@@ -39,18 +39,30 @@ vi.mock('$app/navigation', () => ({ goto: mocks.goto }));
 vi.mock('$store/renderer/store', async () => {
   const { createAppStoreMockModule } =
     await import('$store/renderer/utils/test-helpers/store-mock');
-  return createAppStoreMockModule({ state: () => ({}), dispatch: mocks.dispatch });
+  const { workspaceInitializerReducer } =
+    await import('$store/renderer/slices/workspace-initializer/workspace-initializer-slice');
+  return createAppStoreMockModule({
+    state: () => ({}),
+    dispatch: mocks.dispatch,
+    reducers: { workspaceInitializer: workspaceInitializerReducer },
+  });
 });
 
-vi.mock('$store/renderer/slices/workspace-initializer/workspace-initializer-selectors', () => ({
-  selectWorkspaceInitializerHydrated: () => mocks.readable(() => false),
-  selectCompactWorkspaceInitializerFormState: () => mocks.readable(() => mocks.savedFormState),
-  selectWorkspaceInitializerLastSelectedRepo: () => mocks.readable(() => null),
-  selectWorkspaceInitializerLastSubmittedAgent: () => mocks.readable(() => null),
-  selectWorkspaceInitializerRecentRepos: () => mocks.readable(() => []),
-  selectWorkspaceInitializerPendingGitHubPrefill: () => mocks.readable(() => null),
-  selectWorkspaceInitializerDefaultParentPath: () => mocks.readable(() => ''),
-}));
+vi.mock(
+  '$store/renderer/slices/workspace-initializer/workspace-initializer-selectors',
+  async (importOriginal) => ({
+    ...(await importOriginal<
+      typeof import('$store/renderer/slices/workspace-initializer/workspace-initializer-selectors')
+    >()),
+    selectWorkspaceInitializerHydrated: () => mocks.readable(() => false),
+    selectCompactWorkspaceInitializerFormState: () => mocks.readable(() => mocks.savedFormState),
+    selectWorkspaceInitializerLastSelectedRepo: () => mocks.readable(() => null),
+    selectWorkspaceInitializerLastSubmittedAgent: () => mocks.readable(() => null),
+    selectWorkspaceInitializerRecentRepos: () => mocks.readable(() => []),
+    selectWorkspaceInitializerPendingGitHubPrefill: () => mocks.readable(() => null),
+    selectWorkspaceInitializerDefaultParentPath: () => mocks.readable(() => ''),
+  }),
+);
 
 vi.mock('$store/renderer/slices/model/model-selectors', () => ({
   selectAvailableModels: () => mocks.readable(() => []),
@@ -238,6 +250,31 @@ warmImport(() => import('../initializer/__tests__/mocks/MockComponent.svelte'));
 describe('post-create repo-field preservation', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mocks.dispatch.mockImplementation(
+      (action: {
+        type?: string;
+        payload?: unknown[];
+        success?: (value: unknown) => unknown;
+        failure?: (error: Error) => unknown;
+      }) => {
+        if (action.type === 'workspaceInitializer/readPrefillRequested') {
+          return {
+            promise: Promise.resolve().then(() => {
+              const raw = sessionStorage.getItem(PREFILL_KEY);
+              sessionStorage.removeItem(PREFILL_KEY);
+              return raw ? JSON.parse(raw) : null;
+            }),
+          };
+        } else if (action.type === 'workspaceInitializer/readGitAvailabilityRequested') {
+          return { promise: Promise.resolve({ available: true, version: '2.44.0' }) };
+        } else if (action.type === 'workspaceInitializer/restoreNewWorkspaceDraftRequested') {
+          return { promise: Promise.resolve({ status: 'empty' }) };
+        } else if (action.type === 'workspaceInitializer/createWorkspaceRequested') {
+          return { promise: Promise.resolve(mocks.create(action.payload?.[0])) };
+        }
+        return action;
+      },
+    );
     sessionStorage.clear();
     mocks.savedFormState = null;
   });

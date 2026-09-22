@@ -4,8 +4,8 @@
  * State for the standalone Fleet HUD window: the live global event feed
  * (ring buffer, live-only — no backfill), per-workspace attention/displayStatus
  * overrides pushed by daemon events, the 24h usage rollup from `stats.getUsage`
- * (PROTOCOL §5.36). The subscription lifecycle and the event→feed mapping live
- * in `$features/hud/hud-subscription` / `hud-feed-mapper`; this slice only
+ * (PROTOCOL §5.36). The subscription lifecycle lives in `sagas/hud-saga` and
+ * the event→feed mapping lives in `$features/hud/hud-feed-mapper`; this slice only
  * folds the already-narrowed payloads. Daemon online/version/uptime come from
  * the daemon-health slice (10s poll), not from here — see `selectHudSystem`.
  *
@@ -161,6 +161,8 @@ export interface HudCapturedQuestion {
 export interface HudState {
   /** Whether the HUD subscription is running (feed only accumulates then). */
   active: boolean;
+  /** Native/DOM full-screen state for the standalone HUD window. */
+  fullScreen: boolean;
   /** Live feed ring buffer, newest first, capped at HUD_FEED_LIMIT. */
   feed: HudFeedEntry[];
   /** Live attention flags from `workspace:attention-changed`; "none" clears. */
@@ -191,6 +193,7 @@ export const HUD_FEED_LIMIT = 50;
 
 export const initialState: HudState = {
   active: false,
+  fullScreen: false,
   feed: [],
   attentionByWorkspaceId: {},
   displayStatusByWorkspaceId: {},
@@ -210,6 +213,9 @@ export const initialState: HudState = {
 
 export const hudActivated = createAction('hud/activated');
 export const hudDeactivated = createAction('hud/deactivated');
+export const hudFullScreenRequested =
+  createAction<[fullScreen: boolean]>('hud/fullScreenRequested');
+export const hudFullScreenChanged = createAction<[fullScreen: boolean]>('hud/fullScreenChanged');
 export const hudFeedEntryReceived = createAction<[entry: HudFeedEntry]>('hud/feedEntryReceived');
 export const hudAttentionChanged =
   createAction<[workspaceId: string, attention: string, raisedAtTs: string]>(
@@ -232,7 +238,7 @@ export const hudQuestionCaptured =
   createAction<[question: HudCapturedQuestion]>('hud/questionCaptured');
 /**
  * The workspace's daemon display-status rollup left the attention statuses
- * (`hud-subscription` dispatches this off `workspace:updated` /
+ * (`hud-saga` dispatches this off `workspace:updated` /
  * `agent:status-changed`): a pending question set keeps the rollup in
  * `needs_attention` until it is answered or dismissed (PROTOCOL §7.1), so a
  * non-attention rollup means the captured question is resolved/moot and must
@@ -316,6 +322,10 @@ export function computeBurnRatePerMin(samples: readonly HudRateHistorySample[]):
 export const hudReducer = createReducer<HudState>(initialState);
 hudReducer.with(hudActivated, () => ({ ...initialState, active: true }));
 hudReducer.with(hudDeactivated, () => initialState);
+hudReducer.with(hudFullScreenChanged, (state, { payload: [fullScreen] }) => ({
+  ...state,
+  fullScreen,
+}));
 hudReducer.with(hudFeedEntryReceived, (state, { payload: [entry] }) => {
   if (!state.active) return state;
   if (state.feed.some((existing) => existing.id === entry.id)) return state;

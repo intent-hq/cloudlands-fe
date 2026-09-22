@@ -34,27 +34,36 @@ vi.mock('$app/navigation', () => ({ goto: mocks.goto }));
 vi.mock('$store/renderer/store', async () => {
   const { createAppStoreMockModule } =
     await import('$store/renderer/utils/test-helpers/store-mock');
+  const { workspaceInitializerReducer } =
+    await import('$store/renderer/slices/workspace-initializer/workspace-initializer-slice');
   return createAppStoreMockModule({
     state: () => ({ hardwareConsole: { pttRecording: false, voiceTranscribing: false } }),
     dispatch: mocks.dispatch,
+    reducers: { workspaceInitializer: workspaceInitializerReducer },
   });
 });
 
-vi.mock('$store/renderer/slices/workspace-initializer/workspace-initializer-selectors', () => ({
-  selectWorkspaceInitializerHydrated: () => mocks.readable(() => false),
-  selectCompactWorkspaceInitializerFormState: () => mocks.readable(() => null),
-  selectWorkspaceInitializerLastSelectedRepo: () => mocks.readable(() => null),
-  selectWorkspaceInitializerLastSubmittedAgent: () => mocks.readable(() => null),
-  selectWorkspaceInitializerRecentRepos: () => mocks.readable(() => mocks.recentRepos),
-  // Live readable: tracks subscribers so tests can push a second prefill
-  selectWorkspaceInitializerPendingGitHubPrefill: () => ({
-    subscribe(run: (value: unknown) => void) {
-      run(mocks.pendingPrefill);
-      mocks.prefillSubscribers.add(run);
-      return () => mocks.prefillSubscribers.delete(run);
-    },
+vi.mock(
+  '$store/renderer/slices/workspace-initializer/workspace-initializer-selectors',
+  async (importOriginal) => ({
+    ...(await importOriginal<
+      typeof import('$store/renderer/slices/workspace-initializer/workspace-initializer-selectors')
+    >()),
+    selectWorkspaceInitializerHydrated: () => mocks.readable(() => false),
+    selectCompactWorkspaceInitializerFormState: () => mocks.readable(() => null),
+    selectWorkspaceInitializerLastSelectedRepo: () => mocks.readable(() => null),
+    selectWorkspaceInitializerLastSubmittedAgent: () => mocks.readable(() => null),
+    selectWorkspaceInitializerRecentRepos: () => mocks.readable(() => mocks.recentRepos),
+    // Live readable: tracks subscribers so tests can push a second prefill
+    selectWorkspaceInitializerPendingGitHubPrefill: () => ({
+      subscribe(run: (value: unknown) => void) {
+        run(mocks.pendingPrefill);
+        mocks.prefillSubscribers.add(run);
+        return () => mocks.prefillSubscribers.delete(run);
+      },
+    }),
   }),
-}));
+);
 
 vi.mock('$store/renderer/slices/model/model-selectors', () => ({
   selectAvailableModels: () => mocks.readable(() => []),
@@ -243,14 +252,6 @@ function pushPrefill(value: unknown) {
  * that (otherwise a later effect re-run would re-consume a stale prefill,
  * which cannot happen against the real store).
  */
-function emulateClearPrefillReducer() {
-  mocks.dispatch.mockImplementation((action: { type?: string }) => {
-    if (action?.type === 'workspaceInitializer/clearPendingGitHubPrefill') {
-      pushPrefill(null);
-    }
-  });
-}
-
 function renderInitializer() {
   return render(CompactWorkspaceInitializer, { props: { isExpanded: true } });
 }
@@ -267,12 +268,44 @@ warmImport(() => import('./mocks/MockRepoAndBranchPicker.svelte'));
 describe('CompactWorkspaceInitializer GitHub-prefill repo preselection', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mocks.dispatch.mockImplementation(
+      (action: {
+        type?: string;
+        payload?: unknown[];
+        success?: (value: unknown) => unknown;
+        failure?: (error: Error) => unknown;
+      }) => {
+        if (action.type === 'workspaceInitializer/clearPendingGitHubPrefill') {
+          pushPrefill(null);
+        } else if (action.type === 'workspaceInitializer/readGitRemoteRequested') {
+          return {
+            promise: Promise.resolve(mocks.getRemoteUrl(action.payload?.[0] as string)).then(
+              (response) => {
+                const result = response as {
+                  success?: boolean;
+                  data?: { owner?: string; repo?: string };
+                };
+                return result.success && result.data?.owner && result.data.repo
+                  ? result.data
+                  : null;
+              },
+            ),
+          };
+        } else if (action.type === 'workspaceInitializer/readGitAvailabilityRequested') {
+          return { promise: Promise.resolve({ available: true, version: '2.44.0' }) };
+        } else if (action.type === 'workspaceInitializer/readPrefillRequested') {
+          return { promise: Promise.resolve(null) };
+        } else if (action.type === 'workspaceInitializer/restoreNewWorkspaceDraftRequested') {
+          return { promise: Promise.resolve({ status: 'empty' }) };
+        }
+        return action;
+      },
+    );
     sessionStorage.clear();
     mocks.pendingPrefill = null;
     mocks.prefillSubscribers.clear();
     mocks.recentRepos = [];
     mocks.getRemoteUrl.mockResolvedValue({ success: false });
-    emulateClearPrefillReducer();
   });
 
   afterEach(() => {

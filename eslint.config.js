@@ -156,9 +156,10 @@ const dismissalMarkerRawReadAllowedFiles = [
 const dismissalMarkerRawReadMessage =
   'Do not read `dismissedQuestionsMessageId` directly. Use `isQuestionMessageDismissed` (src/shared/utils/question-dismissal.ts) or `sessionHasPendingQuestion` (src/lib/components/chat/questions/pending-questions.ts) so the dismissal comparison stays shared.';
 
-// Staged rollout: existing components with direct async data loads are baselined
-// until each flow moves to Redux actions/selectors. New Svelte components and
-// cleaned-up files are checked by the rule below.
+// Staged rollout: existing components with direct domain effects are baselined
+// until each flow moves to Redux actions/selectors. The renderer side-effect
+// architecture checker fingerprints classified sites, so these file-level ESLint
+// ignores cannot silently admit another business effect.
 const componentAsyncDataFetchBaselineFiles = [
   'src/features/layout/tab-types/ActivityChangesTabType.svelte',
   'src/features/layout/tab-types/AgentTabType.svelte',
@@ -211,6 +212,8 @@ const componentAsyncDataFetchBaselineFiles = [
   'src/lib/components/file-explorer/VirtualizedFileTree.svelte',
   'src/lib/components/file-explorer/file-explorer-layout.svelte',
   'src/lib/components/file-explorer/file-tree-view.svelte',
+  'src/lib/components/file-tracking/FileChangesList.svelte',
+  'src/lib/components/layout/WorkspaceTabStrip.svelte',
   'src/lib/components/layout/WindowTitleBar.svelte',
   'src/lib/components/layout/panel-system/PanelLayout.svelte',
   'src/lib/components/layout/panel-system/PanelTabBar.svelte',
@@ -260,6 +263,8 @@ const componentAsyncDataFetchBaselineFiles = [
   'src/lib/components/ui/searchable-select/searchable-select.svelte',
   'src/lib/components/visualization/repo-visualizer/RepoVisualizer.svelte',
   'src/lib/components/visualization/repo-visualizer/TreeCanvas.svelte',
+  'src/lib/components/workspace/CommentSystemDemo.svelte',
+  'src/lib/components/workspace/CheckoutModePill.svelte',
   'src/lib/components/workspace/CompactWorkspaceInitializer.svelte',
   'src/lib/components/workspace/MultiSelectTabbedSidebar.svelte',
   'src/lib/components/workspace/NoteCodeChangesCard.svelte',

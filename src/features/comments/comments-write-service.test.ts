@@ -39,9 +39,16 @@ import {
   loadCommentsAction,
 } from '$store/renderer/slices/comments/comments-slice';
 import { selectCommentById } from '$store/renderer/slices/comments/comments-selectors';
-import { loadWorkspaceNotesSucceeded } from '$store/renderer/slices/workspace-notes/workspace-notes-slice';
+import { commentsWriteSaga } from '$store/renderer/slices/comments/sagas/comments-write-saga';
+import {
+  loadWorkspaceNotesSucceeded,
+  updateNoteContent,
+} from '$store/renderer/slices/workspace-notes/workspace-notes-slice';
 import { selectNoteById } from '$store/renderer/slices/workspace-notes/workspace-notes-selectors';
-import { NOTE_CONTENT_SAVE_DEBOUNCE_MS, updateNoteContent } from '../notes/notes-write-service';
+import {
+  NOTE_CONTENT_SAVE_DEBOUNCE_MS,
+  notesWriteSaga,
+} from '$store/renderer/slices/workspace-notes/sagas/notes-write-saga';
 import { addComment, deleteComment, respondToComment } from './comments-write-service';
 
 const commentsApi = appClient.comments as unknown as Record<string, ReturnType<typeof vi.fn>>;
@@ -87,7 +94,11 @@ function seedNote(workspaceId: string, note: Note): void {
 }
 
 describe('commentsWriteService (fake seam, real store)', () => {
-  beforeAll(() => appStore.init());
+  beforeAll(() => {
+    appStore.init();
+    appStore.runSaga(commentsWriteSaga);
+    appStore.runSaga(notesWriteSaga);
+  });
   afterEach(() => {
     appStore.dispatch(clearCommentsAction());
     vi.clearAllMocks();
@@ -286,7 +297,7 @@ describe('commentsWriteService (fake seam, real store)', () => {
         commentTarget: 'bo',
         comment: 'body',
       });
-      updateNoteContent(WS, 'note-rev', 'body with anchors');
+      appStore.dispatch(updateNoteContent(WS, 'note-rev', 'body with anchors'));
       await adding;
       // The add advanced the stored rev to 4 without an echo of its text.
       expect(selectNoteById.select(appStore.state, WS, 'note-rev')?.rev).toBe(4);
@@ -334,7 +345,7 @@ describe('commentsWriteService (fake seam, real store)', () => {
         commentTarget: 'bo',
         comment: 'body',
       });
-      updateNoteContent(WS, 'note-rev', 'body with anchors');
+      appStore.dispatch(updateNoteContent(WS, 'note-rev', 'body with anchors'));
       // The debounce fires while comment.add is still unresolved — the flush
       // must wait on the queue rather than overtake the add.
       await vi.advanceTimersByTimeAsync(NOTE_CONTENT_SAVE_DEBOUNCE_MS + 1);

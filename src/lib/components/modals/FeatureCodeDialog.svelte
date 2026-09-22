@@ -6,14 +6,27 @@
   import { Input } from '$lib/components/ui/input';
   import Fa from 'svelte-fa';
   import { faXmark } from '@fortawesome/free-solid-svg-icons';
-  import { featureCodesClient } from '$features/feature-codes/renderer/feature-codes.client';
   import {
     selectActiveFeatures,
+    selectFeatureCodeOperation,
     selectHasActiveFeatures,
   } from '$store/renderer/slices/feature-codes/feature-codes-selectors';
-  import { setActiveFeatures } from '$store/renderer/slices/feature-codes/feature-codes-slice';
+  import {
+    activateFeatureCodeRequested,
+    deactivateFeatureRequested,
+    loadActiveFeaturesRequested,
+    restartForFeatureCodesRequested,
+  } from '$store/renderer/slices/feature-codes/feature-codes-slice';
   import { store as appStore } from '$store/renderer/store';
   import { m } from '$shared/paraglide/messages.js';
+
+  const STATIC_OPERATION = {
+    version: 0,
+    status: 'idle' as const,
+    kind: null,
+    result: null,
+    error: null,
+  };
 
   interface Props {
     open?: boolean;
@@ -35,6 +48,9 @@
   const hasActiveFeatures$ = untrack(() =>
     staticData ? readable(staticData.activeFeatures.length > 0) : selectHasActiveFeatures(),
   );
+  const operation$ = untrack(() =>
+    staticData ? readable(STATIC_OPERATION) : selectFeatureCodeOperation(),
+  );
 
   let inputValue = $state('');
   let inputRef: HTMLInputElement | null = $state(null);
@@ -42,6 +58,13 @@
   let isActivating = $state(false);
   let needsRestart = $state(false);
   let feedbackTimeout: ReturnType<typeof setTimeout> | null = null;
+  let handledOperationVersion = $state(
+    untrack(() =>
+      staticData
+        ? STATIC_OPERATION.version
+        : selectFeatureCodeOperation.select(appStore.state).version,
+    ),
+  );
 
   function clearFeedbackTimeout() {
     if (feedbackTimeout !== null) {
@@ -72,35 +95,34 @@
     onClose?.();
   }
 
-  async function confirm() {
+  function confirm() {
     if (staticData) return;
     if (!inputValue.trim() || isActivating) return;
     clearFeedbackTimeout();
     isActivating = true;
     feedback = null;
 
-    try {
-      const result = await featureCodesClient.activateCode(inputValue.trim());
-      if (result?.status === 'already_active') {
+    handledOperationVersion = $operation$.version;
+    appStore.dispatch(activateFeatureCodeRequested(inputValue.trim()));
+  }
+
+  $effect(() => {
+    const operation = $operation$;
+    if (operation.version <= handledOperationVersion || operation.status === 'loading') return;
+    handledOperationVersion = operation.version;
+    if (operation.kind === 'activate') {
+      if (operation.status === 'success' && operation.result === 'already_active') {
         feedback = {
           message: m.modals_featureCode_alreadyActive_feedback(),
-          color: 'text-warning-ink',
+          color: 'text-yellow-400',
         };
-      } else {
+      } else if (operation.status === 'success' && operation.result === 'activated') {
         feedback = { message: m.modals_featureCode_activated_feedback(), color: 'text-green-400' };
         needsRestart = true;
-      }
-      // Refresh the renderer-side store so UI gates update immediately
-      await refreshActiveFeatures();
-    } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : String(err);
-      if (
-        message.toLowerCase().includes('already active') ||
-        message.toLowerCase().includes('already_active')
-      ) {
+      } else if (operation.status === 'success' && operation.result === 'invalid') {
         feedback = {
-          message: m.modals_featureCode_alreadyActive_feedback(),
-          color: 'text-warning-ink',
+          message: m.modals_featureCode_invalidCode_feedback(),
+          color: 'text-danger',
         };
       } else {
         feedback = {
@@ -108,11 +130,14 @@
           color: 'text-danger',
         };
       }
-    } finally {
       isActivating = false;
       scheduleFeedbackClear();
+    } else if (operation.kind === 'deactivate' && operation.status === 'success') {
+      needsRestart = true;
+      feedback = { message: m.modals_featureCode_deactivated_feedback(), color: 'text-yellow-400' };
+      scheduleFeedbackClear();
     }
-  }
+  });
 
   function handleKeydown(e: KeyboardEvent) {
     if (e.key === 'Escape') {
@@ -124,38 +149,26 @@
 
   // Focus input and load active features when dialog opens
   $effect(() => {
-    if (open && !staticData) {
+    if (open) {
       clearFeedbackTimeout();
       feedback = null;
       inputValue = '';
-      void refreshActiveFeatures();
+      if (!staticData) appStore.dispatch(loadActiveFeaturesRequested());
       requestAnimationFrame(() => {
         inputRef?.focus();
       });
     }
   });
 
-  /** Re-fetch active features; keep existing store state when the fetch fails. */
-  async function refreshActiveFeatures() {
-    const features = await featureCodesClient.getActiveFeatures();
-    if (features !== null) {
-      appStore.dispatch(setActiveFeatures(features));
-    }
+  function restartApp() {
+    if (staticData) return;
+    appStore.dispatch(restartForFeatureCodesRequested());
   }
 
-  async function restartApp() {
+  function removeFeature(featureId: string) {
     if (staticData) return;
-    await featureCodesClient.restartApp();
-  }
-
-  async function removeFeature(featureId: string) {
-    if (staticData) return;
-    const result = await featureCodesClient.deactivateFeature(featureId);
-    await refreshActiveFeatures();
-    if (!result?.success) return;
-    needsRestart = true;
-    feedback = { message: m.modals_featureCode_deactivated_feedback(), color: 'text-warning-ink' };
-    scheduleFeedbackClear();
+    handledOperationVersion = $operation$.version;
+    appStore.dispatch(deactivateFeatureRequested(featureId));
   }
 </script>
 

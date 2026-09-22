@@ -17,9 +17,8 @@ const mocks = vi.hoisted(() => ({
   dispatch: vi.fn(),
   invoke: vi.fn(),
   shellOpen: vi.fn(),
-  checkPiMcpAdapterInstalled: vi.fn(),
-  installPiMcpAdapter: vi.fn(),
   state: { current: {} as any },
+  resetStore: () => {},
 }));
 
 vi.mock('$lib/electron-bridge', () => ({
@@ -31,22 +30,22 @@ vi.mock('$lib/client', () => ({
   appClient: { settings: { get: vi.fn().mockResolvedValue({ value: {} }) } },
 }));
 
-vi.mock('$features/pi/pi-models.client', () => ({
-  checkPiMcpAdapterInstalled: mocks.checkPiMcpAdapterInstalled,
-  installPiMcpAdapter: mocks.installPiMcpAdapter,
-}));
-
-vi.mock('$lib/components/patterns/notify', () => ({
-  notify: { error: vi.fn(), success: vi.fn() },
+vi.mock('svelte-sonner', () => ({
+  toast: { error: vi.fn(), success: vi.fn() },
 }));
 
 vi.mock('$store/renderer/store', async () => {
   const { createAppStoreMockModule } =
     await import('$store/renderer/utils/test-helpers/store-mock');
-  return createAppStoreMockModule({
+  const { providerSettingsReducer } =
+    await import('$store/renderer/slices/provider-settings/provider-settings-slice');
+  const module = createAppStoreMockModule({
     state: () => mocks.state.current,
     dispatch: mocks.dispatch,
+    reducers: { providerSettings: providerSettingsReducer },
   });
+  mocks.resetStore = module.store.resetReducers;
+  return module;
 });
 
 /** State with the catalog hydrated and every provider probe still in flight. */
@@ -90,6 +89,11 @@ async function buildState(
       enabledProviders,
       defaultProviderId: MOCK_PROVIDER_CATALOG.defaultProviderId,
       nonDisableableProviderIds: [],
+      configuredPaths: {},
+      resolvedPaths: {},
+      secondaryResolvedPaths: {},
+      piMcpAdapterInstalled: null,
+      piMcpAdapterInstalling: false,
     },
     model: { ...modelInitialState, providerModels: {} },
     specialists: { ...specialistsInitialState },
@@ -98,10 +102,13 @@ async function buildState(
     agentAvailability: {
       providerStatusMap,
       providerLoadingMap,
+      providerCheckEpochMap: {},
       providerUserInfoLoadingMap: {},
       hasCheckedOnce: false,
       watchedTerminalIds: [],
       npxStatus,
+      hiddenProviderIds: null,
+      availabilityError: null,
     },
   };
 }
@@ -226,9 +233,12 @@ describe('ProviderSelector progressive rendering', () => {
     },
   );
   beforeEach(() => {
+    mocks.resetStore();
     vi.clearAllMocks();
-    mocks.checkPiMcpAdapterInstalled.mockResolvedValue(true);
-    mocks.installPiMcpAdapter.mockResolvedValue({ success: true });
+    mocks.dispatch.mockImplementation((action) => {
+      if (action?.asyncActionType === 'settings/get') action.success(null);
+      return action;
+    });
     // The aggregated GET_AVAILABILITY never settles: rows must not wait on it.
     mocks.invoke.mockImplementation(async (channel: string) => {
       if (channel === PROVIDERS_CHANNELS.GET_AVAILABILITY) return new Promise(() => {});
@@ -261,6 +271,24 @@ describe('ProviderSelector progressive rendering', () => {
     await waitFor(() => {
       expect(result.getByText('Anthropic Claude Code CLI Path')).toBeTruthy();
     });
+  });
+
+  it('dispatches only a Redux availability refresh when the window regains focus', async () => {
+    mocks.state.current = await buildState({});
+    const ProviderSelector = (await import('./ProviderSelector.svelte')).default;
+    render(ProviderSelector);
+    mocks.dispatch.mockClear();
+    mocks.invoke.mockClear();
+
+    window.dispatchEvent(new Event('focus'));
+
+    expect(mocks.dispatch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'agentAvailability/checkAllProvidersRequested',
+        payload: [],
+      }),
+    );
+    expect(mocks.invoke).not.toHaveBeenCalledWith(PROVIDERS_CHANNELS.GET_AVAILABILITY);
   });
 
   it('shows a settled row while a slower row is still pending', async () => {
@@ -437,8 +465,8 @@ describe('ProviderSelector progressive rendering', () => {
   });
 
   it('moves the Pi adapter warning and install action into the overflow menu', async () => {
-    mocks.checkPiMcpAdapterInstalled.mockResolvedValue(false);
     mocks.state.current = await buildState({ pi: { available: true } });
+    mocks.state.current.providerSettings.piMcpAdapterInstalled = false;
     const ProviderSelector = (await import('./ProviderSelector.svelte')).default;
     const result = render(ProviderSelector);
     const warning = 'Pi needs the pi-mcp-adapter package to use workspace tools';
@@ -451,52 +479,46 @@ describe('ProviderSelector progressive rendering', () => {
     await fireEvent.click(result.getByRole('button', { name: 'Provider actions for Pi' }));
     expect(result.getByText(warning)).toBeTruthy();
     await fireEvent.click(result.getByRole('menuitem', { name: 'Install' }));
-    expect(mocks.installPiMcpAdapter).toHaveBeenCalledOnce();
+    expect(mocks.dispatch).toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'providerSettings/installPiMcpAdapterRequested' }),
+    );
   });
 });
 
 describe('ProviderSelector model refresh rewire (intent-hq/intent#3966)', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mocks.checkPiMcpAdapterInstalled.mockResolvedValue(true);
-    mocks.installPiMcpAdapter.mockResolvedValue({ success: true });
+    mocks.dispatch.mockImplementation((action) => {
+      if (action?.asyncActionType === 'settings/get') action.success(null);
+      return action;
+    });
   });
 
   afterEach(() => {
     cleanup();
   });
 
-  it('dispatches reloadModelsForProvider when retrying the availability check', async () => {
-    // Mount fails the aggregated check (surfacing Try Again); the retry succeeds.
-    let availabilityCalls = 0;
+  it('requests a saga-owned model refresh when retrying the availability check', async () => {
     mocks.invoke.mockImplementation(async (channel: string) => {
-      if (channel === PROVIDERS_CHANNELS.GET_AVAILABILITY) {
-        availabilityCalls += 1;
-        if (availabilityCalls === 1) return { success: false, error: 'availability check failed' };
-        return { success: true, data: { hasAnyProvider: true, providers: {} } };
-      }
       if (channel === PROVIDERS_CHANNELS.GET_PATHS) {
         return { success: true, data: { paths: {}, secondaryPaths: {} } };
       }
       return { success: true, data: {} };
     });
-    mocks.state.current = await buildState({});
+    const state = await buildState({});
+    state.agentAvailability.availabilityError = 'availability check failed';
+    mocks.state.current = state;
     const ProviderSelector = (await import('./ProviderSelector.svelte')).default;
     const result = render(ProviderSelector);
 
     const tryAgain = await result.findByRole('button', { name: 'Try Again' });
-    // The mount-time check does not refresh models.
-    expect(mocks.dispatch).not.toHaveBeenCalledWith(
-      expect.objectContaining({ type: 'model/reloadModelsForProvider' }),
-    );
-
     await fireEvent.click(tryAgain);
-
-    await waitFor(() => {
-      expect(mocks.dispatch).toHaveBeenCalledWith(
-        expect.objectContaining({ type: 'model/reloadModelsForProvider' }),
-      );
-    });
+    expect(mocks.dispatch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'agentAvailability/checkAllProvidersRequested',
+        payload: [true],
+      }),
+    );
   });
 
   it('dispatches reloadModelsForProvider when switching the default provider', async () => {

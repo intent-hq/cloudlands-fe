@@ -31,7 +31,11 @@ import { appClient } from '$lib/client';
 import { store as appStore } from '$store/renderer/store';
 import { loadWorkspaceNotesSucceeded } from '$store/renderer/slices/workspace-notes/workspace-notes-slice';
 import { selectNoteById } from '$store/renderer/slices/workspace-notes/workspace-notes-selectors';
-import { flushNoteContent } from '$features/notes/notes-write-service';
+import {
+  flushPendingNoteContent,
+  NOTE_CONTENT_SAVE_DEBOUNCE_MS,
+  notesWriteSaga,
+} from '$store/renderer/slices/workspace-notes/sagas/notes-write-saga';
 import RawNoteCodeEditor from '../RawNoteCodeEditor.svelte';
 
 const testStore = appStore as typeof appStore & {
@@ -63,7 +67,10 @@ function seed(content: string, rev: number) {
   appStore.dispatch(loadWorkspaceNotesSucceeded([WS], { [WS]: [note] }));
 }
 
-beforeAll(() => appStore.init());
+beforeAll(() => {
+  appStore.init();
+  appStore.runSaga(notesWriteSaga);
+});
 afterEach(() => {
   cleanup();
   vi.clearAllTimers();
@@ -105,8 +112,7 @@ it('replays a draft typed before a superseded echo onto the rebased pending draf
   await fireEvent.input(input, { target: { value: 'body first' } });
   await vi.advanceTimersByTimeAsync(1000);
   await syncStore();
-  const first = flushNoteContent(WS, NOTE);
-  await Promise.resolve();
+  await vi.advanceTimersByTimeAsync(NOTE_CONTENT_SAVE_DEBOUNCE_MS);
   expect(wire).toHaveBeenLastCalledWith(NOTE, 'body first', 4, WS);
 
   await fireEvent.input(input, { target: { value: 'body first second' } });
@@ -118,7 +124,6 @@ it('replays a draft typed before a superseded echo onto the rebased pending draf
   expect(input.value).toBe('body first second third');
 
   resolveFirst({ success: true, newContent: 'AGENT body first', noteRev: 6 });
-  await first;
   await tick();
   await syncStore();
   expect(input.value).toBe('body first second third');
@@ -128,7 +133,11 @@ it('replays a draft typed before a superseded echo onto the rebased pending draf
   expect(wire).toHaveBeenLastCalledWith(NOTE, 'AGENT body first second', 6, WS);
 
   resolveSecond({ success: true, newContent: 'AGENT body first second LATER', noteRev: 9 });
-  await flushNoteContent(WS, NOTE);
+  await tick();
+  appStore.runSaga(function* flushPendingSave() {
+    yield* flushPendingNoteContent(WS, NOTE);
+  });
+  await tick();
   await syncStore();
 
   expect(wire).toHaveBeenCalledTimes(3);

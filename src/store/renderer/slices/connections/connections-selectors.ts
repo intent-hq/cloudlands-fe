@@ -9,6 +9,15 @@ import type {
   ConnectionOpenStatus,
   ConnectionRecord,
 } from './connections-types';
+import type { ConnectionResultState } from './connections-types';
+
+const IDLE_RESULT: ConnectionResultState<never> = {
+  requestId: null,
+  version: 0,
+  status: 'idle',
+  result: null,
+  error: null,
+};
 
 const NO_CERT_WARNINGS: ConnectionHostCertWarning[] = [];
 
@@ -153,4 +162,32 @@ export const selectProtocolMismatchModal = store.createSelector((state) => {
  */
 export const selectKeychainSyncState = store.createSelector(
   (state) => state.connections.keychainSync,
+);
+
+export const selectKeychainSyncOperationState = store.createSelector((state) => ({
+  loadStatus: state.connections.keychainSyncLoadStatus,
+  writeStatus: state.connections.keychainSyncWriteOperation.status,
+}));
+
+export const selectKeychainSyncWriteOperation = store.createSelector(
+  (state) => state.connections.keychainSyncWriteOperation,
+);
+
+export const selectCaptureFingerprintOperation = store.createSelector(
+  (state) => state.connections.captureFingerprintOperation,
+);
+export const selectConnectBackendOperation = store.createSelector(
+  (state) => state.connections.connectBackendOperation,
+);
+export const selectOpenConnectionOperation = store.createSelector(
+  (state, id: string) => state.connections.openOperations[id] ?? IDLE_RESULT,
+);
+export const selectSaveConnectionOperation = store.createSelector(
+  (state, id: string) => state.connections.saveOperations[id] ?? IDLE_RESULT,
+);
+export const selectTestConnectionOperation = store.createSelector(
+  (state, id: string) => state.connections.testOperations[id] ?? IDLE_RESULT,
+);
+export const selectForgetConnectionOperation = store.createSelector(
+  (state, id: string) => state.connections.forgetOperations[id] ?? IDLE_RESULT,
 );

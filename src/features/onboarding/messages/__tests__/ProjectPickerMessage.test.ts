@@ -11,9 +11,6 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } 
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 
 const LOCAL_PATH = '/tmp/local-folder';
-const mocks = vi.hoisted(() => ({
-  localDirectoryStatus: null as Record<string, unknown> | null,
-}));
 
 vi.mock('$lib/electron-bridge', () => ({
   invoke: vi.fn(async (channel: string) =>
@@ -28,6 +25,46 @@ vi.mock('$lib/directory-picker-service', () => ({
     onSelect(LOCAL_PATH),
   ),
 }));
+
+const mocks = vi.hoisted(() => {
+  function writable<T>(initial: T) {
+    let value = initial;
+    const subscribers = new Set<(next: T) => void>();
+    return {
+      get: () => value,
+      set(next: T) {
+        value = next;
+        for (const subscriber of subscribers) subscriber(next);
+      },
+      subscribe(run: (next: T) => void) {
+        subscribers.add(run);
+        run(value);
+        return () => subscribers.delete(run);
+      },
+    };
+  }
+  return {
+    localDirectoryStatus: null as Record<string, unknown> | null,
+    prefillOperation: writable({
+      status: 'idle',
+      version: 0,
+      data: null as Record<string, unknown> | null,
+      error: null as string | null,
+    }),
+  };
+});
+
+vi.mock(
+  '$store/renderer/slices/workspace-initializer/workspace-initializer-selectors',
+  async (importOriginal) => ({
+    ...(await importOriginal<
+      typeof import('$store/renderer/slices/workspace-initializer/workspace-initializer-selectors')
+    >()),
+    selectWorkspaceInitializerPrefillRead: Object.assign(() => mocks.prefillOperation, {
+      select: () => mocks.prefillOperation.get(),
+    }),
+  }),
+);
 
 vi.mock('$lib/client/live/backend-transport', () => ({
   backendRequest: vi.fn(),
@@ -117,6 +154,23 @@ describe('ProjectPickerMessage — GitHub tab picked-repo selection', () => {
     // Unrelated channels invoked during tab mount (github auth/search) resolve
     // to undefined instead of rejecting as unbridged.
     setMockIpcInvokeFallback(undefined);
+    mocks.prefillOperation.set({ status: 'idle', version: 0, data: null, error: null });
+    vi.spyOn(appStore, 'dispatch').mockImplementation((action) => {
+      if (action?.type === 'workspaceInitializer/readPrefillRequested') {
+        const version = mocks.prefillOperation.get().version + 1;
+        mocks.prefillOperation.set({ status: 'loading', version, data: null, error: null });
+        Promise.resolve()
+          .then(() => {
+            const raw = sessionStorage.getItem('workspace-prefill');
+            sessionStorage.removeItem('workspace-prefill');
+            return raw ? JSON.parse(raw) : null;
+          })
+          .then((data) =>
+            mocks.prefillOperation.set({ status: 'success', version, data, error: null }),
+          );
+      }
+      return action;
+    });
   });
 
   afterEach(() => {
@@ -124,6 +178,7 @@ describe('ProjectPickerMessage — GitHub tab picked-repo selection', () => {
     backendRequestMock.mockReset();
     mocks.localDirectoryStatus = null;
     sessionStorage.clear();
+    vi.restoreAllMocks();
   });
 
   afterAll(() => {

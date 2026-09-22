@@ -7,7 +7,8 @@
 import { createAction } from '@augmentcode/themis/utils/store/create-action';
 import { createReducer } from '@augmentcode/themis/utils/store/create-reducer';
 import type { SentryAuthState } from './sentry-auth-types';
-import type { SentryProject } from '$features/sentry-auth/types';
+import type { SentryIssueResult, SentryProject } from '$features/sentry-auth/types';
+import { createCollection } from '@augmentcode/themis/utils/collections/collection-utils';
 
 // =============================================================================
 // Initial State
@@ -20,6 +21,9 @@ const initialState: SentryAuthState = {
   error: null,
   projects: [],
   isLoadingProjects: false,
+  issues: createCollection<SentryIssueResult, 'id'>('id'),
+  isLoadingIssues: false,
+  issuesLoaded: false,
 };
 
 // =============================================================================
@@ -35,6 +39,9 @@ export const connectSentry =
 
 /** Trigger: disconnect / logout from Sentry */
 export const logoutSentry = createAction('sentryAuth/logout');
+
+/** Trigger: load the first issue page for simple picker surfaces. */
+export const loadSentryIssuesRequested = createAction('sentryAuth/loadIssuesRequested');
 
 // =============================================================================
 // State-setting actions (dispatched by sagas to update reducer)
@@ -78,6 +85,10 @@ export const setSentryProjects =
 export const setSentryLoadingProjects = createAction<[isLoading: boolean]>(
   'sentryAuth/setLoadingProjects',
 );
+export const sentryIssuesLoadStarted = createAction('sentryAuth/issuesLoadStarted');
+export const sentryIssuesLoaded =
+  createAction<[issues: SentryIssueResult[]]>('sentryAuth/issuesLoaded');
+export const sentryIssuesLoadSettled = createAction('sentryAuth/issuesLoadSettled');
 
 // =============================================================================
 // Reducer
@@ -114,6 +125,8 @@ sentryAuthReducer.with(setSentryLoggedOut, (state) => ({
   isAuthenticated: false,
   organization: null,
   projects: [],
+  issues: createCollection<SentryIssueResult, 'id'>('id'),
+  issuesLoaded: false,
 }));
 sentryAuthReducer.with(setSentryProjects, (state, { payload: [projects] }) => ({
   ...state,
@@ -123,3 +136,10 @@ sentryAuthReducer.with(setSentryLoadingProjects, (state, { payload: [isLoading] 
   ...state,
   isLoadingProjects: isLoading,
 }));
+sentryAuthReducer.with(sentryIssuesLoadStarted, (state) => ({ ...state, isLoadingIssues: true }));
+sentryAuthReducer.with(sentryIssuesLoaded, (state, { payload: [issues] }) => ({
+  ...state,
+  issues: createCollection<SentryIssueResult, 'id'>('id', issues),
+  issuesLoaded: true,
+}));
+sentryAuthReducer.with(sentryIssuesLoadSettled, (state) => ({ ...state, isLoadingIssues: false }));

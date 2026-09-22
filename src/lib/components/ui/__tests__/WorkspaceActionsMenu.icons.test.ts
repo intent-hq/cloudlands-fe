@@ -48,6 +48,7 @@ beforeEach(() => {
       lastFetched: 0,
     },
     daemonHealth: { transport: { mode: 'sidecar-uds' }, hostLocality: 'local' },
+    git: { byWorkspaceId: {} },
     workspace: { workspaces: createCollection('id', []) },
   } as unknown as Partial<StoreState>;
 });

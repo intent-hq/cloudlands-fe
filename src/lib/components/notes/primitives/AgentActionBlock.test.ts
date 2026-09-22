@@ -52,6 +52,13 @@ vi.mock('$lib/components/patterns/notify', () => ({
   },
 }));
 
+vi.mock('$lib/components/patterns/notify', () => ({
+  notify: {
+    error: mocks.toastError,
+    success: mocks.toastSuccess,
+  },
+}));
+
 vi.mock('$shared/services/unified-id.service', () => ({
   unifiedIdService: {
     generateAgentId: generateAgentIdMock,

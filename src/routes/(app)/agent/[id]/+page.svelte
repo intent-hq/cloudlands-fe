@@ -7,7 +7,6 @@
 
   import { page } from '$app/state';
   import { goto } from '$app/navigation';
-  import { isAgentNotFoundError } from '$features/agent/utils/agent-not-found-error';
   import SimpleRichInput from '$lib/components/chat/input/SimpleRichInput.svelte';
   import MessageContent from '$lib/components/chat/MessageContent.svelte';
   import { sendMessage as sendAgentMessage } from '$features/agent/agent-send';
@@ -16,29 +15,48 @@
   import { Button } from '$lib/components/ui/button';
   import { selectWorkspaceById } from '$store/renderer/slices/workspace/workspace-selectors';
 
-  import { restoreAgentSessionRequested } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
+  import {
+    clearAgentRestorationRequest,
+    restoreAgentSessionRequested,
+  } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
+  import { selectAgentRestorationRequest } from '$store/renderer/slices/workspace-agents/workspace-agents-selectors';
 
   import type { AgentSession } from '$shared/types';
   import { formatTime } from '$lib/i18n/format';
   import { m } from '$shared/paraglide/messages.js';
   import { store as appStore } from '$store/renderer/store';
   import { untrack } from 'svelte';
+  import { writable } from 'svelte/store';
 
   let agentId: string = $state('');
   let agent: any = $state(null);
   let messages: any[] = $state([]);
   let newMessage = $state('');
   let loading = $state(false);
-  let loadPromise: Promise<void> | null = null;
   let isStreaming = $state(false);
   let scrollContainer: HTMLDivElement | null = $state(null);
   let shouldFollowBottom = $state(true);
   let showScrollToBottom = $state(false);
+  let pendingRestore: { workspaceId: string; agentId: string; requestId: string } | null = null;
+
+  const restoreWorkspaceId$ = writable('');
+  const restoreRequestId$ = writable('');
+  const restoreRequest$ = selectAgentRestorationRequest(restoreWorkspaceId$, restoreRequestId$);
 
   function applyAgentSession(session: AgentSession) {
     agent = session;
     messages = session.messages || [];
     isStreaming = !!session.isStreaming;
+  }
+
+  function applyFallbackAgent(requestedAgentId: string) {
+    agent = {
+      id: requestedAgentId,
+      name: m.chat_agentThread_session_fallback(),
+      messages: [],
+    };
+    messages = [];
+    isStreaming = false;
   }
 
   function getOwningWorkspaceId(requestedAgentId = agentId) {
@@ -61,16 +79,42 @@
   $effect(() => {
     const id = page.params.id;
     if (id && id !== agentId) {
+      if (pendingRestore) {
+        appStore.dispatch(
+          clearAgentRestorationRequest(pendingRestore.workspaceId, pendingRestore.requestId),
+        );
+        pendingRestore = null;
+      }
+      loading = false;
       agentId = id;
-      // Wait for any existing load to complete
-      if (loadPromise) {
-        loadPromise.then(() => {
-          loadPromise = loadAgent();
+      loadAgent();
+    }
+  });
+
+  $effect(() => {
+    const request = $restoreRequest$;
+    const pending = pendingRestore;
+    if (!pending || !request || request.requestId !== pending.requestId || request.loading) return;
+
+    if (agentId === pending.agentId) {
+      if (request.notFound) {
+        logger.warn('Agent no longer exists on daemon; navigating home', {
+          agentId: pending.agentId,
         });
+        void goto('/');
+      } else if (request.error) {
+        logger.error('Failed to load agent:', request.error);
+        applyFallbackAgent(pending.agentId);
       } else {
-        loadPromise = loadAgent();
+        const session = selectAgentSession.select(appStore.state, pending.agentId);
+        if (session) applyAgentSession(session);
+        else applyFallbackAgent(pending.agentId);
       }
     }
+
+    appStore.dispatch(clearAgentRestorationRequest(pending.workspaceId, pending.requestId));
+    pendingRestore = null;
+    loading = false;
   });
 
   $effect(() => {
@@ -100,13 +144,14 @@
 
   // Note: Auto-scroll is handled by the followBottom action on the scroll container
 
-  async function loadAgent() {
+  function loadAgent() {
     const requestedAgentId = agentId;
     if (!requestedAgentId || loading) return;
 
     logger.info('Loading agent:', requestedAgentId);
     loading = true;
 
+    let awaitingRestore = false;
     try {
       // First try to get the session from the Redux store (in memory)
       let session: import('$shared/types').AgentSession | null | undefined =
@@ -120,9 +165,15 @@
             agentId: requestedAgentId,
             workspaceId: workspace.id,
           });
-          const restoreAction = restoreAgentSessionRequested(workspace.id, requestedAgentId);
-          appStore.dispatch(restoreAction);
-          session = await restoreAction.promise;
+          const requestId = globalThis.crypto.randomUUID();
+          pendingRestore = { workspaceId: workspace.id, agentId: requestedAgentId, requestId };
+          restoreWorkspaceId$.set(workspace.id);
+          restoreRequestId$.set(requestId);
+          appStore.dispatch(
+            restoreAgentSessionRequested(workspace.id, requestedAgentId, requestId),
+          );
+          awaitingRestore = true;
+          return;
         }
       }
 
@@ -136,38 +187,16 @@
         });
         applyAgentSession(session);
       } else {
-        // Create a minimal agent object if not found
-        agent = {
-          id: requestedAgentId,
-          name: m.chat_agentThread_session_fallback(),
-          messages: [],
-        };
-        messages = [];
-        isStreaming = false;
+        applyFallbackAgent(requestedAgentId);
       }
     } catch (err) {
-      if (isAgentNotFoundError(err)) {
-        // Expected: the route references an agent deleted on the daemon
-        // (monorepo#1753). WARN and leave the dead view for home.
-        logger.warn('Agent no longer exists on daemon; navigating home', {
-          agentId: requestedAgentId,
-        });
-        if (agentId === requestedAgentId) await goto('/');
-        return;
-      }
       logger.error('Failed to load agent:', err);
       if (agentId !== requestedAgentId) return;
-      // Create a minimal agent object on error
-      agent = {
-        id: requestedAgentId,
-        name: m.chat_agentThread_session_fallback(),
-        messages: [],
-      };
-      messages = [];
-      isStreaming = false;
+      applyFallbackAgent(requestedAgentId);
     } finally {
-      loading = false;
-      loadPromise = null;
+      if (!awaitingRestore) {
+        loading = false;
+      }
     }
   }
 

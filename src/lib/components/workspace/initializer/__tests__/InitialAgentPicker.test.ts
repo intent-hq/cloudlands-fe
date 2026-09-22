@@ -81,6 +81,8 @@ const mocks = vi.hoisted(() => {
 vi.mock('$store/renderer/store', async () => {
   const { createAppStoreMockModule } =
     await import('$store/renderer/utils/test-helpers/store-mock');
+  const { workspaceInitializerReducer } =
+    await import('$store/renderer/slices/workspace-initializer/workspace-initializer-slice');
   // The picker reads the default provider / catalog rows via the
   // providerCatalog slice — hydrate the §5.38-shaped mock catalog.
   const { initialState, providerCatalogLoaded, providerCatalogReducer } =
@@ -101,6 +103,16 @@ vi.mock('$store/renderer/store', async () => {
       model: { defaultProviderId: 'auggie' },
       providerModels: { byProviderId: mocks.providerModelsByProviderId, clearEpoch: 0 },
     }),
+    reducers: { workspaceInitializer: workspaceInitializerReducer },
+    dispatch: (action: any) => {
+      if (action?.type === 'workspaceInitializer/listSpecialistPreviewsRequested') {
+        return { promise: Promise.resolve(mocks.specialistsList(...action.payload)) };
+      }
+      if (action?.type === 'workspaceInitializer/readProviderAvailabilityRequested') {
+        return { promise: Promise.resolve(mocks.getProviderAvailability()) };
+      }
+      return action;
+    },
   });
 });
 
@@ -124,15 +136,15 @@ vi.mock('$store/renderer/slices/model/model-selectors', () => ({
   },
 }));
 
-vi.mock('$lib/client', () => ({
-  appClient: {
-    specialists: { list: mocks.specialistsList },
-  },
-}));
-
-vi.mock('$store/renderer/slices/workspace-initializer/workspace-initializer-selectors', () => ({
-  selectWorkspaceInitializerHydrated: () => mocks.hydrated$,
-}));
+vi.mock(
+  '$store/renderer/slices/workspace-initializer/workspace-initializer-selectors',
+  async (importOriginal) => ({
+    ...(await importOriginal<
+      typeof import('$store/renderer/slices/workspace-initializer/workspace-initializer-selectors')
+    >()),
+    selectWorkspaceInitializerHydrated: () => mocks.hydrated$,
+  }),
+);
 
 vi.mock('$store/renderer/slices/provider-settings/provider-settings-selectors', () => ({
   selectActiveProviderId: () => mocks.readable('auggie'),

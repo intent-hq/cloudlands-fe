@@ -238,7 +238,10 @@ describe('notification sagas', () => {
       ['workspace.get', { workspaceId: 'ws-1' }],
     ]);
     expect(MockNotification.instances.map(({ title, options }) => ({ title, options }))).toEqual([
-      { title: 'My Space - Implementor: Ship', options: { body: 'Task completed' } },
+      {
+        title: 'My Space - Implementor: Ship',
+        options: { body: 'Task completed', tag: 'ws-1:agent-1' },
+      },
     ]);
     MockNotification.instances[0].onclick?.();
     await flush();

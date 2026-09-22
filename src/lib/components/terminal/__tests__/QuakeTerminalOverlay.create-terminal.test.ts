@@ -6,61 +6,32 @@
  */
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { render, fireEvent, waitFor } from '@testing-library/svelte';
+import { tick } from 'svelte';
 import type { WorkspaceId } from '$shared/types/branded-ids';
 
-const clientMocks = vi.hoisted(() => ({
-  mockTerminalsCreate: vi.fn(),
-}));
-
-vi.mock('$lib/client', () => ({
-  appClient: {
-    terminals: { create: clientMocks.mockTerminalsCreate },
-  },
-}));
-
 vi.mock('$store/renderer/store', async () => {
+  const { createAppStoreMock } = await import('$store/renderer/utils/test-helpers/store-mock');
   const { scriptsReducer } = await import('$store/renderer/slices/scripts/scripts-slice');
-  let scriptsState = scriptsReducer(undefined, { type: '@@INIT' });
+  const { terminalsReducer } = await import('$store/renderer/slices/terminals/terminals-slice');
   let currentTabId: string | null = null;
   const dispatched: Array<{ type: string; payload?: unknown }> = [];
-  const store: any = {
-    get state() {
-      return {
-        tabState: { currentTabId },
-        scripts: scriptsState,
-        terminals: { height: 30, workspaceHeights: {}, workspaces: {} },
-      };
-    },
+  const store: any = createAppStoreMock({
+    state: () => ({ tabState: { currentTabId } }),
+    reducers: { scripts: scriptsReducer, terminals: terminalsReducer },
     dispatch: (action: any) => {
       dispatched.push(action);
-      scriptsState = scriptsReducer(scriptsState, action);
       return action;
     },
-    createSelector: (fn: (state: any, ...args: any[]) => any) =>
-      Object.assign(
-        (...args: any[]) => ({
-          subscribe: (listener: (v: any) => void) => {
-            listener(fn(store.state, ...args));
-            return () => {};
-          },
-        }),
-        { select: fn },
-      ),
-    getReadableState: () => ({
-      subscribe: (listener: (v: any) => void) => {
-        listener(store.state);
-        return () => {};
-      },
-    }),
-    __dispatched: dispatched,
-    __setCurrentTab: (id: string | null) => {
-      currentTabId = id;
-    },
-    __reset: () => {
-      scriptsState = scriptsReducer(undefined, { type: '@@INIT' });
-      currentTabId = null;
-      dispatched.length = 0;
-    },
+  });
+  store.__dispatched = dispatched;
+  store.__setCurrentTab = (id: string | null) => {
+    currentTabId = id;
+    store.emitState();
+  };
+  store.__reset = () => {
+    currentTabId = null;
+    dispatched.length = 0;
+    store.resetReducers();
   };
   return { store };
 });
@@ -114,6 +85,7 @@ vi.mock('$features/terminal/terminal-history-tracker', () => ({
 
 import QuakeTerminalOverlay from '../QuakeTerminalOverlay.svelte';
 import { store as appStore } from '$store/renderer/store';
+import { createTerminalFromOverlaySucceeded } from '$store/renderer/slices/terminals/terminals-slice';
 import { m } from '$shared/paraglide/messages.js';
 import { warmImport } from '../../../../test/warm-import';
 
@@ -140,20 +112,14 @@ warmImport(() => import('../../workspace/sidebar/__tests__/mocks/MockTooltip.sve
 warmImport(() => import('../../workspace/sidebar/__tests__/mocks/MockTooltipRich.svelte'));
 warmImport(() => import('./mocks/MockButton.svelte'));
 
-describe('QuakeTerminalOverlay createNewTerminal (PR #705 review)', () => {
+describe('QuakeTerminalOverlay createNewTerminal', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     (appStore as any).__reset();
   });
 
-  it('issues a single terminal.create for a rapid double-click (in-flight guard)', async () => {
+  it('dispatches one create request for a rapid double-click while the selector is loading', async () => {
     (appStore as any).__setCurrentTab(WS_A);
-    let resolveCreate: (value: unknown) => void = () => {};
-    clientMocks.mockTerminalsCreate.mockReturnValue(
-      new Promise((resolve) => {
-        resolveCreate = resolve;
-      }),
-    );
 
     const { container } = render(QuakeTerminalOverlay, { props: { workspaceId: WS_A } });
     const button = newTerminalButton(container);
@@ -161,68 +127,47 @@ describe('QuakeTerminalOverlay createNewTerminal (PR #705 review)', () => {
     await fireEvent.click(button);
     await fireEvent.click(button);
 
-    expect(clientMocks.mockTerminalsCreate).toHaveBeenCalledTimes(1);
-
-    resolveCreate({ success: true, id: 'pty-1' });
-    await waitFor(() => {
-      expect(dispatchedTypes()).toContain('terminals/addTerminal');
-    });
+    expect(
+      dispatchedTypes().filter((type) => type === 'terminals/createTerminalFromOverlayRequested'),
+    ).toHaveLength(1);
   });
 
   it('allows a new create after the previous one settles', async () => {
     (appStore as any).__setCurrentTab(WS_A);
-    clientMocks.mockTerminalsCreate.mockResolvedValue({ success: true, id: 'pty-1' });
-
     const { container } = render(QuakeTerminalOverlay, { props: { workspaceId: WS_A } });
     const button = newTerminalButton(container);
 
     await fireEvent.click(button);
-    await waitFor(() => {
-      expect(dispatchedTypes()).toContain('terminals/addTerminal');
-    });
+    appStore.dispatch(createTerminalFromOverlaySucceeded(WS_A, 'pty-1'));
     await fireEvent.click(button);
 
     await waitFor(() => {
-      expect(clientMocks.mockTerminalsCreate).toHaveBeenCalledTimes(2);
+      expect(
+        dispatchedTypes().filter((type) => type === 'terminals/createTerminalFromOverlayRequested'),
+      ).toHaveLength(2);
     });
   });
 
-  it('does not mutate the departed workspace after a mid-create switch', async () => {
+  it('allows the newly rendered workspace to start its own keyed operation', async () => {
     (appStore as any).__setCurrentTab(WS_A);
-    let resolveCreate: (value: unknown) => void = () => {};
-    clientMocks.mockTerminalsCreate.mockReturnValue(
-      new Promise((resolve) => {
-        resolveCreate = resolve;
-      }),
-    );
 
     const { container, rerender } = render(QuakeTerminalOverlay, {
       props: { workspaceId: WS_A },
     });
     await fireEvent.click(newTerminalButton(container));
-    expect(clientMocks.mockTerminalsCreate).toHaveBeenCalledWith(
-      expect.objectContaining({ workspaceId: WS_A }),
-    );
 
-    // Switch workspaces while the create is in flight.
     (appStore as any).__setCurrentTab(WS_B);
     await rerender({ workspaceId: WS_B });
+    await tick();
+    (appStore as any).emitState();
+    await fireEvent.click(newTerminalButton(container));
 
-    // The probe click below issues a fresh create; keep it pending so it can
-    // never dispatch anything itself.
-    clientMocks.mockTerminalsCreate.mockReturnValue(new Promise(() => {}));
-    resolveCreate({ success: true, id: 'pty-1' });
-    // Positive completion signal: the in-flight guard is only released in the
-    // continuation's `finally`, so a probe click issuing a second create proves
-    // the stale-workspace continuation ran to the end (not a vacuous pass on
-    // a too-early tick).
-    await waitFor(async () => {
-      await fireEvent.click(newTerminalButton(container));
-      expect(clientMocks.mockTerminalsCreate).toHaveBeenCalledTimes(2);
-    });
-    // No tab/open mutation landed from the stale WS_A create in either
-    // workspace's live state.
-    expect(dispatchedTypes()).not.toContain('terminals/addTerminal');
-    expect(dispatchedTypes()).not.toContain('terminals/open');
+    const requests = (appStore as any).__dispatched.filter(
+      (action: { type: string }) => action.type === 'terminals/createTerminalFromOverlayRequested',
+    );
+    expect(requests.map((action: { payload: [string] }) => action.payload[0])).toEqual([
+      WS_A,
+      WS_B,
+    ]);
   });
 });

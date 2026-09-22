@@ -16,12 +16,16 @@
 
   import { onMount } from 'svelte';
   import { m } from '$shared/paraglide/messages.js';
-  import { invoke, listenSync } from '$lib/electron-bridge';
-  import { IPC_CHANNELS } from '$shared/ipc-registry';
   import { faExpand, faCompress } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
   import { Button } from '$lib/components/ui/button';
-  import { startHudSubscription } from '$features/hud';
+  import { store as appStore } from '$store/renderer/store';
+  import {
+    hudActivated,
+    hudDeactivated,
+    hudFullScreenRequested,
+  } from '$store/renderer/slices/hud/hud-slice';
+  import { selectHudFullScreen } from '$store/renderer/slices/hud/hud-selectors';
   import { HudWorkspaceGrid } from '$features/hud/grid';
   import HudFooter from '$features/hud/components/HudFooter.svelte';
   import HudHeader from '$features/hud/components/HudHeader.svelte';
@@ -29,46 +33,24 @@
   import RightColumn from '$features/hud/right-column/RightColumn.svelte';
   import HudTakeoverOverlay from '$features/hud/takeover/HudTakeoverOverlay.svelte';
 
-  let isFullScreen = $state(false);
+  const isFullScreen$ = selectHudFullScreen();
   // Wall-clock tick shared by the clock and the uptime extrapolation.
   let nowMs = $state(Date.now());
 
   onMount(() => {
-    // Seed from the window's actual state, then track enter/leave transitions
-    // (button, green traffic-light, Cmd+Ctrl+F) via the main-process event.
-    // eslint-disable-next-line intent/no-component-async-data-fetch -- window-chrome full-screen state (component-local UI, not Redux domain data)
-    invoke<{ success: boolean; fullScreen: boolean }>(IPC_CHANNELS.WINDOW.GET_FULL_SCREEN, {})
-      .then((result) => {
-        if (result?.success) isFullScreen = result.fullScreen;
-      })
-      .catch(() => {});
-
-    // eslint-disable-next-line intent/no-component-async-data-fetch -- window-chrome full-screen transitions (component-local UI, not Redux domain data)
-    const cleanup = listenSync<boolean>('window:fullscreen', (event) => {
-      isFullScreen = !!event.payload;
-    });
-
-    const stopSubscription = startHudSubscription();
+    appStore.dispatch(hudActivated());
     const clockTimer = setInterval(() => {
       nowMs = Date.now();
     }, 1000);
 
     return () => {
       clearInterval(clockTimer);
-      stopSubscription();
-      cleanup();
+      appStore.dispatch(hudDeactivated());
     };
   });
 
   function setFullScreen(fullScreen: boolean) {
-    // eslint-disable-next-line intent/no-component-async-data-fetch -- window-chrome full-screen toggle (component-local UI, not Redux domain data)
-    invoke<{ success: boolean; fullScreen: boolean }>(IPC_CHANNELS.WINDOW.SET_FULL_SCREEN, {
-      fullScreen,
-    })
-      .then((result) => {
-        if (result?.success) isFullScreen = result.fullScreen;
-      })
-      .catch(() => {});
+    appStore.dispatch(hudFullScreenRequested(fullScreen));
   }
 </script>
 
@@ -79,9 +61,9 @@
     <div class="hud-scan-band"></div>
   </div>
 
-  <HudHeader {nowMs} {isFullScreen}>
+  <HudHeader {nowMs} isFullScreen={$isFullScreen$}>
     {#snippet controls()}
-      {#if isFullScreen}
+      {#if $isFullScreen$}
         <Button
           class="hud-fullscreen-btn"
           onclick={() => setFullScreen(false)}

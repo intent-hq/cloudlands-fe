@@ -9,21 +9,11 @@
 
   import { fly } from '$lib/motion';
   import { onDestroy, onMount } from 'svelte';
+  import { writable } from 'svelte/store';
   import Fa from 'svelte-fa';
   import { faArrowLeft } from '@fortawesome/free-solid-svg-icons';
-  import { invoke } from '$shared/generated/ipc-client';
-  import { appClient } from '$lib/client';
-  import {
-    clearNewWorkspaceDraft,
-    createNewWorkspaceDraftSaver,
-    LEGACY_ONBOARDING_PROMPT_SESSION_KEY,
-    restoreNewWorkspaceDraft,
-  } from '$lib/components/workspace/initializer/new-workspace-draft';
-  import {
-    enhancePrompt,
-    EnhancePromptUnavailableError,
-    isEnhancePromptAvailable,
-  } from '$lib/client/live/live-prompt-enhancement';
+  import { serializeDraftAttachments } from '$lib/components/chat/chat-draft-attachments';
+  import { isEnhancePromptAvailable } from '$lib/client/live/live-prompt-enhancement';
   import {
     selectEffectiveDefaultProviderId,
     selectProviderCatalogEntries,
@@ -80,21 +70,20 @@
 
   import { Button } from '$lib/components/ui/button';
   import CopyButton from '$lib/components/ui/CopyButton.svelte';
-  import { shell } from '$lib/electron-bridge';
-  import { runProviderTestPrompt } from '$features/providers/provider-test-prompt.client';
   import {
     mapTestPromptFailure,
     shouldRunOnboardingTestPrompt,
     type TestPromptFailureGuidance,
   } from '$features/onboarding/utils/onboarding-test-prompt';
   import type { ProjectSelection } from '$features/onboarding/messages/ProjectPickerMessage.svelte';
-  import { workspaceClient } from '$store/renderer/slices/workspace/utils/workspace.client';
   import { shouldPullSourceRepositoryBeforeCreate } from '$lib/components/workspace/initializer/workspace-create-pull-policy';
   import { buildContextLinks } from '$lib/components/workspace/initializer/context-links';
 
   import { createAgentTypeId } from '$shared/types/agent.types';
-  import { setWorkspaceEntity } from '$store/renderer/slices/workspace/workspace-slice';
-  import { resolveOnboardingModel } from '$features/onboarding/utils/resolve-onboarding-model';
+  import {
+    setWorkspaceEntity,
+    updateWorkspaceRequested,
+  } from '$store/renderer/slices/workspace/workspace-slice';
   import { commitOnboardingDefaultModel } from '$features/onboarding/utils/commit-onboarding-default-model';
   import { shouldTreatAsNewRepo } from '$features/onboarding/utils/treat-as-new-repo';
   import { selectActiveProviderId } from '$store/renderer/slices/provider-settings/provider-settings-selectors';
@@ -131,8 +120,21 @@
   import { setHasCompletedProviderSetup } from '$store/renderer/slices/user-preferences/user-preferences-slice';
   import {
     cancelWorkspaceInitializerOnboardingFormStateDebounce,
+    clearNewWorkspaceDraftRequested,
     debounceWorkspaceInitializerOnboardingFormState,
     setWorkspaceInitializerLastSubmittedAgent,
+    flushNewWorkspaceDraftRequested,
+    restoreNewWorkspaceDraftRequested,
+    saveNewWorkspaceDraftRequested,
+    createWorkspaceFromInitializerRequested,
+    readWorkspaceInitializerPrefillRequested,
+    readWorkspaceInitializerPullRequestRequested,
+    readWorkspaceInitializerGitRemoteRequested,
+    openWorkspaceInitializerExternalUrlRequested,
+    runWorkspaceInitializerProviderTestRequested,
+    enhanceWorkspaceInitializerPromptRequested,
+    resolveWorkspaceInitializerModelRequested,
+    pullWorkspaceInitializerRepositoryRequested,
   } from '$store/renderer/slices/workspace-initializer/workspace-initializer-slice';
   import {
     DEFAULT_NEW_WORKSPACE_SPECIALIST_ID,
@@ -141,6 +143,15 @@
   import {
     selectWorkspaceInitializerHydrated,
     selectWorkspaceInitializerOnboardingFormState,
+    selectWorkspaceInitializerPrefillRead,
+    selectWorkspaceInitializerDraftRestore,
+    selectWorkspaceInitializerGitRemote,
+    selectWorkspaceInitializerPullRequest,
+    selectWorkspaceInitializerProviderTest,
+    selectWorkspaceInitializerPromptEnhancement,
+    selectWorkspaceInitializerModelResolution,
+    selectWorkspaceInitializerRepositoryPull,
+    selectWorkspaceInitializerCreateRequest,
   } from '$store/renderer/slices/workspace-initializer/workspace-initializer-selectors';
   import { selectModel } from '$store/renderer/slices/model/model-slice';
   import { splitLegacyCompoundId } from '$shared/utils/legacy-model-id';
@@ -158,9 +169,32 @@
     findPRNeedingBranchFetch,
   } from '$features/onboarding/utils/detect-pr-branch';
   import { store as appStore } from '$store/renderer/store';
+  import { waitForWorkspaceInitializerOperation } from '$lib/components/workspace/initializer/wait-for-operation';
   const logger = createLogger('onboarding-page');
-
-  const WORKSPACE_PREFILL_KEY = 'workspace-prefill';
+  const onboardingPrefillOperation$ = selectWorkspaceInitializerPrefillRead(false);
+  const onboardingDraftRestoreOperation$ = selectWorkspaceInitializerDraftRestore('onboarding');
+  const onboardingGitRemotePathStore = writable('');
+  const onboardingGitRemoteOperation$ = selectWorkspaceInitializerGitRemote(
+    onboardingGitRemotePathStore,
+  );
+  const onboardingPrOwnerStore = writable('');
+  const onboardingPrRepoStore = writable('');
+  const onboardingPrNumberStore = writable(0);
+  const onboardingPullRequestOperation$ = selectWorkspaceInitializerPullRequest(
+    onboardingPrOwnerStore,
+    onboardingPrRepoStore,
+    onboardingPrNumberStore,
+  );
+  const onboardingProviderTestOperation$ = selectWorkspaceInitializerProviderTest('onboarding');
+  const onboardingPromptEnhancementOperation$ =
+    selectWorkspaceInitializerPromptEnhancement('onboarding');
+  const onboardingModelResolutionOperation$ =
+    selectWorkspaceInitializerModelResolution('onboarding');
+  const onboardingRepositoryPullOperation$ = selectWorkspaceInitializerRepositoryPull('onboarding');
+  const onboardingCreateProgressIdStore = writable('');
+  const onboardingCreateOperation$ = selectWorkspaceInitializerCreateRequest(
+    onboardingCreateProgressIdStore,
+  );
 
   // ============================================================================
   // Props
@@ -218,6 +252,8 @@
   // repo path/type are unchanged, keep the detected owner/repo and skip the
   // clear + re-probe so the suffix doesn't flicker (reviewer note on #447)
   let lastRemoteUrlProbeKey: string | null = null;
+  let pendingGitRemoteVersion = 0;
+  let pendingGitRemoteGeneration = 0;
 
   // Fetch remote URL when a local repo is selected
   $effect(() => {
@@ -239,26 +275,25 @@
       return;
     }
 
-    (async () => {
-      try {
-        const response =
-          typeof window !== 'undefined' && window.electronAPI
-            ? await invoke<any>('git-tracking:get-remote-url', {
-                repoPath: path,
-              })
-            : undefined;
-        // Drop stale responses: the repo changed while this probe was in flight
-        if (generation !== remoteUrlProbeGeneration) {
-          return;
-        }
-        if (response?.success && response.data?.owner && response.data?.repo) {
-          detectedGitHubOwner = response.data.owner;
-          detectedGitHubRepo = response.data.repo;
-        }
-      } catch {
-        // Ignore probe failures — the detected owner/repo is already cleared
-      }
-    })();
+    if (typeof window === 'undefined' || !window.electronAPI) return;
+    onboardingGitRemotePathStore.set(path);
+    pendingGitRemoteGeneration = generation;
+    pendingGitRemoteVersion =
+      selectWorkspaceInitializerGitRemote.select(appStore.state, path).version + 1;
+    appStore.dispatch(readWorkspaceInitializerGitRemoteRequested(path));
+  });
+
+  $effect(() => {
+    const operation = $onboardingGitRemoteOperation$;
+    if (!pendingGitRemoteVersion || operation.version !== pendingGitRemoteVersion) return;
+    if (operation.status === 'loading') return;
+    pendingGitRemoteVersion = 0;
+    if (pendingGitRemoteGeneration !== remoteUrlProbeGeneration) return;
+    const response = operation.status === 'success' ? operation.data : null;
+    if (response?.owner && response.repo) {
+      detectedGitHubOwner = response.owner;
+      detectedGitHubRepo = response.repo;
+    }
   });
 
   // Derived GitHub owner/repo for IssueSuggestions
@@ -334,32 +369,22 @@
     });
   });
 
-  // Set when the initial prompt was seeded from the legacy sessionStorage key
-  // (not a WORKSPACE_PREFILL_KEY prefill): the shared daemon draft may be
-  // NEWER than that stale value, so the restore below lets the daemon draft
-  // win over an untouched legacy seed.
-  let legacySeededPrompt = '';
-
-  function getInitialOnboardingPrompt(): string {
-    try {
-      const prefill = sessionStorage.getItem(WORKSPACE_PREFILL_KEY);
-      if (prefill) {
-        const data = JSON.parse(prefill) as { prompt?: unknown };
-        if (typeof data.prompt === 'string') return data.prompt;
+  let initialOnboardingPrompt = '';
+  let onboardingInputValue = $state('');
+  const onboardingPrefillVersion =
+    selectWorkspaceInitializerPrefillRead.select(appStore.state, false).version + 1;
+  const onboardingPrefillSettled = waitForWorkspaceInitializerOperation(
+    onboardingPrefillOperation$,
+    onboardingPrefillVersion,
+  )
+    .then((prefill) => {
+      if (prefill?.prompt && !onboardingInputValue) {
+        initialOnboardingPrompt = prefill.prompt;
+        onboardingInputValue = prefill.prompt;
       }
-    } catch {
-      // Ignore malformed prefill data; ProjectPickerMessage clears it after parsing.
-    }
-    // Legacy sessionStorage draft: captured synchronously here, before the
-    // onMount resetOnboarding dispatch lets the workspace-initializer saga
-    // remove the key. A captured value migrates to the daemon draft via the
-    // debounced save below.
-    legacySeededPrompt = sessionStorage.getItem(LEGACY_ONBOARDING_PROMPT_SESSION_KEY) || '';
-    return legacySeededPrompt;
-  }
-
-  const initialOnboardingPrompt = getInitialOnboardingPrompt();
-  let onboardingInputValue = $state(initialOnboardingPrompt);
+    })
+    .catch(() => {});
+  appStore.dispatch(readWorkspaceInitializerPrefillRequested(false));
   let promptStepRef: OnboardingPromptStep | null = $state(null);
   let isOnboardingEnhancing = $state(false);
   // Non-image files staged path-only in the prompt step; placed into the
@@ -402,27 +427,26 @@
   // daemon draft; if the restore failed, empty saves stay skipped so a draft
   // that was never read can't be cleared. All drafts.* failures are non-fatal.
   let onboardingDraftRestored = $state(false);
-  let onboardingDraftRestoreFailed = false;
   // Set after a successful create: the draft is cleared and must not be
   // re-saved by a late flush or effect re-run.
   let onboardingDraftCleared = false;
-  const onboardingDraftSaver = createNewWorkspaceDraftSaver(appClient.drafts, {
-    skipEmptySave: () => !onboardingDraftRestored || onboardingDraftRestoreFailed,
-  });
   (async () => {
     try {
-      const restore = await restoreNewWorkspaceDraft(appClient.drafts, {
-        legacyKey: LEGACY_ONBOARDING_PROMPT_SESSION_KEY,
-      });
-      onboardingDraftRestoreFailed = restore.status === 'error';
+      await onboardingPrefillSettled;
+      const version =
+        selectWorkspaceInitializerDraftRestore.select(appStore.state, 'onboarding').version + 1;
+      const settled = waitForWorkspaceInitializerOperation(
+        onboardingDraftRestoreOperation$,
+        version,
+      );
+      appStore.dispatch(restoreNewWorkspaceDraftRequested('onboarding'));
+      const restore = await settled;
       if (restore.status === 'restored') {
         // Never clobber a WORKSPACE_PREFILL_KEY prefill or text the user
         // typed while the restore was pending. An UNTOUCHED legacy
         // sessionStorage seed is the exception: the shared daemon draft is
         // authoritative and supersedes that stale value.
-        const inputUntouched =
-          !onboardingInputValue ||
-          (!!legacySeededPrompt && onboardingInputValue === legacySeededPrompt);
+        const inputUntouched = !onboardingInputValue;
         if (restore.text && inputUntouched) {
           onboardingInputValue = restore.text;
           // If the prompt step is already mounted, its editor initialized from
@@ -468,10 +492,12 @@
     // The untouched initial value (prefill / legacy seed / empty) stays
     // unscheduled so it cannot clobber a newer shared daemon draft.
     if (!onboardingDraftRestored && onboardingInputValue === initialOnboardingPrompt) return;
-    onboardingDraftSaver.schedule(onboardingInputValue, [
-      ...onboardingImageItems,
-      ...onboardingStagedItems,
-    ]);
+    appStore.dispatch(
+      saveNewWorkspaceDraftRequested(
+        onboardingInputValue,
+        serializeDraftAttachments([...onboardingImageItems, ...onboardingStagedItems]),
+      ),
+    );
   }
 
   // Text changes flow through the bound value; attachment-only changes don't
@@ -488,7 +514,7 @@
   // A reload or window close inside the debounce window would drop the newest
   // keystrokes — flush the pending save on unload and destroy.
   const flushOnboardingDraftSave = () => {
-    if (!onboardingDraftCleared) onboardingDraftSaver.flush();
+    if (!onboardingDraftCleared) appStore.dispatch(flushNewWorkspaceDraftRequested());
   };
   onMount(() => {
     window.addEventListener('beforeunload', flushOnboardingDraftSave);
@@ -689,7 +715,14 @@
       try {
         // No explicit model: the daemon applies its resolved default for the
         // provider (the welcome step precedes any model pick).
-        const result = await runProviderTestPrompt({ providerId });
+        const version =
+          selectWorkspaceInitializerProviderTest.select(appStore.state, 'onboarding').version + 1;
+        const settled = waitForWorkspaceInitializerOperation(
+          onboardingProviderTestOperation$,
+          version,
+        );
+        appStore.dispatch(runWorkspaceInitializerProviderTestRequested('onboarding', providerId));
+        const result = await settled;
         // Provider switched mid-test: the result belongs to the previous
         // selection — drop it (neither advance nor show stale guidance).
         if (providerId !== onboardingGridSelectedProviderId) return;
@@ -963,24 +996,39 @@
 
     if (typeof window !== 'undefined' && window.electronAPI) {
       lastFetchedPRIdentifier = prToFetch.identifier;
-      (async () => {
-        try {
-          const response = await invoke<any>('git-tracking:get-pull-request', {
-            owner: prToFetch.owner,
-            repo: prToFetch.repo,
-            number: prToFetch.number,
-          });
-          if (response?.success && response.data?.sourceBranch) {
-            selectedPRBranch = response.data.sourceBranch;
+      const request = readWorkspaceInitializerPullRequestRequested(
+        prToFetch.owner,
+        prToFetch.repo,
+        prToFetch.number,
+      );
+      onboardingPrOwnerStore.set(prToFetch.owner);
+      onboardingPrRepoStore.set(prToFetch.repo);
+      onboardingPrNumberStore.set(prToFetch.number);
+      const version =
+        selectWorkspaceInitializerPullRequest.select(
+          appStore.state,
+          prToFetch.owner,
+          prToFetch.repo,
+          prToFetch.number,
+        ).version + 1;
+      const settled = waitForWorkspaceInitializerOperation(
+        onboardingPullRequestOperation$,
+        version,
+      );
+      appStore.dispatch(request);
+      void settled
+        .then((response) => {
+          if (response?.sourceBranch) {
+            selectedPRBranch = response.sourceBranch;
             selectedPRNumber = prToFetch.number;
           }
-        } catch (err) {
+        })
+        .catch((error) => {
           logger.warn('Failed to fetch PR branch info', {
             identifier: prToFetch.identifier,
-            error: err,
+            error,
           });
-        }
-      })();
+        });
     }
   }
 
@@ -990,18 +1038,26 @@
     isOnboardingEnhancing = true;
     try {
       // Daemon-side enhancement (agent.enhancePrompt, PROTOCOL §5.31)
-      const result = await enhancePrompt(onboardingInputValue);
+      const version =
+        selectWorkspaceInitializerPromptEnhancement.select(appStore.state, 'onboarding').version +
+        1;
+      const settled = waitForWorkspaceInitializerOperation(
+        onboardingPromptEnhancementOperation$,
+        version,
+      );
+      appStore.dispatch(
+        enhanceWorkspaceInitializerPromptRequested('onboarding', onboardingInputValue),
+      );
+      const result = await settled;
       onboardingInputValue = result.enhanced;
       await getOnboardingRichTextarea()?.setContent(result.enhanced);
       notify.success(m.onboarding_page_promptEnhanced_label());
     } catch (error) {
       logger.error('Failed to enhance prompt', error);
       notify.error(
-        error instanceof EnhancePromptUnavailableError
-          ? m.onboarding_page_enhanceUnavailable_error()
-          : error instanceof Error && error.message
-            ? m.onboarding_page_enhanceFailedWithMessage_error({ message: error.message })
-            : m.onboarding_page_enhanceFailed_error(),
+        error instanceof Error && error.message
+          ? m.onboarding_page_enhanceFailedWithMessage_error({ message: error.message })
+          : m.onboarding_page_enhanceFailed_error(),
       );
     } finally {
       isOnboardingEnhancing = false;
@@ -1106,8 +1162,7 @@
       // the draft), then clear the persisted daemon draft and stop saving so
       // a late flush can't resurrect it either.
       onboardingDraftCleared = true;
-      onboardingDraftSaver.cancel();
-      clearNewWorkspaceDraft(appClient.drafts);
+      appStore.dispatch(clearNewWorkspaceDraftRequested());
       await goto(`/workspace/${pending.workspaceId}`);
     } catch (err) {
       onboardingCreationError =
@@ -1184,18 +1239,26 @@
 
     try {
       const reduxState = appStore.state;
+      const modelVersion =
+        selectWorkspaceInitializerModelResolution.select(appStore.state, 'onboarding').version + 1;
+      const modelSettled = waitForWorkspaceInitializerOperation(
+        onboardingModelResolutionOperation$,
+        modelVersion,
+      );
+      appStore.dispatch(
+        resolveWorkspaceInitializerModelRequested(
+          'onboarding',
+          onboardingModelWasOverridden ? onboardingSelectedModel : undefined,
+          onboardingModelWasOverridden ? onboardingSelectedProvider : undefined,
+        ),
+      );
       const {
         provider,
         model: effectiveModel,
         behaviorPrompt,
         specialistId,
         specialistName,
-      } = await resolveOnboardingModel(
-        reduxState,
-        onboardingModelWasOverridden && onboardingSelectedModel
-          ? { model: onboardingSelectedModel, provider: onboardingSelectedProvider }
-          : undefined,
-      );
+      } = await modelSettled;
       setupSpecialistId = specialistId ?? undefined;
       setupSpecialistName = specialistName;
       // General (null specialist) uses the modal's generic agent name.
@@ -1259,10 +1322,24 @@
           // seam — replaces the dead legacy `git:pullBranch` IPC. The seam
           // folds the daemon's structured `{ ok: false, error }` failure into
           // `{ success: false, error }` and never throws.
-          const pullResult =
-            typeof window !== 'undefined' && window.electronAPI
-              ? await appClient.git.pull(projectSelection.repoPath, projectSelection.branch)
-              : undefined;
+          let pullResult;
+          if (typeof window !== 'undefined' && window.electronAPI) {
+            const pullVersion =
+              selectWorkspaceInitializerRepositoryPull.select(appStore.state, 'onboarding')
+                .version + 1;
+            const pullSettled = waitForWorkspaceInitializerOperation(
+              onboardingRepositoryPullOperation$,
+              pullVersion,
+            );
+            appStore.dispatch(
+              pullWorkspaceInitializerRepositoryRequested(
+                'onboarding',
+                projectSelection.repoPath,
+                projectSelection.branch,
+              ),
+            );
+            pullResult = await pullSettled;
+          }
           if (!pullResult?.success) {
             onboardingPullError = pullResult?.error || m.onboarding_page_pullFailed_error();
             onboardingShowPullConflictDialog = true;
@@ -1316,7 +1393,15 @@
 
       const requestContextLinks = buildContextLinks(contextMentions);
 
-      const result = await workspaceClient.create({
+      onboardingCreateProgressIdStore.set(createProgressId);
+      const createVersion =
+        selectWorkspaceInitializerCreateRequest.select(appStore.state, createProgressId).version +
+        1;
+      const createSettled = waitForWorkspaceInitializerOperation(
+        onboardingCreateOperation$,
+        createVersion,
+      );
+      const createRequest = createWorkspaceFromInitializerRequested({
         title: '',
         repositoryPath: isGithubPick ? undefined : projectSelection.repoPath,
         githubUrl: projectSelection.githubUrl,
@@ -1347,6 +1432,8 @@
         },
         progressId: createProgressId, // Echoed on git:clone:progress/done frames (PROTOCOL §5.1)
       });
+      appStore.dispatch(createRequest);
+      const result = await createSettled;
 
       if (!result.ok) {
         // Keep the daemon's machine-readable code (clone failure taxonomy,
@@ -1486,13 +1573,10 @@
       // Daemon-backed (`workspace.update`, PROTOCOL §5.1) via workspaceClient —
       // the legacy `workspace:update` IPC channel is unbridged in this build.
       if (selectedPRNumber && workspace.id) {
-        void workspaceClient
-          .update({ id: workspace.id, prNumber: selectedPRNumber })
-          .then((updateResult) => {
-            if (!updateResult.ok) {
-              logger.warn('Failed to store PR number on workspace', { error: updateResult.error });
-            }
-          });
+        const updateRequest = updateWorkspaceRequested(workspace.id, {
+          prNumber: selectedPRNumber,
+        });
+        appStore.dispatch(updateRequest);
       }
 
       // Record the script as this repo's last-used default (localStorage).
@@ -1541,8 +1625,7 @@
       // (drafts.clear under the sentinel keys, PROTOCOL §5.16) and stop
       // saving so a late flush can't resurrect it either.
       onboardingDraftCleared = true;
-      onboardingDraftSaver.cancel();
-      clearNewWorkspaceDraft(appClient.drafts);
+      appStore.dispatch(clearNewWorkspaceDraftRequested());
 
       // Use the onboarding reset action as the cleanup signal; initializer
       // persistence/session cleanup is handled by the workspace-initializer saga.
@@ -1763,7 +1846,7 @@
                           <Button
                             class="group/button"
                             size="xl"
-                            variant={!hasConnectedProvider ? 'outline' : 'primary'}
+                            variant={!hasConnectedProvider ? 'outline' : 'default'}
                             disabled={!hasConnectedProvider}
                             loading={onboardingTestPromptRunning}
                             onclick={advanceFromWelcomeStep}
@@ -1812,11 +1895,14 @@
                               {#if onboardingTestPromptFailure.loginDocsUrl}
                                 {@const docsUrl = onboardingTestPromptFailure.loginDocsUrl}
                                 <Button
+                                  variant="ghost"
                                   type="button"
-                                  variant="link"
-                                  size="xs"
-                                  class="mt-2 h-auto px-0 text-xs underline hover:no-underline"
-                                  onclick={() => shell.open(docsUrl)}
+                                  class="mt-2 text-xs underline hover:no-underline"
+                                  onclick={() => {
+                                    const request =
+                                      openWorkspaceInitializerExternalUrlRequested(docsUrl);
+                                    appStore.dispatch(request);
+                                  }}
                                 >
                                   {m.chat_modelPicker_setupDocs_label()}
                                 </Button>
@@ -1846,7 +1932,7 @@
                             <Button
                               class="group/button"
                               size="xl"
-                              variant={!projectSelection?.isValid ? 'outline' : 'primary'}
+                              variant={!projectSelection?.isValid ? 'outline' : 'default'}
                               disabled={!projectSelection?.isValid}
                               onclick={() => appStore.dispatch(goToStep('configuring'))}
                             >

@@ -95,10 +95,23 @@ vi.mock('$lib/client', () => ({
 vi.mock('$store/renderer/store', async () => {
   const { createAppStoreMockModule } =
     await import('$store/renderer/utils/test-helpers/store-mock');
+  const { settingsOperationsReducer } =
+    await import('$store/renderer/slices/settings-events/settings-events-slice');
   return createAppStoreMockModule({
     state: () => mocks.storeState.value,
+    reducers: { settingsOperations: settingsOperationsReducer },
     dispatch: (action: { type: string; payload: unknown[] }) => {
       mocks.dispatched.push(action);
+      if (action.type === 'settings/getUserRuleRequested') {
+        return { ...action, promise: mocks.getUserRule(action.payload[0]) };
+      }
+      if (action.type === 'settings/updateUserRuleRequested') {
+        return {
+          ...action,
+          promise: mocks.updateUserRule(action.payload[0], action.payload[1]),
+        };
+      }
+      return action;
     },
   });
 });

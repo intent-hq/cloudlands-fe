@@ -46,6 +46,10 @@ import type {
   ForgetConnectionResult,
   KeychainSyncStateResult,
   KeychainSyncUiStatus,
+  PublishSelfResult,
+  RefreshSelfResult,
+  SelfPublishedStateResult,
+  UnpublishSelfResult,
   OpenConnectionParams,
   OpenConnectionResult,
   RotateConnectionSecretParams,
@@ -80,10 +84,17 @@ import {
   protocolMismatchReceived,
   rotateConnectionSecretRequested,
   setKeychainSyncEnabledRequested,
+  loadSelfPublishedStateRequested,
+  connectBackendRequested,
+  publishSelfRequested,
+  refreshSelfRequested,
+  saveConnectionRequested,
+  unpublishSelfRequested,
   testConnectionRequested,
   updateConnectionRequested,
   updateBackendRequested,
 } from '../connections-slice';
+import { takeEveryByContextFIFO } from '../../../utils/context-saga-effects';
 
 const CONNECTIONS = IPC_CHANNELS.CONNECTIONS;
 
@@ -408,6 +419,30 @@ async function invokeSyncSetEnabled(
   return (await api.invoke(CONNECTIONS.SYNC_SET_ENABLED, params)) as KeychainSyncStateResult;
 }
 
+async function invokeSelfPublishedState(): Promise<SelfPublishedStateResult> {
+  const api = getApi();
+  if (!api) throw new Error('electronAPI is not available');
+  return (await api.invoke(CONNECTIONS.SELF_PUBLISHED_STATE)) as SelfPublishedStateResult;
+}
+
+async function invokePublishSelf(): Promise<PublishSelfResult> {
+  const api = getApi();
+  if (!api) throw new Error('electronAPI is not available');
+  return (await api.invoke(CONNECTIONS.PUBLISH_SELF)) as PublishSelfResult;
+}
+
+async function invokeUnpublishSelf(): Promise<UnpublishSelfResult> {
+  const api = getApi();
+  if (!api) throw new Error('electronAPI is not available');
+  return (await api.invoke(CONNECTIONS.UNPUBLISH_SELF)) as UnpublishSelfResult;
+}
+
+async function invokeRefreshSelf(): Promise<RefreshSelfResult> {
+  const api = getApi();
+  if (!api) throw new Error('electronAPI is not available');
+  return (await api.invoke(CONNECTIONS.REFRESH_SELF)) as RefreshSelfResult;
+}
+
 function* hydrateConnections(
   tracker: DaemonBehindTracker,
   updateActions: Channel<UpdateBackendAction>,
@@ -449,6 +484,7 @@ function* hydrateConnections(
 function* captureFingerprint(
   action: ReturnType<typeof captureFingerprintRequested>,
 ): SagaGenerator<void> {
+  action.promise.catch(() => {});
   let settled = false;
   try {
     const result = yield* call(invokeCaptureFingerprint, action.payload[0]);
@@ -488,6 +524,7 @@ function* addConnection(action: ReturnType<typeof addConnectionRequested>): Saga
 function* forgetConnection(
   action: ReturnType<typeof forgetConnectionRequested>,
 ): SagaGenerator<void> {
+  action.promise.catch(() => {});
   let settled = false;
   try {
     yield* call(invokeForgetConnection, { id: action.payload[0] });
@@ -520,6 +557,7 @@ function* updateConnection(
 }
 
 function* testConnection(action: ReturnType<typeof testConnectionRequested>): SagaGenerator<void> {
+  action.promise.catch(() => {});
   let settled = false;
   try {
     const result = yield* call(invokeTestConnection, action.payload[0]);
@@ -552,6 +590,7 @@ function* rotateConnectionSecret(
 }
 
 function* openConnection(action: ReturnType<typeof openConnectionRequested>): SagaGenerator<void> {
+  action.promise.catch(() => {});
   const id = action.payload[0];
   let settled = false;
   yield* put(openOperationStarted(id));
@@ -574,7 +613,30 @@ function* openConnection(action: ReturnType<typeof openConnectionRequested>): Sa
   }
 }
 
+type ConnectionOpenOrForgetAction =
+  ReturnType<typeof openConnectionRequested> | ReturnType<typeof forgetConnectionRequested>;
+
+function* openOrForgetConnection(action: ConnectionOpenOrForgetAction): SagaGenerator<void> {
+  if (action.type === openConnectionRequested.type) {
+    yield* call(openConnection, action as ReturnType<typeof openConnectionRequested>);
+  } else {
+    yield* call(forgetConnection, action as ReturnType<typeof forgetConnectionRequested>);
+  }
+}
+
+function* settleDiscardedConnectionRequest(
+  action: ConnectionOpenOrForgetAction,
+): SagaGenerator<void> {
+  action.promise.catch(() => {});
+  const message =
+    action.type === openConnectionRequested.type
+      ? 'Connection open was cancelled'
+      : 'Connection forget was cancelled';
+  yield* put(action.failure(new Error(message)));
+}
+
 function* updateBackend(action: ReturnType<typeof updateBackendRequested>): SagaGenerator<void> {
+  action.promise.catch(() => {});
   let settled = false;
   try {
     const result = yield* call(invokeUpdateBackend, { id: action.payload[0] });
@@ -597,6 +659,7 @@ function* updateBackend(action: ReturnType<typeof updateBackendRequested>): Saga
 function* loadKeychainSyncState(
   action: ReturnType<typeof loadKeychainSyncStateRequested>,
 ): SagaGenerator<void> {
+  action.promise.catch(() => {});
   let settled = false;
   try {
     const result = yield* call(invokeSyncGetState);
@@ -615,10 +678,10 @@ function* loadKeychainSyncState(
 function* setKeychainSyncEnabled(
   action: ReturnType<typeof setKeychainSyncEnabledRequested>,
 ): SagaGenerator<void> {
+  action.promise.catch(() => {});
   let settled = false;
   try {
     const result = yield* call(invokeSyncSetEnabled, { enabled: action.payload[0] });
-    yield* put(keychainSyncStateReceived(result));
     yield* put(action.success(result));
     settled = true;
   } catch (error) {
@@ -627,6 +690,104 @@ function* setKeychainSyncEnabled(
   } finally {
     if (!settled && (yield* cancelled()))
       yield* put(action.failure(new Error('Keychain sync toggle was cancelled')));
+  }
+}
+
+function* settleDiscardedKeychainSyncWrite(
+  action: ReturnType<typeof setKeychainSyncEnabledRequested>,
+): SagaGenerator<void> {
+  action.promise.catch(() => {});
+  yield* put(action.failure(new Error('Keychain sync toggle was cancelled')));
+}
+
+function* loadSelfPublishedState(
+  action: ReturnType<typeof loadSelfPublishedStateRequested>,
+): SagaGenerator<void> {
+  action.promise.catch(() => {});
+  try {
+    const result = yield* call(invokeSelfPublishedState);
+    yield* put(action.success(result));
+  } catch (error) {
+    yield* put(action.failure(toError(error)));
+  }
+}
+
+function* publishSelf(action: ReturnType<typeof publishSelfRequested>): SagaGenerator<void> {
+  action.promise.catch(() => {});
+  try {
+    const result = yield* call(invokePublishSelf);
+    yield* put(action.success(result));
+  } catch (error) {
+    yield* put(action.failure(toError(error)));
+  }
+}
+
+function* unpublishSelf(action: ReturnType<typeof unpublishSelfRequested>): SagaGenerator<void> {
+  action.promise.catch(() => {});
+  try {
+    const result = yield* call(invokeUnpublishSelf);
+    yield* put(action.success(result));
+  } catch (error) {
+    yield* put(action.failure(toError(error)));
+  }
+}
+
+function* refreshSelf(action: ReturnType<typeof refreshSelfRequested>): SagaGenerator<void> {
+  action.promise.catch(() => {});
+  try {
+    const result = yield* call(invokeRefreshSelf);
+    yield* put(action.success(result));
+  } catch (error) {
+    yield* put(action.failure(toError(error)));
+  }
+}
+
+function* saveConnection(action: ReturnType<typeof saveConnectionRequested>): SagaGenerator<void> {
+  action.promise.catch(() => {});
+  let settled = false;
+  try {
+    const [{ update, secret }] = action.payload;
+    if (secret) {
+      const secretResult = yield* call(invokeRotateConnectionSecret, secret);
+      if (secretResult.status !== 'updated') {
+        yield* put(action.success({ stage: 'secret', result: secretResult }));
+        settled = true;
+        return;
+      }
+    }
+    const updateResult = yield* call(invokeUpdateConnection, update);
+    yield* put(action.success({ stage: 'update', result: updateResult }));
+    settled = true;
+  } catch (error) {
+    yield* put(action.failure(toError(error)));
+    settled = true;
+  } finally {
+    if (!settled && (yield* cancelled()))
+      yield* put(action.failure(new Error('Connection save was cancelled')));
+  }
+}
+
+function* settleDiscardedSaveConnection(
+  action: ReturnType<typeof saveConnectionRequested>,
+): SagaGenerator<void> {
+  action.promise.catch(() => {});
+  yield* put(action.failure(new Error('Connection save was cancelled')));
+}
+
+function* connectBackend(action: ReturnType<typeof connectBackendRequested>): SagaGenerator<void> {
+  action.promise.catch(() => {});
+  yield* put(connectOperationStarted());
+  try {
+    const [{ connection, enableSyncAfterAdd }] = action.payload;
+    const added = yield* call(invokeAddConnection, connection);
+    if (enableSyncAfterAdd) yield* call(invokeSyncSetEnabled, { enabled: true });
+    const opened = yield* call(invokeOpenConnection, { id: added.connection.id });
+    yield* put(connectOperationSettled());
+    yield* put(action.success(opened));
+  } catch (error) {
+    const resolved = toError(error);
+    yield* put(connectOperationFailed(resolved.message));
+    yield* put(action.failure(resolved));
   }
 }
 
@@ -664,18 +825,35 @@ function* watchConnectionsActions(
     takeEvery(updateConnectionRequested, updateConnection),
     takeEvery(testConnectionRequested, testConnection),
     takeEvery(rotateConnectionSecretRequested, rotateConnectionSecret),
-    // takeEvery, not takeLeading: each open targets one backend id and main
-    // serializes the work, so a second open dispatched while the first is in
-    // flight must still invoke and settle its own promise.
-    takeEvery(openConnectionRequested, openConnection),
-    takeLeading(forgetConnectionRequested, forgetConnection),
+    takeEveryByContextFIFO(
+      [openConnectionRequested, forgetConnectionRequested],
+      (action) => action.payload[0],
+      openOrForgetConnection,
+      { onDiscardPending: settleDiscardedConnectionRequest },
+    ),
     // takeEvery, not takeLeading: each action targets one backend id, and
     // multiple connected remotes can be updated back-to-back — takeLeading
     // would drop the second action, leaving its promise unresolved and the
     // user without a toast.
     takeEvery(updateBackendRequested, updateBackend),
     takeLeading(loadKeychainSyncStateRequested, loadKeychainSyncState),
-    takeLeading(setKeychainSyncEnabledRequested, setKeychainSyncEnabled),
+    takeEveryByContextFIFO(
+      setKeychainSyncEnabledRequested,
+      () => 'keychain-sync-write',
+      setKeychainSyncEnabled,
+      { onDiscardPending: settleDiscardedKeychainSyncWrite },
+    ),
+    takeLeading(loadSelfPublishedStateRequested, loadSelfPublishedState),
+    takeLeading(publishSelfRequested, publishSelf),
+    takeLeading(unpublishSelfRequested, unpublishSelf),
+    takeLeading(refreshSelfRequested, refreshSelf),
+    takeEveryByContextFIFO(
+      saveConnectionRequested,
+      (action) => action.payload[0].update.id,
+      saveConnection,
+      { onDiscardPending: settleDiscardedSaveConnection },
+    ),
+    takeLeading(connectBackendRequested, connectBackend),
   ]);
 }
 

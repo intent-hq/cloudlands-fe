@@ -26,8 +26,25 @@ const isLoadingModels$ = writable(false);
 const activeProviderId$ = writable('auggie');
 const enabledProviderIds$ = writable(['auggie']);
 const providerWarnings$ = writable<Record<string, string>>({});
+let providerModelsCacheValue: Record<string, { models: ModelOption[]; fetchedAt: string }> = {};
+const providerModelsCache$ = writable(providerModelsCacheValue);
+const providerLoadingStates$ = writable<
+  Record<string, { status: 'loading' | 'success' | 'error'; retryAttempt: number; error?: string }>
+>({});
 const sessionVersion$ = writable(0);
 const sessions = new Map<string, Session>();
+
+const loadProviderModelsMock = vi.hoisted(() =>
+  vi.fn((providerId: string) => {
+    const models =
+      providerId === 'anthropic'
+        ? [{ value: 'anthropic:claude-opus-4-7', label: 'Claude Opus 4.7' }]
+        : providerId === 'claude-code'
+          ? [{ value: 'claude-code:claude-opus-4-8', label: 'Claude Opus 4.8', isDefault: true }]
+          : [{ value: 'auggie:butler', label: 'Auggie Butler' }];
+    return Promise.resolve({ models });
+  }),
+);
 
 const mockReduxDispatch = vi.hoisted(() =>
   vi.fn((action: { type?: string; payload?: unknown }) => {
@@ -38,6 +55,32 @@ const mockReduxDispatch = vi.hoisted(() =>
         ...updates,
       });
       sessionVersion$.update((value) => value + 1);
+    }
+    if (action.type === 'providerModels/loadProviderModelsRequested') {
+      const [providerId] = action.payload as [string];
+      providerLoadingStates$.update((states) => ({
+        ...states,
+        [providerId]: { status: 'loading', retryAttempt: 0 },
+      }));
+      void loadProviderModelsMock(providerId).then(
+        ({ models }) => {
+          providerModelsCacheValue = {
+            ...providerModelsCacheValue,
+            [providerId]: { models, fetchedAt: '2026-01-01T00:00:00.000Z' },
+          };
+          providerModelsCache$.set(providerModelsCacheValue);
+          providerLoadingStates$.update((states) => ({
+            ...states,
+            [providerId]: { status: 'success', retryAttempt: 0 },
+          }));
+        },
+        (error) =>
+          providerLoadingStates$.update((states) => ({
+            ...states,
+            [providerId]: { status: 'error', retryAttempt: 0, error: String(error) },
+          })),
+      );
+      return action;
     }
     return action;
   }),
@@ -217,7 +260,20 @@ vi.mock('$store/renderer/slices/model/model-selectors', () => ({
   selectLoadError: () => writable(null),
   selectAllProviderWarnings: () => providerWarnings$,
   selectAllProviderStaleFlags: () => writable({}),
+  selectAllProviderLoadingStates: () => providerLoadingStates$,
   selectAgentModelEffortLevels: () => writable(undefined),
+  selectAgentModelUpdate: () =>
+    writable({ status: 'idle', requestId: 0, model: null, error: null }),
+}));
+
+vi.mock('$store/renderer/slices/provider-models/provider-models-selectors', () => ({
+  selectProviderModelsCacheMap: Object.assign(() => providerModelsCache$, {
+    select: () => providerModelsCacheValue,
+  }),
+  selectProviderModelsCacheEntry: {
+    select: (_state: unknown, providerId: string) => providerModelsCacheValue[providerId],
+  },
+  selectProviderModelsClearEpoch: Object.assign(() => writable(0), { select: () => 0 }),
 }));
 
 vi.mock('$store/renderer/slices/agent-availability/agent-availability-selectors', () => ({
@@ -242,15 +298,7 @@ vi.mock('$store/renderer/slices/model/model-utils', () => ({
     }
     return Promise.resolve([{ value: 'auggie:butler', label: 'Auggie Butler' }]);
   }),
-  getModelsForProviderForLoadingState: vi.fn((providerId: string) => {
-    const models =
-      providerId === 'anthropic'
-        ? [{ value: 'anthropic:claude-opus-4-7', label: 'Claude Opus 4.7' }]
-        : providerId === 'claude-code'
-          ? [{ value: 'claude-code:claude-opus-4-8', label: 'Claude Opus 4.8', isDefault: true }]
-          : [{ value: 'auggie:butler', label: 'Auggie Butler' }];
-    return Promise.resolve({ models });
-  }),
+  getModelsForProviderForLoadingState: loadProviderModelsMock,
 }));
 
 vi.mock('$shared/types/agent-session', () => ({
@@ -293,6 +341,9 @@ describe('ModelPicker trigger label regressions', () => {
     activeProviderId$.set('auggie');
     enabledProviderIds$.set(['auggie']);
     providerWarnings$.set({});
+    providerModelsCacheValue = {};
+    providerModelsCache$.set({});
+    providerLoadingStates$.set({});
   });
 
   afterEach(() => {

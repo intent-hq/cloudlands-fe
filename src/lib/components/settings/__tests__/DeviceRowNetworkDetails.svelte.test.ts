@@ -18,7 +18,14 @@ vi.mock('$store/renderer/store', async () => {
     await import('$store/renderer/utils/test-helpers/store-mock');
   return createAppStoreMockModule({
     state: {
-      connections: { connectedIds: [], pinnedDaemonVersion: null, keychainSync: null },
+      connections: {
+        connectedIds: [],
+        pinnedDaemonVersion: null,
+        keychainSync: null,
+        openOperations: {},
+        saveOperations: {},
+        testOperations: {},
+      },
     },
     dispatch: vi.fn(),
   });

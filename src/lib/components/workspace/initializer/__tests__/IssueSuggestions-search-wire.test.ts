@@ -24,31 +24,18 @@ const mocks = vi.hoisted(() => {
   return { readable, selector };
 });
 
-vi.mock('$store/renderer/store', async () => {
-  const { createAppStoreMockModule } =
-    await import('$store/renderer/utils/test-helpers/store-mock');
-  return createAppStoreMockModule({ state: () => ({ theme: { name: 'dark' } }) });
-});
-
 vi.mock('$store/renderer/slices/github-auth/github-auth-selectors', () => ({
   selectGitHubAuthIsAuthenticated: mocks.selector(true),
   selectGitHubAuthIsAuthenticating: mocks.selector(false),
 }));
-vi.mock('$store/renderer/slices/github-auth/github-auth-slice', () => ({
-  startGitHubAuth: () => ({ type: 'github-auth/start' }),
-}));
 vi.mock('$store/renderer/slices/linear-auth/linear-auth-selectors', () => ({
+  selectLinearIsAuthenticated: mocks.selector(false),
   selectLinearIsAuthenticating: mocks.selector(false),
 }));
-vi.mock('$store/renderer/slices/linear-auth/linear-auth-slice', () => ({
-  startLinearAuth: () => ({ type: 'linear-auth/start' }),
-}));
 vi.mock('$store/renderer/slices/sentry-auth/sentry-auth-selectors', () => ({
+  selectSentryIsAuthenticated: mocks.selector(false),
   selectSentryIsConnecting: mocks.selector(false),
   selectSentryError: mocks.selector(null),
-}));
-vi.mock('$store/renderer/slices/sentry-auth/sentry-auth-slice', () => ({
-  connectSentry: () => ({ type: 'sentry-auth/connect' }),
 }));
 vi.mock('$features/linear-auth/renderer/linear-auth.client', () => ({
   linearAuthClient: {
@@ -82,6 +69,8 @@ vi.mock('$lib/components/ui/Header.svelte', async () => ({
 }));
 
 import IssueSuggestions from '../IssueSuggestions.svelte';
+import { store as appStore } from '$store/renderer/store';
+import { issueSuggestionsSaga } from '$store/renderer/slices/issue-suggestions/sagas/issue-suggestions-saga';
 import { warmImport } from '../../../../../test/warm-import';
 
 /** Captured IntersectionObserver instances so tests can fire intersections. */
@@ -193,14 +182,21 @@ warmImport(() => import('./mocks/MockComponent.svelte'));
 warmImport(() => import('./mocks/MockTooltipRich.svelte'));
 
 describe('IssueSuggestions server-side search + pagination wire contract', () => {
+  let disposeStore: () => void;
+  let stopSaga: () => void;
+
   beforeEach(() => {
     vi.useFakeTimers();
+    disposeStore = appStore.init();
+    stopSaga = appStore.runSaga(issueSuggestionsSaga);
     observers.length = 0;
     vi.stubGlobal('IntersectionObserver', MockIntersectionObserver);
   });
 
   afterEach(() => {
     cleanup();
+    stopSaga();
+    disposeStore();
     unregisterMockIpcHandler('git-tracking:search-github-issues');
     unregisterMockIpcHandler('git-tracking:search-pull-requests');
     unregisterMockIpcHandler('git-tracking:list-related-repos');

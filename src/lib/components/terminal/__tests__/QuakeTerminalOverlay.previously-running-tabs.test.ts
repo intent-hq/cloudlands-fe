@@ -2,9 +2,9 @@
  * Previously-running script tabs (daemon `previouslyRunning` marker, PROTOCOL
  * §5.8): after an app relaunch the daemon reports services that were running
  * before its last shutdown. The overlay must render a bottom-bar tab for each
- * (unopened, not auto-selected) and let the user dismiss it — dismissal calls
- * `script.stop`, which clears the daemon-side marker even when the script is
- * not live, then refetches the list.
+ * (unopened, not auto-selected) and let the user dismiss it through the
+ * selector-backed stop request, which clears the daemon-side marker even when
+ * the script is not live.
  */
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
@@ -101,6 +101,29 @@ vi.mock('$store/renderer/slices/scripts/scripts-selectors', () => ({
       return () => {};
     },
   }),
+  selectWorkspaceScriptOperations: () => ({
+    subscribe(listener: (operations: Record<string, never>) => void) {
+      listener({});
+      return () => {};
+    },
+  }),
+  selectWorkspaceScriptCommandOperations: () => ({
+    subscribe(listener: (operations: Record<string, never>) => void) {
+      listener({});
+      return () => {};
+    },
+  }),
+  selectScriptCommandOperation: Object.assign(
+    () => ({
+      subscribe(listener: (operation: Record<string, unknown>) => void) {
+        listener({ version: 0, status: 'idle', result: null, error: null });
+        return () => {};
+      },
+    }),
+    {
+      select: () => ({ version: 0, status: 'idle', result: null, error: null }),
+    },
+  ),
 }));
 
 vi.mock('../Terminal.svelte', async () => ({
@@ -130,18 +153,8 @@ vi.mock('$lib/components/ui/tooltip', async () => {
 vi.mock('$lib/components/ui/button/button.svelte', async () => ({
   default: (await import('./mocks/MockButton.svelte')).default,
 }));
-vi.mock('$features/scripts/scripts.client', () => ({
-  scriptsClient: {
-    detect: vi.fn(),
-    start: vi.fn(),
-    stop: vi.fn().mockResolvedValue({ success: true }),
-    restart: vi.fn(),
-    remove: vi.fn(),
-    update: vi.fn(),
-  },
-}));
-vi.mock('$lib/components/patterns/notify', () => ({
-  notify: { success: vi.fn(), info: vi.fn(), error: vi.fn(), warning: vi.fn() },
+vi.mock('$lib/components/ui/toast', () => ({
+  toast: { success: vi.fn(), info: vi.fn(), error: vi.fn(), warning: vi.fn() },
 }));
 vi.mock('$features/terminal/terminal-manager.svelte', () => ({
   terminalManager: { disposeTerminal: vi.fn(), clearTerminal: vi.fn() },
@@ -152,7 +165,6 @@ vi.mock('$features/terminal/terminal-history-tracker', () => ({
 
 import QuakeTerminalOverlay from '../QuakeTerminalOverlay.svelte';
 import { store as appStore } from '$store/renderer/store';
-import { scriptsClient } from '$features/scripts/scripts.client';
 import {
   setScriptsData,
   setScriptsInitialized,
@@ -267,7 +279,7 @@ describe('QuakeTerminalOverlay previously-running script tabs', () => {
     expect(labels['script-idle-1']).toBe('Idle');
   });
 
-  it('dismissing a previously-running tab calls script.stop and refetches the list', async () => {
+  it('dismissing a previously-running tab dispatches its selector-backed stop request', async () => {
     seedScripts([makeScript('prev-1', { previouslyRunning: true })]);
 
     const { container } = render(QuakeTerminalOverlay, { props: { workspaceId: WS_A } });
@@ -279,11 +291,11 @@ describe('QuakeTerminalOverlay previously-running script tabs', () => {
       '[data-dismiss-script-tab="prev-1"]',
     );
     await fireEvent.click(dismiss!);
-    // The handler awaits scriptsClient.stop before dispatching the refresh.
-    await new Promise((resolve) => setTimeout(resolve, 0));
 
-    expect(scriptsClient.stop).toHaveBeenCalledWith(WS_A, 'prev-1');
-    expect(dispatchedTypes()).toContain('scripts/refreshScripts');
+    expect((appStore as any).__dispatched).toContainEqual({
+      type: 'scripts/stopScriptRequested',
+      payload: [WS_A, 'prev-1'],
+    });
   });
 
   it('removes the dismiss control from the document while its script tab is being renamed', async () => {

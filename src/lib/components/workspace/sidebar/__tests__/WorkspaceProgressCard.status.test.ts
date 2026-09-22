@@ -54,6 +54,12 @@ const mocks = vi.hoisted(() => {
   });
   const update = vi.fn();
   const archive = vi.fn();
+  let workspaceMutation = {
+    loading: false,
+    error: null as string | null,
+    version: 0,
+    requestId: null as number | null,
+  };
   const clipboardWrite = vi.fn();
   const toastSuccess = vi.fn();
   const toastError = vi.fn();
@@ -104,6 +110,12 @@ const mocks = vi.hoisted(() => {
     dispatch,
     update,
     archive,
+    get workspaceMutation() {
+      return workspaceMutation;
+    },
+    set workspaceMutation(value) {
+      workspaceMutation = value;
+    },
     clipboardWrite,
     toastSuccess,
     toastError,
@@ -135,6 +147,7 @@ vi.mock('$store/renderer/store', async () => {
 
 vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
   selectWorkspaceById: mocks.selector(() => mocks.workspaceEntity),
+  selectWorkspaceMutation: mocks.selector(() => mocks.workspaceMutation),
   selectWorkspaceActivePullRequest: mocks.selector(() => null),
   selectWorkspaceProgressHeadline: mocks.selector(() => ({ headline: '', subtext: '' })),
   selectWorkspaceProgressActions: mocks.selector(() => mocks.progressActions),
@@ -194,6 +207,10 @@ vi.mock('$store/renderer/slices/workspace/workspace-slice', () => ({
   setWorkspaceEntity: vi.fn((workspace: Workspace) => ({
     type: 'workspace/setWorkspaceEntity',
     payload: [workspace],
+  })),
+  updateWorkspaceRequested: vi.fn((...args: unknown[]) => ({
+    type: 'workspace/updateRequested',
+    payload: args,
   })),
 }));
 
@@ -347,6 +364,7 @@ describe('WorkspaceProgressCard status message', () => {
     mocks.taskState.loading = false;
     mocks.taskState.progress = { total: 0, completed: 0, inProgress: 0 };
     mocks.update.mockResolvedValue({ ok: true, data: mocks.workspaceEntity });
+    mocks.workspaceMutation = { loading: false, error: null, version: 0, requestId: null };
     mocks.clipboardWrite.mockReset();
     mocks.toastSuccess.mockReset();
     mocks.toastError.mockReset();
@@ -586,12 +604,24 @@ describe('WorkspaceProgressCard status message', () => {
   });
 
   it('surfaces a rejected title rename and exits title editing', async () => {
-    mocks.update.mockResolvedValue({ ok: false, error: 'Rename rejected' });
     await renderProgressCard();
     await fireEvent.click(screen.getByRole('button', { name: 'Active Workspace' }));
     const titleInput = screen.getByRole('textbox');
     await fireEvent.input(titleInput, { target: { value: 'Rejected title' } });
     await fireEvent.keyDown(titleInput, { key: 'Enter' });
+    expect(mocks.dispatch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'workspace/updateRequested',
+        payload: ['ws-1', { title: 'Rejected title' }, 'title'],
+      }),
+    );
+    mocks.workspaceMutation = {
+      loading: false,
+      error: 'Rename rejected',
+      version: 1,
+      requestId: null,
+    };
+    mocks.notifySelectors();
 
     await waitFor(() => expect(mocks.toastError).toHaveBeenCalledWith('Rename rejected'));
     expect(screen.queryByRole('textbox')).toBeNull();
@@ -606,8 +636,11 @@ describe('WorkspaceProgressCard status message', () => {
     await fireEvent.input(titleInput, { target: { value: 'Renamed Workspace' } });
     await fireEvent.keyDown(titleInput, { key: 'Enter' });
 
-    await waitFor(() =>
-      expect(mocks.update).toHaveBeenCalledWith({ id: 'ws-1', title: 'Renamed Workspace' }),
+    expect(mocks.dispatch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'workspace/updateRequested',
+        payload: ['ws-1', { title: 'Renamed Workspace' }, 'title'],
+      }),
     );
     expect(screen.queryByRole('textbox')).toBeNull();
   });
@@ -620,7 +653,9 @@ describe('WorkspaceProgressCard status message', () => {
 
     await fireEvent.keyDown(titleInput, { key: 'Escape' });
 
-    expect(mocks.update).not.toHaveBeenCalled();
+    expect(mocks.dispatch).not.toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'workspace/updateRequested' }),
+    );
     expect(screen.getByRole('button', { name: 'Active Workspace' })).toBeTruthy();
   });
 
@@ -632,8 +667,11 @@ describe('WorkspaceProgressCard status message', () => {
 
     await fireEvent.blur(titleInput);
 
-    await waitFor(() =>
-      expect(mocks.update).toHaveBeenCalledWith({ id: 'ws-1', title: 'Blurred Workspace' }),
+    expect(mocks.dispatch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'workspace/updateRequested',
+        payload: ['ws-1', { title: 'Blurred Workspace' }, 'title'],
+      }),
     );
   });
 
@@ -767,9 +805,8 @@ describe('WorkspaceProgressCard status message', () => {
     expect(screen.getByTestId('mock-flame-progress')).toBe(progressBar);
   });
 
-  it('saves status edits on Enter and dispatches the updated workspace', async () => {
+  it('saves status edits on Enter and renders the selector-backed workspace update', async () => {
     const updatedWorkspace = { ...mocks.workspaceEntity, statusMessage: 'Ready for review.' };
-    mocks.update.mockResolvedValue({ ok: true, data: updatedWorkspace });
 
     await renderProgressCard({ statusMessage: 'Drafting status.' });
     await fireEvent.click(screen.getByRole('button', { name: 'Edit workspace status' }));
@@ -780,12 +817,16 @@ describe('WorkspaceProgressCard status message', () => {
 
     // Enter saves without inserting a newline.
     expect((input as HTMLTextAreaElement).value).toBe('Ready for review.');
-    await waitFor(() =>
-      expect(mocks.update).toHaveBeenCalledWith({ id: 'ws-1', statusMessage: 'Ready for review.' }),
-    );
     expect(mocks.dispatch).toHaveBeenCalledWith(
-      expect.objectContaining({ type: 'workspace/setWorkspaceEntity' }),
+      expect.objectContaining({
+        type: 'workspace/updateRequested',
+        payload: ['ws-1', { statusMessage: 'Ready for review.' }, 'status-message'],
+      }),
     );
+    mocks.workspaceEntity = updatedWorkspace;
+    mocks.workspaceMutation = { loading: false, error: null, version: 1, requestId: null };
+    mocks.notifySelectors();
+    await waitFor(() => expect(screen.getByText('Ready for review.')).toBeTruthy());
   });
 
   it('renders the status editor as a wrapping textarea', async () => {
@@ -797,8 +838,6 @@ describe('WorkspaceProgressCard status message', () => {
   });
 
   it('saves status edits on blur', async () => {
-    const updatedWorkspace = { ...mocks.workspaceEntity, statusMessage: 'Saved on blur.' };
-    mocks.update.mockResolvedValue({ ok: true, data: updatedWorkspace });
     await renderProgressCard({ statusMessage: 'Drafting status.' });
     await fireEvent.click(screen.getByRole('button', { name: 'Edit workspace status' }));
     const input = await screen.findByLabelText('Workspace status');
@@ -806,8 +845,11 @@ describe('WorkspaceProgressCard status message', () => {
 
     await fireEvent.blur(input);
 
-    await waitFor(() =>
-      expect(mocks.update).toHaveBeenCalledWith({ id: 'ws-1', statusMessage: 'Saved on blur.' }),
+    expect(mocks.dispatch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'workspace/updateRequested',
+        payload: ['ws-1', { statusMessage: 'Saved on blur.' }, 'status-message'],
+      }),
     );
   });
 
@@ -821,7 +863,9 @@ describe('WorkspaceProgressCard status message', () => {
     expect(notPrevented).toBe(true);
     await fireEvent.input(input, { target: { value: 'First line.\nSecond line.' } });
 
-    expect(mocks.update).not.toHaveBeenCalled();
+    expect(mocks.dispatch).not.toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'workspace/updateRequested' }),
+    );
     expect(screen.getByLabelText('Workspace status')).toBeTruthy();
     expect(input.value).toBe('First line.\nSecond line.');
   });
@@ -835,7 +879,9 @@ describe('WorkspaceProgressCard status message', () => {
     await fireEvent.keyDown(input, { key: 'Escape' });
 
     await waitFor(() => expect(screen.queryByLabelText('Workspace status')).toBeNull());
-    expect(mocks.update).not.toHaveBeenCalled();
+    expect(mocks.dispatch).not.toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'workspace/updateRequested' }),
+    );
   });
 
   it('does not render generated workflow copy below the progress bar', async () => {

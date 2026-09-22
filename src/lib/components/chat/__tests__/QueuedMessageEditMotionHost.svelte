@@ -1,6 +1,7 @@
 <script lang="ts">
   import { followBottom, type FollowBottomState } from '$lib/utils/smartScroll';
   import QueuedMessageList from '../QueuedMessageList.svelte';
+  import type { ChatQueuedMessageEditOperation } from '$store/renderer/slices/chat-state/chat-state-types';
 
   interface Props {
     theme?: 'light' | 'dark';
@@ -16,6 +17,7 @@
   let reversed = $state(false);
   let removed = $state<string[]>([]);
   let savedContent = $state<Record<string, string>>({});
+  let editOperations = $state<Record<string, ChatQueuedMessageEditOperation>>({});
   const messages = $derived(
     Array.from({ length: messageCount }, (_, index) => ({
       id: `motion-${index}`,
@@ -59,8 +61,19 @@
     <div class="h-[620px] px-3 py-2">Transcript history</div>
     <QueuedMessageList
       {messages}
+      {editOperations}
       onedit={async (id, content, editing) => {
         if (!editing) savedContent = { ...savedContent, [id]: content };
+        editOperations = {
+          ...editOperations,
+          [id]: {
+            status: 'success',
+            content,
+            editing: editing ?? false,
+            result: { success: true },
+            error: null,
+          },
+        };
         refresh += 1;
         return { success: true };
       }}

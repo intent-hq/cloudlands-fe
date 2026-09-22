@@ -1,7 +1,7 @@
 <script lang="ts">
   import { logger } from '$lib/utils/client-logger';
 
-  import { AcceptChangesClient } from '$features/accept-changes/accept-changes.client';
+  import type { AcceptChangesResult, PrepareAcceptResponse } from '$features/accept-changes/types';
   import { Button } from '$lib/components/ui/button';
   import { Input } from '$lib/components/ui/input';
   import { Textarea } from '$lib/components/ui/textarea';
@@ -11,6 +11,11 @@
 
   import { selectWorkspaceById } from '$store/renderer/slices/workspace/workspace-selectors';
   import { updateWorkspaceEntity } from '$store/renderer/slices/workspace/workspace-slice';
+  import {
+    createPullRequestRequested,
+    prepareAcceptChangesRequested,
+  } from '$store/renderer/slices/git/git-slice';
+  import { selectGitMutationRequest } from '$store/renderer/slices/git/git-selectors';
 
   import {
     faCodePullRequest,
@@ -26,7 +31,7 @@
   import { WorkspaceId } from '$shared/types/branded-ids';
   import { store as appStore } from '$store/renderer/store';
   import { m } from '$shared/paraglide/messages.js';
-  import { toStore } from 'svelte/store';
+  import { readable, toStore } from 'svelte/store';
 
   interface Props {
     workspaceId?: WorkspaceId | null;
@@ -37,6 +42,12 @@
   let { workspaceId, onClose, onCreated }: Props = $props();
   const workspaceId$ = toStore(() => workspaceId ?? '');
   const workspace$ = selectWorkspaceById(workspaceId$);
+  const prepareRequest$ = selectGitMutationRequest(
+    workspaceId$,
+    readable('prepare-accept'),
+    readable('create-pr'),
+  );
+  const createRequest$ = selectGitMutationRequest(workspaceId$, readable('create-pr'));
 
   // Form state
   let generatingContent = $state(false);
@@ -52,12 +63,71 @@
 
   // Track if we should auto-create after generation
   let autoCreatePending = $state(false);
+  let handledPrepareVersion = 0;
+  let handledCreateVersion = 0;
 
-  async function generatePRContent() {
+  $effect(() => {
+    const request = $prepareRequest$;
+    generatingContent = request?.loading ?? false;
+    if (!request || request.loading || request.version <= handledPrepareVersion) return;
+    handledPrepareVersion = request.version;
+    formData.title.loading = false;
+    formData.description.loading = false;
+    if (request.error || !request.data) {
+      logger.error('Failed to generate PR content', request.error);
+      error = request.error || m.workspace_prCreator_generateFailed_error();
+      autoCreatePending = false;
+      return;
+    }
+    const prepared = request.data as PrepareAcceptResponse;
+    formData.title.value = prepared.suggestedPRTitle || $workspace$?.title || '';
+    formData.description.value = prepared.suggestedPRBody || '';
+    if (autoCreatePending && formData.title.value) createPullRequest();
+    autoCreatePending = false;
+  });
+
+  $effect(() => {
+    const request = $createRequest$;
+    creatingPR = request?.loading ?? false;
+    if (!request || request.loading || request.version <= handledCreateVersion) return;
+    handledCreateVersion = request.version;
+    if (request.error || !request.data) {
+      error = request.error || m.workspace_prCreator_createFailed_error();
+      return;
+    }
+    const result = request.data as AcceptChangesResult;
+    if (!result.success) {
+      error = result.error || m.workspace_prCreator_createFailed_error();
+      return;
+    }
+    success = true;
+    const prNumber = result.result?.prNumber;
+    const prUrl = result.result?.prHtmlUrl || result.result?.prUrl;
+    if (prNumber && prUrl) {
+      const pr: PullRequestInfo = {
+        id: String(prNumber),
+        number: prNumber,
+        url: prUrl,
+        title: formData.title.value,
+        status: PullRequestStatus.Open,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      };
+      const workspace = $workspace$;
+      if (workspace) {
+        appStore.dispatch(
+          updateWorkspaceEntity(workspace.id, { activePullRequest: pr, prNumber: pr.number }),
+        );
+      }
+      onCreated?.(pr);
+    }
+    setTimeout(() => onClose?.(), 2000);
+  });
+
+  function generatePRContent() {
     const workspace = selectWorkspaceById.select(appStore.state, workspaceId ?? '');
     if (!workspace) return;
 
-    generatingContent = true;
     error = null;
 
     // Set all fields to loading
@@ -66,35 +136,15 @@
       description: { value: '', loading: true },
     };
 
-    try {
-      // accept-changes.prepare returns suggested PR title/body (PROTOCOL.md §5.18)
-      const prepared = await AcceptChangesClient.prepare(WorkspaceId(workspace.id), 'create-pr');
-      formData.title.value = prepared.suggestedPRTitle || workspace.title || '';
-      formData.title.loading = false;
-      formData.description.value = prepared.suggestedPRBody || '';
-      formData.description.loading = false;
-    } catch (err: any) {
-      logger.error('Failed to generate PR content:', err);
-      error = err.message || m.workspace_prCreator_generateFailed_error();
-      formData.title.loading = false;
-      formData.description.loading = false;
-      autoCreatePending = false;
-    } finally {
-      generatingContent = false;
-    }
+    appStore.dispatch(prepareAcceptChangesRequested(workspace.id, 'create-pr'));
   }
 
-  async function generateAndCreate() {
+  function generateAndCreate() {
     autoCreatePending = true;
-    await generatePRContent();
-    // After generation completes, create the PR if we have a title
-    if (autoCreatePending && formData.title.value) {
-      await createPullRequest();
-    }
-    autoCreatePending = false;
+    generatePRContent();
   }
 
-  async function createPullRequest() {
+  function createPullRequest() {
     const workspace = selectWorkspaceById.select(appStore.state, workspaceId ?? '');
     if (!workspace) return;
     if (!formData.title.value) {
@@ -102,57 +152,15 @@
       return;
     }
 
-    creatingPR = true;
     error = null;
-
-    try {
-      const result = await AcceptChangesClient.execute(WorkspaceId(workspace.id), 'create-pr', {
-        prTitle: formData.title.value,
-        prBody: formData.description.value,
-        targetBranch: workspace.baseRef || 'main',
-      });
-
-      if (!result.success) {
-        error = result.error || m.workspace_prCreator_createFailed_error();
-        return;
-      }
-
-      success = true;
-      const prNumber = result.result?.prNumber;
-      const prUrl = result.result?.prHtmlUrl || result.result?.prUrl;
-      if (prNumber && prUrl) {
-        const pr: PullRequestInfo = {
-          id: String(prNumber),
-          number: prNumber,
-          url: prUrl,
-          title: formData.title.value,
-          status: PullRequestStatus.Open,
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
-        };
-        appStore.dispatch(
-          updateWorkspaceEntity(workspace.id, {
-            activePullRequest: pr,
-            prNumber: pr.number,
-          }),
-        );
-
-        // Notify parent
-        if (onCreated) {
-          onCreated(pr);
-        }
-      }
-
-      // Auto-close after a short delay
-      setTimeout(() => {
-        if (onClose) onClose();
-      }, 2000);
-    } catch (err: any) {
-      logger.error('Failed to create PR:', err);
-      error = err.message || m.workspace_prCreator_createFailed_error();
-    } finally {
-      creatingPR = false;
-    }
+    appStore.dispatch(
+      createPullRequestRequested(
+        workspace.id,
+        formData.title.value,
+        formData.description.value,
+        workspace.baseRef || 'main',
+      ),
+    );
   }
 </script>
 

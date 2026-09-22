@@ -1,18 +1,13 @@
 /**
- * Pure helpers for the Add-context picker: persisting the last used context
- * source to localStorage and ordering providers for display.
+ * Pure helpers for ordering Add-context picker providers for display.
  *
  * Dependency-light by design — no stores, services, or side effects beyond
- * guarded localStorage access.
+ * side effects.
  */
 
-export type ContextSource = 'linear' | 'github-issues' | 'github-prs' | 'sentry';
+import type { ContextSource } from '$store/renderer/slices/issue-suggestions/issue-suggestions-types';
 
 export type ContextSourceProvider = 'github' | 'linear' | 'sentry';
-
-export const LAST_SOURCE_STORAGE_KEY = 'context-picker:last-source';
-
-const ALL_SOURCES: readonly ContextSource[] = ['linear', 'github-issues', 'github-prs', 'sentry'];
 
 /** Alphabetical baseline order of providers. */
 const ALL_PROVIDERS: readonly ContextSourceProvider[] = ['github', 'linear', 'sentry'];
@@ -32,31 +27,6 @@ export interface ProviderConnectionState {
 
 function providerOfSource(source: ContextSource): ContextSourceProvider {
   return source === 'github-issues' || source === 'github-prs' ? 'github' : source;
-}
-
-function isContextSource(value: unknown): value is ContextSource {
-  return typeof value === 'string' && (ALL_SOURCES as readonly string[]).includes(value);
-}
-
-/** Load the persisted last-used source; null when missing, invalid, or unavailable. */
-export function loadLastUsedSource(): ContextSource | null {
-  try {
-    if (typeof localStorage === 'undefined') return null;
-    const raw = localStorage.getItem(LAST_SOURCE_STORAGE_KEY);
-    return isContextSource(raw) ? raw : null;
-  } catch {
-    return null;
-  }
-}
-
-/** Persist the last-used source; silently no-ops when localStorage is unavailable. */
-export function saveLastUsedSource(source: ContextSource): void {
-  try {
-    if (typeof localStorage === 'undefined') return;
-    localStorage.setItem(LAST_SOURCE_STORAGE_KEY, source);
-  } catch {
-    // localStorage unavailable (e.g., disabled or non-browser environment)
-  }
 }
 
 /**

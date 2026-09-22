@@ -1,6 +1,7 @@
 <script lang="ts">
   /* eslint-disable max-lines */
   import { untrack, onMount, onDestroy, type Snippet } from 'svelte';
+  import { writable } from 'svelte/store';
   import {
     type InitialRepoInfo,
     getLastSelectedRepoHydrationAction,
@@ -26,9 +27,23 @@
   } from '$features/setup-scripts/last-used';
   import {
     setCompactWorkspaceInitializerFormState,
+    clearNewWorkspaceDraftRequested,
     clearWorkspaceInitializerPendingGitHubPrefill,
+    flushNewWorkspaceDraftRequested,
+    restoreNewWorkspaceDraftRequested,
+    saveNewWorkspaceDraftRequested,
+    createWorkspaceFromInitializerRequested,
+    readWorkspaceInitializerPrefillRequested,
+    setInitialAgentReasoningEffortRequested,
+    readWorkspaceInitializerGitAvailabilityRequested,
+    addWorkspaceInitializerRecentRepositoryRequested,
+    openWorkspaceInitializerExternalUrlRequested,
+    readWorkspaceInitializerPullRequestRequested,
+    readWorkspaceInitializerGitRemoteRequested,
     setWorkspaceInitializerBranchForRepo,
     setWorkspaceInitializerLastSubmittedAgent,
+    pullWorkspaceInitializerRepositoryRequested,
+    enhanceWorkspaceInitializerPromptRequested,
   } from '$store/renderer/slices/workspace-initializer/workspace-initializer-slice';
   import {
     beginWorkspaceCreateProgress,
@@ -41,6 +56,15 @@
     selectWorkspaceInitializerLastSubmittedAgent,
     selectWorkspaceInitializerPendingGitHubPrefill,
     selectWorkspaceInitializerRecentRepos,
+    selectWorkspaceInitializerPrefillRead,
+    selectWorkspaceInitializerDraftRestore,
+    selectWorkspaceInitializerGitAvailability,
+    selectWorkspaceInitializerGitRemote,
+    selectWorkspaceInitializerPullRequest,
+    selectWorkspaceInitializerRepositoryPull,
+    selectWorkspaceInitializerCreateRequest,
+    selectWorkspaceInitializerReasoningEffortUpdate,
+    selectWorkspaceInitializerPromptEnhancement,
   } from '$store/renderer/slices/workspace-initializer/workspace-initializer-selectors';
   import type {
     CompactWorkspaceInitializerFormState,
@@ -50,13 +74,14 @@
     hydrateWorkspaceNavigation,
     type WorkspaceNavigationWorkspaceState,
   } from '$store/renderer/slices/workspace-navigation/workspace-navigation-slice';
-  import { workspaceClient } from '$store/renderer/slices/workspace/utils/workspace.client';
   import RichTextarea from '$lib/components/ui/RichTextarea.svelte';
-  import { Input } from '$lib/components/ui/input';
   import { debugConfig } from '$lib/config/debug';
   import type { StarterPrompt } from '$lib/data/starter-prompts';
   import { setInitialAgentId } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
-  import { setWorkspaceEntity } from '$store/renderer/slices/workspace/workspace-slice';
+  import {
+    setWorkspaceEntity,
+    updateWorkspaceRequested,
+  } from '$store/renderer/slices/workspace/workspace-slice';
   import { openWorkspaceTab } from '$store/renderer/slices/tab-state/tab-state-slice';
   import { bootstrapNewWorkspaceLayout } from '$store/renderer/slices/panel-layout/panel-layout-slice';
 
@@ -99,20 +124,14 @@
   import { cancelActiveTranscription } from '$features/hardware-console/voice/transcription-cancellation';
   import type { PttContext } from '$features/hardware-console/voice/ptt-controller';
   import { showVoiceSetupToast } from '$features/hardware-console/voice/voice-setup-toast';
-  import { invoke } from '$lib/electron-bridge';
-  import { WORKSPACE_CHANNELS } from '$shared/ipc/channels';
-  import { appClient } from '$lib/client';
-  import {
-    enhancePrompt,
-    EnhancePromptUnavailableError,
-    isEnhancePromptAvailable,
-  } from '$lib/client/live/live-prompt-enhancement';
+  import { isEnhancePromptAvailable } from '$lib/client/live/live-prompt-enhancement';
   import Fa from 'svelte-fa';
   import PullConflictDialog, { type PullErrorType } from '../modals/PullConflictDialog.svelte';
 
   import { notify } from '$lib/components/patterns/notify';
   import { fade, slide } from '$lib/motion';
   import Button from '../ui/button/button.svelte';
+  import { Input } from '$lib/components/ui/input';
   import { IntentMarkLoader } from '$lib/components/ui/indicators';
   import CreateButtonProgress from './initializer/CreateButtonProgress.svelte';
   import InitialAgentPicker from './initializer/InitialAgentPicker.svelte';
@@ -144,11 +163,7 @@
     type HeldFirstMessage,
   } from './initializer/staged-attachments';
   import AttachmentPreview from '$lib/components/chat/AttachmentPreview.svelte';
-  import {
-    clearNewWorkspaceDraft,
-    createNewWorkspaceDraftSaver,
-    restoreNewWorkspaceDraft,
-  } from './initializer/new-workspace-draft';
+  import { serializeDraftAttachments } from '$lib/components/chat/chat-draft-attachments';
   import { resolveGitHubPrefillSelection } from './initializer/github-prefill';
   import { buildContextLinks } from './initializer/context-links';
   import { createRepoCacheWarmer } from './initializer/warm-repo-cache';
@@ -156,24 +171,53 @@
     matchGitHubPrefillRepo,
     type GitHubPrefillRepoCandidate,
   } from './initializer/github-prefill-repo-match';
+  import { waitForWorkspaceInitializerOperation } from './initializer/wait-for-operation';
 
   const activeProviderId$ = selectActiveProviderId();
   const defaultProviderId$ = selectEffectiveDefaultProviderId();
   const pttRecording$ = selectPttRecording();
   const voiceTranscribing$ = selectVoiceTranscribing();
   const logger = createLogger('CompactWorkspaceInitializer');
+  const compactPrefillOperation$ = selectWorkspaceInitializerPrefillRead(true);
+  const compactDraftRestoreOperation$ = selectWorkspaceInitializerDraftRestore('compact');
+  const compactGitAvailabilityOperation$ = selectWorkspaceInitializerGitAvailability();
+  const compactRemoteProbePathStore = writable('');
+  const compactRemoteProbeOperation$ = selectWorkspaceInitializerGitRemote(
+    compactRemoteProbePathStore,
+  );
+  const compactPrefillRemotePathStore = writable('');
+  const compactPrefillRemoteOperation$ = selectWorkspaceInitializerGitRemote(
+    compactPrefillRemotePathStore,
+  );
+  const compactPrOwnerStore = writable('');
+  const compactPrRepoStore = writable('');
+  const compactPrNumberStore = writable(0);
+  const compactPullRequestOperation$ = selectWorkspaceInitializerPullRequest(
+    compactPrOwnerStore,
+    compactPrRepoStore,
+    compactPrNumberStore,
+  );
+  const compactRestoredPrOwnerStore = writable('');
+  const compactRestoredPrRepoStore = writable('');
+  const compactRestoredPrNumberStore = writable(0);
+  const compactRestoredPullRequestOperation$ = selectWorkspaceInitializerPullRequest(
+    compactRestoredPrOwnerStore,
+    compactRestoredPrRepoStore,
+    compactRestoredPrNumberStore,
+  );
+  const compactRepositoryPullOperation$ = selectWorkspaceInitializerRepositoryPull('compact');
+  const compactCreateProgressIdStore = writable('');
+  const compactCreateOperation$ = selectWorkspaceInitializerCreateRequest(
+    compactCreateProgressIdStore,
+  );
+  const compactReasoningAgentIdStore = writable('');
+  const compactReasoningOperation$ = selectWorkspaceInitializerReasoningEffortUpdate(
+    compactReasoningAgentIdStore,
+  );
+  const compactPromptEnhancementOperation$ = selectWorkspaceInitializerPromptEnhancement('compact');
 
   // Constants
-  const PREFILL_KEY = 'workspace-prefill';
   const UNKNOWN_SPECIALIST_ERROR_PREFIX = 'unknown specialist:'; // i18n-ignore (daemon error prefix)
-
-  function hasWorkspacePrefillData(): boolean {
-    try {
-      return typeof sessionStorage !== 'undefined' && !!sessionStorage.getItem(PREFILL_KEY);
-    } catch {
-      return false;
-    }
-  }
 
   /**
    * Supported file extensions for file attachments.
@@ -311,11 +355,28 @@
    * Apply prefill data from sessionStorage (used by deep links)
    * This is called after the component is mounted to apply prefill data
    */
-  export async function applyPrefill() {
-    const prefillData = sessionStorage.getItem(PREFILL_KEY);
-    if (prefillData) {
+  let applyPrefillPromise: Promise<void> | null = null;
+
+  export function applyPrefill(): Promise<void> {
+    applyPrefillPromise ??= (async () => {
       try {
-        const data = JSON.parse(prefillData);
+        await applyPrefillOnce();
+      } finally {
+        applyPrefillPromise = null;
+      }
+    })();
+    return applyPrefillPromise;
+  }
+
+  async function applyPrefillOnce(): Promise<void> {
+    try {
+      const version =
+        selectWorkspaceInitializerPrefillRead.select(appStore.state, true).version + 1;
+      const settled = waitForWorkspaceInitializerOperation(compactPrefillOperation$, version);
+      appStore.dispatch(readWorkspaceInitializerPrefillRequested(true));
+      const data = await settled;
+      hasInitialPrefillData = !!data;
+      if (data) {
         logger.debug('Applying prefill data from sessionStorage', { data });
 
         // Apply repo and branch settings. An explicit prefill wins over form
@@ -336,48 +397,6 @@
           // explicit data.branch (applied below) still wins.
           remoteSetup = null;
           branch = '';
-        } else if (data.githubUrl && !repoPath) {
-          // repoPath wasn't resolved at deep-link time (knownRepos may not have loaded yet).
-          // Try resolving now via IPC to the repo registry.
-          try {
-            const result = await invoke<{
-              success: boolean;
-              data?: Array<{ path: string; name: string; owner?: string }>;
-            }>('workspace:get-recent-repositories', {});
-            if (result?.success && Array.isArray(result.data)) {
-              const ghUrl = data.githubUrl.trim();
-              const patterns = [
-                /^https?:\/\/github\.com\/([^\/]+)\/([^\/]+?)(?:\.git)?(?:\/.*)?$/,
-                /^git@github\.com:([^\/]+)\/([^\/]+?)(?:\.git)?$/,
-              ];
-              let owner: string | null = null;
-              let repo: string | null = null;
-              for (const pattern of patterns) {
-                const match = ghUrl.match(pattern);
-                if (match) {
-                  owner = match[1].toLowerCase();
-                  repo = match[2].toLowerCase();
-                  break;
-                }
-              }
-              if (owner && repo) {
-                const matched = result.data.find(
-                  (r) => r.owner?.toLowerCase() === owner && r.name.toLowerCase() === repo,
-                );
-                if (matched?.path) {
-                  repoPath = matched.path;
-                  isValidPath = true;
-                  scope = '';
-                  logger.debug('Resolved githubUrl to local path via IPC', {
-                    githubUrl: data.githubUrl,
-                    repoPath,
-                  });
-                }
-              }
-            }
-          } catch (e) {
-            logger.warn('Failed to resolve githubUrl via repo registry IPC', { error: e });
-          }
         }
         if (data.branch) branch = data.branch;
 
@@ -425,8 +444,6 @@
         }
 
         // Clear the prefill data so it doesn't get reapplied on next mount
-        sessionStorage.removeItem(PREFILL_KEY);
-
         // If autoCreate is set, signal the reactive $effect to auto-submit
         // once isValid becomes true (avoids flaky setTimeout).
         if (data.autoCreate === true || data.autoCreate === 'true') {
@@ -438,11 +455,10 @@
             richTextarea?.focus();
           }, 100);
         }
-      } catch (e) {
-        logger.error('Failed to parse prefill data:', e);
-        // Clear malformed data to prevent repeated failures
-        sessionStorage.removeItem(PREFILL_KEY);
       }
+    } catch (e) {
+      logger.error('Failed to apply prefill data:', e);
+      hasInitialPrefillData = false;
     }
   }
 
@@ -628,7 +644,7 @@
 
   let didApplyHydratedCompactState = $state(false);
   let didApplyHydratedLastSelectedRepo = $state(false);
-  let hasInitialPrefillData = $state(hasWorkspacePrefillData());
+  let hasInitialPrefillData = $state(true);
 
   // Whether the user explicitly picked a model in this form session. Late
   // hydration (the applyAgentSettings re-application below) must not
@@ -723,11 +739,13 @@
   // survives app restarts. Gates the save effect below until it settles so an
   // initial empty save cannot clear a not-yet-restored draft. Non-fatal.
   let draftRestored = $state(false);
-  let draftRestoreFailed = false;
   (async () => {
     try {
-      const restore = await restoreNewWorkspaceDraft(appClient.drafts);
-      draftRestoreFailed = restore.status === 'error';
+      const version =
+        selectWorkspaceInitializerDraftRestore.select(appStore.state, 'compact').version + 1;
+      const settled = waitForWorkspaceInitializerOperation(compactDraftRestoreOperation$, version);
+      appStore.dispatch(restoreNewWorkspaceDraftRequested('compact'));
+      const restore = await settled;
       if (restore.status === 'restored') {
         if (restore.contextItems.length > 0 && contextItems.length === 0) {
           contextItems = restore.contextItems;
@@ -750,17 +768,16 @@
   // ever reassigned wholesale, so the reference read is sufficient for
   // reactivity. If the restore failed, the saver skips an empty save so it
   // can't clear a daemon draft we never got to read.
-  const draftSaver = createNewWorkspaceDraftSaver(appClient.drafts, {
-    skipEmptySave: () => draftRestoreFailed,
-  });
   $effect(() => {
     if (!draftRestored) return;
-    draftSaver.schedule(initialPrompt, contextItems);
+    appStore.dispatch(
+      saveNewWorkspaceDraftRequested(initialPrompt, serializeDraftAttachments(contextItems)),
+    );
   });
 
   // A reload (cmd+R) or window close inside the debounce window would drop
   // the newest keystrokes — flush the pending save on unload and destroy.
-  const flushDraftSave = () => draftSaver.flush();
+  const flushDraftSave = () => appStore.dispatch(flushNewWorkspaceDraftRequested());
   onMount(() => {
     window.addEventListener('beforeunload', flushDraftSave);
     return () => window.removeEventListener('beforeunload', flushDraftSave);
@@ -851,22 +868,21 @@
     // Check git availability
     (async () => {
       try {
-        const result =
-          typeof window !== 'undefined' && window.electronAPI
-            ? await invoke<any>('system:check-git')
-            : undefined;
-        if (result?.success && result.data) {
-          gitAvailable = result.data.available;
-          if (result.data.available === true) {
-            logger.debug('Git available', { version: result.data.version });
-          } else if (result.data.available === 'unknown') {
-            logger.warn('Git availability could not be verified (transport failure)');
-          } else {
-            logger.warn('Git is not available on this system');
-          }
+        const version =
+          selectWorkspaceInitializerGitAvailability.select(appStore.state).version + 1;
+        const settled = waitForWorkspaceInitializerOperation(
+          compactGitAvailabilityOperation$,
+          version,
+        );
+        appStore.dispatch(readWorkspaceInitializerGitAvailabilityRequested());
+        const result = await settled;
+        gitAvailable = result?.available ?? 'unknown';
+        if (result?.available === true) {
+          logger.debug('Git available', { version: result.version });
+        } else if (result?.available === 'unknown') {
+          logger.warn('Git availability could not be verified (transport failure)');
         } else {
-          // No probe answer at all — treat as unverifiable, not missing.
-          gitAvailable = 'unknown';
+          logger.warn('Git is not available on this system');
         }
       } catch (err) {
         logger.error('Failed to check git availability', err);
@@ -874,91 +890,7 @@
       }
     })();
 
-    // First check for prefill data from sessionStorage (takes priority over persisted Redux state)
-    // This is set when:
-    // - User clicks "Archive and start new space"
-    // - Deep links with create params
-    // - Other navigation patterns that need to prefill the form
-    const prefillData = sessionStorage.getItem(PREFILL_KEY);
-    if (prefillData) {
-      try {
-        const data = JSON.parse(prefillData);
-        logger.debug('Applying prefill data from sessionStorage', { data });
-
-        // Apply repo and branch settings — a repoPath prefill is always a
-        // local repo, so set the full selection (clearing any restored
-        // github state) so the picker opens on the Copy local repo tab
-        if (data.repoPath) {
-          repoPath = data.repoPath;
-          repoType = 'local';
-          githubUrl = '';
-          isNewRepo = false;
-          isValidPath = true;
-          // Reset scope when changing repos - scope is repo-specific
-          scope = '';
-          // Clear stale remote/branch state from a persisted prior selection:
-          // submission reads remoteSetup.workspacePath and branch regardless of
-          // repoType, so a leftover value would create against the wrong
-          // checkout or a branch that doesn't exist in the local repo. An
-          // explicit data.branch (applied below) still wins.
-          remoteSetup = null;
-          branch = '';
-        }
-        if (data.branch) branch = data.branch;
-
-        // Apply remote environment settings
-        if (data.environmentType === 'remote' && data.sshConfig) {
-          remoteSetup = {
-            type: 'remote',
-            ssh: data.sshConfig,
-          };
-        }
-
-        // Apply prompt if provided
-        if (data.prompt) {
-          initialPrompt = data.prompt;
-        }
-
-        // Apply specialist if provided (match by specialist ID)
-        if (data.specialist) {
-          const specialists = selectSpecialists.select(appStore.state);
-          const matchedSpecialist = specialists.find(
-            (s: { id: string }) => s.id === data.specialist,
-          );
-          if (matchedSpecialist) {
-            selectedSpecialist = matchedSpecialist.id;
-            // Switch team mode based on specialist - the orchestrator uses team orchestration, everything else is single agent
-            isTeamMode =
-              data.specialist === selectOrchestratorSpecialist.select(appStore.state)?.id;
-            logger.debug('Applied specialist from prefill (onMount)', {
-              specialistId: matchedSpecialist.id,
-            });
-          } else {
-            logger.warn('Specialist from prefill not found (onMount), ignoring', {
-              specialist: data.specialist,
-            });
-          }
-        }
-
-        // If we have previous workspace info, set up the pending mention
-        // This will trigger the $effect that inserts the @ mention with the seed prompt
-        if (data.previousWorkspaceId && data.previousWorkspaceTitle) {
-          pendingPreviousWorkspace = {
-            id: data.previousWorkspaceId,
-            title: data.previousWorkspaceTitle,
-          };
-        }
-
-        // Do NOT remove PREFILL_KEY here — applyPrefill() (called by +page.svelte
-        // after tick()) still needs to read it for autoCreate and other fields.
-        // applyPrefill() is the single owner that reads and removes the key.
-      } catch (e) {
-        logger.error('Failed to parse prefill data:', e);
-        // Clear malformed data to prevent repeated failures
-        sessionStorage.removeItem(PREFILL_KEY);
-        hasInitialPrefillData = false;
-      }
-    }
+    void applyPrefill();
   });
 
   // Reactive auto-submit: when applyPrefill() sets pendingAutoCreate, this $effect
@@ -1039,13 +971,15 @@
       candidates,
       probeRemote: async (path) => {
         if (typeof window === 'undefined' || !window.electronAPI) return null;
-        const response = await invoke<{
-          success?: boolean;
-          data?: { owner?: string; repo?: string };
-        }>('git-tracking:get-remote-url', { repoPath: path });
-        return response?.success && response.data?.owner && response.data?.repo
-          ? { owner: response.data.owner, repo: response.data.repo }
-          : null;
+        compactPrefillRemotePathStore.set(path);
+        const version =
+          selectWorkspaceInitializerGitRemote.select(appStore.state, path).version + 1;
+        const settled = waitForWorkspaceInitializerOperation(
+          compactPrefillRemoteOperation$,
+          version,
+        );
+        appStore.dispatch(readWorkspaceInitializerGitRemoteRequested(path));
+        return await settled;
       },
     });
     if (isStale?.()) return;
@@ -1258,17 +1192,24 @@
             repo,
             number,
           });
-          const response = await invoke<any>('git-tracking:get-pull-request', {
-            owner,
-            repo,
-            number,
-          });
-          if (response?.success && response.data?.sourceBranch) {
-            selectedPRBranch = response.data.sourceBranch;
-            selectedPRTargetBranch = response.data.targetBranch ?? '';
+          compactRestoredPrOwnerStore.set(owner);
+          compactRestoredPrRepoStore.set(repo);
+          compactRestoredPrNumberStore.set(number);
+          const version =
+            selectWorkspaceInitializerPullRequest.select(appStore.state, owner, repo, number)
+              .version + 1;
+          const settled = waitForWorkspaceInitializerOperation(
+            compactRestoredPullRequestOperation$,
+            version,
+          );
+          appStore.dispatch(readWorkspaceInitializerPullRequestRequested(owner, repo, number));
+          const response = await settled;
+          if (response?.sourceBranch) {
+            selectedPRBranch = response.sourceBranch;
+            selectedPRTargetBranch = response.targetBranch ?? '';
             selectedPRNumber = number;
             logger.debug('Fetched and set selectedPRBranch from restored context mention', {
-              branch: response.data.sourceBranch,
+              branch: response.sourceBranch,
               prNumber: number,
             });
           }
@@ -1358,23 +1299,24 @@
     // Fetch the remote URL for the local repo
     (async () => {
       try {
-        const response =
-          typeof window !== 'undefined' && window.electronAPI
-            ? await invoke<any>('git-tracking:get-remote-url', {
-                repoPath: path,
-              })
-            : undefined;
+        if (typeof window === 'undefined' || !window.electronAPI) return;
+        compactRemoteProbePathStore.set(path);
+        const version =
+          selectWorkspaceInitializerGitRemote.select(appStore.state, path).version + 1;
+        const settled = waitForWorkspaceInitializerOperation(compactRemoteProbeOperation$, version);
+        appStore.dispatch(readWorkspaceInitializerGitRemoteRequested(path));
+        const response = await settled;
         // Drop stale responses: the repo changed while this probe was in flight
         if (generation !== remoteUrlProbeGeneration) {
           return;
         }
-        if (response?.success && response.data?.owner && response.data?.repo) {
-          detectedGitHubOwner = response.data.owner;
-          detectedGitHubRepo = response.data.repo;
+        if (response?.owner && response.repo) {
+          detectedGitHubOwner = response.owner;
+          detectedGitHubRepo = response.repo;
           logger.debug('Detected GitHub from local repo', {
             path,
-            owner: response.data.owner,
-            repo: response.data.repo,
+            owner: response.owner,
+            repo: response.repo,
           });
         }
       } catch (err) {
@@ -1748,10 +1690,20 @@
           // seam — replaces the dead legacy `git:pullBranch` IPC. The seam
           // folds the daemon's structured `{ ok: false, error }` failure into
           // `{ success: false, error }` and never throws.
-          const pullResult =
-            typeof window !== 'undefined' && window.electronAPI
-              ? await appClient.git.pull(repoPath, branch)
-              : undefined;
+          let pullResult;
+          if (typeof window !== 'undefined' && window.electronAPI) {
+            const pullVersion =
+              selectWorkspaceInitializerRepositoryPull.select(appStore.state, 'compact').version +
+              1;
+            const pullSettled = waitForWorkspaceInitializerOperation(
+              compactRepositoryPullOperation$,
+              pullVersion,
+            );
+            appStore.dispatch(
+              pullWorkspaceInitializerRepositoryRequested('compact', repoPath, branch),
+            );
+            pullResult = await pullSettled;
+          }
           if (!pullResult?.success) {
             pullError = pullResult?.error || m.workspace_compactInitializer_pullFailed_error();
             showPullConflictDialog = true;
@@ -2104,7 +2056,15 @@
 
       const requestContextLinks = buildContextLinks(contextMentions);
 
-      const result = await workspaceClient.create({
+      compactCreateProgressIdStore.set(createProgressId);
+      const createVersion =
+        selectWorkspaceInitializerCreateRequest.select(appStore.state, createProgressId).version +
+        1;
+      const createSettled = waitForWorkspaceInitializerOperation(
+        compactCreateOperation$,
+        createVersion,
+      );
+      const createRequest = createWorkspaceFromInitializerRequested({
         title: prefillTitle || '', // Use deep-link title if provided, otherwise agent will set it
         repositoryPath: isGithubPick
           ? undefined
@@ -2124,6 +2084,8 @@
         initialAgent,
         progressId: createProgressId, // Echoed on git:clone:progress/done frames (PROTOCOL §5.1)
       });
+      appStore.dispatch(createRequest);
+      const result = await createSettled;
 
       if (!result.ok) throw new Error(result.error || 'Failed to create workspace');
 
@@ -2137,16 +2099,22 @@
       // omitting this mutation preserves the daemon's normal resolution chain.
       if (selectedReasoningEffort && initialAgentId) {
         try {
-          const effortResult = await appClient.agents.setReasoningEffort({
-            agentId: initialAgentId,
-            workspaceId: workspace.id,
-            reasoningEffort: selectedReasoningEffort,
-          });
-          if (!effortResult.success) {
-            logger.warn('Failed to set reasoning effort on initial agent', {
-              error: effortResult.error,
-            });
-          }
+          compactReasoningAgentIdStore.set(initialAgentId);
+          const effortVersion =
+            selectWorkspaceInitializerReasoningEffortUpdate.select(appStore.state, initialAgentId)
+              .version + 1;
+          const effortSettled = waitForWorkspaceInitializerOperation(
+            compactReasoningOperation$,
+            effortVersion,
+          );
+          appStore.dispatch(
+            setInitialAgentReasoningEffortRequested(
+              initialAgentId,
+              workspace.id,
+              selectedReasoningEffort,
+            ),
+          );
+          await effortSettled;
         } catch (effortError) {
           logger.warn('Failed to set reasoning effort on initial agent', { error: effortError });
         }
@@ -2221,14 +2189,13 @@
       if (isGithubPick) {
         const ghInfo = parseGitHubUrl(githubUrl);
         if (ghInfo) {
-          void invoke(WORKSPACE_CHANNELS.ADD_RECENT_REPOSITORY, {
+          const request = addWorkspaceInitializerRecentRepositoryRequested({
             repository: `${ghInfo.owner}/${ghInfo.repo}`,
             name: ghInfo.repo,
             owner: ghInfo.owner,
             githubUrl: `https://github.com/${ghInfo.owner}/${ghInfo.repo}`,
-          }).catch((err) => {
-            logger.warn('Failed to register picked repo as recent', { error: err });
           });
+          appStore.dispatch(request);
         }
       }
 
@@ -2237,13 +2204,10 @@
       // (`workspace.update`, PROTOCOL §5.1) via workspaceClient — the legacy
       // `workspace:update` IPC channel is unbridged in this build.
       if (selectedPRNumber && workspace.id) {
-        void workspaceClient
-          .update({ id: workspace.id, prNumber: selectedPRNumber })
-          .then((updateResult) => {
-            if (!updateResult.ok) {
-              logger.warn('Failed to store PR number on workspace', { error: updateResult.error });
-            }
-          });
+        const updateRequest = updateWorkspaceRequested(workspace.id, {
+          prNumber: selectedPRNumber,
+        });
+        appStore.dispatch(updateRequest);
       }
 
       // Record the script as this repo's last-used default (localStorage).
@@ -2328,7 +2292,7 @@
     richTextarea?.clear(); // Clear the TipTap editor content
     // Immediately clear the persisted daemon draft (drafts.clear under the
     // sentinel keys, PROTOCOL §5.16) and the legacy sessionStorage key
-    clearNewWorkspaceDraft(appClient.drafts);
+    appStore.dispatch(clearNewWorkspaceDraftRequested());
     // Note: NOT resetting selectedSpecialist, selectedModel, modelWasOverridden, isTeamMode
     // These are preserved so the user's last agent selection persists across workspace creations
     setupScript = '';
@@ -2852,14 +2816,21 @@
       // Fetch asynchronously without blocking the change handler
       (async () => {
         try {
-          const response = await invoke<any>('git-tracking:get-pull-request', {
-            owner,
-            repo,
-            number,
-          });
-          if (response?.success && response.data?.sourceBranch) {
-            selectedPRBranch = response.data.sourceBranch;
-            selectedPRTargetBranch = response.data.targetBranch ?? '';
+          compactPrOwnerStore.set(owner);
+          compactPrRepoStore.set(repo);
+          compactPrNumberStore.set(number);
+          const version =
+            selectWorkspaceInitializerPullRequest.select(appStore.state, owner, repo, number)
+              .version + 1;
+          const settled = waitForWorkspaceInitializerOperation(
+            compactPullRequestOperation$,
+            version,
+          );
+          appStore.dispatch(readWorkspaceInitializerPullRequestRequested(owner, repo, number));
+          const response = await settled;
+          if (response?.sourceBranch) {
+            selectedPRBranch = response.sourceBranch;
+            selectedPRTargetBranch = response.targetBranch ?? '';
             selectedPRNumber = number;
           }
         } catch (err) {
@@ -2881,7 +2852,14 @@
 
     try {
       // Daemon-side enhancement (agent.enhancePrompt, PROTOCOL §5.31)
-      const result = await enhancePrompt(initialPrompt);
+      const version =
+        selectWorkspaceInitializerPromptEnhancement.select(appStore.state, 'compact').version + 1;
+      const settled = waitForWorkspaceInitializerOperation(
+        compactPromptEnhancementOperation$,
+        version,
+      );
+      appStore.dispatch(enhanceWorkspaceInitializerPromptRequested('compact', initialPrompt));
+      const result = await settled;
 
       if (currentRequestId === cancelledRequestId) return;
 
@@ -2892,13 +2870,11 @@
       if (currentRequestId === cancelledRequestId) return;
       logger.error('Failed to enhance prompt:', error);
       notify.error(
-        error instanceof EnhancePromptUnavailableError
-          ? m.workspace_compactInitializer_enhanceUnavailable_error()
-          : error instanceof Error && error.message
-            ? m.workspace_compactInitializer_enhanceFailedWithMessage_error({
-                message: error.message,
-              })
-            : m.workspace_compactInitializer_enhanceFailed_error(),
+        error instanceof Error && error.message
+          ? m.workspace_compactInitializer_enhanceFailedWithMessage_error({
+              message: error.message,
+            })
+          : m.workspace_compactInitializer_enhanceFailed_error(),
       );
     } finally {
       if (currentRequestId !== cancelledRequestId) {
@@ -3001,7 +2977,7 @@
       <div
         class="absolute inset-0 z-10 flex items-center justify-center rounded-lg bg-primary/5 pointer-events-none"
       >
-        <div class="flex flex-col items-center gap-2 text-primary-ink">
+        <div class="flex flex-col items-center gap-2 text-primary">
           <Fa icon={faPaperclip} class="w-6 h-6" />
           <span class="text-sm font-medium">{m.workspace_compactInitializer_dropFiles_label()}</span
           >
@@ -3206,13 +3182,14 @@
                 {m.workspace_compactInitializer_gitRequired_description()}
               </p>
               <Button
-                variant="ghost"
-                class="mt-2 text-primary-ink hover:text-primary-ink/80 underline cursor-pointer"
+                variant="plain"
+                class="mt-2 text-primary hover:text-primary/80 underline cursor-pointer"
                 onclick={() => {
                   if (typeof window !== 'undefined' && window.electronAPI) {
-                    invoke('shell:openExternal', {
-                      url: 'https://git-scm.com/downloads',
-                    });
+                    const request = openWorkspaceInitializerExternalUrlRequested(
+                      'https://git-scm.com/downloads',
+                    );
+                    appStore.dispatch(request);
                   }
                 }}
               >
@@ -3228,9 +3205,9 @@
           transition:slide={{ axis: 'y', tier: 'moderate' }}
         >
           <div class="flex items-start gap-3">
-            <Fa icon={faExclamationTriangle} class="text-warning-ink mt-0.5 shrink-0" />
+            <Fa icon={faExclamationTriangle} class="text-warning-foreground mt-0.5 shrink-0" />
             <div>
-              <p class="font-medium text-warning-ink">
+              <p class="font-medium text-warning-foreground">
                 {m.workspace_compactInitializer_gitCheckUnknown_label()}
               </p>
               <p class="text-subtle mt-1">
@@ -3358,7 +3335,7 @@
         <div class="mt-2" transition:slide={{ axis: 'y', tier: 'moderate' }}>
           <Button
             variant="plain"
-            class="flex items-center gap-2 mt-2 mb-1 px-1 text-sm text-primary-ink hover:text-primary-ink/80 cursor-pointer"
+            class="flex items-center gap-2 mt-2 mb-1 px-1 text-sm text-primary hover:text-primary/80 cursor-pointer"
             onclick={() => {
               branch = selectedPRBranch;
               // Dispatch branch change event to update the UI
@@ -3400,7 +3377,7 @@
           <div class="flex items-center justify-between flex-wrap gap-2 w-full">
             <!-- Left: setup script button -->
             <Button
-              variant="ghost"
+              variant="plain"
               type="button"
               wrapContent={false}
               class="group flex h-auto min-h-9 w-full min-w-0 cursor-pointer flex-wrap items-center justify-start gap-1.5 rounded-md px-2.5 py-2 text-left text-sm whitespace-normal text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"

@@ -2,6 +2,7 @@
  * Tests for usePanelActions composable
  */
 
+import { fireEvent, render, waitFor } from '@testing-library/svelte';
 import { beforeEach, describe, it, expect, vi } from 'vitest';
 
 const { dispatchMock } = vi.hoisted(() => ({
@@ -11,19 +12,29 @@ const { dispatchMock } = vi.hoisted(() => ({
 vi.mock('$store/renderer/store', async () => {
   const { createAppStoreMockModule } =
     await import('$store/renderer/utils/test-helpers/store-mock');
+  const { workspaceAgentsReducer } =
+    await import('$store/renderer/slices/workspace-agents/workspace-agents-slice');
 
   return createAppStoreMockModule({
     state: () => ({}),
     dispatch: dispatchMock,
+    reducers: { workspaceAgents: workspaceAgentsReducer },
   });
 });
 
-import { usePanelActions } from '../use-panel-actions.svelte';
+import UsePanelActionsHarness from './UsePanelActionsHarness.svelte';
+import { store as appStore } from '$store/renderer/store';
+import {
+  agentCreationRequestFailed,
+  agentCreationRequestSucceeded,
+  createAgentFromConfigRequested,
+} from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
 
 describe('usePanelActions', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     dispatchMock.mockReset();
+    (appStore as typeof appStore & { resetReducers: () => void }).resetReducers();
   });
 
   describe('openAgent', () => {
@@ -177,45 +188,22 @@ describe('usePanelActions', () => {
   });
 
   describe('handleCreateAgentWithPrompt', () => {
-    function createActions(overrides: Record<string, unknown> = {}) {
+    function renderActions() {
       const openDrawer = vi.fn();
       const markAgentRecentlyCreated = vi.fn();
       const onDraftPromptSet = vi.fn();
-      const actions = usePanelActions({
-        workspace: () => ({ id: 'ws-1', title: 'Workspace' }) as any,
-        workspaceState: () =>
-          ({
-            openFile: vi.fn(),
-            openNote: vi.fn(),
-            openDrawer,
-            closeDrawer: vi.fn(),
-            state: { workspace: { id: 'ws-1' } },
-          }) as any,
-        state: () => ({ drawer: { open: false } }) as any,
+      const view = render(UsePanelActionsHarness, {
+        openDrawer,
         markAgentRecentlyCreated,
         onDraftPromptSet,
-        ...overrides,
       });
-
-      return { actions, openDrawer, markAgentRecentlyCreated, onDraftPromptSet };
+      return { view, openDrawer, markAgentRecentlyCreated, onDraftPromptSet };
     }
 
     it('waits for the saga launch result before draft prompt follow-up', async () => {
-      let resolveLaunch: ((session: any) => void) | undefined;
-      dispatchMock.mockImplementation((action) => {
-        if (action.type === 'agentSessions/launchAgentRequested') {
-          resolveLaunch = action.success;
-        }
-      });
-      const createdSession = {
-        id: 'agent-created-by-saga',
-        name: 'Prompt Agent',
-        workspaceId: 'ws-1',
-      };
-      const { actions, openDrawer, markAgentRecentlyCreated, onDraftPromptSet } = createActions();
+      const { view, openDrawer, markAgentRecentlyCreated, onDraftPromptSet } = renderActions();
 
-      const promise = actions.handleCreateAgentWithPrompt('Draft prompt', 'Prompt Agent');
-      await Promise.resolve();
+      await fireEvent.click(view.getByRole('button'));
 
       expect(dispatchMock).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -230,36 +218,53 @@ describe('usePanelActions', () => {
               agentType: 'chat',
               source: 'progress-card-action',
             }),
+            expect.objectContaining({ requestId: expect.any(String) }),
           ],
         }),
       );
-      expect(dispatchMock.mock.calls[0][0].payload[1]).not.toHaveProperty('id');
-      expect(dispatchMock.mock.calls[0][0].payload[1]).not.toHaveProperty('model');
+      const launchAction = dispatchMock.mock.calls.find(
+        ([action]) => action.type === 'agentSessions/launchAgentRequested',
+      )?.[0];
+      const requestId = launchAction.payload[2].requestId as string;
+      expect(launchAction.payload[1]).not.toHaveProperty('id');
+      expect(launchAction.payload[1]).not.toHaveProperty('model');
       expect(markAgentRecentlyCreated).not.toHaveBeenCalled();
       expect(onDraftPromptSet).not.toHaveBeenCalled();
       expect(openDrawer).not.toHaveBeenCalled();
 
-      resolveLaunch?.(createdSession);
-      await promise;
+      appStore.dispatch(createAgentFromConfigRequested('ws-1', {} as never, { requestId }));
+      appStore.dispatch(agentCreationRequestSucceeded('ws-1', requestId, 'agent-created-by-saga'));
 
+      await waitFor(() =>
+        expect(openDrawer).toHaveBeenCalledWith('agent', 'agent-created-by-saga'),
+      );
       expect(markAgentRecentlyCreated).toHaveBeenCalledWith('agent-created-by-saga');
       expect(onDraftPromptSet).toHaveBeenCalledWith('Draft prompt');
-      expect(openDrawer).toHaveBeenCalledWith('agent', 'agent-created-by-saga');
     });
 
     it('does not run draft prompt follow-up when saga launch fails', async () => {
-      dispatchMock.mockImplementation((action) => {
-        if (action.type === 'agentSessions/launchAgentRequested') {
-          action.failure('creation failed');
-        }
-      });
-      const { actions, openDrawer, markAgentRecentlyCreated, onDraftPromptSet } = createActions();
+      const { view, openDrawer, markAgentRecentlyCreated, onDraftPromptSet } = renderActions();
 
-      await actions.handleCreateAgentWithPrompt('Draft prompt', 'Prompt Agent');
+      await fireEvent.click(view.getByRole('button'));
+      const launchAction = dispatchMock.mock.calls.find(
+        ([action]) => action.type === 'agentSessions/launchAgentRequested',
+      )?.[0];
+      const requestId = launchAction.payload[2].requestId as string;
 
-      expect(markAgentRecentlyCreated).not.toHaveBeenCalled();
+      appStore.dispatch(createAgentFromConfigRequested('ws-1', {} as never, { requestId }));
+      appStore.dispatch(agentCreationRequestFailed('ws-1', requestId, 'creation failed'));
+
+      await waitFor(() =>
+        expect(dispatchMock).toHaveBeenCalledWith(
+          expect.objectContaining({
+            type: 'workspaceAgents/clearAgentCreationRequest',
+            payload: ['ws-1', requestId],
+          }),
+        ),
+      );
       expect(onDraftPromptSet).not.toHaveBeenCalled();
       expect(openDrawer).not.toHaveBeenCalled();
+      expect(markAgentRecentlyCreated).not.toHaveBeenCalled();
     });
   });
 });

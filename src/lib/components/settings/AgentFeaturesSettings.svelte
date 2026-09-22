@@ -1,5 +1,4 @@
 <script lang="ts">
-  /* eslint-disable intent/no-component-async-data-fetch */
   /**
    * Agent Features Settings Component
    *
@@ -22,16 +21,18 @@
    * disabled while the feature is off).
    */
   import { onMount } from 'svelte';
-  import {
-    SettingsForm,
-    defineSettings,
-    defineSettingsCustomControls,
-    type SettingEntry,
-  } from '$lib/components/patterns/settings';
-  import { Button, Input } from '$lib/components/patterns/settings/custom-controls';
+  import { Button, Input, Switch } from '$lib/components/patterns/settings/custom-controls';
   import { notify } from '$lib/components/patterns/notify';
-  import { appClient } from '$lib/client';
   import { m } from '$shared/paraglide/messages.js';
+  import { store as appStore } from '$store/renderer/store';
+  import {
+    listSettingsRequested,
+    updateSettingsRequested,
+  } from '$store/renderer/slices/settings-events/settings-events-slice';
+  import {
+    selectSettingsListOperation,
+    selectSettingsUpdateOperations,
+  } from '$store/renderer/slices/settings-events/settings-events-selectors';
 
   import {
     FEATURE_DEFAULTS,
@@ -51,6 +52,11 @@
   // Daemon-side registered bound for agents.maxTopLevelAgents (min 1, no max).
   const MIN_MAX_TOP_LEVEL_AGENTS = 1;
   const DEFAULT_MAX_TOP_LEVEL_AGENTS = 20;
+  const LIST_KEY = 'agent-features:list';
+  const updateKey = (path: string) => `agent-features:update:${path}`;
+
+  const listOperation$ = selectSettingsListOperation(LIST_KEY);
+  const updateOperations$ = selectSettingsUpdateOperations();
 
   // An absent settings.list entry coerces to the feature's daemon default.
   function coerceValue(path: FeaturePath, value: unknown): boolean {
@@ -74,14 +80,24 @@
   let editedMaxAgents = $state<string>(String(DEFAULT_MAX_TOP_LEVEL_AGENTS));
   let maxAgentsSaving = $state(false);
 
-  onMount(async () => {
-    await loadSettings();
+  let seenListVersion = selectSettingsListOperation.select(appStore.state, LIST_KEY).version;
+  const seenUpdateVersions: Record<string, number> = Object.fromEntries(
+    Object.entries(selectSettingsUpdateOperations.select(appStore.state)).map(
+      ([key, operation]) => [key, operation.version],
+    ),
+  );
+
+  onMount(() => {
+    appStore.dispatch(listSettingsRequested(LIST_KEY));
   });
 
-  async function loadSettings() {
-    try {
-      loading = true;
-      const settings = await appClient.settings.list();
+  $effect(() => {
+    const operation = $listOperation$;
+    loading = operation.status === 'idle' || operation.status === 'loading';
+    if (operation.version <= seenListVersion || operation.status === 'loading') return;
+    seenListVersion = operation.version;
+    if (operation.status === 'success' && operation.data) {
+      const settings = operation.data;
       for (const path of FEATURE_PATHS) {
         const entry = settings.find((s: { path: string; value: unknown }) => s.path === path);
         values[path] = coerceValue(path, entry?.value);
@@ -101,42 +117,73 @@
         persistedMaxAgents = maxAgents.value;
         editedMaxAgents = String(maxAgents.value);
       }
-    } catch (error) {
+    } else if (operation.status === 'error') {
       notify.error(
         m.settings_agentFeatures_loadError({
-          error: error instanceof Error ? error.message : String(error),
+          error: operation.error ?? '',
         }),
       );
-    } finally {
-      loading = false;
     }
-  }
+  });
 
-  async function handleToggle(path: FeaturePath, checked: boolean) {
-    values[path] = checked;
-    try {
-      const result = await appClient.settings.update([{ path, value: checked }]);
-
-      // Check if the daemon rolled back the setting on failure
-      const applied = result.find((r: { path: string; value: unknown }) => r.path === path);
-      if (applied && applied.value !== checked) {
-        notify.error(m.settings_agentFeatures_rollbackError());
-        values[path] = coerceValue(path, applied.value);
-        return;
+  $effect(() => {
+    const operations = $updateOperations$;
+    for (const path of [...FEATURE_PATHS, DEBOUNCE_PATH, MAX_AGENTS_PATH]) {
+      const key = updateKey(path);
+      const operation = operations[key];
+      if (!operation || operation.status === 'loading') continue;
+      if (operation.version <= (seenUpdateVersions[key] ?? 0)) continue;
+      seenUpdateVersions[key] = operation.version;
+      if (FEATURE_PATHS.includes(path as FeaturePath)) {
+        const featurePath = path as FeaturePath;
+        if (operation.status === 'success' && operation.data) {
+          const applied = operation.data.find((entry) => entry.path === path);
+          if (applied && applied.value !== values[featurePath]) {
+            notify.error(m.settings_agentFeatures_rollbackError());
+            values[featurePath] = coerceValue(featurePath, applied.value);
+          }
+        } else if (operation.status === 'error') {
+          notify.error(m.settings_agentFeatures_saveError({ error: operation.error ?? '' }));
+          values[featurePath] = !values[featurePath];
+        }
+      } else if (path === DEBOUNCE_PATH) {
+        debounceSaving = false;
+        if (operation.status === 'success' && operation.data) {
+          const applied = operation.data.find((entry) => entry.path === path);
+          if (applied && applied.value !== Number(editedDebounce)) {
+            const rollback = typeof applied.value === 'number' ? applied.value : persistedDebounce;
+            notify.error(m.settings_agentFeatures_rollbackError());
+            persistedDebounce = rollback;
+            editedDebounce = String(rollback);
+          } else persistedDebounce = Number(editedDebounce);
+        } else if (operation.status === 'error') {
+          notify.error(m.settings_agentFeatures_saveError({ error: operation.error ?? '' }));
+          editedDebounce = String(persistedDebounce);
+        }
+      } else {
+        maxAgentsSaving = false;
+        if (operation.status === 'success' && operation.data) {
+          const applied = operation.data.find((entry) => entry.path === path);
+          if (applied && applied.value !== Number(editedMaxAgents)) {
+            const rollback = typeof applied.value === 'number' ? applied.value : persistedMaxAgents;
+            notify.error(m.settings_agentFeatures_rollbackError());
+            persistedMaxAgents = rollback;
+            editedMaxAgents = String(rollback);
+          } else persistedMaxAgents = Number(editedMaxAgents);
+        } else if (operation.status === 'error') {
+          notify.error(m.settings_agentFeatures_saveError({ error: operation.error ?? '' }));
+          editedMaxAgents = String(persistedMaxAgents);
+        }
       }
-
-      values[path] = checked;
-    } catch (error) {
-      notify.error(
-        m.settings_agentFeatures_saveError({
-          error: error instanceof Error ? error.message : String(error),
-        }),
-      );
-      values[path] = !checked;
     }
+  });
+
+  function handleToggle(path: FeaturePath, checked: boolean) {
+    values[path] = checked;
+    appStore.dispatch(updateSettingsRequested([{ path, value: checked }], updateKey(path)));
   }
 
-  async function handleDebounceSave() {
+  function handleDebounceSave() {
     const newValue = Number(editedDebounce);
     if (
       !Number.isInteger(newValue) ||
@@ -146,201 +193,145 @@
       return; // invalid input, do nothing
     }
 
-    try {
-      debounceSaving = true;
-      const result = await appClient.settings.update([{ path: DEBOUNCE_PATH, value: newValue }]);
-
-      // Check if the daemon rolled back the setting on failure
-      const applied = result.find(
-        (r: { path: string; value: unknown }) => r.path === DEBOUNCE_PATH,
-      );
-      if (applied && applied.value !== newValue) {
-        const rolledBackValue =
-          typeof applied.value === 'number' ? applied.value : persistedDebounce;
-        notify.error(m.settings_agentFeatures_rollbackError());
-        persistedDebounce = rolledBackValue;
-        editedDebounce = String(rolledBackValue);
-        return;
-      }
-
-      persistedDebounce = newValue;
-    } catch (error) {
-      notify.error(
-        m.settings_agentFeatures_saveError({
-          error: error instanceof Error ? error.message : String(error),
-        }),
-      );
-      editedDebounce = String(persistedDebounce);
-    } finally {
-      debounceSaving = false;
-    }
-  }
-
-  function isValidDebounce(value: string): boolean {
-    const debounce = Number(value);
-    return (
-      Number.isInteger(debounce) &&
-      debounce >= MIN_DEBOUNCE_SECONDS &&
-      debounce <= MAX_DEBOUNCE_SECONDS
+    debounceSaving = true;
+    appStore.dispatch(
+      updateSettingsRequested([{ path: DEBOUNCE_PATH, value: newValue }], updateKey(DEBOUNCE_PATH)),
     );
   }
 
-  async function handleMaxAgentsSave() {
+  function handleMaxAgentsSave() {
     const newValue = Number(editedMaxAgents);
     if (!Number.isInteger(newValue) || newValue < MIN_MAX_TOP_LEVEL_AGENTS) {
       return; // invalid input, do nothing
     }
 
-    try {
-      maxAgentsSaving = true;
-      const result = await appClient.settings.update([{ path: MAX_AGENTS_PATH, value: newValue }]);
-
-      // Check if the daemon rolled back the setting on failure
-      const applied = result.find(
-        (r: { path: string; value: unknown }) => r.path === MAX_AGENTS_PATH,
-      );
-      if (applied && applied.value !== newValue) {
-        const rolledBackValue =
-          typeof applied.value === 'number' ? applied.value : persistedMaxAgents;
-        notify.error(m.settings_agentFeatures_rollbackError());
-        persistedMaxAgents = rolledBackValue;
-        editedMaxAgents = String(rolledBackValue);
-        return;
-      }
-
-      persistedMaxAgents = newValue;
-    } catch (error) {
-      notify.error(
-        m.settings_agentFeatures_saveError({
-          error: error instanceof Error ? error.message : String(error),
-        }),
-      );
-      editedMaxAgents = String(persistedMaxAgents);
-    } finally {
-      maxAgentsSaving = false;
-    }
+    maxAgentsSaving = true;
+    appStore.dispatch(
+      updateSettingsRequested(
+        [{ path: MAX_AGENTS_PATH, value: newValue }],
+        updateKey(MAX_AGENTS_PATH),
+      ),
+    );
   }
-
-  const schema = $derived.by(() => {
-    const entries: SettingEntry[] = [];
-    for (const feature of FEATURES) {
-      const currentValue = values[feature.path];
-      entries.push({
-        kind: 'switch',
-        id: feature.path,
-        label: feature.label(),
-        description: feature.description(),
-        featureCode: feature.path,
-        disabled: loading,
-        // i18n-ignore (daemon-provided wire text, PROTOCOL §5.12 tokenImpact)
-        status: tokenImpacts[feature.path],
-        statusTone: 'subtle',
-        get: () => currentValue,
-        set: (checked: boolean) => handleToggle(feature.path, checked),
-      });
-      if (feature.path === 'agentFeatures.prMonitor') {
-        entries.push({
-          kind: 'custom',
-          id: 'pr-monitor-debounce',
-          label: m.settings_agentFeatures_prMonitorDebounce_label(),
-          disabled: loading || debounceSaving || !values['agentFeatures.prMonitor'],
-          busy: debounceSaving,
-        });
-      }
-      if (feature.path === 'agentFeatures.peerAgents') {
-        entries.push({
-          kind: 'custom',
-          id: 'max-top-level-agents',
-          label: m.settings_agentFeatures_maxTopLevelAgents_label(),
-          disabled: loading || maxAgentsSaving || !values['agentFeatures.peerAgents'],
-          busy: maxAgentsSaving,
-        });
-      }
-    }
-    return defineSettings({
-      sections: [
-        {
-          id: 'agent-features',
-          title: m.settings_section_agentFeatures(),
-          description: m.settings_agentFeatures_newSessionsNote(),
-          entries,
-        },
-      ],
-    });
-  });
 </script>
 
-{#snippet debounceControl()}
-  {@const valid = isValidDebounce(editedDebounce)}
-  <div class="flex flex-col items-end gap-1">
-    <div class="flex items-center gap-2">
-      <Input
-        type="number"
-        min={MIN_DEBOUNCE_SECONDS}
-        max={MAX_DEBOUNCE_SECONDS}
-        bind:value={editedDebounce}
-        disabled={loading || debounceSaving || !values['agentFeatures.prMonitor']}
-        aria-label={m.settings_agentFeatures_prMonitorDebounce_ariaLabel()}
-        class="w-24"
-      />
-      {#if Number(editedDebounce) !== persistedDebounce}
-        <Button
-          variant="secondary"
-          size="xs"
-          onclick={handleDebounceSave}
-          disabled={debounceSaving || !valid || !values['agentFeatures.prMonitor']}
-        >
-          {debounceSaving
-            ? m.settings_agentFeatures_prMonitorDebounce_saving()
-            : m.settings_agentFeatures_prMonitorDebounce_save()}
-        </Button>
-      {/if}
-    </div>
-    {#if !valid}<p class="type-caption text-warning-ink">
-        {m.settings_agentFeatures_prMonitorDebounce_invalid()}
-      </p>{/if}
-  </div>
-{/snippet}
+<div class="flex flex-col bg-card rounded-xl divide-y divide-border">
+  <!-- New-sessions-only note -->
+  <section class="px-6 py-4">
+    <p class="type-caption text-warning-ink">
+      {m.settings_agentFeatures_newSessionsNote()}
+    </p>
+  </section>
 
-{#snippet maxAgentsControl()}
-  <!-- i18n-ignore (template expression, not user-facing text) -->
-  {@const maxAgentsNum = Number(editedMaxAgents)}
-  <!-- i18n-ignore (template expression, not user-facing text) -->
-  {@const valid = Number.isInteger(maxAgentsNum) && maxAgentsNum >= MIN_MAX_TOP_LEVEL_AGENTS}
-  <div class="flex flex-col items-end gap-1">
-    <div class="flex items-center gap-2">
-      <Input
-        type="number"
-        min={MIN_MAX_TOP_LEVEL_AGENTS}
-        bind:value={editedMaxAgents}
-        disabled={loading || maxAgentsSaving || !values['agentFeatures.peerAgents']}
-        aria-label={m.settings_agentFeatures_maxTopLevelAgents_ariaLabel()}
-        class="w-24"
-      />
-      {#if Number(editedMaxAgents) !== persistedMaxAgents}
-        <Button
-          variant="secondary"
+  {#each FEATURES as feature (feature.path)}
+    <section class="px-6 py-5">
+      <div class="flex items-center justify-between">
+        <div>
+          <p class="type-body font-medium text-foreground">{feature.label()}</p>
+          <p class="type-caption text-subtle mt-1">{feature.description()}</p>
+          {#if tokenImpacts[feature.path]}
+            <!-- i18n-ignore (daemon-provided wire text, PROTOCOL §5.12 tokenImpact) -->
+            <p class="type-caption text-ghost mt-1">{tokenImpacts[feature.path]}</p>
+          {/if}
+        </div>
+        <Switch
+          checked={values[feature.path]}
+          onCheckedChange={(checked) => handleToggle(feature.path, checked)}
           size="xs"
-          onclick={handleMaxAgentsSave}
-          disabled={maxAgentsSaving || !valid || !values['agentFeatures.peerAgents']}
-        >
-          {maxAgentsSaving
-            ? m.settings_agentFeatures_maxTopLevelAgents_saving()
-            : m.settings_agentFeatures_maxTopLevelAgents_save()}
-        </Button>
+          class="mb-auto"
+          disabled={loading}
+          ariaLabel={feature.label()}
+        />
+      </div>
+      {#if feature.path === 'agentFeatures.prMonitor'}
+        <!-- i18n-ignore (template expression, not user-facing text) -->
+        {@const debounceNum = Number(editedDebounce)}
+        <!-- i18n-ignore (template expression, not user-facing text) -->
+        {@const isDebounceValid =
+          Number.isInteger(debounceNum) &&
+          debounceNum >= MIN_DEBOUNCE_SECONDS &&
+          debounceNum <= MAX_DEBOUNCE_SECONDS}
+        <div class="mt-3 flex items-center justify-between gap-3">
+          <span class="type-body text-muted-foreground"
+            >{m.settings_agentFeatures_prMonitorDebounce_label()}</span
+          >
+          <div class="flex items-center gap-2">
+            <div class="shrink-0 w-24">
+              <Input
+                type="number"
+                min={MIN_DEBOUNCE_SECONDS}
+                max={MAX_DEBOUNCE_SECONDS}
+                bind:value={editedDebounce}
+                disabled={loading || debounceSaving || !values['agentFeatures.prMonitor']}
+                aria-label={m.settings_agentFeatures_prMonitorDebounce_ariaLabel()}
+                class="h-9 type-body"
+              />
+            </div>
+            {#if Number(editedDebounce) !== persistedDebounce}
+              <Button
+                variant="secondary"
+                size="compact"
+                type="button"
+                onclick={handleDebounceSave}
+                disabled={debounceSaving || !isDebounceValid || !values['agentFeatures.prMonitor']}
+                class="type-caption"
+              >
+                {debounceSaving
+                  ? m.settings_agentFeatures_prMonitorDebounce_saving()
+                  : m.settings_agentFeatures_prMonitorDebounce_save()}
+              </Button>
+            {/if}
+          </div>
+        </div>
+        {#if !isDebounceValid}
+          <p class="type-caption text-warning-ink mt-1">
+            {m.settings_agentFeatures_prMonitorDebounce_invalid()}
+          </p>
+        {/if}
       {/if}
-    </div>
-    {#if !valid}<p class="type-caption text-warning-ink">
-        {m.settings_agentFeatures_maxTopLevelAgents_invalid()}
-      </p>{/if}
-  </div>
-{/snippet}
-
-<SettingsForm
-  {schema}
-  compact={false}
-  custom={defineSettingsCustomControls({
-    'pr-monitor-debounce': debounceControl,
-    'max-top-level-agents': maxAgentsControl,
-  })}
-/>
+      {#if feature.path === 'agentFeatures.peerAgents'}
+        <!-- i18n-ignore (template expression, not user-facing text) -->
+        {@const maxAgentsNum = Number(editedMaxAgents)}
+        <!-- i18n-ignore (template expression, not user-facing text) -->
+        {@const isMaxAgentsValid =
+          Number.isInteger(maxAgentsNum) && maxAgentsNum >= MIN_MAX_TOP_LEVEL_AGENTS}
+        <div class="mt-3 flex items-center justify-between gap-3">
+          <span class="type-body text-muted-foreground"
+            >{m.settings_agentFeatures_maxTopLevelAgents_label()}</span
+          >
+          <div class="flex items-center gap-2">
+            <div class="shrink-0 w-24">
+              <Input
+                type="number"
+                min={MIN_MAX_TOP_LEVEL_AGENTS}
+                bind:value={editedMaxAgents}
+                disabled={loading || maxAgentsSaving || !values['agentFeatures.peerAgents']}
+                aria-label={m.settings_agentFeatures_maxTopLevelAgents_ariaLabel()}
+                class="h-9 type-body"
+              />
+            </div>
+            {#if Number(editedMaxAgents) !== persistedMaxAgents}
+              <Button
+                variant="secondary"
+                size="xs"
+                onclick={handleMaxAgentsSave}
+                disabled={maxAgentsSaving ||
+                  !isMaxAgentsValid ||
+                  !values['agentFeatures.peerAgents']}
+              >
+                {maxAgentsSaving
+                  ? m.settings_agentFeatures_maxTopLevelAgents_saving()
+                  : m.settings_agentFeatures_maxTopLevelAgents_save()}
+              </Button>
+            {/if}
+          </div>
+        </div>
+        {#if !isMaxAgentsValid}
+          <p class="type-caption text-warning-ink mt-1">
+            {m.settings_agentFeatures_maxTopLevelAgents_invalid()}
+          </p>
+        {/if}
+      {/if}
+    </section>
+  {/each}
+</div>

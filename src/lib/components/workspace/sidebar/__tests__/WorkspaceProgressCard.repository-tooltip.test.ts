@@ -67,7 +67,7 @@ vi.mock('$store/renderer/store', async () => {
     state: () => ({
       panelLayout: {
         byWorkspaceId: {
-          'ws-1': { columnCount: 1 },
+          'ws-1': { columnCount: 1, panels: {} },
         },
       },
     }),
@@ -77,6 +77,12 @@ vi.mock('$store/renderer/store', async () => {
 
 vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
   selectWorkspaceById: mocks.selector(() => mocks.workspaceEntity),
+  selectWorkspaceMutation: mocks.selector(() => ({
+    loading: false,
+    error: null,
+    version: 0,
+    requestId: null,
+  })),
   selectWorkspaceActivePullRequest: mocks.selector(() => null),
   selectWorkspaceProgressHeadline: mocks.selector(() => ({ headline: '', subtext: '' })),
   selectWorkspaceProgressActions: mocks.selector(() => mocks.progressActions),

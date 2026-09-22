@@ -129,6 +129,7 @@ vi.mock('$store/renderer/slices/git/git-selectors', () => ({
   selectSecondaryRootGitRoots: createMockSelector(() => ({
     'root-9': mockReduxState.secondaryRootGit,
   })),
+  selectCommitDetails: createMockSelector(() => null),
 }));
 
 vi.mock('$store/renderer/slices/ui-layout/ui-layout-selectors', () => ({
@@ -191,9 +192,25 @@ vi.mock('$store/renderer/slices/changes/changes-slice', () => ({
 
 vi.mock('$store/renderer/slices/git/git-slice', () => ({
   loadGitStatus: (...args: unknown[]) => ({ type: 'git/loadGitStatus', payload: args }),
+  loadCommitDetails: (...args: unknown[]) => ({ type: 'git/loadCommitDetails', payload: args }),
   loadSecondaryRootGit: (...args: unknown[]) => ({
     type: 'git/loadSecondaryRoot',
     payload: args,
+  }),
+  readGitDiffsRequested: (...args: unknown[]) => ({
+    type: 'git/readDiffs',
+    payload: args,
+    promise: Promise.resolve([]),
+  }),
+  stageGitHunkRequested: (...args: unknown[]) => ({
+    type: 'git/stageHunk',
+    payload: args,
+    promise: Promise.resolve({ success: true }),
+  }),
+  unstageGitHunkRequested: (...args: unknown[]) => ({
+    type: 'git/unstageHunk',
+    payload: args,
+    promise: Promise.resolve({ success: true }),
   }),
 }));
 
@@ -456,27 +473,21 @@ describe('tab-type absolute path joins (intent-hq/monorepo#1567)', () => {
     });
 
     it.each([
-      ['unstaged', 'stage-hunk'],
-      ['staged', 'unstage-hunk'],
+      ['unstaged', 'stage-hunk', 'git/stageHunk'],
+      ['staged', 'unstage-hunk', 'git/unstageHunk'],
     ])(
-      'dispatches one broad refresh after a successful %s hunk mutation',
-      async (stage, testId) => {
+      'dispatches the selector-backed %s hunk mutation request',
+      async (stage, testId, actionType) => {
         mockReduxState.ftChanges = [makeTrackedChange('src/x.ts', stage)];
         renderDiff('src/x.ts');
 
         await fireEvent.click(await screen.findByTestId(testId));
         await vi.waitFor(() => {
-          expect(
-            dispatchMock.mock.calls
-              .map(([action]) => action)
-              .filter(
-                (action: any) =>
-                  action.type === 'git/loadGitStatus' || action.type === 'changes/refreshRequested',
-              ),
-          ).toEqual([
-            { type: 'git/loadGitStatus', payload: ['ws-1', true] },
-            { type: 'changes/refreshRequested', payload: ['ws-1', true] },
-          ]);
+          expect(dispatchMock).toHaveBeenCalledWith({
+            type: actionType,
+            payload: ['ws-1', 'src/x.ts', '@@ patch'],
+            promise: expect.any(Promise),
+          });
         });
       },
     );

@@ -1,5 +1,4 @@
 <script lang="ts">
-  import { githubAuthClient } from '$features/github-auth/renderer/github-auth.client';
   import GitHubIcon from '$lib/components/icons/GitHubIcon.svelte';
   import { Button } from '$lib/components/ui/button';
   import { IntentMarkLoader } from '$lib/components/ui/indicators';
@@ -13,6 +12,7 @@
     initializeGitHubAuth,
     startGitHubAuth,
     cancelGitHubAuth,
+    checkGitHubAuthStatus,
     clearGitHubAuthError,
   } from '$store/renderer/slices/github-auth/github-auth-slice';
   import {
@@ -50,7 +50,6 @@
   const requiresDaemonAuth$ = selectGitHubAuthRequiresDaemonAuth();
 
   let authStartedHere = $state(false);
-  let isCheckingAuth = $state(false);
   let showSuccess = $state(false);
 
   // Initialize auth state on mount and optionally auto-start
@@ -90,30 +89,8 @@
     }, 1000);
   }
 
-  // Manually check auth status (for "Try now" button and focus handler)
-  async function checkAuthStatus() {
-    // Check authStartedHere directly, not derived values
-    if (!authStartedHere) return;
-    if ($isAuthenticated$) {
-      handleAuthSuccess();
-      return;
-    }
-
-    isCheckingAuth = true;
-    try {
-      // Check directly with the client to bypass any potential store state issues
-      const isAuth = await githubAuthClient.isAuthenticated();
-
-      if (isAuth) {
-        // Update the store state
-        appStore.dispatch(initializeGitHubAuth());
-        handleAuthSuccess();
-      }
-    } catch {
-      // Failed to refresh auth state - user can retry manually
-    } finally {
-      isCheckingAuth = false;
-    }
+  function checkAuthStatus() {
+    if (authStartedHere) appStore.dispatch(checkGitHubAuthStatus());
   }
 
   // A device flow resumed by the store after a reload (§5.27: the flow
@@ -209,20 +186,15 @@
         compact
       />
       <div class="flex items-center gap-1.5 text-xs text-subtle">
-        {#if isCheckingAuth}
-          <IntentMarkLoader size={12} />
-          <span>{m.lib_githubAuth_checking_label()}</span>
-        {:else}
-          <IntentMarkLoader size={12} />
-          <span>{m.lib_githubAuth_waitingForAuthorization_label()}</span>
-          <Button
-            type="button"
-            class="cursor-pointer underline underline-offset-2 decoration-muted-foreground/20"
-            onclick={checkAuthStatus}
-          >
-            {m.lib_githubAuth_checkNow_label()}
-          </Button>
-        {/if}
+        <IntentMarkLoader size={12} />
+        <span>{m.lib_githubAuth_waitingForAuthorization_label()}</span>
+        <Button
+          type="button"
+          class="cursor-pointer underline underline-offset-2 decoration-muted-foreground/20"
+          onclick={checkAuthStatus}
+        >
+          {m.lib_githubAuth_checkNow_label()}
+        </Button>
       </div>
     </div>
   {:else if isAuthenticating}

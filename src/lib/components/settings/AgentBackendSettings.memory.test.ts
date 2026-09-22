@@ -26,6 +26,24 @@ vi.mock('$lib/client', () => ({
   },
 }));
 
+vi.mock('$store/renderer/store', async () => {
+  const { createAppStoreMock } = await import('$store/renderer/utils/test-helpers/store-mock');
+  const { settingsOperationsReducer } =
+    await import('$store/renderer/slices/settings-events/settings-events-slice');
+  return {
+    store: createAppStoreMock({
+      reducers: { settingsOperations: settingsOperationsReducer },
+      dispatch: (action: { type: string; payload: unknown[] }) => ({
+        ...action,
+        promise:
+          action.type === 'settings/getRequested'
+            ? mocks.mockSettingsGet(action.payload[0])
+            : mocks.mockSettingsUpdate(action.payload[0]),
+      }),
+    }),
+  };
+});
+
 vi.mock('svelte-fa', async () => {
   const MockFa = (await import('../ui/__tests__/mocks/Fa.svelte')).default;
   return { default: MockFa, Fa: MockFa };

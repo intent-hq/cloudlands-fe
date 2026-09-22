@@ -20,7 +20,8 @@ import {
   KEYCHAIN_SYNC_STATUS_EVENT,
   LOCAL_CONNECTION_ID,
 } from '$shared/types/connections';
-import type { ConnectionRecord } from '$shared/types/connections';
+import type { ConnectionRecord, KeychainSyncStateResult } from '$shared/types/connections';
+import { IPC_CHANNELS } from '$shared/ipc-registry';
 import {
   addConnectionRequested,
   captureFingerprintRequested,
@@ -28,12 +29,17 @@ import {
   forgetConnectionRequested,
   initialState,
   loadKeychainSyncStateRequested,
+  loadSelfPublishedStateRequested,
   openConnectionRequested,
+  publishSelfRequested,
+  refreshSelfRequested,
   rotateConnectionSecretRequested,
+  saveConnectionRequested,
   setKeychainSyncEnabledRequested,
   testConnectionRequested,
   updateConnectionRequested,
   updateBackendRequested,
+  unpublishSelfRequested,
 } from '../connections-slice';
 import { selectIsConnecting, selectIsOpeningConnection } from '../connections-selectors';
 import type { StoreState } from '../../../types';
@@ -79,7 +85,11 @@ function start() {
     return action;
   };
   const task = runSaga({ channel, dispatch, getState: () => state }, connectionsSaga);
-  return { channel, dispatched, getState: () => state, task };
+  const put = (action: any) => {
+    state = { connections: connectionsReducer(state.connections, action) };
+    channel.put(action);
+  };
+  return { channel, put, dispatched, getState: () => state, task };
 }
 
 describe('connectionsSaga', () => {
@@ -331,7 +341,7 @@ describe('connectionsSaga', () => {
     });
 
     const open = openConnectionRequested(REMOTE.id);
-    run.channel.put(open);
+    run.put(open);
     await expect(open.promise).resolves.toEqual({ status: 'opened', id: REMOTE.id });
     expect(invoke).toHaveBeenCalledWith(CONNECTION_CHANNELS.OPEN, { id: REMOTE.id });
 
@@ -436,7 +446,7 @@ describe('connectionsSaga', () => {
     await run.task.toPromise();
   });
 
-  it('keeps a repeat same-id open in flight until its own RPC settles', async () => {
+  it('serializes repeat same-id opens and keeps the id busy through both RPCs', async () => {
     const deferred: Array<(value: { status: 'opened'; id: string }) => void> = [];
     invoke.mockImplementation(async (channel: string) => {
       if (channel === CONNECTION_CHANNELS.LIST)
@@ -454,13 +464,14 @@ describe('connectionsSaga', () => {
     const second = openConnectionRequested('remote-1');
     run.channel.put(first);
     run.channel.put(second);
-    await vi.waitFor(() => expect(deferred).toHaveLength(2));
-    expect(run.getState().connections.openingIds).toEqual(['remote-1', 'remote-1']);
+    await vi.waitFor(() => expect(deferred).toHaveLength(1));
+    expect(run.getState().connections.openingIds).toEqual(['remote-1']);
 
-    // Only the first RPC settles: the second open is still outstanding, so the
-    // id stays tracked and the global status stays busy.
+    // Settling the first RPC starts the queued second open, so the id remains
+    // tracked and the global status stays busy without concurrent same-id RPCs.
     deferred[0]({ status: 'opened', id: 'remote-1' });
     await expect(first.promise).resolves.toEqual({ status: 'opened', id: 'remote-1' });
+    await vi.waitFor(() => expect(deferred).toHaveLength(2));
     expect(run.getState().connections.openingIds).toEqual(['remote-1']);
     expect(run.getState().connections.status).toBe('connecting');
 
@@ -473,7 +484,7 @@ describe('connectionsSaga', () => {
     await run.task.toPromise();
   });
 
-  it('keeps a repeat same-id open tracked and busy when the first one fails', async () => {
+  it('starts a queued same-id open after the first one fails', async () => {
     type OpenResult = { status: 'opened'; id: string };
     const deferred: Array<{
       resolve: (value: OpenResult) => void;
@@ -496,22 +507,21 @@ describe('connectionsSaga', () => {
     const second = openConnectionRequested('remote-1');
     run.channel.put(first);
     run.channel.put(second);
-    await vi.waitFor(() => expect(deferred).toHaveLength(2));
+    await vi.waitFor(() => expect(deferred).toHaveLength(1));
     let secondSettled = false;
     second.promise.then(
       () => (secondSettled = true),
       () => (secondSettled = true),
     );
 
-    // Only the first RPC fails: its own promise rejects and the error is
-    // surfaced, but the outstanding second open keeps the id tracked and the
-    // busy selectors true.
+    // The first RPC rejects its own promise, then the queued open starts and
+    // clears the transient global error while keeping the id busy.
     deferred[0].reject(new Error('boom'));
     await expect(first.promise).rejects.toThrow('boom');
-    await settle();
+    await vi.waitFor(() => expect(deferred).toHaveLength(2));
     expect(secondSettled).toBe(false);
     expect(run.getState().connections.openingIds).toEqual(['remote-1']);
-    expect(run.getState().connections.error).toBe('boom');
+    expect(run.getState().connections.error).toBeNull();
     expect(selectIsOpeningConnection.select(storeState(), 'remote-1')).toBe(true);
     expect(selectIsConnecting.select(storeState())).toBe(true);
 
@@ -527,7 +537,7 @@ describe('connectionsSaga', () => {
     await run.task.toPromise();
   });
 
-  it('rejects every outstanding same-id open and clears the id when the root saga is cancelled', async () => {
+  it('rejects active and queued same-id opens when the root saga is cancelled', async () => {
     invoke.mockImplementation(async (channel: string) => {
       if (channel === CONNECTION_CHANNELS.LIST)
         return { connections: [LOCAL, REMOTE], activeId: LOCAL.id, windowBackendId: LOCAL.id };
@@ -541,9 +551,7 @@ describe('connectionsSaga', () => {
     const second = openConnectionRequested('remote-1');
     run.channel.put(first);
     run.channel.put(second);
-    await vi.waitFor(() =>
-      expect(run.getState().connections.openingIds).toEqual(['remote-1', 'remote-1']),
-    );
+    await vi.waitFor(() => expect(run.getState().connections.openingIds).toEqual(['remote-1']));
 
     run.task.cancel();
     await run.task.toPromise();
@@ -568,7 +576,7 @@ describe('connectionsSaga', () => {
     await settle();
     const action = openConnectionRequested(REMOTE.id);
 
-    run.channel.put(action);
+    run.put(action);
 
     await expect(action.promise).resolves.toEqual({ status: 'secret-unavailable' });
     expect(invoke).toHaveBeenCalledWith(CONNECTION_CHANNELS.OPEN, { id: REMOTE.id });
@@ -656,7 +664,7 @@ describe('connectionsSaga', () => {
     const run = start();
     await settle();
     const action = openConnectionRequested('missing');
-    run.channel.put(action);
+    run.put(action);
     await expect(action.promise).rejects.toThrow('no such connection');
     expect(run.getState().connections.status).toBe('error');
     expect(run.getState().connections.error).toBe('no such connection');
@@ -720,13 +728,126 @@ describe('connectionsSaga', () => {
     const run = start();
     await settle();
     const action = openConnectionRequested(REMOTE.id);
-    run.channel.put(action);
+    run.put(action);
     await settle();
 
     run.task.cancel();
     await run.task.toPromise();
     await expect(action.promise).rejects.toThrow('Connection open was cancelled');
     expect(run.getState().connections.error).toBe('Connection open was cancelled');
+  });
+
+  it('runs different connection IDs concurrently and settles both exact requests', async () => {
+    const releases = new Map<string, (result: { status: 'opened'; id: string }) => void>();
+    invoke.mockImplementation(async (channel: string, params?: unknown) => {
+      if (channel === CONNECTION_CHANNELS.LIST)
+        return { connections: [LOCAL], activeId: LOCAL.id, windowBackendId: LOCAL.id };
+      if (channel === CONNECTION_CHANNELS.OPEN) {
+        const id = (params as { id: string }).id;
+        return await new Promise<{ status: 'opened'; id: string }>((resolve) =>
+          releases.set(id, resolve),
+        );
+      }
+      return {};
+    });
+    const run = start();
+    await settle();
+    const first = openConnectionRequested('remote-a', 'request-a');
+    const second = openConnectionRequested('remote-b', 'request-b');
+
+    run.put(first);
+    run.put(second);
+    await vi.waitFor(() => expect(releases.size).toBe(2));
+    releases.get('remote-b')?.({ status: 'opened', id: 'remote-b' });
+    await expect(second.promise).resolves.toEqual({ status: 'opened', id: 'remote-b' });
+    releases.get('remote-a')?.({ status: 'opened', id: 'remote-a' });
+    await expect(first.promise).resolves.toEqual({ status: 'opened', id: 'remote-a' });
+    expect(run.getState().connections.openOperations).toMatchObject({
+      'remote-a': { requestId: 'request-a', status: 'success' },
+      'remote-b': { requestId: 'request-b', status: 'success' },
+    });
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('runs same-ID requests in FIFO order and ignores the older completion in keyed state', async () => {
+    const releases: Array<(result: { status: 'opened'; id: string }) => void> = [];
+    invoke.mockImplementation(async (channel: string) => {
+      if (channel === CONNECTION_CHANNELS.LIST)
+        return { connections: [LOCAL], activeId: LOCAL.id, windowBackendId: LOCAL.id };
+      if (channel === CONNECTION_CHANNELS.OPEN)
+        return await new Promise<{ status: 'opened'; id: string }>((resolve) =>
+          releases.push(resolve),
+        );
+      return {};
+    });
+    const run = start();
+    await settle();
+    const first = openConnectionRequested(REMOTE.id, 'request-1');
+    const second = openConnectionRequested(REMOTE.id, 'request-2');
+
+    run.put(first);
+    run.put(second);
+    await vi.waitFor(() => expect(releases).toHaveLength(1));
+    expect(run.getState().connections.openOperations[REMOTE.id]).toMatchObject({
+      requestId: 'request-2',
+      status: 'loading',
+    });
+    releases[0]({ status: 'opened', id: REMOTE.id });
+    await expect(first.promise).resolves.toEqual({ status: 'opened', id: REMOTE.id });
+    expect(run.getState().connections.openOperations[REMOTE.id]).toMatchObject({
+      requestId: 'request-2',
+      status: 'loading',
+    });
+    await vi.waitFor(() => expect(releases).toHaveLength(2));
+    releases[1]({ status: 'opened', id: REMOTE.id });
+    await expect(second.promise).resolves.toEqual({ status: 'opened', id: REMOTE.id });
+    expect(run.getState().connections.openOperations[REMOTE.id]).toMatchObject({
+      requestId: 'request-2',
+      status: 'success',
+    });
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('rejects active and queued same-ID requests on teardown without unhandled rejections', async () => {
+    invoke.mockImplementation(async (channel: string) => {
+      if (channel === CONNECTION_CHANNELS.LIST)
+        return { connections: [LOCAL], activeId: LOCAL.id, windowBackendId: LOCAL.id };
+      if (channel === CONNECTION_CHANNELS.OPEN) return await new Promise(() => {});
+      return {};
+    });
+    const unhandled: unknown[] = [];
+    const onUnhandled = (reason: unknown) => unhandled.push(reason);
+    process.on('unhandledRejection', onUnhandled);
+    try {
+      const run = start();
+      await settle();
+      const active = openConnectionRequested(REMOTE.id, 'request-active');
+      const queued = forgetConnectionRequested(REMOTE.id, 'request-queued');
+      const activeRejection = expect(active.promise).rejects.toThrow(
+        'Connection open was cancelled',
+      );
+      const queuedRejection = expect(queued.promise).rejects.toThrow(
+        'Connection forget was cancelled',
+      );
+      run.put(active);
+      run.put(queued);
+      await settle();
+
+      run.task.cancel();
+      await run.task.toPromise();
+      await Promise.all([activeRejection, queuedRejection]);
+      await new Promise<void>((resolve) => setImmediate(resolve));
+      expect(unhandled).toEqual([]);
+      expect(run.getState().connections.forgetOperations[REMOTE.id]).toMatchObject({
+        requestId: 'request-queued',
+        status: 'error',
+        error: 'Connection forget was cancelled',
+      });
+    } finally {
+      process.off('unhandledRejection', onUnhandled);
+    }
   });
 
   it('loads the keychain-sync state and stores it (T4)', async () => {
@@ -762,10 +883,120 @@ describe('connectionsSaga', () => {
     await settle();
 
     const action = setKeychainSyncEnabledRequested(true);
-    run.channel.put(action);
+    run.put(action);
     await expect(action.promise).resolves.toEqual(syncState);
     expect(invoke).toHaveBeenCalledWith(CONNECTION_CHANNELS.SYNC_SET_ENABLED, { enabled: true });
-    expect(run.getState().connections.keychainSync).toEqual(syncState);
+    await vi.waitFor(() => expect(run.getState().connections.keychainSync).toEqual(syncState));
+
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('serializes sync writes and settles every overlapping request', async () => {
+    const releases: Array<(value: KeychainSyncStateResult) => void> = [];
+    invoke.mockImplementation(async (channel: string) => {
+      if (channel === CONNECTION_CHANNELS.LIST)
+        return { connections: [LOCAL], activeId: LOCAL.id, windowBackendId: LOCAL.id };
+      if (channel === CONNECTION_CHANNELS.SYNC_SET_ENABLED)
+        return await new Promise<KeychainSyncStateResult>((resolve) => releases.push(resolve));
+      return {};
+    });
+    const run = start();
+    await settle();
+    const first = setKeychainSyncEnabledRequested(true, 'sync-1');
+    const second = setKeychainSyncEnabledRequested(false, 'sync-2');
+
+    run.put(first);
+    run.put(second);
+    await vi.waitFor(() => expect(releases).toHaveLength(1));
+    expect(run.getState().connections.keychainSyncWriteOperation).toMatchObject({
+      requestId: 'sync-2',
+      status: 'loading',
+    });
+    releases[0]({ supported: true, enabled: true, status: null });
+    await expect(first.promise).resolves.toMatchObject({ enabled: true });
+    await vi.waitFor(() => expect(releases).toHaveLength(2));
+    expect(run.getState().connections.keychainSync).toBeNull();
+    releases[1]({ supported: true, enabled: false, status: null });
+    await expect(second.promise).resolves.toMatchObject({ enabled: false });
+    await vi.waitFor(() => expect(run.getState().connections.keychainSync?.enabled).toBe(false));
+
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('serializes same-device saves and rejects active and queued saves on teardown', async () => {
+    invoke.mockImplementation(async (channel: string) => {
+      if (channel === CONNECTION_CHANNELS.LIST)
+        return { connections: [LOCAL], activeId: LOCAL.id, windowBackendId: LOCAL.id };
+      if (channel === CONNECTION_CHANNELS.UPDATE) return await new Promise(() => {});
+      return {};
+    });
+    const run = start();
+    await settle();
+    const params = { update: { id: REMOTE.id, label: REMOTE.label, accent: null } };
+    const active = saveConnectionRequested(params, 'save-active');
+    const queued = saveConnectionRequested(params, 'save-queued');
+    const activeRejection = expect(active.promise).rejects.toThrow('Connection save was cancelled');
+    const queuedRejection = expect(queued.promise).rejects.toThrow('Connection save was cancelled');
+
+    run.put(active);
+    run.put(queued);
+    await vi.waitFor(() =>
+      expect(run.getState().connections.saveOperations[REMOTE.id]).toMatchObject({
+        requestId: 'save-queued',
+        status: 'loading',
+      }),
+    );
+    expect(
+      invoke.mock.calls.filter(([channel]) => channel === CONNECTION_CHANNELS.UPDATE),
+    ).toHaveLength(1);
+    run.task.cancel();
+    await run.task.toPromise();
+    await Promise.all([activeRejection, queuedRejection]);
+    expect(run.getState().connections.saveOperations[REMOTE.id]).toMatchObject({
+      requestId: 'save-queued',
+      status: 'error',
+      error: 'Connection save was cancelled',
+    });
+  });
+
+  it('routes self-publish operations through their exact IPC channels', async () => {
+    const channels = IPC_CHANNELS.CONNECTIONS;
+    const selfState = { published: false, suppressed: false, selfConnectionId: null };
+    invoke.mockImplementation(async (channel: string) => {
+      if (channel === CONNECTION_CHANNELS.LIST)
+        return { connections: [LOCAL], activeId: LOCAL.id, windowBackendId: LOCAL.id };
+      if (channel === channels.SELF_PUBLISHED_STATE) return selfState;
+      if (channel === channels.PUBLISH_SELF) return { connection: LOCAL };
+      if (channel === channels.UNPUBLISH_SELF) return { removed: true };
+      if (channel === channels.REFRESH_SELF) return { refreshed: true };
+      return {};
+    });
+    const run = start();
+    await settle();
+
+    const load = loadSelfPublishedStateRequested();
+    run.channel.put(load);
+    await expect(load.promise).resolves.toEqual(selfState);
+    const publish = publishSelfRequested();
+    run.channel.put(publish);
+    await expect(publish.promise).resolves.toEqual({ connection: LOCAL });
+    const unpublish = unpublishSelfRequested();
+    run.channel.put(unpublish);
+    await expect(unpublish.promise).resolves.toEqual({ removed: true });
+    const refresh = refreshSelfRequested();
+    run.channel.put(refresh);
+    await expect(refresh.promise).resolves.toEqual({ refreshed: true });
+
+    expect(invoke).toHaveBeenCalledWith(channels.SELF_PUBLISHED_STATE);
+    expect(invoke).toHaveBeenCalledWith(channels.PUBLISH_SELF);
+    expect(invoke).toHaveBeenCalledWith(channels.UNPUBLISH_SELF);
+    expect(invoke).toHaveBeenCalledWith(channels.REFRESH_SELF);
+    expect(run.getState().connections.selfPublishedState).toEqual({
+      ...selfState,
+      published: false,
+    });
 
     run.task.cancel();
     await run.task.toPromise();

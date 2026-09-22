@@ -12,6 +12,10 @@ import {
   loadFileContentRequested,
   loadFileContentSucceeded,
   removeFileContentEntry,
+  resolveWorkspaceMediaRequested,
+  resolveWorkspaceMediaSucceeded,
+  searchFileNamesRequested,
+  searchFileNamesSucceeded,
   filesReducer,
   initialState,
 } from '../files-slice';
@@ -79,6 +83,7 @@ function startStatefulSaga() {
 
 describe('filesReadSaga', () => {
   afterEach(() => {
+    vi.useRealTimers();
     vi.mocked(backendRequest).mockReset();
     vi.restoreAllMocks();
   });
@@ -114,6 +119,54 @@ describe('filesReadSaga', () => {
       loadFileContentSucceeded('ws-1', 'src/a.ts', '/repo/src/a.ts', 'hello', true, true),
     ]);
     expect(backendRequest).not.toHaveBeenCalled();
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it('debounces a keyed filename search and sends the exact wire request', async () => {
+    vi.useFakeTimers();
+    vi.mocked(backendRequest).mockResolvedValue({ files: ['src/app.ts'] });
+    const channel = stdChannel();
+    const actions: unknown[] = [];
+    const task = runSaga({ channel, dispatch: (action) => actions.push(action) }, filesReadSaga);
+
+    channel.put(searchFileNamesRequested('ws-1', 'palette', 'old', 50, 150));
+    await vi.advanceTimersByTimeAsync(75);
+    channel.put(searchFileNamesRequested('ws-1', 'palette', 'app', 50, 150));
+    await vi.advanceTimersByTimeAsync(150);
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(backendRequest).toHaveBeenCalledTimes(1);
+    expect(backendRequest).toHaveBeenCalledWith('search.fileNames', {
+      workspaceId: 'ws-1',
+      pattern: 'app',
+      limit: 50,
+    });
+    expect(actions).toEqual([searchFileNamesSucceeded('ws-1', 'palette', 'app', ['src/app.ts'])]);
+    vi.useRealTimers();
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it('stats exact media paths through the saga and publishes the resolved path', async () => {
+    vi.mocked(backendRequest).mockResolvedValue({ isFile: true });
+    const channel = stdChannel();
+    const actions: unknown[] = [];
+    const task = runSaga({ channel, dispatch: (action) => actions.push(action) }, filesReadSaga);
+
+    channel.put(
+      resolveWorkspaceMediaRequested('ws-1', 'tab-1', 'preview.png', 'preview.png', 'tab-1'),
+    );
+    await settle();
+
+    expect(backendRequest).toHaveBeenCalledWith('file.stat', {
+      workspaceId: 'ws-1',
+      path: 'preview.png',
+    });
+    expect(actions).toEqual([
+      resolveWorkspaceMediaSucceeded('ws-1', 'tab-1', 'preview.png', 'preview.png'),
+    ]);
     task.cancel();
     await task.toPromise();
   });

@@ -180,6 +180,14 @@ export const selectPendingProposalRecovery = store.createSelector(
   (state, agentId: string) => getAgentChatState(state, agentId).pendingProposalRecovery,
 );
 
+export const selectUserMessageIndex = store.createSelector(
+  (state, agentId: string) => getAgentChatState(state, agentId).userMessageIndex,
+);
+
+export const selectQueuedMessageEditOperations = store.createSelector(
+  (state, agentId: string) => state.chatState.queuedMessageEditOperations?.[agentId] ?? {},
+);
+
 /**
  * Switch-back transcript reveal gate: true while the viewed conversation is
  * awaiting a fresh seq-0 snapshot from its (re)opening standing subscription.

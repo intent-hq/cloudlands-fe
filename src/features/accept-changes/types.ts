@@ -119,6 +119,22 @@ export interface UndoCommitMetadata {
   files?: string[];
 }
 
+export interface AcceptChangesExecuteOptions {
+  files?: string[];
+  commitMessage?: string;
+  prTitle?: string;
+  prBody?: string;
+  targetBranch?: string;
+  mergeStrategy?: MergeStrategy;
+  upToCommitHash?: string;
+  undoCommitsMetadata?: UndoCommitMetadata[];
+  stageUnstaged?: boolean;
+  pushAfterCommit?: boolean;
+  createPRAfterPush?: boolean;
+  rebaseFirst?: boolean;
+  localOnly?: boolean;
+}
+
 /** Request to execute accept changes */
 export interface ExecuteAcceptRequest {
   workspaceId: WorkspaceId;

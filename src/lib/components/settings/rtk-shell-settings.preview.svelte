@@ -18,22 +18,31 @@
 
 <script lang="ts">
   import { onDestroy, untrack } from 'svelte';
-  import { appClient, type AppSettingChange, type SettingDefinitionWithValue } from '$lib/client';
-  import { SYSTEM_CHANNELS } from '$shared/ipc/channels';
-  import { overrideMockIpcHandler } from '$shared/ipc-mock-router';
+  import type { AppSettingChange, SettingDefinitionWithValue } from '$lib/client';
   import { Button } from '$lib/components/patterns/settings/custom-controls';
   import GitWorkspaceSettings from './GitWorkspaceSettings.svelte';
   import RtkSettings from './RtkSettings.svelte';
+  import { store as appStore } from '$store/renderer/store';
+  import {
+    getSystemCapabilitiesRequested,
+    listSettingsRequested,
+    updateSettingsRequested,
+  } from '$store/renderer/slices/settings-events/settings-events-slice';
+  import {
+    rtkRequirementResolved,
+    rtkSettingLoaded,
+    rtkSettingLoadFailed,
+    rtkUpdateStarted,
+    rtkUpdateSucceeded,
+    updateRtkEnabledRequested,
+  } from '$store/renderer/slices/host-requirements/host-requirements-slice';
+  import { m } from '$shared/paraglide/messages.js';
 
   let { scenario = 'ready' }: { scenario?: Scenario } = $props();
   const initial = untrack(() => scenario);
   let settingsPending = $state(initial === 'loading-settings');
   let probePending = $state(initial === 'loading-probe');
   let writes = $state<AppSettingChange[]>([]);
-  let releaseSettings!: () => void;
-  let releaseProbe!: () => void;
-  const settingsGate = new Promise<void>((resolve) => (releaseSettings = resolve));
-  const probeGate = new Promise<void>((resolve) => (releaseProbe = resolve));
   const definitions: SettingDefinitionWithValue[] = [
     { path: 'workspace.worktreesLocation', value: '', type: 'string' },
     { path: 'workspace.sshKeyPath', value: '', type: 'string' },
@@ -49,35 +58,47 @@
     ...entry,
   })) as SettingDefinitionWithValue[];
 
-  const previous = {
-    get: appClient.settings.get,
-    list: appClient.settings.list,
-    update: appClient.settings.update,
-  };
-  const previousCapabilities = appClient.system.capabilities;
-  appClient.settings.list = async () => definitions;
-  appClient.settings.get = async (path) => {
-    if (initial === 'loading-settings') await settingsGate;
-    return initial === 'load-error'
-      ? null
-      : (definitions.find((entry) => entry.path === path) ?? null);
-  };
-  appClient.settings.update = async (changes) => {
-    writes = [...writes, ...changes];
-    return changes;
-  };
-  appClient.system.capabilities = async () => ({ cowSupported: true });
-  // eslint-disable-next-line intent/no-component-async-data-fetch -- Registers a synthetic in-memory handler; never fetches domain data.
-  const restoreProbe = overrideMockIpcHandler(SYSTEM_CHANNELS.CHECK_RTK, async () => {
-    if (initial === 'loading-probe') await probeGate;
-    return { success: true, data: { available: initial !== 'unavailable' } };
+  const originalDispatch = appStore.dispatch;
+  Object.defineProperty(appStore, 'dispatch', {
+    configurable: true,
+    value: (action: Parameters<typeof originalDispatch>[0]) => {
+      const result = originalDispatch(action);
+      if (action.type === listSettingsRequested.type) {
+        originalDispatch((action as ReturnType<typeof listSettingsRequested>).success(definitions));
+      } else if (action.type === getSystemCapabilitiesRequested.type) {
+        originalDispatch(
+          (action as ReturnType<typeof getSystemCapabilitiesRequested>).success({
+            cowSupported: true,
+          }),
+        );
+      } else if (action.type === updateSettingsRequested.type) {
+        const request = action as ReturnType<typeof updateSettingsRequested>;
+        const changes = request.payload[0];
+        writes = [...writes, ...changes];
+        originalDispatch(request.success(changes));
+      } else if (action.type === updateRtkEnabledRequested.type) {
+        const enabled = (action as ReturnType<typeof updateRtkEnabledRequested>).payload[0];
+        writes = [...writes, { path: 'rtk.enabled', value: enabled }];
+        originalDispatch(rtkUpdateStarted());
+        originalDispatch(rtkUpdateSucceeded(enabled));
+      }
+      return result;
+    },
   });
+
+  if (initial !== 'loading-settings') {
+    appStore.dispatch(
+      initial === 'load-error'
+        ? rtkSettingLoadFailed(m.settings_rtk_loadError())
+        : rtkSettingLoaded(true),
+    );
+  }
+  if (initial !== 'loading-probe') {
+    appStore.dispatch(rtkRequirementResolved(initial !== 'unavailable'));
+  }
+
   onDestroy(() => {
-    releaseSettings();
-    releaseProbe();
-    Object.assign(appClient.settings, previous);
-    appClient.system.capabilities = previousCapabilities;
-    restoreProbe();
+    Object.defineProperty(appStore, 'dispatch', { configurable: true, value: originalDispatch });
   });
 </script>
 
@@ -86,7 +107,7 @@
     <Button
       onclick={() => {
         settingsPending = false;
-        releaseSettings();
+        appStore.dispatch(rtkSettingLoaded(true));
       }}>Resolve settings</Button
     >
   {/if}
@@ -94,7 +115,7 @@
     <Button
       onclick={() => {
         probePending = false;
-        releaseProbe();
+        appStore.dispatch(rtkRequirementResolved(true));
       }}>Resolve availability</Button
     >
   {/if}

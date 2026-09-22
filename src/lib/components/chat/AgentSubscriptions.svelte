@@ -557,15 +557,9 @@
   // footer refetch, so no handler mutates the local subscription list.
 
   /** One-shot row stop: cancel that agent's in-flight stream (`agent.stop`). */
-  async function stopWatchedAgent(watchedAgentId: string) {
+  function stopWatchedAgent(watchedAgentId: string) {
     if (!workspaceId) return;
-    try {
-      const action = stopAgentSessionRequested(workspaceId, watchedAgentId);
-      appStore.dispatch(action);
-      await action.promise;
-    } catch (error) {
-      logger.error('Failed to stop watched agent', { watchedAgentId, error });
-    }
+    appStore.dispatch(stopAgentSessionRequested(workspaceId, watchedAgentId));
   }
 
   /**
@@ -574,7 +568,7 @@
    * merged single-agent group cancel the whole group (`{ groupId }`) instead,
    * so the daemon removes the group plus its grouped watches together.
    */
-  async function cancelWatch(row: WaitingAgentRow) {
+  function cancelWatch(row: WaitingAgentRow) {
     if (!workspaceId || !agentId) return;
     const scope = row.cancelSubscriptionId
       ? { subscriptionId: row.cancelSubscriptionId }
@@ -587,13 +581,7 @@
       logger.warn('No watch found to cancel', { watchedAgentId: row.agentId });
       return;
     }
-    try {
-      const action = cancelAgentSubscriptionsRequested(workspaceId, agentId, scope);
-      appStore.dispatch(action);
-      await action.promise;
-    } catch (error) {
-      logger.error('Failed to cancel watch', { watchedAgentId: row.agentId, error });
-    }
+    appStore.dispatch(cancelAgentSubscriptionsRequested(workspaceId, agentId, scope));
   }
 
   function handleActionKeydown(event: KeyboardEvent, action: () => void) {
@@ -1043,6 +1031,13 @@
 {/if}
 
 <style>
+  :global([data-testid='agent-subscriptions-card'] [data-testid='agent-card-name']),
+  :global([data-testid='agent-subscriptions-card'] [data-testid='agent-card-preview']),
+  :global([data-testid='agent-subscriptions-card'] [data-testid='one-shot-summary-title']),
+  :global([data-testid='agent-subscriptions-card'] [data-testid='one-shot-leading-column']) {
+    color: var(--color-muted-foreground) !important;
+  }
+
   @media (hover: hover) and (pointer: fine) {
     [data-agent-task-action-reveal] :global([data-row-task-action]) {
       opacity: 0;

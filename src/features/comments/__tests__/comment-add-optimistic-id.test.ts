@@ -10,16 +10,18 @@
  * §5.3) makes the daemon honor a supplied `commentId`; this suite pins the FE
  * side: one id flows through anchors → wire params → post-refetch store.
  */
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeAll, beforeEach, afterAll, afterEach } from 'vitest';
 
 const storeControl = vi.hoisted(() => ({ reset: () => {} }));
 
 vi.mock('$store/renderer/store', async () => {
   const { createStoreMockModule } = await import('$store/renderer/utils/test-helpers/store-mock');
+  const { runSaga, stdChannel } = await import('redux-saga');
   const { commentsReducer, initialState } = await vi.importActual<
     typeof import('$store/renderer/slices/comments/comments-slice')
   >('$store/renderer/slices/comments/comments-slice');
   let state = { comments: initialState };
+  const channel = stdChannel();
   storeControl.reset = () => {
     state = { comments: initialState };
   };
@@ -32,6 +34,7 @@ vi.mock('$store/renderer/store', async () => {
   const mockStore = {
     dispatch: (action: unknown) => {
       state = { comments: commentsReducer(state.comments, action as never) };
+      channel.put(action as never);
       return action;
     },
     get state() {
@@ -46,6 +49,13 @@ vi.mock('$store/renderer/store', async () => {
           (...args: any[]) =>
             readable(() => selectorFunc(storeSource.state ?? mockStore.state, ...args)),
       }),
+    runSaga: (saga: () => Generator) => {
+      const task = runSaga(
+        { channel, dispatch: (action) => mockStore.dispatch(action), getState: () => state },
+        saga,
+      );
+      return () => task.cancel();
+    },
   };
   return createStoreMockModule(mockStore);
 });
@@ -70,7 +80,7 @@ vi.mock('$lib/client', () => ({
 
 // Passthrough for the note-rev mutation queue: rev bookkeeping is exercised by
 // comments-write-service.test.ts and is out of scope here.
-vi.mock('../../notes/notes-write-service', () => ({
+vi.mock('$store/renderer/slices/workspace-notes/note-mutation-queue', () => ({
   enqueueRevBumpingNoteMutation: vi.fn(
     async (_workspaceId: string, _noteId: string, fn: () => Promise<unknown>) => fn(),
   ),
@@ -85,14 +95,19 @@ import { Editor } from '@tiptap/core';
 import { createEditorConfig } from '$lib/utils/editor-config';
 import { processMarkdownToHTML } from '$lib/utils/markdown-processor';
 import { CommentManagerV2 } from '../comment-manager-v2';
+import { commentsWriteSaga } from '$store/renderer/slices/comments/sagas/comments-write-saga';
 import { appClient } from '$lib/client';
 import type { CommentAddParams } from '$lib/client';
 import type { CommentV2 } from '../comment-types-v2';
 import { store as appStore } from '$store/renderer/store';
 import { loadCommentsAction } from '$store/renderer/slices/comments/comments-slice';
-import { selectComments } from '$store/renderer/slices/comments/comments-selectors';
+import {
+  selectComments,
+  selectCommentById,
+} from '$store/renderer/slices/comments/comments-selectors';
 
 const addMock = vi.mocked(appClient.comments.add);
+const respondMock = vi.mocked(appClient.comments.respond);
 
 function createEditor(html: string): { editor: Editor; container: HTMLElement } {
   const container = document.createElement('div');
@@ -146,6 +161,13 @@ describe('comment.add carries the optimistic comment id (clobber/ghosting root c
   let editor: Editor;
   let container: HTMLElement;
   let manager: CommentManagerV2;
+  let stopSaga: (() => void) | undefined;
+
+  beforeAll(() => {
+    stopSaga = appStore.runSaga(commentsWriteSaga);
+  });
+
+  afterAll(() => stopSaga?.());
 
   beforeEach(async () => {
     vi.clearAllMocks();
@@ -214,5 +236,41 @@ describe('comment.add carries the optimistic comment id (clobber/ghosting root c
     expect(selectComments.select(appStore.state)).toHaveLength(0);
     expect(collectAnchors(editor)).toHaveLength(0);
     errorSpy.mockRestore();
+  });
+
+  it('returns failure after a reply persist rollback and does not log success', async () => {
+    respondMock.mockResolvedValueOnce({ success: false, error: 'boom' });
+    appStore.dispatch(loadCommentsAction([makeDaemonComment('reply-parent')]));
+    const infoSpy = vi.spyOn(console, 'info').mockImplementation(() => {});
+
+    const reply = await manager.replyToComment('reply-parent', 'needs follow-up');
+
+    expect(reply).toBeNull();
+    expect(selectComments.select(appStore.state)).toHaveLength(1);
+    expect(respondMock).toHaveBeenCalledWith('spec', {
+      workspaceId: 'comment-add',
+      commentId: 'reply-parent',
+      comment: 'needs follow-up',
+      type: 'comment',
+      authorType: 'user',
+    });
+    expect(infoSpy.mock.calls.some(([message]) => String(message).includes('Added reply'))).toBe(
+      false,
+    );
+    infoSpy.mockRestore();
+  });
+
+  it('keeps the optimistic reply in the store after production-adapter persistence', async () => {
+    appStore.dispatch(loadCommentsAction([makeDaemonComment('reply-parent')]));
+
+    const reply = await manager.replyToComment('reply-parent', 'needs follow-up');
+
+    expect(reply).not.toBeNull();
+    expect(selectCommentById.select(appStore.state, reply!.id)).toMatchObject({
+      id: reply!.id,
+      parentId: 'reply-parent',
+      threadId: 'reply-parent',
+      content: 'needs follow-up',
+    });
   });
 });

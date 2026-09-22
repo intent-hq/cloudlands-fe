@@ -129,6 +129,7 @@ vi.mock('$store/renderer/store', async () => {
 
   return createAppStoreMockModule({
     state: () => ({
+      files: { byWorkspaceId: {} },
       workspaceNotes: { byWorkspaceId: {} },
       workspaceAgents: { byWorkspaceId: {} },
     }),

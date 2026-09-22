@@ -39,6 +39,7 @@
     selectLoadError,
     selectAllProviderWarnings,
     selectAllProviderStaleFlags,
+    selectAllProviderLoadingStates,
     selectAgentModelEffortLevels,
   } from '$store/renderer/slices/model/model-selectors';
   import {
@@ -62,7 +63,10 @@
     getModelsForProvider,
     getModelsForProviderForLoadingState,
   } from '$store/renderer/slices/model/model-utils';
-  import { providerModelsLoaded } from '$store/renderer/slices/provider-models/provider-models-slice';
+  import {
+    loadProviderModelsRequested,
+    providerModelsLoaded,
+  } from '$store/renderer/slices/provider-models/provider-models-slice';
   import {
     selectProviderModelsCacheEntry,
     selectProviderModelsCacheMap,
@@ -149,6 +153,7 @@
   const loadError$ = selectLoadError();
   const allProviderWarnings$ = selectAllProviderWarnings();
   const allProviderStaleFlags$ = selectAllProviderStaleFlags();
+  const allProviderLoadingStates$ = selectAllProviderLoadingStates();
   const hasCheckedOnce$ = selectHasCheckedOnce();
   const daemonHealth$ = selectDaemonHealth();
 
@@ -637,6 +642,7 @@
     const providerGeneration = advanceProviderFetchGeneration(providerId);
     refreshingProviderEpochs.set(providerId, cacheEpoch);
     refreshingProviders = new Set([...refreshingProviders, providerId]);
+    let sagaHandlesRefresh = false;
     const isStale = () =>
       providerFetchGenerations.get(providerId) !== providerGeneration ||
       selectProviderModelsClearEpoch.select(appStore.state) !== cacheEpoch;
@@ -644,9 +650,18 @@
       // True force refresh: the daemon skips its cache and awaits a fresh
       // probe (PROTOCOL §6.7), so the spinner spins for the real probe
       // duration and the returned list replaces the group immediately.
-      const result = await getModelsForProviderForLoadingState(providerId, { forceRefresh: true });
+      const request = loadProviderModelsRequested(providerId, true);
+      request.promise.catch(() => {});
+      appStore.dispatch(request);
+      sagaHandlesRefresh =
+        $allProviderLoadingStates$[normalizeProviderId(providerId)]?.status === 'loading';
+      const result = sagaHandlesRefresh
+        ? await request.promise
+        : await getModelsForProviderForLoadingState(providerId, { forceRefresh: true });
       if (isStale()) return;
-      setProviderWarningState(providerId, result.warning, result.stale);
+      if (!sagaHandlesRefresh) {
+        setProviderWarningState(providerId, result.warning, result.stale);
+      }
       if (providerId === effectiveProviderId && usesAgentProviderFetch) {
         agentProviderModels = result.models;
       }
@@ -657,7 +672,9 @@
         [providerId]: toDropdownOptions(result.models),
       };
       // Write through to the session cache (group keys are normalized ids).
-      appStore.dispatch(providerModelsLoaded(providerId, result, cacheEpoch));
+      if (!sagaHandlesRefresh) {
+        appStore.dispatch(providerModelsLoaded(providerId, result, cacheEpoch));
+      }
     } catch (err) {
       if (isStale()) return;
       const providerError = formatProviderLoadError(providerId, err);
@@ -665,7 +682,9 @@
         ...allProviderErrors,
         [providerId]: providerError,
       };
-      setProviderErrorState(providerId, providerError.displayText);
+      if (!sagaHandlesRefresh) {
+        setProviderErrorState(providerId, providerError.displayText);
+      }
       logger.warn('Failed to refresh models for provider', { providerId, error: err });
     } finally {
       refreshingProviderEpochs.delete(providerId);
@@ -1278,6 +1297,8 @@
         .map((group) => group.parentKey ?? group.key),
     ]),
   ]);
+  let activeBrowseProviderId = $state('');
+  const providerTabsEnabled = $derived(activeBrowseProviderId !== '');
   const preferredBrowseProviderId = $derived(
     providerTabIds.includes(selectedModelProviderId)
       ? selectedModelProviderId
@@ -1285,9 +1306,7 @@
         ? normalizeProviderId(effectiveProviderId)
         : (providerTabIds[0] ?? ''),
   );
-  let activeBrowseProviderId = $state('');
   let providerBrowseChanged = $state(false);
-  const providerTabsEnabled = $derived(activeBrowseProviderId !== '');
 
   $effect(() => {
     if (

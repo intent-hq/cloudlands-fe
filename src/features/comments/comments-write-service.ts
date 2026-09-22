@@ -1,34 +1,22 @@
 /**
- * Comments write service — the sanctioned post-saga comment-mutation mechanism.
+ * Comments write service — compatibility adapters for saga-owned mutations.
  *
- * Mirrors `notes-write-service`: components/managers call these functions
- * instead of dispatching the (now dead) saga-trigger actions. Each operation:
- * (1) applies an optimistic store update for instant UI feedback, (2) awaits the
- * matching `appClient.comments.*` mutation (which forwards to intentd and never
- * throws — it returns a `MutationResult`), and (3) reconciles: on success the
- * live `comment:*` subscribe→refetch loop converges the store to canonical ids;
- * on failure the optimistic change is rolled back.
+ * Existing managers call these functions while the Redux saga owns optimistic
+ * updates, persistence, rollback, and promise settlement. Keeping this small
+ * adapter avoids changing every legacy caller at once.
  *
- * This module is dependency-light: it imports only the AppClient seam, the
- * configured store, slice actions, selectors (per src/store AGENTS.md), and
- * the notes-write-service queue entry point (`comment.add` rewrites note
- * content, so its rev bookkeeping lives with the note mutation queue).
+ * This module is dependency-light: it imports only request types, the
+ * configured store, and comment mutation actions.
  */
-import { appClient } from '$lib/client';
 import type { CommentAddParams, CommentRespondParams } from '$lib/client';
-import { notify } from '$lib/components/patterns/notify';
-import { m } from '$shared/paraglide/messages.js';
 import type { CommentV2 } from './comment-types-v2';
 import { store as appStore } from '$store/renderer/store';
 import {
-  addCommentAction,
-  removeCommentAction,
+  addCommentRequested,
+  deleteCommentRequested,
+  respondToCommentRequested,
+  resolveCommentRequested,
 } from '$store/renderer/slices/comments/comments-slice';
-import { selectCommentById } from '$store/renderer/slices/comments/comments-selectors';
-import { enqueueRevBumpingNoteMutation } from '../notes/notes-write-service';
-import { createLogger } from '$lib/utils/client-logger';
-
-const logger = createLogger('CommentsWriteService');
 
 /**
  * Add a comment optimistically, then persist via `comment.add`. The optimistic
@@ -51,33 +39,7 @@ export async function addComment(
   optimistic: CommentV2,
   params: CommentAddParams,
 ): Promise<boolean> {
-  appStore.dispatch(addCommentAction(optimistic));
-
-  let result;
-  if (params.workspaceId) {
-    result = await enqueueRevBumpingNoteMutation(params.workspaceId, noteId, () =>
-      appClient.comments.add(noteId, params),
-    );
-  } else {
-    // Without a workspace the rev bookkeeping above is impossible: a
-    // successful add still bumps the server rev, so the next conditional save
-    // will conflict (the Round 6b failure mode). Every production caller
-    // passes workspaceId; warn so a future caller that doesn't is visible.
-    logger.warn(
-      'addComment called without workspaceId; note rev bookkeeping skipped — the next save may conflict',
-      { noteId },
-    );
-    result = await appClient.comments.add(noteId, params);
-  }
-  if (!result.success) {
-    logger.error('Failed to add comment', result.error);
-    notify.error(m.comments_writeService_addFailed_error(), {
-      description: result.error ?? m.comments_writeService_unknown_error(),
-    });
-    appStore.dispatch(removeCommentAction(optimistic.id));
-    return false;
-  }
-  return true;
+  return await appStore.dispatch(addCommentRequested(noteId, optimistic, params)).promise;
 }
 
 /**
@@ -91,18 +53,8 @@ export async function respondToComment(
   optimisticReply: CommentV2,
   params: CommentRespondParams,
 ): Promise<boolean> {
-  appStore.dispatch(addCommentAction(optimisticReply));
-
-  const result = await appClient.comments.respond(noteId, params);
-  if (!result.success) {
-    logger.error('Failed to respond to comment', result.error);
-    notify.error(m.comments_writeService_replyFailed_error(), {
-      description: result.error ?? m.comments_writeService_unknown_error(),
-    });
-    appStore.dispatch(removeCommentAction(optimisticReply.id));
-    return false;
-  }
-  return true;
+  return await appStore.dispatch(respondToCommentRequested(noteId, optimisticReply, params))
+    .promise;
 }
 
 /**
@@ -118,18 +70,14 @@ export async function deleteComment(
   commentId: string,
   workspaceId?: string,
 ): Promise<{ existed: boolean; success: boolean }> {
-  const snapshot = selectCommentById.select(appStore.state, commentId);
-  appStore.dispatch(removeCommentAction(commentId));
+  return await appStore.dispatch(deleteCommentRequested(noteId, commentId, workspaceId)).promise;
+}
 
-  const result = await appClient.comments.delete(noteId, commentId, workspaceId);
-  if (!result.success) {
-    logger.error('Failed to delete comment', result.error);
-    notify.error(m.comments_writeService_deleteFailed_error(), {
-      description: result.error ?? m.comments_writeService_unknown_error(),
-    });
-    if (snapshot) appStore.dispatch(addCommentAction(snapshot));
-    return { existed: !!snapshot, success: false };
-  }
-
-  return { existed: !!snapshot, success: true };
+/** Resolve a comment through the comment mutation saga. */
+export async function resolveComment(
+  workspaceId: string,
+  commentId: string,
+  noteId: string,
+): Promise<boolean> {
+  return await appStore.dispatch(resolveCommentRequested(workspaceId, commentId, noteId)).promise;
 }

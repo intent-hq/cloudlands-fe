@@ -2,6 +2,8 @@
 // Per-Agent Chat State
 // ============================================================================
 
+import type { MutationResult } from '$lib/client/app-client';
+
 export type QueuedMessageSendOutcome = 'delivered' | 'queued' | 'quarantined';
 
 export interface StatusEvent {
@@ -138,6 +140,38 @@ export interface PendingProposalRecovery {
   /** Tray projection retained after one successful lookup; never transcript state. */
   proposals?: { proposalId: string; proposal: Proposal }[];
 }
+
+interface UserMessageIndexState {
+  data: UserMessageIndexResult | null;
+  loading: boolean;
+  error: string | null;
+}
+
+type ChatDraftSnapshot = {
+  text: string;
+  attachments?: DraftAttachment[];
+  updatedAt: string;
+} | null;
+
+type ChatDraftOperation<T> = {
+  status: 'idle' | 'loading' | 'success' | 'error';
+  requestId: number | null;
+  data: T | null;
+  error: string | null;
+};
+
+interface ChatDraftOperationsState {
+  loads: Record<string, ChatDraftOperation<ChatDraftSnapshot>>;
+  writes: Record<string, ChatDraftOperation<{ ok: true; updatedAt: string }>>;
+}
+
+export type ChatQueuedMessageEditOperation = {
+  status: 'loading' | 'success' | 'error';
+  content: string;
+  editing: boolean;
+  result: MutationResult | null;
+  error: string | null;
+};
 
 /**
  * Metadata of the LAST seq-0 snapshot the standing `chat.subscribe`
@@ -302,6 +336,8 @@ export interface ChatAgentState {
    * pruned when the metadata refs no longer name the message.
    */
   pendingProposalRecovery?: Record<string, PendingProposalRecovery>;
+  /** Cached full-history user-message index used by the message navigator. */
+  userMessageIndex?: UserMessageIndexState;
   /**
    * Switch-back transcript reveal gate: true while the VIEWED conversation is
    * awaiting a fresh seq-0 snapshot from its (re)opening standing
@@ -385,6 +421,8 @@ import type { ContextReference } from '$features/agent/agent-context';
 import type { ContentBlock } from '$shared/types';
 import type { Question } from '$shared/types/question-resource';
 import type { Proposal } from '$shared/types/proposal';
+import type { UserMessageIndexResult } from '$lib/client/app-client';
+import type { DraftAttachment } from '$lib/client/app-client';
 
 // ============================================================================
 // Top-level slice state (flat, agent-keyed)
@@ -392,6 +430,8 @@ import type { Proposal } from '$shared/types/proposal';
 
 export interface ChatStateSlice {
   byAgentId: Record<string, ChatAgentState>;
+  draftOperations: ChatDraftOperationsState;
+  queuedMessageEditOperations: Record<string, Record<string, ChatQueuedMessageEditOperation>>;
 }
 
 /**

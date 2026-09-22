@@ -11,6 +11,7 @@ import {
   take,
   takeEvery,
   takeLeading,
+  takeLatest,
 } from 'typed-redux-saga';
 
 import { backendRequest } from '$lib/client/live/backend-transport';
@@ -19,7 +20,7 @@ import { m } from '$shared/paraglide/messages.js';
 import { IPC_CHANNELS } from '$shared/ipc-registry';
 import { createElectronChannel } from '$store/renderer/utils/ipc-channel';
 import { takeWithBackoff } from '$store/renderer/utils/take-with-backoff';
-import { selectDaemonConnectionGeneration } from '../daemon-health-selectors';
+import { selectDaemonConnectionGeneration, selectDaemonHealth } from '../daemon-health-selectors';
 import {
   agentMemoryBreakdownClosed,
   agentMemoryBreakdownOpened,
@@ -33,6 +34,7 @@ import {
   fetchSidecarRunLogSucceeded,
   pollSystemStatus,
   pollUnslothStatus,
+  setDetailsPollingActive,
   openLocalAndSpawnRequested,
   openLocalAndSpawnSucceeded,
   spawnSidecarFailed,
@@ -338,6 +340,20 @@ function* systemPollingLoop() {
   }
 }
 
+function* detailsPollingLoop(action: ReturnType<typeof setDetailsPollingActive>) {
+  if (!action.payload[0]) return;
+  let initialPoll = true;
+  while (true) {
+    const health = yield* selectDaemonHealth.effect();
+    if (initialPoll || health !== 'down') {
+      yield* put(pollSystemStatus());
+      yield* put(pollUnslothStatus());
+    }
+    initialPoll = false;
+    yield* delay(1_000);
+  }
+}
+
 /**
  * Run one poll to completion unless the connection generation changes
  * underneath it. Status notifications that leave the generation alone
@@ -508,6 +524,7 @@ function* watchDaemonControls() {
   yield* takeEvery(closeWindowRequested, closeWindowSaga);
   yield* takeEvery(fetchSidecarRunLogRequested, fetchSidecarRunLogSaga);
   yield* takeLeading(stopUnslothRequested, stopUnslothSaga);
+  yield* takeLatest(setDetailsPollingActive, detailsPollingLoop);
 }
 
 export function* daemonHealthSaga() {

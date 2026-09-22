@@ -53,6 +53,22 @@ import DirectoryPickerModal from '../DirectoryPickerModal.svelte';
 const backendRequestMock = vi.mocked(backendRequest);
 let stopDirectoryPickerSaga: (() => void) | undefined;
 
+const waitForListingPath = (path: string): Promise<void> => {
+  if (appStore.state.directoryPicker.listing?.path === path) return Promise.resolve();
+
+  return new Promise((resolve) => {
+    let settledSynchronously = false;
+    let unsubscribe = () => {};
+    unsubscribe = appStore.getReadableState().subscribe((state) => {
+      if (state.directoryPicker.listing?.path !== path) return;
+      settledSynchronously = true;
+      unsubscribe();
+      resolve();
+    });
+    if (settledSynchronously) unsubscribe();
+  });
+};
+
 const homeListing = (): DirectoryPickerListing => ({
   path: '/Users/me',
   parent: null,
@@ -251,9 +267,8 @@ describe('DirectoryPickerModal — typed tilde path commit (monorepo#824)', () =
     await fireEvent.input(input, { target: { value: '~/src' } });
     await fireEvent.keyDown(input, { key: 'Enter' });
 
-    await waitFor(() => {
-      expect(appStore.state.directoryPicker.listing?.path).toBe('/Users/me/src');
-    });
+    await waitForListingPath('/Users/me/src');
+    expect(appStore.state.directoryPicker.listing?.path).toBe('/Users/me/src');
 
     // The fast path expanded before hitting the wire — exact params.
     const hostListDirectoryCalls = backendRequestMock.mock.calls.filter(

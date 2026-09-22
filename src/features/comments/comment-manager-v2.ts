@@ -11,10 +11,7 @@ import type { CommentV2, CommentAnchor } from './comment-types-v2';
 import { createLogger } from '$lib/utils/client-logger';
 import { findCommentAnchors, getAllAnchoredCommentIds } from '$lib/components/tiptap/CommentAnchor';
 import { updateCommentDecorations } from '$lib/components/tiptap/CommentDecorations';
-import {
-  loadComments as loadCommentsFromBackend,
-  resolveComment as resolveCommentInBackend,
-} from './comment-loader';
+import { loadComments as loadCommentsFromBackend } from './comment-loader';
 import { convertBackendCommentToV2 } from './comment-types-v2';
 import { generateCommentId } from '$shared/utils/comment-id-generator';
 import * as commentsWrite from './comments-write-service';
@@ -1179,21 +1176,14 @@ export class CommentManagerV2 {
    */
   async resolveComment(commentId: string): Promise<boolean> {
     const existing = selectCommentById.select(appStore.state, commentId);
-    const updated = !!existing;
-    if (updated) {
-      appStore.dispatch(updateCommentAction(commentId, { status: 'resolved' }));
-    }
+    if (!existing) return false;
 
-    if (updated) {
-      // Save to backend
-      await resolveCommentInBackend(this.workspaceId, commentId, this.noteId);
+    const resolved = await commentsWrite.resolveComment(this.workspaceId, commentId, this.noteId);
+    if (!resolved) return false;
 
-      // Update decorations
-      this.updateDecorations();
-      logger.info('Resolved comment', { commentId });
-    }
-
-    return updated;
+    this.updateDecorations();
+    logger.info('Resolved comment', { commentId });
+    return true;
   }
 
   /**
@@ -1232,13 +1222,17 @@ export class CommentManagerV2 {
     // `comment.respond` + rollback are owned there.
     // `authorType: 'user'` marks the UI-driven reply as user-authored (the
     // daemon defaults to 'agent' when absent).
-    await commentsWrite.respondToComment(this.noteId, reply, {
+    const persisted = await commentsWrite.respondToComment(this.noteId, reply, {
       workspaceId: this.workspaceId,
       commentId: parentId,
       comment: content,
       type: 'comment',
       authorType: 'user',
     });
+    if (!persisted) {
+      logger.error('Failed to persist reply', { replyId: reply.id, parentId });
+      return null;
+    }
 
     logger.info('Added reply', { replyId: reply.id, parentId });
     return reply;

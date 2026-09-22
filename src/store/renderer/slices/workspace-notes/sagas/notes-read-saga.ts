@@ -1,4 +1,4 @@
-import { call, put, race, take } from 'typed-redux-saga';
+import { call, delay, put, race, take } from 'typed-redux-saga';
 
 import { appClient } from '$lib/client';
 import { createLogger } from '$lib/utils/client-logger';
@@ -6,23 +6,36 @@ import { SPEC_NOTE_ID } from '$shared/constants/notes';
 import { workspaceUnmounted } from '../../workspace-lifecycle/workspace-lifecycle-slice';
 import {
   takeLatestByContext,
+  takeLatestInContext,
   takeSingleFlightInContext,
 } from '../../../utils/context-saga-effects';
-import { selectNoteById, selectWorkspaceNotesState } from '../workspace-notes-selectors';
+import {
+  selectAllNotes,
+  selectNoteById,
+  selectWorkspaceNotesState,
+} from '../workspace-notes-selectors';
 import {
   applyNoteCreated,
   applyNoteDeleted,
   applyNoteUpdated,
+  applyReadyTasks,
   loadWorkspaceNotesFailed,
   loadWorkspaceNotesSucceeded,
+  lineAttributionLoaded,
+  lineAttributionLoadFailed,
+  loadLineAttributionRequested,
   noteEventReceived,
   selectNote,
+  workspaceProgressReadyTasksChanged,
+  workspaceProgressStatusRefreshRequested,
   workspaceNotesHydrationRequested,
   type NoteEventType,
 } from '../workspace-notes-slice';
 import { toRuntimeNote } from './note-payload-mappers';
+import { readAcceptChangesStatusRequested } from '../../git/git-slice';
 
 const logger = createLogger('NotesReadSaga');
+export const WORKSPACE_PROGRESS_REFRESH_DEBOUNCE_MS = 5_000;
 
 type ObservedAction = { type: string; payload?: unknown };
 
@@ -114,6 +127,69 @@ function* applyNoteEventWorker(action: ReturnType<typeof noteEventReceived>) {
   });
 }
 
+type LineAttributionAction =
+  ReturnType<typeof loadLineAttributionRequested> | ReturnType<typeof workspaceUnmounted>;
+
+function lineAttributionContext(action: LineAttributionAction) {
+  const workspaceId = action.payload[0];
+  return action.type === workspaceUnmounted.type
+    ? { context: `${workspaceId}:`, cancel: true as const, match: 'prefix' as const }
+    : `${workspaceId}:${(action.payload as [string, string])[1]}`;
+}
+
+function* loadLineAttribution(action: LineAttributionAction) {
+  if (action.type === workspaceUnmounted.type) return;
+  const [workspaceId, noteId] = action.payload as [string, string];
+  try {
+    const data: Awaited<ReturnType<typeof appClient.notes.lineAttribution.load>> = yield* call(
+      [appClient.notes.lineAttribution, appClient.notes.lineAttribution.load],
+      workspaceId,
+      noteId,
+    );
+    yield* put(lineAttributionLoaded(workspaceId, noteId, data?.attributions ?? {}));
+  } catch (error) {
+    yield* put(
+      lineAttributionLoadFailed(
+        workspaceId,
+        noteId,
+        error instanceof Error ? error.message : String(error),
+      ),
+    );
+  }
+}
+
+type ProgressRefreshAction =
+  | ReturnType<typeof workspaceProgressStatusRefreshRequested>
+  | ReturnType<typeof workspaceProgressReadyTasksChanged>
+  | ReturnType<typeof workspaceUnmounted>;
+
+function progressRefreshContext(action: ProgressRefreshAction) {
+  const workspaceId = action.payload[0];
+  return action.type === workspaceUnmounted.type
+    ? { context: workspaceId, cancel: true as const }
+    : workspaceId;
+}
+
+function* refreshWorkspaceProgressStatus(action: ProgressRefreshAction) {
+  if (action.type === workspaceUnmounted.type) return;
+  const [workspaceId] = action.payload;
+  yield* delay(WORKSPACE_PROGRESS_REFRESH_DEBOUNCE_MS);
+  yield* put(readAcceptChangesStatusRequested(workspaceId));
+}
+
+function* applyReadyTasksSnapshot(action: ProgressRefreshAction) {
+  if (action.type !== workspaceProgressReadyTasksChanged.type) return;
+  const [workspaceId, readyTaskIds] = action.payload as [string, string[]];
+  const readyIds = new Set(readyTaskIds);
+  const notes = yield* selectAllNotes.effect(workspaceId);
+  yield* put(
+    applyReadyTasks(
+      workspaceId,
+      notes.filter((note) => readyIds.has(String(note.id))),
+    ),
+  );
+}
+
 export function* notesReadSaga() {
   yield* takeLatestByContext(
     workspaceNotesHydrationRequested,
@@ -128,5 +204,20 @@ export function* notesReadSaga() {
     noteEventReceived,
     (action) => `${action.payload[0]}:${action.payload[1]}`,
     applyNoteEventWorker,
+  );
+  yield* takeSingleFlightInContext(
+    [loadLineAttributionRequested, workspaceUnmounted],
+    lineAttributionContext,
+    loadLineAttribution,
+  );
+  yield* takeLatestInContext(
+    [workspaceProgressStatusRefreshRequested, workspaceUnmounted],
+    progressRefreshContext,
+    refreshWorkspaceProgressStatus,
+  );
+  yield* takeLatestInContext(
+    [workspaceProgressReadyTasksChanged, workspaceUnmounted],
+    progressRefreshContext,
+    applyReadyTasksSnapshot,
   );
 }

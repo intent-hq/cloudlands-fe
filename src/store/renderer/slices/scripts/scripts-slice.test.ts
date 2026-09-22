@@ -90,6 +90,7 @@ describe('scriptsReducer', () => {
       scripts: {},
       outputBuffers: {},
       operations: {},
+      commandOperations: {},
       initialized: false,
       loading: false,
     });

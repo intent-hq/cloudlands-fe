@@ -2,7 +2,13 @@
  * Scripts slice types — safe to import from any process.
  */
 
-import type { ScriptWithState } from '$features/scripts/types';
+import type {
+  ScriptCategory,
+  ScriptMode,
+  ScriptSource,
+  ScriptWithState,
+  WorkspaceScript,
+} from '$features/scripts/types';
 
 // Re-export types that consumers need
 export type { WorkspaceScript, ScriptRuntimeState, ScriptWithState } from '$features/scripts/types';
@@ -37,6 +43,46 @@ export type ScriptOperationState = {
   error?: string;
 };
 
+export type ScriptDefinitionInput = {
+  name: string;
+  command: string;
+  cwd?: string;
+  env?: Record<string, string>;
+  mode: ScriptMode;
+  category?: ScriptCategory;
+  source?: ScriptSource;
+  autoStart?: boolean;
+};
+
+export type ScriptUpdateInput = Partial<Omit<ScriptDefinitionInput, 'source'>>;
+
+export type ScriptDetectionChanges = {
+  add: ScriptDefinitionInput[];
+  update: Array<{ id: string; updates: ScriptUpdateInput }>;
+  remove: string[];
+};
+
+export type ScriptCommandResult =
+  | { kind: 'create'; script: WorkspaceScript }
+  | { kind: 'update'; script: WorkspaceScript }
+  | { kind: 'remove'; scriptId: string }
+  | {
+      kind: 'detect' | 'apply';
+      detected: number;
+      added: number;
+      updated: number;
+      removed: number;
+      skippedRunning: string[];
+    }
+  | { kind: 'save' | 'restore' };
+
+export type ScriptCommandOperationState = {
+  version: number;
+  status: 'idle' | 'loading' | 'success' | 'error';
+  result: ScriptCommandResult | null;
+  error: string | null;
+};
+
 /**
  * Per-workspace scripts state.
  */
@@ -47,6 +93,7 @@ export type ScriptsWorkspaceState = {
   outputBuffers: Record<string, ScriptOutputBuffer>;
   /** Transient Shell controls state keyed by script ID. */
   operations: Record<string, ScriptOperationState>;
+  commandOperations: Record<string, ScriptCommandOperationState>;
   /** Whether the workspace scripts have been initialized */
   initialized: boolean;
   /** Whether scripts are currently loading */

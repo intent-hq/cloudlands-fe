@@ -47,13 +47,18 @@ describe('no-component-async-data-fetch ESLint rule', () => {
   tick,
 } from 'svelte';
         import { loadWebSocketApiStatus } from '$store/renderer/slices/websocket-api/websocket-api-slice';
+        import { pollSystemStatus } from '$store/renderer/slices/stats/stats-slice';
         import { selectWebSocketApiEnabled } from '$store/renderer/slices/websocket-api/websocket-api-selectors';
+        import { selectBrowserTabHost } from '$store/renderer/slices/browser-clients/browser-clients-selectors';
         import { store as appStore } from '$store/renderer/store';
 
         const enabled$ = selectWebSocketApiEnabled();
+        const host = selectBrowserTabHost.select(appStore.state, 'client-id');
 
         onMount(() => {
           appStore.dispatch(loadWebSocketApiStatus());
+          appStore.dispatch(pollSystemStatus());
+          activeTabBoundsPollers.forEach((poll) => poll());
         });
       </script>
     `);
@@ -146,7 +151,50 @@ describe('no-component-async-data-fetch ESLint rule', () => {
     `);
 
     expect(messages).toHaveLength(1);
-    expect(messages[0]?.message).toContain('sagas or service layers');
+    expect(messages[0]?.message).toContain('sagas or approved infrastructure adapters');
+  });
+
+  it('reports direct storage, domain subscriptions, and polling helpers', async () => {
+    const messages = await lintSvelte(`
+      <script lang="ts">
+        import { workspaceClient } from '$lib/client/workspace-client';
+
+        localStorage.setItem('workspace', 'one');
+        sessionStorage.removeItem('draft');
+        workspaceClient.subscribe(handleWorkspace);
+        window.electronAPI.on('workspace:changed', handleWorkspace);
+        pollWorkspace();
+      </script>
+    `);
+
+    expect(messages).toHaveLength(5);
+    expect(
+      messages.every((message) => message.ruleId === 'intent/no-component-async-data-fetch'),
+    ).toBe(true);
+  });
+
+  it('does not let dispatch hide nested domain effects', async () => {
+    const messages = await lintSvelte(`
+      <script lang="ts">
+        import { workspaceClient } from '$lib/client/workspace-client';
+
+        appStore.dispatch(fetch('/domain'));
+        appStore.dispatch(workspaceClient.subscribe(handleWorkspace));
+      </script>
+    `);
+
+    expect(messages).toHaveLength(2);
+  });
+
+  it('allows polling-shaped methods on local visual objects', async () => {
+    const messages = await lintSvelte(`
+      <script lang="ts">
+        element.pollPosition();
+        animation.retryFrame();
+      </script>
+    `);
+
+    expect(messages).toHaveLength(0);
   });
 
   it('reports imported domain loaders in promise chains and fire-and-forget calls', async () => {

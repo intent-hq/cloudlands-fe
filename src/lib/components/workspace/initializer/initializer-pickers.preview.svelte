@@ -2,6 +2,13 @@
   import { definePreview } from '$lib/component-catalog/preview-definition';
   import { appClient } from '$lib/client';
   import { mockInvoke } from '$shared/ipc-mock-router';
+  import { store as appStore } from '$store/renderer/store';
+  import {
+    loadGitBranches,
+    readGitBranchStatusRequested,
+    setGitBranches,
+    setGitBranchStatus,
+  } from '$store/renderer/slices/git/git-slice';
   import { getLocale, locales, overwriteGetLocale } from '$shared/paraglide/runtime.js';
   import { setupRecentRepositoriesPreview } from './recent-repositories.preview-fixtures';
 
@@ -10,11 +17,10 @@
   function setupPickerFixture(onRefresh: () => void, locale: Locale) {
     const restoreRepos = setupRecentRepositoriesPreview();
     const originalGetLocale = getLocale;
-    overwriteGetLocale(() => locale);
-    const originalBranches = appClient.git.getBranches;
-    const originalStatus = appClient.git.branchStatus;
     const originalGithubBranches = appClient.integrations.githubBranches;
     const originalGithubCached = appClient.integrations.githubBranchesCached;
+    const originalDispatch = appStore.dispatch;
+    overwriteGetLocale(() => locale);
     const originalBridge = Object.getOwnPropertyDescriptor(window, 'electronAPI');
     Object.defineProperty(window, 'electronAPI', {
       configurable: true,
@@ -27,22 +33,39 @@
         on: () => () => {},
       },
     });
-    appClient.git.getBranches = async () => {
-      onRefresh();
-      return {
-        branches: ['main', ...Array.from({ length: 30 }, (_, index) => `feature/task-${index}`)],
-        remoteBranches: ['origin/release'],
-        defaultBranch: 'main',
-        currentBranch: 'main',
-      };
-    };
-    appClient.git.branchStatus = async (_repoPath, branchName) => ({
-      branch: branchName,
-      isCurrentBranch: branchName === 'main',
-      ahead: 0,
-      behind: 0,
-      hasUncommittedChanges: true,
-      currentBranch: 'main',
+    Object.defineProperty(appStore, 'dispatch', {
+      configurable: true,
+      value: (action: Parameters<typeof originalDispatch>[0]) => {
+        const result = originalDispatch(action);
+        if (action.type === loadGitBranches.type) {
+          const [repoPath] = action.payload as ReturnType<typeof loadGitBranches>['payload'];
+          onRefresh();
+          originalDispatch(
+            setGitBranches(repoPath, {
+              branches: [
+                'main',
+                ...Array.from({ length: 30 }, (_, index) => `feature/task-${index}`),
+              ],
+              remoteBranches: ['origin/release'],
+              defaultBranch: 'main',
+              currentBranch: 'main',
+            }),
+          );
+        } else if (action.type === readGitBranchStatusRequested.type) {
+          const [repoPath, branchName] = action.payload as ReturnType<
+            typeof readGitBranchStatusRequested
+          >['payload'];
+          originalDispatch(
+            setGitBranchStatus(repoPath, branchName, {
+              ahead: 0,
+              behind: 0,
+              hasUncommittedChanges: true,
+              currentBranch: 'main',
+            }),
+          );
+        }
+        return result;
+      },
     });
     appClient.integrations.githubBranches = async () => ({
       branches: ['main', 'feature/inline-picker'],
@@ -51,10 +74,12 @@
     appClient.integrations.githubBranchesCached = async () => ({ cached: false, branches: [] });
     return () => {
       overwriteGetLocale(originalGetLocale);
-      appClient.git.getBranches = originalBranches;
-      appClient.git.branchStatus = originalStatus;
       appClient.integrations.githubBranches = originalGithubBranches;
       appClient.integrations.githubBranchesCached = originalGithubCached;
+      Object.defineProperty(appStore, 'dispatch', {
+        configurable: true,
+        value: originalDispatch,
+      });
       if (originalBridge) Object.defineProperty(window, 'electronAPI', originalBridge);
       else Reflect.deleteProperty(window, 'electronAPI');
       restoreRepos();

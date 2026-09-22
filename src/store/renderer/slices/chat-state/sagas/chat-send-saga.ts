@@ -27,13 +27,15 @@ import { createLogger } from '$lib/utils/client-logger';
 import { m } from '$shared/paraglide/messages.js';
 import type { AuggieModel } from '$features/auggie/auggie-models.client';
 import type { AgentSession } from '$shared/types';
-import { takeEveryByContextFIFO } from '../../../utils/context-saga-effects';
+import { AgentStatus } from '$shared/types';
+import { takeEveryByContextFIFO, takeLatestInContext } from '../../../utils/context-saga-effects';
 import {
   agentSessionRetryFromStalledRequested,
   agentSessionRetryLastMessageRequested,
   agentSessionRetryWithModelRequested,
   agentSessionRetryWithProviderRequested,
   agentSessionStopChatRequested,
+  updateSession,
 } from '../../agent-session/agent-session-slice';
 import {
   selectAgentIsResponding,
@@ -62,6 +64,12 @@ import {
   chatModelUnavailableCleared,
   chatQueueProcessingReceived,
   chatQueuedRetryRecordSet,
+  chatQueuedRetryRecordUpdated,
+  editQueuedMessageRequested,
+  clearChatDraftRequested,
+  flushChatDraftRequested,
+  retryAgentRequested,
+  saveChatDraftRequested,
   chatSendFailed,
   chatSendStarted,
   chatStopCompleted,
@@ -73,6 +81,7 @@ import {
 } from '../chat-state-slice';
 import {
   selectChatLastAttemptedMessage,
+  selectChatError,
   selectChatLastChunkTime,
   selectChatStatusEvents,
   selectTranscriptHydration,
@@ -90,6 +99,110 @@ type RetryAction = ReturnType<typeof agentSessionRetryLastMessageRequested>;
 type RetryModelAction = ReturnType<typeof agentSessionRetryWithModelRequested>;
 type RetryProviderAction = ReturnType<typeof agentSessionRetryWithProviderRequested>;
 type RetryFromStalledAction = ReturnType<typeof agentSessionRetryFromStalledRequested>;
+type PersistDraftAction =
+  ReturnType<typeof saveChatDraftRequested> | ReturnType<typeof flushChatDraftRequested>;
+
+function* editQueuedMessage(
+  action: ReturnType<typeof editQueuedMessageRequested>,
+): SagaGenerator<void> {
+  const [agentId, messageId, content, editing] = action.payload;
+  action.promise.catch(() => {});
+  let settled = false;
+  try {
+    const result = yield* call(
+      [appClient.agents, appClient.agents.editQueued],
+      agentId,
+      messageId,
+      content,
+      editing,
+    );
+    if (result.success) {
+      yield* put(
+        chatQueuedRetryRecordUpdated(agentId, messageId, result.queuedMessage?.content ?? content),
+      );
+    }
+    yield* put(action.success(result));
+    settled = true;
+  } catch (error) {
+    const failure = error instanceof Error ? error : new Error(String(error));
+    yield* put(action.failure(failure));
+    settled = true;
+  } finally {
+    if (!settled && (yield* cancelled())) {
+      yield* put(action.failure(new Error(CANCELLED_ERROR)));
+    }
+  }
+}
+
+function* clearDraft(action: ReturnType<typeof clearChatDraftRequested>): SagaGenerator<void> {
+  const [workspaceId, agentId] = action.payload;
+  action.promise.catch(() => {});
+  let settled = false;
+  try {
+    yield* call([appClient.drafts, appClient.drafts.clear], workspaceId, agentId);
+    yield* put(action.success(undefined as void));
+    settled = true;
+  } catch (error) {
+    const failure = error instanceof Error ? error : new Error(String(error));
+    logger.debug('Failed to clear chat draft', { workspaceId, agentId, error: failure });
+    yield* put(action.failure(failure));
+    settled = true;
+  } finally {
+    if (!settled && (yield* cancelled())) {
+      yield* put(action.failure(new Error(CANCELLED_ERROR)));
+    }
+  }
+}
+
+function* persistDraft(action: PersistDraftAction): SagaGenerator<void> {
+  const [workspaceId, agentId, text, attachments] = action.payload;
+  action.promise.catch(() => {});
+  let settled = false;
+  try {
+    if (action.type === saveChatDraftRequested.type) yield* delay(500);
+    const result = yield* call(
+      [appClient.drafts, appClient.drafts.set],
+      workspaceId,
+      agentId,
+      text,
+      attachments,
+    );
+    yield* put(action.success(result));
+    settled = true;
+  } catch (error) {
+    yield* put(action.failure(error instanceof Error ? error : new Error(String(error))));
+    settled = true;
+  } finally {
+    if (!settled && (yield* cancelled())) {
+      yield* put(action.failure(new Error('Draft save superseded')));
+    }
+  }
+}
+
+function* retryAgent(action: ReturnType<typeof retryAgentRequested>): SagaGenerator<void> {
+  const [agentId, workspaceId] = action.payload;
+  const priorError =
+    (yield* selectChatError.effect(agentId)) ?? m.chat_chatPanel_agentFailedToStart_error();
+  yield* put(chatErrorCleared(agentId));
+  try {
+    const result = yield* call([appClient.agents, appClient.agents.retry], agentId, workspaceId);
+    if (!result.ok) {
+      yield* put(chatSendFailed(agentId, result.error || priorError));
+      yield* put(agentSessionRetryLastMessageRequested(agentId, workspaceId));
+      return;
+    }
+    yield* put(
+      updateSession(agentId, {
+        status: result.redriven === false ? AgentStatus.RuntimeIdle : AgentStatus.Pending,
+        stopReason: null,
+      }),
+    );
+    if (result.redriven === false) yield* call(showNothingToRetry);
+  } catch (error) {
+    yield* put(chatSendFailed(agentId, error instanceof Error ? error.message : priorError));
+    yield* put(agentSessionRetryLastMessageRequested(agentId, workspaceId));
+  }
+}
 type ChatCommand =
   | SendAction
   | SendQueuedNowAction
@@ -816,6 +929,14 @@ function* discardPendingCommand(action: ChatCommand): SagaGenerator<void> {
 }
 
 export function* chatSendSaga(): SagaGenerator<void> {
+  yield* takeEvery(editQueuedMessageRequested, editQueuedMessage);
+  yield* takeEvery(clearChatDraftRequested, clearDraft);
+  yield* takeEvery(retryAgentRequested, retryAgent);
+  yield* takeLatestInContext(
+    [saveChatDraftRequested, flushChatDraftRequested],
+    (action) => `${action.payload[0]}\u0000${action.payload[1]}`,
+    persistDraft,
+  );
   yield* takeEvery(agentSessionStopChatRequested, runChatCommand);
   yield* takeEveryByContextFIFO(ORDINARY_CHAT_COMMANDS, getCommandAgentId, runChatCommand, {
     onDiscardPending: discardPendingCommand,

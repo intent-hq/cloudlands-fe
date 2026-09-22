@@ -5,8 +5,14 @@ import { call, cancel, cancelled, fork, take, type SagaGenerator } from 'typed-r
 
 type ContextWorker<PrefixArgs extends unknown[], Message> = Saga<[...PrefixArgs, Message]>;
 type ContextSource<Message> = ActionPattern | TakeableChannel<Message>;
-type ContextDirective = string | { context: string; cancel: true };
+type ContextDirective =
+  string | { context: string; cancel: true; match?: 'exact' | 'prefix' } | null | undefined;
 type VersionedContext = { context: string; generation: number; force?: boolean };
+
+function directiveContext(directive: ContextDirective): string | undefined {
+  if (typeof directive === 'string') return directive;
+  return directive && typeof directive.context === 'string' ? directive.context : undefined;
+}
 
 type WorkerSlot = {
   task?: Task;
@@ -56,7 +62,7 @@ function* discardPendingMessages<Message>(
 function* watchInContext<Message, PrefixArgs extends unknown[]>(
   mode: 'latest' | 'leading',
   source: ContextSource<Message>,
-  getContext: (message: Message) => string,
+  getContext: (message: Message) => ContextDirective,
   worker: ContextWorker<PrefixArgs, Message>,
   args: PrefixArgs,
 ): SagaGenerator<never> {
@@ -64,8 +70,26 @@ function* watchInContext<Message, PrefixArgs extends unknown[]>(
 
   while (true) {
     const message = yield* take(source as TakeableChannel<Message>);
-    const context = getContext(message);
+    const directive = getContext(message);
+    if (directive == null) continue;
+    const context = directiveContext(directive);
+    if (context === undefined) continue;
     const current = slots.get(context);
+
+    if (typeof directive !== 'string') {
+      const matchingContexts =
+        directive.match === 'prefix'
+          ? [...slots.keys()].filter((key) => key.startsWith(context))
+          : current
+            ? [context]
+            : [];
+      for (const matchingContext of matchingContexts) {
+        const matching = slots.get(matchingContext);
+        slots.delete(matchingContext);
+        if (matching?.task?.isRunning()) yield* cancel(matching.task);
+      }
+      continue;
+    }
 
     if (mode === 'leading' && (current?.task?.isRunning() || (current && !current.task))) {
       continue;
@@ -131,13 +155,22 @@ function* watchSingleFlightInContext<Message, PrefixArgs extends unknown[]>(
     while (true) {
       const message = yield* take(source as TakeableChannel<Message>);
       const directive = getContext(message);
-      const context = typeof directive === 'string' ? directive : directive.context;
+      if (directive == null) continue;
+      const context = directiveContext(directive);
+      if (context === undefined) continue;
       const current = slots.get(context);
 
       if (typeof directive !== 'string') {
-        if (current) {
-          slots.delete(context);
-          if (current.task?.isRunning()) yield* cancel(current.task);
+        const matchingContexts =
+          directive.match === 'prefix'
+            ? [...slots.keys()].filter((key) => key.startsWith(context))
+            : current
+              ? [context]
+              : [];
+        for (const matchingContext of matchingContexts) {
+          const matching = slots.get(matchingContext);
+          slots.delete(matchingContext);
+          if (matching?.task?.isRunning()) yield* cancel(matching.task);
         }
         continue;
       }
@@ -224,19 +257,19 @@ function* watchEveryByContextFIFO<Message, PrefixArgs extends unknown[]>(
 
 export function takeLatestInContext<P extends ActionPattern, PrefixArgs extends unknown[]>(
   pattern: P,
-  getContext: (action: ActionMatchingPattern<P>) => string,
+  getContext: (action: ActionMatchingPattern<P>) => ContextDirective,
   worker: ContextWorker<PrefixArgs, ActionMatchingPattern<P>>,
   ...args: PrefixArgs
 ): SagaGenerator<Task>;
 export function takeLatestInContext<Message, PrefixArgs extends unknown[]>(
   channel: TakeableChannel<Message>,
-  getContext: (message: Message) => string,
+  getContext: (message: Message) => ContextDirective,
   worker: ContextWorker<PrefixArgs, Message>,
   ...args: PrefixArgs
 ): SagaGenerator<Task>;
 export function* takeLatestInContext<Message, PrefixArgs extends unknown[]>(
   source: ContextSource<Message>,
-  getContext: (message: Message) => string,
+  getContext: (message: Message) => ContextDirective,
   worker: ContextWorker<PrefixArgs, Message>,
   ...args: PrefixArgs
 ): SagaGenerator<Task> {
@@ -274,19 +307,19 @@ export function* takeLatestByContext<Message, PrefixArgs extends unknown[]>(
 
 export function takeLeadingInContext<P extends ActionPattern, PrefixArgs extends unknown[]>(
   pattern: P,
-  getContext: (action: ActionMatchingPattern<P>) => string,
+  getContext: (action: ActionMatchingPattern<P>) => ContextDirective,
   worker: ContextWorker<PrefixArgs, ActionMatchingPattern<P>>,
   ...args: PrefixArgs
 ): SagaGenerator<Task>;
 export function takeLeadingInContext<Message, PrefixArgs extends unknown[]>(
   channel: TakeableChannel<Message>,
-  getContext: (message: Message) => string,
+  getContext: (message: Message) => ContextDirective,
   worker: ContextWorker<PrefixArgs, Message>,
   ...args: PrefixArgs
 ): SagaGenerator<Task>;
 export function* takeLeadingInContext<Message, PrefixArgs extends unknown[]>(
   source: ContextSource<Message>,
-  getContext: (message: Message) => string,
+  getContext: (message: Message) => ContextDirective,
   worker: ContextWorker<PrefixArgs, Message>,
   ...args: PrefixArgs
 ): SagaGenerator<Task> {
@@ -299,8 +332,10 @@ export function* takeLeadingInContext<Message, PrefixArgs extends unknown[]>(
  * Starts the first message for each context immediately and retains only the latest
  * message received while that context is running for one trailing rerun. Returning
  * `{ context, cancel: true }` cancels and retires that context without running queued
- * trailing work. Workers remain attached to the watcher, and caller-owned channels
- * are never closed. Natural channel END stops new intake and drains accepted trailing work.
+ * trailing work. Set `match: 'prefix'` to cancel every active context beginning with
+ * the supplied context. Workers remain attached to the watcher, and caller-owned
+ * channels are never closed. Natural channel END stops new intake and drains accepted
+ * trailing work.
  */
 export function takeSingleFlightInContext<P extends ActionPattern, PrefixArgs extends unknown[]>(
   pattern: P,

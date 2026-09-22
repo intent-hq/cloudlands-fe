@@ -81,6 +81,12 @@ vi.mock('$lib/utils/workspace-navigation', async (importOriginal) => ({
 
 vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
   selectWorkspaceById: mocks.selector(() => mocks.workspaceEntity),
+  selectWorkspaceMutation: mocks.selector(() => ({
+    loading: false,
+    error: null,
+    version: 0,
+    requestId: null,
+  })),
   selectWorkspaceActivePullRequest: mocks.selector(() => null),
   selectWorkspaceProgressHeadline: mocks.selector(() => ({ headline: '', subtext: '' })),
   selectWorkspaceProgressActions: mocks.selector(() => []),

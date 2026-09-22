@@ -106,6 +106,11 @@ export const heartbeatFailed = createAction('daemonHealth/heartbeatFailed');
  */
 export const pollSystemStatus = createAction('daemonHealth/pollSystemStatus');
 
+/** Component lifecycle signal for the saga-owned details-menu polling loop. */
+export const setDetailsPollingActive = createAction<[active: boolean]>(
+  'daemonHealth/setDetailsPollingActive',
+);
+
 /**
  * system.status poll succeeded. `connectionGeneration` is the value the
  * poll captured when its request started; the reducer discards the result

@@ -1,6 +1,9 @@
 import { createAction } from '@augmentcode/themis/utils/store/create-action';
 import { createReducer } from '@augmentcode/themis/utils/store/create-reducer';
 import type { LinearAuthSliceState } from './linear-auth-types';
+import type { LinearIssueFilter } from '$features/linear-auth/constants';
+import type { LinearIssueResult } from '$features/linear-auth/renderer/linear-auth.client';
+import { createCollection } from '@augmentcode/themis/utils/collections/collection-utils';
 
 const initialState: LinearAuthSliceState = {
   isAuthenticated: false,
@@ -8,8 +11,10 @@ const initialState: LinearAuthSliceState = {
   isAuthenticating: false,
   oauthUrl: null,
   error: null,
-  issues: [],
+  issues: createCollection<LinearIssueResult, 'id'>('id'),
   isLoadingIssues: false,
+  issueFilter: 'all',
+  issueFilterLoaded: false,
 };
 
 // --- Actions ---
@@ -34,6 +39,27 @@ export const startLinearAuth = createAction('linearAuth/startAuth');
 
 /** Trigger: logout — clears the daemon-held API key and re-probes */
 export const logoutLinear = createAction('linearAuth/logout');
+
+/** Trigger: hydrate the FE-local issue filter. */
+export const initializeLinearIssueFilter = createAction('linearAuth/initializeIssueFilter');
+
+/** User intent: update and persist the FE-local issue filter. */
+export const setLinearIssueFilter = createAction<[filter: LinearIssueFilter]>(
+  'linearAuth/setIssueFilter',
+);
+
+/** Hydration result; separate from user intent so boot does not write back. */
+export const hydrateLinearIssueFilter = createAction<[filter: LinearIssueFilter]>(
+  'linearAuth/hydrateIssueFilter',
+);
+
+export const loadLinearIssuesRequested = createAction<[filter: LinearIssueFilter]>(
+  'linearAuth/loadIssuesRequested',
+);
+export const linearIssuesLoadStarted = createAction('linearAuth/issuesLoadStarted');
+export const linearIssuesLoaded =
+  createAction<[issues: LinearIssueResult[]]>('linearAuth/issuesLoaded');
+export const linearIssuesLoadSettled = createAction('linearAuth/issuesLoadSettled');
 
 /** Set auth state from IPC response */
 export const setLinearAuthState = createAction(
@@ -70,4 +96,26 @@ linearAuthReducer.with(setLinearIsAuthenticating, (state, { payload: [value] }) 
 linearAuthReducer.with(setLinearError, (state, { payload: [error] }) => ({
   ...state,
   error,
+}));
+linearAuthReducer.with(setLinearIssueFilter, (state, { payload: [issueFilter] }) => ({
+  ...state,
+  issueFilter,
+  issueFilterLoaded: true,
+}));
+linearAuthReducer.with(hydrateLinearIssueFilter, (state, { payload: [issueFilter] }) => ({
+  ...state,
+  issueFilter,
+  issueFilterLoaded: true,
+}));
+linearAuthReducer.with(linearIssuesLoadStarted, (state) => ({
+  ...state,
+  isLoadingIssues: true,
+}));
+linearAuthReducer.with(linearIssuesLoaded, (state, { payload: [issues] }) => ({
+  ...state,
+  issues: createCollection<LinearIssueResult, 'id'>('id', issues),
+}));
+linearAuthReducer.with(linearIssuesLoadSettled, (state) => ({
+  ...state,
+  isLoadingIssues: false,
 }));

@@ -16,10 +16,10 @@
   import SetupScriptModal from './SetupScriptModal.svelte';
   import { Button } from '$lib/components/ui/button';
   import { onMount } from 'svelte';
-  import { appClient } from '$lib/client';
   import { store as appStore } from '$store/renderer/store';
   import { selectWorkspaceItems } from '$store/renderer/slices/workspace/workspace-selectors';
   import { replaceWorkspaceList } from '$store/renderer/slices/workspace/workspace-slice';
+  import { generateWorkspaceSetupScriptRequested } from '$store/renderer/slices/workspace-initializer/workspace-initializer-slice';
   import { WorkspaceStatus, type Workspace } from '$shared/types';
 
   let { generator = false }: { generator?: boolean } = $props();
@@ -35,7 +35,7 @@
   onMount(() => {
     if (!generator) return;
     const previousWorkspaces = selectWorkspaceItems.select(appStore.state);
-    const previousGenerate = appClient.setupScripts.generate;
+    const originalDispatch = appStore.dispatch;
     appStore.dispatch(
       replaceWorkspaceList([
         {
@@ -53,18 +53,28 @@
         },
       ]),
     );
-    appClient.setupScripts.generate = async () => {
-      generationCalls += 1;
-      return {
-        script: '# Fixture generated draft; never executed.\nprintf "fixture draft\\n"\n',
-        projectType: 'node',
-        updatedAt: 1789560000000,
-        generatedBy: 'agent',
-      };
-    };
+    Object.defineProperty(appStore, 'dispatch', {
+      configurable: true,
+      value: (action: Parameters<typeof originalDispatch>[0]) => {
+        const result = originalDispatch(action);
+        if (action.type === generateWorkspaceSetupScriptRequested.type) {
+          generationCalls += 1;
+          const request = action as ReturnType<typeof generateWorkspaceSetupScriptRequested>;
+          originalDispatch(
+            request.success({
+              script: '# Fixture generated draft; never executed.\nprintf "fixture draft\\n"\n',
+              projectType: 'node',
+              updatedAt: 1789560000000,
+              generatedBy: 'agent',
+            }),
+          );
+        }
+        return result;
+      },
+    });
     generatorReady = true;
     return () => {
-      appClient.setupScripts.generate = previousGenerate;
+      Object.defineProperty(appStore, 'dispatch', { configurable: true, value: originalDispatch });
       appStore.dispatch(replaceWorkspaceList(previousWorkspaces));
     };
   });

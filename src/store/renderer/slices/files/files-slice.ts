@@ -1,4 +1,4 @@
-import { createAction } from '@augmentcode/themis/utils/store/create-action';
+import { createAction, createAsyncAction } from '@augmentcode/themis/utils/store/create-action';
 import { createReducer } from '@augmentcode/themis/utils/store/create-reducer';
 import {
   createCollection,
@@ -12,6 +12,8 @@ import type {
   FileContentEntry,
   FileContentReadOptions,
   FileContentSaveOptions,
+  LegacyFileDeleteOperation,
+  LegacyFileDownloadResult,
   FilesState,
   FilesWorkspaceState,
 } from './files-types';
@@ -20,6 +22,9 @@ export type { FileContentReadOptions, FileContentSaveOptions, FilesState, FilesW
 
 export const emptyFilesWorkspaceState: FilesWorkspaceState = {
   files: createCollection<FileContentEntry, 'path'>('path'),
+  fileNameSearches: {},
+  mediaResolutions: {},
+  deleteOperations: {},
 };
 
 export const initialState: FilesState = {
@@ -122,6 +127,68 @@ export const saveFileContentFailed = createAction<[wsId: string, path: string, e
   'files/saveFileContentFailed',
 );
 
+export const searchFileNamesRequested = createAction<
+  [wsId: string, searchId: string, pattern: string, limit: number, debounceMs: number]
+>('files/searchFileNamesRequested');
+export const searchFileNamesSucceeded = createAction<
+  [wsId: string, searchId: string, pattern: string, files: string[]]
+>('files/searchFileNamesSucceeded');
+export const searchFileNamesFailed = createAction<
+  [wsId: string, searchId: string, pattern: string, error: string]
+>('files/searchFileNamesFailed');
+
+export const resolveWorkspaceMediaRequested = createAction<
+  [wsId: string, resolutionId: string, requestedPath: string, sourcePath: string, tabId: string]
+>('files/resolveWorkspaceMediaRequested');
+export const resolveWorkspaceMediaSucceeded = createAction<
+  [wsId: string, resolutionId: string, requestedPath: string, resolvedPath: string]
+>('files/resolveWorkspaceMediaSucceeded');
+export const resolveWorkspaceMediaFailed = createAction<
+  [wsId: string, resolutionId: string, requestedPath: string, error: string]
+>('files/resolveWorkspaceMediaFailed');
+
+export const openLegacyFileRequested = createAsyncAction<
+  [workspaceId: string, path: string],
+  string
+>('files/openLegacyFile', 'files/openLegacyFileRequested');
+export const saveLegacyFileRequested = createAsyncAction<
+  [workspaceId: string, path: string, content: string],
+  void
+>('files/saveLegacyFile', 'files/saveLegacyFileRequested');
+export const readLegacyFileRequested = createAsyncAction<[path: string], string>(
+  'files/readLegacyFile',
+  'files/readLegacyFileRequested',
+);
+export const deleteLegacyFileRequested = createAsyncAction<
+  [workspaceId: string, path: string, tabId?: string, requestId?: string],
+  [workspaceId: string, path: string, tabId: string | undefined, requestId: string],
+  void
+>(
+  'files/deleteLegacyFile',
+  'files/deleteLegacyFileRequested',
+  (workspaceId, path, tabId, requestId = globalThis.crypto.randomUUID()) => [
+    workspaceId,
+    path,
+    tabId,
+    requestId,
+  ],
+);
+export const clearLegacyFileDeleteOperation = createAction<
+  [workspaceId: string, tabId: string, requestId: string]
+>('files/clearLegacyFileDeleteOperation');
+export const writeLegacyFileRequested = createAsyncAction<
+  [workspaceId: string, path: string, content: string],
+  void
+>('files/writeLegacyFile', 'files/writeLegacyFileRequested');
+export const downloadLegacyFileRequested = createAsyncAction<
+  [path: string],
+  LegacyFileDownloadResult
+>('files/downloadLegacyFile', 'files/downloadLegacyFileRequested');
+export const revealLegacyFileRequested = createAsyncAction<[path: string], void>(
+  'files/revealLegacyFile',
+  'files/revealLegacyFileRequested',
+);
+
 export const filesReducer = createReducer<FilesState>(initialState);
 filesReducer.with(workspaceUnmounted, (state, { payload: [wsId] }) =>
   clearWorkspaceState(state, wsId),
@@ -210,4 +277,137 @@ filesReducer.with(saveFileContentFailed, (state, { payload: [wsId, path, error] 
     saving: false,
     error,
   })),
+);
+filesReducer.with(
+  deleteLegacyFileRequested,
+  (state, { payload: [wsId, path, tabId, requestId] }) => {
+    if (!tabId) return state;
+    const workspaceState = getWorkspaceState(state, wsId);
+    const operation: LegacyFileDeleteOperation = {
+      requestId,
+      path,
+      status: 'loading',
+      error: null,
+    };
+    return setWorkspaceState(state, wsId, {
+      ...workspaceState,
+      deleteOperations: { ...workspaceState.deleteOperations, [tabId]: operation },
+    });
+  },
+);
+filesReducer.with(deleteLegacyFileRequested.success, (state, { payload }) => {
+  const [wsId, path, tabId, requestId] = payload.request;
+  if (!tabId) return state;
+  const workspaceState = getWorkspaceState(state, wsId);
+  const current = workspaceState.deleteOperations[tabId];
+  if (current?.requestId !== requestId || current.path !== path) return state;
+  return setWorkspaceState(state, wsId, {
+    ...workspaceState,
+    deleteOperations: {
+      ...workspaceState.deleteOperations,
+      [tabId]: { ...current, status: 'success' },
+    },
+  });
+});
+filesReducer.with(deleteLegacyFileRequested.failure, (state, { payload }) => {
+  const [wsId, path, tabId, requestId] = payload.request;
+  if (!tabId) return state;
+  const workspaceState = getWorkspaceState(state, wsId);
+  const current = workspaceState.deleteOperations[tabId];
+  if (current?.requestId !== requestId || current.path !== path) return state;
+  return setWorkspaceState(state, wsId, {
+    ...workspaceState,
+    deleteOperations: {
+      ...workspaceState.deleteOperations,
+      [tabId]: { ...current, status: 'error', error: payload.error.message },
+    },
+  });
+});
+filesReducer.with(
+  clearLegacyFileDeleteOperation,
+  (state, { payload: [wsId, tabId, requestId] }) => {
+    const workspaceState = state.byWorkspaceId[wsId];
+    if (workspaceState?.deleteOperations[tabId]?.requestId !== requestId) return state;
+    const deleteOperations = { ...workspaceState.deleteOperations };
+    delete deleteOperations[tabId];
+    return setWorkspaceState(state, wsId, { ...workspaceState, deleteOperations });
+  },
+);
+filesReducer.with(searchFileNamesRequested, (state, { payload: [wsId, searchId, pattern] }) => {
+  const workspaceState = getWorkspaceState(state, wsId);
+  return setWorkspaceState(state, wsId, {
+    ...workspaceState,
+    fileNameSearches: {
+      ...workspaceState.fileNameSearches,
+      [searchId]: { pattern, files: [], loading: pattern.length > 0, error: null },
+    },
+  });
+});
+filesReducer.with(
+  searchFileNamesSucceeded,
+  (state, { payload: [wsId, searchId, pattern, files] }) => {
+    const workspaceState = getWorkspaceState(state, wsId);
+    if (workspaceState.fileNameSearches[searchId]?.pattern !== pattern) return state;
+    return setWorkspaceState(state, wsId, {
+      ...workspaceState,
+      fileNameSearches: {
+        ...workspaceState.fileNameSearches,
+        [searchId]: { pattern, files, loading: false, error: null },
+      },
+    });
+  },
+);
+filesReducer.with(searchFileNamesFailed, (state, { payload: [wsId, searchId, pattern, error] }) => {
+  const workspaceState = getWorkspaceState(state, wsId);
+  if (workspaceState.fileNameSearches[searchId]?.pattern !== pattern) return state;
+  return setWorkspaceState(state, wsId, {
+    ...workspaceState,
+    fileNameSearches: {
+      ...workspaceState.fileNameSearches,
+      [searchId]: { pattern, files: [], loading: false, error },
+    },
+  });
+});
+filesReducer.with(
+  resolveWorkspaceMediaRequested,
+  (state, { payload: [wsId, resolutionId, requestedPath] }) => {
+    const workspaceState = getWorkspaceState(state, wsId);
+    return setWorkspaceState(state, wsId, {
+      ...workspaceState,
+      mediaResolutions: {
+        ...workspaceState.mediaResolutions,
+        [resolutionId]: { requestedPath, resolvedPath: null, loading: true, error: null },
+      },
+    });
+  },
+);
+filesReducer.with(
+  resolveWorkspaceMediaSucceeded,
+  (state, { payload: [wsId, resolutionId, requestedPath, resolvedPath] }) => {
+    const workspaceState = getWorkspaceState(state, wsId);
+    if (workspaceState.mediaResolutions[resolutionId]?.requestedPath !== requestedPath)
+      return state;
+    return setWorkspaceState(state, wsId, {
+      ...workspaceState,
+      mediaResolutions: {
+        ...workspaceState.mediaResolutions,
+        [resolutionId]: { requestedPath, resolvedPath, loading: false, error: null },
+      },
+    });
+  },
+);
+filesReducer.with(
+  resolveWorkspaceMediaFailed,
+  (state, { payload: [wsId, resolutionId, requestedPath, error] }) => {
+    const workspaceState = getWorkspaceState(state, wsId);
+    if (workspaceState.mediaResolutions[resolutionId]?.requestedPath !== requestedPath)
+      return state;
+    return setWorkspaceState(state, wsId, {
+      ...workspaceState,
+      mediaResolutions: {
+        ...workspaceState.mediaResolutions,
+        [resolutionId]: { requestedPath, resolvedPath: requestedPath, loading: false, error },
+      },
+    });
+  },
 );

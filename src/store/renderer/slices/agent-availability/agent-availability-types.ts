@@ -33,4 +33,8 @@ export type AgentAvailabilityState = {
   watchedTerminalIds: string[];
   /** npx availability status for npx-fallback providers. */
   npxStatus: NpxStatus | null;
+  /** Daemon-owned hidden-provider verdict; null means the verdict is unknown. */
+  hiddenProviderIds: string[] | null;
+  /** Aggregate availability request failure shown by provider settings. */
+  availabilityError: string | null;
 };

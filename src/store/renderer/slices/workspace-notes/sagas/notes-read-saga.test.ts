@@ -10,13 +10,20 @@ import {
   applyNoteCreated,
   applyNoteDeleted,
   applyNoteUpdated,
+  applyReadyTasks,
+  lineAttributionLoaded,
   loadWorkspaceNotesFailed,
   loadWorkspaceNotesSucceeded,
+  loadLineAttributionRequested,
   noteEventReceived,
   selectNote,
+  workspaceProgressReadyTasksChanged,
+  workspaceProgressStatusRefreshRequested,
   workspaceNotesReducer,
   workspaceNotesHydrationRequested,
 } from '../workspace-notes-slice';
+import { readAcceptChangesStatusRequested } from '../../git/git-slice';
+import { WORKSPACE_PROGRESS_REFRESH_DEBOUNCE_MS } from './notes-read-saga';
 import { notesReadSaga } from './notes-read-saga';
 
 const WS = 'ws-notes-read';
@@ -74,6 +81,50 @@ function harness(seed: Note[] = []) {
 
 describe('notesReadSaga', () => {
   afterEach(() => vi.restoreAllMocks());
+
+  it('loads line attribution with the exact workspace-scoped wire request', async () => {
+    const response = { attributions: {} };
+    const load = vi
+      .spyOn(appClient.notes.lineAttribution, 'load')
+      .mockResolvedValue(response as never);
+    const run = harness();
+
+    run.channel.put(loadLineAttributionRequested(WS, 'note-attribution'));
+    await settle();
+
+    expect(load.mock.calls).toEqual([[WS, 'note-attribution']]);
+    expect(run.actions).toContainEqual(lineAttributionLoaded(WS, 'note-attribution', {}));
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('suppresses a stale attribution result after teardown and permits a fresh load', async () => {
+    const stale = deferred<{ attributions: Record<string, never> }>();
+    const load = vi
+      .spyOn(appClient.notes.lineAttribution, 'load')
+      .mockReturnValueOnce(stale.promise as never)
+      .mockResolvedValueOnce({ attributions: {} } as never);
+    const run = harness();
+
+    run.channel.put(loadLineAttributionRequested(WS, 'note-attribution'));
+    await settle();
+    run.channel.put(workspaceUnmounted(WS));
+    await settle();
+    run.channel.put(loadLineAttributionRequested(WS, 'note-attribution'));
+    await settle();
+    stale.resolve({ attributions: {} });
+    await settle();
+
+    expect(load.mock.calls).toEqual([
+      [WS, 'note-attribution'],
+      [WS, 'note-attribution'],
+    ]);
+    expect(run.actions.filter((action) => action.type === lineAttributionLoaded.type)).toEqual([
+      lineAttributionLoaded(WS, 'note-attribution', {}),
+    ]);
+    run.task.cancel();
+    await run.task.toPromise();
+  });
 
   it('hydrates with the slim-list + full-spec requests and maps the protocol note field by field', async () => {
     const spec = {
@@ -478,6 +529,61 @@ describe('notesReadSaga', () => {
 
     expect(get.mock.calls).toEqual([['note-1', WS]]);
     expect(run.actions).toEqual([]);
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('coalesces a progress status burst into one debounced refresh', async () => {
+    vi.useFakeTimers();
+    const run = harness();
+    try {
+      run.channel.put(workspaceProgressStatusRefreshRequested(WS));
+      run.channel.put(workspaceProgressStatusRefreshRequested(WS));
+      run.channel.put(workspaceProgressStatusRefreshRequested(WS));
+      await settle();
+
+      await vi.advanceTimersByTimeAsync(WORKSPACE_PROGRESS_REFRESH_DEBOUNCE_MS);
+      await settle();
+      expect(run.actions).toEqual([
+        expect.objectContaining({
+          type: readAcceptChangesStatusRequested.type,
+          payload: [WS],
+        }),
+      ]);
+    } finally {
+      run.task.cancel();
+      await run.task.toPromise();
+      vi.useRealTimers();
+    }
+  });
+
+  it('cancels a pending progress status refresh when its workspace unmounts', async () => {
+    vi.useFakeTimers();
+    const run = harness();
+    try {
+      run.channel.put(workspaceProgressStatusRefreshRequested(WS));
+      await settle();
+      run.channel.put(workspaceUnmounted(WS));
+      await settle();
+
+      await vi.advanceTimersByTimeAsync(WORKSPACE_PROGRESS_REFRESH_DEBOUNCE_MS);
+      await settle();
+      expect(run.actions).toEqual([]);
+    } finally {
+      run.task.cancel();
+      await run.task.toPromise();
+      vi.useRealTimers();
+    }
+  });
+
+  it('applies the daemon-owned ready-task ID snapshot from a task event', async () => {
+    const ready = note('ready');
+    const run = harness([note('not-ready'), ready]);
+
+    run.channel.put(workspaceProgressReadyTasksChanged(WS, ['ready']));
+    await settle();
+
+    expect(run.actions).toEqual([applyReadyTasks(WS, [ready])]);
     run.task.cancel();
     await run.task.toPromise();
   });

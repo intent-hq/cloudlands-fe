@@ -42,10 +42,21 @@ interface GhRequirementStatus {
   version?: string;
 }
 
+interface RtkRequirementStatus {
+  checked: boolean;
+  available: boolean;
+}
+
 export interface HostRequirementsState {
   git: GitRequirementStatus;
   node: NodeRequirementStatus;
   gh: GhRequirementStatus;
+  rtk: RtkRequirementStatus;
+  rtkEnabled: boolean;
+  rtkSettingsLoaded: boolean;
+  rtkChecking: boolean;
+  rtkUpdating: boolean;
+  rtkError: string | null;
   /** True while a requirements check group is in flight. */
   checking: boolean;
   /** Flips true once the first check group settles (success OR failure). */

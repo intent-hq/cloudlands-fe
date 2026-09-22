@@ -15,12 +15,27 @@ const {
   activeWorkspaceState,
   selectorWorkspaceArgs,
   executorState,
+  executorListeners,
+  commandOperations,
+  emitCommandOperations,
+  emitExecutorState,
   mockGetNavigationContext,
-  notify,
+  toast,
 } = vi.hoisted(() => {
   const mockDetect = vi.fn();
   const mockExecute = vi.fn();
   const mockDispatch = vi.fn();
+  const executorState = {
+    status: 'idle',
+    result: null as string | null,
+    error: null as string | null,
+    agentId: null as string | null,
+  };
+  const executorListeners = new Set<(value: typeof executorState) => void>();
+  const commandOperations = {
+    value: {} as Record<string, any>,
+    listeners: new Set<(value: Record<string, any>) => void>(),
+  };
   return {
     mockDetect,
     mockExecute,
@@ -28,9 +43,7 @@ const {
     mockScriptCreate: vi.fn(),
     mockScriptUpdate: vi.fn(),
     mockScriptRemove: vi.fn(),
-    backgroundAgentOptions: {
-      value: null as { onResult: (result: string) => Promise<void> } | null,
-    },
+    backgroundAgentOptions: { value: null as unknown },
     scriptEntries: {
       value: [] as any[],
       byWorkspaceId: {} as Record<string, any[]>,
@@ -45,10 +58,18 @@ const {
       value: { id: 'ws-1', path: '/repo' } as any,
       byWorkspaceId: {} as Record<string, any>,
     },
-    executorState: { isRunning: false, agentId: null as string | null },
+    executorState,
+    executorListeners,
+    commandOperations,
+    emitCommandOperations: () => {
+      for (const listener of commandOperations.listeners) listener(commandOperations.value);
+    },
+    emitExecutorState: () => {
+      for (const listener of executorListeners) listener({ ...executorState });
+    },
     mockGetNavigationContext: vi.fn(),
     selectorWorkspaceArgs: [] as unknown[],
-    notify: {
+    toast: {
       success: vi.fn(),
       info: vi.fn(),
       error: vi.fn(),
@@ -88,6 +109,17 @@ vi.mock('$store/renderer/slices/scripts/scripts-selectors', () => ({
         scriptEntries.byWorkspaceId[workspaceId] ?? scriptEntries.value,
     },
   ),
+  selectWorkspaceScriptCommandOperations: (workspaceArg: any) => ({
+    subscribe: (fn: (value: Record<string, any>) => void) => {
+      fn(commandOperations.value);
+      commandOperations.listeners.add(fn);
+      const unsubscribeWorkspace = workspaceArg.subscribe(() => fn(commandOperations.value));
+      return () => {
+        commandOperations.listeners.delete(fn);
+        unsubscribeWorkspace();
+      };
+    },
+  }),
 }));
 vi.mock('$store/renderer/slices/scripts/scripts-slice', async (importOriginal) => ({
   ...(await importOriginal<typeof import('$store/renderer/slices/scripts/scripts-slice')>()),
@@ -132,9 +164,9 @@ vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
 vi.mock('$store/renderers/terminal-overlay.store.svelte', () => ({
   terminalsStore: { terminals: [], activeTerminalId: null },
 }));
-vi.mock('$lib/components/patterns/notify', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('$lib/components/patterns/notify')>()),
-  notify,
+vi.mock('$lib/components/ui/toast', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('$lib/components/ui/toast')>()),
+  toast,
 }));
 vi.mock('$lib/utils/client-logger', () => ({
   createLogger: () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() }),
@@ -157,10 +189,29 @@ vi.mock(
       (workspaceArg: any) => {
         selectorWorkspaceArgs.push(workspaceArg);
         return {
-          subscribe: (fn: any) => workspaceArg.subscribe(() => fn(executorState.isRunning)),
+          subscribe: (fn: any) =>
+            workspaceArg.subscribe(() =>
+              fn(executorState.status === 'initializing' || executorState.status === 'running'),
+            ),
         };
       },
-      { select: () => executorState.isRunning },
+      {
+        select: () => executorState.status === 'initializing' || executorState.status === 'running',
+      },
+    ),
+    selectExecutorState: Object.assign(
+      (workspaceArg: any) => ({
+        subscribe: (fn: any) => {
+          fn(executorState);
+          executorListeners.add(fn);
+          const unsubscribeWorkspace = workspaceArg.subscribe(() => fn(executorState));
+          return () => {
+            executorListeners.delete(fn);
+            unsubscribeWorkspace();
+          };
+        },
+      }),
+      { select: () => executorState },
     ),
     selectExecutorAgentId: Object.assign(
       (workspaceArg: any) => {
@@ -238,8 +289,12 @@ beforeEach(() => {
   terminalEntries.byWorkspaceId = {};
   activeTerminalIds.byWorkspaceId = {};
   activeWorkspaceState.byWorkspaceId = {};
-  executorState.isRunning = false;
+  executorState.status = 'idle';
+  executorState.result = null;
+  executorState.error = null;
   executorState.agentId = null;
+  commandOperations.value = {};
+  commandOperations.listeners.clear();
   mockGetNavigationContext.mockReset();
   selectorWorkspaceArgs.length = 0;
 });
@@ -265,24 +320,35 @@ describe('TerminalSidebar detection flow', () => {
       },
     ] as any[];
 
-    let resolveDetect: (() => void) | undefined;
-    mockDetect.mockReturnValue(
-      new Promise((resolve) => {
-        resolveDetect = () => resolve({ success: true, detected: 0 });
-      }),
-    );
-    // mockDetect already configured via mockReturnValue above
-
     render(TerminalSidebar, { props: { workspaceId: 'ws-1' } });
 
     await fireEvent.click(screen.getByTitle('Scan local project files for scripts'));
 
-    await waitFor(() => expect(mockDetect).toHaveBeenCalledWith('ws-1'));
+    await waitFor(() =>
+      expect(mockDispatch).toHaveBeenCalledWith(
+        expect.objectContaining({ type: 'scripts/detectScriptsRequested', payload: ['ws-1'] }),
+      ),
+    );
     expect(mockExecute).not.toHaveBeenCalled();
     expect(screen.getByText('Scanning files…')).toBeTruthy();
 
-    resolveDetect?.();
-    await waitFor(() => expect(notify.info).toHaveBeenCalled());
+    commandOperations.value = {
+      detect: {
+        version: 1,
+        status: 'success',
+        result: {
+          kind: 'detect',
+          detected: 0,
+          added: 0,
+          updated: 0,
+          removed: 0,
+          skippedRunning: [],
+        },
+        error: null,
+      },
+    };
+    emitCommandOperations();
+    await waitFor(() => expect(toast.info).toHaveBeenCalled());
   });
 
   it('offers manual agent-assisted detection after local detection finds no scripts', async () => {
@@ -299,11 +365,25 @@ describe('TerminalSidebar detection flow', () => {
       },
     ] as any[];
 
-    mockDetect.mockResolvedValue({ success: true, detected: 0 });
-
     render(TerminalSidebar, { props: { workspaceId: 'ws-1' } });
 
     await fireEvent.click(screen.getByTitle('Scan local project files for scripts'));
+    commandOperations.value = {
+      detect: {
+        version: 1,
+        status: 'success',
+        result: {
+          kind: 'detect',
+          detected: 0,
+          added: 0,
+          updated: 0,
+          removed: 0,
+          skippedRunning: [],
+        },
+        error: null,
+      },
+    };
+    emitCommandOperations();
 
     await waitFor(() => {
       expect(screen.getByRole('button', { name: /agent assist/i })).toBeTruthy();
@@ -332,11 +412,25 @@ describe('TerminalSidebar detection flow', () => {
       },
     ] as any[];
 
-    mockDetect.mockResolvedValue({ success: true, detected: 0 });
-
     render(TerminalSidebar, { props: { workspaceId: 'ws-1' } });
 
     await fireEvent.click(screen.getByTitle('Scan local project files for scripts'));
+    commandOperations.value = {
+      detect: {
+        version: 1,
+        status: 'success',
+        result: {
+          kind: 'detect',
+          detected: 0,
+          added: 0,
+          updated: 0,
+          removed: 0,
+          skippedRunning: [],
+        },
+        error: null,
+      },
+    };
+    emitCommandOperations();
 
     await waitFor(() => {
       expect(screen.getByRole('button', { name: /agent assist/i })).toBeTruthy();
@@ -350,6 +444,34 @@ describe('TerminalSidebar detection flow', () => {
         expect.objectContaining({ message: expect.stringContaining('Read package.json') }),
       );
     });
+  });
+});
+
+describe('TerminalSidebar restore failures', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    scriptEntries.value = [];
+    activeWorkspaceState.value = { id: 'ws-1', path: '/repo' } as any;
+  });
+
+  it.each([
+    ['remove', 'remove rejected'],
+    ['create', 'create rejected'],
+  ])('does not report restore success when %s fails', async (_mutation, error) => {
+    render(TerminalSidebar, { props: { workspaceId: 'ws-1' } });
+
+    commandOperations.value = {
+      restore: {
+        version: 1,
+        status: 'error',
+        result: null,
+        error,
+      },
+    };
+    emitCommandOperations();
+
+    await waitFor(() => expect(toast.warning).toHaveBeenCalledWith(error));
+    expect(toast.success).not.toHaveBeenCalled();
   });
 });
 
@@ -398,17 +520,16 @@ describe('TerminalSidebar workspace prop changes', () => {
     });
     expect(screen.queryByText('Script A')).toBeNull();
     expect(screen.queryByText('Terminal A')).toBeNull();
-    expect(selectorWorkspaceArgs).toHaveLength(6);
+    expect(selectorWorkspaceArgs).toHaveLength(5);
     expect(selectorWorkspaceArgs.every((arg: any) => typeof arg?.subscribe === 'function')).toBe(
       true,
     );
 
-    await fireEvent.contextMenu(screen.getByRole('button', { name: /^Script B(?:\s|$)/ }));
+    await fireEvent.contextMenu(screen.getByText('Script B'));
     await fireEvent.click(screen.getByText('Delete'));
 
-    await waitFor(() => expect(mockScriptRemove).toHaveBeenCalledWith('ws-b', 'script-b'));
     expect(mockDispatch).toHaveBeenCalledWith({
-      type: 'scripts/removeScript',
+      type: 'scripts/removeScriptRequested',
       payload: ['ws-b', 'script-b'],
     });
   });
@@ -459,31 +580,46 @@ describe('TerminalSidebar agent detection result handling (running-script guard)
   it('skips the running script in the update loop, surfaces the skipped-running toast, and still applies other entries', async () => {
     render(TerminalSidebar, { props: { workspaceId: 'ws-1' } });
 
-    // The daemon-side scriptId upsert tears down the live PTY group, so the
-    // update entry targeting the running auto-detected script must not upsert.
-    await backgroundAgentOptions.value!.onResult(
-      JSON.stringify({
-        add: [{ name: 'lint', command: 'pnpm lint', mode: 'command', category: 'lint' }],
-        update: [
-          { id: 'auto-running', command: 'pnpm dev --host' },
-          { id: 'auto-idle', command: 'pnpm build --clean' },
-        ],
-        remove: ['auto-stale'],
-      }),
-    );
-
-    expect(mockScriptUpdate).toHaveBeenCalledTimes(1);
-    expect(mockScriptUpdate).toHaveBeenCalledWith('ws-1', 'auto-idle', {
-      command: 'pnpm build --clean',
+    executorState.status = 'running';
+    emitExecutorState();
+    await waitFor(() => expect(screen.getByText('Asking agent…')).toBeTruthy());
+    executorState.status = 'success';
+    executorState.result = JSON.stringify({
+      add: [{ name: 'lint', command: 'pnpm lint', mode: 'command', category: 'lint' }],
+      update: [
+        { id: 'auto-running', command: 'pnpm dev --host' },
+        { id: 'auto-idle', command: 'pnpm build --clean' },
+      ],
+      remove: ['auto-stale'],
     });
-    expect(mockScriptCreate).toHaveBeenCalledWith(
-      'ws-1',
-      expect.objectContaining({ name: 'lint', command: 'pnpm lint', mode: 'command' }),
+    emitExecutorState();
+
+    await waitFor(() =>
+      expect(mockDispatch).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: 'scripts/applyScriptDetectionRequested',
+          payload: [
+            'ws-1',
+            {
+              add: [
+                {
+                  name: 'lint',
+                  command: 'pnpm lint',
+                  mode: 'command',
+                  category: 'lint',
+                  source: 'auto-detected',
+                },
+              ],
+              update: [
+                { id: 'auto-running', updates: { command: 'pnpm dev --host' } },
+                { id: 'auto-idle', updates: { command: 'pnpm build --clean' } },
+              ],
+              remove: ['auto-stale'],
+            },
+          ],
+        }),
+      ),
     );
-    expect(mockScriptRemove).toHaveBeenCalledWith('ws-1', 'auto-stale');
-    expect(notify.warning).toHaveBeenCalledTimes(1);
-    expect(notify.warning).toHaveBeenCalledWith(expect.stringContaining('"dev"'));
-    expect(notify.success).toHaveBeenCalled();
   });
 });
 
@@ -517,7 +653,7 @@ describe('TerminalSidebar context menu Escape handling', () => {
   it('closes the context menu on Escape via the escape-layer stack', async () => {
     render(TerminalSidebar, { props: { workspaceId: 'ws-1' } });
 
-    await fireEvent.contextMenu(screen.getByRole('button', { name: /^build(?:\s|$)/ }));
+    await fireEvent.contextMenu(screen.getByText('build'));
     await waitFor(() => expect(screen.getByText('Edit')).toBeTruthy());
 
     const event = pressEscape();
@@ -553,10 +689,16 @@ describe('TerminalSidebar script inline rename', () => {
     mockScriptUpdate.mockResolvedValue({ success: true });
   });
 
+  function dispatchedScriptUpdates() {
+    return mockDispatch.mock.calls
+      .map(([action]) => action)
+      .filter((action) => action?.type === 'scripts/updateScriptRequested');
+  }
+
   it('shows a prefilled rename input on double-click and restores the row on Escape', async () => {
     const { container } = render(TerminalSidebar, { props: { workspaceId: 'ws-1' } });
 
-    await fireEvent.doubleClick(screen.getByRole('button', { name: /build.*npm run build/ }));
+    await fireEvent.doubleClick(screen.getByText('build'));
 
     const input = container.querySelector<HTMLInputElement>('[data-edit-script="script-1"]');
     expect(input).toBeTruthy();
@@ -565,46 +707,50 @@ describe('TerminalSidebar script inline rename', () => {
     await fireEvent.keyDown(input!, { key: 'Escape' });
     expect(container.querySelector('[data-edit-script="script-1"]')).toBeNull();
     expect(screen.getByText('build')).toBeTruthy();
-    expect(mockScriptUpdate).not.toHaveBeenCalled();
+    expect(dispatchedScriptUpdates()).toEqual([]);
   });
 
   it('commits a non-empty rename with Enter', async () => {
     const { container } = render(TerminalSidebar, { props: { workspaceId: 'ws-1' } });
 
-    await fireEvent.doubleClick(screen.getByRole('button', { name: /build.*npm run build/ }));
+    await fireEvent.doubleClick(screen.getByText('build'));
     const input = container.querySelector<HTMLInputElement>('[data-edit-script="script-1"]');
     await fireEvent.input(input!, { target: { value: 'compile' } });
     await fireEvent.keyDown(input!, { key: 'Enter' });
 
     await waitFor(() =>
-      expect(mockScriptUpdate).toHaveBeenCalledWith('ws-1', 'script-1', { name: 'compile' }),
+      expect(dispatchedScriptUpdates()).toContainEqual(
+        expect.objectContaining({ payload: ['ws-1', 'script-1', { name: 'compile' }] }),
+      ),
     );
     expect(container.querySelector('[data-edit-script="script-1"]')).toBeNull();
   });
 
   it('commits a non-empty rename on blur', async () => {
     const { container } = render(TerminalSidebar, { props: { workspaceId: 'ws-1' } });
-    await fireEvent.doubleClick(screen.getByRole('button', { name: /build.*npm run build/ }));
+    await fireEvent.doubleClick(screen.getByText('build'));
     const input = container.querySelector<HTMLInputElement>('[data-edit-script="script-1"]');
     await fireEvent.input(input!, { target: { value: 'bundle' } });
 
     await fireEvent.blur(input!);
 
     await waitFor(() =>
-      expect(mockScriptUpdate).toHaveBeenCalledWith('ws-1', 'script-1', { name: 'bundle' }),
+      expect(dispatchedScriptUpdates()).toContainEqual(
+        expect.objectContaining({ payload: ['ws-1', 'script-1', { name: 'bundle' }] }),
+      ),
     );
     expect(screen.getByText('build')).toBeTruthy();
   });
 
   it('never leaves the script row empty when an empty rename is submitted', async () => {
     const { container } = render(TerminalSidebar, { props: { workspaceId: 'ws-1' } });
-    await fireEvent.doubleClick(screen.getByRole('button', { name: /build.*npm run build/ }));
+    await fireEvent.doubleClick(screen.getByText('build'));
     const input = container.querySelector<HTMLInputElement>('[data-edit-script="script-1"]');
     await fireEvent.input(input!, { target: { value: '   ' } });
 
     await fireEvent.keyDown(input!, { key: 'Enter' });
 
-    expect(mockScriptUpdate).not.toHaveBeenCalled();
+    expect(dispatchedScriptUpdates()).toEqual([]);
     expect(screen.getByText('build')).toBeTruthy();
   });
 });
@@ -615,7 +761,7 @@ describe('TerminalSidebar agent navigation context', () => {
     ['Cmd', { metaKey: true }, true],
     ['Ctrl', { ctrlKey: true }, true],
   ])('forwards %s agent navigation intent', async (_name, modifier, openInAdjacentPanel) => {
-    executorState.isRunning = true;
+    executorState.status = 'running';
     executorState.agentId = 'agent-detect';
     activeWorkspaceState.value = { id: 'ws-1', path: '/repo' } as any;
     mockGetNavigationContext.mockImplementation((event: MouseEvent) => ({

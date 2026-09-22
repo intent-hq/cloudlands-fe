@@ -22,6 +22,12 @@ export const initialState: HostRequirementsState = {
   git: { checked: false, available: false },
   node: { checked: false, ok: false },
   gh: { checked: false, available: false },
+  rtk: { checked: false, available: false },
+  rtkEnabled: false,
+  rtkSettingsLoaded: false,
+  rtkChecking: false,
+  rtkUpdating: false,
+  rtkError: null,
   checking: false,
   hasCheckedOnce: false,
 };
@@ -65,6 +71,28 @@ export const checkHostRequirementsComplete = createAction(
   'hostRequirements/checkHostRequirementsComplete',
 );
 
+export const initializeRtkSettings = createAction('hostRequirements/initializeRtkSettings');
+export const checkRtkRequested = createAction('hostRequirements/checkRtkRequested');
+export const installRtkRequested = createAction('hostRequirements/installRtkRequested');
+export const updateRtkEnabledRequested = createAction<[enabled: boolean]>(
+  'hostRequirements/updateRtkEnabledRequested',
+);
+export const rtkCheckStarted = createAction('hostRequirements/rtkCheckStarted');
+export const rtkRequirementResolved = createAction<[available: boolean]>(
+  'hostRequirements/rtkRequirementResolved',
+);
+export const rtkSettingLoaded = createAction<[enabled: boolean]>(
+  'hostRequirements/rtkSettingLoaded',
+);
+export const rtkSettingLoadFailed = createAction<[error: string]>(
+  'hostRequirements/rtkSettingLoadFailed',
+);
+export const rtkUpdateStarted = createAction('hostRequirements/rtkUpdateStarted');
+export const rtkUpdateSucceeded = createAction<[enabled: boolean]>(
+  'hostRequirements/rtkUpdateSucceeded',
+);
+export const rtkUpdateFailed = createAction<[error: string]>('hostRequirements/rtkUpdateFailed');
+
 // ---------------------------------------------------------------------------
 // Reducer
 // ---------------------------------------------------------------------------
@@ -96,4 +124,37 @@ hostRequirementsReducer.with(checkHostRequirementsComplete, (state) => ({
   ...state,
   checking: false,
   hasCheckedOnce: true,
+}));
+hostRequirementsReducer.with(rtkCheckStarted, (state) => ({ ...state, rtkChecking: true }));
+hostRequirementsReducer.with(rtkRequirementResolved, (state, { payload: [available] }) => ({
+  ...state,
+  rtk: { checked: true, available },
+  rtkChecking: false,
+}));
+hostRequirementsReducer.with(rtkSettingLoaded, (state, { payload: [rtkEnabled] }) => ({
+  ...state,
+  rtkEnabled,
+  rtkSettingsLoaded: true,
+  rtkError: null,
+}));
+hostRequirementsReducer.with(rtkSettingLoadFailed, (state, { payload: [rtkError] }) => ({
+  ...state,
+  rtkSettingsLoaded: true,
+  rtkError,
+}));
+hostRequirementsReducer.with(rtkUpdateStarted, (state) => ({
+  ...state,
+  rtkUpdating: true,
+  rtkError: null,
+}));
+hostRequirementsReducer.with(rtkUpdateSucceeded, (state, { payload: [rtkEnabled] }) => ({
+  ...state,
+  rtkEnabled,
+  rtkUpdating: false,
+  rtkError: null,
+}));
+hostRequirementsReducer.with(rtkUpdateFailed, (state, { payload: [rtkError] }) => ({
+  ...state,
+  rtkUpdating: false,
+  rtkError,
 }));

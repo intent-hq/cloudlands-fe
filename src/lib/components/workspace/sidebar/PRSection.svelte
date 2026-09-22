@@ -1,37 +1,38 @@
 <script lang="ts">
-  import { Input } from '$lib/components/ui/input';
   /* eslint-disable max-lines */
   /**
    * PRSection - Pull request creation, push/pull/sync, force push, rebase, connect remote, PR list
    * Manages all PR-related UI state and handlers.
    */
-  import { appClient } from '$lib/client';
-  import { AcceptChangesClient } from '$features/accept-changes/accept-changes.client';
-  import { backgroundGitActionsService } from '$features/accept-changes/background-git-actions.service';
   import { selectExecutorState } from '$store/renderer/slices/background-agent-executor/background-agent-executor-selectors';
   import {
     executeBackgroundAgent,
     cancelExecution,
   } from '$store/renderer/slices/background-agent-executor/background-agent-executor-slice';
-  import {
-    ChangeStage,
-    type CommitFile,
-    type CommitInfo,
-    type TrackedChange,
-  } from '$features/file-tracking/types';
+  import { ChangeStage, type CommitInfo, type TrackedChange } from '$features/file-tracking/types';
   import {
     refreshRequested,
     setSidebarCreatePRWhenReady,
-    refreshAcceptChangesStatus,
     clearOlderCommits as ftClearOlderCommits,
   } from '$store/renderer/slices/changes/changes-slice';
-  import { refreshPRStatusRequested } from '$store/renderer/slices/pr-status/pr-status-slice';
   import { gitCache } from '$features/git/git-cache';
-  import { gitClient } from '$features/git/git.client';
-  import { loadGitStatus, setGitOperationFlag } from '$store/renderer/slices/git/git-slice';
+  import {
+    addGitRemoteRequested,
+    createPullRequestRequested,
+    executeAcceptChangesRequested,
+    loadCommitDetails,
+    loadGitStatus,
+    pullGitRequested,
+    pushGitRequested,
+    readGitFileRequested,
+    refreshPullRequestRequested,
+  } from '$store/renderer/slices/git/git-slice';
   import {
     selectGitAhead,
     selectGitBehind,
+    selectCommitDetailsEntries,
+    selectGitFileRead,
+    selectGitMutationRequest,
     selectPostMergeState,
     selectGitOperationFlags,
   } from '$store/renderer/slices/git/git-selectors';
@@ -47,16 +48,17 @@
 
   import { selectWorkspaceById } from '$store/renderer/slices/workspace/workspace-selectors';
   import { selectAllWorkspaceAgents } from '$store/renderer/slices/workspace-agents/workspace-agents-selectors';
-  import { workspaceClient } from '$store/renderer/slices/workspace/utils/workspace.client';
+  import { updateWorkspaceRequested } from '$store/renderer/slices/workspace/workspace-slice';
 
   import GitHubAuthBanner from '$lib/components/GitHubAuthBanner.svelte';
   import FileRow from '$lib/components/file-tracking/accept-changes/FileRow.svelte';
   import type { PRInfo } from '$lib/components/file-tracking/accept-changes/types';
   import LineChangesBadge from '$lib/components/shared/LineChangesBadge.svelte';
   import { Button } from '$lib/components/ui/button';
+  import { Input } from '$lib/components/ui/input';
   import { IntentMarkLoader } from '$lib/components/ui/indicators';
   import { Textarea } from '$lib/components/ui/textarea';
-  import { notify } from '$lib/components/patterns/notify';
+  import { toast } from '$lib/components/ui/toast';
   import { m } from '$shared/paraglide/messages.js';
   import { formatInteger } from '$lib/i18n/format';
   import BranchSelector from '$lib/components/workspace/initializer/BranchSelector.svelte';
@@ -75,7 +77,7 @@
     faRobot,
     faStop,
   } from '@fortawesome/free-solid-svg-icons';
-  import { tick, untrack } from 'svelte';
+  import { untrack } from 'svelte';
   import { readable, writable } from 'svelte/store';
   import Fa from 'svelte-fa';
   import { slide } from '$lib/motion';
@@ -137,11 +139,6 @@
      * no local-files expansion) — the secondary-root browsing view
      * (monorepo#2053). */
     listOnly?: boolean;
-    /** Every mutating affordance (push / create PR / merge / rebase / connect
-     * remote via `accept-changes.*`, GitHub auth via `github.*`, `git.pull`,
-     * force `git.push`) renders only when true; a collaborator gets the
-     * read-only PR list and sync labels. */
-    isOwner?: boolean;
   }
 
   let {
@@ -184,7 +181,6 @@
     onOpenChange: _onOpenChange,
     mergePanelContent,
     listOnly = false,
-    isOwner = true,
   }: Props = $props();
 
   // Redux selectors
@@ -210,6 +206,30 @@
   const prExecState$ = selectExecutorState(workspaceIdStore, readable('pr'));
   const gitAheadStore = selectGitAhead(workspaceIdStore);
   const gitBehindStore = selectGitBehind(workspaceIdStore);
+  const commitDetailsEntries$ = selectCommitDetailsEntries(workspaceIdStore);
+  const prFilePathStore = writable('');
+  const prOldRefStore = writable('');
+  const prNewRefStore = writable('HEAD');
+  const prOldFileRead$ = selectGitFileRead(workspaceIdStore, prFilePathStore, prOldRefStore);
+  const prNewFileRead$ = selectGitFileRead(workspaceIdStore, prFilePathStore, prNewRefStore);
+  const createPrRequest$ = selectGitMutationRequest(workspaceIdStore, readable('create-pr'));
+  const rebaseRequest$ = selectGitMutationRequest(
+    workspaceIdStore,
+    readable('accept-changes'),
+    readable('rebase-onto-trunk'),
+  );
+  const addRemoteRequest$ = selectGitMutationRequest(workspaceIdStore, readable('add-remote'));
+  const pushRequest$ = selectGitMutationRequest(
+    workspaceIdStore,
+    readable('accept-changes'),
+    readable('push'),
+  );
+  const forcePushRequest$ = selectGitMutationRequest(
+    workspaceIdStore,
+    readable('push'),
+    readable('force'),
+  );
+  const pullRequest$ = selectGitMutationRequest(workspaceIdStore, readable('pull'));
 
   // Git operation flags
   const isPushing = $derived($gitOps$.isPushing);
@@ -230,80 +250,48 @@
   // Panel layout manager
   const panelLayoutManager = $derived(getPanelLayoutManager(workspaceId));
 
-  // PR files derived from pushed commits. The commit list payload is
-  // metadata-only (`file-tracking.loadCommits` skips per-commit tree diffs,
-  // PROTOCOL §5.19), so per-commit files are fetched via `git.commitDetails`
-  // (§5.6) on first PR expand and merged into the aggregation. `null` marks
-  // an in-flight fetch (cleared on failure so a later expand retries); the
-  // cache resets on workspace switch so it can't leak across workspaces.
-  let prCommitFileCache = $state<Partial<Record<string, CommitFile[] | null>>>({});
+  // PR files derived from pushed commits. The commit list payload is metadata-only
+  // (PROTOCOL §5.19), so the saga-owned commit-detail collection supplies files.
   // svelte-ignore state_referenced_locally - intentional initial capture; the $effect below tracks later changes
   let prCacheWorkspaceId = workspaceId;
   $effect(() => {
     if (workspaceId !== prCacheWorkspaceId) {
       prCacheWorkspaceId = workspaceId;
-      prCommitFileCache = {};
       expandedPRs = new Set();
     }
   });
 
   const resolvedPushedCommits = $derived(
     (pushedCommits as CommitInfo[]).map((c) => {
-      const cached = prCommitFileCache[c.hash];
-      return c.files || !cached ? c : { ...c, files: cached };
+      const details = $commitDetailsEntries$.find((entry) => entry.commitHash === c.hash)?.data;
+      return c.files || !details ? c : { ...c, files: details.files };
     }),
   );
   const prFiles = $derived(aggregatePRFiles(resolvedPushedCommits));
   // Whether any pushed commit's file list is still unknown (unfetched or in
   // flight) — the chevron stays visible until we know the PR has no files.
   const prFilesUnknown = $derived(
-    (pushedCommits as CommitInfo[]).some((c) => !c.files && !prCommitFileCache[c.hash]),
+    (pushedCommits as CommitInfo[]).some(
+      (c) => !c.files && !$commitDetailsEntries$.find((entry) => entry.commitHash === c.hash)?.data,
+    ),
   );
   const prTotalAdditions = $derived(prFiles.reduce((sum, f) => sum + f.additions, 0));
   const prTotalDeletions = $derived(prFiles.reduce((sum, f) => sum + f.deletions, 0));
 
-  function clearPRCommitFileMarker(hash: string) {
-    if (prCommitFileCache[hash] === null) {
-      const { [hash]: _, ...rest } = prCommitFileCache;
-      prCommitFileCache = rest;
-    }
-  }
-
   function fetchPRCommitFilesIfNeeded() {
     if (!workspaceId) return;
-    const requestWorkspaceId = workspaceId;
     for (const commit of pushedCommits as CommitInfo[]) {
-      if (commit.files || prCommitFileCache[commit.hash] !== undefined) continue;
-      prCommitFileCache = { ...prCommitFileCache, [commit.hash]: null };
-      // `commitDetails` folds transport errors to `null` (no rows; a later
-      // expand retries). In-flight results are dropped if the workspace
-      // switched mid-request so they can't repopulate the reset cache.
-      appClient.git
-        .commitDetails(requestWorkspaceId, commit.hash)
-        .then((result) => {
-          if (workspaceId !== requestWorkspaceId) return;
-          if (!result) {
-            clearPRCommitFileMarker(commit.hash);
-            return;
-          }
-          const files: CommitFile[] =
-            result.fileDetails.length > 0
-              ? result.fileDetails
-              : result.files.map((f) => ({ path: f, additions: 0, deletions: 0 }));
-          prCommitFileCache = { ...prCommitFileCache, [commit.hash]: files };
-        })
-        .catch((error) => {
-          logger.error('Failed to fetch commit details for PR files', { hash: commit.hash, error });
-          if (workspaceId !== requestWorkspaceId) return;
-          clearPRCommitFileMarker(commit.hash);
-        });
+      const entry = $commitDetailsEntries$.find(
+        (candidate) => candidate.commitHash === commit.hash,
+      );
+      if (commit.files || entry?.loading || entry?.data) continue;
+      appStore.dispatch(loadCommitDetails(workspaceId, commit.hash));
     }
   }
 
   // Pushed commits arriving while a PR is already expanded (a push landing
   // mid-view) get their files fetched too. Gated on user interaction; the
-  // cache reads are untracked so cleared failure markers don't auto-refetch —
-  // retries stay tied to an explicit re-expand.
+  // store reads are untracked so failures retry only on an explicit re-expand.
   $effect(() => {
     if (expandedPRs.size > 0 && pushedCommits.length > 0) {
       untrack(() => fetchPRCommitFilesIfNeeded());
@@ -321,6 +309,147 @@
   let pendingActionAfterAuth = $state<'create-pr' | 'refresh-pr' | null>(null);
   let pendingPRWorkspaceId: string | null = null;
   let authBannerKey = $state(0);
+  let pendingCreatePrVersion = 0;
+  let pendingRebaseVersion = 0;
+  let pendingAddRemoteVersion = 0;
+  let pendingPushVersion = 0;
+  let pendingForcePushVersion = 0;
+  let pendingPullVersion = 0;
+  let pendingPrFile: { path: string; stats?: { additions: number; deletions: number } } | null =
+    $state(null);
+
+  $effect(() => {
+    const request = $createPrRequest$;
+    isCreatingPR = request?.loading ?? false;
+    if (!request || request.loading || request.version !== pendingCreatePrVersion) return;
+    pendingCreatePrVersion = 0;
+    if (request.error || !request.data || !('success' in request.data) || !request.data.success) {
+      toast.error(
+        request.error ||
+          (request.data && 'error' in request.data ? request.data.error : undefined) ||
+          m.workspace_prCreator_createFailed_error(),
+      );
+      return;
+    }
+    prTitle = '';
+    prDescription = '';
+    prDrawerOpen = false;
+  });
+
+  $effect(() => {
+    const request = $rebaseRequest$;
+    if (!request || request.loading || request.version !== pendingRebaseVersion) return;
+    pendingRebaseVersion = 0;
+    if (request.error || !request.data || !('success' in request.data) || !request.data.success) {
+      toast.error(
+        request.error ||
+          (request.data && 'error' in request.data ? request.data.error : undefined) ||
+          m.workspace_prSection_rebaseFailed_error(),
+      );
+      return;
+    }
+    appStore.dispatch(ftClearOlderCommits(workspaceId));
+    if ('result' in request.data && request.data.result?.newBaseSha) {
+      appStore.dispatch(
+        updateWorkspaceRequested(workspaceId, { baseCommitSha: request.data.result.newBaseSha }),
+      );
+    }
+    toast.success(m.workspace_prSection_rebasedOnto_label({ branch: trunkBranch }));
+  });
+
+  $effect(() => {
+    const request = $addRemoteRequest$;
+    connectRemote.adding = request?.loading ?? false;
+    if (!request || request.loading || request.version !== pendingAddRemoteVersion) return;
+    pendingAddRemoteVersion = 0;
+    if (request.error || !request.data) {
+      toast.error(
+        m.workspace_prSection_addRemoteFailed_error({
+          error: request.error ?? m.workspace_prSection_unknownError_label(),
+        }),
+      );
+      return;
+    }
+    toast.success(m.workspace_prSection_remoteAdded_label());
+    connectRemote.drawerOpen = false;
+    connectRemote.url = '';
+  });
+
+  $effect(() => {
+    const request = $pushRequest$;
+    if (!request || request.loading || request.version !== pendingPushVersion) return;
+    pendingPushVersion = 0;
+    if (request.error || !request.data || !('success' in request.data) || !request.data.success) {
+      toast.error(
+        request.error ||
+          (request.data && 'error' in request.data ? request.data.error : undefined) ||
+          m.workspace_prSection_pushFailed_error(),
+      );
+    }
+  });
+
+  $effect(() => {
+    const request = $forcePushRequest$;
+    if (!request || request.loading || request.version !== pendingForcePushVersion) return;
+    pendingForcePushVersion = 0;
+    if (request.error || !request.data || !('success' in request.data) || !request.data.success) {
+      toast.error(
+        request.error ||
+          (request.data && 'error' in request.data ? request.data.error : undefined) ||
+          m.workspace_prSection_forcePushFailed_error(),
+      );
+      return;
+    }
+    toast.warning(m.workspace_prSection_forcePushDone_label());
+    forcePushDrawerOpen = false;
+    gitCache.invalidate(`git-status-${workspaceId}`);
+    appStore.dispatch(loadGitStatus(workspaceId, true));
+    appStore.dispatch(refreshRequested(workspaceId, true));
+  });
+
+  $effect(() => {
+    const request = $pullRequest$;
+    if (!request || request.loading || request.version !== pendingPullVersion) return;
+    pendingPullVersion = 0;
+    if (request.error || !request.data || !('success' in request.data) || !request.data.success) {
+      const error =
+        request.error ||
+        (request.data && 'error' in request.data ? request.data.error : undefined) ||
+        m.workspace_prSection_unknownError_label();
+      toast.error(m.workspace_prSection_pullFailed_error({ error }));
+      return;
+    }
+    toast.success(m.workspace_prSection_pullSuccess_label());
+    gitCache.invalidateWorkspace(workspaceId as WorkspaceId);
+    appStore.dispatch(loadGitStatus(workspaceId, true));
+  });
+
+  $effect(() => {
+    const pending = pendingPrFile;
+    const oldRead = $prOldFileRead$;
+    const newRead = $prNewFileRead$;
+    if (!pending || !oldRead || !newRead || oldRead.loading || newRead.loading) return;
+    if (oldRead.error || newRead.error || oldRead.data === null || newRead.data === null) {
+      logger.error('[handlePRFileClick] Failed to fetch file content', {
+        filePath: pending.path,
+        error: oldRead.error ?? newRead.error,
+      });
+      pendingPrFile = null;
+      return;
+    }
+    const change: TrackedChange = {
+      id: `pr-file:${pending.path}`,
+      file: pending.path,
+      relativePath: pending.path,
+      stage: ChangeStage.Committed,
+      stats: pending.stats ?? { additions: 0, deletions: 0 },
+      content: { oldContent: oldRead.data, newContent: newRead.data, diff: '' },
+      commitHash: 'PR',
+      attribution: { timestamp: Date.now() },
+    };
+    pendingPrFile = null;
+    appStore.dispatch(openWorkspaceDiff(workspaceId, change));
+  });
 
   // Auto-close PR drawer when nothing to show
   $effect(() => {
@@ -352,16 +481,6 @@
     return selectWorkspaceById.select(appStore.state, workspaceId);
   }
 
-  // Helper to persist workspace changes
-  async function persistWorkspaceChanges(updates: Record<string, unknown>) {
-    if (!workspaceId) return;
-    try {
-      await workspaceClient.update({ id: workspaceId as WorkspaceId, ...updates });
-    } catch (error) {
-      logger.error('Failed to persist workspace changes', error as Error);
-    }
-  }
-
   function handleOpenFile(relativePath: string) {
     const fileName = relativePath.split('/').pop() || relativePath;
     panelLayoutManager.openTab({
@@ -374,37 +493,20 @@
   }
 
   // --- PR Handlers ---
-  async function handleRefreshPRStatus() {
+  function handleRefreshPRStatus() {
     if (isRefreshingPR) return;
-    appStore.dispatch(setGitOperationFlag(workspaceId, 'isRefreshingPR', true));
-    await tick();
-    try {
-      if (!$githubAuthIsAuthenticated$) {
-        appStore.dispatch(initializeGitHubAuth());
-      }
-      if (!$githubAuthIsAuthenticated$) {
-        pendingActionAfterAuth = 'refresh-pr';
-        notify.info(m.workspace_prSection_connectGithub_label());
-        return;
-      }
-      try {
-        const fetchResult = await gitClient.fetch(workspaceId as WorkspaceId);
-        if (!fetchResult.ok) {
-          logger.warn('[PRSection] Git fetch failed:', { error: fetchResult.error });
-        }
-      } catch (error) {
-        logger.warn('[PRSection] Git fetch error:', error);
-      }
-      gitCache.invalidate(`git-status-${workspaceId}`);
-      appStore.dispatch(loadGitStatus(workspaceId, true));
-      appStore.dispatch(refreshPRStatusRequested(workspaceId, true, true));
-    } finally {
-      await new Promise((resolve) => setTimeout(resolve, 300));
-      appStore.dispatch(setGitOperationFlag(workspaceId, 'isRefreshingPR', false));
+    if (!$githubAuthIsAuthenticated$) {
+      appStore.dispatch(initializeGitHubAuth());
     }
+    if (!$githubAuthIsAuthenticated$) {
+      pendingActionAfterAuth = 'refresh-pr';
+      toast.info(m.workspace_prSection_connectGithub_label());
+      return;
+    }
+    appStore.dispatch(refreshPullRequestRequested(workspaceId));
   }
 
-  async function handleCreatePR(opts?: {
+  function handleCreatePR(opts?: {
     workspaceId?: string;
     targetBranch?: string;
     prTitle?: string;
@@ -420,34 +522,20 @@
     if (!$githubAuthIsAuthenticated$) {
       pendingActionAfterAuth = 'create-pr';
       pendingPRWorkspaceId = wsId;
-      notify.info(m.workspace_prSection_connectGithub_label());
+      toast.info(m.workspace_prSection_connectGithub_label());
       return;
     }
-    isCreatingPR = true;
-    try {
-      const result = await backgroundGitActionsService.createPR({
-        workspaceId: wsId,
-        prTitle: titleToUse,
-        prDescription: descriptionToUse,
-        targetBranch: opts?.targetBranch ?? targetBranch,
+    pendingCreatePrVersion =
+      (selectGitMutationRequest.select(appStore.state, wsId, 'create-pr')?.version ?? 0) + 1;
+    appStore.dispatch(
+      createPullRequestRequested(
+        wsId,
+        titleToUse,
+        descriptionToUse,
+        opts?.targetBranch ?? targetBranch,
         hasStaged,
-      });
-      if (result.success) {
-        prTitle = '';
-        prDescription = '';
-        prDrawerOpen = false;
-      } else if (result.needsAuth) {
-        pendingActionAfterAuth = 'create-pr';
-        pendingPRWorkspaceId = wsId;
-        notify.info(m.workspace_prSection_connectGithub_label());
-      } else {
-        notify.error(result.error || m.workspace_prCreator_createFailed_error());
-      }
-    } catch {
-      notify.error(m.workspace_prCreator_createFailed_error());
-    } finally {
-      isCreatingPR = false;
-    }
+      ),
+    );
   }
 
   // Expose triggerCreatePR for parent auto-action coordination.
@@ -501,134 +589,49 @@
     }
   }
 
-  async function handlePushAllUnpushed() {
+  function handlePushAllUnpushed() {
     if (!workspaceId || commits.length === 0) return;
     const newestUnpushedHash = commits[0].hash;
-    appStore.dispatch(setGitOperationFlag(workspaceId, 'isPushing', true));
-    try {
-      const result = await AcceptChangesClient.execute(workspaceId as WorkspaceId, 'push', {
+    pendingPushVersion =
+      (selectGitMutationRequest.select(appStore.state, workspaceId, 'accept-changes', 'push')
+        ?.version ?? 0) + 1;
+    appStore.dispatch(
+      executeAcceptChangesRequested(workspaceId, 'push', {
         targetBranch: $workspace$?.branch,
         upToCommitHash: newestUnpushedHash,
-      });
-      if (result.success) {
-        gitCache.invalidate(`git-status-${workspaceId}`);
-        try {
-          await Promise.all([
-            Promise.resolve(appStore.dispatch(loadGitStatus(workspaceId, true))),
-            appStore.dispatch(refreshRequested(workspaceId, true)),
-          ]);
-        } catch {
-          /* Refresh failed but push succeeded */
-        }
-      } else {
-        notify.error(result.error || m.workspace_prSection_pushFailed_error());
-      }
-    } catch {
-      notify.error(m.workspace_prSection_pushCommitsFailed_error());
-    } finally {
-      appStore.dispatch(setGitOperationFlag(workspaceId, 'isPushing', false));
-    }
+      }),
+    );
   }
 
-  async function handleForcePush() {
-    appStore.dispatch(setGitOperationFlag(workspaceId, 'isForcePushing', true));
-    try {
-      const result = await gitClient.push(workspaceId as WorkspaceId, undefined, true);
-      if (result.ok) {
-        notify.warning(m.workspace_prSection_forcePushDone_label());
-        forcePushDrawerOpen = false;
-        gitCache.invalidate(`git-status-${workspaceId}`);
-        await Promise.all([
-          Promise.resolve(appStore.dispatch(loadGitStatus(workspaceId, true))),
-          appStore.dispatch(refreshRequested(workspaceId, true)),
-        ]);
-      } else {
-        notify.error(result.error || m.workspace_prSection_forcePushFailed_error());
-      }
-    } catch (error) {
-      logger.error('Force push failed', error as Error);
-      notify.error(m.workspace_prSection_forcePushFailed_error());
-    } finally {
-      appStore.dispatch(setGitOperationFlag(workspaceId, 'isForcePushing', false));
-    }
+  function handleForcePush() {
+    pendingForcePushVersion =
+      (selectGitMutationRequest.select(appStore.state, workspaceId, 'push', 'force')?.version ??
+        0) + 1;
+    appStore.dispatch(pushGitRequested(workspaceId, undefined, true));
   }
 
-  async function handleRebaseOntoTrunk() {
+  function handleRebaseOntoTrunk() {
     if (!workspaceId) return;
-    const capturedWsId = workspaceId;
-    appStore.dispatch(setGitOperationFlag(capturedWsId, 'isRebasing', true));
-    try {
-      const result = await AcceptChangesClient.execute(
-        capturedWsId as WorkspaceId,
+    pendingRebaseVersion =
+      (selectGitMutationRequest.select(
+        appStore.state,
+        workspaceId,
+        'accept-changes',
         'rebase-onto-trunk',
-      );
-      if (workspaceId !== capturedWsId) return;
-      if (result.success) {
-        appStore.dispatch(ftClearOlderCommits(workspaceId));
-        if (result.result?.newBaseSha) {
-          try {
-            await persistWorkspaceChanges({ baseCommitSha: result.result.newBaseSha });
-          } catch {
-            console.error('Failed to update baseCommitSha after rebase onto trunk');
-          }
-        }
-        gitCache.invalidate(`git-status-${capturedWsId}`);
-        await Promise.all([
-          Promise.resolve(appStore.dispatch(loadGitStatus(capturedWsId, true))),
-          appStore.dispatch(refreshRequested(capturedWsId, true)),
-        ]);
-        appStore.dispatch(refreshAcceptChangesStatus(capturedWsId));
-        notify.success(m.workspace_prSection_rebasedOnto_label({ branch: trunkBranch }));
-      } else {
-        const mainError = result.error || m.workspace_prSection_rebaseFailed_error();
-        const stepErrors = result.steps
-          ?.filter((s) => s.status === 'failed' && s.error && s.error !== mainError)
-          .map((s) => s.error);
-        const detailError = stepErrors?.length
-          ? `${mainError}\n${stepErrors.join('\n')}`
-          : mainError;
-        notify.error(detailError);
-      }
-    } catch (error) {
-      logger.error('Rebase onto trunk failed', error as Error);
-      notify.error(
-        m.workspace_prSection_rebaseFailedDetail_error({ error: (error as Error).message }),
-      );
-    } finally {
-      appStore.dispatch(setGitOperationFlag(capturedWsId, 'isRebasing', false));
-    }
+      )?.version ?? 0) + 1;
+    appStore.dispatch(executeAcceptChangesRequested(workspaceId, 'rebase-onto-trunk'));
   }
 
-  async function handlePull() {
-    appStore.dispatch(setGitOperationFlag(workspaceId, 'isPulling', true));
-    try {
-      // Daemon-backed pull (`git.pull`, PROTOCOL §5.6) via the appClient seam.
-      // The wire method is path-based (repoPath + branchName), replacing the
-      // retired workspace-scoped `git:pull` IPC.
-      const repoPath = $workspace$?.worktreePath || $workspace$?.path;
-      const branch = $workspace$?.branch;
-      if (!repoPath || !branch) {
-        notify.error(m.workspace_prSection_pullUnavailable_error());
-        return;
-      }
-      const result = await appClient.git.pull(repoPath, branch);
-      if (result.success) {
-        notify.success(m.workspace_prSection_pullSuccess_label());
-        gitCache.invalidateWorkspace(workspaceId as WorkspaceId);
-        appStore.dispatch(loadGitStatus(workspaceId, true));
-      } else {
-        notify.error(m.workspace_prSection_pullFailed_error({ error: result.error ?? '' }));
-      }
-    } catch (error) {
-      notify.error(
-        m.workspace_prSection_pullFailedDetail_error({
-          error:
-            error instanceof Error ? error.message : m.workspace_prSection_unknownError_label(),
-        }),
-      );
-    } finally {
-      appStore.dispatch(setGitOperationFlag(workspaceId, 'isPulling', false));
+  function handlePull() {
+    const repoPath = $workspace$?.worktreePath || $workspace$?.path;
+    const branch = $workspace$?.branch;
+    if (!repoPath || !branch) {
+      toast.error(m.workspace_prSection_pullUnavailable_error());
+      return;
     }
+    pendingPullVersion =
+      (selectGitMutationRequest.select(appStore.state, workspaceId, 'pull')?.version ?? 0) + 1;
+    appStore.dispatch(pullGitRequested(workspaceId, repoPath, branch));
   }
 
   function handleGitHubAuthSuccess() {
@@ -644,22 +647,12 @@
     }
   }
 
-  async function handleAddRemote() {
+  function handleAddRemote() {
     if (!connectRemote.url.trim()) return;
-    connectRemote.adding = true;
-    try {
-      await AcceptChangesClient.addRemote(workspaceId as WorkspaceId, connectRemote.url.trim());
-      notify.success(m.workspace_prSection_remoteAdded_label());
-      appStore.dispatch(refreshAcceptChangesStatus(workspaceId));
-      connectRemote.drawerOpen = false;
-      connectRemote.url = '';
-    } catch (error) {
-      notify.error(
-        m.workspace_prSection_addRemoteFailed_error({ error: (error as Error).message }),
-      );
-    } finally {
-      connectRemote.adding = false;
-    }
+    pendingAddRemoteVersion =
+      (selectGitMutationRequest.select(appStore.state, workspaceId, 'add-remote')?.version ?? 0) +
+      1;
+    appStore.dispatch(addGitRemoteRequested(workspaceId, connectRemote.url.trim()));
   }
 
   // Expand-state key: cross-repo monitored rows can share a bare PR number
@@ -684,37 +677,20 @@
     expandedPRs = newSet;
   }
 
-  async function handlePRFileClick(filePath: string) {
+  function handlePRFileClick(filePath: string) {
     logger.info('[handlePRFileClick] File clicked in PR', { filePath });
     if (!workspaceId || !$workspace$) return;
-    try {
-      const baseRef = $workspace$.baseRef || 'main';
-      // Daemon-backed file-at-ref reads (`git.showFile`, PROTOCOL §5.6);
-      // errors fold to { ok: false } inside the git client.
-      const [oldContentResult, newContentResult] = await Promise.all([
-        gitClient.showFile(workspaceId as WorkspaceId, filePath, baseRef),
-        gitClient.showFile(workspaceId as WorkspaceId, filePath, 'HEAD'),
-      ]);
-      const oldContent = oldContentResult.ok ? oldContentResult.data : '';
-      const newContent = newContentResult.ok ? newContentResult.data : '';
-      const fileStats = prFiles.find((f) => f.path === filePath);
-      const change: TrackedChange = {
-        id: `pr-file:${filePath}`,
-        file: filePath,
-        relativePath: filePath,
-        stage: ChangeStage.Committed,
-        stats: {
-          additions: fileStats?.additions ?? 0,
-          deletions: fileStats?.deletions ?? 0,
-        },
-        content: { oldContent, newContent, diff: '' },
-        commitHash: 'PR',
-        attribution: { timestamp: Date.now() },
-      };
-      appStore.dispatch(openWorkspaceDiff(workspaceId, change));
-    } catch (error) {
-      logger.error('[handlePRFileClick] Failed to fetch file content', { error, filePath });
-    }
+    const baseRef = $workspace$.baseRef || 'main';
+    const fileStats = prFiles.find((f) => f.path === filePath);
+    pendingPrFile = {
+      path: filePath,
+      stats: { additions: fileStats?.additions ?? 0, deletions: fileStats?.deletions ?? 0 },
+    };
+    prFilePathStore.set(filePath);
+    prOldRefStore.set(baseRef);
+    prNewRefStore.set('HEAD');
+    appStore.dispatch(readGitFileRequested(workspaceId, filePath, baseRef));
+    appStore.dispatch(readGitFileRequested(workspaceId, filePath, 'HEAD'));
   }
 </script>
 
@@ -722,24 +698,17 @@
      the primary workspace has a remote, and never in listOnly mode) -->
 {#if hasRemote && !listOnly}
   <TimelineDivider>
-    {#if isOwner && hasOpenPR && hasUnpushedCommits && unpushedCount > 0 && !isDiverged && !isBehind}
-      <!-- Show Push Commits button when open PR exists (accept-changes.execute, owner-only) -->
-      <DividerButton
-        onclick={handlePushAllUnpushed}
-        disabled={isPushing}
-        loading={isPushing}
-        data-testid="pr-push-commits-button"
-      >
+    {#if hasOpenPR && hasUnpushedCommits && unpushedCount > 0 && !isDiverged && !isBehind}
+      <!-- Show Push Commits button when open PR exists -->
+      <DividerButton onclick={handlePushAllUnpushed} disabled={isPushing} loading={isPushing}>
         {unpushedCount === 1
           ? m.workspace_prSection_pushCommit_one()
           : m.workspace_prSection_pushCommit_many({ count: formatInteger(unpushedCount) })}
       </DividerButton>
-    {:else if isOwner && ((!hasOpenPR && !(isMergedToTrunk || (areAllPRsMerged && !hasResetToTrunk) || isContentMergedToTrunk)) || (!hasOpenPR && hasNewWorkAfterMerge))}
-      <!-- Show Create PR + Merge buttons when no open PR and not post-merge
-           (accept-changes.execute / accept-changes.mergePR / github.*, owner-only) -->
+    {:else if (!hasOpenPR && !(isMergedToTrunk || (areAllPRsMerged && !hasResetToTrunk) || isContentMergedToTrunk)) || (!hasOpenPR && hasNewWorkAfterMerge)}
+      <!-- Show Create PR + Merge buttons when no open PR and not post-merge -->
       <div class="w-full flex gap-1">
         <DividerButton
-          data-testid="pr-create-button"
           tooltipContents={!hasStaged && !hasCommits
             ? m.workspace_prSection_noChangesForPr_tooltip()
             : ''}
@@ -753,7 +722,6 @@
           {m.workspace_prSection_createPr_label()}
         </DividerButton>
         <DividerButton
-          data-testid="pr-merge-button"
           tooltipContents={!hasStaged && !hasCommits
             ? m.workspace_prSection_noChangesToMerge_tooltip()
             : ''}
@@ -800,7 +768,7 @@
               >
               <Input
                 type="text"
-                class="w-full px-2.5 py-1.5 text-sm bg-muted/30 border border-border rounded-md focus:outline-none focus:ring-1 focus:ring-primary-ink/50 placeholder:text-muted-foreground"
+                class="w-full px-2.5 py-1.5 text-sm bg-muted/30 border border-border rounded-md focus:outline-none focus:ring-1 focus:ring-primary/50 placeholder:text-muted-foreground/50"
                 placeholder={m.workspace_prSection_prTitle_placeholder()}
                 bind:value={prTitle}
               />
@@ -821,7 +789,7 @@
                 minHeight={80}
                 maxHeight={200}
                 readonly={isGeneratingPR}
-                class="text-sm {isGeneratingPR ? 'border-primary-ink/40 bg-muted/20' : ''}"
+                class="text-sm {isGeneratingPR ? 'border-primary/40 bg-muted/20' : ''}"
               />
             </div>
           </div>
@@ -934,9 +902,8 @@
           {@render mergePanelContent()}
         {/if}
       </DividerPanel>
-    {:else if isOwner && isBehind}
+    {:else if isBehind}
       <DividerButton
-        data-testid="pr-pull-button"
         onclick={handlePull}
         disabled={isPulling}
         loading={isPulling}
@@ -947,7 +914,7 @@
           : m.workspace_prSection_pullCommit_many({ count: formatInteger(behindCount) })}
         <Fa icon={faArrowDown} size="xs" class="text-ghost rotate-180" />
       </DividerButton>
-    {:else if !isDiverged && !isBehind && (isOwner || !(hasUnpushedCommits && unpushedCount > 0))}
+    {:else if !isDiverged && !isBehind}
       <span
         class="relative z-20 text-xs text-subtle flex items-center gap-1 py-1.5 px-3 rounded-md bg-background"
       >
@@ -956,10 +923,9 @@
       </span>
     {/if}
 
-    <!-- Rebase onto trunk (accept-changes.execute, owner-only) -->
-    {#if isOwner && behindTrunk > 0 && !hasConflicts && aheadOfTrunk !== null}
+    <!-- Rebase onto trunk -->
+    {#if behindTrunk > 0 && !hasConflicts && aheadOfTrunk !== null}
       <DividerButton
-        data-testid="pr-rebase-button"
         onclick={handleRebaseOntoTrunk}
         disabled={isRebasing}
         loading={isRebasing}
@@ -970,10 +936,9 @@
       </DividerButton>
     {/if}
 
-    <!-- Force Push Section (owner-only) -->
-    {#if isOwner && isDiverged}
+    <!-- Force Push Section -->
+    {#if isDiverged}
       <DividerButton
-        data-testid="pr-force-push-button"
         onclick={() => {
           forcePushDrawerOpen = !forcePushDrawerOpen;
         }}
@@ -1046,16 +1011,13 @@
       {#snippet action()}
         <!-- Refresh fetches/refreshes the PRIMARY workspace's git + PR
                state, so it is suppressed in the read-only listOnly
-               (secondary-root browsing) mode (monorepo#2053). Its
-               unauthenticated path starts `github.connect`, which only the
-               owner may call. -->
-        {#if !listOnly && isOwner && (hasAnyPRs || $githubAuthIsAuthenticated$)}
+               (secondary-root browsing) mode (monorepo#2053). -->
+        {#if !listOnly && (hasAnyPRs || $githubAuthIsAuthenticated$)}
           <Button
-            variant="ghost"
+            variant="plain"
             type="button"
             size="icon-compact"
             iconOnly
-            data-testid="pr-refresh-button"
             class="rounded hover:bg-muted transition-colors text-muted-foreground hover:text-foreground disabled:opacity-50 cursor-pointer"
             onclick={() => {
               if (!$githubAuthIsAuthenticated$) {
@@ -1070,12 +1032,16 @@
               ? m.workspace_prSection_refreshPrStatus_tooltip()
               : m.workspace_prSection_connectToGithub_label()}
           >
-            <Fa icon={faArrowsRotate} class="opacity-50 text-ui" />
+            {#if isRefreshingPR}
+              <IntentMarkLoader size={12} class="opacity-50 text-ui" />
+            {:else}
+              <Fa icon={faArrowsRotate} class="opacity-50 text-ui" />
+            {/if}
           </Button>
         {/if}
       {/snippet}
       {#snippet children()}
-        {#if isOwner && !$githubAuthIsAuthenticated$}
+        {#if !$githubAuthIsAuthenticated$}
           {#key authBannerKey}
             <GitHubAuthBanner
               message={m.workspace_prSection_connectToGithub_label()}
@@ -1134,7 +1100,7 @@
 
               <Fa icon={statusIcon} size="xs" class="{statusColor} shrink-0" />
               <Button
-                variant="ghost"
+                variant="plain"
                 type="button"
                 class="flex items-center gap-2 flex-1 min-w-0 text-left cursor-pointer"
                 onclick={onOpenFullPanel}
@@ -1198,11 +1164,7 @@
                     {file}
                     muted={true}
                     active={activeFilePath === file.path && activeFileStaged === null}
-                    onFileClick={(filePath) => {
-                      handlePRFileClick(filePath).catch((error) => {
-                        logger.error('Error in handlePRFileClick', { error });
-                      });
-                    }}
+                    onFileClick={handlePRFileClick}
                     onOpenFile={handleOpenFile}
                   />
                 {/each}
@@ -1244,8 +1206,7 @@
 {/if}
 
 <!-- Divider with Merge button - hide when PR is already merged, when merge is in upper section, or post-merge -->
-<!-- Merge / connect-remote dividers (accept-changes.*, owner-only) -->
-{#if !listOnly && isOwner && !isPRMerged && (!hasRemote || hasOpenPR) && (!(isMergedToTrunk || (areAllPRsMerged && !hasResetToTrunk) || isContentMergedToTrunk) || hasNewWorkAfterMerge)}
+{#if !listOnly && !isPRMerged && (!hasRemote || hasOpenPR) && (!(isMergedToTrunk || (areAllPRsMerged && !hasResetToTrunk) || isContentMergedToTrunk) || hasNewWorkAfterMerge)}
   <TimelineDivider>
     {#if !hasRemote}
       <div class="w-full flex gap-1">
@@ -1297,7 +1258,7 @@
         >
         <Input
           type="text"
-          class="w-full px-2.5 py-1.5 text-sm bg-muted/30 border border-border rounded-md focus:outline-none focus:ring-1 focus:ring-primary-ink/50 placeholder:text-muted-foreground"
+          class="w-full px-2.5 py-1.5 text-sm bg-muted/30 border border-border rounded-md focus:outline-none focus:ring-1 focus:ring-primary/50 placeholder:text-muted-foreground/50"
           placeholder={m.workspace_prSection_remoteUrl_placeholder()}
           bind:value={connectRemote.url}
           onkeydown={(e) => {
@@ -1328,7 +1289,7 @@
         {m.workspace_prSection_noRepo_label()}
         <a
           href="https://github.com/new"
-          class="text-primary-ink hover:underline inline-flex items-center gap-0.5"
+          class="text-primary hover:underline inline-flex items-center gap-0.5"
           onclick={(e) => {
             e.preventDefault();
             handleLink('https://github.com/new', {

@@ -27,6 +27,25 @@ vi.mock('$lib/client/live/backend-transport', () => ({
   },
 }));
 
+vi.mock('$store/renderer/store', async () => {
+  const { createAppStoreMock } = await import('$store/renderer/utils/test-helpers/store-mock');
+  const { appClient } = await import('$lib/client');
+  const { settingsOperationsReducer } =
+    await import('$store/renderer/slices/settings-events/settings-events-slice');
+  return {
+    store: createAppStoreMock({
+      reducers: { settingsOperations: settingsOperationsReducer },
+      dispatch: (action: { type: string; payload: unknown[] }) => ({
+        ...action,
+        promise:
+          action.type === 'settings/listRequested'
+            ? appClient.settings.list()
+            : appClient.settings.update(action.payload[0] as never),
+      }),
+    }),
+  };
+});
+
 import AgentFeaturesSettings from './AgentFeaturesSettings.svelte';
 import { __resetSettingsReadCacheForTests } from '$lib/client/live/live-settings-client';
 

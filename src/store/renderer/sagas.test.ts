@@ -18,6 +18,7 @@ describe('renderer app saga registry', () => {
       'guestSessionsSaga',
       'presenceSaga',
       'settingsHydrationSaga',
+      'settingsOperationsSaga',
       'activeStreamsSaga',
       'agentReadSaga',
       'agentSubscriptionReadSaga',
@@ -26,6 +27,7 @@ describe('renderer app saga registry', () => {
       'chatSendSaga',
       'chatScrollbackSaga',
       'switchTimingSaga',
+      'commentsWriteSaga',
       'permissionResponseSaga',
       'agentStreamSaga',
       'agentCreationSaga',
@@ -37,6 +39,7 @@ describe('renderer app saga registry', () => {
       'gitReadSaga',
       'acceptChangesStatusSaga',
       'fileExplorerSaga',
+      'featureCodesSaga',
       'filesReadSaga',
       'filesWriteSaga',
       'workspaceNotesSaga',
@@ -63,7 +66,9 @@ describe('renderer app saga registry', () => {
       'modelReloadSaga',
       'providerAvailabilitySaga',
       'setupPromptSaga',
+      'setupScriptsSaga',
       'hostRequirementsSaga',
+      'hudSaga',
       'backgroundHooksSaga',
       'hardwareConsoleSaga',
       'voiceSettingsSaga',
@@ -79,6 +84,7 @@ describe('renderer app saga registry', () => {
       'githubUserSearchSaga',
       'sentryAuthSaga',
       'linearAuthSaga',
+      'issueSuggestionsSaga',
       'mcpSettingsSaga',
       'directoryPickerSaga',
       'legacyImportSaga',
@@ -100,6 +106,7 @@ describe('renderer app saga registry', () => {
       'terminalCreationSaga',
       'terminalPersistenceSaga',
       'terminalCommandsSaga',
+      'terminalOperationSaga',
       'externalEditorsPersistenceSaga',
       'workspaceSettingsSaga',
       'updateChannelSaga',
@@ -114,7 +121,7 @@ describe('renderer app saga registry', () => {
       'agentEventsIpcSaga',
       'gitEventsIpcSaga',
     ]);
-    expect(new Set(sagas).size).toBe(101);
+    expect(new Set(sagas).size).toBe(sagas.length);
   });
 
   it('returns one cancellation handler per registered saga', () => {
@@ -123,9 +130,9 @@ describe('renderer app saga registry', () => {
 
     const handlers = startAllAppSagas(store as never);
 
-    expect(store.runSaga).toHaveBeenCalledTimes(101);
+    expect(store.runSaga).toHaveBeenCalledTimes(sagas.length);
     expect(store.runSaga.mock.calls.map(([saga]) => saga)).toEqual(sagas);
-    expect(handlers).toEqual(Array(101).fill(cancel));
+    expect(handlers).toEqual(Array(sagas.length).fill(cancel));
   });
 
   it('starts every hardware-console owner exactly once under one cancellable composition', () => {

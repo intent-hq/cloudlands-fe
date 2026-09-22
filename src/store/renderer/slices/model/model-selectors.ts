@@ -105,6 +105,10 @@ const selectProviderLoadingState = store.createSelector(
   },
 );
 
+export const selectAllProviderLoadingStates = store.createSelector(
+  (state): Record<string, ModelLoadingState> => state.model.loadingState,
+);
+
 export const selectIsLoadingModels = store.createSelector((state, providerId?: string): boolean => {
   return selectProviderLoadingState.select(state, providerId)?.status === 'loading';
 });

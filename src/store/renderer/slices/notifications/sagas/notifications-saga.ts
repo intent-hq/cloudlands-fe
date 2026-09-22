@@ -22,6 +22,7 @@ import { CURRENT_WORKSPACE_TAB_SELECTION_ACTIONS } from '../../tab-state/tab-sta
 
 const logger = createLogger('NotificationsSaga');
 const activeNotifications = new Set<Notification>();
+const activeNotificationsByTag = new Map<string, Notification>();
 let pendingPermissionRequest: Promise<NotificationPermission> | null = null;
 let loggedPermissionSkip = false;
 
@@ -95,8 +96,8 @@ async function ensurePermission(): Promise<boolean> {
   return false;
 }
 
-function createBrowserNotification(title: string, body: string): Notification {
-  return new Notification(title, { body });
+function createBrowserNotification(title: string, body: string, tag: string): Notification {
+  return new Notification(title, { body, tag });
 }
 
 function* showBrowserNotification(
@@ -109,10 +110,15 @@ function* showBrowserNotification(
   const granted: boolean = yield* call(ensurePermission);
   if (!granted) return;
   try {
-    const notification: Notification = yield* call(createBrowserNotification, title, body);
+    const tag = `${workspaceId}:${agentId}`;
+    const notification: Notification = yield* call(createBrowserNotification, title, body, tag);
+    const previous = activeNotificationsByTag.get(tag);
+    if (previous) activeNotifications.delete(previous);
     activeNotifications.add(notification);
+    activeNotificationsByTag.set(tag, notification);
     notification.onclick = () => {
       activeNotifications.delete(notification);
+      if (activeNotificationsByTag.get(tag) === notification) activeNotificationsByTag.delete(tag);
       try {
         window.focus();
       } catch {
@@ -125,9 +131,13 @@ function* showBrowserNotification(
       void handleNotificationNavigate(payload);
       notification.close();
     };
-    notification.onclose = () => activeNotifications.delete(notification);
+    notification.onclose = () => {
+      activeNotifications.delete(notification);
+      if (activeNotificationsByTag.get(tag) === notification) activeNotificationsByTag.delete(tag);
+    };
     notification.onerror = () => {
       activeNotifications.delete(notification);
+      if (activeNotificationsByTag.get(tag) === notification) activeNotificationsByTag.delete(tag);
       logger.warn('Web notification failed to show', { title });
     };
   } catch (error) {
@@ -280,5 +290,6 @@ export function* webNotificationSaga() {
     channel.close();
     for (const notification of activeNotifications) notification.close();
     activeNotifications.clear();
+    activeNotificationsByTag.clear();
   }
 }

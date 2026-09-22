@@ -1,10 +1,19 @@
 import { describe, expect, it } from 'vitest';
 import {
+  checkPiMcpAdapterRequested,
   enablementPersistRejected,
   ensureEnabledIfUnset,
   initialState as bareInitialState,
   loadEnabledProvidersFromStorage,
+  loadProviderPathsRequested,
+  piMcpAdapterInstallFailed,
+  piMcpAdapterStatusLoaded,
+  providerPathChanged,
+  providerPathSaved,
+  providerPathSaveFailed,
+  providerPathsLoaded,
   providerSettingsReducer,
+  saveProviderPathRequested,
   setProviderEnabled,
   toggleProvider,
   type ProviderSettingsState,
@@ -127,6 +136,83 @@ describe('providerSettingsReducer', () => {
       };
       const state = providerSettingsReducer(prev, toggleProvider('auggie'));
       expect(state.enabledProviders['auggie']).toBe(true);
+    });
+  });
+
+  describe('provider discovery and Pi adapter state', () => {
+    it('stores provider paths and applies a saved path locally', () => {
+      const loading = providerSettingsReducer(initialState, loadProviderPathsRequested());
+      expect(loading.providerPathsLoading).toBe(true);
+
+      const loaded = providerSettingsReducer(
+        loading,
+        providerPathsLoaded(
+          { codex: '/custom/codex' },
+          { codex: '/usr/bin/codex' },
+          { unsloth: '/usr/bin/unsloth' },
+        ),
+      );
+      expect(loaded.configuredPaths).toEqual({ codex: '/custom/codex' });
+      expect(loaded.resolvedPaths).toEqual({ codex: '/usr/bin/codex' });
+      expect(loaded.secondaryResolvedPaths).toEqual({ unsloth: '/usr/bin/unsloth' });
+      expect(loaded.providerPathsLoading).toBe(false);
+
+      const changed = providerSettingsReducer(loaded, providerPathChanged('codex', '/new/codex'));
+      expect(changed.configuredPaths.codex).toBe('/new/codex');
+    });
+
+    it('tracks Pi adapter checks and installation failures', () => {
+      const checking = providerSettingsReducer(initialState, checkPiMcpAdapterRequested());
+      expect(checking.piMcpAdapterChecking).toBe(true);
+
+      const loaded = providerSettingsReducer(checking, piMcpAdapterStatusLoaded(false));
+      expect(loaded.piMcpAdapterInstalled).toBe(false);
+      expect(loaded.piMcpAdapterChecking).toBe(false);
+
+      const failed = providerSettingsReducer(loaded, piMcpAdapterInstallFailed('install failed'));
+      expect(failed.piMcpAdapterInstalling).toBe(false);
+      expect(failed.piMcpAdapterError).toBe('install failed');
+    });
+
+    it('ignores stale provider path save completions delivered after the latest request', () => {
+      const first = saveProviderPathRequested('codex', '/old/codex', 'request-1');
+      const second = saveProviderPathRequested('codex', '/new/codex', 'request-2');
+      let state = providerSettingsReducer(initialState, first);
+      state = providerSettingsReducer(state, second);
+
+      const saved = providerSettingsReducer(
+        state,
+        providerPathSaved('codex', '/new/codex', 'request-2'),
+      );
+      expect(saved.configuredPaths.codex).toBe('/new/codex');
+      expect(saved.providerPathSaving.codex).toBe(false);
+      expect(saved.providerPathSaveRequestIds.codex).toBeUndefined();
+
+      const staleSuccess = providerSettingsReducer(
+        saved,
+        providerPathSaved('codex', '/old/codex', 'request-1'),
+      );
+      expect(staleSuccess).toBe(saved);
+      const staleFailure = providerSettingsReducer(
+        saved,
+        providerPathSaveFailed('codex', 'request-1', 'stale failure'),
+      );
+      expect(staleFailure).toBe(saved);
+    });
+
+    it('tracks independently generated request ids per provider', () => {
+      const codexRequest = saveProviderPathRequested('codex', '/new/codex');
+      const claudeRequest = saveProviderPathRequested('claude-code', '/new/claude');
+      const state = providerSettingsReducer(
+        providerSettingsReducer(initialState, codexRequest),
+        claudeRequest,
+      );
+
+      expect(codexRequest.payload[2]).not.toBe(claudeRequest.payload[2]);
+      expect(state.providerPathSaveRequestIds).toEqual({
+        codex: codexRequest.payload[2],
+        'claude-code': claudeRequest.payload[2],
+      });
     });
   });
 

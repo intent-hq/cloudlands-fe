@@ -34,6 +34,7 @@ async function showEditError(message: string): Promise<void> {
 }
 
 function* editAndRegenerate(action: EditAction): SagaGenerator<void> {
+  action.promise.catch(() => {});
   const [agentId, wsId, messageId, newText, rawOptions] = action.payload;
   let settled = false;
   try {

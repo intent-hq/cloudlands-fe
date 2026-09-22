@@ -16,6 +16,7 @@
     faCodeBranch,
   } from '@fortawesome/free-solid-svg-icons';
   import { notify } from '$lib/components/patterns/notify';
+  import { writable } from 'svelte/store';
   import { m } from '$shared/paraglide/messages.js';
   import { Button } from '$lib/components/ui/button';
   import { FileInput } from '$lib/components/ui/file-input';
@@ -34,7 +35,9 @@
   import { selectSpecialists } from '$store/renderer/slices/specialists/specialists-selectors';
   import { selectEffectiveDefaultProviderId } from '$store/renderer/slices/provider-catalog/provider-catalog-selectors';
   import { selectActiveProviderId } from '$store/renderer/slices/provider-settings/provider-settings-selectors';
-  import { appClient } from '$lib/client';
+  import { store as appStore } from '$store/renderer/store';
+  import { listInitializerSpecialistPreviewsRequested } from '$store/renderer/slices/workspace-initializer/workspace-initializer-slice';
+  import { selectWorkspaceInitializerSpecialistPreviews } from '$store/renderer/slices/workspace-initializer/workspace-initializer-selectors';
   import { createLogger } from '$lib/utils/client-logger';
   import { formatFileSize } from '$lib/utils/file-utils';
   import {
@@ -53,6 +56,10 @@
   const defaultProviderId$ = selectEffectiveDefaultProviderId();
   const activeProviderId$ = selectActiveProviderId();
   const specialists$ = selectSpecialists();
+  const specialistPreviewProviderStore = writable('');
+  const specialistPreviewsOperation$ = selectWorkspaceInitializerSpecialistPreviews(
+    specialistPreviewProviderStore,
+  );
 
   interface Props {
     // Input state
@@ -222,6 +229,8 @@
   // Bumped on every store specialist-view refresh; in-flight fetches from an
   // older generation are dropped so they can't overwrite fresher previews.
   let previewsGeneration = 0;
+  let pendingPreviewsVersion = 0;
+  let pendingPreviewsGeneration = 0;
 
   // Invalidate cached previews whenever the store's specialist view refreshes
   // (daemon `specialists:changed` → list subscription refetch).
@@ -234,18 +243,30 @@
   $effect(() => {
     const provider = onboardingProvider;
     if (!provider || provider in resolvedModelsByProvider) return;
-    const generation = previewsGeneration;
-    void (async () => {
-      try {
-        const defs = await appClient.specialists.list(provider);
-        if (generation !== previewsGeneration || defs.length === 0) return;
-        const byId: Record<string, string | undefined> = {};
-        for (const def of defs) byId[def.id] = def.resolvedModel;
-        resolvedModelsByProvider = { ...resolvedModelsByProvider, [provider]: byId };
-      } catch (error) {
-        logger.debug('Failed to fetch resolved-model previews:', { provider, error });
-      }
-    })();
+    specialistPreviewProviderStore.set(provider);
+    pendingPreviewsGeneration = previewsGeneration;
+    pendingPreviewsVersion =
+      selectWorkspaceInitializerSpecialistPreviews.select(appStore.state, provider).version + 1;
+    appStore.dispatch(listInitializerSpecialistPreviewsRequested(provider));
+  });
+
+  $effect(() => {
+    const operation = $specialistPreviewsOperation$;
+    if (!pendingPreviewsVersion || operation.version !== pendingPreviewsVersion) return;
+    if (operation.status === 'loading') return;
+    pendingPreviewsVersion = 0;
+    const provider = onboardingProvider;
+    if (pendingPreviewsGeneration !== previewsGeneration) return;
+    if (operation.status === 'error') {
+      logger.debug('Failed to fetch resolved-model previews:', {
+        provider,
+        error: operation.error,
+      });
+      return;
+    }
+    if (operation.data && Object.keys(operation.data).length > 0) {
+      resolvedModelsByProvider = { ...resolvedModelsByProvider, [provider]: operation.data };
+    }
   });
 
   const initialAgentDefaultModel = $derived.by(() => {
@@ -553,7 +574,7 @@
       />
       <div
         class="relative rich-input-container flex flex-col bg-background rounded-xl border shadow-xs transition-colors overflow-hidden {isDragging
-          ? 'border-primary-ink border-dashed'
+          ? 'border-primary border-dashed'
           : 'border-border'}"
         ondragenter={handleDragEnter}
         ondragleave={handleDragLeave}
@@ -566,7 +587,7 @@
           <div
             class="absolute inset-0 bg-primary/5 z-20 flex items-center justify-center pointer-events-none rounded-xl"
           >
-            <div class="flex flex-col items-center gap-2 text-primary-ink">
+            <div class="flex flex-col items-center gap-2 text-primary">
               <Fa icon={faPaperclip} size={24} />
               <span class="text-sm font-medium">{m.onboarding_promptStep_dropFiles_label()}</span>
             </div>
@@ -596,7 +617,6 @@
                 role="listbox"
                 aria-label={m.onboarding_promptStep_promptSuggestions_ariaLabel()}
               >
-                <!-- Inline starter suggestions use tighter spacing than standalone menu rows. -->
                 {#each visibleSuggestions.slice(0, 4) as suggestion, i (suggestion)}
                   <div class="contents" in:fly={{ tier: 'moderate', axis: 'x', distance: -6 }}>
                     <ActionRow
@@ -819,11 +839,9 @@
             in:fly={{ tier: 'moderate', distance: 10 }}
           >
             <Button
-              variant="plain"
+              variant="ghost"
               type="button"
-              truncateLabel={false}
-              labelClass="flex-wrap"
-              class="flex h-auto min-h-8 min-w-0 max-w-full flex-wrap items-center gap-y-1 text-left text-sm text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+              class="flex min-h-8 min-w-0 max-w-full flex-wrap items-center gap-y-1 text-left text-sm text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
               onclick={() => onShowSetupScriptChange(!showSetupScript)}
             >
               <span>{m.onboarding_promptStep_setupEnvWith_before()}</span>
@@ -880,7 +898,7 @@
       <div class="mt-1" transition:slide={{ axis: 'y', tier: 'moderate' }}>
         <Button
           variant="ghost"
-          class="flex items-center gap-2 mt-1 mb-1 px-1 text-sm text-primary-ink hover:text-primary-ink/80 cursor-pointer"
+          class="flex items-center gap-2 mt-1 mb-1 px-1 text-sm text-primary hover:text-primary/80 cursor-pointer"
           onclick={() => {
             if (projectSelection) {
               onProjectChange({
@@ -914,7 +932,7 @@
       <Button
         class="group/button"
         size="xl"
-        variant={!onboardingInputValue.trim() ? 'outline' : 'primary'}
+        variant={!onboardingInputValue.trim() ? 'outline' : 'default'}
         disabled={createDisabledReason !== null}
         onclick={handleSubmit}
       >

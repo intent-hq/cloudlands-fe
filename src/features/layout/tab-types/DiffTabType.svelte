@@ -14,12 +14,11 @@
     selectFileTrackingChanges,
     selectFileTrackingCommits,
   } from '$store/renderer/slices/changes/changes-selectors';
-  import { refreshRequested } from '$store/renderer/slices/changes/changes-slice';
-  import { gitClient } from '$features/git/git.client';
-  import { gitCache } from '$features/git/git-cache';
-  import { loadGitStatus } from '$store/renderer/slices/git/git-slice';
+  import {
+    stageGitHunkRequested,
+    unstageGitHunkRequested,
+  } from '$store/renderer/slices/git/git-slice';
   import { ChangeStage, type TrackedChange } from '$features/file-tracking/types';
-  import { WorkspaceId } from '$shared/types/branded-ids';
   import { selectWorkspaceById } from '$store/renderer/slices/workspace/workspace-selectors';
   import { TrackedChangeDiffViewer } from '$features/file-tracking/components/diff';
   import * as Menu from '$lib/components/ui/menu';
@@ -36,7 +35,7 @@
     toggleDiffSideBySide,
   } from '$store/renderer/slices/ui-layout/ui-layout-slice';
 
-  import { notify } from '$lib/components/patterns/notify';
+  import { toast } from '$lib/components/ui/toast';
   import { isAbsolutePath } from '$lib/utils/path-utils';
   import { m } from '$shared/paraglide/messages.js';
   import { faFile } from '@fortawesome/free-solid-svg-icons';
@@ -227,47 +226,29 @@
   });
 
   // Handle staging a hunk
-  async function handleStageHunk(filePath: string, hunkPatch: string) {
+  function handleStageHunk(filePath: string, hunkPatch: string) {
     console.log('[DiffTabType] handleStageHunk called', {
       filePath,
       patchLength: hunkPatch.length,
     });
     if (!workspaceId) {
-      notify.error(m.layout_diffTab_noWorkspace_error());
+      toast.error(m.layout_diffTab_noWorkspace_error());
       return;
     }
-    const result = await gitClient.stageHunk(WorkspaceId(workspaceId), filePath, hunkPatch);
-    if (result.ok) {
-      notify.success(m.layout_diffTab_hunkStaged_toast());
-      gitCache.invalidateWorkspace(workspaceId);
-      appStore.dispatch(loadGitStatus(workspaceId, true));
-      // Refresh file tracking to update the changes panel and diff viewer
-      appStore.dispatch(refreshRequested(workspaceId, true));
-    } else {
-      notify.error(result.error || m.layout_diffTab_stageHunkFailed_error());
-    }
+    appStore.dispatch(stageGitHunkRequested(workspaceId, filePath, hunkPatch));
   }
 
   // Handle unstaging a hunk
-  async function handleUnstageHunk(filePath: string, hunkPatch: string) {
+  function handleUnstageHunk(filePath: string, hunkPatch: string) {
     console.log('[DiffTabType] handleUnstageHunk called', {
       filePath,
       patchLength: hunkPatch.length,
     });
     if (!workspaceId) {
-      notify.error(m.layout_diffTab_noWorkspace_error());
+      toast.error(m.layout_diffTab_noWorkspace_error());
       return;
     }
-    const result = await gitClient.unstageHunk(WorkspaceId(workspaceId), filePath, hunkPatch);
-    if (result.ok) {
-      notify.success(m.layout_diffTab_hunkUnstaged_toast());
-      gitCache.invalidateWorkspace(workspaceId);
-      appStore.dispatch(loadGitStatus(workspaceId, true));
-      // Refresh file tracking to update the changes panel and diff viewer
-      appStore.dispatch(refreshRequested(workspaceId, true));
-    } else {
-      notify.error(result.error || m.layout_diffTab_unstageHunkFailed_error());
-    }
+    appStore.dispatch(unstageGitHunkRequested(workspaceId, filePath, hunkPatch));
   }
 </script>
 

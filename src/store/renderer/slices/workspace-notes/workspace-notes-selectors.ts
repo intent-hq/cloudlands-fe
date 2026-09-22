@@ -10,6 +10,7 @@ import type { Note } from '$shared/types';
 import { getItem, getItems } from '@augmentcode/themis/utils/collections/collection-utils';
 import { emptyWorkspaceNotesState } from './workspace-notes-slice';
 import type { NoteVersionsState, WorkspaceNotesWorkspaceState } from './workspace-notes-types';
+import type { LineAttributionReadState } from './workspace-notes-types';
 
 // ============================================================================
 // Per-workspace base selector
@@ -72,4 +73,17 @@ export const selectAllNotes = store.createSelector((state, workspaceId?: string 
 export const selectNoteVersions = store.createSelector(
   (state, workspaceId: string): NoteVersionsState | null =>
     state.workspaceNotes.byWorkspaceId[workspaceId]?.noteVersions ?? null,
+);
+
+const emptyLineAttribution: LineAttributionReadState = {
+  attributions: {},
+  loading: false,
+  error: null,
+  version: 0,
+};
+
+export const selectLineAttribution = store.createSelector(
+  (state, workspaceId: string, noteId: string): LineAttributionReadState =>
+    state.workspaceNotes.byWorkspaceId[workspaceId]?.lineAttributions[noteId] ??
+    emptyLineAttribution,
 );

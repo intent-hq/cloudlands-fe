@@ -18,6 +18,9 @@ const {
   mockToastError,
   debugFlags,
   savedBranchByRepo,
+  selectorState,
+  githubLoadGeneration,
+  githubSearchGeneration,
 } = vi.hoisted(() => ({
   mockGetBranches: vi.fn(),
   mockBranchStatus: vi.fn(async () => null),
@@ -28,6 +31,26 @@ const {
   // persistence + a saved branch; both are reset in beforeEach.
   debugFlags: {} as Record<string, boolean>,
   savedBranchByRepo: {} as Record<string, string>,
+  selectorState: {
+    gitBranchesByRepo: {} as Record<string, { data: any; loading: boolean; error: string | null }>,
+    gitBranchStatuses: {} as Record<string, { data: any; loading: boolean; error: string | null }>,
+    githubBranchListings: {} as Record<
+      string,
+      {
+        branches: string[];
+        defaultBranch: string;
+        source?: string;
+        loading: boolean;
+        error: string | null;
+      }
+    >,
+    listeners: new Set<() => void>(),
+    notify() {
+      this.listeners.forEach((listener) => listener());
+    },
+  },
+  githubLoadGeneration: {} as Record<string, number>,
+  githubSearchGeneration: {} as Record<string, number>,
 }));
 
 vi.mock('$lib/client', () => ({
@@ -51,11 +74,225 @@ vi.mock('$store/renderer/store', async () => {
     state: {},
     // Mirror the real reducer: persisting a branch updates the saved map
     // (this is exactly the clobbering the reconciliation fix guards against).
-    dispatch: (action: { type?: string; payload?: [string, string] }) => {
+    dispatch: (action: any) => {
       if (action?.type === 'workspaceInitializer/setBranchForRepo' && action.payload) {
         const [repoPath, branch] = action.payload;
         savedBranchByRepo[repoPath] = branch;
       }
+      if (
+        (action?.type === 'git/readBranchesRequested' || action?.type === 'git/loadBranches') &&
+        action.payload
+      ) {
+        const [repoPath, includeRemote = true] = action.payload;
+        selectorState.gitBranchesByRepo[repoPath] = { data: null, loading: true, error: null };
+        selectorState.notify();
+        Promise.resolve(mockGetBranches(repoPath, includeRemote)).then(
+          (data) => {
+            selectorState.gitBranchesByRepo[repoPath] =
+              data === null
+                ? { data: null, loading: false, error: 'fetch failed' }
+                : { data, loading: false, error: null };
+            selectorState.notify();
+          },
+          (error) => {
+            selectorState.gitBranchesByRepo[repoPath] = {
+              data: null,
+              loading: false,
+              error: String(error),
+            };
+            selectorState.notify();
+          },
+        );
+      }
+      if (action?.type === 'git/readBranchStatusRequested' && action.payload) {
+        const key = JSON.stringify(action.payload);
+        selectorState.gitBranchStatuses[key] = { data: null, loading: true, error: null };
+        selectorState.notify();
+        Promise.resolve(mockBranchStatus(...action.payload)).then(
+          (data) => {
+            selectorState.gitBranchStatuses[key] = { data, loading: false, error: null };
+            selectorState.notify();
+          },
+          (error) => {
+            selectorState.gitBranchStatuses[key] = {
+              data: null,
+              loading: false,
+              error: String(error),
+            };
+            selectorState.notify();
+          },
+        );
+      }
+      if (action?.type === 'workspaceInitializer/loadGitHubBranches' && action.payload) {
+        const [owner, repo] = action.payload;
+        const requestKey = JSON.stringify([owner, repo]);
+        const generation = (githubLoadGeneration[requestKey] ?? 0) + 1;
+        githubLoadGeneration[requestKey] = generation;
+        const cachedKey = JSON.stringify([owner, repo, 'cached']);
+        const freshKey = JSON.stringify([owner, repo, '']);
+        selectorState.githubBranchListings[cachedKey] = {
+          branches: [],
+          defaultBranch: '',
+          loading: true,
+          error: null,
+        };
+        selectorState.githubBranchListings[freshKey] = {
+          branches: [],
+          defaultBranch: '',
+          loading: true,
+          error: null,
+        };
+        selectorState.notify();
+        Promise.resolve(mockGithubBranchesCached(owner, repo)).then(
+          (result) => {
+            if (githubLoadGeneration[requestKey] !== generation) return;
+            selectorState.githubBranchListings[cachedKey] = {
+              branches: result.branches,
+              defaultBranch: result.defaultBranch ?? '',
+              source: result.source,
+              loading: false,
+              error: null,
+            };
+            selectorState.notify();
+          },
+          (error) => {
+            if (githubLoadGeneration[requestKey] !== generation) return;
+            selectorState.githubBranchListings[cachedKey] = {
+              branches: [],
+              defaultBranch: '',
+              loading: false,
+              error: String(error),
+            };
+            selectorState.notify();
+          },
+        );
+        Promise.resolve(mockGithubBranches(owner, repo)).then(
+          (result) => {
+            if (githubLoadGeneration[requestKey] !== generation) return;
+            selectorState.githubBranchListings[freshKey] = {
+              branches: result.branches,
+              defaultBranch: result.defaultBranch ?? '',
+              loading: false,
+              error: null,
+            };
+            selectorState.notify();
+          },
+          (error) => {
+            if (githubLoadGeneration[requestKey] !== generation) return;
+            selectorState.githubBranchListings[freshKey] = {
+              branches: [],
+              defaultBranch: '',
+              loading: false,
+              error: String(error),
+            };
+            selectorState.notify();
+          },
+        );
+      }
+      if (action?.type === 'workspaceInitializer/searchGitHubBranches' && action.payload) {
+        const [owner, repo, prefix = ''] = action.payload;
+        if (!prefix) return action;
+        const requestKey = JSON.stringify([owner, repo]);
+        const generation = (githubSearchGeneration[requestKey] ?? 0) + 1;
+        githubSearchGeneration[requestKey] = generation;
+        const key = JSON.stringify([owner, repo, prefix]);
+        selectorState.githubBranchListings[key] = {
+          branches: [],
+          defaultBranch: '',
+          loading: true,
+          error: null,
+        };
+        selectorState.notify();
+        Promise.resolve(mockGithubBranches(owner, repo, prefix)).then(
+          (result) => {
+            if (githubSearchGeneration[requestKey] !== generation) return;
+            selectorState.githubBranchListings[key] = {
+              branches: result.branches,
+              defaultBranch: result.defaultBranch ?? '',
+              loading: false,
+              error: null,
+            };
+            selectorState.notify();
+          },
+          (error) => {
+            if (githubSearchGeneration[requestKey] !== generation) return;
+            selectorState.githubBranchListings[key] = {
+              branches: [],
+              defaultBranch: '',
+              loading: false,
+              error: String(error),
+            };
+            selectorState.notify();
+          },
+        );
+      }
+      if (action?.type === 'workspaceInitializer/listGitHubBranchesRequested' && action.payload) {
+        const [owner, repo, prefix = ''] = action.payload;
+        const key = JSON.stringify([owner, repo, prefix]);
+        selectorState.githubBranchListings[key] = {
+          branches: [],
+          defaultBranch: '',
+          loading: true,
+          error: null,
+        };
+        selectorState.notify();
+        Promise.resolve(mockGithubBranches(...action.payload)).then(
+          (result) => {
+            selectorState.githubBranchListings[key] = {
+              branches: result.branches,
+              defaultBranch: result.defaultBranch ?? '',
+              loading: false,
+              error: null,
+            };
+            selectorState.notify();
+          },
+          (error) => {
+            selectorState.githubBranchListings[key] = {
+              branches: [],
+              defaultBranch: '',
+              loading: false,
+              error: String(error),
+            };
+            selectorState.notify();
+          },
+        );
+      }
+      if (
+        action?.type === 'workspaceInitializer/listGitHubBranchesCachedRequested' &&
+        action.payload
+      ) {
+        const [owner, repo] = action.payload;
+        const key = JSON.stringify([owner, repo, 'cached']);
+        selectorState.githubBranchListings[key] = {
+          branches: [],
+          defaultBranch: '',
+          loading: true,
+          error: null,
+        };
+        selectorState.notify();
+        Promise.resolve(mockGithubBranchesCached(...action.payload)).then(
+          (result) => {
+            selectorState.githubBranchListings[key] = {
+              branches: result.branches,
+              defaultBranch: result.defaultBranch ?? '',
+              source: result.source,
+              loading: false,
+              error: null,
+            };
+            selectorState.notify();
+          },
+          (error) => {
+            selectorState.githubBranchListings[key] = {
+              branches: [],
+              defaultBranch: '',
+              loading: false,
+              error: String(error),
+            };
+            selectorState.notify();
+          },
+        );
+      }
+      return action;
     },
   });
 });
@@ -65,10 +302,46 @@ vi.mock(
   async () => {
     const { createAppStoreMock } = await import('$store/renderer/utils/test-helpers/store-mock');
     const store = createAppStoreMock({ state: {} });
+    const parameterizedSelector = (read: (...args: any[]) => any) => {
+      const selector = (...inputs: any[]) => ({
+        subscribe(run: (value: any) => void) {
+          const values = new Array(inputs.length);
+          const ready = new Array(inputs.length).fill(false);
+          const emit = () => {
+            if (ready.every(Boolean)) run(read(...values));
+          };
+          const unsubscribes = inputs.map((input, index) => {
+            if (input && typeof input.subscribe === 'function') {
+              return input.subscribe((value: unknown) => {
+                values[index] = value;
+                ready[index] = true;
+                emit();
+              });
+            }
+            values[index] = input;
+            ready[index] = true;
+            return () => {};
+          });
+          selectorState.listeners.add(emit);
+          emit();
+          return () => {
+            selectorState.listeners.delete(emit);
+            unsubscribes.forEach((unsubscribe) => unsubscribe());
+          };
+        },
+      });
+      return Object.assign(selector, {
+        select: (_state: unknown, ...args: any[]) => read(...args),
+      });
+    };
     return {
       // Return the shared mutable map so dispatched saves are visible to the
       // component's `$branchByRepo$` reads without a store re-emit.
       selectWorkspaceInitializerBranchByRepo: store.createSelector(() => savedBranchByRepo),
+      selectWorkspaceInitializerGitHubBranchListing: parameterizedSelector(
+        (owner, repo, prefix = '') =>
+          selectorState.githubBranchListings[JSON.stringify([owner, repo, prefix])],
+      ),
     };
   },
 );
@@ -86,7 +359,111 @@ vi.mock('$store/renderer/slices/workspace-initializer/workspace-initializer-slic
     type: 'workspaceInitializer/setBranchForRepo',
     payload: [repoPath, branch],
   }),
+  loadWorkspaceInitializerGitHubBranches: (
+    owner: string,
+    repo: string,
+    forceRefresh?: boolean,
+    cacheEnabled?: boolean,
+    networkDelayMs?: number,
+  ) => ({
+    type: 'workspaceInitializer/loadGitHubBranches',
+    payload: [owner, repo, forceRefresh, cacheEnabled, networkDelayMs],
+  }),
+  searchWorkspaceInitializerGitHubBranches: (owner: string, repo: string, prefix: string) => ({
+    type: 'workspaceInitializer/searchGitHubBranches',
+    payload: [owner, repo, prefix],
+  }),
+  listGitHubBranchesRequested: (owner: string, repo: string, prefix?: string) => {
+    const promise = Promise.withResolvers<any>();
+    return {
+      type: 'workspaceInitializer/listGitHubBranchesRequested',
+      payload: prefix === undefined ? [owner, repo] : [owner, repo, prefix],
+      promise: promise.promise,
+      success: promise.resolve,
+      failure: promise.reject,
+    };
+  },
+  listGitHubBranchesCachedRequested: (owner: string, repo: string) => {
+    const promise = Promise.withResolvers<any>();
+    return {
+      type: 'workspaceInitializer/listGitHubBranchesCachedRequested',
+      payload: [owner, repo],
+      promise: promise.promise,
+      success: promise.resolve,
+      failure: promise.reject,
+    };
+  },
+  connectGitHubForInitializerRequested: () => ({
+    type: 'workspaceInitializer/connectGitHubRequested',
+    payload: undefined,
+  }),
 }));
+
+vi.mock('$store/renderer/slices/git/git-selectors', () => {
+  const parameterizedSelector = (read: (...args: any[]) => any) => {
+    const selector = (...inputs: any[]) => ({
+      subscribe(run: (value: any) => void) {
+        const values = new Array(inputs.length);
+        const ready = new Array(inputs.length).fill(false);
+        const emit = () => {
+          if (ready.every(Boolean)) run(read(...values));
+        };
+        const unsubscribes = inputs.map((input, index) => {
+          if (input && typeof input.subscribe === 'function') {
+            return input.subscribe((value: unknown) => {
+              values[index] = value;
+              ready[index] = true;
+              emit();
+            });
+          }
+          values[index] = input;
+          ready[index] = true;
+          return () => {};
+        });
+        selectorState.listeners.add(emit);
+        emit();
+        return () => {
+          selectorState.listeners.delete(emit);
+          unsubscribes.forEach((unsubscribe) => unsubscribe());
+        };
+      },
+    });
+    return Object.assign(selector, { select: (_state: unknown, ...args: any[]) => read(...args) });
+  };
+  return {
+    selectGitRepoBranches: parameterizedSelector(
+      (repoPath) => selectorState.gitBranchesByRepo[repoPath]?.data ?? null,
+    ),
+    selectGitRepoBranchesLoading: parameterizedSelector(
+      (repoPath) => selectorState.gitBranchesByRepo[repoPath]?.loading ?? false,
+    ),
+    selectGitRepoBranchesError: parameterizedSelector(
+      (repoPath) => selectorState.gitBranchesByRepo[repoPath]?.error ?? null,
+    ),
+    selectGitBranchStatus: parameterizedSelector(
+      (repoPath, branchName) =>
+        selectorState.gitBranchStatuses[JSON.stringify([repoPath, branchName])]?.data ?? null,
+    ),
+    selectGitBranchStatusLoading: parameterizedSelector(
+      (repoPath, branchName) =>
+        selectorState.gitBranchStatuses[JSON.stringify([repoPath, branchName])]?.loading ?? false,
+    ),
+    selectGitBranchStatusError: parameterizedSelector(
+      (repoPath, branchName) =>
+        selectorState.gitBranchStatuses[JSON.stringify([repoPath, branchName])]?.error ?? null,
+    ),
+  };
+});
+
+vi.mock('$store/renderer/slices/github-auth/github-auth-selectors', async () => {
+  const { createAppStoreMock } = await import('$store/renderer/utils/test-helpers/store-mock');
+  const store = createAppStoreMock({ state: {} });
+  return {
+    selectGitHubAuthIsAuthenticated: store.createSelector(() => false),
+    selectGitHubAuthIsAuthenticating: store.createSelector(() => false),
+    selectGitHubAuthError: store.createSelector(() => null),
+  };
+});
 
 // Debug toggles (branch caching, form persistence, simulated delays) default
 // off; tests opt in via `debugFlags`.
@@ -124,6 +501,8 @@ describe('BranchSelector (daemon-backed branch listing, no fabricated fallbacks)
     mockToastError.mockReset();
     for (const key of Object.keys(debugFlags)) delete debugFlags[key];
     for (const key of Object.keys(savedBranchByRepo)) delete savedBranchByRepo[key];
+    for (const key of Object.keys(githubLoadGeneration)) delete githubLoadGeneration[key];
+    for (const key of Object.keys(githubSearchGeneration)) delete githubSearchGeneration[key];
     // Default: cold cache â€” the cached-first path is a no-op unless a test arms it.
     mockGithubBranchesCached.mockResolvedValue({ cached: false, branches: [] });
   });
@@ -326,7 +705,7 @@ describe('BranchSelector (daemon-backed branch listing, no fabricated fallbacks)
 
     const trigger = container.querySelector('button');
     expect(trigger).toBeTruthy();
-    // The loader appears as soon as the (debounced) fetch is scheduled â€” it must
+    // The loader appears as soon as the fetch is scheduled â€” it must
     // cover the debounce delay before git.getBranches is actually called.
     await waitFor(() =>
       expect(trigger!.querySelector('[data-slot="intent-mark-loader"]')).toBeTruthy(),
@@ -336,7 +715,7 @@ describe('BranchSelector (daemon-backed branch listing, no fabricated fallbacks)
       expect(trigger!.querySelector('[data-slot="intent-mark-loader"]')).toBeTruthy();
     }
 
-    // The intent mark replaces the old pulse skeleton and persists while the fetch is in flight.
+    // The loader persists while the fetch is in flight.
     await waitFor(() => expect(mockGetBranches).toHaveBeenCalled());
     expect(trigger!.querySelector('[data-slot="intent-mark-loader"]')).toBeTruthy();
     expect(trigger!.querySelector('.animate-pulse')).toBeNull();
@@ -424,6 +803,8 @@ describe('BranchSelector (cached-first GitHub load, github.branches.listCached Â
     mockGithubBranchesCached.mockReset();
     for (const key of Object.keys(debugFlags)) delete debugFlags[key];
     for (const key of Object.keys(savedBranchByRepo)) delete savedBranchByRepo[key];
+    for (const key of Object.keys(githubLoadGeneration)) delete githubLoadGeneration[key];
+    for (const key of Object.keys(githubSearchGeneration)) delete githubSearchGeneration[key];
   });
 
   const githubProps = {
@@ -433,7 +814,7 @@ describe('BranchSelector (cached-first GitHub load, github.branches.listCached Â
   };
 
   it.each(['main', 'trunk'])(
-    'selects the reported default %s outside the first page, including a component cache hit',
+    'selects the reported default %s outside the first page on repeated saga-backed loads',
     async (defaultBranch) => {
       debugFlags.enableBranchCaching = true;
       mockGithubBranchesCached.mockResolvedValue({ cached: false, branches: [] });
@@ -443,13 +824,13 @@ describe('BranchSelector (cached-first GitHub load, github.branches.listCached Â
 
       await waitFor(() => expect(onchange).toHaveBeenCalledTimes(1));
       expect(onchange.mock.lastCall![0].detail.branch).toBe(defaultBranch);
-      // Revisit the repository with no incoming selection: the component's
-      // cache holds a page, not the complete set of branches either.
+      // Revisit with no incoming selection. Cache ownership now lives in the
+      // saga/daemon boundary, so the component dispatches another cached load.
       await rerender({ repoPath: '', githubUrl: undefined });
       await rerender(githubProps);
       await waitFor(() => expect(onchange).toHaveBeenCalledTimes(2));
       expect(onchange.mock.lastCall![0].detail.branch).toBe(defaultBranch);
-      expect(mockGithubBranches).toHaveBeenCalledTimes(1);
+      expect(mockGithubBranches).toHaveBeenCalledTimes(2);
     },
   );
 
@@ -824,6 +1205,8 @@ describe('BranchSelector (server-side prefix search, github.branches.list prefix
     mockGithubBranchesCached.mockReset();
     for (const key of Object.keys(debugFlags)) delete debugFlags[key];
     for (const key of Object.keys(savedBranchByRepo)) delete savedBranchByRepo[key];
+    for (const key of Object.keys(githubLoadGeneration)) delete githubLoadGeneration[key];
+    for (const key of Object.keys(githubSearchGeneration)) delete githubSearchGeneration[key];
     mockGithubBranchesCached.mockResolvedValue({ cached: false, branches: [] });
   });
 
@@ -1023,6 +1406,8 @@ describe('BranchSelector (uncommitted-changes indicator gated on skipIsolation, 
     mockGithubBranchesCached.mockReset();
     for (const key of Object.keys(debugFlags)) delete debugFlags[key];
     for (const key of Object.keys(savedBranchByRepo)) delete savedBranchByRepo[key];
+    for (const key of Object.keys(githubLoadGeneration)) delete githubLoadGeneration[key];
+    for (const key of Object.keys(githubSearchGeneration)) delete githubSearchGeneration[key];
     mockGithubBranchesCached.mockResolvedValue({ cached: false, branches: [] });
     // Local repo where the auto-selected default IS the current branch, so the
     // uncommitted-changes flag reported by the daemon applies to the selection.
@@ -1042,7 +1427,7 @@ describe('BranchSelector (uncommitted-changes indicator gated on skipIsolation, 
 
   /** The warning status dot (trigger + dropdown notice share the same marker). */
   function uncommittedDot(root: ParentNode) {
-    return root.querySelector('.bg-warning');
+    return root.querySelector('.bg-amber-500');
   }
 
   it('shows the indicator and dropdown notice with uncommitted changes on the current branch', async () => {

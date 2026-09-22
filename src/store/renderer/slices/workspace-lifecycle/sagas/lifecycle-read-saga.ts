@@ -1,5 +1,5 @@
 import type { SagaGenerator } from 'typed-redux-saga';
-import { all, call, delay, fork, put, race, take, takeEvery } from 'typed-redux-saga';
+import { all, call, cancelled, delay, fork, put, race, take, takeEvery } from 'typed-redux-saga';
 
 import { isAgentDeletionPending } from '$features/agent/utils/pending-agent-deletions';
 import { staleRuntimeFlagClearUpsertOptions } from '$features/agent/utils/stale-runtime-flag-clear';
@@ -72,6 +72,7 @@ import {
   addAgent,
   adjustDelegatedParentCount,
   adjustScopeCount,
+  agentsHydrationSettled,
   fetchBackgroundAgentsRequested,
   fetchDelegatedAgentsRequested,
   fetchOrphanedDelegatedAgentsRequested,
@@ -1265,9 +1266,34 @@ function* changesWorker(scheduler: WorkspaceReadScheduler, action: ChangesReadAc
 
 type AgentsReadAction = ReturnType<typeof hydrateAgentsRequested | typeof workspaceUnmounted>;
 
-function* coalescedAgentsWorker(scheduler: WorkspaceReadScheduler, action: AgentsReadAction) {
+function agentsReadContext(pendingReads: Set<string>, action: AgentsReadAction) {
+  const workspaceId = action.payload[0];
+  if (isWorkspaceCleanupAction(action)) {
+    pendingReads.delete(workspaceId);
+    return { context: workspaceId, cancel: true as const };
+  }
+  pendingReads.add(workspaceId);
+  return workspaceId;
+}
+
+function* coalescedAgentsWorker(
+  scheduler: WorkspaceReadScheduler,
+  pendingReads: Set<string>,
+  action: AgentsReadAction,
+) {
   if (!isWorkspaceCleanupAction(action)) {
-    yield* runWorkspaceRead(scheduler, 'agents', action.payload[0], hydrateAgents, false);
+    const workspaceId = action.payload[0];
+    pendingReads.delete(workspaceId);
+    try {
+      yield* runWorkspaceRead(scheduler, 'agents', workspaceId, hydrateAgents, false);
+    } finally {
+      // A leading read may predate the HUD's request. Only settle once the
+      // accepted trailing work has drained, even when a read failed.
+      if ((yield* cancelled()) || !pendingReads.has(workspaceId)) {
+        pendingReads.delete(workspaceId);
+        yield* put(agentsHydrationSettled(workspaceId));
+      }
+    }
   }
 }
 
@@ -1399,6 +1425,7 @@ export function* lifecycleReadSaga(): SagaGenerator<void> {
   const initializedContexts = new Set<string>();
   const pendingForcedTaskReads = new Set<string>();
   const pendingInitialEventReads = new Set<string>();
+  const pendingAgentReads = new Set<string>();
   // One scheduler per saga run: it dies with the saga, so a restart can never
   // inherit slots held by reads that were cancelled with the previous run.
   const scheduler = createWorkspaceReadScheduler();
@@ -1478,9 +1505,10 @@ export function* lifecycleReadSaga(): SagaGenerator<void> {
       takeLeadingByAgent(requestAgentLineStats, agentLineStatsWorker),
       takeSingleFlightInContext(
         [hydrateAgentsRequested, workspaceUnmounted],
-        workspaceReadContext,
+        (action) => agentsReadContext(pendingAgentReads, action),
         coalescedAgentsWorker,
         scheduler,
+        pendingAgentReads,
       ),
       takeLeadingByWorkspace(fetchRetiredAgentsRequested, retiredAgentsWorker, scheduler),
       takeLeadingInContext(
@@ -1502,5 +1530,6 @@ export function* lifecycleReadSaga(): SagaGenerator<void> {
     initializedContexts.clear();
     pendingForcedTaskReads.clear();
     pendingInitialEventReads.clear();
+    pendingAgentReads.clear();
   }
 }

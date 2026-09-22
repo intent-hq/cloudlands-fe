@@ -15,6 +15,12 @@
 <script lang="ts">
   import { onDestroy } from 'svelte';
   import { appClient, type AppSettingChange, type SettingDefinitionWithValue } from '$lib/client';
+  import { store as appStore } from '$store/renderer/store';
+  import {
+    getSettingRequested,
+    listSettingsRequested,
+    updateSettingsRequested,
+  } from '$store/renderer/slices/settings-events/settings-events-slice';
   import AgentBackendSettings from './AgentBackendSettings.svelte';
   import WorkspaceApiSettings from './WorkspaceApiSettings.svelte';
 
@@ -38,6 +44,14 @@
     ...entry,
   })) as SettingDefinitionWithValue[];
 
+  function recordWrites(changes: AppSettingChange[]) {
+    for (const change of changes) {
+      const previous = writes.at(-1);
+      if (previous?.path === change.path && previous.value === change.value) continue;
+      writes = [...writes, change];
+    }
+  }
+
   // Override the real consumer seam before either child mounts. The fixture never
   // reaches a daemon, and restores the seam when leaving this isolated preview.
   const previous = {
@@ -48,14 +62,41 @@
   appClient.settings.get = async (path) => definitions.find((entry) => entry.path === path) ?? null;
   appClient.settings.list = async () => definitions;
   appClient.settings.update = async (changes) => {
-    writes = [...writes, ...changes];
     for (const change of changes) {
       const entry = definitions.find((entry) => entry.path === change.path);
       if (entry) entry.value = change.value;
     }
     return changes;
   };
-  onDestroy(() => Object.assign(appClient.settings, previous));
+  const originalDispatch = appStore.dispatch;
+  Object.defineProperty(appStore, 'dispatch', {
+    configurable: true,
+    value: (action: Parameters<typeof originalDispatch>[0]) => {
+      const result = originalDispatch(action);
+      if (action.type === getSettingRequested.type) {
+        const request = action as ReturnType<typeof getSettingRequested>;
+        const definition = definitions.find((entry) => entry.path === request.payload[0]) ?? null;
+        originalDispatch(request.success(definition));
+      } else if (action.type === listSettingsRequested.type) {
+        const request = action as ReturnType<typeof listSettingsRequested>;
+        originalDispatch(request.success(definitions));
+      } else if (action.type === updateSettingsRequested.type) {
+        const request = action as ReturnType<typeof updateSettingsRequested>;
+        const changes = request.payload[0];
+        recordWrites(changes);
+        for (const change of changes) {
+          const entry = definitions.find((entry) => entry.path === change.path);
+          if (entry) entry.value = change.value;
+        }
+        queueMicrotask(() => originalDispatch(request.success(changes)));
+      }
+      return result;
+    },
+  });
+  onDestroy(() => {
+    Object.assign(appClient.settings, previous);
+    Object.defineProperty(appStore, 'dispatch', { configurable: true, value: originalDispatch });
+  });
 </script>
 
 <div

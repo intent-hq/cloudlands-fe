@@ -1,4 +1,4 @@
-import { createAction } from '@augmentcode/themis/utils/store/create-action';
+import { createAction, createAsyncAction } from '@augmentcode/themis/utils/store/create-action';
 import { createReducer } from '@augmentcode/themis/utils/store/create-reducer';
 import { createCollection } from '@augmentcode/themis/utils/collections/collection-utils';
 import type { AuggieModel } from '$features/auggie/auggie-models.client';
@@ -78,6 +78,7 @@ export const initialState: ModelState = {
   defaultProviderId: '',
   pendingDefaultProviderId: null,
   catalogProviderIds: [],
+  agentModelUpdates: {},
 };
 
 // ============================================================================
@@ -158,6 +159,17 @@ export const clearModelFallbackInfo = createAction<[agentId: string]>(
  */
 export const selectModel = createAction<[model: string, providerId?: string]>('model/selectModel');
 export const reloadModelsForProvider = createAction('model/reloadModelsForProvider');
+export const setAgentModelRequested = createAsyncAction<
+  [
+    requestId: number,
+    agentId: string,
+    workspaceId: string,
+    model: string,
+    providerId?: string,
+    supportedEfforts?: string[],
+  ],
+  void
+>('model/setAgentModel', 'model/setAgentModelRequested');
 
 // ============================================================================
 // Reducer
@@ -323,4 +335,33 @@ modelReducer.with(clearModelFallbackInfo, (state, { payload: [agentId] }) => {
   const fallbackInfoByAgentId = { ...state.fallbackInfoByAgentId };
   delete fallbackInfoByAgentId[agentId];
   return { ...state, fallbackInfoByAgentId };
+});
+modelReducer.with(setAgentModelRequested, (state, { payload: [requestId, agentId, , model] }) => ({
+  ...state,
+  agentModelUpdates: {
+    ...state.agentModelUpdates,
+    [agentId]: { status: 'loading', requestId, model, error: null },
+  },
+}));
+modelReducer.with(setAgentModelRequested.success, (state, { payload }) => {
+  const [requestId, agentId, , model] = payload.request;
+  if (state.agentModelUpdates[agentId]?.requestId !== requestId) return state;
+  return {
+    ...state,
+    agentModelUpdates: {
+      ...state.agentModelUpdates,
+      [agentId]: { status: 'success', requestId, model, error: null },
+    },
+  };
+});
+modelReducer.with(setAgentModelRequested.failure, (state, { payload }) => {
+  const [requestId, agentId, , model] = payload.request;
+  if (state.agentModelUpdates[agentId]?.requestId !== requestId) return state;
+  return {
+    ...state,
+    agentModelUpdates: {
+      ...state.agentModelUpdates,
+      [agentId]: { status: 'error', requestId, model, error: payload.error.message },
+    },
+  };
 });

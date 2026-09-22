@@ -67,3 +67,18 @@ export const selectFileIsDirty = store.createSelector(
     return entry ? entry.localContent !== entry.originalContent : false;
   },
 );
+
+export const selectFileNameSearch = store.createSelector(
+  (state, wsId: string, searchId: string) =>
+    selectFilesWorkspaceState.select(state, wsId).fileNameSearches[searchId],
+);
+
+export const selectWorkspaceMediaResolution = store.createSelector(
+  (state, wsId: string, resolutionId: string) =>
+    selectFilesWorkspaceState.select(state, wsId).mediaResolutions[resolutionId],
+);
+
+export const selectLegacyFileDeleteOperation = store.createSelector(
+  (state, wsId: string, tabId: string) =>
+    selectFilesWorkspaceState.select(state, wsId).deleteOperations[tabId],
+);

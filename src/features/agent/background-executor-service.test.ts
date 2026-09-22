@@ -134,6 +134,33 @@ describe('background-executor-service (PROTOCOL §5.32 agent.completeOnce wire)'
     expect(executor?.agentId).toBeNull();
   });
 
+  it('returns tagged script detection through selector-backed executor state', async () => {
+    completeOnceSpy.mockResolvedValueOnce({
+      text: '<<<DETECTED_SCRIPTS>>>{"add":[],"update":[],"remove":[]}<<</DETECTED_SCRIPTS>>>',
+    });
+
+    appStore.dispatch(
+      executeBackgroundAgent(WS, 'script-detect', { message: 'Inspect project scripts' }),
+    );
+    await waitForSettled('script-detect', ['success', 'error']);
+
+    expect(completeOnceSpy).toHaveBeenCalledWith(
+      {
+        prompt: 'PREPARED PROMPT',
+        workspaceId: WS,
+        timeoutMs: 90_000,
+        type: 'script-detect',
+      },
+      { timeoutMs: 100_000 },
+    );
+    expect(readExecutor('script-detect')).toMatchObject({
+      status: 'success',
+      result: '{"add":[],"update":[],"remove":[]}',
+      error: null,
+      progress: 100,
+    });
+  });
+
   // monorepo#1743: the FE no longer resolves `quickActions.*` itself — the
   // daemon owns the chain (typeOverrides[type] → defaultModel → provider
   // default, intentd#1012), so configured settings must NOT leak onto the wire
@@ -157,6 +184,7 @@ describe('background-executor-service (PROTOCOL §5.32 agent.completeOnce wire)'
     ['pr', 'pr'],
     ['review', 'review'],
     ['walkthrough', 'walkthrough'],
+    ['script-detect', 'script-detect'],
   ])('sends executor %s as the wire `type` %s', async (executorType, expectedType) => {
     completeOnceSpy.mockResolvedValueOnce({ text: 'anything' });
 

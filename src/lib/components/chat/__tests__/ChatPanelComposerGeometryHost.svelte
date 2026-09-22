@@ -13,6 +13,7 @@
     bulkUpsertSessions,
     updateSession,
   } from '$store/renderer/slices/agent-session/agent-session-slice';
+  import { loadChatDraftRequested } from '$store/renderer/slices/chat-state/chat-state-slice';
   import {
     initializeLayout,
     setRestoreStatus,
@@ -62,6 +63,24 @@
   const disposeStore = untrack(() => initializeStore)
     ? startRootStoreLifecycle(store, { startSagas: () => [] })
     : () => {};
+  const originalDispatch = store.dispatch;
+  let draftRequestId = $state<number | null>(null);
+  let settledDraftRequestId = $state<number | null>(null);
+  Object.defineProperty(store, 'dispatch', {
+    configurable: true,
+    value: (action: Parameters<typeof originalDispatch>[0]) => {
+      const result = originalDispatch(action);
+      if (action.type !== loadChatDraftRequested.type) return result;
+
+      const loadAction = action as ReturnType<typeof loadChatDraftRequested>;
+      draftRequestId = loadAction.payload[2] ?? null;
+      originalDispatch(
+        loadAction.success(fixture.draft ? { text: fixture.draft, updatedAt: timestamp } : null),
+      );
+      settledDraftRequestId = loadAction.payload[2] ?? null;
+      return result;
+    },
+  });
   const session = {
     id: agentId,
     workspaceId,
@@ -270,10 +289,19 @@
     }),
   );
   store.dispatch(setRestoreStatus(workspaceId, 'restored'));
-  onDestroy(disposeStore);
+  onDestroy(() => {
+    Object.defineProperty(store, 'dispatch', { configurable: true, value: originalDispatch });
+    disposeStore();
+  });
 </script>
 
-<section class:dark={theme === 'dark'} style:zoom data-testid="chat-panel-composer-host">
+<section
+  class:dark={theme === 'dark'}
+  style:zoom
+  data-testid="chat-panel-composer-host"
+  data-draft-request-id={draftRequestId}
+  data-settled-draft-request-id={settledDraftRequestId}
+>
   <div class="relative" style:width="{width}px" style:height="{height}px">
     <div class="absolute inset-0 h-full w-full">
       <PanelLayout {workspaceId} layoutId={workspaceId} />
