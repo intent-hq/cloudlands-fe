@@ -10,7 +10,7 @@ export const principalAvatarMetadata = parseUiComponentMetadata({
   category: 'primitive',
   owner: 'design-system',
   callers: [
-    'src/features/notes/note-presence/NotePresenceAvatarStack.svelte',
+    'src/features/notes/note-presence/NotePresenceAvatars.svelte',
     'src/features/presence/components/PresenceAvatarStack.svelte',
     'src/lib/component-catalog/renderers/PrincipalAvatarCatalogPreview.svelte',
     'src/lib/components/chat/ChatMessage.svelte',

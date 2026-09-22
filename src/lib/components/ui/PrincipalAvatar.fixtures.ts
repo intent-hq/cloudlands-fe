@@ -41,4 +41,11 @@ export const principalAvatarFixtures = [
     themes: ['light', 'dark'],
     viewport: 'both',
   },
+  {
+    id: 'note-presence-stack',
+    title: 'Note header viewers — named by tooltip',
+    states: ['no-url', 'failing-url', 'overflow'],
+    themes: ['light', 'dark'],
+    viewport: 'both',
+  },
 ] satisfies UiComponentFixture[];

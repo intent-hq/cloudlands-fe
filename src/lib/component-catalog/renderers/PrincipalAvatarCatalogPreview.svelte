@@ -1,5 +1,7 @@
 <script lang="ts">
   import { onMount, tick } from 'svelte';
+  import NotePresenceAvatars from '$features/notes/note-presence/NotePresenceAvatars.svelte';
+  import type { RemoteNoteViewer } from '$features/notes/note-presence/note-presence-service';
   import PresenceAvatarStack from '$features/presence/components/PresenceAvatarStack.svelte';
   import {
     presencePersonColor,
@@ -59,13 +61,50 @@
       online: true,
     },
   ];
-  // The stack owns its avatar wrappers, so its failing images are found by
-  // the person id it stamps on them rather than by a marker of this preview.
+  const noteViewers: RemoteNoteViewer[] = [
+    {
+      principalId: 'ada',
+      login: 'ada',
+      displayName: 'Ada Lovelace',
+      avatarUrl: null,
+      cursor: null,
+      cursorSeenAt: null,
+    },
+    {
+      principalId: 'linus',
+      login: 'linus',
+      displayName: null,
+      avatarUrl: FAILING_URL,
+      cursor: null,
+      cursorSeenAt: null,
+    },
+    {
+      principalId: 'grace',
+      login: 'grace',
+      displayName: 'Grace Hopper',
+      avatarUrl: FAILING_URL,
+      cursor: null,
+      cursorSeenAt: null,
+    },
+    {
+      principalId: 'mia',
+      login: 'mia',
+      displayName: 'Mia Overflow',
+      avatarUrl: null,
+      cursor: null,
+      cursorSeenAt: null,
+    },
+  ];
+  // The stacks own their avatar wrappers, so their failing images are found by
+  // the person id they stamp on them rather than by a marker of this preview.
   const failingImageSelector = [
     '[data-catalog-fail] img',
     ...people
       .filter(({ avatarUrl }) => avatarUrl === FAILING_URL)
       .map(({ principalId }) => `[data-presence-avatar="${principalId}"] img`),
+    ...noteViewers
+      .filter(({ avatarUrl }) => avatarUrl === FAILING_URL)
+      .map(({ principalId }) => `[data-principal-id="${principalId}"] img`),
   ].join(', ');
   const tileRows: Array<[string, string | null]> = [
     ['No URL', null],
@@ -129,7 +168,18 @@
   class="flex min-w-0 max-w-full flex-wrap items-center gap-3"
   data-catalog-renderer-fixture={failuresDriven ? fixture.id : undefined}
 >
-  {#if fixture.id === 'tile-states'}
+  {#if fixture.id === 'note-presence-stack'}
+    <div
+      class="grid min-w-0 gap-3"
+      data-catalog-rendered-state={failuresDriven ? 'no-url failing-url overflow' : undefined}
+    >
+      <p class="type-caption text-muted-foreground">
+        Other viewers of a note: one with no URL, two with a failed image, and one more person in
+        the overflow chip.
+      </p>
+      <NotePresenceAvatars viewers={noteViewers} maxVisible={3} />
+    </div>
+  {:else if fixture.id === 'tile-states'}
     <div
       class="grid min-w-0 gap-4"
       data-catalog-rendered-state={failuresDriven
@@ -165,8 +215,8 @@
         : undefined}
     >
       <p class="type-caption text-muted-foreground">
-        You (no URL), the owner (loading image), a member (failed image), an offline member (failed
-        image), and one more person in the overflow chip.
+        You (no URL), the owner (no URL), a member (failed image), an offline member (failed image),
+        and one more person in the overflow chip.
       </p>
       {@render stack(fixture.id)}
       {#if fixture.id === 'presence-stack-action'}
