@@ -118,16 +118,9 @@ function escapeRegExp(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
-/**
- * PIDs of the sidecar processes spawned by the given Electron main process:
- * direct children (`pgrep -P`) whose command line is exactly the bundled
- * sidecar binary. A daemon the app adopted instead of spawning, another
- * worktree's packaged sidecar or a developer's own intentd never match.
- */
-function ownedSidecarPids(electronPid: number, executablePath: string): number[] {
-  const pattern = `^${escapeRegExp(packagedSidecarPath(executablePath))}( |$)`;
+function pgrepPids(args: string[]): number[] {
   try {
-    const out = execFileSync('pgrep', ['-P', String(electronPid), '-f', pattern], {
+    const out = execFileSync('pgrep', args, {
       encoding: 'utf8',
       stdio: ['ignore', 'pipe', 'ignore'],
     });
@@ -138,6 +131,29 @@ function ownedSidecarPids(electronPid: number, executablePath: string): number[]
   } catch {
     return [];
   }
+}
+
+/** Every live descendant of `pid` (children, grandchildren, ...). */
+function descendantPids(pid: number): number[] {
+  const found: number[] = [];
+  const queue = [pid];
+  while (queue.length > 0) {
+    const children = pgrepPids(['-P', String(queue.shift())]);
+    found.push(...children);
+    queue.push(...children);
+  }
+  return found;
+}
+
+/**
+ * PIDs of the sidecar processes spawned by the given Electron main process:
+ * direct children (`pgrep -P`) whose command line is exactly the bundled
+ * sidecar binary. A daemon the app adopted instead of spawning, another
+ * worktree's packaged sidecar or a developer's own intentd never match.
+ */
+function ownedSidecarPids(electronPid: number, executablePath: string): number[] {
+  const pattern = `^${escapeRegExp(packagedSidecarPath(executablePath))}( |$)`;
+  return pgrepPids(['-P', String(electronPid), '-f', pattern]);
 }
 
 function isAlive(pid: number): boolean {
@@ -192,23 +208,35 @@ const launchedExecutables = new WeakMap<ElectronApplication, string>();
  * rather than awaited: Playwright launches Electron with `--inspect` and keeps
  * that session attached, so Node parks the exiting process on "Waiting for
  * the debugger to disconnect..." and the call never resolves (observed on
- * Linux). The remaining process tree is then force-killed, which also
- * releases the single-instance lock for the next spec, and the sidecar it
- * spawned is stopped (see `stopOwnedSidecar`). The sidecar PIDs are resolved
- * before the exit: once the Electron process is gone the sidecar is
- * re-parented and its ownership can no longer be established.
+ * Linux). The launched process tree is then force-killed by PID — the
+ * Electron main process and its descendants, whatever directory the package
+ * lives in — which also releases the single-instance lock for the next spec;
+ * an unrelated packaged Intent instance is never touched. The sidecar the app
+ * spawned is stopped separately (see `stopOwnedSidecar`), together with its
+ * own subtree. All PIDs are resolved before the exit: once the Electron
+ * process is gone its children are re-parented and ownership can no longer
+ * be established.
  */
 export async function exitPackagedApp(app: ElectronApplication | null | undefined): Promise<void> {
   if (!app) return;
   const electronPid = app.process().pid;
-  const sidecarPids =
-    process.platform !== 'win32' && electronPid
-      ? ownedSidecarPids(electronPid, launchedExecutables.get(app) ?? findPackagedApp())
-      : [];
+  const owned = process.platform !== 'win32' && electronPid;
+  const sidecarPids = owned
+    ? ownedSidecarPids(electronPid, launchedExecutables.get(app) ?? findPackagedApp())
+    : [];
+  const sidecarTree = sidecarPids.flatMap((pid) => [pid, ...descendantPids(pid)]);
+  const appTree = owned
+    ? [...descendantPids(electronPid), electronPid].filter((pid) => !sidecarTree.includes(pid))
+    : [];
   const exited = app.evaluate(({ app: electronApp }) => electronApp.exit(0)).catch(() => undefined);
   await Promise.race([exited, new Promise((r) => setTimeout(r, 2_000))]);
-  killPackagedAppProcesses(true);
+  if (owned) {
+    signal(appTree, 'SIGKILL');
+  } else {
+    killPackagedAppProcesses(true);
+  }
   await stopOwnedSidecar(sidecarPids);
+  signal(sidecarTree.filter(isAlive), 'SIGKILL');
 }
 
 /**
