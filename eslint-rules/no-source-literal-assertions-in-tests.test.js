@@ -4,14 +4,17 @@ import path from 'node:path';
 import { ESLint, RuleTester } from 'eslint';
 import typescriptParser from '@typescript-eslint/parser';
 import { describe, expect, it } from 'vitest';
+import { findBaselineGrowth, readComparisonBaseline } from './design-system/baseline-ratchet.js';
 import rule from './no-source-literal-assertions-in-tests.js';
 
 const root = process.cwd();
-const baselinePath = path.join(
-  root,
-  'eslint-rules/no-source-literal-assertions-in-tests.baseline.json',
-);
-const baseline = JSON.parse(fs.readFileSync(baselinePath, 'utf8'));
+const baselineFile = 'eslint-rules/no-source-literal-assertions-in-tests.baseline.json';
+const baseline = JSON.parse(fs.readFileSync(path.join(root, baselineFile), 'utf8'));
+
+// The test-file roots `eslint .` lints (its global ignores drop scripts/, e2e/,
+// test/ and src/test/); the ratchet must see every file the real lint sees.
+const LINT_ROOTS = ['src', 'tests', 'eslint-rules', 'playwright'];
+const LINT_IGNORES = ['**/src/shared/generated/**', '**/src/shared/paraglide/**', '**/test/**'];
 
 const testFile = path.resolve('src/features/example/__tests__/example.test.ts');
 const otherTestFile = path.resolve('src/features/other/__tests__/other.test.ts');
@@ -29,56 +32,82 @@ describe('no-source-literal-assertions-in-tests guidance', () => {
     expect(message).toContain('intent-hq/cloudlands-fe#2760');
   });
 
-  it('declares the baseline option in its schema', () => {
-    expect(rule.meta.schema[0].properties.baseline.items).toEqual({ type: 'string' });
+  it('declares the per-file count baseline in its schema', () => {
+    expect(rule.meta.schema[0].properties.baseline).toEqual({
+      type: 'object',
+      additionalProperties: { type: 'integer', minimum: 1 },
+    });
   });
 });
 
 describe('no-source-literal-assertions-in-tests baseline ratchet', () => {
-  it('is a sorted list of unique, existing package-relative test files', () => {
-    expect(baseline).toEqual([...new Set(baseline)].sort());
-    for (const file of baseline) {
+  it('maps sorted, existing package-relative test files to positive counts', () => {
+    const files = Object.keys(baseline);
+    expect(files).toEqual([...files].sort());
+    for (const [file, count] of Object.entries(baseline)) {
       expect(file, `${file} should be package-relative with forward slashes`).toMatch(
-        /^src\/[^\\]*\.(test|spec)\.(js|ts)$/,
+        new RegExp(`^(${LINT_ROOTS.join('|')})/[^\\\\]*\\.(test|spec)\\.(js|ts)$`),
       );
       expect(fs.existsSync(path.join(root, file)), `${file} no longer exists`).toBe(true);
+      expect(Number.isInteger(count) && count >= 1, `${file} count must be >= 1`).toBe(true);
     }
+  });
+
+  it('never grows a count against the comparison revision', () => {
+    const comparison = readComparisonBaseline({ cwd: root, file: baselineFile });
+    if (!comparison) return;
+    const ruleName = 'no-source-literal-assertions-in-tests';
+    expect(
+      findBaselineGrowth(
+        { [ruleName]: [{ counts: comparison.baseline }] },
+        { [ruleName]: [{ counts: baseline }] },
+      ),
+      `per-file counts may only shrink relative to ${comparison.ref}`,
+    ).toEqual({});
   });
 
   // Full-source ESLint over every test file takes tens of seconds on the shared
   // host; keep the budget local to the ratchet.
-  it('only shrinks: every entry still offends, and no file outside it does', async () => {
+  it('matches today’s offenders exactly: no stale count, no new violation', async () => {
     const eslint = new ESLint({
       cwd: root,
       overrideConfigFile: true,
       overrideConfig: [
-        { ignores: ['src/shared/generated/**', 'src/shared/paraglide/**'] },
-        { files: ['src/**/*.{ts,tsx}'], languageOptions: { parser: typescriptParser } },
+        { ignores: LINT_IGNORES },
+        { files: ['**/*.{ts,tsx}'], languageOptions: { parser: typescriptParser } },
         {
           files: ['**/*.{test,spec}.{js,ts}'],
           plugins: { intent: { rules: { 'no-source-literal-assertions-in-tests': rule } } },
-          rules: { 'intent/no-source-literal-assertions-in-tests': ['error', { baseline: [] }] },
+          rules: { 'intent/no-source-literal-assertions-in-tests': ['error', { baseline: {} }] },
         },
       ],
       cache: false,
     });
-    const results = await eslint.lintFiles(['src']);
-    const offending = new Set();
+    const results = await eslint.lintFiles(LINT_ROOTS);
+    const current = {};
     for (const result of results) {
-      if (
-        result.messages.some((m) => m.ruleId === 'intent/no-source-literal-assertions-in-tests')
-      ) {
-        offending.add(path.relative(root, result.filePath).split(path.sep).join('/'));
-      }
+      const count = result.messages.filter(
+        (m) => m.ruleId === 'intent/no-source-literal-assertions-in-tests',
+      ).length;
+      if (count > 0)
+        current[path.relative(root, result.filePath).split(path.sep).join('/')] = count;
     }
 
-    const fixed = baseline.filter((file) => !offending.has(file));
-    expect(fixed, 'remove these fixed files from the baseline').toEqual([]);
-    const added = [...offending].filter((file) => !baseline.includes(file)).sort();
+    const stale = Object.fromEntries(
+      Object.entries(baseline)
+        .filter(([file, count]) => (current[file] ?? 0) < count)
+        .map(([file, count]) => [file, { baseline: count, current: current[file] ?? 0 }]),
+    );
+    expect(stale, 'lower or remove these baseline counts; the reads were fixed').toEqual({});
+    const grown = Object.fromEntries(
+      Object.entries(current)
+        .filter(([file, count]) => count > (baseline[file] ?? 0))
+        .map(([file, count]) => [file, { baseline: baseline[file] ?? 0, current: count }]),
+    );
     expect(
-      added,
-      'new source-literal assertions; fix them instead of extending the baseline',
-    ).toEqual([]);
+      grown,
+      'new source-literal assertions; fix them instead of raising the baseline',
+    ).toEqual({});
   }, 240_000);
 });
 
@@ -90,6 +119,14 @@ tester.run('no-source-literal-assertions-in-tests', rule, {
     },
     {
       code: "fs.readFileSync(path.join(__dirname, 'fixtures', 'sample.ts'), 'utf8');",
+      filename: testFile,
+    },
+    {
+      code: "fs.readFileSync(path.join(__dirname, 'fixtures', name, 'Sample.ts'), 'utf8');",
+      filename: testFile,
+    },
+    {
+      code: "readFileSync(resolve(__dirname, '../__mocks__', dir, 'store.ts'), 'utf8');",
       filename: testFile,
     },
     { code: "readFileSync('../__mocks__/store.ts', 'utf8');", filename: testFile },
@@ -112,7 +149,12 @@ tester.run('no-source-literal-assertions-in-tests', rule, {
     {
       code: "readFileSync(resolve(__dirname, '../Foo.svelte'), 'utf8');",
       filename: testFile,
-      options: [{ baseline: ['src/features/example/__tests__/example.test.ts'] }],
+      options: [{ baseline: { 'src/features/example/__tests__/example.test.ts': 1 } }],
+    },
+    {
+      code: "readFileSync('../Foo.svelte', 'utf8');\nreadFileSync('../Bar.svelte', 'utf8');",
+      filename: testFile,
+      options: [{ baseline: { 'src/features/example/__tests__/example.test.ts': 2 } }],
     },
   ],
   invalid: [
@@ -169,8 +211,14 @@ tester.run('no-source-literal-assertions-in-tests', rule, {
     {
       code: "readFileSync(resolve(__dirname, '../Foo.svelte'), 'utf8');",
       filename: otherTestFile,
-      options: [{ baseline: ['src/features/example/__tests__/example.test.ts'] }],
+      options: [{ baseline: { 'src/features/example/__tests__/example.test.ts': 1 } }],
       errors: [error('../Foo.svelte')],
+    },
+    {
+      code: "readFileSync('../Foo.svelte', 'utf8');\nreadFileSync('../Bar.svelte', 'utf8');",
+      filename: testFile,
+      options: [{ baseline: { 'src/features/example/__tests__/example.test.ts': 1 } }],
+      errors: [{ ...error('../Bar.svelte'), line: 2 }],
     },
   ],
 });

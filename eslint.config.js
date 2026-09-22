@@ -576,8 +576,9 @@ export default [
       'intent/no-cold-svelte-import-in-tests': 'error',
       // A test that reads a .svelte/.ts source file from disk to assert on its
       // text pins the test to how the source is spelled, not what it does
-      // (cloudlands-fe#2760). The baseline lists today's offenders and may
-      // only shrink: remove a file's entry when it is fixed, never add one.
+      // (cloudlands-fe#2760). The baseline maps today's offenders to their
+      // read counts and may only shrink: lower a file's count as reads are
+      // fixed (remove the entry at zero), never raise one or add a file.
       'intent/no-source-literal-assertions-in-tests': [
         'error',
         { baseline: sourceLiteralAssertionsBaseline },
