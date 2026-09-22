@@ -173,16 +173,33 @@ function gitNames(args, root) {
     .map((file) => slash(file));
 }
 
+const DEFAULT_BASE = 'origin/main';
+
+function gitRevision(args, root) {
+  return execFileSync('git', args, {
+    cwd: root,
+    encoding: 'utf8',
+    stdio: ['ignore', 'pipe', 'pipe'],
+  }).trim();
+}
+
 function mergeBase(ref, root) {
   try {
-    return execFileSync('git', ['merge-base', ref, 'HEAD'], {
-      cwd: root,
-      encoding: 'utf8',
-      stdio: ['ignore', 'pipe', 'pipe'],
-    }).trim();
+    return gitRevision(['merge-base', ref, 'HEAD'], root);
   } catch (error) {
     const detail = String(error?.stderr ?? error?.message ?? error).trim();
     throw new Error(`cannot resolve --base ${ref}: ${detail}`, { cause: error });
+  }
+}
+
+// True when HEAD has commits that `ref` does not; false when `ref` cannot be
+// resolved (no remote-tracking ref, detached fixture), so the caller can fall
+// back to the plain "nothing to verify" exit instead of throwing.
+function isAheadOf(ref, root) {
+  try {
+    return mergeBase(ref, root) !== gitRevision(['rev-parse', 'HEAD'], root);
+  } catch {
+    return false;
   }
 }
 
@@ -756,15 +773,24 @@ export async function runCli(argv = process.argv.slice(2), root = REPO_ROOT, opt
   const args = parseArgs(argv);
   if (args.help) {
     log('Usage: pnpm run verify:changed -- [--dry-run] [--base <ref>] [paths...]');
+    log(
+      `  With no paths: verifies the working-tree changes; when the worktree is clean and HEAD is ahead of ${DEFAULT_BASE}, defaults to --base ${DEFAULT_BASE}.`,
+    );
     return 0;
   }
-  const files = args.paths.length
+  let base = args.base;
+  let files = args.paths.length
     ? expandInputPaths(args.paths, root)
-    : collectChangedFiles(root, { base: args.base });
+    : collectChangedFiles(root, { base });
+  if (!args.paths.length && !base && files.length === 0 && isAheadOf(DEFAULT_BASE, root)) {
+    base = DEFAULT_BASE;
+    log(`verify:changed: worktree clean; verifying commits since merge-base with ${base}`);
+    files = collectChangedFiles(root, { base });
+  }
   if (!args.paths.length && files.length === 0) {
-    const hint = args.base
-      ? ` and no files changed relative to the merge-base with ${args.base}`
-      : "; pass --base origin/main to verify this branch's commits against main";
+    const hint = base
+      ? ` and no files changed relative to the merge-base with ${base}`
+      : `; pass --base ${DEFAULT_BASE} to verify this branch's commits against main`;
     log(`verify:changed: nothing to verify — the worktree is clean${hint}`);
     return 2;
   }
