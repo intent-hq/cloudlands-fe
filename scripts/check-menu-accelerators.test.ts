@@ -98,6 +98,13 @@ describe('renderer-owned menu accelerators guard', () => {
         /menu_close_window\) claims CmdOrCtrl\+Shift\+W, which the renderer owns/,
       ),
     ]);
+    const noCloseWindow = validMenu.replace(
+      /\s*\{\s*label: m\.menu_close_window\(\),[\s\S]*?\n {6}\},/,
+      '',
+    );
+    expect(checkMenuAccelerators(noCloseWindow)).toEqual([
+      'missing menu item `menu_close_window` (expected without an accelerator)',
+    ]);
     const pageUp = validMenu.replace(
       "accelerator: 'CmdOrCtrl+Shift+N',",
       "accelerator: 'CmdOrCtrl+PageUp',",

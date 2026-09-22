@@ -99,7 +99,12 @@ export function checkMenuAccelerators(content) {
     }
   }
   for (const key of UNACCELERATED_ITEMS) {
-    for (const item of items.filter((candidate) => candidate.key === key)) {
+    const matching = items.filter((candidate) => candidate.key === key);
+    if (matching.length === 0) {
+      problems.push(`missing menu item \`${key}\` (expected without an accelerator)`);
+      continue;
+    }
+    for (const item of matching) {
       if (item.accelerator !== null) {
         problems.push(`${at(item)} must not carry an accelerator (has ${item.accelerator})`);
       }
