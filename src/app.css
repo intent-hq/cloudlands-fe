@@ -270,6 +270,13 @@ textarea::placeholder {
     scrollbar-color: hsl(var(--overlay) / 0.08) transparent;
   }
 
+  /* A component that overrides `scrollbar-color` on itself (`.custom-scrollbar`, the
+     comment thread) must not restyle the scrollers it hosts: the editor mounted while
+     editing a comment keeps the canonical colour. */
+  :where(.custom-scrollbar .tiptap-container) {
+    scrollbar-color: hsl(var(--overlay) / 0.08) transparent;
+  }
+
   :where(:not(.native-scrollbars, .native-scrollbars *))::-webkit-scrollbar {
     width: 10px;
     height: 10px;
