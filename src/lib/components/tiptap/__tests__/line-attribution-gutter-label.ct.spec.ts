@@ -62,11 +62,21 @@ const box = (locator: CtLocator): Promise<Box> =>
     return { left, right, top, bottom };
   });
 
-async function mountHarness(mount: ComponentFixtures['mount'], page: Page, hostWidth: number) {
+interface HarnessOptions {
+  hostHeight?: number;
+  inactivePanel?: boolean;
+}
+
+async function mountHarness(
+  mount: ComponentFixtures['mount'],
+  page: Page,
+  hostWidth: number,
+  options: HarnessOptions = {},
+) {
   await page.emulateMedia({ reducedMotion: 'reduce' });
   await page.setViewportSize({ width: hostWidth + 64, height: 800 });
   const component = await mount(LineAttributionGutterHarness, {
-    props: { hostWidth, markdown: MARKDOWN },
+    props: { hostWidth, markdown: MARKDOWN, ...options },
     hooksConfig,
   });
   const span = component.locator('[data-attribution-span]');
@@ -85,6 +95,7 @@ async function mountHarness(mount: ComponentFixtures['mount'], page: Page, hostW
     })
     .toBeLessThan(1);
   return {
+    component,
     span,
     label,
     panel: component.getByTestId('editor-content'),
@@ -160,4 +171,53 @@ test('the label follows the pointer down the span and resets on leave', async ({
   await expect(label).toHaveCSS('opacity', '0');
   const reset = await box(label);
   expect(reset.top).toBeCloseTo(spanBox.top, 0);
+});
+
+// Note tabs mount one `#editor-content` each (split panels, cached inactive
+// tabs), so the gutter must clamp against the panel that contains the span,
+// not the first one in the document.
+test('narrow panel with an earlier inactive panel: the label clamps to its own panel', async ({
+  mount,
+  page,
+}) => {
+  const { span, label, panel } = await mountHarness(mount, page, NARROW_HOST, {
+    inactivePanel: true,
+  });
+
+  const pointerY = await hoverSpan(page, span, 0.75);
+  await expect(label).toHaveCSS('opacity', '1');
+
+  const [labelBox, panelBox] = await Promise.all([box(label), box(panel)]);
+  expect(labelBox.left).toBeGreaterThanOrEqual(panelBox.left);
+  expect(labelBox.right).toBeLessThanOrEqual(panelBox.right);
+  expect(labelBox.top).toBeGreaterThanOrEqual(panelBox.top);
+  expect(labelBox.bottom).toBeLessThanOrEqual(panelBox.bottom);
+  expect(Math.abs((labelBox.top + labelBox.bottom) / 2 - pointerY)).toBeLessThanOrEqual(24);
+});
+
+// A panel whose bottom edge cuts through the top of the span: the label cannot
+// fit both inside the span and inside the panel, and the visible panel wins.
+test('bottom-partial span: the label stays inside the visible panel', async ({ mount, page }) => {
+  const VISIBLE_SLIVER = 10;
+  const { component, span, label, panel } = await mountHarness(mount, page, ORDINARY_HOST);
+
+  const [initialSpan, initialPanel] = await Promise.all([box(span), box(panel)]);
+  await component.update({
+    props: { hostHeight: Math.round(initialSpan.top - initialPanel.top + VISIBLE_SLIVER) },
+  });
+  await expect
+    .poll(async () => {
+      const [spanBox, panelBox] = await Promise.all([box(span), box(panel)]);
+      return Math.abs(panelBox.bottom - spanBox.top - VISIBLE_SLIVER);
+    })
+    .toBeLessThan(1);
+
+  const [spanBox, panelBox] = await Promise.all([box(span), box(panel)]);
+  await page.mouse.move(spanBox.right - 2, spanBox.top + VISIBLE_SLIVER / 2, { steps: 3 });
+  await expect(label).toHaveCSS('opacity', '1');
+
+  const labelBox = await box(label);
+  expect(labelBox.bottom).toBeLessThanOrEqual(panelBox.bottom);
+  expect(labelBox.top).toBeGreaterThanOrEqual(panelBox.top);
+  expect(labelBox.left).toBeGreaterThanOrEqual(panelBox.left);
 });

@@ -5,10 +5,12 @@
    * Mounts the production `LineAttributionGutter` beside a production TipTap
    * editor inside a host that models the note panel layout contract from
    * NoteWithComments: a clipping `#editor-content` scroll container (the
-   * gutter reads it by id for viewport clamping) around a centered prose
-   * column whose horizontal padding is the content gutter. The attribution
-   * data itself arrives through the daemon seam (`note.lineAttribution.load`),
-   * scripted by the spec's `mockBackend` hooks config.
+   * gutter resolves its own panel by that id for viewport clamping) around a
+   * centered prose column whose horizontal padding is the content gutter.
+   * `inactivePanel` mounts a hidden earlier `#editor-content`, as a cached
+   * inactive note tab does. The attribution data itself arrives through the
+   * daemon seam (`note.lineAttribution.load`), scripted by the spec's
+   * `mockBackend` hooks config.
    */
   import { onMount } from 'svelte';
   import { Editor } from '@tiptap/core';
@@ -19,10 +21,11 @@
   interface Props {
     hostWidth: number;
     hostHeight?: number;
+    inactivePanel?: boolean;
     markdown: string;
   }
 
-  let { hostWidth, hostHeight = 640, markdown }: Props = $props();
+  let { hostWidth, hostHeight = 640, inactivePanel = false, markdown }: Props = $props();
 
   let editorElement: HTMLDivElement;
   let editor: Editor | null = $state(null);
@@ -58,6 +61,9 @@
   });
 </script>
 
+{#if inactivePanel}
+  <section id="editor-content" class="hidden" data-testid="inactive-editor-content"></section>
+{/if}
 <div
   class="editor-container flex relative overflow-hidden"
   style:width="{hostWidth}px"

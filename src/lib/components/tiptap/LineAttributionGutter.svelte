@@ -64,7 +64,9 @@
    * Pointer-driven label placement for the hovered span (intent-hq/intent#5575).
    * `top` is relative to the span; `shiftX` pushes the right-anchored label
    * back inside the clipping `#editor-content` panel when the space left of
-   * the gutter is narrower than the label. Reset on pointer leave.
+   * the gutter is narrower than the label. The panel is the span's own
+   * ancestor — several note panels can be mounted at once. Reset on pointer
+   * leave.
    */
   let hoverLabel: { key: string; top: number; shiftX: number } | null = $state(null);
 
@@ -79,15 +81,22 @@
 
     const spanRect = spanEl.getBoundingClientRect();
     const labelRect = labelEl.getBoundingClientRect();
-    const clipRect = document.getElementById('editor-content')?.getBoundingClientRect();
+    const clipRect = spanEl.closest('#editor-content')?.getBoundingClientRect();
 
     // Vertical: center the label on the pointer, clamped to the span and to
-    // the visible panel (the panel clamp wins when the span is taller than it).
+    // the visible panel. When the two disagree (the span is taller than the
+    // panel or only partly visible) the panel wins so the label stays visible.
     let minTop = 0;
     let maxTop = span.height - labelRect.height;
     if (clipRect) {
-      minTop = Math.max(minTop, clipRect.top - spanRect.top);
-      maxTop = Math.min(maxTop, clipRect.bottom - labelRect.height - spanRect.top);
+      const panelMin = clipRect.top - spanRect.top;
+      const panelMax = clipRect.bottom - labelRect.height - spanRect.top;
+      minTop = Math.max(minTop, panelMin);
+      maxTop = Math.min(maxTop, panelMax);
+      if (maxTop < minTop) {
+        minTop = panelMin;
+        maxTop = Math.max(panelMax, panelMin);
+      }
     }
     const centered = event.clientY - spanRect.top - labelRect.height / 2;
     const top = maxTop < minTop ? minTop : Math.min(Math.max(centered, minTop), maxTop);
