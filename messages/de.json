@@ -5822,6 +5822,7 @@
   "deeplink_inviteError_proofScopeMissing": "Der GitHub-Anmeldung dieses Intent fehlt die Gist-Berechtigung, die der Identitätsnachweis braucht. Melde dich erneut bei GitHub an und öffne dann den Link erneut.",
   "deeplink_inviteError_proofGithubUnreachable": "GitHub konnte nicht erreicht werden, um den Identitätsnachweis zu veröffentlichen. Prüfe deine Verbindung und versuche es erneut.",
   "deeplink_inviteError_proofFailed": "Der Identitätsnachweis konnte nicht erstellt werden. Öffne den Link erneut, um es noch einmal zu versuchen.",
+  "deeplink_inviteError_githubRateLimited": "GitHub begrenzt die Anfragen für dieses Konto vorübergehend, daher kann der Identitätsnachweis gerade nicht erstellt werden. Warte eine Weile und öffne den Link dann erneut.",
   "deeplink_invitePlaintext_title": "Anmeldedaten unverschlüsselt gespeichert",
   "deeplink_invitePlaintext_message": "Die Betriebssystem-Verschlüsselung ist auf diesem Computer nicht verfügbar, daher wurden die Gast-Anmeldedaten unverschlüsselt gespeichert. Vergiss die Sitzung und tritt erneut bei, sobald Verschlüsselung verfügbar ist, falls dir das wichtig ist.",
   "rules_service_listFailed_error": "Regeln konnten nicht aufgelistet werden",

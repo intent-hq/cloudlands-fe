@@ -5822,6 +5822,7 @@
   "deeplink_inviteError_proofScopeMissing": "この Intent の GitHub サインインには、本人確認に必要な gist 権限がありません。GitHub に再度サインインしてから、リンクをもう一度開いてください。",
   "deeplink_inviteError_proofGithubUnreachable": "本人確認を公開するために GitHub に接続できませんでした。接続を確認してからもう一度お試しください。",
   "deeplink_inviteError_proofFailed": "本人確認を作成できませんでした。リンクをもう一度開いてやり直してください。",
+  "deeplink_inviteError_githubRateLimited": "GitHub がこのアカウントのリクエストを一時的に制限しているため、現在は本人確認を作成できません。しばらく待ってから、リンクをもう一度開いてください。",
   "deeplink_invitePlaintext_title": "資格情報が暗号化されずに保存されました",
   "deeplink_invitePlaintext_message": "このコンピューターでは OS の暗号化が利用できないため、ゲストの資格情報は暗号化せずに保存されました。気になる場合は、セッションを削除し、暗号化が利用可能になってから再度参加してください。",
   "rules_service_listFailed_error": "ルールを一覧表示できませんでした",
