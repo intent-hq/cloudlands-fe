@@ -32,7 +32,7 @@
   import ChatImageBlock from './ChatImageBlock.svelte';
   import ChatVideoBlock from './ChatVideoBlock.svelte';
   import ChatReferenceBlock from './ChatReferenceBlock.svelte';
-  import DiagramRenderer from '$lib/components/diagrams/DiagramRenderer.svelte';
+  import StreamingDiagramRenderer from '$lib/components/diagrams/StreamingDiagramRenderer.svelte';
   import DiagramPresentation from '$lib/components/diagrams/DiagramPresentation.svelte';
   import MermaidRenderer from '$lib/components/markdown/MermaidRenderer.svelte';
   import ChatCliBlock from './ChatCliBlock.svelte';
@@ -242,7 +242,7 @@
         const contentBlock = block as ContentBlock;
         if (contentBlock.text) {
           const { cleanedContent } = parseSuggestedPrompts(contentBlock.text);
-          const parsed = parseAgentMessage(cleanedContent, workspaceId);
+          const parsed = parseAgentMessage(cleanedContent, workspaceId, { isStreaming });
           map.set(
             String(index),
             filterWorkspaceCardsCoveredByIds(groupParsedBlocks(parsed), bulkProposalWorkspaceIds),
@@ -253,7 +253,7 @@
         group.children.forEach((child, childIndex) => {
           if (child.type === 'text' && child.text) {
             const { cleanedContent } = parseSuggestedPrompts(child.text);
-            const parsed = parseAgentMessage(cleanedContent, workspaceId);
+            const parsed = parseAgentMessage(cleanedContent, workspaceId, { isStreaming });
             map.set(
               `${index}-${childIndex}`,
               filterWorkspaceCardsCoveredByIds(groupParsedBlocks(parsed), bulkProposalWorkspaceIds),
@@ -430,11 +430,14 @@
         {parsedBlock.content}
       </div>
     </div>
-  {:else if parsedBlock.type === 'diagram' && parsedBlock.metadata?.diagramData}
+  {:else if parsedBlock.type === 'diagram'}
     <DiagramPresentation kind="custom">
-      <DiagramRenderer
-        diagram={parsedBlock.metadata.diagramData as DiagramPrimitive}
-        editable={false}
+      <StreamingDiagramRenderer
+        diagram={(parsedBlock.metadata?.diagramData as DiagramPrimitive | null) ?? null}
+        isStreaming={parsedBlock.metadata?.isStreaming ?? false}
+        source={parsedBlock.metadata?.rawSource ?? parsedBlock.content}
+        sourceError={parsedBlock.metadata?.diagramError}
+        viewResetKey={String(parsedBlock.metadata?.fenceStart ?? '')}
         onBindingClick={handleDiagramBindingClick}
       />
     </DiagramPresentation>
@@ -469,8 +472,12 @@
   {:else if parsedBlock.type === 'digest'}
     <DigestCard digest={parsedBlock.content || ''} />
   {:else if parsedBlock.type === 'mermaid'}
-    <DiagramPresentation kind="mermaid">
-      <MermaidRenderer code={parsedBlock.content || ''} />
+    <DiagramPresentation kind="mermaid" rendererOwnsActions>
+      <MermaidRenderer
+        code={parsedBlock.metadata?.rawSource ?? parsedBlock.content ?? ''}
+        isStreaming={parsedBlock.metadata?.isStreaming ?? false}
+        showExportButton
+      />
     </DiagramPresentation>
   {:else if parsedBlock.type === 'code'}
     <CodeBlock

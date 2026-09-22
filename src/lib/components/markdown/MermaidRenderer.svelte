@@ -11,13 +11,15 @@
 
 <script lang="ts">
   /* eslint-disable max-lines -- Mermaid post-processing and presentation stay coordinated */
-  import { onMount, tick } from 'svelte';
+  import { onMount, tick, untrack } from 'svelte';
+  import { createProgressiveRenderQueue } from './progressive-render-queue';
   import { createLogger } from '$lib/utils/client-logger';
   import { faCode, faExpand } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
   import { Button } from '$lib/components/ui/button';
   import MediaLightbox from '$lib/components/ui/MediaLightbox.svelte';
   import ZoomPanViewport from '$lib/components/ui/ZoomPanViewport.svelte';
+  import DiagramActionsMenu from '$lib/components/diagrams/DiagramActionsMenu.svelte';
   import { faUser, getPhosphorIconComponent } from '$lib/icons/phosphor-icons';
   import {
     createMermaidConfig,
@@ -100,18 +102,22 @@
 
   interface Props {
     code: string;
+    isStreaming?: boolean;
     className?: string;
     showExpandButton?: boolean;
     showSourceButton?: boolean;
+    showExportButton?: boolean;
     showSource?: boolean;
     onRenderStateChange?: (state: MermaidRenderState) => void;
   }
 
   let {
     code,
+    isStreaming = false,
     className = '',
     showExpandButton = true,
     showSourceButton = true,
+    showExportButton = false,
     showSource = $bindable(false),
     onRenderStateChange,
   }: Props = $props();
@@ -1559,7 +1565,7 @@ ${source}`;
     return true;
   }
 
-  async function renderDiagram(rawCode: string) {
+  async function renderDiagram(rawCode: string, streaming: boolean, isCurrent: () => boolean) {
     const generation = ++renderGeneration;
     activeGeneration = generation;
     settledGeneration = 0;
@@ -1568,7 +1574,7 @@ ${source}`;
     const decodedCode = decodeHtmlEntities(base64Decoded);
 
     if (!decodedCode?.trim()) {
-      renderedSvg = '';
+      if (!streaming) renderedSvg = '';
       error = null;
       settledGeneration = generation;
       return;
@@ -1581,6 +1587,8 @@ ${source}`;
         getComputedStyle(document.documentElement),
         usesHtmlLabels,
       );
+      // Our own final-error UI owns failures; Mermaid must not paint an error into the document.
+      config.suppressErrorRendering = true;
       const usesStateDiagram = /^\s*stateDiagram(?:-v2)?\b/m.test(renderCode);
       config.layout = usesStateDiagram ? 'elk' : 'dagre';
       if (compactLayout) {
@@ -1604,17 +1612,18 @@ ${source}`;
         }
       }
       await document.fonts?.load(`400 ${config.fontSize}px "${MERMAID_PRIMARY_FONT}"`);
+      if (!isCurrent()) return;
       const renderResult = await runSerializedMermaidRender(
         async () => {
           mermaid.initialize(config);
           const id = `mermaid-${Date.now()}-${Math.random().toString(36).slice(2, 11)}`;
           const { svg } = await mermaid.render(id, renderCode);
-          if (generation !== renderGeneration) return;
+          if (generation !== renderGeneration || !isCurrent()) return;
           let clusterMembership: FlowchartClusterMembership | undefined;
           let stateDiagram: StateDiagramRoutingData | undefined;
           if (usesStateDiagram || (usesHtmlLabels && /class="[^"]*\bcluster\b/.test(svg))) {
             const diagram = await mermaid.mermaidAPI.getDiagramFromText(renderCode);
-            if (generation !== renderGeneration) return;
+            if (generation !== renderGeneration || !isCurrent()) return;
             if (diagram.type === 'flowchart-v2') {
               clusterMembership = snapshotFlowchartClusterMembership(
                 (diagram.db as typeof diagram.db & FlowchartSubgraphDatabase).getSubGraphs(),
@@ -1630,9 +1639,9 @@ ${source}`;
           }
           return { svg, clusterMembership, stateDiagram };
         },
-        () => generation === renderGeneration,
+        () => generation === renderGeneration && isCurrent(),
       );
-      if (!renderResult || generation !== renderGeneration) return;
+      if (!renderResult || generation !== renderGeneration || !isCurrent()) return;
       renderedSvg = renderResult.svg;
       error = null;
       const fitCompleted = await fitRenderedSvg(
@@ -1643,13 +1652,23 @@ ${source}`;
       );
       if (fitCompleted && generation === renderGeneration) settledGeneration = generation;
     } catch (err) {
-      if (generation !== renderGeneration) return;
+      if (generation !== renderGeneration || !isCurrent()) return;
+      if (streaming) {
+        // A partial token is not an error. Keep the last successful SVG (or pending UI).
+        error = null;
+        settledGeneration = generation;
+        return;
+      }
       logger.error('Failed to render mermaid diagram:', err);
       error = err instanceof Error ? err.message : m.markdown_mermaid_renderFailed_error();
       renderedSvg = '';
       settledGeneration = generation;
     }
   }
+
+  const progressiveRender = createProgressiveRenderQueue((request, isCurrent) =>
+    renderDiagram(request.source, request.isStreaming, isCurrent),
+  );
 
   function openFullscreen(e: MouseEvent) {
     // Prevent event propagation to avoid editor selection issues
@@ -1725,20 +1744,31 @@ ${source}`;
       observer.disconnect();
       resizeObserver?.disconnect();
       if (terminalGapFrame !== undefined) cancelAnimationFrame(terminalGapFrame);
+      progressiveRender.dispose();
       renderGeneration += 1;
     };
   });
 
   // Re-render when code changes (after mount)
   $effect(() => {
-    themeRevision;
-    if (mounted && rendererElement) renderDiagram(code);
+    const request = {
+      source: code,
+      isStreaming,
+      revision: `${themeRevision}:${compactLayout}:${narrowLayout}`,
+    };
+    if (mounted && rendererElement) untrack(() => progressiveRender.update(request));
   });
 
   // Mirrors the template branches below so hosts can lay out the block
   // differently when there is no diagram to show.
   let renderState = $derived<MermaidRenderState>(
-    error ? 'error' : renderedSvg ? 'rendered' : !code?.trim() ? 'empty' : 'pending',
+    error
+      ? 'error'
+      : renderedSvg
+        ? 'rendered'
+        : !code?.trim() && !isStreaming
+          ? 'empty'
+          : 'pending',
   );
 
   $effect(() => {
@@ -1775,15 +1805,16 @@ ${source}`;
     <div class="mermaid-svg-container">
       <div
         class="mermaid-svg-viewport"
-        class:without-actions={!showSourceButton && !showExpandButton}
+        class:without-actions={!showSourceButton && !showExpandButton && !showExportButton}
       >
         <div class="mermaid-svg mermaid-presentation">
           {@html renderedSvg}
         </div>
       </div>
-      {#if showSourceButton || showExpandButton}
+      {#if showSourceButton || showExpandButton || showExportButton}
         <div
           class="mermaid-actions"
+          class:with-export={showExportButton}
           role="toolbar"
           aria-label={m.markdown_mermaid_actions_ariaLabel()}
         >
@@ -1814,6 +1845,9 @@ ${source}`;
               <Fa icon={faExpand} size="sm" />
             </Button>
           {/if}
+          {#if showExportButton}
+            <DiagramActionsMenu container={rendererElement} compactTrigger />
+          {/if}
         </div>
       {/if}
     </div>
@@ -1822,7 +1856,7 @@ ${source}`;
         <pre>{decodedSource}</pre>
       </div>
     {/if}
-  {:else if !code?.trim()}
+  {:else if !code?.trim() && !isStreaming}
     <div class="mermaid-empty" role="status">
       <strong>{m.markdown_mermaid_noCode_label()}</strong>
       <span>{m.markdown_mermaid_noCode_description()}</span>
@@ -1897,6 +1931,13 @@ ${source}`;
   .mermaid-svg-container:focus-within .mermaid-actions {
     opacity: 1;
     pointer-events: auto;
+  }
+
+  @media (hover: none) {
+    .mermaid-actions.with-export {
+      opacity: 1;
+      pointer-events: auto;
+    }
   }
 
   .mermaid-svg {

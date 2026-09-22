@@ -1,5 +1,6 @@
-import { readFileSync } from 'node:fs';
-import { describe, expect, it } from 'vitest';
+import { cleanup, render, within } from '@testing-library/svelte';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { getLocale, overwriteGetLocale } from '$shared/paraglide/runtime.js';
 import { DiagramPrimitiveSchema } from '$shared/types/notes-primitives';
 import { validateDiagram } from './diagram-validator';
 import { computeLayout } from './layout-engine';
@@ -12,7 +13,23 @@ import {
   DIAGRAM_WORKBENCH_MERMAID_CASE_IDS,
   MERMAID_WORKBENCH_CASES,
 } from './diagram-workbench.preview-fixtures';
-import { preview } from './diagram-workbench.preview.svelte';
+import DiagramWorkbenchPreview, { preview } from './diagram-workbench.preview.svelte';
+
+// Loading belongs to the workbench; isolate it from unrelated renderer lifecycles.
+vi.mock('$lib/components/markdown/MermaidRenderer.svelte', async () => ({
+  default: (await import('../workspace/initializer/__tests__/mocks/MockComponent.svelte')).default,
+}));
+
+vi.mock('./DiagramRenderer.svelte', async () => ({
+  default: (await import('../workspace/initializer/__tests__/mocks/MockComponent.svelte')).default,
+}));
+
+const originalGetLocale = getLocale;
+
+afterEach(() => {
+  cleanup();
+  overwriteGetLocale(originalGetLocale);
+});
 
 describe('diagram workbench fixtures', () => {
   it('declares the exact all-case readiness contract and initialization budget', () => {
@@ -108,22 +125,26 @@ describe('diagram workbench fixtures', () => {
     }
   });
 
-  it('keeps the loading case localized, text-only, motionless, and UI-led', () => {
-    const source = readFileSync(
-      'src/lib/components/diagrams/diagram-workbench.preview.svelte',
-      'utf8',
-    );
+  it.each([
+    ['en', 'Diagram is loading', 'Rendering diagram…'],
+    ['de', 'Diagramm wird geladen', 'Diagramm wird gerendert…'],
+  ] as const)(
+    'renders the %s loading case as a localized, text-only status',
+    (locale, accessibleName, label) => {
+      overwriteGetLocale(() => locale);
+      const { container } = render(DiagramWorkbenchPreview, {
+        props: preview.states['mermaid-loading'].props,
+      });
+      const stage = container.querySelector<HTMLElement>(
+        '[data-diagram-case-stage="mermaid-loading"]',
+      )!;
+      const status = within(stage).getByRole('status', { name: accessibleName });
 
-    expect(source).toContain('role="status"');
-    expect(source).toContain('m.sandbox_diagramWorkbench_loading_ariaLabel()');
-    expect(source).toContain('m.sandbox_diagramWorkbench_loading_label()');
-    expect(source.match(/\.loading-state \{[\s\S]*?\n  \}/)?.[0]).toContain(
-      'font-family: var(--font-ui)',
-    );
-    expect(source).not.toContain('<span aria-hidden="true"></span>');
-    expect(source).not.toContain('@keyframes spin');
-    expect(source).not.toContain('var(--font-mono)');
-  });
+      expect(status.textContent?.trim()).toBe(label);
+      expect(within(status).getByText(label)).toBeTruthy();
+      expect(status.querySelector('svg, img, canvas, [aria-hidden="true"]')).toBeNull();
+    },
+  );
 
   it('keeps every custom grammar deterministic and schema-valid', () => {
     const cases = Object.values(CUSTOM_WORKBENCH_CASES);

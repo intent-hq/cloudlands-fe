@@ -97,7 +97,10 @@ describe('diagram presentation integration', () => {
     const completed = render(MessageContent, { props: { content: [block] } });
     const completedSurface = completed.container.querySelector('[data-diagram-presentation]');
     expect(completedSurface?.getAttribute('data-diagram-kind')).toBe(kind);
-    expect(completed.getByRole('button', { name: 'Diagram actions' })).toBeTruthy();
+    // Mermaid's real renderer owns its controls; the browser geometry suite exercises them.
+    if (kind === 'custom') {
+      expect(completed.getByRole('button', { name: 'Diagram actions' })).toBeTruthy();
+    }
     cleanup();
 
     const streaming = render(StreamingMessageContent, {
@@ -105,7 +108,9 @@ describe('diagram presentation integration', () => {
     });
     const streamingSurface = streaming.container.querySelector('[data-diagram-presentation]');
     expect(streamingSurface?.getAttribute('data-diagram-kind')).toBe(kind);
-    expect(streaming.getByRole('button', { name: 'Diagram actions' })).toBeTruthy();
+    if (kind === 'custom') {
+      expect(streaming.getByRole('button', { name: 'Diagram actions' })).toBeTruthy();
+    }
   });
 
   it('keeps the streaming surface node stable while content updates', async () => {

@@ -8,6 +8,8 @@
     header?: Snippet;
     actions?: Snippet;
     actionsInTopMargin?: boolean;
+    /** Chat Mermaid owns one inline toolbar instead of this surface's action row. */
+    rendererOwnsActions?: boolean;
     selected?: boolean;
     exportable?: boolean;
     fileName?: string;
@@ -19,6 +21,7 @@
     header,
     actions,
     actionsInTopMargin = false,
+    rendererOwnsActions = false,
     selected = false,
     exportable = true,
     fileName,
@@ -69,6 +72,7 @@
 <section
   class="diagram-presentation"
   class:selected
+  class:renderer-owns-actions={rendererOwnsActions}
   data-diagram-presentation
   data-diagram-kind={kind}
   style:width={noteWidth === undefined ? undefined : `${noteWidth}px`}
@@ -81,7 +85,7 @@
     </header>
   {/if}
 
-  {#if actions || exportable}
+  {#if !rendererOwnsActions && (actions || exportable)}
     <div
       class="diagram-presentation-actions"
       class:actions-in-top-margin={actionsInTopMargin}
@@ -146,6 +150,16 @@
     padding: var(--space-3);
     overflow: hidden;
     background: transparent;
+  }
+
+  .diagram-presentation.renderer-owns-actions {
+    /* The renderer's single toolbar provides the upper separation from prose.
+       Do not stack an outer margin and content inset on top of that row. */
+    margin-top: 0;
+  }
+
+  .renderer-owns-actions > .diagram-presentation-content {
+    padding-top: 0;
   }
 
   .diagram-presentation[data-diagram-kind='custom']:has(:global(.stateful-diagram)) {
