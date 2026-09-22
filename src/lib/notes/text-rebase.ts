@@ -415,6 +415,21 @@ interface TextMap {
 const HIDEABLE = /\]\(|\]\[|\]:/;
 const HIDEABLE_ALL = /\]\(|\]\[|\]:/g;
 /**
+ * The HTML the renderer hides in a markdown note: a comment that is not a
+ * comment anchor, and the tags it leaves unescaped and renders (`<br>`,
+ * `<sub>`, `<sup>`; every other tag is escaped and shown as written).
+ */
+const HIDDEN_HTML = /<!--(?!anchor:)[\s\S]*?-->|<br[ \t]*\/?>|<\/?su[bp]>/gi;
+/** Every tag and comment: what an HTML parser consumes of a note it reads as HTML. */
+const HTML_TAG = /<!--[\s\S]*?-->|<\/?[a-zA-Z][^>]*>/g;
+/**
+ * A line the renderer may read as HTML — one whose first character is `<`
+ * before anything but whitespace or a comment anchor — or that holds a
+ * comment it hides. Such a line is sealed when the mask did not account for
+ * it (`unanchorableLines`).
+ */
+const HTML_LINE = /^[ \t]*<(?![ \t\r\n]|!--anchor:)|<!--(?!anchor:)/gm;
+/**
  * Longest markdown the mask lexes. The renderer's lexer is quadratic in the
  * token count (the `start` hooks of its math tokenizers scan the rest of the
  * source on every token): 16k one-link paragraphs of 128 KB lex in ~170 ms,
@@ -478,27 +493,44 @@ let lastMask: { markdown: string; mask: Mask } | undefined;
  * lifts), which costs a longer diff on a visible code span, never a caret in
  * a URL.
  *
+ * The HTML the renderer hides is masked the same way. A note whose first
+ * character is `<` (other than a comment anchor) the renderer does not parse
+ * as markdown at all but as HTML, so every tag and comment in it is hidden
+ * (`HTML_TAG`) and the text between them shown; in any other note a tag is
+ * escaped and shown as written, except a comment (dropped) and the `<br>`,
+ * `<sub>`, `<sup>` it renders (`HIDDEN_HTML`), which are read off the
+ * lexer's `html` tokens.
+ *
  * The lexer is the renderer's own, configured as the renderer configures it,
  * up to `MAX_LEXED_LENGTH`; a longer source is not lexed and nothing in it
- * is masked, so every line of it that holds link syntax is unanchorable and
- * reaches the diff alone, bounded by its own line (`refine` pairs the lines
- * of such a region one to one): a caret on a line without link syntax is
- * exact, and one on a link line stays on that line, off by at most its
- * hidden destination. Lexing counts against the alignment budget
+ * is masked, so every line of it that holds link syntax is unanchorable, and
+ * so is a line the renderer may read as HTML (`HTML_LINE`): each reaches the
+ * diff alone, bounded by its own line (`refineByLine` pairs the lines of
+ * such a region by their text and never diffs a plain-text line against a
+ * sealed line it is not the text of), so a caret on a line without link
+ * syntax is exact, and one on a link line stays on that line, off by at
+ * most its hidden destination. Lexing counts against the alignment budget
  * (`anchoredHunks` starts its deadline before it) and is memoised for the
- * last markdown; a source with nothing hideable in it (`HIDEABLE`) is not
- * lexed either.
+ * last markdown; a source with nothing hideable in it (`HIDEABLE`,
+ * `HIDDEN_HTML`) is not lexed either.
  */
 function maskHidden(markdown: string): Mask {
   if (lastMask?.markdown === markdown) return lastMask.mask;
   const text = computeHiddenMask(markdown);
-  const mask = { text, unanchorable: unanchorableLines(text) };
+  const mask = {
+    text: text ?? markdown,
+    unanchorable: unanchorableLines(text ?? markdown, text === undefined),
+  };
   lastMask = { markdown, mask };
   return mask;
 }
 
-function computeHiddenMask(markdown: string): string {
-  if (!HIDEABLE.test(markdown) || markdown.length > MAX_LEXED_LENGTH) return markdown;
+/** `markdown` masked, or `undefined` when its hidden text could not be accounted for. */
+function computeHiddenMask(markdown: string): string | undefined {
+  if (markdown.length > MAX_LEXED_LENGTH) return undefined;
+  if (isHtmlNote(markdown)) return maskMatches(markdown, HTML_TAG);
+  HIDDEN_HTML.lastIndex = 0;
+  if (!HIDEABLE.test(markdown) && !HIDDEN_HTML.test(markdown)) return markdown;
   let source = markdown;
   if (markdown.includes(COMMENT_ANCHOR)) {
     const normalized = normalizeAnchorPositions(markdown);
@@ -509,11 +541,11 @@ function computeHiddenMask(markdown: string): string {
     hiddenTextLexer ??= createTiptapTaskListMarked();
     tokens = hiddenTextLexer.lexer(source) as unknown as LexedToken[];
   } catch {
-    return markdown;
+    return undefined;
   }
   const top: TextMap = { text: joinRaw(tokens), lineStarts: [0], sourceStarts: [0] };
   // marked normalises line endings; a source it rewrote has no exact offsets.
-  if (top.text !== source) return markdown;
+  if (top.text !== source) return undefined;
   const ranges: Array<[number, number]> = [];
   collectHidden(tokens, top, 0, markdown, ranges);
   if (ranges.length === 0) return markdown;
@@ -528,14 +560,30 @@ function computeHiddenMask(markdown: string): string {
   return out + markdown.slice(pos);
 }
 
+/** Whether the renderer reads `markdown` as HTML rather than markdown (its `skipIfHTML`). */
+function isHtmlNote(markdown: string): boolean {
+  const trimmed = markdown.trimStart();
+  return (
+    trimmed.charCodeAt(0) === 60 &&
+    !trimmed.startsWith(COMMENT_ANCHOR) &&
+    !markdown.includes('```ws-block')
+  );
+}
+
+/** `text` with every match of `pattern` replaced by U+0000, code unit for code unit. */
+function maskMatches(text: string, pattern: RegExp): string {
+  return text.replace(pattern, (match) => '\u0000'.repeat(match.length));
+}
+
 /**
  * The lines of `masked` that hold an opener the mask did not account for
- * (see `maskHidden`), as sorted, flattened `[start, end)` ranges. One pass:
- * a line is bounded once, at its first such opener, and the scan resumes
- * past its end, so the cost is linear in `masked` however many openers a
- * line holds.
+ * (see `maskHidden`) — and, when the mask accounted for nothing (`unmasked`),
+ * the lines the renderer may read as HTML (`HTML_LINE`) — as sorted,
+ * flattened `[start, end)` ranges. One pass per pattern: a line is bounded
+ * once, at its first such opener, and the scan resumes past its end, so the
+ * cost is linear in `masked` however many openers a line holds.
  */
-function unanchorableLines(masked: string): number[] {
+function unanchorableLines(masked: string, unmasked = false): number[] {
   const lines: number[] = [];
   HIDEABLE_ALL.lastIndex = 0;
   let opener = HIDEABLE_ALL.exec(masked);
@@ -543,15 +591,44 @@ function unanchorableLines(masked: string): number[] {
     const next = masked.charCodeAt(opener.index + 2);
     const closer = opener[0] === '](' ? 41 : opener[0] === '][' ? 93 : -1;
     if (next !== 0 && next !== closer) {
-      const start = masked.lastIndexOf('\n', opener.index) + 1;
-      let end = masked.indexOf('\n', opener.index);
-      if (end === -1) end = masked.length;
-      lines.push(start, end);
-      HIDEABLE_ALL.lastIndex = end;
+      HIDEABLE_ALL.lastIndex = pushLine(lines, masked, opener.index);
     }
     opener = HIDEABLE_ALL.exec(masked);
   }
-  return lines;
+  if (!unmasked) return lines;
+  const html: number[] = [];
+  HTML_LINE.lastIndex = 0;
+  let tag = HTML_LINE.exec(masked);
+  while (tag) {
+    HTML_LINE.lastIndex = pushLine(html, masked, tag.index);
+    tag = HTML_LINE.exec(masked);
+  }
+  return html.length === 0 ? lines : mergeLines(lines, html);
+}
+
+/** Push the `[start, end)` of the line of `text` at `at` and return `end`. */
+function pushLine(lines: number[], text: string, at: number): number {
+  const start = text.lastIndexOf('\n', at) + 1;
+  let end = text.indexOf('\n', at);
+  if (end === -1) end = text.length;
+  lines.push(start, end);
+  return end;
+}
+
+/** Merge two sorted, flattened line lists, each line once. */
+function mergeLines(a: number[], b: number[]): number[] {
+  const out: number[] = [];
+  let i = 0;
+  let j = 0;
+  while (i < a.length || j < b.length) {
+    const next = j >= b.length || (i < a.length && a[i] <= b[j]) ? a : b;
+    const start = next === a ? a[i] : b[j];
+    const end = next === a ? a[i + 1] : b[j + 1];
+    if (next === a) i += 2;
+    else j += 2;
+    if (out.length === 0 || out[out.length - 2] !== start) out.push(start, end);
+  }
+  return out;
 }
 
 /** Whether `[start, end)` meets one of the flattened `ranges`. */
@@ -634,6 +711,13 @@ function collectHidden(
       if (colon !== -1) hide(map, at + colon + 2, at + raw.trimEnd().length, source, ranges);
     } else if (token.type === 'table') {
       collectHiddenInTable(token, map, at, source, ranges);
+    } else if (token.type === 'html') {
+      HIDDEN_HTML.lastIndex = 0;
+      let hidden = HIDDEN_HTML.exec(raw);
+      while (hidden) {
+        hide(map, at + hidden.index, at + hidden.index + hidden[0].length, source, ranges);
+        hidden = HIDDEN_HTML.exec(raw);
+      }
     } else {
       const children = token.tokens ?? token.items;
       if (children) {
@@ -766,15 +850,9 @@ function hide(
 
 /**
  * Append the replaced spans of `from[fromStart, fromEnd)` → `to[toStart, toEnd)`
- * to `out`: trim the common prefix and suffix, diff what is left by token,
- * then `diffChars` each replaced token span. Tokens first because a plain
- * word is a pure insertion apart from the syntax around it, and `diffChars`
- * alone would happily match its letters one by one inside `](https://…)`.
- * Two spans that only whitespace keeps apart are diffed as one (see
- * `mergeAcrossWhitespace`). A region that meets an `unanchorable` line of
- * `to` is diffed line by line (`refineByLine`), and one longer than
- * `MAX_REFINE_LENGTH` is not diffed unless it meets such a line; any diff
- * past the budget emits its input as one replaced span instead.
+ * to `out`. A region that meets an `unanchorable` line of `to` is diffed
+ * line by line (`refineByLine`); any other region is diffed whole
+ * (`diffRegion`).
  */
 function refine(
   out: Hunk[],
@@ -787,12 +865,35 @@ function refine(
   deadline: number,
   unanchorable: number[],
 ): void {
-  if (
-    overlaps(unanchorable, toStart, toEnd) &&
-    refineByLine(out, from, to, fromStart, fromEnd, toStart, toEnd, deadline, unanchorable)
-  ) {
-    return;
+  if (overlaps(unanchorable, toStart, toEnd)) {
+    refineByLine(out, from, to, fromStart, fromEnd, toStart, toEnd, deadline, unanchorable);
+  } else {
+    diffRegion(out, from, to, fromStart, fromEnd, toStart, toEnd, deadline, unanchorable);
   }
+}
+
+/**
+ * Append the replaced spans of `from[fromStart, fromEnd)` → `to[toStart, toEnd)`
+ * to `out`: trim the common prefix and suffix, diff what is left by token,
+ * then `diffChars` each replaced token span. Tokens first because a plain
+ * word is a pure insertion apart from the syntax around it, and `diffChars`
+ * alone would happily match its letters one by one inside `](https://…)`.
+ * Two spans that only whitespace keeps apart are diffed as one (see
+ * `mergeAcrossWhitespace`). A region longer than `MAX_REFINE_LENGTH` is not
+ * diffed unless it meets an `unanchorable` line; any diff past the budget
+ * emits its input as one replaced span instead.
+ */
+function diffRegion(
+  out: Hunk[],
+  from: string,
+  to: string,
+  fromStart: number,
+  fromEnd: number,
+  toStart: number,
+  toEnd: number,
+  deadline: number,
+  unanchorable: number[],
+): void {
   let prefix = 0;
   const maxPrefix = Math.min(fromEnd - fromStart, toEnd - toStart);
   while (
@@ -888,19 +989,27 @@ function refine(
 }
 
 /**
- * `refine` a region that holds an unanchorable line of `to` — one with link
- * syntax the mask did not account for, every line of a source past
- * `MAX_LEXED_LENGTH` included — one line at a time. Each plain-text line ends
- * a markdown line of its own, so when the region holds as many lines of text
- * on each side they pair up in order, and each pair is diffed alone with the
- * line breaks and blank lines between them as the boundaries: a word of the
- * next paragraph is never matched inside the destination on the link line
- * (`**sel**ection daemon` after `[render](https://sync/selection/editor)`),
- * whichever pairing the diff of the whole region would have chosen. Blank
- * lines are not lines of text; a region whose sides hold a different number
- * of lines — a fence, a setext underline or an HTML comment is a markdown
- * line with no plain-text line of its own — is not paired, and `false` is
- * returned for `refine` to diff it whole.
+ * `refine` a region that holds a sealed line of `to` — one with link syntax
+ * the mask did not account for, or that the renderer may read as HTML; every
+ * such line of a source past `MAX_LEXED_LENGTH` — one line at a time, so
+ * that a word of the plain text is never matched inside the unmasked
+ * destination on a link line it is not the text of (`**sel**ection daemon`
+ * after `[render](https://sync/selection/editor)`), whichever pairing the
+ * diff of the whole region would have chosen.
+ *
+ * The lines of plain text (`\n` or U+FFFC ends one; a blank line is not
+ * one) are paired with the lines of markdown by their text, not by count
+ * (`pairLines`): the letters of a plain line are those of its markdown line
+ * with the syntax gone, so they are a subsequence of it, and a run of plain
+ * lines an inline leaf split is paired with the one markdown line that holds
+ * them all. A markdown line no plain line is the text of — a fence, a
+ * setext underline, a comment, a line of a note the renderer collapsed — is
+ * deleted against nothing, and a plain line no markdown line accounts for is
+ * inserted. Each pair is diffed alone (`diffRegion`), and so is each gap
+ * between pairs unless a sealed line lies in it: that gap is emitted as one
+ * replaced span, never diffed, so a position of its plain text maps to the
+ * gap's end and a position of the sealed line to the end of the plain text
+ * before it — neither into the other.
  */
 function refineByLine(
   out: Hunk[],
@@ -912,40 +1021,160 @@ function refineByLine(
   toEnd: number,
   deadline: number,
   unanchorable: number[],
-): boolean {
-  const fromLines = textLines(from, fromStart, fromEnd);
-  const toLines = textLines(to, toStart, toEnd);
-  if (fromLines.length === 0 || fromLines.length !== toLines.length) return false;
-  if (fromLines.length === 1) {
-    // One line each: the pair is the region itself unless a break bounds it.
-    const lineBreak = to.indexOf('\n', toStart);
-    if (lineBreak === -1 || lineBreak >= toEnd) return false;
-  }
+): void {
+  const fragments = textLines(from, fromStart, fromEnd, true);
+  const lines = textLines(to, toStart, toEnd, false, unanchorable);
+  const gap = (fromA: number, fromB: number, toA: number, toB: number) => {
+    if (fromA === fromB && toA === toB) return;
+    if (!overlaps(unanchorable, toA, toB)) {
+      diffRegion(out, from, to, fromA, fromB, toA, toB, deadline, unanchorable);
+      return;
+    }
+    out.push({ fromStart: fromA, fromEnd: fromB, toStart: toA, toEnd: toB });
+  };
   let fromPos = fromStart;
   let toPos = toStart;
-  for (let k = 0; k < fromLines.length; k += 1) {
-    const [lineFrom, lineFromEnd] = fromLines[k];
-    const [lineTo, lineToEnd] = toLines[k];
-    refine(out, from, to, fromPos, lineFrom, toPos, lineTo, deadline, unanchorable);
-    refine(out, from, to, lineFrom, lineFromEnd, lineTo, lineToEnd, deadline, unanchorable);
-    fromPos = lineFromEnd;
-    toPos = lineToEnd;
+  for (const [first, last, line] of pairLines(fragments, lines, deadline)) {
+    const fromA = fragments[first].start;
+    const fromB = fragments[last].end;
+    gap(fromPos, fromA, toPos, line.start);
+    diffRegion(out, from, to, fromA, fromB, line.start, line.end, deadline, unanchorable);
+    fromPos = fromB;
+    toPos = line.end;
   }
-  refine(out, from, to, fromPos, fromEnd, toPos, toEnd, deadline, unanchorable);
-  return true;
+  gap(fromPos, fromEnd, toPos, toEnd);
 }
 
-/** The `[start, end)` of each line of `text[start, end)` that is not blank, without its line break. */
-function textLines(text: string, start: number, end: number): Array<[number, number]> {
-  const lines: Array<[number, number]> = [];
+/** A line of text without its break, the letters and digits on it, and whether it is sealed. */
+interface TextLine {
+  start: number;
+  end: number;
+  letters: string;
+  sealed: boolean;
+}
+
+const NOT_LETTER_OR_DIGIT = /[^\p{L}\p{N}]+/gu;
+
+/**
+ * The lines of `text[start, end)` that hold a letter or a digit, without
+ * their breaks: `\n`, and with `hardBreaks` U+FFFC too.
+ */
+function textLines(
+  text: string,
+  start: number,
+  end: number,
+  hardBreaks: boolean,
+  unanchorable: number[] = [],
+): TextLine[] {
+  const lines: TextLine[] = [];
   let pos = start;
   while (pos < end) {
     let lineEnd = text.indexOf('\n', pos);
     if (lineEnd === -1 || lineEnd > end) lineEnd = end;
-    if (lineEnd > pos && !BLANK.test(text.slice(pos, lineEnd))) lines.push([pos, lineEnd]);
+    if (hardBreaks) {
+      const hardBreak = text.indexOf('\uFFFC', pos);
+      if (hardBreak !== -1 && hardBreak < lineEnd) lineEnd = hardBreak;
+    }
+    if (lineEnd > pos) {
+      const letters = text.slice(pos, lineEnd).replace(NOT_LETTER_OR_DIGIT, '');
+      if (letters !== '') {
+        lines.push({
+          start: pos,
+          end: lineEnd,
+          letters,
+          sealed: overlaps(unanchorable, pos, lineEnd),
+        });
+      }
+    }
     pos = lineEnd + 1;
   }
   return lines;
+}
+
+/** Most `fragments × lines` the pairing searches; past it, or past the deadline, nothing is paired. */
+const MAX_PAIRING_CELLS = 1 << 18;
+
+/**
+ * The pairs `[first, last, line]` — the run of `fragments[first..last]` that
+ * is the text of `line` — of the pairing of the plain-text `fragments` with
+ * the markdown `lines`, in order on both sides, that accounts for the most
+ * letters: a run is the text of a line when its letters are a subsequence of
+ * the line's, and among pairings of equal letters one whose letters are equal
+ * to the line's outranks one whose letters the syntax on the line pads, and
+ * a pair on a line the mask accounted for outranks one on a sealed line —
+ * so a paragraph beside a link line is never taken for the text of the link
+ * line when it has a line of its own. A dynamic programme over the two
+ * sequences; empty once the search would exceed `MAX_PAIRING_CELLS` or the
+ * `deadline`, which the caller degrades safely.
+ */
+function pairLines(
+  fragments: TextLine[],
+  lines: TextLine[],
+  deadline: number,
+): Array<[number, number, TextLine]> {
+  const n = fragments.length;
+  const m = lines.length;
+  if (n === 0 || m === 0 || n * m > MAX_PAIRING_CELLS) return [];
+  const width = m + 1;
+  // Best letters accounted for by `fragments[0, i)` and `lines[0, k)`; -1 unreached.
+  const best = new Int32Array((n + 1) * width).fill(-1);
+  // How the best was reached: -1 skipped a fragment, -2 skipped a line, r ≥ 0 paired a run of r + 1 fragments.
+  const via = new Int8Array((n + 1) * width);
+  best[0] = 0;
+  for (let i = 0; i <= n; i += 1) {
+    if (performance.now() >= deadline) return [];
+    for (let k = 0; k <= m; k += 1) {
+      const cell = i * width + k;
+      if (i > 0 && best[cell - width] > best[cell]) {
+        best[cell] = best[cell - width];
+        via[cell] = -1;
+      }
+      if (k > 0 && best[cell - 1] > best[cell]) {
+        best[cell] = best[cell - 1];
+        via[cell] = -2;
+      }
+      if (best[cell] < 0 || i === n || k === m) continue;
+      const line = lines[k];
+      let at = 0;
+      let letters = 0;
+      for (let j = i; j < n && j - i < 127; j += 1) {
+        at = subsequenceEnd(line.letters, fragments[j].letters, at);
+        if (at === -1) break;
+        letters += fragments[j].letters.length;
+        const rank = letters === line.letters.length ? 2 : line.sealed ? 0 : 1;
+        const score = best[cell] + 3 * letters + rank;
+        const target = (j + 1) * width + k + 1;
+        if (score > best[target]) {
+          best[target] = score;
+          via[target] = j - i;
+        }
+      }
+    }
+  }
+  const pairs: Array<[number, number, TextLine]> = [];
+  let i = n;
+  let k = m;
+  while (i > 0 || k > 0) {
+    const step = via[i * width + k];
+    if (step === -1) i -= 1;
+    else if (step === -2) k -= 1;
+    else {
+      pairs.push([i - step - 1, i - 1, lines[k - 1]]);
+      i -= step + 1;
+      k -= 1;
+    }
+  }
+  return pairs.reverse();
+}
+
+/** Where `needle` ends as a subsequence of `text` searched from `at`, or -1. */
+function subsequenceEnd(text: string, needle: string, at: number): number {
+  for (let i = 0; i < needle.length; i += 1) {
+    at = text.indexOf(needle[i], at);
+    if (at === -1) return -1;
+    at += 1;
+  }
+  return at;
 }
 
 /** Run `diff` with the time left before `deadline`; `undefined` once it is spent or the diff aborts. */

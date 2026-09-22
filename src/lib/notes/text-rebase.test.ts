@@ -1078,6 +1078,340 @@ describe('alignment of link syntax the lexer does not account for', () => {
     60_000,
   );
 
+  /**
+   * Every offset strictly inside the plain-text line (`\n` or U+FFFC bounds
+   * it) that holds `plainNeedle` maps inside the markdown line that holds
+   * `markdownNeedle`, and every offset strictly inside that markdown line
+   * maps inside the plain line — the same-line invariant, whatever the diff
+   * pairs inside the two. A line's ends are the line breaks around it and
+   * may map to either side of the blank lines between the two.
+   */
+  function expectSameLine(
+    plain: string,
+    markdown: string,
+    map: ReturnType<typeof createBidirectionalOffsetMapper>,
+    plainNeedle: string,
+    markdownNeedle: string,
+  ) {
+    const lineAround = (text: string, needle: string, breaks: RegExp): [number, number] => {
+      const at = text.indexOf(needle);
+      expect(at, needle).toBeGreaterThanOrEqual(0);
+      let start = at;
+      while (start > 0 && !breaks.test(text[start - 1])) start -= 1;
+      let end = at + needle.length;
+      while (end < text.length && !breaks.test(text[end])) end += 1;
+      return [start, end];
+    };
+    const [pStart, pEnd] = lineAround(plain, plainNeedle, /[\n\uFFFC]/);
+    const [mStart, mEnd] = lineAround(markdown, markdownNeedle, /\n/);
+    for (let offset = pStart + 1; offset < pEnd; offset += 1) {
+      expect(map.aToB(offset), `aToB(${offset})`).toBeGreaterThanOrEqual(mStart);
+      expect(map.aToB(offset), `aToB(${offset})`).toBeLessThanOrEqual(mEnd);
+    }
+    for (let offset = mStart + 1; offset < mEnd; offset += 1) {
+      expect(map.bToA(offset), `bToA(${offset})`).toBeGreaterThanOrEqual(pStart);
+      expect(map.bToA(offset), `bToA(${offset})`).toBeLessThanOrEqual(pEnd);
+    }
+  }
+
+  // The same-line invariant past the cap, on every line shape the reviewer
+  // raised beside the link line: no offset of a plain-text line that is not
+  // the link line's text maps into the link line, and no offset of the link
+  // line maps outside its own text; every run beside the link line is exact
+  // — the paragraph's `sel` included, which is no piece long enough to
+  // anchor and occurs verbatim inside the URL (and inside the comment, whose
+  // letters are the paragraph's). A comment, a definition, a setext
+  // underline and a table delimiter are markdown lines with no plain-text
+  // line of their own; a hard break, a soft break and a lazy continuation
+  // put two markdown lines on one plain-text line, split at U+FFFC.
+  const SPELLED = '**sel**ection daemon';
+  const VARIANTS: Array<{
+    name: string;
+    note: string;
+    /** Plain text the projection must hold, per projection. */
+    plain: string;
+    /** `[needle, plainIndex, markdownIndex]` of every run beside the link line, exact past the cap. */
+    exact: Array<[string, number, number]>;
+    /** `[plainNeedle, markdownNeedle]` of the formatted paragraph, held to its own line. */
+    sameLine: [string, string];
+    /** Exact below the cap only: runs on the link line. */
+    onLinkLine: Array<[string, number, number]>;
+  }> = [
+    {
+      name: "the reviewer's paragraph",
+      note: `caret ${LINK} sync\n\n**se**le**ct**io**n** **ed**it**or**\n\nend marker`,
+      plain: '\nselection editor\nend marker',
+      exact: [['end marker', 0, 0]],
+      sameLine: ['selection editor', '**se**le**ct**io**n**'],
+      onLinkLine: [
+        ['render', 0, 0],
+        ['sync', 0, 1],
+      ],
+    },
+    {
+      name: 'an HTML comment',
+      note: `caret ${LINK} sync\n\n<!-- selection daemon -->\n\n${SPELLED}\n\nend marker`,
+      plain: '\nselection daemon\nend marker',
+      exact: [
+        ['sel', 0, 2],
+        ['ection daemon', 0, 1],
+        ['end marker', 0, 0],
+      ],
+      sameLine: ['selection daemon', SPELLED],
+      onLinkLine: [
+        ['render', 0, 0],
+        ['sync', 0, 1],
+      ],
+    },
+    {
+      name: 'a hard break',
+      note: `caret ${LINK} sync  \n${SPELLED}\n\nend marker`,
+      plain: '\uFFFCselection daemon\nend marker',
+      exact: [
+        ['sel', 0, 1],
+        ['ection daemon', 0, 0],
+        ['end marker', 0, 0],
+      ],
+      sameLine: ['selection daemon', SPELLED],
+      onLinkLine: [
+        ['render', 0, 0],
+        ['sync', 0, 1],
+      ],
+    },
+    {
+      name: 'a soft break',
+      note: `caret ${LINK} sync\n${SPELLED}\n\nend marker`,
+      plain: '\uFFFCselection daemon\nend marker',
+      exact: [
+        ['sel', 0, 1],
+        ['ection daemon', 0, 0],
+        ['end marker', 0, 0],
+      ],
+      sameLine: ['selection daemon', SPELLED],
+      onLinkLine: [
+        ['render', 0, 0],
+        ['sync', 0, 1],
+      ],
+    },
+    {
+      name: 'a lazy list continuation',
+      note: `- caret ${LINK} sync\n${SPELLED}\n\nend marker`,
+      plain: '\uFFFCselection daemon\nend marker',
+      exact: [
+        ['sel', 0, 1],
+        ['ection daemon', 0, 0],
+        ['end marker', 0, 0],
+      ],
+      sameLine: ['selection daemon', SPELLED],
+      onLinkLine: [
+        ['render', 0, 0],
+        ['sync', 0, 1],
+      ],
+    },
+    {
+      name: 'a lazy blockquote continuation',
+      note: `> caret ${LINK} sync\n${SPELLED}\n\nend marker`,
+      plain: '\uFFFCselection daemon\nend marker',
+      exact: [
+        ['sel', 0, 1],
+        ['ection daemon', 0, 0],
+        ['end marker', 0, 0],
+      ],
+      sameLine: ['selection daemon', SPELLED],
+      onLinkLine: [
+        ['render', 0, 0],
+        ['sync', 0, 1],
+      ],
+    },
+    {
+      name: 'an empty label',
+      note: `caret [](https://sync/selection/editor) sync\n\n${SPELLED}\n\nend marker`,
+      plain: 'caret sync\nselection daemon\nend marker',
+      exact: [
+        ['sel', 0, 1],
+        ['ection daemon', 0, 0],
+        ['end marker', 0, 0],
+      ],
+      sameLine: ['selection daemon', SPELLED],
+      onLinkLine: [
+        ['caret', 0, 0],
+        ['sync', 0, 1],
+      ],
+    },
+    {
+      name: 'a reference definition',
+      note: `caret [render][r] sync\n\n[r]: https://sync/selection/daemon\n\n${SPELLED}\n\nend marker`,
+      plain: 'caret render sync\nselection daemon\nend marker',
+      exact: [
+        ['sel', 0, 1],
+        ['ection daemon', 0, 0],
+        ['end marker', 0, 0],
+      ],
+      sameLine: ['selection daemon', SPELLED],
+      onLinkLine: [
+        ['render', 0, 0],
+        ['sync', 0, 0],
+      ],
+    },
+  ];
+  const PLACEMENTS: Array<[string, (note: string) => string]> = [
+    ['below the cap', (note) => `${note}\n\n${'q'.repeat(127 * 1024)}`],
+    ['past the cap at its start', (note) => `${note}\n\n${'q'.repeat(129 * 1024)}`],
+    ['past the cap at its end', (note) => `${'q'.repeat(129 * 1024)}\n\n${note}`],
+  ];
+  const PROJECTIONS: Array<[string, boolean]> = [
+    ['StarterKit', false],
+    ['the note editor', true],
+  ];
+  const CELLS = PLACEMENTS.flatMap(([where, place]) =>
+    PROJECTIONS.map(([projection, production]): [string, string, typeof place, boolean] => [
+      where,
+      projection,
+      place,
+      production,
+    ]),
+  );
+
+  describe.each(VARIANTS)('beside $name', ({ note, plain: shape, exact, sameLine, onLinkLine }) => {
+    it.each(CELLS)(
+      'keeps every run beside the link line exact in a note %s projected by %s',
+      async (where, _projection, place, production) => {
+        const markdown = place(note);
+        const plain = await projectWithEditor(markdown, production);
+        expect(plain).toContain(shape);
+        expect(plain).not.toContain('](');
+        const map = withoutDeadline(() => createBidirectionalOffsetMapper(plain, markdown));
+        for (const [needle, plainIndex, markdownIndex] of exact) {
+          expectExactRun(plain, markdown, map, needle, plainIndex, markdownIndex);
+        }
+        expectSameLine(plain, markdown, map, ...sameLine);
+        // A definition's URL, a markdown line with no plain-text line, maps
+        // to the line break before the paragraph at most, never past it.
+        const url = markdown.indexOf('https://sync/selection/');
+        const [pStart, pEnd] = [plain.indexOf(sameLine[0]), plain.indexOf('\nend marker')];
+        for (let offset = url + 1; offset < url + 'https://sync/selection/'.length; offset += 1) {
+          expect(map.bToA(offset), `bToA(${offset}) inside the URL`).toBeLessThanOrEqual(pStart);
+        }
+        for (let offset = pStart; offset <= pEnd; offset += 1) {
+          const mapped = map.aToB(offset);
+          expect(
+            mapped <= url || mapped >= url + 'https://sync/selection/'.length,
+            `aToB(${offset}) = ${mapped} lands inside the URL at ${url}`,
+          ).toBe(true);
+        }
+        if (where === 'below the cap') {
+          for (const [needle, plainIndex, markdownIndex] of onLinkLine) {
+            expectExactRun(plain, markdown, map, needle, plainIndex, markdownIndex);
+          }
+        }
+        expectExactRun(plain, markdown, map, 'qqqqqqqq', 0, 0);
+      },
+      60_000,
+    );
+  });
+
+  // A table row holds the link and the paragraph on one markdown line: the
+  // paragraph is the link line's text, so its `selection` may be paired with
+  // the URL's, but stays on the row, and every other cell and line is exact.
+  // StarterKit has no table node and runs the cells into one line; only the
+  // note editor's projection has cells of its own.
+  it.each(CELLS)(
+    'keeps a table row that holds a link on its own line in a note %s projected by %s',
+    async (where, _projection, place, production) => {
+      const row = `| ${LINK} | ${SPELLED} |`;
+      const markdown = place(`| a | b |\n|---|---|\n${row}\n\nend marker`);
+      const plain = await projectWithEditor(markdown, production);
+      expect(plain).not.toContain('](');
+      const map = withoutDeadline(() => createBidirectionalOffsetMapper(plain, markdown));
+      expectExactRun(plain, markdown, map, 'end marker', 0, 0);
+      expectExactRun(plain, markdown, map, 'qqqqqqqq', 0, 0);
+      if (production) {
+        expect(plain).toContain('a\nb\nrender\nselection daemon\nend marker');
+        expectExactRun(plain, markdown, map, 'render', 0, 0);
+        expectSameLine(plain, markdown, map, 'render\nselection daemon', row);
+        if (where === 'below the cap') expectExactRun(plain, markdown, map, 'sel', 0, 1);
+      } else {
+        expect(plain).toContain('abrenderselection daemon\nend marker');
+        expectBetweenAnchors(plain, markdown, map, 'abrender', '| a | b |', 'end marker');
+      }
+    },
+    60_000,
+  );
+
+  // A note that opens with `<` the renderer reads as HTML, not markdown: the
+  // tag — here an autolink at the start of the line — is dropped, and every
+  // other character is shown as written on one line, the line breaks
+  // collapsed. Below the cap the tag is masked and every run is exact. Past
+  // it the tag's line is sealed, and no run of the one plain-text line
+  // anchors past the sealed text it opens with (a plain-text line anchors
+  // only on the markdown line it is the text of), so the note is one
+  // replaced span: nothing maps into the URL, and the URL maps to the end of
+  // the plain text — its own line's — never into the paragraph.
+  it.each<[string, string, boolean]>([
+    ['with no filler', '', false],
+    ['with no filler', '', true],
+    ['below the cap', `\n\n${'q'.repeat(127 * 1024)}`, false],
+    ['below the cap', `\n\n${'q'.repeat(127 * 1024)}`, true],
+    ['past the cap', `\n\n${'q'.repeat(129 * 1024)}`, false],
+    ['past the cap', `\n\n${'q'.repeat(129 * 1024)}`, true],
+  ])(
+    'never maps into the autolink a note the renderer reads as HTML drops, %s, projected by %s',
+    async (where, filler, production) => {
+      const spelled = '**se**le**ct**io**n** **ed**it**or**';
+      const markdown = `<https://selection/editor> sync\n\n${spelled}${filler}`;
+      const plain = await projectWithEditor(markdown, production);
+      expect(plain.startsWith(`sync ${spelled}`)).toBe(true);
+      expect(plain).not.toContain('https');
+      const map = withoutDeadline(() => createBidirectionalOffsetMapper(plain, markdown));
+      const url = markdown.indexOf('https://selection/editor');
+      const paragraphEnd = plain.indexOf(spelled) + spelled.length;
+      for (let offset = url + 1; offset < url + 'https://selection/editor'.length; offset += 1) {
+        const mapped = map.bToA(offset);
+        expect(
+          mapped <= 0 || mapped >= paragraphEnd,
+          `bToA(${offset}) = ${mapped} inside the URL lands in the text`,
+        ).toBe(true);
+        if (where === 'past the cap') expect(mapped, `bToA(${offset})`).toBe(plain.length);
+      }
+      for (let offset = 0; offset <= plain.length; offset += 1) {
+        const mapped = map.aToB(offset);
+        expect(
+          mapped <= url || mapped >= url + 'https://selection/editor'.length,
+          `aToB(${offset}) = ${mapped} lands inside the URL at ${url}`,
+        ).toBe(true);
+      }
+      if (where !== 'past the cap') {
+        expectExactRun(plain, markdown, map, 'sync', 0, 0);
+        expectExactRun(plain, markdown, map, spelled, 0, 0);
+        if (filler) expectExactRun(plain, markdown, map, 'qqqqqqqq', 0, 0);
+      }
+    },
+    60_000,
+  );
+
+  // The control: prefixed by a word the autolink is inline, shown as written,
+  // and the note is markdown — every run is exact.
+  it.each<[string, string, boolean]>([
+    ['below the cap', `\n\n${'q'.repeat(127 * 1024)}`, false],
+    ['below the cap', `\n\n${'q'.repeat(127 * 1024)}`, true],
+    ['past the cap', `\n\n${'q'.repeat(129 * 1024)}`, false],
+    ['past the cap', `\n\n${'q'.repeat(129 * 1024)}`, true],
+  ])(
+    'shows an autolink after a word as written in a note %s projected by %s',
+    async (_where, filler, production) => {
+      const spelled = '**se**le**ct**io**n** **ed**it**or**';
+      const head = 'see <https://selection/editor> sync';
+      const markdown = `${head}\n\n${spelled}${filler}`;
+      const plain = await projectWithEditor(markdown, production);
+      expect(plain.startsWith(`${head}\nselection editor\n`)).toBe(true);
+      const map = withoutDeadline(() => createBidirectionalOffsetMapper(plain, markdown));
+      expectExactRun(plain, markdown, map, head, 0, 0);
+      expectSameLine(plain, markdown, map, 'selection editor', spelled);
+      expectExactRun(plain, markdown, map, 'qqqqqqqq', 0, 0);
+    },
+    60_000,
+  );
+
   // The reviewer's minimal repro, below the cap: the mask hides the
   // destination whether or not the note holds a math delimiter.
   it.each<[string, string]>([
