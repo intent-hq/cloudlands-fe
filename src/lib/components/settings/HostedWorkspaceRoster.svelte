@@ -12,9 +12,8 @@
    * the displayed rows are filtered — the sweep still receives the full roster.
    */
   import { onMount } from 'svelte';
-  import { SvelteMap } from 'svelte/reactivity';
   import { ListView } from '$lib/components/patterns/collection';
-  import { Button } from '$lib/components/patterns/settings/custom-controls';
+  import { Button, PrincipalAvatar } from '$lib/components/patterns/settings/custom-controls';
   import BulkActionConfirmDialog from '$lib/components/modals/BulkActionConfirmDialog.svelte';
   import { m } from '$shared/paraglide/messages.js';
   import type { Workspace } from '$shared/types';
@@ -56,23 +55,8 @@
 
   let removeAllDialogOpen = $state(false);
 
-  /**
-   * The avatar URL that failed to load, per collaborator. Keyed by the URL so
-   * a member whose `avatarUrl` changes retries the load instead of staying on
-   * the initial forever (the identity reset in `GitHubAvatar`).
-   */
-  const failedAvatarUrls = new SvelteMap<string, string>();
-
   function memberLabel(member: WorkspaceMember): string {
     return member.displayName ?? member.login ?? member.principalId;
-  }
-
-  function showsAvatar(member: WorkspaceMember): boolean {
-    return !!member.avatarUrl && failedAvatarUrls.get(member.principalId) !== member.avatarUrl;
-  }
-
-  function markAvatarFailed(member: WorkspaceMember) {
-    if (member.avatarUrl) failedAvatarUrls.set(member.principalId, member.avatarUrl);
   }
 
   function removeAllGuests() {
@@ -166,23 +150,12 @@
       {#snippet row({ item: member })}
         <div class="flex items-center justify-between gap-3 py-2">
           <div class="flex min-w-0 items-center gap-2">
-            {#if showsAvatar(member)}
-              <img
-                src={member.avatarUrl}
-                alt=""
-                class="h-6 w-6 shrink-0 rounded-full"
-                loading="lazy"
-                data-testid="hosted-roster-avatar"
-                onerror={() => markAvatarFailed(member)}
-              />
-            {:else}
-              <span
-                class="grid h-6 w-6 shrink-0 place-items-center rounded-full bg-muted type-caption text-foreground"
-                aria-hidden="true"
-                data-testid="hosted-roster-avatar-fallback"
-                >{memberLabel(member).slice(0, 1).toUpperCase()}</span
-              >
-            {/if}
+            <PrincipalAvatar
+              avatarUrl={member.avatarUrl}
+              label={memberLabel(member)}
+              size={24}
+              testid="hosted-roster-avatar"
+            />
             <div class="min-w-0">
               <p class="truncate type-body text-foreground">{memberLabel(member)}</p>
               <p class="truncate type-caption text-muted-foreground">

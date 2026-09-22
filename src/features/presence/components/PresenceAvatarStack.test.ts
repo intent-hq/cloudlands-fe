@@ -11,11 +11,15 @@ import { buttonVariants } from '$lib/components/ui/button/button.variants';
 import PresenceAvatarStack from './PresenceAvatarStack.svelte';
 import type { PresenceCircle, PresenceCircleAction } from './presence-person';
 
-const person = (principalId: string, online: boolean): PresenceCircle => ({
+const person = (
+  principalId: string,
+  online: boolean,
+  avatarUrl: string | null = null,
+): PresenceCircle => ({
   principalId,
   login: principalId,
   displayName: null,
-  avatarUrl: null,
+  avatarUrl,
   online,
 });
 
@@ -50,5 +54,36 @@ describe('PresenceAvatarStack person buttons', () => {
     expect(ada.hasAttribute('aria-disabled')).toBe(false);
     await fireEvent.click(ada);
     expect(onSelect).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('PresenceAvatarStack default tooltip triggers', () => {
+  // The avatar tile (image or initial) is decorative, so the trigger's name
+  // must come from persistent text — not the tooltip, which is a description.
+  const expectSingleTriggerNamed = (name: string) => {
+    expect(screen.getAllByRole('button')).toHaveLength(1);
+    expect(screen.getByRole('button', { name })).toBeTruthy();
+  };
+
+  it('names the trigger after the person when they have no avatar URL', () => {
+    render(PresenceAvatarStack, { props: { people: [person('ada', true)] } });
+    expectSingleTriggerNamed('ada');
+  });
+
+  it('names the trigger after the person when their avatar URL is present', () => {
+    render(PresenceAvatarStack, {
+      props: { people: [person('ada', true, 'https://example.test/ada.png')] },
+    });
+    expect(document.querySelector('img')).not.toBeNull();
+    expectSingleTriggerNamed('ada');
+  });
+
+  it('keeps the trigger named after the person when their avatar fails to load', async () => {
+    render(PresenceAvatarStack, {
+      props: { people: [person('ada', true, 'https://example.test/ada.png')] },
+    });
+    await fireEvent.error(document.querySelector('img')!);
+    expect(document.querySelector('img')).toBeNull();
+    expectSingleTriggerNamed('ada');
   });
 });

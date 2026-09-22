@@ -4,6 +4,39 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.174.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.173.0...v2.174.0) (2026-09-22)
+
+
+### 🚀 Features
+
+* **agents:** show only orphaned delegated agents in the Delegated bin ([#2789](https://github.com/intent-hq/cloudlands-fe/issues/2789)) ([7d2065f](https://github.com/intent-hq/cloudlands-fe/commit/7d2065f3c29c68022aadf62b6783fd4dc2ab87c9))
+* **hardware-console:** add Close action key as the CM2 ACT09 default ([#2795](https://github.com/intent-hq/cloudlands-fe/issues/2795)) ([1885413](https://github.com/intent-hq/cloudlands-fe/commit/1885413ee92d036de524cc2009185bb8bd144a42))
+* **invite:** show a cancellable progress dialog while joining a shared workspace ([#2794](https://github.com/intent-hq/cloudlands-fe/issues/2794)) ([5295910](https://github.com/intent-hq/cloudlands-fe/commit/5295910764008de6302d780b12c9f7a139d3df2b))
+* polish diagram layout, motion, and exports ([#2281](https://github.com/intent-hq/cloudlands-fe/issues/2281)) ([88b4bcb](https://github.com/intent-hq/cloudlands-fe/commit/88b4bcb5bd9195517f1105441e3307de24b8f366))
+* reserved-box image rendering from text-block media sidecar ([#2796](https://github.com/intent-hq/cloudlands-fe/issues/2796)) ([6f9bcb0](https://github.com/intent-hq/cloudlands-fe/commit/6f9bcb01441084df01424d75340fd8d3e366ba5d))
+* **settings:** add Labs section with Multiplayer toggle ([#2787](https://github.com/intent-hq/cloudlands-fe/issues/2787)) ([a5f9d82](https://github.com/intent-hq/cloudlands-fe/commit/a5f9d82b2906ac6d2fcb19dd9c0ec1aab78dc840))
+* **share:** surface the tunnel-down daemon code distinctly in the share dialog ([#2758](https://github.com/intent-hq/cloudlands-fe/issues/2758)) ([1204db2](https://github.com/intent-hq/cloudlands-fe/commit/1204db2f6de924a3476d124bdd3b758e1ef937d2))
+* warn about guests on single workspace archive/delete ([#2776](https://github.com/intent-hq/cloudlands-fe/issues/2776)) ([df396ea](https://github.com/intent-hq/cloudlands-fe/commit/df396eab34024ef956a70ade98c8c3f976dc9f0a))
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.9.94 ([#2770](https://github.com/intent-hq/cloudlands-fe/issues/2770)) ([a30fb79](https://github.com/intent-hq/cloudlands-fe/commit/a30fb79cdb09f2b877b613e1a9c721d52c4d0d9f))
+* bump intentd sidecar to v0.9.95 ([#2781](https://github.com/intent-hq/cloudlands-fe/issues/2781)) ([b7f457e](https://github.com/intent-hq/cloudlands-fe/commit/b7f457e0119f6626758fff75e8757bed7d5f06c6))
+* bump intentd sidecar to v0.9.97 ([#2804](https://github.com/intent-hq/cloudlands-fe/issues/2804)) ([3e534ae](https://github.com/intent-hq/cloudlands-fe/commit/3e534ae75a701eafa36093d5c2292a5ffeaed0c3))
+* **dev-web:** boot the mock-only preview without the daemon-loss overlay ([#2786](https://github.com/intent-hq/cloudlands-fe/issues/2786)) ([d9b0a11](https://github.com/intent-hq/cloudlands-fe/commit/d9b0a11e63f79c09fadfe7889adb085e300ea77d))
+* **dropdown:** own the portaled submenu so leaf clicks select ([#2773](https://github.com/intent-hq/cloudlands-fe/issues/2773)) ([6193138](https://github.com/intent-hq/cloudlands-fe/commit/61931381f4082d919034fd2c15291442be23d2a4))
+* **i18n-gate:** treat equality-comparison operands as non-rendered ([#2771](https://github.com/intent-hq/cloudlands-fe/issues/2771)) ([914c00f](https://github.com/intent-hq/cloudlands-fe/commit/914c00f3f2e90988433f56e25681fa4680da5f90))
+* **invite:** report a GitHub rate limit instead of "not signed in" ([#2784](https://github.com/intent-hq/cloudlands-fe/issues/2784)) ([4555e30](https://github.com/intent-hq/cloudlands-fe/commit/4555e30880f76cc204d5347713251868cade9114))
+* **notes:** keep the attribution label inside the note panel and near the pointer ([#2780](https://github.com/intent-hq/cloudlands-fe/issues/2780)) ([4ee927d](https://github.com/intent-hq/cloudlands-fe/commit/4ee927da2059727922adab0be2865239e5f5a2bc))
+* **presence:** keep avatars solid and list owner and online members first ([#2764](https://github.com/intent-hq/cloudlands-fe/issues/2764)) ([13c99b9](https://github.com/intent-hq/cloudlands-fe/commit/13c99b9e1246bada86e7eba970741db0b99ed8b3))
+* **presence:** lead the agent chat presence stack with the owner ([#2777](https://github.com/intent-hq/cloudlands-fe/issues/2777)) ([0021212](https://github.com/intent-hq/cloudlands-fe/commit/0021212a83683dfbc1e1e644dc2f5bca5587b2a1))
+* **scripts:** preflight the Paraglide bundle in test:ct ([#2790](https://github.com/intent-hq/cloudlands-fe/issues/2790)) ([14cf4f7](https://github.com/intent-hq/cloudlands-fe/commit/14cf4f7ca4da987c3000ae47ab1b4c48224f9773))
+* **settings:** drop owner row and add avatars to hosting roster ([#2774](https://github.com/intent-hq/cloudlands-fe/issues/2774)) ([6fd15a2](https://github.com/intent-hq/cloudlands-fe/commit/6fd15a21ca3c785ab8dc9fe2c6f83af9e7d0e076))
+* **tooltip:** key the PR hover Queued badge on isInMergeQueue, drop FE hover cache ([#2765](https://github.com/intent-hq/cloudlands-fe/issues/2765)) ([9b36699](https://github.com/intent-hq/cloudlands-fe/commit/9b36699d9c8e3b213e3a6dc65e18231c608f3194))
+* **types:** add isInMergeQueue to the PullRequestInfo wire type ([#2798](https://github.com/intent-hq/cloudlands-fe/issues/2798)) ([e69d695](https://github.com/intent-hq/cloudlands-fe/commit/e69d695dcf5e6188c6f970de0f74c6d762c9236a))
+* **verify-changed:** default to origin/main as base on a clean ahead branch ([#2778](https://github.com/intent-hq/cloudlands-fe/issues/2778)) ([ad03340](https://github.com/intent-hq/cloudlands-fe/commit/ad033403a17a151f1cd5d1076ae2d6820031955c))
+
 ## [2.173.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.172.4...v2.173.0) (2026-09-22)
 
 
