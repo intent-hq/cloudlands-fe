@@ -57,7 +57,12 @@
         },
         {
           "type": "mermaid",
-          "content": "flowchart LR\n  B[Embedded browser] -->|\"http://127.0.0.1:localPort\"| T[Electron main - TunnelManager<br/>net.createServer per port]\n  T -->|\"binary stream frames over wss://daemon/tunnel<br/>(same bearer token)\"| D[intentd tunnel route]\n  D -->|\"TcpStream to 127.0.0.1:remotePort<br/>(daemon loopback only)\"| S[Dev server on daemon host]"
+          "content": "flowchart LR\n  B[Embedded browser] -->|\"http://127.0.0.1:localPort\"| T[Electron main - TunnelManager<br/>net.createServer per port]\n  T -->|\"binary stream frames over wss://daemon/tunnel<br/>(same bearer token)\"| D[intentd tunnel route]\n  D -->|\"TcpStream to 127.0.0.1:remotePort<br/>(daemon loopback only)\"| S[Dev server on daemon host]",
+          "metadata": {
+            "rawSource": "flowchart LR\n  B[Embedded browser] -->|\"http://127.0.0.1:localPort\"| T[Electron main - TunnelManager<br/>net.createServer per port]\n  T -->|\"binary stream frames over wss://daemon/tunnel<br/>(same bearer token)\"| D[intentd tunnel route]\n  D -->|\"TcpStream to 127.0.0.1:remotePort<br/>(daemon loopback only)\"| S[Dev server on daemon host]\n",
+            "fenceStart": 238,
+            "isStreaming": false
+          }
         },
         {
           "type": "text",

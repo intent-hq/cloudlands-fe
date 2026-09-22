@@ -41,6 +41,7 @@ import {
   selectGroupByRepo,
   selectGithubLinkDefaultAction,
   selectHasCompletedProviderSetup,
+  selectLabsMultiplayerEnabled,
   selectLanguagePreference,
   selectNotificationEnabled,
   selectNotificationVolume,
@@ -93,6 +94,7 @@ import {
   setGroupByRepo,
   setGithubLinkDefaultAction,
   setHasCompletedProviderSetup,
+  setLabsMultiplayerEnabled,
   setLanguagePreference,
   setNotificationEnabled,
   setNoteFontStyle,
@@ -286,6 +288,8 @@ async function readCurrentSettingValue(definition: AppSettingDefinition): Promis
       return selectChatAuroraEnabled.select(state);
     case 'appearance.shellTransparency':
       return selectShellTransparencyEnabled.select(state);
+    case 'labs.multiplayer':
+      return selectLabsMultiplayerEnabled.select(state);
     case 'workspaceList.showArchived':
       return selectShowArchived.select(state);
     case 'workspaceList.groupByRepo':
@@ -387,6 +391,9 @@ function dispatchReduxAction(path: string, value: unknown): boolean {
       return true;
     case 'appearance.shellTransparency':
       appStore.dispatch(setShellTransparencyEnabled(Boolean(value)));
+      return true;
+    case 'labs.multiplayer':
+      appStore.dispatch(setLabsMultiplayerEnabled(Boolean(value)));
       return true;
     case 'workspaceList.showArchived':
       appStore.dispatch(setShowArchived(Boolean(value)));

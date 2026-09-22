@@ -38,10 +38,14 @@ const localChanges = {
   hasUncommittedChanges: true,
 };
 
+const guests = { collaboratorCount: 2, openInviteCount: 1 };
+
 describe('workspaceOperationsReducer', () => {
-  it('starts with no local-changes data for either warning', () => {
+  it('starts with no local-changes or guest data for either warning', () => {
     expect(initialState.localChangesForDelete).toBeNull();
     expect(initialState.localChangesForArchive).toBeNull();
+    expect(initialState.guestsForDelete).toBeNull();
+    expect(initialState.guestsForArchive).toBeNull();
   });
 
   it('opens and clears the delete warning state', () => {
@@ -53,6 +57,7 @@ describe('workspaceOperationsReducer', () => {
         hookNames: ['ci-watch'],
         openPrs: [openPr],
         localChanges,
+        guests,
       }),
     );
 
@@ -62,7 +67,9 @@ describe('workspaceOperationsReducer', () => {
     expect(opened.activeHookNamesForDelete).toEqual(['ci-watch']);
     expect(getItems(opened.openPrsForDelete)).toEqual([openPr]);
     expect(opened.localChangesForDelete).toEqual(localChanges);
+    expect(opened.guestsForDelete).toEqual(guests);
     expect(opened.localChangesForArchive).toBeNull();
+    expect(opened.guestsForArchive).toBeNull();
 
     const closed = workspaceOperationsReducer(opened, closeDeleteWarning());
 
@@ -72,9 +79,10 @@ describe('workspaceOperationsReducer', () => {
     expect(closed.activeHookNamesForDelete).toEqual([]);
     expect(getItems(closed.openPrsForDelete)).toEqual([]);
     expect(closed.localChangesForDelete).toBeNull();
+    expect(closed.guestsForDelete).toBeNull();
   });
 
-  it('opens the delete warning with null local changes when none were supplied', () => {
+  it('opens the delete warning with null local changes and guests when none were supplied', () => {
     const opened = workspaceOperationsReducer(
       initialState,
       openDeleteWarning({
@@ -87,6 +95,7 @@ describe('workspaceOperationsReducer', () => {
 
     expect(opened.showDeleteWarning).toBe(true);
     expect(opened.localChangesForDelete).toBeNull();
+    expect(opened.guestsForDelete).toBeNull();
   });
 
   it('opens and clears the archive warning state', () => {
@@ -98,6 +107,7 @@ describe('workspaceOperationsReducer', () => {
         hookNames: ['pr-watch'],
         openPrs: [{ ...openPr, status: 'Draft' as const, mergeConflicts: true }],
         localChanges,
+        guests,
       }),
     );
 
@@ -109,7 +119,9 @@ describe('workspaceOperationsReducer', () => {
       { ...openPr, status: 'Draft', mergeConflicts: true },
     ]);
     expect(opened.localChangesForArchive).toEqual(localChanges);
+    expect(opened.guestsForArchive).toEqual(guests);
     expect(opened.localChangesForDelete).toBeNull();
+    expect(opened.guestsForDelete).toBeNull();
 
     const closed = workspaceOperationsReducer(opened, closeArchiveWarning());
 
@@ -119,6 +131,7 @@ describe('workspaceOperationsReducer', () => {
     expect(closed.activeHookNamesForArchive).toEqual([]);
     expect(getItems(closed.openPrsForArchive)).toEqual([]);
     expect(closed.localChangesForArchive).toBeNull();
+    expect(closed.guestsForArchive).toBeNull();
   });
 
   it('opens the archive warning with null local changes when the RPC failed', () => {
@@ -145,6 +158,7 @@ describe('workspaceOperationsReducer', () => {
         workspaceCount: 3,
         agentCount: 2,
         hookCount: 1,
+        guestCount: 4,
       }),
     );
 
@@ -153,6 +167,7 @@ describe('workspaceOperationsReducer', () => {
     expect(opened.bulkDeleteWorkspaceCount).toBe(3);
     expect(opened.bulkDeleteActiveAgentCount).toBe(2);
     expect(opened.bulkDeleteActiveHookCount).toBe(1);
+    expect(opened.bulkDeleteGuestCount).toBe(4);
 
     const closed = workspaceOperationsReducer(opened, closeBulkDeleteWarningConfirm());
 
@@ -161,6 +176,7 @@ describe('workspaceOperationsReducer', () => {
     expect(closed.bulkDeleteWorkspaceCount).toBe(0);
     expect(closed.bulkDeleteActiveAgentCount).toBe(0);
     expect(closed.bulkDeleteActiveHookCount).toBe(0);
+    expect(closed.bulkDeleteGuestCount).toBe(0);
   });
 
   it('folds computed active work into an open bulk archive confirm and clears it on close', () => {
@@ -168,6 +184,7 @@ describe('workspaceOperationsReducer', () => {
 
     expect(opened.bulkArchiveActiveAgentCount).toBe(0);
     expect(opened.bulkArchiveActiveHookCount).toBe(0);
+    expect(opened.bulkArchiveGuestCount).toBe(0);
 
     const computed = workspaceOperationsReducer(
       opened,
@@ -175,18 +192,21 @@ describe('workspaceOperationsReducer', () => {
         repoKey: 'owner/repo',
         agentCount: 2,
         hookCount: 1,
+        guestCount: 3,
         token: opened.bulkArchiveComputeToken,
       }),
     );
 
     expect(computed.bulkArchiveActiveAgentCount).toBe(2);
     expect(computed.bulkArchiveActiveHookCount).toBe(1);
+    expect(computed.bulkArchiveGuestCount).toBe(3);
 
     const closed = workspaceOperationsReducer(computed, closeBulkArchiveConfirm());
 
     expect(closed.showBulkArchiveConfirm).toBe(false);
     expect(closed.bulkArchiveActiveAgentCount).toBe(0);
     expect(closed.bulkArchiveActiveHookCount).toBe(0);
+    expect(closed.bulkArchiveGuestCount).toBe(0);
   });
 
   it('drops late active-work results when the confirm is closed or for another repo', () => {
@@ -201,12 +221,14 @@ describe('workspaceOperationsReducer', () => {
         repoKey: 'owner/repo',
         agentCount: 2,
         hookCount: 1,
+        guestCount: 3,
         token: firstOpen.bulkArchiveComputeToken,
       }),
     );
 
     expect(afterLate.bulkArchiveActiveAgentCount).toBe(0);
     expect(afterLate.bulkArchiveActiveHookCount).toBe(0);
+    expect(afterLate.bulkArchiveGuestCount).toBe(0);
 
     const reopened = workspaceOperationsReducer(closedState, openBulkArchiveConfirm('other/repo'));
     const afterMismatch = workspaceOperationsReducer(
@@ -215,12 +237,14 @@ describe('workspaceOperationsReducer', () => {
         repoKey: 'owner/repo',
         agentCount: 2,
         hookCount: 1,
+        guestCount: 3,
         token: reopened.bulkArchiveComputeToken,
       }),
     );
 
     expect(afterMismatch.bulkArchiveActiveAgentCount).toBe(0);
     expect(afterMismatch.bulkArchiveActiveHookCount).toBe(0);
+    expect(afterMismatch.bulkArchiveGuestCount).toBe(0);
   });
 
   it('drops a stale compute after a close→reopen for the same repo (token mismatch)', () => {
@@ -240,12 +264,14 @@ describe('workspaceOperationsReducer', () => {
         repoKey: 'owner/repo',
         agentCount: 2,
         hookCount: 1,
+        guestCount: 3,
         token: firstOpen.bulkArchiveComputeToken,
       }),
     );
 
     expect(afterStale.bulkArchiveActiveAgentCount).toBe(0);
     expect(afterStale.bulkArchiveActiveHookCount).toBe(0);
+    expect(afterStale.bulkArchiveGuestCount).toBe(0);
 
     // The fresh compute with the current token still folds.
     const afterFresh = workspaceOperationsReducer(
@@ -254,12 +280,14 @@ describe('workspaceOperationsReducer', () => {
         repoKey: 'owner/repo',
         agentCount: 0,
         hookCount: 0,
+        guestCount: 1,
         token: reopened.bulkArchiveComputeToken,
       }),
     );
 
     expect(afterFresh.bulkArchiveActiveAgentCount).toBe(0);
     expect(afterFresh.bulkArchiveActiveHookCount).toBe(0);
+    expect(afterFresh.bulkArchiveGuestCount).toBe(1);
   });
 
   it('tracks and clears pending repo removal', () => {

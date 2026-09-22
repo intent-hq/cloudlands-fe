@@ -156,10 +156,18 @@ export interface AgentDelegatedParentCounts {
  * name a parent outside this workspace (cross-workspace delegation). Invariant
  * daemon-side: `Σ byParent[*].total === scopeCounts.delegated`. Absent on
  * older daemons.
+ *
+ * `orphaned` counts the delegated rows whose parent is NOT a non-retired
+ * session of the same workspace (parent deleted, retired, or absent); a child
+ * of an orphan is not itself an orphan. Presence-detected: a daemon that
+ * serves it does so on every response (`{ total: 0, running: 0 }` when none,
+ * `total ≤ scopeCounts.delegated`); a daemon predating it omits the field and
+ * ignores the `orphanedOnly` list param, so it is never defaulted here.
  */
 export interface AgentDelegatedCounts {
   running: number;
   byParent: Record<string, AgentDelegatedParentCounts>;
+  orphaned?: AgentDelegatedParentCounts;
 }
 
 /**

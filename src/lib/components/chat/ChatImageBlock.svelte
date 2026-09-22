@@ -2,6 +2,7 @@
   import ImageLightbox from '$lib/components/ui/ImageLightbox.svelte';
   import ImageActionsMenu from '$lib/components/ui/ImageActionsMenu.svelte';
   import MediaUnavailable from '$lib/components/ui/MediaUnavailable.svelte';
+  import MediaLoadingPlaceholder from '$lib/components/ui/MediaLoadingPlaceholder.svelte';
   import { Button } from '$lib/components/ui/button';
   import Fa from 'svelte-fa';
   import { faImage } from '@fortawesome/free-solid-svg-icons';
@@ -12,6 +13,14 @@
     data?: string;
     mimeType: string;
     alt?: string;
+    /**
+     * Intrinsic pixel dimensions of the original image (§7.1 image dimension
+     * sidecar). When both are present the block reserves its final box —
+     * natural aspect ratio, capped at the container width — with a
+     * placeholder until the bytes decode; absent, the legacy square renders.
+     */
+    width?: number;
+    height?: number;
     /** §5.5 slim projection: original `data` was over budget. */
     dataTruncated?: boolean;
     /** §5.5 slim projection: `data` carries the write-time thumbnail. */
@@ -26,6 +35,8 @@
     data,
     mimeType,
     alt = m.chat_imageBlock_fromAgent_alt(),
+    width,
+    height,
     dataTruncated = false,
     dataIsThumbnail = false,
     hydrationLoading = false,
@@ -41,6 +52,16 @@
   // for the original first — the lightbox opens once hydration swaps the
   // full block in (dataTruncated then disappears from the merged block).
   const needsHydration = $derived(dataTruncated && onHydrate !== undefined);
+  // Same validation as the Markdown sidecar transform: intrinsic pixel
+  // dimensions are positive integers, anything else renders the legacy tile.
+  const isPositiveInteger = (value: unknown): value is number =>
+    typeof value === 'number' && Number.isInteger(value) && value > 0;
+  const sized = $derived(isPositiveInteger(width) && isPositiveInteger(height));
+  // Once any bytes have decoded the frame stays revealed: a hydration swap
+  // (thumbnail → original, same intrinsic aspect) must not flash the
+  // placeholder over the thumbnail already on screen.
+  let hasLoaded = $state(false);
+  const showPlaceholder = $derived(sized && !hasLoaded);
 
   function handleClick() {
     if (needsHydration) {
@@ -53,14 +74,26 @@
 
 <div class="my-2 min-w-0 max-w-2xl" data-chat-image>
   {#if imageUrl && !imageUnavailable}
-    <div class="group relative size-40">
+    <div
+      class="group relative {sized ? 'max-w-full' : 'size-40'}"
+      style:aspect-ratio={sized ? `${width} / ${height}` : undefined}
+      style:width={sized ? `min(${width}px, 100%)` : undefined}
+      data-image-sized={sized || undefined}
+      data-loaded={sized ? String(hasLoaded) : undefined}
+    >
+      <!-- The sized frame opts out of Button's inline-flex content wrapper:
+           it shrink-wraps to the thumbnail's intrinsic size, so the img's
+           `size-full` would resolve against 256×144 instead of the frame. -->
       <Button
         variant="plain"
         bind:ref={openerElement}
         type="button"
-        class="block size-40 cursor-zoom-in overflow-hidden rounded-lg border border-border bg-muted/30 p-0 shadow-(--elevation-raised) transition-opacity hover:opacity-90 focus-visible:border-ring focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 {hydrationLoading
-          ? 'animate-pulse'
-          : ''}"
+        wrapContent={!sized}
+        class="block {sized
+          ? 'absolute inset-0 size-full'
+          : 'size-40'} cursor-zoom-in overflow-hidden rounded-lg border border-border bg-muted/30 p-0 shadow-(--elevation-raised) transition-opacity hover:opacity-90 focus-visible:border-ring focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 {showPlaceholder
+          ? 'border-dashed'
+          : ''} {hydrationLoading ? 'animate-pulse' : ''}"
         onclick={handleClick}
         aria-label={needsHydration
           ? m.chat_imageBlock_loadFullImage_ariaLabel({ alt })
@@ -75,10 +108,18 @@
           {alt}
           loading="lazy"
           decoding="async"
-          class="block size-full object-cover"
+          class="block size-full {sized ? 'object-contain' : 'object-cover'} {showPlaceholder
+            ? 'opacity-0'
+            : ''}"
+          onload={() => (hasLoaded = true)}
           onerror={() => (failedImageUrl = imageUrl)}
         />
       </Button>
+      {#if showPlaceholder}
+        <span class="pointer-events-none absolute inset-0 flex items-center justify-center p-2">
+          <MediaLoadingPlaceholder name={alt} />
+        </span>
+      {/if}
       {#if !dataTruncated}
         <!-- Truncated blocks only carry the low-res write-time thumbnail, so
              the menu would download/copy/inspect the wrong bytes; clicking

@@ -21,6 +21,7 @@ import {
   selectGroupByRepo,
   selectGithubLinkDefaultAction,
   selectHasCompletedProviderSetup,
+  selectLabsMultiplayerEnabled,
   selectLanguagePreference,
   selectNoteFontStyle,
   selectReduceMotionOnBattery,
@@ -45,6 +46,7 @@ import {
   setGroupByRepo,
   setGithubLinkDefaultAction,
   setHasCompletedProviderSetup,
+  setLabsMultiplayerEnabled,
   setLanguagePreference,
   setNoteFontStyle,
   setReduceMotionOnBattery,
@@ -57,6 +59,7 @@ import {
   toggleGroupByRepo,
   toggleHasCompletedProviderSetup,
   toggleChatAurora,
+  toggleLabsMultiplayer,
   toggleReduceMotionOnBattery,
   toggleShowArchived,
   toggleShowReasoningBlocks,
@@ -75,6 +78,7 @@ const SHOW_REASONING_BLOCKS_STORAGE_KEY = 'chat:showReasoningBlocks';
 const CHAT_AURORA_STORAGE_KEY = 'chat:auroraEnabled';
 const SHELL_TRANSPARENCY_STORAGE_KEY = 'appearance:shellTransparencyEnabled';
 const REDUCE_MOTION_ON_BATTERY_STORAGE_KEY = 'appearance:reduceMotionOnBattery';
+const LABS_MULTIPLAYER_STORAGE_KEY = 'labs:multiplayerEnabled';
 const AGENT_STORAGE_KEY = 'agent-font-settings';
 const NOTE_STORAGE_KEY = 'note-font-settings';
 const CODE_STORAGE_KEY = 'code-font-settings';
@@ -179,6 +183,11 @@ export function* hydrateUserPreferencesWorker() {
   );
   if (typeof reduceMotionOnBattery === 'boolean') {
     yield* put(setReduceMotionOnBattery(reduceMotionOnBattery));
+  }
+
+  const labsMultiplayerEnabled = yield* getLocalStorageJSON<boolean>(LABS_MULTIPLAYER_STORAGE_KEY);
+  if (typeof labsMultiplayerEnabled === 'boolean') {
+    yield* put(setLabsMultiplayerEnabled(labsMultiplayerEnabled));
   }
 
   const agentFont = yield* getLocalStorageJSON<unknown>(AGENT_STORAGE_KEY);
@@ -288,6 +297,13 @@ function* persistReduceMotionOnBatteryWorker() {
   );
 }
 
+function* persistLabsMultiplayerWorker() {
+  yield* setLocalStorageJSON(
+    LABS_MULTIPLAYER_STORAGE_KEY,
+    yield* selectLabsMultiplayerEnabled.effect(),
+  );
+}
+
 function* persistAgentFontWorker() {
   yield* setLocalStorageJSON(AGENT_STORAGE_KEY, {
     fontStyle: yield* selectAgentFontStyle.effect(),
@@ -364,6 +380,10 @@ function* watchUserPreferenceWrites() {
   yield* takeEvery(
     [setReduceMotionOnBattery, toggleReduceMotionOnBattery],
     persistReduceMotionOnBatteryWorker,
+  );
+  yield* takeEvery(
+    [setLabsMultiplayerEnabled, toggleLabsMultiplayer],
+    persistLabsMultiplayerWorker,
   );
   yield* takeEvery([setAgentFontStyle], persistAgentFontWorker);
   yield* takeEvery([setNoteFontStyle, cycleNoteFontStyle], persistNoteFontWorker);

@@ -1,3 +1,4 @@
+/** Behavioral contract for the tabbed sidebar against the real navigation store. */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { tick } from 'svelte';
@@ -6,6 +7,7 @@ import { store as appStore } from '$store/renderer/store';
 import {
   closePanel,
   openPanel,
+  setChiefCollapsed,
   setShowCreateModal,
 } from '$store/renderer/slices/sidebar-nav/sidebar-nav-slice';
 import SidebarPanelHarness from './mocks/SidebarPanelHarness.svelte';
@@ -23,7 +25,7 @@ vi.mock('$lib/components/layout/sidebar-nav/cards/SettingsCard.svelte', async ()
   default: (await import('./mocks/MockHoverCardContent.svelte')).default,
 }));
 
-function renderPanel(item: 'all-workspaces' | 'chief' = 'all-workspaces') {
+function renderPanel(item: 'all-workspaces' | 'chief' | 'settings' = 'all-workspaces') {
   return render(SidebarPanelHarness, { setup: () => appStore.dispatch(openPanel(item)) });
 }
 
@@ -32,8 +34,10 @@ describe('Sidebar workspace and Intent tabs', () => {
   afterEach(() => {
     cleanup();
     appStore.dispatch(closePanel());
+    appStore.dispatch(setChiefCollapsed(false));
     appStore.dispatch(setShowCreateModal(false));
     vi.restoreAllMocks();
+    vi.unstubAllGlobals();
     vi.useRealTimers();
   });
 
@@ -140,5 +144,32 @@ describe('Sidebar workspace and Intent tabs', () => {
       screen.getByRole('button', { name: m.layout_sidebarNav_newWorkspace_title() }),
     );
     await waitFor(() => expect(appStore.state.sidebarNav.showCreateModal).toBe(true));
+  });
+
+  it('selects Intent independently of the legacy split-panel collapse state', async () => {
+    renderPanel();
+    appStore.dispatch(setChiefCollapsed(true));
+    await fireEvent.click(screen.getByRole('tab', { name: m.layout_chiefCard_title() }));
+    const panel = screen.getByRole('tabpanel', { name: m.layout_chiefCard_title() });
+    expect(panel.hasAttribute('hidden')).toBe(false);
+    expect(panel.hasAttribute('inert')).toBe(false);
+    expect(screen.getByTestId('intent-content').getAttribute('data-active')).toBe('true');
+    expect(appStore.state.sidebarNav.panelItem).toBe('chief');
+  });
+
+  it('keeps the close action on non-tabbed panels', async () => {
+    vi.stubGlobal(
+      'ResizeObserver',
+      class {
+        observe = vi.fn();
+        unobserve = vi.fn();
+        disconnect = vi.fn();
+      },
+    );
+    renderPanel('settings');
+    await fireEvent.click(
+      screen.getByRole('button', { name: m.layout_sidebarPanel_close_ariaLabel() }),
+    );
+    expect(appStore.state.sidebarNav.panelItem).toBeNull();
   });
 });

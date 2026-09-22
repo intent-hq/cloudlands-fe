@@ -5,6 +5,10 @@ import type {
   UiComponentFixture,
 } from '$lib/components/ui/component-metadata';
 import { canonicalComponentManifest } from '$lib/components/ui/manifest';
+import {
+  DIAGRAM_WORKBENCH_CUSTOM_CASE_IDS,
+  DIAGRAM_WORKBENCH_MERMAID_CASE_IDS,
+} from '$lib/components/diagrams/diagram-workbench.preview-fixtures';
 import { m } from '$shared/paraglide/messages.js';
 
 export interface CatalogEntry {
@@ -309,6 +313,34 @@ export const catalogEntries: CatalogEntry[] = [
         id: 'comprehensive-conversation',
         title: m.sandbox_chatPolish_mixedReviewComplete_title(),
         states: ['comprehensive', 'deterministic', 'daemon-free', 'read-only'],
+        themes: ['light', 'dark'],
+        viewport: 'both',
+        reducedMotion: true,
+      },
+    ],
+  } satisfies CatalogEntry,
+  {
+    slug: 'diagram-workbench',
+    name: m.sandbox_diagramWorkbench_title(),
+    description: m.sandbox_diagramWorkbench_description(),
+    category: 'product',
+    source: 'src/lib/components/diagrams/diagram-workbench.preview.svelte',
+    exports: ['DiagramWorkbench'],
+    usage:
+      "import DiagramWorkbench from '$lib/components/diagrams/diagram-workbench.preview.svelte';",
+    fixtures: [
+      {
+        id: 'mermaid-cases',
+        title: m.sandbox_diagramWorkbench_mermaidCases_title(),
+        states: [...DIAGRAM_WORKBENCH_MERMAID_CASE_IDS],
+        themes: ['light', 'dark'],
+        viewport: 'both',
+        reducedMotion: true,
+      },
+      {
+        id: 'custom-cases',
+        title: m.sandbox_diagramWorkbench_customCases_title(),
+        states: [...DIAGRAM_WORKBENCH_CUSTOM_CASE_IDS],
         themes: ['light', 'dark'],
         viewport: 'both',
         reducedMotion: true,
