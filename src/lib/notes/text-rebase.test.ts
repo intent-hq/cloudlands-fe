@@ -877,6 +877,31 @@ describe('alignment of link-shaped text the editor shows', () => {
       expect(bToA(m), `${needle}[${into}] ←`).toBe(p);
     }
   });
+
+  it('anchors the lines after a link that closes its line onto their own text', async () => {
+    // The anchor of "render tk87z" ends inside the label: the `](…)` left on
+    // its markdown line is no text line, so the next line's hit is not one
+    // line beyond the plain text's run (its own line ended at the label),
+    // and "edit" of the third line is not anchored onto the second's.
+    const markdown =
+      '[render tk87z](https://sync/cursor/cursor)\n\n' +
+      'edit selection offset tk88z  \nedit caret remote tk89z\n\n' +
+      'offset daemon [cursor tk90z][r89] offset sync\n\n[r89]: https://sync/editor/render';
+    const plain = await projectWithEditor(markdown);
+    expect(plain).toBe(
+      'render tk87z\nedit selection offset tk88z\uFFFCedit caret remote tk89z\n' +
+        'offset daemon cursor tk90z offset sync',
+    );
+    const { aToB, bToA } = withoutDeadline(() => createBidirectionalOffsetMapper(plain, markdown));
+    for (const word of ['tk87z', 'tk88z', 'edit caret', 'tk89z', 'cursor tk90z', 'offset sync']) {
+      const p = plain.indexOf(word);
+      const m = markdown.indexOf(word);
+      for (let into = 1; into < word.length; into += 1) {
+        expect(aToB(p + into), `${word}[${into}] →`).toBe(m + into);
+        expect(bToA(m + into), `${word}[${into}] ←`).toBe(p + into);
+      }
+    }
+  });
 });
 
 describe('alignment of link syntax the lexer does not account for', () => {
