@@ -27,7 +27,6 @@
   } from './workspace-agents-list-utils';
   import { m } from '$shared/paraglide/messages.js';
   import {
-    agentDelegationParentOf,
     classifyAgentScope,
     isBackgroundAgentSession as isBackgroundAgent,
   } from '$shared/utils/agent-scope';
@@ -83,6 +82,12 @@
     loadingDelegatedParentIds?: Record<string, true>;
     /** True once the orphan-only delegated read (`orphanedOnly: true`) has hydrated the orphaned rows. */
     orphanedDelegatedAgentsLoaded?: boolean;
+    /**
+     * The rows the orphan-only read served — the Delegated bin's membership in
+     * orphan-only mode. Orphan-hood is daemon-owned (§5.5): a delegated row
+     * whose parent is not in `agents` is not necessarily an orphan.
+     */
+    orphanedDelegatedAgentIds?: Record<string, true>;
     /** True while the orphan-only delegated read is in flight. */
     loadingOrphanedDelegated?: boolean;
     /** Lazy-load trigger: fired when the orphan-only Delegated bin expands (`delegatedCounts.orphaned` served). */
@@ -117,6 +122,7 @@
     loadedDelegatedParentIds = {},
     loadingDelegatedParentIds = {},
     orphanedDelegatedAgentsLoaded = false,
+    orphanedDelegatedAgentIds = {},
     loadingOrphanedDelegated = false,
     onLoadOrphanedDelegated,
     backgroundAgentsLoaded = false,
@@ -195,6 +201,24 @@
   // search is active, or it is running (see the Background section below).
   const isBackgroundRowRendered = (agent: AgentSession) =>
     hasActiveSearch || showBackgroundAgents || isAgentRunning(agent.id);
+  // The whole-bin read covers the orphans too, so either flag hydrates them.
+  const orphanedRowsLoaded = $derived(delegatedAgentsLoaded || orphanedDelegatedAgentsLoaded);
+  // Rows the orphan-only bin lists. Orphan-hood is daemon-owned (§5.5): a
+  // delegated row without a parent in the tree is not necessarily an orphan —
+  // a lifecycle event can hydrate a child before its live parent, which sits
+  // in a collapsed group or bin — so the bin lists the rows the orphan-only
+  // read served, never rows inferred from the partial cache, and nothing
+  // before that read lands. Once the whole bin is loaded every delegated
+  // parent is loaded too (the search that issues that read loads the
+  // Background bin as well), so a parentless delegated row is the daemon's
+  // rule itself and the fresher whole-bin rows win.
+  const orphanedSectionAgents = $derived(
+    delegatedAgentsLoaded
+      ? orphanDelegatedAgents
+      : orphanedDelegatedAgentsLoaded
+        ? orphanDelegatedAgents.filter((agent) => orphanedDelegatedAgentIds[agent.id] === true)
+        : [],
+  );
   // Rows the open Delegated bin lists directly: delegated rows with no parent
   // in the tree, plus — whole-bin mode only — the children of a LOADED
   // background parent whose own row is not rendered (collapsed Background
@@ -203,7 +227,7 @@
   // they stay with their parent's group.
   const delegatedSectionAgents = $derived(
     hasOrphanedCounts
-      ? orphanDelegatedAgents
+      ? orphanedSectionAgents
       : [
           ...orphanDelegatedAgents,
           ...standaloneBackgroundAgents
@@ -240,26 +264,13 @@
   // The daemon's `delegated` bin: every parented row (background children
   // included), whether or not its parent is loaded.
   const loadedDelegatedAgents = $derived(activeAgents.filter(isDelegatedAgent));
-  const activeAgentIds = $derived(new Set(activeAgents.map((agent) => agent.id)));
-  // Local view of the daemon's orphan rule: a delegated row whose parent is not
-  // a loaded live session. Matches the wire classification once every live
-  // parent is loaded (top-level rows always are; background parents once their
-  // bin — or a search — hydrates them); the orphan-only read never serves a
-  // live parent's child, so nothing else reaches the bin before then.
-  const loadedOrphanedDelegatedAgents = $derived(
-    loadedDelegatedAgents.filter((agent) => {
-      const parentId = agentDelegationParentOf(agent);
-      return !parentId || !activeAgentIds.has(parentId);
-    }),
-  );
-  // The whole-bin read covers the orphans too, so either flag hydrates them.
-  const orphanedRowsLoaded = $derived(delegatedAgentsLoaded || orphanedDelegatedAgentsLoaded);
   // Daemon-served running count until the bin's rows are loaded (rows of a
-  // collapsed bin are not hydrated, so they cannot be counted locally).
+  // collapsed bin are not hydrated, so they cannot be counted locally). In
+  // orphan-only mode the loaded rows are the bin's membership above.
   const runningDelegatedCount = $derived(
     hasOrphanedCounts
       ? orphanedRowsLoaded
-        ? loadedOrphanedDelegatedAgents.filter((agent) => isAgentRunning(agent.id)).length
+        ? orphanedSectionAgents.filter((agent) => isAgentRunning(agent.id)).length
         : (delegatedCounts?.orphaned?.running ?? 0)
       : hasDelegatedCounts && !delegatedAgentsLoaded
         ? (delegatedCounts?.running ?? 0)
@@ -278,12 +289,13 @@
         ? loadedDelegatedAgents.length
         : Math.max(scopeCounts?.delegated ?? 0, loadedDelegatedAgents.length),
   );
+  // Orphan-only mode: the daemon's `orphaned.total` is authoritative before
+  // AND after the rows load — the orphan-only read re-baselines it to the rows
+  // it served, and a parent's deletion or retire (which turns its children into
+  // orphans, a change no client can classify locally) re-baselines it on the
+  // list refetch that event triggers. No local row ever nudges it.
   const displayedDelegatedCount = $derived(
-    !hasOrphanedCounts
-      ? wholeBinDelegatedCount
-      : orphanedRowsLoaded
-        ? loadedOrphanedDelegatedAgents.length
-        : Math.max(delegatedCounts?.orphaned?.total ?? 0, loadedOrphanedDelegatedAgents.length),
+    !hasOrphanedCounts ? wholeBinDelegatedCount : (delegatedCounts?.orphaned?.total ?? 0),
   );
   const displayedBackgroundCount = $derived(
     !hasLazyBins || backgroundAgentsLoaded
@@ -303,7 +315,7 @@
   // search's whole-bin read shows per-parent skeletons under the groups.
   const showDelegatedSkeleton = $derived(
     hasOrphanedCounts
-      ? showDelegatedAgents && !orphanedRowsLoaded && loadedOrphanedDelegatedAgents.length === 0
+      ? showDelegatedAgents && !orphanedRowsLoaded
       : hasLazyBins &&
           (hasActiveSearch || showDelegatedAgents) &&
           !delegatedAgentsLoaded &&

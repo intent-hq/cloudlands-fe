@@ -21,6 +21,7 @@ import {
   selectIsLoadingOrphanedDelegatedAgents,
   selectLoadedDelegatedParentIds,
   selectLoadingDelegatedParentIds,
+  selectOrphanedDelegatedAgentIds,
   selectOrphanedDelegatedAgentsLoaded,
   selectScopeCounts,
   selectAgentsLoaded,
@@ -68,6 +69,7 @@ import {
   setIsLoadingOrphanedDelegatedAgents,
   setIsLoadingRetiredAgents,
   setLazyBinLoaded,
+  setOrphanedDelegatedAgentIds,
   setOrphanedDelegatedAgentsLoaded,
   setRetiredAgentsLoaded,
   setRetiredCount,
@@ -488,10 +490,33 @@ describe('workspaceAgentsReducer', () => {
     state = workspaceAgentsReducer(state, setOrphanedDelegatedAgentsLoaded(WS_1, false));
     expect(state.byWorkspaceId[WS_1].orphanedDelegatedAgentsLoaded).toBe(false);
 
+    // The orphan-only read's membership: replaced wholesale by the served
+    // ids, a no-op for the same set in any order.
+    expect(selectOrphanedDelegatedAgentIds.select(mockState(state), WS_1)).toEqual({});
+    state = workspaceAgentsReducer(
+      state,
+      setOrphanedDelegatedAgentIds(WS_1, ['agent-o1', 'agent-o2']),
+    );
+    expect(selectOrphanedDelegatedAgentIds.select(mockState(state), WS_1)).toEqual({
+      'agent-o1': true,
+      'agent-o2': true,
+    });
+    expect(
+      workspaceAgentsReducer(state, setOrphanedDelegatedAgentIds(WS_1, ['agent-o2', 'agent-o1'])),
+    ).toBe(state);
+    state = workspaceAgentsReducer(state, setOrphanedDelegatedAgentIds(WS_1, ['agent-o2']));
+    expect(selectOrphanedDelegatedAgentIds.select(mockState(state), WS_1)).toEqual({
+      'agent-o2': true,
+    });
+    state = workspaceAgentsReducer(state, setOrphanedDelegatedAgentIds(WS_1, []));
+    expect(selectOrphanedDelegatedAgentIds.select(mockState(state), WS_1)).toEqual({});
+
     // Workspace reset clears the orphan flags with the rest of the lazy state.
     state = workspaceAgentsReducer(state, setOrphanedDelegatedAgentsLoaded(WS_1, true));
+    state = workspaceAgentsReducer(state, setOrphanedDelegatedAgentIds(WS_1, ['agent-o1']));
     state = workspaceAgentsReducer(state, removeWorkspaceAgentState(WS_1));
     expect(selectOrphanedDelegatedAgentsLoaded.select(mockState(state), WS_1)).toBe(false);
+    expect(selectOrphanedDelegatedAgentIds.select(mockState(state), WS_1)).toEqual({});
     expect(selectDelegatedCounts.select(mockState(state), WS_1)).toBeNull();
   });
 

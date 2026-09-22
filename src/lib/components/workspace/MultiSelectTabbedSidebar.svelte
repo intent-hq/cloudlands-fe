@@ -51,6 +51,7 @@
     selectIsLoadingRetiredAgents,
     selectLoadedDelegatedParentIds,
     selectLoadingDelegatedParentIds,
+    selectOrphanedDelegatedAgentIds,
     selectOrphanedDelegatedAgentsLoaded,
     selectRetiredAgentsLoaded,
     selectRetiredCount,
@@ -247,6 +248,7 @@
   const loadedDelegatedParentIds$ = selectLoadedDelegatedParentIds(workspaceIdStore);
   const loadingDelegatedParentIds$ = selectLoadingDelegatedParentIds(workspaceIdStore);
   const orphanedDelegatedAgentsLoaded$ = selectOrphanedDelegatedAgentsLoaded(workspaceIdStore);
+  const orphanedDelegatedAgentIds$ = selectOrphanedDelegatedAgentIds(workspaceIdStore);
   const loadingOrphanedDelegated$ = selectIsLoadingOrphanedDelegatedAgents(workspaceIdStore);
   const backgroundAgentsLoaded$ = selectBackgroundAgentsLoaded(workspaceIdStore);
   const loadingBackground$ = selectIsLoadingBackgroundAgents(workspaceIdStore);
@@ -1158,6 +1160,7 @@
                             loadedDelegatedParentIds={$loadedDelegatedParentIds$}
                             loadingDelegatedParentIds={$loadingDelegatedParentIds$}
                             orphanedDelegatedAgentsLoaded={$orphanedDelegatedAgentsLoaded$}
+                            orphanedDelegatedAgentIds={$orphanedDelegatedAgentIds$}
                             loadingOrphanedDelegated={$loadingOrphanedDelegated$}
                             onLoadOrphanedDelegated={() => {
                               appStore.dispatch(fetchOrphanedDelegatedAgentsRequested(workspaceId));

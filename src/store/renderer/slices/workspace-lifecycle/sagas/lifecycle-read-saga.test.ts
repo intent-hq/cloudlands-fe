@@ -2705,11 +2705,13 @@ describe('lifecycleReadSaga', () => {
     await settle();
 
     // The served total already matches the one row: no count re-baseline put.
+    // The served ids become the bin's membership (orphan-hood is daemon-owned).
     expect(mocks.agents.list.mock.calls).toEqual([[WS, ORPHANED_ONLY]]);
     expect(run.actions).toEqual([
       { type: 'workspaceAgents/setIsLoadingOrphanedDelegatedAgents', payload: [WS, true] },
       { type: 'agentSessions/bulkUpsertSessions', payload: [[orphan], { listProjection: true }] },
       { type: 'workspaceAgents/addAgent', payload: [WS, orphan] },
+      { type: 'workspaceAgents/setOrphanedDelegatedAgentIds', payload: [WS, ['agent-orphan']] },
       { type: 'workspaceAgents/setOrphanedDelegatedAgentsLoaded', payload: [WS, true] },
       { type: 'workspaceAgents/setIsLoadingOrphanedDelegatedAgents', payload: [WS, false] },
     ]);
@@ -2784,6 +2786,11 @@ describe('lifecycleReadSaga', () => {
       [WS, ORPHANED_ONLY],
       [WS, ORPHANED_ONLY],
     ]);
+    // An empty response is still the authoritative membership.
+    expect(run.actions).toContainEqual({
+      type: 'workspaceAgents/setOrphanedDelegatedAgentIds',
+      payload: [WS, []],
+    });
     expect(run.actions).toContainEqual({
       type: 'workspaceAgents/setOrphanedDelegatedAgentsLoaded',
       payload: [WS, true],
@@ -2824,10 +2831,15 @@ describe('lifecycleReadSaga', () => {
       type: 'workspaceAgents/setAgents',
       payload: [WS, [top, orphan]],
     });
-    // The orphan flag stays loaded — its rows rode the snapshot.
+    // The orphan flag stays loaded — its rows rode the snapshot — and the
+    // membership re-baselines to the re-read rows.
     expect(run.actions).not.toContainEqual(
       expect.objectContaining({ type: 'workspaceAgents/setOrphanedDelegatedAgentsLoaded' }),
     );
+    expect(run.actions).toContainEqual({
+      type: 'workspaceAgents/setOrphanedDelegatedAgentIds',
+      payload: [WS, ['agent-orphan']],
+    });
 
     // Once the whole bin is loaded, the orphan subset is covered by that read.
     mocks.agents.list.mockClear();
@@ -3165,6 +3177,7 @@ describe('lifecycleReadSaga', () => {
 
       expect(mocks.agents.list.mock.calls).toEqual([[WS, ORPHANED_ONLY]]);
       expect(run.wsState().orphanedDelegatedAgentsLoaded).toBe(true);
+      expect(run.wsState().orphanedDelegatedAgentIds).toEqual({ 'agent-o1': true });
       expect(run.wsState().delegatedAgentsLoaded).toBe(false);
       expect(run.wsState().agentIds.map(String)).toEqual(['agent-o1']);
       // Orphans are a subset of the bin: the bin count and the per-parent
@@ -3232,6 +3245,7 @@ describe('lifecycleReadSaga', () => {
       expect(run.wsState().delegatedCounts).toEqual(HYDRATED_DELEGATED);
       expect(run.wsState().agentIds.map(String)).toContain('agent-o1');
       expect(run.wsState().orphanedDelegatedAgentsLoaded).toBe(true);
+      expect(run.wsState().orphanedDelegatedAgentIds).toEqual({ 'agent-o1': true });
       await stop(run.task);
     });
   });

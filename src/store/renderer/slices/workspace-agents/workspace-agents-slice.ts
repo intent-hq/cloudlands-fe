@@ -103,6 +103,14 @@ export interface WorkspaceAgentState {
    * covers the orphans too, so readers check `delegatedAgentsLoaded` first.
    */
   orphanedDelegatedAgentsLoaded: boolean;
+  /**
+   * The rows the latest orphan-only read served. Orphan-hood is decided by
+   * the daemon (§5.5): a delegated row whose parent is absent from the local
+   * cache is not necessarily an orphan (the live parent may sit in a
+   * collapsed group or bin), so the Delegated bin lists this membership, not
+   * an ancestry inferred from the partial cache.
+   */
+  orphanedDelegatedAgentIds: Record<string, true>;
   /** True while the on-demand orphan-only delegated read is in flight. */
   isLoadingOrphanedDelegatedAgents: boolean;
   /** True once the `scope: "background"` read has hydrated the background rows. */
@@ -267,6 +275,7 @@ export const emptyWorkspaceAgentState: WorkspaceAgentState = {
   loadedDelegatedParentIds: {},
   loadingDelegatedParentIds: {},
   orphanedDelegatedAgentsLoaded: false,
+  orphanedDelegatedAgentIds: {},
   isLoadingOrphanedDelegatedAgents: false,
   backgroundAgentsLoaded: false,
   isLoadingBackgroundAgents: false,
@@ -414,6 +423,10 @@ export const setIsLoadingDelegatedParent = createAction<
 >('workspaceAgents/setIsLoadingDelegatedParent');
 export const setOrphanedDelegatedAgentsLoaded = createAction<[wsId: string, loaded: boolean]>(
   'workspaceAgents/setOrphanedDelegatedAgentsLoaded',
+);
+/** Replace the orphan-only read's row membership with the ids it served. */
+export const setOrphanedDelegatedAgentIds = createAction<[wsId: string, agentIds: string[]]>(
+  'workspaceAgents/setOrphanedDelegatedAgentIds',
 );
 export const setIsLoadingOrphanedDelegatedAgents = createAction<[wsId: string, loading: boolean]>(
   'workspaceAgents/setIsLoadingOrphanedDelegatedAgents',
@@ -799,6 +812,23 @@ workspaceAgentsReducer.with(
       ...workspaceState,
       orphanedDelegatedAgentsLoaded: loaded,
     });
+  },
+);
+workspaceAgentsReducer.with(
+  setOrphanedDelegatedAgentIds,
+  (state, { payload: [wsId, agentIds] }) => {
+    const workspaceState = getWorkspaceState(state, wsId);
+    const current = workspaceState.orphanedDelegatedAgentIds;
+    const next: Record<string, true> = {};
+    for (const agentId of agentIds) next[agentId] = true;
+    const nextKeys = Object.keys(next);
+    if (
+      nextKeys.length === Object.keys(current).length &&
+      nextKeys.every((agentId) => current[agentId] === true)
+    ) {
+      return state;
+    }
+    return setWorkspaceState(state, wsId, { ...workspaceState, orphanedDelegatedAgentIds: next });
   },
 );
 workspaceAgentsReducer.with(

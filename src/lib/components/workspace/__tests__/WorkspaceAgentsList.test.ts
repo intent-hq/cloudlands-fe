@@ -948,8 +948,9 @@ describe('WorkspaceAgentsList single-line rows', () => {
     expect(onLoadDelegated).not.toHaveBeenCalled();
 
     // Loaded: the orphans (children of a parent that is not a live session)
-    // list directly in the bin section through the tree, so an orphan's own
-    // counted group renders under it; the loaded rows drive the label.
+    // the orphan-only read served list directly in the bin section through
+    // the tree, so an orphan's own counted group renders under it; the served
+    // membership drives the running badge, the daemon total the count.
     const orphans = ['orphan-1', 'orphan-2', 'orphan-3'].map((id) =>
       makeAgent(id, {
         name: `Orphan ${id}`,
@@ -962,6 +963,7 @@ describe('WorkspaceAgentsList single-line rows', () => {
       agents: [...agents, ...orphans],
       runningAgentIds: [orphans[0].id],
       orphanedDelegatedAgentsLoaded: true,
+      orphanedDelegatedAgentIds: Object.fromEntries(orphans.map((orphan) => [orphan.id, true])),
     });
     expect(view.container.querySelector('[data-agent-delegated-loading]')).toBeNull();
     for (const orphan of orphans) {
@@ -1079,6 +1081,113 @@ describe('WorkspaceAgentsList single-line rows', () => {
     );
     expect(view.container.querySelector('[data-agent-delegated-toggle]')).toBeNull();
     expect(onLoadOrphanedDelegated).not.toHaveBeenCalled();
+  });
+
+  it('keeps the daemon orphan count authoritative and lists only the orphan-only read’s rows — a child hydrated before its live parent is never an orphan', async () => {
+    const coordinator = makeAgent('coordinator', { name: 'Coordinator' });
+    // `agent:created` hydrated a grandchild while its live parent — a
+    // delegated child of the coordinator, in a collapsed group — is unloaded.
+    const unloadedParentId = 'agent-unloaded-parent';
+    const grandchild = makeAgent('grandchild', {
+      name: 'Grandchild of an unloaded live parent',
+      metadata: { createdByAgentId: AgentId(unloadedParentId) } as AgentSession['metadata'],
+    });
+    const agents = [coordinator, grandchild];
+    appStore.dispatch(bulkUpsertSessions(agents));
+    const onLoadDelegated = vi.fn();
+    const onLoadOrphanedDelegated = vi.fn();
+    const props = {
+      agents,
+      workspaceId,
+      scopeCounts: { topLevel: 1, delegated: 2, background: 0 },
+      delegatedCounts: {
+        running: 1,
+        byParent: {
+          [coordinator.id]: { total: 1, running: 0 },
+          [unloadedParentId]: { total: 1, running: 1 },
+        },
+        orphaned: { total: 0, running: 0 },
+      },
+      runningAgentIds: [grandchild.id],
+      onLoadDelegated,
+      onLoadOrphanedDelegated,
+    };
+    const view = render(WorkspaceAgentsList, { props });
+    await waitFor(() =>
+      expect(
+        view.container.querySelector(`[data-agent-panel-row="${coordinator.id}"]`),
+      ).toBeTruthy(),
+    );
+
+    // The daemon says no orphan: no bin, and the grandchild — reachable only
+    // through its parent's group — is neither counted nor listed as one.
+    expect(view.container.querySelector('[data-agent-delegated-toggle]')).toBeNull();
+    expect(view.container.querySelector('[data-agent-delegated-section]')).toBeNull();
+    expect(view.container.querySelector(`[data-agent-panel-row="${grandchild.id}"]`)).toBeNull();
+    expect(onLoadOrphanedDelegated).not.toHaveBeenCalled();
+
+    // A real orphan appears (its parent was deleted): the bin renders the
+    // daemon count, and once the orphan-only read lands, lists exactly the
+    // rows it served — still not the grandchild.
+    const orphan = makeAgent('orphan', {
+      name: 'Orphan',
+      metadata: { createdByAgentId: AgentId('agent-deleted-parent') } as AgentSession['metadata'],
+    });
+    appStore.dispatch(bulkUpsertSessions([orphan]));
+    const withOrphan = {
+      ...props,
+      delegatedCounts: {
+        ...props.delegatedCounts,
+        byParent: {
+          ...props.delegatedCounts.byParent,
+          'agent-deleted-parent': { total: 1, running: 0 },
+        },
+        orphaned: { total: 1, running: 0 },
+      },
+    };
+    await view.rerender(withOrphan);
+    const delegatedToggle = view.container.querySelector<HTMLElement>(
+      '[data-agent-delegated-toggle]',
+    );
+    expect(delegatedToggle?.textContent).toContain('1 delegated agents');
+    await fireEvent.click(delegatedToggle!);
+    await waitFor(() => expect(onLoadOrphanedDelegated).toHaveBeenCalledTimes(1));
+    expect(view.container.querySelector('[data-agent-delegated-loading]')).toBeTruthy();
+    expect(view.container.querySelector(`[data-agent-panel-row="${grandchild.id}"]`)).toBeNull();
+
+    await view.rerender({
+      ...withOrphan,
+      agents: [...agents, orphan],
+      orphanedDelegatedAgentsLoaded: true,
+      orphanedDelegatedAgentIds: { [orphan.id]: true },
+    });
+    expect(view.container.querySelector('[data-agent-delegated-loading]')).toBeNull();
+    expect(
+      view.container.querySelector(
+        `[data-agent-delegated-section] [data-agent-panel-row="${orphan.id}"]`,
+      ),
+    ).toBeTruthy();
+    expect(view.container.querySelector(`[data-agent-panel-row="${grandchild.id}"]`)).toBeNull();
+    expect(delegatedToggle?.textContent).toContain('1 delegated agents');
+    // Collapsed, the running badge counts the served rows only: the running
+    // grandchild never leaks into it.
+    await fireEvent.click(delegatedToggle!);
+    await waitFor(() =>
+      expect(view.container.querySelector(`[data-agent-panel-row="${orphan.id}"]`)).toBeNull(),
+    );
+    expect(delegatedToggle?.textContent).toContain('1 delegated agents');
+    expect(delegatedToggle?.textContent).not.toContain('running');
+
+    // An empty orphan-only read re-baselined the daemon total to 0: the bin
+    // hides even though the parentless grandchild is still in the cache.
+    await view.rerender({
+      ...props,
+      orphanedDelegatedAgentsLoaded: true,
+      orphanedDelegatedAgentIds: {},
+    });
+    expect(view.container.querySelector('[data-agent-delegated-toggle]')).toBeNull();
+    expect(view.container.querySelector(`[data-agent-panel-row="${grandchild.id}"]`)).toBeNull();
+    expect(onLoadDelegated).not.toHaveBeenCalled();
   });
 
   it('keeps the whole-bin read for search in orphan-only mode and the whole-bin expand without orphaned (old daemon)', async () => {

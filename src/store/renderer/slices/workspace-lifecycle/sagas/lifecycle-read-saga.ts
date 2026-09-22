@@ -87,6 +87,7 @@ import {
   setIsLoadingOrphanedDelegatedAgents,
   setIsLoadingRetiredAgents,
   setLazyBinLoaded,
+  setOrphanedDelegatedAgentIds,
   setOrphanedDelegatedAgentsLoaded,
   setRetiredAgentsLoaded,
   setRetiredCount,
@@ -450,6 +451,14 @@ function* hydrateAgents(workspaceId: string): SagaGenerator<void> {
       { scope: 'delegated' as const, orphanedOnly: true },
     );
     listed = mergeListedRows(listed, orphanedRows);
+    // The bin's membership re-baselines with the rows: a parent deleted or
+    // retired since the last read turned its children into orphans.
+    yield* put(
+      setOrphanedDelegatedAgentIds(
+        workspaceId,
+        orphanedRows.map((row) => String(row.id)),
+      ),
+    );
   }
   if (backgroundLoadedAtRead) {
     const backgroundRows: Awaited<ReturnType<typeof appClient.agents.list>> = yield* call(
@@ -716,7 +725,9 @@ function* rebaselineDelegatedCountsFromRows(
  * presence — an older daemon ignores `orphanedOnly` and would answer with the
  * whole bin, so there is nothing to load until the daemon serves the count.
  * `orphaned.total` re-baselines to the rows served (running clipped to it)
- * unless a fresher baseline landed while the read was in flight.
+ * unless a fresher baseline landed while the read was in flight. The served
+ * ids are retained as the bin's membership: orphan-hood is daemon-owned, so
+ * the bin never infers it from a parent's absence in the partial cache.
  */
 function* fetchOrphanedDelegatedAgents(workspaceId: string): SagaGenerator<void> {
   if (!(yield* selectScopeCounts.effect(workspaceId))) return;
@@ -763,6 +774,12 @@ function* fetchOrphanedDelegatedAgents(workspaceId: string): SagaGenerator<void>
         }),
       );
     }
+    yield* put(
+      setOrphanedDelegatedAgentIds(
+        workspaceId,
+        fetched.map((row) => String(row.id)),
+      ),
+    );
     yield* put(setOrphanedDelegatedAgentsLoaded(workspaceId, true));
   } finally {
     yield* put(setIsLoadingOrphanedDelegatedAgents(workspaceId, false));

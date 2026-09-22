@@ -154,6 +154,7 @@ vi.mock('$store/renderer/slices/workspace-agents/workspace-agents-selectors', ()
   selectLoadedDelegatedParentIds: mocks.selector({}),
   selectLoadingDelegatedParentIds: mocks.selector({}),
   selectOrphanedDelegatedAgentsLoaded: mocks.selector(false),
+  selectOrphanedDelegatedAgentIds: mocks.selector({}),
   selectIsLoadingOrphanedDelegatedAgents: mocks.selector(false),
   selectBackgroundAgentsLoaded: mocks.selector(false),
   selectIsLoadingBackgroundAgents: mocks.selector(false),

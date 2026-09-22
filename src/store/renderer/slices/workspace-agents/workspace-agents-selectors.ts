@@ -169,6 +169,11 @@ export const selectOrphanedDelegatedAgentsLoaded = store.createSelector((state, 
   return getWorkspaceAgentState(state, wsId).orphanedDelegatedAgentsLoaded;
 });
 
+/** The rows the latest orphan-only read served (the Delegated bin's membership). */
+export const selectOrphanedDelegatedAgentIds = store.createSelector((state, wsId: string) => {
+  return getWorkspaceAgentState(state, wsId).orphanedDelegatedAgentIds;
+});
+
 /** True while the on-demand orphan-only delegated read is in flight. */
 export const selectIsLoadingOrphanedDelegatedAgents = store.createSelector(
   (state, wsId: string) => {
