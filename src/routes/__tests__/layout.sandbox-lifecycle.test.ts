@@ -1,7 +1,7 @@
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Component } from 'svelte';
 import { cleanup, render, screen } from '@testing-library/svelte';
-import { createRawSnippet } from 'svelte';
+import { createRawSnippet, hasContext } from 'svelte';
 
 // Mock factories run lazily on first import, so they double as a probe of
 // which route layout actually pulls the app-only modules into its graph.
@@ -51,10 +51,25 @@ vi.mock('$lib/utils/history-navigation', () => ({
 }));
 
 import { store as appStore } from '$store/renderer/store';
+import {
+  WORKSPACE_ROUTE_CONTEXT,
+  getWorkspaceRouteContext,
+} from '$lib/utils/workspace-route-context';
 import RootLayout from '../+layout.svelte';
 
 const childrenSnippet = createRawSnippet(() => ({
   render: () => '<div data-testid="root-children">content</div>',
+}));
+
+// Reads the workspace route context from the component context the root
+// layout renders its children in, so a root-owned provider would be observed.
+const observedRouteContext: { value?: unknown; keyPresent?: boolean } = {};
+const contextProbeSnippet = createRawSnippet(() => ({
+  render: () => '<div data-testid="root-children">content</div>',
+  setup: () => {
+    observedRouteContext.value = getWorkspaceRouteContext();
+    observedRouteContext.keyPresent = hasContext(WORKSPACE_ROUTE_CONTEXT);
+  },
 }));
 
 function useStoreLifecycle() {
@@ -91,6 +106,16 @@ describe('root +layout.svelte sandbox Store lifecycle', () => {
       appStoreLifecycle: false,
     });
     expect(mocks.startAppStoreLifecycle).not.toHaveBeenCalled();
+  });
+
+  it('does not provide a workspace route context to its children', () => {
+    observedRouteContext.value = 'unset';
+    observedRouteContext.keyPresent = undefined;
+    render(RootLayout, { props: { children: contextProbeSnippet } });
+
+    expect(screen.getByTestId('root-children')).toBeTruthy();
+    expect(observedRouteContext.keyPresent).toBe(false);
+    expect(observedRouteContext.value).toBeUndefined();
   });
 });
 

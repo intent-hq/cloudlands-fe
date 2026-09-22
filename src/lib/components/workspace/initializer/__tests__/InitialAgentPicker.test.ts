@@ -177,6 +177,7 @@ import { store as mockAppStore } from '$store/renderer/store';
 const emitStoreState = () => (mockAppStore as unknown as { emitState: () => void }).emitState();
 
 /** The single-agent card renders first (index 0); the team card's picker is index 1. */
+const SINGLE_PICKER = 0;
 const TEAM_PICKER = 1;
 
 function teamPickerSelected(): string {
@@ -332,10 +333,26 @@ describe('InitialAgentPicker stale model override clearing', () => {
       'true',
     ]);
     await waitFor(() => expect(teamPickerDefault()).toBe('fable-5'));
-    await fireEvent.click(screen.getAllByTestId('pick-reasoning')[TEAM_PICKER]);
+    const pickerEfforts = () =>
+      screen.getAllByTestId('picker-reasoning').map((node) => node.textContent);
 
-    expect(onReasoningEffortChange).toHaveBeenCalledWith('high');
-    expect(screen.getAllByTestId('picker-reasoning')[TEAM_PICKER].textContent).toBe('high');
+    // The single-agent picker drives the shared controlled effort.
+    await fireEvent.click(screen.getAllByTestId('pick-reasoning')[SINGLE_PICKER]);
+    expect(onReasoningEffortChange).toHaveBeenCalledTimes(1);
+    expect(onReasoningEffortChange).toHaveBeenLastCalledWith('high');
+    expect(pickerEfforts()).toEqual(['high', 'high']);
+
+    // Clearing from the team picker propagates back to both pickers.
+    await fireEvent.click(screen.getAllByTestId('clear-reasoning')[TEAM_PICKER]);
+    expect(onReasoningEffortChange).toHaveBeenCalledTimes(2);
+    expect(onReasoningEffortChange).toHaveBeenLastCalledWith(undefined);
+    expect(pickerEfforts()).toEqual(['', '']);
+
+    // Picking from the team picker also reaches both pickers.
+    await fireEvent.click(screen.getAllByTestId('pick-reasoning')[TEAM_PICKER]);
+    expect(onReasoningEffortChange).toHaveBeenCalledTimes(3);
+    expect(onReasoningEffortChange).toHaveBeenLastCalledWith('high');
+    expect(pickerEfforts()).toEqual(['high', 'high']);
   });
 
   it('keeps effort when a cleared override falls back to a default that supports it', async () => {

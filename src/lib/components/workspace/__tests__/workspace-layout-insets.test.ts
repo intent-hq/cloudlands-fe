@@ -1,12 +1,20 @@
 /**
  * @vitest-environment jsdom
  */
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, render, waitFor } from '@testing-library/svelte';
-import { createRawSnippet } from 'svelte';
+import { createRawSnippet, type Component } from 'svelte';
 import WorkspaceLayout from '../WorkspaceLayout.svelte';
+import { recordedResizablePanelProps } from './mocks/RecordingResizablePanel.svelte';
 import { store as appStore } from '$store/renderer/store';
 import { setCollapsed } from '$store/renderer/slices/ui-layout/ui-layout-slice';
+
+vi.mock('$lib/components/layout/ResizablePanel.svelte', async (importOriginal) => {
+  const actual = await importOriginal<{ default: Component<any> }>();
+  const recorder = await import('./mocks/RecordingResizablePanel.svelte');
+  recorder.actualResizablePanel.component = actual.default;
+  return { default: recorder.default };
+});
 
 const sidebar = createRawSnippet(() => ({
   render: () => '<div data-testid="layout-sidebar">sidebar</div>',
@@ -28,6 +36,7 @@ const hasOuterGutter = (element: HTMLElement) =>
 
 describe('WorkspaceLayout panel insets', () => {
   beforeEach(() => {
+    recordedResizablePanelProps.length = 0;
     appStore.init();
   });
 
@@ -77,5 +86,46 @@ describe('WorkspaceLayout panel insets', () => {
     const bounded = renderLayout({ sidebarMaxWidth: 512, sidebarMinWidth: 240 });
     expect(bounded.sidebarPanel.style.maxWidth).toBe('512px');
     expect(bounded.sidebarPanel.style.minWidth).toBe('240px');
+  });
+
+  it('forwards the sidebar sizing props, including the expanded width, to the resizable panel', () => {
+    renderLayout();
+    expect(recordedResizablePanelProps).toHaveLength(1);
+    expect(recordedResizablePanelProps[0]).toMatchObject({
+      side: 'left',
+      minWidth: 280,
+      maxWidth: 800,
+      defaultWidth: 360,
+      defaultExpandedWidth: 600,
+      storageKey: 'workspace-left-panel-width',
+      expandedStorageKey: 'workspace-left-panel-expanded-width',
+      percentageWeight: 0,
+      initiallyCollapsed: false,
+    });
+    cleanup();
+
+    renderLayout({
+      sidebarSide: 'right',
+      sidebarMinWidth: 240,
+      sidebarMaxWidth: 512,
+      sidebarDefaultWidth: 333,
+      sidebarDefaultExpandedWidth: 417,
+      sidebarStorageKey: 'probe-width',
+      sidebarExpandedStorageKey: 'probe-expanded-width',
+      sidebarPercentageWeight: 0.5,
+      startCollapsed: true,
+    });
+    expect(recordedResizablePanelProps).toHaveLength(2);
+    expect(recordedResizablePanelProps[1]).toMatchObject({
+      side: 'right',
+      minWidth: 240,
+      maxWidth: 512,
+      defaultWidth: 333,
+      defaultExpandedWidth: 417,
+      storageKey: 'probe-width',
+      expandedStorageKey: 'probe-expanded-width',
+      percentageWeight: 0.5,
+      initiallyCollapsed: true,
+    });
   });
 });

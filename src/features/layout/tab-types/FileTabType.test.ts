@@ -1206,15 +1206,19 @@ describe('FileTabType Redux integration', () => {
 
     await fireEvent.input(editor, { target: { value: 'console.log("edited");' } });
     expect(actionMocks.saveFileContentRequested).not.toHaveBeenCalled();
+    dispatchMock.mockClear();
 
     unmount();
 
-    expect(actionMocks.saveFileContentRequested).toHaveBeenCalledExactlyOnceWith(
-      'ws-1',
-      'src/main.ts',
-      '/repo/src/main.ts',
-      'console.log("edited");',
-    );
+    const saveDispatches = dispatchMock.mock.calls
+      .map(([action]) => action)
+      .filter((action) => action.type === 'files/saveFileContentRequested');
+    expect(saveDispatches).toEqual([
+      {
+        type: 'files/saveFileContentRequested',
+        payload: ['ws-1', 'src/main.ts', '/repo/src/main.ts', 'console.log("edited");'],
+      },
+    ]);
   });
 
   it('does not issue a save when a clean tab unmounts', async () => {
@@ -1222,8 +1226,12 @@ describe('FileTabType Redux integration', () => {
     const editor = await screen.findByTestId<HTMLTextAreaElement>('code-editor');
     await waitFor(() => expect(editor.value).toBe('console.log("loaded");'));
 
+    dispatchMock.mockClear();
     unmount();
 
     expect(actionMocks.saveFileContentRequested).not.toHaveBeenCalled();
+    expect(dispatchMock).not.toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'files/saveFileContentRequested' }),
+    );
   });
 });

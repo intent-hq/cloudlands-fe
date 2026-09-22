@@ -153,7 +153,10 @@ import {
   replaceWorkspaceList,
   setWorkspaceHasLoaded,
 } from '$store/renderer/slices/workspace/workspace-slice';
-import { workspaceTabsHydrated } from '$store/renderer/slices/tab-state/tab-state-slice';
+import {
+  loadWorkspaceTabsState,
+  workspaceTabsHydrated,
+} from '$store/renderer/slices/tab-state/tab-state-slice';
 import { selectBootRouteGateResolved } from '$store/renderer/slices/setup-prompt/setup-prompt-selectors';
 import { selectActiveWorkspaceIds } from '$store/renderer/slices/tab-state/tab-state-selectors';
 import { setBootRoutePathnameForTesting } from '$lib/utils/boot-route-gate';
@@ -192,15 +195,30 @@ describe('(app)/+layout.svelte boot-route setup gate (regression)', () => {
       ]),
     );
     appStore.dispatch(setWorkspaceHasLoaded(true));
+    // A persisted tab whose workspace is absent from this (partial) list
+    // snapshot: the layout must neither land on it nor prune it.
+    appStore.dispatch(
+      loadWorkspaceTabsState({
+        openTabs: ['ws-2'],
+        currentTabId: 'ws-2',
+        pinnedTabs: [],
+        unsavedTabs: [],
+        optimisticTabs: [],
+        tabOrder: ['ws-2'],
+      }),
+    );
     appStore.dispatch(workspaceTabsHydrated(LOCAL_CONNECTION_ID));
+    expect(selectActiveWorkspaceIds.select(appStore.state)).toEqual(['ws-2']);
 
     render(Layout, { props: { children: childrenSnippet } });
     await tick();
 
     expect(goto).toHaveBeenCalledWith('/workspace/ws-1', { replaceState: true });
+    expect(goto).toHaveBeenCalledTimes(1);
     expect(selectBootRouteGateResolved.select(appStore.state)).toBe(true);
-    // The landing workspace is opened as a tab so the strip matches the route.
-    expect(selectActiveWorkspaceIds.select(appStore.state)).toEqual(['ws-1']);
+    // The landing workspace is opened as a tab so the strip matches the route,
+    // and the persisted tab missing from the partial list survives alongside it.
+    expect(selectActiveWorkspaceIds.select(appStore.state)).toEqual(['ws-2', 'ws-1']);
     // The app route group owns the store seeders (loaded before the app
     // lifecycle starts) and the action HUD; the root layout does not.
     expect(appGraph.seededBeforeAppLifecycle).toBe(true);
