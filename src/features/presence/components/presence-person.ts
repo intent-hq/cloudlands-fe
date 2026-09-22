@@ -37,7 +37,7 @@ export function presencePersonRing(person: PresenceCircle): PresenceRing | null 
   return person.online === true ? 'member' : null;
 }
 
-function presencePersonName(person: PresenceIdentity): string {
+export function presencePersonName(person: PresenceIdentity): string {
   return person.displayName?.trim() || person.login?.trim() || m.presence_person_unknown_label();
 }
 
