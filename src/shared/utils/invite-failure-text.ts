@@ -64,6 +64,8 @@ export function describeInviteFailureReason(
       return m.deeplink_inviteError_proofFailed();
     case 'github-rate-limited':
       return m.deeplink_inviteError_githubRateLimited();
+    case 'gitlab-rate-limited':
+      return m.deeplink_inviteError_gitlabRateLimited();
     case 'cert-mismatch':
       return m.deeplink_inviteError_certMismatch();
     case 'tailcat-unavailable':

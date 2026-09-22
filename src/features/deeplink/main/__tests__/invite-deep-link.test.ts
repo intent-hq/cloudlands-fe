@@ -2850,8 +2850,9 @@ describe('handleInviteDeepLink — GitLab identity', () => {
 
   // The GitLab probe follows the GitHub one: a rate limit is not "not
   // connected", so no connect-forge prompt and no GitHub sign-in — the join
-  // fails with its own reason (intent-hq/intent#5627).
-  it('a rate-limited sourceControl.authStatus probe: the rate-limit failure, no connect-forge or sign-in prompt, no device flow', async () => {
+  // fails with its own reason, which names GitLab, not GitHub
+  // (intent-hq/intent#5627).
+  it('a rate-limited sourceControl.authStatus probe: the GitLab rate-limit failure, no connect-forge or sign-in prompt, no device flow', async () => {
     showInviteNotice.mockResolvedValue(true);
     onLocal('sourceControl.authStatus', () => {
       throw localRefusal('rate-limited');
@@ -2863,7 +2864,22 @@ describe('handleInviteDeepLink — GitLab identity', () => {
     expect(localCalls('sourceControl.identityProof.create')).toEqual([]);
     expect(prove).not.toHaveBeenCalled();
     expect(showInviteNotice).toHaveBeenCalledTimes(1);
-    expect(noticePayload()).toMatchObject({ kind: 'failed', reason: 'github-rate-limited' });
+    expect(noticePayload()).toMatchObject({ kind: 'failed', reason: 'gitlab-rate-limited' });
+    expect(logLines.join('\n')).toContain('"proofCode":"rate-limited"');
+  });
+
+  it('a rate-limited snippet proof: the GitLab rate-limit failure, and the native box names GitLab, not GitHub', async () => {
+    onLocal('sourceControl.identityProof.create', () => {
+      throw localRefusal('rate-limited');
+    });
+    showInviteConsent.mockImplementation(() => fakeConsent('open').prompt);
+    await handleInviteDeepLink(LINK);
+    expect(localCalls('github.connect')).toEqual([]);
+    expect(prove).not.toHaveBeenCalled();
+    const failure = showMessageBox.mock.calls.at(-1)?.[0] as { type: string; message: string };
+    expect(failure.type).toBe('error');
+    expect(failure.message).toContain('GitLab');
+    expect(failure.message).not.toContain('GitHub');
     expect(logLines.join('\n')).toContain('"proofCode":"rate-limited"');
   });
 

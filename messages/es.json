@@ -5850,6 +5850,7 @@
   "deeplink_inviteError_proofGitlabUnreachable": "No se pudo contactar con tu instancia de GitLab para publicar la prueba de identidad. Comprueba tu conexión e inténtalo de nuevo.",
   "deeplink_inviteError_proofFailed": "No se pudo crear la prueba de identidad. Abre el enlace de nuevo para reintentar.",
   "deeplink_inviteError_githubRateLimited": "GitHub está limitando temporalmente las solicitudes de esta cuenta, así que la prueba de identidad no se puede crear ahora mismo. Espera un momento y abre el enlace de nuevo.",
+  "deeplink_inviteError_gitlabRateLimited": "GitLab está limitando temporalmente las solicitudes de esta cuenta, así que la prueba de identidad no se puede crear ahora mismo. Espera un momento y abre el enlace de nuevo.",
   "deeplink_invitePlaintext_title": "Credencial guardada sin cifrar",
   "deeplink_invitePlaintext_message": "El cifrado del sistema no está disponible en este equipo, así que la credencial de invitado se guardó sin cifrar. Si te importa, olvida la sesión y vuelve a unirte cuando el cifrado esté disponible.",
   "rules_service_listFailed_error": "Error al listar las reglas",

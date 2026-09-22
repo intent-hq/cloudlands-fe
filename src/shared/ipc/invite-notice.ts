@@ -42,8 +42,9 @@ type InviteNoticeKind = 'failed' | 'plaintext';
  * Host refusals mirror the daemon's documented `invite.challenge` /
  * `invite.prove` / `invite.accept` codes, transport codes mirror
  * `InviteTransportError.transportCode`, the `proof-*` codes are the guest's
- * own daemon refusing to publish the identity proof, `github-rate-limited` is
- * the guest's own daemon being rate limited by GitHub (probe or proof), `denied` /
+ * own daemon refusing to publish the identity proof, `github-rate-limited` /
+ * `gitlab-rate-limited` are the guest's own daemon being rate limited by that
+ * forge (probe or proof), `denied` /
  * `flow-expired` / `sign-in-failed` / `launch-failed` are the guest's own
  * GitHub sign-in ending without a token, and the rest are local failure
  * classes; `generic` covers everything else.
@@ -71,6 +72,7 @@ export type InviteFailureReason =
   | 'proof-gitlab-unreachable'
   | 'proof-failed'
   | 'github-rate-limited'
+  | 'gitlab-rate-limited'
   | 'cert-mismatch'
   | 'tailcat-unavailable'
   | 'tunnel-failed'

@@ -224,22 +224,32 @@ type IdentityProofErrorCode = (typeof IDENTITY_PROOF_ERROR_CODES)[number];
  * A `github.identityProof.*` call on the guest's own daemon failed: the
  * daemon's bounded code when it sent one, else `null` (transport, a daemon
  * that is not running, an undocumented error). The message text is dropped.
+ * `provider` is the forge the failing call addressed — the code set is shared
+ * by both, and the provider-neutral `rate-limited` needs it to name the right
+ * forge in the failure notice.
  */
 class IdentityProofError extends Error {
-  constructor(readonly proofCode: IdentityProofErrorCode | null) {
+  constructor(
+    readonly proofCode: IdentityProofErrorCode | null,
+    readonly provider: InviteIdentityProvider['provider'] = 'github',
+  ) {
     // i18n-ignore (internal error, fixed text)
     super('identity proof failed');
     this.name = 'IdentityProofError';
   }
 
   /** Reduce a thrown value to its bounded code (an `IdentityProofError` passes through). */
-  static from(error: unknown): IdentityProofError {
+  static from(
+    error: unknown,
+    provider: InviteIdentityProvider['provider'] = 'github',
+  ): IdentityProofError {
     if (error instanceof IdentityProofError) return error;
     const code = error instanceof JsonRpcError ? error.code : null;
     return new IdentityProofError(
       typeof code === 'string' && (IDENTITY_PROOF_ERROR_CODES as readonly string[]).includes(code)
         ? (code as IdentityProofErrorCode)
         : null,
+      provider,
     );
   }
 }
@@ -498,7 +508,7 @@ async function proveIdentity(
   try {
     proof = await createProof(client, identity, challenge.nonce, labels.hostLabel);
   } catch (error) {
-    const refusal = IdentityProofError.from(error);
+    const refusal = IdentityProofError.from(error, identity.provider);
     if (refusal.proofCode === 'github-scope-missing') {
       return { kind: 'sign-in-required', reason: 'scope-missing' };
     }
@@ -892,7 +902,7 @@ async function readLocalIdentity(client: JsonRpcClient): Promise<LocalIdentity |
     if (result?.isConfigured !== true || host === undefined || login === undefined) return null;
     return { provider: 'gitlab', host, login };
   } catch (error) {
-    const refusal = IdentityProofError.from(error);
+    const refusal = IdentityProofError.from(error, 'gitlab');
     if (refusal.proofCode === 'rate-limited') throw refusal;
     return null;
   }
@@ -1345,7 +1355,7 @@ function classifyProofFailure(error: IdentityProofError): InviteFailureReason {
     case 'gitlab-unreachable':
       return 'proof-gitlab-unreachable';
     case 'rate-limited':
-      return 'github-rate-limited';
+      return error.provider === 'gitlab' ? 'gitlab-rate-limited' : 'github-rate-limited';
     case null:
       return 'proof-failed';
   }
