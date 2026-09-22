@@ -337,13 +337,21 @@ describe('ruleScopeOverrides', () => {
       cache: false,
     });
     const baseEslint = new ESLint({ cwd, cache: false });
-    const [config, baseConfig] = await Promise.all([
+    const tsFile = 'src/lib/motion/index.ts';
+    const [config, baseConfig, tsConfig] = await Promise.all([
       eslint.calculateConfigForFile(path.join(cwd, file)),
       baseEslint.calculateConfigForFile(path.join(cwd, file)),
+      eslint.calculateConfigForFile(path.join(cwd, tsFile)),
     ]);
     expect(baseConfig.rules[ruleId]).toEqual([0]);
     expect(config.rules[ruleId]).toEqual([2]);
-    for (const id of ruleIds) expect(config.rules[id][0]).not.toBe(0);
+    for (const resolved of [config, tsConfig]) {
+      for (const id of ruleIds) expect(resolved.rules[id][0]).not.toBe(0);
+      expect(resolved.rules['intent/no-arbitrary-motion-or-color']).toEqual([
+        2,
+        { allowlist: namedColorAllowlist, baseline: {} },
+      ]);
+    }
 
     const [result] = await eslint.lintFiles([file]);
     expect(result.messages.filter((m) => m.ruleId === ruleId).length).toBeGreaterThan(0);
