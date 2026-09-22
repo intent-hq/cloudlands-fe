@@ -2760,6 +2760,56 @@ describe('handleInviteDeepLink — progress dialog', () => {
     await vi.waitFor(() => expect(localCalls('github.cancelAuth')).toHaveLength(1));
   });
 
+  it('a device flow start cancelled during one invite does not abort the flow a later invite is showing', async () => {
+    signedOutDaemon();
+    const connectingA = fakeProgress();
+    showInviteProgress.mockReturnValueOnce(connectingA.handle);
+    let releaseConnectA!: () => void;
+    let connects = 0;
+    onLocal('github.connect', () => {
+      connects += 1;
+      if (connects === 1) {
+        return new Promise((resolve) => (releaseConnectA = () => resolve(CONNECT)));
+      }
+      return CONNECT;
+    });
+    const signIn = fakeConsent('pending');
+    const prove = fakeConsent('open');
+    showInviteConsent.mockReturnValueOnce(signIn.prompt).mockReturnValueOnce(prove.prompt);
+
+    // Invite A is cancelled while its device-flow start is still pending.
+    const pendingA = handleInviteDeepLink(LINK);
+    await vi.waitFor(() => expect(localCalls('github.connect')).toHaveLength(1));
+    connectingA.cancel();
+    await pendingA;
+    expect(localCalls('github.cancelAuth')).toEqual([]);
+
+    // Invite B starts its own flow and reaches the sign-in prompt.
+    const pendingB = handleInviteDeepLink(LINK);
+    await vi.waitFor(() => expect(showInviteConsent).toHaveBeenCalledTimes(1));
+    expect(localCalls('github.connect')).toHaveLength(2);
+    expect(showInviteConsent.mock.calls[0][0]).toMatchObject({ mode: 'sign-in-required' });
+
+    // A's start arrives late: B owns the live flow, so nothing is cancelled.
+    releaseConnectA();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(localCalls('github.cancelAuth')).toEqual([]);
+    expect(signIn.prompt.dismiss).not.toHaveBeenCalled();
+
+    // B completes normally.
+    signIn.decide('open');
+    await vi.waitFor(() => expect(openExternal).toHaveBeenCalledTimes(1));
+    emitAuthChanged('authorized');
+    await pendingB;
+
+    expect(signIn.prompt.dismiss).toHaveBeenCalledExactlyOnceWith('superseded');
+    expect(prove.prompt.dismiss).toHaveBeenCalledExactlyOnceWith('joined');
+    expect(guestAdd).toHaveBeenCalledWith(expect.objectContaining({ token: TOKEN }));
+    expect(openBackendWindow).toHaveBeenCalledWith('guest-id');
+    expect(localCalls('github.cancelAuth')).toEqual([]);
+    expect(logLines.join('\n')).not.toContain('Invite deep link handling failed');
+  });
+
   it('cancel while the stored session is looked up: nothing inspected or proven, connection closed', async () => {
     const connecting = fakeProgress();
     showInviteProgress.mockReturnValueOnce(connecting.handle);

@@ -610,6 +610,16 @@ type SignInStatus = 'authorized' | 'denied' | 'expired' | 'error';
 type SignInResult = { kind: 'signed-in'; login: string } | { kind: 'cancelled' };
 
 /**
+ * Generation of the latest sign-in started by an invite. A `github.connect`
+ * cancelled while pending may resolve after the next invite already started
+ * (and shows) its own device flow — the in-flight guard is released before
+ * the late result arrives, and the daemon hands the resident live flow to a
+ * concurrent connect — so the late cleanup aborts the flow only while no newer
+ * sign-in has started since; otherwise it would cancel the newer invite's flow.
+ */
+let signInGeneration = 0;
+
+/**
  * Sign the guest's own daemon in to GitHub from the consent modal's
  * `sign-in-required` state: `github.connect` starts the device flow, the
  * modal shows the code + URL (code copied to the clipboard) and the flow's
@@ -619,8 +629,9 @@ type SignInResult = { kind: 'signed-in'; login: string } | { kind: 'cancelled' }
  * effort). Resolves with the login the daemon is now signed in as. The
  * `github.connect` start is raced against the `connecting` dialog's Cancel
  * while that dialog is still up (a device flow that starts after the cancel
- * is aborted on arrival); once the dialog was dismissed by the first prompt
- * its Cancel never settles and the wait is a plain await.
+ * is aborted on arrival — unless a later sign-in owns the live flow by then);
+ * once the dialog was dismissed by the first prompt its Cancel never settles
+ * and the wait is a plain await.
  */
 async function signInToGitHub(
   client: JsonRpcClient,
@@ -629,9 +640,11 @@ async function signInToGitHub(
   prompts: ConsentPrompts,
   connecting: ConnectingProgress,
 ): Promise<SignInResult> {
+  const generation = ++signInGeneration;
   let start: GithubConnectResult;
   try {
     start = await connecting.wait(client.request<GithubConnectResult>('github.connect'), () => {
+      if (generation !== signInGeneration) return;
       void client.request('github.cancelAuth').catch(() => {});
     });
   } catch (error) {
