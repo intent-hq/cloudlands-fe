@@ -5793,7 +5793,7 @@
   "deeplink_inviteError_proofScopeMissing": "此 Intent 的 GitHub 登录缺少身份证明所需的 gist 权限。请重新登录 GitHub，然后重新打开链接。",
   "deeplink_inviteError_proofGithubUnreachable": "无法连接 GitHub 以发布身份证明。请检查网络连接后重试。",
   "deeplink_inviteError_proofFailed": "无法创建身份证明。请重新打开链接重试。",
-  "deeplink_inviteError_githubRateLimited": "此账户已达到 GitHub API 速率限制，目前无法创建身份证明。请等待限制重置（通常在一小时内），然后重新打开链接。",
+  "deeplink_inviteError_githubRateLimited": "GitHub 正在暂时限制此账户的请求，目前无法创建身份证明。请稍等片刻，然后重新打开链接。",
   "deeplink_invitePlaintext_title": "凭据已以未加密方式保存",
   "deeplink_invitePlaintext_message": "此电脑上系统加密不可用，因此访客凭据以未加密方式保存。如果这对你很重要，请忘记该会话，并在加密可用后重新加入。",
   "rules_service_listFailed_error": "列出规则失败",

@@ -5793,7 +5793,7 @@
   "deeplink_inviteError_proofScopeMissing": "이 Intent의 GitHub 로그인에는 신원 증명에 필요한 gist 권한이 없습니다. GitHub에 다시 로그인한 뒤 링크를 다시 여세요.",
   "deeplink_inviteError_proofGithubUnreachable": "신원 증명을 게시하기 위해 GitHub에 연결할 수 없었습니다. 연결을 확인하고 다시 시도하세요.",
   "deeplink_inviteError_proofFailed": "신원 증명을 만들 수 없었습니다. 링크를 다시 열어 재시도하세요.",
-  "deeplink_inviteError_githubRateLimited": "이 계정의 GitHub API 속도 제한에 도달하여 지금은 신원 증명을 만들 수 없습니다. 제한이 초기화될 때까지(보통 1시간 이내) 기다린 뒤 링크를 다시 여세요.",
+  "deeplink_inviteError_githubRateLimited": "GitHub가 이 계정의 요청을 일시적으로 제한하고 있어 지금은 신원 증명을 만들 수 없습니다. 잠시 기다린 뒤 링크를 다시 여세요.",
   "deeplink_invitePlaintext_title": "자격 증명이 암호화되지 않은 상태로 저장됨",
   "deeplink_invitePlaintext_message": "이 컴퓨터에서는 OS 암호화를 사용할 수 없어 게스트 자격 증명이 암호화되지 않은 상태로 저장되었습니다. 중요하다면 세션을 삭제하고 암호화를 사용할 수 있을 때 다시 참여하세요.",
   "rules_service_listFailed_error": "규칙을 나열하지 못했습니다",
