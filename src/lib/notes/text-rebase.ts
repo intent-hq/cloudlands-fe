@@ -2362,14 +2362,20 @@ function isBlank(code: number): boolean {
  * source, so a cell whose letters are all in its syntax (`[!?](https://…)`,
  * `&amp;&amp;`) is the letterless cell its plain-text line is.
  */
+/** Whether `text[start, end)` holds a `|`; reads no character past `end`. */
+function holdsPipe(text: string, start: number, end: number): boolean {
+  for (let i = start; i < end; i += 1) if (text.charCodeAt(i) === 124) return true;
+  return false;
+}
+
 function tableCells(
   text: string,
   line: TextLine,
   tokenizer: () => Tokenizer | undefined,
 ): TextLine[] | undefined {
-  // A line without a `|` is no row: nothing of it is read before the check.
-  const pipe = text.indexOf('|', line.start);
-  if (pipe === -1 || pipe >= line.end) return undefined;
+  // A line without a `|` is no row: nothing of it is read before the check,
+  // and nothing past it — the search stops at the line's end.
+  if (!holdsPipe(text, line.start, line.end)) return undefined;
   let i = line.start;
   while (i < line.end && isBlank(text.charCodeAt(i))) i += 1;
   if (i >= line.end) return undefined;
@@ -2468,12 +2474,19 @@ function textLines(
   const lines: TextLine[] = [];
   let pos = start;
   let next = spelled.length === 0 ? 0 : lowerBound(spelled, start);
+  // The next U+FFFC is looked up once per run of lines, not once per line:
+  // sought from each line of a text without one, it read the rest of the
+  // text as many times as the text has lines.
+  let hardBreak = start - 1;
   while (pos < end) {
     let lineEnd = text.indexOf('\n', pos);
     if (lineEnd === -1 || lineEnd > end) lineEnd = end;
     if (hardBreaks) {
-      const hardBreak = text.indexOf('\uFFFC', pos);
-      if (hardBreak !== -1 && hardBreak < lineEnd) lineEnd = hardBreak;
+      if (hardBreak < pos) {
+        hardBreak = text.indexOf('\uFFFC', pos);
+        if (hardBreak === -1) hardBreak = end;
+      }
+      if (hardBreak < lineEnd) lineEnd = hardBreak;
     }
     while (next < spelled.length && spelled[next] < pos) next += 1;
     if (lineEnd > pos) {

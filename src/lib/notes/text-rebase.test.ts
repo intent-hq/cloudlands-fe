@@ -115,6 +115,37 @@ function countingDomParses<T>(fn: () => T): [result: T, parses: number] {
 }
 
 /**
+ * Run `fn` counting the code units the alignment reads of its strings: one a
+ * `charCodeAt`, and for an `indexOf` the units searched (to the match, or to
+ * the end of the string when there is none). A search with no end bound is
+ * quadratic on a note nothing ends it in — a `|` sought from each line of a
+ * pipe-less note to the note's end read 350 million units of 10 000 lines —
+ * so the count grows with the note where a duration would only hint. (The
+ * methods are replaced by hand: a `vi.spyOn` records each of the millions
+ * of calls.)
+ */
+function countingUnitsRead<T>(fn: () => T): [result: T, units: number] {
+  let units = 0;
+  const { charCodeAt, indexOf } = String.prototype;
+  String.prototype.charCodeAt = function (this: string, i?: number) {
+    units += 1;
+    return charCodeAt.call(this, i);
+  };
+  String.prototype.indexOf = function (this: string, search: string, position = 0) {
+    const at = indexOf.call(this, search, position);
+    units += (at === -1 ? this.length : at + 1) - Math.max(0, Math.min(position, this.length));
+    return at;
+  };
+  try {
+    const result = fn();
+    return [result, units];
+  } finally {
+    String.prototype.charCodeAt = charCodeAt;
+    String.prototype.indexOf = indexOf;
+  }
+}
+
+/**
  * The text the HTML parser shows for each of `references`, decoded in one
  * document, set apart by a private-use character no reference decodes to.
  */
@@ -2801,6 +2832,55 @@ describe('alignment of link syntax the lexer does not account for', () => {
       },
       60_000,
     );
+
+    // A fenced block of 1000, 4000 and 16 000 lines of `[x](u)` — no `|` in
+    // the note — after the paragraph that puts the note past the cap is read
+    // past the deadline in units proportional to its length, its first line
+    // placed; within the budget it maps exactly. (The `|` a line is a row for
+    // was sought from the line's start to the note's end, so each line of a
+    // pipe-less note read the whole rest of it: 350 million units of 10 000
+    // lines, 0.3 s added to a 150 000-line note on every clock; the U+FFFC a
+    // plain-text line ends at was sought the same way.) A fourfold block may
+    // read sixfold, not sixteenfold.
+    it('reads a pipe-less note of many lines in units proportional to its length', async () => {
+      const tick = '`';
+      const paragraph = 'q'.repeat(129 * 1024);
+      const notes = await Promise.all(
+        [1000, 4000, 16_000].map(async (lines) => {
+          const code = Array.from({ length: lines }, () => '[x](u)').join('\n');
+          const markdown = `${paragraph}\n\n${tick.repeat(3)}\n${code}\n${tick.repeat(3)}`;
+          const plain = await projectWithEditor(markdown, true);
+          expect(plain).toBe(`${paragraph}\n${code}`);
+          return { lines, code, plain, markdown };
+        }),
+      );
+      // The code starts after the paragraph and its break; in the markdown
+      // after a blank line and the fence too.
+      const codeStart = paragraph.length + 1;
+      const shift = 5;
+      const unitsRead = notes.map(({ lines, plain, markdown }) => {
+        const [map, units] = countingUnitsRead(() =>
+          withExpiredDeadline(() => createBidirectionalOffsetMapper(plain, markdown)),
+        );
+        expect(map.aToB(codeStart + 1), `${lines} lines past the deadline`).toBe(
+          codeStart + 1 + shift,
+        );
+        expect(map.bToA(codeStart + 1 + shift), `${lines} lines past the deadline`).toBe(
+          codeStart + 1,
+        );
+        return units;
+      });
+      const growth = `${unitsRead.join(' / ')} units of ${notes.map((n) => n.lines).join(' / ')} lines`;
+      expect(unitsRead[1], growth).toBeLessThan(unitsRead[0] * 6);
+      expect(unitsRead[2], growth).toBeLessThan(unitsRead[1] * 6);
+      const { code, plain, markdown } = notes[0];
+      const [map, reads] = onSteppedClock(() => createBidirectionalOffsetMapper(plain, markdown));
+      expect(reads, `${reads} clock reads`).toBeLessThan(BUDGET_READS);
+      for (let p = codeStart + 1; p < codeStart + code.length; p += 1009) {
+        expect(map.aToB(p), `plain ${p} forward`).toBe(p + shift);
+        expect(map.bToA(p + shift), `markdown ${p + shift} back`).toBe(p);
+      }
+    }, 60_000);
 
     // Images alone on their lines before a run of identical items. The
     // editor shows no text of an image, so its line has no plain-text line
