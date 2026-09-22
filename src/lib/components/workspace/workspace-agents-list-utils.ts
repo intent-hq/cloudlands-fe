@@ -1,4 +1,4 @@
-import type { AgentSession } from '$shared/types';
+import type { AgentDelegatedParentCounts, AgentSession } from '$shared/types';
 import { getAgentAttentionRequest } from '$shared/utils/agent-attention';
 import { isAgentRunningState, toAgentRuntimeStateInput } from '$shared/utils/agent-runtime-state';
 import { normalizeSidebarSearchText, sidebarSearchMatches } from './sidebar/sidebar-search';
@@ -8,10 +8,95 @@ export interface FlatWorkspaceAgentRow {
   depth: number;
 }
 
-/** Threshold above which a flat top-level foreground list switches to virtual scrolling. */
+/** Threshold above which a top-level foreground list switches to virtual scrolling. */
 export const WORKSPACE_AGENTS_VIRTUALIZATION_THRESHOLD = 20;
-/** Stable height for every selectable row in the Agents panel. */
+/** Stable height for every row in the Agents panel (selectable rows, group bars, skeletons). */
 export const WORKSPACE_AGENT_ROW_HEIGHT = 40;
+/** Horizontal indent of one nesting level in the Agents panel. */
+export const WORKSPACE_AGENT_ROW_INDENT = 26;
+/** Placeholder rows shown under a parent whose delegated children are still loading. */
+const DELEGATION_SKELETON_ROWS = 2;
+
+/**
+ * One rendered row of the Agents panel. Both render paths — the nested
+ * `{#each}` list and the flat virtualized list — consume the same row array,
+ * so a row kind that renders in one path renders in the other.
+ */
+export type WorkspaceAgentListRow =
+  | { kind: 'header'; key: string; depth: 0; section: 'coordinator' | 'yourAgents' }
+  | { kind: 'agent'; key: string; depth: number; agent: AgentSession }
+  | {
+      kind: 'delegatedGroup';
+      key: string;
+      depth: number;
+      parent: AgentSession;
+      total: number;
+      running: number;
+      expanded: boolean;
+    }
+  | { kind: 'delegatedSkeleton'; key: string; depth: number; parentId: string };
+
+export interface WorkspaceAgentListRowOptions {
+  /** Loaded direct children of a parent that the list may render right now. */
+  getChildren: (agentId: string) => AgentSession[];
+  /** Daemon-served `{ total, running }` for a parent whose children are not hydrated. */
+  getCountedChildren: (agentId: string) => AgentDelegatedParentCounts | undefined;
+  isExpanded: (agentId: string) => boolean;
+  isRunning: (agentId: string) => boolean;
+  /** True while the workspace-level Delegated bin shows its own skeleton instead. */
+  binSkeletonShown: boolean;
+}
+
+/**
+ * Flattens an agent list into rows: each agent, then — when it has loaded or
+ * counted delegated children — its group bar, followed (while expanded) by
+ * either per-parent skeleton rows or the children recursively one level deeper.
+ * The daemon count wins until the children are hydrated; loaded rows are
+ * authoritative after that.
+ */
+export function buildWorkspaceAgentListRows(
+  agents: AgentSession[],
+  options: WorkspaceAgentListRowOptions,
+  depth = 0,
+): WorkspaceAgentListRow[] {
+  const rows: WorkspaceAgentListRow[] = [];
+  for (const agent of agents) {
+    rows.push({ kind: 'agent', key: `agent:${agent.id}`, depth, agent });
+
+    const children = options.getChildren(agent.id);
+    const counted = options.getCountedChildren(agent.id);
+    const total = Math.max(counted?.total ?? 0, children.length);
+    if (total === 0) continue;
+
+    const expanded = options.isExpanded(agent.id);
+    const running =
+      counted?.running ?? children.filter((child) => options.isRunning(child.id)).length;
+    rows.push({
+      kind: 'delegatedGroup',
+      key: `group:${agent.id}`,
+      depth,
+      parent: agent,
+      total,
+      running,
+      expanded,
+    });
+    if (!expanded) continue;
+
+    if (counted !== undefined && children.length === 0 && !options.binSkeletonShown) {
+      for (let index = 0; index < DELEGATION_SKELETON_ROWS; index += 1) {
+        rows.push({
+          kind: 'delegatedSkeleton',
+          key: `skeleton:${agent.id}:${index}`,
+          depth: depth + 1,
+          parentId: agent.id,
+        });
+      }
+    } else {
+      rows.push(...buildWorkspaceAgentListRows(children, options, depth + 1));
+    }
+  }
+  return rows;
+}
 
 export function isBackgroundAgentSession(agent: AgentSession): boolean {
   return !!(agent.isBackground || agent.metadata?.isBackground);
@@ -26,15 +111,16 @@ export function isRetiredAgentSession(agent: AgentSession): boolean {
 }
 
 /**
- * Virtualize only flat lists (no delegations — tree heights are variable) with more
- * top-level foreground agents than the threshold. Coordinator workspaces keep the
- * regular rendering: its Coordinator / "Your agents" section headers have no
- * equivalent in the uniform-row virtual path.
+ * Virtualize lists with more top-level foreground agents than the threshold.
+ * Delegations do not opt out: group bars, skeletons and children are uniform
+ * rows of the shared row model (`buildWorkspaceAgentListRows`), so the flat
+ * virtual path renders them too. Coordinator workspaces keep the regular
+ * rendering for their Coordinator / "Your agents" section layout.
  */
 export function shouldVirtualizeWorkspaceAgentRows(rows: FlatWorkspaceAgentRow[]): boolean {
   let topLevelForegroundCount = 0;
   for (const row of rows) {
-    if (row.depth > 0) return false;
+    if (row.depth > 0) continue;
     if (isBackgroundAgentSession(row.agent)) continue;
     if (isCoordinatorAgentSession(row.agent)) return false;
     topLevelForegroundCount += 1;
