@@ -358,6 +358,7 @@ describe('HUD agent scope goes through the shared classifier (§5.5 row-scope bi
   });
 
   it.each([
+    ['parentAgentId', { parentAgentId: 'coordinator' }],
     ['metadata.createdByAgentId', { metadata: { createdByAgentId: 'coordinator' } }],
     ['agentMetadata.createdByAgentId', { agentMetadata: { createdByAgentId: 'coordinator' } }],
   ])('a session-only child via %s is delegated', (_location, session) => {
@@ -368,6 +369,7 @@ describe('HUD agent scope goes through the shared classifier (§5.5 row-scope bi
 
   it.each([
     ['summary parentAgentId', { parentAgentId: 'probe' }, {}],
+    ['session parentAgentId', {}, { parentAgentId: 'probe' }],
     ['metadata.createdByAgentId', {}, { metadata: { createdByAgentId: 'probe' } }],
     ['agentMetadata.createdByAgentId', {}, { agentMetadata: { createdByAgentId: 'probe' } }],
   ])(

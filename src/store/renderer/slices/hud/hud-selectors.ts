@@ -504,8 +504,9 @@ export interface HudCardAgent {
   /**
    * The shared classifier's `topLevel` bin (`classifyAgentScope`, PROTOCOL
    * §5.5 row scope): a FOREGROUND agent with no parent reference — no summary
-   * `parentAgentId` (§5.1) and no session `metadata.createdByAgentId` /
-   * `agentMetadata.createdByAgentId` (§5.5). Background roots land in the
+   * `parentAgentId` (§5.1) and no session `parentAgentId` /
+   * `metadata.createdByAgentId` / `agentMetadata.createdByAgentId` (§5.5).
+   * Background roots land in the
    * `background` bin, so they report false here. A parent reference equal
    * to the agent's own id is dropped before classification (HUD-side
    * self-reference guard). Gates the workspace-level NEEDS INPUT / BLOCKED
@@ -920,7 +921,9 @@ function agentBucketOf(state: StoreState, info: WorkspaceAgentInfo): HudAgentBuc
  * gating bins a row exactly like every other FE consumer: the §5.1 summary
  * row's `parentAgentId` / additive `isBackground` (intent-hq/intent#3789;
  * available before session hydration) merged with the tracked §5.5
- * session's `isBackground` and both metadata locations. HUD-side
+ * session's `parentAgentId` (the fallback when the summary row lacks one —
+ * a stale or field-less summary must not promote a delegated agent to
+ * top-level), `isBackground` and both metadata locations. HUD-side
  * pre-normalization: a parent reference equal to the agent's own id is
  * dropped before classification, so a (malformed) self-referencing row
  * falls through to the other parent fields and otherwise classifies as
@@ -939,7 +942,7 @@ function hudAgentScopeInputs(
     createdByAgentId: notSelf(metadata?.createdByAgentId),
   });
   return {
-    parentAgentId: notSelf(info.parentAgentId),
+    parentAgentId: notSelf(info.parentAgentId) ?? notSelf(session?.parentAgentId),
     isBackground: info.isBackground === true || session?.isBackground === true,
     metadata: scopeMetadata(session?.metadata),
     agentMetadata: scopeMetadata(session?.agentMetadata),
