@@ -1,6 +1,7 @@
 import { diffArrays, diffChars } from 'diff';
 import { Lexer, type Links, type Tokenizer } from 'marked';
 import { normalizeAnchorPositions } from '$lib/utils/anchor-normalization';
+import { protectMathSource } from '$lib/utils/marked-math';
 import { escapeHtmlTags } from '$lib/utils/markdown-processor';
 import { createTiptapTaskListMarked } from '$lib/utils/tiptap-task-list-extension';
 import { decodeCharacterReference } from './character-references';
@@ -837,7 +838,8 @@ let lastMask: { markdown: string; mask: Mask } | undefined;
  * (`sourceShifts`); a hidden run never holds a line break, so one count
  * places both of its ends. The lexer runs up to `MAX_LEXED_LENGTH`; a longer
  * source is not lexed, and nothing in it is masked but its comments, link
- * definitions, images and code span backticks, which a scan places
+ * definitions, images and code span backticks — and the line breaks of
+ * its code spans, shown as blanks — which a scan places
  * (`maskHiddenBlocks`; a note the
  * renderer reads as HTML is masked by a scan whatever its length), so
  * every line of it that holds link syntax is unanchorable, and so is a line
@@ -881,6 +883,8 @@ const ESCAPED_ANGLE = '\uFFFD';
 const TAG_OPEN = /<\/?\s*[a-zA-Z]/;
 /** A blank the renderer's escaping drops: any `\s`, as its tag pattern reads them. */
 const DROPPED_BLANK = /\s/;
+/** A `<` past the last `>` of the note, as the escaping is handed it: a character that opens no tag. */
+const UNCLOSED_ANGLE = '\uFFFD';
 
 /**
  * `markdown` as marked reads it once the renderer has escaped the tags it
@@ -894,30 +898,43 @@ const DROPPED_BLANK = /\s/;
  * renderer drops is masked off the shadow in turn, `shadowedAngles`), so
  * the shadow keeps every offset of the source and what marked makes of it
  * is what the renderer shows — `![alt](<a b>)` an image to marked, text to
- * the renderer and on the shadow. The escaping is quadratic in the tags left open after
- * the last `>` of the note, which close nothing, so it runs up to that `>`
- * and the rest is kept as written; a code span or fence the cut splits is
- * protected by the renderer and not here, which differs only inside code,
- * where nothing is masked. `markdown` itself when it holds no tag;
- * `undefined` when the escaping did more than that, which no shadow
+ * the renderer and on the shadow. The escaping reads the whole note, so a
+ * fence, a code span or a formula is protected here where the renderer
+ * protects it: a closed fence is its source on the shadow, and no line
+ * break of its code is read as one the renderer drops. (Escaped up to the
+ * last `>` of the note, a fence that `>` lay in was cut before its closing
+ * fence, read as unclosed, and its code escaped as text — a tag broken over
+ * two lines of code was then a dropped line break, and the lines after the
+ * fence paired one off.) The escaping is quadratic in the tags left open
+ * after the last `>`, which close nothing, so past that `>` each `<` is
+ * handed to it as `UNCLOSED_ANGLE`, which opens no tag; the syntax of a
+ * fence, a code span and a formula holds no `<`, and a comment anchor holds
+ * a `>`, so none lies past the last — the escaping leaves that part as
+ * written, as it does the note's. `markdown` itself when it holds no tag or
+ * no `>`; `undefined` when the escaping did more than that, which no shadow
  * reflects — the source is then handed to marked in no form (`maskHidden`).
  */
 function shadowEscapedTags(markdown: string): string | undefined {
   if (!TAG_OPEN.test(markdown)) return markdown;
   const cut = markdown.lastIndexOf('>') + 1;
-  const escaped = escapeHtmlTags(markdown.slice(0, cut));
+  if (cut === 0) return markdown;
+  const source =
+    cut === markdown.length
+      ? markdown
+      : markdown.slice(0, cut) + markdown.slice(cut).replaceAll('<', UNCLOSED_ANGLE);
+  const escaped = escapeHtmlTags(source);
   let out = '';
   let pos = 0;
   let j = 0;
-  for (let i = 0; i < cut; i += 1) {
-    const code = markdown.charCodeAt(i);
+  for (let i = 0; i < source.length; i += 1) {
+    const code = source.charCodeAt(i);
     if (code === escaped.charCodeAt(j)) {
       j += 1;
       continue;
     }
     if (code === 60 && escaped.startsWith('&lt;', j)) j += 4;
     else if (code === 62 && escaped.startsWith('&gt;', j)) j += 4;
-    else if (!DROPPED_BLANK.test(markdown[i])) return undefined;
+    else if (!DROPPED_BLANK.test(source[i])) return undefined;
     out += markdown.slice(pos, i) + ESCAPED_ANGLE;
     pos = i + 1;
   }
@@ -1172,6 +1189,8 @@ const BLANK_LINE = /\n[ \t\r]*\n/g;
 const NOT_BREAK = /[^\n\r]/g;
 /** The `\r` the lexer drops from a `\r\n`; the scan reads it as a blank. */
 const CARRIAGE_RETURN = /\r/g;
+/** What each code unit of a formula reads as on the scan's copy of the source (`formulaEnd`). */
+const FORMULA = '\u0000';
 
 /**
  * `source` the lexer did not read with the hidden text a scan can place —
@@ -1214,9 +1233,18 @@ const CARRIAGE_RETURN = /\r/g;
  * line after a blank one or the note's first to the next line of fewer that
  * is not blank; `indentedCodeEnd`), the text of a code span (a run of
  * backticks closed by the next run of the same length before a blank line,
- * both runs masked; a run none closes is literal) and an escaped character
+ * both runs masked; a run none closes is literal — and each line break
+ * between the runs, which the renderer shows as a blank of the span's one
+ * line, masked as the dropped break it is, the `\r` of a `\r\n` with it, as
+ * `maskHidden` masks those of the shadow) and an escaped character
  * (`\<`, `\[`; `\\` escapes the
- * backslash). Whichever opens first wins: a comment that opens before a
+ * backslash), and a formula (`$…$` on one line, `$$…$$` from a block's
+ * start, `\(…\)`, `\[…\]`), which the renderer's math extension reads as
+ * one token before any image, definition or comment inside it: the
+ * renderer's own `protectMathSource` finds them, on the whole source as the
+ * renderer's escaping runs it (`formulaEnd`) — a formula it reads inside
+ * code, which the lexer would not, is passed over too, which costs a sealed
+ * line at most. Whichever opens first wins: a comment that opens before a
  * fence hides the fence, a fence that opens before a comment shows it. A
  * definition is one only where a block may open (`startsBlock`): a `[` on
  * the line after a paragraph's, an item's or a quote's continues that
@@ -1238,6 +1266,8 @@ function maskHiddenBlocks(source: string, shadow: string | undefined): string {
   const images: Array<{ start: number; end: number; label: string }> = [];
   /** The labels of the definitions the scan masked, as marked matches them. */
   const labels = new Set<string>();
+  /** The line breaks inside the code spans, in order: each is shown as a blank of the span's one line. */
+  const dropped: number[] = [];
   /** The end of the last block the scan closed — a fence, a comment or a definition at a line start. */
   let blockEnd = 0;
   /** The end of the last indented line found to continue a paragraph; the indented lines after it do too. */
@@ -1245,6 +1275,15 @@ function maskHiddenBlocks(source: string, shadow: string | undefined): string {
   const nextCommentClose = memoisedIndexOf(markdown, '-->');
   const nextBlankLine = memoisedSearch(markdown, BLANK_LINE);
   const nextFenceClose = memoisedSearch(markdown, FENCE_CLOSE);
+  /** `markdown` with each formula's code units `FORMULA`; found once, at the first opener outside code. */
+  let formulas: string | undefined;
+  const formulaEnd = (at: number) => {
+    formulas ??= protectMathSource(markdown, (formula) => FORMULA.repeat(formula.length));
+    if (formulas.charCodeAt(at) !== 0) return -1;
+    let end = at + 1;
+    while (end < formulas.length && formulas.charCodeAt(end) === 0) end += 1;
+    return end;
+  };
   const closes = new Map<string, (at: number) => number>();
   const nextSpanClose = (run: string) => {
     let next = closes.get(run);
@@ -1274,9 +1313,12 @@ function maskHiddenBlocks(source: string, shadow: string | undefined): string {
     const indented = indentOf(markdown, lineStart) >= 4;
     const codeEnd = indented ? indentedCodeEnd(markdown, lineStart, blockEnd, continuationEnd) : -1;
     if (indented && codeEnd === -1) continuationEnd = lineEnd;
+    const formula = codeEnd === -1 ? formulaEnd(at) : -1;
     if (codeEnd !== -1) {
       end = codeEnd;
       blockEnd = end;
+    } else if (formula !== -1) {
+      end = formula;
     } else if (found === '<!--') {
       if (!markdown.startsWith(COMMENT_ANCHOR, at)) {
         const close = nextCommentClose(end);
@@ -1347,6 +1389,11 @@ function maskHiddenBlocks(source: string, shadow: string | undefined): string {
         if (close !== -1 && (blank === -1 || close < blank)) {
           mask(at, end);
           mask(close, close + length);
+          for (let brk = markdown.indexOf('\n', end); brk !== -1 && brk < close;) {
+            if (source.charCodeAt(brk - 1) === 13) dropped.push(brk - 1);
+            dropped.push(brk);
+            brk = markdown.indexOf('\n', brk + 1);
+          }
           end = close + length;
         }
       }
@@ -1372,7 +1419,8 @@ function maskHiddenBlocks(source: string, shadow: string | undefined): string {
     hide(masked[k], masked[k + 1]);
   }
   hideImagesBefore(source.length);
-  return out + source.slice(pos);
+  const hidden = out + source.slice(pos);
+  return dropped.length > 0 ? maskOffsets(hidden, dropped) : hidden;
 }
 
 /**

@@ -1914,6 +1914,58 @@ describe('alignment of link syntax the lexer does not account for', () => {
     60_000,
   );
 
+  // An image inside a formula is shown as written too: the renderer's math
+  // extension reads the formula before any image in it, and so does the
+  // mask's lexer below the cap. Past the cap the scan passes over the
+  // formula as the lexer would (`protectMathSource` finds it); reading the
+  // image on the formula's text, it masked one the renderer shows once the
+  // shadow kept the formula's `<not valid>` as the renderer's escaping does
+  // (escaped up to the note's last `>`, the formula was cut open and the
+  // angles escaped, and the image was no image by accident).
+  it.each<[string, number, string, boolean, string]>(
+    (
+      [
+        ['inline dollars', '$![label](<not valid>)$'],
+        ['inline parentheses', '\\(![label](<not valid>)\\)'],
+        ['display dollars', '$$\n![label](<not valid>)\n$$'],
+      ] as const
+    ).flatMap(([shape, formula]) =>
+      (
+        [
+          [127, 'StarterKit', false],
+          [127, 'the note editor', true],
+          [129, 'StarterKit', false],
+          [129, 'the note editor', true],
+        ] as const
+      ).map(
+        ([kilobytes, projection, production]) =>
+          [shape, kilobytes, projection, production, formula] as [
+            string,
+            number,
+            string,
+            boolean,
+            string,
+          ],
+      ),
+    ),
+  )(
+    'shows an image inside a formula of %s as written at %i KiB projected by %s',
+    async (shape, kilobytes, _projection, production, formula) => {
+      const head = shape.startsWith('display') ? formula : `before ${formula} sync after`;
+      const markdown = `${head}\n\n${'q'.repeat(kilobytes * 1024)}`;
+      const plain = await projectWithEditor(markdown, production);
+      expect(plain).toContain('![label](<not valid>)');
+      const map = withoutDeadline(() => createBidirectionalOffsetMapper(plain, markdown));
+      expectExactRun(plain, markdown, map, '![label](<not valid>)', 0, 0);
+      if (!shape.startsWith('display')) {
+        expectExactRun(plain, markdown, map, 'before', 0, 0);
+        expectExactRun(plain, markdown, map, ' sync after', 0, 0);
+      }
+      expectExactRun(plain, markdown, map, 'qqqqqqqq', 0, 0);
+    },
+    60_000,
+  );
+
   // Link syntax the lexer read as a code span leaves its line unanchorable:
   // the line is aligned by the diff, exactly, however long it is — the
   // length cap on a region nothing anchored inside does not apply to one
@@ -3182,6 +3234,160 @@ describe('alignment of link syntax the lexer does not account for', () => {
       },
       60_000,
     );
+
+    // The renderer escapes tags on the whole note, and protects the code of
+    // a closed fence and of a code span from the escaping: a tag broken over
+    // two lines of a closed fence is shown as written, its two lines two
+    // lines of the plain text, and the items after the fence pair with
+    // their own lines. (The escaping the alignment shadowed ran up to the
+    // last `>` of the note — here the tag's own, inside the fence — so it
+    // read the fence as unclosed and escaped its code: the line break of
+    // the tag was read as one the renderer drops and masked, the fence
+    // was one source line short of its plain-text lines, and each item
+    // paired with the next one's line; 16 samples of both items wrong
+    // within the budget, in both projections.) A fence no line
+    // closes really is unclosed to the renderer, which escapes its code and
+    // shows the tag spelled out on one line, the items after it its code;
+    // the alignment follows it: the tag's source lines are that plain-text
+    // line, and each item is bounded by its own. A code span shows its line
+    // break as a blank, the span one line of the plain text: past the cap
+    // the scan masks the break as the renderer drops it (the escaping
+    // shadowed did so by accident, cutting the span open before its closing
+    // backtick and escaping the tag, break and all). (Past the deadline, the
+    // repeated items of a CRLF note map to the break after their line
+    // whatever the block before them holds; that clock is covered by the
+    // LF cells.)
+    describe('a tag inside code, as the last `>` of the note', () => {
+      const FENCE = '```';
+      const PROJECTIONS: Array<[string, boolean | 'comments']> = [
+        ['StarterKit', false],
+        ['the note editor', true],
+        ['the note editor with comments', 'comments'],
+      ];
+      // The comment decorations of the editor with comments read the store.
+      let disposeStore: (() => void) | undefined;
+      beforeAll(() => {
+        disposeStore = appStore.init();
+      });
+      afterAll(() => disposeStore?.());
+      type CodeShape = [string, string, string, boolean];
+      const SHAPES: CodeShape[] = [
+        [
+          'a tag broken over two lines of a closed fence',
+          `${FENCE}\n<\n span>visible tk87z</span>\n${FENCE}`,
+          '<\n span>visible tk87z</span>',
+          true,
+        ],
+        [
+          'a tag closing a code span',
+          '`<span>visible tk87z</span>`',
+          '<span>visible tk87z</span>',
+          true,
+        ],
+        [
+          'a tag broken over two lines of a code span',
+          '`<\n span>visible tk87z</span>`',
+          'span>visible tk87z</span>',
+          true,
+        ],
+        [
+          'a tag broken over two lines of a fence no line closes',
+          `${FENCE}\n<\n span>visible tk87z</span>`,
+          '&lt;span&gt;visible tk87z&lt;/span&gt;',
+          false,
+        ],
+      ];
+      const EOLS: Array<[string, string, Array<[string, Clock]>]> = [
+        ['', '\n', CLOCKS],
+        [
+          ' with CRLF line endings',
+          '\r\n',
+          CLOCKS.filter(([when]) => when === 'within the budget'),
+        ],
+      ];
+      const CELLS = SHAPES.flatMap(([shape, body, shown, asWritten]) =>
+        EOLS.flatMap(([ending, eol, clocks]) =>
+          PROJECTIONS.flatMap(([projection, production]) =>
+            clocks.map(
+              ([when, clock]): [
+                string,
+                string,
+                string,
+                string,
+                string,
+                string,
+                boolean,
+                string,
+                boolean | 'comments',
+                Clock,
+                boolean,
+              ] => [
+                shape,
+                ending,
+                projection,
+                when,
+                body,
+                shown,
+                asWritten,
+                eol,
+                production,
+                clock,
+                when === 'within the budget',
+              ],
+            ),
+          ),
+        ),
+      );
+
+      it.each(CELLS)(
+        'shows %s as the renderer does past the cap%s, and pairs the items after it with their own lines, projected by %s %s',
+        async (
+          _shape,
+          _ending,
+          _projection,
+          _when,
+          body,
+          shown,
+          asWritten,
+          eol,
+          production,
+          clock,
+          exact,
+        ) => {
+          const markdown =
+            `${'q'.repeat(129 * 1024)}\n\nedit one\n\n${body}\n\n- same item\n- same item\n\nending tk88z`.replace(
+              /\n/g,
+              eol,
+            );
+          const plain = await projectWithEditor(markdown, production);
+          expect(plain).toContain(shown);
+          const map = clock(() => createBidirectionalOffsetMapper(plain, markdown));
+          expectExactRun(plain, markdown, map, 'qqqqqqqq', 0, 0);
+          expectSameLine(plain, markdown, map, 'edit one', 'edit one');
+          // Spelled out in a code block, the tag's `&lt;` and `&gt;` are
+          // letters of the plain text no source has, and where the text
+          // between them maps is not asserted: it is where a fence no line
+          // closes maps it whatever the tag holds, a line break or none.
+          if (asWritten) {
+            if (exact) expectExactRun(plain, markdown, map, 'visible tk87z', 0, 0);
+            else expectSameLine(plain, markdown, map, 'visible tk87z', 'visible tk87z');
+          }
+          if (exact) {
+            for (let k = 0; k < 2; k += 1) expectExactRun(plain, markdown, map, 'same item', k, k);
+          } else {
+            expectLinesBounded(
+              map,
+              linesHolding(plain, 'same item', /\n|\uFFFC/g),
+              asWritten
+                ? [...markdown.matchAll(/same item/g)].map((m) => [m.index, m.index + m[0].length])
+                : linesHolding(markdown, 'same item', /\n/g),
+            );
+          }
+          expectSameLine(plain, markdown, map, 'ending tk88z', 'ending tk88z');
+        },
+        60_000,
+      );
+    });
   });
 });
 
