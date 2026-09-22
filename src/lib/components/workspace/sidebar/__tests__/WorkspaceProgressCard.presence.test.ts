@@ -47,6 +47,7 @@ const mocks = vi.hoisted(() => {
     panelLayout: { byWorkspaceId: { 'ws-1': { columnCount: 1, panels: {} } } },
     workspace: { workspaces: null as unknown, pendingTitleMutations: {} },
     presence: null as unknown,
+    userPreferences: undefined as { labsMultiplayerEnabled?: boolean } | undefined,
   };
   const readable = <T>(value: T) => ({
     subscribe(run: (v: T) => void) {
@@ -225,6 +226,7 @@ describe('WorkspaceProgressCard presence row', () => {
     mocks.navigateToNote.mockClear();
     mocks.notes.length = 0;
     mocks.agents.length = 0;
+    mocks.state.userPreferences = undefined;
   });
 
   it('renders nothing for an unshared workspace, keeping the rest of the metadata block', async () => {
@@ -380,7 +382,8 @@ describe('WorkspaceProgressCard presence row', () => {
     );
   });
 
-  it('opens the Share screen for the owner when a person has no agent or note focus', async () => {
+  it('opens the Share screen for the owner when a person has no agent or note focus (Multiplayer lab on)', async () => {
+    mocks.state.userPreferences = { labsMultiplayerEnabled: true };
     await renderProgressCard({ myRole: 'owner' });
     const cy = personButton('cy');
     expect(cy.hasAttribute('aria-disabled')).toBe(false);

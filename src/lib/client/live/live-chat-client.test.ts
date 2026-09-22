@@ -3175,3 +3175,208 @@ describe('LiveChatClient.subscribe incremental delta encoding (§7.1 deltaEncodi
     off();
   });
 });
+
+// ---------------------------------------------------------------------------
+// Text-block `media` on live deltas (PROTOCOL §7.1 image dimension sidecar):
+// a live text chunk carries ONLY the entries that chunk resolved — in both
+// `deltaEncoding` modes — and the client unions them into the in-flight
+// block; the terminal reconcile frame carries the daemon's full union.
+// ---------------------------------------------------------------------------
+
+describe('LiveChatClient.subscribe text-block media sidecar (§7.1)', () => {
+  afterEach(() => {
+    vi.clearAllMocks();
+    reset();
+  });
+
+  const INCREMENTAL_SNAPSHOT = { ...SEEDED_SNAPSHOT, deltaEncoding: 'incremental' };
+  const SHOT = 'workspace-asset://ws-1/shot.png';
+  const DIAGRAM = 'intent://local/file/docs/diagram.png';
+
+  function entity(kind: 'added' | 'updated', block: Record<string, unknown>) {
+    return {
+      [kind]: [{ agentId: 'agent-1', messageId: '0190a200-asst', role: 'assistant', block }],
+      ...(kind === 'added' ? { updated: [] } : { added: [] }),
+      removedIds: [],
+    };
+  }
+
+  function firstBlock(seen: Array<{ messages: Array<{ contentBlocks?: unknown[] }> }>) {
+    return seen[seen.length - 1].messages[1].contentBlocks?.[0];
+  }
+
+  it('unions per-chunk media across incremental fragments and keeps it on media-less chunks', async () => {
+    mockChatSubscribe();
+    const client = new LiveChatClient();
+    const seen: Array<{ messages: Array<{ contentBlocks?: unknown[] }> }> = [];
+    const off = client.subscribe('agent-1', (t) => seen.push(t));
+    await flush();
+
+    snapshotPush('sub-1', 0, INCREMENTAL_SNAPSHOT);
+    deltaPush(
+      'sub-1',
+      1,
+      entity('added', {
+        type: 'text',
+        id: '0190a200-asst:0',
+        textDelta: `![shot](${SHOT})`,
+        media: { [SHOT]: { width: 1440, height: 900 } },
+      }),
+    );
+    expect(firstBlock(seen)).toEqual({
+      type: 'text',
+      id: '0190a200-asst:0',
+      text: `![shot](${SHOT})`,
+      media: { [SHOT]: { width: 1440, height: 900 } },
+    });
+
+    // A chunk that resolved nothing omits the key — the prior entries stay.
+    deltaPush(
+      'sub-1',
+      2,
+      entity('updated', { type: 'text', id: '0190a200-asst:0', textDelta: ' and' }),
+    );
+    expect(firstBlock(seen)).toEqual({
+      type: 'text',
+      id: '0190a200-asst:0',
+      text: `![shot](${SHOT}) and`,
+      media: { [SHOT]: { width: 1440, height: 900 } },
+    });
+
+    // A later chunk carries only ITS entry; a re-sent key is idempotent.
+    deltaPush(
+      'sub-1',
+      3,
+      entity('updated', {
+        type: 'text',
+        id: '0190a200-asst:0',
+        textDelta: ` ![d](${DIAGRAM})`,
+        media: { [DIAGRAM]: { width: 640, height: 480 }, [SHOT]: { width: 1440, height: 900 } },
+      }),
+    );
+    expect(firstBlock(seen)).toEqual({
+      type: 'text',
+      id: '0190a200-asst:0',
+      text: `![shot](${SHOT}) and ![d](${DIAGRAM})`,
+      media: { [SHOT]: { width: 1440, height: 900 }, [DIAGRAM]: { width: 640, height: 480 } },
+    });
+    off();
+  });
+
+  it('unions per-chunk media in full mode too (no encoding echo, full accumulated text)', async () => {
+    mockChatSubscribe();
+    const client = new LiveChatClient();
+    const seen: Array<{ messages: Array<{ contentBlocks?: unknown[] }> }> = [];
+    const off = client.subscribe('agent-1', (t) => seen.push(t));
+    await flush();
+
+    snapshotPush('sub-1', 0, SEEDED_SNAPSHOT);
+    deltaPush(
+      'sub-1',
+      1,
+      entity('added', {
+        type: 'text',
+        id: '0190a200-asst:0',
+        text: `![shot](${SHOT})`,
+        media: { [SHOT]: { width: 1440, height: 900 } },
+      }),
+    );
+    // Full-text replace, but `media` still carries only this chunk's entry.
+    deltaPush(
+      'sub-1',
+      2,
+      entity('updated', {
+        type: 'text',
+        id: '0190a200-asst:0',
+        text: `![shot](${SHOT}) ![d](${DIAGRAM})`,
+        media: { [DIAGRAM]: { width: 640, height: 480 } },
+      }),
+    );
+    expect(firstBlock(seen)).toEqual({
+      type: 'text',
+      id: '0190a200-asst:0',
+      text: `![shot](${SHOT}) ![d](${DIAGRAM})`,
+      media: { [SHOT]: { width: 1440, height: 900 }, [DIAGRAM]: { width: 640, height: 480 } },
+    });
+    off();
+  });
+
+  it('never adds a media key to a text block whose chunks carried none', async () => {
+    mockChatSubscribe();
+    const client = new LiveChatClient();
+    const seen: Array<{ messages: Array<{ contentBlocks?: unknown[] }> }> = [];
+    const off = client.subscribe('agent-1', (t) => seen.push(t));
+    await flush();
+
+    snapshotPush('sub-1', 0, INCREMENTAL_SNAPSHOT);
+    deltaPush(
+      'sub-1',
+      1,
+      entity('added', { type: 'text', id: '0190a200-asst:0', textDelta: 'Plain' }),
+    );
+    deltaPush(
+      'sub-1',
+      2,
+      entity('updated', { type: 'text', id: '0190a200-asst:0', textDelta: ' text' }),
+    );
+
+    const block = firstBlock(seen) as Record<string, unknown>;
+    expect(block).toStrictEqual({ type: 'text', id: '0190a200-asst:0', text: 'Plain text' });
+    expect('media' in block).toBe(false);
+    off();
+  });
+
+  it('terminal reconcile carries the full union and matches the live-reduced block', async () => {
+    mockChatSubscribe();
+    const client = new LiveChatClient();
+    const seen: Array<{ messages: Array<{ contentBlocks?: unknown[] }> }> = [];
+    const off = client.subscribe('agent-1', (t) => seen.push(t));
+    await flush();
+
+    snapshotPush('sub-1', 0, INCREMENTAL_SNAPSHOT);
+    deltaPush(
+      'sub-1',
+      1,
+      entity('added', {
+        type: 'text',
+        id: '0190a200-asst:0',
+        textDelta: `![shot](${SHOT})`,
+        media: { [SHOT]: { width: 1440, height: 900 } },
+      }),
+    );
+    deltaPush(
+      'sub-1',
+      2,
+      entity('updated', {
+        type: 'text',
+        id: '0190a200-asst:0',
+        textDelta: ` ![d](${DIAGRAM})`,
+        media: { [DIAGRAM]: { width: 640, height: 480 } },
+      }),
+    );
+    const live = firstBlock(seen);
+
+    deltaPush('sub-1', 3, {
+      added: [],
+      updated: [
+        {
+          agentId: 'agent-1',
+          messageId: '0190a200-asst',
+          role: 'assistant',
+          block: {
+            type: 'text',
+            id: '0190a200-asst:0',
+            text: `![shot](${SHOT}) ![d](${DIAGRAM})`,
+            media: { [SHOT]: { width: 1440, height: 900 }, [DIAGRAM]: { width: 640, height: 480 } },
+          },
+          messageSeq: 1,
+          timestamp: '2026-06-27T01:00:02.000Z',
+          streamingComplete: true,
+        },
+      ],
+      removedIds: [],
+    });
+    expect(firstBlock(seen)).toEqual(live);
+    off();
+  });
+});

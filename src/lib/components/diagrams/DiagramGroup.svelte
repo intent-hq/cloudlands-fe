@@ -2,6 +2,7 @@
   /**
    * Diagram Group Component
    */
+  import { CUSTOM_GROUP_TITLE_GEOMETRY } from './layout-engine';
   import type { ComputedGroup } from './types';
 
   interface Props {
@@ -36,62 +37,94 @@
 <!-- svelte-ignore a11y_no_static_element_interactions -->
 <g
   class={groupClass}
-  transform="translate({group.x}, {group.y})"
+  data-group-id={group.id}
   onmouseenter={handleMouseEnter}
   onmouseleave={handleMouseLeave}
 >
   <!-- Group background -->
-  <rect width={group.width} height={group.height} rx="6" class="group-bg" />
+  <rect x={group.x} y={group.y} width={group.width} height={group.height} class="group-bg" />
 
   <!-- Group label -->
-  <text x="12" y="20" class="group-label">
+  <text
+    x={group.x + group.width / 2}
+    y={group.y + CUSTOM_GROUP_TITLE_GEOMETRY.centerY}
+    text-anchor="middle"
+    dominant-baseline="middle"
+    class="group-label"
+  >
     {group.label}
   </text>
 </g>
 
 <style>
   :global(.diagram-group) {
-    /* cursor: pointer; */
-    transition: all 0.2s ease;
+    transition: opacity var(--motion-standard) var(--ease-standard);
   }
 
   :global(.group-bg) {
-    fill: hsl(var(--muted) / 0.08);
-    stroke: hsl(var(--border) / 1);
-    stroke-width: 0.5px;
-    stroke-dasharray: 9 3;
+    fill: var(--diagram-canvas);
+    stroke: var(--diagram-group-outline);
+    stroke-width: 1px;
+    rx: var(--diagram-group-radius);
+    ry: var(--diagram-group-radius);
     vector-effect: non-scaling-stroke;
-    transition: all 0.2s ease;
+    transition:
+      width var(--diagram-move-exit-duration, 220ms) cubic-bezier(0.16, 1, 0.3, 1),
+      height var(--diagram-move-exit-duration, 220ms) cubic-bezier(0.16, 1, 0.3, 1),
+      x var(--diagram-move-exit-duration, 220ms) cubic-bezier(0.16, 1, 0.3, 1),
+      y var(--diagram-move-exit-duration, 220ms) cubic-bezier(0.16, 1, 0.3, 1),
+      fill var(--diagram-move-exit-duration, var(--motion-standard)) var(--ease-standard),
+      stroke var(--diagram-move-exit-duration, var(--motion-standard)) var(--ease-standard),
+      opacity var(--motion-standard) var(--ease-standard);
   }
 
   :global(.diagram-group:hover .group-bg) {
-    fill: hsl(var(--muted) / 0.12);
-    stroke: hsl(var(--border) / 1);
+    fill: var(--diagram-canvas);
+    stroke: hsl(var(--muted-foreground) / 0.48);
   }
 
   :global(.group-highlighted .group-bg) {
-    fill: hsl(var(--accent) / 0.05);
-    stroke: hsl(var(--accent) / 0.6);
+    fill: var(--diagram-canvas);
+    stroke: color-mix(in srgb, var(--diagram-accent) 62%, var(--diagram-group-outline));
   }
 
   :global(.group-muted .group-bg) {
-    opacity: 0.4;
+    opacity: 0.55;
   }
 
   :global(.group-dimmed .group-bg) {
-    opacity: 0.2;
-    transition: opacity 0.2s ease;
+    opacity: 0.5;
   }
 
   :global(.group-dimmed .group-label) {
-    opacity: 0.3;
-    transition: opacity 0.2s ease;
+    opacity: 0.68;
+    transition: opacity var(--motion-standard) var(--ease-standard);
   }
 
   :global(.group-label) {
-    fill: hsl(var(--muted-foreground) / 0.8);
-    font-size: 11px;
-    font-weight: 600;
+    fill: var(--diagram-metadata);
+    font-family: var(--font-ui);
+    font-size: var(--diagram-edge-label-font-size, 11px);
+    font-weight: var(--text-caption-weight);
+    letter-spacing: var(--text-caption-tracking);
     pointer-events: none;
+    transition:
+      x var(--diagram-move-exit-duration, 220ms) cubic-bezier(0.16, 1, 0.3, 1),
+      y var(--diagram-move-exit-duration, 220ms) cubic-bezier(0.16, 1, 0.3, 1),
+      opacity var(--motion-standard) var(--ease-standard);
+  }
+
+  :global(.catalog-reduced-motion .diagram-group),
+  :global(.catalog-reduced-motion .group-bg),
+  :global(.catalog-reduced-motion .group-label) {
+    transition: none;
+  }
+
+  @container style(--motion-reduced: 1) {
+    :global(html:not(.catalog-full-motion) .diagram-group),
+    :global(html:not(.catalog-full-motion) .group-bg),
+    :global(html:not(.catalog-full-motion) .group-label) {
+      transition: none;
+    }
   }
 </style>
