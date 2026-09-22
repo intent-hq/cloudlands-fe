@@ -191,7 +191,11 @@ function anchoredHunks(from: string, markdown: string): Hunk[] {
           return false;
         }
         skipped.advanceTo(candidate);
-        return skipped.lines >= run.lines && skipped.letters === run.letters;
+        return (
+          skipped.lines >= run.lines &&
+          skipped.letters === run.letters &&
+          skipped.accountsForLastLine(run)
+        );
       });
       if (hit === -1 || (at !== -1 && hit >= at)) return;
       // A hit past the textblocks the run accounts for may be a later
@@ -280,7 +284,14 @@ function anchoredHunks(from: string, markdown: string): Hunk[] {
  * (`tk298z  \n`, a lazy continuation) — two markdown lines the plain text
  * shows as one, its `\n` a U+FFFC — counts toward `linesWithHardBreaks` but
  * not `lines`, as it does on the plain text; a markdown line no plain line
- * pairs with counts toward both, as before.
+ * pairs with counts toward both, as before, and takes one plain line as its
+ * own. A plain line so ended is not counted by the lower bound below — it
+ * may be a mention's, with no markdown line of its own — so a probe that
+ * starts right after the U+FFFC is held to the pairing instead: the line the
+ * U+FFFC ended must be paired or taken by the hit (`accountsForLastLine`). A
+ * hit on the very markdown line that would pair with it is an earlier
+ * occurrence — `- remote daemon tk1\nremote editor tk2`: the continuation's
+ * first word inside the item, with the same lines and letters before both.
  *
  * Every plain-text line ends a markdown line of its own, so between the last
  * anchor (`fromPos`, `toPos`) and a hit `at` for the text at `cursor`, the
@@ -401,6 +412,16 @@ class LineWalk {
   /** Whether the `k`th text line ended was ended at U+FFFC. */
   private endsHard(k: number): boolean {
     return this.text.charCodeAt(this.ended[2 * k + 1]) === 0xfffc;
+  }
+
+  /**
+   * Whether the last text line `plain` ended, when ended at U+FFFC, is one
+   * this walk has paired or taken (`pairPlainLine`) — the markdown line it
+   * is the text of ends before the position walked to.
+   */
+  accountsForLastLine(plain: LineWalk): boolean {
+    const last = (plain.ended.length >> 1) - 1;
+    return last < 0 || !plain.endsHard(last) || this.plainLine > last;
   }
 }
 

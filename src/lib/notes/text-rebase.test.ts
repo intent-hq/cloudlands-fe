@@ -1329,6 +1329,47 @@ describe('alignment of link syntax the lexer does not account for', () => {
     60_000,
   );
 
+  // Seeds 602 and 603 of the drawn notes, reduced. Past the cap the link line
+  // is unanchorable, so the run after `tk1` is walked in pieces, and a piece
+  // is looked for at most its lookahead beyond twice the plain text before
+  // it: a run of comment and definition lines — markdown with no plain text
+  // — longer than that puts the list item after them out of reach, every
+  // word of it. Its lazy continuation opens with the item's own first word:
+  // the continuation is out of reach whole, but that word inside the item is
+  // within it — an earlier occurrence, with the same lines and letters before
+  // it as the continuation's own — for any hidden run up to the item's length
+  // longer. Held to the pairing, the piece declines it and every run is
+  // exact; the hard break and the blockquote are the same shape.
+  const HIDDEN_LINES = Array.from({ length: 54 }, (_, i) =>
+    i % 2 ? `[n${i}]: https://sync/sel/daemon\n` : '<!-- offset daemon -->\n',
+  ).join('');
+  const CONTINUED_ITEM = `remote ${'daemon caret '.repeat(24)}tk7`;
+  it.each<[string, string]>([
+    ['a lazy list continuation', `- ${CONTINUED_ITEM}\nremote editor cursor tk8`],
+    ['a lazy blockquote continuation', `> ${CONTINUED_ITEM}\nremote editor cursor tk8`],
+    ['a hard break', `${CONTINUED_ITEM}  \nremote editor cursor tk8`],
+  ])(
+    'anchors the first word of %s inside the line it continues, not the line before',
+    async (_shape, continued) => {
+      const tail = `Intro line tk0\n\n${HIDDEN_LINES}[sel tk1](https://sync/offset/anchor)\n\n${continued}`;
+      expect(HIDDEN_LINES.length).toBeGreaterThan(1024 + CONTINUED_ITEM.length);
+      expect(HIDDEN_LINES.length).toBeLessThan(1024 + 2 * CONTINUED_ITEM.length);
+      const markdown = FILLER.repeat(PAST_CAP) + tail;
+      expect(markdown.length).toBeGreaterThan(128 * 1024);
+      const shownTail = await projectWithEditor(tail, true);
+      expect(shownTail).toBe(
+        `Intro line tk0\nsel tk1\n${CONTINUED_ITEM}\ufffcremote editor cursor tk8`,
+      );
+      const plain = 'unchanged prose lines.\n'.repeat(PAST_CAP) + shownTail;
+      const map = withoutDeadline(() => createBidirectionalOffsetMapper(plain, markdown));
+      expectExactRun(plain, markdown, map, 'Intro line tk0', 0, 0);
+      expectExactRun(plain, markdown, map, 'sel tk1', 0, 0);
+      expectExactRun(plain, markdown, map, CONTINUED_ITEM, 0, 0);
+      expectExactRun(plain, markdown, map, 'remote editor cursor tk8', 0, 0);
+    },
+    60_000,
+  );
+
   // The reviewer's repro: the formatted paragraph after the link line shares
   // no whole line with the markdown, and its `selection` occurs verbatim only
   // inside the URL — diffed together with the unmasked link line it would be
