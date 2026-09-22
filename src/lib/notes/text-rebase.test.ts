@@ -2166,6 +2166,78 @@ describe('alignment of link syntax the lexer does not account for', () => {
       60_000,
     );
 
+    // Text the scan past the cap might take for hidden — a comment opener or
+    // a definition's label — that the renderer shows as written: in a code
+    // span, in a fenced code block (closed, holding only a closer, unclosed
+    // and running to the end of the note, of tildes), after a `\`, or on a
+    // line that continues a paragraph or an item, which no definition may
+    // interrupt. Its text is visible non-link text and maps exactly within
+    // the budget; past the deadline it stays on its own line, and so does
+    // the sealed link line after it. (Masked, the visible text was absent
+    // from the alignment's markdown: a caret on it landed at the end of the
+    // line before, and a comment opener in a fence that no `-->` closed
+    // masked the rest of the note, the link line with it. Shown, a whole-line
+    // comment in a fence and a definition-shaped line after a paragraph were
+    // still no text lines, so every line after them paired one line short.)
+    const FENCE = '```';
+    const TILDES = '~~~';
+    const VISIBLE_BLOCKS: Array<[string, string]> = [
+      ['a comment in a code span', '`<!-- visible body -->`'],
+      ['a comment no `-->` closes in a code span', '`<!-- visible body`'],
+      ['a comment in a code span of two backticks', '``a ` <!-- visible body -->``'],
+      ['a comment in a fenced code block', `${FENCE}html\n<!--\nvisible body\n-->\n${FENCE}`],
+      ['a comment in a tilde-fenced code block', `${TILDES}\n<!-- visible body -->\n${TILDES}`],
+      ['a fenced code block holding only a closer', `${FENCE}\n-->\nvisible body\n${FENCE}`],
+      [
+        'a comment opened in text over a fence',
+        `text <!-- hidden\n${FENCE}\nhidden body\n-->\nvisible body\n${FENCE}`,
+      ],
+      ['a fenced code block no fence closes', `${FENCE}\n<!--\nvisible body`],
+      ['an escaped comment opener', '\\<!-- visible body -->'],
+      [
+        'a definition in a fenced code block',
+        `${FENCE}md\n[ref]: https://visible.example\n  "visible body"\n${FENCE}`,
+      ],
+      [
+        'a definition-shaped line after a paragraph',
+        'para\n[ref]: https://visible.example "visible body"',
+      ],
+      [
+        'a definition-shaped line after an item',
+        '- item\n[ref]: https://visible.example "visible body"',
+      ],
+    ];
+    const VISIBLE_BLOCK_CELLS = VISIBLE_BLOCKS.flatMap(([kind, body]) =>
+      PROJECTIONS.flatMap(([projection, production]) =>
+        CLOCKS.map(([when, clock]): [string, string, string, string, boolean, Clock, boolean] => [
+          kind,
+          projection,
+          when,
+          body,
+          production,
+          clock,
+          when === 'within the budget',
+        ]),
+      ),
+    );
+
+    it.each(VISIBLE_BLOCK_CELLS)(
+      'shows %s as written past the cap, projected by %s %s',
+      async (_kind, _projection, _when, body, production, clock, exact) => {
+        const markdown = `${'q'.repeat(129 * 1024)}\n\nedit one\n\n${body}\n\n[ab](https://sync/ab)\n\n**cd** two`;
+        const plain = await projectWithEditor(markdown, production);
+        expect(plain).toContain('visible body');
+        const map = clock(() => createBidirectionalOffsetMapper(plain, markdown));
+        expectExactRun(plain, markdown, map, 'qqqqqqqq', 0, 0);
+        expectSameLine(plain, markdown, map, 'edit one', 'edit one');
+        if (exact) expectExactRun(plain, markdown, map, 'visible body', 0, 0);
+        else expectSameLine(plain, markdown, map, 'visible body', 'visible body');
+        expectSameLine(plain, markdown, map, 'ab', '[ab](');
+        const trailing = plain.includes('**cd** two') ? '**cd** two' : 'cd two';
+        expectSameLine(plain, markdown, map, trailing, '**cd** two');
+      },
+      60_000,
+    );
     // A run of plain-text lines that are byte-identical duplicates — list
     // items, or the cells of table rows — before a sealed link line, longer
     // than the pairing looks ahead over the plain text. The pairing cannot be

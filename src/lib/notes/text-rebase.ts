@@ -425,8 +425,10 @@ function lowerBound(values: number[], at: number): number {
  * Whether `text[start, end)` is a line the editor shows text of: not blank,
  * not masked whole (a definition, an image, a hidden HTML block below the
  * cap), not a code fence, not a setext underline, thematic break or table
- * delimiter row (`RULE` characters only), and — unmasked, past the cap — not
- * a link reference definition nor a comment the whole line long. A markdown
+ * delimiter row (`RULE` characters only), not the label line of a link
+ * reference definition (`[label]:` with nothing but masked text after it;
+ * one that visible text follows continues a paragraph and is shown as
+ * written) and not a comment anchor the whole line long. A markdown
  * line that is none of a plain-text line's must not count as one: counted, it
  * puts every hit for the rest of the run one text line beyond the run, until
  * a hard break of the plain text (counted on one side only) admits a hit one
@@ -461,15 +463,14 @@ function isTextLine(text: string, start: number, end: number): boolean {
   if (code === 91) {
     let close = i + 1;
     while (close < end && text.charCodeAt(close) !== 93) close += 1;
-    const after = close + 2 < end ? text.charCodeAt(close + 2) : 32;
-    return !(
-      close > i + 1 &&
-      close + 1 < end &&
-      text.charCodeAt(close + 1) === 58 &&
-      (after === 32 || after === 9 || after === 0)
-    );
+    if (close === i + 1 || close + 1 >= end || text.charCodeAt(close + 1) !== 58) return true;
+    let after = close + 2;
+    while (after < end && (text.charCodeAt(after) === 32 || text.charCodeAt(after) === 9)) {
+      after += 1;
+    }
+    return after < end && text.charCodeAt(after) !== 0 && text.charCodeAt(after) !== 13;
   }
-  if (code === 60 && text.startsWith('<!--', i)) {
+  if (code === 60 && text.startsWith(COMMENT_ANCHOR, i)) {
     let last = end;
     while (last > i && (text.charCodeAt(last - 1) === 32 || text.charCodeAt(last - 1) === 9)) {
       last -= 1;
@@ -872,9 +873,15 @@ function memoisedSearch(text: string, pattern: RegExp): (at: number) => number {
   };
 }
 
-/** What opens hidden text the scan places: a comment, or a label at a line start. */
-const HIDDEN_BLOCK_OPENER = /<!--|^[ \t]{0,3}\[/gm;
-/** The two breaks of a blank line; no definition title spans one. */
+/**
+ * What the scan stops at: a comment; a label, or a fence of three or more
+ * `` ` `` or `~`, at a line start; a run of backticks; a `\` before a
+ * character it escapes (`\\`, `\<`, `\[`, `` \` ``).
+ */
+const HIDDEN_BLOCK_OPENER = /<!--|^[ \t]{0,3}\[|^ {0,3}(?:`{3,}|~{3,})|`+|\\[\\<[`]/gm;
+/** A line that may close a fence: a run of `` ` `` or `~` alone, at most three spaces before it. */
+const FENCE_CLOSE = /^ {0,3}(?:`{3,}|~{3,})[ \t\r]*$/gm;
+/** The two breaks of a blank line; no definition title or code span spans one. */
 const BLANK_LINE = /\n[ \t\r]*\n/g;
 /** A code unit that is not a line break. */
 const NOT_BREAK = /[^\n\r]/g;
@@ -890,47 +897,132 @@ const NOT_BREAK = /[^\n\r]/g;
  * text line (`isTextLine`) with no plain-text line of its own, and the
  * pairing of a run of sealed lines counts it as one (`refineByLine`,
  * `LineWalk`); masked, none is. A link's destination is not masked — its
- * line is unanchorable instead (`unanchorableLines`). One linear scan: a
- * `-->` or a closing quote none of lies ahead is not searched for again, and
- * a title is closed before the next blank line or not at all.
+ * line is unanchorable instead (`unanchorableLines`).
+ *
+ * What the renderer shows as written is not hidden, and the scan passes over
+ * it as the lexer would: a fenced code block (a fence of three or more
+ * `` ` `` or `~` at a line start, at most three spaces before it, a backtick
+ * fence's info string holding no backtick; closed by a line of the same
+ * character alone, at least as long, or running to the end of the note), a
+ * code span (a run of backticks closed by the next run of the same length
+ * before a blank line; a run none closes is literal) and an escaped
+ * character (`\<`, `\[`; `\\` escapes the backslash). Whichever opens first
+ * wins: a comment that opens before a fence hides the fence, a fence that
+ * opens before a comment shows it. A definition is one only where a block
+ * may open (`startsBlock`): a `[` on the line after a paragraph's, an item's
+ * or a quote's continues that paragraph, and the line is shown as written.
+ * One linear scan: a `-->`, a closing quote, a fence line or a closing run
+ * of a length none of lies ahead is not searched for again, and a title or a
+ * code span is closed before the next blank line or not at all.
  */
 function maskHiddenBlocks(markdown: string): string {
   let out = '';
   let pos = 0;
+  /** The end of the last block the scan closed — a fence, a comment or a definition at a line start. */
+  let blockEnd = 0;
   const nextCommentClose = memoisedIndexOf(markdown, '-->');
   const nextBlankLine = memoisedSearch(markdown, BLANK_LINE);
-  const titleCloses = new Map<number, (at: number) => number>();
+  const nextFenceClose = memoisedSearch(markdown, FENCE_CLOSE);
+  const closes = new Map<string, (at: number) => number>();
   const nextTitleClose = (closer: number) => {
-    let next = titleCloses.get(closer);
+    const quote = String.fromCharCode(closer);
+    let next = closes.get(quote);
+    if (!next) closes.set(quote, (next = memoisedIndexOf(markdown, quote)));
+    return next;
+  };
+  const nextSpanClose = (run: string) => {
+    let next = closes.get(run);
     if (!next)
-      titleCloses.set(closer, (next = memoisedIndexOf(markdown, String.fromCharCode(closer))));
+      closes.set(run, (next = memoisedSearch(markdown, new RegExp(`(?<!\`)${run}(?!\`)`, 'g'))));
     return next;
   };
   const mask = (start: number, end: number) => {
     out += markdown.slice(pos, start) + markdown.slice(start, end).replace(NOT_BREAK, '\u0000');
     pos = end;
   };
+  const lineEndAt = (at: number) => {
+    const lineEnd = markdown.indexOf('\n', at);
+    return lineEnd === -1 ? markdown.length : lineEnd;
+  };
   HIDDEN_BLOCK_OPENER.lastIndex = 0;
   let opener = HIDDEN_BLOCK_OPENER.exec(markdown);
   while (opener) {
-    let end = opener.index + opener[0].length;
-    if (opener[0] === '<!--') {
-      if (!markdown.startsWith(COMMENT_ANCHOR, opener.index)) {
+    const found = opener[0];
+    const at = opener.index;
+    let end = at + found.length;
+    if (found === '<!--') {
+      if (!markdown.startsWith(COMMENT_ANCHOR, at)) {
         const close = nextCommentClose(end);
         end = close === -1 ? markdown.length : close + 3;
-        mask(opener.index, end);
+        mask(at, end);
+        if (atLineStart(markdown, at)) blockEnd = end;
+      }
+    } else if (found.charCodeAt(0) === 92) {
+      // An escaped character: shown as written.
+    } else if (found.endsWith('[')) {
+      if (startsBlock(markdown, at, blockEnd)) {
+        const hidden = definitionHidden(markdown, end - 1, nextTitleClose, nextBlankLine);
+        if (hidden) {
+          mask(hidden[0], hidden[1]);
+          end = hidden[1];
+          blockEnd = end;
+        }
       }
     } else {
-      const hidden = definitionHidden(markdown, end - 1, nextTitleClose, nextBlankLine);
-      if (hidden) {
-        mask(hidden[0], hidden[1]);
-        end = hidden[1];
+      let run = at;
+      while (markdown.charCodeAt(run) === 32) run += 1;
+      const fenceChar = markdown.charCodeAt(run);
+      const length = end - run;
+      const lineEnd = lineEndAt(end);
+      const isFence =
+        (fenceChar === 126 || run !== at || (length >= 3 && atLineStart(markdown, at))) &&
+        (fenceChar === 126 || !markdown.slice(end, lineEnd).includes('`'));
+      if (isFence) {
+        let close = nextFenceClose(lineEnd + 1);
+        while (close !== -1) {
+          let closeRun = close;
+          while (markdown.charCodeAt(closeRun) === 32) closeRun += 1;
+          let closeEnd = closeRun;
+          while (markdown.charCodeAt(closeEnd) === fenceChar) closeEnd += 1;
+          if (closeEnd - closeRun >= length) break;
+          close = nextFenceClose(close + 1);
+        }
+        end = close === -1 ? markdown.length : lineEndAt(close);
+        blockEnd = end;
+      } else {
+        const close = nextSpanClose(markdown.slice(run, end))(end);
+        const blank = nextBlankLine(end);
+        if (close !== -1 && (blank === -1 || close < blank)) end = close + length;
       }
     }
     HIDDEN_BLOCK_OPENER.lastIndex = end;
     opener = HIDDEN_BLOCK_OPENER.exec(markdown);
   }
   return out + markdown.slice(pos);
+}
+
+/** Whether `at` of `text` sits at a line start, at most three blanks after it. */
+function atLineStart(text: string, at: number): boolean {
+  let start = at;
+  while (start > 0 && isBlank(text.charCodeAt(start - 1))) start -= 1;
+  return at - start <= 3 && (start === 0 || text.charCodeAt(start - 1) === 10);
+}
+
+/**
+ * Whether a block may open on the line of `text` that starts at `lineStart`:
+ * the note's first line, a line after a blank one, or the line after the one
+ * the last block the scan closed ended on (`blockEnd`). Any other line
+ * continues the paragraph of the line before it — its own, a list item's or
+ * a block quote's — which a link reference definition cannot interrupt.
+ */
+function startsBlock(text: string, lineStart: number, blockEnd: number): boolean {
+  if (lineStart === 0) return true;
+  const previous = text.lastIndexOf('\n', lineStart - 2) + 1;
+  if (blockEnd > previous) return true;
+  let at = previous;
+  while (at < lineStart - 1 && (isBlank(text.charCodeAt(at)) || text.charCodeAt(at) === 13))
+    at += 1;
+  return at >= lineStart - 1;
 }
 
 /**
