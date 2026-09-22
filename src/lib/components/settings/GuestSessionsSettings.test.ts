@@ -713,14 +713,48 @@ describe('GuestSessionsSettings', () => {
       expect(within(roster).queryByRole('alert')).toBeNull();
     });
 
-    it('lists members and offers Remove only for collaborators', () => {
+    it('lists only collaborators, each with Remove, and never the owner', () => {
       mocks.rosters = { 'ws-1': { status: 'loaded', members: [owner, collaborator] } };
       render(GuestSessionsSettings);
       const roster = screen.getByTestId('hosted-workspace-roster');
       const rows = within(roster).getAllByRole('listitem');
+      expect(rows).toHaveLength(1);
+      expect(rows[0].textContent).toContain('guestlogin');
+      expect(rows[0].textContent).not.toContain('Host Person');
+      expect(within(rows[0]).getByRole('button', { name: 'Remove' })).toBeTruthy();
+    });
+
+    it('renders no rows when the loaded roster holds only the owner', () => {
+      mocks.rosters = { 'ws-1': { status: 'loaded', members: [owner] } };
+      render(GuestSessionsSettings);
+      const roster = screen.getByTestId('hosted-workspace-roster');
+      expect(within(roster).queryAllByRole('listitem')).toHaveLength(0);
+      expect(roster.textContent).not.toContain('Host Person');
+      expect(within(roster).queryByRole('button', { name: 'Remove' })).toBeNull();
+      expect(within(roster).queryByRole('status')).toBeNull();
+      expect(within(roster).queryByRole('alert')).toBeNull();
+    });
+
+    it('leads each collaborator row with an avatar image or an initial fallback', () => {
+      const withAvatar: WorkspaceMember = {
+        ...collaborator,
+        principalId: 'p-pictured',
+        login: 'pictured',
+        displayName: 'Pictured Guest',
+        avatarUrl: 'https://avatars.example/pictured.png',
+      };
+      mocks.rosters = { 'ws-1': { status: 'loaded', members: [owner, withAvatar, collaborator] } };
+      render(GuestSessionsSettings);
+      const roster = screen.getByTestId('hosted-workspace-roster');
+      const rows = within(roster).getAllByRole('listitem');
       expect(rows).toHaveLength(2);
-      expect(within(rows[0]).queryByRole('button', { name: 'Remove' })).toBeNull();
-      expect(within(rows[1]).getByRole('button', { name: 'Remove' })).toBeTruthy();
+
+      const img = within(rows[0]).getByTestId('hosted-roster-avatar') as HTMLImageElement;
+      expect(img.getAttribute('src')).toBe('https://avatars.example/pictured.png');
+      expect(within(rows[0]).queryByTestId('hosted-roster-avatar-fallback')).toBeNull();
+
+      expect(within(rows[1]).queryByTestId('hosted-roster-avatar')).toBeNull();
+      expect(within(rows[1]).getByTestId('hosted-roster-avatar-fallback').textContent).toBe('G');
     });
 
     it('disables Remove while a removal for that member is in flight', () => {

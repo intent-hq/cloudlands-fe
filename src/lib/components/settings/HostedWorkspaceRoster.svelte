@@ -8,8 +8,8 @@
    * first. The confirmed sweep is handed to the parent (`onRemoveAll`, with
    * the roster as it stands) — the sweep's membership delta may unmount this
    * row before it settles, and its per-step report must outlive the row. The
-   * owner row never carries a control (`workspace.members.remove` refuses
-   * the owner).
+   * owner is not listed (`workspace.members.remove` refuses the owner); only
+   * the displayed rows are filtered — the sweep still receives the full roster.
    */
   import { onMount } from 'svelte';
   import { ListView } from '$lib/components/patterns/collection';
@@ -43,6 +43,8 @@
   const roster$ = selectHostedRoster(workspace.id);
   const removingIds$ = selectHostedRemovingPrincipalIds(workspace.id);
   const clearing$ = selectIsHostedWorkspaceClearing(workspace.id);
+
+  const collaborators = $derived($roster$.members.filter((member) => member.role !== 'owner'));
 
   /** What the *Remove* confirm dialog shows — never what a retry acts on. */
   let removeTarget = $state<WorkspaceMember | null>(null);
@@ -139,7 +141,7 @@
   {:else}
     <ListView
       virtualize={false}
-      items={$roster$.members}
+      items={collaborators}
       getKey={(member) => member.principalId}
       getText={(member) => memberLabel(member)}
       ariaLabel={workspace.title}
@@ -147,27 +149,41 @@
     >
       {#snippet row({ item: member })}
         <div class="flex items-center justify-between gap-3 py-2">
-          <div class="min-w-0">
-            <p class="truncate type-body text-foreground">{memberLabel(member)}</p>
-            <p class="truncate type-caption text-muted-foreground">
-              {member.role === 'owner'
-                ? m.settings_guestSessions_role_owner_label()
-                : m.settings_guestSessions_role_collaborator_label()}
-              {#if member.login && member.displayName}
-                · @{member.login}
-              {/if}
-            </p>
+          <div class="flex min-w-0 items-center gap-2">
+            {#if member.avatarUrl}
+              <img
+                src={member.avatarUrl}
+                alt=""
+                class="h-6 w-6 shrink-0 rounded-full"
+                loading="lazy"
+                data-testid="hosted-roster-avatar"
+              />
+            {:else}
+              <span
+                class="grid h-6 w-6 shrink-0 place-items-center rounded-full bg-muted type-caption text-foreground"
+                aria-hidden="true"
+                data-testid="hosted-roster-avatar-fallback"
+                >{memberLabel(member).slice(0, 1).toUpperCase()}</span
+              >
+            {/if}
+            <div class="min-w-0">
+              <p class="truncate type-body text-foreground">{memberLabel(member)}</p>
+              <p class="truncate type-caption text-muted-foreground">
+                {m.settings_guestSessions_role_collaborator_label()}
+                {#if member.login && member.displayName}
+                  · @{member.login}
+                {/if}
+              </p>
+            </div>
           </div>
-          {#if member.role !== 'owner'}
-            <Button
-              variant="ghost"
-              size="sm"
-              disabled={$removingIds$.includes(member.principalId)}
-              onclick={() => requestRemove(member)}
-            >
-              {m.settings_guestSessions_remove_label()}
-            </Button>
-          {/if}
+          <Button
+            variant="ghost"
+            size="sm"
+            disabled={$removingIds$.includes(member.principalId)}
+            onclick={() => requestRemove(member)}
+          >
+            {m.settings_guestSessions_remove_label()}
+          </Button>
         </div>
       {/snippet}
     </ListView>
