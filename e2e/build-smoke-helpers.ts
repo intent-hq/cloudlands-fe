@@ -608,6 +608,14 @@ export async function createWorkspaceWithPrompt(
     return onboardingRoot.getAttribute('data-onboarding-step');
   }
 
+  // Onboarding opens on the 'requirements' gate, which probes git/node
+  // through the daemon and hands off to 'welcome' once both resolve. Wait
+  // for the hand-off before reading the step.
+  await page
+    .locator('[data-onboarding-step]:not([data-onboarding-step="requirements"])')
+    .first()
+    .waitFor({ state: 'visible', timeout: 30_000 });
+
   let onboardingStep = await getOnboardingStep();
   if (onboardingStep === 'welcome') {
     // If a specific provider is requested, click its card in the AgentGrid
