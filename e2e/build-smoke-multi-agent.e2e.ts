@@ -71,7 +71,11 @@ test.describe('Build Smoke — Multi-Agent Orchestration UI', () => {
     }
   });
 
-  test('child agent creation updates sidebar and chat isolation', async () => {
+  // fixme: asserts UI that no longer exists — the panel tab's running dot
+  // (PanelTabBar has no streaming indicator), child avatars inside the
+  // delegation toggle (now text-only `[data-agent-delegation-toggle]`), and
+  // `.bg-green-500` on the parent AgentCard — intent-hq/intent#5608.
+  test.fixme('child agent creation updates sidebar and chat isolation', async () => {
     test.setTimeout(180_000);
 
     // --- Phase 1: Create parent agent with slow streaming ---

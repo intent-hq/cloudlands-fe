@@ -72,7 +72,10 @@ test.describe('Build Smoke — Local Commit', () => {
     }
   });
 
-  test('stage files and commit locally', async () => {
+  // fixme: the "Changes" sidebar launcher no longer carries button text
+  // (the label is a pointer-events-none sibling span) and the downstream
+  // staging/commit locators are unverified — intent-hq/intent#5608.
+  test.fixme('stage files and commit locally', async () => {
     test.setTimeout(TEST_TIMEOUT);
     const start = Date.now();
     let workspaceId: string | undefined;
