@@ -18,6 +18,7 @@ import {
 import {
   getActiveHookNames,
   getActiveWorkNames,
+  getGuestsSummary,
   getLocalChanges,
   getOpenPrItems,
   type LocalChangesWarning,
@@ -353,6 +354,41 @@ describe('getLocalChanges', () => {
   });
 });
 
+describe('getGuestsSummary', () => {
+  beforeAll(() => appStore.init());
+
+  afterEach(() => {
+    appStore.dispatch(removeWorkspaceEntity(WS));
+  });
+
+  const seedMembership = (membership: Partial<Workspace>) =>
+    appStore.dispatch(
+      setWorkspaceEntity({ id: WS, title: WS, status: 'Active', ...membership } as Workspace),
+    );
+
+  it('reports zero guests for an unknown workspace', () => {
+    expect(getGuestsSummary('ws-missing')).toEqual({ collaboratorCount: 0, openInviteCount: 0 });
+  });
+
+  it('reports zero guests when the row omits the membership summary (older daemon)', () => {
+    seedMembership({});
+
+    expect(getGuestsSummary(WS)).toEqual({ collaboratorCount: 0, openInviteCount: 0 });
+  });
+
+  it('counts collaborators as members minus the owner and carries the open invite count', () => {
+    seedMembership({ memberCount: 3, openInviteCount: 2 });
+
+    expect(getGuestsSummary(WS)).toEqual({ collaboratorCount: 2, openInviteCount: 2 });
+  });
+
+  it('reports no collaborators for an owner-only workspace', () => {
+    seedMembership({ memberCount: 1, openInviteCount: 1 });
+
+    expect(getGuestsSummary(WS)).toEqual({ collaboratorCount: 0, openInviteCount: 1 });
+  });
+});
+
 describe('getActiveWorkNames', () => {
   let backend: MockBackendHandle;
 
@@ -368,6 +404,8 @@ describe('getActiveWorkNames', () => {
     resetMockBackend();
   });
 
+  const noGuests = { collaboratorCount: 0, openInviteCount: 0 };
+
   const localChangesRequests = () =>
     backend.requests.filter((r) => r.method === 'workspace.localChanges');
 
@@ -381,6 +419,7 @@ describe('getActiveWorkNames', () => {
       hookNames: [],
       openPrs: [],
       localChanges: localChangesResult,
+      guests: noGuests,
     });
     expect(localChangesRequests()).toEqual([
       {
@@ -407,7 +446,30 @@ describe('getActiveWorkNames', () => {
 
     const result = await getActiveWorkNames(WS, { includeLocalChanges: true });
 
-    expect(result).toEqual({ agentNames: [], hookNames: [], openPrs: [], localChanges: null });
+    expect(result).toEqual({
+      agentNames: [],
+      hookNames: [],
+      openPrs: [],
+      localChanges: null,
+      guests: noGuests,
+    });
+  });
+
+  it('carries the guest summary from the stored row without any extra RPC', async () => {
+    appStore.dispatch(
+      setWorkspaceEntity({
+        id: WS,
+        title: WS,
+        status: 'Active',
+        memberCount: 2,
+        openInviteCount: 1,
+      } as Workspace),
+    );
+
+    const result = await getActiveWorkNames(WS);
+
+    expect(result.guests).toEqual({ collaboratorCount: 1, openInviteCount: 1 });
+    expect(backend.requests.map((r) => r.method)).not.toContain('workspace.get');
   });
 
   const workspaceGetRequests = () => backend.requests.filter((r) => r.method === 'workspace.get');

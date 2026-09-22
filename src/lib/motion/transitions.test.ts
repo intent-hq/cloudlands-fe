@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { blur, crispOut, draw, fade, fly, scale, slide, springIn } from './transitions';
+import { cubicOut } from 'svelte/easing';
+import { blur, crispOut, draw, fade, fly, scale, slide, springIn, timedFade } from './transitions';
 
 function motionPreference(reduced: boolean) {
   vi.stubGlobal(
@@ -83,6 +84,28 @@ describe('motion transitions', () => {
     expect(scale(node, { tier: 'slow', distance: 0.1 })).toHaveProperty('duration', 240);
     expect(blur(node, { tier: 'moderate', distance: 3 })).toHaveProperty('duration', 160);
     expect(draw(path, { tier: 'moderate' })).toHaveProperty('duration', 160);
+  });
+
+  it('preserves explicit fade timing, linear easing, and target opacity', () => {
+    const node = document.createElement('div');
+    node.style.opacity = '0.4';
+
+    const transition = timedFade(node, { delay: 12, duration: 180 });
+
+    expect(transition.delay).toBe(12);
+    expect(transition.duration).toBe(180);
+    expect(transition.easing?.(0.5)).toBe(0.5);
+    expect(transition.css?.(0.5, 0.5)).toBe('opacity: 0.2');
+  });
+
+  it('preserves explicit fade easing and zero duration', () => {
+    const transition = timedFade(document.createElement('div'), {
+      duration: 0,
+      easing: cubicOut,
+    });
+
+    expect(transition.duration).toBe(0);
+    expect(transition.easing).toBe(cubicOut);
   });
 
   it('short-circuits every compatibility transition for reduced motion', () => {

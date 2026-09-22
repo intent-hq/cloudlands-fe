@@ -44,6 +44,13 @@
  * listening on its port, so an unlocked second run from another worktree
  * would test against that tree's component registry and then fail with
  * ECONNREFUSED when the first run exits.
+ *
+ * Before a test run it also provisions the gitignored Paraglide bundle
+ * (src/shared/paraglide) through the same stale-aware `ensureI18nFresh`
+ * step `verify:changed` and `test:unit` run: the bundle compiles only while it
+ * is missing or its recorded input hash no longer matches messages/*.json, so
+ * a fresh worktree's first CT run builds without a manual generate:i18n. The
+ * CI helpers and `--help` skip the preflight.
  */
 import { spawn, spawnSync } from 'node:child_process';
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
@@ -51,6 +58,7 @@ import { createRequire } from 'node:module';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { ensureI18nFresh } from './check-deps-fresh.mjs';
 import { nonFontPackagesFromDryRun } from './playwright-os-deps-lib.mjs';
 import {
   acquireVerificationLock,
@@ -206,6 +214,29 @@ export function exitCodeFromChild(code, signal) {
     return signalNumber ? 128 + signalNumber : 1;
   }
   return code ?? 1;
+}
+
+/**
+ * Provision the Paraglide bundle for a test run (see the header). Resolves to
+ * true when the run may proceed; a stale bundle that could not be compiled or
+ * a thrown error is reported through `printError` and ends the run via
+ * `exit(1)`. `ensureI18n` / `exit` / `printError` are injectable for tests.
+ */
+export async function preflightI18n({
+  root = repoRoot,
+  ensureI18n = ensureI18nFresh,
+  exit = (code) => process.exit(code),
+  printError = console.error,
+} = {}) {
+  try {
+    const i18n = await ensureI18n(root);
+    if (i18n.ok) return true;
+    printError(`[run-ct-tests] ${i18n.reason}`);
+  } catch (error) {
+    printError(`[run-ct-tests] ${error instanceof Error ? error.message : error}`);
+  }
+  exit(1);
+  return false;
 }
 
 /**
@@ -517,6 +548,7 @@ async function main(argv) {
 
   let releaseLock = () => {};
   if (args[0] === 'test') {
+    if (!(await preflightI18n())) return;
     try {
       releaseLock = await acquireCtPortLock();
     } catch (error) {

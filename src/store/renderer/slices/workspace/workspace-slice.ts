@@ -189,6 +189,17 @@ export const loadWorkspacesRequested = createAction<[retryCount?: number]>(
   'workspace/loadWorkspacesRequested',
 );
 
+/**
+ * Re-read one workspace's membership summary (`memberCount` /
+ * `openInviteCount`, PROTOCOL §5.1) after a `workspace:updated` roster or
+ * invite delta: `workspace.invite.create` / `.revoke` carry only
+ * `{ invites: true }`, so the stored row's `openInviteCount` cannot be kept
+ * current from the delta alone.
+ */
+export const refreshWorkspaceMembershipRequested = createAction<[wsId: string]>(
+  'workspace/refreshWorkspaceMembershipRequested',
+);
+
 // ---------------------------------------------------------------------------
 // Reducer helpers
 // ---------------------------------------------------------------------------

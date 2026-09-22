@@ -554,6 +554,14 @@ export interface AgentListOptions {
    * (§5.5; the daemon rejects it with any other scope).
    */
   parentAgentId?: string;
+  /**
+   * Narrows a `scope: "delegated"` read to the ORPHANED delegated rows —
+   * those whose parent is no longer a non-retired session of the workspace
+   * (§5.5; the daemon rejects it with any other scope or alongside
+   * `parentAgentId`). Older daemons ignore it, so callers gate on
+   * `delegatedCounts.orphaned` presence.
+   */
+  orphanedOnly?: boolean;
 }
 
 export interface AgentListResult {
@@ -2167,16 +2175,16 @@ export interface GitHubRepoConfigResult {
 
 /**
  * Normalized single-value PR state (the wire carries `state` + `merged` +
- * `draft` + `mergeableState`). `'queued'` is an open, non-draft PR sitting in
- * the merge queue (`mergeableState: "queued"`).
+ * `draft` + `isInMergeQueue`). `'queued'` is an open, non-draft PR sitting in
+ * the merge queue (`isInMergeQueue: true`).
  */
 export type GitHubPullRequestState = 'open' | 'closed' | 'merged' | 'draft' | 'queued';
 
 /**
  * One pull request (`github.pulls.get`, §5.27) normalized for link previews:
- * the wire's `state` + `merged` + `draft` + `mergeableState` collapse into a
+ * the wire's `state` + `merged` + `draft` + `isInMergeQueue` collapse into a
  * single `state` (merged → `'merged'`, closed → `'closed'`, draft →
- * `'draft'`, `mergeableState: "queued"` → `'queued'`, else `'open'`).
+ * `'draft'`, `isInMergeQueue: true` → `'queued'`, else `'open'`).
  */
 export interface GitHubPullRequestDetails {
   owner: string;
