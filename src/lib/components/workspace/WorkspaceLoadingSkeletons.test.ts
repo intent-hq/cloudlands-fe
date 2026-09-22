@@ -1,5 +1,6 @@
 /** @vitest-environment jsdom */
 import { render } from '@testing-library/svelte';
+import { tick } from 'svelte';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import ContentSkeleton from './ContentSkeleton.svelte';
 import SidebarSkeleton from './SidebarSkeleton.svelte';
@@ -53,12 +54,14 @@ describe('workspace loading skeletons', () => {
     ['sidebar', SidebarSkeleton, '[data-workspace-sidebar-skeleton]'],
   ] as const)(
     'mounts the %s skeleton opaque instead of fading in over mounted content',
-    (_, Skeleton, selector) => {
+    async (_, Skeleton, selector) => {
       // Svelte drives every intro transition (fade/fly/...) through the Web
       // Animations API, so a skeleton that fades in animates its root here.
+      // Intros are queued as effects, so flush them before asserting.
       const animate = vi.spyOn(Element.prototype, 'animate');
 
       const { container } = render(Skeleton);
+      await tick();
       const wrapper = container.querySelector<HTMLElement>(selector)!;
 
       expect(wrapper).toBeTruthy();

@@ -118,8 +118,11 @@ describe('editorial panel resize handles', () => {
   });
 
   // The panel-system handles assert their shared-handle class in the tests
-  // below; TerminalSidebar.test.ts and ResizablePanel-handle-hit-area.ct.spec.ts
-  // cover those implementations. The sidebar's two handles are rendered here.
+  // below. The other implementations assert it from their own rendered output:
+  // TerminalSidebar.test.ts, ResizablePanel-handle-hit-area.ct.spec.ts,
+  // QuakeTerminalOverlay.test.ts (workspace + root overlays),
+  // SetupScriptBanner.test.ts and SimpleRichInput.test.ts.
+  // The sidebar's two handles are rendered here.
   it('renders the sidebar width and split handles on the shared resize-handle contract', () => {
     vi.stubGlobal(
       'ResizeObserver',

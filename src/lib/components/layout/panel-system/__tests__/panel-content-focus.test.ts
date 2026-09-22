@@ -210,7 +210,8 @@ describe('PanelLayout focus routing after a column focus', () => {
     vi.unstubAllGlobals();
   });
 
-  async function mountColumns(targetTabType: PanelTabType) {
+  /** `null` mounts the target column with no tabs (the empty-panel branch). */
+  async function mountColumns(targetTabType: PanelTabType | null) {
     appStore.dispatch(
       initializeLayout(LAYOUT_ID, {
         root: {
@@ -228,11 +229,16 @@ describe('PanelLayout focus routing after a column focus', () => {
             tabs: [{ id: 'origin-tab', type: 'note', title: 'Origin', closable: true }],
             activeTabId: 'origin-tab',
           },
-          target: {
-            id: 'target',
-            tabs: [{ id: 'target-tab', type: targetTabType, title: 'Target', closable: true }],
-            activeTabId: 'target-tab',
-          },
+          target:
+            targetTabType === null
+              ? { id: 'target', tabs: [], activeTabId: null }
+              : {
+                  id: 'target',
+                  tabs: [
+                    { id: 'target-tab', type: targetTabType, title: 'Target', closable: true },
+                  ],
+                  activeTabId: 'target-tab',
+                },
         },
         focusedPanelId: 'origin',
         canvasWidth: 800,
@@ -334,16 +340,41 @@ describe('PanelLayout focus routing after a column focus', () => {
     layout.dispose();
   });
 
-  it('drops a queued callback once focus moved on to another panel', async () => {
-    const layout = await mountColumns('browser');
+  it('blurs stale focus from another column when the target column has no tabs (#2895)', async () => {
+    const layout = await mountColumns(null);
     layout.control('origin').focus();
+
     layout.focusNextColumn();
 
-    appStore.dispatch(focusPanel(LAYOUT_ID, 'origin'));
-    layout.settle();
-
-    expect(document.activeElement).toBe(layout.control('origin'));
+    expect(document.activeElement).toBe(document.body);
     expect(layout.focusContentEvents).toEqual([]);
     layout.dispose();
   });
+
+  it('keeps focus the user placed inside a target column that has no tabs (#2895)', async () => {
+    const layout = await mountColumns(null);
+    layout.control('target').focus();
+
+    layout.focusNextColumn();
+
+    expect(document.activeElement).toBe(layout.control('target'));
+    expect(layout.focusContentEvents).toEqual([]);
+    layout.dispose();
+  });
+
+  it.each<PanelTabType>(['browser', 'note'])(
+    'drops a queued %s callback once focus moved on to another panel',
+    async (targetTabType) => {
+      const layout = await mountColumns(targetTabType);
+      layout.control('origin').focus();
+      layout.focusNextColumn();
+
+      appStore.dispatch(focusPanel(LAYOUT_ID, 'origin'));
+      layout.settle();
+
+      expect(document.activeElement).toBe(layout.control('origin'));
+      expect(layout.focusContentEvents).toEqual([]);
+      layout.dispose();
+    },
+  );
 });

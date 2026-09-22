@@ -183,14 +183,33 @@ describe('PanelLayout drag preview overlay', () => {
     return { container, overlay };
   }
 
+  // The overlay is a pure projection: it must let pointer events fall through
+  // to the real panels beneath it (drop targets keep receiving dragover) and
+  // pin itself to the layout's leading edge and full height above the panels.
+  function expectOverlayShell(overlay: HTMLElement) {
+    for (const className of [
+      'pointer-events-none',
+      'absolute',
+      'inset-y-0',
+      'left-0',
+      'z-40',
+      'box-content',
+    ]) {
+      expect(overlay.classList.contains(className), className).toBe(true);
+    }
+    expect(overlay.getAttribute('aria-hidden')).toBe('true');
+  }
+
   it('projects the wider canvas itself when a contained layout has no outer owner', async () => {
     const { container, overlay } = await projectNewColumn({ contained: true });
 
     expect(container.querySelectorAll('[data-panel-layout-preview-panel]')).toHaveLength(3);
     const ratio = Number.parseFloat(overlay.style.width) / 100;
     expect(ratio).toBeGreaterThan(1);
+    expectOverlayShell(overlay);
     expect(overlay.classList.contains('px-2')).toBe(true);
     expect(overlay.classList.contains('pr-2')).toBe(false);
+    expect(overlay.classList.contains('sm:pr-3')).toBe(false);
   });
 
   it('lets the outer workspace own the projected width when it subscribes to the ratio', async () => {
@@ -214,7 +233,9 @@ describe('PanelLayout drag preview overlay', () => {
     const { overlay } = await projectNewColumn({ contained: false });
 
     expect(overlay.style.width).toBe('100%');
+    expectOverlayShell(overlay);
     expect(overlay.classList.contains('pr-2')).toBe(true);
+    expect(overlay.classList.contains('sm:pr-3')).toBe(true);
     expect(overlay.classList.contains('px-2')).toBe(false);
   });
 });
