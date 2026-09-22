@@ -94,6 +94,7 @@ import {
   scrollbackSeekSettled,
 } from '../chat-state-slice';
 import { selectChatAgentIds, selectChatAgentState } from '../chat-state-selectors';
+import { workspaceChatStateReclaimed } from '../../workspace-lifecycle/workspace-lifecycle-slice';
 
 const logger = createLogger('ChatScrollbackSaga');
 const PAGE_LIMIT = 200;
@@ -115,6 +116,14 @@ function stopsPendingQuestionRecovery(
   agentId: string,
   messageId: string,
 ): boolean {
+  if (
+    action.type === workspaceChatStateReclaimed.type &&
+    Array.isArray(action.payload) &&
+    Array.isArray(action.payload[1]) &&
+    action.payload[1].includes(agentId)
+  ) {
+    return true;
+  }
   if (!Array.isArray(action.payload) || action.payload[0] !== agentId) return false;
   if (action.type === removeSession.type || action.type === pendingQuestionRecoveryCleared.type) {
     return true;
@@ -145,6 +154,14 @@ function stopsPendingProposalRecovery(
   agentId: string,
   messageId: string,
 ): boolean {
+  if (
+    action.type === workspaceChatStateReclaimed.type &&
+    Array.isArray(action.payload) &&
+    Array.isArray(action.payload[1]) &&
+    action.payload[1].includes(agentId)
+  ) {
+    return true;
+  }
   if (!Array.isArray(action.payload) || action.payload[0] !== agentId) return false;
   if (action.type === removeSession.type) return true;
   return (

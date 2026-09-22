@@ -78,89 +78,187 @@
 
   const contentComplexity = $derived(classifyMarkdownContent(markdownContent));
 
-  // Track static content element for click handling
-  let staticContentElement: HTMLElement | null = $state(null);
   let processedContent = $state('');
-  // Only the latest requested render may publish, including when an older worker
-  // finishes after streaming has ended or the viewer has been destroyed.
-  let renderVersion = 0;
+  type RenderMode = 'video' | 'streaming' | 'simple' | 'static';
+  type RenderRequest = {
+    generation: number;
+    markdown: string;
+    mode: RenderMode;
+    contextKey: string;
+    parseKey: string;
+    streaming: boolean;
+    workspaceId: string | undefined;
+    taskBlockRenderMode: 'placeholder' | 'content';
+    renderRichFencesAsCode: boolean;
+    renderMath: boolean;
+  };
+
   const STREAMING_THROTTLE_MS = 150;
-  let lastUpdateTime = -Infinity;
-  let pendingUpdateTimer: ReturnType<typeof setTimeout> | null = null;
-  let pendingUpdate: (() => void) | null = null;
+  let generation = 0;
+  let destroyed = false;
+  let currentRequest: RenderRequest | null = null;
+  let pendingRequest: RenderRequest | null = null;
+  let pendingTimer: ReturnType<typeof setTimeout> | null = null;
+  let lastParseStartedAt = Number.NEGATIVE_INFINITY;
+  let lastCommittedParseKey: string | null = null;
+  let lastScheduledMode: RenderMode | null = null;
+  let latestContextKey = '';
+  let latestMarkdown = '';
 
-  async function updateContent(
-    markdown: string,
-    options: Parameters<typeof processMarkdownToHTML>[1],
-    version: number,
-  ) {
-    try {
-      const html = await processMarkdownToHTML(markdown, options);
-      if (version !== renderVersion) return;
-      // Svelte owns this HTML and the adjacent image-actions overlay. Replacing
-      // the container's innerHTML would remove Svelte's anchors and the overlay.
-      processedContent = html;
-    } catch (error) {
-      if (version !== renderVersion) return;
-      logger.error('Failed to process markdown:', error);
-      // Escape HTML for safety — processedContent is injected with {@html}.
-      const escaped = markdown.replace(
-        /[&<>"']/g,
-        (m) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[m] || m,
-      );
-      processedContent = `<p>${escaped}</p>`;
-    }
+  function escapeMarkdown(markdown: string): string {
+    const escaped = markdown.replace(
+      /[&<>"']/g,
+      (character) =>
+        ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[character] ||
+        character,
+    );
+    return `<p>${escaped}</p>`;
   }
 
-  function flushStreamingUpdate() {
-    if (!pendingUpdate) return;
-    const remaining = STREAMING_THROTTLE_MS - (performance.now() - lastUpdateTime);
-    if (remaining > 0) {
-      pendingUpdateTimer = setTimeout(() => {
-        pendingUpdateTimer = null;
-        flushStreamingUpdate();
-      }, remaining);
-      return;
-    }
-    const update = pendingUpdate;
-    pendingUpdate = null;
-    lastUpdateTime = performance.now();
-    update();
+  function clearPendingTimer(): void {
+    if (pendingTimer === null) return;
+    clearTimeout(pendingTimer);
+    pendingTimer = null;
   }
 
-  function cancelPendingUpdates() {
-    if (pendingUpdateTimer !== null) {
-      clearTimeout(pendingUpdateTimer);
-      pendingUpdateTimer = null;
-    }
-    pendingUpdate = null;
-    lastUpdateTime = -Infinity;
-  }
+  function startPendingRequest(): void {
+    if (destroyed || currentRequest || !pendingRequest) return;
+    clearPendingTimer();
 
-  $effect(() => {
-    // Capture every rendering dependency now, not in the trailing timer or after
-    // awaiting the processor. A new input immediately invalidates in-flight work.
-    const markdown = markdownContent;
-    const options = {
+    const request = pendingRequest;
+    pendingRequest = null;
+    currentRequest = request;
+    lastParseStartedAt = performance.now();
+
+    void processMarkdownToHTML(request.markdown, {
       allowEmpty: true,
       skipIfHTML: false,
       preserveAnchors: true,
-      taskBlockRenderMode,
-      workspaceId,
-      renderRichFencesAsCode,
-      renderMath: !isStreaming,
+      taskBlockRenderMode: request.taskBlockRenderMode,
+      workspaceId: request.workspaceId,
+      renderRichFencesAsCode: request.renderRichFencesAsCode,
+      renderMath: request.renderMath,
       workspaceFileVersion,
-    };
-    const version = ++renderVersion;
-    const update = () => void updateContent(markdown, options, version);
+    })
+      .catch((error) => {
+        logger.error('Failed to process markdown:', error);
+        return escapeMarkdown(request.markdown);
+      })
+      .then((html) => {
+        const isCurrentStreamingPrefix =
+          request.mode === 'streaming' &&
+          request.contextKey === latestContextKey &&
+          latestMarkdown.startsWith(request.markdown);
+        if (!destroyed && (request.generation === generation || isCurrentStreamingPrefix)) {
+          processedContent = html;
+          lastCommittedParseKey = request.parseKey;
+        }
+      })
+      .finally(() => {
+        if (currentRequest === request) currentRequest = null;
+        planPendingRequest();
+      });
+  }
 
-    if (isStreaming) {
-      pendingUpdate = update;
-      if (pendingUpdateTimer === null) flushStreamingUpdate();
-    } else {
-      cancelPendingUpdates();
-      update();
+  function planPendingRequest(): void {
+    if (destroyed || currentRequest || !pendingRequest) return;
+    if (!pendingRequest.streaming) {
+      startPendingRequest();
+      return;
     }
+
+    const remaining = STREAMING_THROTTLE_MS - (performance.now() - lastParseStartedAt);
+    if (remaining <= 0) {
+      startPendingRequest();
+    } else if (pendingTimer === null) {
+      pendingTimer = setTimeout(() => {
+        pendingTimer = null;
+        startPendingRequest();
+      }, remaining);
+    }
+  }
+
+  function scheduleRender(markdown: string, mode: RenderMode): void {
+    const previousMode = lastScheduledMode;
+    lastScheduledMode = mode;
+    generation += 1;
+    const renderMath = mode !== 'streaming';
+    const contextKey = JSON.stringify([
+      mode,
+      workspaceId,
+      taskBlockRenderMode,
+      renderRichFencesAsCode,
+      renderMath,
+    ]);
+    latestContextKey = contextKey;
+    latestMarkdown = markdown;
+    const parseKey = JSON.stringify([
+      markdown,
+      workspaceId,
+      taskBlockRenderMode,
+      renderRichFencesAsCode,
+      renderMath,
+    ]);
+    const request: RenderRequest = {
+      generation,
+      markdown,
+      mode,
+      contextKey,
+      parseKey,
+      streaming: mode === 'streaming',
+      workspaceId,
+      taskBlockRenderMode,
+      renderRichFencesAsCode,
+      renderMath,
+    };
+
+    if (mode === 'video' || mode === 'simple' || !markdown) {
+      pendingRequest = null;
+      clearPendingTimer();
+      if (mode === 'simple' && markdown) {
+        processedContent = escapeMarkdown(markdown);
+        lastCommittedParseKey = null;
+      } else if (mode === 'streaming' && !markdown) {
+        processedContent = '';
+        lastCommittedParseKey = null;
+        lastParseStartedAt = Number.NEGATIVE_INFINITY;
+      }
+      return;
+    }
+
+    if (lastCommittedParseKey === parseKey) {
+      pendingRequest = null;
+      clearPendingTimer();
+      return;
+    }
+
+    if (previousMode === 'video') {
+      processedContent = escapeMarkdown(markdown);
+      lastCommittedParseKey = null;
+    }
+
+    if (mode === 'streaming' && previousMode !== 'streaming') {
+      lastParseStartedAt = Number.NEGATIVE_INFINITY;
+    }
+
+    if (currentRequest?.parseKey === parseKey) {
+      currentRequest.generation = generation;
+      pendingRequest = null;
+      clearPendingTimer();
+      return;
+    }
+
+    pendingRequest = request;
+    planPendingRequest();
+  }
+
+  $effect(() => {
+    const mode: RenderMode = hasVideoSegments
+      ? 'video'
+      : isStreaming
+        ? 'streaming'
+        : contentComplexity;
+    scheduleRender(markdownContent, mode);
   });
 
   // Lightbox state for inline workspace-file images
@@ -414,8 +512,10 @@
   }
 
   onDestroy(() => {
-    renderVersion += 1;
-    cancelPendingUpdates();
+    destroyed = true;
+    generation += 1;
+    pendingRequest = null;
+    clearPendingTimer();
   });
 </script>
 
@@ -489,7 +589,6 @@
     role="group"
     class="markdown-viewer static-content {className}"
     class:chat-image-thumbnails={chatImageThumbnails}
-    bind:this={staticContentElement}
     use:mediaFallbacks
     onclick={handleLinkClick}
     onkeydown={handleLinkKeydown}

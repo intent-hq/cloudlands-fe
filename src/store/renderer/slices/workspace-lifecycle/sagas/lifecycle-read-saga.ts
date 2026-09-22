@@ -1,5 +1,5 @@
 import type { SagaGenerator } from 'typed-redux-saga';
-import { all, call, delay, fork, put, race, take, takeEvery } from 'typed-redux-saga';
+import { all, call, cancelled, delay, fork, put, race, take, takeEvery } from 'typed-redux-saga';
 
 import { isAgentDeletionPending } from '$features/agent/utils/pending-agent-deletions';
 import { staleRuntimeFlagClearUpsertOptions } from '$features/agent/utils/stale-runtime-flag-clear';
@@ -570,7 +570,9 @@ function* fetchRetiredAgents(workspaceId: string): SagaGenerator<void> {
     yield* put(setRetiredCount(workspaceId, fetched.length));
     yield* put(setRetiredAgentsLoaded(workspaceId, true));
   } finally {
-    yield* put(setIsLoadingRetiredAgents(workspaceId, false));
+    if (!(yield* cancelled())) {
+      yield* put(setIsLoadingRetiredAgents(workspaceId, false));
+    }
   }
 }
 

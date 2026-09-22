@@ -393,6 +393,60 @@ describe('lifecycleReadSaga', () => {
       await stop(run.task);
     });
 
+    it.each(['backoff', 'reconnect'] as const)(
+      'resumes workspace listing via %s without reviving an unmounted retired-agent read',
+      async (resume) => {
+        let resolveRetired!: (value: AgentSession[]) => void;
+        mocks.agents.list.mockReturnValueOnce(
+          new Promise<AgentSession[]>((resolve) => {
+            resolveRetired = resolve;
+          }),
+        );
+        mocks.workspaceServiceList
+          .mockResolvedValueOnce(TRANSPORT_DOWN)
+          .mockResolvedValue({ ok: true, data: [{ id: WS, branch: 'main' }] });
+        const run = startWithLoopback();
+        try {
+          run.channel.put(fetchRetiredAgentsRequested(WS));
+          run.channel.put(loadWorkspacesRequested());
+          await settle();
+          expect(mocks.agents.list.mock.calls).toEqual([[WS, { retiredOnly: true }]]);
+          expect(mocks.workspaceServiceList.mock.calls).toEqual([[{ lite: true }]]);
+          expect(run.getWorkspaceState().hasLoaded).toBe(false);
+
+          run.actions.length = 0;
+          run.channel.put(workspaceUnmounted(WS));
+          await settle();
+          resolveRetired([agent('agent-late', { retiredAt: NOW.toISOString() })]);
+          await settle();
+          expect(run.actions).toEqual([]);
+
+          if (resume === 'backoff') await vi.advanceTimersByTimeAsync(1_000);
+          else run.channel.put(backendReconnected());
+          await settle();
+          await settle();
+          expect(mocks.workspaceServiceList.mock.calls).toEqual([
+            [{ lite: true }],
+            [{ lite: true }],
+          ]);
+          expect(run.getWorkspaceState().hasLoaded).toBe(true);
+          expect(getItem(run.getWorkspaceState().workspaces, WS)?.id).toBe(WS);
+
+          await vi.advanceTimersByTimeAsync(60_000);
+          expect(mocks.workspaceServiceList).toHaveBeenCalledTimes(2);
+          expect(mocks.agents.list).toHaveBeenCalledTimes(1);
+          expect(
+            run.actions.filter(
+              ({ type }) =>
+                type.startsWith('workspaceAgents/') || type.startsWith('agentSessions/'),
+            ),
+          ).toEqual([]);
+        } finally {
+          await stop(run.task);
+        }
+      },
+    );
+
     it('does not retry a failed refresh once the list has loaded (log only)', async () => {
       mocks.workspaceServiceList
         .mockResolvedValueOnce({ ok: true, data: [] })
@@ -2052,6 +2106,40 @@ describe('lifecycleReadSaga', () => {
       { type: 'agentSessions/bulkUpsertSessions', payload: [[retired], { listProjection: true }] },
       { type: 'workspaceAgents/addAgent', payload: [WS, retired] },
       { type: 'workspaceAgents/setRetiredCount', payload: [WS, 1] },
+      { type: 'workspaceAgents/setRetiredAgentsLoaded', payload: [WS, true] },
+      { type: 'workspaceAgents/setIsLoadingRetiredAgents', payload: [WS, false] },
+    ]);
+    await stop(run.task);
+  });
+
+  it('does not write retired-agent state after workspace unmount cancels the load', async () => {
+    let resolveList!: (value: AgentSession[]) => void;
+    mocks.agents.list.mockReturnValueOnce(
+      new Promise<AgentSession[]>((resolve) => {
+        resolveList = resolve;
+      }),
+    );
+    const run = start();
+
+    run.channel.put(fetchRetiredAgentsRequested(WS));
+    await settle();
+    expect(run.actions).toEqual([
+      { type: 'workspaceAgents/setIsLoadingRetiredAgents', payload: [WS, true] },
+    ]);
+
+    run.actions.length = 0;
+    run.channel.put(workspaceUnmounted(WS));
+    await settle();
+    resolveList([agent('agent-late', { retiredAt: '2026-08-10T00:00:00.000Z' })]);
+    await settle();
+
+    expect(run.actions).toEqual([]);
+
+    run.channel.put(fetchRetiredAgentsRequested(WS));
+    await settle();
+    expect(run.actions).toEqual([
+      { type: 'workspaceAgents/setIsLoadingRetiredAgents', payload: [WS, true] },
+      { type: 'workspaceAgents/setRetiredCount', payload: [WS, 0] },
       { type: 'workspaceAgents/setRetiredAgentsLoaded', payload: [WS, true] },
       { type: 'workspaceAgents/setIsLoadingRetiredAgents', payload: [WS, false] },
     ]);

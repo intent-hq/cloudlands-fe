@@ -57,6 +57,14 @@ export const workspaceMounted = createAction<[wsId: string]>(
 export const workspaceUnmounted = createAction<[wsId: string]>(
   'workspace-lifecycle/workspaceUnmounted',
 );
+/**
+ * A finally closed workspace no longer has a live chat owner. `agentIds` is
+ * captured before any workspace index is changed so globally agent-keyed
+ * slices can reclaim the same bounded set without cross-slice reads.
+ */
+export const workspaceChatStateReclaimed = createAction<[wsId: string, agentIds: string[]]>(
+  'workspace-lifecycle/workspaceChatStateReclaimed',
+);
 export const workspaceOpenSucceeded = createAction<[wsId: string]>(
   'workspace-lifecycle/workspaceOpenSucceeded',
 );
