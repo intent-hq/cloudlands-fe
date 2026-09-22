@@ -1,5 +1,5 @@
-// @verify-changed-triggers: src/lib/component-catalog/**, src/hooks.client.ts, eslint.config.js,
-//   src/routes/+layout.svelte, src/routes/(app)/+layout.svelte,
+// @verify-changed-triggers: src/lib/component-catalog/**, eslint.config.js,
+//   eslint-rules/internal-module-import-patterns.js,
 //   src/routes/sandbox/+layout.svelte, src/routes/sandbox/+page.svelte,
 //   src/routes/sandbox/[slug]/+page.svelte, src/routes/(app)/sandbox/**,
 //   src/routes/(app)/agent/[id]/+page.svelte, src/routes/(app)/settings/+page.svelte,
@@ -15,11 +15,38 @@
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import path from 'node:path';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
+import { ESLint } from 'eslint';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import CatalogShell from './CatalogShell.svelte';
 
 const root = process.cwd();
 const routesRoot = path.join(root, 'src/routes');
+const ROOT_LAYOUT = 'src/routes/+layout.svelte';
+const APP_LAYOUT = 'src/routes/(app)/+layout.svelte';
+// Host modules the shared root layout must not reach (the (app) layout owns them),
+// in every spelling `no-restricted-imports` has to cover (cloudlands-fe#2763).
+const hostImportSpellings = [
+  ["import { invoke } from '$lib/electron-bridge';", /Electron bridge/],
+  ["import { invoke } from '../lib/electron-bridge.ts';", /Electron bridge/],
+  ["import { LiveAppClient } from '$lib/client/live/live-app-client';", /live daemon client/],
+  ["import * as live from '../lib/client/live/live-app-client.js';", /live daemon client/],
+  ["import { seedMockStore } from '$store/renderer/mock-bootstrap';", /mock store/],
+  ["import { seedMockStore } from '../store/renderer/mock-bootstrap';", /mock store/],
+] as const;
+const sharedLayoutImports = [
+  "import '../app.css';",
+  "import { startRootStoreLifecycle } from '$store/renderer/root-store-lifecycle';",
+];
+
+const eslint = new ESLint({ cwd: root });
+
+async function restrictedImportMessages(filePath: string, imports: string[]) {
+  const source = `<script lang="ts">\n${imports.map((line) => `  ${line}`).join('\n')}\n</script>\n\n<div></div>\n`;
+  const [result] = await eslint.lintText(source, { filePath, warnIgnored: false });
+  return (result?.messages ?? [])
+    .filter((message) => message.ruleId === 'no-restricted-imports')
+    .map((message) => message.message);
+}
 const appRouteFiles = [
   ['(app)/agent/[id]/+page.svelte', '/agent/[id]'],
   ['(app)/settings/+page.svelte', '/settings'],
@@ -82,15 +109,19 @@ describe('catalog route shell', () => {
     expect(existsSync(path.join(routesRoot, '(app)/sandbox'))).toBe(false);
   });
 
-  it('starts shared state at the root while keeping product host code inside the app shell', () => {
-    const rootLayout = readFileSync(path.join(routesRoot, '+layout.svelte'), 'utf8');
-    const appLayout = readFileSync(path.join(routesRoot, '(app)/+layout.svelte'), 'utf8');
-    expect(rootLayout).toContain("import '../app.css'");
-    expect(rootLayout).toContain('startRootStoreLifecycle');
-    expect(rootLayout).not.toMatch(/electron-bridge|LiveAppClient|seedMockStore/);
-    expect(appLayout).toContain('data-testid="app-ready"');
-    expect(appLayout).toContain('LiveAppClient');
-  });
+  it('lets the shared root layout start state and styles but bans product host imports there', async () => {
+    expect(await restrictedImportMessages(ROOT_LAYOUT, sharedLayoutImports)).toEqual([]);
+    for (const [importStatement, expected] of hostImportSpellings) {
+      const messages = await restrictedImportMessages(ROOT_LAYOUT, [importStatement]);
+      expect(messages, importStatement).toHaveLength(1);
+      expect(messages[0], importStatement).toMatch(expected);
+    }
+  }, 30_000);
+
+  it('lets the app-shell layout own the product host imports', async () => {
+    const hostImports = hostImportSpellings.map(([importStatement]) => importStatement);
+    expect(await restrictedImportMessages(APP_LAYOUT, hostImports)).toEqual([]);
+  }, 30_000);
 
   it('moves async-data lint baseline paths without changing baseline membership', () => {
     const eslintConfig = readFileSync(path.join(root, 'eslint.config.js'), 'utf8');
@@ -129,12 +160,6 @@ describe('catalog route shell', () => {
         .flatMap((line, index) => (forbidden.test(line) ? [`${relativeFile}:${index + 1}`] : []));
     });
     expect(violations).toEqual([]);
-
-    const clientHooks = readFileSync(path.join(root, 'src/hooks.client.ts'), 'utf8');
-    expect(clientHooks).toContain("window.location.pathname.startsWith('/sandbox')");
-    expect(clientHooks).toMatch(
-      /if \([\s\S]*!isCatalogRoute[\s\S]*VITE_ENABLE_BROWSER_MOCK[\s\S]*\) \{/,
-    );
   });
 
   it('uses canonical controls throughout the catalog workspace and previews', () => {

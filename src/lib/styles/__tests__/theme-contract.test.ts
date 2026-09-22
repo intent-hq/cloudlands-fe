@@ -1,8 +1,30 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { cleanup, render, waitFor } from '@testing-library/svelte';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import type { AgentSession } from '$shared/types';
+import { CHIEF_WORKSPACE_ID } from '$shared/types/branded-ids';
+import { store as appStore } from '$store/renderer/store';
+import { bulkUpsertSessions } from '$store/renderer/slices/agent-session/agent-session-slice';
+import { openPanel } from '$store/renderer/slices/sidebar-nav/sidebar-nav-slice';
+import { setAgentsLoaded } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
+import type { PanelState } from '$store/renderer/slices/panel-layout/panel-layout-types';
+import ModelPicker from '$lib/components/chat/input/ModelPicker.svelte';
+import Panel from '$lib/components/layout/panel-system/Panel.svelte';
+import PanelContainer from '$lib/components/layout/panel-system/PanelContainer.svelte';
+import PanelEmptyState from '$lib/components/layout/panel-system/PanelEmptyState.svelte';
+import ChiefCard from '$lib/components/layout/sidebar-nav/cards/ChiefCard.svelte';
+import SidebarPanelHarness from '$lib/components/layout/sidebar-nav/__tests__/mocks/SidebarPanelHarness.svelte';
+import SidebarHarness from '$lib/components/ui/sidebar/SidebarHarness.svelte';
+import SidebarSkeleton from '$lib/components/workspace/SidebarSkeleton.svelte';
 import { themePresets } from '../../utils/theme-presets';
 import { parseVSCodeTheme } from '../../utils/vscode-theme-parser';
+
+vi.mock('$lib/components/chat/ChatPanel.svelte', async () => ({
+  default: (
+    await import('$lib/components/layout/sidebar-nav/__tests__/mocks/MockChiefChatPanel.svelte')
+  ).default,
+}));
 
 const COLOR_ROLES = [
   'background',
@@ -383,95 +405,9 @@ describe('theme color contract', () => {
     );
   });
 
-  it('keeps canonical sidebar shells on the shared token without local color overrides', () => {
-    const sidebar = fs.readFileSync(
-      path.resolve(process.cwd(), 'src/lib/components/ui/sidebar/sidebar.svelte'),
-      'utf8',
-    );
-    const provider = fs.readFileSync(
-      path.resolve(process.cwd(), 'src/lib/components/ui/sidebar/sidebar-provider.svelte'),
-      'utf8',
-    );
-    const skeleton = fs.readFileSync(
-      path.resolve(process.cwd(), 'src/lib/components/workspace/SidebarSkeleton.svelte'),
-      'utf8',
-    );
-    const navigationPanel = fs.readFileSync(
-      path.resolve(process.cwd(), 'src/lib/components/layout/sidebar-nav/SidebarPanel.svelte'),
-      'utf8',
-    );
-
-    expect(sidebar.match(/\bbg-sidebar\b/g)).toHaveLength(3);
-    expect(sidebar).not.toMatch(/bg-\[#[\da-f]+\]/i);
-    expect(provider).toContain('has-data-[variant=inset]:bg-sidebar');
-    expect(skeleton).toContain('bg-sidebar text-sidebar-foreground');
-    expect(navigationPanel).toContain(
-      'sidebar-panel h-full flex flex-col relative text-sidebar-foreground',
-    );
-    for (const source of [sidebar, provider, skeleton, navigationPanel]) {
-      expect(source).not.toMatch(/--sidebar\s*:/);
-    }
-  });
-
-  it('keeps populated panels on the primary canvas and pristine empty panels on the sidebar surface', () => {
-    const panel = fs.readFileSync(
-      path.resolve(process.cwd(), 'src/lib/components/layout/panel-system/Panel.svelte'),
-      'utf8',
-    );
-    const panelTabBar = fs.readFileSync(
-      path.resolve(process.cwd(), 'src/lib/components/layout/panel-system/PanelTabBar.svelte'),
-      'utf8',
-    );
-    const panelContainer = fs.readFileSync(
-      path.resolve(process.cwd(), 'src/lib/components/layout/panel-system/PanelContainer.svelte'),
-      'utf8',
-    );
-    const panelEmpty = fs.readFileSync(
-      path.resolve(process.cwd(), 'src/lib/components/layout/panel-system/PanelEmptyState.svelte'),
-      'utf8',
-    );
-    const chief = fs.readFileSync(
-      path.resolve(process.cwd(), 'src/lib/components/layout/sidebar-nav/cards/ChiefCard.svelte'),
-      'utf8',
-    );
-
-    expect(panel).toContain('rounded-(--panel-shell-radius) text-foreground');
-    expect(panel).toContain('--panel-shell-radius: var(--radius-large);');
-    expect(panel).not.toContain('rounded-lg border border-border');
-    expect(panel).toContain('class:bg-sidebar={panel.tabs.length === 0}');
-    expect(panel).toContain('class:bg-background={panel.tabs.length > 0}');
-    expect(panelTabBar).not.toContain('border-b border-border');
-    expect(panelContainer).toContain('bg-background text-foreground');
-    expect(panelEmpty).toContain('bg-sidebar px-6 py-8 text-foreground');
-    expect(panelEmpty).not.toContain('bg-background px-6 py-8 text-foreground');
-    for (const source of [panel, panelContainer, panelEmpty]) {
-      expect(source).not.toContain('bg-sidebar text-sidebar-foreground');
-      expect(source).not.toContain('bg-card text-card-foreground');
-    }
-    expect(chief).toMatch(
-      /<div class="min-h-0 flex-1">\s*<ChatPanel[\s\S]*?agentName=\{m\.layout_chiefCard_title\(\)\}/,
-    );
-    expect(chief).not.toMatch(/<div class="[^"]*\bbg-card\b[^"]*">\s*<ChatPanel/);
-  });
-
-  it('keeps ModelPicker boundaries and avatar art on dedicated semantic roles', () => {
-    const picker = fs.readFileSync(
-      path.resolve(process.cwd(), 'src/lib/components/chat/input/ModelPicker.svelte'),
-      'utf8',
-    );
-    const avatar = fs.readFileSync(
-      path.resolve(
-        process.cwd(),
-        'src/features/agent/components/agent-avatar/AgentAvatarWithState.svelte',
-      ),
-      'utf8',
-    );
+  it('keeps the avatar foreground on the shared light foreground token in both modes', () => {
     const css = fs.readFileSync(path.resolve(process.cwd(), 'src/lib/styles/tokens.css'), 'utf8');
 
-    expect(picker).toContain("'w-full justify-between border-border!'");
-    expect(picker).not.toMatch(/(?:border|ring)-\[#/);
-    expect(avatar).toContain('color: hsl(var(--agent-avatar-foreground))');
-    expect(avatar).not.toContain('color: #080808');
     for (const mode of ['light', 'dark']) {
       expect(tokenValue(css, `theme-${mode}-agent-avatar-foreground`)).toBe(
         'var(--theme-light-foreground)',
@@ -790,5 +726,161 @@ describe('theme color contract', () => {
     }
     expect(appCss).toMatch(/body\s*\{[^}]*font-size:\s*var\(--text-body-size\)/s);
     expect(appCss).not.toMatch(/html,\s*body\s*\{[^}]*font-size:/s);
+  });
+});
+
+describe('theme color contract — rendered surfaces', () => {
+  const WORKSPACE_ID = 'workspace-1';
+  const originalResizeObserver = window.ResizeObserver;
+  let dispose: (() => void) | undefined;
+
+  beforeEach(() => {
+    Object.defineProperty(window, 'ResizeObserver', {
+      configurable: true,
+      value: class {
+        observe = vi.fn();
+        unobserve = vi.fn();
+        disconnect = vi.fn();
+      },
+    });
+    dispose = appStore.init();
+  });
+
+  afterEach(() => {
+    cleanup();
+    dispose?.();
+    Object.defineProperty(window, 'ResizeObserver', {
+      configurable: true,
+      value: originalResizeObserver,
+    });
+  });
+
+  function classesMatching(root: ParentNode, pattern: RegExp): string[] {
+    return [...root.querySelectorAll('*')].flatMap((element) =>
+      [...element.classList].filter((name) => pattern.test(name)),
+    );
+  }
+
+  function inlineOverrides(root: ParentNode, property: string): Element[] {
+    return [...root.querySelectorAll<HTMLElement>('*')].filter(
+      (element) => element.style.getPropertyValue(property) !== '',
+    );
+  }
+
+  function renderPanel(id: string, tabs: PanelState['tabs']) {
+    const { container } = render(Panel, {
+      props: {
+        panel: { id, tabs, activeTabId: tabs[0]?.id ?? null },
+        workspaceId: WORKSPACE_ID,
+        layoutId: WORKSPACE_ID,
+        onFocus: vi.fn(),
+      },
+    });
+    return container.querySelector(`[data-panel-id="${id}"]`)!;
+  }
+
+  it('keeps canonical sidebar shells on the shared token without local color overrides', async () => {
+    const uiSidebar = render(SidebarHarness, { props: { open: true } });
+    const inner = uiSidebar.container.querySelector('[data-slot="sidebar-inner"]')!;
+    const wrapper = uiSidebar.container.querySelector('[data-slot="sidebar-wrapper"]')!;
+    const skeleton = render(SidebarSkeleton);
+    const navigation = render(SidebarPanelHarness, {
+      props: { setup: () => appStore.dispatch(openPanel('settings')) },
+    });
+    const navigationShell = await waitFor(() => {
+      const shell = navigation.container.querySelector('.sidebar-panel');
+      expect(shell).not.toBeNull();
+      return shell!;
+    });
+
+    expect(inner.classList).toContain('bg-sidebar');
+    expect(wrapper.classList).toContain('has-data-[variant=inset]:bg-sidebar');
+    expect(skeleton.container.firstElementChild!.classList).toContain('bg-sidebar');
+    expect(skeleton.container.firstElementChild!.classList).toContain('text-sidebar-foreground');
+    expect(navigationShell.classList).toContain('text-sidebar-foreground');
+    for (const root of [uiSidebar.container, skeleton.container, navigation.container]) {
+      expect(classesMatching(root, /^bg-\[#/i)).toEqual([]);
+      expect(inlineOverrides(root, '--sidebar')).toEqual([]);
+    }
+  });
+
+  it('keeps populated panels on the primary canvas and pristine empty panels on the sidebar surface', async () => {
+    const populated = renderPanel('populated', [
+      { id: 'note-tab', type: 'note', title: 'Note', closable: true },
+    ]);
+    const pristine = renderPanel('pristine', []);
+    const missing = render(PanelContainer, {
+      props: {
+        node: { type: 'panel', panelId: 'missing' },
+        panels: {},
+        panelOrder: [],
+        focusedPanelId: null,
+        workspaceId: WORKSPACE_ID,
+        layoutId: WORKSPACE_ID,
+      },
+    }).container.querySelector('[data-missing-panel-surface]')!;
+    const emptyState = render(PanelEmptyState, {
+      props: { panelId: 'pristine', workspaceId: WORKSPACE_ID, layoutId: WORKSPACE_ID },
+    }).container.firstElementChild!;
+
+    for (const shell of [populated, pristine]) {
+      expect(shell.classList).toContain('rounded-(--panel-shell-radius)');
+      expect(shell.classList).toContain('text-foreground');
+      expect(shell.classList).not.toContain('rounded-lg');
+      expect(shell.classList).not.toContain('border-border');
+    }
+    expect(populated.classList).toContain('bg-background');
+    expect(populated.classList).not.toContain('bg-sidebar');
+    expect(pristine.classList).toContain('bg-sidebar');
+    expect(pristine.classList).not.toContain('bg-background');
+    expect(
+      [...populated.querySelectorAll('*')].filter(
+        (element) =>
+          element.classList.contains('border-b') && element.classList.contains('border-border'),
+      ),
+    ).toEqual([]);
+    expect(missing.classList).toContain('bg-background');
+    expect(missing.classList).toContain('text-foreground');
+    expect(emptyState.classList).toContain('bg-sidebar');
+    expect(emptyState.classList).toContain('text-foreground');
+    expect(emptyState.classList).not.toContain('bg-background');
+    for (const surface of [populated, pristine, missing, emptyState]) {
+      expect(surface.classList).not.toContain('text-sidebar-foreground');
+      expect(surface.classList).not.toContain('bg-card');
+      expect(surface.classList).not.toContain('text-card-foreground');
+    }
+
+    appStore.dispatch(setAgentsLoaded(CHIEF_WORKSPACE_ID, true));
+    appStore.dispatch(
+      bulkUpsertSessions([
+        {
+          id: 'chief-agent',
+          backendSessionId: null,
+          workspaceId: CHIEF_WORKSPACE_ID,
+          name: 'Chief',
+          status: 'idle',
+          messages: [],
+          createdAt: '2026-08-10T00:00:00.000Z',
+          updatedAt: '2026-08-10T00:00:00.000Z',
+        } as unknown as AgentSession,
+      ]),
+    );
+    const chief = render(ChiefCard, { props: { expanded: true } });
+    const chatPanel = await waitFor(() => {
+      const mock = chief.container.querySelector('[data-testid="mock-chat-panel"]');
+      expect(mock).not.toBeNull();
+      return mock!;
+    });
+    expect(chatPanel.parentElement!.classList).toContain('min-h-0');
+    expect(chatPanel.parentElement!.classList).toContain('flex-1');
+    expect(chatPanel.parentElement!.classList).not.toContain('bg-card');
+  });
+
+  it('keeps ModelPicker boundaries on the shared border token', () => {
+    const { container } = render(ModelPicker, { props: { variant: 'outline' } });
+    const trigger = container.querySelector('button')!;
+
+    expect(trigger.classList).toContain('border-border!');
+    expect(classesMatching(container, /^(?:border|ring)-\[#/)).toEqual([]);
   });
 });
