@@ -186,6 +186,7 @@
     developer: 'advanced',
     labs: 'labs',
     'labs-multiplayer': 'labs',
+    multiplayer: 'labs',
   };
 
   function resolveHashTab(targetId: string): SettingsTab | undefined {

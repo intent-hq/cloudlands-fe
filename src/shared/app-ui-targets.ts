@@ -146,7 +146,6 @@ const APP_UI_TARGETS: AppUiTarget[] = [
     ['hardware', 'Hardware', 'Hardware integration settings.', 'advanced'],
     ['data', 'Data', 'Data import settings.', 'advanced'],
     ['developer', 'Developer', 'Development-only settings.', 'advanced'],
-    ['labs-multiplayer', 'Multiplayer (Labs)', 'Experimental Multiplayer lab toggle.', 'labs'],
   ].map(([id, label, description, tab]) =>
     settingsTarget({
       id,
@@ -186,6 +185,16 @@ const APP_UI_TARGETS: AppUiTarget[] = [
       description,
     }),
   ),
+  settingsTarget({
+    id: 'labs-multiplayer',
+    tab: 'labs',
+    hashAliases: ['labs-multiplayer', 'multiplayer', 'labs'],
+    scrollSelector: '#labs-multiplayer',
+    highlightSelector: '[data-highlight-id="labs-multiplayer"]',
+    label: 'Settings: Multiplayer (Labs)',
+    route: '/settings?tab=labs#labs-multiplayer',
+    description: 'Experimental Multiplayer lab toggle.',
+  }),
   settingsTarget({
     id: 'general',
     tab: 'advanced',

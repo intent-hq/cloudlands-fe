@@ -600,6 +600,7 @@ describe('settings tab route and focus behavior', () => {
     ['/settings?tab=behavior#agent-features', 'Agent defaults', 'agent-features'],
     ['/settings?tab=labs#labs-multiplayer', 'Labs', 'labs-multiplayer'],
     ['/settings#labs-multiplayer', 'Labs', 'labs-multiplayer'],
+    ['/settings#multiplayer', 'Labs', 'labs-multiplayer'],
   ])('routes canonical and legacy URL %s to %s', async (url, category, sectionId) => {
     renderSettings(url);
 
