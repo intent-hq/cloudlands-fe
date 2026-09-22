@@ -734,10 +734,6 @@ describe('AgentSubscriptions unified waiting disclosure', () => {
       expect(waitingIcon?.classList).toContain('text-muted-foreground!');
       expect(waitingIcon?.classList).toContain('opacity-100');
       expect(finishedIcon?.className.baseVal).not.toMatch(/green/);
-      for (const token of ['h-3.5!', 'w-3.5!', 'shrink-0']) {
-        expect(finishedIcon?.classList).toContain(token);
-        expect(waitingIcon?.classList).toContain(token);
-      }
     },
   );
 

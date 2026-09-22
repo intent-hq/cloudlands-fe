@@ -52,6 +52,17 @@
    follows the same single source of truth as the hand-written component CSS. */
 @custom-variant motion-reduce (@container style(--motion-reduced: 1));
 
+/* Keep the 12px card inset while sharing the tool-row leading column. */
+@utility subscription-card-outward-bleed {
+  --subscription-card-inline-inset: 0.75rem;
+  --subscription-card-inline-bleed: calc(
+    var(--subscription-card-inline-inset) - var(--chat-operational-row-inline-padding, 0.5rem)
+  );
+  margin-inline: calc(-1 * var(--subscription-card-inline-bleed)) !important;
+  width: calc(100% + 2 * var(--subscription-card-inline-bleed)) !important;
+  max-width: none !important;
+}
+
 :root {
   /* Canonical navigation-row geometry. Product rows select compact or regular density. */
   --row-height-compact: 1.75rem;

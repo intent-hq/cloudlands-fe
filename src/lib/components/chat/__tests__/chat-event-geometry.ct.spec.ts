@@ -51,6 +51,36 @@ async function expectTransitionsSettled(target: Locator): Promise<void> {
 for (const theme of ['light', 'dark'] as const) {
   for (const width of [360, 960] as const) {
     for (const zoom of [1, 2] as const) {
+      test(`subscription columns match tool rows in ${theme} at ${width}px and ${zoom * 100}%`, async ({
+        mount,
+      }) => {
+        const component = await mount(ChatEventGeometryHost, {
+          props: { panelId: 'subscription-tool-columns', theme, width, zoom },
+        });
+        const lane = component.getByTestId('subscription-tool-column');
+        const tool = await lane.locator('[data-operational-leading]').boundingBox();
+        const card = await lane.getByTestId('event-wakeup-leading-column').boundingBox();
+        const icon = await lane
+          .getByTestId('event-wakeup-leading-column')
+          .locator('svg')
+          .boundingBox();
+        expect(tool).not.toBeNull();
+        expect(card).not.toBeNull();
+        expect(icon).not.toBeNull();
+        expect(Math.abs(card!.x - tool!.x)).toBeLessThanOrEqual(1);
+        expect(icon!.width / zoom).toBeCloseTo(16, 1);
+        expect(icon!.height / zoom).toBeCloseTo(16, 1);
+        const delegation = lane.getByTestId('group-summary-toggle').locator('svg');
+        const delegationSlot = await delegation.locator('..').boundingBox();
+        const delegationIcon = await delegation.boundingBox();
+        expect(Math.abs(delegationSlot!.x - tool!.x)).toBeLessThanOrEqual(1);
+        expect(delegationIcon!.width / zoom).toBeCloseTo(16, 1);
+        const surface = await lane.getByTestId('event-wakeup-card').boundingBox();
+        const viewport = await component.boundingBox();
+        expect(surface!.x).toBeGreaterThanOrEqual(viewport!.x);
+        expect(surface!.x + surface!.width).toBeLessThanOrEqual(viewport!.x + viewport!.width);
+      });
+
       test(`measures the production finished-card turn gap in ${theme} at ${width}px and ${zoom * 100}%`, async ({
         mount,
       }) => {

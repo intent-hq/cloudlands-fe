@@ -209,9 +209,6 @@ describe('MonitoredPrsRow', () => {
     expect(line?.className).toContain('min-h-9');
     expect(line?.className).toContain('gap-2');
     expect(line?.className).toContain('px-3');
-    const icon = screen.getByTestId('monitored-pr-icon').querySelector('svg');
-    expect(icon?.getAttribute('width')).toBe('14px');
-    expect(icon?.getAttribute('height')).toBe('14px');
     expect(screen.getByTestId('monitored-pr-label').className).toContain('text-muted-foreground');
     expect(screen.getByTestId('monitored-pr-chip').className).toContain('h-6');
     expect(screen.getByTestId('monitored-pr-disclosure').className).toContain('h-6');

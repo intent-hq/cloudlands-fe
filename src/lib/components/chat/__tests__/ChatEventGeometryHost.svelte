@@ -4,6 +4,14 @@
   import PinnedUserPrompt from '$lib/components/chat/PinnedUserPrompt.svelte';
   import ChatMessage from '$lib/components/chat/ChatMessage.svelte';
   import EventWakeupBanner from '$lib/components/chat/EventWakeupBanner.svelte';
+  import ChatOperationalRow from '$lib/components/chat/ChatOperationalRow.svelte';
+  import DelegationGroupSection from '$lib/components/chat/DelegationGroupSection.svelte';
+  import {
+    SUBSCRIPTION_CARD_CONTAINMENT_CLASS,
+    SUBSCRIPTION_CARD_SURFACE_CLASS,
+  } from '$lib/components/chat/subscription-disclosure';
+  import Fa from 'svelte-fa';
+  import { faBolt } from '@fortawesome/free-solid-svg-icons';
   import ConversationTurnGap from '$lib/components/chat/ConversationTurnGap.svelte';
   import {
     attachPinnedPromptMessage,
@@ -136,7 +144,14 @@
         <ChatMessage message={attributedMessage} />
       </div>
     </div>
-    <div>
+    <div
+      data-testid="subscription-tool-column"
+      style:--chat-operational-row-inline-padding={width < 640 ? '0.125rem' : '0.5rem'}
+    >
+      <ChatOperationalRow>
+        {#snippet leading()}<Fa icon={faBolt} size={16} />{/snippet}
+        {#snippet summary()}Tool row{/snippet}
+      </ChatOperationalRow>
       <div data-testid="event-predecessor"></div>
       <EventWakeupBanner
         metadata={finishedMetadata}
@@ -150,6 +165,20 @@
         nextIsEventNotification={false}
       />
       <div data-testid="following-transcript-row">Following transcript content</div>
+      <div class="{SUBSCRIPTION_CARD_CONTAINMENT_CLASS} {SUBSCRIPTION_CARD_SURFACE_CLASS}">
+        <DelegationGroupSection
+          group={{
+            groupId: `${panelId}-delegation`,
+            awaitMode: 'all',
+            expectedAgentIds: ['delegate-a', 'delegate-b'],
+            completedAgentIds: [],
+            deletedAgentIds: [],
+            agentStatuses: { 'delegate-a': 'responding', 'delegate-b': 'responding' },
+            delivered: false,
+          }}
+          hideActions
+        />
+      </div>
     </div>
   </div>
   <div class="relative">
