@@ -77,6 +77,18 @@ describe('AIBehaviorSidebar', () => {
     expect(container.querySelector('[data-state="active"]')).toBeNull();
   });
 
+  it('renders each specialist row with a compact named-variant avatar', () => {
+    const { container } = render(AIBehaviorSidebar, {
+      activeView: { type: 'specialist', id: 'implementor' },
+      onSelect: vi.fn(),
+    });
+    const avatar = container.querySelector<SVGElement>(
+      '#specialist-implementor [data-agent-avatar]',
+    );
+    expect(avatar?.getAttribute('data-avatar-variant')).toBe('compact');
+    expect(avatar?.style.width).toBe('');
+  });
+
   it('dispatches distinct specialist and creation selections', async () => {
     const onSelect = vi.fn();
     const { container } = render(AIBehaviorSidebar, {
