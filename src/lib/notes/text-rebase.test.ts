@@ -904,6 +904,32 @@ describe('alignment of link-shaped text the editor shows', () => {
   });
 
   it.each([
+    ['an empty destination', '()'],
+    ['a blank destination', '( )'],
+    ['an empty angle destination', '(<>)'],
+    ['an empty angle destination and a title', '(<> "caption")'],
+    ['an empty reference', '[r]\n\n[r]: <>'],
+  ])('anchors the lines after a link with %s onto their own text', async (_name, target) => {
+    // The `]()` left on the label's line has no masked destination, only the
+    // `[` before it says it is a link's tail and no text line of its own.
+    const markdown =
+      `[render tk87z]${target}\n\n` +
+      'edit selection offset tk88z  \nedit caret remote tk89z\n\nordinary ending tk90z';
+    const plain = await projectWithEditor(markdown);
+    expect(plain).toContain('render tk87z');
+    expect(plain).not.toContain('[render');
+    const { aToB, bToA } = withoutDeadline(() => createBidirectionalOffsetMapper(plain, markdown));
+    for (const word of ['tk87z', 'tk88z', 'edit caret', 'tk89z', 'ending', 'tk90z']) {
+      const p = plain.indexOf(word);
+      const m = markdown.indexOf(word);
+      for (let into = 1; into < word.length; into += 1) {
+        expect(aToB(p + into), `${word}[${into}] →`).toBe(m + into);
+        expect(bToA(m + into), `${word}[${into}] ←`).toBe(p + into);
+      }
+    }
+  });
+
+  it.each([
     ['bold', '**]()**', ']()'],
     ['spaced', '] [] ()', '] []'],
     ['a code span', '`]()`', ']()'],

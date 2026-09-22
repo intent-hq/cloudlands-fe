@@ -480,9 +480,11 @@ function lowerBound(values: number[], at: number): number {
  * reference definition (`[label]:` with nothing but masked text after it;
  * one that visible text follows continues a paragraph and is shown as
  * written), not the rest of a link an anchor ended inside its label (`](…)`
- * or `][…]` around its masked destination and nothing visible after — the
- * plain text ends its line where the label does; a `]()` with no masked text
- * in it is punctuation the editor shows, `**]()**` and its plain text alike)
+ * or `][…]` around its masked destination, or after the `[` the line opened
+ * the label with when the destination is empty (`[label]()`, nothing to
+ * mask), and nothing visible after — the plain text ends its line where the
+ * label does; a `]()` with no masked text in it and no `[` before it on its
+ * line is punctuation the editor shows, `**]()**` and its plain text alike)
  * and not a comment anchor the whole line long. A markdown
  * line that is none of a plain-text line's must not count as one: counted, it
  * puts every hit for the rest of the run one text line beyond the run, until
@@ -526,12 +528,12 @@ function isTextLine(text: string, start: number, end: number): boolean {
   }
   if (code === 93) {
     let j = i + 1;
-    let masked = false;
+    let tail = false;
     while (j < end && LINK_CLOSE.has(text.charCodeAt(j))) {
-      if (text.charCodeAt(j) === 0) masked = true;
+      if (text.charCodeAt(j) === 0) tail = true;
       j += 1;
     }
-    return !masked || (j < end && text.charCodeAt(j) !== 13);
+    return !(tail || closesLabel(text, i)) || (j < end && text.charCodeAt(j) !== 13);
   }
   if (code === 91) {
     let close = i + 1;
@@ -551,6 +553,26 @@ function isTextLine(text: string, start: number, end: number): boolean {
     return !(last - i >= 7 && text.startsWith('-->', last - 3));
   }
   return true;
+}
+
+/**
+ * Whether the `]` at `close` closes a `[` earlier on its line — the label of
+ * a link whose destination the line goes on with. The line is read back to
+ * its start (the `\n` or U+FFFC before it, or the text's), past brackets that
+ * pair among themselves and an escaped `\[`.
+ */
+function closesLabel(text: string, close: number): boolean {
+  let depth = 0;
+  for (let k = close - 1; k >= 0; k -= 1) {
+    const code = text.charCodeAt(k);
+    if (code === 10 || code === 0xfffc) return false;
+    if (code === 93) depth += 1;
+    else if (code === 91 && (k === 0 || text.charCodeAt(k - 1) !== 92)) {
+      if (depth === 0) return true;
+      depth -= 1;
+    }
+  }
+  return false;
 }
 
 /**
