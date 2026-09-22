@@ -1338,6 +1338,39 @@ describe('alignment of link syntax the lexer does not account for', () => {
     60_000,
   );
 
+  // Two markdown lines the editor shows no text of — a definition and a
+  // comment — stand between a link line and two paragraphs that anchor only
+  // in pieces (the second holds a link). A hit the count of markdown lines
+  // admits is not thereby the text's own: the word that opens the last
+  // paragraph opens the paragraph two lines before it too, as many lines past
+  // the anchor as the plain text crossed once the two are miscounted as text
+  // lines. Every paragraph must stay on its own line, on either side of the cap.
+  it.each(CELLS)(
+    'does not count a definition or a comment as a text line of the markdown in a note %s projected by %s',
+    async (where, _projection, place, production) => {
+      const markdown = place(
+        'caret [render][r] sync\n\n[r]: https://sync/selection/daemon\n\n<!-- render caret -->\n\nedit selection daemon\n\neditor sync [](https://sync/render/editor) offset\n\neditor render caret',
+      );
+      const plain = await projectWithEditor(markdown, production);
+      expect(plain).toContain(
+        'caret render sync\nedit selection daemon\neditor sync offset\neditor render caret',
+      );
+      const map = withoutDeadline(() => createBidirectionalOffsetMapper(plain, markdown));
+      expectExactRun(plain, markdown, map, 'edit selection daemon', 0, 0);
+      expectExactRun(plain, markdown, map, 'editor sync', 0, 0);
+      expectExactRun(plain, markdown, map, 'offset', 0, 0);
+      expectExactRun(plain, markdown, map, 'editor render caret', 0, 0);
+      expectExactRun(plain, markdown, map, 'qqqqqqqq', 0, 0);
+      expectSameLine(plain, markdown, map, 'caret render sync', 'caret [render][r] sync');
+      if (where === 'below the cap') {
+        expectExactRun(plain, markdown, map, 'caret', 0, 0);
+        expectExactRun(plain, markdown, map, 'render', 0, 0);
+        expectExactRun(plain, markdown, map, 'sync', 0, 0);
+      }
+    },
+    60_000,
+  );
+
   // A note that opens with `<` the renderer reads as HTML, not markdown: the
   // tag — here an autolink at the start of the line — is dropped, and every
   // other character is shown as written on one line, the line breaks
@@ -1523,6 +1556,225 @@ describe('alignment of link syntax the lexer does not account for', () => {
       expect([aToB(offset), bToA(offset + 1)], `@ ${offset}`).toEqual([offset + 1, offset]);
     }
   }, 120_000);
+});
+
+describe('alignment past the cap of notes drawn from every line shape', () => {
+  /** A seeded generator (mulberry32): the same seed draws the same note. */
+  function random(seed: number): () => number {
+    let a = seed >>> 0;
+    return () => {
+      a = (a + 0x6d2b79f5) >>> 0;
+      let t = Math.imul(a ^ (a >>> 15), a | 1);
+      t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+  }
+
+  // Few words, so the letters of any line occur inside the destinations of
+  // many links — the leak a diff across a link line would take.
+  const WORDS = [
+    'selection',
+    'editor',
+    'daemon',
+    'render',
+    'caret',
+    'sync',
+    'cursor',
+    'remote',
+    'anchor',
+    'offset',
+    'sel',
+    'edit',
+  ];
+
+  /**
+   * A note past `MAX_LEXED_LENGTH` of blocks drawn from every line shape,
+   * link lines (inline, reference, image, autolink, empty label) among them.
+   * Every line that has text of its own carries a token `tk<n>z` that occurs
+   * once in the note, by which its plain-text line is found; an image line
+   * carries one on each side of the leaf that splits its plain-text line.
+   */
+  function drawNote(seed: number): string {
+    const next = random(seed);
+    let tokens = 0;
+    const tok = () => `tk${(tokens += 1)}z`;
+    const w = () => WORDS[Math.floor(next() * WORDS.length)];
+    const words = (n: number) => Array.from({ length: n }, w).join(' ');
+    const url = () => `https://sync/${w()}/${w()}`;
+    const split = () => {
+      const word = w();
+      return word.length < 5 ? `**${word}**` : `**${word.slice(0, 3)}**${word.slice(3)}`;
+    };
+    const text: Array<() => string> = [
+      () => `${words(6)} ${tok()}`,
+      () => `${split()} ${words(3)} ${tok()}`,
+      () => `## ${words(3)} ${tok()}`,
+      () => `${words(3)} ${tok()}\n---`,
+      () => `- ${words(3)} ${tok()}\n${words(3)} ${tok()}`,
+      () => `> ${words(4)} ${tok()}`,
+      () =>
+        `| ${w()} ${tok()} | ${w()} ${tok()} |\n|---|---|\n| ${w()} ${tok()} | ${w()} ${tok()} |`,
+      () => `\`\`\`\n${words(3)} ${tok()}\n\`\`\``,
+      () => `<!-- ${words(3)} ${tok()} -->`,
+      () => `${words(3)} ${tok()}  \n${words(3)} ${tok()}`,
+      () => `${words(4)} ${tok()}\r`,
+      () => `<div>${words(3)} ${tok()}</div>`,
+      () => `${words(2)} <b>${w()} ${tok()}</b> ${words(2)}`,
+    ];
+    const links: Array<() => string> = [
+      () => `${words(2)} [${w()} ${tok()}](${url()}) ${words(2)}`,
+      () => {
+        const label = `r${tokens}`;
+        return `${words(2)} [${w()} ${tok()}][${label}] ${words(2)}\n\n[${label}]: ${url()}`;
+      },
+      () => `${tok()} ![${w()}](${url()}.png) ${words(2)} ${tok()}`,
+      () => `${words(2)} <${url()}> ${tok()}`,
+      () => `${words(2)} [](${url()}) ${tok()}`,
+    ];
+    const blocks = [text[0]()];
+    let length = blocks[0].length;
+    while (length <= 129 * 1024) {
+      const pool = next() < 0.3 ? links : text;
+      const block = pool[Math.floor(next() * pool.length)]();
+      blocks.push(block);
+      length += block.length + 2;
+    }
+    return blocks.join('\n\n');
+  }
+
+  /**
+   * Link syntax, a comment (dropped), or a line that opens with a tag — which
+   * the renderer shows as written in a markdown note, and the alignment seals
+   * past the cap all the same. A `<` after text is shown as written and hides
+   * nothing. A line that holds any is not the text of a plain-text line
+   * beside it.
+   */
+  const SYNTAX = /\]\(|\]\[|\]:|<!--|^[ \t]*<[^ \t]/;
+
+  interface Line {
+    start: number;
+    end: number;
+    syntax: boolean;
+  }
+
+  /** The lines of `text` without their breaks, as `[start, end)`. */
+  function linesOf(text: string, breaks: RegExp, syntax: (line: string) => boolean): Line[] {
+    const lines: Line[] = [];
+    let start = 0;
+    for (const match of text.matchAll(breaks)) {
+      lines.push({ start, end: match.index, syntax: syntax(text.slice(start, match.index)) });
+      start = match.index + match[0].length;
+    }
+    lines.push({ start, end: text.length, syntax: syntax(text.slice(start)) });
+    return lines;
+  }
+
+  /** The line `offset` is strictly inside, or `undefined` at a break or a line's end. */
+  function lineStrictlyAround(lines: Line[], offset: number): Line | undefined {
+    let low = 0;
+    let high = lines.length - 1;
+    while (low <= high) {
+      const mid = (low + high) >> 1;
+      if (lines[mid].end < offset) low = mid + 1;
+      else if (lines[mid].start > offset) high = mid - 1;
+      else return lines[mid].start < offset && offset < lines[mid].end ? lines[mid] : undefined;
+    }
+    return undefined;
+  }
+
+  it.each([1, 2, 3])(
+    'never maps a plain-text line into a line of syntax, nor a syntax line out of its own text (seed %i)',
+    async (seed) => {
+      const markdown = drawNote(seed);
+      expect(markdown.length).toBeGreaterThan(128 * 1024);
+      const plain = await projectWithEditor(markdown, true);
+      expect(plain).toContain('<b>');
+      expect(plain).toContain(' <https://sync/');
+      expect(plain).toContain('<div>');
+      expect(plain).not.toContain('](');
+      expect(plain).not.toContain('<!--');
+      const map = withoutDeadline(() => createBidirectionalOffsetMapper(plain, markdown));
+      const markdownLines = linesOf(markdown, /\n/g, (line) => SYNTAX.test(line));
+      const tokenLines = new Map<string, Line>();
+      for (const [token] of markdown.matchAll(/tk\d+z/g)) {
+        const line = lineStrictlyAround(markdownLines, markdown.indexOf(token) + 1);
+        if (line) tokenLines.set(token, line);
+      }
+      // A plain-text line is syntax when it holds the token of a syntax line.
+      const plainLines = linesOf(plain, /\n|\uFFFC/g, (line) => {
+        const tokens = line.match(/tk\d+z/g) ?? [];
+        return tokens.some((token) => tokenLines.get(token)?.syntax);
+      });
+      const violations: string[] = [];
+      const seen = new Set<Line>();
+      for (const [token, line] of tokenLines) {
+        const at = plain.indexOf(token);
+        if (at === -1) continue;
+        const plainLine = lineStrictlyAround(plainLines, at + 1);
+        if (!plainLine || seen.has(plainLine)) continue;
+        seen.add(plainLine);
+        if (!line.syntax) {
+          for (let offset = plainLine.start + 1; offset < plainLine.end; offset += 1) {
+            const target = lineStrictlyAround(markdownLines, map.aToB(offset));
+            if (target?.syntax) {
+              violations.push(
+                `aToB(${offset}) on ${JSON.stringify(plain.slice(plainLine.start, plainLine.end))} → ${JSON.stringify(markdown.slice(target.start, target.end))}`,
+              );
+            }
+          }
+        }
+      }
+      for (const line of new Set(tokenLines.values())) {
+        const tokens = markdown.slice(line.start, line.end).match(/tk\d+z/g) ?? [];
+        const own = tokens
+          .map((token) => plain.indexOf(token))
+          .filter((at) => at !== -1)
+          .map((at) => lineStrictlyAround(plainLines, at + 1))
+          .filter((plainLine): plainLine is Line => plainLine !== undefined);
+        if (own.length === 0) continue;
+        const [ownStart, ownEnd] = [
+          Math.min(...own.map((l) => l.start)),
+          Math.max(...own.map((l) => l.end)),
+        ];
+        for (let offset = line.start + 1; offset < line.end; offset += 1) {
+          const mapped = map.bToA(offset);
+          const target = lineStrictlyAround(plainLines, mapped);
+          if (line.syntax ? mapped < ownStart || mapped > ownEnd : target?.syntax) {
+            violations.push(
+              `bToA(${offset}) on ${JSON.stringify(markdown.slice(line.start, line.end))} → ${mapped} ${target ? JSON.stringify(plain.slice(target.start, target.end)) : 'at a break'}`,
+            );
+          }
+        }
+      }
+      expect(violations.length, violations.slice(0, 12).join('\n')).toBe(0);
+    },
+    120_000,
+  );
+
+  it.each([1, 2, 3])(
+    'maps every token of the note exactly, in both directions (seed %i)',
+    async (seed) => {
+      const markdown = drawNote(seed);
+      const plain = await projectWithEditor(markdown, true);
+      const map = withoutDeadline(() => createBidirectionalOffsetMapper(plain, markdown));
+      const failures: string[] = [];
+      let checked = 0;
+      for (const match of markdown.matchAll(/tk\d+z/g)) {
+        const at = plain.indexOf(match[0]);
+        if (at === -1) continue;
+        checked += 1;
+        const [p, m] = [at + 2, match.index + 2];
+        if (map.aToB(p) !== m || map.bToA(m) !== p) {
+          failures.push(
+            `${match[0]} plain ${p}→${map.aToB(p)} (want ${m}), markdown ${m}→${map.bToA(m)} (want ${p})`,
+          );
+        }
+      }
+      expect(checked).toBeGreaterThan(2_000);
+      expect(failures, failures.slice(0, 12).join('\n')).toEqual([]);
+    },
+    120_000,
+  );
 });
 
 describe('alignment of blocks that never anchor', () => {

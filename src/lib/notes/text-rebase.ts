@@ -54,6 +54,8 @@ const TOKEN_AT = /[\p{L}\p{N}_]+|\s+|\0+|./suy;
 const WORD_AT = /[\p{L}\p{N}_]+/uy;
 const NOT_LETTER = /\P{L}+/gu;
 const BLANK = /^\s+$/u;
+/** `-`, `=`, `*`, `_`, `|`, `:` — a line of these alone is a setext underline, a thematic break or a table delimiter row. */
+const RULE = new Set([45, 61, 42, 95, 124, 58]);
 /** Textblocks at least this long are trusted as verbatim anchors. */
 const MIN_ANCHOR_LENGTH = 12;
 /**
@@ -134,7 +136,7 @@ function anchoredHunks(from: string, markdown: string): Hunk[] {
   const out: Hunk[] = [];
   if (from === markdown) return out;
   const deadline = performance.now() + ALIGNMENT_BUDGET_MS;
-  const { text: to, unanchorable } = maskHidden(markdown);
+  const { text: to, unanchorable, splits } = maskHidden(markdown);
   let fromPos = 0;
   let toPos = 0;
   let cursor = 0;
@@ -166,9 +168,10 @@ function anchoredHunks(from: string, markdown: string): Hunk[] {
       let limit = reach - (lineEnd - end);
       if (at !== -1) limit = Math.min(limit, at - 1 + (end - start));
       run.advanceTo(start);
-      const skipped = new LineWalk(to, toPos);
-      // The run's text lines are all ended before the text at `start`, and
-      // its line holds the same letters before `start` as the markdown line
+      const skipped = new LineWalk(to, toPos, splits, run);
+      // The run's text lines are all ended before the text at `start` — by
+      // text lines of the markdown, or by an image splitting one — and its
+      // line holds the same letters before `start` as the markdown line
       // holds before the hit (see `LineWalk`); a hit on a line the mask did
       // not account for is declined.
       const hit = findAnchor(to, from.slice(start, end), toPos, limit, (candidate) => {
@@ -241,11 +244,23 @@ function anchoredHunks(from: string, markdown: string): Hunk[] {
 
 /**
  * The structure of `text[start, pos)` as `pos` advances, for `start` the last
- * anchor: the lines it ends that hold text — not blank, and not a code fence,
- * which delimits lines of text without being one — and the letters after its
- * last line break. Lines end at `\n`; `linesWithHardBreaks` also counts those
- * ended at U+FFFC, which in the plain text projects a hard break (a markdown
- * line of its own) or an inline leaf such as an image (which is not).
+ * anchor: the lines it ends that hold text (`isTextLine`: not blank, and not
+ * a line of syntax alone — a code fence, a setext underline, a definition —
+ * which delimits or annotates lines of text without being one) and the
+ * letters after its last line break. Lines end at `\n`; `linesWithHardBreaks`
+ * also counts those ended at U+FFFC, which in the plain text projects a hard
+ * break (a markdown line of its own) or an inline leaf such as a mention
+ * (which is not).
+ *
+ * In the markdown a line may also end at an image (`splits`, the offsets of
+ * its `![`): the note editor shows an image as a block, so the paragraph's
+ * text before it and after it are plain-text lines of their own, where an
+ * editor without the image block shows the paragraph on one line. Which of
+ * the two the plain text did is read off the plain text: the image ended a
+ * line if the walk over the plain text (`plain`, advanced to the probe) ended
+ * a line holding the letters of the markdown before the image — the lines
+ * are paired in order, an unpaired plain line (a mention's) skipped — and is
+ * no line break otherwise.
  *
  * Every plain-text line ends a markdown line of its own, so between the last
  * anchor (`fromPos`, `toPos`) and a hit `at` for the text at `cursor`, the
@@ -256,10 +271,10 @@ function anchoredHunks(from: string, markdown: string): Hunk[] {
  * hard breaks too; a hit that ends more may be a later duplicate
  * (`**Repeated** heading\n\nRepeated heading`: the formatted original is a
  * text line inside the skipped markdown). The latter bound is not tight — a
- * setext underline or an HTML comment is a markdown line with no plain-text
- * line of its own — so a hit beyond it is declined rather than skipped over,
- * at a bounded cost: the text is anchored by its pieces instead, and its
- * later pieces are not held to this rule.
+ * line of an HTML block or of a multi-line comment is a markdown line with
+ * no plain-text line of its own — so a hit beyond it is declined rather than
+ * skipped over, at a bounded cost: the text is anchored by its pieces
+ * instead, and its later pieces are not held to this rule.
  *
  * The plain text and the markdown also hold the same letters between the
  * anchor and a true hit: block and inline syntax (`## `, `- `, `1. `, `> `,
@@ -274,21 +289,29 @@ function anchoredHunks(from: string, markdown: string): Hunk[] {
  * run however many probes and candidates read it — and restarts otherwise.
  */
 class LineWalk {
-  /** Text lines ended at `\n`. */
+  /** Text lines ended at `\n` (or at an image the plain text ended a line at). */
   lines = 0;
-  /** Text lines ended at `\n` or U+FFFC. */
+  /** Text lines ended at `\n`, U+FFFC or such an image. */
   linesWithHardBreaks = 0;
   /** Letters after the last line break. */
   letters = '';
+  /** The `[start, end)` of every text line ended, flattened, in order. */
+  private readonly ended: number[] = [];
+  /** The next line of `plain` an image may be paired with. */
+  private plainLine = 0;
   private pos: number;
   private lineStart: number;
+  private nextSplit: number;
 
   constructor(
     private readonly text: string,
     private readonly start: number,
+    private readonly splits: number[] = [],
+    private readonly plain?: LineWalk,
   ) {
     this.pos = start;
     this.lineStart = start;
+    this.nextSplit = lowerBound(splits, start);
   }
 
   advanceTo(pos: number): this {
@@ -298,34 +321,122 @@ class LineWalk {
       this.lines = 0;
       this.linesWithHardBreaks = 0;
       this.letters = '';
+      this.ended.length = 0;
+      this.plainLine = 0;
+      this.nextSplit = lowerBound(this.splits, this.start);
     }
-    const { text } = this;
+    const { text, splits } = this;
     let lineStart = this.lineStart;
     for (let i = this.pos; i < pos; i += 1) {
       const code = text.charCodeAt(i);
-      if (code !== 10 && code !== 0xfffc) continue;
+      const split = this.nextSplit < splits.length && splits[this.nextSplit] === i;
+      if (split) this.nextSplit += 1;
+      else if (code !== 10 && code !== 0xfffc) continue;
       if (isTextLine(text, lineStart, i)) {
-        if (code === 10) this.lines += 1;
+        if (split) {
+          const paired = this.pairPlainLine(lettersOf(text, lineStart, i));
+          if (paired === -1) continue;
+          this.plainLine = paired + 1;
+        } else if (this.plainLine < (this.plain?.ended.length ?? 0) >> 1) {
+          this.plainLine += 1;
+        }
+        if (split || code === 10) this.lines += 1;
         this.linesWithHardBreaks += 1;
-      }
-      lineStart = i + 1;
+        this.ended.push(lineStart, i);
+      } else if (split) continue;
+      lineStart = split ? i : i + 1;
     }
     const from = lineStart > this.lineStart ? lineStart : this.pos;
-    const added = text.slice(from, pos).replace(NOT_LETTER, '');
+    const added = lettersOf(text, from, pos);
     this.letters = lineStart > this.lineStart ? added : this.letters + added;
     this.lineStart = lineStart;
     this.pos = pos;
     return this;
   }
+
+  /** The first line of `plain` from `plainLine` on holding `letters`, or -1. */
+  private pairPlainLine(letters: string): number {
+    const { plain } = this;
+    if (!plain) return -1;
+    for (let k = this.plainLine; k < plain.ended.length >> 1; k += 1) {
+      if (lettersOf(plain.text, plain.ended[2 * k], plain.ended[2 * k + 1]) === letters) return k;
+    }
+    return -1;
+  }
 }
 
+function lettersOf(text: string, start: number, end: number): string {
+  return text.slice(start, end).replace(NOT_LETTER, '');
+}
+
+/** The index of the first element of sorted `values` that is `>= at`. */
+function lowerBound(values: number[], at: number): number {
+  let low = 0;
+  let high = values.length;
+  while (low < high) {
+    const mid = (low + high) >> 1;
+    if (values[mid] < at) low = mid + 1;
+    else high = mid;
+  }
+  return low;
+}
+
+/**
+ * Whether `text[start, end)` is a line the editor shows text of: not blank,
+ * not masked whole (a definition, an image, a hidden HTML block below the
+ * cap), not a code fence, not a setext underline, thematic break or table
+ * delimiter row (`RULE` characters only), and — unmasked, past the cap — not
+ * a link reference definition nor a comment the whole line long. A markdown
+ * line that is none of a plain-text line's must not count as one: counted, it
+ * puts every hit for the rest of the run one text line beyond the run, until
+ * a hard break of the plain text (counted on one side only) admits a hit one
+ * line short of the text's own; and two such lines before a run of pieces
+ * stand in for two plain-text lines the run crossed, so a hit that opens the
+ * paragraph two lines short of the text's own ends as many text lines as
+ * the run did.
+ */
 function isTextLine(text: string, start: number, end: number): boolean {
   let i = start;
-  while (i < end && (text.charCodeAt(i) === 32 || text.charCodeAt(i) === 9)) i += 1;
+  while (
+    i < end &&
+    (text.charCodeAt(i) === 32 || text.charCodeAt(i) === 9 || text.charCodeAt(i) === 0)
+  ) {
+    i += 1;
+  }
   if (i >= end || text.charCodeAt(i) === 13) return false;
   const code = text.charCodeAt(i);
-  const fence = (code === 96 || code === 126) && i + 2 < end;
-  return !(fence && text.charCodeAt(i + 1) === code && text.charCodeAt(i + 2) === code);
+  if (code === 96 || code === 126) {
+    return !(i + 2 < end && text.charCodeAt(i + 1) === code && text.charCodeAt(i + 2) === code);
+  }
+  if (RULE.has(code)) {
+    let j = i + 1;
+    while (
+      j < end &&
+      (RULE.has(text.charCodeAt(j)) || text.charCodeAt(j) === 32 || text.charCodeAt(j) === 9)
+    ) {
+      j += 1;
+    }
+    return j < end && text.charCodeAt(j) !== 13;
+  }
+  if (code === 91) {
+    let close = i + 1;
+    while (close < end && text.charCodeAt(close) !== 93) close += 1;
+    const after = close + 2 < end ? text.charCodeAt(close + 2) : 32;
+    return !(
+      close > i + 1 &&
+      close + 1 < end &&
+      text.charCodeAt(close + 1) === 58 &&
+      (after === 32 || after === 9 || after === 0)
+    );
+  }
+  if (code === 60 && text.startsWith('<!--', i)) {
+    let last = end;
+    while (last > i && (text.charCodeAt(last - 1) === 32 || text.charCodeAt(last - 1) === 9)) {
+      last -= 1;
+    }
+    return !(last - i >= 7 && text.startsWith('-->', last - 3));
+  }
+  return true;
 }
 
 /**
@@ -445,13 +556,18 @@ let hiddenTextLexer: ReturnType<typeof createTiptapTaskListMarked> | undefined;
 
 /**
  * The markdown as the alignment reads it: `text` with the hidden runs masked,
- * and `unanchorable` the sorted, flattened `[start, end)` ranges of the lines
- * of `text` that no anchor may land on.
+ * `unanchorable` the sorted, flattened `[start, end)` ranges of the lines
+ * of `text` that no anchor may land on, and `splits` the sorted offsets of
+ * the images (`![`), each of which the editor may split a plain-text line at
+ * (see `LineWalk`).
  */
 interface Mask {
   text: string;
   unanchorable: number[];
+  splits: number[];
 }
+
+const IMAGE_OPENER = /!\[/g;
 
 /** The last mask: the base text is aligned again each time the editor text changes. */
 let lastMask: { markdown: string; mask: Mask } | undefined;
@@ -517,9 +633,12 @@ let lastMask: { markdown: string; mask: Mask } | undefined;
 function maskHidden(markdown: string): Mask {
   if (lastMask?.markdown === markdown) return lastMask.mask;
   const text = computeHiddenMask(markdown);
+  const splits: number[] = [];
+  for (const image of markdown.matchAll(IMAGE_OPENER)) splits.push(image.index);
   const mask = {
     text: text ?? markdown,
     unanchorable: unanchorableLines(text ?? markdown, text === undefined),
+    splits,
   };
   lastMask = { markdown, mask };
   return mask;
