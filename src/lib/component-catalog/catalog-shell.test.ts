@@ -86,8 +86,8 @@ const generatedSpecifierPrefixes = ['$shared/paraglide/'];
 // production DOM (tooltip trigger + sr-only label) and only the feature component renders it. Each
 // (file, specifier) pair below is exempt from the import guard solely because the closure test proves
 // the module — everything it imports at runtime inside its feature family, plus the $lib/$shared
-// modules those import directly — carries no store, host, or cross-feature dependency; a type-only
-// import is erased and pulls nothing into the bundle.
+// modules those import directly — carries no store, host, or cross-feature dependency. Both guards
+// skip type-only imports: they are erased and pull nothing into the bundle.
 const presentationalFeatureImports: Record<string, readonly string[]> = {
   'src/lib/component-catalog/renderers/PrincipalAvatarCatalogPreview.svelte': [
     '$features/notes/note-presence/NotePresenceAvatars.svelte',
@@ -111,40 +111,54 @@ function scriptBlocks(source: string, file: string): { text: string; offset: num
   }));
 }
 
-// Parses real import/re-export declarations only, so comments and string literals that merely look
-// like imports contribute nothing and cannot flip a following declaration's type-only status.
+// Parses real import/re-export declarations and dynamic import() calls only, so comments and string
+// literals that merely look like imports contribute nothing and cannot flip a following
+// declaration's type-only status.
 function parseImports(source: string, file: string): ParsedImport[] {
   return scriptBlocks(source, file).flatMap(({ text, offset }) => {
     const ast = ts.createSourceFile(file, text, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
     const lineBase = source.slice(0, offset).split('\n').length - 1;
-    return ast.statements.flatMap((statement) => {
-      let typeOnly: boolean;
-      if (ts.isImportDeclaration(statement)) {
-        const clause = statement.importClause;
+    const entries: ParsedImport[] = [];
+    const record = (node: ts.Node, specifier: ts.Node | undefined, typeOnly: boolean) => {
+      if (!specifier || !ts.isStringLiteralLike(specifier)) return;
+      const line = ast.getLineAndCharacterOfPosition(node.getStart(ast)).line + 1;
+      entries.push({ specifier: specifier.text, typeOnly, line: lineBase + line });
+    };
+    const visit = (node: ts.Node) => {
+      if (ts.isImportDeclaration(node)) {
+        const clause = node.importClause;
         const bindings = clause?.namedBindings;
-        typeOnly =
+        record(
+          node,
+          node.moduleSpecifier,
           clause?.phaseModifier === ts.SyntaxKind.TypeKeyword ||
-          (clause?.name === undefined &&
-            bindings !== undefined &&
-            ts.isNamedImports(bindings) &&
-            bindings.elements.length > 0 &&
-            bindings.elements.every((element) => element.isTypeOnly));
-      } else if (ts.isExportDeclaration(statement) && statement.moduleSpecifier) {
-        const clause = statement.exportClause;
-        typeOnly =
-          statement.isTypeOnly ||
-          (clause !== undefined &&
-            ts.isNamedExports(clause) &&
-            clause.elements.length > 0 &&
-            clause.elements.every((element) => element.isTypeOnly));
-      } else {
-        return [];
+            (clause?.name === undefined &&
+              bindings !== undefined &&
+              ts.isNamedImports(bindings) &&
+              bindings.elements.length > 0 &&
+              bindings.elements.every((element) => element.isTypeOnly)),
+        );
+      } else if (ts.isExportDeclaration(node) && node.moduleSpecifier) {
+        const clause = node.exportClause;
+        record(
+          node,
+          node.moduleSpecifier,
+          node.isTypeOnly ||
+            (clause !== undefined &&
+              ts.isNamedExports(clause) &&
+              clause.elements.length > 0 &&
+              clause.elements.every((element) => element.isTypeOnly)),
+        );
+      } else if (
+        ts.isCallExpression(node) &&
+        node.expression.kind === ts.SyntaxKind.ImportKeyword
+      ) {
+        record(node, node.arguments[0], false);
       }
-      const specifier = statement.moduleSpecifier;
-      if (!specifier || !ts.isStringLiteral(specifier)) return [];
-      const line = ast.getLineAndCharacterOfPosition(statement.getStart(ast)).line + 1;
-      return [{ specifier: specifier.text, typeOnly, line: lineBase + line }];
-    });
+      ts.forEachChild(node, visit);
+    };
+    visit(ast);
+    return entries;
   });
 }
 
@@ -174,8 +188,8 @@ function boundaryViolations(
   relativeFile: string,
   allowlisted: readonly string[],
 ): string[] {
-  return parseImports(source, relativeFile).flatMap(({ specifier, line }) =>
-    hostBoundSpecifier.test(specifier) && !allowlisted.includes(specifier)
+  return parseImports(source, relativeFile).flatMap(({ specifier, typeOnly, line }) =>
+    !typeOnly && hostBoundSpecifier.test(specifier) && !allowlisted.includes(specifier)
       ? [`${relativeFile}:${line}`]
       : [],
   );
@@ -416,6 +430,74 @@ describe('catalog route shell', () => {
     } finally {
       rmSync(tmp, { recursive: true, force: true });
     }
+  });
+
+  it('sees dynamic import() calls as runtime imports', () => {
+    const tmp = mkdtempSync(path.join(tmpdir(), 'catalog-guard-'));
+    try {
+      const tmpSrc = path.join(tmp, 'src');
+      const write = (relativeFile: string, content: string) => {
+        const file = path.join(tmpSrc, relativeFile);
+        mkdirSync(path.dirname(file), { recursive: true });
+        writeFileSync(file, content);
+        return file;
+      };
+      const renderer = write(
+        'lib/component-catalog/renderers/Preview.svelte',
+        '<script lang="ts">\n  import { label } from \'$features/presence/components/presence-person\';\n</script>',
+      );
+      const person = 'features/presence/components/presence-person.ts';
+      const specifiers = ['$features/presence/components/presence-person'];
+
+      write(person, 'export const label = (name: string) => name;\n');
+      expect(runtimeHostViolations(renderer, specifiers, tmpSrc)).toEqual([]);
+
+      const injected = [
+        'export const label = async (name: string) => {',
+        "  const { x } = await import('$store/anything');",
+        '  return `${name}${x}`;',
+        '};',
+        '',
+      ].join('\n');
+      write(person, injected);
+      expect(runtimeHostViolations(renderer, specifiers, tmpSrc)).toEqual([
+        'src/features/presence/components/presence-person.ts:2 ($store/anything)',
+      ]);
+      expect(boundaryViolations(injected, 'presence-person.ts', [])).toEqual([
+        'presence-person.ts:2',
+      ]);
+      expect(
+        boundaryViolations(
+          '<script lang="ts">\n  const load = () => import(\'$store/anything\');\n</script>',
+          'renderer.svelte',
+          [],
+        ),
+      ).toEqual(['renderer.svelte:2']);
+    } finally {
+      rmSync(tmp, { recursive: true, force: true });
+    }
+  });
+
+  it('lets renderers import types from host modules but not runtime values', () => {
+    const typeOnly = [
+      '<script lang="ts">',
+      "  import type { Thing } from '$store/anything';",
+      "  import { type Other, type More } from '$features/other/module';",
+      "  export type { Thing } from '$store/anything';",
+      '</script>',
+    ].join('\n');
+    expect(boundaryViolations(typeOnly, 'renderer.svelte', [])).toEqual([]);
+
+    const runtime = [
+      '<script lang="ts">',
+      "  import { thing } from '$store/anything';",
+      "  import { type Other, more } from '$features/other/module';",
+      '</script>',
+    ].join('\n');
+    expect(boundaryViolations(runtime, 'renderer.svelte', [])).toEqual([
+      'renderer.svelte:2',
+      'renderer.svelte:3',
+    ]);
   });
 
   it('uses canonical controls throughout the catalog workspace and previews', () => {
