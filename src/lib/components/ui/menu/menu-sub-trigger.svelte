@@ -1,13 +1,14 @@
 <script lang="ts">
   import type { IconWeight } from 'phosphor-svelte';
   import { DropdownMenu as MenuPrimitive } from 'bits-ui';
-  import type { Snippet } from 'svelte';
+  import { getContext, type Snippet } from 'svelte';
+  import { SUBMENU_CONTEXT, type SubmenuContext } from './submenu-context';
   import type { IconDefinition } from '$lib/icons/phosphor-icons';
   import Fa from '$lib/components/shared/icons/FaWrapper.svelte';
   import { cn } from '$lib/utils.js';
   import type { WithoutChildrenOrChild } from '$lib/utils.js';
   import { menuItem } from './menu-recipes';
-  import { OPTION_LIST_END_SLOT_CLASS } from '$lib/styles/option-list-row';
+  import Indicator from './menu-indicator.svelte';
 
   let {
     ref = $bindable(null),
@@ -21,6 +22,14 @@
     icon?: IconDefinition;
     iconWeight?: IconWeight;
   } = $props();
+
+  const context = getContext<SubmenuContext | undefined>(SUBMENU_CONTEXT);
+  $effect(() => {
+    if (context) context.trigger = ref;
+    return () => {
+      if (context) context.trigger = null;
+    };
+  });
 </script>
 
 <MenuPrimitive.SubTrigger
@@ -36,5 +45,5 @@
     </span>
   {/if}
   {@render children?.()}
-  <span data-slot="menu-sub-chevron" class={OPTION_LIST_END_SLOT_CLASS} aria-hidden="true">›</span>
+  <Indicator state="submenu" />
 </MenuPrimitive.SubTrigger>

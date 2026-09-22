@@ -4,11 +4,12 @@
   import { cn } from '$lib/utils.js';
   import type { WithoutChildrenOrChild } from '$lib/utils.js';
   import { menuItem } from './menu-recipes';
-  import { OPTION_LIST_END_SLOT_CLASS } from '$lib/styles/option-list-row';
+  import Indicator from './menu-indicator.svelte';
 
   let {
     ref = $bindable(null),
     class: className,
+    closeOnSelect = false,
     children,
     ...restProps
   }: WithoutChildrenOrChild<MenuPrimitive.RadioItemProps> & {
@@ -18,13 +19,7 @@
 
 {#snippet radioContent({ checked }: { checked: boolean })}
   {@render children?.()}
-  <span
-    data-slot="menu-item-indicator"
-    class={cn(OPTION_LIST_END_SLOT_CLASS, 'text-primary-ink')}
-    aria-hidden="true"
-  >
-    {checked ? '●' : ''}
-  </span>
+  <Indicator state={checked ? 'checked' : 'empty'} />
 {/snippet}
 
 <MenuPrimitive.RadioItem
@@ -32,6 +27,7 @@
   children={radioContent}
   data-slot="menu-radio-item"
   data-menu-item
+  {closeOnSelect}
   class={cn(menuItem(), className)}
   {...restProps}
 />

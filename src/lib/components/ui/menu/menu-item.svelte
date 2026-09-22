@@ -24,7 +24,11 @@
   data-slot="menu-item"
   data-menu-item
   data-destructive={destructive ? '' : undefined}
-  class={cn(menuItem(), 'data-[destructive]:text-foreground', className)}
+  class={cn(
+    menuItem(),
+    'data-[destructive]:text-danger data-[destructive]:focus:text-danger',
+    className,
+  )}
   {...restProps}
 >
   {#if leading}

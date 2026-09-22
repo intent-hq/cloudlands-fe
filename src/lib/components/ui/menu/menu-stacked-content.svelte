@@ -6,6 +6,8 @@
   import Separator from './menu-separator.svelte';
   import SubContent from './menu-sub-content.svelte';
   import SubTrigger from './menu-sub-trigger.svelte';
+  import Sub from './menu-sub.svelte';
+  import Label from './menu-label.svelte';
   import { DropdownMenu } from 'bits-ui';
   import type { StackedMenuGroup, StackedMenuItem } from './menu-stacked-content.types';
   import { ShortcutChip } from '$lib/components/ui/kbd';
@@ -21,12 +23,27 @@
     portal?: boolean;
     portalProps?: MenuPrimitive.PortalProps;
   } = $props();
+
+  function visibleItems(items: StackedMenuItem[]): StackedMenuItem[] {
+    return items.flatMap((item) => {
+      if (item.when === false) return [];
+      if (!item.items || item.content) return [item];
+      const children = visibleItems(item.items);
+      return children.length ? [{ ...item, items: children }] : [];
+    });
+  }
+
+  const visibleGroups = $derived(
+    groups
+      .map((group) => ({ ...group, items: visibleItems(group.items) }))
+      .filter((group) => group.items.length > 0),
+  );
 </script>
 
 {#snippet renderItems(items: StackedMenuItem[])}
   {#each items as item (item.id)}
     {#if item.items?.length || item.content}
-      <DropdownMenu.Sub>
+      <Sub>
         <SubTrigger icon={item.icon} disabled={item.disabled} class={item.class}>
           <span class="min-w-0 flex-1 truncate">{item.label}</span>
           {#if item.shortcut}
@@ -41,7 +58,7 @@
             {@render renderItems(item.items)}
           {/if}
         </SubContent>
-      </DropdownMenu.Sub>
+      </Sub>
     {:else}
       <CommandItem
         icon={item.icon}
@@ -57,17 +74,15 @@
 {/snippet}
 
 <Content class={cn('w-60', className)} {...restProps}>
-  {#each groups as group, index (group.id)}
+  {#each visibleGroups as group, index (group.id)}
     {#if index > 0}
       <Separator />
     {/if}
-    <div role="group" aria-label={group.label} data-slot="menu-stack-group">
+    <DropdownMenu.Group aria-label={group.label} data-slot="menu-stack-group">
       {#if group.label}
-        <div class="type-caption px-2 pb-1 pt-1 font-medium text-muted-foreground">
-          {group.label}
-        </div>
+        <Label>{group.label}</Label>
       {/if}
       {@render renderItems(group.items)}
-    </div>
+    </DropdownMenu.Group>
   {/each}
 </Content>

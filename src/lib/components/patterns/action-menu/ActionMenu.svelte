@@ -7,17 +7,16 @@
   import Fa from '$lib/components/shared/icons/FaWrapper.svelte';
   import { ShortcutChip } from '$lib/components/ui/kbd';
   import * as Menu from '$lib/components/ui/menu';
-  import { Tooltip } from '$lib/components/ui/tooltip';
-  import { faCheck } from '@fortawesome/free-solid-svg-icons';
-  import { onDestroy, type Snippet } from 'svelte';
+  import { onDestroy, tick, untrack, type Snippet } from 'svelte';
   import { resolveActions } from './actions';
-  import type { ActionDefinition, ActionHandler } from './types';
+  import type { ActionDefinition, ActionHandler, ResolvedAction } from './types';
 
   let {
     actions,
     onAction,
     trigger,
     contextMenu,
+    onOpenChange,
     ariaLabel,
     open = $bindable(false),
     align = 'start',
@@ -27,7 +26,8 @@
     actions: readonly ActionDefinition[];
     onAction?: ActionHandler;
     trigger?: Snippet<[{ props: Record<string, unknown>; open: boolean }]>;
-    contextMenu?: { x: number; y: number };
+    contextMenu?: { x: number; y: number; returnFocus?: HTMLElement | null };
+    onOpenChange?: (open: boolean) => void;
     ariaLabel: string;
     open?: boolean;
     align?: 'start' | 'center' | 'end';
@@ -36,21 +36,114 @@
   } = $props();
 
   const resolvedActions = $derived(resolveActions(actions));
-  let initializedContextMenu = false;
+  const uid = $props.id();
+  let invokingElement: HTMLElement | null = null;
+  let content: HTMLDivElement | null = $state(null);
+  let previousContext: typeof contextMenu;
+  let tabDismissed = false;
+  let fallbackTargets: HTMLElement[] = [];
+
+  function focusCandidates() {
+    return Array.from(
+      document.querySelectorAll<HTMLElement>('a[href],button,input,select,textarea,[tabindex]'),
+    ).filter(
+      (element) =>
+        element.tabIndex >= 0 &&
+        !element.matches(':disabled') &&
+        !element.closest('[data-action-menu-owner],[aria-hidden="true"],[inert]'),
+    );
+  }
 
   $effect(() => {
-    if (!contextMenu || initializedContextMenu) return;
-    initializedContextMenu = true;
-    open = true;
+    if (!contextMenu) return;
+    const { x, y, returnFocus } = contextMenu;
+    if (
+      previousContext?.x === x &&
+      previousContext?.y === y &&
+      previousContext?.returnFocus === returnFocus
+    )
+      return;
+    previousContext = { x, y, returnFocus };
+    untrack(() => {
+      invokingElement =
+        returnFocus ??
+        (document.activeElement instanceof HTMLElement ? document.activeElement : null);
+      const candidates = focusCandidates();
+      const after = candidates.filter(
+        (element) =>
+          invokingElement &&
+          !!(invokingElement.compareDocumentPosition(element) & Node.DOCUMENT_POSITION_FOLLOWING),
+      );
+      const before = candidates
+        .filter(
+          (element) =>
+            invokingElement &&
+            !!(invokingElement.compareDocumentPosition(element) & Node.DOCUMENT_POSITION_PRECEDING),
+        )
+        .reverse();
+      fallbackTargets = [...after, ...before];
+      tabDismissed = false;
+      open = true;
+    });
   });
 
-  function select(action: ActionDefinition, event: Event) {
+  function select(action: ResolvedAction, event: Event) {
     if (action.disabled || action.disabledReason !== undefined) return;
     onAction?.(action.id, event);
   }
 
   function close() {
     open = false;
+    onOpenChange?.(false);
+  }
+
+  function restoreContextFocus(event: Event) {
+    if (!contextMenu) return;
+    event.preventDefault();
+    if (tabDismissed) return;
+    const active = document.activeElement;
+    // Do not steal focus from a dialog or destination opened by the action.
+    if (
+      active !== document.body &&
+      active !== content &&
+      !(
+        active instanceof Element &&
+        active.closest('[data-action-menu-owner]')?.getAttribute('data-action-menu-owner') === uid
+      )
+    )
+      return;
+    const target = invokingElement?.isConnected
+      ? invokingElement
+      : fallbackTargets.find(
+          (element) =>
+            element.isConnected &&
+            !element.matches(':disabled') &&
+            !element.closest('[hidden],[inert],[aria-hidden="true"]'),
+        );
+    target?.focus({ preventScroll: true });
+  }
+
+  function handleContextKeydown(event: KeyboardEvent) {
+    if (!contextMenu || event.key !== 'Tab' || event.defaultPrevented) return;
+    event.preventDefault();
+    const source = invokingElement;
+    const candidates = focusCandidates().filter((element) => element.getClientRects().length > 0);
+    const ordered = event.shiftKey ? candidates.reverse() : candidates;
+    const next = source?.isConnected
+      ? ordered.find(
+          (element) =>
+            element !== source &&
+            !!(
+              source.compareDocumentPosition(element) &
+              (event.shiftKey ? Node.DOCUMENT_POSITION_PRECEDING : Node.DOCUMENT_POSITION_FOLLOWING)
+            ),
+        )
+      : undefined;
+    tabDismissed = true;
+    close();
+    void tick().then(() =>
+      (next ?? (source?.isConnected ? source : null))?.focus({ preventScroll: true }),
+    );
   }
 
   $effect(() => {
@@ -68,64 +161,104 @@
   });
 </script>
 
-{#snippet itemContent(action: ActionDefinition)}
-  {#if action.icon}
-    <Fa icon={action.icon} size="xs" class="w-4 shrink-0 text-muted-foreground opacity-70" />
+{#snippet itemContent(action: ResolvedAction, reserveIcon: boolean)}
+  {#if reserveIcon}
+    <span class="flex size-4 shrink-0 items-center justify-center" aria-hidden="true">
+      {#if action.icon}
+        <Fa icon={action.icon} size={16} class="size-4 text-muted-foreground" />
+      {/if}
+    </span>
   {/if}
-  <span class="min-w-0 flex-1 truncate">{action.label}</span>
-  {#if action.checked}
-    <Fa icon={faCheck} size="xs" class="w-4 shrink-0 text-muted-foreground opacity-70" />
-  {/if}
+  <span class="min-w-0 flex-1">
+    <span class="block truncate">{action.label}</span>
+    {#if action.disabledReason}
+      <span class="block text-muted-foreground" aria-hidden="true">{action.disabledReason}</span>
+    {/if}
+  </span>
   {#if action.shortcut}
     <span class="ml-5" aria-hidden="true"><ShortcutChip>{action.shortcut}</ShortcutChip></span>
   {/if}
 {/snippet}
 
-{#snippet actionItem(action: ActionDefinition)}
+{#snippet actionItem(action: ResolvedAction, reserveIcon: boolean)}
   {@const disabled = action.disabled || action.disabledReason !== undefined}
-  {#if action.children?.length}
+  {@const descriptionId = action.disabledReason ? `${uid}-${action.id}-reason` : undefined}
+  {#if action.kind === 'section'}
+    <Menu.Group aria-label={action.label}>
+      <Menu.Label>{action.label}</Menu.Label>
+      {@render actionItems(action.children, disabled)}
+    </Menu.Group>
+  {:else if action.kind === 'radio-group'}
+    <Menu.RadioGroup value={action.value} aria-label={action.label}>
+      <Menu.Label>{action.label}</Menu.Label>
+      {@render actionItems(action.children, disabled)}
+    </Menu.RadioGroup>
+  {:else if action.children?.length}
     <Menu.Sub>
-      <Menu.SubTrigger {disabled}>
-        {@render itemContent(action)}
+      <Menu.SubTrigger {disabled} aria-describedby={descriptionId} data-action-id={action.id}>
+        {@render itemContent(action, reserveIcon)}
       </Menu.SubTrigger>
-      <Menu.SubContent>
+      <Menu.SubContent
+        collisionPadding={8}
+        data-action-menu-owner={uid}
+        onkeydown={handleContextKeydown}
+      >
         {@render actionItems(action.children)}
       </Menu.SubContent>
     </Menu.Sub>
+  {:else if action.kind === 'radio'}
+    <Menu.RadioItem
+      value={action.value}
+      {disabled}
+      aria-describedby={descriptionId}
+      closeOnSelect={action.closeOnSelect ?? false}
+      onSelect={(event) => select(action, event)}
+      data-action-id={action.id}
+    >
+      {@render itemContent(action, reserveIcon)}
+    </Menu.RadioItem>
+  {:else if action.checked !== undefined}
+    <Menu.CheckboxItem
+      checked={action.checked}
+      indeterminate={action.kind === 'checkbox' && action.indeterminate}
+      {disabled}
+      aria-describedby={descriptionId}
+      closeOnSelect={action.closeOnSelect ?? false}
+      onSelect={(event) => select(action, event)}
+      data-action-id={action.id}
+    >
+      {@render itemContent(action, reserveIcon)}
+    </Menu.CheckboxItem>
   {:else}
     <Menu.Item
       {disabled}
       destructive={action.destructive}
+      aria-describedby={descriptionId}
+      closeOnSelect={action.closeOnSelect ?? true}
       onSelect={(event) => select(action, event)}
       data-action-id={action.id}
     >
-      {@render itemContent(action)}
+      {@render itemContent(action, reserveIcon)}
     </Menu.Item>
   {/if}
-{/snippet}
-
-{#snippet renderedItem(action: ActionDefinition)}
   {#if action.disabledReason}
-    <Tooltip content={action.disabledReason} side="right">
-      {#snippet trigger()}
-        {@render actionItem(action)}
-      {/snippet}
-    </Tooltip>
-  {:else}
-    {@render actionItem(action)}
+    <span id={descriptionId} class="sr-only">{action.disabledReason}</span>
   {/if}
 {/snippet}
 
-{#snippet actionItems(entries: readonly ActionDefinition[])}
+{#snippet actionItems(entries: readonly ResolvedAction[], disabled = false)}
   {#each entries as action, index (action.id)}
-    {#if index > 0 && action.group !== entries[index - 1]?.group}
+    {#if index > 0 && (action.group !== entries[index - 1]?.group || action.kind === 'section' || action.kind === 'radio-group' || entries[index - 1]?.kind === 'section' || entries[index - 1]?.kind === 'radio-group')}
       <Menu.Separator />
     {/if}
-    {@render renderedItem(action)}
+    {@render actionItem(
+      disabled ? { ...action, disabled: true } : action,
+      entries.some((entry) => entry.group === action.group && entry.icon !== undefined),
+    )}
   {/each}
 {/snippet}
 
-<Menu.Root bind:open>
+<Menu.Root bind:open {onOpenChange}>
   <Menu.Trigger>
     {#snippet child({ props })}
       {#if contextMenu}
@@ -133,6 +266,8 @@
           {...props}
           type="button"
           aria-label={ariaLabel}
+          aria-hidden="true"
+          tabindex={-1}
           class="pointer-events-none fixed size-px opacity-0"
           style={`left: ${contextMenu.x}px; top: ${contextMenu.y}px;`}
         ></Button>
@@ -142,11 +277,15 @@
     {/snippet}
   </Menu.Trigger>
   <Menu.Content
+    bind:ref={content}
     {align}
     {side}
     sideOffset={contextMenu ? 0 : 4}
     collisionPadding={8}
     aria-label={ariaLabel}
+    data-action-menu-owner={uid}
+    onCloseAutoFocus={restoreContextFocus}
+    onkeydown={handleContextKeydown}
     class={className}
   >
     {@render actionItems(resolvedActions)}

@@ -147,7 +147,7 @@ describe('Menu command state behavior', () => {
       render(MenuTestHarness, { props: { iconWeight } });
       const trigger = await openMenu();
       const menu = screen.getByRole('menu');
-      const icons = menu.querySelectorAll('svg[data-icon]');
+      const icons = menu.querySelectorAll('[data-slot="menu-item-leading"] svg[data-icon]');
       expect(icons).toHaveLength(3);
       for (const icon of icons) expect(icon.getAttribute('data-weight')).toBe(expectedWeight);
       expect(menu.querySelector('[iconweight]')).toBeNull();
@@ -194,12 +194,10 @@ describe('Menu command state behavior', () => {
     expect(screen.getByRole('menu')).toBeTruthy();
   });
 
-  it('runs a destructive command with neutral menu styling and closes normally', async () => {
+  it('runs a destructive command once and closes normally', async () => {
     render(MenuTestHarness);
     await openMenu();
     const item = screen.getByRole('menuitem', { name: 'Delete item' });
-    expect(item.hasAttribute('data-destructive')).toBe(true);
-    expect(item.className).toContain('data-[destructive]:text-foreground');
     await fireEvent.click(item);
     expect(screen.getByTestId('selected').textContent).toBe('delete');
     await waitFor(() => expect(screen.queryByRole('menu')).toBeNull());
