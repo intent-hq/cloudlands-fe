@@ -24,6 +24,7 @@ import {
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
+import ts from 'typescript';
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import CatalogShell from './CatalogShell.svelte';
@@ -102,13 +103,49 @@ interface ParsedImport {
   line: number;
 }
 
-function parseImports(source: string): ParsedImport[] {
-  const pattern = /\b(?:import|export)\s+(type\s+)?(?:[^'";:=()]*?\bfrom\s+)?(['"])([^'"]+)\2/g;
-  return [...source.matchAll(pattern)].map((match) => ({
-    specifier: match[3],
-    typeOnly: match[1] !== undefined,
-    line: source.slice(0, match.index).split('\n').length,
+function scriptBlocks(source: string, file: string): { text: string; offset: number }[] {
+  if (!file.endsWith('.svelte')) return [{ text: source, offset: 0 }];
+  return [...source.matchAll(/<script\b[^>]*>([\s\S]*?)<\/script>/g)].map((match) => ({
+    text: match[1],
+    offset: match.index + match[0].length - '</script>'.length - match[1].length,
   }));
+}
+
+// Parses real import/re-export declarations only, so comments and string literals that merely look
+// like imports contribute nothing and cannot flip a following declaration's type-only status.
+function parseImports(source: string, file: string): ParsedImport[] {
+  return scriptBlocks(source, file).flatMap(({ text, offset }) => {
+    const ast = ts.createSourceFile(file, text, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
+    const lineBase = source.slice(0, offset).split('\n').length - 1;
+    return ast.statements.flatMap((statement) => {
+      let typeOnly: boolean;
+      if (ts.isImportDeclaration(statement)) {
+        const clause = statement.importClause;
+        const bindings = clause?.namedBindings;
+        typeOnly =
+          clause?.phaseModifier === ts.SyntaxKind.TypeKeyword ||
+          (clause?.name === undefined &&
+            bindings !== undefined &&
+            ts.isNamedImports(bindings) &&
+            bindings.elements.length > 0 &&
+            bindings.elements.every((element) => element.isTypeOnly));
+      } else if (ts.isExportDeclaration(statement) && statement.moduleSpecifier) {
+        const clause = statement.exportClause;
+        typeOnly =
+          statement.isTypeOnly ||
+          (clause !== undefined &&
+            ts.isNamedExports(clause) &&
+            clause.elements.length > 0 &&
+            clause.elements.every((element) => element.isTypeOnly));
+      } else {
+        return [];
+      }
+      const specifier = statement.moduleSpecifier;
+      if (!specifier || !ts.isStringLiteral(specifier)) return [];
+      const line = ast.getLineAndCharacterOfPosition(statement.getStart(ast)).line + 1;
+      return [{ specifier: specifier.text, typeOnly, line: lineBase + line }];
+    });
+  });
 }
 
 function resolveModule(
@@ -137,7 +174,7 @@ function boundaryViolations(
   relativeFile: string,
   allowlisted: readonly string[],
 ): string[] {
-  return parseImports(source).flatMap(({ specifier, line }) =>
+  return parseImports(source, relativeFile).flatMap(({ specifier, line }) =>
     hostBoundSpecifier.test(specifier) && !allowlisted.includes(specifier)
       ? [`${relativeFile}:${line}`]
       : [],
@@ -153,7 +190,7 @@ function runtimeHostViolations(
 ): string[] {
   const projectRoot = path.dirname(sourceRoot);
   const violations: string[] = [];
-  const imports = parseImports(readFileSync(importingFile, 'utf8'));
+  const imports = parseImports(readFileSync(importingFile, 'utf8'), importingFile);
   const families = specifiers.map((specifier) => `${path.posix.dirname(specifier)}/`);
   const queue: { file: string; shared: boolean }[] = [];
   for (const specifier of specifiers) {
@@ -176,7 +213,7 @@ function runtimeHostViolations(
     if (visited.has(file)) continue;
     visited.add(file);
     const moduleFile = path.relative(projectRoot, file);
-    for (const entry of parseImports(readFileSync(file, 'utf8'))) {
+    for (const entry of parseImports(readFileSync(file, 'utf8'), file)) {
       if (entry.typeOnly) continue;
       const location = `${moduleFile}:${entry.line} (${entry.specifier})`;
       const staysInFamily =
@@ -335,6 +372,46 @@ describe('catalog route shell', () => {
       );
       expect(runtimeHostViolations(renderer, specifiers, tmpSrc)).toEqual([
         'src/lib/components/tiptap/RemoteCursorDecorations.ts:2 ($store/anything)',
+      ]);
+    } finally {
+      rmSync(tmp, { recursive: true, force: true });
+    }
+  });
+
+  it('reads type-only status from the import declaration, not from surrounding comments', () => {
+    const tmp = mkdtempSync(path.join(tmpdir(), 'catalog-guard-'));
+    try {
+      const tmpSrc = path.join(tmp, 'src');
+      const write = (relativeFile: string, content: string) => {
+        const file = path.join(tmpSrc, relativeFile);
+        mkdirSync(path.dirname(file), { recursive: true });
+        writeFileSync(file, content);
+        return file;
+      };
+      const renderer = write(
+        'lib/component-catalog/renderers/Preview.svelte',
+        '<script lang="ts">\n  import { label } from \'$features/presence/components/presence-person\';\n</script>',
+      );
+      const person = 'features/presence/components/presence-person.ts';
+      const specifiers = ['$features/presence/components/presence-person'];
+      const header = [
+        '/**',
+        " * Sample: import { x } from '$store/anything';",
+        ' */',
+        "import type { Person } from './types';",
+        '// import type declarations are erased',
+      ];
+
+      write(person, [...header, 'export const label = (p: Person) => p.name;', ''].join('\n'));
+      expect(runtimeHostViolations(renderer, specifiers, tmpSrc)).toEqual([]);
+
+      const injected = [...header, "import { x } from '$store/anything';", ''].join('\n');
+      write(person, injected);
+      expect(runtimeHostViolations(renderer, specifiers, tmpSrc)).toEqual([
+        'src/features/presence/components/presence-person.ts:6 ($store/anything)',
+      ]);
+      expect(boundaryViolations(injected, 'presence-person.ts', [])).toEqual([
+        'presence-person.ts:6',
       ]);
     } finally {
       rmSync(tmp, { recursive: true, force: true });
