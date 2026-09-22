@@ -6265,19 +6265,27 @@ describe('daemonEventsBridge (agent lifecycle → collapsed bin counts, §5.5 sc
       updatedAt: '2026-01-01T00:00:00.000Z',
     };
 
-    /** The daemon's answer once the parent left the live set: the child is the one orphan. */
-    function mockDaemonAfterParentLeft(): void {
+    /**
+     * The daemon's answer once the parent left the live set. By default the
+     * child is the one orphan (parent deleted, or child restored under a
+     * still-retired parent); a cascading retire takes the child along, so
+     * that read serves `orphaned: 0` and a retired count covering both rows.
+     */
+    function mockDaemonAfterParentLeft(
+      orphaned: { total: number; running: number } = ONE_ORPHAN,
+      retiredCount = 0,
+    ): void {
       backendRequestSpy.mockImplementation((method: string, params: unknown) => {
         if (method !== 'agent.list') return undefined;
         const orphanedOnly = (params as { orphanedOnly?: boolean }).orphanedOnly === true;
         return Promise.resolve({
-          agents: orphanedOnly ? [CHILD_ROW] : [],
-          retiredCount: 0,
+          agents: orphanedOnly && orphaned.total > 0 ? [CHILD_ROW] : [],
+          retiredCount,
           scopeCounts: { ...COUNTS, topLevel: COUNTS.topLevel - 1 },
           delegatedCounts: {
             running: 0,
             byParent: { [PARENT]: { total: 1, running: 0 } },
-            orphaned: ONE_ORPHAN,
+            orphaned,
           },
         });
       });
@@ -6321,17 +6329,20 @@ describe('daemonEventsBridge (agent lifecycle → collapsed bin counts, §5.5 sc
     });
 
     it('agent:retired on a known parent and agent:restored on its (cascade-retired) child each re-baseline via the hydrate', async () => {
-      mockDaemonAfterParentLeft();
+      // Retiring the parent cascades to the child (daemon-side): neither row
+      // is live, so the daemon counts no orphan — but the bridge still
+      // re-baselines from the read rather than assuming that.
+      mockDaemonAfterParentLeft(NO_ORPHANS, 2);
       const handler = capturedHandlers[0]!;
 
       handler(notification('agent:retired', { agentId: PARENT }));
       await settle();
       expect(backendRequestSpy).toHaveBeenCalledWith('agent.list', TOP_LEVEL_LIST);
-      expect(delegatedCountsOf()?.orphaned).toEqual(ONE_ORPHAN);
+      expect(delegatedCountsOf()?.orphaned).toEqual(NO_ORPHANS);
+      expect(selectRetiredCount.select(appStore.state, WS)).toBe(2);
 
-      // The retire cascaded to the child (daemon-side); restoring the child
-      // alone leaves it under a still-retired parent — an orphan the daemon
-      // counts, so the restore re-baselines too.
+      // Restoring the child alone leaves it under a still-retired parent — an
+      // orphan the daemon counts, so the restore re-baselines too.
       seedSession({
         id: PARENT as never,
         retiredAt: '2026-01-01T12:00:00.000Z',
@@ -6343,12 +6354,13 @@ describe('daemonEventsBridge (agent lifecycle → collapsed bin counts, §5.5 sc
       });
       appStore.dispatch(setDelegatedCounts(WS, { ...DELEGATED, orphaned: NO_ORPHANS }));
       backendRequestSpy.mockClear();
-      mockDaemonAfterParentLeft();
+      mockDaemonAfterParentLeft(ONE_ORPHAN, 1);
 
       handler(notification('agent:restored', { agentId: CHILD }));
       await settle();
       expect(backendRequestSpy).toHaveBeenCalledWith('agent.list', TOP_LEVEL_LIST);
       expect(delegatedCountsOf()?.orphaned).toEqual(ONE_ORPHAN);
+      expect(selectRetiredCount.select(appStore.state, WS)).toBe(1);
     });
 
     it('a re-delivered agent:retired does not hydrate again (count-neutral transition)', async () => {
