@@ -874,13 +874,13 @@ function memoisedSearch(text: string, pattern: RegExp): (at: number) => number {
 }
 
 /**
- * What the scan stops at: a comment; a label, or a fence of three or more
- * `` ` `` or `~`, at a line start; a run of backticks; a `\` before a
- * character it escapes (`\\`, `\<`, `\[`, `` \` ``).
+ * What the scan stops at: a comment; a label at a line start; a run of
+ * backticks or of three or more `~`; a `\` before a character it escapes
+ * (`\\`, `\<`, `\[`, `` \` ``).
  */
-const HIDDEN_BLOCK_OPENER = /<!--|^[ \t]{0,3}\[|^ {0,3}(?:`{3,}|~{3,})|`+|\\[\\<[`]/gm;
-/** A line that may close a fence: a run of `` ` `` or `~` alone, at most three spaces before it. */
-const FENCE_CLOSE = /^ {0,3}(?:`{3,}|~{3,})[ \t\r]*$/gm;
+const HIDDEN_BLOCK_OPENER = /<!--|^[ \t]{0,3}\[|`+|~{3,}|\\[\\<[`]/gm;
+/** A line that may close a fence: a run of `` ` `` or `~` alone after blanks and `>`. */
+const FENCE_CLOSE = /^[ \t>]*(?:`{3,}|~{3,})[ \t\r]*$/gm;
 /** The two breaks of a blank line; no definition title or code span spans one. */
 const BLANK_LINE = /\n[ \t\r]*\n/g;
 /** A code unit that is not a line break. */
@@ -901,25 +901,32 @@ const NOT_BREAK = /[^\n\r]/g;
  *
  * What the renderer shows as written is not hidden, and the scan passes over
  * it as the lexer would: a fenced code block (a fence of three or more
- * `` ` `` or `~` at a line start, at most three spaces before it, a backtick
- * fence's info string holding no backtick; closed by a line of the same
- * character alone, at least as long, or running to the end of the note), a
- * code span (a run of backticks closed by the next run of the same length
- * before a blank line; a run none closes is literal) and an escaped
- * character (`\<`, `\[`; `\\` escapes the backslash). Whichever opens first
- * wins: a comment that opens before a fence hides the fence, a fence that
- * opens before a comment shows it. A definition is one only where a block
- * may open (`startsBlock`): a `[` on the line after a paragraph's, an item's
- * or a quote's continues that paragraph, and the line is shown as written.
- * One linear scan: a `-->`, a closing quote, a fence line or a closing run
- * of a length none of lies ahead is not searched for again, and a title or a
- * code span is closed before the next blank line or not at all.
+ * `` ` `` or `~` at a line start, at most three blanks before it past the
+ * quote and item markers of the line (`fenceIndent`), a backtick fence's
+ * info string holding no backtick; closed by a line of the same character
+ * alone, at least as long, indented at most three more columns than the
+ * fence was past its markers, or running to the end of the note), an
+ * indented code block (lines of four columns of blanks or more, from the
+ * line after a blank one or the note's first to the next line of fewer that
+ * is not blank; `indentedCodeEnd`), a code span (a run of backticks closed
+ * by the next run of the same length before a blank line; a run none closes
+ * is literal) and an escaped character (`\<`, `\[`; `\\` escapes the
+ * backslash). Whichever opens first wins: a comment that opens before a
+ * fence hides the fence, a fence that opens before a comment shows it. A
+ * definition is one only where a block may open (`startsBlock`): a `[` on
+ * the line after a paragraph's, an item's or a quote's continues that
+ * paragraph, and the line is shown as written. One linear scan: a `-->`, a
+ * closing quote, a fence line or a closing run of a length none of lies
+ * ahead is not searched for again, and a title or a code span is closed
+ * before the next blank line or not at all.
  */
 function maskHiddenBlocks(markdown: string): string {
   let out = '';
   let pos = 0;
   /** The end of the last block the scan closed — a fence, a comment or a definition at a line start. */
   let blockEnd = 0;
+  /** The end of the last indented line found to continue a paragraph; the indented lines after it do too. */
+  let continuationEnd = -1;
   const nextCommentClose = memoisedIndexOf(markdown, '-->');
   const nextBlankLine = memoisedSearch(markdown, BLANK_LINE);
   const nextFenceClose = memoisedSearch(markdown, FENCE_CLOSE);
@@ -946,11 +953,23 @@ function maskHiddenBlocks(markdown: string): string {
   };
   HIDDEN_BLOCK_OPENER.lastIndex = 0;
   let opener = HIDDEN_BLOCK_OPENER.exec(markdown);
+  let lineStart = 0;
+  let lineEnd = -1;
   while (opener) {
     const found = opener[0];
     const at = opener.index;
     let end = at + found.length;
-    if (found === '<!--') {
+    if (at > lineEnd) {
+      lineStart = markdown.lastIndexOf('\n', at - 1) + 1;
+      lineEnd = lineEndAt(at);
+    }
+    const indented = indentOf(markdown, lineStart) >= 4;
+    const codeEnd = indented ? indentedCodeEnd(markdown, lineStart, blockEnd, continuationEnd) : -1;
+    if (indented && codeEnd === -1) continuationEnd = lineEnd;
+    if (codeEnd !== -1) {
+      end = codeEnd;
+      blockEnd = end;
+    } else if (found === '<!--') {
       if (!markdown.startsWith(COMMENT_ANCHOR, at)) {
         const close = nextCommentClose(end);
         end = close === -1 ? markdown.length : close + 3;
@@ -969,28 +988,35 @@ function maskHiddenBlocks(markdown: string): string {
         }
       }
     } else {
-      let run = at;
-      while (markdown.charCodeAt(run) === 32) run += 1;
-      const fenceChar = markdown.charCodeAt(run);
-      const length = end - run;
-      const lineEnd = lineEndAt(end);
+      const fenceChar = found.charCodeAt(0);
+      const length = found.length;
+      const indent = fenceIndent(markdown, lineStart, at);
       const isFence =
-        (fenceChar === 126 || run !== at || (length >= 3 && atLineStart(markdown, at))) &&
+        indent !== -1 &&
+        indent <= 3 &&
+        (fenceChar === 126 || length >= 3) &&
         (fenceChar === 126 || !markdown.slice(end, lineEnd).includes('`'));
       if (isFence) {
+        const offset = columnsPastQuote(markdown, lineStart, at) - indent;
         let close = nextFenceClose(lineEnd + 1);
         while (close !== -1) {
           let closeRun = close;
-          while (markdown.charCodeAt(closeRun) === 32) closeRun += 1;
+          while (isBlank(markdown.charCodeAt(closeRun)) || markdown.charCodeAt(closeRun) === 62) {
+            closeRun += 1;
+          }
           let closeEnd = closeRun;
           while (markdown.charCodeAt(closeEnd) === fenceChar) closeEnd += 1;
-          if (closeEnd - closeRun >= length) break;
+          if (
+            closeEnd - closeRun >= length &&
+            columnsPastQuote(markdown, close, closeRun) <= 3 + offset
+          )
+            break;
           close = nextFenceClose(close + 1);
         }
         end = close === -1 ? markdown.length : lineEndAt(close);
         blockEnd = end;
-      } else {
-        const close = nextSpanClose(markdown.slice(run, end))(end);
+      } else if (fenceChar === 96) {
+        const close = nextSpanClose(found)(end);
         const blank = nextBlankLine(end);
         if (close !== -1 && (blank === -1 || close < blank)) end = close + length;
       }
@@ -1006,6 +1032,103 @@ function atLineStart(text: string, at: number): boolean {
   let start = at;
   while (start > 0 && isBlank(text.charCodeAt(start - 1))) start -= 1;
   return at - start <= 3 && (start === 0 || text.charCodeAt(start - 1) === 10);
+}
+
+/** The columns of the blanks that open the line of `text` at `lineStart`; a tab reaches the next multiple of four. */
+function indentOf(text: string, lineStart: number): number {
+  let columns = 0;
+  for (let at = lineStart; ; at += 1) {
+    const code = text.charCodeAt(at);
+    if (code === 32) columns += 1;
+    else if (code === 9) columns += 4 - (columns % 4);
+    else return columns;
+  }
+}
+
+/** Whether the line of `text` at `lineStart` holds blanks alone. */
+function isBlankLine(text: string, lineStart: number): boolean {
+  let at = lineStart;
+  while (at < text.length && (isBlank(text.charCodeAt(at)) || text.charCodeAt(at) === 13)) at += 1;
+  return at >= text.length || text.charCodeAt(at) === 10;
+}
+
+/**
+ * The end of the indented code block the line of `text` at `lineStart` — of
+ * four columns of blanks or more — belongs to: the start of the next line of
+ * fewer that is not blank, or the note's end. `-1` when the line is no code
+ * but continues a paragraph: the lines above it, indented like it, reach one
+ * that is neither blank nor indented nor within the last block the scan
+ * closed (`blockEnd`), or one already found to continue a paragraph
+ * (`continuationEnd`).
+ */
+function indentedCodeEnd(
+  text: string,
+  lineStart: number,
+  blockEnd: number,
+  continuationEnd: number,
+): number {
+  let start = lineStart;
+  while (start > 0) {
+    const previous = text.lastIndexOf('\n', start - 2) + 1;
+    if (previous < blockEnd || isBlankLine(text, previous)) break;
+    if (previous < continuationEnd || indentOf(text, previous) < 4) return -1;
+    start = previous;
+  }
+  let lineEnd = text.indexOf('\n', lineStart);
+  while (lineEnd !== -1 && lineEnd + 1 < text.length) {
+    const next = lineEnd + 1;
+    if (!isBlankLine(text, next) && indentOf(text, next) < 4) return next;
+    lineEnd = text.indexOf('\n', next);
+  }
+  return text.length;
+}
+
+/**
+ * The columns of blanks between the last quote or item marker (`>`, `-`,
+ * `*`, `+`, `1.`, `1)`) on the line of `text` at `lineStart` — or its start
+ * — and `at`; `-1` when other text lies between them.
+ */
+function fenceIndent(text: string, lineStart: number, at: number): number {
+  let columns = 0;
+  for (let i = lineStart; i < at; i += 1) {
+    const code = text.charCodeAt(i);
+    if (code === 32) columns += 1;
+    else if (code === 9) columns += 4 - (columns % 4);
+    else if (code === 62) columns = 0;
+    else if (
+      (code === 45 || code === 42 || code === 43) &&
+      i + 1 < at &&
+      isBlank(text.charCodeAt(i + 1))
+    ) {
+      columns = 0;
+    } else if (code >= 48 && code <= 57) {
+      let digits = i + 1;
+      while (digits < i + 9 && text.charCodeAt(digits) >= 48 && text.charCodeAt(digits) <= 57)
+        digits += 1;
+      const delimiter = text.charCodeAt(digits);
+      if (
+        (delimiter !== 46 && delimiter !== 41) ||
+        digits + 1 >= at ||
+        !isBlank(text.charCodeAt(digits + 1))
+      )
+        return -1;
+      columns = 0;
+      i = digits;
+    } else return -1;
+  }
+  return columns;
+}
+
+/** The columns from the last `>` of `text` between `from` and `to` — or `from` — to `to`. */
+function columnsPastQuote(text: string, from: number, to: number): number {
+  let columns = 0;
+  for (let at = from; at < to; at += 1) {
+    const code = text.charCodeAt(at);
+    if (code === 62) columns = 0;
+    else if (code === 9) columns += 4 - (columns % 4);
+    else columns += 1;
+  }
+  return columns;
 }
 
 /**

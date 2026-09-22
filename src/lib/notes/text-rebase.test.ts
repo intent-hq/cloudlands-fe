@@ -2169,19 +2169,40 @@ describe('alignment of link syntax the lexer does not account for', () => {
     // Text the scan past the cap might take for hidden — a comment opener or
     // a definition's label — that the renderer shows as written: in a code
     // span, in a fenced code block (closed, holding only a closer, unclosed
-    // and running to the end of the note, of tildes), after a `\`, or on a
-    // line that continues a paragraph or an item, which no definition may
-    // interrupt. Its text is visible non-link text and maps exactly within
-    // the budget; past the deadline it stays on its own line, and so does
-    // the sealed link line after it. (Masked, the visible text was absent
-    // from the alignment's markdown: a caret on it landed at the end of the
-    // line before, and a comment opener in a fence that no `-->` closed
+    // and running to the end of the note, of tildes, in an item or a quote),
+    // in an indented code block, after a `\`, or on a line that continues a
+    // paragraph or an item, which no definition may interrupt. Its text is
+    // visible non-link text and maps exactly within the budget, as does the
+    // ordinary text after it; past the deadline it stays on its own line,
+    // and so does the sealed link line after it. (Masked, the visible text
+    // was absent from the alignment's markdown: a caret on it landed at the
+    // end of the line before, and a comment opener in a fence, in an
+    // indented code block or in a fence within an item that no `-->` closed
     // masked the rest of the note, the link line with it. Shown, a whole-line
     // comment in a fence and a definition-shaped line after a paragraph were
     // still no text lines, so every line after them paired one line short.)
     const FENCE = '```';
     const TILDES = '~~~';
     const VISIBLE_BLOCKS: Array<[string, string]> = [
+      ['a comment in an indented code block', '    <!-- visible body -->'],
+      ['a comment no `-->` closes in an indented code block', '    <!-- visible body'],
+      ['a comment no `-->` closes in a tab-indented code block', '\t<!-- visible body'],
+      [
+        'a definition in an indented code block',
+        '    [ref]: https://visible.example\n      "visible body"',
+      ],
+      [
+        'a comment in a fenced code block in an item',
+        `- ${FENCE}html\n  alpha\n\n  <!-- visible body -->\n  ${FENCE}`,
+      ],
+      [
+        'a comment no `-->` closes in a fenced code block in an item',
+        `- ${FENCE}html\n  alpha\n\n  <!-- visible body\n  ${FENCE}`,
+      ],
+      [
+        'a comment in a tilde-fenced code block in a quote',
+        `> ${TILDES}html\n> <!-- visible body -->\n> ${TILDES}`,
+      ],
       ['a comment in a code span', '`<!-- visible body -->`'],
       ['a comment no `-->` closes in a code span', '`<!-- visible body`'],
       ['a comment in a code span of two backticks', '``a ` <!-- visible body -->``'],
@@ -2234,6 +2255,7 @@ describe('alignment of link syntax the lexer does not account for', () => {
         else expectSameLine(plain, markdown, map, 'visible body', 'visible body');
         expectSameLine(plain, markdown, map, 'ab', '[ab](');
         const trailing = plain.includes('**cd** two') ? '**cd** two' : 'cd two';
+        if (exact) expectExactRun(plain, markdown, map, ' two', 0, 0);
         expectSameLine(plain, markdown, map, trailing, '**cd** two');
       },
       60_000,
