@@ -643,11 +643,11 @@ describe('Dropdown portaled submenu ownership', () => {
   beforeEach(setupDropdownEnv);
   afterEach(cleanupDropdownEnv);
 
-  function submenuOptions(childAction: () => void) {
+  function submenuOptions(childAction: () => void, submenuValue = 'more') {
     return [
       { value: 'a', label: 'Alpha' },
       {
-        value: 'more',
+        value: submenuValue,
         label: 'More',
         type: 'submenu' as const,
         children: [{ value: 'child', label: 'Child action', onclick: childAction }],
@@ -680,6 +680,24 @@ describe('Dropdown portaled submenu ownership', () => {
     expect(childAction).toHaveBeenCalledOnce();
     await waitFor(() => expect(screen.queryByRole('listbox')).toBeNull());
     expect(onopenchange).toHaveBeenLastCalledWith(false);
+  });
+
+  it('owns the submenu when the trigger value contains whitespace', async () => {
+    const childAction = vi.fn();
+    const { container } = render(Dropdown, {
+      props: {
+        searchable: false,
+        portal: true,
+        options: submenuOptions(childAction, 'more actions'),
+      },
+    });
+    const leaf = await openWithSubmenu(container);
+
+    await fireEvent.mouseDown(leaf);
+    await fireEvent.click(leaf);
+
+    expect(childAction).toHaveBeenCalledOnce();
+    await waitFor(() => expect(screen.queryByRole('listbox')).toBeNull());
   });
 
   it('does not treat another dropdown’s open submenu as its own popup', async () => {

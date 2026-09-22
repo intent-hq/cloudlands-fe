@@ -902,7 +902,7 @@
     selectableOptions[highlightedIndex]?.value === option.value}
   {@const submenuOpen =
     option.type === 'submenu' && !!option.children?.length && openSubmenu === option.value}
-  {@const submenuId = `${uid}-submenu-${option.value}`}
+  {@const submenuId = `${uid}-submenu-${encodeURIComponent(option.value)}`}
   <!-- Separator type -->
   {#if option.type === 'separator'}
     <div class="my-1 h-px bg-border"></div>
