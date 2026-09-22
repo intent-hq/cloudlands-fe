@@ -1556,6 +1556,155 @@ describe('alignment of link syntax the lexer does not account for', () => {
       expect([aToB(offset), bToA(offset + 1)], `@ ${offset}`).toEqual([offset + 1, offset]);
     }
   }, 120_000);
+
+  // The lexer reads a note with its `\r\n` line endings rewritten to `\n`,
+  // so every range it hides sits earlier in that text than in the note; the
+  // mask carries each back by the line endings shortened before it. A CRLF
+  // note is masked exactly as its LF twin: below the cap a caret one letter
+  // into the label maps one letter into the label, never into the URL.
+  describe('in a note with CRLF line endings', () => {
+    const LABELS: Array<[string, string, string[]]> = [
+      ['a label split once', '**sel**ection', ['sel', 'ection']],
+      ['a label split on every letter pair', '**se**le**ct**io**n**', ['se', 'le', 'ct', 'io']],
+    ];
+    const CRLF_PLACEMENTS: Array<[string, (note: string) => string]> = [
+      ['below the cap', (note) => note],
+      ['past the cap', (note) => `${note}\r\n\r\n${'q'.repeat(129 * 1024)}`],
+    ];
+    const CRLF_CELLS = LABELS.flatMap(([name, label, runs]) =>
+      CRLF_PLACEMENTS.flatMap(([where, place]) =>
+        PROJECTIONS.map(
+          ([projection, production]): [
+            string,
+            string,
+            string,
+            string,
+            string[],
+            typeof place,
+            boolean,
+          ] => [name, where, projection, label, runs, place, production],
+        ),
+      ),
+    );
+
+    /** No plain-text offset from `start` on maps strictly inside a URL of `markdown`. */
+    function expectUrlsHidden(
+      plain: string,
+      markdown: string,
+      map: ReturnType<typeof createBidirectionalOffsetMapper>,
+      start = 0,
+    ) {
+      const urls = [...markdown.matchAll(/https?:\/\/[^\s)]+/g)].map(
+        (url) => [url.index, url.index + url[0].length] as const,
+      );
+      expect(urls.length).toBeGreaterThan(0);
+      for (let offset = start; offset <= plain.length; offset += 1) {
+        const mapped = map.aToB(offset);
+        for (const [start, stop] of urls) {
+          expect(
+            mapped <= start || mapped >= stop,
+            `aToB(${offset}) = ${mapped} lands inside the URL at ${start}`,
+          ).toBe(true);
+        }
+      }
+    }
+
+    it.each(CRLF_CELLS)(
+      'masks the URL beside %s in a note %s projected by %s',
+      async (_name, where, _projection, label, runs, place, production) => {
+        const markdown = place(`[${label}](https://selection/editor) sync\r\n\r\nend marker`);
+        const plain = await projectWithEditor(markdown, production);
+        expect(plain.startsWith('selection sync\nend marker')).toBe(true);
+        const map = withoutDeadline(() => createBidirectionalOffsetMapper(plain, markdown));
+        const url = markdown.indexOf('https://selection/editor');
+        const lineEnd = plain.indexOf('\n');
+        for (let offset = url + 1; offset < url + 'https://selection/editor'.length; offset += 1) {
+          expect(map.bToA(offset), `bToA(${offset}) inside the URL`).toBeLessThanOrEqual(lineEnd);
+        }
+        expectExactRun(plain, markdown, map, 'end marker', 0, 0);
+        if (where === 'below the cap') {
+          expectUrlsHidden(plain, markdown, map);
+          expect([map.aToB(1), map.bToA(4)]).toEqual([4, 1]);
+          for (const run of runs) expectExactRun(plain, markdown, map, run, 0, 0);
+          expectExactRun(plain, markdown, map, 'sync', 0, 0);
+        } else {
+          // Past the cap the link line is sealed: its text stays on the line,
+          // off by at most the hidden destination, as in its LF twin.
+          expectUrlsHidden(plain, markdown, map, lineEnd);
+          expectSameLine(plain, markdown, map, 'selection sync', 'sync');
+          expectExactRun(plain, markdown, map, 'qqqqqqqq', 0, 0);
+        }
+      },
+      60_000,
+    );
+
+    const NOTES: Array<[string, string, Array<[string, number, number]>]> = [
+      [
+        'mixed CR LF and LF line endings',
+        'caret [render](https://sync/selection) sync\r\nsoft wrap\n\r\n- item [edit](https://edit/or) daemon\n\r\nend marker',
+        [
+          ['caret', 0, 0],
+          ['render', 0, 0],
+          ['sync', 0, 1],
+          ['soft wrap', 0, 0],
+          ['item', 0, 0],
+          ['edit', 0, 0],
+          ['daemon', 0, 0],
+          ['end marker', 0, 0],
+        ],
+      ],
+      [
+        'a code span and a fence beside the link',
+        '`[x](y)` [**sel**ection](https://selection/editor) sync\r\n\r\n```\r\n[a](b)\r\n```\r\n\r\nend marker',
+        [
+          ['[x](y)', 0, 0],
+          ['sel', 0, 0],
+          ['ection', 0, 0],
+          ['sync', 0, 0],
+          ['[a](b)', 0, 0],
+          ['end marker', 0, 0],
+        ],
+      ],
+      [
+        'the link in a list item',
+        '- item [**sel**ection](https://selection/editor) sync\r\n- second\r\n\r\nend marker',
+        [
+          ['item', 0, 0],
+          ['sel', 0, 0],
+          ['ection', 0, 0],
+          ['sync', 0, 0],
+          ['second', 0, 0],
+          ['end marker', 0, 0],
+        ],
+      ],
+    ];
+    const NOTE_CELLS = NOTES.flatMap(([name, markdown, runs]) =>
+      PROJECTIONS.map(
+        ([projection, production]): [
+          string,
+          string,
+          string,
+          Array<[string, number, number]>,
+          boolean,
+        ] => [name, projection, markdown, runs, production],
+      ),
+    );
+
+    it.each(NOTE_CELLS)(
+      'keeps every run exact with %s, projected by %s',
+      async (_name, _projection, markdown, runs, production) => {
+        const plain = await projectWithEditor(markdown, production);
+        expect(plain).not.toContain('https');
+        expect(plain).not.toContain('\r');
+        const map = withoutDeadline(() => createBidirectionalOffsetMapper(plain, markdown));
+        expectUrlsHidden(plain, markdown, map);
+        for (const [needle, plainIndex, markdownIndex] of runs) {
+          expectExactRun(plain, markdown, map, needle, plainIndex, markdownIndex);
+        }
+      },
+      60_000,
+    );
+  });
 });
 
 describe('alignment past the cap of notes drawn from every line shape', () => {
@@ -2079,6 +2228,46 @@ describe('alignment over a corpus of small notes', () => {
         if (legacy === m && aToB(p) !== m) {
           failures.push(
             `seed ${seed} plain ${p}: legacy exact (${m}) but anchored gave ${aToB(p)}`,
+          );
+        }
+      }
+    }
+    expect(checked).toBeGreaterThan(20_000);
+    expect(failures, failures.slice(0, 20).join('\n')).toEqual([]);
+  }, 240_000);
+
+  it('maps every interior offset exactly on the same 200 notes with CRLF line endings', async () => {
+    // The editor projects a CRLF note to the plain text of its LF twin, and
+    // every interior offset must map as it did there, moved past the `\r`
+    // of each line ending before it. An offset just before a line ending may
+    // land before or between its two characters — there is no plain text
+    // between them to tell the two apart.
+    const failures: string[] = [];
+    let checked = 0;
+    for (const seed of SEEDS) {
+      const atoms = generateSmallNote(seed);
+      const lf = atoms.map(([md]) => md).join('');
+      const markdown = lf.replace(/\n/g, '\r\n');
+      const plain = await projectWithEditor(markdown);
+      expect(plain, `seed ${seed} projection of ${JSON.stringify(markdown)}`).toBe(
+        atoms.map(([, p]) => p).join(''),
+      );
+      const { aToB, bToA } = withoutDeadline(() =>
+        createBidirectionalOffsetMapper(plain, markdown),
+      );
+      let breaks = 0;
+      let scanned = 0;
+      for (const [p, m] of interiorPairs(atoms)) {
+        for (; scanned < m; scanned += 1) if (lf.charCodeAt(scanned) === 10) breaks += 1;
+        const want = m + breaks;
+        const beforeBreak = lf.charCodeAt(m) === 10;
+        checked += 1;
+        const forward = aToB(p);
+        const backward = bToA(want);
+        if ((forward !== want && !(beforeBreak && forward === want + 1)) || backward !== p) {
+          failures.push(
+            `seed ${seed} plain ${p}→${forward} (want ${want}), markdown ${want}→${backward} (want ${p}): ` +
+              JSON.stringify(plain.slice(Math.max(0, p - 12), p + 12)),
           );
         }
       }

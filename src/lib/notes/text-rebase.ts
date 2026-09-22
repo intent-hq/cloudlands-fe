@@ -551,6 +551,8 @@ const HTML_LINE = /^[ \t]*<(?![ \t\r\n]|!--anchor:)|<!--(?!anchor:)/gm;
 const MAX_LEXED_LENGTH = 128 * 1024;
 /** A comment anchor; the editor renders it where `normalizeAnchorPositions` moves it. */
 const COMMENT_ANCHOR = '<!--anchor:';
+/** The line endings the lexer rewrites to `\n` before it reads a source. */
+const LINE_ENDING = /\r\n|\r/g;
 
 let hiddenTextLexer: ReturnType<typeof createTiptapTaskListMarked> | undefined;
 
@@ -617,8 +619,13 @@ let lastMask: { markdown: string; mask: Mask } | undefined;
  * `<sub>`, `<sup>` it renders (`HIDDEN_HTML`), which are read off the
  * lexer's `html` tokens.
  *
- * The lexer is the renderer's own, configured as the renderer configures it,
- * up to `MAX_LEXED_LENGTH`; a longer source is not lexed and nothing in it
+ * The lexer is the renderer's own, configured as the renderer configures it.
+ * It reads the source with its line endings rewritten to `\n`
+ * (`LINE_ENDING`), so a range it hides is found in that text and carried
+ * back to the source by the count of `\r\n` pairs shortened before it
+ * (`sourceShifts`); a hidden run never holds a line break, so one count
+ * places both of its ends. The lexer runs up to `MAX_LEXED_LENGTH`; a longer
+ * source is not lexed and nothing in it
  * is masked, so every line of it that holds link syntax is unanchorable, and
  * so is a line the renderer may read as HTML (`HTML_LINE`): each reaches the
  * diff alone, bounded by its own line (`refineByLine` pairs the lines of
@@ -655,19 +662,29 @@ function computeHiddenMask(markdown: string): string | undefined {
     const normalized = normalizeAnchorPositions(markdown);
     if (normalized.length === markdown.length) source = normalized;
   }
+  const lexed = source.replace(LINE_ENDING, '\n');
+  const shifts = lexed.length === source.length ? undefined : sourceShifts(source, lexed);
   let tokens: LexedToken[];
   try {
     hiddenTextLexer ??= createTiptapTaskListMarked();
-    tokens = hiddenTextLexer.lexer(source) as unknown as LexedToken[];
+    tokens = hiddenTextLexer.lexer(lexed) as unknown as LexedToken[];
   } catch {
     return undefined;
   }
   const top: TextMap = { text: joinRaw(tokens), lineStarts: [0], sourceStarts: [0] };
-  // marked normalises line endings; a source it rewrote has no exact offsets.
-  if (top.text !== source) return undefined;
+  // A source the lexer rewrote beyond its line endings has no exact offsets.
+  if (top.text !== lexed) return undefined;
   const ranges: Array<[number, number]> = [];
-  collectHidden(tokens, top, 0, markdown, ranges);
+  const lexedMarkdown = source === markdown ? lexed : markdown.replace(LINE_ENDING, '\n');
+  collectHidden(tokens, top, 0, lexedMarkdown, ranges);
   if (ranges.length === 0) return markdown;
+  if (shifts) {
+    for (const range of ranges) {
+      const shift = shifts[range[0]];
+      range[0] += shift;
+      range[1] += shift;
+    }
+  }
   ranges.sort((a, b) => a[0] - b[0]);
   let out = '';
   let pos = 0;
@@ -677,6 +694,27 @@ function computeHiddenMask(markdown: string): string | undefined {
     pos = end;
   }
   return out + markdown.slice(pos);
+}
+
+/**
+ * For every offset of `lexed` — `source` with its line endings rewritten to
+ * `\n` — how far the same character sits later in `source`: the number of
+ * `\r\n` pairs shortened at or before it (a lone `\r` keeps its length).
+ */
+function sourceShifts(source: string, lexed: string): Uint32Array {
+  const shifts = new Uint32Array(lexed.length + 1);
+  let removed = 0;
+  let at = 0;
+  for (let i = 0; i < source.length; i += 1) {
+    if (source.charCodeAt(i) === 13 && source.charCodeAt(i + 1) === 10) {
+      removed += 1;
+      continue;
+    }
+    shifts[at] = removed;
+    at += 1;
+  }
+  shifts[at] = removed;
+  return shifts;
 }
 
 /** Whether the renderer reads `markdown` as HTML rather than markdown (its `skipIfHTML`). */
