@@ -187,7 +187,7 @@ function anchoredHunks(from: string, markdown: string): Hunk[] {
       if (hit === -1 || (at !== -1 && hit >= at)) return;
       // A hit past the textblocks the run accounts for may be a later
       // duplicate of the line; a shorter probe may still hit its original.
-      if (skipped.advanceTo(hit).lines > run.linesWithHardBreaks) {
+      if (skipped.advanceTo(hit).linesWithHardBreaks > run.linesWithHardBreaks) {
         beyond = true;
         return;
       }
@@ -254,15 +254,24 @@ function anchoredHunks(from: string, markdown: string): Hunk[] {
  * break (a markdown line of its own) or an inline leaf such as a mention
  * (which is not).
  *
- * In the markdown a line may also end at an image (`splits`, the offsets of
- * its `![`): the note editor shows an image as a block, so the paragraph's
- * text before it and after it are plain-text lines of their own, where an
- * editor without the image block shows the paragraph on one line. Which of
- * the two the plain text did is read off the plain text: the image ended a
- * line if the walk over the plain text (`plain`, advanced to the probe) ended
- * a line holding the letters of the markdown before the image — the lines
- * are paired in order, an unpaired plain line (a mention's) skipped — and is
- * no line break otherwise.
+ * In the markdown a line may also end at an image or at a table cell
+ * (`splits`, the offsets of its `![` and of its unescaped `|`): the note
+ * editor shows an image as a block and each cell of a row as a block, so the
+ * text before and after the image, or of each cell, are plain-text lines of
+ * their own, where an editor without the image or table block shows the
+ * paragraph or the row on one line. Which of the two the plain text did is
+ * read off the plain text: the image or the cell ended a line if the walk
+ * over the plain text (`plain`, advanced to the probe) ended a line holding
+ * the letters of the markdown before the split — the lines are paired in
+ * order, an unpaired plain line (a mention's) skipped — and is no line break
+ * otherwise; so a row of the note editor counts one line per cell and a
+ * `|` in prose counts nothing.
+ *
+ * A markdown line ended at `\n` is paired the same way, so that a hard break
+ * (`tk298z  \n`, a lazy continuation) — two markdown lines the plain text
+ * shows as one, its `\n` a U+FFFC — counts toward `linesWithHardBreaks` but
+ * not `lines`, as it does on the plain text; a markdown line no plain line
+ * pairs with counts toward both, as before.
  *
  * Every plain-text line ends a markdown line of its own, so between the last
  * anchor (`fromPos`, `toPos`) and a hit `at` for the text at `cursor`, the
@@ -291,15 +300,20 @@ function anchoredHunks(from: string, markdown: string): Hunk[] {
  * run however many probes and candidates read it — and restarts otherwise.
  */
 class LineWalk {
-  /** Text lines ended at `\n` (or at an image the plain text ended a line at). */
+  /**
+   * Text lines ended at `\n` (or at a split the plain text ended a line at),
+   * less those paired with a plain line ended at U+FFFC.
+   */
   lines = 0;
-  /** Text lines ended at `\n`, U+FFFC or such an image. */
+  /** Text lines ended at `\n`, U+FFFC or such a split. */
   linesWithHardBreaks = 0;
   /** Letters after the last line break. */
   letters = '';
   /** The `[start, end)` of every text line ended, flattened, in order. */
   private readonly ended: number[] = [];
-  /** The next line of `plain` an image may be paired with. */
+  /** The letters of the text lines ended, by index, once asked for. */
+  private readonly endedLetters: string[] = [];
+  /** The next line of `plain` a line may be paired with. */
   private plainLine = 0;
   private pos: number;
   private lineStart: number;
@@ -324,10 +338,11 @@ class LineWalk {
       this.linesWithHardBreaks = 0;
       this.letters = '';
       this.ended.length = 0;
+      this.endedLetters.length = 0;
       this.plainLine = 0;
       this.nextSplit = lowerBound(this.splits, this.start);
     }
-    const { text, splits } = this;
+    const { text, splits, plain } = this;
     let lineStart = this.lineStart;
     for (let i = this.pos; i < pos; i += 1) {
       const code = text.charCodeAt(i);
@@ -335,14 +350,15 @@ class LineWalk {
       if (split) this.nextSplit += 1;
       else if (code !== 10 && code !== 0xfffc) continue;
       if (isTextLine(text, lineStart, i)) {
-        if (split) {
-          const paired = this.pairPlainLine(lettersOf(text, lineStart, i));
-          if (paired === -1) continue;
+        const paired = plain ? this.pairPlainLine(plain, lettersOf(text, lineStart, i)) : -1;
+        if (paired === -1 || !plain) {
+          if (split) continue;
+          if (this.plainLine < (plain?.ended.length ?? 0) >> 1) this.plainLine += 1;
+          if (code === 10) this.lines += 1;
+        } else {
           this.plainLine = paired + 1;
-        } else if (this.plainLine < (this.plain?.ended.length ?? 0) >> 1) {
-          this.plainLine += 1;
+          if (!plain.endsHard(paired)) this.lines += 1;
         }
-        if (split || code === 10) this.lines += 1;
         this.linesWithHardBreaks += 1;
         this.ended.push(lineStart, i);
       } else if (split) continue;
@@ -356,16 +372,38 @@ class LineWalk {
     return this;
   }
 
-  /** The first line of `plain` from `plainLine` on holding `letters`, or -1. */
-  private pairPlainLine(letters: string): number {
-    const { plain } = this;
-    if (!plain) return -1;
-    for (let k = this.plainLine; k < plain.ended.length >> 1; k += 1) {
-      if (lettersOf(plain.text, plain.ended[2 * k], plain.ended[2 * k + 1]) === letters) return k;
+  /**
+   * The first line of `plain` from `plainLine` on holding `letters`, or -1.
+   * The search is short — a mention's plain line or two is the most an
+   * ordinary line skips — so a run of markdown lines with no plain-text
+   * lines of their own (an HTML block) does not read the whole plain text
+   * over for each of them.
+   */
+  private pairPlainLine(plain: LineWalk, letters: string): number {
+    const end = Math.min(plain.ended.length >> 1, this.plainLine + PAIR_LOOKAHEAD);
+    for (let k = this.plainLine; k < end; k += 1) {
+      if (plain.lettersOfLine(k) === letters) return k;
     }
     return -1;
   }
+
+  /** The letters of the `k`th text line ended, computed once. */
+  private lettersOfLine(k: number): string {
+    return (this.endedLetters[k] ??= lettersOf(
+      this.text,
+      this.ended[2 * k],
+      this.ended[2 * k + 1],
+    ));
+  }
+
+  /** Whether the `k`th text line ended was ended at U+FFFC. */
+  private endsHard(k: number): boolean {
+    return this.text.charCodeAt(this.ended[2 * k + 1]) === 0xfffc;
+  }
 }
+
+/** Plain-text lines a markdown line looks past for its own — see `pairPlainLine`. */
+const PAIR_LOOKAHEAD = 8;
 
 function lettersOf(text: string, start: number, end: number): string {
   return text.slice(start, end).replace(NOT_LETTER, '');
@@ -571,7 +609,8 @@ interface Mask {
   splits: number[];
 }
 
-const IMAGE_OPENER = /!\[/g;
+/** An image's `![`, or a table row's unescaped `|` — see `LineWalk`. */
+const LINE_SPLIT = /!\[|(?<!\\)\|/g;
 
 /** The last mask: the base text is aligned again each time the editor text changes. */
 let lastMask: { markdown: string; mask: Mask } | undefined;
@@ -644,7 +683,7 @@ function maskHidden(markdown: string): Mask {
   if (lastMask?.markdown === markdown) return lastMask.mask;
   const text = computeHiddenMask(markdown);
   const splits: number[] = [];
-  for (const image of markdown.matchAll(IMAGE_OPENER)) splits.push(image.index);
+  for (const split of markdown.matchAll(LINE_SPLIT)) splits.push(split.index);
   const mask = {
     text: text ?? markdown,
     unanchorable: unanchorableLines(text ?? markdown, text === undefined),
@@ -734,14 +773,42 @@ function isHtmlNote(markdown: string): boolean {
  * `markdown` with every tag and comment — what an HTML parser consumes of a
  * note it reads as HTML — replaced by U+0000, code unit for code unit: a
  * comment `<!--` … `-->`, or `<`, an optional `/`, a letter and everything
- * up to the next `>`. One scan, linear whatever the note holds: once no
- * `-->` (or no `>`) lies ahead, no comment (or tag) opened later closes
- * either, so the search for one is not repeated.
+ * up to the next `>` outside a quoted attribute value (`<p title="a>b">`
+ * is one tag; a quoted value spans line breaks). A quote no closing quote
+ * follows is unterminated: the renderer then shows nothing more of the
+ * note, and the tag is taken to end at the next `>` or line break, so that
+ * the mask never overshoots what it can account for. One scan, linear
+ * whatever the note holds: once no `-->`, no `>`, no line break or no
+ * closing quote of a kind lies ahead, none opened later closes either, so
+ * the search for one is not repeated.
  */
 function maskHtmlTags(markdown: string): string {
   let out = '';
   let pos = 0;
   let commentsClose = true;
+  /** The quote characters a closing quote may still lie ahead of. */
+  const quotesClose = new Set([34, 39]);
+  const nextClose = memoisedIndexOf(markdown, '>');
+  const nextBreak = memoisedIndexOf(markdown, '\n');
+  /** The index past the `>` that ends the tag opened at `open`, or -1 when none lies ahead. */
+  const tagEnd = (open: number) => {
+    for (let i = open + 1; i < markdown.length; i += 1) {
+      const code = markdown.charCodeAt(i);
+      if (code === 62) return i + 1;
+      if (code !== 34 && code !== 39) continue;
+      const quote = quotesClose.has(code) ? markdown.indexOf(markdown[i], i + 1) : -1;
+      if (quote !== -1) {
+        i = quote;
+        continue;
+      }
+      quotesClose.delete(code);
+      const close = nextClose(i + 1);
+      const lineEnd = nextBreak(i + 1);
+      if (lineEnd !== -1 && (close === -1 || lineEnd < close)) return lineEnd;
+      return close === -1 ? -1 : close + 1;
+    }
+    return -1;
+  };
   let open = markdown.indexOf('<');
   while (open !== -1) {
     let end = -1;
@@ -751,9 +818,8 @@ function maskHtmlTags(markdown: string): string {
       else end = close + 3;
     }
     if (end === -1 && TAG_NAME.test(markdown.slice(open + 1, open + 3))) {
-      const close = markdown.indexOf('>', open + 1);
-      if (close === -1) break;
-      end = close + 1;
+      end = tagEnd(open);
+      if (end === -1) break;
     }
     if (end === -1) {
       open = markdown.indexOf('<', open + 1);
@@ -768,6 +834,24 @@ function maskHtmlTags(markdown: string): string {
 
 /** What follows the `<` of a tag: an optional `/` and a letter. */
 const TAG_NAME = /^\/?[a-zA-Z]/;
+
+/**
+ * `(at) => text.indexOf(needle, at)` for a sequence of `at`s that never
+ * decreases, each search resumed from the last hit: a hit at or past `at`
+ * is returned again, and once none lies ahead none is searched for again.
+ */
+function memoisedIndexOf(text: string, needle: string): (at: number) => number {
+  let found = -1;
+  let exhausted = false;
+  return (at: number) => {
+    if (exhausted) return -1;
+    if (found < at) {
+      found = text.indexOf(needle, at);
+      if (found === -1) exhausted = true;
+    }
+    return found;
+  };
+}
 
 /**
  * The lines of `masked` that hold an opener the mask did not account for
@@ -1202,10 +1286,15 @@ function diffRegion(
  * and when that search is unaffordable the lines are paired greedily in
  * order (`pairGreedily`) — every way linear or bounded, never a diff of the
  * region whole, so that a sealed line is bounded by its own pair whatever
- * the budget. A markdown line no plain line is the text of — a fence, a
- * setext underline, a comment, a line of a note the renderer collapsed — is
- * deleted against nothing, and a plain line no markdown line accounts for is
- * inserted. Each pair is diffed alone (`diffRegion`; past the deadline the
+ * the budget. A markdown line that is not a text line (`isTextLine`: a
+ * fence, a setext underline, a rule, a table delimiter row, a definition,
+ * a comment the whole line long) is no candidate for a pair at all, however
+ * many stand in a row, so a run of them never derails the greedy pairing
+ * (whose lookahead is bounded) from the sealed line beyond them; such a
+ * line, and any other no plain line is the text of — a line of a note the
+ * renderer collapsed — is deleted against nothing, and a plain line no
+ * markdown line accounts for is inserted. Each pair is diffed alone
+ * (`diffRegion`; past the deadline the
  * pair is one replaced span, still bounded by its lines), and so is each gap
  * between pairs unless a sealed line lies in it: that gap is never diffed —
  * its markdown up to the end of its last sealed line is deleted against
@@ -1225,7 +1314,9 @@ function refineByLine(
   unanchorable: number[],
 ): void {
   const fragments = textLines(from, fromStart, fromEnd, true);
-  const lines = textLines(to, toStart, toEnd, false, unanchorable);
+  const lines = textLines(to, toStart, toEnd, false, unanchorable).filter((line) =>
+    isTextLine(to, line.start, line.end),
+  );
   const gap = (fromA: number, fromB: number, toA: number, toB: number) => {
     if (fromA === fromB && toA === toB) return;
     if (!overlaps(unanchorable, toA, toB)) {
@@ -1443,8 +1534,9 @@ const GREEDY_LOOKAHEAD = 8;
  * fragment that is not the text of the line at hand is the text of one of
  * the next `GREEDY_LOOKAHEAD` lines, or one of the next fragments is the
  * text of the line: whichever fit is nearer decides which side is skipped up
- * to it — the line a definition, a comment or an underline is on holds no
- * text — and when neither is found within reach one of each is skipped.
+ * to it — the lines are text lines only (`refineByLine`), so the lookahead
+ * counts none a definition, a comment or an underline is on — and when
+ * neither is found within reach one of each is skipped.
  * Bounded by the letters of both sequences, not their product, so a sealed
  * line among hundreds is still bounded by its own pair.
  */

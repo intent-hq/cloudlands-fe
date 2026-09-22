@@ -1025,6 +1025,59 @@ describe('alignment of link syntax the lexer does not account for', () => {
     60_000,
   );
 
+  // The note editor shows each cell of a table row as a block of its own, so
+  // a row is one markdown line ending several plain-text lines; the plain
+  // text of a hard break (`ij  \n`) or a lazy continuation (`- mn\nop`) is
+  // the reverse, one line ending two markdown lines. Past the cap the link
+  // lines are unanchorable, so the run from `tk1` reaches `tk2` unanchored:
+  // held to a count of markdown lines that does not pair them with the plain
+  // lines, `tk2`'s own line is declined as too early and its `anchor` lands
+  // on the heading two lines on — every line in between with it.
+  const SHORT_CELLS = '| ab | cd |\n|---|---|\n| ef | gh |\n\n';
+  const HARD_BREAKS = 'ij  \nkl\n\n- mn\nop\n\n';
+  const LINK_LINES = Array.from(
+    { length: 6 },
+    (_, i) => `[link ${i}](https://sync/a/b) text ${i}\n\n`,
+  ).join('');
+  it.each<[string, string, string]>([
+    ['a table', SHORT_CELLS, 'ab\ncd\nef\ngh\n'],
+    [
+      'a table and hard breaks',
+      SHORT_CELLS + HARD_BREAKS,
+      'ab\ncd\nef\ngh\nij\ufffckl\nmn\ufffcop\n',
+    ],
+    [
+      'hard breaks and a table',
+      HARD_BREAKS + SHORT_CELLS,
+      'ij\ufffckl\nmn\ufffcop\nab\ncd\nef\ngh\n',
+    ],
+    ['pipes in prose', 'ab \\| cd\n\n`ef | gh`\n\nij | kl\n\n', 'ab | cd\nef | gh\nij | kl\n'],
+  ])(
+    'counts the lines of %s an unanchored run crosses as the note editor shows them',
+    async (_shape, between, shown) => {
+      const tail = `Intro line tk1\n\n${LINK_LINES}${between}anchor editor tk2\n\nfiller line tk3\n\n## anchor remote tk4`;
+      const markdown = FILLER.repeat(PAST_CAP) + tail;
+      expect(markdown.length).toBeGreaterThan(128 * 1024);
+      // The filler projects by repetition (validated on two paragraphs); only
+      // the tail is projected whole.
+      const shownFiller = 'unchanged prose lines.\n';
+      expect(await projectWithEditor(FILLER.repeat(2) + 'Intro line tk1', true)).toBe(
+        shownFiller.repeat(2) + 'Intro line tk1',
+      );
+      const shownTail = await projectWithEditor(tail, true);
+      expect(shownTail).toBe(
+        `Intro line tk1\n${Array.from({ length: 6 }, (_, i) => `link ${i} text ${i}\n`).join('')}${shown}anchor editor tk2\nfiller line tk3\nanchor remote tk4`,
+      );
+      const plain = shownFiller.repeat(PAST_CAP) + shownTail;
+      const map = withoutDeadline(() => createBidirectionalOffsetMapper(plain, markdown));
+      expectExactRun(plain, markdown, map, 'anchor editor tk2', 0, 0);
+      expectExactRun(plain, markdown, map, 'filler line tk3', 0, 0);
+      expectExactRun(plain, markdown, map, 'anchor remote tk4', 0, 0);
+      expectExactRun(plain, markdown, map, 'Intro line tk1', 0, 0);
+    },
+    60_000,
+  );
+
   // The reviewer's repro: the formatted paragraph after the link line shares
   // no whole line with the markdown, and its `selection` occurs verbatim only
   // inside the URL — diffed together with the unmasked link line it would be
@@ -1393,40 +1446,52 @@ describe('alignment of link syntax the lexer does not account for', () => {
   // exact. (Sealing the tag's line past the cap instead left the one
   // plain-text line the text of no markdown line, and the whole note one gap
   // holding a sealed line — every caret in it at one end of the note.)
-  it.each<[string, string, boolean]>([
-    ['with no filler', '', false],
-    ['with no filler', '', true],
-    ['below the cap', `\n\n${'q'.repeat(127 * 1024)}`, false],
-    ['below the cap', `\n\n${'q'.repeat(127 * 1024)}`, true],
-    ['past the cap', `\n\n${'q'.repeat(129 * 1024)}`, false],
-    ['past the cap', `\n\n${'q'.repeat(129 * 1024)}`, true],
-    ['far past the cap', `\n\n${'q'.repeat(1024 * 1024)}`, true],
+  const DROPPED_AUTOLINK = '<https://selection/editor>';
+  const DROPPED_SPELLED = '**se**le**ct**io**n** **ed**it**or**';
+
+  /**
+   * Every offset of the URL maps outside the text and no plain-text offset
+   * maps into the URL — reported as the offending offsets, never the note.
+   */
+  function expectAutolinkDropped(plain: string, markdown: string, spelled: string) {
+    const map = withoutDeadline(() => createBidirectionalOffsetMapper(plain, markdown));
+    const url = markdown.indexOf('https://selection/editor');
+    const urlEnd = url + 'https://selection/editor'.length;
+    const paragraphEnd = plain.indexOf(spelled) + spelled.length;
+    const intoText: number[] = [];
+    for (let offset = url + 1; offset < urlEnd; offset += 1) {
+      const mapped = map.bToA(offset);
+      if (mapped > 0 && mapped < paragraphEnd) intoText.push(offset);
+    }
+    expect(intoText, 'bToA offsets inside the URL that land in the text').toEqual([]);
+    const intoUrl: number[] = [];
+    for (let offset = 0; offset <= plain.length; offset += 1) {
+      const mapped = map.aToB(offset);
+      if (mapped > url && mapped < urlEnd) intoUrl.push(offset);
+    }
+    expect(intoUrl, `aToB offsets that land inside the URL at ${url}`).toEqual([]);
+    expect([map.aToB(1), map.bToA(28)]).toEqual([28, 1]);
+    return map;
+  }
+
+  // The filler and the projection are separate columns so the title never
+  // holds the filler: a 130 KiB title printed per cell stalls the CI log.
+  it.each<[string, string, string, boolean]>([
+    ['with no filler', 'StarterKit', '', false],
+    ['with no filler', 'the note editor', '', true],
+    ['below the cap', 'StarterKit', `\n\n${'q'.repeat(127 * 1024)}`, false],
+    ['below the cap', 'the note editor', `\n\n${'q'.repeat(127 * 1024)}`, true],
+    ['past the cap', 'StarterKit', `\n\n${'q'.repeat(129 * 1024)}`, false],
+    ['past the cap', 'the note editor', `\n\n${'q'.repeat(129 * 1024)}`, true],
   ])(
     'never maps into the autolink a note the renderer reads as HTML drops, %s, projected by %s',
-    async (_where, filler, production) => {
-      const spelled = '**se**le**ct**io**n** **ed**it**or**';
-      const markdown = `<https://selection/editor> sync\n\n${spelled}${filler}`;
+    async (_where, _projection, filler, production) => {
+      const spelled = DROPPED_SPELLED;
+      const markdown = `${DROPPED_AUTOLINK} sync\n\n${spelled}${filler}`;
       const plain = await projectWithEditor(markdown, production);
       expect(plain.startsWith(`sync ${spelled}`)).toBe(true);
-      expect(plain).not.toContain('https');
-      const map = withoutDeadline(() => createBidirectionalOffsetMapper(plain, markdown));
-      const url = markdown.indexOf('https://selection/editor');
-      const paragraphEnd = plain.indexOf(spelled) + spelled.length;
-      for (let offset = url + 1; offset < url + 'https://selection/editor'.length; offset += 1) {
-        const mapped = map.bToA(offset);
-        expect(
-          mapped <= 0 || mapped >= paragraphEnd,
-          `bToA(${offset}) = ${mapped} inside the URL lands in the text`,
-        ).toBe(true);
-      }
-      for (let offset = 0; offset <= plain.length; offset += 1) {
-        const mapped = map.aToB(offset);
-        expect(
-          mapped <= url || mapped >= url + 'https://selection/editor'.length,
-          `aToB(${offset}) = ${mapped} lands inside the URL at ${url}`,
-        ).toBe(true);
-      }
-      expect([map.aToB(1), map.bToA(28)]).toEqual([28, 1]);
+      expect(plain.indexOf('https')).toBe(-1);
+      const map = expectAutolinkDropped(plain, markdown, spelled);
       expectExactRun(plain, markdown, map, 'sync', 0, 0);
       expectExactRun(plain, markdown, map, spelled, 0, 0);
       if (filler) expectExactRun(plain, markdown, map, 'qqqqqqqq', 0, 0);
@@ -1434,13 +1499,103 @@ describe('alignment of link syntax the lexer does not account for', () => {
     60_000,
   );
 
+  // Far past the cap the mapper alone is under test: the editor projects the
+  // head with a token of filler, which fixes how a filler paragraph reads —
+  // one space for the blank line between — and the 1 MiB plain text follows.
+  it('never maps into the autolink a note the renderer reads as HTML drops, far past the cap', async () => {
+    const spelled = DROPPED_SPELLED;
+    const head = `${DROPPED_AUTOLINK} sync\n\n${spelled}`;
+    const token = 'qq';
+    const projectedHead = await projectWithEditor(`${head}\n\n${token}`, true);
+    expect(projectedHead).toBe(`sync ${spelled} ${token}`);
+    const filler = 'q'.repeat(1024 * 1024);
+    const markdown = `${head}\n\n${filler}`;
+    const plain = `sync ${spelled} ${filler}`;
+    const map = expectAutolinkDropped(plain, markdown, spelled);
+    expectExactRun(plain, markdown, map, 'sync', 0, 0);
+    expectExactRun(plain, markdown, map, spelled, 0, 0);
+    expectExactRun(plain, markdown, map, 'qqqqqqqq', 0, 0);
+  }, 60_000);
+
+  // The tag scan is quote-aware, as the renderer's tokenizer is: inside a tag
+  // a `>` within a quoted attribute value does not close it — the value runs
+  // to its closing quote, over a line break too — and a `>` inside a comment
+  // closes nothing. A quote never closed swallows the rest of the note in the
+  // renderer, which shows nothing more of it; the scan ends such a tag at the
+  // next `>` or line break, fail-safe, and the (empty) text maps within
+  // itself. (Ended at the first `>` whatever the quotes, the tag's value was
+  // shown as text and a caret in `selection` landed inside the attribute.)
+  const QUOTED_TAGS: Array<[string, string, string]> = [
+    ['a > in a double-quoted value', '<p title=">selection">selection</p>', 'selection'],
+    ['a > in a single-quoted value', "<p title='>selection'>selection</p>", 'selection'],
+    ['a > inside a comment', '<p><!-- a > b -->selection</p>', 'selection'],
+    ['a quoted > over a line break', '<p title="a\n>b">selection</p>', 'selection'],
+    ['a quoted > after a line break', '<p\n title=">selection">selection</p>', 'selection'],
+    ['a quote never closed', '<p title=">selection</p>', ''],
+  ];
+  const QUOTED_TAG_CELLS = QUOTED_TAGS.flatMap(([shape, note, shown]) =>
+    (
+      [
+        ['with no filler', ''],
+        ['below the cap', `\n\n${'q'.repeat(127 * 1024)}`],
+        ['past the cap', `\n\n${'q'.repeat(129 * 1024)}`],
+      ] as Array<[string, string]>
+    ).flatMap(([where, filler]) =>
+      PROJECTIONS.map(
+        ([projection, production]): [string, string, string, string, string, string, boolean] => [
+          shape,
+          where,
+          projection,
+          note,
+          shown,
+          filler,
+          production,
+        ],
+      ),
+    ),
+  );
+  it.each(QUOTED_TAG_CELLS)(
+    'masks a tag holding %s in a note the renderer reads as HTML, %s, projected by %s',
+    async (_shape, _where, _projection, note, shown, filler, production) => {
+      const markdown = `${note}${filler}`;
+      const plain = await projectWithEditor(markdown, production);
+      const map = withoutDeadline(() => createBidirectionalOffsetMapper(plain, markdown));
+      if (shown === '') {
+        expect(plain).toBe('');
+        for (let offset = 0; offset <= markdown.length; offset += 1 + (markdown.length >> 5)) {
+          expect(map.bToA(offset), `bToA(${offset})`).toBe(0);
+        }
+        return;
+      }
+      expect(plain.startsWith(shown)).toBe(true);
+      expect(plain).not.toContain('>');
+      const m = note.lastIndexOf(shown);
+      expect([map.aToB(1), map.bToA(m + 1)]).toEqual([m + 1, 1]);
+      expectExactRun(plain, markdown, map, shown, 0, note.indexOf(shown) === m ? 0 : 1);
+      for (let offset = 1; offset < m; offset += 1) {
+        expect(map.bToA(offset), `bToA(${offset}) inside the tag`).toBe(0);
+      }
+      if (filler) expectExactRun(plain, markdown, map, 'qqqqqqqq', 0, 0);
+    },
+    60_000,
+  );
+
   // The tag scan of a note the renderer reads as HTML is linear whatever the
   // note holds: a tag never closed, or a comment never closed, is looked for
-  // once, not once per opener. (The regular expression it replaces took 2.7 s
-  // on 128 KB of `<a` and 165 s on 1 MB.)
+  // once, not once per opener, and so are the `>` and the line break that end
+  // a tag whose quote is never closed. (The regular expression it replaces
+  // took 2.7 s on 128 KB of `<a` and 165 s on 1 MB.)
   it.each<[string, string, string]>([
     ['tags never closed', '<a'.repeat(512 * 1024), ''],
     ['comments never closed', '<!--'.repeat(256 * 1024), ''],
+    ['quotes never closed', '<a title="'.repeat(104 * 1024), ''],
+    ['quotes never closed, a > after each', '<a title=">'.repeat(96 * 1024), ''],
+    ['quotes never closed, a line break after each', '<a title="\n'.repeat(96 * 1024), ''],
+    [
+      'a quoted > in every tag',
+      '<p title=">">sync <b>edit</b> selection</p>\n'.repeat(23 * 1024),
+      'sync edit selection\n'.repeat(23 * 1024).trimEnd(),
+    ],
     [
       'tags closed',
       '<p>sync <b>edit</b> selection</p>\n'.repeat(32 * 1024),
@@ -1462,14 +1617,14 @@ describe('alignment of link syntax the lexer does not account for', () => {
 
   // The control: prefixed by a word the autolink is inline, shown as written,
   // and the note is markdown — every run is exact.
-  it.each<[string, string, boolean]>([
-    ['below the cap', `\n\n${'q'.repeat(127 * 1024)}`, false],
-    ['below the cap', `\n\n${'q'.repeat(127 * 1024)}`, true],
-    ['past the cap', `\n\n${'q'.repeat(129 * 1024)}`, false],
-    ['past the cap', `\n\n${'q'.repeat(129 * 1024)}`, true],
+  it.each<[string, string, string, boolean]>([
+    ['below the cap', 'StarterKit', `\n\n${'q'.repeat(127 * 1024)}`, false],
+    ['below the cap', 'the note editor', `\n\n${'q'.repeat(127 * 1024)}`, true],
+    ['past the cap', 'StarterKit', `\n\n${'q'.repeat(129 * 1024)}`, false],
+    ['past the cap', 'the note editor', `\n\n${'q'.repeat(129 * 1024)}`, true],
   ])(
     'shows an autolink after a word as written in a note %s projected by %s',
-    async (_where, filler, production) => {
+    async (_where, _projection, filler, production) => {
       const spelled = '**se**le**ct**io**n** **ed**it**or**';
       const head = 'see <https://selection/editor> sync';
       const markdown = `${head}\n\n${spelled}${filler}`;
@@ -1846,6 +2001,151 @@ describe('alignment of link syntax the lexer does not account for', () => {
       },
       60_000,
     );
+
+    // Nine comment lines after the first of 600 link lines: the counts are
+    // past the search's bound under any clock, so the lines are paired
+    // greedily, and the run is longer than the pairing looks ahead. (As
+    // candidates, the comments put every link line past the lookahead: the
+    // second link's plain-text line mapped inside the first comment, and its
+    // markdown to a later line — 599 of the 600 lines wrong.)
+    it.each(
+      PROJECTIONS.flatMap(([projection, production]) =>
+        [...CLOCKS, ['under the natural clock', (fn) => fn()] as [string, Clock]].map(
+          ([when, clock]): [string, string, boolean, Clock] => [
+            projection,
+            when,
+            production,
+            clock,
+          ],
+        ),
+      ),
+    )(
+      'keeps 600 link lines bounded by their own plain-text lines after a run of comments, projected by %s %s',
+      async (_projection, _when, production, clock) => {
+        const comments = Array.from({ length: 9 }, (_, k) => `<!-- sync ${k} -->`).join('\n');
+        const links = '[xy](https://ab/xy)\n'.repeat(599);
+        const markdown = `${'q'.repeat(129 * 1024)}\n\n[xy](https://ab/xy)\n${comments}\n${links}\n**ab**`;
+        const plain = await projectWithEditor(markdown, production);
+        expect(plain).not.toContain('https');
+        expect(plain).not.toContain('sync');
+        const map = clock(() => createBidirectionalOffsetMapper(plain, markdown));
+        expectExactRun(plain, markdown, map, 'qqqqqqqq', 0, 0);
+        const plainLines = linesHolding(plain, 'xy', /\n|\uFFFC/g);
+        expect(plainLines).toHaveLength(600);
+        expectLinesBounded(map, plainLines, linesHolding(markdown, '](', /\n/g));
+        expectSameLine(plain, markdown, map, 'ab', '**ab**');
+      },
+      60_000,
+    );
+
+    // A run of lines the editor shows no text of — comments, or reference
+    // definitions — before a sealed link line, longer than the greedy pairing
+    // looks ahead. Such a line is no candidate for a pair (`isTextLine`), so
+    // past the deadline, the lines paired greedily, the link line beyond the
+    // run is still paired with its own plain-text line, however long the run.
+    // (As candidates, nine of them put the link line past the lookahead: its
+    // plain-text line was inserted at the note's end and its markdown mapped
+    // to the line before the run.)
+    const HIDDEN_RUNS: Array<[string, (k: number) => string]> = [
+      ['comment', (k) => `<!-- sync ${k} -->`],
+      ['definition', (k) => `[r${k}]: https://sync/${k}`],
+    ];
+    const HIDDEN_RUN_CELLS = HIDDEN_RUNS.flatMap(([kind, line]) =>
+      [9, 50, 500].flatMap((count) =>
+        PROJECTIONS.flatMap(([projection, production]) =>
+          CLOCKS.map(
+            ([when, clock]): [
+              number,
+              string,
+              string,
+              string,
+              (k: number) => string,
+              boolean,
+              Clock,
+            ] => [count, kind, projection, when, line, production, clock],
+          ),
+        ),
+      ),
+    );
+
+    it.each(HIDDEN_RUN_CELLS)(
+      'keeps a link line after %i %s lines bounded by its own plain-text line, projected by %s %s',
+      async (count, _kind, _projection, _when, line, production, clock) => {
+        const run = Array.from({ length: count }, (_, k) => line(k)).join('\n');
+        const markdown = `${'q'.repeat(129 * 1024)}\n\nedit one\n\n${run}\n[ab](https://sync/ab)\n\n**cd** two`;
+        const plain = await projectWithEditor(markdown, production);
+        expect(plain).not.toContain('https');
+        expect(plain).toContain('edit one\nab\ncd two');
+        const map = clock(() => createBidirectionalOffsetMapper(plain, markdown));
+        expectExactRun(plain, markdown, map, 'qqqqqqqq', 0, 0);
+        expectSameLine(plain, markdown, map, 'edit one', 'edit one');
+        expectSameLine(plain, markdown, map, 'ab', '[ab](');
+        expectSameLine(plain, markdown, map, 'cd two', '**cd** two');
+      },
+      60_000,
+    );
+
+    // A run of plain-text lines that are byte-identical duplicates — list
+    // items, or the cells of table rows — before a sealed link line, longer
+    // than the pairing looks ahead over the plain text. The pairing cannot be
+    // derailed the way a run of comments derailed it over the markdown: every
+    // plain-text line ends a markdown text line of its own (a mention's is
+    // the most the markdown lacks), so the lines are consumed in order and
+    // the k-th duplicate pairs with the k-th; the link line beyond the run is
+    // still paired with its own plain-text line, however long the run. (Only
+    // the note editor shows cells of their own, and only within the budget:
+    // past the deadline the lines are paired greedily, a row as one line.)
+    const DUPLICATE_RUNS: Array<
+      [string, (count: number) => string, Array<[string, boolean]>, Array<[string, Clock]>]
+    > = [
+      ['list items', (count) => '- same item\n'.repeat(count), PROJECTIONS, CLOCKS],
+      [
+        'table cells',
+        (count) =>
+          `| same item | same item | same item |\n|---|---|---|\n${'| same item | same item | same item |\n'.repeat(count / 3 - 1)}`,
+        PROJECTIONS.filter(([, production]) => production),
+        CLOCKS.filter(([when]) => when === 'within the budget'),
+      ],
+    ];
+    const DUPLICATE_RUN_CELLS = DUPLICATE_RUNS.flatMap(([kind, run, projections, clocks]) =>
+      [9, 51].flatMap((count) =>
+        projections.flatMap(([projection, production]) =>
+          clocks.map(
+            ([when, clock]): [
+              number,
+              string,
+              string,
+              string,
+              (count: number) => string,
+              boolean,
+              Clock,
+            ] => [count, kind, projection, when, run, production, clock],
+          ),
+        ),
+      ),
+    );
+
+    it.each(DUPLICATE_RUN_CELLS)(
+      'pairs each of %i duplicate %s with its own plain-text line, and a link line after them, projected by %s %s',
+      async (count, _kind, _projection, _when, run, production, clock) => {
+        const markdown = `${'q'.repeat(129 * 1024)}\n\nedit one\n\n${run(count)}\n[ab](https://sync/ab)\n\n**cd** two`;
+        const plain = await projectWithEditor(markdown, production);
+        expect(plain).not.toContain('https');
+        const plainLines = linesHolding(plain, 'same item', /\n|\uFFFC/g);
+        expect(plainLines).toHaveLength(count);
+        const map = clock(() => createBidirectionalOffsetMapper(plain, markdown));
+        expectExactRun(plain, markdown, map, 'qqqqqqqq', 0, 0);
+        expectSameLine(plain, markdown, map, 'edit one', 'edit one');
+        expectLinesBounded(
+          map,
+          plainLines,
+          [...markdown.matchAll(/same item/g)].map((m) => [m.index, m.index + m[0].length]),
+        );
+        expectSameLine(plain, markdown, map, 'ab', '[ab](');
+        expectSameLine(plain, markdown, map, 'cd two', '**cd** two');
+      },
+      60_000,
+    );
   });
 });
 
@@ -1880,8 +2180,10 @@ describe('alignment past the cap of notes drawn from every line shape', () => {
 
   /**
    * A note past `MAX_LEXED_LENGTH` of blocks drawn from every line shape,
-   * link lines (inline, reference, image, autolink, empty label) among them.
-   * Every line that has text of its own carries a token `tk<n>z` that occurs
+   * link lines (inline, reference, image, autolink, empty label, one after a
+   * run of comments and definitions longer than the greedy pairing looks
+   * ahead) among them. Every line that has text of its own carries a token
+   * `tk<n>z` that occurs
    * once in the note, by which its plain-text line is found; an image line
    * carries one on each side of the leaf that splits its plain-text line.
    */
@@ -1921,6 +2223,12 @@ describe('alignment past the cap of notes drawn from every line shape', () => {
       () => `${tok()} ![${w()}](${url()}.png) ${words(2)} ${tok()}`,
       () => `${words(2)} <${url()}> ${tok()}`,
       () => `${words(2)} [](${url()}) ${tok()}`,
+      () => {
+        const run = Array.from({ length: 9 + Math.floor(next() * 41) }, (_, k) =>
+          next() < 0.5 ? `<!-- ${words(2)} -->` : `[n${tokens}k${k}]: ${url()}`,
+        ).join('\n');
+        return `${run}\n[${w()} ${tok()}](${url()})`;
+      },
     ];
     const blocks = [text[0]()];
     let length = blocks[0].length;
