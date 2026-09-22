@@ -1,3 +1,4 @@
+// @verify-changed-triggers: src/lib/components/workspace/WorkspaceAgentsList.svelte
 import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import * as BrandedIds from '$shared/types/branded-ids';
@@ -503,10 +504,12 @@ describe('getVisibleWorkspaceAgentRows', () => {
     const list = readFileSync('src/lib/components/workspace/WorkspaceAgentsList.svelte', 'utf8');
 
     // Per-parent groups start collapsed (default expanded only while the
-    // workspace-level Delegated bin is open); an active search shows every group.
+    // workspace-level Delegated bin is open on a daemon without orphaned
+    // counts); an active search shows every group. Matched operand-wise so
+    // Prettier line wrapping does not affect the assertion.
     expect(list).toContain('let toggledDelegationIds = $state(new Set<string>())');
-    expect(list).toContain(
-      'const delegatedGroupsDefaultExpanded = $derived(hasLazyBins && showDelegatedAgents)',
+    expect(list).toMatch(
+      /const delegatedGroupsDefaultExpanded = \$derived\(\s*hasLazyBins && !hasOrphanedCounts && showDelegatedAgents,?\s*\)/,
     );
     expect(list).toContain('if (hasActiveSearch) return true;');
     expect(list).toContain(
