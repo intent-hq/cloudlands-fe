@@ -1026,12 +1026,16 @@ const NOT_BREAK = /[^\n\r]/g;
 /**
  * `markdown` the lexer did not read with the hidden text a scan can place —
  * a comment (`<!--` … `-->`, or to the end of the note when none closes it;
- * a comment anchor excepted, as in `HIDDEN_HTML`), an image (`![alt](…)` or
- * `![alt][ref]` on one line, whole, as `collectHiddenInLink` hides it: the
- * editor shows no text of it), a link reference definition whole
+ * a comment anchor excepted, as in `HIDDEN_HTML`), an image the renderer
+ * shows (`imageAt`: on one line, whole, as `collectHiddenInLink` hides it —
+ * the editor shows no text of it), a link reference definition whole
  * (`definitionHidden`) and the backticks of a code span — replaced by U+0000
  * code unit for code unit, its line breaks kept, as the lexer's mask is laid
- * (`hide`).
+ * (`hide`). A reference image is masked only when a definition of the note
+ * resolves its label — wherever the definition lies, so the images are
+ * masked once the scan has read every definition; image-shaped text the
+ * renderer shows as written (`![alt][missing]`, `![alt](not valid)`) is
+ * left as written, as any visible text is.
  * A comment's body and a definition's title are the hidden text that spans
  * lines: left as written, each of their lines reads as a text line
  * (`isTextLine`) with no plain-text line of its own, and the pairing of a
@@ -1064,8 +1068,12 @@ const NOT_BREAK = /[^\n\r]/g;
  * before the next blank line or not at all.
  */
 function maskHiddenBlocks(markdown: string): string {
-  let out = '';
-  let pos = 0;
+  /** The `[start, end)` ranges to mask, flattened, in order. */
+  const masked: number[] = [];
+  /** The reference images, in order, each masked at the end when `labels` holds its label. */
+  const images: Array<{ start: number; end: number; label: string }> = [];
+  /** The labels of the definitions the scan masked, as marked matches them. */
+  const labels = new Set<string>();
   /** The end of the last block the scan closed — a fence, a comment or a definition at a line start. */
   let blockEnd = 0;
   /** The end of the last indented line found to continue a paragraph; the indented lines after it do too. */
@@ -1087,8 +1095,7 @@ function maskHiddenBlocks(markdown: string): string {
     return next;
   };
   const mask = (start: number, end: number) => {
-    out += markdown.slice(pos, start) + markdown.slice(start, end).replace(NOT_BREAK, '\u0000');
-    pos = end;
+    masked.push(start, end);
   };
   const lineEndAt = (at: number) => {
     const lineEnd = markdown.indexOf('\n', at);
@@ -1122,15 +1129,17 @@ function maskHiddenBlocks(markdown: string): string {
     } else if (found.charCodeAt(0) === 92) {
       // An escaped character: shown as written.
     } else if (found === '![') {
-      const image = imageEnd(markdown, at, lineEnd);
-      if (image !== -1) {
-        mask(at, image);
-        end = image;
+      const image = imageAt(markdown, at, lineEnd);
+      if (image) {
+        if (image.label === undefined) mask(at, image.end);
+        else images.push({ start: at, end: image.end, label: image.label });
+        end = image.end;
       }
     } else if (found.endsWith('[')) {
       if (startsBlock(markdown, at, blockEnd)) {
         const hidden = definitionHidden(markdown, end - 1, nextTitleClose, nextBlankLine);
         if (hidden) {
+          labels.add(normalizeLabel(markdown.slice(end, markdown.indexOf(']', end))));
           mask(hidden[0], hidden[1]);
           end = hidden[1];
           blockEnd = end;
@@ -1183,41 +1192,175 @@ function maskHiddenBlocks(markdown: string): string {
     HIDDEN_BLOCK_OPENER.lastIndex = end;
     opener = HIDDEN_BLOCK_OPENER.exec(markdown);
   }
+  let out = '';
+  let pos = 0;
+  const hide = (start: number, end: number) => {
+    out += markdown.slice(pos, start) + markdown.slice(start, end).replace(NOT_BREAK, '\u0000');
+    pos = end;
+  };
+  let image = 0;
+  const hideImagesBefore = (at: number) => {
+    for (; image < images.length && images[image].start < at; image += 1) {
+      const { start, end, label } = images[image];
+      if (labels.has(label)) hide(start, end);
+    }
+  };
+  for (let k = 0; k < masked.length; k += 2) {
+    hideImagesBefore(masked[k]);
+    hide(masked[k], masked[k + 1]);
+  }
+  hideImagesBefore(markdown.length);
   return out + markdown.slice(pos);
 }
 
+/** A reference label as marked matches it to a definition: blanks run together, lower-cased, not trimmed. */
+function normalizeLabel(label: string): string {
+  return label.replace(/\s+/g, ' ').toLowerCase();
+}
+
 /**
- * The end of the image whose `![` opens at `at` of `text`, on the line
- * ending at `lineEnd`: past the `]` closing its alt text (brackets nested
- * one deep, `\` escaping the next character) and the `(…)` or `[…]` right
- * after it (parentheses balanced, `\` escaping); `-1` when the line holds
- * no such image, and the text is shown as written.
+ * Whether `text` from `start` to `end` is a reference label as marked reads
+ * one (its `ref`): not blank, no bracket in it but one a `\` escapes.
  */
-function imageEnd(text: string, at: number, lineEnd: number): number {
+function isReferenceLabel(text: string, start: number, end: number): boolean {
+  let blank = true;
+  for (let at = start; at < end; at += 1) {
+    const code = text.charCodeAt(at);
+    if (code === 92) at += 1;
+    else if (code === 91 || code === 93) return false;
+    if (blank && !isSpace(code)) blank = false;
+  }
+  return !blank;
+}
+
+/**
+ * The image the renderer shows whose `![` opens at `at` of `text`, on the
+ * line ending at `lineEnd`, as marked reads it: its `end`, and the `label`
+ * a definition must resolve for a reference image (`![alt][ref]`, or
+ * `![alt][]` and `![alt]` on their alt text) — `undefined` for an inline
+ * image, whose destination and title parse (`inlineImageEnd`). Marked tries
+ * the inline form first, then the full reference, then the alt text alone,
+ * so `![alt](not valid)` and `![alt][re[f]` are the shortcut `![alt]`
+ * followed by text. `undefined` when the line holds no image the renderer
+ * could show — an alt text not closed on the line, or holding a bracket
+ * where a label allows none — and the text is shown as written. An alt
+ * text may nest brackets (`\` escaping the next character).
+ */
+function imageAt(
+  text: string,
+  at: number,
+  lineEnd: number,
+): { end: number; label: string | undefined } | undefined {
   let i = at + 2;
+  let nested = false;
   for (let depth = 0; ; i += 1) {
-    if (i >= lineEnd) return -1;
+    if (i >= lineEnd) return undefined;
     const code = text.charCodeAt(i);
     if (code === 92) i += 1;
-    else if (code === 91) depth += 1;
-    else if (code === 93) {
+    else if (code === 91) {
+      depth += 1;
+      nested = true;
+    } else if (code === 93) {
       if (depth === 0) break;
       depth -= 1;
     }
   }
-  const opener = text.charCodeAt(i + 1);
-  const closer = opener === 40 ? 41 : opener === 91 ? 93 : -1;
-  if (closer === -1) return -1;
-  for (let j = i + 2, depth = 0; j < lineEnd; j += 1) {
-    const code = text.charCodeAt(j);
-    if (code === 92) j += 1;
-    else if (code === opener) depth += 1;
-    else if (code === closer) {
-      if (depth === 0) return j + 1;
-      depth -= 1;
+  const next = text.charCodeAt(i + 1);
+  if (next === 40) {
+    const end = inlineImageEnd(text, i + 2, lineEnd);
+    if (end !== -1) return { end, label: undefined };
+  } else if (next === 91) {
+    let close = i + 2;
+    while (close < lineEnd && text.charCodeAt(close) !== 93) {
+      if (text.charCodeAt(close) === 92) close += 1;
+      close += 1;
+    }
+    if (close < lineEnd && isReferenceLabel(text, i + 2, close)) {
+      return { end: close + 1, label: normalizeLabel(text.slice(i + 2, close)) };
+    }
+    if (close === i + 2 && !nested && isReferenceLabel(text, at + 2, i)) {
+      return { end: close + 1, label: normalizeLabel(text.slice(at + 2, i)) };
     }
   }
-  return -1;
+  if (nested || !isReferenceLabel(text, at + 2, i)) return undefined;
+  return { end: i + 1, label: normalizeLabel(text.slice(at + 2, i)) };
+}
+
+/**
+ * The end of the inline image whose destination opens at `from` of `text` —
+ * right after `](` — on the line ending at `lineEnd`, as marked reads it:
+ * past blanks, a destination in angle brackets (no blank, `<` or `>` in it
+ * but one a `\` escapes) or a run of characters that are no blank, then
+ * blanks and a title (`"…"`, `'…'` or `(…)`, `\` escaping the next
+ * character) or none, blanks, and the `)`. Marked takes the destination
+ * run whole when the `)` follows it, else up to the last `)` in the run,
+ * and ends the image at the first `)` in the destination no `(` before it
+ * opened (`![alt](a)b)` is the image `![alt](a)` and the text `b)`) — so
+ * the run is read up to that `)` at most, and a line of many images is
+ * read once; a destination that closes some `(` but not all is no image.
+ * `-1` when the line holds no such image.
+ */
+function inlineImageEnd(text: string, from: number, lineEnd: number): number {
+  let start = from;
+  while (start < lineEnd && isBlank(text.charCodeAt(start))) start += 1;
+  if (text.charCodeAt(start) === 60) {
+    let close = start + 1;
+    for (; ; close += 1) {
+      if (close >= lineEnd) return -1;
+      const code = text.charCodeAt(close);
+      if (code === 92) close += 1;
+      else if (code === 62) break;
+      else if (code === 60 || isBlank(code)) return -1;
+    }
+    return imageClose(text, close + 1, lineEnd);
+  }
+  let run = start;
+  let depth = 0;
+  let last = -1;
+  for (; run < lineEnd; run += 1) {
+    const code = text.charCodeAt(run);
+    if (isBlank(code)) break;
+    if (code === 92) run += 1;
+    else if (code === 40) depth += 1;
+    else if (code === 41) {
+      if (depth === 0) return start === from ? run + 1 : -1;
+      depth -= 1;
+      last = run;
+    }
+  }
+  const end = imageClose(text, run, lineEnd);
+  if (end !== -1) return last !== -1 && depth > 0 ? -1 : end;
+  if (last === -1) return -1;
+  for (let j = start; j < last; j += 1) {
+    const code = text.charCodeAt(j);
+    if (code === 92) j += 1;
+    else if (code === 41) return -1;
+  }
+  return last + 1;
+}
+
+/**
+ * The end of the inline image whose destination ends at `from` of `text`, on
+ * the line ending at `lineEnd`: past blanks, a title and blanks, or blanks
+ * alone, and the `)`; `-1` when none closes it so.
+ */
+function imageClose(text: string, from: number, lineEnd: number): number {
+  let at = from;
+  while (at < lineEnd && isBlank(text.charCodeAt(at))) at += 1;
+  if (text.charCodeAt(at) === 41) return at + 1;
+  if (at === from) return -1;
+  const quote = text.charCodeAt(at);
+  const closer = quote === 34 || quote === 39 ? quote : quote === 40 ? 41 : -1;
+  if (closer === -1) return -1;
+  for (at += 1; ; at += 1) {
+    if (at >= lineEnd) return -1;
+    const code = text.charCodeAt(at);
+    if (code === 92) at += 1;
+    else if (code === closer) break;
+  }
+  at += 1;
+  while (at < lineEnd && isBlank(text.charCodeAt(at))) at += 1;
+  return text.charCodeAt(at) === 41 ? at + 1 : -1;
 }
 
 /** Whether `at` of `text` sits at a line start, at most three blanks after it. */

@@ -2599,6 +2599,188 @@ describe('alignment of link syntax the lexer does not account for', () => {
       },
       60_000,
     );
+
+    // Image-shaped text the renderer shows as written — a reference no
+    // definition resolves, a destination that does not parse — is no image:
+    // past the cap the scan leaves it as written, and its line maps exactly
+    // within the budget and to its own line past the deadline. An image the
+    // renderer does show — a reference a definition resolves, wherever the
+    // definition lies, as marked reads the label; a destination in angle
+    // brackets, holding balanced parentheses or followed by a title — is
+    // masked whole, and the items after it pair with their own lines.
+    // (Masked by its shape alone, the visible text left its own line in
+    // both directions: forward to the line break before it, back to the
+    // next line's start.)
+    const IMAGE_SHAPED_TEXT: Array<[string, string, string, 'before' | 'after' | 'end']> = [
+      ['a reference no definition resolves', '![visible tk87z][missing]', '', 'after'],
+      ['a collapsed reference no definition resolves', '![visible tk87z][]', '', 'after'],
+      ['a shortcut reference no definition resolves', '![visible tk87z]', '', 'after'],
+      [
+        'a reference whose definition a paragraph holds',
+        '![visible tk87z][ref]',
+        'para\n[ref]: https://example.test/i.png',
+        'before',
+      ],
+      [
+        'a reference whose label a definition does not match in its blanks',
+        '![visible tk87z][ ref ]',
+        '[ref]: https://example.test/i.png',
+        'after',
+      ],
+      ['a destination holding a blank', '![visible tk87z](not valid)', '', 'after'],
+      [
+        'a destination in angle brackets holding a blank',
+        '![visible tk87z](<not valid>)',
+        '',
+        'after',
+      ],
+      ['a title followed by text', '![visible tk87z](u.png "a title" junk)', '', 'after'],
+      ['a title no quote closes', '![visible tk87z](u.png "a title)', '', 'after'],
+    ];
+    const IMAGES_SHOWN: Array<[string, string, string, 'before' | 'after' | 'end']> = [
+      [
+        'a reference a definition after it resolves',
+        '![alt tk87z][ref]',
+        '[ref]: https://example.test/i.png',
+        'after',
+      ],
+      [
+        'a reference a definition before it resolves',
+        '![alt tk87z][ref]',
+        '[ref]: https://example.test/i.png',
+        'before',
+      ],
+      [
+        'a reference a definition at the end resolves',
+        '![alt tk87z][ref]',
+        '[ref]: https://example.test/i.png',
+        'end',
+      ],
+      [
+        'a collapsed reference a definition resolves',
+        '![alt tk87z][]',
+        '[Alt  tk87z]: https://example.test/i.png',
+        'end',
+      ],
+      [
+        'a shortcut reference a definition resolves',
+        '![alt tk87z]',
+        '[alt tk87z]: https://example.test/i.png',
+        'end',
+      ],
+      ['a destination in angle brackets', '![alt tk87z](<u.png>)', '', 'after'],
+      ['a destination and a title', '![alt tk87z](u.png "a title")', '', 'after'],
+      ['a destination holding balanced parentheses', '![alt tk87z](a(b)c)', '', 'after'],
+      ['an empty destination', '![alt tk87z]()', '', 'after'],
+    ];
+    const imageShapedNote = (body: string, definition: string, where: 'before' | 'after' | 'end') =>
+      `${'q'.repeat(129 * 1024)}\n\n${where === 'before' && definition ? `${definition}\n\n` : ''}edit one\n\n${body}\n\n${where === 'after' && definition ? `${definition}\n\n` : ''}- same item\n- same item\n\n[ab](https://sync/ab)\n\n**cd** two${where === 'end' && definition ? `\n\n${definition}` : ''}`;
+    const IMAGE_SHAPED_CELLS = IMAGE_SHAPED_TEXT.flatMap(([shape, body, definition, where]) =>
+      PROJECTIONS.flatMap(([projection, production]) =>
+        CLOCKS.map(
+          ([when, clock]): [
+            string,
+            string,
+            string,
+            string,
+            string,
+            'before' | 'after' | 'end',
+            boolean | 'comments',
+            Clock,
+            boolean,
+          ] => [
+            shape,
+            projection,
+            when,
+            body,
+            definition,
+            where,
+            production,
+            clock,
+            when === 'within the budget',
+          ],
+        ),
+      ),
+    );
+
+    it.each(IMAGE_SHAPED_CELLS)(
+      'shows %s as written past the cap, projected by %s %s',
+      async (_shape, _projection, _when, body, definition, where, production, clock, exact) => {
+        const markdown = imageShapedNote(body, definition, where);
+        const plain = await projectWithEditor(markdown, production);
+        expect(plain).toContain(body);
+        const map = clock(() => createBidirectionalOffsetMapper(plain, markdown));
+        expectExactRun(plain, markdown, map, 'qqqqqqqq', 0, 0);
+        expectSameLine(plain, markdown, map, 'edit one', 'edit one');
+        if (exact) {
+          expectExactRun(plain, markdown, map, 'visible tk87z', 0, 0);
+          for (let k = 0; k < 2; k += 1) expectExactRun(plain, markdown, map, 'same item', k, k);
+        } else {
+          expectSameLine(plain, markdown, map, 'visible tk87z', 'visible tk87z');
+          expectLinesBounded(
+            map,
+            linesHolding(plain, 'same item', /\n|\uFFFC/g),
+            [...markdown.matchAll(/same item/g)].map((m) => [m.index, m.index + m[0].length]),
+          );
+        }
+        expectSameLine(plain, markdown, map, 'ab', '[ab](');
+        expectSameLine(plain, markdown, map, 'cd two', '**cd** two');
+      },
+      60_000,
+    );
+
+    const IMAGES_SHOWN_CELLS = IMAGES_SHOWN.flatMap(([shape, body, definition, where]) =>
+      PROJECTIONS.flatMap(([projection, production]) =>
+        CLOCKS.map(
+          ([when, clock]): [
+            string,
+            string,
+            string,
+            string,
+            string,
+            'before' | 'after' | 'end',
+            boolean | 'comments',
+            Clock,
+            boolean,
+          ] => [
+            shape,
+            projection,
+            when,
+            body,
+            definition,
+            where,
+            production,
+            clock,
+            when === 'within the budget',
+          ],
+        ),
+      ),
+    );
+
+    it.each(IMAGES_SHOWN_CELLS)(
+      'hides %s past the cap, and pairs the items after it with their own lines, projected by %s %s',
+      async (_shape, _projection, _when, body, definition, where, production, clock, exact) => {
+        const markdown = imageShapedNote(body, definition, where);
+        const plain = await projectWithEditor(markdown, production);
+        expect(plain).not.toContain('alt');
+        expect(plain).not.toContain('https');
+        const map = clock(() => createBidirectionalOffsetMapper(plain, markdown));
+        expectExactRun(plain, markdown, map, 'qqqqqqqq', 0, 0);
+        expectSameLine(plain, markdown, map, 'edit one', 'edit one');
+        if (exact) {
+          for (let k = 0; k < 2; k += 1) expectExactRun(plain, markdown, map, 'same item', k, k);
+        } else {
+          expectLinesBounded(
+            map,
+            linesHolding(plain, 'same item', /\n|\uFFFC/g),
+            [...markdown.matchAll(/same item/g)].map((m) => [m.index, m.index + m[0].length]),
+          );
+        }
+        expectSameLine(plain, markdown, map, 'ab', '[ab](');
+        expectSameLine(plain, markdown, map, 'cd two', '**cd** two');
+      },
+      60_000,
+    );
   });
 });
 
