@@ -1,4 +1,4 @@
-<!-- @catalog-exempt: onboarding-only contenteditable input covered by RichTextarea.test.ts; no catalog fixtures yet -->
+<!-- @catalog-exempt: TipTap-backed contenteditable input covered by RichTextarea.test.ts; no catalog fixtures yet -->
 
 <script lang="ts">
   /**

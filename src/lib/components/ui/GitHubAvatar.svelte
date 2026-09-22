@@ -1,4 +1,4 @@
-<!-- @catalog-exempt: aria-hidden owner avatar with a fallback covered by __tests__/GitHubAvatar.test.ts; no catalog fixtures yet -->
+<!-- @catalog-exempt: owner avatar decorative by default, with image-failure fallback covered by __tests__/GitHubAvatar.test.ts; no catalog fixtures yet -->
 
 <script lang="ts">
   /**
