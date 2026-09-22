@@ -3,6 +3,135 @@ import WorkspaceTokenUsageAccessibilityHost from './WorkspaceTokenUsageAccessibi
 
 type Rgba = [number, number, number, number];
 
+test('bridges the body portal in logical keyboard order and exits non-modally', async ({
+  mount,
+  page,
+}) => {
+  const component = await mount(WorkspaceTokenUsageAccessibilityHost, {
+    props: { surroundingControls: true },
+  });
+  const disclosure = component.getByTestId('token-usage-disclosure');
+  const previous = component.getByTestId('preceding-workspace-control');
+  const following = component.getByTestId('following-workspace-control');
+  const last = component.getByTestId('last-workspace-control');
+  const details = page.getByTestId('token-usage-details');
+  const agent = details
+    .getByRole('radiogroup', { name: 'By agent' })
+    .getByRole('radio', { checked: true });
+  const model = details
+    .getByRole('radiogroup', { name: 'By model' })
+    .getByRole('radio', { checked: true });
+
+  await previous.focus();
+  await page.keyboard.press('Tab');
+  await expect(disclosure).toBeFocused();
+  await page.keyboard.press('Enter');
+  await expect(details).toBeVisible();
+  await expect(disclosure).toBeFocused();
+  await page.keyboard.press('Tab');
+  await expect(agent).toBeFocused();
+  await page.keyboard.press('Tab');
+  await expect(model).toBeFocused();
+  await page.keyboard.press('Shift+Tab');
+  await expect(agent).toBeFocused();
+  await page.keyboard.press('Shift+Tab');
+  await expect(disclosure).toBeFocused();
+  await expect(disclosure).toHaveAttribute('aria-expanded', 'true');
+  await page.keyboard.press('Shift+Tab');
+  await expect(previous).toBeFocused();
+  await expect(details).toHaveCount(0);
+
+  await page.keyboard.press('Tab');
+  await page.keyboard.press('Space');
+  await page.keyboard.press('Tab');
+  await expect(agent).toBeFocused();
+  await page.keyboard.press('Escape');
+  await expect(disclosure).toBeFocused();
+  await expect(details).toHaveCount(0);
+
+  await page.keyboard.press('Enter');
+  await page.keyboard.press('Tab');
+  await page.keyboard.press('Tab');
+  await expect(model).toBeFocused();
+  await page.keyboard.press('Tab');
+  await expect(following).toBeFocused();
+  await expect(details).toHaveCount(0);
+  await page.keyboard.press('Tab');
+  await expect(last).toBeFocused();
+  await page.keyboard.press('Shift+Tab');
+  await expect(following).toBeFocused();
+  await page.keyboard.press('Shift+Tab');
+  await expect(disclosure).toBeFocused();
+
+  await disclosure.click();
+  await expect(details).toBeVisible();
+  await following.click();
+  await expect(following).toBeFocused();
+  await expect(details).toHaveCount(0);
+});
+
+for (const scenario of [
+  { name: 'all-cost workspace', costOnly: 'all', costAmount: 2.5, costText: 'Cost $2.50' },
+  { name: 'reported-zero workspace', costOnly: 'all', costAmount: 0, costText: 'Cost $0.00' },
+  { name: 'mixed matrix', costOnly: 'mixed', costAmount: 2.5, costText: 'Cost $2.50' },
+] as const) {
+  test(`reaches cost-only scopes by keyboard in ${scenario.name}`, async ({ mount, page }) => {
+    await page.emulateMedia({ reducedMotion: 'reduce' });
+    const component = await mount(WorkspaceTokenUsageAccessibilityHost, {
+      props: {
+        costOnly: scenario.costOnly,
+        costAmount: scenario.costAmount,
+        surroundingControls: true,
+      },
+    });
+    const disclosure = component.getByTestId('token-usage-disclosure');
+    const details = page.getByTestId('token-usage-details');
+    const cost = page.getByTestId('token-usage-total-cost');
+    const mixed = scenario.costOnly === 'mixed';
+    await expect(disclosure).toHaveAccessibleDescription(`${mixed ? 100 : 0} tokens used`);
+    await expect(cost).toHaveCount(0);
+    await disclosure.focus();
+    await page.keyboard.press('Enter');
+    await expect(details).toBeVisible();
+    if (mixed) await expect(cost).toHaveCount(0);
+    await page.keyboard.press('Tab');
+    const agentGroup = details.getByRole('radiogroup', { name: 'By agent' });
+    const modelGroup = details.getByRole('radiogroup', { name: 'By model' });
+    await expect(agentGroup.getByRole('radio', { checked: true })).toBeFocused();
+    if (mixed) await page.keyboard.press('End');
+    const costAgent = agentGroup.getByRole('radio', { name: 'By agent, Agent cost: 0 tokens, 0%' });
+    const costModel = modelGroup.getByRole('radio', { name: 'By model, Cost Model: 0 tokens, 0%' });
+    await expect(costAgent).toBeFocused();
+    await expect(costAgent).toBeChecked();
+    await page.keyboard.press('Tab');
+    if (mixed) await page.keyboard.press('End');
+    await expect(costModel).toBeFocused();
+    await expect(costModel).toBeChecked();
+    await expect(costAgent).toBeChecked();
+    await expect(cost).toHaveText(scenario.costText);
+    await expect(details.locator('.composition-value .animated-number-value')).toHaveText([
+      '0',
+      '0',
+      '0',
+      '0',
+    ]);
+    await expect(details.locator('.message-composition-label .animated-number-value')).toHaveText(
+      '0 human and 0 agent messages',
+    );
+    await expect(details.locator('.composition-strip-segment')).toHaveCount(0);
+    await expect(details.locator('.breakdown-stack-item')).toHaveCount(mixed ? 2 : 0);
+    await expect(disclosure).toHaveAccessibleDescription(`${mixed ? 100 : 0} tokens used`);
+    await page.keyboard.press('Shift+Tab');
+    await expect(costAgent).toBeFocused();
+    await page.keyboard.press('Tab');
+    await expect(costModel).toBeFocused();
+    await page.keyboard.press('Tab');
+    await expect(component.getByTestId('following-workspace-control')).toBeFocused();
+    await expect(cost).toHaveCount(0);
+    await expect(details).toHaveCount(0);
+  });
+}
+
 function luminance([red, green, blue]: Rgba): number {
   const channels = [red, green, blue].map((channel) => {
     const value = channel / 255;

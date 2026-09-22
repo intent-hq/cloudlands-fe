@@ -6,6 +6,7 @@ import { fireEvent, render, screen, within } from '@testing-library/svelte';
 import type { TokenUsage } from '$features/token-usage/token-usage-types';
 import { emptyWorkspaceTokenUsageState } from '$store/renderer/slices/token-usage/token-usage-types';
 import { warmImport } from '../../../../../test/warm-import';
+import { costOnlyUsage } from './token-usage-cost-fixture';
 
 const mocks = vi.hoisted(() => {
   const dispatch = vi.fn();
@@ -1349,6 +1350,89 @@ describe('WorkspaceTokenUsage', () => {
     expect(screen.getByTestId('token-usage-by-model').textContent).toContain('Model Big');
     expect(screen.getByTestId('token-usage-by-agent').textContent).toContain('Alpha');
   });
+
+  it.each([2.5, 0])('discloses an all-cost workspace with reported cost %s', async (amount) => {
+    mocks.state.usage = makeUsage({ ...costOnlyUsage(amount), isStale: false });
+    await renderTokenUsage();
+    const disclosure = screen.getByRole('button', { name: 'Expand token usage details' });
+    expect(visibleText(disclosure)).toBe('0 0 tokens used');
+    expect(screen.queryByTestId('token-usage-total-cost')).toBeNull();
+
+    await fireEvent.click(disclosure);
+    const details = screen.getByTestId('token-usage-details');
+    expect(visibleText(screen.getByTestId('token-usage-total-cost'))).toBe(
+      `Cost $${amount.toFixed(2)}`,
+    );
+    for (const group of within(details).getAllByRole('radiogroup')) {
+      const control = within(group).getByRole('radio', { name: /0 tokens, 0%/ });
+      expect(control.getAttribute('aria-checked')).toBe('true');
+      expect(control.tabIndex).toBe(0);
+      expect(control.closest('.breakdown-stack')).toBeNull();
+    }
+    expect(
+      details.querySelectorAll('.composition-strip-segment, .breakdown-stack-item'),
+    ).toHaveLength(0);
+    expect(Array.from(details.querySelectorAll('.composition-value')).map(visibleText)).toEqual([
+      '0',
+      '0',
+      '0',
+      '0',
+    ]);
+    expect(visibleText(details.querySelector('.message-composition-label')!)).toBe(
+      '0 human and 0 agent messages',
+    );
+    await fireEvent.click(disclosure);
+    expect(screen.queryByTestId('token-usage-total-cost')).toBeNull();
+  });
+
+  it('retains cell-reported cost even without a workspace cost', async () => {
+    const usage = costOnlyUsage(2.5);
+    delete usage.totals.cost;
+    mocks.state.usage = makeUsage(usage);
+    await renderExpandedTokenUsage();
+    expect(visibleText(screen.getByTestId('token-usage-total-cost'))).toBe('Cost $2.50');
+  });
+
+  it('does not treat absent cost and all-zero counters as reported zero', async () => {
+    mocks.state.usage = makeUsage(costOnlyUsage(undefined));
+    await renderTokenUsage();
+    expect(screen.queryByTestId('workspace-token-usage')).toBeNull();
+  });
+
+  it.each([2.5, 0])(
+    'retains a separate cost-only cell in a mixed matrix (cost %s)',
+    async (amount) => {
+      mocks.state.usage = makeUsage({ ...costOnlyUsage(amount, true), isStale: false });
+      await renderExpandedTokenUsage();
+      const details = screen.getByTestId('token-usage-details');
+      const costAgent = within(screen.getByTestId('token-usage-by-agent')).getByRole('radio', {
+        name: /Agent cost: 0 tokens, 0%/,
+      });
+      const costModel = within(screen.getByTestId('token-usage-by-model')).getByRole('radio', {
+        name: /Cost Model: 0 tokens, 0%/,
+      });
+      expect(screen.queryByTestId('token-usage-total-cost')).toBeNull();
+      expect(visibleText(details.querySelector('.token-summary')!)).toBe('Token usage 100');
+      expect(details.querySelectorAll('.breakdown-stack-item')).toHaveLength(2);
+
+      await fireEvent.click(costAgent);
+      expect(screen.queryByTestId('token-usage-total-cost')).toBeNull();
+      await fireEvent.click(costModel);
+      expect(costAgent.getAttribute('aria-checked')).toBe('true');
+      expect(costModel.getAttribute('aria-checked')).toBe('true');
+      expect(visibleText(screen.getByTestId('token-usage-total-cost'))).toBe(
+        `Cost $${amount.toFixed(2)}`,
+      );
+      expect(visibleText(details.querySelector('.token-summary')!)).toBe('Token usage 0');
+      expect(details.querySelectorAll('.composition-strip-segment')).toHaveLength(0);
+      expect(details.querySelectorAll('.breakdown-stack-item')).toHaveLength(2);
+      expect(visibleText(screen.getByTestId('token-usage-disclosure'))).toBe('100 100 tokens used');
+
+      await fireEvent.click(screen.getByRole('radio', { name: /Token Model: 100 tokens/ }));
+      expect(costAgent.getAttribute('aria-checked')).toBe('true');
+      expect(screen.queryByTestId('token-usage-total-cost')).toBeNull();
+    },
+  );
 
   it('shows provider-reported cost only in expanded details', async () => {
     mocks.state.usage = makeUsage({
