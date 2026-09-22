@@ -1,9 +1,7 @@
 <script lang="ts">
-  import { slide } from 'svelte/transition';
-  import type { Note } from '$shared/types';
+  import { slide } from '$lib/motion';
   import { WORKSPACE_STATUS_MESSAGE_MAX_LENGTH, WorkspaceStatusEnum } from '$shared/types';
-  import { isSpecNote } from '$shared/constants/notes';
-  import { extractOrderedSpecTaskIds, extractSpecTaskIds } from '$shared/utils/task-stats';
+  import { buildTaskTree, type TaskTreeNode } from '../utils/build-task-tree';
   import {
     selectWorkspaceTaskProgress,
     selectWorkspaceTasksInitialized,
@@ -24,6 +22,9 @@
   import { TooltipRich } from '$lib/components/ui/tooltip';
   import CheckoutModePill from '$lib/components/workspace/CheckoutModePill.svelte';
   import Button from '$lib/components/ui/button/button.svelte';
+  import { Input } from '$lib/components/ui/input';
+  import { Textarea } from '$lib/components/ui/textarea';
+  import { IntentMarkLoader } from '$lib/components/ui/indicators';
   import ImageLightbox from '$lib/components/ui/ImageLightbox.svelte';
   import DropdownMenu from '$lib/components/ui/dropdown-menu.svelte';
   import WorkspaceActionsMenu, {
@@ -37,7 +38,7 @@
   import { handleLink } from '$features/navigation/link-handler';
   import { m } from '$shared/paraglide/messages.js';
   import { WorkspaceId } from '$shared/types/branded-ids';
-  import { toast } from 'svelte-sonner';
+  import { notify } from '$lib/components/patterns/notify';
   import { onDestroy, tick } from 'svelte';
   import { writable } from 'svelte/store';
   import { logger } from '$lib/utils/client-logger';
@@ -211,7 +212,7 @@
     isEditingTitle = false;
     if (mutation.error) {
       editedTitle = $workspace?.title || m.workspace_links_untitled_label();
-      toast.error(mutation.error);
+      notify.error(mutation.error);
     }
   });
 
@@ -570,141 +571,6 @@
   const taskStats = $derived($taskStats$);
   const showFlameGraph = $derived(!$tasksInitialized$ || taskStats.total > 0);
 
-  // Tree node with computed weight (leaf count)
-  interface TaskTreeNode {
-    note: Note;
-    children: TaskTreeNode[];
-    weight: number; // Number of leaf descendants (or 1 if leaf)
-    isLeaf: boolean;
-  }
-
-  // Sort notes by their order in the parent's content, falling back to peerOrder/createdAt
-  function sortByContentOrder(notesToSort: Note[], parentContent: string | undefined): Note[] {
-    const orderFromContent = extractOrderedSpecTaskIds(parentContent);
-    const orderMap = new Map(orderFromContent.map((id, index) => [id, index]));
-
-    return [...notesToSort].sort((a, b) => {
-      const aId = a.id as string;
-      const bId = b.id as string;
-      const aOrder = orderMap.get(aId);
-      const bOrder = orderMap.get(bId);
-
-      // If both are in the content, sort by content order
-      if (aOrder !== undefined && bOrder !== undefined) {
-        return aOrder - bOrder;
-      }
-      // If only one is in the content, prioritize the one in content
-      if (aOrder !== undefined) return -1;
-      if (bOrder !== undefined) return 1;
-
-      // Neither in content - fall back to peerOrder then createdAt
-      const aPeerOrder = a.metadata?.task?.peerOrder ?? 0;
-      const bPeerOrder = b.metadata?.task?.peerOrder ?? 0;
-      if (aPeerOrder !== bPeerOrder) {
-        return aPeerOrder - bPeerOrder;
-      }
-      const aCreated = (a.createdAt || a.created_at || '') as string;
-      const bCreated = (b.createdAt || b.created_at || '') as string;
-      return aCreated.localeCompare(bCreated);
-    });
-  }
-
-  // Build task tree from notes using parentId (for nested flame graph)
-  // Only includes tasks within the spec note hierarchy
-  // Orders tasks by their appearance in parent note content
-  function buildTaskTree(notes: Note[]): TaskTreeNode[] {
-    // Get spec note for ordering
-    const specNote = notes.find((n) => isSpecNote(n.id as string));
-
-    // First, find all task notes (excluding spec and cancelled)
-    const seenIds = new Set<string>();
-    const allTaskNotes = notes.filter((n) => {
-      if (
-        !n.metadata?.task ||
-        isSpecNote(n.id as string) ||
-        n.metadata.task.status === 'cancelled'
-      ) {
-        return false;
-      }
-      const noteId = n.id as string;
-      if (seenIds.has(noteId)) {
-        return false; // Skip duplicate
-      }
-      seenIds.add(noteId);
-      return true;
-    });
-
-    // Find tasks that are descendants of the spec note
-    // A task is in the spec hierarchy if:
-    // 1. Its parentId is 'spec', OR
-    // 2. Its parentId is another task that is in the spec hierarchy
-    const specDescendantIds = new Set<string>();
-
-    // First pass: find direct children of spec
-    for (const note of allTaskNotes) {
-      if (isSpecNote(note.parentId as string)) {
-        specDescendantIds.add(note.id as string);
-      }
-    }
-
-    // Subsequent passes: find children of spec descendants
-    let foundNew = true;
-    while (foundNew) {
-      foundNew = false;
-      for (const note of allTaskNotes) {
-        const noteId = note.id as string;
-        const parentId = note.parentId as string | undefined;
-        if (!specDescendantIds.has(noteId) && parentId && specDescendantIds.has(parentId)) {
-          specDescendantIds.add(noteId);
-          foundNew = true;
-        }
-      }
-    }
-
-    // Filter to only tasks within the spec hierarchy
-    const taskNotes = allTaskNotes.filter((n) => specDescendantIds.has(n.id as string));
-
-    // Build parent -> children map
-    const childrenMap = new Map<string | undefined, Note[]>();
-    for (const note of taskNotes) {
-      const rawParentId = note.parentId as string | undefined;
-      // Normalize: spec parent → undefined (root level in flame graph)
-      const parentId = rawParentId && !isSpecNote(rawParentId) ? rawParentId : undefined;
-      if (!childrenMap.has(parentId)) {
-        childrenMap.set(parentId, []);
-      }
-      childrenMap.get(parentId)!.push(note);
-    }
-
-    // Recursively build tree nodes with weights
-    // Sort children by their order in the parent note's content
-    function buildNode(note: Note): TaskTreeNode {
-      const childNotes = childrenMap.get(note.id as string) || [];
-      // Sort children by their order in this note's content
-      const sortedChildren = sortByContentOrder(childNotes, note.content);
-      const children = sortedChildren.map(buildNode);
-
-      const isLeaf = children.length === 0;
-      const weight = isLeaf ? 1 : children.reduce((sum, c) => sum + c.weight, 0);
-
-      return { note, children, weight, isLeaf };
-    }
-
-    // Get root tasks (direct children of spec - their parentId is 'spec')
-    // Only include tasks that are actually referenced in the spec note content
-    // If spec has no task links, fall back to all direct children of spec
-    const specTaskIds = extractSpecTaskIds(specNote?.content);
-    const hasSpecLinks = specTaskIds.size > 0;
-    const roots = taskNotes.filter(
-      (n) => isSpecNote(n.parentId as string) && (!hasSpecLinks || specTaskIds.has(n.id as string)),
-    );
-
-    // Sort roots by their order in the spec note content
-    const sortedRoots = sortByContentOrder(roots, specNote?.content);
-
-    return sortedRoots.map(buildNode);
-  }
-
   // Convert tree to rows for table rendering (flame graph style)
   interface RowCell {
     node: TaskTreeNode | null; // null for empty filler cells
@@ -820,8 +686,8 @@
     <div class="flex items-center justify-between group">
       <div class="relative flex-1 flex flex-col min-w-0">
         {#if isEditingTitle}
-          <input
-            bind:this={titleInputRef}
+          <Input
+            bind:ref={titleInputRef}
             type="text"
             bind:value={editedTitle}
             onblur={saveTitle}
@@ -834,14 +700,15 @@
             placeholder={m.workspace_links_untitled_label()}
           />
         {:else}
-          <button
+          <Button
+            variant="plain"
             class="relative z-10 text-xl font-semibold text-foreground bg-transparent
                border-none py-0.5 pr-1 rounded cursor-text text-left
                max-w-full overflow-hidden text-ellipsis whitespace-nowrap
                transition-all duration-spring-fast ease-spring-fast motion-reduce:transition-none leading-normal
                focus-visible:outline-1 focus-visible:outline-primary/50 focus-visible:-outline-offset-1
-               disabled:cursor-default disabled:opacity-50 truncate min-w-0"
-            class:opacity-50={!$workspace?.title}
+               disabled:cursor-default disabled:opacity-50 truncate min-w-0
+               {!$workspace?.title ? 'opacity-50' : ''}"
             onclick={startEditingTitle}
             title={m.workspace_sidebarHeader_editTitle_tooltip()}
             disabled={!$workspace}
@@ -849,7 +716,7 @@
             {#if $workspace}
               {$workspace.title || m.workspace_links_untitled_label()}
             {/if}
-          </button>
+          </Button>
         {/if}
         <span
           aria-hidden="true"
@@ -874,9 +741,7 @@
               disabled={isDeleting}
             >
               {#if isDeleting}
-                <div
-                  class="animate-spin h-3.5 w-3.5 border-2 border-current border-t-transparent rounded-full"
-                ></div>
+                <IntentMarkLoader size={14} />
               {:else}
                 <KebabIcon class="size-4" />
               {/if}
@@ -1065,7 +930,7 @@
     <!-- Workflow action button (styled like AI-assisted action prompts) -->
     {#if workflowAction}
       {@const action = workflowAction}
-      <div class="flex-1 w-full" transition:slide={{ axis: 'y', duration: 200 }}>
+      <div class="flex-1 w-full" transition:slide={{ axis: 'y', tier: 'moderate' }}>
         {#if action}
           <div class="mt-1">
             <Tooltip
@@ -1149,8 +1014,8 @@
       <div class="pt-1">
         <div class="relative flex">
           {#if isEditingStatusMessage}
-            <textarea
-              bind:this={statusInputRef}
+            <Textarea
+              bind:ref={statusInputRef}
               bind:value={editedStatusMessage}
               onblur={saveStatusMessage}
               onkeydown={handleStatusMessageKeydown}
@@ -1161,9 +1026,11 @@
               class="edit-input type-body relative z-10 min-h-0 max-h-32 w-full resize-none overflow-hidden whitespace-pre-wrap break-words rounded border-none bg-transparent py-0.5 text-foreground outline-none leading-snug
                      focus:ring-none! focus:outline-none! transition-all duration-spring-fast ease-spring-fast motion-reduce:transition-none disabled:opacity-50"
               style="field-sizing: content;"
-              placeholder={m.workspace_sidebarHeader_addStatus_placeholder()}></textarea>
+              placeholder={m.workspace_sidebarHeader_addStatus_placeholder()}
+            ></Textarea>
           {:else if $workspace && currentStatusMessage}
-            <button
+            <Button
+              variant="plain"
               class="type-body relative z-10 w-full cursor-text whitespace-pre-wrap break-words rounded border-none bg-transparent py-0.5 text-left text-muted-foreground
                      transition-all duration-spring-fast ease-spring-fast motion-reduce:transition-none leading-snug hover:text-foreground
                      focus-visible:outline focus-visible:outline-1 focus-visible:outline-ring focus-visible:outline-offset-[-1px]
@@ -1178,7 +1045,7 @@
               disabled={!$workspace}
             >
               {currentStatusMessage}
-            </button>
+            </Button>
           {/if}
           <span
             aria-hidden="true"
@@ -1194,8 +1061,9 @@
     <!-- status screenshot (agent-authored, intent-hq/monorepo#997) -->
     {#if showStatusImage}
       <div class="py-1">
-        <button
-          bind:this={statusImageButtonRef}
+        <Button
+          variant="plain"
+          bind:ref={statusImageButtonRef}
           type="button"
           class="block w-full cursor-zoom-in bg-transparent border-none p-0
                  focus-visible:outline focus-visible:outline-1
@@ -1211,7 +1079,7 @@
             onerror={(e) =>
               (failedStatusImageUrl = e.currentTarget.getAttribute('src') ?? statusImageUrl)}
           />
-        </button>
+        </Button>
       </div>
       <ImageLightbox
         bind:open={statusImageLightboxOpen}
@@ -1225,38 +1093,41 @@
     <!-- {#if isLoadingReadyTasks}
     <div
       class="w-full px-4x pb-3 flex items-center gap-2 text-xs text-subtle"
-      transition:slide={{ axis: 'y', duration: 200 }}
+      transition:slide={{ axis: 'y', tier: 'moderate' }}
     >
-      <Fa icon={faSpinner} spin size="xs" />
+      <IntentMarkLoader size={12} />
       <span>Finding ready tasks...</span>
     </div>
   {:else if displayReadyTasks.length > 0 && currentDisplayReadyTask}
-    <div class="w-full px-4x pb-3" transition:slide={{ axis: 'y', duration: 200 }}>
+    <div class="w-full px-4x pb-3" transition:slide={{ axis: 'y', tier: 'moderate' }}>
       <div class="flex items-center justify-between text-xs text-subtle">
         <span>{displayReadyTasks.length} ready task{displayReadyTasks.length > 1 ? 's' : ''}:</span>
         {#if displayReadyTasks.length > 1}
           <span class="flex items-center gap-1">
-            <button
+            <Button
+              variant="plain"
               class="p-0.5 hover:bg-muted rounded transition-colors text-ghost cursor-pointer"
               onclick={navigatePrev}
               disabled={displayReadyTasks.length <= 1}
               title="Previous ready task"
             >
               <Fa icon={faChevronLeft} size="xs" />
-            </button>
-            <button
+            </Button>
+            <Button
+              variant="plain"
               class="p-0.5 hover:bg-muted rounded transition-colors text-ghost cursor-pointer"
               onclick={navigateNext}
               disabled={displayReadyTasks.length <= 1}
               title="Next ready task"
             >
               <Fa icon={faChevronRight} size="xs" />
-            </button>
+            </Button>
           </span>
         {/if}
       </div>
 
-      <button
+      <Button
+        variant="plain"
         class="flex items-center gap-2 w-full text-left text-sm text-subtle transition-colors py-1 rounded cursor-pointer"
         onclick={() => onOpenNote?.(currentDisplayReadyTask.id as string)}
         onmouseenter={() => (highlightedNoteId = currentDisplayReadyTask.id as string)}
@@ -1264,12 +1135,12 @@
       >
         <span class="flex-1 truncate text-xs">{currentDisplayReadyTask.title}</span>
         <Fa icon={faArrowRight} size="xs" class="text-ghost" />
-      </button>
+      </Button>
     </div>
   {:else if readyTasksError}
     <div
       class="w-full px-4x pb-3 text-xs text-danger mt-2"
-      transition:slide={{ axis: 'y', duration: 200 }}
+      transition:slide={{ axis: 'y', tier: 'moderate' }}
     >
       Error: {readyTasksError}
     </div>

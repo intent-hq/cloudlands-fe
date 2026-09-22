@@ -10,6 +10,7 @@ import { render, screen } from '@testing-library/svelte';
 import { tick } from 'svelte';
 import type { Note, Workspace } from '$shared/types';
 import { WorkspaceStatusEnum } from '$shared/types';
+import { createCollection } from '@augmentcode/themis/utils/collections/collection-utils';
 import { warmImport } from '../../../../../test/warm-import';
 import {
   configuredVisualStates,
@@ -52,9 +53,10 @@ vi.mock('$store/renderer/store', async () => {
     state: () => ({
       panelLayout: {
         byWorkspaceId: {
-          'ws-1': { columnCount: 1 },
+          'ws-1': { columnCount: 1, panels: {}, hiddenTabs: createCollection('id') },
         },
       },
+      git: { byWorkspaceId: {} },
     }),
     dispatch: mocks.dispatch,
   });
@@ -62,6 +64,12 @@ vi.mock('$store/renderer/store', async () => {
 
 vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
   selectWorkspaceById: mocks.selector(() => mocks.workspaceEntity),
+  selectWorkspaceMutation: mocks.selector(() => ({
+    loading: false,
+    error: null,
+    version: 0,
+    requestId: null,
+  })),
   selectWorkspaceActivePullRequest: mocks.selector(() => null),
   selectWorkspaceProgressHeadline: mocks.selector(() => ({ headline: '', subtext: '' })),
   selectWorkspaceProgressActions: mocks.selector(() => []),
@@ -109,6 +117,10 @@ vi.mock('$store/renderer/slices/workspace/workspace-slice', () => ({
   setWorkspaceEntity: vi.fn((workspace: Workspace) => ({
     type: 'workspace/setWorkspaceEntity',
     payload: [workspace],
+  })),
+  updateWorkspaceRequested: vi.fn((...args: unknown[]) => ({
+    type: 'workspace/updateRequested',
+    payload: args,
   })),
 }));
 

@@ -3251,9 +3251,9 @@
         <!-- Create button -->
         {#snippet createButton(progressLabel?: Snippet)}
           <Button
+            variant="primary"
             onclick={handleSubmit}
             disabled={!isValid || isCreating || isEnhancing || isProcessingImages}
-            class="bg-primary text-primary-foreground hover:bg-primary/90 hover:text-primary-foreground"
           >
             {#if isCreating}
               <IntentMarkLoader size={14} />
