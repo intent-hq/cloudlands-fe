@@ -14,14 +14,19 @@ import {
   rebaseText,
 } from './text-rebase';
 
-/** While `abort` is set, every jsdiff call behaves as if its `timeout` had elapsed. */
-const jsdiff = vi.hoisted(() => ({ abort: false }));
+/**
+ * While `abort` is set, every jsdiff call behaves as if its `timeout` had
+ * elapsed; `calls` counts the calls made, aborted or not.
+ */
+const jsdiff = vi.hoisted(() => ({ abort: false, calls: 0 }));
 vi.mock('diff', async (importOriginal) => {
   const actual = await importOriginal<typeof import('diff')>();
   const abortable =
     <A extends unknown[], R>(diff: (...args: A) => R) =>
-    (...args: A) =>
-      jsdiff.abort ? undefined : diff(...args);
+    (...args: A) => {
+      jsdiff.calls += 1;
+      return jsdiff.abort ? undefined : diff(...args);
+    };
   return {
     ...actual,
     diffChars: abortable(actual.diffChars),
@@ -2539,15 +2544,15 @@ describe('alignment past the cap of notes drawn from every line shape', () => {
   ];
 
   /**
-   * A note past `MAX_LEXED_LENGTH` of blocks drawn from every line shape,
-   * link lines (inline, reference, image, autolink, empty label, one after a
-   * run of comments and definitions longer than the greedy pairing looks
-   * ahead) among them. Every line that has text of its own carries a token
-   * `tk<n>z` that occurs
-   * once in the note, by which its plain-text line is found; an image line
-   * carries one on each side of the leaf that splits its plain-text line.
+   * A note of blocks drawn from every line shape — `kilobytes` of them, past
+   * `MAX_LEXED_LENGTH` by default — link lines (inline, reference, image,
+   * autolink, empty label, one after a run of comments and definitions longer
+   * than the greedy pairing looks ahead) among them. Every line that has text
+   * of its own carries a token `tk<n>z` that occurs once in the note, by
+   * which its plain-text line is found; an image line carries one on each
+   * side of the leaf that splits its plain-text line.
    */
-  function drawNote(seed: number): string {
+  function drawNote(seed: number, kilobytes = 129): string {
     const next = random(seed);
     let tokens = 0;
     const tok = () => `tk${(tokens += 1)}z`;
@@ -2592,7 +2597,7 @@ describe('alignment past the cap of notes drawn from every line shape', () => {
     ];
     const blocks = [text[0]()];
     let length = blocks[0].length;
-    while (length <= 129 * 1024) {
+    while (length <= kilobytes * 1024) {
       const pool = next() < 0.3 ? links : text;
       const block = pool[Math.floor(next() * pool.length)]();
       blocks.push(block);
@@ -2766,6 +2771,161 @@ describe('alignment past the cap of notes drawn from every line shape', () => {
     },
     120_000,
   );
+
+  /**
+   * The markdown of a drawn line the editor does not show — an image, a
+   * destination or reference, a definition line, a comment. An autolink and a
+   * tag are shown as written.
+   */
+  const HIDDEN = [
+    /!\[[^\]]*\]\([^)]*\)/g,
+    /\]\([^)]*\)/g,
+    /\]\[[^\]]*\]/g,
+    /^\[[^\]]+\]:.*$/g,
+    /<!--.*?-->/gs,
+  ];
+  const LETTER = /[\p{L}\p{N}]/u;
+
+  /** The letters of one side paired with the other's; see `letterOracle`. */
+  interface LetterPairs {
+    /** The offset of the letter at `[i]` on the other side, or -1. */
+    pair: Int32Array;
+    /** Whether `[i]` lies on a line the oracle pairs the letters of. */
+    covered: Uint8Array;
+  }
+
+  /**
+   * The letters of `plain` paired with their markdown, from the generator's
+   * tokens rather than any alignment: a plain-text segment (between `\n`s or
+   * the leaf an image projects to) holds the tokens of one markdown line, and
+   * on a line whose letters shown equal the letters of its segments, in
+   * order, each letter is the image of its counterpart. A segment whose
+   * tokens name no single line is `unresolved`; a line whose letters shown
+   * differ from its plain text (none in the notes drawn) pairs nothing.
+   */
+  function letterOracle(plain: string, markdown: string) {
+    const markdownLines = markdown.split('\n');
+    const tokenLine = new Map<string, number>();
+    markdownLines.forEach((line, k) => {
+      for (const token of line.match(/tk\d+z/g) ?? []) tokenLine.set(token, k);
+    });
+    const segments = new Map<number, Array<[number, number]>>();
+    let unresolved = 0;
+    for (let start = 0, i = 0; i <= plain.length; i += 1) {
+      if (i < plain.length && plain[i] !== '\n' && plain[i] !== '\uFFFC') continue;
+      if (i > start) {
+        const lines = new Set(
+          (plain.slice(start, i).match(/tk\d+z/g) ?? []).map((token) => tokenLine.get(token)!),
+        );
+        if (lines.size === 1) {
+          const [line] = lines;
+          (segments.get(line) ?? segments.set(line, []).get(line)!).push([start, i]);
+        } else unresolved += 1;
+      }
+      start = i + 1;
+    }
+    const forward: LetterPairs = {
+      pair: new Int32Array(plain.length + 1).fill(-1),
+      covered: new Uint8Array(plain.length + 1),
+    };
+    const backward: LetterPairs = {
+      pair: new Int32Array(markdown.length + 1).fill(-1),
+      covered: new Uint8Array(markdown.length + 1),
+    };
+    let lineStart = 0;
+    for (const [k, line] of markdownLines.entries()) {
+      const own = segments.get(k);
+      if (own) {
+        let shown = line;
+        for (const hidden of HIDDEN) shown = shown.replace(hidden, (m) => '\0'.repeat(m.length));
+        const markdownLetters: number[] = [];
+        for (let j = 0; j < shown.length; j += 1) {
+          if (LETTER.test(shown[j])) markdownLetters.push(lineStart + j);
+        }
+        const plainLetters: number[] = [];
+        for (const [start, end] of own) {
+          for (let p = start; p < end; p += 1) if (LETTER.test(plain[p])) plainLetters.push(p);
+        }
+        if (
+          markdownLetters.length === plainLetters.length &&
+          markdownLetters.every((m, j) => markdown[m] === plain[plainLetters[j]])
+        ) {
+          markdownLetters.forEach((m, j) => {
+            forward.pair[plainLetters[j]] = m;
+            backward.pair[m] = plainLetters[j];
+          });
+          backward.covered.fill(1, lineStart, lineStart + line.length);
+          for (const [start, end] of own) forward.covered.fill(1, start, end);
+        }
+      }
+      lineStart += line.length + 1;
+    }
+    return { forward, backward, unresolved };
+  }
+
+  /**
+   * Every offset of `source` whose image under `map` lies outside the images
+   * of the letters the oracle pairs either side of it — the cursor placed
+   * against another character of its line, or on another line altogether —
+   * on the lines the oracle covers; a break is skipped.
+   */
+  function outsideLetterImages(
+    map: (offset: number) => number,
+    source: string,
+    target: string,
+    { pair, covered }: LetterPairs,
+    breaks: RegExp,
+  ): { checked: number; outside: string[] } {
+    let checked = 0;
+    const outside: string[] = [];
+    let previous = -1;
+    let next = -1;
+    for (let i = 0; i < source.length; i += 1) {
+      if (i > next) {
+        next = i;
+        while (next < source.length && pair[next] < 0) next += 1;
+      }
+      if (covered[i] && !breaks.test(source[i])) {
+        checked += 1;
+        const low = previous === -1 ? 0 : pair[previous] + 1;
+        const high = next === source.length ? target.length : pair[next];
+        const image = map(i);
+        if (image < low || image > high) {
+          outside.push(
+            `${i} ${JSON.stringify(source.slice(i - 8, i + 8))} → ${image} ${JSON.stringify(target.slice(image - 8, image + 8))}, want ${low}..${high}`,
+          );
+        }
+      }
+      if (pair[i] >= 0) previous = i;
+    }
+    return { checked, outside };
+  }
+
+  // Below the cap, within the budget, an offset never leaves the characters
+  // it sits between: its image lies between the images of the letters either
+  // side of it. The greedy line pairing past the deadline is not held to
+  // this; there, containment in the pair emitted is what is asserted.
+  it.each([600, 601, 602, 603, 604])(
+    'maps every offset of a note below the cap between the images of the letters around it (seed %i)',
+    async (seed) => {
+      const markdown = drawNote(seed, 16);
+      expect(markdown.length).toBeLessThan(128 * 1024);
+      const plain = await projectWithEditor(markdown, true);
+      const oracle = letterOracle(plain, markdown);
+      expect(oracle.unresolved).toBe(0);
+      const map = withoutDeadline(() => createBidirectionalOffsetMapper(plain, markdown));
+      const forward = outsideLetterImages(map.aToB, plain, markdown, oracle.forward, /[\n\uFFFC]/);
+      const backward = outsideLetterImages(map.bToA, markdown, plain, oracle.backward, /\n/);
+      expect(forward.checked).toBeGreaterThan(plain.length / 2);
+      expect(backward.checked).toBeGreaterThan(markdown.length / 4);
+      const outside = [
+        ...forward.outside.map((v) => `aToB ${v}`),
+        ...backward.outside.map((v) => `bToA ${v}`),
+      ];
+      expect(outside.length, outside.slice(0, 12).join('\n')).toBe(0);
+    },
+    60_000,
+  );
 });
 
 describe('alignment of blocks that never anchor', () => {
@@ -2812,17 +2972,27 @@ describe('alignment of blocks that never anchor', () => {
       // the longer ones are past the cap and not lexed — the lexer alone took
       // over half a second on the 1 MB one. The projection is modelled: the
       // editor's own takes a minute on this many links, and only the word of
-      // each survives it.
+      // each survives it. The clock is stepped rather than read — a quarter
+      // millisecond a read spends the 250 ms budget in a thousand reads on
+      // any runner — and giving up is held to what it costs: the clock read
+      // at most three more times once the deadline has passed, one per loop
+      // left, and no diff run at all.
       const links = Math.ceil((kilobytes * 1024) / 7);
       const markdown = '[x](u) '.repeat(links);
       const plain = 'x '.repeat(links).trimEnd();
-      const started = performance.now();
-      const { aToB, bToA } = createBidirectionalOffsetMapper(plain, markdown);
-      expect(aToB(0)).toBe(0);
-      const elapsed = performance.now() - started;
-      expect(elapsed, `alignment took ${elapsed.toFixed(0)} ms`).toBeLessThan(400);
-      expectMonotonic(aToB, plain.length, markdown.length, 1009);
-      expectMonotonic(bToA, markdown.length, plain.length, 1009);
+      let reads = 0;
+      const now = vi.spyOn(performance, 'now').mockImplementation(() => 0.25 * reads++);
+      const calls = jsdiff.calls;
+      try {
+        const { aToB, bToA } = createBidirectionalOffsetMapper(plain, markdown);
+        expect(reads - 1000, `${reads} clock reads`).toBeLessThanOrEqual(3);
+        expect(jsdiff.calls - calls).toBe(0);
+        expect(aToB(0)).toBe(0);
+        expectMonotonic(aToB, plain.length, markdown.length, 1009);
+        expectMonotonic(bToA, markdown.length, plain.length, 1009);
+      } finally {
+        now.mockRestore();
+      }
     },
     60_000,
   );

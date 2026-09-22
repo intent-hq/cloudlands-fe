@@ -129,9 +129,12 @@ const isLowSurrogate = (code: number) => code >= 0xdc00 && code <= 0xdfff;
  * bounded by the line (`refineByLine`).
  * The mask, the anchor loop and every diff share one deadline: past it, the
  * remaining text is paired line by line, with no diff, so that a line stays
- * bounded by its own text (`refineByLine`). A surrogate pair never straddles a
- * span boundary: anchors, trimmed prefixes and tokens stop outside pairs and
- * jsdiff's `diffChars` treats a pair as one character.
+ * bounded by its own text (`refineByLine`). Below the cap the alignment is
+ * exact within the budget; once the deadline has passed, every pair emitted
+ * still contains its text — an offset maps into the span its own text lies
+ * in — while which line pairs with which is best effort. A surrogate pair
+ * never straddles a span boundary: anchors, trimmed prefixes and tokens stop
+ * outside pairs and jsdiff's `diffChars` treats a pair as one character.
  *
  * Unlike `charHunks`, the result is not the minimal edit script; only the
  * offset mappers (remote carets) use it, never `rebaseText`.
