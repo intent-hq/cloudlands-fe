@@ -153,9 +153,10 @@ function isEnabled(setting) {
 
 /**
  * The config entries that enable `ruleIds`, reduced to their `files` / `ignores` scope
- * and the rule's own setting. A `baseline` option is reset to `{}` (other options
- * survive); a setting without one is copied verbatim, since rules with `schema: []`
- * reject any options object. Appended to the repo config these win over later per-file
+ * and the rule's own setting. A `baseline` option is reset to `{}` (other options and
+ * any further option items survive); a setting without one is copied verbatim, since
+ * rules with `schema: []` reject any options object. Appended to the repo config these
+ * win over later per-file
  * `'off'` entries, so every file the rule applies to is linted at zero debt — the scope
  * comes from the config only.
  */
@@ -166,10 +167,10 @@ export function ruleScopeOverrides(config, ruleIds) {
     for (const ruleId of ids) {
       const setting = entry.rules?.[ruleId];
       if (!isEnabled(setting)) continue;
-      const [severity, options] = Array.isArray(setting) ? setting : [setting];
+      const [severity, options, ...rest] = Array.isArray(setting) ? setting : [setting];
       rules[ruleId] =
         options !== null && typeof options === 'object' && 'baseline' in options
-          ? [severity, { ...options, baseline: {} }]
+          ? [severity, { ...options, baseline: {} }, ...rest]
           : setting;
     }
     if (!Object.keys(rules).length) return [];

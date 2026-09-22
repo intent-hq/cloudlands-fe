@@ -324,6 +324,33 @@ describe('ruleScopeOverrides', () => {
     ]);
   });
 
+  it('keeps option items after the baseline object, so the ratchet lints with the config options', () => {
+    const ruleId = 'intent/x';
+    expect(
+      ruleScopeOverrides(
+        [
+          {
+            files: ['b/**'],
+            rules: { [ruleId]: ['error', { baseline: { a: 1 }, keep: true }, 'extra'] },
+          },
+        ],
+        ruleId,
+      ),
+    ).toEqual([
+      { files: ['b/**'], rules: { [ruleId]: ['error', { keep: true, baseline: {} }, 'extra'] } },
+    ]);
+  });
+
+  it('leaves a single-option setting as a two-item array', () => {
+    const ruleId = 'intent/x';
+    const [{ rules }] = ruleScopeOverrides(
+      [{ files: ['b/**'], rules: { [ruleId]: ['error', { baseline: { a: 1 }, keep: true }] } }],
+      ruleId,
+    );
+    expect(rules[ruleId]).toEqual(['error', { keep: true, baseline: {} }]);
+    expect(rules[ruleId]).toHaveLength(2);
+  });
+
   it('is accepted by real ESLint for every design-system rule and re-enables baselined files', async () => {
     // DirectoryPickerModal is the one file `designSystemBaselineOverrides` turns
     // `no-dialog-root-outside-patterns` off for, so it must come back on and report.
