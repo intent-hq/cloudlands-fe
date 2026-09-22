@@ -26,7 +26,7 @@ test('keeps destructive and operational secondary text readable in both themes',
     { name: 'turn-failure alert', selector: '.turn-failure-notice', alpha: 0 },
     {
       name: 'turn-failure detail',
-      selector: '.turn-failure-notice span.whitespace-pre-wrap',
+      selector: '.turn-failure-notice [data-chat-notice-reason]',
       alpha: 0,
     },
     {

@@ -1595,6 +1595,68 @@ describe('ChatPanel mounted lifecycle', () => {
     ).toBe('false');
   });
 
+  it('keeps a live system notice ordered without stealing assistant streaming or actions', async () => {
+    mocks.draftGet.mockResolvedValue(null);
+    const messages = [
+      {
+        id: 'user',
+        role: 'user',
+        contentBlocks: [{ type: 'text', text: 'Check the build' }],
+        timestamp: '2026-01-01T00:00:00.000Z',
+      },
+      {
+        id: 'assistant',
+        role: 'assistant',
+        contentBlocks: [{ type: 'text', text: 'Checking' }],
+        timestamp: '2026-01-01T00:00:01.000Z',
+      },
+    ];
+    mocks.agentMessages.set(messages);
+    const view = render(ChatPanel, {
+      props: { workspace: workspace('workspace-a'), agentId: 'agent-a', isActive: true },
+    });
+    await tick();
+    await tick();
+
+    mocks.agentSessionIsStreaming.set(true);
+    mocks.agentMessages.set([
+      ...messages,
+      {
+        id: 'notice',
+        role: 'system',
+        timestamp: '2026-01-01T00:00:02.000Z',
+        contentBlocks: [
+          { type: 'text', text: 'Need access to continue', meta: { kind: 'blocker-report' } },
+        ],
+      },
+    ]);
+    await tick();
+    await tick();
+
+    expect(
+      Array.from(view.container.querySelectorAll('[data-message-role]'), (node) =>
+        node.getAttribute('data-message-id'),
+      ),
+    ).toEqual(['user', 'assistant', 'notice']);
+    const assistant = view.container.querySelector('[data-message-key="assistant"]')!;
+    const notice = view.container.querySelector('[data-message-key="notice"]')!;
+    expect(assistant.getAttribute('data-streaming')).toBe('true');
+    expect(assistant.getAttribute('data-last-assistant')).toBe('true');
+    expect(assistant.getAttribute('data-regeneratable')).toBe('true');
+    expect(notice.getAttribute('data-streaming')).toBe('false');
+    expect(notice.getAttribute('data-last-assistant')).toBe('false');
+    expect(notice.getAttribute('data-regeneratable')).toBe('false');
+    expect(
+      view.container.querySelector('[data-message-id="notice"] [data-testid="mock-edit-submit"]'),
+    ).toBeNull();
+    expect(view.container.querySelector('[data-after-assistant-message="notice"]')).toBeNull();
+
+    mocks.agentSessionIsStreaming.set(false);
+    await tick();
+    expect(assistant.getAttribute('data-streaming')).toBe('false');
+    expect(view.container.querySelector('[data-message-key="notice"]')).toBe(notice);
+  });
+
   it('does not attach a new pre-output terminal error to the previous assistant row', async () => {
     mocks.draftGet.mockResolvedValue(null);
     mocks.agentMessages.set([
@@ -3368,7 +3430,7 @@ describe('ChatPanel mounted lifecycle', () => {
   it.each([
     ['regular', 'workspace-a'],
     ['Chief', '__chief__'],
-  ])('renders suggested prompts in the %s composer instead of the transcript', async (_, id) => {
+  ])('keeps %s transcript suggestions editable and hides them on retirement', async (_, id) => {
     mocks.draftGet.mockResolvedValue(null);
     mocks.agentMessages.set([
       {
@@ -3389,8 +3451,15 @@ describe('ChatPanel mounted lifecycle', () => {
     await tick();
 
     const prompts = screen.getByTestId('suggested-prompts-surface');
-    expect(screen.getByTestId('chat-composer-controls-inner').contains(prompts)).toBe(true);
-    expect(screen.getByTestId('chat-transcript-inner').contains(prompts)).toBe(false);
+    expect(screen.getByTestId('chat-composer-controls-inner').contains(prompts)).toBe(false);
+    expect(screen.getByTestId('chat-transcript-inner').contains(prompts)).toBe(true);
+    await fireEvent.click(screen.getAllByRole('button', { name: 'Edit in input' })[0]);
+    await tick();
+    expect(screen.getByTestId('mock-rich-input').getAttribute('data-value')).toBe('Run the tests');
+
+    mocks.agentSession.set({ id: 'agent-a', retiredAt: '2026-01-02T00:00:00.000Z' });
+    await tick();
+    expect(screen.queryByTestId('suggested-prompts-surface')).toBeNull();
   });
 
   it('reports true-bottom state to the stable header control', async () => {

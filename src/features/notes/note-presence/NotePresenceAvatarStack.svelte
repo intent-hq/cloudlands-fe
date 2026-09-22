@@ -4,6 +4,7 @@
    * by the shared note-presence session (the daemon's viewer roster). Renders
    * nothing while the viewer is alone.
    */
+  import PrincipalAvatar from '$lib/components/ui/PrincipalAvatar.svelte';
   import { Tooltip } from '$lib/components/ui/tooltip';
   import { formatInteger } from '$lib/i18n/format';
   import { m } from '$shared/paraglide/messages.js';
@@ -45,10 +46,6 @@
   function viewerName(viewer: RemoteNoteViewer): string {
     return viewer.displayName ?? viewer.login ?? viewer.principalId;
   }
-
-  function viewerInitial(viewer: RemoteNoteViewer): string {
-    return viewerName(viewer).slice(0, 1).toUpperCase();
-  }
 </script>
 
 {#if viewers.length > 0}
@@ -68,11 +65,7 @@
           data-principal-id={viewer.principalId}
           aria-hidden="true"
         >
-          {#if viewer.avatarUrl}
-            <img src={viewer.avatarUrl} alt="" class="h-full w-full object-cover" loading="lazy" />
-          {:else}
-            {viewerInitial(viewer)}
-          {/if}
+          <PrincipalAvatar fill avatarUrl={viewer.avatarUrl} label={viewerName(viewer)} />
         </span>
         <span class="sr-only">{viewerName(viewer)}</span>
       </Tooltip>

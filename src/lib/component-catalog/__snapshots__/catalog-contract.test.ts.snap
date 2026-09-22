@@ -18028,24 +18028,27 @@ exports[`catalog DOM, token, and accessibility contracts > 'product:popovers:non
                               "In progress"
                             <span aria-hidden="true" class="forced-colors:text-[CanvasText] inline-flex items-center justify-center shrink-0 svelte-<scope> workspace-status-color-active workspace-status-icon" data-workspace-status-visual="dot" data-workspace-status="in_progress">
                               <span class="svelte-<scope> workspace-status-dot" data-workspace-status-dot="">
-                        <div class="min-w-0 mt-1 text-muted-foreground truncate type-caption" data-workspace-hover-card-repo="">
+                        <div class="min-w-0 mt-0.5 text-muted-foreground truncate type-caption" data-workspace-hover-card-repo="">
                           "intent-hq / cloudlands-fe"
                         <p class="line-clamp-3 min-w-0 mt-1 text-muted-foreground type-caption" data-workspace-hover-card-summary="">
                           "Implementing the approved stacked hover-card polish."
                     <div class="border-border border-t my-3" data-workspace-hover-card-divider="">
                     <div class="body-grid gap-3 grid grid-cols-1 items-stretch min-w-0 pb-4 px-5" data-workspace-hover-card-columns="">
                       <section aria-label="Pull requests" class="min-w-0 pull-requests" data-workspace-hover-card-pr-column="">
-                        <div aria-label="Pull requests" class="gap-2 grid min-w-0" data-workspace-hover-card-pr-list="" role="list">
-                          <div aria-label="intent-hq/cloudlands-fe #73 Polish workspace hover cards Open ⏳ 1/5 checks running" class="gap-x-2 grid grid-cols-[1rem_minmax(0,1fr)_auto_auto] items-center min-w-0" data-pr-identity="intent-hq/cloudlands-fe#73" data-pr-status="open" data-workspace-hover-card-pr-row="" role="listitem">
-                            <svg aria-hidden="true" class="justify-self-start shrink-0 text-success" data-icon="code-pull-request" data-weight="regular" role="img">
-                              <rect>
-                              <path>
-                            <span class="min-w-0 text-foreground truncate type-caption" data-workspace-hover-card-pr-title="">
-                              "Polish workspace hover cards"
-                            <span class="shrink-0 text-muted-foreground type-caption" data-workspace-hover-card-pr-status="">
-                              "Open"
-                            <span class="shrink-0 text-muted-foreground type-caption" data-workspace-hover-card-pr-number="">
-                              "#73"
+                        <div aria-label="Pull requests" class="-mx-2 gap-2 grid min-w-0" data-workspace-hover-card-pr-list="" role="list">
+                          <div role="listitem">
+                            <div>
+                              <button aria-label="intent-hq/cloudlands-fe #73 Polish workspace hover cards Open ⏳ 1/5 checks running" class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [--button-icon-padding:0.75rem] aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 border-0! cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring font-inherit font-normal gap-1.5 gap-x-2 grid grid-cols-[1rem_minmax(0,1fr)_auto_auto] group/button h-(--control-height-medium) h-auto! hover:bg-muted/50 isolate items-center justify-normal min-w-0 motion-reduce:transition-none px-0 px-2! py-0 py-0! relative rounded-sm shrink-0 text-inherit text-left transition-colors type-caption w-full whitespace-normal" data-pr-identity="intent-hq/cloudlands-fe#73" data-pr-status="open" data-slot="button" data-workspace-hover-card-pr-row="true" type="button">
+                                <span aria-hidden="true" class="-z-10 absolute bg-transparent duration-spring-fast ease-spring-fast inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
+                                <svg aria-hidden="true" class="justify-self-start shrink-0 text-success" data-icon="code-pull-request" data-weight="regular" role="img">
+                                  <rect>
+                                  <path>
+                                <span class="min-w-0 text-foreground truncate type-caption" data-workspace-hover-card-pr-title="">
+                                  "Polish workspace hover cards"
+                                <span class="shrink-0 text-muted-foreground type-caption" data-workspace-hover-card-pr-status="">
+                                  "Open"
+                                <span class="shrink-0 text-muted-foreground type-caption" data-workspace-hover-card-pr-number="">
+                                  "#73"
               <article class="matrix-cell svelte-<scope>" data-catalog-rendered-state="hover-card github-link">
                 <h3 class="font-medium text-muted-foreground type-caption">
                   "GitHub link card"
