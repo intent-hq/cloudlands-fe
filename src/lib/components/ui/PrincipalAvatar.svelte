@@ -10,6 +10,7 @@
    * https://github.com/intent-hq/cloudlands-fe/pull/2774#discussion_r4068058882).
    */
   import type { HTMLImgAttributes } from 'svelte/elements';
+  import { cn } from '$lib/utils';
 
   interface Props {
     /** Avatar image URL; the initial renders when absent or once the load fails. */
@@ -18,7 +19,7 @@
     label: string;
     /** Rendered size in CSS px. Ignored when `fill` is set. */
     size?: number;
-    /** Classes applied to the outer element (ring, margin, …). */
+    /** Classes merged onto the outer element (ring, margin, fallback text colour, …). */
     class?: string;
     referrerpolicy?: HTMLImgAttributes['referrerpolicy'];
     /**
@@ -59,7 +60,7 @@
     src={avatarUrl}
     alt=""
     aria-hidden="true"
-    class="{fill ? 'h-full w-full object-cover' : 'shrink-0 rounded-full'} {className}"
+    class={cn(fill ? 'h-full w-full object-cover' : 'shrink-0 rounded-full', className)}
     style:width={dimension}
     style:height={dimension}
     loading="lazy"
@@ -71,9 +72,12 @@
   />
 {:else}
   <span
-    class="{fill
-      ? 'grid h-full w-full place-items-center'
-      : 'grid shrink-0 place-items-center rounded-full bg-muted type-caption text-foreground'} {className}"
+    class={cn(
+      fill
+        ? 'grid h-full w-full place-items-center'
+        : 'grid shrink-0 place-items-center rounded-full bg-muted type-caption text-foreground',
+      className,
+    )}
     style:width={dimension}
     style:height={dimension}
     aria-hidden="true"
