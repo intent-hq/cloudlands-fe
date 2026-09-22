@@ -10,6 +10,7 @@ const mocks = vi.hoisted(() => ({
   workspace: null as null | { id: string; title: string },
   guestSession: null as null | { id: string; label: string },
   hidesAgentLifecycleActions: false,
+  sidebarSide: 'left' as 'left' | 'right',
   dispatch: vi.fn(),
   usePanelShortcuts: vi.fn(),
 }));
@@ -88,7 +89,7 @@ vi.mock('$store/renderer/slices/setup-prompt/setup-prompt-selectors', () => ({
 vi.mock('$lib/utils/boot-route-gate', () => ({ isBootRouteLoad: () => false }));
 vi.mock('$store/renderer/slices/ui-layout/ui-layout-selectors', () => ({
   selectPanelVisibilityFlag: { select: () => true },
-  selectSidebarSide: () => readable('left'),
+  selectSidebarSide: () => readable(mocks.sidebarSide),
 }));
 vi.mock('$store/renderer/slices/app-layout/app-layout-selectors', () => ({
   selectPendingCommandPaletteAction: () => readable(null),
@@ -172,6 +173,7 @@ beforeEach(() => {
   mocks.workspace = null;
   mocks.guestSession = null;
   mocks.hidesAgentLifecycleActions = false;
+  mocks.sidebarSide = 'left';
   mocks.dispatch.mockClear();
   mocks.usePanelShortcuts.mockClear();
 });
@@ -311,6 +313,61 @@ describe('WorkspaceSurface terminal shell boundary', () => {
       ).toHaveLength(1);
     },
   );
+
+  it.each(['left', 'right'] as const)(
+    'hands the store-owned %s sidebar side to the workspace layout',
+    (side) => {
+      mocks.sidebarSide = side;
+      mocks.loadState = { status: 'ready', error: null };
+      mocks.workspace = { id: 'workspace-valid', title: 'Valid workspace' };
+      const { container } = renderHost();
+      expect(
+        container.querySelector('[data-workspace-layout]')?.getAttribute('data-sidebar-side'),
+      ).toBe(side);
+    },
+  );
+
+  it('keys the sidebar and panel tree layouts by the domain workspace ID', async () => {
+    mocks.loadState = { status: 'ready', error: null };
+    mocks.workspace = { id: 'workspace-valid', title: 'Valid workspace' };
+    const view = renderHost('workspace-valid');
+    const layoutIds = () =>
+      ['valid-sidebar', 'valid-panel-layout'].map((part) =>
+        view.container
+          .querySelector(`[data-workspace-surface-part="${part}"]`)
+          ?.getAttribute('data-layout-id'),
+      );
+    expect(layoutIds()).toEqual(['workspace-valid', 'workspace-valid']);
+
+    mocks.workspace = { id: 'workspace-other', title: 'Other workspace' };
+    await view.rerender({ workspaceId: 'workspace-other' });
+    expect(layoutIds()).toEqual(['workspace-other', 'workspace-other']);
+  });
+
+  it('scopes the route context to the explicit workspace ID and remounts on switches', async () => {
+    mocks.loadState = { status: 'ready', error: null };
+    mocks.workspace = { id: 'workspace-a', title: 'A' };
+    const view = renderHost('workspace-a');
+    const routeWorkspaceId = () =>
+      view.container
+        .querySelector('[data-workspace-surface-part="valid-panel-layout"]')
+        ?.getAttribute('data-route-workspace-id');
+    expect(routeWorkspaceId()).toBe('workspace-a');
+
+    // The provider freezes its context at mount, so only a remount can move it.
+    mocks.workspace = { id: 'workspace-b', title: 'B' };
+    await view.rerender({ workspaceId: 'workspace-b' });
+    expect(routeWorkspaceId()).toBe('workspace-b');
+  });
+
+  it('exposes a null route context for the onboarding route', () => {
+    const { container } = renderHost('new');
+    expect(
+      container
+        .querySelector('[data-workspace-surface-part="onboarding"]')
+        ?.getAttribute('data-route-workspace-id'),
+    ).toBe('null');
+  });
 
   it('keeps optimistic presentation in the shell without a loaded sidebar', () => {
     mocks.loadState = { status: 'optimistic', error: null };
