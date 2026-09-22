@@ -137,21 +137,33 @@ function readScopeCounts(value: unknown): AgentScopeCounts | undefined {
  * serves it carries `{ running, byParent }` on every response, with `byParent`
  * always an object (possibly empty). Only the documented shape is accepted —
  * a missing `byParent`, a non-numeric `running`, or a malformed entry reads
- * as absent rather than being healed.
+ * as absent rather than being healed. `orphaned` is presence-detected inside
+ * it: carried verbatim when the daemon serves the `{ total, running }` pair,
+ * left absent (never defaulted) on a daemon predating it; a malformed
+ * `orphaned` reads the whole field as absent like any other malformed entry.
  */
 function readDelegatedCounts(value: unknown): AgentDelegatedCounts | undefined {
   if (!value || typeof value !== 'object') return undefined;
-  const { running, byParent } = value as Record<string, unknown>;
+  const { running, byParent, orphaned } = value as Record<string, unknown>;
   if (typeof running !== 'number') return undefined;
   if (!byParent || typeof byParent !== 'object' || Array.isArray(byParent)) return undefined;
   const parents: Record<string, AgentDelegatedParentCounts> = {};
   for (const [parentAgentId, entry] of Object.entries(byParent as Record<string, unknown>)) {
-    if (!entry || typeof entry !== 'object') return undefined;
-    const { total, running: parentRunning } = entry as Record<string, unknown>;
-    if (typeof total !== 'number' || typeof parentRunning !== 'number') return undefined;
-    parents[parentAgentId] = { total, running: parentRunning };
+    const parentCounts = readParentCounts(entry);
+    if (!parentCounts) return undefined;
+    parents[parentAgentId] = parentCounts;
   }
-  return { running, byParent: parents };
+  if (orphaned === undefined) return { running, byParent: parents };
+  const orphanedCounts = readParentCounts(orphaned);
+  if (!orphanedCounts) return undefined;
+  return { running, byParent: parents, orphaned: orphanedCounts };
+}
+
+function readParentCounts(entry: unknown): AgentDelegatedParentCounts | undefined {
+  if (!entry || typeof entry !== 'object') return undefined;
+  const { total, running } = entry as Record<string, unknown>;
+  if (typeof total !== 'number' || typeof running !== 'number') return undefined;
+  return { total, running };
 }
 
 export class LiveAgentsClient implements AgentsClient {
@@ -176,6 +188,10 @@ export class LiveAgentsClient implements AgentsClient {
     // `parentAgentId` narrows a delegated read to one parent's direct children
     // and rides only when supplied (the daemon rejects it on any other scope).
     if (options?.parentAgentId) params.parentAgentId = options.parentAgentId;
+    // `orphanedOnly` narrows a delegated read to the orphaned rows and rides
+    // only when true (the daemon rejects it on any other scope or with
+    // `parentAgentId`; older daemons ignore it).
+    if (options?.orphanedOnly) params.orphanedOnly = true;
     const result = await backendRequest<{
       agents?: unknown[];
       retiredCount?: number;

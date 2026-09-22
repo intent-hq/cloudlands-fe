@@ -405,6 +405,22 @@ function mergeToolUseBlock(prior: ContentBlock, incoming: ContentBlock): Content
 }
 
 /**
+ * Union a `text` block's `media` sidecar (§7.1) across live deltas: a chunk
+ * entity carries only the entries that chunk resolved (never the accumulated
+ * map, in both `deltaEncoding` modes), so the prior block's entries carry
+ * over and the incoming ones are merged on top. The terminal reconcile frame
+ * carries the daemon's full union, which this merge reproduces. Non-text
+ * blocks and blocks with no prior `media` pass through untouched.
+ */
+function unionTextBlockMedia(
+  incoming: ContentBlock,
+  prior: ContentBlock | undefined,
+): ContentBlock {
+  if (incoming.type !== 'text' || !prior?.media) return incoming;
+  return { ...incoming, media: { ...prior.media, ...(incoming.media ?? {}) } };
+}
+
+/**
  * 32-bit FNV-1a hash of the serialized snapshot payload. Duplicate detection
  * only: an exact re-delivery of the same wire push serializes identically, a
  * divergent restart re-emit does not. A spurious mismatch (it is not a
@@ -560,18 +576,20 @@ export class ChatTranscriptReconciler {
    * — mirroring the daemon-side gate on the mapper-owned block types, so a
    * non-text block carrying its own `textDelta` field stays latest-wins.
    * Everything else (full mode, tool blocks, terminal reconcile) is the
-   * FULL block, upserted verbatim.
+   * FULL block, upserted verbatim — except a `text` block's `media` map
+   * (§7.1 image dimension sidecar): a live chunk carries only the entries it
+   * resolved, in BOTH encodings, so the prior block's entries are unioned in.
    */
   private materializeBlock(entity: ChatDeltaEntity, prior: ContentBlock | undefined): ContentBlock {
     const { textDelta, ...block } = entity.block;
-    if (
-      !this.incremental ||
-      typeof textDelta !== 'string' ||
-      (block.type !== 'text' && block.type !== 'thinking')
-    ) {
-      return entity.block;
-    }
-    return { ...block, text: (prior?.text ?? '') + textDelta };
+    const isFragment =
+      this.incremental &&
+      typeof textDelta === 'string' &&
+      (block.type === 'text' || block.type === 'thinking');
+    const materialized = isFragment
+      ? { ...block, text: (prior?.text ?? '') + textDelta }
+      : entity.block;
+    return unionTextBlockMedia(materialized, prior);
   }
 
   /** Upsert one delta entity's block into its owning message. */

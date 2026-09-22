@@ -554,6 +554,14 @@ export interface AgentListOptions {
    * (§5.5; the daemon rejects it with any other scope).
    */
   parentAgentId?: string;
+  /**
+   * Narrows a `scope: "delegated"` read to the ORPHANED delegated rows —
+   * those whose parent is no longer a non-retired session of the workspace
+   * (§5.5; the daemon rejects it with any other scope or alongside
+   * `parentAgentId`). Older daemons ignore it, so callers gate on
+   * `delegatedCounts.orphaned` presence.
+   */
+  orphanedOnly?: boolean;
 }
 
 export interface AgentListResult {

@@ -28,9 +28,11 @@
     minZoom?: number;
     /** Upper zoom bound. */
     maxZoom?: number;
+    /** Reports scale changes after the content transform updates. */
+    onScaleChange?: (scale: number) => void;
   }
 
-  let { children, minZoom = 0.25, maxZoom = 8 }: Props = $props();
+  let { children, minZoom = 0.25, maxZoom = 8, onScaleChange }: Props = $props();
 
   const KEYBOARD_ZOOM_FACTOR = 1.25;
   const WHEEL_ZOOM_INTENSITY = 0.0015;
@@ -43,6 +45,10 @@
   let dragging = $state(false);
 
   let viewportElement: HTMLDivElement | null = $state(null);
+
+  $effect(() => {
+    onScaleChange?.(scale);
+  });
 
   let dragPointerId: number | null = null;
   let lastPointerX = 0;
