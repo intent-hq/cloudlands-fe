@@ -302,8 +302,16 @@ function mockBackendMethodResult(method: string, params?: Record<string, unknown
       hasUntrackedFiles: false,
     };
   }
-  // `event.query` (§5.10) returns a bare newest→oldest array.
-  if (method === 'event.query') return [];
+  // `event.query` (§5.10) returns the paginated `{ items, nextToken }`
+  // envelope when pagination is engaged (`paginate: true` or a `nextToken`,
+  // as the lifecycle saga's `events.queryPage` sends) and the legacy bare
+  // newest→oldest array otherwise.
+  if (method === 'event.query') {
+    if (params?.paginate === true || typeof params?.nextToken === 'string') {
+      return { items: [], nextToken: null };
+    }
+    return [];
+  }
   // The daemon-events-bridge firehose issues `events.subscribe` over
   // `backend:request` (not the `backend:subscribe` channel).
   if (method === 'events.subscribe') {
@@ -363,9 +371,12 @@ function mockBackendInvoke(channel: string, data?: any): any {
         transport: { mode: 'external-ws', target: sanitizeWsUrlForDisplay(wsUrl) },
       };
     }
-    // Bare status shape (no envelope), mirroring backend.ipc.ts. `disconnected`
-    // keeps connection-gated boot flows (e.g. interrupted-agents) inert.
-    return { status: 'disconnected', transport: 'browser-mock' };
+    // Mock-only preview (no daemon URL): bare status shape (no envelope),
+    // mirroring backend.ipc.ts. The mock answers every boot read itself, so
+    // it reports `connected` — a `disconnected` snapshot would drive the
+    // daemon-health slice to 'down' and raise the daemon-loss overlay over a
+    // renderer that has nothing to reconnect to (intent-hq/intent#5582).
+    return { status: 'connected', transport: 'browser-mock' };
   }
   return undefined;
 }
