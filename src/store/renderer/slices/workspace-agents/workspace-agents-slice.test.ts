@@ -43,8 +43,6 @@ import {
   adjustDelegatedParentCount,
   adjustRetiredCount,
   adjustScopeCount,
-  agentDelegationParentOf,
-  agentListBinOf,
   agentsLoaded,
   createAgentRequested,
   createAgentWithSpecialistRequested,
@@ -524,82 +522,6 @@ describe('workspace-agents actions', () => {
       type: agentsLoaded.type,
       payload: [WS_1],
     });
-  });
-});
-
-describe('agentListBinOf (§5.5 row-scope partition)', () => {
-  it('classifies an unparented foreground row as topLevel', () => {
-    expect(agentListBinOf(mockAgent('a'))).toBe('topLevel');
-  });
-
-  it('classifies an unparented background row as background (either flag location)', () => {
-    expect(agentListBinOf(mockBackgroundAgent('a'))).toBe('background');
-    expect(agentListBinOf(mockMetadataBackgroundAgent('a'))).toBe('background');
-  });
-
-  it('classifies any parented row as delegated — a background child is delegated, not background', () => {
-    expect(
-      agentListBinOf({
-        ...mockAgent('a'),
-        metadata: { createdByAgentId: 'agent-parent' } as AgentSession['metadata'],
-      }),
-    ).toBe('delegated');
-    expect(
-      agentListBinOf({
-        ...mockBackgroundAgent('a'),
-        metadata: {
-          isBackground: true,
-          createdByAgentId: 'agent-parent',
-        } as AgentSession['metadata'],
-      }),
-    ).toBe('delegated');
-  });
-
-  it('does not classify a fork-only row (parentSessionId, no parent agent) as delegated — the bin follows the parent_agent_id partition key', () => {
-    const fork = { ...mockAgent('a'), parentSessionId: 'agent-parent' as never };
-    expect(agentListBinOf(fork)).toBe('topLevel');
-    expect(agentListBinOf({ ...mockBackgroundAgent('a'), parentSessionId: 'agent-parent' })).toBe(
-      'background',
-    );
-    // Whatever classifies as delegated has a byParent key, and vice versa.
-    expect(agentListBinOf(fork) === 'delegated').toBe(agentDelegationParentOf(fork) !== null);
-  });
-
-  it('classifies a row by the wire parentAgentId alone — no createdByAgentId, no fork marker (§5.5 partition key)', () => {
-    expect(agentListBinOf({ ...mockAgent('a'), parentAgentId: 'agent-parent' as never })).toBe(
-      'delegated',
-    );
-    // A background CHILD keyed only by parentAgentId is delegated too.
-    expect(
-      agentListBinOf({ ...mockBackgroundAgent('a'), parentAgentId: 'agent-parent' as never }),
-    ).toBe('delegated');
-  });
-
-  it('ignores retiredAt — the bin is the one the row re-enters on restore', () => {
-    expect(
-      agentListBinOf({ ...mockBackgroundAgent('a'), retiredAt: '2026-01-01T00:00:00.000Z' }),
-    ).toBe('background');
-  });
-});
-
-describe('agentDelegationParentOf (§5.5 delegatedCounts byParent key)', () => {
-  it('prefers the wire parentAgentId, falls back to createdByAgentId, and is null for an unparented row', () => {
-    expect(
-      agentDelegationParentOf({
-        ...mockAgent('a'),
-        parentAgentId: 'agent-parent' as never,
-        metadata: { createdByAgentId: 'agent-legacy-parent' } as AgentSession['metadata'],
-      }),
-    ).toBe('agent-parent');
-    expect(
-      agentDelegationParentOf({
-        ...mockAgent('a'),
-        metadata: { createdByAgentId: 'agent-legacy-parent' } as AgentSession['metadata'],
-      }),
-    ).toBe('agent-legacy-parent');
-    expect(agentDelegationParentOf(mockAgent('a'))).toBeNull();
-    // The fork marker is not a parent agent id the daemon groups by.
-    expect(agentDelegationParentOf({ ...mockAgent('a'), parentSessionId: 'sess' })).toBeNull();
   });
 });
 

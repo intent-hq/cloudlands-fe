@@ -16,7 +16,6 @@
   import {
     filterWorkspaceAgentRows,
     getFlatWorkspaceAgentRows,
-    isBackgroundAgentSession as isBackgroundAgent,
     isCoordinatorAgentSession as isCoordinator,
     isRetiredAgentSession as isRetiredAgent,
     shouldVirtualizeWorkspaceAgentRows,
@@ -24,7 +23,10 @@
     WORKSPACE_AGENTS_VIRTUALIZATION_THRESHOLD,
   } from './workspace-agents-list-utils';
   import { m } from '$shared/paraglide/messages.js';
-  import { agentListBinOf } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
+  import {
+    classifyAgentScope,
+    isBackgroundAgentSession as isBackgroundAgent,
+  } from '$shared/utils/agent-scope';
 
   interface Props {
     agents?: AgentSession[];
@@ -150,13 +152,13 @@
   // delegated group renders collapsed from its count and expanding it loads
   // only that parent's children (`scope: "delegated"` + `parentAgentId`).
   const hasDelegatedCounts = $derived(hasLazyBins && delegatedCounts !== null);
-  // Bin membership follows the wire parent (`agentListBinOf`, the daemon's
+  // Bin membership follows the wire parent (`classifyAgentScope`, the daemon's
   // §5.5 row-scope rule), never the rendered tree depth: a delegated row
   // whose parent is not loaded (a collapsed Background parent, or a retired
   // one) flattens to depth 0 in the tree but still belongs to the Delegated
   // bin. Without lazy bins there is no Delegated bin, so such an orphan keeps
   // rendering as a top-level row as before.
-  const isDelegatedAgent = (agent: AgentSession) => agentListBinOf(agent) === 'delegated';
+  const isDelegatedAgent = (agent: AgentSession) => classifyAgentScope(agent) === 'delegated';
   const isOrphanDelegatedAgent = (agent: AgentSession) => hasLazyBins && isDelegatedAgent(agent);
   const topLevelForegroundAgents = $derived(
     topLevelAgents.filter((agent) => !isBackgroundAgent(agent) && !isOrphanDelegatedAgent(agent)),
