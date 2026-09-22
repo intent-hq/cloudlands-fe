@@ -1388,13 +1388,11 @@ describe('alignment of link syntax the lexer does not account for', () => {
   // A note that opens with `<` the renderer reads as HTML, not markdown: the
   // tag — here an autolink at the start of the line — is dropped, and every
   // other character is shown as written on one line, the line breaks
-  // collapsed. Below the cap the tag is masked and every run is exact. Past
-  // it the tag's line is sealed, and no run of the one plain-text line
-  // anchors past the sealed text it opens with (a plain-text line anchors
-  // only on the markdown line it is the text of), so the note is one gap
-  // that holds a sealed line: nothing maps into the URL, and the URL maps to
-  // the end of the plain text before its line — the start, its line being
-  // the first — never into the paragraph.
+  // collapsed. Its tags are masked by a scan, not the lexer, so the cap does
+  // not apply: at any length nothing maps into the URL and every run is
+  // exact. (Sealing the tag's line past the cap instead left the one
+  // plain-text line the text of no markdown line, and the whole note one gap
+  // holding a sealed line — every caret in it at one end of the note.)
   it.each<[string, string, boolean]>([
     ['with no filler', '', false],
     ['with no filler', '', true],
@@ -1402,9 +1400,10 @@ describe('alignment of link syntax the lexer does not account for', () => {
     ['below the cap', `\n\n${'q'.repeat(127 * 1024)}`, true],
     ['past the cap', `\n\n${'q'.repeat(129 * 1024)}`, false],
     ['past the cap', `\n\n${'q'.repeat(129 * 1024)}`, true],
+    ['far past the cap', `\n\n${'q'.repeat(1024 * 1024)}`, true],
   ])(
     'never maps into the autolink a note the renderer reads as HTML drops, %s, projected by %s',
-    async (where, filler, production) => {
+    async (_where, filler, production) => {
       const spelled = '**se**le**ct**io**n** **ed**it**or**';
       const markdown = `<https://selection/editor> sync\n\n${spelled}${filler}`;
       const plain = await projectWithEditor(markdown, production);
@@ -1419,7 +1418,6 @@ describe('alignment of link syntax the lexer does not account for', () => {
           mapped <= 0 || mapped >= paragraphEnd,
           `bToA(${offset}) = ${mapped} inside the URL lands in the text`,
         ).toBe(true);
-        if (where === 'past the cap') expect(mapped, `bToA(${offset})`).toBe(0);
       }
       for (let offset = 0; offset <= plain.length; offset += 1) {
         const mapped = map.aToB(offset);
@@ -1428,13 +1426,38 @@ describe('alignment of link syntax the lexer does not account for', () => {
           `aToB(${offset}) = ${mapped} lands inside the URL at ${url}`,
         ).toBe(true);
       }
-      if (where !== 'past the cap') {
-        expectExactRun(plain, markdown, map, 'sync', 0, 0);
-        expectExactRun(plain, markdown, map, spelled, 0, 0);
-        if (filler) expectExactRun(plain, markdown, map, 'qqqqqqqq', 0, 0);
-      }
+      expect([map.aToB(1), map.bToA(28)]).toEqual([28, 1]);
+      expectExactRun(plain, markdown, map, 'sync', 0, 0);
+      expectExactRun(plain, markdown, map, spelled, 0, 0);
+      if (filler) expectExactRun(plain, markdown, map, 'qqqqqqqq', 0, 0);
     },
     60_000,
+  );
+
+  // The tag scan of a note the renderer reads as HTML is linear whatever the
+  // note holds: a tag never closed, or a comment never closed, is looked for
+  // once, not once per opener. (The regular expression it replaces took 2.7 s
+  // on 128 KB of `<a` and 165 s on 1 MB.)
+  it.each<[string, string, string]>([
+    ['tags never closed', '<a'.repeat(512 * 1024), ''],
+    ['comments never closed', '<!--'.repeat(256 * 1024), ''],
+    [
+      'tags closed',
+      '<p>sync <b>edit</b> selection</p>\n'.repeat(32 * 1024),
+      'sync edit selection\n'.repeat(32 * 1024).trimEnd(),
+    ],
+  ])(
+    'masks a 1 MB note the renderer reads as HTML with %s in linear time',
+    (_case, markdown, plain) => {
+      const started = performance.now();
+      const map = createBidirectionalOffsetMapper(plain, markdown);
+      const elapsed = performance.now() - started;
+      expect(elapsed).toBeLessThan(400);
+      if (plain !== '') {
+        expect(map.aToB(1)).toBe(markdown.indexOf('sync') + 1);
+        expect(map.bToA(markdown.indexOf('edit') + 2)).toBe(plain.indexOf('edit') + 2);
+      }
+    },
   );
 
   // The control: prefixed by a word the autolink is inline, shown as written,

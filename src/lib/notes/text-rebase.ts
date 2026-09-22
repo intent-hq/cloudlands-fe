@@ -533,8 +533,6 @@ const HIDEABLE_ALL = /\]\(|\]\[|\]:/g;
  * `<sub>`, `<sup>`; every other tag is escaped and shown as written).
  */
 const HIDDEN_HTML = /<!--(?!anchor:)[\s\S]*?-->|<br[ \t]*\/?>|<\/?su[bp]>/gi;
-/** Every tag and comment: what an HTML parser consumes of a note it reads as HTML. */
-const HTML_TAG = /<!--[\s\S]*?-->|<\/?[a-zA-Z][^>]*>/g;
 /**
  * A line the renderer may read as HTML — one whose first character is `<`
  * before anything but whitespace or a comment anchor — or that holds a
@@ -548,7 +546,9 @@ const HTML_LINE = /^[ \t]*<(?![ \t\r\n]|!--anchor:)|<!--(?!anchor:)/gm;
  * source on every token): 16k one-link paragraphs of 128 KB lex in ~170 ms,
  * one 128 KB paragraph of 18k links in ~60 ms, and a 1 MB note of dense
  * links takes over half a second with the math tokenizers or without. A
- * longer source is not masked at all; see `maskHidden` for what holds then.
+ * longer source is not masked at all — unless the renderer reads it as HTML,
+ * whose mask is a linear scan (`maskHtmlTags`), not the lexer; see
+ * `maskHidden` for what holds then.
  */
 const MAX_LEXED_LENGTH = 128 * 1024;
 /** A comment anchor; the editor renders it where `normalizeAnchorPositions` moves it. */
@@ -616,7 +616,7 @@ let lastMask: { markdown: string; mask: Mask } | undefined;
  * The HTML the renderer hides is masked the same way. A note whose first
  * character is `<` (other than a comment anchor) the renderer does not parse
  * as markdown at all but as HTML, so every tag and comment in it is hidden
- * (`HTML_TAG`) and the text between them shown; in any other note a tag is
+ * (`maskHtmlTags`) and the text between them shown; in any other note a tag is
  * escaped and shown as written, except a comment (dropped) and the `<br>`,
  * `<sub>`, `<sup>` it renders (`HIDDEN_HTML`), which are read off the
  * lexer's `html` tokens.
@@ -627,9 +627,10 @@ let lastMask: { markdown: string; mask: Mask } | undefined;
  * back to the source by the count of `\r\n` pairs shortened before it
  * (`sourceShifts`); a hidden run never holds a line break, so one count
  * places both of its ends. The lexer runs up to `MAX_LEXED_LENGTH`; a longer
- * source is not lexed and nothing in it
- * is masked, so every line of it that holds link syntax is unanchorable, and
- * so is a line the renderer may read as HTML (`HTML_LINE`): each reaches the
+ * source is not lexed and nothing in it is masked (a note the renderer reads
+ * as HTML excepted: its tags are found by a scan, whatever its length), so
+ * every line of it that holds link syntax is unanchorable, and so is a line
+ * the renderer may read as HTML (`HTML_LINE`): each reaches the
  * diff alone, bounded by its own line (`refineByLine` pairs the lines of
  * such a region by their text and never diffs a plain-text line against a
  * sealed line it is not the text of), so a caret on a line without link
@@ -655,8 +656,8 @@ function maskHidden(markdown: string): Mask {
 
 /** `markdown` masked, or `undefined` when its hidden text could not be accounted for. */
 function computeHiddenMask(markdown: string): string | undefined {
+  if (isHtmlNote(markdown)) return maskHtmlTags(markdown);
   if (markdown.length > MAX_LEXED_LENGTH) return undefined;
-  if (isHtmlNote(markdown)) return maskMatches(markdown, HTML_TAG);
   HIDDEN_HTML.lastIndex = 0;
   if (!HIDEABLE.test(markdown) && !HIDDEN_HTML.test(markdown)) return markdown;
   let source = markdown;
@@ -729,10 +730,44 @@ function isHtmlNote(markdown: string): boolean {
   );
 }
 
-/** `text` with every match of `pattern` replaced by U+0000, code unit for code unit. */
-function maskMatches(text: string, pattern: RegExp): string {
-  return text.replace(pattern, (match) => '\u0000'.repeat(match.length));
+/**
+ * `markdown` with every tag and comment — what an HTML parser consumes of a
+ * note it reads as HTML — replaced by U+0000, code unit for code unit: a
+ * comment `<!--` … `-->`, or `<`, an optional `/`, a letter and everything
+ * up to the next `>`. One scan, linear whatever the note holds: once no
+ * `-->` (or no `>`) lies ahead, no comment (or tag) opened later closes
+ * either, so the search for one is not repeated.
+ */
+function maskHtmlTags(markdown: string): string {
+  let out = '';
+  let pos = 0;
+  let commentsClose = true;
+  let open = markdown.indexOf('<');
+  while (open !== -1) {
+    let end = -1;
+    if (commentsClose && markdown.startsWith('<!--', open)) {
+      const close = markdown.indexOf('-->', open + 4);
+      if (close === -1) commentsClose = false;
+      else end = close + 3;
+    }
+    if (end === -1 && TAG_NAME.test(markdown.slice(open + 1, open + 3))) {
+      const close = markdown.indexOf('>', open + 1);
+      if (close === -1) break;
+      end = close + 1;
+    }
+    if (end === -1) {
+      open = markdown.indexOf('<', open + 1);
+      continue;
+    }
+    out += markdown.slice(pos, open) + '\u0000'.repeat(end - open);
+    pos = end;
+    open = markdown.indexOf('<', end);
+  }
+  return out + markdown.slice(pos);
 }
+
+/** What follows the `<` of a tag: an optional `/` and a letter. */
+const TAG_NAME = /^\/?[a-zA-Z]/;
 
 /**
  * The lines of `masked` that hold an opener the mask did not account for
