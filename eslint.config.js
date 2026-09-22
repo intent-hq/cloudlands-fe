@@ -377,6 +377,26 @@ const rendererBrowserSafetyRestrictedImportsOptions = {
   ],
 };
 
+// The shared CT-module restriction (see the `no-restricted-imports` block
+// below); also repeated by per-file `no-restricted-imports` overrides, since
+// flat-config rule entries replace rather than merge.
+const ctSharedModuleRestrictedImportPath = {
+  name: '@playwright/experimental-ct-svelte',
+  allowTypeImports: true,
+  message:
+    "Only type imports may come from '@playwright/experimental-ct-svelte'. Import `test` / `expect` (and any other runtime export) from the shared CT module (src/test/ct-test.ts) so the browser-context isolation applies to this spec.",
+};
+
+// Every import-source spelling of one `src/<modulePath>` module for a
+// `no-restricted-imports` `patterns` group: the `$alias` form plus any relative
+// or `src/`-rooted form (`**/` also matches leading `../` segments), each bare
+// and with a `.ts` / `.js` extension. `aliasRoot` is the `$alias` whose target
+// directory is the first segment of `modulePath` (see svelte.config.js).
+function modelPickerGuardedModuleSpellings(aliasRoot, modulePath) {
+  const aliasForm = modulePath.replace(/^[^/]+/, aliasRoot);
+  return [aliasForm, `**/${modulePath}`].flatMap((base) => [base, `${base}.ts`, `${base}.js`]);
+}
+
 export default [
   // .gitignore is the source of truth for scratch/sandbox exclusions (.dev/, .wt-*/); see vitest.config.ts.
   includeIgnoreFile(fileURLToPath(new URL('.gitignore', import.meta.url))),
@@ -607,12 +627,56 @@ export default [
       'no-restricted-imports': [
         'error',
         {
-          paths: [
+          paths: [ctSharedModuleRestrictedImportPath],
+        },
+      ],
+    },
+  },
+  // ModelPicker reaches the agent-session mutation APIs (`agent.setModel`, the
+  // session `model` write, the reasoning-effort writers) only through the
+  // lock-checking funnel in agent-model-mutator.ts, so a guest-locked picker
+  // cannot issue a write by construction. Four heads / three fix rounds were
+  // needed to find every per-boundary re-check in cloudlands-fe#2735; this
+  // keeps a new dispatch path from bypassing the mutator. The shared CT-module
+  // path is repeated so this override does not drop that restriction.
+  // `no-restricted-imports` compares source strings and never resolves modules,
+  // so `paths` would only ban the exact alias spelling: the gitignore-style
+  // `patterns` below also cover the relative form (`../../../../features/...`)
+  // and the `.ts` / `.js` extension spellings of each protected module
+  // (cloudlands-fe#2763 review). Each group bans the whole module rather than
+  // named exports: an `importNames` list still lets a namespace import
+  // (`import * as m`) reach the same binding as `m.agentClient`. ModelPicker
+  // imports nothing else from these modules, so nothing needs allowImportNames.
+  // src/lib/eslint/__tests__/model-picker-import-restriction.test.ts asserts
+  // the matrix against this effective config.
+  {
+    files: ['src/lib/components/chat/input/ModelPicker.svelte'],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        {
+          paths: [ctSharedModuleRestrictedImportPath],
+          patterns: [
             {
-              name: '@playwright/experimental-ct-svelte',
-              allowTypeImports: true,
+              group: modelPickerGuardedModuleSpellings('$features', 'features/agent/agent.client'),
               message:
-                "Only type imports may come from '@playwright/experimental-ct-svelte'. Import `test` / `expect` (and any other runtime export) from the shared CT module (src/test/ct-test.ts) so the browser-context isolation applies to this spec.",
+                'ModelPicker must not call agentClient.setModel directly. Route the write through the lock-checking mutator in src/lib/components/chat/input/agent-model-mutator.ts (createAgentModelMutator).',
+            },
+            {
+              group: modelPickerGuardedModuleSpellings(
+                '$features',
+                'features/agent/reasoning-effort',
+              ),
+              message:
+                'ModelPicker must not call applyReasoningEffort / reconcileAgentReasoningEffort directly. Route the write through the lock-checking mutator in src/lib/components/chat/input/agent-model-mutator.ts (createAgentModelMutator).',
+            },
+            {
+              group: modelPickerGuardedModuleSpellings(
+                '$store',
+                'store/renderer/slices/agent-session/agent-session-slice',
+              ),
+              message:
+                'ModelPicker must not dispatch the agent-session updateSession action directly. Route the write through the lock-checking mutator in src/lib/components/chat/input/agent-model-mutator.ts (createAgentModelMutator).',
             },
           ],
         },

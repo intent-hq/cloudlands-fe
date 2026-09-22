@@ -319,8 +319,15 @@ describe('WorkspaceProgressCard presence row', () => {
       ),
       myRole: 'collaborator',
     });
+    const row = presenceRow()!;
     const avatar = (principalId: string) =>
-      presenceRow()!.querySelector<HTMLElement>(`[data-presence-avatar="${principalId}"]`)!;
+      row.querySelector<HTMLElement>(`[data-presence-avatar="${principalId}"]`)!;
+    // Owner first (even offline), then the online member, then the offline one.
+    expect(
+      Array.from(row.querySelectorAll('[data-presence-avatar]')).map((a) =>
+        a.getAttribute('data-presence-avatar'),
+      ),
+    ).toEqual(['me', 'bob', 'cy']);
     expect(avatar('me').getAttribute('data-presence-ring')).toBe('owner');
     expect(avatar('me').hasAttribute('data-presence-offline')).toBe(true);
     expectGreyscaleBelowRing(avatar('me'));
@@ -405,10 +412,13 @@ describe('WorkspaceProgressCard presence row', () => {
     );
   });
 
-  it('leaves such a person inert for a non-owner', async () => {
+  it('leaves such a person inert for a non-owner, without dimming the avatar', async () => {
     await renderProgressCard({ myRole: 'collaborator' });
     const cy = personButton('cy');
     expect(cy.getAttribute('aria-disabled')).toBe('true');
+    // The button base variant dims aria-disabled buttons; the avatar stays solid.
+    expect(cy.classList.contains('aria-disabled:opacity-100')).toBe(true);
+    expect(cy.classList.contains('aria-disabled:opacity-50')).toBe(false);
     await fireEvent.click(cy);
     expect(mocks.dispatch).not.toHaveBeenCalledWith(
       expect.objectContaining({ type: openShareDialog.type }),
