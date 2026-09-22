@@ -575,7 +575,10 @@
   {/if}
 
   {#if device.isLocal}
-    <div class="px-4 pb-4 sm:px-5">
+    <div
+      class="px-4 pb-4 sm:px-5"
+      hidden={$currentConnectionId$ !== device.id && panelMode !== 'edit'}
+    >
       <WebSocketApiSettings expanded={panelMode === 'edit'} onEnabled={() => onOpenPanel('edit')}>
         <SettingsFieldRow id="local-device-icon" label={m.settings_devices_icon_label()}>
           {#snippet control()}
