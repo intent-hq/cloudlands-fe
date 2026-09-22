@@ -197,23 +197,40 @@
   );
   const orphanDelegatedAgents = $derived(topLevelAgents.filter(isOrphanDelegatedAgent));
   const hasCoordinator = $derived(topLevelForegroundAgents.some(isCoordinator));
+  // Same count rule as the retired bin below: the daemon-served count until the
+  // lazy read hydrates the rows, loaded rows authoritative after that.
+  const displayedBackgroundCount = $derived(
+    !hasLazyBins || backgroundAgentsLoaded
+      ? standaloneBackgroundAgents.length
+      : Math.max(scopeCounts?.background ?? 0, standaloneBackgroundAgents.length),
+  );
+  const hasBackgroundBin = $derived(displayedBackgroundCount > 0);
   // A standalone background row renders only while its bin is expanded, a
   // search is active, or it is running (see the Background section below).
   const isBackgroundRowRendered = (agent: AgentSession) =>
     hasActiveSearch || showBackgroundAgents || isAgentRunning(agent.id);
-  // The whole-bin read covers the orphans too, so either flag hydrates them.
-  const orphanedRowsLoaded = $derived(delegatedAgentsLoaded || orphanedDelegatedAgentsLoaded);
+  // Every live delegated parent is in the cache only once the whole delegated
+  // bin AND the Background bin (when there is one) are loaded: a search starts
+  // both reads independently, so the delegated read landing first — or its
+  // Background counterpart failing — leaves a live background parent unloaded
+  // and its cached children parentless in the tree.
+  const delegatedParentsCovered = $derived(
+    delegatedAgentsLoaded && (backgroundAgentsLoaded || !hasBackgroundBin),
+  );
+  // The whole-bin read covers the orphans too — once the parents it needs
+  // to tell them apart are loaded as well.
+  const orphanedRowsLoaded = $derived(delegatedParentsCovered || orphanedDelegatedAgentsLoaded);
   // Rows the orphan-only bin lists. Orphan-hood is daemon-owned (§5.5): a
   // delegated row without a parent in the tree is not necessarily an orphan —
   // a lifecycle event can hydrate a child before its live parent, which sits
   // in a collapsed group or bin — so the bin lists the rows the orphan-only
   // read served, never rows inferred from the partial cache, and nothing
-  // before that read lands. Once the whole bin is loaded every delegated
-  // parent is loaded too (the search that issues that read loads the
-  // Background bin as well), so a parentless delegated row is the daemon's
-  // rule itself and the fresher whole-bin rows win.
+  // before that read lands. Once every delegated parent is loaded, a
+  // parentless delegated row is the daemon's rule itself and the fresher
+  // whole-bin rows win; until then the served membership stays authoritative
+  // even after the whole-bin read.
   const orphanedSectionAgents = $derived(
-    delegatedAgentsLoaded
+    delegatedParentsCovered
       ? orphanDelegatedAgents
       : orphanedDelegatedAgentsLoaded
         ? orphanDelegatedAgents.filter((agent) => orphanedDelegatedAgentIds[agent.id] === true)
@@ -297,14 +314,8 @@
   const displayedDelegatedCount = $derived(
     !hasOrphanedCounts ? wholeBinDelegatedCount : (delegatedCounts?.orphaned?.total ?? 0),
   );
-  const displayedBackgroundCount = $derived(
-    !hasLazyBins || backgroundAgentsLoaded
-      ? standaloneBackgroundAgents.length
-      : Math.max(scopeCounts?.background ?? 0, standaloneBackgroundAgents.length),
-  );
   const hasDelegatedRows = $derived(wholeBinDelegatedCount > 0);
   const hasDelegatedBin = $derived(displayedDelegatedCount > 0);
-  const hasBackgroundBin = $derived(displayedBackgroundCount > 0);
   // Without lazy bins every delegated row is already in the tree and nests under
   // its parent as before; with them the tree hides delegated rows until the
   // workspace-level bin is expanded (a search covers every bin).
@@ -358,8 +369,9 @@
   }
 
   // Orphan-only read (`scope: "delegated"` + `orphanedOnly: true`): the bin's
-  // load in orphan-only mode. Never while the whole-bin read, which covers the
-  // orphans too, is in flight or has landed.
+  // load in orphan-only mode. Never while the whole-bin read is in flight, nor
+  // once it has landed with every delegated parent loaded; a whole-bin read
+  // whose Background counterpart is missing still needs the daemon's answer.
   function requestOrphanedDelegatedLoad() {
     if (!hasOrphanedCounts || !hasDelegatedBin || orphanedRowsLoaded) return;
     if (loadingDelegated || loadingOrphanedDelegated) return;

@@ -2718,7 +2718,7 @@ describe('lifecycleReadSaga', () => {
     await stop(run.task);
   });
 
-  it('skips the orphan-only read behind the presence gate, once loaded, and once the whole bin is loaded', async () => {
+  it('skips the orphan-only read behind the presence gate, once loaded, and once the whole bin AND the Background bin are loaded', async () => {
     const current = state();
     const run = start(current);
 
@@ -2750,7 +2750,26 @@ describe('lifecycleReadSaga', () => {
     await settle();
     expect(mocks.agents.list).not.toHaveBeenCalled();
 
-    // The whole bin already loaded covers the orphans too.
+    // The whole bin already loaded covers the orphans too — once the
+    // Background bin is loaded as well, so every live parent is in the cache.
+    current.workspaceAgents.byWorkspaceId = {
+      [WS]: {
+        scopeCounts: COUNTS,
+        delegatedCounts: DELEGATED_WITH_ORPHANS,
+        delegatedAgentsLoaded: true,
+        backgroundAgentsLoaded: true,
+      },
+    } as never;
+    run.channel.put(fetchOrphanedDelegatedAgentsRequested(WS));
+    await settle();
+    expect(mocks.agents.list).not.toHaveBeenCalled();
+    expect(run.actions).toEqual([]);
+
+    // The whole bin alone does not: its rows cannot tell an orphan from the
+    // child of an unloaded live background parent (a search's Background
+    // read that has not landed, or failed), so the daemon is still asked.
+    const orphan = agent('agent-orphan', { parentAgentId: ORPHAN_PARENT as never });
+    mocks.agents.list.mockResolvedValue([orphan]);
     current.workspaceAgents.byWorkspaceId = {
       [WS]: {
         scopeCounts: COUNTS,
@@ -2760,8 +2779,15 @@ describe('lifecycleReadSaga', () => {
     } as never;
     run.channel.put(fetchOrphanedDelegatedAgentsRequested(WS));
     await settle();
-    expect(mocks.agents.list).not.toHaveBeenCalled();
-    expect(run.actions).toEqual([]);
+    expect(mocks.agents.list.mock.calls).toEqual([[WS, ORPHANED_ONLY]]);
+    expect(run.actions).toContainEqual({
+      type: 'workspaceAgents/setOrphanedDelegatedAgentIds',
+      payload: [WS, ['agent-orphan']],
+    });
+    expect(run.actions).toContainEqual({
+      type: 'workspaceAgents/setOrphanedDelegatedAgentsLoaded',
+      payload: [WS, true],
+    });
     await stop(run.task);
   });
 
@@ -2798,7 +2824,7 @@ describe('lifecycleReadSaga', () => {
     await stop(run.task);
   });
 
-  it('rehydrates the orphan subset alongside the top-level read when it was loaded and the whole bin is not', async () => {
+  it('rehydrates the orphan subset alongside the top-level read when it was loaded and the whole bin and Background bin are not both loaded', async () => {
     const top = agent(PARENT);
     const orphan = agent('agent-orphan', { parentAgentId: ORPHAN_PARENT as never });
     const current = state();
@@ -2841,8 +2867,15 @@ describe('lifecycleReadSaga', () => {
       payload: [WS, ['agent-orphan']],
     });
 
-    // Once the whole bin is loaded, the orphan subset is covered by that read.
+    // The whole bin loaded without the Background bin still re-reads the
+    // orphan subset: the whole-bin rows cannot tell an orphan from the child
+    // of an unloaded live background parent, so the membership re-baselines.
     mocks.agents.list.mockClear();
+    const child = agent('agent-child', { parentAgentId: PARENT as never });
+    mocks.agents.list.mockImplementation(
+      async (_ws: string, params?: { orphanedOnly?: boolean }) =>
+        params?.orphanedOnly ? [orphan] : [orphan, child],
+    );
     current.workspaceAgents.byWorkspaceId = {
       [WS]: {
         scopeCounts: COUNTS,
@@ -2852,9 +2885,41 @@ describe('lifecycleReadSaga', () => {
         orphanedDelegatedAgentsLoaded: true,
       },
     } as never;
+    run.actions.length = 0;
     run.channel.put(hydrateAgentsRequested(WS));
     await settle();
-    expect(mocks.agents.list.mock.calls).toEqual([[WS, { scope: 'delegated' }]]);
+    expect(mocks.agents.list.mock.calls).toEqual([
+      [WS, { scope: 'delegated' }],
+      [WS, ORPHANED_ONLY],
+    ]);
+    expect(run.actions).toContainEqual({
+      type: 'workspaceAgents/setOrphanedDelegatedAgentIds',
+      payload: [WS, ['agent-orphan']],
+    });
+    expect(run.actions).not.toContainEqual(
+      expect.objectContaining({ type: 'workspaceAgents/setOrphanedDelegatedAgentsLoaded' }),
+    );
+
+    // Once the whole bin AND the Background bin are loaded, every live parent
+    // is in the cache and the orphan subset is covered by those reads.
+    mocks.agents.list.mockClear();
+    mocks.agents.list.mockResolvedValue([]);
+    current.workspaceAgents.byWorkspaceId = {
+      [WS]: {
+        scopeCounts: COUNTS,
+        delegatedCounts: DELEGATED_WITH_ORPHANS,
+        loadedDelegatedParentIds: {},
+        delegatedAgentsLoaded: true,
+        backgroundAgentsLoaded: true,
+        orphanedDelegatedAgentsLoaded: true,
+      },
+    } as never;
+    run.channel.put(hydrateAgentsRequested(WS));
+    await settle();
+    expect(mocks.agents.list.mock.calls).toEqual([
+      [WS, { scope: 'delegated' }],
+      [WS, { scope: 'background' }],
+    ]);
     await stop(run.task);
   });
 

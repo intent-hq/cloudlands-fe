@@ -1190,6 +1190,118 @@ describe('WorkspaceAgentsList single-line rows', () => {
     expect(onLoadDelegated).not.toHaveBeenCalled();
   });
 
+  it('keeps the served orphan membership authoritative after a search’s whole-bin read lands before (or without) the Background read — a live background parent’s child never enters the bin', async () => {
+    const coordinator = makeAgent('coordinator', { name: 'Agent coordinator' });
+    // A live standalone background agent, not loaded (its bin is collapsed),
+    // whose child `agent:created` already hydrated into the cache.
+    const backgroundParentId = 'agent-background-parent';
+    const backgroundChild = makeAgent('background-child', {
+      name: 'Agent child of a live background parent',
+      metadata: { createdByAgentId: AgentId(backgroundParentId) } as AgentSession['metadata'],
+    });
+    const orphan = makeAgent('orphan', {
+      name: 'Agent orphan',
+      metadata: { createdByAgentId: AgentId('agent-deleted-parent') } as AgentSession['metadata'],
+    });
+    const agents = [coordinator, backgroundChild, orphan];
+    appStore.dispatch(bulkUpsertSessions(agents));
+    const onLoadDelegated = vi.fn();
+    const onLoadOrphanedDelegated = vi.fn();
+    const onLoadBackground = vi.fn();
+    const props = {
+      agents,
+      workspaceId,
+      scopeCounts: { topLevel: 1, delegated: 2, background: 1 },
+      delegatedCounts: {
+        running: 0,
+        byParent: {
+          [backgroundParentId]: { total: 1, running: 0 },
+          'agent-deleted-parent': { total: 1, running: 0 },
+        },
+        orphaned: { total: 1, running: 0 },
+      },
+      orphanedDelegatedAgentsLoaded: true,
+      orphanedDelegatedAgentIds: { [orphan.id]: true },
+      searchQuery: '',
+      onLoadDelegated,
+      onLoadOrphanedDelegated,
+      onLoadBackground,
+    };
+    const view = render(WorkspaceAgentsList, { props });
+    const delegatedToggle = await waitFor(() => {
+      const toggle = view.container.querySelector<HTMLElement>('[data-agent-delegated-toggle]');
+      expect(toggle).toBeTruthy();
+      return toggle!;
+    });
+    const orphanInBin = () =>
+      view.container.querySelector(
+        `[data-agent-delegated-section] [data-agent-panel-row="${orphan.id}"]`,
+      );
+    const childInBin = () =>
+      view.container.querySelector(
+        `[data-agent-delegated-section] [data-agent-panel-row="${backgroundChild.id}"]`,
+      );
+    await fireEvent.click(delegatedToggle);
+    await waitFor(() => expect(orphanInBin()).toBeTruthy());
+    expect(childInBin()).toBeNull();
+    expect(onLoadOrphanedDelegated).not.toHaveBeenCalled();
+
+    // A search starts the whole-bin AND Background reads independently.
+    await view.rerender({ ...props, searchQuery: 'agent' });
+    await waitFor(() => expect(onLoadDelegated).toHaveBeenCalledTimes(1));
+    expect(onLoadBackground).toHaveBeenCalledTimes(1);
+
+    // Only the whole-bin read has landed: the background parent is still not
+    // in the cache, so its child is parentless in the tree — the served
+    // membership, not cache ancestry, keeps deciding the bin, during the
+    // search and after it clears.
+    const delegatedOnly = { ...props, delegatedAgentsLoaded: true };
+    await view.rerender({ ...delegatedOnly, searchQuery: 'agent' });
+    expect(childInBin()).toBeNull();
+    expect(orphanInBin()).toBeTruthy();
+    await view.rerender(delegatedOnly);
+    expect(childInBin()).toBeNull();
+    expect(orphanInBin()).toBeTruthy();
+    expect(view.container.querySelector('[data-agent-delegated-loading]')).toBeNull();
+    expect(delegatedToggle.textContent).toContain('1 delegated agents');
+
+    // The Background read failed (not loaded, not loading) and a hydration
+    // re-read reset the orphan membership: the bin cannot fall back to the
+    // whole-bin rows, so re-expanding it asks the daemon again.
+    await view.rerender({
+      ...delegatedOnly,
+      orphanedDelegatedAgentsLoaded: false,
+      orphanedDelegatedAgentIds: {},
+    });
+    expect(childInBin()).toBeNull();
+    expect(orphanInBin()).toBeNull();
+    expect(view.container.querySelector('[data-agent-delegated-loading]')).toBeTruthy();
+    await fireEvent.click(delegatedToggle);
+    await fireEvent.click(delegatedToggle);
+    await waitFor(() => expect(onLoadOrphanedDelegated).toHaveBeenCalledTimes(1));
+    expect(onLoadDelegated).toHaveBeenCalledTimes(1);
+
+    // Once the Background read lands too, every live parent is in the cache:
+    // the whole-bin rows are authoritative, the child nests under its parent
+    // and only the true orphan is in the bin.
+    const backgroundParent = makeAgent(backgroundParentId, {
+      name: 'Agent background parent',
+      isBackground: true,
+    });
+    appStore.dispatch(bulkUpsertSessions([backgroundParent]));
+    await view.rerender({
+      ...delegatedOnly,
+      agents: [...agents, backgroundParent],
+      backgroundAgentsLoaded: true,
+      orphanedDelegatedAgentsLoaded: false,
+      orphanedDelegatedAgentIds: {},
+    });
+    expect(view.container.querySelector('[data-agent-delegated-loading]')).toBeNull();
+    expect(orphanInBin()).toBeTruthy();
+    expect(childInBin()).toBeNull();
+    expect(onLoadOrphanedDelegated).toHaveBeenCalledTimes(1);
+  });
+
   it('keeps the whole-bin read for search in orphan-only mode and the whole-bin expand without orphaned (old daemon)', async () => {
     const parent = makeAgent('parent', { name: 'Parent' });
     appStore.dispatch(bulkUpsertSessions([parent]));

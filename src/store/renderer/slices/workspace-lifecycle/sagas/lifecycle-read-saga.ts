@@ -407,26 +407,30 @@ function* hydrateAgents(workspaceId: string): SagaGenerator<void> {
   // bins between them can appear in two lists — dedupe by id, preferring
   // the later (fresher) read; the retired-only row is read last since it
   // carries the fresher `retiredAt`. Delegated rows loaded per parent (the
-  // by-parent read) and the orphan-only subset are re-read the same way when
-  // the whole bin is not loaded. The orphan re-read is gated on the FRESH
+  // by-parent read) are re-read the same way when the whole bin is not
+  // loaded, and the orphan-only subset while the whole bin and the Background
+  // bin are not BOTH loaded — the whole-bin rows alone cannot tell an orphan
+  // from the child of an unloaded live background parent, so its membership
+  // stays authoritative until then. The orphan re-read is gated on the FRESH
   // `delegatedCounts.orphaned`, not the stored flag alone: a reconnect to a
   // daemon predating it would otherwise send `orphanedOnly` to a daemon that
   // ignores the flag and answers with the whole bin.
   const delegatedLoadedAtRead = scopeCounts
     ? yield* selectDelegatedAgentsLoaded.effect(workspaceId)
     : false;
+  const backgroundLoadedAtRead = scopeCounts
+    ? yield* selectBackgroundAgentsLoaded.effect(workspaceId)
+    : false;
+  const delegatedParentsCoveredAtRead = delegatedLoadedAtRead && backgroundLoadedAtRead;
   const loadedParentIdsAtRead =
     scopeCounts && !delegatedLoadedAtRead
       ? Object.keys(yield* selectLoadedDelegatedParentIds.effect(workspaceId))
       : [];
   const orphanedServed = Boolean(scopeCounts && delegatedCounts?.orphaned);
   const orphanedLoadedAtRead =
-    orphanedServed && !delegatedLoadedAtRead
+    orphanedServed && !delegatedParentsCoveredAtRead
       ? yield* selectOrphanedDelegatedAgentsLoaded.effect(workspaceId)
       : false;
-  const backgroundLoadedAtRead = scopeCounts
-    ? yield* selectBackgroundAgentsLoaded.effect(workspaceId)
-    : false;
   const retiredLoadedAtRead = yield* selectRetiredAgentsLoaded.effect(workspaceId);
   if (delegatedLoadedAtRead) {
     const delegatedRows: Awaited<ReturnType<typeof appClient.agents.list>> = yield* call(
@@ -532,17 +536,18 @@ function* hydrateAgents(workspaceId: string): SagaGenerator<void> {
         yield* put(setDelegatedParentLoaded(workspaceId, parentAgentId, false));
         yield* put(fetchDelegatedAgentsRequested(workspaceId, parentAgentId));
       }
-      // Same guard for the orphan subset — and the capability-loss path: the
-      // daemon stopped serving `delegatedCounts.orphaned`, so a loaded flag
-      // is stale (the bin falls back to the whole-bin read) and must not
-      // suppress a later orphan-only load once the capability returns.
-      if (
-        !orphanedLoadedAtRead &&
-        (yield* selectOrphanedDelegatedAgentsLoaded.effect(workspaceId))
-      ) {
-        yield* put(setOrphanedDelegatedAgentsLoaded(workspaceId, false));
-        if (orphanedServed) yield* put(fetchOrphanedDelegatedAgentsRequested(workspaceId));
-      }
+    }
+    // Same guard for the orphan subset — and the capability-loss path: the
+    // daemon stopped serving `delegatedCounts.orphaned`, so a loaded flag
+    // is stale (the bin falls back to the whole-bin read) and must not
+    // suppress a later orphan-only load once the capability returns.
+    if (
+      !delegatedParentsCoveredAtRead &&
+      !orphanedLoadedAtRead &&
+      (yield* selectOrphanedDelegatedAgentsLoaded.effect(workspaceId))
+    ) {
+      yield* put(setOrphanedDelegatedAgentsLoaded(workspaceId, false));
+      if (orphanedServed) yield* put(fetchOrphanedDelegatedAgentsRequested(workspaceId));
     }
     if (!backgroundLoadedAtRead && (yield* selectBackgroundAgentsLoaded.effect(workspaceId))) {
       yield* put(setLazyBinLoaded(workspaceId, 'background', false));
@@ -715,12 +720,22 @@ function* rebaselineDelegatedCountsFromRows(
   );
 }
 
+/** Both lazy bins loaded: every live delegated parent is in the cache. */
+function* selectDelegatedParentsCovered(workspaceId: string): SagaGenerator<boolean> {
+  return (
+    (yield* selectDelegatedAgentsLoaded.effect(workspaceId)) &&
+    (yield* selectBackgroundAgentsLoaded.effect(workspaceId))
+  );
+}
+
 /**
  * On-demand orphan-only delegated load (§5.5, `scope: "delegated"` +
  * `orphanedOnly: true`): triggered when the sidebar's Delegated bin — which
  * holds only the orphaned delegated rows — expands. Same contract as
  * `fetchDelegatedAgentsForParent`: loads once (a whole-bin load covers the
- * orphans too), a failed read leaves the flag false so the next expand
+ * orphans too, but only together with the Background bin — its rows alone
+ * cannot tell an orphan from the child of an unloaded live background
+ * parent), a failed read leaves the flag false so the next expand
  * retries, rows merge in via `addAgent`. Gated on `delegatedCounts.orphaned`
  * presence — an older daemon ignores `orphanedOnly` and would answer with the
  * whole bin, so there is nothing to load until the daemon serves the count.
@@ -732,7 +747,7 @@ function* rebaselineDelegatedCountsFromRows(
 function* fetchOrphanedDelegatedAgents(workspaceId: string): SagaGenerator<void> {
   if (!(yield* selectScopeCounts.effect(workspaceId))) return;
   if (!(yield* selectDelegatedCounts.effect(workspaceId))?.orphaned) return;
-  if (yield* selectDelegatedAgentsLoaded.effect(workspaceId)) return;
+  if (yield* selectDelegatedParentsCovered(workspaceId)) return;
   if (yield* selectOrphanedDelegatedAgentsLoaded.effect(workspaceId)) return;
   if (yield* selectIsLoadingOrphanedDelegatedAgents.effect(workspaceId)) return;
   const baselineGeneration = yield* selectScopeCountsGeneration.effect(workspaceId);
@@ -760,7 +775,7 @@ function* fetchOrphanedDelegatedAgents(workspaceId: string): SagaGenerator<void>
       }
     }
     const superseded =
-      (yield* selectDelegatedAgentsLoaded.effect(workspaceId)) ||
+      (yield* selectDelegatedParentsCovered(workspaceId)) ||
       (yield* selectScopeCountsGeneration.effect(workspaceId)) !== baselineGeneration;
     const counts = yield* selectDelegatedCounts.effect(workspaceId);
     if (counts?.orphaned && !superseded && counts.orphaned.total !== fetched.length) {
