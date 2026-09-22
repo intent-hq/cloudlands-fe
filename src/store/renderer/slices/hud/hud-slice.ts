@@ -4,8 +4,8 @@
  * State for the standalone Fleet HUD window: the live global event feed
  * (ring buffer, live-only — no backfill), per-workspace attention/displayStatus
  * overrides pushed by daemon events, the 24h usage rollup from `stats.getUsage`
- * (PROTOCOL §5.36). The subscription lifecycle and the event→feed mapping live
- * in `$features/hud/hud-subscription` / `hud-feed-mapper`; this slice only
+ * (PROTOCOL §5.36). The subscription lifecycle lives in `sagas/hud-saga` and
+ * the event→feed mapping lives in `$features/hud/hud-feed-mapper`; this slice only
  * folds the already-narrowed payloads. Daemon online/version/uptime come from
  * the daemon-health slice (10s poll), not from here — see `selectHudSystem`.
  *
@@ -238,7 +238,7 @@ export const hudQuestionCaptured =
   createAction<[question: HudCapturedQuestion]>('hud/questionCaptured');
 /**
  * The workspace's daemon display-status rollup left the attention statuses
- * (`hud-subscription` dispatches this off `workspace:updated` /
+ * (`hud-saga` dispatches this off `workspace:updated` /
  * `agent:status-changed`): a pending question set keeps the rollup in
  * `needs_attention` until it is answered or dismissed (PROTOCOL §7.1), so a
  * non-attention rollup means the captured question is resolved/moot and must

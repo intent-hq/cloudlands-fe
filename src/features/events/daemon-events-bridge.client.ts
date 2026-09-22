@@ -2191,8 +2191,8 @@ function handleDisplayStatusChangedEvent(event: WorkspaceEvent, envelopeWorkspac
  * only on an actual change, so the FE mirrors the new value directly into the
  * workspace entity without a follow-up `workspace.get`. The wire values are
  * snake_case and match the FE type exactly, so no mapping is needed. The
- * HUD consumes this same event through its own subscription
- * (`hud-subscription.ts`) with independent bucket semantics — this handler
+ * HUD consumes this same event through its root-owned saga subscription
+ * (`hud-saga.ts`) with independent bucket semantics — this handler
  * only feeds the workspace entity store. Like the tokenUsage/context/
  * displayStatus handlers, the payload's own `data.workspaceId` wins over the
  * envelope id when present.

@@ -979,6 +979,7 @@ describe('HUD subscription (mock backend, real store)', () => {
       });
     });
     appStore.dispatch(setWorkspaceEntity(makeHudWorkspace(WS_OMIT_ID)));
+    const stopLifecycleReadSaga = appStore.runSaga(lifecycleReadSaga);
     try {
       stop = startHudSubscription();
       await flush();
@@ -1008,10 +1009,11 @@ describe('HUD subscription (mock backend, real store)', () => {
         });
       }
       await flush();
-      // Nothing may take over while the mute state is still unknown, and
-      // the reads are bounded by the distinct unknown agents, not the events.
+      // Nothing may take over while the mute state is still unknown. The
+      // saga drains takeover events in order, so the first distinct unknown
+      // agent owns the current read and its second event will reuse the row.
       expect(received).toEqual([]);
-      expect(getCalls().sort()).toEqual([GONE_ID, LOUD_CHILD_ID, MUTED_CHILD_ID].sort());
+      expect(getCalls()).toEqual([MUTED_CHILD_ID]);
 
       releaseGet?.();
       await flush();
@@ -1040,7 +1042,10 @@ describe('HUD subscription (mock backend, real store)', () => {
       expect(received).toHaveLength(2);
       expect(getCalls()).toHaveLength(3);
     } finally {
+      stopLifecycleReadSaga();
+      releaseGet?.();
       unsubscribe();
+      appStore.dispatch(removeWorkspaceSessions(WS_OMIT_ID));
       appStore.dispatch(removeWorkspaceEntity(WS_OMIT_ID));
     }
   });
@@ -1543,6 +1548,7 @@ describe('HUD subscription (mock backend, real store)', () => {
       });
     });
     appStore.dispatch(setWorkspaceEntity(makeHudWorkspace(WS_BG_ID)));
+    const stopLifecycleReadSaga = appStore.runSaga(lifecycleReadSaga);
     try {
       stop = startHudSubscription();
       await flush();
@@ -1573,6 +1579,8 @@ describe('HUD subscription (mock backend, real store)', () => {
         expect.arrayContaining([TOP_ID, BUSY_BG_ID]),
       );
     } finally {
+      stopLifecycleReadSaga();
+      appStore.dispatch(removeWorkspaceSessions(WS_BG_ID));
       appStore.dispatch(removeWorkspaceEntity(WS_BG_ID));
     }
   });
@@ -1669,6 +1677,7 @@ describe('HUD subscription (mock backend, real store)', () => {
         },
       } as Workspace),
     );
+    const stopLifecycleReadSaga = appStore.runSaga(lifecycleReadSaga);
     try {
       stop = startHudSubscription();
       await flush();
@@ -1708,6 +1717,8 @@ describe('HUD subscription (mock backend, real store)', () => {
         expect.arrayContaining([MUTED_FAILED_ID, LOUD_FAILED_ID]),
       );
     } finally {
+      stopLifecycleReadSaga();
+      appStore.dispatch(removeWorkspaceSessions(WS_FAIL_ID));
       appStore.dispatch(removeWorkspaceEntity(WS_FAIL_ID));
     }
   });
