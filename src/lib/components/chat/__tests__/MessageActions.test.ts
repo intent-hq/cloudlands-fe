@@ -2,8 +2,8 @@
  * @vitest-environment jsdom
  */
 import { fireEvent, render, screen } from '@testing-library/svelte';
-import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
-import { formatFullDateTime, formatTime } from '$lib/i18n/format';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { formatDateTime, formatFullDateTime, formatTime } from '$lib/i18n/format';
 import { m } from '$shared/paraglide/messages.js';
 import MessageActions from '../MessageActions.svelte';
 import {
@@ -153,8 +153,15 @@ describe('MessageActions shared surface', () => {
 });
 
 describe('MessageActions timestamp', () => {
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date(2026, 5, 3, 0, 5));
+  });
+
+  afterEach(() => vi.useRealTimers());
+
   it('prefers canonical timestamp and exposes localized compact/full machine-readable time', () => {
-    const timestamp = new Date('2026-06-02T14:35:20.000Z');
+    const timestamp = new Date(2026, 5, 3, 0, 1, 20);
     const fallback = new Date('2025-01-01T01:02:03.000Z');
     const { container } = render(MessageActions, {
       props: { role: 'user', timestamp, createdAt: fallback, onCopy: vi.fn() },
@@ -167,8 +174,33 @@ describe('MessageActions timestamp', () => {
     expect(time.className).toContain('pointer-events-none');
   });
 
+  describe.each(['user', 'assistant'] as const)('%s messages', (role) => {
+    it('shows only the time for the current local calendar day', () => {
+      const timestamp = new Date(2026, 5, 3, 0, 1).toISOString();
+      const { container } = render(MessageActions, { props: { role, timestamp } });
+
+      expect(container.querySelector('time')?.textContent).toBe(formatTime(timestamp));
+    });
+
+    it.each([
+      ['yesterday, less than 24 hours ago', new Date(2026, 5, 2, 23, 55)],
+      ['the same day of a different month', new Date(2026, 4, 3, 19)],
+      ['the same month and day of a different year', new Date(2025, 5, 3, 19)],
+      ['a future day', new Date(2026, 5, 4, 19)],
+    ])('shows the date and time for %s', (_description, timestamp) => {
+      const { container } = render(MessageActions, {
+        props: { role, timestamp: timestamp.toISOString() },
+      });
+      const time = container.querySelector('time')!;
+
+      expect(time.textContent).toBe(formatDateTime(timestamp));
+      expect(time.getAttribute('datetime')).toBe(timestamp.toISOString());
+      expect(time.getAttribute('aria-label')).toBe(formatFullDateTime(timestamp));
+    });
+  });
+
   it('uses createdAt only when timestamp is missing or invalid', () => {
-    const fallback = new Date('2026-06-03T09:10:11.000Z');
+    const fallback = new Date(2026, 5, 2, 19);
     for (const timestamp of [undefined, 'not-a-date']) {
       const { container, unmount } = render(MessageActions, {
         props: { role: 'assistant', timestamp, createdAt: fallback, onCopy: vi.fn() },
@@ -176,6 +208,7 @@ describe('MessageActions timestamp', () => {
       expect(container.querySelector('time')?.getAttribute('datetime')).toBe(
         fallback.toISOString(),
       );
+      expect(container.querySelector('time')?.textContent).toBe(formatDateTime(fallback));
       unmount();
     }
   });

@@ -6,7 +6,7 @@
 -->
 <script lang="ts">
   import { ActionBar, defineActions } from '$lib/components/patterns/action-menu';
-  import { formatFullDateTime, formatTime, type DateInput } from '$lib/i18n/format';
+  import { formatDateTime, formatFullDateTime, formatTime, type DateInput } from '$lib/i18n/format';
   import {
     faArrowRotateRight,
     faArrowUp,
@@ -69,7 +69,13 @@
   }: Props = $props();
 
   let actionDate = $derived(resolveMessageActionDate(timestamp, createdAt));
-  let compactTime = $derived(actionDate ? formatTime(actionDate) : '');
+  let compactTime = $derived(
+    actionDate
+      ? actionDate.toDateString() === new Date().toDateString()
+        ? formatTime(actionDate)
+        : formatDateTime(actionDate)
+      : '',
+  );
   let fullTime = $derived(actionDate ? formatFullDateTime(actionDate) : '');
   const actions = $derived(
     defineActions([
