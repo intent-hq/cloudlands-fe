@@ -146,6 +146,7 @@ const APP_UI_TARGETS: AppUiTarget[] = [
     ['hardware', 'Hardware', 'Hardware integration settings.', 'advanced'],
     ['data', 'Data', 'Data import settings.', 'advanced'],
     ['developer', 'Developer', 'Development-only settings.', 'advanced'],
+    ['labs-multiplayer', 'Multiplayer (Labs)', 'Experimental Multiplayer lab toggle.', 'labs'],
   ].map(([id, label, description, tab]) =>
     settingsTarget({
       id,
