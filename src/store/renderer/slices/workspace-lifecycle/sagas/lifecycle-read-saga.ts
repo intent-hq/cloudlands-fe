@@ -407,7 +407,10 @@ function* hydrateAgents(workspaceId: string): SagaGenerator<void> {
   // the later (fresher) read; the retired-only row is read last since it
   // carries the fresher `retiredAt`. Delegated rows loaded per parent (the
   // by-parent read) and the orphan-only subset are re-read the same way when
-  // the whole bin is not loaded.
+  // the whole bin is not loaded. The orphan re-read is gated on the FRESH
+  // `delegatedCounts.orphaned`, not the stored flag alone: a reconnect to a
+  // daemon predating it would otherwise send `orphanedOnly` to a daemon that
+  // ignores the flag and answers with the whole bin.
   const delegatedLoadedAtRead = scopeCounts
     ? yield* selectDelegatedAgentsLoaded.effect(workspaceId)
     : false;
@@ -415,8 +418,9 @@ function* hydrateAgents(workspaceId: string): SagaGenerator<void> {
     scopeCounts && !delegatedLoadedAtRead
       ? Object.keys(yield* selectLoadedDelegatedParentIds.effect(workspaceId))
       : [];
+  const orphanedServed = Boolean(scopeCounts && delegatedCounts?.orphaned);
   const orphanedLoadedAtRead =
-    scopeCounts && !delegatedLoadedAtRead
+    orphanedServed && !delegatedLoadedAtRead
       ? yield* selectOrphanedDelegatedAgentsLoaded.effect(workspaceId)
       : false;
   const backgroundLoadedAtRead = scopeCounts
@@ -519,12 +523,16 @@ function* hydrateAgents(workspaceId: string): SagaGenerator<void> {
         yield* put(setDelegatedParentLoaded(workspaceId, parentAgentId, false));
         yield* put(fetchDelegatedAgentsRequested(workspaceId, parentAgentId));
       }
+      // Same guard for the orphan subset — and the capability-loss path: the
+      // daemon stopped serving `delegatedCounts.orphaned`, so a loaded flag
+      // is stale (the bin falls back to the whole-bin read) and must not
+      // suppress a later orphan-only load once the capability returns.
       if (
         !orphanedLoadedAtRead &&
         (yield* selectOrphanedDelegatedAgentsLoaded.effect(workspaceId))
       ) {
         yield* put(setOrphanedDelegatedAgentsLoaded(workspaceId, false));
-        yield* put(fetchOrphanedDelegatedAgentsRequested(workspaceId));
+        if (orphanedServed) yield* put(fetchOrphanedDelegatedAgentsRequested(workspaceId));
       }
     }
     if (!backgroundLoadedAtRead && (yield* selectBackgroundAgentsLoaded.effect(workspaceId))) {

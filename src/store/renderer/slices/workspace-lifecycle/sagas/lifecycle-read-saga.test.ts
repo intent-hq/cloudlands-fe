@@ -2892,6 +2892,72 @@ describe('lifecycleReadSaga', () => {
     await stop(run.task);
   });
 
+  it('drops the orphan re-read and clears the stale loaded flag when the daemon stops serving delegatedCounts.orphaned, then loads again once it returns', async () => {
+    const top = agent(PARENT);
+    const orphan = agent('agent-orphan', { parentAgentId: ORPHAN_PARENT as never });
+    const current = state();
+    // Orphans were loaded against a newer daemon; the reconnect lands on one
+    // that serves scopeCounts + delegatedCounts but predates `orphaned`.
+    current.workspaceAgents.byWorkspaceId = {
+      [WS]: {
+        scopeCounts: COUNTS,
+        delegatedCounts: DELEGATED_WITH_ORPHANS,
+        loadedDelegatedParentIds: {},
+        orphanedDelegatedAgentsLoaded: true,
+      },
+    } as never;
+    mocks.agents.listWithMeta.mockResolvedValue({
+      agents: [top],
+      retiredCount: 0,
+      scopeCounts: COUNTS,
+      delegatedCounts: DELEGATED_COUNTS,
+    });
+    const run = start(current);
+
+    run.channel.put(hydrateAgentsRequested(WS));
+    await settle();
+
+    // No `orphanedOnly` request reaches a daemon that would ignore it.
+    expect(mocks.agents.list).not.toHaveBeenCalled();
+    expect(run.actions).toContainEqual({
+      type: 'workspaceAgents/setDelegatedCounts',
+      payload: [WS, DELEGATED_COUNTS],
+    });
+    const setAgentsIndex = run.actions.findIndex(
+      (action) => action.type === 'workspaceAgents/setAgents',
+    );
+    expect(setAgentsIndex).toBeGreaterThanOrEqual(0);
+    expect(run.actions.slice(setAgentsIndex)).toContainEqual({
+      type: 'workspaceAgents/setOrphanedDelegatedAgentsLoaded',
+      payload: [WS, false],
+    });
+    // Invalidation only — nothing to load until the capability is served.
+    expect(run.actions).not.toContainEqual(
+      expect.objectContaining({ type: 'workspaceAgents/fetchOrphanedDelegatedAgentsRequested' }),
+    );
+
+    // Capability back (flag now false, as the reducer would have it): the
+    // orphan-only load runs instead of being suppressed by the stale flag.
+    run.actions.length = 0;
+    current.workspaceAgents.byWorkspaceId = {
+      [WS]: {
+        scopeCounts: COUNTS,
+        delegatedCounts: DELEGATED_WITH_ORPHANS,
+        loadedDelegatedParentIds: {},
+        orphanedDelegatedAgentsLoaded: false,
+      },
+    } as never;
+    mocks.agents.list.mockResolvedValue([orphan]);
+    run.channel.put(fetchOrphanedDelegatedAgentsRequested(WS));
+    await settle();
+    expect(mocks.agents.list.mock.calls).toEqual([[WS, ORPHANED_ONLY]]);
+    expect(run.actions).toContainEqual({
+      type: 'workspaceAgents/setOrphanedDelegatedAgentsLoaded',
+      payload: [WS, true],
+    });
+    await stop(run.task);
+  });
+
   // Count-baseline invariant (§5.5): `Σ byParent[*].total === scopeCounts.delegated`
   // must hold after every completion order of the delegated reads. These run
   // the production saga against the real `workspaceAgentsReducer` so the
