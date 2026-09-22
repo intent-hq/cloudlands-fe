@@ -6,6 +6,7 @@ import ImageLightbox from '../../ui/ImageLightbox.svelte';
 
 type Page = Parameters<Parameters<typeof test.beforeEach>[1]>[0]['page'];
 type Locator = ReturnType<Page['locator']>;
+type Box = NonNullable<Awaited<ReturnType<Locator['boundingBox']>>>;
 
 const svg =
   '<svg xmlns="http://www.w3.org/2000/svg" width="480" height="240"><rect width="480" height="240" rx="16" fill="#e8edf4"/><circle cx="120" cy="120" r="64" fill="#657ca8"/><path d="M240 152l48-64 72 64" fill="none" stroke="#657ca8" stroke-width="12"/></svg>';
@@ -105,6 +106,12 @@ async function expectIgnoredShortcut(page: Page, shortcut: string) {
   expect(
     await page.evaluate(() => (window as ClipboardTestWindow).imageCopyTest.writes.length),
   ).toBe(0);
+}
+
+function expectSameBox(actual: Box, expected: Box) {
+  for (const key of ['x', 'y', 'width', 'height'] as const) {
+    expect(Math.abs(actual[key] - expected[key]), key).toBeLessThanOrEqual(1);
+  }
 }
 
 for (const isStreaming of [false, true]) {
@@ -246,6 +253,101 @@ for (const isStreaming of [false, true]) {
     await expectCopiedImage(page, 4);
     await expect(page.getByRole('menu')).toHaveCount(0);
     await expect(trigger).toBeFocused();
+  });
+
+  test(`${isStreaming ? 'streaming' : 'static'} reserved image frame survives loading, copying and right-click preview`, async ({
+    mount,
+    page,
+  }, testInfo) => {
+    await captureImageClipboard(page);
+    await page.setViewportSize({ width: 360, height: 640 });
+    await page.emulateMedia({ reducedMotion: 'reduce' });
+    const src = 'https://image.test/reserved-original';
+    let releaseImage!: () => void;
+    const imageReady = new Promise<void>((resolve) => {
+      releaseImage = resolve;
+    });
+    await page.route(src, async (route) => {
+      await imageReady;
+      await route.fulfill({
+        status: 200,
+        contentType: 'image/svg+xml',
+        body: svg,
+        headers: { 'access-control-allow-origin': '*' },
+      });
+    });
+    try {
+      const component = await mount(MarkdownViewer, {
+        props: {
+          content: `![diagram](${src})\n\nAfter the image.`,
+          isStreaming,
+          media: { [src]: { width: 480, height: 240 } },
+        },
+      });
+      const image = component.getByRole('button', { name: 'diagram', exact: true });
+      const frame = component.locator('[data-loaded]');
+      const after = component.getByText('After the image.', { exact: true });
+      await expect(frame).toBeVisible();
+      await page.evaluate(() => document.fonts.ready);
+      await expect(image).toHaveJSProperty('naturalWidth', 0);
+      const before = (await frame.boundingBox())!;
+      const afterTextBefore = (await after.boundingBox())!;
+      expect(before.width).toBeGreaterThan(0);
+      expect(before.width).toBeLessThan(480);
+      expect(Math.abs(before.height - before.width / 2)).toBeLessThanOrEqual(1);
+
+      releaseImage();
+      await image.evaluate((node: HTMLImageElement) => node.decode());
+      await expect(image).toHaveCSS('opacity', '1');
+      expectSameBox((await frame.boundingBox())!, before);
+      expectSameBox((await image.boundingBox())!, before);
+      expectSameBox((await after.boundingBox())!, afterTextBefore);
+
+      await image.focus();
+      await page.keyboard.press('Meta+c');
+      await expectCopiedImage(page, 1);
+      const trigger = component.getByRole('button', { name: /image options/i });
+      const triggerBox = (await trigger.boundingBox())!;
+      expect(triggerBox.y - before.y).toBeCloseTo(6, 0);
+      expect(before.x + before.width - triggerBox.x - triggerBox.width).toBeCloseTo(6, 0);
+      await image.click({ button: 'right' });
+      await expect(page.getByRole('menu')).toBeVisible();
+      await expect(page.getByRole('dialog')).toHaveCount(0);
+      await testInfo.attach('reserved-image-controls.png', {
+        body: await page.screenshot(),
+        contentType: 'image/png',
+      });
+      await page.getByRole('menuitem', { name: /copy image/i }).click();
+      await expectCopiedImage(page, 2);
+      await expect(trigger).toBeFocused();
+      await page.keyboard.press('Control+c');
+      const png = await expectCopiedImage(page, 3);
+
+      await image.focus();
+      await page.keyboard.press('Enter');
+      await expect(page.getByRole('dialog', { name: /image preview/i })).toBeVisible();
+      await page.keyboard.press('Escape');
+      await expect(page.getByRole('dialog')).toHaveCount(0);
+      await expect(image).toBeFocused();
+      const final = (await frame.boundingBox())!;
+      expectSameBox(final, before);
+      expectSameBox((await after.boundingBox())!, afterTextBefore);
+      await testInfo.attach('reserved-image-geometry', {
+        body: JSON.stringify({
+          before,
+          final,
+          afterTextBefore,
+          afterTextFinal: await after.boundingBox(),
+        }),
+        contentType: 'application/json',
+      });
+      await testInfo.attach('reserved-image-clipboard.png', {
+        body: png,
+        contentType: 'image/png',
+      });
+    } finally {
+      releaseImage();
+    }
   });
 }
 
@@ -551,4 +653,102 @@ test('chat copies original pixels only after thumbnail props are replaced by the
   await expectCopiedImage(page, 2);
   expect(await dispatchCopy(tile)).toBe(true);
   await expectCopiedImage(page, 3);
+});
+
+test('reserved chat frame keeps thumbnail actions guarded until original hydration', async ({
+  mount,
+  page,
+}, testInfo) => {
+  await captureImageClipboard(page);
+  await page.setViewportSize({ width: 360, height: 640 });
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  let hydrations = 0;
+  const component = await mount(ChatImageBlock, {
+    props: {
+      data: Buffer.from(thumbnailSvg).toString('base64'),
+      mimeType: 'image/svg+xml',
+      alt: 'diagram',
+      width: 480,
+      height: 240,
+      dataTruncated: true,
+      dataIsThumbnail: true,
+      onHydrate: () => {
+        hydrations += 1;
+      },
+    },
+  });
+  const frame = component.locator('[data-image-sized]');
+  const image = component.getByRole('img');
+  const thumbnailButton = component.getByRole('button', { name: /load full-size/i });
+  await image.evaluate((node: HTMLImageElement) => node.decode());
+  await page.evaluate(() => document.fonts.ready);
+  await expect(image).toHaveJSProperty('naturalWidth', 48);
+  const before = (await frame.boundingBox())!;
+  const thumbnailBox = (await image.boundingBox())!;
+  expect(before.width).toBeGreaterThan(48);
+  expect(before.width).toBeLessThan(480);
+  expect(Math.abs(before.height - before.width / 2)).toBeLessThanOrEqual(1);
+  expectSameBox((await thumbnailButton.boundingBox())!, before);
+  await thumbnailButton.focus();
+  await expectIgnoredShortcut(page, 'Meta+c');
+  await expectIgnoredShortcut(page, 'Control+c');
+  expect(await dispatchCopy(thumbnailButton)).toBe(false);
+  await image.click({ button: 'right' });
+  await expect(page.getByRole('menu')).toHaveCount(0);
+  await expect(component.getByRole('button', { name: /image options/i })).toHaveCount(0);
+  await thumbnailButton.click();
+  await expect.poll(() => hydrations).toBe(1);
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+  expectSameBox((await frame.boundingBox())!, before);
+
+  await component.update({
+    props: {
+      data: imageData,
+      mimeType: 'image/svg+xml',
+      alt: 'diagram',
+      width: 480,
+      height: 240,
+      dataTruncated: false,
+      dataIsThumbnail: false,
+      onHydrate: undefined,
+    },
+  });
+  await image.evaluate((node: HTMLImageElement) => node.decode());
+  await expect(image).toHaveJSProperty('naturalWidth', 480);
+  const tile = component.getByRole('button', { name: /view.*full size/i });
+  expectSameBox((await frame.boundingBox())!, before);
+  expectSameBox((await tile.boundingBox())!, before);
+  expectSameBox((await image.boundingBox())!, thumbnailBox);
+  await tile.focus();
+  await page.keyboard.press('Meta+c');
+  await expectCopiedImage(page, 1);
+  await image.click({ button: 'right' });
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+  await expect(page.getByRole('menu')).toBeVisible();
+  await testInfo.attach('reserved-chat-controls.png', {
+    body: await page.screenshot(),
+    contentType: 'image/png',
+  });
+  await page.getByRole('menuitem', { name: /copy image/i }).click();
+  await expectCopiedImage(page, 2);
+  const trigger = component.getByRole('button', { name: /image options/i });
+  await expect(trigger).toBeFocused();
+  await page.keyboard.press('Control+c');
+  await expectCopiedImage(page, 3);
+  await tile.focus();
+  await page.keyboard.press('Enter');
+  const dialog = page.getByRole('dialog', { name: /image preview/i });
+  await expect(dialog.getByRole('button', { name: /close preview/i })).toBeFocused();
+  await page.keyboard.press('Control+c');
+  const png = await expectCopiedImage(page, 4);
+  await page.keyboard.press('Escape');
+  await expect(dialog).toHaveCount(0);
+  await expect(tile).toBeFocused();
+  const final = (await frame.boundingBox())!;
+  expectSameBox(final, before);
+  await testInfo.attach('reserved-chat-geometry', {
+    body: JSON.stringify({ before, final, thumbnailBox, originalBox: await image.boundingBox() }),
+    contentType: 'application/json',
+  });
+  await testInfo.attach('reserved-chat-clipboard.png', { body: png, contentType: 'image/png' });
 });

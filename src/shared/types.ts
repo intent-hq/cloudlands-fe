@@ -37,6 +37,8 @@ import {
 
 // Import consolidated AgentSession type
 import type {
+  AgentDelegatedCounts as NewAgentDelegatedCounts,
+  AgentDelegatedParentCounts as NewAgentDelegatedParentCounts,
   AgentListBin as NewAgentListBin,
   AgentListScope as NewAgentListScope,
   AgentScopeCounts as NewAgentScopeCounts,
@@ -359,10 +361,12 @@ export interface Workspace {
   waiting?: boolean;
   /** Membership summary (PROTOCOL §5.1, intent-hq/intentd#1868). `myRole` is
    *  relative to the caller and absent for a non-member; `memberCount` counts
-   *  accepted members. All absent on older daemons. */
+   *  accepted members; `openInviteCount` counts unredeemed invites. All absent
+   *  on older daemons. */
   ownerPrincipalId?: string;
   myRole?: WorkspaceRole;
   memberCount?: number;
+  openInviteCount?: number;
   createdAt: string;
   updatedAt: string;
   lastActivity?: string;
@@ -1089,6 +1093,8 @@ export type SessionStats = NewSessionStats;
 export type AgentListScope = NewAgentListScope;
 export type AgentListBin = NewAgentListBin;
 export type AgentScopeCounts = NewAgentScopeCounts;
+export type AgentDelegatedCounts = NewAgentDelegatedCounts;
+export type AgentDelegatedParentCounts = NewAgentDelegatedParentCounts;
 
 // Re-export type guards
 export const isPendingAgentSession = isNewPendingAgentSession;

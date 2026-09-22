@@ -1,5 +1,6 @@
 <script lang="ts">
   import type { ContentBlock, ToolUseBlock, MessageRole } from '$shared/types';
+  import type { TextBlockMedia } from '$shared/types/content-block';
   import { dedupeAgentVideoContentBlocks, normalizeAgentVideoContentBlocks } from '$shared/types';
   import {
     classifyToolResults,
@@ -604,13 +605,14 @@
   parsedBlock: ParsedContent,
   isLastBlock: boolean,
   insetProse = false,
+  media: TextBlockMedia | undefined = undefined,
 )}
   {#if insetProse}
     <div class={OPERATIONAL_ASSISTANT_PROSE_INSET_CLASS}>
-      {@render renderParsedContentBlockBody(parsedBlock, isLastBlock, insetProse)}
+      {@render renderParsedContentBlockBody(parsedBlock, isLastBlock, insetProse, media)}
     </div>
   {:else}
-    {@render renderParsedContentBlockBody(parsedBlock, isLastBlock, insetProse)}
+    {@render renderParsedContentBlockBody(parsedBlock, isLastBlock, insetProse, media)}
   {/if}
 {/snippet}
 
@@ -618,6 +620,7 @@
   parsedBlock: ParsedContent,
   isLastBlock: boolean,
   insetProse: boolean,
+  media: TextBlockMedia | undefined,
 )}
   {#if parsedBlock.type === 'augment_code_snippet'}
     <AugmentCodeSnippet
@@ -694,6 +697,7 @@
         {workspaceId}
         taskBlockRenderMode="content"
         chatImageThumbnails
+        {media}
         onFileClick={(path, options) => handleOpenFile({ path, ...options })}
       />
     </div>
@@ -705,6 +709,7 @@
         {workspaceId}
         taskBlockRenderMode="content"
         chatImageThumbnails
+        {media}
         onFileClick={(path, options) => handleOpenFile({ path, ...options })}
       />
     </div>
@@ -751,6 +756,7 @@
             renderBlock as ParsedContent,
             isLastBlock && parsedBlockIndex === parsedResult.blocks.length - 1,
             !nested,
+            block.media,
           )}
         {/each}
       {:else}
@@ -768,6 +774,7 @@
               {workspaceId}
               taskBlockRenderMode="content"
               chatImageThumbnails
+              media={block.media}
               onFileClick={(path, options) => handleOpenFile({ path, ...options })}
             />
           </div>
@@ -884,6 +891,8 @@
     <ChatImageBlock
       data={block.data}
       mimeType={block.mimeType}
+      width={block.width}
+      height={block.height}
       dataTruncated={block.dataTruncated === true}
       dataIsThumbnail={block.dataIsThumbnail === true}
       hydrationLoading={imageHydrationLoading(block.id)}

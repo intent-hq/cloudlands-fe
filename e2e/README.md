@@ -21,6 +21,7 @@ existing binary); `scripts/run-build-smoke-if-packaged.ts` exits with an error o
 
 ```bash
 pnpm run dist:mac                 # or set PACKAGED_APP_PATH=/path/to/Intent binary
+pnpm run dist:linux dir           # Linux: unpacked dir → dist-electron/linux-unpacked/intent
 pnpm run test:build-smoke         # whole suite
 pnpm run test:build-smoke:providers
 pnpm run test:build-smoke -- e2e/build-smoke-commit.e2e.ts --reporter=list
@@ -28,6 +29,20 @@ pnpm run test:build-smoke -- --grep "multi-provider"
 ```
 
 Extra arguments after `--` are forwarded to `playwright test`.
+
+Without `PACKAGED_APP_PATH`, the finder looks in `dist-electron/mac-arm64/` and
+`dist-electron/mac/` (macOS), `dist-electron/linux-unpacked/intent` (Linux), and
+`dist-electron/win-unpacked/Intent.exe` (Windows). On Linux, run under `xvfb-run -a`
+when no display is available.
+
+### CI
+
+`.github/workflows/build-smoke.yml` ("Build Smoke") runs the suite nightly and on
+`workflow_dispatch` — not on PRs. It builds an unpacked Linux x64 app
+(`pnpm run dist:linux dir:x64` with the pinned intentd sidecar), runs
+`pnpm run test:build-smoke` under `xvfb-run`, and uploads `e2e-reports/` as the
+`build-smoke-reports` artifact on failure. Dispatch it against any branch with
+`gh workflow run build-smoke.yml --ref <branch>` (optional `-f grep=<regex>`).
 
 ## Reports
 

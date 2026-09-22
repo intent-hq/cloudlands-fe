@@ -502,4 +502,111 @@ describe('MarkdownViewer static rendering', () => {
     expect(container.querySelector('img')).toBeNull();
     expect(container.querySelector('[data-chat-video]')).toBeNull();
   });
+
+  describe('image dimension sidecar (text block media)', () => {
+    const src = 'intent://local/file/docs/diagram.png';
+    const media = { [src]: { width: 640, height: 360 } };
+
+    async function renderSized(extra: Record<string, unknown> = {}) {
+      const view = render(MarkdownViewer, {
+        props: { content: `![diagram](${src})`, workspaceId: 'ws-abc', media, ...extra },
+      });
+      const image = await waitFor(() => {
+        const element = view.container.querySelector<HTMLImageElement>('img');
+        expect(element?.getAttribute('width')).toBe('640');
+        return element!;
+      });
+      return { ...view, image };
+    }
+
+    it('reserves the final box and shows an icon + path placeholder until the image loads', async () => {
+      const { image } = await renderSized();
+      expect(image.getAttribute('height')).toBe('360');
+
+      const frame = await waitFor(() => {
+        const element = image.parentElement;
+        expect(element?.dataset.loaded).toBe('false');
+        return element!;
+      });
+      expect(frame.style.aspectRatio).toBe('640 / 360');
+      expect(frame.style.width).toBe('min(640px, 100%)');
+      const placeholder = screen.getByTestId('media-loading-placeholder');
+      expect(frame.contains(placeholder)).toBe(true);
+      expect(placeholder.textContent).toContain('docs/diagram.png');
+
+      await fireEvent.load(image);
+
+      expect(frame.dataset.loaded).toBe('true');
+      expect(screen.queryByTestId('media-loading-placeholder')).toBeNull();
+      expect(frame.contains(image)).toBe(true);
+    });
+
+    it('keeps the lightbox and image actions on a sized workspace image', async () => {
+      const { image } = await renderSized();
+      await waitFor(() => expect(image.tabIndex).toBe(0));
+
+      await fireEvent.keyDown(image, { key: 'Enter' });
+
+      expect(screen.getByRole('dialog', { name: /image preview/i })).toBeTruthy();
+    });
+
+    it('replaces the frame with the unavailable placeholder when the image fails', async () => {
+      const { container, image } = await renderSized();
+      await waitFor(() => expect(image.parentElement?.dataset.loaded).toBe('false'));
+
+      await fireEvent.error(image);
+
+      expect(screen.getByTestId('media-unavailable').dataset.reason).toBe('load-failed');
+      expect(screen.queryByTestId('media-loading-placeholder')).toBeNull();
+      expect(container.querySelector('[data-loaded]')).toBeNull();
+    });
+
+    it('labels a sized relative-path image with its source path, not its alt text', async () => {
+      const { container } = render(MarkdownViewer, {
+        props: {
+          content: '![chart](docs/diagram.png)',
+          workspaceId: 'ws-abc',
+          media: { 'docs/diagram.png': { width: 640, height: 360 } },
+        },
+      });
+      await waitFor(() => {
+        expect(container.querySelector('img')?.getAttribute('width')).toBe('640');
+      });
+
+      const placeholder = await screen.findByTestId('media-loading-placeholder');
+      expect(placeholder.textContent).toContain('docs/diagram.png');
+    });
+
+    it('renders legacy images without media exactly as before', async () => {
+      const { container } = render(MarkdownViewer, {
+        props: { content: `![diagram](${src})`, workspaceId: 'ws-abc' },
+      });
+      const image = await waitFor(() => {
+        const element = container.querySelector<HTMLImageElement>('img');
+        expect(element).toBeTruthy();
+        return element!;
+      });
+      await waitFor(() => expect(image.tabIndex).toBe(0));
+
+      expect(image.hasAttribute('width')).toBe(false);
+      expect(image.hasAttribute('height')).toBe(false);
+      expect(container.querySelector('[data-loaded]')).toBeNull();
+      expect(screen.queryByTestId('media-loading-placeholder')).toBeNull();
+    });
+
+    it('sizes images when media arrives after the first render', async () => {
+      const view = render(MarkdownViewer, {
+        props: { content: `![diagram](${src})`, workspaceId: 'ws-abc' },
+      });
+      await waitFor(() => expect(view.container.querySelector('img')).toBeTruthy());
+      expect(view.container.querySelector('img')?.hasAttribute('width')).toBe(false);
+
+      await view.rerender({ content: `![diagram](${src})`, workspaceId: 'ws-abc', media });
+
+      await waitFor(() => {
+        expect(view.container.querySelector('img')?.getAttribute('width')).toBe('640');
+      });
+      expect(await screen.findByTestId('media-loading-placeholder')).toBeTruthy();
+    });
+  });
 });

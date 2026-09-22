@@ -28,6 +28,9 @@ const mocks = vi.hoisted(() => ({
   updateBackend: vi.fn(),
   setSyncEnabled: vi.fn(),
   toastError: vi.fn(),
+  settingsList: vi.fn(),
+  settingsUpdate: vi.fn(),
+  pairingInfo: vi.fn(),
   readable: <T>(get: () => T) => ({
     subscribe(run: (value: T) => void) {
       run(get());
@@ -36,11 +39,19 @@ const mocks = vi.hoisted(() => ({
   }),
 }));
 
+vi.mock('$lib/client', () => ({
+  appClient: {
+    settings: { list: mocks.settingsList, update: mocks.settingsUpdate },
+    server: { pairingInfo: mocks.pairingInfo, rotateToken: vi.fn() },
+  },
+}));
+
 vi.mock('$store/renderer/store', () => ({
   store: { dispatch: mocks.dispatch },
 }));
 
 vi.mock('$store/renderer/slices/connections/connections-selectors', () => ({
+  selectCurrentConnectionId: () => mocks.readable(() => 'local'),
   selectConnections: () => mocks.readable(() => mocks.connections),
   selectConnectionsLoaded: () => mocks.readable(() => mocks.loaded),
   selectRemoteConnections: () =>
@@ -78,6 +89,10 @@ vi.mock('$store/renderer/slices/connections/connections-slice', () => ({
   setKeychainSyncEnabledRequested: (enabled: boolean) => mocks.setSyncEnabled(enabled),
 }));
 
+vi.mock('$lib/components/patterns/notify', () => ({
+  notify: { error: mocks.toastError, success: vi.fn() },
+}));
+
 vi.mock('$lib/components/ui/toast', () => ({
   toast: { error: mocks.toastError, success: vi.fn() },
 }));
@@ -110,6 +125,25 @@ const remote: ConnectionRecord = {
 describe('DevicesSettings', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mocks.settingsList.mockResolvedValue([
+      { path: 'server.wsApi.enabled', value: false },
+      { path: 'server.wsApi.port', value: 5181 },
+    ]);
+    mocks.settingsUpdate.mockImplementation(async (changes) => {
+      mocks.settingsList.mockResolvedValue([
+        { path: 'server.wsApi.port', value: 5181 },
+        ...changes,
+      ]);
+      return changes;
+    });
+    mocks.pairingInfo.mockResolvedValue({
+      token: 'test-token',
+      certFingerprint: 'AA:BB',
+      port: 5181,
+      path: '/ws',
+      localIps: ['127.0.0.1'],
+      hostname: 'test-machine',
+    });
     mocks.loaded = true;
     mocks.connections = [local, remote];
     mocks.pinnedVersion = null;
@@ -499,18 +533,21 @@ describe('DevicesSettings', () => {
       pinnedVersion: '0.9.1',
     });
 
-    it('lists the local machine first with its connection status and no remote-only actions', () => {
+    it('allows editing the local machine without remote-only connection actions', async () => {
       render(DevicesSettings);
 
       const [firstRow] = screen.getAllByRole('article');
       expect(within(firstRow).getByText(localLabel)).toBeTruthy();
       expect(within(firstRow).getByRole('status', { name: 'Status: Connected' })).toBeTruthy();
-      // Ineligible local rows expose no actions at all — Connect, Edit, and
-      // Remove are remote-only.
-      expect(screen.queryByRole('button', { name: `Actions for ${localLabel}` })).toBeNull();
+      await fireEvent.click(screen.getByRole('button', { name: `Actions for ${localLabel}` }));
+      expect(screen.queryByRole('menuitem', { name: 'Connect' })).toBeNull();
+      expect(screen.queryByRole('menuitem', { name: 'Remove' })).toBeNull();
+      await fireEvent.click(await screen.findByRole('menuitem', { name: 'Edit' }));
+      await fireEvent.click(screen.getByRole('button', { name: 'Advanced', exact: true }));
+      expect(screen.getByRole('spinbutton', { name: 'Port' })).toBeTruthy();
     });
 
-    it('shows no badge or Update affordance for the sidecar local row', () => {
+    it('shows no badge or Update affordance for the sidecar local row', async () => {
       // Sidecar mode: the local record is never enriched with daemonVersion /
       // updateSupported, so the real predicates keep both affordances hidden.
       mocks.pinnedVersion = '0.9.1';
@@ -519,7 +556,8 @@ describe('DevicesSettings', () => {
       render(DevicesSettings);
 
       expect(screen.queryByRole('img')).toBeNull();
-      expect(screen.queryByRole('button', { name: `Actions for ${localLabel}` })).toBeNull();
+      await fireEvent.click(screen.getByRole('button', { name: `Actions for ${localLabel}` }));
+      expect(screen.queryByRole('menuitem', { name: 'Update' })).toBeNull();
     });
 
     it('offers the version warning and Update when the shared predicates deem the local row eligible', async () => {
@@ -548,7 +586,7 @@ describe('DevicesSettings', () => {
       await fireEvent.click(screen.getByRole('button', { name: `Actions for ${localLabel}` }));
       expect(await screen.findByRole('menuitem', { name: 'Update' })).toBeTruthy();
       expect(screen.queryByRole('menuitem', { name: 'Connect' })).toBeNull();
-      expect(screen.queryByRole('menuitem', { name: 'Edit' })).toBeNull();
+      expect(screen.getByRole('menuitem', { name: 'Edit' })).toBeTruthy();
       expect(screen.queryByRole('menuitem', { name: 'Remove' })).toBeNull();
 
       await fireEvent.click(screen.getByRole('menuitem', { name: 'Update' }));
@@ -611,9 +649,49 @@ describe('DevicesSettings', () => {
     );
   });
 
+  it('enabling remote access from the collapsed local row opens configuration', async () => {
+    mocks.connections = [local];
+    render(DevicesSettings);
+    const toggle = screen.getByRole('switch', { name: m.settings_wsApi_enable_label() });
+    await waitFor(() => expect(toggle.getAttribute('aria-disabled')).not.toBe('true'));
+    await fireEvent.click(toggle);
+    await waitFor(() =>
+      expect(mocks.settingsUpdate).toHaveBeenCalledWith([
+        { path: 'server.wsApi.enabled', value: true },
+      ]),
+    );
+    await waitFor(() => expect(mocks.pairingInfo).toHaveBeenCalled());
+    expect(await screen.findByRole('button', { name: m.settings_wsApi_showQrCode() })).toBeTruthy();
+    expect(toggle.getAttribute('aria-checked')).toBe('true');
+  });
+
+  it('keeps local configuration closed if enabling remote access fails', async () => {
+    mocks.connections = [local];
+    mocks.settingsUpdate.mockRejectedValueOnce(new Error('listener failed'));
+    render(DevicesSettings);
+    const toggle = screen.getByRole('switch', { name: m.settings_wsApi_enable_label() });
+    await waitFor(() => expect((toggle as HTMLButtonElement).disabled).toBe(false));
+    await fireEvent.click(toggle);
+    await waitFor(() => expect(mocks.toastError).toHaveBeenCalled());
+    expect(toggle.getAttribute('aria-checked')).toBe('false');
+    expect(screen.queryByRole('button', { name: m.settings_devices_advanced_label() })).toBeNull();
+  });
+
+  it('opens local configuration when requested by the remote-access deep link', async () => {
+    render(DevicesSettings, { localSettingsRequested: 1 });
+    expect(
+      screen.getByRole('button', { name: 'Advanced', exact: true }).getAttribute('aria-expanded'),
+    ).toBe('false');
+  });
+
   it('persists a local icon override through connections:update', async () => {
     mocks.connections = [local];
     render(DevicesSettings);
+
+    await openAction('Edit', m.layout_daemonStatus_localConnection_label());
+    await fireEvent.click(
+      screen.getByRole('button', { name: m.settings_devices_advanced_label() }),
+    );
 
     const picker = screen.getByTestId('device-icon-picker-trigger');
     expect(picker.getAttribute('aria-label')).toContain('Automatic (Laptop)');
@@ -643,6 +721,11 @@ describe('DevicesSettings', () => {
       }),
     }));
     render(DevicesSettings);
+
+    await openAction('Edit', m.layout_daemonStatus_localConnection_label());
+    await fireEvent.click(
+      screen.getByRole('button', { name: m.settings_devices_advanced_label() }),
+    );
 
     const picker = screen.getByTestId('device-icon-picker-trigger');
     expect(picker.getAttribute('aria-label')).toContain('Robot');
@@ -918,6 +1001,23 @@ describe('DevicesSettings', () => {
       expect(screen.getByText(m.settings_backendSync_unsupported_description())).toBeTruthy();
       expect((detectSwitch() as HTMLButtonElement).disabled).toBe(false);
     });
+  });
+
+  it.each(['local', 'remote'])('toggles the %s editor with the Edit action', async (kind) => {
+    render(DevicesSettings);
+    const name = kind === 'local' ? m.layout_daemonStatus_localConnection_label() : 'Studio Mac';
+    const editor = () =>
+      kind === 'local'
+        ? screen.queryByRole('button', { name: 'Advanced', exact: true })
+        : screen.queryByRole('form', { name: 'Edit Studio Mac' });
+
+    await openAction('Edit', name);
+    expect(editor()).toBeTruthy();
+    await openAction('Edit', name);
+    await waitFor(() => expect(editor()).toBeNull());
+    await openAction('Edit', name);
+    expect(editor()).toBeTruthy();
+    expect(mocks.update).not.toHaveBeenCalled();
   });
 
   it('replaces the first inline panel when a second device action opens', async () => {

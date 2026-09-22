@@ -179,6 +179,46 @@ describe('ChatMessage image lightbox', () => {
     },
   );
 
+  it('reserves the intrinsic aspect box for an image block carrying width/height from a live delta (§7.1)', async () => {
+    const reconciler = new ChatTranscriptReconciler();
+    reconciler.applySnapshot(0, {
+      agentId: 'agent-image',
+      messages: [],
+      truncated: false,
+      totalMessages: 0,
+    });
+    reconciler.applyDelta(1, {
+      added: [
+        {
+          messageId: 'msg-sized-image',
+          role: 'assistant',
+          block: {
+            type: 'image',
+            id: 'msg-sized-image:0',
+            data: mockImageData,
+            mimeType: mockImageMimeType,
+            width: 1440,
+            height: 900,
+          },
+        },
+      ],
+      updated: [],
+      removedIds: [],
+    });
+
+    const message = reconciler.transcript().messages[0];
+    const { container } = render(ChatMessage, { props: { message } });
+
+    const frame = container.querySelector<HTMLElement>('[data-image-sized]');
+    expect(frame).not.toBeNull();
+    expect(frame!.style.aspectRatio).toBe('1440 / 900');
+    expect(frame!.dataset.loaded).toBe('false');
+
+    await fireEvent.load(screen.getByRole('img', { name: 'Image from agent' }));
+    expect(frame!.dataset.loaded).toBe('true');
+    expect(frame!.style.aspectRatio).toBe('1440 / 900');
+  });
+
   it('renders protocol-shaped image content returned by an agent tool', () => {
     render(ChatMessage, { props: { message: createAssistantMessageWithToolImage() } });
 
