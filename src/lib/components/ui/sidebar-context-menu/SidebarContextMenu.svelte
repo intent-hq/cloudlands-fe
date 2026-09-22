@@ -206,9 +206,10 @@
             {/if}
           </Button>
           {#if entry.submenu && openSubmenuId === entry.id}
+            <!-- Offset py-0.5 plus the border so the first child matches its parent row. -->
             <div
               bind:this={submenuElement}
-              class="absolute left-full top-0 -mt-0.5 bg-popover border border-border shadow-lg py-0.5 min-w-32"
+              class="absolute left-full -top-px -mt-0.5 bg-popover border border-border shadow-lg py-0.5 min-w-32"
               role="menu"
             >
               {#each entry.submenu as subitem, subindex (subitem.id)}

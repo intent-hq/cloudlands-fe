@@ -13,7 +13,12 @@
   import { Input } from '$lib/components/ui/input';
   import { getPageTargetIndex } from '$lib/components/ui/menu';
   import ListHighlight from '../menu/menu-list-highlight.svelte';
-  import { menuItem, menuOverlay, menuOverlayTransition } from '../menu/menu-recipes';
+  import {
+    menuItem,
+    menuOverlay,
+    menuOverlayTransition,
+    menuSubmenuAlignOffset,
+  } from '../menu/menu-recipes';
   import { crispOut, slide, springIn } from '$lib/motion';
   import type {
     DropdownOption,
@@ -438,7 +443,7 @@
       // Position submenu to the right of the parent item
       const target = event.currentTarget as HTMLElement;
       const rect = target.getBoundingClientRect();
-      submenuStyle = `position: fixed; top: ${rect.top}px; left: ${rect.right + 4}px;`;
+      submenuStyle = `position: fixed; top: ${rect.top + menuSubmenuAlignOffset}px; left: ${rect.right + 4}px;`;
     }
   }
 
