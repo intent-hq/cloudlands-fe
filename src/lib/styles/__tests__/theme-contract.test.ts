@@ -466,6 +466,35 @@ describe('theme color contract', () => {
     }
   });
 
+  it.each(['light', 'dark'] as const)(
+    'uses the %s focus color for built-in focus while keeping information purple',
+    (mode) => {
+      const css = fs.readFileSync(path.resolve(process.cwd(), 'src/lib/styles/tokens.css'), 'utf8');
+      const primary = tokenValue(css, `theme-${mode}-primary`);
+      const ring = tokenValue(css, `theme-${mode}-ring`);
+      const info = tokenValue(css, `theme-${mode}-info`);
+
+      expect(ring).toBe(mode === 'light' ? '217.2 91.2% 59.8%' : '213.1 93.9% 67.8%');
+      expect(ring).not.toBe(primary);
+      expect(info).toBe(mode === 'light' ? '260 58% 46%' : '260 80% 72%');
+      expect(ring).not.toBe(info);
+    },
+  );
+
+  it('keeps imported focusBorder colors in control of custom theme focus rings', () => {
+    const colors = {
+      'editor.background': '#000000',
+      'editor.foreground': '#ffffff',
+      'button.background': '#22c55e',
+    };
+    const yellowFocus = parseVSCodeTheme({ colors: { ...colors, focusBorder: '#ffff00' } });
+    const cyanFocus = parseVSCodeTheme({ colors: { ...colors, focusBorder: '#00ffff' } });
+
+    expect(yellowFocus.cssVariables['--ring']).not.toBe(cyanFocus.cssVariables['--ring']);
+    expect(yellowFocus.cssVariables['--primary']).toBe(cyanFocus.cssVariables['--primary']);
+    expect(yellowFocus.cssVariables['--info']).toBe(cyanFocus.cssVariables['--info']);
+  });
+
   it.each(['light', 'dark'] as const)('keeps %s control boundaries and focus at 3:1', (mode) => {
     const css = fs.readFileSync(path.resolve(process.cwd(), 'src/lib/styles/tokens.css'), 'utf8');
     const values = tokenValues(css, mode);

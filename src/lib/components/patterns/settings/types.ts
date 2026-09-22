@@ -11,6 +11,7 @@ export type SettingsTab =
   | 'guest-sessions'
   | 'setup'
   | 'advanced'
+  | 'labs'
   | 'input'
   | 'specialists';
 

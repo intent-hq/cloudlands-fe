@@ -15,6 +15,7 @@ import {
   forwardSignalsToChild,
   heapExhaustionHint,
   parseLauncherArgs,
+  preflightI18n,
   resolveHtmlReportOpen,
   runPlaywright,
   usage,
@@ -512,6 +513,63 @@ describe('heapExhaustionHint', () => {
     expect(usage()).toContain(OPEN_REPORT_FLAG);
     expect(usage()).toContain(PRINT_OS_DEPS_FLAG);
     expect(usage()).toContain('CT_PORT');
+  });
+});
+
+describe('preflightI18n', () => {
+  const harness = () => {
+    const errors: string[] = [];
+    const exits: number[] = [];
+    const roots: unknown[] = [];
+    return {
+      errors,
+      exits,
+      roots,
+      options: {
+        root: '/repo',
+        exit: (code: number) => exits.push(code),
+        printError: (message: string) => errors.push(message),
+      },
+    };
+  };
+
+  it('proceeds without exiting when the bundle is fresh', async () => {
+    const { errors, exits, roots, options } = harness();
+    const proceed = await preflightI18n({
+      ...options,
+      ensureI18n: async (root: string) => {
+        roots.push(root);
+        return { ok: true, reason: null };
+      },
+    });
+    expect(proceed).toBe(true);
+    expect(roots).toEqual(['/repo']);
+    expect(errors).toEqual([]);
+    expect(exits).toEqual([]);
+  });
+
+  it('reports the reason and exits 1 when the bundle stays stale', async () => {
+    const { errors, exits, options } = harness();
+    const proceed = await preflightI18n({
+      ...options,
+      ensureI18n: async () => ({ ok: false, reason: 'Paraglide bundle is stale' }),
+    });
+    expect(proceed).toBe(false);
+    expect(errors).toEqual(['[run-ct-tests] Paraglide bundle is stale']);
+    expect(exits).toEqual([1]);
+  });
+
+  it('reports a thrown error and exits 1', async () => {
+    const { errors, exits, options } = harness();
+    const proceed = await preflightI18n({
+      ...options,
+      ensureI18n: async () => {
+        throw new Error('compiler crashed');
+      },
+    });
+    expect(proceed).toBe(false);
+    expect(errors).toEqual(['[run-ct-tests] compiler crashed']);
+    expect(exits).toEqual([1]);
   });
 });
 

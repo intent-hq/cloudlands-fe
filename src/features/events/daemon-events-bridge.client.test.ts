@@ -277,11 +277,13 @@ import { refreshWorkspaceSubscriptionEntriesRequested } from '$store/renderer/sl
 import {
   setAgents,
   setDelegatedCounts,
+  setOrphanedDelegatedAgentsLoaded,
   setRetiredCount,
   setScopeCounts,
 } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
 import {
   selectDelegatedCounts,
+  selectOrphanedDelegatedAgentIds,
   selectRetiredCount,
   selectScopeCounts,
 } from '$store/renderer/slices/workspace-agents/workspace-agents-selectors';
@@ -347,6 +349,8 @@ const AGENT = 'agent-bridge-1';
 /** The hydration read's wire params (§5.5 row scope: the top-level bin). */
 const TOP_LEVEL_LIST = { workspaceId: WS, scope: 'topLevel' };
 const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
+/** Lets a multi-read hydrate (top-level list + lazy-bin re-reads) settle. */
+const settle = () => new Promise((resolve) => setTimeout(resolve, 20));
 const stopRouterDependencies: Array<() => void> = [];
 
 function inheritedPropertyDescriptor(target: object, key: PropertyKey): PropertyDescriptor {
@@ -6196,6 +6200,204 @@ describe('daemonEventsBridge (agent lifecycle → collapsed bin counts, §5.5 sc
       expect(delegatedCountsOf()).toEqual(DELEGATED);
       expect(sumByParent()).toBe(scopeCountsOf()?.delegated);
     });
+
+    it('a delegated agent:created nudges byParent but leaves delegatedCounts.orphaned untouched (orphan-ness is a daemon-side lookup); deleting the row re-baselines the count from the daemon read', async () => {
+      const ORPHANED = { total: 1, running: 0 };
+      appStore.dispatch(setDelegatedCounts(WS, { ...DELEGATED, orphaned: ORPHANED }));
+      const handler = capturedHandlers[0]!;
+
+      // A child of a parent this workspace no longer holds is what the daemon
+      // will count as an orphan on the next read — the bridge does not guess.
+      ensureAgentSessionSpy.mockImplementationOnce(async () => {
+        seedSession({ id: 'agent-child' as never, parentAgentId: 'agent-gone' as never });
+      });
+      handler(notification('agent:created', { agentId: 'agent-child' }));
+      await flush();
+      expect(scopeCountsOf()).toEqual({ ...COUNTS, delegated: 4 });
+      expect(delegatedCountsOf()).toEqual({
+        ...DELEGATED,
+        byParent: { ...DELEGATED.byParent, 'agent-gone': { total: 1, running: 0 } },
+        orphaned: ORPHANED,
+      });
+      expect(backendRequestSpy).not.toHaveBeenCalledWith('agent.list', TOP_LEVEL_LIST);
+
+      // The deleted row may itself have been an orphan: the count is not
+      // guessed locally either — the hydrate re-baselines it from the daemon.
+      backendRequestSpy.mockImplementation((method: string) =>
+        method === 'agent.list'
+          ? Promise.resolve({
+              agents: [],
+              retiredCount: 0,
+              scopeCounts: COUNTS,
+              delegatedCounts: { ...DELEGATED, orphaned: ORPHANED },
+            })
+          : undefined,
+      );
+      handler(notification('agent:deleted', { agentId: 'agent-child' }));
+      await settle();
+      expect(backendRequestSpy).toHaveBeenCalledWith('agent.list', TOP_LEVEL_LIST);
+      expect(scopeCountsOf()).toEqual(COUNTS);
+      expect(delegatedCountsOf()).toEqual({ ...DELEGATED, orphaned: ORPHANED });
+    });
+  });
+
+  // §5.5 delegatedCounts.orphaned: a known row leaving (or re-entering) the
+  // live set changes which of its children the daemon counts as orphans. The
+  // bridge never infers that locally — when the daemon serves the count, the
+  // lifecycle event rides the single-flight hydrate so the count AND the
+  // Delegated bin's membership re-baseline from the daemon.
+  describe('orphaned delegated count + membership re-baseline on known-row liveness changes', () => {
+    const CHILD = 'agent-bridge-child';
+    const NO_ORPHANS = { total: 0, running: 0 };
+    const ONE_ORPHAN = { total: 1, running: 0 };
+    const DELEGATED = { running: 0, byParent: { [PARENT]: { total: 1, running: 0 } } };
+    const ORPHANED_ONLY_LIST = { workspaceId: WS, scope: 'delegated', orphanedOnly: true };
+    const delegatedCountsOf = () => selectDelegatedCounts.select(appStore.state, WS);
+    const orphanIdsOf = () => selectOrphanedDelegatedAgentIds.select(appStore.state, WS);
+    /** PROTOCOL §5.5-shaped `agent.list` row for the child (slim list projection). */
+    const CHILD_ROW = {
+      id: CHILD,
+      workspaceId: WS,
+      name: 'C',
+      status: 'pending',
+      parentAgentId: PARENT,
+      createdAt: '2026-01-01T00:00:00.000Z',
+      updatedAt: '2026-01-01T00:00:00.000Z',
+    };
+
+    /**
+     * The daemon's answer once the parent left the live set. By default the
+     * child is the one orphan (parent deleted, or child restored under a
+     * still-retired parent); a cascading retire takes the child along, so
+     * that read serves `orphaned: 0` and a retired count covering both rows.
+     */
+    function mockDaemonAfterParentLeft(
+      orphaned: { total: number; running: number } = ONE_ORPHAN,
+      retiredCount = 0,
+    ): void {
+      backendRequestSpy.mockImplementation((method: string, params: unknown) => {
+        if (method !== 'agent.list') return undefined;
+        const orphanedOnly = (params as { orphanedOnly?: boolean }).orphanedOnly === true;
+        return Promise.resolve({
+          agents: orphanedOnly && orphaned.total > 0 ? [CHILD_ROW] : [],
+          retiredCount,
+          scopeCounts: { ...COUNTS, topLevel: COUNTS.topLevel - 1 },
+          delegatedCounts: {
+            running: 0,
+            byParent: { [PARENT]: { total: 1, running: 0 } },
+            orphaned,
+          },
+        });
+      });
+    }
+
+    beforeEach(() => {
+      appStore.dispatch(setDelegatedCounts(WS, { ...DELEGATED, orphaned: NO_ORPHANS }));
+      appStore.dispatch(setOrphanedDelegatedAgentsLoaded(WS, false));
+      seedSession({ id: PARENT as never });
+      seedSession({ id: CHILD as never, parentAgentId: PARENT as never });
+      backendRequestSpy.mockClear();
+    });
+
+    it('agent:deleted on a known live parent re-baselines orphaned 0→1 and the bin membership from the daemon read (no local inference)', async () => {
+      // The Delegated bin was expanded earlier (orphan subset loaded), so the
+      // hydrate re-reads it and the membership follows the daemon.
+      appStore.dispatch(setOrphanedDelegatedAgentsLoaded(WS, true));
+      mockDaemonAfterParentLeft();
+      const handler = capturedHandlers[0]!;
+
+      handler(notification('agent:deleted', { agentId: PARENT }));
+      await settle();
+
+      expect(backendRequestSpy).toHaveBeenCalledWith('agent.list', TOP_LEVEL_LIST);
+      expect(backendRequestSpy).toHaveBeenCalledWith('agent.list', ORPHANED_ONLY_LIST);
+      expect(delegatedCountsOf()?.orphaned).toEqual(ONE_ORPHAN);
+      expect(orphanIdsOf()).toEqual({ [CHILD]: true });
+    });
+
+    it('agent:deleted on a known live parent re-baselines the collapsed bin count even before the orphan subset was ever loaded', async () => {
+      mockDaemonAfterParentLeft();
+      const handler = capturedHandlers[0]!;
+
+      handler(notification('agent:deleted', { agentId: PARENT }));
+      await settle();
+
+      expect(backendRequestSpy).toHaveBeenCalledWith('agent.list', TOP_LEVEL_LIST);
+      // A never-expanded bin loads its rows on demand; only the count moves.
+      expect(backendRequestSpy).not.toHaveBeenCalledWith('agent.list', ORPHANED_ONLY_LIST);
+      expect(delegatedCountsOf()?.orphaned).toEqual(ONE_ORPHAN);
+    });
+
+    it('agent:retired on a known parent and agent:restored on its (cascade-retired) child each re-baseline via the hydrate', async () => {
+      // Retiring the parent cascades to the child (daemon-side): neither row
+      // is live, so the daemon counts no orphan — but the bridge still
+      // re-baselines from the read rather than assuming that.
+      mockDaemonAfterParentLeft(NO_ORPHANS, 2);
+      const handler = capturedHandlers[0]!;
+
+      handler(notification('agent:retired', { agentId: PARENT }));
+      await settle();
+      expect(backendRequestSpy).toHaveBeenCalledWith('agent.list', TOP_LEVEL_LIST);
+      expect(delegatedCountsOf()?.orphaned).toEqual(NO_ORPHANS);
+      expect(selectRetiredCount.select(appStore.state, WS)).toBe(2);
+
+      // Restoring the child alone leaves it under a still-retired parent — an
+      // orphan the daemon counts, so the restore re-baselines too.
+      seedSession({
+        id: PARENT as never,
+        retiredAt: '2026-01-01T12:00:00.000Z',
+      });
+      seedSession({
+        id: CHILD as never,
+        parentAgentId: PARENT as never,
+        retiredAt: '2026-01-01T12:00:00.000Z',
+      });
+      appStore.dispatch(setDelegatedCounts(WS, { ...DELEGATED, orphaned: NO_ORPHANS }));
+      backendRequestSpy.mockClear();
+      mockDaemonAfterParentLeft(ONE_ORPHAN, 1);
+
+      handler(notification('agent:restored', { agentId: CHILD }));
+      await settle();
+      expect(backendRequestSpy).toHaveBeenCalledWith('agent.list', TOP_LEVEL_LIST);
+      expect(delegatedCountsOf()?.orphaned).toEqual(ONE_ORPHAN);
+      expect(selectRetiredCount.select(appStore.state, WS)).toBe(1);
+    });
+
+    it('a re-delivered agent:retired does not hydrate again (count-neutral transition)', async () => {
+      mockDaemonAfterParentLeft();
+      const handler = capturedHandlers[0]!;
+
+      handler(notification('agent:retired', { agentId: PARENT }));
+      await settle();
+      const hydrates = backendRequestSpy.mock.calls.filter(
+        ([method, params]) => method === 'agent.list' && params?.scope === 'topLevel',
+      ).length;
+
+      handler(notification('agent:retired', { agentId: PARENT }));
+      await settle();
+      expect(
+        backendRequestSpy.mock.calls.filter(
+          ([method, params]) => method === 'agent.list' && params?.scope === 'topLevel',
+        ),
+      ).toHaveLength(hydrates);
+    });
+
+    it('a known-row delete / retire / restore never refetches while the daemon does not serve delegatedCounts.orphaned (older daemon)', async () => {
+      appStore.dispatch(setDelegatedCounts(WS, DELEGATED));
+      const handler = capturedHandlers[0]!;
+
+      handler(notification('agent:retired', { agentId: PARENT }));
+      await settle();
+      seedSession({ id: PARENT as never, retiredAt: '2026-01-01T12:00:00.000Z' });
+      handler(notification('agent:restored', { agentId: PARENT }));
+      await settle();
+      handler(notification('agent:deleted', { agentId: PARENT }));
+      await settle();
+
+      expect(backendRequestSpy).not.toHaveBeenCalledWith('agent.list', TOP_LEVEL_LIST);
+      // The local bin nudges remain the whole story on that path.
+      expect(scopeCountsOf()).toEqual({ ...COUNTS, topLevel: COUNTS.topLevel - 1 });
+    });
   });
 });
 describe('daemonEventsBridge (note:* wire contract → applyNoteFromEvent)', () => {
@@ -8625,6 +8827,194 @@ describe('daemonEventsBridge (workspace:updated → workspace slice)', () => {
     expect(ws.memberCount).toBe(2);
     expect(ws.branch).toBe('main');
     expect((ws as Record<string, unknown>).members).toBeUndefined();
+  });
+
+  it('merges an openInviteCount when an invite delta carries one', async () => {
+    await seedWorkspace();
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    handler(updatedNotification({ invites: true, openInviteCount: 3 }));
+
+    const ws = await readWorkspace();
+    expect(ws.openInviteCount).toBe(3);
+    expect(ws.branch).toBe('main');
+    expect((ws as Record<string, unknown>).invites).toBeUndefined();
+  });
+
+  // Regression (cloudlands-fe#2776 verifier): `workspace.invite.create` /
+  // `.revoke` publish only `{ invites: true }` (PROTOCOL multiplayer
+  // "Events"), so the stored row's `openInviteCount` cannot be kept current
+  // from the delta alone — the single archive/delete warning, which gates on
+  // that count, would miss a fresh invite (or warn about a revoked one) until
+  // an unrelated full list read. A roster / invite delta now re-reads the one
+  // workspace's membership summary through the running lifecycle read saga
+  // (`workspace.get`, single-flight + trailing coalesce), and the production
+  // warning path is driven end-to-end with no manual row re-seed or list
+  // refresh in between.
+  describe('membership summary convergence → archive / delete warning gating', () => {
+    let daemonRow: { memberCount: number; openInviteCount: number };
+    let stopOperationsSaga: (() => void) | undefined;
+
+    const workspaceGetRequests = () =>
+      backendRequestSpy.mock.calls.filter(([method]) => method === 'workspace.get');
+
+    async function seedListedWorkspace(row: {
+      memberCount: number;
+      openInviteCount: number;
+    }): Promise<void> {
+      daemonRow = { ...row };
+      await seedWorkspace();
+      const { bulkUpdateWorkspaceEntities, updateWorkspaceEntity } =
+        await import('$store/renderer/slices/workspace/workspace-slice');
+      appStore.dispatch(bulkUpdateWorkspaceEntities([updateWorkspaceEntity(WS_UPD, row)]));
+      backendRequestSpy.mockImplementation((method: string, params?: unknown) => {
+        if (method !== 'workspace.get') return undefined;
+        expect(params).toEqual({ workspaceId: WS_UPD });
+        // PROTOCOL §5.1: every `workspace.get` row carries the summary
+        // re-derived from the store at serve time.
+        return Promise.resolve({
+          workspace: {
+            id: WS_UPD,
+            title: 'Original',
+            branch: 'main',
+            status: 'Active',
+            memberCount: daemonRow.memberCount,
+            openInviteCount: daemonRow.openInviteCount,
+          },
+        });
+      });
+      await primeBridge();
+    }
+
+    async function settleReads(): Promise<void> {
+      await flush();
+      await flush();
+      await flush();
+    }
+
+    beforeEach(async () => {
+      const { workspaceOperationsSaga } =
+        await import('$store/renderer/slices/workspace-operations/sagas/workspace-operations-saga');
+      stopOperationsSaga = appStore.runSaga(workspaceOperationsSaga);
+    });
+
+    afterEach(async () => {
+      stopOperationsSaga?.();
+      stopOperationsSaga = undefined;
+      const { closeArchiveWarning, closeDeleteWarning } =
+        await import('$store/renderer/slices/workspace-operations/workspace-operations-slice');
+      appStore.dispatch(closeArchiveWarning());
+      appStore.dispatch(closeDeleteWarning());
+      const { removeWorkspaceEntity } =
+        await import('$store/renderer/slices/workspace/workspace-slice');
+      appStore.dispatch(removeWorkspaceEntity(WS_UPD));
+    });
+
+    it('an invite created after a zero-count list load opens the archive warning naming the invite', async () => {
+      await seedListedWorkspace({ memberCount: 1, openInviteCount: 0 });
+      const { getActiveWorkNames } = await import('$lib/utils/delete-warning-utils');
+      const { requestArchiveWorkspace } =
+        await import('$store/renderer/slices/workspace-operations/workspace-operations-slice');
+      const { selectGuestsForArchive, selectShowArchiveWarning } =
+        await import('$store/renderer/slices/workspace-operations/workspace-operations-selectors');
+      const handler = capturedHandlers[0]!;
+
+      // Another client minted an invite: the daemon now serves one open
+      // invite, and the wire delta says only that invites changed.
+      daemonRow.openInviteCount = 1;
+      handler(updatedNotification({ invites: true }));
+      await settleReads();
+
+      expect(workspaceGetRequests()).toHaveLength(1);
+      expect((await readWorkspace()).openInviteCount).toBe(1);
+      await expect(getActiveWorkNames(WS_UPD)).resolves.toMatchObject({
+        guests: { collaboratorCount: 0, openInviteCount: 1 },
+      });
+
+      appStore.dispatch(requestArchiveWorkspace(WS_UPD));
+      await settleReads();
+
+      expect(selectShowArchiveWarning.select(appStore.state)).toBe(true);
+      expect(selectGuestsForArchive.select(appStore.state)).toEqual({
+        collaboratorCount: 0,
+        openInviteCount: 1,
+      });
+    });
+
+    it('revoking the last invite clears the count so the delete warning no longer opens for guests', async () => {
+      await seedListedWorkspace({ memberCount: 1, openInviteCount: 1 });
+      const { getActiveWorkNames } = await import('$lib/utils/delete-warning-utils');
+      const { requestDeleteWorkspace } =
+        await import('$store/renderer/slices/workspace-operations/workspace-operations-slice');
+      const { selectShowDeleteWarning } =
+        await import('$store/renderer/slices/workspace-operations/workspace-operations-selectors');
+      const handler = capturedHandlers[0]!;
+
+      daemonRow.openInviteCount = 0;
+      handler(updatedNotification({ invites: true }));
+      await settleReads();
+
+      expect((await readWorkspace()).openInviteCount).toBe(0);
+      await expect(getActiveWorkNames(WS_UPD)).resolves.toMatchObject({
+        guests: { collaboratorCount: 0, openInviteCount: 0 },
+      });
+
+      appStore.dispatch(requestDeleteWorkspace(WS_UPD));
+      await settleReads();
+
+      // No guests and no other active work: the delete proceeds straight to
+      // the undo toast path instead of the warning dialog.
+      expect(selectShowDeleteWarning.select(appStore.state)).toBe(false);
+    });
+
+    it('archive teardown frames converge the row so an unarchived workspace shows no stale guests', async () => {
+      await seedListedWorkspace({ memberCount: 3, openInviteCount: 2 });
+      const { getActiveWorkNames } = await import('$lib/utils/delete-warning-utils');
+      const handler = capturedHandlers[0]!;
+
+      // intentd archive: one `members.remove` frame per collaborator (each
+      // carrying the post-change `memberCount`), one `{ invites: true }` for
+      // the revoked invites, then the archive delta itself; unarchive does
+      // not restore guests.
+      daemonRow = { memberCount: 1, openInviteCount: 0 };
+      handler(
+        updatedNotification({ members: true, removedPrincipalId: 'p-alice', memberCount: 2 }),
+      );
+      handler(updatedNotification({ members: true, removedPrincipalId: 'p-bob', memberCount: 1 }));
+      handler(updatedNotification({ invites: true }));
+      handler(
+        updatedNotification({
+          archived: true,
+          status: 'Archived',
+          archivedAt: '2026-07-25T12:00:00.000Z',
+        }),
+      );
+      await settleReads();
+      handler(updatedNotification({ archived: false, status: 'Active', archivedAt: null }));
+      await settleReads();
+
+      // Three delta frames, at most one in-flight read plus one trailing.
+      expect(workspaceGetRequests().length).toBeLessThanOrEqual(2);
+      const ws = await readWorkspace();
+      expect(ws.status).toBe('Active');
+      expect(ws.memberCount).toBe(1);
+      expect(ws.openInviteCount).toBe(0);
+      await expect(getActiveWorkNames(WS_UPD)).resolves.toMatchObject({
+        guests: { collaboratorCount: 0, openInviteCount: 0 },
+      });
+    });
+
+    it('a delta without roster or invite flags issues no membership read', async () => {
+      await seedListedWorkspace({ memberCount: 1, openInviteCount: 0 });
+      const handler = capturedHandlers[0]!;
+
+      handler(updatedNotification({ title: 'Renamed' }));
+      handler(updatedNotification({ statusMessage: 'Working' }));
+      await settleReads();
+
+      expect(workspaceGetRequests()).toHaveLength(0);
+    });
   });
 });
 

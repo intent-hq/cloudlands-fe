@@ -38,6 +38,7 @@ import {
   setGroupByRepo,
   setGithubLinkDefaultAction,
   setHasCompletedProviderSetup,
+  setLabsMultiplayerEnabled,
   setLanguagePreference,
   setNoteFontStyle,
   setReduceMotionOnBattery,
@@ -50,6 +51,7 @@ import {
   toggleGroupByRepo,
   toggleHasCompletedProviderSetup,
   toggleChatAurora,
+  toggleLabsMultiplayer,
   toggleReduceMotionOnBattery,
   toggleShowArchived,
   toggleShowReasoningBlocks,
@@ -175,6 +177,7 @@ describe('userPreferencesPersistenceSaga', () => {
       'chat:auroraEnabled': false,
       'appearance:shellTransparencyEnabled': false,
       'appearance:reduceMotionOnBattery': false,
+      'labs:multiplayerEnabled': true,
       'agent-font-settings': { fontStyle: 'monospace' },
       'note-font-settings': { fontStyle: 'sans' },
       'code-font-settings': { fontFamily: 'Monaco' },
@@ -199,6 +202,7 @@ describe('userPreferencesPersistenceSaga', () => {
       [setChatAuroraEnabled(false)],
       [setShellTransparencyEnabled(false)],
       [setReduceMotionOnBattery(false)],
+      [setLabsMultiplayerEnabled(true)],
       [setAgentFontStyle('monospace')],
       [setNoteFontStyle('sans')],
       [setCodeFontFamily('Monaco')],
@@ -224,6 +228,24 @@ describe('userPreferencesPersistenceSaga', () => {
         initialState,
       );
       expect(hydrated.reduceMotionOnBattery).toBe(stored);
+    },
+  );
+
+  it.each([true, false])(
+    'hydrates a persisted labs:multiplayerEnabled = %s over the default',
+    async (stored) => {
+      mocks.getJSON.mockImplementation((key: string) =>
+        key === 'labs:multiplayerEnabled' ? stored : undefined,
+      );
+      const dispatch = vi.fn();
+      await runSaga({ dispatch, getState: () => ({}) }, hydrateUserPreferencesWorker).toPromise();
+
+      expect(dispatch.mock.calls).toEqual([[setLabsMultiplayerEnabled(stored)]]);
+      const hydrated = dispatch.mock.calls.reduce(
+        (state, [action]) => userPreferencesReducer(state, action),
+        initialState,
+      );
+      expect(hydrated.labsMultiplayerEnabled).toBe(stored);
     },
   );
 
@@ -345,6 +367,7 @@ describe('userPreferencesPersistenceSaga', () => {
         chatAuroraEnabled: false,
         shellTransparencyEnabled: false,
         reduceMotionOnBattery: false,
+        labsMultiplayerEnabled: true,
         agentFontStyle: 'monospace',
         noteFontStyle: 'sans',
         codeFontFamily: 'Monaco',
@@ -379,6 +402,8 @@ describe('userPreferencesPersistenceSaga', () => {
       toggleShellTransparency(),
       setReduceMotionOnBattery(false),
       toggleReduceMotionOnBattery(),
+      setLabsMultiplayerEnabled(true),
+      toggleLabsMultiplayer(),
       setAgentFontStyle('monospace'),
       setNoteFontStyle('sans'),
       cycleNoteFontStyle(),
@@ -410,6 +435,8 @@ describe('userPreferencesPersistenceSaga', () => {
       ['appearance:shellTransparencyEnabled', false],
       ['appearance:reduceMotionOnBattery', false],
       ['appearance:reduceMotionOnBattery', false],
+      ['labs:multiplayerEnabled', true],
+      ['labs:multiplayerEnabled', true],
       ['agent-font-settings', { fontStyle: 'monospace' }],
       ['note-font-settings', { fontStyle: 'sans' }],
       ['note-font-settings', { fontStyle: 'sans' }],

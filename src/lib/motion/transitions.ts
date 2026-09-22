@@ -1,4 +1,4 @@
-import { cubicOut } from 'svelte/easing';
+import { cubicOut, linear } from 'svelte/easing';
 import {
   blur as svelteBlur,
   draw as svelteDraw,
@@ -86,6 +86,13 @@ export interface MotionParams {
   tier?: SpringTierName;
 }
 
+/** Explicit timing for fades coordinated with a larger scene sequence. */
+export interface TimedFadeParams {
+  duration: number;
+  delay?: number;
+  easing?: TransitionConfig['easing'];
+}
+
 export interface AxisMotionParams extends MotionParams {
   axis?: 'x' | 'y';
 }
@@ -116,6 +123,13 @@ export function fade(
   { direction = 'in' }: { direction?: MotionDirectionHint } = {},
 ): MotionTransitionConfig {
   return motionTransition(node, tier, direction, (config) => svelteFade(node, config));
+}
+
+export function timedFade(
+  node: Element,
+  { duration, delay = 0, easing = linear }: TimedFadeParams,
+): ImmediateMotionConfig {
+  return svelteFade(node, { duration, delay, easing });
 }
 
 export function fly(
