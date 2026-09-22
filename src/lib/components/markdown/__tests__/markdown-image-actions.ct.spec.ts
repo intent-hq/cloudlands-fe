@@ -50,6 +50,38 @@ for (const isStreaming of [false, true]) {
     await expect(page.getByRole('menu')).toHaveCount(0);
     await expect(trigger).toBeFocused();
   });
+
+  test(`${isStreaming ? 'streaming' : 'static'} right-click menu preserves preview and focus behavior`, async ({
+    mount,
+    page,
+  }) => {
+    await page.emulateMedia({ reducedMotion: 'reduce' });
+    const src = `data:image/svg+xml;base64,${Buffer.from(svg).toString('base64')}`;
+    const component = await mount(MarkdownViewer, {
+      props: { content: `![diagram](${src})`, isStreaming },
+    });
+    const image = component.getByRole('button', { name: 'diagram', exact: true });
+    await image.click({ button: 'right' });
+    await expect(page.getByRole('menu')).toBeVisible();
+    await expect(page.getByRole('dialog')).toHaveCount(0);
+    await page.keyboard.press('ArrowDown');
+    await expect(page.getByRole('menuitem', { name: /download/i })).toBeFocused();
+    await page.keyboard.press('Escape');
+    await expect(page.getByRole('menu')).toHaveCount(0);
+    await expect(component.getByRole('button', { name: /image options/i })).toBeFocused();
+    await image.click();
+    const dialog = page.getByRole('dialog', { name: /image preview/i });
+    await expect(dialog).toBeVisible();
+    await dialog.getByRole('img').click({ button: 'right' });
+    await expect(page.getByRole('menuitem', { name: /copy image/i })).toBeVisible();
+    await page.keyboard.press('Escape');
+    await expect(page.getByRole('menu')).toHaveCount(0);
+    await expect(dialog).toBeVisible();
+    await expect(dialog.getByRole('button', { name: /image options/i })).toBeFocused();
+    await page.keyboard.press('Escape');
+    await expect(dialog).toHaveCount(0);
+    await expect(image).toBeFocused();
+  });
 }
 
 test('chat image fills its tile with equal action insets', async ({ mount, page }) => {
@@ -79,6 +111,12 @@ test('chat image fills its tile with equal action insets', async ({ mount, page 
   await expect(trigger).toHaveCSS('opacity', '0');
   await tile.focus();
   await expect(trigger).toHaveCSS('opacity', '1');
+  await image.click({ button: 'right' });
+  await expect(page.getByRole('menuitem', { name: /copy image/i })).toBeVisible();
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+  await page.keyboard.press('Escape');
+  await expect(page.getByRole('menu')).toHaveCount(0);
+  await expect(trigger).toBeFocused();
 });
 
 for (const source of ['https', 'data'] as const) {

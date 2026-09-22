@@ -6,6 +6,7 @@
   import Fa from 'svelte-fa';
   import { faImage } from '@fortawesome/free-solid-svg-icons';
   import { m } from '$shared/paraglide/messages.js';
+  import { supportsImageActions } from '$lib/utils/image-actions';
 
   interface Props {
     /** Base64 image data — the §5.5 slim thumbnail or nothing when truncated. */
@@ -32,6 +33,7 @@
     onHydrate,
   }: Props = $props();
   let lightboxOpen = $state(false);
+  let imageActionsOpen = $state(false);
   let openerElement: HTMLButtonElement | null = $state(null);
   let failedImageUrl = $state<string | null>(null);
 
@@ -50,6 +52,13 @@
     }
     if (imageUrl) lightboxOpen = true;
   }
+
+  function handleContextMenu(event: MouseEvent) {
+    if (!hasOriginal || !imageUrl || !supportsImageActions(imageUrl)) return;
+    event.preventDefault();
+    event.stopPropagation();
+    imageActionsOpen = true;
+  }
 </script>
 
 <div class="my-2 min-w-0 max-w-2xl" data-chat-image>
@@ -64,6 +73,7 @@
           ? 'animate-pulse'
           : ''}"
         onclick={handleClick}
+        oncontextmenu={handleContextMenu}
         aria-label={needsHydration
           ? m.chat_imageBlock_loadFullImage_ariaLabel({ alt })
           : m.chat_imageBlock_viewFullSize_ariaLabel({ alt })}
@@ -89,6 +99,7 @@
         <ImageActionsMenu
           {imageUrl}
           imageName={alt}
+          bind:open={imageActionsOpen}
           triggerClass="absolute right-1.5 top-1.5 opacity-0 transition-opacity focus-visible:opacity-100 group-focus-within:opacity-100 group-hover:opacity-100 data-[state=open]:opacity-100"
         />
       {/if}

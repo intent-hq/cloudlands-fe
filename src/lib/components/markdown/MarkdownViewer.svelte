@@ -191,14 +191,17 @@
     );
   }
 
+  function imageAtTarget(target: EventTarget | null): HTMLImageElement | null {
+    return target instanceof HTMLImageElement
+      ? target
+      : target instanceof HTMLAnchorElement
+        ? target.querySelector('img')
+        : null;
+  }
+
   function handleImageInteraction(event: MouseEvent | FocusEvent): void {
     const target = event.target;
-    const image =
-      target instanceof HTMLImageElement
-        ? target
-        : target instanceof HTMLAnchorElement
-          ? target.querySelector('img')
-          : null;
+    const image = imageAtTarget(target);
     if (image && isActionableImage(image)) {
       if (hoveredImage === image) return;
       const container = event.currentTarget as HTMLElement;
@@ -219,6 +222,15 @@
 
   function handleImageHoverLeave(): void {
     if (!imageActionsOpen && !imageActionsHaveFocus()) hoveredImage = null;
+  }
+
+  function handleImageContextMenu(event: MouseEvent): void {
+    const image = imageAtTarget(event.target);
+    if (!image || !isActionableImage(image)) return;
+    event.preventDefault();
+    event.stopPropagation();
+    handleImageInteraction(event);
+    imageActionsOpen = true;
   }
 
   function mediaFallbacks(node: HTMLElement) {
@@ -485,6 +497,7 @@
     use:mediaFallbacks
     onclick={handleLinkClick}
     onkeydown={handleLinkKeydown}
+    oncontextmenu={handleImageContextMenu}
     onmouseover={handleImageInteraction}
     onfocusin={handleImageInteraction}
     onmouseleave={handleImageHoverLeave}
@@ -509,6 +522,7 @@
     use:mediaFallbacks
     onclick={handleLinkClick}
     onkeydown={handleLinkKeydown}
+    oncontextmenu={handleImageContextMenu}
     onmouseover={handleImageInteraction}
     onfocusin={handleImageInteraction}
     onmouseleave={handleImageHoverLeave}

@@ -111,6 +111,7 @@ describe('ChatImageBlock', () => {
   });
 
   it('suppresses the actions menu on truncated thumbnail blocks until hydration', async () => {
+    const onHydrate = vi.fn();
     render(ChatImageBlock, {
       props: {
         data: pngData,
@@ -118,13 +119,17 @@ describe('ChatImageBlock', () => {
         alt: 'screenshot.png',
         dataTruncated: true,
         dataIsThumbnail: true,
-        onHydrate: vi.fn(),
+        onHydrate,
       },
     });
 
     // The block only carries the low-res thumbnail bytes: the menu's
     // download/copy/info actions would act on the wrong image.
     expect(screen.queryByRole('button', { name: /image options/i })).toBeNull();
+    expect(await fireEvent.contextMenu(screen.getByRole('img'))).toBe(true);
+    expect(screen.queryByRole('menu')).toBeNull();
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(onHydrate).not.toHaveBeenCalled();
   });
 
   it('does not export a thumbnail through the lightbox when hydration is unavailable', async () => {
@@ -132,8 +137,46 @@ describe('ChatImageBlock', () => {
       props: { data: pngData, mimeType: 'image/png', dataTruncated: true, dataIsThumbnail: true },
     });
     await fireEvent.click(screen.getByRole('button'));
-    await screen.findByRole('dialog', { name: /image preview/i });
+    const dialog = await screen.findByRole('dialog', { name: /image preview/i });
+    expect(await fireEvent.contextMenu(dialog.querySelector('img')!)).toBe(true);
+    expect(screen.queryByRole('menu')).toBeNull();
     expect(screen.queryByRole('button', { name: /image options/i })).toBeNull();
+  });
+
+  it('opens original image actions on right-click without opening the lightbox', async () => {
+    const anchorClick = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
+    render(ChatImageBlock, {
+      props: { data: pngData, mimeType: 'image/png', alt: 'original' },
+    });
+    expect(await fireEvent.contextMenu(screen.getByRole('img'))).toBe(false);
+    await screen.findByRole('menuitem', { name: /copy image/i });
+    expect(screen.queryByRole('dialog')).toBeNull();
+    await fireEvent.click(screen.getByRole('menuitem', { name: /download/i }));
+    await waitFor(() => expect(anchorClick).toHaveBeenCalledOnce());
+    const anchor = anchorClick.mock.instances[0] as HTMLAnchorElement;
+    expect(anchor.href).toBe(`data:image/png;base64,${pngData}`);
+    expect(anchor.download).toBe('original.png');
+  });
+
+  it('closes a right-click lightbox menu before the preview and resets on reopen', async () => {
+    render(ChatImageBlock, {
+      props: { data: pngData, mimeType: 'image/png', alt: 'screenshot.png' },
+    });
+    const opener = screen.getByRole('button', { name: /view.*full size/i });
+    await fireEvent.click(opener);
+    const dialog = await screen.findByRole('dialog', { name: /image preview/i });
+    expect(await fireEvent.contextMenu(dialog.querySelector('img')!)).toBe(false);
+    await screen.findByRole('menu');
+    await fireEvent.keyDown(window, { key: 'Escape' });
+    await waitFor(() => expect(screen.queryByRole('menu')).toBeNull());
+    expect(screen.getByRole('dialog')).toBe(dialog);
+    await fireEvent.keyDown(window, { key: 'Escape' });
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    await fireEvent.click(opener);
+    const reopened = await screen.findByRole('dialog');
+    expect(screen.queryByRole('menu')).toBeNull();
+    await fireEvent.contextMenu(reopened.querySelector('img')!);
+    expect(await screen.findByRole('menuitem', { name: /copy image/i })).toBeTruthy();
   });
 
   it('downloads only the original payload after the thumbnail has hydrated', async () => {

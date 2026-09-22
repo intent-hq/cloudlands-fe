@@ -142,6 +142,11 @@ describe('MarkdownViewer panel navigation', () => {
       expect(await screen.findByRole('menuitem', { name: /copy image/i })).toBeTruthy();
       expect(handleLink).not.toHaveBeenCalled();
       await fireEvent.keyDown(screen.getByRole('menu'), { key: 'Escape' });
+      expect(await fireEvent.contextMenu(image)).toBe(false);
+      expect(await screen.findByRole('menuitem', { name: /copy image/i })).toBeTruthy();
+      expect(handleLink).not.toHaveBeenCalled();
+      expect(screen.queryByRole('dialog')).toBeNull();
+      await fireEvent.keyDown(screen.getByRole('menu'), { key: 'Escape' });
       await fireEvent.click(image);
       expect(handleLink).toHaveBeenCalledWith(
         'https://example.com/details',

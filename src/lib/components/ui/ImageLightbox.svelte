@@ -10,6 +10,7 @@
   import ImageActionsMenu from '$lib/components/ui/ImageActionsMenu.svelte';
   import ZoomPanViewport from '$lib/components/ui/ZoomPanViewport.svelte';
   import { m } from '$shared/paraglide/messages.js';
+  import { supportsImageActions } from '$lib/utils/image-actions';
 
   interface Props {
     open?: boolean;
@@ -32,9 +33,21 @@
   }: Props = $props();
 
   let zoomPanViewport: ZoomPanViewport | undefined = $state();
+  let imageActionsOpen = $state(false);
+
+  $effect(() => {
+    if (!open) imageActionsOpen = false;
+  });
 
   function handleKeydown(e: KeyboardEvent) {
     if (!e.defaultPrevented) zoomPanViewport?.handleKeydown(e);
+  }
+
+  function handleContextMenu(event: MouseEvent) {
+    if (!showActionsMenu || !supportsImageActions(imageUrl)) return;
+    event.preventDefault();
+    event.stopPropagation();
+    imageActionsOpen = true;
   }
 </script>
 
@@ -43,6 +56,7 @@
     <ImageActionsMenu
       {imageUrl}
       {imageName}
+      bind:open={imageActionsOpen}
       triggerClass="h-9 w-9 bg-white/0 hover:bg-white/20"
       contentClass="z-[1003]"
     />
@@ -66,6 +80,7 @@
         class="max-h-[90vh] max-w-[90vw] rounded-lg object-contain"
         draggable="false"
         data-media-lightbox-content
+        oncontextmenu={handleContextMenu}
       />
     </ZoomPanViewport>
   {/key}

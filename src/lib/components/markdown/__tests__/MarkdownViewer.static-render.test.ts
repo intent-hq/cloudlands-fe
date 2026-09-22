@@ -193,6 +193,28 @@ describe('MarkdownViewer static rendering', () => {
     },
   );
 
+  it.each([false, true])(
+    'opens image actions on right-click with streaming=%s',
+    async (isStreaming) => {
+      render(MarkdownViewer, {
+        props: {
+          content: '![diagram](data:image/png;base64,iVBORw0KGgo=)\n\nOther content.',
+          isStreaming,
+        },
+      });
+      const image = await screen.findByRole('button', { name: 'diagram' });
+      expect(await fireEvent.contextMenu(screen.getByText('Other content.'))).toBe(true);
+      expect(screen.queryByRole('menu')).toBeNull();
+      expect(await fireEvent.contextMenu(image)).toBe(false);
+      expect(await screen.findByRole('menuitem', { name: /download/i })).toBeTruthy();
+      expect(screen.queryByRole('dialog')).toBeNull();
+      await fireEvent.keyDown(screen.getByRole('menu'), { key: 'Escape' });
+      await waitFor(() => expect(screen.queryByRole('menu')).toBeNull());
+      await fireEvent.click(image);
+      expect(await screen.findByRole('dialog', { name: /image preview/i })).toBeTruthy();
+    },
+  );
+
   it.each(imageSources)('offers keyboard image actions for %s', async (src) => {
     const { container } = render(MarkdownViewer, {
       props: { content: `![note image](${src})` },
@@ -277,6 +299,8 @@ describe('MarkdownViewer static rendering', () => {
       const image = container.querySelector<HTMLImageElement>('img');
       if (image) {
         expect(image.tabIndex).toBe(-1);
+        expect(await fireEvent.contextMenu(image)).toBe(true);
+        expect(screen.queryByRole('menu')).toBeNull();
         await fireEvent.mouseOver(image);
         await fireEvent.click(image);
         await fireEvent.keyDown(image, { key: 'Enter' });
