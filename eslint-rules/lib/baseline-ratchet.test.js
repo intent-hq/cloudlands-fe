@@ -3,6 +3,7 @@ import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { ESLint } from 'eslint';
 import { afterEach, describe, expect, it } from 'vitest';
 import {
   assertBaselineOnlyShrinks,
@@ -13,6 +14,7 @@ import {
   ruleScopeOverrides,
 } from './baseline-ratchet.js';
 import { namedColorAllowlist } from '../design-system/common.js';
+import { designSystemRules } from '../design-system/index.js';
 import repoConfig from '../../eslint.config.js';
 
 const original = {
@@ -297,13 +299,55 @@ describe('ruleScopeOverrides', () => {
       ruleScopeOverrides(
         [
           { files: ['a/**'], rules: { [ruleId]: 0 } },
-          { files: ['b/**'], rules: { [ruleId]: ['warn', { x: 1 }] } },
+          { files: ['b/**'], rules: { [ruleId]: ['warn', { x: 1, baseline: { f: 1 } }] } },
           { rules: { other: 'error' } },
         ],
         ruleId,
       ),
     ).toEqual([{ files: ['b/**'], rules: { [ruleId]: ['warn', { x: 1, baseline: {} }] } }]);
   });
+
+  it('copies settings without a baseline option verbatim, so schema-less rules accept them', () => {
+    // Eleven design-system rules declare `schema: []`; adding an options object to them
+    // makes ESLint reject the config, so only a present `baseline` is ever rewritten.
+    const ruleId = 'intent/no-dialog-root-outside-patterns';
+    expect(ruleScopeOverrides(repoConfig, ruleId)[0].rules[ruleId]).toBe('error');
+    expect(
+      ruleScopeOverrides(
+        [{ files: ['b/**'], rules: { [ruleId]: ['warn', { x: 1 }] } }, { rules: { [ruleId]: 2 } }],
+        ruleId,
+      ),
+    ).toEqual([
+      { files: ['b/**'], rules: { [ruleId]: ['warn', { x: 1 }] } },
+      { rules: { [ruleId]: 2 } },
+    ]);
+  });
+
+  it('is accepted by real ESLint for every design-system rule and re-enables baselined files', async () => {
+    // DirectoryPickerModal is the one file `designSystemBaselineOverrides` turns
+    // `no-dialog-root-outside-patterns` off for, so it must come back on and report.
+    const cwd = path.resolve(import.meta.dirname, '../..');
+    const ruleIds = Object.keys(designSystemRules).map((id) => `intent/${id}`);
+    const file = 'src/features/onboarding/messages/DirectoryPickerModal.svelte';
+    const ruleId = 'intent/no-dialog-root-outside-patterns';
+    const eslint = new ESLint({
+      cwd,
+      overrideConfig: ruleScopeOverrides(repoConfig, ruleIds),
+      ruleFilter: ({ ruleId: id }) => ruleIds.includes(id),
+      cache: false,
+    });
+    const baseEslint = new ESLint({ cwd, cache: false });
+    const [config, baseConfig] = await Promise.all([
+      eslint.calculateConfigForFile(path.join(cwd, file)),
+      baseEslint.calculateConfigForFile(path.join(cwd, file)),
+    ]);
+    expect(baseConfig.rules[ruleId]).toEqual([0]);
+    expect(config.rules[ruleId]).toEqual([2]);
+    for (const id of ruleIds) expect(config.rules[id][0]).not.toBe(0);
+
+    const [result] = await eslint.lintFiles([file]);
+    expect(result.messages.filter((m) => m.ruleId === ruleId).length).toBeGreaterThan(0);
+  }, 120_000);
 });
 
 describe('lintRuleFromRepoConfig', () => {
