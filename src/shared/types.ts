@@ -37,6 +37,8 @@ import {
 
 // Import consolidated AgentSession type
 import type {
+  AgentDelegatedCounts as NewAgentDelegatedCounts,
+  AgentDelegatedParentCounts as NewAgentDelegatedParentCounts,
   AgentListBin as NewAgentListBin,
   AgentListScope as NewAgentListScope,
   AgentScopeCounts as NewAgentScopeCounts,
@@ -104,6 +106,7 @@ import {
 // Import consolidated AgentMessage type
 import type {
   AgentMessage,
+  MessageAuthor,
   MessageMetadata,
   MessageRole,
   ProviderMessage,
@@ -203,7 +206,15 @@ export {
   toProviderMessage,
   MESSAGE_ROLES,
 };
-export type { AgentMessage, MessageMetadata, MessageRole, ProviderMessage, ToolCall, ToolResult };
+export type {
+  AgentMessage,
+  MessageAuthor,
+  MessageMetadata,
+  MessageRole,
+  ProviderMessage,
+  ToolCall,
+  ToolResult,
+};
 
 // Re-export SuggestedPrompt types and helpers
 export type { SuggestedPrompt, SuggestedPromptsEvent } from './types/suggested-prompt';
@@ -1080,6 +1091,8 @@ export type SessionStats = NewSessionStats;
 export type AgentListScope = NewAgentListScope;
 export type AgentListBin = NewAgentListBin;
 export type AgentScopeCounts = NewAgentScopeCounts;
+export type AgentDelegatedCounts = NewAgentDelegatedCounts;
+export type AgentDelegatedParentCounts = NewAgentDelegatedParentCounts;
 
 // Re-export type guards
 export const isPendingAgentSession = isNewPendingAgentSession;

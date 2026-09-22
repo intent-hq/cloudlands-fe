@@ -30,9 +30,7 @@
     // Scripts are invoked via package.json scripts, CI workflows (.github/workflows),
     // and electron-builder hooks (notarize/sign) — not via imports
     "scripts/*.{js,cjs,mjs,ts}",
-    // Referenced from e2e/playwright.config.e2e.ts, which knip cannot load (see "playwright" below)
-    "e2e/global-setup.ts",
-    "e2e/global-teardown.ts",
+    // Spawned by path from the build-smoke specs (MOCK_AGENT_SCRIPT_PATH), not imported
     "e2e/mock-acp-agent.js",
     // $app alias stubs wired in playwright-ct.config.ts ctViteConfig (alias resolution
     // is not followed by knip); playwright/index.ts is listed under "playwright-ct" below
@@ -156,7 +154,6 @@
     "entry": [
       "playwright.config.ts",
       "playwright-ct.config.ts",
-      "e2e/playwright.config.e2e.ts",
       "e2e/build-smoke.config.ts",
       "src/lib/components/ui/card/operate-patterns.playwright.config.ts",
       // playwright.config.ts: testDir ./test, testMatch **/*.spec.ts
@@ -165,7 +162,7 @@
       "src/**/*.ct.spec.ts",
       // operate-patterns.playwright.config.ts: testMatch operate-patterns.visual.spec.ts
       "src/**/*.visual.spec.ts",
-      // e2e/playwright.config.e2e.ts + e2e/build-smoke.config.ts: testMatch **/*.e2e.ts
+      // e2e/build-smoke.config.ts: testMatch **/build-smoke*.e2e.ts
       "e2e/**/*.e2e.ts",
     ],
   },
@@ -180,7 +177,7 @@
   // System/external binaries, not npm packages: pkill/iconutil (macOS), duckdb, flatpak,
   // idea (JetBrains launcher), auggie (Augment CLI, expected on dev/CI hosts), jq (the
   // notify-fixed-issues.sh test stub applies the script's --jq projection with it)
-  "ignoreBinaries": ["pkill", "iconutil", "duckdb", "flatpak", "idea", "auggie", "jq"],
+  "ignoreBinaries": ["pkill", "pgrep", "iconutil", "duckdb", "flatpak", "idea", "auggie", "jq"],
   "ignoreDependencies": [
     // Optional coverage provider: scripts/run-integration-coverage-if-available.ts probes it
     // with require.resolve and exits gracefully when absent — intentionally not declared

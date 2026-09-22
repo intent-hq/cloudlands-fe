@@ -16,7 +16,10 @@
   import { selectAgentPresencePeople } from '$store/renderer/slices/presence/presence-selectors';
   import PresenceAvatarStack from '$features/presence/components/PresenceAvatarStack.svelte';
 
-  import { selectWorkspaceById } from '$store/renderer/slices/workspace/workspace-selectors';
+  import {
+    selectHidesAgentLifecycleActions,
+    selectWorkspaceById,
+  } from '$store/renderer/slices/workspace/workspace-selectors';
   import type { AgentSession } from '$shared/types';
   import { createLogger } from '$lib/utils/client-logger';
   import { navigateToNote } from '$lib/utils/workspace-navigation';
@@ -50,6 +53,7 @@
   import HarnessFeaturesModal from '$lib/components/chat/HarnessFeaturesModal.svelte';
   import ReplaceAgentModal from '$lib/components/modals/ReplaceAgentModal.svelte';
   import { formatAgentMessagesForClipboard } from '$lib/utils/clipboard-formatters';
+  import { agentDelegationParentOf } from '$shared/utils/agent-scope';
   import { isReplaceAgentEligible } from '$shared/utils/replace-agent-eligibility';
   import { m } from '$shared/paraglide/messages.js';
   import { sendMessage } from '$store/renderer/slices/chat-state/chat-state-slice';
@@ -76,6 +80,9 @@
 
   // Cache $workspace to prevent destruction during store reloads
   const workspace = selectWorkspaceById(workspaceIdStore);
+  // `agent.delete` is refused (-32003) for a collaborator connection: the
+  // menu item is withheld rather than disabled.
+  const hidesAgentLifecycleActions$ = selectHidesAgentLifecycleActions(workspaceIdStore);
   const defaultModel = selectSelectedModel();
   // Other people whose focus is this chat (multiplayer w5 presence circles).
   const presencePeople$ = selectAgentPresencePeople(workspaceIdStore, agentIdStore);
@@ -127,7 +134,9 @@
   });
 
   // Resolve "Delegated by" reactively once the parent session is loaded into Redux.
-  const parentAgentId = $derived((agentSession?.metadata?.createdByAgentId as string) || null);
+  const parentAgentId = $derived<string | null>(
+    agentSession ? agentDelegationParentOf(agentSession) : null,
+  );
   const parentAgent$ = useAgentSession(() => parentAgentId);
   const delegatedByName = $derived(parentAgentId ? $parentAgent$?.name || null : null);
 
@@ -234,7 +243,7 @@
   }
 
   async function handleDeleteAgent() {
-    if (!tab.agentId || isAgentDeleting) return;
+    if (!tab.agentId || isAgentDeleting || $hidesAgentLifecycleActions$) return;
     const agentIdToDelete = tab.agentId;
     const agentName = agentSession?.name || tab.title || '';
     isAgentDeleting = true;
@@ -337,14 +346,16 @@
       onclick={() => (replaceAgentModalOpen = true)}
     />
   {/if}
-  <Menu.CommandItem
-    icon={faTrash}
-    iconWeight="regular"
-    label={m.layout_agentTab_deleteAgent_tooltip()}
-    onclick={handleDeleteAgent}
-    disabled={isAgentDeleting}
-    destructive
-  />
+  {#if !$hidesAgentLifecycleActions$}
+    <Menu.CommandItem
+      icon={faTrash}
+      iconWeight="regular"
+      label={m.layout_agentTab_deleteAgent_tooltip()}
+      onclick={handleDeleteAgent}
+      disabled={isAgentDeleting}
+      destructive
+    />
+  {/if}
   {#if agentSpecialistName || harnessVersion}
     <Menu.Separator />
     {#if agentSpecialistName}

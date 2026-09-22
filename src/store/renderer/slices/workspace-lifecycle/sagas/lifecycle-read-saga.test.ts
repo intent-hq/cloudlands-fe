@@ -75,6 +75,9 @@ import {
   fetchRetiredAgentsRequested,
   hydrateAgentsRequested,
   setAgentsLoaded,
+  setDelegatedCounts,
+  setScopeCounts,
+  workspaceAgentsReducer,
 } from '../../workspace-agents/workspace-agents-slice';
 import {
   loadEventsRequested,
@@ -93,7 +96,11 @@ import { consoleOwnerChanged } from '../../hardware-console/hardware-console-sli
 import { bulkUpsertSessions } from '../../agent-session/agent-session-slice';
 import { selectAgentSessionsById } from '../../agent-session/agent-session-selectors';
 import { store as appStore } from '../../../store';
-import { workspaceDeleted, workspaceUnmounted } from '../workspace-lifecycle-slice';
+import {
+  backendReconnected,
+  workspaceDeleted,
+  workspaceUnmounted,
+} from '../workspace-lifecycle-slice';
 import { gitReadSaga } from '../../git/sagas/git-read-saga';
 import { lifecycleReadSaga } from './lifecycle-read-saga';
 import { MAX_CONCURRENT_WORKSPACE_READS } from './workspace-read-scheduler';
@@ -135,6 +142,32 @@ function start(current = state()) {
     lifecycleReadSaga,
   );
   return { channel, actions, task };
+}
+
+// Flows that dispatch loadWorkspacesRequested from inside the saga, or that
+// branch on the loaded flag, need dispatched actions looped back into the
+// channel (the default start() only records them) and the real
+// workspaceReducer applied to observe store convergence.
+function startWithLoopback() {
+  const channel = stdChannel();
+  const actions: { type: string }[] = [];
+  let workspaceState = workspaceReducer(undefined, { type: '@@INIT' });
+  const dispatch = (action: { type: string }) => {
+    actions.push(action);
+    workspaceState = workspaceReducer(workspaceState, action);
+    channel.put(action);
+    return action;
+  };
+  const current = state();
+  const task = runSaga(
+    {
+      channel,
+      dispatch,
+      getState: () => ({ ...current, workspace: workspaceState }),
+    },
+    lifecycleReadSaga,
+  );
+  return { channel, actions, task, dispatch, getWorkspaceState: () => workspaceState };
 }
 
 async function stop(task: ReturnType<typeof runSaga>) {
@@ -261,35 +294,150 @@ describe('lifecycleReadSaga', () => {
     await stop(run.task);
   });
 
+  describe('workspace list retry until the daemon transport connects', () => {
+    const TRANSPORT_DOWN = {
+      ok: false as const,
+      error: 'tailcat tunnel did not connect within 3000ms',
+    };
+    const listActions = (actions: { type: string }[], type: string) =>
+      actions.filter((action) => action.type === type);
+
+    it('retries a boot workspace.list that failed before the list loaded and loads it exactly once', async () => {
+      const workspace = { id: WS, branch: 'main' };
+      mocks.workspaceServiceList
+        .mockResolvedValueOnce(TRANSPORT_DOWN)
+        .mockResolvedValueOnce({ ok: true, data: [workspace] });
+      const run = startWithLoopback();
+      run.channel.put(loadWorkspacesRequested());
+      await settle();
+      expect(mocks.workspaceServiceList).toHaveBeenCalledTimes(1);
+      expect(listActions(run.actions, 'workspace/replaceWorkspaceList')).toEqual([]);
+      expect(run.getWorkspaceState().hasLoaded).toBe(false);
+      expect(mocks.logger.error).not.toHaveBeenCalled();
+
+      // One bounded retry delay, then the list lands once the transport is up.
+      await vi.advanceTimersByTimeAsync(999);
+      expect(mocks.workspaceServiceList).toHaveBeenCalledTimes(1);
+      await vi.advanceTimersByTimeAsync(1);
+      await settle();
+      expect(mocks.workspaceServiceList.mock.calls).toEqual([[{ lite: true }], [{ lite: true }]]);
+      expect(listActions(run.actions, 'workspace/replaceWorkspaceList')).toEqual([
+        { type: 'workspace/replaceWorkspaceList', payload: [[workspace]] },
+      ]);
+      expect(listActions(run.actions, 'workspace/setWorkspaceHasLoaded')).toEqual([
+        { type: 'workspace/setWorkspaceHasLoaded', payload: [true, 'local'] },
+      ]);
+      expect(run.getWorkspaceState().hasLoaded).toBe(true);
+
+      // Retries stop once loaded: no further reads on any later tick.
+      await vi.advanceTimersByTimeAsync(60_000);
+      expect(mocks.workspaceServiceList).toHaveBeenCalledTimes(2);
+      expect(mocks.logger.error).not.toHaveBeenCalled();
+      await stop(run.task);
+    });
+
+    it('backs off 1s, 2s, 5s and then holds at the 15s cap while the transport stays down', async () => {
+      mocks.workspaceServiceList.mockResolvedValue(TRANSPORT_DOWN);
+      const run = startWithLoopback();
+      run.channel.put(loadWorkspacesRequested());
+      await settle();
+      expect(mocks.workspaceServiceList).toHaveBeenCalledTimes(1);
+
+      let calls = 1;
+      for (const delayMs of [1_000, 2_000, 5_000, 15_000, 15_000]) {
+        await vi.advanceTimersByTimeAsync(delayMs - 1);
+        expect(mocks.workspaceServiceList).toHaveBeenCalledTimes(calls);
+        await vi.advanceTimersByTimeAsync(1);
+        await settle();
+        calls += 1;
+        expect(mocks.workspaceServiceList).toHaveBeenCalledTimes(calls);
+      }
+      // Every attempt so far was one sequential read — never a concurrent fan-out.
+      expect(listActions(run.actions, 'workspace/replaceWorkspaceList')).toEqual([]);
+      expect(mocks.logger.error).not.toHaveBeenCalled();
+      await stop(run.task);
+    });
+
+    it('re-requests the workspace list on backendReconnected', async () => {
+      const run = startWithLoopback();
+      run.channel.put(loadWorkspacesRequested());
+      await settle();
+      expect(mocks.workspaceServiceList).toHaveBeenCalledTimes(1);
+
+      run.channel.put(backendReconnected());
+      await settle();
+      expect(mocks.workspaceServiceList.mock.calls).toEqual([[{ lite: true }], [{ lite: true }]]);
+      expect(listActions(run.actions, 'workspace/setWorkspaceHasLoaded')).toHaveLength(2);
+      await stop(run.task);
+    });
+
+    it('reads immediately on backendReconnected during a retry wait, exactly once', async () => {
+      mocks.workspaceServiceList
+        .mockResolvedValueOnce(TRANSPORT_DOWN)
+        .mockResolvedValue({ ok: true, data: [] });
+      const run = startWithLoopback();
+      run.channel.put(loadWorkspacesRequested());
+      await settle();
+      expect(mocks.workspaceServiceList).toHaveBeenCalledTimes(1);
+
+      // No timer advance: the reconnect itself drives the read.
+      run.channel.put(backendReconnected());
+      await settle();
+      await settle();
+      expect(mocks.workspaceServiceList).toHaveBeenCalledTimes(2);
+      expect(run.getWorkspaceState().hasLoaded).toBe(true);
+
+      // Neither the abandoned backoff timer nor a trailing rerun adds a read.
+      await vi.advanceTimersByTimeAsync(60_000);
+      expect(mocks.workspaceServiceList).toHaveBeenCalledTimes(2);
+      await stop(run.task);
+    });
+
+    it('does not retry a failed refresh once the list has loaded (log only)', async () => {
+      mocks.workspaceServiceList
+        .mockResolvedValueOnce({ ok: true, data: [] })
+        .mockResolvedValueOnce(TRANSPORT_DOWN);
+      const run = startWithLoopback();
+      run.channel.put(loadWorkspacesRequested());
+      await settle();
+      expect(run.getWorkspaceState().hasLoaded).toBe(true);
+
+      run.channel.put(loadWorkspacesRequested());
+      await settle();
+      expect(mocks.workspaceServiceList).toHaveBeenCalledTimes(2);
+      expect(mocks.logger.error).toHaveBeenCalledTimes(1);
+      expect(mocks.logger.error.mock.calls[0]?.[0]).toBe('Refresh failed for workspaces');
+
+      await vi.advanceTimersByTimeAsync(60_000);
+      expect(mocks.workspaceServiceList).toHaveBeenCalledTimes(2);
+      await stop(run.task);
+    });
+
+    it.each([
+      ['the IPC-flattened -32003 envelope message', { ok: false as const, error: 'Forbidden' }],
+      [
+        'a structured -32003 daemon error response',
+        Object.assign(new Error('capability refused'), { rpcCode: -32003 }),
+      ],
+    ])('does not retry %s', async (_label, refusal) => {
+      if (refusal instanceof Error) mocks.workspaceServiceList.mockRejectedValueOnce(refusal);
+      else mocks.workspaceServiceList.mockResolvedValueOnce(refusal);
+      const run = startWithLoopback();
+      run.channel.put(loadWorkspacesRequested());
+      await settle();
+      expect(mocks.workspaceServiceList).toHaveBeenCalledTimes(1);
+      expect(mocks.logger.error).toHaveBeenCalledTimes(1);
+
+      await vi.advanceTimersByTimeAsync(60_000);
+      expect(mocks.workspaceServiceList).toHaveBeenCalledTimes(1);
+      expect(run.getWorkspaceState().hasLoaded).toBe(false);
+      await stop(run.task);
+    });
+  });
+
   describe('attention reconciliation on focus / console-owner acquisition', () => {
     const wireWorkspace = (attention: 'none' | 'unread') =>
       ({ id: WS, branch: 'main', attention }) as unknown as import('$shared/types').Workspace;
-
-    // These triggers dispatch loadWorkspacesRequested from inside the saga, so
-    // the harness must loop dispatched actions back into the channel (the
-    // default start() only records them) and apply the real workspaceReducer
-    // to observe store convergence.
-    function startWithLoopback() {
-      const channel = stdChannel();
-      const actions: { type: string }[] = [];
-      let workspaceState = workspaceReducer(undefined, { type: '@@INIT' });
-      const dispatch = (action: { type: string }) => {
-        actions.push(action);
-        workspaceState = workspaceReducer(workspaceState, action);
-        channel.put(action);
-        return action;
-      };
-      const current = state();
-      const task = runSaga(
-        {
-          channel,
-          dispatch,
-          getState: () => ({ ...current, workspace: workspaceState }),
-        },
-        lifecycleReadSaga,
-      );
-      return { channel, actions, task, dispatch, getWorkspaceState: () => workspaceState };
-    }
 
     it('refetches the workspace list when the window regains focus and converges stale attention', async () => {
       const run = startWithLoopback();
@@ -1653,6 +1801,7 @@ describe('lifecycleReadSaga', () => {
       { type: 'workspaceAgents/setAgentsLoaded', payload: [WS, true] },
       { type: 'workspaceAgents/setRetiredCount', payload: [WS, 0] },
       { type: 'workspaceAgents/setScopeCounts', payload: [WS, null] },
+      { type: 'workspaceAgents/setDelegatedCounts', payload: [WS, null] },
       { type: 'workspaceAgents/setAgents', payload: [WS, [background, kept]] },
       {
         type: 'agentSessions/bulkUpsertSessions',
@@ -1861,6 +2010,7 @@ describe('lifecycleReadSaga', () => {
       { type: 'workspaceAgents/setAgentsLoaded', payload: [WS, true] },
       { type: 'workspaceAgents/setRetiredCount', payload: [WS, 0] },
       { type: 'workspaceAgents/setScopeCounts', payload: [WS, null] },
+      { type: 'workspaceAgents/setDelegatedCounts', payload: [WS, null] },
       { type: 'workspaceAgents/setAgents', payload: [WS, []] },
     ]);
     await stop(run.task);
@@ -2078,6 +2228,9 @@ describe('lifecycleReadSaga', () => {
   // §5.5 row scope: the default hydration read is `scope: "topLevel"`; the
   // Delegated / Background bins render from `scopeCounts` and load lazily.
   const COUNTS = { topLevel: 1, delegated: 2, background: 1 };
+  // §5.5 delegatedCounts: the same read serves the per-parent delegated counts
+  // (Σ byParent[*].total === scopeCounts.delegated).
+  const DELEGATED_COUNTS = { running: 1, byParent: { 'agent-top': { total: 2, running: 1 } } };
 
   it('hydrates with scope topLevel and stores the daemon-served scopeCounts (§5.5 row scope)', async () => {
     const top = agent('agent-top');
@@ -2085,6 +2238,7 @@ describe('lifecycleReadSaga', () => {
       agents: [top],
       retiredCount: 0,
       scopeCounts: COUNTS,
+      delegatedCounts: DELEGATED_COUNTS,
     });
     const run = start();
 
@@ -2098,6 +2252,7 @@ describe('lifecycleReadSaga', () => {
       { type: 'workspaceAgents/setAgentsLoaded', payload: [WS, true] },
       { type: 'workspaceAgents/setRetiredCount', payload: [WS, 0] },
       { type: 'workspaceAgents/setScopeCounts', payload: [WS, COUNTS] },
+      { type: 'workspaceAgents/setDelegatedCounts', payload: [WS, DELEGATED_COUNTS] },
       { type: 'workspaceAgents/setAgents', payload: [WS, [top]] },
       { type: 'agentSessions/bulkUpsertSessions', payload: [[top], { listProjection: true }] },
       { type: 'workspaceAgents/setActiveAgentId', payload: [WS, 'agent-top'] },
@@ -2292,6 +2447,430 @@ describe('lifecycleReadSaga', () => {
     await stop(run.task);
   });
 
+  // §5.5 delegatedCounts: one parent's children load on demand via the
+  // by-parent read (`scope: "delegated"` + `parentAgentId`).
+  const PARENT = 'agent-top';
+  const OTHER_PARENT = 'agent-other-top';
+  const BY_PARENT = { scope: 'delegated', parentAgentId: PARENT } as const;
+
+  it('lazy-loads one parent’s delegated children, marks only that parent loaded, and re-baselines byParent in lockstep with scopeCounts.delegated', async () => {
+    const child = agent('agent-child', { parentAgentId: PARENT as never });
+    const current = state();
+    current.workspaceAgents.byWorkspaceId = {
+      [WS]: {
+        scopeCounts: { topLevel: 2, delegated: 3, background: 0 },
+        delegatedCounts: {
+          running: 0,
+          byParent: {
+            [PARENT]: { total: 2, running: 0 },
+            [OTHER_PARENT]: { total: 1, running: 0 },
+          },
+        },
+        loadedDelegatedParentIds: {},
+        loadingDelegatedParentIds: {},
+      },
+    } as never;
+    mocks.agents.list.mockResolvedValue([child]);
+    const run = start(current);
+
+    run.channel.put(fetchDelegatedAgentsRequested(WS, PARENT));
+    await settle();
+
+    // One by-parent read; the parent's total re-baselines from 2 to the 1 row
+    // served and `scopeCounts.delegated` moves by the same delta; only THIS
+    // parent is marked loaded — the whole-bin flag is untouched.
+    expect(mocks.agents.list.mock.calls).toEqual([[WS, BY_PARENT]]);
+    expect(run.actions).toEqual([
+      { type: 'workspaceAgents/setIsLoadingDelegatedParent', payload: [WS, PARENT, true] },
+      { type: 'agentSessions/bulkUpsertSessions', payload: [[child], { listProjection: true }] },
+      { type: 'workspaceAgents/addAgent', payload: [WS, child] },
+      { type: 'workspaceAgents/adjustDelegatedParentCount', payload: [WS, PARENT, -1] },
+      { type: 'workspaceAgents/adjustScopeCount', payload: [WS, 'delegated', -1] },
+      { type: 'workspaceAgents/setDelegatedParentLoaded', payload: [WS, PARENT, true] },
+      { type: 'workspaceAgents/setIsLoadingDelegatedParent', payload: [WS, PARENT, false] },
+    ]);
+    expect(run.actions).not.toContainEqual(
+      expect.objectContaining({ type: 'workspaceAgents/setLazyBinLoaded' }),
+    );
+    await stop(run.task);
+  });
+
+  it('by-parent reads for two parents run concurrently and skip a loaded parent or a whole-bin-loaded workspace', async () => {
+    const current = state();
+    current.workspaceAgents.byWorkspaceId = {
+      [WS]: {
+        scopeCounts: COUNTS,
+        delegatedCounts: { running: 0, byParent: {} },
+        loadedDelegatedParentIds: {},
+        loadingDelegatedParentIds: {},
+      },
+    } as never;
+    let resolveFirst!: (rows: AgentSession[]) => void;
+    mocks.agents.list
+      .mockReturnValueOnce(
+        new Promise<AgentSession[]>((resolve) => {
+          resolveFirst = resolve;
+        }),
+      )
+      .mockResolvedValueOnce([]);
+    const run = start(current);
+
+    // A leading read per PARENT — the second parent is not dropped behind the first.
+    run.channel.put(fetchDelegatedAgentsRequested(WS, PARENT));
+    run.channel.put(fetchDelegatedAgentsRequested(WS, OTHER_PARENT));
+    await settle();
+    expect(mocks.agents.list.mock.calls).toEqual([
+      [WS, BY_PARENT],
+      [WS, { scope: 'delegated', parentAgentId: OTHER_PARENT }],
+    ]);
+    resolveFirst([]);
+    await settle();
+    expect(run.actions).toContainEqual({
+      type: 'workspaceAgents/setDelegatedParentLoaded',
+      payload: [WS, PARENT, true],
+    });
+    expect(run.actions).toContainEqual({
+      type: 'workspaceAgents/setDelegatedParentLoaded',
+      payload: [WS, OTHER_PARENT, true],
+    });
+    // Zero rows against a zero-total parent: no count nudge.
+    expect(run.actions).not.toContainEqual(
+      expect.objectContaining({ type: 'workspaceAgents/adjustDelegatedParentCount' }),
+    );
+
+    // Already loaded per parent: no refetch.
+    mocks.agents.list.mockClear();
+    run.actions.length = 0;
+    current.workspaceAgents.byWorkspaceId = {
+      [WS]: { scopeCounts: COUNTS, loadedDelegatedParentIds: { [PARENT]: true } },
+    } as never;
+    run.channel.put(fetchDelegatedAgentsRequested(WS, PARENT));
+    await settle();
+    expect(mocks.agents.list).not.toHaveBeenCalled();
+    expect(run.actions).toEqual([]);
+
+    // The whole bin already loaded covers every parent.
+    current.workspaceAgents.byWorkspaceId = {
+      [WS]: { scopeCounts: COUNTS, delegatedAgentsLoaded: true, loadedDelegatedParentIds: {} },
+    } as never;
+    run.channel.put(fetchDelegatedAgentsRequested(WS, OTHER_PARENT));
+    await settle();
+    expect(mocks.agents.list).not.toHaveBeenCalled();
+
+    // Old daemon (no counts): nothing to load.
+    current.workspaceAgents.byWorkspaceId = { [WS]: { scopeCounts: null } } as never;
+    run.channel.put(fetchDelegatedAgentsRequested(WS, PARENT));
+    await settle();
+    expect(mocks.agents.list).not.toHaveBeenCalled();
+    expect(run.actions).toEqual([]);
+    await stop(run.task);
+  });
+
+  it('clears the per-parent loading flag and stays retryable after a failed by-parent load', async () => {
+    const current = state();
+    current.workspaceAgents.byWorkspaceId = {
+      [WS]: {
+        scopeCounts: COUNTS,
+        delegatedCounts: DELEGATED_COUNTS,
+        loadedDelegatedParentIds: {},
+        loadingDelegatedParentIds: {},
+      },
+    } as never;
+    mocks.agents.list.mockRejectedValueOnce(new Error('offline')).mockResolvedValueOnce([]);
+    const run = start(current);
+
+    run.channel.put(fetchDelegatedAgentsRequested(WS, PARENT));
+    await settle();
+    expect(run.actions).toEqual([
+      { type: 'workspaceAgents/setIsLoadingDelegatedParent', payload: [WS, PARENT, true] },
+      { type: 'workspaceAgents/setIsLoadingDelegatedParent', payload: [WS, PARENT, false] },
+    ]);
+
+    run.channel.put(fetchDelegatedAgentsRequested(WS, PARENT));
+    await settle();
+    expect(mocks.agents.list.mock.calls).toEqual([
+      [WS, BY_PARENT],
+      [WS, BY_PARENT],
+    ]);
+    expect(run.actions).toContainEqual({
+      type: 'workspaceAgents/setDelegatedParentLoaded',
+      payload: [WS, PARENT, true],
+    });
+    await stop(run.task);
+  });
+
+  it('rehydrates per-parent-loaded children alongside the top-level read when the whole bin is not loaded', async () => {
+    const top = agent(PARENT);
+    const child = agent('agent-child', { parentAgentId: PARENT as never });
+    const current = state();
+    current.workspaceAgents.byWorkspaceId = {
+      [WS]: { scopeCounts: COUNTS, loadedDelegatedParentIds: { [PARENT]: true } },
+    } as never;
+    mocks.agents.listWithMeta.mockResolvedValue({
+      agents: [top],
+      retiredCount: 0,
+      scopeCounts: COUNTS,
+      delegatedCounts: DELEGATED_COUNTS,
+    });
+    mocks.agents.list.mockResolvedValue([child]);
+    const run = start(current);
+
+    run.channel.put(hydrateAgentsRequested(WS));
+    await settle();
+
+    expect(mocks.agents.list.mock.calls).toEqual([[WS, BY_PARENT]]);
+    expect(run.actions).toContainEqual({
+      type: 'workspaceAgents/setDelegatedCounts',
+      payload: [WS, DELEGATED_COUNTS],
+    });
+    expect(run.actions).toContainEqual({
+      type: 'workspaceAgents/setAgents',
+      payload: [WS, [top, child]],
+    });
+    // The parent stays loaded — its rows rode the snapshot.
+    expect(run.actions).not.toContainEqual(
+      expect.objectContaining({ type: 'workspaceAgents/setDelegatedParentLoaded' }),
+    );
+    await stop(run.task);
+  });
+
+  it('re-arms a by-parent load that completes mid-hydration (snapshot eviction guard)', async () => {
+    let resolvePending!: (value: boolean) => void;
+    mocks.isAgentDeletionPending.mockReturnValueOnce(
+      new Promise<boolean>((resolve) => {
+        resolvePending = resolve;
+      }) as never,
+    );
+    const current = state();
+    mocks.agents.listWithMeta.mockResolvedValue({
+      agents: [agent(PARENT)],
+      retiredCount: 0,
+      scopeCounts: COUNTS,
+      delegatedCounts: DELEGATED_COUNTS,
+    });
+    const run = start(current);
+
+    run.channel.put(hydrateAgentsRequested(WS));
+    await settle();
+
+    // The by-parent worker finished while hydration was parked.
+    current.workspaceAgents.byWorkspaceId = {
+      [WS]: { scopeCounts: COUNTS, loadedDelegatedParentIds: { [PARENT]: true } },
+    } as never;
+    resolvePending(false);
+    await settle();
+
+    const setAgentsIndex = run.actions.findIndex(
+      (action) => action.type === 'workspaceAgents/setAgents',
+    );
+    expect(setAgentsIndex).toBeGreaterThanOrEqual(0);
+    expect(run.actions.slice(setAgentsIndex)).toContainEqual({
+      type: 'workspaceAgents/setDelegatedParentLoaded',
+      payload: [WS, PARENT, false],
+    });
+    expect(run.actions).toContainEqual({
+      type: 'workspaceAgents/fetchDelegatedAgentsRequested',
+      payload: [WS, PARENT],
+    });
+    await stop(run.task);
+  });
+
+  // Count-baseline invariant (§5.5): `Σ byParent[*].total === scopeCounts.delegated`
+  // must hold after every completion order of the delegated reads. These run
+  // the production saga against the real `workspaceAgentsReducer` so the
+  // resulting store state — not the dispatched action list — is what is
+  // asserted.
+  describe('delegated count baseline across whole-bin, by-parent and hydration reads (real reducer)', () => {
+    const SEEDED_DELEGATED = {
+      running: 0,
+      byParent: { [PARENT]: { total: 2, running: 0 }, [OTHER_PARENT]: { total: 1, running: 0 } },
+    };
+    const childOf = (id: string, parentAgentId: string) =>
+      agent(id, { parentAgentId: parentAgentId as never });
+
+    function startWithAgentsReducer() {
+      const channel = stdChannel();
+      const actions: { type: string }[] = [];
+      let agentsState = workspaceAgentsReducer(undefined, { type: '@@INIT' } as never);
+      const dispatch = (action: { type: string }) => {
+        actions.push(action);
+        agentsState = workspaceAgentsReducer(agentsState, action as never);
+        return action;
+      };
+      const current = state();
+      const task = runSaga(
+        { channel, dispatch, getState: () => ({ ...current, workspaceAgents: agentsState }) },
+        lifecycleReadSaga,
+      );
+      dispatch(setScopeCounts(WS, { topLevel: 2, delegated: 3, background: 0 }));
+      dispatch(setDelegatedCounts(WS, SEEDED_DELEGATED));
+      const wsState = () => agentsState.byWorkspaceId[WS]!;
+      const sumByParent = () =>
+        Object.values(wsState().delegatedCounts?.byParent ?? {}).reduce((n, e) => n + e.total, 0);
+      return { channel, actions, task, dispatch, wsState, sumByParent };
+    }
+
+    it('re-baselines byParent alongside scopeCounts.delegated from one whole-bin read', async () => {
+      const run = startWithAgentsReducer();
+      mocks.agents.list.mockResolvedValue([
+        childOf('agent-c1', PARENT),
+        childOf('agent-c2', PARENT),
+        childOf('agent-c3', PARENT),
+        childOf('agent-c4', OTHER_PARENT),
+      ]);
+
+      run.channel.put(fetchDelegatedAgentsRequested(WS));
+      await settle();
+
+      expect(mocks.agents.list.mock.calls).toEqual([[WS, { scope: 'delegated' }]]);
+      expect(run.wsState().delegatedAgentsLoaded).toBe(true);
+      expect(run.wsState().scopeCounts?.delegated).toBe(4);
+      expect(run.wsState().delegatedCounts).toEqual({
+        running: 0,
+        byParent: { [PARENT]: { total: 3, running: 0 }, [OTHER_PARENT]: { total: 1, running: 0 } },
+      });
+      expect(run.sumByParent()).toBe(run.wsState().scopeCounts?.delegated);
+      await stop(run.task);
+    });
+
+    it('drops a parent whose whole-bin rows are gone and clips running to the new total', async () => {
+      const run = startWithAgentsReducer();
+      run.dispatch(
+        setDelegatedCounts(WS, {
+          running: 3,
+          byParent: {
+            [PARENT]: { total: 2, running: 2 },
+            [OTHER_PARENT]: { total: 1, running: 1 },
+          },
+        }),
+      );
+      mocks.agents.list.mockResolvedValue([childOf('agent-c1', PARENT)]);
+
+      run.channel.put(fetchDelegatedAgentsRequested(WS));
+      await settle();
+
+      expect(run.wsState().scopeCounts?.delegated).toBe(1);
+      expect(run.wsState().delegatedCounts).toEqual({
+        running: 1,
+        byParent: { [PARENT]: { total: 1, running: 1 } },
+      });
+      await stop(run.task);
+    });
+
+    it('a by-parent read that completes after the whole-bin read leaves the whole-bin baseline untouched', async () => {
+      const run = startWithAgentsReducer();
+      let resolveParent!: (rows: AgentSession[]) => void;
+      mocks.agents.list.mockImplementation((_ws: string, options: { parentAgentId?: string }) =>
+        options.parentAgentId
+          ? new Promise<AgentSession[]>((resolve) => {
+              resolveParent = resolve;
+            })
+          : Promise.resolve([
+              childOf('agent-c1', PARENT),
+              childOf('agent-c2', PARENT),
+              childOf('agent-c3', OTHER_PARENT),
+            ]),
+      );
+
+      run.channel.put(fetchDelegatedAgentsRequested(WS, PARENT));
+      await settle();
+      run.channel.put(fetchDelegatedAgentsRequested(WS));
+      await settle();
+      expect(run.wsState().delegatedAgentsLoaded).toBe(true);
+      expect(run.wsState().scopeCounts?.delegated).toBe(3);
+
+      // The parked, older read lands with one row: it never re-baselines over
+      // the whole-bin coverage, so the label still matches the loaded rows.
+      resolveParent([childOf('agent-c1', PARENT)]);
+      await settle();
+
+      expect(run.wsState().agentIds.map(String).sort()).toEqual([
+        'agent-c1',
+        'agent-c2',
+        'agent-c3',
+      ]);
+      expect(run.wsState().scopeCounts?.delegated).toBe(3);
+      expect(run.wsState().delegatedCounts?.byParent[PARENT]).toEqual({ total: 2, running: 0 });
+      expect(run.sumByParent()).toBe(3);
+      expect(run.wsState().loadingDelegatedParentIds).toEqual({});
+      await stop(run.task);
+    });
+
+    it('a whole-bin read that completes after the by-parent read re-baselines over it (either order converges)', async () => {
+      const run = startWithAgentsReducer();
+      let resolveBin!: (rows: AgentSession[]) => void;
+      mocks.agents.list.mockImplementation((_ws: string, options: { parentAgentId?: string }) =>
+        options.parentAgentId
+          ? Promise.resolve([childOf('agent-c1', PARENT)])
+          : new Promise<AgentSession[]>((resolve) => {
+              resolveBin = resolve;
+            }),
+      );
+
+      run.channel.put(fetchDelegatedAgentsRequested(WS));
+      await settle();
+      run.channel.put(fetchDelegatedAgentsRequested(WS, PARENT));
+      await settle();
+      // The by-parent read landed first: parent 2→1, bin 3→2, in lockstep.
+      expect(run.wsState().scopeCounts?.delegated).toBe(2);
+      expect(run.wsState().delegatedCounts?.byParent[PARENT]).toEqual({ total: 1, running: 0 });
+      expect(run.sumByParent()).toBe(2);
+
+      resolveBin([
+        childOf('agent-c1', PARENT),
+        childOf('agent-c2', PARENT),
+        childOf('agent-c3', OTHER_PARENT),
+      ]);
+      await settle();
+
+      expect(run.wsState().delegatedAgentsLoaded).toBe(true);
+      expect(run.wsState().scopeCounts?.delegated).toBe(3);
+      expect(run.wsState().delegatedCounts?.byParent[PARENT]).toEqual({ total: 2, running: 0 });
+      expect(run.sumByParent()).toBe(3);
+      await stop(run.task);
+    });
+
+    it('a by-parent read that completes after a hydration baseline keeps the daemon-served counts', async () => {
+      const run = startWithAgentsReducer();
+      let resolveParent!: (rows: AgentSession[]) => void;
+      mocks.agents.list.mockImplementation(
+        () =>
+          new Promise<AgentSession[]>((resolve) => {
+            resolveParent = resolve;
+          }),
+      );
+      const HYDRATED_COUNTS = { topLevel: 2, delegated: 5, background: 0 };
+      const HYDRATED_DELEGATED = {
+        running: 1,
+        byParent: { [PARENT]: { total: 4, running: 1 }, [OTHER_PARENT]: { total: 1, running: 0 } },
+      };
+      mocks.agents.listWithMeta.mockResolvedValue({
+        agents: [agent(PARENT), agent(OTHER_PARENT)],
+        retiredCount: 0,
+        scopeCounts: HYDRATED_COUNTS,
+        delegatedCounts: HYDRATED_DELEGATED,
+      });
+
+      run.channel.put(fetchDelegatedAgentsRequested(WS, PARENT));
+      await settle();
+      run.channel.put(hydrateAgentsRequested(WS));
+      await settle();
+      expect(run.wsState().scopeCounts).toEqual(HYDRATED_COUNTS);
+      expect(run.wsState().delegatedCounts).toEqual(HYDRATED_DELEGATED);
+
+      // The older by-parent read lands with one row after the fresh baseline:
+      // its delta is dropped, the row still merges, the parent is loaded.
+      resolveParent([childOf('agent-c1', PARENT)]);
+      await settle();
+
+      expect(run.wsState().scopeCounts).toEqual(HYDRATED_COUNTS);
+      expect(run.wsState().delegatedCounts).toEqual(HYDRATED_DELEGATED);
+      expect(run.wsState().agentIds.map(String)).toContain('agent-c1');
+      expect(run.wsState().loadedDelegatedParentIds).toEqual({ [PARENT]: true });
+      await stop(run.task);
+    });
+  });
+
   it('does not cancel concurrent agent hydrates across workspaces (#1934)', async () => {
     const otherWorkspaceId = 'ws-other';
     type ListWithMeta = { agents: AgentSession[]; retiredCount: number };
@@ -2381,6 +2960,7 @@ describe('lifecycleReadSaga', () => {
       setAgentsLoaded(WS, true),
       { type: 'workspaceAgents/setRetiredCount', payload: [WS, 0] },
       { type: 'workspaceAgents/setScopeCounts', payload: [WS, null] },
+      { type: 'workspaceAgents/setDelegatedCounts', payload: [WS, null] },
       { type: 'workspaceAgents/setAgents', payload: [WS, []] },
     ]);
     await stop(run.task);
@@ -2420,6 +3000,7 @@ describe('lifecycleReadSaga', () => {
       setAgentsLoaded(WS, true),
       { type: 'workspaceAgents/setRetiredCount', payload: [WS, 0] },
       { type: 'workspaceAgents/setScopeCounts', payload: [WS, null] },
+      { type: 'workspaceAgents/setDelegatedCounts', payload: [WS, null] },
       { type: 'workspaceAgents/setAgents', payload: [WS, []] },
     ]);
     await stop(run.task);

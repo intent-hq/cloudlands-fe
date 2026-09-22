@@ -1,4 +1,9 @@
 export const uiComponentGuardrails = {
+  // `<Button>` usages that pass an opaque `bg-<token>` class (no `/opacity`, no state prefix)
+  // without a `variant`. Button paints its surface on an inner span that covers class-level
+  // backgrounds, so such callers render the default surface with the accent's foreground
+  // (near-black, unreadable in dark mode). Route accent buttons through `variant=` instead.
+  buttonBackgroundOverrides: 0,
   internalImports: {
     '$lib/components/ui/button/button.svelte': 18,
     '$lib/components/ui/button/index.js': 1,

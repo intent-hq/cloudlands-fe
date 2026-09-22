@@ -32,6 +32,7 @@
   import DaemonStoppedOverlay from '$features/daemon-status/DaemonStoppedOverlay.svelte';
   import DaemonUpdatingOverlay from '$features/daemon-status/DaemonUpdatingOverlay.svelte';
   import { registerWorkspaceTabShortcuts } from '$features/workspace/utils/workspace-tab-navigation';
+  import { registerWorkspaceSpacesShortcut } from '$features/workspace/utils/workspace-spaces-shortcut';
   import { WORKSPACE_TAB_MOVED_EVENT } from '$features/workspace/utils/workspace-tab-move-event';
   import AuggieSetupGate from '$lib/components/AuggieSetupGate.svelte';
   import CommandPalette from '$lib/components/CommandPalette.svelte';
@@ -88,6 +89,7 @@
   import { openTabInRightmostColumnRequested } from '$store/renderer/slices/panel-layout/panel-layout-slice';
   import { resolveTerminalShortcutWorkspaceId } from '$features/terminal/terminal-shortcut-context';
   import {
+    selectHidesAgentLifecycleActions,
     selectIsCollaboratorOnlyClient,
     selectIsWorkspaceCollaborator,
     selectWorkspaceHasLoaded,
@@ -154,6 +156,13 @@
   } from '$features/quit-confirmation/quit-confirmation-service';
   import QuitConfirmationModal from '$lib/components/modals/QuitConfirmationModal.svelte';
   import type { QuitConfirmationShowPayload } from '$shared/ipc/quit-confirmation';
+  import {
+    installInviteConsentService,
+    respondToInviteConsent,
+  } from '$features/invite-consent/invite-consent-service';
+  import InviteConsentModal from '$lib/components/modals/InviteConsentModal.svelte';
+  import type { InviteConsentShowPayload } from '$shared/ipc/invite-consent';
+  import InviteNoticeHost from '$features/invite-notice/InviteNoticeHost.svelte';
   import type { InterruptedAgent } from '$lib/client/app-client';
   import { LiveAppClient } from '$lib/client/live/live-app-client';
   import { workspaceIdFromRoute } from '$lib/utils/workspace-route-context';
@@ -239,6 +248,10 @@
   // Quit confirmation modal state (main-process quit/restart interception)
   let showQuitConfirmationModal = $state(false);
   let quitConfirmationPayload = $state<QuitConfirmationShowPayload | null>(null);
+
+  // Invite consent modal state (main-process intent://invite GitHub identity prompt)
+  let showInviteConsentModal = $state(false);
+  let inviteConsentPayload = $state<InviteConsentShowPayload | null>(null);
 
   // The root route is a minimal empty state and fresh windows boot at
   // /workspace/new, which renders onboarding. Gate boot (and legacy `/`)
@@ -352,6 +365,18 @@
       onDismiss: () => {
         showQuitConfirmationModal = false;
         quitConfirmationPayload = null;
+      },
+    });
+
+    // Initialize invite-consent service (in-app modal for the invite GitHub identity check)
+    const disposeInviteConsent = installInviteConsentService({
+      onShow: (payload) => {
+        inviteConsentPayload = payload;
+        showInviteConsentModal = true;
+      },
+      onDismiss: () => {
+        showInviteConsentModal = false;
+        inviteConsentPayload = null;
       },
     });
 
@@ -504,7 +529,11 @@
       getCurrentPath: () => window.location.pathname,
       navigate: (path) => goto(path),
       openNewWorkspace: () => appStore.dispatch(setShowCreateModal(true)),
-      onCreateAgent: (workspaceId) => appStore.dispatch(createAgentRequested(workspaceId)),
+      onCreateAgent: (workspaceId) => {
+        // `agent.create` is refused (-32003) for a collaborator connection.
+        if (selectHidesAgentLifecycleActions.select(appStore.state, workspaceId)) return;
+        appStore.dispatch(createAgentRequested(workspaceId));
+      },
       onCreateNote: (workspaceId) => appStore.dispatch(createNoteRequested(workspaceId)),
       onCreateTerminal: (workspaceId) =>
         appStore.dispatch(createPanelTerminalRequested(workspaceId)),
@@ -586,16 +615,9 @@
       action: openCommandPalette,
     });
     // Cmd+O (Mac) / Ctrl+O (Win/Linux) -> toggle all spaces sidebar panel
-    const toggleAllSpaces = () => {
-      appStore.dispatch(togglePanel('all-workspaces'));
-    };
-    register({
-      key: 'o',
-      meta: true,
-      shortcutId: 'global.toggle-spaces',
-      description: 'Toggle All Spaces (Mac)', // i18n-ignore (shortcut registry metadata, not rendered in UI)
-      skipInEditableElements: true,
-      action: toggleAllSpaces,
+    registerWorkspaceSpacesShortcut(paletteShortcuts, {
+      toggleSpaces: () => appStore.dispatch(togglePanel('all-workspaces')),
+      resolveBinding: getEffectiveShortcut,
     });
     // Cmd+T is registered by registerWorkspaceTabShortcuts (New Panel)
     // F12 - Go to Definition (dispatches event for Monaco editor to handle)
@@ -837,6 +859,7 @@
       window.removeEventListener('keydown', handleBrowserNavigation);
       disposeInterruptedAgents();
       disposeQuitConfirmation();
+      disposeInviteConsent();
     };
   });
 
@@ -1131,6 +1154,19 @@
       respondToQuitConfirmation(proceed);
     }}
   />
+
+  <!-- Invite Consent Modal (shown when main runs an intent://invite GitHub identity check) -->
+  <InviteConsentModal
+    bind:open={showInviteConsentModal}
+    payload={inviteConsentPayload}
+    onRespond={(action) => {
+      if (action === 'cancel') inviteConsentPayload = null;
+      respondToInviteConsent(action);
+    }}
+  />
+
+  <!-- Invite notice (intent://invite join failed / plaintext credential warning) -->
+  <InviteNoticeHost />
 
   {#if import.meta.env.DEV}
     <DebugPanel />

@@ -7326,17 +7326,17 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:combobox:c
                           <div class="aria-disabled:opacity-50 aria-disabled:pointer-events-none bg-transparent border-none cursor-default data-[disabled]:opacity-50 data-[disabled]:pointer-events-none duration-spring-fast ease-spring-fast flex focus-visible:outline-none focus:text-foreground font-normal gap-2 group/menu-item items-center justify-start min-h-(--control-height-small) min-w-0 motion-reduce:transition-none px-2 py-1 relative rounded-(--radius-row) select-none text-left transition-colors type-caption w-full z-10" data-combobox-item="" data-label="Ada Lovelace" data-menu-item="true" data-slot="combobox-option-motion" data-value="ada" id="bits-<id>" role="option">
                             <span class="flex-1 min-w-0 truncate">
                               "Ada Lovelace"
-                            <span aria-hidden="true" class="flex font-medium group-data-[selected]:opacity-100 items-center justify-center ml-auto opacity-0 shrink-0 size-4 text-primary-ink" data-slot="combobox-item-check">
+                            <span aria-hidden="true" class="flex font-medium items-center justify-center ml-auto opacity-0 shrink-0 size-4 text-primary-ink" data-slot="combobox-item-check">
                               "✓"
                           <div aria-selected="true" class="aria-disabled:opacity-50 aria-disabled:pointer-events-none bg-transparent border-none cursor-default data-[disabled]:opacity-50 data-[disabled]:pointer-events-none duration-spring-fast ease-spring-fast flex focus-visible:outline-none focus:text-foreground font-normal gap-2 group/menu-item items-center justify-start min-h-(--control-height-small) min-w-0 motion-reduce:transition-none px-2 py-1 relative rounded-(--radius-row) select-none text-left transition-colors type-caption w-full z-10" data-combobox-item="" data-highlighted="" data-label="Grace Hopper" data-menu-item="true" data-selected="" data-slot="combobox-option-motion" data-value="grace" id="bits-<id>" role="option">
                             <span class="flex-1 min-w-0 truncate">
                               "Grace Hopper"
-                            <span aria-hidden="true" class="flex font-medium group-data-[selected]:opacity-100 items-center justify-center ml-auto opacity-0 shrink-0 size-4 text-primary-ink" data-slot="combobox-item-check">
+                            <span aria-hidden="true" class="flex font-medium items-center justify-center ml-auto opacity-100 shrink-0 size-4 text-primary-ink" data-slot="combobox-item-check">
                               "✓"
                           <div class="aria-disabled:opacity-50 aria-disabled:pointer-events-none bg-transparent border-none cursor-default data-[disabled]:opacity-50 data-[disabled]:pointer-events-none duration-spring-fast ease-spring-fast flex focus-visible:outline-none focus:text-foreground font-normal gap-2 group/menu-item items-center justify-start min-h-(--control-height-small) min-w-0 motion-reduce:transition-none px-2 py-1 relative rounded-(--radius-row) select-none text-left transition-colors type-caption w-full z-10" data-combobox-item="" data-label="A very long option label that remains readable in compact layouts" data-menu-item="true" data-slot="combobox-option-motion" data-value="long" id="bits-<id>" role="option">
                             <span class="flex-1 min-w-0 truncate">
                               "A very long option label that remains readable in compact layouts"
-                            <span aria-hidden="true" class="flex font-medium group-data-[selected]:opacity-100 items-center justify-center ml-auto opacity-0 shrink-0 size-4 text-primary-ink" data-slot="combobox-item-check">
+                            <span aria-hidden="true" class="flex font-medium items-center justify-center ml-auto opacity-0 shrink-0 size-4 text-primary-ink" data-slot="combobox-item-check">
                               "✓"
               <div class="svelte-<scope>" data-catalog-rendered-state="multi-selected" data-catalog-state="combobox-multi">
                 <div class="relative w-full">
@@ -17740,17 +17740,17 @@ exports[`catalog DOM, token, and accessibility contracts > 'product:popovers:non
                         <div class="aria-disabled:opacity-50 aria-disabled:pointer-events-none bg-transparent border-none cursor-default data-[disabled]:opacity-50 data-[disabled]:pointer-events-none duration-spring-fast ease-spring-fast flex focus-visible:outline-none focus:text-foreground font-normal gap-2 group/menu-item items-center justify-start min-h-(--control-height-small) min-w-0 motion-reduce:transition-none px-2 py-1 relative rounded-(--radius-row) select-none text-left transition-colors type-caption w-full z-10" data-combobox-item="" data-label="Ada Lovelace" data-menu-item="true" data-slot="combobox-option-motion" data-value="ada" id="bits-<id>" role="option">
                           <span class="flex-1 min-w-0 truncate">
                             "Ada Lovelace"
-                          <span aria-hidden="true" class="flex font-medium group-data-[selected]:opacity-100 items-center justify-center ml-auto opacity-0 shrink-0 size-4 text-primary-ink" data-slot="combobox-item-check">
+                          <span aria-hidden="true" class="flex font-medium items-center justify-center ml-auto opacity-0 shrink-0 size-4 text-primary-ink" data-slot="combobox-item-check">
                             "✓"
                         <div aria-selected="true" class="aria-disabled:opacity-50 aria-disabled:pointer-events-none bg-transparent border-none cursor-default data-[disabled]:opacity-50 data-[disabled]:pointer-events-none duration-spring-fast ease-spring-fast flex focus-visible:outline-none focus:text-foreground font-normal gap-2 group/menu-item items-center justify-start min-h-(--control-height-small) min-w-0 motion-reduce:transition-none px-2 py-1 relative rounded-(--radius-row) select-none text-left transition-colors type-caption w-full z-10" data-combobox-item="" data-highlighted="" data-label="Grace Hopper" data-menu-item="true" data-selected="" data-slot="combobox-option-motion" data-value="grace" id="bits-<id>" role="option">
                           <span class="flex-1 min-w-0 truncate">
                             "Grace Hopper"
-                          <span aria-hidden="true" class="flex font-medium group-data-[selected]:opacity-100 items-center justify-center ml-auto opacity-0 shrink-0 size-4 text-primary-ink" data-slot="combobox-item-check">
+                          <span aria-hidden="true" class="flex font-medium items-center justify-center ml-auto opacity-100 shrink-0 size-4 text-primary-ink" data-slot="combobox-item-check">
                             "✓"
                         <div class="aria-disabled:opacity-50 aria-disabled:pointer-events-none bg-transparent border-none cursor-default data-[disabled]:opacity-50 data-[disabled]:pointer-events-none duration-spring-fast ease-spring-fast flex focus-visible:outline-none focus:text-foreground font-normal gap-2 group/menu-item items-center justify-start min-h-(--control-height-small) min-w-0 motion-reduce:transition-none px-2 py-1 relative rounded-(--radius-row) select-none text-left transition-colors type-caption w-full z-10" data-combobox-item="" data-disabled="" data-label="Linus Torvalds" data-menu-item="true" data-slot="combobox-option-motion" data-value="linus" id="bits-<id>" role="option">
                           <span class="flex-1 min-w-0 truncate">
                             "Linus Torvalds"
-                          <span aria-hidden="true" class="flex font-medium group-data-[selected]:opacity-100 items-center justify-center ml-auto opacity-0 shrink-0 size-4 text-primary-ink" data-slot="combobox-item-check">
+                          <span aria-hidden="true" class="flex font-medium items-center justify-center ml-auto opacity-0 shrink-0 size-4 text-primary-ink" data-slot="combobox-item-check">
                             "✓"
               <article class="matrix-cell svelte-<scope>" data-catalog-rendered-state="empty-search searchable-select">
                 <h3 class="font-medium text-muted-foreground type-caption">
@@ -17792,12 +17792,12 @@ exports[`catalog DOM, token, and accessibility contracts > 'product:popovers:non
                         <div class="aria-disabled:opacity-50 aria-disabled:pointer-events-none bg-transparent border-none cursor-default data-[disabled]:opacity-50 data-[disabled]:pointer-events-none duration-spring-fast ease-spring-fast flex focus-visible:outline-none focus:text-foreground font-normal gap-2 group/menu-item items-center justify-start min-h-(--control-height-small) min-w-0 motion-reduce:transition-none px-2 py-1 relative rounded-(--radius-row) select-none text-left transition-colors type-caption w-full z-10" data-combobox-item="" data-label="Ada Lovelace" data-menu-item="true" data-slot="combobox-option-motion" data-value="ada" id="bits-<id>" role="option">
                           <span class="flex-1 min-w-0 truncate">
                             "Ada Lovelace"
-                          <span aria-hidden="true" class="flex font-medium group-data-[selected]:opacity-100 items-center justify-center ml-auto opacity-0 shrink-0 size-4 text-primary-ink" data-slot="combobox-item-check">
+                          <span aria-hidden="true" class="flex font-medium items-center justify-center ml-auto opacity-0 shrink-0 size-4 text-primary-ink" data-slot="combobox-item-check">
                             "✓"
                         <div aria-selected="true" class="aria-disabled:opacity-50 aria-disabled:pointer-events-none bg-transparent border-none cursor-default data-[disabled]:opacity-50 data-[disabled]:pointer-events-none duration-spring-fast ease-spring-fast flex focus-visible:outline-none focus:text-foreground font-normal gap-2 group/menu-item items-center justify-start min-h-(--control-height-small) min-w-0 motion-reduce:transition-none px-2 py-1 relative rounded-(--radius-row) select-none text-left transition-colors type-caption w-full z-10" data-combobox-item="" data-highlighted="" data-label="Grace Hopper" data-menu-item="true" data-selected="" data-slot="combobox-option-motion" data-value="grace" id="bits-<id>" role="option">
                           <span class="flex-1 min-w-0 truncate">
                             "Grace Hopper"
-                          <span aria-hidden="true" class="flex font-medium group-data-[selected]:opacity-100 items-center justify-center ml-auto opacity-0 shrink-0 size-4 text-primary-ink" data-slot="combobox-item-check">
+                          <span aria-hidden="true" class="flex font-medium items-center justify-center ml-auto opacity-100 shrink-0 size-4 text-primary-ink" data-slot="combobox-item-check">
                             "✓"
                       <div aria-labelledby="bits-<id>" data-combobox-group="" id="bits-<id>" role="group">
                         <div class="font-medium px-2 py-1.5 text-muted-foreground type-caption" data-combobox-group-label="" id="bits-<id>">
@@ -17812,7 +17812,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'product:popovers:non
                         <div class="aria-disabled:opacity-50 aria-disabled:pointer-events-none bg-transparent border-none cursor-default data-[disabled]:opacity-50 data-[disabled]:pointer-events-none duration-spring-fast ease-spring-fast flex focus-visible:outline-none focus:text-foreground font-normal gap-2 group/menu-item items-center justify-start min-h-(--control-height-small) min-w-0 motion-reduce:transition-none px-2 py-1 relative rounded-(--radius-row) select-none text-left transition-colors type-caption w-full z-10" data-combobox-item="" data-label="Linus Torvalds" data-menu-item="true" data-slot="combobox-option-motion" data-value="linus" id="bits-<id>" role="option">
                           <span class="flex-1 min-w-0 truncate">
                             "Linus Torvalds"
-                          <span aria-hidden="true" class="flex font-medium group-data-[selected]:opacity-100 items-center justify-center ml-auto opacity-0 shrink-0 size-4 text-primary-ink" data-slot="combobox-item-check">
+                          <span aria-hidden="true" class="flex font-medium items-center justify-center ml-auto opacity-0 shrink-0 size-4 text-primary-ink" data-slot="combobox-item-check">
                             "✓"
               <article class="matrix-cell svelte-<scope>" data-catalog-rendered-state="popover title body">
                 <h3 class="font-medium text-muted-foreground type-caption">

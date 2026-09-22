@@ -9,8 +9,10 @@ import { shell } from 'electron';
 
 const mocks = vi.hoisted(() => ({
   logs: [] as string[],
-  start: vi.fn(),
-  wait: vi.fn(),
+  challenge: vi.fn(),
+  prove: vi.fn(),
+  /** The guest's OWN daemon (`github.getUser`, `github.identityProof.*`, `github.connect`). */
+  local: vi.fn(),
   add: vi.fn(),
   open: vi.fn(),
   close: vi.fn(),
@@ -30,7 +32,14 @@ vi.mock('$shared/logger', () => ({
   },
 }));
 vi.mock('electron', () => ({
-  BrowserWindow: class {},
+  // No focused/main window: the consent modal has nowhere to render, so the
+  // flow takes its native-dialog fallback (the cold-start posture under review).
+  BrowserWindow: class {
+    static getFocusedWindow(): null {
+      return null;
+    }
+  },
+  ipcMain: { handle: vi.fn() },
   app: { isReady: () => true },
   clipboard: { writeText: vi.fn() },
   shell: { openExternal: vi.fn() },
@@ -40,20 +49,30 @@ vi.mock('../../../../main/state', () => ({ getMainWindow: () => null }));
 vi.mock('../../../protocol/main/protocol-adapter', () => ({ protocolAdapter: {} }));
 vi.mock('../../../backend/main/guest-sessions-store', () => ({
   add: mocks.add,
+  // First join on this machine: no stored session, so the returning-guest
+  // shortcut is skipped and the identity proof under review runs.
+  findMatching: vi.fn(async () => null),
+  getDecryptedToken: vi.fn(async () => null),
   GuestStoreCorruptError: class extends Error {},
   GuestEncryptionUnavailableError: class extends Error {},
 }));
-vi.mock('../../../backend/main/backend.ipc', () => ({ openBackendWindow: mocks.open }));
+vi.mock('../../../backend/main/backend.ipc', () => ({
+  openBackendWindow: mocks.open,
+  getBackendClient: () => ({ request: mocks.local }),
+  onBackendNotification: () => () => {},
+}));
 vi.mock('../../../backend/main/backend-connection', () => ({
   PinMismatchError: class extends Error {},
+  normalizeFingerprint: (fp: string) => fp,
 }));
 vi.mock('../../../backend/main/invite-connection', () => ({
   InviteRpcError: class extends Error {},
+  InviteTransportError: class extends Error {},
   openInviteConnection: vi.fn(async () => ({
     host: '127.0.0.1',
     via: 'direct',
-    redeemStart: mocks.start,
-    redeemWait: mocks.wait,
+    challenge: mocks.challenge,
+    prove: mocks.prove,
     close: mocks.close,
   })),
 }));
@@ -79,14 +98,26 @@ beforeEach(() => {
   vi.clearAllMocks();
   mocks.logs.length = 0;
   mocks.dialog.mockResolvedValue({ response: 0 });
-  mocks.start.mockResolvedValue({
-    flowId: 'review',
-    userCode: 'ABCD-1234',
-    verificationUri: 'https://github.com/login/device',
-    expiresIn: 60,
+  mocks.challenge.mockResolvedValue({
+    workspaceId: 'review',
     workspaceTitle: 'Review',
+    nonce: 'review-nonce',
+    nonceExpiresAt: '2026-09-17T12:00:00Z',
   });
-  mocks.wait.mockResolvedValue({
+  // Signed in: the proof is made without any device flow.
+  mocks.local.mockImplementation(async (method: string) => {
+    switch (method) {
+      case 'github.getUser':
+        return { user: { login: 'review' } };
+      case 'github.identityProof.create':
+        return { gistId: 'review-gist', login: 'review' };
+      case 'github.identityProof.delete':
+        return { ok: true };
+      default:
+        throw new Error(`unexpected local method ${method}`);
+    }
+  });
+  mocks.prove.mockResolvedValue({
     token,
     principalId: 'review',
     login: 'review',
@@ -110,6 +141,16 @@ describe('review: secret boundary', () => {
     await handleInviteDeepLink(link);
     expect(mocks.open).not.toHaveBeenCalled();
     expect(mocks.logs.some((line) => line.includes(token))).toBe(false);
+  });
+
+  it('logs an unrecognised error under the bounded kind, never its arbitrary name', async () => {
+    const error = new Error('refused');
+    error.name = `Leaky ${token}`;
+    mocks.add.mockRejectedValueOnce(error);
+    await handleInviteDeepLink(link);
+    const allLogs = mocks.logs.join('\n');
+    expect(allLogs).toContain('"kind":"unknown"');
+    expect(allLogs).not.toContain(token);
   });
 
   it('keeps a normal cold-start invite token-free at renderer IPC', async () => {
@@ -138,9 +179,45 @@ describe('review: secret boundary', () => {
     },
   );
 
-  it('aborts before storing or opening when the OS refuses to launch the verification URL', async () => {
+  it('drops the guest daemon message text when the proof cannot be made', async () => {
+    mocks.local.mockImplementation(async (method: string) => {
+      if (method === 'github.getUser') return { user: { login: 'review' } };
+      throw new Error(`gist refused: secret=${secret} token=${token}`);
+    });
+    await handleInviteDeepLink(link);
+    expect(mocks.prove).not.toHaveBeenCalled();
+    expect(mocks.add).not.toHaveBeenCalled();
+    expect(mocks.dialog.mock.calls.at(-1)?.[0]).toMatchObject({ type: 'error' });
+    const allLogs = mocks.logs.join('\n');
+    expect(allLogs).toContain('"kind":"proof"');
+    expect(allLogs).not.toContain(secret);
+    expect(allLogs).not.toContain(token);
+  });
+
+  it('aborts before storing or opening when the OS refuses to launch the sign-in URL', async () => {
+    // Not signed in: the guest's own device flow runs, and its browser
+    // launch fails — the proof cannot have been made yet.
+    mocks.local.mockImplementation(async (method: string) => {
+      switch (method) {
+        case 'github.getUser':
+          return { user: null };
+        case 'github.connect':
+          return {
+            userCode: 'ABCD-1234',
+            verificationUri: 'https://github.com/login/device',
+            expiresIn: 60,
+            interval: 5,
+          };
+        case 'github.cancelAuth':
+          return { ok: true, cancelled: true };
+        default:
+          throw new Error(`unexpected local method ${method}`);
+      }
+    });
     vi.mocked(shell.openExternal).mockRejectedValueOnce(new Error(`launch refused for ${token}`));
     await handleInviteDeepLink(link);
+    expect(mocks.challenge).toHaveBeenCalledOnce();
+    expect(mocks.prove).not.toHaveBeenCalled();
     expect(mocks.add).not.toHaveBeenCalled();
     expect(mocks.open).not.toHaveBeenCalled();
     expect(mocks.dialog.mock.calls.at(-1)?.[0]).toMatchObject({ type: 'error' });

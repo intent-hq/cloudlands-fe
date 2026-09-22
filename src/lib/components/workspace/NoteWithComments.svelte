@@ -88,6 +88,7 @@
     selectNoteById,
     selectNewlyCreatedNoteId,
   } from '$store/renderer/slices/workspace-notes/workspace-notes-selectors';
+  import { selectHidesAgentLifecycleActions } from '$store/renderer/slices/workspace/workspace-selectors';
   import { processMarkdownToHTML, processHTMLToMarkdown } from '$lib/utils/markdown-processor';
   import { createWorkspaceFileVersion } from '$lib/utils/workspace-file-image';
   import { setupEditorListeners } from '$lib/utils/editor-listeners';
@@ -572,6 +573,9 @@
   const currentNote$ = selectNoteById(workspaceIdStore, noteIdStore);
   const currentNote = $derived($currentNote$ ?? null);
   const rawNoteViewEnabled$ = selectIsRawNoteViewEnabled(workspaceIdStore, noteIdStore);
+  // Both task-menu actions launch an agent; the popovers are withheld
+  // (never disabled) where the daemon would refuse the create.
+  const hidesAgentLifecycleActions$ = selectHidesAgentLifecycleActions(workspaceIdStore);
   let isRawNoteViewEnabled = $derived($rawNoteViewEnabled$ === true);
   let shouldShowRawNoteView = $derived(
     isRawNoteViewEnabled && !isInitializing && !isTooLargeForRichEditor,
@@ -2267,7 +2271,7 @@
 </div>
 
 <!-- Task Menu Popovers - Rendered based on discovered task buttons -->
-{#if !shouldShowRawNoteView}
+{#if !shouldShowRawNoteView && !$hidesAgentLifecycleActions$}
   {#each taskMenuData as menuData (menuData.id)}
     <TaskMenu
       id={menuData.id}

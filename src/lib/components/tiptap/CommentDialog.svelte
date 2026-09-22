@@ -134,10 +134,7 @@
     <!-- Actions -->
     {#if content.trim()}
       <div class="flex gap-2">
-        <Button
-          onclick={handleSubmit}
-          class="text-xs px-2 py-1 rounded bg-primary text-primary-foreground hover:bg-primary/90 transition-colors"
-        >
+        <Button variant="primary" onclick={handleSubmit} class="text-xs px-2 py-1">
           {m.tiptap_commentDialog_send_label()}
         </Button>
         <Button

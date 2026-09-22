@@ -9,7 +9,11 @@ import {
   parseUiComponentInventory,
   parseUiComponentMetadata,
 } from '../src/lib/components/ui/component-metadata';
-import { buildPatternAdoptionAudit, runUiComponentAudit } from './ui-component-audit';
+import {
+  buildButtonBackgroundAudit,
+  buildPatternAdoptionAudit,
+  runUiComponentAudit,
+} from './ui-component-audit';
 import { buildUiComponentInventory } from './ui-component-inventory';
 
 const auditScript = path.resolve(process.cwd(), 'scripts/ui-component-audit.ts');
@@ -292,6 +296,180 @@ describe('UI component inventory gate', () => {
       rmSync(directory, { recursive: true, force: true });
     }
   }, 120_000);
+});
+
+describe('Button background override guard', () => {
+  // Minimal tree so `check` can build the inventory and raw-element policy for a temp root.
+  const scaffold = {
+    'src/lib/components/ui/button/index.ts': "export const Button = 'button';",
+    'src/lib/components/ui/button/button.svelte': '<button>primitive host</button>',
+    'scripts/ui-component-raw-element-allowlist.json': JSON.stringify({
+      ceilings: {
+        'src/features': { button: 0, input: 0, select: 0, textarea: 0 },
+        'src/lib': { button: 0, input: 0, select: 0, textarea: 0 },
+      },
+      exceptions: [],
+    }),
+  };
+
+  function withFixtures(files: Record<string, string>, run: (root: string) => void) {
+    const root = mkdtempSync(path.join(tmpdir(), 'button-background-audit-'));
+    try {
+      for (const [file, source] of Object.entries({ ...scaffold, ...files })) {
+        const target = path.join(root, file);
+        mkdirSync(path.dirname(target), { recursive: true });
+        writeFileSync(target, source);
+      }
+      run(root);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  }
+
+  it('fails a Button that sets an opaque bg-* class without a variant, naming file:line and the repair', () => {
+    withFixtures(
+      {
+        'src/features/example/Accept.svelte': [
+          '<div>',
+          '  <Button class="bg-primary text-primary-foreground" onclick={() => count > 1 && accept()}>',
+          '    Apply',
+          '  </Button>',
+          '  <Button',
+          '    type="button"',
+          '    class={cn("h-8", "bg-success text-success-foreground", extra)}',
+          '  >',
+          '    Open',
+          '  </Button>',
+          '  <Button class:bg-danger={armed}>Delete</Button>',
+          '  <Button class={variant === "danger" ? "bg-danger" : "bg-primary"}>Apply</Button>',
+          '  <Button class="bg-[#2563eb] text-white">Hex</Button>',
+          '  <Button class="bg-[var(--brand)] bg-(--accent)">Variable</Button>',
+          '  <Button class="{active ? "bg-primary" : "bg-danger"}">Quoted</Button>',
+          "  <Button title={'Don\\'t'} class=\"bg-primary\">Escaped</Button>",
+          '  <Button {...{ class: "bg-primary" }}>Spread</Button>',
+          '  <Button {...{ class: "bg-muted" }} class="bg-primary">Overridden</Button>',
+          '  {#if ready}<Button class={`bg-${tone} bg-primary`}>Nested</Button>{/if}',
+          '</div>',
+        ].join('\n'),
+      },
+      (root) => {
+        const audit = buildButtonBackgroundAudit(root);
+        expect(audit.findings).toEqual([
+          { file: 'src/features/example/Accept.svelte', line: 2, classes: ['bg-primary'] },
+          { file: 'src/features/example/Accept.svelte', line: 5, classes: ['bg-success'] },
+          { file: 'src/features/example/Accept.svelte', line: 11, classes: ['bg-danger'] },
+          {
+            file: 'src/features/example/Accept.svelte',
+            line: 12,
+            classes: ['bg-danger', 'bg-primary'],
+          },
+          { file: 'src/features/example/Accept.svelte', line: 13, classes: ['bg-[#2563eb]'] },
+          {
+            file: 'src/features/example/Accept.svelte',
+            line: 14,
+            classes: ['bg-(--accent)', 'bg-[var(--brand)]'],
+          },
+          {
+            file: 'src/features/example/Accept.svelte',
+            line: 15,
+            classes: ['bg-danger', 'bg-primary'],
+          },
+          { file: 'src/features/example/Accept.svelte', line: 16, classes: ['bg-primary'] },
+          { file: 'src/features/example/Accept.svelte', line: 17, classes: ['bg-primary'] },
+          { file: 'src/features/example/Accept.svelte', line: 18, classes: ['bg-primary'] },
+          { file: 'src/features/example/Accept.svelte', line: 19, classes: ['bg-primary'] },
+        ]);
+        expect(audit.failures[0]).toMatch(
+          /^src\/features\/example\/Accept\.svelte:2: <Button> without variant sets bg-primary; .*use variant="primary"/,
+        );
+
+        const result = runUiComponentAudit('check', root);
+        expect(result.exitCode).toBe(1);
+        expect(result.stderr).toContain(
+          'Accept.svelte:2: <Button> without variant sets bg-primary',
+        );
+        expect(result.stderr).toContain(
+          'Accept.svelte:5: <Button> without variant sets bg-success',
+        );
+      },
+    );
+  });
+
+  it('passes Buttons with a variant, translucent, state-prefixed, transparent, or non-colour bg-* classes', () => {
+    withFixtures(
+      {
+        'src/features/example/Fine.svelte': [
+          '<script lang="ts">',
+          '  const example: string = \'<Button class="bg-primary">documented bad example</Button>\';',
+          '</script>',
+          '<!-- <Button class="bg-primary">commented-out call site</Button> -->',
+          '<Button variant="primary" class="bg-primary text-primary-foreground">Apply</Button>',
+          '<Button {variant} class="bg-danger">Delete</Button>',
+          '<Button class="bg-success/10 text-success hover:bg-muted focus-visible:bg-accent dark:bg-muted">Soft</Button>',
+          '<Button class="bg-transparent bg-cover bg-gradient-to-r bg-[url(/x.png)]">Ghost</Button>',
+          '<Button class="bg-[length:200px_100px] bg-(image:--hero) bg-[linear-gradient(red,blue)] bg-[#2563eb]/40 bg-[var(--brand)]/[0.5]">Arbitrary</Button>',
+          '<Button class={cn("px-2", active && "bg-muted/50")}>Toggle</Button>',
+          '<Button class={cn("px-2")} title="bg-primary" data-tone={tone === "bg-danger"}>Plain</Button>',
+          '<Button bind:variant class="bg-primary">Bound</Button>',
+          '<Button {...{ variant: "primary" }} class="bg-primary">Spread variant</Button>',
+          '<Button {...{ class: "bg-primary" }} variant="primary">Spread class</Button>',
+          '<Button {...{ class: "bg-primary" }} class="px-2">Spread overridden</Button>',
+          '<Button {...props} class="bg-primary">Runtime spread</Button>',
+          '<Button {...{ ...props, class: "bg-primary" }}>Nested runtime spread</Button>',
+          '<ButtonGroup class="bg-primary"><span class="bg-primary">not a Button</span></ButtonGroup>',
+          '<style>',
+          '  /* <Button class="bg-primary">in a style comment</Button> */',
+          '</style>',
+        ].join('\n'),
+        'src/routes/sandbox/button/+page.svelte': '<Button class="bg-primary">fixture</Button>',
+        'src/features/example/__tests__/Harness.svelte': '<Button class="bg-primary">test</Button>',
+      },
+      (root) => {
+        const audit = buildButtonBackgroundAudit(root);
+        expect(audit).toMatchObject({ count: 0, ceiling: 0, findings: [], failures: [] });
+        expect(runUiComponentAudit('check', root).stderr).not.toContain('<Button> without variant');
+      },
+    );
+  });
+
+  it('fails closed on a Svelte file the parser rejects, naming the file and diagnostic instead of throwing', () => {
+    withFixtures(
+      {
+        'src/features/example/Broken.svelte': '<div>\n<Button class={>',
+        'src/features/example/Accept.svelte': '<Button class="bg-primary">Apply</Button>',
+      },
+      (root) => {
+        const audit = buildButtonBackgroundAudit(root);
+        expect(audit.findings).toEqual([
+          { file: 'src/features/example/Accept.svelte', line: 1, classes: ['bg-primary'] },
+        ]);
+        expect(audit.failures).toHaveLength(2);
+        expect(audit.failures[0]).toMatch(
+          /^src\/features\/example\/Broken\.svelte:2:16: svelte parse error \(js_parse_error\): Unexpected token$/,
+        );
+        expect(audit.failures[1]).toMatch(
+          /^src\/features\/example\/Accept\.svelte:1: <Button> without variant sets bg-primary/,
+        );
+
+        const report = runUiComponentAudit('button-backgrounds', root);
+        expect(report.exitCode).toBe(0);
+        expect(JSON.parse(report.stdout)).toMatchObject({ count: 1, failures: audit.failures });
+
+        const result = runUiComponentAudit('check', root);
+        expect(result.exitCode).toBe(1);
+        expect(result.stderr).toContain(
+          'Broken.svelte:2:16: svelte parse error (js_parse_error): Unexpected token',
+        );
+        expect(result.stderr).toContain(
+          'Accept.svelte:1: <Button> without variant sets bg-primary',
+        );
+      },
+    );
+  });
+
+  it('keeps the checked-in tree at the zero ceiling', () => {
+    expect(buildButtonBackgroundAudit()).toMatchObject({ count: 0, ceiling: 0, failures: [] });
+  });
 });
 
 describe('settings pattern adoption', () => {

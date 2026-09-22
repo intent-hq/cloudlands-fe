@@ -915,6 +915,53 @@ export function disconnectBackendClient(id: string): void {
 }
 
 /**
+ * Replay the reconnect marker for a client rebuilt under live windows once
+ * it has GENUINELY connected. `connectBackendClient` resolves as soon as the
+ * client is constructed and started — its socket is still dialing — so a
+ * `status: 'connected'` pushed at that point tells the window's renderer the
+ * backend is healthy while the real status is `connecting`: the daemon-loss
+ * overlay dismisses on the fabricated `connected` and re-arms its grace timer
+ * on the next real `disconnected`, which reads as the overlay flickering
+ * whenever the host is unreachable. The rebuilt client's FIRST connect is a
+ * plain `connected`, not a `reconnected`, so the marker is still owed — it
+ * just waits for that connect. A client that is evicted or replaced before
+ * connecting never replays.
+ */
+function replayReconnectOnceConnected(id: string, rebuilt: JsonRpcClient): void {
+  let replayed = false;
+  const replay = (): void => {
+    if (replayed || backendClients.get(id) !== rebuilt) return;
+    replayed = true;
+    broadcast(
+      BACKEND.STATUS,
+      {
+        status: 'connected',
+        reconnected: true,
+        transport: formatTransportInfo(
+          rebuilt.getConfig(),
+          getPinnedVersion(),
+          rebuilt.getConnectedVia(),
+        ),
+        reconnectAttempts: rebuilt.getReconnectAttempts(),
+        ...daemonUpdateMarker(id),
+      },
+      id,
+    );
+    backendReconnectForwarder.emit('reconnected', id);
+  };
+  if (rebuilt.getStatus() === 'connected') {
+    replay();
+    return;
+  }
+  const onStatus = (status: ConnectionStatus): void => {
+    if (status !== 'connected') return;
+    rebuilt.off('status', onStatus);
+    replay();
+  };
+  rebuilt.on('status', onStatus);
+}
+
+/**
  * A guest re-join (or a keychain sync applying a newer record) replaces the
  * session's credential — and possibly its principal — in place under the
  * SAME id. Anything built on the old credential is invalidated at once: the
@@ -934,22 +981,7 @@ function onGuestCredentialReplaced(id: string): void {
   if (!hadLiveClient) return;
   void enqueueConnectionOperation(async () => {
     const rebuilt = await connectBackendClient(id);
-    broadcast(
-      BACKEND.STATUS,
-      {
-        status: 'connected',
-        reconnected: true,
-        transport: formatTransportInfo(
-          rebuilt.getConfig(),
-          getPinnedVersion(),
-          rebuilt.getConnectedVia(),
-        ),
-        reconnectAttempts: rebuilt.getReconnectAttempts(),
-        ...daemonUpdateMarker(id),
-      },
-      id,
-    );
-    backendReconnectForwarder.emit('reconnected', id);
+    replayReconnectOnceConnected(id, rebuilt);
   }).catch((error: unknown) => {
     logger.warn('Failed to rebuild guest client after credential replacement', {
       id,
@@ -997,6 +1029,17 @@ function createAdditionalBackendClient(id: string, config: BackendConnectionConf
     id !== LOCAL_CONNECTION_ID && config.host != null && config.port != null
       ? { id, host: config.host, port: config.port }
       : null;
+  // The guest-only `events.subscribe` lease, one per transport generation:
+  // the daemon drops it with the socket, so every non-`connected` status
+  // bumps the generation and forgets it (a late answer from the old socket is
+  // discarded by the generation check), and a hello on a socket that already
+  // holds or is acquiring one — a same-socket capability re-hello — reuses it.
+  // Events on any other subscription are the renderer's.
+  const guestWorkspaceEvents: {
+    generation: number;
+    subscriptionId: string | undefined;
+    subscribing: boolean;
+  } = { generation: 0, subscriptionId: undefined, subscribing: false };
   const instance = new JsonRpcClient({
     config,
     // Enable a liveness heartbeat: reconnect-on-close alone misses a silently
@@ -1047,8 +1090,23 @@ function createAdditionalBackendClient(id: string, config: BackendConnectionConf
         // the version capture; the store dedupes the unchanged common case.
         void captureRemoteHostname(id);
         // A guest session's joined-workspace cache refreshes from the host on
-        // the same (re)connect window; a no-op for paired (owner) backends.
+        // the same (re)connect window, and the host's workspace events keep it
+        // fresh between hellos; both are no-ops for paired (owner) backends.
         void hydrateGuestWorkspaces(id);
+        if (
+          guestWorkspaceEvents.subscriptionId === undefined &&
+          !guestWorkspaceEvents.subscribing
+        ) {
+          const generation = guestWorkspaceEvents.generation;
+          const isCurrent = () =>
+            guestWorkspaceEvents.generation === generation && backendClients.get(id) === instance;
+          guestWorkspaceEvents.subscribing = true;
+          void subscribeGuestWorkspaceEvents(id, instance, isCurrent).then((subscriptionId) => {
+            if (!isCurrent()) return;
+            guestWorkspaceEvents.subscribing = false;
+            guestWorkspaceEvents.subscriptionId = subscriptionId;
+          });
+        }
         // Capture whether the daemon supports self-update (system.status
         // `updateSupported`) so the renderer can gate the Update affordance.
         // Fire-and-forget/fail-soft like the captures above.
@@ -1098,11 +1156,17 @@ function createAdditionalBackendClient(id: string, config: BackendConnectionConf
   instance.on('notification', (notification: JsonRpcNotification) => {
     broadcast(BACKEND.NOTIFICATION, notification, id);
     backendNotificationForwarder.emit('notification', id, notification);
+    if (isGuestWorkspaceRefreshEvent(notification, guestWorkspaceEvents.subscriptionId)) {
+      requestGuestWorkspaceRefresh(id);
+    }
   });
   instance.on('status', (status: ConnectionStatus) => {
     if (status !== 'connected') {
       connectedDaemonVersions.delete(id);
       connectedProtocolVersions.delete(id);
+      guestWorkspaceEvents.generation += 1;
+      guestWorkspaceEvents.subscriptionId = undefined;
+      guestWorkspaceEvents.subscribing = false;
     }
     notePendingDaemonUpdateStatus(id, status);
     broadcast(
@@ -1115,6 +1179,8 @@ function createAdditionalBackendClient(id: string, config: BackendConnectionConf
           instance.getConnectedVia(),
         ),
         reconnectAttempts: instance.getReconnectAttempts(),
+        connectionLimited: instance.isConnectionLimited(),
+        connectionLimitRetryAfterMs: instance.getConnectionLimitRetryAfterMs(),
         ...daemonUpdateMarker(id),
       },
       id,
@@ -1593,6 +1659,105 @@ async function hydrateGuestWorkspaces(id: string): Promise<void> {
       code: revokeFailureCode(error),
     });
   }
+}
+
+/**
+ * Per-session hydration gate: `true` while a hydration is in flight AND a
+ * trailing one was requested meanwhile, `false` while one is in flight with
+ * nothing pending, absent when idle.
+ */
+const guestWorkspaceRefreshPending = new Map<string, boolean>();
+
+/**
+ * Event-driven {@link hydrateGuestWorkspaces}, single-flight with trailing
+ * coalesce: host events arriving while a read is in flight collapse into at
+ * most one follow-up read once it settles, so a burst costs at most two
+ * `workspace.list` calls instead of one per event. The hello path calls
+ * {@link hydrateGuestWorkspaces} directly — its read-generation fence already
+ * settles two hellos on one client.
+ */
+function requestGuestWorkspaceRefresh(id: string): void {
+  if (guestWorkspaceRefreshPending.has(id)) {
+    guestWorkspaceRefreshPending.set(id, true);
+    return;
+  }
+  void (async () => {
+    do {
+      guestWorkspaceRefreshPending.set(id, false);
+      await hydrateGuestWorkspaces(id);
+    } while (guestWorkspaceRefreshPending.get(id));
+    guestWorkspaceRefreshPending.delete(id);
+  })();
+}
+
+/** Host events that can change a guest's cached `{ id, title }` list. */
+const GUEST_WORKSPACE_EVENT_TYPES = ['workspace:updated', 'workspace:deleted'];
+
+/**
+ * Subscribe a guest session's pooled client to the host's workspace events
+ * (PROTOCOL §6.2) so a rename or a membership removal refreshes the cached
+ * joined-workspace list without waiting for the next reconnect hello. The
+ * caller runs it once per transport generation and matches notifications
+ * strictly on the returned id. Resolves `undefined` for a paired (owner)
+ * backend, a replaced client, or a failure (fail-soft: the next hello on the
+ * same socket retries, and the cache still refreshes on every hello).
+ *
+ * `isCurrent` is re-checked after the registry read, BEFORE the request goes
+ * out: the read is a real file read, and a socket that dropped and redialed
+ * while it was pending already cleared the caller's guard, so a request from
+ * here would land a second lease on the new socket (`request()` waits across
+ * a non-connected status instead of failing).
+ */
+async function subscribeGuestWorkspaceEvents(
+  id: string,
+  client: JsonRpcClient,
+  isCurrent: () => boolean,
+): Promise<string | undefined> {
+  try {
+    if ((await guestSessionsStore.findById(id)) === null) return undefined;
+    if (!isCurrent()) return undefined;
+    const result = (await client.request('events.subscribe', {
+      eventTypes: GUEST_WORKSPACE_EVENT_TYPES,
+    })) as { subscriptionId?: unknown } | undefined;
+    if (!isCurrent()) return undefined;
+    if (typeof result?.subscriptionId !== 'string' || !result.subscriptionId) {
+      logger.warn('events.subscribe for guest workspace events returned no subscriptionId', {
+        id,
+      });
+      return undefined;
+    }
+    return result.subscriptionId;
+  } catch (error) {
+    logger.warn('events.subscribe for guest workspace events failed', {
+      id,
+      code: revokeFailureCode(error),
+    });
+    return undefined;
+  }
+}
+
+/**
+ * Whether a daemon notification is a `workspace:updated` / `workspace:deleted`
+ * on the guest subscription that can change the cached list: a title change,
+ * the removed member's final `removedPrincipalId` delta (§6.5, multiplayer
+ * unshare), or a deletion. Other deltas (the debounced `lastActivity` push,
+ * status/attention flips) never touch `{ id, title }` and must not cost a
+ * `workspace.list` round trip.
+ */
+function isGuestWorkspaceRefreshEvent(
+  notification: JsonRpcNotification,
+  subscriptionId: string | undefined,
+): boolean {
+  if (subscriptionId === undefined || notification.method !== 'events.event') return false;
+  const params = notification.params as
+    { subscriptionId?: unknown; event?: { type?: unknown; data?: unknown } } | undefined;
+  if (params?.subscriptionId !== subscriptionId) return false;
+  const type = params.event?.type;
+  if (type === 'workspace:deleted') return true;
+  if (type !== 'workspace:updated') return false;
+  const changes = (params.event?.data as { changes?: unknown } | undefined)?.changes as
+    { title?: unknown; removedPrincipalId?: unknown } | undefined;
+  return typeof changes?.title === 'string' || typeof changes?.removedPrincipalId === 'string';
 }
 
 /**
@@ -2952,6 +3117,8 @@ export function registerBackendHandlers(): void {
       status: client.getStatus(),
       transport,
       reconnectAttempts: client.getReconnectAttempts(),
+      connectionLimited: client.isConnectionLimited(),
+      connectionLimitRetryAfterMs: client.getConnectionLimitRetryAfterMs(),
       ...daemonUpdateMarker(backendId),
     };
   });
@@ -3247,29 +3414,13 @@ function registerConnectionsHandlers(): void {
             // destroying any windows. The caller opens/focuses it through
             // connections:open.
             const rebuilt = await connectBackendClient(connection.id);
-            // The rebuilt client's FIRST connect is a plain `connected`, not a
-            // `reconnected`, and this backend's windows stay alive across the
-            // swap. Replay the reconnect marker exactly as the instance's own
-            // `reconnected` handler would, so main-process services and
-            // renderer consumers holding daemon `events.subscribe` leases
-            // re-subscribe against the new client (requests queue until the
-            // fresh socket connects, T8).
-            broadcast(
-              BACKEND.STATUS,
-              {
-                status: 'connected',
-                reconnected: true,
-                transport: formatTransportInfo(
-                  rebuilt.getConfig(),
-                  getPinnedVersion(),
-                  rebuilt.getConnectedVia(),
-                ),
-                reconnectAttempts: rebuilt.getReconnectAttempts(),
-                ...daemonUpdateMarker(connection.id),
-              },
-              connection.id,
-            );
-            backendReconnectForwarder.emit('reconnected', connection.id);
+            // This backend's windows stay alive across the swap. Replay the
+            // reconnect marker exactly as the instance's own `reconnected`
+            // handler would — once the fresh socket has connected — so
+            // main-process services and renderer consumers holding daemon
+            // `events.subscribe` leases re-subscribe against the new client
+            // (requests queue until then, T8).
+            replayReconnectOnceConnected(connection.id, rebuilt);
           }
           await broadcastConnectionsChanged();
           return {

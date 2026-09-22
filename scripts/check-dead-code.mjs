@@ -6,7 +6,8 @@
 // that means the gate has gone blind to unused files (cloudlands-fe#2695 found three such
 // masks that passed silently for months). Otherwise the canary rows are dropped and the
 // remaining issues are reported with knip's own exit semantics (error-level rules only).
-// The canary directory is removed on every exit path, including SIGINT/SIGTERM.
+// The canary directory is removed on every exit path, including SIGINT/SIGTERM, and is
+// excluded in tsconfig.json so a concurrent type-check never sees it (TS6053 otherwise).
 import { spawnSync } from 'node:child_process';
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';

@@ -14,7 +14,7 @@
 
 import type { AgentId, WorkspaceId } from './branded-ids';
 import { splitLegacyCompoundId } from '$shared/utils/legacy-model-id';
-import type { AgentMessage } from './agent-message';
+import type { AgentMessage, MessageAuthor } from './agent-message';
 import { AgentStatus } from './agent.types';
 import type { AgentMetadata } from '../types';
 
@@ -81,9 +81,18 @@ export interface QueuedMessage {
    * eventTypes, events? }` so the UI can render them as system notifications
    * instead of raw `[WORKSPACE EVENTS]` text. Agent-to-agent messages carry
    * `{ type: 'agent_message', fromAgentId, fromAgentName? }` so the UI can
-   * render sender attribution.
+   * render sender attribution. User-typed entries carry the daemon's
+   * `fromPrincipalId` principal stamp (intent-hq/intentd#1869).
    */
   messageMetadata?: Record<string, unknown>;
+  /**
+   * Serve-time projection of the principal that enqueued the entry
+   * (multiplayer w2), resolved by the daemon from the `fromPrincipalId`
+   * stamp. Authoritative when present: `null` means the principal row is
+   * gone (no author, no fallback). Absent on older daemons, where the queue
+   * surface falls back to the projections the transcript already carries.
+   */
+  author?: MessageAuthor | null;
 }
 
 /**
@@ -130,6 +139,27 @@ export interface AgentScopeCounts {
   topLevel: number;
   delegated: number;
   background: number;
+}
+
+/** One parent's direct non-retired children: `total` rows, `running` of them mid-turn. */
+export interface AgentDelegatedParentCounts {
+  total: number;
+  running: number;
+}
+
+/**
+ * Per-parent counts of the workspace's non-retired DELEGATED sessions, served
+ * as `delegatedCounts` on every `agent.list` response (§5.5). `running` is the
+ * workspace-wide running delegated count (persisted status `pending` /
+ * `active` / legacy `Processing`); `byParent` keys are raw `parentAgentId`
+ * values — a parent with no non-retired children has NO entry, and a key may
+ * name a parent outside this workspace (cross-workspace delegation). Invariant
+ * daemon-side: `Σ byParent[*].total === scopeCounts.delegated`. Absent on
+ * older daemons.
+ */
+export interface AgentDelegatedCounts {
+  running: number;
+  byParent: Record<string, AgentDelegatedParentCounts>;
 }
 
 /**
