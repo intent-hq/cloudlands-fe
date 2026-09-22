@@ -391,6 +391,7 @@ describe('lintRuleFromRepoConfig', () => {
 
     expect(seen.options).not.toHaveProperty('overrideConfigFile');
     expect(seen.options.cwd).toBe(process.cwd());
+    expect(seen.options.errorOnUnmatchedPattern).toBe(false);
     expect(seen.options.overrideConfig).toEqual(ruleScopeOverrides(repoConfig, ruleIds));
     expect(seen.options.ruleFilter({ ruleId: 'intent/no-raw-controls' })).toBe(true);
     expect(seen.options.ruleFilter({ ruleId: 'intent/no-raw-typography' })).toBe(false);
@@ -401,6 +402,80 @@ describe('lintRuleFromRepoConfig', () => {
       'intent/no-native-dialogs': {},
     });
   });
+});
+
+describe('lintRuleFromRepoConfig with ignored or unmatched config-derived globs', () => {
+  const tmpDirs = [];
+  afterEach(() => {
+    for (const dir of tmpDirs.splice(0)) fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  const ruleId = 'no-unused-vars';
+  const offender = 'const unused = 1;\n';
+
+  // A throwaway package whose flat config enables a core rule through `entries` and
+  // globally ignores `ignores`; real ESLint resolves the resulting patterns from disk.
+  function makePackage({ ignores, entries, files }) {
+    const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'baseline-ratchet-scope-'));
+    tmpDirs.push(cwd);
+    fs.writeFileSync(path.join(cwd, 'package.json'), '{"type":"module"}\n');
+    for (const file of files) {
+      fs.mkdirSync(path.dirname(path.join(cwd, file)), { recursive: true });
+      fs.writeFileSync(path.join(cwd, file), offender);
+    }
+    const config = [
+      { ignores },
+      ...entries.map((glob) => ({ files: [glob], rules: { [ruleId]: 'error' } })),
+    ];
+    fs.writeFileSync(
+      path.join(cwd, 'eslint.config.js'),
+      `export default ${JSON.stringify(config, null, 2)};\n`,
+    );
+    return cwd;
+  }
+
+  it('counts only the populated glob when a sibling glob is fully covered by a global ignore', async () => {
+    const seen = {};
+    class RecordingESLint extends ESLint {
+      constructor(options) {
+        super(options);
+        seen.options = options;
+      }
+    }
+    const entries = ['src/**/*.js', 'ignored/**/*.js'];
+    const cwd = makePackage({
+      ignores: ['ignored/**'],
+      entries,
+      files: ['src/a.js', 'ignored/b.js'],
+    });
+    // Control: ESLint's default rejects this pattern union outright.
+    await expect(new ESLint({ cwd, cache: false }).lintFiles(entries)).rejects.toThrow(
+      "All files matched by 'ignored/**/*.js' are ignored",
+    );
+
+    await expect(
+      lintRuleFromRepoConfig({ cwd, ruleIds: ruleId, eslintClass: RecordingESLint }),
+    ).resolves.toEqual({ [ruleId]: { 'src/a.js': 1 } });
+    expect(seen.options.errorOnUnmatchedPattern).toBe(false);
+  }, 30_000);
+
+  it('returns empty counts when every config-derived glob is fully ignored', async () => {
+    const cwd = makePackage({
+      ignores: ['src/**'],
+      entries: ['src/**/*.js'],
+      files: ['src/a.js'],
+    });
+    await expect(lintRuleFromRepoConfig({ cwd, ruleIds: ruleId })).resolves.toEqual({
+      [ruleId]: {},
+    });
+  }, 30_000);
+
+  it('returns empty counts for a glob that matches no file at all', async () => {
+    const cwd = makePackage({ ignores: [], entries: ['src/**/*.js'], files: [] });
+    await expect(lintRuleFromRepoConfig({ cwd, ruleIds: ruleId })).resolves.toEqual({
+      [ruleId]: {},
+    });
+  }, 30_000);
 });
 
 describe('lintPatterns', () => {

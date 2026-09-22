@@ -205,6 +205,8 @@ export function lintPatterns(overrides) {
  * Lint `ruleIds` over the repo's real flat config: file resolution and global ignores
  * (incl. `.gitignore`) come from `eslint.config.js`, only the rule(s) under ratchet run,
  * and the result maps each rule id to `{ [packageRelativeFile]: violationCount }`.
+ * A config-derived glob that a global ignore covers entirely (or that matches nothing)
+ * contributes no files rather than failing the run, as `lintFiles(['.'])` would.
  * `eslintClass` is injectable for tests.
  */
 export async function lintRuleFromRepoConfig({ cwd, ruleIds, eslintClass = ESLint }) {
@@ -216,6 +218,7 @@ export async function lintRuleFromRepoConfig({ cwd, ruleIds, eslintClass = ESLin
     overrideConfig: overrides,
     ruleFilter: ({ ruleId }) => ids.includes(ruleId),
     cache: false,
+    errorOnUnmatchedPattern: false,
   });
   const results = await eslint.lintFiles(lintPatterns(overrides));
   const counts = Object.fromEntries(ids.map((ruleId) => [ruleId, {}]));
