@@ -108,6 +108,9 @@
   let searchGeneration = 0;
   const pickerId = $props.id();
   const searchListId = `${pickerId}-results`;
+
+  // Show search results when there's a query, otherwise show open panels
+  let showSearchResults = $derived(searchQuery.trim().length > 0);
   const activeResult = $derived(
     !isSearching && !searchFailed && showSearchResults
       ? searchResults[activeSearchIndex]
@@ -136,9 +139,6 @@
   let checkedPanelCount = $derived(panels.filter((p) => p.checked).length);
   let checkedSelectionCount = $derived(selections.filter((s) => s.checked).length);
   let checkedCount = $derived(checkedPanelCount + checkedSelectionCount);
-
-  // Show search results when there's a query, otherwise show open panels
-  let showSearchResults = $derived(searchQuery.trim().length > 0);
 
   // Group panels by panelId for display with headers
   interface PanelGroup {
@@ -544,7 +544,7 @@
                 id={resultId(result)}
                 role="option"
                 aria-selected={index === activeSearchIndex}
-                tabindex="-1"
+                tabindex={-1}
                 onpointerdown={(event) => event.preventDefault()}
                 onpointermove={() => (activeSearchIndex = index)}
                 onclick={() => handleSelectSearchResult(result)}

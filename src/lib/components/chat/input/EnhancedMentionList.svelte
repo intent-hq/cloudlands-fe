@@ -387,7 +387,7 @@
                 role="option"
                 aria-selected={isSelected}
                 aria-label={item.label}
-                tabindex="-1"
+                tabindex={-1}
                 onpointerdown={(event) => event.preventDefault()}
                 onmousedown={(event) => event.preventDefault()}
                 onclick={() => selectItem(visualIndex)}

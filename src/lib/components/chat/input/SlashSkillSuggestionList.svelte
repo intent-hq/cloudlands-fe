@@ -153,7 +153,7 @@
               selectedIndex === index && 'active',
             )}
             role="option"
-            tabindex="-1"
+            tabindex={-1}
             aria-label={item.name}
             aria-selected={selectedIndex === index}
             onpointerenter={() => (selectedIndex = index)}
