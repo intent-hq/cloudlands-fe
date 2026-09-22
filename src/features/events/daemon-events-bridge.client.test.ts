@@ -277,11 +277,13 @@ import { refreshWorkspaceSubscriptionEntriesRequested } from '$store/renderer/sl
 import {
   setAgents,
   setDelegatedCounts,
+  setOrphanedDelegatedAgentsLoaded,
   setRetiredCount,
   setScopeCounts,
 } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
 import {
   selectDelegatedCounts,
+  selectOrphanedDelegatedAgentIds,
   selectRetiredCount,
   selectScopeCounts,
 } from '$store/renderer/slices/workspace-agents/workspace-agents-selectors';
@@ -347,6 +349,8 @@ const AGENT = 'agent-bridge-1';
 /** The hydration read's wire params (§5.5 row scope: the top-level bin). */
 const TOP_LEVEL_LIST = { workspaceId: WS, scope: 'topLevel' };
 const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
+/** Lets a multi-read hydrate (top-level list + lazy-bin re-reads) settle. */
+const settle = () => new Promise((resolve) => setTimeout(resolve, 20));
 const stopRouterDependencies: Array<() => void> = [];
 
 function inheritedPropertyDescriptor(target: object, key: PropertyKey): PropertyDescriptor {
@@ -6197,7 +6201,7 @@ describe('daemonEventsBridge (agent lifecycle → collapsed bin counts, §5.5 sc
       expect(sumByParent()).toBe(scopeCountsOf()?.delegated);
     });
 
-    it('a delegated agent:created / agent:deleted nudges byParent but leaves delegatedCounts.orphaned untouched (orphan-ness is a daemon-side lookup)', async () => {
+    it('a delegated agent:created nudges byParent but leaves delegatedCounts.orphaned untouched (orphan-ness is a daemon-side lookup); deleting the row re-baselines the count from the daemon read', async () => {
       const ORPHANED = { total: 1, running: 0 };
       appStore.dispatch(setDelegatedCounts(WS, { ...DELEGATED, orphaned: ORPHANED }));
       const handler = capturedHandlers[0]!;
@@ -6215,11 +6219,172 @@ describe('daemonEventsBridge (agent lifecycle → collapsed bin counts, §5.5 sc
         byParent: { ...DELEGATED.byParent, 'agent-gone': { total: 1, running: 0 } },
         orphaned: ORPHANED,
       });
+      expect(backendRequestSpy).not.toHaveBeenCalledWith('agent.list', TOP_LEVEL_LIST);
 
+      // The deleted row may itself have been an orphan: the count is not
+      // guessed locally either — the hydrate re-baselines it from the daemon.
+      backendRequestSpy.mockImplementation((method: string) =>
+        method === 'agent.list'
+          ? Promise.resolve({
+              agents: [],
+              retiredCount: 0,
+              scopeCounts: COUNTS,
+              delegatedCounts: { ...DELEGATED, orphaned: ORPHANED },
+            })
+          : undefined,
+      );
       handler(notification('agent:deleted', { agentId: 'agent-child' }));
-      await flush();
+      await settle();
+      expect(backendRequestSpy).toHaveBeenCalledWith('agent.list', TOP_LEVEL_LIST);
       expect(scopeCountsOf()).toEqual(COUNTS);
       expect(delegatedCountsOf()).toEqual({ ...DELEGATED, orphaned: ORPHANED });
+    });
+  });
+
+  // §5.5 delegatedCounts.orphaned: a known row leaving (or re-entering) the
+  // live set changes which of its children the daemon counts as orphans. The
+  // bridge never infers that locally — when the daemon serves the count, the
+  // lifecycle event rides the single-flight hydrate so the count AND the
+  // Delegated bin's membership re-baseline from the daemon.
+  describe('orphaned delegated count + membership re-baseline on known-row liveness changes', () => {
+    const CHILD = 'agent-bridge-child';
+    const NO_ORPHANS = { total: 0, running: 0 };
+    const ONE_ORPHAN = { total: 1, running: 0 };
+    const DELEGATED = { running: 0, byParent: { [PARENT]: { total: 1, running: 0 } } };
+    const ORPHANED_ONLY_LIST = { workspaceId: WS, scope: 'delegated', orphanedOnly: true };
+    const delegatedCountsOf = () => selectDelegatedCounts.select(appStore.state, WS);
+    const orphanIdsOf = () => selectOrphanedDelegatedAgentIds.select(appStore.state, WS);
+    /** PROTOCOL §5.5-shaped `agent.list` row for the child (slim list projection). */
+    const CHILD_ROW = {
+      id: CHILD,
+      workspaceId: WS,
+      name: 'C',
+      status: 'pending',
+      parentAgentId: PARENT,
+      createdAt: '2026-01-01T00:00:00.000Z',
+      updatedAt: '2026-01-01T00:00:00.000Z',
+    };
+
+    /** The daemon's answer once the parent left the live set: the child is the one orphan. */
+    function mockDaemonAfterParentLeft(): void {
+      backendRequestSpy.mockImplementation((method: string, params: unknown) => {
+        if (method !== 'agent.list') return undefined;
+        const orphanedOnly = (params as { orphanedOnly?: boolean }).orphanedOnly === true;
+        return Promise.resolve({
+          agents: orphanedOnly ? [CHILD_ROW] : [],
+          retiredCount: 0,
+          scopeCounts: { ...COUNTS, topLevel: COUNTS.topLevel - 1 },
+          delegatedCounts: {
+            running: 0,
+            byParent: { [PARENT]: { total: 1, running: 0 } },
+            orphaned: ONE_ORPHAN,
+          },
+        });
+      });
+    }
+
+    beforeEach(() => {
+      appStore.dispatch(setDelegatedCounts(WS, { ...DELEGATED, orphaned: NO_ORPHANS }));
+      appStore.dispatch(setOrphanedDelegatedAgentsLoaded(WS, false));
+      seedSession({ id: PARENT as never });
+      seedSession({ id: CHILD as never, parentAgentId: PARENT as never });
+      backendRequestSpy.mockClear();
+    });
+
+    it('agent:deleted on a known live parent re-baselines orphaned 0→1 and the bin membership from the daemon read (no local inference)', async () => {
+      // The Delegated bin was expanded earlier (orphan subset loaded), so the
+      // hydrate re-reads it and the membership follows the daemon.
+      appStore.dispatch(setOrphanedDelegatedAgentsLoaded(WS, true));
+      mockDaemonAfterParentLeft();
+      const handler = capturedHandlers[0]!;
+
+      handler(notification('agent:deleted', { agentId: PARENT }));
+      await settle();
+
+      expect(backendRequestSpy).toHaveBeenCalledWith('agent.list', TOP_LEVEL_LIST);
+      expect(backendRequestSpy).toHaveBeenCalledWith('agent.list', ORPHANED_ONLY_LIST);
+      expect(delegatedCountsOf()?.orphaned).toEqual(ONE_ORPHAN);
+      expect(orphanIdsOf()).toEqual({ [CHILD]: true });
+    });
+
+    it('agent:deleted on a known live parent re-baselines the collapsed bin count even before the orphan subset was ever loaded', async () => {
+      mockDaemonAfterParentLeft();
+      const handler = capturedHandlers[0]!;
+
+      handler(notification('agent:deleted', { agentId: PARENT }));
+      await settle();
+
+      expect(backendRequestSpy).toHaveBeenCalledWith('agent.list', TOP_LEVEL_LIST);
+      // A never-expanded bin loads its rows on demand; only the count moves.
+      expect(backendRequestSpy).not.toHaveBeenCalledWith('agent.list', ORPHANED_ONLY_LIST);
+      expect(delegatedCountsOf()?.orphaned).toEqual(ONE_ORPHAN);
+    });
+
+    it('agent:retired on a known parent and agent:restored on its (cascade-retired) child each re-baseline via the hydrate', async () => {
+      mockDaemonAfterParentLeft();
+      const handler = capturedHandlers[0]!;
+
+      handler(notification('agent:retired', { agentId: PARENT }));
+      await settle();
+      expect(backendRequestSpy).toHaveBeenCalledWith('agent.list', TOP_LEVEL_LIST);
+      expect(delegatedCountsOf()?.orphaned).toEqual(ONE_ORPHAN);
+
+      // The retire cascaded to the child (daemon-side); restoring the child
+      // alone leaves it under a still-retired parent — an orphan the daemon
+      // counts, so the restore re-baselines too.
+      seedSession({
+        id: PARENT as never,
+        retiredAt: '2026-01-01T12:00:00.000Z',
+      });
+      seedSession({
+        id: CHILD as never,
+        parentAgentId: PARENT as never,
+        retiredAt: '2026-01-01T12:00:00.000Z',
+      });
+      appStore.dispatch(setDelegatedCounts(WS, { ...DELEGATED, orphaned: NO_ORPHANS }));
+      backendRequestSpy.mockClear();
+      mockDaemonAfterParentLeft();
+
+      handler(notification('agent:restored', { agentId: CHILD }));
+      await settle();
+      expect(backendRequestSpy).toHaveBeenCalledWith('agent.list', TOP_LEVEL_LIST);
+      expect(delegatedCountsOf()?.orphaned).toEqual(ONE_ORPHAN);
+    });
+
+    it('a re-delivered agent:retired does not hydrate again (count-neutral transition)', async () => {
+      mockDaemonAfterParentLeft();
+      const handler = capturedHandlers[0]!;
+
+      handler(notification('agent:retired', { agentId: PARENT }));
+      await settle();
+      const hydrates = backendRequestSpy.mock.calls.filter(
+        ([method, params]) => method === 'agent.list' && params?.scope === 'topLevel',
+      ).length;
+
+      handler(notification('agent:retired', { agentId: PARENT }));
+      await settle();
+      expect(
+        backendRequestSpy.mock.calls.filter(
+          ([method, params]) => method === 'agent.list' && params?.scope === 'topLevel',
+        ),
+      ).toHaveLength(hydrates);
+    });
+
+    it('a known-row delete / retire / restore never refetches while the daemon does not serve delegatedCounts.orphaned (older daemon)', async () => {
+      appStore.dispatch(setDelegatedCounts(WS, DELEGATED));
+      const handler = capturedHandlers[0]!;
+
+      handler(notification('agent:retired', { agentId: PARENT }));
+      await settle();
+      seedSession({ id: PARENT as never, retiredAt: '2026-01-01T12:00:00.000Z' });
+      handler(notification('agent:restored', { agentId: PARENT }));
+      await settle();
+      handler(notification('agent:deleted', { agentId: PARENT }));
+      await settle();
+
+      expect(backendRequestSpy).not.toHaveBeenCalledWith('agent.list', TOP_LEVEL_LIST);
+      // The local bin nudges remain the whole story on that path.
+      expect(scopeCountsOf()).toEqual({ ...COUNTS, topLevel: COUNTS.topLevel - 1 });
     });
   });
 });
