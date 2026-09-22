@@ -35,6 +35,7 @@
   import {
     fetchBackgroundAgentsRequested,
     fetchDelegatedAgentsRequested,
+    fetchOrphanedDelegatedAgentsRequested,
     fetchRetiredAgentsRequested,
     restoreRetiredAgentRequested,
   } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
@@ -46,9 +47,11 @@
     selectIsLoadingAgents,
     selectIsLoadingBackgroundAgents,
     selectIsLoadingDelegatedAgents,
+    selectIsLoadingOrphanedDelegatedAgents,
     selectIsLoadingRetiredAgents,
     selectLoadedDelegatedParentIds,
     selectLoadingDelegatedParentIds,
+    selectOrphanedDelegatedAgentsLoaded,
     selectRetiredAgentsLoaded,
     selectRetiredCount,
     selectScopeCounts,
@@ -243,6 +246,8 @@
   const delegatedCounts$ = selectDelegatedCounts(workspaceIdStore);
   const loadedDelegatedParentIds$ = selectLoadedDelegatedParentIds(workspaceIdStore);
   const loadingDelegatedParentIds$ = selectLoadingDelegatedParentIds(workspaceIdStore);
+  const orphanedDelegatedAgentsLoaded$ = selectOrphanedDelegatedAgentsLoaded(workspaceIdStore);
+  const loadingOrphanedDelegated$ = selectIsLoadingOrphanedDelegatedAgents(workspaceIdStore);
   const backgroundAgentsLoaded$ = selectBackgroundAgentsLoaded(workspaceIdStore);
   const loadingBackground$ = selectIsLoadingBackgroundAgents(workspaceIdStore);
   const hasUnreadForegroundAgents$ = selectWorkspaceHasUnreadForegroundAgents(workspaceIdStore);
@@ -1152,6 +1157,11 @@
                             delegatedCounts={$delegatedCounts$}
                             loadedDelegatedParentIds={$loadedDelegatedParentIds$}
                             loadingDelegatedParentIds={$loadingDelegatedParentIds$}
+                            orphanedDelegatedAgentsLoaded={$orphanedDelegatedAgentsLoaded$}
+                            loadingOrphanedDelegated={$loadingOrphanedDelegated$}
+                            onLoadOrphanedDelegated={() => {
+                              appStore.dispatch(fetchOrphanedDelegatedAgentsRequested(workspaceId));
+                            }}
                             backgroundAgentsLoaded={$backgroundAgentsLoaded$}
                             loadingBackground={$loadingBackground$}
                             onLoadBackground={() => {

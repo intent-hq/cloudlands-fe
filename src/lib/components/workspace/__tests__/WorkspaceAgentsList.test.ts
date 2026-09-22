@@ -879,6 +879,257 @@ describe('WorkspaceAgentsList single-line rows', () => {
     expect(onLoadDelegated).toHaveBeenLastCalledWith();
   });
 
+  it('renders the orphan-only Delegated bin from delegatedCounts.orphaned and loads only the orphans on expand (§5.5 orphanedOnly)', async () => {
+    const coordinator = makeAgent('coordinator', { name: 'Coordinator' });
+    const agents = [coordinator];
+    appStore.dispatch(bulkUpsertSessions(agents));
+    const onLoadDelegated = vi.fn();
+    const onLoadOrphanedDelegated = vi.fn();
+    const retiredParentId = 'agent-retired-parent';
+    const props = {
+      agents,
+      workspaceId,
+      scopeCounts: { topLevel: 1, delegated: 6, background: 0 },
+      delegatedCounts: {
+        running: 2,
+        byParent: {
+          [coordinator.id]: { total: 2, running: 1 },
+          [retiredParentId]: { total: 3, running: 1 },
+          'orphan-1': { total: 1, running: 0 },
+        },
+        orphaned: { total: 3, running: 1 },
+      },
+      onLoadDelegated,
+      onLoadOrphanedDelegated,
+    };
+    const view = render(WorkspaceAgentsList, { props });
+    await waitFor(() =>
+      expect(
+        view.container.querySelector(`[data-agent-panel-row="${coordinator.id}"]`),
+      ).toBeTruthy(),
+    );
+
+    // Count-first: the bin renders from `orphaned` (not `scopeCounts.delegated`
+    // / `running`), while the live parent keeps its own collapsed group.
+    const delegatedToggle = view.container.querySelector<HTMLElement>(
+      '[data-agent-delegated-toggle]',
+    );
+    const coordinatorBar = view.container.querySelector<HTMLElement>(
+      `[data-agent-delegation-toggle="${coordinator.id}"]`,
+    );
+    expect(delegatedToggle?.textContent).toContain('1 / 3 delegated agents running');
+    expect(delegatedToggle?.getAttribute('aria-expanded')).toBe('false');
+    expect(coordinatorBar?.textContent).toContain('1 / 2 delegated running');
+    expect(coordinatorBar?.getAttribute('aria-expanded')).toBe('false');
+    expect(onLoadDelegated).not.toHaveBeenCalled();
+    expect(onLoadOrphanedDelegated).not.toHaveBeenCalled();
+
+    // Expanding the bin fires the orphan-only trigger — never the whole-bin
+    // one — shows the bin skeleton, and leaves the per-parent group collapsed.
+    await fireEvent.click(delegatedToggle!);
+    await waitFor(() => expect(onLoadOrphanedDelegated).toHaveBeenCalledTimes(1));
+    expect(onLoadDelegated).not.toHaveBeenCalled();
+    expect(view.container.querySelector('[data-agent-delegated-loading]')).toBeTruthy();
+    expect(coordinatorBar?.getAttribute('aria-expanded')).toBe('false');
+    expect(
+      view.container.querySelector(`[data-agent-delegation-loading="${coordinator.id}"]`),
+    ).toBeNull();
+
+    // In flight: collapse/re-expand does not re-request; a failed read (flag
+    // clears, nothing loaded) retries on the next expand transition.
+    await view.rerender({ ...props, loadingOrphanedDelegated: true });
+    await fireEvent.click(delegatedToggle!);
+    await fireEvent.click(delegatedToggle!);
+    expect(onLoadOrphanedDelegated).toHaveBeenCalledTimes(1);
+    await view.rerender({ ...props, loadingOrphanedDelegated: false });
+    await fireEvent.click(delegatedToggle!);
+    await fireEvent.click(delegatedToggle!);
+    expect(onLoadOrphanedDelegated).toHaveBeenCalledTimes(2);
+    expect(onLoadDelegated).not.toHaveBeenCalled();
+
+    // Loaded: the orphans (children of a parent that is not a live session)
+    // list directly in the bin section through the tree, so an orphan's own
+    // counted group renders under it; the loaded rows drive the label.
+    const orphans = ['orphan-1', 'orphan-2', 'orphan-3'].map((id) =>
+      makeAgent(id, {
+        name: `Orphan ${id}`,
+        metadata: { createdByAgentId: AgentId(retiredParentId) } as AgentSession['metadata'],
+      }),
+    );
+    appStore.dispatch(bulkUpsertSessions(orphans));
+    await view.rerender({
+      ...props,
+      agents: [...agents, ...orphans],
+      runningAgentIds: [orphans[0].id],
+      orphanedDelegatedAgentsLoaded: true,
+    });
+    expect(view.container.querySelector('[data-agent-delegated-loading]')).toBeNull();
+    for (const orphan of orphans) {
+      expect(
+        view.container.querySelector(
+          `[data-agent-delegated-section] [data-agent-panel-row="${orphan.id}"]`,
+        ),
+      ).toBeTruthy();
+    }
+    expect(delegatedToggle?.textContent).toContain('3 delegated agents');
+    const orphanBar = view.container.querySelector<HTMLElement>(
+      `[data-agent-delegated-section] [data-agent-delegation-toggle="${orphans[0].id}"]`,
+    );
+    expect(orphanBar?.textContent).toContain('1 delegated');
+    expect(orphanBar?.getAttribute('aria-expanded')).toBe('false');
+    expect(coordinatorBar?.getAttribute('aria-expanded')).toBe('false');
+    expect(view.container.querySelectorAll('[data-agent-delegation-toggle]')).toHaveLength(2);
+
+    // The orphan's group still lazy-loads through the per-parent read.
+    await fireEvent.click(orphanBar!);
+    expect(onLoadDelegated).toHaveBeenCalledTimes(1);
+    expect(onLoadDelegated).toHaveBeenLastCalledWith(orphans[0].id);
+    expect(
+      view.container.querySelector(`[data-agent-delegation-loading="${orphans[0].id}"]`),
+    ).toBeTruthy();
+
+    // Collapsing hides the orphan rows and shows the loaded running count;
+    // re-expanding does not re-fetch.
+    await fireEvent.click(delegatedToggle!);
+    await waitFor(() =>
+      expect(view.container.querySelector(`[data-agent-panel-row="${orphans[0].id}"]`)).toBeNull(),
+    );
+    expect(delegatedToggle?.textContent).toContain('1 / 3 delegated agents running');
+    await fireEvent.click(delegatedToggle!);
+    await waitFor(() =>
+      expect(
+        view.container.querySelector(`[data-agent-panel-row="${orphans[0].id}"]`),
+      ).toBeTruthy(),
+    );
+    expect(onLoadOrphanedDelegated).toHaveBeenCalledTimes(2);
+    expect(onLoadDelegated).toHaveBeenCalledTimes(1);
+  });
+
+  it('hides the orphan-only bin at orphaned.total 0 while byParent is non-empty, and never lists a live background parent’s child in it', async () => {
+    const coordinator = makeAgent('coordinator', { name: 'Coordinator' });
+    const backgroundParent = makeAgent('background-parent', {
+      name: 'Background parent',
+      isBackground: true,
+    });
+    const agents = [coordinator, backgroundParent];
+    appStore.dispatch(bulkUpsertSessions(agents));
+    const onLoadDelegated = vi.fn();
+    const onLoadOrphanedDelegated = vi.fn();
+    const onLoadBackground = vi.fn();
+    const props = {
+      agents,
+      workspaceId,
+      scopeCounts: { topLevel: 1, delegated: 3, background: 1 },
+      delegatedCounts: {
+        running: 0,
+        byParent: {
+          [coordinator.id]: { total: 2, running: 0 },
+          [backgroundParent.id]: { total: 1, running: 0 },
+        },
+        orphaned: { total: 0, running: 0 },
+      },
+      backgroundAgentsLoaded: true,
+      onLoadDelegated,
+      onLoadOrphanedDelegated,
+      onLoadBackground,
+    };
+    const view = render(WorkspaceAgentsList, { props });
+    await waitFor(() =>
+      expect(
+        view.container.querySelector(`[data-agent-panel-row="${coordinator.id}"]`),
+      ).toBeTruthy(),
+    );
+
+    // Every delegated row has a live parent: no workspace-level bin, while the
+    // per-parent groups and the Background bin render from their counts.
+    expect(view.container.querySelector('[data-agent-delegated-toggle]')).toBeNull();
+    expect(
+      view.container.querySelector(`[data-agent-delegation-toggle="${coordinator.id}"]`),
+    ).toBeTruthy();
+    const backgroundToggle = view.container.querySelector<HTMLElement>(
+      '[data-agent-background-toggle]',
+    );
+    expect(backgroundToggle?.textContent).toContain('1 background agents');
+
+    // The background parent's child (loaded through the per-parent read) nests
+    // under its parent inside the Background section, and stays out of the
+    // Delegated bin whether the Background bin is open or collapsed.
+    await fireEvent.click(backgroundToggle!);
+    const backgroundBar = view.container.querySelector<HTMLElement>(
+      `[data-agent-delegation-toggle="${backgroundParent.id}"]`,
+    );
+    await fireEvent.click(backgroundBar!);
+    expect(onLoadDelegated).toHaveBeenLastCalledWith(backgroundParent.id);
+    const child = makeAgent('background-child', {
+      name: 'Child of background parent',
+      metadata: { createdByAgentId: backgroundParent.id } as AgentSession['metadata'],
+    });
+    appStore.dispatch(bulkUpsertSessions([child]));
+    await view.rerender({
+      ...props,
+      agents: [...agents, child],
+      loadedDelegatedParentIds: { [backgroundParent.id]: true },
+    });
+    expect(view.container.querySelector(`[data-agent-panel-row="${child.id}"]`)).toBeTruthy();
+    expect(view.container.querySelector('[data-agent-delegated-toggle]')).toBeNull();
+    expect(view.container.querySelector('[data-agent-delegated-section]')).toBeNull();
+    await fireEvent.click(backgroundToggle!);
+    await waitFor(() =>
+      expect(view.container.querySelector(`[data-agent-panel-row="${child.id}"]`)).toBeNull(),
+    );
+    expect(view.container.querySelector('[data-agent-delegated-toggle]')).toBeNull();
+    expect(onLoadOrphanedDelegated).not.toHaveBeenCalled();
+  });
+
+  it('keeps the whole-bin read for search in orphan-only mode and the whole-bin expand without orphaned (old daemon)', async () => {
+    const parent = makeAgent('parent', { name: 'Parent' });
+    appStore.dispatch(bulkUpsertSessions([parent]));
+    const onLoadDelegated = vi.fn();
+    const onLoadOrphanedDelegated = vi.fn();
+    const byParent = { [parent.id]: { total: 2, running: 0 } };
+    const props = {
+      agents: [parent],
+      workspaceId,
+      scopeCounts: { topLevel: 1, delegated: 2, background: 0 },
+      delegatedCounts: { running: 0, byParent, orphaned: { total: 0, running: 0 } },
+      searchQuery: '',
+      onLoadDelegated,
+      onLoadOrphanedDelegated,
+    };
+    const view = render(WorkspaceAgentsList, { props });
+    expect(view.container.querySelector('[data-agent-delegated-toggle]')).toBeNull();
+
+    // A search must cover every delegated row, so it issues the whole-bin read
+    // even though the (orphan-only) bin is hidden — and never the orphan read.
+    await view.rerender({ ...props, searchQuery: 'needle' });
+    await waitFor(() => expect(onLoadDelegated).toHaveBeenCalledTimes(1));
+    expect(onLoadDelegated).toHaveBeenLastCalledWith();
+    expect(onLoadOrphanedDelegated).not.toHaveBeenCalled();
+    cleanup();
+
+    // Without `orphaned` the bin keeps the whole-bin contract: it renders from
+    // `scopeCounts.delegated`, expanding issues the whole-bin read and opens
+    // the per-parent groups; the orphan-only trigger never fires.
+    const legacy = render(WorkspaceAgentsList, {
+      props: {
+        ...props,
+        delegatedCounts: { running: 0, byParent },
+        onLoadDelegated: vi.fn(),
+      },
+    });
+    const delegatedToggle = legacy.container.querySelector<HTMLElement>(
+      '[data-agent-delegated-toggle]',
+    );
+    expect(delegatedToggle?.textContent).toContain('2 delegated agents');
+    await fireEvent.click(delegatedToggle!);
+    expect(onLoadOrphanedDelegated).not.toHaveBeenCalled();
+    expect(
+      legacy.container
+        .querySelector(`[data-agent-delegation-toggle="${parent.id}"]`)
+        ?.getAttribute('aria-expanded'),
+    ).toBe('true');
+  });
+
   it('renders the per-parent bar inside the virtual path above the threshold (counted group keeps virtualization)', async () => {
     const agents = Array.from({ length: 21 }, (_, index) =>
       makeAgent(`parent-${String(index).padStart(2, '0')}`, { name: `Parent ${index}` }),
