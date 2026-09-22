@@ -38,6 +38,15 @@ vi.mock('$lib/electron-bridge', () => ({
 
 vi.mock('$lib/utils/platform-capabilities', () => ({
   isElectronPlatform: vi.fn(() => true),
+  hasCapability: vi.fn(() => true),
+}));
+
+vi.mock('$store/renderer/store', () => ({
+  store: { state: {}, dispatch: vi.fn() },
+}));
+
+vi.mock('$features/workspace/utils/workspace-tab-navigation', () => ({
+  closeActiveTabCascade: vi.fn(() => 'panel'),
 }));
 
 import { isVoiceRecordingSupported } from '../../voice/voice-recorder';
@@ -49,7 +58,9 @@ import {
 import { showVoiceSetupToast } from '../../voice/voice-setup-toast';
 import { applyContentPreset } from '$features/layout/preset-executor';
 import { invoke } from '$lib/electron-bridge';
-import { isElectronPlatform } from '$lib/utils/platform-capabilities';
+import { hasCapability, isElectronPlatform } from '$lib/utils/platform-capabilities';
+import { store as appStore } from '$store/renderer/store';
+import { closeActiveTabCascade } from '$features/workspace/utils/workspace-tab-navigation';
 import { IPC_CHANNELS } from '$shared/ipc-registry';
 import {
   ACTION_KEY_REGISTRY,
@@ -229,6 +240,7 @@ describe('availability', () => {
       expect(getActionKeyDefinition(id).isAvailable(context)).toBe(false);
     }
     expect(getActionKeyDefinition('new-workspace').isAvailable(context)).toBe(true);
+    expect(getActionKeyDefinition('close-tab').isAvailable(context)).toBe(true);
     expect(getActionKeyDefinition('none').isAvailable(context)).toBe(false);
   });
 
@@ -2094,6 +2106,70 @@ describe('cycle-open-windows', () => {
       expect(invokeMock).toHaveBeenCalledTimes(1);
     });
     expect(dispatch).not.toHaveBeenCalled();
+    expect(showHint).not.toHaveBeenCalled();
+  });
+});
+
+describe('close-tab', () => {
+  const cascadeMock = closeActiveTabCascade as ReturnType<typeof vi.fn>;
+  const hasCapabilityMock = hasCapability as ReturnType<typeof vi.fn>;
+  const invokeMock = invoke as ReturnType<typeof vi.fn>;
+  const definition = () => getActionKeyDefinition('close-tab');
+
+  it('is labelled Close and always available', () => {
+    expect(definition().label).toBe(m.hardwareConsole_actionKey_closeTab_label());
+    expect(
+      definition().isAvailable(makeContext(makeState({ currentWorkspaceId: null })).context),
+    ).toBe(true);
+  });
+
+  it('runs the Cmd+W cascade against the app store, current path, navigate and a window close', async () => {
+    cascadeMock.mockReturnValueOnce('panel');
+    const { context, navigate, showHint } = makeContext(makeState());
+    definition().execute(context);
+    await vi.waitFor(() => {
+      expect(cascadeMock).toHaveBeenCalledTimes(1);
+    });
+    const [store, currentPath, options] = cascadeMock.mock.calls[0];
+    expect(store).toBe(appStore);
+    expect(currentPath).toBe(window.location.pathname);
+    expect(options.navigate).toBe(navigate);
+    expect(hasCapabilityMock).toHaveBeenCalledWith('windowChrome');
+    options.closeWindow();
+    expect(invokeMock).toHaveBeenCalledExactlyOnceWith(IPC_CHANNELS.WINDOW.CLOSE);
+    expect(showHint).not.toHaveBeenCalled();
+  });
+
+  it('omits closeWindow on builds without window chrome (web)', async () => {
+    hasCapabilityMock.mockReturnValueOnce(false);
+    const { context } = makeContext(makeState());
+    definition().execute(context);
+    await vi.waitFor(() => {
+      expect(cascadeMock).toHaveBeenCalledTimes(1);
+    });
+    expect(cascadeMock.mock.calls[0][2]).not.toHaveProperty('closeWindow');
+  });
+
+  it('hints "nothing to close" when the cascade has nothing closable', async () => {
+    cascadeMock.mockReturnValueOnce(null);
+    const { context, showHint } = makeContext(makeState());
+    definition().execute(context);
+    await vi.waitFor(() => {
+      expect(showHint).toHaveBeenCalledExactlyOnceWith(
+        m.hardwareConsole_actionKey_closeTab_nothingToClose_hint(),
+      );
+    });
+  });
+
+  it('catches and logs a throwing cascade without throwing', async () => {
+    cascadeMock.mockImplementationOnce(() => {
+      throw new Error('boom');
+    });
+    const { context, showHint } = makeContext(makeState());
+    expect(() => definition().execute(context)).not.toThrow();
+    await vi.waitFor(() => {
+      expect(cascadeMock).toHaveBeenCalledTimes(1);
+    });
     expect(showHint).not.toHaveBeenCalled();
   });
 });

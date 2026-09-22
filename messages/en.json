@@ -5913,6 +5913,8 @@
   "hardwareConsole_actionKey_switchWindowLayouts_notApplicable_hint": "Nothing to show for this layout",
   "hardwareConsole_actionKey_cycleOpenWindows_label": "Cycle open windows",
   "hardwareConsole_actionKey_noOtherOpenWindows_message": "No other open windows",
+  "hardwareConsole_actionKey_closeTab_label": "Close",
+  "hardwareConsole_actionKey_closeTab_nothingToClose_hint": "Nothing to close",
   "hardwareConsole_actionKey_pushToTalk_label": "Push to talk",
   "hardwareConsole_ptt_listening_label": "Listening…",
   "hardwareConsole_ptt_unavailable_message": "Voice recording is not available on this system",
