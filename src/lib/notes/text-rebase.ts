@@ -2094,7 +2094,8 @@ function diffRegion(
  * The lines of plain text (`\n` or U+FFFC ends one; a blank line is not
  * one) are paired with the lines of markdown by their text, not by count:
  * the letters of a plain line are those of its markdown line with the
- * syntax gone, so they are a subsequence of it, and a run of plain lines an
+ * syntax gone, so they are a subsequence of it (`lineLetters`; a line of no
+ * letter is keyed by its text without blanks), and a run of plain lines an
  * inline leaf split is paired with the one markdown line that holds them
  * all. As many plain lines as markdown lines, each the text of the line at
  * its own position, are paired in one pass (`pairPositionally`); otherwise
@@ -2207,8 +2208,8 @@ function lastOverlapEnd(ranges: number[], start: number, end: number): number {
 }
 
 /**
- * A line of text without its break, the letters and digits on it, whether
- * it is sealed, and — a table row's — its `cells` (`tableCells`).
+ * A line of text without its break, its `letters` (`lineLetters`), whether it
+ * is sealed, and — a table row's — its `cells` (`tableCells`).
  */
 interface TextLine {
   start: number;
@@ -2219,6 +2220,18 @@ interface TextLine {
 }
 
 const NOT_LETTER_OR_DIGIT = /[^\p{L}\p{N}]+/gu;
+const WHITESPACE = /\s+/gu;
+
+/**
+ * What a line or a cell is paired by: the letters and digits on it — the
+ * syntax gone, the text of a plain-text line is a subsequence of its
+ * markdown line's — or, when it holds none (`!?`, an emoji), its text
+ * without blanks; `''` when it holds nothing but blanks.
+ */
+function lineLetters(text: string): string {
+  const letters = text.replace(NOT_LETTER_OR_DIGIT, '');
+  return letters !== '' ? letters : text.replace(WHITESPACE, '');
+}
 
 /** Whether `code` is a space or a tab. */
 function isBlank(code: number): boolean {
@@ -2227,8 +2240,8 @@ function isBlank(code: number): boolean {
 
 /**
  * The cells of the table row `line` of `text` — the text between its
- * unescaped `|`, each without the blanks around it, that holds a letter or a
- * digit — when the line holds two or more; `undefined` otherwise. The
+ * unescaped `|`, each without the blanks around it, that is not blank —
+ * when the line holds two or more; `undefined` otherwise. The
  * leading `|` is optional (GFM), so a line is a row on its cells alone: a
  * paragraph that holds a `|` has cells too, and is paired as one line
  * because no run of plain-text lines is the text of its cells in turn. The
@@ -2249,7 +2262,7 @@ function tableCells(text: string, line: TextLine): TextLine[] | undefined {
     while (start < end && isBlank(text.charCodeAt(start))) start += 1;
     while (end > start && isBlank(text.charCodeAt(end - 1))) end -= 1;
     if (start < end) {
-      const letters = text.slice(start, end).replace(NOT_LETTER_OR_DIGIT, '');
+      const letters = lineLetters(text.slice(start, end));
       if (letters !== '') cells.push({ start, end, letters, sealed: line.sealed });
     }
     cellStart = j + 1;
@@ -2258,8 +2271,8 @@ function tableCells(text: string, line: TextLine): TextLine[] | undefined {
 }
 
 /**
- * The lines of `text[start, end)` that hold a letter or a digit, without
- * their breaks: `\n`, and with `hardBreaks` U+FFFC too.
+ * The lines of `text[start, end)` that are not blank, without their breaks:
+ * `\n`, and with `hardBreaks` U+FFFC too.
  */
 function textLines(
   text: string,
@@ -2278,7 +2291,7 @@ function textLines(
       if (hardBreak !== -1 && hardBreak < lineEnd) lineEnd = hardBreak;
     }
     if (lineEnd > pos) {
-      const letters = text.slice(pos, lineEnd).replace(NOT_LETTER_OR_DIGIT, '');
+      const letters = lineLetters(text.slice(pos, lineEnd));
       if (letters !== '') {
         lines.push({
           start: pos,

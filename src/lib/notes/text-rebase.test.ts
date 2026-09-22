@@ -2548,6 +2548,60 @@ describe('alignment of link syntax the lexer does not account for', () => {
       60_000,
     );
 
+    // A cell that holds no letter or digit — punctuation, emoji — between
+    // two linked cells of a sealed row. The note editor shows it as a
+    // plain-text line of its own; keyed by its text without blanks it pairs
+    // with its own cell, within the budget and past the deadline alike, and
+    // the linked cells with theirs. (Dropped as holding no letters, the cell
+    // and its plain-text line were the gap between the linked cells, deleted
+    // against nothing: a position on the plain-text line mapped to the start
+    // of the next cell, a position in the cell to the end of the plain-text
+    // line before.)
+    const LETTERLESS_CELLS = (
+      [
+        ['punctuation', '!?', '!?', /!\?/g],
+        ['emoji', '🙂🙂', '🙂🙂', /🙂🙂/g],
+        ['formatted punctuation', '**!?**', '!?', /\*\*!\?\*\*/g],
+      ] as Array<[string, string, string, RegExp]>
+    ).flatMap(([kind, cell, needle, pattern]) =>
+      CLOCKS.map(([when, clock]): [string, string, string, string, RegExp, Clock] => [
+        kind,
+        when,
+        cell,
+        needle,
+        pattern,
+        clock,
+      ]),
+    );
+
+    it.each(LETTERLESS_CELLS)(
+      'pairs a %s cell between linked cells with its own plain-text line %s',
+      async (_kind, _when, cell, needle, pattern, clock) => {
+        const row = `${LINK} | ${cell} | ${LINK} |\n`;
+        const markdown = `${'q'.repeat(129 * 1024)}\n\nedit one\n\n${row}---|---|---|\n${row}${row}\n[ab](https://sync/ab)\n\n**cd** two`;
+        const plain = await projectWithEditor(markdown, true);
+        expect(plain).not.toContain('https');
+        const cellLines = linesHolding(plain, needle, /\n|\uFFFC/g);
+        expect(cellLines).toHaveLength(3);
+        const map = clock(() => createBidirectionalOffsetMapper(plain, markdown));
+        expectExactRun(plain, markdown, map, 'qqqqqqqq', 0, 0);
+        expectSameLine(plain, markdown, map, 'edit one', 'edit one');
+        expectLinesBounded(
+          map,
+          cellLines,
+          [...markdown.matchAll(pattern)].map((m) => [m.index, m.index + m[0].length]),
+        );
+        expectLinesBounded(
+          map,
+          linesHolding(plain, 'render', /\n|\uFFFC/g),
+          [...markdown.matchAll(/\[render[^\n]*?\)/g)].map((m) => [m.index, m.index + m[0].length]),
+        );
+        expectSameLine(plain, markdown, map, 'ab', '[ab](');
+        expectSameLine(plain, markdown, map, 'cd two', '**cd** two');
+      },
+      60_000,
+    );
+
     // Images alone on their lines before a run of identical items. The
     // editor shows no text of an image, so its line has no plain-text line
     // of its own; past the cap the scan masks the image whole, as the lexer
