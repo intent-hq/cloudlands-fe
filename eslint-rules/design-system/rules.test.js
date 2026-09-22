@@ -538,6 +538,26 @@ svelteTester.run('no-dialog-root-outside-patterns', noDialogRootOutsidePatterns,
   ],
   invalid: [
     {
+      code: '<div role="dialog" aria-modal="true" />',
+      filename: projectFile('src/lib/components/modals/RawModal.svelte'),
+      errors: [{ messageId: 'dialogRoot' }],
+    },
+    {
+      code: '<script>import { Dialog as Primitive } from "bits-ui";</script><Primitive.Root />',
+      filename: projectFile('src/features/example/RawModal.svelte'),
+      errors: [{ messageId: 'dialogRoot' }],
+    },
+    {
+      code: '<script>import * as Modal from "$lib/components/ui/dialog";</script><Modal.Root />',
+      filename: projectFile('src/lib/components/modals/NewFeature.svelte'),
+      errors: [{ messageId: 'dialogRoot' }],
+    },
+    {
+      code: '<script>import { Root as Modal } from "$lib/components/ui/dialog";</script><Modal />',
+      filename: projectFile('src/routes/example/+page.svelte'),
+      errors: [{ messageId: 'dialogRoot' }],
+    },
+    {
       code: '<Dialog.Root />',
       filename: projectFile('src/features/example/ConfirmView.svelte'),
       errors: [{ messageId: 'dialogRoot' }],

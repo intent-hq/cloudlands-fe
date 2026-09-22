@@ -1,7 +1,7 @@
 /**
  * @vitest-environment jsdom
  */
-import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
 import { describe, expect, it, vi } from 'vitest';
 import { warmImport } from '../../../../test/warm-import';
 import type { QuitConfirmationShowPayload } from '$shared/ipc/quit-confirmation';
@@ -34,6 +34,40 @@ warmImport(() => import('../../workspace/sidebar/__tests__/mocks/Fa.svelte'));
 warmImport(() => import('../QuitConfirmationModal.svelte'));
 
 describe('QuitConfirmationModal', () => {
+  it('counts browsers per workspace, including owner fallback and explicit workspace overrides', async () => {
+    const Modal = (await import('../QuitConfirmationModal.svelte')).default;
+    render(Modal, {
+      open: true,
+      payload: {
+        requestId: 'workspace-counts',
+        interrupted: FULL_PAYLOAD.interrupted,
+        disruptedBrowserTabs: [
+          { tabId: 't1', ownerAgentId: 'a1' },
+          { tabId: 't2', ownerAgentId: 'a1', workspaceId: 'w1' },
+          { tabId: 't3', ownerAgentId: 'a1', workspaceId: 'w2' },
+          { tabId: 't4', ownerAgentId: 'unknown' },
+        ],
+      },
+    });
+    expect(
+      within(screen.getByRole('listitem', { name: 'Alpha' })).getByRole('img', {
+        name: '2 browsers',
+      }),
+    ).toBeTruthy();
+    expect(
+      within(screen.getByRole('listitem', { name: 'Untitled' })).getByRole('img', {
+        name: '1 browser',
+      }),
+    ).toBeTruthy();
+    expect(
+      within(screen.getByRole('listitem', { name: 'Other' })).getByRole('img', {
+        name: '1 browser',
+      }),
+    ).toBeTruthy();
+    expect(
+      screen.getByRole('alertdialog', { description: '1 agent and 4 browsers will stop' }),
+    ).toBeTruthy();
+  });
   it('renders quit framing with grouped content and responds true on Quit', async () => {
     const onRespond = vi.fn();
     const QuitConfirmationModal = (await import('../QuitConfirmationModal.svelte')).default;
@@ -88,8 +122,9 @@ describe('QuitConfirmationModal', () => {
     const groups = await screen.findAllByRole('listitem', { name: 'Alpha' });
     expect(groups).toHaveLength(2);
     const agentIds = (row: HTMLElement) =>
-      Array.from(row.querySelectorAll('[data-agent-avatar-stack-agent-id]'), (avatar) =>
-        avatar.getAttribute('data-agent-avatar-stack-agent-id'),
+      Array.from(
+        row.querySelectorAll('[data-quit-agent-stack] [data-agent-avatar-stack-agent-id]'),
+        (avatar) => avatar.getAttribute('data-agent-avatar-stack-agent-id'),
       );
     expect(agentIds(groups[0])).toEqual(['a1', 'a2']);
     expect(agentIds(groups[1])).toEqual(['a4']);

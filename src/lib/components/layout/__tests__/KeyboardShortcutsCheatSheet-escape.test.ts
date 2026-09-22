@@ -5,7 +5,7 @@
  * `closeCheatSheet()` actually hides it.
  */
 import { describe, it, expect, vi, beforeAll, afterEach } from 'vitest';
-import { render, fireEvent, waitFor, cleanup } from '@testing-library/svelte';
+import { render, screen, fireEvent, waitFor, cleanup } from '@testing-library/svelte';
 
 vi.mock('$lib/client/live/backend-transport', () => ({
   backendRequest: vi.fn(),
@@ -41,33 +41,33 @@ describe('KeyboardShortcutsCheatSheet Escape handling (escape-layer stack)', () 
   });
 
   it('shows the effective shortcut after a user override', async () => {
-    const { container } = render(KeyboardShortcutsCheatSheet);
+    render(KeyboardShortcutsCheatSheet);
     appStore.dispatch(setShortcutOverride('global.settings', 'alt+p'));
     appStore.dispatch(openCheatSheet('global'));
 
     await waitFor(() => {
-      expect(container.querySelector('.cheat-sheet')?.textContent).toContain('Alt+P');
+      expect(screen.queryByRole('dialog')?.textContent).toContain('Alt+P');
     });
   });
 
   it('Escape closes the open cheat sheet', async () => {
-    const { container } = render(KeyboardShortcutsCheatSheet);
+    render(KeyboardShortcutsCheatSheet);
     appStore.dispatch(openCheatSheet('global'));
     await waitFor(() => {
-      expect(container.querySelector('.cheat-sheet')).toBeTruthy();
+      expect(screen.queryByRole('dialog')).toBeTruthy();
     });
 
-    await fireEvent.keyDown(window, { key: 'Escape' });
+    await fireEvent.keyDown(screen.getByRole('dialog'), { key: 'Escape' });
 
     await waitFor(() => {
-      expect(container.querySelector('.cheat-sheet')).toBeFalsy();
+      expect(screen.queryByRole('dialog')).toBeFalsy();
     });
     expect(appStore.state.shortcutsCheatSheet.isOpen).toBe(false);
   });
 
   it('Escape is not consumed while the sheet is closed (no layer registered)', async () => {
-    const { container } = render(KeyboardShortcutsCheatSheet);
-    expect(container.querySelector('.cheat-sheet')).toBeFalsy();
+    render(KeyboardShortcutsCheatSheet);
+    expect(screen.queryByRole('dialog')).toBeFalsy();
 
     const event = new KeyboardEvent('keydown', {
       key: 'Escape',

@@ -5,7 +5,7 @@ export const uiComponentGuardrails = {
   // (near-black, unreadable in dark mode). Route accent buttons through `variant=` instead.
   buttonBackgroundOverrides: 0,
   internalImports: {
-    '$lib/components/ui/button/button.svelte': 18,
+    '$lib/components/ui/button/button.svelte': 16,
     '$lib/components/ui/button/index.js': 1,
     '$lib/components/ui/checkbox/checkbox.svelte': 2,
     '$lib/components/ui/input/index.js': 1,
@@ -27,7 +27,7 @@ export const uiComponentGuardrails = {
     'relative:src/lib/components/ui/Header.svelte': 2,
     'relative:src/lib/components/ui/MediaLightbox.svelte': 1,
     'relative:src/lib/components/ui/Portal.svelte': 3,
-    'relative:src/lib/components/ui/button/button.svelte': 7,
+    'relative:src/lib/components/ui/button/button.svelte': 6,
     'relative:src/lib/components/ui/checkbox/checkbox.svelte': 1,
     'relative:src/lib/components/ui/combobox/index.ts': 3,
     'relative:src/lib/components/ui/dropdown-menu.svelte': 1,

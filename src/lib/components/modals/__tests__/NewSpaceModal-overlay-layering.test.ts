@@ -94,15 +94,13 @@ describe('NewSpaceModal nested overlay layering', () => {
     expect(selectContent).toContain('data-slot="select-content"');
   });
 
-  it('uses the canonical subtle modal backdrop instead of a smeared heavy blur', () => {
-    const modal = source('src/lib/components/modals/NewSpaceModal.svelte');
-    const overlay = source('src/lib/components/ui/dialog/dialog-overlay.svelte');
-
-    expect(modal).toContain("import * as Dialog from '$lib/components/ui/dialog'");
-    expect(overlay).toContain("contained || staticPosition ? 'absolute' : 'fixed'");
-    expect(overlay).toContain('{#if forceMount || rootOpen()}');
-    expect(overlay).toContain('inset-0 z-[var(--layer-modal)]');
-    expect(overlay).toContain('bg-black/40 dark:bg-black/80');
-    expect(modal).not.toContain('bg-background/50 backdrop-blur cursor-pointer');
+  it('has one modal semantic owner and a separate canonical backdrop', async () => {
+    render(NewSpaceModal, { props: { open: true, onClose: vi.fn() } });
+    await waitFor(() => expect(document.querySelectorAll('[role="dialog"]')).toHaveLength(1));
+    const dialog = document.querySelector('[role="dialog"]')!;
+    expect(dialog.getAttribute('aria-modal')).toBe('true');
+    const overlay = document.querySelector('[data-slot="dialog-overlay"]');
+    expect(overlay).toBeTruthy();
+    expect(dialog.contains(overlay)).toBe(false);
   });
 });

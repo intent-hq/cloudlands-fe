@@ -1,15 +1,13 @@
 <script lang="ts">
   import { Button } from '$lib/components/ui/button';
-  import * as Dialog from '$lib/components/ui/dialog';
+  import { ContentDialog } from '$lib/components/patterns/confirm';
   import DropdownMenu from '$lib/components/ui/dropdown-menu.svelte';
   import { Tooltip } from '$lib/components/ui/tooltip';
   import Fa from 'svelte-fa';
   import {
-    faXmark,
     faTerminal,
     faCode,
     faCodeBranch,
-    faExclamationTriangle,
     faChevronDown,
     faArrowUpRightFromSquare,
     faFolder,
@@ -95,7 +93,15 @@
   // global create flow) keep it until the last one detaches.
   $effect(() => {
     if (staticPosition || !contentRef) return;
-    return acquireMarkerAttribute(contentRef.ownerDocument.body, 'data-pull-conflict-dialog-open');
+    const releaseBody = acquireMarkerAttribute(
+      contentRef.ownerDocument.body,
+      'data-pull-conflict-dialog-open',
+    );
+    const releaseMarker = acquireMarkerAttribute(contentRef, 'data-pull-conflict-dialog');
+    return () => {
+      releaseBody();
+      releaseMarker();
+    };
   });
 
   // Fetch installed editors on mount
@@ -139,15 +145,22 @@
 
   /** Detected error type based on the error message */
   const errorType = $derived(detectErrorType(error));
+  // Only simplify recognized content-conflict lines. Preserve every other
+  // diagnostic verbatim, including unrecognized conflict kinds.
+  const errorLines = $derived(
+    error
+      .split('\n')
+      .filter((line) => line.trim())
+      .map((line) => ({
+        raw: line,
+        path: /^CONFLICT \(content\): Merge conflict in (.+)$/.exec(line)?.[1],
+      })),
+  );
 
   function close() {
     dropdownOpen = false;
     open = false;
     onCancel?.();
-  }
-
-  function handleOpenChange(nextOpen: boolean) {
-    if (!nextOpen && open) close();
   }
 
   /**
@@ -194,53 +207,34 @@
   }
 </script>
 
-<Dialog.Root {staticPosition} {open} onOpenChange={handleOpenChange}>
-  <Dialog.Content
-    bind:ref={contentRef}
-    data-pull-conflict-dialog
-    showCloseButton={false}
-    class="app-no-drag max-w-md gap-0 overflow-hidden rounded-lg p-0"
-  >
-    <!-- Header -->
-    <div class="px-6 py-4 flex items-center justify-between">
-      <div class="flex items-center gap-3">
-        <div class="text-danger">
-          <Fa icon={faExclamationTriangle} size="lg" />
-        </div>
-        <div>
-          <Dialog.Title class="text-lg font-semibold">
-            {m.modals_pullConflict_title()}
-          </Dialog.Title>
-        </div>
+<ContentDialog
+  bind:open
+  static={staticPosition}
+  bind:contentRef
+  title={m.modals_pullConflict_title()}
+  closeLabel={m.modals_pullConflict_close_ariaLabel()}
+  onClose={close}
+>
+  <div class="min-w-0">
+    {#if branchName}
+      <p class="type-body mb-4">{m.modals_pullConflict_branch_label({ branchName })}</p>
+    {/if}
+    <p class="type-body mb-4">
+      {m.modals_pullConflict_description()}
+    </p>
+    {#if error}
+      <div class="type-caption text-foreground space-y-2 break-words max-h-40 overflow-auto">
+        {#each errorLines as line}
+          {#if line.path}<p class="font-mono [overflow-wrap:anywhere]">{line.path}</p>
+          {:else}<p class="whitespace-pre-wrap">{line.raw}</p>{/if}
+        {/each}
       </div>
-      <Dialog.Close
-        class="app-no-drag inline-flex size-8 shrink-0 cursor-pointer items-center justify-center rounded-md border border-transparent bg-transparent text-foreground outline-none transition-[background-color,border-color,color,box-shadow] hover:border-border hover:bg-secondary focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/40"
-        aria-label={m.modals_pullConflict_close_ariaLabel()}
-      >
-        <Fa icon={faXmark} />
-      </Dialog.Close>
-    </div>
+    {/if}
+  </div>
 
-    <!-- Content -->
-    <div class="p-6">
-      {#if branchName}
-        <p class="type-body mb-4">{m.modals_pullConflict_branch_label({ branchName })}</p>
-      {/if}
-      <p class="type-body mb-4">
-        {m.modals_pullConflict_description()}
-      </p>
-      {#if error}
-        <div
-          class="bg-danger-background/10 py-2.5 px-3.5 text-sm text-danger whitespace-pre-wrap break-words max-h-32 overflow-auto"
-        >
-          {error}
-        </div>
-      {/if}
-    </div>
-
-    <!-- Footer -->
-    <div class="px-6 py-4 border-t border-border flex flex-col gap-4">
-      <div class="grid grid-cols-2 gap-2 items-center">
+  <!-- Footer -->
+  <div class="flex flex-col gap-4">
+    {#if $installedEditors$.length > 0}<div class="grid grid-cols-2 gap-2 items-center">
         <p class="type-caption text-muted-foreground font-normal select-none">
           {m.modals_pullConflict_resolveInApp_label()}
         </p>
@@ -292,26 +286,21 @@
             {/snippet}
           </DropdownMenu>
         {/if}
-      </div>
-      <div class="grid grid-cols-2 gap-2 items-center">
-        <Tooltip content={m.modals_pullConflict_createWorkspace_tooltip()}>
-          <span class="type-caption text-muted-foreground font-normal inline-block"
-            >{m.modals_pullConflict_letIntentHandle_label()}</span
-          >
-        </Tooltip>
-        <!-- Create workspace action -->
-        <Button
-          variant="primary"
-          onclick={handleCreateWorkspace}
-          class="w-full justify-start gap-2"
+      </div>{/if}
+    <div class="flex flex-wrap justify-between gap-3 items-center">
+      <Tooltip content={m.modals_pullConflict_createWorkspace_tooltip()}>
+        <span class="type-caption text-muted-foreground font-normal inline-block"
+          >{m.modals_pullConflict_letIntentHandle_label()}</span
         >
-          <Fa icon={faCodeBranch} />
-          {m.modals_pullConflict_createWorkspace_label()}
-        </Button>
-      </div>
+      </Tooltip>
+      <!-- Create workspace action -->
+      <Button variant="primary" onclick={handleCreateWorkspace} class="ml-auto shrink-0 gap-2">
+        <Fa icon={faCodeBranch} />
+        {m.modals_pullConflict_createWorkspace_label()}
+      </Button>
     </div>
-  </Dialog.Content>
-</Dialog.Root>
+  </div>
+</ContentDialog>
 
 <style>
   :global(body[data-pull-conflict-dialog-open] [data-slot='dialog-overlay']) {

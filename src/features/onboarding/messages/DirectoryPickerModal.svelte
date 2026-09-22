@@ -157,6 +157,7 @@
   >
     <Dialog.Title class="sr-only">{resolvedTitle}</Dialog.Title>
     <DirectoryPickerView
+      embedded
       {open}
       title={resolvedTitle}
       selectLabel={resolvedSelectLabel}

@@ -10,8 +10,11 @@
    * Uses the canonical portaled dialog primitive so it escapes the chat input's
    * overflow/stacking contexts while preserving focus and dismissal semantics.
    */
-  import { Button } from '$lib/components/ui/button';
-  import * as Dialog from '$lib/components/ui/dialog';
+  import { FormDialog } from '$lib/components/patterns/confirm';
+  import ProviderIcon, {
+    hasProviderIcon,
+  } from '$features/agent/components/AgentProviderIcon.svelte';
+  import ArrowRight from 'phosphor-svelte/lib/ArrowRight';
   import { m } from '$shared/paraglide/messages.js';
 
   interface Props {
@@ -23,6 +26,8 @@
     toModelLabel?: string;
     fromProviderName?: string;
     toProviderName?: string;
+    fromProviderId?: string;
+    toProviderId?: string;
     onConfirm?: () => void;
     onCancel?: () => void;
   }
@@ -35,60 +40,49 @@
     toModelLabel = '',
     fromProviderName = '',
     toProviderName = '',
+    fromProviderId = '',
+    toProviderId = '',
     onConfirm,
     onCancel,
   }: Props = $props();
-
-  let confirmButtonRef: HTMLButtonElement | null = $state(null);
-
-  function handleOpenAutoFocus(event: Event) {
-    event.preventDefault();
-    confirmButtonRef?.focus();
-  }
 </script>
 
-<Dialog.Root {open} {staticPosition} onOpenChange={(nextOpen) => !nextOpen && onCancel?.()}>
-  <Dialog.Content
-    class="max-w-md gap-0 overflow-hidden p-0"
-    closeLabel={m.chat_modelSwitchDialog_close_ariaLabel()}
-    onOpenAutoFocus={handleOpenAutoFocus}
-  >
-    <div class="space-y-4 p-5 pr-12">
-      <Dialog.Header class="gap-2 pr-0">
-        <Dialog.Title>
-          {isProviderChange
-            ? m.chat_modelSwitchDialog_switchProvider_title()
-            : m.chat_modelSwitchDialog_switchModel_title()}
-        </Dialog.Title>
-      </Dialog.Header>
-
-      <div class="rounded-md border border-border bg-muted/40 px-3 py-2 text-sm font-medium">
-        {#if isProviderChange}
-          {fromProviderName} / {fromModelLabel} &rarr; {toProviderName} / {toModelLabel}
-        {:else}
-          {fromModelLabel} &rarr; {toModelLabel}
-        {/if}
-      </div>
-
-      <Dialog.Description class="space-y-2 leading-5">
-        <span class="block">
-          {isProviderChange
-            ? m.chat_modelSwitchDialog_providerChange_description()
-            : m.chat_modelSwitchDialog_modelChange_description()}
-        </span>
-        <span class="block">{m.chat_modelSwitchDialog_deferred_description()}</span>
-      </Dialog.Description>
-    </div>
-
-    <Dialog.Footer class="mt-0 flex-row items-center justify-end border-0 px-5 pb-5 pt-0">
-      <Button variant="ghost-light" onclick={() => onCancel?.()}>
-        {m.chat_modelSwitchDialog_cancel_label()}
-      </Button>
-      <Button variant="default" bind:ref={confirmButtonRef} onclick={() => onConfirm?.()}>
-        {isProviderChange
-          ? m.chat_modelSwitchDialog_switchProvider_label()
-          : m.chat_modelSwitchDialog_switchModel_label()}
-      </Button>
-    </Dialog.Footer>
-  </Dialog.Content>
-</Dialog.Root>
+<FormDialog
+  {open}
+  static={staticPosition}
+  title={isProviderChange
+    ? m.chat_modelSwitchDialog_switchProvider_title()
+    : m.chat_modelSwitchDialog_switchModel_title()}
+  closeLabel={m.chat_modelSwitchDialog_close_ariaLabel()}
+  submitLabel={isProviderChange
+    ? m.chat_modelSwitchDialog_switchProvider_label()
+    : m.chat_modelSwitchDialog_switchModel_label()}
+  cancelLabel={m.chat_modelSwitchDialog_cancel_label()}
+  focusSubmit
+  onSubmit={() => onConfirm?.()}
+  {onCancel}
+>
+  <div class="flex flex-wrap items-center gap-3 type-body" data-testid="model-switch-models">
+    <span class="inline-flex min-w-0 items-center gap-1.5" title={fromProviderName}>
+      {#if hasProviderIcon(fromProviderId)}<span aria-hidden="true"
+          ><ProviderIcon providerId={fromProviderId} class="size-3.5" /></span
+        >{/if}
+      <span class="sr-only">{fromProviderName}</span>
+      <span class="break-all">{fromModelLabel}</span>
+    </span>
+    <ArrowRight size={16} class="shrink-0 text-muted-foreground" aria-hidden="true" />
+    <span class="inline-flex min-w-0 items-center gap-1.5" title={toProviderName}>
+      {#if hasProviderIcon(toProviderId)}<span aria-hidden="true"
+          ><ProviderIcon providerId={toProviderId} class="size-3.5" /></span
+        >{/if}
+      <span class="sr-only">{toProviderName}</span>
+      <span class="break-all">{toModelLabel}</span>
+    </span>
+  </div>
+  <p class="type-body text-muted-foreground">
+    {isProviderChange
+      ? m.chat_modelSwitchDialog_providerChange_description()
+      : m.chat_modelSwitchDialog_modelChange_description()}
+    {m.chat_modelSwitchDialog_deferred_description()}
+  </p>
+</FormDialog>

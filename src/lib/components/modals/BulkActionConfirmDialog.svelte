@@ -19,7 +19,7 @@
     activeHookCount?: number;
     /** Collaborators + open invites across the targeted workspaces that the action would remove. */
     guestCount?: number;
-    onConfirm?: () => void;
+    onConfirm?: () => void | Promise<void>;
     onCancel?: () => void;
   }
 
@@ -46,11 +46,7 @@
   }
 
   async function handleConfirm() {
-    try {
-      await onConfirm?.();
-    } catch (error) {
-      console.error('Confirm action failed:', error);
-    }
+    await onConfirm?.();
     open = false;
   }
 </script>
@@ -68,9 +64,9 @@
     <div class="space-y-4">
       {#if description}<p class="type-body">{description}</p>{/if}
       {#if hasActiveWork}
-        <div class="space-y-4 rounded-md border border-border bg-muted/40 p-3">
+        <div class="space-y-2">
           {#if activeAgentCount > 0}
-            <p class="type-body text-muted-foreground font-normal">
+            <p class="type-body text-foreground font-medium">
               {activeAgentCount === 1
                 ? m.modals_deleteWarning_agentsStopped_one({
                     count: formatInteger(activeAgentCount),
@@ -81,7 +77,7 @@
             </p>
           {/if}
           {#if activeHookCount > 0}
-            <p class="type-body text-muted-foreground font-normal">
+            <p class="type-body text-foreground font-medium">
               {activeHookCount === 1
                 ? m.modals_deleteWarning_hooksCancelled_one({
                     count: formatInteger(activeHookCount),

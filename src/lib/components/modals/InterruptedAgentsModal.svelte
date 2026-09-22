@@ -1,317 +1,218 @@
 <script lang="ts">
-  /**
-   * Modal for resuming or abandoning interrupted agents after intentd restart.
-   * Grouped by workspace with checkboxes (all checked by default).
-   */
   import { untrack } from 'svelte';
   import { Button } from '$lib/components/ui/button';
-  import { Badge } from '$lib/components/ui/badge';
   import { Checkbox } from '$lib/components/ui/checkbox';
-  import { CheckboxGroup } from '$lib/components/ui/checkbox-group';
-  import { ShortcutChip } from '$lib/components/ui/kbd';
-  import { ListRow, ListView, SectionedList } from '$lib/components/patterns/collection';
-  import { TakeoverScreen } from '$lib/components/patterns/screen';
-  import { crispOut, springIn } from '$lib/motion';
-  import Fa from 'svelte-fa';
-  import { faExclamationTriangle, faXmark } from '@fortawesome/free-solid-svg-icons';
-  import Portal from '$lib/components/ui/Portal.svelte';
-  import type { InterruptedAgent } from '$lib/client/app-client';
-  import { formatDateTime } from '$lib/i18n/format';
+  import { InputMessage } from '$lib/components/ui/input-message';
+  import { ContentDialog } from '$lib/components/patterns/confirm';
+  import { FormActions } from '$lib/components/patterns/form';
+  import { ListRow } from '$lib/components/patterns/collection';
+  import type { InterruptedAgent, ResolveInterruptedResult } from '$lib/client/app-client';
+  import AgentAvatarStack from '$features/agent/components/agent-avatar/AgentAvatarStack.svelte';
   import { m } from '$shared/paraglide/messages.js';
 
+  type Resolution = void | ResolveInterruptedResult;
   interface Props {
     open?: boolean;
+    /** Compatibility with older catalog callers; static previews render in place. */
     portalTarget?: string | HTMLElement;
     inline?: boolean;
     agents?: InterruptedAgent[];
-    onResumeSelected?: (resumeIds: string[], abandonIds: string[]) => void;
-    onAbandonAll?: (abandonIds: string[]) => void;
+    onResumeSelected?: (
+      resumeIds: string[],
+      abandonIds: string[],
+    ) => Resolution | Promise<Resolution>;
+    onAbandonAll?: (abandonIds: string[]) => Resolution | Promise<Resolution>;
     onClose?: () => void;
   }
-
   let {
     open = $bindable(false),
-    agents = [],
-    portalTarget = 'body',
     inline = false,
+    agents = [],
     onResumeSelected,
     onAbandonAll,
     onClose,
   }: Props = $props();
-
-  const dialogTitleId = 'interrupted-agents-dialog-title';
-  const dialogDescriptionId = 'interrupted-agents-dialog-description';
-
-  let dialogEl = $state<HTMLElement | null>(null);
-
-  // Move focus into the dialog on open (ARIA alertdialog pattern) so Escape
-  // reaches the keydown handler immediately — without this, focus stays on
-  // the previously focused page element outside the portal. `agents` is read
-  // untracked: the dialog mounting (bind:this assigning dialogEl) already
-  // re-runs the effect, and tracking `agents` would re-steal focus from a
-  // checkbox/button when a cross-window prune replaces the array mid-open.
+  let checked = $state<string[]>([]);
+  let resolved = $state<string[]>([]);
+  let busy = $state(false);
+  let error = $state('');
+  let confirmingAbandon = $state(false);
+  let knownIds = new Set<string>();
   $effect(() => {
-    if (!inline && open && dialogEl && untrack(() => agents.length > 0)) {
-      dialogEl.focus();
+    if (open)
+      untrack(() => {
+        resolved = [];
+        checked = agents.map((agent) => agent.agentId);
+        knownIds = new Set(checked);
+        error = '';
+        confirmingAbandon = false;
+      });
+  });
+  const remaining = $derived(agents.filter((agent) => !resolved.includes(agent.agentId)));
+  const selected = $derived(remaining.filter((agent) => checked.includes(agent.agentId)));
+  const groups = $derived.by(() => {
+    const byWorkspace = new Map<string, { id: string; name: string; agents: InterruptedAgent[] }>();
+    for (const agent of remaining) {
+      let group = byWorkspace.get(agent.workspaceId);
+      if (!group) {
+        group = {
+          id: agent.workspaceId,
+          name: agent.workspaceName || agent.workspaceId,
+          agents: [],
+        };
+        byWorkspace.set(agent.workspaceId, group);
+      }
+      group.agents.push(agent);
     }
+    return [...byWorkspace.values()];
   });
 
-  // Group agents by workspace
-  const agentsByWorkspace = $derived(() => {
-    const groups = new Map<string, InterruptedAgent[]>();
-    for (const agent of agents) {
-      const ws = agent.workspaceId;
-      if (!groups.has(ws)) {
-        groups.set(ws, []);
-      }
-      groups.get(ws)!.push(agent);
-    }
-    return Array.from(groups.entries()).map(([workspaceId, wsAgents]) => ({
-      workspaceId,
-      workspaceName: wsAgents[0]?.workspaceName ?? workspaceId,
-      agents: wsAgents,
-    }));
-  });
-
-  // All agents checked by default
-  // svelte-ignore state_referenced_locally - intentional initial capture; the reconcile $effect below syncs later changes
-  let checkedAgents = $state<Set<string>>(new Set(agents.map((a) => a.agentId)));
-
-  // Reconcile checked state when agents change: survivors of a cross-window
-  // prune keep their checkbox state; agents not previously listed default to
-  // checked.
-  // svelte-ignore state_referenced_locally - intentional initial capture; updated inside the reconcile $effect
-  let knownAgentIds = new Set(agents.map((a) => a.agentId));
-  const allSelected = $derived(agents.length > 0 && checkedAgents.size === agents.length);
-  const someSelected = $derived(checkedAgents.size > 0 && !allSelected);
-  const navigatorPlatform =
-    typeof navigator === 'undefined'
-      ? ''
-      : ((navigator as Navigator & { userAgentData?: { platform?: string } }).userAgentData
-          ?.platform ?? navigator.platform);
-  const isMac = /mac/i.test(navigatorPlatform);
-
   $effect(() => {
-    const checked = untrack(() => checkedAgents);
-    const next = new Set<string>();
-    for (const agent of agents) {
-      if (!knownAgentIds.has(agent.agentId) || checked.has(agent.agentId)) {
-        next.add(agent.agentId);
-      }
-    }
-    knownAgentIds = new Set(agents.map((a) => a.agentId));
-    checkedAgents = next;
+    const previous = untrack(() => checked);
+    checked = agents
+      .filter((agent) => !knownIds.has(agent.agentId) || previous.includes(agent.agentId))
+      .map((agent) => agent.agentId);
+    knownIds = new Set(agents.map((agent) => agent.agentId));
   });
 
   function close() {
+    if (busy) return;
     open = false;
     onClose?.();
   }
 
-  function handleResumeSelected() {
-    const allIds = agents.map((a) => a.agentId);
-    const resumeIds = allIds.filter((id) => checkedAgents.has(id));
-    const abandonIds = allIds.filter((id) => !checkedAgents.has(id));
-    onResumeSelected?.(resumeIds, abandonIds);
-    open = false;
-  }
-
-  function handleAbandonAll() {
-    const allIds = agents.map((a) => a.agentId);
-    onAbandonAll?.(allIds);
-    open = false;
-  }
-
-  function setSelection(agentIds: string[]) {
-    checkedAgents = new Set(agentIds);
-  }
-
-  function toggleAll(checked: boolean) {
-    checkedAgents = checked ? new Set(agents.map((agent) => agent.agentId)) : new Set();
-  }
-
-  function handleKeydown(e: KeyboardEvent) {
-    if (e.key === 'Escape') {
-      e.preventDefault();
-      e.stopPropagation();
-      close();
-      return;
-    }
-    if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
-      e.preventDefault();
-      e.stopPropagation();
-      handleResumeSelected();
+  async function resolve(abandon: boolean) {
+    if (busy || (!abandon && selected.length === 0)) return;
+    const ids = (abandon ? remaining : selected).map((agent) => agent.agentId);
+    busy = true;
+    error = '';
+    try {
+      const result = abandon ? await onAbandonAll?.(ids) : await onResumeSelected?.(ids, []);
+      const completed = result ? [...result.resumed, ...result.abandoned] : ids;
+      resolved = [...resolved, ...completed];
+      checked = checked.filter((id) => !completed.includes(id));
+      confirmingAbandon = false;
+      if (result?.failed.length) {
+        error =
+          result.failed.length === 1
+            ? m.layout_appShell_resolveFailedCount_one({ count: 1 })
+            : m.layout_appShell_resolveFailedCount_many({ count: result.failed.length });
+      }
+      if (agents.every((agent) => resolved.includes(agent.agentId))) {
+        busy = false;
+        close();
+      }
+    } catch {
+      error = abandon
+        ? m.layout_appShell_abandonInterruptedFailed_error()
+        : m.layout_appShell_resolveInterruptedFailed_error();
+    } finally {
+      busy = false;
     }
   }
 </script>
 
-{#snippet takeoverTitle()}
-  <h2 id={dialogTitleId} class="text-lg font-semibold leading-6">
-    {m.modals_interruptedAgents_title()}
-  </h2>
-{/snippet}
-
-{#snippet takeoverLeading()}
-  <div
-    class="flex size-10 items-center justify-center rounded-full bg-warning/20 text-warning-ink ring-1 ring-warning/20"
+{#if open && remaining.length > 0}
+  <ContentDialog
+    bind:open
+    static={inline}
+    role="alertdialog"
+    title={m.modals_interruptedAgents_title()}
+    description={confirmingAbandon
+      ? m.modals_interruptedAgents_abandon_description()
+      : m.modals_interruptedAgents_description()}
+    titleId="interrupted-agents-dialog-title"
+    descriptionId="interrupted-agents-dialog-description"
+    closeLabel={m.modals_interruptedAgents_close_ariaLabel()}
+    {busy}
+    dismissOnInteractOutside={false}
+    onClose={close}
+    onkeydowncapture={(event) => {
+      if (
+        event.key === 'Enter' &&
+        (event.metaKey || event.ctrlKey) &&
+        !confirmingAbandon &&
+        !event.isComposing
+      ) {
+        event.preventDefault();
+        event.stopPropagation();
+        void resolve(false);
+      }
+    }}
   >
-    <Fa icon={faExclamationTriangle} size="lg" />
-  </div>
-{/snippet}
-
-{#snippet takeoverActions()}
-  <Button
-    variant="ghost"
-    size="icon-sm"
-    class="-mr-1 text-subtle hover:text-foreground"
-    aria-label={m.modals_interruptedAgents_close_ariaLabel()}
-    onclick={close}
-  >
-    <Fa icon={faXmark} />
-  </Button>
-{/snippet}
-
-{#snippet takeoverBody()}
-  <div class="mb-4 flex items-center justify-between gap-3 px-1">
-    <label class="flex cursor-pointer items-center gap-2 text-sm font-medium text-foreground">
-      <Checkbox
-        checked={allSelected}
-        indeterminate={someSelected}
-        ariaLabel={m.ui_shortcuts_selectAll_label()}
-        onCheckedChange={toggleAll}
-      />
-      <span>{m.ui_shortcuts_selectAll_label()}</span>
-    </label>
-    <span class="type-caption tabular-nums text-muted-foreground" aria-hidden="true">
-      {checkedAgents.size}/{agents.length}
-    </span>
-  </div>
-  <CheckboxGroup
-    value={[...checkedAgents]}
-    onValueChange={setSelection}
-    aria-label={m.modals_interruptedAgents_title()}
-    class="gap-0"
-  >
-    <SectionedList
-      sections={agentsByWorkspace()}
-      getKey={(group) => group.workspaceId}
-      class="space-y-4"
-    >
-      {#snippet header(group)}<span class="type-caption text-muted-foreground font-normal"
-          >{group.workspaceName}</span
-        >{/snippet}
-      {#snippet children(group)}
-        <ListView
-          items={group.agents}
-          getKey={(agent) => agent.agentId}
-          getText={(agent) => agent.agentName}
-          selectable="multi"
-          selectedKeys={[...checkedAgents]}
-          onSelectedKeysChange={(keys) => (checkedAgents = new Set(keys.map(String)))}
-          ariaLabel={group.workspaceName}
-        >
-          {#snippet row({ item: agent, selected })}
-            <ListRow>
-              {#snippet leading()}
-                <span
-                  aria-hidden="true"
-                  class="inline-flex size-4 shrink-0 items-center justify-center rounded-(--radius-small) border-[1.5px] shadow-(--elevation-raised) {selected
-                    ? 'border-primary bg-primary text-primary-foreground'
-                    : 'border-border bg-card'}"
-                >
-                  <svg class="size-[75%]" viewBox="0 0 12 12" fill="none">
-                    {#if selected}
-                      <path
-                        d="m2.25 6.25 2.25 2.2 5.25-5"
-                        stroke="currentColor"
-                        stroke-width="1.5"
-                        stroke-linecap="round"
-                        stroke-linejoin="round"
-                      />
-                    {/if}
-                  </svg>
-                </span>
-              {/snippet}
-              {#snippet title()}{agent.agentName}{/snippet}
-              {#snippet description()}
-                {m.modals_interruptedAgents_statusLine_label({
-                  status: agent.prevStatus,
-                  timestamp: formatDateTime(agent.interruptedAt),
-                })}
-              {/snippet}
-              {#snippet meta()}<Badge variant="info" dot>{agent.prevStatus}</Badge>{/snippet}
-            </ListRow>
-          {/snippet}
-        </ListView>
-      {/snippet}
-    </SectionedList>
-  </CheckboxGroup>
-{/snippet}
-
-{#snippet takeoverDestructive()}
-  <Button variant="ghost" class="text-danger" onclick={handleAbandonAll}>
-    {m.modals_interruptedAgents_abandonAll_label()}
-  </Button>
-{/snippet}
-
-{#snippet takeoverSecondary()}
-  <Button variant="outline" onclick={close}>
-    {m.chat_questionWizard_dismiss_label()}
-    <!-- i18n-ignore (platform keyboard token) -->
-    <span aria-hidden="true"><ShortcutChip>Esc</ShortcutChip></span>
-  </Button>
-{/snippet}
-
-{#snippet takeoverPrimary()}
-  <Button variant="primary" class="sm:min-w-[11rem]" onclick={handleResumeSelected}>
-    {m.modals_interruptedAgents_resumeSelected_label()}
-    <span aria-hidden="true">
-      <ShortcutChip class="border-0 bg-background/15 text-background shadow-none">
-        {isMac ? '⌘' : '⌃'}↵
-      </ShortcutChip>
-    </span>
-  </Button>
-{/snippet}
-
-{#if open && agents.length > 0}
-  <Portal target={portalTarget} zIndex={100}>
-    <div
-      class="{inline
-        ? 'relative'
-        : 'fixed inset-0 z-50'} flex items-center justify-center bg-black/40 p-4 backdrop-blur-[1px]"
-      role="presentation"
-      onkeydown={handleKeydown}
-      onclick={close}
-    >
-      <div
-        class="flex w-full max-w-2xl min-w-0 flex-col"
-        in:springIn={{ tier: 'moderate', scale: 0.98, y: 8 }}
-        out:crispOut={{ tier: 'fast', scale: 0.98 }}
-      >
-        <TakeoverScreen
-          bind:ref={dialogEl}
-          title={takeoverTitle}
-          leading={takeoverLeading}
-          actions={takeoverActions}
-          primary={takeoverPrimary}
-          secondary={takeoverSecondary}
-          destructive={takeoverDestructive}
-          class="max-h-[85vh] rounded-2xl border border-border shadow-xl shadow-black/20 outline-none"
-          headerClass="px-6 pt-6"
-          bodyClass="overflow-auto px-6 py-5"
-          footerClass="bg-muted/20 px-6 py-4"
-          onclick={(event) => event.stopPropagation()}
-          role="alertdialog"
-          aria-modal={inline ? undefined : true}
-          aria-labelledby={dialogTitleId}
-          aria-describedby={dialogDescriptionId}
-          tabindex={-1}
-          onkeydown={handleKeydown}
-        >
-          <p id={dialogDescriptionId} class="sr-only">{m.modals_interruptedAgents_description()}</p>
-          {@render takeoverBody()}
-        </TakeoverScreen>
+    <fieldset disabled={busy} class="min-w-0" aria-busy={busy}>
+      <div class="grid">
+        {#each groups as group (group.id)}
+          <ListRow class="min-h-8 gap-2 px-0 py-1">
+            {#snippet leading()}
+              {#if !confirmingAbandon}
+                <Checkbox
+                  checked={group.agents.every((agent) => checked.includes(agent.agentId))}
+                  indeterminate={group.agents.some((agent) => checked.includes(agent.agentId)) &&
+                    !group.agents.every((agent) => checked.includes(agent.agentId))}
+                  disabled={busy}
+                  ariaLabel={group.name}
+                  onCheckedChange={(value) => {
+                    const ids = group.agents.map((agent) => agent.agentId);
+                    checked = value
+                      ? [...new Set([...checked, ...ids])]
+                      : checked.filter((id) => !ids.includes(id));
+                  }}
+                />
+              {/if}
+            {/snippet}
+            {#snippet title()}{group.name}{/snippet}
+            {#snippet trailing()}
+              <AgentAvatarStack
+                items={group.agents.map((agent) => ({
+                  key: agent.agentId,
+                  agentId: agent.agentId,
+                }))}
+                maxVisible={4}
+                align="end"
+              />
+            {/snippet}
+          </ListRow>
+        {/each}
       </div>
-    </div>
-  </Portal>
+    </fieldset>
+    {#if error}<InputMessage tone="error">{error}</InputMessage>{/if}
+    {#snippet footer()}
+      <FormActions class="gap-1 [&>[data-slot=form-actions-end]]:gap-1">
+        {#snippet destructive()}
+          {#if !confirmingAbandon}<Button
+              variant="ghost"
+              class="px-2 text-danger"
+              disabled={busy}
+              onclick={() => (confirmingAbandon = true)}
+              >{m.modals_interruptedAgents_abandonAll_label()}</Button
+            >{/if}
+        {/snippet}
+        {#snippet secondary()}
+          <Button
+            variant="ghost-light"
+            class="px-2"
+            disabled={busy}
+            onclick={() => (confirmingAbandon ? (confirmingAbandon = false) : close())}
+          >
+            {confirmingAbandon
+              ? m.modals_bulkActionConfirm_cancel_label()
+              : m.modals_setupPrompt_notNow_label()}
+          </Button>
+        {/snippet}
+        {#snippet primary()}
+          <Button
+            variant={confirmingAbandon ? 'destructive' : 'primary'}
+            loading={busy}
+            disabled={busy || (!confirmingAbandon && selected.length === 0)}
+            onclick={() => resolve(confirmingAbandon)}
+          >
+            {confirmingAbandon
+              ? m.modals_interruptedAgents_abandonAll_label()
+              : m.modals_interruptedAgents_resumeSelected_label()}
+          </Button>
+        {/snippet}
+      </FormActions>
+    {/snippet}
+  </ContentDialog>
 {/if}

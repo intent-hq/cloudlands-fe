@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { Button } from '$lib/components/ui/button';
+  import { ContentDialog } from '$lib/components/patterns/confirm';
   /**
    * ContextPickerModal - Modal overlay for picking context items
    *
@@ -7,14 +7,9 @@
    * Handles Linear issues, GitHub issues, Sentry issues, and browser URLs.
    */
   import type { ContextProvider } from '$features/context/types';
-  import ProviderIcon from '$features/context/components/ContextProviderIcon.svelte';
-  import { faTimes } from '@fortawesome/free-solid-svg-icons';
-  import Fa from 'svelte-fa';
-  import { fade, fly } from '$lib/motion';
   import LinearPicker from './LinearPicker.svelte';
   import SentryPicker from './SentryPicker.svelte';
   import BrowserUrlPicker from './BrowserUrlPicker.svelte';
-  import { pushEscapeLayer } from '$lib/utils/escapeLayers';
   import { m } from '$shared/paraglide/messages.js';
 
   interface Props {
@@ -50,74 +45,31 @@
       return m.workspace_multiSelectSidebar_contextTab_label();
     },
   };
-
-  function handleBackdropClick(e: MouseEvent) {
-    if (e.target === e.currentTarget) {
-      onClose();
-    }
-  }
-
-  // Escape layer: registered only while open so stacked overlays dismiss
-  // one at a time in LIFO order
-  $effect(() => {
-    if (!isOpen) return;
-    return pushEscapeLayer(() => onClose());
-  });
 </script>
 
 {#if isOpen}
-  <div class="fixed inset-0 z-50" transition:fade={{ tier: 'moderate' }}>
-    <Button
-      variant="plain"
-      type="button"
-      class="absolute inset-0 h-full rounded-none bg-black/50 backdrop-blur-sm border-0 p-0"
-      aria-label={m.workspace_contextPicker_closeModal_ariaLabel()}
-      onclick={handleBackdropClick}
-    ></Button>
-    <div class="absolute inset-0 flex items-center justify-center">
-      <div
-        class="bg-background border border-border rounded-lg shadow-xl w-full max-w-lg max-h-[70vh] flex flex-col overflow-hidden"
-        transition:fly={{ axis: 'y', distance: 20, tier: 'moderate' }}
-      >
-        <!-- Header -->
-        <div class="flex items-center justify-between px-4 py-3">
-          <div class="flex items-center gap-2">
-            <ProviderIcon {provider} size={18} />
-            <h2 class="text-sm font-semibold">{providerTitles[provider]}</h2>
-          </div>
-          <Button
-            variant="ghost"
-            type="button"
-            size="icon-compact"
-            iconOnly
-            aria-label={m.workspace_contextPicker_close_ariaLabel()}
-            class="rounded hover:bg-muted transition-colors cursor-pointer"
-            onclick={onClose}
-          >
-            <Fa icon={faTimes} size="sm" class="text-ghost" />
-          </Button>
-        </div>
-
-        <!-- Content -->
-        <div class="flex-1 overflow-y-auto">
-          {#if provider === 'linear'}
-            <LinearPicker {workspaceId} {onSelect} {onClose} />
-          {:else if provider === 'sentry'}
-            <SentryPicker {workspaceId} {onSelect} {onClose} />
-          {:else if provider === 'browser'}
-            <BrowserUrlPicker {workspaceId} {onSelect} {onClose} />
-          {:else if provider === 'github'}
-            <div class="p-8 text-left text-subtle">
-              <p class="text-sm">{m.workspace_contextPicker_githubComingSoon_label()}</p>
-              <p class="text-xs mt-2">{m.workspace_contextPicker_useBrowserUrls_label()}</p>
-            </div>
-          {:else}
-            <div class="p-8 text-left text-subtle">
-              <p class="text-sm">{m.workspace_contextPicker_selectProvider_label()}</p>
-            </div>
-          {/if}
-        </div>
+  <ContentDialog
+    open={isOpen}
+    title={providerTitles[provider]}
+    size="lg"
+    closeLabel={m.workspace_contextPicker_closeModal_ariaLabel()}
+    {onClose}
+  >
+    {#if provider === 'linear'}
+      <LinearPicker {workspaceId} {onSelect} {onClose} />
+    {:else if provider === 'sentry'}
+      <SentryPicker {workspaceId} {onSelect} {onClose} />
+    {:else if provider === 'browser'}
+      <BrowserUrlPicker {workspaceId} {onSelect} {onClose} />
+    {:else if provider === 'github'}
+      <div class="p-8 text-left text-subtle">
+        <p class="text-sm">{m.workspace_contextPicker_githubComingSoon_label()}</p>
+        <p class="text-xs mt-2">{m.workspace_contextPicker_useBrowserUrls_label()}</p>
       </div>
-    </div>
-  </div>
+    {:else}
+      <div class="p-8 text-left text-subtle">
+        <p class="text-sm">{m.workspace_contextPicker_selectProvider_label()}</p>
+      </div>
+    {/if}
+  </ContentDialog>
 {/if}

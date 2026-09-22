@@ -45,6 +45,7 @@ export const inputMetadata = parseUiComponentMetadata({
     'src/lib/components/modals/FeatureCodeDialog.svelte',
     'src/lib/components/modals/InputDialog.svelte',
     'src/lib/components/modals/ShareWorkspaceDialog.svelte',
+    'src/lib/components/modals/modal-polish.preview.svelte',
     'src/lib/components/patterns/confirm/ConfirmRequestView.svelte',
     'src/lib/components/patterns/confirm/modal-heading-spacing.preview.svelte',
     'src/lib/components/patterns/settings/SettingsControl.svelte',

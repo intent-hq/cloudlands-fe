@@ -47,14 +47,16 @@ for (const kind of [
       headerBorders.every((border) => border === 0),
       'borderless modal header',
     ).toBe(true);
-    if (kind === 'form' || kind === 'confirm' || kind === 'direct') {
-      const gap = await dialog.locator('[data-slot=dialog-header]').evaluate((header) => {
-        const next = header.nextElementSibling!;
-        return next.getBoundingClientRect().top - header.getBoundingClientRect().bottom;
-      });
-      // Confirm has no body; preserve its deliberate 24px footer section margin.
-      expect(gap).toBeCloseTo(kind === 'confirm' ? 40 : 16, 0);
-    }
+    const gap = await dialog.evaluate((element, kind) => {
+      const header = element.querySelector('[data-slot=dialog-header]')!;
+      const next =
+        kind === 'confirm'
+          ? element.querySelector('[data-slot=dialog-footer]')!
+          : element.querySelector('input')!;
+      return next.getBoundingClientRect().top - header.getBoundingClientRect().bottom;
+    }, kind);
+    // Measure visible content, not wrapper boxes: shared layouts own their body inset.
+    expect(gap).toBeCloseTo(kind === 'confirm' ? 40 : kind === 'form' ? 20 : 16, 0);
     const bounds = await dialog.evaluate((node) => ({
       left: node.getBoundingClientRect().left,
       right: node.getBoundingClientRect().right,

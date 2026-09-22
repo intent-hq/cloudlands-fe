@@ -143,8 +143,9 @@ describe('TransferWorkspaceModal — destination step', () => {
       expect(className).not.toMatch(/\bsize-\d/);
       expect(className).toContain('whitespace-normal');
       expect(className).not.toContain('whitespace-nowrap');
-      expect(className).not.toContain('!px-0');
-      expect(className).not.toContain('!py-0');
+      expect(className).toContain('!px-0');
+      expect(className).toContain('!py-0');
+      expect(screen.getByTestId(testId).querySelector('[data-slot="list-row"]')).toBeTruthy();
     }
   });
 
@@ -570,8 +571,9 @@ describe('TransferWorkspaceModal — result step', () => {
     const closeButton = screen.getByLabelText('Close') as HTMLButtonElement;
     expect(closeButton.disabled).toBe(true);
     await fireEvent.click(closeButton);
-    await fireEvent.click(screen.getByRole('presentation'));
-    await fireEvent.keyDown(screen.getByRole('presentation'), { key: 'Escape' });
+    const overlay = document.querySelector('[data-slot="dialog-overlay"]')!;
+    await fireEvent.pointerDown(overlay, { pointerType: 'mouse', button: 0 });
+    await fireEvent.keyDown(screen.getByRole('dialog'), { key: 'Escape' });
     expect(onCancel).not.toHaveBeenCalled();
   });
 

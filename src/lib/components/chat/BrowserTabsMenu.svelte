@@ -4,7 +4,7 @@
   import BrowserIcon from 'phosphor-svelte/lib/BrowserIcon';
   import { CHAT_ICON_SIZE } from './chat-icon-size';
   import { faWindowMaximize, faXmark } from '@fortawesome/free-solid-svg-icons';
-  import * as Dialog from '$lib/components/ui/dialog';
+  import { FormDialog } from '$lib/components/patterns/confirm';
   import type { PanelTab } from '$store/renderer/slices/panel-layout/panel-layout-types';
   import * as Menu from '$lib/components/ui/menu';
   import { getPanelLayoutManager } from '$features/layout/panel-layout-adapter';
@@ -93,8 +93,6 @@
 
   // Close request awaiting confirmation (owner agent running); null otherwise.
   let pendingClose = $state<PendingClose | null>(null);
-  let confirmButtonRef: HTMLButtonElement | null = $state(null);
-  let confirmHasFocus = $state(false);
 
   function isHostedHere(tab: PanelTab, ownClientId: string | null): boolean {
     return tab.hostClientId === undefined || tab.hostClientId === ownClientId;
@@ -145,11 +143,6 @@
 
   function cancelPendingClose() {
     pendingClose = null;
-  }
-
-  function handleDialogOpenAutoFocus(event: Event) {
-    event.preventDefault();
-    confirmButtonRef?.focus();
   }
 </script>
 
@@ -260,51 +253,22 @@
   </Menu.Root>
 {/if}
 
-<Dialog.Root
+<FormDialog
   open={pendingClose !== null}
-  onOpenChange={(nextOpen) => !nextOpen && cancelPendingClose()}
->
-  <Dialog.Content
-    class="max-w-sm gap-0 overflow-hidden p-0"
-    closeLabel={m.chat_browserTabs_closeDialog_close_ariaLabel()}
-    onOpenAutoFocus={handleDialogOpenAutoFocus}
-  >
-    <div class="p-5 pr-12">
-      <Dialog.Header class="gap-2 pr-0">
-        <Dialog.Title>
-          {pendingClose?.kind === 'hidden'
-            ? m.chat_browserTabs_closeHiddenDialog_title()
-            : m.chat_browserTabs_closeDialog_title()}
-        </Dialog.Title>
-        <Dialog.Description class="leading-5">
-          {pendingClose?.kind === 'hidden'
-            ? m.chat_browserTabs_closeHiddenDialog_description()
-            : m.chat_browserTabs_closeDialog_description()}
-        </Dialog.Description>
-      </Dialog.Header>
-    </div>
-
-    <Dialog.Footer class="mt-0 flex-row items-center justify-end border-0 px-5 pb-5 pt-0">
-      <Button
-        variant="ghost-light"
-        data-testid="browser-tabs-close-dialog-cancel"
-        onclick={cancelPendingClose}
-      >
-        {m.chat_browserTabs_closeDialog_cancel_label()}
-      </Button>
-      <Button
-        variant="destructive"
-        bind:ref={confirmButtonRef}
-        class={confirmHasFocus ? 'ring-ring/50 ring-2' : undefined}
-        data-testid="browser-tabs-close-dialog-confirm"
-        onfocus={() => (confirmHasFocus = true)}
-        onblur={() => (confirmHasFocus = false)}
-        onclick={confirmPendingClose}
-      >
-        {pendingClose?.kind === 'hidden'
-          ? m.chat_browserTabs_closeHiddenDialog_confirm_label()
-          : m.chat_browserTabs_closeDialog_confirm_label()}
-      </Button>
-    </Dialog.Footer>
-  </Dialog.Content>
-</Dialog.Root>
+  size="sm"
+  title={pendingClose?.kind === /* i18n-ignore (internal close-intent discriminator) */ 'hidden'
+    ? m.chat_browserTabs_closeHiddenDialog_title()
+    : m.chat_browserTabs_closeDialog_title()}
+  description={pendingClose?.kind === 'hidden'
+    ? m.chat_browserTabs_closeHiddenDialog_description()
+    : m.chat_browserTabs_closeDialog_description()}
+  closeLabel={m.chat_browserTabs_closeDialog_close_ariaLabel()}
+  cancelLabel={m.chat_browserTabs_closeDialog_cancel_label()}
+  submitLabel={pendingClose?.kind === 'hidden'
+    ? m.chat_browserTabs_closeHiddenDialog_confirm_label()
+    : m.chat_browserTabs_closeDialog_confirm_label()}
+  submitVariant="destructive"
+  focusSubmit
+  onSubmit={confirmPendingClose}
+  onCancel={cancelPendingClose}
+/>

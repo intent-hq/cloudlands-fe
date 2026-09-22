@@ -1,10 +1,12 @@
 <script lang="ts">
-  import type { Snippet } from 'svelte';
+  import type { ComponentProps, Snippet } from 'svelte';
   import type { ButtonVariant } from '$lib/components/ui/button';
   import { Button } from '$lib/components/ui/button';
   import * as Dialog from '$lib/components/ui/dialog';
   import { Form, FormActions } from '$lib/components/patterns/form';
   import { m } from '$shared/paraglide/messages.js';
+  import { cn } from '$lib/utils';
+  import DialogLayout from './DialogLayout.svelte';
 
   interface Props {
     open?: boolean;
@@ -26,6 +28,7 @@
     showCloseButton?: boolean;
     closeLabel?: string;
     class?: string;
+    size?: ComponentProps<typeof Dialog.Content>['size'];
     initialFocus?: HTMLElement | null;
     focusContent?: boolean;
     focusSubmit?: boolean;
@@ -45,10 +48,10 @@
     titleId,
     descriptionId,
     children,
-    footer,
+    footer: customFooter,
     submitLabel = m.modals_bulkActionConfirm_confirm_label(),
     cancelLabel = m.modals_bulkActionConfirm_cancel_label(),
-    submitVariant = 'default',
+    submitVariant = 'primary',
     canSubmit = true,
     busy = false,
     role = 'dialog',
@@ -57,6 +60,7 @@
     showCloseButton = true,
     closeLabel = m.ui_dialog_close_ariaLabel(),
     class: className,
+    size = 'default',
     initialFocus,
     focusContent = false,
     focusSubmit = false,
@@ -69,27 +73,34 @@
   }: Props = $props();
 
   let internalBusy = $state(false);
+  let submissionError = $state('');
   let cancellationHandled = $state(false);
   let contentRef = $state<HTMLElement | null>(null);
   let submitRef = $state<HTMLButtonElement | null>(null);
   const isBusy = $derived(busy || internalBusy);
 
   $effect(() => {
-    if (open) cancellationHandled = false;
+    if (open) {
+      cancellationHandled = false;
+      submissionError = '';
+    }
   });
 
   function cancel() {
     if (isBusy || cancellationHandled) return;
     cancellationHandled = true;
-    onCancel?.();
     open = false;
+    onCancel?.();
   }
 
   async function submit() {
     if (isBusy || !canSubmit) return;
     internalBusy = true;
+    submissionError = '';
     try {
       await onSubmit();
+    } catch {
+      submissionError = m.ui_dialog_submitFailed_error();
     } finally {
       internalBusy = false;
     }
@@ -109,7 +120,8 @@
   <Dialog.Content
     bind:ref={contentRef}
     {role}
-    class={className}
+    {size}
+    class={cn('flex min-h-0 flex-col overflow-hidden p-0', className)}
     closeDisabled={isBusy}
     {showCloseButton}
     {closeLabel}
@@ -123,46 +135,54 @@
         cancel();
       }
     }}
-    onInteractOutside={(event) => !dismissOnInteractOutside && event.preventDefault()}
+    onInteractOutside={(event) => (isBusy || !dismissOnInteractOutside) && event.preventDefault()}
+    onEscapeKeydown={(event) => isBusy && event.preventDefault()}
   >
-    <Form onSubmit={submit} busy={isBusy} {enterKey} {modEnter}>
-      <Dialog.Header class="mb-0">
-        <Dialog.Title id={titleId}>{title}</Dialog.Title>
-        {#if description}<Dialog.Description id={descriptionId}>{description}</Dialog.Description
-          >{/if}
-      </Dialog.Header>
-
-      {@render children?.()}
-
-      <Dialog.Footer>
-        {#if footer}
-          {@render footer()}
-        {:else}
-          <FormActions>
-            {#snippet secondary()}
-              {#if showCancel}
-                <Button variant="ghost-light" disabled={isBusy} onclick={cancel}
-                  >{cancelLabel}</Button
+    <Form
+      onSubmit={submit}
+      busy={isBusy}
+      {enterKey}
+      {modEnter}
+      class="flex min-h-0 min-w-0 flex-1 flex-col"
+    >
+      <DialogLayout
+        {title}
+        {description}
+        {titleId}
+        {descriptionId}
+        {children}
+        error={submissionError}
+      >
+        {#snippet footer()}
+          {#if customFooter}
+            {@render customFooter()}
+          {:else}
+            <FormActions>
+              {#snippet secondary()}
+                {#if showCancel}
+                  <Button variant="ghost-light" disabled={isBusy} onclick={cancel}
+                    >{cancelLabel}</Button
+                  >
+                {/if}
+              {/snippet}
+              {#snippet primary()}
+                <Button
+                  bind:ref={submitRef}
+                  type="submit"
+                  variant={submitVariant}
+                  class={focusSubmit
+                    ? 'focus-visible:outline focus-visible:-outline-offset-1'
+                    : undefined}
+                  loading={isBusy}
+                  disabled={!canSubmit || isBusy}
                 >
-              {/if}
-            {/snippet}
-            {#snippet primary()}
-              <Button
-                bind:ref={submitRef}
-                type="submit"
-                variant={submitVariant}
-                class={focusSubmit
-                  ? 'focus-visible:outline focus-visible:-outline-offset-1'
-                  : undefined}
-                loading={isBusy}
-                disabled={!canSubmit || isBusy}
-              >
-                {submitLabel}
-              </Button>
-            {/snippet}
-          </FormActions>
-        {/if}
-      </Dialog.Footer>
+                  {submitLabel}
+                </Button>
+              {/snippet}
+            </FormActions>
+          {/if}
+        {/snippet}
+      </DialogLayout>
     </Form>
   </Dialog.Content>
 </Dialog.Root>

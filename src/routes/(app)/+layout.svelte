@@ -864,14 +864,13 @@
     };
   });
 
-  // Both modal actions go through the service so it stops the cross-window
-  // watcher before sending the resolution request.
+  // Return the daemon result so recovery can retain unresolved rows and retry.
   async function handleResumeSelectedAgents(resumeIds: string[], abandonIds: string[]) {
-    await resolveInterruptedAgents(new LiveAppClient(), resumeIds, abandonIds);
+    return await resolveInterruptedAgents(new LiveAppClient(), resumeIds, abandonIds);
   }
 
   async function handleAbandonAllAgents(abandonIds: string[]) {
-    await resolveInterruptedAgents(new LiveAppClient(), [], abandonIds);
+    return await resolveInterruptedAgents(new LiveAppClient(), [], abandonIds);
   }
 
   function handleGitHubAuthSuccess() {

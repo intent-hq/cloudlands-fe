@@ -194,13 +194,14 @@ with an explicit colour from the status mapping above.
 ## confirm
 
 - **Import:** `$lib/components/patterns/confirm`
-- **Public API / props surface:** `ConfirmHost`, `ConfirmRequestView`, `DestructiveConfirm`, `FormDialog`, `alert`, `confirm`, `prompt`
+- **Public API / props surface:** `ConfirmHost`, `ConfirmRequestView`, `DestructiveConfirm`, `FormDialog`, `ContentDialog`, `alert`, `confirm`, `prompt`
 - **Catalog:** [`/sandbox/confirm`](../src/routes/sandbox/[slug]/+page.svelte)
 
 ### Use when
 
 - Blocking an action until the user confirms, enters one value, or acknowledges a message.
 - Building a dialog whose content is a form with standard actions.
+- Showing a selection, progress/result, or reading dialog with shared layout and focus ownership.
 
 ### Do not use when
 

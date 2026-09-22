@@ -83,6 +83,7 @@ export const spinnerMetadata = parseUiComponentMetadata({
     'src/lib/components/workspace/initializer/RepoAndBranchPicker.svelte',
     'src/lib/components/workspace/initializer/RepoSelector.svelte',
     'src/lib/components/workspace/initializer/SetupScriptAgent.svelte',
+    'src/lib/components/workspace/initializer/SetupScriptTrigger.svelte',
     'src/lib/components/workspace/sidebar/CommitDrawer.svelte',
     'src/lib/components/workspace/sidebar/CommitsTimeline.svelte',
     'src/lib/components/workspace/sidebar/DividerButton.svelte',
