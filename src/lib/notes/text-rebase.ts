@@ -486,9 +486,10 @@ function lowerBound(values: number[], at: number): number {
  * or `][…]` around its masked destination, or after the `[` the line opened
  * the label with when the destination is empty (`[label]()`, nothing to
  * mask), and nothing visible after — the plain text ends its line where the
- * label does; a `]()` with no masked text in it and no `[` before it on its
- * line is punctuation the editor shows, `**]()**` and its plain text alike)
- * and not a comment anchor the whole line long. A markdown
+ * label does; a `]()` with no masked text inside it and no `[` before it on
+ * its line is punctuation the editor shows, `**]()**`, `` `]()` `` — its
+ * backticks masked — and their plain text alike) and not a comment anchor
+ * the whole line long. A markdown
  * line that is none of a plain-text line's must not count as one: counted, it
  * puts every hit for the rest of the run one text line beyond the run, until
  * a hard break of the plain text (counted on one side only) admits a hit one
@@ -531,9 +532,13 @@ function isTextLine(text: string, start: number, end: number): boolean {
   }
   if (code === 93) {
     let j = i + 1;
+    let depth = 0;
     let tail = false;
     while (j < end && LINK_CLOSE.has(text.charCodeAt(j))) {
-      if (text.charCodeAt(j) === 0) tail = true;
+      const next = text.charCodeAt(j);
+      if (next === 40 || next === 91) depth += 1;
+      else if ((next === 41 || next === 93) && depth > 0) depth -= 1;
+      else if (next === 0 && depth > 0) tail = true;
       j += 1;
     }
     return !(tail || closesLabel(text, i)) || (j < end && text.charCodeAt(j) !== 13);
@@ -744,11 +749,15 @@ let lastMask: { markdown: string; mask: Mask } | undefined;
 
 /**
  * `markdown` with the text the editor does not show — the destination and
- * title of a link (`](…)` or `][…]`), an image, the URL and title of a link
- * definition — replaced by U+0000, code unit for code unit. That text is
- * absent from the plain text, so neither an anchor search nor a diff may
- * match a word inside it (`[render](https://sync/…) sync` against
- * `render sync`); the mask keeps every other offset where it was.
+ * title of a link (`](…)` or `][…]`), an image, a link definition whole, the
+ * backticks of a code span — replaced by U+0000, code unit for code unit.
+ * That text is absent from the plain text, so neither an anchor search nor a
+ * diff may match a word inside it (`[render](https://sync/…) sync` against
+ * `render sync`), and no line is left of it alone: the closing backtick of
+ * `` `[render]()` `` after an anchor that ended before it is no text line
+ * (`isTextLine`), where left in it read as one and put the plain text's
+ * next line one markdown line beyond its own. The mask keeps every other
+ * offset where it was.
  *
  * What is hidden is read off the tokens of the renderer's own marked
  * instance, not off the syntax: link-shaped text the lexer reads as a code
@@ -793,8 +802,9 @@ let lastMask: { markdown: string; mask: Mask } | undefined;
  * back to the source by the count of `\r\n` pairs shortened before it
  * (`sourceShifts`); a hidden run never holds a line break, so one count
  * places both of its ends. The lexer runs up to `MAX_LEXED_LENGTH`; a longer
- * source is not lexed, and nothing in it is masked but its comments and
- * link definitions, which a scan places (`maskHiddenBlocks`; a note the
+ * source is not lexed, and nothing in it is masked but its comments, link
+ * definitions and code span backticks, which a scan places
+ * (`maskHiddenBlocks`; a note the
  * renderer reads as HTML is masked by a scan whatever its length), so
  * every line of it that holds link syntax is unanchorable, and so is a line
  * the renderer may read as HTML (`HTML_LINE`): each reaches the
@@ -805,7 +815,7 @@ let lastMask: { markdown: string; mask: Mask } | undefined;
  * most its hidden destination. Lexing counts against the alignment budget
  * (`anchoredHunks` starts its deadline before it) and is memoised for the
  * last markdown; a source with nothing hideable in it (`HIDEABLE`,
- * `HIDDEN_HTML`) is not lexed either.
+ * `HIDDEN_HTML`, a backtick) is not lexed either.
  */
 function maskHidden(markdown: string): Mask {
   if (lastMask?.markdown === markdown) return lastMask.mask;
@@ -827,7 +837,9 @@ function computeHiddenMask(markdown: string): string | undefined {
   if (isHtmlNote(markdown)) return maskHtmlTags(markdown);
   if (markdown.length > MAX_LEXED_LENGTH) return undefined;
   HIDDEN_HTML.lastIndex = 0;
-  if (!HIDEABLE.test(markdown) && !HIDDEN_HTML.test(markdown)) return markdown;
+  if (!HIDEABLE.test(markdown) && !HIDDEN_HTML.test(markdown) && !markdown.includes('`')) {
+    return markdown;
+  }
   let source = markdown;
   if (markdown.includes(COMMENT_ANCHOR)) {
     const normalized = normalizeAnchorPositions(markdown);
@@ -1016,9 +1028,10 @@ const NOT_BREAK = /[^\n\r]/g;
  * a comment (`<!--` … `-->`, or to the end of the note when none closes it;
  * a comment anchor excepted, as in `HIDDEN_HTML`), an image (`![alt](…)` or
  * `![alt][ref]` on one line, whole, as `collectHiddenInLink` hides it: the
- * editor shows no text of it) and the destination and title of a link
- * reference definition (`definitionHidden`) — replaced by U+0000 code unit
- * for code unit, its line breaks kept, as the lexer's mask is laid (`hide`).
+ * editor shows no text of it), a link reference definition whole
+ * (`definitionHidden`) and the backticks of a code span — replaced by U+0000
+ * code unit for code unit, its line breaks kept, as the lexer's mask is laid
+ * (`hide`).
  * A comment's body and a definition's title are the hidden text that spans
  * lines: left as written, each of their lines reads as a text line
  * (`isTextLine`) with no plain-text line of its own, and the pairing of a
@@ -1037,9 +1050,10 @@ const NOT_BREAK = /[^\n\r]/g;
  * that holds it (`containerEnd`) or of the note), an
  * indented code block (lines of four columns of blanks or more, from the
  * line after a blank one or the note's first to the next line of fewer that
- * is not blank; `indentedCodeEnd`), a code span (a run of backticks closed
- * by the next run of the same length before a blank line; a run none closes
- * is literal) and an escaped character (`\<`, `\[`; `\\` escapes the
+ * is not blank; `indentedCodeEnd`), the text of a code span (a run of
+ * backticks closed by the next run of the same length before a blank line,
+ * both runs masked; a run none closes is literal) and an escaped character
+ * (`\<`, `\[`; `\\` escapes the
  * backslash). Whichever opens first wins: a comment that opens before a
  * fence hides the fence, a fence that opens before a comment shows it. A
  * definition is one only where a block may open (`startsBlock`): a `[` on
@@ -1159,7 +1173,11 @@ function maskHiddenBlocks(markdown: string): string {
       } else if (fenceChar === 96) {
         const close = nextSpanClose(found)(end);
         const blank = nextBlankLine(end);
-        if (close !== -1 && (blank === -1 || close < blank)) end = close + length;
+        if (close !== -1 && (blank === -1 || close < blank)) {
+          mask(at, end);
+          mask(close, close + length);
+          end = close + length;
+        }
       }
     }
     HIDDEN_BLOCK_OPENER.lastIndex = end;
@@ -1600,6 +1618,13 @@ function collectHidden(
     } else if (token.type === 'def') {
       const colon = raw.indexOf(']:');
       if (colon !== -1) hide(map, at + raw.indexOf('['), at + raw.trimEnd().length, source, ranges);
+    } else if (token.type === 'codespan') {
+      let run = 0;
+      while (raw.charCodeAt(run) === 96) run += 1;
+      if (run > 0 && raw.length > 2 * run && raw.endsWith(raw.slice(0, run))) {
+        hide(map, at, at + run, source, ranges);
+        hide(map, at + raw.length - run, at + raw.length, source, ranges);
+      }
     } else if (token.type === 'table') {
       collectHiddenInTable(token, map, at, source, ranges);
     } else if (token.type === 'html') {

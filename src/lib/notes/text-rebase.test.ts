@@ -852,6 +852,9 @@ describe('plain-text ↔ markdown alignment of repeated paragraphs', () => {
 });
 
 describe('alignment of link-shaped text the editor shows', () => {
+  /** A paragraph that puts the note past the cap the mask lexes up to. */
+  const PAST_THE_CAP = `\n\n${'q'.repeat(129 * 1024)}`;
+
   it.each<[string, string, string]>([
     [
       'a code span',
@@ -935,35 +938,80 @@ describe('alignment of link-shaped text the editor shows', () => {
   });
 
   it.each([
+    ['a code span holding a link', '`[render tk87z]()`', 'below the cap', ''],
+    ['a code span holding a link', '`[render tk87z]()`', 'past the cap', PAST_THE_CAP],
+    ['a code span in a note without link syntax', '`render tk87z`', 'below the cap', ''],
+    ['a code span in a note without link syntax', '`render tk87z`', 'past the cap', PAST_THE_CAP],
+    ['a code span of two backticks', '``render tk87z``', 'below the cap', ''],
+    ['a code span of two backticks', '``render tk87z``', 'past the cap', PAST_THE_CAP],
+  ])(
+    'anchors the lines after %s (%s) onto their own text, %s',
+    async (_name, body, _where, filler) => {
+      // The backticks are masked: the closing one left on the markdown line
+      // after the anchor of "render tk87z" is no text line. Read as one, it put
+      // the next line's hit one text line beyond the plain text's run, and
+      // "edit" of the third line was anchored onto the second's.
+      const markdown =
+        `${body}\n\nedit selection offset tk88z  \nedit caret remote tk89z\n\n` +
+        `ordinary ending tk90z${filler}`;
+      const plain = await projectWithEditor(markdown, true);
+      expect(plain).toContain('render');
+      expect(plain).not.toContain('`');
+      const { aToB, bToA } = withoutDeadline(() =>
+        createBidirectionalOffsetMapper(plain, markdown),
+      );
+      for (const word of ['tk87z', 'tk88z', 'edit caret', 'tk89z', 'ending', 'tk90z']) {
+        const p = plain.indexOf(word);
+        const m = markdown.indexOf(word);
+        for (let into = 1; into < word.length; into += 1) {
+          expect(aToB(p + into), `${word}[${into}] →`).toBe(m + into);
+          expect(bToA(m + into), `${word}[${into}] ←`).toBe(p + into);
+        }
+      }
+    },
+  );
+
+  it.each<[string, string, string, string?]>([
     ['bold', '**]()**', ']()'],
     ['spaced', '] [] ()', '] []'],
     ['a code span', '`]()`', ']()'],
     ['an escape', '\\]()', ']()'],
     ['a quote', '> **]()**', ']()'],
     ['a list item', '- **]()**', ']()'],
-  ])('shows a %s of link punctuation as a text line of its own', async (_name, body, shown) => {
-    // The line holds the glyphs of a link's tail and no masked destination:
-    // the editor shows it, so it counts as a text line on both sides — not
-    // counted, the plain side's run is one line short of the markdown's and
-    // the caret of every line after it lands on the line before its own.
-    const markdown =
-      body + '\n\nedit selection offset tk88z  \nedit caret remote tk89z\n\n**offset** sync tk90z';
-    const plain = await projectWithEditor(markdown);
-    expect(plain).toContain(shown);
-    const { aToB, bToA } = withoutDeadline(() => createBidirectionalOffsetMapper(plain, markdown));
-    for (const word of [shown, 'tk88z', 'edit caret', 'tk89z', 'offset', 'tk90z']) {
-      const p = plain.indexOf(word);
-      const m = markdown.indexOf(word);
-      for (let into = 1; into < word.length; into += 1) {
-        expect(aToB(p + into), `${word}[${into}] →`).toBe(m + into);
-        expect(bToA(m + into), `${word}[${into}] ←`).toBe(p + into);
+    ['an escaped label', '\\[render tk87z\\]()', 'render tk87z', '\\[render tk87z\\]()'],
+    ['an escaped tail', '\\[render tk87z]\\(\\)', 'render tk87z', '\\[render tk87z]\\(\\)'],
+    ['an escaped close', '[render tk87z\\]()', 'render tk87z', '[render tk87z]()'],
+  ])(
+    'shows a %s of link punctuation as a text line of its own',
+    async (_name, body, shown, line) => {
+      // The line holds the glyphs of a link's tail and no masked destination:
+      // the editor shows it, so it counts as a text line on both sides — not
+      // counted, the plain side's run is one line short of the markdown's and
+      // the caret of every line after it lands on the line before its own. A
+      // plain line that reads `[label]()` because the markdown escaped it
+      // closes a `[` on the plain side alone, and is a text line on both.
+      const markdown =
+        body +
+        '\n\nedit selection offset tk88z  \nedit caret remote tk89z\n\n**offset** sync tk90z';
+      const plain = await projectWithEditor(markdown);
+      expect(plain).toContain(line ?? shown);
+      const { aToB, bToA } = withoutDeadline(() =>
+        createBidirectionalOffsetMapper(plain, markdown),
+      );
+      for (const word of [shown, 'tk88z', 'edit caret', 'tk89z', 'offset', 'tk90z']) {
+        const p = plain.indexOf(word);
+        const m = markdown.indexOf(word);
+        for (let into = 1; into < word.length; into += 1) {
+          expect(aToB(p + into), `${word}[${into}] →`).toBe(m + into);
+          expect(bToA(m + into), `${word}[${into}] ←`).toBe(p + into);
+        }
       }
-    }
-  });
+    },
+  );
 
   it.each([
     ['below the cap', ''],
-    ['past the cap', `\n\n${'q'.repeat(129 * 1024)}`],
+    ['past the cap', PAST_THE_CAP],
   ])('hides the label of a link reference definition, %s', async (_where, filler) => {
     // The letters of the label are the plain text of no line: left in the
     // markdown, the `r` of `[r196]` was the first `r` for the `ren` of
