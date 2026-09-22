@@ -883,6 +883,7 @@
   "ui_imageActionsMenu_pathCopied_label": "パスをクリップボードにコピーしました",
   "ui_imageActionsMenu_imageCopied_label": "画像をクリップボードにコピーしました",
   "ui_imageActionsMenu_linkCopied_label": "リンクをクリップボードにコピーしました",
+  "ui_mediaLoadingPlaceholder_title_label": "画像を読み込んでいます…",
   "ui_mediaUnavailable_title_label": "メディアを利用できません",
   "ui_mediaUnavailable_missing_description": "ファイルが見つかりません。",
   "ui_mediaUnavailable_unsupported_description": "このファイル形式はサポートされていません。",
