@@ -138,6 +138,7 @@
       {:else}
         <Tooltip content={presencePersonLabel(person)} {side}>
           {@render avatar(person)}
+          <span class="sr-only">{presencePersonLabel(person)}</span>
         </Tooltip>
       {/if}
     {/each}
