@@ -8,6 +8,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import {
   assertBaselineOnlyShrinks,
   findBaselineGrowth,
+  lintPatterns,
   lintRuleFromRepoConfig,
   parseRegisteredRules,
   readComparisonBaseline,
@@ -393,10 +394,43 @@ describe('lintRuleFromRepoConfig', () => {
     expect(seen.options.overrideConfig).toEqual(ruleScopeOverrides(repoConfig, ruleIds));
     expect(seen.options.ruleFilter({ ruleId: 'intent/no-raw-controls' })).toBe(true);
     expect(seen.options.ruleFilter({ ruleId: 'intent/no-raw-typography' })).toBe(false);
-    expect(seen.patterns).toEqual(['.']);
+    expect(seen.patterns).toEqual(lintPatterns(ruleScopeOverrides(repoConfig, ruleIds)));
+    expect(seen.patterns).not.toEqual(['.']);
     expect(counts).toEqual({
       'intent/no-raw-controls': { 'src/a.svelte': 2 },
       'intent/no-native-dialogs': {},
     });
+  });
+});
+
+describe('lintPatterns', () => {
+  it('narrows the source-literal ratchet to the test-file glob of its config entry', () => {
+    expect(
+      lintPatterns(ruleScopeOverrides(repoConfig, 'intent/no-source-literal-assertions-in-tests')),
+    ).toEqual(['**/*.{test,spec}.{js,ts}']);
+  });
+
+  it('unions the globs of every entry enabling the design-system rules, without duplicates', () => {
+    const ruleIds = Object.keys(designSystemRules).map((id) => `intent/${id}`);
+    const overrides = ruleScopeOverrides(repoConfig, ruleIds);
+    const expected = [...new Set(overrides.flatMap((entry) => entry.files))];
+    expect(overrides.length).toBeGreaterThan(1);
+    expect(lintPatterns(overrides)).toEqual(expected);
+    expect(lintPatterns(overrides)).toEqual(
+      expect.arrayContaining(['src/**/*.{js,mjs,ts,tsx,svelte}', 'src/**/*.css']),
+    );
+    expect(lintPatterns(overrides)).not.toContain('.');
+  });
+
+  it('falls back to the whole tree for an unscoped entry or a nested AND-glob', () => {
+    const rules = { 'intent/x': 'error' };
+    expect(lintPatterns([{ files: ['src/**/*.ts'], rules }, { rules }])).toEqual(['.']);
+    expect(
+      lintPatterns([
+        { files: ['src/**/*.ts'], rules },
+        { files: [['src/**', '*.ts']], rules },
+      ]),
+    ).toEqual(['.']);
+    expect(lintPatterns([])).toEqual(['.']);
   });
 });

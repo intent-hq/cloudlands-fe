@@ -184,6 +184,24 @@ export function ruleScopeOverrides(config, ruleIds) {
 }
 
 /**
+ * The `lintFiles` patterns for a set of scope overrides: the union of their `files`
+ * globs, so ESLint walks only the files the rule(s) can apply to (the config's global
+ * ignores still apply to glob matches). Falls back to the whole tree when an entry is
+ * unscoped or uses a nested AND-glob array, which has no single-pattern equivalent.
+ */
+export function lintPatterns(overrides) {
+  const patterns = new Set();
+  for (const { files } of overrides) {
+    if (files === undefined) return ['.'];
+    for (const pattern of files) {
+      if (typeof pattern !== 'string') return ['.'];
+      patterns.add(pattern);
+    }
+  }
+  return patterns.size ? [...patterns] : ['.'];
+}
+
+/**
  * Lint `ruleIds` over the repo's real flat config: file resolution and global ignores
  * (incl. `.gitignore`) come from `eslint.config.js`, only the rule(s) under ratchet run,
  * and the result maps each rule id to `{ [packageRelativeFile]: violationCount }`.
@@ -192,13 +210,14 @@ export function ruleScopeOverrides(config, ruleIds) {
 export async function lintRuleFromRepoConfig({ cwd, ruleIds, eslintClass = ESLint }) {
   const ids = [ruleIds].flat();
   const { default: config } = await import(pathToFileURL(path.join(cwd, configPath)).href);
+  const overrides = ruleScopeOverrides(config, ids);
   const eslint = new eslintClass({
     cwd,
-    overrideConfig: ruleScopeOverrides(config, ids),
+    overrideConfig: overrides,
     ruleFilter: ({ ruleId }) => ids.includes(ruleId),
     cache: false,
   });
-  const results = await eslint.lintFiles(['.']);
+  const results = await eslint.lintFiles(lintPatterns(overrides));
   const counts = Object.fromEntries(ids.map((ruleId) => [ruleId, {}]));
   for (const result of results) {
     const file = path.relative(cwd, result.filePath).split(path.sep).join('/');
