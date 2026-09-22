@@ -4,10 +4,13 @@ import { cleanup, render } from '@testing-library/svelte';
 import { afterEach, describe, expect, it } from 'vitest';
 import { cardMetadata } from '$lib/components/ui/card';
 import { cardFixtures } from '$lib/components/ui/card/card.fixtures';
+import { copyInputFixtures } from '$lib/components/ui/copy-input/copy-input.fixtures';
 import { spinnerMetadata } from '$lib/components/ui/indicators';
 import { spinnerFixtures } from '$lib/components/ui/indicators/spinner.fixtures';
 import { inputMetadata } from '$lib/components/ui/input';
 import { inputFixtures } from '$lib/components/ui/input/input.fixtures';
+import { inputGroupFixtures } from '$lib/components/ui/input-group/input-group.fixtures';
+import { inputMessageFixtures } from '$lib/components/ui/input-message/input-message.fixtures';
 import { labelMetadata } from '$lib/components/ui/label';
 import { labelFixtures } from '$lib/components/ui/label/label.fixtures';
 import { listMetadata } from '$lib/components/ui/list';
@@ -16,6 +19,7 @@ import { separatorMetadata } from '$lib/components/ui/separator';
 import { separatorFixtures } from '$lib/components/ui/separator/separator.fixtures';
 import { skeletonMetadata } from '$lib/components/ui/skeleton';
 import { skeletonFixtures } from '$lib/components/ui/skeleton/skeleton.fixtures';
+import { tableFixtures } from '$lib/components/ui/table/table.fixtures';
 import { textareaMetadata } from '$lib/components/ui/textarea';
 import { textareaFixtures } from '$lib/components/ui/textarea/textarea.fixtures';
 import { buildUiComponentInventory } from '../../../../scripts/ui-component-inventory';
@@ -30,6 +34,15 @@ const cases = [
   ['separator', separatorFixtures[0]],
   ['skeleton', skeletonFixtures[0]],
   ['loading-indicator', spinnerFixtures[0]],
+] as const;
+// Every renderer branch, so a raw control or physical palette class added to
+// any of them is caught by the DOM invariant matrix.
+const controlCases = [
+  ...cases,
+  ['copy-input', copyInputFixtures[0]],
+  ['input-group', inputGroupFixtures[0]],
+  ['input-message', inputMessageFixtures[0]],
+  ['table', tableFixtures[0]],
 ] as const;
 const metadata = [
   cardMetadata,
@@ -123,7 +136,7 @@ describe('ContentFieldCatalogPreview', () => {
     ).toBe('14');
   });
 
-  it.each(cases)(
+  it.each(controlCases)(
     'renders %s controls only through canonical components and semantic colors',
     (componentId, fixture) => {
       const { container } = render(ContentFieldCatalogPreview, { props: { componentId, fixture } });

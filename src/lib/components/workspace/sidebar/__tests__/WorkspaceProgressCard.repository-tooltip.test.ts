@@ -18,6 +18,7 @@ import { warmImport } from '../../../../../test/warm-import';
 const mocks = vi.hoisted(() => {
   const dispatch = vi.fn();
   const update = vi.fn();
+  const pollDiskUsage = vi.fn();
   const notes = [] as Note[];
   let progressActions: WorkspaceProgressAction[] = [];
   const workspaceEntity = {
@@ -44,6 +45,7 @@ const mocks = vi.hoisted(() => {
   return {
     dispatch,
     update,
+    pollDiskUsage,
     notes,
     workspaceEntity,
     readable,
@@ -223,6 +225,10 @@ vi.mock('$lib/components/workspace/initializer/isolation-mode', () => ({
   resolveEffectiveIsolationMode: vi.fn().mockResolvedValue('cow'),
 }));
 
+vi.mock('$lib/components/workspace/disk-usage-poll', () => ({
+  pollWorkspaceDiskUsage: mocks.pollDiskUsage,
+}));
+
 async function renderProgressCard(overrides: Partial<Workspace> = {}) {
   mocks.workspaceEntity = {
     ...mocks.workspaceEntity,
@@ -253,6 +259,12 @@ function hoverCard(container: HTMLElement, selector: string): HTMLElement {
   return card!;
 }
 
+function hoverSurface(card: HTMLElement): HTMLElement {
+  const surface = card.closest<HTMLElement>('[data-testid="mock-tooltip-content"]');
+  expect(surface).not.toBeNull();
+  return surface!;
+}
+
 // Pre-warm the component module graph so the cold dynamic import is not
 // billed to the first test's timeout (intent-hq/monorepo#1464).
 warmImport(() => import('../../../terminal/__tests__/mocks/MockButton.svelte'));
@@ -271,6 +283,11 @@ describe('WorkspaceProgressCard repository tooltip', () => {
     mocks.notes.length = 0;
     mocks.progressActions = [];
     mocks.update.mockImplementation(async () => ({ ok: true, data: mocks.workspaceEntity }));
+    mocks.pollDiskUsage.mockReset();
+    mocks.pollDiskUsage.mockResolvedValue({
+      diskUsage: { bytes: 4096, breakdown: [] },
+      refreshing: false,
+    });
     writeText.mockReset();
     writeText.mockResolvedValue(undefined);
     Object.defineProperty(navigator, 'clipboard', {
@@ -315,6 +332,12 @@ describe('WorkspaceProgressCard repository tooltip', () => {
 
   it('copies the workspace path and branch name from their hover triggers', async () => {
     const { container } = await renderProgressCard();
+    const repositorySurface = hoverSurface(
+      hoverCard(container, '[data-sidebar-repository-hover-card]'),
+    );
+    const branchSurface = hoverSurface(hoverCard(container, '[data-sidebar-branch-hover-card]'));
+    expect(repositorySurface.getAttribute('data-open')).toBe('false');
+    expect(branchSurface.getAttribute('data-open')).toBe('false');
 
     await fireEvent.click(hoverTrigger(container, 'augment/intent'));
     await waitFor(() => expect(writeText).toHaveBeenCalledWith('/home/dev/worktrees/feature-pill'));
@@ -323,6 +346,8 @@ describe('WorkspaceProgressCard repository tooltip', () => {
         within(hoverCard(container, '[data-sidebar-repository-hover-card]')).getByText('Copied'),
       ).toBeTruthy(),
     );
+    // The copy handler holds the hover card open (bound `open`) to show the check.
+    expect(repositorySurface.getAttribute('data-open')).toBe('true');
 
     await fireEvent.click(hoverTrigger(container, 'feature/pill'));
     await waitFor(() => expect(writeText).toHaveBeenCalledWith('feature/pill'));
@@ -331,6 +356,21 @@ describe('WorkspaceProgressCard repository tooltip', () => {
         within(hoverCard(container, '[data-sidebar-branch-hover-card]')).getByText('Copied'),
       ).toBeTruthy(),
     );
+    expect(branchSurface.getAttribute('data-open')).toBe('true');
+  });
+
+  it('starts checkout disk-usage polling when the repository hover card opens', async () => {
+    const { container } = await renderProgressCard({ checkoutMode: 'cow' });
+    const repositoryCard = hoverCard(container, '[data-sidebar-repository-hover-card]');
+    const repositorySurface = hoverSurface(repositoryCard);
+    expect(repositoryCard.querySelector('[data-checkout-mode-details]')).not.toBeNull();
+    expect(repositorySurface.getAttribute('data-open')).toBe('false');
+    expect(mocks.pollDiskUsage).not.toHaveBeenCalled();
+
+    await fireEvent.click(within(repositorySurface).getByTestId('mock-tooltip-hover-open'));
+
+    expect(repositorySurface.getAttribute('data-open')).toBe('true');
+    await waitFor(() => expect(mocks.pollDiskUsage).toHaveBeenCalledWith('ws-1'));
   });
 
   it('delays workflow-action tooltips so a mouse pass-over never opens them', async () => {
@@ -364,6 +404,7 @@ describe('WorkspaceProgressCard repository tooltip', () => {
       name: 'Copy workspace path',
     });
     expect(pathButton.hasAttribute('data-sidebar-repository-path-copy')).toBe(true);
+    expect(pathButton.getAttribute('variant')).toBe('plain');
     expect(pathButton.getAttribute('title')).toBe('/home/dev/worktrees/feature-pill');
     for (const className of ['underline', 'decoration-dotted', 'underline-offset-2']) {
       expect(pathButton.classList.contains(className), className).toBe(true);

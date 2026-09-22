@@ -1,9 +1,8 @@
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
-import { createRawSnippet } from 'svelte';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { buttonVariants } from '$lib/components/ui/button/button.variants';
 import { m } from '$shared/paraglide/messages.js';
-import SetupScriptModal from '../SetupScriptModal.svelte';
+import SetupScriptModalBindingHost from './SetupScriptModalBindingHost.svelte';
 
 const primaryClasses = buttonVariants({ variant: 'primary' }).split(/\s+/).filter(Boolean);
 
@@ -13,15 +12,15 @@ function hasPrimaryVariant(button: HTMLElement): boolean {
 
 function renderModal() {
   const onClose = vi.fn();
-  let setEditorValue: ((value: string) => void) | undefined;
-  const editor = createRawSnippet<[string, (value: string) => void]>((_value, setValue) => {
-    setEditorValue = setValue();
-    return { render: () => '<div data-testid="editor-slot"></div>' };
-  });
-  render(SetupScriptModal, {
-    props: { open: true, value: 'echo one', scriptName: 'One', editor, onClose },
-  });
-  return { onClose, editValue: (next: string) => setEditorValue?.(next) };
+  render(SetupScriptModalBindingHost, { props: { onClose } });
+  const boundValue = () => screen.getByLabelText('bound script value').textContent?.trim();
+  const dialogState = () => screen.getByLabelText('dialog state').textContent?.trim();
+  return {
+    onClose,
+    boundValue,
+    dialogState,
+    editValue: () => fireEvent.click(screen.getByTestId('edit-script')),
+  };
 }
 
 const doneButton = () => screen.findByRole('button', { name: m.modals_setupScript_done_label() });
@@ -32,7 +31,7 @@ afterEach(cleanup);
 
 describe('SetupScriptModal primary actions', () => {
   it('keeps Done on the primary button variant when nothing changed', async () => {
-    const { onClose } = renderModal();
+    const { onClose, boundValue, dialogState } = renderModal();
 
     const done = await doneButton();
     expect(hasPrimaryVariant(done)).toBe(true);
@@ -45,13 +44,16 @@ describe('SetupScriptModal primary actions', () => {
 
     await fireEvent.click(done);
     await waitFor(() => expect(onClose).toHaveBeenCalledTimes(1));
+    expect(dialogState()).toBe('closed');
+    expect(boundValue()).toBe('echo one');
   });
 
-  it('switches to a primary Save and Done once the script is edited', async () => {
-    const { onClose, editValue } = renderModal();
+  it('switches to a primary Save and Done that commits the edited script', async () => {
+    const { onClose, boundValue, dialogState, editValue } = renderModal();
     await doneButton();
 
-    editValue('echo two');
+    await editValue();
+    expect(boundValue()).toBe('echo one');
 
     const saveAndDone = await saveAndDoneButton();
     expect(hasPrimaryVariant(saveAndDone)).toBe(true);
@@ -60,12 +62,14 @@ describe('SetupScriptModal primary actions', () => {
 
     await fireEvent.click(saveAndDone);
     await waitFor(() => expect(onClose).toHaveBeenCalledTimes(1));
+    expect(dialogState()).toBe('closed');
+    expect(boundValue()).toBe('echo two');
   });
 
-  it('keeps Cancel off the primary variant and closes without committing', async () => {
-    const { onClose, editValue } = renderModal();
+  it('keeps Cancel off the primary variant and discards the edited script', async () => {
+    const { onClose, boundValue, dialogState, editValue } = renderModal();
     await doneButton();
-    editValue('echo two');
+    await editValue();
     await saveAndDoneButton();
 
     const cancel = screen.getByRole('button', { name: m.modals_setupScript_cancel_label() });
@@ -73,5 +77,7 @@ describe('SetupScriptModal primary actions', () => {
 
     await fireEvent.click(cancel);
     await waitFor(() => expect(onClose).toHaveBeenCalledTimes(1));
+    expect(dialogState()).toBe('closed');
+    expect(boundValue()).toBe('echo one');
   });
 });

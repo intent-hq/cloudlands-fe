@@ -10,7 +10,17 @@
     delayDuration,
     disableCloseOnTriggerClick,
     showArrow,
+    open = $bindable(false),
+    onOpenChange,
   }: any = $props();
+
+  // Simulates the real tooltip opening from a hover: flips the bound `open`
+  // and reports it, the way TooltipRich does. Content always renders so
+  // tests can inspect the hover surface without opening it.
+  function simulateHoverOpen() {
+    open = true;
+    onOpenChange?.(true);
+  }
 </script>
 
 {#if children}
@@ -38,7 +48,10 @@
     data-testid="mock-tooltip-content"
     data-content-class={contentClass}
     data-content-container-class={contentContainerClass}
+    data-open={open}
   >
+    <button type="button" data-testid="mock-tooltip-hover-open" onclick={simulateHoverOpen}
+    ></button>
     {@render content()}
   </div>
 {/if}
