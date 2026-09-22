@@ -28,7 +28,9 @@
  *    whose `host` names the instance the proof is made on). Neither signed
  *    in puts the consent modal in its neutral `connect-forge` state first —
  *    Settings → Connections for GitLab, or "Sign in to GitHub" — before
- *    anything is asked of GitHub. That choice, or a GitHub token that
+ *    anything is asked of GitHub (a `rate-limited` probe is NOT "not signed
+ *    in": it fails the join with its own reason, since signing in again
+ *    cannot help). That choice, or a GitHub token that
  *    predates the `gist` scope the proof needs (`github-scope-missing`),
  *    leads to the `sign-in-required` state: the guest's own `github.connect`
  *    device flow (code copied to the clipboard; "Open GitHub" opens the URL)
@@ -199,9 +201,12 @@ class InviteFlowError extends Error {
 /**
  * The guest daemon's documented `error.data.code` values for
  * `github.identityProof.create` / `.delete` (intentd #1967) and their
- * per-provider `sourceControl.identityProof.*` counterparts for GitLab. Like
- * the host's invite codes, the closed set is the only daemon-authored text
- * that leaves {@link IdentityProofError}; anything else maps to `null`.
+ * per-provider `sourceControl.identityProof.*` counterparts for GitLab, plus
+ * `rate-limited` — the forge rate limiting the daemon's API calls (primary or
+ * secondary limit, REST or GraphQL), which the account probes and the proof
+ * calls of either provider report (intent-hq/intent#5627). Like the host's
+ * invite codes, the closed set is the only daemon-authored text that leaves
+ * {@link IdentityProofError}; anything else maps to `null`.
  */
 const IDENTITY_PROOF_ERROR_CODES = [
   'github-not-connected',
@@ -210,6 +215,7 @@ const IDENTITY_PROOF_ERROR_CODES = [
   'gitlab-not-connected',
   'gitlab-scope-missing',
   'gitlab-unreachable',
+  'rate-limited',
 ] as const;
 
 type IdentityProofErrorCode = (typeof IDENTITY_PROOF_ERROR_CODES)[number];
@@ -825,12 +831,19 @@ function waitForSignIn(
   return { status, stop };
 }
 
-/** The GitHub login the guest's own daemon is signed in as, or `null` when it is not. */
+/**
+ * The GitHub login the guest's own daemon is signed in as, or `null` when it
+ * is not. A `rate-limited` refusal is neither: the account may well be signed
+ * in, and a sign-in prompt would not help — it throws so the join fails with
+ * that reason instead. Any other error reads as not signed in.
+ */
 async function readLocalLogin(client: JsonRpcClient): Promise<string | null> {
   try {
     const result = await client.request<{ user?: { login?: unknown } | null }>('github.getUser');
     return nonBlank(result?.user?.login) ?? null;
-  } catch {
+  } catch (error) {
+    const refusal = IdentityProofError.from(error);
+    if (refusal.proofCode === 'rate-limited') throw refusal;
     return null;
   }
 }
@@ -857,7 +870,9 @@ const IDENTITY_SEAM_MIN_PROTOCOL = { major: 10, minor: 8 } as const;
  * targets), else `null`. The GitLab probe is only made against a local daemon
  * that serves the identity seam: an older one cannot publish a snippet proof,
  * so a GitLab-only guest on it reads as "not connected" and is sent to the
- * GitHub sign-in.
+ * GitHub sign-in. A `rate-limited` refusal from either probe is neither
+ * signed in nor not: it throws so the join fails with that reason instead of
+ * a connect prompt that cannot help.
  */
 async function readLocalIdentity(client: JsonRpcClient): Promise<LocalIdentity | null> {
   const githubLogin = await readLocalLogin(client);
@@ -876,7 +891,9 @@ async function readLocalIdentity(client: JsonRpcClient): Promise<LocalIdentity |
     const login = nonBlank(result?.user?.login);
     if (result?.isConfigured !== true || host === undefined || login === undefined) return null;
     return { provider: 'gitlab', host, login };
-  } catch {
+  } catch (error) {
+    const refusal = IdentityProofError.from(error);
+    if (refusal.proofCode === 'rate-limited') throw refusal;
     return null;
   }
 }
@@ -1327,6 +1344,8 @@ function classifyProofFailure(error: IdentityProofError): InviteFailureReason {
       return 'proof-gitlab-scope-missing';
     case 'gitlab-unreachable':
       return 'proof-gitlab-unreachable';
+    case 'rate-limited':
+      return 'github-rate-limited';
     case null:
       return 'proof-failed';
   }

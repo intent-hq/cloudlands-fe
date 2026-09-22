@@ -5849,6 +5849,7 @@
   "deeplink_inviteError_proofGitlabScopeMissing": "Der GitLab-Verbindung dieses Intent fehlt der api-Scope, den der Identitätsnachweis benötigt. Verbinde GitLab unter Einstellungen → Verbindungen neu und öffne den Link dann erneut.",
   "deeplink_inviteError_proofGitlabUnreachable": "Deine GitLab-Instanz war nicht erreichbar, um den Identitätsnachweis zu veröffentlichen. Prüfe deine Verbindung und versuche es erneut.",
   "deeplink_inviteError_proofFailed": "Der Identitätsnachweis konnte nicht erstellt werden. Öffne den Link erneut, um es noch einmal zu versuchen.",
+  "deeplink_inviteError_githubRateLimited": "GitHub begrenzt die Anfragen für dieses Konto vorübergehend, daher kann der Identitätsnachweis gerade nicht erstellt werden. Warte eine Weile und öffne den Link dann erneut.",
   "deeplink_invitePlaintext_title": "Anmeldedaten unverschlüsselt gespeichert",
   "deeplink_invitePlaintext_message": "Die Betriebssystem-Verschlüsselung ist auf diesem Computer nicht verfügbar, daher wurden die Gast-Anmeldedaten unverschlüsselt gespeichert. Vergiss die Sitzung und tritt erneut bei, sobald Verschlüsselung verfügbar ist, falls dir das wichtig ist.",
   "rules_service_listFailed_error": "Regeln konnten nicht aufgelistet werden",

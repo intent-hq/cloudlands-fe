@@ -5849,6 +5849,7 @@
   "deeplink_inviteError_proofGitlabScopeMissing": "This Intent’s GitLab connection lacks the api scope the identity proof needs. Reconnect GitLab in Settings → Connections, then open the link again.",
   "deeplink_inviteError_proofGitlabUnreachable": "Your GitLab instance could not be reached to publish the identity proof. Check your connection and try again.",
   "deeplink_inviteError_proofFailed": "The identity proof could not be made. Open the link again to retry.",
+  "deeplink_inviteError_githubRateLimited": "GitHub is temporarily rate limiting requests for this account, so the identity proof cannot be made right now. Wait a while, then open the link again.",
   "deeplink_invitePlaintext_title": "Credential stored without encryption",
   "deeplink_invitePlaintext_message": "OS encryption is unavailable on this computer, so the guest credential was saved unencrypted. Forget the session and join again once encryption is available if this matters to you.",
   "rules_service_listFailed_error": "Failed to list rules",

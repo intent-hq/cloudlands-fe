@@ -5849,6 +5849,7 @@
   "deeplink_inviteError_proofGitlabScopeMissing": "La connexion GitLab de cet Intent n’a pas la portée api nécessaire à la preuve d’identité. Reconnectez GitLab dans Réglages → Connexions, puis ouvrez de nouveau le lien.",
   "deeplink_inviteError_proofGitlabUnreachable": "Votre instance GitLab est injoignable pour publier la preuve d’identité. Vérifiez votre connexion et réessayez.",
   "deeplink_inviteError_proofFailed": "La preuve d'identité n'a pas pu être créée. Rouvrez le lien pour réessayer.",
+  "deeplink_inviteError_githubRateLimited": "GitHub limite temporairement les requêtes de ce compte : la preuve d'identité ne peut pas être créée pour le moment. Patientez un peu, puis rouvrez le lien.",
   "deeplink_invitePlaintext_title": "Identifiant enregistré sans chiffrement",
   "deeplink_invitePlaintext_message": "Le chiffrement du système est indisponible sur cet ordinateur : l’identifiant invité a donc été enregistré en clair. Si cela compte pour vous, oubliez la session et rejoignez-la à nouveau quand le chiffrement sera disponible.",
   "rules_service_listFailed_error": "Impossible de lister les règles",

@@ -1,5 +1,5 @@
 // @vitest-environment node
-// @verify-changed-triggers: eslint.config.js, src/lib/components/chat/input/agent-model-mutator.ts
+// @verify-changed-triggers: eslint.config.js, eslint-rules/internal-module-import-patterns.js, src/lib/components/chat/input/agent-model-mutator.ts
 import { describe, expect, it } from 'vitest';
 import { ESLint } from 'eslint';
 

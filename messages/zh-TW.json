@@ -5849,6 +5849,7 @@
   "deeplink_inviteError_proofGitlabScopeMissing": "此 Intent 的 GitLab 連線缺少身分證明所需的 api 範圍。請在「設定 → 連線」中重新連線 GitLab，然後重新開啟連結。",
   "deeplink_inviteError_proofGitlabUnreachable": "無法連線你的 GitLab 執行個體以發布身分證明。請檢查網路連線後再試一次。",
   "deeplink_inviteError_proofFailed": "無法建立身分證明。請重新開啟連結重試。",
+  "deeplink_inviteError_githubRateLimited": "GitHub 正在暫時限制此帳戶的請求，目前無法建立身分證明。請稍候片刻，然後重新開啟連結。",
   "deeplink_invitePlaintext_title": "憑證已以未加密方式儲存",
   "deeplink_invitePlaintext_message": "此電腦上系統加密不可用，因此訪客憑證以未加密方式儲存。若這對你很重要，請忘記此工作階段，並在加密可用後重新加入。",
   "rules_service_listFailed_error": "列出規則失敗",
