@@ -101,6 +101,7 @@
         <InlineAgentAvatar
           agentId={tab.ownerAgentId}
           agentName={ownerAgentName}
+          presentation="header"
           onclick={openOwnerAgent}
         />
       </span>

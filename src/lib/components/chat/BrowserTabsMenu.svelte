@@ -178,8 +178,10 @@
           {...props}
           variant="ghost-light"
           size="icon-sm"
+          active={menuOpen}
           aria-label={triggerLabel}
           tooltip={triggerLabel}
+          tooltipDisabled={menuOpen}
           tooltipSide="bottom"
           tooltipDelayDuration={300}
           data-testid="browser-tabs-trigger"

@@ -31,6 +31,7 @@ export const selectMetadata = parseUiComponentMetadata({
   callers: [
     'src/lib/component-catalog/renderers/FieldPreviewCell.svelte',
     'src/lib/component-catalog/renderers/PopoversCatalogPreview.svelte',
+    'src/lib/components/chat/TaskProgressControl.svelte',
     'src/lib/components/settings/LinearAuthConnection.svelte',
     'src/lib/components/workspace/initializer/BranchSelector.svelte',
     'src/lib/components/workspace/initializer/RepoSelector.svelte',
