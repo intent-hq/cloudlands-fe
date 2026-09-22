@@ -719,6 +719,27 @@ const HTML_LINE = /^[ \t]*<(?![ \t\r\n]|!--anchor:)|<!--(?!anchor:)/gm;
  * by a linear scan (`maskHiddenBlocks`), as are the tags of a note the
  * renderer reads as HTML (`maskHtmlTags`); see `maskHidden` for what holds
  * then.
+ *
+ * Measured (marked 18, the renderer's lexer, medians of warm runs): the
+ * quadratic term is two `start` hooks, each a search over the rest of the
+ * source — `mathDisplay.start` at every paragraph attempt of the block
+ * pass, `mathInline.start` at every inline text token — so the block pass
+ * alone costs the order of the full lex (200–315 ms at 512 KiB, 0.9–1.7 s
+ * at 1 MiB and on 550 KB notes of 20k blocks, 11 s on 131k one-link
+ * paragraphs). The block pass without `mathDisplay.start` is linear: 3–19 ms
+ * on 150 KB–1 MiB notes, 36–39 ms on the 550 KB notes, 57–134 ms on the
+ * adversarial 1 MiB of 131k paragraphs — against ≤ 8 ms for the scan. A
+ * follow-up could replace the scan past the cap with those block tokens
+ * (`html`, `def`, `code`, and the containers that bound them) plus a scan
+ * bounded to each paragraph's raw for what is inline (code span backticks,
+ * a comment in a paragraph, link tails). Not a drop-in: without the hook a
+ * display-math block that follows a paragraph line joins the paragraph, and
+ * a comment inside a display-math block lexes as an `html` token the
+ * collector would hide where the math token keeps it visible; and the raws
+ * of the block tokens do not join back to the source on every note
+ * (seed 604 differs under either configuration), so the token offsets need
+ * validating against the source, with the scan as the fall-back when they
+ * do not hold.
  */
 const MAX_LEXED_LENGTH = 128 * 1024;
 /** A comment anchor; the editor renders it where `normalizeAnchorPositions` moves it. */
