@@ -84,10 +84,14 @@
       data-image-sized={sized || undefined}
       data-loaded={sized ? String(hasLoaded) : undefined}
     >
+      <!-- The sized frame opts out of Button's inline-flex content wrapper:
+           it shrink-wraps to the thumbnail's intrinsic size, so the img's
+           `size-full` would resolve against 256×144 instead of the frame. -->
       <Button
         variant="plain"
         bind:ref={openerElement}
         type="button"
+        wrapContent={!sized}
         class="block {sized
           ? 'absolute inset-0 size-full'
           : 'size-40'} cursor-zoom-in overflow-hidden rounded-lg border border-border bg-muted/30 p-0 shadow-(--elevation-raised) transition-opacity hover:opacity-90 focus-visible:border-ring focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 {showPlaceholder
