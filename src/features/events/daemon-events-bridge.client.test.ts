@@ -8627,6 +8627,19 @@ describe('daemonEventsBridge (workspace:updated → workspace slice)', () => {
     expect((ws as Record<string, unknown>).members).toBeUndefined();
   });
 
+  it('merges an openInviteCount when an invite delta carries one', async () => {
+    await seedWorkspace();
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    handler(updatedNotification({ invites: true, openInviteCount: 3 }));
+
+    const ws = await readWorkspace();
+    expect(ws.openInviteCount).toBe(3);
+    expect(ws.branch).toBe('main');
+    expect((ws as Record<string, unknown>).invites).toBeUndefined();
+  });
+
   // Regression (cloudlands-fe#2776 verifier): `workspace.invite.create` /
   // `.revoke` publish only `{ invites: true }` (PROTOCOL multiplayer
   // "Events"), so the stored row's `openInviteCount` cannot be kept current

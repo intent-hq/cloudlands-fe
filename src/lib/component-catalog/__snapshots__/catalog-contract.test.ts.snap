@@ -15782,7 +15782,8 @@ exports[`catalog DOM, token, and accessibility contracts > 'product:modals:produ
                                     <span class="min-w-0 truncate">
                                       "Watch release build"
                               <p class="leading-5 text-sm text-subtle">
-                                "You can unarchive this workspace later, but stopped agents and cancelled hooks will not resume automatically."
+                                <span>
+                                  "You can unarchive this workspace later, but stopped agents and cancelled hooks will not resume automatically."
                             <div class="flex gap-2 items-center justify-end mt-6" data-slot="dialog-footer">
                               <div class="flex gap-3 items-center justify-between" data-size="default" data-slot="form-actions">
                                 <div class="flex items-center" data-slot="form-actions-destructive">
@@ -16497,8 +16498,28 @@ exports[`catalog DOM, token, and accessibility contracts > 'product:modals:produ
                                     <span class="[&_svg]:pointer-events-none [&_svg]:size-3 duration-spring-fast ease-spring-fast font-medium gap-1.5 h-6 inline-flex items-center justify-center motion-reduce:transition-none overflow-hidden px-2.5 rounded-(--radius-medium) shrink-0 text-[12px] text-foreground transition-[background-color,color,box-shadow] w-fit whitespace-nowrap" data-color="gray" data-size="default" data-slot="badge" data-variant="solid" tokens=["--accent"]>
                                       <span class="[text-box:trim-both_cap_alphabetic]">
                                         "Uncommitted changes"
+                                <p class="font-normal mt-4 text-muted-foreground type-body">
+                                  "Guests will be removed from this workspace"
+                                <ul class="mt-2 space-y-1">
+                                  <li class="gap-x-2.5 grid grid-cols-[2rem_minmax(0,1fr)] items-center min-w-0 text-muted-foreground type-body">
+                                    <span aria-hidden="true" class="grid h-8 place-items-center w-8">
+                                      <svg role="img">
+                                        <rect>
+                                        <path>
+                                    <span class="min-w-0 truncate">
+                                      "2 collaborators"
+                                  <li class="gap-x-2.5 grid grid-cols-[2rem_minmax(0,1fr)] items-center min-w-0 text-muted-foreground type-body">
+                                    <span aria-hidden="true" class="grid h-8 place-items-center w-8">
+                                      <svg role="img">
+                                        <rect>
+                                        <path>
+                                    <span class="min-w-0 truncate">
+                                      "1 open invite"
                               <p class="leading-5 text-sm text-subtle">
-                                "Intent will permanently remove this workspace from disk after stopping the running work. This cannot be undone."
+                                <span>
+                                  "Intent will permanently remove this workspace from disk after stopping the running work. This cannot be undone."
+                                <span>
+                                  "Guests lose access permanently."
                             <div class="flex gap-2 items-center justify-end mt-6" data-slot="dialog-footer">
                               <div class="flex gap-3 items-center justify-between" data-size="default" data-slot="form-actions">
                                 <div class="flex items-center" data-slot="form-actions-destructive">
@@ -16598,8 +16619,28 @@ exports[`catalog DOM, token, and accessibility contracts > 'product:modals:produ
                                     <span class="[&_svg]:pointer-events-none [&_svg]:size-3 duration-spring-fast ease-spring-fast font-medium gap-1.5 h-6 inline-flex items-center justify-center motion-reduce:transition-none overflow-hidden px-2.5 rounded-(--radius-medium) shrink-0 text-[12px] text-foreground transition-[background-color,color,box-shadow] w-fit whitespace-nowrap" data-color="gray" data-size="default" data-slot="badge" data-variant="solid" tokens=["--accent"]>
                                       <span class="[text-box:trim-both_cap_alphabetic]">
                                         "Uncommitted changes"
+                                <p class="font-normal mt-4 text-muted-foreground type-body">
+                                  "Guests will be removed from this workspace"
+                                <ul class="mt-2 space-y-1">
+                                  <li class="gap-x-2.5 grid grid-cols-[2rem_minmax(0,1fr)] items-center min-w-0 text-muted-foreground type-body">
+                                    <span aria-hidden="true" class="grid h-8 place-items-center w-8">
+                                      <svg role="img">
+                                        <rect>
+                                        <path>
+                                    <span class="min-w-0 truncate">
+                                      "2 collaborators"
+                                  <li class="gap-x-2.5 grid grid-cols-[2rem_minmax(0,1fr)] items-center min-w-0 text-muted-foreground type-body">
+                                    <span aria-hidden="true" class="grid h-8 place-items-center w-8">
+                                      <svg role="img">
+                                        <rect>
+                                        <path>
+                                    <span class="min-w-0 truncate">
+                                      "1 open invite"
                               <p class="leading-5 text-sm text-subtle">
-                                "You can unarchive this workspace later, but stopped agents and cancelled hooks will not resume automatically."
+                                <span>
+                                  "You can unarchive this workspace later, but stopped agents and cancelled hooks will not resume automatically."
+                                <span>
+                                  "Collaborators are removed when a workspace is archived; after unarchiving you will need to invite them again."
                             <div class="flex gap-2 items-center justify-end mt-6" data-slot="dialog-footer">
                               <div class="flex gap-3 items-center justify-between" data-size="default" data-slot="form-actions">
                                 <div class="flex items-center" data-slot="form-actions-destructive">
