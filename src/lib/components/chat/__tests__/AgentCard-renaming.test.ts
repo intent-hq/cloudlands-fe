@@ -70,6 +70,25 @@ describe('AgentCard rename editing', () => {
     expect(onActivate).not.toHaveBeenCalled();
   });
 
+  it.each(['ContextMenu', 'F10'])(
+    'opens context actions with %s without activating the card',
+    async (key) => {
+      const onActivate = vi.fn();
+      const view = render(AgentCard, {
+        props: { agentId, agentName: 'Original Agent', onclick: onActivate, panelRow: true },
+      });
+      const row = view.container.querySelector<HTMLElement>('[data-agent-panel-row]')!;
+      row.focus();
+      await fireEvent.keyDown(row, { key, shiftKey: key === 'F10' });
+      const rename = await screen.findByRole('menuitem', { name: 'Rename' });
+      expect(onActivate).not.toHaveBeenCalled();
+      await fireEvent.click(rename);
+      const input = await screen.findByRole('textbox', { name: 'Rename' });
+      await waitFor(() => expect(document.activeElement).toBe(input));
+      expect(onActivate).not.toHaveBeenCalled();
+    },
+  );
+
   it('isolates normal editing keys and pointer events without cancelling browser defaults', async () => {
     const { container, input, onActivate } = await beginRename({ panelRow: true });
     const escaped = vi.fn();

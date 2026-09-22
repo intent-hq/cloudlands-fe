@@ -1,10 +1,6 @@
 <script lang="ts">
-  import { onMount, tick } from 'svelte';
-  import type {
-    MentionCandidate,
-    MentionGroup,
-    BreadcrumbItem,
-  } from '$lib/services/mentions/types';
+  import { onDestroy, tick } from 'svelte';
+  import type { MentionCandidate, MentionGroup } from '$lib/services/mentions/types';
   import { isMentionGroup } from '$lib/services/mentions/types';
   import { BreadcrumbController } from '$lib/services/mentions/breadcrumb-controller.svelte';
   import { getIconForType } from '$lib/services/mentions/icon-map';
@@ -59,21 +55,33 @@
   } from '@fortawesome/free-solid-svg-icons';
   import type { IconDefinition } from '@fortawesome/free-solid-svg-icons';
   import { Button } from '$lib/components/ui/button';
+  import { menuItem } from '$lib/components/ui/menu';
 
   interface Props {
     items: (MentionCandidate | MentionGroup)[];
     command: (props: any) => void;
     onClose?: () => void;
     loading?: boolean;
+    listboxId?: string;
+    onActiveOptionChange?: (id: string | undefined) => void;
   }
 
-  let { items = [], command, onClose, loading = false }: Props = $props();
+  const componentId = $props.id();
+  let {
+    items = [],
+    command,
+    onClose,
+    loading = false,
+    listboxId = `${componentId}-listbox`,
+    onActiveOptionChange,
+  }: Props = $props();
 
   let selectedIndex = $state(0);
-  let breadcrumbs: BreadcrumbItem[] = $state([]);
-  // svelte-ignore state_referenced_locally -- initial seed only; the items-change effect below keeps it in sync.
-  let currentItems: (MentionCandidate | MentionGroup)[] = $state(items);
-  let breadcrumbController: BreadcrumbController;
+  const breadcrumbController = new BreadcrumbController();
+  const breadcrumbs = $derived(breadcrumbController.breadcrumbs);
+  const currentItems = $derived(
+    breadcrumbController.isInGroup() ? breadcrumbController.currentItems : items,
+  );
   let listElement: HTMLDivElement;
 
   // Prevent mouseenter from changing selectedIndex when the popup first appears
@@ -83,7 +91,6 @@
   // Get the currently selected item for preview
   // Note: selectedIndex is a visual-order index (matching grouped display order),
   // so we look up via visualOrderItems which is derived from groupedItems.
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const selectedItem = $derived.by(() => {
     // visualOrderItems may not be initialized yet during first render pass,
     // fall back to currentItems for safety
@@ -157,32 +164,7 @@
     return iconMap[iconName] || faFile;
   }
 
-  onMount(() => {
-    breadcrumbController = new BreadcrumbController();
-
-    // Subscribe to breadcrumb changes
-    const unsubscribeBreadcrumbs = breadcrumbController.subscribeToBreadcrumbs((b) => {
-      breadcrumbs = b;
-    });
-
-    const unsubscribeItems = breadcrumbController.subscribeToCurrentItems((items) => {
-      if (items.length > 0) {
-        currentItems = items;
-      } else {
-        currentItems = $state.snapshot(items);
-      }
-    });
-
-    // Don't add keyboard event listener here - it will be handled by TipTap
-    // document.addEventListener('keydown', handleKeyDown);
-
-    return () => {
-      unsubscribeBreadcrumbs();
-      unsubscribeItems();
-      breadcrumbController.destroy();
-      // document.removeEventListener('keydown', handleKeyDown);
-    };
-  });
+  onDestroy(() => breadcrumbController.destroy());
 
   function handleKeyDown(event: KeyboardEvent): boolean {
     // Let breadcrumb controller handle navigation first
@@ -206,6 +188,11 @@
         return true;
 
       case 'ArrowRight':
+        if (!selectedItem || !isMentionGroup(selectedItem)) return false;
+        event.preventDefault();
+        event.stopPropagation();
+        enterHandler();
+        return true;
       case 'Enter':
         event.preventDefault();
         event.stopPropagation();
@@ -256,7 +243,7 @@
     if (!listElement) return;
     const selectedEl = listElement.querySelector('.mention-item.selected');
     if (selectedEl) {
-      selectedEl.scrollIntoView({ block: 'nearest', behavior: 'instant' });
+      selectedEl.scrollIntoView?.({ block: 'nearest', behavior: 'instant' });
     }
   }
 
@@ -281,16 +268,9 @@
 
   // Reset selected index when items change
   $effect(() => {
-    // Defensive check: ensure items is an array
-    const itemList = Array.isArray(items) ? items : [];
-    if (breadcrumbs.length === 0) {
-      currentItems = itemList;
-      selectedIndex = 0;
-      // When items change (popup opens/updates), ignore mouse events until
-      // the user actually moves the mouse. This prevents onmouseenter from
-      // changing selectedIndex when the popup appears under the cursor.
-      ignoreMouseUntilMove = true;
-    }
+    currentItems;
+    selectedIndex = 0;
+    ignoreMouseUntilMove = true;
   });
 
   // Expose onKeyDown for parent
@@ -329,6 +309,11 @@
   // Flat array in visual (grouped) order — used for arrow key navigation
   // so that selectedIndex follows the display order, not the original array order.
   const visualOrderItems = $derived(Array.from(groupedItems.values()).flat());
+  function optionId(item: MentionCandidate | MentionGroup) {
+    return `${componentId}-option-${encodeURIComponent(`${isMentionGroup(item) ? 'group' : item.type}:${item.id}`)}`;
+  }
+  const activeOptionId = $derived(selectedItem ? optionId(selectedItem) : undefined);
+  $effect(() => onActiveOptionChange?.(activeOptionId));
 </script>
 
 <div class="enhanced-mention-list" bind:this={listElement}>
@@ -364,7 +349,11 @@
       {/if}
 
       {#if loading && currentItems.length === 0}
-        <div class="mention-loading">
+        <div
+          class="mention-loading"
+          role="status"
+          aria-label={m.ui_combobox_loadingOptions_message()}
+        >
           {#each [0, 1, 2, 3] as i (i)}
             <div class="mention-skeleton">
               <div class="skeleton-icon"></div>
@@ -373,10 +362,19 @@
           {/each}
         </div>
       {:else if currentItems.length > 0}
-        <!-- svelte-ignore a11y_no_static_element_interactions -->
-        <div class="mention-items" onmousemove={() => (ignoreMouseUntilMove = false)}>
+        <div
+          class="mention-items"
+          id={listboxId}
+          role="listbox"
+          tabindex="-1"
+          aria-label={m.chat_mentionList_ariaLabel()}
+          aria-activedescendant={activeOptionId}
+          aria-busy={loading}
+          onkeydown={handleKeyDown}
+          onmousemove={() => (ignoreMouseUntilMove = false)}
+        >
           {#each Array.from(groupedItems.entries()) as [groupName, groupItems] (groupName)}
-            {#each groupItems as item (item.id)}
+            {#each groupItems as item (optionId(item))}
               {@const visualIndex = visualOrderItems.indexOf(item)}
               {@const icon = getIcon(item)}
               {@const isSelected = visualIndex === selectedIndex}
@@ -384,7 +382,13 @@
               <Button
                 variant="plain"
                 wrapContent={false}
-                class="mention-item {isSelected ? 'selected' : ''}"
+                class="{menuItem()} mention-item {isSelected ? 'selected' : ''}"
+                id={optionId(item)}
+                role="option"
+                aria-selected={isSelected}
+                aria-label={item.label}
+                tabindex="-1"
+                onpointerdown={(event) => event.preventDefault()}
                 onmousedown={(event) => event.preventDefault()}
                 onclick={() => selectItem(visualIndex)}
                 onmouseenter={() => {
@@ -421,7 +425,7 @@
           {/each}
         </div>
       {:else}
-        <div class="mention-empty">{m.chat_mentionList_noResults_label()}</div>
+        <div class="mention-empty" role="status">{m.chat_mentionList_noResults_label()}</div>
       {/if}
     </div>
   </div>

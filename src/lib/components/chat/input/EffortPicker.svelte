@@ -114,8 +114,7 @@
   ]);
   const selectItems = $derived(options.map(({ value, label }) => ({ value, label })));
 
-  // An effort the newly selected model does not advertise keeps the underlying
-  // provider-default value without guessing which concrete level the provider uses.
+  // Keep unsupported persisted values visible without inventing selectable levels.
   const persistedValue = $derived(embedded ? effort : ($reasoningEffort$ ?? null));
   const persistedOptionValue = $derived.by(() => {
     if (persistedValue === null || persistedValue === undefined) return AUTO_OPTION_VALUE;
@@ -124,7 +123,12 @@
   });
   let selectedOptionValue = $state('');
   const selectedOption = $derived(options.find((option) => option.value === selectedOptionValue));
-  const selectedLabel = $derived(selectedOption?.label ?? m.chat_effortPicker_level_auto());
+  const selectedLabel = $derived(
+    selectedOption?.label ??
+      (persistedValue
+        ? m.chat_effortPicker_unavailable_label({ level: levelLabel(persistedValue) })
+        : m.chat_effortPicker_level_auto()),
+  );
   const selectedLevelIndex = $derived(selectedOption?.levelIndex ?? -1);
   let selectOpen = $state(false);
   let pickerRoot = $state<HTMLDivElement | null>(null);

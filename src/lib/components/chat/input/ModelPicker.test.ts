@@ -60,7 +60,8 @@ vi.mock('svelte-fa', async () => {
   return { default: MockFa };
 });
 
-vi.mock('@fortawesome/free-solid-svg-icons', () => ({
+vi.mock('@fortawesome/free-solid-svg-icons', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@fortawesome/free-solid-svg-icons')>()),
   faCheck: { iconName: 'check' },
   faSearch: { iconName: 'search' },
   faChevronDown: { iconName: 'chevron-down' },
@@ -1215,7 +1216,7 @@ describe('ModelPicker combined reasoning mode', () => {
     expect(onReasoningChange).toHaveBeenCalledTimes(1);
   });
 
-  it('displays an unsupported controlled effort as Auto without mutating it', async () => {
+  it('labels an unsupported controlled effort without mutating it or inventing an option', async () => {
     const onReasoningChange = vi.fn();
     render(ModelPicker, {
       props: {
@@ -1228,7 +1229,9 @@ describe('ModelPicker combined reasoning mode', () => {
     });
 
     const trigger = screen.getByRole('button');
-    await waitFor(() => expect(screen.getByLabelText('GPT-5.6-Sol · Auto')).toBeTruthy());
+    await waitFor(() =>
+      expect(screen.getByLabelText('GPT-5.6-Sol · Extra high (unavailable)')).toBeTruthy(),
+    );
     expect(screen.getByTestId('model-reasoning-effort-gauge').dataset.gaugeCentered).toBe('true');
 
     await fireEvent.click(trigger);
@@ -1236,7 +1239,7 @@ describe('ModelPicker combined reasoning mode', () => {
     expect(screen.queryByTestId('effort-gauge')).toBeNull();
     expect(trigger.textContent).not.toContain('Auto');
     expect(trigger.textContent).not.toContain('Default');
-    expect(effortTrigger().textContent?.trim()).toBe('Auto');
+    expect(effortTrigger().textContent).toContain('unavailable');
     const effortListbox = await openEffortSelect();
     expect(within(effortListbox).getByRole('option', { name: 'Auto' })).toBeTruthy();
     expect(onReasoningChange).not.toHaveBeenCalled();

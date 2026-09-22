@@ -237,7 +237,7 @@ describe('BrowserTabsMenu', () => {
     trigger.addEventListener('focus', triggerFocus);
     await fireEvent.click(trigger);
     await fireEvent.click(await screen.findByTestId('browser-tabs-menu-item'));
-    await waitFor(() => expect(screen.queryByRole('menu')).toBeNull());
+    await waitFor(() => expect(screen.queryByTestId('browser-tabs-menu-item')).toBeNull());
     expect(setActiveTabMock).toHaveBeenCalledWith('visible-1', 'browser');
     expect(focusPanelMock).toHaveBeenCalledWith('browser');
     expect(document.activeElement).toBe(browserPanel);

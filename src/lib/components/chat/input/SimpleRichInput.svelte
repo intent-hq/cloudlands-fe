@@ -1,7 +1,7 @@
 <script lang="ts">
   import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-session-selectors';
   /* eslint-disable max-lines */
-  import { onMount, tick, type Snippet } from 'svelte';
+  import { onMount, tick } from 'svelte';
   import { writable } from 'svelte/store';
   import { notify } from '$lib/components/patterns/notify';
   import { withToastCountdown } from '$lib/components/patterns/notify';
@@ -72,6 +72,7 @@
     selectSkillsError,
     selectSkillsLoading,
   } from '$store/renderer/slices/skills/skills-selectors';
+  import { loadSkillsRequested } from '$store/renderer/slices/skills/skills-slice';
 
   import {
     togglePanel as togglePanelAction,
@@ -279,6 +280,8 @@
   } | null = $state(null);
   let contextPickerRef: { open: (anchor?: HTMLElement) => Promise<void> } | null = $state(null);
   let promptActionsOpen = $state(false);
+  let promptActionsTrigger = $state<HTMLButtonElement | null>(null);
+  let handingOffContext = false;
   // svelte-ignore state_referenced_locally -- intentional initial snapshots for transition detection.
   let previousDisabled = $state(disabled);
   // svelte-ignore state_referenced_locally -- intentional initial snapshots for transition detection.
@@ -1388,14 +1391,11 @@
     }
   });
 
-  function withContextPickerContent(
-    groups: StackedMenuGroup[],
-    content: Snippet,
-  ): StackedMenuGroup[] {
-    return groups.map((group) => ({
-      ...group,
-      items: group.items.map((item) => (item.id === 'add-context' ? { ...item, content } : item)),
-    }));
+  async function openContextPicker() {
+    handingOffContext = true;
+    promptActionsOpen = false;
+    await tick();
+    await contextPickerRef?.open(promptActionsTrigger ?? undefined);
   }
 
   const promptActionGroups = $derived.by((): StackedMenuGroup[] => {
@@ -1408,6 +1408,7 @@
             icon: faAt,
             label: m.chat_contextPicker_addContext_ariaLabel(),
             shortcut: '@',
+            onSelect: () => void openContextPicker(),
           },
           {
             id: 'attach-files',
@@ -1625,6 +1626,9 @@
       skills={$skills$}
       skillsLoading={$skillsLoading$}
       skillsError={$skillsError$}
+      onSkillsRetry={() => {
+        if (workspace?.id) appStore.dispatch(loadSkillsRequested(workspace.id));
+      }}
       onUpdate={(text) => {
         handleCancelEnhance();
         if (
@@ -1745,26 +1749,17 @@
 
     <div class="flex min-w-0 shrink-0 items-center gap-1.5" data-chat-input-submit-actions>
       <div class="relative inline-block">
-        {#snippet contextPickerSubmenu()}
-          <ContextPickerButton
-            panels={availablePanels}
-            selections={availableSelections}
-            {workspace}
-            {disabled}
-            currentAgentId={agentId}
-            onToggle={handleTogglePanel}
-            onToggleSelection={handleToggleSelection}
-            onInsertMention={(mention) => tiptap?.insertMention(mention)}
-            onPick={() => (promptActionsOpen = false)}
-            renderTrigger={false}
-            embedded
-          />
-        {/snippet}
-        <Menu.Root bind:open={promptActionsOpen}>
+        <Menu.Root
+          bind:open={promptActionsOpen}
+          onOpenChange={(open) => {
+            if (open) handingOffContext = false;
+          }}
+        >
           <Menu.Trigger>
             {#snippet child({ props })}
               <Button
                 {...props}
+                bind:ref={promptActionsTrigger}
                 variant="ghost-light"
                 size="icon-sm"
                 {disabled}
@@ -1776,11 +1771,13 @@
             {/snippet}
           </Menu.Trigger>
           <Menu.StackedContent
-            groups={withContextPickerContent(promptActionGroups, contextPickerSubmenu)}
+            groups={promptActionGroups}
             align="end"
             side="top"
             class="min-w-60"
-            submenuClass="p-0"
+            onCloseAutoFocus={(event) => {
+              if (handingOffContext) event.preventDefault();
+            }}
           />
         </Menu.Root>
       </div>

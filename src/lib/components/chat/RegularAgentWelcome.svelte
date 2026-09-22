@@ -1,6 +1,7 @@
 <script lang="ts">
   import Fa from 'svelte-fa';
-  import { faCheck, faGear, faChevronDown, faPlus } from '@fortawesome/free-solid-svg-icons';
+  import { faGear, faChevronDown, faPlus } from '@fortawesome/free-solid-svg-icons';
+  import SpecialistOptions from './SpecialistOptions.svelte';
   import { cn } from '$lib/utils';
   import { navigateToSettings } from '$lib/utils/workspace-navigation';
   import type { Specialist } from '$lib/constants/specialists';
@@ -83,7 +84,7 @@
         bind:open={pickerOpen}
         align="start"
         side="bottom"
-        contentClass="w-[min(28rem,calc(100vw-2rem))] overflow-hidden p-0!"
+        contentClass="w-[min(28rem,calc(100vw-2rem))]"
       >
         {#snippet trigger({ props })}
           <Button
@@ -126,80 +127,26 @@
                 {m.workspace_createAgentSection_specialists_label()}
               </p>
               <p class="type-caption mt-0.5 text-muted-foreground">
-                {m.workspace_createAgentSection_specialists_label()}
                 {m.workspace_createAgentSection_specialists_description()}
               </p>
             </div>
 
             <div class="max-h-[21rem] overflow-y-auto p-2">
-              <Menu.Item
-                class={cn(
-                  'flex h-auto w-full cursor-pointer items-center gap-3 whitespace-normal rounded-md px-3 py-2.5 text-left transition-colors',
-                  'hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
-                  !specialistInfo ? 'bg-accent/70' : '',
-                )}
-                aria-current={!specialistInfo ? 'true' : undefined}
-                data-specialist-option="general"
-                onSelect={() => onSpecialistChange?.(null)}
-              >
-                <div
-                  class="flex size-9 shrink-0 items-center justify-center rounded-md bg-muted/50"
-                >
-                  <AgentAvatar agentId="blank" size={22} />
-                </div>
-                <div class="min-w-0 flex-1">
-                  <div class="type-body font-medium text-foreground">
-                    {m.chat_shared_general_fallback()}
-                  </div>
-                  <div class="type-caption mt-0.5 text-muted-foreground">
-                    {m.chat_shared_noSpecializedBehavior_label()}
-                  </div>
-                </div>
-                {#if !specialistInfo}
-                  <Fa icon={faCheck} size={12} class="shrink-0 text-primary-ink" />
-                {/if}
-              </Menu.Item>
-
-              {#each customSpecialists as specialist (specialist.id)}
-                <Menu.Item
-                  class={cn(
-                    'mt-1 flex h-auto w-full cursor-pointer items-center gap-3 whitespace-normal rounded-md px-3 py-2.5 text-left transition-colors',
-                    'hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
-                    specialistInfo?.id === specialist.id ? 'bg-accent/70' : '',
-                  )}
-                  aria-current={specialistInfo?.id === specialist.id ? 'true' : undefined}
-                  data-specialist-option={specialist.id}
-                  onSelect={() => onSpecialistChange?.(specialist.id)}
-                >
-                  <div
-                    class="flex size-9 shrink-0 items-center justify-center rounded-md bg-muted/50"
-                  >
-                    <AgentAvatar
-                      agentId="blank"
-                      size={22}
-                      specialist={specialist.id}
-                      icon={specialist.icon}
-                    />
-                  </div>
-                  <div class="min-w-0 flex-1">
-                    <div class="type-body truncate font-medium text-foreground">
-                      {specialist.name}
-                    </div>
-                    <div class="type-caption mt-0.5 line-clamp-2 text-muted-foreground">
-                      {specialist.description}
-                    </div>
-                  </div>
-                  {#if specialistInfo?.id === specialist.id}
-                    <Fa icon={faCheck} size={12} class="shrink-0 text-primary-ink" />
-                  {/if}
-                </Menu.Item>
-              {/each}
+              <SpecialistOptions
+                specialists={customSpecialists}
+                value={specialistInfo?.id ?? null}
+                onchange={(id) => {
+                  pickerOpen = false;
+                  onSpecialistChange?.(id);
+                }}
+              />
             </div>
 
             <div class="border-t border-border bg-popover p-2">
               <Menu.Item
                 class="flex h-auto w-full cursor-pointer items-center gap-3 whitespace-normal rounded-md px-3 py-2 text-left text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                 onSelect={() => {
+                  pickerOpen = false;
                   void openSpecialistSettings();
                 }}
               >

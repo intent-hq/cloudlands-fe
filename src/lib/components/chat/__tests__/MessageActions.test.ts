@@ -126,6 +126,23 @@ describe('MessageActions shared surface', () => {
     expect(onCopy).toHaveBeenCalledTimes(1);
   });
 
+  it('reflects confirmed vote state without prematurely changing it on activation', async () => {
+    const onVote = vi.fn();
+    const view = render(MessageActions, {
+      props: { role: 'assistant', currentVote: 'up', onVote },
+    });
+    const good = screen.getByRole('button', { name: m.chat_messageActions_goodResponse_label() });
+    const bad = screen.getByRole('button', { name: m.chat_messageActions_badResponse_label() });
+    expect(good.getAttribute('aria-pressed')).toBe('true');
+    expect(bad.getAttribute('aria-pressed')).toBe('false');
+    await fireEvent.click(bad);
+    expect(onVote).toHaveBeenCalledExactlyOnceWith('down');
+    expect(good.getAttribute('aria-pressed')).toBe('true');
+    await view.rerender({ role: 'assistant', currentVote: 'down', onVote });
+    expect(good.getAttribute('aria-pressed')).toBe('false');
+    expect(bad.getAttribute('aria-pressed')).toBe('true');
+  });
+
   it('forwards modifier keys through declarative copy actions', async () => {
     const clipboardDescriptor = Object.getOwnPropertyDescriptor(navigator, 'clipboard');
     const writeText = vi.fn().mockResolvedValue(undefined);

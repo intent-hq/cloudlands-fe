@@ -94,10 +94,9 @@
   import { notify } from '$lib/components/patterns/notify';
   import { m } from '$shared/paraglide/messages.js';
   import { IntentMarkLoader } from '$lib/components/ui/indicators';
-  import { OPTION_LIST_END_SLOT_CLASS } from '$lib/styles/option-list-row';
+  import { Indicator } from '$lib/components/ui/menu';
   import {
     faArrowsRotate,
-    faCheck,
     faChevronDown,
     faLock,
     faPlus,
@@ -1424,9 +1423,13 @@
       : null,
   );
   const currentReasoningLabel = $derived(
-    currentReasoningEffort
-      ? reasoningLevelLabel(currentReasoningEffort)
-      : m.chat_effortPicker_level_auto(),
+    persistedReasoningEffort && !reasoningLevels.includes(persistedReasoningEffort)
+      ? m.chat_effortPicker_unavailable_label({
+          level: reasoningLevelLabel(persistedReasoningEffort),
+        })
+      : currentReasoningEffort
+        ? reasoningLevelLabel(currentReasoningEffort)
+        : m.chat_effortPicker_level_auto(),
   );
   const currentReasoningLevelIndex = $derived(
     currentReasoningEffort ? reasoningLevels.indexOf(currentReasoningEffort) : -1,
@@ -2178,11 +2181,7 @@
               </div>
             {/if}
           </div>
-          {#if selected}
-            <span class={OPTION_LIST_END_SLOT_CLASS}>
-              <Fa icon={faCheck} class="size-4 text-primary-ink shrink-0" />
-            </span>
-          {/if}
+          <Indicator state={selected ? 'checked' : 'empty'} />
         {/if}
       </div>
     {/snippet}

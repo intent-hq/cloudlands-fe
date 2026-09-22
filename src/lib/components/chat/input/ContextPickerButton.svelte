@@ -26,6 +26,7 @@
   import { OPTION_LIST_ROW_CLASS } from '$lib/styles/option-list-row';
   import { pushEscapeLayer } from '$lib/utils/escapeLayers';
   import { Button } from '$lib/components/ui/button';
+  import { menuItem } from '$lib/components/ui/menu';
   import { IntentMarkLoader } from '$lib/components/ui/indicators';
   import Portal from '$lib/components/ui/Portal.svelte';
   import { Checkbox } from '$lib/components/ui/checkbox';
@@ -101,8 +102,35 @@
   let searchQuery = $state('');
   let searchResults = $state<MentionCandidate[]>([]);
   let isSearching = $state(false);
+  let searchFailed = $state(false);
+  let activeSearchIndex = $state(0);
   let searchDebounceTimer: ReturnType<typeof setTimeout> | null = null;
   let searchGeneration = 0;
+  const pickerId = $props.id();
+  const searchListId = `${pickerId}-results`;
+  const activeResult = $derived(
+    !isSearching && !searchFailed && showSearchResults
+      ? searchResults[activeSearchIndex]
+      : undefined,
+  );
+  function resultId(result: MentionCandidate) {
+    return `${pickerId}-result-${encodeURIComponent(`${result.type}:${result.id}`)}`;
+  }
+  async function handleSearchKeyDown(event: KeyboardEvent) {
+    if (!activeResult || !['ArrowDown', 'ArrowUp', 'Enter'].includes(event.key)) return;
+    event.preventDefault();
+    event.stopPropagation();
+    if (event.key === 'Enter') {
+      handleSelectSearchResult(activeResult);
+      return;
+    }
+    activeSearchIndex =
+      (activeSearchIndex + (event.key === 'ArrowDown' ? 1 : -1) + searchResults.length) %
+      searchResults.length;
+    await tick();
+    if (activeResult)
+      document.getElementById(resultId(activeResult))?.scrollIntoView?.({ block: 'nearest' });
+  }
 
   // Count of checked panels and selections for badge
   let checkedPanelCount = $derived(panels.filter((p) => p.checked).length);
@@ -201,7 +229,7 @@
     isOpen = true;
     updatePosition();
     await tick();
-    searchInputRef?.focus();
+    if (isOpen) searchInputRef?.focus();
   }
 
   async function toggleOpen() {
@@ -221,6 +249,7 @@
     searchQuery = '';
     searchResults = [];
     isSearching = false;
+    searchFailed = false;
   }
 
   function updatePosition() {
@@ -228,14 +257,19 @@
     if (!anchor) return;
     const rect = anchor.getBoundingClientRect();
     const viewportHeight = window.innerHeight;
-    const spaceBelow = viewportHeight - rect.top;
+    const spaceBelow = viewportHeight - rect.bottom;
     const estimatedHeight = 350;
+    const width = Math.min(320, window.innerWidth - 16);
+    const left = Math.max(8, Math.min(rect.left, window.innerWidth - width - 8));
+    const above = spaceBelow < estimatedHeight && rect.top > spaceBelow;
+    const maxHeight = Math.max(0, (above ? rect.top : spaceBelow) - 12);
+    const bounds = `left: ${left}px; width: ${width}px; max-height: ${maxHeight}px;`;
 
     // Position above the button
-    if (spaceBelow < estimatedHeight) {
-      popoverStyle = `position: fixed; bottom: ${viewportHeight - rect.top + 4}px; left: ${rect.left}px; min-width: 280px; max-width: 320px;`;
+    if (above) {
+      popoverStyle = `position: fixed; bottom: ${viewportHeight - rect.top + 4}px; ${bounds}`;
     } else {
-      popoverStyle = `position: fixed; top: ${rect.bottom + 4}px; left: ${rect.left}px; min-width: 280px; max-width: 320px;`;
+      popoverStyle = `position: fixed; top: ${rect.bottom + 4}px; ${bounds}`;
     }
   }
 
@@ -253,9 +287,11 @@
   $effect(() => {
     if (!isOpen) return;
     return pushEscapeLayer(() => {
+      const returnTarget = externalAnchor ?? triggerRef;
       isOpen = false;
       externalAnchor = null;
       resetSearch();
+      returnTarget?.focus();
     });
   });
 
@@ -276,8 +312,7 @@
       // Close popover after inserting mention
       isOpen = false;
       externalAnchor = null;
-      searchQuery = '';
-      searchResults = [];
+      resetSearch();
       onPick?.();
       return;
     }
@@ -302,8 +337,8 @@
     );
 
     // Clear search but keep popover open so user can add more items
-    searchQuery = '';
-    searchResults = [];
+    resetSearch();
+    searchInputRef?.focus();
   }
 
   async function performSearch(query: string, generation: number) {
@@ -321,10 +356,16 @@
         workspaceId: workspace.id,
       };
       const results = await mentionSystem.search(query, context);
-      if (generation === searchGeneration) searchResults = results;
+      if (generation === searchGeneration) {
+        searchResults = results;
+        activeSearchIndex = 0;
+      }
     } catch (error) {
       console.error('Search failed:', error);
-      if (generation === searchGeneration) searchResults = [];
+      if (generation === searchGeneration) {
+        searchResults = [];
+        searchFailed = true;
+      }
     } finally {
       if (generation === searchGeneration) isSearching = false;
     }
@@ -333,6 +374,7 @@
   function handleSearchInput(e: Event) {
     const target = e.target as HTMLInputElement;
     searchQuery = target.value;
+    searchFailed = false;
     const generation = ++searchGeneration;
 
     if (searchDebounceTimer) {
@@ -358,6 +400,7 @@
     document.addEventListener('mousedown', handleClickOutside, true);
     if (embedded) void tick().then(() => searchInputRef?.focus());
     return () => {
+      searchGeneration += 1;
       document.removeEventListener('mousedown', handleClickOutside, true);
       if (searchDebounceTimer) {
         clearTimeout(searchDebounceTimer);
@@ -375,8 +418,9 @@
       onclick={toggleOpen}
       {disabled}
       aria-label={m.chat_contextPicker_addContext_ariaLabel()}
-      aria-haspopup="true"
+      aria-haspopup="dialog"
       aria-expanded={isOpen}
+      aria-controls={isOpen ? `${pickerId}-dialog` : undefined}
       class={cn('shrink-0 relative', className)}
     >
       <Fa icon={faAt} size="sm" />
@@ -395,11 +439,12 @@
 {#snippet pickerBody()}
   <div
     bind:this={popoverRef}
+    id={`${pickerId}-dialog`}
     class={cn(
       'flex max-h-[min(400px,var(--bits-menu-content-available-height,calc(100dvh_-_1rem)))] flex-col overflow-hidden pb-2',
       embedded
         ? 'w-80'
-        : 'rounded-lg border border-border bg-popover text-popover-foreground shadow-lg',
+        : 'rounded-(--radius-medium) border border-border bg-popover text-popover-foreground shadow-(--elevation-overlay)',
     )}
     style={embedded ? undefined : popoverStyle}
     role={embedded ? undefined : 'dialog'}
@@ -426,8 +471,16 @@
           bind:this={searchInputRef}
           type="text"
           placeholder={m.chat_contextPicker_addFiles_placeholder()}
+          aria-label={m.chat_contextPicker_addFiles_placeholder()}
+          aria-busy={isSearching}
+          role="combobox"
+          aria-autocomplete="list"
+          aria-expanded={Boolean(activeResult)}
+          aria-controls={activeResult ? searchListId : undefined}
+          aria-activedescendant={activeResult ? resultId(activeResult) : undefined}
           value={searchQuery}
           oninput={handleSearchInput}
+          onkeydown={handleSearchKeyDown}
           class="pl-7"
           noFocusStyle
         />
@@ -457,20 +510,48 @@
               </div>
             {/each}
           </div>
+        {:else if searchFailed}
+          <div class="flex items-center gap-2 px-3 py-4">
+            <span class="type-caption text-muted-foreground" role="alert">
+              {m.chat_contextPicker_searchFailed_error()}
+            </span>
+            <Button
+              variant="ghost"
+              size="sm"
+              onclick={() => {
+                searchFailed = false;
+                isSearching = true;
+                searchInputRef?.focus();
+                void performSearch(searchQuery, ++searchGeneration);
+              }}>{m.ui_errorToast_retry_label()}</Button
+            >
+          </div>
         {:else if searchResults.length === 0}
           <div class="type-caption px-3 py-4 text-left text-subtle">
             {m.chat_contextPicker_noResults_label()}
           </div>
         {:else}
-          <div class="py-1">
-            {#each searchResults as result (result.id)}
+          <div
+            class="py-1"
+            role="listbox"
+            id={searchListId}
+            aria-label={m.chat_contextPicker_addFiles_placeholder()}
+          >
+            {#each searchResults as result, index (`${result.type}:${result.id}`)}
               <Button
                 type="button"
                 variant="plain"
+                id={resultId(result)}
+                role="option"
+                aria-selected={index === activeSearchIndex}
+                tabindex="-1"
+                onpointerdown={(event) => event.preventDefault()}
+                onpointermove={() => (activeSearchIndex = index)}
                 onclick={() => handleSelectSearchResult(result)}
                 wrapContent={false}
                 class={cn(
-                  OPTION_LIST_ROW_CLASS,
+                  menuItem(),
+                  index === activeSearchIndex && 'bg-selected',
                   'flex h-auto w-full items-center justify-start gap-2 hover:bg-hover cursor-pointer transition-colors text-left',
                 )}
               >
@@ -500,12 +581,8 @@
               <!-- Panels in this group -->
               {#each group.panels as panel (panel.id)}
                 {@const isCurrentAgent = panel.type === 'agent' && panel.agentId === currentAgentId}
-                <Button
-                  type="button"
-                  variant="plain"
-                  onclick={() => !isCurrentAgent && handleToggleItem(panel.id)}
-                  disabled={isCurrentAgent}
-                  wrapContent={false}
+                <label
+                  for={`${pickerId}-panel-${panel.id}`}
                   class={cn(
                     OPTION_LIST_ROW_CLASS,
                     'flex h-auto w-full items-center justify-start gap-2 transition-colors',
@@ -515,6 +592,7 @@
                   )}
                 >
                   <Checkbox
+                    id={`${pickerId}-panel-${panel.id}`}
                     checked={panel.checked}
                     size="sm"
                     disabled={isCurrentAgent}
@@ -532,29 +610,27 @@
                       >{m.chat_contextPicker_active_badge()}</span
                     >
                   {/if}
-                </Button>
+                </label>
               {/each}
 
               <!-- Selections in this group -->
               {#each group.selections as selection (selection.id)}
-                <Button
-                  type="button"
-                  variant="plain"
-                  onclick={() => handleToggleSelectionItem(selection.id)}
-                  wrapContent={false}
+                <label
+                  for={`${pickerId}-selection-${selection.id}`}
                   class={cn(
                     OPTION_LIST_ROW_CLASS,
                     'flex h-auto w-full items-center justify-start gap-2 hover:bg-hover cursor-pointer transition-colors',
                   )}
                 >
                   <Checkbox
+                    id={`${pickerId}-selection-${selection.id}`}
                     checked={selection.checked}
                     size="sm"
                     onCheckedChange={() => handleToggleSelectionItem(selection.id)}
                   />
                   <Fa icon={faQuoteLeft} class="h-3.5 w-3.5 text-ghost" />
                   <span class="flex-1 truncate text-left">{truncateText(selection.text)}</span>
-                </Button>
+                </label>
               {/each}
             {/each}
           </div>

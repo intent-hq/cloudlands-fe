@@ -10,29 +10,34 @@
     items?: readonly SkillInfo[];
     loading?: boolean;
     error?: string | null;
-    listboxId: string;
+    listboxId?: string;
     onSelect: (skill: SkillInfo) => void;
     onDismiss?: () => void;
+    onRetry?: () => void;
     onActiveOptionChange?: (optionId: string | undefined) => void;
   }
 
+  const componentId = $props.id();
   let {
     items = [],
     loading = false,
     error = null,
-    listboxId,
+    listboxId = `${componentId}-listbox`,
     onSelect,
     onDismiss,
+    onRetry,
     onActiveOptionChange,
   }: Props = $props();
 
-  const componentId = $props.id();
   let selectedIndex = $state(0);
   let listElement = $state<HTMLDivElement>();
 
   const selectedOptionId = $derived(
-    items.length > 0 ? `${componentId}-option-${selectedIndex}` : undefined,
+    !loading && !error && items[selectedIndex] ? optionId(items[selectedIndex]) : undefined,
   );
+  function optionId(item: SkillInfo) {
+    return `${componentId}-option-${encodeURIComponent(`${item.name}:${item.location}`)}`;
+  }
 
   $effect(() => {
     items;
@@ -59,10 +64,11 @@
 
   function selectItem(index: number) {
     const item = items[index];
-    if (item) onSelect(item);
+    if (item && !loading && !error) onSelect(item);
   }
 
   function handleKeyDown(event: KeyboardEvent): boolean {
+    if ((loading || error) && event.key !== 'Escape') return false;
     switch (event.key) {
       case 'ArrowUp':
         if (items.length === 0) return false;
@@ -109,6 +115,14 @@
   {:else if error}
     <div class="slash-skill-state" role="alert">
       {m.chat_slashSkillSuggestionList_loadFailed_label()}
+      {#if onRetry}
+        <Button
+          variant="ghost"
+          size="sm"
+          onpointerdown={(event) => event.preventDefault()}
+          onclick={onRetry}>{m.ui_errorToast_retry_label()}</Button
+        >
+      {/if}
     </div>
   {:else if items.length === 0}
     <div class="slash-skill-state" role="status">
@@ -129,7 +143,7 @@
         <Tooltip content={item.description} side="right" align="start" size="sm" class="w-full">
           <Button
             type="button"
-            id={`${componentId}-option-${index}`}
+            id={optionId(item)}
             variant="ghost"
             size="sm"
             labelClass="type-body"
@@ -139,6 +153,7 @@
               selectedIndex === index && 'active',
             )}
             role="option"
+            tabindex="-1"
             aria-label={item.name}
             aria-selected={selectedIndex === index}
             onpointerenter={() => (selectedIndex = index)}

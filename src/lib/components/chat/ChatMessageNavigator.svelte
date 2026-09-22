@@ -59,8 +59,11 @@
     return messages.filter((message) => message.text.toLocaleLowerCase().includes(normalizedQuery));
   });
   const activeOptionId = $derived(
-    filteredMessages.length > 0 ? `${listboxId}-option-${activeIndex}` : undefined,
+    filteredMessages[activeIndex] ? optionId(filteredMessages[activeIndex].id) : undefined,
   );
+  function optionId(messageId: string) {
+    return `${listboxId}-option-${encodeURIComponent(messageId)}`;
+  }
 
   function handleOpenChange(nextOpen: boolean) {
     open = nextOpen;
@@ -123,7 +126,7 @@
   // the next animation frame) so programmatic scrolls keep the end anchor.
   $effect(() => {
     if (!open || !contentElement || filteredMessages.length === 0) return;
-    const option = document.getElementById(`${listboxId}-option-${activeIndex}`);
+    const option = activeOptionId ? document.getElementById(activeOptionId) : null;
     if (!option) return;
     suppressScrollRelease = true;
     option.scrollIntoView?.({ block: 'nearest' });
@@ -251,7 +254,7 @@
             onkeydown={handleSearchKeydown}
             role="combobox"
             aria-label={m.chat_messageNavigator_search_ariaLabel()}
-            aria-controls={listboxId}
+            aria-controls={filteredMessages.length > 0 ? listboxId : undefined}
             aria-expanded="true"
             aria-autocomplete="list"
             aria-activedescendant={activeOptionId}
@@ -300,7 +303,7 @@
                     type="button"
                     variant="plain"
                     labelClass="overflow-hidden whitespace-nowrap text-left text-ellipsis"
-                    id={`${listboxId}-option-${index}`}
+                    id={optionId(message.id)}
                     role="option"
                     tabindex={-1}
                     aria-selected={index === activeIndex}

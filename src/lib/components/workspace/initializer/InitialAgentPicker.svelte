@@ -2,6 +2,7 @@
   import { Button } from '$lib/components/ui/button';
   import * as Menu from '$lib/components/ui/menu';
   import ModelPicker from '$lib/components/chat/input/ModelPicker.svelte';
+  import SpecialistOptions from '$lib/components/chat/SpecialistOptions.svelte';
   import AgentAvatar from '$features/agent/components/agent-avatar/AgentAvatar.svelte';
 
   import {
@@ -645,8 +646,8 @@
   }
 
   async function openSpecialistSettings() {
-    await navigateToSettings({ view: 'create-specialist' });
     specialistDropdownOpen = false;
+    await navigateToSettings({ view: 'create-specialist' });
   }
 </script>
 
@@ -660,6 +661,7 @@
       : 'border-border bg-card hover:bg-muted/50'}"
     onclick={selectSingleAgentMode}
     onkeydown={(event) => {
+      if (event.target !== event.currentTarget) return;
       if (event.key === 'Enter' || event.key === ' ') {
         event.preventDefault();
         selectSingleAgentMode();
@@ -723,54 +725,14 @@
 
         {#snippet content()}
           <div class="min-w-0 max-h-[300px] overflow-y-auto">
-            <!-- General (blank) option -->
-            <Menu.Item
-              class="specialist-option {selectedSpecialist === null ||
-              (selectedSpecialist && isTeamRoleId(selectedSpecialist))
-                ? 'specialist-option-selected'
-                : ''}"
-              onSelect={() => handleSpecialistSelect(null)}
-            >
-              <AgentAvatar agentId="blank" variant="standard" />
-              <div class="flex flex-col min-w-0 flex-1">
-                <span class="type-caption text-foreground"
-                  >{m.workspace_initialAgentPicker_general_label()}</span
-                >
-                <span class="type-caption text-subtle truncate"
-                  >{m.workspace_initialAgentPicker_noSpecializedBehavior_description()}</span
-                >
-              </div>
-            </Menu.Item>
-
-            {#if customSpecialists.length > 0}
-              <div class="h-px bg-border"></div>
-
-              {#each customSpecialists as specialist (specialist.id)}
-                <Menu.Item
-                  class="specialist-option {selectedSpecialist === specialist.id
-                    ? 'specialist-option-selected'
-                    : ''}"
-                  onSelect={() => handleSpecialistSelect(specialist.id)}
-                >
-                  <AgentAvatar
-                    agentId="blank"
-                    variant="standard"
-                    specialist={specialist.id}
-                    icon={specialist.icon}
-                  />
-                  <div class="flex flex-col min-w-0 flex-1">
-                    <span class="type-caption text-foreground truncate">{specialist.name}</span>
-                    <span class="type-caption text-subtle truncate">{specialist.description}</span>
-                  </div>
-                </Menu.Item>
-              {/each}
-            {/if}
-
+            <SpecialistOptions
+              specialists={customSpecialists}
+              value={isTeamRoleId(selectedSpecialist) ? null : selectedSpecialist}
+              onchange={handleSpecialistSelect}
+            />
+            <Menu.Separator />
             <!-- Create new specialist link -->
-            <Menu.Item
-              class="specialist-option sticky bottom-0 border-t! border-border bg-background! z-10 text-subtle"
-              onSelect={openSpecialistSettings}
-            >
+            <Menu.Item class="gap-2" onSelect={openSpecialistSettings}>
               <Fa icon={faPlus} class="size-3! opacity-60" />
               <span class="type-caption"
                 >{m.workspace_initialAgentPicker_manageSpecialists_label()}</span
@@ -825,6 +787,7 @@
         : 'border-border bg-card hover:bg-muted/50'}"
       onclick={selectTeamMode}
       onkeydown={(event) => {
+        if (event.target !== event.currentTarget) return;
         if (event.key === 'Enter' || event.key === ' ') {
           event.preventDefault();
           selectTeamMode();
@@ -950,46 +913,11 @@
     border-color: var(--color-foreground);
   }
 
-  :global(.specialist-option) {
-    display: flex;
-    justify-content: flex-start;
-    height: auto;
-    min-height: var(--control-height-medium);
-    align-items: center;
-    gap: 0.75rem;
-    width: 100%;
-    padding: 0.5rem;
-    border: none;
-    background: transparent;
-    cursor: pointer;
-    text-align: left;
-    border-radius: var(--radius-row);
-    transition: background-color var(--motion-fast);
-  }
-
-  :global(.specialist-option:hover) {
-    background: color-mix(in srgb, var(--color-muted, hsl(var(--muted))) 60%, transparent);
-  }
-
-  :global(.specialist-option:focus-visible) {
-    outline: none;
-    background: color-mix(in srgb, var(--color-muted, hsl(var(--muted))) 75%, transparent);
-  }
-
   @media (forced-colors: active) {
     .agent-card:focus-visible,
     :global(.specialist-trigger:focus-visible) {
       border-color: Highlight;
       background: Canvas;
     }
-
-    :global(.specialist-option:focus-visible) {
-      background: Highlight;
-      color: HighlightText;
-    }
-  }
-
-  :global(.specialist-option-selected) {
-    background: color-mix(in srgb, var(--color-muted, hsl(var(--muted))) 40%, transparent);
   }
 </style>
