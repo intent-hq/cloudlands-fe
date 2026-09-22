@@ -1,6 +1,7 @@
-import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { Editor, type EditorOptions } from '@tiptap/core';
 import StarterKit from '@tiptap/starter-kit';
+import { store as appStore } from '$store/renderer/store';
 
 import { processMarkdownToHTML } from '$lib/utils/markdown-processor';
 import { createEditorConfig } from '$lib/utils/editor-config';
@@ -196,7 +197,10 @@ function generateLargeNote(minMarkdownLength: number, seed = 1): LargeNote {
  * `enableComments` the projection sees; the rest is a decorations plugin over
  * the app store — so a comment anchor is an inline leaf, not dropped markup.
  */
-async function projectWithEditor(markdown: string, production = false): Promise<string> {
+async function projectWithEditor(
+  markdown: string,
+  production: boolean | 'comments' = false,
+): Promise<string> {
   const html = await processMarkdownToHTML(markdown, { preserveAnchors: true });
   const element = document.createElement('div');
   let options: Partial<EditorOptions>;
@@ -207,8 +211,11 @@ async function projectWithEditor(markdown: string, production = false): Promise<
       editable: true,
       onUpdate: () => {},
       useMarkdown: true,
+      enableComments: production === 'comments',
     });
-    options.extensions = [...(options.extensions ?? []), CommentAnchor];
+    if (production !== 'comments') {
+      options.extensions = [...(options.extensions ?? []), CommentAnchor];
+    }
   } else {
     options = { element, extensions: [StarterKit], content: html };
   }
@@ -2730,6 +2737,104 @@ describe('alignment of blocks that never anchor', () => {
     expect(aToB(inTail)).toBe(b.length + tail.indexOf('share'));
     expect(bToA(b.length + tail.indexOf('share'))).toBe(inTail);
   });
+
+  // Below the cap, one-word links after a fenced block a quote or an item
+  // holds and a comment: no link line is long enough to anchor
+  // (`MIN_ANCHOR_LENGTH`), so 600 of them reach `refine` as one region of
+  // 14 KB of markdown. Within the budget every link maps exactly — the
+  // offsets asserted are those of main's full diff of the same notes, which
+  // was exact on every one of these cells — and past the deadline every link
+  // stays bounded by its own line. (The fence opener `> ~~~html` counted as
+  // a text line — its container marker hid the fence from `isTextLine` — so
+  // the `visible body` hit lay one text line beyond the run and was declined
+  // as a later duplicate; nothing anchored after the opening paragraph, and
+  // the region from the first link to the note's end, longer than
+  // `MAX_REFINE_LENGTH`, was emitted as one span: 599 of 600 links mapped to
+  // the note's ends. Past the deadline the two-link region was one span too,
+  // the first link mapped into the second.)
+  describe('one-word link lines after a fence a container ends, below the cap', () => {
+    const LINK = '[ab](https://sync/ab)';
+    const FENCE = '```';
+    const SHAPES: Array<[string, string]> = [
+      ['a tilde fence a quote ends', '> ~~~html\n> visible body'],
+      ['a fence a quote ends', `> ${FENCE}html\n> visible body`],
+      ['a tilde fence an item ends', '- ~~~html\n  visible body'],
+      ['a fence an item ends', `- ${FENCE}html\n  visible body`],
+    ];
+    const PROJECTIONS: Array<[string, boolean | 'comments']> = [
+      ['StarterKit', false],
+      ['the note editor', true],
+      ['the note editor with comments', 'comments'],
+    ];
+    type Clock = <T>(fn: () => T) => T;
+    const CLOCKS: Array<[string, Clock]> = [
+      ['within the budget', withoutDeadline],
+      ['past the deadline', withExpiredDeadline],
+    ];
+    // The comment decorations of the editor with comments read the store.
+    let disposeStore: (() => void) | undefined;
+    beforeAll(() => {
+      disposeStore = appStore.init();
+    });
+    afterAll(() => disposeStore?.());
+    const CELLS = SHAPES.flatMap(([shape, body]) =>
+      [2, 600].flatMap((count) =>
+        PROJECTIONS.flatMap(([projection, production]) =>
+          CLOCKS.map(
+            ([when, clock]): [
+              number,
+              string,
+              string,
+              string,
+              string,
+              boolean | 'comments',
+              Clock,
+            ] => [count, shape, projection, when, body, production, clock],
+          ),
+        ),
+      ),
+    );
+
+    it.each(CELLS)(
+      'maps each of %i one-word links after %s, projected by %s %s',
+      async (count, _shape, _projection, when, body, production, clock) => {
+        const hidden = `<!--\n${Array.from({ length: 9 }, () => 'hidden body').join('\n')}\n-->`;
+        const links = Array.from({ length: count - 1 }, () => LINK).join('\n\n');
+        const markdown = `${'q'.repeat(1024)}\n\n${LINK}\n\n${body}\n\n${hidden}\n\n${links}`;
+        expect(markdown.length).toBeLessThan(128 * 1024);
+        const plain = await projectWithEditor(markdown, production);
+        expect(plain).toContain('visible body');
+        expect(plain).not.toContain('hidden body');
+        const map = clock(() => createBidirectionalOffsetMapper(plain, markdown));
+        const plainLinks = [...plain.matchAll(/ab/g)].map((match) => match.index);
+        const markdownLinks = [...markdown.matchAll(/\[ab\]/g)].map((match) => match.index);
+        expect(plainLinks).toHaveLength(count);
+        expect(markdownLinks).toHaveLength(count);
+        const exact = when === 'within the budget';
+        if (exact) {
+          const inPlain = plain.indexOf('visible body') + 3;
+          const inMarkdown = markdown.indexOf('visible body') + 3;
+          expect(map.aToB(inPlain)).toBe(inMarkdown);
+          expect(map.bToA(inMarkdown)).toBe(inPlain);
+        }
+        const escaped: string[] = [];
+        for (let k = 0; k < count; k += 1) {
+          const p = plainLinks[k];
+          const m = markdownLinks[k];
+          const forward = map.aToB(p + 1);
+          const backward = map.bToA(m + 2);
+          if (exact ? forward !== m + 2 : forward < m || forward > m + LINK.length) {
+            escaped.push(`aToB(${p + 1}) = ${forward} for link ${k} at ${m}`);
+          }
+          if (exact ? backward !== p + 1 : backward < p || backward > p + 2) {
+            escaped.push(`bToA(${m + 2}) = ${backward} for link ${k} at ${p}`);
+          }
+        }
+        expect(escaped, escaped.slice(0, 8).join('\n')).toEqual([]);
+      },
+      60_000,
+    );
+  });
 });
 
 describe('alignment over a corpus of small notes', () => {
@@ -3069,10 +3174,16 @@ describe('alignment when the diff budget is exhausted', () => {
     expect(exact.aToB(heading)).toBe(markdown.indexOf('line'));
     expect(exact.aToB(closing)).toBe(markdown.indexOf('closing'));
 
+    // The region jsdiff gave up on is paired by line instead: the pair's
+    // common prefix and suffix map exactly, and a position inside what is
+    // left clamps to the end of that span, within its own line.
+    const more = plain.indexOf('more');
     const words = plain.indexOf('words');
     expect(exact.aToB(words)).toBe(markdown.indexOf('words'));
-    expect(degraded.aToB(words)).toBe(markdown.indexOf('\nPlain'));
-    expect(degraded.bToA(markdown.indexOf('words'))).toBe(plain.indexOf('\nPlain'));
+    expect(degraded.aToB(words)).toBe(markdown.indexOf('words'));
+    expect(degraded.bToA(markdown.indexOf('words'))).toBe(words);
+    expect(degraded.aToB(more)).toBe(markdown.indexOf(' words here'));
+    expect(degraded.bToA(markdown.indexOf('more'))).toBe(plain.indexOf(' words here'));
   });
 
   it('still aligns the large note quickly', () => {

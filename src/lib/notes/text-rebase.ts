@@ -90,10 +90,11 @@ const MIN_PIECE_LENGTH = 4;
 const PIECE_SEARCH_SLACK = 1024;
 /**
  * A region left between anchors that is longer than this on either side is
- * emitted as one replaced span: nothing inside it anchored, so a token diff
- * of it would spend the whole budget on carets that clamp anyway. A region
- * that holds an unanchorable line (see `maskHidden`) is exempt: its text was
- * declined, not missing, and the deadline alone bounds its diff.
+ * not diffed whole but paired line by line (`refineByLine`), each pair and
+ * each gap between pairs diffed alone, however long: nothing inside it
+ * anchored, so a token diff of it whole would spend the budget on carets that
+ * the pairs place for free. The bound never emits a span: the deadline alone
+ * decides what is left undiffed.
  */
 const MAX_REFINE_LENGTH = 8192;
 
@@ -125,9 +126,8 @@ const isLowSurrogate = (code: number) => code >= 0xdc00 && code <= 0xdfff;
  * (`Mask.unanchorable`): its text reaches a diff only, and that diff is
  * bounded by the line (`refineByLine`).
  * The mask, the anchor loop and every diff share one deadline: past it, the
- * remaining text is emitted as one replaced span, except that a region with
- * an unanchorable line is still paired line by line, with no diff, so the
- * line stays bounded by its own text. A surrogate pair never straddles a
+ * remaining text is paired line by line, with no diff, so that a line stays
+ * bounded by its own text (`refineByLine`). A surrogate pair never straddles a
  * span boundary: anchors, trimmed prefixes and tokens stop outside pairs and
  * jsdiff's `diffChars` treats a pair as one character.
  *
@@ -484,17 +484,26 @@ function lowerBound(values: number[], at: number): number {
  * line short of the text's own; and two such lines before a run of pieces
  * stand in for two plain-text lines the run crossed, so a hit that opens the
  * paragraph two lines short of the text's own ends as many text lines as
- * the run did.
+ * the run did. The markers of the containers a line sits in — a block quote's
+ * `>`, a list item's bullet or number — are looked past first: `> ~~~html`
+ * opens a fence in a quote and is no more a text line than `~~~html` is (and
+ * counted as one it declines the hit for every line of the quote's text as
+ * beyond the run, see `anchoredHunks`).
  */
 function isTextLine(text: string, start: number, end: number): boolean {
   let i = start;
-  while (
-    i < end &&
-    (text.charCodeAt(i) === 32 || text.charCodeAt(i) === 9 || text.charCodeAt(i) === 0)
-  ) {
-    i += 1;
+  for (;;) {
+    while (
+      i < end &&
+      (text.charCodeAt(i) === 32 || text.charCodeAt(i) === 9 || text.charCodeAt(i) === 0)
+    ) {
+      i += 1;
+    }
+    if (i >= end || text.charCodeAt(i) === 13) return false;
+    const marker = containerMarkerEnd(text, i, end);
+    if (marker === -1) break;
+    i = marker;
   }
-  if (i >= end || text.charCodeAt(i) === 13) return false;
   const code = text.charCodeAt(i);
   if (code === 96 || code === 126) {
     return !(i + 2 < end && text.charCodeAt(i + 1) === code && text.charCodeAt(i + 2) === code);
@@ -527,6 +536,33 @@ function isTextLine(text: string, start: number, end: number): boolean {
     return !(last - i >= 7 && text.startsWith('-->', last - 3));
   }
   return true;
+}
+
+/**
+ * The end of the container marker that opens `text[i, end)` — a block quote's
+ * `>`, a bullet (`-`, `+`, `*`) or an ordered marker (up to nine digits and
+ * `.` or `)`), the latter two followed by a blank or the line's end — or -1
+ * when the line opens with none.
+ */
+function containerMarkerEnd(text: string, i: number, end: number): number {
+  const code = text.charCodeAt(i);
+  if (code === 62) return i + 1;
+  let after = i + 1;
+  if (code >= 48 && code <= 57) {
+    while (
+      after < end &&
+      after - i < 9 &&
+      text.charCodeAt(after) >= 48 &&
+      text.charCodeAt(after) <= 57
+    ) {
+      after += 1;
+    }
+    if (after >= end || (text.charCodeAt(after) !== 46 && text.charCodeAt(after) !== 41)) return -1;
+    after += 1;
+  } else if (code !== 45 && code !== 43 && code !== 42) {
+    return -1;
+  }
+  return after >= end || isBlank(text.charCodeAt(after)) ? after : -1;
 }
 
 /**
@@ -1682,7 +1718,7 @@ function refine(
   if (overlaps(unanchorable, toStart, toEnd)) {
     refineByLine(out, from, to, fromStart, fromEnd, toStart, toEnd, deadline, unanchorable);
   } else {
-    diffRegion(out, from, to, fromStart, fromEnd, toStart, toEnd, deadline, unanchorable);
+    diffRegion(out, from, to, fromStart, fromEnd, toStart, toEnd, deadline, unanchorable, true);
   }
 }
 
@@ -1693,9 +1729,17 @@ function refine(
  * word is a pure insertion apart from the syntax around it, and `diffChars`
  * alone would happily match its letters one by one inside `](https://…)`.
  * Two spans that only whitespace keeps apart are diffed as one (see
- * `mergeAcrossWhitespace`). A region longer than `MAX_REFINE_LENGTH` is not
- * diffed unless it meets an `unanchorable` line; any diff past the budget
- * emits its input as one replaced span instead.
+ * `mergeAcrossWhitespace`). A region that may still be `split` line by line
+ * (`refineByLine`, whose pairs and gaps come back here with `split` false)
+ * is not diffed whole once longer than `MAX_REFINE_LENGTH` but split: a
+ * region a long run of short lines left unanchored — 600 one-word links,
+ * none long enough for `MIN_ANCHOR_LENGTH` — is then diffed pair by pair,
+ * each well within the bound. A pair or a gap of that split is diffed
+ * whatever its length, the deadline alone bounding it, so that within the
+ * budget no length emits a span wider than the lines around it. A diff past
+ * the budget is abandoned: a region still to split is paired without a
+ * diff, so a position stays bounded by its own line whatever the budget,
+ * and a pair or a gap is emitted as one replaced span.
  */
 function diffRegion(
   out: Hunk[],
@@ -1707,6 +1751,7 @@ function diffRegion(
   toEnd: number,
   deadline: number,
   unanchorable: number[],
+  split: boolean,
 ): void {
   let prefix = 0;
   const maxPrefix = Math.min(fromEnd - fromStart, toEnd - toStart);
@@ -1737,9 +1782,18 @@ function diffRegion(
     out.push(whole);
     return;
   }
-  // Nothing is searched once the budget is spent: the region is emitted as is.
+  // A region not diffed is paired line by line while it may be; a pair or a
+  // gap of that pairing is emitted as is.
+  const abandon = () => {
+    if (split) {
+      refineByLine(out, from, to, fromStart, fromEnd, toStart, toEnd, deadline, unanchorable);
+    } else {
+      out.push(whole);
+    }
+  };
+  // Nothing is searched once the budget is spent.
   if (performance.now() >= deadline) {
-    out.push(whole);
+    abandon();
     return;
   }
   // A `from` region that survives whole inside the `to` region — text between
@@ -1753,14 +1807,10 @@ function diffRegion(
     if (after < toEnd) out.push({ fromStart: fromEnd, fromEnd, toStart: after, toEnd });
     return;
   }
-  // Nothing inside a long region anchored — unless its anchors were declined
-  // (an unanchorable line), in which case the deadline alone bounds its diff
-  // — so the region is emitted as is.
-  if (
-    (fromEnd - fromStart > MAX_REFINE_LENGTH || toEnd - toStart > MAX_REFINE_LENGTH) &&
-    !overlaps(unanchorable, toStart, toEnd)
-  ) {
-    out.push(whole);
+  // Nothing inside a long region anchored, so the region is not diffed whole
+  // but split; a pair or a gap of the split is diffed however long.
+  if (split && (fromEnd - fromStart > MAX_REFINE_LENGTH || toEnd - toStart > MAX_REFINE_LENGTH)) {
+    refineByLine(out, from, to, fromStart, fromEnd, toStart, toEnd, deadline, unanchorable);
     return;
   }
   const words = withinBudget(deadline, (timeout) =>
@@ -1771,7 +1821,7 @@ function diffRegion(
     ),
   );
   if (!words) {
-    out.push(whole);
+    abandon();
     return;
   }
   const spans = mergeAcrossWhitespace(
@@ -1857,7 +1907,7 @@ function refineByLine(
   const gap = (fromA: number, fromB: number, toA: number, toB: number) => {
     if (fromA === fromB && toA === toB) return;
     if (!overlaps(unanchorable, toA, toB)) {
-      diffRegion(out, from, to, fromA, fromB, toA, toB, deadline, unanchorable);
+      diffRegion(out, from, to, fromA, fromB, toA, toB, deadline, unanchorable, false);
       return;
     }
     const sealedEnd = Math.min(lastOverlapEnd(unanchorable, toA, toB), toB);
@@ -1876,7 +1926,7 @@ function refineByLine(
     const fromA = fragments[first].start;
     const fromB = fragments[last].end;
     gap(fromPos, fromA, toPos, line.start);
-    diffRegion(out, from, to, fromA, fromB, line.start, line.end, deadline, unanchorable);
+    diffRegion(out, from, to, fromA, fromB, line.start, line.end, deadline, unanchorable, false);
     fromPos = fromB;
     toPos = line.end;
   }
