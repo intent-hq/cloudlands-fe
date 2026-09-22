@@ -44,7 +44,19 @@ async function handleInitialize(id) {
   // Simulate realistic provider timing — give frontend time to set up panel layout
   await new Promise((resolve) => setTimeout(resolve, 2000));
   return jsonrpcResult(id, {
+    protocolVersion: 1,
+    agentCapabilities: {},
     agentInfo: { name: 'mock-e2e', version: '1.0.0' },
+  });
+}
+
+function agentMessageChunk(text) {
+  return jsonrpcNotification('session/update', {
+    sessionId,
+    update: {
+      sessionUpdate: 'agent_message_chunk',
+      content: { type: 'text', text },
+    },
   });
 }
 
@@ -110,14 +122,7 @@ async function handleSessionPrompt(id) {
       if (i > 0 && chunkDelayMs > 0) {
         await new Promise((resolve) => setTimeout(resolve, chunkDelayMs));
       }
-      const notification = jsonrpcNotification('session/update', {
-        sessionId,
-        sessionUpdate: {
-          type: 'agent_message_chunk',
-          content: { type: 'text', text: behavior.chunks[i] },
-        },
-      });
-      process.stdout.write(notification + '\n');
+      process.stdout.write(agentMessageChunk(behavior.chunks[i]) + '\n');
     }
   } else {
     // Single-response mode: split response text into fixed-size chunks (no delay)
@@ -125,29 +130,12 @@ async function handleSessionPrompt(id) {
     const chunkSize = behavior.chunkSize || 20;
 
     for (let i = 0; i < replyText.length; i += chunkSize) {
-      const chunk = replyText.slice(i, i + chunkSize);
-      const notification = jsonrpcNotification('session/update', {
-        sessionId,
-        sessionUpdate: {
-          type: 'agent_message_chunk',
-          content: { type: 'text', text: chunk },
-        },
-      });
-      process.stdout.write(notification + '\n');
+      process.stdout.write(agentMessageChunk(replyText.slice(i, i + chunkSize)) + '\n');
     }
   }
 
-  // 4. Send done notification
-  const doneNotification = jsonrpcNotification('session/update', {
-    sessionId,
-    sessionUpdate: {
-      type: 'done',
-      stopReason: 'end_turn',
-    },
-  });
-  process.stdout.write(doneNotification + '\n');
-
-  return jsonrpcResult(id, {});
+  // 4. End the turn — the prompt result carries the stop reason
+  return jsonrpcResult(id, { stopReason: 'end_turn' });
 }
 
 // --- Message dispatch ---
