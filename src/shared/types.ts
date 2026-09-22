@@ -601,6 +601,11 @@ export interface PullRequestInfo {
   closedAt?: string;
   /** GitHub mergeability state: 'clean', 'dirty', 'blocked', 'behind', 'unstable', 'unknown' */
   mergeableState?: string;
+  /**
+   * The PR sits in the host's merge queue. Present as `true` only when a signal-bearing
+   * read reported it (a queued PR reads `mergeableState: 'clean'` on REST); absent otherwise.
+   */
+  isInMergeQueue?: boolean;
   /** Number of review comments on the PR */
   reviewComments?: number;
   /** CI status summary */
