@@ -74,6 +74,7 @@ import {
   adjustScopeCount,
   fetchBackgroundAgentsRequested,
   fetchDelegatedAgentsRequested,
+  fetchOrphanedDelegatedAgentsRequested,
   fetchRetiredAgentsRequested,
   hydrateAgentsRequested,
   setActiveAgentId,
@@ -83,8 +84,10 @@ import {
   setDelegatedParentLoaded,
   setIsLoadingDelegatedParent,
   setIsLoadingLazyBin,
+  setIsLoadingOrphanedDelegatedAgents,
   setIsLoadingRetiredAgents,
   setLazyBinLoaded,
+  setOrphanedDelegatedAgentsLoaded,
   setRetiredAgentsLoaded,
   setRetiredCount,
   setScopeCounts,
@@ -100,8 +103,10 @@ import {
   selectIsLoadingBackgroundAgents,
   selectIsLoadingDelegatedAgents,
   selectIsLoadingDelegatedParent,
+  selectIsLoadingOrphanedDelegatedAgents,
   selectIsLoadingRetiredAgents,
   selectLoadedDelegatedParentIds,
+  selectOrphanedDelegatedAgentsLoaded,
   selectRetiredAgentsLoaded,
   selectScopeCounts,
   selectScopeCountsGeneration,
@@ -401,7 +406,8 @@ function* hydrateAgents(workspaceId: string): SagaGenerator<void> {
   // bins between them can appear in two lists — dedupe by id, preferring
   // the later (fresher) read; the retired-only row is read last since it
   // carries the fresher `retiredAt`. Delegated rows loaded per parent (the
-  // by-parent read) are re-read per parent when the whole bin is not loaded.
+  // by-parent read) and the orphan-only subset are re-read the same way when
+  // the whole bin is not loaded.
   const delegatedLoadedAtRead = scopeCounts
     ? yield* selectDelegatedAgentsLoaded.effect(workspaceId)
     : false;
@@ -409,6 +415,10 @@ function* hydrateAgents(workspaceId: string): SagaGenerator<void> {
     scopeCounts && !delegatedLoadedAtRead
       ? Object.keys(yield* selectLoadedDelegatedParentIds.effect(workspaceId))
       : [];
+  const orphanedLoadedAtRead =
+    scopeCounts && !delegatedLoadedAtRead
+      ? yield* selectOrphanedDelegatedAgentsLoaded.effect(workspaceId)
+      : false;
   const backgroundLoadedAtRead = scopeCounts
     ? yield* selectBackgroundAgentsLoaded.effect(workspaceId)
     : false;
@@ -428,6 +438,14 @@ function* hydrateAgents(workspaceId: string): SagaGenerator<void> {
       { scope: 'delegated' as const, parentAgentId },
     );
     listed = mergeListedRows(listed, childRows);
+  }
+  if (orphanedLoadedAtRead) {
+    const orphanedRows: Awaited<ReturnType<typeof appClient.agents.list>> = yield* call(
+      [appClient.agents, appClient.agents.list],
+      workspaceId,
+      { scope: 'delegated' as const, orphanedOnly: true },
+    );
+    listed = mergeListedRows(listed, orphanedRows);
   }
   if (backgroundLoadedAtRead) {
     const backgroundRows: Awaited<ReturnType<typeof appClient.agents.list>> = yield* call(
@@ -500,6 +518,13 @@ function* hydrateAgents(workspaceId: string): SagaGenerator<void> {
         if (loadedParentIdsAtRead.includes(parentAgentId)) continue;
         yield* put(setDelegatedParentLoaded(workspaceId, parentAgentId, false));
         yield* put(fetchDelegatedAgentsRequested(workspaceId, parentAgentId));
+      }
+      if (
+        !orphanedLoadedAtRead &&
+        (yield* selectOrphanedDelegatedAgentsLoaded.effect(workspaceId))
+      ) {
+        yield* put(setOrphanedDelegatedAgentsLoaded(workspaceId, false));
+        yield* put(fetchOrphanedDelegatedAgentsRequested(workspaceId));
       }
     }
     if (!backgroundLoadedAtRead && (yield* selectBackgroundAgentsLoaded.effect(workspaceId))) {
@@ -643,7 +668,8 @@ function* fetchLazyBinAgents(workspaceId: string, bin: LazyAgentListBin): SagaGe
  * `running` is not derivable from a list row here, so each parent keeps its
  * daemon-served running count clipped to the new total (loaded rows are
  * authoritative for running once hydrated) and the workspace-wide `running`
- * stays `Σ byParent[*].running`.
+ * stays `Σ byParent[*].running`. `orphaned` is not derivable from a list row
+ * (orphan-ness is a daemon-side parent lookup), so it is carried verbatim.
  */
 function* rebaselineDelegatedCountsFromRows(
   workspaceId: string,
@@ -663,7 +689,76 @@ function* rebaselineDelegatedCountsFromRows(
     byParent[parentAgentId] = { total, running: parentRunning };
     running += parentRunning;
   }
-  yield* put(setDelegatedCounts(workspaceId, { running, byParent }));
+  yield* put(
+    setDelegatedCounts(workspaceId, {
+      running,
+      byParent,
+      ...(counts.orphaned ? { orphaned: counts.orphaned } : {}),
+    }),
+  );
+}
+
+/**
+ * On-demand orphan-only delegated load (§5.5, `scope: "delegated"` +
+ * `orphanedOnly: true`): triggered when the sidebar's Delegated bin — which
+ * holds only the orphaned delegated rows — expands. Same contract as
+ * `fetchDelegatedAgentsForParent`: loads once (a whole-bin load covers the
+ * orphans too), a failed read leaves the flag false so the next expand
+ * retries, rows merge in via `addAgent`. Gated on `delegatedCounts.orphaned`
+ * presence — an older daemon ignores `orphanedOnly` and would answer with the
+ * whole bin, so there is nothing to load until the daemon serves the count.
+ * `orphaned.total` re-baselines to the rows served (running clipped to it)
+ * unless a fresher baseline landed while the read was in flight.
+ */
+function* fetchOrphanedDelegatedAgents(workspaceId: string): SagaGenerator<void> {
+  if (!(yield* selectScopeCounts.effect(workspaceId))) return;
+  if (!(yield* selectDelegatedCounts.effect(workspaceId))?.orphaned) return;
+  if (yield* selectDelegatedAgentsLoaded.effect(workspaceId)) return;
+  if (yield* selectOrphanedDelegatedAgentsLoaded.effect(workspaceId)) return;
+  if (yield* selectIsLoadingOrphanedDelegatedAgents.effect(workspaceId)) return;
+  const baselineGeneration = yield* selectScopeCountsGeneration.effect(workspaceId);
+  yield* put(setIsLoadingOrphanedDelegatedAgents(workspaceId, true));
+  try {
+    const listed: Awaited<ReturnType<typeof appClient.agents.list>> = yield* call(
+      [appClient.agents, appClient.agents.list],
+      workspaceId,
+      { scope: 'delegated' as const, orphanedOnly: true },
+    );
+    const fetched = yield* filterPendingDeletions(listed);
+    if (fetched.length > 0) {
+      const agents = [] as typeof fetched;
+      for (const agent of fetched) {
+        const existing = yield* selectAgentSession.effect(String(agent.id));
+        agents.push(
+          agent.messages.length === 0 && existing && existing.messages.length > 0
+            ? { ...agent, messages: existing.messages }
+            : agent,
+        );
+      }
+      yield* put(bulkUpsertSessions(agents, { listProjection: true }));
+      for (const agent of agents) {
+        yield* put(addAgent(workspaceId, agent));
+      }
+    }
+    const superseded =
+      (yield* selectDelegatedAgentsLoaded.effect(workspaceId)) ||
+      (yield* selectScopeCountsGeneration.effect(workspaceId)) !== baselineGeneration;
+    const counts = yield* selectDelegatedCounts.effect(workspaceId);
+    if (counts?.orphaned && !superseded && counts.orphaned.total !== fetched.length) {
+      yield* put(
+        setDelegatedCounts(workspaceId, {
+          ...counts,
+          orphaned: {
+            total: fetched.length,
+            running: Math.min(fetched.length, counts.orphaned.running),
+          },
+        }),
+      );
+    }
+    yield* put(setOrphanedDelegatedAgentsLoaded(workspaceId, true));
+  } finally {
+    yield* put(setIsLoadingOrphanedDelegatedAgents(workspaceId, false));
+  }
 }
 
 /**
@@ -1099,6 +1194,18 @@ function delegatedReadContextOf(action: ReturnType<typeof fetchDelegatedAgentsRe
   return parentAgentId ? `${workspaceId}::${parentAgentId}` : workspaceId;
 }
 
+function* orphanedDelegatedAgentsWorker(
+  scheduler: WorkspaceReadScheduler,
+  action: ReturnType<typeof fetchOrphanedDelegatedAgentsRequested>,
+) {
+  yield* runWorkspaceRead(
+    scheduler,
+    'orphanedDelegatedAgents',
+    action.payload[0],
+    fetchOrphanedDelegatedAgents,
+  );
+}
+
 function* backgroundAgentsWorker(
   scheduler: WorkspaceReadScheduler,
   action: ReturnType<typeof fetchBackgroundAgentsRequested>,
@@ -1270,6 +1377,11 @@ export function* lifecycleReadSaga(): SagaGenerator<void> {
         fetchDelegatedAgentsRequested,
         delegatedReadContextOf,
         delegatedAgentsWorker,
+        scheduler,
+      ),
+      takeLeadingByWorkspace(
+        fetchOrphanedDelegatedAgentsRequested,
+        orphanedDelegatedAgentsWorker,
         scheduler,
       ),
       takeLeadingByWorkspace(fetchBackgroundAgentsRequested, backgroundAgentsWorker, scheduler),

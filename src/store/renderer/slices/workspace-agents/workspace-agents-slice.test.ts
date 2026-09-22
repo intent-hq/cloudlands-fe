@@ -18,8 +18,10 @@ import {
   selectIsLoadingBackgroundAgents,
   selectIsLoadingDelegatedAgents,
   selectIsLoadingDelegatedParent,
+  selectIsLoadingOrphanedDelegatedAgents,
   selectLoadedDelegatedParentIds,
   selectLoadingDelegatedParentIds,
+  selectOrphanedDelegatedAgentsLoaded,
   selectScopeCounts,
   selectAgentsLoaded,
   selectForegroundWorkspaceAgents,
@@ -63,8 +65,10 @@ import {
   setIsLoadingAgents,
   setIsLoadingDelegatedParent,
   setIsLoadingLazyBin,
+  setIsLoadingOrphanedDelegatedAgents,
   setIsLoadingRetiredAgents,
   setLazyBinLoaded,
+  setOrphanedDelegatedAgentsLoaded,
   setRetiredAgentsLoaded,
   setRetiredCount,
   setScopeCounts,
@@ -420,6 +424,75 @@ describe('workspaceAgentsReducer', () => {
     state = workspaceAgentsReducer(state, setDelegatedCounts(WS_1, null));
     expect(state.byWorkspaceId[WS_1].delegatedCounts).toBeNull();
     expect(workspaceAgentsReducer(state, setDelegatedCounts(WS_1, null))).toBe(state);
+  });
+
+  it('carries delegatedCounts.orphaned verbatim when served, never defaults it, and tracks the orphan-only read flags', () => {
+    const PARENT_A = 'agent-parent-a';
+    // Older daemon shape: no `orphaned` key is installed (presence-detected).
+    let state = workspaceAgentsReducer(
+      initialState,
+      setScopeCounts(WS_1, { topLevel: 2, delegated: 4, background: 0 }),
+    );
+    state = workspaceAgentsReducer(
+      state,
+      setDelegatedCounts(WS_1, { running: 1, byParent: { [PARENT_A]: { total: 4, running: 1 } } }),
+    );
+    expect('orphaned' in (state.byWorkspaceId[WS_1].delegatedCounts ?? {})).toBe(false);
+
+    // Served shape: stored as-is (the empty pair is a served value, not absence).
+    state = workspaceAgentsReducer(
+      state,
+      setDelegatedCounts(WS_1, {
+        running: 1,
+        byParent: { [PARENT_A]: { total: 4, running: 1 } },
+        orphaned: { total: 0, running: 0 },
+      }),
+    );
+    expect(state.byWorkspaceId[WS_1].delegatedCounts?.orphaned).toEqual({ total: 0, running: 0 });
+    state = workspaceAgentsReducer(
+      state,
+      setDelegatedCounts(WS_1, {
+        running: 3,
+        byParent: { [PARENT_A]: { total: 2, running: 1 } },
+        orphaned: { total: 2, running: 2 },
+      }),
+    );
+    expect(state.byWorkspaceId[WS_1].delegatedCounts).toEqual({
+      running: 3,
+      byParent: { [PARENT_A]: { total: 2, running: 1 } },
+      orphaned: { total: 2, running: 2 },
+    });
+
+    // Per-parent nudges (the lifecycle-event path) leave `orphaned` untouched.
+    state = workspaceAgentsReducer(state, adjustDelegatedParentCount(WS_1, PARENT_A, 1));
+    expect(state.byWorkspaceId[WS_1].delegatedCounts).toEqual({
+      running: 3,
+      byParent: { [PARENT_A]: { total: 3, running: 1 } },
+      orphaned: { total: 2, running: 2 },
+    });
+
+    // Orphan-only read flags, independent of the whole-bin and per-parent ones.
+    expect(selectOrphanedDelegatedAgentsLoaded.select(mockState(state), WS_1)).toBe(false);
+    expect(selectIsLoadingOrphanedDelegatedAgents.select(mockState(state), WS_1)).toBe(false);
+    state = workspaceAgentsReducer(state, setIsLoadingOrphanedDelegatedAgents(WS_1, true));
+    expect(selectIsLoadingOrphanedDelegatedAgents.select(mockState(state), WS_1)).toBe(true);
+    expect(workspaceAgentsReducer(state, setIsLoadingOrphanedDelegatedAgents(WS_1, true))).toBe(
+      state,
+    );
+    state = workspaceAgentsReducer(state, setIsLoadingOrphanedDelegatedAgents(WS_1, false));
+    state = workspaceAgentsReducer(state, setOrphanedDelegatedAgentsLoaded(WS_1, true));
+    expect(selectOrphanedDelegatedAgentsLoaded.select(mockState(state), WS_1)).toBe(true);
+    expect(selectDelegatedAgentsLoaded.select(mockState(state), WS_1)).toBe(false);
+    expect(selectDelegatedParentLoaded.select(mockState(state), WS_1, PARENT_A)).toBe(false);
+    expect(workspaceAgentsReducer(state, setOrphanedDelegatedAgentsLoaded(WS_1, true))).toBe(state);
+    state = workspaceAgentsReducer(state, setOrphanedDelegatedAgentsLoaded(WS_1, false));
+    expect(state.byWorkspaceId[WS_1].orphanedDelegatedAgentsLoaded).toBe(false);
+
+    // Workspace reset clears the orphan flags with the rest of the lazy state.
+    state = workspaceAgentsReducer(state, setOrphanedDelegatedAgentsLoaded(WS_1, true));
+    state = workspaceAgentsReducer(state, removeWorkspaceAgentState(WS_1));
+    expect(selectOrphanedDelegatedAgentsLoaded.select(mockState(state), WS_1)).toBe(false);
+    expect(selectDelegatedCounts.select(mockState(state), WS_1)).toBeNull();
   });
 
   it('stores waiting-for-first-message per agent and clears it when false', () => {

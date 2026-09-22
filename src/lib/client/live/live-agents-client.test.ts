@@ -1488,6 +1488,86 @@ describe('LiveAgentsClient reads thread daemon activity flags (PROTOCOL §5.5)',
     }
   });
 
+  it('list sends orphanedOnly alongside scope delegated only when true (§5.5 orphan-only read)', async () => {
+    backend.onRequest('agent.list', () => ({ agents: [], retiredCount: 0 }));
+    const client = new LiveAgentsClient();
+
+    await client.list('ws-1', { scope: 'delegated', orphanedOnly: true });
+    expect(backend.requests[0]).toEqual({
+      method: 'agent.list',
+      params: { workspaceId: 'ws-1', scope: 'delegated', orphanedOnly: true },
+    });
+
+    // `false` and absent are the same whole-bin read — the flag stays off the wire.
+    await client.list('ws-1', { scope: 'delegated', orphanedOnly: false });
+    expect(backend.requests[1].params).toEqual({ workspaceId: 'ws-1', scope: 'delegated' });
+  });
+
+  it('listWithMeta carries delegatedCounts.orphaned verbatim and leaves it absent for a daemon predating it (§5.5)', async () => {
+    const client = new LiveAgentsClient();
+    const withOrphans = {
+      running: 2,
+      byParent: { 'agent-parent-a': { total: 3, running: 2 } },
+      orphaned: { total: 1, running: 0 },
+    };
+    backend.onRequest('agent.list', () => ({
+      agents: [
+        {
+          id: 'agent-orphan',
+          workspaceId: 'ws-1',
+          name: 'Orphan',
+          status: 'idle',
+          parentAgentId: 'agent-gone',
+        },
+      ],
+      retiredCount: 0,
+      scopeCounts: { topLevel: 2, delegated: 4, background: 0 },
+      delegatedCounts: withOrphans,
+    }));
+    const served = await client.listWithMeta('ws-1', { scope: 'delegated', orphanedOnly: true });
+    expect(served.delegatedCounts).toEqual(withOrphans);
+    expect(served.agents.map((a) => [a.id, a.parentAgentId])).toEqual([
+      ['agent-orphan', 'agent-gone'],
+    ]);
+
+    // The empty pair is a served value (no orphans), not absence.
+    backend.onRequest('agent.list', () => ({
+      agents: [],
+      retiredCount: 0,
+      scopeCounts: { topLevel: 2, delegated: 4, background: 0 },
+      delegatedCounts: { running: 0, byParent: {}, orphaned: { total: 0, running: 0 } },
+    }));
+    const none = await client.listWithMeta('ws-1', { scope: 'topLevel' });
+    expect(none.delegatedCounts?.orphaned).toEqual({ total: 0, running: 0 });
+
+    // A daemon serving `delegatedCounts` but predating `orphaned`: the key
+    // must be ABSENT (never zeroed) so the store gates the orphan-only read off.
+    backend.onRequest('agent.list', () => ({
+      agents: [],
+      retiredCount: 0,
+      scopeCounts: { topLevel: 2, delegated: 4, background: 0 },
+      delegatedCounts: { running: 0, byParent: {} },
+    }));
+    const legacy = await client.listWithMeta('ws-1', { scope: 'topLevel' });
+    expect(legacy.delegatedCounts).toEqual({ running: 0, byParent: {} });
+    expect('orphaned' in (legacy.delegatedCounts ?? {})).toBe(false);
+
+    // A malformed `orphaned` is not healed: the whole field reads as absent.
+    for (const malformed of [
+      { running: 0, byParent: {}, orphaned: { total: 1 } },
+      { running: 0, byParent: {}, orphaned: { total: '1', running: 0 } },
+      { running: 0, byParent: {}, orphaned: null },
+    ]) {
+      backend.onRequest('agent.list', () => ({
+        agents: [],
+        retiredCount: 0,
+        delegatedCounts: malformed,
+      }));
+      const bad = await client.listWithMeta('ws-1', { scope: 'topLevel' });
+      expect(bad.delegatedCounts).toBeUndefined();
+    }
+  });
+
   it('list carries retiredAt verbatim on the retired-only read (§5.5 soft retire)', async () => {
     backend.onRequest('agent.list', () => ({
       agents: [

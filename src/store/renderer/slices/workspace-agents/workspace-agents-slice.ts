@@ -97,6 +97,14 @@ export interface WorkspaceAgentState {
   loadedDelegatedParentIds: Record<string, true>;
   /** Parents whose per-parent delegated read is in flight. */
   loadingDelegatedParentIds: Record<string, true>;
+  /**
+   * True once the orphan-only delegated read (`scope: "delegated"` +
+   * `orphanedOnly: true`) has hydrated the orphaned rows. A whole-bin load
+   * covers the orphans too, so readers check `delegatedAgentsLoaded` first.
+   */
+  orphanedDelegatedAgentsLoaded: boolean;
+  /** True while the on-demand orphan-only delegated read is in flight. */
+  isLoadingOrphanedDelegatedAgents: boolean;
   /** True once the `scope: "background"` read has hydrated the background rows. */
   backgroundAgentsLoaded: boolean;
   /** True while the on-demand background read is in flight. */
@@ -258,6 +266,8 @@ export const emptyWorkspaceAgentState: WorkspaceAgentState = {
   isLoadingDelegatedAgents: false,
   loadedDelegatedParentIds: {},
   loadingDelegatedParentIds: {},
+  orphanedDelegatedAgentsLoaded: false,
+  isLoadingOrphanedDelegatedAgents: false,
   backgroundAgentsLoaded: false,
   isLoadingBackgroundAgents: false,
 };
@@ -342,6 +352,15 @@ export const setIsLoadingRetiredAgents = createAction<[wsId: string, loading: bo
 export const fetchDelegatedAgentsRequested = createAction<[wsId: string, parentAgentId?: string]>(
   'workspaceAgents/fetchDelegatedAgentsRequested',
 );
+/**
+ * Saga-only trigger: load the ORPHANED delegated rows on demand via
+ * `agent.list { scope: "delegated", orphanedOnly: true }` (§5.5). A no-op
+ * unless the daemon served `delegatedCounts.orphaned` — an older daemon
+ * ignores `orphanedOnly` and would answer with the whole bin.
+ */
+export const fetchOrphanedDelegatedAgentsRequested = createAction<[wsId: string]>(
+  'workspaceAgents/fetchOrphanedDelegatedAgentsRequested',
+);
 export const fetchBackgroundAgentsRequested = createAction<[wsId: string]>(
   'workspaceAgents/fetchBackgroundAgentsRequested',
 );
@@ -393,6 +412,12 @@ export const setDelegatedParentLoaded = createAction<
 export const setIsLoadingDelegatedParent = createAction<
   [wsId: string, parentAgentId: string, loading: boolean]
 >('workspaceAgents/setIsLoadingDelegatedParent');
+export const setOrphanedDelegatedAgentsLoaded = createAction<[wsId: string, loaded: boolean]>(
+  'workspaceAgents/setOrphanedDelegatedAgentsLoaded',
+);
+export const setIsLoadingOrphanedDelegatedAgents = createAction<[wsId: string, loading: boolean]>(
+  'workspaceAgents/setIsLoadingOrphanedDelegatedAgents',
+);
 export const createAgentRequested = createAction<
   [wsId: string, agentType?: string, options?: { panelLayoutId?: string; panelId?: string }]
 >('workspaceAgents/createAgentRequested');
@@ -749,11 +774,44 @@ workspaceAgentsReducer.with(setDelegatedCounts, (state, { payload: [wsId, counts
     if (total === 0) continue;
     byParent[parentAgentId] = { total, running: Math.min(total, Math.max(0, entry.running)) };
   }
+  // `orphaned` is presence-detected: stored when served, never defaulted.
+  const orphaned = counts.orphaned
+    ? {
+        total: Math.max(0, counts.orphaned.total),
+        running: Math.min(Math.max(0, counts.orphaned.total), Math.max(0, counts.orphaned.running)),
+      }
+    : undefined;
   return setWorkspaceState(state, wsId, {
     ...workspaceState,
-    delegatedCounts: { running: Math.max(0, counts.running), byParent },
+    delegatedCounts: {
+      running: Math.max(0, counts.running),
+      byParent,
+      ...(orphaned ? { orphaned } : {}),
+    },
   });
 });
+workspaceAgentsReducer.with(
+  setOrphanedDelegatedAgentsLoaded,
+  (state, { payload: [wsId, loaded] }) => {
+    const workspaceState = getWorkspaceState(state, wsId);
+    if (workspaceState.orphanedDelegatedAgentsLoaded === loaded) return state;
+    return setWorkspaceState(state, wsId, {
+      ...workspaceState,
+      orphanedDelegatedAgentsLoaded: loaded,
+    });
+  },
+);
+workspaceAgentsReducer.with(
+  setIsLoadingOrphanedDelegatedAgents,
+  (state, { payload: [wsId, loading] }) => {
+    const workspaceState = getWorkspaceState(state, wsId);
+    if (workspaceState.isLoadingOrphanedDelegatedAgents === loading) return state;
+    return setWorkspaceState(state, wsId, {
+      ...workspaceState,
+      isLoadingOrphanedDelegatedAgents: loading,
+    });
+  },
+);
 workspaceAgentsReducer.with(
   adjustDelegatedParentCount,
   (state, { payload: [wsId, parentAgentId, delta] }) => {

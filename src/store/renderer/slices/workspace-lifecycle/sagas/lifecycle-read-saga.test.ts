@@ -72,6 +72,7 @@ import { fetchWorkspaceTokenUsage } from '../../token-usage/token-usage-slice';
 import {
   fetchBackgroundAgentsRequested,
   fetchDelegatedAgentsRequested,
+  fetchOrphanedDelegatedAgentsRequested,
   fetchRetiredAgentsRequested,
   hydrateAgentsRequested,
   setAgentsLoaded,
@@ -2675,6 +2676,222 @@ describe('lifecycleReadSaga', () => {
     await stop(run.task);
   });
 
+  // §5.5 delegatedCounts.orphaned: the Delegated bin's orphan rows load on
+  // demand via the orphan-only read (`scope: "delegated"` + `orphanedOnly`).
+  const ORPHANED_ONLY = { scope: 'delegated', orphanedOnly: true } as const;
+  const ORPHAN_PARENT = 'agent-gone';
+  const DELEGATED_WITH_ORPHANS = {
+    running: 1,
+    byParent: { [PARENT]: { total: 2, running: 1 }, [ORPHAN_PARENT]: { total: 1, running: 0 } },
+    orphaned: { total: 1, running: 0 },
+  };
+
+  it('lazy-loads the orphaned delegated rows with exactly the orphan-only request and marks only the orphan flag loaded', async () => {
+    const orphan = agent('agent-orphan', { parentAgentId: ORPHAN_PARENT as never });
+    const current = state();
+    current.workspaceAgents.byWorkspaceId = {
+      [WS]: {
+        scopeCounts: { topLevel: 2, delegated: 3, background: 0 },
+        scopeCountsGeneration: 1,
+        delegatedCounts: DELEGATED_WITH_ORPHANS,
+        loadedDelegatedParentIds: {},
+        loadingDelegatedParentIds: {},
+      },
+    } as never;
+    mocks.agents.list.mockResolvedValue([orphan]);
+    const run = start(current);
+
+    run.channel.put(fetchOrphanedDelegatedAgentsRequested(WS));
+    await settle();
+
+    // The served total already matches the one row: no count re-baseline put.
+    expect(mocks.agents.list.mock.calls).toEqual([[WS, ORPHANED_ONLY]]);
+    expect(run.actions).toEqual([
+      { type: 'workspaceAgents/setIsLoadingOrphanedDelegatedAgents', payload: [WS, true] },
+      { type: 'agentSessions/bulkUpsertSessions', payload: [[orphan], { listProjection: true }] },
+      { type: 'workspaceAgents/addAgent', payload: [WS, orphan] },
+      { type: 'workspaceAgents/setOrphanedDelegatedAgentsLoaded', payload: [WS, true] },
+      { type: 'workspaceAgents/setIsLoadingOrphanedDelegatedAgents', payload: [WS, false] },
+    ]);
+    await stop(run.task);
+  });
+
+  it('skips the orphan-only read behind the presence gate, once loaded, and once the whole bin is loaded', async () => {
+    const current = state();
+    const run = start(current);
+
+    // Daemon predating `delegatedCounts.orphaned` (it would ignore `orphanedOnly`
+    // and answer with the whole bin): nothing to load.
+    current.workspaceAgents.byWorkspaceId = {
+      [WS]: { scopeCounts: COUNTS, delegatedCounts: DELEGATED_COUNTS },
+    } as never;
+    run.channel.put(fetchOrphanedDelegatedAgentsRequested(WS));
+    await settle();
+    expect(mocks.agents.list).not.toHaveBeenCalled();
+    expect(run.actions).toEqual([]);
+
+    // Old daemon (no counts at all).
+    current.workspaceAgents.byWorkspaceId = { [WS]: { scopeCounts: null } } as never;
+    run.channel.put(fetchOrphanedDelegatedAgentsRequested(WS));
+    await settle();
+    expect(mocks.agents.list).not.toHaveBeenCalled();
+
+    // Already loaded.
+    current.workspaceAgents.byWorkspaceId = {
+      [WS]: {
+        scopeCounts: COUNTS,
+        delegatedCounts: DELEGATED_WITH_ORPHANS,
+        orphanedDelegatedAgentsLoaded: true,
+      },
+    } as never;
+    run.channel.put(fetchOrphanedDelegatedAgentsRequested(WS));
+    await settle();
+    expect(mocks.agents.list).not.toHaveBeenCalled();
+
+    // The whole bin already loaded covers the orphans too.
+    current.workspaceAgents.byWorkspaceId = {
+      [WS]: {
+        scopeCounts: COUNTS,
+        delegatedCounts: DELEGATED_WITH_ORPHANS,
+        delegatedAgentsLoaded: true,
+      },
+    } as never;
+    run.channel.put(fetchOrphanedDelegatedAgentsRequested(WS));
+    await settle();
+    expect(mocks.agents.list).not.toHaveBeenCalled();
+    expect(run.actions).toEqual([]);
+    await stop(run.task);
+  });
+
+  it('clears the orphan loading flag and stays retryable after a failed orphan-only load', async () => {
+    const current = state();
+    current.workspaceAgents.byWorkspaceId = {
+      [WS]: { scopeCounts: COUNTS, delegatedCounts: DELEGATED_WITH_ORPHANS },
+    } as never;
+    mocks.agents.list.mockRejectedValueOnce(new Error('offline')).mockResolvedValueOnce([]);
+    const run = start(current);
+
+    run.channel.put(fetchOrphanedDelegatedAgentsRequested(WS));
+    await settle();
+    expect(run.actions).toEqual([
+      { type: 'workspaceAgents/setIsLoadingOrphanedDelegatedAgents', payload: [WS, true] },
+      { type: 'workspaceAgents/setIsLoadingOrphanedDelegatedAgents', payload: [WS, false] },
+    ]);
+
+    run.channel.put(fetchOrphanedDelegatedAgentsRequested(WS));
+    await settle();
+    expect(mocks.agents.list.mock.calls).toEqual([
+      [WS, ORPHANED_ONLY],
+      [WS, ORPHANED_ONLY],
+    ]);
+    expect(run.actions).toContainEqual({
+      type: 'workspaceAgents/setOrphanedDelegatedAgentsLoaded',
+      payload: [WS, true],
+    });
+    await stop(run.task);
+  });
+
+  it('rehydrates the orphan subset alongside the top-level read when it was loaded and the whole bin is not', async () => {
+    const top = agent(PARENT);
+    const orphan = agent('agent-orphan', { parentAgentId: ORPHAN_PARENT as never });
+    const current = state();
+    current.workspaceAgents.byWorkspaceId = {
+      [WS]: {
+        scopeCounts: COUNTS,
+        delegatedCounts: DELEGATED_WITH_ORPHANS,
+        loadedDelegatedParentIds: {},
+        orphanedDelegatedAgentsLoaded: true,
+      },
+    } as never;
+    mocks.agents.listWithMeta.mockResolvedValue({
+      agents: [top],
+      retiredCount: 0,
+      scopeCounts: COUNTS,
+      delegatedCounts: DELEGATED_WITH_ORPHANS,
+    });
+    mocks.agents.list.mockResolvedValue([orphan]);
+    const run = start(current);
+
+    run.channel.put(hydrateAgentsRequested(WS));
+    await settle();
+
+    expect(mocks.agents.list.mock.calls).toEqual([[WS, ORPHANED_ONLY]]);
+    expect(run.actions).toContainEqual({
+      type: 'workspaceAgents/setDelegatedCounts',
+      payload: [WS, DELEGATED_WITH_ORPHANS],
+    });
+    expect(run.actions).toContainEqual({
+      type: 'workspaceAgents/setAgents',
+      payload: [WS, [top, orphan]],
+    });
+    // The orphan flag stays loaded — its rows rode the snapshot.
+    expect(run.actions).not.toContainEqual(
+      expect.objectContaining({ type: 'workspaceAgents/setOrphanedDelegatedAgentsLoaded' }),
+    );
+
+    // Once the whole bin is loaded, the orphan subset is covered by that read.
+    mocks.agents.list.mockClear();
+    current.workspaceAgents.byWorkspaceId = {
+      [WS]: {
+        scopeCounts: COUNTS,
+        delegatedCounts: DELEGATED_WITH_ORPHANS,
+        loadedDelegatedParentIds: {},
+        delegatedAgentsLoaded: true,
+        orphanedDelegatedAgentsLoaded: true,
+      },
+    } as never;
+    run.channel.put(hydrateAgentsRequested(WS));
+    await settle();
+    expect(mocks.agents.list.mock.calls).toEqual([[WS, { scope: 'delegated' }]]);
+    await stop(run.task);
+  });
+
+  it('re-arms an orphan-only load that completes mid-hydration (snapshot eviction guard)', async () => {
+    let resolvePending!: (value: boolean) => void;
+    mocks.isAgentDeletionPending.mockReturnValueOnce(
+      new Promise<boolean>((resolve) => {
+        resolvePending = resolve;
+      }) as never,
+    );
+    const current = state();
+    mocks.agents.listWithMeta.mockResolvedValue({
+      agents: [agent(PARENT)],
+      retiredCount: 0,
+      scopeCounts: COUNTS,
+      delegatedCounts: DELEGATED_WITH_ORPHANS,
+    });
+    const run = start(current);
+
+    run.channel.put(hydrateAgentsRequested(WS));
+    await settle();
+
+    // The orphan-only worker finished while hydration was parked.
+    current.workspaceAgents.byWorkspaceId = {
+      [WS]: {
+        scopeCounts: COUNTS,
+        delegatedCounts: DELEGATED_WITH_ORPHANS,
+        loadedDelegatedParentIds: {},
+        orphanedDelegatedAgentsLoaded: true,
+      },
+    } as never;
+    resolvePending(false);
+    await settle();
+
+    const setAgentsIndex = run.actions.findIndex(
+      (action) => action.type === 'workspaceAgents/setAgents',
+    );
+    expect(setAgentsIndex).toBeGreaterThanOrEqual(0);
+    expect(run.actions.slice(setAgentsIndex)).toContainEqual({
+      type: 'workspaceAgents/setOrphanedDelegatedAgentsLoaded',
+      payload: [WS, false],
+    });
+    expect(run.actions).toContainEqual({
+      type: 'workspaceAgents/fetchOrphanedDelegatedAgentsRequested',
+      payload: [WS],
+    });
+    await stop(run.task);
+  });
+
   // Count-baseline invariant (§5.5): `Σ byParent[*].total === scopeCounts.delegated`
   // must hold after every completion order of the delegated reads. These run
   // the production saga against the real `workspaceAgentsReducer` so the
@@ -2867,6 +3084,88 @@ describe('lifecycleReadSaga', () => {
       expect(run.wsState().delegatedCounts).toEqual(HYDRATED_DELEGATED);
       expect(run.wsState().agentIds.map(String)).toContain('agent-c1');
       expect(run.wsState().loadedDelegatedParentIds).toEqual({ [PARENT]: true });
+      await stop(run.task);
+    });
+
+    it('the orphan-only read re-baselines orphaned.total to the rows served and leaves byParent and scopeCounts.delegated alone', async () => {
+      const run = startWithAgentsReducer();
+      run.dispatch(
+        setDelegatedCounts(WS, { ...SEEDED_DELEGATED, orphaned: { total: 2, running: 2 } }),
+      );
+      mocks.agents.list.mockResolvedValue([childOf('agent-o1', ORPHAN_PARENT)]);
+
+      run.channel.put(fetchOrphanedDelegatedAgentsRequested(WS));
+      await settle();
+
+      expect(mocks.agents.list.mock.calls).toEqual([[WS, ORPHANED_ONLY]]);
+      expect(run.wsState().orphanedDelegatedAgentsLoaded).toBe(true);
+      expect(run.wsState().delegatedAgentsLoaded).toBe(false);
+      expect(run.wsState().agentIds.map(String)).toEqual(['agent-o1']);
+      // Orphans are a subset of the bin: the bin count and the per-parent
+      // totals are not the orphan read's to move; `running` clips to the total.
+      expect(run.wsState().scopeCounts?.delegated).toBe(3);
+      expect(run.wsState().delegatedCounts).toEqual({
+        ...SEEDED_DELEGATED,
+        orphaned: { total: 1, running: 1 },
+      });
+      await stop(run.task);
+    });
+
+    it('a whole-bin read carries orphaned verbatim while re-baselining byParent', async () => {
+      const run = startWithAgentsReducer();
+      run.dispatch(
+        setDelegatedCounts(WS, { ...SEEDED_DELEGATED, orphaned: { total: 1, running: 0 } }),
+      );
+      mocks.agents.list.mockResolvedValue([
+        childOf('agent-c1', PARENT),
+        childOf('agent-o1', ORPHAN_PARENT),
+      ]);
+
+      run.channel.put(fetchDelegatedAgentsRequested(WS));
+      await settle();
+
+      expect(run.wsState().delegatedCounts).toEqual({
+        running: 0,
+        byParent: { [PARENT]: { total: 1, running: 0 }, [ORPHAN_PARENT]: { total: 1, running: 0 } },
+        orphaned: { total: 1, running: 0 },
+      });
+      await stop(run.task);
+    });
+
+    it('an orphan-only read that completes after a hydration baseline keeps the daemon-served orphaned count', async () => {
+      const run = startWithAgentsReducer();
+      run.dispatch(
+        setDelegatedCounts(WS, { ...SEEDED_DELEGATED, orphaned: { total: 3, running: 0 } }),
+      );
+      let resolveOrphans!: (rows: AgentSession[]) => void;
+      mocks.agents.list.mockImplementation(
+        () =>
+          new Promise<AgentSession[]>((resolve) => {
+            resolveOrphans = resolve;
+          }),
+      );
+      const HYDRATED_DELEGATED = { ...SEEDED_DELEGATED, orphaned: { total: 2, running: 1 } };
+      mocks.agents.listWithMeta.mockResolvedValue({
+        agents: [agent(PARENT), agent(OTHER_PARENT)],
+        retiredCount: 0,
+        scopeCounts: { topLevel: 2, delegated: 3, background: 0 },
+        delegatedCounts: HYDRATED_DELEGATED,
+      });
+
+      run.channel.put(fetchOrphanedDelegatedAgentsRequested(WS));
+      await settle();
+      run.channel.put(hydrateAgentsRequested(WS));
+      await settle();
+      expect(run.wsState().delegatedCounts).toEqual(HYDRATED_DELEGATED);
+
+      // The older orphan read lands with one row after the fresh baseline: its
+      // re-baseline is dropped, the row still merges, the orphans are loaded.
+      resolveOrphans([childOf('agent-o1', ORPHAN_PARENT)]);
+      await settle();
+
+      expect(run.wsState().delegatedCounts).toEqual(HYDRATED_DELEGATED);
+      expect(run.wsState().agentIds.map(String)).toContain('agent-o1');
+      expect(run.wsState().orphanedDelegatedAgentsLoaded).toBe(true);
       await stop(run.task);
     });
   });

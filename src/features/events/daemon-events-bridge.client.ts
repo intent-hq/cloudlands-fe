@@ -1354,7 +1354,9 @@ function scopeCountsGenerationOf(workspaceId: string): number {
  * parent's `delegatedCounts.byParent` total by the same delta, so
  * `Σ byParent[*].total` stays in lockstep with `scopeCounts.delegated`
  * (§5.5). Running counts are not nudged: they re-baseline on the next
- * hydration read, and loaded rows are authoritative once hydrated.
+ * hydration read, and loaded rows are authoritative once hydrated. Neither is
+ * `delegatedCounts.orphaned` — whether a row is an orphan is a daemon-side
+ * parent lookup no lifecycle event carries, so it too waits for the next read.
  */
 function adjustBinCounts(workspaceId: string, session: StoredAgentSession, delta: 1 | -1): void {
   const bin = classifyAgentScope(session);

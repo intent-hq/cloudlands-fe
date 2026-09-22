@@ -6196,6 +6196,31 @@ describe('daemonEventsBridge (agent lifecycle → collapsed bin counts, §5.5 sc
       expect(delegatedCountsOf()).toEqual(DELEGATED);
       expect(sumByParent()).toBe(scopeCountsOf()?.delegated);
     });
+
+    it('a delegated agent:created / agent:deleted nudges byParent but leaves delegatedCounts.orphaned untouched (orphan-ness is a daemon-side lookup)', async () => {
+      const ORPHANED = { total: 1, running: 0 };
+      appStore.dispatch(setDelegatedCounts(WS, { ...DELEGATED, orphaned: ORPHANED }));
+      const handler = capturedHandlers[0]!;
+
+      // A child of a parent this workspace no longer holds is what the daemon
+      // will count as an orphan on the next read — the bridge does not guess.
+      ensureAgentSessionSpy.mockImplementationOnce(async () => {
+        seedSession({ id: 'agent-child' as never, parentAgentId: 'agent-gone' as never });
+      });
+      handler(notification('agent:created', { agentId: 'agent-child' }));
+      await flush();
+      expect(scopeCountsOf()).toEqual({ ...COUNTS, delegated: 4 });
+      expect(delegatedCountsOf()).toEqual({
+        ...DELEGATED,
+        byParent: { ...DELEGATED.byParent, 'agent-gone': { total: 1, running: 0 } },
+        orphaned: ORPHANED,
+      });
+
+      handler(notification('agent:deleted', { agentId: 'agent-child' }));
+      await flush();
+      expect(scopeCountsOf()).toEqual(COUNTS);
+      expect(delegatedCountsOf()).toEqual({ ...DELEGATED, orphaned: ORPHANED });
+    });
   });
 });
 describe('daemonEventsBridge (note:* wire contract → applyNoteFromEvent)', () => {
