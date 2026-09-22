@@ -33,9 +33,19 @@ const hostImportSpellings = [
   ["import { seedMockStore } from '$store/renderer/mock-bootstrap';", /mock store/],
   ["import { seedMockStore } from '../store/renderer/mock-bootstrap';", /mock store/],
 ] as const;
+// The same modules reached through `import()`, which `no-restricted-imports`
+// does not see; the root layout bans them via `no-restricted-syntax`.
+const hostDynamicImportSpellings = [
+  ["void import('$lib/electron-bridge');", /Electron bridge.*import\(\)/],
+  ["void import('../lib/electron-bridge.ts');", /Electron bridge.*import\(\)/],
+  ["void import('../lib/client/live/live-app-client.js');", /live daemon client.*import\(\)/],
+  ["void import('$store/renderer/mock-bootstrap');", /mock store.*import\(\)/],
+  ['void import(`../lib/electron-bridge`);', /string-literal specifier/],
+] as const;
 const sharedLayoutImports = [
   "import '../app.css';",
   "import { startRootStoreLifecycle } from '$store/renderer/root-store-lifecycle';",
+  "void import('$lib/utils/platform-capabilities');",
 ];
 
 const eslint = new ESLint({ cwd: root });
@@ -44,7 +54,10 @@ async function restrictedImportMessages(filePath: string, imports: string[]) {
   const source = `<script lang="ts">\n${imports.map((line) => `  ${line}`).join('\n')}\n</script>\n\n<div></div>\n`;
   const [result] = await eslint.lintText(source, { filePath, warnIgnored: false });
   return (result?.messages ?? [])
-    .filter((message) => message.ruleId === 'no-restricted-imports')
+    .filter(
+      (message) =>
+        message.ruleId === 'no-restricted-imports' || message.ruleId === 'no-restricted-syntax',
+    )
     .map((message) => message.message);
 }
 const appRouteFiles = [
@@ -111,7 +124,10 @@ describe('catalog route shell', () => {
 
   it('lets the shared root layout start state and styles but bans product host imports there', async () => {
     expect(await restrictedImportMessages(ROOT_LAYOUT, sharedLayoutImports)).toEqual([]);
-    for (const [importStatement, expected] of hostImportSpellings) {
+    for (const [importStatement, expected] of [
+      ...hostImportSpellings,
+      ...hostDynamicImportSpellings,
+    ]) {
       const messages = await restrictedImportMessages(ROOT_LAYOUT, [importStatement]);
       expect(messages, importStatement).toHaveLength(1);
       expect(messages[0], importStatement).toMatch(expected);
@@ -119,7 +135,9 @@ describe('catalog route shell', () => {
   }, 30_000);
 
   it('lets the app-shell layout own the product host imports', async () => {
-    const hostImports = hostImportSpellings.map(([importStatement]) => importStatement);
+    const hostImports = [...hostImportSpellings, ...hostDynamicImportSpellings].map(
+      ([importStatement]) => importStatement,
+    );
     expect(await restrictedImportMessages(APP_LAYOUT, hostImports)).toEqual([]);
   }, 30_000);
 

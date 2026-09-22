@@ -4,11 +4,20 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, render, screen } from '@testing-library/svelte';
 import { createRawSnippet } from 'svelte';
 
-const mocks = vi.hoisted(() => ({ startRootStoreLifecycle: vi.fn(() => () => {}) }));
+const mocks = vi.hoisted(() => ({
+  startRootStoreLifecycle: vi.fn(() => () => {}),
+  loadAppStylesheet: vi.fn(),
+}));
 
 vi.mock('$store/renderer/root-store-lifecycle', () => ({
   startRootStoreLifecycle: mocks.startRootStoreLifecycle,
 }));
+// Import seam: the factory runs only when a module evaluated by this suite
+// imports src/app.css, so the root layout owning that import is observable.
+vi.mock('../../app.css', () => {
+  mocks.loadAppStylesheet();
+  return {};
+});
 vi.mock('$store/renderer/seeders', () => ({}));
 // Native animation behavior is covered in window-blur-animations.ct.spec.ts.
 vi.mock('$lib/actions/pause-window-animations', () => ({
@@ -38,6 +47,10 @@ describe('root +layout.svelte sandbox Store lifecycle', () => {
   afterEach(() => {
     cleanup();
     appStore.dispose();
+  });
+
+  it('loads the global stylesheet from the shared root layout', () => {
+    expect(mocks.loadAppStylesheet).toHaveBeenCalledTimes(1);
   });
 
   it('initializes the shared root Store without owning app sagas', () => {

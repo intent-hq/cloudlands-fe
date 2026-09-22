@@ -920,6 +920,9 @@ describe('theme color contract — rendered surfaces', () => {
     expect(chatPanel.parentElement!.classList).toContain('min-h-0');
     expect(chatPanel.parentElement!.classList).toContain('flex-1');
     expect(chatPanel.parentElement!.classList).not.toContain('bg-card');
+    const chiefTitle = m.layout_chiefCard_title();
+    expect(chiefTitle).not.toBe('');
+    expect(chatPanel.getAttribute('data-agent-name')).toBe(chiefTitle);
   });
 
   it('keeps ModelPicker boundaries on the shared border token', () => {
