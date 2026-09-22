@@ -77,7 +77,7 @@
     /** Rendered inside the combined Home panel: the panel owns the close
         button and height, so hide the close X and don't force a min height. */
     embedded?: boolean;
-    /** Hidden tabs keep the draft mounted without claiming focus or read state. */
+    /** Mount chat on first activation, then retain drafts without claiming focus or read state. */
     isActive?: boolean;
     collapsed?: boolean;
     ontoggle?: () => void;
@@ -109,6 +109,7 @@
   let isCreatingThread = $state(false);
   let hasAutoStartedRef = $state(false);
   let isWorkspaceRegistered = $state(false);
+  let hasActivatedChat = $state(false);
 
   const activeChiefThread = $derived(
     $chiefActiveAgentId$
@@ -154,6 +155,12 @@
 
   $effect.pre(() => {
     ensureChiefWorkspaceRegistered();
+  });
+
+  $effect.pre(() => {
+    // ChatPanel initializes its transcript on mount, even when inactive.
+    // Defer that first mount until selection, then keep the draft alive on tab changes.
+    if (expanded && isActive && activeAgentId) hasActivatedChat = true;
   });
 
   $effect(() => {
@@ -470,7 +477,7 @@
       hidden={Boolean(ontoggle && collapsed)}
     >
       <section class="flex h-full min-h-0 flex-col">
-        {#if activeAgentId}
+        {#if hasActivatedChat && activeAgentId}
           {#key activeAgentId}
             <div class="min-h-0 flex-1">
               <ChatPanel

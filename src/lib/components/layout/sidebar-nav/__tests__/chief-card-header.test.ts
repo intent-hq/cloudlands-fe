@@ -52,22 +52,35 @@ describe('ChiefCard combined header', () => {
     appStore.dispatch(removeSession(agentId));
   });
 
-  it('keeps chat mounted but pauses active behavior when its tab is hidden', async () => {
-    const { rerender } = render(ChiefCard, {
-      props: { expanded: true, embedded: true, isActive: false },
-    });
-    const chat = screen.getByTestId('mock-chat-panel');
-    expect(chat.getAttribute('data-active')).toBe('false');
+  it.each([false, true])(
+    'defers chat mount until activation, then retains it across tab switches (late hydration: %s)',
+    async (lateHydration) => {
+      if (lateHydration) appStore.dispatch(removeSession(agentId));
+      const { rerender } = render(ChiefCard, {
+        props: { expanded: true, embedded: true, isActive: false },
+      });
+      if (lateHydration) {
+        expect(screen.queryByTestId('mock-chat-panel')).toBeNull();
+        appStore.dispatch(bulkUpsertSessions([makeChiefSession()]));
+      }
+      // Confirm the existing thread has reached the card before checking its child lifecycle.
+      await screen.findByRole('button', { name: threadTitle });
+      expect(screen.queryByTestId('mock-chat-panel')).toBeNull();
 
-    await rerender({ expanded: true, embedded: true, isActive: true });
-    expect(screen.getByTestId('mock-chat-panel')).toBe(chat);
-    expect(chat.getAttribute('data-active')).toBe('true');
-    expect(chat.getAttribute('data-autofocus')).toBe('false');
+      await rerender({ expanded: true, embedded: true, isActive: true });
+      const chat = await screen.findByTestId('mock-chat-panel');
+      expect(chat.getAttribute('data-active')).toBe('true');
+      expect(chat.getAttribute('data-autofocus')).toBe('false');
 
-    await rerender({ expanded: true, embedded: true, isActive: false });
-    expect(screen.getByTestId('mock-chat-panel')).toBe(chat);
-    expect(chat.getAttribute('data-active')).toBe('false');
-  });
+      await rerender({ expanded: true, embedded: true, isActive: false });
+      expect(screen.getByTestId('mock-chat-panel')).toBe(chat);
+      expect(chat.getAttribute('data-active')).toBe('false');
+
+      await rerender({ expanded: true, embedded: true, isActive: true });
+      expect(screen.getByTestId('mock-chat-panel')).toBe(chat);
+      expect(chat.getAttribute('data-active')).toBe('true');
+    },
+  );
 
   it('toggles exactly once from every part of the collapsed header without opening the dropdown', async () => {
     const ontoggle = vi.fn();
