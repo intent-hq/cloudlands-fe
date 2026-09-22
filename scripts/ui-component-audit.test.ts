@@ -148,8 +148,30 @@ describe('UI component inventory gate', () => {
       'src/lib/components/patterns/settings/custom-controls.ts',
       'src/routes/(app)/settings/+page.svelte',
     ]);
-    expect(dropdownMenu?.callers).toHaveLength(15);
+    // DiagramBlock migrated to DiagramActionsMenu's canonical Menu in d9229ea037.
+    expect(dropdownMenu?.callers).toEqual([
+      'src/features/external-editors/components/FileActionsDropdown.svelte',
+      'src/features/external-editors/components/OpenComboButton.svelte',
+      'src/lib/components/chat/BackgroundHooksRow.svelte',
+      'src/lib/components/chat/MonitoredPrsRow.svelte',
+      'src/lib/components/chat/RegularAgentWelcome.svelte',
+      'src/lib/components/chat/SpecialistDropdown.svelte',
+      'src/lib/components/layout/DaemonStatusIndicator.svelte',
+      'src/lib/components/layout/panel-system/PanelTabBar.svelte',
+      'src/lib/components/modals/PullConflictDialog.svelte',
+      'src/lib/components/patterns/settings/custom-controls.ts',
+      'src/lib/components/workspace/TaskStatusIndicator.svelte',
+      'src/lib/components/workspace/WorkspaceSidebarHeader.svelte',
+      'src/lib/components/workspace/initializer/InitialAgentPicker.svelte',
+      'src/lib/components/workspace/sidebar/WorkspaceProgressCard.svelte',
+    ]);
     expect(dropdownMenu?.callers).toContain('src/lib/components/chat/RegularAgentWelcome.svelte');
+    expect(dropdownMenu?.callers).not.toContain(
+      'src/lib/components/notes/primitives/DiagramBlock.svelte',
+    );
+    expect(
+      components.find((component) => component.publicImport === '$lib/components/ui/menu')?.callers,
+    ).toContain('src/lib/components/diagrams/DiagramActionsMenu.svelte');
     expect(buildUiComponentInventory().components).toEqual(components);
   });
 

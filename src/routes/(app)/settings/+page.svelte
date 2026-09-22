@@ -51,6 +51,7 @@
     setAgentFontStyle,
     setChatAuroraEnabled,
     setCodeFontFamily,
+    setLabsMultiplayerEnabled,
     setNoteFontStyle,
     setShellTransparencyEnabled,
     setUpdateChannel,
@@ -64,6 +65,7 @@
     selectCodeFontFamilyLabel,
     selectCodeFontOptions,
     selectIsNoteMonospace,
+    selectLabsMultiplayerEnabled,
     selectNoteFontStyle,
     selectShellTransparencyEnabled,
     selectUpdateChannel,
@@ -96,6 +98,7 @@
   const codeFontOptions = selectCodeFontOptions();
   const chatAuroraEnabled = selectChatAuroraEnabled();
   const shellTransparencyEnabled = selectShellTransparencyEnabled();
+  const labsMultiplayerEnabled = selectLabsMultiplayerEnabled();
   const themePreference = selectThemePreference();
   const daemonTransport$ = selectDaemonTransport();
   const isCollaboratorOnlyClient$ = selectIsCollaboratorOnlyClient();
@@ -121,6 +124,7 @@
     'guest-sessions',
     'setup',
     'advanced',
+    'labs',
     'input',
     'specialists',
   ];
@@ -180,6 +184,9 @@
     reset: 'advanced',
     general: 'advanced',
     developer: 'advanced',
+    labs: 'labs',
+    'labs-multiplayer': 'labs',
+    multiplayer: 'labs',
   };
 
   function resolveHashTab(targetId: string): SettingsTab | undefined {
@@ -1115,6 +1122,44 @@
               </div>
             </div>
           {/if}
+        {/if}
+
+        <!-- Labs -->
+        {#if activeTab === 'labs'}
+          <div id="labs" data-highlight-id="labs" use:highlightTarget>
+            <h2 class="type-title mb-3 text-foreground">
+              {m.settings_section_labs()}
+            </h2>
+            <p class="type-body text-subtle mb-3">
+              {m.settings_labs_disclaimer_description()}
+            </p>
+            <div class="flex flex-col bg-card rounded-xl divide-y divide-border">
+              <section
+                id="labs-multiplayer"
+                data-highlight-id="labs-multiplayer"
+                use:highlightTarget
+                data-slot="settings-section-body"
+                class="px-6 py-4"
+              >
+                <SettingsFieldRow
+                  id="settings-labs-multiplayer-label-field"
+                  label={m.settings_labs_multiplayer_label()}
+                  description={m.settings_labs_multiplayer_description()}
+                  experimental
+                >
+                  <Switch
+                    id="labs-multiplayer-switch"
+                    size="sm"
+                    class="mb-auto"
+                    checked={$labsMultiplayerEnabled}
+                    onCheckedChange={(enabled) =>
+                      appStore.dispatch(setLabsMultiplayerEnabled(enabled))}
+                    ariaLabel={m.settings_labs_multiplayer_label()}
+                  />
+                </SettingsFieldRow>
+              </section>
+            </div>
+          </div>
         {/if}
       </main>
     </div>

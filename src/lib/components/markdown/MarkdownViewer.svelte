@@ -13,12 +13,18 @@
   import { splitWorkspaceVideoMarkdown } from '$lib/utils/workspace-file-video';
   import RecursiveMarkdownViewer from './MarkdownViewer.svelte';
   import MediaUnavailable from '$lib/components/ui/MediaUnavailable.svelte';
+  import MediaLoadingPlaceholder from '$lib/components/ui/MediaLoadingPlaceholder.svelte';
   import { parseWorkspaceFileImageUrl } from '$lib/utils/image-actions';
   import {
     createWorkspaceFileVersion,
     parseIntentFileTarget,
     workspaceAssetVideoSource,
   } from '$lib/utils/workspace-file-image';
+  import {
+    IMAGE_SIZED_ATTR,
+    stampMarkdownImageDimensions,
+  } from '$lib/utils/markdown-image-dimensions';
+  import type { TextBlockMedia } from '$shared/types/content-block';
 
   import {
     openWorkspaceFile,
@@ -47,6 +53,12 @@
     forceExternalLinks?: boolean;
     /** Show rich fenced blocks as source when no TipTap node views are mounted. */
     renderRichFencesAsCode?: boolean;
+    /**
+     * Text-block image dimension sidecar (PROTOCOL §7.1), keyed by Markdown
+     * `src`. Matching images render in a pre-sized frame with a placeholder
+     * until they load; images without an entry keep the legacy rendering.
+     */
+    media?: TextBlockMedia;
   }
 
   let {
@@ -61,6 +73,7 @@
     chatImageThumbnails = false,
     forceExternalLinks = false,
     renderRichFencesAsCode = false,
+    media,
   }: Props = $props();
 
   // One cache-busting token per viewer instance: re-processing the same
@@ -92,6 +105,7 @@
   async function updateContent(
     markdown: string,
     options: Parameters<typeof processMarkdownToHTML>[1],
+    imageMedia: TextBlockMedia | undefined,
     version: number,
   ) {
     try {
@@ -99,7 +113,7 @@
       if (version !== renderVersion) return;
       // Svelte owns this HTML and the adjacent image-actions overlay. Replacing
       // the container's innerHTML would remove Svelte's anchors and the overlay.
-      processedContent = html;
+      processedContent = stampMarkdownImageDimensions(html, imageMedia, options?.workspaceId);
     } catch (error) {
       if (version !== renderVersion) return;
       logger.error('Failed to process markdown:', error);
@@ -151,8 +165,9 @@
       renderMath: !isStreaming,
       workspaceFileVersion,
     };
+    const imageMedia = media;
     const version = ++renderVersion;
-    const update = () => void updateContent(markdown, options, version);
+    const update = () => void updateContent(markdown, options, imageMedia, version);
 
     if (isStreaming) {
       pendingUpdate = update;
@@ -205,8 +220,73 @@
     if (!imageActionsOpen) hoveredImage = null;
   }
 
+  const IMAGE_FRAME_CLASS = 'markdown-image-frame';
+
+  /** Workspace path or asset name shown while a sized image is still loading. */
+  function sizedImageLabel(image: HTMLImageElement): string | undefined {
+    const source = image.getAttribute('src') || '';
+    const path =
+      parseWorkspaceFileImageUrl(source)?.path ?? parseIntentFileTarget(source, workspaceId)?.path;
+    if (path) return path;
+    if (source.startsWith('workspace-asset://')) {
+      const assetName = source.split(/[?#]/)[0].split('/').pop();
+      if (assetName) return assetName;
+    }
+    // Bare workspace-relative paths (`![x](docs/diagram.png)`) are a supported
+    // media-key shape; the path itself is the most useful label.
+    if (source && !/^[a-z][a-z0-9+.-]*:/i.test(source) && !source.startsWith('//')) {
+      try {
+        return decodeURI(source);
+      } catch {
+        return source;
+      }
+    }
+    return image.getAttribute('alt') || undefined;
+  }
+
   function mediaFallbacks(node: HTMLElement) {
     const mountedPlaceholders = new Map<HTMLElement, ReturnType<typeof mount>>();
+
+    function imageFrame(media: HTMLElement): HTMLElement | null {
+      const parent = media.parentElement;
+      return parent?.classList.contains(IMAGE_FRAME_CLASS) ? parent : null;
+    }
+
+    // Sized images (`width`/`height` from the text block's media sidecar)
+    // sit in a frame that already occupies their final box and shows an
+    // icon + path placeholder until the bytes arrive.
+    function frameSizedImage(image: HTMLImageElement) {
+      const width = Number(image.getAttribute('width'));
+      const height = Number(image.getAttribute('height'));
+      if (!(width > 0 && height > 0)) return;
+      const frame = document.createElement('span');
+      frame.className = IMAGE_FRAME_CLASS;
+      frame.style.aspectRatio = `${width} / ${height}`;
+      frame.style.width = `min(${width}px, 100%)`;
+      frame.dataset.loaded = 'false';
+      image.replaceWith(frame);
+      frame.appendChild(image);
+      const placeholderHost = frame.appendChild(document.createElement('span'));
+      placeholderHost.className = 'markdown-image-frame-placeholder';
+      mountedPlaceholders.set(
+        placeholderHost,
+        mount(MediaLoadingPlaceholder, {
+          target: placeholderHost,
+          props: { name: sizedImageLabel(image) },
+        }),
+      );
+      const reveal = () => {
+        frame.dataset.loaded = 'true';
+        const placeholder = mountedPlaceholders.get(placeholderHost);
+        if (placeholder) {
+          void unmount(placeholder);
+          mountedPlaceholders.delete(placeholderHost);
+        }
+        placeholderHost.remove();
+      };
+      if (image.complete && image.naturalWidth > 0) reveal();
+      else image.addEventListener('load', reveal, { once: true });
+    }
 
     function replaceMedia(
       media: HTMLImageElement | HTMLVideoElement,
@@ -224,7 +304,7 @@
         undefined;
       const host = document.createElement(media instanceof HTMLVideoElement ? 'div' : 'span');
       host.className = 'media-unavailable-host';
-      media.replaceWith(host);
+      (imageFrame(media) ?? media).replaceWith(host);
       if (hoveredImage === media) hoveredImage = null;
       const fallback = mount(MediaUnavailable, {
         target: host,
@@ -255,6 +335,7 @@
           image.tabIndex = 0;
           image.setAttribute('role', 'button');
         }
+        if (image.hasAttribute(IMAGE_SIZED_ATTR) && !imageFrame(image)) frameSizedImage(image);
       }
       for (const media of node.querySelectorAll<HTMLImageElement>('[data-media-unsupported]')) {
         replaceMedia(media, 'unsupported');
@@ -456,6 +537,7 @@
           {chatImageThumbnails}
           {forceExternalLinks}
           {renderRichFencesAsCode}
+          {media}
         />
       {/if}
     {/each}
@@ -938,13 +1020,55 @@
   }
 
   /* Chat transcript: inline workspace file images render as fixed square
-     bordered thumbnails (cropped), matching ChatImageBlock */
-  .markdown-viewer.chat-image-thumbnails :global(img[src^='workspace-file://']) {
+     bordered thumbnails (cropped), matching ChatImageBlock. Images sized from
+     the text block's media sidecar keep their own frame instead. */
+  .markdown-viewer.chat-image-thumbnails
+    :global(img[src^='workspace-file://']:not([data-image-sized])) {
     width: 10rem;
     height: 10rem;
     object-fit: cover;
     border: 1px solid hsl(var(--border));
     border-radius: 0.5rem;
+  }
+
+  /* Reserved box for images with daemon-probed dimensions: the frame takes
+     the final layout size (aspect-ratio + width set inline from width/height
+     attrs) before any bytes arrive, showing a bordered icon + path placeholder
+     until the image loads. */
+  .markdown-viewer :global(.markdown-image-frame) {
+    position: relative;
+    display: block;
+    max-width: 100%;
+    overflow: hidden;
+    border-radius: 0.5rem;
+  }
+
+  .markdown-viewer :global(.markdown-image-frame[data-loaded='false']) {
+    border: 1px dashed hsl(var(--border));
+    background: hsl(var(--muted) / 0.3);
+  }
+
+  .markdown-viewer :global(.markdown-image-frame > img) {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    max-width: none;
+    object-fit: contain;
+    border-radius: 0;
+  }
+
+  .markdown-viewer :global(.markdown-image-frame[data-loaded='false'] > img) {
+    opacity: 0;
+  }
+
+  .markdown-viewer :global(.markdown-image-frame-placeholder) {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0.5rem;
   }
 
   /* Task Block - Skeleton loader styled like final checkbox state */

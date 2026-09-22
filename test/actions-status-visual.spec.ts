@@ -49,7 +49,9 @@ test('captures Actions & status at genuine 200% device scale with reduced motion
     // Wave 11 batch 5a (388bffff) retired the gallery group filter; use the live Button page.
     await page.goto(`${baseUrl}sandbox/button?motion=reduced`, { waitUntil: 'networkidle' });
     await page.getByRole('button', { name: 'Customize preview' }).click();
-    const reduceMotion = page.getByRole('switch', { name: 'Reduce motion' });
+    const reduceMotion = page
+      .getByRole('group', { name: 'Motion' })
+      .getByRole('radio', { name: 'Reduced', exact: true });
     await expect(reduceMotion).toBeChecked();
     const runAction = page.getByRole('button', { name: '1. Primary', exact: true });
     const heading = page.getByRole('main').getByRole('heading', { level: 1 });

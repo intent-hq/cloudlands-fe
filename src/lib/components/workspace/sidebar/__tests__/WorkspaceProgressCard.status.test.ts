@@ -33,6 +33,7 @@ const mocks = vi.hoisted(() => {
       pendingTitleMutations: {} as Record<string, { token: number }>,
     },
     browserClients: undefined as unknown,
+    userPreferences: undefined as { labsMultiplayerEnabled?: boolean } | undefined,
   };
   const dispatch = vi.fn((action: { type: string; payload?: unknown[] }) => {
     if (
@@ -353,6 +354,7 @@ describe('WorkspaceProgressCard status message', () => {
     mocks.progressActions.length = 0;
     mocks.storeState.workspace.pendingTitleMutations = {};
     mocks.storeState.browserClients = browserClientsInitialState;
+    mocks.storeState.userPreferences = undefined;
     mocks.role.hidesOwnerActions = false;
     Object.defineProperty(navigator, 'clipboard', {
       value: { writeText: mocks.clipboardWrite },
@@ -422,7 +424,8 @@ describe('WorkspaceProgressCard status message', () => {
     ).toBe('false');
   });
 
-  it('offers Share to the workspace owner ahead of Transfer and opens the share dialog', async () => {
+  it('offers Share to the workspace owner ahead of Transfer and opens the share dialog once the Multiplayer lab is on', async () => {
+    mocks.storeState.userPreferences = { labsMultiplayerEnabled: true };
     const { container } = await renderProgressCard({ myRole: 'owner' });
     await fireEvent.click(container.querySelector('[data-workspace-actions-trigger]')!);
 
@@ -447,9 +450,25 @@ describe('WorkspaceProgressCard status message', () => {
   });
 
   it.each([
+    ['by default (no preference persisted)', undefined],
+    ['while the Multiplayer lab is off', { labsMultiplayerEnabled: false }],
+  ])('does not offer Share to the owner %s', async (_label, userPreferences) => {
+    mocks.storeState.userPreferences = userPreferences;
+    const { container } = await renderProgressCard({ myRole: 'owner' });
+    await fireEvent.click(container.querySelector('[data-workspace-actions-trigger]')!);
+
+    expect(screen.getByRole('button', { name: 'Transfer/Download…' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Share…' })).toBeNull();
+    expect(mocks.dispatch).not.toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'workspaceShare/openDialog' }),
+    );
+  });
+
+  it.each([
     ['a collaborator', { myRole: 'collaborator' as const }],
     ['no reported role', { myRole: undefined }],
-  ])('does not offer Share to %s', async (_label, overrides) => {
+  ])('does not offer Share to %s even with the Multiplayer lab on', async (_label, overrides) => {
+    mocks.storeState.userPreferences = { labsMultiplayerEnabled: true };
     const { container } = await renderProgressCard(overrides);
     await fireEvent.click(container.querySelector('[data-workspace-actions-trigger]')!);
 
@@ -458,6 +477,7 @@ describe('WorkspaceProgressCard status message', () => {
   });
 
   it('does not offer Share while the owner-only actions are hidden, even when the row reports myRole owner (guest window / unsettled identity)', async () => {
+    mocks.storeState.userPreferences = { labsMultiplayerEnabled: true };
     mocks.role.hidesOwnerActions = true;
     const { container } = await renderProgressCard({ myRole: 'owner' });
     await fireEvent.click(container.querySelector('[data-workspace-actions-trigger]')!);

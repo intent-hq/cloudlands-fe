@@ -177,7 +177,10 @@ test('remains usable in narrow, dark, compact, and reduced-motion modes', async 
   // Wave 11 docs shell (388bffff) collapses customization at narrow widths.
   await page.getByRole('button', { name: 'Customize preview' }).click();
   await page.getByRole('radio', { name: 'Dark' }).click();
-  await page.getByRole('switch', { name: 'Reduce motion' }).click();
+  await page
+    .getByRole('group', { name: 'Motion' })
+    .getByRole('radio', { name: 'Reduced', exact: true })
+    .click();
   await page.getByRole('switch', { name: 'Compact mode' }).click();
   await expect(page.locator('html')).toHaveClass(/dark/);
   await expect(page.getByTestId('catalog-shell')).toHaveAttribute('data-catalog-motion', 'reduced');

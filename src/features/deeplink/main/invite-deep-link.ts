@@ -26,7 +26,9 @@
  *    reduces to `isConfigured`, but returning the login the prove prompt
  *    names). Not signed in — or, later, a token that predates the
  *    `gist` scope the proof needs (`github-scope-missing`) — puts the consent
- *    modal in its `sign-in-required` state: the guest's own `github.connect`
+ *    modal in its `sign-in-required` state (a `rate-limited` probe is NOT
+ *    "not signed in": it fails the join with its own reason, since signing
+ *    in again cannot help): the guest's own `github.connect`
  *    device flow (code copied to the clipboard; "Open GitHub" opens the URL)
  *    is awaited from the moment the code is shown — a code entered on another
  *    device completes the sign-in without the button — while the modal shows
@@ -58,6 +60,17 @@
  * `invite-notice:*` channels) with the native box as the no-window/no-ack
  * fallback; the renderer only ever receives a bounded reason code.
  *
+ * The two silent phases show a progress dialog with Cancel
+ * (`main/invite-progress.ts`, `invite-progress:*` channels; no native
+ * fallback — without a window the flow simply runs without it): `connecting`
+ * from the parsed link up to the first consent prompt (every await in between
+ * — the dial, the stored-session lookups, `inspect`, `challenge`,
+ * `github.getUser`, the initial `github.connect` — is raced against Cancel,
+ * which aborts the join, closes the connection, and shows no notice), and
+ * `opening` from the point of no return up to the window (Cancel closes the
+ * dialog and only skips opening the window; the credential is stored and the
+ * membership stands).
+ *
  * Security posture mirrors the pair flow: the invite secret and the minted
  * token are never logged — failures are logged as bounded error kinds and
  * codes, never as free-form message text (a server or encryption error
@@ -85,6 +98,7 @@ import { describeInviteFailureReason } from '$shared/utils/invite-failure-text';
 import { parseInviteUri } from '$shared/utils/invite-uri';
 import { showInviteConsent, type InviteConsentPrompt } from '../../../main/invite-consent';
 import { showInviteNotice } from '../../../main/invite-notice';
+import { showInviteProgress, type InviteProgressHandle } from '../../../main/invite-progress';
 import { getMainWindow } from '../../../main/state';
 import * as guestSessionsStore from '../../backend/main/guest-sessions-store';
 import {
@@ -174,14 +188,18 @@ class InviteFlowError extends Error {
 
 /**
  * The guest daemon's documented `error.data.code` values for
- * `github.identityProof.create` / `.delete` (intentd #1967). Like the host's
- * invite codes, the closed set is the only daemon-authored text that leaves
+ * `github.identityProof.create` / `.delete` (intentd #1967), plus
+ * `rate-limited` — GitHub rate limiting the daemon's API calls (primary or
+ * secondary limit, REST or GraphQL), which `github.getUser` and the proof
+ * calls all report (intent-hq/intent#5627). Like the host's invite codes, the
+ * closed set is the only daemon-authored text that leaves
  * {@link IdentityProofError}; anything else maps to `null`.
  */
 const IDENTITY_PROOF_ERROR_CODES = [
   'github-not-connected',
   'github-scope-missing',
   'github-unreachable',
+  'rate-limited',
 ] as const;
 
 type IdentityProofErrorCode = (typeof IDENTITY_PROOF_ERROR_CODES)[number];
@@ -210,21 +228,67 @@ class IdentityProofError extends Error {
   }
 }
 
+/** The user pressed Cancel on the progress dialog while the flow was still connecting. */
+class InviteCancelledError extends Error {
+  constructor() {
+    // i18n-ignore (internal error, fixed text)
+    super('invite cancelled while connecting');
+    this.name = 'InviteCancelledError';
+  }
+}
+
+/**
+ * The `connecting` progress dialog of one join: up from the moment the link
+ * parses until the first consent prompt (or the failure notice) replaces it.
+ * `wait` races a connecting-phase step against Cancel and rejects with
+ * {@link InviteCancelledError} when the user cancels first; `onLateResult`
+ * then disposes of the step's result should it still arrive.
+ */
+interface ConnectingProgress {
+  wait<T>(step: Promise<T>, onLateResult?: (result: T) => void): Promise<T>;
+  connected(hostLabel: string): void;
+  dismiss(): void;
+}
+
+function showConnectingProgress(): ConnectingProgress {
+  const handle = showInviteProgress({ requestId: randomUUID(), phase: 'connecting' });
+  const cancelled: Promise<never> = handle.cancelled.then(() => {
+    throw new InviteCancelledError();
+  });
+  cancelled.catch(() => {});
+  return {
+    async wait(step, onLateResult) {
+      try {
+        return await Promise.race([step, cancelled]);
+      } catch (error) {
+        if (error instanceof InviteCancelledError) {
+          void step.then(onLateResult, () => {});
+        }
+        throw error;
+      }
+    },
+    connected: (hostLabel) => handle.update('connecting', { hostLabel }),
+    dismiss: () => handle.dismiss(),
+  };
+}
+
 /**
  * The consent prompts of one join, in order. Showing the next prompt ends
  * the previous one as `superseded` (after the renderer already shows the new
  * request, so it never flickers closed), unless the flow already dismissed
- * it; `current()` is what the failure path dismisses.
+ * it; `current()` is what the failure path dismisses. The first prompt also
+ * ends the `connecting` progress dialog it replaces.
  */
 interface ConsentPrompts {
   show(payload: InviteConsentShowPayload): InviteConsentPrompt;
   current(): InviteConsentPrompt | null;
 }
 
-function createConsentPrompts(): ConsentPrompts {
+function createConsentPrompts(connecting: ConnectingProgress): ConsentPrompts {
   let current: InviteConsentPrompt | null = null;
   return {
     show(payload) {
+      connecting.dismiss();
       const prompt = showInviteConsent(payload);
       const previous = current;
       let ended = false;
@@ -264,7 +328,8 @@ export async function handleInviteDeepLink(url: string): Promise<void> {
   }
   inviteLinkInFlight = true;
   let connection: InviteConnection | null = null;
-  const prompts = createConsentPrompts();
+  let connecting: ConnectingProgress | null = null;
+  let prompts: ConsentPrompts | null = null;
   // Display labels for the notices, filled in as the flow learns them.
   const labels: NoticeLabels = {};
   try {
@@ -292,23 +357,36 @@ export async function handleInviteDeepLink(url: string): Promise<void> {
     }
 
     const envelope: InviteEnvelope = { hosts, port, fingerprint, tcAddress, inviteId, secret };
-    connection = await openInviteConnection({ hosts, port, fingerprint, tcAddress });
+    connecting = showConnectingProgress();
+    prompts = createConsentPrompts(connecting);
+    // A dial that completes after the user cancelled is closed on arrival.
+    connection = await connecting.wait(
+      openInviteConnection({ hosts, port, fingerprint, tcAddress }),
+      (late) => late.close(),
+    );
     labels.hostLabel = connection.host;
-    const returning = await joinAsReturningGuest(connection, envelope, prompts, labels);
+    connecting.connected(connection.host);
+    const returning = await joinAsReturningGuest(connection, envelope, prompts, connecting, labels);
     if (returning.kind === 'handled') return;
     logger.info('No usable stored credential for this host; proving identity through GitHub', {
       reason: returning.reason,
     });
-    await joinWithIdentityProof(connection, envelope, prompts, labels);
+    await joinWithIdentityProof(connection, envelope, prompts, connecting, labels);
   } catch (error) {
+    connecting?.dismiss();
+    if (error instanceof InviteCancelledError) {
+      logger.info('User cancelled the invite while connecting');
+      return;
+    }
     logger.warn('Invite deep link handling failed', describeErrorForLog(error));
     // The handoff dismiss is a no-op once the modal was dismissed `joined`;
     // the failure notice still shows.
     await showFailure(
       { kind: 'failed', reason: classifyInviteFailure(error), ...labels },
-      { consent: prompts.current(), outcome: 'failed' },
+      { consent: prompts?.current() ?? null, outcome: 'failed' },
     );
   } finally {
+    connecting?.dismiss();
     connection?.close();
     inviteLinkInFlight = false;
   }
@@ -340,18 +418,19 @@ async function joinWithIdentityProof(
   connection: InviteConnection,
   envelope: InviteEnvelope,
   prompts: ConsentPrompts,
+  connecting: ConnectingProgress,
   noticeLabels: NoticeLabels,
 ): Promise<void> {
   const { inviteId, secret } = envelope;
   const client = getBackendClient();
-  let challenge = await connection.challenge(inviteId, secret);
+  let challenge = await connecting.wait(connection.challenge(inviteId, secret));
   const labels: PromptLabels = {
     hostLabel: hostLabelFor(connection, challenge),
     workspaceTitle: nonBlank(challenge.workspaceTitle) ?? m.workspace_links_untitled_label(),
   };
   Object.assign(noticeLabels, labels);
 
-  let login = await readLocalLogin(client);
+  let login = await connecting.wait(readLocalLogin(client));
   let signInReason: InviteSignInReason | null = login === null ? 'not-connected' : null;
   let signedIn = false;
   let consented = false;
@@ -364,7 +443,7 @@ async function joinWithIdentityProof(
           signInReason === 'scope-missing' ? 'github-scope-missing' : 'github-not-connected',
         );
       }
-      const signIn = await signInToGitHub(client, signInReason, labels, prompts);
+      const signIn = await signInToGitHub(client, signInReason, labels, prompts, connecting);
       if (signIn.kind === 'cancelled') return;
       signedIn = true;
       login = signIn.login;
@@ -537,24 +616,45 @@ type SignInStatus = 'authorized' | 'denied' | 'expired' | 'error';
 type SignInResult = { kind: 'signed-in'; login: string } | { kind: 'cancelled' };
 
 /**
+ * Generation of the latest sign-in started by an invite. A `github.connect`
+ * cancelled while pending may resolve after the next invite already started
+ * (and shows) its own device flow — the in-flight guard is released before
+ * the late result arrives, and the daemon hands the resident live flow to a
+ * concurrent connect — so the late cleanup aborts the flow only while no newer
+ * sign-in has started since; otherwise it would cancel the newer invite's flow.
+ */
+let signInGeneration = 0;
+
+/**
  * Sign the guest's own daemon in to GitHub from the consent modal's
  * `sign-in-required` state: `github.connect` starts the device flow, the
  * modal shows the code + URL (code copied to the clipboard) and the flow's
  * terminal transition is awaited from that moment — the code may be entered
  * on any device, so "Open GitHub" only launches the URL here. Cancel (before
  * or after "Open GitHub") aborts the flow locally (`github.cancelAuth`, best
- * effort). Resolves with the login the daemon is now signed in as.
+ * effort). Resolves with the login the daemon is now signed in as. The
+ * `github.connect` start is raced against the `connecting` dialog's Cancel
+ * while that dialog is still up (a device flow that starts after the cancel
+ * is aborted on arrival — unless a later sign-in owns the live flow by then);
+ * once the dialog was dismissed by the first prompt its Cancel never settles
+ * and the wait is a plain await.
  */
 async function signInToGitHub(
   client: JsonRpcClient,
   reason: InviteSignInReason,
   labels: PromptLabels,
   prompts: ConsentPrompts,
+  connecting: ConnectingProgress,
 ): Promise<SignInResult> {
+  const generation = ++signInGeneration;
   let start: GithubConnectResult;
   try {
-    start = await client.request<GithubConnectResult>('github.connect');
-  } catch {
+    start = await connecting.wait(client.request<GithubConnectResult>('github.connect'), () => {
+      if (generation !== signInGeneration) return;
+      void client.request('github.cancelAuth').catch(() => {});
+    });
+  } catch (error) {
+    if (error instanceof InviteCancelledError) throw error;
     throw new InviteFlowError('sign-in-failed');
   }
   if (
@@ -737,12 +837,19 @@ function waitForSignIn(
   return { status, stop };
 }
 
-/** The GitHub login the guest's own daemon is signed in as, or `null` when it is not. */
+/**
+ * The GitHub login the guest's own daemon is signed in as, or `null` when it
+ * is not. A `rate-limited` refusal is neither: the account may well be signed
+ * in, and a sign-in prompt would not help — it throws so the join fails with
+ * that reason instead. Any other error reads as not signed in.
+ */
 async function readLocalLogin(client: JsonRpcClient): Promise<string | null> {
   try {
     const result = await client.request<{ user?: { login?: unknown } | null }>('github.getUser');
     return nonBlank(result?.user?.login) ?? null;
-  } catch {
+  } catch (error) {
+    const refusal = IdentityProofError.from(error);
+    if (refusal.proofCode === 'rate-limited') throw refusal;
     return null;
   }
 }
@@ -788,16 +895,19 @@ async function joinAsReturningGuest(
   connection: InviteConnection,
   envelope: InviteEnvelope,
   prompts: ConsentPrompts,
+  connecting: ConnectingProgress,
   noticeLabels: NoticeLabels,
 ): Promise<ReturningOutcome> {
   const { hosts, port, fingerprint, inviteId, secret } = envelope;
   // The winning candidate (a direct host, or the tc address standing in as
   // the host) is what the store keyed a tunnel-only session on.
-  const session = await guestSessionsStore.findMatching({
-    hosts: [...new Set([connection.host, ...hosts])],
-    port,
-    fingerprint,
-  });
+  const session = await connecting.wait(
+    guestSessionsStore.findMatching({
+      hosts: [...new Set([connection.host, ...hosts])],
+      port,
+      fingerprint,
+    }),
+  );
   if (!session) return { kind: 'fallback', reason: 'no-session' };
   // Fail closed: the store's host:port fallback can match a record pinned to
   // a different cert at the same address. Only a session pinned to the exact
@@ -807,21 +917,23 @@ async function joinAsReturningGuest(
   }
   let token: string | null;
   try {
-    token = await guestSessionsStore.getDecryptedToken(session.id);
-  } catch {
+    token = await connecting.wait(guestSessionsStore.getDecryptedToken(session.id));
+  } catch (error) {
+    if (error instanceof InviteCancelledError) throw error;
     // Keyring changed: the ciphertext is unreadable. A fresh proof re-mints
     // the credential; the store's upsert then replaces it.
     return { kind: 'fallback', reason: 'token-unavailable' };
   }
   if (token === null) return { kind: 'fallback', reason: 'no-token' };
 
-  const inspection = await connection.inspect(inviteId, secret);
+  const inspection = await connecting.wait(connection.inspect(inviteId, secret));
   if (session.workspaces.some((w) => w.id === inspection.workspaceId)) {
     logger.info('Already a member of the invited workspace on this host; opening the window', {
       id: session.id,
       workspaceId: inspection.workspaceId,
       via: connection.via,
     });
+    connecting.dismiss();
     await openBackendWindow(session.id);
     return { kind: 'handled' };
   }
@@ -890,12 +1002,15 @@ async function joinAsReturningGuest(
 /**
  * Persist the minted credential as a GUEST session (the store upserts by
  * daemon identity: a returning guest's record keeps its id, takes the fresh
- * token, and gains the workspace) and open the daemon's window. A store
- * failure here surfaces as a failure, never as a cancellation. `labels` are
- * the display labels the plaintext notice shows; `afterStore` runs once the
- * write settled either way (the proof gist's cleanup: it must not delay or
- * fail the join, and the gist outliving a failed write by a moment is
- * harmless — the nonce is spent).
+ * token, and gains the workspace) and open the daemon's window, under the
+ * `opening` progress dialog. A store failure here surfaces as a failure,
+ * never as a cancellation; a Cancel on the dialog closes it at once and only
+ * skips opening the window — the credential is stored, the membership stands,
+ * and a window whose open was already requested still appears. `labels` are
+ * the display labels the dialog and the plaintext notice show; `afterStore`
+ * runs once the write settled either way (the proof gist's cleanup: it must
+ * not delay or fail the join, and the gist outliving a failed write by a
+ * moment is harmless — the nonce is spent).
  */
 async function storeCredentialAndOpen(
   connection: InviteConnection,
@@ -905,37 +1020,55 @@ async function storeCredentialAndOpen(
   labels: PromptLabels,
   afterStore?: () => Promise<void>,
 ): Promise<void> {
-  let record: Awaited<ReturnType<typeof guestSessionsStore.add>>;
-  try {
-    record = await guestSessionsStore.add({
-      label: connection.host,
-      host: connection.host,
-      hosts: envelope.hosts,
-      port: envelope.port,
-      fingerprint: envelope.fingerprint,
-      tcAddress: envelope.tcAddress,
-      principalId: credential.principalId,
-      login: credential.login,
-      token: credential.token,
-      workspace: { id: credential.workspaceId, title: workspaceTitle },
-    });
-  } finally {
-    void afterStore?.();
-  }
-  logger.info('Joined workspace as a guest; opening the window', {
-    id: record.id,
-    workspaceId: credential.workspaceId,
-    via: connection.via,
-    tokenEncrypted: record.tokenEncrypted,
+  const opening: InviteProgressHandle = showInviteProgress({
+    requestId: randomUUID(),
+    phase: 'opening',
+    ...labels,
   });
-  if (!record.tokenEncrypted) {
-    // Flagged plaintext fallback (spec ruling): the join stands, but the
-    // user learns the credential is not protected by OS encryption —
-    // acknowledged before the window opens. The consent modal is already
-    // dismissed `joined`, so there is no modal to hand off from.
-    await showPlaintextWarning({ kind: 'plaintext', ...labels });
+  let cancelled = false;
+  void opening.cancelled.then(() => {
+    cancelled = true;
+    opening.dismiss();
+  });
+  try {
+    let record: Awaited<ReturnType<typeof guestSessionsStore.add>>;
+    try {
+      record = await guestSessionsStore.add({
+        label: connection.host,
+        host: connection.host,
+        hosts: envelope.hosts,
+        port: envelope.port,
+        fingerprint: envelope.fingerprint,
+        tcAddress: envelope.tcAddress,
+        principalId: credential.principalId,
+        login: credential.login,
+        token: credential.token,
+        workspace: { id: credential.workspaceId, title: workspaceTitle },
+      });
+    } finally {
+      void afterStore?.();
+    }
+    logger.info('Joined workspace as a guest; opening the window', {
+      id: record.id,
+      workspaceId: credential.workspaceId,
+      via: connection.via,
+      tokenEncrypted: record.tokenEncrypted,
+    });
+    if (!record.tokenEncrypted) {
+      // Flagged plaintext fallback (spec ruling): the join stands, but the
+      // user learns the credential is not protected by OS encryption —
+      // acknowledged before the window opens. The consent modal is already
+      // dismissed `joined`, so there is no modal to hand off from.
+      await showPlaintextWarning({ kind: 'plaintext', ...labels });
+    }
+    if (cancelled) {
+      logger.info('User closed the join progress dialog; window not opened', { id: record.id });
+      return;
+    }
+    await openBackendWindow(record.id);
+  } finally {
+    opening.dismiss();
   }
-  await openBackendWindow(record.id);
 }
 
 /**
@@ -1175,6 +1308,8 @@ function classifyProofFailure(error: IdentityProofError): InviteFailureReason {
       return 'proof-scope-missing';
     case 'github-unreachable':
       return 'proof-github-unreachable';
+    case 'rate-limited':
+      return 'github-rate-limited';
     case null:
       return 'proof-failed';
   }
