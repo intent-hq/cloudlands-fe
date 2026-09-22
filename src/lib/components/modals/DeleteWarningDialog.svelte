@@ -334,21 +334,21 @@
         </div>
       {/if}
 
-      <div class="space-y-1 text-sm leading-5 text-subtle">
+      <p class="text-sm leading-5 text-subtle">
         {#if isArchive}
           {#if !guestsOnly}
-            <p>{m.modals_archiveWarning_note_description()}</p>
+            <span>{m.modals_archiveWarning_note_description()}</span>
           {/if}
           {#if hasGuests}
-            <p>{m.modals_archiveWarning_note_guests_description()}</p>
+            <span>{m.modals_archiveWarning_note_guests_description()}</span>
           {/if}
         {:else}
-          <p>{m.modals_deleteWarning_permanent_description()}</p>
+          <span>{m.modals_deleteWarning_permanent_description()}</span>
           {#if hasGuests}
-            <p>{m.modals_deleteWarning_permanent_guests_description()}</p>
+            <span>{m.modals_deleteWarning_permanent_guests_description()}</span>
           {/if}
         {/if}
-      </div>
+      </p>
     </div>
   {/snippet}
 </DestructiveConfirm>

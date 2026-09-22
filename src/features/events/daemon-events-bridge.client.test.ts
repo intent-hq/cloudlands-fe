@@ -8626,6 +8626,181 @@ describe('daemonEventsBridge (workspace:updated → workspace slice)', () => {
     expect(ws.branch).toBe('main');
     expect((ws as Record<string, unknown>).members).toBeUndefined();
   });
+
+  // Regression (cloudlands-fe#2776 verifier): `workspace.invite.create` /
+  // `.revoke` publish only `{ invites: true }` (PROTOCOL multiplayer
+  // "Events"), so the stored row's `openInviteCount` cannot be kept current
+  // from the delta alone — the single archive/delete warning, which gates on
+  // that count, would miss a fresh invite (or warn about a revoked one) until
+  // an unrelated full list read. A roster / invite delta now re-reads the one
+  // workspace's membership summary through the running lifecycle read saga
+  // (`workspace.get`, single-flight + trailing coalesce), and the production
+  // warning path is driven end-to-end with no manual row re-seed or list
+  // refresh in between.
+  describe('membership summary convergence → archive / delete warning gating', () => {
+    let daemonRow: { memberCount: number; openInviteCount: number };
+    let stopOperationsSaga: (() => void) | undefined;
+
+    const workspaceGetRequests = () =>
+      backendRequestSpy.mock.calls.filter(([method]) => method === 'workspace.get');
+
+    async function seedListedWorkspace(row: {
+      memberCount: number;
+      openInviteCount: number;
+    }): Promise<void> {
+      daemonRow = { ...row };
+      await seedWorkspace();
+      const { bulkUpdateWorkspaceEntities, updateWorkspaceEntity } =
+        await import('$store/renderer/slices/workspace/workspace-slice');
+      appStore.dispatch(bulkUpdateWorkspaceEntities([updateWorkspaceEntity(WS_UPD, row)]));
+      backendRequestSpy.mockImplementation((method: string, params?: unknown) => {
+        if (method !== 'workspace.get') return undefined;
+        expect(params).toEqual({ workspaceId: WS_UPD });
+        // PROTOCOL §5.1: every `workspace.get` row carries the summary
+        // re-derived from the store at serve time.
+        return Promise.resolve({
+          workspace: {
+            id: WS_UPD,
+            title: 'Original',
+            branch: 'main',
+            status: 'Active',
+            memberCount: daemonRow.memberCount,
+            openInviteCount: daemonRow.openInviteCount,
+          },
+        });
+      });
+      await primeBridge();
+    }
+
+    async function settleReads(): Promise<void> {
+      await flush();
+      await flush();
+      await flush();
+    }
+
+    beforeEach(async () => {
+      const { workspaceOperationsSaga } =
+        await import('$store/renderer/slices/workspace-operations/sagas/workspace-operations-saga');
+      stopOperationsSaga = appStore.runSaga(workspaceOperationsSaga);
+    });
+
+    afterEach(async () => {
+      stopOperationsSaga?.();
+      stopOperationsSaga = undefined;
+      const { closeArchiveWarning, closeDeleteWarning } =
+        await import('$store/renderer/slices/workspace-operations/workspace-operations-slice');
+      appStore.dispatch(closeArchiveWarning());
+      appStore.dispatch(closeDeleteWarning());
+      const { removeWorkspaceEntity } =
+        await import('$store/renderer/slices/workspace/workspace-slice');
+      appStore.dispatch(removeWorkspaceEntity(WS_UPD));
+    });
+
+    it('an invite created after a zero-count list load opens the archive warning naming the invite', async () => {
+      await seedListedWorkspace({ memberCount: 1, openInviteCount: 0 });
+      const { getActiveWorkNames } = await import('$lib/utils/delete-warning-utils');
+      const { requestArchiveWorkspace } =
+        await import('$store/renderer/slices/workspace-operations/workspace-operations-slice');
+      const { selectGuestsForArchive, selectShowArchiveWarning } =
+        await import('$store/renderer/slices/workspace-operations/workspace-operations-selectors');
+      const handler = capturedHandlers[0]!;
+
+      // Another client minted an invite: the daemon now serves one open
+      // invite, and the wire delta says only that invites changed.
+      daemonRow.openInviteCount = 1;
+      handler(updatedNotification({ invites: true }));
+      await settleReads();
+
+      expect(workspaceGetRequests()).toHaveLength(1);
+      expect((await readWorkspace()).openInviteCount).toBe(1);
+      await expect(getActiveWorkNames(WS_UPD)).resolves.toMatchObject({
+        guests: { collaboratorCount: 0, openInviteCount: 1 },
+      });
+
+      appStore.dispatch(requestArchiveWorkspace(WS_UPD));
+      await settleReads();
+
+      expect(selectShowArchiveWarning.select(appStore.state)).toBe(true);
+      expect(selectGuestsForArchive.select(appStore.state)).toEqual({
+        collaboratorCount: 0,
+        openInviteCount: 1,
+      });
+    });
+
+    it('revoking the last invite clears the count so the delete warning no longer opens for guests', async () => {
+      await seedListedWorkspace({ memberCount: 1, openInviteCount: 1 });
+      const { getActiveWorkNames } = await import('$lib/utils/delete-warning-utils');
+      const { requestDeleteWorkspace } =
+        await import('$store/renderer/slices/workspace-operations/workspace-operations-slice');
+      const { selectShowDeleteWarning } =
+        await import('$store/renderer/slices/workspace-operations/workspace-operations-selectors');
+      const handler = capturedHandlers[0]!;
+
+      daemonRow.openInviteCount = 0;
+      handler(updatedNotification({ invites: true }));
+      await settleReads();
+
+      expect((await readWorkspace()).openInviteCount).toBe(0);
+      await expect(getActiveWorkNames(WS_UPD)).resolves.toMatchObject({
+        guests: { collaboratorCount: 0, openInviteCount: 0 },
+      });
+
+      appStore.dispatch(requestDeleteWorkspace(WS_UPD));
+      await settleReads();
+
+      // No guests and no other active work: the delete proceeds straight to
+      // the undo toast path instead of the warning dialog.
+      expect(selectShowDeleteWarning.select(appStore.state)).toBe(false);
+    });
+
+    it('archive teardown frames converge the row so an unarchived workspace shows no stale guests', async () => {
+      await seedListedWorkspace({ memberCount: 3, openInviteCount: 2 });
+      const { getActiveWorkNames } = await import('$lib/utils/delete-warning-utils');
+      const handler = capturedHandlers[0]!;
+
+      // intentd archive: one `members.remove` frame per collaborator (each
+      // carrying the post-change `memberCount`), one `{ invites: true }` for
+      // the revoked invites, then the archive delta itself; unarchive does
+      // not restore guests.
+      daemonRow = { memberCount: 1, openInviteCount: 0 };
+      handler(
+        updatedNotification({ members: true, removedPrincipalId: 'p-alice', memberCount: 2 }),
+      );
+      handler(updatedNotification({ members: true, removedPrincipalId: 'p-bob', memberCount: 1 }));
+      handler(updatedNotification({ invites: true }));
+      handler(
+        updatedNotification({
+          archived: true,
+          status: 'Archived',
+          archivedAt: '2026-07-25T12:00:00.000Z',
+        }),
+      );
+      await settleReads();
+      handler(updatedNotification({ archived: false, status: 'Active', archivedAt: null }));
+      await settleReads();
+
+      // Three delta frames, at most one in-flight read plus one trailing.
+      expect(workspaceGetRequests().length).toBeLessThanOrEqual(2);
+      const ws = await readWorkspace();
+      expect(ws.status).toBe('Active');
+      expect(ws.memberCount).toBe(1);
+      expect(ws.openInviteCount).toBe(0);
+      await expect(getActiveWorkNames(WS_UPD)).resolves.toMatchObject({
+        guests: { collaboratorCount: 0, openInviteCount: 0 },
+      });
+    });
+
+    it('a delta without roster or invite flags issues no membership read', async () => {
+      await seedListedWorkspace({ memberCount: 1, openInviteCount: 0 });
+      const handler = capturedHandlers[0]!;
+
+      handler(updatedNotification({ title: 'Renamed' }));
+      handler(updatedNotification({ statusMessage: 'Working' }));
+      await settleReads();
+
+      expect(workspaceGetRequests()).toHaveLength(0);
+    });
+  });
 });
 
 describe('daemonEventsBridge (workspace:updated → tab bar archive sync)', () => {

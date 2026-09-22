@@ -3,7 +3,13 @@ import { runSaga, stdChannel } from 'redux-saga';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
-  workspaces: { list: vi.fn(), recentViews: vi.fn(), getTokenUsage: vi.fn(), getContext: vi.fn() },
+  workspaces: {
+    list: vi.fn(),
+    get: vi.fn(),
+    recentViews: vi.fn(),
+    getTokenUsage: vi.fn(),
+    getContext: vi.fn(),
+  },
   workspaceServiceList: vi.fn(),
   tasks: { list: vi.fn(), listAgentLinks: vi.fn() },
   events: { queryPage: vi.fn() },
@@ -89,6 +95,7 @@ import {
 } from '../../workspace-tasks/workspace-tasks-slice';
 import {
   loadWorkspacesRequested,
+  refreshWorkspaceMembershipRequested,
   replaceWorkspaceList,
   workspaceReducer,
 } from '../../workspace/workspace-slice';
@@ -197,6 +204,7 @@ describe('lifecycleReadSaga', () => {
     mocks.workspaces.recentViews.mockResolvedValue({});
     mocks.workspaces.getTokenUsage.mockResolvedValue(null);
     mocks.workspaces.getContext.mockResolvedValue([]);
+    mocks.workspaces.get.mockResolvedValue(null);
     mocks.tasks.list.mockResolvedValue({ tasks: [], stats: { total: 0 } });
     mocks.tasks.listAgentLinks.mockResolvedValue({});
     mocks.events.queryPage.mockResolvedValue({ items: [], nextToken: null });
@@ -292,6 +300,112 @@ describe('lifecycleReadSaga', () => {
     await settle();
     expect(mocks.workspaceServiceList.mock.calls).toHaveLength(2);
     await stop(run.task);
+  });
+
+  describe('membership summary refresh (workspace:updated roster / invite deltas)', () => {
+    it('re-reads workspace.get for the one workspace and merges only the membership counts', async () => {
+      mocks.workspaces.get.mockResolvedValue({
+        id: WS,
+        title: 'Renamed on the daemon',
+        memberCount: 3,
+        openInviteCount: 2,
+      });
+      const run = start();
+
+      run.channel.put(refreshWorkspaceMembershipRequested(WS));
+      await settle();
+
+      expect(mocks.workspaces.get.mock.calls).toEqual([[WS]]);
+      expect(run.actions).toEqual([
+        {
+          type: 'workspace/bulkUpdateWorkspaceEntities',
+          payload: [
+            [
+              {
+                type: 'workspace/updateWorkspaceEntity',
+                payload: [WS, { memberCount: 3, openInviteCount: 2 }],
+              },
+            ],
+          ],
+        },
+      ]);
+      await stop(run.task);
+    });
+
+    it('dispatches nothing when the row is gone or carries no membership summary', async () => {
+      mocks.workspaces.get.mockResolvedValueOnce(null).mockResolvedValueOnce({ id: WS });
+      const run = start();
+
+      run.channel.put(refreshWorkspaceMembershipRequested(WS));
+      await settle();
+      run.channel.put(refreshWorkspaceMembershipRequested(WS));
+      await settle();
+
+      expect(mocks.workspaces.get.mock.calls).toEqual([[WS], [WS]]);
+      expect(run.actions).toEqual([]);
+      await stop(run.task);
+    });
+
+    it('coalesces a burst for one workspace into one in-flight read plus one trailing read', async () => {
+      const resolvers: ((value: unknown) => void)[] = [];
+      mocks.workspaces.get.mockImplementation(
+        () =>
+          new Promise((done) => {
+            resolvers.push(done);
+          }),
+      );
+      const run = start();
+
+      // The archive teardown publishes one frame per removed member and one
+      // per revoked invite; the row must converge on the post-burst summary
+      // with at most two reads, never N.
+      run.channel.put(refreshWorkspaceMembershipRequested(WS));
+      run.channel.put(refreshWorkspaceMembershipRequested(WS));
+      run.channel.put(refreshWorkspaceMembershipRequested(WS));
+      run.channel.put(refreshWorkspaceMembershipRequested('ws-other'));
+      await settle();
+      expect(mocks.workspaces.get.mock.calls).toEqual([[WS], ['ws-other']]);
+
+      resolvers[0]!({ id: WS, memberCount: 2, openInviteCount: 1 });
+      await settle();
+      expect(mocks.workspaces.get.mock.calls).toHaveLength(3);
+      expect(mocks.workspaces.get.mock.calls[2]).toEqual([WS]);
+
+      resolvers[2]!({ id: WS, memberCount: 1, openInviteCount: 0 });
+      resolvers[1]!({ id: 'ws-other', memberCount: 1, openInviteCount: 0 });
+      await settle();
+      expect(mocks.workspaces.get.mock.calls).toHaveLength(3);
+      const merged = run.actions
+        .map((action) => action as { type: string; payload: unknown[] })
+        .filter((action) => action.type === 'workspace/bulkUpdateWorkspaceEntities')
+        .map((action) => (action.payload[0] as { payload: unknown[] }[])[0]!.payload);
+      expect(merged).toEqual([
+        [WS, { memberCount: 2, openInviteCount: 1 }],
+        [WS, { memberCount: 1, openInviteCount: 0 }],
+        ['ws-other', { memberCount: 1, openInviteCount: 0 }],
+      ]);
+      await stop(run.task);
+    });
+
+    it('logs and swallows a failed read without dropping later refreshes', async () => {
+      mocks.workspaces.get
+        .mockRejectedValueOnce(new Error('workspace.get failed'))
+        .mockResolvedValueOnce({ id: WS, memberCount: 1, openInviteCount: 0 });
+      const run = start();
+
+      run.channel.put(refreshWorkspaceMembershipRequested(WS));
+      await settle();
+      expect(mocks.logger.error).toHaveBeenCalledWith(
+        `Refresh failed for membership:${WS}`,
+        expect.any(Error),
+      );
+
+      run.channel.put(refreshWorkspaceMembershipRequested(WS));
+      await settle();
+      expect(mocks.workspaces.get.mock.calls).toHaveLength(2);
+      expect(run.actions).toHaveLength(1);
+      await stop(run.task);
+    });
   });
 
   describe('workspace list retry until the daemon transport connects', () => {
