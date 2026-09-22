@@ -52,14 +52,11 @@
   // for the original first — the lightbox opens once hydration swaps the
   // full block in (dataTruncated then disappears from the merged block).
   const needsHydration = $derived(dataTruncated && onHydrate !== undefined);
-  const sized = $derived(
-    typeof width === 'number' &&
-      typeof height === 'number' &&
-      Number.isFinite(width) &&
-      Number.isFinite(height) &&
-      width > 0 &&
-      height > 0,
-  );
+  // Same validation as the Markdown sidecar transform: intrinsic pixel
+  // dimensions are positive integers, anything else renders the legacy tile.
+  const isPositiveInteger = (value: unknown): value is number =>
+    typeof value === 'number' && Number.isInteger(value) && value > 0;
+  const sized = $derived(isPositiveInteger(width) && isPositiveInteger(height));
   // Once any bytes have decoded the frame stays revealed: a hydration swap
   // (thumbnail → original, same intrinsic aspect) must not flash the
   // placeholder over the thumbnail already on screen.

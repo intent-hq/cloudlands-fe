@@ -211,18 +211,22 @@ describe('ChatImageBlock', () => {
     expect(trigger.parentElement!.style.width).toBe('');
   });
 
-  it('falls back to the legacy layout when only one dimension or a non-positive one is given', () => {
-    const { container, unmount } = render(ChatImageBlock, {
-      props: { data: pngData, mimeType: 'image/png', alt: 'one.png', width: 1440 },
+  it.each([
+    ['only one dimension', { width: 1440 }],
+    ['a zero dimension', { width: 0, height: 900 }],
+    ['a fractional dimension', { width: 0.5, height: 900 }],
+    ['a non-finite dimension', { width: Number.POSITIVE_INFINITY, height: 900 }],
+    ['a NaN dimension', { width: 640, height: Number.NaN }],
+  ])('falls back to the legacy layout with %s', (_label, dims) => {
+    const { container } = render(ChatImageBlock, {
+      props: { data: pngData, mimeType: 'image/png', alt: 'invalid.png', ...dims },
     });
-    expect(container.querySelector('[data-image-sized]')).toBeNull();
-    unmount();
 
-    const second = render(ChatImageBlock, {
-      props: { data: pngData, mimeType: 'image/png', alt: 'zero.png', width: 0, height: 900 },
-    });
-    expect(second.container.querySelector('[data-image-sized]')).toBeNull();
+    expect(container.querySelector('[data-image-sized]')).toBeNull();
     expect(screen.queryByTestId('media-loading-placeholder')).toBeNull();
+    const trigger = screen.getByRole('button', { name: /view invalid\.png full size/i });
+    expect(trigger.parentElement!.style.aspectRatio).toBe('');
+    expect(trigger.parentElement!.style.width).toBe('');
   });
 });
 
