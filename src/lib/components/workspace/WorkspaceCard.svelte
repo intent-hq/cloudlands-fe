@@ -756,7 +756,12 @@
         </span>
       {/if}
       <Tooltip content={workspaceStatusPresentation.tooltip} side="bottom" sideOffset={4}>
-        <WorkspaceStatusIcon status={workspaceStatusState} size={14} decorative />
+        <WorkspaceStatusIcon
+          status={workspaceStatusState}
+          size={14}
+          decorative
+          class="justify-start"
+        />
       </Tooltip>
       <span id="workspace-status-state-{workspace.id}" class="sr-only">
         {workspaceStatusPresentation.accessibleName}

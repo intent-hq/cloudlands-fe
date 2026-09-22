@@ -45,30 +45,58 @@ async function observePaneMotion(panel: Locator) {
 }
 
 for (const width of [288, 100]) {
-  test(`tab label, heading and workspace titles share a left edge at ${width}px`, async ({
+  test(`workspace alignment and centered Intent label survive tab changes at ${width}px`, async ({
     mount,
   }) => {
     const component = await mount(SidebarTabsPreview, { props: { width } });
     const workspaces = component.getByRole('tab', { name: 'Workspaces', exact: true });
+    const intent = component.getByRole('tab', { name: 'Intent', exact: true });
     const heading = component.getByRole('heading', { name: 'All workspaces', exact: true });
     const titles = component.locator('[data-workspace-card-title]');
+    const rows = component.locator('[data-workspace-card-row]');
+    const dots = rows.locator('[data-workspace-status-dot]');
     await expect(titles).toHaveCount(4);
+    await expect(rows).toHaveCount(4);
+    await expect(dots).toHaveCount(3);
 
     async function expectAligned() {
       const label = await workspaces.locator('span').boundingBox();
       const headingBox = await heading.boundingBox();
       expect(label).not.toBeNull();
       expect(headingBox).not.toBeNull();
-      expect(Math.abs(label!.x - headingBox!.x)).toBeLessThanOrEqual(1);
-      for (const title of await titles.all()) {
-        const box = await title.boundingBox();
+      for (const row of await rows.all()) {
+        const contentLeft = await row.evaluate(
+          (node) =>
+            node.getBoundingClientRect().left + parseFloat(getComputedStyle(node).paddingLeft),
+        );
+        expect(Math.abs(contentLeft - headingBox!.x)).toBeLessThanOrEqual(1);
+      }
+      for (const dot of await dots.all()) {
+        const box = await dot.boundingBox();
         expect(box).not.toBeNull();
         expect(Math.abs(box!.x - headingBox!.x)).toBeLessThanOrEqual(1);
       }
+      for (const title of await titles.all()) {
+        const box = await title.boundingBox();
+        expect(box).not.toBeNull();
+        expect(Math.abs(box!.x - label!.x)).toBeLessThanOrEqual(1);
+      }
+    }
+
+    async function expectIntentCentered() {
+      const tab = await intent.boundingBox();
+      const label = await intent.locator('span').boundingBox();
+      expect(tab).not.toBeNull();
+      expect(label).not.toBeNull();
+      expect(Math.abs(label!.x + label!.width / 2 - (tab!.x + tab!.width / 2))).toBeLessThanOrEqual(
+        1,
+      );
     }
 
     await expectAligned();
-    await component.getByRole('tab', { name: 'Intent', exact: true }).click();
+    await expectIntentCentered();
+    await intent.click();
+    await expectIntentCentered();
     await workspaces.click();
     await expect(component.locator('[data-combined-panel-spaces]')).toHaveCSS('transform', 'none');
     await expectAligned();

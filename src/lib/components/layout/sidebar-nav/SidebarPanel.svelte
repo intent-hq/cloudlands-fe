@@ -283,14 +283,14 @@
             >
               <Tabs.Trigger
                 value="all-workspaces"
-                class="sidebar-view-tab min-w-0 px-2 font-medium focus-visible:outline-none focus-visible:ring-0"
+                class="sidebar-workspaces-tab min-w-0 px-2 font-medium focus-visible:outline-none focus-visible:ring-0"
               >
                 <span class="truncate">{m.layout_sidebarPanel_workspacesTab_label()}</span>
               </Tabs.Trigger>
               {#if !$isCollaboratorOnlyClient$}
                 <Tabs.Trigger
                   value="chief"
-                  class="sidebar-view-tab min-w-0 px-2 font-medium focus-visible:outline-none focus-visible:ring-0"
+                  class="min-w-0 px-2 font-medium focus-visible:outline-none focus-visible:ring-0"
                 >
                   <span class="truncate">{m.layout_chiefCard_title()}</span>
                 </Tabs.Trigger>
@@ -506,7 +506,7 @@
     --sidebar-label-inset: 2.375rem;
   }
 
-  .sidebar-panel :global(.sidebar-view-tab) {
+  .sidebar-panel :global(.sidebar-workspaces-tab) {
     justify-content: flex-start;
     /* Subtract the tab strip's 8px outer inset and 4px inner padding. */
     padding-left: calc(var(--sidebar-label-inset) - 0.75rem);
@@ -604,12 +604,12 @@
   }
 
   .workspace-panel-header .panel-title {
-    margin-left: calc(var(--sidebar-label-inset) - 0.5rem);
+    /* Align with row content (including its status gutter), not the title inset. */
+    margin-left: 0.375rem;
   }
 
   /* Narrow: stack header vertically */
   @container (max-width: 160px) {
-    .workspace-panel-header,
     :global(.sidebar-view-tabs) {
       /* Compact rows use 8px padding and a 6px status-to-title gap. */
       --sidebar-label-inset: 2rem;
@@ -623,9 +623,6 @@
     }
     .panel-title {
       font-size: 12px;
-    }
-    .workspace-panel-header .panel-title {
-      margin-left: calc(var(--sidebar-label-inset) - 0.375rem);
     }
   }
 </style>
