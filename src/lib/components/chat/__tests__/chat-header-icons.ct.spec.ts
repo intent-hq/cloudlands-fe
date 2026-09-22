@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/experimental-ct-svelte';
+import { expect, test } from '../../../../test/ct-test';
 import Preview from '../chat-header-icons.preview.svelte';
 import { probeHeaderIcons } from './chat-header-icon-probe';
 

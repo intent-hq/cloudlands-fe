@@ -1,4 +1,5 @@
-import { expect, test, type Locator } from '@playwright/experimental-ct-svelte';
+import type { Locator } from '@playwright/experimental-ct-svelte';
+import { expect, test } from '../../../../test/ct-test';
 import ToolCallRunningStatusHost from './ToolCallRunningStatusHost.svelte';
 
 const row = (host: Locator, name: string) => host.locator(`[data-row="${name}"]`);

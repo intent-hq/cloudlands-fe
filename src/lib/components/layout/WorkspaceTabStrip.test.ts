@@ -62,6 +62,8 @@ vi.mock('$store/renderer/store', () => ({
     get state() {
       return { tabState: { currentTabId: mocks.nextCurrentId } };
     },
+    createSelector: (select: (state: unknown, ...args: unknown[]) => unknown) =>
+      Object.assign(() => readable(undefined), { select }),
   },
 }));
 vi.mock('$store/renderer/slices/tab-state/tab-state-selectors', () => ({
@@ -396,6 +398,19 @@ describe('WorkspaceTabStrip', () => {
     expect(cluster.parentElement).toBe(controls);
   });
 
+  it('renders no presence stack and keeps every card non-hoverable, owner or not', () => {
+    render(WorkspaceTabStrip, { props: { activeWorkspaceId: 'ws-2' } });
+    for (const name of [/Alpha/, /Beta/, /Gamma/]) {
+      const tab = screen.getByRole('tab', { name });
+      expect(tab.querySelector('[data-presence-avatar-stack]')).toBeNull();
+      expect(
+        tab
+          .closest<HTMLElement>('[data-testid="workspace-tab-tooltip-root"]')!
+          .getAttribute('data-tooltip-disable-hoverable-content'),
+      ).toBe('true');
+    }
+  });
+
   it.each([
     ['active', 'ws-1'],
     ['inactive', 'ws-2'],
@@ -482,7 +497,9 @@ describe('WorkspaceTabStrip', () => {
     expect(source).not.toContain('in:fly');
     expect(source).not.toContain('out:fly');
     expect(source).toContain('animate:flip');
-    expect(source).toContain('<WorkspaceHoverCard {workspace} activeAgentIds={runningAgentIds} />');
+    expect(source).toMatch(
+      /<WorkspaceHoverCard\s+\{workspace\}\s+activeAgentIds=\{runningAgentIds\}[\s\S]*?\/>/,
+    );
     expect(source).not.toContain('ensureWorkspaceTasksLoaded');
     expect(source).not.toContain('data-workspace-tab-progress');
   });
@@ -635,16 +652,7 @@ describe('WorkspaceTabStrip', () => {
       const alpha = screen.getByRole('tab', { name: /Alpha/ });
       expect(alpha.getAttribute('aria-selected')).toBe('false');
       const tooltipRoot = alpha.closest<HTMLElement>('[data-testid="workspace-tab-tooltip-root"]')!;
-      // Alpha reports `myRole: 'owner'`: its card carries Share / Remove
-      // controls, so the pointer must be able to travel into it. Beta is a
-      // collaborator's read-only preview and still closes on leave.
-      expect(tooltipRoot.getAttribute('data-tooltip-disable-hoverable-content')).toBe('false');
-      expect(
-        screen
-          .getByRole('tab', { name: /Beta/ })
-          .closest<HTMLElement>('[data-testid="workspace-tab-tooltip-root"]')!
-          .getAttribute('data-tooltip-disable-hoverable-content'),
-      ).toBe('true');
+      expect(tooltipRoot.getAttribute('data-tooltip-disable-hoverable-content')).toBe('true');
       await enterTabTooltip(tooltipRoot);
       vi.advanceTimersByTime(799);
       await tick();

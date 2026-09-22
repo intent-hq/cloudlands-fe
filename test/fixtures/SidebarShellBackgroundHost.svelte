@@ -3,6 +3,7 @@
   import { page } from '$app/state';
   import SidebarPanel from '$lib/components/layout/sidebar-nav/SidebarPanel.svelte';
   import { store as appStore } from '$store/renderer/store';
+  import { guestSessionsListUnavailable } from '$store/renderer/slices/guest-sessions/guest-sessions-slice';
   import {
     closePanel,
     openPanel,
@@ -20,6 +21,10 @@
   document.documentElement.classList.toggle('dark', theme === 'dark');
   Object.assign(page, { url: new URL('http://localhost/workspace/sidebar-shell-0') });
   appStore.init();
+  // Settle the window identity as an owner window (no guest list outside
+  // Electron); until it settles the panel reads as collaborator-only and
+  // withholds the Chief card this suite measures.
+  appStore.dispatch(guestSessionsListUnavailable());
   appStore.dispatch(resetWorkspaceState());
   appStore.dispatch(setWorkspaceHasLoaded(true));
   appStore.dispatch(setAllSpacesViewMode('recent'));

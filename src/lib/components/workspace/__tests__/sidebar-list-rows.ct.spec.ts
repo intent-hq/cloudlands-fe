@@ -1,4 +1,4 @@
-import { test } from '@playwright/experimental-ct-svelte';
+import { test } from '../../../../test/ct-test';
 import Preview from '../sidebar-list-rows.preview.svelte';
 import { assertSidebarListRows } from './sidebar-list-row-contract';
 

@@ -168,7 +168,6 @@ const componentAsyncDataFetchBaselineFiles = [
   'src/features/workspace/SpacesSwitcherOverlay.svelte',
   'src/lib/components/AuggieSetupGate.svelte',
   'src/lib/components/CommandPalette.svelte',
-  'src/lib/components/ErrorDisplay.svelte',
   'src/lib/components/GitCredentialsModal.svelte',
   'src/lib/components/GitHubAuthBanner.svelte',
   'src/lib/components/GitHubAuthModal.svelte',
@@ -202,21 +201,16 @@ const componentAsyncDataFetchBaselineFiles = [
   'src/lib/components/file-explorer/VirtualizedFileTree.svelte',
   'src/lib/components/file-explorer/file-explorer-layout.svelte',
   'src/lib/components/file-explorer/file-tree-view.svelte',
-  'src/lib/components/file-tracking/FileChangesList.svelte',
   'src/lib/components/layout/WindowTitleBar.svelte',
   'src/lib/components/layout/panel-system/PanelLayout.svelte',
-  'src/lib/components/layout/panel-system/PanelLayoutControls.svelte',
-  'src/lib/components/layout/panel-system/PanelLayoutHeader.svelte',
   'src/lib/components/layout/panel-system/PanelTabBar.svelte',
   'src/lib/components/layout/sidebar-nav/SidebarNav.svelte',
   'src/lib/components/layout/sidebar-nav/cards/ActiveWorkspacesCard.svelte',
   'src/lib/components/layout/sidebar-nav/cards/AllWorkspacesCard.svelte',
-  'src/lib/components/layout/sidebar-nav/cards/NewWorkspaceCard.svelte',
   'src/lib/components/markdown/MarkdownViewer.svelte',
   'src/lib/components/markdown/MermaidRenderer.svelte',
   'src/lib/components/modals/FeatureCodeDialog.svelte',
   'src/lib/components/modals/PullConflictDialog.svelte',
-  'src/lib/components/notes/NotesPanel.svelte',
   'src/lib/components/notes/primitives/AgentActionBlock.svelte',
   'src/lib/components/notes/primitives/CliBlock.svelte',
   'src/lib/components/notes/primitives/DiagramBlock.svelte',
@@ -234,7 +228,6 @@ const componentAsyncDataFetchBaselineFiles = [
   'src/lib/components/settings/ProviderSelector.svelte',
   'src/lib/components/settings/RtkSettings.svelte',
   'src/lib/components/settings/SentryAuthConnection.svelte',
-  'src/lib/components/shared/AgentAttributionBadge.svelte',
   'src/lib/components/terminal/QuakeTerminalOverlay.svelte',
   'src/lib/components/terminal/ScriptOutputViewer.svelte',
   'src/lib/components/terminal/SetupScriptBanner.svelte',
@@ -247,19 +240,16 @@ const componentAsyncDataFetchBaselineFiles = [
   'src/lib/components/tiptap/TaskAgentStatus.svelte',
   'src/lib/components/tiptap/TaskItemNodeView.svelte',
   'src/lib/components/tiptap/TaskMenu.svelte',
-  'src/lib/components/tiptap/comments/UnifiedCommentThreadDemo.svelte',
   'src/lib/components/ui/CopyButton.svelte',
   'src/features/external-editors/components/FileActionsDropdown.svelte',
   'src/features/external-editors/components/OpenComboButton.svelte',
   'src/lib/components/ui/VirtualList.svelte',
   'src/features/workspace/components/WorkspaceActionsMenu.svelte',
   'src/features/file-tracking/components/diff/TrackedChangeDiffViewer.svelte',
-  'src/lib/components/ui/list/ListExample.svelte',
   'src/lib/components/ui/searchable-combobox/searchable-combobox.svelte',
   'src/lib/components/ui/searchable-select/searchable-select.svelte',
   'src/lib/components/visualization/repo-visualizer/RepoVisualizer.svelte',
   'src/lib/components/visualization/repo-visualizer/TreeCanvas.svelte',
-  'src/lib/components/workspace/CommentSystemDemo.svelte',
   'src/lib/components/workspace/CompactWorkspaceInitializer.svelte',
   'src/lib/components/workspace/MultiSelectTabbedSidebar.svelte',
   'src/lib/components/workspace/NoteCodeChangesCard.svelte',
@@ -276,7 +266,6 @@ const componentAsyncDataFetchBaselineFiles = [
   'src/lib/components/workspace/initializer/BranchSelector.svelte',
   'src/lib/components/workspace/initializer/InitialAgentPicker.svelte',
   'src/lib/components/workspace/initializer/IssueSuggestions.svelte',
-  'src/lib/components/workspace/initializer/RemoteSetupSelector.svelte',
   'src/lib/components/workspace/initializer/RepoSelector.svelte',
   'src/lib/components/workspace/initializer/SetupScriptAgent.svelte',
   'src/lib/components/workspace/sidebar/BranchDisplay.svelte',
@@ -300,7 +289,6 @@ const componentAsyncDataFetchBaselineFiles = [
   'src/routes/(app)/test-error-boundary/+page.svelte',
   'src/routes/(app)/test-input/+page.svelte',
   'src/routes/(app)/test-mentions/+page.svelte',
-  'src/routes/(app)/test-mentions/compact-initializer-test.svelte',
   'src/routes/(app)/test-mentions/compact/+page.svelte',
   'src/routes/(app)/workspace/[id]/+page.svelte',
 ];
@@ -388,6 +376,26 @@ const rendererBrowserSafetyRestrictedImportsOptions = {
     },
   ],
 };
+
+// The shared CT-module restriction (see the `no-restricted-imports` block
+// below); also repeated by per-file `no-restricted-imports` overrides, since
+// flat-config rule entries replace rather than merge.
+const ctSharedModuleRestrictedImportPath = {
+  name: '@playwright/experimental-ct-svelte',
+  allowTypeImports: true,
+  message:
+    "Only type imports may come from '@playwright/experimental-ct-svelte'. Import `test` / `expect` (and any other runtime export) from the shared CT module (src/test/ct-test.ts) so the browser-context isolation applies to this spec.",
+};
+
+// Every import-source spelling of one `src/<modulePath>` module for a
+// `no-restricted-imports` `patterns` group: the `$alias` form plus any relative
+// or `src/`-rooted form (`**/` also matches leading `../` segments), each bare
+// and with a `.ts` / `.js` extension. `aliasRoot` is the `$alias` whose target
+// directory is the first segment of `modulePath` (see svelte.config.js).
+function modelPickerGuardedModuleSpellings(aliasRoot, modulePath) {
+  const aliasForm = modulePath.replace(/^[^/]+/, aliasRoot);
+  return [aliasForm, `**/${modulePath}`].flatMap((base) => [base, `${base}.ts`, `${base}.js`]);
+}
 
 export default [
   // .gitignore is the source of truth for scratch/sandbox exclusions (.dev/, .wt-*/); see vitest.config.ts.
@@ -595,6 +603,80 @@ export default [
               importNames: ['execSync', 'spawnSync', 'execFileSync'],
               message:
                 'Synchronous child_process calls block the Electron main thread. Use exec/spawn with util.promisify or the execAsync helper instead.',
+            },
+          ],
+        },
+      ],
+    },
+  },
+  // Every Playwright CT spec and CT helper takes `test` / `expect` from the shared
+  // module, which turns off ct-core's per-worker browser-context reuse (the
+  // reuse reset raced `mount()` on the merge queue: intent-hq/intent#4373, #4783,
+  // #5236, #5249, #5279, #5481). A spec that imports them from the package
+  // directly runs without that override, so forbid every value import of the
+  // package — named, namespace (`import * as ct`) and default alike; an
+  // `importNames` list would let `ct.test` / `ct.expect` through a default import.
+  // Type imports (`Locator`, `Page`, `ComponentFixtures`, ...) still come from the
+  // package. The shared module itself is the one sanctioned value importer.
+  // Main-process files are excluded so this block does not replace their
+  // child_process ban above.
+  {
+    files: ['src/**/*.{js,mjs,ts,tsx,svelte}'],
+    ignores: ['src/test/ct-test.ts', ...mainProcessFiles],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        {
+          paths: [ctSharedModuleRestrictedImportPath],
+        },
+      ],
+    },
+  },
+  // ModelPicker reaches the agent-session mutation APIs (`agent.setModel`, the
+  // session `model` write, the reasoning-effort writers) only through the
+  // lock-checking funnel in agent-model-mutator.ts, so a guest-locked picker
+  // cannot issue a write by construction. Four heads / three fix rounds were
+  // needed to find every per-boundary re-check in cloudlands-fe#2735; this
+  // keeps a new dispatch path from bypassing the mutator. The shared CT-module
+  // path is repeated so this override does not drop that restriction.
+  // `no-restricted-imports` compares source strings and never resolves modules,
+  // so `paths` would only ban the exact alias spelling: the gitignore-style
+  // `patterns` below also cover the relative form (`../../../../features/...`)
+  // and the `.ts` / `.js` extension spellings of each protected module
+  // (cloudlands-fe#2763 review). Each group bans the whole module rather than
+  // named exports: an `importNames` list still lets a namespace import
+  // (`import * as m`) reach the same binding as `m.agentClient`. ModelPicker
+  // imports nothing else from these modules, so nothing needs allowImportNames.
+  // src/lib/eslint/__tests__/model-picker-import-restriction.test.ts asserts
+  // the matrix against this effective config.
+  {
+    files: ['src/lib/components/chat/input/ModelPicker.svelte'],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        {
+          paths: [ctSharedModuleRestrictedImportPath],
+          patterns: [
+            {
+              group: modelPickerGuardedModuleSpellings('$features', 'features/agent/agent.client'),
+              message:
+                'ModelPicker must not call agentClient.setModel directly. Route the write through the lock-checking mutator in src/lib/components/chat/input/agent-model-mutator.ts (createAgentModelMutator).',
+            },
+            {
+              group: modelPickerGuardedModuleSpellings(
+                '$features',
+                'features/agent/reasoning-effort',
+              ),
+              message:
+                'ModelPicker must not call applyReasoningEffort / reconcileAgentReasoningEffort directly. Route the write through the lock-checking mutator in src/lib/components/chat/input/agent-model-mutator.ts (createAgentModelMutator).',
+            },
+            {
+              group: modelPickerGuardedModuleSpellings(
+                '$store',
+                'store/renderer/slices/agent-session/agent-session-slice',
+              ),
+              message:
+                'ModelPicker must not dispatch the agent-session updateSession action directly. Route the write through the lock-checking mutator in src/lib/components/chat/input/agent-model-mutator.ts (createAgentModelMutator).',
             },
           ],
         },

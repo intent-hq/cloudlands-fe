@@ -1,15 +1,13 @@
-import { expect, test } from '@playwright/experimental-ct-svelte';
+import { expect, test } from '../../../../test/ct-test';
 import type { ComponentFixtures } from '@playwright/experimental-ct-svelte';
 import {
   failOnConsoleErrors,
   peekConsoleErrors,
   takeConsoleErrors,
 } from '../../../../test/ct-console-errors';
-import { isolateBrowserContextPerTest } from '../../../../test/ct-isolated-browser-context';
 import ChatPanelComposerGeometryHost from './ChatPanelComposerGeometryHost.svelte';
 
 test.setTimeout(120_000);
-isolateBrowserContextPerTest(test, 'intent-hq/intent#4783');
 failOnConsoleErrors(test);
 
 test.afterEach(async ({ page }) => {

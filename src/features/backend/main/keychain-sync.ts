@@ -51,7 +51,7 @@ import {
 const logger = new Logger('KeychainSync');
 
 /** Keychain service holding guest sessions (credentials minted by an
- * `invite.redeem` join). Kept apart from the helper's default backends
+ * `invite.prove` join). Kept apart from the helper's default backends
  * service (`com.cloudlands.intent.backends`, the only one the iOS companion
  * reads) so a guest credential can never surface as — or tombstone — an
  * owner record. */

@@ -1,4 +1,4 @@
-import { test } from '@playwright/experimental-ct-svelte';
+import { test } from '../../../../test/ct-test';
 import SettingsContentLayout from '../settings-content-layout.preview.svelte';
 import {
   assertSettingsContentLayout,

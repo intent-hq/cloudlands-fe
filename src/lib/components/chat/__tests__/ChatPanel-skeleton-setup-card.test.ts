@@ -175,6 +175,10 @@ vi.mock('$store/renderer/slices/workspace-tasks/workspace-tasks-selectors', () =
     () => testState.workspaceTasksInitialized,
   ),
 }));
+vi.mock('$store/renderer/slices/presence/presence-selectors', () => ({
+  selectAgentTypingPeople: testState.selector([]),
+  selectPresenceOwnPrincipalId: testState.selector(null),
+}));
 vi.mock('$store/renderer/slices/multi-panel-context/multi-panel-context-selectors', () => ({
   selectCheckedPanels: testState.selector([]),
   selectPanels: testState.selector([]),
@@ -221,9 +225,6 @@ vi.mock('../input/SimpleRichInput.svelte', async () => ({
   default: (await import('./mocks/SlotOnly.svelte')).default,
 }));
 vi.mock('../ChatMessage.svelte', async () => ({
-  default: (await import('./mocks/SlotOnly.svelte')).default,
-}));
-vi.mock('../DateSeparator.svelte', async () => ({
   default: (await import('./mocks/SlotOnly.svelte')).default,
 }));
 vi.mock('../EventWakeupBanner.svelte', async () => ({

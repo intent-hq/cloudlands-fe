@@ -42,10 +42,13 @@
     selectAllWorkspaceAgents,
     selectBackgroundAgentsLoaded,
     selectDelegatedAgentsLoaded,
+    selectDelegatedCounts,
     selectIsLoadingAgents,
     selectIsLoadingBackgroundAgents,
     selectIsLoadingDelegatedAgents,
     selectIsLoadingRetiredAgents,
+    selectLoadedDelegatedParentIds,
+    selectLoadingDelegatedParentIds,
     selectRetiredAgentsLoaded,
     selectRetiredCount,
     selectScopeCounts,
@@ -94,6 +97,7 @@
   import SidebarBrowserList from './SidebarBrowserList.svelte';
   import { selectEffectiveFileExplorerWorkspacePath } from '$store/renderer/slices/file-explorer/file-explorer-selectors';
   import {
+    selectIsWorkspaceCollaborator,
     selectWorkspaceActivePullRequest,
     selectWorkspaceById,
   } from '$store/renderer/slices/workspace/workspace-selectors';
@@ -236,6 +240,9 @@
   const scopeCounts$ = selectScopeCounts(workspaceIdStore);
   const delegatedAgentsLoaded$ = selectDelegatedAgentsLoaded(workspaceIdStore);
   const loadingDelegated$ = selectIsLoadingDelegatedAgents(workspaceIdStore);
+  const delegatedCounts$ = selectDelegatedCounts(workspaceIdStore);
+  const loadedDelegatedParentIds$ = selectLoadedDelegatedParentIds(workspaceIdStore);
+  const loadingDelegatedParentIds$ = selectLoadingDelegatedParentIds(workspaceIdStore);
   const backgroundAgentsLoaded$ = selectBackgroundAgentsLoaded(workspaceIdStore);
   const loadingBackground$ = selectIsLoadingBackgroundAgents(workspaceIdStore);
   const hasUnreadForegroundAgents$ = selectWorkspaceHasUnreadForegroundAgents(workspaceIdStore);
@@ -332,8 +339,11 @@
   }
   // Collaborators (multiplayer w3) are refused on terminal + browser methods, so
   // the shell dock, browser launcher, their strip tabs, and any persisted
-  // selection of those tabs are withheld up front.
-  const isCollaborator = $derived($workspace?.myRole === 'collaborator');
+  // selection of those tabs are withheld up front. The selector fails closed: a
+  // guest window (multiplayer w4) reads as collaborator whatever `myRole` the
+  // row carries, and so does every window until its identity has settled.
+  const isCollaborator$ = selectIsWorkspaceCollaborator(workspaceIdStore);
+  const isCollaborator = $derived($isCollaborator$);
   const selectedTabIds = selectMultiSelectSidebarSelectedTabIds(workspaceIdStore);
   const selectedTabs = $derived(normalizeSelectedTabs($selectedTabIds, isCollaborator));
   let agentSearchQuery = $state('');
@@ -1134,9 +1144,14 @@
                             scopeCounts={$scopeCounts$}
                             delegatedAgentsLoaded={$delegatedAgentsLoaded$}
                             loadingDelegated={$loadingDelegated$}
-                            onLoadDelegated={() => {
-                              appStore.dispatch(fetchDelegatedAgentsRequested(workspaceId));
+                            onLoadDelegated={(parentAgentId) => {
+                              appStore.dispatch(
+                                fetchDelegatedAgentsRequested(workspaceId, parentAgentId),
+                              );
                             }}
+                            delegatedCounts={$delegatedCounts$}
+                            loadedDelegatedParentIds={$loadedDelegatedParentIds$}
+                            loadingDelegatedParentIds={$loadingDelegatedParentIds$}
                             backgroundAgentsLoaded={$backgroundAgentsLoaded$}
                             loadingBackground={$loadingBackground$}
                             onLoadBackground={() => {

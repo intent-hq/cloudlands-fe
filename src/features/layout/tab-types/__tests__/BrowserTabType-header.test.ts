@@ -1,9 +1,9 @@
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { PanelTab } from '$store/renderer/slices/panel-layout/panel-layout-types';
+import { openAgentTabRequested } from '$store/renderer/slices/app-layout/app-layout-slice';
 
-const navigateToAgent = vi.hoisted(() => vi.fn());
-vi.mock('$lib/utils/workspace-navigation', () => ({ navigateToAgent }));
+const dispatch = vi.hoisted(() => vi.fn());
 vi.mock('$lib/components/browser/EmbeddedBrowser.svelte', async () => ({
   default: (await import('./mocks/MockEmbeddedBrowser.svelte')).default,
 }));
@@ -17,10 +17,18 @@ vi.mock('$store/renderer/store', async () => {
     await import('$store/renderer/slices/permission/permission-slice');
   return createAppStoreMockModule({
     state: { workspaceAgents: { byWorkspaceId: {} }, permission },
+    dispatch,
   });
 });
 
 import Harness from './mocks/BrowserTabTypeHeaderHarness.svelte';
+
+const openedAgent = (agentId: string) =>
+  openAgentTabRequested('workspace-1', {
+    agentId,
+    sourcePanelId: undefined,
+    openInAdjacentPanel: false,
+  });
 
 const ownedTab = (id: string): PanelTab => ({
   id,
@@ -44,25 +52,44 @@ describe('browser connected agent in the panel header', () => {
 
       const header = within(screen.getByTestId('panel-header'));
       await fireEvent.click(header.getByRole('button', { name: /Owner one/ }));
-      expect(navigateToAgent).toHaveBeenCalledWith('agent-one');
+      expect(dispatch).toHaveBeenCalledWith(openedAgent('agent-one'));
     },
   );
+
+  it('opens the owner in an adjacent panel on a modifier click from within a panel', async () => {
+    const tab = ownedTab('one');
+    const { container } = render(Harness, { tabs: [tab], activeTabId: tab.id });
+    const panel = document.createElement('div');
+    panel.setAttribute('data-panel-id', 'panel-3');
+    panel.append(container);
+    document.body.append(panel);
+
+    const header = within(screen.getByTestId('panel-header'));
+    await fireEvent.click(header.getByRole('button', { name: /Owner one/ }), { ctrlKey: true });
+    expect(dispatch).toHaveBeenCalledWith(
+      openAgentTabRequested('workspace-1', {
+        agentId: 'agent-one',
+        sourcePanelId: 'panel-3',
+        openInAdjacentPanel: true,
+      }),
+    );
+  });
 
   it('follows the active tab and keeps its registration when an inactive tab unmounts', async () => {
     const tabs = [ownedTab('one'), ownedTab('two')];
     const view = render(Harness, { tabs, activeTabId: 'one' });
     const header = within(screen.getByTestId('panel-header'));
     await fireEvent.click(header.getByRole('button', { name: /Owner one/ }));
-    expect(navigateToAgent).toHaveBeenLastCalledWith('agent-one');
+    expect(dispatch).toHaveBeenLastCalledWith(openedAgent('agent-one'));
 
     await view.rerender({ tabs, activeTabId: 'two' });
     expect(header.queryByRole('button', { name: /Owner one/ })).toBeNull();
     await fireEvent.click(header.getByRole('button', { name: /Owner two/ }));
-    expect(navigateToAgent).toHaveBeenLastCalledWith('agent-two');
+    expect(dispatch).toHaveBeenLastCalledWith(openedAgent('agent-two'));
 
     await view.rerender({ tabs: [tabs[1]], activeTabId: 'two' });
     await fireEvent.click(header.getByRole('button', { name: /Owner two/ }));
-    expect(navigateToAgent).toHaveBeenLastCalledWith('agent-two');
+    expect(dispatch).toHaveBeenLastCalledWith(openedAgent('agent-two'));
 
     await view.rerender({ tabs: [], activeTabId: '' });
     expect(header.queryByRole('button')).toBeNull();
@@ -77,7 +104,7 @@ describe('browser connected agent in the panel header', () => {
       activeTabId: tab.id,
     });
     await fireEvent.click(header.getByRole('button', { name: /New owner/ }));
-    expect(navigateToAgent).toHaveBeenCalledWith('agent-new');
+    expect(dispatch).toHaveBeenCalledWith(openedAgent('agent-new'));
 
     await view.rerender({ tabs: [{ ...tab, ownerAgentId: undefined }], activeTabId: tab.id });
     expect(header.queryByRole('button')).toBeNull();

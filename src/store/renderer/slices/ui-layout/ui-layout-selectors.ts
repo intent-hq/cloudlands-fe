@@ -1,9 +1,5 @@
 import { store } from '../../store';
-import {
-  defaultPanelVisibility,
-  type PanelVisibilityState,
-  type ResizablePanelGroupLayoutState,
-} from './ui-layout-slice';
+import { defaultPanelVisibility, type PanelVisibilityState } from './ui-layout-slice';
 
 export const selectLineWrapping = store.createSelector((state) => {
   return state.uiLayout.lineWrapping;
@@ -67,13 +63,6 @@ export const selectResizablePanelSize = store.createSelector<[key: string], numb
 export const selectResizablePanelSizeHydrated = store.createSelector<[key: string], boolean>(
   (state, key) => state.uiLayout.hydratedResizablePanelSizes[key] === true,
 );
-
-export const selectResizablePanelGroupLayout = store.createSelector<
-  [key: string],
-  ResizablePanelGroupLayoutState | undefined
->((state, key) => {
-  return state.uiLayout.resizablePanelGroupLayouts[key];
-});
 
 export const selectCollapsiblePanelCollapsed = store.createSelector<
   [key: string],

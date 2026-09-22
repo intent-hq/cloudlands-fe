@@ -14,14 +14,30 @@
  * WebSocket message is one mux frame `[opcode u8][streamId u32 BE][payload]`
  * — the WebSocket provides message boundaries, so no length prefix.
  *
- * | opcode | name       | payload       | direction       |
- * |--------|------------|---------------|-----------------|
- * | 0x01   | `OPEN`     | port `u16` BE | client → daemon |
- * | 0x02   | `OPEN_OK`  | (empty)       | daemon → client |
- * | 0x03   | `OPEN_ERR` | UTF-8 message | daemon → client |
- * | 0x04   | `DATA`     | raw bytes     | both            |
- * | 0x05   | `EOF`      | (empty)       | both            |
- * | 0x06   | `CLOSE`    | (empty)       | both            |
+ * | opcode | name       | payload         | direction       |
+ * |--------|------------|-----------------|-----------------|
+ * | 0x01   | `OPEN`     | port `u16` BE   | client → daemon |
+ * | 0x02   | `OPEN_OK`  | (empty)         | daemon → client |
+ * | 0x03   | `OPEN_ERR` | UTF-8 message   | daemon → client |
+ * | 0x04   | `DATA`     | raw bytes       | both            |
+ * | 0x05   | `EOF`      | (empty)         | both            |
+ * | 0x06   | `CLOSE`    | (empty)         | both            |
+ * | 0x07   | `CREDIT`   | credit `u32` BE | client → daemon |
+ *
+ * Per-stream flow control (daemon → client direction, intent-hq/intent#5482):
+ * the daemon grants each stream a fixed 1 MiB window at `OPEN_OK` and only
+ * reads its loopback peer while credit remains; every `DATA` payload it sends
+ * consumes that many bytes. The client replenishes with `CREDIT` once the
+ * bytes have been flushed to the local socket — never for bytes still queued
+ * in Node's write buffer — coalesced to one frame per 64 KiB or per flushed
+ * backlog, whichever comes first. A local socket that never drains therefore
+ * grants nothing and stalls only its own stream, not its siblings or the
+ * heartbeat. `CREDIT` is sent only when the connected daemon's `client.hello`
+ * `protocolVersion` is ≥ {@link CREDIT_MIN_PROTOCOL} (a pre-credit daemon
+ * rejects the unknown opcode with 1002); otherwise the client behaves exactly
+ * as before — bytes are still tracked, nothing is sent. The version is
+ * re-read on every tunnel (re)connect. The client → daemon direction is
+ * bounded daemon-side.
  *
  * Lifecycle: `ensureTunnel()` lazily opens the single `/tunnel` socket,
  * reusing the active transport's URL/token (and cert pin for `wss`). A `wss`
@@ -55,6 +71,7 @@ import {
   PinMismatchError,
   type BackendConnectionConfig,
 } from './backend-connection';
+import { protocolVersionAtLeast } from './protocol-compat';
 
 const logger = new Logger('TunnelManager');
 
@@ -77,9 +94,20 @@ export const OP_DATA = 0x04;
 const OP_EOF = 0x05;
 /** `CLOSE` — full stream teardown (no payload). */
 const OP_CLOSE = 0x06;
+/** `CREDIT` — grant the daemon more daemon→client `DATA` bytes (payload: credit u32 BE, > 0). */
+export const OP_CREDIT = 0x07;
 
 /** Frame header length: opcode (1 byte) + streamId (4 bytes, big-endian). */
 export const HEADER_LEN = 5;
+
+/**
+ * Flushed-but-ungranted bytes per stream at which a `CREDIT` is sent even
+ * while more bytes are still queued on the local socket; a fully flushed
+ * backlog sends whatever is pending regardless of size.
+ */
+const CREDIT_COALESCE_BYTES = 64 * 1024;
+/** First daemon protocol version whose `/tunnel` decoder accepts `CREDIT`. */
+const CREDIT_MIN_PROTOCOL = { major: 10, minor: 4 } as const;
 
 /**
  * Largest `DATA` payload the daemon accepts per frame
@@ -95,7 +123,8 @@ export type TunnelFrame =
   | { type: 'openErr'; streamId: number; message: string }
   | { type: 'data'; streamId: number; payload: Buffer }
   | { type: 'eof'; streamId: number }
-  | { type: 'close'; streamId: number };
+  | { type: 'close'; streamId: number }
+  | { type: 'credit'; streamId: number; credit: number };
 
 /** Encode a frame into its `[opcode u8][streamId u32 BE][payload]` wire form. */
 export function encodeFrame(frame: TunnelFrame): Buffer {
@@ -121,6 +150,11 @@ export function encodeFrame(frame: TunnelFrame): Buffer {
       return build(OP_EOF, frame.streamId, Buffer.alloc(0));
     case 'close':
       return build(OP_CLOSE, frame.streamId, Buffer.alloc(0));
+    case 'credit': {
+      const credit = Buffer.allocUnsafe(4);
+      credit.writeUInt32BE(frame.credit, 0);
+      return build(OP_CREDIT, frame.streamId, credit);
+    }
   }
 }
 
@@ -134,8 +168,8 @@ export class FrameDecodeError extends Error {
 
 /**
  * Decode one wire frame. Rejects short buffers, unknown opcodes, wrong `OPEN`
- * payload sizes, and payloads on payload-less opcodes — mirroring the daemon
- * codec's `FrameError` cases.
+ * / `CREDIT` payload sizes, a zero `CREDIT` grant, and payloads on
+ * payload-less opcodes — mirroring the daemon codec's `FrameError` cases.
  */
 export function decodeFrame(bytes: Buffer): TunnelFrame {
   if (bytes.length < HEADER_LEN) {
@@ -163,6 +197,14 @@ export function decodeFrame(bytes: Buffer): TunnelFrame {
     case OP_CLOSE:
       if (payload.length > 0) throw new FrameDecodeError('CLOSE must not carry a payload');
       return { type: 'close', streamId };
+    case OP_CREDIT: {
+      if (payload.length !== 4) {
+        throw new FrameDecodeError('CREDIT payload must be exactly 4 bytes (credit)');
+      }
+      const credit = payload.readUInt32BE(0);
+      if (credit === 0) throw new FrameDecodeError('CREDIT must grant at least one byte');
+      return { type: 'credit', streamId, credit };
+    }
     default:
       throw new FrameDecodeError(`unknown opcode 0x${opcode.toString(16).padStart(2, '0')}`);
   }
@@ -217,6 +259,13 @@ export interface TunnelManagerOptions {
    * every (re)connect so a backend switch is picked up lazily.
    */
   getConfig: () => BackendConnectionConfig | null;
+  /**
+   * The connected daemon's `client.hello` `protocolVersion` (`null` when
+   * unknown). Read on every tunnel (re)connect; `CREDIT` is sent only when it
+   * advertises CREDIT support, so a backend switch or daemon upgrade is picked
+   * up lazily.
+   */
+  getProtocolVersion: () => string | null;
   /** Socket factory seam for tests; defaults to [[createTunnelSocket]]. */
   socketFactory?: (config: BackendConnectionConfig) => TunnelSocketLike;
   /** Deadline for the `/tunnel` WebSocket to reach `open`. Default 10s. */
@@ -276,6 +325,10 @@ interface StreamState {
   opened: boolean;
   pendingData: Buffer[];
   pendingBytes: number;
+  /** Daemon→client `DATA` bytes written to the local socket but not yet flushed. */
+  unflushedBytes: number;
+  /** Flushed bytes not yet returned to the daemon as `CREDIT`. */
+  ungrantedBytes: number;
   localEnded: boolean;
   /** The daemon already ended this stream (`OPEN_ERR`/`CLOSE`) — send no `CLOSE` back. */
   remoteClosed: boolean;
@@ -417,6 +470,7 @@ export class TunnelManager {
   onForwardDropped: ((remotePort: number) => void) | null = null;
 
   private readonly getConfig: () => BackendConnectionConfig | null;
+  private readonly getProtocolVersion: () => string | null;
   private readonly socketFactory: (config: BackendConnectionConfig) => TunnelSocketLike;
   private readonly connectTimeoutMs: number;
   private readonly openTimeoutMs: number;
@@ -449,6 +503,8 @@ export class TunnelManager {
   private heartbeatSentAtMs: number | null = null;
   private lastPongAtMs: number | null = null;
   private tunnelGeneration = 0;
+  /** Whether the daemon behind the current tunnel socket accepts `CREDIT`. */
+  private creditEnabled = false;
   private nextStreamId = 1;
   private disposed = false;
   /** Latched by a 403 upgrade rejection; see {@link TunnelForbiddenError}. */
@@ -476,6 +532,7 @@ export class TunnelManager {
     this.admissionTimeoutMs = positive(options.admissionTimeoutMs ?? 30_000, 'admissionTimeoutMs');
     this.admissionRetryMs = positive(options.admissionRetryMs ?? 100, 'admissionRetryMs');
     this.getConfig = options.getConfig;
+    this.getProtocolVersion = options.getProtocolVersion;
     this.socketFactory = options.socketFactory ?? createTunnelSocket;
     this.connectTimeoutMs = options.connectTimeoutMs ?? DEFAULT_CONNECT_TIMEOUT_MS;
     this.openTimeoutMs = options.openTimeoutMs ?? DEFAULT_OPEN_TIMEOUT_MS;
@@ -578,11 +635,19 @@ export class TunnelManager {
           }
           this.ws = ws;
           this.tunnelGeneration += 1;
+          const protocolVersion = this.getProtocolVersion();
+          this.creditEnabled = protocolVersionAtLeast(
+            protocolVersion,
+            CREDIT_MIN_PROTOCOL.major,
+            CREDIT_MIN_PROTOCOL.minor,
+          );
           this.startHeartbeat(ws);
           logger.info('tunnel connected', {
             generation: this.tunnelGeneration,
             candidates: candidates.length,
             reconnect: this.tunnelGeneration > 1,
+            protocolVersion,
+            creditEnabled: this.creditEnabled,
           });
           resolve();
         });
@@ -903,6 +968,8 @@ export class TunnelManager {
       opened: false,
       pendingData: [],
       pendingBytes: 0,
+      unflushedBytes: 0,
+      ungrantedBytes: 0,
       localEnded: false,
       remoteClosed: false,
       openTimer: null,
@@ -1060,24 +1127,33 @@ export class TunnelManager {
         }
         break;
       }
-      case 'data':
-        // `write()`'s return value is deliberately ignored: the frozen frame
-        // contract has no per-stream flow-control window and pausing the
-        // shared WebSocket would stall every stream. Bound the local write
-        // buffer and close only this stream if its reader cannot keep up.
+      case 'data': {
+        // `write()`'s return value is deliberately ignored: pausing the shared
+        // WebSocket would stall every stream. Flow control is per stream —
+        // the daemon only sends within the credit this side has granted, and
+        // credit is replenished from the write callback (bytes flushed), so a
+        // slow reader stalls only its own stream. The local write-buffer
+        // bound stays as the last resort against a daemon ignoring credit.
         if (!stream.opened) {
           this.endStream(stream, { sendClose: stream.admitted });
           break;
         }
-        if (stream.socket.writableLength + frame.payload.length > MAX_LOCAL_WRITE_BUFFER_BYTES) {
+        const length = frame.payload.length;
+        if (stream.socket.writableLength + length > MAX_LOCAL_WRITE_BUFFER_BYTES) {
           this.recordAdmissionFailure(
             stream.forward.remotePort,
             'local reader byte budget exceeded',
             Date.now() - stream.createdAtMs,
           );
           this.endStream(stream, { sendClose: true });
-        } else if (!stream.socket.destroyed) stream.socket.write(frame.payload);
+        } else if (!stream.socket.destroyed) {
+          stream.unflushedBytes += length;
+          stream.socket.write(frame.payload, (error) =>
+            this.handleLocalFlush(stream, length, error),
+          );
+        }
         break;
+      }
       case 'eof':
         // Remote half-close: finish the local write side, keep reading.
         if (!stream.socket.destroyed) stream.socket.end();
@@ -1091,7 +1167,31 @@ export class TunnelManager {
           streamId: frame.streamId,
         });
         break;
+      case 'credit':
+        logger.warn('unexpected client-only CREDIT frame from daemon', {
+          streamId: frame.streamId,
+        });
+        break;
     }
+  }
+
+  /**
+   * Write callback for one daemon→client `DATA` payload: the bytes have left
+   * Node's write buffer for the kernel (or the write failed — a destroyed
+   * socket owes the daemon nothing). Return them as `CREDIT`, coalesced to one
+   * frame per {@link CREDIT_COALESCE_BYTES} or per fully flushed backlog —
+   * unless the daemon predates `CREDIT`, in which case nothing is sent.
+   */
+  private handleLocalFlush(stream: StreamState, length: number, error?: Error | null): void {
+    if (error || this.streams.get(stream.streamId) !== stream) return;
+    stream.unflushedBytes -= length;
+    stream.ungrantedBytes += length;
+    if (stream.ungrantedBytes === 0) return;
+    if (stream.ungrantedBytes < CREDIT_COALESCE_BYTES && stream.unflushedBytes > 0) return;
+    const credit = stream.ungrantedBytes;
+    stream.ungrantedBytes = 0;
+    if (!this.creditEnabled) return;
+    this.sendFrame({ type: 'credit', streamId: stream.streamId, credit });
   }
 
   /**

@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/experimental-ct-svelte';
+import { expect, test } from '../../../../../test/ct-test';
 import QuestionPreview from '../question-card.preview.svelte';
 
 for (const width of [280, 960]) {

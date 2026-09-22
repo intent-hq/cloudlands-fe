@@ -61,7 +61,10 @@
   import { AGENT_KEY_COUNT } from '$features/hardware-console/assignment/key-assignment';
   import { microConnectedReadable } from '$features/hardware-console/device/connection-status';
   import MicroKeySlotBadge from '$lib/components/workspace/MicroKeySlotBadge.svelte';
-  import { selectWorkspaceActivePullRequest } from '$store/renderer/slices/workspace/workspace-selectors';
+  import {
+    selectHidesOwnerWorkspaceActions,
+    selectWorkspaceActivePullRequest,
+  } from '$store/renderer/slices/workspace/workspace-selectors';
   import { selectPrMonitors } from '$store/renderer/slices/pr-monitor/pr-monitor-selectors';
   import { constructPrUrl } from '$lib/components/workspace/sidebar/sidebar-changes-utils';
   import {
@@ -178,6 +181,11 @@
   const microConnected$ = microConnectedReadable();
   const workspaceKeySlot$ = selectWorkspaceResolvedKeySlot(workspaceIdStore);
 
+  // Owner-only actions (Transfer/Download, Archive, Delete) are refused by the
+  // daemon for collaborators (`require_owner`), so a collaborator row hides
+  // them instead of offering a failing action.
+  const hidesOwnerActions$ = selectHidesOwnerWorkspaceActions(workspaceIdStore);
+
   // Load canonical tasks for progress display (no-op once initialized).
   $effect(() => {
     const workspaceId = workspace?.id;
@@ -255,12 +263,10 @@
   let hoverCardFocusOpenSuppressed = false;
   let hoverCardFocusSuppressionTimer: ReturnType<typeof setTimeout> | null = null;
   // The card is portaled beside the row with a small gap, and it carries
-  // controls (Share, Remove). Crossing that gap fires the row's mouseleave, so
+  // agent and PR controls. Crossing that gap fires the row's mouseleave, so
   // closing is deferred by a short grace period the card's own pointerenter
   // cancels; pointer or focus inside the card keeps it open like the row does.
   let hoverCardEl: HTMLElement | null = $state(null);
-  let hoverCardContent: { blockDismissal: (event?: KeyboardEvent) => boolean } | undefined =
-    $state();
   let undeferHoverCardClose: (() => void) | null = null;
   let hoverCardFocusRelocationTimer: ReturnType<typeof setTimeout> | undefined;
 
@@ -289,8 +295,7 @@
     workspaceHoverCardIntentSession.notifyOpened();
   }
 
-  function closeHoverCard(force = false) {
-    if (!force && hoverCardContent?.blockDismissal?.()) return;
+  function closeHoverCard() {
     clearHoverCardCloseTimer();
     clearTimeout(hoverCardFocusRelocationTimer);
     hoverCardDismissalActive = false;
@@ -407,7 +412,6 @@
     if (target instanceof Node && getHoverCardElement()?.contains(target)) return;
     event.preventDefault();
     event.stopPropagation();
-    if (hoverCardContent?.blockDismissal?.(event)) return;
     preventFocusOpenUntilRowExit = focusWithinRow;
     clearHoverCardOpenTimer();
     closeHoverCard();
@@ -518,11 +522,6 @@
   }
 
   function handleHoverCardKeydown(event: KeyboardEvent) {
-    if (event.key === 'Escape' && hoverCardContent?.blockDismissal?.(event)) {
-      event.preventDefault();
-      event.stopPropagation();
-      return;
-    }
     const controls = getHoverCardControls();
     const returningFromFirstControl =
       event.key === 'Tab' && event.shiftKey && event.currentTarget === controls[0];
@@ -596,6 +595,10 @@
     e.preventDefault();
     e.stopPropagation();
     overflowMenuOpen = false;
+    if (getContextMenuItems().length === 0) {
+      contextMenu = null;
+      return;
+    }
     contextMenu = { x: e.clientX, y: e.clientY };
   }
 
@@ -623,7 +626,7 @@
       clearTimeout(hoverCardFocusSuppressionTimer);
       hoverCardFocusSuppressionTimer = null;
     }
-    closeHoverCard(true);
+    closeHoverCard();
     if (hadContextMenu) appStore.dispatch(decrementContextMenuOpen());
   });
 
@@ -676,6 +679,8 @@
         submenu: assignSubmenu,
       });
     }
+
+    if ($hidesOwnerActions$) return items;
 
     items.push({
       id: 'transfer',
@@ -1053,7 +1058,6 @@
         onfocusout={handleHoverCardFocusOut}
       >
         <WorkspaceHoverCard
-          bind:this={hoverCardContent}
           {workspace}
           activeAgentIds={streamingAgentIds}
           onkeydown={handleHoverCardKeydown}
@@ -1063,12 +1067,15 @@
   {/if}
 
   {#if contextMenu}
-    <SidebarContextMenu
-      x={contextMenu.x}
-      y={contextMenu.y}
-      items={getContextMenuItems()}
-      onClickOutside={closeContextMenu}
-    />
+    {@const contextMenuItems = getContextMenuItems()}
+    {#if contextMenuItems.length > 0}
+      <SidebarContextMenu
+        x={contextMenu.x}
+        y={contextMenu.y}
+        items={contextMenuItems}
+        onClickOutside={closeContextMenu}
+      />
+    {/if}
   {/if}
 {:else if phase && stats && variant === 'row'}
   <div

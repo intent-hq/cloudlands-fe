@@ -22,6 +22,8 @@ vi.mock('$lib/utils/client-logger', () => ({
 import { createTerminalRequested, createPanelTerminalRequested } from '../terminals-slice';
 import { terminalCreationSaga } from './terminal-creation-saga';
 import { terminalCommandsSaga } from './terminal-commands-saga';
+import { initialState as guestSessionsInitialState } from '../../guest-sessions/guest-sessions-slice';
+import { LOCAL_CONNECTION_ID } from '$shared/types/connections';
 
 const settle = async () => {
   await Promise.resolve();
@@ -38,6 +40,9 @@ function startSaga(myRole: 'owner' | 'collaborator' = 'owner') {
       channel,
       dispatch: (action: { type: string; payload?: unknown }) => dispatched.push(action),
       getState: () => ({
+        connections: { activeId: LOCAL_CONNECTION_ID, windowBackendId: LOCAL_CONNECTION_ID },
+        // Settled owner window: guest list received, no host joined.
+        guestSessions: { ...guestSessionsInitialState, hasReceivedList: true },
         panelLayout: { byWorkspaceId: { 'ws-1': { focusedPanelId: 'panel-1' } } },
         workspace: { workspaces: createCollection('id', [{ id: 'ws-1', myRole }]) },
       }),

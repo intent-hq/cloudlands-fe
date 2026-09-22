@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/experimental-ct-svelte';
+import { expect, test } from '../../../../test/ct-test';
 import Preview from '../file-tree-disclosure.preview.svelte';
 import { probeFileTreeGlyph } from './file-tree-glyph-probe';
 

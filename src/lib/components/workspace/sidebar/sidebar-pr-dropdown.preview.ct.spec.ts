@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/experimental-ct-svelte';
+import { expect, test } from '../../../../test/ct-test';
 import SidebarPrDropdownPreview from './sidebar-pr-dropdown.preview.svelte';
 
 test('keeps long-title PR identity and status on one row inside the live menu', async ({

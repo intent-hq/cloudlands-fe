@@ -4,6 +4,7 @@ import { svelte } from '@sveltejs/vite-plugin-svelte';
 import type { ViteDevServer } from 'vite';
 import { createServer } from 'vite';
 import { viteHarnessCacheDir } from './vite-harness-cache.mjs';
+import { loadBundledInterFont } from './test-fonts';
 import {
   agentAvatarGeometry,
   agentAvatarVariants,
@@ -54,9 +55,12 @@ test.beforeAll(async () => {
 
 test.afterAll(async () => server?.close());
 
+// Text metrics feed the avatar stack's overflow badge width, so the harness uses the
+// repo-bundled Inter Variable (like the CT harness and /sandbox) rather than host fonts.
 async function mountAvatarHost(page: Page) {
   await page.goto(`${baseUrl}src/app.html`);
   await page.addStyleTag({ url: `${baseUrl}src/lib/styles/tokens.css` });
+  await loadBundledInterFont(page, { baseUrl });
   await page.evaluate(async () => {
     Object.assign(globalThis, { process: { env: { NODE_ENV: 'test' } } });
     const [{ mount, tick }, { default: Host }] = await Promise.all([
@@ -144,7 +148,7 @@ async function catalogStackPng(locator: Locator, scale: number): Promise<Buffer>
         );
         context.fill();
         context.fillStyle = style.color;
-        context.font = `500 ${12 * selectedScale}px system-ui`;
+        context.font = `500 ${12 * selectedScale}px 'Inter Variable'`;
         context.textAlign = 'center';
         context.textBaseline = 'middle';
         context.fillText(
@@ -301,7 +305,7 @@ test('renders repeated Coordinator message cards with canonical identity on the 
             'Coordinator',
           );
           await expect(card.getByTestId('agent-message-disclosure-toggle')).toHaveAccessibleName(
-            /sent a message: Coordinator message/,
+            'sent a message',
           );
 
           const [rowBox, identityBox, avatarBox, glyphBox] = await Promise.all([
@@ -426,68 +430,6 @@ test('keeps named surface and art geometry clear at 200% zoom', async ({ page })
       await expect(svg).toHaveAttribute('viewBox', '0 0 16 16');
       await expect(svg).toHaveAttribute('data-avatar-design', design);
     }
-  }
-});
-
-test('fits the emphasized panel stack and aligned overflow count in a narrow tab', async ({
-  page,
-}) => {
-  await mountAvatarHost(page);
-  const host = page.locator('[data-live-panel-header]');
-  const stack = host.locator('[data-agent-avatar-stack]');
-  const avatars = stack.locator('[data-agent-avatar-with-state]');
-  const overflow = stack.locator('[data-agent-avatar-overflow]');
-  await expect(avatars).toHaveCount(2);
-  for (let index = 0; index < 2; index += 1) {
-    await expect(avatars.nth(index)).toHaveAttribute('data-avatar-variant', 'emphasized');
-  }
-  await expect(overflow).toHaveText('+2');
-  await expect(host.getByRole('tab')).toHaveAccessibleDescription('+2');
-  const overflowStyle = await overflow.evaluate((node) => {
-    const style = getComputedStyle(node);
-    return {
-      background: style.backgroundColor,
-      borderWidth: style.borderTopWidth,
-      borderRadius: style.borderRadius,
-      boxShadow: style.boxShadow,
-      fontSize: style.fontSize,
-    };
-  });
-  expect(overflowStyle).toEqual({
-    background: expect.not.stringMatching(/rgba\(0, 0, 0, 0\)|transparent/),
-    borderWidth: '0px',
-    borderRadius: '7px',
-    boxShadow: 'none',
-    fontSize: '12px',
-  });
-  for (const zoom of [1, 2]) {
-    await host.evaluate((node, selectedZoom) => {
-      node.style.zoom = String(selectedZoom);
-    }, zoom);
-    const [hostBox, stackBox, avatarBoxes, overflowBox] = await Promise.all([
-      host.boundingBox(),
-      stack.boundingBox(),
-      avatars.evaluateAll((nodes) => nodes.map((node) => node.getBoundingClientRect().toJSON())),
-      overflow.boundingBox(),
-    ]);
-    const avatarTrackWidth = 24 * zoom + (avatarBoxes.length - 1) * 18 * zoom;
-    expect(stackBox?.width).toBeCloseTo(avatarTrackWidth + overflowBox!.width - 6 * zoom, 1);
-    expect(stackBox?.height).toBeCloseTo(24 * zoom, 1);
-    expect(overflowBox?.width).toBeGreaterThanOrEqual(24 * zoom);
-    expect(overflowBox?.height).toBeCloseTo(24 * zoom, 1);
-    for (const box of avatarBoxes) {
-      expect(box.width).toBeCloseTo(24 * zoom, 1);
-      expect(box.height).toBeCloseTo(24 * zoom, 1);
-    }
-    expect(overflowBox!.x - avatarBoxes.at(-1)!.x).toBeCloseTo(18 * zoom, 1);
-    const avatarCenter = avatarBoxes.at(-1)!.y + avatarBoxes.at(-1)!.height / 2;
-    const overflowCenter = overflowBox!.y + overflowBox!.height / 2;
-    expect(
-      Math.abs(avatarCenter - overflowCenter) * (await page.evaluate(() => devicePixelRatio)),
-    ).toBeLessThanOrEqual(0.5);
-    expect((stackBox?.x ?? 0) + (stackBox?.width ?? 0)).toBeLessThanOrEqual(
-      (hostBox?.x ?? 0) + (hostBox?.width ?? 0),
-    );
   }
 });
 
@@ -701,17 +643,11 @@ test('matches the emphasized catalog stack in each theme at 100% and 200%', asyn
   }
 });
 
-test('shows the state surface in live panel-header and subscription consumers', async ({
-  page,
-}) => {
+test('shows the state surface in the live subscription consumer', async ({ page }) => {
   await mountAvatarHost(page);
-  const panelAvatar = page.locator('[data-live-panel-header] [data-agent-avatar-surface]');
   const subscriptionAvatar = page.locator(
     '[data-live-subscription-row] [data-agent-avatar-surface]',
   );
-  await expect(panelAvatar).toHaveCount(2);
-  await expect(panelAvatar.nth(0)).toHaveAttribute('data-avatar-state', 'running');
-  await expect(panelAvatar.nth(1)).toHaveAttribute('data-avatar-state', 'unread');
   await expect(subscriptionAvatar).toHaveCount(1);
   await expect(subscriptionAvatar).toHaveAttribute('data-avatar-state', 'completed');
   for (const theme of ['light', 'dark'] as const) {
@@ -720,16 +656,11 @@ test('shows the state surface in live panel-header and subscription consumers', 
       document.documentElement.classList.toggle('light', selectedTheme === 'light');
     }, theme);
     await page.waitForTimeout(250);
-    for (const [avatar, family] of [
-      [panelAvatar.nth(1), 'neutral'],
-      [subscriptionAvatar, 'completed'],
-    ] as const) {
-      const presentation = await computedPresentation(avatar);
-      expect(presentation.background[3]).toBe(255);
-      expect(
-        colorDistance(presentation.background, expectedSurfaceByTheme[theme][family]),
-      ).toBeLessThanOrEqual(1);
-    }
+    const presentation = await computedPresentation(subscriptionAvatar);
+    expect(presentation.background[3]).toBe(255);
+    expect(
+      colorDistance(presentation.background, expectedSurfaceByTheme[theme].completed),
+    ).toBeLessThanOrEqual(1);
   }
 });
 

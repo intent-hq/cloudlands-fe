@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/experimental-ct-svelte';
+import { expect, test } from '../../../../test/ct-test';
 import EventWakeBodyGeometryHost from './EventWakeBodyGeometryHost.svelte';
 
 test('aligns expanded wake content with its header label column', async ({ mount, page }) => {

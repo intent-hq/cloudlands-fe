@@ -2,10 +2,13 @@
  * Workspace Share Saga
  *
  * Drives the owner-side sharing RPCs (PROTOCOL §5.1 membership) for the Share
- * dialog: reads `workspace.members.list` + `workspace.invite.list` when the
- * dialog opens, after every local mutation, and on a `workspace:updated`
- * membership delta from any client; settles `workspace.invite.create` /
- * `.revoke` / `workspace.members.remove` into slice actions. The workspace
+ * dialog: reads `workspace.members.list` + `workspace.invite.list` (and the
+ * host-wide `principal.list` behind direct member add) when the dialog opens,
+ * after a local invite create / revoke / member remove, and on a
+ * `workspace:updated` membership delta from any client — a successful
+ * `workspace.members.add` relies on that delta alone; settles
+ * `workspace.invite.create` / `.revoke` / `workspace.members.add` / `.remove`
+ * into slice actions. The workspace
  * hover card's roster (`workspace.members.list` per hovered workspace, plus
  * its Remove) rides the same saga, keyed by workspace id.
  *
@@ -16,31 +19,43 @@
  * but not the RPC already on the wire.)
  *
  * Every owner-only RPC is gated on the owner role BEFORE it is issued (a
- * collaborator connection never calls `workspace.invite.*` or
- * `workspace.members.remove`), and a daemon `-32003` refusal withholds the
+ * collaborator connection never calls `workspace.invite.*`, `principal.list`,
+ * or `workspace.members.add` / `.remove`), and a daemon `-32003` refusal withholds the
  * dialog / the hover controls the same way. Every dialog settlement carries
  * the `WorkspaceShareTarget` it was issued for and every roster settlement its
  * workspace id, so the reducer can drop a reply that outlived its surface.
  *
- * Secrets: the one-time invite url never enters an action, the store, or a
- * log line — it is parked in `invite-link-vault` and only its handle rides
- * `shareInviteCreated`. Failures are logged as bounded codes only.
+ * Secrets: an invite url (a capability) never enters an action, the store, or
+ * a log line — every `url` the daemon returns (`invite.create`, each open
+ * `invite.list` row) is parked in `invite-link-vault` under its invite id
+ * before the row is dispatched, and the dialog host resolves ids back to
+ * links at render time. Failures are logged as bounded codes only.
  */
 
 import { all, call, put, takeEvery, takeLatest, type SagaGenerator } from 'typed-redux-saga';
 
-import { clearInviteLinks, storeInviteLink } from '$features/workspace-sharing/invite-link-vault';
+import {
+  clearInviteLinks,
+  storeInviteLink,
+  vaultInviteLinks,
+} from '$features/workspace-sharing/invite-link-vault';
 import {
   workspaceSharingClient,
   type ShareFailure,
 } from '$features/workspace-sharing/workspace-sharing.client';
-import type { WorkspaceInvite, WorkspaceMember } from '$features/workspace-sharing/types';
+import type {
+  HostPrincipal,
+  WorkspaceInviteRow,
+  WorkspaceMembersList,
+} from '$features/workspace-sharing/types';
 import { isForbiddenErrorResponse } from '$lib/client/live/backend-transport-types';
 import { createLogger } from '$lib/utils/client-logger';
 import { m } from '$shared/paraglide/messages.js';
 import {
+  selectShareAddingPrincipalId,
   selectShareCanManage,
   selectShareCreateRequest,
+  selectShareHasMember,
   selectShareMutationGeneration,
   selectShareRemovingPrincipalId,
   selectShareRevokingInviteId,
@@ -61,8 +76,10 @@ import {
   shareInviteCreateFailed,
   shareInviteCreateRequested,
   shareInviteRevokeRequested,
+  shareMemberAddRequested,
   shareMemberRemoveRequested,
   shareMembershipChanged,
+  sharePrincipalsLoaded,
   shareRosterActionSettled,
   shareRosterFailed,
   shareRosterLoaded,
@@ -105,42 +122,57 @@ function coalescedByKey<A>(
   };
 }
 
+type ShareData = WorkspaceMembersList & {
+  invites: WorkspaceInviteRow[];
+  /** `null` when `principal.list` failed for a reason other than `-32003`. */
+  principals: HostPrincipal[] | null;
+};
+
 /**
- * Both reads are issued together. `result` rejects the moment either read is
- * refused with `-32003` (a terminal denial must withhold immediately, not
- * once the sibling RPC times out) and otherwise settles once both have;
- * `settled` resolves only when both have, so the caller can keep the
- * `coalescedByKey` guard held and no second concurrent read starts while a
- * sibling RPC is still outstanding.
+ * All three reads are issued together. `result` rejects the moment any read
+ * is refused with `-32003` (a terminal denial must withhold immediately, not
+ * once a sibling RPC times out) and otherwise settles once the roster and
+ * invite reads have — a `principal.list` failure only leaves `principals`
+ * `null` (the existing-guest section keeps its previous rows) so a daemon
+ * that cannot list its guests still serves the rest of the dialog. `settled`
+ * resolves only when all have, so the caller can keep the `coalescedByKey`
+ * guard held and no second concurrent read starts while a sibling RPC is
+ * still outstanding.
  */
 function readShareData(workspaceId: string): {
-  result: Promise<{ members: WorkspaceMember[]; invites: WorkspaceInvite[] }>;
+  result: Promise<ShareData>;
   settled: Promise<void>;
 } {
   const reads = [
     workspaceSharingClient.listMembers(workspaceId),
     workspaceSharingClient.listInvites(workspaceId),
+    workspaceSharingClient.listPrincipals(),
   ] as const;
   const outcomes = Promise.allSettled(reads);
-  const result = new Promise<{ members: WorkspaceMember[]; invites: WorkspaceInvite[] }>(
-    (resolve, reject) => {
-      for (const read of reads) {
-        read.catch((error: unknown) => {
-          if (isForbiddenErrorResponse(error)) reject(error);
-        });
-      }
-      void outcomes.then(([members, invites]) => {
-        if (members.status === 'fulfilled' && invites.status === 'fulfilled') {
-          resolve({ members: members.value, invites: invites.value });
-          return;
-        }
-        const reasons = [members, invites].flatMap((outcome) =>
-          outcome.status === 'rejected' ? [outcome.reason as unknown] : [],
-        );
-        reject(reasons.find(isForbiddenErrorResponse) ?? reasons[0]);
+  const result = new Promise<ShareData>((resolve, reject) => {
+    for (const read of reads) {
+      read.catch((error: unknown) => {
+        if (isForbiddenErrorResponse(error)) reject(error);
       });
-    },
-  );
+    }
+    void outcomes.then(([members, invites, principals]) => {
+      if (members.status === 'fulfilled' && invites.status === 'fulfilled') {
+        if (principals.status === 'rejected') {
+          logger.warn('Listing the host principals failed', { workspaceId });
+        }
+        resolve({
+          ...members.value,
+          invites: invites.value,
+          principals: principals.status === 'fulfilled' ? principals.value : null,
+        });
+        return;
+      }
+      const reasons = [members, invites, principals].flatMap((outcome) =>
+        outcome.status === 'rejected' ? [outcome.reason as unknown] : [],
+      );
+      reject(reasons.find(isForbiddenErrorResponse) ?? reasons[0]);
+    });
+  });
   return { result, settled: outcomes.then(() => undefined) };
 }
 
@@ -156,7 +188,7 @@ function* manageableTarget(): SagaGenerator<WorkspaceShareTarget | null> {
 /**
  * False once the dialog closed or retargeted while an RPC was in flight: the
  * reply is dropped here (the reducer would drop it too, but a stale create
- * must not park its url in the vault or trigger a re-read for the new target).
+ * must not trigger a re-read for the new target).
  */
 function* stillTargets(target: WorkspaceShareTarget): SagaGenerator<boolean> {
   const current = yield* selectShareTarget.effect();
@@ -177,8 +209,16 @@ function* loadShareData(): SagaGenerator<void> {
   const generation = yield* selectShareMutationGeneration.effect();
   const read = readShareData(target.workspaceId);
   try {
-    const { members, invites } = yield* call(() => read.result);
-    yield* put(shareDataLoaded({ target, generation, members, invites }));
+    const {
+      members,
+      invites: rows,
+      principals,
+      guestCount,
+      guestLimit,
+    } = yield* call(() => read.result);
+    const invites = yield* call(vaultInviteLinks, rows);
+    yield* put(shareDataLoaded({ target, generation, members, invites, guestCount, guestLimit }));
+    if (principals) yield* put(sharePrincipalsLoaded({ target, principals }));
   } catch (error) {
     if (yield* stillTargets(target)) {
       if (isForbiddenErrorResponse(error)) {
@@ -196,7 +236,10 @@ function* loadShareData(): SagaGenerator<void> {
 /**
  * Inline error for a failed `workspace.invite.create`: the pin failure names
  * the login; `listener-down` (Remote access off, so the daemon cannot serve
- * an invite) tells the owner what to turn on; anything else stays generic.
+ * an invite) and `tunnel-down` (the Tailcat tunnel is off, so no tunnel-only
+ * link can be minted) each name the one setting to turn on; `guest-limit`
+ * (the cap was spent between the dialog's read and the create) names the
+ * cap; anything else stays generic.
  */
 function createInviteErrorMessage(code: ShareFailure['code'], requestedPin: string): string {
   switch (code) {
@@ -204,6 +247,10 @@ function createInviteErrorMessage(code: ShareFailure['code'], requestedPin: stri
       return m.workspace_share_pinUnknown_error({ login: `@${requestedPin}` });
     case 'listener-down':
       return m.workspace_share_listenerDown_error();
+    case 'tunnel-down':
+      return m.workspace_share_tunnelDown_error();
+    case 'guest-limit':
+      return m.workspace_share_guestLimit_error();
     default:
       return m.workspace_share_createFailed_error();
   }
@@ -234,16 +281,13 @@ function* createInvite(action: ReturnType<typeof shareInviteCreateRequested>): S
     );
     return;
   }
-  const linkHandle = yield* call(storeInviteLink, outcome.result.url);
+  const inviteId = outcome.result.invite.id;
+  yield* call(storeInviteLink, inviteId, outcome.result.url);
   yield* put(
     shareInviteCreated({
       target,
       request,
-      link: {
-        inviteId: outcome.result.invite.id,
-        linkHandle,
-        pinLogin: outcome.result.invite.pinLogin,
-      },
+      link: { inviteId, pinLogin: outcome.result.invite.pinLogin },
     }),
   );
   yield* put(shareDataRequested());
@@ -295,6 +339,45 @@ function* removeMember(action: ReturnType<typeof shareMemberRemoveRequested>): S
   yield* put(shareDataRequested());
 }
 
+/**
+ * Inline error for a failed `workspace.members.add`: `guest-limit` (the cap
+ * was spent between the dialog's read and the add) names the cap; anything
+ * else stays generic.
+ */
+function addMemberErrorMessage(code: ShareFailure['code']): string {
+  return code === 'guest-limit'
+    ? m.workspace_share_guestLimit_error()
+    : m.workspace_share_addMemberFailed_error();
+}
+
+function* addMember(action: ReturnType<typeof shareMemberAddRequested>): SagaGenerator<void> {
+  const target = yield* manageableTarget();
+  if (!target) return;
+  const [principalId] = action.payload;
+  if ((yield* selectShareAddingPrincipalId.effect()) !== principalId) return;
+  const result = yield* call(workspaceSharingClient.addMember, target.workspaceId, principalId);
+  if (!(yield* stillTargets(target))) return;
+  if (!result.success) {
+    if (result.code === 'forbidden') {
+      yield* put(shareAccessWithheld({ target }));
+      return;
+    }
+    logFailure('Adding a member', target.workspaceId, result);
+    yield* put(shareActionSettled({ target, error: addMemberErrorMessage(result.code) }));
+    return;
+  }
+  yield* put(shareActionSettled({ target, error: null }));
+  // `added: true` — the daemon commits, then emits `workspace:updated`
+  // (`members`) to every client including this one, so
+  // `refreshOnMembershipChange` re-reads the roster: no read is issued here.
+  // `added: false` (already a member) emits no event; only when the loaded
+  // roster does not carry the row yet — it was added by another client and
+  // that client's event has not been reconciled — is a read still owed.
+  if (!result.result.added && !(yield* selectShareHasMember.effect(principalId))) {
+    yield* put(shareDataRequested());
+  }
+}
+
 function* requestDataOnOpen(): SagaGenerator<void> {
   yield* call(clearInviteLinks);
   yield* put(shareDataRequested());
@@ -307,7 +390,7 @@ function* clearLinksOnClose(): SagaGenerator<void> {
 /** Hover card: `workspace.members.list` for one workspace (Member+ may read). */
 function* loadRoster(workspaceId: string): SagaGenerator<void> {
   try {
-    const members = yield* call(workspaceSharingClient.listMembers, workspaceId);
+    const { members } = yield* call(workspaceSharingClient.listMembers, workspaceId);
     yield* put(shareRosterLoaded({ workspaceId, members }));
   } catch (error) {
     if (isForbiddenErrorResponse(error)) {
@@ -386,5 +469,6 @@ export function* workspaceShareSaga(): SagaGenerator<void> {
     // worker mid-RPC (the reducer, not the watcher, serializes these).
     takeEvery(shareInviteRevokeRequested, revokeInvite),
     takeEvery(shareMemberRemoveRequested, removeMember),
+    takeEvery(shareMemberAddRequested, addMember),
   ]);
 }

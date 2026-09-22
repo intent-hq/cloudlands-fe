@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/experimental-ct-svelte';
+import { test, expect } from '../../../../test/ct-test';
 import FileInput from './file-input.svelte';
 
 for (const theme of ['light', 'dark'] as const) {

@@ -58,12 +58,15 @@ vi.mock('$store/renderer/slices/workspace-notes/workspace-notes-selectors', () =
   selectSelectedNoteId: Object.assign(() => mockReadable(null), {
     select: () => null,
   }),
-  selectNotesVersion: () => mockReadable(0),
   selectWorkspaceNotesState: () => ({
     subscribe(fn: (value: { initialized: boolean }) => void) {
       return linkedNoteState.initializedReadable.subscribe((initialized) => fn({ initialized }));
     },
   }),
+}));
+
+vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
+  selectHidesAgentLifecycleActions: () => mockReadable(false),
 }));
 
 vi.mock('$store/renderer/store', async () => {

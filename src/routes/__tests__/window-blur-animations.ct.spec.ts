@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/experimental-ct-svelte';
+import { expect, test } from '../../test/ct-test';
 import IntentMarkLoader from '$lib/components/ui/indicators/IntentMarkLoader.svelte';
 import WindowBlurAnimationProbe from './WindowBlurAnimationProbe.svelte';
 

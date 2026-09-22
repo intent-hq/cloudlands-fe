@@ -106,9 +106,10 @@
  * dispatches `workspace-lifecycle/workspaceDeleted(wsId, agentIds)`, which
  * purges the agent-session slice, workspace-agents index, and per-agent
  * chat-state entries — preventing a recreated same-slug workspace from
- * surfacing ghost agents. It also calls `navigateAwayIfViewing` so a
- * workspace deleted by another client while on screen closes its tab and
- * routes away — this is the PRIMARY navigate-away path: the `events.event`
+ * surfacing ghost agents. It also calls `closeWorkspaceTabAndNavigateAway` so
+ * a workspace deleted by another client closes its tab (on screen or in the
+ * background) and routes away when it was on screen — this is the PRIMARY
+ * navigate-away path: the `events.event`
  * firehose fires in both live and legacy modes, whereas the workspace-list
  * snapshot diff is suppressed post-boot under live-state
  * (intent-hq/monorepo#775). `workspace:created` covers the recycled-ID case:
@@ -175,12 +176,13 @@ import {
 import type { StoredAgentSession } from '$store/renderer/slices/agent-session/agent-session-types';
 import { workspaceDeleted } from '$store/renderer/slices/workspace-lifecycle/workspace-lifecycle-slice';
 import {
+  adjustDelegatedParentCount,
   adjustRetiredCount,
   adjustScopeCount,
-  agentListBinOf,
   hydrateAgentsRequested,
   removeAgent,
 } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
+import { agentDelegationParentOf, classifyAgentScope } from '$shared/utils/agent-scope';
 import { removeWatchedAgent } from '$store/renderer/slices/agent-subscription-ui/agent-subscription-ui-slice';
 import {
   destroyOwnedTabsForWorkspace,
@@ -188,6 +190,7 @@ import {
   pruneRecentlyClosed,
 } from '$store/renderer/slices/panel-layout/panel-layout-slice';
 import { selectHiddenTabs } from '$store/renderer/slices/panel-layout/panel-layout-selectors';
+import { selectWindowGuestSession } from '$store/renderer/slices/guest-sessions/guest-sessions-selectors';
 import {
   applyTaskStatusChanged,
   loadWorkspaceTasksRequested,
@@ -224,6 +227,7 @@ import {
   removePendingAgentDeletion,
   setPendingAgentDeletion,
 } from '$features/agent/utils/pending-agent-deletions';
+import { isStructuredAgentNotFoundError } from '$features/agent/utils/agent-not-found-error';
 import { notifyInterruptedAgentUpdated } from '$features/agent/interrupted-agents-service';
 import {
   getAgentFailureEntry,
@@ -233,6 +237,7 @@ import {
 } from '$features/agent/agent-failure-registry';
 import {
   showAgentAttentionToast,
+  showWorkspaceAccessRemovedToast,
   showWorkspaceAutoUnarchiveToast,
 } from '$features/agent/agent-attention-toast-service';
 import { refreshWorkspaceSubscriptionEntriesRequested } from '$store/renderer/slices/agent-subscription-ui/agent-subscription-ui-slice';
@@ -242,6 +247,8 @@ import {
   type PermissionRequest,
 } from '$store/renderer/slices/permission/permission-slice';
 import { tokenUsageReceived } from '$store/renderer/slices/token-usage/token-usage-slice';
+import { presenceRosterReceived } from '$store/renderer/slices/presence/presence-slice';
+import { isPresenceRoster } from '$shared/types/presence';
 import {
   workspaceCreateProgressDone,
   workspaceCreateProgressReceived,
@@ -285,6 +292,7 @@ import {
 import { emitMockIpcEvent } from '$shared/ipc-mock-router';
 import type { WorkspaceEvent } from '$features/events/types';
 import { createLogger } from '$lib/utils/client-logger';
+import { formatGuestSessionLabel } from '$lib/utils/connection-label';
 import {
   reportStreamLifecycle,
   streamTurnCorrelation,
@@ -1333,12 +1341,29 @@ function handleAgentCreatedEvent(event: WorkspaceEvent, workspaceId: string): vo
     const session = appStore.state.agentSessions?.byAgentId[agentId];
     if (!session || session.retiredAt) return;
     if (scopeCountsGenerationOf(workspaceId) !== baselineGeneration) return;
-    appStore.dispatch(adjustScopeCount(workspaceId, agentListBinOf(session), 1));
+    adjustBinCounts(workspaceId, session, 1);
   });
 }
 
 function scopeCountsGenerationOf(workspaceId: string): number {
   return appStore.state.workspaceAgents?.byWorkspaceId[workspaceId]?.scopeCountsGeneration ?? 0;
+}
+
+/**
+ * Nudge a non-retired row's `scopeCounts` bin and — for a delegated row — its
+ * parent's `delegatedCounts.byParent` total by the same delta, so
+ * `Σ byParent[*].total` stays in lockstep with `scopeCounts.delegated`
+ * (§5.5). Running counts are not nudged: they re-baseline on the next
+ * hydration read, and loaded rows are authoritative once hydrated.
+ */
+function adjustBinCounts(workspaceId: string, session: StoredAgentSession, delta: 1 | -1): void {
+  const bin = classifyAgentScope(session);
+  appStore.dispatch(adjustScopeCount(workspaceId, bin, delta));
+  if (bin !== 'delegated') return;
+  const parentAgentId = agentDelegationParentOf(session);
+  if (parentAgentId) {
+    appStore.dispatch(adjustDelegatedParentCount(workspaceId, parentAgentId, delta));
+  }
 }
 
 /**
@@ -1359,7 +1384,7 @@ function adjustScopeCountForRetireTransition(
   if (!appStore.state.workspaceAgents?.byWorkspaceId[workspaceId]?.scopeCounts) return;
   const session = appStore.state.agentSessions?.byAgentId[agentId];
   if (session) {
-    appStore.dispatch(adjustScopeCount(workspaceId, agentListBinOf(session), delta));
+    adjustBinCounts(workspaceId, session, delta);
   } else {
     appStore.dispatch(hydrateAgentsRequested(workspaceId));
   }
@@ -1641,6 +1666,17 @@ function handleTokenUsageChangedEvent(event: WorkspaceEvent): void {
   const tokenUsage = data.tokenUsage;
   if (!workspaceId || !tokenUsage || typeof tokenUsage !== 'object') return;
   appStore.dispatch(tokenUsageReceived(workspaceId, tokenUsage as TokenUsage));
+}
+
+/**
+ * `presence:changed` (§5.46) carries the workspace's whole online roster —
+ * a full replacement, never a diff — so it is mirrored straight into the
+ * presence slice; a payload off the documented shape is dropped.
+ */
+function handlePresenceChangedEvent(event: WorkspaceEvent): void {
+  const data = (event as { data?: unknown }).data;
+  if (!isPresenceRoster(data)) return;
+  appStore.dispatch(presenceRosterReceived(data));
 }
 
 /**
@@ -2445,6 +2481,7 @@ function handleWorkspaceUpdatedEvent(event: WorkspaceEvent, workspaceId: string)
   // the list has not loaded the id yet, drop the update — the sidebar's
   // hydrate on mount converges the state.
   handleWorkspaceMcpServerToggled(raw, workspaceId);
+  if (handleWorkspaceMembershipRemoved(raw, workspaceId)) return;
   const changes: Partial<Workspace> = {};
   if (typeof raw.title === 'string') changes.title = raw.title;
   if (typeof raw.statusMessage === 'string') changes.statusMessage = raw.statusMessage;
@@ -2579,6 +2616,56 @@ function handleWorkspaceUpdatedEvent(event: WorkspaceEvent, workspaceId: string)
 }
 
 /**
+ * `removedPrincipalId` on a `workspace:updated` delta (multiplayer w4 unshare):
+ * `workspace.members.remove` publishes `{ members: true, removedPrincipalId }`
+ * and the daemon's membership gate delivers it to the removed member as its
+ * FINAL event for that workspace (nothing follows — the workspace is
+ * `NotFound` for it from here on). When the removed principal is the guest
+ * session this window is bound to, tear the workspace down like a delete:
+ * purge its Redux state and agent-owned browser tabs, close its tab (open or
+ * in the background), route away when it is on screen, and say why in a
+ * toast. Every other subscriber (the owner removing someone, another member)
+ * sees a plain membership delta and falls through to the entity merge.
+ */
+function handleWorkspaceMembershipRemoved(
+  raw: Record<string, unknown>,
+  workspaceId: string,
+): boolean {
+  const removed = raw.removedPrincipalId;
+  if (typeof removed !== 'string' || !removed) return false;
+  const session = selectWindowGuestSession.select(appStore.state);
+  if (!session || session.principalId !== removed) return false;
+  const state = appStore.state as {
+    agentSessions?: { agentIdsByWorkspace: Record<string, string[]> };
+    workspace?: { workspaces: { map: Record<string, { title?: string }> } };
+  };
+  // Resolved BEFORE the purge drops the entity.
+  const title = state.workspace?.workspaces.map[workspaceId]?.title;
+  const agentIds = state.agentSessions?.agentIdsByWorkspace[workspaceId] ?? [];
+  const ownerAgentIds = collectOwnedTabAgentIds(workspaceId);
+  appStore.dispatch(destroyOwnedTabsForWorkspace(workspaceId));
+  appStore.dispatch(workspaceDeleted(workspaceId, [...agentIds]));
+  for (const agentId of ownerAgentIds) {
+    void invoke(IPC_CHANNELS.BROWSER.CLEAR_AGENT_TABS, { agentId }).catch((error: unknown) => {
+      logger.warn('Failed to clear main-process registrations for unshared workspace tabs', {
+        workspaceId,
+        agentId,
+        error,
+      });
+    });
+  }
+  closeWorkspaceTabAndNavigateAway(workspaceId).catch((error) => {
+    logger.warn('closeWorkspaceTabAndNavigateAway failed after membership removal', error);
+  });
+  void showWorkspaceAccessRemovedToast({
+    workspaceId,
+    title,
+    hostLabel: formatGuestSessionLabel(session),
+  });
+  return true;
+}
+
+/**
  * `mcpServerToggled` on a `workspace:updated` delta (PROTOCOL §5.22
  * per-workspace disable / §6.5): `{ serverId, workspaceDisabled }` — emitted
  * on every workspace-scoped `mcp.servers.toggle`, so other windows (and
@@ -2605,9 +2692,10 @@ function handleWorkspaceMcpServerToggled(raw: Record<string, unknown>, workspace
  * workspace from Redux so a recreated same-slug workspace does not surface
  * ghost agents. The chat-state slice is keyed by `agentId`, so we resolve the
  * agent-id list from the agent-session workspace index *before* dispatching
- * and pass it in the payload. When the deleted workspace is the one on
- * screen (deleted by another client), also close its tab and route away —
- * this event path fires in both live and legacy modes, unlike the
+ * and pass it in the payload. Also close its tab — open on screen OR in the
+ * background (a guest's last shared workspace deleted while another tab is
+ * current must not linger in the strip) — and route away when it is the one
+ * on screen. This event path fires in both live and legacy modes, unlike the
  * workspace-list snapshot diff, which live-state suppresses post-boot
  * (intent-hq/monorepo#775; see the workspace-list saga).
  */
@@ -2630,8 +2718,8 @@ function handleWorkspaceDeletedEvent(workspaceId: string): void {
       });
     });
   }
-  navigateAwayIfViewing(workspaceId).catch((error) => {
-    logger.warn('navigateAwayIfViewing failed after workspace:deleted', error);
+  closeWorkspaceTabAndNavigateAway(workspaceId).catch((error) => {
+    logger.warn('closeWorkspaceTabAndNavigateAway failed after workspace:deleted', error);
   });
 }
 
@@ -3462,6 +3550,14 @@ export function routeDaemonEventsNotification(
     return;
   }
 
+  // `presence:changed` (§5.46) carries a self-sufficient `data.workspaceId`
+  // and is transient by contract, so it is folded into the presence slice
+  // and never recorded on the activity timeline.
+  if (type === 'presence:changed') {
+    handlePresenceChangedEvent(event);
+    return;
+  }
+
   // `git:clone:progress` / `git:clone:done` frames carrying a `data.progressId`
   // correlate to an in-flight `workspace.create` by progressId, not by
   // workspaceId (server-minted mid-create, unknown to the FE), so they route
@@ -3632,7 +3728,7 @@ export function routeDaemonEventsNotification(
       if (deletedSession?.retiredAt) {
         appStore.dispatch(adjustRetiredCount(workspaceId, -1));
       } else if (deletedSession) {
-        appStore.dispatch(adjustScopeCount(workspaceId, agentListBinOf(deletedSession), -1));
+        adjustBinCounts(workspaceId, deletedSession, -1);
       } else {
         appStore.dispatch(hydrateAgentsRequested(workspaceId));
       }
@@ -4086,6 +4182,11 @@ export const DAEMON_EVENTS_SUBSCRIBE_TYPES = [
   'app:ui-navigate',
   'app:ui-highlight',
   'app:workspace-open',
+  // `presence:changed` (§5.46, multiplayer w5) — the transient who-is-here
+  // roster of a member workspace, a full replacement folded into the
+  // presence slice. Workspace-scoped on the daemon side, so the membership
+  // gate narrows it like any other row.
+  'presence:changed',
 ] as const;
 
 export async function refreshDaemonEventsAfterReconnect(
@@ -4143,62 +4244,53 @@ function sharedWorkspaceIdsToRefresh(): string[] {
 
 /**
  * Drop failure-registry entries whose agent no longer exists on the daemon.
- * One `agent.list` per DISTINCT workspace holding entries (no per-entry
- * fan-out — AGENTS.md "Event-driven refetches"); a failed or unverifiable
- * list (missing/non-array `agents`) keeps that workspace's entries
- * (unverifiable ≠ deleted — live events converge them later). Only entries
- * from the snapshot taken BEFORE the list, still identical in the registry
- * (the same identity-guard convention as retryAgent in the toast saga), are
- * dropped: a failure recorded or replaced while the list was in flight
- * predates nothing the stale result can prove, so it is kept. Never throws,
- * so the reconnect refresh can await it safely.
+ * One `agent.get` point read per entry — the registry is keyed by agentId, so
+ * that is one read per agent, never a whole-workspace `agent.list` frame
+ * (intent#5531; the registry holds a handful of ids, so this is bounded by
+ * the failures, not the workspace). An entry is dropped ONLY on the STRICT
+ * structured not-found rejection (`isStructuredAgentNotFoundError`: numeric
+ * `rpcCode === -32602` AND `data.code === "not-found"`, §9) — deliberately
+ * NOT the lenient `isAgentNotFoundError`, whose `rpcCode` + message fallback
+ * accepts errors that lost the discriminator; fine for closing a stale tab,
+ * but here a match DELETES a failure entry. Any other failure keeps the entry
+ * (unverifiable ≠ deleted — live events converge it later).
+ * Only the exact entry snapshotted BEFORE
+ * the read, still identical in the registry (the same identity-guard
+ * convention as retryAgent in the toast saga), is dropped: a failure
+ * recorded or replaced while the read was in flight predates nothing the
+ * stale result can prove, so it is kept. Never throws, so the reconnect
+ * refresh can await it safely.
  */
 async function reconcileAgentFailureRegistry(): Promise<void> {
   const entries = listAgentFailureEntries();
   if (entries.length === 0) return;
   const { backendRequest } = await import('$lib/client/live/backend-transport');
-  const workspaceIds = [...new Set(entries.map((entry) => entry.workspaceId))];
   await Promise.all(
-    workspaceIds.map(async (workspaceId) => {
-      let survivorIds: Set<string>;
+    entries.map(async (entry) => {
+      const { agentId, workspaceId } = entry;
       try {
-        // Deliberately unscoped (§5.5 row scope): failure entries can name
-        // delegated and background agents, so survivorship needs every bin.
-        const response = (await backendRequest('agent.list', { workspaceId })) as
-          { agents?: Array<{ id?: unknown }> } | undefined;
-        if (!Array.isArray(response?.agents)) {
-          logger.warn(
-            'agent.list returned no verifiable agents array during failure-registry reconciliation — keeping entries',
-            { workspaceId },
-          );
+        await backendRequest('agent.get', { agentId, workspaceId });
+        return;
+      } catch (error) {
+        if (!isStructuredAgentNotFoundError(error)) {
+          logger.warn('agent.get failed during failure-registry reconciliation — keeping entry', {
+            agentId,
+            workspaceId,
+            error,
+          });
           return;
         }
-        survivorIds = new Set(
-          response.agents
-            .map((agent) => agent?.id)
-            .filter((id): id is string => typeof id === 'string'),
-        );
-      } catch (error) {
-        logger.warn('agent.list failed during failure-registry reconciliation — keeping entries', {
-          workspaceId,
-          error,
-        });
-        return;
       }
-      for (const entry of entries) {
-        if (entry.workspaceId !== workspaceId) continue;
-        if (survivorIds.has(entry.agentId)) continue;
-        // Identity guard: only drop the exact entry snapshotted before the
-        // list. Removed mid-flight (live agent:deleted) → already gone;
-        // replaced mid-flight (re-failure) → the fresh entry postdates the
-        // list result, which proves nothing about it — keep it.
-        if (getAgentFailureEntry(entry.agentId) !== entry) continue;
-        logger.warn('Dropping failure entry for agent no longer on the daemon', {
-          agentId: entry.agentId,
-          workspaceId,
-        });
-        removeAgentFailure(entry.agentId);
-      }
+      // Identity guard: only drop the exact entry snapshotted before the
+      // read. Removed mid-flight (live agent:deleted) → already gone;
+      // replaced mid-flight (re-failure) → the fresh entry postdates the
+      // read result, which proves nothing about it — keep it.
+      if (getAgentFailureEntry(agentId) !== entry) return;
+      logger.warn('Dropping failure entry for agent no longer on the daemon', {
+        agentId,
+        workspaceId,
+      });
+      removeAgentFailure(agentId);
     }),
   );
 }

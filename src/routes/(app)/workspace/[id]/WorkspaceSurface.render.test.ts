@@ -8,6 +8,8 @@ const mocks = vi.hoisted(() => ({
     error: null | { kind: 'not_found' | 'error'; message: string };
   },
   workspace: null as null | { id: string; title: string },
+  guestSession: null as null | { id: string; label: string },
+  hidesAgentLifecycleActions: false,
   dispatch: vi.fn(),
   usePanelShortcuts: vi.fn(),
 }));
@@ -71,6 +73,7 @@ vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => {
     selectWorkspaceIsEmpty: { select: () => false },
     selectIsNewWorkspaceSession: () => readable(false),
     selectIsWorkspaceCollaborator: () => readable(false),
+    selectHidesAgentLifecycleActions: () => readable(mocks.hidesAgentLifecycleActions),
   };
 });
 vi.mock('$store/renderer/slices/changes/changes-selectors', () => ({
@@ -137,6 +140,10 @@ vi.mock('$lib/components/workspace/WorkspaceModals.svelte', mockPart('modals'));
 vi.mock('$lib/components/modals/InputDialog.svelte', mockPart('input-dialog'));
 vi.mock('$lib/components/terminal/QuakeTerminalOverlay.svelte', mockPart('quake-terminal'));
 vi.mock('$features/onboarding/OnboardingPage.svelte', mockPart('onboarding'));
+vi.mock('$features/guest-sessions/GuestEmptyState.svelte', mockPart('guest-empty-state'));
+vi.mock('$store/renderer/slices/guest-sessions/guest-sessions-selectors', () => ({
+  selectWindowGuestSession: () => readable(mocks.guestSession),
+}));
 vi.mock('$lib/components/layout/panel-system', async () => {
   const component = (await import('./__tests__/mocks/MockWorkspaceSurfacePart.svelte')).default;
   const renderPart = component as unknown as (anchor: Node, props: Record<string, unknown>) => void;
@@ -163,8 +170,75 @@ afterEach(cleanup);
 beforeEach(() => {
   mocks.loadState = { status: 'idle', error: null };
   mocks.workspace = null;
+  mocks.guestSession = null;
+  mocks.hidesAgentLifecycleActions = false;
   mocks.dispatch.mockClear();
   mocks.usePanelShortcuts.mockClear();
+});
+
+describe('WorkspaceSurface agent lifecycle gate (multiplayer w4)', () => {
+  function createAffordances(container: HTMLElement) {
+    return [...container.querySelectorAll<HTMLElement>('[data-create-agent-affordance]')].map(
+      (el) => el.dataset.createAgentAffordance,
+    );
+  }
+
+  it('hands the sidebar and panel tree agent-creation handlers in an owner window', () => {
+    mocks.loadState = { status: 'ready', error: null };
+    mocks.workspace = { id: 'workspace-1', title: 'Owned' };
+
+    const { container } = renderHost();
+
+    expect(createAffordances(container).sort()).toEqual([
+      'agent',
+      'agent',
+      'specialist',
+      'specialist',
+    ]);
+  });
+
+  it('withholds every agent-creation handler when lifecycle actions are hidden', () => {
+    mocks.loadState = { status: 'ready', error: null };
+    mocks.workspace = { id: 'workspace-1', title: 'Shared' };
+    mocks.hidesAgentLifecycleActions = true;
+
+    const { container } = renderHost();
+
+    expect(container.querySelector('[data-workspace-surface-part="valid-sidebar"]')).not.toBeNull();
+    expect(
+      container.querySelector('[data-workspace-surface-part="valid-panel-layout"]'),
+    ).not.toBeNull();
+    expect(createAffordances(container)).toEqual([]);
+  });
+});
+
+describe('WorkspaceSurface zero-workspace route (/workspace/new)', () => {
+  it('shows the workspace onboarding in an owner window and hides the nav', () => {
+    const { container } = renderHost('new');
+    expect(container.querySelector('[data-workspace-surface-part="onboarding"]')).toBeTruthy();
+    expect(container.querySelector('[data-workspace-surface-part="guest-empty-state"]')).toBeNull();
+    expect(mocks.dispatch).toHaveBeenCalledWith({
+      type: 'sidebarNav/setOnboardingActive',
+      payload: [true],
+    });
+  });
+
+  it('shows the guest empty state instead of onboarding in a guest window and keeps the nav (multiplayer w4)', () => {
+    mocks.guestSession = { id: 'guest-1', label: 'studio.local' };
+    const { container } = renderHost('new');
+    expect(
+      container.querySelector('[data-workspace-surface-part="guest-empty-state"]'),
+    ).toBeTruthy();
+    expect(container.querySelector('[data-workspace-surface-part="onboarding"]')).toBeNull();
+    expect(mocks.dispatch).toHaveBeenCalledWith({
+      type: 'sidebarNav/setOnboardingActive',
+      payload: [false],
+    });
+    expect(mocks.dispatch).not.toHaveBeenCalledWith({
+      type: 'sidebarNav/setOnboardingActive',
+      payload: [true],
+    });
+  });
 });
 
 describe('WorkspaceSurface terminal shell boundary', () => {

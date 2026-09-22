@@ -6,7 +6,7 @@
  * that geometry from Chromium bounding boxes so a future Button structure
  * change fails here instead of reaching users.
  */
-import { expect, test } from '@playwright/experimental-ct-svelte';
+import { expect, test } from '../../../../../test/ct-test';
 import type { Locator, Page } from '@playwright/test';
 import CreateButtonProgressGeometryHost from './CreateButtonProgressGeometryHost.svelte';
 

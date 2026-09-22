@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/experimental-ct-svelte';
+import { expect, test } from '../../../../test/ct-test';
 import AttentionFlowSpacingGeometryHost from './AttentionFlowSpacingGeometryHost.svelte';
 
 for (const theme of ['light', 'dark'] as const) {

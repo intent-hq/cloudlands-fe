@@ -730,7 +730,7 @@ test('browser resolves the semantic hatch and compact foundation geometry in bot
     expect(foundations).toMatchObject({
       compactControl: '1.75rem',
       smallControl: '1.75rem',
-      mediumControl: '2.25rem',
+      mediumControl: '2rem',
       largeControl: '2.25rem',
       smallRadius: '8px',
       mediumRadius: '8px',

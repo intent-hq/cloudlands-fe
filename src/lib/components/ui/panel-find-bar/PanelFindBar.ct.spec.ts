@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/experimental-ct-svelte';
+import { expect, test } from '../../../../test/ct-test';
 import Harness from './__tests__/PanelFindBarTestHarness.svelte';
 
 test('find input stays box-free while keyboard search and action focus remain usable', async ({

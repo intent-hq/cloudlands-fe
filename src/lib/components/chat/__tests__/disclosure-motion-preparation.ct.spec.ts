@@ -1,4 +1,5 @@
-import { expect, test, type Locator, type Page } from '@playwright/experimental-ct-svelte';
+import type { Locator, Page } from '@playwright/experimental-ct-svelte';
+import { expect, test } from '../../../../test/ct-test';
 import DisclosureMotionPreparationHost from './DisclosureMotionPreparationHost.svelte';
 
 interface FrameSample {

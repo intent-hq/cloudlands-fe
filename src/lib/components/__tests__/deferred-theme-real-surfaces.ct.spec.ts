@@ -1,20 +1,9 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { expect, test } from '@playwright/experimental-ct-svelte';
-import { recordCdpLifecycle } from '../../../test/ct-cdp-lifecycle-recorder';
-import { isolateBrowserContextPerTest } from '../../../test/ct-isolated-browser-context';
+import { expect, test } from '../../../test/ct-test';
 import DeferredThemeRealSurfaceHost from './DeferredThemeRealSurfaceHost.svelte';
 
 test.setTimeout(60_000);
-// The light-1280-200 cell's mount() failed with "Execution context was
-// destroyed" on the merge queue (intent-hq/intent#5279) right after the
-// previous cell on the same reused per-worker page — the ct-core reuse reset
-// racing the next mount, the same signature intent-hq/intent#4373 / #5236 /
-// #5249 hit. Give every cell its own browser context so no prior teardown
-// races the next mount, and keep recording the CDP lifecycle so a recurrence
-// reports the real event ordering.
-isolateBrowserContextPerTest(test, 'intent-hq/intent#5279');
-recordCdpLifecycle(test);
 test.afterEach(async ({ page }) => {
   await page.locator('#root').evaluate(async (root) => {
     if (root.childElementCount > 0) await window.playwrightUnmount(root);

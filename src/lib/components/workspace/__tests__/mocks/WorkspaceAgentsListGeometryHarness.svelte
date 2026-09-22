@@ -65,9 +65,31 @@
     makeAgent('background-idle', { name: 'Background idle', isBackground: true }),
     makeAgent('retired', { name: 'Retired', retiredAt: '2026-08-20T00:00:00.000Z' }),
   ];
-  const virtualAgents = Array.from({ length: 24 }, (_, index) =>
-    makeAgent(`virtual-${index}`, { name: `Virtual agent ${index}` }),
+  // Virtual fixture (above the virtualization threshold): a count-only parent,
+  // a parent with loaded children, then childless parents. Zero-padded ids fix
+  // the sibling order so both groups fall inside the initial VirtualList window.
+  const countedParentId = 'parent-00';
+  const loadedParentId = 'parent-01';
+  const virtualParents = Array.from({ length: 24 }, (_, index) =>
+    makeAgent(`parent-${String(index).padStart(2, '0')}`, { name: `Parent ${index}` }),
   );
+  const virtualChildren = ['child-a', 'child-b'].map((id) =>
+    makeAgent(id, {
+      name: id,
+      metadata: { createdByAgentId: loadedParentId } as AgentSession['metadata'],
+    }),
+  );
+  const virtualAgents = [...virtualParents, ...virtualChildren];
+  const virtualScopeCounts = {
+    topLevel: virtualParents.length,
+    delegated: 4,
+    background: 0,
+  };
+  const virtualDelegatedCounts = {
+    running: 1,
+    byParent: { [countedParentId]: { total: 2, running: 1 } },
+  };
+  const virtualLoadedParentIds: Record<string, true> = { [loadedParentId]: true };
   const agents = $derived(virtual ? virtualAgents : treeAgents);
   onMount(() => {
     appStore.dispatch(bulkUpsertSessions(agents));
@@ -87,6 +109,10 @@
     {searchQuery}
     {selectedAgentId}
     runningAgentIds={virtual ? [] : ['delegated-search-target', 'background-active']}
+    scopeCounts={virtual ? virtualScopeCounts : null}
+    delegatedCounts={virtual ? virtualDelegatedCounts : null}
+    loadedDelegatedParentIds={virtual ? virtualLoadedParentIds : {}}
+    onLoadDelegated={virtual ? () => {} : undefined}
     onSelect={({ agentId }) => (selectedAgentId = agentId)}
   />
   {#if showNonPanelControl}

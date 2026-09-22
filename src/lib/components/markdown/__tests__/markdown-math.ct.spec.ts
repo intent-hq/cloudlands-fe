@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/experimental-ct-svelte';
+import { expect, test } from '../../../../test/ct-test';
 import MarkdownMathPreview from '../markdown-math.preview.svelte';
 
 function contrastRatio(foreground: number[], background: number[]): number {

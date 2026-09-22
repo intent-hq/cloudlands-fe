@@ -83,7 +83,6 @@ describe('editorial panel resize handles', () => {
     );
     const implementationPaths = [
       '../../ResizablePanel.svelte',
-      '../../ResizablePanelGroup.svelte',
       '../PanelSplitHandle.svelte',
       '../PanelCornerHandle.svelte',
       '../../sidebar-nav/SidebarPanel.svelte',

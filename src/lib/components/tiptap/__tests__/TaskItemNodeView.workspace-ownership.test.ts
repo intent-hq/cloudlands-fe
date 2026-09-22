@@ -61,8 +61,10 @@ const mocks = vi.hoisted(() => {
     reset() {
       active = 'workspace-a';
       states.clear();
+      mocks.hidesAgentLifecycleActions = false;
       vi.clearAllMocks();
     },
+    hidesAgentLifecycleActions: false,
     setActive(value: string) {
       active = value;
       activeSubscribers.forEach((run) => run(value));
@@ -82,6 +84,12 @@ const mocks = vi.hoisted(() => {
 vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
   selectActiveWorkspaceId: () => mocks.activeReadable,
   selectWorkspaceById: { select: () => undefined },
+  selectHidesAgentLifecycleActions: () => ({
+    subscribe(run: (value: boolean) => void) {
+      run(mocks.hidesAgentLifecycleActions);
+      return () => {};
+    },
+  }),
 }));
 vi.mock('$store/renderer/slices/agent-session/agent-session-selectors', () => ({
   selectAgentPreview: () => ({
@@ -197,6 +205,16 @@ describe('TaskItemNodeView workspace ownership', () => {
       openInNewAdjacentPanel: false,
       sourcePanelId: 'panel-b',
     });
+  });
+
+  it('withholds the assign affordance in a guest / collaborator window', async () => {
+    mocks.hidesAgentLifecycleActions = true;
+    mocks.setWorkspace('workspace-b', true, [taskNote('workspace-b', 'Task from B')]);
+    const view = render(TestTaskItemNodeView, { props: linkedProps('workspace-b') });
+
+    expect(view.getByText('Task from B')).toBeTruthy();
+    expect(view.queryByTitle('Assign to agent')).toBeNull();
+    expect(mocks.dispatch).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'delegate' }));
   });
 
   it('opens the assigned agent with the task owner without opening the linked note', async () => {

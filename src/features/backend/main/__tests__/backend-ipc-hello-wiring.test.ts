@@ -87,6 +87,12 @@ vi.mock('../json-rpc-client', () => ({
     getReconnectAttempts(): number {
       return 0;
     }
+    isConnectionLimited(): boolean {
+      return false;
+    }
+    getConnectionLimitRetryAfterMs(): number | null {
+      return null;
+    }
   },
 }));
 
@@ -466,6 +472,57 @@ describe('backend.ipc daemon build-identity log on hello (#3649)', () => {
       version: '0.3.0',
       buildCommit: 'def5678',
     });
+  });
+
+  it('exposes the connected daemon protocolVersion per connection id for feature gates (intent-hq/intent#5482)', async () => {
+    const { getConnectedDaemonProtocolVersion, __resetBackendProtocolStateForTesting } =
+      await import('../backend.ipc');
+    __resetBackendProtocolStateForTesting();
+    const onHelloResult = await getPrimaryOnHelloResult();
+
+    // Nothing captured yet and no sidecar baseline: unknown.
+    expect(getConnectedDaemonProtocolVersion('local')).toBeNull();
+    expect(getConnectedDaemonProtocolVersion('conn-remote')).toBeNull();
+
+    onHelloResult({ clientId: 'cli-1', protocolVersion: '10.4', server: {} });
+    expect(getConnectedDaemonProtocolVersion('local')).toBe('10.4');
+    expect(getConnectedDaemonProtocolVersion('conn-remote')).toBeNull();
+
+    // A hello without a version is unknown — the earlier hello never lingers.
+    onHelloResult({ clientId: 'cli-1', server: {} });
+    expect(getConnectedDaemonProtocolVersion('local')).toBeNull();
+
+    // A fresh hello (reconnect after a daemon upgrade) re-captures.
+    onHelloResult({ clientId: 'cli-1', protocolVersion: '10.10', server: {} });
+    expect(getConnectedDaemonProtocolVersion('local')).toBe('10.10');
+    __resetBackendProtocolStateForTesting();
+  });
+
+  it('lets the sidecar probe seed the local version only until the first local hello (intent-hq/intent#5482)', async () => {
+    const { getLocalDaemonProtocolVersion } = await import('../intentd-sidecar');
+    vi.mocked(getLocalDaemonProtocolVersion).mockReturnValue('10.4');
+    const { getConnectedDaemonProtocolVersion, __resetBackendProtocolStateForTesting } =
+      await import('../backend.ipc');
+    __resetBackendProtocolStateForTesting();
+    const onHelloResult = await getPrimaryOnHelloResult();
+
+    // Before the pooled local client's hello answers, the probe baseline stands in.
+    expect(getConnectedDaemonProtocolVersion('local')).toBe('10.4');
+    // The probe is local-only: a remote id never inherits it.
+    expect(getConnectedDaemonProtocolVersion('conn-remote')).toBeNull();
+
+    // A local hello that omits the version is authoritative: null, no
+    // fallback to the (possibly stale or env-default) probe value.
+    onHelloResult({ clientId: 'cli-1', server: {} });
+    expect(getConnectedDaemonProtocolVersion('local')).toBeNull();
+
+    // A later hello with a version re-captures; a versionless one clears again.
+    onHelloResult({ clientId: 'cli-1', protocolVersion: '10.4', server: {} });
+    expect(getConnectedDaemonProtocolVersion('local')).toBe('10.4');
+    onHelloResult({ clientId: 'cli-1', server: {} });
+    expect(getConnectedDaemonProtocolVersion('local')).toBeNull();
+    __resetBackendProtocolStateForTesting();
+    vi.mocked(getLocalDaemonProtocolVersion).mockReturnValue(null);
   });
 
   it('does not log for hellos without a well-formed server.version', async () => {

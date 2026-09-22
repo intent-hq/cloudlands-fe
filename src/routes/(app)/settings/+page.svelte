@@ -17,6 +17,7 @@
   } from '$lib/components/settings/AIBehaviorSidebar.svelte';
   import { SettingsPage, type SettingsTab } from '$lib/components/patterns/settings';
   import DevicesSettings from '$lib/components/settings/DevicesSettings.svelte';
+  import GuestSessionsSettings from '$lib/components/settings/GuestSessionsSettings.svelte';
   import BackendSyncSettings from '$lib/components/settings/BackendSyncSettings.svelte';
   import VoiceSettings from '$lib/components/settings/VoiceSettings.svelte';
   import GitWorkspaceSettings from '$lib/components/settings/GitWorkspaceSettings.svelte';
@@ -30,7 +31,6 @@
   import NotificationSettings from '$lib/components/settings/NotificationSettings.svelte';
   import RtkSettings from '$lib/components/settings/RtkSettings.svelte';
   import HardwareConsoleSettings from '$lib/components/settings/HardwareConsoleSettings.svelte';
-  import WebSocketApiSettings from '$lib/components/settings/WebSocketApiSettings.svelte';
   import WorkspaceApiSettings from '$lib/components/settings/WorkspaceApiSettings.svelte';
   import AgentBackendSettings from '$lib/components/settings/AgentBackendSettings.svelte';
   import AgentFeaturesSettings from '$lib/components/settings/AgentFeaturesSettings.svelte';
@@ -42,6 +42,7 @@
   import * as ToggleGroup from '$lib/components/ui/toggle-group';
   import { selectDaemonTransport } from '$store/renderer/slices/daemon-health/daemon-health-selectors';
   import { selectIsCollaboratorOnlyClient } from '$store/renderer/slices/workspace/workspace-selectors';
+  import { selectWindowIdentitySettled } from '$store/renderer/slices/guest-sessions/guest-sessions-selectors';
   import { selectThemePreference } from '$store/renderer/slices/theme/theme-selectors';
   import { requestThemePreferenceChange } from '$store/renderer/slices/theme/theme-slice';
   import type { ThemePreference } from '$store/renderer/slices/theme/theme-types';
@@ -98,6 +99,7 @@
   const themePreference = selectThemePreference();
   const daemonTransport$ = selectDaemonTransport();
   const isCollaboratorOnlyClient$ = selectIsCollaboratorOnlyClient();
+  const windowIdentitySettled$ = selectWindowIdentitySettled();
 
   // UDS socket path of the connected intentd; null hides the Connection section
   // (external-ws, unknown transport, or missing target).
@@ -116,6 +118,7 @@
     'providers',
     'connections',
     'devices',
+    'guest-sessions',
     'setup',
     'advanced',
     'input',
@@ -142,6 +145,8 @@
     'backend-sync': 'devices',
     'websocket-api': 'devices',
     'remote-access': 'devices',
+    'guest-sessions': 'guest-sessions',
+    sharing: 'guest-sessions',
     voice: 'input',
     'keyboard-shortcuts': 'input',
     'git-workspace': 'setup',
@@ -210,6 +215,7 @@
   }
 
   let activeTab = $state<SettingsTab>(getInitialTab());
+  let localSettingsRequested = $state(0);
   let contentScroll: HTMLDivElement;
 
   function resetContentScroll() {
@@ -235,12 +241,16 @@
 
   // Provider keys and GitHub/Linear/Sentry connections are administrator-owned
   // daemon state (multiplayer w3): a collaborator-only client cannot read or
-  // change them, so those sections are withheld and their tabs redirect.
+  // change them, so those sections are withheld and their tabs redirect. The
+  // redirect waits for the window identity to settle: during boot the
+  // collaborator-only default is a safe placeholder, not an answer, and
+  // redirecting on it would drop a `?tab=providers` deep link for an
+  // administrator (intent-hq/intent#5514).
   const hiddenTabs = $derived<readonly SettingsTab[]>(
     $isCollaboratorOnlyClient$ ? ['providers', 'connections'] : [],
   );
   $effect(() => {
-    if (hiddenTabs.includes(activeTab)) setActiveTab('display');
+    if ($windowIdentitySettled$ && hiddenTabs.includes(activeTab)) setActiveTab('display');
   });
 
   // Keep the rendered pane in sync when SvelteKit navigates within the mounted settings page.
@@ -398,6 +408,7 @@
     }
     if (typeof window === 'undefined' || !window.location.hash) return;
     const targetId = window.location.hash.slice(1);
+    if (resolveHashToTarget(targetId)?.id === 'websocket-api') localSettingsRequested += 1;
 
     // Switch to the correct tab if needed
     const targetTab = resolveHashTab(targetId);
@@ -549,7 +560,7 @@
       <main
         class="mx-auto flex min-h-full {activeTab === 'specialists'
           ? 'max-w-6xl xl:h-full xl:min-h-0 xl:py-8'
-          : 'max-w-4xl'} flex-col pr-8 pl-6 py-6 [&>*:last-child]:mb-0"
+          : 'max-w-4xl'} flex-col gap-6 pr-8 pl-6 py-6"
         aria-labelledby="settings-page-title"
       >
         <h1 id="settings-page-title" class="sr-only">{m.settings_page_title()}</h1>
@@ -560,12 +571,14 @@
 
         <!-- Devices -->
         {#if activeTab === 'devices'}
-          <div id="devices" class="mb-6 scroll-mt-20">
-            <DevicesSettings />
+          <div id="devices" class="scroll-mt-20">
+            <div id="websocket-api" data-highlight-id="websocket-api" use:highlightTarget>
+              <DevicesSettings bind:localSettingsRequested />
+            </div>
           </div>
 
           <!-- Backend sync (iCloud Keychain) -->
-          <div id="backend-sync" class="mb-6 scroll-mt-20">
+          <div id="backend-sync" class="scroll-mt-20">
             <h2 class="type-title mb-3 text-foreground">
               {m.settings_section_backendSync()}
             </h2>
@@ -575,22 +588,12 @@
               </section>
             </div>
           </div>
+        {/if}
 
-          <!-- Remote Access (WebSocket API) -->
-          <div
-            id="websocket-api"
-            data-highlight-id="websocket-api"
-            use:highlightTarget
-            class="mb-6 scroll-mt-20"
-          >
-            <h2 class="type-title mb-3 text-foreground">
-              {m.settings_section_remoteAccess()}
-            </h2>
-            <div class="flex flex-col bg-card rounded-xl divide-y divide-border">
-              <section data-slot="settings-section-body" class="px-6 py-4">
-                <WebSocketApiSettings />
-              </section>
-            </div>
+        <!-- Guest sessions (multiplayer w4: hosting roster + joined hosts) -->
+        {#if activeTab === 'guest-sessions'}
+          <div id="guest-sessions" class="scroll-mt-20">
+            <GuestSessionsSettings />
           </div>
         {/if}
 
@@ -626,7 +629,7 @@
         <!-- Display -->
         {#if activeTab === 'display'}
           <!-- Theme -->
-          <div id="theme" data-highlight-id="appearance" use:highlightTarget class="mb-6">
+          <div id="theme" data-highlight-id="appearance" use:highlightTarget>
             <h2 class="type-title mb-3 text-foreground">
               {m.settings_section_appearance()}
             </h2>
@@ -715,7 +718,7 @@
             </div>
           </div>
 
-          <div id="font-style" data-highlight-id="font-style" use:highlightTarget class="mb-6">
+          <div id="font-style" data-highlight-id="font-style" use:highlightTarget>
             <h2 class="type-title mb-3 text-foreground">
               {m.settings_section_fontStyle()}
             </h2>
@@ -822,7 +825,7 @@
           </div>
 
           <!-- Language -->
-          <div id="language" data-highlight-id="language" use:highlightTarget class="mb-6">
+          <div id="language" data-highlight-id="language" use:highlightTarget>
             <h2 class="type-title mb-3 text-foreground">
               {m.settings_language_section_title()}
             </h2>
@@ -837,7 +840,7 @@
         <!-- App Behavior -->
         {#if activeTab === 'app-behavior'}
           <!-- Updates -->
-          <div id="updates" data-highlight-id="updates" use:highlightTarget class="mb-6">
+          <div id="updates" data-highlight-id="updates" use:highlightTarget>
             <h2 class="type-title mb-3 text-foreground">
               {m.settings_section_updates()}
             </h2>
@@ -867,7 +870,7 @@
             </div>
           </div>
 
-          <div id="open-in" data-highlight-id="open-in" use:highlightTarget class="mb-6">
+          <div id="open-in" data-highlight-id="open-in" use:highlightTarget>
             <h2 class="type-title mb-3 text-foreground">
               {m.settings_section_openIn()}
             </h2>
@@ -877,12 +880,7 @@
               </section>
             </div>
           </div>
-          <div
-            id="github-link-action"
-            data-highlight-id="github-link-action"
-            use:highlightTarget
-            class="mb-6"
-          >
+          <div id="github-link-action" data-highlight-id="github-link-action" use:highlightTarget>
             <h2 class="type-title mb-3 text-foreground">
               {m.settings_githubLinks_section_title()}
             </h2>
@@ -894,7 +892,7 @@
           </div>
           <NotificationSettings />
 
-          <SettingsSection id="licenses" title={m.settings_licenses_title_label()} class="mb-6">
+          <SettingsSection id="licenses" title={m.settings_licenses_title_label()}>
             <div class="px-6 py-4">
               <a
                 href="https://github.com/tailscale/tailcat/blob/main/LICENSE"
@@ -913,7 +911,7 @@
             id="global-instructions"
             data-highlight-id="global-instructions"
             use:highlightTarget
-            class="mb-6 min-w-0"
+            class="min-w-0"
           >
             <h2 class="type-title mb-3 text-foreground">
               {m.settings_section_globalInstructions()}
@@ -929,12 +927,7 @@
 
         <!-- Input -->
         {#if activeTab === 'input'}
-          <div
-            id="keyboard-shortcuts"
-            data-highlight-id="keyboard-shortcuts"
-            use:highlightTarget
-            class="mb-6"
-          >
+          <div id="keyboard-shortcuts" data-highlight-id="keyboard-shortcuts" use:highlightTarget>
             <h2 class="type-title mb-3 text-foreground">
               {m.settings_section_keyboardShortcuts()}
             </h2>
@@ -943,7 +936,7 @@
             </div>
           </div>
 
-          <div id="voice" data-highlight-id="voice" use:highlightTarget class="mb-6 scroll-mt-20">
+          <div id="voice" data-highlight-id="voice" use:highlightTarget class="scroll-mt-20">
             <h2 class="type-title mb-3 text-foreground">
               {m.settings_section_voice()}
             </h2>
@@ -958,12 +951,7 @@
         <!-- Advanced -->
         {#if activeTab === 'advanced'}
           <!-- Agent Backend -->
-          <div
-            id="agent-backend"
-            data-highlight-id="agent-backend"
-            use:highlightTarget
-            class="mb-6"
-          >
+          <div id="agent-backend" data-highlight-id="agent-backend" use:highlightTarget>
             <h2 class="type-title mb-3 text-foreground">
               {m.settings_section_agentBackend()}
             </h2>
@@ -975,12 +963,7 @@
           </div>
 
           <!-- Tool Output & Retention (anchor id kept as workspace-api for deep links) -->
-          <div
-            id="workspace-api"
-            data-highlight-id="workspace-api"
-            use:highlightTarget
-            class="mb-6"
-          >
+          <div id="workspace-api" data-highlight-id="workspace-api" use:highlightTarget>
             <h2 class="type-title mb-3 text-foreground">
               {m.settings_section_workspaceApi()}
             </h2>
@@ -989,7 +972,7 @@
 
           <!-- Connection (UDS only; hidden for WS/unknown transports) -->
           {#if udsSocketPath}
-            <div id="connection" data-highlight-id="connection" use:highlightTarget class="mb-6">
+            <div id="connection" data-highlight-id="connection" use:highlightTarget>
               <h2 class="type-title mb-3 text-foreground">
                 {m.settings_section_connection()}
               </h2>
@@ -1013,7 +996,7 @@
 
           <!-- Hardware / Creator Micro (only when a supported device is detectable) -->
           {#if showHardwareSection}
-            <div id="hardware" data-highlight-id="hardware" use:highlightTarget class="mb-6">
+            <div id="hardware" data-highlight-id="hardware" use:highlightTarget>
               <h2 class="type-title mb-3 text-foreground">
                 {m.settings_section_hardware()}
               </h2>
@@ -1022,7 +1005,7 @@
           {/if}
 
           <!-- Data -->
-          <div id="data" data-highlight-id="data" use:highlightTarget class="mb-6">
+          <div id="data" data-highlight-id="data" use:highlightTarget>
             <h2 class="type-title mb-3 text-foreground">
               {m.settings_section_data()}
             </h2>
@@ -1030,7 +1013,7 @@
           </div>
 
           <!-- Reset -->
-          <div id="reset" data-highlight-id="general" use:highlightTarget class="mb-6">
+          <div id="reset" data-highlight-id="general" use:highlightTarget>
             <h2 class="type-title mb-3 text-foreground">
               {m.settings_section_reset()}
             </h2>
@@ -1055,7 +1038,7 @@
 
           <!-- Developer Section (only in dev mode; dev-only UI is not translated) -->
           {#if isDevMode}
-            <div id="developer" data-highlight-id="developer" use:highlightTarget class="mb-6">
+            <div id="developer" data-highlight-id="developer" use:highlightTarget>
               <h2 class="type-title mb-3 text-foreground">
                 <!-- i18n-ignore (dev-only) -->
                 Developer
