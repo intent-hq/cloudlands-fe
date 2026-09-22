@@ -33,11 +33,19 @@ const iconOnlyButtonSizeBaseline = Object.assign(
   ...(designSystemBaseline['icon-only-button-size'] ?? []).map((entry) => entry.counts ?? {}),
 );
 import noColdSvelteImportInTestsRule from './eslint-rules/no-cold-svelte-import-in-tests.js';
+import noSourceLiteralAssertionsInTestsRule from './eslint-rules/no-source-literal-assertions-in-tests.js';
 import noFlushSyncInTeardownRule from './eslint-rules/no-flushsync-in-teardown.js';
 import noDirectReducedMotionQueryRule, {
   SOURCE_OF_TRUTH_FILES as reducedMotionSourceOfTruthFiles,
   TEST_FILE_GLOBS as reducedMotionTestFileGlobs,
 } from './eslint-rules/no-direct-reduced-motion-query.js';
+
+const sourceLiteralAssertionsBaseline = JSON.parse(
+  readFileSync(
+    new URL('./eslint-rules/no-source-literal-assertions-in-tests.baseline.json', import.meta.url),
+    'utf8',
+  ),
+);
 
 const intentPlugin = {
   rules: {
@@ -45,6 +53,7 @@ const intentPlugin = {
     'no-production-dynamic-import': noProductionDynamicImportRule,
     ...designSystemRules,
     'no-cold-svelte-import-in-tests': noColdSvelteImportInTestsRule,
+    'no-source-literal-assertions-in-tests': noSourceLiteralAssertionsInTestsRule,
     'no-flushsync-in-teardown': noFlushSyncInTeardownRule,
     'no-direct-reduced-motion-query': noDirectReducedMotionQueryRule,
   },
@@ -565,6 +574,14 @@ export default [
     },
     rules: {
       'intent/no-cold-svelte-import-in-tests': 'error',
+      // A test that reads a .svelte/.ts source file from disk to assert on its
+      // text pins the test to how the source is spelled, not what it does
+      // (cloudlands-fe#2760). The baseline lists today's offenders and may
+      // only shrink: remove a file's entry when it is fixed, never add one.
+      'intent/no-source-literal-assertions-in-tests': [
+        'error',
+        { baseline: sourceLiteralAssertionsBaseline },
+      ],
     },
   },
   // Ban synchronous child_process calls in Electron main process code.

@@ -1,7 +1,17 @@
+// @vitest-environment node
+import fs from 'node:fs';
 import path from 'node:path';
-import { RuleTester } from 'eslint';
+import { ESLint, RuleTester } from 'eslint';
+import typescriptParser from '@typescript-eslint/parser';
 import { describe, expect, it } from 'vitest';
 import rule from './no-source-literal-assertions-in-tests.js';
+
+const root = process.cwd();
+const baselinePath = path.join(
+  root,
+  'eslint-rules/no-source-literal-assertions-in-tests.baseline.json',
+);
+const baseline = JSON.parse(fs.readFileSync(baselinePath, 'utf8'));
 
 const testFile = path.resolve('src/features/example/__tests__/example.test.ts');
 const otherTestFile = path.resolve('src/features/other/__tests__/other.test.ts');
@@ -22,6 +32,54 @@ describe('no-source-literal-assertions-in-tests guidance', () => {
   it('declares the baseline option in its schema', () => {
     expect(rule.meta.schema[0].properties.baseline.items).toEqual({ type: 'string' });
   });
+});
+
+describe('no-source-literal-assertions-in-tests baseline ratchet', () => {
+  it('is a sorted list of unique, existing package-relative test files', () => {
+    expect(baseline).toEqual([...new Set(baseline)].sort());
+    for (const file of baseline) {
+      expect(file, `${file} should be package-relative with forward slashes`).toMatch(
+        /^src\/[^\\]*\.(test|spec)\.(js|ts)$/,
+      );
+      expect(fs.existsSync(path.join(root, file)), `${file} no longer exists`).toBe(true);
+    }
+  });
+
+  // Full-source ESLint over every test file takes tens of seconds on the shared
+  // host; keep the budget local to the ratchet.
+  it('only shrinks: every entry still offends, and no file outside it does', async () => {
+    const eslint = new ESLint({
+      cwd: root,
+      overrideConfigFile: true,
+      overrideConfig: [
+        { ignores: ['src/shared/generated/**', 'src/shared/paraglide/**'] },
+        { files: ['src/**/*.{ts,tsx}'], languageOptions: { parser: typescriptParser } },
+        {
+          files: ['**/*.{test,spec}.{js,ts}'],
+          plugins: { intent: { rules: { 'no-source-literal-assertions-in-tests': rule } } },
+          rules: { 'intent/no-source-literal-assertions-in-tests': ['error', { baseline: [] }] },
+        },
+      ],
+      cache: false,
+    });
+    const results = await eslint.lintFiles(['src']);
+    const offending = new Set();
+    for (const result of results) {
+      if (
+        result.messages.some((m) => m.ruleId === 'intent/no-source-literal-assertions-in-tests')
+      ) {
+        offending.add(path.relative(root, result.filePath).split(path.sep).join('/'));
+      }
+    }
+
+    const fixed = baseline.filter((file) => !offending.has(file));
+    expect(fixed, 'remove these fixed files from the baseline').toEqual([]);
+    const added = [...offending].filter((file) => !baseline.includes(file)).sort();
+    expect(
+      added,
+      'new source-literal assertions; fix them instead of extending the baseline',
+    ).toEqual([]);
+  }, 240_000);
 });
 
 tester.run('no-source-literal-assertions-in-tests', rule, {
