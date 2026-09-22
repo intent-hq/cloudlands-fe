@@ -808,6 +808,10 @@ export const ACTION_KEY_REGISTRY: readonly ActionKeyDefinition[] = [
       return true;
     },
     execute(context) {
+      // Read the path synchronously at press time: a workspace switch that
+      // lands before the dynamic import resolves must not redirect the close
+      // to the newly selected workspace.
+      const pressPath = window.location.pathname;
       // Dynamic import: close-active-tab.ts reaches the app store and the
       // workspace-tab-navigation selectors (`store.createSelector` at module
       // scope), which would crash if evaluated eagerly here — see the
@@ -815,7 +819,7 @@ export const ACTION_KEY_REGISTRY: readonly ActionKeyDefinition[] = [
       // out of this registry (window-cycle.ts pattern).
       void import('./close-active-tab')
         .then(({ closeActiveTab }) => {
-          if (closeActiveTab(context.navigate) === null) {
+          if (closeActiveTab(pressPath, context.navigate) === null) {
             context.showHint(m.hardwareConsole_actionKey_closeTab_nothingToClose_hint());
           }
         })

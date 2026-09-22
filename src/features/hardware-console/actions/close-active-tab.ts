@@ -20,11 +20,16 @@ import {
 /**
  * Run the Cmd+W cascade with the same inputs the `navigation.close-tab`
  * shortcut registration passes in `+layout.svelte`: the app store, the
- * current location path, and a window close only on builds with window
+ * location path captured when the key was pressed (the caller reads it
+ * before the dynamic import so a workspace switch racing the import cannot
+ * redirect the close), and a window close only on builds with window
  * chrome. Returns the level that closed, or null when nothing was closable.
  */
-export function closeActiveTab(navigate: (path: string) => unknown): CloseTabCascadeLevel | null {
-  return closeActiveTabCascade(appStore, window.location.pathname, {
+export function closeActiveTab(
+  currentPath: string,
+  navigate: (path: string) => unknown,
+): CloseTabCascadeLevel | null {
+  return closeActiveTabCascade(appStore, currentPath, {
     navigate,
     ...(hasCapability('windowChrome')
       ? { closeWindow: () => invoke(IPC_CHANNELS.WINDOW.CLOSE) }

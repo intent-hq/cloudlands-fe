@@ -2158,6 +2158,22 @@ describe('close-tab', () => {
     expect(cascadeMock.mock.calls[0][2]).not.toHaveProperty('closeWindow');
   });
 
+  it('passes the path captured at press time even when the location changes before the import resolves', async () => {
+    const originalPath = window.location.pathname;
+    window.history.pushState({}, '', '/workspace/ws-1');
+    try {
+      const { context } = makeContext(makeState());
+      definition().execute(context);
+      window.history.pushState({}, '', '/workspace/ws-2');
+      await vi.waitFor(() => {
+        expect(cascadeMock).toHaveBeenCalledTimes(1);
+      });
+      expect(cascadeMock.mock.calls[0][1]).toBe('/workspace/ws-1');
+    } finally {
+      window.history.pushState({}, '', originalPath);
+    }
+  });
+
   it('hints "nothing to close" when the cascade has nothing closable', async () => {
     cascadeMock.mockReturnValueOnce(null);
     const { context, showHint } = makeContext(makeState());
