@@ -923,11 +923,11 @@ function memoisedSearch(text: string, pattern: RegExp): (at: number) => number {
 }
 
 /**
- * What the scan stops at: a comment; a label at a line start; a run of
- * backticks or of three or more `~`; a `\` before a character it escapes
- * (`\\`, `\<`, `\[`, `` \` ``).
+ * What the scan stops at: a comment; an image; a label at a line start; a
+ * run of backticks or of three or more `~`; a `\` before a character it
+ * escapes (`\\`, `\<`, `\[`, `` \` ``, `\!`).
  */
-const HIDDEN_BLOCK_OPENER = /<!--|^[ \t]{0,3}\[|`+|~{3,}|\\[\\<[`]/gm;
+const HIDDEN_BLOCK_OPENER = /<!--|!\[|^[ \t]{0,3}\[|`+|~{3,}|\\[\\<[`!]/gm;
 /** A line that may close a fence: a run of `` ` `` or `~` alone after blanks and `>`. */
 const FENCE_CLOSE = /^[ \t>]*(?:`{3,}|~{3,})[ \t\r]*$/gm;
 /** The two breaks of a blank line; no definition title or code span spans one. */
@@ -938,15 +938,18 @@ const NOT_BREAK = /[^\n\r]/g;
 /**
  * `markdown` the lexer did not read with the hidden text a scan can place —
  * a comment (`<!--` … `-->`, or to the end of the note when none closes it;
- * a comment anchor excepted, as in `HIDDEN_HTML`) and the destination and
- * title of a link reference definition (`definitionHidden`) — replaced by
- * U+0000 code unit for code unit, its line breaks kept, as the lexer's mask
- * is laid (`hide`). A comment's body and a definition's title are the hidden
- * text that spans lines: left as written, each of their lines reads as a
- * text line (`isTextLine`) with no plain-text line of its own, and the
- * pairing of a run of sealed lines counts it as one (`refineByLine`,
- * `LineWalk`); masked, none is. A link's destination is not masked — its
- * line is unanchorable instead (`unanchorableLines`).
+ * a comment anchor excepted, as in `HIDDEN_HTML`), an image (`![alt](…)` or
+ * `![alt][ref]` on one line, whole, as `collectHiddenInLink` hides it: the
+ * editor shows no text of it) and the destination and title of a link
+ * reference definition (`definitionHidden`) — replaced by U+0000 code unit
+ * for code unit, its line breaks kept, as the lexer's mask is laid (`hide`).
+ * A comment's body and a definition's title are the hidden text that spans
+ * lines: left as written, each of their lines reads as a text line
+ * (`isTextLine`) with no plain-text line of its own, and the pairing of a
+ * run of sealed lines counts it as one (`refineByLine`, `LineWalk`); masked,
+ * none is — nor is a line holding an image alone, which has no plain-text
+ * line either. A link's destination is not masked — its line is
+ * unanchorable instead (`unanchorableLines`).
  *
  * What the renderer shows as written is not hidden, and the scan passes over
  * it as the lexer would: a fenced code block (a fence of three or more
@@ -1028,6 +1031,12 @@ function maskHiddenBlocks(markdown: string): string {
       }
     } else if (found.charCodeAt(0) === 92) {
       // An escaped character: shown as written.
+    } else if (found === '![') {
+      const image = imageEnd(markdown, at, lineEnd);
+      if (image !== -1) {
+        mask(at, image);
+        end = image;
+      }
     } else if (found.endsWith('[')) {
       if (startsBlock(markdown, at, blockEnd)) {
         const hidden = definitionHidden(markdown, end - 1, nextTitleClose, nextBlankLine);
@@ -1081,6 +1090,40 @@ function maskHiddenBlocks(markdown: string): string {
     opener = HIDDEN_BLOCK_OPENER.exec(markdown);
   }
   return out + markdown.slice(pos);
+}
+
+/**
+ * The end of the image whose `![` opens at `at` of `text`, on the line
+ * ending at `lineEnd`: past the `]` closing its alt text (brackets nested
+ * one deep, `\` escaping the next character) and the `(…)` or `[…]` right
+ * after it (parentheses balanced, `\` escaping); `-1` when the line holds
+ * no such image, and the text is shown as written.
+ */
+function imageEnd(text: string, at: number, lineEnd: number): number {
+  let i = at + 2;
+  for (let depth = 0; ; i += 1) {
+    if (i >= lineEnd) return -1;
+    const code = text.charCodeAt(i);
+    if (code === 92) i += 1;
+    else if (code === 91) depth += 1;
+    else if (code === 93) {
+      if (depth === 0) break;
+      depth -= 1;
+    }
+  }
+  const opener = text.charCodeAt(i + 1);
+  const closer = opener === 40 ? 41 : opener === 91 ? 93 : -1;
+  if (closer === -1) return -1;
+  for (let j = i + 2, depth = 0; j < lineEnd; j += 1) {
+    const code = text.charCodeAt(j);
+    if (code === 92) j += 1;
+    else if (code === opener) depth += 1;
+    else if (code === closer) {
+      if (depth === 0) return j + 1;
+      depth -= 1;
+    }
+  }
+  return -1;
 }
 
 /** Whether `at` of `text` sits at a line start, at most three blanks after it. */

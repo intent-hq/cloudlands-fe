@@ -2347,6 +2347,58 @@ describe('alignment of link syntax the lexer does not account for', () => {
       },
       60_000,
     );
+
+    // Images alone on their lines before a run of identical items. The
+    // editor shows no text of an image, so its line has no plain-text line
+    // of its own; past the cap the scan masks the image whole, as the lexer
+    // does below it, and the line is no text line: the items pair with
+    // their own plain-text lines, exactly within the budget, bounded past
+    // the deadline. (Shown as written, the image line was a text line no
+    // plain-text line held the letters of, so it took the first item's
+    // plain-text line for its own, and every item paired with the next.)
+    const IMAGE_PREFIX_CELLS = [1, 9, 12].flatMap((images) =>
+      [2, 51].flatMap((count) =>
+        PROJECTIONS.flatMap(([projection, production]) =>
+          CLOCKS.map(([when, clock]): [number, number, string, string, boolean, Clock, boolean] => [
+            images,
+            count,
+            projection,
+            when,
+            production,
+            clock,
+            when === 'within the budget',
+          ]),
+        ),
+      ),
+    );
+
+    it.each(IMAGE_PREFIX_CELLS)(
+      'after %i images, pairs each of %i duplicate items with its own plain-text line, projected by %s %s',
+      async (images, count, _projection, _when, production, clock, exact) => {
+        const markdown = `${'q'.repeat(129 * 1024)}\n\nedit one\n\n${'![alt](https://example.test/image.png)\n\n'.repeat(images)}${'- same item\n'.repeat(count)}\n[ab](https://sync/ab)\n\n**cd** two`;
+        const plain = await projectWithEditor(markdown, production);
+        expect(plain).not.toContain('https');
+        expect(plain).not.toContain('alt');
+        const plainLines = linesHolding(plain, 'same item', /\n|\uFFFC/g);
+        expect(plainLines).toHaveLength(count);
+        const map = clock(() => createBidirectionalOffsetMapper(plain, markdown));
+        expectExactRun(plain, markdown, map, 'qqqqqqqq', 0, 0);
+        expectSameLine(plain, markdown, map, 'edit one', 'edit one');
+        if (exact) {
+          for (let k = 0; k < count; k += 1)
+            expectExactRun(plain, markdown, map, 'same item', k, k);
+        } else {
+          expectLinesBounded(
+            map,
+            plainLines,
+            [...markdown.matchAll(/same item/g)].map((m) => [m.index, m.index + m[0].length]),
+          );
+        }
+        expectSameLine(plain, markdown, map, 'ab', '[ab](');
+        expectSameLine(plain, markdown, map, 'cd two', '**cd** two');
+      },
+      60_000,
+    );
   });
 });
 
