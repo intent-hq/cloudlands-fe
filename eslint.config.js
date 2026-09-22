@@ -14,6 +14,7 @@ import noComponentAsyncDataFetchRule from './eslint-rules/no-component-async-dat
 import cssParser from './eslint-rules/design-system/css-parser.js';
 import { designSystemRules } from './eslint-rules/design-system/index.js';
 import { namedColorAllowlist } from './eslint-rules/design-system/common.js';
+import { internalModuleImportPatterns } from './eslint-rules/internal-module-import-patterns.js';
 
 const designSystemBaseline = JSON.parse(
   readFileSync(new URL('./eslint-rules/design-system/baseline.json', import.meta.url), 'utf8'),
@@ -33,11 +34,19 @@ const iconOnlyButtonSizeBaseline = Object.assign(
   ...(designSystemBaseline['icon-only-button-size'] ?? []).map((entry) => entry.counts ?? {}),
 );
 import noColdSvelteImportInTestsRule from './eslint-rules/no-cold-svelte-import-in-tests.js';
+import noSourceLiteralAssertionsInTestsRule from './eslint-rules/no-source-literal-assertions-in-tests.js';
 import noFlushSyncInTeardownRule from './eslint-rules/no-flushsync-in-teardown.js';
 import noDirectReducedMotionQueryRule, {
   SOURCE_OF_TRUTH_FILES as reducedMotionSourceOfTruthFiles,
   TEST_FILE_GLOBS as reducedMotionTestFileGlobs,
 } from './eslint-rules/no-direct-reduced-motion-query.js';
+
+const sourceLiteralAssertionsBaseline = JSON.parse(
+  readFileSync(
+    new URL('./eslint-rules/no-source-literal-assertions-in-tests.baseline.json', import.meta.url),
+    'utf8',
+  ),
+);
 
 const intentPlugin = {
   rules: {
@@ -45,6 +54,7 @@ const intentPlugin = {
     'no-production-dynamic-import': noProductionDynamicImportRule,
     ...designSystemRules,
     'no-cold-svelte-import-in-tests': noColdSvelteImportInTestsRule,
+    'no-source-literal-assertions-in-tests': noSourceLiteralAssertionsInTestsRule,
     'no-flushsync-in-teardown': noFlushSyncInTeardownRule,
     'no-direct-reduced-motion-query': noDirectReducedMotionQueryRule,
   },
@@ -387,16 +397,6 @@ const ctSharedModuleRestrictedImportPath = {
     "Only type imports may come from '@playwright/experimental-ct-svelte'. Import `test` / `expect` (and any other runtime export) from the shared CT module (src/test/ct-test.ts) so the browser-context isolation applies to this spec.",
 };
 
-// Every import-source spelling of one `src/<modulePath>` module for a
-// `no-restricted-imports` `patterns` group: the `$alias` form plus any relative
-// or `src/`-rooted form (`**/` also matches leading `../` segments), each bare
-// and with a `.ts` / `.js` extension. `aliasRoot` is the `$alias` whose target
-// directory is the first segment of `modulePath` (see svelte.config.js).
-function modelPickerGuardedModuleSpellings(aliasRoot, modulePath) {
-  const aliasForm = modulePath.replace(/^[^/]+/, aliasRoot);
-  return [aliasForm, `**/${modulePath}`].flatMap((base) => [base, `${base}.ts`, `${base}.js`]);
-}
-
 export default [
   // .gitignore is the source of truth for scratch/sandbox exclusions (.dev/, .wt-*/); see vitest.config.ts.
   includeIgnoreFile(fileURLToPath(new URL('.gitignore', import.meta.url))),
@@ -585,6 +585,15 @@ export default [
     },
     rules: {
       'intent/no-cold-svelte-import-in-tests': 'error',
+      // A test that reads a .svelte/.ts source file from disk to assert on its
+      // text pins the test to how the source is spelled, not what it does
+      // (cloudlands-fe#2760). The baseline maps today's offenders to their
+      // read counts and may only shrink: lower a file's count as reads are
+      // fixed (remove the entry at zero), never raise one or add a file.
+      'intent/no-source-literal-assertions-in-tests': [
+        'error',
+        { baseline: sourceLiteralAssertionsBaseline },
+      ],
     },
   },
   // Ban synchronous child_process calls in Electron main process code.
@@ -640,13 +649,15 @@ export default [
   // keeps a new dispatch path from bypassing the mutator. The shared CT-module
   // path is repeated so this override does not drop that restriction.
   // `no-restricted-imports` compares source strings and never resolves modules,
-  // so `paths` would only ban the exact alias spelling: the gitignore-style
-  // `patterns` below also cover the relative form (`../../../../features/...`)
-  // and the `.ts` / `.js` extension spellings of each protected module
-  // (cloudlands-fe#2763 review). Each group bans the whole module rather than
-  // named exports: an `importNames` list still lets a namespace import
-  // (`import * as m`) reach the same binding as `m.agentClient`. ModelPicker
-  // imports nothing else from these modules, so nothing needs allowImportNames.
+  // so `paths` would only ban the exact alias spelling: each gitignore-style
+  // `patterns` group below comes from the shared
+  // eslint-rules/internal-module-import-patterns.js helper, which also covers
+  // the relative form (`../../../../features/...`) and the `.ts` / `.js`
+  // extension spellings of each protected module (cloudlands-fe#2763 review).
+  // Each group bans the whole module rather than named exports: an
+  // `importNames` list still lets a namespace import (`import * as m`) reach
+  // the same binding as `m.agentClient`. ModelPicker imports nothing else from
+  // these modules, so nothing needs allowImportNames.
   // src/lib/eslint/__tests__/model-picker-import-restriction.test.ts asserts
   // the matrix against this effective config.
   {
@@ -658,20 +669,17 @@ export default [
           paths: [ctSharedModuleRestrictedImportPath],
           patterns: [
             {
-              group: modelPickerGuardedModuleSpellings('$features', 'features/agent/agent.client'),
+              group: internalModuleImportPatterns('$features', 'features/agent/agent.client'),
               message:
                 'ModelPicker must not call agentClient.setModel directly. Route the write through the lock-checking mutator in src/lib/components/chat/input/agent-model-mutator.ts (createAgentModelMutator).',
             },
             {
-              group: modelPickerGuardedModuleSpellings(
-                '$features',
-                'features/agent/reasoning-effort',
-              ),
+              group: internalModuleImportPatterns('$features', 'features/agent/reasoning-effort'),
               message:
                 'ModelPicker must not call applyReasoningEffort / reconcileAgentReasoningEffort directly. Route the write through the lock-checking mutator in src/lib/components/chat/input/agent-model-mutator.ts (createAgentModelMutator).',
             },
             {
-              group: modelPickerGuardedModuleSpellings(
+              group: internalModuleImportPatterns(
                 '$store',
                 'store/renderer/slices/agent-session/agent-session-slice',
               ),

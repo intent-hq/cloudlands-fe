@@ -6,7 +6,7 @@
  */
 
 import { _electron as electron, type ElectronApplication, type Page } from '@playwright/test';
-import { execSync } from 'child_process';
+import { execFileSync, execSync } from 'child_process';
 
 import {
   existsSync,
@@ -31,6 +31,7 @@ import { basename, join, resolve } from 'path';
  *  1. PACKAGED_APP_PATH env var (explicit override)
  *  2. dist-electron/mac-arm64/Intent.app/Contents/MacOS/Intent
  *  3. dist-electron/mac/Intent.app/Contents/MacOS/Intent
+ *  (Linux: dist-electron/linux-unpacked/intent; Windows: dist-electron/win-unpacked/Intent.exe)
  *
  * Throws if no binary is found.
  */
@@ -47,10 +48,12 @@ function findPackagedApp(): string {
   const candidates =
     process.platform === 'win32'
       ? [join(root, 'dist-electron', 'win-unpacked', 'Intent.exe')]
-      : [
-          join(root, 'dist-electron', 'mac-arm64', 'Intent.app', 'Contents', 'MacOS', 'Intent'),
-          join(root, 'dist-electron', 'mac', 'Intent.app', 'Contents', 'MacOS', 'Intent'),
-        ];
+      : process.platform === 'linux'
+        ? [join(root, 'dist-electron', 'linux-unpacked', 'intent')]
+        : [
+            join(root, 'dist-electron', 'mac-arm64', 'Intent.app', 'Contents', 'MacOS', 'Intent'),
+            join(root, 'dist-electron', 'mac', 'Intent.app', 'Contents', 'MacOS', 'Intent'),
+          ];
 
   for (const candidate of candidates) {
     if (existsSync(candidate)) {
@@ -69,27 +72,181 @@ function findPackagedApp(): string {
 // ---------------------------------------------------------------------------
 
 /**
- * Kill any running packaged "Intent" processes to release the single instance lock.
- * The packaged app uses app.requestSingleInstanceLock() which prevents a second
- * instance from launching.
+ * Kill every process of the packaged "Intent" app (main process and Chromium
+ * helpers) on the current platform.
+ *
+ * @param force - send SIGKILL (`pkill -9` / `taskkill /F`) instead of SIGTERM.
  */
-async function killExistingPackagedApp(): Promise<void> {
-  console.log('⚠️  Killing existing packaged "Intent" processes for clean test launch...');
+function killPackagedAppProcesses(force = false): void {
   if (process.platform === 'win32') {
     try {
       execSync('taskkill /F /IM "Intent.exe"', { stdio: 'ignore', windowsHide: true });
     } catch {
       // No matching processes — that's fine
     }
-  } else {
-    // Match the packaged binary path so unrelated processes (e.g. intentd)
-    // are never touched.
+    return;
+  }
+  // Match the packaged binary path so unrelated processes (a developer's own
+  // intentd, other Electron apps) are never touched.
+  pkill(
+    process.platform === 'linux' ? 'linux-unpacked/intent' : 'Intent\\.app/Contents/MacOS/Intent',
+    force,
+  );
+}
+
+/** `pkill -f` without an intermediate shell whose own command line would match. */
+function pkill(pattern: string, force = false): void {
+  try {
+    execFileSync('pkill', [...(force ? ['-9'] : []), '-f', pattern], { stdio: 'ignore' });
+  } catch {
+    // No matching processes — that's fine
+  }
+}
+
+/**
+ * Path of the intentd sidecar bundled with the packaged app binary — the
+ * `process.resourcesPath/intentd/intentd` contract of
+ * `src/features/backend/main/intentd-sidecar.ts::resolveIntentdBinaryPath`.
+ */
+function packagedSidecarPath(executablePath: string): string {
+  return process.platform === 'darwin'
+    ? resolve(executablePath, '..', '..', 'Resources', 'intentd', 'intentd')
+    : resolve(executablePath, '..', 'resources', 'intentd', 'intentd');
+}
+
+function escapeRegExp(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function pgrepPids(args: string[]): number[] {
+  try {
+    const out = execFileSync('pgrep', args, {
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+    });
+    return out
+      .split('\n')
+      .map((line) => Number.parseInt(line, 10))
+      .filter((pid) => Number.isInteger(pid) && pid > 0);
+  } catch {
+    return [];
+  }
+}
+
+/** Every live descendant of `pid` (children, grandchildren, ...). */
+function descendantPids(pid: number): number[] {
+  const found: number[] = [];
+  const queue = [pid];
+  while (queue.length > 0) {
+    const children = pgrepPids(['-P', String(queue.shift())]);
+    found.push(...children);
+    queue.push(...children);
+  }
+  return found;
+}
+
+/**
+ * PIDs of the sidecar processes spawned by the given Electron main process:
+ * direct children (`pgrep -P`) whose command line is exactly the bundled
+ * sidecar binary. A daemon the app adopted instead of spawning, another
+ * worktree's packaged sidecar or a developer's own intentd never match.
+ */
+function ownedSidecarPids(electronPid: number, executablePath: string): number[] {
+  const pattern = `^${escapeRegExp(packagedSidecarPath(executablePath))}( |$)`;
+  return pgrepPids(['-P', String(electronPid), '-f', pattern]);
+}
+
+function isAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function signal(pids: number[], sig: NodeJS.Signals): void {
+  for (const pid of pids) {
     try {
-      execSync('pkill -f "Intent\\.app/Contents/MacOS/Intent"', { stdio: 'ignore' });
+      process.kill(pid, sig);
     } catch {
-      // No matching processes — that's fine
+      // Already gone — that's fine
     }
   }
+}
+
+/**
+ * Stop the intentd sidecar processes the launched app spawned.
+ *
+ * `app.exit()` skips the app's own shutdown, so the sidecar outlives the
+ * Electron process — and it holds the extra stdio pipes Playwright opened on
+ * that process, so Node never emits `close` for it and Playwright's worker
+ * teardown waits the full 300 s (observed on Linux CI: only the spec whose
+ * instance spawned the sidecar hung; the ones that reused it exited at once).
+ * SIGTERM first so intentd shuts down cleanly, SIGKILL if it is still around
+ * after the grace period. The next launch spawns a fresh sidecar.
+ */
+async function stopOwnedSidecar(pids: number[]): Promise<void> {
+  if (pids.length === 0) return;
+  signal(pids, 'SIGTERM');
+  const deadline = Date.now() + 5_000;
+  while (pids.some(isAlive) && Date.now() < deadline) {
+    await new Promise((r) => setTimeout(r, 250));
+  }
+  signal(pids.filter(isAlive), 'SIGKILL');
+}
+
+/** Executable each launched app was started from (see `exitPackagedApp`). */
+const launchedExecutables = new WeakMap<ElectronApplication, string>();
+
+/**
+ * Terminate a packaged app launched by a spec (call from `afterAll`).
+ *
+ * `app.exit(0)` is used instead of `app.close()`: `close()` fires Electron's
+ * `before-quit`, whose native "Quit anyway?" dialog blocks forever while
+ * agents are still running. The `evaluate` is raced against a grace period
+ * rather than awaited: Playwright launches Electron with `--inspect` and keeps
+ * that session attached, so Node parks the exiting process on "Waiting for
+ * the debugger to disconnect..." and the call never resolves (observed on
+ * Linux). The launched process tree is then force-killed by PID — the
+ * Electron main process and its descendants, whatever directory the package
+ * lives in — which also releases the single-instance lock for the next spec;
+ * an unrelated packaged Intent instance is never touched. The sidecar the app
+ * spawned is stopped separately (see `stopOwnedSidecar`), together with its
+ * own subtree. All PIDs are resolved before the exit: once the Electron
+ * process is gone its children are re-parented and ownership can no longer
+ * be established.
+ */
+export async function exitPackagedApp(app: ElectronApplication | null | undefined): Promise<void> {
+  if (!app) return;
+  const electronPid = app.process().pid;
+  const owned = process.platform !== 'win32' && electronPid;
+  const sidecarPids = owned
+    ? ownedSidecarPids(electronPid, launchedExecutables.get(app) ?? findPackagedApp())
+    : [];
+  const sidecarTree = sidecarPids.flatMap((pid) => [pid, ...descendantPids(pid)]);
+  const appTree = owned
+    ? [...descendantPids(electronPid), electronPid].filter((pid) => !sidecarTree.includes(pid))
+    : [];
+  const exited = app.evaluate(({ app: electronApp }) => electronApp.exit(0)).catch(() => undefined);
+  await Promise.race([exited, new Promise((r) => setTimeout(r, 2_000))]);
+  if (owned) {
+    signal(appTree, 'SIGKILL');
+  } else {
+    killPackagedAppProcesses(true);
+  }
+  await stopOwnedSidecar(sidecarPids);
+  signal(sidecarTree.filter(isAlive), 'SIGKILL');
+}
+
+/**
+ * Kill any running packaged "Intent" processes to release the single instance lock.
+ * The packaged app uses app.requestSingleInstanceLock() which prevents a second
+ * instance from launching.
+ */
+async function killExistingPackagedApp(): Promise<void> {
+  console.log('⚠️  Killing existing packaged "Intent" processes for clean test launch...');
+  killPackagedAppProcesses();
   // Wait for processes to fully terminate and release the lock file
   await new Promise((r) => setTimeout(r, 2000));
 }
@@ -120,6 +277,8 @@ export async function launchPackagedApp(options: LaunchOptions = {}): Promise<{
   logPaths: { mainProcess: string; renderer: string };
 }> {
   await killExistingPackagedApp();
+  // A behavior left over from an earlier spec must not leak into this launch.
+  rmSync(MOCK_AGENT_BEHAVIOR_FILE, { force: true });
 
   const executablePath = findPackagedApp();
 
@@ -132,10 +291,12 @@ export async function launchPackagedApp(options: LaunchOptions = {}): Promise<{
     env: {
       ...process.env,
       TESTING: 'true',
+      MOCK_AGENT_BEHAVIOR_FILE,
       ...(options.workspaceDir ? { TEST_WORKSPACE_DIR: options.workspaceDir } : {}),
       ...(options.extraEnv || {}),
     },
   });
+  launchedExecutables.set(app, executablePath);
 
   // --- Capture Electron main-process stdout/stderr ---
   const logDir = join(process.cwd(), 'e2e-reports', 'build-smoke');
@@ -145,7 +306,9 @@ export async function launchPackagedApp(options: LaunchOptions = {}): Promise<{
   const rendererLogPath = join(logDir, 'electron-renderer.log');
 
   const proc = app.process();
-  const logStream = createWriteStream(mainProcessLogPath, { flags: 'w' });
+  // Append (like the renderer log) so every instance a run launches is kept,
+  // not just the last one.
+  const logStream = createWriteStream(mainProcessLogPath, { flags: 'a' });
   if (proc.stdout) {
     proc.stdout.pipe(logStream);
   }
@@ -399,13 +562,25 @@ export async function createWorkspaceWithPrompt(
     return onboardingRoot.getAttribute('data-onboarding-step');
   }
 
+  // Onboarding opens on the 'requirements' gate, which probes git/node
+  // through the daemon and hands off to 'welcome' once both resolve. Wait
+  // for the hand-off before reading the step.
+  await page
+    .locator('[data-onboarding-step]:not([data-onboarding-step="requirements"])')
+    .first()
+    .waitFor({ state: 'visible', timeout: 30_000 });
+
   let onboardingStep = await getOnboardingStep();
   if (onboardingStep === 'welcome') {
     // If a specific provider is requested, click its card in the AgentGrid
-    // to select it before proceeding. The card's aria-label is "Use <name>"
-    // when the provider is ready (available + authenticated).
+    // to select it before proceeding. A ready (available + authenticated)
+    // card is labelled "Use <name>", or "<name> (selected)" when onboarding
+    // already auto-selected it as the only available provider. Clicking a
+    // selected card re-selects it (no toggle), so either label is safe.
     if (providerName) {
-      const providerCard = page.locator(`[aria-label="Use ${providerName}"]`).first();
+      const providerCard = page
+        .locator(`[aria-label="Use ${providerName}"], [aria-label="${providerName} (selected)"]`)
+        .first();
       await providerCard.waitFor({ state: 'visible', timeout: 20_000 });
       await providerCard.click();
       console.log(`🔄 Selected provider: ${providerName}`);
@@ -928,7 +1103,8 @@ export async function waitForAgentNotStreaming(
             const store = Array.isArray(ctx) ? ctx[0]?.store : ctx?.store;
             if (!store) return { available: false, reason: 'no-store' };
 
-            const state = store.getState();
+            // The app Store exposes `state` as a getter (plain Redux exposes getState()).
+            const state = typeof store.getState === 'function' ? store.getState() : store.state;
             // workspace-agents slice: state.workspaceAgents.byWorkspaceId[wsId].agentIds
             // agent-session slice: state.agentSessions.byAgentId[agentId]
             const wsState = state?.workspaceAgents?.byWorkspaceId?.[wsId];
@@ -1569,14 +1745,40 @@ export async function findImplementorAgent(
 }
 
 // ---------------------------------------------------------------------------
+// openAgentsSidebarPanel
+// ---------------------------------------------------------------------------
+
+/**
+ * Expand the Agents section of the workspace sidebar.
+ *
+ * Agent cards (`[data-testid="agent-list-item"]`, `[data-agent-id]`) render
+ * only inside the expanded Agents panel (`[data-testid="agent-panel"]`). A
+ * fresh workspace opens on the sidebar's launcher overview, where the section
+ * is collapsed behind the `agent-panel-toggle` launcher tile — and the tile
+ * itself is unmounted while any section is expanded, so check the panel first.
+ */
+export async function openAgentsSidebarPanel(page: Page): Promise<void> {
+  const agentPanel = page.locator('[data-testid="agent-panel"]');
+  if (await agentPanel.isVisible({ timeout: 1_000 }).catch(() => false)) {
+    return;
+  }
+  const toggle = page.locator('[data-testid="agent-panel-toggle"]');
+  await toggle.waitFor({ state: 'visible', timeout: 15_000 });
+  await toggle.click();
+  await agentPanel.waitFor({ state: 'visible', timeout: 10_000 });
+  console.log('✅ Agents sidebar panel expanded');
+}
+
+// ---------------------------------------------------------------------------
 // openAgentChat
 // ---------------------------------------------------------------------------
 
 /**
- * Open an agent's chat panel by clicking its avatar button in the AgentNavRail.
+ * Open an agent's chat panel by clicking its card in the Agents sidebar panel.
  *
- * Uses `[data-agent-id]` which is always visible in the left rail,
- * unlike the "Threads" list which requires a specific sidebar tab.
+ * Callers must expand the panel first (`openAgentsSidebarPanel`); clicking an
+ * AgentCard dispatches `openAgentTabRequested`, which replaced the old
+ * `workspace:open-agent` window event.
  *
  * After clicking, waits for the chat panel to become visible (indicated by
  * the presence of a chat message or the chat input in the **active** tab).
@@ -1735,10 +1937,21 @@ export async function waitForAssistantResponse(
 // ---------------------------------------------------------------------------
 
 /**
- * Build a `MOCK_AGENT_BEHAVIOR` env-var payload for the mock ACP provider.
+ * File the mock ACP agent re-reads on every `session/prompt`
+ * (`MOCK_AGENT_BEHAVIOR_FILE`). `launchPackagedApp` passes the path into the
+ * app env, which the intentd sidecar and the mock child inherit — so a spec
+ * can change the behavior between turns by rewriting the file, whereas an
+ * env var set on the Electron main process after launch never reaches the
+ * daemon-spawned agent.
+ */
+const MOCK_AGENT_BEHAVIOR_FILE = join(tmpdir(), 'build-smoke-mock-agent-behavior.json');
+
+/**
+ * Configure the mock ACP provider's behavior for subsequent prompts.
  *
- * The mock provider reads this env var on startup and replays the described
- * behavior instead of calling a real LLM.
+ * Writes the behavior to `MOCK_AGENT_BEHAVIOR_FILE` (read by the mock on each
+ * prompt) and returns the equivalent `MOCK_AGENT_BEHAVIOR` env payload for
+ * callers that still pass it into `LaunchOptions.extraEnv`.
  *
  * @param options.files  - Map of relative file paths → content the mock agent
  *                         should write (e.g. `{ 'README.md': 'hello world' }`).
@@ -1767,8 +1980,12 @@ export function setMockAgentBehavior(
     behavior.response = options.response ?? 'I have completed the task. TASK_COMPLETE';
   }
 
+  const behaviorJson = JSON.stringify(behavior);
+  writeFileSync(MOCK_AGENT_BEHAVIOR_FILE, behaviorJson);
+
   return {
-    MOCK_AGENT_BEHAVIOR: JSON.stringify(behavior),
+    MOCK_AGENT_BEHAVIOR: behaviorJson,
+    MOCK_AGENT_BEHAVIOR_FILE,
     MOCK_AGENT_SCRIPT_PATH: resolve(process.cwd(), 'e2e', 'mock-acp-agent.js'),
   };
 }

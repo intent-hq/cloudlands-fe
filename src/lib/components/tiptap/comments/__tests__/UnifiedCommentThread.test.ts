@@ -192,6 +192,42 @@ describe('UnifiedCommentThread', () => {
     expect(onShow).toHaveBeenCalled();
   });
 
+  it('closes without reactivating its clickable ancestor and preserves other comment clicks', async () => {
+    const onClose = vi.fn();
+    const onResolve = vi.fn();
+    const onAncestorClick = vi.fn();
+    const ancestor = document.createElement('div');
+    const target = document.createElement('div');
+    ancestor.append(target);
+    document.body.append(ancestor);
+    ancestor.addEventListener('click', onAncestorClick);
+    const { getByRole, findByText } = render(TooltipWrapper, {
+      target,
+      props: {
+        component: UnifiedCommentThread,
+        props: {
+          comment: mockComment,
+          replies: [],
+          isCollapsed: false,
+          onClose,
+          onResolve,
+        },
+      },
+    });
+
+    await fireEvent.click(await findByText(mockComment.content));
+    expect(onAncestorClick).toHaveBeenCalledTimes(1);
+    onAncestorClick.mockClear();
+
+    await fireEvent.click(getByRole('button', { name: 'Collapse' }));
+    expect(onClose).toHaveBeenCalledTimes(1);
+    expect(onAncestorClick).not.toHaveBeenCalled();
+
+    await fireEvent.click(getByRole('button', { name: 'Resolve' }));
+    expect(onResolve).toHaveBeenCalledTimes(1);
+    expect(onAncestorClick).toHaveBeenCalledTimes(1);
+  });
+
   it('transitions smoothly between collapsed and expanded states', async () => {
     const { container, rerender } = render(TooltipWrapper, {
       props: {

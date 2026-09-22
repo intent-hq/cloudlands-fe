@@ -2,6 +2,7 @@
   import { canonicalComponentManifest } from '$lib/components/ui/manifest';
   import type { CatalogEntry } from './catalog';
   import { getCatalogRenderer } from './catalog-renderers';
+  import { m } from '$shared/paraglide/messages.js';
   import {
     defaultChatPolishGeometry,
     type ChatPolishGeometry,
@@ -80,6 +81,14 @@
                 />
               {/if}
             {:catch error}<p role="alert">{String(error)}</p>{/await}
+          {:else if entry.slug === 'diagram-workbench'}
+            <a
+              class="diagram-workbench-link"
+              href={`/sandbox/diagram-workbench?state=${fixture.states[0]}`}
+            >
+              <span>{m.sandbox_diagramWorkbench_open_label()}</span>
+              <small>{fixture.states.length} {m.sandbox_diagramWorkbench_states_label()}</small>
+            </a>
           {:else}
             {#await renderer then loaded}
               {#if loaded}{@const Preview = loaded.component}<Preview
@@ -166,6 +175,26 @@
 </section>
 
 <style>
+  .diagram-workbench-link {
+    display: grid;
+    min-height: 8rem;
+    place-content: center;
+    gap: 0.25rem;
+    color: hsl(var(--primary));
+    text-align: center;
+  }
+
+  .diagram-workbench-link span {
+    font-weight: 600;
+  }
+  .diagram-workbench-link small {
+    color: hsl(var(--muted-foreground));
+  }
+  .diagram-workbench-link:focus-visible {
+    outline: 2px solid hsl(var(--ring));
+    outline-offset: -2px;
+  }
+
   .catalog-detail {
     display: grid;
     gap: calc(var(--control-height-medium) / 2);

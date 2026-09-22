@@ -76,6 +76,17 @@ describe('app settings schema', () => {
     });
   });
 
+  it('defines the Multiplayer lab preference as an opt-in local-storage boolean', () => {
+    expect(findAppSettingDefinition('labs.multiplayer')).toMatchObject({
+      category: 'labs',
+      type: 'boolean',
+      source: 'local-storage',
+      storageKey: 'labs:multiplayerEnabled',
+      defaultValue: false,
+      apply: { kind: 'redux-action', action: 'userPreferences/setLabsMultiplayerEnabled' },
+    });
+  });
+
   it('exposes theme preset IDs as enum values', () => {
     const definition = findAppSettingDefinition('theme.activePresetId');
 
