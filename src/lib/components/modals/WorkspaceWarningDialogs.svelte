@@ -13,6 +13,8 @@
   import {
     selectActiveHookNamesForArchive,
     selectActiveHookNamesForDelete,
+    selectGuestsForArchive,
+    selectGuestsForDelete,
     selectLocalChangesForArchive,
     selectLocalChangesForDelete,
     selectOpenPrsForArchive,
@@ -40,6 +42,9 @@
   const localChangesForDelete$ = untrack(() =>
     staticData ? readable(undefined) : selectLocalChangesForDelete(),
   );
+  const guestsForDelete$ = untrack(() =>
+    staticData ? readable(undefined) : selectGuestsForDelete(),
+  );
   const showArchiveWarning$ = untrack(() =>
     staticData ? readable(undefined) : selectShowArchiveWarning(),
   );
@@ -55,6 +60,9 @@
   const localChangesForArchive$ = untrack(() =>
     staticData ? readable(undefined) : selectLocalChangesForArchive(),
   );
+  const guestsForArchive$ = untrack(() =>
+    staticData ? readable(undefined) : selectGuestsForArchive(),
+  );
 </script>
 
 {#if staticData}
@@ -67,6 +75,7 @@
     hookNames={$activeHookNamesForDelete$}
     openPrs={$openPrsForDelete$}
     localChanges={$localChangesForDelete$}
+    guests={$guestsForDelete$}
     onDeleteAnyway={() => appStore.dispatch(confirmDeleteWorkspace())}
     onCancel={() => appStore.dispatch(closeDeleteWarning())}
   />
@@ -79,6 +88,7 @@
     hookNames={$activeHookNamesForArchive$}
     openPrs={$openPrsForArchive$}
     localChanges={$localChangesForArchive$}
+    guests={$guestsForArchive$}
     onDeleteAnyway={() => appStore.dispatch(confirmArchiveWorkspace())}
     onCancel={() => appStore.dispatch(closeArchiveWarning())}
   />

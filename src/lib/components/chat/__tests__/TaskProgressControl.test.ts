@@ -1,6 +1,4 @@
 /** @vitest-environment jsdom */
-import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { tick } from 'svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -343,17 +341,25 @@ describe('TaskProgressControl', () => {
     }
   });
 
-  it('contains no state-ring helper, inline shadow, or replacement color styling', () => {
-    const source = readFileSync(
-      resolve(process.cwd(), 'src/lib/components/chat/TaskProgressControl.svelte'),
-      'utf8',
-    );
-    expect(source).not.toContain('statusIndicatorClass');
-    expect(source).not.toContain('--agent-avatar-surface-');
-    expect(source).not.toMatch(/box-shadow\s*:/);
-    expect(source).not.toMatch(
-      /workspace-status-unread|blue|primary|green|bg-transparent|opacity-|\/[0-9]+/,
-    );
+  it('renders no state-ring surface variables, inline shadows, or replacement color styling', async () => {
+    render(TaskProgressControl, { props: { tasks: allStatusTasks } });
+    await fireEvent.click(screen.getByTestId('task-progress-trigger'));
+    await screen.findByRole('dialog', { name: 'Agent tasks' });
+
+    const roots = [
+      screen.getByTestId('task-progress-trigger'),
+      screen.getByTestId('task-progress-list'),
+    ];
+    const elements = roots.flatMap((root) => [root, ...root.querySelectorAll<HTMLElement>('*')]);
+    expect(elements.length).toBeGreaterThan(allStatusTasks.length);
+    for (const element of elements) {
+      const style = element.getAttribute('style') ?? '';
+      expect(style).not.toContain('--agent-avatar-surface-');
+      expect(style).not.toMatch(/box-shadow\s*:/);
+      expect(element.getAttribute('class') ?? '').not.toMatch(
+        /workspace-status-unread|blue|primary|green|bg-transparent|opacity-|\/[0-9]+/,
+      );
+    }
   });
 
   it('clamps normal and shimmered titles to two lines with full accessible text', async () => {

@@ -48,6 +48,8 @@
   import { Input } from '$lib/components/ui/input';
   import { Label } from '$lib/components/ui/label';
   import { menuItem } from '$lib/components/ui/menu';
+  import * as Popover from '$lib/components/ui/popover';
+  import PrincipalAvatar from '$lib/components/ui/PrincipalAvatar.svelte';
   import { Select } from '$lib/components/ui/select';
   import { ListView } from '$lib/components/patterns/collection';
   import { notify } from '$lib/components/patterns/notify';
@@ -171,10 +173,13 @@
   /** Highlighted suggestion row; -1 means none. */
   let activeSuggestion = $state(-1);
   let pinInput = $state<ReturnType<typeof Input> | null>(null);
+  let pinAnchor = $state<HTMLDivElement | null>(null);
+  let suggestionList = $state<HTMLDivElement | null>(null);
   /** Member row awaiting Remove confirmation. */
   let confirmRemovePrincipalId = $state<string | null>(null);
   /** The existing-guest dropdown pick (`principalId`); `''` for none. */
   let selectedPrincipalId = $state('');
+  let existingGuestMenuOpen = $state(false);
 
   const principalItems = $derived(
     principals.map((principal) => ({
@@ -202,6 +207,21 @@
   );
   const suggestionsOpen = $derived(pinSearchable && !selectedUser && !suggestionsDismissed);
 
+  $effect(() => {
+    if (suggestionsOpen && activeSuggestion >= 0) {
+      suggestionList?.children[activeSuggestion]?.scrollIntoView?.({ block: 'nearest' });
+    }
+  });
+
+  function dismissSuggestions() {
+    suggestionsDismissed = true;
+    activeSuggestion = -1;
+  }
+
+  function keepPinInteraction(event: Event) {
+    if (event.target instanceof Node && pinAnchor?.contains(event.target)) event.preventDefault();
+  }
+
   function resetPinDraft() {
     pinLogin = '';
     selectedUser = null;
@@ -217,6 +237,7 @@
     untrack(resetPinDraft);
     confirmRemovePrincipalId = null;
     selectedPrincipalId = '';
+    existingGuestMenuOpen = false;
   });
   $effect(() => {
     if (createdLink) untrack(resetPinDraft);
@@ -254,8 +275,7 @@
       // Close the list only; a second Escape reaches the dialog and closes it.
       e.preventDefault();
       e.stopPropagation();
-      suggestionsDismissed = true;
-      activeSuggestion = -1;
+      dismissSuggestions();
     }
   }
 
@@ -354,26 +374,24 @@
 
   function handleKeydown(e: KeyboardEvent) {
     e.stopPropagation();
-    if (e.key === 'Escape') onClose?.();
+    if (e.key === 'Escape') {
+      if (existingGuestMenuOpen) {
+        e.preventDefault();
+        existingGuestMenuOpen = false;
+      } else {
+        onClose?.();
+      }
+    }
   }
 </script>
 
 {#snippet userAvatar(user: GithubUserSearchItem)}
-  {#if user.avatarUrl}
-    <img
-      src={user.avatarUrl}
-      alt=""
-      class="h-6 w-6 shrink-0 rounded-full"
-      loading="lazy"
-      data-testid="share-pin-avatar"
-    />
-  {:else}
-    <span
-      class="grid h-6 w-6 shrink-0 place-items-center rounded-full bg-muted text-xs"
-      aria-hidden="true"
-      data-testid="share-pin-avatar-fallback">{user.login.slice(0, 1).toUpperCase()}</span
-    >
-  {/if}
+  <PrincipalAvatar
+    avatarUrl={user.avatarUrl}
+    label={user.login}
+    size={24}
+    testid="share-pin-avatar"
+  />
 {/snippet}
 
 {#if open}
@@ -443,6 +461,7 @@
               <div class="flex items-center gap-2">
                 <div class="min-w-0 flex-1">
                   <Select.Root
+                    bind:open={existingGuestMenuOpen}
                     bind:value={selectedPrincipalId}
                     items={principalItems}
                     disabled={busy}
@@ -453,21 +472,18 @@
                     >
                       <Select.Value placeholder={m.workspace_share_existingGuest_placeholder()} />
                     </Select.Trigger>
-                    <Select.Content portal>
+                    <Select.Content class="z-(--layer-modal)">
                       {#each principals as principal (principal.principalId)}
                         <Select.Item
                           value={principal.principalId}
                           label={principalLabel(principal)}
                         >
                           <span class="flex min-w-0 items-center gap-2">
-                            {#if principal.avatarUrl}
-                              <img
-                                src={principal.avatarUrl}
-                                alt=""
-                                class="h-5 w-5 shrink-0 rounded-full"
-                                loading="lazy"
-                              />
-                            {/if}
+                            <PrincipalAvatar
+                              avatarUrl={principal.avatarUrl}
+                              label={principalLabel(principal)}
+                              size={20}
+                            />
                             <span class="truncate">{principalLabel(principal)}</span>
                           </span>
                         </Select.Item>
@@ -529,36 +545,61 @@
                   </Button>
                 </div>
               {:else}
-                <div class="relative min-w-0 flex-1">
-                  <Input
-                    id="share-pin-login"
-                    bind:this={pinInput}
-                    bind:value={pinLogin}
-                    autocomplete="off"
-                    spellcheck={false}
-                    disabled={creating}
-                    placeholder={m.workspace_share_pinLogin_placeholder()}
-                    role="combobox"
-                    aria-autocomplete="list"
-                    aria-controls="share-pin-suggestions"
-                    aria-expanded={suggestionsOpen}
-                    aria-activedescendant={suggestionsOpen && visibleSuggestions[activeSuggestion]
-                      ? `share-pin-suggestion-${activeSuggestion}`
-                      : undefined}
-                    oninput={(e) => handlePinInput(e.currentTarget.value)}
-                    onkeydown={handlePinKeydown}
-                  />
-                  {#if suggestionsOpen}
-                    <div
-                      class="absolute left-0 right-0 top-full z-10 mt-1 overflow-hidden rounded border border-border bg-background shadow-md"
+                <Popover.Root
+                  open={suggestionsOpen}
+                  onOpenChange={(next) => {
+                    if (!next) dismissSuggestions();
+                  }}
+                >
+                  <div bind:this={pinAnchor} class="min-w-0 flex-1">
+                    <Input
+                      id="share-pin-login"
+                      bind:this={pinInput}
+                      bind:value={pinLogin}
+                      autocomplete="off"
+                      spellcheck={false}
+                      disabled={creating}
+                      placeholder={m.workspace_share_pinLogin_placeholder()}
+                      role="combobox"
+                      aria-autocomplete="list"
+                      aria-controls="share-pin-suggestions"
+                      aria-expanded={suggestionsOpen}
+                      aria-activedescendant={suggestionsOpen && visibleSuggestions[activeSuggestion]
+                        ? `share-pin-suggestion-${activeSuggestion}`
+                        : undefined}
+                      oninput={(e) => handlePinInput(e.currentTarget.value)}
+                      onkeydown={handlePinKeydown}
+                    />
+                    <Popover.Content
+                      portal={false}
+                      customAnchor={pinAnchor}
+                      align="start"
+                      collisionPadding={8}
+                      trapFocus={false}
+                      preventScroll={false}
+                      onOpenAutoFocus={(event) => event.preventDefault()}
+                      onCloseAutoFocus={(event) => event.preventDefault()}
+                      onInteractOutside={keepPinInteraction}
+                      onFocusOutside={(event) => {
+                        keepPinInteraction(event);
+                        if (!event.defaultPrevented) dismissSuggestions();
+                      }}
+                      onEscapeKeydown={(event) => {
+                        event.preventDefault();
+                        event.stopPropagation();
+                        dismissSuggestions();
+                      }}
+                      role="presentation"
+                      class="z-(--layer-modal) w-(--bits-popover-anchor-width) max-h-[min(18rem,var(--bits-popover-content-available-height))] overflow-y-auto"
                       data-testid="share-pin-suggestions"
                     >
                       {#if visibleSuggestions.length > 0}
                         <div
+                          bind:this={suggestionList}
                           id="share-pin-suggestions"
                           role="listbox"
                           aria-label={m.workspace_share_userSuggestions_ariaLabel()}
-                          class="max-h-72 overflow-y-auto py-1"
+                          class="py-1"
                         >
                           {#each visibleSuggestions as user, index (user.login)}
                             <Button
@@ -566,9 +607,11 @@
                               id="share-pin-suggestion-{index}"
                               role="option"
                               aria-selected={index === activeSuggestion}
+                              tabindex={-1}
                               class={`${menuItem()} h-auto rounded-none px-3 py-1.5 font-normal hover:border-transparent ${index === activeSuggestion ? 'bg-accent/20 hover:bg-accent/20' : 'hover:bg-muted/50'}`}
                               data-testid="share-pin-suggestion"
                               data-login={user.login}
+                              onpointerdown={(event) => event.preventDefault()}
                               onclick={() => selectUser(user)}
                               onmousemove={() => (activeSuggestion = index)}
                             >
@@ -602,9 +645,9 @@
                           {m.workspace_share_userSearch_noResults_label()}
                         </p>
                       {/if}
-                    </div>
-                  {/if}
-                </div>
+                    </Popover.Content>
+                  </div>
+                </Popover.Root>
               {/if}
               <Button
                 type="submit"
@@ -695,7 +738,7 @@
                         disabled={!inviteLink(invite.id)}
                         title={inviteLink(invite.id)
                           ? undefined
-                          : m.workspace_share_listenerDown_error()}
+                          : m.workspace_share_linkUnavailable_tooltip()}
                         onclick={() => copyInvite(invite)}
                         aria-label={m.workspace_share_copyInvite_ariaLabel({
                           audience: inviteAudience(invite),
@@ -762,19 +805,11 @@
                     data-principal-id={member.principalId}
                   >
                     <div class="flex min-w-0 items-center gap-2">
-                      {#if member.avatarUrl}
-                        <img
-                          src={member.avatarUrl}
-                          alt=""
-                          class="h-6 w-6 shrink-0 rounded-full"
-                          loading="lazy"
-                        />
-                      {:else}
-                        <span
-                          class="grid h-6 w-6 shrink-0 place-items-center rounded-full bg-muted text-xs"
-                          aria-hidden="true">{memberName(member).slice(0, 1).toUpperCase()}</span
-                        >
-                      {/if}
+                      <PrincipalAvatar
+                        avatarUrl={member.avatarUrl}
+                        label={memberName(member)}
+                        size={24}
+                      />
                       <div class="min-w-0">
                         <div class="truncate text-sm">{memberName(member)}</div>
                         <div class="text-xs text-subtle">{roleLabel(member.role)}</div>

@@ -13,13 +13,14 @@
    * nobody is there.
    */
   import { Button } from '$lib/components/ui/button';
+  import PrincipalAvatar from '$lib/components/ui/PrincipalAvatar.svelte';
   import { Tooltip } from '$lib/components/ui/tooltip';
   import { formatInteger } from '$lib/i18n/format';
   import { m } from '$shared/paraglide/messages.js';
   import {
     presencePersonColor,
-    presencePersonInitial,
     presencePersonLabel,
+    presencePersonName,
     presencePersonRing,
     type PresenceCircle,
     type PresenceCircleAction,
@@ -103,17 +104,7 @@
       style:background-color={presencePersonColor(person.principalId)}
       data-presence-avatar-tile
     >
-      {#if person.avatarUrl}
-        <img
-          src={person.avatarUrl}
-          alt=""
-          aria-hidden="true"
-          class="h-full w-full object-cover"
-          loading="lazy"
-        />
-      {:else}
-        {presencePersonInitial(person)}
-      {/if}
+      <PrincipalAvatar fill avatarUrl={person.avatarUrl} label={presencePersonName(person)} />
     </span>
   </span>
 {/snippet}
@@ -132,7 +123,7 @@
         <Button
           variant="plain"
           wrapContent={false}
-          class="h-auto rounded-full p-0"
+          class="h-auto rounded-full p-0 aria-disabled:opacity-100"
           tooltip={personLabel}
           tooltipSide={side}
           aria-label={personLabel}
@@ -147,6 +138,7 @@
       {:else}
         <Tooltip content={presencePersonLabel(person)} {side}>
           {@render avatar(person)}
+          <span class="sr-only">{presencePersonLabel(person)}</span>
         </Tooltip>
       {/if}
     {/each}

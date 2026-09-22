@@ -9,6 +9,7 @@ export interface ComboboxOption {
 }
 
 export interface ComboboxGroup {
+  separatorBefore?: boolean;
   key: string;
   label: string;
   options: ComboboxOption[];

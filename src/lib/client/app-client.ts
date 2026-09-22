@@ -11,6 +11,7 @@
  * stays aligned with the live store shape.
  */
 import type {
+  AgentDelegatedCounts,
   AgentListScope,
   AgentMessage,
   AgentScopeCounts,
@@ -548,6 +549,19 @@ export interface AgentListOptions {
   retiredOnly?: boolean;
   /** Row scope (intent-hq/intent#5383): one bin of the non-retired sessions; `all` / absent is the default read. */
   scope?: AgentListScope;
+  /**
+   * Narrows a `scope: "delegated"` read to that parent's DIRECT sub-agents
+   * (§5.5; the daemon rejects it with any other scope).
+   */
+  parentAgentId?: string;
+  /**
+   * Narrows a `scope: "delegated"` read to the ORPHANED delegated rows —
+   * those whose parent is no longer a non-retired session of the workspace
+   * (§5.5; the daemon rejects it with any other scope or alongside
+   * `parentAgentId`). Older daemons ignore it, so callers gate on
+   * `delegatedCounts.orphaned` presence.
+   */
+  orphanedOnly?: boolean;
 }
 
 export interface AgentListResult {
@@ -559,6 +573,11 @@ export interface AgentListResult {
    * default (all-rows) read without this field.
    */
   scopeCounts?: AgentScopeCounts;
+  /**
+   * Per-parent delegated counts (`delegatedCounts`, §5.5) — present only when
+   * the daemon serves them; workspace-wide even on a narrowed read.
+   */
+  delegatedCounts?: AgentDelegatedCounts;
 }
 
 export interface AgentsClient {
@@ -2156,16 +2175,16 @@ export interface GitHubRepoConfigResult {
 
 /**
  * Normalized single-value PR state (the wire carries `state` + `merged` +
- * `draft` + `mergeableState`). `'queued'` is an open, non-draft PR sitting in
- * the merge queue (`mergeableState: "queued"`).
+ * `draft` + `isInMergeQueue`). `'queued'` is an open, non-draft PR sitting in
+ * the merge queue (`isInMergeQueue: true`).
  */
 export type GitHubPullRequestState = 'open' | 'closed' | 'merged' | 'draft' | 'queued';
 
 /**
  * One pull request (`github.pulls.get`, §5.27) normalized for link previews:
- * the wire's `state` + `merged` + `draft` + `mergeableState` collapse into a
+ * the wire's `state` + `merged` + `draft` + `isInMergeQueue` collapse into a
  * single `state` (merged → `'merged'`, closed → `'closed'`, draft →
- * `'draft'`, `mergeableState: "queued"` → `'queued'`, else `'open'`).
+ * `'draft'`, `isInMergeQueue: true` → `'queued'`, else `'open'`).
  */
 export interface GitHubPullRequestDetails {
   owner: string;

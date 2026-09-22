@@ -113,6 +113,49 @@ describe('presence selectors', () => {
       ]);
     });
 
+    it('orders the owner first, then online members, then offline ones, keeping membership order within each group', () => {
+      const shuffled = presenceMembersReceived('ws-1', [
+        accepted('away'),
+        accepted('idle'),
+        accepted('gone'),
+        accepted('me', 'owner'),
+        accepted('viewer'),
+        accepted('other-agent'),
+      ]);
+      const workspace = workspacesWith(shared('ws-1', { ownerPrincipalId: 'me', memberCount: 6 }));
+      const ownerOnline = stateWith(
+        reduce(roster, shuffled, presenceOwnPrincipalReceived('viewer')),
+        {
+          workspace,
+        },
+      );
+      expect(ids(selectWorkspacePresencePeople.select(ownerOnline, 'ws-1'))).toEqual([
+        'me',
+        'idle',
+        'other-agent',
+        'away',
+        'gone',
+      ]);
+
+      const ownerAway = presenceRosterReceived({
+        workspaceId: 'ws-1',
+        members: [member('viewer'), member('idle'), member('other-agent')],
+      });
+      const ownerOffline = stateWith(
+        reduce(ownerAway, shuffled, presenceOwnPrincipalReceived('viewer')),
+        { workspace },
+      );
+      const people = selectWorkspacePresencePeople.select(ownerOffline, 'ws-1');
+      expect(ids(people)).toEqual(['me', 'idle', 'other-agent', 'away', 'gone']);
+      expect(people.map((p) => [p.owner, p.online])).toEqual([
+        [true, false],
+        [false, true],
+        [false, true],
+        [false, false],
+        [false, false],
+      ]);
+    });
+
     it('resolves where each online member looks: their agent chat first, else their note, nothing for the bare tab', () => {
       const focused = presenceRosterReceived({
         workspaceId: 'ws-1',
@@ -468,6 +511,27 @@ describe('presence selectors', () => {
           .select(state, 'ws-1', 'agent-1')
           .map((p) => [p.principalId, p.owner, p.self]),
       ).toEqual([['me', true, false]]);
+    });
+
+    it('leads with the owner even when the roster lists them after another viewer, keeping the others in roster order', () => {
+      const lookingAt = (principalId: string) =>
+        member(principalId, { focus: [{ workspaceId: 'ws-1', agentId: 'agent-1' }] });
+      const ownerLast = presenceRosterReceived({
+        workspaceId: 'ws-1',
+        members: [
+          lookingAt('me'),
+          lookingAt('second'),
+          lookingAt('first'),
+          lookingAt('boss'),
+          lookingAt('third'),
+        ],
+      });
+      const state = stateWith(reduce(ownerLast, presenceOwnPrincipalReceived('me')), {
+        workspace: workspacesWith(shared('ws-1', { ownerPrincipalId: 'boss', memberCount: 5 })),
+      });
+      const people = selectAgentPresencePeople.select(state, 'ws-1', 'agent-1');
+      expect(ids(people)).toEqual(['boss', 'second', 'first', 'third']);
+      expect(people.map((p) => p.owner)).toEqual([true, false, false, false]);
     });
 
     it('tells a same-named other person apart from self by principal id', () => {

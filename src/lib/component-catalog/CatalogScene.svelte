@@ -6,7 +6,7 @@
   import { getCatalogEntry, type CatalogEntry } from './catalog';
   import { loadPreview, setActivePreview } from './preview-discovery';
   import { resolvePreviewState, type PreviewState } from './preview-definition';
-  import { waitForCaptureStability } from './capture-stability';
+  import { waitForCaptureStability, watchCaptureStability } from './capture-stability';
   import type { CatalogPreviewFit } from './catalog-preferences';
 
   interface RenderedScene {
@@ -39,6 +39,10 @@
   let stabilityStatus = $state<'waiting' | 'stable' | 'error'>('waiting');
   let stabilityError = $state('');
   let captureMotion = $state<'full' | 'reduced'>('full');
+  let previewGeneration = $state(0);
+  let stabilityGeneration = $state(0);
+  let nextPreviewGeneration = 0;
+  const isDiagramWorkbench = $derived(slug === 'diagram-workbench');
   const shellWidth = getContext<CatalogWidthContext | undefined>(catalogWidthContext);
   const width = $derived(
     Math.min(1600, Math.max(240, Math.round(shellWidth?.width ?? requestedWidth ?? 720))),
@@ -71,6 +75,8 @@
     const disposeSetups: Array<() => void> = [];
     let setupDisposed = false;
     const stabilityController = new AbortController();
+    const generation = ++nextPreviewGeneration;
+    previewGeneration = generation;
 
     const cleanupSetup = (): unknown => {
       if (setupDisposed) return;
@@ -217,7 +223,46 @@
         }
         if (cancelled) return;
       }
-      await prepareCapture();
+      try {
+        if (!sceneElement) throw new Error('Preview scene element is unavailable.');
+        await watchCaptureStability(
+          sceneElement,
+          {
+            readiness: loaded.definition.captureReadiness,
+            readinessTimeoutMs: loaded.definition.captureReadiness?.readinessTimeoutMs,
+            signal: stabilityController.signal,
+          },
+          {
+            onWaiting: (nextStabilityGeneration) => {
+              if (cancelled || generation !== previewGeneration) return;
+              stabilityGeneration = nextStabilityGeneration;
+              stabilityStatus = 'waiting';
+              status = 'loading';
+              setActivePreview(null);
+            },
+            onStable: (stability, nextStabilityGeneration) => {
+              if (cancelled || generation !== previewGeneration) return;
+              stabilityGeneration = nextStabilityGeneration;
+              captureMotion = stability.reducedMotion ? 'reduced' : 'full';
+              stabilityStatus = 'stable';
+              status = 'ready';
+              setActivePreview({
+                slug: nextSlug,
+                state: stateName,
+                width: nextWidth,
+                status: 'ready',
+                ...(nextFit ? { fit: nextFit } : {}),
+              });
+            },
+          },
+        );
+      } catch (preparationError) {
+        if (cancelled || stabilityController.signal.aborted) return;
+        const cleanupError = cleanupSetup();
+        stabilityStatus = 'error';
+        stabilityError = `Preview capture preparation failed: ${describeError(preparationError)}`;
+        if (cleanupError) stabilityError += ` Cleanup failed: ${describeError(cleanupError)}`;
+      }
     })();
 
     return () => {
@@ -232,6 +277,7 @@
 <section
   class:component-fit={requestedFit === 'component'}
   class="catalog-scene mx-auto grid max-w-full gap-4 p-4 sm:p-6 lg:p-10"
+  class:workbench-scene={isDiagramWorkbench}
   data-testid="catalog-scene"
   data-preview-slug={slug}
   data-preview-state={stateName}
@@ -241,10 +287,12 @@
   data-preview-stability={stabilityStatus}
   data-preview-stable={stabilityStatus === 'stable' ? 'true' : 'false'}
   data-preview-capture-motion={captureMotion}
+  data-preview-generation={previewGeneration}
+  data-preview-stability-generation={stabilityGeneration}
   data-preview-fit={requestedFit}
   bind:this={sceneElement}
 >
-  {#if requestedFit !== 'component' && !fallbackEntry}
+  {#if !isDiagramWorkbench && requestedFit !== 'component' && !fallbackEntry}
     <header class="rounded-lg border border-border bg-card p-4">
       <p class="text-xs font-medium text-muted-foreground">Named preview</p>
       <h1 class="mt-1 text-2xl font-medium tracking-tight">{title || slug}</h1>
@@ -320,10 +368,12 @@
             {/if}
             <div
               class="preview-frame max-w-full overflow-auto rounded-lg border border-border bg-background p-6"
+              class:workbench-frame={isDiagramWorkbench}
             >
               <div
                 class="preview-focus mx-auto max-w-full p-6"
-                style:width={`${width}px`}
+                class:workbench-focus={isDiagramWorkbench}
+                style:width={isDiagramWorkbench ? `min(100%, ${width}px)` : `${width}px`}
                 data-testid="catalog-scene-focus"
               >
                 <Preview {...rendered.state.props} />
@@ -341,6 +391,22 @@
   .catalog-scene {
     width: 100%;
     min-width: 0;
+  }
+  .catalog-scene.workbench-scene {
+    gap: 0;
+  }
+  .preview-frame.workbench-frame {
+    overflow: visible;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    padding: 0;
+  }
+  .preview-focus.workbench-focus {
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    padding: 0;
   }
 
   .catalog-scene.component-fit {

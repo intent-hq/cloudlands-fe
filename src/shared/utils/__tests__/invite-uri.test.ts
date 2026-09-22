@@ -60,6 +60,23 @@ describe('parseInviteUri', () => {
     });
   });
 
+  // The tunnel-only envelope the daemon mints: no `host` parameter at all,
+  // `tc=` mandatory. An absent `host` is an empty host list, not a failure.
+  it('parses a tunnel-only invite with no host parameter to an empty host list', () => {
+    expect(
+      parseInviteUri(
+        'intent://invite?v=1&port=5181&fp=AA%3ABB%3ACC&inviteId=inv_42&secret=s3cr3t&tc=tc7f2a91.tailcat.net',
+      ),
+    ).toEqual({
+      hosts: [],
+      port: 5181,
+      fingerprint: 'AA:BB:CC',
+      inviteId: 'inv_42',
+      secret: 's3cr3t',
+      tcAddress: 'tc7f2a91.tailcat.net',
+    });
+  });
+
   it('returns null for non-invite text', () => {
     expect(parseInviteUri('intent://pair?v=1&host=h&port=1&fp=AA&token=t')).toBeNull();
     expect(parseInviteUri('not a uri')).toBeNull();

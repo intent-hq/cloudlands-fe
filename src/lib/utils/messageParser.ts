@@ -23,6 +23,8 @@ import type { SuggestedPrompt } from '$shared/types';
 import type { ContentBlock } from '$shared/types/content-block';
 import type { VideoSource } from '$shared/types/content-block';
 import { splitWorkspaceVideoMarkdown } from './workspace-file-video';
+import { scanMessageFences } from './message-fences';
+import { parseIncrementalDiagramJson } from './incrementalDiagramJson';
 import {
   promptVisibleText,
   splitPromptMarkdownLinks,
@@ -63,6 +65,9 @@ export interface ParsedContent {
     path?: string;
     mode?: string;
     diagramData?: unknown; // Parsed DiagramPrimitive data
+    diagramError?: string;
+    rawSource?: string;
+    fenceStart?: number;
     workspaceCardData?: { workspaceIds: string[] };
     navLinkData?: { target: string; label?: string };
     videoData?: {
@@ -788,7 +793,11 @@ function parseSpecialBlock(blockText: string): ParsedContent | null {
   return null;
 }
 
-export function parseAgentMessage(content: string, workspaceId?: string): ParsedContent[] {
+export function parseAgentMessage(
+  content: string,
+  workspaceId?: string,
+  options?: { isStreaming: boolean },
+): ParsedContent[] {
   if (!content) return [];
 
   const mediaSegments = splitWorkspaceVideoMarkdown(content, workspaceId);
@@ -796,7 +805,7 @@ export function parseAgentMessage(content: string, workspaceId?: string): Parsed
     return mergeConsecutiveTextBlocks(
       mediaSegments.flatMap((segment): ParsedContent[] =>
         segment.type === 'markdown'
-          ? parseAgentMessage(segment.content, workspaceId)
+          ? parseAgentMessage(segment.content, workspaceId, options)
           : [
               {
                 type: 'video',
@@ -819,17 +828,59 @@ export function parseAgentMessage(content: string, workspaceId?: string): Parsed
   // Instead of running 5 separate regex passes, we find all special blocks at once
   const specialBlocks: Array<{ start: number; end: number; block: ParsedContent }> = [];
 
+  const fences = scanMessageFences(content);
+  for (const fence of fences) {
+    if (!['mermaid', 'diagram', 'ws-block:diagram'].includes(fence.language)) continue;
+    if (!fence.closed && !options) continue;
+    const metadata: ParsedContent['metadata'] = {
+      rawSource: fence.source,
+      fenceStart: fence.start,
+      isStreaming: Boolean(options?.isStreaming && !fence.closed),
+    };
+    const type = fence.language === 'mermaid' ? 'mermaid' : 'diagram';
+    if (type === 'diagram') {
+      if (!fence.closed && !options?.isStreaming) {
+        // The message stream ended before this fence closed. A JSON prefix that
+        // merely looks complete must not be accepted as a finished diagram.
+        metadata.diagramData = null;
+        metadata.diagramError = 'Message ended before the diagram was complete';
+      } else {
+        const projection = parseIncrementalDiagramJson(fence.source, fence.closed);
+        metadata.diagramData = projection.diagram;
+        metadata.diagramError = projection.error;
+      }
+    }
+    specialBlocks.push({
+      start: fence.start,
+      end: fence.end,
+      block: { type, content: fence.source.trim(), metadata },
+    });
+  }
+
   // Reset regex state
   COMBINED_SPECIAL_REGEX.lastIndex = 0;
 
-  let match;
+  let match: RegExpExecArray | null;
   while ((match = COMBINED_SPECIAL_REGEX.exec(content)) !== null) {
     const blockText = match[0];
+    const matchIndex = match.index;
+    // The fence scanner owns diagrams and shields examples inside ordinary code.
+    if (/^[`~]{3,}(?:mermaid|diagram|ws-block:diagram)\b/.test(blockText)) continue;
+    if (fences.some((fence) => matchIndex > fence.start && matchIndex < fence.end)) continue;
     const parsed = parseSpecialBlock(blockText);
     if (parsed) {
+      // Explicit snippet wrappers own their fenced contents, even a Mermaid example.
+      for (let i = specialBlocks.length - 1; i >= 0; i--) {
+        if (
+          specialBlocks[i].start >= matchIndex &&
+          specialBlocks[i].end <= matchIndex + blockText.length
+        ) {
+          specialBlocks.splice(i, 1);
+        }
+      }
       specialBlocks.push({
-        start: match.index,
-        end: match.index + blockText.length,
+        start: matchIndex,
+        end: matchIndex + blockText.length,
         block: parsed,
       });
     }

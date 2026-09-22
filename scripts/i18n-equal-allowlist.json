@@ -209,6 +209,7 @@
   "settings_footer_support": ["de"],
   "settings_gitWorkspace_experimental_badge": ["es"],
   "settings_hardware_joystickExplainer_label": ["de", "fr", "es"],
+  "settings_labs_multiplayer_label": ["de"],
   "settings_hardware_ledStatus_failed_label": ["es"],
   "settings_language_system_option": ["de"],
   "settings_mcpServers_documentation": ["fr"],
@@ -222,6 +223,7 @@
   "settings_notifications_volume_label": ["fr"],
   "settings_pathField_confirm_ok_label": ["ja", "de", "fr"],
   "settings_section_hardware": ["de", "es"],
+  "settings_section_labs": ["de", "fr", "es"],
   "settings_section_notifications": ["fr"],
   "settings_section_updates": ["de"],
   "settings_theme_label": ["de"],
@@ -318,6 +320,7 @@
   "settings_section_git": "*",
   "settings_sidebar_appBehavior_label": ["es"],
   "settings_sidebar_agents_label": ["fr"],
+  "settings_sidebar_labs_label": ["de", "fr", "es"],
   "presence_avatarStack_more_label": "*",
   "workspace_progressCard_presenceOffline_tooltip": ["de"]
 }
