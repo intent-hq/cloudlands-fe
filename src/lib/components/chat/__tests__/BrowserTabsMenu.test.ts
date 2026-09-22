@@ -1,5 +1,5 @@
 /** @vitest-environment jsdom */
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 const { dispatchMock, focusPanelMock, layoutState, setActiveTabMock, agentState, mockState } =
@@ -252,15 +252,17 @@ describe('BrowserTabsMenu', () => {
     await waitFor(() => expect(document.activeElement).toBe(trigger));
   });
 
-  it('restores trigger focus when dismissed without selecting a tab', async () => {
+  it('restores trigger focus when the named chooser is dismissed without selecting a tab', async () => {
     seedLayout(1);
     renderMenu();
     const trigger = screen.getByTestId('browser-tabs-trigger');
     trigger.focus();
     await fireEvent.click(trigger);
-    const item = await screen.findByTestId('browser-tabs-menu-item');
+    const chooser = await screen.findByRole('dialog', { name: '1 browser tab' });
+    const item = within(chooser).getByTestId('browser-tabs-menu-item');
     item.focus();
     await fireEvent.keyDown(item, { key: 'Escape' });
+    await waitFor(() => expect(chooser.isConnected).toBe(false));
     await waitFor(() => expect(document.activeElement).toBe(trigger));
     expect(focusPanelMock).not.toHaveBeenCalled();
   });

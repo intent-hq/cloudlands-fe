@@ -226,6 +226,7 @@
       side="bottom"
       sideOffset={4}
       class="min-w-52 max-w-80 max-h-[min(var(--bits-popover-content-available-height,calc(100dvh-1rem)),calc(100dvh-1rem))] overflow-y-auto p-1"
+      role="dialog"
       aria-label={triggerLabel}
       onOpenAutoFocus={(event) => {
         event.preventDefault();
