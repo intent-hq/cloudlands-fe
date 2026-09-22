@@ -163,6 +163,7 @@
   import InviteConsentModal from '$lib/components/modals/InviteConsentModal.svelte';
   import type { InviteConsentShowPayload } from '$shared/ipc/invite-consent';
   import InviteNoticeHost from '$features/invite-notice/InviteNoticeHost.svelte';
+  import InviteProgressHost from '$features/invite-progress/InviteProgressHost.svelte';
   import type { InterruptedAgent } from '$lib/client/app-client';
   import { LiveAppClient } from '$lib/client/live/live-app-client';
   import { workspaceIdFromRoute } from '$lib/utils/workspace-route-context';
@@ -1167,6 +1168,9 @@
 
   <!-- Invite notice (intent://invite join failed / plaintext credential warning) -->
   <InviteNoticeHost />
+
+  <!-- Invite progress (spinner + Cancel during the silent phases of an intent://invite join) -->
+  <InviteProgressHost />
 
   {#if import.meta.env.DEV}
     <DebugPanel />

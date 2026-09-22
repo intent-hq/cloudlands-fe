@@ -384,6 +384,7 @@
       }}
       hookNames={['Watch release build']}
       openPrs={[{ number: 418, title: 'Refine modal catalog', status: 'Open', url: '' }]}
+      guests={{ collaboratorCount: 2, openInviteCount: 1 }}
     />
   {:else if state === 'bulk-action-confirm-dialog'}
     <BulkActionConfirmDialog
@@ -393,8 +394,10 @@
       description="The selected workspaces will move to the archive."
       confirmText="Archive workspaces"
       variant="destructive"
+      mode="archive"
       activeAgentCount={2}
       activeHookCount={1}
+      guestCount={3}
     />
   {:else if state === 'quit-confirmation-modal'}
     <QuitConfirmationModal open static payload={quitPayload} />

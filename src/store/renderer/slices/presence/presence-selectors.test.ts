@@ -542,6 +542,27 @@ describe('presence selectors', () => {
       ).toEqual([['me', true, false]]);
     });
 
+    it('leads with the owner even when the roster lists them after another viewer, keeping the others in roster order', () => {
+      const lookingAt = (principalId: string) =>
+        member(principalId, { focus: [{ workspaceId: 'ws-1', agentId: 'agent-1' }] });
+      const ownerLast = presenceRosterReceived({
+        workspaceId: 'ws-1',
+        members: [
+          lookingAt('me'),
+          lookingAt('second'),
+          lookingAt('first'),
+          lookingAt('boss'),
+          lookingAt('third'),
+        ],
+      });
+      const state = stateWith(reduce(ownerLast, presenceOwnPrincipalReceived('me')), {
+        workspace: workspacesWith(shared('ws-1', { ownerPrincipalId: 'boss', memberCount: 5 })),
+      });
+      const people = selectAgentPresencePeople.select(state, 'ws-1', 'agent-1');
+      expect(ids(people)).toEqual(['boss', 'second', 'first', 'third']);
+      expect(people.map((p) => p.owner)).toEqual([true, false, false, false]);
+    });
+
     it('tells a same-named other person apart from self by principal id', () => {
       const workspace = workspacesWith(shared('ws-1', { ownerPrincipalId: 'p-1', memberCount: 2 }));
       const alice = (principalId: string) =>

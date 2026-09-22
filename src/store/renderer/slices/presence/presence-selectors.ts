@@ -65,7 +65,11 @@ const toPerson = (
 export const hasOtherPresence = (people: readonly PresencePerson[]): boolean =>
   people.some((person) => person.online && !person.self);
 
-/** Row order of the sidebar presence stack: owner, then online members, then offline ones. */
+/**
+ * Row order shared by the sidebar presence stack and the chat title-bar stack:
+ * owner, then online members, then offline ones (the chat stack only ever has
+ * online people, so there it reduces to owner first).
+ */
 const presenceRowRank = (person: PresencePerson): number =>
   person.owner ? 0 : person.online ? 1 : 2;
 
@@ -132,7 +136,8 @@ export const selectWorkspacePresenceFocusTargets = store.createSelector<
 
 /**
  * The circles of a chat's title bar: everyone else whose focus includes this
- * agent's chat right now, with the owner (`ownerPrincipalId`) blue. Nobody
+ * agent's chat right now, with the owner (`ownerPrincipalId`) blue and leading
+ * the stack (same rank as the sidebar row), the others in roster order. Nobody
  * offline appears here, and an unshared workspace, an unknown own principal,
  * or a solo user shows no circle at all (so the last unshare hides the
  * circles at once, before any roster replacement arrives).
@@ -157,7 +162,8 @@ export const selectAgentPresencePeople = store.createSelector<
         viewing: true,
         self: false,
       }),
-    );
+    )
+    .sort((a, b) => presenceRowRank(a) - presenceRowRank(b));
   return hasOtherPresence(people) ? people : NO_PEOPLE;
 });
 

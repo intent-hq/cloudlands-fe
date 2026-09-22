@@ -8,10 +8,11 @@
    * first. The confirmed sweep is handed to the parent (`onRemoveAll`, with
    * the roster as it stands) — the sweep's membership delta may unmount this
    * row before it settles, and its per-step report must outlive the row. The
-   * owner row never carries a control (`workspace.members.remove` refuses
-   * the owner).
+   * owner is not listed (`workspace.members.remove` refuses the owner); only
+   * the displayed rows are filtered — the sweep still receives the full roster.
    */
   import { onMount } from 'svelte';
+  import { SvelteMap } from 'svelte/reactivity';
   import { ListView } from '$lib/components/patterns/collection';
   import { Button } from '$lib/components/patterns/settings/custom-controls';
   import BulkActionConfirmDialog from '$lib/components/modals/BulkActionConfirmDialog.svelte';
@@ -44,6 +45,8 @@
   const removingIds$ = selectHostedRemovingPrincipalIds(workspace.id);
   const clearing$ = selectIsHostedWorkspaceClearing(workspace.id);
 
+  const collaborators = $derived($roster$.members.filter((member) => member.role !== 'owner'));
+
   /** What the *Remove* confirm dialog shows — never what a retry acts on. */
   let removeTarget = $state<WorkspaceMember | null>(null);
   let removeDialogOpen = $state(false);
@@ -53,8 +56,23 @@
 
   let removeAllDialogOpen = $state(false);
 
+  /**
+   * The avatar URL that failed to load, per collaborator. Keyed by the URL so
+   * a member whose `avatarUrl` changes retries the load instead of staying on
+   * the initial forever (the identity reset in `GitHubAvatar`).
+   */
+  const failedAvatarUrls = new SvelteMap<string, string>();
+
   function memberLabel(member: WorkspaceMember): string {
     return member.displayName ?? member.login ?? member.principalId;
+  }
+
+  function showsAvatar(member: WorkspaceMember): boolean {
+    return !!member.avatarUrl && failedAvatarUrls.get(member.principalId) !== member.avatarUrl;
+  }
+
+  function markAvatarFailed(member: WorkspaceMember) {
+    if (member.avatarUrl) failedAvatarUrls.set(member.principalId, member.avatarUrl);
   }
 
   function removeAllGuests() {
@@ -139,7 +157,7 @@
   {:else}
     <ListView
       virtualize={false}
-      items={$roster$.members}
+      items={collaborators}
       getKey={(member) => member.principalId}
       getText={(member) => memberLabel(member)}
       ariaLabel={workspace.title}
@@ -147,27 +165,42 @@
     >
       {#snippet row({ item: member })}
         <div class="flex items-center justify-between gap-3 py-2">
-          <div class="min-w-0">
-            <p class="truncate type-body text-foreground">{memberLabel(member)}</p>
-            <p class="truncate type-caption text-muted-foreground">
-              {member.role === 'owner'
-                ? m.settings_guestSessions_role_owner_label()
-                : m.settings_guestSessions_role_collaborator_label()}
-              {#if member.login && member.displayName}
-                · @{member.login}
-              {/if}
-            </p>
+          <div class="flex min-w-0 items-center gap-2">
+            {#if showsAvatar(member)}
+              <img
+                src={member.avatarUrl}
+                alt=""
+                class="h-6 w-6 shrink-0 rounded-full"
+                loading="lazy"
+                data-testid="hosted-roster-avatar"
+                onerror={() => markAvatarFailed(member)}
+              />
+            {:else}
+              <span
+                class="grid h-6 w-6 shrink-0 place-items-center rounded-full bg-muted type-caption text-foreground"
+                aria-hidden="true"
+                data-testid="hosted-roster-avatar-fallback"
+                >{memberLabel(member).slice(0, 1).toUpperCase()}</span
+              >
+            {/if}
+            <div class="min-w-0">
+              <p class="truncate type-body text-foreground">{memberLabel(member)}</p>
+              <p class="truncate type-caption text-muted-foreground">
+                {m.settings_guestSessions_role_collaborator_label()}
+                {#if member.login && member.displayName}
+                  · @{member.login}
+                {/if}
+              </p>
+            </div>
           </div>
-          {#if member.role !== 'owner'}
-            <Button
-              variant="ghost"
-              size="sm"
-              disabled={$removingIds$.includes(member.principalId)}
-              onclick={() => requestRemove(member)}
-            >
-              {m.settings_guestSessions_remove_label()}
-            </Button>
-          {/if}
+          <Button
+            variant="ghost"
+            size="sm"
+            disabled={$removingIds$.includes(member.principalId)}
+            onclick={() => requestRemove(member)}
+          >
+            {m.settings_guestSessions_remove_label()}
+          </Button>
         </div>
       {/snippet}
     </ListView>

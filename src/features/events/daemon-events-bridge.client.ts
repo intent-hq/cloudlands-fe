@@ -205,6 +205,7 @@ import {
   clearWorkspacePendingDeletion,
   loadWorkspacesRequested,
   markWorkspacePendingDeletion,
+  refreshWorkspaceMembershipRequested,
   removeWorkspaceEntity,
   updateWorkspaceEntity,
 } from '$store/renderer/slices/workspace/workspace-slice';
@@ -2535,12 +2536,18 @@ function handleWorkspaceUpdatedEvent(event: WorkspaceEvent, workspaceId: string)
   if (typeof raw.memberCount === 'number' && Number.isFinite(raw.memberCount)) {
     changes.memberCount = raw.memberCount;
   }
+  if (typeof raw.openInviteCount === 'number' && Number.isFinite(raw.openInviteCount)) {
+    changes.openInviteCount = raw.openInviteCount;
+  }
   // The same deltas flag `members: true` / `invites: true` (also an invite
   // create/revoke, which leaves `memberCount` alone): the Share dialog
   // re-reads its roster + invites when it targets this workspace, so every
-  // client converges without a manual refresh.
+  // client converges without a manual refresh. The row's own membership
+  // summary is re-read too — invite deltas carry no `openInviteCount` today,
+  // and the single archive/delete warning gates on that stored count.
   if (raw.members === true || raw.invites === true) {
     appStore.dispatch(shareMembershipChanged({ workspaceId }));
+    appStore.dispatch(refreshWorkspaceMembershipRequested(workspaceId));
   }
   if (typeof raw.archived === 'boolean') changes.archived = raw.archived;
   // `archivedAt` is nullable on the wire: archive sends the persisted ISO
