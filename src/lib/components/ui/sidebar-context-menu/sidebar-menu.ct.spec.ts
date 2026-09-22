@@ -52,6 +52,17 @@ for (const theme of ['light', 'dark'] as const) {
       else await trigger.click({ button: 'right' });
       const root = page.getByRole('menu', { name: 'Workspace actions' });
       await expect(root).toBeVisible();
+      const textEdges = await root
+        .locator('[data-menu-item] > span:not([aria-hidden="true"]) > span')
+        .evaluateAll((labels) =>
+          labels.map((label) => {
+            const range = document.createRange();
+            range.selectNodeContents(label);
+            return range.getBoundingClientRect().left;
+          }),
+        );
+      expect(textEdges.length).toBeGreaterThan(6);
+      expect(Math.max(...textEdges) - Math.min(...textEdges)).toBeLessThan(1);
       const rootStyles = await anatomy(root);
       expect(parseFloat(rootStyles.radius)).toBeGreaterThan(0);
       await test.info().attach(`${via}-${theme}-root`, {

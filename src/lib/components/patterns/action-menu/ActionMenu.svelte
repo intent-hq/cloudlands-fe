@@ -36,6 +36,15 @@
   } = $props();
 
   const resolvedActions = $derived(resolveActions(actions));
+  function hasSurfaceIcon(entries: readonly ResolvedAction[]): boolean {
+    return entries.some(
+      (entry) =>
+        entry.icon !== undefined ||
+        ((entry.kind === 'section' || entry.kind === 'radio-group') &&
+          hasSurfaceIcon(entry.children)),
+    );
+  }
+
   const uid = $props.id();
   let invokingElement: HTMLElement | null = null;
   let content: HTMLDivElement | null = $state(null);
@@ -161,7 +170,7 @@
   });
 </script>
 
-{#snippet itemContent(action: ResolvedAction, reserveIcon: boolean)}
+{#snippet iconSlot(action: ResolvedAction, reserveIcon: boolean)}
   {#if reserveIcon}
     <span class="flex size-4 shrink-0 items-center justify-center" aria-hidden="true">
       {#if action.icon}
@@ -169,6 +178,10 @@
       {/if}
     </span>
   {/if}
+{/snippet}
+
+{#snippet itemContent(action: ResolvedAction, reserveIcon: boolean)}
+  {@render iconSlot(action, reserveIcon)}
   <span class="min-w-0 flex-1">
     <span class="block truncate">{action.label}</span>
     {#if action.disabledReason}
@@ -180,20 +193,27 @@
   {/if}
 {/snippet}
 
+{#snippet groupLabel(action: ResolvedAction, reserveIcon: boolean)}
+  <Menu.Label>
+    {@render iconSlot(action, reserveIcon)}
+    <span>{action.label}</span>
+  </Menu.Label>
+{/snippet}
+
 {#snippet actionItem(action: ResolvedAction, reserveIcon: boolean)}
   {@const disabled = action.disabled || action.disabledReason !== undefined}
   {@const descriptionId = action.disabledReason ? `${uid}-${action.id}-reason` : undefined}
   {#if action.kind === 'label'}
-    <Menu.Group><Menu.Label>{action.label}</Menu.Label></Menu.Group>
+    <Menu.Group>{@render groupLabel(action, reserveIcon)}</Menu.Group>
   {:else if action.kind === 'section'}
     <Menu.Group aria-label={action.label}>
-      <Menu.Label>{action.label}</Menu.Label>
-      {@render actionItems(action.children, disabled)}
+      {@render groupLabel(action, reserveIcon)}
+      {@render actionItems(action.children, disabled, reserveIcon)}
     </Menu.Group>
   {:else if action.kind === 'radio-group'}
     <Menu.RadioGroup value={action.value} aria-label={action.label}>
-      <Menu.Label>{action.label}</Menu.Label>
-      {@render actionItems(action.children, disabled)}
+      {@render groupLabel(action, reserveIcon)}
+      {@render actionItems(action.children, disabled, reserveIcon)}
     </Menu.RadioGroup>
   {:else if action.children?.length}
     <Menu.Sub>
@@ -248,15 +268,16 @@
   {/if}
 {/snippet}
 
-{#snippet actionItems(entries: readonly ResolvedAction[], disabled = false)}
+{#snippet actionItems(
+  entries: readonly ResolvedAction[],
+  disabled = false,
+  reserveIcon = hasSurfaceIcon(entries),
+)}
   {#each entries as action, index (action.id)}
     {#if index > 0 && (action.group !== entries[index - 1]?.group || action.kind === 'section' || action.kind === 'radio-group' || entries[index - 1]?.kind === 'section' || entries[index - 1]?.kind === 'radio-group')}
       <Menu.Separator />
     {/if}
-    {@render actionItem(
-      disabled ? { ...action, disabled: true } : action,
-      entries.some((entry) => entry.group === action.group && entry.icon !== undefined),
-    )}
+    {@render actionItem(disabled ? { ...action, disabled: true } : action, reserveIcon)}
   {/each}
 {/snippet}
 
