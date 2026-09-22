@@ -2304,25 +2304,41 @@ function tableCells(
   return cells.length > 1 ? cells : undefined;
 }
 
-/** A character reference the note editor shows as its character: one of HTML's own five, `&nbsp;`, or a numeric one. */
-const CHARACTER_REFERENCE = /&(?:(amp|lt|gt|quot|apos|nbsp)|#(\d{1,7})|#[xX]([0-9a-fA-F]{1,6}));/g;
-const NAMED_CHARACTERS: Record<string, string> = {
-  amp: '&',
-  lt: '<',
-  gt: '>',
-  quot: '"',
-  apos: "'",
-  nbsp: '\u00A0',
-};
+/** A character reference as the renderer passes one to the note editor's HTML parser: `&name;`, `&#ddd;` or `&#xhh;`. */
+const CHARACTER_REFERENCE = /&(?:[a-zA-Z][a-zA-Z0-9]{1,31}|#\d{1,7}|#[xX][0-9a-fA-F]{1,6});/g;
+const MAX_DECODED_REFERENCES = 1 << 12;
+const decodedReferences = new Map<string, string>();
+let referenceParser: DOMParser | undefined;
+
+/**
+ * The text the note editor shows for the character `reference`: decoded by
+ * the HTML parser that builds the editor's document — every name it knows,
+ * in the case it knows it, a numeric reference as it remaps it — so that a
+ * name it does not know shows as written. Memoised; the reference itself
+ * where there is no DOM.
+ */
+function decodeReference(reference: string): string {
+  const known = decodedReferences.get(reference);
+  if (known !== undefined) return known;
+  if (typeof DOMParser === 'undefined') return reference;
+  referenceParser ??= new DOMParser();
+  const shown =
+    referenceParser.parseFromString(reference, 'text/html').documentElement.textContent ??
+    reference;
+  if (decodedReferences.size >= MAX_DECODED_REFERENCES) decodedReferences.clear();
+  decodedReferences.set(reference, shown);
+  return shown;
+}
 
 /**
  * The text the note editor shows of the table cell `cell`, as far as its
  * letters go: a link read by the renderer's own `tokenizer` (the inline form,
  * then a reference every label resolves in, as `imageAt` reads an image)
- * stands as its label, an image as nothing, a character reference as its
- * character. The rest is kept as written — formatting is letterless, and a
- * reference the note leaves undefined shows its letters either way. `cell`
- * itself when the tokenizer could not be made.
+ * stands as its label, an image as nothing, a character reference as the
+ * editor's HTML parser shows it (`decodeReference`). The rest is kept as
+ * written — formatting is letterless, and a reference the note leaves
+ * undefined shows its letters either way. `cell` itself when the tokenizer
+ * could not be made.
  */
 function shownText(cell: string, tokenizer: () => Tokenizer | undefined): string {
   let out = '';
@@ -2338,14 +2354,7 @@ function shownText(cell: string, tokenizer: () => Tokenizer | undefined): string
     pos = at + link.length;
   }
   out += cell.slice(pos);
-  return out.replace(
-    CHARACTER_REFERENCE,
-    (_reference, name?: string, decimal?: string, hex?: string) => {
-      if (name !== undefined) return NAMED_CHARACTERS[name];
-      const code = decimal !== undefined ? parseInt(decimal, 10) : parseInt(hex ?? '', 16);
-      return code > 0x10ffff ? '\uFFFD' : String.fromCodePoint(code);
-    },
-  );
+  return out.replace(CHARACTER_REFERENCE, decodeReference);
 }
 
 /** Definitions every label resolves in. */

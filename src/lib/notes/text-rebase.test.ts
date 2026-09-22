@@ -2580,6 +2580,17 @@ describe('alignment of link syntax the lexer does not account for', () => {
           /\[🙂🙂\]\(https:\/\/sync\/emoji\)/g,
         ],
         ['entity', '&amp;&amp;', '&&', /&amp;&amp;/g],
+        // A character reference beyond HTML's five: the editor's HTML parser
+        // shows it as its character, whatever its case, so the cell's key
+        // must be decoded by the same parser. (Decoded from a hand list of
+        // the five, `A&eacute;B` was keyed `AeacuteB` and `&AMP;&AMP;`
+        // `AMPAMP` — letters no plain-text line of the row showed — and the
+        // row was paired as one line.)
+        ['named accented', 'A&eacute;B', 'AéB', /A&eacute;B/g],
+        ['copyright between letters', 'A&copy;B', 'A©B', /A&copy;B/g],
+        ['copyright with year', '&copy;2026', '©2026', /&copy;2026/g],
+        ['registered between letters', 'A&reg;B', 'A®B', /A&reg;B/g],
+        ['uppercase entity', '&AMP;&AMP;', '&&', /&AMP;&AMP;/g],
       ] as Array<[string, string, string, RegExp]>
     ).flatMap(([kind, cell, needle, pattern]) =>
       CLOCKS.map(([when, clock]): [string, string, string, string, RegExp, Clock] => [
