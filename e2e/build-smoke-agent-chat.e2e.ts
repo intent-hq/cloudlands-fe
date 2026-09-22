@@ -20,6 +20,8 @@ import {
   archiveAndGoHome,
   setMockAgentBehavior,
   exitPackagedApp,
+  openAgentsSidebarPanel,
+  openAgentChat,
 } from './build-smoke-helpers';
 
 const SCREENSHOT_DIR = path.join(process.cwd(), 'e2e-reports', 'build-smoke');
@@ -87,16 +89,15 @@ test.describe('Build Smoke — Agent Chat UI', () => {
     });
 
     try {
-      // 1. Agent card appears in sidebar
+      // 1. Agent card appears in the (expanded) Agents sidebar panel
+      await openAgentsSidebarPanel(page);
       const agentCard = page.locator('[data-testid="agent-list-item"]').first();
       await agentCard.waitFor({ state: 'visible', timeout: 15_000 });
       console.log('✅ Agent card appeared in sidebar');
 
       // 2. Open the agent chat tab
       const agentId = await agentCard.getAttribute('data-agent-id');
-      await page.evaluate((id) => {
-        window.dispatchEvent(new CustomEvent('workspace:open-agent', { detail: { agentId: id } }));
-      }, agentId);
+      await openAgentChat(page, agentId!);
 
       // 3. Thinking indicator appears
       await page.waitForSelector('[data-testid="streaming-status-thinking"]', { timeout: 15_000 });
@@ -108,11 +109,8 @@ test.describe('Build Smoke — Agent Chat UI', () => {
       });
       console.log('✅ Streaming indicator appeared');
 
-      // 5. Agent card shows preview text in sidebar
-      const preview = page.locator('[data-testid="agent-card-preview"]').first();
-      await preview.waitFor({ state: 'visible', timeout: 15_000 });
-      const previewText = await preview.textContent();
-      console.log('✅ Agent card shows preview:', previewText?.substring(0, 50));
+      // 5. (The sidebar agent list renders cards with `hidePreview`, so there
+      //    is no preview text to assert here any more.)
 
       // 6. Wait for agent completion
       await waitForAgentCompletion(page, workspaceId, 30_000);

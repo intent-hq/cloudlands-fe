@@ -14,6 +14,10 @@
  *       Example: { "chunks": ["Thinking about", " your request...", " Done! TASK_COMPLETE"], "chunkDelayMs": 500 }
  *     - chunkDelayMs: milliseconds to wait between each chunk (default: 500). Only used with chunks.
  *     When chunks is set, it takes precedence over response.
+ *   MOCK_AGENT_BEHAVIOR_FILE - path of a JSON file holding the same payload, re-read on every
+ *     session/prompt. Takes precedence over MOCK_AGENT_BEHAVIOR when the file exists. The
+ *     daemon spawns this agent with the env it was itself started with, so a test can only
+ *     change behavior between turns through a file, not by editing the app's env.
  *   MOCK_AGENT_DELAY_MS - milliseconds to wait before streaming the response in session/prompt.
  *     Gives the app time to finish chat initialization. Default: 3000. Set to 0 for no delay.
  */
@@ -82,7 +86,11 @@ function handleSessionLoad(id) {
 }
 
 async function handleSessionPrompt(id) {
-  const behaviorRaw = process.env.MOCK_AGENT_BEHAVIOR || '{}';
+  let behaviorRaw = process.env.MOCK_AGENT_BEHAVIOR || '{}';
+  const behaviorFile = process.env.MOCK_AGENT_BEHAVIOR_FILE;
+  if (behaviorFile && fs.existsSync(behaviorFile)) {
+    behaviorRaw = fs.readFileSync(behaviorFile, 'utf8');
+  }
   let behavior;
   try {
     behavior = JSON.parse(behaviorRaw);

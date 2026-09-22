@@ -18,6 +18,8 @@ import {
   setMockAgentBehavior,
   archiveAndGoHome,
   exitPackagedApp,
+  openAgentsSidebarPanel,
+  openAgentChat,
 } from './build-smoke-helpers';
 
 const SCREENSHOT_DIR = path.join(process.cwd(), 'e2e-reports', 'build-smoke');
@@ -90,12 +92,11 @@ test.describe('Build Smoke — Chat History Navigation', () => {
     console.log(`🏗️  Workspace created: ${workspaceId}`);
 
     // Open the agent chat panel (the onboarding saga skips auto-opening)
+    await openAgentsSidebarPanel(page);
     const agentCard = page.locator('[data-testid="agent-list-item"]').first();
     await agentCard.waitFor({ state: 'visible', timeout: 15_000 });
     const agentId = await agentCard.getAttribute('data-agent-id');
-    await page.evaluate((id) => {
-      window.dispatchEvent(new CustomEvent('workspace:open-agent', { detail: { agentId: id } }));
-    }, agentId);
+    await openAgentChat(page, agentId!);
     console.log('✅ Agent panel opened');
 
     await waitForAgentCompletion(page, workspaceId, 60_000);
@@ -137,12 +138,11 @@ test.describe('Build Smoke — Chat History Navigation', () => {
     //    won't auto-open on a cold workspace load — the test must
     //    explicitly open it, just like on initial creation.
     await page.waitForTimeout(2_000);
+    await openAgentsSidebarPanel(page);
     const agentCardAfter = page.locator('[data-testid="agent-list-item"]').first();
     await agentCardAfter.waitFor({ state: 'visible', timeout: 15_000 });
     const agentIdAfter = await agentCardAfter.getAttribute('data-agent-id');
-    await page.evaluate((id) => {
-      window.dispatchEvent(new CustomEvent('workspace:open-agent', { detail: { agentId: id } }));
-    }, agentIdAfter);
+    await openAgentChat(page, agentIdAfter!);
     console.log('✅ Agent panel re-opened after navigation');
     await page.waitForTimeout(2_000);
 

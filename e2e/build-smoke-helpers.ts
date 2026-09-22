@@ -258,6 +258,8 @@ export async function launchPackagedApp(options: LaunchOptions = {}): Promise<{
   logPaths: { mainProcess: string; renderer: string };
 }> {
   await killExistingPackagedApp();
+  // A behavior left over from an earlier spec must not leak into this launch.
+  rmSync(MOCK_AGENT_BEHAVIOR_FILE, { force: true });
 
   const executablePath = findPackagedApp();
 
@@ -270,6 +272,7 @@ export async function launchPackagedApp(options: LaunchOptions = {}): Promise<{
     env: {
       ...process.env,
       TESTING: 'true',
+      MOCK_AGENT_BEHAVIOR_FILE,
       ...(options.workspaceDir ? { TEST_WORKSPACE_DIR: options.workspaceDir } : {}),
       ...(options.extraEnv || {}),
     },
@@ -1154,7 +1157,8 @@ export async function waitForAgentNotStreaming(
             const store = Array.isArray(ctx) ? ctx[0]?.store : ctx?.store;
             if (!store) return { available: false, reason: 'no-store' };
 
-            const state = store.getState();
+            // The app Store exposes `state` as a getter (plain Redux exposes getState()).
+            const state = typeof store.getState === 'function' ? store.getState() : store.state;
             // workspace-agents slice: state.workspaceAgents.byWorkspaceId[wsId].agentIds
             // agent-session slice: state.agentSessions.byAgentId[agentId]
             const wsState = state?.workspaceAgents?.byWorkspaceId?.[wsId];
@@ -1795,14 +1799,40 @@ export async function findImplementorAgent(
 }
 
 // ---------------------------------------------------------------------------
+// openAgentsSidebarPanel
+// ---------------------------------------------------------------------------
+
+/**
+ * Expand the Agents section of the workspace sidebar.
+ *
+ * Agent cards (`[data-testid="agent-list-item"]`, `[data-agent-id]`) render
+ * only inside the expanded Agents panel (`[data-testid="agent-panel"]`). A
+ * fresh workspace opens on the sidebar's launcher overview, where the section
+ * is collapsed behind the `agent-panel-toggle` launcher tile — and the tile
+ * itself is unmounted while any section is expanded, so check the panel first.
+ */
+export async function openAgentsSidebarPanel(page: Page): Promise<void> {
+  const agentPanel = page.locator('[data-testid="agent-panel"]');
+  if (await agentPanel.isVisible({ timeout: 1_000 }).catch(() => false)) {
+    return;
+  }
+  const toggle = page.locator('[data-testid="agent-panel-toggle"]');
+  await toggle.waitFor({ state: 'visible', timeout: 15_000 });
+  await toggle.click();
+  await agentPanel.waitFor({ state: 'visible', timeout: 10_000 });
+  console.log('✅ Agents sidebar panel expanded');
+}
+
+// ---------------------------------------------------------------------------
 // openAgentChat
 // ---------------------------------------------------------------------------
 
 /**
- * Open an agent's chat panel by clicking its avatar button in the AgentNavRail.
+ * Open an agent's chat panel by clicking its card in the Agents sidebar panel.
  *
- * Uses `[data-agent-id]` which is always visible in the left rail,
- * unlike the "Threads" list which requires a specific sidebar tab.
+ * Callers must expand the panel first (`openAgentsSidebarPanel`); clicking an
+ * AgentCard dispatches `openAgentTabRequested`, which replaced the old
+ * `workspace:open-agent` window event.
  *
  * After clicking, waits for the chat panel to become visible (indicated by
  * the presence of a chat message or the chat input in the **active** tab).
@@ -1961,10 +1991,21 @@ export async function waitForAssistantResponse(
 // ---------------------------------------------------------------------------
 
 /**
- * Build a `MOCK_AGENT_BEHAVIOR` env-var payload for the mock ACP provider.
+ * File the mock ACP agent re-reads on every `session/prompt`
+ * (`MOCK_AGENT_BEHAVIOR_FILE`). `launchPackagedApp` passes the path into the
+ * app env, which the intentd sidecar and the mock child inherit — so a spec
+ * can change the behavior between turns by rewriting the file, whereas an
+ * env var set on the Electron main process after launch never reaches the
+ * daemon-spawned agent.
+ */
+const MOCK_AGENT_BEHAVIOR_FILE = join(tmpdir(), 'build-smoke-mock-agent-behavior.json');
+
+/**
+ * Configure the mock ACP provider's behavior for subsequent prompts.
  *
- * The mock provider reads this env var on startup and replays the described
- * behavior instead of calling a real LLM.
+ * Writes the behavior to `MOCK_AGENT_BEHAVIOR_FILE` (read by the mock on each
+ * prompt) and returns the equivalent `MOCK_AGENT_BEHAVIOR` env payload for
+ * callers that still pass it into `LaunchOptions.extraEnv`.
  *
  * @param options.files  - Map of relative file paths → content the mock agent
  *                         should write (e.g. `{ 'README.md': 'hello world' }`).
@@ -1993,8 +2034,12 @@ export function setMockAgentBehavior(
     behavior.response = options.response ?? 'I have completed the task. TASK_COMPLETE';
   }
 
+  const behaviorJson = JSON.stringify(behavior);
+  writeFileSync(MOCK_AGENT_BEHAVIOR_FILE, behaviorJson);
+
   return {
-    MOCK_AGENT_BEHAVIOR: JSON.stringify(behavior),
+    MOCK_AGENT_BEHAVIOR: behaviorJson,
+    MOCK_AGENT_BEHAVIOR_FILE,
     MOCK_AGENT_SCRIPT_PATH: resolve(process.cwd(), 'e2e', 'mock-acp-agent.js'),
   };
 }
