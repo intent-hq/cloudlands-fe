@@ -58,6 +58,7 @@
   }: Props = $props();
 
   const isArchive = $derived(mode === 'archive');
+  const hasRunningWork = $derived(agents.length > 0 || hookNames.length > 0);
   const hasLocalChanges = $derived(
     localChanges != null && (localChanges.hasUnpushedCommits || localChanges.hasUncommittedChanges),
   );
@@ -136,13 +137,21 @@
     ? isArchive
       ? m.modals_archiveWarning_guestsOnly_title()
       : m.modals_deleteWarning_guestsOnly_title()
-    : isArchive
+    : hasRunningWork
+    ? isArchive
       ? m.modals_archiveWarning_title()
-      : m.modals_deleteWarning_title()}
+      : m.modals_deleteWarning_title()
+    : isArchive
+      ? m.modals_archiveWarning_inactive_title()
+      : m.modals_deleteWarning_inactive_title()}
   confirmLabel={guestsOnly
     ? isArchive
       ? m.modals_archiveWarning_guestsOnly_confirm_label()
       : m.modals_deleteWarning_guestsOnly_confirm_label()
+    : !hasRunningWork
+    ? isArchive
+      ? m.workspace_card_archive_label()
+      : m.menu_delete()
     : isArchive
       ? m.modals_archiveWarning_confirm_label()
       : m.modals_deleteWarning_confirm_label()}
@@ -159,9 +168,13 @@
         ? isArchive
           ? m.modals_archiveWarning_guestsOnly_description()
           : m.modals_deleteWarning_guestsOnly_description()
-        : isArchive
+        : hasRunningWork
+        ? isArchive
           ? m.modals_archiveWarning_description()
-          : m.modals_deleteWarning_description()}
+          : m.modals_deleteWarning_description()
+        : isArchive
+          ? m.modals_archiveWarning_inactive_description()
+          : m.modals_deleteWarning_inactive_description()}
     </p>
     <div class="min-w-0 space-y-4">
       {#if hasActiveWork || hasGuests}

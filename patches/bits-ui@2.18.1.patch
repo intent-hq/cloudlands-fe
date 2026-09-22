@@ -84,3 +84,15 @@ index 04833253a9e04813a458a8e1a7c12b720dd4a15b..b5e434d07c0855a88caa135a761d0941
              stopTouchMoveListener?.();
          };
      });
+diff --git a/dist/bits/utilities/popper-layer/popper-layer-inner.svelte b/dist/bits/utilities/popper-layer/popper-layer-inner.svelte
+--- a/dist/bits/utilities/popper-layer/popper-layer-inner.svelte
++++ b/dist/bits/utilities/popper-layer/popper-layer-inner.svelte
+@@ -97,7 +97,7 @@
+ 			{onOpenAutoFocus}
+ 			{onCloseAutoFocus}
+ 			{loop}
+-			{enabled}
++			enabled={enabled && !tooltip}
+ 			{trapFocus}
+ 			forceMount={restProps.forceMount}
+ 			{ref}

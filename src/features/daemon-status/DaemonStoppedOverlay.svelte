@@ -655,7 +655,7 @@
             <div class="mt-4 border-t border-border pt-4">
               <Button
                 type="button"
-                variant="primary"
+                variant={isAuthRejected ? 'secondary' : 'primary'}
                 class="w-full px-4 py-2 text-sm font-medium"
                 disabled={$spawnPending$}
                 onclick={handleSpawnSidecar}

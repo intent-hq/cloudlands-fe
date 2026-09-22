@@ -1,8 +1,9 @@
 <script lang="ts">
-  import Button from '$lib/components/ui/button/button.svelte';
+  import { Button } from '$lib/components/ui/button';
   import { FormDialog } from '$lib/components/patterns/confirm';
-  import Input from '$lib/components/ui/input/input.svelte';
-  import Label from '$lib/components/ui/label/label.svelte';
+  import { Input } from '$lib/components/ui/input';
+  import { Label } from '$lib/components/ui/label';
+  import { InputMessage } from '$lib/components/ui/input-message';
   import { RadioGroup, RadioGroupItem } from '$lib/components/ui/radio-group';
   import Fa from 'svelte-fa';
   import { faKey } from '@fortawesome/free-solid-svg-icons';
@@ -195,7 +196,7 @@
         </div>
 
         {#if transport === 'ssh'}
-          <div class="grid grid-cols-2 gap-3">
+          <div class="grid grid-cols-[minmax(0,1fr)_5rem] gap-3">
             <div>
               <Label for="host">{m.workspace_addRemoteSetupModal_host_label()}</Label>
               <!-- i18n-ignore (example hostname placeholder) -->
@@ -258,8 +259,12 @@
                 : 'border-border hover:bg-muted/50'}"
             />
             {#if authMode === 'keyfile'}
-              <!-- i18n-ignore (example path placeholder) -->
-              <Input bind:value={keyPath} placeholder="~/.ssh/id_rsa" class="h-8" />
+              {@const keyPathExample = '~/.ssh/id_rsa'}
+              <Input
+                bind:value={keyPath}
+                placeholder={keyPathExample}
+                aria-label={m.workspace_addRemoteSetupModal_keyFile_label()}
+              />
             {/if}
             <RadioGroupItem
               value="password"
@@ -269,13 +274,18 @@
                 : 'border-border hover:bg-muted/50'}"
             />
             {#if authMode === 'password'}
-              <Input type="password" bind:value={password} placeholder="••••••••" class="h-8" />
+              <Input
+                type="password"
+                bind:value={password}
+                placeholder="••••••••"
+                aria-label={m.workspace_addRemoteSetupModal_password_label()}
+              />
             {/if}
           </RadioGroup>
         </div>
       {:else}
         <!-- WebSocket info - no SSH auth needed -->
-        <div class="text-sm text-subtle bg-muted/50 px-3 py-2 rounded-md">
+        <div class="type-caption text-subtle">
           <p>
             {m.workspace_addRemoteSetupModal_websocketAuth_description()}
           </p>
@@ -291,9 +301,6 @@
           placeholder={/* i18n-ignore (example path placeholder) */ '/home/user/myrepo'}
           class="mt-1"
         />
-        <p class="text-xs text-subtle mt-1">
-          {m.workspace_addRemoteSetupModal_repoPath_description()}
-        </p>
       </div>
 
       <!-- Branch Name -->
@@ -301,13 +308,10 @@
         <Label for="branch">{m.workspace_addRemoteSetupModal_branch_label()}</Label>
         <!-- i18n-ignore (branch name placeholder) -->
         <Input id="branch" bind:value={branch} placeholder="main" class="mt-1" />
-        <p class="text-xs text-subtle mt-1">
-          {m.workspace_addRemoteSetupModal_branch_description()}
-        </p>
       </div>
 
       {#if error}
-        <div class="text-sm text-danger">{error}</div>
+        <InputMessage tone="error">{error}</InputMessage>
       {/if}
     </div>
   </FormDialog>

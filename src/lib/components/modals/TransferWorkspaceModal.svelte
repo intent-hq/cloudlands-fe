@@ -23,6 +23,7 @@
   import { ListRow } from '$lib/components/patterns/collection';
   import { Button } from '$lib/components/ui/button';
   import { Checkbox } from '$lib/components/ui/checkbox';
+  import * as Accordion from '$lib/components/ui/accordion';
   import Fa from 'svelte-fa';
   import {
     faCircleCheck,
@@ -233,7 +234,7 @@
                 aria-pressed={isSelected({ kind: 'server', connectionId: conn.id })}
                 onclick={() => onSelectDestination?.({ kind: 'server', connectionId: conn.id })}
               >
-                <ListRow leadingAlign="title" class="w-full min-h-8 px-0 py-1">
+                <ListRow class="w-full min-h-8 px-0 py-1">
                   {#snippet leading()}<span
                       class="grid size-6 place-items-center rounded-lg bg-muted"
                       ><Fa
@@ -265,7 +266,7 @@
           aria-pressed={isSelected({ kind: 'download' })}
           onclick={() => onSelectDestination?.({ kind: 'download' })}
         >
-          <ListRow leadingAlign="title" class="w-full min-h-8 px-0 py-1">
+          <ListRow class="w-full min-h-8 px-0 py-1">
             {#snippet leading()}<span class="grid size-6 place-items-center rounded-lg bg-muted"
                 ><Fa icon={faDownload} class="text-foreground" /></span
               >{/snippet}
@@ -304,7 +305,9 @@
             <span class="text-xs text-subtle">{m.workspace_transfer_warnings_label()}</span>
             {#each plan.warnings as warning (warning.code)}
               <p class="flex items-start gap-2 text-xs text-subtle">
-                <Fa icon={faTriangleExclamation} class="text-warning-ink shrink-0 mt-0.5" />
+                <span class="first-line-icon"
+                  ><Fa icon={faTriangleExclamation} class="text-warning-ink" /></span
+                >
                 <span>{warning.message}</span>
               </p>
             {/each}
@@ -320,66 +323,76 @@
           <p class="text-lg font-semibold" data-testid="transfer-total-size">
             {formatBytesBinary(plan.totalSizeBytes)}
           </p>
-          <ul class="text-xs text-subtle space-y-0.5">
-            <li>
-              {m.workspace_transfer_dbRows_label()}: {formatBytesBinary(plan.dbRowBytes)}
-            </li>
-            <li>
-              {plan.manifest.assets.length === 1
-                ? m.workspace_transfer_assets_one()
-                : m.workspace_transfer_assets_many({ count: plan.manifest.assets.length })}:
-              {formatBytesBinary(plan.assetBytes)}
-            </li>
-            <li>
-              {m.workspace_transfer_gitBundle_label()}:
-              {formatBytesBinary(plan.estimatedGitBundleBytes)}
-            </li>
-          </ul>
         </div>
+        <Accordion.Root type="single">
+          <Accordion.Item value="transfer-details">
+            <Accordion.Trigger inset={false}
+              >{m.workspace_transfer_details_label()}</Accordion.Trigger
+            >
+            <Accordion.Content inset={false} data-testid="transfer-details-content">
+              <div class="grid gap-4">
+                <ul class="text-xs text-subtle space-y-0.5">
+                  <li>
+                    {m.workspace_transfer_dbRows_label()}: {formatBytesBinary(plan.dbRowBytes)}
+                  </li>
+                  <li>
+                    {plan.manifest.assets.length === 1
+                      ? m.workspace_transfer_assets_one()
+                      : m.workspace_transfer_assets_many({ count: plan.manifest.assets.length })}:
+                    {formatBytesBinary(plan.assetBytes)}
+                  </li>
+                  <li>
+                    {m.workspace_transfer_gitBundle_label()}:
+                    {formatBytesBinary(plan.estimatedGitBundleBytes)}
+                  </li>
+                </ul>
 
-        <div class="space-y-1">
-          <span class="text-xs text-subtle">{m.workspace_transfer_data_label()}</span>
-          <table class="w-full text-xs" data-testid="transfer-tables">
-            <thead>
-              <tr class="text-left text-subtle">
-                <th class="font-normal pb-1">{m.workspace_transfer_tableName_label()}</th>
-                <th class="font-normal pb-1 text-right">
-                  {m.workspace_transfer_tableRows_label()}
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {#each populatedTables as table (table.name)}
-                <tr>
-                  <!-- i18n-ignore (table names are wire identifiers) -->
-                  <td class="font-mono">{table.name}</td>
-                  <td class="text-right">{formatInteger(table.rowCount)}</td>
-                </tr>
-              {/each}
-            </tbody>
-          </table>
-        </div>
+                <div class="space-y-1">
+                  <table class="w-full text-xs" data-testid="transfer-tables">
+                    <thead>
+                      <tr class="text-left text-subtle">
+                        <th class="font-normal pb-1">{m.workspace_transfer_tableName_label()}</th>
+                        <th class="font-normal pb-1 text-right">
+                          {m.workspace_transfer_tableRows_label()}
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {#each populatedTables as table (table.name)}
+                        <tr>
+                          <!-- i18n-ignore (table names are wire identifiers) -->
+                          <td class="font-mono">{table.name}</td>
+                          <td class="text-right">{formatInteger(table.rowCount)}</td>
+                        </tr>
+                      {/each}
+                    </tbody>
+                  </table>
+                </div>
 
-        <div class="space-y-1 text-xs text-subtle">
-          {#if plan.manifest.git.hasRepository}
-            {#if plan.manifest.git.branch}
-              <p>
-                {m.workspace_transfer_gitBranch_label({ branch: plan.manifest.git.branch })}
-              </p>
-            {/if}
-            {#if plan.manifest.git.sandboxBranches.length > 0}
-              <p>
-                {plan.manifest.git.sandboxBranches.length === 1
-                  ? m.workspace_transfer_sandboxBranches_one()
-                  : m.workspace_transfer_sandboxBranches_many({
-                      count: plan.manifest.git.sandboxBranches.length,
-                    })}
-              </p>
-            {/if}
-          {:else}
-            <p>{m.workspace_transfer_noRepository_message()}</p>
-          {/if}
-        </div>
+                <div class="space-y-1 text-xs text-subtle">
+                  {#if plan.manifest.git.hasRepository}
+                    {#if plan.manifest.git.branch}
+                      <p>
+                        {m.workspace_transfer_gitBranch_label({ branch: plan.manifest.git.branch })}
+                      </p>
+                    {/if}
+                    {#if plan.manifest.git.sandboxBranches.length > 0}
+                      <p>
+                        {plan.manifest.git.sandboxBranches.length === 1
+                          ? m.workspace_transfer_sandboxBranches_one()
+                          : m.workspace_transfer_sandboxBranches_many({
+                              count: plan.manifest.git.sandboxBranches.length,
+                            })}
+                      </p>
+                    {/if}
+                  {:else}
+                    <p>{m.workspace_transfer_noRepository_message()}</p>
+                  {/if}
+                </div>
+              </div>
+            </Accordion.Content>
+          </Accordion.Item>
+        </Accordion.Root>
 
         <p class="text-xs text-subtle">
           {isDownload
@@ -459,8 +472,8 @@
       {/if}
     {:else if step === 'result'}
       {#if runStatus === 'succeeded'}
-        <p class="flex items-center gap-2 text-sm" data-testid="transfer-result-success">
-          <Fa icon={faCircleCheck} class="text-success shrink-0" />
+        <p class="flex items-start gap-2 text-sm" data-testid="transfer-result-success">
+          <span class="first-line-icon"><Fa icon={faCircleCheck} class="text-success" /></span>
           <span class="font-semibold">
             {isDownload
               ? m.workspace_transfer_result_downloadSuccess_title()
@@ -517,8 +530,8 @@
           </p>
         {/if}
       {:else}
-        <p class="flex items-center gap-2 text-sm" data-testid="transfer-result-failed">
-          <Fa icon={faCircleXmark} class="text-danger shrink-0" />
+        <p class="flex items-start gap-2 text-sm" data-testid="transfer-result-failed">
+          <span class="first-line-icon"><Fa icon={faCircleXmark} class="text-danger" /></span>
           <span class="font-semibold">
             {isDownload
               ? m.workspace_transfer_result_downloadFailed_title()

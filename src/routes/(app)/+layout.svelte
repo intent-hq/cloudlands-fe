@@ -1149,6 +1149,7 @@
   <QuitConfirmationModal
     bind:open={showQuitConfirmationModal}
     payload={quitConfirmationPayload}
+    workspaceDetails={$workspaceItems}
     onRespond={(proceed) => {
       quitConfirmationPayload = null;
       respondToQuitConfirmation(proceed);

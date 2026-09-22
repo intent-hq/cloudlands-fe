@@ -53,7 +53,7 @@ describe('ModelSwitchConfirmDialog', () => {
     renderDialog();
     const text = dialogText();
 
-    expect(screen.getByText('Switch model mid-conversation?')).toBeTruthy();
+    expect(screen.getByRole('heading', { name: 'Switch model?' })).toBeTruthy();
     expect(text).toContain('Conversation history is kept');
     expect(text).toContain('cached context is lost');
     // The cross-provider warnings must NOT leak into the model-only variant.
@@ -71,7 +71,7 @@ describe('ModelSwitchConfirmDialog', () => {
     });
     const text = dialogText();
 
-    expect(screen.getByText('Switch provider mid-conversation?')).toBeTruthy();
+    expect(screen.getByRole('heading', { name: 'Switch provider?' })).toBeTruthy();
     expect(text).toContain('sends this conversation to the new provider as plain text');
     expect(text).toContain('Tool details may be lost');
     expect(text).toContain('token usage may increase');
@@ -80,7 +80,6 @@ describe('ModelSwitchConfirmDialog', () => {
     expect(models.querySelector('[title="OpenAI Codex"] svg')).not.toBeNull();
     expect(models.textContent).not.toContain(' / ');
     expect(models.textContent).not.toContain('→');
-    expect(dialogEl().querySelectorAll('p')).toHaveLength(1);
     expect(screen.getByRole('button', { name: 'Switch provider' })).toBeTruthy();
   });
 

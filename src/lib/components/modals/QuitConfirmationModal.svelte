@@ -8,7 +8,9 @@
   import { FormDialog } from '$lib/components/patterns/confirm';
   import AgentAvatarStack from '$features/agent/components/agent-avatar/AgentAvatarStack.svelte';
   import Fa from 'svelte-fa';
-  import { faWindowMaximize } from '@fortawesome/free-solid-svg-icons';
+  import { faWindowMaximize, faFolder } from '@fortawesome/free-solid-svg-icons';
+  import GitHubAvatar from '$lib/components/ui/GitHubAvatar.svelte';
+  import type { Workspace } from '$shared/types';
   import { ListRow } from '$lib/components/patterns/collection';
   import type {
     QuitAgentSummary,
@@ -20,6 +22,10 @@
     open?: boolean;
     static?: boolean;
     payload?: QuitConfirmationShowPayload | null;
+    workspaceDetails?: Pick<
+      Workspace,
+      'id' | 'title' | 'repositoryOwner' | 'repositoryName' | 'branch'
+    >[];
     /** Called exactly once per open with the user's decision. */
     onRespond?: (proceed: boolean) => void;
   }
@@ -28,6 +34,7 @@
     open = $bindable(false),
     static: staticPosition = false,
     payload = null,
+    workspaceDetails = [],
     onRespond,
   }: Props = $props();
 
@@ -47,11 +54,6 @@
       ? m.quitConfirmation_modal_browsers_one({ count: disruptedTabs.length })
       : m.quitConfirmation_modal_browsers_many({ count: disruptedTabs.length }),
   );
-  const summary = $derived(
-    interrupted.length && disruptedTabs.length
-      ? m.quitConfirmation_modal_summary_both({ agents: agentCount, browsers: browserCount })
-      : m.quitConfirmation_modal_summary({ count: interrupted.length ? agentCount : browserCount }),
-  );
 
   const workspaces = $derived.by(() => {
     const groups = new Map<
@@ -61,6 +63,9 @@
         name: string;
         agents: QuitAgentSummary[];
         browserCount: number;
+        workspaceId?: string;
+        owner?: string;
+        detail?: string;
       }
     >();
     function group(workspaceId?: string, workspaceName?: string) {
@@ -70,17 +75,25 @@
           ? `name:${workspaceName}`
           : 'other';
       let value = groups.get(key);
+      const details = workspaceDetails.find((item) => item.id === workspaceId);
       if (!value) {
         value = {
           key,
+          workspaceId,
+          owner: details?.repositoryOwner,
+          detail:
+            details?.repositoryOwner && details.repositoryName
+              ? `${details.repositoryOwner}/${details.repositoryName}`
+              : details?.branch || workspaceId,
           name:
+            details?.title ||
             workspaceName ||
             (workspaceId ? m.workspace_links_untitled_label() : m.workspace_links_other_label()),
           agents: [],
           browserCount: 0,
         };
         groups.set(key, value);
-      } else if (workspaceName) {
+      } else if (workspaceName && !details?.title) {
         value.name = workspaceName;
       }
       return value;
@@ -98,6 +111,32 @@
       group(workspaceId, workspaceName).browserCount += 1;
     }
     return [...groups.values()];
+  });
+
+  const summary = $derived.by(() => {
+    const known = workspaces.length > 0 && workspaces.every((item) => item.workspaceId);
+    const scope =
+      workspaces.length === 1
+        ? m.quitConfirmation_modal_workspaces_one({ count: workspaces.length })
+        : m.quitConfirmation_modal_workspaces_many({ count: workspaces.length });
+    if (interrupted.length && disruptedTabs.length)
+      return known
+        ? m.quitConfirmation_modal_impactBothScoped({
+            agents: agentCount,
+            browsers: browserCount,
+            workspaces: scope,
+          })
+        : m.quitConfirmation_modal_impactBoth({ agents: agentCount, browsers: browserCount });
+    if (disruptedTabs.length)
+      return known
+        ? m.quitConfirmation_modal_impactBrowsersScoped({
+            browsers: browserCount,
+            workspaces: scope,
+          })
+        : m.quitConfirmation_modal_impactBrowsers({ browsers: browserCount });
+    return known
+      ? m.quitConfirmation_modal_impactAgentsScoped({ agents: agentCount, workspaces: scope })
+      : m.quitConfirmation_modal_impactAgents({ agents: agentCount });
   });
 
   let responded = $state(false);
@@ -136,7 +175,24 @@
       {#each workspaces as workspace (workspace.key)}
         <li aria-label={workspace.name}>
           <ListRow class="min-h-8 gap-2 px-0 py-1">
+            {#snippet leading()}
+              {#if workspace.owner}
+                <GitHubAvatar
+                  identity={workspace.owner}
+                  size={20}
+                  class="size-5 shrink-0 rounded-full"
+                >
+                  {#snippet fallback()}<Fa
+                      icon={faFolder}
+                      class="size-4 text-muted-foreground"
+                    />{/snippet}
+                </GitHubAvatar>
+              {:else}
+                <Fa icon={faFolder} class="size-4 text-muted-foreground" />
+              {/if}
+            {/snippet}
             {#snippet title()}<span title={workspace.name}>{workspace.name}</span>{/snippet}
+            {#snippet description()}{workspace.detail ?? ''}{/snippet}
             {#snippet trailing()}
               {#if workspace.browserCount > 0}
                 {@const browserLabel =

@@ -705,19 +705,23 @@
             wrapContent={false}
             class="specialist-trigger"
           >
-            <AgentAvatar
-              agentId="blank"
-              variant="standard"
-              specialist={currentSpecialistInfo ? displayedSpecialist : null}
-              icon={currentSpecialistInfo?.icon}
-            />
+            <span class="first-line-icon type-caption">
+              <AgentAvatar
+                agentId="blank"
+                variant="standard"
+                specialist={currentSpecialistInfo ? displayedSpecialist : null}
+                icon={currentSpecialistInfo?.icon}
+              />
+            </span>
             <div class="flex flex-col min-w-0 flex-1">
               <span class="type-caption font-medium! text-foreground truncate"
                 >{specialistDisplayLabel}</span
               >
               <span class="type-caption text-subtle truncate">{specialistDisplayDescription}</span>
             </div>
-            <Fa icon={faChevronDown} class="text-ghost size-3! shrink-0" />
+            <span class="first-line-icon type-caption"
+              ><Fa icon={faChevronDown} class="text-ghost size-3!" /></span
+            >
           </Button>
         {/snippet}
 
@@ -731,7 +735,9 @@
                 : ''}"
               onSelect={() => handleSpecialistSelect(null)}
             >
-              <AgentAvatar agentId="blank" variant="standard" />
+              <span class="first-line-icon type-caption"
+                ><AgentAvatar agentId="blank" variant="standard" /></span
+              >
               <div class="flex flex-col min-w-0 flex-1">
                 <span class="type-caption text-foreground"
                   >{m.workspace_initialAgentPicker_general_label()}</span
@@ -752,12 +758,14 @@
                     : ''}"
                   onSelect={() => handleSpecialistSelect(specialist.id)}
                 >
-                  <AgentAvatar
-                    agentId="blank"
-                    variant="standard"
-                    specialist={specialist.id}
-                    icon={specialist.icon}
-                  />
+                  <span class="first-line-icon type-caption">
+                    <AgentAvatar
+                      agentId="blank"
+                      variant="standard"
+                      specialist={specialist.id}
+                      icon={specialist.icon}
+                    />
+                  </span>
                   <div class="flex flex-col min-w-0 flex-1">
                     <span class="type-caption text-foreground truncate">{specialist.name}</span>
                     <span class="type-caption text-subtle truncate">{specialist.description}</span>

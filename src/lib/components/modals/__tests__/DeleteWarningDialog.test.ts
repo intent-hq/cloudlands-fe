@@ -23,6 +23,39 @@ warmImport(() => import('../../workspace/sidebar/__tests__/mocks/Fa.svelte'));
 warmImport(() => import('../DeleteWarningDialog.svelte'));
 
 describe('DeleteWarningDialog', () => {
+  it.each(['delete', 'archive'] as const)(
+    'does not claim to stop work for an inactive %s warning',
+    async (mode) => {
+      const DeleteWarningDialog = (await import('../DeleteWarningDialog.svelte')).default;
+      const onDeleteAnyway = vi.fn();
+      render(DeleteWarningDialog, {
+        props: {
+          open: true,
+          mode,
+          openPrs: [{ number: 418, title: 'Pending review', status: 'Open', url: '' }],
+          onDeleteAnyway,
+        },
+      });
+      expect(
+        screen.getByRole('heading', {
+          name:
+            mode === 'delete'
+              ? m.modals_deleteWarning_inactive_title()
+              : m.modals_archiveWarning_inactive_title(),
+        }),
+      ).toBeTruthy();
+      expect(screen.queryByText(/stop running work/i)).toBeNull();
+      expect(screen.getByText('Pending review')).toBeTruthy();
+      await fireEvent.click(
+        screen.getByRole('button', {
+          name: mode === 'delete' ? m.menu_delete() : m.workspace_card_archive_label(),
+          exact: true,
+        }),
+      );
+      expect(onDeleteAnyway).toHaveBeenCalledOnce();
+    },
+  );
+
   beforeEach(() => {
     openExternalUrlMock.mockClear();
   });

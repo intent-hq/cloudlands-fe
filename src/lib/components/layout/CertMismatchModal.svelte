@@ -44,9 +44,9 @@
 
     <div class="space-y-3 text-xs">
       <div class="flex justify-between gap-2">
-        <span class="text-subtle">{m.modals_certMismatch_connection_label()}</span>
+        <span class="shrink-0 text-subtle">{m.modals_certMismatch_connection_label()}</span>
         <!-- i18n-ignore (host:port, not translatable copy) -->
-        <span class="font-mono">{event.host}:{event.port}</span>
+        <span class="min-w-0 break-all text-right font-mono">{event.host}:{event.port}</span>
       </div>
 
       <div class="space-y-1">

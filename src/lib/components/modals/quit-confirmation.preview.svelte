@@ -22,6 +22,7 @@
 <script lang="ts">
   import QuitConfirmationModal from './QuitConfirmationModal.svelte';
   import type { QuitConfirmationShowPayload } from '$shared/ipc/quit-confirmation';
+  import type { WorkspaceId } from '$shared/types';
   let { scenario = 'eleven-browsers' }: { scenario?: string } = $props();
   let open = $state(true);
   const payload = $derived.by((): QuitConfirmationShowPayload => {
@@ -74,4 +75,18 @@
   });
 </script>
 
-<QuitConfirmationModal bind:open static {payload} onRespond={() => {}} />
+<QuitConfirmationModal
+  bind:open
+  static
+  {payload}
+  workspaceDetails={scenario === 'eleven-browsers' || scenario === 'one-browser'
+    ? ['Design system', 'Release prep', 'Documentation'].map((title, index) => ({
+        id: `browser-workspace-${index}` as WorkspaceId,
+        title,
+        repositoryOwner: 'intent-hq',
+        repositoryName: index === 2 ? 'intentapp.dev' : 'intent',
+        branch: ['design-system', 'release-prep', 'docs'][index],
+      }))
+    : []}
+  onRespond={() => {}}
+/>

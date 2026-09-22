@@ -83,6 +83,8 @@
     {isProviderChange
       ? m.chat_modelSwitchDialog_providerChange_description()
       : m.chat_modelSwitchDialog_modelChange_description()}
+  </p>
+  <p class="type-caption text-muted-foreground">
     {m.chat_modelSwitchDialog_deferred_description()}
   </p>
 </FormDialog>

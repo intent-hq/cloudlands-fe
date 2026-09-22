@@ -211,7 +211,9 @@
   bind:open
   static={staticPosition}
   bind:contentRef
-  title={m.modals_pullConflict_title()}
+  title={errorType === 'stash-conflict'
+    ? m.modals_pullConflict_stashTitle_label()
+    : m.modals_pullConflict_title()}
   closeLabel={m.modals_pullConflict_close_ariaLabel()}
   onClose={close}
 >
@@ -220,7 +222,9 @@
       <p class="type-body mb-4">{m.modals_pullConflict_branch_label({ branchName })}</p>
     {/if}
     <p class="type-body mb-4">
-      {m.modals_pullConflict_description()}
+      {errorType === 'stash-conflict'
+        ? m.modals_pullConflict_stash_description()
+        : m.modals_pullConflict_description()}
     </p>
     {#if error}
       <div class="type-caption text-foreground space-y-2 break-words max-h-40 overflow-auto">
@@ -258,28 +262,32 @@
                   <Button
                     variant="ghost"
                     type="button"
-                    class="flex w-full items-center gap-2 px-3 py-1.5 text-sm hover:bg-muted transition-colors text-left cursor-pointer"
+                    truncateLabel={false}
+                    labelClass="items-start"
+                    class="flex h-auto w-full items-start gap-2 whitespace-normal px-3 py-1.5 text-sm hover:bg-muted transition-colors text-left cursor-pointer"
                     onclick={() => {
                       openInEditor(editor);
                       dropdownOpen = false;
                     }}
                   >
-                    {#if editor.iconBase64}
-                      <img
-                        src="data:image/png;base64,{editor.iconBase64}"
-                        alt={editor.name}
-                        class="w-5 h-5"
-                      />
-                    {:else if IconComponent}
-                      <IconComponent size={16} />
-                    {:else if editor.category === 'terminal'}
-                      <Fa icon={faTerminal} class="w-4 h-4 ml-0.5 mr-0.5 opacity-30" />
-                    {:else if editor.category === 'finder'}
-                      <Fa icon={faFolder} class="w-4 h-4 ml-0.5 mr-0.5 opacity-30" />
-                    {:else}
-                      <Fa icon={faCode} class="w-4 h-4 ml-0.5 mr-0.5 opacity-30" />
-                    {/if}
-                    <span class="flex-1">{editor.name}</span>
+                    <span class="first-line-icon">
+                      {#if editor.iconBase64}
+                        <img
+                          src="data:image/png;base64,{editor.iconBase64}"
+                          alt={editor.name}
+                          class="w-5 h-5"
+                        />
+                      {:else if IconComponent}
+                        <IconComponent size={16} />
+                      {:else if editor.category === 'terminal'}
+                        <Fa icon={faTerminal} class="w-4 h-4 ml-0.5 mr-0.5 opacity-30" />
+                      {:else if editor.category === 'finder'}
+                        <Fa icon={faFolder} class="w-4 h-4 ml-0.5 mr-0.5 opacity-30" />
+                      {:else}
+                        <Fa icon={faCode} class="w-4 h-4 ml-0.5 mr-0.5 opacity-30" />
+                      {/if}
+                    </span>
+                    <span data-editor-name class="min-w-0 flex-1 break-words">{editor.name}</span>
                   </Button>
                 {/each}
               </div>
@@ -288,11 +296,13 @@
         {/if}
       </div>{/if}
     <div class="flex flex-wrap justify-between gap-3 items-center">
-      <Tooltip content={m.modals_pullConflict_createWorkspace_tooltip()}>
-        <span class="type-caption text-muted-foreground font-normal inline-block"
-          >{m.modals_pullConflict_letIntentHandle_label()}</span
+      {#if $installedEditors$.length > 0}<Tooltip
+          content={m.modals_pullConflict_createWorkspace_tooltip()}
         >
-      </Tooltip>
+          <span class="type-caption text-muted-foreground font-normal inline-block"
+            >{m.modals_pullConflict_letIntentHandle_label()}</span
+          >
+        </Tooltip>{/if}
       <!-- Create workspace action -->
       <Button variant="primary" onclick={handleCreateWorkspace} class="ml-auto shrink-0 gap-2">
         <Fa icon={faCodeBranch} />

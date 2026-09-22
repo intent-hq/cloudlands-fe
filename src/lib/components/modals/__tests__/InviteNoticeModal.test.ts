@@ -122,35 +122,7 @@ describe('InviteNoticeModal', () => {
     outside.remove();
   });
 
-  it('traps Tab within the dialog while open and restores focus on close', async () => {
-    const InviteNoticeModal = await loadModal();
-
-    const outside = document.createElement('button');
-    document.body.appendChild(outside);
-    outside.focus();
-
-    const { rerender } = render(InviteNoticeModal, {
-      props: { open: true, payload: FAILED, onAcknowledge: vi.fn() },
-    });
-
-    const dialogEl = await screen.findByRole('alertdialog');
-    const focusable = Array.from(dialogEl.querySelectorAll<HTMLElement>('button:not([disabled])'));
-    expect(focusable.length).toBeGreaterThan(1);
-    const first = focusable[0];
-    const last = focusable[focusable.length - 1];
-
-    last.focus();
-    await fireEvent.keyDown(document, { key: 'Tab' });
-    expect(document.activeElement).toBe(first);
-
-    await fireEvent.keyDown(document, { key: 'Tab', shiftKey: true });
-    expect(document.activeElement).toBe(last);
-
-    await rerender({ open: false, payload: FAILED, onAcknowledge: vi.fn() });
-    expect(document.activeElement).toBe(outside);
-    outside.remove();
-  });
-
+  // Real keyboard/pointer coverage lives in invitation-dialogs.ct.spec.ts.
   it('restores focus to the opener when OK acknowledges', async () => {
     const InviteNoticeModal = await loadModal();
 
@@ -171,18 +143,7 @@ describe('InviteNoticeModal', () => {
     outside.remove();
   });
 
-  it('acknowledges on backdrop click', async () => {
-    const onAcknowledge = vi.fn();
-    const InviteNoticeModal = await loadModal();
-
-    render(InviteNoticeModal, { props: { open: true, payload: FAILED, onAcknowledge } });
-
-    const dialogEl = await screen.findByRole('alertdialog');
-    await fireEvent.click(dialogEl.parentElement!);
-
-    expect(onAcknowledge).toHaveBeenCalledOnce();
-  });
-
+  // Real keyboard/pointer coverage lives in invitation-dialogs.ct.spec.ts.
   it('closes on dismiss (open=false) without acknowledging', async () => {
     const onAcknowledge = vi.fn();
     const InviteNoticeModal = await loadModal();

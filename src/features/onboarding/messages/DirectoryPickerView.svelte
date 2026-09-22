@@ -356,7 +356,7 @@
 
 {#snippet listingErrorMessage()}
   <span>{m.onboarding_dirPicker_readError_title()}</span>
-  <span class="mt-1 block type-caption break-all">{error}</span>
+  <span class="mt-1 block type-caption wrap-anywhere">{error}</span>
 {/snippet}
 
 {#snippet pathErrorMessage()}{pathError}{/snippet}

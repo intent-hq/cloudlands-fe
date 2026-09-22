@@ -68,8 +68,11 @@ Import `ListView` and `ListRow` from `$lib/components/patterns/collection`; insp
 Inside dialogs, use flush, unfilled rows (`ListRow class="px-0"`), not nested cards or wells.
 Keep informational agents and PRs to one line; avoid redundant status badges. Render
 warnings and empty-state guidance as muted text. For an icon beside a title and wrapping
-description, use `ListRow leadingAlign="title"` so the icon stays centered on the first
-text line rather than the entire block. Selection belongs to the enclosing control;
+description, use `ListRow`: leading icons, avatars, and trailing symbols are always centered
+on the first text line, never the entire multiline block. This is the default, not an opt-in.
+For custom compositions, use a top-aligned row and the shared `first-line-icon` slot with the same
+typography as the first line. Center the icon inside that slot; do not use fixed pixel nudges.
+Keep single-line and icon-only controls centered as usual. Selection belongs to the enclosing control;
 use its accessible pressed/selected state and a trailing check, not a permanent row fill.
 
 ### …build a screen or takeover
@@ -141,7 +144,12 @@ geometry. Use `size="sm"` for a short decision, the default for ordinary forms,
 editor. Choose width from the content, not from the longest button label. Avoid
 overriding shell padding, positioning, or overflow.
 
-- The title names the decision. A short visible description explains consequences.
+- The title names the decision. Omit a description when the labels already explain
+  the task; never repeat the title as a body heading or explain how to click Save.
+  Keep consequences, permissions and recovery guidance visible and specific.
+- Use the shared header and footer without decorative icon badges, nested cards,
+  or a second border/background treatment. Reserve icons for meaningful identity,
+  selection and status. A warning needs a clear consequence, not extra chrome.
 - Put essential context first; move generated instructions and technical details
   into a disclosure, never the information needed to make a safe choice.
   Use `Accordion.Trigger` and `Accordion.Content` with `inset={false}` when the
@@ -329,11 +337,11 @@ dynamic imports from source; do not maintain a second prose inventory.
 
 Choose the row family by purpose; do not impose one height on every row.
 
-| Family          | Height rule                                                                                                                                                                           | Title, icon, and action alignment                                                                                                                                           |
-| --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Navigation rows | Compact 28px or regular 32px, using the navigation row tokens in `app.css`; use `type-caption`.                                                                                       | Keep the title, leading icon, and trailing action on the same primary line.                                                                                                 |
-| Content rows    | Content-driven and potentially multiline. `collection/ListRow` keeps 36px compact / 48px regular minimum heights, with room to grow; its title and short metadata use `type-caption`. | Keep title and inline metadata on a shared text baseline. Use `leadingAlign="title"` for an icon beside descriptive text; the default centers it against the content block. |
-| Setting rows    | Content-driven label/control/description tiers, using `SettingsFieldRow`; expanded form content uses `type-body`.                                                                     | Align the label and control on the primary tier, with the description below; keep icons and actions aligned to that tier.                                                   |
+| Family          | Height rule                                                                                                                                                                           | Title, icon, and action alignment                                                                                                                                          |
+| --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Navigation rows | Compact 28px or regular 32px, using the navigation row tokens in `app.css`; use `type-caption`.                                                                                       | Keep the title, leading icon, and trailing action on the same primary line.                                                                                                |
+| Content rows    | Content-driven and potentially multiline. `collection/ListRow` keeps 36px compact / 48px regular minimum heights, with room to grow; its title and short metadata use `type-caption`. | Keep title and inline metadata on a shared text baseline. Leading and trailing icons always center on the first title line, including when subtitles or descriptions wrap. |
+| Setting rows    | Content-driven label/control/description tiers, using `SettingsFieldRow`; expanded form content uses `type-body`.                                                                     | Align the label and control on the primary tier, with the description below; keep icons and actions aligned to that tier.                                                  |
 
 The shared baseline rule is to align titles, icons, and actions within the primary row or tier;
 secondary copy must not introduce an independent title or action offset. Multiline content may

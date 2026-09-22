@@ -69,7 +69,7 @@
 
 <div class="py-3">
   <div class="grid grid-cols-[1rem_minmax(0,1fr)_auto] items-start gap-x-3 gap-y-1">
-    <div class="flex size-4 items-center justify-center text-ghost">
+    <div class="first-line-icon type-body w-4 text-ghost">
       <Fa icon={faGithub} class="size-4" />
     </div>
     <div class="flex min-w-0 items-center gap-3">

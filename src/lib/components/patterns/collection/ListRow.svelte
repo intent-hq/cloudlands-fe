@@ -12,8 +12,6 @@
     meta?: Snippet;
     trailing?: Snippet;
     inset?: boolean;
-    /** Align a leading icon with the title line when the description wraps. */
-    leadingAlign?: 'center' | 'title';
     class?: string;
   }
 
@@ -24,7 +22,6 @@
     meta,
     trailing,
     inset = false,
-    leadingAlign = 'center',
     class: className,
     ...restProps
   }: Props = $props();
@@ -36,7 +33,7 @@
   data-density={density}
   data-inset={inset ? 'card' : undefined}
   class={cn(
-    'flex min-w-0 items-center gap-3',
+    'flex min-w-0 items-start gap-3',
     inset ? CARD_ROW_GUTTER_CLASS : 'px-3',
     density === 'compact' ? 'min-h-9 py-1.5' : 'min-h-12 py-2.5',
     className,
@@ -44,19 +41,13 @@
   {...restProps}
 >
   {#if leading}
-    <div
-      data-slot="list-row-leading"
-      class={cn(
-        'flex shrink-0 items-center justify-center',
-        leadingAlign === 'title' && 'self-start h-[1lh] type-caption',
-      )}
-    >
+    <div data-slot="list-row-leading" class="type-caption first-line-icon">
       {@render leading()}
     </div>
   {/if}
   <div class="min-w-0 flex-1">
     <div class="flex min-w-0 items-baseline gap-2">
-      <div class="min-w-0 truncate type-caption text-foreground">
+      <div data-slot="list-row-title" class="min-w-0 truncate type-caption text-foreground">
         {@render title()}
       </div>
       {#if meta}<div class="shrink-0 type-caption text-muted-foreground">{@render meta()}</div>{/if}
@@ -65,5 +56,7 @@
       <div class="mt-0.5 min-w-0 type-caption text-muted-foreground">{@render description()}</div>
     {/if}
   </div>
-  {#if trailing}<div class="flex shrink-0 items-center gap-1">{@render trailing()}</div>{/if}
+  {#if trailing}<div data-slot="list-row-trailing" class="type-caption first-line-icon gap-1">
+      {@render trailing()}
+    </div>{/if}
 </div>
