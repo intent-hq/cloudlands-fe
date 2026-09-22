@@ -491,7 +491,6 @@ export const faColumns = icon('columns');
 export const faComment = icon('comment');
 export const faCommentDots = icon('comment-dots');
 export const faCommentSlash = icon('comment-slash');
-export const faComments = icon('comments');
 export const faCompress = icon('compress');
 export const faCompressAlt = icon('compress-alt');
 export const faCopy = icon('copy');

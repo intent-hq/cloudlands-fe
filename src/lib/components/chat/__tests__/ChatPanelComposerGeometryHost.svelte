@@ -37,6 +37,8 @@
     transcript = false,
     responseDelivered = false,
     initializeStore = true,
+    followUp,
+    historyNotice,
   }: {
     theme?: 'light' | 'dark';
     zoom?: number;
@@ -52,9 +54,32 @@
     transcript?: boolean;
     responseDelivered?: boolean;
     initializeStore?: boolean;
+    followUp?: 'blocker' | 'discussion';
+    historyNotice?: 'blocker-report' | 'discussion-request' | 'turn-failure' | 'interruption';
   } = $props();
 
-  const fixture = untrack(() => ({ chief, streaming, draft, suggestions, questions, transcript }));
+  $effect(() => {
+    const root = document.documentElement;
+    const hadLight = root.classList.contains('light');
+    const hadDark = root.classList.contains('dark');
+    root.classList.toggle('light', theme === 'light');
+    root.classList.toggle('dark', theme === 'dark');
+    return () => {
+      root.classList.toggle('light', hadLight);
+      root.classList.toggle('dark', hadDark);
+    };
+  });
+
+  const fixture = untrack(() => ({
+    chief,
+    streaming,
+    draft,
+    suggestions,
+    questions,
+    transcript,
+    followUp,
+    historyNotice,
+  }));
   let appliedStreaming = fixture.streaming;
   const workspaceId = fixture.chief ? CHIEF_WORKSPACE_ID : 'chat-panel-composer-geometry';
   const agentId = fixture.chief ? 'chief-composer-agent' : 'regular-composer-agent';
@@ -129,6 +154,61 @@
     createdAt: timestamp,
     updatedAt: timestamp,
   } as unknown as AgentSession;
+
+  if (fixture.followUp || fixture.historyNotice) {
+    session.messages = [
+      {
+        id: 'follow-up-user',
+        role: 'user',
+        timestamp,
+        contentBlocks: [
+          { type: 'text', text: 'Check the release readiness and share the next steps.' },
+        ],
+      },
+      {
+        id: 'follow-up-assistant',
+        role: 'assistant',
+        timestamp,
+        contentBlocks: [
+          {
+            type: 'text',
+            text: [
+              '## Release readiness',
+              'The implementation is complete. Here is the verification summary.',
+              ...Array.from(
+                { length: 8 },
+                (_, index) =>
+                  `### Check ${index + 1}\nThe focused checks passed. The changes remain scoped to the requested behavior.`,
+              ),
+              '## Ready for your review',
+              'Automated validation is complete. Native accessibility checks still need guided manual testing.',
+              'No merge action was taken.',
+              '<!-- suggested-prompts\nWalk me through the manual checks.\nHold off on opening the PR.\n-->',
+            ].join('\n\n'),
+          },
+        ],
+      },
+    ];
+    if (fixture.historyNotice) {
+      session.messages.push({
+        id: 'follow-up-notice',
+        role: 'system',
+        timestamp,
+        contentBlocks: [
+          {
+            type: 'text',
+            text:
+              fixture.historyNotice === 'interruption'
+                ? 'This conversation was interrupted because intentd restarted.'
+                : fixture.historyNotice === 'turn-failure'
+                  ? 'The agent stopped before it could finish the response. Please retry when the connection is restored.'
+                  : 'Native accessibility checks need manual confirmation. Choose guided testing or resolve the permission entry before continuing.',
+            meta: { kind: fixture.historyNotice },
+          },
+        ],
+      });
+    }
+  }
 
   if (fixture.transcript) {
     const history = Array.from({ length: 12 }, (_, index) => {
@@ -220,13 +300,16 @@
   });
   if (fixture.draft) store.dispatch(setChatDraft(workspaceId, agentId, fixture.draft));
   $effect(() => {
+    const kind = attention ?? followUp;
     store.dispatch(
       updateSession(agentId, {
-        attentionRequestKind: attention ?? undefined,
-        attentionRequestReason: attention
-          ? 'Please review the fixture plan before continuing. This longer explanation must stay readable without covering the prompt or queued messages.'
+        attentionRequestKind: kind,
+        attentionRequestReason: kind
+          ? followUp
+            ? 'Native accessibility checks need manual confirmation. Choose guided testing or resolve the permission entry before continuing.'
+            : 'Please review the fixture plan before continuing. This longer explanation must stay readable without covering the prompt or queued messages.'
           : undefined,
-        attentionRequestTimestamp: attention ? timestamp : undefined,
+        attentionRequestTimestamp: kind ? timestamp : undefined,
       }),
     );
   });
@@ -273,7 +356,7 @@
   onDestroy(disposeStore);
 </script>
 
-<section class:dark={theme === 'dark'} style:zoom data-testid="chat-panel-composer-host">
+<section style:zoom data-testid="chat-panel-composer-host">
   <div class="relative" style:width="{width}px" style:height="{height}px">
     <div class="absolute inset-0 h-full w-full">
       <PanelLayout {workspaceId} layoutId={workspaceId} />
