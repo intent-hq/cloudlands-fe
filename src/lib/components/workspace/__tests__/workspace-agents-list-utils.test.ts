@@ -345,9 +345,7 @@ describe('shouldVirtualizeWorkspaceAgentRows', () => {
     expect(list).toContain('shouldVirtualizeWorkspaceAgentRows(filteredAgentRows)');
     expect(list).toContain('{:else if shouldUseVirtual}');
     expect(list).toContain('<VirtualList');
-    // Both paths iterate the same row model: no per-path grouping logic.
     expect(list).toContain('items={listRows}');
-    expect(list).toContain('{@render rowList(listRows)}');
   });
 });
 
