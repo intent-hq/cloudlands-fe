@@ -54,7 +54,7 @@
     tabindex="-1"
   >
     <!-- Header -->
-    <div class="px-6 py-4 border-b border-border flex items-center justify-between">
+    <div class="px-6 py-4 flex items-center justify-between">
       <div class="flex items-center gap-3">
         <span class="text-warning-ink"><Fa icon={faTriangleExclamation} size="lg" /></span>
         <h2 id="protocol-mismatch-title" class="text-lg font-semibold">

@@ -33,6 +33,7 @@
   import { requestDeleteWorkspace } from '$store/renderer/slices/workspace-operations/workspace-operations-slice';
   import { openTransferModal } from '$store/renderer/slices/workspace-transfer/workspace-transfer-slice';
   import { setWorkspaceEntity } from '$store/renderer/slices/workspace/workspace-slice';
+  import { selectHidesOwnerWorkspaceActions } from '$store/renderer/slices/workspace/workspace-selectors';
   import {
     markKeySlotUnassigned,
     pinWorkspaceToKey,
@@ -378,6 +379,10 @@
   const pinnedKeySlot$ = selectWorkspacePinnedKeySlot(workspaceIdStore);
   const resolvedKeySlot$ = selectWorkspaceResolvedKeySlot(workspaceIdStore);
 
+  // Owner-only actions (Transfer/Download, Delete) are refused by the daemon
+  // for collaborators (`require_owner`), so the menu hides them up front.
+  const hidesOwnerActions$ = selectHidesOwnerWorkspaceActions(workspaceIdStore);
+
   const microKeyAction: MenuAction | null = $derived.by(() => {
     const targetWorkspaceId = workspaceId || workspace?.id || '';
     if (!$microConnected$ || !targetWorkspaceId) return null;
@@ -410,7 +415,7 @@
   });
 
   const transferAction: MenuAction | null = $derived(
-    workspace
+    workspace && !$hidesOwnerActions$
       ? {
           label: m.workspace_card_transfer_label(),
           icon: faRightLeft,
@@ -640,13 +645,14 @@
           style="max-width: min(20rem, calc(var(--bits-dropdown-menu-content-available-width, 100vw) - 0.625rem))"
         >
           <WorkspaceActionsMenu
+            layout="editors-submenu"
             filePath={workspace?.worktreePath || workspace?.repositoryPath || workspace?.path || ''}
             workspaceId={workspace?.id || workspaceId}
             isDirectory={true}
             isWorkspaceRoot={true}
             onDelete={handleDelete}
             onClose={handleClose}
-            showDeleteOption={true}
+            showDeleteOption={!$hidesOwnerActions$}
             showFileNameCopy={false}
             {additionalActions}
           />

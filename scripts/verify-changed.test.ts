@@ -96,6 +96,10 @@ function branchWithCommit(root: string, file = 'src/committed.ts') {
   return file;
 }
 
+function trackOriginMain(root: string, ref = 'refs/heads/main') {
+  git(root, 'update-ref', 'refs/remotes/origin/main', ref);
+}
+
 function deferred() {
   let resolve!: () => void;
   const promise = new Promise<void>((done) => {
@@ -164,9 +168,10 @@ describe('verify-changed arguments and paths', () => {
     expect(() => parseArgs(['--base', '--dry-run'])).toThrow('--base');
   });
 
-  it('collects committed branch files only when a base is given', () => {
+  it('collectChangedFiles includes committed branch files only when a base is given', () => {
     const root = gitRepository();
     const committed = branchWithCommit(root);
+    trackOriginMain(root);
     writeFileSync(join(root, 'src/untracked.ts'), '');
 
     expect(collectChangedFiles(root)).toEqual(['src/untracked.ts']);
@@ -252,6 +257,36 @@ describe('verification planning', () => {
       ctTests: [],
     });
     expect(otherScript.checks.map((check) => check.id)).not.toContain('architecture');
+  });
+
+  it('lints changed scripts/ files but not e2e/ or test/ files', () => {
+    const root = fixtureRoot({
+      'scripts/verify-changed.mjs': '',
+      'scripts/type-check.ts': '',
+      'scripts/legacy.cjs': '',
+      'e2e/flow.spec.ts': '',
+      'test/harness.mjs': '',
+      'test/fixtures/legacy.cjs': '',
+    });
+    const plan = createVerificationPlan(
+      [
+        'scripts/verify-changed.mjs',
+        'scripts/type-check.ts',
+        'scripts/legacy.cjs',
+        'e2e/flow.spec.ts',
+        'test/harness.mjs',
+        'test/fixtures/legacy.cjs',
+      ],
+      { root, ctTests: [] },
+    );
+    const eslint = plan.checks.find((check) => check.id === 'eslint');
+    expect(eslint?.args).toEqual([
+      'exec',
+      'eslint',
+      'scripts/verify-changed.mjs',
+      'scripts/type-check.ts',
+      'scripts/legacy.cjs',
+    ]);
   });
 
   it('runs the type-check:validate wrapper only when scripts/type-check.ts changes', () => {
@@ -747,8 +782,15 @@ describe('verification planning', () => {
   it('classifies test paths by the runner that owns them', () => {
     expect(testRunner('test/splash-loader.spec.ts')).toBe('playwright');
     expect(testRunner('test/nested/geometry.spec.ts')).toBe('playwright');
+    // playwright.config.ts `testIgnore` names (playwright/root-spec-pattern.mjs) run
+    // only through playwright.manual.config.ts, so they are not the Playwright lane.
     expect(testRunner('test/current-main-baseline.spec.ts')).toBe('manual');
     expect(testRunner('test/catalog-manual-review.capture.spec.ts')).toBe('manual');
+    expect(testRunner('test/electron-browser-lifetime.spec.ts')).toBe('manual');
+    expect(testRunner('test/nested/electron-browser-lifetime.spec.ts')).toBe('manual');
+    // Playwright matches testMatch with nocase + dot, so these are root specs too.
+    expect(testRunner('test/Foo.SPEC.ts')).toBe('playwright');
+    expect(testRunner('test/.hidden/x.spec.ts')).toBe('playwright');
     expect(testRunner('test/actions-status-visual.spec.ts')).toBe('playwright');
     expect(testRunner('test/added.visual.spec.ts')).toBe('playwright');
     expect(testRunner('test/added.ct.spec.ts')).toBe('playwright');
@@ -1022,6 +1064,25 @@ describe('verification planning', () => {
     expect(ids).not.toContain('playwright-direct');
     expect(plan.fallbackReasons).toEqual([]);
   });
+
+  // playwright.config.ts reads testDir/testMatch/testIgnore from these modules, so
+  // a change there can reroute root discovery the same way a config edit does.
+  it.each(['playwright/root-spec-pattern.mjs', 'playwright/ct-spec-pattern.mjs'])(
+    'runs the whole Playwright browser suite when %s changes',
+    (module) => {
+      const root = fixtureRoot({ [module]: 'export const ROOT_TEST_DIR = "test";' });
+      const plan = createVerificationPlan([module], { root, ctTests: [] });
+      const ids = plan.checks.map((check) => check.id);
+      expect(ids).toContain('playwright-full');
+      expect(plan.fallbackReasons).toEqual([]);
+    },
+  );
+
+  it('does not run the whole Playwright browser suite for other playwright/ sources', () => {
+    const root = fixtureRoot({ 'playwright/ct-port.ts': 'export const CT_PORT = 3100;' });
+    const plan = createVerificationPlan(['playwright/ct-port.ts'], { root, ctTests: [] });
+    expect(plan.checks.map((check) => check.id)).not.toContain('playwright-full');
+  });
 });
 
 describe('empty change set guard', () => {
@@ -1030,8 +1091,7 @@ describe('empty change set guard', () => {
     return { lines, options: { log: (line: string) => lines.push(line) } };
   }
 
-  it('exits 2 with the --base hint when a clean worktree collects nothing', async () => {
-    const root = gitRepository();
+  async function expectNothingToVerify(root: string) {
     for (const argv of [[], ['--dry-run']]) {
       const { lines, options } = capture();
       expect(await runCli(argv, root, options), argv.join(' ')).toBe(2);
@@ -1039,6 +1099,64 @@ describe('empty change set guard', () => {
       expect(lines[0]).toContain('nothing to verify');
       expect(lines[0]).toContain('pass --base origin/main');
     }
+  }
+
+  it('exits 2 with the --base hint when a clean worktree has no origin/main ref', async () => {
+    await expectNothingToVerify(gitRepository());
+  });
+
+  it('exits 2 with the --base hint when a clean worktree is not ahead of origin/main', async () => {
+    const root = gitRepository();
+    trackOriginMain(root);
+    await expectNothingToVerify(root);
+
+    branchWithCommit(root);
+    trackOriginMain(root, 'refs/heads/feature');
+    await expectNothingToVerify(root);
+  });
+
+  it('exits 2 without throwing when a clean branch is ahead but origin/main is missing', async () => {
+    const root = gitRepository();
+    branchWithCommit(root);
+    await expectNothingToVerify(root);
+  });
+
+  it('defaults to origin/main as the base on a clean branch that is ahead of it', async () => {
+    const root = gitRepository();
+    const committed = branchWithCommit(root);
+    trackOriginMain(root);
+    for (const argv of [[], ['--dry-run']]) {
+      const { lines, options } = capture();
+      const planned: string[][] = [];
+      const gates = {
+        checkNode: () => ({ ok: true, reason: null }),
+        checkDeps: () => ({ ok: true, reason: null }),
+        ensureI18n: async () => ({ ok: true, reason: null }),
+        runPlan: async (plan: { files: string[] }) => {
+          planned.push(plan.files);
+        },
+      };
+      expect(await runCli(argv, root, { ...options, ...gates }), argv.join(' ')).toBe(0);
+      expect(lines[0]).toBe(
+        'verify:changed: worktree clean; verifying commits since merge-base with origin/main',
+      );
+      expect(lines).toContain(`  - ${committed}`);
+      expect(lines.some((line) => /verify:changed: [1-9][0-9]* check\(s\)/.test(line))).toBe(true);
+      expect(lines.some((line) => line.includes('nothing to verify'))).toBe(false);
+      expect(planned).toEqual(argv.includes('--dry-run') ? [] : [[committed]]);
+    }
+  });
+
+  it('verifies the working-tree set without the fallback when changes are uncommitted', async () => {
+    const root = gitRepository();
+    const committed = branchWithCommit(root);
+    trackOriginMain(root);
+    writeFileSync(join(root, 'src/untracked.ts'), '');
+    const { lines, options } = capture();
+    expect(await runCli(['--dry-run'], root, options)).toBe(0);
+    expect(lines).toContain('  - src/untracked.ts');
+    expect(lines).not.toContain(`  - ${committed}`);
+    expect(lines.some((line) => line.includes('worktree clean'))).toBe(false);
   });
 
   it('omits the hint when --base was already supplied', async () => {

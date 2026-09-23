@@ -33,6 +33,7 @@ const mocks = vi.hoisted(() => {
       pendingTitleMutations: {} as Record<string, { token: number }>,
     },
     browserClients: undefined as unknown,
+    userPreferences: undefined as { labsMultiplayerEnabled?: boolean } | undefined,
   };
   const dispatch = vi.fn((action: { type: string; payload?: unknown[] }) => {
     if (
@@ -97,7 +98,9 @@ const mocks = vi.hoisted(() => {
       { select: getter },
     );
   const notifySelectors = () => selectorSubscribers.forEach((notify) => notify());
+  const role = { hidesOwnerActions: false };
   return {
+    role,
     dispatch,
     update,
     archive,
@@ -135,6 +138,7 @@ vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
   selectWorkspaceActivePullRequest: mocks.selector(() => null),
   selectWorkspaceProgressHeadline: mocks.selector(() => ({ headline: '', subtext: '' })),
   selectWorkspaceProgressActions: mocks.selector(() => mocks.progressActions),
+  selectHidesOwnerWorkspaceActions: mocks.selector(() => mocks.role.hidesOwnerActions),
 }));
 
 vi.mock('$store/renderer/slices/workspace-notes/workspace-notes-selectors', () => ({
@@ -155,6 +159,11 @@ vi.mock('$store/renderer/slices/note-read-tracking/note-read-tracking-selectors'
 
 vi.mock('$store/renderer/slices/workspace-agents/workspace-agents-selectors', () => ({
   selectAllWorkspaceAgents: mocks.selector(() => []),
+}));
+
+vi.mock('$store/renderer/slices/presence/presence-selectors', () => ({
+  selectWorkspacePresencePeople: mocks.selector(() => []),
+  selectWorkspacePresenceFocusTargets: mocks.selector(() => ({})),
 }));
 
 vi.mock('$store/renderer/slices/git/git-selectors', () => ({
@@ -293,6 +302,7 @@ async function renderProgressCard(overrides: Partial<Workspace> = {}) {
     status: WorkspaceStatusEnum.Active,
     statusMessage: undefined,
     statusImageAssetId: undefined,
+    myRole: undefined,
     ...overrides,
   } as Workspace;
   const WorkspaceProgressCard = (await import('../WorkspaceProgressCard.svelte')).default;
@@ -344,6 +354,8 @@ describe('WorkspaceProgressCard status message', () => {
     mocks.progressActions.length = 0;
     mocks.storeState.workspace.pendingTitleMutations = {};
     mocks.storeState.browserClients = browserClientsInitialState;
+    mocks.storeState.userPreferences = undefined;
+    mocks.role.hidesOwnerActions = false;
     Object.defineProperty(navigator, 'clipboard', {
       value: { writeText: mocks.clipboardWrite },
       configurable: true,
@@ -410,6 +422,91 @@ describe('WorkspaceProgressCard status message', () => {
     expect(
       container.querySelector('[data-workspace-actions-trigger]')?.getAttribute('aria-expanded'),
     ).toBe('false');
+  });
+
+  it('offers Share to the workspace owner ahead of Transfer and opens the share dialog once the Multiplayer lab is on', async () => {
+    mocks.storeState.userPreferences = { labsMultiplayerEnabled: true };
+    const { container } = await renderProgressCard({ myRole: 'owner' });
+    await fireEvent.click(container.querySelector('[data-workspace-actions-trigger]')!);
+
+    const share = screen.getByRole('button', { name: 'Share…' });
+    const transfer = screen.getByRole('button', { name: 'Transfer/Download…' });
+    const menuItems = Array.from(share.parentElement!.children);
+    const shareIndex = menuItems.indexOf(share);
+
+    expect(share.dataset.iconName).toBe('user-plus');
+    expect(menuItems[shareIndex - 1]?.getAttribute('data-testid')).toBe('menu-divider');
+    expect(menuItems.indexOf(transfer)).toBe(shareIndex + 1);
+
+    await fireEvent.click(share);
+
+    expect(mocks.dispatch).toHaveBeenCalledWith({
+      type: 'workspaceShare/openDialog',
+      payload: [{ workspaceId: 'ws-1', workspaceTitle: 'Active Workspace' }],
+    });
+    expect(
+      container.querySelector('[data-workspace-actions-trigger]')?.getAttribute('aria-expanded'),
+    ).toBe('false');
+  });
+
+  it.each([
+    ['by default (no preference persisted)', undefined],
+    ['while the Multiplayer lab is off', { labsMultiplayerEnabled: false }],
+  ])('does not offer Share to the owner %s', async (_label, userPreferences) => {
+    mocks.storeState.userPreferences = userPreferences;
+    const { container } = await renderProgressCard({ myRole: 'owner' });
+    await fireEvent.click(container.querySelector('[data-workspace-actions-trigger]')!);
+
+    expect(screen.getByRole('button', { name: 'Transfer/Download…' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Share…' })).toBeNull();
+    expect(mocks.dispatch).not.toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'workspaceShare/openDialog' }),
+    );
+  });
+
+  it.each([
+    ['a collaborator', { myRole: 'collaborator' as const }],
+    ['no reported role', { myRole: undefined }],
+  ])('does not offer Share to %s even with the Multiplayer lab on', async (_label, overrides) => {
+    mocks.storeState.userPreferences = { labsMultiplayerEnabled: true };
+    const { container } = await renderProgressCard(overrides);
+    await fireEvent.click(container.querySelector('[data-workspace-actions-trigger]')!);
+
+    expect(screen.getByRole('button', { name: 'Transfer/Download…' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Share…' })).toBeNull();
+  });
+
+  it('does not offer Share while the owner-only actions are hidden, even when the row reports myRole owner (guest window / unsettled identity)', async () => {
+    mocks.storeState.userPreferences = { labsMultiplayerEnabled: true };
+    mocks.role.hidesOwnerActions = true;
+    const { container } = await renderProgressCard({ myRole: 'owner' });
+    await fireEvent.click(container.querySelector('[data-workspace-actions-trigger]')!);
+
+    expect(screen.queryByRole('button', { name: 'Share…' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Transfer/Download…' })).toBeNull();
+  });
+
+  it('offers Transfer, Archive and Delete to the workspace owner', async () => {
+    const { container } = await renderProgressCard({ myRole: 'owner' });
+    await fireEvent.click(container.querySelector('[data-workspace-actions-trigger]')!);
+
+    expect(screen.getByRole('button', { name: 'Transfer/Download…' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Archive Workspace' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Delete Workspace…' })).toBeTruthy();
+  });
+
+  it('hides Transfer, Archive and Delete from a collaborator while keeping the rest of the menu', async () => {
+    mocks.role.hidesOwnerActions = true;
+    const { container } = await renderProgressCard({ myRole: 'collaborator' });
+    await fireEvent.click(container.querySelector('[data-workspace-actions-trigger]')!);
+
+    expect(screen.queryByRole('button', { name: 'Transfer/Download…' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Archive Workspace' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Delete Workspace…' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Share…' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Leave' })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Toggle Sidebar' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Move sidebar to right' })).toBeTruthy();
   });
 
   it('omits the transfer action when workspace data becomes unavailable', async () => {

@@ -9,8 +9,13 @@
     disabled = false,
   }: { ariaLabel: string; value?: string; disabled?: boolean } = $props();
 
-  export function focus() {}
-  export function focusAndSelectAll() {}
+  let element: HTMLDivElement;
+  export function focus() {
+    element?.focus();
+  }
+  export function focusAndSelectAll() {
+    element?.focus();
+  }
   export async function setContent(content: string) {
     value = content;
   }
@@ -32,6 +37,7 @@
 </script>
 
 <div
+  bind:this={element}
   aria-label={ariaLabel}
   role="textbox"
   data-testid="mock-rich-textarea"

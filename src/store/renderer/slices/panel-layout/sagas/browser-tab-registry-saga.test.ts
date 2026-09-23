@@ -28,6 +28,7 @@ vi.mock('$lib/utils/browser-url-resolution', () => ({
 }));
 
 import { LOCAL_CONNECTION_ID } from '$shared/types/connections';
+import { initialState as guestSessionsInitialState } from '../../guest-sessions/guest-sessions-slice';
 import type { BrowserTab, BrowserTabListing } from '$shared/types/browser-clients';
 import { createAction, type StoreAction } from '@augmentcode/themis/utils/store/create-action';
 import {
@@ -55,6 +56,7 @@ import {
   openTabInRightmostColumn,
   openTabInRightmostColumnRequested,
   panelLayoutReducer as rawPanelLayoutReducer,
+  reopenClosedTab,
   setActiveTab,
   setRestoreStatus,
   setTabOwnerAgent,
@@ -164,6 +166,8 @@ function start(
     },
     daemonHealth: { health: opts.health ?? 'healthy', connectionGeneration: 1 },
     connections: { activeId: LOCAL_CONNECTION_ID, windowBackendId: LOCAL_CONNECTION_ID },
+    // Settled owner window: guest list received, no host joined.
+    guestSessions: { ...guestSessionsInitialState, hasReceivedList: true },
     workspace: {
       workspaces: createCollection(
         'id',
@@ -1396,6 +1400,79 @@ describe('browserTabRegistrySaga', () => {
 
       await flush(SYNC_RETRY_MS);
       expect(mocks.syncTabs).toHaveBeenCalledTimes(1);
+      await stop(h);
+    });
+
+    it('stops the connect-time sync on a -32003 refusal instead of retrying (collaborator, multiplayer w3)', async () => {
+      const forbidden = Object.assign(new Error('Forbidden'), { rpcCode: -32003 });
+      mocks.listTabs.mockRejectedValue(forbidden);
+      const h = start({ layouts: { [WS]: settledLayout([]) } });
+      await flush();
+      expect(mocks.listTabs).toHaveBeenCalledTimes(1);
+      expect(mocks.syncTabs).not.toHaveBeenCalled();
+
+      await flush(SYNC_RETRY_MS);
+      await flush(SYNC_RETRY_MS);
+      // No re-dial for this connection; the layout is untouched (empty state).
+      expect(mocks.listTabs).toHaveBeenCalledTimes(1);
+      expect(mocks.syncTabs).not.toHaveBeenCalled();
+      expect(h.tabs()).toEqual([]);
+      await stop(h);
+    });
+
+    it('settles a prepopulated workspace on a -32003 refusal as applied and empty, and never re-dials for later settles (collaborator, multiplayer w3)', async () => {
+      const forbidden = Object.assign(new Error('Forbidden'), { rpcCode: -32003 });
+      mocks.listTabs.mockRejectedValue(forbidden);
+      const h = start({
+        layouts: {
+          [WS]: settledLayout([
+            browserTab({ id: 'b1', hostClientId: OTHER, browserUrl: 'http://a.test/' }),
+            browserTab({ id: 'b2', hostClientId: OWN, browserUrl: 'http://b.test/' }),
+            browserTab({ id: 'b3', browserUrl: 'http://c.test/' }),
+          ]),
+        },
+      });
+      await flush();
+
+      // The refusal is the authoritative listing for every local browser tab:
+      // another host's mirror, a tab this client hosts, and one not yet hosted
+      // all go, since a collaborator can neither mirror nor host one.
+      expect(h.registry()).toMatchObject({ phase: 'applied', reported: {} });
+      expect(h.tabs().map((tab) => tab.id)).toEqual([]);
+      expect(mocks.listTabs).toHaveBeenCalledTimes(1);
+      expect(mocks.upsertTab).not.toHaveBeenCalled();
+      expect(mocks.syncTabs).not.toHaveBeenCalled();
+      // Destroyed, not merely closed: nothing sits in recentlyClosed for a
+      // collaborator to bring back.
+      expect(h.layout().recentlyClosed).toEqual([]);
+      h.dispatch(reopenClosedTab(WS, 1000));
+      h.dispatch(reopenClosedTab(WS, 1001, 'b3'));
+      await flush();
+      expect(h.tabs()).toEqual([]);
+
+      h.dispatch(setRestoreStatus(WS, 'restored'));
+      await flush();
+      expect(h.registry().phase).not.toBe('loading');
+      expect(h.registry().reported).toEqual({});
+      expect(mocks.listTabs).toHaveBeenCalledTimes(1);
+      expect(mocks.upsertTab).not.toHaveBeenCalled();
+
+      // A reconnect re-dials once; a tab that reached the already-restored
+      // layout in between is closed by the refused listing too.
+      h.dispatch(openTabInRightmostColumn(WS, browserTab({ browserUrl: 'http://d.test/' })));
+      await flush();
+      expect(h.tabs().map((tab) => tab.type)).toEqual(['browser']);
+      h.setHealth('healthy', 2);
+      h.dispatch(connectionStatusChanged('connected'));
+      await flush();
+      expect(mocks.listTabs).toHaveBeenCalledTimes(2);
+      expect(h.tabs().map((tab) => tab.id)).toEqual([]);
+      expect(h.registry()).toMatchObject({ phase: 'applied', reported: {} });
+      expect(mocks.upsertTab).not.toHaveBeenCalled();
+      expect(h.layout().recentlyClosed).toEqual([]);
+      h.dispatch(reopenClosedTab(WS, 1002));
+      await flush();
+      expect(h.tabs()).toEqual([]);
       await stop(h);
     });
   });

@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/experimental-ct-svelte';
+import { expect, test } from '../../../../test/ct-test';
 import McpAdvancedEditor from '../mcp-advanced-editor.preview.svelte';
 
 for (const width of [420, 1100]) {

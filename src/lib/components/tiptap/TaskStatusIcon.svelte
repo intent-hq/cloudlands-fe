@@ -88,12 +88,20 @@
 <Button
   type="button"
   variant="ghost"
-  class="task-status-icon inline-flex items-center justify-center shrink-0 cursor-pointer bg-transparent border-0 p-0 focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-1 focus-visible:ring-primary-ink rounded-full"
+  size="icon-compact"
+  iconOnly
+  class="task-status-icon shrink-0 cursor-pointer bg-transparent border-0 focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-1 focus-visible:ring-primary-ink rounded-full"
   style="width: {size}px; height: {size}px;"
   {onclick}
   title={m.tiptap_taskStatus_status_tooltip({ status: statusLabel })}
 >
-  <svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+  <svg
+    width={size}
+    height={size}
+    style="width: {size}px; height: {size}px;"
+    viewBox="0 0 24 24"
+    fill="none"
+  >
     <!-- Clip path for half-fill effect -->
     <defs>
       <clipPath id="half-clip-{uniqueId}">

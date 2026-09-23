@@ -42,7 +42,11 @@ export function parseWorkspaceFileImageUrl(url: string): WorkspaceFileImage | nu
 
 /** Whether an image source is a remote HTTPS URL with a shareable link. */
 export function isHttpsImageUrl(url: string): boolean {
-  return /^https:\/\//i.test(url);
+  try {
+    return new URL(url).protocol === 'https:';
+  } catch {
+    return false;
+  }
 }
 
 /** Parsed base64 `data:` URL. */
@@ -56,6 +60,16 @@ export function parseBase64DataUrl(url: string): Base64DataUrl | null {
   const match = /^data:([^;,]+);base64,(.*)$/s.exec(url);
   if (!match) return null;
   return { mimeType: match[1], base64: match[2] };
+}
+
+/** Sources whose original bytes can be copied or downloaded by the image menu. */
+export function supportsImageActions(url: string): boolean {
+  return (
+    isHttpsImageUrl(url) ||
+    parseWorkspaceFileImageUrl(url) !== null ||
+    /^workspace-asset:\/\/[^/?#]+/.test(url) ||
+    /^data:image\/[a-z0-9.+-]+(?:;[^,]*)?,/i.test(url)
+  );
 }
 
 /** Byte size encoded by a base64 payload (accounts for `=` padding). */
@@ -80,6 +94,9 @@ const MIME_EXTENSIONS: Record<string, string> = {
   'image/jpeg': 'jpg',
   'image/gif': 'gif',
   'image/webp': 'webp',
+  'image/svg+xml': 'svg',
+  'image/avif': 'avif',
+  'image/bmp': 'bmp',
 };
 
 /**
@@ -99,6 +116,7 @@ export function imageDownloadFileName(opts: {
   // i18n-ignore (fallback file name, not UI copy)
   const base = (opts.imageName || 'image').replace(/[/\\]/g, '_');
   if (/\.[A-Za-z0-9]+$/.test(base)) return base;
-  const extension = (opts.mimeType && MIME_EXTENSIONS[opts.mimeType]) || 'png';
+  const mimeType = opts.mimeType?.split(';')[0].trim().toLowerCase();
+  const extension = (mimeType && MIME_EXTENSIONS[mimeType]) || 'png';
   return `${base}.${extension}`;
 }

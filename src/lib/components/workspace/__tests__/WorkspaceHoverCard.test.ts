@@ -1,14 +1,29 @@
 /**
  * @vitest-environment jsdom
  */
-import { render, screen, waitFor, within } from '@testing-library/svelte';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
 import { tick } from 'svelte';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { PrMonitorRow } from '$features/pr-monitor/pr-monitor-service';
 import type { AgentMessage, AgentSession, ContentBlock, Workspace } from '$shared/types';
 import { PullRequestStatus, WorkspaceStatusEnum } from '$shared/types';
+import { WorkspaceId } from '$shared/types/branded-ids';
+import type { PresenceMember } from '$shared/types/presence';
 import { QUESTION_RESOURCE_MIME_TYPE } from '$shared/types/question-resource';
+import type { WorkspaceMember } from '$store/renderer/slices/guest-sessions/guest-sessions-types';
+import {
+  initialState as presenceInitialState,
+  presenceMembersReceived,
+  presenceOwnPrincipalReceived,
+  presenceReducer,
+  presenceRosterReceived,
+} from '$store/renderer/slices/presence/presence-slice';
+import { selectWorkspacePresencePeople } from '$store/renderer/slices/presence/presence-selectors';
+import type { StoreState } from '$store/renderer/types';
+import { createCollection } from '@augmentcode/themis/utils/collections/collection-utils';
 import { warmImport } from '../../../../test/warm-import';
+
+vi.mock('$app/state', () => ({ page: { url: new URL('http://localhost/') } }));
 
 const mocks = vi.hoisted(() => {
   const dispatch = vi.fn();
@@ -16,6 +31,11 @@ const mocks = vi.hoisted(() => {
   const agentSessionsByWorkspace: Record<string, AgentSession[]> = {};
   const agentPreviewsById: Record<string, { kind: string; text?: string }> = {};
   const prMonitors: PrMonitorRow[] = [];
+  const handleLink = vi.fn();
+  const navigateToRoute = vi.fn().mockResolvedValue(undefined);
+  let currentWorkspaceTabId = 'ws-1';
+  /** The store state the app-store mock serves; the card reads nothing from it by default. */
+  const storeState: { state: unknown } = { state: {} };
   const createWorkspaceReadable =
     <T>(resolve: (workspaceId: string) => T) =>
     (workspaceIdStore: { subscribe: (run: (value: string) => void) => () => void }) => ({
@@ -29,6 +49,15 @@ const mocks = vi.hoisted(() => {
     agentSessionsByWorkspace,
     agentPreviewsById,
     prMonitors,
+    handleLink,
+    navigateToRoute,
+    get currentWorkspaceTabId() {
+      return currentWorkspaceTabId;
+    },
+    set currentWorkspaceTabId(value: string) {
+      currentWorkspaceTabId = value;
+    },
+    storeState,
     createWorkspaceReadable,
   };
 });
@@ -43,7 +72,10 @@ vi.mock('$features/agent/services/active-streams-tracker', () => ({
 vi.mock('$store/renderer/store', async () => {
   const { createAppStoreMockModule } =
     await import('$store/renderer/utils/test-helpers/store-mock');
-  return createAppStoreMockModule({ state: () => ({}), dispatch: mocks.dispatch });
+  return createAppStoreMockModule({
+    state: () => mocks.storeState.state,
+    dispatch: mocks.dispatch,
+  });
 });
 
 vi.mock('$store/renderer/slices/pr-monitor/pr-monitor-selectors', () => ({
@@ -53,6 +85,14 @@ vi.mock('$store/renderer/slices/pr-monitor/pr-monitor-selectors', () => ({
 vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
   selectWorkspaceActivePullRequest: { select: vi.fn(() => null) },
 }));
+
+vi.mock('$store/renderer/slices/tab-state/tab-state-selectors', () => ({
+  selectCurrentWorkspaceTabId: { select: vi.fn(() => mocks.currentWorkspaceTabId) },
+}));
+
+vi.mock('$lib/utils/navigation.client', () => ({ navigateToRoute: mocks.navigateToRoute }));
+
+vi.mock('$features/navigation/link-handler', () => ({ handleLink: mocks.handleLink }));
 
 vi.mock('$store/renderer/slices/workspace-agents/workspace-agents-selectors', () => ({
   selectAllWorkspaceAgents: vi.fn(
@@ -170,11 +210,15 @@ function text(element: Element) {
 describe('WorkspaceHoverCard', () => {
   beforeEach(() => {
     mocks.dispatch.mockClear();
+    mocks.handleLink.mockClear();
+    mocks.navigateToRoute.mockClear();
+    mocks.currentWorkspaceTabId = 'ws-1';
     mocks.streamingAgentIds.length = 0;
     mocks.prMonitors.length = 0;
     for (const record of [mocks.agentSessionsByWorkspace, mocks.agentPreviewsById]) {
       for (const key of Object.keys(record)) delete record[key];
     }
+    mocks.storeState.state = {};
   });
 
   it('keeps pull request numbers and status visible in the pull request column', async () => {
@@ -190,12 +234,11 @@ describe('WorkspaceHoverCard', () => {
       },
     });
 
-    const row = screen.getByRole('listitem', { name: /augment\/intent #42/i });
+    const row = screen.getByRole('button', { name: /augment\/intent #42/i });
     expect(row.textContent).toContain('Refine hover card');
     expect(row.textContent).toContain('#42');
     expect(row.textContent).toContain('Open');
     expect(row.getAttribute('data-pr-status')).toBe('open');
-    expect(Array.from(row.children).map(text)).toEqual(['', 'Refine hover card', 'Open', '#42']);
     expect(container.querySelector('[data-workspace-hover-card-activity]')).toBeNull();
     expect(
       container.querySelector('[data-workspace-hover-card-pr-column]')?.getAttribute('aria-label'),
@@ -248,7 +291,7 @@ describe('WorkspaceHoverCard', () => {
       },
     });
 
-    const row = screen.getByRole('listitem', { name: /augment\/intent #42/i });
+    const row = screen.getByRole('button', { name: /augment\/intent #42/i });
     expect(row.getAttribute('data-pr-status')).toBe('open');
     expect(text(row.querySelector('[data-workspace-hover-card-pr-status]')!)).toBe('Queued');
   });
@@ -366,6 +409,89 @@ describe('WorkspaceHoverCard', () => {
     expect(columns.children[0]).toBe(activity);
     expect(activity.getAttribute('aria-label')).toBe('Agents');
     expect(container.querySelector('[data-workspace-hover-card-pr-column]')).toBeNull();
+  });
+
+  it('dispatches an agent-tab request when an agent row is clicked', async () => {
+    mocks.currentWorkspaceTabId = 'ws-2';
+    mocks.agentSessionsByWorkspace['ws-1'] = [agent('active', 'Noah', 'running')];
+    await renderHoverCard({ agentSummary: { agentIds: ['active'] } });
+    const event = new MouseEvent('click', { bubbles: true });
+    const stopPropagation = vi.spyOn(event, 'stopPropagation');
+
+    const row = screen.getByRole('button', { name: /Noah/i });
+    expect(row).toBeInstanceOf(HTMLButtonElement);
+    row.dispatchEvent(event);
+
+    expect(stopPropagation).toHaveBeenCalledOnce();
+    expect(mocks.dispatch).toHaveBeenCalledWith({
+      type: 'tabState/openWorkspaceTab',
+      payload: ['ws-1'],
+    });
+    expect(mocks.navigateToRoute).toHaveBeenCalledWith('/workspace/ws-1');
+    expect(mocks.dispatch).toHaveBeenCalledWith({
+      type: 'appLayout/openAgentTabRequested',
+      payload: ['ws-1', { agentId: 'active' }],
+    });
+  });
+
+  it('routes a pull request row through the link handler', async () => {
+    const url = 'https://github.com/augment/intent/pull/42';
+    await renderHoverCard({
+      activePullRequest: {
+        id: 'pr-42',
+        number: 42,
+        url,
+        title: 'Refine hover card',
+        status: PullRequestStatus.Open,
+        createdAt: baseWorkspace.createdAt,
+        updatedAt: baseWorkspace.updatedAt,
+      },
+    });
+
+    const row = screen.getByRole('button', { name: /augment\/intent #42/i });
+    expect(row).toBeInstanceOf(HTMLButtonElement);
+    await fireEvent.click(row);
+
+    await waitFor(() =>
+      expect(mocks.handleLink).toHaveBeenCalledWith(url, {
+        workspaceId: 'ws-1',
+        event: expect.any(MouseEvent),
+      }),
+    );
+  });
+
+  it('leaves a pull request row without a URL non-interactive', async () => {
+    const { container } = await renderHoverCard({
+      repositoryOwner: undefined,
+      repositoryName: undefined,
+      activePullRequest: {
+        id: 'pr-42',
+        number: 42,
+        url: '',
+        title: 'Local pull request',
+        status: PullRequestStatus.Open,
+        createdAt: baseWorkspace.createdAt,
+        updatedAt: baseWorkspace.updatedAt,
+      },
+    });
+
+    expect(screen.queryByRole('button', { name: /#42/i })).toBeNull();
+    expect(screen.getByRole('listitem', { name: /#42/i })).toBeTruthy();
+    expect(container.querySelector('[data-workspace-hover-card-pr-row]')).toBeTruthy();
+  });
+
+  it('keeps preview agent rows inert when session loading is disabled', async () => {
+    mocks.agentSessionsByWorkspace['ws-1'] = [agent('active', 'Noah', 'running')];
+    await renderHoverCard({ agentSummary: { agentIds: ['active'] } }, { loadAgentSessions: false });
+
+    await expect(fireEvent.click(screen.getByRole('button', { name: /Noah/i }))).resolves.toBe(
+      true,
+    );
+    expect(
+      mocks.dispatch.mock.calls.some(
+        ([action]) => (action as { type?: string }).type === 'appLayout/openAgentTabRequested',
+      ),
+    ).toBe(false);
   });
 
   it('orders blocker, real question, active, and waiting rows without group headings', async () => {
@@ -603,5 +729,57 @@ describe('WorkspaceHoverCard', () => {
     expect(container.querySelector('[data-workspace-hover-card-branch]')).toBeNull();
     expect(container.textContent).not.toContain('undefined');
     expect(container.textContent).not.toContain('null');
+  });
+
+  // Who is in a shared workspace shows in the workspace sidebar's presence row
+  // (WorkspaceProgressCard); the card lists agents and pull requests only.
+  it('lists no people even while someone else is present in the shared workspace', async () => {
+    const identity = (principalId: string) => ({
+      principalId,
+      login: principalId,
+      displayName: null,
+      avatarUrl: null,
+    });
+    const accepted = (principalId: string, role: WorkspaceMember['role']): WorkspaceMember => ({
+      ...identity(principalId),
+      role,
+      addedAt: '2026-09-14T12:00:00Z',
+    });
+    const online = (principalId: string): PresenceMember => ({
+      ...identity(principalId),
+      focus: [{ workspaceId: 'ws-1' }],
+      typing: [],
+    });
+    const presence = [
+      presenceMembersReceived('ws-1', [accepted('me', 'owner'), accepted('other', 'collaborator')]),
+      presenceRosterReceived({ workspaceId: 'ws-1', members: [online('me'), online('other')] }),
+      presenceOwnPrincipalReceived('me'),
+    ].reduce((state, action) => presenceReducer(state, action), presenceInitialState);
+    const state = {
+      presence,
+      workspace: {
+        workspaces: createCollection('id', [
+          { ...baseWorkspace, id: WorkspaceId('ws-1'), ownerPrincipalId: 'me', memberCount: 2 },
+        ]),
+      },
+    } as unknown as StoreState;
+    // The sidebar's people selector does see the other person in this state.
+    expect(selectWorkspacePresencePeople.select(state, 'ws-1')).toHaveLength(1);
+    mocks.storeState.state = state;
+    mocks.agentSessionsByWorkspace['ws-1'] = [agent('active', 'Noah', 'running')];
+
+    const { container } = await renderHoverCard({
+      myRole: 'owner',
+      memberCount: 2,
+      agentSummary: { agentIds: ['active'] },
+    });
+    await tick();
+
+    expect(container.querySelector('[data-workspace-hover-card-people]')).toBeNull();
+    expect(container.querySelector('[data-presence-avatar]')).toBeNull();
+    expect(screen.getAllByRole('listitem')).toHaveLength(1);
+    expect(screen.getAllByRole('button')).toHaveLength(1);
+    expect(screen.getByRole('button', { name: /Noah/ })).toBeTruthy();
+    expect(container.textContent).not.toContain('other');
   });
 });

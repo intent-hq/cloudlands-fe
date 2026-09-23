@@ -4,8 +4,6 @@ import RealTooltipShortcut from '$lib/components/ui/tooltip/TooltipShortcut.svel
 import { m } from '$shared/paraglide/messages.js';
 import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { flushSync, tick } from 'svelte';
-import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { WorkspaceTabStatus } from '$store/renderer/slices/hud/hud-types';
 import { WORKSPACE_TAB_MOVED_EVENT } from '$features/workspace/utils/workspace-tab-move-event';
@@ -62,6 +60,8 @@ vi.mock('$store/renderer/store', () => ({
     get state() {
       return { tabState: { currentTabId: mocks.nextCurrentId } };
     },
+    createSelector: (select: (state: unknown, ...args: unknown[]) => unknown) =>
+      Object.assign(() => readable(undefined), { select }),
   },
 }));
 vi.mock('$store/renderer/slices/tab-state/tab-state-selectors', () => ({
@@ -91,6 +91,7 @@ vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
           statusMessage: 'Polishing the workspace navigation experience.',
           activity: 'agent_running',
           displayStatus: 'in_progress',
+          myRole: 'owner',
         },
         {
           id: 'ws-2',
@@ -98,6 +99,7 @@ vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
           branch: 'main',
           repositoryName: 'intent',
           displayStatus: 'idle',
+          myRole: 'collaborator',
         },
         {
           id: 'ws-3',
@@ -394,6 +396,19 @@ describe('WorkspaceTabStrip', () => {
     expect(cluster.parentElement).toBe(controls);
   });
 
+  it('renders no presence stack and keeps every card non-hoverable, owner or not', () => {
+    render(WorkspaceTabStrip, { props: { activeWorkspaceId: 'ws-2' } });
+    for (const name of [/Alpha/, /Beta/, /Gamma/]) {
+      const tab = screen.getByRole('tab', { name });
+      expect(tab.querySelector('[data-presence-avatar-stack]')).toBeNull();
+      expect(
+        tab
+          .closest<HTMLElement>('[data-testid="workspace-tab-tooltip-root"]')!
+          .getAttribute('data-tooltip-disable-hoverable-content'),
+      ).toBe('true');
+    }
+  });
+
   it.each([
     ['active', 'ws-1'],
     ['inactive', 'ws-2'],
@@ -471,18 +486,60 @@ describe('WorkspaceTabStrip', () => {
     expect(tab.querySelector('[data-workspace-tab-status-overflow]')).toBeNull();
   });
 
-  it('keeps persisted tabs opaque and stationary during initial hydration', () => {
-    const source = readFileSync(
-      resolve(process.cwd(), 'src/lib/components/layout/WorkspaceTabStrip.svelte'),
-      'utf8',
-    );
+  it('keeps persisted tabs opaque and stationary during initial hydration', async () => {
+    // Svelte runs every intro transition through the Web Animations API, so a
+    // tab that flies or fades in animates its motion wrapper on mount.
+    const animate = vi.spyOn(Element.prototype, 'animate');
+    try {
+      render(WorkspaceTabStrip);
+      await tick();
 
-    expect(source).not.toContain('in:fly');
-    expect(source).not.toContain('out:fly');
-    expect(source).toContain('animate:flip');
-    expect(source).toContain('<WorkspaceHoverCard {workspace} activeAgentIds={runningAgentIds} />');
-    expect(source).not.toContain('ensureWorkspaceTasksLoaded');
-    expect(source).not.toContain('data-workspace-tab-progress');
+      const wrappers = document.querySelectorAll<HTMLElement>('[data-workspace-tab-motion]');
+      expect(wrappers).toHaveLength(3);
+      expect(animate).not.toHaveBeenCalled();
+      for (const wrapper of wrappers) {
+        expect(wrapper.style.opacity).toBe('');
+        expect(wrapper.style.transform).toBe('');
+      }
+      // The strip renders task progress only inside the shared hover card,
+      // which owns the task load; the strip itself never requests it.
+      expect(mocks.dispatch).not.toHaveBeenCalledWith(
+        expect.objectContaining({ type: 'workspaceTasks/ensureWorkspaceTasksLoaded' }),
+      );
+    } finally {
+      animate.mockRestore();
+    }
+  });
+
+  it('slides persisted tabs into a new order instead of remounting them', async () => {
+    render(WorkspaceTabStrip);
+    await tick();
+    const wrappersBefore = Array.from(
+      document.querySelectorAll<HTMLElement>('[data-workspace-tab-motion]'),
+    );
+    for (const wrapper of wrappersBefore) {
+      // Geometry follows DOM position so a reorder measures a displacement.
+      wrapper.getBoundingClientRect = function () {
+        const index = Array.from(this.parentElement?.children ?? []).indexOf(this);
+        return makeRect(index * 162);
+      };
+    }
+    const animate = vi.spyOn(Element.prototype, 'animate');
+    try {
+      emitTabOrder(['ws-2', 'ws-1', 'ws-3']);
+      await tick();
+
+      expect(renderedTabOrder()).toEqual(['ws-2', 'ws-1', 'ws-3']);
+      const wrappersAfter = Array.from(
+        document.querySelectorAll<HTMLElement>('[data-workspace-tab-motion]'),
+      );
+      expect(new Set(wrappersAfter)).toEqual(new Set(wrappersBefore));
+      const animated = new Set(animate.mock.contexts as Element[]);
+      expect(animated.has(wrappersBefore[0])).toBe(true);
+      expect(animated.has(wrappersBefore[1])).toBe(true);
+    } finally {
+      animate.mockRestore();
+    }
   });
 
   it('keeps the final active-tab surface while workspace metadata loads', () => {
@@ -1215,6 +1272,19 @@ describe('WorkspaceTabStrip', () => {
       (screen.getByRole('menuitem', { name: 'Close tabs to the right' }) as HTMLButtonElement)
         .disabled,
     ).toBe(true);
+  });
+
+  it('does not offer Share from the tab context menu, even on an owned tab', async () => {
+    render(WorkspaceTabStrip);
+
+    // Alpha reports `myRole: 'owner'`; Share lives in the workspace ⋯ menu only.
+    await fireEvent.contextMenu(screen.getByRole('tab', { name: /Alpha/ }));
+    await screen.findByRole('menuitem', { name: 'Close' });
+
+    expect(screen.queryByRole('menuitem', { name: 'Share…' })).toBeNull();
+    expect(mocks.dispatch).not.toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'workspaceShare/openDialog' }),
+    );
   });
 
   it('closes other workspace tabs in order and focuses the context target', async () => {

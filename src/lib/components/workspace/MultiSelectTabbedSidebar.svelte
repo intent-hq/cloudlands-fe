@@ -33,15 +33,29 @@
     refreshUnreadNotes,
   } from '$store/renderer/slices/note-read-tracking/note-read-tracking-slice';
   import {
+    fetchBackgroundAgentsRequested,
+    fetchDelegatedAgentsRequested,
+    fetchOrphanedDelegatedAgentsRequested,
     fetchRetiredAgentsRequested,
     restoreRetiredAgentRequested,
   } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
   import {
     selectAllWorkspaceAgents,
+    selectBackgroundAgentsLoaded,
+    selectDelegatedAgentsLoaded,
+    selectDelegatedCounts,
     selectIsLoadingAgents,
+    selectIsLoadingBackgroundAgents,
+    selectIsLoadingDelegatedAgents,
+    selectIsLoadingOrphanedDelegatedAgents,
     selectIsLoadingRetiredAgents,
+    selectLoadedDelegatedParentIds,
+    selectLoadingDelegatedParentIds,
+    selectOrphanedDelegatedAgentIds,
+    selectOrphanedDelegatedAgentsLoaded,
     selectRetiredAgentsLoaded,
     selectRetiredCount,
+    selectScopeCounts,
     selectWorkspaceHasUnreadForegroundAgents,
   } from '$store/renderer/slices/workspace-agents/workspace-agents-selectors';
   import { selectAgentIsRunning } from '$store/renderer/slices/agent-session/agent-session-selectors';
@@ -87,6 +101,7 @@
   import SidebarBrowserList from './SidebarBrowserList.svelte';
   import { selectEffectiveFileExplorerWorkspacePath } from '$store/renderer/slices/file-explorer/file-explorer-selectors';
   import {
+    selectIsWorkspaceCollaborator,
     selectWorkspaceActivePullRequest,
     selectWorkspaceById,
   } from '$store/renderer/slices/workspace/workspace-selectors';
@@ -115,6 +130,7 @@
   import {
     LAUNCHER_GRID_POSITIONS,
     normalizeSelectedTabs,
+    OWNER_ONLY_TAB_IDS,
     TAB_DEFINITIONS,
     type LauncherTabId,
     type TabId,
@@ -225,6 +241,17 @@
   const retiredCount$ = selectRetiredCount(workspaceIdStore);
   const retiredAgentsLoaded$ = selectRetiredAgentsLoaded(workspaceIdStore);
   const loadingRetired$ = selectIsLoadingRetiredAgents(workspaceIdStore);
+  const scopeCounts$ = selectScopeCounts(workspaceIdStore);
+  const delegatedAgentsLoaded$ = selectDelegatedAgentsLoaded(workspaceIdStore);
+  const loadingDelegated$ = selectIsLoadingDelegatedAgents(workspaceIdStore);
+  const delegatedCounts$ = selectDelegatedCounts(workspaceIdStore);
+  const loadedDelegatedParentIds$ = selectLoadedDelegatedParentIds(workspaceIdStore);
+  const loadingDelegatedParentIds$ = selectLoadingDelegatedParentIds(workspaceIdStore);
+  const orphanedDelegatedAgentsLoaded$ = selectOrphanedDelegatedAgentsLoaded(workspaceIdStore);
+  const orphanedDelegatedAgentIds$ = selectOrphanedDelegatedAgentIds(workspaceIdStore);
+  const loadingOrphanedDelegated$ = selectIsLoadingOrphanedDelegatedAgents(workspaceIdStore);
+  const backgroundAgentsLoaded$ = selectBackgroundAgentsLoaded(workspaceIdStore);
+  const loadingBackground$ = selectIsLoadingBackgroundAgents(workspaceIdStore);
   const hasUnreadForegroundAgents$ = selectWorkspaceHasUnreadForegroundAgents(workspaceIdStore);
   const hudQuestionsByAgentId$ = selectHudQuestionsByAgentId();
 
@@ -317,23 +344,31 @@
       ? `repeat(${itemCount - 1}, ${LAUNCHER_STEP_SIZE}px) ${LAUNCHER_VISIBLE_SIZE}px`
       : `${LAUNCHER_VISIBLE_SIZE}px`;
   }
+  // Collaborators (multiplayer w3) are refused on terminal + browser methods, so
+  // the shell dock, browser launcher, their strip tabs, and any persisted
+  // selection of those tabs are withheld up front. The selector fails closed: a
+  // guest window (multiplayer w4) reads as collaborator whatever `myRole` the
+  // row carries, and so does every window until its identity has settled.
+  const isCollaborator$ = selectIsWorkspaceCollaborator(workspaceIdStore);
+  const isCollaborator = $derived($isCollaborator$);
   const selectedTabIds = selectMultiSelectSidebarSelectedTabIds(workspaceIdStore);
-  const selectedTabs = $derived(normalizeSelectedTabs($selectedTabIds));
+  const selectedTabs = $derived(normalizeSelectedTabs($selectedTabIds, isCollaborator));
   let agentSearchQuery = $state('');
   let contextSearchQuery = $state('');
   const expandedStripTabs = $derived(
-    TAB_DEFINITIONS.filter((definition) => definition.id !== 'overview').map(
-      ({ id, label, icon }) => ({
-        id,
-        label,
-        icon,
-        unread: id === 'agents' && $hasUnreadForegroundAgents$,
-        unreadLabel:
-          id === 'agents'
-            ? m.workspace_multiSelectSidebar_agentsTabUnread_ariaLabel({ label })
-            : undefined,
-      }),
-    ),
+    TAB_DEFINITIONS.filter(
+      (definition) =>
+        definition.id !== 'overview' && !(isCollaborator && OWNER_ONLY_TAB_IDS.has(definition.id)),
+    ).map(({ id, label, icon }) => ({
+      id,
+      label,
+      icon,
+      unread: id === 'agents' && $hasUnreadForegroundAgents$,
+      unreadLabel:
+        id === 'agents'
+          ? m.workspace_multiSelectSidebar_agentsTabUnread_ariaLabel({ label })
+          : undefined,
+    })),
   );
   let sidebarTabSwitchDirection = $state<'left' | 'right' | 'none'>('none');
   let openLauncherHoverKey = $state<string | null>(null);
@@ -1113,6 +1148,28 @@
                             onLoadRetired={() => {
                               appStore.dispatch(fetchRetiredAgentsRequested(workspaceId));
                             }}
+                            scopeCounts={$scopeCounts$}
+                            delegatedAgentsLoaded={$delegatedAgentsLoaded$}
+                            loadingDelegated={$loadingDelegated$}
+                            onLoadDelegated={(parentAgentId) => {
+                              appStore.dispatch(
+                                fetchDelegatedAgentsRequested(workspaceId, parentAgentId),
+                              );
+                            }}
+                            delegatedCounts={$delegatedCounts$}
+                            loadedDelegatedParentIds={$loadedDelegatedParentIds$}
+                            loadingDelegatedParentIds={$loadingDelegatedParentIds$}
+                            orphanedDelegatedAgentsLoaded={$orphanedDelegatedAgentsLoaded$}
+                            orphanedDelegatedAgentIds={$orphanedDelegatedAgentIds$}
+                            loadingOrphanedDelegated={$loadingOrphanedDelegated$}
+                            onLoadOrphanedDelegated={() => {
+                              appStore.dispatch(fetchOrphanedDelegatedAgentsRequested(workspaceId));
+                            }}
+                            backgroundAgentsLoaded={$backgroundAgentsLoaded$}
+                            loadingBackground={$loadingBackground$}
+                            onLoadBackground={() => {
+                              appStore.dispatch(fetchBackgroundAgentsRequested(workspaceId));
+                            }}
                             onSelect={({ agentId, event }) =>
                               handleOpenAgentInPanel(agentId, event)}
                             onRestoreRetired={({ agentId }) => {
@@ -1441,19 +1498,21 @@
     onclick={isLauncherOverview ? undefined : handleExpandedFooterClick}
   >
     {#if isLauncherOverview}
-      {#if !isNewWorkspaceSession}
-        <SidebarBrowserLauncher
+      {#if !isCollaborator}
+        {#if !isNewWorkspaceSession}
+          <SidebarBrowserLauncher
+            {workspaceId}
+            {panelLayoutId}
+            onExpand={() => handleTabClick('browser')}
+            expanded={selectedTabs.has('browser')}
+          />
+        {/if}
+        <WorkspaceTerminalDock
           {workspaceId}
-          {panelLayoutId}
-          onExpand={() => handleTabClick('browser')}
-          expanded={selectedTabs.has('browser')}
+          onExpand={() => handleTabClick('shell')}
+          expanded={selectedTabs.has('shell')}
         />
       {/if}
-      <WorkspaceTerminalDock
-        {workspaceId}
-        onExpand={() => handleTabClick('shell')}
-        expanded={selectedTabs.has('shell')}
-      />
     {:else}
       <SidebarExpandedTabStrip
         tabs={expandedStripTabs}

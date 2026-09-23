@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/experimental-ct-svelte';
+import { expect, test } from '../../../test/ct-test';
 import ConnectBackendModalPreview from './connect-backend-modal.preview.svelte';
 import DeviceIconPickerHarness from '../DeviceIconPicker.test-harness.svelte';
 

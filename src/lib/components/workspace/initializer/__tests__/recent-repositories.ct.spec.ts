@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/experimental-ct-svelte';
+import { expect, test } from '../../../../../test/ct-test';
 import Preview from '../recent-repositories.preview.svelte';
 
 for (const tab of ['Pick a repo', 'Copy local repo']) {

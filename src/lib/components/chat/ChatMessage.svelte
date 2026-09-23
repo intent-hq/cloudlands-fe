@@ -49,6 +49,7 @@
     resolveFinishReasonNotice,
   } from './message-display-utils';
   import ImageLightbox from '$lib/components/ui/ImageLightbox.svelte';
+  import PrincipalAvatar from '$lib/components/ui/PrincipalAvatar.svelte';
   import EditRegenerateConfirmDialog from './EditRegenerateConfirmDialog.svelte';
   import { evictAttachmentImageUrl, resolveAttachmentImageUrl } from './attachment-image-url';
   import { onBackendReconnected } from '$lib/client/live/backend-transport';
@@ -56,6 +57,11 @@
   import type { ContentBlock } from '$shared/types/content-block';
   import AgentMessageAttributionHeader from './AgentMessageAttributionHeader.svelte';
   import { getAgentMessageAttribution } from '$lib/utils/agent-message-attribution';
+  import {
+    getCollaboratorSenderAttribution,
+    singleLineName,
+  } from '$lib/utils/collaborator-sender-attribution';
+  import { getHumanMessageAuthor, getMessageAuthorLabel } from '$lib/utils/message-authorship';
   import { getQueueInfo } from '$lib/utils/queue-info';
   import { getPresentedUserMessageText } from '$lib/utils/user-message-presentation';
   import AutomatedWakeCardHeader from './AutomatedWakeCardHeader.svelte';
@@ -71,6 +77,8 @@
   import { getQuestionsDismissedNotice } from './questions-dismissed-notice';
   import AutoUnarchivedNotice from './AutoUnarchivedNotice.svelte';
   import { getAutoUnarchivedNotice } from './auto-unarchived-notice';
+  import ProviderRehomedNotice from './ProviderRehomedNotice.svelte';
+  import { getProviderRehomedNotice } from './rehome-notice';
   import ChatOperationalRow from './ChatOperationalRow.svelte';
   import { CHAT_OPERATIONAL_ICON_CLASS } from './operational-disclosure-row';
 
@@ -195,6 +203,11 @@
     /** Workspace for SimpleRichInput in edit mode */
     workspace?: Workspace | null;
     /**
+     * The viewer's own principal (`presence.ownPrincipalId`): their own rows
+     * render no author identity. `null` = not yet known, every author shown.
+     */
+    ownPrincipalId?: string | null;
+    /**
      * Called when user wants to edit and resend the message. `blocks`
      * carries the attachment content blocks restored/edited in the edit
      * strip (PROTOCOL §5.5) so edit/regenerate never drops attachments.
@@ -246,6 +259,7 @@
     hideToolCalls = false,
     sessionMetadata,
     workspace = null,
+    ownPrincipalId = null,
     onEditSubmit,
     editModel,
     onRegenerate,
@@ -316,6 +330,9 @@
 
   // Daemon-persisted auto-unarchive transcript row (metadata type "auto_unarchived")
   let autoUnarchivedNotice = $derived(getAutoUnarchivedNotice(message));
+
+  // Daemon-persisted provider re-home transcript row (metadata type "provider_rehomed")
+  let providerRehomedNotice = $derived(getProviderRehomedNotice(message));
 
   // Daemon-persisted attention-request row (meta.kind "discussion-request"/"blocker-report")
   let attentionNotice = $derived(getAttentionNotice(message));
@@ -404,6 +421,47 @@
   );
   let isAutomatedWakeExpanded = $state(false);
   let automatedWakeBodyId = $derived(`automated-wake-body-${message?.id ?? 'pending'}`);
+
+  // Human author identity (multiplayer w2): shown only once the workspace has
+  // more than one member, on plain human rows — agent-to-agent sends and
+  // automated wakes carry their own sender header. Reads the daemon's
+  // serve-time `author` projection verbatim; single-member workspaces, the
+  // viewer's own rows and rows without the projection render unchanged.
+  //
+  // A row whose content starts with the daemon's collaborator sender preamble
+  // (exact match against the text rebuilt from the same projection) always
+  // shows the sender chip with the guest role — the preamble itself is
+  // display-stripped by the presentation boundary, so the chip is the only
+  // place the sender and their role remain visible, for owner and guest alike.
+  // The workspace owner's own rows never qualify (the daemon prepends the
+  // preamble for collaborators only), so an owner-typed lookalike line stays.
+  let collaboratorSender = $derived(
+    role === 'user' && !agentAttribution && !automatedWakePresentation
+      ? getCollaboratorSenderAttribution(message, workspace?.ownerPrincipalId)
+      : null,
+  );
+  let humanAuthor = $derived(
+    collaboratorSender
+      ? collaboratorSender.author
+      : role === 'user' &&
+          (workspace?.memberCount ?? 0) >= 2 &&
+          !agentAttribution &&
+          !automatedWakePresentation
+        ? getHumanMessageAuthor(message, ownPrincipalId)
+        : null,
+  );
+  let humanAuthorLabel = $derived.by(() => {
+    if (!humanAuthor) return null;
+    if (!collaboratorSender) return getMessageAuthorLabel(humanAuthor);
+    // Same shape and sanitizer as the stripped preamble: `@login (Display
+    // Name)`, then `@login`, then the display name alone — control characters
+    // and whitespace runs collapse exactly as the daemon's `single_line_name`.
+    const cleanLogin = singleLineName(humanAuthor.login);
+    const login = cleanLogin ? `@${cleanLogin}` : null;
+    const name = singleLineName(humanAuthor.displayName);
+    // i18n-ignore (handle + name composition, mirrors the daemon preamble)
+    return login && name ? `${login} (${name})` : (login ?? name);
+  });
 
   // Local state
   let messageElement = $state<HTMLDivElement>();
@@ -1029,7 +1087,7 @@
     const rawText =
       automatedWakePresentation?.bodyText ??
       (role === 'user' && message
-        ? getPresentedUserMessageText(message)
+        ? getPresentedUserMessageText(message, workspace?.ownerPrincipalId)
         : extractTextFromMessage());
     if (role === 'user') {
       const parsed = parseContextFromMessage(rawText);
@@ -1115,7 +1173,7 @@
 
     // Extract text and tool blocks from contentBlocks
     if (role === 'user' && message) {
-      const presentedText = getPresentedUserMessageText(message);
+      const presentedText = getPresentedUserMessageText(message, workspace?.ownerPrincipalId);
       if (presentedText.trim()) parts.push(presentedText);
     }
     if (message?.contentBlocks && Array.isArray(message.contentBlocks)) {
@@ -1194,7 +1252,9 @@
   function handleStartEdit() {
     // Presentation-only delivery notes stay out of edit/retry text while the
     // canonical stored content remains unchanged.
-    const rawText = message ? getPresentedUserMessageText(message) : getMessageText();
+    const rawText = message
+      ? getPresentedUserMessageText(message, workspace?.ownerPrincipalId)
+      : getMessageText();
     const parsed = parseStoredMessage(rawText);
     editValue = parsed.userMessage;
 
@@ -1380,6 +1440,12 @@
 {:else if autoUnarchivedNotice}
   <!-- Daemon-persisted auto-unarchive notice row - centered inline divider -->
   <AutoUnarchivedNotice title={extractAllContent(message) || undefined} />
+{:else if providerRehomedNotice}
+  <!-- Daemon-persisted provider re-home notice row - centered inline divider -->
+  <ProviderRehomedNotice
+    notice={providerRehomedNotice}
+    fallbackText={extractAllContent(message) || undefined}
+  />
 {:else if questionOnlyTurn && !shouldShowStoppedIndicator && !finishReasonNoticeLabel}
   <!-- Agent Q&A is wizard-only: question-only turns render no bubble -->{:else}
   <div
@@ -1467,6 +1533,42 @@
               {workspace}
               ontoggle={() => (isAutomatedWakeExpanded = !isAutomatedWakeExpanded)}
             />
+          {/if}
+
+          <!-- Human author identity in multi-member workspaces, and the
+               collaborator (guest) sender chip on preamble-carrying rows -->
+          {#if humanAuthor && !isSticky}
+            <div
+              class="type-caption mb-1 flex min-w-0 items-center gap-1.5 text-subtle"
+              data-testid="user-message-author"
+              data-principal-id={humanAuthor.principalId}
+              data-sender-role={collaboratorSender ? 'collaborator' : undefined}
+              aria-label={collaboratorSender
+                ? m.chat_chatMessage_collaboratorAuthor_ariaLabel({
+                    name: humanAuthorLabel ?? m.chat_chatMessage_authorUnknown_label(),
+                  })
+                : m.chat_chatMessage_author_ariaLabel({
+                    name: humanAuthorLabel ?? m.chat_chatMessage_authorUnknown_label(),
+                  })}
+            >
+              <PrincipalAvatar
+                avatarUrl={humanAuthor.avatarUrl}
+                label={humanAuthorLabel ?? ''}
+                size={16}
+                class="font-medium leading-none text-muted-foreground"
+                referrerpolicy="no-referrer"
+                testid="user-message-author-avatar"
+              />
+              <span class="truncate" data-testid="user-message-author-name"
+                >{humanAuthorLabel ?? m.chat_chatMessage_authorUnknown_label()}</span
+              >
+              {#if collaboratorSender}
+                <span aria-hidden="true" class="shrink-0">·</span>
+                <span class="shrink-0" data-testid="user-message-author-role"
+                  >{m.chat_chatMessage_collaboratorRole_label()}</span
+                >
+              {/if}
+            </div>
           {/if}
 
           {#if (!agentAttribution || isAgentMessageExpanded) && (!automatedWakePresentation || isAutomatedWakeExpanded)}
@@ -1725,7 +1827,8 @@
       {/if}
     {:else if role === 'assistant'}
       <!-- Assistant Message -->
-      <div class="type-body text-pretty text-foreground">
+      <!-- Reserve toolbar height only for rendered prose, never empty or tool-only rows. -->
+      <div class="type-body has-[[data-assistant-prose]]:min-h-8 text-pretty text-foreground">
         <StreamingMessageContent
           content={combinedContent}
           {isStreaming}

@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/experimental-ct-svelte';
+import { expect, test } from '../../../../../test/ct-test';
 import type { Locator, Page } from '@playwright/test';
 import WorkspaceProgressCardEditGeometryHost from './mocks/WorkspaceProgressCardEditGeometryHost.svelte';
 
@@ -222,4 +222,45 @@ test('shows every workspace actions menu label untruncated at a normal viewport'
     body: JSON.stringify({ viewport: page.viewportSize(), menu: box, row, labels }),
     contentType: 'application/json',
   });
+});
+
+test('aligns the Open in flyout borders and first rows and preserves keyboard return', async ({
+  mount,
+  page,
+}, testInfo) => {
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  const component = await mount(WorkspaceProgressCardEditGeometryHost, {
+    props: { desktop: true },
+    hooksConfig: { mockBackend: {} },
+  });
+  const root = await openWorkspaceActionsMenu(component, page);
+  const rootBox = await settledBoundingBox(root);
+  const parent = root.getByRole('menuitem', { name: 'Open in...', exact: true });
+  await parent.focus();
+  await page.keyboard.press('ArrowRight');
+
+  const editor = page.getByRole('menuitem', { name: 'Open in Visual Studio Code', exact: true });
+  await expect(editor).toBeFocused();
+  const submenu = page.getByRole('menu').filter({ has: editor });
+  const rowBox = await settledBoundingBox(parent);
+  const editorBox = await settledBoundingBox(editor);
+  const submenuBox = await settledBoundingBox(submenu);
+  expect(Math.abs(submenuBox.y - rootBox.y)).toBeLessThanOrEqual(0.5);
+  expect(Math.abs(editorBox.y - rowBox.y)).toBeLessThanOrEqual(0.5);
+  // Collision handling may flip the flyout to the left; either side stays outside its parent.
+  expect(
+    submenuBox.x >= rowBox.x + rowBox.width || submenuBox.x + submenuBox.width <= rowBox.x,
+  ).toBe(true);
+  expect(submenuBox.y + submenuBox.height).toBeLessThanOrEqual(page.viewportSize()!.height);
+
+  await page.screenshot({ path: testInfo.outputPath('workspace-open-in-top-aligned.png') });
+  await testInfo.attach('submenu geometry', {
+    body: JSON.stringify({ root: rootBox, parent: rowBox, submenu: submenuBox, editor: editorBox }),
+    contentType: 'application/json',
+  });
+  await page.keyboard.press('ArrowLeft');
+  await expect(editor).toHaveCount(0);
+  await expect(parent).toBeFocused();
+  await expect(root).toBeVisible();
 });

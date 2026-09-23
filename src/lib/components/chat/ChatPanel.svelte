@@ -79,6 +79,8 @@
   import { selectAgentQueueMessages } from '$store/renderer/slices/agent-queue/agent-queue-selectors';
   import { removeQueuedMessageRequested } from '$store/renderer/slices/agent-queue/agent-queue-slice';
   import { hydrateAgentQueue } from '$features/agent/agent-queue-read-service';
+  import { ensureWorkspaceDetail } from '$features/workspace/workspace-detail-hydration';
+  import { workspaceSetupScriptText } from '$features/workspace/utils/workspace-setup-script';
   import {
     acquireChatInterestLease,
     releaseChatInterestLease,
@@ -152,6 +154,12 @@
   import { appClient } from '$lib/client';
   import { selectChatDraft } from '$store/renderer/slices/transient-ui/transient-ui-selectors';
   import { setChatDraft } from '$store/renderer/slices/transient-ui/transient-ui-slice';
+  import {
+    presenceTypingPulse,
+    presenceTypingStopped,
+  } from '$store/renderer/slices/presence/presence-slice';
+  import { selectPresenceOwnPrincipalId } from '$store/renderer/slices/presence/presence-selectors';
+  import PresenceTypingIndicator from '$features/presence/components/PresenceTypingIndicator.svelte';
 
   import { selectTasksForAgent } from '$store/renderer/slices/task-agent-associations/task-agent-associations-selectors';
   import type { TaskAgentAssociation } from '$store/renderer/slices/task-agent-associations/task-agent-associations-types';
@@ -364,6 +372,8 @@
   import { canChangeAgentProvider as resolveCanChangeAgentProvider } from './provider-lock';
   import ModelChangeNotice from './ModelChangeNotice.svelte';
   import { getModelChangeNotice } from './model-change-notice';
+  import ProviderRehomedNotice from './ProviderRehomedNotice.svelte';
+  import { getProviderRehomedNotice } from './rehome-notice';
   import {
     hasOperationalAssistantMessageBoundary,
     hasOperationalAssistantTurnBoundary,
@@ -393,6 +403,7 @@
     isUserQueuedMessage,
     omitDrainedQueuedMessages,
   } from '$lib/utils/queued-message-visibility';
+  import { getQueueSurfaceAuthors } from '$lib/utils/message-authorship';
   import {
     findPreviousUserMessage,
     isAutomatedChatMessage,
@@ -727,7 +738,7 @@
   const userMessageNavigationItems = $derived(
     mergeUserMessageNavigationItems(
       userMessageIndexItems ?? [],
-      getUserMessageNavigationItems($agentMessages$),
+      getUserMessageNavigationItems($agentMessages$, workspace?.ownerPrincipalId),
     ),
   );
 
@@ -1105,6 +1116,16 @@
     omitDrainedQueuedMessages($queuedMessages$.filter(isUserQueuedMessage), $agentMessages$),
   );
 
+  // Queue-surface attribution (multiplayer w2): on only once the workspace
+  // has more than one member. Entries carry their own `author` projection;
+  // the transcript's projections are the fallback for daemons that stamp
+  // `fromPrincipalId` only.
+  const queuedMessageAuthors = $derived(
+    getQueueSurfaceAuthors(workspace?.memberCount, $agentMessages$),
+  );
+  // The viewer's own rows carry no author identity (transcript and queue).
+  const presenceOwnPrincipalId$ = selectPresenceOwnPrincipalId();
+
   // Queue visibility around the wizard: hidden while the wizard is expanded,
   // shown while Ignore-collapsed. Derivation shared with the regression suite.
   const queuedMessagesVisibility = $derived(
@@ -1316,7 +1337,12 @@
   // current-match turn (and its neighbors) can be force-rendered through the
   // LazyTurn virtualization while searching.
   const allSearchMatches = $derived.by(() => {
-    return findChatSearchMatches($agentMessages$, debouncedSearchQuery, messageIdToTurnKey);
+    return findChatSearchMatches(
+      $agentMessages$,
+      debouncedSearchQuery,
+      messageIdToTurnKey,
+      workspace?.ownerPrincipalId,
+    );
   });
 
   // Derive the match count from allSearchMatches
@@ -1765,6 +1791,14 @@
     const workspaceId = workspace?.id;
     if (!workspaceId || !agentId) return;
     pendingDraftWrite = { workspaceId, agentId, draft };
+  }
+
+  // Presence typing (multiplayer w5): each user edit is a pulse for this
+  // agent; an emptied composer ends the episode at once (the saga throttles
+  // the wire sends and ends an idle episode on its own).
+  function reportTypingActivity(value: string): void {
+    if (!agentId) return;
+    appStore.dispatch(value.trim() ? presenceTypingPulse(agentId) : presenceTypingStopped());
   }
 
   // svelte-ignore state_referenced_locally -- identity snapshot is refreshed by the effect below.
@@ -3452,6 +3486,11 @@
     return transcriptStructure.assistantTurnNumberById.get(messageId) ?? 0;
   }
 
+  // A turn notice the transcript renders (mirrors the notice rows below).
+  function isRenderedTurnNotice(notice: AgentMessage): boolean {
+    return Boolean(getModelChangeNotice(notice) || getProviderRehomedNotice(notice));
+  }
+
   // Compute the turn structure and both virtualization/search indexes in one
   // transcript pass rather than regrouping each date bucket for every consumer.
   const conversationTurnIndex = $derived(indexConversationTurns(groupedMessages));
@@ -3742,9 +3781,23 @@
           repoPath: workspace.repositoryPath || '',
           specialistName: session?.name,
           specialistId: (session?.metadata as any)?.specialist,
-          setupScript: workspace.setupScript,
+          // The wire serves `setupScript` as a `{ script, ... }` record
+          // (PROTOCOL §5.25); the card renders the script text.
+          setupScript: workspaceSetupScriptText(workspace.setupScript),
           skipWorktree: workspace.skipWorktree,
         };
+        // `setupScript` is detail-only (absent from slim `workspace.list`
+        // rows), so an undefined value on the list-backed prop does not mean
+        // "no script". Pull the detail once (single-flighted per workspace)
+        // and patch the setup card when it arrives.
+        if (isInitialWorkspaceAgent && workspace.setupScript === undefined) {
+          const wsId = workspace.id;
+          void ensureWorkspaceDetail(wsId).then((detail) => {
+            const setupScript = workspaceSetupScriptText(detail?.setupScript);
+            if (!setupScript || !onboardingContext || workspace?.id !== wsId) return;
+            onboardingContext = { ...onboardingContext, setupScript };
+          });
+        }
       }
     }
 
@@ -4681,7 +4734,9 @@
     const lastAgentMessage = [...messages].reverse().find((m) => m.role === 'assistant');
 
     onChatUpdate({
-      lastUserMessage: lastUserMessage ? getPresentedUserMessageText(lastUserMessage) : undefined,
+      lastUserMessage: lastUserMessage
+        ? getPresentedUserMessageText(lastUserMessage, workspace?.ownerPrincipalId)
+        : undefined,
       lastAgentResponse: lastAgentMessage ? extractAllContent(lastAgentMessage) : undefined,
       isProcessing: $agentIsResponding$,
       messageCount: messages.length,
@@ -4884,6 +4939,7 @@
       inputValue = '';
       inputComponent?.clear();
       commitDraftWrite('');
+      appStore.dispatch(presenceTypingStopped());
       // Clear draft from backend when message is sent
       if (workspace && agentId) {
         await appClient.drafts.clear(workspace.id, agentId);
@@ -5290,6 +5346,25 @@
     handleSend(prompt);
   }
 
+  function isSuggestedPromptShortcutVisible(index: number): boolean {
+    const hint = scrollContainer?.querySelectorAll<HTMLElement>('[data-suggested-prompt-hint]')[
+      index
+    ];
+    if (!scrollContainer || !hint) return false;
+    // Read the targeted hint at keypress time: scroll/resize can precede an
+    // IntersectionObserver delivery, and only part of the prompt list may be visible.
+    const target = hint.getBoundingClientRect();
+    const clip = scrollContainer.getBoundingClientRect();
+    return (
+      target.width > 0 &&
+      target.height > 0 &&
+      target.top >= Math.max(clip.top, 0) &&
+      target.bottom <= Math.min(clip.bottom, window.innerHeight) &&
+      target.left >= Math.max(clip.left, 0) &&
+      target.right <= Math.min(clip.right, window.innerWidth)
+    );
+  }
+
   // Handle editing a suggested prompt - loads into input without sending
   async function handleEditSuggestedPrompt(prompt: string) {
     if (!isActive) return;
@@ -5496,7 +5571,7 @@
         const hasModifier = isMac
           ? e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey // Ctrl on Mac
           : e.altKey && !e.metaKey && !e.ctrlKey && !e.shiftKey; // Alt on Win/Linux
-        if (hasModifier) {
+        if (hasModifier && isSuggestedPromptShortcutVisible(promptIndex)) {
           e.preventDefault();
           const prompt = suggestedPrompts[promptIndex];
           handleSelectSuggestedPrompt(prompt);
@@ -5793,6 +5868,7 @@
                     <ChatMessage
                       message={pendingMessage}
                       {workspace}
+                      ownPrincipalId={$presenceOwnPrincipalId$}
                       backendSessionId={auggieSessionId}
                     />
                   </div>
@@ -5811,6 +5887,7 @@
                         {messageId}
                         ownsMessageIdentity={false}
                         {workspace}
+                        ownPrincipalId={$presenceOwnPrincipalId$}
                         isStreaming={isCurrentlyStreaming}
                         isLastConversationMessage={isLastMessage}
                         backendSessionId={auggieSessionId}
@@ -5911,6 +5988,7 @@
                     <ChatMessage
                       message={pendingMessage}
                       {workspace}
+                      ownPrincipalId={$presenceOwnPrincipalId$}
                       backendSessionId={auggieSessionId}
                     />
                   </div>
@@ -5929,6 +6007,7 @@
                         {messageId}
                         ownsMessageIdentity={false}
                         {workspace}
+                        ownPrincipalId={$presenceOwnPrincipalId$}
                         isStreaming={isCurrentlyStreaming}
                         isLastConversationMessage={isLastMessage}
                         backendSessionId={auggieSessionId}
@@ -6161,8 +6240,8 @@
                     `group-${indexedGroup.group.groupKey ?? groupIndex}-turn-${turnIndex}`}
                   <!-- "Last" means last RENDERED turn (globalTurnIndexMap indexes the
                        turns groupIntoTurns produced), not the last raw date group — a
-                       trailing group holding only skipped rows (system/error, non-model-
-                       change notices) renders no turn and must not count as a follower. -->
+                       trailing group holding only unrecognized system/error rows
+                       renders no turn and must not count as a follower. -->
                   {@const isEventNotification = isEventWakeMessage(turn.userMessage ?? undefined)}
                   {@const nextTurn =
                     turns[turnIndex + 1] ?? conversationTurnIndex.groups[groupIndex + 1]?.turns[0]}
@@ -6188,9 +6267,9 @@
                     })}
                   {@const hasTurnBody = hasVisibleTurnBody({
                     assistantMessages: turn.assistantMessages,
-                    hasVisibleNotice: turn.noticeMessages.some((notice) =>
-                      Boolean(getModelChangeNotice(notice)),
-                    ),
+                    hasVisibleNotice:
+                      turn.bodyMessages.some((message) => message.role === 'system') ||
+                      turn.noticeMessages.some((notice) => isRenderedTurnNotice(notice)),
                     hasPendingStatus:
                       showPendingAssistantStatus ||
                       (groupIndex === groupedMessages.length - 1 &&
@@ -6243,8 +6322,8 @@
                        here — if it is the anchor, the divider renders at the turn
                        boundary (previously it rendered nowhere). -->
                   {@const turnLastRenderedMessageId =
-                    turn.assistantMessages[turn.assistantMessages.length - 1]?.id ??
-                    turn.noticeMessages.findLast((notice) => getModelChangeNotice(notice))?.id ??
+                    turn.bodyMessages[turn.bodyMessages.length - 1]?.id ??
+                    turn.noticeMessages.findLast((notice) => isRenderedTurnNotice(notice))?.id ??
                     turn.userMessage?.id ??
                     null}
                   {@const dividerAtTurnBoundary = dividerDefersToTurnBoundary(
@@ -6341,6 +6420,7 @@
                                 messageId={message.id}
                                 ownsMessageIdentity={false}
                                 {workspace}
+                                ownPrincipalId={$presenceOwnPrincipalId$}
                                 onEditSubmit={isRetiredSession
                                   ? undefined
                                   : (newText, model, blocks) =>
@@ -6361,13 +6441,22 @@
                       {@render newMessagesDividerAfter(message.id, dividerAtTurnBoundary)}
                     {/if}
 
-                    <!-- Model-change notices (daemon-persisted, after the user row, before assistant output) -->
+                    <!-- Model-change and provider re-home notices (daemon-persisted, after the user row, before assistant output) -->
                     {#each turn.noticeMessages as noticeMessage (noticeMessage.id)}
                       {@const notice = getModelChangeNotice(noticeMessage)}
+                      {@const rehomeNotice = getProviderRehomedNotice(noticeMessage)}
                       {#if notice}
                         <div data-message-id={noticeMessage.id} class="px-2">
                           <ModelChangeNotice
                             {notice}
+                            fallbackText={extractAllContent(noticeMessage) || undefined}
+                          />
+                        </div>
+                        {@render newMessagesDividerAfter(noticeMessage.id, dividerAtTurnBoundary)}
+                      {:else if rehomeNotice}
+                        <div data-message-id={noticeMessage.id} class="px-2">
+                          <ProviderRehomedNotice
+                            notice={rehomeNotice}
                             fallbackText={extractAllContent(noticeMessage) || undefined}
                           />
                         </div>
@@ -6404,23 +6493,25 @@
                       </div>
                     {/if}
 
-                    <!-- Assistant messages -->
+                    <!-- Assistant output and historical notices in transcript order -->
                     <!-- PERF: Key by message.id for efficient updates during streaming -->
-                    {#each turn.assistantMessages as message, assistantIndex (message.id)}
+                    {#each turn.bodyMessages as message, bodyIndex (message.id)}
                       {@const isLastTurn =
                         groupIndex === groupedMessages.length - 1 && turnIndex === turns.length - 1}
                       {@const isLastAssistant =
-                        assistantIndex === turn.assistantMessages.length - 1}
+                        message.role === 'assistant' &&
+                        message.id ===
+                          turn.assistantMessages[turn.assistantMessages.length - 1]?.id}
                       {@const isLastMessage = isLastTurn && isLastAssistant}
                       {@const isCurrentlyStreaming = isLastMessage && $agentSessionIsStreaming$}
                       {@const compactPreviousMessageBoundary =
                         hasOperationalAssistantMessageBoundary(
-                          turn.assistantMessages[assistantIndex - 1],
+                          turn.bodyMessages[bodyIndex - 1],
                           message,
                         )}
                       {@const compactNextMessageBoundary = hasOperationalAssistantMessageBoundary(
                         message,
-                        turn.assistantMessages[assistantIndex + 1],
+                        turn.bodyMessages[bodyIndex + 1],
                       )}
                       {@const turnNumber = getMessageTurnNumber(message.id)}
                       {@const globalIndex = getMessageIndex(message.id)}
@@ -6436,7 +6527,7 @@
                         {#snippet children()}
                           <div
                             data-message-id={message.id}
-                            data-message-role="assistant"
+                            data-message-role={message.role}
                             data-message-index={globalIndex}
                             data-turn-number={turnNumber}
                             class="message-nav-target"
@@ -6449,13 +6540,14 @@
                               messageId={message.id}
                               ownsMessageIdentity={false}
                               {workspace}
+                              ownPrincipalId={$presenceOwnPrincipalId$}
                               isStreaming={isCurrentlyStreaming}
                               isLastConversationMessage={isLastMessage}
-                              onEditSubmit={isRetiredSession
+                              onEditSubmit={isRetiredSession || message.role !== 'assistant'
                                 ? undefined
                                 : (newText, model, blocks) =>
                                     handleEditMessage(message.id, newText, model, blocks)}
-                              onRegenerate={isRetiredSession
+                              onRegenerate={isRetiredSession || message.role !== 'assistant'
                                 ? undefined
                                 : () => handleRegenerateFromMessage(message.id)}
                               backendSessionId={auggieSessionId}
@@ -6493,27 +6585,29 @@
                             </div>
                           {/if}
                           <!-- Show file changes after each assistant turn -->
-                          <div
-                            class="w-full"
-                            class:mb-1={!compactNextMessageBoundary &&
-                              !(isLastAssistant && compactOperationalTurnBoundary) &&
-                              !(isLastAssistant && (nextTurnHasUserMessage || nextIsChatCard))}
-                            data-after-assistant-message={message.id}
-                          >
-                            <ChatFileChangesSummary
-                              workspaceId={workspace.id}
-                              {message}
-                              isStreaming={isCurrentlyStreaming}
-                              {agentId}
-                              {turnNumber}
-                            />
-                          </div>
-                          <!-- Show auto-commit status after the last assistant message of each turn -->
-                          {#if isLastAssistant}
-                            <AutoCommitStatus
-                              status={autoCommitStatuses[globalTurnIndexMap.get(turnKey) ?? 0]}
-                              workspaceId={workspace.id}
-                            />
+                          {#if message.role === 'assistant'}
+                            <div
+                              class="w-full"
+                              class:mb-1={!compactNextMessageBoundary &&
+                                !(isLastAssistant && compactOperationalTurnBoundary) &&
+                                !(isLastAssistant && (nextTurnHasUserMessage || nextIsChatCard))}
+                              data-after-assistant-message={message.id}
+                            >
+                              <ChatFileChangesSummary
+                                workspaceId={workspace.id}
+                                {message}
+                                isStreaming={isCurrentlyStreaming}
+                                {agentId}
+                                {turnNumber}
+                              />
+                            </div>
+                            <!-- Show auto-commit status after the last assistant message of each turn -->
+                            {#if isLastAssistant}
+                              <AutoCommitStatus
+                                status={autoCommitStatuses[globalTurnIndexMap.get(turnKey) ?? 0]}
+                                workspaceId={workspace.id}
+                              />
+                            {/if}
                           {/if}
                         {/snippet}
                       </LazyTurn>
@@ -6606,6 +6700,20 @@
 
         {#if workspace?.id && agentId}
           <AttentionRequestBanner {agentId} />
+        {/if}
+
+        <!-- Follow-up actions belong to the response and scroll with the transcript. -->
+        {#if !isRetiredSession && suggestedPrompts.length > 0 && !deferTranscriptReveal}
+          <div class="mt-6 w-full">
+            <SuggestedPrompts
+              prompts={suggestedPrompts}
+              onSelect={handleSelectSuggestedPrompt}
+              onEdit={handleEditSuggestedPrompt}
+              compact={isCompactMode}
+              showShortcutHints={isChatFocused}
+              workspaceId={workspace?.id}
+            />
+          </div>
         {/if}
 
         <!-- The utility stack owns short-chat surplus through its auto margin.
@@ -6759,25 +6867,15 @@
                 {/if}
               {/snippet}
               {#if !pendingQuestionRecoveryLoading || pendingQuestions || questionWizardCollapsed}
-                <!-- Show suggested prompts for the last message only, when not streaming. -->
-                {#if suggestedPrompts.length > 0 && !deferTranscriptReveal}
-                  <div
-                    class="w-full {isCompactMode ? 'pb-2' : 'pb-3'} {isChiefWorkspace
-                      ? 'px-0'
-                      : COMPOSER_INSET_CLASS}"
-                  >
-                    <SuggestedPrompts
-                      prompts={suggestedPrompts}
-                      onSelect={handleSelectSuggestedPrompt}
-                      onEdit={handleEditSuggestedPrompt}
-                      compact={isCompactMode}
-                      showShortcutHints={isChatFocused}
-                      workspaceId={workspace?.id}
-                    />
-                  </div>
-                {/if}
                 {#if draftManager.gateVisible}
                   <ChatDraftLoadingGate />
+                {/if}
+                {#if workspace && agentId}
+                  <PresenceTypingIndicator
+                    workspaceId={workspace.id}
+                    {agentId}
+                    class={isChiefWorkspace ? 'px-3 pb-1' : 'regular-composer-content-inset pb-1'}
+                  />
                 {/if}
                 <SimpleRichInput
                   bind:this={inputComponent}
@@ -6785,6 +6883,7 @@
                   bind:value={inputValue}
                   onvaluechange={(value) => {
                     scheduleDraftWrite(value);
+                    reportTypingActivity(value);
                   }}
                   onsubmit={handleSend}
                   onforcesubmit={handleForceSubmit}
@@ -6813,6 +6912,8 @@
                       <QueuedMessageList
                         bind:this={queuedMessageListRef}
                         messages={visibleQueuedMessages}
+                        authors={queuedMessageAuthors}
+                        ownPrincipalId={$presenceOwnPrincipalId$}
                         onedit={handleEditQueuedMessage}
                         onremove={handleRemoveQueuedMessage}
                         onsendnow={handleSendQueuedMessageNow}

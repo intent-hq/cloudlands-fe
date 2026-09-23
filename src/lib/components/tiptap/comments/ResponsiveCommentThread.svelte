@@ -310,7 +310,13 @@
               <Fa icon={faCheck} size="xs" />
               {m.tiptap_responsiveThread_resolve_label()}
             </Button>
-            <Button size="xs" variant="ghost" onclick={() => onClose?.()}>
+            <Button
+              size="icon-compact"
+              iconOnly
+              variant="ghost"
+              aria-label={m.tiptap_responsiveThread_close_ariaLabel()}
+              onclick={() => onClose?.()}
+            >
               <Fa icon={faTimes} size="xs" />
             </Button>
           </div>
@@ -602,7 +608,7 @@
 
   /* Focus and collapse states */
   .focused {
-    width: 300px;
+    width: var(--comment-focused-width, 300px);
     max-width: 300px;
     box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
     z-index: 20 !important;

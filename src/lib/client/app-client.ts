@@ -11,7 +11,10 @@
  * stays aligned with the live store shape.
  */
 import type {
+  AgentDelegatedCounts,
+  AgentListScope,
   AgentMessage,
+  AgentScopeCounts,
   AgentSession,
   ContentBlock,
   CreateNoteRequest,
@@ -520,6 +523,12 @@ export interface FileBlock {
 export interface AgentDeleteResult extends MutationResult {
   scheduled?: boolean;
   deleteAt?: string;
+  /**
+   * The daemon refused the delete with `-32003 Forbidden` (a collaborator
+   * connection): not transient, so the caller renders a not-permitted sentence
+   * instead of the raw transport message.
+   */
+  forbidden?: boolean;
 }
 
 /**
@@ -532,24 +541,62 @@ export interface AgentCancelDeleteResult extends MutationResult {
   cancelled?: boolean;
 }
 
+/**
+ * `agent.list` read options (§5.5). `retiredOnly` and a bin `scope` are
+ * mutually exclusive daemon-side (retired sessions are their own bin).
+ */
+export interface AgentListOptions {
+  retiredOnly?: boolean;
+  /** Row scope (intent-hq/intent#5383): one bin of the non-retired sessions; `all` / absent is the default read. */
+  scope?: AgentListScope;
+  /**
+   * Narrows a `scope: "delegated"` read to that parent's DIRECT sub-agents
+   * (§5.5; the daemon rejects it with any other scope).
+   */
+  parentAgentId?: string;
+  /**
+   * Narrows a `scope: "delegated"` read to the ORPHANED delegated rows —
+   * those whose parent is no longer a non-retired session of the workspace
+   * (§5.5; the daemon rejects it with any other scope or alongside
+   * `parentAgentId`). Older daemons ignore it, so callers gate on
+   * `delegatedCounts.orphaned` presence.
+   */
+  orphanedOnly?: boolean;
+}
+
+export interface AgentListResult {
+  agents: AgentSession[];
+  retiredCount: number;
+  /**
+   * Per-bin counts (`scopeCounts`, §5.5 row scope) — present only when the
+   * daemon serves them. An older daemon ignores `scope` and answers the
+   * default (all-rows) read without this field.
+   */
+  scopeCounts?: AgentScopeCounts;
+  /**
+   * Per-parent delegated counts (`delegatedCounts`, §5.5) — present only when
+   * the daemon serves them; workspace-wide even on a narrowed read.
+   */
+  delegatedCounts?: AgentDelegatedCounts;
+}
+
 export interface AgentsClient {
   /**
    * Agents of one workspace (`agent.list`, §5.5). Soft-retired sessions
    * (`retiredAt` set) are excluded from the default read daemon-side;
    * `options.retiredOnly: true` serves ONLY retired rows, each
-   * carrying the presence-detected `retiredAt` ISO timestamp. The flag only
-   * rides the wire when supplied so the default read carries no flags.
+   * carrying the presence-detected `retiredAt` ISO timestamp. `options.scope`
+   * narrows the read to one bin of the non-retired sessions (§5.5 row scope).
+   * Flags only ride the wire when supplied so the default read carries none.
    */
-  list(workspaceId: string, options?: { retiredOnly?: boolean }): Promise<AgentSession[]>;
+  list(workspaceId: string, options?: AgentListOptions): Promise<AgentSession[]>;
   /**
    * Same read as `list` plus response metadata: `retiredCount` (§5.5 soft retire) is the
    * number of soft-retired sessions in the workspace, served on every
-   * `agent.list` variant (defaults to 0 if the field is absent).
+   * `agent.list` variant (defaults to 0 if the field is absent); `scopeCounts`
+   * is the per-bin count triple, absent on daemons predating `scope`.
    */
-  listWithMeta(
-    workspaceId: string,
-    options?: { retiredOnly?: boolean },
-  ): Promise<{ agents: AgentSession[]; retiredCount: number }>;
+  listWithMeta(workspaceId: string, options?: AgentListOptions): Promise<AgentListResult>;
   get(agentId: string): Promise<AgentSession | null>;
   /**
    * One page of an agent's retained transcript (`agent.getConversation`, §5.5).
@@ -800,6 +847,18 @@ export interface AgentsClient {
     agentId: string;
     workspaceId: string;
     reasoningEffort: string | null;
+  }): Promise<MutationResult>;
+  /**
+   * Set or clear the daemon-owned per-agent notification mute
+   * (`agent.update { changes: { notificationsMuted } }`, §5.5). The daemon
+   * persists the flag, serves it on `AgentLite.notificationsMuted`, and emits
+   * `agent:updated` so every client converges. Transport / daemon errors
+   * fold into `{ success: false, error }`.
+   */
+  setNotificationsMuted(params: {
+    agentId: string;
+    workspaceId: string;
+    notificationsMuted: boolean;
   }): Promise<MutationResult>;
   /** Persist a specialist picker change through the `agent.update` partial writer. */
   updateSpecialist(params: {
@@ -2116,16 +2175,16 @@ export interface GitHubRepoConfigResult {
 
 /**
  * Normalized single-value PR state (the wire carries `state` + `merged` +
- * `draft` + `mergeableState`). `'queued'` is an open, non-draft PR sitting in
- * the merge queue (`mergeableState: "queued"`).
+ * `draft` + `isInMergeQueue`). `'queued'` is an open, non-draft PR sitting in
+ * the merge queue (`isInMergeQueue: true`).
  */
 export type GitHubPullRequestState = 'open' | 'closed' | 'merged' | 'draft' | 'queued';
 
 /**
  * One pull request (`github.pulls.get`, §5.27) normalized for link previews:
- * the wire's `state` + `merged` + `draft` + `mergeableState` collapse into a
+ * the wire's `state` + `merged` + `draft` + `isInMergeQueue` collapse into a
  * single `state` (merged → `'merged'`, closed → `'closed'`, draft →
- * `'draft'`, `mergeableState: "queued"` → `'queued'`, else `'open'`).
+ * `'draft'`, `isInMergeQueue: true` → `'queued'`, else `'open'`).
  */
 export interface GitHubPullRequestDetails {
   owner: string;

@@ -27,6 +27,7 @@ vi.mock('../../../backend/main/backend.ipc', () => ({
   getLocalBackendClient: vi.fn(() => mocks.backendClient),
   getBackendIdForIpcSender: vi.fn(() => 'local'),
   getPrimaryBackendId: vi.fn(() => 'local'),
+  getConnectedDaemonProtocolVersion: vi.fn(() => null),
   onBackendNotification: vi.fn(() => () => {}),
   onBackendReconnected: vi.fn(() => () => {}),
 }));

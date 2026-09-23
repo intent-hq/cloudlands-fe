@@ -1,29 +1,9 @@
 <script lang="ts">
-  /**
-   * Listen-target selector (mirrors the `intentd pair` picker): the daemon's
-   * available IP addresses with the currently bound ones selected.
-   * Presentational — the parent owns fetching and persistence
-   * (`server.bindAddress`, `server.tunnel.enabled`, `server.tunnel.only`)
-   * and hosts the tunnel on/off toggle; `tunnelSelected` mirrors it here.
-   *
-   * Selection semantics:
-   * - "127.0.0.1 (localhost)" is always bound: this app and the tailcat
-   *   sidecar (which forwards tunnel connections to 127.0.0.1:<port>) reach
-   *   the daemon over loopback, so it renders checked + locked and every
-   *   emission includes it — except under all-interfaces, which covers it.
-   * - "All interfaces" (0.0.0.0) is exclusive with specific IPs (daemon
-   *   validation: unspecified-only-alone). While it is selected, the other
-   *   addresses render checked but locked (0.0.0.0 already covers them);
-   *   unchecking it falls back to loopback-only and makes them individually
-   *   toggleable again.
-   * - Specific IPs are hand-picked on top of loopback; deselecting the last
-   *   one leaves loopback-only (never zero targets), and the parent keeps
-   *   the section open so more IPs can be picked.
-   * - The tunnel toggle lives in the parent; its state is carried through.
-   */
   import { m } from '$shared/paraglide/messages.js';
-  import { flushSync } from 'svelte';
-  import { Checkbox } from '$lib/components/patterns/settings/custom-controls';
+  import Fa from 'svelte-fa';
+  import { faChevronDown } from '@fortawesome/free-solid-svg-icons';
+  import { SettingsFieldRow } from '$lib/components/patterns/settings';
+  import { Combobox } from '$lib/components/patterns/settings/custom-controls';
 
   export interface ListenTargetSelection {
     /** Selected bind IPs ('0.0.0.0' means all interfaces, exclusive). */
@@ -39,7 +19,7 @@
     selectedIps: string[];
     /** `server.tunnel.enabled` — the parent's tunnel toggle state. */
     tunnelSelected: boolean;
-    /** Persist in flight — disables the checkboxes. */
+    /** Persist in flight — disables the multiselect. */
     saving?: boolean;
     onchange: (selection: ListenTargetSelection) => void;
   }
@@ -66,11 +46,36 @@
   ]);
 
   const selection = $derived(new Set(selectedIps));
-  let rollbackGeneration = $state(0);
-
-  // While an unspecified address is bound, every other address is already
-  // covered by it — render them checked but locked until it is unchecked.
   const allInterfacesSelected = $derived(selectedIps.some((ip) => UNSPECIFIED.has(ip)));
+  const renderedSelection = $derived(withLoopback(selectedIps));
+  const groups = $derived([
+    {
+      key: 'all',
+      label: '',
+      options: [{ value: ALL_INTERFACES, label: ipLabel(ALL_INTERFACES) }],
+    },
+    {
+      key: 'interfaces',
+      label: '',
+      separatorBefore: true,
+      options: ipOptions
+        .filter((ip) => ip !== ALL_INTERFACES)
+        .map((ip) => ({
+          value: ip,
+          label: ipLabel(ip),
+          disabled: ip === LOOPBACK && !allInterfacesSelected,
+        })),
+    },
+  ]);
+  const displayValue = $derived(renderedSelection.map(ipLabel).join(', '));
+
+  function ipLabel(ip: string): string {
+    return ip === ALL_INTERFACES
+      ? m.settings_listenTargets_allInterfaces_label()
+      : ip === LOOPBACK
+        ? m.settings_listenTargets_loopback_label()
+        : ip;
+  }
 
   /**
    * Loopback is always bound: force it into every emission unless an
@@ -84,7 +89,7 @@
   }
 
   function toggleIp(ip: string): void {
-    if (ip === LOOPBACK) return; // always bound, never toggled
+    if (ip === LOOPBACK && !allInterfacesSelected) return; // always bound
     let ips: string[];
     if (selection.has(ip)) {
       ips = selectedIps.filter((v) => v !== ip);
@@ -97,64 +102,42 @@
     onchange({ ips: withLoopback(ips), tunnel: tunnelSelected });
   }
 
-  function handleCheckedChange(ip: string, next: boolean, rendered: boolean): void {
-    if (next === rendered) return;
-    toggleIp(ip);
-    flushSync(() => (rollbackGeneration += 1));
+  function handleChange(next: string | string[]): void {
+    if (saving || !Array.isArray(next)) return;
+    const changed = ipOptions.find((ip) => next.includes(ip) !== renderedSelection.includes(ip));
+    if (changed) toggleIp(changed);
   }
 </script>
 
-<div class="flex flex-col gap-1" data-listen-target-selector>
-  <p class="type-body font-medium text-foreground">{m.settings_listenTargets_label()}</p>
-  <p class="type-body text-subtle mb-1">{m.settings_listenTargets_description()}</p>
-  <ul class="flex flex-col gap-0.5">
-    {#each ipOptions as ip (ip)}
-      {@const covered = !UNSPECIFIED.has(ip) && allInterfacesSelected}
-      {@const locked = covered || ip === LOOPBACK}
-      {@const checked = selection.has(ip) || locked}
-      <li>
-        <label
-          class="flex items-center gap-2 py-1 type-body text-foreground cursor-pointer {saving
-            ? 'opacity-50'
-            : ''}"
-          title={covered
-            ? m.settings_listenTargets_coveredByAllInterfaces_note()
-            : locked
-              ? m.settings_listenTargets_loopbackAlwaysBound_note()
-              : undefined}
-        >
-          {#key `${ip}:${rollbackGeneration}`}
-            <Checkbox
-              {checked}
-              disabled={saving || locked}
-              ariaLabel={ip === ALL_INTERFACES
-                ? m.settings_listenTargets_allInterfaces_label()
-                : ip === LOOPBACK
-                  ? m.settings_listenTargets_loopback_label()
-                  : ip}
-              onCheckedChange={(next) => handleCheckedChange(ip, next, checked)}
-            />
-          {/key}
-          <span class="font-mono type-caption">
-            {ip === ALL_INTERFACES
-              ? m.settings_listenTargets_allInterfaces_label()
-              : ip === LOOPBACK
-                ? m.settings_listenTargets_loopback_label()
-                : ip}
-          </span>
-        </label>
-        {#if locked && !covered}
-          <p class="type-body text-subtle ml-6">
-            {m.settings_listenTargets_loopbackAlwaysBound_note()}
-          </p>
-        {/if}
-      </li>
-    {/each}
-  </ul>
-  {#if allInterfacesSelected}
-    <p class="type-body text-subtle">{m.settings_listenTargets_coveredByAllInterfaces_note()}</p>
-  {/if}
-  {#if tunnelSelected && selectedIps.length === 0}
-    <p class="type-body text-subtle">{m.settings_listenTargets_tunnelOnly_note()}</p>
-  {/if}
-</div>
+<SettingsFieldRow
+  id="available-networks"
+  label={m.settings_listenTargets_label()}
+  description={m.settings_listenTargets_description()}
+  disabled={saving}
+>
+  {#snippet control()}
+    <div class="relative w-full md:w-64">
+      <Combobox
+        multiple
+        bind:value={() => renderedSelection, () => {}}
+        {groups}
+        {displayValue}
+        disabled={saving}
+        ariaLabel={m.settings_listenTargets_label()}
+        inputClass="pr-8"
+        onchange={handleChange}
+      />
+      <span
+        class="pointer-events-none absolute right-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
+        aria-hidden="true"
+      >
+        <Fa icon={faChevronDown} />
+      </span>
+    </div>
+    {#if tunnelSelected && selectedIps.length === 0}
+      <p class="type-body text-subtle mt-2 md:max-w-64">
+        {m.settings_listenTargets_tunnelOnly_note()}
+      </p>
+    {/if}
+  {/snippet}
+</SettingsFieldRow>

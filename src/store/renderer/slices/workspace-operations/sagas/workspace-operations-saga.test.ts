@@ -118,7 +118,14 @@ const createProposal = (applyToolCallId: string): WorkspaceCreateProposal => ({
   applyToolCallId,
 });
 
-const noActiveWork = { agentNames: [], hookNames: [], openPrs: [], localChanges: null };
+const noGuests = { collaboratorCount: 0, openInviteCount: 0 };
+const noActiveWork = {
+  agentNames: [],
+  hookNames: [],
+  openPrs: [],
+  localChanges: null,
+  guests: noGuests,
+};
 
 const localChanges = {
   roots: [
@@ -349,10 +356,9 @@ describe('workspaceOperationsSaga', () => {
 
   it('shows the delete warning, confirms it, and restores the workspace when cancelDelete succeeds', async () => {
     mocks.getActiveWorkNames.mockResolvedValue({
+      ...noActiveWork,
       agentNames: ['Ada'],
       hookNames: ['ci-watch'],
-      openPrs: [],
-      localChanges: null,
     });
     mocks.deleteWorkspace.mockResolvedValue({
       ok: true,
@@ -376,6 +382,7 @@ describe('workspaceOperationsSaga', () => {
           hookNames: ['ci-watch'],
           openPrs: [],
           localChanges: null,
+          guests: noGuests,
         },
       ],
     });
@@ -430,12 +437,7 @@ describe('workspaceOperationsSaga', () => {
   });
 
   it('shows the archive warning for active hooks and archives after confirmation', async () => {
-    mocks.getActiveWorkNames.mockResolvedValue({
-      agentNames: [],
-      hookNames: ['pr-watch'],
-      openPrs: [],
-      localChanges: null,
-    });
+    mocks.getActiveWorkNames.mockResolvedValue({ ...noActiveWork, hookNames: ['pr-watch'] });
     mocks.archive.mockResolvedValue({
       ok: true,
       data: workspace('ws-1', WorkspaceStatusEnum.Archived),
@@ -458,6 +460,7 @@ describe('workspaceOperationsSaga', () => {
           hookNames: ['pr-watch'],
           openPrs: [],
           localChanges: null,
+          guests: noGuests,
         },
       ],
     });
@@ -487,9 +490,7 @@ describe('workspaceOperationsSaga', () => {
     expect(mocks.deleteWorkspace).not.toHaveBeenCalled();
     expect(run.dispatch.mock.calls.flat()).toContainEqual({
       type: 'workspaceOperations/openDeleteWarning',
-      payload: [
-        { workspaceId: 'ws-1', agentNames: [], hookNames: [], openPrs, localChanges: null },
-      ],
+      payload: [{ workspaceId: 'ws-1', ...noActiveWork, openPrs }],
     });
 
     run.send(requestArchiveWorkspace('ws-2'));
@@ -497,9 +498,7 @@ describe('workspaceOperationsSaga', () => {
     expect(mocks.archive).not.toHaveBeenCalled();
     expect(run.dispatch.mock.calls.flat()).toContainEqual({
       type: 'workspaceOperations/openArchiveWarning',
-      payload: [
-        { workspaceId: 'ws-2', agentNames: [], hookNames: [], openPrs, localChanges: null },
-      ],
+      payload: [{ workspaceId: 'ws-2', ...noActiveWork, openPrs }],
     });
 
     run.task.cancel();
@@ -517,7 +516,7 @@ describe('workspaceOperationsSaga', () => {
     expect(run.state().workspaceOperations.localChangesForDelete).toEqual(localChanges);
     expect(run.dispatch.mock.calls.flat()).toContainEqual({
       type: 'workspaceOperations/openDeleteWarning',
-      payload: [{ workspaceId: 'ws-1', agentNames: [], hookNames: [], openPrs: [], localChanges }],
+      payload: [{ workspaceId: 'ws-1', ...noActiveWork, localChanges }],
     });
 
     run.send(requestArchiveWorkspace('ws-2'));
@@ -527,9 +526,59 @@ describe('workspaceOperationsSaga', () => {
     expect(run.state().workspaceOperations.localChangesForArchive).toEqual(localChanges);
     expect(run.dispatch.mock.calls.flat()).toContainEqual({
       type: 'workspaceOperations/openArchiveWarning',
-      payload: [{ workspaceId: 'ws-2', agentNames: [], hookNames: [], openPrs: [], localChanges }],
+      payload: [{ workspaceId: 'ws-2', ...noActiveWork, localChanges }],
     });
 
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it.each([
+    ['collaborators', { collaboratorCount: 2, openInviteCount: 0 }],
+    ['open invites', { collaboratorCount: 0, openInviteCount: 1 }],
+  ])(
+    'shows the delete and archive warnings when only %s exist (zero agents/hooks/PRs/local changes)',
+    async (_label, guests) => {
+      mocks.getActiveWorkNames.mockResolvedValue({ ...noActiveWork, guests });
+      const run = harness([workspace('ws-1'), workspace('ws-2')]);
+
+      run.send(requestDeleteWorkspace('ws-1'));
+      await settle();
+      expect(mocks.deleteWorkspace).not.toHaveBeenCalled();
+      expect(run.state().workspaceOperations.showDeleteWarning).toBe(true);
+      expect(run.state().workspaceOperations.guestsForDelete).toEqual(guests);
+      expect(run.dispatch.mock.calls.flat()).toContainEqual({
+        type: 'workspaceOperations/openDeleteWarning',
+        payload: [{ workspaceId: 'ws-1', ...noActiveWork, guests }],
+      });
+
+      run.send(requestArchiveWorkspace('ws-2'));
+      await settle();
+      expect(mocks.archive).not.toHaveBeenCalled();
+      expect(run.state().workspaceOperations.showArchiveWarning).toBe(true);
+      expect(run.state().workspaceOperations.guestsForArchive).toEqual(guests);
+      expect(run.dispatch.mock.calls.flat()).toContainEqual({
+        type: 'workspaceOperations/openArchiveWarning',
+        payload: [{ workspaceId: 'ws-2', ...noActiveWork, guests }],
+      });
+
+      run.task.cancel();
+      await run.task.toPromise();
+    },
+  );
+
+  it('archives without a warning when the workspace has no guests and no active work', async () => {
+    mocks.archive.mockResolvedValue({
+      ok: true,
+      data: workspace('ws-1', WorkspaceStatusEnum.Archived),
+    });
+    const run = harness([workspace('ws-1')]);
+
+    run.send(requestArchiveWorkspace('ws-1'));
+    await settle();
+
+    expect(run.state().workspaceOperations.showArchiveWarning).toBe(false);
+    expect(mocks.archive).toHaveBeenCalledExactlyOnceWith('ws-1');
     run.task.cancel();
     await run.task.toPromise();
   });
@@ -743,7 +792,15 @@ describe('workspaceOperationsSaga', () => {
     expect(mocks.deleteWorkspace).not.toHaveBeenCalled();
     expect(guarded.dispatch.mock.calls.flat()).toContainEqual({
       type: 'workspaceOperations/openBulkDeleteWarningConfirm',
-      payload: [{ repoKey: 'intent-hq/repo', workspaceCount: 3, agentCount: 2, hookCount: 1 }],
+      payload: [
+        {
+          repoKey: 'intent-hq/repo',
+          workspaceCount: 3,
+          agentCount: 2,
+          hookCount: 1,
+          guestCount: 0,
+        },
+      ],
     });
     guarded.send(confirmBulkDeleteWarning());
     await vi.advanceTimersByTimeAsync(50);
@@ -760,6 +817,65 @@ describe('workspaceOperationsSaga', () => {
     expect(guarded.state().workspace.pendingDeletions).toEqual({});
     guarded.task.cancel();
     await guarded.task.toPromise();
+  });
+
+  it('gates bulk delete-archived behind the warning when only guests would be removed', async () => {
+    mocks.getActiveWorkNames.mockImplementation((workspaceId: string) =>
+      Promise.resolve(
+        workspaceId === 'ws-2'
+          ? { ...noActiveWork, guests: { collaboratorCount: 0, openInviteCount: 1 } }
+          : { ...noActiveWork, guests: { collaboratorCount: 2, openInviteCount: 0 } },
+      ),
+    );
+    mocks.deleteWorkspace.mockResolvedValue({ ok: true, data: undefined });
+    const run = harness([
+      workspace('ws-1', WorkspaceStatusEnum.Archived),
+      workspace('ws-2', WorkspaceStatusEnum.Archived),
+    ]);
+    run.send(openBulkDeleteArchivedConfirm('intent-hq/repo'));
+    run.send(confirmBulkDeleteArchived());
+    await settle();
+    expect(mocks.deleteWorkspace).not.toHaveBeenCalled();
+    expect(run.dispatch.mock.calls.flat()).toContainEqual({
+      type: 'workspaceOperations/openBulkDeleteWarningConfirm',
+      payload: [
+        {
+          repoKey: 'intent-hq/repo',
+          workspaceCount: 2,
+          agentCount: 0,
+          hookCount: 0,
+          guestCount: 3,
+        },
+      ],
+    });
+    expect(run.state().workspaceOperations.bulkDeleteGuestCount).toBe(3);
+    run.send(confirmBulkDeleteWarning());
+    await settle();
+    expect(mocks.deleteWorkspace).toHaveBeenCalledTimes(2);
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('sums guests across the targeted workspaces into the bulk archive confirm', async () => {
+    mocks.getActiveWorkNames.mockImplementation((workspaceId: string) =>
+      Promise.resolve(
+        workspaceId === 'ws-1'
+          ? {
+              ...noActiveWork,
+              agentNames: ['Ada'],
+              guests: { collaboratorCount: 1, openInviteCount: 1 },
+            }
+          : { ...noActiveWork, guests: { collaboratorCount: 1, openInviteCount: 0 } },
+      ),
+    );
+    const run = harness([workspace('ws-1'), workspace('ws-2')]);
+    run.send(openBulkArchiveConfirm('intent-hq/repo'));
+    await settle();
+    expect(run.state().workspaceOperations.bulkArchiveActiveAgentCount).toBe(1);
+    expect(run.state().workspaceOperations.bulkArchiveActiveHookCount).toBe(0);
+    expect(run.state().workspaceOperations.bulkArchiveGuestCount).toBe(3);
+    run.task.cancel();
+    await run.task.toPromise();
   });
 
   it('removes a repository, reports invoke failure, and no-ops without a pending path', async () => {
@@ -810,12 +926,15 @@ describe('workspaceOperationsSaga', () => {
       title: 'New space',
       repositoryPath: '/repo',
       baseRef: 'feature/x',
+      // The payload names no specialist, so the effective specialist is
+      // General and the payload's "Coordinator" name is not applied.
       initialAgent: {
-        name: 'Coordinator',
+        name: 'Agent',
         prompt: 'Edited prompt',
         metadata: { isInitialAgent: true },
       },
     });
+    expect(mocks.create.mock.calls[0]?.[0]?.initialAgent?.specialist).toBeUndefined();
     expect(mocks.create.mock.calls[0]?.[0]?.initialAgent).not.toHaveProperty('agentId');
     expect(getItem(run.state().workspace.workspaces, 'ws-created')).toBeDefined();
     expect(run.state().proposalLifecycle['create-success']).toMatchObject({

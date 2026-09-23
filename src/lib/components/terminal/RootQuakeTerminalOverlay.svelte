@@ -404,7 +404,8 @@
                 bind:value={headerEditValue}
                 onblur={finishEditingHeaderName}
                 onkeydown={handleHeaderEditKeydown}
-                class="inline-edit-input relative z-10 w-40 border-0 bg-transparent px-0 text-sm font-medium text-muted-foreground outline-none focus:outline-none! focus:ring-0!"
+                noFocusStyle
+                class="inline-edit-input relative z-10 w-40 border-0 bg-transparent hover:bg-transparent px-0 text-sm font-medium text-muted-foreground outline-none focus:outline-none! focus:ring-0!"
                 placeholder={m.terminal_quakeOverlay_terminalName_placeholder()}
               />
             {:else}
@@ -502,9 +503,10 @@
                     bind:value={editingValue}
                     onblur={finishEditing}
                     onkeydown={handleEditKeydown}
+                    noFocusStyle
                     onclick={(e) => e.stopPropagation()}
                     placeholder={m.terminal_quakeOverlay_name_placeholder()}
-                    class="inline-edit-input relative z-10 w-60 border-none bg-transparent p-0 font-inherit text-inherit outline-none focus:outline-none! focus:ring-0!"
+                    class="inline-edit-input relative z-10 w-60 border-none bg-transparent hover:bg-transparent p-0 font-inherit text-inherit outline-none focus:outline-none! focus:ring-0!"
                   />
                 {:else}
                   <span
@@ -523,8 +525,10 @@
 
               <Button
                 variant="ghost"
+                size="icon-compact"
+                iconOnly
                 type="button"
-                class="ml-0.5 p-1 text-muted-foreground hover:text-muted-foreground opacity-0 group-hover/tab:opacity-100 transition-opacity duration-spring-moderate ease-spring-moderate motion-reduce:transition-none cursor-pointer"
+                class="ml-0.5 text-muted-foreground hover:text-muted-foreground opacity-0 group-hover/tab:opacity-100 transition-opacity duration-spring-moderate ease-spring-moderate motion-reduce:transition-none cursor-pointer"
                 onclick={(e) => closeTerminal(term.id, e)}
                 aria-label={m.terminal_quakeOverlay_closeTerminal_ariaLabel()}
               >
@@ -540,12 +544,14 @@
           >
             <Button
               variant="ghost"
+              size="icon-compact"
+              iconOnly
               type="button"
-              class="flex items-center justify-center w-7 h-7 ml-1 border-none rounded-md bg-transparent text-muted-foreground cursor-pointer transition-all duration-spring-moderate ease-spring-moderate motion-reduce:transition-none hover:bg-muted/80 hover:text-foreground"
+              class="ml-1 text-muted-foreground cursor-pointer transition-all duration-spring-moderate ease-spring-moderate motion-reduce:transition-none hover:bg-muted/80 hover:text-foreground"
               onclick={createNewTerminal}
               aria-label={m.terminal_quakeOverlay_newTerminal_ariaLabel()}
             >
-              <Fa icon={faPlus} class="w-3.5 h-3.5" />
+              <Fa icon={faPlus} />
             </Button>
           </Tooltip>
         </div>

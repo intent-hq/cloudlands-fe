@@ -100,7 +100,7 @@
     <div
       class="bg-background rounded-lg w-[420px] max-w-[90vw] shadow-lg border border-border text-foreground"
     >
-      <div class="flex justify-between items-center p-4 border-b border-border">
+      <div class="flex justify-between items-center p-4">
         <h2 class="m-0 text-lg text-foreground">{m.lib_githubAuth_connect_label()}</h2>
         <Button
           variant="ghost"
@@ -114,7 +114,7 @@
           <div class="text-danger">
             <p>{$error$}</p>
             <Button
-              class="mt-3 bg-muted border-none px-4 py-2 rounded cursor-pointer text-foreground hover:bg-muted/80"
+              class="mt-3 border-none px-4 py-2 rounded cursor-pointer text-foreground"
               onclick={handleRetry}>{m.lib_githubAuth_tryAgain_label()}</Button
             >
           </div>
@@ -159,10 +159,7 @@
             <p class="text-subtle text-sm mt-2">
               {m.lib_githubAuth_localCredentials_message()}
             </p>
-            <Button
-              class="mt-4 cursor-pointer rounded border-none bg-success px-6 py-3 text-base text-success-foreground hover:bg-success/90"
-              onclick={handleConnect}
-            >
+            <Button variant="primary" class="mt-4 px-6 py-3 text-base" onclick={handleConnect}>
               {m.lib_githubAuth_connect_label()}
             </Button>
           </div>

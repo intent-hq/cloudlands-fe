@@ -21,11 +21,13 @@
   import { tick } from 'svelte';
   import { safeDisclosureTransition } from './disclosure-motion';
   import { beforeFollowBottomMutation } from '$lib/utils/smartScroll';
-  import type { QueuedMessage } from '$shared/types';
+  import type { MessageAuthor, QueuedMessage } from '$shared/types';
   import type { QueuedMessageSendOutcome } from '$store/renderer/slices/chat-state/chat-state-types';
+  import { getMessageAuthorLabel, getQueuedMessageAuthor } from '$lib/utils/message-authorship';
   import { Button } from '$lib/components/ui/button';
   import { Textarea } from '$lib/components/ui/textarea';
   import ImageLightbox from '$lib/components/ui/ImageLightbox.svelte';
+  import PrincipalAvatar from '$lib/components/ui/PrincipalAvatar.svelte';
   import { openWorkspaceAttachment } from '$store/renderer/slices/workspace-navigation/workspace-navigation-slice';
   import { evictAttachmentImageUrl, resolveAttachmentImageUrl } from './attachment-image-url';
   import { store as appStore } from '$store/renderer/store';
@@ -54,9 +56,30 @@
       messageId: string,
     ) => QueuedMessageSendOutcome | void | Promise<QueuedMessageSendOutcome | void>;
     ondone?: () => void;
+    /**
+     * Queue-surface attribution (multiplayer w2). `null` = off (single-member
+     * workspace). Otherwise a user-authored entry renders its own `author`
+     * projection, or — on a daemon that stamps `fromPrincipalId` only — the
+     * transcript author this map resolves it to.
+     */
+    authors?: ReadonlyMap<string, MessageAuthor> | null;
+    /**
+     * The viewer's own principal (`presence.ownPrincipalId`): their own
+     * entries render no author. `null` = not yet known, every author shown.
+     */
+    ownPrincipalId?: string | null;
   }
 
-  let { messages = [], disabled = false, onedit, onremove, onsendnow, ondone }: Props = $props();
+  let {
+    messages = [],
+    disabled = false,
+    onedit,
+    onremove,
+    onsendnow,
+    ondone,
+    authors = null,
+    ownPrincipalId = null,
+  }: Props = $props();
 
   const workspaceId = getWorkspaceRouteContext()?.workspaceId ?? undefined;
 
@@ -658,6 +681,10 @@
                   </Button>
                 </div>
               {:else}
+                {@const queuedAuthor = getQueuedMessageAuthor(message, authors, ownPrincipalId)}
+                {@const queuedAuthorLabel = queuedAuthor
+                  ? getMessageAuthorLabel(queuedAuthor)
+                  : null}
                 <!-- Display mode -->
                 <div class="col-span-full row-span-full flex min-w-0 flex-1 items-center gap-2">
                   {#if message.requeuedAfterFailure}
@@ -683,6 +710,28 @@
                     ondblclick={() => startEdit(message)}
                     onkeydown={(event) => handleDisplayKeydown(event, message)}
                   >
+                    {#if queuedAuthor}
+                      <span
+                        class="type-caption mb-0.5 flex min-w-0 items-center gap-1.5 text-subtle"
+                        data-testid="queued-message-author"
+                        data-principal-id={queuedAuthor.principalId}
+                        aria-label={m.chat_queuedMessages_author_ariaLabel({
+                          name: queuedAuthorLabel ?? m.chat_chatMessage_authorUnknown_label(),
+                        })}
+                      >
+                        <PrincipalAvatar
+                          avatarUrl={queuedAuthor.avatarUrl}
+                          label={queuedAuthorLabel ?? ''}
+                          size={16}
+                          class="font-medium leading-none text-muted-foreground"
+                          referrerpolicy="no-referrer"
+                          testid="queued-message-author-avatar"
+                        />
+                        <span class="truncate" data-testid="queued-message-author-name"
+                          >{queuedAuthorLabel ?? m.chat_chatMessage_authorUnknown_label()}</span
+                        >
+                      </span>
+                    {/if}
                     <span class="block truncate" data-testid="queued-message-text">
                       {message.requeuedAfterFailure
                         ? m.chat_queuedMessages_failedWillRetryPrefix_label() + ' '

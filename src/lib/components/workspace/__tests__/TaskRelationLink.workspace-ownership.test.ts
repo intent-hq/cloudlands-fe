@@ -43,7 +43,6 @@ vi.mock('$store/renderer/slices/workspace-notes/workspace-notes-selectors', () =
     }),
     { select: (_: any, workspaceId: string) => mocks.notes.get(workspaceId) },
   ),
-  selectNotesVersion: () => ({ subscribe: (run: any) => (run(0), () => {}) }),
 }));
 vi.mock('$store/renderer/store', async () => {
   const { createAppStoreMockModule } =

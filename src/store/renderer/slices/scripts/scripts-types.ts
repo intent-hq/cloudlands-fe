@@ -59,37 +59,3 @@ export type ScriptsWorkspaceState = {
 export type ScriptsState = {
   byWorkspaceId: Record<string, ScriptsWorkspaceState>;
 };
-
-// IPC event payload types
-type ScriptStartedEvent = {
-  workspaceId: string;
-  scriptId: string;
-  pid?: number;
-  startedAt: string;
-};
-
-type ScriptStoppedEvent = {
-  workspaceId: string;
-  scriptId: string;
-  exitCode: number | null;
-  signal?: string | null;
-  stoppedAt: string;
-};
-
-type ScriptOutputEvent = {
-  workspaceId: string;
-  scriptId: string;
-  lines: Array<{ text: string; stream: 'stdout' | 'stderr'; timestamp: string }>;
-};
-
-type ScriptErrorEvent = {
-  workspaceId: string;
-  scriptId: string;
-  error: string;
-};
-
-type ScriptUrlDetectedEvent = {
-  workspaceId: string;
-  scriptId: string;
-  url: string;
-};

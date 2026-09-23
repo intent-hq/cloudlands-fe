@@ -1,5 +1,5 @@
 // @verify-changed-triggers: ../Panel.svelte, ../PanelContainer.svelte, ../PanelLayout.svelte,
-//   ../PanelSplitHandle.svelte, ../PanelTabBar.svelte, ../LayoutPresetDropdown.svelte,
+//   ../PanelSplitHandle.svelte, ../PanelTabBar.svelte,
 //   ../../WindowTitleBar.svelte, ../../WorkspaceTabStrip.svelte,
 //   ../../sidebar-nav/SidebarNav.svelte, ../../sidebar-nav/SidebarPanel.svelte,
 //   ../../../workspace/WorkspaceLayout.svelte, ../../../workspace/WorkspaceSidebarHeader.svelte,
@@ -128,17 +128,15 @@ describe('editorial workspace shell presentation contract', () => {
     expect(tabBar).not.toContain('color-mix');
   });
 
-  it('limits direct manipulation and presets to the horizontal panel stack', () => {
+  it('limits direct manipulation to the horizontal panel stack', () => {
     const panel = source('../Panel.svelte');
     const layout = source('../PanelLayout.svelte');
-    const presets = source('../LayoutPresetDropdown.svelte');
 
     expect(panel).toContain('Tabless panels only split along the horizontal stack.');
     expect(layout).toContain("if (direction !== 'horizontal') return;");
     expect(layout).toMatch(
       /moveTabToSplitLevel\(\s*draggedPane\.tabId,\s*draggedPane\.panelId,\s*\[\],\s*placement\.position,\s*'horizontal',\s*\)/,
     );
-    expect(presets).not.toContain("id: 'split-vertical'");
   });
 
   it('reserves browser-style tab chords for global workspace tabs', () => {
@@ -233,8 +231,6 @@ describe('editorial workspace shell presentation contract', () => {
     expect(nav).not.toContain('faBell');
     expect(nav).not.toContain("id: 'settings'");
     expect(nav).toContain('data-titlebar-spaces-control');
-    expect(nav).toContain('name="dandelion"');
-    expect(nav).not.toContain('name="spaces"');
     expect(titlebar).not.toContain('ChiefTrigger');
     expect(workspaceHeader).toContain('label: m.ui_sidebar_toggle_label()');
     expect(workspaceHeader).toContain('appStore.dispatch(toggleSidebar())');
@@ -269,7 +265,6 @@ describe('editorial workspace shell presentation contract', () => {
     expect(navigation).not.toContain('aria-expanded');
     expect(navigation).not.toContain('aria-controls');
     expect(navigation).not.toContain('SidebarNavHoverCard');
-    expect(navigation).toContain('name="dandelion"');
     expect(appLayout).toContain('class="workspace-main flex');
     expect(sidebarPanel).toContain('data-panel-item={$panelItem$}');
     expect(sidebarPanel).not.toContain("$panelItem$ === 'chief' ? 'bg-background' : ''");

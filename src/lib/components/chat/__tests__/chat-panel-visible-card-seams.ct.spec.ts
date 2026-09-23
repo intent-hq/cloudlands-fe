@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/experimental-ct-svelte';
+import { expect, test } from '../../../../test/ct-test';
 import type { AgentMessage } from '$shared/types';
 import { QUESTION_RESOURCE_MIME_TYPE } from '$shared/types/question-resource';
 import { failOnConsoleErrors } from '../../../../test/ct-console-errors';
@@ -48,6 +48,7 @@ const hiddenQuestion = assistant([
 for (const [scenario, between] of [
   ['adjacent', []],
   ['empty assistant', [assistant([])]],
+  ['whitespace-only assistant', [assistant([{ type: 'text', text: ' \n\t ' }])]],
   ['question-only assistant', [hiddenQuestion]],
   [
     'ignored notice',
@@ -61,6 +62,23 @@ for (const [scenario, between] of [
     ],
   ],
   ['visible prose', [assistant([{ type: 'text', text: 'Visible response between the cards.' }])]],
+  [
+    'visible system notice',
+    [
+      {
+        id: 'seam-system',
+        role: 'system',
+        timestamp,
+        contentBlocks: [
+          {
+            type: 'text',
+            text: 'Need access before continuing.',
+            meta: { kind: 'blocker-report' },
+          },
+        ],
+      } as AgentMessage,
+    ],
+  ],
   [
     'visible tool',
     [
@@ -116,7 +134,7 @@ for (const [scenario, between] of [
           },
         );
         const body = root
-          .querySelector('[data-message-id="seam-assistant"]')
+          .querySelector('[data-message-id="seam-assistant"], [data-message-id="seam-system"]')
           ?.getBoundingClientRect();
         return {
           cards,

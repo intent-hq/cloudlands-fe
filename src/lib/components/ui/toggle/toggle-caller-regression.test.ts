@@ -94,24 +94,20 @@ describe('B2 caller metadata regression', () => {
   it('matches current source-derived callers for every field primitive', () => {
     const expected = {
       checkbox: [
-        'src/features/log/components/ActivityLogFilters.svelte',
         'src/lib/component-catalog/renderers/BasicCatalogPreview.svelte',
         'src/lib/component-catalog/renderers/FieldPreviewCell.svelte',
         'src/lib/component-catalog/renderers/ProposalCatalogPreview.svelte',
         'src/lib/components/chat/ChatChangesPanel.svelte',
-        'src/lib/components/chat/ChatSearch.svelte',
         'src/lib/components/chat/input/ContextPickerButton.svelte',
         'src/lib/components/chat/proposals/BulkProposalItems.svelte',
         'src/lib/components/modals/InterruptedAgentsModal.svelte',
         'src/lib/components/modals/TransferWorkspaceModal.svelte',
-        'src/lib/components/notes/NotesPanel.svelte',
         'src/lib/components/patterns/settings/custom-controls.ts',
         'src/lib/components/tiptap/TaskItemNodeView.svelte',
         'src/lib/components/workspace/initializer/BranchSelector.svelte',
         'src/lib/components/workspace/initializer/RepoAndBranchPicker.svelte',
       ],
       switch: [
-        'src/lib/component-catalog/CatalogControls.svelte',
         'src/lib/component-catalog/ChatPolishGeometryControls.svelte',
         'src/lib/component-catalog/renderers/BasicCatalogPreview.svelte',
         'src/lib/component-catalog/renderers/FieldPreviewCell.svelte',

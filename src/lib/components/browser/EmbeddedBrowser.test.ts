@@ -369,6 +369,385 @@ describe('EmbeddedBrowser', () => {
       expect(container.querySelector('input')).toBeNull();
     });
 
+    // intent-hq/intent#5710: an explicit daemon.localhost / client.localhost
+    // alias typed into the address bar resolves through browser:resolve-url
+    // like browser.exec does; bare loopback and every other URL keep loading
+    // literally (intent-hq/monorepo#2404).
+    describe('address-bar loopback alias resolution', () => {
+      const RESOLVE_CHANNEL = 'browser:resolve-url';
+
+      type AddressWebview = HTMLElement & {
+        loadURL: ReturnType<typeof vi.fn>;
+        getURL: () => string;
+      };
+
+      const typeAddress = async (rendered: ReturnType<typeof renderPage>, typed: string) => {
+        await fireEvent.click(rendered.getByRole('button', { name: 'Edit browser address' }));
+        const input = rendered.getByRole('textbox', { name: 'Browser address' });
+        await fireEvent.input(input, { target: { value: typed } });
+        await fireEvent.submit(input.closest('form')!);
+      };
+
+      const submitAddress = async (typed: string, props?: Parameters<typeof renderPage>[0]) => {
+        const rendered = renderPage(props);
+        const webview = rendered.container.querySelector('webview') as AddressWebview;
+        webview.loadURL = vi.fn().mockResolvedValue(undefined);
+        webview.getURL = () => 'https://example.test/docs';
+        mocks.dispatch.mockClear();
+
+        await typeAddress(rendered, typed);
+        return { ...rendered, webview };
+      };
+
+      const failLoad = (webview: Element, validatedURL: string, errorCode = -102) =>
+        fireEvent(
+          webview,
+          Object.assign(new Event('did-fail-load'), {
+            errorCode,
+            errorDescription: 'ERR_CONNECTION_REFUSED',
+            validatedURL,
+          }),
+        );
+
+      // A resolver call the test settles by hand, standing in for the slow
+      // remote reachability probe.
+      const deferredResolver = () => {
+        let settle!: (result: unknown) => void;
+        const pending = new Promise((resolve) => {
+          settle = resolve;
+        });
+        mocks.invoke.mockImplementation((channel: string) =>
+          channel === RESOLVE_CHANNEL ? pending : Promise.resolve(undefined),
+        );
+        return settle;
+      };
+
+      const resolveCalls = () =>
+        mocks.invoke.mock.calls.filter(([channel]) => channel === RESOLVE_CHANNEL);
+
+      const recentUrlEntries = () =>
+        mocks.dispatch.mock.calls
+          .map(([action]) => action)
+          .filter((action) => action.type === 'browser/addRecentUrl')
+          .map((action) => action.payload[1]);
+
+      it('resolves an explicit daemon alias and loads the tunneled URL', async () => {
+        mocks.invoke.mockImplementation(async (channel: string) =>
+          channel === RESOLVE_CHANNEL
+            ? {
+                url: 'http://127.0.0.1:41234/',
+                rewritten: true,
+                requestedUrl: 'http://daemon.localhost:3000',
+                tunneled: true,
+              }
+            : undefined,
+        );
+
+        const { webview, queryByText } = await submitAddress('daemon.localhost:3000');
+
+        await waitFor(() =>
+          expect(webview.loadURL).toHaveBeenCalledWith('http://127.0.0.1:41234/'),
+        );
+        expect(resolveCalls()).toEqual([
+          [RESOLVE_CHANNEL, { url: 'http://daemon.localhost:3000' }],
+        ]);
+        expect(recentUrlEntries()).toEqual(['http://daemon.localhost:3000']);
+        expect(queryByText(m.browser_embedded_resolveFailed_error())).toBeNull();
+      });
+
+      it('reports the typed alias as the requested URL when the tunnel navigation commits', async () => {
+        mocks.invoke.mockImplementation(async (channel: string) =>
+          channel === RESOLVE_CHANNEL
+            ? {
+                url: 'http://127.0.0.1:41234/',
+                rewritten: true,
+                requestedUrl: 'http://daemon.localhost:3000',
+                tunneled: true,
+              }
+            : undefined,
+        );
+        const onNavigate = vi.fn();
+
+        const { webview } = await submitAddress('daemon.localhost:3000', { onNavigate });
+        await waitFor(() =>
+          expect(webview.loadURL).toHaveBeenCalledWith('http://127.0.0.1:41234/'),
+        );
+        onNavigate.mockClear();
+
+        await fireEvent(
+          webview,
+          Object.assign(new Event('did-navigate'), { url: 'http://127.0.0.1:41234/' }),
+        );
+        expect(onNavigate).toHaveBeenCalledWith(
+          'http://127.0.0.1:41234/',
+          'http://daemon.localhost:3000/',
+        );
+
+        // The alias belongs to that one navigation: a later page reports none.
+        onNavigate.mockClear();
+        await fireEvent(
+          webview,
+          Object.assign(new Event('did-navigate'), { url: 'http://127.0.0.1:41234/docs' }),
+        );
+        expect(onNavigate).toHaveBeenCalledTimes(1);
+        expect(onNavigate.mock.calls[0]).toEqual(['http://127.0.0.1:41234/docs']);
+      });
+
+      // An HTTP redirect on the resolved load commits a different URL than the
+      // one requested: the alias must describe the page actually shown.
+      it('rebases the alias onto a same-origin redirect target before reporting it', async () => {
+        mocks.invoke.mockImplementation(async (channel: string) =>
+          channel === RESOLVE_CHANNEL
+            ? {
+                url: 'http://127.0.0.1:41234/',
+                rewritten: true,
+                requestedUrl: 'http://daemon.localhost:3000',
+                tunneled: true,
+              }
+            : undefined,
+        );
+        const onNavigate = vi.fn();
+
+        const { webview } = await submitAddress('daemon.localhost:3000', { onNavigate });
+        await waitFor(() =>
+          expect(webview.loadURL).toHaveBeenCalledWith('http://127.0.0.1:41234/'),
+        );
+        onNavigate.mockClear();
+
+        await fireEvent(
+          webview,
+          Object.assign(new Event('did-navigate'), {
+            url: 'http://127.0.0.1:41234/login?next=%2F#top',
+          }),
+        );
+        expect(onNavigate).toHaveBeenCalledWith(
+          'http://127.0.0.1:41234/login?next=%2F#top',
+          'http://daemon.localhost:3000/login?next=%2F#top',
+        );
+      });
+
+      it('drops the alias when the resolved load redirects to another origin', async () => {
+        mocks.invoke.mockImplementation(async (channel: string) =>
+          channel === RESOLVE_CHANNEL
+            ? {
+                url: 'http://127.0.0.1:41234/',
+                rewritten: true,
+                requestedUrl: 'http://daemon.localhost:3000',
+                tunneled: true,
+              }
+            : undefined,
+        );
+        const onNavigate = vi.fn();
+
+        const { webview } = await submitAddress('daemon.localhost:3000', { onNavigate });
+        await waitFor(() =>
+          expect(webview.loadURL).toHaveBeenCalledWith('http://127.0.0.1:41234/'),
+        );
+        onNavigate.mockClear();
+
+        await fireEvent(
+          webview,
+          Object.assign(new Event('did-navigate'), { url: 'https://accounts.example/sign-in' }),
+        );
+        expect(onNavigate).toHaveBeenCalledTimes(1);
+        expect(onNavigate.mock.calls[0]).toEqual(['https://accounts.example/sign-in']);
+      });
+
+      it('reports no requested URL for a plainly typed address', async () => {
+        const onNavigate = vi.fn();
+        const { webview } = await submitAddress('https://example.test/page', { onNavigate });
+        onNavigate.mockClear();
+
+        await fireEvent(
+          webview,
+          Object.assign(new Event('did-navigate'), { url: 'https://example.test/page' }),
+        );
+        expect(onNavigate).toHaveBeenCalledTimes(1);
+        expect(onNavigate.mock.calls[0]).toEqual(['https://example.test/page']);
+      });
+
+      it('loads the rewritten URL and shows the resolver error when the alias is unreachable', async () => {
+        mocks.invoke.mockImplementation(async (channel: string) =>
+          channel === RESOLVE_CHANNEL
+            ? {
+                url: 'http://10.0.0.5:3000/',
+                rewritten: true,
+                requestedUrl: 'http://client.localhost:3000',
+                error: 'not reachable from this machine',
+              }
+            : undefined,
+        );
+
+        const { webview, queryByText } = await submitAddress('client.localhost:3000');
+
+        await waitFor(() => expect(webview.loadURL).toHaveBeenCalledWith('http://10.0.0.5:3000/'));
+        await waitFor(() =>
+          expect(queryByText(m.browser_embedded_resolveFailed_error())).not.toBeNull(),
+        );
+        expect(recentUrlEntries()).toEqual(['http://client.localhost:3000']);
+      });
+
+      it('keeps the resolver error when the rewritten URL then fails to load', async () => {
+        mocks.invoke.mockImplementation(async (channel: string) =>
+          channel === RESOLVE_CHANNEL
+            ? {
+                url: 'http://10.0.0.5:3000/',
+                rewritten: true,
+                requestedUrl: 'http://client.localhost:3000',
+                error: 'not reachable from this machine',
+              }
+            : undefined,
+        );
+        const resolverMessage = m.browser_embedded_resolveFailed_error();
+
+        const { webview, queryByText } = await submitAddress('client.localhost:3000');
+        await waitFor(() => expect(queryByText(resolverMessage)).not.toBeNull());
+
+        await failLoad(webview, 'http://10.0.0.5:3000/');
+        expect(queryByText(resolverMessage)).not.toBeNull();
+        expect(queryByText(m.browser_embedded_loadFailed_error())).toBeNull();
+      });
+
+      it('lets the next navigation report its own load failure', async () => {
+        mocks.invoke.mockImplementation(async (channel: string) =>
+          channel === RESOLVE_CHANNEL
+            ? {
+                url: 'http://10.0.0.5:3000/',
+                rewritten: true,
+                requestedUrl: 'http://client.localhost:3000',
+                error: 'not reachable from this machine',
+              }
+            : undefined,
+        );
+        const resolverMessage = m.browser_embedded_resolveFailed_error();
+
+        const rendered = await submitAddress('client.localhost:3000');
+        await waitFor(() => expect(rendered.queryByText(resolverMessage)).not.toBeNull());
+
+        await typeAddress(rendered, '127.0.0.1:5173');
+        await waitFor(() =>
+          expect(rendered.webview.loadURL).toHaveBeenCalledWith('http://127.0.0.1:5173'),
+        );
+        await failLoad(rendered.webview, 'http://127.0.0.1:5173/');
+
+        expect(rendered.queryByText(resolverMessage)).toBeNull();
+        expect(
+          rendered.queryByText(m.browser_embedded_localhostRefusedPort_error({ port: '5173' })),
+        ).not.toBeNull();
+      });
+
+      it('drops an alias resolution that finishes after a newer address was submitted', async () => {
+        const settle = deferredResolver();
+        const rendered = await submitAddress('daemon.localhost:3000');
+        expect(resolveCalls()).toHaveLength(1);
+
+        await typeAddress(rendered, 'https://example.org/next');
+        await waitFor(() =>
+          expect(rendered.webview.loadURL).toHaveBeenCalledWith('https://example.org/next'),
+        );
+
+        settle({
+          url: 'http://127.0.0.1:41234/',
+          rewritten: true,
+          requestedUrl: 'http://daemon.localhost:3000',
+          tunneled: true,
+          error: 'tunnel failed',
+        });
+        await new Promise((resolve) => setTimeout(resolve, 20));
+
+        expect(rendered.webview.loadURL).toHaveBeenCalledTimes(1);
+        expect(rendered.webview.loadURL).not.toHaveBeenCalledWith('http://127.0.0.1:41234/');
+        expect(rendered.queryByText(m.browser_embedded_resolveFailed_error())).toBeNull();
+      });
+
+      it.each([
+        ['a link click', 'did-navigate', {}],
+        ['SPA history', 'did-navigate-in-page', { isMainFrame: true }],
+      ])(
+        'drops an alias resolution that finishes after %s in the page',
+        async (_label, eventName, extra) => {
+          const settle = deferredResolver();
+          const rendered = await submitAddress('daemon.localhost:3000');
+          expect(resolveCalls()).toHaveLength(1);
+
+          await fireEvent(
+            rendered.webview,
+            Object.assign(new Event(eventName), { url: 'https://example.test/clicked', ...extra }),
+          );
+
+          settle({
+            url: 'http://127.0.0.1:41234/',
+            rewritten: true,
+            requestedUrl: 'http://daemon.localhost:3000',
+            tunneled: true,
+            error: 'tunnel failed',
+          });
+          await new Promise((resolve) => setTimeout(resolve, 20));
+
+          expect(rendered.webview.loadURL).not.toHaveBeenCalled();
+          expect(rendered.queryByText(m.browser_embedded_resolveFailed_error())).toBeNull();
+        },
+      );
+
+      it('keeps an alias resolution when only an iframe navigated meanwhile', async () => {
+        const settle = deferredResolver();
+        const rendered = await submitAddress('daemon.localhost:3000');
+
+        await fireEvent(
+          rendered.webview,
+          Object.assign(new Event('did-navigate-in-page'), {
+            url: 'https://ads.example.test/frame',
+            isMainFrame: false,
+          }),
+        );
+
+        settle({
+          url: 'http://127.0.0.1:41234/',
+          rewritten: true,
+          requestedUrl: 'http://daemon.localhost:3000',
+          tunneled: true,
+        });
+        await waitFor(() =>
+          expect(rendered.webview.loadURL).toHaveBeenCalledWith('http://127.0.0.1:41234/'),
+        );
+      });
+
+      it('drops an alias resolution that finishes after the browser unmounted', async () => {
+        const settle = deferredResolver();
+        const { webview, unmount } = await submitAddress('daemon.localhost:3000');
+        expect(resolveCalls()).toHaveLength(1);
+
+        unmount();
+        settle({
+          url: 'http://127.0.0.1:41234/',
+          rewritten: true,
+          requestedUrl: 'http://daemon.localhost:3000',
+          tunneled: true,
+        });
+        await new Promise((resolve) => setTimeout(resolve, 20));
+
+        expect(webview.loadURL).not.toHaveBeenCalled();
+      });
+
+      it('loads a bare loopback address literally without resolving it', async () => {
+        const { webview } = await submitAddress('127.0.0.1:5173');
+
+        await waitFor(() => expect(webview.loadURL).toHaveBeenCalledWith('http://127.0.0.1:5173'));
+        expect(resolveCalls()).toEqual([]);
+        expect(recentUrlEntries()).toEqual(['http://127.0.0.1:5173']);
+      });
+
+      it('loads a non-loopback address literally without resolving it', async () => {
+        const { webview } = await submitAddress('https://example.org/path');
+
+        await waitFor(() =>
+          expect(webview.loadURL).toHaveBeenCalledWith('https://example.org/path'),
+        );
+        expect(resolveCalls()).toEqual([]);
+        expect(recentUrlEntries()).toEqual(['https://example.org/path']);
+      });
+    });
+
     describe('destroyed guest webContents', () => {
       type GuestWebview = HTMLElement & {
         getURL: () => string;

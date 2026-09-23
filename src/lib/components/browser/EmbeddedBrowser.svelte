@@ -26,6 +26,7 @@
   import type { BrowserElement } from '$store/renderer/slices/browser/browser-types';
   import { selectPendingBrowserZoom } from '$store/renderer/slices/browser/browser-selectors';
   import { selectMostRecentAgentTab } from '$store/renderer/slices/panel-layout/panel-layout-selectors';
+  import { rebaseRequestedUrlForNavigation } from '$store/renderer/slices/panel-layout/browser-tab-rehydration';
   import {
     acquireBrowserTabMount,
     releaseBrowserTabMount,
@@ -58,6 +59,10 @@
   import { matchesShortcut } from '$lib/utils/shortcut-bindings';
   import { effectiveShortcutReadable } from '$lib/utils/effective-shortcuts';
   import { invoke } from '$lib/electron-bridge';
+  import {
+    isExplicitLoopbackAliasUrl,
+    resolveBrowserLinkUrl,
+  } from '$lib/utils/browser-url-resolution';
   import BrowserOverflowMenu from './BrowserOverflowMenu.svelte';
   import BrowserViewportMenu from './BrowserViewportMenu.svelte';
   import BrowserDeviceFrame from './BrowserDeviceFrame.svelte';
@@ -79,7 +84,12 @@
     workspaceId: string;
     /** Unique tab ID for CDP registration */
     tabId?: string;
-    onNavigate?: (url: string) => void;
+    /**
+     * Fired when the webview commits a navigation. `requestedUrl` is the
+     * pre-rewrite alias the user typed when `url` is its resolved tunnel
+     * target, so the tab can be restored by re-resolving it; absent otherwise.
+     */
+    onNavigate?: (url: string, requestedUrl?: string) => void;
     onTitleChange?: (title: string) => void;
     onFaviconChange?: (faviconUrl: string) => void;
     onFocus?: () => void;
@@ -204,6 +214,30 @@
   // Flag to hide webview during URL switch to force recreation
   let isRecreatingWebview = $state(false);
 
+  // Bumped by every explicit navigation (address bar, toolbar, unmount) and by
+  // every committed main-frame guest navigation (link clicks, SPA history) so an
+  // async address-bar alias resolution that finishes after a newer navigation is
+  // dropped instead of loading its stale target over the newer page.
+  let navigationGeneration = 0;
+  // Resolver error attached to the current navigation: did-fail-load keeps it
+  // instead of replacing it with a generic connection error, and the next
+  // navigation clears it.
+  let navigationResolverError = '';
+  // Pre-rewrite alias behind the current navigation and the tunnel URL it
+  // resolved to; did-navigate reconciles the alias with the URL that actually
+  // committed (an HTTP redirect may land elsewhere) and hands it to the parent
+  // so the tab persists the alias (re-resolvable after a restart) rather than
+  // the ephemeral forward.
+  let navigationRequestedUrl = '';
+  let navigationResolvedUrl = '';
+
+  function beginNavigation(): number {
+    navigationResolverError = '';
+    navigationRequestedUrl = '';
+    navigationResolvedUrl = '';
+    return ++navigationGeneration;
+  }
+
   // Set when the guest webContents was destroyed under a mounted <webview>
   // (e.g. the page called window.close()). The dead element is unmounted and
   // an error banner is shown until the user explicitly navigates or reloads;
@@ -214,7 +248,9 @@
   // Initialize from url prop if valid, otherwise use about:blank. The browser
   // loads exactly the URL it is given — programmatic entry points (script
   // URLs, terminal links) resolve loopback URLs BEFORE opening a tab, and
-  // user-typed address-bar URLs load literally (intent-hq/monorepo#2404).
+  // user-typed address-bar URLs load literally (intent-hq/monorepo#2404),
+  // except an explicit daemon.localhost / client.localhost alias, which
+  // handleFormSubmit resolves first (intent-hq/intent#5710).
   // svelte-ignore state_referenced_locally - intentional: we want initial value, effect syncs later changes
   let currentWebviewUrl = $state<string>(isValidBrowserUrl(url) ? url : 'about:blank');
 
@@ -549,6 +585,8 @@
 
     return () => {
       window.removeEventListener('keydown', handleKeydown, true);
+      // Invalidate any in-flight address-bar alias resolution
+      beginNavigation();
       // Clean up webview listeners
       cleanupWebviewListeners();
       // NOTE: We intentionally do NOT unregister the tab from CDP here.
@@ -666,10 +704,23 @@
       faviconLoadFailed = false;
       isSecure = e.url?.startsWith('https://');
       errorMessage = '';
+      // The alias survives only a commit on the resolved origin (path/query/hash
+      // rebased onto the committed ones); a redirect off that origin drops it.
+      const requestedUrl = rebaseRequestedUrlForNavigation(
+        navigationResolvedUrl || undefined,
+        e.url,
+        navigationRequestedUrl || undefined,
+      );
+      // A committed main-frame navigation supersedes any pending alias resolution.
+      beginNavigation();
       // Update previousUrlProp to prevent the prop-change effect from re-triggering a load
       // when the parent updates its state in response to onNavigate
       recordEmbeddedBrowserNavigation(navigationSync, e.url);
-      onNavigate?.(e.url);
+      if (requestedUrl) {
+        onNavigate?.(e.url, requestedUrl);
+      } else {
+        onNavigate?.(e.url);
+      }
       updateNavigationState();
     });
 
@@ -679,6 +730,7 @@
       currentWebviewUrl = e.url;
       displayUrl = e.url;
       isSecure = e.url?.startsWith('https://');
+      beginNavigation();
       // Update previousUrlProp to prevent the prop-change effect from re-triggering a load
       recordEmbeddedBrowserNavigation(navigationSync, e.url);
       // Also call onNavigate for in-page navigation (e.g., clicking links that don't reload)
@@ -710,7 +762,16 @@
         const failedUrl = e.validatedURL || currentWebviewUrl;
         const isLocalhost = failedUrl?.includes('localhost') || failedUrl?.includes('127.0.0.1');
 
-        if (e.errorCode === -102 && isLocalhost) {
+        if (navigationResolverError) {
+          // The alias resolver already explained why this navigation cannot
+          // work; keep that message over the webview's generic failure.
+          errorMessage = navigationResolverError;
+          logger.warn('Webview failed to load after a resolver error', {
+            url: failedUrl,
+            errorCode: e.errorCode,
+            errorDescription: e.errorDescription,
+          });
+        } else if (e.errorCode === -102 && isLocalhost) {
           // ERR_CONNECTION_REFUSED on localhost - likely a dev server that isn't running
           const port = failedUrl?.match(/:(\d+)/)?.[1];
           errorMessage = port
@@ -831,6 +892,7 @@
 
   async function loadUrl(targetUrl: string) {
     if (!targetUrl) return;
+    beginNavigation();
 
     if (!isValidBrowserUrl(targetUrl)) {
       // Provide specific error messages for different failure cases
@@ -902,6 +964,7 @@
     if (!webviewReady || !webviewRef) return;
     try {
       if (webviewRef.canGoBack?.()) {
+        beginNavigation();
         webviewRef.goBack();
       }
     } catch {
@@ -913,6 +976,7 @@
     if (!webviewReady || !webviewRef) return;
     try {
       if (webviewRef.canGoForward?.()) {
+        beginNavigation();
         webviewRef.goForward();
       }
     } catch {
@@ -931,6 +995,7 @@
     // Otherwise we get: "The WebView must be attached to the DOM and the dom-ready event emitted before this method can be called"
     if (!webviewReady || !webviewRef) return;
     try {
+      beginNavigation();
       webviewRef.reload?.();
       // Re-focus the webview after reload to maintain focus state
       webviewRef.focus?.();
@@ -1087,6 +1152,7 @@
   function reloadWithoutCache() {
     if (!webviewRef || !webviewReady) return;
     try {
+      beginNavigation();
       webviewRef.reloadIgnoringCache?.();
       webviewRef.focus?.();
     } catch {
@@ -1127,12 +1193,59 @@
         return;
       }
       logger.info('Loading URL from form', { urlToLoad });
-      loadUrl(urlToLoad);
+      if (isExplicitLoopbackAliasUrl(urlToLoad)) {
+        void loadResolvedAliasUrl(urlToLoad);
+      } else {
+        loadUrl(urlToLoad);
+      }
       appStore.dispatch(
         addRecentUrl(_workspaceId, urlToLoad, undefined, undefined, new Date().toISOString()),
       );
       // Blur the input to indicate the action was taken
       exitUrlEditMode();
+    }
+  }
+
+  /**
+   * An explicit `daemon.localhost` / `client.localhost` alias typed into the
+   * address bar is unambiguous, so it resolves (rewrite → probe → tunnel)
+   * like `browser.exec` navigate does (intent-hq/intent#5710). Bare loopback
+   * URLs never take this path (intent-hq/monorepo#2404). On a resolver error
+   * the rewritten URL still loads so the webview's own error page shows,
+   * and the resolver message survives the resulting did-fail-load. A result
+   * that arrives after a newer navigation (or unmount) is dropped. The typed
+   * alias rides along as the committed navigation's requested URL (reconciled
+   * with the committed URL in did-navigate) so the tab persists it instead of
+   * the ephemeral tunnel forward.
+   */
+  async function loadResolvedAliasUrl(requestedUrl: string) {
+    const generation = beginNavigation();
+    const resolved = await resolveBrowserLinkUrl(requestedUrl, invoke);
+    if (generation !== navigationGeneration) {
+      logger.info('Dropping superseded address-bar alias resolution', {
+        requestedUrl,
+        url: resolved.url,
+      });
+      return;
+    }
+    logger.info('Resolved address-bar loopback alias', {
+      requestedUrl,
+      url: resolved.url,
+      rewritten: resolved.rewritten,
+      tunneled: resolved.tunneled,
+      reason: resolved.reason,
+      error: resolved.error,
+    });
+    await loadUrl(resolved.url);
+    if (resolved.rewritten) {
+      navigationRequestedUrl = requestedUrl;
+      navigationResolvedUrl = resolved.url;
+    }
+    if (resolved.error && resolved.rewritten) {
+      navigationResolverError = resolved.forbidden
+        ? m.browser_linkOpen_ownerOnlyForward_error()
+        : m.browser_embedded_resolveFailed_error();
+      errorMessage = navigationResolverError;
     }
   }
 </script>

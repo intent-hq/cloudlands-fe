@@ -1,4 +1,5 @@
-import { expect, type ComponentFixtures } from '@playwright/experimental-ct-svelte';
+import type { ComponentFixtures } from '@playwright/experimental-ct-svelte';
+import { expect } from '../../../../test/ct-test';
 
 // Keep locator and page types on the same Playwright version as CT's expect.
 type Page = ReturnType<Awaited<ReturnType<ComponentFixtures['mount']>>['page']>;

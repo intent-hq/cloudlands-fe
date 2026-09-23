@@ -13,7 +13,12 @@
   import { Input } from '$lib/components/ui/input';
   import { getPageTargetIndex } from '$lib/components/ui/menu';
   import ListHighlight from '../menu/menu-list-highlight.svelte';
-  import { menuItem, menuOverlay, menuOverlayTransition } from '../menu/menu-recipes';
+  import {
+    menuItem,
+    menuOverlay,
+    menuOverlayTransition,
+    menuSubmenuAlignOffset,
+  } from '../menu/menu-recipes';
   import { crispOut, slide, springIn } from '$lib/motion';
   import type {
     DropdownOption,
@@ -438,7 +443,7 @@
       // Position submenu to the right of the parent item
       const target = event.currentTarget as HTMLElement;
       const rect = target.getBoundingClientRect();
-      submenuStyle = `position: fixed; top: ${rect.top}px; left: ${rect.right + 4}px;`;
+      submenuStyle = `position: fixed; top: ${rect.top + menuSubmenuAlignOffset}px; left: ${rect.right + 4}px;`;
     }
   }
 
@@ -900,6 +905,9 @@
     highlightedIndex >= 0 &&
     highlightedIndex < selectableOptions.length &&
     selectableOptions[highlightedIndex]?.value === option.value}
+  {@const submenuOpen =
+    option.type === 'submenu' && !!option.children?.length && openSubmenu === option.value}
+  {@const submenuId = `${uid}-submenu-${encodeURIComponent(option.value)}`}
   <!-- Separator type -->
   {#if option.type === 'separator'}
     <div class="my-1 h-px bg-border"></div>
@@ -930,6 +938,7 @@
         aria-expanded={popupRole === 'menu' && option.type === 'submenu'
           ? openSubmenu === option.value
           : undefined}
+        aria-controls={submenuOpen ? submenuId : undefined}
         tabindex={isHighlighted && !option.disabled ? 0 : -1}
       >
         {#if item}
@@ -1000,11 +1009,12 @@
         {/if}
       </Button>
 
-      <!-- Submenu (rendered in portal for proper positioning) -->
+      <!-- Submenu (rendered in portal for proper positioning; owned via the trigger's aria-controls) -->
       {#if option.type === 'submenu' && option.children?.length && openSubmenu === option.value}
         <Portal zIndex={101}>
           <!-- svelte-ignore a11y_no_static_element_interactions -->
           <div
+            id={submenuId}
             data-submenu
             in:panelEnter={menuOverlayTransition.enter}
             out:panelExit={menuOverlayTransition.exit}

@@ -1,7 +1,8 @@
 <script lang="ts">
+  /* eslint-disable max-lines */
   import { Button } from '$lib/components/ui/button';
   import { goto } from '$app/navigation';
-  import { faArrowRight, faLayerGroup, faXmark } from '@fortawesome/free-solid-svg-icons';
+  import { faXmark } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
   import { flushSync, onMount } from 'svelte';
   import { flip } from 'svelte/animate';
@@ -54,7 +55,7 @@
   import SidebarContextMenu from '$lib/components/ui/sidebar-context-menu/SidebarContextMenu.svelte';
   import type { SidebarMenuEntry } from '$lib/components/ui/sidebar-context-menu/types';
   import WorkspaceTabFlare from './WorkspaceTabFlare.svelte';
-  import { getWorkspaceTabBulkCloseIds } from './workspace-tab-context-actions';
+  import { buildWorkspaceTabContextMenu } from './workspace-tab-context-actions';
   import { prepareTabOutros, workspaceTabLifecycleMotion } from './workspace-tab-lifecycle-motion';
   import {
     WORKSPACE_TAB_CORNER_RADIUS_PX,
@@ -168,31 +169,12 @@
   const tabContextMenuItems = $derived.by<SidebarMenuEntry[]>(() => {
     if (!tabContextMenu) return [];
     const { workspaceId } = tabContextMenu;
-    const closeOthers = getWorkspaceTabBulkCloseIds($workspaceTabOrder$, workspaceId, 'others');
-    const closeRight = getWorkspaceTabBulkCloseIds($workspaceTabOrder$, workspaceId, 'right');
-    return [
-      {
-        id: 'close',
-        label: m.layout_panelTabBar_close_label(),
-        icon: faXmark,
-        onClick: () => closeWorkspace(workspaceId),
-      },
-      { type: 'separator' },
-      {
-        id: 'close-others',
-        label: m.layout_panelTabBar_closeAllOthers_label(),
-        icon: faLayerGroup,
-        disabled: closeOthers.length === 0,
-        onClick: () => closeWorkspaceTabs(closeOthers, workspaceId),
-      },
-      {
-        id: 'close-right',
-        label: m.layout_panelTabBar_closeTabsToRight_label(),
-        icon: faArrowRight,
-        disabled: closeRight.length === 0,
-        onClick: () => closeWorkspaceTabs(closeRight),
-      },
-    ];
+    return buildWorkspaceTabContextMenu({
+      order: $workspaceTabOrder$,
+      workspaceId,
+      onClose: () => closeWorkspace(workspaceId),
+      onCloseTabs: closeWorkspaceTabs,
+    });
   });
   const run = (sync: boolean, fn: () => void) => (sync ? flushSync(fn) : fn());
   const reportActiveTabTracking = ({ sync = true } = {}) =>
@@ -356,6 +338,7 @@
     void activeStreamsVersion;
     return activeStreamsTracker.getStreamingAgentIdsForWorkspace(workspaceId);
   }
+
   function tabAccessibleLabel(
     title: string,
     workspaceState: WorkspaceStatusPresentationState,
@@ -1064,9 +1047,11 @@
             {/key}
             <Button
               variant="plain"
+              size="icon-compact"
+              iconOnly
               type="button"
               class={cn(
-                'absolute right-1 z-10 flex size-(--control-height-compact) shrink-0 cursor-pointer items-center justify-center rounded text-subtle outline-none! transition-opacity hover:bg-muted hover:text-foreground focus-visible:ring-0 focus-visible:ring-offset-0 focus-visible:text-foreground focus-visible:opacity-100 forced-colors:focus-visible:text-[HighlightText]',
+                'absolute right-1 z-10 shrink-0 cursor-pointer rounded text-subtle outline-none! transition-opacity hover:bg-muted hover:text-foreground focus-visible:ring-0 focus-visible:ring-offset-0 focus-visible:text-foreground focus-visible:opacity-100 forced-colors:focus-visible:text-[HighlightText]',
                 isCurrent ? 'opacity-70' : 'opacity-0 group-hover/workspace-tab:opacity-100',
               )}
               onclick={(event) => closeWorkspace(workspaceId, event)}

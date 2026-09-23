@@ -26,18 +26,13 @@ const swappedDisclosureFiles = [
   'src/features/file-tracking/components/diff/DiffHeader.svelte',
   'src/features/onboarding/steps/WorkspaceCreationError.svelte',
   'src/features/workspace/components/WorkspaceActionsMenu.svelte',
-  'src/lib/components/ErrorDisplay.svelte',
   'src/lib/components/chat/ChatChangesPanel.svelte',
   'src/lib/components/chat/InlinePermissionRequest.svelte',
-  'src/lib/components/chat/LongRunningDebugInfo.svelte',
   'src/lib/components/code-review/walkthrough/CodeWalkthroughSection.svelte',
   'src/lib/components/code-review/walkthrough/WalkthroughCommentThread.svelte',
   'src/lib/components/code-review/walkthrough/WalkthroughFileDiff.svelte',
-  'src/lib/components/code-walkthrough/WalkthroughDiffViewer.svelte',
-  'src/lib/components/code-walkthrough/WalkthroughSection.svelte',
   'src/lib/components/debug/DebugPanel.svelte',
   'src/lib/components/file-explorer/file-explorer-sidebar.svelte',
-  'src/lib/components/file-tracking/TreeNode.svelte',
   'src/lib/components/terminal/QuakeTerminalOverlay.svelte',
   'src/lib/components/workspace/NoteCodeChangesCard.svelte',
   'src/lib/components/workspace/sidebar/ActivityLogPreview.svelte',
@@ -48,7 +43,7 @@ const source = (path: string) => readFileSync(resolve(process.cwd(), path), 'utf
 describe('disclosure chevron inventory', () => {
   it('keeps every audited source on the rendered left-closed and down-open contract', () => {
     expect(rotatedDisclosureFiles).toHaveLength(14);
-    expect(swappedDisclosureFiles).toHaveLength(18);
+    expect(swappedDisclosureFiles).toHaveLength(13);
 
     for (const path of rotatedDisclosureFiles) {
       const contents = source(path);

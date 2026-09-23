@@ -1,40 +1,106 @@
-// @verify-changed-triggers: ./+page.svelte, ./WorkspaceSurface.svelte, src/routes/+layout.svelte
+/**
+ * @vitest-environment jsdom
+ *
+ * The workspace route page hands the route param to the retention surface, so
+ * a workspace switch keeps the previous surface mounted (inactive) instead of
+ * remounting a single surface keyed by the route.
+ */
+import { cleanup, render, waitFor } from '@testing-library/svelte';
+import { readable } from 'svelte/store';
+import { createSubscriber } from 'svelte/reactivity';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
-import { describe, expect, it } from 'vitest';
+const mocks = vi.hoisted(() => ({
+  routeId: 'workspace-a',
+  notify: undefined as (() => void) | undefined,
+  openWorkspaceIds: ['workspace-a', 'workspace-b'],
+  workspaceItems: [
+    { id: 'workspace-a', title: 'A' },
+    { id: 'workspace-b', title: 'B' },
+  ],
+}));
 
-const pageSource = readFileSync(resolve(__dirname, '+page.svelte'), 'utf8');
-const surfaceSource = readFileSync(resolve(__dirname, 'WorkspaceSurface.svelte'), 'utf8');
-const rootLayoutSource = readFileSync(resolve(process.cwd(), 'src/routes/+layout.svelte'), 'utf8');
+vi.mock('$app/state', () => {
+  const subscribe = createSubscriber((update) => {
+    mocks.notify = update;
+    return () => {
+      mocks.notify = undefined;
+    };
+  });
+  return {
+    page: {
+      get params() {
+        subscribe();
+        return { id: mocks.routeId };
+      },
+    },
+  };
+});
+vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
+  selectWorkspaceById: () => readable(null),
+  selectWorkspaceItems: () => readable(mocks.workspaceItems),
+}));
+vi.mock('$store/renderer/slices/tab-state/tab-state-selectors', () => ({
+  selectActiveWorkspaceIds: () => readable(mocks.openWorkspaceIds),
+}));
+vi.mock('./WorkspaceSurface.svelte', async () => {
+  const component = (await import('./__tests__/mocks/MockWorkspaceSurfacePart.svelte')).default;
+  const renderPart = component as unknown as (anchor: Node, props: Record<string, unknown>) => void;
+  // Keep the reactive prop getters intact so `active` updates reach the mock.
+  return {
+    default: (anchor: Node, props: Record<string, unknown>) =>
+      renderPart(anchor, Object.create(props, { marker: { value: 'workspace-surface' } })),
+  };
+});
 
-describe('workspace route context installation', () => {
-  it('routes workspace changes through the active-gated retention surface', () => {
-    expect(pageSource).toContain('page.params?.id');
-    expect(pageSource).toContain('<RetainedWorkspaceSurfaces');
-    expect(pageSource).toContain('activeWorkspaceId={workspaceId}');
-    expect(pageSource).toContain(
-      '{#snippet children(retainedWorkspaceId: string, active: boolean)}',
-    );
-    expect(pageSource).toContain('<WorkspaceSurface workspaceId={retainedWorkspaceId} {active} />');
-    expect(pageSource).not.toContain('{#key routeWorkspaceId}');
-    expect(pageSource).not.toContain('window.location.pathname');
+import WorkspacePage from './+page.svelte';
+
+function navigateTo(workspaceId: string) {
+  mocks.routeId = workspaceId;
+  mocks.notify?.();
+}
+
+function surfaces(container: HTMLElement) {
+  return [
+    ...container.querySelectorAll<HTMLElement>('[data-workspace-surface-part="workspace-surface"]'),
+  ].map((surface) => ({
+    workspaceId: surface.dataset.workspaceId,
+    active: surface.dataset.active,
+    retained: surface.closest<HTMLElement>('[data-retained-workspace-surface]')?.dataset
+      .retainedWorkspaceActive,
+  }));
+}
+
+describe('workspace route page', () => {
+  beforeEach(() => {
+    mocks.routeId = 'workspace-a';
   });
 
-  it('leaves route context ownership to each workspace surface', () => {
-    expect(rootLayoutSource).not.toContain('WorkspaceRouteContextProvider');
-    expect(rootLayoutSource).not.toContain('workspaceIdFromRoute');
-    expect(surfaceSource).toContain('WorkspaceRouteContextProvider');
-    expect(surfaceSource).toContain(
-      '<WorkspaceRouteContextProvider workspaceId={surfaceWorkspaceId}>',
-    );
-    expect(surfaceSource).toContain('{#key surfaceWorkspaceId}');
-  });
+  afterEach(cleanup);
 
-  it('leaves workspace session cleanup to open-tab removal', () => {
-    expect(surfaceSource).not.toContain('workspaceUnmounted');
-    expect(surfaceSource).not.toContain('setAgents(workspaceId, [])');
-    expect(surfaceSource).not.toContain('setAgentsLoaded(workspaceId, false)');
-    expect(surfaceSource).not.toContain('retainWorkspaceSessionOnUnmount');
+  it('routes workspace changes through the active-gated retention surface', async () => {
+    const { container } = render(WorkspacePage);
+    expect(surfaces(container)).toEqual([
+      { workspaceId: 'workspace-a', active: 'true', retained: 'true' },
+    ]);
+
+    navigateTo('workspace-b');
+    await waitFor(() =>
+      expect(surfaces(container)).toEqual([
+        { workspaceId: 'workspace-a', active: 'false', retained: 'false' },
+        { workspaceId: 'workspace-b', active: 'true', retained: 'true' },
+      ]),
+    );
+
+    // Returning reactivates the retained surface instead of mounting a new one.
+    const [firstSurface] = container.querySelectorAll('[data-retained-workspace-surface]');
+    navigateTo('workspace-a');
+    await waitFor(() =>
+      expect(surfaces(container)).toEqual([
+        { workspaceId: 'workspace-a', active: 'true', retained: 'true' },
+        { workspaceId: 'workspace-b', active: 'false', retained: 'false' },
+      ]),
+    );
+    expect(container.querySelectorAll('[data-retained-workspace-surface]')[0]).toBe(firstSurface);
   });
 });

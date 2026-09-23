@@ -244,7 +244,13 @@
               <span class="text-subtle">=</span>
               <!-- i18n-ignore (env var format examples) -->
               <Input bind:value={pair.value} placeholder="value" class="flex-1" />
-              <Button size="sm" variant="ghost" onclick={() => removeEnvVar(pair.id)}>
+              <Button
+                size="icon"
+                iconOnly
+                variant="ghost"
+                onclick={() => removeEnvVar(pair.id)}
+                aria-label={m.settings_mcp_form_removeEnvVar_ariaLabel()}
+              >
                 <Fa icon={faTrash} size="xs" class="text-danger" />
               </Button>
             </div>
@@ -316,7 +322,13 @@
                 <span class="text-subtle">:</span>
                 <!-- i18n-ignore (header format examples) -->
                 <Input bind:value={pair.value} placeholder="value" class="flex-1" />
-                <Button size="sm" variant="ghost" onclick={() => removeHeader(pair.id)}>
+                <Button
+                  size="icon"
+                  iconOnly
+                  variant="ghost"
+                  onclick={() => removeHeader(pair.id)}
+                  aria-label={m.settings_mcp_form_removeHeader_ariaLabel()}
+                >
                   <Fa icon={faTrash} size="xs" class="text-danger" />
                 </Button>
               </div>

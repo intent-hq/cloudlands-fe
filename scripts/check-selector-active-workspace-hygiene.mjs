@@ -603,7 +603,7 @@ function createForbiddenResolver(sources) {
     const nextSeen = new Set(seen).add(key);
     const record = sources.get(filePath);
     if (!record) return false;
-    let forbidden = false;
+    let forbidden;
     if (declaration && ts.isBindingElement(declaration)) {
       forbidden = symbolPathIsForbidden(filePath, identifier, [], nextSeen);
     } else if (declaration) {

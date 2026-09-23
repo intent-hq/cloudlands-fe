@@ -48,7 +48,9 @@
   {#if isHovered}
     <Button
       variant="ghost"
-      class="absolute top-2 right-2 p-1 rounded hover:bg-danger-background/10 text-muted-foreground hover:text-danger transition-colors"
+      size="icon-compact"
+      iconOnly
+      class="absolute top-2 right-2 rounded hover:bg-danger-background/10 text-muted-foreground hover:text-danger transition-colors"
       onclick={handleDelete}
       onkeydown={handleKeyDown}
       aria-label={m.tiptap_choiceBlock_delete_label()}

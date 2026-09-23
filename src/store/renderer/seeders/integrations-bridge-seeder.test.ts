@@ -33,6 +33,7 @@ vi.mock('$lib/client/live/backend-transport', () => ({
 import { backendRequest } from '$lib/client/live/backend-transport';
 import {
   __resetGitHubAuthStatusForTests,
+  GITHUB_AUTH_STATUS_TTL_MS,
   readGitHubAuthStatus,
 } from '$features/github-auth/renderer/github-auth-status.client';
 import { mockInvoke } from '$shared/ipc-mock-router';
@@ -543,6 +544,50 @@ describe('integrations-bridge-seeder', () => {
         ],
       });
     });
+
+    it('search-users forwards to github.users.search and maps the hits, nulling absent urls', async () => {
+      mockedRequest.mockResolvedValueOnce({
+        users: [
+          {
+            id: 1,
+            login: 'octocat',
+            avatarUrl: 'https://avatars.githubusercontent.com/u/1',
+            htmlUrl: 'https://github.com/octocat',
+          },
+          { id: 2, login: 'octokit' },
+        ],
+      });
+
+      const response = await mockInvoke(GITHUB_AUTH_CHANNELS.SEARCH_USERS, { query: 'octo' });
+
+      expect(mockedRequest).toHaveBeenCalledWith('github.users.search', { query: 'octo' });
+      expect(response).toEqual({
+        success: true,
+        data: [
+          {
+            id: 1,
+            login: 'octocat',
+            avatarUrl: 'https://avatars.githubusercontent.com/u/1',
+            htmlUrl: 'https://github.com/octocat',
+          },
+          { id: 2, login: 'octokit', avatarUrl: null, htmlUrl: null },
+        ],
+      });
+    });
+
+    it('search-users refuses an empty query without a forge call and folds a daemon failure', async () => {
+      expect(await mockInvoke(GITHUB_AUTH_CHANNELS.SEARCH_USERS, { query: '' })).toEqual({
+        success: false,
+        error: 'query is required',
+      });
+      expect(mockedRequest).not.toHaveBeenCalled();
+
+      mockedRequest.mockRejectedValueOnce(new Error('rate limited'));
+      expect(await mockInvoke(GITHUB_AUTH_CHANNELS.SEARCH_USERS, { query: 'octo' })).toEqual({
+        success: false,
+        error: 'rate limited',
+      });
+    });
   });
 
   describe('github-auth OAuth triggers → daemon device flow (§5.27 connect/cancelAuth/revoke)', () => {
@@ -758,6 +803,52 @@ describe('integrations-bridge-seeder', () => {
         'github.authStatus',
         'github.getUser',
       ]);
+    });
+
+    it('poll observes the authorized flow past the cache TTL even when github:auth-changed is missed (#5362)', async () => {
+      vi.useFakeTimers();
+      try {
+        const pendingFlow = {
+          status: 'pending',
+          userCode: 'WXYZ-5678',
+          verificationUri: 'https://github.com/login/device',
+          expiresIn: 899,
+          interval: 5,
+        };
+        mockedRequest
+          .mockResolvedValueOnce({
+            isConfigured: true,
+            oauthUrl: 'https://github.com/login/device',
+            configuredButNeedsUpdate: false,
+            updatedScopes: '',
+            deviceFlow: pendingFlow,
+          })
+          .mockResolvedValueOnce({
+            isConfigured: true,
+            oauthUrl: '',
+            configuredButNeedsUpdate: false,
+            updatedScopes: '',
+            deviceFlow: null,
+          })
+          .mockResolvedValueOnce({ user: WIRE_USER });
+
+        expect(await mockInvoke(GITHUB_AUTH_CHANNELS.POLL_FOR_TOKEN)).toEqual({
+          success: true,
+          data: { isComplete: false, user: null },
+        });
+        vi.advanceTimersByTime(GITHUB_AUTH_STATUS_TTL_MS);
+        const result = (await mockInvoke(GITHUB_AUTH_CHANNELS.POLL_FOR_TOKEN)) as {
+          data: { isComplete: boolean };
+        };
+        expect(result.data.isComplete).toBe(true);
+        expect(mockedRequest.mock.calls.map(([method]) => method)).toEqual([
+          'github.authStatus',
+          'github.authStatus',
+          'github.getUser',
+        ]);
+      } finally {
+        vi.useRealTimers();
+      }
     });
 
     it('poll stays incomplete (user null) while the PAT does not validate', async () => {

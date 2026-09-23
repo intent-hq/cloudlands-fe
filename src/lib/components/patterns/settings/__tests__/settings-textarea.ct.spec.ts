@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/experimental-ct-svelte';
+import { expect, test } from '../../../../../test/ct-test';
 import Preview from '../settings-textarea.preview.svelte';
 
 for (const theme of ['light', 'dark'] as const) {

@@ -10,6 +10,7 @@ import {
   removeSession,
 } from '$store/renderer/slices/agent-session/agent-session-slice';
 import { setChiefCollapsed } from '$store/renderer/slices/sidebar-nav/sidebar-nav-slice';
+import { guestSessionsListReceived } from '$store/renderer/slices/guest-sessions/guest-sessions-slice';
 import ChiefCard from '../cards/ChiefCard.svelte';
 
 vi.mock('$lib/components/chat/ChatPanel.svelte', async () => ({
@@ -40,6 +41,8 @@ function makeChiefSession(): AgentSession {
 describe('ChiefCard combined header', () => {
   beforeEach(() => {
     appStore.init();
+    // A settled owner window (no joined host), so the new-thread action is offered.
+    appStore.dispatch(guestSessionsListReceived({ sessions: [], openIds: [], connectedIds: [] }));
     appStore.dispatch(setChiefCollapsed(true));
     appStore.dispatch(bulkUpsertSessions([makeChiefSession()]));
   });
@@ -48,6 +51,36 @@ describe('ChiefCard combined header', () => {
     cleanup();
     appStore.dispatch(removeSession(agentId));
   });
+
+  it.each([false, true])(
+    'defers chat mount until activation, then retains it across tab switches (late hydration: %s)',
+    async (lateHydration) => {
+      if (lateHydration) appStore.dispatch(removeSession(agentId));
+      const { rerender } = render(ChiefCard, {
+        props: { expanded: true, embedded: true, isActive: false },
+      });
+      if (lateHydration) {
+        expect(screen.queryByTestId('mock-chat-panel')).toBeNull();
+        appStore.dispatch(bulkUpsertSessions([makeChiefSession()]));
+      }
+      // Confirm the existing thread has reached the card before checking its child lifecycle.
+      await screen.findByRole('button', { name: threadTitle });
+      expect(screen.queryByTestId('mock-chat-panel')).toBeNull();
+
+      await rerender({ expanded: true, embedded: true, isActive: true });
+      const chat = await screen.findByTestId('mock-chat-panel');
+      expect(chat.getAttribute('data-active')).toBe('true');
+      expect(chat.getAttribute('data-autofocus')).toBe('false');
+
+      await rerender({ expanded: true, embedded: true, isActive: false });
+      expect(screen.getByTestId('mock-chat-panel')).toBe(chat);
+      expect(chat.getAttribute('data-active')).toBe('false');
+
+      await rerender({ expanded: true, embedded: true, isActive: true });
+      expect(screen.getByTestId('mock-chat-panel')).toBe(chat);
+      expect(chat.getAttribute('data-active')).toBe('true');
+    },
+  );
 
   it('toggles exactly once from every part of the collapsed header without opening the dropdown', async () => {
     const ontoggle = vi.fn();

@@ -1,15 +1,13 @@
-import { expect, test } from '@playwright/experimental-ct-svelte';
+import { expect, test } from '../../../../test/ct-test';
 import type { ComponentFixtures } from '@playwright/experimental-ct-svelte';
 import {
   failOnConsoleErrors,
   peekConsoleErrors,
   takeConsoleErrors,
 } from '../../../../test/ct-console-errors';
-import { isolateBrowserContextPerTest } from '../../../../test/ct-isolated-browser-context';
 import ChatPanelComposerGeometryHost from './ChatPanelComposerGeometryHost.svelte';
 
 test.setTimeout(120_000);
-isolateBrowserContextPerTest(test, 'intent-hq/intent#4783');
 failOnConsoleErrors(test);
 
 test.afterEach(async ({ page }) => {
@@ -34,7 +32,7 @@ async function measure(component: CtLocator) {
     };
     const content = inner.getBoundingClientRect();
     const style = getComputedStyle(inner);
-    const cardStyle = getComputedStyle(banner);
+    const noticeStyle = getComputedStyle(banner);
     return {
       banner: box(banner),
       message: box(message),
@@ -48,8 +46,7 @@ async function measure(component: CtLocator) {
       inTranscript: viewport.contains(banner),
       inComposer: composer.contains(banner),
       overflow: banner.scrollWidth - banner.clientWidth,
-      rounded: parseFloat(cardStyle.borderTopLeftRadius),
-      border: parseFloat(cardStyle.borderTopWidth),
+      border: parseFloat(noticeStyle.borderTopWidth),
     };
   });
 }
@@ -135,8 +132,7 @@ for (const width of [280, 720]) {
         expect(before.viewport.bottom).toBeLessThanOrEqual(before.composer.top + 1);
         expect(before.banner.bottom).toBeLessThanOrEqual(before.queue!.top);
         expect(before.overflow).toBeLessThanOrEqual(1);
-        expect(before.rounded).toBeGreaterThan(0);
-        expect(before.border).toBeGreaterThan(0);
+        expect(before.border).toBe(0);
 
         // Real wheel input releases follow-bottom ownership. Observe displacement
         // against both the scroll offset and a rendered message, not CSS spelling.
@@ -162,7 +158,7 @@ for (const width of [280, 720]) {
         await page.mouse.wheel(0, -100_000);
         await expect.poll(async () => viewport.evaluate((node) => node.scrollTop)).toBeLessThan(1);
         await expect(banner).not.toBeInViewport();
-        // Offscreen message bodies may dehydrate; the card itself must still
+        // Offscreen message bodies may dehydrate; the notice itself must still
         // exist below the viewport, rather than disappearing with the composer.
         const bannerTop = await banner.evaluate((node) => node.getBoundingClientRect().top);
         const viewportBottom = await viewport.evaluate(

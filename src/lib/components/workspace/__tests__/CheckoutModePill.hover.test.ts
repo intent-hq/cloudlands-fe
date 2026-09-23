@@ -8,6 +8,17 @@ vi.mock('../shrink-workspace-action', () => ({
   runShrinkWorkspaceAction: vi.fn(),
 }));
 
+// The hover contract under test is store-independent; stub the lifecycle gate
+// (an owner window) so the pill does not need an initialized store.
+vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
+  selectHidesAgentLifecycleActions: () => ({
+    subscribe: (fn: (v: boolean) => void) => {
+      fn(false);
+      return () => {};
+    },
+  }),
+}));
+
 const originalResizeObserver = window.ResizeObserver;
 
 beforeEach(() => {

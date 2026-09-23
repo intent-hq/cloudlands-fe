@@ -219,8 +219,9 @@
           <Button
             variant="plain"
             type="button"
+            size="icon-compact"
             iconOnly
-            class="group/button h-auto shrink-0 opacity-50 hover:opacity-100 transition-colors p-0.5 cursor-pointer"
+            class="group/button shrink-0 opacity-50 hover:opacity-100 transition-colors cursor-pointer"
             onclick={(e) => openDocs(provider.docsUrl, e)}
             title={m.onboarding_providerCard_openDocs_tooltip({ name: provider.name })}
             aria-label={m.onboarding_providerCard_openDocs_tooltip({ name: provider.name })}
@@ -279,8 +280,9 @@
             <Button
               variant="plain"
               type="button"
+              size="icon-compact"
               iconOnly
-              class="h-auto flex-none opacity-50 hover:opacity-100 transition-colors px-0.5 py-1 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+              class="size-5 flex-none opacity-50 hover:opacity-100 transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
               onclick={(e) => {
                 e.stopPropagation();
                 userRefreshing = true;

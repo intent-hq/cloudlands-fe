@@ -2,9 +2,10 @@
  * @vitest-environment jsdom
  */
 import { describe, it, expect, vi } from 'vitest';
-import { render, screen } from '@testing-library/svelte';
+import { render, screen, waitFor } from '@testing-library/svelte';
 import AgentMessageList from '../AgentMessageList.svelte';
-import type { AgentMessage } from '$shared/types';
+import type { AgentMessage, Workspace } from '$shared/types';
+import { buildCollaboratorSenderPreamble } from '$lib/utils/collaborator-sender-attribution';
 
 // Mock the Redux store to avoid initialization errors
 vi.mock('$store/renderer/store', async () => {
@@ -201,6 +202,73 @@ describe('AgentMessageList - System Messages', () => {
     ).toBeTruthy();
   });
 
+  it('renders a provider_rehomed system message once, naming the old model + provider and the new provider (intent#5737)', () => {
+    // Daemon-persisted re-home row (§5.5, disabled providers): role "system",
+    // the daemon's own sentence as the text block, metadata
+    // { type: "provider_rehomed", reason: "provider_disabled", from, to, fromProvider, toProvider }.
+    const daemonText =
+      'gpt-5-codex (OpenAI Codex) is no longer available — OpenAI Codex was disabled in Settings > Agents; this agent now runs on Augment Auggie.';
+    const messages: AgentMessage[] = [
+      {
+        id: 'msg-1',
+        role: 'user',
+        contentBlocks: [{ type: 'text', text: 'ping' }],
+        timestamp: new Date().toISOString(),
+      },
+      {
+        id: 'msg-2',
+        role: 'system',
+        contentBlocks: [{ type: 'text', text: daemonText }],
+        timestamp: new Date().toISOString(),
+        metadata: {
+          type: 'provider_rehomed',
+          reason: 'provider_disabled',
+          from: 'gpt-5-codex',
+          to: null,
+          fromProvider: 'codex',
+          toProvider: 'auggie',
+        },
+      },
+      {
+        id: 'msg-3',
+        role: 'assistant',
+        contentBlocks: [{ type: 'text', text: 'pong' }],
+        timestamp: new Date().toISOString(),
+      },
+    ];
+
+    render(AgentMessageList, { props: { messages } });
+
+    // One status divider, not an interruption alert. With the empty mocked
+    // store the provider names fall back to their ids.
+    const notices = screen.getAllByRole('status');
+    expect(notices).toHaveLength(1);
+    expect(screen.queryByRole('alert')).toBeNull();
+    const text = notices[0].textContent ?? '';
+    expect(text).toMatch(/gpt-5-codex/);
+    expect(text).toMatch(/codex/);
+    expect(text).toMatch(/disabled/i);
+    expect(text).toMatch(/auggie/);
+    expect(screen.getByText('pong')).toBeTruthy();
+  });
+
+  it('falls back to the daemon text when a provider_rehomed row carries an unknown reason', () => {
+    const daemonText = 'The agent was moved to another provider.';
+    const messages: AgentMessage[] = [
+      {
+        id: 'msg-1',
+        role: 'system',
+        contentBlocks: [{ type: 'text', text: daemonText }],
+        timestamp: new Date().toISOString(),
+        metadata: { type: 'provider_rehomed', reason: 'other', fromProvider: 'codex' },
+      },
+    ];
+
+    render(AgentMessageList, { props: { messages } });
+
+    expect(screen.getByRole('status').textContent).toContain(daemonText);
+  });
+
   it('renders no model-change notice when the transcript has no model_changed row', () => {
     // A reverted-before-send switch persists nothing, so an ordinary
     // transcript must contain no status divider.
@@ -310,5 +378,61 @@ describe('AgentMessageList - System Messages', () => {
 
     expect(screen.getByRole('status')).toBeTruthy();
     expect(screen.getByText(/Model changed to gpt-5-codex/)).toBeTruthy();
+  });
+});
+
+describe('AgentMessageList - search filter memo', () => {
+  const GUEST_AUTHOR = {
+    principalId: 'principal-guest',
+    login: 'octocat',
+    displayName: 'The Octocat',
+    avatarUrl: null,
+  };
+  const GUEST_PREAMBLE = buildCollaboratorSenderPreamble(
+    GUEST_AUTHOR.login,
+    GUEST_AUTHOR.displayName,
+    GUEST_AUTHOR.principalId,
+  );
+  const messages: AgentMessage[] = [
+    {
+      id: 'msg-guest',
+      role: 'user',
+      contentBlocks: [{ type: 'text', text: `${GUEST_PREAMBLE}\n\nhello from the guest` }],
+      timestamp: new Date().toISOString(),
+      metadata: { fromPrincipalId: GUEST_AUTHOR.principalId },
+      author: GUEST_AUTHOR,
+    } as AgentMessage,
+    {
+      id: 'msg-owner',
+      role: 'user',
+      contentBlocks: [{ type: 'text', text: 'hello from the owner' }],
+      timestamp: new Date().toISOString(),
+    },
+  ];
+  // Matches only inside the daemon's collaborator preamble, never in the bodies.
+  const searchQuery = 'collaborator (guest)';
+
+  // Regression (fe#2715 review): the filter memo was keyed on message count +
+  // query only, so a later `ownerPrincipalId` (which decides whether the
+  // preamble is searchable) reused the stale filtered list.
+  it('re-filters when ownerPrincipalId changes with the same messages and query', async () => {
+    const { rerender } = render(AgentMessageList, {
+      props: { messages, searchQuery, workspace: null },
+    });
+
+    // No owner id → nothing is stripped → the preamble is searchable.
+    expect(screen.getByText(/hello from the guest/)).toBeTruthy();
+    expect(screen.queryByText(/hello from the owner/)).toBeNull();
+
+    await rerender({
+      messages,
+      searchQuery,
+      workspace: { id: 'ws-1', ownerPrincipalId: 'principal-owner' } as unknown as Workspace,
+    });
+
+    // Owner id known → the guest preamble is stripped → no message matches
+    // (the row leaves after its outro transition settles).
+    await waitFor(() => expect(screen.queryByText(/hello from the guest/)).toBeNull());
+    expect(screen.queryByText(/hello from the owner/)).toBeNull();
   });
 });

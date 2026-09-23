@@ -21,7 +21,8 @@ const virtualModules: Record<string, string> = {
   '$lib/components/ui/tooltip': `
     import Tooltip from '/src/lib/components/layout/__tests__/mocks/MockWorkspaceTooltipRich.svelte';
     export const TooltipRich = Tooltip;
-    export const TooltipShortcut = Tooltip;`,
+    export const TooltipShortcut = Tooltip;
+    export { Tooltip };`,
   '$lib/components/workspace/WorkspaceHoverCard.svelte': `
     export { default } from '/src/lib/components/layout/__tests__/mocks/MockWorkspaceHoverCard.svelte';`,
   '$lib/components/workspace/utils/workspace-tab-status-presentation': `
@@ -67,6 +68,15 @@ const virtualModules: Record<string, string> = {
     export const selectWorkspaceItems = Object.assign(
       () => readable(() => globalThis.__workspaceTabScenario.workspaces),
       { select: () => globalThis.__workspaceTabScenario.workspaces },
+    );`,
+  '$store/renderer/slices/presence/presence-selectors': `
+    const readable = (read) => ({ subscribe(run) { run(read()); return () => {}; } });
+    export const selectPresenceRosters = () => readable(() => ({}));
+    export const selectPresenceMembers = () => readable(() => ({}));
+    export const selectPresenceOwnPrincipalId = () => readable(() => null);
+    export const selectWorkspacePresencePeople = Object.assign(
+      () => readable(() => []),
+      { select: () => [] },
     );`,
   '$store/renderer/slices/hud/hud-selectors': `
     const readable = (read) => ({ subscribe(run) { run(read()); return () => {}; } });
@@ -293,11 +303,24 @@ async function mountStrip(
       let currentPanelOpen = panelOpen;
       let currentPanelWidth = panelWidth;
       let component: ReturnType<typeof mount> | null = null;
-      const applyPanelLayout = () => {
+      // Under reduced motion the tokens.css blanket gives every element a
+      // 0.01ms transition-duration, so each inline change below spawns a real
+      // CSSTransition that holds the previous geometry until the document
+      // timeline passes its start (one or two frames). Gate on those
+      // transitions settling instead of counting frames.
+      const settlePanelLayout = async () => {
+        for (;;) {
+          const animations = [controls, sidebar].flatMap((element) => element.getAnimations());
+          if (animations.length === 0) return;
+          await Promise.allSettled(animations.map((animation) => animation.finished));
+        }
+      };
+      const applyPanelLayout = async () => {
         const offset = currentPanelOpen ? currentPanelWidth + 8 : 116;
         controls.style.marginLeft = `${offset}px`;
         controls.style.width = `calc(100% - ${offset}px)`;
         sidebar.style.flexBasis = `${currentPanelOpen ? currentPanelWidth : 0}px`;
+        await settlePanelLayout();
       };
       const renderStrip = async () => {
         if (component) await unmount(component);
@@ -309,17 +332,17 @@ async function mountStrip(
         await tick();
         await new Promise<void>((resolveFrame) => requestAnimationFrame(() => resolveFrame()));
       };
-      applyPanelLayout();
+      await applyPanelLayout();
       await renderStrip();
 
       Object.assign(globalThis, {
-        __setWorkspacePanelWidth(width: number) {
+        async __setWorkspacePanelWidth(width: number) {
           currentPanelWidth = width;
-          applyPanelLayout();
+          await applyPanelLayout();
         },
         async __setWorkspacePanelOpen(open: boolean) {
           currentPanelOpen = open;
-          applyPanelLayout();
+          await applyPanelLayout();
           await renderStrip();
         },
         __remountWorkspaceTabStrip: renderStrip,
@@ -416,9 +439,11 @@ test('keeps the normal first-tab curve, both flares, and 24px panel gutter acros
       });
 
       for (const panelWidth of scenario.panelWidths) {
-        await page.evaluate((width) => {
-          (
-            globalThis as typeof globalThis & { __setWorkspacePanelWidth: (value: number) => void }
+        await page.evaluate(async (width) => {
+          await (
+            globalThis as typeof globalThis & {
+              __setWorkspacePanelWidth: (value: number) => Promise<void>;
+            }
           ).__setWorkspacePanelWidth(width);
         }, panelWidth);
         await settle(page);

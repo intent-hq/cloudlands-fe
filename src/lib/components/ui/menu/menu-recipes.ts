@@ -12,6 +12,9 @@ export const menuOverlay = tv({
   base: 'type-body relative isolate z-(--layer-popover) overflow-hidden rounded-md border border-border bg-popover text-popover-foreground shadow-(--elevation-overlay) focus-visible:border-input focus-visible:outline focus-visible:-outline-offset-1 data-[side=bottom]:origin-top data-[side=top]:origin-bottom data-[side=left]:origin-right data-[side=right]:origin-left data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95 data-[state=open]:duration-spring-moderate data-[state=open]:ease-spring-moderate data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:duration-spring-moderate-exit data-[state=closed]:ease-spring-exit motion-reduce:animate-none motion-reduce:transition-none',
 });
 
+// Compensate for p-1/py-1 and the overlay's 1px border so first rows align.
+export const menuSubmenuAlignOffset = -5;
+
 export const menuOverlayTransition = {
   enter: { tier: 'moderate', y: 4, scale: 0.95 },
   exit: { tier: 'moderate' },

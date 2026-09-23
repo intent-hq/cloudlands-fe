@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/experimental-ct-svelte';
+import { expect, test } from '../../../../test/ct-test';
 import ChatThinkingPanelLifecycleHost from './ChatThinkingPanelLifecycleHost.svelte';
 
 test.setTimeout(120_000);

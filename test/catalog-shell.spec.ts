@@ -586,10 +586,16 @@ async function exerciseCanonicalPreview(page: Page, slug: (typeof catalogSlugs)[
     await expect(menu).toBeHidden();
     await expect(trigger).toBeFocused();
     await trigger.click();
+    await expect(menu).toBeVisible();
     const outsideTarget = page.getByRole('button', { name: 'Menu outside target' });
-    if ((page.viewportSize()?.width ?? 0) < 500) await outsideTarget.click({ force: true });
-    else await outsideTarget.click();
-    await expect(menu).toBeHidden();
+    // The menu arms its outside-pointerdown dismissal a few frames after it mounts, so a
+    // click that lands before that is ignored (a forced click skips the stability wait
+    // that usually covers this on a warm worker). Retry the outside click until it takes.
+    await expect(async () => {
+      if ((page.viewportSize()?.width ?? 0) < 500) await outsideTarget.click({ force: true });
+      else await outsideTarget.click();
+      await expect(menu).toBeHidden({ timeout: 1_000 });
+    }).toPass();
   } else if (slug === 'dialog' || slug === 'sheet') {
     if (slug === 'dialog') {
       const initialDialog = page.getByRole('dialog', {
@@ -893,10 +899,9 @@ async function setCatalogTheme(page: Page, theme: 'light' | 'dark') {
 
 async function setReducedMotion(page: Page, enabled: boolean) {
   await expandCustomization(page);
-  const control = page.getByRole('switch', { name: 'Reduce motion' });
-  const checked = (await control.getAttribute('aria-checked')) === 'true';
-  if (checked !== enabled) await control.click();
-  await expect(control).toHaveAttribute('aria-checked', String(enabled));
+  const control = page.getByRole('radio', { name: enabled ? 'Reduced' : 'Full', exact: true });
+  if ((await control.getAttribute('aria-checked')) !== 'true') await control.click();
+  await expect(control).toHaveAttribute('aria-checked', 'true');
 }
 
 function maxDurationMs(value: string): number {
@@ -1004,7 +1009,7 @@ for (const route of ['', '/button', '/checkbox', '/fields']) {
     );
     await expandCustomization(page);
     const motion = await page
-      .getByRole('switch', { name: 'Reduce motion' })
+      .getByRole('radio', { name: 'Reduced', exact: true })
       .evaluate((element) => getComputedStyle(element).transitionDuration);
     expect(maxDurationMs(motion)).toBeLessThanOrEqual(0.01);
     // The preference attribute precedes the effect applying the root theme and its colours.

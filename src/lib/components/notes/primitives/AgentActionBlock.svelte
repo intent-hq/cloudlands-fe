@@ -14,6 +14,8 @@
   import { notify } from '$lib/components/patterns/notify';
   import { parseAgentTypeId } from '$shared/types/agent.types';
   import { selectSelectedModel } from '$store/renderer/slices/model/model-selectors';
+  import { selectHidesAgentLifecycleActions } from '$store/renderer/slices/workspace/workspace-selectors';
+  import { writable } from 'svelte/store';
 
   import { WorkspaceId } from '$shared/types/branded-ids';
   import AgentAvatar from '$features/agent/components/agent-avatar/AgentAvatar.svelte';
@@ -37,6 +39,14 @@
 
   // Get workspaceId from extension options
   let workspaceId = $derived(extension?.options?.workspaceId as string | undefined);
+  const wsIdStore = writable<string>('');
+  $effect(() => {
+    wsIdStore.set(workspaceId ?? '');
+  });
+  // Running the action creates an agent (`agent.create`), refused (-32003) for
+  // a collaborator connection: the run affordance is withheld. Viewing an
+  // already-linked agent is not a lifecycle action and stays available.
+  const hidesAgentLifecycleActions$ = selectHidesAgentLifecycleActions(wsIdStore);
 
   function getErrorMessage(err: unknown): string {
     if (err instanceof Error) return err.message;
@@ -202,20 +212,22 @@
       <span class="min-w-0 flex-1 truncate">
         {primitive.goal}
       </span>
-      <Button
-        variant="ghost-light"
-        size="sm"
-        class="type-caption shrink-0"
-        onclick={handleButtonClick}
-        disabled={running}
-      >
-        {#if running}
-          <IntentMarkLoader size={12} />
-        {:else if buttonState.icon}
-          <Fa icon={buttonState.icon} size="xs" />
-        {/if}
-        {buttonState.label}
-      </Button>
+      {#if agentId || !$hidesAgentLifecycleActions$}
+        <Button
+          variant="ghost-light"
+          size="sm"
+          class="type-caption shrink-0"
+          onclick={handleButtonClick}
+          disabled={running}
+        >
+          {#if running}
+            <IntentMarkLoader size={12} />
+          {:else if buttonState.icon}
+            <Fa icon={buttonState.icon} size="xs" />
+          {/if}
+          {buttonState.label}
+        </Button>
+      {/if}
     </div>
   {:else}
     <div class="ws-block-widget type-caption my-2 text-muted-foreground">

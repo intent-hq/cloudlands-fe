@@ -26,8 +26,9 @@ export function normalizeCtPath(file) {
 // dot-directories included" — so the classifiers compare suffixes that way
 // instead of using Node's `path.matchesGlob`, which is case-sensitive and
 // rejects dot segments (playwright/ct-spec-pattern.test.ts pins the agreement
-// against the CT runner's own matcher).
-function endsWithNocase(path, suffix) {
+// against the CT runner's own matcher). Exported so `root-spec-pattern.mjs`
+// shares the one implementation instead of re-deriving it.
+export function endsWithNocase(path, suffix) {
   return path.toLowerCase().endsWith(suffix.toLowerCase());
 }
 

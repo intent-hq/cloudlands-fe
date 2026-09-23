@@ -20,6 +20,7 @@
     faFileLines,
     faGlobe,
     faRightLeft,
+    faUserPlus,
   } from '@fortawesome/free-solid-svg-icons';
   import SidebarIcon from '$lib/components/icons/SidebarIcon.svelte';
   import Tooltip from '$lib/components/ui/tooltip/Tooltip.svelte';
@@ -73,6 +74,7 @@
     setWorkspaceEntity,
   } from '$store/renderer/slices/workspace/workspace-slice';
   import {
+    selectHidesOwnerWorkspaceActions,
     selectWorkspaceById,
     selectWorkspaceProgressActions,
   } from '$store/renderer/slices/workspace/workspace-selectors';
@@ -83,6 +85,8 @@
   } from '$store/renderer/slices/workspace/workspace-types';
   import { store as appStore } from '$store/renderer/store';
   import { openTransferModal } from '$store/renderer/slices/workspace-transfer/workspace-transfer-slice';
+  import { openShareDialog } from '$store/renderer/slices/workspace-share/workspace-share-slice';
+  import { selectLabsMultiplayerEnabled } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
   import { selectWorkspaceDrivingClient } from '$store/renderer/slices/browser-clients/browser-clients-selectors';
   import { setWorkspaceBrowserClientRequested } from '$store/renderer/slices/browser-clients/browser-clients-slice';
   import { selectWorkspaceHasBrowserTabs } from '$store/renderer/slices/panel-layout/panel-layout-selectors';
@@ -90,6 +94,19 @@
   import DrivingClientIndicator from '$lib/components/workspace/DrivingClientIndicator.svelte';
   import SetPrimaryClientConfirmDialog from '$lib/components/workspace/SetPrimaryClientConfirmDialog.svelte';
   import { resolveDrivingClientSwitch } from '$lib/components/workspace/driving-indicator';
+  import PresenceAvatarStack from '$features/presence/components/PresenceAvatarStack.svelte';
+  import {
+    presencePersonName,
+    type PresenceCircle,
+    type PresenceCircleAction,
+  } from '$features/presence/components/presence-person';
+  import {
+    selectWorkspacePresenceFocusTargets,
+    selectWorkspacePresencePeople,
+  } from '$store/renderer/slices/presence/presence-selectors';
+  import { findSourcePanelId, navigateToNote } from '$lib/utils/workspace-navigation';
+  import { isCmdClickModifier } from '$shared/utils/link-helpers';
+  import { openAgentTabRequested } from '$store/renderer/slices/app-layout/app-layout-slice';
 
   const readyLogger = createLogger('ReadyTasks');
 
@@ -110,6 +127,12 @@
   const sidebarSide$ = selectSidebarSide();
   const notes = selectAllNotes(workspaceIdStore);
   const workspace = selectWorkspaceById(workspaceIdStore);
+  // Owner-only actions (Transfer/Download, Archive, Delete) are refused by the
+  // daemon for collaborators (`require_owner`), so the menu hides them up front.
+  const hidesOwnerActions$ = selectHidesOwnerWorkspaceActions(workspaceIdStore);
+  // Sharing is a lab: the Share entry point stays hidden until the user turns
+  // the Multiplayer lab on in Settings → Labs (local preference, off by default).
+  const labsMultiplayerEnabled$ = selectLabsMultiplayerEnabled();
   // BE-owned task progress rollup served verbatim from the workspace-tasks slice
   // (PROTOCOL §5.4 `task.list`.stats). The renderer never re-derives counts.
   const taskStats$ = selectWorkspaceTaskProgress(workspaceIdStore);
@@ -407,12 +430,82 @@
     },
   });
 
+  // Owner-only (PROTOCOL §5.1 `myRole`): a missing role never offers Share, and
+  // neither does a guest window or a window whose identity has not settled
+  // (`selectHidesOwnerWorkspaceActions`), whatever `myRole` the row carries.
+  // On top of that the Multiplayer lab must be on: with it off (the default)
+  // even the owner gets no Share item — and no presence-avatar fallback either,
+  // since that fallback reuses this action.
+  const shareAction: MenuAction | null = $derived(
+    $labsMultiplayerEnabled$ && $workspace?.myRole === 'owner' && !$hidesOwnerActions$
+      ? {
+          label: m.workspace_share_menu_label(),
+          icon: faUserPlus,
+          dividerBefore: true,
+          onClick: () => {
+            if (!$workspace) return;
+            appStore.dispatch(
+              openShareDialog({ workspaceId: $workspace.id, workspaceTitle: $workspace.title }),
+            );
+          },
+        }
+      : null,
+  );
+
+  // Multiplayer presence row: everybody else on this shared workspace, the
+  // offline members greyscale, so the row shows even while only this window
+  // is online. An avatar takes the viewer to where that person looks right
+  // now (their agent chat, else their note); with no such focus it opens the
+  // owner's Share screen and stays inert for a non-owner.
+  const presencePeople$ = selectWorkspacePresencePeople(workspaceIdStore);
+  const presenceFocusTargets$ = selectWorkspacePresenceFocusTargets(workspaceIdStore);
+  const presencePersonAction = $derived.by(() => {
+    const targets = $presenceFocusTargets$;
+    const agents = $workspaceAgentSessions$;
+    const allNotes = $notes;
+    const wsId = $workspace?.id ? String($workspace.id) : undefined;
+    const share = shareAction?.onClick ?? null;
+    return (person: PresenceCircle): PresenceCircleAction => {
+      const name = presencePersonName(person);
+      const target = targets[person.principalId];
+      if (target?.kind === 'agent') {
+        const agent = agents.find((s) => String(s.id) === target.agentId)?.name ?? '';
+        return {
+          label: m.workspace_progressCard_presenceOnAgent_tooltip({ name, agent }),
+          onSelect: wsId
+            ? (event) =>
+                appStore.dispatch(
+                  openAgentTabRequested(wsId, {
+                    agentId: target.agentId,
+                    sourcePanelId: findSourcePanelId(event.target),
+                    openInAdjacentPanel: isCmdClickModifier({ event }),
+                  }),
+                )
+            : null,
+        };
+      }
+      if (target?.kind === 'note') {
+        const note = allNotes.find((n) => String(n.id) === target.noteId)?.title ?? '';
+        return {
+          label: m.workspace_progressCard_presenceOnNote_tooltip({ name, note }),
+          onSelect: wsId ? () => void navigateToNote(target.noteId, { workspaceId: wsId }) : null,
+        };
+      }
+      return {
+        label: person.online
+          ? m.workspace_progressCard_presenceInWorkspace_tooltip({ name })
+          : m.workspace_progressCard_presenceOffline_tooltip({ name }),
+        onSelect: share,
+      };
+    };
+  });
+
   const transferAction: MenuAction | null = $derived(
-    $workspace
+    $workspace && !$hidesOwnerActions$
       ? {
           label: m.workspace_card_transfer_label(),
           icon: faRightLeft,
-          dividerBefore: true,
+          dividerBefore: !shareAction,
           onClick: () => {
             if (!$workspace) return;
             appStore.dispatch(
@@ -465,6 +558,7 @@
     sidebarToggleAction,
     sidebarSideAction,
     ...(setPrimaryClientAction ? [setPrimaryClientAction] : []),
+    ...(shareAction ? [shareAction] : []),
     ...(transferAction ? [transferAction] : []),
   ]);
 
@@ -818,7 +912,8 @@
             bind:value={editedTitle}
             onblur={saveTitle}
             onkeydown={handleTitleKeydown}
-            class="edit-input relative z-10 text-xl font-semibold text-foreground bg-transparent
+            noFocusStyle
+            class="edit-input relative z-10 text-xl font-semibold text-foreground bg-transparent hover:bg-transparent border-none
                py-0.5 rounded
                outline-none w-full leading-normal
                focus:ring-none! focus:outline-none!
@@ -881,6 +976,7 @@
               style="max-width: min(20rem, calc(var(--bits-dropdown-menu-content-available-width, 100vw) - 0.625rem))"
             >
               <WorkspaceActionsMenu
+                layout="editors-submenu"
                 filePath={$workspace?.worktreePath ||
                   $workspace?.repositoryPath ||
                   $workspace?.path ||
@@ -893,8 +989,8 @@
                 onUnarchive={handleUnarchive}
                 {isArchived}
                 onClose={handleDropdownClose}
-                showDeleteOption={true}
-                showArchiveOption={true}
+                showDeleteOption={!$hidesOwnerActions$}
+                showArchiveOption={!$hidesOwnerActions$}
                 showFileNameCopy={false}
                 showFileActions={true}
                 {additionalActions}
@@ -1026,6 +1122,16 @@
           </TooltipRich>
         {/if}
       </div>
+      {#if $presencePeople$.length > 0}
+        <div class="flex h-5 w-full min-w-0 items-center" data-sidebar-presence-row>
+          <PresenceAvatarStack
+            people={$presencePeople$}
+            size={18}
+            action={presencePersonAction}
+            class="pl-0.5"
+          />
+        </div>
+      {/if}
       <!-- driving browser client (REV-2); renders nothing with one eligible client or no browser tabs -->
       <DrivingClientIndicator {...$drivingClient$} hasBrowserTabs={$hasBrowserTabs$} />
     </div>
@@ -1137,10 +1243,11 @@
               onblur={saveStatusMessage}
               onkeydown={handleStatusMessageKeydown}
               disabled={isSavingStatusMessage}
+              noFocusStyle
               maxlength={WORKSPACE_STATUS_MESSAGE_MAX_LENGTH}
               rows={1}
               aria-label={m.workspace_sidebarHeader_status_ariaLabel()}
-              class="edit-input type-body relative z-10 min-h-0 max-h-32 w-full resize-none overflow-hidden whitespace-pre-wrap break-words rounded border-none bg-transparent py-0.5 text-foreground outline-none leading-snug
+              class="edit-input type-body relative z-10 min-h-0 max-h-32 w-full resize-none overflow-hidden whitespace-pre-wrap break-words rounded border-none bg-transparent hover:bg-transparent py-0.5 text-foreground outline-none leading-snug
                      focus:ring-none! focus:outline-none! transition-all duration-spring-moderate ease-spring-moderate motion-reduce:transition-none disabled:opacity-50"
               style="field-sizing: content;"
               placeholder={m.workspace_sidebarHeader_addStatus_placeholder()}

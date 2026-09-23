@@ -1,3 +1,4 @@
+import iconOnlyButtonSize from './icon-only-button-size.js';
 import noAdhocTransitions from './no-adhoc-transitions.js';
 import noArbitraryMotionOrColor from './no-arbitrary-motion-or-color.js';
 import noButtonCompatibilityAliases from './no-button-compatibility-aliases.js';
@@ -13,6 +14,7 @@ import settingsUseSchema from './settings-use-schema.js';
 
 export const designSystemRules = {
   'no-uppercase': noUppercase,
+  'icon-only-button-size': iconOnlyButtonSize,
   'no-adhoc-transitions': noAdhocTransitions,
   'no-arbitrary-motion-or-color': noArbitraryMotionOrColor,
   'no-button-compatibility-aliases': noButtonCompatibilityAliases,

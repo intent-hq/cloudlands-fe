@@ -3,8 +3,9 @@
  * detected-URL clicks, terminal links): resolves the URL through
  * `browser:resolve-url` (rewrite → probe → tunnel) BEFORE the tab is opened,
  * surfacing resolver warnings/errors as toasts (intent-hq/monorepo#2404).
- * The embedded browser itself never resolves — it loads exactly the URL it
- * is given.
+ * The embedded browser itself loads exactly the URL it is given; its address
+ * bar resolves only an explicit `daemon.localhost` / `client.localhost`
+ * alias (intent-hq/intent#5710).
  */
 
 import { notify } from '$lib/components/patterns/notify';
@@ -40,7 +41,11 @@ export async function resolveBrowserLinkForOpen(
     typeof window !== 'undefined' ? window.electronAPI?.invoke : undefined,
   );
   if (resolved.error && resolved.rewritten) {
-    notify.error(m.browser_embedded_resolveFailed_error(), { description: resolved.error });
+    if (resolved.forbidden) {
+      notify.error(m.browser_linkOpen_ownerOnlyForward_error());
+    } else {
+      notify.error(m.browser_embedded_resolveFailed_error(), { description: resolved.error });
+    }
   } else if (resolved.warning) {
     notify.warning(m.browser_linkOpen_loopbackAmbiguity_warning(), {
       description: resolved.warning,

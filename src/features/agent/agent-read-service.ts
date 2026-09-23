@@ -29,6 +29,7 @@ import type { AgentSession } from '$shared/types';
 import { store as appStore } from '$store/renderer/store';
 import {
   bulkUpsertSessions,
+  markAgentDetailHydrated,
   upsertSession,
 } from '$store/renderer/slices/agent-session/agent-session-slice';
 import { createLogger } from '$lib/utils/client-logger';
@@ -165,6 +166,7 @@ async function hydrateAgentSession(agentId: string): Promise<AgentSession | null
         ),
       );
       appStore.dispatch(upsertSession(merged));
+      appStore.dispatch(markAgentDetailHydrated(agentId));
       return merged;
     }
     return null;

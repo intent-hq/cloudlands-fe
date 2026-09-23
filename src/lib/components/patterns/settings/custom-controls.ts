@@ -3,6 +3,7 @@
  * Ordinary settings fields belong in a `defineSettings` schema instead.
  */
 export { Button } from '$lib/components/ui/button';
+export { Combobox } from '$lib/components/ui/combobox';
 export { Checkbox } from '$lib/components/ui/checkbox';
 export { default as CopyButton } from '$lib/components/ui/CopyButton.svelte';
 export { default as DropdownMenu } from '$lib/components/ui/dropdown-menu.svelte';
@@ -13,6 +14,7 @@ export { Input } from '$lib/components/ui/input';
 export { IntentMarkLoader } from '$lib/components/ui/indicators';
 export { Label } from '$lib/components/ui/label';
 export * as Menu from '$lib/components/ui/menu';
+export { default as PrincipalAvatar } from '$lib/components/ui/PrincipalAvatar.svelte';
 export { Select } from '$lib/components/ui/select';
 export { Skeleton } from '$lib/components/ui/skeleton';
 export { Slider } from '$lib/components/ui/slider';

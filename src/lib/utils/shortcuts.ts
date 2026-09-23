@@ -523,14 +523,6 @@ export const SHORTCUTS = {
   },
 } as const;
 
-/**
- * Get the display string for a shortcut
- */
-export function getShortcutDisplay(shortcutKey: keyof typeof SHORTCUTS): string {
-  const shortcut = SHORTCUTS[shortcutKey];
-  return formatShortcut(shortcut.key);
-}
-
 export function getShortcutChord(
   shortcutKey: keyof typeof SHORTCUTS,
   mac = isMac,

@@ -1,4 +1,3 @@
-import { readFileSync } from 'node:fs';
 import { builtinModules } from 'node:module';
 import { fileURLToPath } from 'node:url';
 import { includeIgnoreFile } from '@eslint/compat';
@@ -14,26 +13,31 @@ import noComponentAsyncDataFetchRule from './eslint-rules/no-component-async-dat
 import cssParser from './eslint-rules/design-system/css-parser.js';
 import { designSystemRules } from './eslint-rules/design-system/index.js';
 import { namedColorAllowlist } from './eslint-rules/design-system/common.js';
+import { internalModuleImportPatterns } from './eslint-rules/internal-module-import-patterns.js';
+import { baselineCounts, loadBaseline } from './eslint-rules/lib/baseline-ratchet.js';
 
-const designSystemBaseline = JSON.parse(
-  readFileSync(new URL('./eslint-rules/design-system/baseline.json', import.meta.url), 'utf8'),
-);
-const designSystemBaselineOverrides = Object.entries(designSystemBaseline).flatMap(
-  ([rule, exceptions]) => {
-    const files = exceptions.flatMap((exception) => exception.files ?? []);
-    return files.length > 0 ? [{ files, rules: { [`intent/${rule}`]: 'off' } }] : [];
-  },
-);
-const semanticColorBaseline = Object.assign(
-  {},
-  ...designSystemBaseline['no-arbitrary-motion-or-color'].map((entry) => entry.counts ?? {}),
-);
+// One entry file per tolerated source file under eslint-rules/baselines/<rule>/; see
+// eslint-rules/lib/baseline-ratchet.js for the layout.
+const lintBaseline = loadBaseline({ cwd: fileURLToPath(new URL('.', import.meta.url)) });
+const designSystemBaselineOverrides = Object.keys(designSystemRules).flatMap((rule) => {
+  const files = (lintBaseline[rule] ?? []).flatMap((exception) => exception.files ?? []);
+  return files.length > 0 ? [{ files, rules: { [`intent/${rule}`]: 'off' } }] : [];
+});
+const semanticColorBaseline = baselineCounts(lintBaseline['no-arbitrary-motion-or-color']) ?? {};
+const iconOnlyButtonSizeBaseline = baselineCounts(lintBaseline['icon-only-button-size']) ?? {};
 import noColdSvelteImportInTestsRule from './eslint-rules/no-cold-svelte-import-in-tests.js';
+import noSourceLiteralAssertionsInTestsRule from './eslint-rules/no-source-literal-assertions-in-tests.js';
+import noWallClockAssertionsInTestsRule from './eslint-rules/no-wall-clock-assertions-in-tests.js';
 import noFlushSyncInTeardownRule from './eslint-rules/no-flushsync-in-teardown.js';
 import noDirectReducedMotionQueryRule, {
   SOURCE_OF_TRUTH_FILES as reducedMotionSourceOfTruthFiles,
   TEST_FILE_GLOBS as reducedMotionTestFileGlobs,
 } from './eslint-rules/no-direct-reduced-motion-query.js';
+
+const sourceLiteralAssertionsBaseline =
+  baselineCounts(lintBaseline['no-source-literal-assertions-in-tests']) ?? {};
+const wallClockAssertionsBaseline =
+  baselineCounts(lintBaseline['no-wall-clock-assertions-in-tests']) ?? {};
 
 const intentPlugin = {
   rules: {
@@ -41,6 +45,8 @@ const intentPlugin = {
     'no-production-dynamic-import': noProductionDynamicImportRule,
     ...designSystemRules,
     'no-cold-svelte-import-in-tests': noColdSvelteImportInTestsRule,
+    'no-source-literal-assertions-in-tests': noSourceLiteralAssertionsInTestsRule,
+    'no-wall-clock-assertions-in-tests': noWallClockAssertionsInTestsRule,
     'no-flushsync-in-teardown': noFlushSyncInTeardownRule,
     'no-direct-reduced-motion-query': noDirectReducedMotionQueryRule,
   },
@@ -141,6 +147,46 @@ const dismissalMarkerRawReadAllowedFiles = [
 ];
 const dismissalMarkerRawReadMessage =
   'Do not read `dismissedQuestionsMessageId` directly. Use `isQuestionMessageDismissed` (src/shared/utils/question-dismissal.ts) or `sessionHasPendingQuestion` (src/lib/components/chat/questions/pending-questions.ts) so the dismissal comparison stays shared.';
+const dismissalMarkerRawReadSelectors = [
+  {
+    selector: "MemberExpression[computed=false][property.name='dismissedQuestionsMessageId']",
+    message: dismissalMarkerRawReadMessage,
+  },
+  {
+    selector: "MemberExpression[computed=true][property.value='dismissedQuestionsMessageId']",
+    message: dismissalMarkerRawReadMessage,
+  },
+  {
+    selector: "ObjectPattern > Property[key.name='dismissedQuestionsMessageId']",
+    message: dismissalMarkerRawReadMessage,
+  },
+  {
+    selector: "ObjectPattern > Property[key.value='dismissedQuestionsMessageId']",
+    message: dismissalMarkerRawReadMessage,
+  },
+];
+
+// Host modules the shared root layout must not reach (see the
+// src/routes/+layout.svelte override below). `no-restricted-imports` covers
+// static imports only, so dynamic `import()` of the same modules is banned
+// through `no-restricted-syntax`; the specifier must be a string literal so
+// the ban can be checked at all.
+const rootLayoutHostModules = [
+  ['electron-bridge', 'reach the Electron bridge'],
+  ['live-app-client', 'construct the live daemon client'],
+  ['mock-bootstrap', 'seed the browser mock store'],
+];
+const rootLayoutDynamicImportSelectors = [
+  ...rootLayoutHostModules.map(([basename, action]) => ({
+    selector: `ImportExpression[source.type='Literal'][source.value=/${basename}(\\.[jt]s)?$/]`,
+    message: `The root layout is shared with the /sandbox catalog and must not ${action}, statically or via import(). Host wiring belongs in src/routes/(app)/+layout.svelte.`,
+  })),
+  {
+    selector: "ImportExpression[source.type!='Literal']",
+    message:
+      'Dynamic imports in the shared root layout must use a string-literal specifier so the host-module boundary can be lint-checked.',
+  },
+];
 
 // Staged rollout: existing components with direct async data loads are baselined
 // until each flow moves to Redux actions/selectors. New Svelte components and
@@ -164,7 +210,6 @@ const componentAsyncDataFetchBaselineFiles = [
   'src/features/workspace/SpacesSwitcherOverlay.svelte',
   'src/lib/components/AuggieSetupGate.svelte',
   'src/lib/components/CommandPalette.svelte',
-  'src/lib/components/ErrorDisplay.svelte',
   'src/lib/components/GitCredentialsModal.svelte',
   'src/lib/components/GitHubAuthBanner.svelte',
   'src/lib/components/GitHubAuthModal.svelte',
@@ -198,21 +243,16 @@ const componentAsyncDataFetchBaselineFiles = [
   'src/lib/components/file-explorer/VirtualizedFileTree.svelte',
   'src/lib/components/file-explorer/file-explorer-layout.svelte',
   'src/lib/components/file-explorer/file-tree-view.svelte',
-  'src/lib/components/file-tracking/FileChangesList.svelte',
   'src/lib/components/layout/WindowTitleBar.svelte',
   'src/lib/components/layout/panel-system/PanelLayout.svelte',
-  'src/lib/components/layout/panel-system/PanelLayoutControls.svelte',
-  'src/lib/components/layout/panel-system/PanelLayoutHeader.svelte',
   'src/lib/components/layout/panel-system/PanelTabBar.svelte',
   'src/lib/components/layout/sidebar-nav/SidebarNav.svelte',
   'src/lib/components/layout/sidebar-nav/cards/ActiveWorkspacesCard.svelte',
   'src/lib/components/layout/sidebar-nav/cards/AllWorkspacesCard.svelte',
-  'src/lib/components/layout/sidebar-nav/cards/NewWorkspaceCard.svelte',
   'src/lib/components/markdown/MarkdownViewer.svelte',
   'src/lib/components/markdown/MermaidRenderer.svelte',
   'src/lib/components/modals/FeatureCodeDialog.svelte',
   'src/lib/components/modals/PullConflictDialog.svelte',
-  'src/lib/components/notes/NotesPanel.svelte',
   'src/lib/components/notes/primitives/AgentActionBlock.svelte',
   'src/lib/components/notes/primitives/CliBlock.svelte',
   'src/lib/components/notes/primitives/DiagramBlock.svelte',
@@ -230,7 +270,6 @@ const componentAsyncDataFetchBaselineFiles = [
   'src/lib/components/settings/ProviderSelector.svelte',
   'src/lib/components/settings/RtkSettings.svelte',
   'src/lib/components/settings/SentryAuthConnection.svelte',
-  'src/lib/components/shared/AgentAttributionBadge.svelte',
   'src/lib/components/terminal/QuakeTerminalOverlay.svelte',
   'src/lib/components/terminal/ScriptOutputViewer.svelte',
   'src/lib/components/terminal/SetupScriptBanner.svelte',
@@ -243,19 +282,16 @@ const componentAsyncDataFetchBaselineFiles = [
   'src/lib/components/tiptap/TaskAgentStatus.svelte',
   'src/lib/components/tiptap/TaskItemNodeView.svelte',
   'src/lib/components/tiptap/TaskMenu.svelte',
-  'src/lib/components/tiptap/comments/UnifiedCommentThreadDemo.svelte',
   'src/lib/components/ui/CopyButton.svelte',
   'src/features/external-editors/components/FileActionsDropdown.svelte',
   'src/features/external-editors/components/OpenComboButton.svelte',
   'src/lib/components/ui/VirtualList.svelte',
   'src/features/workspace/components/WorkspaceActionsMenu.svelte',
   'src/features/file-tracking/components/diff/TrackedChangeDiffViewer.svelte',
-  'src/lib/components/ui/list/ListExample.svelte',
   'src/lib/components/ui/searchable-combobox/searchable-combobox.svelte',
   'src/lib/components/ui/searchable-select/searchable-select.svelte',
   'src/lib/components/visualization/repo-visualizer/RepoVisualizer.svelte',
   'src/lib/components/visualization/repo-visualizer/TreeCanvas.svelte',
-  'src/lib/components/workspace/CommentSystemDemo.svelte',
   'src/lib/components/workspace/CompactWorkspaceInitializer.svelte',
   'src/lib/components/workspace/MultiSelectTabbedSidebar.svelte',
   'src/lib/components/workspace/NoteCodeChangesCard.svelte',
@@ -272,7 +308,6 @@ const componentAsyncDataFetchBaselineFiles = [
   'src/lib/components/workspace/initializer/BranchSelector.svelte',
   'src/lib/components/workspace/initializer/InitialAgentPicker.svelte',
   'src/lib/components/workspace/initializer/IssueSuggestions.svelte',
-  'src/lib/components/workspace/initializer/RemoteSetupSelector.svelte',
   'src/lib/components/workspace/initializer/RepoSelector.svelte',
   'src/lib/components/workspace/initializer/SetupScriptAgent.svelte',
   'src/lib/components/workspace/sidebar/BranchDisplay.svelte',
@@ -296,7 +331,6 @@ const componentAsyncDataFetchBaselineFiles = [
   'src/routes/(app)/test-error-boundary/+page.svelte',
   'src/routes/(app)/test-input/+page.svelte',
   'src/routes/(app)/test-mentions/+page.svelte',
-  'src/routes/(app)/test-mentions/compact-initializer-test.svelte',
   'src/routes/(app)/test-mentions/compact/+page.svelte',
   'src/routes/(app)/workspace/[id]/+page.svelte',
 ];
@@ -385,6 +419,82 @@ const rendererBrowserSafetyRestrictedImportsOptions = {
   ],
 };
 
+// The shared CT-module restriction (see the `no-restricted-imports` block
+// below); also repeated by per-file `no-restricted-imports` overrides, since
+// flat-config rule entries replace rather than merge.
+const ctSharedModuleRestrictedImportPath = {
+  name: '@playwright/experimental-ct-svelte',
+  allowTypeImports: true,
+  message:
+    "Only type imports may come from '@playwright/experimental-ct-svelte'. Import `test` / `expect` (and any other runtime export) from the shared CT module (src/test/ct-test.ts) so the browser-context isolation applies to this spec.",
+};
+
+const javascriptConfig = {
+  files: ['**/*.js', '**/*.jsx', '**/*.mjs'],
+  languageOptions: {
+    ecmaVersion: 2022,
+    sourceType: 'module',
+    globals: {
+      console: 'readonly',
+      process: 'readonly',
+      Buffer: 'readonly',
+      __dirname: 'readonly',
+      __filename: 'readonly',
+      global: 'readonly',
+      window: 'readonly',
+      document: 'readonly',
+      navigator: 'readonly',
+      fetch: 'readonly',
+      URL: 'readonly',
+      URLSearchParams: 'readonly',
+      setTimeout: 'readonly',
+      clearTimeout: 'readonly',
+      setInterval: 'readonly',
+      clearInterval: 'readonly',
+      Promise: 'readonly',
+      require: 'readonly',
+      module: 'readonly',
+      exports: 'readonly',
+      WebSocket: 'readonly',
+      MutationObserver: 'readonly',
+      PerformanceObserver: 'readonly',
+      Event: 'readonly',
+      KeyboardEvent: 'readonly',
+      getComputedStyle: 'readonly',
+      performance: 'readonly',
+      requestAnimationFrame: 'readonly',
+      cancelAnimationFrame: 'readonly',
+      queueMicrotask: 'readonly',
+      HTMLAnchorElement: 'readonly',
+      HTMLElement: 'readonly',
+      Element: 'readonly',
+      Node: 'readonly',
+    },
+  },
+  plugins: {
+    'unused-imports': unusedImports,
+  },
+  rules: {
+    ...js.configs.recommended.rules,
+    'no-console': 'off',
+    'prefer-const': 'warn',
+    'no-var': 'error',
+    'object-shorthand': 'off',
+    'prefer-template': 'off',
+    'prefer-arrow-callback': 'off',
+    'no-unused-vars': [
+      'error',
+      {
+        argsIgnorePattern: '^_',
+        varsIgnorePattern: '^_',
+        caughtErrorsIgnorePattern: '^_',
+        destructuredArrayIgnorePattern: '^_',
+      },
+    ],
+    'unused-imports/no-unused-imports': 'error',
+  },
+};
+
 export default [
   // .gitignore is the source of truth for scratch/sandbox exclusions (.dev/, .wt-*/); see vitest.config.ts.
   includeIgnoreFile(fileURLToPath(new URL('.gitignore', import.meta.url))),
@@ -406,80 +516,14 @@ export default [
       '**/static/generated/**',
       '**/.backup-state-migration/**',
       '**/.test-data/**',
-      '**/*.cjs',
       '**/cdp-mcp-server/**',
       '**/playwright/.cache/**',
       '**/playwright-report/**',
-      '**/scripts/**',
       '**/e2e/**',
       '**/test/**',
     ],
   },
-  {
-    files: ['**/*.js', '**/*.jsx', '**/*.mjs'],
-    languageOptions: {
-      ecmaVersion: 2022,
-      sourceType: 'module',
-      globals: {
-        console: 'readonly',
-        process: 'readonly',
-        Buffer: 'readonly',
-        __dirname: 'readonly',
-        __filename: 'readonly',
-        global: 'readonly',
-        window: 'readonly',
-        document: 'readonly',
-        navigator: 'readonly',
-        fetch: 'readonly',
-        URL: 'readonly',
-        URLSearchParams: 'readonly',
-        setTimeout: 'readonly',
-        clearTimeout: 'readonly',
-        setInterval: 'readonly',
-        clearInterval: 'readonly',
-        Promise: 'readonly',
-        require: 'readonly',
-        module: 'readonly',
-        exports: 'readonly',
-        WebSocket: 'readonly',
-        MutationObserver: 'readonly',
-        PerformanceObserver: 'readonly',
-        Event: 'readonly',
-        KeyboardEvent: 'readonly',
-        getComputedStyle: 'readonly',
-        performance: 'readonly',
-        requestAnimationFrame: 'readonly',
-        cancelAnimationFrame: 'readonly',
-        queueMicrotask: 'readonly',
-        HTMLAnchorElement: 'readonly',
-        HTMLElement: 'readonly',
-        Element: 'readonly',
-        Node: 'readonly',
-      },
-    },
-    plugins: {
-      'unused-imports': unusedImports,
-    },
-    rules: {
-      ...js.configs.recommended.rules,
-      'no-console': 'off',
-      'prefer-const': 'warn',
-      'no-var': 'error',
-      'object-shorthand': 'off',
-      'prefer-template': 'off',
-      'prefer-arrow-callback': 'off',
-      'no-unused-vars': [
-        'error',
-        {
-          argsIgnorePattern: '^_',
-          varsIgnorePattern: '^_',
-          caughtErrorsIgnorePattern: '^_',
-          destructuredArrayIgnorePattern: '^_',
-        },
-      ],
-      'unused-imports/no-unused-imports': 'error',
-    },
-  },
+  javascriptConfig,
   {
     files: ['**/*.ts', '**/*.tsx', '**/*.mts', '**/*.cts'],
     languageOptions: {
@@ -552,6 +596,30 @@ export default [
       'prefer-arrow-callback': 'off',
     },
   },
+  // Scripts run under Node only. The shared JS/TS blocks above declare the
+  // globals renderer and main code have in common; the Node-only ones live here.
+  {
+    files: ['scripts/**/*.{js,cjs,mjs,ts}'],
+    languageOptions: {
+      globals: {
+        AbortController: 'readonly',
+        AbortSignal: 'readonly',
+        clearImmediate: 'readonly',
+        setImmediate: 'readonly',
+        structuredClone: 'readonly',
+        TextDecoder: 'readonly',
+        TextEncoder: 'readonly',
+      },
+    },
+  },
+  {
+    ...javascriptConfig,
+    files: ['scripts/**/*.cjs'],
+    languageOptions: {
+      ...javascriptConfig.languageOptions,
+      sourceType: 'commonjs',
+    },
+  },
   {
     files: dynamicImportEnforcedFiles,
     ignores: productionModuleIgnores,
@@ -573,6 +641,23 @@ export default [
     },
     rules: {
       'intent/no-cold-svelte-import-in-tests': 'error',
+      // A test that reads a .svelte/.ts source file from disk to assert on its
+      // text pins the test to how the source is spelled, not what it does
+      // (cloudlands-fe#2760). The baseline maps today's offenders to their
+      // read counts and may only shrink: lower a file's count as reads are
+      // fixed (delete its entry file at zero), never raise one or add a file.
+      'intent/no-source-literal-assertions-in-tests': [
+        'error',
+        { baseline: sourceLiteralAssertionsBaseline },
+      ],
+      // A test that asserts a raw performance.now()/Date.now() elapsed time
+      // against a millisecond budget passes in isolation and fails under CI
+      // runner load (cloudlands-fe#2740). Same ratchet as above: the baseline
+      // maps today's offenders to their assertion counts and may only shrink.
+      'intent/no-wall-clock-assertions-in-tests': [
+        'error',
+        { baseline: wallClockAssertionsBaseline },
+      ],
     },
   },
   // Ban synchronous child_process calls in Electron main process code.
@@ -591,6 +676,117 @@ export default [
               importNames: ['execSync', 'spawnSync', 'execFileSync'],
               message:
                 'Synchronous child_process calls block the Electron main thread. Use exec/spawn with util.promisify or the execAsync helper instead.',
+            },
+          ],
+        },
+      ],
+    },
+  },
+  // Every Playwright CT spec and CT helper takes `test` / `expect` from the shared
+  // module, which turns off ct-core's per-worker browser-context reuse (the
+  // reuse reset raced `mount()` on the merge queue: intent-hq/intent#4373, #4783,
+  // #5236, #5249, #5279, #5481). A spec that imports them from the package
+  // directly runs without that override, so forbid every value import of the
+  // package — named, namespace (`import * as ct`) and default alike; an
+  // `importNames` list would let `ct.test` / `ct.expect` through a default import.
+  // Type imports (`Locator`, `Page`, `ComponentFixtures`, ...) still come from the
+  // package. The shared module itself is the one sanctioned value importer.
+  // Main-process files are excluded so this block does not replace their
+  // child_process ban above.
+  {
+    files: ['src/**/*.{js,mjs,ts,tsx,svelte}'],
+    ignores: ['src/test/ct-test.ts', ...mainProcessFiles],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        {
+          paths: [ctSharedModuleRestrictedImportPath],
+        },
+      ],
+    },
+  },
+  // ModelPicker reaches the agent-session mutation APIs (`agent.setModel`, the
+  // session `model` write, the reasoning-effort writers) only through the
+  // lock-checking funnel in agent-model-mutator.ts, so a guest-locked picker
+  // cannot issue a write by construction. Four heads / three fix rounds were
+  // needed to find every per-boundary re-check in cloudlands-fe#2735; this
+  // keeps a new dispatch path from bypassing the mutator. The shared CT-module
+  // path is repeated so this override does not drop that restriction.
+  // `no-restricted-imports` compares source strings and never resolves modules,
+  // so `paths` would only ban the exact alias spelling: each gitignore-style
+  // `patterns` group below comes from the shared
+  // eslint-rules/internal-module-import-patterns.js helper, which also covers
+  // the relative form (`../../../../features/...`) and the `.ts` / `.js`
+  // extension spellings of each protected module (cloudlands-fe#2763 review).
+  // Each group bans the whole module rather than named exports: an
+  // `importNames` list still lets a namespace import (`import * as m`) reach
+  // the same binding as `m.agentClient`. ModelPicker imports nothing else from
+  // these modules, so nothing needs allowImportNames.
+  // src/lib/eslint/__tests__/model-picker-import-restriction.test.ts asserts
+  // the matrix against this effective config.
+  {
+    files: ['src/lib/components/chat/input/ModelPicker.svelte'],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        {
+          paths: [ctSharedModuleRestrictedImportPath],
+          patterns: [
+            {
+              group: internalModuleImportPatterns('$features', 'features/agent/agent.client'),
+              message:
+                'ModelPicker must not call agentClient.setModel directly. Route the write through the lock-checking mutator in src/lib/components/chat/input/agent-model-mutator.ts (createAgentModelMutator).',
+            },
+            {
+              group: internalModuleImportPatterns('$features', 'features/agent/reasoning-effort'),
+              message:
+                'ModelPicker must not call applyReasoningEffort / reconcileAgentReasoningEffort directly. Route the write through the lock-checking mutator in src/lib/components/chat/input/agent-model-mutator.ts (createAgentModelMutator).',
+            },
+            {
+              group: internalModuleImportPatterns(
+                '$store',
+                'store/renderer/slices/agent-session/agent-session-slice',
+              ),
+              message:
+                'ModelPicker must not dispatch the agent-session updateSession action directly. Route the write through the lock-checking mutator in src/lib/components/chat/input/agent-model-mutator.ts (createAgentModelMutator).',
+            },
+          ],
+        },
+      ],
+    },
+  },
+  // The root layout is shared by the product app shell and the /sandbox component
+  // catalog: it starts the store lifecycle and loads the global stylesheet, and
+  // nothing more. Host code — the Electron bridge, the live daemon client, the
+  // browser mock-store seeding — belongs to the (app) layout, so a catalog page
+  // never boots a daemon connection or the mock bootstrap. The shared CT-module
+  // path is repeated so this override does not drop that restriction;
+  // src/lib/component-catalog/catalog-shell.test.ts asserts the matrix against
+  // this effective config. The matching dynamic-import ban rides on
+  // `no-restricted-syntax` in the root-layout block after the
+  // dismissedQuestionsMessageId guard below, so that guard does not override it.
+  {
+    files: ['src/routes/+layout.svelte'],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        {
+          paths: [ctSharedModuleRestrictedImportPath],
+          patterns: [
+            {
+              group: internalModuleImportPatterns('$lib', 'lib/electron-bridge'),
+              message:
+                'The root layout is shared with the /sandbox catalog and must not reach the Electron bridge. Host wiring belongs in src/routes/(app)/+layout.svelte.',
+            },
+            {
+              group: internalModuleImportPatterns('$lib', 'lib/client/live/live-app-client'),
+              message:
+                'The root layout is shared with the /sandbox catalog and must not construct the live daemon client. Host wiring belongs in src/routes/(app)/+layout.svelte.',
+            },
+            {
+              group: internalModuleImportPatterns('$store', 'store/renderer/mock-bootstrap'),
+              message:
+                'The root layout is shared with the /sandbox catalog and must not seed the browser mock store. Host wiring belongs in src/routes/(app)/+layout.svelte.',
             },
           ],
         },
@@ -627,24 +823,20 @@ export default [
     files: ['src/**/*.{js,mjs,ts,tsx,svelte}'],
     ignores: [...productionModuleIgnores, ...dismissalMarkerRawReadAllowedFiles],
     rules: {
+      'no-restricted-syntax': ['error', ...dismissalMarkerRawReadSelectors],
+    },
+  },
+  // Root-layout dynamic-import ban (see the `no-restricted-imports` override
+  // above). Placed after the `src/**` `no-restricted-syntax` block because flat
+  // config replaces a rule's options per file rather than merging them, so this
+  // block carries the dismissal selectors too.
+  {
+    files: ['src/routes/+layout.svelte'],
+    rules: {
       'no-restricted-syntax': [
         'error',
-        {
-          selector: "MemberExpression[computed=false][property.name='dismissedQuestionsMessageId']",
-          message: dismissalMarkerRawReadMessage,
-        },
-        {
-          selector: "MemberExpression[computed=true][property.value='dismissedQuestionsMessageId']",
-          message: dismissalMarkerRawReadMessage,
-        },
-        {
-          selector: "ObjectPattern > Property[key.name='dismissedQuestionsMessageId']",
-          message: dismissalMarkerRawReadMessage,
-        },
-        {
-          selector: "ObjectPattern > Property[key.value='dismissedQuestionsMessageId']",
-          message: dismissalMarkerRawReadMessage,
-        },
+        ...dismissalMarkerRawReadSelectors,
+        ...rootLayoutDynamicImportSelectors,
       ],
     },
   },
@@ -730,6 +922,7 @@ export default [
         { allowlist: namedColorAllowlist, baseline: semanticColorBaseline },
       ],
       'intent/no-button-compatibility-aliases': 'warn',
+      'intent/icon-only-button-size': ['error', { baseline: iconOnlyButtonSizeBaseline }],
       'intent/no-dialog-root-outside-patterns': 'error',
       'intent/no-direct-toast': 'error',
       'intent/no-legacy-spinner': 'error',

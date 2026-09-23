@@ -1,3 +1,5 @@
+<!-- @catalog-exempt: deprecated wrapper over the catalogued Menu (replacement $lib/components/ui/menu); covered by __tests__/dropdown-menu-escape.test.ts -->
+
 <script module lang="ts">
   let closeActiveMenu: (() => void) | null = null;
 </script>

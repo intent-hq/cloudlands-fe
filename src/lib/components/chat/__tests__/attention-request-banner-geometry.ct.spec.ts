@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/experimental-ct-svelte';
+import { expect, test } from '../../../../test/ct-test';
 import AttentionRequestBannerGeometryHost from './AttentionRequestBannerGeometryHost.svelte';
 
 const longLabel =
@@ -46,18 +46,19 @@ for (const kind of ['blocker', 'discussion'] as const) {
                 scrollWidth: transcript.scrollWidth,
               },
               header: { top: headerBox.top, bottom: headerBox.bottom },
-              label: { top: labelBox.top, right: labelBox.right },
+              label: { top: labelBox.top, left: labelBox.left, right: labelBox.right },
               timestamp: {
                 top: timestampBox.top,
                 left: timestampBox.left,
                 right: timestampBox.right,
               },
-              reason: { top: reasonBox.top },
+              reason: { top: reasonBox.top, left: reasonBox.left },
             };
           });
 
-          expect(geometry.seam).toBeCloseTo(0, 1);
+          expect(geometry.seam).toBeCloseTo(40 * zoom, 1);
           expect(geometry.label.top).toBeCloseTo(geometry.header.top, 1);
+          expect(geometry.label.left).toBeCloseTo(geometry.reason.left, 1);
           expect(geometry.timestamp.top).toBeCloseTo(geometry.header.top, 1);
           expect(geometry.label.right).toBeLessThanOrEqual(geometry.timestamp.left);
           expect(geometry.reason.top).toBeGreaterThanOrEqual(geometry.header.bottom + 4 * zoom - 1);
