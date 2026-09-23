@@ -388,7 +388,7 @@ async function projectLargeNote(minMarkdownLength: number, seed = 1): Promise<Pr
 let largeNote: ProjectedNote;
 beforeAll(async () => {
   largeNote = await projectLargeNote(150 * 1024);
-}, 120_000);
+});
 
 describe('mapOffsetThroughDiff', () => {
   it('leaves offsets before a change unchanged', () => {
@@ -574,9 +574,13 @@ describe('plain-text ↔ markdown alignment of a note formatted on every line', 
   const LINES = 8192;
   let note: { plain: string; markdown: string };
   beforeAll(async () => {
-    const markdown = LINE.repeat(LINES);
-    note = { markdown, plain: await projectWithEditor(markdown) };
-  }, 120_000);
+    // The items project by repetition: the editor projects three, which
+    // fixes how one reads, and the note is composed (8192 items through the
+    // editor took 4 s unloaded; the alignment under test 50 ms).
+    const shownItem = 'aaaaaaaaaaaab\n';
+    expect(await projectWithEditor(LINE.repeat(3))).toBe(shownItem.repeat(3).trimEnd());
+    note = { markdown: LINE.repeat(LINES), plain: shownItem.repeat(LINES).trimEnd() };
+  });
 
   /** `[plainStart, markdownStart, length]` of each verbatim run of one line, by forward search on both sides. */
   function runsOfLine(line: number): Array<[number, number, number]> {
@@ -640,7 +644,7 @@ describe('plain-text ↔ markdown alignment of one long formatted paragraph', ()
   beforeAll(async () => {
     const markdown = UNIT.repeat(UNITS);
     note = { markdown, plain: await projectWithEditor(markdown) };
-  }, 120_000);
+  });
 
   /** `[plainStart, markdownStart, length]` of each verbatim run of unit `unit`, by forward search on both sides. */
   function runsOfUnit(unit: number): Array<[number, number, number]> {
@@ -1272,24 +1276,30 @@ describe('alignment of link syntax the lexer does not account for', () => {
   // bounded by its own line, so a caret on it stays on it but may sit off by
   // the hidden destination; every other line is exact — the paragraphs beside
   // the link line included, whose words are never diffed against the
-  // destination (`selection` below occurs verbatim only inside the URL).
-  it.each<[string, (link: string) => string]>([
+  // destination (`selection` below occurs verbatim only inside the URL). The
+  // filler projects by repetition: the editor projects the note with two
+  // paragraphs of it, which fixes how the head and a filler paragraph read,
+  // and the note past the cap is composed (thousands of paragraphs through
+  // the editor took 7 s unloaded, the alignment under test 10 ms).
+  const HEAD = `caret ${LINK} sync\n\n**sel**ection daemon\n\n$x$`;
+  const SHOWN_HEAD = 'caret render sync\nselection daemon\n$x$';
+  const SHOWN_FILLER = 'unchanged prose lines.\n';
+  it.each<[string, (filler: string) => string, (shownFiller: string) => string]>([
     [
       'at its start',
-      (link) => `caret ${link} sync\n\n**sel**ection daemon\n\n$x$\n\n${FILLER.repeat(PAST_CAP)}`,
+      (filler) => `${HEAD}\n\n${filler}`,
+      (shownFiller) => `${SHOWN_HEAD}\n${shownFiller.trimEnd()}`,
     ],
-    [
-      'past the cap',
-      (link) => `${FILLER.repeat(PAST_CAP)}caret ${link} sync\n\n**sel**ection daemon\n\n$x$\n\n`,
-    ],
+    ['past the cap', (filler) => `${filler}${HEAD}\n\n`, (shownFiller) => shownFiller + SHOWN_HEAD],
   ])(
     'leaves the line of a link %s to the diff in a note past the lexing cap',
-    async (_where, note) => {
-      const markdown = note(LINK);
+    async (_where, note, shown) => {
+      expect(await projectWithEditor(note(FILLER.repeat(2)), true)).toBe(
+        shown(SHOWN_FILLER.repeat(2)),
+      );
+      const markdown = note(FILLER.repeat(PAST_CAP));
+      const plain = shown(SHOWN_FILLER.repeat(PAST_CAP));
       expect(markdown.length).toBeGreaterThan(128 * 1024);
-      const plain = await projectWithEditor(markdown, true);
-      expect(plain).not.toContain('](');
-      expect(plain).toContain('$x$');
       const [map, reads] = onSteppedClock(() => createBidirectionalOffsetMapper(plain, markdown));
       expect(reads, `${reads} clock reads`).toBeLessThan(BUDGET_READS);
       expect(map.aToB(1)).toBe(1);
@@ -1300,7 +1310,6 @@ describe('alignment of link syntax the lexer does not account for', () => {
       expectExactRun(plain, markdown, map, 'unchanged prose', 100, 100);
       expectExactRun(plain, markdown, map, 'unchanged prose', PAST_CAP - 1, PAST_CAP - 1);
     },
-    60_000,
   );
 
   // The note editor shows each cell of a table row as a block of its own, so
@@ -1353,7 +1362,6 @@ describe('alignment of link syntax the lexer does not account for', () => {
       expectExactRun(plain, markdown, map, 'anchor remote tk4', 0, 0);
       expectExactRun(plain, markdown, map, 'Intro line tk1', 0, 0);
     },
-    60_000,
   );
 
   // Seeds 602 and 603 of the drawn notes, reduced. Past the cap the link line
@@ -1394,7 +1402,6 @@ describe('alignment of link syntax the lexer does not account for', () => {
       expectExactRun(plain, markdown, map, CONTINUED_ITEM, 0, 0);
       expectExactRun(plain, markdown, map, 'remote editor cursor tk8', 0, 0);
     },
-    60_000,
   );
 
   // The reviewer's repro: the formatted paragraph after the link line shares
@@ -1434,7 +1441,6 @@ describe('alignment of link syntax the lexer does not account for', () => {
       expectExactRun(plain, markdown, map, 'end marker', 0, 0);
       expectExactRun(plain, markdown, map, 'qqqqqqqq', 0, 0);
     },
-    60_000,
   );
 
   // A paragraph beside the link line no piece of which anchors — no four
@@ -1461,7 +1467,6 @@ describe('alignment of link syntax the lexer does not account for', () => {
       expectExactRun(plain, markdown, map, 'end marker', 0, 0);
       expectExactRun(plain, markdown, map, 'qqqqqqqq', 0, 0);
     },
-    60_000,
   );
 
   /**
@@ -1692,7 +1697,6 @@ describe('alignment of link syntax the lexer does not account for', () => {
         }
         expectExactRun(plain, markdown, map, 'qqqqqqqq', 0, 0);
       },
-      60_000,
     );
   });
 
@@ -1721,7 +1725,6 @@ describe('alignment of link syntax the lexer does not account for', () => {
         expectBetweenAnchors(plain, markdown, map, 'abrender', '| a | b |', 'end marker');
       }
     },
-    60_000,
   );
 
   // Two markdown lines the editor shows no text of — a definition and a
@@ -1754,7 +1757,6 @@ describe('alignment of link syntax the lexer does not account for', () => {
         expectExactRun(plain, markdown, map, 'sync', 0, 0);
       }
     },
-    60_000,
   );
 
   // A note that opens with `<` the renderer reads as HTML, not markdown: the
@@ -1815,7 +1817,6 @@ describe('alignment of link syntax the lexer does not account for', () => {
       expectExactRun(plain, markdown, map, spelled, 0, 0);
       if (filler) expectExactRun(plain, markdown, map, 'qqqqqqqq', 0, 0);
     },
-    60_000,
   );
 
   // Far past the cap the mapper alone is under test: the editor projects the
@@ -1834,7 +1835,7 @@ describe('alignment of link syntax the lexer does not account for', () => {
     expectExactRun(plain, markdown, map, 'sync', 0, 0);
     expectExactRun(plain, markdown, map, spelled, 0, 0);
     expectExactRun(plain, markdown, map, 'qqqqqqqq', 0, 0);
-  }, 60_000);
+  });
 
   // The tag scan is quote-aware, as the renderer's tokenizer is: inside a tag
   // a `>` within a quoted attribute value does not close it — the value runs
@@ -1896,7 +1897,6 @@ describe('alignment of link syntax the lexer does not account for', () => {
       }
       if (filler) expectExactRun(plain, markdown, map, 'qqqqqqqq', 0, 0);
     },
-    60_000,
   );
 
   // The tag scan of a note the renderer reads as HTML is linear whatever the
@@ -1954,7 +1954,6 @@ describe('alignment of link syntax the lexer does not account for', () => {
       expectSameLine(plain, markdown, map, 'selection editor', spelled);
       expectExactRun(plain, markdown, map, 'qqqqqqqq', 0, 0);
     },
-    60_000,
   );
 
   // The reviewer's minimal repro, below the cap: the mask hides the
@@ -2010,7 +2009,6 @@ describe('alignment of link syntax the lexer does not account for', () => {
       expectExactRun(plain, markdown, map, 'before', 0, 0);
       expectExactRun(plain, markdown, map, ' sync after', 0, 0);
     },
-    60_000,
   );
 
   // An image inside a formula is shown as written too: the renderer's math
@@ -2062,7 +2060,6 @@ describe('alignment of link syntax the lexer does not account for', () => {
       }
       expectExactRun(plain, markdown, map, 'qqqqqqqq', 0, 0);
     },
-    60_000,
   );
 
   // Link syntax the lexer read as a code span leaves its line unanchorable:
@@ -2096,7 +2093,7 @@ describe('alignment of link syntax the lexer does not account for', () => {
         ]);
       }
     },
-    60_000,
+    15_000,
   );
 
   it('aligns a 300 KiB visible code line of residual link syntax exactly', async () => {
@@ -2117,7 +2114,7 @@ describe('alignment of link syntax the lexer does not account for', () => {
     for (let offset = 1; offset < plain.length; offset += 1009) {
       expect([aToB(offset), bToA(offset + 1)], `@ ${offset}`).toEqual([offset + 1, offset]);
     }
-  }, 120_000);
+  }, 15_000);
 
   // The lexer reads a note with its `\r\n` line endings rewritten to `\n`,
   // so every range it hides sits earlier in that text than in the note; the
@@ -2197,7 +2194,6 @@ describe('alignment of link syntax the lexer does not account for', () => {
           expectExactRun(plain, markdown, map, 'qqqqqqqq', 0, 0);
         }
       },
-      60_000,
     );
 
     const NOTES: Array<[string, string, Array<[string, number, number]>]> = [
@@ -2264,7 +2260,6 @@ describe('alignment of link syntax the lexer does not account for', () => {
           expectExactRun(plain, markdown, map, needle, plainIndex, markdownIndex);
         }
       },
-      60_000,
     );
   });
 
@@ -2338,7 +2333,6 @@ describe('alignment of link syntax the lexer does not account for', () => {
         );
         expectSameLine(plain, markdown, map, 'ab', '**ab**');
       },
-      60_000,
     );
 
     // A comment between every three link lines: the renderer drops it, so the
@@ -2365,7 +2359,6 @@ describe('alignment of link syntax the lexer does not account for', () => {
         );
         expectSameLine(plain, markdown, map, 'ab', '**ab**');
       },
-      60_000,
     );
 
     // Nine comment lines after the first of 600 link lines: the counts are
@@ -2401,7 +2394,6 @@ describe('alignment of link syntax the lexer does not account for', () => {
         expectLinesBounded(map, plainLines, linesHolding(markdown, '](', /\n/g));
         expectSameLine(plain, markdown, map, 'ab', '**ab**');
       },
-      60_000,
     );
 
     // Hidden text that spans lines among 600 link lines past the cap: a
@@ -2511,7 +2503,6 @@ describe('alignment of link syntax the lexer does not account for', () => {
           expect(map.bToA(hidden)).toBeLessThanOrEqual(plain.length);
         }
       },
-      60_000,
     );
 
     // A run of lines the editor shows no text of — comments, or reference
@@ -2558,7 +2549,6 @@ describe('alignment of link syntax the lexer does not account for', () => {
         expectSameLine(plain, markdown, map, 'ab', '[ab](');
         expectSameLine(plain, markdown, map, 'cd two', '**cd** two');
       },
-      60_000,
     );
 
     // Text the scan past the cap might take for hidden — a comment opener or
@@ -2651,7 +2641,6 @@ describe('alignment of link syntax the lexer does not account for', () => {
         if (exact) expectExactRun(plain, markdown, map, ' two', 0, 0);
         expectSameLine(plain, markdown, map, trailing, '**cd** two');
       },
-      60_000,
     );
     // A run of plain-text lines that are byte-identical duplicates — list
     // items, or the cells of table rows — before a sealed link line, longer
@@ -2751,7 +2740,6 @@ describe('alignment of link syntax the lexer does not account for', () => {
         expectSameLine(plain, markdown, map, 'ab', '[ab](');
         expectSameLine(plain, markdown, map, 'cd two', '**cd** two');
       },
-      60_000,
     );
 
     // A cell that shows no letter or digit — punctuation, emoji — between
@@ -2844,7 +2832,6 @@ describe('alignment of link syntax the lexer does not account for', () => {
         expectSameLine(plain, markdown, map, 'ab', '[ab](');
         expectSameLine(plain, markdown, map, 'cd two', '**cd** two');
       },
-      60_000,
     );
 
     // A line of 20 000 character references and 150 KiB of text in one code
@@ -2898,7 +2885,7 @@ describe('alignment of link syntax the lexer does not account for', () => {
           expect(map.bToA(p + 1), `markdown ${p + 1} back`).toBe(p);
         }
       },
-      60_000,
+      15_000,
     );
 
     // A fenced block of 1000, 4000 and 16 000 lines of `[x](u)` — no `|` in
@@ -2953,7 +2940,7 @@ describe('alignment of link syntax the lexer does not account for', () => {
         expect(map.aToB(p), `plain ${p} forward`).toBe(p + shift);
         expect(map.bToA(p + shift), `markdown ${p + shift} back`).toBe(p);
       }
-    }, 60_000);
+    }, 15_000);
 
     // A line of 1000, 4000 and 16 000 code spans after the paragraph that
     // puts the note past the cap is read in units proportional to its length
@@ -3001,7 +2988,7 @@ describe('alignment of link syntax the lexer does not account for', () => {
         expect(map.bToA(map.aToB(p)), `plain ${p} round trip`).toBe(p);
         expect(markdown.slice(map.aToB(p), m + 1), `plain ${p} forward`).toMatch(/^`?x$/);
       }
-    }, 60_000);
+    }, 15_000);
 
     // Images alone on their lines before a run of identical items. The
     // editor shows no text of an image, so its line has no plain-text line
@@ -3052,7 +3039,6 @@ describe('alignment of link syntax the lexer does not account for', () => {
         expectSameLine(plain, markdown, map, 'ab', '[ab](');
         expectSameLine(plain, markdown, map, 'cd two', '**cd** two');
       },
-      60_000,
     );
 
     // Image-shaped text the renderer shows as written — a reference no
@@ -3362,7 +3348,6 @@ describe('alignment of link syntax the lexer does not account for', () => {
         expectSameLine(plain, markdown, map, 'ab', '[ab](');
         expectSameLine(plain, markdown, map, 'cd two', '**cd** two');
       },
-      60_000,
     );
 
     const IMAGES_SHOWN_CELLS = IMAGES_SHOWN.flatMap(([shape, body, definition, where]) =>
@@ -3433,7 +3418,6 @@ describe('alignment of link syntax the lexer does not account for', () => {
         expectSameLine(plain, markdown, map, 'ab', '[ab](');
         expectSameLine(plain, markdown, map, 'cd two', '**cd** two');
       },
-      60_000,
     );
 
     // The renderer escapes tags on the whole note, and protects the code of
@@ -3586,7 +3570,6 @@ describe('alignment of link syntax the lexer does not account for', () => {
           }
           expectSameLine(plain, markdown, map, 'ending tk88z', 'ending tk88z');
         },
-        60_000,
       );
     });
   });
@@ -3734,42 +3717,73 @@ describe('alignment past the cap of notes drawn from every line shape', () => {
     return undefined;
   }
 
-  // Within the budget, and again with the deadline spent — every diff and
-  // pairing search declined, the alignment degraded the whole way — since
-  // the sealed lines must stay bounded by their own text whatever the budget.
-  it.each([1, 2, 3])(
-    'never maps a plain-text line into a line of syntax, nor a syntax line out of its own text (seed %i)',
-    async (seed) => {
-      const markdown = drawNote(seed);
+  // A drawn note is projected and aligned within the budget once for the
+  // two tests on it. The alignment with the deadline out of reach diffs
+  // every one of the hundreds of link lines past the cap to the end, where
+  // production would have given up: 6–7 s unloaded, about 45 s under
+  // `test:loaded`, and no cheaper without giving up the exactness it proves
+  // on every line shape; the projection of the note's hundreds of blocks
+  // through the editor adds 3 s. Both are paid once, under the hook's own
+  // budget, so neither test carries a timeout of its own.
+  describe.each([1, 2, 3])('a note drawn with seed %i', (seed) => {
+    let markdown: string;
+    let plain: string;
+    let withinBudget: ReturnType<typeof createBidirectionalOffsetMapper>;
+    beforeAll(async () => {
+      markdown = drawNote(seed);
       expect(markdown.length).toBeGreaterThan(128 * 1024);
-      const plain = await projectWithEditor(markdown, true);
+      plain = await projectWithEditor(markdown, true);
+      withinBudget = withoutDeadline(() => createBidirectionalOffsetMapper(plain, markdown));
+    }, 120_000);
+
+    // Within the budget, and again with the deadline spent — every diff and
+    // pairing search declined, the alignment degraded the whole way — since
+    // the sealed lines must stay bounded by their own text whatever the budget.
+    it('never maps a plain-text line into a line of syntax, nor a syntax line out of its own text', () => {
       expect(plain).toContain('<b>');
       expect(plain).toContain(' <https://sync/');
       expect(plain).toContain('<div>');
       expect(plain).not.toContain('](');
       expect(plain).not.toContain('<!--');
+      const pastDeadline = withExpiredDeadline(() =>
+        createBidirectionalOffsetMapper(plain, markdown),
+      );
       const violations = [
-        ...syntaxViolations(plain, markdown, withoutDeadline).map((v) => `within the budget: ${v}`),
-        ...syntaxViolations(plain, markdown, withExpiredDeadline).map(
-          (v) => `past the deadline: ${v}`,
-        ),
+        ...syntaxViolations(plain, markdown, withinBudget).map((v) => `within the budget: ${v}`),
+        ...syntaxViolations(plain, markdown, pastDeadline).map((v) => `past the deadline: ${v}`),
       ];
       expect(violations.length, violations.slice(0, 12).join('\n')).toBe(0);
-    },
-    180_000,
-  );
+    });
+
+    it('maps every token of the note exactly, in both directions', () => {
+      const failures: string[] = [];
+      let checked = 0;
+      for (const match of markdown.matchAll(/tk\d+z/g)) {
+        const at = plain.indexOf(match[0]);
+        if (at === -1) continue;
+        checked += 1;
+        const [p, m] = [at + 2, match.index + 2];
+        if (withinBudget.aToB(p) !== m || withinBudget.bToA(m) !== p) {
+          failures.push(
+            `${match[0]} plain ${p}→${withinBudget.aToB(p)} (want ${m}), markdown ${m}→${withinBudget.bToA(m)} (want ${p})`,
+          );
+        }
+      }
+      expect(checked).toBeGreaterThan(2_000);
+      expect(failures, failures.slice(0, 12).join('\n')).toEqual([]);
+    });
+  });
 
   /**
    * Every plain-text line that maps into a line of syntax it is not the text
    * of, and every offset of a syntax line that maps out of its own text, in
-   * the alignment of `plain` with `markdown` run under `clock`.
+   * `map`, an alignment of `plain` with `markdown`.
    */
   function syntaxViolations(
     plain: string,
     markdown: string,
-    clock: <T>(fn: () => T) => T,
+    map: ReturnType<typeof createBidirectionalOffsetMapper>,
   ): string[] {
-    const map = clock(() => createBidirectionalOffsetMapper(plain, markdown));
     const markdownLines = linesOf(markdown, /\n/g, (line) => SYNTAX.test(line));
     const tokenLines = new Map<string, Line>();
     for (const [token] of markdown.matchAll(/tk\d+z/g)) {
@@ -3824,31 +3838,6 @@ describe('alignment past the cap of notes drawn from every line shape', () => {
     }
     return violations;
   }
-
-  it.each([1, 2, 3])(
-    'maps every token of the note exactly, in both directions (seed %i)',
-    async (seed) => {
-      const markdown = drawNote(seed);
-      const plain = await projectWithEditor(markdown, true);
-      const map = withoutDeadline(() => createBidirectionalOffsetMapper(plain, markdown));
-      const failures: string[] = [];
-      let checked = 0;
-      for (const match of markdown.matchAll(/tk\d+z/g)) {
-        const at = plain.indexOf(match[0]);
-        if (at === -1) continue;
-        checked += 1;
-        const [p, m] = [at + 2, match.index + 2];
-        if (map.aToB(p) !== m || map.bToA(m) !== p) {
-          failures.push(
-            `${match[0]} plain ${p}→${map.aToB(p)} (want ${m}), markdown ${m}→${map.bToA(m)} (want ${p})`,
-          );
-        }
-      }
-      expect(checked).toBeGreaterThan(2_000);
-      expect(failures, failures.slice(0, 12).join('\n')).toEqual([]);
-    },
-    120_000,
-  );
 
   /**
    * The markdown of a drawn line the editor does not show — an image, a
@@ -4002,7 +3991,6 @@ describe('alignment past the cap of notes drawn from every line shape', () => {
       ];
       expect(outside.length, outside.slice(0, 12).join('\n')).toBe(0);
     },
-    60_000,
   );
 });
 
@@ -4070,7 +4058,6 @@ describe('alignment of blocks that never anchor', () => {
         now.mockRestore();
       }
     },
-    60_000,
   );
 
   it('still anchors the blocks that do match after a run that does not', () => {
@@ -4178,7 +4165,6 @@ describe('alignment of blocks that never anchor', () => {
         }
         expect(escaped, escaped.slice(0, 8).join('\n')).toEqual([]);
       },
-      60_000,
     );
   });
 });
@@ -4380,99 +4366,132 @@ describe('alignment over a corpus of small notes', () => {
 
   const SEEDS = Array.from({ length: 200 }, (_, i) => 1000 + i);
 
-  it('maps every interior offset exactly, in both directions, on 200 generated notes', async () => {
-    const failures: string[] = [];
-    let checked = 0;
-    for (const seed of SEEDS) {
-      const atoms = generateSmallNote(seed);
-      const markdown = atoms.map(([md]) => md).join('');
-      const plain = await projectWithEditor(markdown);
-      // The atom model must match production projection or the oracle is void.
-      expect(plain, `seed ${seed} projection of ${JSON.stringify(markdown)}`).toBe(
-        atoms.map(([, p]) => p).join(''),
-      );
-      const pairs = interiorPairs(atoms);
-      const { aToB, bToA } = withoutDeadline(() =>
-        createBidirectionalOffsetMapper(plain, markdown),
-      );
-      for (const [p, m] of pairs) {
-        checked += 1;
-        const forward = aToB(p);
-        const backward = bToA(m);
-        if (forward !== m || backward !== p) {
+  // Each of the two 200-note tests projects its notes through the editor —
+  // the check that the atom model is production's projection, without which
+  // the oracle is void — and the projections are its cost: under 2 s
+  // unloaded, 15–25 s under `test:loaded`, too close to the 30 s default to
+  // leave to it. The alignments checked are a few milliseconds.
+  const CORPUS_TIMEOUT_MS = 60_000;
+
+  it(
+    'maps every interior offset exactly, in both directions, on 200 generated notes',
+    async () => {
+      const failures: string[] = [];
+      let checked = 0;
+      for (const seed of SEEDS) {
+        const atoms = generateSmallNote(seed);
+        const markdown = atoms.map(([md]) => md).join('');
+        const plain = await projectWithEditor(markdown);
+        // The atom model must match production projection or the oracle is void.
+        expect(plain, `seed ${seed} projection of ${JSON.stringify(markdown)}`).toBe(
+          atoms.map(([, p]) => p).join(''),
+        );
+        const pairs = interiorPairs(atoms);
+        const { aToB, bToA } = withoutDeadline(() =>
+          createBidirectionalOffsetMapper(plain, markdown),
+        );
+        pairs.forEach(([p, m], i) => {
+          checked += 1;
+          const forward = aToB(p);
+          const backward = bToA(m);
+          if (forward === m && backward === p) return;
           failures.push(
             `seed ${seed} plain ${p}→${forward} (want ${m}), markdown ${m}→${backward} (want ${p}): ` +
               JSON.stringify(plain.slice(Math.max(0, p - 12), p + 12)),
           );
-        }
+          // Differential guard against the pre-anchoring whole-text diff: the
+          // anchored mapper may only disagree with it where legacy itself is
+          // off the oracle (an arbitrary tie between equal-cost alignments).
+          // Legacy is consulted only where the anchored mapper is off the
+          // oracle, which the assertion above already fails: on every seventh
+          // pair of a passing run it was 3000 whole-text diffs, 40 s under
+          // `test:loaded`, deciding nothing.
+          if (i % 7 !== 0 || forward === m) return;
+          const legacy = withoutDeadline(() => mapOffsetThroughDiff(plain, markdown, p));
+          if (legacy === m) {
+            failures.push(
+              `seed ${seed} plain ${p}: legacy exact (${m}) but anchored gave ${forward}`,
+            );
+          }
+        });
       }
-      // Differential guard against the pre-anchoring whole-text diff: the
-      // anchored mapper may only disagree with it where legacy itself is
-      // off the oracle (an arbitrary tie between equal-cost alignments).
-      for (const [p, m] of pairs.filter((_, i) => i % 7 === 0)) {
-        const legacy = withoutDeadline(() => mapOffsetThroughDiff(plain, markdown, p));
-        if (legacy === m && aToB(p) !== m) {
-          failures.push(
-            `seed ${seed} plain ${p}: legacy exact (${m}) but anchored gave ${aToB(p)}`,
-          );
-        }
-      }
-    }
-    expect(checked).toBeGreaterThan(20_000);
-    expect(failures, failures.slice(0, 20).join('\n')).toEqual([]);
-  }, 240_000);
+      expect(checked).toBeGreaterThan(20_000);
+      expect(failures, failures.slice(0, 20).join('\n')).toEqual([]);
+    },
+    CORPUS_TIMEOUT_MS,
+  );
 
-  it('maps every interior offset exactly on the same 200 notes with CRLF line endings', async () => {
-    // The editor projects a CRLF note to the plain text of its LF twin, and
-    // every interior offset must map as it did there, moved past the `\r`
-    // of each line ending before it. An offset just before a line ending may
-    // land before or between its two characters — there is no plain text
-    // between them to tell the two apart.
-    const failures: string[] = [];
-    let checked = 0;
-    for (const seed of SEEDS) {
-      const atoms = generateSmallNote(seed);
-      const lf = atoms.map(([md]) => md).join('');
-      const markdown = lf.replace(/\n/g, '\r\n');
-      const plain = await projectWithEditor(markdown);
-      expect(plain, `seed ${seed} projection of ${JSON.stringify(markdown)}`).toBe(
-        atoms.map(([, p]) => p).join(''),
-      );
-      const { aToB, bToA } = withoutDeadline(() =>
-        createBidirectionalOffsetMapper(plain, markdown),
-      );
-      let breaks = 0;
-      let scanned = 0;
-      for (const [p, m] of interiorPairs(atoms)) {
-        for (; scanned < m; scanned += 1) if (lf.charCodeAt(scanned) === 10) breaks += 1;
-        const want = m + breaks;
-        const beforeBreak = lf.charCodeAt(m) === 10;
-        checked += 1;
-        const forward = aToB(p);
-        const backward = bToA(want);
-        if ((forward !== want && !(beforeBreak && forward === want + 1)) || backward !== p) {
-          failures.push(
-            `seed ${seed} plain ${p}→${forward} (want ${want}), markdown ${want}→${backward} (want ${p}): ` +
-              JSON.stringify(plain.slice(Math.max(0, p - 12), p + 12)),
-          );
+  it(
+    'maps every interior offset exactly on the same 200 notes with CRLF line endings',
+    async () => {
+      // The editor projects a CRLF note to the plain text of its LF twin, and
+      // every interior offset must map as it did there, moved past the `\r`
+      // of each line ending before it. An offset just before a line ending may
+      // land before or between its two characters — there is no plain text
+      // between them to tell the two apart.
+      const failures: string[] = [];
+      let checked = 0;
+      for (const seed of SEEDS) {
+        const atoms = generateSmallNote(seed);
+        const lf = atoms.map(([md]) => md).join('');
+        const markdown = lf.replace(/\n/g, '\r\n');
+        const plain = await projectWithEditor(markdown);
+        expect(plain, `seed ${seed} projection of ${JSON.stringify(markdown)}`).toBe(
+          atoms.map(([, p]) => p).join(''),
+        );
+        const { aToB, bToA } = withoutDeadline(() =>
+          createBidirectionalOffsetMapper(plain, markdown),
+        );
+        let breaks = 0;
+        let scanned = 0;
+        for (const [p, m] of interiorPairs(atoms)) {
+          for (; scanned < m; scanned += 1) if (lf.charCodeAt(scanned) === 10) breaks += 1;
+          const want = m + breaks;
+          const beforeBreak = lf.charCodeAt(m) === 10;
+          checked += 1;
+          const forward = aToB(p);
+          const backward = bToA(want);
+          if ((forward !== want && !(beforeBreak && forward === want + 1)) || backward !== p) {
+            failures.push(
+              `seed ${seed} plain ${p}→${forward} (want ${want}), markdown ${want}→${backward} (want ${p}): ` +
+                JSON.stringify(plain.slice(Math.max(0, p - 12), p + 12)),
+            );
+          }
         }
       }
-    }
-    expect(checked).toBeGreaterThan(20_000);
-    expect(failures, failures.slice(0, 20).join('\n')).toEqual([]);
-  }, 240_000);
+      expect(checked).toBeGreaterThan(20_000);
+      expect(failures, failures.slice(0, 20).join('\n')).toEqual([]);
+    },
+    CORPUS_TIMEOUT_MS,
+  );
 
   it('maps every interior offset exactly on a note past the lexing cap', async () => {
     // Two generated notes around enough prose to pass the 128 KB the mask
-    // lexes up to: nothing in them is masked.
-    const atoms: Atom[] = [...generateSmallNote(1000), ['\n\n', '\n'], ['$x$', '$x$']];
-    while (atoms.reduce((n, [md]) => n + md.length, 0) <= 130 * 1024) {
-      atoms.push(['\n\n', '\n'], ['unchanged prose lines.', 'unchanged prose lines.']);
-    }
-    atoms.push(['\n\n', '\n'], ...generateSmallNote(1001));
-    const markdown = atoms.map(([md]) => md).join('');
-    const plain = await projectWithEditor(markdown);
-    expect(plain).toBe(atoms.map(([, p]) => p).join(''));
+    // lexes up to: nothing in them is masked. The prose projects by
+    // repetition: the editor projects the two notes around two paragraphs of
+    // it, which checks the atom model whole, and the note past the cap is
+    // composed (6000 paragraphs through the editor took 5 s unloaded, the
+    // alignment under test 10 ms).
+    const prose: Atom[] = [
+      ['\n\n', '\n'],
+      ['unchanged prose lines.', 'unchanged prose lines.'],
+    ];
+    const noteAround = (paragraphs: number): Atom[] => [
+      ...generateSmallNote(1000),
+      ['\n\n', '\n'],
+      ['$x$', '$x$'],
+      ...Array.from({ length: paragraphs }, () => prose).flat(),
+      ['\n\n', '\n'],
+      ...generateSmallNote(1001),
+    ];
+    const text = (atoms: Atom[], side: 0 | 1) => atoms.map((atom) => atom[side]).join('');
+    const sample = noteAround(2);
+    expect(await projectWithEditor(text(sample, 0))).toBe(text(sample, 1));
+    const paragraphs = Math.ceil((130 * 1024) / text(prose, 0).length);
+    const atoms = noteAround(paragraphs);
+    const markdown = text(atoms, 0);
+    const plain = text(atoms, 1);
+    expect(markdown.length).toBeGreaterThan(130 * 1024);
     const [{ aToB, bToA }, reads] = onSteppedClock(() =>
       createBidirectionalOffsetMapper(plain, markdown),
     );
@@ -4485,7 +4504,7 @@ describe('alignment over a corpus of small notes', () => {
       }
     }
     expect(failures, failures.slice(0, 20).join('\n')).toEqual([]);
-  }, 120_000);
+  });
 });
 
 describe('alignment when the diff budget is exhausted', () => {
