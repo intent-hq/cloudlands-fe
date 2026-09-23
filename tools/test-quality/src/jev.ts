@@ -24,6 +24,9 @@ export interface DimensionScore {
 
 export interface TargetScore {
   overall: number;
+  quality: number;
+  criticality: number;
+  criticalityConfidence: number;
   /** Minimum dimension confidence: a conservative review signal, not joint probability. */
   confidence: number;
   dimensions: Record<string, DimensionScore>;
@@ -136,9 +139,20 @@ function validateResponse(
       dimensions[dimension] = answer;
       weightedScore += answer.score * rubric.weight;
       weight += rubric.weight;
-      confidence = Math.min(confidence, answer.confidence);
+      if (rubric.weight > 0) confidence = Math.min(confidence, answer.confidence);
     }
-    entries.push([target.id, { overall: weightedScore / weight, confidence, dimensions }]);
+    const quality = weightedScore / weight;
+    entries.push([
+      target.id,
+      {
+        overall: quality,
+        quality,
+        criticality: dimensions.criticalDefectPrevention!.score,
+        criticalityConfidence: dimensions.criticalDefectPrevention!.confidence,
+        confidence,
+        dimensions,
+      },
+    ]);
   }
   return {
     model: actualModel,

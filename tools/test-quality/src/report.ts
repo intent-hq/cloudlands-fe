@@ -51,6 +51,10 @@ export function report(run: RunRow, rows: ResultRow[], options: ReportOptions) {
             ? Math.round((scored.reduce((s, r) => s + r.score!.overall, 0) / scored.length) * 10) /
               10
             : null,
+          meanCriticality:
+            scored.length && scored.every((r) => r.score!.criticality !== undefined)
+              ? scored.reduce((sum, r) => sum + r.score!.criticality!, 0) / scored.length
+              : null,
           minimumScore: scored.length ? Math.min(...scored.map((r) => r.score!.overall)) : null,
           lowScores: children.filter((r) => r.lowScore).length,
           errors: children.filter((r) => r.status === 'error').length,
@@ -71,8 +75,11 @@ export function report(run: RunRow, rows: ResultRow[], options: ReportOptions) {
     );
   return {
     run: { ...run, options: JSON.parse(run.options) },
+    scoreMetric: rows.some((row) => row.score?.quality !== undefined)
+      ? 'quality'
+      : 'legacy-combined',
     rubricNote:
-      'Scores estimate static test quality, not measured defect-prevention probability. Review evidence before changing tests. File scores judge organization; aggregate test and assertion scores separately.',
+      'Version 2 thresholds apply to quality alone; criticality is separate. Earlier runs retain their legacy combined scores. These are static estimates, not measured defect-prevention probabilities. Review evidence before changing tests.',
     policy: options,
     summary: {
       targets: rows.length,
@@ -95,7 +102,7 @@ export function textReport(value: ReturnType<typeof report>): string {
   const lines = [
     `Run ${value.run.id} (${value.run.status})`,
     `${s.files} files, ${s.tests} tests, ${s.assertions} assertion sites; ${s.lowScores} low scores, ${s.review} need review, ${s.errors} errors.`,
-    `Threshold: ${value.policy.threshold}/100; confidence floor: ${value.policy.minConfidence}.`,
+    `Threshold: ${value.policy.threshold}/100 (${value.scoreMetric}); confidence floor: ${value.policy.minConfidence}.`,
     value.rubricNote,
     '',
   ];
@@ -104,6 +111,10 @@ export function textReport(value: ReturnType<typeof report>): string {
       `${row.status.toUpperCase()} ${row.score ? row.score.overall.toFixed(1) : 'n/a'} ${row.target.kind} ${row.target.file}:${row.target.line} ${row.target.name}`,
     );
     lines.push(`  id=${row.target.id} trace=${row.traceId}`);
+    if (row.score?.quality !== undefined)
+      lines.push(
+        `  quality=${row.score.quality.toFixed(1)} criticality=${row.score.criticality?.toFixed(1)} criticalityConfidence=${row.score.criticalityConfidence?.toFixed(2)}`,
+      );
     if (row.score)
       lines.push(
         `  ${Object.entries(row.score.dimensions)

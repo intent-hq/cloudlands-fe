@@ -32,6 +32,9 @@ Reports:   --run <run-id> (default latest) --format text|json --kind file|test|a
            --threshold <0..100> (default 60) --min-confidence <0..1> (default 0.6)
            --failing-only --limit <count> --fail-on-low
 
+Version 2 thresholds use quality only; criticality is reported separately.
+Earlier saved runs keep their legacy combined score and are labeled accordingly.
+
 Exit codes: 0 success, 1 error or partial run, 2 low score with --fail-on-low.
 Paths are relative to --root. No tests execute. Jev receives selected source excerpts.
 Use --config tools/test-quality/repository.config.json for this repository's aliases.

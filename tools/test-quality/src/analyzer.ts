@@ -4,7 +4,7 @@ import { parse } from 'svelte/compiler';
 import { hash, inside, isTestFile, slash, Sources } from './files.ts';
 import type { Analysis, Config, Fragment, Target, Trace } from './types.ts';
 
-export const ANALYZER_VERSION = '3';
+export const ANALYZER_VERSION = '5';
 type Module = {
   source: ts.SourceFile;
   declarations: Map<string, ts.Node>;
@@ -31,6 +31,7 @@ function chain(node: ts.Node): string[] {
 function names(node: ts.Node): Set<string> {
   const result = new Set<string>();
   const visit = (child: ts.Node): void => {
+    if (ts.isTypeNode(child) || ts.isInterfaceDeclaration(child)) return;
     if (
       ts.isIdentifier(child) &&
       !(ts.isPropertyAccessExpression(child.parent) && child.parent.name === child) &&
@@ -78,7 +79,7 @@ function parseModule(file: string, text: string): Module {
     try {
       const ast = parse(text, { modern: true });
       const ranges = [ast.instance, ast.module]
-        .filter((n) => n !== null)
+        .filter((n) => n != null)
         .map((n) => {
           const content = n.content as typeof n.content & { start: number; end: number };
           return [content.start, content.end] as const;
@@ -90,7 +91,7 @@ function parseModule(file: string, text: string): Module {
         )
         .join('');
       warnings.push(
-        `${file}: Svelte script and bounded component excerpt; template references are not resolved`,
+        `${file}: Svelte script and bounded component excerpt; template references are partial static evidence`,
       );
     } catch {
       warnings.push(`${file}: Svelte parse failed; component excerpt only`);
@@ -188,8 +189,8 @@ function testNodes(file: string, module: Module): TestNode[] {
       let callback: ts.ArrowFunction | ts.FunctionExpression | ts.FunctionDeclaration | undefined =
         node.arguments.find(functionNode);
       if (!callback && node.arguments.length > 1) {
-        const argument = node.arguments.at(-1)!;
-        if (ts.isIdentifier(argument)) {
+        const argument = node.arguments.find((arg, index) => index > 0 && ts.isIdentifier(arg));
+        if (argument && ts.isIdentifier(argument)) {
           const declaration = module.declarations.get(argument.text);
           if (declaration && ts.isFunctionDeclaration(declaration)) callback = declaration;
           else if (declaration && ts.isVariableStatement(declaration)) {
@@ -376,6 +377,17 @@ export class Analyzer {
       const fragments: Fragment[] = [];
       const warnings = new Set(module.warnings);
       const seen = new Set<string>();
+      const pending: { priority: number; run: () => void }[] = [];
+      const interest = new Set<string>();
+      const collectInterest = (node: ts.Node): void => {
+        if (ts.isPropertyAccessExpression(node)) {
+          const root = chain(node)[0];
+          const imported = module.imports.get(root);
+          if (imported && this.resolve(file, imported.specifier)) interest.add(node.name.text);
+        }
+        ts.forEachChild(node, collectInterest);
+      };
+      collectInterest(test.node);
       const helperAssertions: { file: string; node: ts.CallExpression; module: Module }[] = [];
       let chars = test.target.code.length;
       if (test.target.code.length > this.config.maxContextChars / 2)
@@ -386,31 +398,48 @@ export class Analyzer {
         if (seen.has(key)) return;
         seen.add(key);
         dependencies[sourceFile] = this.sources.digest(sourceFile);
-        for (const warning of m.warnings) warnings.add(warning);
-        if (
-          depth > this.config.maxDepth ||
-          fragments.length >= this.config.maxFragments ||
-          chars >= this.config.maxContextChars
-        ) {
-          warnings.add('Related-code traversal reached its configured budget');
-          return;
-        }
-        const loc = location(node, m.source);
-        const remaining = this.config.maxContextChars - chars;
-        const code = loc.code.slice(0, remaining);
-        if (code.length < loc.code.length)
-          warnings.add(`Truncated related declaration in ${sourceFile}:${loc.line}`);
-        fragments.push({ file: sourceFile, ...loc, code, reason });
-        chars += code.length;
-        if (
-          sourceFile === file ||
-          isTestFile(sourceFile) ||
-          /(?:^|[/.-])(?:test|tests|__tests__|testing)(?:[/.-]|$)/.test(sourceFile)
-        ) {
-          for (const assertion of assertionNodes(node, m))
-            helperAssertions.push({ file: sourceFile, node: assertion, module: m });
-        }
-        follow(sourceFile, node, depth + 1);
+        if (ts.isInterfaceDeclaration(node) || ts.isTypeAliasDeclaration(node)) return;
+        const setup = reason === 'Test setup or teardown';
+        const mock = setup && /\b(?:mock|doMock)\s*\(/.test(node.getText(m.source));
+        const priority =
+          depth * 2 + (mock ? 6 : setup ? -2 : ts.isFunctionDeclaration(node) ? 0 : 1);
+        pending.push({
+          priority,
+          run: () => {
+            for (const warning of m.warnings) warnings.add(warning);
+            if (
+              depth > this.config.maxDepth ||
+              fragments.length >= this.config.maxFragments ||
+              chars >= this.config.maxContextChars
+            ) {
+              warnings.add('Related-code traversal reached its configured budget');
+              return;
+            }
+            const loc = location(node, m.source);
+            const remaining = Math.min(2400, this.config.maxContextChars - chars);
+            const code = loc.code.slice(0, remaining);
+            if (code.length < loc.code.length)
+              warnings.add(`Truncated related declaration in ${sourceFile}:${loc.line}`);
+            fragments.push({
+              file: sourceFile,
+              ...loc,
+              endLine: loc.line + code.split('\n').length - 1,
+              code,
+              reason,
+              priority,
+            });
+            chars += code.length;
+            if (
+              sourceFile === file ||
+              isTestFile(sourceFile) ||
+              /(?:^|[/.-])(?:test|tests|__tests__|testing)(?:[/.-]|$)/.test(sourceFile)
+            ) {
+              for (const assertion of assertionNodes(node, m))
+                helperAssertions.push({ file: sourceFile, node: assertion, module: m });
+            }
+            follow(sourceFile, node, depth + 1);
+          },
+        });
       };
       const exported = (sourceFile: string, symbol: string, depth: number): void => {
         const m = this.module(sourceFile);
@@ -425,21 +454,53 @@ export class Analyzer {
         if (sourceFile.endsWith('.svelte')) {
           if (!seen.has(`component:${sourceFile}`)) {
             seen.add(`component:${sourceFile}`);
-            const code = this.sources
-              .read(sourceFile)
-              .slice(0, Math.max(0, Math.min(5000, this.config.maxContextChars - chars)));
-            if (code.length)
-              fragments.push({
-                file: sourceFile,
-                line: 1,
-                endLine: code.split('\n').length,
-                code,
-                reason: 'Imported Svelte component excerpt',
-              });
-            chars += code.length;
-            warnings.add(
-              `${sourceFile}: bounded component excerpt; template references are not resolved`,
-            );
+            pending.push({
+              priority: depth * 2,
+              run: () => {
+                const text = this.sources.read(sourceFile);
+                const templateStart = text.lastIndexOf('</script>') + '</script>'.length;
+                const styleStart = text.indexOf('<style', templateStart);
+                const templateEnd = styleStart < 0 ? text.length : styleStart;
+                const ranges =
+                  templateStart > 8
+                    ? [
+                        [0, templateStart],
+                        [templateStart, templateEnd],
+                      ]
+                    : [[0, templateEnd]];
+                for (const [start, end] of ranges) {
+                  const remaining = Math.max(
+                    0,
+                    Math.min(1800, this.config.maxContextChars - chars),
+                  );
+                  if (fragments.length >= this.config.maxFragments || !remaining) {
+                    warnings.add('Related-code traversal reached its configured budget');
+                    break;
+                  }
+                  const code = text.slice(start, Math.min(end, start + remaining));
+                  const line = text.slice(0, start).split('\n').length;
+                  fragments.push({
+                    file: sourceFile,
+                    line,
+                    endLine: line + code.split('\n').length - 1,
+                    code,
+                    reason: start === 0 ? 'Svelte script excerpt' : 'Svelte template excerpt',
+                    priority: depth * 2,
+                  });
+                  chars += code.length;
+                }
+                warnings.add(
+                  `${sourceFile}: bounded component excerpts; template references are partial static evidence`,
+                );
+                for (const [local, imported] of m.imports) {
+                  if (text.slice(templateStart, templateEnd).includes(`<${local}`)) {
+                    const resolved = this.resolve(sourceFile, imported.specifier);
+                    if (resolved) exported(resolved, imported.imported, depth + 1);
+                  }
+                }
+                follow(sourceFile, m.source, depth + 1);
+              },
+            });
           }
           return;
         }
@@ -451,6 +512,42 @@ export class Analyzer {
         }
         const declaration = m.declarations.get(symbol);
         if (declaration) {
+          if (declaration.getText(m.source).length > 2400) {
+            let candidates: readonly ts.Node[] = [];
+            if (ts.isFunctionDeclaration(declaration) && declaration.body)
+              candidates = declaration.body.statements;
+            if (ts.isVariableStatement(declaration)) {
+              let initializer = declaration.declarationList.declarations[0]?.initializer;
+              while (
+                initializer &&
+                (ts.isAsExpression(initializer) || ts.isSatisfiesExpression(initializer))
+              )
+                initializer = initializer.expression;
+              if (initializer && ts.isObjectLiteralExpression(initializer))
+                candidates = initializer.properties;
+            }
+            const selected = candidates.filter((candidate) => {
+              let matched = false;
+              const visit = (node: ts.Node): void => {
+                if (
+                  (ts.isPropertyAccessExpression(node) && interest.has(node.name.text)) ||
+                  (ts.isPropertyAssignment(node) && interest.has(node.name.getText(m.source)))
+                )
+                  matched = true;
+                ts.forEachChild(node, visit);
+              };
+              visit(candidate);
+              return matched;
+            });
+            if (selected.length) {
+              warnings.add(
+                `Selected relevant statements from ${symbol} in ${sourceFile}; enclosing declaration omitted`,
+              );
+              for (const statement of selected)
+                add(sourceFile, statement, `Selected statement in ${symbol}`, depth);
+              return;
+            }
+          }
           add(sourceFile, declaration, `Reference to ${symbol}`, depth);
           return;
         }
@@ -487,12 +584,49 @@ export class Analyzer {
             if (resolved) exported(resolved, imported.imported, depth);
             else if (
               imported.specifier.startsWith('.') ||
-              Object.keys(this.config.aliases).some((a) => imported.specifier.startsWith(a))
+              Object.keys(this.config.aliases).some(
+                (a) => imported.specifier === a || imported.specifier.startsWith(`${a}/`),
+              )
             )
               warnings.add(`Unresolved local import ${imported.specifier} in ${sourceFile}`);
           }
         }
         const visit = (child: ts.Node): void => {
+          if (ts.isStringLiteralLike(child) && /\.(?:[cm]?[jt]sx?|svelte|css)$/.test(child.text)) {
+            const referenced = this.files.has(child.text)
+              ? child.text
+              : this.resolve(sourceFile, child.text);
+            if (referenced && !seen.has(`literal:${referenced}`)) {
+              seen.add(`literal:${referenced}`);
+              dependencies[referenced] = this.sources.digest(referenced);
+              pending.push({
+                priority: depth * 2 + 4,
+                run: () => {
+                  const remaining = Math.max(
+                    0,
+                    Math.min(1800, this.config.maxContextChars - chars),
+                  );
+                  if (!remaining || fragments.length >= this.config.maxFragments) {
+                    warnings.add(`Referenced file omitted by context budget: ${referenced}`);
+                    return;
+                  }
+                  const text = this.sources.read(referenced);
+                  const code = text.slice(0, remaining);
+                  fragments.push({
+                    file: referenced,
+                    line: 1,
+                    endLine: code.split('\n').length,
+                    code,
+                    reason: 'Literal file reference; static excerpt, not evidence of execution',
+                    priority: depth * 2 + 4,
+                  });
+                  chars += code.length;
+                  if (code.length < text.length)
+                    warnings.add(`Referenced file excerpt truncated: ${referenced}`);
+                },
+              });
+            }
+          }
           if (
             ts.isCallExpression(child) &&
             (child.expression.kind === ts.SyntaxKind.ImportKeyword ||
@@ -504,7 +638,13 @@ export class Analyzer {
             if (specifier && ts.isStringLiteralLike(specifier)) {
               const resolved = this.resolve(sourceFile, specifier.text);
               if (resolved) exported(resolved, '*', depth);
-              else warnings.add(`Dynamic import context unavailable: ${specifier.text}`);
+              else if (
+                specifier.text.startsWith('.') ||
+                Object.keys(this.config.aliases).some(
+                  (a) => specifier.text === a || specifier.text.startsWith(`${a}/`),
+                )
+              )
+                warnings.add(`Dynamic import context unavailable: ${specifier.text}`);
             } else warnings.add('Computed import cannot be resolved statically');
           }
           ts.forEachChild(child, visit);
@@ -513,6 +653,13 @@ export class Analyzer {
       };
       follow(file, test.node, 0);
       for (const hook of test.scope) add(file, hook, 'Test setup or teardown', 0);
+      let steps = 0;
+      while (pending.length && steps++ < 500) {
+        pending.sort((a, b) => a.priority - b.priority);
+        pending.shift()!.run();
+      }
+      if (pending.length) warnings.add('Context traversal work limit reached');
+      fragments.sort((a, b) => (a.priority ?? 0) - (b.priority ?? 0));
       const targets: Target[] = [
         { ...test.target, code: test.target.code.slice(0, this.config.maxContextChars / 2) },
       ];

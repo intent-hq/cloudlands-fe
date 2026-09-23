@@ -86,7 +86,9 @@ test('sends the documented HTTP request and computes independently known weighte
   assert.equal(result.model, 'jev-1.13.0');
   assert.deepEqual(result.usage, { input_tokens: 123, output_tokens: 45 });
   assert.deepEqual(result.answers, raw.answers);
-  assert.equal(result.scores['test:17']?.overall, 60);
+  assert.equal(result.scores['test:17']?.overall, 53.125);
+  assert.equal(result.scores['test:17']?.quality, 53.125);
+  assert.equal(result.scores['test:17']?.criticality, 75);
   assert.equal(result.scores['test:17']?.confidence, 0.25);
   assert.deepEqual(
     Object.values(result.scores['test:17']!.dimensions).map((value) => value.score),
@@ -131,6 +133,24 @@ test('builds five atomic questions per target with model-visible IDs and indepen
       { id: 'a', kind: 'test' },
     ]),
   );
+});
+
+test('criticality and its uncertainty cannot change quality or quality confidence', async () => {
+  for (const criticality of [0, 4]) {
+    const raw = serviceResponse();
+    const answer = raw.answers[questionKey('test:17', 'criticalDefectPrevention')]!;
+    answer.score = criticality;
+    answer.confidence = 0.01;
+    answer.probabilities = Object.fromEntries(
+      [0, 1, 2, 3, 4].map((level) => [level, Number(level === criticality)]),
+    );
+    const result = await judge(state, targets, { apiKey, fetch: async () => respond(raw) });
+    const score = result.scores['test:17']!;
+    assert.equal(score.quality, 53.125);
+    assert.equal(score.confidence, 0.25);
+    assert.equal(score.criticality, criticality * 25);
+    assert.equal(score.criticalityConfidence, 0.01);
+  }
 });
 
 test('accepts independently rounded live Jev scores without altering raw distributions', async () => {
@@ -197,8 +217,8 @@ test('handles prototype-like target IDs without losing or confusing scores', asy
     fetch: async () => respond(serviceResponse(buildQuestions(selected))),
   });
   assert.deepEqual(Object.keys(result.scores), ['__proto__', 'constructor']);
-  assert.equal(result.scores.__proto__?.overall, 60);
-  assert.ok(Object.values(result.scores).every((score) => score.overall === 60));
+  assert.equal(result.scores.__proto__?.overall, 53.125);
+  assert.ok(Object.values(result.scores).every((score) => score.overall === 53.125));
 });
 
 type Fixture = ReturnType<typeof serviceResponse>;
@@ -374,7 +394,7 @@ for (const status of [408, 425, 429, 500, 502, 503, 504, 529]) {
         ++calls === 1 ? respond({}, status, { 'Retry-After': '0' }) : respond(serviceResponse()),
     });
     assert.equal(calls, 2);
-    assert.equal(result.scores['test:17']?.overall, 60);
+    assert.equal(result.scores['test:17']?.overall, 53.125);
   });
 }
 
@@ -415,7 +435,7 @@ for (const [name, header, delay] of [
     await setImmediate();
     assert.equal(calls, 1);
     context.mock.timers.tick(1);
-    assert.equal((await pending).scores['test:17']?.overall, 60);
+    assert.equal((await pending).scores['test:17']?.overall, 53.125);
     assert.equal(calls, 2);
   });
 }

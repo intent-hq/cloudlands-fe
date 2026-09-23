@@ -9,7 +9,7 @@ import { fileURLToPath } from 'node:url';
 import { defaults, inventory, selectedFiles } from '../src/files.ts';
 import { Store } from '../src/database.ts';
 import { batches, evaluate, scan } from '../src/runner.ts';
-import { report } from '../src/report.ts';
+import { report, textReport } from '../src/report.ts';
 import type { Judgment } from '../src/types.ts';
 
 function fixture(t: TestContext) {
@@ -342,4 +342,118 @@ test('CLI emits parseable JSON and rejects invalid options before API work', (t)
   assert.equal(invalid.status, 1);
   const missing = run(['report', '--root', root, '--db', 'missing.sqlite']);
   assert.equal(missing.status, 1);
+});
+
+test('retains setup and tested production statements ahead of a large unrelated registry', (t) => {
+  const { root, put, store, config } = fixture(t);
+  put(
+    'src/registry.ts',
+    `export const registry = { ${Array.from({ length: 300 }, (_, i) => `unused${i}: '${'x'.repeat(30)}'`).join(',')}, execute: 'exec' };`,
+  );
+  put(
+    'src/install.ts',
+    `import { registry } from './registry'; export function install(register) { ${Array.from({ length: 100 }, (_, i) => `register(registry.unused${i}, () => '${'y'.repeat(30)}');`).join('\n')} register(registry.execute, (input) => input.allowed ? 'ok' : 'denied'); }`,
+  );
+  put(
+    'context.test.ts',
+    `import { registry } from './src/registry'; import { install } from './src/install'; let handlers = new Map(); beforeEach(() => install((name, fn) => handlers.set(name, fn))); test('denies execution', () => expect(handlers.get(registry.execute)({allowed:false})).toBe('denied'));`,
+  );
+  const { traces } = scan(root, { ...config, maxContextChars: 5000 }, ['context.test.ts'], store);
+  const batch = batches(traces[1], 8)[0];
+  const evidence = batch.state.fragments as { file: string; code: string }[];
+  assert.ok(evidence.some((f) => f.file === 'src/install.ts' && f.code.includes("'denied'")));
+  assert.ok(evidence.some((f) => f.file === 'context.test.ts' && f.code.includes('beforeEach')));
+  assert.ok(evidence.some((f) => f.file === 'src/registry.ts' && f.code.includes("'exec'")));
+  assert.ok(Buffer.byteLength(JSON.stringify(batch.state)) <= 24000);
+});
+
+test('includes the Svelte template and its child after a long script and invalidates child edits', (t) => {
+  const { root, put, store, config } = fixture(t);
+  put('src/Child.svelte', '<button>Save</button>');
+  put(
+    'src/Parent.svelte',
+    `<script>import Child from './Child.svelte'; const filler = '${'x'.repeat(7000)}';</script><Child />`,
+  );
+  put(
+    'svelte.test.ts',
+    `import Parent from './src/Parent.svelte'; test('save', () => { render(Parent); expect(screen.getByRole('button')).toBeTruthy(); });`,
+  );
+  const first = scan(root, config, ['svelte.test.ts'], store);
+  const fragments = first.traces[1].fragments;
+  assert.ok(fragments.some((f) => f.file === 'src/Parent.svelte' && f.code.includes('<Child />')));
+  assert.ok(
+    fragments.some(
+      (f) => f.file === 'src/Child.svelte' && f.code.includes('<button>Save</button>'),
+    ),
+  );
+  put('src/Child.svelte', '<button>Delete</button>');
+  const second = scan(root, config, ['svelte.test.ts'], store);
+  assert.equal(second.cachedFiles, 0);
+  assert.notEqual(second.traces[1].id, first.traces[1].id);
+});
+
+test('captures literal CSS file evidence and invalidates it without treating packages as local aliases', (t) => {
+  const { root, put, store, config } = fixture(t);
+  put('src/theme.css', ':root { --ink: black; }');
+  put(
+    'css.test.ts',
+    `import { render } from '@testing-library/svelte'; import {readFileSync} from 'node:fs'; test('ink', () => { render(); expect(readFileSync('src/theme.css','utf8')).toContain('--ink'); });`,
+  );
+  const aliasedConfig = { ...config, aliases: { '@': 'src' } };
+  const first = scan(root, aliasedConfig, ['css.test.ts'], store);
+  assert.ok(first.traces[1].fragments.some((f) => f.file === 'src/theme.css'));
+  assert.ok(!first.traces[1].warnings.some((w) => w.includes('@testing-library')));
+  assert.equal(scan(root, aliasedConfig, ['css.test.ts'], store).cachedFiles, 1);
+  put('src/theme.css', ':root { --ink: white; }');
+  assert.equal(scan(root, aliasedConfig, ['css.test.ts'], store).cachedFiles, 0);
+});
+
+test('quality threshold is independent of criticality and legacy reports keep their original meaning', async (t) => {
+  const { root, store, config } = fixture(t);
+  const { traces } = scan(root, config, [], store, 'denies guests');
+  const result = await evaluate(
+    store,
+    traces,
+    { apiKey: 'fixture', concurrency: 1, batchSize: 8, judge: judgeFixture },
+    {},
+  );
+  const rows = store.results(result.runId);
+  const options = { threshold: 60, minConfidence: 0.6 };
+  const legacy = report(store.run(result.runId), rows, options);
+  assert.equal(legacy.scoreMetric, 'legacy-combined');
+  assert.match(textReport(legacy), /legacy-combined/);
+  const updated = rows.map((row, i) => ({
+    ...row,
+    score: {
+      ...row.score!,
+      overall: i === 0 ? 90 : 30,
+      quality: i === 0 ? 90 : 30,
+      criticality: i === 0 ? 0 : 100,
+      criticalityConfidence: 0.1,
+    },
+  }));
+  const current = report(store.run(result.runId), updated, options);
+  assert.equal(current.scoreMetric, 'quality');
+  assert.equal(current.results.find((r) => r.score!.criticality === 0)!.lowScore, false);
+  assert.ok(current.results.filter((r) => r.score!.criticality === 100).every((r) => r.lowScore));
+  assert.match(textReport(current), /quality=90.0 criticality=0.0/);
+  assert.equal(store.results(result.runId)[0].score!.quality, undefined);
+});
+
+test('many context warnings cannot crowd production evidence out of a request', (t) => {
+  const { root, store, config } = fixture(t);
+  const { traces } = scan(root, config, [], store, 'denies guests');
+  const trace = {
+    ...traces[0],
+    warnings: Array.from(
+      { length: 180 },
+      (_, index) => `Unresolved evidence ${index}: ${'x'.repeat(120)}`,
+    ),
+  };
+  const [batch] = batches(trace, 8);
+  const state = batch.state as { warnings: string[]; fragments: { file: string }[] };
+  assert.equal(batch.warnings.length, 180);
+  assert.ok(state.warnings.length < 12);
+  assert.ok(state.fragments.some((f) => f.file === 'src/policy.ts'));
+  assert.ok(Buffer.byteLength(JSON.stringify(state)) <= 24000);
 });

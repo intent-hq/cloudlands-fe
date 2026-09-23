@@ -11,7 +11,7 @@ export const hash = (value: unknown): string =>
 export const slash = (value: string): string => value.split(path.sep).join('/');
 export const isTestFile = (value: string): boolean =>
   /\.(?:test|spec|e2e)\.[cm]?[jt]sx?$/.test(value);
-const sourceFile = /\.(?:[cm]?[jt]sx?|svelte|json)$/;
+const sourceFile = /\.(?:[cm]?[jt]sx?|svelte|json|css)$/;
 const ignored = new Set([
   'node_modules',
   'dist',

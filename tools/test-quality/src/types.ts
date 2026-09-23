@@ -25,6 +25,7 @@ export interface Fragment {
   endLine: number;
   code: string;
   reason: string;
+  priority?: number;
 }
 
 export interface Trace {
@@ -51,6 +52,9 @@ export interface Dimension {
 
 export interface Score {
   overall: number;
+  quality?: number;
+  criticality?: number;
+  criticalityConfidence?: number;
   confidence: number;
   dimensions: Record<string, Dimension>;
 }
