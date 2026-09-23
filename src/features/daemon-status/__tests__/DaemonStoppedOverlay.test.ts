@@ -339,7 +339,7 @@ describe('DaemonStoppedOverlay', () => {
     // not the local data-dir caveat. The positive match is the only signal that
     // the external-note branch rendered (the negative alone also passes with no
     // note at all), so it stays despite being copy.
-    expect(overlay()!.textContent).toContain('instead of the remote server');
+    expect(overlay()!.textContent).toContain('workspaces and agents, not the remote server');
     expect(overlay()!.textContent).not.toContain('may use a different data directory');
   });
 

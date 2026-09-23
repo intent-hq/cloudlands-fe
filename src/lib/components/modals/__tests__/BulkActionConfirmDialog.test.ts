@@ -10,6 +10,20 @@ import { warmImport } from '../../../../test/warm-import';
 warmImport(() => import('../BulkActionConfirmDialog.svelte'));
 
 describe('BulkActionConfirmDialog', () => {
+  it('keeps a failed action open with feedback and permits retry', async () => {
+    const onConfirm = vi
+      .fn()
+      .mockRejectedValueOnce(new Error('Unavailable'))
+      .mockResolvedValue(undefined);
+    const Modal = (await import('../BulkActionConfirmDialog.svelte')).default;
+    render(Modal, { open: true, onConfirm });
+    await fireEvent.click(screen.getByRole('button', { name: 'Confirm' }));
+    await screen.findByText('This action could not be completed. Please try again.');
+    expect(screen.getByRole('dialog')).toBeTruthy();
+    await fireEvent.click(screen.getByRole('button', { name: 'Confirm' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(onConfirm).toHaveBeenCalledTimes(2);
+  });
   it('renders plural agent and hook lines', async () => {
     const BulkActionConfirmDialog = (await import('../BulkActionConfirmDialog.svelte')).default;
 

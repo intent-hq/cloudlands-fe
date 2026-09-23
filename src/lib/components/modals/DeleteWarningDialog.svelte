@@ -11,7 +11,6 @@
 
 <script lang="ts">
   import AgentAvatarWithState from '$features/agent/components/agent-avatar/AgentAvatarWithState.svelte';
-  import { getAgentAvatarStateLabel } from '$features/agent/components/agent-avatar/avatar-state-label';
   import HourglassMedium from 'phosphor-svelte/lib/HourglassMedium';
   import EnvelopeIcon from 'phosphor-svelte/lib/EnvelopeIcon';
   import UsersIcon from 'phosphor-svelte/lib/UsersIcon';
@@ -59,6 +58,7 @@
   }: Props = $props();
 
   const isArchive = $derived(mode === 'archive');
+  const hasRunningWork = $derived(agents.length > 0 || hookNames.length > 0);
   const hasLocalChanges = $derived(
     localChanges != null && (localChanges.hasUnpushedCommits || localChanges.hasUncommittedChanges),
   );
@@ -96,6 +96,27 @@
     onCancel?.();
   }
 
+  function localChangesSentence(root: LocalChangesRoot): string {
+    const commits =
+      root.unpushedCount === 1
+        ? m.modals_deleteWarning_localChanges_unpushed_one({
+            count: formatInteger(root.unpushedCount),
+          })
+        : m.modals_deleteWarning_localChanges_unpushed_many({
+            count: formatInteger(root.unpushedCount),
+          });
+    const changes =
+      root.unpushedCount > 0
+        ? root.uncommittedCount > 0
+          ? m.modals_deleteWarning_combinedChanges_label({ commits })
+          : commits
+        : m.modals_deleteWarning_localChanges_uncommitted_label();
+    const params = { changes, branch: rootLabel(root) };
+    return isArchive
+      ? m.modals_archiveWarning_branchChanges_description(params)
+      : m.modals_deleteWarning_branchChanges_description(params);
+  }
+
   function handleDeleteAnyway() {
     onDeleteAnyway?.();
     open = false;
@@ -116,16 +137,24 @@
     ? isArchive
       ? m.modals_archiveWarning_guestsOnly_title()
       : m.modals_deleteWarning_guestsOnly_title()
-    : isArchive
-      ? m.modals_archiveWarning_title()
-      : m.modals_deleteWarning_title()}
+    : hasRunningWork
+      ? isArchive
+        ? m.modals_archiveWarning_title()
+        : m.modals_deleteWarning_title()
+      : isArchive
+        ? m.modals_archiveWarning_inactive_title()
+        : m.modals_deleteWarning_inactive_title()}
   confirmLabel={guestsOnly
     ? isArchive
       ? m.modals_archiveWarning_guestsOnly_confirm_label()
       : m.modals_deleteWarning_guestsOnly_confirm_label()
-    : isArchive
-      ? m.modals_archiveWarning_confirm_label()
-      : m.modals_deleteWarning_confirm_label()}
+    : !hasRunningWork
+      ? isArchive
+        ? m.workspace_card_archive_label()
+        : m.menu_delete()
+      : isArchive
+        ? m.modals_archiveWarning_confirm_label()
+        : m.modals_deleteWarning_confirm_label()}
   cancelLabel={m.modals_deleteWarning_cancel_label()}
   closeLabel={isArchive
     ? m.modals_archiveWarning_close_ariaLabel()
@@ -139,15 +168,19 @@
         ? isArchive
           ? m.modals_archiveWarning_guestsOnly_description()
           : m.modals_deleteWarning_guestsOnly_description()
-        : isArchive
-          ? m.modals_archiveWarning_description()
-          : m.modals_deleteWarning_description()}
+        : hasRunningWork
+          ? isArchive
+            ? m.modals_archiveWarning_description()
+            : m.modals_deleteWarning_description()
+          : isArchive
+            ? m.modals_archiveWarning_inactive_description()
+            : m.modals_deleteWarning_inactive_description()}
     </p>
     <div class="min-w-0 space-y-4">
       {#if hasActiveWork || hasGuests}
-        <div class="rounded-md border border-border bg-muted/40 p-3">
+        <div class="min-w-0">
           {#if agents.length > 0}
-            <p class="type-body text-muted-foreground font-normal">
+            <p class="type-body text-foreground font-medium">
               {agents.length === 1
                 ? m.modals_deleteWarning_agentsStopped_one({
                     count: formatInteger(agents.length),
@@ -156,10 +189,10 @@
                     count: formatInteger(agents.length),
                   })}
             </p>
-            <ul class="mt-2 grid max-h-40 gap-3 overflow-auto pr-1">
+            <ul class="mt-2 grid max-h-40 overflow-auto">
               {#each agents as agent (agent.id)}
-                <li class="grid min-w-0 grid-cols-[2rem_minmax(0,1fr)] gap-x-2.5">
-                  <span class="row-span-2 grid h-8 w-8 place-items-center" aria-hidden="true">
+                <li class="grid min-w-0 grid-cols-[1.5rem_minmax(0,1fr)] items-center gap-x-2">
+                  <span class="grid h-8 w-6 items-center justify-items-start" aria-hidden="true">
                     <AgentAvatarWithState
                       agentId={agent.id}
                       variant="emphasized"
@@ -168,17 +201,12 @@
                     />
                   </span>
                   <span class="type-body min-w-0 truncate text-foreground">{agent.name}</span>
-                  <span class="type-caption min-w-0 truncate text-muted-foreground"
-                    >{agent.specialist ? `${agent.specialist} · ` : ''}{getAgentAvatarStateLabel(
-                      agent.state,
-                    )}</span
-                  >
                 </li>
               {/each}
             </ul>
           {/if}
           {#if hookNames.length > 0}
-            <p class="type-body text-muted-foreground font-normal" class:mt-4={agents.length > 0}>
+            <p class="type-body text-foreground font-medium" class:mt-4={agents.length > 0}>
               {hookNames.length === 1
                 ? m.modals_deleteWarning_hooksCancelled_one({
                     count: formatInteger(hookNames.length),
@@ -187,13 +215,14 @@
                     count: formatInteger(hookNames.length),
                   })}
             </p>
-            <ul class="mt-2 max-h-28 space-y-1 overflow-auto pr-1">
+            <ul class="mt-2 max-h-28 overflow-auto">
               {#each hookNames as name}
                 <li
-                  class="type-body grid min-w-0 grid-cols-[2rem_minmax(0,1fr)] items-center gap-x-2.5 text-muted-foreground"
+                  class="type-body grid min-h-8 min-w-0 grid-cols-[1.5rem_minmax(0,1fr)] items-center gap-x-2 text-foreground"
                 >
-                  <span class="grid h-8 w-8 place-items-center" aria-hidden="true"
-                    ><HourglassMedium size={16} weight="regular" /></span
+                  <span
+                    class="grid size-6 place-items-center rounded-lg bg-accent"
+                    aria-hidden="true"><HourglassMedium size={16} weight="regular" /></span
                   >
                   <span class="min-w-0 truncate">{name}</span>
                 </li>
@@ -202,7 +231,7 @@
           {/if}
           {#if openPrs.length > 0}
             <p
-              class="type-body text-muted-foreground font-normal"
+              class="type-body text-foreground font-medium"
               class:mt-4={agents.length > 0 || hookNames.length > 0}
             >
               {openPrs.length === 1
@@ -213,18 +242,22 @@
                     count: formatInteger(openPrs.length),
                   })}
             </p>
-            <ul class="mt-2 max-h-28 space-y-1 overflow-auto pr-1">
+            <ul class="mt-2 max-h-28 overflow-auto">
               {#each openPrs as pr (pr.url || pr.number)}
                 <li
-                  class="grid min-w-0 grid-cols-[2rem_minmax(0,1fr)_auto_auto] items-center gap-x-2.5"
+                  class="grid min-h-8 min-w-0 grid-cols-[1.5rem_minmax(0,1fr)_auto] items-center gap-x-2"
                 >
-                  <Fa
-                    icon={faCodePullRequest}
-                    size={18}
-                    class="shrink-0 justify-self-center {pr.status === 'Draft'
-                      ? 'text-muted-foreground'
-                      : 'text-success'}"
-                  />
+                  <span
+                    class="grid size-6 place-items-center rounded-lg bg-accent"
+                    aria-hidden="true"
+                    ><Fa
+                      icon={faCodePullRequest}
+                      size={16}
+                      class="shrink-0 {pr.status === 'Draft'
+                        ? 'text-muted-foreground'
+                        : 'text-success'}"
+                    /></span
+                  >
                   {#if pr.url}
                     <a
                       href={pr.url}
@@ -237,16 +270,11 @@
                   {:else}
                     <span class="type-body min-w-0 truncate text-foreground">{pr.title}</span>
                   {/if}
-                  <Badge variant={pr.status === 'Draft' ? 'secondary' : 'success'}>
-                    {pr.status === 'Draft'
-                      ? m.workspace_prSection_statusDraft_label()
-                      : m.workspace_prSection_statusOpen_label()}
-                  </Badge>
-                  <span class="type-caption shrink-0 text-muted-foreground">#{pr.number}</span>
+                  <span class="type-caption shrink-0 text-foreground">#{pr.number}</span>
                   {#if pr.mergeConflicts === true}
                     <Badge
                       variant="destructive"
-                      class="col-span-3 col-start-2 mt-1 justify-self-start"
+                      class="col-span-2 col-start-2 mt-1 justify-self-start"
                     >
                       {m.modals_deleteWarning_prMergeConflicts_label()}
                     </Badge>
@@ -255,38 +283,21 @@
               {/each}
             </ul>
           {/if}
-          {#if hasLocalChanges}
-            <p
-              class="type-caption text-muted-foreground"
+          {#if hasLocalChanges && !isArchive}
+            <div
+              class="space-y-2 type-body text-foreground"
               class:mt-4={agents.length > 0 || hookNames.length > 0 || openPrs.length > 0}
             >
-              {isArchive
-                ? m.modals_archiveWarning_localChanges_description()
-                : m.modals_deleteWarning_localChanges_description()}
-            </p>
-            <ul class="mt-2 max-h-28 space-y-1 overflow-auto pr-1">
               {#each localChangeRoots as root (root.gitRootId ?? root.path)}
-                <li class="type-caption flex min-w-0 items-center gap-2 text-muted-foreground">
-                  <span class="min-w-0 truncate">{rootLabel(root)}</span>
-                  {#if root.unpushedCount > 0}
-                    <Badge variant="secondary" class="shrink-0">
-                      {root.unpushedCount === 1
-                        ? m.modals_deleteWarning_localChanges_unpushed_one({
-                            count: formatInteger(root.unpushedCount),
-                          })
-                        : m.modals_deleteWarning_localChanges_unpushed_many({
-                            count: formatInteger(root.unpushedCount),
-                          })}
-                    </Badge>
-                  {/if}
-                  {#if root.uncommittedCount > 0}
-                    <Badge variant="secondary" class="shrink-0">
-                      {m.modals_deleteWarning_localChanges_uncommitted_label()}
-                    </Badge>
-                  {/if}
-                </li>
+                <p class="break-words">{localChangesSentence(root)}</p>
+              {:else}
+                <p>
+                  {isArchive
+                    ? m.modals_archiveWarning_localChanges_description()
+                    : m.modals_deleteWarning_localChanges_description()}
+                </p>
               {/each}
-            </ul>
+            </div>
           {/if}
           {#if hasGuests}
             <p class="type-body text-muted-foreground font-normal" class:mt-4={hasActiveWork}>
@@ -333,22 +344,13 @@
           {/if}
         </div>
       {/if}
-
-      <p class="text-sm leading-5 text-subtle">
-        {#if isArchive}
-          {#if !guestsOnly}
-            <span>{m.modals_archiveWarning_note_description()}</span>
-          {/if}
-          {#if hasGuests}
-            <span>{m.modals_archiveWarning_note_guests_description()}</span>
-          {/if}
-        {:else}
-          <span>{m.modals_deleteWarning_permanent_description()}</span>
-          {#if hasGuests}
-            <span>{m.modals_deleteWarning_permanent_guests_description()}</span>
-          {/if}
-        {/if}
-      </p>
+      {#if hasGuests}
+        <p class="type-body text-subtle">
+          {isArchive
+            ? m.modals_archiveWarning_note_guests_description()
+            : m.modals_deleteWarning_permanent_guests_description()}
+        </p>
+      {/if}
     </div>
   {/snippet}
 </DestructiveConfirm>

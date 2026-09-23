@@ -390,6 +390,49 @@ describe('interrupted-agents-service', () => {
       await new Promise((resolve) => setTimeout(resolve, INTERRUPTED_RECONCILE_DEBOUNCE_MS + 30));
     }
 
+    it('returns partial failures and keeps unresolved agents watched', async () => {
+      const first = interrupted('agent-1');
+      const second = interrupted('agent-2');
+      await installWithOpenModal([first, second]);
+      const result = {
+        resumed: ['agent-1'],
+        abandoned: [],
+        failed: [{ agentId: 'agent-2', error: 'Unavailable' }],
+      };
+      const resolveInterrupted = vi.fn().mockResolvedValue(result);
+      expect(
+        await resolveInterruptedAgents(
+          { agents: { resolveInterrupted } },
+          ['agent-1', 'agent-2'],
+          [],
+        ),
+      ).toEqual(result);
+      expect(resolveInterrupted).toHaveBeenCalledWith({ resume: ['agent-1', 'agent-2'] });
+      mockAppClient.agents.listInterrupted.mockResolvedValue([second]);
+      notifyInterruptedAgentUpdated('agent-2');
+      await flushDebounce();
+      expect(showHandler).toHaveBeenLastCalledWith([second]);
+      showHandler.mockClear();
+      mockAppClient.agents.listInterrupted.mockClear();
+      notifyInterruptedAgentUpdated('agent-1');
+      await flushDebounce();
+      expect(mockAppClient.agents.listInterrupted).not.toHaveBeenCalled();
+    });
+
+    it('propagates a rejected resolution without losing cross-window recovery', async () => {
+      await installWithOpenModal([interrupted('agent-1')]);
+      const failure = new Error('Disconnected');
+      const resolveInterrupted = vi.fn().mockRejectedValue(failure);
+      await expect(
+        resolveInterruptedAgents({ agents: { resolveInterrupted } }, [], ['agent-1']),
+      ).rejects.toBe(failure);
+      expect(resolveInterrupted).toHaveBeenCalledWith({ abandon: ['agent-1'] });
+      mockAppClient.agents.listInterrupted.mockResolvedValue([]);
+      notifyInterruptedAgentUpdated('agent-1');
+      await flushDebounce();
+      expect(showHandler).toHaveBeenLastCalledWith([]);
+    });
+
     it('resume arm: a later agent:updated cannot re-open the modal', async () => {
       await installWithOpenModal([interrupted('agent-1')]);
       const resolveInterrupted = vi.fn().mockResolvedValue({

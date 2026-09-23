@@ -105,7 +105,7 @@
   onfocusin={handleFocusIn}
   enterKey="ignore"
   modEnter="ignore"
-  class="max-w-6xl grid-cols-1 [&>form]:min-w-0 [&>form]:grid-cols-1"
+  size="editor"
   onSubmit={handleDone}
   onCancel={handleCancel}
 >

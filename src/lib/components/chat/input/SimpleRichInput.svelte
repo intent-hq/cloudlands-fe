@@ -678,6 +678,8 @@
     toModelLabel: string;
     fromProviderName: string;
     toProviderName: string;
+    fromProviderId: string;
+    toProviderId: string;
     resolve: (confirmed: boolean) => void;
   } | null>(null);
 
@@ -709,6 +711,7 @@
   function confirmModelSwitch(
     from: string | null | undefined,
     to: string | null,
+    labels?: { from: string; to: string },
   ): boolean | Promise<boolean> {
     if (!requiresModelSwitchConfirmation) return true;
 
@@ -722,10 +725,12 @@
         // fall back to the default config's display name and would misclassify
         // a cross-provider switch as model-only.
         isProviderChange: fromInfo.providerId !== toInfo.providerId,
-        fromModelLabel: fromInfo.modelLabel,
-        toModelLabel: toInfo.modelLabel,
+        fromModelLabel: labels?.from ?? fromInfo.modelLabel,
+        toModelLabel: labels?.to ?? toInfo.modelLabel,
         fromProviderName: fromInfo.providerName,
         toProviderName: toInfo.providerName,
+        fromProviderId: fromInfo.providerId,
+        toProviderId: toInfo.providerId,
         resolve,
       };
     });
@@ -1912,6 +1917,8 @@
   toModelLabel={modelSwitchDialog?.toModelLabel ?? ''}
   fromProviderName={modelSwitchDialog?.fromProviderName ?? ''}
   toProviderName={modelSwitchDialog?.toProviderName ?? ''}
+  fromProviderId={modelSwitchDialog?.fromProviderId ?? ''}
+  toProviderId={modelSwitchDialog?.toProviderId ?? ''}
   onConfirm={() => settleModelSwitchDialog(true)}
   onCancel={() => settleModelSwitchDialog(false)}
 />

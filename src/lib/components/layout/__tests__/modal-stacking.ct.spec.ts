@@ -67,7 +67,7 @@ for (const updateKind of ['quit', 'release-notes'] as const) {
       const update =
         updateKind === 'quit'
           ? page.getByRole('alertdialog')
-          : page.locator('[role="dialog"].release-notes-dialog');
+          : page.getByRole('dialog', { name: /0\.0\.0-demo/ });
       const bottom = first === 'protocol' ? protocol : update;
       const top = first === 'protocol' ? update : protocol;
       const dismiss = (dialog: Locator) =>

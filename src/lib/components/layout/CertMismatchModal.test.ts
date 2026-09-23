@@ -49,7 +49,7 @@ describe('CertMismatchModal', () => {
     await fireEvent.click(screen.getByText('Forget & re-pair'));
     expect(onForget).toHaveBeenCalledWith('r1');
 
-    await fireEvent.click(screen.getByText('Dismiss'));
+    await fireEvent.click(screen.getByRole('button', { name: 'Close' }));
     expect(onDismiss).toHaveBeenCalledOnce();
   });
 });

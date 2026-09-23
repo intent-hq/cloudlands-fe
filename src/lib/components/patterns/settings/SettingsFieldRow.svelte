@@ -103,7 +103,14 @@
 >
   {#if !controlOnly}
     <div class="flex min-w-0 items-start gap-3">
-      {#if leading}<div class="shrink-0" data-field-leading aria-hidden="true">
+      {#if leading}<div
+          class={cn(
+            'type-body first-line-icon',
+            !compact && 'md:mt-[max(0px,calc((var(--control-height-medium)-1lh)/2))]',
+          )}
+          data-field-leading
+          aria-hidden="true"
+        >
           {@render leading()}
         </div>{/if}
       <div class="min-w-0 flex-1 space-y-1 break-words">
