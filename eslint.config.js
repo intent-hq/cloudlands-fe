@@ -27,6 +27,7 @@ const semanticColorBaseline = baselineCounts(lintBaseline['no-arbitrary-motion-o
 const iconOnlyButtonSizeBaseline = baselineCounts(lintBaseline['icon-only-button-size']) ?? {};
 import noColdSvelteImportInTestsRule from './eslint-rules/no-cold-svelte-import-in-tests.js';
 import noSourceLiteralAssertionsInTestsRule from './eslint-rules/no-source-literal-assertions-in-tests.js';
+import noWallClockAssertionsInTestsRule from './eslint-rules/no-wall-clock-assertions-in-tests.js';
 import noFlushSyncInTeardownRule from './eslint-rules/no-flushsync-in-teardown.js';
 import noDirectReducedMotionQueryRule, {
   SOURCE_OF_TRUTH_FILES as reducedMotionSourceOfTruthFiles,
@@ -35,6 +36,8 @@ import noDirectReducedMotionQueryRule, {
 
 const sourceLiteralAssertionsBaseline =
   baselineCounts(lintBaseline['no-source-literal-assertions-in-tests']) ?? {};
+const wallClockAssertionsBaseline =
+  baselineCounts(lintBaseline['no-wall-clock-assertions-in-tests']) ?? {};
 
 const intentPlugin = {
   rules: {
@@ -43,6 +46,7 @@ const intentPlugin = {
     ...designSystemRules,
     'no-cold-svelte-import-in-tests': noColdSvelteImportInTestsRule,
     'no-source-literal-assertions-in-tests': noSourceLiteralAssertionsInTestsRule,
+    'no-wall-clock-assertions-in-tests': noWallClockAssertionsInTestsRule,
     'no-flushsync-in-teardown': noFlushSyncInTeardownRule,
     'no-direct-reduced-motion-query': noDirectReducedMotionQueryRule,
   },
@@ -645,6 +649,14 @@ export default [
       'intent/no-source-literal-assertions-in-tests': [
         'error',
         { baseline: sourceLiteralAssertionsBaseline },
+      ],
+      // A test that asserts a raw performance.now()/Date.now() elapsed time
+      // against a millisecond budget passes in isolation and fails under CI
+      // runner load (cloudlands-fe#2740). Same ratchet as above: the baseline
+      // maps today's offenders to their assertion counts and may only shrink.
+      'intent/no-wall-clock-assertions-in-tests': [
+        'error',
+        { baseline: wallClockAssertionsBaseline },
       ],
     },
   },
