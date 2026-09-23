@@ -4,6 +4,13 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.179.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.179.0...v2.179.1) (2026-09-23)
+
+
+### 🐛 Bug Fixes
+
+* unify modal layouts and refine responsive interactions ([#2819](https://github.com/intent-hq/cloudlands-fe/issues/2819)) ([47ec95b](https://github.com/intent-hq/cloudlands-fe/commit/47ec95be24efc9323ff561a5e6945b23d40066df))
+
 ## [2.179.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.178.3...v2.179.0) (2026-09-23)
 
 
