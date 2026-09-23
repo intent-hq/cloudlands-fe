@@ -27,6 +27,16 @@ interface BuildGroupedModelOptionsParams {
    */
   availableModelsProviderId: string;
   enabledProviderIds: string[];
+  /**
+   * The effective provider was explicitly disabled in Settings > Agents for an
+   * existing agent. The disabled-effective-provider fallback group (kept since
+   * cloudlands-fe#749 so a since-unavailable provider's model was not
+   * orphaned) is then NOT rendered: the daemon refuses to run the agent on a
+   * disabled provider and re-homes it on the next send (intent#5737), so the
+   * picker must report the model as unavailable instead of keeping it
+   * selectable. Defaults to false (guest windows, transient unavailability).
+   */
+  effectiveProviderDisabled?: boolean;
   allProviderModels: Record<string, DropdownOption[]>;
   allProviderLoading: Record<string, boolean>;
   allProviderErrors: Record<string, ProviderLoadError>;
@@ -40,6 +50,7 @@ export function buildGroupedModelOptions({
   availableModels,
   availableModelsProviderId,
   enabledProviderIds,
+  effectiveProviderDisabled = false,
   allProviderModels,
   allProviderLoading,
   allProviderErrors,
@@ -59,8 +70,10 @@ export function buildGroupedModelOptions({
   const normalizedEnabledProviderIds = new Set(
     enabledProviderIds.map((pid) => selectNormalizedProviderId.select(state, pid)),
   );
-  // Keep the agent's current provider group visible even if that provider was
-  // since disabled in settings, so the selected model isn't orphaned.
+  // Keep the agent's current provider group visible while that provider is
+  // merely unavailable (or a guest window cannot see the host's settings), so
+  // the selected model isn't orphaned — unless it was explicitly disabled in
+  // settings (see `effectiveProviderDisabled`).
   const normalizedEffectiveProviderId = selectNormalizedProviderId.select(
     state,
     effectiveProviderId,
@@ -74,7 +87,9 @@ export function buildGroupedModelOptions({
 
   for (const pid of selectAllCatalogProviderIds.select(state)) {
     const isDisabledEffectiveProvider =
-      pid === normalizedEffectiveProviderId && !normalizedEnabledProviderIds.has(pid);
+      !effectiveProviderDisabled &&
+      pid === normalizedEffectiveProviderId &&
+      !normalizedEnabledProviderIds.has(pid);
     if (!normalizedEnabledProviderIds.has(pid) && !isDisabledEffectiveProvider) continue;
     const rawModels =
       allProviderModels[pid] ??

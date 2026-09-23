@@ -55,6 +55,7 @@
   import {
     selectActiveProviderId,
     selectAvailableEnabledProviderIds,
+    selectEnabledProviders,
     selectIsProviderModelAccessAllowed,
     selectModelFetchProviderIds,
   } from '$store/renderer/slices/provider-settings/provider-settings-selectors';
@@ -82,6 +83,7 @@
   import {
     filterDefaultPseudoOptions,
     findModelFallbackOption,
+    isProviderDisabledInSettings,
     isProviderEnabled,
     isUserProviderSettled,
     normalizeModelIdForMatch,
@@ -141,6 +143,7 @@
     );
   }
   const availableEnabledProviderIds$ = selectAvailableEnabledProviderIds();
+  const enabledProviders$ = selectEnabledProviders();
   const selectedModel$ = selectSelectedModel();
   const availableModels$ = selectAvailableModels();
   const availableModelsProviderId$ = selectAvailableModelsProviderId();
@@ -487,6 +490,21 @@
 
   const isEffectiveProviderAvailable = $derived(
     isProviderEnabled($availableEnabledProviderIds$, effectiveProviderId),
+  );
+
+  // An existing agent whose current provider was explicitly disabled in
+  // Settings > Agents (intent#5737). Read from `providers.enabled` alone — not
+  // the available+enabled set, which also drops providers whose probe failed,
+  // and not a daemon event — so the picker can warn before any message is
+  // sent. The daemon refuses to run the agent on a disabled provider and
+  // re-homes it on the next send, so unlike the cloudlands-fe#749 policy
+  // (keep a since-unavailable provider selectable) the model is reported as
+  // unavailable and the disabled provider's group is not offered. A
+  // guest-locked picker never sees the host's settings and stays read-only.
+  const isEffectiveProviderDisabled = $derived(
+    !!agentId &&
+      !isGuestLocked &&
+      isProviderDisabledInSettings($enabledProviders$, effectiveProviderId),
   );
 
   // The per-agent fetch is only needed when the effective provider's models
@@ -1092,9 +1110,12 @@
     ...$availableEnabledProviderIds$.flatMap(
       (pid) => allProviderModels[normalizeProviderId(pid)] ?? [],
     ),
-    // Keep the agent's current provider selectable even if it was since
-    // disabled, so the selected model isn't treated as unavailable.
-    ...(isEffectiveProviderAvailable || !fallbackModelsMatchEffectiveProvider
+    // Keep the agent's current provider selectable while it is merely
+    // unavailable, so the selected model isn't treated as unavailable — but
+    // not once it was disabled in settings (see isEffectiveProviderDisabled).
+    ...(isEffectiveProviderAvailable ||
+    isEffectiveProviderDisabled ||
+    !fallbackModelsMatchEffectiveProvider
       ? []
       : toDropdownOptions(availableModels)),
   ]);
@@ -1232,6 +1253,7 @@
       availableModels,
       availableModelsProviderId,
       enabledProviderIds: $availableEnabledProviderIds$,
+      effectiveProviderDisabled: isEffectiveProviderDisabled,
       allProviderModels,
       allProviderLoading,
       allProviderErrors,
@@ -1268,6 +1290,17 @@
     hasExplicitModel && localModel
       ? normalizeProviderId(resolvePickedTriple(localModel).providerId)
       : '',
+  );
+
+  // The selected model's own provider (the effective provider when the model
+  // inherits it) was disabled in settings — the pre-send warning state.
+  const isSelectedModelProviderDisabled = $derived(
+    !!agentId &&
+      !isGuestLocked &&
+      isProviderDisabledInSettings(
+        $enabledProviders$,
+        selectedModelProviderId || effectiveProviderId,
+      ),
   );
 
   const providerTabIds = $derived.by(() => [
@@ -1364,6 +1397,8 @@
 
   const isSelectedModelUnavailable = $derived.by(() => {
     if (isGuestLocked) return false;
+    // Settings-derived: does not wait for catalog loads or availability probes.
+    if (isSelectedModelProviderDisabled) return true;
     if (!canUseProviderModels(selectedModelProviderId || effectiveProviderId)) return true;
     if (!$hasCheckedOnce$) return false;
     if (isLoadingModels) return false;
@@ -1546,6 +1581,7 @@
   const showModelLoading = $derived(
     !!agentId &&
       $fallbackInfo$ === null &&
+      !isSelectedModelProviderDisabled &&
       isSelectedModelMissingFromCatalog &&
       (!$hasCheckedOnce$ ||
         isLoadingModels ||
@@ -1561,6 +1597,14 @@
 
   // Warning message to display
   const warningMessage = $derived.by(() => {
+    if (isSelectedModelProviderDisabled) {
+      return {
+        title: m.chat_modelPicker_noLongerAvailable_title({ model: currentModelLabel }),
+        description: m.chat_modelPicker_providerDisabled_description({
+          provider: providerDisplayName(selectedModelProviderId || effectiveProviderId),
+        }),
+      };
+    }
     if (isSelectedModelUnavailable) {
       return {
         title: m.chat_modelPicker_noLongerAvailable_title({
@@ -1579,6 +1623,75 @@
     return null;
   });
 
+  // Native tooltip on the trigger: the warning reason while one is shown
+  // ("<model> is no longer available — <provider> is disabled"), else the label.
+  const triggerTitle = $derived(
+    showModelWarning && warningMessage
+      ? m.chat_modelPicker_warning_tooltip({
+          title: warningMessage.title,
+          description: warningMessage.description,
+        })
+      : triggerAccessibleLabel,
+  );
+
+  // Follow the daemon's re-home (intent#5737): while the agent's provider is
+  // disabled the warning above derives from settings alone; when the session
+  // then lands on another provider (the daemon moves it on the next send and
+  // the agent-updated event refreshes `explicitProviderId`), announce the
+  // switch once with the existing fallback toast and keep the from/to note in
+  // the picker. The FE never performs the switch itself. A user pick in the
+  // meantime, or the provider being re-enabled, cancels the announcement.
+  let disabledProviderSnapshot = $state<{
+    agentId: string;
+    providerId: string;
+    fromModel: string;
+  } | null>(null);
+  $effect(() => {
+    if (!agentId) {
+      disabledProviderSnapshot = null;
+      return;
+    }
+    const currentProviderId = normalizeProviderId(effectiveProviderId);
+    if (isEffectiveProviderDisabled) {
+      if (!disabledProviderSnapshot && !untrack(() => userChangedModel)) {
+        disabledProviderSnapshot = {
+          agentId,
+          providerId: currentProviderId,
+          fromModel: untrack(() => currentModelLabel),
+        };
+      }
+      return;
+    }
+    const snapshot = disabledProviderSnapshot;
+    if (!snapshot) return;
+    // The session's provider and the `selectedModel` prop refresh from the same
+    // agent-updated event but may land in separate flushes; announce only once
+    // the selected model has left the disabled provider so the "to" label is
+    // the re-homed model, not the stale one.
+    if (
+      snapshot.agentId === agentId &&
+      snapshot.providerId !== currentProviderId &&
+      selectedModelProviderId === snapshot.providerId
+    ) {
+      return;
+    }
+    disabledProviderSnapshot = null;
+    if (snapshot.agentId !== agentId) return;
+    if (snapshot.providerId === currentProviderId) return;
+    if (untrack(() => userChangedModel)) return;
+    const toModel = untrack(() => currentModelLabel);
+    logger.info('Agent re-homed by the daemon after its provider was disabled:', {
+      agentId,
+      fromProvider: snapshot.providerId,
+      toProvider: currentProviderId,
+    });
+    setFallbackInfo({ fromModel: snapshot.fromModel, toModel });
+    notify.info(
+      m.chat_modelPicker_unavailableSwitched_toast({ from: snapshot.fromModel, to: toModel }),
+      { duration: 5000 },
+    );
+  });
+
   function findFallbackOption(restrictToProvider?: string): DropdownOption | undefined {
     return findModelFallbackOption({
       options: flatModelOptions,
@@ -1593,6 +1706,9 @@
   $effect(() => {
     if (!agentId) return;
     if (isGuestLocked) return;
+    // A disabled provider is re-homed by the daemon on the next send; the FE
+    // must not `agent.setModel` its way around the gate (intent#5737).
+    if (isSelectedModelProviderDisabled) return;
     if (!canUseProviderModels(selectedModelProviderId || effectiveProviderId)) return;
     if (!isSelectedModelUnavailable) return;
     if (flatModelOptions.length === 0) return;
@@ -2003,7 +2119,7 @@
           'inline-flex items-center gap-2 truncate min-w-0',
           (variant === 'outline' || variant === 'default') && 'flex-1',
         )}
-        title={isTriggerLabelResolved ? triggerAccessibleLabel : ''}
+        title={isTriggerLabelResolved ? triggerTitle : ''}
         aria-label={isTriggerLabelResolved ? triggerAccessibleLabel : undefined}
       >
         {#if isCompact}
