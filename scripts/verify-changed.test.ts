@@ -259,13 +259,14 @@ describe('verification planning', () => {
     expect(otherScript.checks.map((check) => check.id)).not.toContain('architecture');
   });
 
-  it('lints changed scripts/ files but not e2e/, test/, or .cjs files', () => {
+  it('lints changed scripts/ files but not e2e/ or test/ files', () => {
     const root = fixtureRoot({
       'scripts/verify-changed.mjs': '',
       'scripts/type-check.ts': '',
       'scripts/legacy.cjs': '',
       'e2e/flow.spec.ts': '',
       'test/harness.mjs': '',
+      'test/fixtures/legacy.cjs': '',
     });
     const plan = createVerificationPlan(
       [
@@ -274,6 +275,7 @@ describe('verification planning', () => {
         'scripts/legacy.cjs',
         'e2e/flow.spec.ts',
         'test/harness.mjs',
+        'test/fixtures/legacy.cjs',
       ],
       { root, ctTests: [] },
     );
@@ -283,6 +285,7 @@ describe('verification planning', () => {
       'eslint',
       'scripts/verify-changed.mjs',
       'scripts/type-check.ts',
+      'scripts/legacy.cjs',
     ]);
   });
 
