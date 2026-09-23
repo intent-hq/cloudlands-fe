@@ -124,7 +124,9 @@ describe('buildGroupedModelOptions disabled effective provider (intent#5737)', (
     expect(groups.map(({ key }) => key)).toEqual(['codex']);
   });
 
-  it('leaves an enabled effective provider unchanged by the flag', () => {
+  it('drops the disabled effective provider even while the enabled set still names it', () => {
+    // The enabled set also carries the active provider, which can still be the
+    // disabled one until the daemon re-derives the default.
     const groups = buildGroupedModelOptions({
       ...disabledEffectiveParams,
       enabledProviderIds: ['auggie', 'codex'],
@@ -135,6 +137,6 @@ describe('buildGroupedModelOptions disabled effective provider (intent#5737)', (
       effectiveProviderDisabled: true,
     });
 
-    expect(groups.map(({ key }) => key)).toEqual(['auggie', 'codex']);
+    expect(groups.map(({ key }) => key)).toEqual(['codex']);
   });
 });

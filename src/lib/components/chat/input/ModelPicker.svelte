@@ -849,6 +849,12 @@
     }
     logger.debug('Model selected:', { model, previousModel: localModel, workspaceId, agentId });
     logger.debug('Model pick flags:', { deferUpdate, updateGlobalStore, updateGlobalDefault });
+    // An explicit pick while the agent's provider is disabled is the user's
+    // own switch: the daemon's re-home must not be announced (intent#5737).
+    if (isEffectiveProviderDisabled || disabledProviderSnapshot) {
+      disabledProviderSnapshot = null;
+      reHomeAnnouncementSuppressed = true;
+    }
     // Update local state before async work so the UI responds immediately.
     propModelAtLocalChange = selectedModel;
     userChangedModel = true;
@@ -1405,10 +1411,42 @@
     return !values.has(normalizeModelIdForMatch(localModel, effectiveProviderId));
   });
 
+  // Follow the daemon's re-home (intent#5737): while the agent's provider is
+  // disabled the warning derives from settings alone; when the session then
+  // lands on another provider (the daemon moves it on the next send and the
+  // agent-updated event refreshes `explicitProviderId`), announce the switch
+  // once with the existing fallback toast and keep the from/to note in the
+  // picker. The FE never performs the switch itself. A user pick in the
+  // meantime, or the provider being re-enabled, cancels the announcement.
+  let disabledProviderSnapshot = $state<{
+    agentId: string;
+    providerId: string;
+    fromModel: string;
+  } | null>(null);
+  // Set by an explicit pick while the provider is disabled: the user chose
+  // the switch, so the daemon's re-home must not be announced as its own.
+  let reHomeAnnouncementSuppressed = $state(false);
+
+  // The agent-updated event that re-homes the agent refreshes the session's
+  // provider and model together, but the `selectedModel` prop can land in a
+  // later flush. Until the prop matches the session model the old model is
+  // stale, so neither the announcement nor the auto-fallback may act on it.
+  const isAwaitingReHomedModel = $derived.by(() => {
+    const snapshot = disabledProviderSnapshot;
+    if (!snapshot || snapshot.agentId !== agentId || isEffectiveProviderDisabled) return false;
+    const sessionModel = $agentSession$?.model;
+    if (sessionModel === undefined) return false;
+    const sessionModelId = sessionModel === null ? '' : splitLegacyCompoundId(sessionModel).modelId;
+    const localModelId =
+      hasExplicitModel && localModel ? splitLegacyCompoundId(localModel).modelId : '';
+    return sessionModelId !== localModelId;
+  });
+
   const isSelectedModelUnavailable = $derived.by(() => {
     if (isGuestLocked) return false;
     // Settings-derived: does not wait for catalog loads or availability probes.
     if (isSelectedModelProviderDisabled) return true;
+    if (isAwaitingReHomedModel) return false;
     if (!canUseProviderModels(selectedModelProviderId || effectiveProviderId)) return true;
     if (!$hasCheckedOnce$) return false;
     if (isLoadingModels) return false;
@@ -1644,26 +1682,16 @@
       : triggerAccessibleLabel,
   );
 
-  // Follow the daemon's re-home (intent#5737): while the agent's provider is
-  // disabled the warning above derives from settings alone; when the session
-  // then lands on another provider (the daemon moves it on the next send and
-  // the agent-updated event refreshes `explicitProviderId`), announce the
-  // switch once with the existing fallback toast and keep the from/to note in
-  // the picker. The FE never performs the switch itself. A user pick in the
-  // meantime, or the provider being re-enabled, cancels the announcement.
-  let disabledProviderSnapshot = $state<{
-    agentId: string;
-    providerId: string;
-    fromModel: string;
-  } | null>(null);
+  // Re-home announcement (see `disabledProviderSnapshot`).
   $effect(() => {
     if (!agentId) {
       disabledProviderSnapshot = null;
+      reHomeAnnouncementSuppressed = false;
       return;
     }
     const currentProviderId = normalizeProviderId(effectiveProviderId);
     if (isEffectiveProviderDisabled) {
-      if (!disabledProviderSnapshot && !untrack(() => userChangedModel)) {
+      if (!disabledProviderSnapshot && !untrack(() => reHomeAnnouncementSuppressed)) {
         disabledProviderSnapshot = {
           agentId,
           providerId: currentProviderId,
@@ -1672,23 +1700,13 @@
       }
       return;
     }
+    reHomeAnnouncementSuppressed = false;
     const snapshot = disabledProviderSnapshot;
     if (!snapshot) return;
-    // The session's provider and the `selectedModel` prop refresh from the same
-    // agent-updated event but may land in separate flushes; announce only once
-    // the selected model has left the disabled provider so the "to" label is
-    // the re-homed model, not the stale one.
-    if (
-      snapshot.agentId === agentId &&
-      snapshot.providerId !== currentProviderId &&
-      selectedModelProviderId === snapshot.providerId
-    ) {
-      return;
-    }
+    if (isAwaitingReHomedModel) return;
     disabledProviderSnapshot = null;
     if (snapshot.agentId !== agentId) return;
     if (snapshot.providerId === currentProviderId) return;
-    if (untrack(() => userChangedModel)) return;
     const toModel = untrack(() => currentModelLabel);
     logger.info('Agent re-homed by the daemon after its provider was disabled:', {
       agentId,

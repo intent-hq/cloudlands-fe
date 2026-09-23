@@ -78,6 +78,9 @@ export function buildGroupedModelOptions({
     state,
     effectiveProviderId,
   );
+  // Settings win: `enabledProviderIds` also carries the active provider, which
+  // can still name the disabled one until the daemon re-derives the default.
+  if (effectiveProviderDisabled) normalizedEnabledProviderIds.delete(normalizedEffectiveProviderId);
   // Only use the shared catalog for the fallback group when it was actually
   // loaded for the effective provider (see availableModelsProviderId doc).
   const fallbackModelsMatchEffectiveProvider =

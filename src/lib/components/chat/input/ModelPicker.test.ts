@@ -226,7 +226,7 @@ const availableEnabledProviderIds$ = derived(
   ([enabled, override]) => override ?? enabled,
 );
 const mockAgentSession$ = writable<
-  { id: string; workspaceId: string; provider?: string } | undefined
+  { id: string; workspaceId: string; provider?: string; model?: string | null } | undefined
 >(undefined);
 // Guest-local Antigravity sign-in state (`selectIsProviderModelAccessAllowed`).
 const antigravityModelsAllowed$ = writable(true);
@@ -3234,7 +3234,12 @@ describe('ModelPicker disabled agent provider (intent#5737)', () => {
     const { agentClient } = await import('$features/agent/agent.client');
     const { notify } = await import('$lib/components/patterns/notify');
     enabledProvidersMap$.set({ auggie: true, codex: false });
-    mockAgentSession$.set({ id: 'agent-1', workspaceId: 'ws-1', provider: 'codex' });
+    mockAgentSession$.set({
+      id: 'agent-1',
+      workspaceId: 'ws-1',
+      provider: 'codex',
+      model: 'gpt-5-codex',
+    });
 
     const props = {
       selectedModel: 'codex:gpt-5-codex',
@@ -3256,7 +3261,12 @@ describe('ModelPicker disabled agent provider (intent#5737)', () => {
 
     // The daemon refused the disabled provider on send and re-homed the agent;
     // the agent-updated event refreshes the session's provider and model.
-    mockAgentSession$.set({ id: 'agent-1', workspaceId: 'ws-1', provider: 'auggie' });
+    mockAgentSession$.set({
+      id: 'agent-1',
+      workspaceId: 'ws-1',
+      provider: 'auggie',
+      model: 'sonnet4.6',
+    });
     await rerender({ ...props, selectedModel: 'auggie:sonnet4.6' });
 
     await waitFor(() => {
@@ -3271,6 +3281,116 @@ describe('ModelPicker disabled agent provider (intent#5737)', () => {
     await waitFor(() => {
       expect(trigger.querySelector('[data-icon="triangle-exclamation"]')).toBeNull();
     });
+  });
+
+  it('holds the announcement and the auto-fallback until the bare re-homed model arrives', async () => {
+    const { agentClient } = await import('$features/agent/agent.client');
+    const { notify } = await import('$lib/components/patterns/notify');
+    enabledProvidersMap$.set({ auggie: true, codex: false });
+    // Catalog rows are bare for every provider, as the daemon serves them.
+    vi.mocked(getModelsForProviderForLoadingState).mockImplementation(async (providerId) => {
+      if (providerId === 'codex') {
+        return { models: [{ value: 'gpt-5-codex', label: 'GPT-5 Codex', description: '' }] };
+      }
+      if (providerId === 'auggie') {
+        return { models: [{ value: 'sonnet4.6', label: 'Sonnet 4.6', description: '' }] };
+      }
+      return { models: [] };
+    });
+    mockAgentSession$.set({
+      id: 'agent-1',
+      workspaceId: 'ws-1',
+      provider: 'codex',
+      model: 'gpt-5-codex',
+    });
+
+    const props = {
+      selectedModel: 'gpt-5-codex',
+      agentId: 'agent-1',
+      workspaceId: 'ws-1',
+      portal: false,
+      updateGlobalStore: true,
+    };
+    const { rerender } = render(ModelPicker, { props });
+
+    const trigger = await screen.findByRole('button');
+    await waitFor(() => {
+      expect(trigger.querySelector('[data-icon="triangle-exclamation"]')).not.toBeNull();
+    });
+    await fireEvent.click(trigger);
+    expect(await screen.findByRole('option', { name: /Sonnet 4\.6/ })).toBeTruthy();
+    await fireEvent.keyDown(document.activeElement ?? trigger, { key: 'Escape' });
+
+    // The session's provider/model pair refreshes first; the `selectedModel`
+    // prop still carries the stale model for a few flushes.
+    mockAgentSession$.set({
+      id: 'agent-1',
+      workspaceId: 'ws-1',
+      provider: 'auggie',
+      model: 'sonnet4.6',
+    });
+    await tick();
+    await tick();
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(vi.mocked(notify.info)).not.toHaveBeenCalled();
+    expect(vi.mocked(agentClient.setModel)).not.toHaveBeenCalled();
+    expect(dispatchedTypes()).not.toContain('agentSession/updateSession');
+
+    await rerender({ ...props, selectedModel: 'sonnet4.6' });
+
+    await waitFor(() => {
+      expect(vi.mocked(notify.info)).toHaveBeenCalledTimes(1);
+    });
+    const [toast] = vi.mocked(notify.info).mock.calls[0] as [string, ...unknown[]];
+    // The disabled provider's catalog is never fetched, so the "from" side may
+    // fall back to the model id; the "to" side is the re-homed model.
+    expect(toast).toMatch(/gpt-5[- ]codex/i);
+    expect(toast).toMatch(/Sonnet 4\.6/);
+    expect(vi.mocked(agentClient.setModel)).not.toHaveBeenCalled();
+    expect(dispatchedTypes()).not.toContain('agentSession/updateSession');
+  });
+
+  it('does not announce a re-home the user picked themselves', async () => {
+    const { notify } = await import('$lib/components/patterns/notify');
+    enabledProvidersMap$.set({ auggie: true, codex: false });
+    mockAgentSession$.set({
+      id: 'agent-1',
+      workspaceId: 'ws-1',
+      provider: 'codex',
+      model: 'gpt-5-codex',
+    });
+
+    const props = {
+      selectedModel: 'codex:gpt-5-codex',
+      agentId: 'agent-1',
+      workspaceId: 'ws-1',
+      portal: false,
+    };
+    const { rerender } = render(ModelPicker, { props });
+
+    const trigger = await screen.findByRole('button');
+    await waitFor(() => {
+      expect(trigger.querySelector('[data-icon="triangle-exclamation"]')).not.toBeNull();
+    });
+    await fireEvent.click(trigger);
+    await fireEvent.click(await screen.findByRole('option', { name: /Sonnet 4\.6/ }));
+
+    // The pick settles in separate flushes: the prop first, the session later.
+    await rerender({ ...props, selectedModel: 'auggie:sonnet4.6' });
+    await tick();
+    mockAgentSession$.set({
+      id: 'agent-1',
+      workspaceId: 'ws-1',
+      provider: 'auggie',
+      model: 'sonnet4.6',
+    });
+
+    await waitFor(() => {
+      expect(trigger.querySelector('[data-icon="triangle-exclamation"]')).toBeNull();
+    });
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(vi.mocked(notify.info)).not.toHaveBeenCalled();
+    expect(dispatchedTypes()).not.toContain('model/setModelFallbackInfo');
   });
 
   it('does not announce anything when the provider is simply re-enabled', async () => {
