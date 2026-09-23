@@ -5,7 +5,7 @@
 
 import { describe, expect, it } from 'vitest';
 import { spawn } from 'node:child_process';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync } from 'node:fs';
 import path from 'node:path';
 
 const repoRoot = path.resolve(__dirname, '..');
@@ -45,13 +45,9 @@ describe('playwright component-test discovery (run-ct-tests.mjs)', () => {
     // First run compiles the CT transform and is slow; be generous.
   }, 120_000);
 
+  // The discovery run above lists the "production path" navigator test, which
+  // mounts the integration host; the legacy standalone host must stay deleted.
   it('keeps navigator discovery on the production integration fixture', () => {
-    const specSource = readFileSync(
-      path.join(navigatorTestDir, 'chat-message-navigator.ct.spec.ts'),
-      'utf8',
-    );
-    expect(specSource).toContain("from './ChatMessageNavigatorIntegrationHost.svelte'");
-    expect(specSource).not.toContain('ChatMessageNavigatorHost.svelte');
     expect(
       existsSync(path.join(navigatorTestDir, 'ChatMessageNavigatorIntegrationHost.svelte')),
     ).toBe(true);

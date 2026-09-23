@@ -55,7 +55,6 @@ const FOLDED_NEWLINE = /([^\n])\n(?=[^\n])/g;
 const SCRIPT_NAME = /^[\w:.-]+$/;
 const ENV_ASSIGNMENT = /^[A-Za-z_]\w*=/;
 const LAUNCHER = /^scripts\/[\w./-]+$/;
-const RUNNERS = ['vitest', 'playwright'] as const;
 /** Commands that run the rest of their line as the command. */
 const WRAPPERS = new Set(['cross-env', 'env', 'xvfb-run', 'corepack']);
 /** Commands that run the bins named after them. */
@@ -66,7 +65,7 @@ const SHELLS = new Set(['sh', 'bash']);
 const PLAIN_WORD = /^[\w@%+=:,./-]+$/;
 const MAX_SCRIPT_HOPS = 16;
 
-type Runner = (typeof RUNNERS)[number];
+type Runner = 'vitest' | 'playwright';
 type Scripts = Record<string, string>;
 type Reader = (path: string) => string | undefined;
 /** One package-script call with the args pnpm forwards to it. */

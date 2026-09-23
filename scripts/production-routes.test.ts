@@ -19,6 +19,15 @@ function temporaryDirectory() {
   return directory;
 }
 
+// The canonical source a generated wrapper delegates to, resolved from its own location.
+function wrapperTarget(outputRoot: string, routeFile: string) {
+  const wrapperFile = path.join(outputRoot, routeFile);
+  const wrapper = readFileSync(wrapperFile, 'utf8');
+  const specifier = wrapper.match(/\bfrom\s+"([^"]+)"/)?.[1];
+  expect(specifier, `${routeFile} wrapper must import its source`).toBeDefined();
+  return { wrapper, target: path.resolve(path.dirname(wrapperFile), specifier!) };
+}
+
 afterEach(async () => {
   const { rm } = await import('node:fs/promises');
   await Promise.all(
@@ -58,10 +67,13 @@ describe('production route graph', () => {
 
     const routeFiles = listProductionRouteFiles(routesRoot);
     expect(readProductionRouteManifest(outputRoot)).toEqual(routeFiles);
-    const rootLayout = readFileSync(path.join(outputRoot, '+layout.svelte'), 'utf8');
-    expect(rootLayout).toContain('import RouteComponent from');
-    expect(rootLayout).toContain('{@render children?.()}');
-    expect(readFileSync(path.join(outputRoot, '+layout.ts'), 'utf8')).toContain('export * from');
+    for (const routeFile of routeFiles) {
+      const { wrapper, target } = wrapperTarget(outputRoot, routeFile);
+      expect(target, routeFile).toBe(path.join(routesRoot, routeFile));
+      expect(wrapper.includes('{@render children'), routeFile).toBe(
+        path.basename(routeFile) === '+layout.svelte',
+      );
+    }
     expect(existsSync(path.join(outputRoot, 'sandbox/+page.svelte'))).toBe(false);
     expect(existsSync(path.join(outputRoot, '(app)/workspace/[id]/terminal-test'))).toBe(false);
   });
