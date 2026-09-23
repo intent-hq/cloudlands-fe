@@ -124,6 +124,7 @@ import { QUESTION_RESOURCE_MIME_TYPE } from '$shared/types/question-resource';
 import { reportStreamLifecycle } from '$lib/utils/stream-lifecycle-telemetry';
 import { selectTranscriptSnapshotMeta } from '$store/renderer/slices/chat-state/chat-state-selectors';
 import { shouldShowStoppedIndicator } from '$lib/components/chat/message-display-utils';
+import { groupIntoTurns } from '$lib/components/chat/conversation-turns';
 
 type FakeSubscription = {
   agentId: string;
@@ -1667,6 +1668,63 @@ describe('chatSubscribeSaga (fake seam, real store)', () => {
         }),
       );
     }
+
+    it('moves an empty interruption back to its original turn when recovery supplies its sequence', () => {
+      const agentId = 'agent-empty-interruption-order';
+      seedSession(agentId);
+      const sub = openChat(agentId);
+      const user = makeMessage('original-user', 'First request', { role: 'user', seq: 0 });
+      hydrate(sub, [user]);
+      appStore.dispatch(
+        agentStreamUpdateReceived({
+          agentId,
+          workspaceId: WS,
+          handlerSessionId: agentId,
+          source: 'sendMessage',
+          eventType: 'complete',
+          assistantMessageId: PLACEHOLDER_ID,
+          stopReason: 'interrupted',
+          interruptReason: 'preempted_by_message',
+        }),
+      );
+      const followup = makeMessage('followup-user', 'Second request', { role: 'user', seq: 2 });
+      const answer = makeMessage('normal-answer', 'Done', { seq: 3 });
+      sub.handler(transcript([user, followup, answer]));
+      // Reproduce the visible symptom: without an entity for the empty row,
+      // the retained seq-less placeholder sorts after the completed reply.
+      expect(selectAgentMessages.select(appStore.state, agentId).at(-1)?.id).toBe(PLACEHOLDER_ID);
+
+      const marker = makeMessage(PLACEHOLDER_ID, '', {
+        seq: 1,
+        contentBlocks: [],
+        metadata: {
+          interrupted: true,
+          stopReason: 'interrupted',
+          interruptReason: 'preempted_by_message',
+        },
+      });
+      // LiveChatClient's recovery emits this daemon-owned full snapshot.
+      sub.handler({ ...transcript([user, marker, followup, answer]), fromSnapshot: true });
+      const messages = selectAgentMessages.select(appStore.state, agentId);
+      expect(messages.map(({ id }) => id)).toEqual([
+        'original-user',
+        PLACEHOLDER_ID,
+        'followup-user',
+        'normal-answer',
+      ]);
+      expect(messages[1].provisional).toBeUndefined();
+      const turns = groupIntoTurns(messages);
+      expect(turns.map((turn) => turn.assistantMessages.map(({ id }) => id))).toEqual([
+        [PLACEHOLDER_ID],
+        ['normal-answer'],
+      ]);
+      expect(
+        shouldShowStoppedIndicator({ message: turns[0].assistantMessages[0], isStreaming: false }),
+      ).toBe(true);
+      expect(
+        shouldShowStoppedIndicator({ message: turns[1].assistantMessages[0], isStreaming: false }),
+      ).toBe(false);
+    });
 
     function closeThenReopen(agentA: string, agentB: string, sub: FakeSubscription) {
       appStore.dispatch(markAgentAsViewed(agentB));

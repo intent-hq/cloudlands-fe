@@ -852,3 +852,12 @@ body.panel-resizing webview {
 .app-drag-region [data-app-region-clip] [tabindex]:not([tabindex='-1']) {
   -webkit-app-region: initial;
 }
+/* Icon slots share the first text line's typography, not the whole row's height. */
+@utility first-line-icon {
+  display: inline-flex;
+  height: 1lh;
+  flex-shrink: 0;
+  align-self: flex-start;
+  align-items: center;
+  justify-content: center;
+}

@@ -184,6 +184,7 @@
     confirmModelChange?: (
       from: string | null | undefined,
       to: string | null,
+      labels?: { from: string; to: string },
     ) => boolean | Promise<boolean>;
     providerId?: string;
     isCompact?: boolean;
@@ -1963,6 +1964,13 @@
       const confirmed = await confirmModelChange(
         localModel,
         modelValue === USE_DEFAULT_VALUE ? null : modelValue,
+        {
+          from: currentModelLabel,
+          to:
+            modelValue === USE_DEFAULT_VALUE
+              ? m.chat_modelPicker_defaultModel_label()
+              : (getModelLabel(modelValue) ?? parseCompoundModelId(modelValue).modelId),
+        },
       );
       if (!confirmed) {
         // Revert the dropdown's internal selection back to the current model.

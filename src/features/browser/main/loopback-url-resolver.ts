@@ -5,8 +5,10 @@
  * Extracted from `browser-action-executor.ts` so the same resolution backs
  * both `browser.exec` navigate/openTab and the renderer-facing
  * `browser:resolve-url` IPC (programmatic UI entry points: script URL and
- * terminal link clicks — never the address bar, which loads literally per
- * intent-hq/monorepo#2404). Pure of Electron imports; callers inject the
+ * terminal link clicks, plus an explicit `daemon.localhost` /
+ * `client.localhost` alias typed into the address bar per
+ * intent-hq/intent#5710 — bare loopback address-bar input loads literally
+ * per intent-hq/monorepo#2404). Pure of Electron imports; callers inject the
  * loopback context and the tunnel provider.
  */
 

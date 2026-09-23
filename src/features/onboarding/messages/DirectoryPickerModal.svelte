@@ -153,10 +153,11 @@
     showCloseButton={false}
     escapeKeydownBehavior="ignore"
     onOpenAutoFocus={(event) => event.preventDefault()}
-    class="max-w-3xl gap-0 border-0 bg-transparent p-0 shadow-none"
+    class="max-w-3xl gap-0 overflow-hidden rounded-lg border-0 bg-transparent p-0 shadow-none"
   >
     <Dialog.Title class="sr-only">{resolvedTitle}</Dialog.Title>
     <DirectoryPickerView
+      embedded
       {open}
       title={resolvedTitle}
       selectLabel={resolvedSelectLabel}

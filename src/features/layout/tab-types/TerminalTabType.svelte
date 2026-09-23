@@ -44,6 +44,8 @@
     size="icon-sm"
     onclick={moveToBottomBar}
     tooltip={m.workspace_shell_showInBottomBar_tooltip()}
+    tooltipSide="bottom"
+    tooltipDelayDuration={300}
     aria-label={m.workspace_shell_showInBottomBar_tooltip()}
     data-move-to-bottom-bar
   >

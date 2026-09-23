@@ -1,15 +1,13 @@
 <script lang="ts">
   import { Button } from '$lib/components/ui/button';
-  import * as Dialog from '$lib/components/ui/dialog';
+  import { ContentDialog } from '$lib/components/patterns/confirm';
   import DropdownMenu from '$lib/components/ui/dropdown-menu.svelte';
   import { Tooltip } from '$lib/components/ui/tooltip';
   import Fa from 'svelte-fa';
   import {
-    faXmark,
     faTerminal,
     faCode,
     faCodeBranch,
-    faExclamationTriangle,
     faChevronDown,
     faArrowUpRightFromSquare,
     faFolder,
@@ -95,7 +93,15 @@
   // global create flow) keep it until the last one detaches.
   $effect(() => {
     if (staticPosition || !contentRef) return;
-    return acquireMarkerAttribute(contentRef.ownerDocument.body, 'data-pull-conflict-dialog-open');
+    const releaseBody = acquireMarkerAttribute(
+      contentRef.ownerDocument.body,
+      'data-pull-conflict-dialog-open',
+    );
+    const releaseMarker = acquireMarkerAttribute(contentRef, 'data-pull-conflict-dialog');
+    return () => {
+      releaseBody();
+      releaseMarker();
+    };
   });
 
   // Fetch installed editors on mount
@@ -139,15 +145,36 @@
 
   /** Detected error type based on the error message */
   const errorType = $derived(detectErrorType(error));
+  const dialogTitle = $derived(
+    errorType === 'stash-conflict'
+      ? m.modals_pullConflict_stashTitle_label()
+      : m.modals_pullConflict_title(),
+  );
+  const description = $derived(
+    errorType === 'stash-conflict'
+      ? branchName
+        ? m.modals_pullConflict_stashBranch_description({ branchName })
+        : m.modals_pullConflict_stash_description()
+      : branchName
+        ? m.modals_pullConflict_remoteBranch_description({ branchName })
+        : m.modals_pullConflict_description(),
+  );
+  // Only simplify recognized content-conflict lines. Preserve every other
+  // diagnostic verbatim, including unrecognized conflict kinds.
+  const errorLines = $derived(
+    error
+      .split('\n')
+      .filter((line) => line.trim())
+      .map((line) => ({
+        raw: line,
+        path: /^CONFLICT \(content\): Merge conflict in (.+)$/.exec(line)?.[1],
+      })),
+  );
 
   function close() {
     dropdownOpen = false;
     open = false;
     onCancel?.();
-  }
-
-  function handleOpenChange(nextOpen: boolean) {
-    if (!nextOpen && open) close();
   }
 
   /**
@@ -194,124 +221,113 @@
   }
 </script>
 
-<Dialog.Root {staticPosition} {open} onOpenChange={handleOpenChange}>
-  <Dialog.Content
-    bind:ref={contentRef}
-    data-pull-conflict-dialog
-    showCloseButton={false}
-    class="app-no-drag max-w-md gap-0 overflow-hidden rounded-lg p-0"
-  >
-    <!-- Header -->
-    <div class="px-6 py-4 flex items-center justify-between">
-      <div class="flex items-center gap-3">
-        <div class="text-danger">
-          <Fa icon={faExclamationTriangle} size="lg" />
-        </div>
-        <div>
-          <Dialog.Title class="text-lg font-semibold">
-            {m.modals_pullConflict_title()}
-          </Dialog.Title>
-        </div>
-      </div>
-      <Dialog.Close
-        class="app-no-drag inline-flex size-8 shrink-0 cursor-pointer items-center justify-center rounded-md border border-transparent bg-transparent text-foreground outline-none transition-[background-color,border-color,color,box-shadow] hover:border-border hover:bg-secondary focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/40"
-        aria-label={m.modals_pullConflict_close_ariaLabel()}
+<ContentDialog
+  bind:open
+  static={staticPosition}
+  bind:contentRef
+  title={dialogTitle}
+  closeLabel={m.modals_pullConflict_close_ariaLabel()}
+  onClose={close}
+>
+  <div class="min-w-0">
+    <p class="type-body break-words">
+      {description}
+      <span
+        >{errorLines
+          .filter((line) => !line.path)
+          .map((line) => line.raw)
+          .join(' ')}</span
       >
-        <Fa icon={faXmark} />
-      </Dialog.Close>
-    </div>
-
-    <!-- Content -->
-    <div class="p-6">
-      {#if branchName}
-        <p class="type-body mb-4">{m.modals_pullConflict_branch_label({ branchName })}</p>
-      {/if}
-      <p class="type-body mb-4">
-        {m.modals_pullConflict_description()}
-      </p>
-      {#if error}
-        <div
-          class="bg-danger-background/10 py-2.5 px-3.5 text-sm text-danger whitespace-pre-wrap break-words max-h-32 overflow-auto"
-        >
-          {error}
-        </div>
-      {/if}
-    </div>
-
-    <!-- Footer -->
-    <div class="px-6 py-4 border-t border-border flex flex-col gap-4">
-      <div class="grid grid-cols-2 gap-2 items-center">
-        <p class="type-caption text-muted-foreground font-normal select-none">
-          {m.modals_pullConflict_resolveInApp_label()}
-        </p>
-        <!-- Open in dropdown (combined IDEs and terminals) -->
-        {#if $installedEditors$.length > 0}
-          <DropdownMenu bind:open={dropdownOpen} align="start" portal={true}>
-            {#snippet trigger({ props })}
-              <Button {...props} variant="outline" class="w-full justify-between gap-2">
-                <span class="flex items-center gap-2">
-                  <Fa icon={faArrowUpRightFromSquare} size="sm" />
-                  <span>{m.modals_pullConflict_openIn_label()}</span>
-                </span>
-                <Fa icon={faChevronDown} size="xs" class="opacity-50" />
-              </Button>
-            {/snippet}
-
-            {#snippet content()}
-              <div class="max-w-60 py-1">
-                {#each $installedEditors$ as editor (editor.id)}
-                  {@const IconComponent = EDITOR_ICONS[editor.id]}
-                  <Button
-                    variant="ghost"
-                    type="button"
-                    class="flex w-full items-center gap-2 px-3 py-1.5 text-sm hover:bg-muted transition-colors text-left cursor-pointer"
-                    onclick={() => {
-                      openInEditor(editor);
-                      dropdownOpen = false;
-                    }}
-                  >
-                    {#if editor.iconBase64}
-                      <img
-                        src="data:image/png;base64,{editor.iconBase64}"
-                        alt={editor.name}
-                        class="w-5 h-5"
-                      />
-                    {:else if IconComponent}
-                      <IconComponent size={16} />
-                    {:else if editor.category === 'terminal'}
-                      <Fa icon={faTerminal} class="w-4 h-4 ml-0.5 mr-0.5 opacity-30" />
-                    {:else if editor.category === 'finder'}
-                      <Fa icon={faFolder} class="w-4 h-4 ml-0.5 mr-0.5 opacity-30" />
-                    {:else}
-                      <Fa icon={faCode} class="w-4 h-4 ml-0.5 mr-0.5 opacity-30" />
-                    {/if}
-                    <span class="flex-1">{editor.name}</span>
-                  </Button>
-                {/each}
-              </div>
-            {/snippet}
-          </DropdownMenu>
-        {/if}
+    </p>
+    {#if errorLines.some((line) => line.path)}
+      <div class="mt-4 space-y-2 type-caption">
+        <p class="text-subtle">{m.modals_pullConflict_conflictedFiles_label()}</p>
+        <ul class="list-disc pl-4 space-y-1 max-h-40 overflow-auto">
+          {#each errorLines.filter((line) => line.path) as line}
+            <li class="[overflow-wrap:anywhere]">{line.path}</li>
+          {/each}
+        </ul>
       </div>
-      <div class="grid grid-cols-2 gap-2 items-center">
-        <Tooltip content={m.modals_pullConflict_createWorkspace_tooltip()}>
-          <span class="type-caption text-muted-foreground font-normal inline-block"
-            >{m.modals_pullConflict_letIntentHandle_label()}</span
+    {/if}
+  </div>
+
+  <!-- Footer -->
+  {#snippet footer()}
+    <div class="flex w-full flex-col gap-4">
+      {#if $installedEditors$.length > 0}<div class="grid grid-cols-2 gap-2 items-center">
+          <p class="type-caption text-muted-foreground font-normal select-none">
+            {m.modals_pullConflict_resolveInApp_label()}
+          </p>
+          <!-- Open in dropdown (combined IDEs and terminals) -->
+          {#if $installedEditors$.length > 0}
+            <DropdownMenu bind:open={dropdownOpen} align="start" portal={true}>
+              {#snippet trigger({ props })}
+                <Button {...props} variant="outline" class="w-full justify-between gap-2">
+                  <span class="flex items-center gap-2">
+                    <Fa icon={faArrowUpRightFromSquare} size="sm" />
+                    <span>{m.modals_pullConflict_openIn_label()}</span>
+                  </span>
+                  <Fa icon={faChevronDown} size="xs" class="opacity-50" />
+                </Button>
+              {/snippet}
+
+              {#snippet content()}
+                <div class="max-w-60 py-1">
+                  {#each $installedEditors$ as editor (editor.id)}
+                    {@const IconComponent = EDITOR_ICONS[editor.id]}
+                    <Button
+                      variant="ghost"
+                      type="button"
+                      truncateLabel={false}
+                      labelClass="items-start"
+                      class="flex h-auto w-full items-start gap-2 whitespace-normal px-3 py-1.5 text-sm hover:bg-muted transition-colors text-left cursor-pointer"
+                      onclick={() => {
+                        openInEditor(editor);
+                        dropdownOpen = false;
+                      }}
+                    >
+                      <span class="first-line-icon">
+                        {#if editor.iconBase64}
+                          <img
+                            src="data:image/png;base64,{editor.iconBase64}"
+                            alt={editor.name}
+                            class="w-5 h-5"
+                          />
+                        {:else if IconComponent}
+                          <IconComponent size={16} />
+                        {:else if editor.category === 'terminal'}
+                          <Fa icon={faTerminal} class="w-4 h-4 ml-0.5 mr-0.5 opacity-30" />
+                        {:else if editor.category === 'finder'}
+                          <Fa icon={faFolder} class="w-4 h-4 ml-0.5 mr-0.5 opacity-30" />
+                        {:else}
+                          <Fa icon={faCode} class="w-4 h-4 ml-0.5 mr-0.5 opacity-30" />
+                        {/if}
+                      </span>
+                      <span data-editor-name class="min-w-0 flex-1 break-words">{editor.name}</span>
+                    </Button>
+                  {/each}
+                </div>
+              {/snippet}
+            </DropdownMenu>
+          {/if}
+        </div>{/if}
+      <div class="flex flex-wrap justify-between gap-3 items-center">
+        {#if $installedEditors$.length > 0}<Tooltip
+            content={m.modals_pullConflict_createWorkspace_tooltip()}
           >
-        </Tooltip>
+            <span class="type-caption text-muted-foreground font-normal inline-block"
+              >{m.modals_pullConflict_letIntentHandle_label()}</span
+            >
+          </Tooltip>{/if}
         <!-- Create workspace action -->
-        <Button
-          variant="primary"
-          onclick={handleCreateWorkspace}
-          class="w-full justify-start gap-2"
-        >
+        <Button variant="primary" onclick={handleCreateWorkspace} class="ml-auto shrink-0 gap-2">
           <Fa icon={faCodeBranch} />
           {m.modals_pullConflict_createWorkspace_label()}
         </Button>
       </div>
     </div>
-  </Dialog.Content>
-</Dialog.Root>
+  {/snippet}
+</ContentDialog>
 
 <style>
   :global(body[data-pull-conflict-dialog-open] [data-slot='dialog-overlay']) {

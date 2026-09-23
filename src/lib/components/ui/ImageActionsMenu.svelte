@@ -10,8 +10,7 @@
    * hosting overlay (e.g. the image lightbox) is not dismissed by the same
    * Escape that closes the menu.
    */
-  import Fa from 'svelte-fa';
-  import { faEllipsis } from '@fortawesome/free-solid-svg-icons';
+  import KebabIcon from '$lib/components/icons/KebabIcon.svelte';
   import { notify } from '$lib/components/patterns/notify';
   import { Button } from '$lib/components/ui/button';
   import * as Menu from '$lib/components/ui/menu';
@@ -261,7 +260,7 @@
           active={open}
           aria-label={m.ui_imageActionsMenu_trigger_ariaLabel()}
         >
-          <Fa icon={faEllipsis} size="sm" />
+          <KebabIcon class="size-3.5" />
         </Button>
       {/snippet}
     </Menu.Trigger>
