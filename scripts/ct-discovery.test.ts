@@ -3,7 +3,7 @@
 //   src/lib/components/chat/__tests__/ChatMessageNavigatorIntegrationHost.svelte,
 //   src/lib/components/chat/__tests__/ChatMessageNavigatorHost.svelte
 
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { spawn } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import path from 'node:path';
@@ -11,6 +11,21 @@ import path from 'node:path';
 const repoRoot = path.resolve(__dirname, '..');
 const launcher = path.join(repoRoot, 'scripts', 'run-ct-tests.mjs');
 const navigatorTestDir = path.join(repoRoot, 'src/lib/components/chat/__tests__');
+
+// Importing the navigator spec under vitest walks its real import graph. The CT
+// harness is replaced by an inert stub (every `test.*` call is a no-op) and the
+// production integration fixture by a factory that records the import, so the
+// spec proves which host it mounts without its source being read as text.
+const fixtureImports = vi.hoisted(() => ({ integrationHost: false }));
+
+vi.mock('../src/test/ct-test', () => {
+  const inert: unknown = new Proxy(() => inert, { get: () => inert });
+  return { test: inert, expect: inert };
+});
+vi.mock('../src/lib/components/chat/__tests__/ChatMessageNavigatorIntegrationHost.svelte', () => {
+  fixtureImports.integrationHost = true;
+  return { default: {} };
+});
 
 function runLauncher(args: string[]): Promise<{ code: number | null; output: string }> {
   return new Promise((resolvePromise, rejectPromise) => {
@@ -45,12 +60,11 @@ describe('playwright component-test discovery (run-ct-tests.mjs)', () => {
     // First run compiles the CT transform and is slow; be generous.
   }, 120_000);
 
-  // The discovery run above lists the "production path" navigator test, which
-  // mounts the integration host; the legacy standalone host must stay deleted.
-  it('keeps navigator discovery on the production integration fixture', () => {
-    expect(
-      existsSync(path.join(navigatorTestDir, 'ChatMessageNavigatorIntegrationHost.svelte')),
-    ).toBe(true);
+  // The "production path" navigator test listed above must mount the integration
+  // host; the legacy standalone host must stay deleted.
+  it('keeps navigator discovery on the production integration fixture', async () => {
+    await import('../src/lib/components/chat/__tests__/chat-message-navigator.ct.spec.ts');
+    expect(fixtureImports.integrationHost).toBe(true);
     expect(existsSync(path.join(navigatorTestDir, 'ChatMessageNavigatorHost.svelte'))).toBe(false);
   });
 });
