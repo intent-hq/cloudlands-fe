@@ -73,7 +73,7 @@
   <Dialog.Content
     class="release-notes-dialog flex max-w-2xl flex-col gap-0 overflow-hidden rounded-lg p-0"
   >
-    <div class="flex shrink-0 items-center border-b border-border px-6 py-4 pr-12">
+    <div class="flex shrink-0 items-center px-6 py-4 pr-12">
       <Dialog.Title class="type-title text-foreground">{title}</Dialog.Title>
     </div>
 

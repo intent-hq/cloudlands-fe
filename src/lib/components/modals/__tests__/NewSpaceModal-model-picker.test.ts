@@ -1,6 +1,7 @@
 /** @vitest-environment jsdom */
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { tick } from 'svelte';
 
 const mocks = vi.hoisted(() => {
   const readable = <T>(value: T) => ({
@@ -250,6 +251,7 @@ vi.mock('svelte-fa', async () => ({
 }));
 
 import NewSpaceModal from '../NewSpaceModal.svelte';
+import CompactWorkspaceInitializer from '../../workspace/CompactWorkspaceInitializer.svelte';
 import { setCompactWorkspaceInitializerFormState } from '$store/renderer/slices/workspace-initializer/workspace-initializer-slice';
 
 function persistedStates() {
@@ -304,6 +306,25 @@ describe('NewSpaceModal model-picker composition', () => {
   afterEach(() => {
     cleanup();
     sessionStorage.clear();
+    vi.useRealTimers();
+    vi.restoreAllMocks();
+  });
+
+  it('does not let initializer timers override modal focus, while inline prompts still autofocus', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    const focus = vi.spyOn(HTMLElement.prototype, 'focus');
+    const modal = render(NewSpaceModal, { props: { open: true, onClose: mocks.onClose } });
+    await tick();
+    const modalPrompt = screen.getByTestId('mock-rich-textarea');
+    await vi.advanceTimersByTimeAsync(500);
+    expect(focus.mock.contexts).not.toContain(modalPrompt);
+    modal.unmount();
+
+    render(CompactWorkspaceInitializer, { props: { isExpanded: true } });
+    await tick();
+    const inlinePrompt = screen.getByTestId('mock-rich-textarea');
+    await vi.advanceTimersByTimeAsync(500);
+    expect(focus.mock.contexts).toContain(inlinePrompt);
   });
 
   it('selects models in both modes without bubbling, closing, or losing persisted state', async () => {

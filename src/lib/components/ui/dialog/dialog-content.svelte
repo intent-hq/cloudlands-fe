@@ -67,6 +67,36 @@
     onInteractOutside?.(e);
   }
 
+  function handleOpenAutoFocus(event: Event) {
+    onOpenAutoFocus?.(event);
+    if (event.defaultPrevented || !ref) return;
+
+    const belongsToDialog = (element: HTMLElement) =>
+      element.closest('[data-slot="dialog-content"]') === ref;
+    const canFocus = (element: HTMLElement) =>
+      !element.matches(':disabled, [aria-disabled="true"], [inert]') &&
+      !element.closest('[inert]') &&
+      element.getClientRects().length > 0 &&
+      getComputedStyle(element).visibility === 'visible';
+    const actions = Array.from(
+      ref.querySelectorAll<HTMLElement>(
+        '[data-dialog-primary-action], [data-slot="dialog-footer"] button, [data-slot="dialog-footer"] a[href]',
+      ),
+    ).filter(belongsToDialog);
+    // Standard dialog footers put the primary action last. Non-footer actions
+    // (such as Create workspace) can declare themselves explicitly.
+    const primary =
+      actions.find((action) => action.hasAttribute('data-dialog-primary-action')) ?? actions.at(-1);
+    const field = Array.from(
+      ref.querySelectorAll<HTMLElement>(
+        'input:not([type="hidden"]), textarea, select, [contenteditable="true"]',
+      ),
+    ).find((element) => belongsToDialog(element) && canFocus(element));
+    const target = primary && canFocus(primary) ? primary : (field ?? ref);
+    event.preventDefault();
+    target.focus({ preventScroll: true });
+  }
+
   function preventAutoFocus(
     event: Parameters<NonNullable<DialogPrimitive.ContentProps['onOpenAutoFocus']>>[0],
   ) {
@@ -81,7 +111,7 @@
     forceMount
     {...restProps}
     onInteractOutside={handleInteractOutside}
-    onOpenAutoFocus={staticPosition() ? preventAutoFocus : onOpenAutoFocus}
+    onOpenAutoFocus={staticPosition() ? preventAutoFocus : handleOpenAutoFocus}
     onCloseAutoFocus={staticPosition() ? preventAutoFocus : onCloseAutoFocus}
     trapFocus={staticPosition() ? false : trapFocus}
     preventScroll={staticPosition() ? false : preventScroll}
@@ -121,7 +151,7 @@
                   variant="ghost"
                   size="icon-sm"
                   iconOnly
-                  class="absolute right-6 top-[calc(1.5rem+var(--text-title-line-height)/2)] -translate-y-1/2 text-muted-foreground"
+                  class="dialog-close-button absolute right-6 -translate-y-1/2 text-muted-foreground"
                 >
                   <svg aria-hidden="true" viewBox="0 0 16 16" fill="none">
                     <path d="M3 3l10 10M13 3L3 13" stroke="currentColor" stroke-width="1.5" />
@@ -149,9 +179,16 @@
 <style>
   :global(.dialog-editorial-content) {
     --dialog-content-min-width: 26.25rem;
+    anchor-scope: --dialog-title;
     width: min(100% - 2rem, 100vw - 2rem);
     min-width: min(var(--dialog-content-min-width), 100% - 2rem, 100vw - 2rem);
     max-height: calc(100dvh - 2rem);
+  }
+
+  :global(.dialog-close-button) {
+    top: calc(1.5rem + var(--text-title-line-height) / 2);
+    /* Follow the title's first line, not a padding assumption or a wrapped title's center. */
+    top: calc(anchor(--dialog-title top, 1.5rem) + var(--text-title-line-height) / 2);
   }
 
   :global(.dialog-editorial-content[data-size='sm']) {

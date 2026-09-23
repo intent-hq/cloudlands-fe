@@ -264,6 +264,8 @@
     isExpanded: boolean;
     initialRepo?: InitialRepoInfo;
     oncreate?: () => void;
+    /** Let a containing dialog own initial focus instead of focusing the prompt. */
+    autoFocus?: boolean;
     /** Show contextual hints for first-time users */
     showFirstTimeHints?: boolean;
   }
@@ -271,6 +273,7 @@
     isExpanded = $bindable(false),
     initialRepo,
     oncreate,
+    autoFocus = true,
     showFirstTimeHints = false,
   }: Props = $props();
 
@@ -432,7 +435,7 @@
         if (data.autoCreate === true || data.autoCreate === 'true') {
           logger.info('autoCreate is set, will auto-submit once form is valid');
           pendingAutoCreate = true;
-        } else {
+        } else if (autoFocus) {
           // Focus the prompt textarea so the user can immediately type what to do
           setTimeout(() => {
             richTextarea?.focus();
@@ -1094,7 +1097,7 @@
           const selection = await resolveGitHubPrefillSelection(snapshot);
           if (isStale()) return;
           handleIssueSelect(`#${prefill.number}`, selection);
-          richTextarea?.focus();
+          if (autoFocus) richTextarea?.focus();
         } catch (err) {
           logger.error('Failed to apply GitHub prefill', err);
         }
@@ -1138,11 +1141,12 @@
   });
 
   $effect(() => {
-    if (!isExpanded) return;
+    if (!isExpanded || !autoFocus) return;
     // Focus the prompt input after the form expands
-    setTimeout(() => {
+    const focusTimer = setTimeout(() => {
       richTextarea?.focus();
     }, 100);
+    return () => clearTimeout(focusTimer);
   });
 
   // Listen for global enhance prompt shortcut (Cmd+/)
@@ -3275,6 +3279,7 @@
         {#snippet createButton(progressLabel?: Snippet)}
           <Button
             variant="primary"
+            data-dialog-primary-action
             onclick={handleSubmit}
             disabled={!isValid || isCreating || isEnhancing || isProcessingImages}
           >

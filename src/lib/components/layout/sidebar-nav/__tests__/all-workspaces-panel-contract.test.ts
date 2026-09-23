@@ -1,9 +1,7 @@
-/**
- * The combined Spaces + Chief sidebar panel, rendered against the real store
- * with the workspace cards and the Chief chat mocked.
- */
+/** Behavioral contract for the tabbed sidebar against the real navigation store. */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
+import { tick } from 'svelte';
 import { m } from '$shared/paraglide/messages.js';
 import { store as appStore } from '$store/renderer/store';
 import {
@@ -14,127 +12,164 @@ import {
 } from '$store/renderer/slices/sidebar-nav/sidebar-nav-slice';
 import SidebarPanelHarness from './mocks/SidebarPanelHarness.svelte';
 
-vi.mock('$lib/components/layout/sidebar-nav/cards/ActiveWorkspacesCard.svelte', async () => ({
-  default: (await import('./mocks/MockHoverCardContent.svelte')).default,
-}));
 vi.mock('$lib/components/layout/sidebar-nav/cards/AllWorkspacesCard.svelte', async () => ({
+  default: (await import('./mocks/MockSidebarTabContent.svelte')).default,
+}));
+vi.mock('$lib/components/layout/sidebar-nav/cards/ChiefCard.svelte', async () => ({
+  default: (await import('./mocks/MockSidebarTabContent.svelte')).default,
+}));
+vi.mock('$lib/components/layout/sidebar-nav/cards/ActiveWorkspacesCard.svelte', async () => ({
   default: (await import('./mocks/MockHoverCardContent.svelte')).default,
 }));
 vi.mock('$lib/components/layout/sidebar-nav/cards/SettingsCard.svelte', async () => ({
   default: (await import('./mocks/MockHoverCardContent.svelte')).default,
 }));
-vi.mock('$lib/components/chat/ChatPanel.svelte', async () => ({
-  default: (await import('./mocks/MockChiefChatPanel.svelte')).default,
-}));
 
-vi.mock('$features/agent/services/active-streams-tracker', () => ({
-  activeStreamsTracker: {
-    fetchActiveStreams: vi.fn(),
-    startPolling: vi.fn(),
-    getStreamingAgentIdsForWorkspace: vi.fn(() => []),
-    subscribe: vi.fn(() => () => {}),
-  },
-}));
-
-vi.mock('$lib/electron-bridge', () => ({
-  on: vi.fn(),
-  off: vi.fn(),
-  once: vi.fn(),
-  invoke: vi.fn(),
-  listenSync: vi.fn(),
-}));
-
-function renderPanel(item: 'chief' | 'settings' = 'chief') {
-  return render(SidebarPanelHarness, {
-    props: { setup: () => appStore.dispatch(openPanel(item)) },
-  });
+function renderPanel(item: 'all-workspaces' | 'chief' | 'settings' = 'all-workspaces') {
+  return render(SidebarPanelHarness, { setup: () => appStore.dispatch(openPanel(item)) });
 }
 
-function closeButtons(root: ParentNode) {
-  return [...root.querySelectorAll<HTMLButtonElement>('button')].filter(
-    (button) => button.getAttribute('aria-label') === m.layout_sidebarPanel_close_ariaLabel(),
-  );
-}
-
-describe('All Workspaces panel presentation', () => {
-  beforeEach(() => {
-    appStore.init();
-    appStore.dispatch(setChiefCollapsed(false));
-    appStore.dispatch(setShowCreateModal(false));
-    global.ResizeObserver = class {
-      observe = vi.fn();
-      unobserve = vi.fn();
-      disconnect = vi.fn();
-    } as never;
-    global.MutationObserver = class {
-      observe = vi.fn();
-      disconnect = vi.fn();
-      takeRecords = vi.fn();
-    } as never;
-  });
-
+describe('Sidebar workspace and Intent tabs', () => {
+  beforeEach(() => appStore.init());
   afterEach(() => {
     cleanup();
     appStore.dispatch(closePanel());
+    appStore.dispatch(setChiefCollapsed(false));
+    appStore.dispatch(setShowCreateModal(false));
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+    vi.useRealTimers();
   });
 
-  it('keeps Spaces and Chief mounted with the list height following the collapse state', async () => {
-    const { container } = renderPanel();
+  it('switches destinations without closing the sidebar and links tabs to panels', async () => {
+    renderPanel();
+    const workspaces = screen.getByRole('tab', {
+      name: m.layout_sidebarPanel_workspacesTab_label(),
+    });
+    const intent = screen.getByRole('tab', { name: m.layout_chiefCard_title() });
+    expect(workspaces.getAttribute('aria-selected')).toBe('true');
 
-    const spaces = container.querySelector<HTMLElement>('[data-combined-panel-spaces]')!;
-    expect(spaces).not.toBeNull();
-    expect(container.querySelectorAll('[data-combined-panel-chief]')).toHaveLength(1);
-    expect(container.querySelectorAll('[data-chief-header-row]')).toHaveLength(1);
-    expect(spaces.style.height).toMatch(/%$/);
-
-    appStore.dispatch(setChiefCollapsed(true));
-    await waitFor(() => expect(spaces.style.height).toBe(''));
-
-    expect(container.querySelectorAll('[data-combined-panel-chief]')).toHaveLength(1);
-    expect(container.querySelector<HTMLElement>('#combined-panel-chief-content')?.hidden).toBe(
-      true,
-    );
+    await fireEvent.click(intent);
     expect(appStore.state.sidebarNav.panelItem).toBe('chief');
+    expect(intent.getAttribute('aria-selected')).toBe('true');
+    const panel = screen.getByRole('tabpanel');
+    expect(panel.id).toBe(intent.getAttribute('aria-controls'));
+    expect(panel.getAttribute('aria-labelledby')).toBe(intent.id);
+
+    await fireEvent.click(workspaces);
+    expect(appStore.state.sidebarNav.panelItem).toBe('all-workspaces');
+    expect(workspaces.getAttribute('aria-selected')).toBe('true');
   });
 
-  it('offers a create-space action while the Spaces section is visible', async () => {
-    const { container } = renderPanel();
+  it('keeps pane interactivity in sync with selection before the Redux frame arrives', async () => {
+    renderPanel();
+    await tick();
+    vi.useFakeTimers({ toFake: ['Date', 'setTimeout', 'clearTimeout'] });
+    vi.spyOn(window, 'requestAnimationFrame').mockImplementation(() => 1);
 
-    const create = container.querySelector<HTMLButtonElement>(
-      '[data-combined-panel-spaces] [data-spaces-create]',
-    )!;
-    expect(create).not.toBeNull();
-    expect(appStore.state.sidebarNav.showCreateModal).toBe(false);
-
-    await fireEvent.click(create);
-
-    expect(appStore.state.sidebarNav.showCreateModal).toBe(true);
+    const workspaces = screen.getByRole('tab', {
+      name: m.layout_sidebarPanel_workspacesTab_label(),
+    });
+    const intent = screen.getByRole('tab', { name: m.layout_chiefCard_title() });
+    for (const tab of [intent, workspaces]) {
+      await fireEvent.click(tab);
+      expect(tab.getAttribute('aria-selected')).toBe('true');
+      const activePanel = screen.getByRole('tabpanel');
+      expect(activePanel.id).toBe(tab.getAttribute('aria-controls'));
+      expect(activePanel.hasAttribute('inert')).toBe(false);
+      const inactivePanel = screen
+        .getAllByRole('tabpanel', { hidden: true })
+        .find((panel) => panel !== activePanel)!;
+      expect(inactivePanel.hasAttribute('hidden')).toBe(true);
+      expect(inactivePanel.hasAttribute('inert')).toBe(true);
+      expect(screen.getByTestId('intent-content').getAttribute('data-active')).toBe(
+        String(tab === intent),
+      );
+    }
   });
 
-  it('omits close controls from the combined Spaces and Chief panel', async () => {
+  it('honors external Intent navigation and hides inactive content from interaction', async () => {
     const { container } = renderPanel();
+    appStore.dispatch(openPanel('chief'));
+    await waitFor(() =>
+      expect(screen.getByRole('tab', { selected: true }).textContent).toContain(
+        m.layout_chiefCard_title(),
+      ),
+    );
+    const spaces = container.querySelector('[data-combined-panel-spaces]');
+    expect(spaces?.hasAttribute('hidden')).toBe(true);
+    expect(spaces?.hasAttribute('inert')).toBe(true);
+    expect(screen.getByTestId('intent-content').getAttribute('data-active')).toBe('true');
 
-    expect(closeButtons(container)).toHaveLength(0);
-    expect(closeButtons(container.querySelector('[data-combined-panel-chief]')!)).toHaveLength(0);
+    appStore.dispatch(closePanel());
+    await waitFor(() =>
+      expect(screen.getByTestId('intent-content').getAttribute('data-active')).toBe('false'),
+    );
+  });
 
+  it('preserves each tab subtree and draft through switches and sidebar close/reopen', async () => {
+    renderPanel();
+    const workspaceInput = screen.getByRole('textbox', { name: 'Workspace search' });
+    await fireEvent.input(workspaceInput, { target: { value: 'sidebar' } });
+    await fireEvent.click(screen.getByRole('tab', { name: m.layout_chiefCard_title() }));
+    const chatInput = screen.getByRole('textbox', { name: 'Chat draft' });
+    await fireEvent.input(chatInput, { target: { value: 'Help me plan tomorrow' } });
     await fireEvent.click(
-      container.querySelector<HTMLButtonElement>('[data-chief-section-toggle]')!,
+      screen.getByRole('tab', { name: m.layout_sidebarPanel_workspacesTab_label() }),
     );
-    expect(appStore.state.sidebarNav.panelItem).toBe('chief');
-    expect(appStore.state.sidebarNav.isChiefCollapsed).toBe(true);
+    expect(screen.getByRole('textbox', { name: 'Workspace search' })).toBe(workspaceInput);
+    expect((workspaceInput as HTMLInputElement).value).toBe('sidebar');
+    expect(screen.getByTestId('intent-content').getAttribute('data-active')).toBe('false');
+
+    appStore.dispatch(closePanel());
+    await tick();
+    appStore.dispatch(openPanel('chief'));
+    await waitFor(() =>
+      expect(screen.getByRole('textbox', { name: 'Chat draft' })).toBe(chatInput),
+    );
+    expect((chatInput as HTMLInputElement).value).toBe('Help me plan tomorrow');
   });
 
-  it('keeps the close control on non-combined panels', async () => {
-    const { container } = renderPanel('settings');
-
-    const [close] = closeButtons(container);
-    expect(close).toBeDefined();
-    expect(screen.getByRole('button', { name: m.layout_sidebarPanel_close_ariaLabel() })).toBe(
-      close,
+  it('retains workspace search and create actions within the workspace tab', async () => {
+    renderPanel();
+    await fireEvent.click(
+      screen.getByRole('button', { name: m.layout_sidebarPanel_searchWorkspaces_ariaLabel() }),
     );
+    expect(
+      screen
+        .getByRole('button', { name: m.layout_sidebarPanel_hideSearch_ariaLabel() })
+        .getAttribute('aria-pressed'),
+    ).toBe('true');
+    await fireEvent.click(
+      screen.getByRole('button', { name: m.layout_sidebarNav_newWorkspace_title() }),
+    );
+    await waitFor(() => expect(appStore.state.sidebarNav.showCreateModal).toBe(true));
+  });
 
-    await fireEvent.click(close);
+  it('selects Intent independently of the legacy split-panel collapse state', async () => {
+    renderPanel();
+    appStore.dispatch(setChiefCollapsed(true));
+    await fireEvent.click(screen.getByRole('tab', { name: m.layout_chiefCard_title() }));
+    const panel = screen.getByRole('tabpanel', { name: m.layout_chiefCard_title() });
+    expect(panel.hasAttribute('hidden')).toBe(false);
+    expect(panel.hasAttribute('inert')).toBe(false);
+    expect(screen.getByTestId('intent-content').getAttribute('data-active')).toBe('true');
+    expect(appStore.state.sidebarNav.panelItem).toBe('chief');
+  });
 
+  it('keeps the close action on non-tabbed panels', async () => {
+    vi.stubGlobal(
+      'ResizeObserver',
+      class {
+        observe = vi.fn();
+        unobserve = vi.fn();
+        disconnect = vi.fn();
+      },
+    );
+    renderPanel('settings');
+    await fireEvent.click(
+      screen.getByRole('button', { name: m.layout_sidebarPanel_close_ariaLabel() }),
+    );
     expect(appStore.state.sidebarNav.panelItem).toBeNull();
   });
 });
