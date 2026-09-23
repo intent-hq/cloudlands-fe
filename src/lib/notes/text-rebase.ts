@@ -1,4 +1,10 @@
-import { diffChars } from 'diff';
+import { diffArrays, diffChars } from 'diff';
+import { Lexer, type Links, type Tokenizer } from 'marked';
+import { normalizeAnchorPositions } from '$lib/utils/anchor-normalization';
+import { protectMathSource } from '$lib/utils/marked-math';
+import { escapeHtmlTags } from '$lib/utils/markdown-processor';
+import { createTiptapTaskListMarked } from '$lib/utils/tiptap-task-list-extension';
+import { decodeCharacterReference } from './character-references';
 
 /**
  * One-sided text rebase for the note save path: when the daemon echoes a
@@ -26,14 +32,2806 @@ interface CharChange {
 /**
  * Group `diffChars(from, to)` parts into replaced spans. Offsets are UTF-16
  * code-unit indexes into `from` / `to`; jsdiff splits surrogate pairs as whole
- * characters, so a pair never straddles a span boundary.
+ * characters, so a pair never straddles a span boundary. This is the save
+ * path's alignment: its texts are near-identical, so Myers is cheap and the
+ * globally minimal edit script is what `rebaseText` relies on (a deletion
+ * theirs already made must align onto itself, not onto a repeated line).
  */
-function hunks(from: string, to: string): Hunk[] {
+function charHunks(from: string, to: string): Hunk[] {
+  return groupChanges(diffChars(from, to) as CharChange[], 0, 0);
+}
+
+/**
+ * Total time one plain-text ↔ markdown alignment may spend, anchor search and
+ * diffs together. Once spent, the rest of the text becomes one replaced span
+ * (offsets inside clamp to the span end), so a pathological pair degrades to
+ * slightly-off remote carets instead of a frozen main thread.
+ */
+const ALIGNMENT_BUDGET_MS = 250;
+/**
+ * Words, whitespace runs, a masked run (see `maskHidden`), and single code
+ * points (a surrogate pair is one token).
+ */
+const TOKEN = /[\p{L}\p{N}_]+|\s+|\0+|./gsu;
+/** `TOKEN` anchored at `lastIndex`, for reading the one token that starts there. */
+const TOKEN_AT = /[\p{L}\p{N}_]+|\s+|\0+|./suy;
+const WORD_AT = /[\p{L}\p{N}_]+/uy;
+const NOT_LETTER = /\P{L}+/gu;
+const BLANK = /^\s+$/u;
+/** `-`, `=`, `*`, `_`, `|`, `:` — a line of these alone is a setext underline, a thematic break or a table delimiter row. */
+const RULE = new Set([45, 61, 42, 95, 124, 58]);
+/** Masked text, blanks and `]`, `[`, `(`, `)`: the rest of a link after its label, see `isTextLine`. */
+const LINK_CLOSE = new Set([0, 9, 32, 40, 41, 91, 93]);
+/** Textblocks at least this long are trusted as verbatim anchors. */
+const MIN_ANCHOR_LENGTH = 12;
+/**
+ * A block is looked for at most this far beyond twice the unanchored text
+ * before it (see `MAX_ANCHOR_GAP`). A block whose markdown lies further away
+ * — the syntax before it expanded the text by more than that — stays
+ * unanchored, and the window of the blocks after it grows by its length.
+ */
+const ANCHOR_SEARCH_SLACK = 8192;
+/**
+ * Cap on the unanchored-gap allowance of one anchor search, so a run of
+ * blocks that never match (each rescanning the text after the last anchor)
+ * costs O(blocks · window) rather than O(blocks · remainder) before the
+ * deadline stops it.
+ */
+const MAX_ANCHOR_GAP = 64 * 1024;
+/**
+ * Once this much of `from` has gone unanchored, the blocks stopped matching
+ * verbatim (inline formatting in every one of them) and the run is re-walked
+ * in pieces: the verbatim runs inside each block are anchored one at a time,
+ * which keeps the search windows and the regions left to `refine` small
+ * instead of growing with the run.
+ */
+const MAX_UNANCHORED_RUN = 2048;
+/** Shortest run of a block anchored on its own; anything shorter is left to `refine`. */
+const MIN_PIECE_LENGTH = 4;
+/**
+ * Lookahead past the expected position of a piece. Only inline syntax sits
+ * between the pieces of one block, and a block-level gap a piece cannot see
+ * over is covered by the unanchored-gap allowance as the run grows.
+ */
+const PIECE_SEARCH_SLACK = 1024;
+/**
+ * A region left between anchors that is longer than this on either side is
+ * not diffed whole but paired line by line (`refineByLine`), each pair and
+ * each gap between pairs diffed alone, however long: nothing inside it
+ * anchored, so a token diff of it whole would spend the budget on carets that
+ * the pairs place for free. The bound never emits a span: the deadline alone
+ * decides what is left undiffed.
+ */
+const MAX_REFINE_LENGTH = 8192;
+
+const isHighSurrogate = (code: number) => code >= 0xd800 && code <= 0xdbff;
+const isLowSurrogate = (code: number) => code >= 0xdc00 && code <= 0xdfff;
+
+/**
+ * Align the plain text `from` with its `markdown` as a list of replaced spans
+ * in UTF-16 code-unit offsets; the text between consecutive spans is
+ * identical on both sides.
+ *
+ * A full `diffChars` is O(N·D) and D is in the thousands between a note's
+ * plain-text projection and its markdown (every syntax character differs), so
+ * instead each block of `from` between line breaks (`\n`, or the U+FFFC a hard
+ * break projects to — a markdown line of its own) that appears verbatim in
+ * the markdown — plain paragraphs, headings, list items, fenced code — is
+ * anchored with a forward `indexOf`, and only the short regions between
+ * anchors are diffed (`refine`). A hit is held to the structure of the
+ * markdown — the text lines it ends and the letters on its line, see
+ * `LineWalk` — which declines a hit that lies past the block's formatted
+ * original on a later duplicate of it, or short of it on an earlier one. A
+ * run of blocks that never match verbatim (inline formatting in each) is
+ * anchored piecewise instead, see `MAX_UNANCHORED_RUN`; so is a run whose
+ * next block matches only beyond textblocks the run does not account for.
+ * The markdown the editor does not show — link destinations, images, link
+ * definitions — is masked first (`maskHidden`) so that no search or diff
+ * matches it, and a markdown line with link syntax the mask did not account
+ * for — every link line of a source too long to lex — is never anchored
+ * (`Mask.unanchorable`): its text reaches a diff only, and that diff is
+ * bounded by the line (`refineByLine`).
+ * The mask, the anchor loop and every diff share one deadline: past it, the
+ * remaining text is paired line by line, with no diff, so that a line stays
+ * bounded by its own text (`refineByLine`). Below the cap the alignment is
+ * exact within the budget; once the deadline has passed, every pair emitted
+ * still contains its text — an offset maps into the span its own text lies
+ * in — while which line pairs with which is best effort. A surrogate pair
+ * never straddles a span boundary: anchors, trimmed prefixes and tokens stop
+ * outside pairs and jsdiff's `diffChars` treats a pair as one character.
+ *
+ * Unlike `charHunks`, the result is not the minimal edit script; only the
+ * offset mappers (remote carets) use it, never `rebaseText`.
+ */
+function anchoredHunks(from: string, markdown: string): Hunk[] {
   const out: Hunk[] = [];
+  if (from === markdown) return out;
+  const deadline = performance.now() + ALIGNMENT_BUDGET_MS;
+  const { text: to, unanchorable, spelled, splits } = maskHidden(markdown);
   let fromPos = 0;
   let toPos = 0;
+  let cursor = 0;
+  let pieces = false;
+  let run = new LineWalk(from, fromPos);
+  // The block ends at the next `\n` or U+FFFC; the latter is looked up once
+  // per run of blocks, not once per block.
+  let nextHardBreak = -1;
+  while (cursor < from.length && performance.now() < deadline) {
+    let lineEnd = from.indexOf('\n', cursor);
+    if (lineEnd === -1) lineEnd = from.length;
+    if (nextHardBreak < cursor) {
+      nextHardBreak = from.indexOf('\uFFFC', cursor);
+      if (nextHardBreak === -1) nextHardBreak = from.length;
+    }
+    if (nextHardBreak < lineEnd) lineEnd = nextHardBreak;
+    const slack = pieces ? PIECE_SEARCH_SLACK : ANCHOR_SEARCH_SLACK;
+    const gap = Math.min(2 * (cursor - fromPos), MAX_ANCHOR_GAP);
+    // The markdown the block is looked for in.
+    const reach = toPos + gap + (lineEnd - cursor) + slack;
+    let at = -1;
+    let anchor = cursor;
+    let whole = false;
+    let beyond = false;
+    let declined = false;
+    // Among the probes tried, the hit that skips the least markdown wins, so
+    // a probe is only looked for short of the hit found so far.
+    const consider = (start: number, end: number) => {
+      let limit = reach - (lineEnd - end);
+      if (at !== -1) limit = Math.min(limit, at - 1 + (end - start));
+      run.advanceTo(start);
+      const skipped = new LineWalk(to, toPos, splits, run);
+      // The run's text lines are all ended before the text at `start` — by
+      // text lines of the markdown, or by an image splitting one — and its
+      // line holds the same letters before `start` as the markdown line
+      // holds before the hit (see `LineWalk`); a hit on a line the mask did
+      // not account for is declined.
+      const hit = findAnchor(to, from.slice(start, end), toPos, limit, (candidate) => {
+        if (overlaps(unanchorable, candidate, candidate + (end - start))) {
+          if (end === lineEnd) declined = true;
+          return false;
+        }
+        skipped.advanceTo(candidate);
+        return (
+          skipped.lines >= run.lines &&
+          skipped.letters === run.letters &&
+          skipped.accountsForLastLine(run)
+        );
+      });
+      if (hit === -1 || (at !== -1 && hit >= at)) return;
+      // A hit past the textblocks the run accounts for may be a later
+      // duplicate of the line; a shorter probe may still hit its original.
+      if (skipped.advanceTo(hit).linesWithHardBreaks > run.linesWithHardBreaks) {
+        beyond = true;
+        return;
+      }
+      at = hit;
+      anchor = start;
+      whole = end === lineEnd;
+    };
+    const wholeLine = lineEnd - cursor >= MIN_ANCHOR_LENGTH;
+    if (wholeLine) consider(cursor, lineEnd);
+    if (at === -1 && pieces) {
+      for (const [start, end] of pieceProbes(from, cursor, lineEnd)) {
+        if (!(wholeLine && start === cursor && end === lineEnd)) consider(start, end);
+      }
+    }
+    if (at !== -1) {
+      const length = commonRun(from, anchor, to, at);
+      refine(out, from, to, fromPos, anchor, toPos, at, deadline, unanchorable, spelled);
+      fromPos = anchor + length;
+      toPos = at + length;
+      cursor = fromPos;
+      pieces = !whole;
+      run = new LineWalk(from, fromPos);
+      continue;
+    }
+    // Re-walk the unanchored run in pieces once it is long enough — this
+    // failed block included, so a long final paragraph is not skipped whole —
+    // or once a block of it matches only beyond the run: the pieces consume
+    // the markdown of the run's earlier blocks, and the block's own pieces
+    // then anchor its original rather than the duplicate. Likewise once the
+    // markdown the block was looked for in holds an unanchorable line, unless
+    // the block is that line's text: the pieces of the blocks around the line
+    // anchor, so its text reaches the diff alone — the diff of a region that
+    // holds the line and a neighbouring paragraph too would match the
+    // paragraph's words inside the unmasked destination.
+    if (
+      !pieces &&
+      (beyond ||
+        lineEnd + 1 - fromPos > MAX_UNANCHORED_RUN ||
+        (!declined && overlaps(unanchorable, toPos, reach)))
+    ) {
+      pieces = true;
+      cursor = fromPos;
+      run = new LineWalk(from, fromPos);
+      nextHardBreak = -1;
+    } else {
+      // The rest of a line found whole on an unanchorable markdown line is
+      // that line's text: none of its pieces anchor, so it is not walked in
+      // pieces — for a long code span that walk is quadratic — and it reaches
+      // the diff whole instead.
+      cursor = pieces && !declined ? cursor + tokenLength(from, cursor) : lineEnd + 1;
+    }
+  }
+  refine(out, from, to, fromPos, from.length, toPos, to.length, deadline, unanchorable, spelled);
+  return out;
+}
+
+/**
+ * The structure of `text[start, pos)` as `pos` advances, for `start` the last
+ * anchor: the lines it ends that hold text (`isTextLine`: not blank, and not
+ * a line of syntax alone — a code fence, a setext underline, a definition —
+ * which delimits or annotates lines of text without being one) and the
+ * letters after its last line break. Lines end at `\n`; `linesWithHardBreaks`
+ * also counts those ended at U+FFFC, which in the plain text projects a hard
+ * break (a markdown line of its own) or an inline leaf such as a mention
+ * (which is not).
+ *
+ * In the markdown a line may also end at an image or at a table cell
+ * (`splits`, the offsets of its `![` and of its unescaped `|`): the note
+ * editor shows an image as a block and each cell of a row as a block, so the
+ * text before and after the image, or of each cell, are plain-text lines of
+ * their own, where an editor without the image or table block shows the
+ * paragraph or the row on one line. Which of the two the plain text did is
+ * read off the plain text: the image or the cell ended a line if the walk
+ * over the plain text (`plain`, advanced to the probe) ended a line holding
+ * the letters of the markdown before the split — the lines are paired in
+ * order, an unpaired plain line (a mention's) skipped — and is no line break
+ * otherwise; so a row of the note editor counts one line per cell and a
+ * `|` in prose counts nothing.
+ *
+ * A markdown line ended at `\n` is paired the same way, so that a hard break
+ * (`tk298z  \n`, a lazy continuation) — two markdown lines the plain text
+ * shows as one, its `\n` a U+FFFC — counts toward `linesWithHardBreaks` but
+ * not `lines`, as it does on the plain text; a markdown line no plain line
+ * pairs with counts toward both, as before, and takes one plain line as its
+ * own. A plain line so ended is not counted by the lower bound below — it
+ * may be a mention's, with no markdown line of its own — so a probe that
+ * starts right after the U+FFFC is held to the pairing instead: the line the
+ * U+FFFC ended must be paired or taken by the hit (`accountsForLastLine`). A
+ * hit on the very markdown line that would pair with it is an earlier
+ * occurrence — `- remote daemon tk1\nremote editor tk2`: the continuation's
+ * first word inside the item, with the same lines and letters before both.
+ *
+ * Every plain-text line ends a markdown line of its own, so between the last
+ * anchor (`fromPos`, `toPos`) and a hit `at` for the text at `cursor`, the
+ * markdown must end at least as many text lines as the plain text crossed on
+ * `\n` alone — a hit short of that is an earlier occurrence of the text
+ * (`- a\n\npeer markdown\n\n**pee**r markdown`: the paragraph's markdown is
+ * not the earlier paragraph) — and at most as many as it crossed counting
+ * hard breaks too; a hit that ends more may be a later duplicate
+ * (`**Repeated** heading\n\nRepeated heading`: the formatted original is a
+ * text line inside the skipped markdown). The latter bound is not tight — a
+ * line of an HTML block or of a multi-line comment is a markdown line with
+ * no plain-text line of its own — so a hit beyond it is declined rather than
+ * skipped over, at a bounded cost: the text is anchored by its pieces
+ * instead, and its later pieces are not held to this rule.
+ *
+ * The plain text and the markdown also hold the same letters between the
+ * anchor and a true hit: block and inline syntax (`## `, `- `, `1. `, `> `,
+ * `**`, `[`, a masked run) adds none, while a word of an earlier
+ * textblock on the hit's markdown line, or of the plain line itself before a
+ * later occurrence of the probe (`**edi**tor caret. editor`), does. Only the
+ * letters after the last break are compared, which keeps the comparison short
+ * and confines a letter the syntax does add (a fence info string, a task
+ * marker) to the line it is on.
+ *
+ * `advanceTo` is incremental for a non-decreasing `pos` — one pass over the
+ * run however many probes and candidates read it — and restarts otherwise.
+ */
+class LineWalk {
+  /**
+   * Text lines ended at `\n` (or at a split the plain text ended a line at),
+   * less those paired with a plain line ended at U+FFFC.
+   */
+  lines = 0;
+  /** Text lines ended at `\n`, U+FFFC or such a split. */
+  linesWithHardBreaks = 0;
+  /** Letters after the last line break. */
+  letters = '';
+  /** The `[start, end)` of every text line ended, flattened, in order. */
+  private readonly ended: number[] = [];
+  /** The next line of `plain` a line may be paired with. */
+  private plainLine = 0;
+  private pos: number;
+  private lineStart: number;
+  private nextSplit: number;
+
+  constructor(
+    private readonly text: string,
+    private readonly start: number,
+    private readonly splits: number[] = [],
+    private readonly plain?: LineWalk,
+  ) {
+    this.pos = start;
+    this.lineStart = start;
+    this.nextSplit = lowerBound(splits, start);
+  }
+
+  advanceTo(pos: number): this {
+    if (pos < this.pos) {
+      this.pos = this.start;
+      this.lineStart = this.start;
+      this.lines = 0;
+      this.linesWithHardBreaks = 0;
+      this.letters = '';
+      this.ended.length = 0;
+      this.plainLine = 0;
+      this.nextSplit = lowerBound(this.splits, this.start);
+    }
+    const { text, splits, plain } = this;
+    let lineStart = this.lineStart;
+    for (let i = this.pos; i < pos; i += 1) {
+      const code = text.charCodeAt(i);
+      const split = this.nextSplit < splits.length && splits[this.nextSplit] === i;
+      if (split) this.nextSplit += 1;
+      else if (code !== 10 && code !== 0xfffc) continue;
+      if (isTextLine(text, lineStart, i)) {
+        const paired = plain ? this.pairPlainLine(plain, lineStart, i) : -1;
+        if (paired === -1 || !plain) {
+          if (split) continue;
+          if (this.plainLine < (plain?.ended.length ?? 0) >> 1) this.plainLine += 1;
+          if (code === 10) this.lines += 1;
+        } else {
+          this.plainLine = paired + 1;
+          if (!plain.endsHard(paired)) this.lines += 1;
+        }
+        this.linesWithHardBreaks += 1;
+        this.ended.push(lineStart, i);
+      } else if (split) continue;
+      lineStart = split ? i : i + 1;
+    }
+    const from = lineStart > this.lineStart ? lineStart : this.pos;
+    const added = lettersOf(text, from, pos);
+    this.letters = lineStart > this.lineStart ? added : this.letters + added;
+    this.lineStart = lineStart;
+    this.pos = pos;
+    return this;
+  }
+
+  /**
+   * The first line of `plain` from `plainLine` on holding the letters of
+   * `text[start, end)`, or -1. The search is short — a mention's plain line
+   * or two is the most an ordinary line skips — so a run of markdown lines
+   * with no plain-text lines of their own (an HTML block) does not read the
+   * whole plain text over for each of them, and the lines are compared in
+   * place (`sameLetters`): every text line of the markdown is paired, and a
+   * walk restarted redoes it, so the walk allocates nothing per line.
+   */
+  private pairPlainLine(plain: LineWalk, start: number, end: number): number {
+    const last = Math.min(plain.ended.length >> 1, this.plainLine + PAIR_LOOKAHEAD);
+    for (let k = this.plainLine; k < last; k += 1) {
+      if (
+        sameLetters(this.text, start, end, plain.text, plain.ended[2 * k], plain.ended[2 * k + 1])
+      )
+        return k;
+    }
+    return -1;
+  }
+
+  /** Whether the `k`th text line ended was ended at U+FFFC. */
+  private endsHard(k: number): boolean {
+    return this.text.charCodeAt(this.ended[2 * k + 1]) === 0xfffc;
+  }
+
+  /**
+   * Whether the last text line `plain` ended, when ended at U+FFFC, is one
+   * this walk has paired or taken (`pairPlainLine`) — the markdown line it
+   * is the text of ends before the position walked to.
+   */
+  accountsForLastLine(plain: LineWalk): boolean {
+    const last = (plain.ended.length >> 1) - 1;
+    return last < 0 || !plain.endsHard(last) || this.plainLine > last;
+  }
+}
+
+/** Plain-text lines a markdown line looks past for its own — see `pairPlainLine`. */
+const PAIR_LOOKAHEAD = 8;
+
+function lettersOf(text: string, start: number, end: number): string {
+  return text.slice(start, end).replace(NOT_LETTER, '');
+}
+
+/**
+ * Whether `a[aStart, aEnd)` and `b[bStart, bEnd)` hold the same letters —
+ * `lettersOf(a, …) === lettersOf(b, …)` without the slices, the replace or
+ * the strings: two pointers step over the code points, skip the ones that
+ * are not letters, and stop at the first that differ.
+ */
+function sameLetters(
+  a: string,
+  aStart: number,
+  aEnd: number,
+  b: string,
+  bStart: number,
+  bEnd: number,
+): boolean {
+  let i = aStart;
+  let j = bStart;
+  for (;;) {
+    let x = -1;
+    while (i < aEnd) {
+      const code = a.codePointAt(i) as number;
+      i += code > 0xffff ? 2 : 1;
+      if (isLetter(code)) {
+        x = code;
+        break;
+      }
+    }
+    let y = -1;
+    while (j < bEnd) {
+      const code = b.codePointAt(j) as number;
+      j += code > 0xffff ? 2 : 1;
+      if (isLetter(code)) {
+        y = code;
+        break;
+      }
+    }
+    if (x !== y) return false;
+    if (x === -1) return true;
+  }
+}
+
+/** A code point that is a letter (`\p{L}`), as the one-code-point string. */
+const LETTER = /^\p{L}$/u;
+/** Whether a code point outside ASCII is a letter, once tested. */
+const letterByCode = new Map<number, boolean>();
+
+/** Whether the code point `code` is a letter — `\p{L}`, as `lettersOf` keeps. */
+function isLetter(code: number): boolean {
+  if (code < 128) return (code >= 65 && code <= 90) || (code >= 97 && code <= 122);
+  let letter = letterByCode.get(code);
+  if (letter === undefined) {
+    letter = LETTER.test(String.fromCodePoint(code));
+    letterByCode.set(code, letter);
+  }
+  return letter;
+}
+
+/** The index of the first element of sorted `values` that is `>= at`. */
+function lowerBound(values: number[], at: number): number {
+  let low = 0;
+  let high = values.length;
+  while (low < high) {
+    const mid = (low + high) >> 1;
+    if (values[mid] < at) low = mid + 1;
+    else high = mid;
+  }
+  return low;
+}
+
+/**
+ * Whether `text[start, end)` is a line the editor shows text of: not blank,
+ * not masked whole (a definition, an image, a hidden HTML block below the
+ * cap), not a code fence, not a setext underline, thematic break or table
+ * delimiter row (`RULE` characters only), not the label line of a link
+ * reference definition (`[label]:` with nothing but masked text after it;
+ * one that visible text follows continues a paragraph and is shown as
+ * written), not the rest of a link an anchor ended inside its label (`](…)`
+ * or `][…]` around its masked destination, or after the `[` the line opened
+ * the label with when the destination is empty (`[label]()`, nothing to
+ * mask), and nothing visible after — the plain text ends its line where the
+ * label does; a `]()` with no masked text inside it and no `[` before it on
+ * its line is punctuation the editor shows, `**]()**`, `` `]()` `` — its
+ * backticks masked — and their plain text alike) and not a comment anchor
+ * the whole line long. A markdown
+ * line that is none of a plain-text line's must not count as one: counted, it
+ * puts every hit for the rest of the run one text line beyond the run, until
+ * a hard break of the plain text (counted on one side only) admits a hit one
+ * line short of the text's own; and two such lines before a run of pieces
+ * stand in for two plain-text lines the run crossed, so a hit that opens the
+ * paragraph two lines short of the text's own ends as many text lines as
+ * the run did. The markers of the containers a line sits in — a block quote's
+ * `>`, a list item's bullet or number — are looked past first: `> ~~~html`
+ * opens a fence in a quote and is no more a text line than `~~~html` is (and
+ * counted as one it declines the hit for every line of the quote's text as
+ * beyond the run, see `anchoredHunks`).
+ */
+function isTextLine(text: string, start: number, end: number): boolean {
+  let i = start;
+  for (;;) {
+    while (
+      i < end &&
+      (text.charCodeAt(i) === 32 || text.charCodeAt(i) === 9 || text.charCodeAt(i) === 0)
+    ) {
+      i += 1;
+    }
+    if (i >= end || text.charCodeAt(i) === 13) return false;
+    const marker = containerMarkerEnd(text, i, end);
+    if (marker === -1) break;
+    i = marker;
+  }
+  const code = text.charCodeAt(i);
+  if (code === 96 || code === 126) {
+    return !(i + 2 < end && text.charCodeAt(i + 1) === code && text.charCodeAt(i + 2) === code);
+  }
+  if (RULE.has(code)) {
+    let j = i + 1;
+    while (
+      j < end &&
+      (RULE.has(text.charCodeAt(j)) || text.charCodeAt(j) === 32 || text.charCodeAt(j) === 9)
+    ) {
+      j += 1;
+    }
+    return j < end && text.charCodeAt(j) !== 13;
+  }
+  if (code === 93) {
+    let j = i + 1;
+    let depth = 0;
+    let tail = false;
+    while (j < end && LINK_CLOSE.has(text.charCodeAt(j))) {
+      const next = text.charCodeAt(j);
+      if (next === 40 || next === 91) depth += 1;
+      else if ((next === 41 || next === 93) && depth > 0) depth -= 1;
+      else if (next === 0 && depth > 0) tail = true;
+      j += 1;
+    }
+    return !(tail || closesLabel(text, i)) || (j < end && text.charCodeAt(j) !== 13);
+  }
+  if (code === 91) {
+    let close = i + 1;
+    while (close < end && text.charCodeAt(close) !== 93) close += 1;
+    if (close === i + 1 || close + 1 >= end || text.charCodeAt(close + 1) !== 58) return true;
+    let after = close + 2;
+    while (after < end && (text.charCodeAt(after) === 32 || text.charCodeAt(after) === 9)) {
+      after += 1;
+    }
+    return after < end && text.charCodeAt(after) !== 0 && text.charCodeAt(after) !== 13;
+  }
+  if (code === 60 && text.startsWith(COMMENT_ANCHOR, i)) {
+    let last = end;
+    while (last > i && (text.charCodeAt(last - 1) === 32 || text.charCodeAt(last - 1) === 9)) {
+      last -= 1;
+    }
+    return !(last - i >= 7 && text.startsWith('-->', last - 3));
+  }
+  return true;
+}
+
+/**
+ * Whether the `]` at `close` closes a `[` earlier on its line — the label of
+ * a link whose destination the line goes on with. The line is read back to
+ * its start (the `\n` or U+FFFC before it, or the text's), past brackets that
+ * pair among themselves and an escaped `\[`.
+ */
+function closesLabel(text: string, close: number): boolean {
+  let depth = 0;
+  for (let k = close - 1; k >= 0; k -= 1) {
+    const code = text.charCodeAt(k);
+    if (code === 10 || code === 0xfffc) return false;
+    if (code === 93) depth += 1;
+    else if (code === 91 && (k === 0 || text.charCodeAt(k - 1) !== 92)) {
+      if (depth === 0) return true;
+      depth -= 1;
+    }
+  }
+  return false;
+}
+
+/**
+ * The end of the container marker that opens `text[i, end)` — a block quote's
+ * `>`, a bullet (`-`, `+`, `*`) or an ordered marker (up to nine digits and
+ * `.` or `)`), the latter two followed by a blank or the line's end — or -1
+ * when the line opens with none.
+ */
+function containerMarkerEnd(text: string, i: number, end: number): number {
+  const code = text.charCodeAt(i);
+  if (code === 62) return i + 1;
+  let after = i + 1;
+  if (code >= 48 && code <= 57) {
+    while (
+      after < end &&
+      after - i < 9 &&
+      text.charCodeAt(after) >= 48 &&
+      text.charCodeAt(after) <= 57
+    ) {
+      after += 1;
+    }
+    if (after >= end || (text.charCodeAt(after) !== 46 && text.charCodeAt(after) !== 41)) return -1;
+    after += 1;
+  } else if (code !== 45 && code !== 43 && code !== 42) {
+    return -1;
+  }
+  return after >= end || isBlank(text.charCodeAt(after)) ? after : -1;
+}
+
+/**
+ * `[start, end)` of the word-level probes for the text of `from` at `cursor`,
+ * tried after the rest of the line: the leading word, its first few code
+ * units, and its last few — formatting may split the word either way
+ * (`**pro**jection`, `projec**tion**`), and a probe on the split side of it
+ * sees only a later occurrence of the word. A probe only locates the run;
+ * `commonRun` then extends the anchor as far as the texts agree.
+ */
+function pieceProbes(from: string, cursor: number, lineEnd: number): Array<[number, number]> {
+  const probes: Array<[number, number]> = [];
+  WORD_AT.lastIndex = cursor;
+  const word = WORD_AT.exec(from);
+  const wordEnd = word ? Math.min(cursor + word[0].length, lineEnd) : cursor;
+  if (wordEnd - cursor >= MIN_PIECE_LENGTH) probes.push([cursor, wordEnd]);
+  let shortEnd = cursor + MIN_PIECE_LENGTH;
+  if (isHighSurrogate(from.charCodeAt(shortEnd - 1))) shortEnd += 1;
+  if (shortEnd <= lineEnd && shortEnd !== wordEnd) probes.push([cursor, shortEnd]);
+  let tailStart = wordEnd - MIN_PIECE_LENGTH;
+  if (isLowSurrogate(from.charCodeAt(tailStart))) tailStart -= 1;
+  if (tailStart > cursor) probes.push([tailStart, wordEnd]);
+  return probes;
+}
+
+function tokenLength(text: string, at: number): number {
+  TOKEN_AT.lastIndex = at;
+  return TOKEN_AT.exec(text)?.[0].length ?? 1;
+}
+
+/** Length of the run `from[fromAt…]` and `to[toAt…]` share, not ending inside a surrogate pair. */
+function commonRun(from: string, fromAt: number, to: string, toAt: number): number {
+  const max = Math.min(from.length - fromAt, to.length - toAt);
+  let n = 0;
+  while (n < max && from.charCodeAt(fromAt + n) === to.charCodeAt(toAt + n)) n += 1;
+  if (n > 0 && isHighSurrogate(from.charCodeAt(fromAt + n - 1))) n -= 1;
+  return n;
+}
+
+/**
+ * First occurrence of `block` in `to[start, limit)` that does not split a
+ * surrogate pair and that `accept` admits.
+ */
+function findAnchor(
+  to: string,
+  block: string,
+  start: number,
+  limit: number,
+  accept: (at: number) => boolean,
+): number {
+  const window = to.slice(start, Math.min(limit, to.length));
+  let at = window.indexOf(block);
+  while (
+    at !== -1 &&
+    (isHighSurrogate(to.charCodeAt(start + at - 1)) ||
+      isLowSurrogate(to.charCodeAt(start + at + block.length)) ||
+      !accept(start + at))
+  ) {
+    at = window.indexOf(block, at + 1);
+  }
+  return at === -1 ? -1 : start + at;
+}
+
+/** The token shape `maskHidden` reads: `raw` is the source a token consumed. */
+interface LexedToken {
+  type: string;
+  raw: string;
+  tokens?: LexedToken[];
+  items?: LexedToken[];
+  header?: Array<{ tokens: LexedToken[] }>;
+  rows?: Array<Array<{ tokens: LexedToken[] }>>;
+}
+
+/**
+ * Where each line of a token's `text` — the string its children's `raw`s add
+ * up to — starts in the source. Between two line starts the text and the
+ * source run in step, so `sourceStarts[k] + (offset - lineStarts[k])` is the
+ * source offset of `text[offset]` on line `k`.
+ */
+interface TextMap {
+  text: string;
+  lineStarts: number[];
+  sourceStarts: number[];
+}
+
+/** Every hidden run — link destination, image, definition — sits after one of these. */
+const HIDEABLE = /\]\(|\]\[|\]:/;
+const HIDEABLE_ALL = /\]\(|\]\[|\]:/g;
+/**
+ * The HTML the renderer hides in a markdown note: a comment that is not a
+ * comment anchor, and the tags it leaves unescaped and renders (`<br>`,
+ * `<sub>`, `<sup>`; every other tag is escaped and shown as written).
+ */
+const HIDDEN_HTML = /<!--(?!anchor:)[\s\S]*?-->|<br[ \t]*\/?>|<\/?su[bp]>/gi;
+/**
+ * A line the renderer may read as HTML — one whose first character is `<`
+ * before anything but whitespace or a comment anchor — or that holds a
+ * comment it hides. Such a line is sealed when the mask did not account for
+ * it (`unanchorableLines`).
+ */
+const HTML_LINE = /^[ \t]*<(?![ \t\r\n]|!--anchor:)|<!--(?!anchor:)/gm;
+/**
+ * Longest markdown the mask lexes. The renderer's lexer is quadratic in the
+ * token count (the `start` hooks of its math tokenizers scan the rest of the
+ * source on every token): 16k one-link paragraphs of 128 KB lex in ~170 ms,
+ * one 128 KB paragraph of 18k links in ~60 ms, and a 1 MB note of dense
+ * links takes over half a second with the math tokenizers or without. A
+ * longer source is not lexed: its comments and link definitions are masked
+ * by a linear scan (`maskHiddenBlocks`), as are the tags of a note the
+ * renderer reads as HTML (`maskHtmlTags`); see `maskHidden` for what holds
+ * then.
+ *
+ * Measured (marked 18, the renderer's lexer, medians of warm runs): the
+ * quadratic term is two `start` hooks, each a search over the rest of the
+ * source — `mathDisplay.start` at every paragraph attempt of the block
+ * pass, `mathInline.start` at every inline text token — so the block pass
+ * alone costs the order of the full lex (200–315 ms at 512 KiB, 0.9–1.7 s
+ * at 1 MiB and on 550 KB notes of 20k blocks, 11 s on 131k one-link
+ * paragraphs). The block pass without `mathDisplay.start` is linear: 3–19 ms
+ * on 150 KB–1 MiB notes, 36–39 ms on the 550 KB notes, 57–134 ms on the
+ * adversarial 1 MiB of 131k paragraphs — against ≤ 8 ms for the scan. A
+ * follow-up could replace the scan past the cap with those block tokens
+ * (`html`, `def`, `code`, and the containers that bound them) plus a scan
+ * bounded to each paragraph's raw for what is inline (code span backticks,
+ * a comment in a paragraph, link tails). Not a drop-in: without the hook a
+ * display-math block that follows a paragraph line joins the paragraph, and
+ * a comment inside a display-math block lexes as an `html` token the
+ * collector would hide where the math token keeps it visible; and the raws
+ * of the block tokens do not join back to the source on every note
+ * (seed 604 differs under either configuration), so the token offsets need
+ * validating against the source, with the scan as the fall-back when they
+ * do not hold.
+ */
+const MAX_LEXED_LENGTH = 128 * 1024;
+/** A comment anchor; the editor renders it where `normalizeAnchorPositions` moves it. */
+const COMMENT_ANCHOR = '<!--anchor:';
+/** The line endings the lexer rewrites to `\n` before it reads a source. */
+const LINE_ENDING = /\r\n|\r/g;
+
+let hiddenTextLexer: ReturnType<typeof createTiptapTaskListMarked> | undefined;
+
+/**
+ * The markdown as the alignment reads it: `text` with the hidden runs masked
+ * — the line breaks the renderer drops among them (`shadowedAngles`), so a
+ * line of `text` is a line of the plain text — `unanchorable` the sorted,
+ * flattened `[start, end)` ranges of the lines of `text` that no anchor may
+ * land on, `spelled` the sorted offsets of the `<` and `>` the renderer
+ * shows as `&lt;` and `&gt;` spelled out (`shadowedAngles`), and `splits`
+ * the sorted offsets of the images (`![`), each of which the editor may
+ * split a plain-text line at (see `LineWalk`).
+ */
+interface Mask {
+  text: string;
+  unanchorable: number[];
+  spelled: number[];
+  splits: number[];
+}
+
+/** An image's `![`, or a table row's unescaped `|` — see `LineWalk`. */
+const LINE_SPLIT = /!\[|(?<!\\)\|/g;
+
+/** The last mask: the base text is aligned again each time the editor text changes. */
+let lastMask: { markdown: string; mask: Mask } | undefined;
+
+/**
+ * `markdown` with the text the editor does not show — the destination and
+ * title of a link (`](…)` or `][…]`), an image, a link definition whole, the
+ * backticks of a code span — replaced by U+0000, code unit for code unit.
+ * That text is absent from the plain text, so neither an anchor search nor a
+ * diff may match a word inside it (`[render](https://sync/…) sync` against
+ * `render sync`), and no line is left of it alone: the closing backtick of
+ * `` `[render]()` `` after an anchor that ended before it is no text line
+ * (`isTextLine`), where left in it read as one and put the plain text's
+ * next line one markdown line beyond its own. The mask keeps every other
+ * offset where it was.
+ *
+ * What is hidden is read off the tokens of the renderer's own marked
+ * instance, not off the syntax: link-shaped text the lexer reads as a code
+ * span, a fence, an escape or an unresolved reference label is visible, and
+ * never produces a link token. Tokens carry no offsets, but each `raw` is the
+ * source it consumed: at the top level the raws add up to the source, and
+ * inside a container — list item, block quote, heading — the children see
+ * the container's text with its marker and indentation gone, each line a
+ * suffix of the source line (`suffixLineMap`); a table cell's text is found
+ * in its row. A container whose text does not map back that way is left
+ * unmasked, and every range is checked against the source before it is
+ * masked — a gap in the mapping costs a mask, never a visible character.
+ *
+ * The renderer parses the markdown with its comment anchors moved off the
+ * block markers they precede (`normalizeAnchorPositions`; a line keeps its
+ * length, so every offset after the swapped prefix stays put), and so does
+ * the lexer here: as written, `<!--anchor:…-->## a [b](c)` is an HTML block
+ * that holds no link token.
+ *
+ * The mask must never fall through to a visible destination. Once masked,
+ * an opener (`HIDEABLE`) not followed by a masked run — or by the closer of
+ * an empty destination — is link syntax the lexer read as something else: a
+ * code span, an escape, an unresolved reference, an HTML block whose text
+ * the editor shows as written, a link in a source that was not lexed, or a
+ * construct it has no token for. Its line is `unanchorable`
+ * (`unanchorableLines`): the anchor search declines every hit on it and the
+ * line's text reaches the diff instead (`refine`, whose length cap the line
+ * lifts), which costs a longer diff on a visible code span, never a caret in
+ * a URL.
+ *
+ * The HTML the renderer hides is masked the same way. A note whose first
+ * character is `<` (other than a comment anchor) the renderer does not parse
+ * as markdown at all but as HTML, so every tag and comment in it is hidden
+ * (`maskHtmlTags`) and the text between them shown; in any other note a tag is
+ * escaped and shown as written, except a comment (dropped) and the `<br>`,
+ * `<sub>`, `<sup>` it renders (`HIDDEN_HTML`), which are read off the
+ * lexer's `html` tokens.
+ *
+ * The lexer is the renderer's own, configured as the renderer configures it,
+ * and reads the source as the renderer hands it over: with the tags it
+ * escapes gone (`shadowEscapedTags`), so `![alt](<not valid>)` is text to
+ * both where marked alone reads an image; a source whose escaping cannot be
+ * shadowed is handed to marked in no form — the lexer does not run, and the
+ * scan masks no image and no definition (a wrong shadow could hide text the
+ * renderer shows; a missing one only seals a line). It reads the source with
+ * its line endings rewritten to `\n`
+ * (`LINE_ENDING`), so a range it hides is found in that text and carried
+ * back to the source by the count of `\r\n` pairs shortened before it
+ * (`sourceShifts`); a hidden run never holds a line break, so one count
+ * places both of its ends. The lexer runs up to `MAX_LEXED_LENGTH`; a longer
+ * source is not lexed, and nothing in it is masked but its comments, link
+ * definitions, images and code span backticks — and the line breaks of
+ * its code spans, shown as blanks — which a scan places
+ * (`maskHiddenBlocks`; a note the
+ * renderer reads as HTML is masked by a scan whatever its length), so
+ * every line of it that holds link syntax is unanchorable, and so is a line
+ * the renderer may read as HTML (`HTML_LINE`): each reaches the
+ * diff alone, bounded by its own line (`refineByLine` pairs the lines of
+ * such a region by their text and never diffs a plain-text line against a
+ * sealed line it is not the text of), so a caret on a line without link
+ * syntax is exact, and one on a link line stays on that line, off by at
+ * most its hidden destination. Lexing counts against the alignment budget
+ * (`anchoredHunks` starts its deadline before it) and is memoised for the
+ * last markdown; a source with nothing hideable in it (`HIDEABLE`,
+ * `HIDDEN_HTML`, a backtick) is not lexed either.
+ *
+ * A line break the renderer drops (`<` broken from its tag name over two
+ * lines) is masked too: the lines it kept apart are one line of the plain
+ * text, so they are one line of `text`, and the lines pair (`textLines`).
+ */
+function maskHidden(markdown: string): Mask {
+  if (lastMask?.markdown === markdown) return lastMask.mask;
+  const shadow = shadowEscapedTags(markdown);
+  const lexed = computeHiddenMask(markdown, shadow);
+  let text = lexed ?? maskHiddenBlocks(markdown, shadow);
+  const shadowed =
+    shadow === undefined || shadow === markdown ? undefined : shadowedAngles(markdown, shadow);
+  if (shadowed && shadowed.dropped.length > 0) text = maskOffsets(text, shadowed.dropped);
+  const splits: number[] = [];
+  for (const split of markdown.matchAll(LINE_SPLIT)) splits.push(split.index);
+  const mask = {
+    text,
+    unanchorable: unanchorableLines(text, lexed === undefined),
+    spelled: shadowed?.spelled ?? [],
+    splits,
+  };
+  lastMask = { markdown, mask };
+  return mask;
+}
+
+/** A character that opens no syntax, ends no destination and is no blank: what an escaped `<` or `>` reads as. */
+const ESCAPED_ANGLE = '\uFFFD';
+/** The `<` of a tag the renderer may escape: `<`, an optional `/`, blanks and a letter. */
+const TAG_OPEN = /<\/?\s*[a-zA-Z]/;
+/** A blank the renderer's escaping drops: any `\s`, as its tag pattern reads them. */
+const DROPPED_BLANK = /\s/;
+/** A `<` past the last `>` of the note, as the escaping is handed it: a character that opens no tag. */
+const UNCLOSED_ANGLE = '\uFFFD';
+
+/**
+ * `markdown` as marked reads it once the renderer has escaped the tags it
+ * shows as written (`escapeHtmlTags`: `<b>` becomes `&lt;b&gt;`, while a
+ * comment, `<br>`, `<sub>`, `<sup>` and the tags of a code span, a fence or
+ * a formula stay), code unit for code unit: each `<` and `>` escaped is
+ * `ESCAPED_ANGLE` instead, and so is each blank the escaping drops between
+ * a `<` and its tag name (`< span>` reaches marked as `&lt;span&gt;`, and
+ * `![alt](< a>)` as the image `![alt](&lt;a&gt;)` — blanks, a line break
+ * among them, that are on the shadow no blank either; the line break the
+ * renderer drops is masked off the shadow in turn, `shadowedAngles`), so
+ * the shadow keeps every offset of the source and what marked makes of it
+ * is what the renderer shows — `![alt](<a b>)` an image to marked, text to
+ * the renderer and on the shadow. The escaping reads the whole note, so a
+ * fence, a code span or a formula is protected here where the renderer
+ * protects it: a closed fence is its source on the shadow, and no line
+ * break of its code is read as one the renderer drops. (Escaped up to the
+ * last `>` of the note, a fence that `>` lay in was cut before its closing
+ * fence, read as unclosed, and its code escaped as text — a tag broken over
+ * two lines of code was then a dropped line break, and the lines after the
+ * fence paired one off.) The escaping is quadratic in the tags left open
+ * after the last `>`, which close nothing, so past that `>` each `<` is
+ * handed to it as `UNCLOSED_ANGLE`, which opens no tag; the syntax of a
+ * fence, a code span and a formula holds no `<`, and a comment anchor holds
+ * a `>`, so none lies past the last — the escaping leaves that part as
+ * written, as it does the note's. `markdown` itself when it holds no tag or
+ * no `>`; `undefined` when the escaping did more than that, which no shadow
+ * reflects — the source is then handed to marked in no form (`maskHidden`).
+ */
+function shadowEscapedTags(markdown: string): string | undefined {
+  if (!TAG_OPEN.test(markdown)) return markdown;
+  const cut = markdown.lastIndexOf('>') + 1;
+  if (cut === 0) return markdown;
+  const source =
+    cut === markdown.length
+      ? markdown
+      : markdown.slice(0, cut) + markdown.slice(cut).replaceAll('<', UNCLOSED_ANGLE);
+  const escaped = escapeHtmlTags(source);
+  let out = '';
+  let pos = 0;
+  let j = 0;
+  for (let i = 0; i < source.length; i += 1) {
+    const code = source.charCodeAt(i);
+    if (code === escaped.charCodeAt(j)) {
+      j += 1;
+      continue;
+    }
+    if (code === 60 && escaped.startsWith('&lt;', j)) j += 4;
+    else if (code === 62 && escaped.startsWith('&gt;', j)) j += 4;
+    else if (!DROPPED_BLANK.test(source[i])) return undefined;
+    out += markdown.slice(pos, i) + ESCAPED_ANGLE;
+    pos = i + 1;
+  }
+  if (j !== escaped.length) return undefined;
+  return out + markdown.slice(pos);
+}
+
+/**
+ * What the renderer's escaping does to `markdown` beyond reading a `<` or a
+ * `>` as text, read off `shadow` (`ESCAPED_ANGLE` where `markdown` has the
+ * character it rewrote), each as sorted offsets. `spelled`: the `<` and `>`
+ * it shows spelled out, as `&lt;` and `&gt;` — those it escapes right after
+ * a backslash; the escaping leaves the backslash before the `&`, and marked
+ * reads `\&lt;` as an escaped `&` followed by `lt;`; a backslash itself
+ * escaped (`\\<b>`) escapes nothing. The letters of the spelling are on the
+ * plain-text line and on no source line, so a source line is paired by its
+ * letters with them (`textLines`). `dropped`: the line breaks it drops
+ * between a `<` and its tag name (`<` then ` span>` on the next line is
+ * shown as `<span>`, one line; the `\r` and the `\n` of a `\r\n` both) —
+ * each ends a source line and no plain-text line, so it is masked
+ * (`maskHidden`) and ends no line of the masked text either.
+ */
+function shadowedAngles(
+  markdown: string,
+  shadow: string,
+): { spelled: number[]; dropped: number[] } {
+  const spelled: number[] = [];
+  const dropped: number[] = [];
+  for (
+    let at = shadow.indexOf(ESCAPED_ANGLE);
+    at !== -1;
+    at = shadow.indexOf(ESCAPED_ANGLE, at + 1)
+  ) {
+    const code = markdown.charCodeAt(at);
+    if (code === 10 || code === 13) {
+      dropped.push(at);
+      continue;
+    }
+    if (code !== 60 && code !== 62) continue;
+    let backslashes = 0;
+    while (markdown.charCodeAt(at - 1 - backslashes) === 92) backslashes += 1;
+    if (backslashes % 2 === 1) spelled.push(at);
+  }
+  return { spelled, dropped };
+}
+
+/** `text` with the code unit at each of the sorted `offsets` masked. */
+function maskOffsets(text: string, offsets: number[]): string {
+  let out = '';
+  let pos = 0;
+  for (const at of offsets) {
+    out += text.slice(pos, at) + '\u0000';
+    pos = at + 1;
+  }
+  return out + text.slice(pos);
+}
+
+/**
+ * `markdown` masked, or `undefined` when its hidden text could not be
+ * accounted for. `shadow` is `markdown` as the renderer hands it to marked
+ * (`shadowEscapedTags`): the lexer reads it, and every range it hides is an
+ * offset range of `markdown` too; without one the lexer does not run.
+ */
+function computeHiddenMask(markdown: string, shadow: string | undefined): string | undefined {
+  if (isHtmlNote(markdown)) return maskHtmlTags(markdown);
+  if (shadow === undefined || markdown.length > MAX_LEXED_LENGTH) return undefined;
+  HIDDEN_HTML.lastIndex = 0;
+  if (!HIDEABLE.test(markdown) && !HIDDEN_HTML.test(markdown) && !markdown.includes('`')) {
+    return markdown;
+  }
+  let source = shadow;
+  if (shadow.includes(COMMENT_ANCHOR)) {
+    const normalized = normalizeAnchorPositions(shadow);
+    if (normalized.length === shadow.length) source = normalized;
+  }
+  const lexed = source.replace(LINE_ENDING, '\n');
+  const shifts = lexed.length === source.length ? undefined : sourceShifts(source, lexed);
+  let tokens: LexedToken[];
+  try {
+    hiddenTextLexer ??= createTiptapTaskListMarked();
+    tokens = hiddenTextLexer.lexer(lexed) as unknown as LexedToken[];
+  } catch {
+    return undefined;
+  }
+  const top: TextMap = { text: joinRaw(tokens), lineStarts: [0], sourceStarts: [0] };
+  // A source the lexer rewrote beyond its line endings has no exact offsets.
+  if (top.text !== lexed) return undefined;
+  const ranges: Array<[number, number]> = [];
+  const lexedMarkdown = source === shadow ? lexed : shadow.replace(LINE_ENDING, '\n');
+  collectHidden(tokens, top, 0, lexedMarkdown, ranges);
+  if (ranges.length === 0) return markdown;
+  if (shifts) {
+    for (const range of ranges) {
+      const shift = shifts[range[0]];
+      range[0] += shift;
+      range[1] += shift;
+    }
+  }
+  ranges.sort((a, b) => a[0] - b[0]);
+  let out = '';
+  let pos = 0;
+  for (const [start, end] of ranges) {
+    if (start < pos) continue;
+    out += markdown.slice(pos, start) + '\u0000'.repeat(end - start);
+    pos = end;
+  }
+  return out + markdown.slice(pos);
+}
+
+/**
+ * For every offset of `lexed` — `source` with its line endings rewritten to
+ * `\n` — how far the same character sits later in `source`: the number of
+ * `\r\n` pairs shortened at or before it (a lone `\r` keeps its length).
+ */
+function sourceShifts(source: string, lexed: string): Uint32Array {
+  const shifts = new Uint32Array(lexed.length + 1);
+  let removed = 0;
+  let at = 0;
+  for (let i = 0; i < source.length; i += 1) {
+    if (source.charCodeAt(i) === 13 && source.charCodeAt(i + 1) === 10) {
+      removed += 1;
+      continue;
+    }
+    shifts[at] = removed;
+    at += 1;
+  }
+  shifts[at] = removed;
+  return shifts;
+}
+
+/** Whether the renderer reads `markdown` as HTML rather than markdown (its `skipIfHTML`). */
+function isHtmlNote(markdown: string): boolean {
+  const trimmed = markdown.trimStart();
+  return (
+    trimmed.charCodeAt(0) === 60 &&
+    !trimmed.startsWith(COMMENT_ANCHOR) &&
+    !markdown.includes('```ws-block')
+  );
+}
+
+/**
+ * `markdown` with every tag and comment — what an HTML parser consumes of a
+ * note it reads as HTML — replaced by U+0000, code unit for code unit: a
+ * comment `<!--` … `-->`, or `<`, an optional `/`, a letter and everything
+ * up to the next `>` outside a quoted attribute value (`<p title="a>b">`
+ * is one tag; a quoted value spans line breaks). A quote no closing quote
+ * follows is unterminated: the renderer then shows nothing more of the
+ * note, and the tag is taken to end at the next `>` or line break, so that
+ * the mask never overshoots what it can account for. One scan, linear
+ * whatever the note holds: once no `-->`, no `>`, no line break or no
+ * closing quote of a kind lies ahead, none opened later closes either, so
+ * the search for one is not repeated.
+ */
+function maskHtmlTags(markdown: string): string {
+  let out = '';
+  let pos = 0;
+  let commentsClose = true;
+  /** The quote characters a closing quote may still lie ahead of. */
+  const quotesClose = new Set([34, 39]);
+  const nextClose = memoisedIndexOf(markdown, '>');
+  const nextBreak = memoisedIndexOf(markdown, '\n');
+  /** The index past the `>` that ends the tag opened at `open`, or -1 when none lies ahead. */
+  const tagEnd = (open: number) => {
+    for (let i = open + 1; i < markdown.length; i += 1) {
+      const code = markdown.charCodeAt(i);
+      if (code === 62) return i + 1;
+      if (code !== 34 && code !== 39) continue;
+      const quote = quotesClose.has(code) ? markdown.indexOf(markdown[i], i + 1) : -1;
+      if (quote !== -1) {
+        i = quote;
+        continue;
+      }
+      quotesClose.delete(code);
+      const close = nextClose(i + 1);
+      const lineEnd = nextBreak(i + 1);
+      if (lineEnd !== -1 && (close === -1 || lineEnd < close)) return lineEnd;
+      return close === -1 ? -1 : close + 1;
+    }
+    return -1;
+  };
+  let open = markdown.indexOf('<');
+  while (open !== -1) {
+    let end = -1;
+    if (commentsClose && markdown.startsWith('<!--', open)) {
+      const close = markdown.indexOf('-->', open + 4);
+      if (close === -1) commentsClose = false;
+      else end = close + 3;
+    }
+    if (end === -1 && TAG_NAME.test(markdown.slice(open + 1, open + 3))) {
+      end = tagEnd(open);
+      if (end === -1) break;
+    }
+    if (end === -1) {
+      open = markdown.indexOf('<', open + 1);
+      continue;
+    }
+    out += markdown.slice(pos, open) + '\u0000'.repeat(end - open);
+    pos = end;
+    open = markdown.indexOf('<', end);
+  }
+  return out + markdown.slice(pos);
+}
+
+/** What follows the `<` of a tag: an optional `/` and a letter. */
+const TAG_NAME = /^\/?[a-zA-Z]/;
+
+/**
+ * `(at) => text.indexOf(needle, at)` for a sequence of `at`s that never
+ * decreases, each search resumed from the last hit: a hit at or past `at`
+ * is returned again, and once none lies ahead none is searched for again.
+ */
+function memoisedIndexOf(text: string, needle: string): (at: number) => number {
+  let found = -1;
+  let exhausted = false;
+  return (at: number) => {
+    if (exhausted) return -1;
+    if (found < at) {
+      found = text.indexOf(needle, at);
+      if (found === -1) exhausted = true;
+    }
+    return found;
+  };
+}
+
+/** `memoisedIndexOf` for a global `pattern`: the index of its next match at or past `at`. */
+function memoisedSearch(text: string, pattern: RegExp): (at: number) => number {
+  let found = -1;
+  let exhausted = false;
+  return (at: number) => {
+    if (exhausted) return -1;
+    if (found < at) {
+      pattern.lastIndex = at;
+      const match = pattern.exec(text);
+      if (match) found = match.index;
+      else exhausted = true;
+    }
+    return exhausted ? -1 : found;
+  };
+}
+
+/**
+ * What the scan stops at: a comment; an image; a label at a line start; a
+ * run of backticks or of three or more `~`; a `\` before a character it
+ * escapes (`\\`, `\<`, `\[`, `` \` ``, `\!`).
+ */
+const HIDDEN_BLOCK_OPENER = /<!--|!\[|^[ \t]{0,3}\[|`+|~{3,}|\\[\\<[`!]/gm;
+/** A line that may close a fence: a run of `` ` `` or `~` alone after blanks and `>`. */
+const FENCE_CLOSE = /^[ \t>]*(?:`{3,}|~{3,})[ \t\r]*$/gm;
+/** The two breaks of a blank line; no definition title or code span spans one. */
+const BLANK_LINE = /\n[ \t\r]*\n/g;
+/** A code unit that is not a line break. */
+const NOT_BREAK = /[^\n\r]/g;
+/** The `\r` the lexer drops from a `\r\n`; the scan reads it as a blank. */
+const CARRIAGE_RETURN = /\r/g;
+/** What each code unit of a formula reads as on the scan's copy of the source (`formulaEnd`). */
+const FORMULA = '\u0000';
+
+/**
+ * `source` the lexer did not read with the hidden text a scan can place —
+ * a comment (`<!--` … `-->`, or to the end of the note when none closes it;
+ * a comment anchor excepted, as in `HIDDEN_HTML`), an image the renderer
+ * shows (`imageAt`: on one line, whole, as `collectHiddenInLink` hides it —
+ * the editor shows no text of it), a link reference definition whole
+ * (`definitionAt`) and the backticks of a code span — replaced by U+0000
+ * code unit for code unit, its line breaks kept, as the lexer's mask is laid
+ * (`hide`). A reference image is masked only when a definition of the note
+ * resolves its label — wherever the definition lies, so the images are
+ * masked once the scan has read every definition; image-shaped text the
+ * renderer shows as written (`![alt][missing]`, `![alt](not valid)`) is
+ * left as written, as any visible text is.
+ * A comment's body and a definition's title are the hidden text that spans
+ * lines: left as written, each of their lines reads as a text line
+ * (`isTextLine`) with no plain-text line of its own, and the pairing of a
+ * run of sealed lines counts it as one (`refineByLine`, `LineWalk`); masked,
+ * none is — nor is a line holding an image alone, which has no plain-text
+ * line either. A link's destination is not masked — its line is
+ * unanchorable instead (`unanchorableLines`).
+ *
+ * The scan reads `shadow` — `source` as the renderer hands it to marked
+ * (`shadowEscapedTags`), each `\r` a blank as the lexer drops it from a
+ * `\r\n` — and lets the renderer's own tokenizer decide what an image or a
+ * definition is, on the text the scan bounds for it; both keep every offset
+ * of `source`, and the mask is laid on `source`. Without a shadow the scan
+ * reads `source` and masks no image and no definition: what either is
+ * depends on the escaping, and text the renderer shows must stay visible.
+ *
+ * What the renderer shows as written is not hidden, and the scan passes over
+ * it as the lexer would: a fenced code block (a fence of three or more
+ * `` ` `` or `~` at a line start, at most three blanks before it past the
+ * quote and item markers of the line (`fenceIndent`), a backtick fence's
+ * info string holding no backtick; closed by a line of the same character
+ * alone, at least as long, indented at most three more columns than the
+ * fence was past its markers, or running to the end of the quote or item
+ * that holds it (`containerEnd`) or of the note), an
+ * indented code block (lines of four columns of blanks or more, from the
+ * line after a blank one or the note's first to the next line of fewer that
+ * is not blank; `indentedCodeEnd`), the text of a code span (a run of
+ * backticks closed by the next run of the same length before a blank line,
+ * both runs masked; a run none closes is literal — and each line break
+ * between the runs, which the renderer shows as a blank of the span's one
+ * line, masked as the dropped break it is, the `\r` of a `\r\n` with it, as
+ * `maskHidden` masks those of the shadow) and an escaped character
+ * (`\<`, `\[`; `\\` escapes the
+ * backslash), and a formula (`$…$` on one line, `$$…$$` from a block's
+ * start, `\(…\)`, `\[…\]`), which the renderer's math extension reads as
+ * one token before any image, definition or comment inside it: the
+ * renderer's own `protectMathSource` finds them, on the whole source as the
+ * renderer's escaping runs it (`formulaEnd`) — a formula it reads inside
+ * code, which the lexer would not, is passed over too, which costs a sealed
+ * line at most. Whichever opens first wins: a comment that opens before a
+ * fence hides the fence, a fence that opens before a comment shows it. A
+ * definition is one only where a block may open (`startsBlock`): a `[` on
+ * the line after a paragraph's, an item's or a quote's continues that
+ * paragraph, and the line is shown as written. One linear scan: a `-->`, a
+ * fence line or a closing run of a length none of lies ahead is not
+ * searched for again; a code span is closed before the next blank line or
+ * not at all, and so is a definition's title (`definitionAt`): the text a
+ * definition is read on ends at the next blank line, and the lines a
+ * candidate that is none reaches continue its paragraph, where no other is
+ * tried, so no text is read twice; the line breaks a span drops are found
+ * by one search resumed from span to span, not one from each span's
+ * opening run to the line's end (a line of 16 000 spans read 512 million
+ * units).
+ */
+function maskHiddenBlocks(source: string, shadow: string | undefined): string {
+  const text = shadow ?? source;
+  const markdown = text.includes('\r') ? text.replace(CARRIAGE_RETURN, ' ') : text;
+  const tokenizer = shadow === undefined ? undefined : scanTokenizer();
+  /** The `[start, end)` ranges to mask, flattened, in order. */
+  const masked: number[] = [];
+  /** The reference images, in order, each masked at the end when `labels` holds its label. */
+  const images: Array<{ start: number; end: number; label: string }> = [];
+  /** The labels of the definitions the scan masked, as marked matches them. */
+  const labels = new Set<string>();
+  /** The line breaks inside the code spans, in order: each is shown as a blank of the span's one line. */
+  const dropped: number[] = [];
+  /** The end of the last block the scan closed — a fence, a comment or a definition at a line start. */
+  let blockEnd = 0;
+  /** The end of the last indented line found to continue a paragraph; the indented lines after it do too. */
+  let continuationEnd = -1;
+  const nextCommentClose = memoisedIndexOf(markdown, '-->');
+  const nextBlankLine = memoisedSearch(markdown, BLANK_LINE);
+  const nextFenceClose = memoisedSearch(markdown, FENCE_CLOSE);
+  /** The next line break at or past a code span's opening run: one search per line, not per span. */
+  const nextLineBreak = memoisedIndexOf(markdown, '\n');
+  /** `markdown` with each formula's code units `FORMULA`; found once, at the first opener outside code. */
+  let formulas: string | undefined;
+  const formulaEnd = (at: number) => {
+    formulas ??= protectMathSource(markdown, (formula) => FORMULA.repeat(formula.length));
+    if (formulas.charCodeAt(at) !== 0) return -1;
+    let end = at + 1;
+    while (end < formulas.length && formulas.charCodeAt(end) === 0) end += 1;
+    return end;
+  };
+  const closes = new Map<string, (at: number) => number>();
+  const nextSpanClose = (run: string) => {
+    let next = closes.get(run);
+    if (!next)
+      closes.set(run, (next = memoisedSearch(markdown, new RegExp(`(?<!\`)${run}(?!\`)`, 'g'))));
+    return next;
+  };
+  const mask = (start: number, end: number) => {
+    masked.push(start, end);
+  };
+  const lineEndAt = (at: number) => {
+    const lineEnd = markdown.indexOf('\n', at);
+    return lineEnd === -1 ? markdown.length : lineEnd;
+  };
+  HIDDEN_BLOCK_OPENER.lastIndex = 0;
+  let opener = HIDDEN_BLOCK_OPENER.exec(markdown);
+  let lineStart = 0;
+  let lineEnd = -1;
+  while (opener) {
+    const found = opener[0];
+    const at = opener.index;
+    let end = at + found.length;
+    if (at > lineEnd) {
+      lineStart = markdown.lastIndexOf('\n', at - 1) + 1;
+      lineEnd = lineEndAt(at);
+    }
+    const indented = indentOf(markdown, lineStart) >= 4;
+    const codeEnd = indented ? indentedCodeEnd(markdown, lineStart, blockEnd, continuationEnd) : -1;
+    if (indented && codeEnd === -1) continuationEnd = lineEnd;
+    const formula = codeEnd === -1 ? formulaEnd(at) : -1;
+    if (codeEnd !== -1) {
+      end = codeEnd;
+      blockEnd = end;
+    } else if (formula !== -1) {
+      end = formula;
+    } else if (found === '<!--') {
+      if (!markdown.startsWith(COMMENT_ANCHOR, at)) {
+        const close = nextCommentClose(end);
+        end = close === -1 ? markdown.length : close + 3;
+        mask(at, end);
+        if (atLineStart(markdown, at)) blockEnd = end;
+      }
+    } else if (found.charCodeAt(0) === 92) {
+      // An escaped character: shown as written.
+    } else if (found === '![') {
+      const image = tokenizer && imageAt(tokenizer, markdown.slice(at, lineEnd));
+      if (image) {
+        if (image.label === undefined) mask(at, at + image.length);
+        else images.push({ start: at, end: at + image.length, label: image.label });
+        end = at + image.length;
+      }
+    } else if (found.endsWith('[')) {
+      if (tokenizer && startsBlock(markdown, lineStart, blockEnd)) {
+        const blank = nextBlankLine(at);
+        const definition = definitionAt(
+          tokenizer,
+          markdown.slice(lineStart, blank === -1 ? markdown.length : blank),
+        );
+        if (definition) {
+          labels.add(definition.label);
+          mask(lineStart + definition.start, lineStart + definition.end);
+          end = lineStart + definition.end;
+          blockEnd = end;
+        }
+      }
+    } else {
+      const fenceChar = found.charCodeAt(0);
+      const length = found.length;
+      const indent = fenceIndent(markdown, lineStart, at);
+      const isFence =
+        indent !== -1 &&
+        indent <= 3 &&
+        (fenceChar === 126 || length >= 3) &&
+        (fenceChar === 126 || !markdown.slice(end, lineEnd).includes('`'));
+      if (isFence) {
+        const columns = columnsPastQuote(markdown, lineStart, at);
+        const offset = columns - indent;
+        let close = nextFenceClose(lineEnd + 1);
+        while (close !== -1) {
+          let closeRun = close;
+          while (isBlank(markdown.charCodeAt(closeRun)) || markdown.charCodeAt(closeRun) === 62) {
+            closeRun += 1;
+          }
+          let closeEnd = closeRun;
+          while (markdown.charCodeAt(closeEnd) === fenceChar) closeEnd += 1;
+          if (
+            closeEnd - closeRun >= length &&
+            columnsPastQuote(markdown, close, closeRun) <= 3 + offset
+          )
+            break;
+          close = nextFenceClose(close + 1);
+        }
+        end = close === -1 ? markdown.length : lineEndAt(close);
+        const quotes = quotesOf(markdown, lineStart, at);
+        if (quotes > 0 || offset > 0) {
+          const exit = containerEnd(markdown, lineEnd + 1, end, quotes, offset > 0 ? columns : -1);
+          if (exit !== -1) end = exit;
+        }
+        blockEnd = end;
+      } else if (fenceChar === 96) {
+        const close = nextSpanClose(found)(end);
+        const blank = nextBlankLine(end);
+        if (close !== -1 && (blank === -1 || close < blank)) {
+          mask(at, end);
+          mask(close, close + length);
+          for (let brk = nextLineBreak(end); brk !== -1 && brk < close;) {
+            if (source.charCodeAt(brk - 1) === 13) dropped.push(brk - 1);
+            dropped.push(brk);
+            brk = nextLineBreak(brk + 1);
+          }
+          end = close + length;
+        }
+      }
+    }
+    HIDDEN_BLOCK_OPENER.lastIndex = end;
+    opener = HIDDEN_BLOCK_OPENER.exec(markdown);
+  }
+  let out = '';
+  let pos = 0;
+  const hide = (start: number, end: number) => {
+    out += source.slice(pos, start) + source.slice(start, end).replace(NOT_BREAK, '\u0000');
+    pos = end;
+  };
+  let image = 0;
+  const hideImagesBefore = (at: number) => {
+    for (; image < images.length && images[image].start < at; image += 1) {
+      const { start, end, label } = images[image];
+      if (labels.has(label)) hide(start, end);
+    }
+  };
+  for (let k = 0; k < masked.length; k += 2) {
+    hideImagesBefore(masked[k]);
+    hide(masked[k], masked[k + 1]);
+  }
+  hideImagesBefore(source.length);
+  const hidden = out + source.slice(pos);
+  return dropped.length > 0 ? maskOffsets(hidden, dropped) : hidden;
+}
+
+/**
+ * The renderer's own tokenizer, to read an image or a definition as the
+ * renderer reads it: marked's, configured as the renderer configures it, its
+ * rules bound by a lexer of the same options. A copy of the options is bound,
+ * so the lexer the mask runs (`computeHiddenMask`) keeps its own.
+ * `undefined` when marked could not make one, and the scan masks no image
+ * and no definition.
+ */
+function scanTokenizer(): Tokenizer | undefined {
+  try {
+    hiddenTextLexer ??= createTiptapTaskListMarked();
+    const options = { ...hiddenTextLexer.defaults };
+    return new Lexer(options).options.tokenizer ?? undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/** A link every label resolves to: what a reference image needs to be read as one, whatever the note defines. */
+const ANY_LINK = { href: '', title: '' };
+
+/**
+ * The image `text` opens with as marked reads it — its `length`, and the
+ * `label` a definition of the note must resolve for a reference image
+ * (`![alt][ref]`, `![alt][]` and `![alt]` on their alt text; `undefined` for
+ * an inline image) — or `undefined` when `text` opens with no image. The
+ * renderer's own tokenizer reads it, in the renderer's order: the inline
+ * form first (`link`), then a reference (`reflink`, given a `links` every
+ * label resolves in, so the label is read whether or not the note defines
+ * it) — so `![alt](not valid)` is the shortcut image `![alt]` to both, and
+ * image-shaped text the renderer shows as written is masked by neither.
+ */
+function imageAt(
+  tokenizer: Tokenizer,
+  text: string,
+): { length: number; label: string | undefined } | undefined {
+  const inline = tokenizer.link(text);
+  if (inline) {
+    return inline.type === 'image' ? { length: inline.raw.length, label: undefined } : undefined;
+  }
+  let label: string | undefined;
+  const links = new Proxy({} as Links, {
+    get(_links, name) {
+      if (typeof name !== 'string') return undefined;
+      label = name;
+      return ANY_LINK;
+    },
+  });
+  const reference = tokenizer.reflink(text, links);
+  if (reference?.type !== 'image' || label === undefined) return undefined;
+  return { length: reference.raw.length, label };
+}
+
+/**
+ * The link reference definition `text` opens with as marked reads it (`def`)
+ * — the `[start, end)` of the text the editor hides of it, past the blanks
+ * that open it and short of the line break that ends it, and the `label` as
+ * marked matches a reference to it — or `undefined` when `text` opens with
+ * none. The label is hidden with the rest: its letters would otherwise pair
+ * with a plain-text line's in a diff. `text` reaches the next blank line at
+ * most, which no definition spans, so no text past it is read as part of
+ * one.
+ */
+function definitionAt(
+  tokenizer: Tokenizer,
+  text: string,
+): { start: number; end: number; label: string } | undefined {
+  const definition = tokenizer.def(text);
+  if (!definition) return undefined;
+  const raw = definition.raw;
+  return {
+    start: raw.length - raw.trimStart().length,
+    end: raw.trimEnd().length,
+    label: definition.tag,
+  };
+}
+
+/** Whether `at` of `text` sits at a line start, at most three blanks after it. */
+function atLineStart(text: string, at: number): boolean {
+  let start = at;
+  while (start > 0 && isBlank(text.charCodeAt(start - 1))) start -= 1;
+  return at - start <= 3 && (start === 0 || text.charCodeAt(start - 1) === 10);
+}
+
+/** The columns of the blanks that open the line of `text` at `lineStart`; a tab reaches the next multiple of four. */
+function indentOf(text: string, lineStart: number): number {
+  let columns = 0;
+  for (let at = lineStart; ; at += 1) {
+    const code = text.charCodeAt(at);
+    if (code === 32) columns += 1;
+    else if (code === 9) columns += 4 - (columns % 4);
+    else return columns;
+  }
+}
+
+/** Whether the line of `text` at `lineStart` holds blanks alone. */
+function isBlankLine(text: string, lineStart: number): boolean {
+  let at = lineStart;
+  while (at < text.length && (isBlank(text.charCodeAt(at)) || text.charCodeAt(at) === 13)) at += 1;
+  return at >= text.length || text.charCodeAt(at) === 10;
+}
+
+/**
+ * The end of the indented code block the line of `text` at `lineStart` — of
+ * four columns of blanks or more — belongs to: the start of the next line of
+ * fewer that is not blank, or the note's end. `-1` when the line is no code
+ * but continues a paragraph: the lines above it, indented like it, reach one
+ * that is neither blank nor indented nor within the last block the scan
+ * closed (`blockEnd`), or one already found to continue a paragraph
+ * (`continuationEnd`).
+ */
+function indentedCodeEnd(
+  text: string,
+  lineStart: number,
+  blockEnd: number,
+  continuationEnd: number,
+): number {
+  let start = lineStart;
+  while (start > 0) {
+    const previous = text.lastIndexOf('\n', start - 2) + 1;
+    if (previous < blockEnd || isBlankLine(text, previous)) break;
+    if (previous < continuationEnd || indentOf(text, previous) < 4) return -1;
+    start = previous;
+  }
+  let lineEnd = text.indexOf('\n', lineStart);
+  while (lineEnd !== -1 && lineEnd + 1 < text.length) {
+    const next = lineEnd + 1;
+    if (!isBlankLine(text, next) && indentOf(text, next) < 4) return next;
+    lineEnd = text.indexOf('\n', next);
+  }
+  return text.length;
+}
+
+/**
+ * The columns of blanks between the last quote or item marker (`>`, `-`,
+ * `*`, `+`, `1.`, `1)`) on the line of `text` at `lineStart` — or its start
+ * — and `at`; `-1` when other text lies between them.
+ */
+function fenceIndent(text: string, lineStart: number, at: number): number {
+  let columns = 0;
+  for (let i = lineStart; i < at; i += 1) {
+    const code = text.charCodeAt(i);
+    if (code === 32) columns += 1;
+    else if (code === 9) columns += 4 - (columns % 4);
+    else if (code === 62) columns = 0;
+    else if (
+      (code === 45 || code === 42 || code === 43) &&
+      i + 1 < at &&
+      isBlank(text.charCodeAt(i + 1))
+    ) {
+      columns = 0;
+    } else if (code >= 48 && code <= 57) {
+      let digits = i + 1;
+      while (digits < i + 9 && text.charCodeAt(digits) >= 48 && text.charCodeAt(digits) <= 57)
+        digits += 1;
+      const delimiter = text.charCodeAt(digits);
+      if (
+        (delimiter !== 46 && delimiter !== 41) ||
+        digits + 1 >= at ||
+        !isBlank(text.charCodeAt(digits + 1))
+      )
+        return -1;
+      columns = 0;
+      i = digits;
+    } else return -1;
+  }
+  return columns;
+}
+
+/** The `>` of `text` between `from` and `to`. */
+function quotesOf(text: string, from: number, to: number): number {
+  let quotes = 0;
+  for (let at = from; at < to; at += 1) if (text.charCodeAt(at) === 62) quotes += 1;
+  return quotes;
+}
+
+/**
+ * What ends an item at a line of few blanks, as the renderer's list rule has
+ * it: a bullet, a fence, a `#`, an HTML tag or comment, a `>` or a thematic
+ * break.
+ */
+const ITEM_INTERRUPT =
+  /(?:[*+-]|\d{1,9}[.)])(?:[ \t]|$)|`{3}|~{3}|#|<(?:[a-z].*>|!--)|>|(?:(?:- *){3,}|(?:_ *){3,}|(?:\* *){3,})$/imy;
+/** A line of an item's content that a less indented line ends the item after: a fence, a `#` or a thematic break. */
+const CONTENT_BLOCK = /`{3}|~{3}|#|(?:(?:- *){3,}|(?:_ *){3,}|(?:\* *){3,})$/my;
+
+/**
+ * The start of the first line of `text` from `from` — before `until` — that
+ * ends the quote and item a fence opened in, `quotes` quote markers deep,
+ * the item's content at column `itemIndent` (`-1` in no item); `-1` when
+ * none does. The renderer ends a fence none closes with its container, and
+ * reads the note on past it as written: a quote ends at a line with fewer
+ * `>` than the fence's; an item at a line of fewer columns than its content
+ * that a blank line, an indented code line, a fence, a `#` or a thematic
+ * break precedes, or that opens a block of its own within three blanks
+ * (`ITEM_INTERRUPT`) — any other continues the item lazily.
+ */
+function containerEnd(
+  text: string,
+  from: number,
+  until: number,
+  quotes: number,
+  itemIndent: number,
+): number {
+  let blankBefore = false;
+  let codeBefore = true;
+  for (let start = from; start < until;) {
+    let at = start;
+    for (let q = 0; q < quotes; q += 1) {
+      const blanks = at;
+      while (at - blanks < 3 && text.charCodeAt(at) === 32) at += 1;
+      if (text.charCodeAt(at) !== 62) return start;
+      at += 1;
+      if (text.charCodeAt(at) === 32) at += 1;
+    }
+    if (itemIndent !== -1) {
+      if (isBlankLine(text, at)) {
+        blankBefore = true;
+        codeBefore = false;
+      } else {
+        const indent = indentOf(text, at);
+        let content = at;
+        while (isBlank(text.charCodeAt(content))) content += 1;
+        if (indent <= Math.min(3, itemIndent - 1)) {
+          ITEM_INTERRUPT.lastIndex = content;
+          if (ITEM_INTERRUPT.test(text)) return start;
+        }
+        if (indent < itemIndent) {
+          if (blankBefore || codeBefore) return start;
+          codeBefore = false;
+        } else {
+          CONTENT_BLOCK.lastIndex = content;
+          codeBefore = indent - itemIndent >= 4 || CONTENT_BLOCK.test(text);
+        }
+      }
+    }
+    const lineEnd = text.indexOf('\n', start);
+    start = lineEnd === -1 ? text.length : lineEnd + 1;
+  }
+  return -1;
+}
+
+/** The columns from the last `>` of `text` between `from` and `to` — or `from` — to `to`. */
+function columnsPastQuote(text: string, from: number, to: number): number {
+  let columns = 0;
+  for (let at = from; at < to; at += 1) {
+    const code = text.charCodeAt(at);
+    if (code === 62) columns = 0;
+    else if (code === 9) columns += 4 - (columns % 4);
+    else columns += 1;
+  }
+  return columns;
+}
+
+/**
+ * Whether a block may open on the line of `text` that starts at `lineStart`:
+ * the note's first line, a line after a blank one, or the line after the one
+ * the last block the scan closed ended on (`blockEnd`). Any other line
+ * continues the paragraph of the line before it — its own, a list item's or
+ * a block quote's — which a link reference definition cannot interrupt.
+ */
+function startsBlock(text: string, lineStart: number, blockEnd: number): boolean {
+  if (lineStart === 0) return true;
+  const previous = text.lastIndexOf('\n', lineStart - 2) + 1;
+  if (blockEnd > previous) return true;
+  let at = previous;
+  while (at < lineStart - 1 && (isBlank(text.charCodeAt(at)) || text.charCodeAt(at) === 13))
+    at += 1;
+  return at >= lineStart - 1;
+}
+
+/**
+ * The lines of `masked` that hold an opener the mask did not account for
+ * (see `maskHidden`) — and, when the mask accounted for nothing (`unmasked`),
+ * the lines the renderer may read as HTML (`HTML_LINE`) — as sorted,
+ * flattened `[start, end)` ranges. One pass per pattern: a line is bounded
+ * once, at its first such opener, and the scan resumes past its end, so the
+ * cost is linear in `masked` however many openers a line holds.
+ */
+function unanchorableLines(masked: string, unmasked = false): number[] {
+  const lines: number[] = [];
+  HIDEABLE_ALL.lastIndex = 0;
+  let opener = HIDEABLE_ALL.exec(masked);
+  while (opener) {
+    const next = masked.charCodeAt(opener.index + 2);
+    const closer = opener[0] === '](' ? 41 : opener[0] === '][' ? 93 : -1;
+    if (next !== 0 && next !== closer) {
+      HIDEABLE_ALL.lastIndex = pushLine(lines, masked, opener.index);
+    }
+    opener = HIDEABLE_ALL.exec(masked);
+  }
+  if (!unmasked) return lines;
+  const html: number[] = [];
+  HTML_LINE.lastIndex = 0;
+  let tag = HTML_LINE.exec(masked);
+  while (tag) {
+    HTML_LINE.lastIndex = pushLine(html, masked, tag.index);
+    tag = HTML_LINE.exec(masked);
+  }
+  return html.length === 0 ? lines : mergeLines(lines, html);
+}
+
+/** Push the `[start, end)` of the line of `text` at `at` and return `end`. */
+function pushLine(lines: number[], text: string, at: number): number {
+  const start = text.lastIndexOf('\n', at) + 1;
+  let end = text.indexOf('\n', at);
+  if (end === -1) end = text.length;
+  lines.push(start, end);
+  return end;
+}
+
+/** Merge two sorted, flattened line lists, each line once. */
+function mergeLines(a: number[], b: number[]): number[] {
+  const out: number[] = [];
+  let i = 0;
+  let j = 0;
+  while (i < a.length || j < b.length) {
+    const next = j >= b.length || (i < a.length && a[i] <= b[j]) ? a : b;
+    const start = next === a ? a[i] : b[j];
+    const end = next === a ? a[i + 1] : b[j + 1];
+    if (next === a) i += 2;
+    else j += 2;
+    if (out.length === 0 || out[out.length - 2] !== start) out.push(start, end);
+  }
+  return out;
+}
+
+/** Whether `[start, end)` meets one of the flattened `ranges`. */
+function overlaps(ranges: number[], start: number, end: number): boolean {
+  let low = 0;
+  let high = ranges.length >> 1;
+  // The first range that ends after `start`.
+  while (low < high) {
+    const mid = (low + high) >> 1;
+    if (ranges[2 * mid + 1] <= start) low = mid + 1;
+    else high = mid;
+  }
+  return low < ranges.length >> 1 && ranges[2 * low] < end;
+}
+
+function joinRaw(tokens: LexedToken[]): string {
+  let text = '';
+  for (const token of tokens) text += token.raw;
+  return text;
+}
+
+function mapToSource(map: TextMap, offset: number): number {
+  let k = map.lineStarts.length - 1;
+  while (k > 0 && map.lineStarts[k] > offset) k -= 1;
+  return map.sourceStarts[k] + (offset - map.lineStarts[k]);
+}
+
+/**
+ * The map of `text`, the children's text of the container whose `raw` sits at
+ * `at` in `parent`: line `k` of `text` must be a suffix of line `k` of `raw` —
+ * what is left once the marker or indentation before it is gone — and the
+ * lines of `raw` after the last line of `text` must be blank. `undefined`
+ * when `raw` is not shaped that way.
+ */
+function suffixLineMap(
+  parent: TextMap,
+  at: number,
+  raw: string,
+  text: string,
+): TextMap | undefined {
+  const rawLines = raw.split('\n');
+  const textLines = text.split('\n');
+  if (textLines.length > rawLines.length) return undefined;
+  const map: TextMap = { text, lineStarts: [], sourceStarts: [] };
+  let rawPos = 0;
+  let textPos = 0;
+  for (let k = 0; k < rawLines.length; k += 1) {
+    const rawLine = rawLines[k];
+    if (k < textLines.length) {
+      const line = textLines[k];
+      if (!rawLine.endsWith(line)) return undefined;
+      map.lineStarts.push(textPos);
+      map.sourceStarts.push(mapToSource(parent, at + rawPos) + (rawLine.length - line.length));
+      textPos += line.length + 1;
+    } else if (rawLine.trim() !== '') {
+      return undefined;
+    }
+    rawPos += rawLine.length + 1;
+  }
+  return map;
+}
+
+/**
+ * Append to `ranges` the source ranges hidden inside `tokens`, consecutive
+ * in `map.text` from `at`.
+ */
+function collectHidden(
+  tokens: LexedToken[],
+  map: TextMap,
+  at: number,
+  source: string,
+  ranges: Array<[number, number]>,
+): void {
+  for (const token of tokens) {
+    const { raw } = token;
+    if (token.type === 'link' || token.type === 'image') {
+      collectHiddenInLink(token, map, at, source, ranges);
+    } else if (token.type === 'def') {
+      const colon = raw.indexOf(']:');
+      if (colon !== -1) hide(map, at + raw.indexOf('['), at + raw.trimEnd().length, source, ranges);
+    } else if (token.type === 'codespan') {
+      let run = 0;
+      while (raw.charCodeAt(run) === 96) run += 1;
+      if (run > 0 && raw.length > 2 * run && raw.endsWith(raw.slice(0, run))) {
+        hide(map, at, at + run, source, ranges);
+        hide(map, at + raw.length - run, at + raw.length, source, ranges);
+      }
+    } else if (token.type === 'table') {
+      collectHiddenInTable(token, map, at, source, ranges);
+    } else if (token.type === 'html') {
+      HIDDEN_HTML.lastIndex = 0;
+      let hidden = HIDDEN_HTML.exec(raw);
+      while (hidden) {
+        hide(map, at + hidden.index, at + hidden.index + hidden[0].length, source, ranges);
+        hidden = HIDDEN_HTML.exec(raw);
+      }
+    } else {
+      const children = token.tokens ?? token.items;
+      if (children) {
+        const inner = childMap(map, at, raw, joinRaw(children));
+        if (inner) collectHidden(children, inner.map, inner.at, source, ranges);
+      }
+    }
+    at += raw.length;
+  }
+}
+
+/**
+ * Where the children of the token whose `raw` sits at `at` in `parent` see
+ * their text: at the start of `raw` (a paragraph, a list, an inline text
+ * block), at its only occurrence on a one-line `raw` (`**` or `*` around it,
+ * a heading's marker before it), or one suffix per line (`suffixLineMap`).
+ */
+function childMap(
+  parent: TextMap,
+  at: number,
+  raw: string,
+  text: string,
+): { map: TextMap; at: number } | undefined {
+  if (raw.startsWith(text)) return { map: parent, at };
+  if (!text.includes('\n')) {
+    const found = raw.indexOf(text);
+    if (found !== -1 && raw.indexOf(text, found + 1) === -1) {
+      return {
+        map: { text, lineStarts: [0], sourceStarts: [mapToSource(parent, at + found)] },
+        at: 0,
+      };
+    }
+  }
+  const map = suffixLineMap(parent, at, raw, text);
+  return map && { map, at: 0 };
+}
+
+/**
+ * An image shows as one object replacement character, so all of it is hidden.
+ * A link shows its label, the text between `[` and `](` / `][`; the rest up to
+ * the closing `)` / `]` is hidden. An autolink or a bare URL shows its text.
+ */
+function collectHiddenInLink(
+  token: LexedToken,
+  map: TextMap,
+  at: number,
+  source: string,
+  ranges: Array<[number, number]>,
+): void {
+  const { raw } = token;
+  if (token.type === 'image') {
+    hide(map, at, at + raw.length, source, ranges);
+    return;
+  }
+  const label = token.tokens ? joinRaw(token.tokens) : '';
+  if (!token.tokens || raw.charCodeAt(0) !== 91 || !raw.startsWith(label, 1)) return;
+  const after = 1 + label.length;
+  const opener = raw.slice(after, after + 2);
+  if ((opener === '](' || opener === '][') && raw.length > after + 2) {
+    hide(map, at + after + 2, at + raw.length - 1, source, ranges);
+  }
+  collectHidden(token.tokens, map, at + 1, source, ranges);
+}
+
+/**
+ * Line `0` of a table is its header, line `2 + i` its row `i`; each cell's
+ * text (the cells are trimmed, so it is never blank) is the next occurrence
+ * on its line after the cell before it.
+ */
+function collectHiddenInTable(
+  token: LexedToken,
+  map: TextMap,
+  at: number,
+  source: string,
+  ranges: Array<[number, number]>,
+): void {
+  const lines = token.raw.split('\n');
+  const lineStarts: number[] = [];
+  let pos = 0;
+  for (const line of lines) {
+    lineStarts.push(pos);
+    pos += line.length + 1;
+  }
+  const rows = [token.header ?? [], ...(token.rows ?? [])];
+  rows.forEach((cells, index) => {
+    const lineIndex = index === 0 ? 0 : index + 1;
+    const line = lines[lineIndex];
+    if (line === undefined) return;
+    let cellPos = 0;
+    for (const cell of cells) {
+      const text = joinRaw(cell.tokens);
+      if (text === '') continue;
+      const found = line.indexOf(text, cellPos);
+      if (found === -1) return;
+      const cellMap: TextMap = {
+        text,
+        lineStarts: [0],
+        sourceStarts: [mapToSource(map, at + lineStarts[lineIndex]) + found],
+      };
+      collectHidden(cell.tokens, cellMap, 0, source, ranges);
+      cellPos = found + text.length;
+    }
+  });
+}
+
+/**
+ * Append the source ranges of `map.text[start, end)` to `ranges`, one per
+ * line, each only if the source holds that text there.
+ */
+function hide(
+  map: TextMap,
+  start: number,
+  end: number,
+  source: string,
+  ranges: Array<[number, number]>,
+): void {
+  let pos = start;
+  while (pos < end) {
+    let lineEnd = map.text.indexOf('\n', pos);
+    if (lineEnd === -1 || lineEnd > end) lineEnd = end;
+    if (lineEnd > pos) {
+      const from = mapToSource(map, pos);
+      if (source.startsWith(map.text.slice(pos, lineEnd), from)) {
+        ranges.push([from, from + (lineEnd - pos)]);
+      }
+    }
+    pos = lineEnd + 1;
+  }
+}
+
+/**
+ * Append the replaced spans of `from[fromStart, fromEnd)` → `to[toStart, toEnd)`
+ * to `out`. A region that meets an `unanchorable` line of `to` is diffed
+ * line by line (`refineByLine`, which pairs the lines by their letters,
+ * `spelled` angle brackets included); any other region is diffed whole
+ * (`diffRegion`).
+ */
+function refine(
+  out: Hunk[],
+  from: string,
+  to: string,
+  fromStart: number,
+  fromEnd: number,
+  toStart: number,
+  toEnd: number,
+  deadline: number,
+  unanchorable: number[],
+  spelled: number[],
+): void {
+  if (overlaps(unanchorable, toStart, toEnd)) {
+    refineByLine(
+      out,
+      from,
+      to,
+      fromStart,
+      fromEnd,
+      toStart,
+      toEnd,
+      deadline,
+      unanchorable,
+      spelled,
+    );
+  } else {
+    diffRegion(
+      out,
+      from,
+      to,
+      fromStart,
+      fromEnd,
+      toStart,
+      toEnd,
+      deadline,
+      unanchorable,
+      spelled,
+      true,
+    );
+  }
+}
+
+/**
+ * Append the replaced spans of `from[fromStart, fromEnd)` → `to[toStart, toEnd)`
+ * to `out`: trim the common prefix and suffix, diff what is left by token,
+ * then `diffChars` each replaced token span. Tokens first because a plain
+ * word is a pure insertion apart from the syntax around it, and `diffChars`
+ * alone would happily match its letters one by one inside `](https://…)`.
+ * Two spans that only whitespace keeps apart are diffed as one (see
+ * `mergeAcrossWhitespace`). A region that may still be `split` line by line
+ * (`refineByLine`, whose pairs and gaps come back here with `split` false)
+ * is not diffed whole once longer than `MAX_REFINE_LENGTH` but split: a
+ * region a long run of short lines left unanchored — 600 one-word links,
+ * none long enough for `MIN_ANCHOR_LENGTH` — is then diffed pair by pair,
+ * each well within the bound. A pair or a gap of that split is diffed
+ * whatever its length, the deadline alone bounding it, so that within the
+ * budget no length emits a span wider than the lines around it. A diff past
+ * the budget is abandoned: a region still to split is paired without a
+ * diff, so a position stays bounded by its own line whatever the budget,
+ * and a pair or a gap is emitted as one replaced span.
+ */
+function diffRegion(
+  out: Hunk[],
+  from: string,
+  to: string,
+  fromStart: number,
+  fromEnd: number,
+  toStart: number,
+  toEnd: number,
+  deadline: number,
+  unanchorable: number[],
+  spelled: number[],
+  split: boolean,
+): void {
+  let prefix = 0;
+  const maxPrefix = Math.min(fromEnd - fromStart, toEnd - toStart);
+  while (
+    prefix < maxPrefix &&
+    from.charCodeAt(fromStart + prefix) === to.charCodeAt(toStart + prefix)
+  ) {
+    prefix += 1;
+  }
+  if (prefix > 0 && isHighSurrogate(from.charCodeAt(fromStart + prefix - 1))) prefix -= 1;
+  fromStart += prefix;
+  toStart += prefix;
+  let suffix = 0;
+  const maxSuffix = Math.min(fromEnd - fromStart, toEnd - toStart);
+  while (
+    suffix < maxSuffix &&
+    from.charCodeAt(fromEnd - 1 - suffix) === to.charCodeAt(toEnd - 1 - suffix)
+  ) {
+    suffix += 1;
+  }
+  if (suffix > 0 && isLowSurrogate(from.charCodeAt(fromEnd - suffix))) suffix -= 1;
+  fromEnd -= suffix;
+  toEnd -= suffix;
+
+  if (fromStart === fromEnd && toStart === toEnd) return;
+  const whole: Hunk = { fromStart, fromEnd, toStart, toEnd };
+  if (fromStart === fromEnd || toStart === toEnd) {
+    out.push(whole);
+    return;
+  }
+  // A region not diffed is paired line by line while it may be; a pair or a
+  // gap of that pairing is emitted as is.
+  const abandon = () => {
+    if (split) {
+      refineByLine(
+        out,
+        from,
+        to,
+        fromStart,
+        fromEnd,
+        toStart,
+        toEnd,
+        deadline,
+        unanchorable,
+        spelled,
+      );
+    } else {
+      out.push(whole);
+    }
+  };
+  // Nothing is searched once the budget is spent.
+  if (performance.now() >= deadline) {
+    abandon();
+    return;
+  }
+  // A `from` region that survives whole inside the `to` region — text between
+  // two pieces of inline syntax, or a code span between its backticks — is a
+  // pure insertion around it; the diff would say the same, at a cost per gap.
+  // One linear search, however long the region.
+  const inside = findAnchor(to, from.slice(fromStart, fromEnd), toStart, toEnd, () => true);
+  if (inside !== -1) {
+    if (inside > toStart) out.push({ fromStart, fromEnd: fromStart, toStart, toEnd: inside });
+    const after = inside + (fromEnd - fromStart);
+    if (after < toEnd) out.push({ fromStart: fromEnd, fromEnd, toStart: after, toEnd });
+    return;
+  }
+  // Nothing inside a long region anchored, so the region is not diffed whole
+  // but split; a pair or a gap of the split is diffed however long.
+  if (split && (fromEnd - fromStart > MAX_REFINE_LENGTH || toEnd - toStart > MAX_REFINE_LENGTH)) {
+    refineByLine(
+      out,
+      from,
+      to,
+      fromStart,
+      fromEnd,
+      toStart,
+      toEnd,
+      deadline,
+      unanchorable,
+      spelled,
+    );
+    return;
+  }
+  const words = withinBudget(deadline, (timeout) =>
+    diffArrays(
+      from.slice(fromStart, fromEnd).match(TOKEN) ?? [],
+      to.slice(toStart, toEnd).match(TOKEN) ?? [],
+      { timeout },
+    ),
+  );
+  if (!words) {
+    abandon();
+    return;
+  }
+  const spans = mergeAcrossWhitespace(
+    groupChanges(
+      words.map((part) => ({
+        value: part.value.join(''),
+        added: part.added,
+        removed: part.removed,
+      })),
+      fromStart,
+      toStart,
+    ),
+    from,
+  );
+  for (const span of spans) {
+    const chars =
+      span.fromStart < span.fromEnd && span.toStart < span.toEnd
+        ? withinBudget(deadline, (timeout) =>
+            diffChars(
+              from.slice(span.fromStart, span.fromEnd),
+              to.slice(span.toStart, span.toEnd),
+              { timeout },
+            ),
+          )
+        : undefined;
+    if (chars) out.push(...groupChanges(chars, span.fromStart, span.toStart));
+    else out.push(span);
+  }
+}
+
+/**
+ * `refine` a region that holds a sealed line of `to` — one with link syntax
+ * the mask did not account for, or that the renderer may read as HTML; every
+ * such line of a source past `MAX_LEXED_LENGTH` — one line at a time, so
+ * that a word of the plain text is never matched inside the unmasked
+ * destination on a link line it is not the text of (`**sel**ection daemon`
+ * after `[render](https://sync/selection/editor)`), whichever pairing the
+ * diff of the whole region would have chosen.
+ *
+ * The lines of plain text (`\n` or U+FFFC ends one; a blank line is not
+ * one) are paired with the lines of markdown by their text, not by count:
+ * the letters of a plain line are those of its markdown line with the
+ * syntax gone, so they are a subsequence of it (`lineLetters`; a line of no
+ * letter is keyed by its text without blanks), and a run of plain lines an
+ * inline leaf split is paired with the one markdown line that holds them
+ * all. As many plain lines as markdown lines, each the text of the line at
+ * its own position, are paired in one pass (`pairPositionally`); otherwise
+ * the pairing that accounts for the most letters is searched (`pairLines`),
+ * and when that search is unaffordable the lines are paired greedily in
+ * order (`pairGreedily`) — every way linear or bounded, never a diff of the
+ * region whole, so that a sealed line is bounded by its own pair whatever
+ * the budget. A markdown line that is not a text line (`isTextLine`: a
+ * fence, a setext underline, a rule, a table delimiter row, a definition,
+ * a comment the whole line long) is no candidate for a pair at all, however
+ * many stand in a row, so a run of them never derails the greedy pairing
+ * (whose lookahead is bounded) from the sealed line beyond them; such a
+ * line, and any other no plain line is the text of — a line of a note the
+ * renderer collapsed — is deleted against nothing, and a plain line no
+ * markdown line accounts for is inserted. Each pair is diffed alone
+ * (`diffRegion`; past the deadline the
+ * pair is one replaced span, still bounded by its lines), and so is each gap
+ * between pairs unless a sealed line lies in it: that gap is never diffed —
+ * its markdown up to the end of its last sealed line is deleted against
+ * nothing, and its plain text replaces what follows — so a position of its
+ * plain text maps to the gap's end and a position of the sealed line to the
+ * end of the plain text before it, neither into the other. A sealed table
+ * row paired cell by cell (`tableCells`) is the exception: the syntax of the
+ * row before a cell is inserted before the cell's fragment, so a position on
+ * the row stays on the row's own plain-text lines.
+ */
+function refineByLine(
+  out: Hunk[],
+  from: string,
+  to: string,
+  fromStart: number,
+  fromEnd: number,
+  toStart: number,
+  toEnd: number,
+  deadline: number,
+  unanchorable: number[],
+  spelled: number[],
+): void {
+  const fragments = textLines(from, fromStart, fromEnd, true);
+  const lines = textLines(to, toStart, toEnd, false, unanchorable, spelled).filter((line) =>
+    isTextLine(to, line.start, line.end),
+  );
+  let tokenizer: Tokenizer | undefined | null = null;
+  const cellTokenizer = () => (tokenizer === null ? (tokenizer = scanTokenizer()) : tokenizer);
+  for (const line of lines) line.cells = tableCells(to, line, cellTokenizer);
+  const gap = (fromA: number, fromB: number, toA: number, toB: number) => {
+    if (fromA === fromB && toA === toB) return;
+    if (!overlaps(unanchorable, toA, toB)) {
+      diffRegion(out, from, to, fromA, fromB, toA, toB, deadline, unanchorable, spelled, false);
+      return;
+    }
+    const lastEnd = lastOverlapEnd(unanchorable, toA, toB);
+    const rowStart = lastEnd > toB ? rangeStartAt(unanchorable, toB - 1) : toA;
+    if (rowStart > toA) {
+      // The gap ends at the first cell of a sealed row (the ranges are whole
+      // lines): the row's syntax before the cell is inserted before the
+      // cell's fragment, so a position on it stays on the row; the gap
+      // before the row is a gap like any. (A gap between two cells lies on
+      // the row whole and is deleted against the fragment before it.)
+      gap(fromA, fromB, toA, rowStart);
+      out.push({ fromStart: fromB, fromEnd: fromB, toStart: rowStart, toEnd: toB });
+      return;
+    }
+    const sealedEnd = Math.min(lastEnd, toB);
+    out.push({ fromStart: fromA, fromEnd: fromA, toStart: toA, toEnd: sealedEnd });
+    if (fromA < fromB || sealedEnd < toB) {
+      out.push({ fromStart: fromA, fromEnd: fromB, toStart: sealedEnd, toEnd: toB });
+    }
+  };
+  const pairs =
+    pairPositionally(fragments, lines) ??
+    pairLines(fragments, lines, deadline) ??
+    pairGreedily(fragments, lines);
+  let fromPos = fromStart;
+  let toPos = toStart;
+  for (const [first, last, line] of pairs) {
+    const fromA = fragments[first].start;
+    const fromB = fragments[last].end;
+    gap(fromPos, fromA, toPos, line.start);
+    diffRegion(
+      out,
+      from,
+      to,
+      fromA,
+      fromB,
+      line.start,
+      line.end,
+      deadline,
+      unanchorable,
+      spelled,
+      false,
+    );
+    fromPos = fromB;
+    toPos = line.end;
+  }
+  gap(fromPos, fromEnd, toPos, toEnd);
+}
+
+/** The start of the one of the sorted, flattened `ranges` that holds `at`, or `at`. */
+function rangeStartAt(ranges: number[], at: number): number {
+  let low = 0;
+  let high = ranges.length >> 1;
+  while (low < high) {
+    const mid = (low + high) >> 1;
+    if (ranges[2 * mid + 1] <= at) low = mid + 1;
+    else high = mid;
+  }
+  return low < ranges.length >> 1 && ranges[2 * low] <= at ? ranges[2 * low] : at;
+}
+
+/** The end of the last of the sorted, flattened `ranges` that overlaps `[start, end)`, or `start`. */
+function lastOverlapEnd(ranges: number[], start: number, end: number): number {
+  let low = 0;
+  let high = ranges.length >> 1;
+  while (low < high) {
+    const mid = (low + high) >> 1;
+    if (ranges[2 * mid + 1] <= start) low = mid + 1;
+    else high = mid;
+  }
+  let last = start;
+  for (let range = low; range < ranges.length >> 1 && ranges[2 * range] < end; range += 1) {
+    last = ranges[2 * range + 1];
+  }
+  return last;
+}
+
+/**
+ * A line of text without its break, its `letters` (`lineLetters`; a cell's,
+ * of the text it shows), whether it is sealed, and — a table row's — its
+ * `cells` (`tableCells`).
+ */
+interface TextLine {
+  start: number;
+  end: number;
+  letters: string;
+  sealed: boolean;
+  cells?: TextLine[];
+}
+
+const NOT_LETTER_OR_DIGIT = /[^\p{L}\p{N}]+/gu;
+const WHITESPACE = /\s+/gu;
+
+/**
+ * What a line or a cell is paired by: the letters and digits on it — the
+ * syntax gone, the text of a plain-text line is a subsequence of its
+ * markdown line's — or, when it holds none (`!?`, an emoji), its text
+ * without blanks; `''` when it holds nothing but blanks.
+ */
+function lineLetters(text: string): string {
+  const letters = text.replace(NOT_LETTER_OR_DIGIT, '');
+  return letters !== '' ? letters : text.replace(WHITESPACE, '');
+}
+
+/** Whether `code` is a space or a tab. */
+function isBlank(code: number): boolean {
+  return code === 32 || code === 9;
+}
+
+/**
+ * The cells of the table row `line` of `text` — the text between its
+ * unescaped `|`, each without the blanks around it, that is not blank —
+ * when the line holds two or more; `undefined` otherwise. The
+ * leading `|` is optional (GFM), so a line is a row on its cells alone: a
+ * paragraph that holds a `|` has cells too, and is paired as one line
+ * because no run of plain-text lines is the text of its cells in turn. The
+ * note editor shows each cell as a plain-text line of its own (see
+ * `LineWalk`), so a run of them is paired cell by cell (`pairLines`,
+ * `pairGreedily`), each fragment with the cell at its own position — a cell
+ * is keyed by the letters of the text it shows (`shownText`), not of its
+ * source, so a cell whose letters are all in its syntax (`[!?](https://…)`,
+ * `&amp;&amp;`) is the letterless cell its plain-text line is.
+ */
+/** Whether `text[start, end)` holds a `|`; reads no character past `end`. */
+function holdsPipe(text: string, start: number, end: number): boolean {
+  for (let i = start; i < end; i += 1) if (text.charCodeAt(i) === 124) return true;
+  return false;
+}
+
+function tableCells(
+  text: string,
+  line: TextLine,
+  tokenizer: () => Tokenizer | undefined,
+): TextLine[] | undefined {
+  // A line without a `|` is no row: nothing of it is read before the check,
+  // and nothing past it — the search stops at the line's end.
+  if (!holdsPipe(text, line.start, line.end)) return undefined;
+  let i = line.start;
+  while (i < line.end && isBlank(text.charCodeAt(i))) i += 1;
+  if (i >= line.end) return undefined;
+  // The bounds of the cells first, the text they show only once the line
+  // holds two or more: a line's one cell is never read.
+  const bounds: number[] = [];
+  let cellStart = text.charCodeAt(i) === 124 ? i + 1 : i;
+  for (let j = cellStart; j <= line.end; j += 1) {
+    if (j < line.end && (text.charCodeAt(j) !== 124 || text.charCodeAt(j - 1) === 92)) continue;
+    let start = cellStart;
+    let end = j;
+    while (start < end && isBlank(text.charCodeAt(start))) start += 1;
+    while (end > start && isBlank(text.charCodeAt(end - 1))) end -= 1;
+    if (start < end) bounds.push(start, end);
+    cellStart = j + 1;
+  }
+  if (bounds.length < 4) return undefined;
+  const cells: TextLine[] = [];
+  for (let k = 0; k < bounds.length; k += 2) {
+    const start = bounds[k];
+    const end = bounds[k + 1];
+    const letters = lineLetters(shownText(text.slice(start, end), tokenizer));
+    if (letters !== '') cells.push({ start, end, letters, sealed: line.sealed });
+  }
+  return cells.length > 1 ? cells : undefined;
+}
+
+/** A character reference as the renderer passes one to the note editor's HTML parser: `&name;`, `&#ddd;` or `&#xhh;`. */
+const CHARACTER_REFERENCE = /&(?:[a-zA-Z][a-zA-Z0-9]{1,31}|#\d{1,7}|#[xX][0-9a-fA-F]{1,6});/g;
+
+/** The text the note editor shows for the character `reference`: as its HTML parser decodes it, or as written. */
+function decodeReference(reference: string): string {
+  return decodeCharacterReference(reference) ?? reference;
+}
+
+/**
+ * The text the note editor shows of the table cell `cell`, as far as its
+ * letters go: a link read by the renderer's own `tokenizer` (the inline form,
+ * then a reference every label resolves in, as `imageAt` reads an image)
+ * stands as its label, an image as nothing, a character reference as the
+ * editor's HTML parser shows it (`decodeReference` — the standard's table
+ * and arithmetic, no DOM, so a cell of any length is one pass). The rest is
+ * kept as written — formatting is letterless, and a reference the note
+ * leaves undefined shows its letters either way. `cell` itself when the
+ * tokenizer could not be made.
+ */
+function shownText(cell: string, tokenizer: () => Tokenizer | undefined): string {
+  let out = '';
+  let pos = 0;
+  for (let i = cell.indexOf('['); i !== -1; i = cell.indexOf('[', i + 1)) {
+    if (i < pos || (i > 0 && cell.charCodeAt(i - 1) === 92)) continue;
+    const at = i > pos && cell.charCodeAt(i - 1) === 33 ? i - 1 : i;
+    const reader = tokenizer();
+    if (!reader) return cell;
+    const link = linkAt(reader, cell.slice(at));
+    if (!link) continue;
+    out += cell.slice(pos, at) + link.text;
+    pos = at + link.length;
+  }
+  out += cell.slice(pos);
+  return out.indexOf('&') === -1 ? out : out.replace(CHARACTER_REFERENCE, decodeReference);
+}
+
+/** Definitions every label resolves in. */
+const ANY_LINKS: Links = new Proxy({} as Links, {
+  get: (_links, name) => (typeof name === 'string' ? ANY_LINK : undefined),
+});
+
+/**
+ * The link or image `text` opens with as marked reads it — its `length` and
+ * the `text` it shows, a link's label and an image's nothing — or
+ * `undefined` when `text` opens with neither. Read as `imageAt` reads an
+ * image: the inline form first, then a reference every label resolves in.
+ */
+function linkAt(tokenizer: Tokenizer, text: string): { length: number; text: string } | undefined {
+  const token = tokenizer.link(text) ?? tokenizer.reflink(text, ANY_LINKS);
+  if (!token) return undefined;
+  return { length: token.raw.length, text: token.type === 'image' ? '' : token.text };
+}
+
+/**
+ * The lines of `text[start, end)` that are not blank, without their breaks:
+ * `\n`, and with `hardBreaks` U+FFFC too. A markdown line is keyed by the
+ * letters of the text it shows as far as the renderer spells one of its
+ * characters out (`spelled`: `\<` is shown as `&lt;`), so that its
+ * plain-text line's letters are a subsequence of its own.
+ */
+function textLines(
+  text: string,
+  start: number,
+  end: number,
+  hardBreaks: boolean,
+  unanchorable: number[] = [],
+  spelled: number[] = [],
+): TextLine[] {
+  const lines: TextLine[] = [];
+  let pos = start;
+  let next = spelled.length === 0 ? 0 : lowerBound(spelled, start);
+  // The next U+FFFC is looked up once per run of lines, not once per line:
+  // sought from each line of a text without one, it read the rest of the
+  // text as many times as the text has lines.
+  let hardBreak = start - 1;
+  while (pos < end) {
+    let lineEnd = text.indexOf('\n', pos);
+    if (lineEnd === -1 || lineEnd > end) lineEnd = end;
+    if (hardBreaks) {
+      if (hardBreak < pos) {
+        hardBreak = text.indexOf('\uFFFC', pos);
+        if (hardBreak === -1) hardBreak = end;
+      }
+      if (hardBreak < lineEnd) lineEnd = hardBreak;
+    }
+    while (next < spelled.length && spelled[next] < pos) next += 1;
+    if (lineEnd > pos) {
+      let line = text.slice(pos, lineEnd);
+      if (next < spelled.length && spelled[next] < lineEnd) {
+        let out = '';
+        let from = pos;
+        for (; next < spelled.length && spelled[next] < lineEnd; next += 1) {
+          const at = spelled[next];
+          const code = text.charCodeAt(at);
+          // A spelled angle bracket inside a hidden run is masked, and shown as nothing.
+          if (code !== 60 && code !== 62) continue;
+          out += text.slice(from, at) + (code === 60 ? '&lt;' : '&gt;');
+          from = at + 1;
+        }
+        line = out + text.slice(from, lineEnd);
+      }
+      const letters = lineLetters(line);
+      if (letters !== '') {
+        lines.push({
+          start: pos,
+          end: lineEnd,
+          letters,
+          sealed: overlaps(unanchorable, pos, lineEnd),
+        });
+      }
+    }
+    pos = lineEnd + 1;
+  }
+  return lines;
+}
+
+/** A run `fragments[first..last]` of plain-text lines that is the text of the markdown `line`. */
+type LinePair = [first: number, last: number, line: TextLine];
+
+/** Most fragments `pairLines` pairs with one line, and `pairGreedily` too. */
+const MAX_RUN_LENGTH = 127;
+
+/**
+ * The pairs of the plain-text `fragments` with the markdown `lines` when
+ * there are as many of each and every fragment's letters are a subsequence
+ * of the letters of the line at its own position; `undefined` otherwise.
+ * One pass over the letters, whatever the budget.
+ */
+function pairPositionally(fragments: TextLine[], lines: TextLine[]): LinePair[] | undefined {
+  if (fragments.length !== lines.length) return undefined;
+  const pairs: LinePair[] = [];
+  for (let i = 0; i < lines.length; i += 1) {
+    if (subsequenceEnd(lines[i].letters, fragments[i].letters, 0) === -1) return undefined;
+    pairs.push([i, i, lines[i]]);
+  }
+  return pairs;
+}
+
+/** Most `fragments × lines` the pairing searches; past it, or past the deadline, nothing is paired. */
+const MAX_PAIRING_CELLS = 1 << 18;
+
+/**
+ * The pairs `[first, last, line]` — the run of `fragments[first..last]` that
+ * is the text of `line` — of the pairing of the plain-text `fragments` with
+ * the markdown `lines`, in order on both sides, that accounts for the most
+ * letters: a run is the text of a line when its letters are a subsequence of
+ * the line's, and among pairings of equal letters one whose letters are equal
+ * to the line's outranks one whose letters the syntax on the line pads, and
+ * a pair on a line the mask accounted for outranks one on a sealed line —
+ * so a paragraph beside a link line is never taken for the text of the link
+ * line when it has a line of its own — and among pairings equal in all that,
+ * one of more pairs: each fragment on a line of its own rather than in a run
+ * on the line before, whose hidden destination may repeat its letters
+ * (`[xy](https://ab/xy)` fits `xy` twice) — and the fragments a table row's
+ * cells are each the text of in turn each with its own cell (`tableCells`)
+ * rather than in one run over the row, whose cells are as alike as the rows
+ * of the table (a run of three `[same](https://sync/same)` cells is a
+ * subsequence of the row however the fragments are dealt out among the
+ * rows; the letters of a linked cell are never those of its fragment, so
+ * the rank alone does not decide). A dynamic programme over the two
+ * sequences; `undefined` once the search would exceed `MAX_PAIRING_CELLS`
+ * or the `deadline`, which the caller pairs greedily instead.
+ */
+function pairLines(
+  fragments: TextLine[],
+  lines: TextLine[],
+  deadline: number,
+): LinePair[] | undefined {
+  const n = fragments.length;
+  const m = lines.length;
+  if (n === 0 || m === 0) return [];
+  if (n * m > MAX_PAIRING_CELLS) return undefined;
+  const width = m + 1;
+  // Best letters accounted for by `fragments[0, i)` and `lines[0, k)`; -1 unreached.
+  const best = new Int32Array((n + 1) * width).fill(-1);
+  // The pairs of the best.
+  const count = new Int32Array((n + 1) * width);
+  // How the best was reached: -1 skipped a fragment, -2 skipped a line, -3
+  // paired the line's cells each with a fragment, r ≥ 0 paired a run of r + 1 fragments.
+  const via = new Int8Array((n + 1) * width);
+  const better = (score: number, pairs: number, cell: number) =>
+    score > best[cell] || (score === best[cell] && pairs > count[cell]);
+  best[0] = 0;
+  for (let i = 0; i <= n; i += 1) {
+    if (performance.now() >= deadline) return undefined;
+    for (let k = 0; k <= m; k += 1) {
+      const cell = i * width + k;
+      if (i > 0 && better(best[cell - width], count[cell - width], cell)) {
+        best[cell] = best[cell - width];
+        count[cell] = count[cell - width];
+        via[cell] = -1;
+      }
+      if (k > 0 && better(best[cell - 1], count[cell - 1], cell)) {
+        best[cell] = best[cell - 1];
+        count[cell] = count[cell - 1];
+        via[cell] = -2;
+      }
+      if (best[cell] < 0 || i === n || k === m) continue;
+      const line = lines[k];
+      const cells = line.cells;
+      if (
+        cells &&
+        i + cells.length <= n &&
+        cells.every((c, d) => subsequenceEnd(c.letters, fragments[i + d].letters, 0) !== -1)
+      ) {
+        let letters = 0;
+        for (let d = 0; d < cells.length; d += 1) letters += fragments[i + d].letters.length;
+        const rank = letters === line.letters.length ? 2 : line.sealed ? 0 : 1;
+        const score = best[cell] + 3 * letters + rank;
+        const target = (i + cells.length) * width + k + 1;
+        if (better(score, count[cell] + cells.length, target)) {
+          best[target] = score;
+          count[target] = count[cell] + cells.length;
+          via[target] = -3;
+        }
+      }
+      let at = 0;
+      let letters = 0;
+      for (let j = i; j < n && j - i < MAX_RUN_LENGTH; j += 1) {
+        at = subsequenceEnd(line.letters, fragments[j].letters, at);
+        if (at === -1) break;
+        letters += fragments[j].letters.length;
+        const rank = letters === line.letters.length ? 2 : line.sealed ? 0 : 1;
+        const score = best[cell] + 3 * letters + rank;
+        const target = (j + 1) * width + k + 1;
+        if (better(score, count[cell] + 1, target)) {
+          best[target] = score;
+          count[target] = count[cell] + 1;
+          via[target] = j - i;
+        }
+      }
+    }
+  }
+  const pairs: LinePair[] = [];
+  let i = n;
+  let k = m;
+  while (i > 0 || k > 0) {
+    const step = via[i * width + k];
+    if (step === -1) i -= 1;
+    else if (step === -2) k -= 1;
+    else if (step === -3) {
+      const cells = lines[k - 1].cells ?? [];
+      for (let d = cells.length - 1; d >= 0; d -= 1) {
+        pairs.push([i - cells.length + d, i - cells.length + d, cells[d]]);
+      }
+      i -= cells.length;
+      k -= 1;
+    } else {
+      pairs.push([i - step - 1, i - 1, lines[k - 1]]);
+      i -= step + 1;
+      k -= 1;
+    }
+  }
+  return pairs.reverse();
+}
+
+/** Most lines, or fragments, `pairGreedily` looks ahead over for the pair of one that fits none at hand. */
+const GREEDY_LOOKAHEAD = 8;
+
+/**
+ * The pairs of the plain-text `fragments` with the markdown `lines` found in
+ * one pass, in order on both sides, when `pairLines` is unaffordable: a
+ * fragment is paired with the line at hand when it is the text of it — and
+ * the run extended over the fragments that follow it on that line, short of
+ * one that is the text of a line just ahead, unless it completes the line's
+ * letters (a hidden destination may repeat the letters of the line beside
+ * it, `[xy](https://ab/xy)`) — unless its letters are those of the next line
+ * whole and not of this one, when the line at hand is deleted (a fit on a
+ * line that holds more letters than the fragment, sealed or not, is not
+ * preferred to one on the line at hand: a token fits many a longer line). A
+ * fragment that is not the text of the line at hand is the text of one of
+ * the next `GREEDY_LOOKAHEAD` lines, or one of the next fragments is the
+ * text of the line: whichever fit is nearer decides which side is skipped up
+ * to it — the lines are text lines only (`refineByLine`), so the lookahead
+ * counts none a definition, a comment or an underline is on — and when
+ * neither is found within reach one of each is skipped. A table row whose
+ * cells are each the text of the next fragment in turn is paired cell by
+ * cell, each fragment with its own cell — the note editor shows each cell
+ * as a line, and the cells of a row are as alike as the rows of a table, so
+ * the run over the row would stop at one the next row fits too; a row shown
+ * as one line (the fragment fits no single cell) is paired as one line.
+ * Bounded by the letters of both sequences, not their product, so a sealed
+ * line among hundreds is still bounded by its own pair.
+ */
+function pairGreedily(fragments: TextLine[], lines: TextLine[]): LinePair[] {
+  const pairs: LinePair[] = [];
+  const fits = (i: number, k: number) =>
+    subsequenceEnd(lines[k].letters, fragments[i].letters, 0) !== -1;
+  /** How far past `k` the nearest of the next `GREEDY_LOOKAHEAD` lines `fragments[i]` fits is, or 0. */
+  const lineAhead = (i: number, k: number) => {
+    for (let d = 1; d <= GREEDY_LOOKAHEAD && k + d < lines.length; d += 1) {
+      if (fits(i, k + d)) return d;
+    }
+    return 0;
+  };
+  let i = 0;
+  let k = 0;
+  while (i < fragments.length && k < lines.length) {
+    const fragment = fragments[i];
+    const line = lines[k];
+    let at = subsequenceEnd(line.letters, fragment.letters, 0);
+    if (at === -1) {
+      const skipLines = lineAhead(i, k);
+      let skipFragments = 0;
+      for (let d = 1; d <= GREEDY_LOOKAHEAD && i + d < fragments.length; d += 1) {
+        if (fits(i + d, k)) {
+          skipFragments = d;
+          break;
+        }
+      }
+      if (skipLines > 0 && (skipFragments === 0 || skipLines <= skipFragments)) k += skipLines;
+      else if (skipFragments > 0) i += skipFragments;
+      else {
+        i += 1;
+        k += 1;
+      }
+      continue;
+    }
+    if (
+      k + 1 < lines.length &&
+      fragment.letters !== line.letters &&
+      fragment.letters === lines[k + 1].letters
+    ) {
+      k += 1;
+      continue;
+    }
+    const cells = line.cells;
+    if (
+      cells &&
+      i + cells.length <= fragments.length &&
+      cells.every((cell, d) => subsequenceEnd(cell.letters, fragments[i + d].letters, 0) !== -1)
+    ) {
+      for (let d = 0; d < cells.length; d += 1) pairs.push([i + d, i + d, cells[d]]);
+      i += cells.length;
+      k += 1;
+      continue;
+    }
+    let j = i;
+    let letters = fragment.letters.length;
+    while (j + 1 < fragments.length && j - i + 1 < MAX_RUN_LENGTH) {
+      const next = fragments[j + 1];
+      const end = subsequenceEnd(line.letters, next.letters, at);
+      if (end === -1) break;
+      letters += next.letters.length;
+      if (letters !== line.letters.length && lineAhead(j + 1, k) > 0) break;
+      at = end;
+      j += 1;
+    }
+    pairs.push([i, j, line]);
+    i = j + 1;
+    k += 1;
+  }
+  return pairs;
+}
+
+/** Where `needle` ends as a subsequence of `text` searched from `at`, or -1. */
+function subsequenceEnd(text: string, needle: string, at: number): number {
+  for (let i = 0; i < needle.length; i += 1) {
+    at = text.indexOf(needle[i], at);
+    if (at === -1) return -1;
+    at += 1;
+  }
+  return at;
+}
+
+/** Run `diff` with the time left before `deadline`; `undefined` once it is spent or the diff aborts. */
+function withinBudget<T>(
+  deadline: number,
+  diff: (timeout: number) => T | undefined,
+): T | undefined {
+  const timeout = deadline - performance.now();
+  return timeout > 0 ? diff(timeout) : undefined;
+}
+
+/**
+ * Merge consecutive token spans whose only separation is equal whitespace.
+ * A whitespace token matches as readily on one side of a change as on the
+ * other — `render workspace` against `- **ren**der workspace` may pair the
+ * space after `render` with the one after `-`, leaving `render` against `-`
+ * and `**ren**der` as an insertion — so the two changes and the whitespace
+ * are handed to `diffChars` as one span, where the letters pair up.
+ */
+function mergeAcrossWhitespace(spans: Hunk[], from: string): Hunk[] {
+  const out: Hunk[] = [];
+  for (const span of spans) {
+    const previous = out.at(-1);
+    if (previous && BLANK.test(from.slice(previous.fromEnd, span.fromStart))) {
+      previous.fromEnd = span.fromEnd;
+      previous.toEnd = span.toEnd;
+    } else {
+      out.push({ ...span });
+    }
+  }
+  return out;
+}
+
+/** Group consecutive added/removed parts into replaced spans, offset from `fromStart` / `toStart`. */
+function groupChanges(parts: CharChange[], fromStart: number, toStart: number): Hunk[] {
+  const out: Hunk[] = [];
+  let fromPos = fromStart;
+  let toPos = toStart;
   let open: Hunk | undefined;
-  for (const part of diffChars(from, to) as CharChange[]) {
+  for (const part of parts) {
     if (part.added || part.removed) {
       open ??= { fromStart: fromPos, fromEnd: fromPos, toStart: toPos, toEnd: toPos };
       if (part.removed) fromPos += part.value.length;
@@ -61,6 +2859,20 @@ function mapOffset(spans: Hunk[], offset: number): number {
   return offset + delta;
 }
 
+/** The same alignment read `to → from`: every span with its sides swapped. */
+function invertHunks(spans: Hunk[]): Hunk[] {
+  return spans.map((h) => ({
+    fromStart: h.toStart,
+    fromEnd: h.toEnd,
+    toStart: h.fromStart,
+    toEnd: h.fromEnd,
+  }));
+}
+
+function offsetMapper(spans: Hunk[], fromLength: number): (offset: number) => number {
+  return (offset) => mapOffset(spans, Math.max(0, Math.min(offset, fromLength)));
+}
+
 /**
  * Map a UTF-16 offset in `from` to the corresponding offset in `to`. Offsets
  * before a change are unchanged, offsets strictly inside a replaced/deleted
@@ -70,16 +2882,44 @@ function mapOffset(spans: Hunk[], offset: number): number {
  */
 export function mapOffsetThroughDiff(from: string, to: string, offset: number): number {
   const clamped = Math.max(0, Math.min(offset, from.length));
-  return mapOffset(hunks(from, to), clamped);
+  return mapOffset(charHunks(from, to), clamped);
 }
 
 /**
- * `mapOffsetThroughDiff` with the `from → to` diff computed once, for callers
- * mapping many offsets between the same two texts (remote cursors).
+ * Map many offsets between a note's plain-text projection and its markdown
+ * (remote cursors) with the `from → to` alignment computed once. Uses the
+ * anchored alignment, so unlike `mapOffsetThroughDiff` it is bounded by
+ * `ALIGNMENT_BUDGET_MS` and not guaranteed to be the minimal edit script.
  */
 export function createOffsetMapper(from: string, to: string): (offset: number) => number {
-  const spans = hunks(from, to);
-  return (offset) => mapOffset(spans, Math.max(0, Math.min(offset, from.length)));
+  return offsetMapper(anchoredHunks(from, to), from.length);
+}
+
+interface BidirectionalOffsetMapper {
+  aToB: (offset: number) => number;
+  bToA: (offset: number) => number;
+}
+
+/**
+ * Both directions of `createOffsetMapper` from ONE `a → b` alignment. `bToA`
+ * reads the same spans with their sides swapped instead of diffing again, so
+ * the two directions always describe the same alignment: strictly inside a
+ * common run `bToA` is the exact inverse of `aToB` (offsets round-trip); on a
+ * run boundary each direction keeps `mapOffset`'s start affinity (the edge of
+ * a change maps to the change's start, so it need not round-trip); and an
+ * offset strictly inside a changed span clamps to that span's end in `a`.
+ *
+ * This is NOT always `createOffsetMapper(b, a)`: when repeated characters
+ * admit several equally short alignments (`abXY` ↔ `XYab`), a fresh `b → a`
+ * diff may pick a different one and disagree even on shared text. Callers
+ * mapping in both directions want the single consistent alignment.
+ */
+export function createBidirectionalOffsetMapper(a: string, b: string): BidirectionalOffsetMapper {
+  const spans = anchoredHunks(a, b);
+  return {
+    aToB: offsetMapper(spans, a.length),
+    bToA: offsetMapper(invertHunks(spans), b.length),
+  };
 }
 
 /**
@@ -93,7 +2933,7 @@ export function createOffsetMapper(from: string, to: string): (offset: number) =
 export function rebaseText(base: string, theirs: string, ours: string): string {
   if (ours === base) return theirs;
   if (theirs === base) return ours;
-  const spans = hunks(base, theirs);
+  const spans = charHunks(base, theirs);
   const map = (offset: number) => mapOffset(spans, offset);
   let result = '';
   let basePos = 0;

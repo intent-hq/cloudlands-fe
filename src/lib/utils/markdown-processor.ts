@@ -266,7 +266,7 @@ const ANCHOR_COMMENT_REGEX = /<!--\s*anchor:([^:]+):([^-]+)\s*-->/g;
  * @param content - The markdown content to process
  * @returns Content with HTML-like tags escaped (except in code blocks)
  */
-function escapeHtmlTags(content: string): string {
+export function escapeHtmlTags(content: string): string {
   // Step 1: Extract code blocks to preserve their content
   // Choose a namespace absent from the input: user text cannot forge a reference,
   // and restoring a protected source cannot introduce another placeholder.
