@@ -279,7 +279,7 @@
 </script>
 
 {#snippet agentPrimaryActions()}
-  <div class="flex min-w-0 items-center gap-1.5">
+  <div class="flex min-w-0 items-center gap-0.5">
     <PresenceAvatarStack people={$presencePeople$} size={18} class="mr-1" />
     {#if isNotificationsMuted}
       <Tooltip content={m.chat_agentCard_notificationsMuted_tooltip()} side="bottom">

@@ -195,7 +195,7 @@
   }
 </script>
 
-<div class="flex shrink-0 items-center gap-0" data-testid="chat-header-navigation-controls">
+<div class="flex shrink-0 items-center gap-0.5" data-testid="chat-header-navigation-controls">
   <Popover.Root bind:open onOpenChange={handleOpenChange}>
     <Popover.Trigger bind:ref={triggerElement}>
       {#snippet child({ props })}
@@ -203,6 +203,7 @@
           {...props}
           variant="ghost-light"
           size="icon-sm"
+          active={open}
           aria-label={m.chat_messageNavigator_open_ariaLabel()}
           tooltip={m.chat_messageNavigator_open_ariaLabel()}
           tooltipDisabled={open}
