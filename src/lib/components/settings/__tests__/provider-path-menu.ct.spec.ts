@@ -100,6 +100,38 @@ test('provider keyboard action transfers focus to the path form and Escape retur
   await expect(page.getByRole('menu')).toHaveCount(0);
 });
 
+test('Antigravity menu hands keyboard focus to its setup dialog while status is pending', async ({
+  page,
+}, testInfo) => {
+  const trigger = page.getByRole('button', {
+    name: 'Provider actions for Google Antigravity',
+    exact: true,
+  });
+  await trigger.focus();
+  await page.keyboard.press('Enter');
+  const menu = page.getByRole('menu', { name: 'Provider actions for Google Antigravity' });
+  await expect(menu).toBeVisible();
+  await page.keyboard.press('Home');
+  await expect(menu.getByRole('menuitem', { name: 'Connect Antigravity' })).toBeFocused();
+  await page.keyboard.press('Enter');
+  const dialog = page.getByRole('dialog', { name: 'Connect Antigravity', exact: true });
+  await expect(dialog).toBeVisible();
+  await expect(menu).toHaveCount(0);
+  await expect
+    .poll(() => dialog.evaluate((node) => node.contains(document.activeElement)))
+    .toBe(true);
+  // This fixture has no status saga, so the initial check remains pending.
+  // Confirm focus reaches the available action, not the closing menu trigger.
+  await expect(dialog.getByRole('button', { name: 'Cancel setup' })).toBeFocused();
+  await testInfo.attach('antigravity-menu-dialog-handoff', {
+    body: await page.screenshot(),
+    contentType: 'image/png',
+  });
+  await page.keyboard.press('Escape');
+  await expect(dialog).toHaveCount(0);
+  await expect(page.getByRole('menu')).toHaveCount(0);
+});
+
 test('reopened provider path form dismisses on outside pointer without stealing clicked focus', async ({
   page,
 }) => {

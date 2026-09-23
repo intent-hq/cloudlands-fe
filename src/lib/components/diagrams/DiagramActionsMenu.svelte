@@ -1,6 +1,5 @@
 <script lang="ts">
-  import Fa from 'svelte-fa';
-  import { faEllipsis } from '@fortawesome/free-solid-svg-icons';
+  import KebabIcon from '$lib/components/icons/KebabIcon.svelte';
   import * as Menu from '$lib/components/ui/menu';
   import { toast } from '$lib/components/ui/toast';
   import { m } from '$shared/paraglide/messages.js';
@@ -53,7 +52,7 @@
     aria-label={m.diagram_actions_menu_ariaLabel()}
     class={compactTrigger ? 'size-(--control-height-compact) p-0' : undefined}
   >
-    <Fa icon={faEllipsis} size="sm" />
+    <KebabIcon class="size-3.5" />
   </Menu.Trigger>
   <Menu.Content align="end">
     <Menu.Item onSelect={() => void copyImage()}>{m.diagram_actions_copyImage_label()}</Menu.Item>

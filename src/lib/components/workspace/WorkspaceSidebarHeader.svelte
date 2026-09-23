@@ -1,4 +1,5 @@
 <script lang="ts">
+  import KebabIcon from '$lib/components/icons/KebabIcon.svelte';
   import { Input } from '$lib/components/ui/input';
   import { Textarea } from '$lib/components/ui/textarea';
   import { logger } from '$lib/utils/client-logger';
@@ -9,12 +10,10 @@
   import { TooltipRich } from '$lib/components/ui/tooltip';
   import {
     faBars,
-    faEllipsisV,
     faKeyboard,
     faRightLeft,
     faTableColumns,
   } from '@fortawesome/free-solid-svg-icons';
-  import Fa from 'svelte-fa';
   import { tick } from 'svelte';
   import { writable } from 'svelte/store';
   import DropdownMenu from '$lib/components/ui/dropdown-menu.svelte';
@@ -642,7 +641,7 @@
           {#if isDeleting}
             <IntentMarkLoader size={14} />
           {:else}
-            <Fa icon={faEllipsisV} size="sm" />
+            <KebabIcon class="size-3.5" />
           {/if}
         </Button>
       {/snippet}
