@@ -45,9 +45,35 @@ function charHunks(from: string, to: string): Hunk[] {
  * Total time one plain-text ↔ markdown alignment may spend, anchor search and
  * diffs together. Once spent, the rest of the text becomes one replaced span
  * (offsets inside clamp to the span end), so a pathological pair degrades to
- * slightly-off remote carets instead of a frozen main thread.
+ * slightly-off remote carets instead of a frozen main thread. The budget
+ * stops the anchor loop, the pairing search and the start of a diff; a diff
+ * once started is bounded by `DIFF_WORK`, not by the time left, so an
+ * alignment may overrun the budget by at most one diff's worst case.
  */
 const ALIGNMENT_BUDGET_MS = 250;
+/**
+ * Most work one jsdiff call may do, as `(N + M) · D` for inputs of `N` and
+ * `M` tokens and an edit length `D`: Myers is O((N + M) · D), so bounding
+ * `D` by `DIFF_WORK / (N + M)` (`withinBudget`) bounds the call by a
+ * constant that is a function of its inputs alone. A diff that gives up is
+ * `undefined`, as one past the deadline is, and its region falls to the
+ * line-bounded fallback (`diffRegion`). jsdiff's own `timeout` option is not
+ * used: it is held to the wall clock once per edit length, so whether a
+ * diff completed depended on the load of the machine, and a test could not
+ * pin it — a diff within a frozen `performance.now` budget still aborted in
+ * real time on a loaded runner.
+ *
+ * Calibrated on the diffs the alignment tests complete, measured with
+ * jsdiff's wall clock stepped so none of them aborted: the largest is the
+ * shared tail after 20 KB of blocks that never anchor, 5850 tokens at 2926
+ * edit lengths (17.1 million), then the line of 1000 code spans, 5999
+ * tokens at 2001 (12.0 million); no other reaches 2 million. 2^25 is about
+ * twice the largest, and about twice what the 250 ms budget bought unloaded
+ * (some 2500 edit lengths on 6000 tokens) — the same margin the tests kept
+ * on the stepped clock. A line of 2000 code spans (12 000 tokens at 4001,
+ * 48 million) is past the bound, as it was past the budget unloaded.
+ */
+const DIFF_WORK = 1 << 25;
 /**
  * Words, whitespace runs, a masked run (see `maskHidden`), and single code
  * points (a surrogate pair is one token).
@@ -99,8 +125,8 @@ const PIECE_SEARCH_SLACK = 1024;
  * not diffed whole but paired line by line (`refineByLine`), each pair and
  * each gap between pairs diffed alone, however long: nothing inside it
  * anchored, so a token diff of it whole would spend the budget on carets that
- * the pairs place for free. The bound never emits a span: the deadline alone
- * decides what is left undiffed.
+ * the pairs place for free. The bound never emits a span: the deadline and
+ * `DIFF_WORK` alone decide what is left undiffed.
  */
 const MAX_REFINE_LENGTH = 8192;
 
@@ -131,10 +157,12 @@ const isLowSurrogate = (code: number) => code >= 0xdc00 && code <= 0xdfff;
  * for — every link line of a source too long to lex — is never anchored
  * (`Mask.unanchorable`): its text reaches a diff only, and that diff is
  * bounded by the line (`refineByLine`).
- * The mask, the anchor loop and every diff share one deadline: past it, the
- * remaining text is paired line by line, with no diff, so that a line stays
- * bounded by its own text (`refineByLine`). Below the cap the alignment is
- * exact within the budget; once the deadline has passed, every pair emitted
+ * The mask, the anchor loop and the start of every diff share one deadline:
+ * past it, the remaining text is paired line by line, with no diff, so that
+ * a line stays bounded by its own text (`refineByLine`); a diff once started
+ * is bounded by its inputs (`DIFF_WORK`), not by the clock. Below the cap
+ * the alignment is exact within the budget and the bound; once the deadline
+ * has passed, every pair emitted
  * still contains its text — an offset maps into the span its own text lies
  * in — while which line pairs with which is best effort. A surrogate pair
  * never straddles a span boundary: anchors, trimmed prefixes and tokens stop
@@ -2062,11 +2090,13 @@ function refine(
  * region a long run of short lines left unanchored — 600 one-word links,
  * none long enough for `MIN_ANCHOR_LENGTH` — is then diffed pair by pair,
  * each well within the bound. A pair or a gap of that split is diffed
- * whatever its length, the deadline alone bounding it, so that within the
+ * whatever its length, `DIFF_WORK` alone bounding it, so that within the
  * budget no length emits a span wider than the lines around it. A diff past
- * the budget is abandoned: a region still to split is paired without a
- * diff, so a position stays bounded by its own line whatever the budget,
- * and a pair or a gap is emitted as one replaced span.
+ * the budget is not started, and one whose edit length exceeds what
+ * `DIFF_WORK` affords its inputs gives up; either way the region is
+ * abandoned: a region still to split is paired without a diff, so a
+ * position stays bounded by its own line whatever the budget, and a pair
+ * or a gap is emitted as one replaced span.
  */
 function diffRegion(
   out: Hunk[],
@@ -2163,12 +2193,11 @@ function diffRegion(
     );
     return;
   }
-  const words = withinBudget(deadline, (timeout) =>
-    diffArrays(
-      from.slice(fromStart, fromEnd).match(TOKEN) ?? [],
-      to.slice(toStart, toEnd).match(TOKEN) ?? [],
-      { timeout },
-    ),
+  const words = withinBudget(
+    deadline,
+    from.slice(fromStart, fromEnd).match(TOKEN) ?? [],
+    to.slice(toStart, toEnd).match(TOKEN) ?? [],
+    (a, b, maxEditLength) => diffArrays(a, b, { maxEditLength }),
   );
   if (!words) {
     abandon();
@@ -2189,12 +2218,11 @@ function diffRegion(
   for (const span of spans) {
     const chars =
       span.fromStart < span.fromEnd && span.toStart < span.toEnd
-        ? withinBudget(deadline, (timeout) =>
-            diffChars(
-              from.slice(span.fromStart, span.fromEnd),
-              to.slice(span.toStart, span.toEnd),
-              { timeout },
-            ),
+        ? withinBudget(
+            deadline,
+            from.slice(span.fromStart, span.fromEnd),
+            to.slice(span.toStart, span.toEnd),
+            (a, b, maxEditLength) => diffChars(a, b, { maxEditLength }),
           )
         : undefined;
     if (chars) out.push(...groupChanges(chars, span.fromStart, span.toStart));
@@ -2794,13 +2822,20 @@ function subsequenceEnd(text: string, needle: string, at: number): number {
   return at;
 }
 
-/** Run `diff` with the time left before `deadline`; `undefined` once it is spent or the diff aborts. */
-function withinBudget<T>(
+/**
+ * Run `diff` of `from` against `to` with the edit length `DIFF_WORK` affords
+ * their lengths; `undefined` once the `deadline` is spent, when the diff is
+ * not started, or when the diff gives up. The bound is a function of the
+ * inputs alone, so whether a diff completes never depends on the clock.
+ */
+function withinBudget<T extends string | unknown[], R>(
   deadline: number,
-  diff: (timeout: number) => T | undefined,
-): T | undefined {
-  const timeout = deadline - performance.now();
-  return timeout > 0 ? diff(timeout) : undefined;
+  from: T,
+  to: T,
+  diff: (from: T, to: T, maxEditLength: number) => R | undefined,
+): R | undefined {
+  if (performance.now() >= deadline) return undefined;
+  return diff(from, to, Math.floor(DIFF_WORK / (from.length + to.length)));
 }
 
 /**

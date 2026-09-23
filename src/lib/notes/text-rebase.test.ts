@@ -16,8 +16,8 @@ import {
 import { decodeCharacterReference, namedCharacterReferences } from './character-references';
 
 /**
- * While `abort` is set, every jsdiff call behaves as if its `timeout` had
- * elapsed; `calls` counts the calls made, aborted or not.
+ * While `abort` is set, every jsdiff call behaves as if its `maxEditLength`
+ * had been exceeded; `calls` counts the calls made, aborted or not.
  */
 const jsdiff = vi.hoisted(() => ({ abort: false, calls: 0 }));
 vi.mock('diff', async (importOriginal) => {
@@ -38,40 +38,17 @@ vi.mock('diff', async (importOriginal) => {
 /**
  * Run `fn` with the alignment deadline out of reach: `performance.now` is
  * frozen, so an exactness assertion cannot flip to the clamped fallback on a
- * loaded runner. Bounds on the work done are asserted with `onSteppedClock`.
+ * loaded runner. A diff is bounded by its inputs (`DIFF_WORK`), never by the
+ * clock, so nothing else is frozen. Bounds on the work done are asserted
+ * with `onSteppedClock`.
  */
 function withoutDeadline<T>(fn: () => T): T {
   const now = vi.spyOn(performance, 'now').mockReturnValue(0);
-  const wall = steppedWallClock();
   try {
     return fn();
   } finally {
     now.mockRestore();
-    wall.mockRestore();
   }
-}
-
-/**
- * The edit lengths a diff may try before it gives up under `withoutDeadline`
- * and `onSteppedClock`, as the step of `Date.now`: jsdiff holds the `timeout`
- * the alignment hands it (the budget left on `performance.now`, 250 ms at
- * most) to `Date.now`, read once per edit length, so on a loaded runner a
- * diff within the frozen or stepped budget still aborted in real time and
- * its line fell to the clamped fallback (a 2000-span line, 150 ms of diff
- * unloaded, mapped its first span to the line's end on a CI shard of 857 s).
- * Stepped 0.05 ms a read, the budget is 5000 edit lengths: twice what the
- * 250 ms buy unloaded, and above every diff these tests complete (the
- * 2000-span line takes 2002, the shared tail after 20 KB of blocks that
- * never anchor 2927), while a diff that does give up is bounded (its work
- * is quadratic in its edit lengths; frozen, the diff of a 1 MB pair no four
- * code units of match never ends).
- */
-const DIFF_STEP_MS = 0.05;
-
-/** Step `Date.now` by `DIFF_STEP_MS` a read — see `DIFF_STEP_MS`. */
-function steppedWallClock() {
-  let reads = 0;
-  return vi.spyOn(Date, 'now').mockImplementation(() => DIFF_STEP_MS * reads++);
 }
 
 /**
@@ -93,13 +70,11 @@ const BUDGET_READS = 250_000;
 function onSteppedClock<T>(fn: () => T): [result: T, reads: number] {
   let reads = 0;
   const now = vi.spyOn(performance, 'now').mockImplementation(() => 0.001 * reads++);
-  const wall = steppedWallClock();
   try {
     const result = fn();
     return [result, reads];
   } finally {
     now.mockRestore();
-    wall.mockRestore();
   }
 }
 
@@ -3000,6 +2975,40 @@ describe('alignment of link syntax the lexer does not account for', () => {
         expect(map.bToA(m), `markdown ${m} back`).toBe(p);
         expect(map.bToA(map.aToB(p)), `plain ${p} round trip`).toBe(p);
         expect(markdown.slice(map.aToB(p), m + 1), `plain ${p} forward`).toMatch(/^`?x$/);
+      }
+    }, 60_000);
+
+    // Each diff of the alignment is bounded by an edit length derived from
+    // its inputs (`DIFF_WORK`), so the wall clock has no say in it: leaping
+    // a second a read while the alignment budget on `performance.now` stands
+    // still, the line of code spans above still maps exactly. (jsdiff held
+    // the `timeout` the alignment handed it to the wall clock, read once per
+    // edit length, so a loaded runner aborted a diff the frozen budget
+    // allowed and the line fell to the clamped fallback: this line, 150 ms
+    // of diff unloaded, mapped its first span to the line's end on a CI
+    // shard of 857 s.)
+    it('maps a line of many code spans exactly however the wall clock leaps', () => {
+      const spans = 1000;
+      const paragraph = 'q'.repeat(129 * 1024);
+      const line = (span: string) => Array.from({ length: spans }, () => span).join(' ');
+      const markdown = `${paragraph}\n\n${line('`x`')}`;
+      const plain = `${paragraph}\n${line('x')}`;
+      const now = vi.spyOn(performance, 'now').mockReturnValue(0);
+      let wallMs = 0;
+      const wall = vi.spyOn(Date, 'now').mockImplementation(() => (wallMs += 1000));
+      try {
+        const map = createBidirectionalOffsetMapper(plain, markdown);
+        const lineStart = paragraph.length + 1;
+        for (let k = 1; k < spans; k += 37) {
+          const p = lineStart + 2 * k;
+          const m = lineStart + 2 + 4 * k;
+          expect(map.bToA(m), `markdown ${m} back`).toBe(p);
+          expect(map.bToA(map.aToB(p)), `plain ${p} round trip`).toBe(p);
+          expect(markdown.slice(map.aToB(p), m + 1), `plain ${p} forward`).toMatch(/^`?x$/);
+        }
+      } finally {
+        now.mockRestore();
+        wall.mockRestore();
       }
     }, 60_000);
 
