@@ -283,7 +283,7 @@
             >
               <Tabs.Trigger
                 value="all-workspaces"
-                class="sidebar-workspaces-tab min-w-0 px-2 font-medium focus-visible:outline-none focus-visible:ring-0"
+                class="min-w-0 px-2 font-medium focus-visible:outline-none focus-visible:ring-0"
               >
                 <span class="truncate">{m.layout_sidebarPanel_workspacesTab_label()}</span>
               </Tabs.Trigger>
@@ -502,14 +502,6 @@
 <style>
   .sidebar-panel {
     container-type: inline-size;
-    /* WorkspaceCard's 4px margin + 10px padding + 14px status + 10px gap. */
-    --sidebar-label-inset: 2.375rem;
-  }
-
-  .sidebar-panel :global(.sidebar-workspaces-tab) {
-    justify-content: flex-start;
-    /* Subtract the tab strip's 8px outer inset and 4px inner padding. */
-    padding-left: calc(var(--sidebar-label-inset) - 0.75rem);
   }
 
   /* Only the incoming pane moves; the outgoing pane becomes hidden/inert
@@ -610,11 +602,6 @@
 
   /* Narrow: stack header vertically */
   @container (max-width: 160px) {
-    :global(.sidebar-view-tabs) {
-      /* Compact rows use 8px padding and a 6px status-to-title gap. */
-      --sidebar-label-inset: 2rem;
-    }
-
     .panel-header {
       flex-direction: column;
       align-items: stretch;
