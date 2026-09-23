@@ -47,10 +47,6 @@ export function presencePersonLabel(person: PresenceCircle): string {
   return person.self ? m.presence_person_you_label({ name }) : name;
 }
 
-export function presencePersonInitial(person: PresenceIdentity): string {
-  return presencePersonName(person).slice(0, 1).toUpperCase();
-}
-
 /** Stable hue per principal so the same person keeps one color everywhere. */
 export function presencePersonColor(principalId: string): string {
   let hash = 0;

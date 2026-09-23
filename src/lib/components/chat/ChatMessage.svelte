@@ -49,6 +49,7 @@
     resolveFinishReasonNotice,
   } from './message-display-utils';
   import ImageLightbox from '$lib/components/ui/ImageLightbox.svelte';
+  import PrincipalAvatar from '$lib/components/ui/PrincipalAvatar.svelte';
   import EditRegenerateConfirmDialog from './EditRegenerateConfirmDialog.svelte';
   import { evictAttachmentImageUrl, resolveAttachmentImageUrl } from './attachment-image-url';
   import { onBackendReconnected } from '$lib/client/live/backend-transport';
@@ -1539,22 +1540,14 @@
                     name: humanAuthorLabel ?? m.chat_chatMessage_authorUnknown_label(),
                   })}
             >
-              {#if humanAuthor.avatarUrl}
-                <img
-                  src={humanAuthor.avatarUrl}
-                  alt=""
-                  class="size-4 shrink-0 rounded-full"
-                  referrerpolicy="no-referrer"
-                  data-testid="user-message-author-avatar"
-                />
-              {:else}
-                <span
-                  aria-hidden="true"
-                  class="type-caption flex size-4 shrink-0 items-center justify-center rounded-full bg-muted font-medium leading-none text-muted-foreground"
-                  data-testid="user-message-author-avatar-fallback"
-                  >{(humanAuthorLabel ?? '?').slice(0, 1).toUpperCase()}</span
-                >
-              {/if}
+              <PrincipalAvatar
+                avatarUrl={humanAuthor.avatarUrl}
+                label={humanAuthorLabel ?? ''}
+                size={16}
+                class="font-medium leading-none text-muted-foreground"
+                referrerpolicy="no-referrer"
+                testid="user-message-author-avatar"
+              />
               <span class="truncate" data-testid="user-message-author-name"
                 >{humanAuthorLabel ?? m.chat_chatMessage_authorUnknown_label()}</span
               >
@@ -1823,7 +1816,8 @@
       {/if}
     {:else if role === 'assistant'}
       <!-- Assistant Message -->
-      <div class="type-body text-pretty text-foreground">
+      <!-- Reserve toolbar height only for rendered prose, never empty or tool-only rows. -->
+      <div class="type-body has-[[data-assistant-prose]]:min-h-8 text-pretty text-foreground">
         <StreamingMessageContent
           content={combinedContent}
           {isStreaming}

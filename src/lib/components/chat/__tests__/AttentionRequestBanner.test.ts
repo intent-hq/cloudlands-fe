@@ -23,12 +23,15 @@ afterEach(() => {
 });
 
 describe('AttentionRequestBanner', () => {
-  it('updates pending attention from discussion to blocker and removes it when resolved', async () => {
+  it('updates pending attention in both directions and removes it when resolved', async () => {
     attentionRequest.set({ kind: 'discussion', reason: 'Choose the scope' });
     render(AttentionRequestBanner, { props: { agentId: 'agent-1' } });
+    expect(screen.getByTestId('attention-request-label').textContent).toMatch(/discussion/i);
     expect(screen.getByTestId('attention-request-reason').textContent).toContain(
       'Choose the scope',
     );
+    expect(screen.queryByRole('alert')).toBeNull();
+    expect(screen.getByTestId('attention-request-header').querySelector('[title]')).toBeNull();
     attentionRequest.set({
       kind: 'blocker',
       reason: 'Docker daemon is down',
@@ -40,6 +43,16 @@ describe('AttentionRequestBanner', () => {
     expect(screen.getByTestId('attention-request-reason').textContent).toContain(
       'Docker daemon is down',
     );
+    expect(screen.getByTestId('attention-request-header').querySelector('[title]')).not.toBeNull();
+    expect(screen.queryByRole('alert')).toBeNull();
+    attentionRequest.set({ kind: 'discussion', reason: 'Confirm the next step' });
+    await waitFor(() =>
+      expect(screen.getByTestId('attention-request-label').textContent).toMatch(/discussion/i),
+    );
+    expect(screen.getByTestId('attention-request-reason').textContent).toContain(
+      'Confirm the next step',
+    );
+    expect(screen.getByTestId('attention-request-header').querySelector('[title]')).toBeNull();
     attentionRequest.set(null);
     await waitFor(() => expect(screen.queryByTestId('attention-request-banner')).toBeNull());
   });

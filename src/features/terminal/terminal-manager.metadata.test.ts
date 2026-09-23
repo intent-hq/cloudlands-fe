@@ -7,6 +7,13 @@ const mocks = vi.hoisted(() => ({
   dispatch: vi.fn(),
   backendRequest: vi.fn(),
   state: {} as unknown,
+  adapter: {
+    initialize: vi.fn(async () => {}),
+    reattach: vi.fn(async () => {}),
+    detach: vi.fn(),
+    dispose: vi.fn(),
+    updateCallbacks: vi.fn(),
+  },
 }));
 
 // The mock also backs the relative `../../store` import inside
@@ -25,7 +32,11 @@ vi.mock('$store/renderer/store', () => ({
   },
 }));
 
-vi.mock('./TerminalAdapter', () => ({ TerminalAdapter: vi.fn() }));
+vi.mock('./TerminalAdapter', () => ({
+  TerminalAdapter: vi.fn(function () {
+    return mocks.adapter;
+  }),
+}));
 vi.mock('./terminal-buffer-manager', () => ({ TerminalBufferManager: vi.fn() }));
 vi.mock('$lib/client/live/backend-transport', () => ({
   backendRequest: mocks.backendRequest,
@@ -116,4 +127,34 @@ it('kills a restored terminal without an adapter so the next daemon list stays e
     terminalId: 'pty-restored',
   });
   expect((await client.list(WS)).terminals).toEqual([]);
+});
+
+describe('terminalManager owner-aware detach', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('ignores a detach from a surface the adapter has since left', async () => {
+    const overlayContainer = document.createElement('div');
+    const panelContainer = document.createElement('div');
+
+    await terminalManager.getOrCreateTerminal('t-move', WS, overlayContainer);
+    await terminalManager.getOrCreateTerminal('t-move', WS, panelContainer);
+    expect(mocks.adapter.reattach).toHaveBeenCalledWith(panelContainer);
+    expect(terminalManager.isAttachedTo('t-move', panelContainer)).toBe(true);
+
+    // The overlay surface unmounts after the panel took the adapter over.
+    terminalManager.detachTerminal('t-move', overlayContainer);
+
+    expect(mocks.adapter.detach).not.toHaveBeenCalled();
+    expect(terminalManager.isAttachedTo('t-move', panelContainer)).toBe(true);
+    expect(terminalManager.isAttachedTo('t-move', overlayContainer)).toBe(false);
+
+    // The owning surface can still detach.
+    terminalManager.detachTerminal('t-move', panelContainer);
+    expect(mocks.adapter.detach).toHaveBeenCalledTimes(1);
+    expect(terminalManager.isAttachedTo('t-move', panelContainer)).toBe(false);
+
+    terminalManager.disposeTerminal('t-move');
+  });
 });

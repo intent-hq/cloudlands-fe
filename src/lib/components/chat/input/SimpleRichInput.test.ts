@@ -1391,6 +1391,16 @@ describe('SimpleRichInput automatic composer geometry', () => {
     },
   );
 
+  it('renders the composer resize handle on the shared app-resize-handle contract', () => {
+    renderInPanel(720);
+    const composer = screen.getByTestId('message-input');
+
+    const resizeHandle = screen.getByRole('button', { name: /Resize input area/ });
+    expect(composer.contains(resizeHandle)).toBe(true);
+    expect(resizeHandle.classList.contains('app-resize-handle')).toBe(true);
+    expect(resizeHandle.getAttribute('data-resize-axis')).toBe('y');
+  });
+
   it('keeps a manual resize when focus changes', async () => {
     renderInPanel(720);
     const composer = screen.getByTestId('message-input');
