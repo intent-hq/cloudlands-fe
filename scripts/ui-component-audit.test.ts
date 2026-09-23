@@ -147,6 +147,7 @@ describe('UI component inventory gate', () => {
       'src/lib/component-catalog/CatalogControls.svelte',
       'src/lib/component-catalog/renderers/BasicCatalogPreview.svelte',
       'src/lib/components/patterns/settings/custom-controls.ts',
+      'src/lib/components/workspace/initializer/AddRemoteSetupModal.svelte',
       'src/routes/(app)/settings/+page.svelte',
     ]);
     // DiagramBlock migrated to DiagramActionsMenu's canonical Menu in d9229ea037.

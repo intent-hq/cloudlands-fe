@@ -74,14 +74,19 @@ test('selectable modal rows toggle after pointer hover without reactive loops', 
       ],
     },
   });
-  const option = page.getByRole('alertdialog').getByRole('option');
+  const option = page
+    .getByRole('alertdialog')
+    .getByRole('checkbox', { name: 'Workspace', exact: true });
   await option.hover();
   await option.click();
-  await expect(option).toHaveAttribute('aria-selected', 'false');
+  await expect(option).not.toBeChecked();
   await option.press('Space');
-  await expect(option).toHaveAttribute('aria-selected', 'true');
+  await expect(option).toBeChecked();
   await option.press('Enter');
-  await expect(option).toHaveAttribute('aria-selected', 'false');
+  // Checkbox semantics toggle on Space, not Enter.
+  await expect(option).toBeChecked();
+  await option.press('Space');
+  await expect(option).not.toBeChecked();
   expect(errors).toEqual([]);
 });
 

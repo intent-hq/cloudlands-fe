@@ -10,7 +10,12 @@ import {
 import type { Workspace, WorkspaceId } from '$shared/types';
 import { WorkspaceStatusEnum } from '$shared/types';
 import { store as appStore } from '$store/renderer/store';
-import { closePanel, openPanel } from '$store/renderer/slices/sidebar-nav/sidebar-nav-slice';
+import {
+  closePanel,
+  openPanel,
+  setPanelWidth,
+} from '$store/renderer/slices/sidebar-nav/sidebar-nav-slice';
+import { selectPanelWidth } from '$store/renderer/slices/sidebar-nav/sidebar-nav-selectors';
 import {
   replaceWorkspaceList,
   setWorkspaceHasLoaded,
@@ -122,8 +127,8 @@ describe('editorial panel resize handles', () => {
   // TerminalSidebar.test.ts, ResizablePanel-handle-hit-area.ct.spec.ts,
   // QuakeTerminalOverlay.test.ts (workspace + root overlays),
   // SetupScriptBanner.test.ts and SimpleRichInput.test.ts.
-  // The sidebar's two handles are rendered here.
-  it('renders the sidebar width and split handles on the shared resize-handle contract', () => {
+  // The tabbed sidebar keeps its width handle, but no longer has a split handle.
+  it('commits sidebar width changes through the shared resize handle', async () => {
     vi.stubGlobal(
       'ResizeObserver',
       class {
@@ -152,12 +157,15 @@ describe('editorial panel resize handles', () => {
       updatedAt: '2026-01-01T00:00:00Z',
       myRole: 'owner',
     } as Workspace;
+    let previousWidth = 288;
     try {
       const { container } = render(SidebarPanelHarness, {
         props: {
           setup: () => {
             appStore.dispatch(replaceWorkspaceList([workspace]));
             appStore.dispatch(setWorkspaceHasLoaded(true));
+            previousWidth = selectPanelWidth.select(appStore.state);
+            appStore.dispatch(setPanelWidth(288));
             appStore.dispatch(openPanel('chief'));
           },
         },
@@ -166,17 +174,18 @@ describe('editorial panel resize handles', () => {
       const widthHandle = container.querySelector<HTMLElement>(
         '[data-testid="width-resize-handle"]',
       )!;
-      const splitHandle = container.querySelector<HTMLElement>(
-        '[data-testid="split-resize-handle"]',
-      )!;
       expect(widthHandle.classList).toContain('app-resize-handle');
       expect(widthHandle.dataset.resizeAxis).toBe('x');
-      expect(splitHandle.classList).toContain('app-resize-handle');
-      expect(splitHandle.dataset.resizeAxis).toBe('y');
-      expect(splitHandle.querySelector('[data-combined-panel-divider-border]')).not.toBeNull();
+      await fireEvent.mouseDown(widthHandle, { clientX: 288 });
+      expect(document.body.classList.contains('panel-resizing')).toBe(true);
+      await fireEvent.mouseMove(window, { clientX: 320 });
+      await fireEvent.mouseUp(window);
+      expect(selectPanelWidth.select(appStore.state)).toBe(320);
+      expect(document.body.classList.contains('panel-resizing')).toBe(false);
     } finally {
       cleanup();
       appStore.dispatch(closePanel());
+      appStore.dispatch(setPanelWidth(previousWidth));
       appStore.dispatch(replaceWorkspaceList([]));
       appStore.dispatch(setWorkspaceHasLoaded(false));
       vi.unstubAllGlobals();

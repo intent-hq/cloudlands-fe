@@ -60,7 +60,8 @@
   import { store as appStore } from '$store/renderer/store';
 
   interface Props {
-    layout?: 'list' | 'submenu';
+    /** Nest all file actions, or only app choices while keeping copy actions at the root. */
+    layout?: 'list' | 'submenu' | 'editors-submenu';
     iconWeight?: IconWeight;
     filePath?: string;
     workspaceId?: string;
@@ -624,82 +625,97 @@
   }
 </script>
 
+{#snippet copyMenuItems()}
+  <Menu.Item onclick={copyAbsolutePath}>
+    <span class="{iconSlotClass} text-xs font-normal font-mono opacity-50" aria-hidden="true">
+      {isWindowsPlatform() ? '\\' : '/'}
+    </span>
+    <span class="min-w-0 flex-1 truncate">
+      {m.ui_workspaceActions_copyAbsolutePath_label()}
+    </span>
+  </Menu.Item>
+
+  {#if !isWorkspaceRoot}
+    <Menu.Item onclick={copyWorkspacePath}>
+      <span class="{iconSlotClass} text-xs font-normal font-mono opacity-50" aria-hidden="true"
+        >./</span
+      >
+      <span class="min-w-0 flex-1 truncate">
+        {m.ui_workspaceActions_copyRelativePath_label()}
+      </span>
+    </Menu.Item>
+  {/if}
+
+  {#if showFileNameCopy && !isDirectory}
+    <Menu.Item onclick={copyFileName}>
+      <span class={iconSlotClass} aria-hidden="true">
+        <Fa icon={faFile} size="16" class="opacity-50" />
+      </span>
+      <span class="min-w-0 flex-1 truncate">
+        {m.ui_workspaceActions_copyFileName_label()}
+      </span>
+    </Menu.Item>
+  {/if}
+{/snippet}
+
 <div class="w-full overflow-hidden">
-  {#if showFileActions && layout === 'submenu'}
-    <Menu.Sub>
-      <Menu.SubTrigger icon={faUpRightFromSquare} {iconWeight}>
-        <span class="min-w-0 flex-1 truncate">{m.ui_openCombo_openInApp_tooltip()}</span>
-      </Menu.SubTrigger>
-      <Menu.SubContent class="w-60">
-        {#if canOpenExternalEditors && $isWorkspaceHostLocal$}
-          {#each visibleEditors as editor (editor.id)}
-            {@const IconComponent = resolveEditorIcon(editor)}
-            <Menu.Item onclick={() => openInEditor(editor)}>
+  {#if showFileActions && layout !== 'list'}
+    {#if layout === 'submenu' || (canOpenExternalEditors && $isWorkspaceHostLocal$)}
+      <Menu.Sub>
+        <Menu.SubTrigger icon={faUpRightFromSquare} {iconWeight}>
+          <span class="min-w-0 flex-1 truncate">{m.ui_openCombo_openInApp_tooltip()}</span>
+        </Menu.SubTrigger>
+        <Menu.SubContent class="w-60">
+          {#if canOpenExternalEditors && $isWorkspaceHostLocal$}
+            {#each visibleEditors as editor (editor.id)}
+              {@const IconComponent = resolveEditorIcon(editor)}
+              <Menu.Item onclick={() => openInEditor(editor)}>
+                <span class={iconSlotClass} aria-hidden="true">
+                  {#if editor.iconBase64}
+                    <img
+                      src="data:image/png;base64,{editor.iconBase64}"
+                      alt={editor.name}
+                      class="size-4"
+                    />
+                  {:else if IconComponent}
+                    <IconComponent size={12} />
+                  {:else}
+                    <Fa
+                      icon={resolveEditorFallbackIcon(editor.category)}
+                      size="16"
+                      class="opacity-50"
+                    />
+                  {/if}
+                </span>
+                <span class="min-w-0 flex-1 truncate">
+                  {m.ui_workspaceActions_openIn_label({ name: editor.name })}
+                </span>
+              </Menu.Item>
+            {/each}
+
+            <Menu.Item onclick={openWithOther}>
               <span class={iconSlotClass} aria-hidden="true">
-                {#if editor.iconBase64}
-                  <img
-                    src="data:image/png;base64,{editor.iconBase64}"
-                    alt={editor.name}
-                    class="size-4"
-                  />
-                {:else if IconComponent}
-                  <IconComponent size={12} />
-                {:else}
-                  <Fa
-                    icon={resolveEditorFallbackIcon(editor.category)}
-                    size="16"
-                    class="opacity-50"
-                  />
-                {/if}
+                <Fa icon={faUpRightFromSquare} size="16" class="opacity-50" />
               </span>
-              <span class="min-w-0 flex-1 truncate">
-                {m.ui_workspaceActions_openIn_label({ name: editor.name })}
-              </span>
+              <span class="min-w-0 flex-1 truncate">{m.ui_workspaceActions_chooseApp_label()}</span>
             </Menu.Item>
-          {/each}
+            {#if layout === 'submenu'}
+              <Menu.Separator />
+            {/if}
+          {/if}
 
-          <Menu.Item onclick={openWithOther}>
-            <span class={iconSlotClass} aria-hidden="true">
-              <Fa icon={faUpRightFromSquare} size="16" class="opacity-50" />
-            </span>
-            <span class="min-w-0 flex-1 truncate">{m.ui_workspaceActions_chooseApp_label()}</span>
-          </Menu.Item>
-          <Menu.Separator />
-        {/if}
-
-        <Menu.Item onclick={copyAbsolutePath}>
-          <span class="{iconSlotClass} text-xs font-normal font-mono opacity-50" aria-hidden="true">
-            {isWindowsPlatform() ? '\\' : '/'}
-          </span>
-          <span class="min-w-0 flex-1 truncate">
-            {m.ui_workspaceActions_copyAbsolutePath_label()}
-          </span>
-        </Menu.Item>
-
-        {#if !isWorkspaceRoot}
-          <Menu.Item onclick={copyWorkspacePath}>
-            <span
-              class="{iconSlotClass} text-xs font-normal font-mono opacity-50"
-              aria-hidden="true">./</span
-            >
-            <span class="min-w-0 flex-1 truncate">
-              {m.ui_workspaceActions_copyRelativePath_label()}
-            </span>
-          </Menu.Item>
-        {/if}
-
-        {#if showFileNameCopy && !isDirectory}
-          <Menu.Item onclick={copyFileName}>
-            <span class={iconSlotClass} aria-hidden="true">
-              <Fa icon={faFile} size="16" class="opacity-50" />
-            </span>
-            <span class="min-w-0 flex-1 truncate">
-              {m.ui_workspaceActions_copyFileName_label()}
-            </span>
-          </Menu.Item>
-        {/if}
-      </Menu.SubContent>
-    </Menu.Sub>
+          {#if layout === 'submenu'}
+            {@render copyMenuItems()}
+          {/if}
+        </Menu.SubContent>
+      </Menu.Sub>
+    {/if}
+    {#if layout === 'editors-submenu'}
+      {#if canOpenExternalEditors && $isWorkspaceHostLocal$}
+        <Menu.Separator />
+      {/if}
+      {@render copyMenuItems()}
+    {/if}
   {:else if showFileActions}
     {#if canOpenExternalEditors && $isWorkspaceHostLocal$}
       <!-- Open Actions - dynamically rendered based on installed editors -->

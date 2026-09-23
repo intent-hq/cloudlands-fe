@@ -4,6 +4,98 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.179.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.179.0...v2.179.1) (2026-09-23)
+
+
+### 🐛 Bug Fixes
+
+* unify modal layouts and refine responsive interactions ([#2819](https://github.com/intent-hq/cloudlands-fe/issues/2819)) ([47ec95b](https://github.com/intent-hq/cloudlands-fe/commit/47ec95be24efc9323ff561a5e6945b23d40066df))
+
+## [2.179.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.178.3...v2.179.0) (2026-09-23)
+
+
+### 🚀 Features
+
+* **ui:** standardize panel header actions and task filters ([#2788](https://github.com/intent-hq/cloudlands-fe/issues/2788)) ([560db30](https://github.com/intent-hq/cloudlands-fe/commit/560db3023638dee7374b08c43349b020402bda6f))
+
+
+### 🐛 Bug Fixes
+
+* sharpen sidebar and settings header icons ([#2844](https://github.com/intent-hq/cloudlands-fe/issues/2844)) ([73beeb4](https://github.com/intent-hq/cloudlands-fe/commit/73beeb4b9ca1022c37d6a0f0adf0f95110d76cef))
+
+## [2.178.3](https://github.com/intent-hq/cloudlands-fe/compare/v2.178.2...v2.178.3) (2026-09-23)
+
+
+### 🐛 Bug Fixes
+
+* align protocol mismatch dialog stacking ([#2743](https://github.com/intent-hq/cloudlands-fe/issues/2743)) ([aad0a83](https://github.com/intent-hq/cloudlands-fe/commit/aad0a83b9d70e51ae7f0450437f7585963070fd4))
+* hydrate inline system notices in long chats ([#5762](https://github.com/intent-hq/cloudlands-fe/issues/5762)) ([#2841](https://github.com/intent-hq/cloudlands-fe/issues/2841)) ([ac59d99](https://github.com/intent-hq/cloudlands-fe/commit/ac59d9959770a259c646edca510b2797a0d70951))
+* move Antigravity connection setup into a dialog ([#2815](https://github.com/intent-hq/cloudlands-fe/issues/2815)) ([88d6bee](https://github.com/intent-hq/cloudlands-fe/commit/88d6bee4f5bc331e6d3e7c15db3694ddf5555d63))
+* use custom kebab icons for overflow menus ([#2838](https://github.com/intent-hq/cloudlands-fe/issues/2838)) ([5816d10](https://github.com/intent-hq/cloudlands-fe/commit/5816d103bd7de692b371932701492bbef0869667))
+* **workspace:** keep tab hover cards reachable ([#5755](https://github.com/intent-hq/cloudlands-fe/issues/5755)) ([#2837](https://github.com/intent-hq/cloudlands-fe/issues/2837)) ([52bf6a8](https://github.com/intent-hq/cloudlands-fe/commit/52bf6a89c34e43cdd22aa1e702e0f52b76637f4e))
+
+## [2.178.2](https://github.com/intent-hq/cloudlands-fe/compare/v2.178.1...v2.178.2) (2026-09-23)
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.9.103 ([#2839](https://github.com/intent-hq/cloudlands-fe/issues/2839)) ([c8fd915](https://github.com/intent-hq/cloudlands-fe/commit/c8fd915d5e48e6a320646c0db8091fd43e973211))
+
+## [2.178.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.178.0...v2.178.1) (2026-09-23)
+
+
+### 🐛 Bug Fixes
+
+* **browser:** resolve explicit daemon.localhost / client.localhost aliases typed in the address bar ([#2823](https://github.com/intent-hq/cloudlands-fe/issues/2823)) ([ce9f7bc](https://github.com/intent-hq/cloudlands-fe/commit/ce9f7bc571fd5ad456471cd054ce96795d31a797))
+* bump intentd sidecar to v0.9.102 ([#2835](https://github.com/intent-hq/cloudlands-fe/issues/2835)) ([d522c42](https://github.com/intent-hq/cloudlands-fe/commit/d522c42792c812770f0b5122787b5d13b3689730))
+* **test:** make the tab-strip geometry root and CT specs deterministic under load ([#2826](https://github.com/intent-hq/cloudlands-fe/issues/2826)) ([0a2602b](https://github.com/intent-hq/cloudlands-fe/commit/0a2602bed55b9dc84129480ba607661fce9dfc78))
+
+## [2.178.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.177.2...v2.178.0) (2026-09-23)
+
+
+### 🚀 Features
+
+* **perf:** paired text-rebase alignment benchmark ([#2830](https://github.com/intent-hq/cloudlands-fe/issues/2830)) ([8cd3be9](https://github.com/intent-hq/cloudlands-fe/commit/8cd3be9b23f6ff3917625847f2ea8a32e5981047))
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.9.101 ([#2834](https://github.com/intent-hq/cloudlands-fe/issues/2834)) ([2ca0b1e](https://github.com/intent-hq/cloudlands-fe/commit/2ca0b1e0cb60111559fb491d740a2775b78b5b5b))
+* **model-picker:** warn before send when the agent provider is disabled ([#2829](https://github.com/intent-hq/cloudlands-fe/issues/2829)) ([3543254](https://github.com/intent-hq/cloudlands-fe/commit/354325433ad7bf5e60b57331500bfd6ff7023110))
+
+## [2.177.2](https://github.com/intent-hq/cloudlands-fe/compare/v2.177.1...v2.177.2) (2026-09-23)
+
+
+### 🐛 Bug Fixes
+
+* **notes:** bound each alignment diff by edit length, not wall clock ([#2824](https://github.com/intent-hq/cloudlands-fe/issues/2824)) ([a94b23d](https://github.com/intent-hq/cloudlands-fe/commit/a94b23dd948845c540695839ece0b2b4cf2704b6))
+
+## [2.177.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.177.0...v2.177.1) (2026-09-23)
+
+
+### ⚡ Performance
+
+* **notes:** stop re-diffing plain text vs markdown on every selection change ([#2740](https://github.com/intent-hq/cloudlands-fe/issues/2740)) ([bb219c3](https://github.com/intent-hq/cloudlands-fe/commit/bb219c3e55b283f218b709a494ad5ea78f4eb3ee))
+
+## [2.177.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.176.0...v2.177.0) (2026-09-23)
+
+
+### 🚀 Features
+
+* add Workspaces and Intent sidebar tabs ([#2751](https://github.com/intent-hq/cloudlands-fe/issues/2751)) ([a7a2b17](https://github.com/intent-hq/cloudlands-fe/commit/a7a2b172716b2a6d56c2e1549f5c329687f245bd))
+
+
+### 🐛 Bug Fixes
+
+* avoid duplicate blocker and discussion notices ([#2818](https://github.com/intent-hq/cloudlands-fe/issues/2818)) ([fe1360d](https://github.com/intent-hq/cloudlands-fe/commit/fe1360dc9ddede7e361e00d266529df83b476e98))
+
+## [2.176.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.175.0...v2.176.0) (2026-09-23)
+
+
+### 🚀 Features
+
+* add consistent image controls across notes and chat ([#2783](https://github.com/intent-hq/cloudlands-fe/issues/2783)) ([c1e09e5](https://github.com/intent-hq/cloudlands-fe/commit/c1e09e59cef894a63bb83b834aa7ef32e6f74552))
+
 ## [2.175.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.174.0...v2.175.0) (2026-09-23)
 
 

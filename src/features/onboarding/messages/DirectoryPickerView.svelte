@@ -43,6 +43,7 @@
 
   interface Props {
     open: boolean;
+    embedded?: boolean;
     title?: string;
     selectLabel?: string;
     listing: DirectoryPickerListing | null;
@@ -65,6 +66,7 @@
 
   let {
     open,
+    embedded = false,
     title = m.onboarding_dirPicker_selectFolder_label(),
     selectLabel = m.onboarding_dirPicker_selectFolder_label(),
     listing,
@@ -354,7 +356,7 @@
 
 {#snippet listingErrorMessage()}
   <span>{m.onboarding_dirPicker_readError_title()}</span>
-  <span class="mt-1 block type-caption break-all">{error}</span>
+  <span class="mt-1 block type-caption wrap-anywhere">{error}</span>
 {/snippet}
 
 {#snippet pathErrorMessage()}{pathError}{/snippet}
@@ -371,12 +373,12 @@
   <div
     bind:this={dialogRef}
     tabindex="-1"
-    role="dialog"
-    aria-modal="true"
+    role={embedded ? 'group' : 'dialog'}
+    aria-modal={embedded ? undefined : true}
     aria-label={title}
-    class="flex h-[32rem] w-full max-w-3xl flex-col overflow-hidden rounded-xl border border-border bg-card shadow-2xl focus:outline-none"
+    class="directory-picker flex h-[min(32rem,calc(100dvh-2rem))] min-w-0 w-full max-w-3xl flex-col overflow-hidden rounded-lg border border-border bg-card shadow-2xl focus:outline-none"
   >
-    <header class="flex h-12 shrink-0 items-center justify-between border-b border-border px-4">
+    <header class="flex h-12 shrink-0 items-center justify-between px-4">
       <div class="flex min-w-0 items-center gap-2">
         <Fa icon={faFolderOpen} class="shrink-0 text-muted-foreground" />
         <h2 class="truncate text-sm font-medium">{title}</h2>
@@ -396,7 +398,7 @@
 
     <div class="flex min-h-0 flex-1">
       <aside
-        class="hidden w-44 shrink-0 overflow-y-auto border-r border-border bg-muted/15 px-3 py-3 sm:block"
+        class="picker-sidebar w-44 shrink-0 overflow-y-auto border-r border-border bg-muted/15 px-3 py-3"
       >
         <h3 class="mb-1 px-2 text-xs font-semibold text-muted-foreground">
           {m.onboarding_dirPicker_favorites_label()}
@@ -425,7 +427,7 @@
 
       <div class="flex min-w-0 flex-1 flex-col">
         <div
-          class="flex min-h-11 shrink-0 items-center gap-2 border-b border-border bg-muted/10 px-3 py-2"
+          class="flex min-h-11 shrink-0 flex-wrap items-center gap-2 border-b border-border bg-muted/10 px-3 py-2"
         >
           <Button
             type="button"
@@ -522,7 +524,7 @@
               count={6}
               rowHeight={32}
               label={m.onboarding_dirPicker_loading_label()}
-              class="py-1"
+              class="gap-2 py-1"
             />
           {:else if pathError}
             <ErrorState
@@ -619,7 +621,9 @@
       </div>
     {/if}
 
-    <footer class="flex shrink-0 items-center gap-2 border-t border-border bg-muted/10 px-4 py-3">
+    <footer
+      class="flex shrink-0 flex-wrap items-center gap-2 border-t border-border bg-muted/10 px-4 py-3"
+    >
       {#if mode === 'directory' && onCreateDirectory}
         {#if newFolderOpen}
           <div class="flex min-w-0 flex-1 items-center gap-1.5">
@@ -667,3 +671,21 @@
     </footer>
   </div>
 {/if}
+
+<style>
+  .directory-picker {
+    container-type: inline-size;
+  }
+  @container (max-width: 34rem) {
+    .picker-sidebar {
+      display: none;
+    }
+  }
+  .directory-picker footer :global(button) {
+    max-width: 100%;
+    white-space: normal;
+    overflow-wrap: anywhere;
+    height: auto;
+    min-height: var(--control-height-small);
+  }
+</style>

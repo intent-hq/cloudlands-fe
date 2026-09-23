@@ -1557,6 +1557,60 @@ describe('ChatPanel mounted lifecycle', () => {
     }
   });
 
+  it.each(['blocker-report', 'discussion-request', 'turn-failure', 'interruption'])(
+    'hydrates an inline %s notice in a long transcript after opening and reopening',
+    async (kind) => {
+      MockChatIntersectionObserver.instances = [];
+      vi.stubGlobal('IntersectionObserver', MockChatIntersectionObserver);
+      mocks.draftGet.mockResolvedValue(null);
+      mocks.agentMessages.set([
+        ...Array.from({ length: 24 }, (_, index) => [
+          {
+            id: `user-${index}`,
+            role: 'user',
+            content: `question ${index}`,
+            timestamp: `2026-01-01T00:${String(index).padStart(2, '0')}:00.000Z`,
+          },
+          {
+            id: `assistant-${index}`,
+            role: 'assistant',
+            content: `answer ${index}`,
+            timestamp: `2026-01-01T00:${String(index).padStart(2, '0')}:30.000Z`,
+          },
+        ]).flat(),
+        {
+          id: 'inline-notice',
+          role: 'system',
+          contentBlocks: [{ type: 'text', text: 'Attention needed', meta: { kind } }],
+          timestamp: '2026-01-01T00:24:00.000Z',
+        },
+      ]);
+      const props = { workspace: workspace('workspace-a'), agentId: 'agent-a' };
+      const view = render(ChatPanel, { props });
+      await tick();
+      await tick();
+
+      const notice = view.container.querySelector('[data-lazy-turn-key="inline-notice"]')!;
+      expect(notice).not.toBeNull();
+      expect(notice.querySelector('[data-message-key="inline-notice"]')).toBeNull();
+      const observer = MockChatIntersectionObserver.instances.find((candidate) =>
+        candidate.observed.has(notice),
+      )!;
+      observer.fire([{ target: notice, isIntersecting: true }]);
+      flushFrame();
+      await tick();
+
+      expect(notice.querySelector('[data-message-key="inline-notice"]')).not.toBeNull();
+      expect(notice.querySelector('.lazy-turn-placeholder')).toBeNull();
+
+      await view.rerender({ ...props, isActive: false });
+      await view.rerender({ ...props, isActive: true });
+      await tick();
+      expect(notice.querySelector('[data-message-key="inline-notice"]')).not.toBeNull();
+      view.unmount();
+    },
+  );
+
   it('virtualizes assistant-heavy Chief transcripts within one recent turn', async () => {
     MockChatIntersectionObserver.instances = [];
     vi.stubGlobal('IntersectionObserver', MockChatIntersectionObserver);

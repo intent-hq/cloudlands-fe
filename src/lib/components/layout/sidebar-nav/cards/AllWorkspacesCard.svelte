@@ -19,7 +19,8 @@
   import Header from '$lib/components/ui/Header.svelte';
   import GitHubAvatar from '$lib/components/ui/GitHubAvatar.svelte';
   import Fa from 'svelte-fa';
-  import { faChevronDown } from '@fortawesome/free-solid-svg-icons';
+  import { faBoxArchive, faChevronDown, faTrash } from '@fortawesome/free-solid-svg-icons';
+  import * as Tooltip from '$lib/components/ui/tooltip';
 
   import {
     selectPinnedWorkspaceIds,
@@ -44,6 +45,11 @@
   import WorkspaceCardSkeleton from '../WorkspaceCardSkeleton.svelte';
   import { openWorkspaceTab } from '$store/renderer/slices/tab-state/tab-state-slice';
   import { Button } from '$lib/components/ui/button';
+  import { selectBulkOperationInFlight } from '$store/renderer/slices/workspace-operations/workspace-operations-selectors';
+  import {
+    openBulkArchiveConfirm,
+    openBulkDeleteConfirm,
+  } from '$store/renderer/slices/workspace-operations/workspace-operations-slice';
 
   const REPOSITORY_WORKSPACE_LIMIT = 3;
 
@@ -54,6 +60,7 @@
   const collapsedRepoGroupKeys$ = selectCollapsedRepoGroupKeys();
   const collapsedStatusGroupIds$ = selectCollapsedStatusGroupIds();
   const showArchivedWorkspaces$ = selectShowArchivedWorkspaces();
+  const bulkOperationInFlight$ = selectBulkOperationInFlight();
 
   interface Props {
     expanded?: boolean;
@@ -322,6 +329,25 @@
     appStore.dispatch(toggleStatusGroupCollapsed(groupId));
   }
 
+  function openGroupArchive(event: MouseEvent, workspaces: Workspace[], groupLabel: string) {
+    event.stopPropagation();
+    appStore.dispatch(
+      openBulkArchiveConfirm({
+        workspaceIds: workspaces
+          .filter(({ status }) => status !== WorkspaceStatusEnum.Archived)
+          .map(({ id }) => id),
+        groupLabel,
+      }),
+    );
+  }
+
+  function openGroupDelete(event: MouseEvent, workspaces: Workspace[], groupLabel: string) {
+    event.stopPropagation();
+    appStore.dispatch(
+      openBulkDeleteConfirm({ workspaceIds: workspaces.map(({ id }) => id), groupLabel }),
+    );
+  }
+
   function _getStreamingIds(ws: Workspace): string[] {
     void activeStreamsVersion;
     return activeStreamsTracker.getStreamingAgentIdsForWorkspace(ws.id);
@@ -434,6 +460,45 @@
     }
   }
 </script>
+
+{#snippet groupActions(workspaces: Workspace[], groupLabel: string)}
+  <div
+    class="absolute right-1 top-1/2 -translate-y-1/2 flex items-center gap-0.5 rounded-md bg-accent/95 px-0.5 opacity-0 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto group-focus-within:opacity-100 group-focus-within:pointer-events-auto focus-within:opacity-100 focus-within:pointer-events-auto"
+  >
+    {#if workspaces.some((workspace) => workspace.status !== WorkspaceStatusEnum.Archived)}
+      <Tooltip.Tooltip content={m.layout_allCard_groupArchiveAll_tooltip()}>
+        <Button
+          variant="plain"
+          size="icon-xs"
+          iconOnly
+          disabled={$bulkOperationInFlight$}
+          class="text-muted-foreground hover:bg-muted/50 hover:text-foreground focus-visible:border-transparent focus-visible:bg-muted/50 focus-visible:text-foreground focus-visible:ring-0"
+          aria-label={m.layout_allCard_groupArchiveAll_ariaLabel({ group: groupLabel })}
+          data-group-archive-all
+          onclick={(event) => openGroupArchive(event, workspaces, groupLabel)}
+          onkeydown={(event) => event.stopPropagation()}
+        >
+          <Fa icon={faBoxArchive} size="xs" />
+        </Button>
+      </Tooltip.Tooltip>
+    {/if}
+    <Tooltip.Tooltip content={m.layout_allCard_groupDeleteAll_tooltip()}>
+      <Button
+        variant="plain"
+        size="icon-xs"
+        iconOnly
+        disabled={$bulkOperationInFlight$}
+        class="text-muted-foreground hover:bg-muted/50 hover:text-foreground focus-visible:border-transparent focus-visible:bg-muted/50 focus-visible:text-foreground focus-visible:ring-0"
+        aria-label={m.layout_allCard_groupDeleteAll_ariaLabel({ group: groupLabel })}
+        data-group-delete-all
+        onclick={(event) => openGroupDelete(event, workspaces, groupLabel)}
+        onkeydown={(event) => event.stopPropagation()}
+      >
+        <Fa icon={faTrash} size="xs" />
+      </Button>
+    </Tooltip.Tooltip>
+  </div>
+{/snippet}
 
 <div
   class="flex flex-col h-full outline-none focus-visible:bg-muted/10"
@@ -578,11 +643,11 @@
               data-repository-group
               data-repository-key={repositoryGroup.key}
             >
-              <div class="section-header mx-1 pt-2 pb-1 min-w-0">
+              <div class="section-header group relative flex items-center mx-1 pt-2 pb-1 min-w-0">
                 <Button
                   variant="ghost"
                   type="button"
-                  class="h-auto! w-full min-w-0 justify-start gap-2.5 px-2.5! py-1! text-left"
+                  class="h-auto! flex-1 min-w-0 justify-start gap-2.5 px-2.5! py-1! text-left"
                   aria-expanded={isExpanded}
                   aria-controls={`repo-group-${encodeURIComponent(repositoryGroup.key)}`}
                   data-repository-collapse-toggle
@@ -610,6 +675,10 @@
                       : '-rotate-90'}"
                   />
                 </Button>
+                {@render groupActions(
+                  repositoryGroup.group.workspaces,
+                  repositoryGroup.group.label,
+                )}
               </div>
               <div
                 id={`repo-group-${encodeURIComponent(repositoryGroup.key)}`}
@@ -667,11 +736,14 @@
         {:else if $viewMode$ === 'status'}
           {#each groupedByStatus as group (group.id)}
             {@const isExpanded = !$collapsedStatusGroupIds$.includes(group.id)}
-            <div class="section-header mx-1 pt-2 pb-1 mt-2 min-w-0" data-status-group={group.id}>
+            <div
+              class="section-header group relative flex items-center mx-1 pt-2 pb-1 mt-2 min-w-0"
+              data-status-group={group.id}
+            >
               <Button
                 variant="ghost"
                 type="button"
-                class="h-auto! w-full min-w-0 justify-start gap-2.5 px-2.5! py-1! text-left"
+                class="h-auto! flex-1 min-w-0 justify-start gap-2.5 px-2.5! py-1! text-left"
                 aria-expanded={isExpanded}
                 aria-controls={`status-group-${group.id}`}
                 data-status-group-toggle={group.id}
@@ -687,6 +759,7 @@
                     : '-rotate-90'}"
                 />
               </Button>
+              {@render groupActions(group.workspaces, group.label)}
             </div>
             <div id={`status-group-${group.id}`} hidden={!isExpanded}>
               {#each group.workspaces as workspace, _i (workspace.id)}

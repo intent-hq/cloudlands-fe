@@ -14,6 +14,7 @@
   import { getAvatarStateForSession } from '$features/agent/components/agent-avatar/avatar-state';
   import { selectPendingCount } from '$store/renderer/slices/permission/permission-selectors';
   import * as Tooltip from '$lib/components/ui/tooltip';
+  import { Button } from '$lib/components/ui/button';
   import type { Workspace } from '$shared/types';
   import { store as appStore } from '$store/renderer/store';
   import { m } from '$shared/paraglide/messages.js';
@@ -30,6 +31,8 @@
     onclick?: (event: MouseEvent) => void;
     /** Override the navigation label when a pinned avatar returns to its source. */
     activationLabel?: string;
+    /** Header actions share the toolbar target while preserving the identity artwork. */
+    presentation?: 'inline' | 'header';
   }
 
   let {
@@ -39,6 +42,7 @@
     isCompleted = false,
     onclick,
     activationLabel,
+    presentation = 'inline',
   }: Props = $props();
 
   // svelte-ignore state_referenced_locally -- selector readables are init-time only; instances are keyed by agentId.
@@ -86,30 +90,52 @@
   const displayName = $derived(agentData?.name || agentName || m.chat_shared_agentName_fallback());
 </script>
 
+{#snippet avatar()}
+  <div
+    class="inline-agent-avatar-ring relative ring-1 ring-card"
+    data-testid="inline-agent-avatar-ring"
+  >
+    <AgentAvatarWithState
+      {agentId}
+      variant="standard"
+      {state}
+      {specialist}
+      class="inline-agent-avatar-surface"
+    />
+  </div>
+{/snippet}
+
 <!-- Provider ensures proper context and cleanup during component destruction -->
-<Tooltip.Provider delayDuration={0}>
-  <Tooltip.Root delayDuration={0}>
-    <Tooltip.Trigger
-      class="inline-agent-avatar-trigger transition-colors hover:bg-muted/40 focus-visible:bg-muted/60 focus-visible:outline-none"
-      {onclick}
-      data-testid="inline-agent-avatar-trigger"
-      aria-label={activationLabel ??
-        (onclick ? m.chat_msgAttribution_openAgent_title({ name: displayName }) : undefined)}
-    >
-      <div
-        class="inline-agent-avatar-ring relative ring-1 ring-card"
-        data-testid="inline-agent-avatar-ring"
+<Tooltip.Provider delayDuration={presentation === 'header' ? 300 : 0}>
+  <Tooltip.Root delayDuration={presentation === 'header' ? 300 : 0}>
+    {#if presentation === 'header'}
+      <Tooltip.Trigger>
+        {#snippet child({ props })}
+          <Button
+            {...props}
+            variant="ghost-light"
+            size="icon-sm"
+            {onclick}
+            aria-label={activationLabel ??
+              m.chat_msgAttribution_openAgent_title({ name: displayName })}
+            data-testid="inline-agent-avatar-trigger"
+          >
+            {@render avatar()}
+          </Button>
+        {/snippet}
+      </Tooltip.Trigger>
+    {:else}
+      <Tooltip.Trigger
+        class="inline-agent-avatar-trigger transition-colors hover:bg-muted/40 focus-visible:bg-muted/60 focus-visible:outline-none"
+        {onclick}
+        data-testid="inline-agent-avatar-trigger"
+        aria-label={activationLabel ??
+          (onclick ? m.chat_msgAttribution_openAgent_title({ name: displayName }) : undefined)}
       >
-        <AgentAvatarWithState
-          {agentId}
-          variant="standard"
-          {state}
-          {specialist}
-          class="inline-agent-avatar-surface"
-        />
-      </div>
-    </Tooltip.Trigger>
-    <Tooltip.Content side="top" class="text-xs">
+        {@render avatar()}
+      </Tooltip.Trigger>
+    {/if}
+    <Tooltip.Content side={presentation === 'header' ? 'bottom' : 'top'} class="text-xs">
       <p>{displayName}</p>
       {#if attentionRequest}
         <p class="line-clamp-3">

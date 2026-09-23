@@ -66,16 +66,33 @@ const canonicalImports = [
 // Single-file components published under their `.svelte` path rather than a folder barrel.
 const canonicalFileImports = ['PrincipalAvatar.svelte'] as const;
 
+// `button-group` is published from the root barrel as the `ButtonGroup` namespace.
+function rootNamespaceFor(publicImport: string): string {
+  return publicImport.replace(/(?:^|-)([a-z])/g, (_match, letter: string) => letter.toUpperCase());
+}
+
 describe('Gate C public component contract', () => {
-  it('publishes a discoverability API while preserving canonical subpaths', () => {
-    const rootApi = readFileSync(path.join(root, 'src/lib/components/ui/index.ts'), 'utf8');
-    for (const publicImport of canonicalImports) {
-      expect(rootApi, publicImport).toContain(`from './${publicImport}'`);
+  it('publishes a discoverability API while preserving canonical subpaths', async () => {
+    const rootApi: Record<string, unknown> = await import('../src/lib/components/ui');
+    const subpathApis = await Promise.all(
+      canonicalImports.map(
+        (publicImport) =>
+          import(`../src/lib/components/ui/${publicImport}/index.ts`) as Promise<
+            Record<string, unknown>
+          >,
+      ),
+    );
+    canonicalImports.forEach((publicImport, index) => {
+      const namespace = rootApi[rootNamespaceFor(publicImport)];
+      expect(namespace, publicImport).toBeDefined();
+      expect(Object.keys(namespace as object).sort(), publicImport).toEqual(
+        Object.keys(subpathApis[index]).sort(),
+      );
       expect(existsSync(path.join(root, `src/lib/components/ui/${publicImport}/index.ts`))).toBe(
         true,
       );
-    }
-    expect(rootApi).toContain("from './manifest'");
+    });
+    expect(rootApi.canonicalComponentManifest).toBe(canonicalComponentManifest);
   });
 
   it('keeps catalog fixtures out of runtime component barrels', () => {

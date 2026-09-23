@@ -337,7 +337,7 @@ describe('permanent close actions (intent#4762)', () => {
     const dialog = screen.getByRole('dialog');
     expect(dialog.getAttribute('aria-modal')).toBe('true');
 
-    await fireEvent.click(screen.getByTestId('browser-tabs-close-dialog-confirm'));
+    await fireEvent.click(screen.getByRole('button', { name: 'Close tab', exact: true }));
     const close = dispatchedActions().find((a) => a.type === closeTabType);
     expect(close?.payload).toMatchObject({ wsId: 'ws-1', tabId: 'visible-1', destroy: true });
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
@@ -351,7 +351,7 @@ describe('permanent close actions (intent#4762)', () => {
     await fireEvent.click(screen.getByTestId('browser-tabs-close-hidden'));
     expect(screen.getByRole('dialog')).toBeTruthy();
 
-    await fireEvent.click(screen.getByTestId('browser-tabs-close-dialog-cancel'));
+    await fireEvent.click(screen.getByRole('button', { name: 'Cancel', exact: true }));
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
     expect(dispatchedActions().some((a) => a.type === destroyHiddenType)).toBe(false);
     expect(dispatchedActions().some((a) => a.type === closeTabType)).toBe(false);
@@ -365,7 +365,7 @@ describe('permanent close actions (intent#4762)', () => {
     await fireEvent.click(screen.getByTestId('browser-tabs-close-hidden'));
     expect(dispatchedActions().some((a) => a.type === destroyHiddenType)).toBe(false);
 
-    await fireEvent.click(screen.getByTestId('browser-tabs-close-dialog-confirm'));
+    await fireEvent.click(screen.getByRole('button', { name: 'Close hidden tabs', exact: true }));
     const bulk = dispatchedActions().find((a) => a.type === destroyHiddenType);
     expect(bulk?.payload).toMatchObject({ wsId: 'ws-1', agentId: 'agent-1' });
   });

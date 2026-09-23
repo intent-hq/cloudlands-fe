@@ -1,4 +1,5 @@
 <script lang="ts">
+  import KebabIcon from '$lib/components/icons/KebabIcon.svelte';
   import Fa from 'svelte-fa';
   import { differenceInDays } from 'date-fns';
   import { formatDistanceToNow, formatShortDate, formatInteger } from '$lib/i18n/format';
@@ -13,7 +14,6 @@
     faEdit,
     faTimes,
     faReply,
-    faEllipsisV,
     faLightbulb,
     faExclamationTriangle,
     faCircleQuestion,
@@ -297,7 +297,7 @@
               onShow?.();
             }}
           >
-            <Fa icon={faEllipsisV} size="xs" />
+            <KebabIcon class="size-3.5" />
           </Button>
         {/if}
       </div>

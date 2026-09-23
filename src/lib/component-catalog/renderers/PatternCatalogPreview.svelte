@@ -5,6 +5,9 @@
   import CardInsetContractHarness from '$lib/components/patterns/collection/CardInsetContractHarness.svelte';
   import DestructiveConfirm from '$lib/components/patterns/confirm/DestructiveConfirm.svelte';
   import FormDialog from '$lib/components/patterns/confirm/FormDialog.svelte';
+  import { ContentDialog } from '$lib/components/patterns/confirm';
+  import { Button } from '$lib/components/ui/button';
+  import { InputMessage } from '$lib/components/ui/input-message';
   import FormHarness from '$lib/components/patterns/form/FormHarness.svelte';
   import NotifyErrorToast from '$lib/components/patterns/notify/NotifyErrorToast.svelte';
   import ScreenHarness from '$lib/components/patterns/screen/ScreenHarness.svelte';
@@ -52,7 +55,34 @@
           <CollectionHarness />
         {/if}
       {:else if componentId === 'confirm'}
-        {#if fixture.id === 'destructive-confirm'}
+        {#if fixture.id === 'content-dialog'}
+          <ContentDialog
+            open
+            static
+            title={state === 'progress' ? 'Importing workspace' : 'Workspace details'}
+            description="Keep the decision clear and supporting details in the body."
+            busy={state === 'progress'}
+          >
+            {#if state === 'error'}
+              <InputMessage tone="error"
+                >The connection was interrupted. Your file is unchanged.</InputMessage
+              >
+            {:else if state === 'progress'}
+              <p role="status" class="type-body">Importing the selected workspace…</p>
+            {:else}
+              {#each Array.from({ length: state === 'long-content' ? 30 : 1 }) as _, index}
+                <p class="type-body">
+                  Workspace detail {index + 1}. Supporting information stays in one scrollable
+                  region.
+                </p>
+              {/each}
+            {/if}
+            {#snippet footer()}
+              <Button variant="ghost" disabled={state === 'progress'}>Close</Button>
+              {#if state === 'error'}<Button variant="primary">Try again</Button>{/if}
+            {/snippet}
+          </ContentDialog>
+        {:else if fixture.id === 'destructive-confirm'}
           <DestructiveConfirm
             open
             static

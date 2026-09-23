@@ -156,6 +156,11 @@ for (const { width, height } of [
     await expect(page.getByRole('listbox')).toHaveCount(0);
     await expect(dialog).toBeVisible();
     await expect(trigger).toBeFocused();
+    // Focus restoration may reveal the trigger's tooltip. Dismiss that hint
+    // before testing the dialog: Escape belongs to the topmost open layer.
+    await page.mouse.move(1, 1);
+    await dialog.getByLabel('Device name', { exact: true }).focus();
+    await expect(page.getByRole('tooltip')).toHaveCount(0);
     await page.keyboard.press('Escape');
     await expect(dialog).toHaveCount(0);
   });

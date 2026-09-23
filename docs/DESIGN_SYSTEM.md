@@ -65,6 +65,16 @@ Import `ListView` and `ListRow` from `$lib/components/patterns/collection`; insp
 <ListView {items} getKey={(item) => item.id}>{#snippet row({ item })}<ListRow>{#snippet title()}{item.name}{/snippet}</ListRow>{/snippet}</ListView>
 ```
 
+Inside dialogs, use flush, unfilled rows (`ListRow class="px-0"`), not nested cards or wells.
+Keep informational agents and PRs to one line; avoid redundant status badges. Render
+warnings and empty-state guidance as muted text. For an icon beside a title and wrapping
+description, use `ListRow`: leading icons, avatars, and trailing symbols are always centered
+on the first text line, never the entire multiline block. This is the default, not an opt-in.
+For custom compositions, use a top-aligned row and the shared `first-line-icon` slot with the same
+typography as the first line. Center the icon inside that slot; do not use fixed pixel nudges.
+Keep single-line and icon-only controls centered as usual. Selection belongs to the enclosing control;
+use its accessible pressed/selected state and a trailing check, not a permanent row fill.
+
 ### …build a screen or takeover
 
 Import `TakeoverScreen` from `$lib/components/patterns/screen`; inspect
@@ -121,6 +131,74 @@ Import shared transitions from `$lib/motion`; inspect the live motion examples i
 <!-- Use duration-spring-* only for class transitions. -->
 ```
 
+## Modal compositions
+
+Use `$lib/components/patterns/confirm`, not a feature-owned overlay. `FormDialog`
+owns submission and cancellation; `ContentDialog` owns the layout and dismissal
+of selection, progress/result, and reading dialogs. The Confirm service remains
+the shortest path for a simple confirmation, prompt, or acknowledgement.
+
+Both compositions share title, description, scrollable body, and responsive footer
+geometry. Use `size="sm"` for a short decision, the default for ordinary forms,
+`lg` for richer forms, `wide` for reading or selection, and `editor` for an actual
+editor. Choose width from the content, not from the longest button label. Avoid
+overriding shell padding, positioning, or overflow.
+
+- The title names the decision. Omit a description when the labels already explain
+  the task; never repeat the title as a body heading or explain how to click Save.
+  Keep consequences, permissions and recovery guidance visible and specific.
+- Use the shared header and footer without decorative icon badges, nested cards,
+  or a second border/background treatment. Reserve icons for meaningful identity,
+  selection and status. A warning needs a clear consequence, not extra chrome.
+- Put essential context first; move generated instructions and technical details
+  into a disclosure, never the information needed to make a safe choice.
+  Use `Accordion.Trigger` and `Accordion.Content` with `inset={false}` when the
+  surrounding dialog already supplies gutters. Triggers fill the available width,
+  keeping labels aligned with body copy and chevrons at the trailing edge.
+- For checkbox-driven selection, use `ListView selectionAppearance="indicator"`
+  with a visible row selection control. This avoids a solid selected card behind
+  every item; `SectionedList inset={false}` aligns headings to an existing gutter.
+- Use grid gaps for vertically stacked actions and help text rather than relying
+  on margins crossing compound component wrappers. Review ordinary form widths
+  separately from intentionally constrained zoom stress cases at `/sandbox/modal-polish`.
+- Use one specific primary verb and a quiet secondary action. Use `FormActions`
+  when a separate destructive action is necessary. Confirm abandonment explicitly.
+- Selection does not imply destruction: unselected work remains untouched unless
+  the interface explicitly describes another operation.
+- Set `busy` while an operation cannot safely be dismissed. Disable duplicate
+  keyboard and pointer submission; keep failures visible and preserve retry state.
+  `FormDialog` catches rejected submissions, keeps the dialog open, and shows
+  localized retry feedback. Close the caller only after its action succeeds.
+- The body scrolls; the title and actions remain reachable. Exercise long names,
+  translated labels, short viewports, narrow widths, and browser zoom.
+- `static` is only for previews: it does not test focus trapping or restoration.
+  Test the real portaled composition for keyboard ownership and nested overlays.
+
+The dialog rule covers product components and routes, aliased imports, direct
+Bits UI roots, and literal raw `aria-modal` shells. Command palette, analytics
+takeover, and daemon stopped/updating overlays remain explicit specialized modal
+owners; their search, full-screen, or blocking recovery interactions need dedicated
+tests. An anchored nonmodal popover is not a centered dialog just because its ARIA
+role is `dialog`.
+
+Copyable examples are at `/sandbox/confirm`; real product comparisons are at
+`/sandbox/modals`. Reading, progress, failure, and long-content examples use the
+same `ContentDialog` API as product flows:
+
+<!-- prettier-ignore -->
+```svelte
+<script lang="ts">
+  import { ContentDialog } from '$lib/components/patterns/confirm';
+  import { Button } from '$lib/components/ui/button';
+</script>
+<ContentDialog bind:open {title} {description} {busy} size="wide" onClose={close}>
+  {@render details()}
+  {#snippet footer()}
+    <Button variant="ghost" disabled={busy} onclick={close}>{closeLabel}</Button>
+  {/snippet}
+</ContentDialog>
+```
+
 ## Never
 
 - Never transform labels to all capitals; use sentence case without extra letter spacing. `intent/no-uppercase` rejects Tailwind `uppercase` classes and CSS `text-transform: uppercase` in renderer components and stylesheets. Preserve meaningful acronyms and initials.
@@ -134,7 +212,7 @@ Import shared transitions from `$lib/motion`; inspect the live motion examples i
 - Never call `window.alert`, `window.confirm`, or `window.prompt`; use the Confirm pattern.
 - Never import `svelte/motion` or `svelte/transition` outside `$lib/motion`.
 - Never use arbitrary or Tailwind-scale duration/easing utilities (`duration-300`, `ease-out`), or arbitrary background/text-color utilities; use semantic tokens.
-- Never mount `Dialog.Root` directly in a feature; use `FormDialog` or the Confirm service.
+- Never mount `Dialog.Root` directly in a feature; use `FormDialog`, `ContentDialog`, or the Confirm service.
 - Never hand-compose settings row layout from primitives; use `SettingsFieldRow` for bespoke controls, or define a schema and render `SettingsForm` for a settings section.
 
 ## Default surface choices
@@ -259,11 +337,11 @@ dynamic imports from source; do not maintain a second prose inventory.
 
 Choose the row family by purpose; do not impose one height on every row.
 
-| Family          | Height rule                                                                                                                                                                           | Title, icon, and action alignment                                                                                         |
-| --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
-| Navigation rows | Compact 28px or regular 32px, using the navigation row tokens in `app.css`; use `type-caption`.                                                                                       | Keep the title, leading icon, and trailing action on the same primary line.                                               |
-| Content rows    | Content-driven and potentially multiline. `collection/ListRow` keeps 36px compact / 48px regular minimum heights, with room to grow; its title and short metadata use `type-caption`. | Keep title and inline metadata on a shared text baseline; center icon and action slots against the content block.         |
-| Setting rows    | Content-driven label/control/description tiers, using `SettingsFieldRow`; expanded form content uses `type-body`.                                                                     | Align the label and control on the primary tier, with the description below; keep icons and actions aligned to that tier. |
+| Family          | Height rule                                                                                                                                                                           | Title, icon, and action alignment                                                                                                                                          |
+| --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Navigation rows | Compact 28px or regular 32px, using the navigation row tokens in `app.css`; use `type-caption`.                                                                                       | Keep the title, leading icon, and trailing action on the same primary line.                                                                                                |
+| Content rows    | Content-driven and potentially multiline. `collection/ListRow` keeps 36px compact / 48px regular minimum heights, with room to grow; its title and short metadata use `type-caption`. | Keep title and inline metadata on a shared text baseline. Leading and trailing icons always center on the first title line, including when subtitles or descriptions wrap. |
+| Setting rows    | Content-driven label/control/description tiers, using `SettingsFieldRow`; expanded form content uses `type-body`.                                                                     | Align the label and control on the primary tier, with the description below; keep icons and actions aligned to that tier.                                                  |
 
 The shared baseline rule is to align titles, icons, and actions within the primary row or tier;
 secondary copy must not introduce an independent title or action offset. Multiline content may
@@ -344,10 +422,11 @@ which is also part of `pnpm run lint`.
 ### Design-system ESLint guidance
 
 The `intent/*` design-system rules run at error severity. Every error names the supported replacement
-and its `/sandbox/<slug>` catalog page. `eslint-rules/design-system/baseline.json` records only scoped
-exceptions with an owner and reason; remove files as callers migrate, and never add a new violating
-file. The baseline test fails when a rule finds a file outside that checked-in set, and CI compares the
-file with the PR base revision to reject baseline additions while allowing removals.
+and its `/sandbox/<slug>` catalog page. `eslint-rules/baselines/<rule>/<source path>.json` records
+only scoped exceptions, one entry file per exempted source file with an owner and reason (and a
+`count` cap where the rule ratchets per file); delete the entry file as its caller migrates, and never
+add a new one. The baseline test fails when a rule finds a file outside that checked-in set, and CI
+compares the tree with the PR base revision to reject baseline additions while allowing removals.
 
 | Rule                                     | Replace with                                      |
 | ---------------------------------------- | ------------------------------------------------- |

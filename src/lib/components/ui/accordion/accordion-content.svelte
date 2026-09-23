@@ -7,11 +7,12 @@
   import { useSize } from '$lib/components/ui/size-context';
 
   interface Props extends HTMLAttributes<HTMLDivElement> {
+    inset?: boolean;
     class?: string;
     children?: Snippet;
   }
 
-  let { class: className, children, ...restProps }: Props = $props();
+  let { class: className, children, inset = true, ...restProps }: Props = $props();
   const density = useSize();
 </script>
 
@@ -29,6 +30,7 @@
           class={cn(
             density === 'compact' ? 'pb-2.5' : 'pb-3',
             'type-caption px-2 pt-1 text-muted-foreground',
+            !inset && 'px-0',
           )}
         >
           {@render children?.()}

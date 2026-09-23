@@ -850,7 +850,8 @@
                   oncopycapture={isolateEditEvent}
                   oncutcapture={isolateEditEvent}
                   onpastecapture={isolateEditEvent}
-                  class="inline-edit-input relative z-10 min-w-0 flex-1 truncate border-none bg-transparent {panelRow
+                  noFocusStyle
+                  class="inline-edit-input relative z-10 min-w-0 flex-1 truncate border-none bg-transparent hover:bg-transparent {panelRow
                     ? 'type-body font-normal'
                     : 'text-sm'} text-foreground outline-none! ring-0! focus:outline-none! focus:ring-0! focus-visible:outline-none! focus-visible:ring-0!"
                 />

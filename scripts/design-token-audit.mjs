@@ -121,16 +121,23 @@ function styleDirectiveDefinitions(source, parse) {
 }
 
 const styleDirectiveCandidates = [];
+const definedIn = new Map();
+
+function define(token, relative) {
+  definitions.add(token);
+  if (!definedIn.has(token)) definedIn.set(token, new Set());
+  definedIn.get(token).add(relative);
+}
 
 for (const file of files) {
   const relative = path.relative(root, file);
   const source = fs.readFileSync(file, 'utf8');
-  for (const match of source.matchAll(/(--[A-Za-z0-9_-]+)\s*:/g)) definitions.add(match[1]);
+  for (const match of source.matchAll(/(--[A-Za-z0-9_-]+)\s*:/g)) define(match[1], relative);
   for (const match of source.matchAll(/\.setProperty\(\s*(['"])(--[A-Za-z0-9_-]+)\1\s*,/g)) {
-    definitions.add(match[2]);
+    define(match[2], relative);
   }
   if (path.extname(file) === '.svelte' && source.includes('style:--')) {
-    styleDirectiveCandidates.push(source);
+    styleDirectiveCandidates.push({ relative, source });
   }
   for (const match of withoutNegativeAssertions(source).matchAll(/var\((--[A-Za-z0-9_-]+)/g)) {
     if (!usages.has(match[1])) usages.set(match[1], new Set());
@@ -151,10 +158,17 @@ for (const file of files) {
 
 if (styleDirectiveCandidates.length > 0) {
   const { parse } = await import('svelte/compiler');
-  for (const source of styleDirectiveCandidates) {
-    for (const name of styleDirectiveDefinitions(source, parse)) definitions.add(name);
+  for (const { relative, source } of styleDirectiveCandidates) {
+    for (const name of styleDirectiveDefinitions(source, parse)) define(name, relative);
   }
 }
+
+// Sidebar surfaces inherit the shared `--sidebar*` tokens; a component-scoped
+// redeclaration (stylesheet rule, inline style, style directive, setProperty) would
+// silently retheme one shell away from the rest of the app. Tests may pin a sentinel.
+const TOKEN_SOURCE = 'src/lib/styles/tokens.css';
+const sharedOnly = approved.filter((token) => token === 'sidebar' || token.startsWith('sidebar-'));
+const isTestFile = (file) => /(?:^|\/)__tests__\/|\.(?:test|spec)\.[^/]+$/.test(file);
 
 const runtimePatterns = [
   // Set by svelte-sonner on Toaster from the measured front toast height.
@@ -237,6 +251,13 @@ if (mode === 'approved') {
       failures.push(
         `src/lib/styles/tokens.css: --${token} declarations=${count}; expected exactly 1`,
       );
+  }
+  for (const token of sharedOnly) {
+    for (const file of definedIn.get(`--${token}`) ?? []) {
+      if (file !== TOKEN_SOURCE && !isTestFile(file)) {
+        failures.push(`${file}: redeclares --${token}; sidebar surfaces inherit ${TOKEN_SOURCE}`);
+      }
+    }
   }
   for (const entry of allowlist.aliases) {
     const allowedFiles = new Set(entry.allowedFiles ?? []);
