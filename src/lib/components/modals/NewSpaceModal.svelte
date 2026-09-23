@@ -86,7 +86,12 @@
     {#if initializer}
       {@render initializer()}
     {:else}
-      <CompactWorkspaceInitializer bind:this={initializerRef} bind:isExpanded autoFocus={false} oncreate={close} />
+      <CompactWorkspaceInitializer
+        bind:this={initializerRef}
+        bind:isExpanded
+        autoFocus={false}
+        oncreate={close}
+      />
     {/if}
   </div>
 </ContentDialog>

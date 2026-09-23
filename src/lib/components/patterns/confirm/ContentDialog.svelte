@@ -74,8 +74,9 @@
     {escapeKeydownBehavior}
     class="app-no-drag flex min-h-0 flex-col overflow-hidden p-0"
     onOpenAutoFocus={(event) => {
-      event.preventDefault();
-      (initialFocus ?? contentRef)?.focus();
+      if (!initialFocus) return;
+      initialFocus.focus();
+      if (initialFocus.ownerDocument.activeElement === initialFocus) event.preventDefault();
     }}
     onInteractOutside={(event) => {
       if (busy || !dismissOnInteractOutside) event.preventDefault();
