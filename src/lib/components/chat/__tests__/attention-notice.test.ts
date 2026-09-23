@@ -84,6 +84,22 @@ describe('hasMatchingAttentionNotice', () => {
   });
 
   it.each([
+    ['2026-09-23T03:00:00.123456Z', '2026-09-23T03:00:00.123457Z', false],
+    ['2026-09-23T03:00:00.000000001Z', '2026-09-23T03:00:00.000000002Z', false],
+    ['2026-09-23T03:00:00.123456Z', '2026-09-23T03:00:00.123456000Z', true],
+    ['2026-09-23T03:00:00.123456Z', '2026-09-23T05:00:00.123456+02:00', true],
+    [new Date('2026-09-23T03:00:00.123Z'), '2026-09-23T03:00:00.123456Z', false],
+    [new Date('2026-09-23T03:00:00.123Z'), '2026-09-23T03:00:00.123000Z', true],
+  ] as const)('compares full timestamp identity: %s and %s', (saved, pending, matches) => {
+    expect(
+      hasMatchingAttentionNotice([{ ...notice, timestamp: saved }], {
+        ...request,
+        timestamp: pending,
+      }),
+    ).toBe(matches);
+  });
+
+  it.each([
     { ...notice, timestamp: '2026-09-22T03:00:00Z' },
     { ...notice, timestamp: '2026-09-24T03:00:00Z' },
     { ...notice, timestamp: 'invalid' },
