@@ -34,7 +34,12 @@ test('QR dialog covers device dividers and returns focus when dismissed', async 
   await expect(dialog).toHaveCount(0);
   await expect(trigger).toBeFocused();
   await trigger.click();
-  await expect(page.getByRole('dialog')).toBeVisible();
-  await page.mouse.click(10, 10);
-  await expect(page.getByRole('dialog')).toHaveCount(0);
+  await expect(dialog).toBeVisible();
+  await expect(dialog.getByRole('button', { name: 'Close', exact: true })).toBeFocused();
+  // Visibility alone can precede the dialog's deferred outside-pointer listener.
+  // Use locator actionability (stable, receiving events) rather than a raw mouse
+  // event immediately after remounting. Keep the click outside the dialog.
+  await page.locator('[data-slot="dialog-overlay"]').click({ position: { x: 10, y: 10 } });
+  await expect(dialog).toHaveCount(0);
+  await expect(trigger).toBeFocused();
 });
