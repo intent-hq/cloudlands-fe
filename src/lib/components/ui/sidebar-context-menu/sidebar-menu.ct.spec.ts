@@ -28,6 +28,49 @@ test('right-click descriptions keep the icon and shortcut centered on the first 
   await expect(trigger).toBeFocused();
 });
 
+test('first-line measurement is atomic across popup movement and still rejects misaligned accessories', async ({
+  mount,
+  page,
+}) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await mount(SidebarMenuHarness, { props: { multiline: true } });
+  await page.getByRole('button', { name: 'Workspace', exact: true }).click({ button: 'right' });
+  const root = page.getByRole('menu', { name: 'Workspace actions' });
+  const row = root.getByRole('menuitem', { name: 'Locked', exact: true });
+  const label = row.getByText('Locked', { exact: true });
+  await expect(row).toBeVisible();
+  await page.evaluate(() => document.fonts.ready);
+  await row.scrollIntoViewIfNeeded();
+  const before = (await root.boundingBox())!;
+
+  await label.evaluate((element) => {
+    const menu = element.closest<HTMLElement>('[role="menu"]')!;
+    const original = Range.prototype.getClientRects;
+    Range.prototype.getClientRects = function () {
+      const rects = original.call(this);
+      if (element.contains(this.commonAncestorContainer)) {
+        Range.prototype.getClientRects = original;
+        // Reproduce placement moving the entire popup after the text read,
+        // without faking either the text or accessory geometry.
+        queueMicrotask(() => (menu.style.translate = '0 29px'));
+      }
+      return rects;
+    };
+  });
+  await expectMenuFirstLine(row, label);
+  expect((await root.boundingBox())!.y).not.toBe(before.y);
+
+  for (const [selector, slot] of [
+    ['[data-slot="menu-item-leading"] svg', 'menu-item-leading'],
+    ['kbd', 'KBD'],
+  ]) {
+    const accessory = row.locator(selector);
+    await accessory.evaluate((element) => element.setAttribute('style', 'translate: 0 8px'));
+    await expect(expectMenuFirstLine(row, label)).rejects.toThrow(slot);
+    await accessory.evaluate((element) => element.removeAttribute('style'));
+  }
+});
+
 async function anatomy(menu: Locator) {
   return menu.evaluate((element) => {
     const surface = getComputedStyle(element);
