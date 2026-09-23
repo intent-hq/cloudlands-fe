@@ -1431,12 +1431,17 @@
   // provider and model together, but the `selectedModel` prop can land in a
   // later flush. Until the prop matches the session model the old model is
   // stale, so neither the announcement nor the auto-fallback may act on it.
+  // A re-home onto the provider default lands with no `model` on the AgentLite
+  // row (§5.5 omits it), so an absent model on a present session means "no
+  // pinned model", and the prop must catch up to that too.
   const isAwaitingReHomedModel = $derived.by(() => {
     const snapshot = disabledProviderSnapshot;
     if (!snapshot || snapshot.agentId !== agentId || isEffectiveProviderDisabled) return false;
-    const sessionModel = $agentSession$?.model;
-    if (sessionModel === undefined) return false;
-    const sessionModelId = sessionModel === null ? '' : splitLegacyCompoundId(sessionModel).modelId;
+    const session = $agentSession$;
+    if (!session) return false;
+    const sessionModel = session.model;
+    const sessionModelId =
+      typeof sessionModel === 'string' ? splitLegacyCompoundId(sessionModel).modelId : '';
     const localModelId =
       hasExplicitModel && localModel ? splitLegacyCompoundId(localModel).modelId : '';
     return sessionModelId !== localModelId;

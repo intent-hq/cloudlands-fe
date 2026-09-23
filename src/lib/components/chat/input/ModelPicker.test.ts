@@ -3350,6 +3350,63 @@ describe('ModelPicker disabled agent provider (intent#5737)', () => {
     expect(dispatchedTypes()).not.toContain('agentSession/updateSession');
   });
 
+  it('names the provider default, not the stale model, when the re-home lands on no pinned model', async () => {
+    const { agentClient } = await import('$features/agent/agent.client');
+    const { notify } = await import('$lib/components/patterns/notify');
+    enabledProvidersMap$.set({ auggie: true, codex: false });
+    vi.mocked(getModelsForProviderForLoadingState).mockImplementation(async (providerId) => {
+      if (providerId === 'codex') {
+        return { models: [{ value: 'gpt-5-codex', label: 'GPT-5 Codex', description: '' }] };
+      }
+      if (providerId === 'auggie') {
+        return { models: [{ value: 'sonnet4.6', label: 'Sonnet 4.6', description: '' }] };
+      }
+      return { models: [] };
+    });
+    mockAgentSession$.set({
+      id: 'agent-1',
+      workspaceId: 'ws-1',
+      provider: 'codex',
+      model: 'gpt-5-codex',
+    });
+
+    const props = {
+      selectedModel: 'gpt-5-codex',
+      agentId: 'agent-1',
+      workspaceId: 'ws-1',
+      portal: false,
+    };
+    const { rerender } = render(ModelPicker, { props });
+
+    const trigger = await screen.findByRole('button');
+    await waitFor(() => {
+      expect(trigger.querySelector('[data-icon="triangle-exclamation"]')).not.toBeNull();
+    });
+
+    // The daemon re-homed onto the default provider with no pinned model: the
+    // refreshed AgentLite row carries the new provider and omits `model`
+    // (§5.5), while the `selectedModel` prop still holds the stale model.
+    mockAgentSession$.set({ id: 'agent-1', workspaceId: 'ws-1', provider: 'auggie' });
+    await tick();
+    await tick();
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(vi.mocked(notify.info)).not.toHaveBeenCalled();
+
+    await rerender({ ...props, selectedModel: undefined });
+
+    await waitFor(() => {
+      expect(vi.mocked(notify.info)).toHaveBeenCalledTimes(1);
+    });
+    const [toast] = vi.mocked(notify.info).mock.calls[0] as [string, ...unknown[]];
+    expect(toast).toMatch(/gpt-5[- ]codex/i);
+    // The "to" side is the default label, never the model the agent left.
+    expect(toast.replace(/^.*Switched to/i, '')).not.toMatch(/gpt-5[- ]codex/i);
+    expect(vi.mocked(agentClient.setModel)).not.toHaveBeenCalled();
+    await waitFor(() => {
+      expect(trigger.querySelector('[data-icon="triangle-exclamation"]')).toBeNull();
+    });
+  });
+
   it('does not announce a re-home the user picked themselves', async () => {
     const { notify } = await import('$lib/components/patterns/notify');
     enabledProvidersMap$.set({ auggie: true, codex: false });
