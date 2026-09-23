@@ -11,6 +11,7 @@ import {
   selectPanelRestoreStatusesByWorkspaceId,
   selectMostRecentAgentTab,
   selectWorkspaceHasBrowserTabs,
+  selectBrowserWorkspaceIds,
 } from './panel-layout-selectors';
 import { emptyWorkspaceState } from './panel-layout-slice';
 import type { PanelTab } from './panel-layout-types';
@@ -191,6 +192,10 @@ describe('panel layout selectors', () => {
       },
     };
 
+    expect(selectBrowserWorkspaceIds.select(state as any)).toEqual(['visible', 'mirror', 'hidden']);
+    expect(selectBrowserWorkspaceIds.select({ panelLayout: { byWorkspaceId: {} } } as any)).toEqual(
+      [],
+    );
     expect(selectWorkspaceHasBrowserTabs.select(state as any, 'none')).toBe(false);
     expect(selectWorkspaceHasBrowserTabs.select(state as any, 'visible')).toBe(true);
     expect(selectWorkspaceHasBrowserTabs.select(state as any, 'mirror')).toBe(true);

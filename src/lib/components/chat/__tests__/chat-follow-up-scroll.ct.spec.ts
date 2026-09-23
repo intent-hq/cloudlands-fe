@@ -33,8 +33,6 @@ for (const chief of [false, true]) {
       .poll(() => scroll.evaluate((node) => node.scrollHeight - node.clientHeight - node.scrollTop))
       .toBeLessThanOrEqual(1);
 
-    const before = await prompts.boundingBox();
-    const composerBefore = await composer.boundingBox();
     const message = component.locator('[data-message-id="follow-up-assistant"]');
     const prose = message.locator('[data-assistant-prose]').last();
     const label = component.getByTestId('attention-request-label');
@@ -75,6 +73,21 @@ for (const chief of [false, true]) {
     expect(reasonTypography).toEqual(proseTypography);
 
     await scroll.hover();
+    // Capture the scroll baseline after focus setup and composer layout settle.
+    // Font readiness alone does not guarantee the mounted editor has its final size.
+    await expect(component.locator('.tiptap-editor[contenteditable="true"]')).toBeVisible();
+    let previousGeometry = '';
+    let stableSamples = 0;
+    await expect
+      .poll(async () => {
+        const geometry = JSON.stringify(await composer.boundingBox());
+        stableSamples = geometry === previousGeometry ? stableSamples + 1 : 0;
+        previousGeometry = geometry;
+        return stableSamples;
+      })
+      .toBeGreaterThanOrEqual(2);
+    const before = await prompts.boundingBox();
+    const composerBefore = await composer.boundingBox();
     await page.mouse.wheel(0, -180);
     await expect
       .poll(() => scroll.evaluate((node) => node.scrollHeight - node.clientHeight - node.scrollTop))
