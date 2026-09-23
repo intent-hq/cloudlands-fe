@@ -410,6 +410,34 @@ describe('readComparisonBaseline base ref', () => {
     expect(readComparisonBaseline({ cwd, env: {} }).baseline).toEqual(fromDisk);
   });
 
+  it('reads a committed listing larger than the default 1 MiB child-process buffer', () => {
+    const cwd = makeRepo();
+    const git = (...args) =>
+      execFileSync('git', args, {
+        cwd,
+        encoding: 'utf8',
+        stdio: ['ignore', 'pipe', 'ignore'],
+        maxBuffer: 16 * 1024 * 1024,
+      });
+    const segment = 'x'.repeat(60);
+    const entries = {};
+    for (let i = 0; i < 4000; i += 1) {
+      entries[`no-raw-controls/src/${segment}/${segment}/${segment}/entry-${i}.svelte.json`] = {
+        owner: 'ui',
+        reason: 'bulk',
+      };
+    }
+    writeTree(cwd, entries);
+    git('add', '-A', '.');
+    git('commit', '-q', '-m', 'bulk');
+    expect(
+      Buffer.byteLength(git('ls-tree', '-r', '-z', 'HEAD', '--', baselinesDir)),
+    ).toBeGreaterThan(1024 * 1024);
+    const fromDisk = loadBaseline({ cwd });
+    expect(fromDisk['no-raw-controls'][0].files).toHaveLength(4000);
+    expect(readComparisonBaseline({ cwd, env: {} }).baseline).toEqual(fromDisk);
+  });
+
   it('fails loudly on an unresolvable comparison revision', () => {
     const cwd = makeRepo();
     expect(() => readComparisonBaseline({ cwd, env: { LINT_BASELINE_BASE_REF: 'nope' } })).toThrow(
