@@ -153,7 +153,9 @@
     guestCount={$bulkGuestCount$}
     openPrCount={$bulkOpenPrCount$}
     preflightReady={$bulkPreflightReady$}
-    onConfirm={() => appStore.dispatch(confirmBulkArchive())}
+    onConfirm={() => {
+      appStore.dispatch(confirmBulkArchive());
+    }}
     onCancel={() => appStore.dispatch(closeBulkArchiveConfirm())}
   >
     {#snippet body()}
@@ -179,7 +181,9 @@
     guestCount={$bulkGuestCount$}
     openPrCount={$bulkOpenPrCount$}
     preflightReady={$bulkPreflightReady$}
-    onConfirm={() => appStore.dispatch(confirmBulkDelete())}
+    onConfirm={() => {
+      appStore.dispatch(confirmBulkDelete());
+    }}
     onCancel={() => appStore.dispatch(closeBulkDeleteConfirm())}
   >
     {#snippet body()}
