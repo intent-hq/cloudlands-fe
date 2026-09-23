@@ -95,6 +95,7 @@
     "test:unit": "node scripts/check-deps-fresh.mjs && vitest run --config vitest.config.ts",
     "test:ui-invariants": "node scripts/check-deps-fresh.mjs && node scripts/ui-invariant-suites.mjs",
     "test:unit:watch": "vitest",
+    "test:loaded": "node scripts/vitest-loaded.mjs",
     "test:playwright": "playwright test",
     "test:playwright:manual:catalog": "playwright test --config=playwright.manual.config.ts test/catalog-manual-review.capture.spec.ts",
     "test:playwright:manual:baseline": "playwright test --config=playwright.manual.config.ts test/current-main-baseline.spec.ts",
