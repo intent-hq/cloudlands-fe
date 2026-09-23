@@ -17,6 +17,9 @@
  *   differs from the current one is measured against the current one.
  * - `test:unit`'s forks run with V8 Sparkplug disabled (see `vitest.config.ts`),
  *   inherited here: absolute figures are not the renderer's, the comparison is.
+ * - A tree from before `createBidirectionalOffsetMapper` existed (pre-#2740
+ *   main) is measured through both directions of its `createOffsetMapper`,
+ *   i.e. two alignments, as production derived the pair then.
  * - Under the natural clock `deadlineHit` is read off `performance.now`: the
  *   alignment learns its deadline elapsed only by a read at or past it, so a
  *   diff jsdiff itself aborted on `Date.now` counts only once a later read
@@ -32,7 +35,7 @@ import { createEditorConfig } from '$lib/utils/editor-config';
 import { CommentAnchor } from '$lib/components/tiptap/CommentAnchor';
 import { docTextOffsets } from './doc-text-offsets';
 import { TEXT_REBASE_SHAPE_NAMES, textRebaseShapes } from './text-rebase-shapes';
-import { createBidirectionalOffsetMapper } from './text-rebase';
+import * as textRebase from './text-rebase';
 import {
   BENCH_CLOCKS,
   benchShape,
@@ -42,6 +45,7 @@ import {
   type BenchRow,
   type BenchSubject,
   type InstalledClock,
+  type OffsetMapperFactory,
 } from './text-rebase-bench';
 
 declare module 'vitest' {
@@ -49,6 +53,15 @@ declare module 'vitest' {
     textRebaseBench?: BenchRow[];
   }
 }
+
+const benchedTree = textRebase as Partial<typeof textRebase>;
+const factory: OffsetMapperFactory =
+  benchedTree.createBidirectionalOffsetMapper ??
+  ((a, b) => {
+    const { createOffsetMapper } = benchedTree;
+    if (!createOffsetMapper) throw new Error('the benched tree exports no offset mapper');
+    return { aToB: createOffsetMapper(a, b), bToA: createOffsetMapper(b, a) };
+  });
 
 const repeats = parseRepeats(process.env.TEXT_REBASE_BENCH_REPEATS);
 const shapeNames = selectShapes(process.env.TEXT_REBASE_BENCH_SHAPES, TEXT_REBASE_SHAPE_NAMES);
@@ -94,12 +107,7 @@ for (const mode of BENCH_CLOCKS) {
       it(name, ({ task }) => {
         const subject = subjects.get(name);
         if (!subject) throw new Error(`shape ${name} was not projected`);
-        task.meta.textRebaseBench = benchShape(
-          createBidirectionalOffsetMapper,
-          subject,
-          clock,
-          repeats,
-        );
+        task.meta.textRebaseBench = benchShape(factory, subject, clock, repeats);
       });
     }
   });
