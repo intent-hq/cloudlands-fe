@@ -4,6 +4,20 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.177.2](https://github.com/intent-hq/cloudlands-fe/compare/v2.177.1...v2.177.2) (2026-09-23)
+
+
+### 🐛 Bug Fixes
+
+* **notes:** bound each alignment diff by edit length, not wall clock ([#2824](https://github.com/intent-hq/cloudlands-fe/issues/2824)) ([a94b23d](https://github.com/intent-hq/cloudlands-fe/commit/a94b23dd948845c540695839ece0b2b4cf2704b6))
+
+## [2.177.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.177.0...v2.177.1) (2026-09-23)
+
+
+### ⚡ Performance
+
+* **notes:** stop re-diffing plain text vs markdown on every selection change ([#2740](https://github.com/intent-hq/cloudlands-fe/issues/2740)) ([bb219c3](https://github.com/intent-hq/cloudlands-fe/commit/bb219c3e55b283f218b709a494ad5ea78f4eb3ee))
+
 ## [2.177.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.176.0...v2.177.0) (2026-09-23)
 
 
