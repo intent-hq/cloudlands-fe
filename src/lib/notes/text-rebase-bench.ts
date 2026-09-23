@@ -12,8 +12,8 @@ type BenchPhase = 'cold' | 'cached';
 
 /**
  * One row of the document the orchestrator aggregates,
- * `{ tree: "head" | "base", sha, rows: BenchRow[] }`, which
- * `vitest.text-rebase-bench.config.ts` assembles.
+ * `{ tree: "head" | "base", sha, mapperMode: MapperMode, rows: BenchRow[] }`,
+ * which `vitest.text-rebase-bench.config.ts` assembles.
  */
 export interface BenchRow {
   shape: string;
@@ -36,6 +36,39 @@ interface OffsetMapper {
   bToA(offset: number): number;
 }
 export type OffsetMapperFactory = (a: string, b: string) => OffsetMapper;
+
+/**
+ * How a benched tree builds the mapper pair: `bidirectional` through its
+ * `createBidirectionalOffsetMapper` (one alignment), `legacy-two-mapper`
+ * through two opposite `createOffsetMapper` calls, as production derived the
+ * pair before that export existed (pre-#2740 main). The two are not
+ * like-for-like: the legacy mode measures two one-way alignments.
+ */
+export type MapperMode = 'bidirectional' | 'legacy-two-mapper';
+
+/** The exports of `text-rebase.ts` the bench can build a mapper pair from; either may be missing on an old tree. */
+export interface OffsetMapperExports {
+  createBidirectionalOffsetMapper?: OffsetMapperFactory;
+  createOffsetMapper?: (a: string, b: string) => (offset: number) => number;
+}
+
+/** Picks the mapper factory a tree offers and names the mode it runs in; throws when it offers neither. */
+export function resolveOffsetMapperFactory(exports: OffsetMapperExports): {
+  mode: MapperMode;
+  factory: OffsetMapperFactory;
+} {
+  const { createBidirectionalOffsetMapper, createOffsetMapper } = exports;
+  if (createBidirectionalOffsetMapper) {
+    return { mode: 'bidirectional', factory: createBidirectionalOffsetMapper };
+  }
+  if (createOffsetMapper) {
+    return {
+      mode: 'legacy-two-mapper',
+      factory: (a, b) => ({ aToB: createOffsetMapper(a, b), bToA: createOffsetMapper(b, a) }),
+    };
+  }
+  throw new Error('the benched tree exports no offset mapper');
+}
 
 export interface BenchSubject {
   name: string;

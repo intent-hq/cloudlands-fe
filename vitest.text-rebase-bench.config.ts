@@ -3,8 +3,10 @@
  * `src/lib/notes/text-rebase-bench.runner.ts` (which `test:unit` never picks
  * up) under `vitest.config.ts`'s environment against ONE source tree and
  * writes the JSON document the bench orchestrator aggregates —
- * `{ tree, sha, rows: [{ shape, clock, phase, ms, deadlineHit }] }` — to the
- * file named by `TEXT_REBASE_BENCH_OUT`, else as the only thing on stdout.
+ * `{ tree, sha, mapperMode, rows: [{ shape, clock, phase, ms, deadlineHit }] }`
+ * (`mapperMode` is `bidirectional` or `legacy-two-mapper`, see the runner) —
+ * to the file named by `TEXT_REBASE_BENCH_OUT`, else as the only thing on
+ * stdout.
  *
  *   TEXT_REBASE_BENCH_SRC=<abs path to a checkout's src/> \
  *     pnpm vitest run --config vitest.text-rebase-bench.config.ts
@@ -94,6 +96,7 @@ class BenchReporter implements Reporter {
     reason: 'passed' | 'interrupted' | 'failed',
   ): void {
     const rows: unknown[] = [];
+    const mapperModes = new Set<string>();
     const failures = unhandledErrors.map((error) => error.message);
     for (const testModule of testModules) {
       failures.push(...testModule.errors().map((error) => error.message));
@@ -104,20 +107,29 @@ class BenchReporter implements Reporter {
             `${test.fullName}: ${result.errors.map((error) => error.message).join('; ')}`,
           );
         }
-        rows.push(...((test.meta() as { textRebaseBench?: unknown[] }).textRebaseBench ?? []));
+        const meta = test.meta() as {
+          textRebaseBench?: unknown[];
+          textRebaseBenchMapperMode?: string;
+        };
+        rows.push(...(meta.textRebaseBench ?? []));
+        if (meta.textRebaseBenchMapperMode) mapperModes.add(meta.textRebaseBenchMapperMode);
       }
+    }
+    if (mapperModes.size !== 1 && rows.length > 0) {
+      failures.push(`expected one mapper mode across the rows, got ${[...mapperModes].join(', ')}`);
     }
     if (reason !== 'passed' || failures.length > 0 || rows.length === 0) {
       const detail = failures.length > 0 ? failures.join('\n') : `${rows.length} rows`;
       process.stderr.write(`text-rebase bench: run ${reason}, no document written\n${detail}\n`);
       return;
     }
+    const [mapperMode] = mapperModes;
     const sha =
       process.env.TEXT_REBASE_BENCH_SHA ||
       execFileSync('git', ['-C', path.dirname(benchSrc), 'rev-parse', 'HEAD'], {
         encoding: 'utf8',
       }).trim();
-    const json = `${JSON.stringify({ tree: treeName, sha, rows })}\n`;
+    const json = `${JSON.stringify({ tree: treeName, sha, mapperMode, rows })}\n`;
     if (outPath) writeFileSync(outPath, json);
     else process.stdout.write(json);
   }

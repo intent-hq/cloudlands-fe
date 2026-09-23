@@ -7,6 +7,8 @@ import {
   formatHeader,
   formatMs,
   formatTable,
+  mapperModeOf,
+  mapperModeWarning,
   median,
   parseArgs,
   percentile,
@@ -26,7 +28,12 @@ const row = (
   ms,
   deadlineHit,
 });
-const document = (tree: 'head' | 'base', rows: Row[]) => ({ tree, sha: `${tree}sha`, rows });
+const document = (tree: 'head' | 'base', rows: Row[], mapperMode = 'bidirectional') => ({
+  tree,
+  sha: `${tree}sha`,
+  mapperMode,
+  rows,
+});
 
 describe('parseArgs', () => {
   it('requires --base and applies the defaults', () => {
@@ -204,17 +211,77 @@ describe('formatting', () => {
     expect(new Set(lines.map((line) => line.length)).size).toBe(1);
   });
 
-  it('the header names both trees, the run shape and the caveat', () => {
+  it('the header names both trees with their mapper modes, the run shape and the caveat', () => {
     const header = formatHeader({
       head: 'working tree (abc)',
+      headMode: 'bidirectional',
       base: 'origin/main (def)',
+      baseMode: 'bidirectional',
       runs: 5,
       repeats: 5,
       node: 'v24.0.0',
     });
-    expect(header).toContain('head working tree (abc) vs base origin/main (def)');
+    expect(header).toContain(
+      'head working tree (abc) [bidirectional] vs base origin/main (def) [bidirectional]',
+    );
     expect(header).toContain('5 paired cold process(es) per tree');
     expect(header).toContain('shapes: all; node v24.0.0');
     expect(header).toContain('resolve from the current node_modules for BOTH trees');
+    expect(header).not.toContain('WARNING');
+  });
+
+  it('the header warns once when the mapper modes differ, naming the two-alignment tree', () => {
+    const header = formatHeader({
+      head: 'working tree (abc)',
+      headMode: 'bidirectional',
+      base: '914c00f3f (914c00f3f123)',
+      baseMode: 'legacy-two-mapper',
+      runs: 1,
+      repeats: 5,
+      shapes: 'mixed',
+      node: 'v24.0.0',
+    });
+    expect(header).toContain(
+      'head working tree (abc) [bidirectional] vs base 914c00f3f (914c00f3f123) [legacy-two-mapper]',
+    );
+    const warnings = header.split('\n').filter((line: string) => line.startsWith('WARNING'));
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]).toContain('base measures two one-way alignments');
+    expect(warnings[0]).toContain('not comparable like-for-like');
+  });
+});
+
+describe('mapperModeWarning', () => {
+  it('is silent for equal modes and names whichever side is legacy', () => {
+    expect(
+      mapperModeWarning({ headMode: 'legacy-two-mapper', baseMode: 'legacy-two-mapper' }),
+    ).toBeNull();
+    expect(
+      mapperModeWarning({ headMode: 'legacy-two-mapper', baseMode: 'bidirectional' }),
+    ).toContain('head measures two one-way alignments');
+  });
+});
+
+describe('mapperModeOf', () => {
+  it('returns the one mode the documents agree on', () => {
+    expect(
+      mapperModeOf('base', [
+        document('base', [], 'legacy-two-mapper'),
+        document('base', [], 'legacy-two-mapper'),
+      ]),
+    ).toBe('legacy-two-mapper');
+  });
+
+  it('rejects disagreeing, missing and absent documents', () => {
+    expect(() =>
+      mapperModeOf('head', [document('head', []), document('head', [], 'legacy-two-mapper')]),
+    ).toThrow('head documents report inconsistent mapperMode: bidirectional, legacy-two-mapper');
+    expect(() => mapperModeOf('head', [{ tree: 'head', sha: 'x', rows: [] }])).toThrow(
+      'head documents report no mapperMode',
+    );
+    expect(() =>
+      mapperModeOf('head', [document('head', []), { tree: 'head', sha: 'x', rows: [] }]),
+    ).toThrow('head documents report inconsistent mapperMode: bidirectional');
+    expect(() => mapperModeOf('base', [])).toThrow('base documents report no mapperMode');
   });
 });

@@ -181,10 +181,35 @@ export function formatTable(summary) {
   ].join('\n');
 }
 
-export function formatHeader({ head, base, runs, repeats, shapes, node }) {
-  return [
-    `text-rebase bench: head ${head} vs base ${base}`,
+/**
+ * The one `mapperMode` every document of a tree reports (`bidirectional` |
+ * `legacy-two-mapper`, emitted by the runner's reporter); throws when the
+ * documents disagree or one carries none.
+ */
+export function mapperModeOf(tree, documents) {
+  const modes = new Set(documents.map((document) => document.mapperMode));
+  if (modes.size !== 1 || modes.has(undefined)) {
+    const named = [...modes].filter((mode) => mode !== undefined);
+    const problem = named.length === 0 ? 'no' : 'inconsistent';
+    throw new Error(`${tree} documents report ${problem} mapperMode: ${named.join(', ') || '-'}`);
+  }
+  return [...modes][0];
+}
+
+/** The warning printed under the header when the two trees do not build the pair the same way, else `null`. */
+export function mapperModeWarning({ headMode, baseMode }) {
+  if (headMode === baseMode) return null;
+  const legacy = baseMode === 'legacy-two-mapper' ? 'base' : 'head';
+  return `WARNING: mapper modes differ (head ${headMode}, base ${baseMode}): ${legacy} measures two one-way alignments (createOffsetMapper each way), the other one bidirectional alignment, so the rows are not comparable like-for-like.`;
+}
+
+export function formatHeader({ head, headMode, base, baseMode, runs, repeats, shapes, node }) {
+  const lines = [
+    `text-rebase bench: head ${head} [${headMode}] vs base ${base} [${baseMode}]`,
     `${runs} paired cold process(es) per tree, interleaved head/base; ${repeats} cached call(s) per shape per process; shapes: ${shapes ?? 'all'}; node ${node}`,
     'Bare packages (diff, marked, ...) resolve from the current node_modules for BOTH trees; the projection is the current tree\u2019s.',
-  ].join('\n');
+  ];
+  const warning = mapperModeWarning({ headMode, baseMode });
+  if (warning) lines.push(warning);
+  return lines.join('\n');
 }

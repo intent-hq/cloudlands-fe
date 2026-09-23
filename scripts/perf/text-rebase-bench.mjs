@@ -20,6 +20,7 @@ import {
   aggregate,
   formatHeader,
   formatTable,
+  mapperModeOf,
   parseArgs,
 } from './text-rebase-bench-lib.mjs';
 
@@ -178,7 +179,9 @@ async function main(argv) {
   const summary = aggregate(documents.head, documents.base);
   const meta = {
     head: trees.head.label,
+    headMode: mapperModeOf('head', documents.head),
     base: trees.base.label,
+    baseMode: mapperModeOf('base', documents.base),
     runs: options.runs,
     repeats: options.repeats,
     shapes: options.shapes?.join(','),

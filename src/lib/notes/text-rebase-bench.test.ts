@@ -7,6 +7,7 @@ import {
   installClock,
   median,
   parseRepeats,
+  resolveOffsetMapperFactory,
   selectShapes,
   timeMapping,
   type BenchSubject,
@@ -51,6 +52,39 @@ describe('median', () => {
   });
   it('rejects no values', () => {
     expect(() => median([])).toThrow(/no values/);
+  });
+});
+
+describe('resolveOffsetMapperFactory', () => {
+  it('prefers the bidirectional export and names its mode', () => {
+    const { factory: bidirectional } = recordingFactory();
+    const createOffsetMapper = () => () => 0;
+    const resolved = resolveOffsetMapperFactory({
+      createBidirectionalOffsetMapper: bidirectional,
+      createOffsetMapper,
+    });
+    expect(resolved).toEqual({ mode: 'bidirectional', factory: bidirectional });
+  });
+
+  it('falls back to two opposite one-way mappers on a tree without the bidirectional export', () => {
+    const calls: Array<[string, string]> = [];
+    const createOffsetMapper = (a: string, b: string) => {
+      calls.push([a, b]);
+      return (offset: number) => offset + a.length * 100 + b.length;
+    };
+    const resolved = resolveOffsetMapperFactory({ createOffsetMapper });
+    expect(resolved.mode).toBe('legacy-two-mapper');
+    const mapper = resolved.factory('ab', 'xyz');
+    expect(calls).toEqual([
+      ['ab', 'xyz'],
+      ['xyz', 'ab'],
+    ]);
+    expect(mapper.aToB(1)).toBe(1 + 200 + 3);
+    expect(mapper.bToA(1)).toBe(1 + 300 + 2);
+  });
+
+  it('rejects a tree that exports neither', () => {
+    expect(() => resolveOffsetMapperFactory({})).toThrow(/exports no offset mapper/);
   });
 });
 

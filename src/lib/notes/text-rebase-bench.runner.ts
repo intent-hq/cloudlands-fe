@@ -19,7 +19,10 @@
  *   inherited here: absolute figures are not the renderer's, the comparison is.
  * - A tree from before `createBidirectionalOffsetMapper` existed (pre-#2740
  *   main) is measured through both directions of its `createOffsetMapper`,
- *   i.e. two alignments, as production derived the pair then.
+ *   i.e. two alignments, as production derived the pair then. Which of the
+ *   two the tree got is its `mapperMode` (`resolveOffsetMapperFactory`),
+ *   decided once per tree and put on every row's `task.meta` so the
+ *   reporter can emit it as a top-level field of the document.
  * - Under the natural clock `deadlineHit` is read off `performance.now`: the
  *   alignment learns its deadline elapsed only by a read at or past it, so a
  *   diff jsdiff itself aborted on `Date.now` counts only once a later read
@@ -41,27 +44,24 @@ import {
   benchShape,
   installClock,
   parseRepeats,
+  resolveOffsetMapperFactory,
   selectShapes,
   type BenchRow,
   type BenchSubject,
   type InstalledClock,
-  type OffsetMapperFactory,
+  type MapperMode,
 } from './text-rebase-bench';
 
 declare module 'vitest' {
   interface TaskMeta {
     textRebaseBench?: BenchRow[];
+    textRebaseBenchMapperMode?: MapperMode;
   }
 }
 
-const benchedTree = textRebase as Partial<typeof textRebase>;
-const factory: OffsetMapperFactory =
-  benchedTree.createBidirectionalOffsetMapper ??
-  ((a, b) => {
-    const { createOffsetMapper } = benchedTree;
-    if (!createOffsetMapper) throw new Error('the benched tree exports no offset mapper');
-    return { aToB: createOffsetMapper(a, b), bToA: createOffsetMapper(b, a) };
-  });
+const { mode: mapperMode, factory } = resolveOffsetMapperFactory(
+  textRebase as Partial<typeof textRebase>,
+);
 
 const repeats = parseRepeats(process.env.TEXT_REBASE_BENCH_REPEATS);
 const shapeNames = selectShapes(process.env.TEXT_REBASE_BENCH_SHAPES, TEXT_REBASE_SHAPE_NAMES);
@@ -107,6 +107,7 @@ for (const mode of BENCH_CLOCKS) {
       it(name, ({ task }) => {
         const subject = subjects.get(name);
         if (!subject) throw new Error(`shape ${name} was not projected`);
+        task.meta.textRebaseBenchMapperMode = mapperMode;
         task.meta.textRebaseBench = benchShape(factory, subject, clock, repeats);
       });
     }
