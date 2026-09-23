@@ -202,7 +202,7 @@
     class="app-no-drag max-w-md gap-0 overflow-hidden rounded-lg p-0"
   >
     <!-- Header -->
-    <div class="px-6 py-4 border-b border-border flex items-center justify-between">
+    <div class="px-6 py-4 flex items-center justify-between">
       <div class="flex items-center gap-3">
         <div class="text-danger">
           <Fa icon={faExclamationTriangle} size="lg" />

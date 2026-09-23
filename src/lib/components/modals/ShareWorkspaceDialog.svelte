@@ -523,7 +523,7 @@
       tabindex="-1"
       data-testid="share-workspace-dialog"
     >
-      <div class="px-6 py-4 border-b border-border flex items-center justify-between">
+      <div class="px-6 py-4 flex items-center justify-between">
         <h2 id="share-workspace-title" class="text-lg font-semibold">
           {m.workspace_share_dialog_title()}
         </h2>
