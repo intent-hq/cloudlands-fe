@@ -301,8 +301,9 @@ describe('baseline directory store', () => {
 
 describe('readComparisonBaseline base ref', () => {
   // A throwaway repo whose two commits differ in the baseline tree, so which ref the
-  // env selects is observable through the parsed contents.
-  function makeRepo({ legacyBase = false } = {}) {
+  // env selects is observable through the parsed contents. `bareBase` commits the base
+  // revision without any `eslint-rules/baselines/` tree.
+  function makeRepo({ bareBase = false } = {}) {
     const cwd = makeTmpDir();
     const git = (...args) =>
       execFileSync('git', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
@@ -315,20 +316,7 @@ describe('readComparisonBaseline base ref', () => {
       path.join(cwd, 'eslint-rules/design-system/index.js'),
       "export const designSystemRules = {\n  'no-raw-controls': noRawControls,\n};\n",
     );
-    if (legacyBase) {
-      fs.writeFileSync(
-        path.join(cwd, 'eslint-rules/design-system/baseline.json'),
-        JSON.stringify({
-          'no-raw-controls': [{ owner: 'ui', reason: 'legacy', files: ['src/A.svelte'] }],
-        }),
-      );
-      fs.writeFileSync(
-        path.join(cwd, 'eslint-rules/no-source-literal-assertions-in-tests.baseline.json'),
-        JSON.stringify({ 'src/x.test.ts': 2 }),
-      );
-    } else {
-      writeTree(cwd, entry('base'));
-    }
+    if (!bareBase) writeTree(cwd, entry('base'));
     git('add', '.');
     git('commit', '-q', '-m', 'base');
     git('branch', 'base');
@@ -375,21 +363,18 @@ describe('readComparisonBaseline base ref', () => {
     });
   });
 
-  it('falls back to the single-document baselines at a pre-migration revision', () => {
-    const cwd = makeRepo({ legacyBase: true });
-    expect(readComparisonBaseline({ cwd, env: { LINT_BASELINE_BASE_REF: 'base' } })).toMatchObject({
-      baseline: {
-        ...expected('legacy'),
-        'no-source-literal-assertions-in-tests': [{ counts: { 'src/x.test.ts': 2 } }],
-      },
+  it('treats a base revision without a baseline tree as zero debt', () => {
+    const cwd = makeRepo({ bareBase: true });
+    const base = readComparisonBaseline({ cwd, env: { LINT_BASELINE_BASE_REF: 'base' } });
+    expect(base).toEqual({ ref: 'base', baseline: {}, rules: ['no-raw-controls'] });
+    const headBaseline = loadBaseline({ cwd });
+    expect(headBaseline).toEqual(expected('head'));
+    expect(findBaselineGrowth(base.baseline, headBaseline)).toEqual({
+      'no-raw-controls': ['src/A.svelte'],
     });
-    expect(
-      readComparisonBaseline({
-        cwd,
-        env: { LINT_BASELINE_BASE_REF: 'base' },
-        rules: ['no-raw-controls'],
-      }).baseline,
-    ).toEqual(expected('legacy'));
+    expect(() => assertBaselineOnlyShrinks(base.baseline, headBaseline)).toThrow(
+      'Baseline entries and counts may only shrink',
+    );
   });
 
   it('preserves source paths containing tabs when reading the committed tree', () => {
