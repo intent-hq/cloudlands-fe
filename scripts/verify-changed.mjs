@@ -361,7 +361,7 @@ function survivingUnitTestDirectory(file, root, exclude) {
 
 function isLintable(file) {
   if (!LINT_EXTENSIONS.has(extname(file))) return false;
-  return !/^(?:scripts|e2e|test)\//.test(file) && !file.endsWith('.cjs');
+  return !/^(?:e2e|test)\//.test(file) && !file.endsWith('.cjs');
 }
 
 function isKnownNonCode(file) {
