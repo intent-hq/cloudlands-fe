@@ -575,9 +575,11 @@
         <Menu.SubTrigger class="w-full cursor-pointer text-xs px-3 py-1.5">
           {detailsStatusLabel}
         </Menu.SubTrigger>
+        <!-- This details panel aligns to the whole menu, not the triggering row. -->
         <Menu.SubContent
           side="left"
           align="start"
+          alignOffset={0}
           customAnchor={menuAnchor}
           collisionPadding={8}
           class="min-w-56 w-max max-w-80 px-0"
@@ -1142,11 +1144,9 @@
   remains after "continue anyway" dismisses this.
 -->
 {#if $protocolMismatchModal$}
-  <Portal target="body" zIndex={100}>
-    <ProtocolMismatchModal
-      event={$protocolMismatchModal$}
-      onOpenLocal={openLocalFromProtocolMismatch}
-      onContinue={continueWithProtocolMismatch}
-    />
-  </Portal>
+  <ProtocolMismatchModal
+    event={$protocolMismatchModal$}
+    onOpenLocal={openLocalFromProtocolMismatch}
+    onContinue={continueWithProtocolMismatch}
+  />
 {/if}

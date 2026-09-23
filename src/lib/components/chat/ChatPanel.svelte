@@ -372,6 +372,8 @@
   import { canChangeAgentProvider as resolveCanChangeAgentProvider } from './provider-lock';
   import ModelChangeNotice from './ModelChangeNotice.svelte';
   import { getModelChangeNotice } from './model-change-notice';
+  import ProviderRehomedNotice from './ProviderRehomedNotice.svelte';
+  import { getProviderRehomedNotice } from './rehome-notice';
   import {
     hasOperationalAssistantMessageBoundary,
     hasOperationalAssistantTurnBoundary,
@@ -3484,13 +3486,22 @@
     return transcriptStructure.assistantTurnNumberById.get(messageId) ?? 0;
   }
 
+  // A turn notice the transcript renders (mirrors the notice rows below).
+  function isRenderedTurnNotice(notice: AgentMessage): boolean {
+    return Boolean(getModelChangeNotice(notice) || getProviderRehomedNotice(notice));
+  }
+
   // Compute the turn structure and both virtualization/search indexes in one
   // transcript pass rather than regrouping each date bucket for every consumer.
   const conversationTurnIndex = $derived(indexConversationTurns(groupedMessages));
   const hydrationMessages = $derived.by((): HydrationMessage[] =>
-    groupedMessages
-      .flatMap((group) => group.messages)
-      .filter((message) => message.role === 'user' || message.role === 'assistant')
+    conversationTurnIndex.groups
+      .flatMap(({ turns }) =>
+        turns.flatMap((turn) => [
+          ...(turn.userMessage ? [turn.userMessage] : []),
+          ...turn.bodyMessages,
+        ]),
+      )
       .map(({ id, role }) => ({ id, role })),
   );
 
@@ -4220,7 +4231,7 @@
   }
 
   // The controller order is the composed history + live-tail chronology, not
-  // turn position. User and assistant rows both register with the shared
+  // turn position. User, assistant, and inline system rows register with the shared
   // observer and follow the asymmetric displayport frontier; user rows never
   // dehydrate once hydrated (see message-hydration-policy.ts).
   $effect(() => {
@@ -5339,6 +5350,25 @@
     handleSend(prompt);
   }
 
+  function isSuggestedPromptShortcutVisible(index: number): boolean {
+    const hint = scrollContainer?.querySelectorAll<HTMLElement>('[data-suggested-prompt-hint]')[
+      index
+    ];
+    if (!scrollContainer || !hint) return false;
+    // Read the targeted hint at keypress time: scroll/resize can precede an
+    // IntersectionObserver delivery, and only part of the prompt list may be visible.
+    const target = hint.getBoundingClientRect();
+    const clip = scrollContainer.getBoundingClientRect();
+    return (
+      target.width > 0 &&
+      target.height > 0 &&
+      target.top >= Math.max(clip.top, 0) &&
+      target.bottom <= Math.min(clip.bottom, window.innerHeight) &&
+      target.left >= Math.max(clip.left, 0) &&
+      target.right <= Math.min(clip.right, window.innerWidth)
+    );
+  }
+
   // Handle editing a suggested prompt - loads into input without sending
   async function handleEditSuggestedPrompt(prompt: string) {
     if (!isActive) return;
@@ -5545,7 +5575,7 @@
         const hasModifier = isMac
           ? e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey // Ctrl on Mac
           : e.altKey && !e.metaKey && !e.ctrlKey && !e.shiftKey; // Alt on Win/Linux
-        if (hasModifier) {
+        if (hasModifier && isSuggestedPromptShortcutVisible(promptIndex)) {
           e.preventDefault();
           const prompt = suggestedPrompts[promptIndex];
           handleSelectSuggestedPrompt(prompt);
@@ -6214,8 +6244,8 @@
                     `group-${indexedGroup.group.groupKey ?? groupIndex}-turn-${turnIndex}`}
                   <!-- "Last" means last RENDERED turn (globalTurnIndexMap indexes the
                        turns groupIntoTurns produced), not the last raw date group — a
-                       trailing group holding only skipped rows (system/error, non-model-
-                       change notices) renders no turn and must not count as a follower. -->
+                       trailing group holding only unrecognized system/error rows
+                       renders no turn and must not count as a follower. -->
                   {@const isEventNotification = isEventWakeMessage(turn.userMessage ?? undefined)}
                   {@const nextTurn =
                     turns[turnIndex + 1] ?? conversationTurnIndex.groups[groupIndex + 1]?.turns[0]}
@@ -6241,9 +6271,9 @@
                     })}
                   {@const hasTurnBody = hasVisibleTurnBody({
                     assistantMessages: turn.assistantMessages,
-                    hasVisibleNotice: turn.noticeMessages.some((notice) =>
-                      Boolean(getModelChangeNotice(notice)),
-                    ),
+                    hasVisibleNotice:
+                      turn.bodyMessages.some((message) => message.role === 'system') ||
+                      turn.noticeMessages.some((notice) => isRenderedTurnNotice(notice)),
                     hasPendingStatus:
                       showPendingAssistantStatus ||
                       (groupIndex === groupedMessages.length - 1 &&
@@ -6296,8 +6326,8 @@
                        here — if it is the anchor, the divider renders at the turn
                        boundary (previously it rendered nowhere). -->
                   {@const turnLastRenderedMessageId =
-                    turn.assistantMessages[turn.assistantMessages.length - 1]?.id ??
-                    turn.noticeMessages.findLast((notice) => getModelChangeNotice(notice))?.id ??
+                    turn.bodyMessages[turn.bodyMessages.length - 1]?.id ??
+                    turn.noticeMessages.findLast((notice) => isRenderedTurnNotice(notice))?.id ??
                     turn.userMessage?.id ??
                     null}
                   {@const dividerAtTurnBoundary = dividerDefersToTurnBoundary(
@@ -6415,13 +6445,22 @@
                       {@render newMessagesDividerAfter(message.id, dividerAtTurnBoundary)}
                     {/if}
 
-                    <!-- Model-change notices (daemon-persisted, after the user row, before assistant output) -->
+                    <!-- Model-change and provider re-home notices (daemon-persisted, after the user row, before assistant output) -->
                     {#each turn.noticeMessages as noticeMessage (noticeMessage.id)}
                       {@const notice = getModelChangeNotice(noticeMessage)}
+                      {@const rehomeNotice = getProviderRehomedNotice(noticeMessage)}
                       {#if notice}
                         <div data-message-id={noticeMessage.id} class="px-2">
                           <ModelChangeNotice
                             {notice}
+                            fallbackText={extractAllContent(noticeMessage) || undefined}
+                          />
+                        </div>
+                        {@render newMessagesDividerAfter(noticeMessage.id, dividerAtTurnBoundary)}
+                      {:else if rehomeNotice}
+                        <div data-message-id={noticeMessage.id} class="px-2">
+                          <ProviderRehomedNotice
+                            notice={rehomeNotice}
                             fallbackText={extractAllContent(noticeMessage) || undefined}
                           />
                         </div>
@@ -6458,23 +6497,25 @@
                       </div>
                     {/if}
 
-                    <!-- Assistant messages -->
+                    <!-- Assistant output and historical notices in transcript order -->
                     <!-- PERF: Key by message.id for efficient updates during streaming -->
-                    {#each turn.assistantMessages as message, assistantIndex (message.id)}
+                    {#each turn.bodyMessages as message, bodyIndex (message.id)}
                       {@const isLastTurn =
                         groupIndex === groupedMessages.length - 1 && turnIndex === turns.length - 1}
                       {@const isLastAssistant =
-                        assistantIndex === turn.assistantMessages.length - 1}
+                        message.role === 'assistant' &&
+                        message.id ===
+                          turn.assistantMessages[turn.assistantMessages.length - 1]?.id}
                       {@const isLastMessage = isLastTurn && isLastAssistant}
                       {@const isCurrentlyStreaming = isLastMessage && $agentSessionIsStreaming$}
                       {@const compactPreviousMessageBoundary =
                         hasOperationalAssistantMessageBoundary(
-                          turn.assistantMessages[assistantIndex - 1],
+                          turn.bodyMessages[bodyIndex - 1],
                           message,
                         )}
                       {@const compactNextMessageBoundary = hasOperationalAssistantMessageBoundary(
                         message,
-                        turn.assistantMessages[assistantIndex + 1],
+                        turn.bodyMessages[bodyIndex + 1],
                       )}
                       {@const turnNumber = getMessageTurnNumber(message.id)}
                       {@const globalIndex = getMessageIndex(message.id)}
@@ -6490,7 +6531,7 @@
                         {#snippet children()}
                           <div
                             data-message-id={message.id}
-                            data-message-role="assistant"
+                            data-message-role={message.role}
                             data-message-index={globalIndex}
                             data-turn-number={turnNumber}
                             class="message-nav-target"
@@ -6506,11 +6547,11 @@
                               ownPrincipalId={$presenceOwnPrincipalId$}
                               isStreaming={isCurrentlyStreaming}
                               isLastConversationMessage={isLastMessage}
-                              onEditSubmit={isRetiredSession
+                              onEditSubmit={isRetiredSession || message.role !== 'assistant'
                                 ? undefined
                                 : (newText, model, blocks) =>
                                     handleEditMessage(message.id, newText, model, blocks)}
-                              onRegenerate={isRetiredSession
+                              onRegenerate={isRetiredSession || message.role !== 'assistant'
                                 ? undefined
                                 : () => handleRegenerateFromMessage(message.id)}
                               backendSessionId={auggieSessionId}
@@ -6548,27 +6589,29 @@
                             </div>
                           {/if}
                           <!-- Show file changes after each assistant turn -->
-                          <div
-                            class="w-full"
-                            class:mb-1={!compactNextMessageBoundary &&
-                              !(isLastAssistant && compactOperationalTurnBoundary) &&
-                              !(isLastAssistant && (nextTurnHasUserMessage || nextIsChatCard))}
-                            data-after-assistant-message={message.id}
-                          >
-                            <ChatFileChangesSummary
-                              workspaceId={workspace.id}
-                              {message}
-                              isStreaming={isCurrentlyStreaming}
-                              {agentId}
-                              {turnNumber}
-                            />
-                          </div>
-                          <!-- Show auto-commit status after the last assistant message of each turn -->
-                          {#if isLastAssistant}
-                            <AutoCommitStatus
-                              status={autoCommitStatuses[globalTurnIndexMap.get(turnKey) ?? 0]}
-                              workspaceId={workspace.id}
-                            />
+                          {#if message.role === 'assistant'}
+                            <div
+                              class="w-full"
+                              class:mb-1={!compactNextMessageBoundary &&
+                                !(isLastAssistant && compactOperationalTurnBoundary) &&
+                                !(isLastAssistant && (nextTurnHasUserMessage || nextIsChatCard))}
+                              data-after-assistant-message={message.id}
+                            >
+                              <ChatFileChangesSummary
+                                workspaceId={workspace.id}
+                                {message}
+                                isStreaming={isCurrentlyStreaming}
+                                {agentId}
+                                {turnNumber}
+                              />
+                            </div>
+                            <!-- Show auto-commit status after the last assistant message of each turn -->
+                            {#if isLastAssistant}
+                              <AutoCommitStatus
+                                status={autoCommitStatuses[globalTurnIndexMap.get(turnKey) ?? 0]}
+                                workspaceId={workspace.id}
+                              />
+                            {/if}
                           {/if}
                         {/snippet}
                       </LazyTurn>
@@ -6661,6 +6704,20 @@
 
         {#if workspace?.id && agentId}
           <AttentionRequestBanner {agentId} />
+        {/if}
+
+        <!-- Follow-up actions belong to the response and scroll with the transcript. -->
+        {#if !isRetiredSession && suggestedPrompts.length > 0 && !deferTranscriptReveal}
+          <div class="mt-6 w-full">
+            <SuggestedPrompts
+              prompts={suggestedPrompts}
+              onSelect={handleSelectSuggestedPrompt}
+              onEdit={handleEditSuggestedPrompt}
+              compact={isCompactMode}
+              showShortcutHints={isChatFocused}
+              workspaceId={workspace?.id}
+            />
+          </div>
         {/if}
 
         <!-- The utility stack owns short-chat surplus through its auto margin.
@@ -6814,23 +6871,6 @@
                 {/if}
               {/snippet}
               {#if !pendingQuestionRecoveryLoading || pendingQuestions || questionWizardCollapsed}
-                <!-- Show suggested prompts for the last message only, when not streaming. -->
-                {#if suggestedPrompts.length > 0 && !deferTranscriptReveal}
-                  <div
-                    class="w-full {isCompactMode ? 'pb-2' : 'pb-3'} {isChiefWorkspace
-                      ? 'px-0'
-                      : COMPOSER_INSET_CLASS}"
-                  >
-                    <SuggestedPrompts
-                      prompts={suggestedPrompts}
-                      onSelect={handleSelectSuggestedPrompt}
-                      onEdit={handleEditSuggestedPrompt}
-                      compact={isCompactMode}
-                      showShortcutHints={isChatFocused}
-                      workspaceId={workspace?.id}
-                    />
-                  </div>
-                {/if}
                 {#if draftManager.gateVisible}
                   <ChatDraftLoadingGate />
                 {/if}

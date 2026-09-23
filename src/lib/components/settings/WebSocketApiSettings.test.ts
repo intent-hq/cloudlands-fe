@@ -214,7 +214,16 @@ describe('WebSocketApiSettings', () => {
         expect(screen.getByRole('dialog')).toBeTruthy();
         await vi.advanceTimersByTimeAsync(10_000);
         if (method === 'button') {
-          await fireEvent.click(screen.getByRole('button', { name: m.settings_wsApi_close() }));
+          await fireEvent.click(screen.getByText(m.settings_wsApi_close(), { selector: 'span' }));
+        } else if (method === 'backdrop') {
+          await vi.advanceTimersByTimeAsync(20);
+          await fireEvent.pointerDown(document.querySelector('[data-slot="dialog-overlay"]')!, {
+            button: 0,
+            pointerType: 'mouse',
+            clientX: 1,
+            clientY: 1,
+          });
+          await vi.advanceTimersByTimeAsync(20);
         } else {
           await fireEvent.keyDown(screen.getByRole('dialog'), { key: 'Escape' });
         }

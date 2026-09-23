@@ -34,8 +34,8 @@
     faEyeSlash,
     faQrcode,
   } from '@fortawesome/free-solid-svg-icons';
+  import { ContentDialog } from '$lib/components/patterns/confirm';
   import { notify } from '$lib/components/patterns/notify';
-  import { FormDialog } from '$lib/components/patterns/confirm';
   import {
     SettingsDisclosure,
     SettingsFieldRow,
@@ -952,24 +952,24 @@
   {/if}
 </div>
 
-<FormDialog
-  bind:open={showQr}
-  title={m.settings_wsApi_mobilePairing_label()}
-  submitLabel={m.settings_wsApi_close()}
-  showCancel={false}
-  showCloseButton={false}
-  class="max-w-xs"
-  onSubmit={handleCloseQr}
-  onCancel={handleCloseQr}
->
-  {#if qrDataUrl}
-    <img
-      src={qrDataUrl}
-      alt={m.settings_wsApi_qrImageAlt()}
-      class="w-full h-auto rounded-lg"
-      width="544"
-      height="544"
-    />
-  {/if}
-  <p class="type-body text-subtle">{m.settings_wsApi_scanDescription()}</p>
-</FormDialog>
+{#if showQr}
+  <ContentDialog
+    open
+    title={m.settings_wsApi_mobilePairing_label()}
+    description={m.settings_wsApi_scanDescription()}
+    size="sm"
+    closeLabel={m.settings_wsApi_close()}
+    onClose={handleCloseQr}
+  >
+    {#if qrDataUrl}<img
+        src={qrDataUrl}
+        alt={m.settings_wsApi_qrImageAlt()}
+        class="h-auto w-full rounded-lg"
+        width="544"
+        height="544"
+      />{/if}
+    {#snippet footer()}<Button variant="ghost" onclick={handleCloseQr}
+        >{m.settings_wsApi_close()}</Button
+      >{/snippet}
+  </ContentDialog>
+{/if}

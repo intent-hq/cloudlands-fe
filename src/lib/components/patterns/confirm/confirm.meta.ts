@@ -10,6 +10,7 @@ export const confirmMetadata = parsePatternMetadata({
     'ConfirmRequestView',
     'DestructiveConfirm',
     'FormDialog',
+    'ContentDialog',
     'alert',
     'confirm',
     'prompt',
@@ -19,6 +20,7 @@ export const confirmMetadata = parsePatternMetadata({
   useWhen: [
     'Blocking an action until the user confirms, enters one value, or acknowledges a message.',
     'Building a dialog whose content is a form with standard actions.',
+    'Showing a selection, progress/result, or reading dialog with shared layout and focus ownership.',
   ],
   dontUseWhen: [
     'Reporting non-blocking status; use the notification service instead.',

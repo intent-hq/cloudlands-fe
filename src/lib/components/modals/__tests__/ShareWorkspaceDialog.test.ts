@@ -787,12 +787,13 @@ describe('ShareWorkspaceDialog — invite an existing GitHub user', () => {
 });
 
 describe('ShareWorkspaceDialog — dismissal', () => {
-  it('closes on Escape and on the close button', async () => {
+  it.each(['Escape', 'close button'])('closes once using %s', async (method) => {
     const onClose = vi.fn();
     renderDialog({ onClose });
 
-    await fireEvent.keyDown(screen.getByTestId('share-workspace-dialog'), { key: 'Escape' });
-    await fireEvent.click(screen.getByRole('button', { name: 'Close' }));
-    expect(onClose).toHaveBeenCalledTimes(2);
+    if (method === 'Escape')
+      await fireEvent.keyDown(screen.getByTestId('share-workspace-dialog'), { key: 'Escape' });
+    else await fireEvent.click(screen.getByRole('button', { name: 'Close' }));
+    expect(onClose).toHaveBeenCalledOnce();
   });
 });

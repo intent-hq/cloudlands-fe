@@ -127,6 +127,7 @@ describe('B2 caller metadata regression', () => {
         'src/lib/component-catalog/CatalogControls.svelte',
         'src/lib/component-catalog/renderers/BasicCatalogPreview.svelte',
         'src/lib/components/patterns/settings/custom-controls.ts',
+        'src/lib/components/workspace/initializer/AddRemoteSetupModal.svelte',
         'src/routes/(app)/settings/+page.svelte',
       ],
     };

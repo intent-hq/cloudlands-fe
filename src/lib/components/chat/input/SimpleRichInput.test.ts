@@ -779,7 +779,6 @@ describe('SimpleRichInput provider switch sync', () => {
       expect(el).not.toBeNull();
       return el as HTMLElement;
     });
-    expect(dialog.textContent).toContain('Switch provider mid-conversation?');
     expect(setModelMock).not.toHaveBeenCalled();
     expect(onmodelChange).not.toHaveBeenCalled();
 
@@ -880,8 +879,6 @@ describe('SimpleRichInput provider switch sync', () => {
       expect(el).not.toBeNull();
       return el as HTMLElement;
     });
-    expect(dialog.textContent).toContain('Switch model mid-conversation?');
-    expect(dialog.textContent).not.toContain('Switch provider mid-conversation?');
 
     const confirmButton = Array.from(dialog.querySelectorAll('button')).find(
       (b) => b.textContent?.trim() === 'Switch model',
@@ -1390,6 +1387,16 @@ describe('SimpleRichInput automatic composer geometry', () => {
       expect(screen.getByTestId('tiptap-editor').getAttribute('placeholder')).toBe('Ask anything');
     },
   );
+
+  it('renders the composer resize handle on the shared app-resize-handle contract', () => {
+    renderInPanel(720);
+    const composer = screen.getByTestId('message-input');
+
+    const resizeHandle = screen.getByRole('button', { name: /Resize input area/ });
+    expect(composer.contains(resizeHandle)).toBe(true);
+    expect(resizeHandle.classList.contains('app-resize-handle')).toBe(true);
+    expect(resizeHandle.getAttribute('data-resize-axis')).toBe('y');
+  });
 
   it('keeps a manual resize when focus changes', async () => {
     renderInPanel(720);

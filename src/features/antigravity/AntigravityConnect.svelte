@@ -2,13 +2,14 @@
   import { onMount } from 'svelte';
   import { m } from '$shared/paraglide/messages.js';
   import { Button } from '$lib/components/ui/button';
+  import { FormDialog } from '$lib/components/patterns/confirm';
   import { store as appStore } from '$store/renderer/store';
   import { antigravitySetupRequested } from '$store/renderer/slices/antigravity-setup/antigravity-setup-slice';
   import {
     selectAntigravitySetup,
     selectAntigravitySetupPolicy,
   } from '$store/renderer/slices/antigravity-setup/antigravity-setup-selectors';
-  let { ready = false }: { ready?: boolean } = $props();
+  let { open = $bindable(false) }: { open?: boolean } = $props();
   const setup$ = selectAntigravitySetup();
   const policy$ = selectAntigravitySetupPolicy();
   const status = $derived($setup$.result?.ok ? $setup$.result.status : null);
@@ -29,6 +30,20 @@
     appStore.dispatch(antigravitySetupRequested('status'));
     return () => appStore.dispatch(antigravitySetupRequested('close'));
   });
+
+  function connect() {
+    if ($setup$.busy || limited || $policy$.connected) return;
+    appStore.dispatch(
+      antigravitySetupRequested(status?.phase === 'signInRequired' ? 'login' : 'start'),
+    );
+  }
+
+  function cancel() {
+    if ($setup$.busy || status?.phase === 'signInRequired') {
+      appStore.dispatch(antigravitySetupRequested('cancel'));
+    }
+    open = false;
+  }
 
   function failureText(code: string): string {
     switch (code) {
@@ -60,8 +75,14 @@
   }
 </script>
 
-{#if !ready || $setup$.busy || $policy$.hasAttempt || status?.phase === 'connected'}
-  <div class="mt-3 space-y-2 text-xs text-muted-foreground">
+<FormDialog
+  bind:open
+  title={m.antigravity_setup_connect_label()}
+  canSubmit={!$setup$.busy && !limited && !$policy$.connected}
+  onSubmit={connect}
+  onCancel={cancel}
+>
+  <div class="space-y-2 type-body text-muted-foreground">
     <div role="status" aria-live="polite">
       {#if errorCode}
         <p>{failureText(errorCode)}</p>
@@ -94,37 +115,21 @@
         </p>
       {/if}
     </div>
-    <div class="flex gap-2">
-      {#if $setup$.busy}
-        <Button
-          size="xs"
-          variant="secondary"
-          onclick={() => appStore.dispatch(antigravitySetupRequested('cancel'))}
-          >{m.antigravity_setup_cancel_label()}</Button
-        >
-      {:else if status?.phase === 'signInRequired'}
-        <Button
-          size="xs"
-          variant="secondary"
-          onclick={() => appStore.dispatch(antigravitySetupRequested('login'))}
-          >{m.antigravity_setup_signIn_label()}</Button
-        >
-        <Button
-          size="xs"
-          variant="ghost"
-          onclick={() => appStore.dispatch(antigravitySetupRequested('cancel'))}
-          >{m.antigravity_setup_cancel_label()}</Button
-        >
-      {:else if !limited && !$policy$.connected}
-        <Button
-          size="xs"
-          variant="secondary"
-          onclick={() => appStore.dispatch(antigravitySetupRequested('start'))}
-          >{errorCode || status?.phase === 'cancelled'
+  </div>
+  {#snippet footer()}
+    <Button variant="ghost-light" onclick={cancel}
+      >{$policy$.connected || limited
+        ? m.ui_dialog_close_ariaLabel()
+        : m.antigravity_setup_cancel_label()}</Button
+    >
+    {#if !$setup$.busy && !limited && !$policy$.connected}
+      <Button type="submit"
+        >{status?.phase === 'signInRequired'
+          ? m.antigravity_setup_signIn_label()
+          : errorCode || status?.phase === 'cancelled'
             ? m.settings_providers_tryAgain()
             : m.antigravity_setup_connect_label()}</Button
-        >
-      {/if}
-    </div>
-  </div>
-{/if}
+      >
+    {/if}
+  {/snippet}
+</FormDialog>

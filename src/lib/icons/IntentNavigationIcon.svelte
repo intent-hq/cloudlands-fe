@@ -1,5 +1,11 @@
 <script lang="ts" module>
-  export const intentNavigationIconNames = ['spaces', 'tabs', 'settings', 'dandelion'] as const;
+  export const intentNavigationIconNames = [
+    'spaces',
+    'tabs',
+    'settings',
+    'dandelion',
+    'sidebar',
+  ] as const;
 
   export type IntentNavigationIconName = (typeof intentNavigationIconNames)[number];
 </script>
@@ -25,7 +31,10 @@
   focusable="false"
   data-navigation-icon={name}
 >
-  {#if name === 'spaces'}
+  {#if name === 'sidebar'}
+    <rect x="1.5" y="2.5" width="13" height="11" rx="1.5" stroke="currentColor" stroke-width="1" />
+    <path d="M5.5 2.5V13.5" stroke="currentColor" stroke-width="1" />
+  {:else if name === 'spaces'}
     <rect
       x="1.75"
       y="3.75"
@@ -60,10 +69,10 @@
       stroke-width="1.5"
     />
   {:else if name === 'settings'}
-    <path d="M9 5L14 5" stroke="currentColor" stroke-width="1.5" />
-    <path d="M2 11H7" stroke="currentColor" stroke-width="1.5" />
-    <circle cx="5" cy="5" r="2.25" stroke="currentColor" stroke-width="1.5" />
-    <circle cx="11" cy="11" r="2.25" stroke="currentColor" stroke-width="1.5" />
+    <path d="M9 4.5H14" stroke="currentColor" stroke-width="1" />
+    <path d="M2 11.5H7" stroke="currentColor" stroke-width="1" />
+    <circle cx="5" cy="4.5" r="2" stroke="currentColor" stroke-width="1" />
+    <circle cx="11" cy="11.5" r="2" stroke="currentColor" stroke-width="1" />
   {:else}
     <path
       d="M10.4792 1.33398L9.23019 4.76581C9.07545 5.19082 9.2031 5.66727 9.54958 5.95802C9.89607 6.24878 10.3874 6.29173 10.7791 6.06563L13.9419 4.23958M14.7735 8.91547L11.1769 8.28131C10.7314 8.20278 10.2845 8.41116 10.0583 8.80291C9.83216 9.19467 9.87511 9.68598 10.1659 10.0325L12.5134 12.8301"

@@ -14,7 +14,14 @@
   import RecursiveMarkdownViewer from './MarkdownViewer.svelte';
   import MediaUnavailable from '$lib/components/ui/MediaUnavailable.svelte';
   import MediaLoadingPlaceholder from '$lib/components/ui/MediaLoadingPlaceholder.svelte';
-  import { parseWorkspaceFileImageUrl } from '$lib/utils/image-actions';
+  import { parseWorkspaceFileImageUrl, supportsImageActions } from '$lib/utils/image-actions';
+  import {
+    imageActionsHaveFocus,
+    imageActionsPosition,
+    imageAtTarget,
+    isActionableImage,
+    sizedImageLabel,
+  } from './markdown-image-dom';
   import {
     createWorkspaceFileVersion,
     parseIntentFileTarget,
@@ -178,37 +185,34 @@
     }
   });
 
-  // Lightbox state for inline workspace-file images
+  // Lightbox state for supported inline images.
   let lightboxOpen = $state(false);
   let lightboxImageUrl = $state('');
   let lightboxImageAlt = $state<string | undefined>(undefined);
   let lightboxOpenerElement = $state<HTMLElement | null>(null);
 
-  // Hover overlay: workspace-backed images get an image actions menu.
+  // Hover overlay: supported image sources share one image actions menu.
   // The images live in {@html}-managed DOM, so a single Svelte-rendered
   // trigger is positioned over whichever image is hovered or focused.
   let hoveredImage = $state<HTMLImageElement | null>(null);
-  let hoveredImagePosition = $state({ top: 0, left: 0 });
+  let hoveredImagePosition = $state({ top: 0, right: 0 });
   let imageActionsOpen = $state(false);
+  let imageActionsMenu: ImageActionsMenu | undefined = $state();
   let imageActionsOverlayElement = $state<HTMLElement | null>(null);
 
-  function isWorkspaceImage(image: HTMLImageElement): boolean {
-    const src = image.getAttribute('src') || '';
-    return src.startsWith('workspace-file://') || src.startsWith('workspace-asset://');
-  }
-
   function handleImageInteraction(event: MouseEvent | FocusEvent): void {
+    // Pointer movement must not replace the keyboard-focused image's actions.
+    if (
+      event.type === 'mouseover' &&
+      imageActionsHaveFocus(hoveredImage, imageActionsOverlayElement)
+    )
+      return;
     const target = event.target;
-    if (target instanceof HTMLImageElement && isWorkspaceImage(target)) {
-      if (hoveredImage === target) return;
-      const container = event.currentTarget as HTMLElement;
-      const imageRect = target.getBoundingClientRect();
-      const containerRect = container.getBoundingClientRect();
-      hoveredImage = target;
-      hoveredImagePosition = {
-        top: imageRect.top - containerRect.top + 6,
-        left: imageRect.right - containerRect.left - 34,
-      };
+    const image = imageAtTarget(target);
+    if (image && isActionableImage(image)) {
+      if (hoveredImage === image) return;
+      hoveredImage = image;
+      hoveredImagePosition = imageActionsPosition(image, event.currentTarget as HTMLElement);
     } else if (hoveredImage && !imageActionsOpen) {
       // Keep the overlay while the pointer is on the trigger itself.
       if (target instanceof Node && imageActionsOverlayElement?.contains(target)) return;
@@ -217,32 +221,21 @@
   }
 
   function handleImageHoverLeave(): void {
-    if (!imageActionsOpen) hoveredImage = null;
+    if (!imageActionsOpen && !imageActionsHaveFocus(hoveredImage, imageActionsOverlayElement)) {
+      hoveredImage = null;
+    }
+  }
+
+  function handleImageContextMenu(event: MouseEvent): void {
+    const image = imageAtTarget(event.target);
+    if (!image || !isActionableImage(image)) return;
+    event.preventDefault();
+    event.stopPropagation();
+    handleImageInteraction(event);
+    imageActionsOpen = true;
   }
 
   const IMAGE_FRAME_CLASS = 'markdown-image-frame';
-
-  /** Workspace path or asset name shown while a sized image is still loading. */
-  function sizedImageLabel(image: HTMLImageElement): string | undefined {
-    const source = image.getAttribute('src') || '';
-    const path =
-      parseWorkspaceFileImageUrl(source)?.path ?? parseIntentFileTarget(source, workspaceId)?.path;
-    if (path) return path;
-    if (source.startsWith('workspace-asset://')) {
-      const assetName = source.split(/[?#]/)[0].split('/').pop();
-      if (assetName) return assetName;
-    }
-    // Bare workspace-relative paths (`![x](docs/diagram.png)`) are a supported
-    // media-key shape; the path itself is the most useful label.
-    if (source && !/^[a-z][a-z0-9+.-]*:/i.test(source) && !source.startsWith('//')) {
-      try {
-        return decodeURI(source);
-      } catch {
-        return source;
-      }
-    }
-    return image.getAttribute('alt') || undefined;
-  }
 
   function mediaFallbacks(node: HTMLElement) {
     const mountedPlaceholders = new Map<HTMLElement, ReturnType<typeof mount>>();
@@ -272,7 +265,7 @@
         placeholderHost,
         mount(MediaLoadingPlaceholder, {
           target: placeholderHost,
-          props: { name: sizedImageLabel(image) },
+          props: { name: sizedImageLabel(image, workspaceId) },
         }),
       );
       const reveal = () => {
@@ -331,7 +324,7 @@
 
     function reconcile() {
       for (const image of node.querySelectorAll<HTMLImageElement>('img')) {
-        if (isWorkspaceImage(image)) {
+        if (isActionableImage(image) && !image.closest('a')) {
           image.tabIndex = 0;
           image.setAttribute('role', 'button');
         }
@@ -382,11 +375,11 @@
     const target = event.target as HTMLElement;
     const anchor = target.closest('a');
 
-    // Inline workspace-file images open in the lightbox (unless wrapped in a
+    // Supported inline images open in the lightbox (unless wrapped in a
     // link, in which case the link wins)
     if (!anchor && target instanceof HTMLImageElement) {
       const src = target.getAttribute('src') || '';
-      if (src.startsWith('workspace-file://') || src.startsWith('workspace-asset://')) {
+      if (supportsImageActions(src)) {
         event.preventDefault();
         event.stopPropagation();
         event.stopImmediatePropagation();
@@ -476,9 +469,11 @@
   }
 
   function handleLinkKeydown(event: KeyboardEvent): void {
+    handleImageCopy(event);
+    if (event.defaultPrevented) return;
     if (
       event.target instanceof HTMLImageElement &&
-      isWorkspaceImage(event.target) &&
+      isActionableImage(event.target) &&
       (event.key === 'Enter' || event.key === ' ')
     ) {
       handleLinkClick(event);
@@ -486,6 +481,12 @@
     }
     if (event.key !== 'Enter' || !isCmdClickModifier({ event })) return;
     handleLinkClick(event);
+  }
+
+  function handleImageCopy(event: KeyboardEvent | ClipboardEvent): void {
+    const image = imageAtTarget(event.target);
+    if (!image || !isActionableImage(image)) return;
+    imageActionsMenu?.handleCopy(event, image.getAttribute('src') || '');
   }
 
   function getSourcePanelId(event: MouseEvent | KeyboardEvent): string | undefined {
@@ -508,11 +509,12 @@
   {#if hoveredImage}
     <div
       bind:this={imageActionsOverlayElement}
-      class="absolute z-10"
-      style="top: {hoveredImagePosition.top}px; left: {hoveredImagePosition.left}px;"
+      class="image-actions-overlay absolute z-10"
+      style="top: {hoveredImagePosition.top}px; right: {hoveredImagePosition.right}px;"
       data-testid="markdown-image-actions-overlay"
     >
       <ImageActionsMenu
+        bind:this={imageActionsMenu}
         imageUrl={hoveredImage.getAttribute('src') || ''}
         imageName={hoveredImage.getAttribute('alt') || undefined}
         bind:open={imageActionsOpen}
@@ -551,6 +553,8 @@
     use:mediaFallbacks
     onclick={handleLinkClick}
     onkeydown={handleLinkKeydown}
+    oncopy={handleImageCopy}
+    oncontextmenu={handleImageContextMenu}
     onmouseover={handleImageInteraction}
     onfocusin={handleImageInteraction}
     onmouseleave={handleImageHoverLeave}
@@ -575,6 +579,8 @@
     use:mediaFallbacks
     onclick={handleLinkClick}
     onkeydown={handleLinkKeydown}
+    oncopy={handleImageCopy}
+    oncontextmenu={handleImageContextMenu}
     onmouseover={handleImageInteraction}
     onfocusin={handleImageInteraction}
     onmouseleave={handleImageHoverLeave}
@@ -625,13 +631,13 @@
     contain: layout style;
   }
 
-  /* Apply same spacing to static content children */
-  .markdown-viewer.static-content > :global(* + *) {
+  /* Paragraph spacing must not offset the positioned image controls. */
+  .markdown-viewer.static-content > :global(* + :not(.image-actions-overlay)) {
     margin-top: 0.75rem;
   }
 
   /* PERF: Apply same styles to streaming content (direct children) */
-  .markdown-viewer.streaming-content > :global(* + *) {
+  .markdown-viewer.streaming-content > :global(* + :not(.image-actions-overlay)) {
     margin-top: 0.75rem;
   }
 
@@ -1013,9 +1019,8 @@
     border-radius: 0.375rem;
   }
 
-  /* Workspace-backed images open in a lightbox on click */
-  .markdown-viewer :global(img[src^='workspace-file://']),
-  .markdown-viewer :global(img[src^='workspace-asset://']) {
+  /* Only unlinked, supported images open in the lightbox. */
+  .markdown-viewer :global(img[role='button']) {
     cursor: zoom-in;
   }
 

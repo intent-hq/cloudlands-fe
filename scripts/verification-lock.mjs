@@ -144,7 +144,7 @@ export async function acquireVerificationLock(options = {}) {
         let record;
         try {
           record = ownerRecordName(lockPath);
-          if (!record) throw new Error('lock has no owner record');
+          if (!record) throw new Error('lock has no owner record', { cause: error });
           owner = JSON.parse(readFileSync(join(lockPath, record), 'utf8'));
           stale = !processIsAlive(owner.pid);
         } catch {

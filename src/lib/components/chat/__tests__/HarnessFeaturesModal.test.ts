@@ -106,9 +106,13 @@ describe('HarnessFeaturesModal', () => {
     const states = getStates(dialog);
     expect(states).toHaveLength(HARNESS_FEATURE_CATALOG.length);
     const stateFor = (key: string) => states.find((el) => el.dataset.feature === key)!;
-    expect(stateFor('structuredQuestions').textContent!.trim()).toBe('On');
-    expect(stateFor('taskGraph').textContent!.trim()).toBe('Off');
-    expect(stateFor('browserAutomation').textContent!.trim()).toBe('Off');
+    expect(stateFor('structuredQuestions').closest('section')?.getAttribute('aria-label')).toBe(
+      'On',
+    );
+    expect(stateFor('taskGraph').closest('section')?.getAttribute('aria-label')).toBe('Off');
+    expect(stateFor('browserAutomation').closest('section')?.getAttribute('aria-label')).toBe(
+      'Off',
+    );
   });
 
   it('renders unknown snapshot keys with a humanized label and no description', async () => {
@@ -124,7 +128,9 @@ describe('HarnessFeaturesModal', () => {
     renderModal({ version: '1.0', features: {} });
 
     const dialog = await screen.findByRole('dialog');
-    expect(dialog.className).toContain('overflow-y-auto');
+    expect(dialog.querySelector('[data-slot="dialog-body"]')?.className).toContain(
+      'overflow-y-auto',
+    );
     expect(dialog.className).toContain('dialog-editorial-content');
     expect(dialog.querySelector('[data-testid="harness-features-list"]')).not.toBeNull();
   });

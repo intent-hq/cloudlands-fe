@@ -43,7 +43,7 @@ const SKIP_DIRS = new Set([
   'test-reports',
 ]);
 const CODE_EXTENSIONS = new Set(['.cjs', '.js', '.jsx', '.mjs', '.svelte', '.ts', '.tsx']);
-const LINT_EXTENSIONS = new Set(['.js', '.jsx', '.mjs', '.svelte', '.ts', '.tsx']);
+const LINT_EXTENSIONS = new Set(['.cjs', '.js', '.jsx', '.mjs', '.svelte', '.ts', '.tsx']);
 const FORMAT_EXTENSIONS = new Set([
   '.cjs',
   '.css',
@@ -361,7 +361,7 @@ function survivingUnitTestDirectory(file, root, exclude) {
 
 function isLintable(file) {
   if (!LINT_EXTENSIONS.has(extname(file))) return false;
-  return !/^(?:scripts|e2e|test)\//.test(file) && !file.endsWith('.cjs');
+  return !/^(?:e2e|test)\//.test(file);
 }
 
 function isKnownNonCode(file) {

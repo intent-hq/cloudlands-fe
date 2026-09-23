@@ -7,7 +7,7 @@
  */
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/svelte';
+import { render, screen, fireEvent, waitFor } from '@testing-library/svelte';
 import { warmImport } from '../../../test/warm-import';
 
 const mocks = vi.hoisted(() => ({
@@ -272,7 +272,11 @@ describe('ConnectBackendModal', () => {
     await vi.waitFor(() => expect(picker.getAttribute('aria-expanded')).toBe('false'));
     expect(screen.getByRole('dialog')).toBeTruthy();
     expect(document.activeElement).toBe(picker);
-    await fireEvent.keyDown(picker, { key: 'Escape' });
+    // Leave the focus-triggered tooltip before asserting dialog dismissal.
+    const name = screen.getByLabelText('Device name');
+    name.focus();
+    await waitFor(() => expect(screen.queryByRole('tooltip')).toBeNull());
+    await fireEvent.keyDown(name, { key: 'Escape' });
     expect(screen.queryByRole('dialog')).toBeNull();
     expect(mocks.captureFingerprintRequested).not.toHaveBeenCalled();
     expect(mocks.addConnectionRequested).not.toHaveBeenCalled();

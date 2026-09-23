@@ -349,6 +349,24 @@ describe('QuakeTerminalOverlay lifecycle', () => {
   });
 
   it.each([
+    ['workspace', () => render(QuakeTerminalOverlay, { props: { workspaceId: 'ws-1' as any } })],
+    ['root', () => render(RootQuakeTerminalOverlay)],
+  ])(
+    'renders the %s overlay resize handle on the shared app-resize-handle contract',
+    (_, renderOverlay) => {
+      const { container } = renderOverlay();
+      const panel = container.querySelector<HTMLElement>('.terminal-panel');
+      const resizeHandle = container.querySelector<HTMLElement>('[data-resize-axis="y"]');
+
+      expect(panel).toBeTruthy();
+      expect(resizeHandle).toBeTruthy();
+      expect(panel!.contains(resizeHandle)).toBe(true);
+      expect(resizeHandle!.classList.contains('app-resize-handle')).toBe(true);
+      expect(resizeHandle!.getAttribute('data-resize-indicator')).toBe('short');
+    },
+  );
+
+  it.each([
     [
       'workspace',
       () => render(QuakeTerminalOverlay, { props: { workspaceId: 'ws-1' as any } }),

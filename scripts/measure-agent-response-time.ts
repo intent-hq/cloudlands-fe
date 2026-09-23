@@ -49,11 +49,12 @@ async function measureResponseTime(model: string): Promise<TimingResult> {
       reject(new Error('Timeout'));
     }, TIMEOUT_MS);
 
+    const stdin = auggie.stdin;
     const rl = readline.createInterface({ input: auggie.stdout });
 
     const sendRequest = (method: string, params: any) => {
       const request = { jsonrpc: '2.0', method, params, id: ++requestId };
-      auggie.stdin!.write(`${JSON.stringify(request)}\n`);
+      stdin.write(`${JSON.stringify(request)}\n`);
     };
 
     rl.on('line', (line) => {
@@ -72,7 +73,7 @@ async function measureResponseTime(model: string): Promise<TimingResult> {
 
             const firstTokenTime = performance.now();
             resolve({
-              spawnToReady: sessionReadyTime! - startTime,
+              spawnToReady: (sessionReadyTime ?? startTime) - startTime,
               promptToFirstToken: firstTokenTime - promptSentTime,
               totalTime: firstTokenTime - startTime,
             });
@@ -105,7 +106,7 @@ async function measureResponseTime(model: string): Promise<TimingResult> {
           auggie.kill();
           reject(new Error(msg.error.message));
         }
-      } catch (e) {
+      } catch {
         // Ignore non-JSON lines
       }
     });

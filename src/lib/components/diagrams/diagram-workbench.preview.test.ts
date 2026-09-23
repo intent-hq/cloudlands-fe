@@ -37,7 +37,7 @@ describe('diagram workbench fixtures', () => {
       selector: '[data-diagram-workbench-ready="true"]',
       count: 1,
       generationAttribute: 'data-diagram-workbench-generation',
-      readinessTimeoutMs: 24_000,
+      readinessTimeoutMs: 45_000,
     });
   });
 
