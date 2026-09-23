@@ -60,6 +60,32 @@ describe('parseArgs', () => {
     expect(() => parseArgs(['--'])).toThrow(/No test file or filter given/);
   });
 
+  it('does not mistake an option value given as a separate token for a filter', () => {
+    expect(() => parseArgs(['--reporter', 'verbose'])).toThrow(/No test file or filter given/);
+    expect(() => parseArgs(['--testTimeout', '15000'])).toThrow(/No test file or filter given/);
+    expect(() => parseArgs(['-t', 'name'])).toThrow(/No test file or filter given/);
+    expect(() => parseArgs(['--', '--reporter', 'verbose'])).toThrow(
+      /No test file or filter given/,
+    );
+  });
+
+  it('accepts a file or name filter alongside options in either form', () => {
+    expect(parseArgs(['src/a.test.ts', '--reporter', 'verbose'])).toEqual([
+      'src/a.test.ts',
+      '--reporter',
+      'verbose',
+    ]);
+    expect(parseArgs(['--testTimeout', '15000', 'src/a.test.ts'])).toEqual([
+      '--testTimeout',
+      '15000',
+      'src/a.test.ts',
+    ]);
+    expect(parseArgs(['text-rebase', '--testTimeout=15000'])).toEqual([
+      'text-rebase',
+      '--testTimeout=15000',
+    ]);
+  });
+
   it('drops the separators pnpm forwards and keeps vitest flags verbatim', () => {
     expect(parseArgs(['src/a.test.ts'])).toEqual(['src/a.test.ts']);
     expect(parseArgs(['src/a.test.ts', '--', '--reporter=verbose', '-t', 'name'])).toEqual([

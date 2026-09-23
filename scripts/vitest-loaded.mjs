@@ -29,6 +29,7 @@ import { readFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { parseCLI } from 'vitest/node';
 
 export const DEFAULT_BUSY = 3;
 export const VITEST_CONFIG = 'vitest.config.ts';
@@ -90,11 +91,13 @@ export function pickBusyCount(requested) {
 /**
  * The vitest arguments from the harness argv: every bare `--` dropped (pnpm may
  * forward the user's separator), and at least one file or filter required so a
- * typo does not run the whole suite pinned to one core.
+ * typo does not run the whole suite pinned to one core. Vitest's own CLI parser
+ * decides what is a filter, so an option value such as `--reporter verbose` or
+ * `--testTimeout 15000` does not pass for one.
  */
 export function parseArgs(argv) {
   const vitestArgs = argv.filter((arg) => arg !== '--');
-  if (!vitestArgs.some((arg) => !arg.startsWith('-'))) {
+  if (parseCLI(['vitest', 'run', ...vitestArgs]).filter.length === 0) {
     throw new Error(`No test file or filter given.\n${USAGE}`);
   }
   return vitestArgs;
