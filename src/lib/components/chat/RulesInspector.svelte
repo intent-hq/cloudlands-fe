@@ -37,7 +37,7 @@
   <div
     class="relative max-w-3xl w-full max-h-[80vh] bg-background border border-border rounded-lg shadow-xl overflow-hidden"
   >
-    <div class="flex items-center justify-between px-6 py-4 border-b border-border">
+    <div class="flex items-center justify-between px-6 py-4">
       <h2 id="rules-inspector-title" class="text-lg font-semibold text-foreground">
         {m.chat_rulesInspector_title()}
       </h2>
