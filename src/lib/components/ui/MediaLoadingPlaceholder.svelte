@@ -1,3 +1,5 @@
+<!-- @catalog-exempt: static loading status tile with no interactive DOM -->
+
 <script lang="ts">
   import { faImage } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';

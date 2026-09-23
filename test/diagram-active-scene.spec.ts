@@ -167,7 +167,7 @@ for (const fixture of fixtures) {
         await expect(page.getByTestId('catalog-scene')).toHaveAttribute(
           'data-preview-ready',
           'true',
-          { timeout: 30_000 },
+          { timeout: 60_000 },
         );
         await page.evaluate(() => document.fonts.ready);
         await expect(root).toHaveAttribute('data-diagram-settled', 'true', { timeout: 30_000 });

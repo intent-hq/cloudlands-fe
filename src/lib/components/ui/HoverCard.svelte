@@ -1,3 +1,5 @@
+<!-- @catalog-exempt: portal-positioned hover surface covered by __tests__/HoverCard.positioning.test.ts; no catalog fixtures yet -->
+
 <script lang="ts">
   import { onMount, tick } from 'svelte';
   import type { Snippet } from 'svelte';
