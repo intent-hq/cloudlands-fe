@@ -4,6 +4,19 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.178.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.177.2...v2.178.0) (2026-09-23)
+
+
+### 🚀 Features
+
+* **perf:** paired text-rebase alignment benchmark ([#2830](https://github.com/intent-hq/cloudlands-fe/issues/2830)) ([8cd3be9](https://github.com/intent-hq/cloudlands-fe/commit/8cd3be9b23f6ff3917625847f2ea8a32e5981047))
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.9.101 ([#2834](https://github.com/intent-hq/cloudlands-fe/issues/2834)) ([2ca0b1e](https://github.com/intent-hq/cloudlands-fe/commit/2ca0b1e0cb60111559fb491d740a2775b78b5b5b))
+* **model-picker:** warn before send when the agent provider is disabled ([#2829](https://github.com/intent-hq/cloudlands-fe/issues/2829)) ([3543254](https://github.com/intent-hq/cloudlands-fe/commit/354325433ad7bf5e60b57331500bfd6ff7023110))
+
 ## [2.177.2](https://github.com/intent-hq/cloudlands-fe/compare/v2.177.1...v2.177.2) (2026-09-23)
 
 
