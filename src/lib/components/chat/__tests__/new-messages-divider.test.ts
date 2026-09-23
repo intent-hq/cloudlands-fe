@@ -504,6 +504,25 @@ describe('turn-boundary divider placement (rendered ChatPanel)', () => {
       anchorId: 'notice-1',
     },
     {
+      site: 'provider re-home notice',
+      messages: [
+        message('user-1', 'user'),
+        message('notice-1', 'system', {
+          metadata: {
+            type: 'provider_rehomed',
+            reason: 'provider_disabled',
+            from: 'a',
+            to: null,
+            fromProvider: 'codex',
+            toProvider: 'auggie',
+          },
+        }),
+        message('user-2', 'user'),
+        message('assistant-2', 'assistant'),
+      ],
+      anchorId: 'notice-1',
+    },
+    {
       site: 'assistant row',
       messages: [
         message('user-1', 'user'),
@@ -525,6 +544,46 @@ describe('turn-boundary divider placement (rendered ChatPanel)', () => {
       expect(dividers[0].previousElementSibling).toBe(gaps[0]);
     },
   );
+
+  it('renders the daemon provider re-home notice once in the transcript (intent#5737)', async () => {
+    const daemonText =
+      'gpt-5-codex (OpenAI Codex) is no longer available — OpenAI Codex was disabled in Settings > Agents; this agent now runs on Augment Auggie.';
+    const { container, turns } = await renderTranscript(
+      [
+        message('user-1', 'user'),
+        message('rehome-1', 'system', {
+          text: daemonText,
+          metadata: {
+            type: 'provider_rehomed',
+            reason: 'provider_disabled',
+            from: 'gpt-5-codex',
+            to: null,
+            fromProvider: 'codex',
+            toProvider: 'auggie',
+          },
+        }),
+        message('assistant-1', 'assistant'),
+      ],
+      null,
+    );
+
+    expect(turns).toHaveLength(1);
+    const rows = container.querySelectorAll('[data-message-id="rehome-1"]');
+    expect(rows).toHaveLength(1);
+    const notices = rows[0].querySelectorAll('[role="status"]');
+    expect(notices).toHaveLength(1);
+    const text = notices[0].textContent ?? '';
+    expect(text).toMatch(/gpt-5-codex/);
+    expect(text).toMatch(/disabled/i);
+    expect(text).toMatch(/auggie/i);
+    // The notice sits between the user row and the assistant output.
+    const userRow = container.querySelector('[data-message-id="user-1"]') as Node;
+    const assistantRow = container.querySelector('[data-message-id="assistant-1"]') as Node;
+    const follows = (a: Node, b: Node) =>
+      Boolean(a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING);
+    expect(follows(userRow, rows[0])).toBe(true);
+    expect(follows(rows[0], assistantRow)).toBe(true);
+  });
 
   it('keeps the divider inline when the anchor is not the last rendered row of its turn', async () => {
     const { dividers, turns } = await renderTranscript(

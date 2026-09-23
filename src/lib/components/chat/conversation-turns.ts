@@ -7,7 +7,7 @@ export interface ConversationTurn {
   bodyMessages: AgentMessage[];
   /** Assistant-only projection for streaming, model selection, and completion UI. */
   assistantMessages: AgentMessage[];
-  /** Model-change notices retain their placement before the turn body. */
+  /** Model-change and provider re-home notices retain their placement before the turn body. */
   noticeMessages: AgentMessage[];
 }
 
@@ -82,7 +82,8 @@ export function hasOperationalAssistantTurnBoundary(
 }
 
 function isModelChangeNotice(message: AgentMessage): boolean {
-  return message.metadata?.type === 'model_changed';
+  const type = message.metadata?.type;
+  return type === 'model_changed' || type === 'provider_rehomed';
 }
 
 function isInlineSystemNotice(message: AgentMessage): boolean {
