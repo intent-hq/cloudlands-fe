@@ -1,14 +1,9 @@
 ---
 name: svelte/migration
 description: >-
-  Migrate an existing Svelte app from Svelte stores (writable, readable,
-  derived, $state, $derived) to Redux + Saga architecture using
-  themis. Root index that routes to assessment, setup, per-primitive
-  mapping (writable/derived/side-effects), component migration, and cleanup
-  sub-skills. Use when ANY task involves migrating Svelte stores to Redux,
-  converting writable/readable/derived stores, replacing Svelte store patterns
-  with Redux slices, moving side effects to sagas, or planning a store
-  migration strategy.
+  Route migration planning or conversion of Svelte writable/readable/derived
+  stores and $state/$derived runes to Themis Redux and sagas, including side
+  effects, components, and cleanup.
 type: lifecycle
 requires:
   - svelte

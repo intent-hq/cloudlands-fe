@@ -1,10 +1,9 @@
 ---
 name: svelte/migration/assessment
 description: >-
-  Inventory existing Svelte stores and $state/$derived runes; classify each
-  store as state / derived / side effects, list consumers, and decide whether
-  it moves to Redux (shared) or stays as component-local state using the
-  decision framework. First step of any migration to themis.
+  Start Svelte-to-Themis migrations by inventorying stores/runes and
+  consumers, classifying state, derivations, and effects, and deciding shared
+  Redux versus component-local state.
 type: sub-skill
 requires:
   - svelte

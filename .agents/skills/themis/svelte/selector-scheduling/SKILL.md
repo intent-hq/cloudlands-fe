@@ -1,12 +1,9 @@
 ---
 name: svelte/selector-scheduling
 description: >-
-  Public guidance for Store-owned selector emission coalescing and optional FPS
-  tuning. Selector scheduler helpers are internal details and must not be
-  imported from any public subpackage. Use Store-bound selectors directly;
-  their readables are already cached, optimized, and scheduled by package
-  internals. Do not add memoization, debounce/throttle, manual caches, or
-  scheduler wrappers around Store-created selectors.
+  Use for Svelte Store selector emission coalescing, rAF scheduling, FPS
+  tuning, or cached/throttled readables. Keep scheduling owned by Store; do
+  not wrap its selectors.
 type: sub-skill
 requires:
   - svelte

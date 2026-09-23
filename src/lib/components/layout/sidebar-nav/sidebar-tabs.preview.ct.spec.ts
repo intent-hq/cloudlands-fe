@@ -45,7 +45,7 @@ async function observePaneMotion(panel: Locator) {
 }
 
 for (const width of [288, 100]) {
-  test(`workspace alignment and centered Intent label survive tab changes at ${width}px`, async ({
+  test(`both tab labels stay centered and workspace rows stay aligned at ${width}px`, async ({
     mount,
   }) => {
     const component = await mount(SidebarTabsPreview, { props: { width } });
@@ -60,9 +60,9 @@ for (const width of [288, 100]) {
     await expect(dots).toHaveCount(3);
 
     async function expectAligned() {
-      const label = await workspaces.locator('span').boundingBox();
+      const firstTitle = await titles.first().boundingBox();
       const headingBox = await heading.boundingBox();
-      expect(label).not.toBeNull();
+      expect(firstTitle).not.toBeNull();
       expect(headingBox).not.toBeNull();
       for (const row of await rows.all()) {
         const contentLeft = await row.evaluate(
@@ -79,27 +79,30 @@ for (const width of [288, 100]) {
       for (const title of await titles.all()) {
         const box = await title.boundingBox();
         expect(box).not.toBeNull();
-        expect(Math.abs(box!.x - label!.x)).toBeLessThanOrEqual(1);
+        expect(Math.abs(box!.x - firstTitle!.x)).toBeLessThanOrEqual(1);
       }
     }
 
-    async function expectIntentCentered() {
-      const tab = await intent.boundingBox();
-      const label = await intent.locator('span').boundingBox();
-      expect(tab).not.toBeNull();
-      expect(label).not.toBeNull();
-      expect(Math.abs(label!.x + label!.width / 2 - (tab!.x + tab!.width / 2))).toBeLessThanOrEqual(
-        1,
-      );
+    async function expectLabelsCentered() {
+      for (const trigger of [workspaces, intent]) {
+        const tab = await trigger.boundingBox();
+        const label = await trigger.locator('span').boundingBox();
+        expect(tab).not.toBeNull();
+        expect(label).not.toBeNull();
+        expect(
+          Math.abs(label!.x + label!.width / 2 - (tab!.x + tab!.width / 2)),
+        ).toBeLessThanOrEqual(1);
+      }
     }
 
     await expectAligned();
-    await expectIntentCentered();
+    await expectLabelsCentered();
     await intent.click();
-    await expectIntentCentered();
+    await expectLabelsCentered();
     await workspaces.click();
     await expect(component.locator('[data-combined-panel-spaces]')).toHaveCSS('transform', 'none');
     await expectAligned();
+    await expectLabelsCentered();
   });
 }
 

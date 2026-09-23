@@ -1,16 +1,9 @@
 ---
 name: core/file-structure
 description: >-
-  Per-slice directory layout ({name}-types.ts, {name}-slice.ts,
-  {name}-selectors.ts, sagas/{name}-saga.ts plus tests). Saga-only slices skip
-  reducer registration. Register reducers in the Store constructor map; store.init()
-  wires the Redux store and package saga manager but does NOT auto-start
-  app sagas — start each one explicitly via store.runSaga(sagaFn).
-  Do not manually register package @internal_ sagas.
-  Ownership: exactly one {name}-slice.ts and one {name}-selectors.ts module per
-  slice directory; split multiple slices into separate directories. Naming:
-  {Feature}State, {feature}Reducer, camelCase slice identity keys/namespaces,
-  verb-phrase actions, select* prefix, "sliceName/actionName" action types.
+  Use when scaffolding or organizing Themis slices, types, selectors, sagas,
+  and tests, including naming, saga-only slices, reducer registration, and
+  saga startup.
 type: sub-skill
 requires:
   - core

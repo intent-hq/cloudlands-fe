@@ -1,12 +1,9 @@
 ---
 name: svelte/component-integration
 description: >-
-  Wire the Store class into a Svelte 5 app. Create a Store instance with
-  constructor reducer maps, configure optional middleware, call
-  store.init() + onDestroy in the root layout, dispatch through the configured
-  Store instance, and use selectFoo() at component init with $selectorResult$
-  in templates. Start app sagas through store.runSaga(sagaFn). Public API:
-  @augmentcode/themis/svelte-store; related guidance: ../SKILL.md §7.
+  Use when wiring Themis Store into Svelte 5 components or root layouts,
+  including initialization, dispatch, selector readables, template
+  subscriptions, and saga startup.
 type: sub-skill
 library: themis
 requires:
