@@ -2195,8 +2195,10 @@ function diffRegion(
   }
   const words = withinBudget(
     deadline,
-    from.slice(fromStart, fromEnd).match(TOKEN) ?? [],
-    to.slice(toStart, toEnd).match(TOKEN) ?? [],
+    () => [
+      from.slice(fromStart, fromEnd).match(TOKEN) ?? [],
+      to.slice(toStart, toEnd).match(TOKEN) ?? [],
+    ],
     (a, b, maxEditLength) => diffArrays(a, b, { maxEditLength }),
   );
   if (!words) {
@@ -2220,8 +2222,7 @@ function diffRegion(
       span.fromStart < span.fromEnd && span.toStart < span.toEnd
         ? withinBudget(
             deadline,
-            from.slice(span.fromStart, span.fromEnd),
-            to.slice(span.toStart, span.toEnd),
+            () => [from.slice(span.fromStart, span.fromEnd), to.slice(span.toStart, span.toEnd)],
             (a, b, maxEditLength) => diffChars(a, b, { maxEditLength }),
           )
         : undefined;
@@ -2823,18 +2824,19 @@ function subsequenceEnd(text: string, needle: string, at: number): number {
 }
 
 /**
- * Run `diff` of `from` against `to` with the edit length `DIFF_WORK` affords
- * their lengths; `undefined` once the `deadline` is spent, when the diff is
- * not started, or when the diff gives up. The bound is a function of the
- * inputs alone, so whether a diff completes never depends on the clock.
+ * Run `diff` over the two `inputs` with the edit length `DIFF_WORK` affords
+ * their lengths; `undefined` once the `deadline` is spent, when neither the
+ * inputs are built nor the diff started, or when the diff gives up. The
+ * bound is a function of the inputs alone, so whether a started diff
+ * completes never depends on the clock.
  */
 function withinBudget<T extends string | unknown[], R>(
   deadline: number,
-  from: T,
-  to: T,
+  inputs: () => [T, T],
   diff: (from: T, to: T, maxEditLength: number) => R | undefined,
 ): R | undefined {
   if (performance.now() >= deadline) return undefined;
+  const [from, to] = inputs();
   return diff(from, to, Math.floor(DIFF_WORK / (from.length + to.length)));
 }
 
