@@ -55,7 +55,6 @@ const FOLDED_NEWLINE = /([^\n])\n(?=[^\n])/g;
 const SCRIPT_NAME = /^[\w:.-]+$/;
 const ENV_ASSIGNMENT = /^[A-Za-z_]\w*=/;
 const LAUNCHER = /^scripts\/[\w./-]+$/;
-const RUNNERS = ['vitest', 'playwright'] as const;
 /** Commands that run the rest of their line as the command. */
 const WRAPPERS = new Set(['cross-env', 'env', 'xvfb-run', 'corepack']);
 /** Commands that run the bins named after them. */
@@ -66,7 +65,7 @@ const SHELLS = new Set(['sh', 'bash']);
 const PLAIN_WORD = /^[\w@%+=:,./-]+$/;
 const MAX_SCRIPT_HOPS = 16;
 
-type Runner = (typeof RUNNERS)[number];
+type Runner = 'vitest' | 'playwright';
 type Scripts = Record<string, string>;
 type Reader = (path: string) => string | undefined;
 /** One package-script call with the args pnpm forwards to it. */
@@ -84,6 +83,8 @@ interface Word {
 const ALLOWLIST: Readonly<Record<string, string>> = Object.freeze({
   'src/lib/components/ui/card/operate-patterns.playwright.config.ts':
     '2026-09-21: intentionally manual visual harness; its spec renders Operate pattern contact sheets into a dated .demo-artifacts/ directory for human review, with no checked-in baselines to compare against in CI',
+  'vitest.text-rebase-bench.config.ts':
+    '2026-09-23: local-only text-rebase benchmark; it times createBidirectionalOffsetMapper over the shapes corpus for a head-vs-base comparison on one host and writes JSON, with no assertion CI could check and timings CI runners could not reproduce',
 });
 
 const normalizePath = (value: string) => posix.normalize(value.replaceAll('\\', '/'));

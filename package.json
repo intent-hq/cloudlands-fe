@@ -1,6 +1,6 @@
 {
   "name": "intent",
-  "version": "2.177.2",
+  "version": "2.178.1",
   "description": "Intent",
   "type": "module",
   "main": "dist/main/index.js",
@@ -25,6 +25,7 @@
     "sandbox:probe": "node scripts/sandbox/probe.mjs",
     "sandbox:geometry:update": "cross-env SANDBOX_GEOMETRY_UPDATE=1 node scripts/pnpm-run.mjs test:ct -- --grep 'geometry snapshot'",
     "perf:chat-motion": "node scripts/perf/chat-motion-trace.mjs",
+    "perf:text-rebase": "node scripts/perf/text-rebase-bench.mjs",
     "dev:electron": "node scripts/dev-electron.js",
     "dev:electron:cdp": "node scripts/dev-electron.js --cdp",
     "kill:electron": "node scripts/kill-electron.js",
@@ -95,6 +96,7 @@
     "test:unit": "node scripts/check-deps-fresh.mjs && vitest run --config vitest.config.ts",
     "test:ui-invariants": "node scripts/check-deps-fresh.mjs && node scripts/ui-invariant-suites.mjs",
     "test:unit:watch": "vitest",
+    "test:loaded": "node scripts/vitest-loaded.mjs",
     "test:playwright": "playwright test",
     "test:playwright:manual:catalog": "playwright test --config=playwright.manual.config.ts test/catalog-manual-review.capture.spec.ts",
     "test:playwright:manual:baseline": "playwright test --config=playwright.manual.config.ts test/current-main-baseline.spec.ts",

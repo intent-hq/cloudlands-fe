@@ -116,6 +116,7 @@ export function parseKnipJson(stdout) {
   } catch (error) {
     throw new Error(
       `knip --reporter json produced no parseable JSON (${error.message}); stdout was ${JSON.stringify(stdout.slice(0, 200))}`,
+      { cause: error },
     );
   }
   if (!parsed || !Array.isArray(parsed.issues)) {

@@ -372,6 +372,8 @@
   import { canChangeAgentProvider as resolveCanChangeAgentProvider } from './provider-lock';
   import ModelChangeNotice from './ModelChangeNotice.svelte';
   import { getModelChangeNotice } from './model-change-notice';
+  import ProviderRehomedNotice from './ProviderRehomedNotice.svelte';
+  import { getProviderRehomedNotice } from './rehome-notice';
   import {
     hasOperationalAssistantMessageBoundary,
     hasOperationalAssistantTurnBoundary,
@@ -3484,6 +3486,11 @@
     return transcriptStructure.assistantTurnNumberById.get(messageId) ?? 0;
   }
 
+  // A turn notice the transcript renders (mirrors the notice rows below).
+  function isRenderedTurnNotice(notice: AgentMessage): boolean {
+    return Boolean(getModelChangeNotice(notice) || getProviderRehomedNotice(notice));
+  }
+
   // Compute the turn structure and both virtualization/search indexes in one
   // transcript pass rather than regrouping each date bucket for every consumer.
   const conversationTurnIndex = $derived(indexConversationTurns(groupedMessages));
@@ -6262,7 +6269,7 @@
                     assistantMessages: turn.assistantMessages,
                     hasVisibleNotice:
                       turn.bodyMessages.some((message) => message.role === 'system') ||
-                      turn.noticeMessages.some((notice) => Boolean(getModelChangeNotice(notice))),
+                      turn.noticeMessages.some((notice) => isRenderedTurnNotice(notice)),
                     hasPendingStatus:
                       showPendingAssistantStatus ||
                       (groupIndex === groupedMessages.length - 1 &&
@@ -6316,7 +6323,7 @@
                        boundary (previously it rendered nowhere). -->
                   {@const turnLastRenderedMessageId =
                     turn.bodyMessages[turn.bodyMessages.length - 1]?.id ??
-                    turn.noticeMessages.findLast((notice) => getModelChangeNotice(notice))?.id ??
+                    turn.noticeMessages.findLast((notice) => isRenderedTurnNotice(notice))?.id ??
                     turn.userMessage?.id ??
                     null}
                   {@const dividerAtTurnBoundary = dividerDefersToTurnBoundary(
@@ -6434,13 +6441,22 @@
                       {@render newMessagesDividerAfter(message.id, dividerAtTurnBoundary)}
                     {/if}
 
-                    <!-- Model-change notices (daemon-persisted, after the user row, before assistant output) -->
+                    <!-- Model-change and provider re-home notices (daemon-persisted, after the user row, before assistant output) -->
                     {#each turn.noticeMessages as noticeMessage (noticeMessage.id)}
                       {@const notice = getModelChangeNotice(noticeMessage)}
+                      {@const rehomeNotice = getProviderRehomedNotice(noticeMessage)}
                       {#if notice}
                         <div data-message-id={noticeMessage.id} class="px-2">
                           <ModelChangeNotice
                             {notice}
+                            fallbackText={extractAllContent(noticeMessage) || undefined}
+                          />
+                        </div>
+                        {@render newMessagesDividerAfter(noticeMessage.id, dividerAtTurnBoundary)}
+                      {:else if rehomeNotice}
+                        <div data-message-id={noticeMessage.id} class="px-2">
+                          <ProviderRehomedNotice
+                            notice={rehomeNotice}
                             fallbackText={extractAllContent(noticeMessage) || undefined}
                           />
                         </div>

@@ -82,6 +82,32 @@ describe('conversation turn indexing', () => {
     expect(turns[2].userMessage?.id).toBe('user-2');
   });
 
+  it('keeps the provider re-home notice before the turn body and indexes it (intent#5737)', () => {
+    const rehome = {
+      ...message('rehome', 'system', 'provider_rehomed'),
+      contentBlocks: [{ type: 'text', text: 'gpt-5-codex (OpenAI Codex) is no longer available' }],
+    } as AgentMessage;
+    const indexed = indexConversationTurns([
+      { messages: [message('user', 'user'), rehome, message('reply', 'assistant')] },
+    ]);
+    const [turn] = indexed.groups[0].turns;
+    expect(turn.noticeMessages.map(({ id }) => id)).toEqual(['rehome']);
+    expect(turn.bodyMessages.map(({ id }) => id)).toEqual(['reply']);
+    expect(turn.assistantMessages.map(({ id }) => id)).toEqual(['reply']);
+    expect(indexed.turnKeyByMessageId.get('rehome')).toBe('user');
+  });
+
+  it('indexes an orphan provider re-home notice in a standalone history group', () => {
+    const indexed = indexConversationTurns([
+      { groupKey: 'older', messages: [message('rehome', 'system', 'provider_rehomed')] },
+      { groupKey: 'tail', messages: [message('user', 'user')] },
+    ]);
+    expect(indexed.groups[0].turns[0]?.noticeMessages.map(({ id }) => id)).toEqual(['rehome']);
+    expect(indexed.groups[0].turns[0]?.userMessage).toBeNull();
+    expect(indexed.turnKeyByMessageId.get('rehome')).toBe('group-older-turn-0');
+    expect(indexed.globalIndexByTurnKey.get('user')).toBe(1);
+  });
+
   it('builds stable global and per-message indexes from the grouped turns', () => {
     const first = {
       label: 'Today',

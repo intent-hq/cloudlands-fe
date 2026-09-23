@@ -27,6 +27,7 @@ const semanticColorBaseline = baselineCounts(lintBaseline['no-arbitrary-motion-o
 const iconOnlyButtonSizeBaseline = baselineCounts(lintBaseline['icon-only-button-size']) ?? {};
 import noColdSvelteImportInTestsRule from './eslint-rules/no-cold-svelte-import-in-tests.js';
 import noSourceLiteralAssertionsInTestsRule from './eslint-rules/no-source-literal-assertions-in-tests.js';
+import noWallClockAssertionsInTestsRule from './eslint-rules/no-wall-clock-assertions-in-tests.js';
 import noFlushSyncInTeardownRule from './eslint-rules/no-flushsync-in-teardown.js';
 import noDirectReducedMotionQueryRule, {
   SOURCE_OF_TRUTH_FILES as reducedMotionSourceOfTruthFiles,
@@ -35,6 +36,8 @@ import noDirectReducedMotionQueryRule, {
 
 const sourceLiteralAssertionsBaseline =
   baselineCounts(lintBaseline['no-source-literal-assertions-in-tests']) ?? {};
+const wallClockAssertionsBaseline =
+  baselineCounts(lintBaseline['no-wall-clock-assertions-in-tests']) ?? {};
 
 const intentPlugin = {
   rules: {
@@ -43,6 +46,7 @@ const intentPlugin = {
     ...designSystemRules,
     'no-cold-svelte-import-in-tests': noColdSvelteImportInTestsRule,
     'no-source-literal-assertions-in-tests': noSourceLiteralAssertionsInTestsRule,
+    'no-wall-clock-assertions-in-tests': noWallClockAssertionsInTestsRule,
     'no-flushsync-in-teardown': noFlushSyncInTeardownRule,
     'no-direct-reduced-motion-query': noDirectReducedMotionQueryRule,
   },
@@ -425,6 +429,72 @@ const ctSharedModuleRestrictedImportPath = {
     "Only type imports may come from '@playwright/experimental-ct-svelte'. Import `test` / `expect` (and any other runtime export) from the shared CT module (src/test/ct-test.ts) so the browser-context isolation applies to this spec.",
 };
 
+const javascriptConfig = {
+  files: ['**/*.js', '**/*.jsx', '**/*.mjs'],
+  languageOptions: {
+    ecmaVersion: 2022,
+    sourceType: 'module',
+    globals: {
+      console: 'readonly',
+      process: 'readonly',
+      Buffer: 'readonly',
+      __dirname: 'readonly',
+      __filename: 'readonly',
+      global: 'readonly',
+      window: 'readonly',
+      document: 'readonly',
+      navigator: 'readonly',
+      fetch: 'readonly',
+      URL: 'readonly',
+      URLSearchParams: 'readonly',
+      setTimeout: 'readonly',
+      clearTimeout: 'readonly',
+      setInterval: 'readonly',
+      clearInterval: 'readonly',
+      Promise: 'readonly',
+      require: 'readonly',
+      module: 'readonly',
+      exports: 'readonly',
+      WebSocket: 'readonly',
+      MutationObserver: 'readonly',
+      PerformanceObserver: 'readonly',
+      Event: 'readonly',
+      KeyboardEvent: 'readonly',
+      getComputedStyle: 'readonly',
+      performance: 'readonly',
+      requestAnimationFrame: 'readonly',
+      cancelAnimationFrame: 'readonly',
+      queueMicrotask: 'readonly',
+      HTMLAnchorElement: 'readonly',
+      HTMLElement: 'readonly',
+      Element: 'readonly',
+      Node: 'readonly',
+    },
+  },
+  plugins: {
+    'unused-imports': unusedImports,
+  },
+  rules: {
+    ...js.configs.recommended.rules,
+    'no-console': 'off',
+    'prefer-const': 'warn',
+    'no-var': 'error',
+    'object-shorthand': 'off',
+    'prefer-template': 'off',
+    'prefer-arrow-callback': 'off',
+    'no-unused-vars': [
+      'error',
+      {
+        argsIgnorePattern: '^_',
+        varsIgnorePattern: '^_',
+        caughtErrorsIgnorePattern: '^_',
+        destructuredArrayIgnorePattern: '^_',
+      },
+    ],
+    'unused-imports/no-unused-imports': 'error',
+  },
+};
+
 export default [
   // .gitignore is the source of truth for scratch/sandbox exclusions (.dev/, .wt-*/); see vitest.config.ts.
   includeIgnoreFile(fileURLToPath(new URL('.gitignore', import.meta.url))),
@@ -446,80 +516,14 @@ export default [
       '**/static/generated/**',
       '**/.backup-state-migration/**',
       '**/.test-data/**',
-      '**/*.cjs',
       '**/cdp-mcp-server/**',
       '**/playwright/.cache/**',
       '**/playwright-report/**',
-      '**/scripts/**',
       '**/e2e/**',
       '**/test/**',
     ],
   },
-  {
-    files: ['**/*.js', '**/*.jsx', '**/*.mjs'],
-    languageOptions: {
-      ecmaVersion: 2022,
-      sourceType: 'module',
-      globals: {
-        console: 'readonly',
-        process: 'readonly',
-        Buffer: 'readonly',
-        __dirname: 'readonly',
-        __filename: 'readonly',
-        global: 'readonly',
-        window: 'readonly',
-        document: 'readonly',
-        navigator: 'readonly',
-        fetch: 'readonly',
-        URL: 'readonly',
-        URLSearchParams: 'readonly',
-        setTimeout: 'readonly',
-        clearTimeout: 'readonly',
-        setInterval: 'readonly',
-        clearInterval: 'readonly',
-        Promise: 'readonly',
-        require: 'readonly',
-        module: 'readonly',
-        exports: 'readonly',
-        WebSocket: 'readonly',
-        MutationObserver: 'readonly',
-        PerformanceObserver: 'readonly',
-        Event: 'readonly',
-        KeyboardEvent: 'readonly',
-        getComputedStyle: 'readonly',
-        performance: 'readonly',
-        requestAnimationFrame: 'readonly',
-        cancelAnimationFrame: 'readonly',
-        queueMicrotask: 'readonly',
-        HTMLAnchorElement: 'readonly',
-        HTMLElement: 'readonly',
-        Element: 'readonly',
-        Node: 'readonly',
-      },
-    },
-    plugins: {
-      'unused-imports': unusedImports,
-    },
-    rules: {
-      ...js.configs.recommended.rules,
-      'no-console': 'off',
-      'prefer-const': 'warn',
-      'no-var': 'error',
-      'object-shorthand': 'off',
-      'prefer-template': 'off',
-      'prefer-arrow-callback': 'off',
-      'no-unused-vars': [
-        'error',
-        {
-          argsIgnorePattern: '^_',
-          varsIgnorePattern: '^_',
-          caughtErrorsIgnorePattern: '^_',
-          destructuredArrayIgnorePattern: '^_',
-        },
-      ],
-      'unused-imports/no-unused-imports': 'error',
-    },
-  },
+  javascriptConfig,
   {
     files: ['**/*.ts', '**/*.tsx', '**/*.mts', '**/*.cts'],
     languageOptions: {
@@ -592,6 +596,30 @@ export default [
       'prefer-arrow-callback': 'off',
     },
   },
+  // Scripts run under Node only. The shared JS/TS blocks above declare the
+  // globals renderer and main code have in common; the Node-only ones live here.
+  {
+    files: ['scripts/**/*.{js,cjs,mjs,ts}'],
+    languageOptions: {
+      globals: {
+        AbortController: 'readonly',
+        AbortSignal: 'readonly',
+        clearImmediate: 'readonly',
+        setImmediate: 'readonly',
+        structuredClone: 'readonly',
+        TextDecoder: 'readonly',
+        TextEncoder: 'readonly',
+      },
+    },
+  },
+  {
+    ...javascriptConfig,
+    files: ['scripts/**/*.cjs'],
+    languageOptions: {
+      ...javascriptConfig.languageOptions,
+      sourceType: 'commonjs',
+    },
+  },
   {
     files: dynamicImportEnforcedFiles,
     ignores: productionModuleIgnores,
@@ -621,6 +649,14 @@ export default [
       'intent/no-source-literal-assertions-in-tests': [
         'error',
         { baseline: sourceLiteralAssertionsBaseline },
+      ],
+      // A test that asserts a raw performance.now()/Date.now() elapsed time
+      // against a millisecond budget passes in isolation and fails under CI
+      // runner load (cloudlands-fe#2740). Same ratchet as above: the baseline
+      // maps today's offenders to their assertion counts and may only shrink.
+      'intent/no-wall-clock-assertions-in-tests': [
+        'error',
+        { baseline: wallClockAssertionsBaseline },
       ],
     },
   },

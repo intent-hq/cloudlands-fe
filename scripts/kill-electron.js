@@ -12,7 +12,7 @@ try {
     try {
       execSync('taskkill /F /IM electron.exe', { stdio: 'inherit' });
       console.log('✓ Killed Electron processes');
-    } catch (err) {
+    } catch {
       // taskkill returns error if no process found, which is fine
       console.log('No Electron processes found');
     }
@@ -21,7 +21,7 @@ try {
     try {
       execSync("pkill -9 -f 'electron.*dist/main/index.js'", { stdio: 'inherit' });
       console.log('✓ Killed Electron processes');
-    } catch (err) {
+    } catch {
       // pkill returns error if no process found, which is fine
       console.log('No Electron processes found');
     }
