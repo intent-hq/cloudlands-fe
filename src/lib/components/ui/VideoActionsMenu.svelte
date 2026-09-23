@@ -1,3 +1,5 @@
+<!-- @catalog-exempt: composition over the catalogued Menu; no catalog fixtures yet -->
+
 <script lang="ts">
   import { faEllipsis } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';

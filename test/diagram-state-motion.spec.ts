@@ -7,7 +7,12 @@ const externalBaseUrl = process.env.UI_PREVIEW_BASE_URL;
 let baseUrl = externalBaseUrl ?? '';
 let server: ViteDevServer | undefined;
 
-test.describe.configure({ mode: 'default' });
+// Every workbench visit renders all diagram cases before `data-preview-ready`, which
+// alone can take most of the default 30 s budget on CI (intent-hq/intent#5687). The
+// per-visit budget sits above the workbench's own 45 s `readinessTimeoutMs` so a slow
+// visit surfaces the preview's readiness error rather than a bare expect timeout.
+const WORKBENCH_READY_TIMEOUT_MS = 60_000;
+test.describe.configure({ mode: 'default', timeout: 90_000 });
 
 test.beforeAll(async () => {
   if (externalBaseUrl) return;
@@ -100,7 +105,9 @@ async function openMotionFixture(page: Page, state: string, reduced = false) {
   const url = `${baseUrl}/sandbox/diagram-workbench?state=${state}&theme=light&width=960&motion=${motion}`;
   await page.goto(url, { waitUntil: 'domcontentloaded' });
   const scene = page.getByTestId('catalog-scene');
-  await expect(scene).toHaveAttribute('data-preview-ready', 'true', { timeout: 30_000 });
+  await expect(scene).toHaveAttribute('data-preview-ready', 'true', {
+    timeout: WORKBENCH_READY_TIMEOUT_MS,
+  });
 }
 
 async function openSystemMotionFixture(page: Page, state: string, reduced: boolean) {
@@ -108,7 +115,7 @@ async function openSystemMotionFixture(page: Page, state: string, reduced: boole
   const url = `${baseUrl}/sandbox/diagram-workbench?state=${state}&theme=light&width=960`;
   await page.goto(url, { waitUntil: 'domcontentloaded' });
   await expect(page.getByTestId('catalog-scene')).toHaveAttribute('data-preview-ready', 'true', {
-    timeout: 30_000,
+    timeout: WORKBENCH_READY_TIMEOUT_MS,
   });
 }
 
@@ -925,7 +932,7 @@ test('keeps the bundled sandbox font through theme changes and repeated document
       { waitUntil: 'domcontentloaded' },
     );
     await expect(page.getByTestId('catalog-scene')).toHaveAttribute('data-preview-ready', 'true', {
-      timeout: 30_000,
+      timeout: WORKBENCH_READY_TIMEOUT_MS,
     });
     await expectBundledSandboxFont(page, rootId);
     if (state === 'custom-architecture') {
@@ -1150,28 +1157,45 @@ test('keeps live battery policy and explicit preview choices consistent in CSS a
   await root.screenshot({ path: info.outputPath('battery-policy-restored.png') });
 });
 
-test('persists accessible full and reduced motion choices across stepped fixtures', async ({
-  page,
-}) => {
+// The saved-motion-choice journey is one test per document visit so a single workbench
+// load never shares a test budget with another. Each visit seeds the storage record the
+// previous visit is asserted to have written.
+const catalogPreferencesKey = 'component-catalog-preferences';
+
+async function readStoredCatalogPreferences(page: Page) {
+  return page.evaluate(
+    (key) => JSON.parse(localStorage.getItem(key) ?? '{}'),
+    catalogPreferencesKey,
+  );
+}
+
+async function seedStoredCatalogPreferences(page: Page, value: Record<string, unknown>) {
+  await page.addInitScript(([key, serialized]) => localStorage.setItem(key, serialized), [
+    catalogPreferencesKey,
+    JSON.stringify(value),
+  ] as const);
+}
+
+test('persists an accessible full motion choice over a reduced-motion system', async ({ page }) => {
   await openSystemMotionFixture(page, 'custom-walkthrough', true);
   await page.getByRole('button', { name: 'Customize preview', exact: true }).click();
   await page.getByRole('radio', { name: 'Full', exact: true }).click();
   await expect(page.getByTestId('catalog-shell')).toHaveAttribute('data-catalog-motion', 'full');
   await expect(page.locator('html')).toHaveClass(/catalog-full-motion/);
   expect(new URL(page.url()).searchParams.get('motion')).toBe('full');
-  expect(
-    await page.evaluate(() =>
-      JSON.parse(localStorage.getItem('component-catalog-preferences') ?? '{}'),
-    ),
-  ).toMatchObject({ motion: 'full' });
+  expect(await readStoredCatalogPreferences(page)).toMatchObject({ motion: 'full' });
   const fullTransition = await recordControlMotion(page, 'custom-walkthrough', 'forward');
   expect(fullTransition.frames[0]).toMatchObject({ phase: 'camera', settled: false });
+});
 
+test('hydrates a saved full motion choice and persists a reduced override', async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await seedStoredCatalogPreferences(page, { motion: 'full' });
   await page.goto(
     `${baseUrl}/sandbox/diagram-workbench?state=custom-architecture&theme=light&width=960`,
   );
   await expect(page.getByTestId('catalog-scene')).toHaveAttribute('data-preview-ready', 'true', {
-    timeout: 30_000,
+    timeout: WORKBENCH_READY_TIMEOUT_MS,
   });
   await page.getByRole('button', { name: 'Customize preview', exact: true }).click();
   await expect(page.getByRole('radio', { name: 'Full', exact: true })).toHaveAttribute(
@@ -1182,13 +1206,18 @@ test('persists accessible full and reduced motion choices across stepped fixture
   await expect(page.getByTestId('catalog-shell')).toHaveAttribute('data-catalog-motion', 'reduced');
   await expect(page.locator('html')).toHaveClass(/catalog-reduced-motion/);
   expect(new URL(page.url()).searchParams.get('motion')).toBe('reduced');
+  expect(await readStoredCatalogPreferences(page)).toMatchObject({ motion: 'reduced' });
   const reducedTransition = await recordReducedControlMotion(
     page,
     'custom-architecture',
     'forward',
   );
   expect(Math.max(...reducedTransition.finiteAnimationCounts.map(({ count }) => count))).toBe(0);
+});
 
+test('hydrates a saved reduced motion choice on a later stepped fixture', async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await seedStoredCatalogPreferences(page, { motion: 'reduced' });
   await page.goto(
     `${baseUrl}/sandbox/diagram-workbench?state=custom-delivery-walkthrough&theme=light&width=960`,
   );
@@ -1209,7 +1238,6 @@ test('persists accessible full and reduced motion choices across stepped fixture
 test('animates delivery nodes and painted connections between Observe and Publish', async ({
   page,
 }) => {
-  test.setTimeout(60_000);
   await openMotionFixture(page, 'custom-delivery-walkthrough');
   const root = page.locator('#custom-delivery-walkthrough');
   const renderer = root.locator('.diagram-renderer');
@@ -1438,7 +1466,6 @@ test('targets complete delivery scene geometry before incoming content appears',
 test('animates the untouched initial ownership step before the following step', async ({
   page,
 }) => {
-  test.setTimeout(60_000);
   await openMotionFixture(page, 'custom-walkthrough');
   const root = page.locator('#custom-walkthrough');
   const renderer = root.locator('.diagram-renderer');
@@ -1567,7 +1594,7 @@ for (const width of [960, 320]) {
       { waitUntil: 'domcontentloaded' },
     );
     await expect(page.getByTestId('catalog-scene')).toHaveAttribute('data-preview-ready', 'true', {
-      timeout: 30_000,
+      timeout: WORKBENCH_READY_TIMEOUT_MS,
     });
 
     const lineTops = await page
@@ -1745,7 +1772,6 @@ test('settles an ownership step interrupted by a genuine outer lane resize', asy
 test('interpolates a retained route with its moving endpoints in diagram coordinates', async ({
   page,
 }) => {
-  test.setTimeout(60_000);
   await openMotionFixture(page, 'custom-architecture');
   const root = page.locator('#custom-architecture');
   const renderer = root.locator('.diagram-renderer');
@@ -1828,7 +1854,7 @@ test('keeps explicit full motion active for every stepped sandbox control', asyn
     `${baseUrl}/sandbox/diagram-workbench?state=custom-architecture&theme=light&width=960&motion=full`,
   );
   await expect(page.getByTestId('catalog-scene')).toHaveAttribute('data-preview-ready', 'true', {
-    timeout: 30_000,
+    timeout: WORKBENCH_READY_TIMEOUT_MS,
   });
   expect(await page.evaluate(() => matchMedia('(prefers-reduced-motion: reduce)').matches)).toBe(
     true,
@@ -1995,7 +2021,6 @@ test('keeps explicit full motion active for every stepped sandbox control', asyn
 test('settles every stepped sandbox control without finite reduced-motion animations', async ({
   page,
 }) => {
-  test.setTimeout(60_000);
   await openMotionFixture(page, 'custom-architecture', true);
   await expect(page.getByTestId('catalog-shell')).toHaveAttribute('data-catalog-motion', 'reduced');
   await expect(page.locator('html')).toHaveClass(/catalog-reduced-motion/);
@@ -2046,7 +2071,7 @@ test('shows continuous Redux walkthrough motion when the system requests reduced
     `${baseUrl}/sandbox/diagram-workbench?state=custom-walkthrough&theme=light&width=960&motion=full`,
   );
   await expect(page.getByTestId('catalog-scene')).toHaveAttribute('data-preview-ready', 'true', {
-    timeout: 30_000,
+    timeout: WORKBENCH_READY_TIMEOUT_MS,
   });
 
   const transition = await recordControlMotion(page, 'custom-walkthrough', 'forward');
@@ -2306,7 +2331,6 @@ for (const appearance of framingAppearances) {
     test(`fits each reduced-motion scene above the footer · ${appearance.name} · ${width.name}`, async ({
       page,
     }) => {
-      test.setTimeout(60_000);
       await page.emulateMedia({ reducedMotion: 'reduce' });
       const params = new URLSearchParams({
         state: 'custom-architecture',
@@ -2320,7 +2344,7 @@ for (const appearance of framingAppearances) {
         'data-preview-ready',
         'true',
         {
-          timeout: 30_000,
+          timeout: WORKBENCH_READY_TIMEOUT_MS,
         },
       );
       const root = page.locator('#custom-architecture');
