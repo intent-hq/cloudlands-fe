@@ -1,4 +1,5 @@
 import { expect, test } from '../../../test/ct-test';
+import TransferWorkspaceModal from './TransferWorkspaceModal.svelte';
 import ModalPolishPreview from './modal-polish.preview.svelte';
 
 for (const width of [720, 360]) {
@@ -7,7 +8,26 @@ for (const width of [720, 360]) {
     page,
   }) => {
     await page.setViewportSize({ width, height: 900 });
-    await mount(ModalPolishPreview, { props: { state: 'transfer' } });
+    let selected = false;
+    const component = await mount(TransferWorkspaceModal, {
+      props: {
+        open: true,
+        workspaceTitle: 'Design system',
+        connections: [
+          {
+            id: 'target',
+            label: 'Other device',
+            host: 'example.test',
+            port: 443,
+            fingerprint: null,
+            isLocal: false,
+          },
+        ],
+        onSelectDestination: () => {
+          selected = true;
+        },
+      },
+    });
     const option = page.getByTestId('transfer-download-option');
     const row = option.locator('[data-slot="list-row"]');
     await expect(row).toHaveCSS('padding-left', '0px');
@@ -22,8 +42,26 @@ for (const width of [720, 360]) {
       Math.abs(icon!.y + icon!.height / 2 - (title!.y + title!.height / 2)),
     ).toBeLessThanOrEqual(1);
     await option.click();
+    await expect.poll(() => selected).toBe(true);
+    await component.update({ props: { destination: { kind: 'download' } } });
     await expect(option).toHaveAttribute('aria-pressed', 'true');
     await expect(page.getByRole('button', { name: 'Next', exact: true })).toBeEnabled();
+  });
+
+  test(`export offers a clear review action without a selector at ${width}px`, async ({
+    mount,
+    page,
+  }) => {
+    await page.setViewportSize({ width, height: 900 });
+    await mount(ModalPolishPreview, { props: { state: 'transfer' } });
+    const dialog = page.getByRole('dialog', { name: 'Export workspace', exact: true });
+    await expect(dialog).toBeVisible();
+    await expect(
+      dialog.getByText('Save “Design system” to a file you can import on another device.'),
+    ).toBeVisible();
+    await expect(page.getByTestId('transfer-download-option')).toHaveCount(0);
+    await expect(dialog.getByRole('button', { name: 'Review export', exact: true })).toBeEnabled();
+    expect(await dialog.evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(true);
   });
 
   test(`harness On/Off groups adapt to ${width}px`, async ({ mount, page }) => {
