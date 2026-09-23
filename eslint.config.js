@@ -1,4 +1,3 @@
-import { readFileSync } from 'node:fs';
 import { builtinModules } from 'node:module';
 import { fileURLToPath } from 'node:url';
 import { includeIgnoreFile } from '@eslint/compat';
@@ -15,24 +14,17 @@ import cssParser from './eslint-rules/design-system/css-parser.js';
 import { designSystemRules } from './eslint-rules/design-system/index.js';
 import { namedColorAllowlist } from './eslint-rules/design-system/common.js';
 import { internalModuleImportPatterns } from './eslint-rules/internal-module-import-patterns.js';
+import { baselineCounts, loadBaseline } from './eslint-rules/lib/baseline-ratchet.js';
 
-const designSystemBaseline = JSON.parse(
-  readFileSync(new URL('./eslint-rules/design-system/baseline.json', import.meta.url), 'utf8'),
-);
-const designSystemBaselineOverrides = Object.entries(designSystemBaseline).flatMap(
-  ([rule, exceptions]) => {
-    const files = exceptions.flatMap((exception) => exception.files ?? []);
-    return files.length > 0 ? [{ files, rules: { [`intent/${rule}`]: 'off' } }] : [];
-  },
-);
-const semanticColorBaseline = Object.assign(
-  {},
-  ...designSystemBaseline['no-arbitrary-motion-or-color'].map((entry) => entry.counts ?? {}),
-);
-const iconOnlyButtonSizeBaseline = Object.assign(
-  {},
-  ...(designSystemBaseline['icon-only-button-size'] ?? []).map((entry) => entry.counts ?? {}),
-);
+// One entry file per tolerated source file under eslint-rules/baselines/<rule>/; see
+// eslint-rules/lib/baseline-ratchet.js for the layout.
+const lintBaseline = loadBaseline({ cwd: fileURLToPath(new URL('.', import.meta.url)) });
+const designSystemBaselineOverrides = Object.keys(designSystemRules).flatMap((rule) => {
+  const files = (lintBaseline[rule] ?? []).flatMap((exception) => exception.files ?? []);
+  return files.length > 0 ? [{ files, rules: { [`intent/${rule}`]: 'off' } }] : [];
+});
+const semanticColorBaseline = baselineCounts(lintBaseline['no-arbitrary-motion-or-color']) ?? {};
+const iconOnlyButtonSizeBaseline = baselineCounts(lintBaseline['icon-only-button-size']) ?? {};
 import noColdSvelteImportInTestsRule from './eslint-rules/no-cold-svelte-import-in-tests.js';
 import noSourceLiteralAssertionsInTestsRule from './eslint-rules/no-source-literal-assertions-in-tests.js';
 import noFlushSyncInTeardownRule from './eslint-rules/no-flushsync-in-teardown.js';
@@ -41,12 +33,8 @@ import noDirectReducedMotionQueryRule, {
   TEST_FILE_GLOBS as reducedMotionTestFileGlobs,
 } from './eslint-rules/no-direct-reduced-motion-query.js';
 
-const sourceLiteralAssertionsBaseline = JSON.parse(
-  readFileSync(
-    new URL('./eslint-rules/no-source-literal-assertions-in-tests.baseline.json', import.meta.url),
-    'utf8',
-  ),
-);
+const sourceLiteralAssertionsBaseline =
+  baselineCounts(lintBaseline['no-source-literal-assertions-in-tests']) ?? {};
 
 const intentPlugin = {
   rules: {
@@ -629,7 +617,7 @@ export default [
       // text pins the test to how the source is spelled, not what it does
       // (cloudlands-fe#2760). The baseline maps today's offenders to their
       // read counts and may only shrink: lower a file's count as reads are
-      // fixed (remove the entry at zero), never raise one or add a file.
+      // fixed (delete its entry file at zero), never raise one or add a file.
       'intent/no-source-literal-assertions-in-tests': [
         'error',
         { baseline: sourceLiteralAssertionsBaseline },
