@@ -3170,6 +3170,37 @@ describe('ModelPicker disabled agent provider (intent#5737)', () => {
     expect(vi.mocked(notify.info)).not.toHaveBeenCalled();
   });
 
+  it('does not offer a disabled default provider the available+enabled set still admits', async () => {
+    const { agentClient } = await import('$features/agent/agent.client');
+    // selectEnabledProviderIds always admits `model.defaultProvider`, so a
+    // default provider disabled in Settings > Agents still reaches the picker
+    // through the available+enabled list. The daemon refuses every turn on it
+    // (and a disabled default has no re-home target), so its rows are a dead
+    // end and must not be selectable — while the agent's own enabled provider
+    // stays offered and raises no warning.
+    enabledProviderIds$.set(['auggie', 'codex']);
+    enabledProvidersMap$.set({ auggie: false, codex: true });
+    mockAgentSession$.set({ id: 'agent-1', workspaceId: 'ws-1', provider: 'codex' });
+
+    render(ModelPicker, {
+      props: {
+        selectedModel: 'codex:gpt-5-codex',
+        agentId: 'agent-1',
+        workspaceId: 'ws-1',
+        portal: false,
+      },
+    });
+
+    const trigger = await screen.findByRole('button');
+    await fireEvent.click(trigger);
+    expect(await screen.findByRole('option', { name: /GPT-5 Codex/ })).toBeTruthy();
+    expect(screen.queryByRole('option', { name: /Sonnet 4\.6/ })).toBeNull();
+    expect(screen.queryByRole('tab', { name: /Auggie/ })).toBeNull();
+    expect(screen.queryByRole('alert')).toBeNull();
+    expect(trigger.querySelector('[data-icon="triangle-exclamation"]')).toBeNull();
+    expect(vi.mocked(agentClient.setModel)).not.toHaveBeenCalled();
+  });
+
   it('warns while no catalog has resolved yet — the warning never waits behind a fetch', async () => {
     enabledProvidersMap$.set({ auggie: true, codex: false });
     mockAgentSession$.set({ id: 'agent-1', workspaceId: 'ws-1', provider: 'codex' });

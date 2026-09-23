@@ -507,6 +507,20 @@
       isProviderDisabledInSettings($enabledProviders$, effectiveProviderId),
   );
 
+  // Providers whose models the picker may offer. The available+enabled set
+  // always admits the default provider (`model.defaultProvider`) even when it
+  // was disabled in settings, so its catalog keeps loading for the fetch and
+  // warning paths — but the daemon refuses every turn on a disabled provider
+  // and a disabled default has no re-home target, so its rows must not be
+  // selectable (intent#5737). Same settings blind spot as above for guests.
+  const selectableProviderIds = $derived(
+    isGuestLocked
+      ? $availableEnabledProviderIds$
+      : $availableEnabledProviderIds$.filter(
+          (pid) => !isProviderDisabledInSettings($enabledProviders$, pid),
+        ),
+  );
+
   // The per-agent fetch is only needed when the effective provider's models
   // aren't already covered by the all-providers fetch because the agent's
   // provider is since unavailable. Skipping it otherwise avoids a duplicate fetch.
@@ -1116,9 +1130,7 @@
 
   const flatModelOptions = $derived<DropdownOption[]>([
     ...(showDefaultOption ? [useDefaultOption] : []),
-    ...$availableEnabledProviderIds$.flatMap(
-      (pid) => allProviderModels[normalizeProviderId(pid)] ?? [],
-    ),
+    ...selectableProviderIds.flatMap((pid) => allProviderModels[normalizeProviderId(pid)] ?? []),
     // Keep the agent's current provider selectable while it is merely
     // unavailable, so the selected model isn't treated as unavailable — but
     // not once it was disabled in settings (see isEffectiveProviderDisabled).
@@ -1261,7 +1273,7 @@
       effectiveProviderId,
       availableModels,
       availableModelsProviderId,
-      enabledProviderIds: $availableEnabledProviderIds$,
+      enabledProviderIds: selectableProviderIds,
       effectiveProviderDisabled: isEffectiveProviderDisabled,
       allProviderModels,
       allProviderLoading,
@@ -1321,7 +1333,7 @@
 
   const providerTabIds = $derived.by(() => [
     ...new Set([
-      ...$availableEnabledProviderIds$.map((id) => normalizeProviderId(id)),
+      ...selectableProviderIds.map((id) => normalizeProviderId(id)),
       ...groupedModelOptions
         .filter((group) => group.key !== 'default')
         .map((group) => group.parentKey ?? group.key),
