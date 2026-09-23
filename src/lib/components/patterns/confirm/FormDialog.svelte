@@ -22,6 +22,8 @@
     submitVariant?: ButtonVariant;
     canSubmit?: boolean;
     busy?: boolean;
+    /** Disable and show progress on submit while keeping cancellation available. */
+    submitBusy?: boolean;
     role?: 'dialog' | 'alertdialog';
     dismissOnInteractOutside?: boolean;
     showCancel?: boolean;
@@ -32,6 +34,7 @@
     initialFocus?: HTMLElement | null;
     focusContent?: boolean;
     focusSubmit?: boolean;
+    focusCancel?: boolean;
     escapeKeydownBehavior?: 'close' | 'ignore';
     enterKey?: 'submit' | 'ignore';
     modEnter?: 'submit' | 'ignore';
@@ -54,6 +57,7 @@
     submitVariant = 'primary',
     canSubmit = true,
     busy = false,
+    submitBusy = false,
     role = 'dialog',
     dismissOnInteractOutside = true,
     showCancel = true,
@@ -64,6 +68,7 @@
     initialFocus,
     focusContent = false,
     focusSubmit = false,
+    focusCancel = false,
     escapeKeydownBehavior = 'close',
     enterKey = 'submit',
     modEnter = 'submit',
@@ -76,6 +81,7 @@
   let submissionError = $state('');
   let cancellationHandled = $state(false);
   let contentRef = $state<HTMLElement | null>(null);
+  let cancelRef = $state<HTMLButtonElement | null>(null);
   let submitRef = $state<HTMLButtonElement | null>(null);
   const isBusy = $derived(busy || internalBusy);
 
@@ -94,7 +100,7 @@
   }
 
   async function submit() {
-    if (isBusy || !canSubmit) return;
+    if (isBusy || submitBusy || !canSubmit) return;
     internalBusy = true;
     submissionError = '';
     try {
@@ -107,7 +113,9 @@
   }
 
   function handleOpenAutoFocus(event: Event) {
-    const target = initialFocus ?? (focusSubmit ? submitRef : focusContent ? contentRef : null);
+    const target =
+      initialFocus ??
+      (focusCancel ? cancelRef : focusSubmit ? submitRef : focusContent ? contentRef : null);
     if (!target) return;
     target.focus();
     // A disabled or hidden submit target cannot take focus; let Dialog.Content
@@ -160,8 +168,11 @@
             <FormActions>
               {#snippet secondary()}
                 {#if showCancel}
-                  <Button variant="ghost-light" disabled={isBusy} onclick={cancel}
-                    >{cancelLabel}</Button
+                  <Button
+                    bind:ref={cancelRef}
+                    variant="ghost-light"
+                    disabled={isBusy}
+                    onclick={cancel}>{cancelLabel}</Button
                   >
                 {/if}
               {/snippet}
@@ -173,8 +184,8 @@
                   class={focusSubmit
                     ? 'focus-visible:outline focus-visible:-outline-offset-1'
                     : undefined}
-                  loading={isBusy}
-                  disabled={!canSubmit || isBusy}
+                  loading={isBusy || submitBusy}
+                  disabled={!canSubmit || isBusy || submitBusy}
                 >
                   {submitLabel}
                 </Button>

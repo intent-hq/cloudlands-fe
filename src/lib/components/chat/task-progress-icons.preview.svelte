@@ -1,13 +1,23 @@
 <script lang="ts" module>
   import { definePreview } from '$lib/component-catalog/preview-definition';
 
-  export const preview = definePreview<{ presentation: 'status-stack' | 'checklist' }>({
+  interface PreviewProps {
+    presentation: 'status-stack' | 'checklist';
+    scenario?: 'seven' | 'eight' | 'long' | 'completed' | 'empty';
+  }
+
+  export const preview = definePreview<PreviewProps>({
     id: 'task-progress-icons',
     title: 'Task list status icons',
     defaultState: 'checklist',
     states: {
       checklist: { props: { presentation: 'checklist' } },
       stack: { props: { presentation: 'status-stack' } },
+      'threshold-eight': { props: { presentation: 'checklist', scenario: 'eight' } },
+      'long-list': { props: { presentation: 'checklist', scenario: 'long' } },
+      'long-stack': { props: { presentation: 'status-stack', scenario: 'long' } },
+      completed: { props: { presentation: 'checklist', scenario: 'completed' } },
+      empty: { props: { presentation: 'checklist', scenario: 'empty' } },
     },
   });
 </script>
@@ -16,8 +26,8 @@
   import TaskProgressControl from './TaskProgressControl.svelte';
   import type { TaskProgressItem } from './workspace-task-fallback';
 
-  let { presentation = 'checklist' }: { presentation?: 'status-stack' | 'checklist' } = $props();
-  const tasks: TaskProgressItem[] = [
+  let { presentation = 'checklist', scenario = 'seven' }: Partial<PreviewProps> = $props();
+  const baseTasks: TaskProgressItem[] = [
     {
       id: 'review',
       status: 'review_required',
@@ -50,6 +60,33 @@
       title: 'Capture the finished review for the implementation handoff',
     },
   ];
+  const tasks = $derived.by((): TaskProgressItem[] => {
+    if (scenario === 'empty') return [];
+    if (scenario === 'completed')
+      return baseTasks.map((task) => ({ ...task, status: 'completed' }));
+    if (scenario === 'eight')
+      return [
+        ...baseTasks,
+        {
+          id: 'keyboard',
+          status: 'pending',
+          title: 'Review keyboard navigation at the search threshold',
+        },
+      ];
+    if (scenario === 'long')
+      return [
+        ...baseTasks,
+        ...Array.from({ length: 13 }, (_, index): TaskProgressItem => ({
+          id: `extra-${index}`,
+          status: index % 3 === 0 ? 'completed' : 'pending',
+          title:
+            index % 2 === 0
+              ? `Review narrow layouts and long translated labels in panel ${index + 1}`
+              : `تحقق من المهمة ${index + 1} with English details and עברית`,
+        })),
+      ];
+    return baseTasks;
+  });
 </script>
 
 <section

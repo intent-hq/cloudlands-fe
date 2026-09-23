@@ -4,6 +4,29 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.179.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.178.3...v2.179.0) (2026-09-23)
+
+
+### 🚀 Features
+
+* **ui:** standardize panel header actions and task filters ([#2788](https://github.com/intent-hq/cloudlands-fe/issues/2788)) ([560db30](https://github.com/intent-hq/cloudlands-fe/commit/560db3023638dee7374b08c43349b020402bda6f))
+
+
+### 🐛 Bug Fixes
+
+* sharpen sidebar and settings header icons ([#2844](https://github.com/intent-hq/cloudlands-fe/issues/2844)) ([73beeb4](https://github.com/intent-hq/cloudlands-fe/commit/73beeb4b9ca1022c37d6a0f0adf0f95110d76cef))
+
+## [2.178.3](https://github.com/intent-hq/cloudlands-fe/compare/v2.178.2...v2.178.3) (2026-09-23)
+
+
+### 🐛 Bug Fixes
+
+* align protocol mismatch dialog stacking ([#2743](https://github.com/intent-hq/cloudlands-fe/issues/2743)) ([aad0a83](https://github.com/intent-hq/cloudlands-fe/commit/aad0a83b9d70e51ae7f0450437f7585963070fd4))
+* hydrate inline system notices in long chats ([#5762](https://github.com/intent-hq/cloudlands-fe/issues/5762)) ([#2841](https://github.com/intent-hq/cloudlands-fe/issues/2841)) ([ac59d99](https://github.com/intent-hq/cloudlands-fe/commit/ac59d9959770a259c646edca510b2797a0d70951))
+* move Antigravity connection setup into a dialog ([#2815](https://github.com/intent-hq/cloudlands-fe/issues/2815)) ([88d6bee](https://github.com/intent-hq/cloudlands-fe/commit/88d6bee4f5bc331e6d3e7c15db3694ddf5555d63))
+* use custom kebab icons for overflow menus ([#2838](https://github.com/intent-hq/cloudlands-fe/issues/2838)) ([5816d10](https://github.com/intent-hq/cloudlands-fe/commit/5816d103bd7de692b371932701492bbef0869667))
+* **workspace:** keep tab hover cards reachable ([#5755](https://github.com/intent-hq/cloudlands-fe/issues/5755)) ([#2837](https://github.com/intent-hq/cloudlands-fe/issues/2837)) ([52bf6a8](https://github.com/intent-hq/cloudlands-fe/commit/52bf6a89c34e43cdd22aa1e702e0f52b76637f4e))
+
 ## [2.178.2](https://github.com/intent-hq/cloudlands-fe/compare/v2.178.1...v2.178.2) (2026-09-23)
 
 
