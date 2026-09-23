@@ -451,7 +451,7 @@ describe('DeleteWarningDialog', () => {
       expect(
         screen.getByText(m.modals_deleteWarning_guests_openInvites_one({ count: '1' })),
       ).toBeTruthy();
-      expect(screen.getByText(m.modals_deleteWarning_permanent_description())).toBeTruthy();
+      expect(screen.getByText(m.modals_deleteWarning_description())).toBeTruthy();
       expect(screen.getByText(m.modals_deleteWarning_permanent_guests_description())).toBeTruthy();
       expect(
         screen.getByRole('button', { name: m.modals_deleteWarning_confirm_label() }),
@@ -507,7 +507,7 @@ describe('DeleteWarningDialog', () => {
         screen.getByText(m.modals_deleteWarning_guests_openInvites_many({ count: '3' })),
       ).toBeTruthy();
       expect(screen.queryByText(/collaborator/)).toBeNull();
-      expect(screen.getByText(m.modals_archiveWarning_note_description())).toBeTruthy();
+      expect(screen.getByText(m.modals_archiveWarning_description())).toBeTruthy();
       expect(screen.getByText(m.modals_archiveWarning_note_guests_description())).toBeTruthy();
       expect(screen.queryByText(m.modals_deleteWarning_permanent_guests_description())).toBeNull();
     });
@@ -531,7 +531,7 @@ describe('DeleteWarningDialog', () => {
       expect(screen.getByText(m.modals_archiveWarning_guestsOnly_description())).toBeTruthy();
       expect(screen.queryByText(m.modals_archiveWarning_description())).toBeNull();
       expect(screen.getByText(m.modals_archiveWarning_note_guests_description())).toBeTruthy();
-      expect(screen.queryByText(m.modals_archiveWarning_note_description())).toBeNull();
+      expect(screen.queryByText(/stopped agents and cancelled hooks/)).toBeNull();
 
       await fireEvent.click(
         screen.getByRole('button', { name: m.modals_archiveWarning_guestsOnly_confirm_label() }),

@@ -384,7 +384,12 @@
 </script>
 
 {#snippet userAvatar(user: GithubUserSearchItem)}
-  <PrincipalAvatar avatarUrl={user.avatarUrl} label={user.login} size={24} testid="share-pin-avatar" />
+  <PrincipalAvatar
+    avatarUrl={user.avatarUrl}
+    label={user.login}
+    size={24}
+    testid="share-pin-avatar"
+  />
 {/snippet}
 
 {#if open}
@@ -448,7 +453,11 @@
                     {#each principals as principal (principal.principalId)}
                       <Select.Item value={principal.principalId} label={principalLabel(principal)}>
                         <span class="flex min-w-0 items-center gap-2">
-                          <PrincipalAvatar avatarUrl={principal.avatarUrl} label={principalLabel(principal)} size={20} />
+                          <PrincipalAvatar
+                            avatarUrl={principal.avatarUrl}
+                            label={principalLabel(principal)}
+                            size={20}
+                          />
                           <span class="truncate">{principalLabel(principal)}</span>
                         </span>
                       </Select.Item>
@@ -770,7 +779,11 @@
                 >
                   <div class="flex min-w-0 items-start gap-2 text-sm">
                     <span class="first-line-icon">
-                      <PrincipalAvatar avatarUrl={member.avatarUrl} label={memberName(member)} size={24} />
+                      <PrincipalAvatar
+                        avatarUrl={member.avatarUrl}
+                        label={memberName(member)}
+                        size={24}
+                      />
                     </span>
                     <div class="min-w-0">
                       <div class="truncate text-sm">{memberName(member)}</div>

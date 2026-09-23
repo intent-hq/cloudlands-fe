@@ -138,23 +138,23 @@
       ? m.modals_archiveWarning_guestsOnly_title()
       : m.modals_deleteWarning_guestsOnly_title()
     : hasRunningWork
-    ? isArchive
-      ? m.modals_archiveWarning_title()
-      : m.modals_deleteWarning_title()
-    : isArchive
-      ? m.modals_archiveWarning_inactive_title()
-      : m.modals_deleteWarning_inactive_title()}
+      ? isArchive
+        ? m.modals_archiveWarning_title()
+        : m.modals_deleteWarning_title()
+      : isArchive
+        ? m.modals_archiveWarning_inactive_title()
+        : m.modals_deleteWarning_inactive_title()}
   confirmLabel={guestsOnly
     ? isArchive
       ? m.modals_archiveWarning_guestsOnly_confirm_label()
       : m.modals_deleteWarning_guestsOnly_confirm_label()
     : !hasRunningWork
-    ? isArchive
-      ? m.workspace_card_archive_label()
-      : m.menu_delete()
-    : isArchive
-      ? m.modals_archiveWarning_confirm_label()
-      : m.modals_deleteWarning_confirm_label()}
+      ? isArchive
+        ? m.workspace_card_archive_label()
+        : m.menu_delete()
+      : isArchive
+        ? m.modals_archiveWarning_confirm_label()
+        : m.modals_deleteWarning_confirm_label()}
   cancelLabel={m.modals_deleteWarning_cancel_label()}
   closeLabel={isArchive
     ? m.modals_archiveWarning_close_ariaLabel()
@@ -169,12 +169,12 @@
           ? m.modals_archiveWarning_guestsOnly_description()
           : m.modals_deleteWarning_guestsOnly_description()
         : hasRunningWork
-        ? isArchive
-          ? m.modals_archiveWarning_description()
-          : m.modals_deleteWarning_description()
-        : isArchive
-          ? m.modals_archiveWarning_inactive_description()
-          : m.modals_deleteWarning_inactive_description()}
+          ? isArchive
+            ? m.modals_archiveWarning_description()
+            : m.modals_deleteWarning_description()
+          : isArchive
+            ? m.modals_archiveWarning_inactive_description()
+            : m.modals_deleteWarning_inactive_description()}
     </p>
     <div class="min-w-0 space-y-4">
       {#if hasActiveWork || hasGuests}
