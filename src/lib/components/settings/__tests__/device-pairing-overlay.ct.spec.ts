@@ -35,7 +35,12 @@ test('QR dialog covers device dividers and returns focus when dismissed', async 
   await expect(trigger).toBeFocused();
   await trigger.click();
   await expect(dialog).toBeVisible();
-  await expect(dialog.getByRole('button', { name: 'Close', exact: true })).toBeFocused();
+  // Exercise focus with both same-name controls present, not the older footer-only dialog.
+  await expect(dialog.getByRole('button', { name: 'Close', exact: true })).toHaveCount(2);
+  const footerClose = dialog
+    .locator('[data-slot="dialog-footer"]')
+    .getByRole('button', { name: 'Close', exact: true });
+  await expect(footerClose).toBeFocused();
   // Visibility alone can precede the dialog's deferred outside-pointer listener.
   // Use locator actionability (stable, receiving events) rather than a raw mouse
   // event immediately after remounting. Keep the click outside the dialog.
