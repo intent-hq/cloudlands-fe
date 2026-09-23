@@ -410,6 +410,7 @@
   }
 
   const sidebarToggleAction: MenuAction = {
+    id: 'toggle-sidebar',
     label: m.ui_sidebar_toggle_label(),
     iconSnippet: sidebarToggleIconSnippet,
     dividerBefore: true,
@@ -420,6 +421,7 @@
   };
 
   const sidebarSideAction: MenuAction = $derived({
+    id: 'move-sidebar',
     label:
       $sidebarSide$ === 'left'
         ? m.workspace_sidebarHeader_moveSidebarRight_label()
@@ -439,6 +441,7 @@
   const shareAction: MenuAction | null = $derived(
     $labsMultiplayerEnabled$ && $workspace?.myRole === 'owner' && !$hidesOwnerActions$
       ? {
+          id: 'share-workspace',
           label: m.workspace_share_menu_label(),
           icon: faUserPlus,
           dividerBefore: true,
@@ -503,6 +506,7 @@
   const transferAction: MenuAction | null = $derived(
     $workspace && !$hidesOwnerActions$
       ? {
+          id: 'transfer-workspace',
           label: m.workspace_card_transfer_label(),
           icon: faRightLeft,
           dividerBefore: !shareAction,
@@ -538,6 +542,7 @@
     const ownClientId = $drivingClient$.ownClientId;
     if (!drivingClientSwitch?.canSwitchHere || !ownClientId || !workspaceId) return null;
     return {
+      id: 'set-primary-client',
       label: m.workspace_drivingClient_setPrimary_label(),
       icon: faGlobe,
       dividerBefore: true,

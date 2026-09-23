@@ -38,6 +38,7 @@
   import { store as appStore } from '$store/renderer/store';
   import {
     selectConnectedIds,
+    selectCurrentConnectionId,
     selectKeychainSyncState,
     selectPinnedDaemonVersion,
   } from '$store/renderer/slices/connections/connections-selectors';
@@ -71,6 +72,7 @@
   let { device, panelMode, onOpenPanel, onClosePanel, onRequestRemove }: Props = $props();
   const pinnedVersion$ = selectPinnedDaemonVersion();
   const connectedIds$ = selectConnectedIds();
+  const currentConnectionId$ = selectCurrentConnectionId();
   const syncState$ = selectKeychainSyncState();
   let name = $state('');
   let host = $state('');
@@ -108,11 +110,12 @@
   );
   const savedDeviceIcon = $derived(device.deviceIcon ?? 'auto');
   const accentOptions = $derived(connectionAccentOptions(savedAccent));
-  // Shared with the daemon-status menu: the local entry gets the fixed
-  // "This machine (local)" label; for remotes the Name wins outright, with
-  // hostname → address fallbacks for unmigrated records.
   const displayName = $derived(
-    device.isLocal ? m.layout_daemonStatus_localConnection_label() : formatConnectionLabel(device),
+    device.isLocal
+      ? $currentConnectionId$ === device.id
+        ? m.layout_daemonStatus_localConnection_label()
+        : m.settings_devices_hostMachine_label()
+      : formatConnectionLabel(device),
   );
   const openStatus = $derived(device.status ?? 'not-open');
   const trimmedName = $derived(name.trim());
@@ -572,7 +575,10 @@
   {/if}
 
   {#if device.isLocal}
-    <div class="px-4 pb-4 sm:px-5">
+    <div
+      class="px-4 pb-4 sm:px-5"
+      hidden={$currentConnectionId$ !== device.id && panelMode !== 'edit'}
+    >
       <WebSocketApiSettings expanded={panelMode === 'edit'} onEnabled={() => onOpenPanel('edit')}>
         <SettingsFieldRow id="local-device-icon" label={m.settings_devices_icon_label()}>
           {#snippet control()}

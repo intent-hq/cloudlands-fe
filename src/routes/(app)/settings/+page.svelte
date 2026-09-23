@@ -62,7 +62,6 @@
     selectChatAuroraEnabled,
     selectCodeFontFamily,
     selectCodeFontFamilyCSS,
-    selectCodeFontFamilyLabel,
     selectCodeFontOptions,
     selectIsNoteMonospace,
     selectLabsMultiplayerEnabled,
@@ -94,7 +93,6 @@
   const agentFontStyle = selectAgentFontStyle();
   const codeFontFamily = selectCodeFontFamily();
   const codeFontFamilyCSS = selectCodeFontFamilyCSS();
-  const codeFontFamilyLabel = selectCodeFontFamilyLabel();
   const codeFontOptions = selectCodeFontOptions();
   const chatAuroraEnabled = selectChatAuroraEnabled();
   const shellTransparencyEnabled = selectShellTransparencyEnabled();
@@ -808,24 +806,27 @@
                   label={m.settings_font_code_label()}
                   description={m.settings_font_code_description()}
                 >
-                  <div class="w-[180px] flex-shrink-0">
-                    <Select.Root value={$codeFontFamily} onchange={handleCodeFontChange}>
-                      <Select.Trigger>
-                        <span class="truncate" style:font-family={$codeFontFamilyCSS}>
-                          {$codeFontFamilyLabel}
-                        </span>
-                      </Select.Trigger>
-                      <Select.Content portal class="max-h-[300px] w-[180px]">
-                        {#each $codeFontOptions as option}
-                          <Select.Item value={option.value}>
-                            <span class="truncate" style:font-family={option.fontFamily}>
-                              {option.label}
-                            </span>
-                          </Select.Item>
-                        {/each}
-                      </Select.Content>
-                    </Select.Root>
-                  </div>
+                  {#snippet control({ labelId, descriptionId })}
+                    <div class="w-[180px] flex-shrink-0">
+                      <Select.Root value={$codeFontFamily} onchange={handleCodeFontChange}>
+                        <Select.Trigger aria-labelledby={labelId} aria-describedby={descriptionId}>
+                          <span class="truncate" style:font-family={$codeFontFamilyCSS}>
+                            {$codeFontOptions.find((option) => option.value === $codeFontFamily)
+                              ?.label ?? $codeFontFamily}
+                          </span>
+                        </Select.Trigger>
+                        <Select.Content portal class="max-h-[300px] w-[180px]">
+                          {#each $codeFontOptions as option}
+                            <Select.Item value={option.value}>
+                              <span class="truncate" style:font-family={option.fontFamily}>
+                                {option.label}
+                              </span>
+                            </Select.Item>
+                          {/each}
+                        </Select.Content>
+                      </Select.Root>
+                    </div>
+                  {/snippet}
                 </SettingsFieldRow>
               </section>
             </div>

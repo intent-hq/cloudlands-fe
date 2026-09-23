@@ -423,11 +423,11 @@
         />
         <div class="w-full sm:w-60 shrink-0">
           {#if selectedSlot !== null}
-            <p class="type-body font-medium text-muted-foreground mb-2">
+            <p id="hardware-selected-key" class="type-body font-medium text-muted-foreground mb-2">
               {selectedKeyLabel}
             </p>
             <Select.Root value={selectedActionId ?? 'none'} onchange={handleActionChange}>
-              <Select.Trigger>
+              <Select.Trigger aria-labelledby="hardware-selected-key">
                 <span class="truncate">{selectedActionLabel}</span>
               </Select.Trigger>
               <Select.Content portal class="max-h-75">
@@ -510,8 +510,12 @@
           </p>
         </div>
         <div class="w-22.5 flex-shrink-0">
-          <Select.Root value={String($promptPickerLimit$)} onchange={handleLimitChange}>
-            <Select.Trigger>
+          <Select.Root
+            value={String($promptPickerLimit$)}
+            invalid={!promptLimitOptions.includes($promptPickerLimit$)}
+            onchange={handleLimitChange}
+          >
+            <Select.Trigger aria-label={m.settings_hardware_promptLimit_label()}>
               <span>{$promptPickerLimit$}</span>
             </Select.Trigger>
             <Select.Content portal class="max-h-75 w-22.5">

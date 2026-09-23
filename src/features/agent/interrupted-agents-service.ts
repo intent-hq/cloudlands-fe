@@ -14,7 +14,7 @@
  */
 import { Logger } from '$shared/logger';
 import { onBackendReconnected, electronAPI } from '$lib/client/live/backend-transport';
-import type { InterruptedAgent } from '$lib/client/app-client';
+import type { InterruptedAgent, ResolveInterruptedResult } from '$lib/client/app-client';
 import { m } from '$shared/paraglide/messages.js';
 
 const BACKEND = {
@@ -82,24 +82,25 @@ export function notifyInterruptedAgentsModalClosed(): void {
 
 /**
  * Modal resume/abandon handler (`agent.resolveInterrupted`, PROTOCOL §5.35).
- * Stops the cross-window watcher (the modal closed locally), sends the
- * resolve, and toasts per-arm results. Omits empty arrays per the intentd
- * router contract.
+ * Resolves only the explicit IDs. Keep watching unresolved agents while the
+ * dialog remains open; callers display per-agent failures and can retry.
  */
 export async function resolveInterruptedAgents(
   appClient: any,
   resumeIds: string[],
   abandonIds: string[],
-): Promise<void> {
-  notifyInterruptedAgentsModalClosed();
-  if (resumeIds.length === 0 && abandonIds.length === 0) return;
+): Promise<ResolveInterruptedResult> {
+  if (resumeIds.length === 0 && abandonIds.length === 0)
+    return { resumed: [], abandoned: [], failed: [] };
   const abandonOnly = resumeIds.length === 0;
   try {
     const params: { resume?: string[]; abandon?: string[] } = {};
     if (resumeIds.length > 0) params.resume = resumeIds;
     if (abandonIds.length > 0) params.abandon = abandonIds;
 
-    const result = await appClient.agents.resolveInterrupted(params);
+    const result: ResolveInterruptedResult = await appClient.agents.resolveInterrupted(params);
+    for (const id of [...result.resumed, ...result.abandoned]) openAgentIds?.delete(id);
+    if (openAgentIds?.size === 0) notifyInterruptedAgentsModalClosed();
     logger.info('Resolved interrupted agents', { result });
     import('$lib/components/patterns/notify')
       .then(({ notify }) => {
@@ -126,6 +127,7 @@ export async function resolveInterruptedAgents(
           );
       })
       .catch(() => {});
+    return result;
   } catch (error) {
     logger.error('Failed to resolve interrupted agents', { error });
     import('$lib/components/patterns/notify')
@@ -137,6 +139,7 @@ export async function resolveInterruptedAgents(
         );
       })
       .catch(() => {});
+    throw error;
   }
 }
 

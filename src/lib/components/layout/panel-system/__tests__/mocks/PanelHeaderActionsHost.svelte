@@ -17,6 +17,7 @@
   import { selectPanelColumnCount } from '$store/renderer/slices/panel-layout/panel-layout-selectors';
   import * as Menu from '$lib/components/ui/menu';
   import PanelTabBar from '../../PanelTabBar.svelte';
+  import NoteViewSettingsDropdown from '$features/layout/tab-types/NoteViewSettingsDropdown.svelte';
 
   let {
     panelType = 'agent',
@@ -29,6 +30,8 @@
     populated = true,
     stackCount = 2,
     longMenuContent = false,
+    noteAppearance = false,
+    showTabStrip = false,
   }: {
     panelType?: PanelTabType;
     width?: number;
@@ -40,6 +43,8 @@
     populated?: boolean;
     stackCount?: 1 | 2 | 3 | 4 | 5;
     longMenuContent?: boolean;
+    noteAppearance?: boolean;
+    showTabStrip?: boolean;
   } = $props();
 
   const disposeStore = startRootStoreLifecycle(store, { startSagas: () => [] });
@@ -110,13 +115,17 @@
 </script>
 
 {#snippet contentDisplayAction()}
-  <Menu.CommandItem
-    label={longMenuContent
-      ? 'Content display action with a deliberately long label'
-      : 'Content display action'}
-    shortcut={longMenuContent ? 'Ctrl+Shift+Alt+M' : undefined}
-    onclick={() => (displayCount += 1)}
-  />
+  {#if noteAppearance}
+    <NoteViewSettingsDropdown {workspaceId} noteId="panel-note" embedded />
+  {:else}
+    <Menu.CommandItem
+      label={longMenuContent
+        ? 'Content display action with a deliberately long label'
+        : 'Content display action'}
+      shortcut={longMenuContent ? 'Ctrl+Shift+Alt+M' : undefined}
+      onclick={() => (displayCount += 1)}
+    />
+  {/if}
 {/snippet}
 
 {#snippet contentNavigationAction()}
@@ -156,6 +165,7 @@
     panelId="panel-actions"
     {workspaceId}
     {isRightmostPanel}
+    {showTabStrip}
     contentActions={{
       primary: contentNavigationAction,
       display: contentDisplayAction,

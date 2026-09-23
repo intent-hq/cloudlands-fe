@@ -1,15 +1,17 @@
 <script lang="ts">
+  import { ContentDialog } from '$lib/components/patterns/confirm';
+  import * as Accordion from '$lib/components/ui/accordion';
   import { Button } from '$lib/components/ui/button';
   import { handleLink } from '$features/navigation/link-handler';
   import { WorkspaceId } from '$shared/types/branded-ids';
-  import { faGithub } from '@fortawesome/free-brands-svg-icons';
-  import { faExternalLink, faKey, faTerminal } from '@fortawesome/free-solid-svg-icons';
+  import { faExternalLink } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
   import { m } from '$shared/paraglide/messages.js';
   import { getWorkspaceRouteContext } from '$lib/utils/workspace-route-context';
 
   interface Props {
     open?: boolean;
+    static?: boolean;
     onClose?: () => void;
     onRetryInTerminal?: () => void;
     errorMessage?: string;
@@ -23,6 +25,7 @@
 
   let {
     open = false,
+    static: staticPosition = false,
     onClose = () => {},
     onRetryInTerminal,
     errorMessage = '',
@@ -63,75 +66,38 @@
 </script>
 
 {#if open}
-  <div
-    class="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
-    role="button"
-    tabindex="0"
-    aria-label={m.lib_gitCredentials_closeModal_ariaLabel()}
-    onclick={(event) => event.target === event.currentTarget && handleClose()}
-    onkeydown={(e) => e.key === 'Escape' && handleClose()}
+  <ContentDialog
+    {open}
+    static={staticPosition}
+    title={m.lib_gitCredentials_title()}
+    closeLabel={m.lib_gitCredentials_closeModal_ariaLabel()}
+    onClose={handleClose}
+    size="lg"
   >
-    <div
-      class="bg-background rounded-lg w-[520px] max-w-[90vw] max-h-[80vh] overflow-y-auto shadow-lg border border-border text-foreground"
-    >
-      <!-- Header -->
-      <div class="flex justify-between items-center p-4">
-        <h2 class="m-0 text-lg font-semibold flex items-center gap-2">
-          <Fa icon={faKey} class="text-warning-ink" />
-          {m.lib_gitCredentials_title()}
-        </h2>
-        <Button
-          variant="ghost"
-          class="bg-transparent border-none text-2xl cursor-pointer text-muted-foreground hover:text-foreground"
-          onclick={handleClose}>×</Button
+    {#if errorMessage}<p class="type-body text-subtle">{errorMessage}</p>{/if}
+    <p class="type-caption text-muted-foreground">
+      <strong>{m.lib_gitCredentials_note_before()}</strong>
+      {m.lib_gitCredentials_note_after()}
+    </p>
+    <Accordion.Root type="multiple">
+      {#if command || displayError}
+        <Accordion.Item value="error"
+          ><Accordion.Trigger>{m.lib_gitCredentials_failedOperation_label()}</Accordion.Trigger
+          ><Accordion.Content>
+            {#if command}<pre
+                class="whitespace-pre-wrap break-all font-mono type-caption">{command}</pre>{/if}
+            {#if displayError}<pre
+                class="mt-2 max-h-32 overflow-auto whitespace-pre-wrap break-words font-mono type-caption text-subtle">{displayError}</pre>{/if}
+          </Accordion.Content></Accordion.Item
         >
-      </div>
-
-      <!-- Content -->
-      <div class="p-6 space-y-4">
-        <!-- What failed -->
-        {#if command || displayError}
-          <div
-            class="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-4 space-y-2"
-          >
-            <div class="flex justify-between items-center">
-              <p class="text-sm font-medium text-red-800 dark:text-red-200 m-0">
-                {m.lib_gitCredentials_failedOperation_label()}
-              </p>
-              {#if canRetry}
-                <Button
-                  variant="ghost"
-                  class="text-sm text-blue-600 dark:text-blue-400 underline bg-transparent border-none cursor-pointer p-0 hover:text-blue-800 dark:hover:text-blue-300"
-                  onclick={() => onRetryInTerminal?.()}
-                >
-                  {m.lib_gitCredentials_tryInTerminal_label()}
-                </Button>
-              {/if}
-            </div>
-            {#if command}
-              <div
-                class="bg-red-100 dark:bg-red-900/40 rounded p-2 font-mono text-xs text-red-900 dark:text-red-100 break-all"
-              >
-                {command}
-              </div>
-            {/if}
-            {#if displayError}
-              <pre
-                class="text-xs text-red-700 dark:text-red-300 m-0 whitespace-pre-wrap break-words overflow-auto max-h-32 bg-red-100 dark:bg-red-900/40 rounded p-2 font-mono">{displayError}</pre>
-            {/if}
-          </div>
-        {/if}
-
-        <!-- Option 1: SSH Keys -->
-        <div class="border border-border rounded-lg p-4">
-          <h3 class="text-base font-semibold flex items-center gap-2 m-0 mb-3">
-            <Fa icon={faKey} class="text-green-500" />
-            {m.lib_gitCredentials_sshOption_title()}
-          </h3>
+      {/if}
+      <Accordion.Item value="ssh"
+        ><Accordion.Trigger>{m.lib_gitCredentials_sshOption_title()}</Accordion.Trigger
+        ><Accordion.Content>
           <p class="text-sm text-subtle mb-3">
             {m.lib_gitCredentials_sshOption_description()}
           </p>
-          <div class="bg-muted rounded p-3 font-mono text-xs space-y-1">
+          <div class="font-mono text-xs space-y-1 break-words">
             <p class="m-0">
               <span class="text-subtle">{m.lib_gitCredentials_generateKey_comment()}</span>
             </p>
@@ -145,24 +111,22 @@
           </div>
           <Button
             variant="ghost"
-            class="mt-3 text-sm text-blue-600 dark:text-blue-400 hover:underline flex items-center gap-1 bg-transparent border-none cursor-pointer p-0"
+            class="mt-3 flex items-center gap-1 text-primary-ink"
+            disabled={!workspaceId}
             onclick={openGitHubSSHDocs}
           >
             <Fa icon={faExternalLink} size="xs" />
             {m.lib_gitCredentials_sshGuide_label()}
           </Button>
-        </div>
-
-        <!-- Option 2: Git Credential Manager -->
-        <div class="border border-border rounded-lg p-4">
-          <h3 class="text-base font-semibold flex items-center gap-2 m-0 mb-3">
-            <Fa icon={faTerminal} class="text-purple-500" />
-            {m.lib_gitCredentials_gcmOption_title()}
-          </h3>
+        </Accordion.Content></Accordion.Item
+      >
+      <Accordion.Item value="gcm"
+        ><Accordion.Trigger>{m.lib_gitCredentials_gcmOption_title()}</Accordion.Trigger
+        ><Accordion.Content>
           <p class="text-sm text-subtle mb-3">
             {m.lib_gitCredentials_gcmOption_description()}
           </p>
-          <div class="bg-muted rounded p-3 font-mono text-xs space-y-1">
+          <div class="font-mono text-xs space-y-1 break-words">
             <p class="m-0">
               <span class="text-subtle">{m.lib_gitCredentials_installMacos_comment()}</span>
             </p>
@@ -176,33 +140,21 @@
           </div>
           <Button
             variant="ghost"
-            class="mt-3 text-sm text-blue-600 dark:text-blue-400 hover:underline flex items-center gap-1 bg-transparent border-none cursor-pointer p-0"
+            class="mt-3 flex items-center gap-1 text-primary-ink"
+            disabled={!workspaceId}
             onclick={openGitCredentialManagerDocs}
           >
             <Fa icon={faExternalLink} size="xs" />
             {m.lib_gitCredentials_gcmDocs_label()}
           </Button>
-        </div>
-
-        <!-- Note about GitHub auth -->
-        <div class="flex items-start gap-3">
-          <Fa icon={faGithub} class="text-ghost mt-0.5" />
-          <p class="text-sm text-subtle m-0">
-            <strong>{m.lib_gitCredentials_note_before()}</strong>
-            {m.lib_gitCredentials_note_after()}
-          </p>
-        </div>
-      </div>
-
-      <!-- Footer -->
-      <div class="flex justify-end gap-2 p-4 border-t border-border">
-        <Button
-          class="border-none px-4 py-2 rounded cursor-pointer text-foreground"
-          onclick={handleClose}
-        >
-          {m.lib_gitCredentials_close_label()}
-        </Button>
-      </div>
-    </div>
-  </div>
+        </Accordion.Content></Accordion.Item
+      >
+    </Accordion.Root>
+    {#snippet footer()}
+      <Button variant="ghost" onclick={handleClose}>{m.lib_gitCredentials_close_label()}</Button>
+      {#if canRetry}<Button variant="primary" onclick={() => onRetryInTerminal?.()}
+          >{m.lib_gitCredentials_tryInTerminal_label()}</Button
+        >{/if}
+    {/snippet}
+  </ContentDialog>
 {/if}

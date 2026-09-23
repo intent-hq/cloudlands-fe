@@ -1,4 +1,5 @@
 import { expect, test } from '../../../../../test/ct-test';
+import { expectMenuFirstLine } from '../../../../../test/menu-geometry';
 import Preview from '../agent-header-icons.preview.svelte';
 import { probeHeaderIcons } from './agent-header-icon-probe';
 import { isPanelMenuSettled, probePanelMenuIcons } from './panel-menu-icon-probe';
@@ -45,8 +46,11 @@ for (const { width, theme } of [
     await actions.getByTestId('panel-actions-trigger').focus();
     await expect(actions.getByTestId('panel-actions-trigger')).toBeFocused();
     await page.keyboard.press('Enter');
-    await expect(page.locator('[data-panel-actions-section="display"]')).toBeVisible();
+    const menu = page.getByRole('menu');
+    await expect(menu).toBeVisible();
+    await expect(menu.getByRole('menuitem', { name: 'Zoom Panel' })).toBeDisabled();
     await page.keyboard.press('Escape');
+    await expect(actions.getByTestId('panel-actions-trigger')).toBeFocused();
     await actions.locator('[data-add-panel-column]').focus();
     await page.keyboard.press('Enter');
     await expect(fixture).toHaveAttribute('data-column-count', '2');
@@ -76,8 +80,8 @@ for (const { width, theme } of [
     await page.keyboard.press('Enter');
     const menu = page.locator('[data-slot="menu-content"]');
     await expect(menu).toBeVisible();
-    const openIn = menu.locator('[data-slot="menu-sub-trigger"]');
-    await expect(openIn).toBeVisible();
+    const fontTrigger = menu.getByRole('menuitem', { name: /^Font Style/ });
+    await expect(fontTrigger).toBeVisible();
     // Bits keeps the floating wrapper at translate(0, -200%) until floating-ui has placed
     // it, and autoUpdate may move it again while layout settles (intent-hq/intent#5279).
     // Wait for placement and a still rect, then sample the menu and its children in the
@@ -94,18 +98,18 @@ for (const { width, theme } of [
       body: await page.screenshot(),
       contentType: 'image/png',
     });
-    expect(ink.map((icon) => icon.id)).toEqual([
-      'font',
-      'expand',
+    expect(ink.map((icon) => icon.id).sort()).toEqual([
+      'arrow-left',
       'arrow-left',
       'arrow-right',
-      'copy',
-      'trash',
+      'arrow-right',
       'circle-info',
-      'arrow-left',
-      'arrow-right',
+      'copy',
+      'copy',
+      'expand',
+      'font',
       'table-columns',
-      'up-right-from-square',
+      'trash',
     ]);
     for (const icon of ink) {
       expect(icon.svg).toEqual({ width: 16, height: 16, transform: 'none' });
@@ -114,29 +118,36 @@ for (const { width, theme } of [
         headerInk.find((entry) => entry.id === 'add-panel-column')!.strokeWidth!,
         1,
       );
-      expect(icon.target.height).toBe(28);
+      // Disabled explanations can wrap; preserve the minimum target size.
+      expect(icon.target.height).toBeGreaterThanOrEqual(28);
       expect(icon.target.x).toBeGreaterThanOrEqual(menuBounds.x);
       expect(icon.target.x + icon.target.width).toBeLessThanOrEqual(
         menuBounds.x + menuBounds.width,
       );
       expect(icon.menuTransform).toBe('none');
     }
+    for (const row of await menu.locator('[data-menu-item]').all()) {
+      await expectMenuFirstLine(row, row);
+    }
     expect(ink.filter((icon) => icon.disabled)).toHaveLength(3);
-    const font = menu.getByRole('menuitemradio', { name: 'Mono' });
+    await fontTrigger.focus();
+    await page.keyboard.press('ArrowRight');
+    const fontMenu = page.getByRole('menu', { name: 'Font Style', exact: true });
+    await expect(fontMenu).toBeVisible();
+    const font = fontMenu.getByRole('menuitemradio', { name: 'Mono' });
     await font.click();
     await expect(font).toHaveAttribute('aria-checked', 'true');
+    await expect(fontMenu).toBeVisible();
     await expect(menu).toBeVisible();
-    await openIn.focus();
-    await page.keyboard.press('ArrowRight');
-    await expect(page.locator('[data-slot="menu-sub-content"]')).toBeVisible();
     await page.keyboard.press('ArrowLeft');
-    await expect(openIn).toBeFocused();
+    await expect(fontMenu).toBeHidden();
+    await expect(fontTrigger).toBeFocused();
     await page.keyboard.press('Escape');
     await expect(trigger).toBeFocused();
     for (const [name, action] of [
       ['Copy conversation', 'copy'],
       ['Zoom Panel', 'zoom'],
-      ['Move left', 'move-left'],
+      ['Move tab left', 'move-left'],
       ['Create column to right', 'split'],
       ['Delete agent', 'delete'],
     ]) {

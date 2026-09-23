@@ -82,11 +82,10 @@ describe('AgentCard specialist context-menu item', () => {
     await openContextMenu();
 
     const item = await screen.findByText('Specialist: Implementor');
-    // Read-only informational entry: disabled, no flyout.
-    const menuButton = item.closest('button');
-    expect(menuButton).not.toBeNull();
-    expect(menuButton!.disabled).toBe(true);
-    expect(menuButton!.getAttribute('aria-haspopup')).not.toBe('menu');
+    // Metadata is not an unavailable action or a keyboard-navigation stop.
+    expect(item.closest('[role="menuitem"]')).toBeNull();
+    expect(item.closest('button')).toBeNull();
+    expect(item.getAttribute('tabindex')).not.toBe('0');
   });
 
   it('falls back to the raw id when the specialist id is unknown', async () => {
@@ -122,9 +121,9 @@ describe('AgentCard specialist context-menu item', () => {
     await openContextMenu();
 
     const item = await screen.findByText('Specialist: Implementor');
-    await fireEvent.click(item.closest('button')!);
+    await fireEvent.click(item);
 
-    // Disabled item: click is a no-op, the menu stays open.
+    // Metadata is inert: clicking the text does not dismiss the menu.
     expect(screen.getByText('Open')).toBeTruthy();
     expect(screen.getByText('Specialist: Implementor')).toBeTruthy();
   });

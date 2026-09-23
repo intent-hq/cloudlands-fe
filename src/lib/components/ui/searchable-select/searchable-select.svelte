@@ -11,6 +11,13 @@
     options?: Option[];
     placeholder?: string;
     searchPlaceholder?: string;
+    ariaLabel?: string;
+    ariaLabelledby?: string;
+    ariaDescribedby?: string;
+    emptyText?: string;
+    errorText?: string;
+    retryText?: string;
+    onSearchError?: (error: unknown, query: string) => void;
     disabled?: boolean;
     loading?: boolean;
     allowCustom?: boolean;
@@ -26,6 +33,13 @@
     options = [],
     placeholder = m.ui_searchableSelect_select_placeholder(),
     searchPlaceholder = m.ui_searchableSelect_search_placeholder(),
+    ariaLabel,
+    ariaLabelledby,
+    ariaDescribedby,
+    emptyText,
+    errorText,
+    retryText,
+    onSearchError,
     disabled = false,
     loading = false,
     allowCustom = false,
@@ -50,9 +64,15 @@
   {disabled}
   {loading}
   {allowCustom}
+  {emptyText}
+  {errorText}
+  {retryText}
   onsearch={onSearch}
+  onsearcherror={onSearchError}
   class={className}
-  ariaLabel={placeholder}
+  ariaLabel={ariaLabel ?? placeholder}
+  {ariaLabelledby}
+  {ariaDescribedby}
   portal={false}
   {staticPosition}
   onchange={handleChange}

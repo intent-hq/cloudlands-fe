@@ -98,10 +98,10 @@ describe('AgentCard harness version context-menu item', () => {
     await openContextMenu();
 
     const item = await screen.findByText('Harness v1.0');
-    const menuButton = item.closest('button');
+    const menuButton = item.closest('[role="menuitem"]');
     expect(menuButton).not.toBeNull();
     // Enabled, plain menu item (no flyout).
-    expect(menuButton!.disabled).toBe(false);
+    expect(menuButton!.getAttribute('aria-disabled')).not.toBe('true');
     expect(menuButton!.getAttribute('aria-haspopup')).not.toBe('menu');
 
     await fireEvent.click(menuButton!);
@@ -134,9 +134,9 @@ describe('AgentCard harness version context-menu item', () => {
     await openContextMenu();
 
     const item = await screen.findByText('Harness v1.0');
-    const menuButton = item.closest('button');
+    const menuButton = item.closest('[role="menuitem"]');
     expect(menuButton).not.toBeNull();
-    await waitFor(() => expect(menuButton!.disabled).toBe(false));
+    await waitFor(() => expect(menuButton!.getAttribute('aria-disabled')).not.toBe('true'));
 
     await fireEvent.click(menuButton!);
 
@@ -169,8 +169,8 @@ describe('AgentCard harness version context-menu item', () => {
 
     await openContextMenu();
     const item = await screen.findByText('Harness v1.0');
-    const menuButton = item.closest('button')!;
-    expect(menuButton.disabled).toBe(true);
+    const menuButton = item.closest('[role="menuitem"]')!;
+    expect(menuButton.getAttribute('aria-disabled')).toBe('true');
     expect(get).toHaveBeenCalledTimes(1);
     expect(get).toHaveBeenCalledWith(agentId);
 
@@ -184,10 +184,12 @@ describe('AgentCard harness version context-menu item', () => {
     );
 
     await waitFor(() => {
-      const button = screen.getByText('Harness v1.0').closest('button')!;
-      expect(button.disabled).toBe(false);
+      // Floating positioning can remain hidden in jsdom's zero-sized viewport.
+      // This test observes hydration/dispatch; real-browser CT owns visibility.
+      const button = screen.getByText('Harness v1.0').closest('[role="menuitem"]')!;
+      expect(button.getAttribute('aria-disabled')).not.toBe('true');
     });
-    await fireEvent.click(screen.getByText('Harness v1.0').closest('button')!);
+    await fireEvent.click(screen.getByText('Harness v1.0').closest('[role="menuitem"]')!);
     const dialog = await screen.findByRole('dialog', { name: 'Harness v1.0' });
     const state = dialog.querySelector(
       '[data-testid="harness-feature-state"][data-feature="structuredQuestions"]',
@@ -215,7 +217,12 @@ describe('AgentCard harness version context-menu item', () => {
     expect(get).toHaveBeenCalledTimes(1);
     expect(get).toHaveBeenCalledWith(agentId);
     await waitFor(() => {
-      expect(screen.getByText('Harness v1.0').closest('button')!.disabled).toBe(false);
+      expect(
+        screen
+          .getByText('Harness v1.0')
+          .closest('[role="menuitem"]')!
+          .getAttribute('aria-disabled'),
+      ).not.toBe('true');
     });
   });
 
@@ -301,7 +308,7 @@ describe('AgentCard notification mute (PROTOCOL §5.5 notificationsMuted)', () =
     const rename = await screen.findByText('Rename');
     expect(rename.compareDocumentPosition(item) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
 
-    await fireEvent.click(item.closest('button')!);
+    await fireEvent.click(item.closest('[role="menuitem"]')!);
 
     const action = dispatched.find((a) => a.type === MUTE_ACTION);
     expect(action).toBeDefined();
@@ -318,7 +325,7 @@ describe('AgentCard notification mute (PROTOCOL §5.5 notificationsMuted)', () =
 
     expect(screen.queryByText('Mute notifications')).toBeNull();
     const item = await screen.findByText('Unmute notifications');
-    await fireEvent.click(item.closest('button')!);
+    await fireEvent.click(item.closest('[role="menuitem"]')!);
 
     const action = dispatched.find((a) => a.type === MUTE_ACTION);
     expect(action!.payload).toEqual(['ws-1', agentId, false]);

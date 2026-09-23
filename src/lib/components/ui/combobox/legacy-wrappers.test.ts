@@ -1,12 +1,28 @@
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import axe from 'axe-core';
 import LegacyWrappersHarness from './legacy-wrappers.test-harness.svelte';
+import type { ComboboxOption } from './types';
 
 describe('legacy searchable and grouped compatibility wrappers', () => {
-  afterEach(cleanup);
+  const originalScrollIntoView = Element.prototype.scrollIntoView;
+  beforeEach(() => {
+    Element.prototype.scrollIntoView = vi.fn();
+  });
+  afterEach(() => {
+    cleanup();
+    Element.prototype.scrollIntoView = originalScrollIntoView;
+  });
 
   it('preserves searchable-select async search and custom-value entry', async () => {
-    const onSearch = vi.fn(async () => [{ value: 'remote', label: 'Remote result' }]);
+    let settleCustomSearch!: (options: ComboboxOption[]) => void;
+    const customSearch = new Promise<ComboboxOption[]>((resolve) => {
+      settleCustomSearch = resolve;
+    });
+    const onSearch = vi
+      .fn()
+      .mockResolvedValueOnce([{ value: 'remote', label: 'Remote result' }])
+      .mockReturnValueOnce(customSearch);
     const onChange = vi.fn();
     render(LegacyWrappersHarness, {
       props: { mode: 'select', selectSearch: onSearch, onChange },
@@ -18,8 +34,18 @@ describe('legacy searchable and grouped compatibility wrappers', () => {
     expect(onSearch).toHaveBeenCalledWith('remote');
 
     await fireEvent.input(input, { target: { value: 'custom-person' } });
+    expect(input.getAttribute('aria-busy')).toBe('true');
     await fireEvent.keyDown(input, { key: 'Enter' });
-    await waitFor(() => expect(onChange).toHaveBeenCalledWith('custom-person'));
+    expect(onChange).not.toHaveBeenCalled();
+    expect(input.getAttribute('aria-expanded')).toBe('true');
+    expect((input as HTMLInputElement).value).toBe('custom-person');
+    settleCustomSearch([]);
+    const custom = await screen.findByRole('option', { name: 'Use custom-person' });
+    await waitFor(() => expect(input.getAttribute('aria-activedescendant')).toBe(custom.id));
+    expect(onChange).not.toHaveBeenCalled();
+    await fireEvent.keyDown(input, { key: 'Enter' });
+    await waitFor(() => expect(onChange).toHaveBeenCalledExactlyOnceWith('custom-person'));
+    expect(input.getAttribute('aria-expanded')).toBe('false');
   });
 
   it('preserves searchable-combobox callbacks, search, snippets, and rename context', async () => {
@@ -93,9 +119,107 @@ describe('legacy searchable and grouped compatibility wrappers', () => {
     await fireEvent.focus(input);
     expect(onOpen).toHaveBeenCalledOnce();
     expect(screen.queryByRole('option', { name: /Linus Torvalds/ })).toBeNull();
-    await fireEvent.click(screen.getByRole('option', { name: 'Toggle Others' }));
+    await fireEvent.click(screen.getByRole('button', { name: 'Toggle Others' }));
     expect(screen.getByRole('option', { name: /Linus Torvalds/ })).toBeTruthy();
     await fireEvent.keyDown(input, { key: 'Escape' });
     await waitFor(() => expect(onClose).toHaveBeenCalledOnce());
+  });
+
+  it('keeps group controls outside the listbox ownership while options collapse and filter', async () => {
+    // This checks semantics, not floating placement (which requires real layout).
+    render(LegacyWrappersHarness, {
+      mode: 'grouped',
+      defaultCollapsed: true,
+      staticPosition: true,
+    });
+    const input = screen.getByRole('combobox');
+    await fireEvent.focus(input);
+    const listbox = screen.getByRole('listbox');
+    const toggle = screen.getByRole('button', { name: 'Toggle Others' });
+    expect(input.getAttribute('aria-controls')).toBe(listbox.id);
+    expect(listbox.contains(toggle)).toBe(false);
+
+    const checkSemantics = async () => {
+      const result = await axe.run(document.body, {
+        runOnly: ['aria-required-children', 'aria-required-parent', 'aria-valid-attr-value'],
+      });
+      expect(result.violations).toEqual([]);
+    };
+    await checkSemantics();
+    await fireEvent.click(toggle);
+    const option = screen.getByRole('option', { name: /Linus Torvalds/ });
+    const group = option.closest('[role="group"]');
+    expect(group).not.toBeNull();
+    expect(group?.contains(toggle)).toBe(false);
+    expect(listbox.getAttribute('aria-owns')?.split(' ')).toContain(group?.id);
+    await checkSemantics();
+
+    await fireEvent.input(input, { target: { value: 'Linus' } });
+    expect(screen.getAllByRole('option')).toHaveLength(1);
+    await checkSemantics();
+    await fireEvent.pointerUp(screen.getByRole('option'), { button: 0, pointerType: 'mouse' });
+    await waitFor(() => expect(screen.getByTestId('legacy-value').textContent).toBe('linus'));
+  });
+
+  it.each(['select', 'searchable', 'grouped'] as const)(
+    'forwards naming and recoverable search errors through %s',
+    async (mode) => {
+      const error = new Error('offline');
+      const onSearchError = vi.fn();
+      const remote = { value: 'remote', label: 'Remote result' };
+      const results =
+        mode === 'grouped' ? [{ key: 'remote', label: 'Remote', options: [remote] }] : [remote];
+      const onSearch = vi.fn().mockRejectedValueOnce(error).mockResolvedValueOnce(results);
+      render(LegacyWrappersHarness, {
+        mode,
+        ariaLabel: 'Reviewers',
+        onSearchError,
+        selectSearch: onSearch,
+        searchableSearch: onSearch,
+        groupedSearch: onSearch,
+      });
+      const input = screen.getByRole('combobox', { name: 'Reviewers' });
+      await fireEvent.focus(input);
+      await fireEvent.input(input, { target: { value: 'Remote' } });
+      const retry = await screen.findByRole('button', { name: 'Retry' });
+      expect(onSearchError).toHaveBeenCalledExactlyOnceWith(error, 'Remote');
+      await fireEvent.click(retry);
+      const option = await screen.findByRole('option', { name: /Remote result/ });
+      await fireEvent.pointerUp(option, { button: 0, pointerType: 'mouse' });
+      await waitFor(() => expect(screen.getByTestId('legacy-value').textContent).toBe('remote'));
+      expect(screen.getByRole('combobox', { name: 'Reviewers' })).toBe(input);
+    },
+  );
+
+  it('resets grouped search on close and preserves collapsed group controls', async () => {
+    render(LegacyWrappersHarness, { mode: 'grouped', defaultCollapsed: true });
+    const input = screen.getByRole('combobox');
+    await fireEvent.focus(input);
+    expect(
+      screen.getByRole('button', { name: 'Toggle Others' }).getAttribute('aria-expanded'),
+    ).toBe('false');
+    expect(screen.queryByText('No options available')).toBeNull();
+    await fireEvent.input(input, { target: { value: 'Linus' } });
+    expect(screen.getByRole('option', { name: /Linus Torvalds/ })).toBeTruthy();
+    await fireEvent.keyDown(input, { key: 'Escape' });
+    await fireEvent.focus(input);
+    expect(screen.queryByRole('option', { name: /Linus Torvalds/ })).toBeNull();
+    const toggle = screen.getByRole('button', { name: 'Toggle Others' });
+    await fireEvent.click(toggle);
+    expect(toggle.getAttribute('aria-expanded')).toBe('true');
+    expect(screen.getByRole('option', { name: /Linus Torvalds/ })).toBeTruthy();
+  });
+
+  it('does not select a row when activating its nested rename action', async () => {
+    const onChange = vi.fn();
+    render(LegacyWrappersHarness, { mode: 'searchable', onChange });
+    const input = screen.getByRole('combobox');
+    await fireEvent.focus(input);
+    const rename = screen.getAllByTestId('rename-action')[0];
+    await fireEvent.pointerUp(rename, { button: 0, pointerType: 'mouse' });
+    await fireEvent.click(rename);
+    expect(onChange).not.toHaveBeenCalled();
+    expect(screen.getByRole('textbox', { name: 'Rename Ada Lovelace' })).toBeTruthy();
+    expect(input.getAttribute('aria-expanded')).toBe('true');
   });
 });

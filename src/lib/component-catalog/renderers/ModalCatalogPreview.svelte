@@ -14,6 +14,7 @@
   import QuitConfirmationModal from '$lib/components/modals/QuitConfirmationModal.svelte';
   import ReplaceAgentModal from '$lib/components/modals/ReplaceAgentModal.svelte';
   import ReleaseNotesModal from '$lib/components/modals/ReleaseNotesModal.svelte';
+  import GitCredentialsModal from '$lib/components/GitCredentialsModal.svelte';
   import ImportWorkspaceModal from '$lib/components/modals/ImportWorkspaceModal.svelte';
   import TransferWorkspaceModal from '$lib/components/modals/TransferWorkspaceModal.svelte';
   import HarnessFeaturesModal from '$lib/components/chat/HarnessFeaturesModal.svelte';
@@ -22,11 +23,13 @@
   import DismissQuestionsConfirmDialog from '$lib/components/chat/questions/DismissQuestionsConfirmDialog.svelte';
   import NewSpaceModal from '$lib/components/modals/NewSpaceModal.svelte';
   import SetupScriptModal from '$lib/components/modals/SetupScriptModal.svelte';
+  import SetupScriptTrigger from '$lib/components/workspace/initializer/SetupScriptTrigger.svelte';
   import InterruptedAgentsModal from '$lib/components/modals/InterruptedAgentsModal.svelte';
   import AddRemoteSetupModal from '$lib/components/workspace/initializer/AddRemoteSetupModal.svelte';
   import { Textarea } from '$lib/components/ui/textarea';
   import { Label } from '$lib/components/ui/label';
   import type { UiComponentFixture } from '$lib/components/ui/component-metadata';
+  import type { ComponentProps } from 'svelte';
 
   let { fixture }: { componentId: 'modals'; fixture: UiComponentFixture } = $props();
 
@@ -84,6 +87,8 @@
     ['quit-confirmation-modal', 'QuitConfirmationModal'],
     ['replace-agent-modal', 'ReplaceAgentModal'],
     ['release-notes-modal', 'ReleaseNotesModal'],
+    ['git-credentials-modal', 'Git credentials — terminal retry'],
+    ['git-credentials-no-context', 'Git credentials — no workspace context'],
     ['import-workspace-modal', 'ImportWorkspaceModal'],
     ['transfer-workspace-modal', 'TransferWorkspaceModal'],
     ['harness-features-modal', 'HarnessFeaturesModal'],
@@ -93,9 +98,34 @@
     ['new-space-modal', 'NewSpaceModal'],
     ['setup-script-modal', 'SetupScriptModal'],
     ['interrupted-agents-modal', 'InterruptedAgentsModal'],
+    ['interrupted-agent-single', 'Recovery — one agent'],
+    ['interrupted-agents-many', 'Recovery — long names and many agents'],
+    ['interrupted-agents-retry', 'Recovery — retry after failure'],
     ['add-remote-setup-modal', 'AddRemoteSetupModal'],
   ] as const;
   type ProductModalState = (typeof productStates)[number][0];
+
+  function recoveryAgents(state: string): ComponentProps<typeof InterruptedAgentsModal>['agents'] {
+    return Array.from(
+      {
+        length:
+          state === 'interrupted-agent-single' ? 1 : state === 'interrupted-agents-many' ? 24 : 2,
+      },
+      (_, index) => ({
+        agentId: `recovery-${index}`,
+        agentName:
+          state === 'interrupted-agents-many'
+            ? `Agent ${index + 1} reviewing a long-running cross-component migration`
+            : index === 0
+              ? 'Implementor'
+              : 'Reviewer',
+        workspaceId: index % 2 === 0 ? 'design' : 'release',
+        workspaceName: index % 2 === 0 ? 'Design system' : 'Release prep',
+        prevStatus: 'running',
+        interruptedAt: '2026-09-11T12:00:00Z',
+      }),
+    );
+  }
 
   const quitPayload = {
     requestId: 'catalog-quit',
@@ -130,7 +160,11 @@
   <div class:modal-zoom-preview={state === 'zoom-200'}>
     <Dialog.Root open staticPosition>
       <Dialog.Content
-        size={state === 'size-lg' ? 'lg' : 'sm'}
+        size={state === 'size-lg' || state === 'zoom-200'
+          ? 'lg'
+          : state === 'size-sm'
+            ? 'sm'
+            : 'default'}
         closeDisabled={state === 'busy' || state === 'disabled-close'}
         class={state === 'long-content-scrolling' ? 'max-h-72' : undefined}
       >
@@ -327,16 +361,32 @@
       {/snippet}
     </DestructiveConfirm>
   {:else if state === 'form-dialog-default'}
-    <FormDialog open static title="Save workspace" onSubmit={() => {}}>
-      <p class="type-body">Review the workspace details before saving.</p>
+    <FormDialog open static title="Rename workspace" submitLabel="Save name" onSubmit={() => {}}>
+      <Label for={`${uid}-workspace-name`}>Workspace name</Label>
+      <Input id={`${uid}-workspace-name`} value="Design system" />
     </FormDialog>
   {:else if state === 'form-dialog-busy'}
-    <FormDialog open static busy title="Saving workspace" onSubmit={() => {}}>
+    <FormDialog open static busy title="Rename workspace" submitLabel="Saving…" onSubmit={() => {}}>
       <p class="type-body">Your changes are being saved.</p>
     </FormDialog>
   {:else if state === 'form-dialog-invalid'}
-    <FormDialog open static canSubmit={false} title="Save workspace" onSubmit={() => {}}>
-      <p class="type-body">A workspace name is required.</p>
+    <FormDialog
+      open
+      static
+      canSubmit={false}
+      title="Rename workspace"
+      submitLabel="Save name"
+      onSubmit={() => {}}
+    >
+      <Label for={`${uid}-invalid-name`}>Workspace name</Label>
+      <Input
+        id={`${uid}-invalid-name`}
+        aria-invalid="true"
+        aria-describedby={`${uid}-name-error`}
+      />
+      <InputMessage id={`${uid}-name-error`} tone="error"
+        >A workspace name is required.</InputMessage
+      >
     </FormDialog>
   {:else if state === 'input-dialog'}
     <InputDialog
@@ -403,10 +453,24 @@
     <QuitConfirmationModal open static payload={quitPayload} />
   {:else if state === 'replace-agent-modal'}
     <ReplaceAgentModal open static agentName="Catalog implementor" specialist="implementor" />
+  {:else if state === 'git-credentials-modal' || state === 'git-credentials-no-context'}
+    <GitCredentialsModal
+      open
+      static
+      errorMessage="Git could not authenticate with the remote repository."
+      rawError="Permission denied (publickey). Could not read from remote repository."
+      command={state === 'git-credentials-modal'
+        ? 'git push origin feature/modal-design-system'
+        : undefined}
+      cwd={state === 'git-credentials-modal' ? '/workspace/intent' : undefined}
+      workspaceId={state === 'git-credentials-modal' ? 'catalog-workspace' : undefined}
+      onRetryInTerminal={() => {}}
+    />
   {:else if state === 'release-notes-modal'}
     <ReleaseNotesModal open static {releaseNotes} />
   {:else if state === 'import-workspace-modal'}
     <ImportWorkspaceModal
+      static
       open
       step="result"
       runStatus="succeeded"
@@ -414,17 +478,24 @@
       interruptedAgents={['Review agent']}
     />
   {:else if state === 'transfer-workspace-modal'}
-    <TransferWorkspaceModal open workspaceTitle="Design system" />
+    <TransferWorkspaceModal open static workspaceTitle="Design system" />
   {:else if state === 'harness-features-modal'}
-    <HarnessFeaturesModal open static version="2.3" features={{ browser: true, hooks: true }} />
+    <HarnessFeaturesModal
+      open
+      static
+      version="2.3"
+      features={{ browserAutomation: true, backgroundHooks: true, structuredQuestions: true }}
+    />
   {:else if state === 'model-switch-confirm-dialog'}
     <ModelSwitchConfirmDialog
       open
       static
       isProviderChange
       fromProviderName="Augment"
-      fromModelLabel="Auggie"
+      fromProviderId="auggie"
+      fromModelLabel="Claude Sonnet 4.6"
       toProviderName="OpenAI"
+      toProviderId="codex"
       toModelLabel="GPT-5.6"
     />
   {:else if state === 'dismiss-proposal-confirm-dialog'}
@@ -450,7 +521,7 @@
             <p class="type-body text-muted-foreground font-normal">Implementor</p>
             <p class="text-xs text-muted-foreground">OpenAI · GPT-5.6 · High reasoning</p>
           </div>
-          <Button variant="outline">Setup script: pnpm install</Button>
+          <SetupScriptTrigger value="pnpm install" onOpen={() => {}} />
           <Button variant="primary">Create workspace</Button>
         </div>
       {/snippet}
@@ -475,29 +546,19 @@
         </div>
       {/snippet}
     </SetupScriptModal>
-  {:else if state === 'interrupted-agents-modal'}
+  {:else if state.startsWith('interrupted-agent')}
     <InterruptedAgentsModal
       open
       inline
       portalTarget={`#${portalId(state)}`}
-      agents={[
-        {
-          agentId: 'interrupted-implementor',
-          agentName: 'Implementor',
-          workspaceId: 'design',
-          workspaceName: 'Design system',
-          prevStatus: 'running',
-          interruptedAt: '2026-09-11T12:00:00Z',
-        },
-        {
-          agentId: 'interrupted-reviewer',
-          agentName: 'Reviewer',
-          workspaceId: 'release',
-          workspaceName: 'Release prep',
-          prevStatus: 'waiting',
-          interruptedAt: '2026-09-11T12:00:00Z',
-        },
-      ]}
+      agents={recoveryAgents(state)}
+      onResumeSelected={state === 'interrupted-agents-retry'
+        ? (ids) => ({
+            resumed: [],
+            abandoned: [],
+            failed: ids.map((agentId) => ({ agentId, error: 'Connection unavailable' })),
+          })
+        : undefined}
     />
   {:else if state === 'add-remote-setup-modal'}
     <AddRemoteSetupModal
@@ -530,7 +591,11 @@
       </h2>
       <div class="modal-preview-grid">
         {#each primitiveStates as [state, label] (state)}
-          <article class="grid min-w-0 content-start gap-2" data-modal-preview={state}>
+          <article
+            class="grid min-w-0 content-start gap-2"
+            class:col-span-full={state === 'zoom-200'}
+            data-modal-preview={state}
+          >
             <h3 class="type-caption text-muted-foreground font-normal">{label}</h3>
             <div class="relative min-h-88 overflow-hidden rounded-md bg-muted/40 py-4">
               {#if state === 'compact-density'}
@@ -576,8 +641,11 @@
   }
 
   .modal-zoom-preview {
-    width: 50%;
     zoom: 2;
+  }
+
+  [data-modal-preview='zoom-200'] {
+    grid-column: 1 / -1;
   }
 
   .legacy-static-frame {

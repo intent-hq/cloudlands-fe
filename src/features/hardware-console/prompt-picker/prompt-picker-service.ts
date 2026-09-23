@@ -67,6 +67,8 @@ export interface PromptPickerJoystickDeps {
   centerDwellMs?: number;
   /** Console-owner gate (#1928). Defaults to the store-backed `isConsoleOwner`. */
   isOwner?: () => boolean;
+  /** Active-session keyboard fallback; null disables it for non-DOM hosts. */
+  keyboardTarget?: EventTarget | null;
 }
 
 interface JoystickSession {
@@ -96,6 +98,12 @@ export function installHardwareConsolePromptPickerJoystick(
   const selectDistance = deps.selectDistance ?? DEFAULT_JOYSTICK_ENGAGE_DISTANCE;
   const centerDwellMs = deps.centerDwellMs ?? DEFAULT_CENTER_DWELL_MS;
   const isOwner = deps.isOwner ?? isConsoleOwner;
+  const keyboardTarget =
+    deps.keyboardTarget === undefined
+      ? typeof window === 'undefined'
+        ? null
+        : window
+      : deps.keyboardTarget;
 
   let session: JoystickSession | null = null;
   let detachDecoder: (() => void) | null = null;
@@ -159,6 +167,34 @@ export function installHardwareConsolePromptPickerJoystick(
     }
   };
 
+  // Keep focus in the original editor so insertion still targets it. Only an
+  // active owner session consumes keys; Escape also clears the service session
+  // so a later joystick release cannot insert a canceled prompt.
+  const onKeydown = (event: Event): void => {
+    if (!session) return;
+    const key = event as KeyboardEvent;
+    if (key.isComposing || key.altKey || key.ctrlKey || key.metaKey || key.defaultPrevented) return;
+    if (!['Escape', 'Enter', 'ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(key.key))
+      return;
+    if (!isOwner()) {
+      closeSession();
+      return;
+    }
+    key.preventDefault();
+    key.stopImmediatePropagation();
+    if (key.key === 'Escape') {
+      closeSession();
+    } else if (key.key === 'Enter') {
+      onRelease();
+    } else {
+      const count = session.prompts.length + 1;
+      const direction = key.key === 'ArrowLeft' || key.key === 'ArrowUp' ? -1 : 1;
+      session.belowSince = null;
+      setSelection(((session.selection ?? count - 1) + direction + count) % count);
+    }
+  };
+  keyboardTarget?.addEventListener('keydown', onKeydown, true);
+
   const teardownDecoder = (): void => {
     detachDecoder?.();
     detachDecoder = null;
@@ -191,6 +227,7 @@ export function installHardwareConsolePromptPickerJoystick(
   if (manager.status === 'connected') setupDecoder();
 
   return () => {
+    keyboardTarget?.removeEventListener('keydown', onKeydown, true);
     offStatus();
     teardownDecoder();
   };

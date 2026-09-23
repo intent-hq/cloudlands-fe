@@ -19,6 +19,7 @@
     useSurface,
   } from '$lib/components/ui/surface-context';
   import { useSize } from '$lib/components/ui/size-context';
+  import { provideDialogPortalTarget } from './dialog-portal-context';
 
   let {
     ref = $bindable(null),
@@ -41,7 +42,7 @@
   }: WithoutChildrenOrChild<DialogPrimitive.ContentProps> & {
     portalProps?: DialogPrimitive.PortalProps;
     container?: HTMLElement | null;
-    size?: 'sm' | 'default' | 'lg';
+    size?: 'sm' | 'default' | 'lg' | 'wide' | 'editor';
     showCloseButton?: boolean;
     closeDisabled?: boolean;
     closeLabel?: string;
@@ -56,6 +57,7 @@
   const density = useSize();
   const open = () => forceMount || rootOpen();
   const presence = createOverlayPresence(open);
+  provideDialogPortalTarget(() => ref);
 
   // Interactions inside a lightbox stacked above the dialog (see
   // ImageLightbox's data-image-lightbox-root) are not outside interactions:
@@ -132,6 +134,8 @@
             size === 'sm' && (density === 'compact' ? 'max-w-90' : 'max-w-100'),
             size === 'default' && 'max-w-110',
             size === 'lg' && (density === 'compact' ? 'max-w-120' : 'max-w-135'),
+            size === 'wide' && 'max-w-2xl',
+            size === 'editor' && 'max-w-6xl',
             surfaceClasses(surface),
             className,
           )}

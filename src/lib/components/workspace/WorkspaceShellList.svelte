@@ -150,6 +150,7 @@
                       iconOnly
                       class="size-(--row-action-target-compact)"
                       tooltip={m.ui_openCombo_openInApp_tooltip()}
+                      aria-label={m.ui_openCombo_openInApp_tooltip()}
                       tooltipSide="left"
                     >
                       <Fa icon={faArrowUpRightFromSquare} class="size-3" />
@@ -160,7 +161,7 @@
                   align="end"
                   side="bottom"
                   preventScroll={false}
-                  aria-label={m.ui_dropdownMenu_ariaLabel()}
+                  aria-label={terminalName}
                 >
                   <Menu.Item
                     onclick={(event) => {
@@ -268,6 +269,7 @@
                         iconOnly
                         class="size-(--row-action-target-compact)"
                         tooltip={m.ui_openCombo_openInApp_tooltip()}
+                        aria-label={m.ui_openCombo_openInApp_tooltip()}
                         tooltipSide="left"
                       >
                         <Fa icon={faArrowUpRightFromSquare} class="size-3" />
@@ -278,7 +280,7 @@
                     align="end"
                     side="bottom"
                     preventScroll={false}
-                    aria-label={m.ui_dropdownMenu_ariaLabel()}
+                    aria-label={script.name}
                   >
                     <Menu.Item
                       onclick={(event) => {

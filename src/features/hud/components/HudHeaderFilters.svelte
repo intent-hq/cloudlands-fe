@@ -89,7 +89,13 @@
           <span class="hud-header-menu-name">{allWorkspacesLabel}</span>
           <span class="hud-header-menu-count">{$cards$.length}</span>
         </Menu.Item>
-        <Menu.Separator class="hud-header-menu-sep" />
+        {#if repos.length > 0}
+          <Menu.Separator class="hud-header-menu-sep" />
+        {:else}
+          <p role="status" class="px-2 py-1.5 text-xs text-muted-foreground">
+            {m.hud_filter_noRepositories_label()}
+          </p>
+        {/if}
         {#each repos as option (option.repo)}
           <Menu.Item
             class={$filter$.repo === option.repo
@@ -121,7 +127,7 @@
         class="hud-header-menu"
         aria-label={m.hud_filter_statusMenu_ariaLabel()}
       >
-        <Menu.Item class="hud-header-menu-row" onSelect={clearStates}>
+        <Menu.Item class="hud-header-menu-row" closeOnSelect={false} onSelect={clearStates}>
           <span class="hud-header-menu-name">{m.hud_filter_allStatuses_label()}</span>
           <span class="hud-header-menu-count">{$cards$.length}</span>
         </Menu.Item>

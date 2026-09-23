@@ -142,6 +142,7 @@
       },
       {
         id: 'vote-up',
+        kind: 'checkbox',
         label: m.chat_messageActions_goodResponse_label(),
         icon: faThumbsUp,
         checked: currentVote === 'up',
@@ -149,6 +150,7 @@
       },
       {
         id: 'vote-down',
+        kind: 'checkbox',
         label: m.chat_messageActions_badResponse_label(),
         icon: faThumbsDown,
         checked: currentVote === 'down',

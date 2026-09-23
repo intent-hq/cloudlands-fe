@@ -1,7 +1,10 @@
+// @vitest-environment node
 // @ui-invariant
+// Inspect public exports without evaluating browser-only component initialization.
 import { readdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { warmImport } from '../../../test/warm-import';
 import { parseUiComponentMetadata } from './component-metadata';
 import { canonicalComponentManifest } from './manifest';
 import { selectMetadata } from './select/select.meta';
@@ -24,6 +27,12 @@ describe('component metadata usage contract', () => {
 });
 
 const publicModules = import.meta.glob<Record<string, unknown>>('./*/index.ts');
+
+warmImport(async () => {
+  await Promise.all(
+    canonicalComponentManifest.map((entry) => publicModules[`./${entry.id}/index.ts`]?.()),
+  );
+});
 
 it('provides usage for every public parts-style component entry', async () => {
   const compoundIds: string[] = [];

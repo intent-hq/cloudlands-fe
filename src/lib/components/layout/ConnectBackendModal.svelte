@@ -24,6 +24,7 @@
    * and surfaces inline errors.
    */
 
+  import { ContentDialog } from '$lib/components/patterns/confirm';
   import { Button } from '$lib/components/ui/button';
   import DeviceIconPicker from '$lib/components/DeviceIconPicker.svelte';
   import { Input } from '$lib/components/ui/input';
@@ -32,8 +33,6 @@
     SettingsControl,
     type SwitchSetting,
   } from '$lib/components/patterns/settings';
-  import Fa from 'svelte-fa';
-  import { faXmark } from '@fortawesome/free-solid-svg-icons';
   import { m } from '$shared/paraglide/messages.js';
   import { openExternalUrl } from '$lib/utils/open-external';
   import { store as appStore } from '$store/renderer/store';
@@ -317,24 +316,6 @@
     error = null;
   }
 
-  function handleKeydown(e: KeyboardEvent) {
-    // Select keeps focus on its trigger and handles Escape at the document.
-    // Let an open picker dismiss itself before treating Escape as modal dismissal.
-    if (
-      e.key === 'Escape' &&
-      e.target instanceof HTMLElement &&
-      e.target.closest('[role="combobox"][aria-expanded="true"]')
-    ) {
-      return;
-    }
-    if (e.key === 'Escape') {
-      e.stopPropagation();
-      close();
-    } else {
-      e.stopPropagation();
-    }
-  }
-
   const inputClass =
     'w-full px-3 py-2 bg-background border border-border rounded text-foreground text-sm focus:outline-none focus:border-primary-ink';
 
@@ -401,209 +382,190 @@
 {/snippet}
 
 {#if open}
-  <div
-    class="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
-    role="presentation"
-    onclick={close}
-    onkeydown={handleKeydown}
+  <ContentDialog
+    bind:open
+    title={m.modals_connect_title()}
+    closeLabel={m.modals_connect_close_ariaLabel()}
+    {busy}
+    initialFocus={firstInput}
+    onClose={close}
+    dismissOnInteractOutside={false}
   >
-    <div
-      class="bg-background border border-border rounded-lg shadow-lg w-full max-w-md overflow-hidden flex flex-col"
-      onclick={(e) => e.stopPropagation()}
-      onkeydown={handleKeydown}
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="connect-modal-title"
-      tabindex="-1"
-    >
-      <!-- Header -->
-      <div class="px-6 py-4 flex items-center justify-between">
-        <h2 id="connect-modal-title" class="text-lg font-semibold">{m.modals_connect_title()}</h2>
-        <Button
-          variant="ghost"
-          size="icon"
-          onclick={close}
-          aria-label={m.modals_connect_close_ariaLabel()}
-        >
-          <Fa icon={faXmark} />
-        </Button>
-      </div>
-
-      <!-- Content -->
-      <div class="p-6 space-y-4">
-        {#if step === 'details'}
-          <p class="text-sm text-subtle">{m.modals_connect_details_description()}</p>
-
-          <div class="space-y-1">
-            <label class="text-xs text-subtle" for="connect-name"
-              >{m.modals_connect_name_label()}</label
-            >
-            <Input
-              id="connect-name"
-              bind:ref={firstInput}
-              bind:value={name}
-              type="text"
-              placeholder={m.modals_connect_name_placeholder()}
-              class={inputClass}
-              autocomplete="off"
-            />
-          </div>
-
-          <div class="flex min-w-0 items-end gap-4" data-connect-appearance>
-            <fieldset class="min-w-0 flex-1 space-y-1">
-              <legend class="text-xs text-subtle">{m.settings_devices_accent_label()}</legend>
-              <div class="flex flex-wrap gap-1">
-                {#each accentOptions as option}
-                  <Button
-                    type="button"
-                    variant="plain"
-                    class={cn(
-                      'flex size-8 cursor-pointer items-center justify-center rounded-full border bg-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
-                      option === accent
-                        ? 'border-foreground shadow-[0_0_0_2px_var(--color-background),0_0_0_4px_var(--color-foreground)]'
-                        : 'border-border hover:border-input',
-                    )}
-                    aria-label={m.modals_connect_accentOption_ariaLabel({
-                      color: accentLabel(option),
-                    })}
-                    aria-pressed={option === accent}
-                    onclick={() => (accent = option)}
-                  >
-                    {#if option === null}
-                      <span
-                        class="size-4 rounded-full border border-muted-foreground/60 bg-background"
-                        aria-hidden="true"
-                      ></span>
-                    {:else}
-                      <span
-                        class={cn('size-4 rounded-full', CONNECTION_ACCENT_CLASSES[option])}
-                        aria-hidden="true"
-                      ></span>
-                    {/if}
-                  </Button>
-                {/each}
-              </div>
-            </fieldset>
-
-            <DeviceIconPicker
-              record={{ deviceIcon }}
-              bind:value={deviceIcon}
-              portal={true}
-              contentClass="z-[calc(var(--layer-modal)+1)]"
-            />
-          </div>
-
-          <div class="space-y-1">
-            <label class="text-xs text-subtle" for="connect-host"
-              >{m.modals_connect_host_label()}</label
-            >
-            <Input
-              id="connect-host"
-              bind:value={host}
-              type="text"
-              placeholder={m.modals_connect_host_placeholder()}
-              class={inputClass}
-              autocorrect="off"
-              autocapitalize="off"
-              spellcheck="false"
-              onpaste={handleHostPaste}
-              oninput={handleHostInput}
-            />
-          </div>
-
-          <div class="space-y-1">
-            <label class="text-xs text-subtle" for="connect-port"
-              >{m.modals_connect_port_label()}</label
-            >
-            <Input
-              id="connect-port"
-              bind:value={port}
-              type="text"
-              inputmode="numeric"
-              placeholder={m.modals_connect_port_placeholder()}
-              class={inputClass}
-              autocorrect="off"
-              autocapitalize="off"
-              spellcheck="false"
-            />
-          </div>
-
-          <div class="space-y-1">
-            <label class="text-xs text-subtle" for="connect-token"
-              >{m.modals_connect_token_label()}</label
-            >
-            <Input
-              id="connect-token"
-              bind:value={token}
-              type="password"
-              placeholder={m.modals_connect_token_placeholder()}
-              class={inputClass}
-              autocorrect="off"
-              autocapitalize="off"
-              spellcheck="false"
-            />
-          </div>
-
-          {@render toggleRow(detectHostsEntry)}
-
-          {#if syncSupported}
-            {@render toggleRow(saveToICloudEntry)}
-          {/if}
-
-          <p class="text-xs text-subtle">{m.modals_connect_whereToFind_help()}</p>
-          <p class="text-xs text-subtle">
-            {m.modals_connect_headless_before()}
-            <a
-              href={INTENTD_REPO_URL}
-              class="text-primary-ink hover:underline"
-              onclick={openIntentdRepo}><!-- i18n-ignore (URL) -->github.com/intent-hq/intentd</a
-            >
-            {m.modals_connect_headless_after()}
-          </p>
-        {:else if step === 'confirm'}
-          <p class="text-sm text-subtle">{m.modals_connect_confirmStep_description()}</p>
-          <div class="space-y-1">
-            <span class="text-xs text-subtle">{m.modals_connect_fingerprint_label()}</span>
-            <!-- i18n-ignore (cert fingerprint hex, not translatable copy) -->
-            <p class="font-mono text-xs break-all bg-muted/50 rounded p-2">{fingerprint}</p>
-          </div>
-        {:else}
-          <p class="text-sm text-subtle">{m.modals_connect_enableSync_description()}</p>
-        {/if}
-
-        {#if error}
-          <p class="text-xs text-danger">{error}</p>
-        {/if}
-      </div>
-
-      <!-- Footer -->
-      <div class="px-6 py-4 border-t border-border flex justify-end gap-2">
-        {#if step === 'details'}
-          <Button variant="ghost" onclick={close}>{m.modals_connect_cancel_label()}</Button>
-          <Button variant="default" onclick={handleCapture} disabled={!canSubmitDetails}>
-            {busy ? m.modals_connect_connecting_label() : m.modals_connect_continue_label()}
-          </Button>
-        {:else if step === 'confirm'}
-          <Button variant="ghost" onclick={back} disabled={busy}
-            >{m.modals_connect_back_label()}</Button
+    <div class="space-y-4" aria-busy={busy}>
+      <p class="text-sm text-subtle" role="status" aria-live="polite">
+        {step === 'details'
+          ? m.modals_connect_details_description()
+          : step === 'confirm'
+            ? m.modals_connect_confirmStep_description()
+            : m.modals_connect_enableSync_description()}
+      </p>
+      {#if step === 'details'}
+        <div class="space-y-1">
+          <label class="text-xs text-subtle" for="connect-name"
+            >{m.modals_connect_name_label()}</label
           >
-          <Button variant="default" onclick={handleConfirm} disabled={busy}>
-            {busy ? m.modals_connect_connecting_label() : m.modals_connect_confirm_label()}
-          </Button>
-        {:else}
-          <Button variant="ghost" onclick={back} disabled={busy}
-            >{m.modals_connect_back_label()}</Button
+          <Input
+            id="connect-name"
+            bind:ref={firstInput}
+            bind:value={name}
+            type="text"
+            placeholder={m.modals_connect_name_placeholder()}
+            class={inputClass}
+            autocomplete="off"
+          />
+        </div>
+
+        <div class="flex min-w-0 items-end gap-4" data-connect-appearance>
+          <fieldset class="min-w-0 flex-1 space-y-1">
+            <legend class="text-xs text-subtle">{m.settings_devices_accent_label()}</legend>
+            <div class="flex flex-wrap gap-1">
+              {#each accentOptions as option}
+                <Button
+                  type="button"
+                  variant="plain"
+                  class={cn(
+                    'flex size-8 cursor-pointer items-center justify-center rounded-full border bg-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+                    option === accent
+                      ? 'border-foreground shadow-[0_0_0_2px_var(--color-background),0_0_0_4px_var(--color-foreground)]'
+                      : 'border-border hover:border-input',
+                  )}
+                  aria-label={m.modals_connect_accentOption_ariaLabel({
+                    color: accentLabel(option),
+                  })}
+                  aria-pressed={option === accent}
+                  onclick={() => (accent = option)}
+                >
+                  {#if option === null}
+                    <span
+                      class="size-4 rounded-full border border-muted-foreground/60 bg-background"
+                      aria-hidden="true"
+                    ></span>
+                  {:else}
+                    <span
+                      class={cn('size-4 rounded-full', CONNECTION_ACCENT_CLASSES[option])}
+                      aria-hidden="true"
+                    ></span>
+                  {/if}
+                </Button>
+              {/each}
+            </div>
+          </fieldset>
+
+          <DeviceIconPicker
+            record={{ deviceIcon }}
+            bind:value={deviceIcon}
+            portal={true}
+            contentClass="z-[calc(var(--layer-modal)+1)]"
+          />
+        </div>
+
+        <div class="space-y-1">
+          <label class="text-xs text-subtle" for="connect-host"
+            >{m.modals_connect_host_label()}</label
           >
-          <Button variant="ghost" onclick={handleDeclineSync} disabled={busy}>
-            {m.modals_connect_enableSync_decline_label()}
-          </Button>
-          <Button variant="default" onclick={handleEnableSyncAndAdd} disabled={busy}>
-            {busy
-              ? m.modals_connect_connecting_label()
-              : m.modals_connect_enableSync_confirm_label()}
-          </Button>
+          <Input
+            id="connect-host"
+            bind:value={host}
+            type="text"
+            placeholder={m.modals_connect_host_placeholder()}
+            class={inputClass}
+            autocorrect="off"
+            autocapitalize="off"
+            spellcheck="false"
+            onpaste={handleHostPaste}
+            oninput={handleHostInput}
+          />
+        </div>
+
+        <div class="space-y-1">
+          <label class="text-xs text-subtle" for="connect-port"
+            >{m.modals_connect_port_label()}</label
+          >
+          <Input
+            id="connect-port"
+            bind:value={port}
+            type="text"
+            inputmode="numeric"
+            placeholder={m.modals_connect_port_placeholder()}
+            class={inputClass}
+            autocorrect="off"
+            autocapitalize="off"
+            spellcheck="false"
+          />
+        </div>
+
+        <div class="space-y-1">
+          <label class="text-xs text-subtle" for="connect-token"
+            >{m.modals_connect_token_label()}</label
+          >
+          <Input
+            id="connect-token"
+            bind:value={token}
+            type="password"
+            placeholder={m.modals_connect_token_placeholder()}
+            class={inputClass}
+            autocorrect="off"
+            autocapitalize="off"
+            spellcheck="false"
+          />
+        </div>
+
+        {@render toggleRow(detectHostsEntry)}
+
+        {#if syncSupported}
+          {@render toggleRow(saveToICloudEntry)}
         {/if}
-      </div>
+
+        <p class="text-xs text-subtle">{m.modals_connect_whereToFind_help()}</p>
+        <p class="text-xs text-subtle">
+          {m.modals_connect_headless_before()}
+          <a
+            href={INTENTD_REPO_URL}
+            class="text-primary-ink hover:underline"
+            onclick={openIntentdRepo}><!-- i18n-ignore (URL) -->github.com/intent-hq/intentd</a
+          >
+          {m.modals_connect_headless_after()}
+        </p>
+      {:else if step === 'confirm'}
+        <div class="space-y-1">
+          <span class="text-xs text-subtle">{m.modals_connect_fingerprint_label()}</span>
+          <!-- i18n-ignore (cert fingerprint hex, not translatable copy) -->
+          <p class="font-mono text-xs break-all bg-muted/50 rounded p-2">{fingerprint}</p>
+        </div>
+      {/if}
+
+      {#if error}
+        <p class="text-xs text-danger" role="alert">{error}</p>
+      {/if}
     </div>
-  </div>
+
+    <!-- Footer -->
+    {#snippet footer()}
+      {#if step === 'details'}
+        <Button variant="ghost" disabled={busy} onclick={close}
+          >{m.modals_connect_cancel_label()}</Button
+        >
+        <Button variant="default" onclick={handleCapture} disabled={!canSubmitDetails}>
+          {busy ? m.modals_connect_connecting_label() : m.modals_connect_continue_label()}
+        </Button>
+      {:else if step === 'confirm'}
+        <Button variant="ghost" onclick={back} disabled={busy}
+          >{m.modals_connect_back_label()}</Button
+        >
+        <Button variant="default" onclick={handleConfirm} disabled={busy}>
+          {busy ? m.modals_connect_connecting_label() : m.modals_connect_confirm_label()}
+        </Button>
+      {:else}
+        <Button variant="ghost" onclick={back} disabled={busy}
+          >{m.modals_connect_back_label()}</Button
+        >
+        <Button variant="ghost" onclick={handleDeclineSync} disabled={busy}>
+          {m.modals_connect_enableSync_decline_label()}
+        </Button>
+        <Button variant="default" onclick={handleEnableSyncAndAdd} disabled={busy}>
+          {busy ? m.modals_connect_connecting_label() : m.modals_connect_enableSync_confirm_label()}
+        </Button>
+      {/if}
+    {/snippet}
+  </ContentDialog>
 {/if}

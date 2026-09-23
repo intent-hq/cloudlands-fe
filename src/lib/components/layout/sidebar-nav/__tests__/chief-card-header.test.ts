@@ -1,5 +1,5 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen } from '@testing-library/svelte';
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { m } from '$shared/paraglide/messages.js';
 import { AgentStatus, type AgentSession } from '$shared/types';
 import { AgentId, CHIEF_WORKSPACE_ID } from '$shared/types/branded-ids';
@@ -12,6 +12,11 @@ import {
 import { setChiefCollapsed } from '$store/renderer/slices/sidebar-nav/sidebar-nav-slice';
 import { guestSessionsListReceived } from '$store/renderer/slices/guest-sessions/guest-sessions-slice';
 import ChiefCard from '../cards/ChiefCard.svelte';
+import { deleteAgentWithUndoRequested } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
+
+beforeAll(() => {
+  Element.prototype.scrollIntoView = vi.fn();
+});
 
 vi.mock('$lib/components/chat/ChatPanel.svelte', async () => ({
   default: (await import('./mocks/MockChiefChatPanel.svelte')).default,
@@ -49,6 +54,7 @@ describe('ChiefCard combined header', () => {
 
   afterEach(() => {
     cleanup();
+    vi.restoreAllMocks();
     appStore.dispatch(removeSession(agentId));
   });
 
@@ -64,7 +70,10 @@ describe('ChiefCard combined header', () => {
         appStore.dispatch(bulkUpsertSessions([makeChiefSession()]));
       }
       // Confirm the existing thread has reached the card before checking its child lifecycle.
-      await screen.findByRole('button', { name: threadTitle });
+      const picker = await screen.findByRole('combobox', {
+        name: m.layout_chiefCard_threadPicker_ariaLabel(),
+      });
+      await waitFor(() => expect(picker.textContent).toContain(threadTitle));
       expect(screen.queryByTestId('mock-chat-panel')).toBeNull();
 
       await rerender({ expanded: true, embedded: true, isActive: true });
@@ -135,7 +144,27 @@ describe('ChiefCard combined header', () => {
     expect(newThread?.tabIndex).toBe(0);
     expect(newThread?.hasAttribute('aria-hidden')).toBe(false);
 
-    await fireEvent.click(screen.getByRole('button', { name: threadTitle }));
+    await fireEvent.click(
+      screen.getByRole('combobox', { name: m.layout_chiefCard_threadPicker_ariaLabel() }),
+    );
     expect(await screen.findByRole('option', { name: threadTitle })).toBeTruthy();
+  });
+
+  it('deletes the selected thread through an independent named command without selecting a row', async () => {
+    const dispatch = vi.spyOn(appStore, 'dispatch');
+    render(ChiefCard, { props: { expanded: true, embedded: true, collapsed: false } });
+    dispatch.mockClear();
+    await fireEvent.click(
+      screen.getByRole('button', {
+        name: m.layout_chiefCard_deleteThread_ariaLabel({ title: threadTitle }),
+      }),
+    );
+    expect(dispatch).toHaveBeenCalledOnce();
+    const expected = deleteAgentWithUndoRequested(CHIEF_WORKSPACE_ID, agentId, threadTitle);
+    expect(dispatch.mock.calls[0][0]).toMatchObject({
+      type: expected.type,
+      payload: expected.payload,
+    });
+    expect(screen.queryByRole('listbox')).toBeNull();
   });
 });

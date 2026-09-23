@@ -14,74 +14,66 @@
    * protocol gap, but the user stays in control.
    */
 
-  import { FormDialog } from '$lib/components/patterns/confirm';
+  import { ContentDialog } from '$lib/components/patterns/confirm';
   import { Button } from '$lib/components/ui/button';
-  import Fa from 'svelte-fa';
-  import { faTriangleExclamation } from '@fortawesome/free-solid-svg-icons';
   import { m } from '$shared/paraglide/messages.js';
   import type { ConnectionProtocolMismatchEvent } from '$shared/types/connections';
 
   interface Props {
+    static?: boolean;
     event: ConnectionProtocolMismatchEvent;
     onOpenLocal?: () => void;
     onContinue?: () => void;
   }
 
-  let { event, onOpenLocal, onContinue }: Props = $props();
+  let { static: staticPosition = false, event, onOpenLocal, onContinue }: Props = $props();
   let open = $state(true);
+  let continued = false;
 
   function continueAnyway() {
-    if (!open) return;
+    if (continued) return;
+    continued = true;
     open = false;
     onContinue?.();
   }
 </script>
 
-<FormDialog
-  bind:open
+<ContentDialog
+  {open}
+  static={staticPosition}
   title={m.modals_protocolMismatch_title()}
   closeLabel={m.modals_protocolMismatch_close_ariaLabel()}
-  class="max-w-md"
-  enterKey="ignore"
-  modEnter="ignore"
-  onSubmit={continueAnyway}
-  onCancel={continueAnyway}
+  onClose={continueAnyway}
 >
-  <div class="space-y-4">
-    <div class="flex items-start gap-3">
-      <span class="text-warning-ink"><Fa icon={faTriangleExclamation} size="lg" /></span>
-      <p class="text-sm text-subtle">{m.modals_protocolMismatch_description()}</p>
-    </div>
+  <div class="space-y-4 min-w-0">
+    <p class="text-sm text-subtle">{m.modals_protocolMismatch_description()}</p>
 
     <div class="space-y-3 text-xs">
       <div class="flex justify-between gap-2">
-        <span class="text-subtle">{m.modals_protocolMismatch_connection_label()}</span>
+        <span class="shrink-0 text-subtle">{m.modals_protocolMismatch_connection_label()}</span>
         <!-- i18n-ignore (host:port, not translatable copy) -->
-        <span class="font-mono">{event.host}:{event.port}</span>
+        <span class="min-w-0 break-all text-right font-mono">{event.host}:{event.port}</span>
       </div>
 
       <div class="flex justify-between gap-2">
         <span class="text-subtle">{m.modals_protocolMismatch_localVersion_label()}</span>
         <!-- i18n-ignore (protocol version string) -->
-        <span class="font-mono">{event.localProtocolVersion}</span>
+        <span class="min-w-0 break-all text-right font-mono">{event.localProtocolVersion}</span>
       </div>
 
       <div class="flex justify-between gap-2">
         <span class="text-subtle">{m.modals_protocolMismatch_remoteVersion_label()}</span>
         <!-- i18n-ignore (protocol version string) -->
-        <span class="font-mono">{event.remoteProtocolVersion}</span>
+        <span class="min-w-0 break-all text-right font-mono">{event.remoteProtocolVersion}</span>
       </div>
     </div>
   </div>
-
   {#snippet footer()}
-    <div class="flex w-full flex-col gap-2">
-      <Button variant="default" onclick={continueAnyway}>
-        {m.modals_protocolMismatch_continue_label()}
-      </Button>
-      <Button variant="ghost" onclick={() => onOpenLocal?.()}>
-        {m.modals_protocolMismatch_openLocal_label()}
-      </Button>
-    </div>
+    <Button variant="ghost" onclick={() => onOpenLocal?.()}>
+      {m.modals_protocolMismatch_openLocal_label()}
+    </Button>
+    <Button variant="primary" onclick={continueAnyway}>
+      {m.modals_protocolMismatch_continue_label()}
+    </Button>
   {/snippet}
-</FormDialog>
+</ContentDialog>
