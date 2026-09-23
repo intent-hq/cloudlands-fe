@@ -189,12 +189,16 @@ function gitShow(ref, cwd, file) {
   }
 }
 
+// Node's default 1 MiB would truncate the listing of a few thousand long entry paths.
+const gitOutputBudget = 64 * 1024 * 1024;
+
 /** `[path relative to dir, contents]` for every blob under `dir` at `ref`, in one batch. */
 function gitReadTree(ref, cwd, dir) {
   const listing = execFileSync('git', ['ls-tree', '-r', '-z', ref, '--', dir], {
     cwd,
     encoding: 'utf8',
     stdio: ['ignore', 'pipe', 'ignore'],
+    maxBuffer: gitOutputBudget,
   });
   const blobs = listing
     .split('\0')
@@ -212,7 +216,7 @@ function gitReadTree(ref, cwd, dir) {
     cwd,
     input: blobs.map(({ sha }) => `${sha}\n`).join(''),
     stdio: ['pipe', 'pipe', 'ignore'],
-    maxBuffer: 64 * 1024 * 1024,
+    maxBuffer: gitOutputBudget,
   });
   const files = [];
   let offset = 0;
