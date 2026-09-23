@@ -4,11 +4,16 @@
 // a ref is checked out as a detached `git worktree` under this package
 // (`.wt-bench-<tree>-<sha>-<pid>/`, gitignored by `.wt-*/`) so its bare
 // imports resolve to THIS package's node_modules; `--head` omitted benches the
-// working tree. For i in 1..runs it spawns one fresh runner process for head,
-// then one for base (`vitest.text-rebase-bench.config.ts` with
-// TEXT_REBASE_BENCH_SRC pointing into the tree), aggregates the documents per
+// working tree. For i in 1..runs it spawns one fresh runner process per tree
+// (`vitest.text-rebase-bench.config.ts` with TEXT_REBASE_BENCH_SRC pointing
+// into the tree), head first on odd runs and base first on even runs so host
+// drift does not always land on the same side, aggregates the documents per
 // shape x clock x phase and prints one table. Worktrees are removed on exit,
 // failure and Ctrl-C. Exit 0 on success, 1 on runtime failure, 2 on usage.
+//
+// TEXT_REBASE_BENCH_RUNNER=<script.mjs> replaces the vitest runner with a node
+// script that receives the same environment; text-rebase-bench.test.ts uses it
+// to drive the worktree/exit-code/cleanup path without a benchmark run.
 import { execFileSync, spawn } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { writeFile } from 'node:fs/promises';
@@ -22,6 +27,7 @@ import {
   formatTable,
   mapperModeOf,
   parseArgs,
+  runOrder,
 } from './text-rebase-bench-lib.mjs';
 
 class UsageError extends Error {}
@@ -29,10 +35,16 @@ class UsageError extends Error {}
 const packageDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 const benchConfig = path.join(packageDir, 'vitest.text-rebase-bench.config.ts');
 const require = createRequire(import.meta.url);
-const vitestBin = path.join(
-  path.dirname(require.resolve('vitest/package.json')),
-  require('vitest/package.json').bin.vitest,
-);
+
+function runnerArgs() {
+  const override = process.env.TEXT_REBASE_BENCH_RUNNER;
+  if (override) return [path.resolve(packageDir, override)];
+  const vitestBin = path.join(
+    path.dirname(require.resolve('vitest/package.json')),
+    require('vitest/package.json').bin.vitest,
+  );
+  return [vitestBin, 'run', '--config', benchConfig];
+}
 
 const git = (...args) => execFileSync('git', args, { cwd: packageDir, encoding: 'utf8' }).trim();
 
@@ -102,7 +114,7 @@ function runBench({ tree, src, sha, repeats, shapes }) {
   if (shapes) env.TEXT_REBASE_BENCH_SHAPES = shapes.join(',');
   else delete env.TEXT_REBASE_BENCH_SHAPES;
   return new Promise((resolve, reject) => {
-    child = spawn(process.execPath, [vitestBin, 'run', '--config', benchConfig], {
+    child = spawn(process.execPath, runnerArgs(), {
       cwd: packageDir,
       env,
       stdio: ['ignore', 'pipe', 'pipe'],
@@ -143,7 +155,9 @@ async function main(argv) {
   } catch (error) {
     throw new UsageError(`${error.message}\n${USAGE}`);
   }
-  if (!existsSync(benchConfig)) throw new Error(`${benchConfig} is missing`);
+  if (!process.env.TEXT_REBASE_BENCH_RUNNER && !existsSync(benchConfig)) {
+    throw new Error(`${benchConfig} is missing`);
+  }
   const baseSha = resolveRef('--base', options.base);
   const headSha = options.head ? resolveRef('--head', options.head) : git('rev-parse', 'HEAD');
   const trees = {
@@ -167,9 +181,11 @@ async function main(argv) {
   const documents = { head: [], base: [] };
   const startedAt = Date.now();
   for (let run = 1; run <= options.runs; run += 1) {
-    for (const tree of ['head', 'base']) {
+    const order = runOrder(run);
+    process.stderr.write(`run ${run}/${options.runs}: ${order.join(' then ')}\n`);
+    for (const tree of order) {
       const runStart = Date.now();
-      process.stderr.write(`run ${run}/${options.runs} ${tree} ${trees[tree].label} ... `);
+      process.stderr.write(`  ${tree} ${trees[tree].label} ... `);
       documents[tree].push(
         await runBench({ tree, ...trees[tree], repeats: options.repeats, shapes: options.shapes }),
       );

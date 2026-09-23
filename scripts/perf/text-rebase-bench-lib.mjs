@@ -62,6 +62,18 @@ export function parseArgs(argv) {
   return options;
 }
 
+/**
+ * The order the two trees run in for 1-based run `run`: odd runs head then
+ * base, even runs base then head, so monotonic host drift (thermal, load,
+ * cache pressure) does not always land on the same side of a pair.
+ */
+export function runOrder(run) {
+  if (!Number.isInteger(run) || run < 1) {
+    throw new Error(`run must be a positive integer, got ${run}`);
+  }
+  return run % 2 === 1 ? ['head', 'base'] : ['base', 'head'];
+}
+
 const sorted = (values) => [...values].sort((a, b) => a - b);
 
 export function median(values) {
@@ -211,7 +223,7 @@ export function mapperModeWarning({ headMode, baseMode }) {
 export function formatHeader({ head, headMode, base, baseMode, runs, repeats, shapes, node }) {
   const lines = [
     `text-rebase bench: head ${head} [${headMode}] vs base ${base} [${baseMode}]`,
-    `${runs} paired cold process(es) per tree, interleaved head/base; ${repeats} cached call(s) per shape per process; shapes: ${shapes ?? 'all'}; node ${node}`,
+    `${runs} paired cold process(es) per tree, interleaved with the head/base order alternating per run; ${repeats} cached call(s) per shape per process; shapes: ${shapes ?? 'all'}; node ${node}`,
     'Bare packages (diff, marked, ...) resolve from the current node_modules for BOTH trees; the projection is the current tree\u2019s.',
   ];
   const warning = mapperModeWarning({ headMode, baseMode });

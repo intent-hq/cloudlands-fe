@@ -12,6 +12,7 @@ import {
   median,
   parseArgs,
   percentile,
+  runOrder,
 } from './text-rebase-bench-lib.mjs';
 
 type Row = { shape: string; clock: string; phase: string; ms: number; deadlineHit: boolean | null };
@@ -239,6 +240,7 @@ describe('formatting', () => {
       'head working tree (abc) [bidirectional] vs base origin/main (def) [bidirectional]',
     );
     expect(header).toContain('5 paired cold process(es) per tree');
+    expect(header).toContain('head/base order alternating per run');
     expect(header).toContain('shapes: all; node v24.0.0');
     expect(header).toContain('resolve from the current node_modules for BOTH trees');
     expect(header).not.toContain('WARNING');
@@ -262,6 +264,24 @@ describe('formatting', () => {
     expect(warnings).toHaveLength(1);
     expect(warnings[0]).toContain('base measures two one-way alignments');
     expect(warnings[0]).toContain('not comparable like-for-like');
+  });
+});
+
+describe('runOrder', () => {
+  it('alternates head-first and base-first from run 1 so both trees lead equally often', () => {
+    const orders = [1, 2, 3, 4, 5, 6].map((run) => runOrder(run));
+    expect(orders[0]).toEqual(['head', 'base']);
+    expect(orders[1]).toEqual(['base', 'head']);
+    expect(orders[2]).toEqual(['head', 'base']);
+    expect(orders[3]).toEqual(['base', 'head']);
+    expect(orders.filter((order) => order[0] === 'head')).toHaveLength(3);
+    expect(orders.filter((order) => order[0] === 'base')).toHaveLength(3);
+    for (const order of orders) expect([...order].sort()).toEqual(['base', 'head']);
+  });
+
+  it('rejects non-positive and fractional run numbers', () => {
+    expect(() => runOrder(0)).toThrow('run must be a positive integer, got 0');
+    expect(() => runOrder(1.5)).toThrow('run must be a positive integer, got 1.5');
   });
 });
 
