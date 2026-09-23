@@ -180,7 +180,7 @@ function main(argv, env) {
   const loops = plan.busy.map(({ executable, args }) =>
     spawn(executable, args, { cwd: root, stdio: 'ignore' }),
   );
-  let vitest;
+  const vitest = spawn(plan.vitest.executable, plan.vitest.args, { cwd: root, stdio: 'inherit' });
   let signalled;
   const stopLoops = () => {
     for (const loop of loops) if (loop.exitCode === null && !loop.killed) loop.kill('SIGKILL');
@@ -188,13 +188,12 @@ function main(argv, env) {
   const onSignal = (signal) => {
     signalled = signal;
     stopLoops();
-    if (vitest && vitest.exitCode === null) vitest.kill(signal);
+    if (vitest.exitCode === null) vitest.kill(signal);
     else process.exit(128 + os.constants.signals[signal]);
   };
   process.on('exit', stopLoops);
   for (const signal of ['SIGINT', 'SIGTERM', 'SIGHUP']) process.on(signal, onSignal);
 
-  vitest = spawn(plan.vitest.executable, plan.vitest.args, { cwd: root, stdio: 'inherit' });
   vitest.on('error', (error) => {
     console.error(`test:loaded: failed to start vitest: ${error.message}`);
     process.exit(1);
