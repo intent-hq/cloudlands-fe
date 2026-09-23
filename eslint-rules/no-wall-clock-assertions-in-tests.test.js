@@ -141,6 +141,16 @@ tester.run('no-wall-clock-assertions-in-tests', rule, {
       code: "const d = new Date('2026-01-01').getTime() - epoch;\nexpect(d).toBeGreaterThan(0);",
       filename: testFile,
     },
+    { code: 'expect(new Date(1000) - epoch).toBeLessThan(2000);', filename: testFile },
+    {
+      code: 'const fixed = new Date(1000);\nexpect(fixed - epoch).toBeLessThan(2000);',
+      filename: testFile,
+    },
+    // An assertion message does not change what is asserted.
+    {
+      code: "expect(reads - baselineReads, 'growth').toBeLessThan(50);",
+      filename: testFile,
+    },
     // Non-literal budgets are not millisecond constants the rule can reason about.
     { code: 'expect(performance.now() - t0).toBeLessThan(BUDGET_MS);', filename: testFile },
     {
@@ -151,6 +161,19 @@ tester.run('no-wall-clock-assertions-in-tests', rule, {
     { code: 'expect(elapsed).toBeLessThan(100);', filename: testFile },
     {
       code: 'let d = 0;\nd = Date.now() - start;\nexpect(d).toBeLessThan(100);',
+      filename: testFile,
+    },
+    // A binding reassigned after its declaration no longer holds the clock difference.
+    {
+      code: 'let d = performance.now() - t0;\nd = ops;\nexpect(d).toBeLessThan(5);',
+      filename: testFile,
+    },
+    {
+      code: 'let d = Date.now() - start;\nd -= idleMs;\nexpect(d).toBeLessThan(100);',
+      filename: testFile,
+    },
+    {
+      code: 'let end = performance.now();\nend = ops;\nexpect(end - start).toBeLessThan(5);',
       filename: testFile,
     },
     // Baselined file: the first `count` assertions in source order are tolerated.
@@ -229,6 +252,18 @@ tester.run('no-wall-clock-assertions-in-tests', rule, {
       errors: [error],
     },
     { code: 'expect(+new Date() - start).toBeLessThan(100);', filename: testFile, errors: [error] },
+    // A bare `new Date()` operand is coerced to a timestamp by the subtraction.
+    { code: 'expect(new Date() - start).toBeLessThan(100);', filename: testFile, errors: [error] },
+    {
+      code: 'expect(start - new Date()).toBeGreaterThan(-100);',
+      filename: testFile,
+      errors: [error],
+    },
+    {
+      code: 'const end = new Date();\nexpect(end - start).toBeLessThan(100);',
+      filename: testFile,
+      errors: [{ ...error, line: 2 }],
+    },
     {
       code: 'const end = performance.now();\nexpect(end - start).toBeLessThan(100);',
       filename: testFile,
@@ -238,6 +273,22 @@ tester.run('no-wall-clock-assertions-in-tests', rule, {
       code: 'let elapsed = Date.now() - start;\nexpect(elapsed).toBeLessThan(100);',
       filename: testFile,
       errors: [{ ...error, line: 2 }],
+    },
+    {
+      code: 'let end = performance.now();\nexpect(end - start).toBeLessThan(100);',
+      filename: testFile,
+      errors: [{ ...error, line: 2 }],
+    },
+    // Vitest's optional assertion message is analysed like the bare form.
+    {
+      code: "const d = performance.now() - t0;\nexpect(d, 'duration').toBeLessThan(100);",
+      filename: testFile,
+      errors: [{ ...error, line: 2 }],
+    },
+    {
+      code: "expect(Date.now() - start, 'took too long').not.toBeGreaterThan(500);",
+      filename: testFile,
+      errors: [error],
     },
     // A baseline entry for another file does not cover this one.
     {

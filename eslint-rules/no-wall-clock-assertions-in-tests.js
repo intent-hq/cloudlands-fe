@@ -50,7 +50,7 @@ function isNewDate(node) {
 }
 
 // `performance.now()`, `Date.now()`, `new Date().getTime()`, `+new Date()` and their
-// `globalThis.` / `window.` spellings.
+// `globalThis.` / `window.` spellings, plus a bare `new Date()` (a `-` coerces it).
 function isDirectClockRead(node) {
   if (!node) return false;
   if (node.type === 'CallExpression') {
@@ -64,7 +64,8 @@ function isDirectClockRead(node) {
       isNewDate(node.callee.object)
     );
   }
-  return node.type === 'UnaryExpression' && node.operator === '+' && isNewDate(node.argument);
+  if (node.type === 'UnaryExpression') return node.operator === '+' && isNewDate(node.argument);
+  return isNewDate(node);
 }
 
 // A numeric literal, optionally negated or combined with other literals (`2 * 1000`).
@@ -80,6 +81,7 @@ function isLiteralNumber(node) {
 }
 
 // The initializer of the single `const` / `let` declaration an identifier resolves to.
+// A binding written anywhere besides its declaration no longer holds that initializer.
 function resolveInit(node, context) {
   for (let scope = context.sourceCode.getScope(node); scope; scope = scope.upper) {
     const variable = scope.set.get(node.name);
@@ -87,6 +89,7 @@ function resolveInit(node, context) {
     if (variable.defs.length !== 1) return null;
     const [def] = variable.defs;
     if (def.type !== 'Variable' || !['const', 'let'].includes(def.parent.kind)) return null;
+    if (variable.references.some((ref) => ref.isWrite() && !ref.init)) return null;
     return def.node.id.type === 'Identifier' ? def.node.init : null;
   }
   return null;
@@ -124,14 +127,16 @@ function isClockDifference(node, context, depth = 0) {
   );
 }
 
-// The `expect(...)` call at the root of a matcher chain (`expect(d).not.toBeLessThan`).
+// The `expect(actual, message?)` call at the root of a matcher chain
+// (`expect(d).not.toBeLessThan`, `expect(d, 'took too long').toBeLessThan`).
 function expectCall(callee) {
   let node = callee.object;
   while (node.type === 'MemberExpression' && !node.computed) node = node.object;
   return node.type === 'CallExpression' &&
     node.callee.type === 'Identifier' &&
     node.callee.name === 'expect' &&
-    node.arguments.length === 1
+    node.arguments.length >= 1 &&
+    node.arguments.length <= 2
     ? node
     : null;
 }
