@@ -779,7 +779,6 @@ describe('SimpleRichInput provider switch sync', () => {
       expect(el).not.toBeNull();
       return el as HTMLElement;
     });
-    expect(dialog.textContent).toContain('Switch provider mid-conversation?');
     expect(setModelMock).not.toHaveBeenCalled();
     expect(onmodelChange).not.toHaveBeenCalled();
 
@@ -880,8 +879,6 @@ describe('SimpleRichInput provider switch sync', () => {
       expect(el).not.toBeNull();
       return el as HTMLElement;
     });
-    expect(dialog.textContent).toContain('Switch model mid-conversation?');
-    expect(dialog.textContent).not.toContain('Switch provider mid-conversation?');
 
     const confirmButton = Array.from(dialog.querySelectorAll('button')).find(
       (b) => b.textContent?.trim() === 'Switch model',

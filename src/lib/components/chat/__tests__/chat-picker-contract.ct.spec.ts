@@ -1,6 +1,7 @@
 import { expect, test } from '../../../../test/ct-test';
 import BrowserTabsPreview from '$lib/component-catalog/browser-tabs-menu.preview.svelte';
 import BrowserTabsMenu from '../BrowserTabsMenu.svelte';
+import BrowserTabsConfirmationHarness from './mocks/BrowserTabsConfirmationHarness.svelte';
 import SimpleRichInputQueueHost from '../input/SimpleRichInputQueueHost.svelte';
 import MentionResultsPreview from '../input/mention-results.preview.svelte';
 
@@ -76,6 +77,40 @@ test('many browser tabs remain bounded and the last reveal, close, and bulk clos
   await expect(chooser).toHaveCount(0);
   await expect(trigger).toBeFocused();
 });
+
+for (const dismissal of ['cancel', 'escape', 'confirm'] as const) {
+  test(`browser close confirmation restores the chooser trigger after ${dismissal}`, async ({
+    mount,
+    page,
+  }) => {
+    await mount(BrowserTabsConfirmationHarness);
+    const trigger = page.getByTestId('browser-tabs-trigger');
+    await trigger.focus();
+    await trigger.press('Enter');
+    const chooser = page.getByRole('dialog', { name: '2 browser tabs' });
+    const row = chooser.getByTestId('browser-tabs-menu-item').first();
+    await expect(row).toBeFocused();
+    await row.press('ArrowRight');
+    const close = chooser.getByRole('button', { name: 'Close tab first', exact: true });
+    await expect(close).toBeFocused();
+    await close.press('Enter');
+    await expect(chooser).toHaveCount(0);
+
+    const dialog = page.getByRole('dialog');
+    const confirm = dialog.getByRole('button', { name: 'Close tab', exact: true });
+    await expect(confirm).toBeFocused();
+    if (dismissal === 'escape') await confirm.press('Escape');
+    else if (dismissal === 'confirm') await confirm.press('Enter');
+    else await dialog.getByRole('button', { name: 'Cancel', exact: true }).click();
+
+    await expect(dialog).toHaveCount(0);
+    await expect(trigger).toBeFocused();
+    await trigger.press('Enter');
+    await expect(page.getByTestId('browser-tabs-menu-item')).toHaveCount(
+      dismissal === 'confirm' ? 1 : 2,
+    );
+  });
+}
 
 test('composer context command keeps its parent menu and Escape returns through each layer', async ({
   mount,

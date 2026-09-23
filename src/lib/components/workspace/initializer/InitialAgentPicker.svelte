@@ -707,19 +707,23 @@
             wrapContent={false}
             class="specialist-trigger"
           >
-            <AgentAvatar
-              agentId="blank"
-              variant="standard"
-              specialist={currentSpecialistInfo ? displayedSpecialist : null}
-              icon={currentSpecialistInfo?.icon}
-            />
+            <span class="first-line-icon type-caption">
+              <AgentAvatar
+                agentId="blank"
+                variant="standard"
+                specialist={currentSpecialistInfo ? displayedSpecialist : null}
+                icon={currentSpecialistInfo?.icon}
+              />
+            </span>
             <div class="flex flex-col min-w-0 flex-1">
               <span class="type-caption font-medium! text-foreground truncate"
                 >{specialistDisplayLabel}</span
               >
               <span class="type-caption text-subtle truncate">{specialistDisplayDescription}</span>
             </div>
-            <Fa icon={faChevronDown} class="text-ghost size-3! shrink-0" />
+            <span class="first-line-icon type-caption"
+              ><Fa icon={faChevronDown} class="text-ghost size-3!" /></span
+            >
           </Button>
         {/snippet}
 

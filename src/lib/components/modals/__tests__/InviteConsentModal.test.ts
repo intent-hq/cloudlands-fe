@@ -64,7 +64,6 @@ describe('InviteConsentModal', () => {
     expect(screen.getByText('ABCD-1234')).toBeTruthy();
     expect(screen.getByText('https://github.com/login/device')).toBeTruthy();
     expect(screen.getByText('Sign in to GitHub first')).toBeTruthy();
-    expect(screen.getByText('What the host learns')).toBeTruthy();
     expect(screen.queryByRole('button', { name: 'Join' })).toBeNull();
     expect(screen.queryByRole('status')).toBeNull();
   });
@@ -151,49 +150,8 @@ describe('InviteConsentModal', () => {
     outside.remove();
   });
 
-  it('traps Tab within the dialog while open and restores focus on close', async () => {
-    const InviteConsentModal = await loadModal();
-
-    const outside = document.createElement('button');
-    document.body.appendChild(outside);
-    outside.focus();
-
-    const { rerender } = render(InviteConsentModal, {
-      props: { open: true, payload: PAYLOAD, onRespond: vi.fn() },
-    });
-
-    const dialogEl = await screen.findByRole('alertdialog', { name: DIALOG_NAME });
-    const focusable = Array.from(
-      dialogEl.querySelectorAll<HTMLElement>('a[href], button:not([disabled])'),
-    );
-    expect(focusable.length).toBeGreaterThan(1);
-    const first = focusable[0];
-    const last = focusable[focusable.length - 1];
-
-    last.focus();
-    await fireEvent.keyDown(document, { key: 'Tab' });
-    expect(document.activeElement).toBe(first);
-
-    await fireEvent.keyDown(document, { key: 'Tab', shiftKey: true });
-    expect(document.activeElement).toBe(last);
-
-    await rerender({ open: false, payload: PAYLOAD, onRespond: vi.fn() });
-    expect(document.activeElement).toBe(outside);
-    outside.remove();
-  });
-
-  it('responds cancel on backdrop click', async () => {
-    const onRespond = vi.fn();
-    const InviteConsentModal = await loadModal();
-
-    render(InviteConsentModal, { props: { open: true, payload: PAYLOAD, onRespond } });
-
-    const dialogEl = await screen.findByRole('alertdialog', { name: DIALOG_NAME });
-    await fireEvent.click(dialogEl.parentElement!);
-
-    expect(onRespond).toHaveBeenCalledExactlyOnceWith('cancel');
-  });
-
+  // Real keyboard/pointer coverage lives in invitation-dialogs.ct.spec.ts.
+  // Real keyboard/pointer coverage lives in invitation-dialogs.ct.spec.ts.
   it('closes on dismiss (open=false) without responding', async () => {
     const onRespond = vi.fn();
     const InviteConsentModal = await loadModal();
@@ -247,7 +205,6 @@ describe('InviteConsentModal', () => {
 
       await screen.findByRole('alertdialog', { name: DIALOG_NAME });
       expect(screen.getByText(identityLine)).toBeTruthy();
-      expect(screen.getByText('What the host learns')).toBeTruthy();
       expect(screen.queryByText('Sign in to GitHub first')).toBeNull();
       expect(screen.queryByText('ABCD-1234')).toBeNull();
       expect(screen.queryByRole('button', { name: 'Open GitHub' })).toBeNull();

@@ -26,7 +26,14 @@ async function expectViewportGutter(popup: Locator) {
           rect.left >= 8 &&
           rect.top >= 8 &&
           rect.right <= innerWidth - 8 &&
-          rect.bottom <= innerHeight - 8
+          rect.bottom <= innerHeight - 8 &&
+          [
+            [rect.left + 8, rect.top + 8],
+            [rect.right - 8, rect.bottom - 8],
+          ].every(([x, y]) => {
+            const hit = document.elementFromPoint(x, y);
+            return Boolean(hit && element.contains(hit));
+          })
         );
       }),
     )

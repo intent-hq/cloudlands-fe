@@ -32,13 +32,13 @@
   data-selected={selected ? '' : undefined}
   class={cn(
     menuItem(),
-    'whitespace-normal text-foreground hover:bg-hover active:bg-active focus-visible:bg-hover focus-visible:outline-solid focus-visible:-outline-offset-1 focus-visible:outline-ring disabled:pointer-events-none disabled:opacity-50',
+    'items-start whitespace-normal text-foreground hover:bg-hover active:bg-active focus-visible:bg-hover focus-visible:outline-solid focus-visible:-outline-offset-1 focus-visible:outline-ring disabled:pointer-events-none disabled:opacity-50',
     selected && 'bg-selected hover:bg-selected focus-visible:bg-selected',
     className,
   )}
 >
   {#if leading}
-    <span data-slot="action-row-leading" class="flex h-lh w-4 shrink-0 items-center justify-center">
+    <span data-slot="action-row-leading" class="first-line-icon w-4">
       {@render leading()}
     </span>
   {/if}
@@ -51,7 +51,7 @@
     {/if}
   </span>
   {#if trailing}
-    <span data-slot="action-row-trailing" class="flex h-lh shrink-0 items-center gap-2">
+    <span data-slot="action-row-trailing" class="first-line-icon gap-2">
       {@render trailing()}
     </span>
   {/if}

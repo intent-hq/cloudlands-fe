@@ -1003,7 +1003,6 @@
                 align="start"
                 delayDuration={workspaceHoverCardOpenDelay}
                 onOpenChange={(open) => handleWorkspaceHoverCardOpenChange(workspaceId, open)}
-                disableHoverableContent={true}
                 disabled={isCurrent || draggedWorkspaceId !== null}
                 showArrow={false}
                 maxWidth="none"

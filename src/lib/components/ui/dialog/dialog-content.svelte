@@ -42,7 +42,7 @@
   }: WithoutChildrenOrChild<DialogPrimitive.ContentProps> & {
     portalProps?: DialogPrimitive.PortalProps;
     container?: HTMLElement | null;
-    size?: 'sm' | 'default' | 'lg';
+    size?: 'sm' | 'default' | 'lg' | 'wide' | 'editor';
     showCloseButton?: boolean;
     closeDisabled?: boolean;
     closeLabel?: string;
@@ -134,6 +134,8 @@
             size === 'sm' && (density === 'compact' ? 'max-w-90' : 'max-w-100'),
             size === 'default' && 'max-w-110',
             size === 'lg' && (density === 'compact' ? 'max-w-120' : 'max-w-135'),
+            size === 'wide' && 'max-w-2xl',
+            size === 'editor' && 'max-w-6xl',
             surfaceClasses(surface),
             className,
           )}

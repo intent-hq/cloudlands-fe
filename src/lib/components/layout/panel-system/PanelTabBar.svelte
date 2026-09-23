@@ -1331,7 +1331,12 @@
         {...props}
         variant="ghost-light"
         size="icon-sm"
+        active={panelActionsMenuOpen[location]}
         aria-label={m.ui_breadcrumb_more_label()}
+        tooltip={m.ui_breadcrumb_more_label()}
+        tooltipDisabled={panelActionsMenuOpen[location]}
+        tooltipSide="bottom"
+        tooltipDelayDuration={300}
         data-testid="panel-actions-trigger"
       >
         <KebabIcon class="pointer-events-none size-4!" />
@@ -1604,16 +1609,19 @@
           {@const selectorLabel = m.layout_panelTabBar_paneSelector_ariaLabel({
             count: tabs.length,
           })}
-          <Tooltip content={selectorLabel} side="bottom" delayDuration={300}>
+          <Tooltip
+            content={selectorLabel}
+            side="bottom"
+            delayDuration={300}
+            disabled={paneStackMenuOpen}
+          >
             <Button
               {...props}
-              variant="plain"
+              variant="ghost-light"
               size="icon-sm"
               iconOnly
-              class={cn(
-                'relative flex size-7 shrink-0 items-center justify-center rounded-sm border-0 bg-transparent p-0 text-muted-foreground shadow-none outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background',
-                inactiveAttentionCount > 0 && 'text-foreground',
-              )}
+              active={paneStackMenuOpen}
+              class={cn(inactiveAttentionCount > 0 && 'text-foreground')}
               aria-label={selectorLabel}
               data-testid="pane-stack-selector-trigger"
               data-pane-stack-selector-trigger
@@ -1663,10 +1671,10 @@
         {/snippet}
       </Menu.Trigger>
       <Menu.Content
-        align="start"
+        align="end"
         side="bottom"
         collisionPadding={8}
-        class="w-64 max-w-[calc(100vw-1rem)] p-1.5"
+        class="w-64 max-w-[calc(100vw-1rem)]"
         maxHeight="min(28rem, calc(100dvh - 1rem))"
         aria-label={m.layout_panelTabBar_paneMenu_ariaLabel()}
         data-pane-stack-menu
@@ -1692,7 +1700,7 @@
           {#each tabs as tab (tab.id)}
             {@const current = tab.id === activeTabId}
             <Menu.Item
-              class={cn('min-h-8', current && 'bg-accent/60 text-accent-foreground')}
+              class={cn('min-h-8', current && 'bg-selected text-foreground')}
               aria-current={current ? 'page' : undefined}
               aria-label={attentionPaneIds.has(tab.id)
                 ? m.layout_panelTabBar_paneMenuAttention_ariaLabel({ title: getTabTitle(tab) })
@@ -2050,13 +2058,14 @@
 
     <!-- Panel Actions (on tab bar) -->
     <div class="shrink-0 h-full flex items-center">
-      <div
-        class="panel-actions flex items-center gap-0 px-1 opacity-30 group-hover/tabbar:opacity-100 focus-within:opacity-100 transition-opacity z-20"
-        data-panel-header-actions
-      >
+      <div class="panel-actions flex items-center gap-0.5 px-1 z-20" data-panel-header-actions>
+        {#if contentActions?.primary}
+          <span class="flex min-w-0 items-center gap-0.5" data-panel-header-content-actions>
+            {@render contentActions.primary()}
+          </span>
+        {/if}
         {@render panelActionsDropdown('tabBar')}
         {@render contentActionsDivider()}
-        {@render contentActions?.primary?.()}
         {@render panelCloseButton(activeTab)}
       </div>
     </div>
@@ -2218,9 +2227,9 @@
       {/if}
 
       <!-- Right: all actions at the far edge in stable order. -->
-      <div class="flex shrink-0 items-center gap-0" data-panel-header-actions>
+      <div class="flex shrink-0 items-center gap-0.5" data-panel-header-actions>
         {#if contentActions?.primary}
-          <span class="flex min-w-0 items-center" data-panel-header-content-actions>
+          <span class="flex min-w-0 items-center gap-0.5" data-panel-header-content-actions>
             {@render contentActions.primary()}
           </span>
         {/if}
@@ -2245,7 +2254,7 @@
       data-empty-panel-header
     >
       <div class="min-w-0 flex-1" aria-hidden="true"></div>
-      <div class="flex shrink-0 items-center gap-0" data-panel-header-actions>
+      <div class="flex shrink-0 items-center gap-0.5" data-panel-header-actions>
         {@render addPanelColumnButton()}
         {@render panelCloseButton()}
       </div>

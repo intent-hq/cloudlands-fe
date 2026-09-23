@@ -4,7 +4,7 @@
    * Can be opened from anywhere in the app (Cmd+N, sidebar, overlay, etc.)
    * without navigating away from the current page.
    */
-  import * as Dialog from '$lib/components/ui/dialog';
+  import { ContentDialog } from '$lib/components/patterns/confirm';
   import type { Snippet } from 'svelte';
   import CompactWorkspaceInitializer from '$lib/components/workspace/CompactWorkspaceInitializer.svelte';
   import { pushEscapeLayer } from '$lib/utils/escapeLayers';
@@ -34,10 +34,6 @@
     onClose?.();
   }
 
-  function handleOpenChange(nextOpen: boolean) {
-    if (!nextOpen) close();
-  }
-
   // Escape layer: works even when inputs are focused, and only the topmost
   // overlay (e.g. a lightbox opened above this modal) handles Escape
   $effect(() => {
@@ -59,43 +55,47 @@
   // last one detaches.
   $effect(() => {
     if (!contentRef || staticPosition) return;
-    return acquireMarkerAttribute(contentRef.ownerDocument.body, 'data-new-space-modal-open');
+    const releaseBody = acquireMarkerAttribute(
+      contentRef.ownerDocument.body,
+      'data-new-space-modal-open',
+    );
+    const releaseMarker = acquireMarkerAttribute(contentRef, 'data-new-space-modal');
+    const releaseBoundary = acquireMarkerAttribute(
+      contentRef,
+      'data-model-picker-collision-boundary',
+    );
+    return () => {
+      releaseBody();
+      releaseMarker();
+      releaseBoundary();
+    };
   });
 </script>
 
-<Dialog.Root bind:open {staticPosition} onOpenChange={handleOpenChange}>
-  <Dialog.Content
-    bind:ref={contentRef}
-    data-new-space-modal
-    data-model-picker-collision-boundary
-    showCloseButton={true}
-    closeLabel={m.ui_updateToast_close_ariaLabel()}
-    escapeKeydownBehavior="ignore"
-    class="flex max-w-4xl flex-col gap-0 overflow-visible rounded-lg border border-border bg-popover p-0"
-  >
-    <div class="flex shrink-0 items-center px-6 py-4 pr-12">
-      <Dialog.Title class="type-title text-foreground">{m.modals_newSpace_title()}</Dialog.Title>
-      <Dialog.Description class="sr-only">
-        {m.workspace_repoSelector_whichRepo_description()}
-      </Dialog.Description>
-    </div>
-
-    <div
-      class="min-h-0 overflow-y-auto overscroll-contain rounded-b-lg bg-background px-6 py-6 sm:px-8"
-    >
-      {#if initializer}
-        {@render initializer()}
-      {:else}
-        <CompactWorkspaceInitializer
-          bind:this={initializerRef}
-          bind:isExpanded
-          autoFocus={false}
-          oncreate={close}
-        />
-      {/if}
-    </div>
-  </Dialog.Content>
-</Dialog.Root>
+<ContentDialog
+  bind:open
+  static={staticPosition}
+  bind:contentRef
+  size="editor"
+  allowOverflow
+  title={m.modals_newSpace_title()}
+  closeLabel={m.ui_updateToast_close_ariaLabel()}
+  escapeKeydownBehavior="ignore"
+  onClose={close}
+>
+  <div class="min-w-0">
+    {#if initializer}
+      {@render initializer()}
+    {:else}
+      <CompactWorkspaceInitializer
+        bind:this={initializerRef}
+        bind:isExpanded
+        autoFocus={false}
+        oncreate={close}
+      />
+    {/if}
+  </div>
+</ContentDialog>
 
 <style>
   :global(body[data-new-space-modal-open] [data-slot='select-content']),

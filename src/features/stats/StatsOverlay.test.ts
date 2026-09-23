@@ -3,14 +3,24 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/sv
 import type { UsageStatsResult } from '$lib/client/app-client';
 import { m } from '$shared/paraglide/messages.js';
 
-const mocks = vi.hoisted(() => ({ dispatch: vi.fn(), data: null as UsageStatsResult | null }));
+const mocks = vi.hoisted(() => ({
+  dispatch: vi.fn(),
+  data: null as UsageStatsResult | null,
+  loading: false,
+}));
 vi.mock('$store/renderer/store', async () => {
   const { createAppStoreMockModule } =
     await import('$store/renderer/utils/test-helpers/store-mock');
   return createAppStoreMockModule({
     state: () => ({
       sidebarNav: { statsOverlayOpen: true },
-      stats: { mode: 'month', periodKey: '2026-09', loading: false, error: null, data: mocks.data },
+      stats: {
+        mode: 'month',
+        periodKey: '2026-09',
+        loading: mocks.loading,
+        error: null,
+        data: mocks.data,
+      },
     }),
     dispatch: mocks.dispatch,
   });
@@ -21,6 +31,7 @@ import { setStatsOverlayOpen } from '$store/renderer/slices/sidebar-nav/sidebar-
 
 beforeEach(() => {
   mocks.dispatch.mockClear();
+  mocks.loading = false;
   mocks.data = {
     totals: { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheCreationTokens: 0 },
     runs: 0,
@@ -38,6 +49,28 @@ beforeEach(() => {
 afterEach(cleanup);
 
 describe('usage period Select', () => {
+  it('keeps period selection available but withholds card export while initial data loads', async () => {
+    mocks.data = null;
+    mocks.loading = true;
+    render(StatsOverlay);
+    const trigger = screen.getByRole('combobox', { name: m.stats_overlay_period_ariaLabel() });
+    expect(trigger.getAttribute('aria-busy')).toBe('true');
+    expect(screen.getByRole('status').textContent).toContain(m.stats_overlay_loading_label());
+    expect(
+      screen.queryByRole('button', {
+        name: m.stats_overlay_exportCard_ariaLabel({ card: 'passport' }),
+      }),
+    ).toBeNull();
+
+    trigger.focus();
+    await fireEvent.keyDown(trigger, { key: 'Enter' });
+    expect(screen.getByRole('listbox')).toBeTruthy();
+    expect(screen.queryAllByRole('option')).toHaveLength(0);
+    mocks.dispatch.mockClear();
+    await fireEvent.keyDown(trigger, { key: 'Escape' });
+    expect(mocks.dispatch).not.toHaveBeenCalledWith(setStatsOverlayOpen(false));
+  });
+
   it('selects a period by keyboard and dispatches its exact key', async () => {
     render(StatsOverlay);
     mocks.dispatch.mockClear();

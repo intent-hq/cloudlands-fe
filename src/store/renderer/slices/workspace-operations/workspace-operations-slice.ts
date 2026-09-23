@@ -29,20 +29,19 @@ export type WorkspaceOperationsState = {
   localChangesForArchive: LocalChangesWarning | null;
   guestsForArchive: GuestsWarning | null;
   showBulkArchiveConfirm: boolean;
-  bulkArchiveActiveAgentCount: number;
-  bulkArchiveActiveHookCount: number;
-  /** Collaborators + open invites across the targeted workspaces the archive removes. */
-  bulkArchiveGuestCount: number;
+  showBulkDeleteConfirm: boolean;
+  pendingBulkWorkspaceIds: string[];
+  pendingBulkGroupLabel: string | null;
+  bulkActiveAgentCount: number;
+  bulkActiveHookCount: number;
+  bulkOpenPrCount: number;
+  bulkGuestCount: number;
+  bulkPreflightReady: boolean;
   /** Monotonic token; only the compute matching the latest open folds its counts. */
-  bulkArchiveComputeToken: number;
-  showBulkDeleteArchivedConfirm: boolean;
-  pendingBulkRepoKey: string | undefined;
-  pendingBulkDeleteRepoKey: string | null;
-  showBulkDeleteWarningConfirm: boolean;
-  bulkDeleteWorkspaceCount: number;
-  bulkDeleteActiveAgentCount: number;
-  bulkDeleteActiveHookCount: number;
-  bulkDeleteGuestCount: number;
+  bulkComputeToken: number;
+  bulkOperationInFlight: boolean;
+  bulkOperationKind: 'archive' | 'delete' | null;
+  bulkReservedWorkspaceIds: string[];
   showRemoveRepoConfirm: boolean;
   pendingRemoveRepoPath: string | null;
 };
@@ -65,18 +64,18 @@ export const initialState: WorkspaceOperationsState = {
   localChangesForArchive: null,
   guestsForArchive: null,
   showBulkArchiveConfirm: false,
-  bulkArchiveActiveAgentCount: 0,
-  bulkArchiveActiveHookCount: 0,
-  bulkArchiveGuestCount: 0,
-  bulkArchiveComputeToken: 0,
-  showBulkDeleteArchivedConfirm: false,
-  pendingBulkRepoKey: undefined,
-  pendingBulkDeleteRepoKey: null,
-  showBulkDeleteWarningConfirm: false,
-  bulkDeleteWorkspaceCount: 0,
-  bulkDeleteActiveAgentCount: 0,
-  bulkDeleteActiveHookCount: 0,
-  bulkDeleteGuestCount: 0,
+  showBulkDeleteConfirm: false,
+  pendingBulkWorkspaceIds: [],
+  pendingBulkGroupLabel: null,
+  bulkActiveAgentCount: 0,
+  bulkActiveHookCount: 0,
+  bulkOpenPrCount: 0,
+  bulkGuestCount: 0,
+  bulkPreflightReady: false,
+  bulkComputeToken: 0,
+  bulkOperationInFlight: false,
+  bulkOperationKind: null,
+  bulkReservedWorkspaceIds: [],
   showRemoveRepoConfirm: false,
   pendingRemoveRepoPath: null,
 };
@@ -131,57 +130,40 @@ export const closeArchiveWarning = createAction('workspaceOperations/closeArchiv
 
 export const confirmArchiveWorkspace = createAction('workspaceOperations/confirmArchiveWorkspace');
 
-export const openBulkArchiveConfirm = createAction<[repoKey: string]>(
-  'workspaceOperations/openBulkArchiveConfirm',
-);
+export const openBulkArchiveConfirm = createAction<
+  [payload: { workspaceIds: string[]; groupLabel: string }]
+>('workspaceOperations/openBulkArchiveConfirm');
 
 export const closeBulkArchiveConfirm = createAction('workspaceOperations/closeBulkArchiveConfirm');
 
 export const confirmBulkArchive = createAction('workspaceOperations/confirmBulkArchive');
 
-export const bulkArchiveActiveWorkComputed = createAction<
+export const openBulkDeleteConfirm = createAction<
+  [payload: { workspaceIds: string[]; groupLabel: string }]
+>('workspaceOperations/openBulkDeleteConfirm');
+
+export const closeBulkDeleteConfirm = createAction('workspaceOperations/closeBulkDeleteConfirm');
+
+export const confirmBulkDelete = createAction('workspaceOperations/confirmBulkDelete');
+
+export const bulkActiveWorkComputed = createAction<
   [
     payload: {
-      repoKey: string;
+      kind: 'archive' | 'delete';
       agentCount: number;
       hookCount: number;
+      openPrCount: number;
       guestCount: number;
       token: number;
     },
   ]
->('workspaceOperations/bulkArchiveActiveWorkComputed');
+>('workspaceOperations/bulkActiveWorkComputed');
 
-export const openBulkDeleteArchivedConfirm = createAction<[repoKey: string]>(
-  'workspaceOperations/openBulkDeleteArchivedConfirm',
-);
+export const bulkOperationStarted = createAction<
+  [payload: { kind: 'archive' | 'delete'; workspaceIds: string[] }]
+>('workspaceOperations/bulkOperationStarted');
 
-export const closeBulkDeleteArchivedConfirm = createAction(
-  'workspaceOperations/closeBulkDeleteArchivedConfirm',
-);
-
-export const confirmBulkDeleteArchived = createAction(
-  'workspaceOperations/confirmBulkDeleteArchived',
-);
-
-export const openBulkDeleteWarningConfirm = createAction<
-  [
-    payload: {
-      repoKey: string;
-      workspaceCount: number;
-      agentCount: number;
-      hookCount: number;
-      guestCount: number;
-    },
-  ]
->('workspaceOperations/openBulkDeleteWarningConfirm');
-
-export const closeBulkDeleteWarningConfirm = createAction(
-  'workspaceOperations/closeBulkDeleteWarningConfirm',
-);
-
-export const confirmBulkDeleteWarning = createAction(
-  'workspaceOperations/confirmBulkDeleteWarning',
-);
+export const bulkOperationFinished = createAction('workspaceOperations/bulkOperationFinished');
 
 export const openRemoveRepoConfirm = createAction<[repoPath: string]>(
   'workspaceOperations/openRemoveRepoConfirm',
@@ -244,71 +226,102 @@ workspaceOperationsReducer.with(closeArchiveWarning, (state) => ({
   localChangesForArchive: null,
   guestsForArchive: null,
 }));
-workspaceOperationsReducer.with(openBulkArchiveConfirm, (state, { payload: [repoKey] }) => ({
-  ...state,
-  showBulkArchiveConfirm: true,
-  pendingBulkRepoKey: repoKey,
-  bulkArchiveActiveAgentCount: 0,
-  bulkArchiveActiveHookCount: 0,
-  bulkArchiveGuestCount: 0,
-  bulkArchiveComputeToken: state.bulkArchiveComputeToken + 1,
-}));
+workspaceOperationsReducer.with(
+  openBulkArchiveConfirm,
+  (state, { payload: [{ workspaceIds, groupLabel }] }) =>
+    state.bulkOperationInFlight
+      ? state
+      : {
+          ...state,
+          showBulkArchiveConfirm: true,
+          showBulkDeleteConfirm: false,
+          pendingBulkWorkspaceIds: workspaceIds,
+          pendingBulkGroupLabel: groupLabel,
+          bulkActiveAgentCount: 0,
+          bulkActiveHookCount: 0,
+          bulkOpenPrCount: 0,
+          bulkGuestCount: 0,
+          bulkPreflightReady: false,
+          bulkComputeToken: state.bulkComputeToken + 1,
+        },
+);
 workspaceOperationsReducer.with(closeBulkArchiveConfirm, (state) => ({
   ...state,
   showBulkArchiveConfirm: false,
-  pendingBulkRepoKey: undefined,
-  bulkArchiveActiveAgentCount: 0,
-  bulkArchiveActiveHookCount: 0,
-  bulkArchiveGuestCount: 0,
+  pendingBulkWorkspaceIds: [],
+  pendingBulkGroupLabel: null,
+  bulkActiveAgentCount: 0,
+  bulkActiveHookCount: 0,
+  bulkOpenPrCount: 0,
+  bulkGuestCount: 0,
+  bulkPreflightReady: false,
 }));
 workspaceOperationsReducer.with(
-  bulkArchiveActiveWorkComputed,
-  (state, { payload: [{ repoKey, agentCount, hookCount, guestCount, token }] }) => {
+  openBulkDeleteConfirm,
+  (state, { payload: [{ workspaceIds, groupLabel }] }) =>
+    state.bulkOperationInFlight
+      ? state
+      : {
+          ...state,
+          showBulkArchiveConfirm: false,
+          showBulkDeleteConfirm: true,
+          pendingBulkWorkspaceIds: workspaceIds,
+          pendingBulkGroupLabel: groupLabel,
+          bulkActiveAgentCount: 0,
+          bulkActiveHookCount: 0,
+          bulkOpenPrCount: 0,
+          bulkGuestCount: 0,
+          bulkPreflightReady: false,
+          bulkComputeToken: state.bulkComputeToken + 1,
+        },
+);
+workspaceOperationsReducer.with(closeBulkDeleteConfirm, (state) => ({
+  ...state,
+  showBulkDeleteConfirm: false,
+  pendingBulkWorkspaceIds: [],
+  pendingBulkGroupLabel: null,
+  bulkActiveAgentCount: 0,
+  bulkActiveHookCount: 0,
+  bulkOpenPrCount: 0,
+  bulkGuestCount: 0,
+  bulkPreflightReady: false,
+}));
+workspaceOperationsReducer.with(
+  bulkActiveWorkComputed,
+  (state, { payload: [{ kind, agentCount, hookCount, openPrCount, guestCount, token }] }) => {
     if (
-      !state.showBulkArchiveConfirm ||
-      state.pendingBulkRepoKey !== repoKey ||
-      state.bulkArchiveComputeToken !== token
+      (kind === 'archive' ? !state.showBulkArchiveConfirm : !state.showBulkDeleteConfirm) ||
+      state.bulkComputeToken !== token
     ) {
       return state;
     }
     return {
       ...state,
-      bulkArchiveActiveAgentCount: agentCount,
-      bulkArchiveActiveHookCount: hookCount,
-      bulkArchiveGuestCount: guestCount,
+      bulkActiveAgentCount: agentCount,
+      bulkActiveHookCount: hookCount,
+      bulkOpenPrCount: openPrCount,
+      bulkGuestCount: guestCount,
+      bulkPreflightReady: true,
     };
   },
 );
-workspaceOperationsReducer.with(openBulkDeleteArchivedConfirm, (state, { payload: [repoKey] }) => ({
-  ...state,
-  showBulkDeleteArchivedConfirm: true,
-  pendingBulkRepoKey: repoKey,
-}));
-workspaceOperationsReducer.with(closeBulkDeleteArchivedConfirm, (state) => ({
-  ...state,
-  showBulkDeleteArchivedConfirm: false,
-  pendingBulkRepoKey: undefined,
-}));
 workspaceOperationsReducer.with(
-  openBulkDeleteWarningConfirm,
-  (state, { payload: [{ repoKey, workspaceCount, agentCount, hookCount, guestCount }] }) => ({
-    ...state,
-    showBulkDeleteWarningConfirm: true,
-    pendingBulkDeleteRepoKey: repoKey,
-    bulkDeleteWorkspaceCount: workspaceCount,
-    bulkDeleteActiveAgentCount: agentCount,
-    bulkDeleteActiveHookCount: hookCount,
-    bulkDeleteGuestCount: guestCount,
-  }),
+  bulkOperationStarted,
+  (state, { payload: [{ kind, workspaceIds }] }) =>
+    state.bulkOperationInFlight
+      ? state
+      : {
+          ...state,
+          bulkOperationInFlight: true,
+          bulkOperationKind: kind,
+          bulkReservedWorkspaceIds: workspaceIds,
+        },
 );
-workspaceOperationsReducer.with(closeBulkDeleteWarningConfirm, (state) => ({
+workspaceOperationsReducer.with(bulkOperationFinished, (state) => ({
   ...state,
-  showBulkDeleteWarningConfirm: false,
-  pendingBulkDeleteRepoKey: null,
-  bulkDeleteWorkspaceCount: 0,
-  bulkDeleteActiveAgentCount: 0,
-  bulkDeleteActiveHookCount: 0,
-  bulkDeleteGuestCount: 0,
+  bulkOperationInFlight: false,
+  bulkOperationKind: null,
+  bulkReservedWorkspaceIds: [],
 }));
 workspaceOperationsReducer.with(openRemoveRepoConfirm, (state, { payload: [repoPath] }) => ({
   ...state,

@@ -396,7 +396,7 @@ describe('WorkspaceTabStrip', () => {
     expect(cluster.parentElement).toBe(controls);
   });
 
-  it('renders no presence stack and keeps every card non-hoverable, owner or not', () => {
+  it('renders no presence stack and allows hovering every card, owner or not', () => {
     render(WorkspaceTabStrip, { props: { activeWorkspaceId: 'ws-2' } });
     for (const name of [/Alpha/, /Beta/, /Gamma/]) {
       const tab = screen.getByRole('tab', { name });
@@ -405,7 +405,7 @@ describe('WorkspaceTabStrip', () => {
         tab
           .closest<HTMLElement>('[data-testid="workspace-tab-tooltip-root"]')!
           .getAttribute('data-tooltip-disable-hoverable-content'),
-      ).toBe('true');
+      ).toBe('false');
     }
   });
 
@@ -662,6 +662,45 @@ describe('WorkspaceTabStrip', () => {
     }
   });
 
+  it('keeps the real card open when the pointer enters it and resets hover intent after Escape', async () => {
+    vi.useFakeTimers();
+    mocks.useRealTooltip = true;
+    const view = render(WorkspaceTabStrip, { props: { activeWorkspaceId: 'ws-2' } });
+    try {
+      const alpha = screen.getByRole('tab', { name: /Alpha/ });
+      const tab = alpha.closest<HTMLElement>('[data-workspace-tab]')!;
+      await fireEvent.mouseEnter(tab);
+      await fireEvent.pointerMove(alpha, { pointerType: 'mouse' });
+      await vi.advanceTimersByTimeAsync(800);
+
+      const content = document.querySelector<HTMLElement>(
+        '[data-workspace-tab-hover-content="ws-1"]',
+      )!;
+      expect(content).not.toBeNull();
+      await fireEvent.pointerLeave(alpha, { pointerType: 'mouse', relatedTarget: content });
+      await fireEvent.mouseLeave(tab);
+      await fireEvent.pointerEnter(content, { pointerType: 'mouse' });
+      await fireEvent.pointerMove(content, { pointerType: 'mouse' });
+      await vi.advanceTimersByTimeAsync(300);
+
+      expect(content.isConnected).toBe(true);
+      for (let node: HTMLElement | null = content; node; node = node.parentElement) {
+        expect(getComputedStyle(node).pointerEvents).not.toBe('none');
+      }
+      expect(workspaceHoverCardIntentSession.currentOpenDelay).toBe(0);
+
+      await fireEvent.keyDown(content, { key: 'Escape' });
+      await vi.advanceTimersByTimeAsync(300);
+      expect(document.querySelector('[data-workspace-tab-hover-content]')).toBeNull();
+      expect(workspaceHoverCardIntentSession.currentOpenDelay).toBe(800);
+      expect(mocks.dispatch).not.toHaveBeenCalled();
+    } finally {
+      view.unmount();
+      workspaceHoverCardIntentSession.reset();
+      vi.useRealTimers();
+    }
+  });
+
   it('preserves keyboard focus when the focused tab becomes current', async () => {
     mocks.useRealTooltip = true;
     const view = render(WorkspaceTabStrip, { props: { activeWorkspaceId: 'ws-2' } });
@@ -690,7 +729,7 @@ describe('WorkspaceTabStrip', () => {
       const alpha = screen.getByRole('tab', { name: /Alpha/ });
       expect(alpha.getAttribute('aria-selected')).toBe('false');
       const tooltipRoot = alpha.closest<HTMLElement>('[data-testid="workspace-tab-tooltip-root"]')!;
-      expect(tooltipRoot.getAttribute('data-tooltip-disable-hoverable-content')).toBe('true');
+      expect(tooltipRoot.getAttribute('data-tooltip-disable-hoverable-content')).toBe('false');
       await enterTabTooltip(tooltipRoot);
       vi.advanceTimersByTime(799);
       await tick();

@@ -4,6 +4,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import os from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { warmImport } from '../src/test/warm-import';
 import { canonicalComponentManifest } from '../src/lib/components/ui/manifest';
 import { uiComponentGuardrails } from './ui-component-guardrails';
 import { buildUiComponentInventory } from './ui-component-inventory';
@@ -71,17 +72,24 @@ function rootNamespaceFor(publicImport: string): string {
   return publicImport.replace(/(?:^|-)([a-z])/g, (_match, letter: string) => letter.toUpperCase());
 }
 
+async function loadPublicComponentApis() {
+  const rootApi: Record<string, unknown> = await import('../src/lib/components/ui');
+  const subpathApis = await Promise.all(
+    canonicalImports.map(
+      (publicImport) =>
+        import(`../src/lib/components/ui/${publicImport}/index.ts`) as Promise<
+          Record<string, unknown>
+        >,
+    ),
+  );
+  return { rootApi, subpathApis };
+}
+
+warmImport(loadPublicComponentApis);
+
 describe('Gate C public component contract', () => {
   it('publishes a discoverability API while preserving canonical subpaths', async () => {
-    const rootApi: Record<string, unknown> = await import('../src/lib/components/ui');
-    const subpathApis = await Promise.all(
-      canonicalImports.map(
-        (publicImport) =>
-          import(`../src/lib/components/ui/${publicImport}/index.ts`) as Promise<
-            Record<string, unknown>
-          >,
-      ),
-    );
+    const { rootApi, subpathApis } = await loadPublicComponentApis();
     canonicalImports.forEach((publicImport, index) => {
       const namespace = rootApi[rootNamespaceFor(publicImport)];
       expect(namespace, publicImport).toBeDefined();

@@ -10,6 +10,7 @@
   } from './initializer/initial-repo-utils';
   import { goto } from '$app/navigation';
   import { v4 as uuidv4 } from 'uuid';
+  import SetupScriptTrigger from './initializer/SetupScriptTrigger.svelte';
   import {
     SETUP_SCRIPT_TEMPLATES,
     getTemplateContent,
@@ -3401,37 +3402,13 @@
           />
         </div>
         <!-- Setup script -->
-        <div class="space-y-2 border-t border-border pt-3">
-          <div class="flex items-center justify-between flex-wrap gap-2 w-full">
-            <!-- Left: setup script button -->
-            <Button
-              variant="ghost"
-              type="button"
-              wrapContent={false}
-              class="group flex h-auto min-h-9 w-full min-w-0 cursor-pointer flex-wrap items-center justify-start gap-1.5 rounded-md px-2.5 py-2 text-left text-sm whitespace-normal text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
-              onclick={() => (showSetupScript = !showSetupScript)}
-            >
-              <span>{m.workspace_compactInitializer_setupDevEnvWith_before()}</span>
-              <!-- The pill and trailing suffix render in both states (spinner
-                   inside the pill while loading) so the row keeps the same
-                   structure and height when the probe resolves. -->
-              <span
-                class="min-w-0 max-w-full rounded-md border border-border bg-background px-2 py-0.5 font-medium wrap-break-word text-foreground"
-              >
-                {#if isRepoConfigLoading}
-                  <IntentMarkLoader size={14} />
-                  <span class="sr-only"
-                    >{m.workspace_compactInitializer_detectingSetupScript_label()}</span
-                  >
-                {:else}
-                  {setupScriptDisplayName(setupScriptName, setupScriptNameSource)}
-                {/if}
-              </span>
-              <span class="text-sm text-subtle">
-                {m.workspace_compactInitializer_setupDevEnvWith_after()}
-              </span>
-            </Button>
-          </div>
+        <div class="space-y-2">
+          <SetupScriptTrigger
+            value={setupScriptDisplayName(setupScriptName, setupScriptNameSource)}
+            loading={isRepoConfigLoading}
+            expanded={showSetupScript}
+            onOpen={() => (showSetupScript = true)}
+          />
           <SetupScriptModal
             bind:open={showSetupScript}
             {repoPath}

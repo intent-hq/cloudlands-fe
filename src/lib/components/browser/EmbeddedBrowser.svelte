@@ -195,6 +195,7 @@
   let isEditingUrl = $state(false);
   let pageTitle = $state('');
   let faviconUrl = $state('');
+  let faviconLoadFailed = $state(false);
   let canGoBack = $state(false);
   let canGoForward = $state(false);
   let isLoading = $state(false);
@@ -700,6 +701,7 @@
       displayUrl = e.url;
       pageTitle = '';
       faviconUrl = '';
+      faviconLoadFailed = false;
       isSecure = e.url?.startsWith('https://');
       errorMessage = '';
       // The alias survives only a commit on the resolved origin (path/query/hash
@@ -746,6 +748,7 @@
     addWebviewListener('page-favicon-updated', (e: any) => {
       if (e.favicons?.length > 0) {
         faviconUrl = e.favicons[0];
+        faviconLoadFailed = false;
         appStore.dispatch(updateUrlMetadata(_workspaceId, displayUrl, undefined, e.favicons[0]));
         onFaviconChange?.(e.favicons[0]);
       }
@@ -1323,7 +1326,23 @@
     <!-- Page identity / editable address -->
     <div class="flex min-w-0 flex-1 items-center gap-2">
       {#if faviconUrl}
-        <img src={faviconUrl} alt="" class="size-5 shrink-0 rounded-sm" data-browser-page-favicon />
+        {#if faviconLoadFailed}
+          <span
+            class="size-5 shrink-0 rounded-full bg-muted"
+            aria-hidden="true"
+            data-browser-page-favicon-fallback
+          ></span>
+        {:else}
+          {#key faviconUrl}
+            <img
+              src={faviconUrl}
+              alt=""
+              class="size-5 shrink-0 rounded-sm"
+              onerror={() => (faviconLoadFailed = true)}
+              data-browser-page-favicon
+            />
+          {/key}
+        {/if}
       {/if}
 
       <div

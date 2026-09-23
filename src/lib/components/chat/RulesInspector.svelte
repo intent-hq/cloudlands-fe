@@ -1,65 +1,18 @@
 <script lang="ts">
-  import { faXmark } from '@fortawesome/free-solid-svg-icons';
-  import Fa from 'svelte-fa';
-  import Button from '$lib/components/ui/button/button.svelte';
+  import { ContentDialog } from '$lib/components/patterns/confirm';
   import { m } from '$shared/paraglide/messages.js';
-
-  interface Props {
-    rules: string | null;
-    onClose: () => void;
-  }
-
-  let { rules, onClose }: Props = $props();
-
-  function handleBackdropClick(event: MouseEvent) {
-    if (event.target === event.currentTarget) {
-      onClose();
-    }
-  }
-
-  function handleBackdropKeydown(event: KeyboardEvent) {
-    if (event.key === 'Escape') {
-      event.stopPropagation();
-      onClose();
-    }
-  }
+  let { rules, onClose }: { rules: string | null; onClose: () => void } = $props();
 </script>
 
-<div
-  class="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
-  role="dialog"
-  aria-modal="true"
-  aria-labelledby="rules-inspector-title"
-  tabindex="-1"
-  onclick={handleBackdropClick}
-  onkeydown={handleBackdropKeydown}
+<ContentDialog
+  open
+  title={m.chat_rulesInspector_title()}
+  closeLabel={m.chat_rulesInspector_close_ariaLabel()}
+  size="wide"
+  {onClose}
 >
-  <div
-    class="relative max-w-3xl w-full max-h-[80vh] bg-background border border-border rounded-lg shadow-xl overflow-hidden"
-  >
-    <div class="flex items-center justify-between px-6 py-4">
-      <h2 id="rules-inspector-title" class="text-lg font-semibold text-foreground">
-        {m.chat_rulesInspector_title()}
-      </h2>
-      <Button
-        variant="ghost"
-        size="icon-sm"
-        onclick={onClose}
-        aria-label={m.chat_rulesInspector_close_ariaLabel()}
-      >
-        <Fa icon={faXmark} />
-      </Button>
-    </div>
-
-    <div class="px-6 py-4 overflow-y-auto max-h-[calc(80vh-4rem)]">
-      {#if rules}
-        <div class="prose prose-sm dark:prose-invert max-w-none">
-          <pre
-            class="whitespace-pre-wrap font-mono text-xs bg-muted/50 p-4 rounded-md">{rules}</pre>
-        </div>
-      {:else}
-        <p class="text-subtle">{m.chat_rulesInspector_noRules_label()}</p>
-      {/if}
-    </div>
-  </div>
-</div>
+  {#if rules}
+    <pre
+      class="whitespace-pre-wrap break-words font-mono type-caption bg-muted/50 p-4 rounded-md">{rules}</pre>
+  {:else}<p class="text-muted-foreground">{m.chat_rulesInspector_noRules_label()}</p>{/if}
+</ContentDialog>

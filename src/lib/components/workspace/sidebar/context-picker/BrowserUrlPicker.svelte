@@ -5,6 +5,8 @@
    * Simple URL input with recent URLs list.
    */
   import { Input } from '$lib/components/ui/input';
+  import { Label } from '$lib/components/ui/label';
+  import { InputMessage } from '$lib/components/ui/input-message';
   import { Button } from '$lib/components/ui/button';
   import { faGlobe, faPlus, faHistory } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
@@ -97,9 +99,6 @@
       e.preventDefault();
       handleSubmit();
     }
-    if (urlError) {
-      urlError = '';
-    }
   }
 
   function handleRecentClick(entry: { url: string; title?: string }) {
@@ -117,20 +116,21 @@
   });
 </script>
 
-<div class="p-4">
+<div class="min-w-0">
   <!-- URL Input -->
   <div class="space-y-2">
-    <label for="url-input" class="text-sm font-medium"
-      >{m.workspace_browserUrlPicker_enterUrl_label()}</label
-    >
-    <div class="flex gap-2">
-      <div class="flex-1 relative">
+    <Label for="url-input">{m.workspace_browserUrlPicker_enterUrl_label()}</Label>
+    <div class="flex flex-wrap gap-2">
+      <div class="relative min-w-0 flex-1 basis-44">
         <Fa icon={faGlobe} class="absolute left-3 top-1/2 -translate-y-1/2 text-ghost" size="sm" />
         <Input
           bind:value={urlInput}
           placeholder={m.workspace_browserUrlPicker_url_placeholder()}
-          class="pl-9 h-10"
+          class="pl-9"
           onkeydown={handleKeydown}
+          oninput={() => (urlError = '')}
+          aria-invalid={urlError ? true : undefined}
+          aria-describedby={urlError ? 'url-input-error' : undefined}
           id="url-input"
           autofocus
         />
@@ -141,7 +141,7 @@
       </Button>
     </div>
     {#if urlError}
-      <p class="text-xs text-danger">{urlError}</p>
+      <InputMessage id="url-input-error" tone="error">{urlError}</InputMessage>
     {/if}
   </div>
 

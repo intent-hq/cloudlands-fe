@@ -1015,6 +1015,29 @@ describe('EmbeddedBrowser', () => {
       },
     );
 
+    it.each(['https://example.test/favicon.ico', 'https://example.test/new-favicon.ico'])(
+      'replaces a failed favicon and retries a later favicon update to %s',
+      async (nextFaviconUrl) => {
+        const { container } = renderPage();
+        const webview = container.querySelector('webview')!;
+        const updateFavicon = (url: string) =>
+          fireEvent(webview, Object.assign(new Event('page-favicon-updated'), { favicons: [url] }));
+
+        await updateFavicon('https://example.test/favicon.ico');
+        await fireEvent.error(container.querySelector('[data-browser-page-favicon]')!);
+
+        expect(container.querySelector('[data-browser-page-favicon]')).toBeNull();
+        expect(container.querySelector('[data-browser-page-favicon-fallback]')).not.toBeNull();
+
+        await updateFavicon(nextFaviconUrl);
+        const favicon = container.querySelector('[data-browser-page-favicon]')!;
+        expect(favicon.getAttribute('src')).toBe(nextFaviconUrl);
+        await fireEvent.load(favicon);
+        expect(container.querySelector('[data-browser-page-favicon]')).toBe(favicon);
+        expect(container.querySelector('[data-browser-page-favicon-fallback]')).toBeNull();
+      },
+    );
+
     it('exposes the page title and distinct hostname together', async () => {
       const { container, getByRole } = renderPage({ url: 'https://app.example.com/dashboard' });
       const titleEvent = new Event('page-title-updated');

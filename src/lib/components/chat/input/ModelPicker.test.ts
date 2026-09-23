@@ -631,7 +631,10 @@ describe('ModelPicker guest / collaborator lock', () => {
     await fireEvent.click(screen.getByRole('button'));
     await fireEvent.click(await screen.findByRole('option', { name: /Opus 4\.7/ }));
     await waitFor(() => {
-      expect(confirmModelChange).toHaveBeenCalledWith('auggie:sonnet4.6', 'auggie:opus4.7');
+      expect(confirmModelChange).toHaveBeenCalledWith('auggie:sonnet4.6', 'auggie:opus4.7', {
+        from: 'Sonnet 4.6',
+        to: 'Opus 4.7',
+      });
     });
 
     await flipToCollaborator();
@@ -3917,7 +3920,10 @@ describe('ModelPicker confirmModelChange gate', () => {
         modelId: 'model-2',
       });
     });
-    expect(confirmModelChange).toHaveBeenCalledWith('model-1', 'model-2');
+    expect(confirmModelChange).toHaveBeenCalledWith('model-1', 'model-2', {
+      from: 'Model 1',
+      to: 'Model 2',
+    });
   });
 
   it('reverts the pick and skips onModelChange when the gate resolves false', async () => {
@@ -3932,7 +3938,10 @@ describe('ModelPicker confirmModelChange gate', () => {
     await fireEvent.click(await screen.findByRole('option', { name: /Model 2/ }));
 
     await waitFor(() => {
-      expect(confirmModelChange).toHaveBeenCalledWith('model-1', 'model-2');
+      expect(confirmModelChange).toHaveBeenCalledWith('model-1', 'model-2', {
+        from: 'Model 1',
+        to: 'Model 2',
+      });
     });
     await new Promise((r) => setTimeout(r, 0));
     expect(onModelChange).not.toHaveBeenCalled();
@@ -3962,7 +3971,10 @@ describe('ModelPicker confirmModelChange gate', () => {
     await fireEvent.click(await screen.findByRole('option', { name: /Default model/ }));
 
     await waitFor(() => {
-      expect(confirmModelChange).toHaveBeenCalledWith('model-1', null);
+      expect(confirmModelChange).toHaveBeenCalledWith('model-1', null, {
+        from: 'Model 1',
+        to: 'Default model',
+      });
     });
     // Confirming applies the pick: the trigger now shows "Default model".
     await waitFor(() => {
@@ -3993,7 +4005,10 @@ describe('ModelPicker confirmModelChange gate', () => {
     await fireEvent.click(await screen.findByRole('option', { name: /Default model/ }));
 
     await waitFor(() => {
-      expect(confirmModelChange).toHaveBeenCalledWith('model-1', null);
+      expect(confirmModelChange).toHaveBeenCalledWith('model-1', null, {
+        from: 'Model 1',
+        to: 'Default model',
+      });
     });
     await new Promise((r) => setTimeout(r, 0));
     expect(onModelChange).not.toHaveBeenCalled();

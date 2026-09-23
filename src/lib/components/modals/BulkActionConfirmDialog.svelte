@@ -1,4 +1,5 @@
 <script lang="ts">
+  import type { Snippet } from 'svelte';
   import type { ButtonVariant } from '$lib/components/ui/button';
   import { DestructiveConfirm } from '$lib/components/patterns/confirm';
   import { m } from '$shared/paraglide/messages.js';
@@ -11,15 +12,21 @@
     description?: string;
     confirmText?: string;
     variant?: ButtonVariant;
+    initialFocus?: 'confirm' | 'cancel';
+    body?: Snippet;
     /** Picks the guest-removal note: archive adds the re-invite reminder. */
     mode?: 'delete' | 'archive';
     /** Streaming agents across the targeted workspaces that the action would stop. */
     activeAgentCount?: number;
     /** Active background hooks across the targeted workspaces that the action would cancel. */
     activeHookCount?: number;
+    /** Open pull requests across the targeted workspaces. */
+    openPrCount?: number;
+    /** Whether active-work preflight has resolved for the current target snapshot. */
+    preflightReady?: boolean;
     /** Collaborators + open invites across the targeted workspaces that the action would remove. */
     guestCount?: number;
-    onConfirm?: () => void;
+    onConfirm?: () => void | Promise<void>;
     onCancel?: () => void;
   }
 
@@ -30,6 +37,10 @@
     description = '',
     confirmText = m.modals_bulkActionConfirm_confirm_label(),
     variant = 'default',
+    initialFocus = 'confirm',
+    body,
+    openPrCount = 0,
+    preflightReady = true,
     mode = 'delete',
     activeAgentCount = 0,
     activeHookCount = 0,
@@ -38,7 +49,9 @@
     onCancel,
   }: Props = $props();
 
-  const hasActiveWork = $derived(activeAgentCount > 0 || activeHookCount > 0 || guestCount > 0);
+  const hasActiveWork = $derived(
+    activeAgentCount > 0 || activeHookCount > 0 || openPrCount > 0 || guestCount > 0,
+  );
 
   function close() {
     open = false;
@@ -46,11 +59,7 @@
   }
 
   async function handleConfirm() {
-    try {
-      await onConfirm?.();
-    } catch (error) {
-      console.error('Confirm action failed:', error);
-    }
+    await onConfirm?.();
     open = false;
   }
 </script>
@@ -60,6 +69,12 @@
   static={staticPosition}
   {title}
   confirmLabel={confirmText}
+  submitBusy={!preflightReady}
+  canSubmit={preflightReady}
+  focusSubmit={preflightReady && initialFocus === 'confirm'}
+  focusCancel={!preflightReady || initialFocus === 'cancel'}
+  enterKey={initialFocus === 'cancel' ? 'ignore' : 'submit'}
+  modEnter={initialFocus === 'cancel' ? 'ignore' : 'submit'}
   destructive={variant === 'destructive'}
   onConfirm={handleConfirm}
   onCancel={close}
@@ -68,9 +83,9 @@
     <div class="space-y-4">
       {#if description}<p class="type-body">{description}</p>{/if}
       {#if hasActiveWork}
-        <div class="space-y-4 rounded-md border border-border bg-muted/40 p-3">
+        <div class="space-y-2">
           {#if activeAgentCount > 0}
-            <p class="type-body text-muted-foreground font-normal">
+            <p class="type-body text-foreground font-medium">
               {activeAgentCount === 1
                 ? m.modals_deleteWarning_agentsStopped_one({
                     count: formatInteger(activeAgentCount),
@@ -81,7 +96,7 @@
             </p>
           {/if}
           {#if activeHookCount > 0}
-            <p class="type-body text-muted-foreground font-normal">
+            <p class="type-body text-foreground font-medium">
               {activeHookCount === 1
                 ? m.modals_deleteWarning_hooksCancelled_one({
                     count: formatInteger(activeHookCount),
@@ -89,6 +104,13 @@
                 : m.modals_deleteWarning_hooksCancelled_many({
                     count: formatInteger(activeHookCount),
                   })}
+            </p>
+          {/if}
+          {#if openPrCount > 0}
+            <p class="type-body text-muted-foreground font-normal">
+              {openPrCount === 1
+                ? m.modals_deleteWarning_openPrs_one({ count: formatInteger(openPrCount) })
+                : m.modals_deleteWarning_openPrs_many({ count: formatInteger(openPrCount) })}
             </p>
           {/if}
           {#if guestCount > 0}
@@ -107,6 +129,8 @@
           {/if}
         </div>
       {/if}
+
+      {@render body?.()}
     </div>
   {/snippet}
 </DestructiveConfirm>

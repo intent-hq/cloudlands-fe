@@ -3,6 +3,7 @@
 
   interface Props {
     loading?: boolean;
+    brokenFavicon?: boolean;
   }
 
   export const preview = definePreview<Props>({
@@ -12,6 +13,7 @@
     states: {
       ready: { props: {} },
       loading: { props: { loading: true } },
+      'broken-favicon': { props: { brokenFavicon: true } },
     },
   });
 </script>
@@ -20,7 +22,7 @@
   import { onMount, tick } from 'svelte';
   import EmbeddedBrowser from './EmbeddedBrowser.svelte';
 
-  let { loading = false }: Props = $props();
+  let { loading = false, brokenFavicon = false }: Props = $props();
   let root: HTMLElement;
   let url = $state('about:blank');
   let lastAction = $state('');
@@ -52,6 +54,9 @@
       });
       emit('did-navigate', { url: currentUrl });
       emit('page-title-updated', { title: 'Example docs' });
+      if (brokenFavicon) {
+        emit('page-favicon-updated', { favicons: ['data:image/png;base64,broken'] });
+      }
       emit(loading ? 'did-start-loading' : 'did-stop-loading');
       ready = true;
     });
