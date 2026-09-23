@@ -4,6 +4,13 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.180.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.179.2...v2.180.0) (2026-09-23)
+
+
+### 🚀 Features
+
+* standardize dropdown menus and picker interactions ([#2821](https://github.com/intent-hq/cloudlands-fe/issues/2821)) ([f3e9ef0](https://github.com/intent-hq/cloudlands-fe/commit/f3e9ef0f709b9306cdc44e4c2410ed3c6a128351))
+
 ## [2.179.2](https://github.com/intent-hq/cloudlands-fe/compare/v2.179.1...v2.179.2) (2026-09-23)
 
 

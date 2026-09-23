@@ -1,12 +1,9 @@
 ---
 name: core/verifier
 description: >-
-  Verifier quality gate for themis diffs. Hard-fails recurring
-  review failures: instruction drift from required skills/docs, unjustified
-  pass-through wrappers after refactors, duplicated utilities created without
-  reuse discovery, non-canonical Redux state, and duplicate action/selector/saga
-  owners. Use when reviewing or verifying changes to skills, docs, reducers,
-  utilities, refactors, or shared-state implementation.
+  Use when reviewing Themis skills, docs, reducers, utilities, refactors, or
+  shared-state changes for instruction compliance, reuse, canonical ownership,
+  and required verification.
 type: sub-skill
 requires:
   - core

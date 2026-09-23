@@ -1,12 +1,9 @@
 ---
 name: core/saga-manager
 description: >-
-  Agent guidance for the package-owned saga manager: crash tracking in manager
-  status and serialized addCrash reports, per-saga cleanup with clearCrashes,
-  internal crash report storage keyed by saga name with newest
-  MAX_SAGA_CRASH_REPORTS retained, Store runSaga start/stop/restart behavior,
-  and getBackOffDelay exponential backoff. Do not teach app code to import
-  package-internal saga-manager files.
+  Use for Store saga start/stop/restart behavior, crash reports,
+  addCrash/clearCrashes, and retry backoff. Package saga-manager internals are
+  not app imports.
 type: sub-skill
 library: themis
 requires:

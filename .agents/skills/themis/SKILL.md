@@ -1,15 +1,10 @@
 ---
 name: themis
 description: >-
-  Repository root router for themis skills. Start here to choose
-  ./svelte/SKILL.md only for frontend-facing Svelte/SvelteKit paths with concrete
-  Svelte evidence, ./react/SKILL.md for React UI paths using ReactStore and
-  Preact signals, ./streaming/SKILL.md for Node/server/workers/CLIs/test harnesses
-  or no-UI code paths by default, and ./core/SKILL.md for shared Redux,
-  redux-saga concepts, or explicit Redux store pruning requests. Use
-  ./setup/SKILL.md for first-time app setup. Svelte,
-  React, and Streaming Store app patterns are mutually exclusive choices for any
-  single app.
+  Route Themis setup and shared Redux/saga guidance. Choose Svelte or React
+  only with concrete UI evidence; default to Streaming for Node/no-UI paths
+  or absent UI evidence. Use one Store family per app; prune stores only on
+  explicit request.
 type: core
 sources:
   - ./setup/SKILL.md

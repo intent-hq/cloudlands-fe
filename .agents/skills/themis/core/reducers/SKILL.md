@@ -1,14 +1,8 @@
 ---
 name: core/reducers
 description: >-
-  createReducer<State>(initialState) returns a reducer whose .with(action, fn)
-  chain-registers pure handlers and returns the same reducer (fluent builder —
-  no .build() needed). The reducer is a function (state = initialState, action)
-  that dispatches to the registered handler by action.type. Reducers must be
-  pure and immutable — no side effects, no mutation, no Date.now(). Reducers
-  update canonical state only and never maintain selector-derived fields. Return
-  the same reference when nothing changes so selector reference-equality
-  memoization and test ref-equality assertions pass. `.initialState` is exposed for tests.
+  Use when building Themis createReducer handlers, chaining actions, or
+  handling immutable canonical-state updates and no-op reference equality.
 type: sub-skill
 requires:
   - core

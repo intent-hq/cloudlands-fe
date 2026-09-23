@@ -1,12 +1,8 @@
 ---
 name: core/domain-scoped-state
 description: >-
-  State keyed by a domain id (workspace, project, tenant). State shape is
-  { byDomainId: Record<string, T> }. createDomainScopedHelpers(emptyState)
-  returns getDomainState, setDomainState, and clearDomainState — immutable
-  helpers that read with an emptyState fallback, write per-domain entries, and
-  drop domains (returning the same reference when the id was absent). Public API:
-  @augmentcode/themis/utils/store/domain-scoped; related guidance: ../SKILL.md §10.
+  Use createDomainScopedHelpers when reading, writing, or clearing Redux state
+  keyed by workspace, project, or tenant in byDomainId.
 type: sub-skill
 library: themis
 requires:

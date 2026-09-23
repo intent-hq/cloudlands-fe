@@ -1,10 +1,9 @@
 ---
 name: svelte/migration/setup
 description: >-
-  Install themis + peer dependencies, import the package runtime
-  directly from npm, wire the Store class in +layout.svelte, and create empty
-  reducer and saga registrations so the first slice can be migrated. Covers steps
-  1-4 of the ten-step migration checklist.
+  Use when preparing a Svelte store migration: install Themis and peers, wire
+  Store in +layout.svelte, and register reducers and sagas before migrating
+  slices.
 type: sub-skill
 requires:
   - svelte
