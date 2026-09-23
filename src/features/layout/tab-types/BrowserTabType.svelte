@@ -149,9 +149,15 @@
           new CustomEvent(BROWSER_VIEWPORT_CHANGE_EVENT, { detail: viewport }),
         );
       }}
-      onNavigate={(newUrl: string) => {
-        // Update the tab's browserUrl so it stays in sync with actual location
-        appStore.dispatch(updateTabBrowserUrl(panelLayoutId, tab.id, newUrl));
+      onNavigate={(newUrl: string, requestedUrl?: string) => {
+        // Update the tab's browserUrl so it stays in sync with actual location.
+        // An address-bar alias resolution names its pre-rewrite URL so the tab
+        // restores by re-resolving it; other navigations keep the auto mode.
+        appStore.dispatch(
+          requestedUrl === undefined
+            ? updateTabBrowserUrl(panelLayoutId, tab.id, newUrl)
+            : updateTabBrowserUrl(panelLayoutId, tab.id, newUrl, requestedUrl),
+        );
         // Update context store item if this tab is linked to one
         if (tab.contextItemId) {
           appStore.dispatch(updateContextItem(workspaceId, tab.contextItemId, { url: newUrl }));
