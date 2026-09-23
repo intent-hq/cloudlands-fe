@@ -89,6 +89,8 @@ export interface CaptureSession {
   domain: string;
   /** Output directory */
   outputDir: string;
+  /** ISO timestamp of when the session was started */
+  startTime: string;
   /** Step counter */
   stepCount: number;
   /** Whether capture is active (listening to events) */

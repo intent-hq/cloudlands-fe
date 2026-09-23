@@ -261,6 +261,19 @@ textarea::placeholder {
 @media (pointer: fine) {
   :where(:not(.native-scrollbars, .native-scrollbars *)) {
     scrollbar-width: thin;
+  }
+
+  /* `scrollbar-color` is inherited, so declare it once per theme scope. Declaring it on
+     every element made each restyle start a `scrollbar-color` transition per element
+     under the reduced-motion duration blanket. */
+  :where(:root, .light, .dark) {
+    scrollbar-color: hsl(var(--overlay) / 0.08) transparent;
+  }
+
+  /* A component that overrides `scrollbar-color` on itself (`.custom-scrollbar`, the
+     comment thread) must not restyle the scrollers it hosts: the editor mounted while
+     editing a comment keeps the canonical colour. */
+  :where(.custom-scrollbar .tiptap-container) {
     scrollbar-color: hsl(var(--overlay) / 0.08) transparent;
   }
 

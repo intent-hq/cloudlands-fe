@@ -1,3 +1,5 @@
+<!-- @catalog-exempt: composition over the catalogued Button and Input; no catalog fixtures yet -->
+
 <script lang="ts">
   /**
    * EditableName - Inline click-to-edit name component
