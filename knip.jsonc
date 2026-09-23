@@ -144,7 +144,13 @@
     "playwright/**/*.ts",
   ],
   "vitest": {
-    "config": ["vitest.config.ts", "tests/integration/vitest.integration.config.ts"],
+    // The bench config's `include` names src/lib/notes/text-rebase-bench.runner.ts, an
+    // entry `test:unit` never discovers (not a test pattern)
+    "config": [
+      "vitest.config.ts",
+      "tests/integration/vitest.integration.config.ts",
+      "vitest.text-rebase-bench.config.ts",
+    ],
   },
   "playwright": {
     // Loading multiple playwright configs fails with "Requiring @playwright/test second
