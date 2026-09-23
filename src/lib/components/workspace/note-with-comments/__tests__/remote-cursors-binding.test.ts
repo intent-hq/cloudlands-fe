@@ -16,7 +16,19 @@ import type {
   RemoteNoteViewer,
 } from '$features/notes/note-presence/note-presence-service';
 import type { NoteViewerCursor } from '$features/notes/note-presence/note-presence.client';
+import * as textRebase from '$lib/notes/text-rebase';
 import { bindRemoteCursors } from '../remote-cursors-binding';
+
+// Spy seam: the alignment is the expensive step, so the tests count how often
+// the binding asks for it while exercising the real mapper.
+vi.mock('$lib/notes/text-rebase', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('$lib/notes/text-rebase')>();
+  return {
+    ...actual,
+    createBidirectionalOffsetMapper: vi.fn(actual.createBidirectionalOffsetMapper),
+  };
+});
+const alignSpy = vi.mocked(textRebase.createBidirectionalOffsetMapper);
 
 const MARKDOWN = '# Title\n\nBody **bold** tail';
 
@@ -69,6 +81,7 @@ describe('bindRemoteCursors', () => {
   let unbind: (() => void) | undefined;
 
   beforeEach(() => {
+    alignSpy.mockClear();
     element = document.createElement('div');
     document.body.appendChild(element);
     editor = new Editor({
@@ -172,6 +185,83 @@ describe('bindRemoteCursors', () => {
     unbind();
     unbind = undefined;
     expect(session.providers.size).toBe(0);
+  });
+
+  it('aligns the texts once and reuses it across caret moves, heartbeats and peer renders', async () => {
+    const session = fakeSession();
+    unbind = bindRemoteCursors({
+      editor,
+      session,
+      getBaseText: () => MARKDOWN,
+      getBaseRev: () => 12,
+    });
+    await nextFrame();
+    expect(alignSpy).not.toHaveBeenCalled();
+
+    const setCaret = (pos: number) =>
+      editor.view.dispatch(
+        editor.state.tr.setSelection(TextSelection.create(editor.state.doc, pos)),
+      );
+    setCaret(2);
+    await nextFrame();
+    expect(alignSpy).toHaveBeenCalledTimes(1);
+    const firstPublish = vi.mocked(session.publishCursor).mock.lastCall?.[0];
+
+    // Text positions inside "Title" and "Body bold tail" (7 sits between blocks).
+    const carets = [3, 4, 5, 6, 8, 9, 10, 11, 12];
+    for (const pos of carets) {
+      setCaret(pos);
+      await nextFrame();
+    }
+    expect(alignSpy).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(session.publishCursor)).toHaveBeenCalledTimes(carets.length + 1);
+    const lastPublish = vi.mocked(session.publishCursor).mock.lastCall?.[0];
+    expect(lastPublish?.head).toBeGreaterThan(firstPublish!.head);
+
+    const [heartbeat] = session.providers;
+    expect(heartbeat()).toEqual(lastPublish);
+    expect(heartbeat()).toEqual(lastPublish);
+    expect(alignSpy).toHaveBeenCalledTimes(1);
+
+    const markdownCaret = MARKDOWN.indexOf('tail');
+    session.emit([peer({ rev: 12, anchor: markdownCaret, head: markdownCaret })]);
+    await nextFrame();
+    const [widget] = remoteCursorsPluginKey.getState(editor.state)!.find();
+    expect(editor.state.doc.textBetween(widget.from, widget.from + 4)).toBe('tail');
+    expect(alignSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it('re-aligns when the document text changes and when the base text changes', async () => {
+    const session = fakeSession();
+    let base = MARKDOWN;
+    unbind = bindRemoteCursors({
+      editor,
+      session,
+      getBaseText: () => base,
+      getBaseRev: () => 12,
+    });
+    editor.view.dispatch(editor.state.tr.setSelection(TextSelection.create(editor.state.doc, 2)));
+    await nextFrame();
+    expect(alignSpy).toHaveBeenCalledTimes(1);
+
+    editor.view.dispatch(editor.state.tr.insertText('XYZ', 2));
+    await nextFrame();
+    expect(alignSpy).toHaveBeenCalledTimes(2);
+    expect(alignSpy.mock.lastCall?.[0]).toContain('TXYZitle');
+
+    const [heartbeat] = session.providers;
+    heartbeat();
+    expect(alignSpy).toHaveBeenCalledTimes(2);
+
+    base = '# TXYZitle\n\nBody **bold** tail';
+    expect(heartbeat()).toEqual({ rev: 12, anchor: 6, head: 6 });
+    expect(alignSpy).toHaveBeenCalledTimes(3);
+    expect(alignSpy.mock.lastCall?.[1]).toBe(base);
+
+    // Same base text from a fresh string: equality, not identity, keys the cache.
+    base = `# TXYZitle\n\nBody **bold** ${'tail'}`;
+    heartbeat();
+    expect(alignSpy).toHaveBeenCalledTimes(3);
   });
 
   it('removes the plugin and its decorations on unbind', async () => {
