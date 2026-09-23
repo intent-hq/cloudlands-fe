@@ -176,8 +176,19 @@
   },
   // System/external binaries, not npm packages: pkill/iconutil (macOS), duckdb, flatpak,
   // idea (JetBrains launcher), auggie (Augment CLI, expected on dev/CI hosts), jq (the
-  // notify-fixed-issues.sh test stub applies the script's --jq projection with it)
-  "ignoreBinaries": ["pkill", "pgrep", "iconutil", "duckdb", "flatpak", "idea", "auggie", "jq"],
+  // notify-fixed-issues.sh test stub applies the script's --jq projection with it),
+  // taskset (Linux util-linux; scripts/vitest-loaded.mjs pins vitest to one core with it)
+  "ignoreBinaries": [
+    "pkill",
+    "pgrep",
+    "iconutil",
+    "duckdb",
+    "flatpak",
+    "idea",
+    "auggie",
+    "jq",
+    "taskset",
+  ],
   "ignoreDependencies": [
     // Optional coverage provider: scripts/run-integration-coverage-if-available.ts probes it
     // with require.resolve and exits gracefully when absent — intentionally not declared

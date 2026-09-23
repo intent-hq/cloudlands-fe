@@ -116,6 +116,16 @@ corepack pnpm run test:playwright
 
 `.git-blame-ignore-revs` lists the repo-wide Prettier reformat commit so `git blame` skips it (GitHub honors it automatically; opt in locally with `git config blame.ignoreRevsFile .git-blame-ignore-revs`).
 
+A test that budgets wall time (perf guards, alignment work bounds) must fit the local 30 s
+`testTimeout` under CI runner load, not just in isolation: the shared runners starve a
+fork ~4×, and cloudlands-fe#2740 went red three times on guards that took a few seconds
+locally. Before pushing such a test, run
+`pnpm test:loaded <file or filter> [-- <extra vitest args>]` — it runs the default
+`vitest.config.ts` with one worker pinned to a single core (`taskset`, Linux only; macOS
+runs the loops unpinned and says the reproduction is weaker) that it shares with three
+busy loops, exits with vitest's code, and always kills the loops. `LOADED_CORE=<n>` and
+`LOADED_BUSY=<n>` override the core and loop count; `CI` is left unset on purpose.
+
 ## Fast UI preview loop
 
 Use `dev:ui` for component-only work. It skips Electron, native helpers, the daemon,
