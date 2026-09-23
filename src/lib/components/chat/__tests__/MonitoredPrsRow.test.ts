@@ -658,7 +658,7 @@ describe('MonitoredPrsRow', () => {
     await fireEvent.click(screen.getByTestId('monitored-pr-chip'));
     await waitFor(() => screen.getByTestId('monitored-pr-check-flush-item'));
     const menu = screen.getByTestId('monitored-pr-menu');
-    const items = Array.from(menu.querySelectorAll('button'));
+    const items = Array.from(menu.querySelectorAll('[role="menuitem"]'));
     expect(items.map((item) => item.textContent?.trim())).toEqual([
       'Check and Flush',
       'Open in App',
@@ -730,7 +730,7 @@ describe('MonitoredPrsRow', () => {
 
     await fireEvent.click(screen.getByTestId('monitored-pr-chip'));
     const flushItem = await waitFor(() => screen.getByTestId('monitored-pr-check-flush-item'));
-    expect((flushItem as HTMLButtonElement).disabled).toBe(false);
+    expect(flushItem.hasAttribute('data-disabled')).toBe(false);
 
     await fireEvent.click(flushItem);
     expect(dispatchMock).toHaveBeenCalledTimes(1);

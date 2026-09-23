@@ -15,6 +15,7 @@ import noLegacySpinner from './no-legacy-spinner.js';
 import noNativeDialogs from './no-native-dialogs.js';
 import noRawControls from './no-raw-controls.js';
 import noRawMenuRow from './no-raw-menu-row.js';
+import noRawMenuSurface from './no-raw-menu-surface.js';
 import settingsUseSchema from './settings-use-schema.js';
 
 const projectFile = (file) => path.resolve(file);
@@ -75,12 +76,32 @@ svelteTester.run('no-raw-controls', noRawControls, {
 svelteTester.run('no-raw-menu-row', noRawMenuRow, {
   valid: [
     {
-      code: '<Button role="menuitem" class={cn(menuItem(), "text-danger")} />',
+      code: '<div data-slot="list-view-item" role={selectable ? "option" : "listitem"} aria-selected={selected} />',
+      filename: projectFile('src/lib/components/patterns/collection/ListView.svelte'),
+    },
+    {
+      code: '<script>import { menuItem } from "$lib/components/ui/menu";</script><Button role="menuitem" class={cn(menuItem(), "text-danger")} />',
       filename: projectFile('src/features/example/ActionMenu.svelte'),
     },
     {
-      code: '<span role="option" class="px-3" />',
+      code: '<script>import { menuItem as row } from "$lib/components/ui/menu"; const optionClass = $derived(cn(row(), "gap-2"));</script><a role={multiple ? "menuitemcheckbox" : "option"} aria-checked={selected} class={optionClass} />',
       filename: projectFile('src/features/example/Status.svelte'),
+    },
+    {
+      code: '<script>import * as Recipes from "$lib/components/ui/menu"; const row = () => Recipes.menuItem();</script><FeatureOption role="option" class={row()} />',
+      filename: projectFile('src/features/example/Picker.svelte'),
+    },
+    {
+      code: '<script>import * as Commands from "$lib/components/ui/menu";</script><Commands.Content><Commands.CheckboxItem checked={true}>On</Commands.CheckboxItem></Commands.Content>',
+      filename: projectFile('src/features/example/ActionMenu.svelte'),
+    },
+    {
+      code: '<script>import { Content as Flyout, CommandItem as Command } from "$lib/components/ui/menu";</script><Flyout><Command onclick={run} /></Flyout>',
+      filename: projectFile('src/features/example/ActionMenu.svelte'),
+    },
+    {
+      code: '<Popover.Content><input aria-label="Search" /><div role="listbox"><FeatureOption /></div><button onclick={retry}>Retry</button></Popover.Content>',
+      filename: projectFile('src/features/example/Picker.svelte'),
     },
   ],
   invalid: [
@@ -90,7 +111,17 @@ svelteTester.run('no-raw-menu-row', noRawMenuRow, {
       errors: [{ messageId: 'rawMenuRow' }],
     },
     {
-      code: '<button role="menuitemradio" class="px-3">Choice</button><div role="menuitemcheckbox" class="px-3">Toggle</div><div role="option" class="px-3">Option</div>',
+      code: '<div data-slot="list-view-item" role="menuitem" />',
+      filename: projectFile('src/lib/components/patterns/collection/ListView.svelte'),
+      errors: [{ messageId: 'rawMenuRow' }],
+    },
+    {
+      code: '<div data-slot="list-view-item" role="option" />',
+      filename: projectFile('src/features/example/ListView.svelte'),
+      errors: [{ messageId: 'rawMenuRow' }],
+    },
+    {
+      code: '<button role="menuitemradio" aria-checked={true} class="px-3">Choice</button><div role="menuitemcheckbox" aria-checked={false} class="px-3">Toggle</div><div role="option" class="px-3">Option</div>',
       filename: projectFile('src/features/example/ActionMenu.svelte'),
       errors: [
         { messageId: 'rawMenuRow' },
@@ -98,7 +129,64 @@ svelteTester.run('no-raw-menu-row', noRawMenuRow, {
         { messageId: 'rawMenuRow' },
       ],
     },
+    ...[
+      '<span role="option" class="px-3" />',
+      '<a role={selected ? "menuitem" : "option"} />',
+      '<FeatureOption role="option" class="menuItem()" />',
+      '<script>const menuItem = () => "px-3";</script><button role="menuitem" class={menuItem()} />',
+      '<script>import { menuItem } from "./fake";</script><button role="menuitem" class={menuItem()} />',
+      '<script>import { menuItem } from "$lib/components/ui/menu";</script>{#each rows as menuItem}<a role="option" class={menuItem()} />{/each}',
+      '<script>import { menuItem } from "$lib/components/ui/menu";</script><div role="option" class={selected ? menuItem() : "px-3"} />',
+      '<script>const rowRole = active ? "option" : "presentation";</script><span role={rowRole} />',
+    ].map((code) => ({
+      code,
+      filename: projectFile('src/features/example/Picker.svelte'),
+      errors: [{ messageId: 'rawMenuRow' }],
+    })),
+    ...[
+      '<script>import * as Commands from "$lib/components/ui/menu"; import { Button as Action } from "$lib/components/ui/button";</script><Commands.Content><div><Action>Run</Action></div></Commands.Content>',
+      '<script>import { Content as Flyout } from "$lib/components/ui/menu";</script><Flyout><a href="/settings">Settings</a></Flyout>',
+      '<script>import { menuItem } from "$lib/components/ui/menu";</script><div role="menuitemcheckbox" class={menuItem()} />',
+      '<div role="menu"><FeatureRow onclick={run} /></div>',
+    ].map((code) => ({
+      code,
+      filename: projectFile('src/features/example/Actions.svelte'),
+      errors: [{ messageId: 'semanticMenuRow' }],
+    })),
   ],
+});
+
+svelteTester.run('no-raw-menu-surface', noRawMenuSurface, {
+  valid: [
+    {
+      code: '<script>import * as Commands from "$lib/components/ui/menu";</script><Commands.Content /><Commands.SubContent />',
+      filename: projectFile('src/features/example/Menu.svelte'),
+    },
+    {
+      code: '<script>import { menuOverlay as shell } from "./menu-recipes"; const surface = $derived(cn(shell(), extra));</script><div role="menu" class={surface} />',
+      filename: projectFile('src/lib/components/ui/menu/adapter.svelte'),
+    },
+    {
+      code: '<script>import { ContextMenu as Primitive } from "bits-ui"; import { menuOverlay } from "./menu-recipes";</script><Primitive.SubContent class={menuOverlay()} />',
+      filename: projectFile('src/lib/components/ui/menu/adapter.svelte'),
+    },
+    {
+      code: '<Popover.Content><form><input /><div role="listbox" /></form></Popover.Content>',
+      filename: projectFile('src/features/example/RepositoryPicker.svelte'),
+    },
+  ],
+  invalid: [
+    '<div role="menu" class="rounded-md bg-popover" />',
+    '<FeatureShell role={context ? "menu" : "dialog"} />',
+    '<script>import { DropdownMenu as Primitive } from "bits-ui";</script><Primitive.Content />',
+    '<script>import { ContextMenu as Primitive } from "bits-ui";</script><Primitive.SubContent />',
+    '<script>const menuOverlay = () => "rounded-md";</script><div role="menu" class={menuOverlay()} />',
+    '<div role="menu" class="menuOverlay()" />',
+  ].map((code) => ({
+    code,
+    filename: projectFile('src/features/example/Menu.svelte'),
+    errors: [{ messageId: 'rawMenuSurface' }],
+  })),
 });
 
 svelteTester.run('no-button-compatibility-aliases', noButtonCompatibilityAliases, {

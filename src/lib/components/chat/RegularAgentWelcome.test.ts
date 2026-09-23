@@ -99,7 +99,7 @@ describe('RegularAgentWelcome specialist picker', () => {
 
     await fireEvent.click(trigger);
     expect(trigger.getAttribute('aria-expanded')).toBe('true');
-    const option = await screen.findByRole('menuitem', { name: /UI Designer/ });
+    const option = await screen.findByRole('menuitemradio', { name: /UI Designer/ });
 
     await fireEvent.click(option);
     expect(onSpecialistChange).toHaveBeenCalledWith('ui-designer');
@@ -119,7 +119,7 @@ describe('RegularAgentWelcome specialist picker', () => {
 
     for (const [id, name] of teamSpecialists) {
       await fireEvent.click(trigger);
-      const option = await screen.findByRole('menuitem', { name: new RegExp(name) });
+      const option = await screen.findByRole('menuitemradio', { name: new RegExp(name) });
       await fireEvent.click(option);
       expect(onSpecialistChange).toHaveBeenLastCalledWith(id);
       await waitFor(() => expect(trigger.getAttribute('aria-expanded')).toBe('false'));
@@ -133,8 +133,8 @@ describe('RegularAgentWelcome specialist picker', () => {
 
     const trigger = screen.getByTestId('specialist-picker-trigger');
     await fireEvent.click(trigger);
-    const selected = await screen.findByRole('menuitem', { name: /UI Designer/ });
-    expect(selected.getAttribute('aria-current')).toBe('true');
+    const selected = await screen.findByRole('menuitemradio', { name: /UI Designer/ });
+    expect(selected.getAttribute('aria-checked')).toBe('true');
   });
 
   it('expands and collapses the selected prompt and preserves customize routing', async () => {

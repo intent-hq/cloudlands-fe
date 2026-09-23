@@ -1,5 +1,5 @@
 /** @vitest-environment jsdom */
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 const { dispatchMock, focusPanelMock, layoutState, setActiveTabMock, agentState, mockState } =
@@ -237,7 +237,7 @@ describe('BrowserTabsMenu', () => {
     trigger.addEventListener('focus', triggerFocus);
     await fireEvent.click(trigger);
     await fireEvent.click(await screen.findByTestId('browser-tabs-menu-item'));
-    await waitFor(() => expect(screen.queryByRole('menu')).toBeNull());
+    await waitFor(() => expect(screen.queryByTestId('browser-tabs-menu-item')).toBeNull());
     expect(setActiveTabMock).toHaveBeenCalledWith('visible-1', 'browser');
     expect(focusPanelMock).toHaveBeenCalledWith('browser');
     expect(document.activeElement).toBe(browserPanel);
@@ -252,15 +252,17 @@ describe('BrowserTabsMenu', () => {
     await waitFor(() => expect(document.activeElement).toBe(trigger));
   });
 
-  it('restores trigger focus when dismissed without selecting a tab', async () => {
+  it('restores trigger focus when the named chooser is dismissed without selecting a tab', async () => {
     seedLayout(1);
     renderMenu();
     const trigger = screen.getByTestId('browser-tabs-trigger');
     trigger.focus();
     await fireEvent.click(trigger);
-    const item = await screen.findByTestId('browser-tabs-menu-item');
+    const chooser = await screen.findByRole('dialog', { name: '1 browser tab' });
+    const item = within(chooser).getByTestId('browser-tabs-menu-item');
     item.focus();
     await fireEvent.keyDown(item, { key: 'Escape' });
+    await waitFor(() => expect(chooser.isConnected).toBe(false));
     await waitFor(() => expect(document.activeElement).toBe(trigger));
     expect(focusPanelMock).not.toHaveBeenCalled();
   });
@@ -356,6 +358,39 @@ describe('permanent close actions (intent#4762)', () => {
     expect(dispatchedActions().some((a) => a.type === destroyHiddenType)).toBe(false);
     expect(dispatchedActions().some((a) => a.type === closeTabType)).toBe(false);
   });
+
+  it.each(['cancel', 'escape', 'confirm'] as const)(
+    'returns focus to the browser chooser trigger after confirmation %s',
+    async (dismissal) => {
+      seedLayout(1, 1);
+      agentState.running = true;
+      renderMenu();
+      const trigger = screen.getByTestId('browser-tabs-trigger');
+      trigger.focus();
+      await fireEvent.click(trigger);
+      const close = screen.getAllByTestId('browser-tab-close')[0];
+      close.focus();
+      await fireEvent.click(close);
+
+      const confirm = await screen.findByRole('button', { name: 'Close tab', exact: true });
+      await waitFor(() => expect(document.activeElement).toBe(confirm));
+      expect(screen.queryByRole('dialog', { name: '2 browser tabs' })).toBeNull();
+      if (dismissal === 'escape') await fireEvent.keyDown(confirm, { key: 'Escape' });
+      else {
+        await fireEvent.click(
+          dismissal === 'confirm'
+            ? confirm
+            : screen.getByRole('button', { name: 'Cancel', exact: true }),
+        );
+      }
+
+      await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+      await waitFor(() => expect(document.activeElement).toBe(trigger));
+      expect(dispatchedActions().filter((a) => a.type === closeTabType)).toHaveLength(
+        dismissal === 'confirm' ? 1 : 0,
+      );
+    },
+  );
 
   it('confirms the bulk close while the owner agent is running, then dispatches it', async () => {
     seedLayout(1, 1);

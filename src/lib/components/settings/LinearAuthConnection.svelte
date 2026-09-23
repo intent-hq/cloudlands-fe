@@ -204,7 +204,7 @@
           >{m.settings_connections_linear_showIssues()}</span
         >
         <Select.Root bind:value={issueFilter}>
-          <Select.Trigger class="w-[180px]">
+          <Select.Trigger class="w-[180px]" aria-label={m.settings_connections_linear_showIssues()}>
             {LINEAR_ISSUE_FILTER_OPTIONS.find((o) => o.value === issueFilter)?.label ||
               m.settings_connections_linear_selectPlaceholder()}
           </Select.Trigger>

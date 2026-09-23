@@ -14,7 +14,7 @@ export type NoteViewMode = 'editor' | 'raw' | 'preview';
 export interface TransientUiWorkspaceState {
   chatDrafts: Record<string, string>;
   composerContextByAgentId: Record<string, Collection<ComposerContextItem, 'id'>>;
-  noteViewModeByNoteId: Record<string, Exclude<NoteViewMode, 'editor'>>;
+  noteViewModeByNoteId: Partial<Record<string, Exclude<NoteViewMode, 'editor'>>>;
   sidebarActiveTab: SidebarTabId;
   viewedFiles: Record<string, string>;
   timestamp: number;

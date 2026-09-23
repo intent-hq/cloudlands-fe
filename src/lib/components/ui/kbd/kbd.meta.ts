@@ -10,6 +10,7 @@ export const kbdMetadata = parseUiComponentMetadata({
   category: 'primitive',
   owner: 'design-system',
   callers: [
+    'src/features/workspace/components/WorkspaceActionItems.svelte',
     'src/lib/component-catalog/renderers/NavigationHelpCatalogPreview.svelte',
     'src/lib/component-catalog/renderers/PopoversCatalogPreview.svelte',
     'src/lib/components/ui/tooltip/TooltipShortcut.svelte',

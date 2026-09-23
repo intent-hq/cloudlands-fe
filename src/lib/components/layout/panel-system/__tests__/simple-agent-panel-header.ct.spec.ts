@@ -199,8 +199,12 @@ for (const width of [280, 320]) {
     const browser = header.getByRole('button', { name: /browser tab/i });
     await expect(browser).toBeFocused();
     await browser.press('Enter');
-    await expect(page.getByRole('menuitem', { name: /Header preview/ })).toBeVisible();
+    const browserDialog = page.getByRole('dialog', { name: /browser tab/i });
+    await expect(
+      browserDialog.getByRole('button', { name: 'Header preview', exact: true }),
+    ).toBeFocused();
     await page.keyboard.press('Escape');
+    await expect(browserDialog).toBeHidden();
     await expect(browser).toBeFocused();
     await page.keyboard.press('Tab');
     const navigator = header.getByTestId('chat-message-navigator-trigger');

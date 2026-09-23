@@ -467,7 +467,12 @@
     {#if isExpanded}
       <div class="pl-5 pr-1.5 pb-0.5 pt-0.5 space-y-px" transition:slide={{ tier: 'moderate' }}>
         {#each files as file (file.path)}
-          <FileRow {file} muted={true} onFileClick={() => openCommitChangeset(commit)} />
+          <FileRow
+            contextKey={`${workspaceId}:${gitRootId}:${commit.hash}`}
+            {file}
+            muted={true}
+            onFileClick={() => openCommitChangeset(commit)}
+          />
         {/each}
       </div>
     {/if}

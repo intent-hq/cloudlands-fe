@@ -1307,10 +1307,12 @@ describe('WorkspaceTabStrip', () => {
 
     await fireEvent.mouseDown(document.body);
     await fireEvent.contextMenu(screen.getByRole('tab', { name: 'Loading workspace ws-3' }));
-    expect(
-      (screen.getByRole('menuitem', { name: 'Close tabs to the right' }) as HTMLButtonElement)
-        .disabled,
-    ).toBe(true);
+    const closeRight = screen.getByRole('menuitem', { name: 'Close tabs to the right' });
+    expect(closeRight.getAttribute('aria-disabled')).toBe('true');
+    mocks.dispatch.mockClear();
+    await fireEvent.click(closeRight);
+    expect(mocks.dispatch).not.toHaveBeenCalled();
+    expect(mocks.goto).not.toHaveBeenCalled();
   });
 
   it('does not offer Share from the tab context menu, even on an owned tab', async () => {

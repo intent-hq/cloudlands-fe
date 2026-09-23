@@ -53,7 +53,11 @@
   import ReplaceAgentModal from '$lib/components/modals/ReplaceAgentModal.svelte';
   import { sendMessage } from '$store/renderer/slices/chat-state/chat-state-slice';
 
-  import type { SidebarMenuEntry } from '$lib/components/ui/sidebar-context-menu/types';
+  import {
+    getSidebarContextPosition,
+    type SidebarContextPosition,
+    type SidebarMenuEntry,
+  } from '$lib/components/ui/sidebar-context-menu/types';
   import {
     faArrowUpRightFromSquare,
     faBell,
@@ -64,7 +68,6 @@
     faRightLeft,
     faStop,
     faTrash,
-    faUserTie,
   } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
   import { selectSpecialistName } from '$store/renderer/slices/specialists/specialists-selectors';
@@ -195,7 +198,7 @@
   let editInputRef: HTMLInputElement | null = $state(null);
 
   // Context menu state
-  let contextMenu: { x: number; y: number } | null = $state(null);
+  let contextMenu: SidebarContextPosition | null = $state(null);
 
   // Read-only harness-features modal (opened from the context menu).
   let harnessModalOpen = $state(false);
@@ -300,6 +303,10 @@
   // Handle keyboard events on the card button
   function handleCardKeydown(e: KeyboardEvent) {
     if (readOnly) return;
+    if (e.key === 'ContextMenu' || (e.shiftKey && e.key === 'F10')) {
+      handleContextMenu(e);
+      return;
+    }
     if (e.key === 'Enter' && isCmdClickModifier({ event: e })) {
       e.preventDefault();
       e.stopPropagation();
@@ -317,11 +324,11 @@
   }
 
   // Context menu handlers
-  function handleContextMenu(e: MouseEvent) {
+  function handleContextMenu(e: MouseEvent | KeyboardEvent) {
     if (readOnly) return;
-    e.preventDefault();
-    e.stopPropagation();
-    contextMenu = { x: e.clientX, y: e.clientY };
+    const position = getSidebarContextPosition(e);
+    if (!position) return;
+    contextMenu = position;
     // The `agent.list` row this card renders from omits the detail-only
     // fields (§5.5 list projection) the menu gates on — `harnessFeatures`
     // drives both "Replace agent" and the harness modal. Pull the detail
@@ -357,6 +364,7 @@
           closeContextMenu();
         },
       },
+      { type: 'separator' },
       {
         id: 'rename',
         label: m.chat_agentCard_menu_rename_label(),
@@ -432,6 +440,7 @@
     // needs-permission, …) outrank `running` in getAvatarState, but a live
     // turn must stay stoppable regardless of what the avatar shows.
     if (isTurnRunning) {
+      items.push({ type: 'separator' });
       items.push({
         id: 'stop',
         label: m.chat_agentCard_menu_stop_label(),
@@ -511,17 +520,10 @@
       });
     }
 
-    // Read-only info stamps. Specialist (monorepo#3498): resolved display
-    // name when the id is known, raw id fallback otherwise; omitted for
-    // agents without a specialist. Harness version (PROTOCOL §5.5): selecting
-    // the item opens the harness-features modal (monorepo#2459) — legacy
-    // sessions without a harnessFeatures snapshot open it too (every catalog
-    // feature renders OFF); sessions from daemons that predate the field omit
-    // the item entirely. The snapshot is detail-only (stripped from list
-    // rows), so an absent snapshot is ambiguous until the detail read
-    // `handleContextMenu` dispatches has landed (`detailHydrated`): the item
-    // stays disabled until then, and enables once the snapshot arrives or the
-    // detail read confirms a never-activated session has none (all-OFF modal).
+    // Specialist is metadata, resolved by name with a raw-ID fallback (monorepo#3498).
+    // Harness opens the features modal (PROTOCOL §5.5, monorepo#2459). The detail-only
+    // snapshot may be absent on slim rows, so wait for hydration before enabling.
+    // Hydrated legacy sessions without a snapshot show every feature OFF.
     const specialistId = specialist;
     const harnessVersion = $agent$?.harnessVersion;
     const harnessSnapshotResolved = $agent$?.harnessFeatures !== undefined || $agentDetailHydrated$;
@@ -532,11 +534,9 @@
       const specialistName =
         selectSpecialistName.select(appStore.state, specialistId) ?? specialistId;
       items.push({
+        type: 'label',
         id: 'specialist',
         label: m.chat_agentCard_menu_specialist_label({ name: specialistName }),
-        icon: faUserTie,
-        disabled: true,
-        onClick: () => {},
       });
     }
     if (harnessVersion) {
@@ -1061,6 +1061,7 @@
   <SidebarContextMenu
     x={contextMenu.x}
     y={contextMenu.y}
+    returnFocus={contextMenu.returnFocus}
     items={getContextMenuItems()}
     onClickOutside={closeContextMenu}
   />

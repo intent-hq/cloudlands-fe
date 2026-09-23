@@ -181,7 +181,9 @@ describe('OpenComboButton trigger ownership', () => {
     await fireEvent.click(within(container).getByRole('button', { name: 'Open in...' }));
     await within(container).findByRole('menu');
 
-    await fireEvent.click(within(container).getByRole('menuitem', { name: 'Finder' }));
+    const finder = within(container).getByRole('menuitemradio', { name: 'Finder' });
+    expect(finder.getAttribute('aria-checked')).toBe('false');
+    await fireEvent.click(finder);
 
     await waitFor(() =>
       expect(invoke).toHaveBeenCalledExactlyOnceWith('shell:showItemInFolder', {

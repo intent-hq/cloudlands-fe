@@ -1,14 +1,12 @@
 <script lang="ts">
-  import { Button } from '$lib/components/ui/button';
-  import { tick } from 'svelte';
   import type { TaskStatus } from '$shared/types';
   import type { WorkspaceId, NoteId } from '$shared/types/branded-ids';
-  import DropdownMenu from '$lib/components/ui/dropdown-menu.svelte';
+  import { Select } from '$lib/components/ui/select';
   import TaskStatusIcon from '../tiptap/TaskStatusIcon.svelte';
 
   import { updateTaskNoteStatus } from '$features/tasks/tasks-write-service';
+  import { notify } from '$lib/components/patterns/notify';
   import { m } from '$shared/paraglide/messages.js';
-  import { menuItem } from '$lib/components/ui/menu';
 
   let {
     workspaceId,
@@ -24,9 +22,8 @@
     compact?: boolean;
   } = $props();
 
-  let selectedIndex = $state(0);
-  let menuRef: HTMLDivElement | null = $state(null);
   let menuOpen = $state(false);
+  let pending = $state(false);
 
   const statusOptions: TaskStatus[] = [
     'not_started',
@@ -77,107 +74,49 @@
     cancelled: 'bg-gray-600/10 text-gray-500',
   };
 
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  const statusDotColors: Record<TaskStatus, string> = {
-    not_started: 'bg-gray-400',
-    waiting: 'bg-gray-300',
-    discussion_needed: 'bg-warning',
-    blocked: 'bg-red-500',
-    in_progress: 'bg-sky-400',
-    review_required: 'bg-blue-500',
-    complete: 'bg-emerald-500',
-    cancelled: 'bg-gray-500',
-  };
-
   // Check if this is an interactive dropdown or readonly badge
   let isInteractive = $derived(!readonly && !!workspaceId && !!noteId);
 
-  function handleStatusSelect(newStatus: TaskStatus, close: () => void) {
-    close();
-    if (newStatus === status) return;
-    if (!workspaceId || !noteId) return;
-
-    // eslint-disable-next-line intent/no-component-async-data-fetch -- sanctioned post-saga tasks-write-service seam (dispatches optimistic store updates + AppClient mutation); not a component data fetch.
-    void updateTaskNoteStatus(workspaceId, noteId, newStatus);
-  }
-
-  async function handleMenuOpen() {
-    // Set initial selection to current status
-    selectedIndex = statusOptions.indexOf(status);
-    if (selectedIndex === -1) selectedIndex = 0;
-    // Focus the menu after it renders
-    await tick();
-    menuRef?.focus();
-  }
-
-  $effect(() => {
-    if (menuOpen) void handleMenuOpen();
-  });
-
-  function handleKeyDown(e: KeyboardEvent, close: () => void) {
-    switch (e.key) {
-      case 'ArrowDown':
-        e.preventDefault();
-        selectedIndex = Math.min(selectedIndex + 1, statusOptions.length - 1);
-        break;
-      case 'ArrowUp':
-        e.preventDefault();
-        selectedIndex = Math.max(selectedIndex - 1, 0);
-        break;
-      case 'Enter':
-        e.preventDefault();
-        handleStatusSelect(statusOptions[selectedIndex], close);
-        break;
-      case 'Escape':
-        e.preventDefault();
-        close();
-        break;
+  async function handleStatusSelect(value: string) {
+    menuOpen = false;
+    const newStatus = statusOptions.find((option) => option === value);
+    if (!newStatus || newStatus === status || pending || !workspaceId || !noteId) return;
+    pending = true;
+    try {
+      // eslint-disable-next-line intent/no-component-async-data-fetch -- sanctioned mutation seam owns optimistic updates, rollback and failure notification.
+      await updateTaskNoteStatus(workspaceId, noteId, newStatus);
+    } catch {
+      notify.error(m.notes_writeService_updateFailed_error());
+    } finally {
+      pending = false;
     }
   }
 </script>
 
 {#if isInteractive}
-  <DropdownMenu bind:open={menuOpen} align="start" side="bottom">
-    {#snippet trigger({ props })}
-      <Button
-        variant="ghost"
-        {...props}
-        class="inline-flex font-mediumx text-subtlex items-center cursor-pointer {compact
-          ? 'py-0.5 text-sm gap-1.5'
-          : 'py-1 text-sm gap-2'}"
-      >
-        <TaskStatusIcon {status} size={12} />
-        {statusLabels[status]}
-      </Button>
-    {/snippet}
-    {#snippet content({ close }: { close: () => void })}
-      <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
-      <div
-        bind:this={menuRef}
-        tabindex="0"
-        onkeydown={(e) => handleKeyDown(e, close)}
-        class="outline-none"
-        role="listbox"
-      >
-        {#each statusOptions as option, i (option)}
-          <Button
-            variant="ghost"
-            onclick={() => handleStatusSelect(option, close)}
-            onmouseenter={() => (selectedIndex = i)}
-            class={`${menuItem()} px-3 py-1.5 text-sm cursor-pointer ${
-              i === selectedIndex ? 'bg-muted/30' : ''
-            } ${option === status ? 'font-medium' : ''}`}
-            role="option"
-            aria-selected={option === status}
-          >
-            <!-- <span class="size-2 rounded-full {statusDotColors[option]}"></span> -->
+  <Select.Root value={status} bind:open={menuOpen} disabled={pending} onchange={handleStatusSelect}>
+    <Select.Trigger
+      variant="ghost"
+      aria-label={m.workspace_taskStatus_change_ariaLabel()}
+      aria-busy={pending}
+      class="inline-flex items-center cursor-pointer {compact ? 'py-0.5 gap-1.5' : 'py-1 gap-2'}"
+    >
+      <TaskStatusIcon {status} size={12} />
+      {statusLabels[status]}
+    </Select.Trigger>
+    <Select.Content portal class="min-w-48">
+      {#each statusOptions as option (option)}
+        <Select.Item value={option} label={statusLabels[option]}>
+          <span class="flex items-center gap-2">
             <TaskStatusIcon status={option} size={12} />
             {statusLabels[option]}
-          </Button>
-        {/each}
-      </div>
-    {/snippet}
-  </DropdownMenu>
+          </span>
+        </Select.Item>
+      {/each}
+    </Select.Content>
+  </Select.Root>
+  <span role="status" class="sr-only">{pending ? m.workspace_taskStatus_updating_label() : ''}</span
+  >
 {:else}
   <span
     class="inline-flex items-center rounded-md font-semibold {compact
