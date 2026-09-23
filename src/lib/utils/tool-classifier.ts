@@ -45,6 +45,8 @@ export interface ToolDisplay {
   icon: IconDefinition;
   verb: string;
   subject: string | null;
+  /** Raw command fallback, rather than a human-readable description. */
+  subjectIsCommand?: boolean;
   path: string | null;
   /** Note ID for linking to notes (optional) */
   noteId?: string | null;
@@ -1345,6 +1347,7 @@ function fileDeleteDisplay(name: string, input: Record<string, any>): ToolDispla
 function terminalDisplay(name: string, input: Record<string, any>): ToolDisplay {
   let verb: string = m.chat_toolClassifier_run_label();
   let subject: string | null = null;
+  let subjectIsCommand = false;
 
   // Extract terminal ID from name like "read terminal 123", "kill terminal 5"
   const nameTerminalIdMatch = name.match(/terminal\s+(\d+)/);
@@ -1393,6 +1396,7 @@ function terminalDisplay(name: string, input: Record<string, any>): ToolDisplay 
       subject = truncate(input.description, 50);
     } else {
       subject = truncate(cmd.split('\n')[0], 80);
+      subjectIsCommand = true;
     }
   } else if (input.terminal_id !== undefined && !input.command) {
     // Input-based detection: terminal_id without command is read/write/kill process
@@ -1432,8 +1436,10 @@ function terminalDisplay(name: string, input: Record<string, any>): ToolDisplay 
         } else if (titleVerb === 'launch') {
           verb = m.chat_toolClassifier_launch_label();
           subject = truncate(rest.split('\n')[0], 80);
+          subjectIsCommand = /^Launch\s+`/i.test(input._acpTitle);
         } else {
           subject = truncate(rest.split('\n')[0], 80);
+          subjectIsCommand = /^Run\s+`/i.test(input._acpTitle);
         }
       }
     }
@@ -1443,6 +1449,7 @@ function terminalDisplay(name: string, input: Record<string, any>): ToolDisplay 
     const backtickMatch = name.match(/^(?:run|launch)\s+`(.+)`\s*$/);
     if (backtickMatch) {
       subject = truncate(backtickMatch[1].split('\n')[0], 80);
+      subjectIsCommand = true;
     }
   }
 
@@ -1451,6 +1458,7 @@ function terminalDisplay(name: string, input: Record<string, any>): ToolDisplay 
     icon: CATEGORY_ICONS.terminal,
     verb,
     subject,
+    ...(subjectIsCommand ? { subjectIsCommand: true } : {}),
     path: null,
   };
 }

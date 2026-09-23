@@ -253,14 +253,16 @@ export function buildToolDisplayModel({
   parsedResult?: ParsedToolResult | null;
   toolState: ToolState;
 }): CompactToolDisplayModel {
-  const sentence = compactSentence(display, input, parsedResult, toolState);
+  const deferCommand = toolState === 'running' && display.subjectIsCommand === true;
+  const compactDisplay = deferCommand ? { ...display, subject: null } : display;
+  const sentence = compactSentence(compactDisplay, input, parsedResult, toolState);
   const okOnly = isOkOnlyResult(result) && isWorkspaceMutation(toolName, input, display);
   const hasPayload = result !== null && result !== undefined;
   const hasInput = Object.keys(input || {}).some((key) => !key.startsWith('_'));
   return {
     sentence,
-    sentenceSegments: sentenceSegments(display, input, sentence),
-    accessibleSentence: accessibleSentence(display, input, sentence),
+    sentenceSegments: sentenceSegments(compactDisplay, input, sentence),
+    accessibleSentence: deferCommand ? sentence : accessibleSentence(display, input, sentence),
     status:
       toolState === 'error' ? 'error' : okOnly && toolState === 'completed' ? 'success' : null,
     isOkOnlyWorkspaceResult: okOnly,
