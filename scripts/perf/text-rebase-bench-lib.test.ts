@@ -87,6 +87,20 @@ describe('parseArgs', () => {
     );
     expect(() => parseArgs(['--base', 'a', '--bogus'])).toThrow('Unknown option: --bogus');
   });
+
+  it('rejects an explicitly empty ref instead of falling back to the working tree', () => {
+    expect(() => parseArgs(['--base', 'HEAD', '--head', ''])).toThrow(
+      '--head requires a non-empty ref.',
+    );
+    expect(() => parseArgs(['--base', 'HEAD', '--head', '  '])).toThrow(
+      '--head requires a non-empty ref.',
+    );
+    expect(() => parseArgs(['--base', ''])).toThrow('--base requires a non-empty ref.');
+  });
+
+  it('leaves head unset when --head is omitted', () => {
+    expect(parseArgs(['--base', 'HEAD'])).not.toHaveProperty('head');
+  });
 });
 
 describe('median / percentile', () => {

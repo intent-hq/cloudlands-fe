@@ -10,6 +10,7 @@ const INTEGER_OPTIONS = {
   '--repeats': { key: 'repeats', min: 1 },
 };
 const VALUE_OPTIONS = { '--base': 'base', '--head': 'head', '--json': 'json' };
+const REF_OPTIONS = new Set(['--base', '--head']);
 
 const hasOwn = (object, key) => Object.prototype.hasOwnProperty.call(object, key);
 
@@ -37,7 +38,11 @@ export function parseArgs(argv) {
     if (seen.has(flag)) throw new Error(`${flag} may only be specified once.`);
     seen.add(flag);
     if (hasOwn(VALUE_OPTIONS, flag)) {
-      options[VALUE_OPTIONS[flag]] = optionValue(argv, index, flag);
+      const value = optionValue(argv, index, flag);
+      if (REF_OPTIONS.has(flag) && value.trim() === '') {
+        throw new Error(`${flag} requires a non-empty ref.`);
+      }
+      options[VALUE_OPTIONS[flag]] = value;
     } else if (hasOwn(INTEGER_OPTIONS, flag)) {
       const { key, min } = INTEGER_OPTIONS[flag];
       options[key] = integerOption(flag, optionValue(argv, index, flag), { min });
