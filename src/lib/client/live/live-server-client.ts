@@ -17,6 +17,8 @@ import type { AppClient, ServerClient, ServerPairingInfo } from '../app-client';
 import { backendRequest } from './backend-transport';
 
 export class LiveServerClient implements ServerClient {
+  constructor(private readonly localMachine = false) {}
+
   async pairingInfo(): Promise<ServerPairingInfo> {
     const result = await backendRequest<{
       token?: string;
@@ -27,7 +29,7 @@ export class LiveServerClient implements ServerClient {
       hostname?: string;
       tcAddress?: string;
       availableIps?: string[];
-    }>('server.pairingInfo');
+    }>('server.pairingInfo', undefined, this.localMachine ? { localMachine: true } : undefined);
 
     // Validate required fields
     if (
@@ -57,7 +59,11 @@ export class LiveServerClient implements ServerClient {
   }
 
   async rotateToken(): Promise<{ token: string }> {
-    const result = await backendRequest<{ token?: string }>('server.rotateToken');
+    const result = await backendRequest<{ token?: string }>(
+      'server.rotateToken',
+      undefined,
+      this.localMachine ? { localMachine: true } : undefined,
+    );
 
     if (typeof result?.token !== 'string') {
       throw new Error('Invalid server.rotateToken response shape');

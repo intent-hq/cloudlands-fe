@@ -11,8 +11,8 @@
  * (`systemStatusSuccess` → `host.locality`) plus an optional workspace
  * entity, opens a file row's context menu, and asserts the items' visibility.
  */
-import { beforeAll, beforeEach, afterAll, afterEach, describe, expect, it } from 'vitest';
-import { fireEvent, render, screen } from '@testing-library/svelte';
+import { beforeAll, beforeEach, afterAll, afterEach, describe, expect, it, vi } from 'vitest';
+import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 
 import VirtualizedFileTree from '../VirtualizedFileTree.svelte';
 import { store as appStore } from '$store/renderer/store';
@@ -64,6 +64,7 @@ function seedWorkspace(remote: boolean) {
     setWorkspaceEntity({
       id: WorkspaceId(WS_ID),
       title: 'Tree WS',
+      path: '/project',
       branch: 'main',
       changesets: [],
       timeline: [],
@@ -146,5 +147,62 @@ describe('VirtualizedFileTree download/reveal locality gating (monorepo#2171)', 
     expect(await screen.findByText('Open')).toBeTruthy();
     expect(screen.queryByText(/^Download/)).toBeNull();
     expect(screen.queryByText(/^Reveal in /)).toBeNull();
+  });
+
+  it('keyboard context uses the focused file and retains its exact path', async () => {
+    const onFileSelect = vi.fn();
+    render(VirtualizedFileTree, {
+      flattenedNodes,
+      workspaceId: WS_ID,
+      selectedFile: FILE_PATH,
+      onFileSelect,
+    });
+    await fireEvent.keyDown(screen.getByRole('tree'), { key: 'F10', shiftKey: true });
+    await fireEvent.click(screen.getByRole('menuitem', { name: 'Open' }));
+    expect(onFileSelect).toHaveBeenCalledExactlyOnceWith(FILE_PATH);
+  });
+
+  it('closes if the workspace or visible file target changes', async () => {
+    const onFileSelect = vi.fn();
+    const { container, rerender } = render(VirtualizedFileTree, {
+      flattenedNodes,
+      workspaceId: WS_ID,
+      onFileSelect,
+    });
+    await openFileContextMenu(container);
+    await rerender({ workspaceId: 'another-workspace' });
+    await waitFor(() => expect(screen.queryByRole('menu')).toBeNull());
+    await openFileContextMenu(container);
+    await rerender({ flattenedNodes: [] });
+    await waitFor(() => expect(screen.queryByRole('menu')).toBeNull());
+    expect(onFileSelect).not.toHaveBeenCalled();
+  });
+
+  it('keeps folder expansion separate from background file creation', async () => {
+    seedWorkspace(false);
+    const folder = {
+      node: { name: 'src', path: '/project/src', type: 'directory' as const, children: [] },
+      depth: 0,
+      isExpanded: false,
+      isLoading: false,
+    };
+    const onToggleDirectory = vi.fn();
+    const onCreateFile = vi.fn();
+    render(VirtualizedFileTree, {
+      flattenedNodes: [folder],
+      workspaceId: WS_ID,
+      selectedFile: folder.node.path,
+      onToggleDirectory,
+      onCreateFile,
+    });
+    await fireEvent.keyDown(screen.getByRole('tree'), { key: 'ContextMenu' });
+    expect(screen.queryByRole('menuitem', { name: 'Open' })).toBeNull();
+    await fireEvent.click(screen.getByRole('menuitem', { name: 'Expand' }));
+    expect(onToggleDirectory).toHaveBeenCalledWith(folder.node, folder);
+    await fireEvent.contextMenu(screen.getByRole('tree'));
+    expect(screen.queryByRole('menuitem', { name: 'Expand' })).toBeNull();
+    await fireEvent.click(screen.getByRole('menuitem', { name: 'New File' }));
+    expect(screen.getByRole('textbox')).toBeTruthy();
+    expect(onCreateFile).not.toHaveBeenCalled();
   });
 });

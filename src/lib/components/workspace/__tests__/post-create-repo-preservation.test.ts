@@ -11,6 +11,7 @@
 import { cleanup, render, waitFor } from '@testing-library/svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import type { DraftAttachment } from '$lib/client/app-client';
 import type { CompactWorkspaceInitializerFormState } from '$store/renderer/slices/workspace-initializer/workspace-initializer-types';
 
 const mocks = vi.hoisted(() => {
@@ -26,6 +27,14 @@ const mocks = vi.hoisted(() => {
     goto: vi.fn(),
     create: vi.fn(),
     update: vi.fn(),
+    draftGet: vi.fn(),
+    draftSet: vi.fn(),
+    draftClear: vi.fn(),
+    persistedDraft: null as {
+      text: string;
+      attachments?: DraftAttachment[];
+      updatedAt: string;
+    } | null,
     getLastUsedSetupScript: vi.fn(() => undefined),
     recordLastUsedSetupScript: vi.fn(),
     // Per-test persisted form state returned by the selector mock (read
@@ -128,9 +137,9 @@ vi.mock('$lib/client', () => ({
   appClient: {
     git: { pull: vi.fn(async () => ({ success: true })) },
     drafts: {
-      get: vi.fn(async () => null),
-      set: vi.fn(async () => undefined),
-      clear: vi.fn(async () => undefined),
+      get: mocks.draftGet,
+      set: mocks.draftSet,
+      clear: mocks.draftClear,
     },
   },
 }));
@@ -240,12 +249,172 @@ describe('post-create repo-field preservation', () => {
     vi.clearAllMocks();
     sessionStorage.clear();
     mocks.savedFormState = null;
+    mocks.persistedDraft = null;
+    mocks.goto.mockReset();
+    mocks.draftGet.mockImplementation(async () => mocks.persistedDraft);
+    mocks.draftSet.mockImplementation(async (_workspaceId, _agentId, text: string) => {
+      mocks.persistedDraft = text ? { text, updatedAt: '2026-09-21T00:00:00Z' } : null;
+    });
+    mocks.draftClear.mockImplementation(async () => {
+      mocks.persistedDraft = null;
+    });
   });
 
   afterEach(() => {
     cleanup();
+    vi.useRealTimers();
     sessionStorage.clear();
   });
+
+  it('clears the submitted prompt before navigation can unmount the form', async () => {
+    mockCreateSuccess();
+    let finishNavigation!: () => void;
+    mocks.goto.mockImplementation(
+      () => new Promise<void>((resolve) => (finishNavigation = resolve)),
+    );
+    sessionStorage.setItem(
+      PREFILL_KEY,
+      JSON.stringify({
+        repoPath: '/tmp/test-repo',
+        branch: 'main',
+        prompt: 'Submitted prompt',
+        autoCreate: true,
+      }),
+    );
+    const { component, getByRole } = render(CompactWorkspaceInitializer, {
+      props: { isExpanded: false },
+    });
+    await component.applyPrefill();
+    try {
+      await waitFor(() => expect(mocks.goto).toHaveBeenCalled());
+      expect(mocks.draftClear).toHaveBeenCalledWith('__new-workspace__', '__initializer__');
+      expect(getByRole('textbox').textContent?.trim()).toBe('');
+    } finally {
+      finishNavigation?.();
+    }
+  });
+
+  it('does not resurrect a submitted draft when closing immediately after success', async () => {
+    vi.useFakeTimers();
+    mockCreateSuccess();
+    let draftAtNavigation: typeof mocks.persistedDraft | undefined;
+    mocks.goto.mockImplementation(async () => {
+      window.dispatchEvent(new Event('beforeunload'));
+      draftAtNavigation = mocks.persistedDraft;
+    });
+    let unmountForm!: () => void;
+    const oncreate = vi.fn(() => unmountForm());
+    sessionStorage.setItem(
+      PREFILL_KEY,
+      JSON.stringify({
+        repoPath: '/tmp/test-repo',
+        branch: 'main',
+        prompt: 'Submitted prompt',
+        autoCreate: true,
+      }),
+    );
+    const { component, unmount } = render(CompactWorkspaceInitializer, {
+      props: { isExpanded: false, oncreate },
+    });
+    unmountForm = unmount;
+    await component.applyPrefill();
+    await vi.waitFor(() => expect(oncreate).toHaveBeenCalled(), { interval: 1 });
+    expect(draftAtNavigation).toBeNull();
+    expect(mocks.persistedDraft).toBeNull();
+    await vi.advanceTimersByTimeAsync(300);
+    expect(mocks.persistedDraft).toBeNull();
+
+    const reopened = render(CompactWorkspaceInitializer, { props: { isExpanded: false } });
+    await vi.advanceTimersByTimeAsync(300);
+    expect(reopened.getByRole('textbox').textContent?.trim()).toBe('');
+  });
+
+  it('keeps the prompt for retry when workspace creation fails', async () => {
+    mocks.create.mockResolvedValue({ ok: false, error: 'Create failed' });
+    sessionStorage.setItem(
+      PREFILL_KEY,
+      JSON.stringify({
+        repoPath: '/tmp/test-repo',
+        branch: 'main',
+        prompt: 'Keep this draft',
+        autoCreate: true,
+      }),
+    );
+    const { component, getByRole, unmount } = render(CompactWorkspaceInitializer, {
+      props: { isExpanded: false },
+    });
+    await component.applyPrefill();
+    await waitFor(() => expect(mocks.create).toHaveBeenCalledOnce());
+    await waitFor(() => expect(getByRole('textbox').getAttribute('data-disabled')).toBe('false'));
+    expect(getByRole('textbox').textContent).toContain('Keep this draft');
+    expect(mocks.draftClear).not.toHaveBeenCalled();
+    expect(mocks.goto).not.toHaveBeenCalled();
+    unmount();
+    expect(mocks.persistedDraft?.text).toBe('Keep this draft');
+  });
+
+  it.each(['after creation', 'before creation'])(
+    'ignores stale restore work when drafts.get resolves %s',
+    async (restoreTiming) => {
+      vi.useFakeTimers();
+      mockCreateSuccess();
+      let resolveRestore!: (draft: NonNullable<typeof mocks.persistedDraft>) => void;
+      mocks.draftGet.mockImplementationOnce(
+        () => new Promise((resolve) => (resolveRestore = resolve)),
+      );
+      let finishNavigation!: () => void;
+      mocks.goto.mockImplementation(
+        () => new Promise<void>((resolve) => (finishNavigation = resolve)),
+      );
+      const { component, getByRole, unmount } = render(CompactWorkspaceInitializer, {
+        props: { isExpanded: false },
+      });
+      const staleDraft = {
+        text: 'Old persisted prompt',
+        updatedAt: '2026-09-21T00:00:00Z',
+        attachments: [
+          {
+            id: 'old-image',
+            type: 'file',
+            label: 'old.png',
+            imageData: 'aGVsbG8=',
+            imageMimeType: 'image/png',
+          },
+        ],
+      };
+      try {
+        if (restoreTiming === 'before creation') {
+          resolveRestore({ ...staleDraft, attachments: [] });
+          await vi.advanceTimersByTimeAsync(0);
+          // The restore's delayed editor update is still queued at 50ms.
+        }
+        sessionStorage.setItem(
+          PREFILL_KEY,
+          JSON.stringify({
+            repoPath: '/tmp/test-repo',
+            branch: 'main',
+            prompt: 'Submitted prompt',
+            autoCreate: true,
+          }),
+        );
+        await component.applyPrefill();
+        await vi.waitFor(() => expect(mocks.goto).toHaveBeenCalledOnce(), { interval: 1 });
+        expect(mocks.draftClear).toHaveBeenCalled();
+        mocks.draftSet.mockClear();
+        if (restoreTiming === 'after creation') resolveRestore(staleDraft);
+        await vi.advanceTimersByTimeAsync(300);
+        expect(getByRole('textbox').textContent?.trim()).toBe('');
+        unmount();
+        for (const [, , text, attachments] of mocks.draftSet.mock.calls) {
+          expect(text).toBe('');
+          expect(attachments).toBeUndefined();
+        }
+        expect(mocks.persistedDraft).toBeNull();
+      } finally {
+        finishNavigation?.();
+      }
+    },
+  );
 
   it('preserves the local repo selection and agent prefs in the persisted form state', async () => {
     mockCreateSuccess();

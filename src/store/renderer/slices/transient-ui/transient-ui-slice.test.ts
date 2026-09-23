@@ -120,12 +120,16 @@ describe('transientUiReducer', () => {
   it('keeps note view modes mutually exclusive and stores only non-default modes', () => {
     let state = transientUiReducer(initialState, setNoteViewMode(WS_1, 'note-1', 'raw'));
     expect(state.byWorkspaceId[WS_1].noteViewModeByNoteId).toEqual({ 'note-1': 'raw' });
+    expect(selectNoteViewMode.select(mockState(state), WS_1, 'note-1')).toBe('raw');
 
     state = transientUiReducer(state, setNoteViewMode(WS_1, 'note-1', 'preview'));
     expect(state.byWorkspaceId[WS_1].noteViewModeByNoteId).toEqual({ 'note-1': 'preview' });
+    expect(selectNoteViewMode.select(mockState(state), WS_1, 'note-1')).toBe('preview');
 
     state = transientUiReducer(state, setNoteViewMode(WS_1, 'note-1', 'editor'));
     expect(state.byWorkspaceId[WS_1].noteViewModeByNoteId).toEqual({});
+    expect(selectNoteViewMode.select(mockState(state), WS_1, 'note-1')).toBe('editor');
+    expect(selectIsRawNoteViewEnabled.select(mockState(state), WS_1, 'note-1')).toBe(false);
   });
 
   it('keeps view modes isolated across notes and workspaces', () => {

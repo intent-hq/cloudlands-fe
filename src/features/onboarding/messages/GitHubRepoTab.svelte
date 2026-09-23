@@ -289,6 +289,7 @@
         noFocusStyle
         class="border-0 bg-transparent! shadow-none focus-visible:ring-0 text-sm"
         role="combobox"
+        aria-label={m.onboarding_githubRepoTab_repoList_ariaLabel()}
         aria-autocomplete="list"
         aria-controls="github-repo-list"
         aria-expanded={combinedRepos.length > 0}
@@ -310,6 +311,7 @@
     <GitHubAuthBanner message={m.onboarding_githubRepoTab_signIn_description()} />
   {:else if $reposError$}
     <div
+      role="alert"
       class="rounded-lg border border-danger/30 bg-danger-background/5 px-3 py-2.5 text-xs text-danger space-y-2"
     >
       <p>{m.onboarding_githubRepoTab_loadFailed_error({ error: $reposError$ })}</p>

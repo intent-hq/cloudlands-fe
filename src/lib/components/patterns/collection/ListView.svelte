@@ -17,6 +17,8 @@
     getText?: (item: T, index: number) => string;
     selectable?: SelectionMode;
     selectedKeys?: ListKey[];
+    /** Use indicator when each row supplies a visible selection control. */
+    selectionAppearance?: 'surface' | 'indicator';
     onSelectedKeysChange?: (keys: ListKey[]) => void;
     onActivate?: (item: T, index: number) => void;
     status?: 'ready' | 'loading' | 'error';
@@ -38,6 +40,7 @@
     getText = (item, index) => String(getKey(item, index)),
     selectable = false,
     selectedKeys = $bindable([]),
+    selectionAppearance = 'surface',
     onSelectedKeysChange,
     onActivate,
     status = 'ready',
@@ -274,7 +277,10 @@
       class="relative min-w-0"
       style:height={isVirtualized ? `${items.length * rowHeight}px` : undefined}
     >
-      {#if hover}<ProximityHighlight store={hover} {selectedIndexes} />{/if}
+      {#if hover}<ProximityHighlight
+          store={hover}
+          selectedIndexes={selectionAppearance === 'surface' ? selectedIndexes : []}
+        />{/if}
       <div style:transform={isVirtualized ? `translateY(${startIndex * rowHeight}px)` : undefined}>
         {#each visibleRows as { item, index } (getKey(item, index))}
           {@const key = getKey(item, index)}

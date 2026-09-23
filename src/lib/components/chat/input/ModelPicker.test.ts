@@ -60,7 +60,8 @@ vi.mock('svelte-fa', async () => {
   return { default: MockFa };
 });
 
-vi.mock('@fortawesome/free-solid-svg-icons', () => ({
+vi.mock('@fortawesome/free-solid-svg-icons', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@fortawesome/free-solid-svg-icons')>()),
   faCheck: { iconName: 'check' },
   faSearch: { iconName: 'search' },
   faChevronDown: { iconName: 'chevron-down' },
@@ -630,7 +631,10 @@ describe('ModelPicker guest / collaborator lock', () => {
     await fireEvent.click(screen.getByRole('button'));
     await fireEvent.click(await screen.findByRole('option', { name: /Opus 4\.7/ }));
     await waitFor(() => {
-      expect(confirmModelChange).toHaveBeenCalledWith('auggie:sonnet4.6', 'auggie:opus4.7');
+      expect(confirmModelChange).toHaveBeenCalledWith('auggie:sonnet4.6', 'auggie:opus4.7', {
+        from: 'Sonnet 4.6',
+        to: 'Opus 4.7',
+      });
     });
 
     await flipToCollaborator();
@@ -1221,7 +1225,7 @@ describe('ModelPicker combined reasoning mode', () => {
     expect(onReasoningChange).toHaveBeenCalledTimes(1);
   });
 
-  it('displays an unsupported controlled effort as Auto without mutating it', async () => {
+  it('labels an unsupported controlled effort without mutating it or inventing an option', async () => {
     const onReasoningChange = vi.fn();
     render(ModelPicker, {
       props: {
@@ -1234,7 +1238,9 @@ describe('ModelPicker combined reasoning mode', () => {
     });
 
     const trigger = screen.getByRole('button');
-    await waitFor(() => expect(screen.getByLabelText('GPT-5.6-Sol · Auto')).toBeTruthy());
+    await waitFor(() =>
+      expect(screen.getByLabelText('GPT-5.6-Sol · Extra high (unavailable)')).toBeTruthy(),
+    );
     expect(screen.getByTestId('model-reasoning-effort-gauge').dataset.gaugeCentered).toBe('true');
 
     await fireEvent.click(trigger);
@@ -1242,7 +1248,7 @@ describe('ModelPicker combined reasoning mode', () => {
     expect(screen.queryByTestId('effort-gauge')).toBeNull();
     expect(trigger.textContent).not.toContain('Auto');
     expect(trigger.textContent).not.toContain('Default');
-    expect(effortTrigger().textContent?.trim()).toBe('Auto');
+    expect(effortTrigger().textContent).toContain('unavailable');
     const effortListbox = await openEffortSelect();
     expect(within(effortListbox).getByRole('option', { name: 'Auto' })).toBeTruthy();
     expect(onReasoningChange).not.toHaveBeenCalled();
@@ -3914,7 +3920,10 @@ describe('ModelPicker confirmModelChange gate', () => {
         modelId: 'model-2',
       });
     });
-    expect(confirmModelChange).toHaveBeenCalledWith('model-1', 'model-2');
+    expect(confirmModelChange).toHaveBeenCalledWith('model-1', 'model-2', {
+      from: 'Model 1',
+      to: 'Model 2',
+    });
   });
 
   it('reverts the pick and skips onModelChange when the gate resolves false', async () => {
@@ -3929,7 +3938,10 @@ describe('ModelPicker confirmModelChange gate', () => {
     await fireEvent.click(await screen.findByRole('option', { name: /Model 2/ }));
 
     await waitFor(() => {
-      expect(confirmModelChange).toHaveBeenCalledWith('model-1', 'model-2');
+      expect(confirmModelChange).toHaveBeenCalledWith('model-1', 'model-2', {
+        from: 'Model 1',
+        to: 'Model 2',
+      });
     });
     await new Promise((r) => setTimeout(r, 0));
     expect(onModelChange).not.toHaveBeenCalled();
@@ -3959,7 +3971,10 @@ describe('ModelPicker confirmModelChange gate', () => {
     await fireEvent.click(await screen.findByRole('option', { name: /Default model/ }));
 
     await waitFor(() => {
-      expect(confirmModelChange).toHaveBeenCalledWith('model-1', null);
+      expect(confirmModelChange).toHaveBeenCalledWith('model-1', null, {
+        from: 'Model 1',
+        to: 'Default model',
+      });
     });
     // Confirming applies the pick: the trigger now shows "Default model".
     await waitFor(() => {
@@ -3990,7 +4005,10 @@ describe('ModelPicker confirmModelChange gate', () => {
     await fireEvent.click(await screen.findByRole('option', { name: /Default model/ }));
 
     await waitFor(() => {
-      expect(confirmModelChange).toHaveBeenCalledWith('model-1', null);
+      expect(confirmModelChange).toHaveBeenCalledWith('model-1', null, {
+        from: 'Model 1',
+        to: 'Default model',
+      });
     });
     await new Promise((r) => setTimeout(r, 0));
     expect(onModelChange).not.toHaveBeenCalled();

@@ -22,7 +22,10 @@ export function probePanelMenuIcons(root: Element) {
     'arrow-up-right-from-square': [40, 144, 1, 0],
     'up-right-from-square': [40, 144, 1, 0],
   };
-  const icons = [...root.querySelectorAll<SVGSVGElement>('svg[data-icon]')].map((svg) => {
+  const commandIcons = [...root.querySelectorAll<SVGSVGElement>('svg[data-icon]')].filter(
+    (svg) => !svg.closest('[data-slot="menu-sub-chevron"], [data-slot="menu-item-indicator"]'),
+  );
+  const icons = commandIcons.map((svg) => {
     const id = svg.dataset.icon!;
     const box = svg.getBoundingClientRect();
     const row = svg.closest('[data-menu-item], [data-slot="menu-label"]')!;

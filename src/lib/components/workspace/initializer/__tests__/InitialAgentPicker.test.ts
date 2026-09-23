@@ -154,15 +154,6 @@ vi.mock('$lib/components/chat/input/ModelPicker.svelte', async () => ({
   default: (await import('./mocks/MockModelPicker.svelte')).default,
 }));
 
-vi.mock('$lib/components/ui/dropdown-menu.svelte', async () => ({
-  default: (await import('./mocks/MockDropdownMenu.svelte')).default,
-}));
-
-// The specialist menu items need a bits-ui menu root; render their content inline.
-vi.mock('$lib/components/ui/menu', async () => ({
-  Item: (await import('./mocks/MockComponent.svelte')).default,
-}));
-
 vi.mock('$features/agent/components/agent-avatar/AgentAvatar.svelte', async () => ({
   default: (await import('./mocks/MockComponent.svelte')).default,
 }));
@@ -852,7 +843,8 @@ describe('InitialAgentPicker specialist dropdown', () => {
     return within(modeCards().single).getByRole('button', { name: /General/ });
   }
 
-  const manageSpecialistsItem = () => screen.queryByText(/manage specialists/i);
+  const manageSpecialistsItem = () =>
+    screen.queryByRole('menuitem', { name: /manage specialists/i });
 
   it('selects single-agent mode instead of opening the menu while in team mode', async () => {
     const onTeamModeChange = vi.fn();
@@ -890,12 +882,48 @@ describe('InitialAgentPicker specialist dropdown', () => {
     expect(manageSpecialistsItem()).toBeNull();
 
     await fireEvent.click(trigger);
-    await flush();
+    await screen.findByRole('menuitem', { name: /manage specialists/i });
 
     expect(trigger.getAttribute('aria-expanded')).toBe('true');
     expect(manageSpecialistsItem()).not.toBeNull();
     expect(modeCards().single.getAttribute('aria-pressed')).toBe('true');
     expect(onTeamModeChange).not.toHaveBeenCalled();
+  });
+
+  it('selects one specialist, clears the model override, and exposes the checked choice on reopen', async () => {
+    mocks.specialists$.set([{ id: 'developer', name: 'Developer', description: 'Builds things' }]);
+    const onSpecialistChange = vi.fn();
+    const onModelChange = vi.fn();
+    render(InitialAgentPicker, {
+      props: {
+        selectedSpecialist: null,
+        selectedModel: 'remembered-model',
+        modelWasOverridden: true,
+        onSpecialistChange,
+        onModelChange,
+      },
+    });
+
+    const trigger = specialistTrigger();
+    await fireEvent.click(trigger);
+    const general = await screen.findByRole('menuitemradio', { name: /General/ });
+    const developer = screen.getByRole('menuitemradio', { name: /Developer/ });
+    expect(general.getAttribute('aria-checked')).toBe('true');
+    expect(developer.getAttribute('aria-checked')).toBe('false');
+
+    await fireEvent.click(developer);
+    await waitFor(() => expect(screen.queryByRole('menu')).toBeNull());
+    expect(onSpecialistChange).toHaveBeenCalledExactlyOnceWith('developer');
+    expect(onModelChange).toHaveBeenCalledExactlyOnceWith(undefined);
+    expect(screen.getAllByTestId('picker-selected')[SINGLE_PICKER].textContent).toBe('');
+    expect(modeCards().single.getAttribute('aria-pressed')).toBe('true');
+
+    await fireEvent.click(trigger);
+    const selected = await screen.findByRole('menuitemradio', { name: /Developer/, checked: true });
+    expect(screen.getAllByRole('menuitemradio', { checked: true })).toEqual([selected]);
+    expect(
+      screen.getByRole('menuitemradio', { name: /General/ }).getAttribute('aria-checked'),
+    ).toBe('false');
   });
 
   it('keeps both model pickers inline and bounded by the modal collision boundary', () => {

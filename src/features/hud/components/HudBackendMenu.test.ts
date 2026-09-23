@@ -188,6 +188,31 @@ describe('HudBackendMenu', () => {
     expect(screen.queryByText('Connections')).toBeNull();
   });
 
+  it('reopens with a retryable error on rejected open and clears it after retry', async () => {
+    let fail = true;
+    mockDispatch.mockImplementation(
+      (action: {
+        type: string;
+        failure?: (error: Error) => void;
+        success?: (r: unknown) => void;
+      }) => {
+        if (action.type === 'connections/openRequested') {
+          if (fail) action.failure?.(new Error('offline'));
+          else action.success?.({ status: 'opened', id: 'r1' });
+        }
+        return action;
+      },
+    );
+    await renderAndOpen();
+    await fireEvent.click(screen.getByText('desk:4180').closest('[role="menuitem"]')!);
+    expect((await screen.findByTestId('hud-backend-menu-open-error')).getAttribute('role')).toBe(
+      'alert',
+    );
+    fail = false;
+    await fireEvent.click(screen.getByText('desk:4180').closest('[role="menuitem"]')!);
+    await vi.waitFor(() => expect(screen.queryByTestId('hud-backend-menu-open-error')).toBeNull());
+  });
+
   it('opens the add-backend modal from the add entry', async () => {
     await renderAndOpen();
 

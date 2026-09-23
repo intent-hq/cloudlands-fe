@@ -29,7 +29,7 @@
   import { safeDisclosureTransition } from './disclosure-motion';
   import { untrack } from 'svelte';
   import { writable } from 'svelte/store';
-  import DropdownMenu from '$lib/components/ui/dropdown-menu.svelte';
+  import * as Menu from '$lib/components/ui/menu';
   import { Button } from '$lib/components/ui/button';
   import { getPanelLayoutManager } from '$features/layout/panel-layout-adapter';
   import { m } from '$shared/paraglide/messages.js';
@@ -111,20 +111,17 @@
     count = agentHooks.length;
   });
 
-  function handleRunNow(hook: BackgroundHook, close?: () => void) {
-    close?.();
+  function handleRunNow(hook: BackgroundHook) {
     appStore.dispatch(runBackgroundHookRequested(hook.workspaceId, hook.hookId));
   }
 
-  function handleCancel(hook: BackgroundHook, close?: () => void) {
-    close?.();
+  function handleCancel(hook: BackgroundHook) {
     appStore.dispatch(cancelBackgroundHookRequested(hook.workspaceId, hook.hookId));
   }
 
   let expandedHookId = $state<string | null>(null);
 
-  function handleViewScript(hook: BackgroundHook, close?: () => void) {
-    close?.();
+  function handleViewScript(hook: BackgroundHook) {
     const panelLayoutManager = getPanelLayoutManager(hook.workspaceId);
     const sourcePanelId = panelLayoutManager
       .getPanelIds()
@@ -277,54 +274,46 @@
             class={SUBSCRIPTION_TRAILING_CONTROLS_CLASS}
             data-testid="background-hook-trailing-controls"
           >
-            <DropdownMenu side="top" align="end">
-              {#snippet trigger({ props })}
-                <Button
-                  {...props}
-                  variant="plain"
-                  size="icon-xs"
-                  type="button"
-                  class="h-6 w-6 shrink-0 border-0 {SUBSCRIPTION_ICON_CLASS} {SUBSCRIPTION_ICON_BUTTON_CLASS} focus-visible:ring-1"
-                  data-testid="background-hook-chip"
-                  aria-label={m.chat_backgroundHooks_row_ariaLabel()}
+            <Menu.Root>
+              <Menu.Trigger>
+                {#snippet child({ props })}
+                  <Button
+                    {...props}
+                    variant="plain"
+                    size="icon-xs"
+                    type="button"
+                    class="h-6 w-6 shrink-0 border-0 {SUBSCRIPTION_ICON_CLASS} {SUBSCRIPTION_ICON_BUTTON_CLASS} focus-visible:ring-1"
+                    data-testid="background-hook-chip"
+                    aria-label={m.chat_backgroundHooks_row_ariaLabel()}
+                  >
+                    <KebabIcon class="h-3 w-3" />
+                  </Button>
+                {/snippet}
+              </Menu.Trigger>
+              <Menu.Content
+                side="top"
+                align="end"
+                class="w-36"
+                aria-label={m.chat_backgroundHooks_row_ariaLabel()}
+              >
+                <Menu.Item disabled={hook.state === 'running'} onSelect={() => handleRunNow(hook)}>
+                  <Fa icon={faPlay} class="h-2.5 w-2.5" />
+                  {m.chat_backgroundHooks_runNow_label()}
+                </Menu.Item>
+                <Menu.Item
+                  data-testid="background-hook-view-script-item"
+                  onSelect={() => handleViewScript(hook)}
                 >
-                  <KebabIcon class="h-3 w-3" />
-                </Button>
-              {/snippet}
-              {#snippet content({ close }: { close: () => void })}
-                <div class="flex w-36 flex-col p-1">
-                  <Button
-                    variant="ghost-light"
-                    size="xs"
-                    class="justify-start"
-                    disabled={hook.state === 'running'}
-                    onclick={() => handleRunNow(hook, close)}
-                  >
-                    <Fa icon={faPlay} class="h-2.5 w-2.5" />
-                    {m.chat_backgroundHooks_runNow_label()}
-                  </Button>
-                  <Button
-                    variant="ghost-light"
-                    size="xs"
-                    class="justify-start"
-                    data-testid="background-hook-view-script-item"
-                    onclick={() => handleViewScript(hook, close)}
-                  >
-                    <Fa icon={faCode} class="h-2.5 w-2.5" />
-                    {m.chat_backgroundHooks_viewScript_label()}
-                  </Button>
-                  <Button
-                    variant="ghost-light"
-                    size="xs"
-                    class="justify-start"
-                    onclick={() => handleCancel(hook, close)}
-                  >
-                    <Fa icon={faXmark} class="h-2.5 w-2.5" />
-                    {m.chat_backgroundHooks_cancel_label()}
-                  </Button>
-                </div>
-              {/snippet}
-            </DropdownMenu>
+                  <Fa icon={faCode} class="h-2.5 w-2.5" />
+                  {m.chat_backgroundHooks_viewScript_label()}
+                </Menu.Item>
+                <Menu.Separator />
+                <Menu.Item onSelect={() => handleCancel(hook)}>
+                  <Fa icon={faXmark} class="h-2.5 w-2.5" />
+                  {m.chat_backgroundHooks_cancel_label()}
+                </Menu.Item>
+              </Menu.Content>
+            </Menu.Root>
             <Button
               variant="plain"
               size="icon-xs"

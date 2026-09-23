@@ -117,6 +117,44 @@ function install(prompts: string[], manager = makeFakeManager()) {
 
 const PROMPTS = ['p0', 'p1', 'p2', 'p3', 'p4', 'p5', 'p6', 'p7'];
 
+describe('active radial keyboard alternative', () => {
+  it('cancels the service session without letting a later release insert', () => {
+    const run = install(PROMPTS);
+    run.manager.joystick(0, 1);
+    const escape = new KeyboardEvent('keydown', { key: 'Escape', cancelable: true });
+    window.dispatchEvent(escape);
+    run.manager.joystick(0, 0);
+    expect(escape.defaultPrevented).toBe(true);
+    expect(run.insertText).not.toHaveBeenCalled();
+    expect(run.dispatched.at(-1)).toEqual(radialPromptPickerClosed());
+    run.teardown();
+  });
+
+  it('arrows through prompt and Cancel sectors without moving editor focus', () => {
+    const run = install(PROMPTS);
+    run.manager.joystick(0, 1);
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight' }));
+    expect(run.dispatched.at(-1)).toEqual(radialPromptPickerSectorChanged(7));
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter' }));
+    expect(run.insertText).toHaveBeenCalledExactlyOnceWith('p7');
+    run.manager.joystick(0, 0);
+    expect(run.insertText).toHaveBeenCalledTimes(1);
+    run.teardown();
+  });
+
+  it('does not consume unrelated keys or keys after teardown', () => {
+    const run = install(PROMPTS);
+    run.manager.joystick(0, 1);
+    const typing = new KeyboardEvent('keydown', { key: 'a', cancelable: true });
+    window.dispatchEvent(typing);
+    expect(typing.defaultPrevented).toBe(false);
+    run.teardown();
+    const escape = new KeyboardEvent('keydown', { key: 'Escape', cancelable: true });
+    window.dispatchEvent(escape);
+    expect(escape.defaultPrevented).toBe(false);
+  });
+});
+
 beforeEach(() => {
   storeDispatched.length = 0;
   mockState.hardwareConsole = { promptUsage: [], promptPickerLimit: 8, isConsoleOwner: true };

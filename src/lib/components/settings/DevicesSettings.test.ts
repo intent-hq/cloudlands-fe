@@ -8,6 +8,7 @@ import type { ConnectionRecord, KeychainSyncStateResult } from '$shared/types/co
 
 const mocks = vi.hoisted(() => ({
   loaded: true,
+  currentConnectionId: 'local',
   connections: [] as ConnectionRecord[],
   pinnedVersion: null as string | null,
   connectedIds: [] as string[],
@@ -40,6 +41,10 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock('$lib/client', () => ({
+  localMachineClient: {
+    settings: { list: mocks.settingsList, update: mocks.settingsUpdate },
+    server: { pairingInfo: mocks.pairingInfo, rotateToken: vi.fn() },
+  },
   appClient: {
     settings: { list: mocks.settingsList, update: mocks.settingsUpdate },
     server: { pairingInfo: mocks.pairingInfo, rotateToken: vi.fn() },
@@ -51,7 +56,7 @@ vi.mock('$store/renderer/store', () => ({
 }));
 
 vi.mock('$store/renderer/slices/connections/connections-selectors', () => ({
-  selectCurrentConnectionId: () => mocks.readable(() => 'local'),
+  selectCurrentConnectionId: () => mocks.readable(() => mocks.currentConnectionId),
   selectConnections: () => mocks.readable(() => mocks.connections),
   selectConnectionsLoaded: () => mocks.readable(() => mocks.loaded),
   selectRemoteConnections: () =>
@@ -145,6 +150,7 @@ describe('DevicesSettings', () => {
       hostname: 'test-machine',
     });
     mocks.loaded = true;
+    mocks.currentConnectionId = 'local';
     mocks.connections = [local, remote];
     mocks.pinnedVersion = null;
     mocks.connectedIds = [];
@@ -1001,6 +1007,41 @@ describe('DevicesSettings', () => {
       expect(screen.getByText(m.settings_backendSync_unsupported_description())).toBeTruthy();
       expect((detectSwitch() as HTMLButtonElement).disabled).toBe(false);
     });
+  });
+
+  it('reveals host settings only after Edit from a remote window', async () => {
+    mocks.currentConnectionId = 'remote-1';
+    render(DevicesSettings);
+    const name = m.settings_devices_hostMachine_label();
+    expect(screen.queryByRole('switch', { name: m.settings_wsApi_enable_label() })).toBeNull();
+    await openAction('Edit', name);
+    expect(
+      await screen.findByRole('switch', { name: m.settings_wsApi_enable_label() }),
+    ).toBeTruthy();
+    await fireEvent.click(
+      screen.getByRole('button', { name: m.settings_devices_advanced_label() }),
+    );
+    expect(await screen.findByRole('spinbutton', { name: 'Port' })).toBeTruthy();
+    await openAction('Edit', name);
+    expect(screen.queryByRole('button', { name: m.settings_devices_advanced_label() })).toBeNull();
+    expect(screen.queryByRole('switch', { name: m.settings_wsApi_enable_label() })).toBeNull();
+  });
+
+  it('immediately hides Advanced when closing enabled local settings', async () => {
+    mocks.settingsList.mockResolvedValue([
+      { path: 'server.wsApi.enabled', value: true },
+      { path: 'server.wsApi.port', value: 5181 },
+      { path: 'server.tunnel.enabled', value: true },
+    ]);
+    render(DevicesSettings);
+    const name = m.layout_daemonStatus_localConnection_label();
+    await openAction('Edit', name);
+    await screen.findByRole('button', { name: m.settings_wsApi_showQrCode() });
+    await fireEvent.click(
+      screen.getByRole('button', { name: m.settings_devices_advanced_label() }),
+    );
+    await openAction('Edit', name);
+    expect(screen.queryByRole('button', { name: m.settings_devices_advanced_label() })).toBeNull();
   });
 
   it.each(['local', 'remote'])('toggles the %s editor with the Edit action', async (kind) => {

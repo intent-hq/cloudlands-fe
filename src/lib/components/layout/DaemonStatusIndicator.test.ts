@@ -872,11 +872,11 @@ describe('DaemonStatusIndicator', () => {
     const breakdownActions = (type: string) =>
       mockDispatch.mock.calls.filter(([action]) => action?.type === type).length;
 
-    it('renders the agent memory row as a button once the daemon has sampled it', async () => {
+    it('exposes the sampled agent memory breakdown as a menu command', async () => {
       withAgentMemory(3221225472);
       await openStatusMenu();
 
-      const row = screen.getByRole('button', { name: /^Agent memory 3\.00 GB/ });
+      const row = screen.getByRole('menuitem', { name: /^Agent memory 3\.00 GB/ });
       expect(row).toBeTruthy();
       expect(within(row).getByText('3.00 GB')).toBeTruthy();
       // The daemon's own Memory row is unaffected.
@@ -902,7 +902,7 @@ describe('DaemonStatusIndicator', () => {
       await openStatusMenu();
 
       expect(breakdownActions('daemonHealth/agentMemoryBreakdownOpened')).toBe(0);
-      await fireEvent.click(screen.getByRole('button', { name: /^Agent memory/ }));
+      await fireEvent.click(screen.getByRole('menuitem', { name: /^Agent memory/ }));
 
       const dialog = screen.getByRole('dialog');
       expect(dialog).toBeTruthy();
@@ -916,7 +916,7 @@ describe('DaemonStatusIndicator', () => {
     it('lists every agent memory-descending with an expandable process list', async () => {
       withAgentMemory(3221225472, { agentMemoryUsage: usage });
       await openStatusMenu();
-      await fireEvent.click(screen.getByRole('button', { name: /^Agent memory/ }));
+      await fireEvent.click(screen.getByRole('menuitem', { name: /^Agent memory/ }));
 
       const dialog = screen.getByRole('dialog');
       expect(within(dialog).getByText('Implement dark mode')).toBeTruthy();
@@ -963,7 +963,7 @@ describe('DaemonStatusIndicator', () => {
       const first = render(DaemonStatusIndicatorPreloaded);
       await fireEvent.click(screen.getByRole('button', { name: 'intentd: healthy' }));
       await fireEvent.click(screen.getByText(/^Status - /));
-      await fireEvent.click(screen.getByRole('button', { name: /^Agent memory/ }));
+      await fireEvent.click(screen.getByRole('menuitem', { name: /^Agent memory/ }));
       expect(
         within(screen.getByRole('dialog')).getByText(/No agent processes have been sampled/),
       ).toBeTruthy();
@@ -971,14 +971,14 @@ describe('DaemonStatusIndicator', () => {
 
       withAgentMemory(3221225472, { agentMemoryUsageError: true });
       await openStatusMenu();
-      await fireEvent.click(screen.getByRole('button', { name: /^Agent memory/ }));
+      await fireEvent.click(screen.getByRole('menuitem', { name: /^Agent memory/ }));
       expect(within(screen.getByRole('dialog')).getByText(/could not be loaded/)).toBeTruthy();
     });
 
     it('keeps the last sample visible and flags a failed refresh alongside it', async () => {
       withAgentMemory(3221225472, { agentMemoryUsage: usage, agentMemoryUsageError: true });
       await openStatusMenu();
-      await fireEvent.click(screen.getByRole('button', { name: /^Agent memory/ }));
+      await fireEvent.click(screen.getByRole('menuitem', { name: /^Agent memory/ }));
 
       const dialog = screen.getByRole('dialog');
       expect(within(dialog).getByText('Implement dark mode')).toBeTruthy();
@@ -989,7 +989,7 @@ describe('DaemonStatusIndicator', () => {
     it('dispatches agentMemoryBreakdownClosed on Close and on Escape', async () => {
       withAgentMemory(3221225472, { agentMemoryUsage: usage });
       await openStatusMenu();
-      await fireEvent.click(screen.getByRole('button', { name: /^Agent memory/ }));
+      await fireEvent.click(screen.getByRole('menuitem', { name: /^Agent memory/ }));
       expect(breakdownActions('daemonHealth/agentMemoryBreakdownClosed')).toBe(0);
 
       await fireEvent.click(
@@ -1002,7 +1002,7 @@ describe('DaemonStatusIndicator', () => {
       // Reopen and dismiss with Escape.
       await fireEvent.click(screen.getByRole('button', { name: 'intentd: healthy' }));
       await fireEvent.click(screen.getByText(/^Status - /));
-      await fireEvent.click(screen.getByRole('button', { name: /^Agent memory/ }));
+      await fireEvent.click(screen.getByRole('menuitem', { name: /^Agent memory/ }));
       expect(breakdownActions('daemonHealth/agentMemoryBreakdownOpened')).toBe(2);
       await fireEvent.keyDown(screen.getByRole('dialog'), { key: 'Escape' });
       await tick();
@@ -1795,8 +1795,8 @@ describe('DaemonStatusIndicator', () => {
       await fireEvent.click(screen.getByRole('button', { name: 'intentd: healthy' }));
       await fireEvent.click(screen.getByText(/^Status - /));
 
-      const stopButton = screen.getByText('Stopping…').closest('button');
-      expect(stopButton?.disabled).toBe(true);
+      const stopButton = screen.getByRole('menuitem', { name: 'Stopping…' });
+      expect(stopButton.getAttribute('aria-disabled')).toBe('true');
     });
   });
 

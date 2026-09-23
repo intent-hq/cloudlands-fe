@@ -2,14 +2,14 @@
   /**
    * ProviderPathConfig
    *
-   * A controlled dropdown panel for configuring a provider's CLI executable path.
+   * A controlled form popover for configuring a provider's CLI executable path.
    */
   import { appClient } from '$lib/client';
   import { faCheck } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
   import { notify } from '$lib/components/patterns/notify';
   import { m } from '$shared/paraglide/messages.js';
-  import { Menu } from '$lib/components/patterns/settings/custom-controls';
+  import { Popover } from '$lib/components/patterns/settings/custom-controls';
   import PathSettingField from './PathSettingField.svelte';
   import { createLogger } from '$lib/utils/client-logger';
 
@@ -63,8 +63,10 @@
     isInstalled?: boolean;
     /** Callback when path changes */
     onPathChange?: (path: string) => void;
-    /** Controlled path dropdown state */
+    /** Controlled path form state */
     open: boolean;
+    /** Overflow trigger that launched this form, used for anchoring and focus return. */
+    anchor?: HTMLElement | null;
   }
 
   let {
@@ -79,6 +81,7 @@
     isInstalled = false,
     onPathChange,
     open = $bindable(),
+    anchor,
   }: Props = $props();
 
   async function savePath(path: string) {
@@ -115,10 +118,11 @@
   );
 
   // Remote daemons route browsing to the in-app DirectoryPickerModal, which
-  // portals outside this menu; while it is open the menu must neither close
+  // portals outside this popover; while it is open the form must neither close
   // on outside interaction/Escape/focus loss nor unmount the subtree that
   // renders the modal.
   let pickerOpen = $state(false);
+  let dismissedOutside = false;
 
   // This panel is opened from the provider overflow menu, so bits-ui has no
   // trigger element to position against. An invisible custom anchor keeps the
@@ -126,11 +130,11 @@
   let anchorEl = $state<HTMLElement | null>(null);
 </script>
 
-<Menu.Root
+<Popover.Root
   bind:open={
     () => open,
     (next) => {
-      // The remote picker modal lives inside this menu's subtree; refuse to
+      // The remote picker modal lives inside this popover's subtree; refuse to
       // close (and unmount it) while the modal is open.
       if (!next && pickerOpen) return;
       open = next;
@@ -138,17 +142,36 @@
   }
 >
   <span bind:this={anchorEl} aria-hidden="true"></span>
-  <Menu.Content
+  <Popover.Content
     align="end"
     side="bottom"
     portal={true}
-    customAnchor={anchorEl}
+    role="dialog"
+    trapFocus={false}
+    customAnchor={anchor ?? anchorEl}
     interactOutsideBehavior={pickerOpen ? 'ignore' : 'close'}
     escapeKeydownBehavior={pickerOpen ? 'ignore' : 'close'}
-    onFocusOutside={(event) => {
-      if (pickerOpen) event.preventDefault();
+    onOpenAutoFocus={() => (dismissedOutside = false)}
+    onInteractOutside={() => {
+      if (!pickerOpen) dismissedOutside = true;
     }}
-    aria-label={m.ui_dropdownMenu_ariaLabel()}
+    onFocusOutside={(event) => {
+      if (pickerOpen) {
+        event.preventDefault();
+        return;
+      }
+      dismissedOutside = true;
+      open = false;
+    }}
+    onCloseAutoFocus={(event) => {
+      if (dismissedOutside) {
+        event.preventDefault();
+      } else if (anchor?.isConnected) {
+        event.preventDefault();
+        anchor.focus();
+      }
+    }}
+    aria-label={m.settings_providerPath_header({ name: providerName })}
   >
     <div class="w-80 p-3 space-y-3 overflow-hidden">
       <!-- Header with helpful copy -->
@@ -254,5 +277,5 @@
         </div>
       {/if}
     </div>
-  </Menu.Content>
-</Menu.Root>
+  </Popover.Content>
+</Popover.Root>

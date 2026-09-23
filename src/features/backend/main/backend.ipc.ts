@@ -3031,7 +3031,10 @@ export function registerBackendHandlers(): void {
 
   ipcMain.handle(
     BACKEND.REQUEST,
-    async (event, payload: { method?: string; params?: unknown; timeoutMs?: number }) => {
+    async (
+      event,
+      payload: { method?: string; params?: unknown; timeoutMs?: number; localMachine?: boolean },
+    ) => {
       const method = payload?.method;
       if (typeof method !== 'string' || method.length === 0) {
         return { ok: false, error: { code: 'INVALID_PARAMS', message: 'method is required' } };
@@ -3042,7 +3045,10 @@ export function registerBackendHandlers(): void {
       // structured `{ok:false}` result wins over a transport timeout.
       const timeoutMs = typeof payload?.timeoutMs === 'number' ? payload.timeoutMs : undefined;
       try {
-        const { backendId, client } = getBackendClientForIpcEvent(event);
+        const { backendId, client } =
+          payload.localMachine === true
+            ? { backendId: LOCAL_CONNECTION_ID, client: getLocalBackendClient() }
+            : getBackendClientForIpcEvent(event);
         // Bulk attachment transfers on a remote backend ride their own
         // short-lived connection so a slow-draining 20+ MiB frame never
         // head-of-line-blocks the main channel (its heartbeat and unrelated

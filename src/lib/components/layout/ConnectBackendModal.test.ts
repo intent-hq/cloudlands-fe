@@ -7,7 +7,7 @@
  */
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/svelte';
+import { render, screen, fireEvent, waitFor } from '@testing-library/svelte';
 import { warmImport } from '../../../test/warm-import';
 
 const mocks = vi.hoisted(() => ({
@@ -105,6 +105,8 @@ describe('ConnectBackendModal', () => {
     const ConnectBackendModal = (await import('./ConnectBackendModal.svelte')).default;
     render(ConnectBackendModal, { props: { open: true } });
 
+    const status = screen.getByRole('status');
+    const detailsStatus = status.textContent;
     await fillDetails();
     await fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
 
@@ -117,6 +119,8 @@ describe('ConnectBackendModal', () => {
     // Confirm step: the captured fingerprint is shown for the user to verify.
     expect(await screen.findByText('AA:BB:CC:DD')).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Confirm & connect' })).toBeTruthy();
+    expect(screen.getByRole('status')).toBe(status);
+    expect(status.textContent).not.toBe(detailsStatus);
   });
 
   it('stores and opens the connection on confirm', async () => {
@@ -187,8 +191,14 @@ describe('ConnectBackendModal', () => {
     await fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
     expect(detection.disabled).toBe(true);
     expect(cloud.disabled).toBe(true);
+    expect(screen.getByRole('status').closest('[aria-busy]')?.getAttribute('aria-busy')).toBe(
+      'true',
+    );
     finishCapture({ fingerprint: 'AA:BB:CC:DD', tokenValid: true });
     await screen.findByText('AA:BB:CC:DD');
+    expect(screen.getByRole('status').closest('[aria-busy]')?.getAttribute('aria-busy')).toBe(
+      'false',
+    );
     await fireEvent.click(screen.getByRole('button', { name: 'Back' }));
     for (const label of ['Detect all backend IPs', 'Save to iCloud']) {
       const toggle = screen.getByRole('switch', { name: label }) as HTMLButtonElement;
@@ -272,7 +282,11 @@ describe('ConnectBackendModal', () => {
     await vi.waitFor(() => expect(picker.getAttribute('aria-expanded')).toBe('false'));
     expect(screen.getByRole('dialog')).toBeTruthy();
     expect(document.activeElement).toBe(picker);
-    await fireEvent.keyDown(picker, { key: 'Escape' });
+    // Leave the focus-triggered tooltip before asserting dialog dismissal.
+    const name = screen.getByLabelText('Device name');
+    name.focus();
+    await waitFor(() => expect(screen.queryByRole('tooltip')).toBeNull());
+    await fireEvent.keyDown(name, { key: 'Escape' });
     expect(screen.queryByRole('dialog')).toBeNull();
     expect(mocks.captureFingerprintRequested).not.toHaveBeenCalled();
     expect(mocks.addConnectionRequested).not.toHaveBeenCalled();
@@ -344,7 +358,7 @@ describe('ConnectBackendModal', () => {
     await fillDetails();
     await fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
 
-    expect(await screen.findByText('unreachable host')).toBeTruthy();
+    expect((await screen.findByRole('alert')).textContent).toBe('unreachable host');
     expect(mocks.addConnectionRequested).not.toHaveBeenCalled();
     // Still on details: the Host field is present.
     expect(screen.getByLabelText('Host')).toBeTruthy();

@@ -42,7 +42,7 @@
   }
 </script>
 
-<div class={compact ? 'space-y-2' : 'space-y-3'}>
+<div class={compact ? 'grid gap-2' : 'grid gap-4'}>
   <div
     class="flex items-center justify-center gap-1 bg-muted rounded {compact
       ? 'py-1.5 px-2'
@@ -64,7 +64,7 @@
   <Button
     type="button"
     variant="primary"
-    class="gap-2 {compact ? 'px-3 py-1.5 text-xs' : 'px-6 py-3 text-base w-full'}"
+    class={compact ? undefined : 'w-full'}
     onclick={handleOpenGitHub}
   >
     <span>{openLabel}</span>

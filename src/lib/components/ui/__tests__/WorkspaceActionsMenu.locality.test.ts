@@ -300,8 +300,11 @@ describe('WorkspaceActionsMenu locality gating (monorepo#883)', () => {
 
   it('keeps copy actions in submenu mode when external editors are unavailable', async () => {
     mockStoreState = makeState({ mode: 'external-ws' });
-    await renderSubmenu();
+    const Harness = (await import('./mocks/WorkspaceActionsMenuSubmenuHarness.svelte')).default;
+    render(Harness);
+    await fireEvent.click(screen.getByRole('button', { name: 'Actions' }));
 
+    expect(screen.queryByRole('menuitem', { name: 'Open in...' })).toBeNull();
     expect(screen.queryByRole('menuitem', { name: 'Choose app' })).toBeNull();
     expect(screen.queryByRole('menuitem', { name: 'Open in Visual Studio Code' })).toBeNull();
     expect(await screen.findByRole('menuitem', { name: 'Copy Absolute Path' })).toBeTruthy();
@@ -329,6 +332,83 @@ describe('WorkspaceActionsMenu locality gating (monorepo#883)', () => {
     await fireEvent.click(screen.getByRole('menuitem', { name: 'Copy Absolute Path' }));
 
     await waitFor(() => expect(clipboard.writeText).toHaveBeenCalledWith(toNativePath('/abs/wt')));
+  });
+
+  it('dispatches a checked additional action once and blocks unavailable actions', async () => {
+    mockStoreState = makeState({ mode: 'external-ws' });
+    const checkedAction = vi.fn();
+    const disabledAction = vi.fn();
+    const Harness = (await import('./mocks/WorkspaceActionsMenuSubmenuHarness.svelte')).default;
+    render(Harness, {
+      props: {
+        additionalActions: [
+          { id: 'chosen', label: 'Chosen action', checked: true, onClick: checkedAction },
+          {
+            id: 'unavailable',
+            label: 'Unavailable action',
+            disabled: true,
+            onClick: disabledAction,
+          },
+        ],
+      },
+    });
+    await fireEvent.click(screen.getByRole('button', { name: 'Actions' }));
+    const unavailable = await screen.findByRole('menuitem', { name: 'Unavailable action' });
+    await fireEvent.click(unavailable);
+    expect(disabledAction).not.toHaveBeenCalled();
+    const checked = screen.getByRole('menuitemcheckbox', { name: 'Chosen action' });
+    expect(checked.getAttribute('aria-checked')).toBe('true');
+    await fireEvent.click(checked);
+    expect(checkedAction).toHaveBeenCalledOnce();
+    await waitFor(() => expect(screen.queryByRole('menu')).toBeNull());
+  });
+
+  it('renders exclusive submenu choices as radios and keeps clear as a command', async () => {
+    mockStoreState = makeState({ mode: 'external-ws' });
+    const selectFirst = vi.fn();
+    const selectSecond = vi.fn();
+    const clear = vi.fn();
+    const Harness = (await import('./mocks/WorkspaceActionsMenuSubmenuHarness.svelte')).default;
+    render(Harness, {
+      props: {
+        additionalActions: [
+          {
+            id: 'shortcut',
+            label: 'Shortcut',
+            selection: 'single',
+            onClick: vi.fn(),
+            submenu: [
+              { id: 'one', label: 'One', checked: true, onClick: selectFirst },
+              { id: 'two', label: 'Two', checked: false, onClick: selectSecond },
+              { id: 'clear', label: 'Clear', dividerBefore: true, onClick: clear },
+            ],
+          },
+        ],
+      },
+    });
+    const openChoices = async () => {
+      await fireEvent.click(screen.getByRole('button', { name: 'Actions' }));
+      const trigger = await screen.findByRole('menuitem', { name: 'Shortcut' });
+      trigger.focus();
+      await fireEvent.keyDown(trigger, { key: 'ArrowRight' });
+      return await screen.findByRole('menuitemradio', { name: 'Two' });
+    };
+    const second = await openChoices();
+    expect(screen.getByRole('menuitemradio', { name: 'One' }).getAttribute('aria-checked')).toBe(
+      'true',
+    );
+    expect(second.getAttribute('aria-checked')).toBe('false');
+    expect(screen.queryByRole('menuitemcheckbox')).toBeNull();
+    expect(screen.getByRole('menuitem', { name: 'Clear' }).getAttribute('aria-checked')).toBeNull();
+    await fireEvent.click(second);
+    expect(selectSecond).toHaveBeenCalledOnce();
+    expect(selectFirst).not.toHaveBeenCalled();
+    expect(clear).not.toHaveBeenCalled();
+    await waitFor(() => expect(screen.queryByRole('menu')).toBeNull());
+    await openChoices();
+    await fireEvent.click(screen.getByRole('menuitem', { name: 'Clear' }));
+    expect(clear).toHaveBeenCalledOnce();
+    expect(selectSecond).toHaveBeenCalledOnce();
   });
 
   it('falls back to the legacy workspace path for a workspace-root copy', async () => {
@@ -458,7 +538,7 @@ describe('live WorkspaceProgressCard Open in submenu', () => {
   it('reveals and dismisses app choices while keeping copy and archive at the root', async () => {
     const root = await openProgressCardMenu();
     const trigger = within(root).getByRole('menuitem', { name: 'Open in...' });
-    const archive = within(root).getByRole('button', { name: 'Archive Workspace' });
+    const archive = within(root).getByRole('menuitem', { name: 'Archive Workspace' });
     expect(trigger.getAttribute('aria-expanded')).toBe('false');
     expect(screen.queryByRole('menuitem', { name: 'Open in Visual Studio Code' })).toBeNull();
     expect(within(root).getByRole('menuitem', { name: 'Copy Absolute Path' })).toBeTruthy();

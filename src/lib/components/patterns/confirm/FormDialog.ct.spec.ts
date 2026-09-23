@@ -1,5 +1,6 @@
 import { expect, test } from '../../../../test/ct-test';
 import FormDialog from './FormDialog.svelte';
+import FormDialogAsyncHarness from './FormDialogAsyncHarness.svelte';
 import DestructiveConfirm from './DestructiveConfirm.svelte';
 
 for (const enterKey of ['submit', 'ignore'] as const) {
@@ -141,6 +142,53 @@ for (const enterKey of ['submit', 'ignore'] as const) {
     expect(submitted).toBe(0);
   });
 }
+
+test('pending submission blocks dismissal and permits retry after rejection', async ({
+  mount,
+  page,
+}) => {
+  const component = await mount(FormDialogAsyncHarness);
+  const dialog = page.getByRole('dialog');
+  const save = dialog.getByRole('button', { name: 'Save', exact: true });
+  await save.click();
+  await expect(page.getByTestId('submission-count')).toHaveText('1');
+  await expect(save).toBeDisabled();
+  await page.keyboard.press('Enter');
+  await page.keyboard.press('Escape');
+  // Bits UI debounces outside pointer handling. Keep submission pending until
+  // that handler has actually rejected the click, rather than racing its timer.
+  await page.evaluate(() => {
+    document.addEventListener(
+      'pointerdown',
+      (event) => {
+        (window as Window & { auditOutsidePointer?: PointerEvent }).auditOutsidePointer = event;
+      },
+      { once: true, capture: true },
+    );
+  });
+  await page.mouse.click(1, 1);
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () =>
+          (window as Window & { auditOutsidePointer?: PointerEvent }).auditOutsidePointer
+            ?.defaultPrevented,
+      ),
+    )
+    .toBe(true);
+  await expect(dialog).toBeVisible();
+  await expect(page.getByTestId('cancellation-count')).toHaveText('0');
+  await expect(page.getByTestId('submission-count')).toHaveText('1');
+  await component.update({ props: { rejectPending: true } });
+  await expect(save).toBeEnabled();
+  await expect(dialog.getByRole('alert')).toBeVisible();
+  await save.click();
+  await expect(page.getByTestId('submission-count')).toHaveText('2');
+  await expect(dialog.getByRole('alert')).toHaveCount(0);
+  await dialog.getByRole('button', { name: 'Cancel', exact: true }).click();
+  await expect(page.getByTestId('cancellation-count')).toHaveText('1');
+  await expect(dialog).toHaveCount(0);
+});
 
 test('destructive confirmation keeps preflight cancellable and requires explicit submit focus', async ({
   mount,

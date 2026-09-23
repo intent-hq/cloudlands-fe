@@ -1,5 +1,6 @@
 <script lang="ts">
   import Fa from 'svelte-fa';
+  import { tick } from 'svelte';
   import {
     faArrowLeft,
     faArrowRight,
@@ -15,16 +16,13 @@
   import KebabIcon from '$lib/components/icons/KebabIcon.svelte';
   import { Badge } from '$lib/components/ui/badge';
   import { Button } from '$lib/components/ui/button';
-  import { Input } from '$lib/components/ui/input';
   import * as Menu from '$lib/components/ui/menu';
   import { formatInteger } from '$lib/i18n/format';
   import { m } from '$shared/paraglide/messages.js';
   import type { BrowserTabViewport } from '$shared/ipc/workspace-command-payloads';
-  import { BROWSER_VIEWPORT_PRESETS, rotateBrowserViewport } from './browser-viewport-presets';
-
-  const MIN_VIEWPORT_PX = 320;
-  const MAX_VIEWPORT_PX = 3840;
-  const DEFAULT_CUSTOM_SIZE = { width: 1280, height: 800 };
+  import { BROWSER_VIEWPORT_PRESETS } from './browser-viewport-presets';
+  import BrowserViewportItems from './BrowserViewportItems.svelte';
+  import BrowserViewportDialog from './BrowserViewportDialog.svelte';
 
   interface Props {
     errorCount?: number;
@@ -75,9 +73,6 @@
       ? m.browser_overflow_triggerWithErrors_ariaLabel({ count: formatInteger(errorCount) })
       : m.browser_overflow_trigger_ariaLabel(),
   );
-  const selectedViewport = $derived(
-    viewport.mode === 'fit' ? 'fit' : viewport.mode === 'preset' ? viewport.presetId : 'custom',
-  );
   const selectedPreset = $derived(
     viewport.mode === 'preset'
       ? BROWSER_VIEWPORT_PRESETS.find((preset) => preset.id === viewport.presetId)
@@ -93,54 +88,21 @@
           })),
   );
   let editingCustom = $state(false);
-  let customWidth: number | null = $state(DEFAULT_CUSTOM_SIZE.width);
-  let customHeight: number | null = $state(DEFAULT_CUSTOM_SIZE.height);
-  const customSizeValid = $derived(
-    typeof customWidth === 'number' &&
-      Number.isInteger(customWidth) &&
-      customWidth >= MIN_VIEWPORT_PX &&
-      customWidth <= MAX_VIEWPORT_PX &&
-      typeof customHeight === 'number' &&
-      Number.isInteger(customHeight) &&
-      customHeight >= MIN_VIEWPORT_PX &&
-      customHeight <= MAX_VIEWPORT_PX,
-  );
-
-  $effect(() => {
-    if (editingCustom) return;
-    const size = viewport.mode === 'fit' ? DEFAULT_CUSTOM_SIZE : viewport;
-    customWidth = size.width;
-    customHeight = size.height;
-  });
-
-  function selectViewport(value: string): void {
-    if (value === 'fit') {
-      onViewportChange?.({ mode: 'fit' });
-      return;
-    }
-    const preset = BROWSER_VIEWPORT_PRESETS.find((candidate) => candidate.id === value);
-    if (!preset) return;
-    onViewportChange?.({
-      mode: 'preset',
-      presetId: preset.id,
-      width: preset.width,
-      height: preset.height,
-    });
-  }
-
-  function applyCustom(event: SubmitEvent): void {
-    event.preventDefault();
-    if (!customSizeValid || customWidth === null || customHeight === null) return;
-    onViewportChange?.({ mode: 'custom', width: customWidth, height: customHeight });
-    editingCustom = false;
+  let triggerRef: HTMLButtonElement | null = $state(null);
+  let open = $state(false);
+  async function showCustomEditor() {
+    open = false;
+    await tick();
+    editingCustom = true;
   }
 </script>
 
-<Menu.Root>
+<Menu.Root bind:open>
   <Menu.Trigger>
     {#snippet child({ props })}
       <Button
         {...props}
+        bind:ref={triggerRef}
         variant="ghost-light"
         size="icon-xs"
         class="relative"
@@ -163,7 +125,11 @@
       </Button>
     {/snippet}
   </Menu.Trigger>
-  <Menu.Content align="end" class="w-56">
+  <Menu.Content
+    align="end"
+    class="w-56"
+    onCloseAutoFocus={(event) => editingCustom && event.preventDefault()}
+  >
     {#if collapsed}
       <Menu.Item disabled={!canGoBack} onSelect={onGoBack}>
         <Fa icon={faArrowLeft} size="xs" class="w-4 text-muted-foreground" />
@@ -180,75 +146,18 @@
           : m.browser_embedded_selectElement_ariaLabel()}
       </Menu.Item>
       <Menu.Sub>
-        <Menu.SubTrigger>
+        <Menu.SubTrigger disabled={!onViewportChange}>
           <Fa icon={faDesktop} size="xs" class="w-4 text-muted-foreground" />
           <span class="min-w-0 flex-1 truncate">
             {m.browser_viewport_trigger_ariaLabel({ mode: viewportLabel })}
           </span>
         </Menu.SubTrigger>
         <Menu.SubContent class="w-64">
-          <Menu.RadioGroup value={selectedViewport} onValueChange={selectViewport}>
-            <Menu.RadioItem value="fit">{m.browser_viewport_fitPanel_label()}</Menu.RadioItem>
-            <Menu.Separator />
-            {#each BROWSER_VIEWPORT_PRESETS as preset}
-              <Menu.RadioItem value={preset.id}>
-                <span class="min-w-0 flex-1 truncate">{preset.name}</span>
-                <span class="ml-3 text-xs text-muted-foreground">
-                  {m.browser_viewport_dimensions_label({
-                    width: formatInteger(preset.width),
-                    height: formatInteger(preset.height),
-                  })}
-                </span>
-              </Menu.RadioItem>
-            {/each}
-          </Menu.RadioGroup>
-          <Menu.Separator />
-          <Menu.Item closeOnSelect={false} onSelect={() => (editingCustom = true)}>
-            {m.browser_viewport_custom_label()}
-          </Menu.Item>
-          {#if editingCustom}
-            <form
-              class="space-y-2 px-2 py-2"
-              onsubmit={applyCustom}
-              data-testid="overflow-viewport-custom-form"
-            >
-              <div class="grid grid-cols-[1fr_auto_1fr] items-end gap-2">
-                <label class="space-y-1 text-xs text-muted-foreground">
-                  <span>{m.browser_viewport_width_label()}</span>
-                  <Input
-                    type="number"
-                    min={MIN_VIEWPORT_PX}
-                    max={MAX_VIEWPORT_PX}
-                    step="1"
-                    bind:value={customWidth}
-                    aria-invalid={!customSizeValid}
-                  />
-                </label>
-                <span class="pb-2 text-muted-foreground" aria-hidden="true">×</span>
-                <label class="space-y-1 text-xs text-muted-foreground">
-                  <span>{m.browser_viewport_height_label()}</span>
-                  <Input
-                    type="number"
-                    min={MIN_VIEWPORT_PX}
-                    max={MAX_VIEWPORT_PX}
-                    step="1"
-                    bind:value={customHeight}
-                    aria-invalid={!customSizeValid}
-                  />
-                </label>
-              </div>
-              <Button type="submit" size="xs" disabled={!customSizeValid}>
-                {m.browser_viewport_apply_label()}
-              </Button>
-            </form>
-          {/if}
-          {#if viewport.mode !== 'fit'}
-            <Menu.Separator />
-            <Menu.Item onSelect={() => onViewportChange?.(rotateBrowserViewport(viewport))}>
-              <Fa icon={faRotate} size="xs" class="w-4 text-muted-foreground" />
-              {m.browser_viewport_rotate_label()}
-            </Menu.Item>
-          {/if}
+          <BrowserViewportItems
+            {viewport}
+            onViewportChange={(value) => onViewportChange?.(value)}
+            onCustom={showCustomEditor}
+          />
         </Menu.SubContent>
       </Menu.Sub>
       <Menu.Separator />
@@ -266,6 +175,7 @@
       <Fa icon={faCamera} size="xs" class="w-4 text-muted-foreground" />
       {m.browser_overflow_screenshot_label()}
     </Menu.Item>
+    <Menu.Separator />
     <Menu.Item onSelect={() => void onOpenConsole()}>
       <Fa icon={faTerminal} size="xs" class="w-4 text-muted-foreground" />
       {m.browser_overflow_console_label()}
@@ -286,3 +196,9 @@
     </Menu.Item>
   </Menu.Content>
 </Menu.Root>
+<BrowserViewportDialog
+  bind:open={editingCustom}
+  {viewport}
+  onViewportChange={(value) => onViewportChange?.(value)}
+  returnFocus={triggerRef}
+/>

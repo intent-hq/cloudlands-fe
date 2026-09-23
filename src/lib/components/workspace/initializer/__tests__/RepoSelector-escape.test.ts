@@ -338,10 +338,10 @@ describe('RepoSelector mode tabs', () => {
     const { container } = render(RepoSelector, { props: {} });
     await openDropdown(container);
 
-    await screen.findByRole('button', { name: 'Pick a repo' });
+    await screen.findByRole('tab', { name: 'Pick a repo' });
     const expectedLabels = new Set(['Pick a repo', 'Copy local repo', 'New repo']);
     const tabLabels = screen
-      .getAllByRole('button')
+      .getAllByRole('tab')
       .map((tab) => tab.textContent?.trim())
       .filter((label): label is string => Boolean(label && expectedLabels.has(label)));
     expect(tabLabels).toEqual(['Pick a repo', 'Copy local repo', 'New repo']);

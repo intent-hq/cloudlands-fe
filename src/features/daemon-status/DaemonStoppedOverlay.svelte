@@ -514,7 +514,7 @@
           {/if}
 
           {#if isGuestRevoked}
-            <div class="mt-4 border-t border-border pt-4">
+            <div class="mt-4">
               <Button
                 class="w-full"
                 disabled={guestLeaving}
@@ -536,7 +536,7 @@
               {/if}
             </div>
           {:else if isAuthRejected}
-            <div class="mt-4 border-t border-border pt-4">
+            <div class="mt-4">
               <Button
                 type="button"
                 variant="primary"
@@ -553,10 +553,7 @@
           {#if isGuestRevoked}
             <!-- Leave host is the only action for a revoked guest. -->
           {:else if isGuestOffline}
-            <div
-              class="mt-4 border-t border-border pt-4"
-              data-testid="daemon-stopped-guest-offline"
-            >
+            <div class="mt-4" data-testid="daemon-stopped-guest-offline">
               <Button
                 class="w-full"
                 onclick={handleCloseWindow}
@@ -586,7 +583,7 @@
               {/if}
             </div>
           {:else if isSidecarFailure}
-            <div class="mt-4 border-t border-border pt-4">
+            <div class="mt-4">
               <Button
                 type="button"
                 variant="primary"
@@ -652,10 +649,10 @@
               {/if}
             </div>
           {:else if showSpawnButton}
-            <div class="mt-4 border-t border-border pt-4">
+            <div class="mt-4">
               <Button
                 type="button"
-                variant="primary"
+                variant={isAuthRejected ? 'secondary' : 'primary'}
                 class="w-full px-4 py-2 text-sm font-medium"
                 disabled={$spawnPending$}
                 onclick={handleSpawnSidecar}
@@ -687,10 +684,7 @@
           {/if}
 
           {#if otherConnections.length > 0 && !isGuestRevoked && !isGuestOffline}
-            <div
-              class="mt-4 border-t border-border pt-4"
-              data-testid="daemon-stopped-known-backends"
-            >
+            <div class="mt-4" data-testid="daemon-stopped-known-backends">
               <p class="text-xs text-muted-foreground">
                 {m.daemonStatus_overlay_knownBackends_label()}
               </p>
