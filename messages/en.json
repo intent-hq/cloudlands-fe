@@ -5678,7 +5678,7 @@
   "workspace_ops_archivedCount_many": "Archived {count} workspaces",
   "workspace_ops_archiveFailedCount_one": "Failed to archive {count} workspace",
   "workspace_ops_archiveFailedCount_many": "Failed to archive {count} workspaces",
-  "workspace_ops_noArchivedToDelete_message": "No archived workspaces to delete",
+  "workspace_ops_noWorkspacesToDelete_message": "No workspaces to delete",
   "workspace_ops_permanentlyDeletedCount_one": "Permanently deleted {count} workspace",
   "workspace_ops_permanentlyDeletedCount_many": "Permanently deleted {count} workspaces",
   "workspace_ops_stillDeleting_one": "{count} workspace is still deleting (large checkout)",

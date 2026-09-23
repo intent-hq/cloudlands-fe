@@ -5678,7 +5678,7 @@
   "workspace_ops_archivedCount_many": "{count} espaces archivés",
   "workspace_ops_archiveFailedCount_one": "Impossible d'archiver {count} espace",
   "workspace_ops_archiveFailedCount_many": "Impossible d'archiver {count} espaces",
-  "workspace_ops_noArchivedToDelete_message": "Aucun espace archivé à supprimer",
+  "workspace_ops_noWorkspacesToDelete_message": "Aucun espace à supprimer",
   "workspace_ops_permanentlyDeletedCount_one": "{count} espace définitivement supprimé",
   "workspace_ops_permanentlyDeletedCount_many": "{count} espaces définitivement supprimés",
   "workspace_ops_stillDeleting_one": "{count} espace est encore en cours de suppression (extraction volumineuse)",

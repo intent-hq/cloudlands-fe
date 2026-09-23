@@ -5678,7 +5678,7 @@
   "workspace_ops_archivedCount_many": "{count} espacios archivados",
   "workspace_ops_archiveFailedCount_one": "Error al archivar {count} espacio",
   "workspace_ops_archiveFailedCount_many": "Error al archivar {count} espacios",
-  "workspace_ops_noArchivedToDelete_message": "No hay espacios archivados para eliminar",
+  "workspace_ops_noWorkspacesToDelete_message": "No hay espacios para eliminar",
   "workspace_ops_permanentlyDeletedCount_one": "{count} espacio eliminado de forma permanente",
   "workspace_ops_permanentlyDeletedCount_many": "{count} espacios eliminados de forma permanente",
   "workspace_ops_stillDeleting_one": "{count} espacio todavía se está eliminando (checkout grande)",

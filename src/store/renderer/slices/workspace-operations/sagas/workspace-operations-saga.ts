@@ -498,7 +498,7 @@ function* computeBulkDeleteActiveWork(
 function* performBulkDelete(targets: Workspace[]): SagaGenerator<string[]> {
   const notify = yield* call(getToast);
   if (targets.length === 0) {
-    notify.info(m.workspace_ops_noArchivedToDelete_message());
+    notify.info(m.workspace_ops_noWorkspacesToDelete_message());
     return [];
   }
   const deletedIds: string[] = [];

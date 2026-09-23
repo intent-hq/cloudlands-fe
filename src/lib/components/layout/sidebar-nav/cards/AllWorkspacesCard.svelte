@@ -332,7 +332,12 @@
   function openGroupArchive(event: MouseEvent, workspaces: Workspace[], groupLabel: string) {
     event.stopPropagation();
     appStore.dispatch(
-      openBulkArchiveConfirm({ workspaceIds: workspaces.map(({ id }) => id), groupLabel }),
+      openBulkArchiveConfirm({
+        workspaceIds: workspaces
+          .filter(({ status }) => status !== WorkspaceStatusEnum.Archived)
+          .map(({ id }) => id),
+        groupLabel,
+      }),
     );
   }
 

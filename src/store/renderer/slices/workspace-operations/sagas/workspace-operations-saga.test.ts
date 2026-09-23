@@ -36,6 +36,7 @@ vi.mock('$lib/components/patterns/notify', async () => ({
 }));
 vi.mock('$lib/electron-bridge', () => ({ invoke: mocks.invoke }));
 
+import { m } from '$shared/paraglide/messages.js';
 import { WorkspaceStatusEnum, type Workspace } from '$shared/types';
 import type { BulkOperationProposal, WorkspaceCreateProposal } from '$shared/types/proposal';
 import type { Specialist } from '$lib/constants/specialists';
@@ -767,6 +768,23 @@ describe('workspaceOperationsSaga', () => {
     expect(mocks.notify.error).toHaveBeenCalledTimes(1);
     // Direct unarchive gets no focus behavior — only the undo path does
     expect(mocks.navigateToRoute).toHaveBeenCalledTimes(1);
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('uses a scope-neutral notice when group delete targets disappear before confirmation', async () => {
+    const run = harness([workspace('ws-removed')]);
+    run.send(openBulkDeleteConfirm({ workspaceIds: ['ws-removed'], groupLabel: 'Active' }));
+    await settle();
+    run.send(removeWorkspaceEntity('ws-removed'));
+    run.send(confirmBulkDelete());
+    await settle();
+
+    expect(mocks.deleteWorkspace).not.toHaveBeenCalled();
+    expect(mocks.notify.info).toHaveBeenCalledExactlyOnceWith(
+      m.workspace_ops_noWorkspacesToDelete_message(),
+    );
+    expect(run.state().workspaceOperations.bulkOperationInFlight).toBe(false);
     run.task.cancel();
     await run.task.toPromise();
   });

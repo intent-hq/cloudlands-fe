@@ -5678,7 +5678,7 @@
   "workspace_ops_archivedCount_many": "{count} 個のスペースをアーカイブしました",
   "workspace_ops_archiveFailedCount_one": "{count} 個のスペースをアーカイブできませんでした",
   "workspace_ops_archiveFailedCount_many": "{count} 個のスペースをアーカイブできませんでした",
-  "workspace_ops_noArchivedToDelete_message": "削除するアーカイブ済みスペースはありません",
+  "workspace_ops_noWorkspacesToDelete_message": "削除するスペースはありません",
   "workspace_ops_permanentlyDeletedCount_one": "{count} 個のスペースを完全に削除しました",
   "workspace_ops_permanentlyDeletedCount_many": "{count} 個のスペースを完全に削除しました",
   "workspace_ops_stillDeleting_one": "{count} 個のスペースはまだ削除中です（大きなチェックアウト）",

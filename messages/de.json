@@ -5678,7 +5678,7 @@
   "workspace_ops_archivedCount_many": "{count} Spaces archiviert",
   "workspace_ops_archiveFailedCount_one": "{count} Space konnte nicht archiviert werden",
   "workspace_ops_archiveFailedCount_many": "{count} Spaces konnten nicht archiviert werden",
-  "workspace_ops_noArchivedToDelete_message": "Keine archivierten Spaces zum Löschen",
+  "workspace_ops_noWorkspacesToDelete_message": "Keine Spaces zum Löschen",
   "workspace_ops_permanentlyDeletedCount_one": "{count} Space dauerhaft gelöscht",
   "workspace_ops_permanentlyDeletedCount_many": "{count} Spaces dauerhaft gelöscht",
   "workspace_ops_stillDeleting_one": "{count} Space wird noch gelöscht (großer Checkout)",

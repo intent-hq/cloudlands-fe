@@ -5678,7 +5678,7 @@
   "workspace_ops_archivedCount_many": "已歸檔 {count} 個空間",
   "workspace_ops_archiveFailedCount_one": "歸檔 {count} 個空間失敗",
   "workspace_ops_archiveFailedCount_many": "歸檔 {count} 個空間失敗",
-  "workspace_ops_noArchivedToDelete_message": "沒有可刪除的已歸檔空間",
+  "workspace_ops_noWorkspacesToDelete_message": "沒有可刪除的空間",
   "workspace_ops_permanentlyDeletedCount_one": "已永久刪除 {count} 個空間",
   "workspace_ops_permanentlyDeletedCount_many": "已永久刪除 {count} 個空間",
   "workspace_ops_stillDeleting_one": "{count} 個空間仍在刪除中（檢出較大）",

@@ -112,6 +112,36 @@ describe('AllWorkspacesCard group actions', () => {
     expect(appStore.state.workspaceOperations.pendingBulkGroupLabel).toBe('alpha');
   });
 
+  it.each(['archive', 'delete'] as const)(
+    'selects the correct members for %s in a mixed repository group',
+    async (operation) => {
+      appStore.dispatch(setShowArchivedWorkspaces(true));
+      renderView('repo', [
+        workspace('active', 'alpha'),
+        workspace('archived', 'alpha', { status: WorkspaceStatus.Archived }),
+      ]);
+
+      const group = await waitFor(() => repositoryGroup('alpha'));
+      await fireEvent.click(
+        within(group).getByRole('button', {
+          name:
+            operation === 'archive'
+              ? m.layout_allCard_groupArchiveAll_ariaLabel({ group: 'alpha' })
+              : m.layout_allCard_groupDeleteAll_ariaLabel({ group: 'alpha' }),
+        }),
+      );
+
+      expect(appStore.state.workspaceOperations.pendingBulkWorkspaceIds).toEqual(
+        operation === 'archive' ? ['active'] : ['active', 'archived'],
+      );
+      expect(
+        operation === 'archive'
+          ? appStore.state.workspaceOperations.showBulkArchiveConfirm
+          : appStore.state.workspaceOperations.showBulkDeleteConfirm,
+      ).toBe(true);
+    },
+  );
+
   it('archives a full status group without toggling its collapsed state', async () => {
     const workspaces = [workspace('active-1', 'alpha'), workspace('active-2', 'beta')];
     renderView('status', workspaces);
