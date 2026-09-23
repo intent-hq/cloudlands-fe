@@ -118,17 +118,16 @@ corepack pnpm run test:playwright
 
 A test that budgets wall time (perf guards, alignment work bounds) must fit its timeout
 under CI runner load, not just in isolation — the local 30 s `testTimeout` by default
-(`vitest.config.ts` raises it to 60 s on CI), or the explicit per-test budget where one is
-documented, such as the 120 s seeded-note `beforeAll` and the 60 s 200-note corpus tests in
-`src/lib/notes/text-rebase.test.ts`. The shared runners starve a fork ~4×, and
-cloudlands-fe#2740 went red three times on guards that took a few seconds locally. Before
-pushing such a test, run `pnpm test:loaded <file or filter> [-- <extra vitest args>]` — it
-runs the default `vitest.config.ts` with one worker pinned to a single core (`taskset`,
-Linux only; macOS runs the loops unpinned and says the reproduction is weaker) that it
-shares with three busy loops, exits with vitest's code, and always kills the loops.
-`LOADED_CORE=<n>` (default: the last core the process may run on) and `LOADED_BUSY=<n>`
-override the core and loop count; `CI` is inherited from your shell, never set or cleared
-by the harness, so the run uses the local 30 s timeout unless you export `CI` yourself.
+(`vitest.config.ts` raises it to 60 s on CI) or the documented per-test budget.
+`intent/no-wall-clock-assertions-in-tests` (in `pnpm run lint`) flags a raw
+`performance.now()` / `Date.now()` elapsed-time assertion against a millisecond budget and
+names the alternatives; today's offenders are baselined under
+`eslint-rules/baselines/no-wall-clock-assertions-in-tests/`, and counts only shrink. Before
+pushing such a test, run `pnpm test:loaded <file or filter> [-- <extra vitest args>]`: one
+worker pinned to a single core (`taskset`, Linux only; unpinned on macOS) shared with three
+busy loops, exiting with vitest's code. `LOADED_CORE=<n>` / `LOADED_BUSY=<n>` override the
+core and loop count; `CI` is inherited from your shell, so the run uses the local 30 s
+timeout unless you export `CI` yourself.
 
 ## Fast UI preview loop
 
