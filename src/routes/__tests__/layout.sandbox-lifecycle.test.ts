@@ -10,6 +10,7 @@ const mocks = vi.hoisted(() => {
   return {
     loaded,
     startRootStoreLifecycle: vi.fn(() => () => {}),
+    loadAppStylesheet: vi.fn(),
     seededBeforeAppLifecycle: null as boolean | null,
     startAppStoreLifecycle: vi.fn(() => {
       mocks.seededBeforeAppLifecycle = loaded.seeders;
@@ -21,6 +22,12 @@ const mocks = vi.hoisted(() => {
 vi.mock('$store/renderer/root-store-lifecycle', () => ({
   startRootStoreLifecycle: mocks.startRootStoreLifecycle,
 }));
+// Import seam: the factory runs only when a module evaluated by this suite
+// imports src/app.css, so the root layout owning that import is observable.
+vi.mock('../../app.css', () => {
+  mocks.loadAppStylesheet();
+  return {};
+});
 vi.mock('$store/renderer/app-store-lifecycle', () => {
   mocks.loaded.appStoreLifecycle = true;
   return { startAppStoreLifecycle: mocks.startAppStoreLifecycle };
@@ -86,6 +93,10 @@ function useStoreLifecycle() {
 
 describe('root +layout.svelte sandbox Store lifecycle', () => {
   useStoreLifecycle();
+
+  it('loads the global stylesheet from the shared root layout', () => {
+    expect(mocks.loadAppStylesheet).toHaveBeenCalledTimes(1);
+  });
 
   it('initializes the shared root Store without owning app sagas', () => {
     render(RootLayout, { props: { children: childrenSnippet } });

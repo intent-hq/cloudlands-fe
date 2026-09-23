@@ -205,6 +205,9 @@ describe('+layout.svelte isHudRoute chrome-less gating', () => {
     expect(screen.getAllByTestId('encoder-cycle-hud-marker').length).toBeGreaterThan(0);
     expect(screen.getAllByTestId('action-key-hud-marker').length).toBeGreaterThan(0);
     expect(screen.getByTestId('hud-gating-children')).toBeTruthy();
+    // The sandbox-isolation Playwright specs assert this marker has count 0 on
+    // preview routes; it must exist on the app shell for that check to mean anything.
+    expect(screen.getByTestId('app-ready')).toBeTruthy();
     expect(mocks.startAppStoreLifecycle).toHaveBeenCalledOnce();
   });
 
