@@ -21,6 +21,7 @@
     onDelete?: (option: Option) => void;
     defaultCollapsed?: boolean;
     includeOptionDescription?: boolean;
+    staticPosition?: boolean;
   }
 
   let {
@@ -38,6 +39,7 @@
     onDelete,
     defaultCollapsed = false,
     includeOptionDescription = true,
+    staticPosition = false,
   }: Props = $props();
 
   const options: Option[] = [
@@ -128,6 +130,7 @@
     tooltip="Grouped tooltip"
     tooltipSide="left"
     {defaultCollapsed}
+    {staticPosition}
   />
 {/if}
 

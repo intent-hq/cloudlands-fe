@@ -177,6 +177,14 @@
       .filter((group) => group.options.length > 0);
   });
   const hasOptions = $derived(filteredGroups.some((group) => group.options.length > 0));
+  const ownedGroupIds = $derived(
+    loading
+      ? undefined
+      : filteredGroups
+          .map((group, index) => (group.collapsed && !query.trim() ? '' : `${uid}-group-${index}`))
+          .filter(Boolean)
+          .join(' ') || undefined,
+  );
   const selectedInputValue = $derived.by(() => {
     if (displayValue !== undefined) return displayValue;
     const selectedValues = Array.isArray(value) ? value : typeof value === 'string' ? [value] : [];
@@ -530,77 +538,94 @@
       class="{OPTION_LIST_CONTAINER_CLASS} max-h-72 overscroll-contain overflow-y-auto"
     >
       {#snippet child({ props: viewportProps })}
+        <!-- svelte-ignore a11y_no_noninteractive_tabindex (named scroll region needs keyboard scrolling when controls are outside the listbox) -->
         <div
           {...viewportProps}
           bind:this={viewportRef}
-          id={listboxId}
-          role="listbox"
-          aria-multiselectable={multiple || undefined}
+          id={groupAction ? undefined : listboxId}
+          role={groupAction ? 'region' : 'listbox'}
+          aria-multiselectable={!groupAction && multiple ? true : undefined}
           aria-labelledby={accessibleLabelId}
           aria-busy={busy}
           tabindex="0"
         >
           <ListHighlight />
+          {#if groupAction}
+            <!-- Own only option groups, not the interleaved interactive headings. -->
+            <div
+              id={listboxId}
+              role="listbox"
+              aria-labelledby={accessibleLabelId}
+              aria-multiselectable={multiple || undefined}
+              aria-busy={busy}
+              aria-owns={ownedGroupIds}
+              class="sr-only"
+            ></div>
+          {/if}
           {#if !loading}
             {#each filteredGroups as group, groupIndex (group.key)}
               {#if group.separatorBefore && groupIndex > 0}
                 <ComboboxPrimitive.Separator decorative class="my-1 border-t border-border" />
               {/if}
-              <ComboboxPrimitive.Group>
-                {#if group.label}
-                  <ComboboxPrimitive.GroupHeading
-                    class="type-caption px-2 py-1.5 font-medium text-muted-foreground"
-                  >
-                    <span>{group.label}</span>
-                    {#if groupDescription}{@render groupDescription(group)}{/if}
-                    {#if groupAction}{@render groupAction(group)}{/if}
-                  </ComboboxPrimitive.GroupHeading>
-                {/if}
-                {#each group.collapsed && !query.trim() ? [] : group.options as option (option.value)}
-                  {#snippet optionChild({ props, selected }: OptionChildProps)}
-                    <div
-                      {...props}
-                      onpointerup={(event) =>
-                        handleOptionPointerUp(event, option, props.onpointerup)}
-                      onclick={() => handleOptionClick(option)}
-                      aria-disabled={busy || option.disabled || undefined}
-                      data-slot="combobox-option-motion"
-                    >
-                      <span class="min-w-0 flex-1 truncate">
-                        {option === customOption
-                          ? m.ui_combobox_useCustom_label({ value: option.label })
-                          : option.label}
-                      </span>
-                      {#if optionDescription}
-                        {@render optionDescription(option)}
-                      {:else if option.description}
-                        <span
-                          class="type-caption max-w-1/2 shrink-0 truncate text-muted-foreground"
-                        >
-                          {option.description}
-                        </span>
-                      {/if}
-                      <Indicator
-                        state={selected ? 'checked' : 'empty'}
-                        data-slot="combobox-item-check"
-                        class={selected ? 'opacity-100' : 'opacity-0'}
-                      />
-                      {#if optionActions}{@render optionActions(option)}{/if}
+              <ComboboxPrimitive.Group id={`${uid}-group-${groupIndex}`}>
+                {#snippet child({ props: groupProps })}
+                  {#if group.label}
+                    <div class="type-caption px-2 py-1.5 font-medium text-muted-foreground">
+                      <ComboboxPrimitive.GroupHeading class="inline">
+                        <span>{group.label}</span>
+                        {#if groupDescription}{@render groupDescription(group)}{/if}
+                      </ComboboxPrimitive.GroupHeading>
+                      {#if groupAction}{@render groupAction(group)}{/if}
                     </div>
-                  {/snippet}
-                  <ComboboxPrimitive.Item
-                    value={option.value}
-                    label={option.label}
-                    disabled={busy || option.disabled || !optionMatchesQuery(option)}
-                    data-menu-item
-                    class={cn(menuItem(), option.class)}
-                    child={optionChild}
-                    onHighlight={() => (highlightedOption = option)}
-                    onUnhighlight={() => {
-                      if (highlightedOption === option) highlightedOption = null;
-                    }}
-                  />
-                {/each}
+                  {/if}
+                  <div {...groupProps}>
+                    {#each group.collapsed && !query.trim() ? [] : group.options as option (option.value)}
+                      {#snippet optionChild({ props, selected }: OptionChildProps)}
+                        <div
+                          {...props}
+                          onpointerup={(event) =>
+                            handleOptionPointerUp(event, option, props.onpointerup)}
+                          onclick={() => handleOptionClick(option)}
+                          aria-disabled={busy || option.disabled || undefined}
+                          data-slot="combobox-option-motion"
+                        >
+                          <span class="min-w-0 flex-1 truncate">
+                            {option === customOption
+                              ? m.ui_combobox_useCustom_label({ value: option.label })
+                              : option.label}
+                          </span>
+                          {#if optionDescription}
+                            {@render optionDescription(option)}
+                          {:else if option.description}
+                            <span
+                              class="type-caption max-w-1/2 shrink-0 truncate text-muted-foreground"
+                            >
+                              {option.description}
+                            </span>
+                          {/if}
+                          <Indicator
+                            state={selected ? 'checked' : 'empty'}
+                            data-slot="combobox-item-check"
+                            class={selected ? 'opacity-100' : 'opacity-0'}
+                          />
+                          {#if optionActions}{@render optionActions(option)}{/if}
+                        </div>
+                      {/snippet}
+                      <ComboboxPrimitive.Item
+                        value={option.value}
+                        label={option.label}
+                        disabled={busy || option.disabled || !optionMatchesQuery(option)}
+                        data-menu-item
+                        class={cn(menuItem(), option.class)}
+                        child={optionChild}
+                        onHighlight={() => (highlightedOption = option)}
+                        onUnhighlight={() => {
+                          if (highlightedOption === option) highlightedOption = null;
+                        }}
+                      />
+                    {/each}
+                  </div>
+                {/snippet}
               </ComboboxPrimitive.Group>
             {/each}
           {/if}

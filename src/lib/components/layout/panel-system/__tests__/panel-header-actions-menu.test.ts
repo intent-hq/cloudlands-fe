@@ -286,6 +286,26 @@ describe('traditional tab context commands', () => {
 });
 
 describe('mounted panel header actions menu', () => {
+  it('removes unregistered content sections while retaining working panel commands', async () => {
+    const onZoomToggle = vi.fn();
+    const view = renderHeader('note', { onZoomToggle });
+    const trigger = panelTrigger(view.container);
+    await fireEvent.click(trigger);
+    const menu = await screen.findByRole('menu');
+    expect(within(menu).getByTestId('content-display-action')).toBeTruthy();
+    expect(within(menu).getByTestId('content-command-action')).toBeTruthy();
+
+    await view.rerender({ contentActions: undefined });
+    expect(within(menu).queryByTestId('content-display-action')).toBeNull();
+    expect(within(menu).queryByTestId('content-command-action')).toBeNull();
+    expect(menu.querySelector('[data-panel-actions-section="display"]')).toBeNull();
+    expect(menu.querySelector('[data-panel-actions-section="actions"]')).toBeNull();
+    await fireEvent.click(within(menu).getByRole('menuitem', { name: /Zoom Panel/i }));
+    expect(onZoomToggle).toHaveBeenCalledOnce();
+    await waitFor(() => expect(screen.queryByRole('menu')).toBeNull());
+    expect(trigger.getAttribute('aria-expanded')).toBe('false');
+  });
+
   it('keeps identity left and orders every action at the right edge', () => {
     const onClosePanel = vi.fn();
     const populated = renderHeader('note', {

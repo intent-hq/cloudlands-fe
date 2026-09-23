@@ -1,5 +1,5 @@
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen } from '@testing-library/svelte';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { m } from '$shared/paraglide/messages.js';
 import { AgentStatus, type AgentSession } from '$shared/types';
 import { AgentId, CHIEF_WORKSPACE_ID } from '$shared/types/branded-ids';
@@ -70,7 +70,10 @@ describe('ChiefCard combined header', () => {
         appStore.dispatch(bulkUpsertSessions([makeChiefSession()]));
       }
       // Confirm the existing thread has reached the card before checking its child lifecycle.
-      await screen.findByRole('button', { name: threadTitle });
+      const picker = await screen.findByRole('combobox', {
+        name: m.layout_chiefCard_threadPicker_ariaLabel(),
+      });
+      await waitFor(() => expect(picker.textContent).toContain(threadTitle));
       expect(screen.queryByTestId('mock-chat-panel')).toBeNull();
 
       await rerender({ expanded: true, embedded: true, isActive: true });

@@ -1482,7 +1482,7 @@
           <Button
             {...props}
             bind:ref={triggerEl}
-            {variant}
+            variant={variant === 'default' ? 'outline' : variant}
             aria-label={`${m.workspace_branchSelector_selectBranch_label()}: ${selectedBranch || value}`}
             class={`w-full text-muted-foreground ${triggerClass} ${githubAuthNeeded === 'not-authenticated' ? 'ring-1 ring-orange-400 rounded-sm' : suggestedBranch && suggestedBranch !== internalSelectedBranch ? 'ring-1 ring-primary-ink rounded-sm' : ''}`}
           >

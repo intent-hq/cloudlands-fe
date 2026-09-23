@@ -441,7 +441,9 @@ describe('OpenComboButton menu action dispatch', () => {
       mockStoreState = makeState({ mode: 'sidecar-uds' });
       const container = await renderAndOpenDropdown({ workspaceId: 'ws-remote' });
 
-      await fireEvent.click(within(container).getByRole('menuitemradio', { name: 'Copy branch name' }));
+      await fireEvent.click(
+        within(container).getByRole('menuitemradio', { name: 'Copy branch name' }),
+      );
 
       await waitFor(() => expect(clipboard.writeText).toHaveBeenCalledExactlyOnceWith('main'));
       expect(mockDispatch).toHaveBeenCalledWith(setOpenAction('copy-branch'));

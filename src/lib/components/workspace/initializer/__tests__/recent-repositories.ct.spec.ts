@@ -21,9 +21,12 @@ for (const tab of ['Pick a repo', 'Copy local repo']) {
     });
     expect(Math.abs(centerOffset)).toBeLessThan(1);
 
-    const trigger = component.getByRole('combobox', { name: 'Choose fixture repository' });
+    const trigger = component.getByRole('button', { name: 'Choose fixture repository' });
+    await expect(trigger).toHaveAttribute('aria-haspopup', 'dialog');
     await trigger.click();
-    await page.getByRole('button', { name: tab, exact: true }).click();
+    const dialog = page.getByRole('dialog');
+    await expect(dialog).toBeVisible();
+    await dialog.getByRole('tab', { name: tab, exact: true }).click();
     const rows = page.getByTestId('recent-repositories').getByRole('button');
     await expect(rows).toHaveCount(3);
     const geometry = await rows.evaluateAll((elements) =>
@@ -64,12 +67,14 @@ for (const tab of ['Pick a repo', 'Copy local repo']) {
     const path = tab === 'Pick a repo' ? 'fixture-owner/app' : '/fixture/app';
     await expect(component.getByTestId('repo-selection')).toContainText(JSON.stringify(path));
     await expect(rows).toHaveCount(0);
+    await expect(trigger).toBeFocused();
     await trigger.click();
-    await page.getByRole('button', { name: tab, exact: true }).click();
+    await dialog.getByRole('tab', { name: tab, exact: true }).click();
     await rows.nth(1).focus();
     await rows.nth(1).press('Enter');
     const secondPath = tab === 'Pick a repo' ? 'fixture-owner/tools' : '/fixture/tools';
     await expect(component.getByTestId('repo-selection')).toContainText(JSON.stringify(secondPath));
     await expect(rows).toHaveCount(0);
+    await expect(trigger).toBeFocused();
   });
 }

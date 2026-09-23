@@ -27,7 +27,9 @@ test('portals grouped options beyond a clipping parent and keeps header actions 
     .poll(() =>
       toggle.evaluate((node) => {
         const box = node.getBoundingClientRect();
-        const fills = node.closest('[role="listbox"]')?.querySelectorAll('.bg-hover') ?? [];
+        const viewport = node.closest('[data-combobox-viewport]');
+        if (!viewport) throw new Error('Missing combobox viewport');
+        const fills = viewport.querySelectorAll('.bg-hover');
         return Array.from(fills).some((fill) => {
           const rect = fill.getBoundingClientRect();
           return (
@@ -45,6 +47,27 @@ test('portals grouped options beyond a clipping parent and keeps header actions 
   await expect(option).toHaveCount(0);
   await page.keyboard.press('Enter');
   await expect(option).toBeVisible();
-  await option.click();
+  const cdp = await page.context().newCDPSession(page);
+  try {
+    const { nodes } = await cdp.send('Accessibility.getFullAXTree');
+    const listbox = nodes.find((node) => node.role?.value === 'listbox' && !node.ignored);
+    expect(listbox).toBeDefined();
+    const byId = new Map(nodes.map((node) => [node.nodeId, node]));
+    const descendants = (id: string): typeof nodes => {
+      const node = byId.get(id);
+      return node ? [node, ...(node.childIds ?? []).flatMap(descendants)] : [];
+    };
+    const tree = descendants(listbox!.nodeId);
+    expect(
+      tree.filter((node) => node.role?.value === 'option').map((node) => node.name?.value),
+    ).toEqual(['Alpha', 'Beta']);
+    expect(tree.some((node) => node.role?.value === 'button')).toBe(false);
+  } finally {
+    await cdp.detach();
+  }
+  await page.getByRole('combobox').click();
+  await page.getByRole('combobox').fill('Beta');
+  await page.keyboard.press('ArrowDown');
+  await page.keyboard.press('Enter');
   await expect(page.getByLabel('Selected project')).toHaveText('beta');
 });

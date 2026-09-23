@@ -21,10 +21,22 @@ for (const pointer of ['mouse', 'touch'] as const) {
 
       // Coordinate input deliberately bypasses Playwright's disabled-element wait;
       // it still uses the browser's native hit testing and pointer/click sequence.
-      const point = await option.evaluate((node) => {
-        const rect = node.getBoundingClientRect();
-        return { x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 };
-      });
+      // Disabled rows use pointer-events:none, so their center must hit the listbox,
+      // not the option itself or the page beneath an as-yet unpositioned popup.
+      await option.scrollIntoViewIfNeeded();
+      let point = { x: 0, y: 0, hitsListbox: false };
+      await expect
+        .poll(async () => {
+          point = await option.evaluate((node) => {
+            const rect = node.getBoundingClientRect();
+            const x = rect.x + rect.width / 2;
+            const y = rect.y + rect.height / 2;
+            const hit = document.elementFromPoint(x, y);
+            return { x, y, hitsListbox: node.closest('[role="listbox"]')?.contains(hit) ?? false };
+          });
+          return point.hitsListbox;
+        })
+        .toBe(true);
       if (pointer === 'mouse') await page.mouse.click(point.x, point.y);
       else await page.touchscreen.tap(point.x, point.y);
       await expect(page.getByLabel('Selected people')).toHaveText(JSON.stringify(value));

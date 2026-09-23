@@ -1,10 +1,18 @@
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import axe from 'axe-core';
 import LegacyWrappersHarness from './legacy-wrappers.test-harness.svelte';
 import type { ComboboxOption } from './types';
 
 describe('legacy searchable and grouped compatibility wrappers', () => {
-  afterEach(cleanup);
+  const originalScrollIntoView = Element.prototype.scrollIntoView;
+  beforeEach(() => {
+    Element.prototype.scrollIntoView = vi.fn();
+  });
+  afterEach(() => {
+    cleanup();
+    Element.prototype.scrollIntoView = originalScrollIntoView;
+  });
 
   it('preserves searchable-select async search and custom-value entry', async () => {
     let settleCustomSearch!: (options: ComboboxOption[]) => void;
@@ -115,6 +123,42 @@ describe('legacy searchable and grouped compatibility wrappers', () => {
     expect(screen.getByRole('option', { name: /Linus Torvalds/ })).toBeTruthy();
     await fireEvent.keyDown(input, { key: 'Escape' });
     await waitFor(() => expect(onClose).toHaveBeenCalledOnce());
+  });
+
+  it('keeps group controls outside the listbox ownership while options collapse and filter', async () => {
+    // This checks semantics, not floating placement (which requires real layout).
+    render(LegacyWrappersHarness, {
+      mode: 'grouped',
+      defaultCollapsed: true,
+      staticPosition: true,
+    });
+    const input = screen.getByRole('combobox');
+    await fireEvent.focus(input);
+    const listbox = screen.getByRole('listbox');
+    const toggle = screen.getByRole('button', { name: 'Toggle Others' });
+    expect(input.getAttribute('aria-controls')).toBe(listbox.id);
+    expect(listbox.contains(toggle)).toBe(false);
+
+    const checkSemantics = async () => {
+      const result = await axe.run(document.body, {
+        runOnly: ['aria-required-children', 'aria-required-parent', 'aria-valid-attr-value'],
+      });
+      expect(result.violations).toEqual([]);
+    };
+    await checkSemantics();
+    await fireEvent.click(toggle);
+    const option = screen.getByRole('option', { name: /Linus Torvalds/ });
+    const group = option.closest('[role="group"]');
+    expect(group).not.toBeNull();
+    expect(group?.contains(toggle)).toBe(false);
+    expect(listbox.getAttribute('aria-owns')?.split(' ')).toContain(group?.id);
+    await checkSemantics();
+
+    await fireEvent.input(input, { target: { value: 'Linus' } });
+    expect(screen.getAllByRole('option')).toHaveLength(1);
+    await checkSemantics();
+    await fireEvent.pointerUp(screen.getByRole('option'), { button: 0, pointerType: 'mouse' });
+    await waitFor(() => expect(screen.getByTestId('legacy-value').textContent).toBe('linus'));
   });
 
   it.each(['select', 'searchable', 'grouped'] as const)(
