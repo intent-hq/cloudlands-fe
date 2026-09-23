@@ -30,7 +30,12 @@
 
 {#snippet leading()}
   {#if icon}
-    <Fa {icon} weight={iconWeight} size={16} class="size-4 text-muted-foreground opacity-70" />
+    <Fa
+      {icon}
+      weight={iconWeight}
+      size={16}
+      class={destructive ? 'size-4 text-current' : 'size-4 text-muted-foreground opacity-70'}
+    />
   {/if}
 {/snippet}
 
@@ -53,6 +58,8 @@
     {/if}
   </span>
   {#if shortcut}
-    <span class="ml-5" aria-hidden="true"><ShortcutChip>{shortcut}</ShortcutChip></span>
+    <span class="ml-5 flex h-lh shrink-0 items-center" aria-hidden="true"
+      ><ShortcutChip>{shortcut}</ShortcutChip></span
+    >
   {/if}
 </Item>

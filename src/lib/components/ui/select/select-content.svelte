@@ -6,7 +6,7 @@
   import { cn } from '$lib/utils';
   import { clampSurface, setSurface, useSurface } from '$lib/components/ui/surface-context';
   import { OPTION_LIST_CONTAINER_CLASS } from '$lib/styles/option-list-row';
-  import { OVERLAY_VIEWPORT_GUTTER } from '../overlay-positioning';
+  import { OVERLAY_VIEWPORT_GUTTER } from '$lib/components/ui/overlay-positioning';
 
   let {
     wrapperId,

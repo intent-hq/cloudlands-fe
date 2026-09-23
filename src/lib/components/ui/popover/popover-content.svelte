@@ -4,7 +4,7 @@
   import { menuOverlay } from '../menu/menu-recipes';
   import { clampSurface, setSurface, useSurface } from '../surface-context';
   import { useStaticOverlay } from '../static-overlay-context.svelte';
-  import { OVERLAY_VIEWPORT_GUTTER } from '../overlay-positioning';
+  import { OVERLAY_VIEWPORT_GUTTER } from '$lib/components/ui/overlay-positioning';
 
   let {
     class: className,

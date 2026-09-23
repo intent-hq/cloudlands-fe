@@ -15,6 +15,7 @@
     side = 'bottom',
     portal = true,
     collisionPadding = 8,
+    alignIconColumn = false,
     trigger,
     content,
     contentClass = '',
@@ -26,6 +27,7 @@
     side?: 'top' | 'bottom' | 'left' | 'right';
     portal?: boolean;
     collisionPadding?: number;
+    alignIconColumn?: boolean;
     trigger?: Snippet<[{ toggle: () => void; open: boolean; props: Record<string, unknown> }]>;
     content?: Snippet<[{ close: () => void }]>;
     contentClass?: string;
@@ -99,6 +101,7 @@
       {side}
       {portal}
       {collisionPadding}
+      {alignIconColumn}
       preventScroll={false}
       class={contentClass}
       maxHeight={contentMaxHeight}

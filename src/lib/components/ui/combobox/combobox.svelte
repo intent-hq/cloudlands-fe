@@ -12,7 +12,7 @@
   import { OPTION_LIST_CONTAINER_CLASS } from '$lib/styles/option-list-row';
   import { useSize, type UiSize } from '$lib/components/ui/size-context';
   import { textEntryControlClasses, textEntryHeight } from '../text-entry';
-  import { OVERLAY_VIEWPORT_GUTTER } from '../overlay-positioning';
+  import { OVERLAY_VIEWPORT_GUTTER } from '$lib/components/ui/overlay-positioning';
 
   const uid = $props.id();
 

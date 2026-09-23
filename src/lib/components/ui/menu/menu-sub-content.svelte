@@ -7,10 +7,11 @@
   import { clampSurface, setSurface, useSurface } from '$lib/components/ui/surface-context';
   import { OPTION_LIST_CONTAINER_CLASS } from '$lib/styles/option-list-row';
   import { useStaticOverlay } from '../static-overlay-context.svelte';
-  import { OVERLAY_VIEWPORT_GUTTER } from '../overlay-positioning';
+  import { OVERLAY_VIEWPORT_GUTTER } from '$lib/components/ui/overlay-positioning';
   import { handleMenuPageKey, setMenuTabStop, syncMenuTabStopFromFocus } from './menu-roving-focus';
   import { SUBMENU_CONTEXT, type SubmenuContext } from './submenu-context';
   import { resolveSubmenuSide } from './submenu-placement';
+  import { createMenuLayout } from './menu-layout-context.svelte';
 
   const uid = $props.id();
 
@@ -21,8 +22,11 @@
     portal = true,
     portalProps,
     staticPosition,
+    alignIconColumn,
     side = 'right',
     sideOffset = 4,
+    align = 'start',
+    alignOffset,
     avoidCollisions = true,
     collisionPadding = OVERLAY_VIEWPORT_GUTTER,
     onkeydown,
@@ -33,6 +37,8 @@
     portal?: boolean;
     portalProps?: MenuPrimitive.PortalProps;
     staticPosition?: boolean;
+    /** Inherits column alignment, but computes its own visible icon reservation. */
+    alignIconColumn?: boolean;
   } = $props();
 
   // bits-ui 2.18.1: SubContent is the shared menu primitive, so its available-height
@@ -40,16 +46,25 @@
   // in menu-content.svelte. The differing var names are intentional.
   const maxHeight = 'var(--bits-menu-content-available-height, calc(100dvh - 1rem))';
   const rootStaticPosition = useStaticOverlay();
+  createMenuLayout(() => alignIconColumn);
   const isStatic = $derived(staticPosition ?? rootStaticPosition());
   const submenu = getContext<SubmenuContext | undefined>(SUBMENU_CONTEXT);
   let verticalFallback = $state(false);
+  let leadingInset = $state(0);
   const resolvedSide = $derived(verticalFallback ? 'bottom' : side);
+  const resolvedAlignOffset = $derived(
+    alignOffset ??
+      (align === 'start' && (resolvedSide === 'right' || resolvedSide === 'left')
+        ? -leadingInset
+        : 0),
+  );
 
   $effect(() => {
     const content = ref;
     const trigger = submenu?.trigger;
-    if (!content || !trigger || isStatic || !avoidCollisions) {
+    if (!content || !trigger || isStatic) {
       verticalFallback = false;
+      leadingInset = 0;
       return;
     }
     const padding =
@@ -58,8 +73,13 @@
         : { left: collisionPadding.left ?? 0, right: collisionPadding.right ?? 0 };
     const preferred = side;
     const gap = sideOffset;
+    const collisionsEnabled = avoidCollisions;
     function updatePlacement() {
+      // Align the first row, not the popup border, with the owning parent row.
+      const style = getComputedStyle(content!);
+      leadingInset = parseFloat(style.paddingTop) + parseFloat(style.borderTopWidth);
       verticalFallback =
+        collisionsEnabled &&
         resolveSubmenuSide(
           preferred,
           trigger!.getBoundingClientRect(),
@@ -140,6 +160,8 @@
       class={contentClass}
       side={resolvedSide}
       {sideOffset}
+      {align}
+      alignOffset={resolvedAlignOffset}
       {avoidCollisions}
       {collisionPadding}
       style="max-height: {maxHeight}"
@@ -160,6 +182,8 @@
     class={contentClass}
     side={resolvedSide}
     {sideOffset}
+    {align}
+    alignOffset={resolvedAlignOffset}
     {avoidCollisions}
     {collisionPadding}
     style="max-height: {maxHeight}"

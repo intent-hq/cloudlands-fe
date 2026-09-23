@@ -7,8 +7,9 @@
   import { clampSurface, setSurface, useSurface } from '$lib/components/ui/surface-context';
   import { OPTION_LIST_CONTAINER_CLASS } from '$lib/styles/option-list-row';
   import { useStaticOverlay } from '../static-overlay-context.svelte';
-  import { OVERLAY_VIEWPORT_GUTTER } from '../overlay-positioning';
+  import { OVERLAY_VIEWPORT_GUTTER } from '$lib/components/ui/overlay-positioning';
   import { handleMenuPageKey, setMenuTabStop, syncMenuTabStopFromFocus } from './menu-roving-focus';
+  import { createMenuLayout } from './menu-layout-context.svelte';
 
   const uid = $props.id();
 
@@ -19,6 +20,7 @@
     portal = true,
     portalProps,
     staticPosition,
+    alignIconColumn = false,
     sideOffset = 4,
     collisionPadding = OVERLAY_VIEWPORT_GUTTER,
     onkeydown,
@@ -35,9 +37,12 @@
     portalProps?: MenuPrimitive.PortalProps;
     maxHeight?: string;
     staticPosition?: boolean;
+    /** Align declared leading slots, iconless rows and headings across this popup. */
+    alignIconColumn?: boolean;
   } = $props();
 
   const rootStaticPosition = useStaticOverlay();
+  createMenuLayout(() => alignIconColumn);
   const isStatic = $derived(staticPosition ?? rootStaticPosition());
   const surface = clampSurface(useSurface() + 2);
   setSurface(surface);

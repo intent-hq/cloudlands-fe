@@ -9,6 +9,7 @@
   import type { WithoutChildrenOrChild } from '$lib/utils.js';
   import { menuItem } from './menu-recipes';
   import Indicator from './menu-indicator.svelte';
+  import { useMenuIconColumn } from './menu-layout-context.svelte';
 
   let {
     ref = $bindable(null),
@@ -16,12 +17,15 @@
     children,
     icon,
     iconWeight,
+    leading,
     ...restProps
   }: WithoutChildrenOrChild<MenuPrimitive.SubTriggerProps> & {
     children?: Snippet;
     icon?: IconDefinition;
     iconWeight?: IconWeight;
+    leading?: Snippet;
   } = $props();
+  const reserveIcon = useMenuIconColumn(() => !!(icon || leading));
 
   const context = getContext<SubmenuContext | undefined>(SUBMENU_CONTEXT);
   $effect(() => {
@@ -39,9 +43,17 @@
   class={cn(menuItem(), className)}
   {...restProps}
 >
-  {#if icon}
-    <span data-slot="menu-item-leading" class="size-4 shrink-0" aria-hidden="true">
-      <Fa {icon} weight={iconWeight} size={16} class="size-4 text-muted-foreground opacity-70" />
+  {#if icon || leading || reserveIcon()}
+    <span
+      data-slot="menu-item-leading"
+      class="flex h-lh w-4 shrink-0 items-center justify-center"
+      aria-hidden="true"
+    >
+      {#if leading}
+        {@render leading()}
+      {:else if icon}
+        <Fa {icon} weight={iconWeight} size={16} class="size-4 text-muted-foreground opacity-70" />
+      {/if}
     </span>
   {/if}
   {@render children?.()}

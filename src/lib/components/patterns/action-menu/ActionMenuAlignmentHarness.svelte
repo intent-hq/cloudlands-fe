@@ -6,8 +6,10 @@
 
   let {
     iconSource = 'root',
+    multiline = false,
   }: {
     iconSource?: 'root' | 'section' | 'radio' | 'submenu' | 'hidden';
+    multiline?: boolean;
   } = $props();
   let checked = $state(false);
   let density = $state('comfortable');
@@ -22,22 +24,43 @@
       label: 'Manage',
       children: [
         { id: 'edit', label: 'Edit', icon: iconSource === 'section' ? faPencil : undefined },
-        { id: 'locked', label: 'Locked', disabledReason: 'Requires access' },
+        {
+          id: 'locked',
+          label: 'Locked',
+          icon: multiline ? faPencil : undefined,
+          shortcut: multiline ? '⌘K' : undefined,
+          disabledReason: multiline
+            ? 'Requires access from the workspace owner before this command can be used.'
+            : 'Requires access',
+        },
       ],
     },
-    { id: 'details', kind: 'checkbox', label: 'Show details', checked, group: 'view' },
+    {
+      id: 'details',
+      kind: 'checkbox',
+      label: 'Show details',
+      checked: multiline || checked,
+      group: 'view',
+      icon: multiline ? faPencil : undefined,
+      disabledReason: multiline
+        ? 'Details are unavailable until this workspace finishes loading.'
+        : undefined,
+    },
     {
       id: 'density',
       kind: 'radio-group',
       label: 'Density',
-      value: density,
+      value: multiline ? 'compact' : density,
       children: [
         {
           id: 'compact',
           kind: 'radio',
           label: 'Compact',
           value: 'compact',
-          icon: iconSource === 'radio' ? faPencil : undefined,
+          icon: iconSource === 'radio' || multiline ? faPencil : undefined,
+          disabledReason: multiline
+            ? 'This density is unavailable while the workspace is loading.'
+            : undefined,
         },
         { id: 'comfortable', kind: 'radio', label: 'Comfortable', value: 'comfortable' },
       ],
@@ -46,17 +69,28 @@
       id: 'more',
       kind: 'submenu',
       label: 'More',
+      icon: multiline ? faPencil : undefined,
+      disabledReason: multiline
+        ? 'Additional commands are unavailable until the workspace finishes loading.'
+        : undefined,
       children: [
         { id: 'export', label: 'Export', icon: iconSource === 'submenu' ? faPencil : undefined },
         { id: 'copy', label: 'Copy', group: 'other' },
       ],
     },
-    { id: 'delete', label: 'Delete', destructive: true, group: 'destructive' },
+    {
+      id: 'delete',
+      label: 'Delete',
+      icon: multiline ? faPencil : undefined,
+      destructive: true,
+      group: 'destructive',
+    },
   ]);
 </script>
 
 <ActionMenu
   {actions}
+  class={multiline ? 'w-72' : undefined}
   ariaLabel="Workspace menu"
   onAction={(id) => {
     selected = id;

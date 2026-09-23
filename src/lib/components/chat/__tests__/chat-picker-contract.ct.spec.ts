@@ -77,7 +77,7 @@ test('many browser tabs remain bounded and the last reveal, close, and bulk clos
   await expect(trigger).toBeFocused();
 });
 
-test('composer context command hands focus to one rich picker and Escape returns to the plus trigger', async ({
+test('composer context command keeps its parent menu and Escape returns through each layer', async ({
   mount,
   page,
 }) => {
@@ -87,12 +87,22 @@ test('composer context command hands focus to one rich picker and Escape returns
   const command = page.getByRole('menuitem', { name: /Add Context/ });
   await command.focus();
   await command.press('Enter');
-  await expect(page.getByRole('menu')).toHaveCount(0);
+  await expect(page.getByRole('menu')).toBeVisible();
   const picker = page.getByRole('dialog', { name: /Select context panels/i });
   await expect(picker).toBeVisible();
+  await expect(command).toHaveAttribute('aria-haspopup', 'dialog');
+  await expect(command).toHaveAttribute('aria-expanded', 'true');
   await expect(picker.getByRole('combobox')).toBeFocused();
   await picker.getByRole('combobox').press('Escape');
   await expect(picker).toHaveCount(0);
+  await expect(command).toBeFocused();
+  await expect(command).toHaveAttribute('aria-expanded', 'false');
+  await command.press('ArrowRight');
+  await expect(picker.getByRole('combobox')).toBeFocused();
+  await picker.getByRole('combobox').press('Escape');
+  await expect(command).toBeFocused();
+  await command.press('Escape');
+  await expect(page.getByRole('menu')).toHaveCount(0);
   await expect(trigger).toBeFocused();
 });
 

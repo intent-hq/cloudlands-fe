@@ -112,13 +112,15 @@
     aria-describedby={$noteViewMode === 'preview' ? descriptionId : undefined}
     onCheckedChange={() => appStore.dispatch(toggleSpellcheck())}
   >
-    {m.ui_viewSettings_spellcheck_label()}
+    <span class="min-w-0 flex-1">
+      <span class="block">{m.ui_viewSettings_spellcheck_label()}</span>
+      {#if $noteViewMode === 'preview'}
+        <span id={descriptionId} class="block text-muted-foreground" aria-hidden="true">
+          {m.ui_viewSettings_spellcheckPreview_description()}
+        </span>
+      {/if}
+    </span>
   </Menu.CheckboxItem>
-  {#if $noteViewMode === 'preview'}
-    <p id={descriptionId} class="type-caption px-2 py-1 text-muted-foreground">
-      {m.ui_viewSettings_spellcheckPreview_description()}
-    </p>
-  {/if}
 {/snippet}
 
 {#if embedded}
@@ -141,7 +143,12 @@
         </Button>
       {/snippet}
     </Menu.Trigger>
-    <Menu.Content align="end" class="w-72" aria-label={m.ui_viewSettings_trigger_tooltip()}>
+    <Menu.Content
+      alignIconColumn
+      align="end"
+      class="w-72"
+      aria-label={m.ui_viewSettings_trigger_tooltip()}
+    >
       {@render settingsItems()}
     </Menu.Content>
   </Menu.Root>

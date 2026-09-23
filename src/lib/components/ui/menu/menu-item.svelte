@@ -4,6 +4,7 @@
   import { cn } from '$lib/utils.js';
   import type { WithoutChildrenOrChild } from '$lib/utils.js';
   import { menuItem } from './menu-recipes';
+  import { useMenuIconColumn } from './menu-layout-context.svelte';
 
   let {
     ref = $bindable(null),
@@ -17,6 +18,7 @@
     leading?: Snippet;
     children?: Snippet;
   } = $props();
+  const reserveIcon = useMenuIconColumn(() => !!leading);
 </script>
 
 <MenuPrimitive.Item
@@ -31,9 +33,13 @@
   )}
   {...restProps}
 >
-  {#if leading}
-    <span data-slot="menu-item-leading" class="flex size-4 shrink-0 items-center justify-center">
-      {@render leading()}
+  {#if leading || reserveIcon()}
+    <span
+      data-slot="menu-item-leading"
+      class="flex h-lh w-4 shrink-0 items-center justify-center"
+      aria-hidden="true"
+    >
+      {@render leading?.()}
     </span>
   {/if}
   {@render children?.()}

@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { faPencil } from '@fortawesome/free-solid-svg-icons';
+  import { faPencil, faTrash } from '@fortawesome/free-solid-svg-icons';
   import { Button } from '$lib/components/ui/button';
   import SidebarContextMenu from './SidebarContextMenu.svelte';
   import SidebarOverflowMenu from './SidebarOverflowMenu.svelte';
@@ -9,7 +9,11 @@
     type SidebarMenuEntry,
   } from './types';
 
-  let { edge = false, long = false }: { edge?: boolean; long?: boolean } = $props();
+  let {
+    edge = false,
+    long = false,
+    multiline = false,
+  }: { edge?: boolean; long?: boolean; multiline?: boolean } = $props();
   let context = $state<SidebarContextPosition | null>(null);
   let checked = $state(false);
   let choice = $state('first');
@@ -20,7 +24,11 @@
     {
       id: 'locked',
       label: 'Locked',
-      disabledReason: 'Requires access',
+      icon: multiline ? faPencil : undefined,
+      shortcut: multiline ? '⌘K' : undefined,
+      disabledReason: multiline
+        ? 'Requires access from the workspace owner before this command can be used.'
+        : 'Requires access',
       onClick: () => (selected = 'locked'),
     },
     { type: 'separator' },
@@ -60,7 +68,13 @@
         }))
       : []),
     { type: 'separator' },
-    { id: 'delete', label: 'Delete', destructive: true, onClick: () => (selected = 'delete') },
+    {
+      id: 'delete',
+      label: 'Delete',
+      icon: faTrash,
+      destructive: true,
+      onClick: () => (selected = 'delete'),
+    },
     { type: 'separator' },
   ]);
 

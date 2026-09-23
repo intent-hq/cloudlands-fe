@@ -1319,6 +1319,7 @@
 
 {#snippet panelActionsDropdown(location: 'tabBar' | 'compact')}
   <DropdownMenu
+    alignIconColumn
     bind:open={panelActionsMenuOpen[location]}
     align="end"
     side="bottom"

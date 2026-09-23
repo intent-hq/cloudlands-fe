@@ -229,7 +229,10 @@
           wrapperId={contentId}
           portal
           dropUp={!embedded}
-          class={cn('effort-picker-content', embedded && 'z-[101]!')}
+          class={cn(
+            'effort-picker-content w-max min-w-(--bits-select-anchor-width)',
+            embedded && 'z-[101]!',
+          )}
         >
           {#each options as option (option.value)}
             <Select.Item value={option.value} label={option.label}>{option.label}</Select.Item>

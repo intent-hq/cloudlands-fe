@@ -1,6 +1,7 @@
 import type { Locator } from '@playwright/test';
 import { expect, test } from '../../../../test/ct-test';
 import Preview from './icon-defaults.preview.svelte';
+import { expectDestructiveMenuInk, expectMenuFirstLine } from '../../../../test/menu-geometry';
 
 async function expectLeftAlignedCopy(rows: Locator) {
   const labels = await rows.locator('span[title]').evaluateAll((elements) =>
@@ -102,6 +103,9 @@ test('workspace menu keeps a viewport gutter and left-aligned copy with keyboard
     })
     .toBeGreaterThanOrEqual(8);
   await expectLeftAlignedCopy(menu.getByRole('menuitem'));
+  await expect(transfer.locator('kbd')).toHaveCount(1);
+  await expectMenuFirstLine(transfer, transfer);
+  await expectDestructiveMenuInk(menu.getByRole('menuitem', { name: /^Delete Workspace/ }));
   await page.screenshot({ path: testInfo.outputPath('workspace-menu-inset.png') });
   await page.keyboard.press('Home');
   await expect(menu.getByRole('menuitem').first()).toBeFocused();

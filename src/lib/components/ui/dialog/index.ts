@@ -11,6 +11,7 @@ import Trigger from './dialog-trigger.svelte';
 
 const Portal = DialogPrimitive.Portal;
 export { dialogMetadata } from './dialog.meta';
+export { useDialogPortalTarget } from './dialog-portal-context';
 
 export {
   Root,

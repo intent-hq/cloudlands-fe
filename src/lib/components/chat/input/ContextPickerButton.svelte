@@ -71,8 +71,12 @@
       meta?: Record<string, unknown>;
     }) => void;
     renderTrigger?: boolean;
-    /** Render only the picker body inside an owning overlay such as Menu.SubContent. */
+    /** Render only the picker body inside an owning rich popover/dialog. */
     embedded?: boolean;
+    /** Allows the owning dialog to reference the picker's visible description. */
+    descriptionId?: string;
+    /** Mounted picker body, for an embedding popover's placement and dismissal. */
+    bodyRef?: HTMLDivElement | null;
     class?: string;
   }
 
@@ -88,13 +92,14 @@
     onInsertMention,
     renderTrigger = true,
     embedded = false,
+    descriptionId,
+    bodyRef = $bindable(null),
     class: className = '',
   }: Props = $props();
 
   let isOpen = $state(false);
   let triggerRef = $state<HTMLButtonElement | null>(null);
   let externalAnchor = $state<HTMLElement | null>(null);
-  let popoverRef = $state<HTMLDivElement | null>(null);
   let searchInputRef = $state<{ focus: () => void } | null>(null);
   let popoverStyle = $state('');
 
@@ -276,7 +281,7 @@
   function handleClickOutside(e: MouseEvent) {
     if (!isOpen) return;
     const target = e.target as Node;
-    if (triggerRef?.contains(target) || popoverRef?.contains(target)) return;
+    if (triggerRef?.contains(target) || bodyRef?.contains(target)) return;
     isOpen = false;
     externalAnchor = null;
     resetSearch();
@@ -438,24 +443,25 @@
 
 {#snippet pickerBody()}
   <div
-    bind:this={popoverRef}
+    bind:this={bodyRef}
     id={`${pickerId}-dialog`}
     class={cn(
-      'flex max-h-[min(400px,var(--bits-menu-content-available-height,calc(100dvh_-_1rem)))] flex-col overflow-hidden pb-2',
+      'flex max-h-[min(400px,var(--bits-popover-content-available-height,calc(100dvh_-_1rem)))] flex-col overflow-hidden pb-2',
       embedded
-        ? 'w-80'
+        ? 'min-h-0 w-full min-w-0'
         : 'rounded-(--radius-medium) border border-border bg-popover text-popover-foreground shadow-(--elevation-overlay)',
     )}
     style={embedded ? undefined : popoverStyle}
     role={embedded ? undefined : 'dialog'}
     aria-label={m.chat_contextPicker_selectPanels_ariaLabel()}
+    aria-describedby={embedded ? undefined : (descriptionId ?? `${pickerId}-description`)}
     data-context-picker-body
     data-embedded={embedded ? '' : undefined}
   >
     <!-- Header -->
     <div class="shrink-0 px-3 py-2">
       <div class="type-body font-medium">{m.chat_contextPicker_context_title()}</div>
-      <div class="type-caption text-subtle">
+      <div id={descriptionId ?? `${pickerId}-description`} class="type-caption text-subtle">
         {m.chat_contextPicker_selectFiles_description()}
       </div>
     </div>
@@ -552,10 +558,12 @@
                 class={cn(
                   menuItem(),
                   index === activeSearchIndex && 'bg-selected',
-                  'flex h-auto w-full items-center justify-start gap-2 hover:bg-hover cursor-pointer transition-colors text-left',
+                  'flex h-auto w-full items-start justify-start gap-2 hover:bg-hover cursor-pointer transition-colors text-left',
                 )}
               >
-                <Fa icon={getIconForType(result.type)} class="h-3.5 w-3.5 text-subtle" />
+                <span class="flex h-lh shrink-0 items-center text-sm" aria-hidden="true">
+                  <Fa icon={getIconForType(result.type)} class="h-3.5 w-3.5 text-subtle" />
+                </span>
                 <div class="flex min-w-0 flex-1 flex-col gap-0.5">
                   <div class="text-sm truncate font-medium">{result.label}</div>
                   {#if result.subtitle || result.description}

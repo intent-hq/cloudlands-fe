@@ -36,14 +36,6 @@
   } = $props();
 
   const resolvedActions = $derived(resolveActions(actions));
-  function hasSurfaceIcon(entries: readonly ResolvedAction[]): boolean {
-    return entries.some(
-      (entry) =>
-        entry.icon !== undefined ||
-        ((entry.kind === 'section' || entry.kind === 'radio-group') &&
-          hasSurfaceIcon(entry.children)),
-    );
-  }
 
   const uid = $props.id();
   let invokingElement: HTMLElement | null = null;
@@ -170,18 +162,7 @@
   });
 </script>
 
-{#snippet iconSlot(action: ResolvedAction, reserveIcon: boolean)}
-  {#if reserveIcon}
-    <span class="flex size-4 shrink-0 items-center justify-center" aria-hidden="true">
-      {#if action.icon}
-        <Fa icon={action.icon} size={16} class="size-4 text-muted-foreground" />
-      {/if}
-    </span>
-  {/if}
-{/snippet}
-
-{#snippet itemContent(action: ResolvedAction, reserveIcon: boolean)}
-  {@render iconSlot(action, reserveIcon)}
+{#snippet itemContent(action: ResolvedAction)}
   <span class="min-w-0 flex-1">
     <span class="block truncate">{action.label}</span>
     {#if action.disabledReason}
@@ -189,36 +170,51 @@
     {/if}
   </span>
   {#if action.shortcut}
-    <span class="ml-5" aria-hidden="true"><ShortcutChip>{action.shortcut}</ShortcutChip></span>
+    <span class="ml-5 flex h-lh shrink-0 items-center" aria-hidden="true"
+      ><ShortcutChip>{action.shortcut}</ShortcutChip></span
+    >
   {/if}
 {/snippet}
 
-{#snippet groupLabel(action: ResolvedAction, reserveIcon: boolean)}
-  <Menu.Label>
-    {@render iconSlot(action, reserveIcon)}
+{#snippet groupLabel(action: ResolvedAction)}
+  <Menu.Label icon={action.icon}>
     <span>{action.label}</span>
   </Menu.Label>
 {/snippet}
 
-{#snippet actionItem(action: ResolvedAction, reserveIcon: boolean)}
+{#snippet actionItem(action: ResolvedAction)}
   {@const disabled = action.disabled || action.disabledReason !== undefined}
   {@const descriptionId = action.disabledReason ? `${uid}-${action.id}-reason` : undefined}
+  {#snippet leading()}
+    {#if action.icon}
+      <Fa
+        icon={action.icon}
+        size={16}
+        class={action.destructive ? 'size-4 text-current' : 'size-4 text-muted-foreground'}
+      />
+    {/if}
+  {/snippet}
   {#if action.kind === 'label'}
-    <Menu.Group>{@render groupLabel(action, reserveIcon)}</Menu.Group>
+    <Menu.Group>{@render groupLabel(action)}</Menu.Group>
   {:else if action.kind === 'section'}
     <Menu.Group aria-label={action.label}>
-      {@render groupLabel(action, reserveIcon)}
-      {@render actionItems(action.children, disabled, reserveIcon)}
+      {@render groupLabel(action)}
+      {@render actionItems(action.children, disabled)}
     </Menu.Group>
   {:else if action.kind === 'radio-group'}
     <Menu.RadioGroup value={action.value} aria-label={action.label}>
-      {@render groupLabel(action, reserveIcon)}
-      {@render actionItems(action.children, disabled, reserveIcon)}
+      {@render groupLabel(action)}
+      {@render actionItems(action.children, disabled)}
     </Menu.RadioGroup>
   {:else if action.children?.length}
     <Menu.Sub>
-      <Menu.SubTrigger {disabled} aria-describedby={descriptionId} data-action-id={action.id}>
-        {@render itemContent(action, reserveIcon)}
+      <Menu.SubTrigger
+        icon={action.icon}
+        {disabled}
+        aria-describedby={descriptionId}
+        data-action-id={action.id}
+      >
+        {@render itemContent(action)}
       </Menu.SubTrigger>
       <Menu.SubContent
         collisionPadding={8}
@@ -231,17 +227,19 @@
   {:else if action.kind === 'radio'}
     <Menu.RadioItem
       value={action.value}
+      leading={action.icon ? leading : undefined}
       {disabled}
       aria-describedby={descriptionId}
       closeOnSelect={action.closeOnSelect ?? false}
       onSelect={(event) => select(action, event)}
       data-action-id={action.id}
     >
-      {@render itemContent(action, reserveIcon)}
+      {@render itemContent(action)}
     </Menu.RadioItem>
   {:else if action.checked !== undefined}
     <Menu.CheckboxItem
       checked={action.checked}
+      leading={action.icon ? leading : undefined}
       indeterminate={action.kind === 'checkbox' && action.indeterminate}
       {disabled}
       aria-describedby={descriptionId}
@@ -249,18 +247,19 @@
       onSelect={(event) => select(action, event)}
       data-action-id={action.id}
     >
-      {@render itemContent(action, reserveIcon)}
+      {@render itemContent(action)}
     </Menu.CheckboxItem>
   {:else}
     <Menu.Item
       {disabled}
+      leading={action.icon ? leading : undefined}
       destructive={action.destructive}
       aria-describedby={descriptionId}
       closeOnSelect={action.closeOnSelect ?? true}
       onSelect={(event) => select(action, event)}
       data-action-id={action.id}
     >
-      {@render itemContent(action, reserveIcon)}
+      {@render itemContent(action)}
     </Menu.Item>
   {/if}
   {#if action.disabledReason}
@@ -268,16 +267,12 @@
   {/if}
 {/snippet}
 
-{#snippet actionItems(
-  entries: readonly ResolvedAction[],
-  disabled = false,
-  reserveIcon = hasSurfaceIcon(entries),
-)}
+{#snippet actionItems(entries: readonly ResolvedAction[], disabled = false)}
   {#each entries as action, index (action.id)}
     {#if index > 0 && (action.group !== entries[index - 1]?.group || action.kind === 'section' || action.kind === 'radio-group' || entries[index - 1]?.kind === 'section' || entries[index - 1]?.kind === 'radio-group')}
       <Menu.Separator />
     {/if}
-    {@render actionItem(disabled ? { ...action, disabled: true } : action, reserveIcon)}
+    {@render actionItem(disabled ? { ...action, disabled: true } : action)}
   {/each}
 {/snippet}
 
@@ -300,6 +295,7 @@
     {/snippet}
   </Menu.Trigger>
   <Menu.Content
+    alignIconColumn
     bind:ref={content}
     {align}
     {side}

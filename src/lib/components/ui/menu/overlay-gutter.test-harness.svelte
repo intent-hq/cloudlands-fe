@@ -44,6 +44,8 @@
           <Menu.SubTrigger>More choices</Menu.SubTrigger>
           <Menu.SubContent {collisionPadding} class="w-80">
             <Menu.Item onSelect={() => (value = 'banana')}>Banana</Menu.Item>
+            <Menu.Item onSelect={() => (value = 'apple')}>Apple</Menu.Item>
+            <Menu.Item onSelect={() => (value = 'cherry')}>Cherry</Menu.Item>
           </Menu.SubContent>
         </Menu.Sub>
       </Menu.Content>

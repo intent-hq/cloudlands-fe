@@ -7,6 +7,7 @@
   import { cn } from '$lib/utils.js';
   import type { WithoutChildrenOrChild } from '$lib/utils.js';
   import { OPTION_LIST_ROW_CLASS } from '$lib/styles/option-list-row';
+  import { useMenuIconColumn } from './menu-layout-context.svelte';
 
   let {
     ref = $bindable(null),
@@ -20,6 +21,7 @@
     icon?: IconDefinition;
     iconWeight?: IconWeight;
   } = $props();
+  const reserveIcon = useMenuIconColumn(() => !!icon);
 </script>
 
 <MenuPrimitive.GroupHeading
@@ -27,14 +29,20 @@
   data-slot="menu-label"
   class={cn(
     OPTION_LIST_ROW_CLASS,
-    'flex items-center gap-2 font-medium text-muted-foreground',
+    'flex items-start gap-2 font-medium text-muted-foreground',
     className,
   )}
   {...restProps}
 >
-  {#if icon}
-    <span data-slot="menu-item-leading" class="size-4 shrink-0" aria-hidden="true">
-      <Fa {icon} weight={iconWeight} size="xs" class="size-4 text-muted-foreground opacity-70" />
+  {#if icon || reserveIcon()}
+    <span
+      data-slot="menu-item-leading"
+      class="flex h-lh w-4 shrink-0 items-center justify-center"
+      aria-hidden="true"
+    >
+      {#if icon}
+        <Fa {icon} weight={iconWeight} size="xs" class="size-4 text-muted-foreground opacity-70" />
+      {/if}
     </span>
   {/if}
   {@render children?.()}

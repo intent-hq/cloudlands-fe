@@ -65,6 +65,7 @@
             id: 'transfer-to-host',
             label: 'Transfer to host',
             icon: faArrowRightArrowLeft,
+            shortcut: 'mod+T',
             onClick: () => (lastAction = 'transfer'),
           },
         ]}

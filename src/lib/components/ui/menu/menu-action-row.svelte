@@ -38,7 +38,7 @@
   )}
 >
   {#if leading}
-    <span data-slot="action-row-leading" class="flex size-4 shrink-0 items-center justify-center">
+    <span data-slot="action-row-leading" class="flex h-lh w-4 shrink-0 items-center justify-center">
       {@render leading()}
     </span>
   {/if}
@@ -51,7 +51,7 @@
     {/if}
   </span>
   {#if trailing}
-    <span data-slot="action-row-trailing" class="flex shrink-0 items-center gap-2">
+    <span data-slot="action-row-trailing" class="flex h-lh shrink-0 items-center gap-2">
       {@render trailing()}
     </span>
   {/if}

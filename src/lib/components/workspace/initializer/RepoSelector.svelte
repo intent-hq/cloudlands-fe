@@ -8,6 +8,7 @@
   import GitHubAvatar from '$lib/components/ui/GitHubAvatar.svelte';
   import Input from '$lib/components/ui/input/input.svelte';
   import * as Popover from '$lib/components/ui/popover';
+  import { useDialogPortalTarget } from '$lib/components/ui/dialog';
   import * as Tabs from '$lib/components/ui/tabs';
   import { IntentMarkLoader } from '$lib/components/ui/indicators';
   import { debugConfig } from '$lib/config/debug';
@@ -81,6 +82,7 @@
   import { selectWorkspaceItems } from '$store/renderer/slices/workspace/workspace-selectors';
 
   const logger = createLogger('RepoSelector');
+  const dialogPortalTarget = useDialogPortalTarget();
 
   // Effective isolated-checkout mode (worktree vs CoW clone) for creation copy.
   // Re-resolves when workspace items hydrate (cowSupported is read off them).
@@ -1483,6 +1485,8 @@
       onkeydown={(event) => {
         if (event.key === 'Enter') event.stopPropagation();
       }}
+      portalProps={{ to: dialogPortalTarget() }}
+      strategy={dialogPortalTarget() ? 'absolute' : 'fixed'}
       portal
     >
       <!-- Header -->

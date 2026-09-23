@@ -366,7 +366,7 @@
         onSelect={() => handleActionClick(action.id)}
         textValue={action.label}
       >
-        <span class="flex size-4 shrink-0 items-center justify-center" aria-hidden="true">
+        {#snippet leading()}
           {#if action.iconBase64}
             <img src="data:image/png;base64,{action.iconBase64}" alt="" class="size-4" />
           {:else if action.icon}
@@ -378,7 +378,7 @@
               class="size-4 text-muted-foreground"
             />
           {/if}
-        </span>
+        {/snippet}
         <span class="min-w-0 flex-1 truncate">{action.label}</span>
         {#if action.shortcut}
           <kbd class="type-caption ml-4 text-muted-foreground" aria-hidden="true"
@@ -393,12 +393,7 @@
 {#if embedded}
   {#if openActions.length}
     <Menu.Sub>
-      <Menu.SubTrigger>
-        <Fa
-          icon={faArrowUpRightFromSquare}
-          size="xs"
-          class="w-4 text-muted-foreground opacity-70"
-        />
+      <Menu.SubTrigger icon={faArrowUpRightFromSquare}>
         <span>{m.ui_openCombo_openInApp_tooltip()}</span>
       </Menu.SubTrigger>
       <Menu.SubContent class="w-60">

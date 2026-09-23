@@ -1,6 +1,7 @@
 import type { Locator } from '@playwright/test';
 import { expect, test } from '../../../../test/ct-test';
 import Harness from './ActionMenuAlignmentHarness.svelte';
+import { expectDestructiveMenuInk, expectMenuFirstLine } from '../../../../test/menu-geometry';
 
 async function textLeft(label: Locator) {
   return label.evaluate((element) => {
@@ -12,6 +13,56 @@ async function textLeft(label: Locator) {
     );
   });
 }
+
+test('icons, shortcuts, checks and submenu arrows align with the first label line above descriptions', async ({
+  mount,
+  page,
+}, testInfo) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await page.setViewportSize({ width: 420, height: 850 });
+  await mount(Harness, { props: { multiline: true } });
+  const trigger = page.getByRole('button', { name: 'Actions', exact: true });
+  await trigger.click();
+  const root = page.getByRole('menu', { name: 'Workspace menu', exact: true });
+  await expect(root).toBeVisible();
+  await page.evaluate(() => document.fonts.ready);
+  for (const name of ['Locked', 'Show details', 'Compact', 'More']) {
+    const row = root
+      .locator('[data-menu-item]')
+      .filter({ has: page.getByText(name, { exact: true }) });
+    await row.scrollIntoViewIfNeeded();
+    await expect(row).toHaveAttribute('aria-disabled', 'true');
+    expect((await row.boundingBox())!.height).toBeGreaterThan(40);
+    await expectMenuFirstLine(row, row.getByText(name, { exact: true }));
+  }
+  await expectDestructiveMenuInk(root.getByRole('menuitem', { name: 'Delete', exact: true }));
+  await testInfo.attach('action-menu-first-line', {
+    body: await root.screenshot(),
+    contentType: 'image/png',
+  });
+  await page.keyboard.press('Escape');
+  await expect(trigger).toBeFocused();
+});
+
+test('removing the last visible icon releases the column while an open child keeps its own column', async ({
+  mount,
+  page,
+}) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  const component = await mount(Harness, { props: { iconSource: 'root' } });
+  await page.getByRole('button', { name: 'Actions', exact: true }).click();
+  const root = page.getByRole('menu', { name: 'Workspace menu', exact: true });
+  const label = root.getByText('Rename', { exact: true });
+  await expect.poll(() => textInset(label)).toBe(24);
+  await component.update({ props: { iconSource: 'submenu' } });
+  await expect.poll(() => textInset(label)).toBe(0);
+  await root.getByRole('menuitem', { name: 'More', exact: true }).focus();
+  await page.keyboard.press('ArrowRight');
+  const child = page.getByRole('menuitem', { name: 'Export', exact: true });
+  await expect(child).toBeFocused();
+  await expect.poll(() => textInset(child.getByText('Export', { exact: true }))).toBe(24);
+  expect(await textInset(label)).toBe(0);
+});
 
 async function textInset(label: Locator) {
   return label.evaluate((element) => {

@@ -25,10 +25,11 @@ async function expectGutter(surface: Locator, gutter = 8) {
 
 for (const { name, width, ...props } of [
   { name: 'top-left default portal', width: 900, edge: 'left' },
+  { name: 'top-right inline flip', width: 900, edge: 'right', portal: false },
   { name: 'bottom-right inline', width: 900, edge: 'right', bottom: true, portal: false },
   { name: 'narrow bottom-right', width: 200, edge: 'right', bottom: true },
 ] as const) {
-  test(`menu and submenu keep viewport gutters at ${name}`, async ({ mount, page }) => {
+  test(`menu and submenu keep viewport gutters at ${name}`, async ({ mount, page }, testInfo) => {
     await page.emulateMedia({ reducedMotion: 'reduce' });
     await page.setViewportSize({ width, height: 480 });
     await mount(OverlayGutterHarness, { props });
@@ -41,8 +42,23 @@ for (const { name, width, ...props } of [
     await page.keyboard.press('ArrowRight');
     const child = page.getByRole('menuitem', { name: 'Banana', exact: true });
     await expect(child).toBeFocused();
-    await expectGutter(page.locator('[data-slot="menu-sub-content"]'));
+    const submenu = page.locator('[data-slot="menu-sub-content"]');
+    await expectGutter(submenu);
     await expectGutter(root);
+    if (name === 'top-left default portal' || name === 'top-right inline flip') {
+      await expect(submenu).toHaveAttribute('data-side', props.edge === 'left' ? 'right' : 'left');
+      await expect
+        .poll(async () => {
+          const parentBounds = await more.boundingBox();
+          const childBounds = await child.boundingBox();
+          return Math.abs(parentBounds!.y - childBounds!.y);
+        })
+        .toBeLessThanOrEqual(1);
+      await testInfo.attach('first-row-aligned-submenu', {
+        body: await page.screenshot(),
+        contentType: 'image/png',
+      });
+    }
     await child.click();
     await expect(page.getByLabel('Selected fruit')).toHaveText('banana');
     await expect(page.getByRole('menu')).toHaveCount(0);

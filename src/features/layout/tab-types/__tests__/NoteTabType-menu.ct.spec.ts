@@ -1,5 +1,11 @@
 import { expect, test } from '../../../../test/ct-test';
 import Harness from './mocks/NotePanelMenuHarness.svelte';
+import {
+  expectDestructiveMenuInk,
+  expectMenuFirstLine,
+  expectMenuLabelColumn,
+  menuTextGeometry,
+} from '../../../../test/menu-geometry';
 
 test('production note actions keep rounded surfaces and keyboard state across both entry points', async ({
   mount,
@@ -59,6 +65,14 @@ test('production note actions keep rounded surfaces and keyboard state across bo
     expect(parseFloat(surface.radius)).toBeGreaterThan(0);
     expect(surface).toMatchObject({ contained: true, portalled: true });
     surfaces.push(surface);
+    await expectMenuLabelColumn(root);
+    for (const row of await root.locator('[data-slot="menu-command-item"]').all()) {
+      await row.scrollIntoViewIfNeeded();
+      await expectMenuFirstLine(row, row);
+    }
+    await expectDestructiveMenuInk(
+      root.getByRole('menuitem', { name: 'Delete note', exact: true }),
+    );
     await testInfo.attach(`note-${entry}-root`, {
       body: await page.screenshot(),
       contentType: 'image/png',
@@ -71,6 +85,10 @@ test('production note actions keep rounded surfaces and keyboard state across bo
     await serif.focus();
     await page.keyboard.press('Enter');
     await expect(serif).toHaveAttribute('aria-checked', 'true');
+    await expectMenuLabelColumn(fontMenu);
+    const childText = await menuTextGeometry(serif);
+    const parentText = await menuTextGeometry(fontTrigger);
+    expect(parentText.left - childText.left).toBeCloseTo(24, 0);
     await expect(root).toBeVisible();
     expect(await fontMenu.evaluate((node) => getComputedStyle(node).borderRadius)).toBe(
       surface.radius,
@@ -101,6 +119,29 @@ test('production note actions keep rounded surfaces and keyboard state across bo
     body: JSON.stringify(surfaces),
     contentType: 'application/json',
   });
+  await trigger.click();
+  const viewTrigger = root.getByRole('menuitem', { name: /^Note view/ });
+  await viewTrigger.focus();
+  await page.keyboard.press('ArrowRight');
+  const viewMenu = page.getByRole('menu', { name: 'Note view', exact: true });
+  const preview = viewMenu.getByRole('menuitemradio', { name: 'Rendered preview', exact: true });
+  await preview.click();
+  await expect(preview).toHaveAttribute('aria-checked', 'true');
+  await page.keyboard.press('Escape');
+  const spellcheck = root.getByRole('menuitemcheckbox', { name: 'Spellcheck', exact: true });
+  await expect(spellcheck).toHaveAttribute('aria-disabled', 'true');
+  await expectMenuLabelColumn(root);
+  const description = spellcheck.locator('[id][aria-hidden="true"]');
+  const labelBox = await menuTextGeometry(spellcheck);
+  const descriptionBox = (await description.boundingBox())!;
+  const menuBox = (await root.boundingBox())!;
+  expect(descriptionBox.x - menuBox.x).toBeCloseTo(labelBox.left, 0);
+  await testInfo.attach('note-disabled-description', {
+    body: await root.screenshot(),
+    contentType: 'image/png',
+  });
+  await page.keyboard.press('Escape');
+  await expect(trigger).toBeFocused();
   await trigger.click();
   const copy = root.getByRole('menuitem', { name: /Copy full note/i });
   await copy.focus();

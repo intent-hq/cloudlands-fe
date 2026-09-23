@@ -1,8 +1,32 @@
 import { test, expect } from '../../../../test/ct-test';
 import SidebarMenuHarness from './SidebarMenuHarness.svelte';
+import { expectDestructiveMenuInk, expectMenuFirstLine } from '../../../../test/menu-geometry';
 
 type Page = Parameters<Parameters<typeof test.beforeEach>[1]>[0]['page'];
 type Locator = ReturnType<Page['locator']>;
+
+test('right-click descriptions keep the icon and shortcut centered on the first label line', async ({
+  mount,
+  page,
+}, testInfo) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await page.setViewportSize({ width: 360, height: 600 });
+  const component = await mount(SidebarMenuHarness, { props: { multiline: true } });
+  const trigger = component.getByRole('button', { name: 'Workspace', exact: true });
+  await trigger.click({ button: 'right' });
+  const root = page.getByRole('menu', { name: 'Workspace actions' });
+  const locked = root.getByRole('menuitem', { name: 'Locked', exact: true });
+  await expect(locked).toBeVisible();
+  await page.evaluate(() => document.fonts.ready);
+  expect((await locked.boundingBox())!.height).toBeGreaterThan(40);
+  await expectMenuFirstLine(locked, locked.getByText('Locked', { exact: true }));
+  await testInfo.attach('context-first-line', {
+    body: await root.screenshot(),
+    contentType: 'image/png',
+  });
+  await page.keyboard.press('Escape');
+  await expect(trigger).toBeFocused();
+});
 
 async function anatomy(menu: Locator) {
   return menu.evaluate((element) => {
@@ -69,6 +93,7 @@ for (const theme of ['light', 'dark'] as const) {
         body: await root.screenshot(),
         contentType: 'image/png',
       });
+      await expectDestructiveMenuInk(root.getByRole('menuitem', { name: 'Delete', exact: true }));
       const more = page.getByRole('menuitem', { name: 'More', exact: true });
       await more.hover();
       const child = page.getByRole('menuitem', { name: 'Export', exact: true });

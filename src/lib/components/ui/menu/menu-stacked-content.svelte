@@ -47,7 +47,8 @@
         <SubTrigger icon={item.icon} disabled={item.disabled} class={item.class}>
           <span class="min-w-0 flex-1 truncate">{item.label}</span>
           {#if item.shortcut}
-            <span class="ml-5" aria-hidden="true"><ShortcutChip>{item.shortcut}</ShortcutChip></span
+            <span class="ml-5 flex h-lh shrink-0 items-center" aria-hidden="true"
+              ><ShortcutChip>{item.shortcut}</ShortcutChip></span
             >
           {/if}
         </SubTrigger>

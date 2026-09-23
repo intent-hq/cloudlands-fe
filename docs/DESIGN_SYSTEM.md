@@ -359,6 +359,12 @@ and descriptions are left-aligned; trailing shortcuts and indicators keep their 
 When any visible row has a leading icon, reserve that icon column across the entire popup,
 including group headings and rows separated by dividers. Descriptions align with their labels.
 Each submenu decides independently; entirely iconless popups do not reserve an icon column.
+Align leading icons and trailing shortcuts with the first line of the label, not the vertical
+center of a multiline label or description. Keep this contract in shared row anatomy so
+composed panel menus and action-model menus behave the same way.
+Destructive leading icons inherit the label's destructive color, including hover and focus.
+Submenus prefer the right side and align their first row with the parent row; viewport
+collisions may flip or shift them, while preserving the viewport gutter.
 Menus must fit the viewport, scroll internally, support keyboard/typeahead navigation, and
 return focus without stealing it from a dialog or destination opened by a command.
 Verify parity with the same domain model
