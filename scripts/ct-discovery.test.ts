@@ -15,7 +15,8 @@ const navigatorTestDir = path.join(repoRoot, 'src/lib/components/chat/__tests__'
 // Importing the navigator spec under vitest walks its real import graph. The CT
 // harness is replaced by an inert stub (every `test.*` call is a no-op) and the
 // production integration fixture by a factory that records the import, so the
-// spec proves which host it mounts without its source being read as text.
+// test proves which host module the spec imports (import-graph coverage) without
+// its source being read as text.
 const fixtureImports = vi.hoisted(() => ({ integrationHost: false }));
 
 vi.mock('../src/test/ct-test', () => {
@@ -60,9 +61,9 @@ describe('playwright component-test discovery (run-ct-tests.mjs)', () => {
     // First run compiles the CT transform and is slow; be generous.
   }, 120_000);
 
-  // The "production path" navigator test listed above must mount the integration
-  // host; the legacy standalone host must stay deleted.
-  it('keeps navigator discovery on the production integration fixture', async () => {
+  // The navigator spec listed above must import the production integration host
+  // module; the legacy standalone host must stay deleted.
+  it('imports the production integration host from the navigator spec', async () => {
     await import('../src/lib/components/chat/__tests__/chat-message-navigator.ct.spec.ts');
     expect(fixtureImports.integrationHost).toBe(true);
     expect(existsSync(path.join(navigatorTestDir, 'ChatMessageNavigatorHost.svelte'))).toBe(false);
