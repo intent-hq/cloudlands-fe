@@ -19,7 +19,8 @@ for (const theme of ['light', 'dark'] as const) {
 
         for (const [testId, previousSelector, expectedGap] of [
           ['attention-card-boundary', '[data-testid="attention-card"]', 20],
-          ['notice-boundary', '.discussion-request-notice', 24],
+          // The borderless notice no longer adds the old card's 8px bottom margin.
+          ['notice-boundary', '.discussion-request-notice', 16],
           ['prose-boundary', '[data-message-content-block="text"]', 16],
           ['message-content-boundary', '[data-testid="message-content"]', 20],
           ['streaming-boundary', '[data-message-content-block="text"]', 16],

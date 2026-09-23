@@ -1,3 +1,5 @@
+<!-- @catalog-exempt: owner avatar decorative by default, with image-failure fallback covered by __tests__/GitHubAvatar.test.ts; no catalog fixtures yet -->
+
 <script lang="ts">
   /**
    * GitHub owner avatar with a load-failure fallback.

@@ -454,10 +454,11 @@ which is also part of `pnpm run lint`.
 ### Design-system ESLint guidance
 
 The `intent/*` design-system rules run at error severity. Every error names the supported replacement
-and its `/sandbox/<slug>` catalog page. `eslint-rules/design-system/baseline.json` records only scoped
-exceptions with an owner and reason; remove files as callers migrate, and never add a new violating
-file. The baseline test fails when a rule finds a file outside that checked-in set, and CI compares the
-file with the PR base revision to reject baseline additions while allowing removals.
+and its `/sandbox/<slug>` catalog page. `eslint-rules/baselines/<rule>/<source path>.json` records
+only scoped exceptions, one entry file per exempted source file with an owner and reason (and a
+`count` cap where the rule ratchets per file); delete the entry file as its caller migrates, and never
+add a new one. The baseline test fails when a rule finds a file outside that checked-in set, and CI
+compares the tree with the PR base revision to reject baseline additions while allowing removals.
 
 | Rule                                     | Replace with                                         |
 | ---------------------------------------- | ---------------------------------------------------- |

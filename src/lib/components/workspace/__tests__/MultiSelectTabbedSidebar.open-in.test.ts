@@ -6,6 +6,7 @@ import { cleanup, fireEvent, render, waitFor, within } from '@testing-library/sv
 import { tick } from 'svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AgentSession } from '$shared/types';
+import { m } from '$shared/paraglide/messages.js';
 import { spring } from '$lib/motion';
 
 import type { InstalledEditor } from '$store/renderer/slices/external-editors/external-editors-slice';
@@ -153,6 +154,9 @@ vi.mock('$store/renderer/slices/workspace-agents/workspace-agents-selectors', ()
   selectDelegatedCounts: mocks.selector(null),
   selectLoadedDelegatedParentIds: mocks.selector({}),
   selectLoadingDelegatedParentIds: mocks.selector({}),
+  selectOrphanedDelegatedAgentsLoaded: mocks.selector(false),
+  selectOrphanedDelegatedAgentIds: mocks.selector({}),
+  selectIsLoadingOrphanedDelegatedAgents: mocks.selector(false),
   selectBackgroundAgentsLoaded: mocks.selector(false),
   selectIsLoadingBackgroundAgents: mocks.selector(false),
   selectWorkspaceHasUnreadForegroundAgents: mocks.selector(false),
@@ -1447,10 +1451,13 @@ describe('MultiSelectTabbedSidebar Files Open In', () => {
     const agentsDescription = TAB_DEFINITIONS.find((tab) => tab.id === 'agents')!.description;
     const Sidebar = (await import('../MultiSelectTabbedSidebar.svelte')).default;
 
+    const orchestrationLabel = m.workspace_initialAgentPicker_teamMode_label();
+
     mocks.selectedTabs = ['shell'];
     const shell = render(Sidebar, { props: { workspaceId: 'ws-1' } });
     const shellCard = shell.container.querySelector<HTMLElement>('.sidebar-expanded-card')!;
     expect(within(shellCard).getByText(shellDescription)).toBeTruthy();
+    expect(shell.queryByText(orchestrationLabel)).toBeNull();
 
     cleanup();
     mocks.agents = [makeAgent('agent-1')];
@@ -1459,5 +1466,8 @@ describe('MultiSelectTabbedSidebar Files Open In', () => {
     const agentsCard = agents.container.querySelector<HTMLElement>('.sidebar-expanded-card')!;
     expect(within(agentsCard).queryByText(agentsDescription)).toBeNull();
     expect(within(agentsCard).queryByText(shellDescription)).toBeNull();
+    // The initializer's orchestration mode copy belongs to the picker, not the sidebar.
+    expect(agents.queryByText(orchestrationLabel)).toBeNull();
+    expect(agents.queryByLabelText(orchestrationLabel)).toBeNull();
   });
 });

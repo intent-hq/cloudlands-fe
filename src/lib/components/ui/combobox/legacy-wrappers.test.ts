@@ -1,12 +1,20 @@
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import LegacyWrappersHarness from './legacy-wrappers.test-harness.svelte';
+import type { ComboboxOption } from './types';
 
 describe('legacy searchable and grouped compatibility wrappers', () => {
   afterEach(cleanup);
 
   it('preserves searchable-select async search and custom-value entry', async () => {
-    const onSearch = vi.fn(async () => [{ value: 'remote', label: 'Remote result' }]);
+    let settleCustomSearch!: (options: ComboboxOption[]) => void;
+    const customSearch = new Promise<ComboboxOption[]>((resolve) => {
+      settleCustomSearch = resolve;
+    });
+    const onSearch = vi
+      .fn()
+      .mockResolvedValueOnce([{ value: 'remote', label: 'Remote result' }])
+      .mockReturnValueOnce(customSearch);
     const onChange = vi.fn();
     render(LegacyWrappersHarness, {
       props: { mode: 'select', selectSearch: onSearch, onChange },
@@ -18,8 +26,18 @@ describe('legacy searchable and grouped compatibility wrappers', () => {
     expect(onSearch).toHaveBeenCalledWith('remote');
 
     await fireEvent.input(input, { target: { value: 'custom-person' } });
+    expect(input.getAttribute('aria-busy')).toBe('true');
     await fireEvent.keyDown(input, { key: 'Enter' });
-    await waitFor(() => expect(onChange).toHaveBeenCalledWith('custom-person'));
+    expect(onChange).not.toHaveBeenCalled();
+    expect(input.getAttribute('aria-expanded')).toBe('true');
+    expect((input as HTMLInputElement).value).toBe('custom-person');
+    settleCustomSearch([]);
+    const custom = await screen.findByRole('option', { name: 'Use custom-person' });
+    await waitFor(() => expect(input.getAttribute('aria-activedescendant')).toBe(custom.id));
+    expect(onChange).not.toHaveBeenCalled();
+    await fireEvent.keyDown(input, { key: 'Enter' });
+    await waitFor(() => expect(onChange).toHaveBeenCalledExactlyOnceWith('custom-person'));
+    expect(input.getAttribute('aria-expanded')).toBe('false');
   });
 
   it('preserves searchable-combobox callbacks, search, snippets, and rename context', async () => {

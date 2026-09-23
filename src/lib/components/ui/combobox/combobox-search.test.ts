@@ -29,6 +29,102 @@ async function search(query: string) {
 describe('Combobox search and controlled selection', () => {
   afterEach(cleanup);
 
+  for (const pointerType of ['mouse', 'touch'] as const) {
+    it.each([
+      { selection: 'changed single', value: 'grace', multiple: false, expectedValue: 'ada' },
+      { selection: 'same single', value: 'ada', multiple: false, expectedValue: 'ada' },
+      {
+        selection: 'multiple selection',
+        value: ['grace'],
+        multiple: true,
+        expectedValue: ['grace', 'ada'],
+      },
+      {
+        selection: 'multiple deselection',
+        value: ['grace', 'ada'],
+        multiple: true,
+        expectedValue: ['grace'],
+      },
+    ])(
+      `blocks pending ${pointerType} $selection until a new activation after search settles`,
+      async ({ selection, value, multiple, expectedValue }) => {
+        const pending = deferred();
+        const onchange = vi.fn();
+        const oncommit = vi.fn();
+        const onquerychange = vi.fn();
+        const result = { value: 'ada', label: 'Ada result', data: { source: 'remote' } };
+        render(Combobox, {
+          ariaLabel: 'People',
+          options,
+          value,
+          multiple,
+          onchange,
+          oncommit,
+          onquerychange,
+          onsearch: () => pending.promise,
+        });
+        const input = await search('Ada');
+        const stale = screen.getByRole('option', { name: 'Ada Lovelace' });
+        expect(stale.getAttribute('aria-disabled')).toBe('true');
+        await fireEvent.keyDown(input, { key: 'Enter' });
+        await fireEvent.pointerUp(stale, { button: 0, pointerType });
+        await fireEvent.click(stale);
+        expect(onchange).not.toHaveBeenCalled();
+        expect(oncommit).not.toHaveBeenCalled();
+        expect(onquerychange.mock.calls).toEqual([['Ada']]);
+        expect(input.value).toBe('Ada');
+        expect(input.getAttribute('aria-expanded')).toBe('true');
+        expect(input.getAttribute('aria-busy')).toBe('true');
+
+        pending.resolve([result]);
+        const settled = await screen.findByRole('option', { name: 'Ada result' });
+        expect(input.getAttribute('aria-busy')).toBe('false');
+        expect(input.getAttribute('aria-expanded')).toBe('true');
+        expect(input.value).toBe('Ada');
+        expect(onchange).not.toHaveBeenCalled();
+        expect(oncommit).not.toHaveBeenCalled();
+        await fireEvent.pointerUp(settled, { button: 0, pointerType });
+        await fireEvent.click(settled);
+        expect(oncommit).toHaveBeenCalledExactlyOnceWith(expectedValue, result);
+        if (selection === 'same single') expect(onchange).not.toHaveBeenCalled();
+        else if (multiple) expect(onchange).toHaveBeenCalledExactlyOnceWith(expectedValue);
+        else expect(onchange).toHaveBeenCalledExactlyOnceWith(expectedValue, result);
+        expect(input.getAttribute('aria-expanded')).toBe(String(multiple));
+        expect(input.value).toBe(multiple ? '' : 'Ada Lovelace');
+      },
+    );
+  }
+
+  it('does not arm a pending touch release for a click after results settle', async () => {
+    const pending = deferred();
+    const onchange = vi.fn();
+    const oncommit = vi.fn();
+    render(Combobox, {
+      ariaLabel: 'People',
+      value: 'ada',
+      options,
+      onchange,
+      oncommit,
+      // Retain the row identity so a wrongly armed native click listener survives settlement.
+      onsearch: () => pending.promise.then((options) => [{ key: 'options', label: '', options }]),
+    });
+    const input = await search('Ada');
+    const option = screen.getByRole('option', { name: 'Ada Lovelace' });
+    await fireEvent.pointerUp(option, { button: 0, pointerType: 'touch' });
+    pending.resolve([options[0]]);
+    await waitFor(() => expect(input.getAttribute('aria-busy')).toBe('false'));
+    await fireEvent.click(option);
+    expect(onchange).not.toHaveBeenCalled();
+    expect(oncommit).not.toHaveBeenCalled();
+    expect(input.getAttribute('aria-expanded')).toBe('true');
+    expect(input.value).toBe('Ada');
+    await fireEvent.pointerUp(option, { button: 0, pointerType: 'touch' });
+    await fireEvent.click(option);
+    expect(oncommit).toHaveBeenCalledExactlyOnceWith('ada', options[0]);
+    expect(onchange).not.toHaveBeenCalled();
+    expect(input.getAttribute('aria-expanded')).toBe('false');
+  });
+
   it.each(['throw', 'reject'] as const)(
     'settles a search %s and retries the same query',
     async (failure) => {

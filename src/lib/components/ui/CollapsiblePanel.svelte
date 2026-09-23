@@ -1,3 +1,5 @@
+<!-- @catalog-exempt: product-category wrapper tracked by CollapsiblePanel.meta.ts and slated for Accordion; not in the canonical manifest -->
+
 <script lang="ts">
   import { faChevronDown } from '@fortawesome/free-solid-svg-icons';
   import { onMount } from 'svelte';

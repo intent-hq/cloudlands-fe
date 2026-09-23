@@ -20,7 +20,7 @@ async function openWorkspaceActionsMenu(component: Locator, page: Page) {
   await component.getByRole('button', { name: 'Workspace actions' }).click();
   const menu = page.getByRole('menu');
   await expect(menu).toBeVisible();
-  await expect(menu.getByRole('button').first()).toBeVisible();
+  await expect(menu.getByRole('menuitem').first()).toBeVisible();
   await expect.poll(async () => isPositionedOnPage(await menu.boundingBox())).toBe(true);
   return menu;
 }
@@ -53,7 +53,7 @@ async function expectMenuInsideCollisionPadding(menu: Locator, page: Page) {
 
 function collectTruncatedLabels(menu: Locator) {
   return menu.evaluate((node) =>
-    Array.from(node.querySelectorAll<HTMLElement>('button span'))
+    Array.from(node.querySelectorAll<HTMLElement>('[role="menuitem"] span'))
       .filter((span) => getComputedStyle(span).textOverflow === 'ellipsis')
       .map((span) => ({
         text: span.textContent?.trim() ?? '',
@@ -189,7 +189,7 @@ test('keeps the workspace actions menu inside the collision padding at a 320px v
   const menu = await openWorkspaceActionsMenu(component, page);
   const box = await expectMenuInsideCollisionPadding(menu, page);
   // The 12rem row floor still applies: a 320px viewport leaves room for it.
-  const row = await settledBoundingBox(menu.getByRole('button').first());
+  const row = await settledBoundingBox(menu.getByRole('menuitem').first());
   expect(row.width).toBeGreaterThanOrEqual(MENU_ROW_MIN_WIDTH_PX - 0.5);
 
   await page.screenshot({ path: testInfo.outputPath('workspace-actions-menu-320.png') });
@@ -209,7 +209,7 @@ test('shows every workspace actions menu label untruncated at a normal viewport'
 
   const menu = await openWorkspaceActionsMenu(component, page);
   const box = await expectMenuInsideCollisionPadding(menu, page);
-  const row = await settledBoundingBox(menu.getByRole('button').first());
+  const row = await settledBoundingBox(menu.getByRole('menuitem').first());
   expect(row.width).toBeGreaterThanOrEqual(MENU_ROW_MIN_WIDTH_PX - 0.5);
 
   const labels = await collectTruncatedLabels(menu);
@@ -222,4 +222,45 @@ test('shows every workspace actions menu label untruncated at a normal viewport'
     body: JSON.stringify({ viewport: page.viewportSize(), menu: box, row, labels }),
     contentType: 'application/json',
   });
+});
+
+test('aligns the Open in flyout borders and first rows and preserves keyboard return', async ({
+  mount,
+  page,
+}, testInfo) => {
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  const component = await mount(WorkspaceProgressCardEditGeometryHost, {
+    props: { desktop: true },
+    hooksConfig: { mockBackend: {} },
+  });
+  const root = await openWorkspaceActionsMenu(component, page);
+  const rootBox = await settledBoundingBox(root);
+  const parent = root.getByRole('menuitem', { name: 'Open in...', exact: true });
+  await parent.focus();
+  await page.keyboard.press('ArrowRight');
+
+  const editor = page.getByRole('menuitem', { name: 'Open in Visual Studio Code', exact: true });
+  await expect(editor).toBeFocused();
+  const submenu = page.getByRole('menu').filter({ has: editor });
+  const rowBox = await settledBoundingBox(parent);
+  const editorBox = await settledBoundingBox(editor);
+  const submenuBox = await settledBoundingBox(submenu);
+  expect(Math.abs(submenuBox.y - rootBox.y)).toBeLessThanOrEqual(0.5);
+  expect(Math.abs(editorBox.y - rowBox.y)).toBeLessThanOrEqual(0.5);
+  // Collision handling may flip the flyout to the left; either side stays outside its parent.
+  expect(
+    submenuBox.x >= rowBox.x + rowBox.width || submenuBox.x + submenuBox.width <= rowBox.x,
+  ).toBe(true);
+  expect(submenuBox.y + submenuBox.height).toBeLessThanOrEqual(page.viewportSize()!.height);
+
+  await page.screenshot({ path: testInfo.outputPath('workspace-open-in-top-aligned.png') });
+  await testInfo.attach('submenu geometry', {
+    body: JSON.stringify({ root: rootBox, parent: rowBox, submenu: submenuBox, editor: editorBox }),
+    contentType: 'application/json',
+  });
+  await page.keyboard.press('ArrowLeft');
+  await expect(editor).toHaveCount(0);
+  await expect(parent).toBeFocused();
+  await expect(root).toBeVisible();
 });

@@ -1,5 +1,11 @@
 <script lang="ts" module>
-  export const intentNavigationIconNames = ['spaces', 'tabs', 'settings', 'dandelion'] as const;
+  export const intentNavigationIconNames = [
+    'spaces',
+    'tabs',
+    'settings',
+    'dandelion',
+    'sidebar',
+  ] as const;
 
   export type IntentNavigationIconName = (typeof intentNavigationIconNames)[number];
 </script>
@@ -25,7 +31,18 @@
   focusable="false"
   data-navigation-icon={name}
 >
-  {#if name === 'spaces'}
+  {#if name === 'sidebar'}
+    <rect
+      x="1.75"
+      y="2.75"
+      width="12.5"
+      height="10.5"
+      rx="1.5"
+      stroke="currentColor"
+      stroke-width="1.5"
+    />
+    <path d="M5.75 2.75V13.25" stroke="currentColor" stroke-width="1.5" />
+  {:else if name === 'spaces'}
     <rect
       x="1.75"
       y="3.75"

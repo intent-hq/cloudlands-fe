@@ -14,6 +14,7 @@ export { IntentMarkLoader } from '$lib/components/ui/indicators';
 export { Label } from '$lib/components/ui/label';
 export * as Menu from '$lib/components/ui/menu';
 export * as Popover from '$lib/components/ui/popover';
+export { default as PrincipalAvatar } from '$lib/components/ui/PrincipalAvatar.svelte';
 export { Select } from '$lib/components/ui/select';
 export { Skeleton } from '$lib/components/ui/skeleton';
 export { Slider } from '$lib/components/ui/slider';

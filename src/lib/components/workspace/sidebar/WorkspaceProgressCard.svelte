@@ -86,6 +86,7 @@
   import { store as appStore } from '$store/renderer/store';
   import { openTransferModal } from '$store/renderer/slices/workspace-transfer/workspace-transfer-slice';
   import { openShareDialog } from '$store/renderer/slices/workspace-share/workspace-share-slice';
+  import { selectLabsMultiplayerEnabled } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
   import { selectWorkspaceDrivingClient } from '$store/renderer/slices/browser-clients/browser-clients-selectors';
   import { setWorkspaceBrowserClientRequested } from '$store/renderer/slices/browser-clients/browser-clients-slice';
   import { selectWorkspaceHasBrowserTabs } from '$store/renderer/slices/panel-layout/panel-layout-selectors';
@@ -129,6 +130,9 @@
   // Owner-only actions (Transfer/Download, Archive, Delete) are refused by the
   // daemon for collaborators (`require_owner`), so the menu hides them up front.
   const hidesOwnerActions$ = selectHidesOwnerWorkspaceActions(workspaceIdStore);
+  // Sharing is a lab: the Share entry point stays hidden until the user turns
+  // the Multiplayer lab on in Settings → Labs (local preference, off by default).
+  const labsMultiplayerEnabled$ = selectLabsMultiplayerEnabled();
   // BE-owned task progress rollup served verbatim from the workspace-tasks slice
   // (PROTOCOL §5.4 `task.list`.stats). The renderer never re-derives counts.
   const taskStats$ = selectWorkspaceTaskProgress(workspaceIdStore);
@@ -431,8 +435,11 @@
   // Owner-only (PROTOCOL §5.1 `myRole`): a missing role never offers Share, and
   // neither does a guest window or a window whose identity has not settled
   // (`selectHidesOwnerWorkspaceActions`), whatever `myRole` the row carries.
+  // On top of that the Multiplayer lab must be on: with it off (the default)
+  // even the owner gets no Share item — and no presence-avatar fallback either,
+  // since that fallback reuses this action.
   const shareAction: MenuAction | null = $derived(
-    $workspace?.myRole === 'owner' && !$hidesOwnerActions$
+    $labsMultiplayerEnabled$ && $workspace?.myRole === 'owner' && !$hidesOwnerActions$
       ? {
           id: 'share-workspace',
           label: m.workspace_share_menu_label(),
@@ -910,7 +917,8 @@
             bind:value={editedTitle}
             onblur={saveTitle}
             onkeydown={handleTitleKeydown}
-            class="edit-input relative z-10 text-xl font-semibold text-foreground bg-transparent
+            noFocusStyle
+            class="edit-input relative z-10 text-xl font-semibold text-foreground bg-transparent hover:bg-transparent border-none
                py-0.5 rounded
                outline-none w-full leading-normal
                focus:ring-none! focus:outline-none!
@@ -973,7 +981,7 @@
               style="max-width: min(20rem, calc(var(--bits-dropdown-menu-content-available-width, 100vw) - 0.625rem))"
             >
               <WorkspaceActionsMenu
-                layout="menu"
+                layout="editors-submenu"
                 filePath={$workspace?.worktreePath ||
                   $workspace?.repositoryPath ||
                   $workspace?.path ||
@@ -1240,10 +1248,11 @@
               onblur={saveStatusMessage}
               onkeydown={handleStatusMessageKeydown}
               disabled={isSavingStatusMessage}
+              noFocusStyle
               maxlength={WORKSPACE_STATUS_MESSAGE_MAX_LENGTH}
               rows={1}
               aria-label={m.workspace_sidebarHeader_status_ariaLabel()}
-              class="edit-input type-body relative z-10 min-h-0 max-h-32 w-full resize-none overflow-hidden whitespace-pre-wrap break-words rounded border-none bg-transparent py-0.5 text-foreground outline-none leading-snug
+              class="edit-input type-body relative z-10 min-h-0 max-h-32 w-full resize-none overflow-hidden whitespace-pre-wrap break-words rounded border-none bg-transparent hover:bg-transparent py-0.5 text-foreground outline-none leading-snug
                      focus:ring-none! focus:outline-none! transition-all duration-spring-moderate ease-spring-moderate motion-reduce:transition-none disabled:opacity-50"
               style="field-sizing: content;"
               placeholder={m.workspace_sidebarHeader_addStatus_placeholder()}

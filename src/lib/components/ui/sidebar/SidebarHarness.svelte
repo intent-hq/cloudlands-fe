@@ -8,6 +8,7 @@
     variant = 'sidebar',
     rail = true,
     side = 'left',
+    collapsible = 'offcanvas',
     fixtureState = 'default',
     insetAs = 'main',
   }: {
@@ -16,6 +17,7 @@
     variant?: 'sidebar' | 'floating' | 'inset';
     rail?: boolean;
     side?: 'left' | 'right';
+    collapsible?: 'offcanvas' | 'icon' | 'none';
     insetAs?: 'main' | 'div';
     fixtureState?:
       | 'default'
@@ -43,13 +45,7 @@
   data-sidebar-fixture-state={fixtureState}
   class="relative h-72 !min-h-0 overflow-hidden rounded-md border border-border"
 >
-  <Sidebar.Root
-    collapsible="offcanvas"
-    {variant}
-    {rail}
-    {side}
-    class="!absolute !inset-y-0 !h-full"
-  >
+  <Sidebar.Root {collapsible} {variant} {rail} {side} class="!absolute !inset-y-0 !h-full">
     <Sidebar.Header
       orientation={fixtureState === 'header-footer-stacking' ? 'horizontal' : 'vertical'}
     >

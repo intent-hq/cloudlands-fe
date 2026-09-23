@@ -562,7 +562,8 @@
                   bind:value={editingValue}
                   onblur={saveEdit}
                   onkeydown={handleEditKeydown}
-                  class="inline-edit-input relative z-10 min-w-0 flex-1 border-none px-0 bg-transparent type-body font-normal outline-none ring-0 focus:outline-none focus:ring-0 focus-visible:outline-none focus-visible:ring-0"
+                  noFocusStyle
+                  class="inline-edit-input relative z-10 min-w-0 flex-1 border-none px-0 bg-transparent hover:bg-transparent type-body font-normal outline-none ring-0 focus:outline-none focus:ring-0 focus-visible:outline-none focus-visible:ring-0"
                   onclick={(e) => e.stopPropagation()}
                 />
               </div>

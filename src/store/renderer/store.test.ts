@@ -1,10 +1,14 @@
-import { readFileSync } from 'node:fs';
-
 import type { AgentMessage, AgentSession } from '$shared/types';
 import type { Readable } from 'svelte/store';
 import { readable, writable } from 'svelte/store';
-import type { Store } from '@augmentcode/themis/svelte-store';
+import { Store } from '@augmentcode/themis/svelte-store';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+
+const sagasModule = vi.hoisted(() => ({ loaded: vi.fn() }));
+vi.mock('./sagas', async (importOriginal) => {
+  sagasModule.loaded();
+  return importOriginal();
+});
 
 import { initAppStore, store as appStore } from './store';
 import {
@@ -76,11 +80,10 @@ beforeEach(() => {
 
 describe('configured app Store', () => {
   it('constructs the core Store without importing app sagas', () => {
-    const source = readFileSync('src/store/renderer/configured-store.ts', 'utf8');
-
-    expect(source).not.toContain('from "./sagas"');
-    expect(source).toContain('new RendererStore(');
-    expect(source).not.toContain('new Store(reducers, sagas');
+    expect(sagasModule.loaded).not.toHaveBeenCalled();
+    expect(appStore).toBeInstanceOf(Store);
+    expect(Object.getPrototypeOf(appStore)).not.toBe(Store.prototype);
+    expect(typeof appStore.getReadableState).toBe('function');
     expect(appStore).toBe(configuredStore);
   });
 

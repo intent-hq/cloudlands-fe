@@ -417,7 +417,7 @@
       tabindex="-1"
     >
       <!-- Header -->
-      <div class="px-6 py-4 border-b border-border flex items-center justify-between">
+      <div class="px-6 py-4 flex items-center justify-between">
         <h2 id="connect-modal-title" class="text-lg font-semibold">{m.modals_connect_title()}</h2>
         <Button
           variant="ghost"

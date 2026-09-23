@@ -214,6 +214,17 @@ const APP_SETTING_DEFINITIONS: readonly AppSettingDefinition[] = [
     apply: { kind: 'redux-action', action: 'userPreferences/setReduceMotionOnBattery' },
   },
   {
+    path: 'labs.multiplayer',
+    label: 'Multiplayer (Labs)',
+    description: 'Whether the experimental Multiplayer lab is enabled.',
+    category: 'labs',
+    type: 'boolean',
+    source: 'local-storage',
+    storageKey: 'labs:multiplayerEnabled',
+    defaultValue: false,
+    apply: { kind: 'redux-action', action: 'userPreferences/setLabsMultiplayerEnabled' },
+  },
+  {
     path: 'theme.activePresetId',
     label: 'Theme preset',
     description: `Active built-in color theme preset ID. Available presets: ${THEME_PRESET_OPTIONS_DESCRIPTION}.`,

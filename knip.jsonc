@@ -6,6 +6,16 @@
   "rules": {
     "duplicates": "warn",
   },
+  // Mirror the real icon alias: Knip 6.33.0's Vitest plugin cannot read alias arrays.
+  "paths": {
+    "svelte-fa": ["./src/lib/components/shared/icons/fa-proxy.ts"],
+    // Vite dev-server URL specifiers (/src/..., /test/fixtures/...) imported inside
+    // page.evaluate() in browser-based playwright specs map back to source files so knip
+    // follows them into the fixtures (cloudlands-fe#2695: a fixture importing a deleted
+    // component passed every gate because knip never reached test/**/*.svelte)
+    "/src/*": ["./src/*"],
+    "/test/*": ["./test/*"],
+  },
   "entry": [
     // Electron main process (tsconfig.main.json; package.json "main" points at its build output)
     "src/main/index.ts",
@@ -25,6 +35,8 @@
     // $app alias stubs wired in playwright-ct.config.ts ctViteConfig (alias resolution
     // is not followed by knip); playwright/index.ts is listed under "playwright-ct" below
     "playwright/app-stubs/*.ts",
+    // Explicit CT root keeps its exact-source fixture imports reachable for analysis.
+    "src/lib/components/markdown/__tests__/mermaid-label-contrast-exact-source.ct.spec.ts",
     // Loaded via <script src> in operate-patterns.visual.html (visual test harness)
     "src/lib/components/ui/card/operate-patterns.visual.ts",
     // Loaded via <script type="module"> in test/fixtures/browser-lifetime/index.html
@@ -132,7 +144,13 @@
     "playwright/**/*.ts",
   ],
   "vitest": {
-    "config": ["vitest.config.ts", "tests/integration/vitest.integration.config.ts"],
+    // The bench config's `include` names src/lib/notes/text-rebase-bench.runner.ts, an
+    // entry `test:unit` never discovers (not a test pattern)
+    "config": [
+      "vitest.config.ts",
+      "tests/integration/vitest.integration.config.ts",
+      "vitest.text-rebase-bench.config.ts",
+    ],
   },
   "playwright": {
     // Loading multiple playwright configs fails with "Requiring @playwright/test second
@@ -164,8 +182,19 @@
   },
   // System/external binaries, not npm packages: pkill/iconutil (macOS), duckdb, flatpak,
   // idea (JetBrains launcher), auggie (Augment CLI, expected on dev/CI hosts), jq (the
-  // notify-fixed-issues.sh test stub applies the script's --jq projection with it)
-  "ignoreBinaries": ["pkill", "iconutil", "duckdb", "flatpak", "idea", "auggie", "jq"],
+  // notify-fixed-issues.sh test stub applies the script's --jq projection with it),
+  // taskset (Linux util-linux; scripts/vitest-loaded.mjs pins vitest to one core with it)
+  "ignoreBinaries": [
+    "pkill",
+    "pgrep",
+    "iconutil",
+    "duckdb",
+    "flatpak",
+    "idea",
+    "auggie",
+    "jq",
+    "taskset",
+  ],
   "ignoreDependencies": [
     // Optional coverage provider: scripts/run-integration-coverage-if-available.ts probes it
     // with require.resolve and exits gracefully when absent — intentionally not declared
@@ -181,14 +210,6 @@
     // Loaded by the inlang CLI through project.inlang/settings.json "modules"
     "@inlang/plugin-message-format",
   ],
-  // Vite dev-server URL specifiers (/src/..., /test/fixtures/...) imported inside
-  // page.evaluate() in browser-based playwright specs map back to source files so knip
-  // follows them into the fixtures (cloudlands-fe#2695: a fixture importing a deleted
-  // component passed every gate because knip never reached test/**/*.svelte)
-  "paths": {
-    "/src/*": ["./src/*"],
-    "/test/*": ["./test/*"],
-  },
   // Vite dev-server /@id/<package> specifiers imported the same way — runtime URLs for
   // bare packages, not module specifiers
   "ignoreUnresolved": ["^/@id/.+"],

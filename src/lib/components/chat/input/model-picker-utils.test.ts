@@ -24,6 +24,7 @@ import {
   filterDefaultPseudoOptions,
   findModelFallbackOption,
   isDefaultPseudoModelId,
+  isProviderDisabledInSettings,
   isUserProviderSettled,
   normalizeModelIdForMatch,
   toDropdownOptions,
@@ -207,6 +208,22 @@ describe('isUserProviderSettled', () => {
       modelProvider: 'auggie',
     });
     expect(result).toBe(false);
+  });
+});
+
+describe('isProviderDisabledInSettings', () => {
+  it('is true only for an explicit providers.enabled[id] === false entry', () => {
+    expect(isProviderDisabledInSettings({ auggie: false, codex: true }, 'auggie')).toBe(true);
+    expect(isProviderDisabledInSettings({ auggie: false, codex: true }, 'codex')).toBe(false);
+  });
+
+  it('treats an absent entry (settings not hydrated yet) as not disabled', () => {
+    expect(isProviderDisabledInSettings({}, 'auggie')).toBe(false);
+    expect(isProviderDisabledInSettings({ codex: false }, 'auggie')).toBe(false);
+  });
+
+  it('is false for an empty provider id', () => {
+    expect(isProviderDisabledInSettings({ auggie: false }, '')).toBe(false);
   });
 });
 

@@ -56,7 +56,8 @@
   import { store as appStore } from '$store/renderer/store';
 
   interface Props {
-    layout?: 'list' | 'submenu' | 'menu';
+    /** Menu layouts nest app choices while keeping copy actions at the root. */
+    layout?: 'list' | 'submenu' | 'menu' | 'editors-submenu';
     iconWeight?: IconWeight;
     filePath?: string;
     workspaceId?: string;

@@ -124,51 +124,89 @@ export default defineConfig(async () => {
       ],
     },
     resolve: {
-      alias: {
-        '@': path.resolve(__dirname, './src'),
-        $lib: path.resolve(__dirname, './src/lib'),
-        $store: path.resolve(__dirname, './src/store'),
-        $features: path.resolve(__dirname, './src/features'),
-        $shared: path.resolve(__dirname, './src/shared'),
-        $app: path.resolve(__dirname, './src/__mocks__/$app'),
-        '@fortawesome/fontawesome-common-types': path.resolve(
-          __dirname,
-          './src/lib/icons/phosphor-icons.ts',
-        ),
-        '@fortawesome/fontawesome-svg-core': path.resolve(
-          __dirname,
-          './src/lib/icons/phosphor-icons.ts',
-        ),
-        '@fortawesome/free-brands-svg-icons': path.resolve(
-          __dirname,
-          './src/lib/icons/phosphor-icons.ts',
-        ),
-        '@fortawesome/free-regular-svg-icons': path.resolve(
-          __dirname,
-          './src/lib/icons/phosphor-icons.ts',
-        ),
-        '@fortawesome/free-solid-svg-icons': path.resolve(
-          __dirname,
-          './src/lib/icons/phosphor-icons.ts',
-        ),
-        'svelte-fa': path.resolve(__dirname, './src/lib/components/shared/icons/fa-proxy.ts'),
+      alias: [
+        // Match the complete worker specifiers before the API alias. Consume ?worker
+        // so Vite loads the stub as a module, not as a browser Worker wrapper.
+        {
+          find: /^monaco-editor\/editor\/editor\.worker\?worker$/,
+          replacement: path.resolve(__dirname, './src/__mocks__/monaco-worker.ts'),
+        },
+        {
+          find: /^monaco-editor\/language\/json\/json\.worker\?worker$/,
+          replacement: path.resolve(__dirname, './src/__mocks__/monaco-worker.ts'),
+        },
+        {
+          find: /^monaco-editor\/language\/css\/css\.worker\?worker$/,
+          replacement: path.resolve(__dirname, './src/__mocks__/monaco-worker.ts'),
+        },
+        {
+          find: /^monaco-editor\/language\/html\/html\.worker\?worker$/,
+          replacement: path.resolve(__dirname, './src/__mocks__/monaco-worker.ts'),
+        },
+        {
+          find: /^monaco-editor\/language\/typescript\/ts\.worker\?worker$/,
+          replacement: path.resolve(__dirname, './src/__mocks__/monaco-worker.ts'),
+        },
         // Test-only stub: avoid resolving the real monaco-editor (heavy and ESM-export sensitive)
-        'monaco-editor': path.resolve(__dirname, './src/__mocks__/monaco-editor'),
+        // Exact matching keeps other Monaco subpaths out of the bare API mock.
+        {
+          find: /^monaco-editor$/,
+          replacement: path.resolve(__dirname, './src/__mocks__/monaco-editor'),
+        },
+        { find: '@', replacement: path.resolve(__dirname, './src') },
+        { find: '$lib', replacement: path.resolve(__dirname, './src/lib') },
+        { find: '$store', replacement: path.resolve(__dirname, './src/store') },
+        { find: '$features', replacement: path.resolve(__dirname, './src/features') },
+        { find: '$shared', replacement: path.resolve(__dirname, './src/shared') },
+        { find: '$app', replacement: path.resolve(__dirname, './src/__mocks__/$app') },
+        {
+          find: '@fortawesome/fontawesome-common-types',
+          replacement: path.resolve(__dirname, './src/lib/icons/phosphor-icons.ts'),
+        },
+        {
+          find: '@fortawesome/fontawesome-svg-core',
+          replacement: path.resolve(__dirname, './src/lib/icons/phosphor-icons.ts'),
+        },
+        {
+          find: '@fortawesome/free-brands-svg-icons',
+          replacement: path.resolve(__dirname, './src/lib/icons/phosphor-icons.ts'),
+        },
+        {
+          find: '@fortawesome/free-regular-svg-icons',
+          replacement: path.resolve(__dirname, './src/lib/icons/phosphor-icons.ts'),
+        },
+        {
+          find: '@fortawesome/free-solid-svg-icons',
+          replacement: path.resolve(__dirname, './src/lib/icons/phosphor-icons.ts'),
+        },
+        {
+          find: 'svelte-fa',
+          replacement: path.resolve(__dirname, './src/lib/components/shared/icons/fa-proxy.ts'),
+        },
         // Test-only stub: avoid resolving protocol-adapter's complex dependency chain
-        '$features/protocol/protocol-adapter': path.resolve(
-          __dirname,
-          './src/__mocks__/protocol-adapter',
-        ),
+        {
+          find: '$features/protocol/protocol-adapter',
+          replacement: path.resolve(__dirname, './src/__mocks__/protocol-adapter'),
+        },
         // Test-only stub: avoid resolving ws browser bundle (missing createWebSocketStream)
-        ws: path.resolve(__dirname, './src/__mocks__/ws'),
+        { find: 'ws', replacement: path.resolve(__dirname, './src/__mocks__/ws') },
         // Test-only stubs: avoid promisify(exec) at module load time (breaks jsdom)
-        '$shared/git/git-env': path.resolve(__dirname, './src/__mocks__/git-env'),
-        '$shared/main/async-utils': path.resolve(__dirname, './src/__mocks__/async-utils'),
+        {
+          find: '$shared/git/git-env',
+          replacement: path.resolve(__dirname, './src/__mocks__/git-env'),
+        },
+        {
+          find: '$shared/main/async-utils',
+          replacement: path.resolve(__dirname, './src/__mocks__/async-utils'),
+        },
         // Test-only stub: lru_map module doesn't provide proper ESM exports
-        lru_map: path.resolve(__dirname, './src/__mocks__/lru_map'),
+        { find: 'lru_map', replacement: path.resolve(__dirname, './src/__mocks__/lru_map') },
         // Test-only stub: @pierre/diffs/worker has lru_map ESM import issues
-        '@pierre/diffs/worker': path.resolve(__dirname, './src/__mocks__/@pierre/diffs/worker'),
-      },
+        {
+          find: '@pierre/diffs/worker',
+          replacement: path.resolve(__dirname, './src/__mocks__/@pierre/diffs/worker'),
+        },
+      ],
       conditions: ['import', 'module', 'browser', 'default'],
       // Do not list '.svelte' here: knip turns non-default extensions into `src/**/*.<ext>` entries, hiding every unused Svelte component from `pnpm lint:dead-code`.
       extensions: ['.mjs', '.js', '.ts', '.jsx', '.tsx', '.json'],

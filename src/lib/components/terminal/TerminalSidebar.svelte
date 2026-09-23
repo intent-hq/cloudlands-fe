@@ -1122,8 +1122,9 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
                           onblur={finishEditingScript}
                           onkeydown={handleEditScriptKeydown}
                           onclick={(e) => e.stopPropagation()}
+                          noFocusStyle
                           placeholder={m.terminal_quakeOverlay_name_placeholder()}
-                          class="relative z-10 w-full cursor-text border-none bg-transparent p-0 text-sm outline-none focus:outline-none! focus:ring-0!"
+                          class="pointer-events-auto relative z-10 w-full cursor-text border-none bg-transparent hover:bg-transparent p-0 text-sm outline-none focus:outline-none! focus:ring-0!"
                         />
                       {/if}
                       <span

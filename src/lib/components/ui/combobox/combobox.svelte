@@ -126,6 +126,7 @@
   let searchedGroups = $state<ComboboxGroup[] | null>(null);
   let searching = $state(false);
   let searchFailed = $state(false);
+  const busy = $derived(loading || searching);
   let selectedLabels = $state<Record<string, string>>({});
   let highlightedOption: ComboboxOption | null = null;
   let touchReselection: ComboboxOption | null = null;
@@ -150,7 +151,9 @@
   });
   const normalizedGroups = $derived.by(() => {
     const source = searchedGroups ?? baseGroups;
-    if (!customOption) return source;
+    // Offer creation only after search can rule out an existing result. Mounting
+    // it enabled also lets Bits establish its initial keyboard highlight.
+    if (!customOption || busy) return source;
     return [
       ...source,
       { key: 'custom', label: '', options: [customOption] satisfies ComboboxOption[] },
@@ -267,6 +270,7 @@
 
   async function runSearch(nextQuery: string) {
     const generation = ++searchGeneration;
+    touchReselection = null;
     searchFailed = false;
     searchedGroups = null;
     if (!onsearch || !nextQuery.trim()) {
@@ -307,8 +311,7 @@
       const activeId = inputRef?.getAttribute('aria-activedescendant');
       const activeOption = activeId ? inputRef?.ownerDocument.getElementById(activeId) : null;
       if (
-        loading ||
-        searching ||
+        busy ||
         !hasOptions ||
         !activeOption ||
         !viewportRef?.contains(activeOption) ||
@@ -332,6 +335,7 @@
   }
 
   function reselectedOption(option: ComboboxOption | null) {
+    if (busy) return null;
     return open && !multiple && !disabled && option && !option.disabled && value === option.value
       ? option
       : null;
@@ -340,7 +344,7 @@
   function handleInputKeydown(event: KeyboardEvent, primitiveHandler: unknown) {
     touchReselection = null;
     const reselected =
-      event.key === 'Enter' && !event.isComposing && !loading && !searching && !searchFailed
+      event.key === 'Enter' && !event.isComposing && !busy && !searchFailed
         ? reselectedOption(highlightedOption)
         : null;
     if (typeof primitiveHandler === 'function') primitiveHandler(event);
@@ -352,8 +356,14 @@
     option: ComboboxOption,
     primitiveHandler: unknown,
   ) {
-    const reselected = !event.defaultPrevented ? reselectedOption(option) : null;
     touchReselection = null;
+    // Do not let Bits close/reset the query or arm its deferred native touch click
+    // while the displayed base options are waiting to be replaced by search results.
+    if (busy) {
+      event.preventDefault();
+      return;
+    }
+    const reselected = !event.defaultPrevented ? reselectedOption(option) : null;
     if (typeof primitiveHandler === 'function') primitiveHandler(event);
     if (!reselected) return;
     if (!open) oncommit?.(reselected.value, reselected);
@@ -364,7 +374,12 @@
   function handleOptionClick(option: ComboboxOption) {
     const reselected = touchReselection;
     touchReselection = null;
-    if (reselected === option && !open) oncommit?.(reselected.value, reselected);
+    if (busy) return;
+    // Closing can restore cached option objects before the delegated click runs.
+    // Match the stable value, retaining the accepted search result's metadata.
+    if (reselected && reselected.value === option.value && !open) {
+      oncommit?.(reselected.value, reselected);
+    }
   }
 
   function rememberSelection(nextValue: string | string[]) {
@@ -381,6 +396,7 @@
   }
 
   function handleSingleChange(nextValue: string) {
+    if (busy) return;
     const option = normalizedGroups
       .flatMap((group) => group.options)
       .find((option) => option.value === nextValue);
@@ -392,6 +408,7 @@
   }
 
   function handleMultipleChange(nextValue: string[]) {
+    if (busy) return;
     const previous = Array.isArray(value) ? value : [];
     const option = normalizedGroups
       .flatMap((group) => group.options)
@@ -457,7 +474,7 @@
     id={inputId}
     aria-labelledby={accessibleLabelId}
     aria-describedby={ariaDescribedby}
-    aria-busy={loading || searching}
+    aria-busy={busy}
     aria-controls={open ? listboxId : undefined}
     aria-invalid={invalid || undefined}
     placeholder={open ? searchPlaceholder : placeholder}
@@ -491,7 +508,7 @@
         {#if headerAction}<div class="ml-auto">{@render headerAction()}</div>{/if}
       </div>
     {/if}
-    {#if loading || searching}
+    {#if busy}
       <div class="type-body px-3 py-2 text-muted-foreground" role="status">
         {m.ui_combobox_loadingOptions_message()}
       </div>
@@ -520,7 +537,7 @@
           role="listbox"
           aria-multiselectable={multiple || undefined}
           aria-labelledby={accessibleLabelId}
-          aria-busy={loading || searching}
+          aria-busy={busy}
           tabindex="0"
         >
           <ListHighlight />
@@ -546,7 +563,7 @@
                       onpointerup={(event) =>
                         handleOptionPointerUp(event, option, props.onpointerup)}
                       onclick={() => handleOptionClick(option)}
-                      aria-disabled={option.disabled || undefined}
+                      aria-disabled={busy || option.disabled || undefined}
                       data-slot="combobox-option-motion"
                     >
                       <span class="min-w-0 flex-1 truncate">
@@ -574,7 +591,7 @@
                   <ComboboxPrimitive.Item
                     value={option.value}
                     label={option.label}
-                    disabled={option.disabled || !optionMatchesQuery(option)}
+                    disabled={busy || option.disabled || !optionMatchesQuery(option)}
                     data-menu-item
                     class={cn(menuItem(), option.class)}
                     child={optionChild}

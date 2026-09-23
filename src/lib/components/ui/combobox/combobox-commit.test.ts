@@ -118,6 +118,30 @@ describe('Combobox accepted-selection callback', () => {
     expect(input.getAttribute('aria-expanded')).toBe('false');
   });
 
+  it('preserves touch reselection and its metadata when option objects refresh before click', async () => {
+    const oncommit = vi.fn();
+    const onchange = vi.fn();
+    const view = render(Combobox, {
+      ariaLabel: 'Branches',
+      value: 'main',
+      options,
+      oncommit,
+      onchange,
+    });
+    const input = await open();
+    const option = screen.getByRole('option', { name: 'Main branch' });
+    await fireEvent.pointerUp(option, { pointerType: 'touch', button: 0 });
+    await view.rerender({
+      options: options.map((item) => ({ ...item, data: { refreshed: true } })),
+    });
+    expect(oncommit).not.toHaveBeenCalled();
+    expect(input.getAttribute('aria-expanded')).toBe('true');
+    await fireEvent.click(option);
+    expect(oncommit).toHaveBeenCalledExactlyOnceWith('main', options[0]);
+    expect(onchange).not.toHaveBeenCalled();
+    expect(input.getAttribute('aria-expanded')).toBe('false');
+  });
+
   it('retains an uncommitted query when every matching option is disabled', async () => {
     const oncommit = vi.fn();
     const onchange = vi.fn();

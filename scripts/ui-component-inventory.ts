@@ -103,6 +103,14 @@ function policyFor(publicImport: string): Policy {
       removalGate: 'Move persisted collapse state to callers, then adopt Accordion.',
     };
   }
+  if (publicImport === `${UI_IMPORT}PrincipalAvatar.svelte`) {
+    return {
+      category: 'primitive',
+      owner: 'design-system',
+      replacement: null,
+      removalGate: 'Retain while exported; require metadata, fixtures, and behavioral coverage.',
+    };
+  }
   if (publicImport === `${UI_IMPORT}TabBar.svelte`) {
     return {
       category: 'deletion-candidate',

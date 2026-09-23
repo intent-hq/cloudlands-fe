@@ -12,12 +12,12 @@ describe('catalog preferences', () => {
       parseCatalogUrlSettings(
         new URLSearchParams('state=loading&theme=dark&width=420&motion=reduced'),
       ),
-    ).toEqual({ state: 'loading', theme: 'dark', width: 420, reducedMotion: true });
+    ).toEqual({ state: 'loading', theme: 'dark', width: 420, motion: 'reduced' });
     expect(
       parseCatalogUrlSettings(
         new URLSearchParams('state=%20&theme=invalid&width=12&reducedMotion=false'),
       ),
-    ).toEqual({ state: undefined, theme: undefined, width: undefined, reducedMotion: false });
+    ).toEqual({ state: undefined, theme: undefined, width: undefined, motion: 'full' });
   });
 
   it('accepts only the exact component fit mode', () => {
@@ -36,7 +36,7 @@ describe('catalog preferences', () => {
     expect(readCatalogPreferences(storage)).toEqual({
       theme: 'dark',
       colorTheme: defaultCatalogPreferences.colorTheme,
-      reducedMotion: true,
+      motion: 'reduced',
     });
 
     vi.mocked(storage.getItem).mockReturnValue('{');
@@ -49,7 +49,7 @@ describe('catalog preferences', () => {
     const value = {
       theme: 'light',
       colorTheme: 'dracula',
-      reducedMotion: true,
+      motion: 'reduced',
     } as const;
     writeCatalogPreferences(storage, value);
     expect(setItem).toHaveBeenCalledWith('component-catalog-preferences', JSON.stringify(value));

@@ -8,11 +8,13 @@
  * actions stay.
  */
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
 import { createCollection } from '@augmentcode/themis/utils/collections/collection-utils';
 import type { StoreState } from '$store/renderer/types';
 import type { InstalledEditor } from '$store/renderer/slices/external-editors/external-editors-slice';
 import type { BackendTransportInfo } from '$store/renderer/slices/daemon-health/daemon-health-types';
+import type { Workspace } from '$shared/types';
+import { requestArchiveWorkspace } from '$store/renderer/slices/workspace-operations/workspace-operations-slice';
 import { toNativePath } from '$lib/utils/path-utils';
 import { warmImport } from '../../../../test/warm-import';
 
@@ -20,6 +22,7 @@ let mockStoreState: Partial<StoreState> = {};
 const mockDispatch = vi.fn();
 const electronBridgeMocks = vi.hoisted(() => ({
   invoke: vi.fn().mockResolvedValue(undefined),
+  canOpenExternalEditors: true,
 }));
 
 vi.mock('$store/renderer/store', async () => {
@@ -36,8 +39,24 @@ vi.mock('$store/renderer/store', async () => {
 
 // Electron build: the capability alone must NOT keep "Choose app" visible.
 vi.mock('$lib/utils/platform-capabilities', () => ({
-  hasCapability: () => true,
+  hasCapability: () => electronBridgeMocks.canOpenExternalEditors,
 }));
+
+vi.mock('$store/renderer/slices/workspace/workspace-selectors', async (importOriginal) => {
+  const original =
+    await importOriginal<typeof import('$store/renderer/slices/workspace/workspace-selectors')>();
+  const { derived, readable } = await import('svelte/store');
+  return {
+    ...original,
+    selectHidesOwnerWorkspaceActions: () => readable(false),
+    selectWorkspaceById: (id: import('svelte/store').Readable<string>) =>
+      derived(id, ($id) => original.selectWorkspaceById.select(mockStoreState as StoreState, $id)),
+  };
+});
+
+beforeEach(() => {
+  electronBridgeMocks.canOpenExternalEditors = true;
+});
 
 vi.mock('svelte-fa', async () => {
   const MockFa = (await import('./mocks/Fa.svelte')).default;
@@ -51,6 +70,7 @@ vi.mock('$lib/components/ui/button/button.svelte', async () => {
 
 vi.mock('$lib/electron-bridge', () => ({
   invoke: electronBridgeMocks.invoke,
+  listenSync: vi.fn(() => () => {}),
 }));
 
 vi.mock('$lib/client', () => ({
@@ -105,8 +125,14 @@ const manyMockEditors: InstalledEditor[] = [
 ];
 
 const mockWorkspaces = [
-  { id: 'ws-local' },
-  { id: 'ws-remote', environmentConfig: { type: 'remote' } },
+  { id: 'ws-local', title: 'Local workspace', worktreePath: '/tmp/project', status: 'active' },
+  {
+    id: 'ws-remote',
+    title: 'Remote workspace',
+    worktreePath: '/tmp/project',
+    status: 'active',
+    environmentConfig: { type: 'remote' },
+  },
 ];
 
 function makeState(
@@ -117,6 +143,7 @@ function makeState(
   editorOrder: string[] = [],
 ): Partial<StoreState> {
   return {
+    uiLayout: { sidebarSide: 'left' },
     externalEditors: {
       selectedAction: 'vscode',
       editors: createCollection<InstalledEditor, 'id'>('id', editors),
@@ -130,6 +157,13 @@ function makeState(
     workspace: {
       workspaces: createCollection('id', mockWorkspaces),
     },
+    git: { byWorkspaceId: {} },
+    workspaceTasks: { byWorkspaceId: {} },
+    workspaceNotes: { byWorkspaceId: {} },
+    workspaceAgents: { byWorkspaceId: {} },
+    panelLayout: { byWorkspaceId: {} },
+    presence: { ownPrincipalId: null, rosters: {} },
+    tokenUsage: { byWorkspaceId: {} },
   } as unknown as Partial<StoreState>;
 }
 
@@ -158,6 +192,8 @@ warmImport(() => import('./mocks/Fa.svelte'));
 warmImport(() => import('./mocks/button.svelte'));
 warmImport(() => import('./mocks/WorkspaceActionsMenuSubmenuHarness.svelte'));
 warmImport(() => import('$features/workspace/components/WorkspaceActionsMenu.svelte'));
+warmImport(() => import('$lib/components/workspace/WorkspaceSidebarHeader.svelte'));
+warmImport(() => import('$lib/components/workspace/sidebar/WorkspaceProgressCard.svelte'));
 
 interface SubmenuProps {
   filePath?: string;
@@ -399,6 +435,154 @@ describe('WorkspaceActionsMenu locality gating (monorepo#883)', () => {
       expect(clipboard.writeText).toHaveBeenCalledWith(toNativePath('/abs/legacy')),
     );
   });
+});
+
+describe('workspace sidebar Open in submenu', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    electronBridgeMocks.canOpenExternalEditors = true;
+    electronBridgeMocks.invoke.mockResolvedValue(undefined);
+  });
+
+  async function openSidebarMenu() {
+    const Header = (await import('$lib/components/workspace/WorkspaceSidebarHeader.svelte'))
+      .default;
+    const { container } = render(Header, {
+      props: {
+        workspace: { id: 'ws-local', path: '/tmp/project' } as Workspace,
+        workspaceId: 'ws-local',
+      },
+    });
+    await fireEvent.click(container.querySelector('[data-workspace-actions-trigger]')!);
+    return screen.findByRole('menu');
+  }
+
+  it('opens app choices without moving copy actions into the submenu', async () => {
+    mockStoreState = makeState({ mode: 'sidecar-uds' });
+    const root = await openSidebarMenu();
+    const trigger = within(root).getByRole('menuitem', { name: 'Open in...' });
+    expect(trigger.getAttribute('aria-expanded')).toBe('false');
+    expect(screen.queryByRole('menuitem', { name: 'Open in Visual Studio Code' })).toBeNull();
+    expect(within(root).getByRole('menuitem', { name: 'Copy Absolute Path' })).toBeTruthy();
+
+    trigger.focus();
+    await fireEvent.keyDown(trigger, { key: 'ArrowRight' });
+    await waitFor(() => expect(trigger.getAttribute('aria-expanded')).toBe('true'));
+    const editor = await screen.findByRole('menuitem', { name: 'Open in Visual Studio Code' });
+    const submenu = editor.closest('[role="menu"]') as HTMLElement;
+    expect(submenu).not.toBe(root);
+    expect(within(submenu).getByRole('menuitem', { name: 'Choose app' })).toBeTruthy();
+    expect(within(submenu).queryByRole('menuitem', { name: 'Copy Absolute Path' })).toBeNull();
+
+    await fireEvent.keyDown(editor, { key: 'ArrowLeft' });
+    await waitFor(() => expect(trigger.getAttribute('aria-expanded')).toBe('false'));
+    expect(screen.getByRole('menu')).toBe(root);
+  });
+
+  it.each([
+    ['Open in Visual Studio Code', 'vscode:open', '/tmp/project'],
+    ['Choose app', 'external-editors:open-with-other', { path: '/tmp/project' }],
+  ] as const)(
+    'routes %s from the submenu and closes the workspace menu',
+    async (label, channel, args) => {
+      mockStoreState = makeState({ mode: 'sidecar-uds' });
+      electronBridgeMocks.invoke.mockResolvedValue({ success: true });
+      const root = await openSidebarMenu();
+      const trigger = within(root).getByRole('menuitem', { name: 'Open in...' });
+      await fireEvent.click(trigger);
+      await fireEvent.click(await screen.findByRole('menuitem', { name: label }));
+      await waitFor(() => expect(electronBridgeMocks.invoke).toHaveBeenCalledWith(channel, args));
+      await waitFor(() => expect(screen.queryByRole('menu')).toBeNull());
+    },
+  );
+
+  it('copies the workspace path without opening the app submenu', async () => {
+    mockStoreState = makeState({ mode: 'sidecar-uds' });
+    const clipboard = { writeText: vi.fn().mockResolvedValue(undefined) };
+    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: clipboard });
+    const root = await openSidebarMenu();
+    await fireEvent.click(within(root).getByRole('menuitem', { name: 'Copy Absolute Path' }));
+    await waitFor(() =>
+      expect(clipboard.writeText).toHaveBeenCalledWith(toNativePath('/tmp/project')),
+    );
+    await waitFor(() => expect(screen.queryByRole('menu')).toBeNull());
+  });
+
+  it.each(['remote', 'web'] as const)(
+    'keeps copy accessible without an empty submenu on %s',
+    async (mode) => {
+      mockStoreState = makeState({ mode: mode === 'remote' ? 'external-ws' : 'sidecar-uds' });
+      electronBridgeMocks.canOpenExternalEditors = mode !== 'web';
+      const root = await openSidebarMenu();
+      expect(within(root).queryByRole('menuitem', { name: 'Open in...' })).toBeNull();
+      expect(within(root).getByRole('menuitem', { name: 'Copy Absolute Path' })).toBeTruthy();
+    },
+  );
+});
+
+describe('live WorkspaceProgressCard Open in submenu', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    electronBridgeMocks.invoke.mockResolvedValue(undefined);
+    mockStoreState = makeState({ mode: 'sidecar-uds' });
+  });
+
+  async function openProgressCardMenu(workspaceId = 'ws-local') {
+    const Card = (await import('$lib/components/workspace/sidebar/WorkspaceProgressCard.svelte'))
+      .default;
+    render(Card, { props: { workspaceId } });
+    await fireEvent.click(screen.getByRole('button', { name: 'Workspace actions' }));
+    return screen.findByRole('menu');
+  }
+
+  it('reveals and dismisses app choices while keeping copy and archive at the root', async () => {
+    const root = await openProgressCardMenu();
+    const trigger = within(root).getByRole('menuitem', { name: 'Open in...' });
+    const archive = within(root).getByRole('menuitem', { name: 'Archive Workspace' });
+    expect(trigger.getAttribute('aria-expanded')).toBe('false');
+    expect(screen.queryByRole('menuitem', { name: 'Open in Visual Studio Code' })).toBeNull();
+    expect(within(root).getByRole('menuitem', { name: 'Copy Absolute Path' })).toBeTruthy();
+
+    await fireEvent.click(trigger);
+    const editor = await screen.findByRole('menuitem', { name: 'Open in Visual Studio Code' });
+    const submenu = editor.closest('[role="menu"]') as HTMLElement;
+    expect(submenu).not.toBe(root);
+    expect(trigger.getAttribute('aria-expanded')).toBe('true');
+    expect(within(submenu).getByRole('menuitem', { name: 'Choose app' })).toBeTruthy();
+    expect(within(submenu).queryByRole('menuitem', { name: 'Copy Absolute Path' })).toBeNull();
+    expect(submenu.contains(archive)).toBe(false);
+
+    await fireEvent.keyDown(editor, { key: 'ArrowLeft' });
+    await waitFor(() => expect(trigger.getAttribute('aria-expanded')).toBe('false'));
+    expect(screen.getByRole('menu')).toBe(root);
+    await fireEvent.click(archive);
+    expect(mockDispatch).toHaveBeenCalledWith(requestArchiveWorkspace('ws-local'));
+    await waitFor(() => expect(screen.queryByRole('menu')).toBeNull());
+  });
+
+  it.each(['local', 'remote daemon', 'remote workspace', 'web'] as const)(
+    'keeps direct path copy available with locality gates on %s',
+    async (mode) => {
+      mockStoreState = makeState({
+        mode: mode === 'remote daemon' ? 'external-ws' : 'sidecar-uds',
+      });
+      electronBridgeMocks.canOpenExternalEditors = mode !== 'web';
+      const clipboard = { writeText: vi.fn().mockResolvedValue(undefined) };
+      Object.defineProperty(navigator, 'clipboard', { configurable: true, value: clipboard });
+      const root = await openProgressCardMenu(
+        mode === 'remote workspace' ? 'ws-remote' : 'ws-local',
+      );
+      const trigger = within(root).queryByRole('menuitem', { name: 'Open in...' });
+      if (mode === 'local') expect(trigger?.getAttribute('aria-expanded')).toBe('false');
+      else expect(trigger).toBeNull();
+
+      await fireEvent.click(within(root).getByRole('menuitem', { name: 'Copy Absolute Path' }));
+      await waitFor(() =>
+        expect(clipboard.writeText).toHaveBeenCalledWith(toNativePath('/tmp/project')),
+      );
+      await waitFor(() => expect(screen.queryByRole('menu')).toBeNull());
+    },
+  );
 });
 
 describe('WorkspaceActionsMenu workspace-locality gating (monorepo#2171)', () => {

@@ -45,13 +45,11 @@
     return pushEscapeLayer(close);
   });
 
-  // Focus the form when the modal opens
+  // Prepare the form; Dialog.Content owns initial focus on the primary action.
   $effect(() => {
     if (!open || staticPosition) return;
     isExpanded = true;
     initializerRef?.applyPrefill();
-    const focusTimer = setTimeout(() => initializerRef?.focusAndSelectAll(), 150);
-    return () => clearTimeout(focusTimer);
   });
 
   // Mark <body> while the dialog content is mounted (including its outro) so the
@@ -75,7 +73,7 @@
     escapeKeydownBehavior="ignore"
     class="flex max-w-4xl flex-col gap-0 overflow-visible rounded-lg border border-border bg-popover p-0"
   >
-    <div class="flex shrink-0 items-center border-b border-border px-6 py-4 pr-12">
+    <div class="flex shrink-0 items-center px-6 py-4 pr-12">
       <Dialog.Title class="type-title text-foreground">{m.modals_newSpace_title()}</Dialog.Title>
       <Dialog.Description class="sr-only">
         {m.workspace_repoSelector_whichRepo_description()}
@@ -88,7 +86,12 @@
       {#if initializer}
         {@render initializer()}
       {:else}
-        <CompactWorkspaceInitializer bind:this={initializerRef} bind:isExpanded oncreate={close} />
+        <CompactWorkspaceInitializer
+          bind:this={initializerRef}
+          bind:isExpanded
+          autoFocus={false}
+          oncreate={close}
+        />
       {/if}
     </div>
   </Dialog.Content>

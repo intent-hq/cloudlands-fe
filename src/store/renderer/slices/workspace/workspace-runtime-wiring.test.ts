@@ -1,19 +1,21 @@
-// @verify-changed-triggers: ./workspace-slice.ts
-
 import { describe, expect, it } from 'vitest';
-import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
-
-const WORKSPACE_SLICE_SOURCE = readFileSync(
-  resolve(process.cwd(), 'src/store/renderer/slices/workspace/workspace-slice.ts'),
-  'utf8',
-);
+import {
+  cleanupRecency,
+  initialState,
+  recordWorkspaceView,
+  workspaceReducer,
+} from './workspace-slice';
 
 describe('workspace recency runtime wiring', () => {
   it('stores recency tracking in the Redux workspace slice', () => {
-    expect(WORKSPACE_SLICE_SOURCE).toContain('export const recordWorkspaceView');
-    expect(WORKSPACE_SLICE_SOURCE).toContain('export const cleanupRecency');
-    expect(WORKSPACE_SLICE_SOURCE).toContain('.with(recordWorkspaceView');
-    expect(WORKSPACE_SLICE_SOURCE).toContain('.with(cleanupRecency');
+    const viewed = workspaceReducer(
+      workspaceReducer(initialState, recordWorkspaceView('ws-a', 100)),
+      recordWorkspaceView('ws-b', 200),
+    );
+    expect(viewed.recency.lastViewedAt).toEqual({ 'ws-a': 100, 'ws-b': 200 });
+
+    const cleaned = workspaceReducer(viewed, cleanupRecency(['ws-b']));
+    expect(cleaned.recency.lastViewedAt).toEqual({ 'ws-b': 200 });
+    expect(workspaceReducer(cleaned, cleanupRecency(['ws-b']))).toBe(cleaned);
   });
 });

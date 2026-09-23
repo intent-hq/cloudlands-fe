@@ -1,6 +1,7 @@
-import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
-import { describe, expect, it } from 'vitest';
+/** @vitest-environment jsdom */
+import { cleanup, render } from '@testing-library/svelte';
+import { tick } from 'svelte';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
   resolveNewMessagesDividerAnchor,
@@ -12,6 +13,171 @@ import {
 } from '../new-messages-divider';
 import { indexConversationTurns } from '../conversation-turns';
 import type { AgentMessage } from '$shared/types';
+import { resetScaffold, scaffold } from './mocks/chat-panel-render-scaffold';
+
+vi.mock('$store/renderer/store', async () =>
+  (await import('./mocks/chat-panel-render-scaffold')).appStore(),
+);
+vi.mock('$features/layout/panel-layout-adapter', async () =>
+  (await import('./mocks/chat-panel-render-scaffold')).panelLayoutAdapter(),
+);
+vi.mock('$lib/client', async () =>
+  (await import('./mocks/chat-panel-render-scaffold')).appClient(),
+);
+vi.mock('$lib/electron-bridge', () => ({
+  invoke: vi.fn().mockResolvedValue({ success: true, data: [] }),
+  listenSync: vi.fn(() => () => {}),
+}));
+vi.mock('$lib/components/patterns/notify', () => ({
+  notify: { error: vi.fn(), success: vi.fn(), info: vi.fn() },
+}));
+vi.mock('svelte-fa', async () => ({ default: (await import('./mocks/SlotOnly.svelte')).default }));
+vi.mock('$store/renderer/slices/agent-session/agent-session-selectors', async () =>
+  (await import('./mocks/chat-panel-render-scaffold')).agentSessionSelectors(),
+);
+vi.mock('$store/renderer/slices/chat-state/chat-state-selectors', async () =>
+  (await import('./mocks/chat-panel-render-scaffold')).chatStateSelectors(),
+);
+vi.mock('$store/renderer/slices/unread-tracking/unread-tracking-selectors', async () =>
+  (await import('./mocks/chat-panel-render-scaffold')).unreadTrackingSelectors(),
+);
+vi.mock('$store/renderer/slices/agent-queue/agent-queue-selectors', async () =>
+  (await import('./mocks/chat-panel-render-scaffold')).agentQueueSelectors(),
+);
+vi.mock('$store/renderer/slices/transient-ui/transient-ui-selectors', async () =>
+  (await import('./mocks/chat-panel-render-scaffold')).transientUiSelectors(),
+);
+vi.mock('$store/renderer/slices/provider-catalog/provider-catalog-selectors', async () =>
+  (await import('./mocks/chat-panel-render-scaffold')).providerCatalogSelectors(),
+);
+vi.mock('$store/renderer/slices/panel-layout/panel-layout-selectors', async () =>
+  (await import('./mocks/chat-panel-render-scaffold')).stub({ selectAllTabs: [] }),
+);
+vi.mock('$store/renderer/slices/workspace-notes/workspace-notes-selectors', async () =>
+  (await import('./mocks/chat-panel-render-scaffold')).stub({ selectNoteById: null }),
+);
+vi.mock('$store/renderer/slices/workspace-tasks/workspace-tasks-selectors', async () =>
+  (await import('./mocks/chat-panel-render-scaffold')).stub({
+    selectWorkspaceTasks: [],
+    selectWorkspaceTasksInitialized: false,
+  }),
+);
+vi.mock('$store/renderer/slices/presence/presence-selectors', async () =>
+  (await import('./mocks/chat-panel-render-scaffold')).stub({
+    selectAgentTypingPeople: [],
+    selectPresenceOwnPrincipalId: null,
+  }),
+);
+vi.mock('$store/renderer/slices/multi-panel-context/multi-panel-context-selectors', async () =>
+  (await import('./mocks/chat-panel-render-scaffold')).stub({
+    selectCheckedPanels: [],
+    selectPanels: [],
+    selectCheckedSelections: [],
+  }),
+);
+vi.mock('$store/renderer/slices/terminals/terminals-selectors', async () =>
+  (await import('./mocks/chat-panel-render-scaffold')).stub({ selectWorkspaceSetupTerminal: null }),
+);
+vi.mock('$store/renderer/slices/workspace-navigation/workspace-navigation-selectors', async () =>
+  (await import('./mocks/chat-panel-render-scaffold')).stub({
+    selectWorkspaceNavigationMainPanel: { type: 'empty' },
+  }),
+);
+vi.mock(
+  '$store/renderer/slices/task-agent-associations/task-agent-associations-selectors',
+  async () =>
+    (await import('./mocks/chat-panel-render-scaffold')).stub({ selectTasksForAgent: [] }),
+);
+vi.mock('$store/renderer/slices/permission/permission-selectors', async () =>
+  (await import('./mocks/chat-panel-render-scaffold')).stub({ selectPermissionRequests: [] }),
+);
+vi.mock('$store/renderer/slices/user-preferences/user-preferences-selectors', async () =>
+  (await import('./mocks/chat-panel-render-scaffold')).stub({
+    selectChatAuroraEnabled: false,
+    selectIsAgentMonospace: false,
+  }),
+);
+vi.mock('$store/renderer/slices/specialists/specialists-selectors', async () =>
+  (await import('./mocks/chat-panel-render-scaffold')).stub({
+    selectSpecialists: [],
+    selectEffectiveBehaviorPrompt: '',
+    selectEffectiveModel: '',
+  }),
+);
+vi.mock('../input/SimpleRichInput.svelte', async () => ({
+  default: (await import('./mocks/SlotOnly.svelte')).default,
+}));
+vi.mock('../ChatMessage.svelte', async () => ({
+  default: (await import('./mocks/SlotOnly.svelte')).default,
+}));
+vi.mock('../EventWakeupBanner.svelte', async () => ({
+  default: (await import('./mocks/SlotOnly.svelte')).default,
+}));
+vi.mock('../AgentCard.svelte', async () => ({
+  default: (await import('./mocks/SlotOnly.svelte')).default,
+}));
+vi.mock('../StreamingStatus.svelte', async () => ({
+  default: (await import('./mocks/SlotOnly.svelte')).default,
+}));
+vi.mock('../LiveStreamPhaseIndicator.svelte', async () => ({
+  default: (await import('./mocks/SlotOnly.svelte')).default,
+}));
+vi.mock('../RegularAgentWelcome.svelte', async () => ({
+  default: (await import('./mocks/SlotOnly.svelte')).default,
+}));
+vi.mock('../SuggestedPrompts.svelte', async () => ({
+  default: (await import('./mocks/SlotOnly.svelte')).default,
+}));
+vi.mock('../questions/QuestionWizard.svelte', async () => ({
+  default: (await import('./mocks/SlotOnly.svelte')).default,
+}));
+vi.mock('../ChatFileChangesSummary.svelte', async () => ({
+  default: (await import('./mocks/SlotOnly.svelte')).default,
+}));
+vi.mock('../AutoCommitStatus.svelte', async () => ({
+  default: (await import('./mocks/SlotOnly.svelte')).default,
+}));
+vi.mock('../QueuedMessageList.svelte', async () => ({
+  default: (await import('./mocks/SlotOnly.svelte')).default,
+}));
+vi.mock('../BackgroundHooksRow.svelte', async () => ({
+  default: (await import('./mocks/SlotOnly.svelte')).default,
+}));
+vi.mock('../MonitoredPrsRow.svelte', async () => ({
+  default: (await import('./mocks/SlotOnly.svelte')).default,
+}));
+vi.mock('../AgentSubscriptions.svelte', async () => ({
+  default: (await import('./mocks/SlotOnly.svelte')).default,
+}));
+vi.mock('../EventSubscriptionsCard.svelte', async () => ({
+  default: (await import('./mocks/SlotOnly.svelte')).default,
+}));
+vi.mock('../AttentionRequestBanner.svelte', async () => ({
+  default: (await import('./mocks/SlotOnly.svelte')).default,
+}));
+vi.mock('../LazyTurn.svelte', async () => ({
+  default: (await import('./mocks/SlotOnly.svelte')).default,
+}));
+vi.mock('../InlinePermissionRequest.svelte', async () => ({
+  default: (await import('./mocks/SlotOnly.svelte')).default,
+}));
+vi.mock('../AuroraBackground.svelte', async () => ({
+  default: (await import('./mocks/SlotOnly.svelte')).default,
+}));
+vi.mock('../ModelChangeNotice.svelte', async () => ({
+  default: (await import('./mocks/SlotOnly.svelte')).default,
+}));
+vi.mock('$features/onboarding/messages/WorkspaceSetupCard.svelte', async () => ({
+  default: (await import('./mocks/SlotOnly.svelte')).default,
+}));
+vi.mock('$lib/components/ui/panel-find-bar', async () => ({
+  PanelFindBar: (await import('./mocks/SlotOnly.svelte')).default,
+}));
+vi.mock('$lib/components/ui/skeleton', async () => ({
+  Skeleton: (await import('./mocks/SlotOnly.svelte')).default,
+}));
+
+import ChatPanel from '../ChatPanel.svelte';
 
 describe('resolveNewMessagesDividerAnchor', () => {
   const ids = ['m1', 'm2', 'm3', 'm4'];
@@ -127,55 +293,313 @@ describe('turn-boundary divider placement (ChatPanel contract)', () => {
       dividerDefersToTurnBoundary('assistant-1', 'assistant-1', !isLastTurnInConversation),
     ).toBe(false);
   });
+});
 
-  it('derives isLastTurnInConversation from rendered turns, not raw date groups', () => {
-    const panel = readFileSync(
-      resolve(process.cwd(), 'src/lib/components/chat/ChatPanel.svelte'),
-      'utf8',
+describe('turn-boundary divider placement (rendered ChatPanel)', () => {
+  const DAY_ONE = '2026-01-01T10:00:00.000Z';
+  const DAY_TWO = '2026-01-02T10:00:00.000Z';
+  const workspace = { id: 'ws-1', title: 'Workspace' } as never;
+
+  const message = (
+    id: string,
+    role: AgentMessage['role'],
+    extra: { timestamp?: string; metadata?: Record<string, unknown>; text?: string } = {},
+  ): AgentMessage =>
+    ({
+      id,
+      role,
+      timestamp: extra.timestamp ?? DAY_ONE,
+      contentBlocks: [{ type: 'text', text: extra.text ?? `${id} body` }],
+      metadata: extra.metadata,
+    }) as unknown as AgentMessage;
+  const eventWake = (id: string) =>
+    message(id, 'user', {
+      metadata: { type: 'event_notification', eventCount: 1, eventTypes: ['file:changed'] },
+    });
+  const batched = (id: string, batchId: string) =>
+    message(id, 'user', { metadata: { queueInfo: { batchId } } });
+  const attentionRequest = (id: string) =>
+    message(id, 'user', {
+      metadata: {
+        type: 'event_notification',
+        eventCount: 1,
+        eventTypes: ['agent:attention-requested'],
+        events: [{ type: 'agent:attention-requested', data: { kind: 'discussion' } }],
+      },
+    });
+  const questionAnswers = (id: string, answeredQuestionsMessageId: string) =>
+    message(id, 'user', { metadata: { type: 'question_answers', answeredQuestionsMessageId } });
+  const operationalAssistant = (id: string, extra: { timestamp?: string } = {}): AgentMessage =>
+    ({
+      id,
+      role: 'assistant',
+      timestamp: extra.timestamp ?? DAY_ONE,
+      contentBlocks: [{ type: 'tool_use', id: `${id}-tool`, name: 'read', input: {} }],
+    }) as unknown as AgentMessage;
+
+  async function renderTranscript(messages: AgentMessage[], anchorId: string | null) {
+    resetScaffold();
+    scaffold.agentMessages = messages;
+    scaffold.dividerAnchorId = anchorId;
+    const view = render(ChatPanel, { props: { workspace, agentId: 'agent-1', isActive: true } });
+    await tick();
+    const container = view.container;
+    const dividers = [...container.querySelectorAll<HTMLElement>('[data-new-messages-divider]')];
+    const gaps = [
+      ...container.querySelectorAll<HTMLElement>('[data-testid="conversation-turn-gap"]'),
+    ];
+    const turns = [...container.querySelectorAll<HTMLElement>('[data-conversation-turn]')];
+    return { container, dividers, gaps, turns };
+  }
+
+  beforeEach(() => {
+    vi.stubGlobal(
+      'ResizeObserver',
+      class {
+        observe() {}
+        unobserve() {}
+        disconnect() {}
+      },
     );
-    expect(panel).toContain(
-      'isLastTurnInConversation =\n                    globalTurnIndexMap.get(turnKey) === globalTurnIndexMap.size - 1',
+    vi.stubGlobal(
+      'IntersectionObserver',
+      class {
+        observe() {}
+        unobserve() {}
+        disconnect() {}
+      },
     );
   });
 
-  it('renders the turn-boundary divider immediately after the semantic inter-turn gap', () => {
-    const panel = readFileSync(
-      resolve(process.cwd(), 'src/lib/components/chat/ChatPanel.svelte'),
-      'utf8',
-    ).replace(/<!--[\s\S]*?-->/g, '');
-    const normalized = panel.replace(/\s+/g, ' ');
-    const gapStart = normalized.indexOf('<ConversationTurnGap');
-    const gapEnd = normalized.indexOf('/>', gapStart) + 2;
-    const dividerStart = normalized.indexOf('{#if dividerAtTurnBoundary}', gapEnd);
-    const gap = normalized.slice(gapStart, gapEnd);
-
-    expect(gapStart).toBeGreaterThan(-1);
-    expect(gap).toContain('compactOperationalSeam={compactOperationalTurnBoundary}');
-    expect(gap).toContain('zeroToolSeam={zeroOperationalTurnBoundary}');
-    expect(gap).toContain('batchedDeliverySeam={batchedDeliveryTurnSeam}');
-    expect(gap).toContain('attentionQuestionAnswerSeam={attentionQuestionAnswerTurnSeam}');
-    expect(normalized.slice(gapEnd, dividerStart).trim()).toBe('{/if}');
-    expect(normalized.slice(dividerStart)).toContain(
-      '{#if dividerAtTurnBoundary} <NewMessagesDivider /> {/if}',
-    );
+  afterEach(() => {
+    cleanup();
+    vi.unstubAllGlobals();
   });
 
-  it('suppresses the inline render when the divider defers to the turn boundary', () => {
-    const panel = readFileSync(
-      resolve(process.cwd(), 'src/lib/components/chat/ChatPanel.svelte'),
-      'utf8',
+  it('derives isLastTurnInConversation from rendered turns, not raw date groups', async () => {
+    // The trailing day holds only rows the turn grouper skips, so it renders no
+    // turn: the anchor's turn is still the LAST rendered one and the divider
+    // stays inline (no following gap, no boundary placement).
+    const { dividers, gaps, turns } = await renderTranscript(
+      [
+        message('user-1', 'user'),
+        message('assistant-1', 'assistant'),
+        message('sys-1', 'system', { timestamp: DAY_TWO }),
+        message('err-1', 'error', { timestamp: DAY_TWO }),
+      ],
+      'assistant-1',
     );
-    expect(panel).toContain(
-      '{#if newMessagesDividerAnchorId === messageId && !deferToTurnBoundary}',
+
+    expect(turns).toHaveLength(1);
+    expect(gaps).toHaveLength(0);
+    expect(dividers).toHaveLength(1);
+    expect(turns[0].contains(dividers[0])).toBe(true);
+  });
+
+  it('renders the turn-boundary divider immediately after the semantic inter-turn gap', async () => {
+    const { dividers, gaps, turns } = await renderTranscript(
+      [
+        message('user-1', 'user'),
+        message('assistant-1', 'assistant'),
+        message('user-2', 'user'),
+        message('assistant-2', 'assistant'),
+      ],
+      'assistant-1',
     );
-    // Every inline render site (event banner, user row, notice, assistant)
-    // passes the defer flag — anchored to the concrete count so removed or
-    // non-matching sites fail rather than vacuously comparing undefined.
-    const allSites = panel.match(/@render newMessagesDividerAfter\(/g) ?? [];
-    const withFlag =
-      panel.match(/@render newMessagesDividerAfter\([^)]+,\s*dividerAtTurnBoundary,?\s*\)/g) ?? [];
-    expect(allSites.length).toBe(4);
-    expect(withFlag.length).toBe(allSites.length);
+
+    expect(turns).toHaveLength(2);
+    expect(gaps).toHaveLength(1);
+    expect(dividers).toHaveLength(1);
+    expect(turns[0].contains(dividers[0])).toBe(false);
+    expect(turns[0].nextElementSibling).toBe(gaps[0]);
+    expect(gaps[0].nextElementSibling).toBe(dividers[0]);
+    expect(dividers[0].nextElementSibling).toBe(turns[1]);
+  });
+
+  // One case per seam prop ChatPanel feeds the inter-turn gap: the gap's own
+  // data attributes are the oracle, so a dropped or mis-wired prop shows up
+  // as the seam not being classified.
+  it('feeds the batched-delivery seam of the two turns into the gap the divider follows', async () => {
+    const { dividers, gaps } = await renderTranscript(
+      [
+        batched('user-1', 'batch-1'),
+        batched('user-2', 'batch-1'),
+        message('assistant-2', 'assistant'),
+      ],
+      'user-1',
+    );
+
+    expect(gaps).toHaveLength(1);
+    expect(gaps[0].getAttribute('data-batched-seam')).toBe('true');
+    expect(gaps[0].getAttribute('data-attention-answer-seam')).toBeNull();
+    expect(gaps[0].nextElementSibling).toBe(dividers[0]);
+  });
+
+  it('feeds the attention-request → answered-questions seam into the gap the divider follows', async () => {
+    const { dividers, gaps, turns } = await renderTranscript(
+      [
+        attentionRequest('wake-1'),
+        message('assistant-1', 'assistant'),
+        questionAnswers('answer-1', 'assistant-1'),
+        message('assistant-2', 'assistant'),
+      ],
+      'assistant-1',
+    );
+
+    expect(turns).toHaveLength(2);
+    expect(gaps).toHaveLength(1);
+    expect(gaps[0].getAttribute('data-attention-answer-seam')).toBe('true');
+    expect(gaps[0].getAttribute('data-batched-seam')).toBeNull();
+    expect(turns[0].contains(dividers[0])).toBe(false);
+    expect(gaps[0].nextElementSibling).toBe(dividers[0]);
+    expect(dividers[0].nextElementSibling).toBe(turns[1]);
+  });
+
+  it('feeds the operational seam between tool-only assistant turns into the gap the divider follows', async () => {
+    // The second turn is an orphan assistant turn (a new day, no user row), so
+    // the operational boundary test runs against the first turn's last row.
+    const { dividers, gaps, turns } = await renderTranscript(
+      [
+        message('user-1', 'user'),
+        operationalAssistant('assistant-1'),
+        operationalAssistant('assistant-2', { timestamp: DAY_TWO }),
+      ],
+      'assistant-1',
+    );
+
+    expect(turns).toHaveLength(2);
+    expect(gaps).toHaveLength(1);
+    expect(gaps[0].getAttribute('data-operational-seam')).toBe('true');
+    expect(gaps[0].getAttribute('data-tool-seam')).toBe('true');
+    expect(gaps[0].nextElementSibling).toBe(dividers[0]);
+  });
+
+  it.each([
+    {
+      site: 'event banner',
+      messages: [
+        eventWake('wake-1'),
+        message('user-2', 'user'),
+        message('assistant-2', 'assistant'),
+      ],
+      anchorId: 'wake-1',
+    },
+    {
+      site: 'user row',
+      messages: [
+        message('user-1', 'user'),
+        message('user-2', 'user'),
+        message('assistant-2', 'assistant'),
+      ],
+      anchorId: 'user-1',
+    },
+    {
+      site: 'model-change notice',
+      messages: [
+        message('user-1', 'user'),
+        message('notice-1', 'system', { metadata: { type: 'model_changed', from: 'a', to: 'b' } }),
+        message('user-2', 'user'),
+        message('assistant-2', 'assistant'),
+      ],
+      anchorId: 'notice-1',
+    },
+    {
+      site: 'provider re-home notice',
+      messages: [
+        message('user-1', 'user'),
+        message('notice-1', 'system', {
+          metadata: {
+            type: 'provider_rehomed',
+            reason: 'provider_disabled',
+            from: 'a',
+            to: null,
+            fromProvider: 'codex',
+            toProvider: 'auggie',
+          },
+        }),
+        message('user-2', 'user'),
+        message('assistant-2', 'assistant'),
+      ],
+      anchorId: 'notice-1',
+    },
+    {
+      site: 'assistant row',
+      messages: [
+        message('user-1', 'user'),
+        message('assistant-1', 'assistant'),
+        message('user-2', 'user'),
+        message('assistant-2', 'assistant'),
+      ],
+      anchorId: 'assistant-1',
+    },
+  ])(
+    'suppresses the inline $site render when the divider defers to the turn boundary',
+    async ({ messages, anchorId }) => {
+      const { container, dividers, gaps, turns } = await renderTranscript(messages, anchorId);
+
+      expect(container.querySelector(`[data-message-id="${anchorId}"]`)).not.toBeNull();
+      expect(turns).toHaveLength(2);
+      expect(dividers).toHaveLength(1);
+      expect(turns[0].contains(dividers[0])).toBe(false);
+      expect(dividers[0].previousElementSibling).toBe(gaps[0]);
+    },
+  );
+
+  it('renders the daemon provider re-home notice once in the transcript (intent#5737)', async () => {
+    const daemonText =
+      'gpt-5-codex (OpenAI Codex) is no longer available — OpenAI Codex was disabled in Settings > Agents; this agent now runs on Augment Auggie.';
+    const { container, turns } = await renderTranscript(
+      [
+        message('user-1', 'user'),
+        message('rehome-1', 'system', {
+          text: daemonText,
+          metadata: {
+            type: 'provider_rehomed',
+            reason: 'provider_disabled',
+            from: 'gpt-5-codex',
+            to: null,
+            fromProvider: 'codex',
+            toProvider: 'auggie',
+          },
+        }),
+        message('assistant-1', 'assistant'),
+      ],
+      null,
+    );
+
+    expect(turns).toHaveLength(1);
+    const rows = container.querySelectorAll('[data-message-id="rehome-1"]');
+    expect(rows).toHaveLength(1);
+    const notices = rows[0].querySelectorAll('[role="status"]');
+    expect(notices).toHaveLength(1);
+    const text = notices[0].textContent ?? '';
+    expect(text).toMatch(/gpt-5-codex/);
+    expect(text).toMatch(/disabled/i);
+    expect(text).toMatch(/auggie/i);
+    // The notice sits between the user row and the assistant output.
+    const userRow = container.querySelector('[data-message-id="user-1"]') as Node;
+    const assistantRow = container.querySelector('[data-message-id="assistant-1"]') as Node;
+    const follows = (a: Node, b: Node) =>
+      Boolean(a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING);
+    expect(follows(userRow, rows[0])).toBe(true);
+    expect(follows(rows[0], assistantRow)).toBe(true);
+  });
+
+  it('keeps the divider inline when the anchor is not the last rendered row of its turn', async () => {
+    const { dividers, turns } = await renderTranscript(
+      [
+        message('user-1', 'user'),
+        message('assistant-1', 'assistant'),
+        message('user-2', 'user'),
+        message('assistant-2', 'assistant'),
+      ],
+      'user-1',
+    );
+
+    expect(dividers).toHaveLength(1);
+    expect(turns[0].contains(dividers[0])).toBe(true);
+    const anchorRow = turns[0].querySelector('[data-message-id="user-1"]')!;
+    expect(anchorRow.nextElementSibling).toBe(dividers[0]);
   });
 });
 
