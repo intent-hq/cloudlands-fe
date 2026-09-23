@@ -4,9 +4,7 @@
   import { Input } from '$lib/components/ui/input';
   import { Label } from '$lib/components/ui/label';
   import { InputMessage } from '$lib/components/ui/input-message';
-  import { RadioGroup, RadioGroupItem } from '$lib/components/ui/radio-group';
-  import Fa from 'svelte-fa';
-  import { faKey } from '@fortawesome/free-solid-svg-icons';
+  import * as ToggleGroup from '$lib/components/ui/toggle-group';
   import { createLogger } from '$lib/utils/client-logger';
   import { m } from '$shared/paraglide/messages.js';
 
@@ -233,55 +231,69 @@
             {m.workspace_addRemoteSetupModal_authentication_label()}
           </h3>
 
-          <!-- Auth mode radio buttons -->
-          {#snippet agentMarker()}
-            <Fa icon={faKey} class="text-ghost text-xs" />
-          {/snippet}
-          <RadioGroup
-            value={authMode}
-            onValueChange={(value) => (authMode = value as typeof authMode)}
+          <ToggleGroup.Root
+            type="single"
+            bind:value={
+              () => authMode,
+              (value) => {
+                if (value === 'agent' || value === 'keyfile' || value === 'password')
+                  authMode = value;
+              }
+            }
             aria-label={m.workspace_addRemoteSetupModal_authentication_label()}
-            class="gap-2"
+            variant="outline"
+            class="flex w-full"
           >
-            <RadioGroupItem
+            <ToggleGroup.Item
               value="agent"
-              title={m.workspace_addRemoteSetupModal_sshAgent_label()}
-              marker={agentMarker}
-              class="rounded-md border p-2 {authMode === 'agent'
-                ? 'border-primary bg-primary/5'
-                : 'border-border hover:bg-muted/50'}"
-            />
-            <RadioGroupItem
+              class="min-w-0 flex-1"
+              onclick={(event) => {
+                if (authMode === 'agent') event.preventDefault();
+              }}
+              onkeydown={(event) => {
+                if (authMode === 'agent' && ['Enter', ' '].includes(event.key))
+                  event.preventDefault();
+              }}>{m.workspace_addRemoteSetupModal_sshAgent_label()}</ToggleGroup.Item
+            >
+            <ToggleGroup.Item
               value="keyfile"
-              title={m.workspace_addRemoteSetupModal_keyFile_label()}
-              class="rounded-md border p-2 {authMode === 'keyfile'
-                ? 'border-primary bg-primary/5'
-                : 'border-border hover:bg-muted/50'}"
-            />
-            {#if authMode === 'keyfile'}
-              {@const keyPathExample = '~/.ssh/id_rsa'}
-              <Input
-                bind:value={keyPath}
-                placeholder={keyPathExample}
-                aria-label={m.workspace_addRemoteSetupModal_keyFile_label()}
-              />
-            {/if}
-            <RadioGroupItem
+              class="min-w-0 flex-1"
+              onclick={(event) => {
+                if (authMode === 'keyfile') event.preventDefault();
+              }}
+              onkeydown={(event) => {
+                if (authMode === 'keyfile' && ['Enter', ' '].includes(event.key))
+                  event.preventDefault();
+              }}>{m.workspace_addRemoteSetupModal_keyFile_label()}</ToggleGroup.Item
+            >
+            <ToggleGroup.Item
               value="password"
-              title={m.workspace_addRemoteSetupModal_password_label()}
-              class="rounded-md border p-2 {authMode === 'password'
-                ? 'border-primary bg-primary/5'
-                : 'border-border hover:bg-muted/50'}"
+              class="min-w-0 flex-1"
+              onclick={(event) => {
+                if (authMode === 'password') event.preventDefault();
+              }}
+              onkeydown={(event) => {
+                if (authMode === 'password' && ['Enter', ' '].includes(event.key))
+                  event.preventDefault();
+              }}>{m.workspace_addRemoteSetupModal_password_label()}</ToggleGroup.Item
+            >
+          </ToggleGroup.Root>
+          {#if authMode === 'keyfile'}
+            {@const keyPathExample = '~/.ssh/id_rsa'}
+            <Input
+              bind:value={keyPath}
+              placeholder={keyPathExample}
+              aria-label={m.workspace_addRemoteSetupModal_keyFile_label()}
             />
-            {#if authMode === 'password'}
-              <Input
-                type="password"
-                bind:value={password}
-                placeholder="••••••••"
-                aria-label={m.workspace_addRemoteSetupModal_password_label()}
-              />
-            {/if}
-          </RadioGroup>
+          {/if}
+          {#if authMode === 'password'}
+            <Input
+              type="password"
+              bind:value={password}
+              placeholder="••••••••"
+              aria-label={m.workspace_addRemoteSetupModal_password_label()}
+            />
+          {/if}
         </div>
       {:else}
         <!-- WebSocket info - no SSH auth needed -->

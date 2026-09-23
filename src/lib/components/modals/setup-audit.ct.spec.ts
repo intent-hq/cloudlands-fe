@@ -25,7 +25,12 @@ for (const mode of ['Key File', 'Password'] as const) {
         },
       },
     });
-    await page.getByRole('radio', { name: mode, exact: true }).click();
+    const choice = page.getByRole('radio', { name: mode, exact: true });
+    await choice.click();
+    await choice.click();
+    await choice.press('Space');
+    await choice.press('Enter');
+    await expect(choice).toHaveAttribute('aria-checked', 'true');
     const field = page.getByLabel(mode, { exact: true }).filter({ visible: true });
     await field.fill(mode === 'Key File' ? '/fixture/id_ed25519' : 'fixture-only-password');
     const save = page.getByRole('button', { name: 'Add Setup', exact: true });

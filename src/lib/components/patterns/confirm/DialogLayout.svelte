@@ -9,6 +9,7 @@
     titleId,
     descriptionId,
     children,
+    headerActions,
     footer,
     error,
   }: {
@@ -17,14 +18,26 @@
     titleId?: string;
     descriptionId?: string;
     children?: Snippet;
+    headerActions?: Snippet;
     footer?: Snippet;
     error?: string;
   } = $props();
 </script>
 
 <div class="dialog-layout flex min-h-0 min-w-0 flex-1 flex-col">
-  <Dialog.Header class="m-0 shrink-0 px-6 pt-6 pr-14">
-    <Dialog.Title id={titleId}>{title}</Dialog.Title>
+  <Dialog.Header class="m-0 shrink-0 px-6 pt-6 {headerActions ? 'pr-22' : 'pr-14'}">
+    {#if headerActions}
+      <div class="flex min-w-0 flex-wrap items-center justify-between gap-3">
+        <Dialog.Title id={titleId}>{title}</Dialog.Title>
+        <div
+          class="absolute right-14 top-[calc(1.5rem+var(--text-title-line-height)/2)] -translate-y-1/2"
+        >
+          {@render headerActions()}
+        </div>
+      </div>
+    {:else}
+      <Dialog.Title id={titleId}>{title}</Dialog.Title>
+    {/if}
     {#if description}<Dialog.Description id={descriptionId}>{description}</Dialog.Description>{/if}
   </Dialog.Header>
   {#if children || error}

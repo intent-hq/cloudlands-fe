@@ -398,7 +398,7 @@ describe('DeleteWarningDialog', () => {
         },
       });
 
-      expect(screen.getByText(/feat\/x.*remain on disk/)).toBeTruthy();
+      expect(screen.getByRole('button', { name: 'Archive', exact: true })).toBeTruthy();
       expect(screen.queryByText(/feat\/x.*will be lost/)).toBeNull();
       unmount();
 

@@ -189,16 +189,16 @@
             >{/if}
         {/snippet}
         {#snippet secondary()}
-          <Button
-            variant="ghost-light"
-            class="px-2"
-            disabled={busy}
-            onclick={() => (confirmingAbandon ? (confirmingAbandon = false) : close())}
-          >
-            {confirmingAbandon
-              ? m.modals_bulkActionConfirm_cancel_label()
-              : m.modals_setupPrompt_notNow_label()}
-          </Button>
+          {#if confirmingAbandon}
+            <Button
+              variant="ghost-light"
+              class="px-2"
+              disabled={busy}
+              onclick={() => (confirmingAbandon = false)}
+            >
+              {m.modals_bulkActionConfirm_cancel_label()}
+            </Button>
+          {/if}
         {/snippet}
         {#snippet primary()}
           <Button

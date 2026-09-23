@@ -14,16 +14,16 @@
   } from '$lib/utils/shortcuts';
   import { ContentDialog } from '$lib/components/patterns/confirm';
   import Header from '../ui/Header.svelte';
-  import {
-    selectIsCheatSheetOpen,
-    selectCheatSheetContext,
-  } from '$store/renderer/slices/shortcuts-cheatsheet/shortcuts-cheatsheet-selectors';
+  import { selectIsCheatSheetOpen } from '$store/renderer/slices/shortcuts-cheatsheet/shortcuts-cheatsheet-selectors';
+  import { Button } from '$lib/components/ui/button';
+  import Fa from 'svelte-fa';
+  import { faPencil } from '@fortawesome/free-solid-svg-icons';
+  import { navigateToSettings } from '$lib/utils/workspace-navigation';
   import { closeCheatSheet } from '$store/renderer/slices/shortcuts-cheatsheet/shortcuts-cheatsheet-slice';
   import { store as appStore } from '$store/renderer/store';
   import { selectShortcutOverrides } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
 
   const isOpen = selectIsCheatSheetOpen();
-  const context = selectCheatSheetContext();
 
   const shortcutOverrides = selectShortcutOverrides();
   const categories = $derived(getAllShortcutCategories($shortcutOverrides));
@@ -45,9 +45,6 @@
   <ContentDialog
     open
     title={m.layout_cheatSheet_title()}
-    description={$context !== 'global'
-      ? m.layout_cheatSheet_context_label({ context: $context })
-      : undefined}
     size="wide"
     closeLabel={m.layout_cheatSheet_close_ariaLabel()}
     onClose={handleClose}
@@ -72,5 +69,18 @@
         </div>
       {/each}
     </div>
+    {#snippet headerActions()}
+      <Button
+        variant="ghost"
+        size="icon-sm"
+        iconOnly
+        aria-label={m.layout_cheatSheet_configure_label()}
+        title={m.layout_cheatSheet_configure_label()}
+        onclick={() => {
+          handleClose();
+          void navigateToSettings({ tab: 'input', hash: 'keyboard-shortcuts' });
+        }}><Fa icon={faPencil} /></Button
+      >
+    {/snippet}
   </ContentDialog>
 {/if}

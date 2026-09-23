@@ -43,22 +43,22 @@
     <p class="text-sm text-subtle">{m.modals_certMismatch_description()}</p>
 
     <div class="space-y-3 text-xs">
-      <div class="flex justify-between gap-2">
+      <div class="flex flex-col gap-1">
         <span class="shrink-0 text-subtle">{m.modals_certMismatch_connection_label()}</span>
         <!-- i18n-ignore (host:port, not translatable copy) -->
-        <span class="min-w-0 break-all text-right font-mono">{event.host}:{event.port}</span>
+        <span class="min-w-0 break-all font-mono">{event.host}:{event.port}</span>
       </div>
 
-      <div class="space-y-1">
+      <div class="flex flex-col gap-2">
         <span class="text-subtle">{m.modals_certMismatch_expected_label()}</span>
         <!-- i18n-ignore (cert fingerprint hex) -->
-        <p class="font-mono break-all bg-muted/50 rounded p-2">{event.expectedFingerprint}</p>
+        <p class="font-mono break-all bg-accent rounded p-2">{event.expectedFingerprint}</p>
       </div>
 
-      <div class="space-y-1">
+      <div class="flex flex-col gap-2">
         <span class="text-subtle">{m.modals_certMismatch_presented_label()}</span>
         <!-- i18n-ignore (cert fingerprint hex) -->
-        <p class="font-mono break-all bg-danger/10 rounded p-2">{event.actualFingerprint}</p>
+        <p class="font-mono break-all bg-accent rounded p-2">{event.actualFingerprint}</p>
       </div>
     </div>
   </div>
@@ -72,11 +72,6 @@
       {#snippet destructive()}
         <Button variant="ghost-danger" onclick={() => onForget?.(event.id)}>
           {m.modals_certMismatch_forget_label()}
-        </Button>
-      {/snippet}
-      {#snippet secondary()}
-        <Button variant="ghost" onclick={() => onDismiss?.()}>
-          {m.modals_certMismatch_dismiss_label()}
         </Button>
       {/snippet}
     </FormActions>

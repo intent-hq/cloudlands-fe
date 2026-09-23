@@ -12,6 +12,7 @@
   import GitHubAvatar from '$lib/components/ui/GitHubAvatar.svelte';
   import type { Workspace } from '$shared/types';
   import { ListRow } from '$lib/components/patterns/collection';
+  import { Button } from '$lib/components/ui/button';
   import type {
     QuitAgentSummary,
     QuitConfirmationShowPayload,
@@ -65,7 +66,6 @@
         browserCount: number;
         workspaceId?: string;
         owner?: string;
-        detail?: string;
       }
     >();
     function group(workspaceId?: string, workspaceName?: string) {
@@ -81,10 +81,6 @@
           key,
           workspaceId,
           owner: details?.repositoryOwner,
-          detail:
-            details?.repositoryOwner && details.repositoryName
-              ? `${details.repositoryOwner}/${details.repositoryName}`
-              : details?.branch || workspaceId,
           name:
             details?.title ||
             workspaceName ||
@@ -140,8 +136,14 @@
   });
 
   let responded = $state(false);
+  let expandedRequest = $state<string | null>(null);
+  const visibleWorkspaces = $derived(
+    expandedRequest === payload?.requestId ? workspaces : workspaces.slice(0, 5),
+  );
+  const hasMoreWorkspaces = $derived(visibleWorkspaces.length < workspaces.length);
   $effect(() => {
     if (open) responded = false;
+    else expandedRequest = null;
   });
 
   function respond(proceed: boolean) {
@@ -154,7 +156,7 @@
   }
 </script>
 
-{#if open && payload}
+{#if open && payload && (interrupted.length > 0 || disruptedTabs.length > 0)}
   <FormDialog
     bind:open
     static={staticPosition}
@@ -171,9 +173,9 @@
     onSubmit={() => respond(true)}
     onCancel={() => respond(false)}
   >
-    <ul>
-      {#each workspaces as workspace (workspace.key)}
-        <li aria-label={workspace.name}>
+    <ul class="min-w-0">
+      {#each visibleWorkspaces as workspace (workspace.key)}
+        <li aria-label={workspace.name} class="min-w-0">
           <ListRow class="min-h-8 gap-2 px-0 py-1">
             {#snippet leading()}
               {#if workspace.owner}
@@ -188,11 +190,16 @@
                     />{/snippet}
                 </GitHubAvatar>
               {:else}
-                <Fa icon={faFolder} class="size-4 text-muted-foreground" />
+                <span
+                  class="flex size-5 items-center justify-center rounded bg-accent text-foreground"
+                >
+                  <Fa icon={faFolder} class="size-3.5" />
+                </span>
               {/if}
             {/snippet}
-            {#snippet title()}<span title={workspace.name}>{workspace.name}</span>{/snippet}
-            {#snippet description()}{workspace.detail ?? ''}{/snippet}
+            {#snippet title()}<span class="block truncate" title={workspace.name}
+                >{workspace.name}</span
+              >{/snippet}
             {#snippet trailing()}
               {#if workspace.browserCount > 0}
                 {@const browserLabel =
@@ -239,6 +246,17 @@
         </li>
       {/each}
     </ul>
+    {#if hasMoreWorkspaces}
+      <Button
+        variant="ghost"
+        class="justify-self-start"
+        onclick={() => (expandedRequest = payload.requestId)}
+      >
+        {m.quitConfirmation_modal_showMore_label({
+          count: workspaces.length - visibleWorkspaces.length,
+        })}
+      </Button>
+    {/if}
   </FormDialog>
 {/if}
 

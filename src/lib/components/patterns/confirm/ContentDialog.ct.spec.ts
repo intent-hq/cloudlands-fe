@@ -1,5 +1,19 @@
 import { expect, test } from '../../../../test/ct-test';
 import DialogLayoutHarness from './DialogLayoutHarness.svelte';
+import PullConflictPreview from '../../modals/pull-conflict-audit.preview.svelte';
+
+test('pull failure keeps its action inset from the bottom edge', async ({ mount, page }) => {
+  await page.setViewportSize({ width: 360, height: 480 });
+  await mount(PullConflictPreview, { props: { state: 'merge' } });
+  const dialog = page.getByRole('dialog');
+  const action = page.getByRole('button', { name: 'Create Workspace', exact: true });
+  await expect(action).toBeVisible();
+  const dialogBox = await dialog.boundingBox();
+  const actionBox = await action.boundingBox();
+  expect(
+    dialogBox!.y + dialogBox!.height - actionBox!.y - actionBox!.height,
+  ).toBeGreaterThanOrEqual(24);
+});
 
 test('long content scrolls without hiding actions at a narrow, short viewport', async ({
   mount,

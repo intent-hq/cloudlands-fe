@@ -125,7 +125,7 @@ describe('InterruptedAgentsModal', () => {
     expect(onResumeSelected).toHaveBeenCalledWith(['a1', 'a2'], []);
 
     await rerender({ open: true, agents: AGENTS, onResumeSelected, onClose });
-    await fireEvent.click(screen.getByRole('button', { name: /Not now/ }));
+    await fireEvent.click(screen.getByRole('button', { name: 'Close interrupted agents dialog' }));
     expect(onClose).toHaveBeenCalledTimes(2);
   });
 

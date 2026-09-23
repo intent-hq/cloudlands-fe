@@ -64,7 +64,6 @@ describe('InviteConsentModal', () => {
     expect(screen.getByText('ABCD-1234')).toBeTruthy();
     expect(screen.getByText('https://github.com/login/device')).toBeTruthy();
     expect(screen.getByText('Sign in to GitHub first')).toBeTruthy();
-    expect(screen.getByText('What the host learns')).toBeTruthy();
     expect(screen.queryByRole('button', { name: 'Join' })).toBeNull();
     expect(screen.queryByRole('status')).toBeNull();
   });
@@ -206,7 +205,6 @@ describe('InviteConsentModal', () => {
 
       await screen.findByRole('alertdialog', { name: DIALOG_NAME });
       expect(screen.getByText(identityLine)).toBeTruthy();
-      expect(screen.getByText('What the host learns')).toBeTruthy();
       expect(screen.queryByText('Sign in to GitHub first')).toBeNull();
       expect(screen.queryByText('ABCD-1234')).toBeNull();
       expect(screen.queryByRole('button', { name: 'Open GitHub' })).toBeNull();

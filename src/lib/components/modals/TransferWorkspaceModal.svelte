@@ -116,6 +116,13 @@
 
   /** Download-to-file mode swaps transfer-flavored copy for download copy. */
   const isDownload = $derived(destination?.kind === 'download');
+  const dialogTitle = $derived(
+    step === 'transferring'
+      ? isDownload
+        ? m.workspace_transfer_downloading_title({ title: workspaceTitle })
+        : m.workspace_transfer_transferring_title({ title: workspaceTitle })
+      : m.workspace_transfer_modal_title(),
+  );
 
   /**
    * Closing is locked while finalize is in flight — a close dispatches the
@@ -200,7 +207,7 @@
 <ContentDialog
   {open}
   static={staticPosition}
-  title={m.workspace_transfer_modal_title()}
+  title={dialogTitle}
   closeLabel={m.workspace_transfer_close_ariaLabel()}
   onClose={() => requestClose()}
   busy={!canClose}
@@ -401,15 +408,10 @@
         </p>
       {/if}
     {:else if step === 'transferring'}
-      <p class="text-sm" data-testid="transfer-progress-label">
-        {isDownload
-          ? m.workspace_transfer_downloading_title({ title: workspaceTitle })
-          : m.workspace_transfer_transferring_title({ title: workspaceTitle })}
-      </p>
       <p class="text-sm text-subtle" data-testid="transfer-progress-stage">{progressLabel}</p>
 
       <div
-        class="h-2 w-full rounded bg-muted overflow-hidden"
+        class="h-2 w-full rounded bg-accent/50 dark:bg-accent overflow-hidden"
         role="progressbar"
         aria-label={isDownload
           ? m.workspace_transfer_downloadProgress_ariaLabel()
@@ -429,7 +431,10 @@
         {/if}
       </div>
 
-      <ul class="text-xs text-subtle space-y-0.5" data-testid="transfer-progress-bytes">
+      <ul
+        class="grid grid-cols-2 gap-x-4 gap-y-1 text-xs text-subtle"
+        data-testid="transfer-progress-bytes"
+      >
         <li>
           {m.workspace_transfer_bytesDown_label({
             bytes: formatBytesBinary(progress?.bytesDown ?? 0),

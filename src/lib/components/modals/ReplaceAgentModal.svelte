@@ -70,6 +70,7 @@
   cancelLabel={m.modals_replaceAgent_cancel_label()}
   canSubmit={canSend}
   enterKey="ignore"
+  focusContent
   onSubmit={handleSend}
   onCancel={close}
 >

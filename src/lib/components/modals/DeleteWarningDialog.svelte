@@ -221,7 +221,7 @@
                   class="type-body grid min-h-8 min-w-0 grid-cols-[1.5rem_minmax(0,1fr)] items-center gap-x-2 text-foreground"
                 >
                   <span
-                    class="grid size-6 place-items-center rounded-lg bg-muted"
+                    class="grid size-6 place-items-center rounded-lg bg-accent"
                     aria-hidden="true"><HourglassMedium size={16} weight="regular" /></span
                   >
                   <span class="min-w-0 truncate">{name}</span>
@@ -248,7 +248,7 @@
                   class="grid min-h-8 min-w-0 grid-cols-[1.5rem_minmax(0,1fr)_auto] items-center gap-x-2"
                 >
                   <span
-                    class="grid size-6 place-items-center rounded-lg bg-muted"
+                    class="grid size-6 place-items-center rounded-lg bg-accent"
                     aria-hidden="true"
                     ><Fa
                       icon={faCodePullRequest}
@@ -283,7 +283,7 @@
               {/each}
             </ul>
           {/if}
-          {#if hasLocalChanges}
+          {#if hasLocalChanges && !isArchive}
             <div
               class="space-y-2 type-body text-foreground"
               class:mt-4={agents.length > 0 || hookNames.length > 0 || openPrs.length > 0}
@@ -344,22 +344,13 @@
           {/if}
         </div>
       {/if}
-
-      <p class="text-sm leading-5 text-subtle">
-        {#if isArchive}
-          {#if !guestsOnly}
-            <span>{m.modals_archiveWarning_note_description()}</span>
-          {/if}
-          {#if hasGuests}
-            <span>{m.modals_archiveWarning_note_guests_description()}</span>
-          {/if}
-        {:else}
-          <span>{m.modals_deleteWarning_permanent_description()}</span>
-          {#if hasGuests}
-            <span>{m.modals_deleteWarning_permanent_guests_description()}</span>
-          {/if}
-        {/if}
-      </p>
+      {#if hasGuests}
+        <p class="type-body text-subtle">
+          {isArchive
+            ? m.modals_archiveWarning_note_guests_description()
+            : m.modals_deleteWarning_permanent_guests_description()}
+        </p>
+      {/if}
     </div>
   {/snippet}
 </DestructiveConfirm>

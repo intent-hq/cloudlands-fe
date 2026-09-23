@@ -6,6 +6,9 @@
  */
 import { describe, it, expect, vi, beforeAll, afterEach } from 'vitest';
 import { render, screen, fireEvent, waitFor, cleanup } from '@testing-library/svelte';
+import { navigateToSettings } from '$lib/utils/workspace-navigation';
+
+vi.mock('$lib/utils/workspace-navigation', () => ({ navigateToSettings: vi.fn() }));
 
 vi.mock('$lib/client/live/backend-transport', () => ({
   backendRequest: vi.fn(),
@@ -63,6 +66,15 @@ describe('KeyboardShortcutsCheatSheet Escape handling (escape-layer stack)', () 
       expect(screen.queryByRole('dialog')).toBeFalsy();
     });
     expect(appStore.state.shortcutsCheatSheet.isOpen).toBe(false);
+  });
+
+  it('Configure closes the sheet and opens keyboard shortcut settings', async () => {
+    render(KeyboardShortcutsCheatSheet);
+    appStore.dispatch(openCheatSheet('chat'));
+    await fireEvent.click(await screen.findByRole('button', { name: 'Configure' }));
+    expect(navigateToSettings).toHaveBeenCalledWith({ tab: 'input', hash: 'keyboard-shortcuts' });
+    expect(appStore.state.shortcutsCheatSheet.isOpen).toBe(false);
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
   });
 
   it('Escape is not consumed while the sheet is closed (no layer registered)', async () => {

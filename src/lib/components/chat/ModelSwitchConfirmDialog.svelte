@@ -62,21 +62,21 @@
   onSubmit={() => onConfirm?.()}
   {onCancel}
 >
-  <div class="flex flex-wrap items-center gap-3 type-body" data-testid="model-switch-models">
-    <span class="inline-flex min-w-0 items-center gap-1.5" title={fromProviderName}>
+  <div class="flex min-w-0 items-center gap-3 type-body" data-testid="model-switch-models">
+    <span class="inline-flex min-w-0 flex-1 items-center gap-1.5" title={fromProviderName}>
       {#if hasProviderIcon(fromProviderId)}<span aria-hidden="true"
           ><ProviderIcon providerId={fromProviderId} class="size-3.5" /></span
         >{/if}
       <span class="sr-only">{fromProviderName}</span>
-      <span class="break-all">{fromModelLabel}</span>
+      <span class="truncate" title={fromModelLabel}>{fromModelLabel}</span>
     </span>
     <ArrowRight size={16} class="shrink-0 text-muted-foreground" aria-hidden="true" />
-    <span class="inline-flex min-w-0 items-center gap-1.5" title={toProviderName}>
+    <span class="inline-flex min-w-0 flex-1 items-center gap-1.5" title={toProviderName}>
       {#if hasProviderIcon(toProviderId)}<span aria-hidden="true"
           ><ProviderIcon providerId={toProviderId} class="size-3.5" /></span
         >{/if}
       <span class="sr-only">{toProviderName}</span>
-      <span class="break-all">{toModelLabel}</span>
+      <span class="truncate" title={toModelLabel}>{toModelLabel}</span>
     </span>
   </div>
   <p class="type-body text-muted-foreground">

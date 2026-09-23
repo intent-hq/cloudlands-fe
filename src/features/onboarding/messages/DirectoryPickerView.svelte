@@ -376,7 +376,7 @@
     role={embedded ? 'group' : 'dialog'}
     aria-modal={embedded ? undefined : true}
     aria-label={title}
-    class="directory-picker flex h-[min(32rem,calc(100dvh-2rem))] min-w-0 w-full max-w-3xl flex-col overflow-hidden rounded-xl border border-border bg-card shadow-2xl focus:outline-none"
+    class="directory-picker flex h-[min(32rem,calc(100dvh-2rem))] min-w-0 w-full max-w-3xl flex-col overflow-hidden rounded-lg border border-border bg-card shadow-2xl focus:outline-none"
   >
     <header class="flex h-12 shrink-0 items-center justify-between px-4">
       <div class="flex min-w-0 items-center gap-2">
@@ -524,7 +524,7 @@
               count={6}
               rowHeight={32}
               label={m.onboarding_dirPicker_loading_label()}
-              class="py-1"
+              class="gap-2 py-1"
             />
           {:else if pathError}
             <ErrorState

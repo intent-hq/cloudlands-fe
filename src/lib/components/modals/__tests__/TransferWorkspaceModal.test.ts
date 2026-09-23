@@ -333,15 +333,12 @@ describe('TransferWorkspaceModal — transferring step', () => {
         },
       },
     });
-    expect(screen.getByTestId('transfer-progress-label').textContent).toContain(
-      'Transferring “My Space”',
-    );
     expect(screen.getByTestId('transfer-progress-stage').textContent).toContain(
       'Transferring archive',
     );
     const bytes = screen.getByTestId('transfer-progress-bytes').textContent ?? '';
-    expect(bytes).toContain('Downloaded: 2Mi');
-    expect(bytes).toContain('Uploaded: 1Mi');
+    expect(bytes).toContain('2Mi');
+    expect(bytes).toContain('1Mi');
     // (2 + 1) MiB of 2×4 MiB → 38%.
     expect(screen.getByTestId('transfer-progress-bar').getAttribute('aria-valuenow')).toBe('38');
     // Restart toggle only renders for server destinations.
@@ -369,9 +366,6 @@ describe('TransferWorkspaceModal — transferring step', () => {
         },
       },
     });
-    expect(screen.getByTestId('transfer-progress-label').textContent).toContain(
-      'Downloading “My Space”',
-    );
     expect(screen.getByTestId('transfer-progress-stage').textContent).toContain(
       'Downloading archive',
     );
@@ -379,7 +373,7 @@ describe('TransferWorkspaceModal — transferring step', () => {
       'Download progress',
     );
     const bytes = screen.getByTestId('transfer-progress-bytes').textContent ?? '';
-    expect(bytes).toContain('Downloaded: 1Mi');
+    expect(bytes).toContain('1Mi');
     expect(bytes).not.toContain('Uploaded');
     expect(screen.queryByTestId('transfer-restart-agents')).toBeNull();
     // Download fraction counts down only: 1 of 4 MiB → 25%.

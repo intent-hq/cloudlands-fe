@@ -12,7 +12,7 @@
    * `mode: "prove"` (first join on the host, signed in) and `mode: "confirm"`
    * (returning guest with a stored credential): no code or URL — an identity
    * line names the signed-in login (prove) or the login the host already
-   * knows (confirm), the "what the host learns" section stays, and the
+   * knows (confirm), the privacy explanation stays, and the
    * primary "Join" button reports `open`, keeping the dialog up in a brief
    * joining state until main dismisses it.
    *
@@ -70,18 +70,7 @@
     closeLabel={m.inviteConsent_modal_dismiss_ariaLabel()}
     onClose={cancel}
   >
-    {#if payload.mode === 'sign-in-required'}
-      <section class="space-y-1">
-        <h3 class="text-sm font-medium text-foreground">
-          {m.inviteConsent_modal_signInRequired_title()}
-        </h3>
-        <p class="text-xs text-subtle">
-          {payload.reason === 'scope-missing'
-            ? m.inviteConsent_modal_signInScopeMissing_description()
-            : m.inviteConsent_modal_signInNotConnected_description()}
-        </p>
-      </section>
-    {:else}
+    {#if payload.mode !== 'sign-in-required'}
       <div class="flex items-start gap-2 text-sm text-foreground">
         <span class="first-line-icon"><Fa icon={faUser} class="text-subtle" /></span>
         <span>
@@ -91,20 +80,27 @@
         </span>
       </div>
     {/if}
-    <section class="space-y-1">
-      <h3 class="text-sm font-medium text-foreground">
-        {m.inviteConsent_modal_hostLearns_title()}
-      </h3>
-      <p class="text-xs text-subtle">
-        {m.inviteConsent_modal_hostLearns_description()}
-      </p>
-    </section>
+    <p class="text-xs text-subtle">
+      {m.inviteConsent_modal_hostLearns_description()}
+    </p>
     {#if payload.mode === 'sign-in-required'}
-      <GitHubDeviceCodeCard
-        userCode={payload.userCode}
-        verificationUri={payload.verificationUri}
-        onOpen={handleOpen}
-      />
+      <section class="space-y-4">
+        <div class="space-y-1">
+          <h3 class="text-sm font-medium text-foreground">
+            {m.inviteConsent_modal_signInRequired_title()}
+          </h3>
+          <p class="text-xs text-subtle">
+            {payload.reason === 'scope-missing'
+              ? m.inviteConsent_modal_signInScopeMissing_description()
+              : m.inviteConsent_modal_signInNotConnected_description()}
+          </p>
+        </div>
+        <GitHubDeviceCodeCard
+          userCode={payload.userCode}
+          verificationUri={payload.verificationUri}
+          onOpen={handleOpen}
+        />
+      </section>
     {/if}
     {#if waiting}
       <div class="flex items-start gap-2 text-sm text-subtle">

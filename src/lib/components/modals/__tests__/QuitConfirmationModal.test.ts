@@ -58,10 +58,9 @@ describe('QuitConfirmationModal', () => {
       },
     });
     const named = await screen.findByRole('listitem', { name: 'Design system' });
-    expect(within(named).getByText('intent-hq/intent')).toBeTruthy();
     expect(named.querySelector('img')?.getAttribute('src')).toContain('github.com/intent-hq.png');
     const missing = screen.getByRole('listitem', { name: 'Untitled' });
-    expect(within(missing).getByText('w2')).toBeTruthy();
+    expect(within(missing).queryByText('w2')).toBeNull();
     expect(screen.getByRole('alertdialog').getAttribute('aria-describedby')).toBeTruthy();
   });
   it('counts browsers per workspace, including owner fallback and explicit workspace overrides', async () => {

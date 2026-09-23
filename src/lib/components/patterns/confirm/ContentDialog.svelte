@@ -20,6 +20,7 @@
     contentRef?: HTMLElement | null;
     escapeKeydownBehavior?: 'close' | 'ignore';
     children?: Snippet;
+    headerActions?: Snippet;
     footer?: Snippet;
     onkeydown?: (event: KeyboardEvent) => void;
     onkeydowncapture?: (event: KeyboardEvent) => void;
@@ -43,6 +44,7 @@
     contentRef = $bindable(null),
     escapeKeydownBehavior = 'close',
     children,
+    headerActions,
     footer,
     onkeydown,
     onkeydowncapture,
@@ -84,6 +86,14 @@
     {onkeydown}
     {onkeydowncapture}
   >
-    <DialogLayout {title} {description} {titleId} {descriptionId} {children} {footer} />
+    <DialogLayout
+      {title}
+      {description}
+      {titleId}
+      {descriptionId}
+      {children}
+      {footer}
+      {headerActions}
+    />
   </Dialog.Content>
 </Dialog.Root>
