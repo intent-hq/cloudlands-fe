@@ -141,7 +141,9 @@ export async function compileModernMacOSIcon({
         { stdio: 'inherit' },
       );
     } catch (error) {
-      throw new Error(`Xcode actool failed to compile the modern macOS icon: ${error.message}`);
+      throw new Error(`Xcode actool failed to compile the modern macOS icon: ${error.message}`, {
+        cause: error,
+      });
     }
 
     const resourcePath = path.join(outputDirectory, 'Assets.car');
