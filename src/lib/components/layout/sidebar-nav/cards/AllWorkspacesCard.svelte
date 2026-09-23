@@ -458,7 +458,7 @@
 
 {#snippet groupActions(workspaces: Workspace[], groupLabel: string)}
   <div
-    class="absolute right-0 top-1/2 -translate-y-1/2 flex items-center gap-0.5 rounded-md bg-accent/95 px-0.5 opacity-0 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto group-focus-within:opacity-100 group-focus-within:pointer-events-auto focus-within:opacity-100 focus-within:pointer-events-auto"
+    class="absolute right-1 top-1/2 -translate-y-1/2 flex items-center gap-0.5 rounded-md bg-accent/95 px-0.5 opacity-0 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto group-focus-within:opacity-100 group-focus-within:pointer-events-auto focus-within:opacity-100 focus-within:pointer-events-auto"
   >
     {#if workspaces.some((workspace) => workspace.status !== WorkspaceStatusEnum.Archived)}
       <Tooltip.Tooltip content={m.layout_allCard_groupArchiveAll_tooltip()}>
