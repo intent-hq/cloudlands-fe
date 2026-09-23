@@ -32,15 +32,7 @@
   data-navigation-icon={name}
 >
   {#if name === 'sidebar'}
-    <rect
-      x="1.5"
-      y="2.5"
-      width="13"
-      height="11"
-      rx="1.5"
-      stroke="currentColor"
-      stroke-width="1"
-    />
+    <rect x="1.5" y="2.5" width="13" height="11" rx="1.5" stroke="currentColor" stroke-width="1" />
     <path d="M5.5 2.5V13.5" stroke="currentColor" stroke-width="1" />
   {:else if name === 'spaces'}
     <rect
