@@ -155,6 +155,20 @@ describe('sanitizeWsUrlForDisplay', () => {
 });
 
 describe('BrowserWebSocketTransport', () => {
+  it('rejects local-machine requests instead of sending them to the browser daemon', async () => {
+    const { transport, sockets } = createHarness();
+    await expect(
+      transport.request(
+        'settings.update',
+        {
+          changes: [{ path: 'server.wsApi.enabled', value: false }],
+        },
+        { localMachine: true },
+      ),
+    ).rejects.toThrow('Local machine requests require the desktop bridge');
+    expect(sockets).toHaveLength(0);
+    transport.dispose();
+  });
   it('connects lazily and sends a JSON-RPC 2.0 request frame', async () => {
     const { transport, sockets, socket } = createHarness();
     expect(sockets).toHaveLength(0);

@@ -1,4 +1,8 @@
 {
+  "settings_devices_hostMachine_label": "主机（本地）",
+  "settings_wsApi_connectionDetails_label": "连接详情",
+  "settings_wsApi_copyFingerprint_label": "复制 TLS 指纹",
+  "settings_wsApi_fingerprintCopied_label": "已复制 TLS 指纹",
   "layout_cheatSheet_configure_label": "配置",
   "modals_pullConflict_remoteBranch_description": "无法从远程分支“{branchName}”拉取更改。",
   "modals_pullConflict_stashBranch_description": "已从远程分支“{branchName}”拉取，但无法恢复暂存的更改。",

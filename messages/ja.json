@@ -1,4 +1,8 @@
 {
+  "settings_devices_hostMachine_label": "ホストマシン（ローカル）",
+  "settings_wsApi_connectionDetails_label": "接続情報",
+  "settings_wsApi_copyFingerprint_label": "TLSフィンガープリントをコピー",
+  "settings_wsApi_fingerprintCopied_label": "TLSフィンガープリントをコピーしました",
   "layout_cheatSheet_configure_label": "設定",
   "modals_pullConflict_remoteBranch_description": "リモートブランチ「{branchName}」から変更を取得できませんでした。",
   "modals_pullConflict_stashBranch_description": "リモートブランチ「{branchName}」から取得しましたが、スタッシュした変更を復元できませんでした。",

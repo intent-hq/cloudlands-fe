@@ -1,4 +1,8 @@
 {
+  "settings_devices_hostMachine_label": "Host machine (local)",
+  "settings_wsApi_connectionDetails_label": "Connection details",
+  "settings_wsApi_copyFingerprint_label": "Copy TLS fingerprint",
+  "settings_wsApi_fingerprintCopied_label": "TLS fingerprint copied",
   "layout_cheatSheet_configure_label": "Configure",
   "modals_pullConflict_remoteBranch_description": "Unable to pull changes from the “{branchName}” remote branch.",
   "modals_pullConflict_stashBranch_description": "Pulled from the “{branchName}” remote branch, but couldn’t restore stashed changes.",

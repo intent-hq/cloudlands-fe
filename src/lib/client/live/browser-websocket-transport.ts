@@ -270,6 +270,14 @@ export class BrowserWebSocketTransport implements BackendTransport {
     params?: unknown,
     options?: BackendRequestOptions,
   ): Promise<T> {
+    if (options?.localMachine) {
+      return Promise.reject(
+        new BackendError({
+          code: 'UNAVAILABLE',
+          message: 'Local machine requests require the desktop bridge',
+        }),
+      );
+    }
     if (this.disposed) {
       return Promise.reject(
         new BackendError({ code: 'UNAVAILABLE', message: 'Backend transport disposed' }),

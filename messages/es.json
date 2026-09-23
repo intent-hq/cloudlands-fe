@@ -1,4 +1,8 @@
 {
+  "settings_devices_hostMachine_label": "Equipo anfitrión (local)",
+  "settings_wsApi_connectionDetails_label": "Detalles de conexión",
+  "settings_wsApi_copyFingerprint_label": "Copiar huella TLS",
+  "settings_wsApi_fingerprintCopied_label": "Huella TLS copiada",
   "layout_cheatSheet_configure_label": "Configurar",
   "modals_pullConflict_remoteBranch_description": "No se pudieron obtener cambios de la rama remota «{branchName}».",
   "modals_pullConflict_stashBranch_description": "Se obtuvo la rama remota «{branchName}», pero no se pudieron restaurar los cambios guardados en stash.",

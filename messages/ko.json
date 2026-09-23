@@ -1,4 +1,8 @@
 {
+  "settings_devices_hostMachine_label": "호스트 컴퓨터(로컬)",
+  "settings_wsApi_connectionDetails_label": "연결 세부 정보",
+  "settings_wsApi_copyFingerprint_label": "TLS 지문 복사",
+  "settings_wsApi_fingerprintCopied_label": "TLS 지문 복사됨",
   "layout_cheatSheet_configure_label": "설정",
   "modals_pullConflict_remoteBranch_description": "원격 브랜치 “{branchName}”에서 변경 사항을 가져올 수 없습니다.",
   "modals_pullConflict_stashBranch_description": "원격 브랜치 “{branchName}”에서 가져왔지만 스태시한 변경 사항을 복원하지 못했습니다.",

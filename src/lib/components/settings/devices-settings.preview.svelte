@@ -6,7 +6,7 @@
   import { selectConnections } from '$store/renderer/slices/connections/connections-selectors';
   import type { ConnectionsListResult } from '$shared/types/connections';
 
-  function setup() {
+  function setup(remote = false) {
     const state = appStore.state.connections;
     const previous: ConnectionsListResult = {
       connections: selectConnections.select(appStore.state),
@@ -17,8 +17,8 @@
     };
     appStore.dispatch(
       connectionsListReceived({
-        activeId: 'local',
-        windowBackendId: 'local',
+        activeId: remote ? 'studio' : 'local',
+        windowBackendId: remote ? 'studio' : 'local',
         pinnedVersion: '0.9.1',
         connectedIds: ['local', 'studio'],
         connections: [
@@ -80,16 +80,18 @@
     title: 'Device settings',
     defaultState: 'versions',
     states: {
-      versions: { props: {}, setup },
-      'local-expanded': { props: { expanded: true }, setup },
-      'access-disabled': { props: { accessEnabled: false }, setup },
+      versions: { props: {}, setup: () => setup() },
+      'local-expanded': { props: { expanded: true }, setup: () => setup() },
+      'remote-window': { props: {}, setup: () => setup(true) },
+      'remote-expanded': { props: { expanded: true }, setup: () => setup(true) },
+      'access-disabled': { props: { accessEnabled: false }, setup: () => setup() },
     },
   });
 </script>
 
 <script lang="ts">
   import { onDestroy, untrack } from 'svelte';
-  import { appClient, type SettingDefinitionWithValue } from '$lib/client';
+  import { appClient, localMachineClient, type SettingDefinitionWithValue } from '$lib/client';
   import DevicesSettings from './DevicesSettings.svelte';
 
   let { expanded = false, accessEnabled = true }: { expanded?: boolean; accessEnabled?: boolean } =
@@ -98,12 +100,15 @@
     list: appClient.settings.list,
     update: appClient.settings.update,
     pairingInfo: appClient.server.pairingInfo,
+    localList: localMachineClient.settings.list,
+    localUpdate: localMachineClient.settings.update,
+    localPairingInfo: localMachineClient.server.pairingInfo,
   };
   const definitions = [
     { path: 'server.wsApi.enabled', value: untrack(() => accessEnabled), type: 'boolean' },
     { path: 'server.wsApi.port', value: 5181, type: 'number' },
     { path: 'server.bindAddress', value: ['0.0.0.0'], type: 'string' },
-    { path: 'server.tunnel.enabled', value: false, type: 'boolean' },
+    { path: 'server.tunnel.enabled', value: true, type: 'boolean' },
     { path: 'server.tunnel.only', value: false, type: 'boolean' },
   ].map((entry) => ({
     label: entry.path,
@@ -130,10 +135,16 @@
     hostname: 'preview-device',
     tcAddress: 'preview-tailcat-address',
   });
+  localMachineClient.settings.list = appClient.settings.list;
+  localMachineClient.settings.update = appClient.settings.update;
+  localMachineClient.server.pairingInfo = appClient.server.pairingInfo;
   onDestroy(() => {
     appClient.settings.list = previous.list;
     appClient.settings.update = previous.update;
     appClient.server.pairingInfo = previous.pairingInfo;
+    localMachineClient.settings.list = previous.localList;
+    localMachineClient.settings.update = previous.localUpdate;
+    localMachineClient.server.pairingInfo = previous.localPairingInfo;
   });
 </script>
 

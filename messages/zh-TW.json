@@ -1,4 +1,8 @@
 {
+  "settings_devices_hostMachine_label": "主機（本機）",
+  "settings_wsApi_connectionDetails_label": "連線詳細資訊",
+  "settings_wsApi_copyFingerprint_label": "複製 TLS 指紋",
+  "settings_wsApi_fingerprintCopied_label": "已複製 TLS 指紋",
   "layout_cheatSheet_configure_label": "設定",
   "modals_pullConflict_remoteBranch_description": "無法從遠端分支「{branchName}」拉取變更。",
   "modals_pullConflict_stashBranch_description": "已從遠端分支「{branchName}」拉取，但無法還原暫存的變更。",

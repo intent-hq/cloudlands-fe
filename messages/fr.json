@@ -1,4 +1,8 @@
 {
+  "settings_devices_hostMachine_label": "Machine hôte (locale)",
+  "settings_wsApi_connectionDetails_label": "Détails de connexion",
+  "settings_wsApi_copyFingerprint_label": "Copier l’empreinte TLS",
+  "settings_wsApi_fingerprintCopied_label": "Empreinte TLS copiée",
   "layout_cheatSheet_configure_label": "Configurer",
   "modals_pullConflict_remoteBranch_description": "Impossible de récupérer les modifications de la branche distante « {branchName} ».",
   "modals_pullConflict_stashBranch_description": "La branche distante « {branchName} » a été récupérée, mais les modifications remisées n’ont pas pu être restaurées.",

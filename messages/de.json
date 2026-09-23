@@ -1,4 +1,8 @@
 {
+  "settings_devices_hostMachine_label": "Host-Rechner (lokal)",
+  "settings_wsApi_connectionDetails_label": "Verbindungsdetails",
+  "settings_wsApi_copyFingerprint_label": "TLS-Fingerabdruck kopieren",
+  "settings_wsApi_fingerprintCopied_label": "TLS-Fingerabdruck kopiert",
   "layout_cheatSheet_configure_label": "Konfigurieren",
   "modals_pullConflict_remoteBranch_description": "Änderungen vom Remote-Branch „{branchName}“ konnten nicht abgerufen werden.",
   "modals_pullConflict_stashBranch_description": "Remote-Branch „{branchName}“ abgerufen, aber zwischengespeicherte Änderungen konnten nicht wiederhergestellt werden.",
