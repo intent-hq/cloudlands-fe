@@ -81,11 +81,8 @@ test('ignore preserves native submit-button activation', async ({ mount, page },
       },
     },
   });
-  // Bits queues initial autofocus on the first tabbable (Cancel). Let it finish
-  // before moving to Save, so it cannot redirect our native Enter activation.
-  await expect(page.getByRole('button', { name: 'Cancel', exact: true })).toBeFocused();
   const save = page.getByRole('button', { name: 'Save', exact: true });
-  await save.focus();
+  // The primary action receives initial focus even when Enter in fields is ignored.
   await expect(save).toBeFocused();
   await page.keyboard.press('Enter');
   await expect.poll(() => submitted).toBe(1);
@@ -95,6 +92,24 @@ test('ignore preserves native submit-button activation', async ({ mount, page },
     body: await page.screenshot(),
     contentType: 'image/png',
   });
+});
+
+test('a disabled primary action without an editable field focuses the dialog, not close', async ({
+  mount,
+  page,
+}) => {
+  await mount(FormDialog, {
+    props: {
+      open: true,
+      title: 'Unavailable action',
+      canSubmit: false,
+      focusSubmit: true,
+      onSubmit: () => {},
+    },
+  });
+  await expect(page.getByRole('dialog')).toBeFocused();
+  await page.keyboard.press('Tab');
+  await expect(page.getByRole('button', { name: 'Cancel', exact: true })).toBeFocused();
 });
 
 for (const enterKey of ['submit', 'ignore'] as const) {

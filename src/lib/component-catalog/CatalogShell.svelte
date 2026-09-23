@@ -23,10 +23,12 @@
     readCatalogPreferences,
     writeCatalogPreferences,
     type CatalogColorTheme,
+    type CatalogMotion,
     type CatalogPreviewFit,
     type CatalogTheme,
   } from './catalog-preferences';
   import { installPreviewBrowserApi } from './preview-discovery';
+  import { onReducedMotionChange, prefersReducedMotion } from '$lib/utils/reduced-motion';
 
   let {
     activeSlug,
@@ -35,9 +37,10 @@
   }: { activeSlug?: string; activePath?: string; children?: Snippet } = $props();
   let theme = $state<CatalogTheme>(defaultCatalogPreferences.theme);
   let colorTheme = $state<CatalogColorTheme>(defaultCatalogPreferences.colorTheme);
-  let reducedMotion = $state(defaultCatalogPreferences.reducedMotion);
+  let motion = $state<CatalogMotion>(defaultCatalogPreferences.motion);
   let fit = $state<CatalogPreviewFit>();
   let systemDark = $state(false);
+  let reducedMotion = $state(false);
   let hydrated = $state(false);
   let width = $state<number | undefined>(undefined);
   setContext<CatalogWidthContext>(catalogWidthContext, {
@@ -56,6 +59,7 @@
   let initialRootDark = false;
   let initialRootLight = false;
   let initialRootReducedMotion = false;
+  let initialRootFullMotion = false;
   let initialRootComponentFit = false;
   // Root inline properties this shell owns, keyed by property name, with the inline
   // declaration (or null when absent) that was present before the shell first wrote it.
@@ -66,6 +70,9 @@
   const priorRootProperties = new Map<string, InlineDeclaration | null>();
 
   const resolvedTheme = $derived(theme === 'system' ? (systemDark ? 'dark' : 'light') : theme);
+  const resolvedMotion = $derived(
+    motion === 'system' ? (reducedMotion ? 'reduced' : 'full') : motion,
+  );
 
   function applyRootProperties(root: HTMLElement, next: Record<string, string>) {
     for (const property of [...priorRootProperties.keys()]) {
@@ -98,12 +105,13 @@
     initialRootDark = root.classList.contains('dark');
     initialRootLight = root.classList.contains('light');
     initialRootReducedMotion = root.classList.contains('catalog-reduced-motion');
+    initialRootFullMotion = root.classList.contains('catalog-full-motion');
     initialRootComponentFit = root.classList.contains('catalog-component-fit');
     const saved = readCatalogPreferences(localStorage);
     const urlSettings = parseCatalogUrlSettings(new URLSearchParams(window.location.search));
     theme = urlSettings.theme ?? saved.theme;
     colorTheme = saved.colorTheme;
-    reducedMotion = urlSettings.reducedMotion ?? saved.reducedMotion;
+    motion = urlSettings.motion ?? saved.motion;
     width = urlSettings.width;
     fit = urlSettings.fit;
     const removePreviewBrowserApi = installPreviewBrowserApi(window);
@@ -111,14 +119,18 @@
     const media = window.matchMedia('(prefers-color-scheme: dark)');
     const updateSystemTheme = () => (systemDark = media.matches);
     updateSystemTheme();
+    reducedMotion = prefersReducedMotion(document);
+    const stopMotion = onReducedMotionChange((next) => (reducedMotion = next), document);
     media.addEventListener('change', updateSystemTheme);
     hydrated = true;
     return () => {
       media.removeEventListener('change', updateSystemTheme);
+      stopMotion();
       removePreviewBrowserApi();
       root.classList.toggle('dark', initialRootDark);
       root.classList.toggle('light', initialRootLight);
       root.classList.toggle('catalog-reduced-motion', initialRootReducedMotion);
+      root.classList.toggle('catalog-full-motion', initialRootFullMotion);
       root.classList.toggle('catalog-component-fit', initialRootComponentFit);
       for (const property of [...priorRootProperties.keys()]) restoreRootProperty(root, property);
     };
@@ -126,7 +138,7 @@
 
   $effect(() => {
     if (!hydrated) return;
-    writeCatalogPreferences(localStorage, { theme, colorTheme, reducedMotion });
+    writeCatalogPreferences(localStorage, { theme, colorTheme, motion });
     const root = document.documentElement;
     const preset = themePresets.find(({ id }) => id === colorTheme);
     const themeProperties: Record<string, string> = preset
@@ -136,13 +148,16 @@
     applyRootProperties(root, themeProperties);
     root.classList.toggle('dark', resolvedTheme === 'dark');
     root.classList.toggle('light', resolvedTheme === 'light');
-    root.classList.toggle('catalog-reduced-motion', reducedMotion);
+    root.classList.toggle('catalog-reduced-motion', motion === 'reduced');
+    root.classList.toggle('catalog-full-motion', motion === 'full');
     root.classList.toggle('catalog-component-fit', fit === 'component');
 
     if (activeSlug) {
       const url = new URL(window.location.href);
       url.searchParams.set('theme', theme);
-      url.searchParams.set('motion', reducedMotion ? 'reduced' : 'full');
+      url.searchParams.delete('reducedMotion');
+      if (motion === 'system') url.searchParams.delete('motion');
+      else url.searchParams.set('motion', motion);
       if (width) url.searchParams.set('width', String(width));
       else url.searchParams.delete('width');
       window.history.replaceState(window.history.state, '', url);
@@ -156,7 +171,8 @@
   data-testid="catalog-shell"
   data-catalog-theme={theme}
   data-catalog-color-theme={colorTheme}
-  data-catalog-motion={reducedMotion ? 'reduced' : 'full'}
+  data-catalog-motion={resolvedMotion}
+  data-catalog-motion-preference={motion}
   data-catalog-density={density}
   data-catalog-radius={radius}
   style={`${radius === 'square' ? '--radius-small:2px;--radius-medium:3px;--radius-large:4px;' : ''}${width ? `--catalog-preview-width:${width}px` : ''}`}
@@ -241,7 +257,7 @@
                 bind:theme
                 bind:colorTheme
                 {resolvedTheme}
-                bind:reducedMotion
+                bind:motion
                 bind:width
                 bind:density
                 bind:radius
@@ -412,14 +428,5 @@
     .catalog-customize :global(.catalog-controls) {
       grid-template-columns: minmax(0, 1fr);
     }
-  }
-
-  :global(html.catalog-reduced-motion *),
-  :global(html.catalog-reduced-motion *::before),
-  :global(html.catalog-reduced-motion *::after) {
-    scroll-behavior: auto !important;
-    transition-duration: 0.01ms !important;
-    animation-duration: 0.01ms !important;
-    animation-iteration-count: 1 !important;
   }
 </style>

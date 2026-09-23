@@ -23,7 +23,7 @@ try {
     'tsc cdp-mcp-server/server.ts --outDir cdp-mcp-server/dist --module commonjs --target es2020 --moduleResolution node --esModuleInterop --skipLibCheck',
     { cwd: rootDir, stdio: 'inherit' },
   );
-} catch (error) {
+} catch {
   console.error('TypeScript compilation failed');
   process.exit(1);
 }

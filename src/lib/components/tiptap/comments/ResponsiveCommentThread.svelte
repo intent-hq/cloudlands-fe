@@ -1,4 +1,5 @@
 <script lang="ts">
+  import KebabIcon from '$lib/components/icons/KebabIcon.svelte';
   import Fa from 'svelte-fa';
   import { differenceInDays } from 'date-fns';
   import { formatDistanceToNow, formatShortDate, formatInteger } from '$lib/i18n/format';
@@ -13,7 +14,6 @@
     faEdit,
     faTimes,
     faReply,
-    faEllipsisV,
     faLightbulb,
     faExclamationTriangle,
     faCircleQuestion,
@@ -297,7 +297,7 @@
               onShow?.();
             }}
           >
-            <Fa icon={faEllipsisV} size="xs" />
+            <KebabIcon class="size-3.5" />
           </Button>
         {/if}
       </div>
@@ -608,7 +608,7 @@
 
   /* Focus and collapse states */
   .focused {
-    width: 300px;
+    width: var(--comment-focused-width, 300px);
     max-width: 300px;
     box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
     z-index: 20 !important;

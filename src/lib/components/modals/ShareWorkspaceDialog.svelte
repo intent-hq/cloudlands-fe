@@ -49,6 +49,7 @@
   import { Label } from '$lib/components/ui/label';
   import { menuItem } from '$lib/components/ui/menu';
   import * as Popover from '$lib/components/ui/popover';
+  import PrincipalAvatar from '$lib/components/ui/PrincipalAvatar.svelte';
   import { Select } from '$lib/components/ui/select';
   import { ListView } from '$lib/components/patterns/collection';
   import { notify } from '$lib/components/patterns/notify';
@@ -385,21 +386,12 @@
 </script>
 
 {#snippet userAvatar(user: GithubUserSearchItem)}
-  {#if user.avatarUrl}
-    <img
-      src={user.avatarUrl}
-      alt=""
-      class="h-6 w-6 shrink-0 rounded-full"
-      loading="lazy"
-      data-testid="share-pin-avatar"
-    />
-  {:else}
-    <span
-      class="grid h-6 w-6 shrink-0 place-items-center rounded-full bg-muted text-xs"
-      aria-hidden="true"
-      data-testid="share-pin-avatar-fallback">{user.login.slice(0, 1).toUpperCase()}</span
-    >
-  {/if}
+  <PrincipalAvatar
+    avatarUrl={user.avatarUrl}
+    label={user.login}
+    size={24}
+    testid="share-pin-avatar"
+  />
 {/snippet}
 
 {#if open}
@@ -419,7 +411,7 @@
       tabindex="-1"
       data-testid="share-workspace-dialog"
     >
-      <div class="px-6 py-4 border-b border-border flex items-center justify-between">
+      <div class="px-6 py-4 flex items-center justify-between">
         <h2 id="share-workspace-title" class="text-lg font-semibold">
           {m.workspace_share_dialog_title()}
         </h2>
@@ -487,14 +479,11 @@
                           label={principalLabel(principal)}
                         >
                           <span class="flex min-w-0 items-center gap-2">
-                            {#if principal.avatarUrl}
-                              <img
-                                src={principal.avatarUrl}
-                                alt=""
-                                class="h-5 w-5 shrink-0 rounded-full"
-                                loading="lazy"
-                              />
-                            {/if}
+                            <PrincipalAvatar
+                              avatarUrl={principal.avatarUrl}
+                              label={principalLabel(principal)}
+                              size={20}
+                            />
                             <span class="truncate">{principalLabel(principal)}</span>
                           </span>
                         </Select.Item>
@@ -816,19 +805,11 @@
                     data-principal-id={member.principalId}
                   >
                     <div class="flex min-w-0 items-center gap-2">
-                      {#if member.avatarUrl}
-                        <img
-                          src={member.avatarUrl}
-                          alt=""
-                          class="h-6 w-6 shrink-0 rounded-full"
-                          loading="lazy"
-                        />
-                      {:else}
-                        <span
-                          class="grid h-6 w-6 shrink-0 place-items-center rounded-full bg-muted text-xs"
-                          aria-hidden="true">{memberName(member).slice(0, 1).toUpperCase()}</span
-                        >
-                      {/if}
+                      <PrincipalAvatar
+                        avatarUrl={member.avatarUrl}
+                        label={memberName(member)}
+                        size={24}
+                      />
                       <div class="min-w-0">
                         <div class="truncate text-sm">{memberName(member)}</div>
                         <div class="text-xs text-subtle">{roleLabel(member.role)}</div>
