@@ -4,6 +4,15 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.178.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.178.0...v2.178.1) (2026-09-23)
+
+
+### 🐛 Bug Fixes
+
+* **browser:** resolve explicit daemon.localhost / client.localhost aliases typed in the address bar ([#2823](https://github.com/intent-hq/cloudlands-fe/issues/2823)) ([ce9f7bc](https://github.com/intent-hq/cloudlands-fe/commit/ce9f7bc571fd5ad456471cd054ce96795d31a797))
+* bump intentd sidecar to v0.9.102 ([#2835](https://github.com/intent-hq/cloudlands-fe/issues/2835)) ([d522c42](https://github.com/intent-hq/cloudlands-fe/commit/d522c42792c812770f0b5122787b5d13b3689730))
+* **test:** make the tab-strip geometry root and CT specs deterministic under load ([#2826](https://github.com/intent-hq/cloudlands-fe/issues/2826)) ([0a2602b](https://github.com/intent-hq/cloudlands-fe/commit/0a2602bed55b9dc84129480ba607661fce9dfc78))
+
 ## [2.178.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.177.2...v2.178.0) (2026-09-23)
 
 
