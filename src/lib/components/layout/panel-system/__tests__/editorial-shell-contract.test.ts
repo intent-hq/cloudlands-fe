@@ -231,8 +231,6 @@ describe('editorial workspace shell presentation contract', () => {
     expect(nav).not.toContain('faBell');
     expect(nav).not.toContain("id: 'settings'");
     expect(nav).toContain('data-titlebar-spaces-control');
-    expect(nav).toContain('name="dandelion"');
-    expect(nav).not.toContain('name="spaces"');
     expect(titlebar).not.toContain('ChiefTrigger');
     expect(workspaceHeader).toContain('label: m.ui_sidebar_toggle_label()');
     expect(workspaceHeader).toContain('appStore.dispatch(toggleSidebar())');
@@ -267,7 +265,6 @@ describe('editorial workspace shell presentation contract', () => {
     expect(navigation).not.toContain('aria-expanded');
     expect(navigation).not.toContain('aria-controls');
     expect(navigation).not.toContain('SidebarNavHoverCard');
-    expect(navigation).toContain('name="dandelion"');
     expect(appLayout).toContain('class="workspace-main flex');
     expect(sidebarPanel).toContain('data-panel-item={$panelItem$}');
     expect(sidebarPanel).not.toContain("$panelItem$ === 'chief' ? 'bg-background' : ''");

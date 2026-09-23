@@ -825,6 +825,41 @@ describe('workspaceShareSaga', () => {
     h.task.cancel();
   });
 
+  // Remote access on, Tailcat tunnel off: the daemon's tunnel-only refusal
+  // (-32603, `data.code = 'tunnel-down'`) names the tunnel, not Remote
+  // Access, so the owner turns on the one setting that is actually off.
+  it('maps the tunnel-down daemon code onto the Tailcat inline error, distinct from listener-down', async () => {
+    replyByMethod({
+      'workspace.invite.create': Object.assign(new Error('tunnel is down'), {
+        rpcCode: -32603,
+        data: { code: 'tunnel-down' },
+      }),
+    });
+    const h = harness(opened());
+
+    h.dispatch(shareInviteCreateRequested({ pinLogin: '' }));
+    await settle();
+
+    expect(h.state().creating).toBe(false);
+    const tunnelDownError = h.state().createError;
+    expect(tunnelDownError).toContain('Tailcat');
+    expect(tunnelDownError).not.toContain('Remote Access');
+    expect(h.state().createdLink).toBeNull();
+
+    replyByMethod({
+      'workspace.invite.create': Object.assign(new Error('invite listener is down'), {
+        rpcCode: -32603,
+        data: { code: 'listener-down' },
+      }),
+    });
+    h.dispatch(shareInviteCreateRequested({ pinLogin: '' }));
+    await settle();
+
+    expect(h.state().createError).toContain('Remote Access');
+    expect(h.state().createError).not.toBe(tunnelDownError);
+    h.task.cancel();
+  });
+
   // Regression (fe#2440 review P2): revoking the just-created invite retires
   // its one-time link.
   it('revokes an invite then re-reads, retiring the created link, and localizes a rejected revoke', async () => {

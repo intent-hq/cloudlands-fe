@@ -9,6 +9,7 @@ import {
   setAgentFontStyle,
   setChatAuroraEnabled,
   setGithubLinkDefaultAction,
+  setLabsMultiplayerEnabled,
   setShellTransparencyEnabled,
   setVolume,
 } from '$store/renderer/slices/user-preferences/user-preferences-slice';
@@ -240,6 +241,26 @@ describe('settings-proposal-actions', () => {
         apply: { kind: 'redux-action', action: 'userPreferences/setShellTransparencyEnabled' },
       },
     ]);
+  });
+
+  it('applies and reverses the Multiplayer lab preference', async () => {
+    const result = await applySettingsProposalWork(
+      makeDetail(makeProposal('labs.multiplayer', true)),
+    );
+
+    expect(mocks.dispatch).toHaveBeenCalledWith(setLabsMultiplayerEnabled(true));
+    expect(result.reverseChanges).toEqual([
+      {
+        path: 'labs.multiplayer',
+        value: false,
+        apply: { kind: 'redux-action', action: 'userPreferences/setLabsMultiplayerEnabled' },
+      },
+    ]);
+
+    mocks.dispatch.mockClear();
+    await undoSettingsProposalWork(result.reverseChanges);
+
+    expect(mocks.dispatch).toHaveBeenCalledWith(setLabsMultiplayerEnabled(false));
   });
 
   it('falls back to the proposal value when a numeric edit is invalid', async () => {

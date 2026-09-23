@@ -226,12 +226,17 @@ const availableEnabledProviderIds$ = derived(
   ([enabled, override]) => override ?? enabled,
 );
 const mockAgentSession$ = writable<
-  { id: string; workspaceId: string; provider?: string } | undefined
+  { id: string; workspaceId: string; provider?: string; model?: string | null } | undefined
 >(undefined);
 // Guest-local Antigravity sign-in state (`selectIsProviderModelAccessAllowed`).
 const antigravityModelsAllowed$ = writable(true);
+// Raw `providers.enabled` map (settings-derived disabled state, intent#5737).
+// Empty by default: an absent entry is "not disabled", so existing tests that
+// only manipulate the enabled/available lists keep working unchanged.
+const enabledProvidersMap$ = writable<Record<string, boolean>>({});
 vi.mock('$store/renderer/slices/provider-settings/provider-settings-selectors', () => ({
   selectActiveProviderId: () => activeProviderId$,
+  selectEnabledProviders: () => enabledProvidersMap$,
   selectModelFetchProviderIds: () =>
     derived(
       [hasCheckedOnce$, enabledProviderIds$, availableEnabledProviderIds$],
@@ -278,6 +283,7 @@ warmImport(() => import('../../ui/__tests__/mocks/button.svelte'));
 
 afterEach(() => {
   availableProviderOverride$.set(null);
+  enabledProvidersMap$.set({});
   mockModelState.availableModelsProviderId = 'auggie';
   daemonHealth$.set('healthy');
   providerStaleFlags$.set({});
@@ -1142,7 +1148,9 @@ describe('ModelPicker combined reasoning mode', () => {
     await selectEffort(effortListbox, 'High');
 
     await waitFor(() => {
-      expect(applyReasoningEffortMock).toHaveBeenCalledWith('agent-1', 'ws-1', 'high', 'medium');
+      expect(applyReasoningEffortMock).toHaveBeenCalledWith('agent-1', 'ws-1', 'high', 'medium', {
+        canMutate: expect.any(Function),
+      });
     });
   });
 
@@ -1752,7 +1760,9 @@ describe('ModelPicker combined reasoning mode', () => {
     expect(screen.queryByTestId('effort-gauge')).toBeNull();
 
     await waitFor(() => {
-      expect(applyReasoningEffortMock).toHaveBeenCalledWith('agent-1', 'ws-1', null, 'none');
+      expect(applyReasoningEffortMock).toHaveBeenCalledWith('agent-1', 'ws-1', null, 'none', {
+        canMutate: expect.any(Function),
+      });
     });
   });
 });
@@ -3079,6 +3089,428 @@ describe('ModelPicker unlocked agent provider handling', () => {
   });
 });
 
+describe('ModelPicker disabled agent provider (intent#5737)', () => {
+  const dispatchedTypes = () =>
+    mockSvelteDispatch.mock.calls.map(([action]) => (action as { type?: string }).type);
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockModelState.selectedModel = 'codex:gpt-5-codex';
+    mockModelState.loadError = null;
+    mockModelState.availableModels = [];
+    providerWarnings$.set({});
+    mockAgentSession$.set(undefined);
+    vi.mocked(getModelsForProviderForLoadingState).mockImplementation(async (providerId) => {
+      if (providerId === 'codex') {
+        return {
+          models: [{ value: 'codex:gpt-5-codex', label: 'GPT-5 Codex', description: 'Smart' }],
+        };
+      }
+      if (providerId === 'auggie') {
+        return {
+          models: [{ value: 'auggie:sonnet4.6', label: 'Sonnet 4.6', description: 'Smart' }],
+        };
+      }
+      return { models: [] };
+    });
+    enabledProviderIds$.set(['auggie']);
+    activeProviderId$.set('auggie');
+    hasCheckedOnce$.set(true);
+  });
+
+  afterEach(() => {
+    cleanup();
+    document.body.innerHTML = '';
+    mockAgentSession$.set(undefined);
+    enabledProvidersMap$.set({});
+    activeProviderId$.set('auggie');
+  });
+
+  it('warns before any send when the agent provider is disabled in settings, without switching the model itself', async () => {
+    const { agentClient } = await import('$features/agent/agent.client');
+    const { notify } = await import('$lib/components/patterns/notify');
+    // The provider is explicitly OFF in Settings > Agents (not merely
+    // unavailable): the warning derives from settings alone, ahead of any
+    // catalog fetch or daemon event.
+    enabledProvidersMap$.set({ auggie: true, codex: false });
+    mockAgentSession$.set({ id: 'agent-1', workspaceId: 'ws-1', provider: 'codex' });
+
+    render(ModelPicker, {
+      props: {
+        selectedModel: 'codex:gpt-5-codex',
+        agentId: 'agent-1',
+        workspaceId: 'ws-1',
+        portal: false,
+      },
+    });
+
+    const trigger = await screen.findByRole('button');
+    await waitFor(() => {
+      expect(trigger.querySelector('[data-icon="triangle-exclamation"]')).not.toBeNull();
+    });
+    expect(screen.queryByRole('status')).toBeNull();
+    // The trigger tooltip carries the reason (model + disabled provider).
+    const tooltip = trigger.querySelector('[title]')?.getAttribute('title') ?? '';
+    expect(tooltip).toMatch(/Codex/);
+    expect(tooltip).toMatch(/disabled/i);
+
+    await fireEvent.click(trigger);
+    const alert = await screen.findByRole('alert');
+    expect(alert.textContent).toMatch(/Codex/);
+    expect(alert.textContent).toMatch(/disabled/i);
+    // The disabled provider's group is not offered as a pick target…
+    expect(screen.queryByRole('option', { name: /GPT-5 Codex/ })).toBeNull();
+    // …while the still-enabled provider remains selectable.
+    expect(await screen.findByRole('option', { name: /Sonnet 4\.6/ })).toBeTruthy();
+
+    // The daemon owns the re-home on the next send; the FE never routes around
+    // the gate with agent.setModel, a session patch, or an auto-fallback toast.
+    expect(vi.mocked(agentClient.setModel)).not.toHaveBeenCalled();
+    expect(dispatchedTypes()).not.toContain('agentSession/updateSession');
+    expect(vi.mocked(notify.info)).not.toHaveBeenCalled();
+  });
+
+  it('does not offer a disabled default provider the available+enabled set still admits', async () => {
+    const { agentClient } = await import('$features/agent/agent.client');
+    // selectEnabledProviderIds always admits `model.defaultProvider`, so a
+    // default provider disabled in Settings > Agents still reaches the picker
+    // through the available+enabled list. The daemon refuses every turn on it
+    // (and a disabled default has no re-home target), so its rows are a dead
+    // end and must not be selectable — while the agent's own enabled provider
+    // stays offered and raises no warning.
+    enabledProviderIds$.set(['auggie', 'codex']);
+    enabledProvidersMap$.set({ auggie: false, codex: true });
+    mockAgentSession$.set({ id: 'agent-1', workspaceId: 'ws-1', provider: 'codex' });
+
+    render(ModelPicker, {
+      props: {
+        selectedModel: 'codex:gpt-5-codex',
+        agentId: 'agent-1',
+        workspaceId: 'ws-1',
+        portal: false,
+      },
+    });
+
+    const trigger = await screen.findByRole('button');
+    await fireEvent.click(trigger);
+    expect(await screen.findByRole('option', { name: /GPT-5 Codex/ })).toBeTruthy();
+    expect(screen.queryByRole('option', { name: /Sonnet 4\.6/ })).toBeNull();
+    expect(screen.queryByRole('tab', { name: /Auggie/ })).toBeNull();
+    expect(screen.queryByRole('alert')).toBeNull();
+    expect(trigger.querySelector('[data-icon="triangle-exclamation"]')).toBeNull();
+    expect(vi.mocked(agentClient.setModel)).not.toHaveBeenCalled();
+  });
+
+  it('warns while no catalog has resolved yet — the warning never waits behind a fetch', async () => {
+    enabledProvidersMap$.set({ auggie: true, codex: false });
+    mockAgentSession$.set({ id: 'agent-1', workspaceId: 'ws-1', provider: 'codex' });
+    // Every catalog fetch hangs: nothing about the disabled provider can be
+    // learned from the network, only from settings.
+    vi.mocked(getModelsForProviderForLoadingState).mockImplementation(() => new Promise(() => {}));
+
+    render(ModelPicker, {
+      props: {
+        selectedModel: 'codex:gpt-5-codex',
+        agentId: 'agent-1',
+        workspaceId: 'ws-1',
+        portal: false,
+      },
+    });
+
+    const trigger = await screen.findByRole('button');
+    await waitFor(() => {
+      expect(trigger.querySelector('[data-icon="triangle-exclamation"]')).not.toBeNull();
+    });
+    const tooltip = trigger.querySelector('[title]')?.getAttribute('title') ?? '';
+    expect(tooltip).toMatch(/Codex/);
+    expect(tooltip).toMatch(/disabled/i);
+  });
+
+  it('attributes a bare model id shared by several catalogs to the agent provider, not the default one', async () => {
+    enabledProvidersMap$.set({ auggie: true, codex: false });
+    mockAgentSession$.set({ id: 'agent-1', workspaceId: 'ws-1', provider: 'codex' });
+    // Both catalogs list the same bare id; the default provider (auggie) is
+    // enabled, but the agent still sends through codex.
+    vi.mocked(getModelsForProviderForLoadingState).mockImplementation(async (providerId) => {
+      if (providerId === 'codex' || providerId === 'auggie') {
+        return { models: [{ value: 'shared-model', label: 'Shared model', description: '' }] };
+      }
+      return { models: [] };
+    });
+
+    render(ModelPicker, {
+      props: {
+        selectedModel: 'shared-model',
+        agentId: 'agent-1',
+        workspaceId: 'ws-1',
+        portal: false,
+      },
+    });
+
+    const trigger = await screen.findByRole('button');
+    // The enabled default provider's catalog has loaded and owns the id too.
+    await fireEvent.click(trigger);
+    expect(await screen.findByRole('option', { name: /Shared model/ })).toBeTruthy();
+    await fireEvent.keyDown(document.activeElement ?? trigger, { key: 'Escape' });
+
+    await waitFor(() => {
+      expect(trigger.querySelector('[data-icon="triangle-exclamation"]')).not.toBeNull();
+    });
+    const tooltip = trigger.querySelector('[title]')?.getAttribute('title') ?? '';
+    expect(tooltip).toMatch(/Codex/);
+    expect(tooltip).toMatch(/disabled/i);
+  });
+
+  it('announces the daemon re-home once when the session lands on another provider', async () => {
+    const { agentClient } = await import('$features/agent/agent.client');
+    const { notify } = await import('$lib/components/patterns/notify');
+    enabledProvidersMap$.set({ auggie: true, codex: false });
+    mockAgentSession$.set({
+      id: 'agent-1',
+      workspaceId: 'ws-1',
+      provider: 'codex',
+      model: 'gpt-5-codex',
+    });
+
+    const props = {
+      selectedModel: 'codex:gpt-5-codex',
+      agentId: 'agent-1',
+      workspaceId: 'ws-1',
+      portal: false,
+    };
+    const { rerender } = render(ModelPicker, { props });
+
+    const trigger = await screen.findByRole('button');
+    await waitFor(() => {
+      expect(trigger.querySelector('[data-icon="triangle-exclamation"]')).not.toBeNull();
+    });
+    // The enabled provider's catalog has loaded (the picker offers it).
+    await fireEvent.click(trigger);
+    expect(await screen.findByRole('option', { name: /Sonnet 4\.6/ })).toBeTruthy();
+    await fireEvent.keyDown(document.activeElement ?? trigger, { key: 'Escape' });
+    expect(vi.mocked(notify.info)).not.toHaveBeenCalled();
+
+    // The daemon refused the disabled provider on send and re-homed the agent;
+    // the agent-updated event refreshes the session's provider and model.
+    mockAgentSession$.set({
+      id: 'agent-1',
+      workspaceId: 'ws-1',
+      provider: 'auggie',
+      model: 'sonnet4.6',
+    });
+    await rerender({ ...props, selectedModel: 'auggie:sonnet4.6' });
+
+    await waitFor(() => {
+      expect(vi.mocked(notify.info)).toHaveBeenCalledTimes(1);
+    });
+    const [toast] = vi.mocked(notify.info).mock.calls[0] as [string, ...unknown[]];
+    expect(toast).toMatch(/Sonnet 4\.6/);
+    expect(dispatchedTypes()).toContain('model/setModelFallbackInfo');
+    expect(vi.mocked(agentClient.setModel)).not.toHaveBeenCalled();
+
+    // Settled on the enabled provider: the warning clears.
+    await waitFor(() => {
+      expect(trigger.querySelector('[data-icon="triangle-exclamation"]')).toBeNull();
+    });
+  });
+
+  it('holds the announcement and the auto-fallback until the bare re-homed model arrives', async () => {
+    const { agentClient } = await import('$features/agent/agent.client');
+    const { notify } = await import('$lib/components/patterns/notify');
+    enabledProvidersMap$.set({ auggie: true, codex: false });
+    // Catalog rows are bare for every provider, as the daemon serves them.
+    vi.mocked(getModelsForProviderForLoadingState).mockImplementation(async (providerId) => {
+      if (providerId === 'codex') {
+        return { models: [{ value: 'gpt-5-codex', label: 'GPT-5 Codex', description: '' }] };
+      }
+      if (providerId === 'auggie') {
+        return { models: [{ value: 'sonnet4.6', label: 'Sonnet 4.6', description: '' }] };
+      }
+      return { models: [] };
+    });
+    mockAgentSession$.set({
+      id: 'agent-1',
+      workspaceId: 'ws-1',
+      provider: 'codex',
+      model: 'gpt-5-codex',
+    });
+
+    const props = {
+      selectedModel: 'gpt-5-codex',
+      agentId: 'agent-1',
+      workspaceId: 'ws-1',
+      portal: false,
+      updateGlobalStore: true,
+    };
+    const { rerender } = render(ModelPicker, { props });
+
+    const trigger = await screen.findByRole('button');
+    await waitFor(() => {
+      expect(trigger.querySelector('[data-icon="triangle-exclamation"]')).not.toBeNull();
+    });
+    await fireEvent.click(trigger);
+    expect(await screen.findByRole('option', { name: /Sonnet 4\.6/ })).toBeTruthy();
+    await fireEvent.keyDown(document.activeElement ?? trigger, { key: 'Escape' });
+
+    // The session's provider/model pair refreshes first; the `selectedModel`
+    // prop still carries the stale model for a few flushes.
+    mockAgentSession$.set({
+      id: 'agent-1',
+      workspaceId: 'ws-1',
+      provider: 'auggie',
+      model: 'sonnet4.6',
+    });
+    await tick();
+    await tick();
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(vi.mocked(notify.info)).not.toHaveBeenCalled();
+    expect(vi.mocked(agentClient.setModel)).not.toHaveBeenCalled();
+    expect(dispatchedTypes()).not.toContain('agentSession/updateSession');
+
+    await rerender({ ...props, selectedModel: 'sonnet4.6' });
+
+    await waitFor(() => {
+      expect(vi.mocked(notify.info)).toHaveBeenCalledTimes(1);
+    });
+    const [toast] = vi.mocked(notify.info).mock.calls[0] as [string, ...unknown[]];
+    // The disabled provider's catalog is never fetched, so the "from" side may
+    // fall back to the model id; the "to" side is the re-homed model.
+    expect(toast).toMatch(/gpt-5[- ]codex/i);
+    expect(toast).toMatch(/Sonnet 4\.6/);
+    expect(vi.mocked(agentClient.setModel)).not.toHaveBeenCalled();
+    expect(dispatchedTypes()).not.toContain('agentSession/updateSession');
+  });
+
+  it('names the provider default, not the stale model, when the re-home lands on no pinned model', async () => {
+    const { agentClient } = await import('$features/agent/agent.client');
+    const { notify } = await import('$lib/components/patterns/notify');
+    enabledProvidersMap$.set({ auggie: true, codex: false });
+    vi.mocked(getModelsForProviderForLoadingState).mockImplementation(async (providerId) => {
+      if (providerId === 'codex') {
+        return { models: [{ value: 'gpt-5-codex', label: 'GPT-5 Codex', description: '' }] };
+      }
+      if (providerId === 'auggie') {
+        return { models: [{ value: 'sonnet4.6', label: 'Sonnet 4.6', description: '' }] };
+      }
+      return { models: [] };
+    });
+    mockAgentSession$.set({
+      id: 'agent-1',
+      workspaceId: 'ws-1',
+      provider: 'codex',
+      model: 'gpt-5-codex',
+    });
+
+    const props = {
+      selectedModel: 'gpt-5-codex',
+      agentId: 'agent-1',
+      workspaceId: 'ws-1',
+      portal: false,
+    };
+    const { rerender } = render(ModelPicker, { props });
+
+    const trigger = await screen.findByRole('button');
+    await waitFor(() => {
+      expect(trigger.querySelector('[data-icon="triangle-exclamation"]')).not.toBeNull();
+    });
+
+    // The daemon re-homed onto the default provider with no pinned model: the
+    // refreshed AgentLite row carries the new provider and omits `model`
+    // (§5.5), while the `selectedModel` prop still holds the stale model.
+    mockAgentSession$.set({ id: 'agent-1', workspaceId: 'ws-1', provider: 'auggie' });
+    await tick();
+    await tick();
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(vi.mocked(notify.info)).not.toHaveBeenCalled();
+
+    await rerender({ ...props, selectedModel: undefined });
+
+    await waitFor(() => {
+      expect(vi.mocked(notify.info)).toHaveBeenCalledTimes(1);
+    });
+    const [toast] = vi.mocked(notify.info).mock.calls[0] as [string, ...unknown[]];
+    expect(toast).toMatch(/gpt-5[- ]codex/i);
+    // The "to" side is the default label, never the model the agent left.
+    expect(toast.replace(/^.*Switched to/i, '')).not.toMatch(/gpt-5[- ]codex/i);
+    expect(vi.mocked(agentClient.setModel)).not.toHaveBeenCalled();
+    await waitFor(() => {
+      expect(trigger.querySelector('[data-icon="triangle-exclamation"]')).toBeNull();
+    });
+  });
+
+  it('does not announce a re-home the user picked themselves', async () => {
+    const { notify } = await import('$lib/components/patterns/notify');
+    enabledProvidersMap$.set({ auggie: true, codex: false });
+    mockAgentSession$.set({
+      id: 'agent-1',
+      workspaceId: 'ws-1',
+      provider: 'codex',
+      model: 'gpt-5-codex',
+    });
+
+    const props = {
+      selectedModel: 'codex:gpt-5-codex',
+      agentId: 'agent-1',
+      workspaceId: 'ws-1',
+      portal: false,
+    };
+    const { rerender } = render(ModelPicker, { props });
+
+    const trigger = await screen.findByRole('button');
+    await waitFor(() => {
+      expect(trigger.querySelector('[data-icon="triangle-exclamation"]')).not.toBeNull();
+    });
+    await fireEvent.click(trigger);
+    await fireEvent.click(await screen.findByRole('option', { name: /Sonnet 4\.6/ }));
+
+    // The pick settles in separate flushes: the prop first, the session later.
+    await rerender({ ...props, selectedModel: 'auggie:sonnet4.6' });
+    await tick();
+    mockAgentSession$.set({
+      id: 'agent-1',
+      workspaceId: 'ws-1',
+      provider: 'auggie',
+      model: 'sonnet4.6',
+    });
+
+    await waitFor(() => {
+      expect(trigger.querySelector('[data-icon="triangle-exclamation"]')).toBeNull();
+    });
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(vi.mocked(notify.info)).not.toHaveBeenCalled();
+    expect(dispatchedTypes()).not.toContain('model/setModelFallbackInfo');
+  });
+
+  it('does not announce anything when the provider is simply re-enabled', async () => {
+    const { notify } = await import('$lib/components/patterns/notify');
+    enabledProvidersMap$.set({ auggie: true, codex: false });
+    mockAgentSession$.set({ id: 'agent-1', workspaceId: 'ws-1', provider: 'codex' });
+
+    render(ModelPicker, {
+      props: {
+        selectedModel: 'codex:gpt-5-codex',
+        agentId: 'agent-1',
+        workspaceId: 'ws-1',
+        portal: false,
+      },
+    });
+
+    const trigger = await screen.findByRole('button');
+    await waitFor(() => {
+      expect(trigger.querySelector('[data-icon="triangle-exclamation"]')).not.toBeNull();
+    });
+
+    enabledProvidersMap$.set({ auggie: true, codex: true });
+    enabledProviderIds$.set(['auggie', 'codex']);
+
+    await waitFor(() => {
+      expect(trigger.querySelector('[data-icon="triangle-exclamation"]')).toBeNull();
+    });
+    expect(vi.mocked(notify.info)).not.toHaveBeenCalled();
+    expect(dispatchedTypes()).not.toContain('model/setModelFallbackInfo');
+  });
+});
+
 describe('ModelPicker global-default vs per-agent dispatch gating', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -3192,10 +3624,13 @@ describe('ModelPicker global-default vs per-agent dispatch gating', () => {
     await pickModelOne();
 
     await waitFor(() => {
-      expect(reconcileAgentReasoningEffortMock).toHaveBeenCalledWith('agent-1', 'ws-1', 'xhigh', [
-        'low',
-        'high',
-      ]);
+      expect(reconcileAgentReasoningEffortMock).toHaveBeenCalledWith(
+        'agent-1',
+        'ws-1',
+        'xhigh',
+        ['low', 'high'],
+        { canMutate: expect.any(Function) },
+      );
     });
   });
 

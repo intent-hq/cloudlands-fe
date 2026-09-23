@@ -3,13 +3,7 @@
   import { onMount, tick, untrack } from 'svelte';
   import { writable } from 'svelte/store';
 
-  import { agentClient } from '$features/agent/agent.client';
-  import {
-    applyReasoningEffort,
-    reconcileAgentReasoningEffort,
-  } from '$features/agent/reasoning-effort';
   import { useAgentSession } from '$lib/hooks/useAgentSession.svelte';
-  import { updateSession as updateAgentSessionFields } from '$store/renderer/slices/agent-session/agent-session-slice';
   import { selectAgentReasoningEffort } from '$store/renderer/slices/agent-session/agent-session-selectors';
 
   import Button from '$lib/components/ui/button/button.svelte';
@@ -33,6 +27,7 @@
     type ProviderWarningNotice,
   } from './ModelPickerProviderNotice.svelte';
   import ModelProviderErrorItem from './ModelProviderErrorItem.svelte';
+  import { createAgentModelMutator, isSkippedMutation } from './agent-model-mutator';
 
   import {
     selectSelectedModel,
@@ -60,6 +55,7 @@
   import {
     selectActiveProviderId,
     selectAvailableEnabledProviderIds,
+    selectEnabledProviders,
     selectIsProviderModelAccessAllowed,
     selectModelFetchProviderIds,
   } from '$store/renderer/slices/provider-settings/provider-settings-selectors';
@@ -87,6 +83,7 @@
   import {
     filterDefaultPseudoOptions,
     findModelFallbackOption,
+    isProviderDisabledInSettings,
     isProviderEnabled,
     isUserProviderSettled,
     normalizeModelIdForMatch,
@@ -146,6 +143,7 @@
     );
   }
   const availableEnabledProviderIds$ = selectAvailableEnabledProviderIds();
+  const enabledProviders$ = selectEnabledProviders();
   const selectedModel$ = selectSelectedModel();
   const availableModels$ = selectAvailableModels();
   const availableModelsProviderId$ = selectAvailableModelsProviderId();
@@ -226,7 +224,7 @@
     // model is selected (e.g. "Default ({model})" for the specialist editor's
     // inherit state). Also applies to the catalog-default fallback.
     formatDefaultModelLabel?: (modelLabel: string) => string;
-    // Gates agent-session updates (updateAgentSessionFields, agent.setModel).
+    // Gates agent-session updates (session model write, agent.setModel).
     updateGlobalStore?: boolean;
     // Gates the global selectModel dispatch (persisted default); Settings default picker only.
     updateGlobalDefault?: boolean;
@@ -323,6 +321,9 @@
   });
   const isGuestLocked = $derived(!!agentId && !!workspaceId && $isWorkspaceCollaborator$);
   const effectiveLocked = $derived(isLocked || isGuestLocked);
+  // Every agent-session mutation goes through this funnel; it re-reads the
+  // live lock on each call, so no call site needs to re-check after an await.
+  const mutate = createAgentModelMutator({ isLocked: () => isGuestLocked });
 
   let agentProviderModels = $state<
     import('$features/auggie/auggie-models.client').AuggieModel[] | null
@@ -489,6 +490,35 @@
 
   const isEffectiveProviderAvailable = $derived(
     isProviderEnabled($availableEnabledProviderIds$, effectiveProviderId),
+  );
+
+  // An existing agent whose current provider was explicitly disabled in
+  // Settings > Agents (intent#5737). Read from `providers.enabled` alone — not
+  // the available+enabled set, which also drops providers whose probe failed,
+  // and not a daemon event — so the picker can warn before any message is
+  // sent. The daemon refuses to run the agent on a disabled provider and
+  // re-homes it on the next send, so unlike the cloudlands-fe#749 policy
+  // (keep a since-unavailable provider selectable) the model is reported as
+  // unavailable and the disabled provider's group is not offered. A
+  // guest-locked picker never sees the host's settings and stays read-only.
+  const isEffectiveProviderDisabled = $derived(
+    !!agentId &&
+      !isGuestLocked &&
+      isProviderDisabledInSettings($enabledProviders$, effectiveProviderId),
+  );
+
+  // Providers whose models the picker may offer. The available+enabled set
+  // always admits the default provider (`model.defaultProvider`) even when it
+  // was disabled in settings, so its catalog keeps loading for the fetch and
+  // warning paths — but the daemon refuses every turn on a disabled provider
+  // and a disabled default has no re-home target, so its rows must not be
+  // selectable (intent#5737). Same settings blind spot as above for guests.
+  const selectableProviderIds = $derived(
+    isGuestLocked
+      ? $availableEnabledProviderIds$
+      : $availableEnabledProviderIds$.filter(
+          (pid) => !isProviderDisabledInSettings($enabledProviders$, pid),
+        ),
   );
 
   // The per-agent fetch is only needed when the effective provider's models
@@ -741,7 +771,7 @@
   });
 
   $effect(() => {
-    if (!deferUpdate && pendingModelUpdate && !isGuestLocked) {
+    if (!deferUpdate && pendingModelUpdate) {
       const model = pendingModelUpdate;
       pendingModelUpdate = null;
       logger.info('Applying deferred model update:', { model, agentId });
@@ -787,7 +817,6 @@
   }
 
   async function applyBackendModelUpdate(model: string) {
-    if (isGuestLocked) return;
     if (agentId && workspaceId) {
       try {
         // Send the picked model's provider explicitly: the owning catalog
@@ -795,10 +824,9 @@
         // daemon resolves a bare id against the session's current provider,
         // rejecting cross-provider picks.
         const pickedProviderId = resolvePickedTriple(model).providerId || undefined;
-        const result = await agentClient.setModel(agentId, model, workspaceId, pickedProviderId);
-        // The role may have changed while the RPC was in flight; the reasoning
-        // reconciliation below issues further mutations, so stop here if locked.
-        if (isGuestLocked) return;
+        const result = await mutate.setModel(agentId, model, workspaceId, pickedProviderId);
+        // A locked skip is not an RPC failure: nothing to toast or warn about.
+        if (isSkippedMutation(result)) return;
         if (result.ok && result.data.success) {
           logger.info('Updated agent model via IPC:', { agentId, model });
           const targetOption = flatModelOptions.find(
@@ -806,12 +834,7 @@
           );
           const supportedEfforts = targetOption?.data?.effortLevels as string[] | undefined;
           const currentEffort = selectAgentReasoningEffort.select(appStore.state, agentId);
-          await reconcileAgentReasoningEffort(
-            agentId,
-            workspaceId,
-            currentEffort,
-            supportedEfforts,
-          );
+          await mutate.reconcileEffort(agentId, workspaceId, currentEffort, supportedEfforts);
         } else {
           const errorMsg = result.ok ? result.data.error : result.error;
           logger.warn('Failed to update agent model:', {
@@ -840,6 +863,12 @@
     }
     logger.debug('Model selected:', { model, previousModel: localModel, workspaceId, agentId });
     logger.debug('Model pick flags:', { deferUpdate, updateGlobalStore, updateGlobalDefault });
+    // An explicit pick while the agent's provider is disabled is the user's
+    // own switch: the daemon's re-home must not be announced (intent#5737).
+    if (isEffectiveProviderDisabled || disabledProviderSnapshot) {
+      disabledProviderSnapshot = null;
+      reHomeAnnouncementSuppressed = true;
+    }
     // Update local state before async work so the UI responds immediately.
     propModelAtLocalChange = selectedModel;
     userChangedModel = true;
@@ -864,15 +893,11 @@
 
     await tick();
 
-    // The role may have changed while yielding; never mutate session state
-    // from a picker that is now guest-locked.
-    if (isGuestLocked) return;
-
     if (updateGlobalDefault) appStore.dispatch(selectModel(pickedModelId, pickedProviderId));
     if (!updateGlobalStore) return;
 
     if (agentId && workspaceId) {
-      appStore.dispatch(updateAgentSessionFields(agentId, { model }));
+      if (!mutate.setSessionModel(agentId, model)) return;
       logger.debug('Updated local session model:', { agentId, model });
 
       if (deferUpdate) {
@@ -1062,6 +1087,9 @@
     // A `<provider>:default` selection mapped to its D2 row renders that
     // row's label — resolved even while other providers are still loading.
     if (legacyDefaultMappedOption) return true;
+    // The disabled-provider warning derives from settings alone and must not
+    // wait behind the disabled provider's catalog, which may never load.
+    if (isSelectedModelProviderDisabled) return true;
     if (!isLoadingModels && allProvidersLoaded) return true;
     for (const models of Object.values(allProviderModels)) {
       if (models.some((m) => m.value === localModel)) return true;
@@ -1102,12 +1130,13 @@
 
   const flatModelOptions = $derived<DropdownOption[]>([
     ...(showDefaultOption ? [useDefaultOption] : []),
-    ...$availableEnabledProviderIds$.flatMap(
-      (pid) => allProviderModels[normalizeProviderId(pid)] ?? [],
-    ),
-    // Keep the agent's current provider selectable even if it was since
-    // disabled, so the selected model isn't treated as unavailable.
-    ...(isEffectiveProviderAvailable || !fallbackModelsMatchEffectiveProvider
+    ...selectableProviderIds.flatMap((pid) => allProviderModels[normalizeProviderId(pid)] ?? []),
+    // Keep the agent's current provider selectable while it is merely
+    // unavailable, so the selected model isn't treated as unavailable — but
+    // not once it was disabled in settings (see isEffectiveProviderDisabled).
+    ...(isEffectiveProviderAvailable ||
+    isEffectiveProviderDisabled ||
+    !fallbackModelsMatchEffectiveProvider
       ? []
       : toDropdownOptions(availableModels)),
   ]);
@@ -1244,7 +1273,8 @@
       effectiveProviderId,
       availableModels,
       availableModelsProviderId,
-      enabledProviderIds: $availableEnabledProviderIds$,
+      enabledProviderIds: selectableProviderIds,
+      effectiveProviderDisabled: isEffectiveProviderDisabled,
       allProviderModels,
       allProviderLoading,
       allProviderErrors,
@@ -1283,9 +1313,27 @@
       : '',
   );
 
+  // Provider the daemon resolves the selected model against on send: a legacy
+  // compound prefix, else the agent's own provider. Catalog ownership is not
+  // authoritative here — a bare id shared by several catalogs would be
+  // attributed to the default provider while the agent still runs elsewhere.
+  const selectedModelGateProviderId = $derived.by(() => {
+    const legacyProviderId =
+      hasExplicitModel && localModel ? splitLegacyCompoundId(localModel).providerId : '';
+    return normalizeProviderId(legacyProviderId || effectiveProviderId);
+  });
+
+  // The provider the selected model is sent through was disabled in settings —
+  // the pre-send warning state.
+  const isSelectedModelProviderDisabled = $derived(
+    !!agentId &&
+      !isGuestLocked &&
+      isProviderDisabledInSettings($enabledProviders$, selectedModelGateProviderId),
+  );
+
   const providerTabIds = $derived.by(() => [
     ...new Set([
-      ...$availableEnabledProviderIds$.map((id) => normalizeProviderId(id)),
+      ...selectableProviderIds.map((id) => normalizeProviderId(id)),
       ...groupedModelOptions
         .filter((group) => group.key !== 'default')
         .map((group) => group.parentKey ?? group.key),
@@ -1375,8 +1423,47 @@
     return !values.has(normalizeModelIdForMatch(localModel, effectiveProviderId));
   });
 
+  // Follow the daemon's re-home (intent#5737): while the agent's provider is
+  // disabled the warning derives from settings alone; when the session then
+  // lands on another provider (the daemon moves it on the next send and the
+  // agent-updated event refreshes `explicitProviderId`), announce the switch
+  // once with the existing fallback toast and keep the from/to note in the
+  // picker. The FE never performs the switch itself. A user pick in the
+  // meantime, or the provider being re-enabled, cancels the announcement.
+  let disabledProviderSnapshot = $state<{
+    agentId: string;
+    providerId: string;
+    fromModel: string;
+  } | null>(null);
+  // Set by an explicit pick while the provider is disabled: the user chose
+  // the switch, so the daemon's re-home must not be announced as its own.
+  let reHomeAnnouncementSuppressed = $state(false);
+
+  // The agent-updated event that re-homes the agent refreshes the session's
+  // provider and model together, but the `selectedModel` prop can land in a
+  // later flush. Until the prop matches the session model the old model is
+  // stale, so neither the announcement nor the auto-fallback may act on it.
+  // A re-home onto the provider default lands with no `model` on the AgentLite
+  // row (§5.5 omits it), so an absent model on a present session means "no
+  // pinned model", and the prop must catch up to that too.
+  const isAwaitingReHomedModel = $derived.by(() => {
+    const snapshot = disabledProviderSnapshot;
+    if (!snapshot || snapshot.agentId !== agentId || isEffectiveProviderDisabled) return false;
+    const session = $agentSession$;
+    if (!session) return false;
+    const sessionModel = session.model;
+    const sessionModelId =
+      typeof sessionModel === 'string' ? splitLegacyCompoundId(sessionModel).modelId : '';
+    const localModelId =
+      hasExplicitModel && localModel ? splitLegacyCompoundId(localModel).modelId : '';
+    return sessionModelId !== localModelId;
+  });
+
   const isSelectedModelUnavailable = $derived.by(() => {
     if (isGuestLocked) return false;
+    // Settings-derived: does not wait for catalog loads or availability probes.
+    if (isSelectedModelProviderDisabled) return true;
+    if (isAwaitingReHomedModel) return false;
     if (!canUseProviderModels(selectedModelProviderId || effectiveProviderId)) return true;
     if (!$hasCheckedOnce$) return false;
     if (isLoadingModels) return false;
@@ -1524,7 +1611,7 @@
         return (await onReasoningChange(value)) !== false;
       }
       if (!agentId || !workspaceId) return false;
-      return await applyReasoningEffort(agentId, workspaceId, value, previous);
+      return await mutate.applyEffort(agentId, workspaceId, value, previous);
     } finally {
       updatingReasoningEffort = false;
     }
@@ -1559,6 +1646,7 @@
   const showModelLoading = $derived(
     !!agentId &&
       $fallbackInfo$ === null &&
+      !isSelectedModelProviderDisabled &&
       isSelectedModelMissingFromCatalog &&
       (!$hasCheckedOnce$ ||
         isLoadingModels ||
@@ -1574,6 +1662,14 @@
 
   // Warning message to display
   const warningMessage = $derived.by(() => {
+    if (isSelectedModelProviderDisabled) {
+      return {
+        title: m.chat_modelPicker_noLongerAvailable_title({ model: currentModelLabel }),
+        description: m.chat_modelPicker_providerDisabled_description({
+          provider: providerDisplayName(selectedModelGateProviderId),
+        }),
+      };
+    }
     if (isSelectedModelUnavailable) {
       return {
         title: m.chat_modelPicker_noLongerAvailable_title({
@@ -1592,6 +1688,55 @@
     return null;
   });
 
+  // Native tooltip on the trigger: the warning reason while one is shown
+  // ("<model> is no longer available — <provider> is disabled"), else the label.
+  const triggerTitle = $derived(
+    showModelWarning && warningMessage
+      ? m.chat_modelPicker_warning_tooltip({
+          title: warningMessage.title,
+          description: warningMessage.description,
+        })
+      : triggerAccessibleLabel,
+  );
+
+  // Re-home announcement (see `disabledProviderSnapshot`).
+  $effect(() => {
+    if (!agentId) {
+      disabledProviderSnapshot = null;
+      reHomeAnnouncementSuppressed = false;
+      return;
+    }
+    const currentProviderId = normalizeProviderId(effectiveProviderId);
+    if (isEffectiveProviderDisabled) {
+      if (!disabledProviderSnapshot && !untrack(() => reHomeAnnouncementSuppressed)) {
+        disabledProviderSnapshot = {
+          agentId,
+          providerId: currentProviderId,
+          fromModel: untrack(() => currentModelLabel),
+        };
+      }
+      return;
+    }
+    reHomeAnnouncementSuppressed = false;
+    const snapshot = disabledProviderSnapshot;
+    if (!snapshot) return;
+    if (isAwaitingReHomedModel) return;
+    disabledProviderSnapshot = null;
+    if (snapshot.agentId !== agentId) return;
+    if (snapshot.providerId === currentProviderId) return;
+    const toModel = untrack(() => currentModelLabel);
+    logger.info('Agent re-homed by the daemon after its provider was disabled:', {
+      agentId,
+      fromProvider: snapshot.providerId,
+      toProvider: currentProviderId,
+    });
+    setFallbackInfo({ fromModel: snapshot.fromModel, toModel });
+    notify.info(
+      m.chat_modelPicker_unavailableSwitched_toast({ from: snapshot.fromModel, to: toModel }),
+      { duration: 5000 },
+    );
+  });
+
   function findFallbackOption(restrictToProvider?: string): DropdownOption | undefined {
     return findModelFallbackOption({
       options: flatModelOptions,
@@ -1606,13 +1751,16 @@
   $effect(() => {
     if (!agentId) return;
     if (isGuestLocked) return;
+    // A disabled provider is re-homed by the daemon on the next send; the FE
+    // must not `agent.setModel` its way around the gate (intent#5737).
+    if (isSelectedModelProviderDisabled) return;
     if (!canUseProviderModels(selectedModelProviderId || effectiveProviderId)) return;
     if (!isSelectedModelUnavailable) return;
     if (flatModelOptions.length === 0) return;
 
-    // Guard against transient unavailability. This effect dispatches
-    // updateAgentSessionFields(agentId, { model }), which PERMANENTLY overwrites
-    // the persisted model on the agent session — including across restarts.
+    // Guard against transient unavailability. This effect writes the session
+    // model (via handleModelSelect), which PERMANENTLY overwrites the
+    // persisted model on the agent session — including across restarts.
     // Only proceed once we're confident the user's provider has truly settled;
     // otherwise a slow/empty per-provider fetch during boot or refresh would
     // silently replace the user's picked model (e.g. Sonnet 4.6 → GPT 5.4).
@@ -1816,9 +1964,7 @@
         localModel,
         modelValue === USE_DEFAULT_VALUE ? null : modelValue,
       );
-      // The confirmation may resolve after the window's role changed; a pick
-      // that started in an owner window must not land once guest-locked.
-      if (!confirmed || isGuestLocked) {
+      if (!confirmed) {
         // Revert the dropdown's internal selection back to the current model.
         dropdownValue = localModel ?? USE_DEFAULT_VALUE;
         return;
@@ -2018,7 +2164,7 @@
           'inline-flex items-center gap-2 truncate min-w-0',
           (variant === 'outline' || variant === 'default') && 'flex-1',
         )}
-        title={isTriggerLabelResolved ? triggerAccessibleLabel : ''}
+        title={isTriggerLabelResolved ? triggerTitle : ''}
         aria-label={isTriggerLabelResolved ? triggerAccessibleLabel : undefined}
       >
         {#if isCompact}

@@ -3,7 +3,7 @@
   import { tick } from 'svelte';
   import { cn } from '$lib/utils.js';
   import ListHighlight from './menu-list-highlight.svelte';
-  import { menuOverlay } from './menu-recipes';
+  import { menuOverlay, menuSubmenuAlignOffset } from './menu-recipes';
   import { clampSurface, setSurface, useSurface } from '$lib/components/ui/surface-context';
   import { OPTION_LIST_CONTAINER_CLASS } from '$lib/styles/option-list-row';
   import { useStaticOverlay } from '../static-overlay-context.svelte';
@@ -19,6 +19,8 @@
     portalProps,
     staticPosition,
     sideOffset = 4,
+    align = 'start',
+    alignOffset = align === 'start' ? menuSubmenuAlignOffset : 0,
     onkeydown,
     onfocusin,
     children,
@@ -92,6 +94,8 @@
       data-surface-level={surface}
       class={contentClass}
       {sideOffset}
+      {align}
+      {alignOffset}
       style="max-height: {maxHeight}"
       onkeydown={handleKeydown}
       onfocusin={handleFocusin}
@@ -109,6 +113,8 @@
     data-surface-level={surface}
     class={contentClass}
     {sideOffset}
+    {align}
+    {alignOffset}
     style="max-height: {maxHeight}"
     onkeydown={handleKeydown}
     onfocusin={handleFocusin}

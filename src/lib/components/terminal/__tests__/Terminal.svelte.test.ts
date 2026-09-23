@@ -23,12 +23,15 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const SYSTEM_DEFAULT =
   "ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Monaco, Consolas, monospace";
 
-const { fontReadableRef, adapterRef, getOrCreateSpy, detachSpy } = vi.hoisted(() => ({
-  fontReadableRef: { value: null as any },
-  adapterRef: { value: null as any, resolve: null as null | (() => void), promise: null as any },
-  getOrCreateSpy: vi.fn(),
-  detachSpy: vi.fn(),
-}));
+const { fontReadableRef, adapterRef, getOrCreateSpy, detachSpy, isAttachedToSpy } = vi.hoisted(
+  () => ({
+    fontReadableRef: { value: null as any },
+    adapterRef: { value: null as any, resolve: null as null | (() => void), promise: null as any },
+    getOrCreateSpy: vi.fn(),
+    detachSpy: vi.fn(),
+    isAttachedToSpy: vi.fn(),
+  }),
+);
 
 function createControllableReadable<T>(initial: T) {
   let current = initial;
@@ -59,6 +62,7 @@ vi.mock('$features/terminal/terminal-manager.svelte', () => ({
   terminalManager: {
     getOrCreateTerminal: getOrCreateSpy,
     detachTerminal: detachSpy,
+    isAttachedTo: isAttachedToSpy,
   },
 }));
 
@@ -112,6 +116,7 @@ describe('Terminal.svelte code-font wiring', () => {
     (adapterRef as any).resolve = pending.resolve;
     (adapterRef as any).promise = pending.promise;
     getOrCreateSpy.mockImplementation(() => pending.promise);
+    isAttachedToSpy.mockReturnValue(true);
   });
 
   afterEach(() => cleanup());
@@ -166,5 +171,43 @@ describe('Terminal.svelte code-font wiring', () => {
     await tick();
     expect(adapterRef.value.setVisible).toHaveBeenLastCalledWith(true);
     expect(getOrCreateSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it('re-attaches to its own surface when revealed after a panel round trip', async () => {
+    // Stateful fake of the shared manager: one adapter, attached to at most
+    // one surface container at a time.
+    const attached = new Map<string, HTMLElement | null>();
+    getOrCreateSpy.mockImplementation(async (id: string, _ws: string, el: HTMLElement) => {
+      attached.set(id, el);
+      return adapterRef.value;
+    });
+    detachSpy.mockImplementation((id: string, el?: HTMLElement) => {
+      if (!el || attached.get(id) === el) attached.set(id, null);
+    });
+    isAttachedToSpy.mockImplementation((id: string, el: HTMLElement) => attached.get(id) === el);
+
+    const props = { terminalId: 't-1', workspaceId: 'ws-1' };
+    const overlay = render(Terminal, { props: { ...props, visible: true } });
+    await flushMicrotasks();
+    const overlayEl = getOrCreateSpy.mock.calls[0][2] as HTMLElement;
+    expect(attached.get('t-1')).toBe(overlayEl);
+
+    // Overlay closes (parked, still attached), then the same terminal opens in a panel.
+    await overlay.rerender({ ...props, visible: false });
+    await tick();
+    const panel = render(Terminal, { props: { ...props, visible: true } });
+    await flushMicrotasks();
+    const panelEl = getOrCreateSpy.mock.calls[1][2] as HTMLElement;
+    expect(panelEl).not.toBe(overlayEl);
+    expect(attached.get('t-1')).toBe(panelEl);
+
+    // "Show in bottom bar": overlay reveals and the panel tab unmounts.
+    await overlay.rerender({ ...props, visible: true });
+    await flushMicrotasks();
+    panel.unmount();
+    await tick();
+
+    expect(attached.get('t-1')).toBe(overlayEl);
+    expect(adapterRef.value.setVisible).toHaveBeenLastCalledWith(true);
   });
 });

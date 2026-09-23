@@ -80,7 +80,7 @@
         transition:fly={{ axis: 'y', distance: 20, tier: 'moderate' }}
       >
         <!-- Header -->
-        <div class="flex items-center justify-between px-4 py-3 border-b border-border">
+        <div class="flex items-center justify-between px-4 py-3">
           <div class="flex items-center gap-2">
             <ProviderIcon {provider} size={18} />
             <h2 class="text-sm font-semibold">{providerTitles[provider]}</h2>

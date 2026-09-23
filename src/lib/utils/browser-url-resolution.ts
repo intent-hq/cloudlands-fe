@@ -4,11 +4,32 @@
  * resolved (loopback rewrite → reachability probe → tunnel fallback in the
  * main process) BEFORE a browser tab is opened or navigated; the embedded
  * browser itself loads exactly the URL it is given (intent-hq/monorepo#2404),
- * so user-typed address-bar URLs never resolve.
+ * so user-typed address-bar URLs load literally — except an EXPLICIT
+ * `daemon.localhost` / `client.localhost` alias, which is unambiguous and
+ * resolves the same way (intent-hq/intent#5710; see
+ * `isExplicitLoopbackAliasUrl`).
  *
  * Dependency-light on purpose: the IPC boundary is injected so tests and
  * bridge-less (web) builds degrade to a passthrough resolution.
  */
+
+/**
+ * True when `url` targets one of the explicit loopback aliases the main-process
+ * resolver rewrites (`daemon.localhost` → daemon host, `client.localhost` →
+ * this machine); mirrors the alias branch of `classifyLoopbackHost` in
+ * `features/browser/main/loopback-rewrite.ts`, which renderer code cannot
+ * import. Bare `127.0.0.1` / `localhost` / `[::1]` are NOT aliases: resolving
+ * them from the address bar re-tunnels an already-tunneled URL
+ * (intent-hq/monorepo#2404).
+ */
+export function isExplicitLoopbackAliasUrl(url: string): boolean {
+  try {
+    const host = new URL(url).hostname.toLowerCase();
+    return host === 'daemon.localhost' || host === 'client.localhost';
+  } catch {
+    return false;
+  }
+}
 
 /** Wire shape of `browser:resolve-url` (`ResolvedBrowserUrl` in the main process). */
 export interface ResolvedBrowserLink {

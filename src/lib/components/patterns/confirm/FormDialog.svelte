@@ -98,8 +98,10 @@
   function handleOpenAutoFocus(event: Event) {
     const target = initialFocus ?? (focusSubmit ? submitRef : focusContent ? contentRef : null);
     if (!target) return;
-    event.preventDefault();
     target.focus();
+    // A disabled or hidden submit target cannot take focus; let Dialog.Content
+    // choose an editable field or the dialog rather than leaving focus outside.
+    if (target.ownerDocument.activeElement === target) event.preventDefault();
   }
 </script>
 

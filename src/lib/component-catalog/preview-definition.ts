@@ -7,11 +7,19 @@ export interface PreviewState<Props> {
   setup?: PreviewSetup;
 }
 
+export interface PreviewCaptureReadiness {
+  selector: string;
+  count?: number;
+  generationAttribute?: string;
+  readinessTimeoutMs?: number;
+}
+
 export interface PreviewDefinition<Props> {
   id: string;
   title: string;
   defaultState: string;
   states: Record<string, PreviewState<Props>>;
+  captureReadiness?: PreviewCaptureReadiness;
 }
 
 export interface LoadedPreview {
@@ -37,6 +45,15 @@ export function validatePreviewDefinition<Props>(
     throw new Error(
       `Preview “${definition.id}” default state “${definition.defaultState}” is not defined.`,
     );
+  }
+  const readinessTimeoutMs = definition.captureReadiness?.readinessTimeoutMs;
+  if (
+    readinessTimeoutMs !== undefined &&
+    (typeof readinessTimeoutMs !== 'number' ||
+      !Number.isFinite(readinessTimeoutMs) ||
+      readinessTimeoutMs <= 0)
+  ) {
+    throw new Error(`Preview “${definition.id}” readiness timeout must be a positive number.`);
   }
   return definition;
 }

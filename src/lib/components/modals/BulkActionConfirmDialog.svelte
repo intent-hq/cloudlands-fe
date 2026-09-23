@@ -11,10 +11,14 @@
     description?: string;
     confirmText?: string;
     variant?: ButtonVariant;
+    /** Picks the guest-removal note: archive adds the re-invite reminder. */
+    mode?: 'delete' | 'archive';
     /** Streaming agents across the targeted workspaces that the action would stop. */
     activeAgentCount?: number;
     /** Active background hooks across the targeted workspaces that the action would cancel. */
     activeHookCount?: number;
+    /** Collaborators + open invites across the targeted workspaces that the action would remove. */
+    guestCount?: number;
     onConfirm?: () => void;
     onCancel?: () => void;
   }
@@ -26,13 +30,15 @@
     description = '',
     confirmText = m.modals_bulkActionConfirm_confirm_label(),
     variant = 'default',
+    mode = 'delete',
     activeAgentCount = 0,
     activeHookCount = 0,
+    guestCount = 0,
     onConfirm,
     onCancel,
   }: Props = $props();
 
-  const hasActiveWork = $derived(activeAgentCount > 0 || activeHookCount > 0);
+  const hasActiveWork = $derived(activeAgentCount > 0 || activeHookCount > 0 || guestCount > 0);
 
   function close() {
     open = false;
@@ -83,6 +89,20 @@
                 : m.modals_deleteWarning_hooksCancelled_many({
                     count: formatInteger(activeHookCount),
                   })}
+            </p>
+          {/if}
+          {#if guestCount > 0}
+            <p class="type-body text-muted-foreground font-normal">
+              {guestCount === 1
+                ? m.modals_bulkActionConfirm_guestsRemoved_one({
+                    count: formatInteger(guestCount),
+                  })
+                : m.modals_bulkActionConfirm_guestsRemoved_many({
+                    count: formatInteger(guestCount),
+                  })}
+              {#if mode === 'archive'}
+                {m.modals_bulkActionConfirm_guestsReinvite_description()}
+              {/if}
             </p>
           {/if}
         </div>

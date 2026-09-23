@@ -796,7 +796,8 @@
                   bind:value={commitEdit.value}
                   onblur={saveCommitEdit}
                   onkeydown={handleCommitEditKeydown}
-                  class="inline-edit-input relative z-10 min-w-0 flex-1 border-none bg-transparent text-ui text-subtle outline-none! ring-0! focus:outline-none! focus:ring-0! focus-visible:outline-none! focus-visible:ring-0!"
+                  noFocusStyle
+                  class="inline-edit-input relative z-10 min-w-0 flex-1 border-none bg-transparent hover:bg-transparent text-ui text-subtle outline-none! ring-0! focus:outline-none! focus:ring-0! focus-visible:outline-none! focus-visible:ring-0!"
                   onclick={(e) => e.stopPropagation()}
                 />
               {:else}
