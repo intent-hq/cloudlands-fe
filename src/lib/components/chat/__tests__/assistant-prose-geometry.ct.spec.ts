@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/experimental-ct-svelte';
+import { expect, test } from '../../../../test/ct-test';
 import AssistantProseGeometryHost from './AssistantProseGeometryHost.svelte';
 
 function contrastRatio(foreground: string, background: string): number {

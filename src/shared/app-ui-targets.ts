@@ -95,6 +95,16 @@ const APP_UI_TARGETS: AppUiTarget[] = [
     description: 'Saved remote device settings.',
   }),
   settingsTarget({
+    id: 'guest-sessions',
+    tab: 'guest-sessions',
+    hashAliases: ['guest-sessions', 'sharing'],
+    scrollSelector: '#guest-sessions',
+    highlightSelector: '#guest-sessions',
+    label: 'Settings: Guest Sessions',
+    route: '/settings?tab=guest-sessions#guest-sessions',
+    description: 'Hosted workspace rosters and joined hosts.',
+  }),
+  settingsTarget({
     id: 'websocket-api',
     tab: 'devices',
     hashAliases: ['websocket-api', 'remote-access'],
@@ -175,6 +185,16 @@ const APP_UI_TARGETS: AppUiTarget[] = [
       description,
     }),
   ),
+  settingsTarget({
+    id: 'labs-multiplayer',
+    tab: 'labs',
+    hashAliases: ['labs-multiplayer', 'multiplayer', 'labs'],
+    scrollSelector: '#labs-multiplayer',
+    highlightSelector: '[data-highlight-id="labs-multiplayer"]',
+    label: 'Settings: Multiplayer (Labs)',
+    route: '/settings?tab=labs#labs-multiplayer',
+    description: 'Experimental Multiplayer lab toggle.',
+  }),
   settingsTarget({
     id: 'general',
     tab: 'advanced',

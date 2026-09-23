@@ -1,0 +1,29 @@
+{
+  "$meta": {
+    "generatedOn": "linux"
+  },
+  "native-30": {
+    "1024": {
+      "probes": {
+        "data-testid=aura-benchmark-stage": {
+          "fontSize": 15,
+          "fontWeight": 400,
+          "gap": 0,
+          "height": 272,
+          "lineHeight": 22,
+          "marginBottom": 0,
+          "marginTop": 0,
+          "paddingLeft": 0,
+          "paddingRight": 0,
+          "width": 926,
+          "x": 49,
+          "y": 176.59
+        }
+      },
+      "root": {
+        "height": 681.58,
+        "width": 1024
+      }
+    }
+  }
+}

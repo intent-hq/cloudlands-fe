@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/experimental-ct-svelte';
+import { expect, test } from '../../../../test/ct-test';
 import Preview from '../devices-settings.preview.svelte';
 
 test('separates device marks and exposes version warnings on focus and hover without row fill', async ({

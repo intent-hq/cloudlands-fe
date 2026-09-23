@@ -5,7 +5,11 @@ import {
   type Collection,
 } from '@augmentcode/themis/utils/collections/collection-utils';
 import type { WorkspaceProposalApplyPayload } from '$shared/app-workspace-operations';
-import type { LocalChangesWarning, OpenPrWarningItem } from './workspace-operations-types';
+import type {
+  GuestsWarning,
+  LocalChangesWarning,
+  OpenPrWarningItem,
+} from './workspace-operations-types';
 
 export type WorkspaceOperationsState = {
   showDeleteWarning: boolean;
@@ -15,15 +19,20 @@ export type WorkspaceOperationsState = {
   openPrsForDelete: Collection<OpenPrWarningItem, 'number'>;
   /** `null` when the warning has no local-changes data (RPC failed or not fetched). */
   localChangesForDelete: LocalChangesWarning | null;
+  /** `null` when the warning carries no guest counts. */
+  guestsForDelete: GuestsWarning | null;
   showArchiveWarning: boolean;
   pendingArchiveWorkspaceId: string | null;
   runningAgentNamesForArchive: string[];
   activeHookNamesForArchive: string[];
   openPrsForArchive: Collection<OpenPrWarningItem, 'number'>;
   localChangesForArchive: LocalChangesWarning | null;
+  guestsForArchive: GuestsWarning | null;
   showBulkArchiveConfirm: boolean;
   bulkArchiveActiveAgentCount: number;
   bulkArchiveActiveHookCount: number;
+  /** Collaborators + open invites across the targeted workspaces the archive removes. */
+  bulkArchiveGuestCount: number;
   /** Monotonic token; only the compute matching the latest open folds its counts. */
   bulkArchiveComputeToken: number;
   showBulkDeleteArchivedConfirm: boolean;
@@ -33,6 +42,7 @@ export type WorkspaceOperationsState = {
   bulkDeleteWorkspaceCount: number;
   bulkDeleteActiveAgentCount: number;
   bulkDeleteActiveHookCount: number;
+  bulkDeleteGuestCount: number;
   showRemoveRepoConfirm: boolean;
   pendingRemoveRepoPath: string | null;
 };
@@ -46,15 +56,18 @@ export const initialState: WorkspaceOperationsState = {
   activeHookNamesForDelete: [],
   openPrsForDelete: emptyOpenPrs(),
   localChangesForDelete: null,
+  guestsForDelete: null,
   showArchiveWarning: false,
   pendingArchiveWorkspaceId: null,
   runningAgentNamesForArchive: [],
   activeHookNamesForArchive: [],
   openPrsForArchive: emptyOpenPrs(),
   localChangesForArchive: null,
+  guestsForArchive: null,
   showBulkArchiveConfirm: false,
   bulkArchiveActiveAgentCount: 0,
   bulkArchiveActiveHookCount: 0,
+  bulkArchiveGuestCount: 0,
   bulkArchiveComputeToken: 0,
   showBulkDeleteArchivedConfirm: false,
   pendingBulkRepoKey: undefined,
@@ -63,6 +76,7 @@ export const initialState: WorkspaceOperationsState = {
   bulkDeleteWorkspaceCount: 0,
   bulkDeleteActiveAgentCount: 0,
   bulkDeleteActiveHookCount: 0,
+  bulkDeleteGuestCount: 0,
   showRemoveRepoConfirm: false,
   pendingRemoveRepoPath: null,
 };
@@ -93,6 +107,7 @@ export const openDeleteWarning = createAction<
       hookNames: string[];
       openPrs: OpenPrWarningItem[];
       localChanges?: LocalChangesWarning | null;
+      guests?: GuestsWarning | null;
     },
   ]
 >('workspaceOperations/openDeleteWarning');
@@ -107,6 +122,7 @@ export const openArchiveWarning = createAction<
       hookNames: string[];
       openPrs: OpenPrWarningItem[];
       localChanges?: LocalChangesWarning | null;
+      guests?: GuestsWarning | null;
     },
   ]
 >('workspaceOperations/openArchiveWarning');
@@ -124,7 +140,15 @@ export const closeBulkArchiveConfirm = createAction('workspaceOperations/closeBu
 export const confirmBulkArchive = createAction('workspaceOperations/confirmBulkArchive');
 
 export const bulkArchiveActiveWorkComputed = createAction<
-  [payload: { repoKey: string; agentCount: number; hookCount: number; token: number }]
+  [
+    payload: {
+      repoKey: string;
+      agentCount: number;
+      hookCount: number;
+      guestCount: number;
+      token: number;
+    },
+  ]
 >('workspaceOperations/bulkArchiveActiveWorkComputed');
 
 export const openBulkDeleteArchivedConfirm = createAction<[repoKey: string]>(
@@ -140,7 +164,15 @@ export const confirmBulkDeleteArchived = createAction(
 );
 
 export const openBulkDeleteWarningConfirm = createAction<
-  [payload: { repoKey: string; workspaceCount: number; agentCount: number; hookCount: number }]
+  [
+    payload: {
+      repoKey: string;
+      workspaceCount: number;
+      agentCount: number;
+      hookCount: number;
+      guestCount: number;
+    },
+  ]
 >('workspaceOperations/openBulkDeleteWarningConfirm');
 
 export const closeBulkDeleteWarningConfirm = createAction(
@@ -162,7 +194,10 @@ export const confirmRemoveRepo = createAction('workspaceOperations/confirmRemove
 export const workspaceOperationsReducer = createReducer<WorkspaceOperationsState>(initialState);
 workspaceOperationsReducer.with(
   openDeleteWarning,
-  (state, { payload: [{ workspaceId, agentNames, hookNames, openPrs, localChanges }] }) => ({
+  (
+    state,
+    { payload: [{ workspaceId, agentNames, hookNames, openPrs, localChanges, guests }] },
+  ) => ({
     ...state,
     showDeleteWarning: true,
     pendingDeleteWorkspaceId: workspaceId,
@@ -170,6 +205,7 @@ workspaceOperationsReducer.with(
     activeHookNamesForDelete: hookNames,
     openPrsForDelete: createCollection<OpenPrWarningItem, 'number'>('number', openPrs),
     localChangesForDelete: localChanges ?? null,
+    guestsForDelete: guests ?? null,
   }),
 );
 workspaceOperationsReducer.with(closeDeleteWarning, (state) => ({
@@ -180,10 +216,14 @@ workspaceOperationsReducer.with(closeDeleteWarning, (state) => ({
   activeHookNamesForDelete: [],
   openPrsForDelete: emptyOpenPrs(),
   localChangesForDelete: null,
+  guestsForDelete: null,
 }));
 workspaceOperationsReducer.with(
   openArchiveWarning,
-  (state, { payload: [{ workspaceId, agentNames, hookNames, openPrs, localChanges }] }) => ({
+  (
+    state,
+    { payload: [{ workspaceId, agentNames, hookNames, openPrs, localChanges, guests }] },
+  ) => ({
     ...state,
     showArchiveWarning: true,
     pendingArchiveWorkspaceId: workspaceId,
@@ -191,6 +231,7 @@ workspaceOperationsReducer.with(
     activeHookNamesForArchive: hookNames,
     openPrsForArchive: createCollection<OpenPrWarningItem, 'number'>('number', openPrs),
     localChangesForArchive: localChanges ?? null,
+    guestsForArchive: guests ?? null,
   }),
 );
 workspaceOperationsReducer.with(closeArchiveWarning, (state) => ({
@@ -201,6 +242,7 @@ workspaceOperationsReducer.with(closeArchiveWarning, (state) => ({
   activeHookNamesForArchive: [],
   openPrsForArchive: emptyOpenPrs(),
   localChangesForArchive: null,
+  guestsForArchive: null,
 }));
 workspaceOperationsReducer.with(openBulkArchiveConfirm, (state, { payload: [repoKey] }) => ({
   ...state,
@@ -208,6 +250,7 @@ workspaceOperationsReducer.with(openBulkArchiveConfirm, (state, { payload: [repo
   pendingBulkRepoKey: repoKey,
   bulkArchiveActiveAgentCount: 0,
   bulkArchiveActiveHookCount: 0,
+  bulkArchiveGuestCount: 0,
   bulkArchiveComputeToken: state.bulkArchiveComputeToken + 1,
 }));
 workspaceOperationsReducer.with(closeBulkArchiveConfirm, (state) => ({
@@ -216,10 +259,11 @@ workspaceOperationsReducer.with(closeBulkArchiveConfirm, (state) => ({
   pendingBulkRepoKey: undefined,
   bulkArchiveActiveAgentCount: 0,
   bulkArchiveActiveHookCount: 0,
+  bulkArchiveGuestCount: 0,
 }));
 workspaceOperationsReducer.with(
   bulkArchiveActiveWorkComputed,
-  (state, { payload: [{ repoKey, agentCount, hookCount, token }] }) => {
+  (state, { payload: [{ repoKey, agentCount, hookCount, guestCount, token }] }) => {
     if (
       !state.showBulkArchiveConfirm ||
       state.pendingBulkRepoKey !== repoKey ||
@@ -231,6 +275,7 @@ workspaceOperationsReducer.with(
       ...state,
       bulkArchiveActiveAgentCount: agentCount,
       bulkArchiveActiveHookCount: hookCount,
+      bulkArchiveGuestCount: guestCount,
     };
   },
 );
@@ -246,13 +291,14 @@ workspaceOperationsReducer.with(closeBulkDeleteArchivedConfirm, (state) => ({
 }));
 workspaceOperationsReducer.with(
   openBulkDeleteWarningConfirm,
-  (state, { payload: [{ repoKey, workspaceCount, agentCount, hookCount }] }) => ({
+  (state, { payload: [{ repoKey, workspaceCount, agentCount, hookCount, guestCount }] }) => ({
     ...state,
     showBulkDeleteWarningConfirm: true,
     pendingBulkDeleteRepoKey: repoKey,
     bulkDeleteWorkspaceCount: workspaceCount,
     bulkDeleteActiveAgentCount: agentCount,
     bulkDeleteActiveHookCount: hookCount,
+    bulkDeleteGuestCount: guestCount,
   }),
 );
 workspaceOperationsReducer.with(closeBulkDeleteWarningConfirm, (state) => ({
@@ -262,6 +308,7 @@ workspaceOperationsReducer.with(closeBulkDeleteWarningConfirm, (state) => ({
   bulkDeleteWorkspaceCount: 0,
   bulkDeleteActiveAgentCount: 0,
   bulkDeleteActiveHookCount: 0,
+  bulkDeleteGuestCount: 0,
 }));
 workspaceOperationsReducer.with(openRemoveRepoConfirm, (state, { payload: [repoPath] }) => ({
   ...state,

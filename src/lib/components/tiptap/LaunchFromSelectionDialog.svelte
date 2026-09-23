@@ -109,6 +109,8 @@
         rows={1}
       ></Textarea>
       <Button
+        size="icon"
+        iconOnly
         onclick={handleSubmit}
         class="launch-submit-btn"
         aria-label={m.tiptap_launchDialog_send_ariaLabel()}
@@ -161,12 +163,8 @@
     border-color: hsl(var(--border));
   }
 
+  /* Sizing comes from the Button `icon` size (square, zero padding). */
   :global(.launch-submit-btn) {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 32px;
-    height: 32px;
     flex-shrink: 0;
     border: none;
     background-color: hsl(var(--primary));

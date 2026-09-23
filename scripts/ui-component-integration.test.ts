@@ -63,6 +63,8 @@ const canonicalImports = [
   'toggle-group',
   'tooltip',
 ] as const;
+// Single-file components published under their `.svelte` path rather than a folder barrel.
+const canonicalFileImports = ['PrincipalAvatar.svelte'] as const;
 
 describe('Gate C public component contract', () => {
   it('publishes a discoverability API while preserving canonical subpaths', () => {
@@ -88,7 +90,9 @@ describe('Gate C public component contract', () => {
 
   it('aggregates schema-validated source metadata with fixtures and verification owners', () => {
     expect(canonicalComponentManifest.map(({ publicImport }) => publicImport)).toEqual(
-      canonicalImports.map((component) => `$lib/components/ui/${component}`).sort(),
+      [...canonicalImports, ...canonicalFileImports]
+        .map((component) => `$lib/components/ui/${component}`)
+        .sort(),
     );
     for (const component of canonicalComponentManifest) {
       expect(component.fixtures.length, component.publicImport).toBeGreaterThan(0);
@@ -119,9 +123,25 @@ describe('Gate C generated migration ledger', () => {
       expect(entry.removalGate, entry.oldImport).toMatch(/zero|migrate|callers/i);
     }
 
+    // DiagramBlock's export actions now use canonical Menu through DiagramActionsMenu.
     expect(
       ledger.find(({ oldImport }) => oldImport.endsWith('dropdown-menu.svelte'))?.callers,
-    ).toHaveLength(16);
+    ).toEqual([
+      'src/features/external-editors/components/FileActionsDropdown.svelte',
+      'src/features/external-editors/components/OpenComboButton.svelte',
+      'src/lib/components/chat/BackgroundHooksRow.svelte',
+      'src/lib/components/chat/MonitoredPrsRow.svelte',
+      'src/lib/components/chat/RegularAgentWelcome.svelte',
+      'src/lib/components/chat/SpecialistDropdown.svelte',
+      'src/lib/components/layout/DaemonStatusIndicator.svelte',
+      'src/lib/components/layout/panel-system/PanelTabBar.svelte',
+      'src/lib/components/modals/PullConflictDialog.svelte',
+      'src/lib/components/patterns/settings/custom-controls.ts',
+      'src/lib/components/workspace/TaskStatusIndicator.svelte',
+      'src/lib/components/workspace/WorkspaceSidebarHeader.svelte',
+      'src/lib/components/workspace/initializer/InitialAgentPicker.svelte',
+      'src/lib/components/workspace/sidebar/WorkspaceProgressCard.svelte',
+    ]);
     expect(ledger.find(({ oldImport }) => oldImport.endsWith('/dropdown'))).toMatchObject({
       replacement: 'ledger:src/lib/components/ui/dropdown/dropdown-caller-ledger.ts',
       callers: [
@@ -129,7 +149,6 @@ describe('Gate C generated migration ledger', () => {
         'src/lib/component-catalog/renderers/PopoversCatalogPreview.svelte',
         'src/lib/components/chat/input/ModelPicker.svelte',
         'src/lib/components/chat/input/ModelPickerGroupHeader.svelte',
-        'src/lib/components/chat/input/ModelPickerOptionItem.svelte',
         'src/lib/components/chat/input/model-picker-groups.ts',
         'src/lib/components/chat/input/model-picker-utils.ts',
         'src/lib/components/layout/sidebar-nav/cards/ChiefCard.svelte',
@@ -161,8 +180,8 @@ describe('Gate C generated migration ledger', () => {
     const retained = new Map(
       buildUiMigrationLedger(root).map((entry) => [entry.oldImport, entry.callers.length]),
     );
-    expect(retained.get('$lib/components/ui/dropdown-menu.svelte')).toBe(16);
-    expect(retained.get('$lib/components/ui/dropdown')).toBe(8);
+    expect(retained.get('$lib/components/ui/dropdown-menu.svelte')).toBe(14);
+    expect(retained.get('$lib/components/ui/dropdown')).toBe(7);
   });
 });
 

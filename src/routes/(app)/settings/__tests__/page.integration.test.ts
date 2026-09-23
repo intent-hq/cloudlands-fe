@@ -11,6 +11,7 @@ import { initAppStore, store as appStore } from '$store/renderer/store';
 import { selectActiveProviderId } from '$store/renderer/slices/provider-settings/provider-settings-selectors';
 import { hydrateDefaultProvider } from '$store/renderer/slices/model/model-slice';
 import { selectGitHubAuthError } from '$store/renderer/slices/github-auth/github-auth-selectors';
+import { guestSessionsListUnavailable } from '$store/renderer/slices/guest-sessions/guest-sessions-slice';
 import { setGitHubAuthError } from '$store/renderer/slices/github-auth/github-auth-slice';
 import { selectBundledSpecialists } from '$store/renderer/slices/specialists/specialists-selectors';
 import {
@@ -90,7 +91,7 @@ vi.mock('$lib/components/settings/VoiceSettings.svelte', async () => ({
   default: (await import('./mocks/SettingsStateFixture.svelte')).default,
 }));
 vi.mock('$lib/components/settings/DevicesSettings.svelte', async () => ({
-  default: (await import('$lib/components/chat/__tests__/mocks/SlotOnly.svelte')).default,
+  default: (await import('./mocks/SettingsStateFixture.svelte')).default,
 }));
 vi.mock('$lib/components/settings/GitWorkspaceSettings.svelte', async () => ({
   default: (await import('./mocks/GitWorkspaceSettingsFixture.svelte')).default,
@@ -115,10 +116,6 @@ vi.mock('$lib/components/settings/NotificationSettings.svelte', async () => ({
 }));
 vi.mock('$lib/components/settings/RtkSettings.svelte', async () => ({
   default: (await import('$lib/components/chat/__tests__/mocks/SlotOnly.svelte')).default,
-}));
-// Devices-tab fixture carrier (Remote Access section).
-vi.mock('$lib/components/settings/WebSocketApiSettings.svelte', async () => ({
-  default: (await import('./mocks/SettingsStateFixture.svelte')).default,
 }));
 // Advanced-tab fixture carrier.
 vi.mock('$lib/components/settings/AgentBackendSettings.svelte', async () => ({
@@ -165,6 +162,9 @@ beforeEach(() => {
     configurable: true,
   });
   appStore.dispatch(simulateSetState({ status: 'idle' }));
+  // No sagas run here: settle the window's guest/owner identity as an owner
+  // (multiplayer w4) so the administrator-only tabs are rendered.
+  appStore.dispatch(guestSessionsListUnavailable());
 });
 
 afterEach(() => {
@@ -522,6 +522,7 @@ describe('settings tab route and focus behavior', () => {
     ['machines', 'Devices', 'page'],
     ['interface-system', 'Appearance', 'page'],
     ['input', 'Input and shortcuts', 'page'],
+    ['labs', 'Labs', 'page'],
     ['unknown', 'Appearance', 'page'],
   ])('maps ?tab=%s to %s', async (tab, label, current) => {
     renderSettings(`/settings?tab=${tab}`);
@@ -597,6 +598,9 @@ describe('settings tab route and focus behavior', () => {
     ['/settings?tab=advanced#websocket-api', 'Devices', 'websocket-api'],
     ['/settings?tab=agent-behavior#agent-features', 'Agent defaults', 'agent-features'],
     ['/settings?tab=behavior#agent-features', 'Agent defaults', 'agent-features'],
+    ['/settings?tab=labs#labs-multiplayer', 'Labs', 'labs-multiplayer'],
+    ['/settings#labs-multiplayer', 'Labs', 'labs-multiplayer'],
+    ['/settings#multiplayer', 'Labs', 'labs-multiplayer'],
   ])('routes canonical and legacy URL %s to %s', async (url, category, sectionId) => {
     renderSettings(url);
 

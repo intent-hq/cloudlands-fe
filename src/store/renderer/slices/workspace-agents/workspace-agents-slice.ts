@@ -1,5 +1,14 @@
-import type { AgentSession, AgentMessage, ContentBlock, AgentId } from '$shared/types';
+import type {
+  AgentSession,
+  AgentMessage,
+  ContentBlock,
+  AgentId,
+  AgentDelegatedCounts,
+  AgentListBin,
+  AgentScopeCounts,
+} from '$shared/types';
 import type { UnifiedAgentConfig } from '$shared/types/agent.types';
+import { isBackgroundAgentSession } from '$shared/utils/agent-scope';
 import { createAction, createAsyncAction } from '@augmentcode/themis/utils/store/create-action';
 import { createReducer } from '@augmentcode/themis/utils/store/create-reducer';
 import { createWorkspaceScopedHelpers } from '../../utils/workspace-scoped';
@@ -48,7 +57,70 @@ export interface WorkspaceAgentState {
   retiredAgentsLoaded: boolean;
   /** True while the on-demand retired-only read is in flight. */
   isLoadingRetiredAgents: boolean;
+  /**
+   * Daemon-served per-bin counts (`scopeCounts`, §5.5 row scope). The default
+   * hydration read is `scope: "topLevel"`, so the sidebar's Delegated and
+   * Background bins render their collapsed toggles from these counts and
+   * lazy-load the rows on expand. `null` = the daemon served no counts
+   * (predates `scope`, answered the all-rows read): no bins, every row is in
+   * the list already.
+   */
+  scopeCounts: AgentScopeCounts | null;
+  /**
+   * Bumped each time `setScopeCounts` installs an authoritative baseline —
+   * including one numerically equal to the held counts (a created row may
+   * replace a retired one in the same bin, or the snapshot may correct an
+   * already-stale local count). Deferred event nudges (`agent:created`
+   * classifies the row only once its detail read lands) capture the generation
+   * when the event arrives and skip the nudge if a newer baseline — which
+   * already counts the row — was installed meanwhile. `adjustScopeCount`
+   * never advances it.
+   */
+  scopeCountsGeneration: number;
+  /**
+   * Daemon-served per-parent delegated counts (`delegatedCounts`, §5.5),
+   * installed by the same hydration read as `scopeCounts` and sharing its
+   * baseline generation. Every top-level agent's collapsed delegated group
+   * renders from `byParent[id]` until that parent's children are loaded.
+   * `null` = the daemon served none (predates the field).
+   */
+  delegatedCounts: AgentDelegatedCounts | null;
+  /** True once the whole-bin `scope: "delegated"` read has hydrated the delegated rows. */
+  delegatedAgentsLoaded: boolean;
+  /** True while the on-demand whole-bin delegated read is in flight. */
+  isLoadingDelegatedAgents: boolean;
+  /**
+   * Parents whose direct children the per-parent delegated read
+   * (`scope: "delegated"` + `parentAgentId`) has hydrated. A whole-bin load
+   * covers every parent, so readers check `delegatedAgentsLoaded` first.
+   */
+  loadedDelegatedParentIds: Record<string, true>;
+  /** Parents whose per-parent delegated read is in flight. */
+  loadingDelegatedParentIds: Record<string, true>;
+  /**
+   * True once the orphan-only delegated read (`scope: "delegated"` +
+   * `orphanedOnly: true`) has hydrated the orphaned rows. A whole-bin load
+   * covers the orphans too, so readers check `delegatedAgentsLoaded` first.
+   */
+  orphanedDelegatedAgentsLoaded: boolean;
+  /**
+   * The rows the latest orphan-only read served. Orphan-hood is decided by
+   * the daemon (§5.5): a delegated row whose parent is absent from the local
+   * cache is not necessarily an orphan (the live parent may sit in a
+   * collapsed group or bin), so the Delegated bin lists this membership, not
+   * an ancestry inferred from the partial cache.
+   */
+  orphanedDelegatedAgentIds: Record<string, true>;
+  /** True while the on-demand orphan-only delegated read is in flight. */
+  isLoadingOrphanedDelegatedAgents: boolean;
+  /** True once the `scope: "background"` read has hydrated the background rows. */
+  backgroundAgentsLoaded: boolean;
+  /** True while the on-demand background read is in flight. */
+  isLoadingBackgroundAgents: boolean;
 }
+
+/** Lazily loaded `agent.list` bins (retired rows have their own flags). */
+export type LazyAgentListBin = Exclude<AgentListBin, 'topLevel'>;
 
 export interface WorkspaceAgentsState {
   byWorkspaceId: Record<string, WorkspaceAgentState>;
@@ -117,7 +189,7 @@ function reconcileWorkspaceAgentSnapshot(
   const allIdSet = new Set(mergedIds);
 
   const diskForegroundAgentIds = agents
-    .filter((agent) => !isBackgroundAgent(agent))
+    .filter((agent) => !isBackgroundAgentSession(agent))
     .map((agent) => agent.id);
   const diskForegroundIdSet = new Set(diskForegroundAgentIds.map((id) => String(id)));
   const foregroundAgentIds = mergeUniqueAgentIds(
@@ -153,10 +225,6 @@ function reconcileWorkspaceAgentSnapshot(
   };
 }
 
-function isBackgroundAgent(agent: AgentSession): boolean {
-  return agent.isBackground === true || agent.metadata?.isBackground === true;
-}
-
 function mergeUniqueAgentIds(existing: AgentId[], additions: AgentId[]): AgentId[] {
   const existingIds = new Set(existing.map((id) => String(id)));
   const merged = [...existing];
@@ -179,7 +247,7 @@ function removeAgentId(existing: AgentId[], agentId: string): AgentId[] {
 }
 
 function syncForegroundAgentId(existing: AgentId[], agent: AgentSession): AgentId[] {
-  return isBackgroundAgent(agent)
+  return isBackgroundAgentSession(agent)
     ? removeAgentId(existing, String(agent.id))
     : mergeUniqueAgentIds(existing, [agent.id]);
 }
@@ -199,6 +267,18 @@ export const emptyWorkspaceAgentState: WorkspaceAgentState = {
   retiredCount: 0,
   retiredAgentsLoaded: false,
   isLoadingRetiredAgents: false,
+  scopeCounts: null,
+  scopeCountsGeneration: 0,
+  delegatedCounts: null,
+  delegatedAgentsLoaded: false,
+  isLoadingDelegatedAgents: false,
+  loadedDelegatedParentIds: {},
+  loadingDelegatedParentIds: {},
+  orphanedDelegatedAgentsLoaded: false,
+  orphanedDelegatedAgentIds: {},
+  isLoadingOrphanedDelegatedAgents: false,
+  backgroundAgentsLoaded: false,
+  isLoadingBackgroundAgents: false,
 };
 
 export const initialState: WorkspaceAgentsState = {
@@ -268,6 +348,88 @@ export const setRetiredAgentsLoaded = createAction<[wsId: string, loaded: boolea
 );
 export const setIsLoadingRetiredAgents = createAction<[wsId: string, loading: boolean]>(
   'workspaceAgents/setIsLoadingRetiredAgents',
+);
+/**
+ * Saga-only triggers (no reducer entry): load one lazy bin's rows on demand
+ * via the scoped read (`scope: "delegated"` / `scope: "background"`, §5.5 row
+ * scope) when the sidebar's bin expands or an active search needs them. The
+ * handlers live in `lifecycle-read-saga` and no-op once the rows are loaded.
+ * The delegated trigger takes an optional `parentAgentId`: with it, only that
+ * parent's direct children are read (`scope: "delegated"` + `parentAgentId`)
+ * and only that parent is marked loaded; without it the whole bin is read.
+ */
+export const fetchDelegatedAgentsRequested = createAction<[wsId: string, parentAgentId?: string]>(
+  'workspaceAgents/fetchDelegatedAgentsRequested',
+);
+/**
+ * Saga-only trigger: load the ORPHANED delegated rows on demand via
+ * `agent.list { scope: "delegated", orphanedOnly: true }` (§5.5). A no-op
+ * unless the daemon served `delegatedCounts.orphaned` — an older daemon
+ * ignores `orphanedOnly` and would answer with the whole bin.
+ */
+export const fetchOrphanedDelegatedAgentsRequested = createAction<[wsId: string]>(
+  'workspaceAgents/fetchOrphanedDelegatedAgentsRequested',
+);
+export const fetchBackgroundAgentsRequested = createAction<[wsId: string]>(
+  'workspaceAgents/fetchBackgroundAgentsRequested',
+);
+/**
+ * Store the daemon-served per-bin counts (`scopeCounts`, §5.5 row scope);
+ * `null` records that the daemon served none (old daemon, all-rows read).
+ */
+export const setScopeCounts = createAction<[wsId: string, counts: AgentScopeCounts | null]>(
+  'workspaceAgents/setScopeCounts',
+);
+/**
+ * Nudge one bin's count on agent lifecycle events (`agent:created` +1,
+ * `agent:deleted` / `agent:retired` −1, `agent:restored` +1) so the collapsed
+ * bins stay consistent without a full refetch; hydration re-baselines from the
+ * daemon-served counts. A no-op while no counts are held (old daemon).
+ */
+export const adjustScopeCount = createAction<[wsId: string, bin: AgentListBin, delta: number]>(
+  'workspaceAgents/adjustScopeCount',
+);
+export const setLazyBinLoaded = createAction<
+  [wsId: string, bin: LazyAgentListBin, loaded: boolean]
+>('workspaceAgents/setLazyBinLoaded');
+export const setIsLoadingLazyBin = createAction<
+  [wsId: string, bin: LazyAgentListBin, loading: boolean]
+>('workspaceAgents/setIsLoadingLazyBin');
+/**
+ * Store the daemon-served per-parent delegated counts (`delegatedCounts`,
+ * §5.5); `null` records that the daemon served none. Always put by the same
+ * hydration read as `setScopeCounts`, whose generation bump covers both.
+ */
+export const setDelegatedCounts = createAction<[wsId: string, counts: AgentDelegatedCounts | null]>(
+  'workspaceAgents/setDelegatedCounts',
+);
+/**
+ * Nudge one parent's delegated `total` on agent lifecycle events, in lockstep
+ * with the `adjustScopeCount(…, 'delegated', delta)` the same event dispatches
+ * so `Σ byParent[*].total === scopeCounts.delegated` holds. An entry reaching
+ * zero is dropped (the wire never serves an empty parent); `running` is never
+ * nudged — it re-baselines on the next hydration read, and loaded rows are
+ * authoritative once a parent's children are hydrated. A no-op while no
+ * counts are held.
+ */
+export const adjustDelegatedParentCount = createAction<
+  [wsId: string, parentAgentId: string, delta: number]
+>('workspaceAgents/adjustDelegatedParentCount');
+export const setDelegatedParentLoaded = createAction<
+  [wsId: string, parentAgentId: string, loaded: boolean]
+>('workspaceAgents/setDelegatedParentLoaded');
+export const setIsLoadingDelegatedParent = createAction<
+  [wsId: string, parentAgentId: string, loading: boolean]
+>('workspaceAgents/setIsLoadingDelegatedParent');
+export const setOrphanedDelegatedAgentsLoaded = createAction<[wsId: string, loaded: boolean]>(
+  'workspaceAgents/setOrphanedDelegatedAgentsLoaded',
+);
+/** Replace the orphan-only read's row membership with the ids it served. */
+export const setOrphanedDelegatedAgentIds = createAction<[wsId: string, agentIds: string[]]>(
+  'workspaceAgents/setOrphanedDelegatedAgentIds',
+);
+export const setIsLoadingOrphanedDelegatedAgents = createAction<[wsId: string, loading: boolean]>(
+  'workspaceAgents/setIsLoadingOrphanedDelegatedAgents',
 );
 export const createAgentRequested = createAction<
   [wsId: string, agentType?: string, options?: { panelLayoutId?: string; panelId?: string }]
@@ -354,6 +516,19 @@ export const renameAgentSessionRequested = createAsyncAction<
 export const stopAgentSessionRequested = createAsyncAction<[wsId: string, agentId: string], void>(
   'workspaceAgents/stopAgentSession',
   'workspaceAgents/stopAgentSessionRequested',
+);
+/**
+ * Set or clear the daemon-owned per-agent notification mute
+ * (`agent.update { changes: { notificationsMuted } }`, §5.5). The saga
+ * applies the flag optimistically (re-deriving `hasUnread`), reverts on a
+ * daemon failure, and lets the `agent:updated` push converge the session.
+ */
+export const setAgentNotificationsMutedRequested = createAsyncAction<
+  [wsId: string, agentId: string, notificationsMuted: boolean],
+  void
+>(
+  'workspaceAgents/setAgentNotificationsMuted',
+  'workspaceAgents/setAgentNotificationsMutedRequested',
 );
 export const deleteAgentSessionRequested = createAsyncAction<[wsId: string, agentId: string], void>(
   'workspaceAgents/deleteAgentSession',
@@ -543,6 +718,180 @@ workspaceAgentsReducer.with(setIsLoadingRetiredAgents, (state, { payload: [wsId,
   }
   return setWorkspaceState(state, wsId, { ...workspaceState, isLoadingRetiredAgents: loading });
 });
+workspaceAgentsReducer.with(setScopeCounts, (state, { payload: [wsId, counts] }) => {
+  const workspaceState = getWorkspaceState(state, wsId);
+  const scopeCounts = counts
+    ? {
+        topLevel: Math.max(0, counts.topLevel),
+        delegated: Math.max(0, counts.delegated),
+        background: Math.max(0, counts.background),
+      }
+    : null;
+  const current = workspaceState.scopeCounts;
+  const unchanged =
+    current === scopeCounts ||
+    (current !== null &&
+      scopeCounts !== null &&
+      current.topLevel === scopeCounts.topLevel &&
+      current.delegated === scopeCounts.delegated &&
+      current.background === scopeCounts.background);
+  // An equal-valued snapshot is still a fresh baseline: the generation
+  // advances so deferred nudges captured before it are dropped, while the
+  // counts object keeps its reference.
+  return setWorkspaceState(state, wsId, {
+    ...workspaceState,
+    scopeCounts: unchanged ? current : scopeCounts,
+    scopeCountsGeneration: workspaceState.scopeCountsGeneration + 1,
+  });
+});
+workspaceAgentsReducer.with(adjustScopeCount, (state, { payload: [wsId, bin, delta] }) => {
+  const workspaceState = getWorkspaceState(state, wsId);
+  const current = workspaceState.scopeCounts;
+  if (!current) return state;
+  const next = Math.max(0, current[bin] + delta);
+  if (current[bin] === next) return state;
+  return setWorkspaceState(state, wsId, {
+    ...workspaceState,
+    scopeCounts: { ...current, [bin]: next },
+  });
+});
+const LAZY_BIN_LOADED_FIELD = {
+  delegated: 'delegatedAgentsLoaded',
+  background: 'backgroundAgentsLoaded',
+} as const satisfies Record<LazyAgentListBin, keyof WorkspaceAgentState>;
+const LAZY_BIN_LOADING_FIELD = {
+  delegated: 'isLoadingDelegatedAgents',
+  background: 'isLoadingBackgroundAgents',
+} as const satisfies Record<LazyAgentListBin, keyof WorkspaceAgentState>;
+workspaceAgentsReducer.with(setLazyBinLoaded, (state, { payload: [wsId, bin, loaded] }) => {
+  const workspaceState = getWorkspaceState(state, wsId);
+  const field = LAZY_BIN_LOADED_FIELD[bin];
+  if (workspaceState[field] === loaded) return state;
+  return setWorkspaceState(state, wsId, { ...workspaceState, [field]: loaded });
+});
+workspaceAgentsReducer.with(setIsLoadingLazyBin, (state, { payload: [wsId, bin, loading] }) => {
+  const workspaceState = getWorkspaceState(state, wsId);
+  const field = LAZY_BIN_LOADING_FIELD[bin];
+  if (workspaceState[field] === loading) return state;
+  return setWorkspaceState(state, wsId, { ...workspaceState, [field]: loading });
+});
+workspaceAgentsReducer.with(setDelegatedCounts, (state, { payload: [wsId, counts] }) => {
+  const workspaceState = getWorkspaceState(state, wsId);
+  if (!counts) {
+    if (workspaceState.delegatedCounts === null) return state;
+    return setWorkspaceState(state, wsId, { ...workspaceState, delegatedCounts: null });
+  }
+  const byParent: AgentDelegatedCounts['byParent'] = {};
+  for (const [parentAgentId, entry] of Object.entries(counts.byParent)) {
+    const total = Math.max(0, entry.total);
+    if (total === 0) continue;
+    byParent[parentAgentId] = { total, running: Math.min(total, Math.max(0, entry.running)) };
+  }
+  // `orphaned` is presence-detected: stored when served, never defaulted.
+  const orphaned = counts.orphaned
+    ? {
+        total: Math.max(0, counts.orphaned.total),
+        running: Math.min(Math.max(0, counts.orphaned.total), Math.max(0, counts.orphaned.running)),
+      }
+    : undefined;
+  return setWorkspaceState(state, wsId, {
+    ...workspaceState,
+    delegatedCounts: {
+      running: Math.max(0, counts.running),
+      byParent,
+      ...(orphaned ? { orphaned } : {}),
+    },
+  });
+});
+workspaceAgentsReducer.with(
+  setOrphanedDelegatedAgentsLoaded,
+  (state, { payload: [wsId, loaded] }) => {
+    const workspaceState = getWorkspaceState(state, wsId);
+    if (workspaceState.orphanedDelegatedAgentsLoaded === loaded) return state;
+    return setWorkspaceState(state, wsId, {
+      ...workspaceState,
+      orphanedDelegatedAgentsLoaded: loaded,
+    });
+  },
+);
+workspaceAgentsReducer.with(
+  setOrphanedDelegatedAgentIds,
+  (state, { payload: [wsId, agentIds] }) => {
+    const workspaceState = getWorkspaceState(state, wsId);
+    const current = workspaceState.orphanedDelegatedAgentIds;
+    const next: Record<string, true> = {};
+    for (const agentId of agentIds) next[agentId] = true;
+    const nextKeys = Object.keys(next);
+    if (
+      nextKeys.length === Object.keys(current).length &&
+      nextKeys.every((agentId) => current[agentId] === true)
+    ) {
+      return state;
+    }
+    return setWorkspaceState(state, wsId, { ...workspaceState, orphanedDelegatedAgentIds: next });
+  },
+);
+workspaceAgentsReducer.with(
+  setIsLoadingOrphanedDelegatedAgents,
+  (state, { payload: [wsId, loading] }) => {
+    const workspaceState = getWorkspaceState(state, wsId);
+    if (workspaceState.isLoadingOrphanedDelegatedAgents === loading) return state;
+    return setWorkspaceState(state, wsId, {
+      ...workspaceState,
+      isLoadingOrphanedDelegatedAgents: loading,
+    });
+  },
+);
+workspaceAgentsReducer.with(
+  adjustDelegatedParentCount,
+  (state, { payload: [wsId, parentAgentId, delta] }) => {
+    const workspaceState = getWorkspaceState(state, wsId);
+    const current = workspaceState.delegatedCounts;
+    if (!current || delta === 0) return state;
+    const entry = current.byParent[parentAgentId];
+    const total = Math.max(0, (entry?.total ?? 0) + delta);
+    if ((entry?.total ?? 0) === total) return state;
+    const byParent = { ...current.byParent };
+    if (total === 0) {
+      delete byParent[parentAgentId];
+    } else {
+      byParent[parentAgentId] = { total, running: Math.min(total, entry?.running ?? 0) };
+    }
+    return setWorkspaceState(state, wsId, {
+      ...workspaceState,
+      delegatedCounts: { ...current, byParent },
+    });
+  },
+);
+function setParentIdFlag(
+  ids: Record<string, true>,
+  parentAgentId: string,
+  flagged: boolean,
+): Record<string, true> {
+  if (flagged) {
+    return ids[parentAgentId] ? ids : { ...ids, [parentAgentId]: true };
+  }
+  return ids[parentAgentId] ? omitKey(ids, parentAgentId) : ids;
+}
+workspaceAgentsReducer.with(
+  setDelegatedParentLoaded,
+  (state, { payload: [wsId, parentAgentId, loaded] }) => {
+    const workspaceState = getWorkspaceState(state, wsId);
+    const next = setParentIdFlag(workspaceState.loadedDelegatedParentIds, parentAgentId, loaded);
+    if (next === workspaceState.loadedDelegatedParentIds) return state;
+    return setWorkspaceState(state, wsId, { ...workspaceState, loadedDelegatedParentIds: next });
+  },
+);
+workspaceAgentsReducer.with(
+  setIsLoadingDelegatedParent,
+  (state, { payload: [wsId, parentAgentId, loading] }) => {
+    const workspaceState = getWorkspaceState(state, wsId);
+    const next = setParentIdFlag(workspaceState.loadingDelegatedParentIds, parentAgentId, loading);
+    if (next === workspaceState.loadingDelegatedParentIds) return state;
+    return setWorkspaceState(state, wsId, { ...workspaceState, loadingDelegatedParentIds: next });
+  },
+);
+
 workspaceAgentsReducer.with(
   setWaitingForFirstMessage,
   (state, { payload: [wsId, agentId, waiting] }) => {

@@ -62,6 +62,17 @@ export interface StartAuthOptions {
 }
 
 /**
+ * One `github.users.search` hit (§5.27): the daemon's login-prefix user
+ * search over `GET /search/users`, already camelCase on the wire.
+ */
+export interface GithubUserSearchHit {
+  id: number;
+  login: string;
+  avatarUrl: string | null;
+  htmlUrl: string | null;
+}
+
+/**
  * Result from starting GitHub authentication
  */
 export interface StartAuthResult {

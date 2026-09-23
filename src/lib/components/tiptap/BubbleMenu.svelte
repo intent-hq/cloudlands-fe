@@ -27,6 +27,8 @@
   // import { getAgentTypes } from '$features/agent/instruction-registry';
   import Portal from '$lib/components/ui/Portal.svelte';
   import { store as appStore } from '$store/renderer/store';
+  import { selectHidesAgentLifecycleActions } from '$store/renderer/slices/workspace/workspace-selectors';
+  import { writable } from 'svelte/store';
   import { m } from '$shared/paraglide/messages.js';
 
   interface Props {
@@ -53,6 +55,14 @@
   let bubbleMenuVisible = $state(false);
   let bubbleMenuPosition = $state({ x: 0, y: 0 });
   let menuRef: HTMLDivElement | null = $state(null);
+
+  const wsIdStore = writable<string>('');
+  $effect(() => {
+    wsIdStore.set(workspace?.id ?? '');
+  });
+  // "Send to Agent" creates an agent (`agent.create`), refused (-32003) for a
+  // collaborator connection: the affordance is withheld.
+  const hidesAgentLifecycleActions$ = selectHidesAgentLifecycleActions(wsIdStore);
 
   // Menu dimensions for edge detection (estimated, updated on mount)
   const MENU_HEIGHT = 40;
@@ -375,6 +385,8 @@
         >
           <Button
             variant="ghost"
+            size="icon-compact"
+            iconOnly
             class="bubble-menu-btn"
             onclick={toggleBold}
             aria-label={m.tiptap_bubbleMenu_bold_label()}
@@ -394,6 +406,8 @@
         >
           <Button
             variant="ghost"
+            size="icon-compact"
+            iconOnly
             class="bubble-menu-btn"
             onclick={toggleItalic}
             aria-label={m.tiptap_bubbleMenu_italic_label()}
@@ -413,6 +427,8 @@
         >
           <Button
             variant="ghost"
+            size="icon-compact"
+            iconOnly
             class="bubble-menu-btn"
             onclick={toggleUnderline}
             aria-label={m.tiptap_bubbleMenu_underline_label()}
@@ -432,6 +448,8 @@
         >
           <Button
             variant="ghost"
+            size="icon-compact"
+            iconOnly
             class="bubble-menu-btn"
             onclick={toggleStrike}
             aria-label={m.tiptap_bubbleMenu_strikethrough_label()}
@@ -451,6 +469,8 @@
         >
           <Button
             variant="ghost"
+            size="icon-compact"
+            iconOnly
             class="bubble-menu-btn"
             onclick={toggleCode}
             aria-label={m.tiptap_bubbleMenu_code_label()}
@@ -470,6 +490,8 @@
         >
           <Button
             variant="ghost"
+            size="icon-compact"
+            iconOnly
             class="bubble-menu-btn"
             onclick={handleLinkClick}
             aria-label={m.tiptap_bubbleMenu_addLink_label()}
@@ -490,6 +512,8 @@
           >
             <Button
               variant="ghost"
+              size="icon-compact"
+              iconOnly
               class="bubble-menu-btn"
               onclick={handleAddComment}
               aria-label={m.tiptap_bubbleMenu_addComment_label()}
@@ -498,20 +522,24 @@
             </Button>
           </TooltipShortcut>
 
-          <TooltipShortcut
-            label={m.tiptap_bubbleMenu_sendToAgent_label()}
-            side="top"
-            delayDuration={200}
-          >
-            <Button
-              variant="ghost"
-              class="bubble-menu-btn"
-              onclick={handleLaunchAgentClick}
-              aria-label={m.tiptap_bubbleMenu_sendToAgent_label()}
+          {#if !$hidesAgentLifecycleActions$}
+            <TooltipShortcut
+              label={m.tiptap_bubbleMenu_sendToAgent_label()}
+              side="top"
+              delayDuration={200}
             >
-              <Fa icon={faPaperPlane} size="xs" />
-            </Button>
-          </TooltipShortcut>
+              <Button
+                variant="ghost"
+                size="icon-compact"
+                iconOnly
+                class="bubble-menu-btn"
+                onclick={handleLaunchAgentClick}
+                aria-label={m.tiptap_bubbleMenu_sendToAgent_label()}
+              >
+                <Fa icon={faPaperPlane} size="xs" />
+              </Button>
+            </TooltipShortcut>
+          {/if}
         {/if}
       </div>
 
@@ -529,6 +557,8 @@
           <div class="link-input-actions">
             <Button
               variant="ghost"
+              size="icon-compact"
+              iconOnly
               class="bubble-menu-btn small"
               onclick={handleSetLink}
               aria-label={m.tiptap_bubbleMenu_setLink_ariaLabel()}
@@ -537,6 +567,8 @@
             </Button>
             <Button
               variant="ghost"
+              size="icon-compact"
+              iconOnly
               class="bubble-menu-btn small"
               onclick={handleCancelLink}
               aria-label={m.tiptap_bubbleMenu_cancel_ariaLabel()}
@@ -582,17 +614,10 @@
     gap: 1px;
   }
 
+  /* Sizing comes from the Button `icon-compact` size (square, zero padding). */
   :global(.bubble-menu-btn) {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 26px;
-    height: 26px;
-    border: none;
-    background: transparent;
     color: hsl(var(--muted-foreground));
     border-radius: 4px;
-    cursor: pointer;
     transition: all 0.1s ease;
   }
 

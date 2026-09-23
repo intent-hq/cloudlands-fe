@@ -201,6 +201,48 @@ describe('agent-attention-toast-service', () => {
     });
   });
 
+  describe('muted-agent suppression', () => {
+    const request = {
+      workspaceId: WS,
+      agentId: AGENT,
+      agentName: 'Implementor',
+      kind: 'discussion' as const,
+      reason: 'Need a decision',
+    };
+
+    it('suppresses the toast when the payload carries notificationsMuted: true', async () => {
+      vi.spyOn(document, 'hasFocus').mockReturnValue(false);
+
+      await showAgentAttentionToast({ ...request, notificationsMuted: true });
+
+      expect(toastCustomMock).not.toHaveBeenCalled();
+      expect(toastDismissMock).not.toHaveBeenCalled();
+    });
+
+    it('suppresses the toast when the tracked session is muted (payload without the stamp)', async () => {
+      vi.spyOn(document, 'hasFocus').mockReturnValue(false);
+      storeStateMock.value = {
+        agentSessions: { byAgentId: { [AGENT]: { id: AGENT, notificationsMuted: true } } },
+      };
+
+      await showAgentAttentionToast(request);
+
+      expect(toastCustomMock).not.toHaveBeenCalled();
+    });
+
+    it('shows the toast for an unmuted session and for unknown agents', async () => {
+      vi.spyOn(document, 'hasFocus').mockReturnValue(false);
+      storeStateMock.value = {
+        agentSessions: { byAgentId: { [AGENT]: { id: AGENT, notificationsMuted: false } } },
+      };
+
+      await showAgentAttentionToast(request);
+      await showAgentAttentionToast({ ...request, agentId: 'agent-unknown' });
+
+      expect(toastCustomMock).toHaveBeenCalledTimes(2);
+    });
+  });
+
   describe('already-viewing suppression', () => {
     const request = {
       workspaceId: WS,

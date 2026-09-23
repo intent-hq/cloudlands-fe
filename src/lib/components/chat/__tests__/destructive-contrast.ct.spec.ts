@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/experimental-ct-svelte';
+import { expect, test } from '../../../../test/ct-test';
 import DestructiveContrastHost from './DestructiveContrastHost.svelte';
 
 type Rgba = [number, number, number, number];
@@ -26,7 +26,7 @@ test('keeps destructive and operational secondary text readable in both themes',
     { name: 'turn-failure alert', selector: '.turn-failure-notice', alpha: 0 },
     {
       name: 'turn-failure detail',
-      selector: '.turn-failure-notice span.whitespace-pre-wrap',
+      selector: '.turn-failure-notice [data-chat-notice-reason]',
       alpha: 0,
     },
     {

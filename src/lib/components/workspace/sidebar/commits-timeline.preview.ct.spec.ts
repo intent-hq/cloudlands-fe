@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/experimental-ct-svelte';
+import { expect, test } from '../../../../test/ct-test';
 import CommitsTimelinePreview from './commits-timeline.preview.svelte';
 
 test('keeps the boundary label and divider disjoint on hover and keyboard focus', async ({

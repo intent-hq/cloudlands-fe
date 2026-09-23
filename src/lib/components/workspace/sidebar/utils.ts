@@ -19,7 +19,6 @@ import { faNote } from '$lib/icons/faNote';
 
 // Re-export utilities from centralized location
 export { isSpecNote };
-export { getNoteIcon } from '$features/notes/utils/note-icon-utils';
 
 /**
  * Get display title for a note

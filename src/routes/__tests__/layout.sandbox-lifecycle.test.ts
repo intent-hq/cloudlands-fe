@@ -1,15 +1,42 @@
-import { readFileSync } from 'node:fs';
-import path from 'node:path';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import type { Component } from 'svelte';
 import { cleanup, render, screen } from '@testing-library/svelte';
-import { createRawSnippet } from 'svelte';
+import { createRawSnippet, hasContext } from 'svelte';
 
-const mocks = vi.hoisted(() => ({ startRootStoreLifecycle: vi.fn(() => () => {}) }));
+// Mock factories run lazily on first import, so they double as a probe of
+// which route layout actually pulls the app-only modules into its graph.
+const mocks = vi.hoisted(() => {
+  const loaded = { sagas: false, seeders: false, actionKeyHud: false, appStoreLifecycle: false };
+  return {
+    loaded,
+    startRootStoreLifecycle: vi.fn(() => () => {}),
+    seededBeforeAppLifecycle: null as boolean | null,
+    startAppStoreLifecycle: vi.fn(() => {
+      mocks.seededBeforeAppLifecycle = loaded.seeders;
+      return () => {};
+    }),
+  };
+});
 
 vi.mock('$store/renderer/root-store-lifecycle', () => ({
   startRootStoreLifecycle: mocks.startRootStoreLifecycle,
 }));
-vi.mock('$store/renderer/seeders', () => ({}));
+vi.mock('$store/renderer/app-store-lifecycle', () => {
+  mocks.loaded.appStoreLifecycle = true;
+  return { startAppStoreLifecycle: mocks.startAppStoreLifecycle };
+});
+vi.mock('$store/renderer/sagas', () => {
+  mocks.loaded.sagas = true;
+  return { startAllAppSagas: () => [] };
+});
+vi.mock('$store/renderer/seeders', () => {
+  mocks.loaded.seeders = true;
+  return {};
+});
+vi.mock('$features/hardware-console/actions/ActionKeyHud.svelte', async () => {
+  mocks.loaded.actionKeyHud = true;
+  return { default: (await import('./mocks/Marker.svelte')).default };
+});
 // Native animation behavior is covered in window-blur-animations.ct.spec.ts.
 vi.mock('$lib/actions/pause-window-animations', () => ({
   pauseWindowAnimations: () => ({ destroy() {} }),
@@ -22,14 +49,30 @@ vi.mock('$lib/utils/history-navigation', () => ({
   attachMouseHistoryNavigation: () => () => {},
   handleHistoryNavigateIpc: () => {},
 }));
+
 import { store as appStore } from '$store/renderer/store';
+import {
+  WORKSPACE_ROUTE_CONTEXT,
+  getWorkspaceRouteContext,
+} from '$lib/utils/workspace-route-context';
 import RootLayout from '../+layout.svelte';
 
 const childrenSnippet = createRawSnippet(() => ({
   render: () => '<div data-testid="root-children">content</div>',
 }));
 
-describe('root +layout.svelte sandbox Store lifecycle', () => {
+// Reads the workspace route context from the component context the root
+// layout renders its children in, so a root-owned provider would be observed.
+const observedRouteContext: { value?: unknown; keyPresent?: boolean } = {};
+const contextProbeSnippet = createRawSnippet(() => ({
+  render: () => '<div data-testid="root-children">content</div>',
+  setup: () => {
+    observedRouteContext.value = getWorkspaceRouteContext();
+    observedRouteContext.keyPresent = hasContext(WORKSPACE_ROUTE_CONTEXT);
+  },
+}));
+
+function useStoreLifecycle() {
   beforeEach(() => {
     appStore.init();
     mocks.startRootStoreLifecycle.mockClear();
@@ -39,6 +82,10 @@ describe('root +layout.svelte sandbox Store lifecycle', () => {
     cleanup();
     appStore.dispose();
   });
+}
+
+describe('root +layout.svelte sandbox Store lifecycle', () => {
+  useStoreLifecycle();
 
   it('initializes the shared root Store without owning app sagas', () => {
     render(RootLayout, { props: { children: childrenSnippet } });
@@ -50,25 +97,43 @@ describe('root +layout.svelte sandbox Store lifecycle', () => {
     expect(screen.getByTestId('root-children')).toBeTruthy();
   });
 
-  it('keeps app-only saga and action HUD imports behind the app route group', () => {
-    const routesRoot = path.resolve(process.cwd(), 'src/routes');
-    const rootLayout = readFileSync(path.join(routesRoot, '+layout.svelte'), 'utf8');
-    const appLayout = readFileSync(path.join(routesRoot, '(app)/+layout.svelte'), 'utf8');
-    const hudLayout = readFileSync(path.join(routesRoot, 'hud/+layout.svelte'), 'utf8');
+  it('keeps app-only saga and action HUD imports out of the root layout graph', () => {
+    render(RootLayout, { props: { children: childrenSnippet } });
+    expect(mocks.loaded).toEqual({
+      sagas: false,
+      seeders: false,
+      actionKeyHud: false,
+      appStoreLifecycle: false,
+    });
+    expect(mocks.startAppStoreLifecycle).not.toHaveBeenCalled();
+  });
 
-    expect(rootLayout).not.toContain('$store/renderer/sagas');
-    expect(rootLayout).not.toContain('$store/renderer/seeders');
-    expect(rootLayout).not.toContain('ActionKeyHud');
-    expect(appLayout).toContain('$store/renderer/app-store-lifecycle');
-    expect(appLayout).toContain('$store/renderer/seeders');
-    expect(appLayout.indexOf("import '$store/renderer/seeders'")).toBeLessThan(
-      appLayout.indexOf('startAppStoreLifecycle(appStore'),
-    );
-    expect(appLayout).toContain('ActionKeyHud');
-    expect(hudLayout).toContain('$store/renderer/app-store-lifecycle');
-    expect(hudLayout).toContain('$store/renderer/seeders');
-    expect(hudLayout.indexOf("import '$store/renderer/seeders'")).toBeLessThan(
-      hudLayout.indexOf('startAppStoreLifecycle(appStore'),
-    );
+  it('does not provide a workspace route context to its children', () => {
+    observedRouteContext.value = 'unset';
+    observedRouteContext.keyPresent = undefined;
+    render(RootLayout, { props: { children: contextProbeSnippet } });
+
+    expect(screen.getByTestId('root-children')).toBeTruthy();
+    expect(observedRouteContext.keyPresent).toBe(false);
+    expect(observedRouteContext.value).toBeUndefined();
+  });
+});
+
+// Imported after the root-layout probes so its graph does not pre-load the
+// app-only modules those probes assert are absent.
+describe('hud +layout.svelte Store lifecycle', () => {
+  let HudLayout: Component<{ children: typeof childrenSnippet }>;
+  beforeAll(async () => {
+    HudLayout = (await import('../hud/+layout.svelte')).default;
+  });
+  useStoreLifecycle();
+
+  it('seeds the store before starting the app lifecycle, without the action HUD', () => {
+    render(HudLayout, { props: { children: childrenSnippet } });
+
+    expect(mocks.startAppStoreLifecycle).toHaveBeenCalledExactlyOnceWith(appStore, undefined);
+    expect(mocks.seededBeforeAppLifecycle).toBe(true);
+    expect(mocks.loaded.sagas).toBe(false);
+    expect(mocks.loaded.actionKeyHud).toBe(false);
   });
 });

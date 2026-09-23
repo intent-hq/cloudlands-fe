@@ -1,5 +1,5 @@
 // @verify-changed-triggers: ../Panel.svelte, ../PanelContainer.svelte, ../PanelLayout.svelte,
-//   ../PanelSplitHandle.svelte, ../PanelTabBar.svelte, ../LayoutPresetDropdown.svelte,
+//   ../PanelSplitHandle.svelte, ../PanelTabBar.svelte,
 //   ../../WindowTitleBar.svelte, ../../WorkspaceTabStrip.svelte,
 //   ../../sidebar-nav/SidebarNav.svelte, ../../sidebar-nav/SidebarPanel.svelte,
 //   ../../../workspace/WorkspaceLayout.svelte, ../../../workspace/WorkspaceSidebarHeader.svelte,
@@ -128,17 +128,15 @@ describe('editorial workspace shell presentation contract', () => {
     expect(tabBar).not.toContain('color-mix');
   });
 
-  it('limits direct manipulation and presets to the horizontal panel stack', () => {
+  it('limits direct manipulation to the horizontal panel stack', () => {
     const panel = source('../Panel.svelte');
     const layout = source('../PanelLayout.svelte');
-    const presets = source('../LayoutPresetDropdown.svelte');
 
     expect(panel).toContain('Tabless panels only split along the horizontal stack.');
     expect(layout).toContain("if (direction !== 'horizontal') return;");
     expect(layout).toMatch(
       /moveTabToSplitLevel\(\s*draggedPane\.tabId,\s*draggedPane\.panelId,\s*\[\],\s*placement\.position,\s*'horizontal',\s*\)/,
     );
-    expect(presets).not.toContain("id: 'split-vertical'");
   });
 
   it('reserves browser-style tab chords for global workspace tabs', () => {

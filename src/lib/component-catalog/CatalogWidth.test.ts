@@ -1,7 +1,7 @@
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { afterEach, expect, it, vi } from 'vitest';
 import Button from '../components/ui/button/button.svelte';
-import { preview as buttonPreview } from '../components/ui/button/button.preview';
+import { preview as buttonPreview } from '../components/ui/button/button.preview.svelte';
 import CatalogWidth from './CatalogWidth.test.svelte';
 
 vi.mock('$app/state', () => ({

@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/experimental-ct-svelte';
+import { test, expect } from '../../../../../test/ct-test';
 import Harness from './ToastFooterHarness.svelte';
 
 test.use({ viewport: { width: 900, height: 640 }, reducedMotion: 'reduce' });

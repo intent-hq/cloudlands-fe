@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/experimental-ct-svelte';
+import { expect, test } from '../../../../test/ct-test';
 import TaskProgressIconsPreview from '../task-progress-icons.preview.svelte';
 
 test('expanded task glyphs fill the regular icon size and align with wrapped titles without enlarging the stack', async ({

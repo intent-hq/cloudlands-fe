@@ -2,11 +2,28 @@ import { describe, expect, it, beforeEach, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import AgentActionBlock from './AgentActionBlock.svelte';
 
-const { dispatchMock, toastErrorMock, toastSuccessMock, generateAgentIdMock } = vi.hoisted(() => ({
-  dispatchMock: vi.fn(),
-  toastErrorMock: vi.fn(),
-  toastSuccessMock: vi.fn(),
-  generateAgentIdMock: vi.fn(),
+const { dispatchMock, toastErrorMock, toastSuccessMock, generateAgentIdMock, mocks } = vi.hoisted(
+  () => ({
+    dispatchMock: vi.fn(),
+    toastErrorMock: vi.fn(),
+    toastSuccessMock: vi.fn(),
+    generateAgentIdMock: vi.fn(),
+    mocks: {
+      hidesAgentLifecycleActions: false,
+      readable<T>(value: T) {
+        return {
+          subscribe(run: (value: T) => void) {
+            run(value);
+            return () => {};
+          },
+        };
+      },
+    },
+  }),
+);
+
+vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
+  selectHidesAgentLifecycleActions: () => mocks.readable(mocks.hidesAgentLifecycleActions),
 }));
 
 vi.mock('svelte-tiptap', async () => ({
@@ -59,7 +76,7 @@ vi.mock('$lib/utils/client-logger', () => ({
   createLogger: () => ({ error: vi.fn(), warn: vi.fn(), info: vi.fn(), debug: vi.fn() }),
 }));
 
-function renderBlock(updateAttributes = vi.fn()) {
+function renderBlock(updateAttributes = vi.fn(), data: Record<string, unknown> = {}) {
   return {
     updateAttributes,
     ...render(AgentActionBlock, {
@@ -70,6 +87,7 @@ function renderBlock(updateAttributes = vi.fn()) {
               id: 'primitive-1',
               goal: 'Run the confirmation task',
               inputs: [],
+              ...data,
             },
           },
         },
@@ -83,7 +101,37 @@ function renderBlock(updateAttributes = vi.fn()) {
 describe('AgentActionBlock creation confirmation', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mocks.hidesAgentLifecycleActions = false;
     generateAgentIdMock.mockReturnValue('agent-generated');
+  });
+
+  it('hides the run action when agent lifecycle actions are withheld', () => {
+    mocks.hidesAgentLifecycleActions = true;
+    renderBlock();
+
+    expect(screen.queryByRole('button', { name: /run/i })).toBeNull();
+    expect(screen.getByText('Run the confirmation task')).toBeTruthy();
+    expect(dispatchMock).not.toHaveBeenCalled();
+  });
+
+  it('keeps the open-agent action for an already-linked agent when lifecycle actions are withheld', async () => {
+    mocks.hidesAgentLifecycleActions = true;
+    renderBlock(vi.fn(), { createdByAgentId: 'agent-linked' });
+
+    expect(screen.queryByRole('button', { name: /^run$/i })).toBeNull();
+    await fireEvent.click(screen.getByTitle('View agent'));
+    expect(dispatchMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'appLayout/openAgentTabRequested',
+        payload: expect.arrayContaining([
+          'ws-1',
+          expect.objectContaining({ agentId: 'agent-linked' }),
+        ]),
+      }),
+    );
+    expect(dispatchMock).not.toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'workspaceAgents/createAgentFromConfigRequested' }),
+    );
   });
 
   it('persists linked/running state only after agent creation is confirmed', async () => {

@@ -6,6 +6,8 @@
     showReasoning = false,
     reasoningEffort,
     onReasoningChange,
+    portal,
+    collisionBoundary,
   }: {
     selectedModel?: string;
     defaultModelId?: string;
@@ -16,10 +18,16 @@
     showReasoning?: boolean;
     reasoningEffort?: string | null;
     onReasoningChange?: (effort: string | null) => boolean | void | Promise<boolean | void>;
+    portal?: boolean;
+    collisionBoundary?: string;
   } = $props();
 </script>
 
-<div data-testid="mock-model-picker">
+<div
+  data-testid="mock-model-picker"
+  data-portal={portal === undefined ? undefined : String(portal)}
+  data-collision-boundary={collisionBoundary}
+>
   <span data-testid="picker-selected">{selectedModel ?? ''}</span>
   <span data-testid="picker-default">{defaultModelId ?? ''}</span>
   <span data-testid="picker-show-reasoning">{showReasoning ? 'true' : 'false'}</span>

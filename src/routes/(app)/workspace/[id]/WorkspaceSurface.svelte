@@ -32,6 +32,8 @@
   import {
     selectWorkspaceIsEmpty,
     selectIsNewWorkspaceSession,
+    selectIsWorkspaceCollaborator,
+    selectHidesAgentLifecycleActions,
   } from '$store/renderer/slices/workspace/workspace-selectors';
   import {
     selectWorkspaceLoadResult,
@@ -68,6 +70,9 @@
 
   // Onboarding
   import OnboardingPage from '$features/onboarding/OnboardingPage.svelte';
+  // Guest empty state (multiplayer w4): replaces onboarding in a guest window
+  import GuestEmptyState from '$features/guest-sessions/GuestEmptyState.svelte';
+  import { selectWindowGuestSession } from '$store/renderer/slices/guest-sessions/guest-sessions-selectors';
 
   // Utils
   import { createLogger } from '$lib/utils/client-logger';
@@ -178,6 +183,17 @@
   // workspaceId changes AND Redux state updates.
   const workspace = selectWorkspaceLoadResult(workspaceIdStore);
   const workspaceLoadState = selectWorkspaceLoadState(workspaceIdStore);
+  // Collaborators (multiplayer w3) have no terminal access; the quake overlay
+  // (and its shortcut) is withheld rather than surfacing -32003 on open.
+  const isCollaborator$ = selectIsWorkspaceCollaborator(workspaceIdStore);
+  // Agent create / delegate / delete are refused (-32003) for a collaborator
+  // connection; the sidebar and panel creation affordances are withheld by
+  // passing no handler, exactly as the terminal / browser ones are.
+  const hidesAgentLifecycleActions$ = selectHidesAgentLifecycleActions(workspaceIdStore);
+  // Guest window (multiplayer w4): `/workspace/new` shows the guest empty
+  // state instead of the (administrator-only) workspace onboarding, and the
+  // nav bar stays visible so Settings → Guest Sessions remains reachable.
+  const windowGuestSession$ = selectWindowGuestSession();
 
   $effect(() => {
     const currentWorkspaceId = workspaceId;
@@ -250,9 +266,10 @@
   });
 
   // Hide the left nav bar and top bar workspace controls during onboarding
+  // (never for the guest empty state, which keeps the nav reachable).
   $effect(() => {
     if (!active) return;
-    appStore.dispatch(setOnboardingActive(showOnboarding));
+    appStore.dispatch(setOnboardingActive(showOnboarding && !$windowGuestSession$));
     return () => appStore.dispatch(setOnboardingActive(false));
   });
 
@@ -771,8 +788,10 @@
         onCreateFile={handleCreateFile}
         onFileRenamed={handleFileRenamed}
         isNewWorkspaceSession={$isNewWorkspaceSession$}
-        onCreateAgent={handleCreateAgent}
-        onCreateAgentWithSpecialist={handleCreateAgentWithSpecialist}
+        onCreateAgent={$hidesAgentLifecycleActions$ ? undefined : handleCreateAgent}
+        onCreateAgentWithSpecialist={$hidesAgentLifecycleActions$
+          ? undefined
+          : handleCreateAgentWithSpecialist}
       />
     </div>
   {/if}
@@ -781,7 +800,9 @@
 <!-- Main Content Snippet -->
 {#snippet mainContent()}
   <div class="h-full w-full relative">
-    {#if showOnboarding}
+    {#if showOnboarding && $windowGuestSession$}
+      <GuestEmptyState session={$windowGuestSession$} />
+    {:else if showOnboarding}
       <OnboardingPage
         {isOnboarding}
         fadingOut={onboardingFadingOut}
@@ -816,8 +837,12 @@
             workspaceId={$workspace?.id || workspaceId}
             layoutId={panelLayoutId}
             {active}
-            onCreateAgent={(panelId) => handleCreateAgent(undefined, panelId)}
-            onCreateAgentWithSpecialist={handleCreateAgentWithSpecialist}
+            onCreateAgent={$hidesAgentLifecycleActions$
+              ? undefined
+              : (panelId) => handleCreateAgent(undefined, panelId)}
+            onCreateAgentWithSpecialist={$hidesAgentLifecycleActions$
+              ? undefined
+              : handleCreateAgentWithSpecialist}
             onCreateNote={handleCreateNote}
           />
         </div>
@@ -828,7 +853,7 @@
 
 <!-- Terminal Overlay Snippet -->
 {#snippet terminalOverlayContent()}
-  {#if active}
+  {#if active && !$isCollaborator$}
     <QuakeTerminalOverlay
       workspaceId={WorkspaceId($workspace?.id || workspaceId)}
       showDockWhenClosed={false}

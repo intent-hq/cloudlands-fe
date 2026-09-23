@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/experimental-ct-svelte';
+import { test, expect } from '../../../../test/ct-test';
 import Harness from './GroupedComboboxHarness.svelte';
 
 test('portals grouped options beyond a clipping parent and keeps header actions quiet', async ({

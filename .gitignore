@@ -106,10 +106,13 @@ playwright/.cache-*
 
 # Workspace data directories (should be in ~/.workspaces, not in repo)
 .workspaces/
-# UUID-based workspace directories
-[0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]-[0-9a-f][0-9a-f][0-9a-f][0-9a-f]-[0-9a-f][0-9a-f][0-9a-f][0-9a-f]-[0-9a-f][0-9a-f][0-9a-f][0-9a-f]-[0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]/
-# Simpler pattern for UUID directories
-*-*-*-*-*/
+# UUID-based workspace directories. Both rules are anchored to the package root: knip
+# applies gitignore patterns to files as well as directories, so the unanchored simple
+# form hid every source file with four or more hyphens in its name from
+# `pnpm lint:dead-code`, and nothing writes UUID directories below the package root.
+/[0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]-[0-9a-f][0-9a-f][0-9a-f][0-9a-f]-[0-9a-f][0-9a-f][0-9a-f][0-9a-f]-[0-9a-f][0-9a-f][0-9a-f][0-9a-f]-[0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]/
+# Simpler pattern for UUID directories.
+/*-*-*-*-*/
 trace.json
 
 native/IntentDynamicIsland/.build

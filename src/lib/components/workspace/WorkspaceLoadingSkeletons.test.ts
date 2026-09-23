@@ -1,10 +1,13 @@
 /** @vitest-environment jsdom */
 import { render } from '@testing-library/svelte';
-import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { tick } from 'svelte';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import ContentSkeleton from './ContentSkeleton.svelte';
 import SidebarSkeleton from './SidebarSkeleton.svelte';
+
+afterEach(() => {
+  vi.restoreAllMocks();
+});
 
 describe('workspace loading skeletons', () => {
   it('uses one quiet shimmer layer on sidebar-relative placeholders', () => {
@@ -46,19 +49,26 @@ describe('workspace loading skeletons', () => {
     );
   });
 
-  it('keeps loading surfaces opaque instead of fading over mounted content', () => {
-    const contentSource = readFileSync(
-      resolve(process.cwd(), 'src/lib/components/workspace/ContentSkeleton.svelte'),
-      'utf8',
-    );
-    const sidebarSource = readFileSync(
-      resolve(process.cwd(), 'src/lib/components/workspace/SidebarSkeleton.svelte'),
-      'utf8',
-    );
+  it.each([
+    ['content', ContentSkeleton, '[data-workspace-content-skeleton]'],
+    ['sidebar', SidebarSkeleton, '[data-workspace-sidebar-skeleton]'],
+  ] as const)(
+    'mounts the %s skeleton opaque instead of fading in over mounted content',
+    async (_, Skeleton, selector) => {
+      // Svelte drives every intro transition (fade/fly/...) through the Web
+      // Animations API, so a skeleton that fades in animates its root here.
+      // Intros are queued as effects, so flush them before asserting.
+      const animate = vi.spyOn(Element.prototype, 'animate');
 
-    expect(contentSource).not.toContain('in:fade');
-    expect(sidebarSource).not.toContain('in:fade');
-  });
+      const { container } = render(Skeleton);
+      await tick();
+      const wrapper = container.querySelector<HTMLElement>(selector)!;
+
+      expect(wrapper).toBeTruthy();
+      expect(animate).not.toHaveBeenCalled();
+      expect(wrapper.style.opacity).toBe('');
+    },
+  );
 
   it('matches the reserved panel-column geometry and final panel surface', () => {
     const { container } = render(ContentSkeleton, { props: { panelCount: 3 } });

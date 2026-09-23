@@ -5,7 +5,11 @@ import { createLogger } from '$lib/utils/client-logger';
 import type { AgentSession } from '$shared/types';
 import { isAgentDeletionPending } from '$features/agent/utils/pending-agent-deletions';
 import { isAgentNotFoundError } from '$features/agent/utils/agent-not-found-error';
-import { bulkUpsertSessions, upsertSession } from '../../agent-session/agent-session-slice';
+import {
+  bulkUpsertSessions,
+  markAgentDetailHydrated,
+  upsertSession,
+} from '../../agent-session/agent-session-slice';
 import { selectAgentSession } from '../../agent-session/agent-session-selectors';
 import { workspaceUnmounted } from '../../workspace-lifecycle/workspace-lifecycle-slice';
 import { ensureAgentSessionLoaded } from '../workspace-agents-slice';
@@ -27,6 +31,7 @@ function* loadAgentSessionSaga(wsId: string, agentId: string) {
     const merged = existing ? { ...session, messages: existing.messages } : session;
     yield* put(bulkUpsertSessions([merged]));
     yield* put(upsertSession(merged));
+    yield* put(markAgentDetailHydrated(agentId));
   } catch (error) {
     if (isAgentNotFoundError(error)) {
       // Expected after deletion: a stale tab/route still references the

@@ -218,4 +218,12 @@ export interface AgentSessionState {
    * means no agent has hydrated history (equivalent to an empty record).
    */
   historySegmentsByAgentId?: Record<string, AgentHistorySegment>;
+  /**
+   * Agents whose detail projection (`agent.get` / `agent.getSession`) has
+   * been read at least once this session. A stored row seeded only from the
+   * `agent.list` projection (PROTOCOL §5.5) omits the detail-only fields, so
+   * their absence is ambiguous until this is set. Absent/undefined means no
+   * agent has been detail-hydrated (equivalent to an empty record).
+   */
+  detailHydrated?: Record<string, true>;
 }

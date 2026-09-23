@@ -11,6 +11,7 @@
   import { faChevronLeft, faChevronRight } from '@fortawesome/free-solid-svg-icons';
   import { fly } from '$lib/motion';
   import { m } from '$shared/paraglide/messages.js';
+  import { onDestroy } from 'svelte';
 
   interface Props {
     states: DiagramState[];
@@ -41,15 +42,14 @@
 
   // Hover state for each segment
   let hoveredIndex = $state<number | null>(null);
+  let navigationElement = $state<HTMLDivElement | null>(null);
+  let focusFrame: number | undefined;
 
-  // Navigation (with cycling)
+  // Navigation stops at the first and last step so progression stays predictable.
   function goToPrevState() {
     previousIndex = currentIndex;
     if (currentIndex > 0) {
       onStateChange(states[currentIndex - 1].id);
-    } else if (currentIndex === 0) {
-      // Cycle to last state
-      onStateChange(states[states.length - 1].id);
     }
   }
 
@@ -57,57 +57,78 @@
     previousIndex = currentIndex;
     if (currentIndex < states.length - 1) {
       onStateChange(states[currentIndex + 1].id);
-    } else if (currentIndex === states.length - 1) {
-      // Cycle to first state
-      onStateChange(states[0].id);
     }
   }
 
   function goToState(index: number) {
     previousIndex = currentIndex;
+    hoveredIndex = null;
     onStateChange(states[index].id);
   }
 
-  function handleKeydown(e: KeyboardEvent) {
-    // Only handle arrow keys when there are multiple states to navigate between;
-    // for single-state diagrams, let the browser handle normal scrolling
+  function focusStep(index: number) {
+    if (focusFrame !== undefined) cancelAnimationFrame(focusFrame);
+    const stateId = states[index]?.id;
+    const stateList = states;
+    const navigation = navigationElement;
+    focusFrame = requestAnimationFrame(() => {
+      focusFrame = undefined;
+      if (navigation !== navigationElement || stateId !== currentStateId || stateList !== states)
+        return;
+      navigationElement
+        ?.querySelector<HTMLButtonElement>(`[data-diagram-step-index="${index}"]`)
+        ?.focus({ preventScroll: true });
+    });
+  }
+
+  function handleStepKeydown(e: KeyboardEvent, index: number) {
     if (states.length <= 1) return;
 
+    let nextIndex = index;
     if (e.key === 'ArrowLeft') {
-      e.preventDefault();
-      goToPrevState();
+      nextIndex = Math.max(0, index - 1);
     } else if (e.key === 'ArrowRight') {
-      e.preventDefault();
-      goToNextState();
-    }
+      nextIndex = Math.min(states.length - 1, index + 1);
+    } else if (e.key === 'Home') nextIndex = 0;
+    else if (e.key === 'End') nextIndex = states.length - 1;
+    else return;
+
+    e.preventDefault();
+    if (nextIndex === index) return;
+    goToState(nextIndex);
+    focusStep(nextIndex);
   }
+
+  onDestroy(() => {
+    if (focusFrame !== undefined) cancelAnimationFrame(focusFrame);
+  });
 </script>
 
-<div class="diagram-controls bg-background border-t border-border">
-  <div class="flex items-center justify-between gap-3 px-3 py-2">
+<div class="diagram-controls">
+  <div class="controls-inner">
     <!-- Active state narrative -->
-    <div class="flex-1 min-w-0 grid">
+    <div class="narrative-region" aria-live="polite" aria-atomic="true">
       {#if currentState?.narrative}
         {@const narrative = getNarrative(currentState.narrative)}
         {#key currentIndex}
           <div
-            class="text-left overflow-hidden col-span-full row-span-full"
+            class="narrative"
             in:fly={{
               axis: 'x',
-              distance: slideDirection === 'left' ? 100 : -100,
-              tier: 'slow',
+              distance: slideDirection === 'left' ? 8 : -8,
+              tier: 'fast',
             }}
             out:fly={{
               axis: 'x',
-              distance: slideDirection === 'left' ? -100 : 100,
-              tier: 'slow',
+              distance: slideDirection === 'left' ? -8 : 8,
+              tier: 'fast',
             }}
           >
             {#if narrative?.title}
-              <div class="text-sm font-medium">{narrative.title}</div>
+              <div class="narrative-title">{narrative.title}</div>
             {/if}
             {#if narrative?.text}
-              <div class="text-xs text-subtle">{narrative.text}</div>
+              <div class="narrative-text">{narrative.text}</div>
             {/if}
           </div>
         {/key}
@@ -115,25 +136,31 @@
     </div>
 
     <!-- Stepper and navigation -->
-    <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
     <div
-      class="flex items-center gap-1.5 flex-none"
-      role="tablist"
-      tabindex="0"
-      onkeydown={handleKeydown}
+      class="state-navigation"
+      role="group"
+      aria-label={m.diagram_controls_walkthrough_ariaLabel()}
+      bind:this={navigationElement}
     >
       <!-- Stepper dots -->
-      <div class="flex items-center gap-1.5">
+      <div class="stepper">
         {#each states as state, index (state.id)}
           {@const stateNarrative = getNarrative(state.narrative)}
           <Button
+            variant="ghost"
+            size="icon-compact"
+            iconOnly
             class="stepper-dot {index === currentIndex ? 'active' : ''} {index < currentIndex
               ? 'completed'
               : ''}"
+            data-diagram-step-index={index}
             style="anchor-name: --segment-{index};"
             onclick={() => goToState(index)}
+            onkeydown={(event) => handleStepKeydown(event, index)}
             onmouseenter={() => (hoveredIndex = index)}
             onmouseleave={() => (hoveredIndex = null)}
+            aria-current={index === currentIndex ? 'step' : undefined}
+            tabindex={index === currentIndex ? 0 : -1}
             aria-label={m.diagram_controls_state_ariaLabel({
               number: index + 1,
               title:
@@ -144,7 +171,11 @@
 
           <!-- Hover card -->
           {#if hoveredIndex === index && stateNarrative}
-            <HoverCard anchor="--segment-{index}" position="top" class="rounded-md">
+            <HoverCard
+              anchor="--segment-{index}"
+              position="top"
+              class="rounded-md !pointer-events-none"
+            >
               <div class="p-2.5">
                 {#if stateNarrative.title}
                   <div class="text-xs font-medium mb-0.5">{stateNarrative.title}</div>
@@ -161,27 +192,35 @@
       </div>
 
       <!-- Step counter -->
-      <span class="text-ui text-subtle tabular-nums flex-none"
-        >{currentIndex + 1}/{states.length}</span
+      <span
+        class="step-counter"
+        aria-label={m.diagram_controls_stepCounter_ariaLabel({
+          current: currentIndex + 1,
+          total: states.length,
+        })}>{currentIndex + 1}/{states.length}</span
       >
 
       <!-- Navigation buttons (hidden for single state) -->
       {#if states.length > 1}
-        <div class="flex items-center gap-0.5 sticky left-0">
+        <div class="navigation-buttons">
           <Button
             variant="ghost"
-            size="sm"
-            class="h-5 w-5 p-0 opacity-60 hover:opacity-100"
+            size="icon-compact"
+            iconOnly
+            class="diagram-nav-button"
             onclick={goToPrevState}
+            disabled={currentIndex <= 0}
             aria-label={m.diagram_controls_previousStep_ariaLabel()}
           >
             <Fa icon={faChevronLeft} class="text-ui" />
           </Button>
           <Button
             variant="ghost"
-            size="sm"
-            class="h-5 w-5 p-0 opacity-60 hover:opacity-100"
+            size="icon-compact"
+            iconOnly
+            class="diagram-nav-button"
             onclick={goToNextState}
+            disabled={currentIndex >= states.length - 1}
             aria-label={m.diagram_controls_nextStep_ariaLabel()}
           >
             <Fa icon={faChevronRight} class="text-ui" />
@@ -194,42 +233,167 @@
 
 <style>
   .diagram-controls {
+    container-type: inline-size;
     pointer-events: auto;
+    border-top: 1px solid hsl(var(--border));
+    background: hsl(var(--card));
+    color: hsl(var(--foreground));
+    font-family: var(--font-ui);
   }
 
-  :global(.stepper-dot) {
-    width: 6px;
-    height: 6px;
-    background: hsl(var(--border) / 0.6);
-    border: none;
-    border-radius: 3px;
-    cursor: pointer;
-    transition: all var(--spring-moderate) var(--spring-moderate-ease);
-    position: relative;
-    padding: 6px;
-    background-clip: content-box;
+  .controls-inner {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    width: min(100%, var(--diagram-controls-width, 100%));
+    box-sizing: border-box;
+    margin-inline: auto;
+    gap: var(--space-2) var(--space-3);
+    padding: var(--space-2) var(--space-3);
+  }
+
+  .narrative-region {
+    display: grid;
+    grid-row: 2;
+    min-width: 0;
+  }
+
+  .narrative-region:empty {
+    display: none;
+  }
+
+  .narrative {
+    grid-column: 1;
+    grid-row: 1;
+    overflow: hidden;
+    overflow-wrap: anywhere;
+    text-align: left;
+  }
+
+  .narrative-title {
+    font-size: var(--text-caption-size);
+    line-height: var(--text-caption-line-height);
+    font-weight: var(--text-caption-weight);
+    letter-spacing: var(--text-caption-tracking);
+  }
+
+  .narrative-text {
+    color: hsl(var(--muted-foreground));
+    font-size: var(--text-caption-size);
+    line-height: var(--text-caption-line-height);
+    letter-spacing: var(--text-caption-tracking);
+  }
+
+  .state-navigation,
+  .stepper,
+  .navigation-buttons {
+    display: flex;
+    align-items: center;
+  }
+
+  .state-navigation {
+    grid-row: 1;
+    min-width: 0;
+    max-width: 100%;
+    gap: var(--space-1);
+    justify-content: flex-end;
+    align-self: start;
+  }
+
+  @container (min-width: 28rem) {
+    .controls-inner {
+      grid-template-columns: minmax(0, 1fr) auto;
+    }
+
+    .narrative-region {
+      grid-row: 1;
+    }
+
+    .state-navigation {
+      grid-column: 2;
+    }
+  }
+
+  .stepper {
+    gap: 2px;
+    min-width: 0;
+    flex-wrap: wrap;
+  }
+
+  .navigation-buttons {
+    gap: 2px;
     flex-shrink: 0;
   }
 
-  :global(.stepper-dot:hover) {
-    background: hsl(var(--muted-foreground) / 0.5);
-    background-clip: content-box;
-    transform: scale(1.2);
+  .step-counter {
+    flex: none;
+    color: hsl(var(--muted-foreground));
+    font-size: var(--text-caption-size);
+    font-variant-numeric: tabular-nums;
   }
 
-  :global(.stepper-dot.completed) {
-    background: hsl(var(--primary) / 0.6);
-    background-clip: content-box;
+  :global(.stepper-dot) {
+    display: grid;
+    width: 18px;
+    height: 18px;
+    place-items: center;
+    box-sizing: border-box;
+    background: transparent;
+    border: none;
+    border-radius: var(--radius-full);
+    cursor: pointer;
+    transition: background var(--motion-fast) var(--ease-standard);
+    position: relative;
+    padding: 0;
+    flex-shrink: 0;
   }
 
-  :global(.stepper-dot.active) {
-    width: 24px;
+  :global(.stepper-dot)::after {
+    content: '';
+    width: 6px;
+    height: 6px;
+    border-radius: var(--radius-full);
+    background: hsl(var(--border));
+    transition:
+      width var(--motion-standard) var(--ease-standard),
+      background var(--motion-standard) var(--ease-standard);
+  }
+
+  :global(.stepper-dot):hover {
+    background: hsl(var(--muted) / 0.55);
+  }
+
+  :global(.stepper-dot):focus-visible {
+    outline: 2px solid hsl(var(--ring) / 0.55);
+    outline-offset: 1px;
+    background: hsl(var(--muted) / 0.55);
+  }
+
+  :global(.stepper-dot.completed)::after {
+    background: hsl(var(--primary) / 0.58);
+  }
+
+  :global(.stepper-dot.active)::after {
+    width: 14px;
     background: hsl(var(--primary));
-    background-clip: content-box;
-    border-radius: 12px;
   }
 
-  :global(.stepper-dot.active:hover) {
-    transform: scale(1.05);
+  :global(.diagram-nav-button) {
+    color: hsl(var(--muted-foreground));
+  }
+
+  :global(.diagram-nav-button:hover) {
+    color: hsl(var(--foreground));
+  }
+
+  :global(.catalog-reduced-motion .stepper-dot),
+  :global(.catalog-reduced-motion .stepper-dot)::after {
+    transition: none;
+  }
+
+  @container style(--motion-reduced: 1) {
+    :global(html:not(.catalog-full-motion) .stepper-dot),
+    :global(html:not(.catalog-full-motion) .stepper-dot)::after {
+      transition: none;
+    }
   }
 </style>

@@ -49,9 +49,11 @@ in a monorepo checkout, where this repo mounts at `packages/cloudlands-fe/`.
 | Working on…                                                             | Open                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
 | ----------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | agents                                                                  | ../../docs/fe/agent-message-dedup-and-stream-sagas.md, ../../docs/fe/RULES_SYSTEM.md                                                                                                                                                                                                                                                                                                                                                                                               |
+| `agent.list` requests (unbounded on a large workspace)                  | `pnpm run lint:agent-list-scope` — `scripts/check-agent-list-scope.mjs` fails any non-test `agent.list` request (wire literal, `agents.list` / `listWithMeta`, saga `call` / tuple) without `retiredOnly: true` or a `scope` literal / variable (`false`, `undefined`, `''` and words inside strings do not bound it); the file-level `ALLOWLIST` in the script needs a one-line reason and stale entries fail; CI runs it via `lint:architecture` (intent-hq/intent#5531)         |
 | state/store                                                             | ../../docs/fe/STATE_MANAGEMENT.md, src/store/renderer/docs/                                                                                                                                                                                                                                                                                                                                                                                                                        |
 | component design                                                        | ../../docs/fe/COMPONENTS_DESIGN.md                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
 | UI invariant gates                                                      | `pnpm run test:ui-invariants` — ratchets + catalog `*.meta.ts` ledgers, see below                                                                                                                                                                                                                                                                                                                                                                                                  |
+| adding a ratcheted lint rule                                            | `eslint-rules/lib/baseline-ratchet.js` — `lintRuleFromRepoConfig` derives scope from `eslint.config.js` (same rule entries and global ignores as `pnpm lint`); per-file counts only shrink vs `LINT_BASELINE_BASE_REF` (CI sets it to the PR / queue base; falls back to `HEAD`)                                                                                                                                                                                                   |
 | deps freshness                                                          | `pnpm run deps:check` — gates refuse to run on a stale node_modules install                                                                                                                                                                                                                                                                                                                                                                                                        |
 | Node version                                                            | `pnpm install` and gates refuse to run on a Node outside `engines.node` (the one range)                                                                                                                                                                                                                                                                                                                                                                                            |
 | panels/layout                                                           | ../../docs/fe/panel-system-refactoring.md, ../../docs/fe/PANEL_TAB_UX_SPEC.md                                                                                                                                                                                                                                                                                                                                                                                                      |
@@ -87,7 +89,7 @@ in a monorepo checkout, where this repo mounts at `packages/cloudlands-fe/`.
 All user-facing strings (labels, aria-labels, placeholders, tooltips, toasts, errors, menu items) go through Paraglide message functions — never hardcode them.
 
 - **Messages**: call `m.*()` (import from `src/shared/paraglide/messages.js`); keys live in `messages/en.json`. Key naming: `{feature}_{component}_{purpose}`, camelCase segments, role suffixes `_label` / `_description` / `_placeholder` / `_ariaLabel` / `_tooltip` / `_error` (e.g. `settings_wsApi_port_invalid`).
-- The compiled output (`src/shared/paraglide/`) is **gitignored** — run `pnpm run generate:i18n` after editing `messages/en.json`.
+- The compiled output (`src/shared/paraglide/`) is **gitignored** — `verify:changed`, `test:unit`, `lint:dead-code`, and `test:ct` regenerate it on demand when it is missing or stale; run `pnpm run generate:i18n` to rebuild it by hand after editing `messages/en.json`.
 - **Interpolation over concatenation**: named params (`"Configure {name} path"`); sentences split by inline markup use `_before` / `_middle` / `_after` key pairs; plurals as `_one` / `_many` key pairs. Gotcha: literal `{`/`}` in a message parses as a parameter — rephrase such strings.
 - **Dates/numbers**: only via `$lib/i18n/format` (renderer) or `src/shared/i18n/formatters.ts` (main/shared) — never ad-hoc `toLocaleString`, direct `date-fns` format calls, or string-built numbers/percentages.
 - **Module-scope constants** holding localized text use property getters (`get description() { return m.…() }`) so strings re-evaluate on locale change; identifier-bearing fields stay literal.
@@ -105,9 +107,9 @@ corepack pnpm run dev           # Standard Electron launcher
 corepack pnpm run dev:cdp       # Electron launcher with CDP support
 corepack pnpm run build         # Production build
 corepack pnpm run check         # Svelte + TypeScript checks
-corepack pnpm run lint          # ESLint + i18n string/completeness + package-script pnpm nesting + knip dead code
+corepack pnpm run lint          # ESLint + i18n string/completeness + package-script pnpm nesting + knip dead code + Prettier check
 corepack pnpm run format        # Prettier write pass
-corepack pnpm run format:check  # Prettier check (enforced in PR CI)
+corepack pnpm run format:check  # Prettier check (also runs inside `lint`)
 corepack pnpm run test:unit     # Vitest suite
 corepack pnpm run test:playwright
 ```
@@ -334,8 +336,13 @@ produced — manual install/testing only.
 
 Use `pnpm run verify:changed -- <paths...>` during local work. With no paths, it reads
 staged, unstaged, deleted, and untracked frontend files, plus the commits since
-`git merge-base <ref> HEAD` when `--base <ref>` (e.g. `--base origin/main`) is given; an
-empty change set exits 2 instead of passing silently. Add `--dry-run` to inspect the
+`git merge-base <ref> HEAD` when `--base <ref>` (e.g. `--base origin/main`) is given. When
+that working-tree set is empty and `HEAD` is ahead of `origin/main`, it defaults to
+`--base origin/main` (no fetch; it logs the chosen base and verifies the commits since the
+merge-base), so the bare command is correct on a committed PR branch; `--base <ref>` still
+overrides. Only a change set that is empty either way — a clean checkout on or behind
+`origin/main`, or no `origin/main` ref at all — exits 2 instead of passing silently. Add
+`--dry-run` to inspect the
 selected commands without running them. The command runs scoped Prettier and ESLint,
 related Vitest tests, colocated component tests that import the changed file directly or
 through a host `.svelte` they import (one hop, `.svelte` imports only — a change to a `.ts`
@@ -347,7 +354,12 @@ also chained into `pnpm run lint`): dead-code detection is a whole-program check
 cannot be scoped to changed files — dropping an import in one file can make an export in
 another unused. knip resolves `m.*()` imports against the gitignored i18n bundle, so
 `lint:dead-code` first runs `generate:i18n --if-stale`, which compiles only while the
-bundle is missing or its recorded input hash no longer matches `messages/*.json`.
+bundle is missing or its recorded input hash no longer matches `messages/*.json`. The gate
+runs knip through `scripts/check-dead-code.mjs`, which drops two known-unused canary files
+under `src/lib/components/__knip-canary__/` for the run and fails when knip does not
+report them — the masks fixed in cloudlands-fe#2695 (`.svelte` in vite
+`resolve.extensions`, an `import.meta.glob` over the component tree, an unanchored
+gitignore rule) had silently zeroed knip's Svelte coverage for months.
 
 Any renderer source change also runs `pnpm run test:ui-invariants` (chained into
 `validate:architecture` too): the repo-wide UI ratchets and the component-catalog
@@ -564,46 +576,33 @@ is roughly 10× the cost of a jsdom test and the CT job is sharded and time-boxe
   not a parking lot — remove the tag in the PR that fixes the flake.
 - Motion specs that sample animation progress mid-flight are the historical flake source;
   prefer asserting start/end states and `getAnimations()` counts over timed midpoints.
-- **A known cause of `mount()` failing with "Execution context was destroyed, most likely
-  because of a navigation" is the context-reuse race.** The message is Playwright's
-  rewrite of any CDP error on the mount evaluate, so it does not name a cause by itself;
-  every recorded incident so far (intent-hq/intent#4373, #5236, #5249) has been the reuse
-  reset, not a component bug. ct-core reuses one browser context + page per worker; between
-  tests it resets that page (navigate to `about:blank`, clear the origin, navigate back to
-  the CT host), and the reset can race the next `mount()`'s `Runtime.callFunctionOn` —
-  whether the previous test was another spec's last cell or the same spec's previous
-  cell. The signature is a pass-on-retry at the `mount(` line with no assertion involved.
-  Fix it by calling, at file level after any `test.setTimeout` / `test.use`:
-  `isolateBrowserContextPerTest(test, 'intent-hq/intent#<issue>')` from
-  `src/test/ct-isolated-browser-context.ts` and `recordCdpLifecycle(test)` from
-  `src/test/ct-cdp-lifecycle-recorder.ts`, with a comment naming the incident. Do not
-  quarantine the test, add retries, or widen timeouts for this signature.
-  - _What it costs_: the isolated spec runs in its own worker (one extra browser launch and
-    CT bundle load per shard) and every test pays a fresh browser context (~1–2 s each
-    locally), so only adopt it on a spec with a recorded destroyed-context incident.
-  - _Guard_: `isolateBrowserContextPerTest` sets the private `_optionContextReuseMode`
-    option and asserts via CDP that each test's `browserContextId` is new to the worker.
-    A failure `browser context <id> was already used by an earlier test in this worker …`
-    means context reuse is back for that spec — typically a Playwright upgrade no longer
-    honoring the private option — so fix the helper, not the spec.
-  - _Reading the CDP lifecycle log_: on a failure the recorder attaches `cdp-lifecycle.json`
-    as an in-memory body attachment — open it from the failed test's attachments in the
-    HTML report (`playwright-report/`); there is no standalone file under `test-results/`.
-    Recording starts in the spec's `beforeEach`, once the `page` fixture is ready, so
-    `sinceStartMs` counts from that attach — not from the start of the test — and anything
-    the harness did to the page before it (fixture setup, an already-finished reuse reset)
-    is not in the log; the leading `Runtime.executionContextCreated` entries are the
-    replay of contexts that already existed at attach. A `Page.frameRequestedNavigation` /
-    `Runtime.executionContextsCleared` / `Page.frameNavigated` (to `about:blank` or the CT
-    host URL) sequence in the milliseconds before the failing mount confirms the reuse
-    reset; `Inspector.targetCrashed` is a renderer crash and a different investigation.
-    Only the replayed entries with no navigation or clear is inconclusive: it means no
-    recorded evidence of navigation or context clearing after attach — the recorded
-    methods are a selection and a CDP error need not emit one — not that the page was
-    healthy or that the test's own code is at fault; inspect a `DEBUG=pw:protocol` run or
-    a trace, which also cover the setup window, before drawing a conclusion. The recorder
-    never fails a test — a `cdp-lifecycle-recorder` annotation reports when it could not
-    start or attach.
+- **Every CT spec imports `test` / `expect` from `src/test/ct-test.ts`** — lint-enforced
+  (`no-restricted-imports`; only type imports may come from
+  `@playwright/experimental-ct-svelte`). The module sets `_optionContextReuseMode: 'none'`
+  for the whole suite, so every test mounts into a fresh browser context: ct-core's
+  per-worker context reuse resets the page between tests, and that reset raced the next
+  `mount()` and surfaced as a pass-on-retry "Execution context was destroyed, most likely
+  because of a navigation" at the `mount(` line (intent-hq/intent#4373, #4783, #5236,
+  #5249, #5279, #5481). The cost is ~0.2 s per test (critical-path CI shard +10%), accepted
+  suite-wide; `CT_CONTEXT_REUSE=1` restores reuse for local wall-time measurement only and
+  is never set on CI. Two auto fixtures ride along:
+  - _Guard_: asserts via CDP that each test's `browserContextId` is new to the worker. A
+    failure `browser context <id> was already used by an earlier test in this worker …`
+    means reuse is back for the suite — typically a Playwright upgrade no longer honoring
+    the private option, or `PW_TEST_REUSE_CONTEXT` in the environment — so fix the
+    module, not the spec. A destroyed-context failure with the guard passing is therefore
+    a residual incident to investigate, not one to quarantine or retry away.
+  - _Recorder_: on a failure it attaches `cdp-lifecycle.json` to the test's attachments in
+    the HTML report (`playwright-report/`; nothing under `test-results/`), covering
+    execution-context and navigation events from the moment the `page` fixture was ready
+    — the leading `Runtime.executionContextCreated` entries replay contexts that already
+    existed at attach. A `Page.frameRequestedNavigation` / `Runtime.executionContextsCleared`
+    / `Page.frameNavigated` (to `about:blank` or the CT host) sequence just before the
+    failing mount confirms a reuse reset; `Inspector.targetCrashed` is a renderer crash. No
+    navigation or clear after attach is inconclusive, not exoneration — the recorded
+    methods are a selection — so inspect a `DEBUG=pw:protocol` run or a trace before
+    drawing a conclusion. The recorder never fails a test; a `cdp-lifecycle-recorder`
+    annotation reports when it could not start or attach.
 
 ### Testing — every feature/fix against a mock BE
 

@@ -28,6 +28,33 @@ const mockProviderModelsState = vi.hoisted(() => ({
   clearEpoch: 0,
 }));
 
+// Caller-role slices read by the real `selectIsWorkspaceCollaborator` gate
+// (guest window / collaborator seat / unsettled identity). Defaults to a
+// settled owner window so every existing test keeps the unlocked path.
+const mockRoleState = vi.hoisted(() => {
+  const ownerWindow = () => ({
+    workspace: {
+      hasLoaded: true,
+      workspaces: { idField: 'id', map: {}, ids: [] } as {
+        idField: 'id';
+        map: Record<string, { id: string; myRole?: 'owner' | 'collaborator' }>;
+        ids: string[];
+      },
+    },
+    connections: { windowBackendId: 'local', hasReceivedList: true },
+    guestSessions: {
+      sessions: { idField: 'id', map: {}, ids: [] } as {
+        idField: 'id';
+        map: Record<string, { id: string }>;
+        ids: string[];
+      },
+      hasReceivedList: true,
+      listUnavailable: false,
+    },
+  });
+  return { current: ownerWindow(), reset: () => ownerWindow() };
+});
+
 vi.mock('svelte-fa', async () => {
   const MockFa = (await import('../../ui/__tests__/mocks/Fa.svelte')).default;
   return { default: MockFa };
@@ -88,6 +115,7 @@ vi.mock('$store/renderer/store', async () => {
         byProviderId: mockProviderModelsState.byProviderId,
         clearEpoch: mockProviderModelsState.clearEpoch,
       },
+      ...mockRoleState.current,
     }),
     dispatch: mockSvelteDispatch,
   });
@@ -200,6 +228,8 @@ const availableEnabledProviderIds$ = derived(
 const mockAgentSession$ = writable<
   { id: string; workspaceId: string; provider?: string } | undefined
 >(undefined);
+// Guest-local Antigravity sign-in state (`selectIsProviderModelAccessAllowed`).
+const antigravityModelsAllowed$ = writable(true);
 vi.mock('$store/renderer/slices/provider-settings/provider-settings-selectors', () => ({
   selectActiveProviderId: () => activeProviderId$,
   selectModelFetchProviderIds: () =>
@@ -207,7 +237,8 @@ vi.mock('$store/renderer/slices/provider-settings/provider-settings-selectors', 
       [hasCheckedOnce$, enabledProviderIds$, availableEnabledProviderIds$],
       ([checked, enabled, available]) => (checked ? available : enabled),
     ),
-  selectIsProviderModelAccessAllowed: () => readable(true),
+  selectIsProviderModelAccessAllowed: (providerId: string) =>
+    providerId === 'antigravity' ? antigravityModelsAllowed$ : readable(true),
   selectAvailableEnabledProviderIds: () => availableEnabledProviderIds$,
 }));
 
@@ -252,6 +283,7 @@ afterEach(() => {
   providerStaleFlags$.set({});
   mockProviderModelsState.byProviderId = {};
   mockProviderModelsState.clearEpoch = 0;
+  mockRoleState.current = mockRoleState.reset();
   reasoningEffort$.set(undefined);
   agentModelEffortLevels$.set(undefined);
 });
@@ -341,6 +373,332 @@ describe('ModelPicker locked state', () => {
     });
 
     expect(screen.getByRole('button').textContent).toContain('Claude Sonnet 4.5');
+  });
+});
+
+describe('ModelPicker guest / collaborator lock', () => {
+  const dispatchedTypes = () =>
+    mockSvelteDispatch.mock.calls.map(([action]) => (action as { type?: string }).type);
+
+  const hostCatalog = [{ value: 'auggie:sonnet4.6', label: 'Sonnet 4.6', description: 'Smart' }];
+
+  const asGuestWindow = () => {
+    mockRoleState.current.connections = { windowBackendId: 'host-1', hasReceivedList: true };
+    mockRoleState.current.guestSessions.sessions = {
+      idField: 'id',
+      map: { 'host-1': { id: 'host-1' } },
+      ids: ['host-1'],
+    };
+  };
+
+  const withWorkspaceRole = (myRole: 'owner' | 'collaborator') => {
+    mockRoleState.current.workspace.workspaces = {
+      idField: 'id',
+      map: { 'ws-1': { id: 'ws-1', myRole } },
+      ids: ['ws-1'],
+    };
+  };
+
+  const renderAgentPicker = (selectedModel = 'auggie:sonnet4.6') =>
+    render(ModelPicker, {
+      props: {
+        selectedModel,
+        agentId: 'agent-1',
+        workspaceId: 'ws-1',
+        updateGlobalStore: true,
+        portal: false,
+      },
+    });
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockModelState.selectedModel = 'gpt5.4';
+    mockModelState.loadError = null;
+    mockModelState.availableModels = [
+      { value: 'gpt5.4', label: 'GPT 5.4', description: 'Smart model' },
+    ];
+    providerWarnings$.set({});
+    hasCheckedOnce$.set(true);
+    enabledProviderIds$.set(['auggie']);
+    activeProviderId$.set('auggie');
+    // The agent's provider is the guest's local active provider, so the
+    // owner-window per-agent fetch rule (provider differs from the active
+    // one and is unavailable) would not fire on its own.
+    mockAgentSession$.set({ id: 'agent-1', workspaceId: 'ws-1', provider: 'auggie' });
+    vi.mocked(getModelsForProviderForLoadingState).mockImplementation(async (providerId) =>
+      providerId === 'auggie' ? { models: hostCatalog } : { models: [] },
+    );
+  });
+
+  afterEach(() => {
+    cleanup();
+    document.body.innerHTML = '';
+    mockAgentSession$.set(undefined);
+    hasCheckedOnce$.set(true);
+    enabledProviderIds$.set(['auggie']);
+    activeProviderId$.set('auggie');
+    antigravityModelsAllowed$.set(true);
+  });
+
+  it('guest window: renders disabled with the host catalog label and provider icon, no warning, no mutation', async () => {
+    const { agentClient } = await import('$features/agent/agent.client');
+    const { notify } = await import('$lib/components/patterns/notify');
+    asGuestWindow();
+    // Guest-local probes report no available provider (intent#5378).
+    availableProviderOverride$.set([]);
+
+    renderAgentPicker();
+
+    const button = screen.getByRole('button');
+    expect(button.hasAttribute('disabled')).toBe(true);
+    expect(button.getAttribute('title')).toContain('workspace owner');
+
+    await waitFor(() => {
+      expect(vi.mocked(getModelsForProviderForLoadingState)).toHaveBeenCalledWith('auggie');
+    });
+    await waitFor(() => {
+      expect(button.textContent).toContain('Sonnet 4.6');
+    });
+    expect(button.querySelector('span.inline-flex')).not.toBeNull();
+
+    await fireEvent.click(button);
+    await new Promise((r) => setTimeout(r, 50));
+
+    expect(screen.queryByRole('option')).toBeNull();
+    expect(screen.queryByRole('status')).toBeNull();
+    expect(screen.queryByText('No provider available')).toBeNull();
+    expect(button.querySelector('[data-icon="triangle-exclamation"]')).toBeNull();
+    expect(vi.mocked(notify.error)).not.toHaveBeenCalled();
+    expect(dispatchedTypes()).not.toContain('agentSession/updateSession');
+    expect(vi.mocked(agentClient.setModel)).not.toHaveBeenCalled();
+  });
+
+  it('guest window: a model missing from the host catalog shows its bare id without auto-fallback', async () => {
+    const { agentClient } = await import('$features/agent/agent.client');
+    asGuestWindow();
+    availableProviderOverride$.set([]);
+
+    renderAgentPicker('auggie:opus-legacy');
+
+    const button = screen.getByRole('button');
+    await waitFor(() => {
+      expect(vi.mocked(getModelsForProviderForLoadingState)).toHaveBeenCalledWith('auggie');
+    });
+    await new Promise((r) => setTimeout(r, 50));
+
+    expect(button.hasAttribute('disabled')).toBe(true);
+    expect(button.textContent).toContain('opus-legacy');
+    expect(button.querySelector('[data-icon="triangle-exclamation"]')).toBeNull();
+    expect(screen.queryByRole('status')).toBeNull();
+    expect(dispatchedTypes()).not.toContain('agentSession/updateSession');
+    expect(vi.mocked(agentClient.setModel)).not.toHaveBeenCalled();
+  });
+
+  it('guest window: an Antigravity agent reads the host catalog even without local Antigravity sign-in', async () => {
+    const { agentClient } = await import('$features/agent/agent.client');
+    asGuestWindow();
+    availableProviderOverride$.set([]);
+    antigravityModelsAllowed$.set(false);
+    mockAgentSession$.set({ id: 'agent-1', workspaceId: 'ws-1', provider: 'antigravity' });
+    vi.mocked(getModelsForProviderForLoadingState).mockImplementation(async (providerId) =>
+      providerId === 'antigravity'
+        ? {
+            models: [
+              { value: 'antigravity:gemini-3.7-flash-high', label: 'Gemini 3.7 Flash (High)' },
+            ],
+          }
+        : { models: [] },
+    );
+
+    renderAgentPicker('antigravity:gemini-3.7-flash-high');
+
+    const button = screen.getByRole('button');
+    expect(button.hasAttribute('disabled')).toBe(true);
+    await waitFor(() => {
+      expect(vi.mocked(getModelsForProviderForLoadingState)).toHaveBeenCalledWith('antigravity');
+    });
+    await waitFor(() => {
+      expect(button.textContent).toContain('Gemini 3.7 Flash (High)');
+    });
+    expect(button.querySelector('[data-icon="triangle-exclamation"]')).toBeNull();
+    expect(screen.queryByRole('status')).toBeNull();
+    expect(dispatchedTypes()).not.toContain('agentSession/updateSession');
+    expect(vi.mocked(agentClient.setModel)).not.toHaveBeenCalled();
+  });
+
+  it('owner window: an Antigravity agent still waits for local Antigravity sign-in before reading its catalog', async () => {
+    withWorkspaceRole('owner');
+    antigravityModelsAllowed$.set(false);
+    mockAgentSession$.set({ id: 'agent-1', workspaceId: 'ws-1', provider: 'antigravity' });
+
+    renderAgentPicker('antigravity:gemini-3.7-flash-high');
+
+    const button = screen.getByRole('button');
+    expect(button.hasAttribute('disabled')).toBe(false);
+    await new Promise((r) => setTimeout(r, 50));
+    expect(vi.mocked(getModelsForProviderForLoadingState)).not.toHaveBeenCalledWith('antigravity');
+  });
+
+  it('collaborator seat in an owner window: renders disabled with the catalog label and no warning', async () => {
+    const { agentClient } = await import('$features/agent/agent.client');
+    withWorkspaceRole('collaborator');
+    availableProviderOverride$.set([]);
+
+    renderAgentPicker();
+
+    const button = screen.getByRole('button');
+    expect(button.hasAttribute('disabled')).toBe(true);
+    await waitFor(() => {
+      expect(button.textContent).toContain('Sonnet 4.6');
+    });
+    expect(button.querySelector('[data-icon="triangle-exclamation"]')).toBeNull();
+    expect(screen.queryByRole('status')).toBeNull();
+    expect(dispatchedTypes()).not.toContain('agentSession/updateSession');
+    expect(vi.mocked(agentClient.setModel)).not.toHaveBeenCalled();
+  });
+
+  it('unsettled window identity: locks (fails closed)', () => {
+    mockRoleState.current.guestSessions.hasReceivedList = false;
+    withWorkspaceRole('owner');
+
+    renderAgentPicker();
+
+    expect(screen.getByRole('button').hasAttribute('disabled')).toBe(true);
+  });
+
+  it('owner window: the picker stays interactive', async () => {
+    withWorkspaceRole('owner');
+
+    renderAgentPicker();
+
+    const button = screen.getByRole('button');
+    expect(button.hasAttribute('disabled')).toBe(false);
+
+    await fireEvent.click(button);
+    expect(await screen.findByRole('option', { name: /Sonnet 4\.6/ })).toBeTruthy();
+  });
+
+  const flipToCollaborator = async () => {
+    withWorkspaceRole('collaborator');
+    (mockAppStore as unknown as { emitState: () => void }).emitState();
+    await waitFor(() => {
+      expect(screen.getByRole('button').hasAttribute('disabled')).toBe(true);
+    });
+  };
+
+  const twoModelCatalog = () => {
+    vi.mocked(getModelsForProviderForLoadingState).mockImplementation(async (providerId) =>
+      providerId === 'auggie'
+        ? {
+            models: [
+              ...hostCatalog,
+              { value: 'auggie:opus4.7', label: 'Opus 4.7', description: 'Smarter' },
+            ],
+          }
+        : { models: [] },
+    );
+  };
+
+  it('role flips to collaborator while a pick awaits confirmation: the confirmed pick is dropped', async () => {
+    const { agentClient } = await import('$features/agent/agent.client');
+    withWorkspaceRole('owner');
+    twoModelCatalog();
+    let resolveConfirm!: (confirmed: boolean) => void;
+    const confirmModelChange = vi.fn(
+      () => new Promise<boolean>((resolve) => (resolveConfirm = resolve)),
+    );
+    const onModelChange = vi.fn();
+
+    render(ModelPicker, {
+      props: {
+        selectedModel: 'auggie:sonnet4.6',
+        agentId: 'agent-1',
+        workspaceId: 'ws-1',
+        updateGlobalStore: true,
+        confirmModelChange,
+        onModelChange,
+        portal: false,
+      },
+    });
+
+    await fireEvent.click(screen.getByRole('button'));
+    await fireEvent.click(await screen.findByRole('option', { name: /Opus 4\.7/ }));
+    await waitFor(() => {
+      expect(confirmModelChange).toHaveBeenCalledWith('auggie:sonnet4.6', 'auggie:opus4.7');
+    });
+
+    await flipToCollaborator();
+
+    resolveConfirm(true);
+    await new Promise((r) => setTimeout(r, 50));
+
+    expect(onModelChange).not.toHaveBeenCalled();
+    expect(dispatchedTypes()).not.toContain('agentSession/updateSession');
+    expect(vi.mocked(agentClient.setModel)).not.toHaveBeenCalled();
+    expect(screen.getByRole('button').textContent).toContain('Sonnet 4.6');
+  });
+
+  it('role flips to collaborator while a deferred update is queued: streaming end does not flush it', async () => {
+    const { agentClient } = await import('$features/agent/agent.client');
+    withWorkspaceRole('owner');
+    twoModelCatalog();
+    const props = {
+      selectedModel: 'auggie:sonnet4.6',
+      agentId: 'agent-1',
+      workspaceId: 'ws-1',
+      updateGlobalStore: true,
+      deferUpdate: true,
+      portal: false,
+    };
+    const { rerender } = render(ModelPicker, { props });
+
+    await fireEvent.click(screen.getByRole('button'));
+    await fireEvent.click(await screen.findByRole('option', { name: /Opus 4\.7/ }));
+    await new Promise((r) => setTimeout(r, 0));
+    // The local session updated but the backend call is deferred while streaming.
+    expect(dispatchedTypes()).toContain('agentSession/updateSession');
+    expect(vi.mocked(agentClient.setModel)).not.toHaveBeenCalled();
+
+    await flipToCollaborator();
+
+    await rerender({ ...props, deferUpdate: false });
+    await new Promise((r) => setTimeout(r, 50));
+
+    expect(vi.mocked(agentClient.setModel)).not.toHaveBeenCalled();
+  });
+
+  it('role flips to collaborator while setModel is in flight: reasoning reconciliation does not run', async () => {
+    const { agentClient } = await import('$features/agent/agent.client');
+    withWorkspaceRole('owner');
+    twoModelCatalog();
+    let resolveSetModel!: (result: { ok: true; data: { success: true } }) => void;
+    vi.mocked(agentClient.setModel).mockImplementationOnce(
+      () => new Promise((resolve) => (resolveSetModel = resolve)),
+    );
+
+    render(ModelPicker, {
+      props: {
+        selectedModel: 'auggie:sonnet4.6',
+        agentId: 'agent-1',
+        workspaceId: 'ws-1',
+        updateGlobalStore: true,
+        portal: false,
+      },
+    });
+
+    await fireEvent.click(screen.getByRole('button'));
+    await fireEvent.click(await screen.findByRole('option', { name: /Opus 4\.7/ }));
+    await waitFor(() => {
+      expect(vi.mocked(agentClient.setModel)).toHaveBeenCalledTimes(1);
+    });
+
+    await flipToCollaborator();
+
+    resolveSetModel({ ok: true, data: { success: true } });
+    await new Promise((r) => setTimeout(r, 50));
+
+    expect(reconcileAgentReasoningEffortMock).not.toHaveBeenCalled();
+    expect(vi.mocked(agentClient.setModel)).toHaveBeenCalledTimes(1);
   });
 });
 
@@ -784,7 +1142,9 @@ describe('ModelPicker combined reasoning mode', () => {
     await selectEffort(effortListbox, 'High');
 
     await waitFor(() => {
-      expect(applyReasoningEffortMock).toHaveBeenCalledWith('agent-1', 'ws-1', 'high', 'medium');
+      expect(applyReasoningEffortMock).toHaveBeenCalledWith('agent-1', 'ws-1', 'high', 'medium', {
+        canMutate: expect.any(Function),
+      });
     });
   });
 
@@ -1394,7 +1754,9 @@ describe('ModelPicker combined reasoning mode', () => {
     expect(screen.queryByTestId('effort-gauge')).toBeNull();
 
     await waitFor(() => {
-      expect(applyReasoningEffortMock).toHaveBeenCalledWith('agent-1', 'ws-1', null, 'none');
+      expect(applyReasoningEffortMock).toHaveBeenCalledWith('agent-1', 'ws-1', null, 'none', {
+        canMutate: expect.any(Function),
+      });
     });
   });
 });
@@ -2834,10 +3196,13 @@ describe('ModelPicker global-default vs per-agent dispatch gating', () => {
     await pickModelOne();
 
     await waitFor(() => {
-      expect(reconcileAgentReasoningEffortMock).toHaveBeenCalledWith('agent-1', 'ws-1', 'xhigh', [
-        'low',
-        'high',
-      ]);
+      expect(reconcileAgentReasoningEffortMock).toHaveBeenCalledWith(
+        'agent-1',
+        'ws-1',
+        'xhigh',
+        ['low', 'high'],
+        { canMutate: expect.any(Function) },
+      );
     });
   });
 
@@ -2846,8 +3211,16 @@ describe('ModelPicker global-default vs per-agent dispatch gating', () => {
     // Session provider differs from the default provider — the historical
     // failure: the daemon validated the bare id against claude-code and
     // rejected it. The FE must attribute the bare pick to the effective
-    // default provider explicitly.
+    // default provider explicitly. The disabled claude-code group owns a
+    // different id, so the picked 'model-1' row is unambiguously the default
+    // provider's.
     mockAgentSession$.set({ id: 'agent-1', workspaceId: 'ws-1', provider: 'claude-code' });
+    vi.mocked(getModelsForProviderForLoadingState).mockImplementation(async (providerId) => ({
+      models:
+        providerId === 'claude-code'
+          ? [{ value: 'claude-opus-4-8', label: 'Claude Opus 4.8', description: 'Opus' }]
+          : [{ value: 'model-1', label: 'Model 1', description: 'A model' }],
+    }));
 
     render(ModelPicker, {
       props: {
@@ -2858,7 +3231,10 @@ describe('ModelPicker global-default vs per-agent dispatch gating', () => {
       },
     });
 
-    await pickModelOne();
+    await fireEvent.click(screen.getByRole('button'));
+    await fireEvent.click(await screen.findByRole('tab', { name: /Auggie/ }));
+    await fireEvent.click(await screen.findByRole('option', { name: /Model 1/ }));
+    await new Promise((r) => setTimeout(r, 0));
 
     await waitFor(() => {
       expect(vi.mocked(agentClient.setModel)).toHaveBeenCalledWith(
@@ -2866,6 +3242,64 @@ describe('ModelPicker global-default vs per-agent dispatch gating', () => {
         'model-1',
         'ws-1',
         'auggie',
+      );
+    });
+  });
+
+  it('guest window: bare pick from the per-agent provider group sends the agent provider, not the default provider', async () => {
+    const { agentClient } = await import('$features/agent/agent.client');
+    const onModelChange = vi.fn();
+    // Guest-window shape: the host's `settings.list` is administrator-only,
+    // so `providers.enabled` never hydrates and the enabled set is only the
+    // first-catalog-row default provider (auggie). The host agent runs on
+    // claude-code, reached only via the per-agent fetch. A pick from that
+    // group must carry `providerId: 'claude-code'` — attributing it to auggie
+    // makes the daemon reject with "model … does not belong to provider auggie".
+    mockAgentSession$.set({
+      id: 'agent-1',
+      workspaceId: 'ws-1',
+      provider: 'claude-code',
+      model: 'claude-opus-4-8',
+    });
+    enabledProviderIds$.set(['auggie']);
+    vi.mocked(getModelsForProviderForLoadingState).mockImplementation(async (providerId) => ({
+      models:
+        providerId === 'claude-code'
+          ? [
+              { value: 'claude-opus-4-8', label: 'Claude Opus 4.8', description: 'Opus' },
+              { value: 'claude-sonnet-4-8', label: 'Claude Sonnet 4.8', description: 'Sonnet' },
+            ]
+          : [{ value: 'model-1', label: 'Model 1', description: 'A model' }],
+    }));
+
+    render(ModelPicker, {
+      props: {
+        selectedModel: 'claude-opus-4-8',
+        workspaceId: 'ws-1',
+        agentId: 'agent-1',
+        updateGlobalStore: true,
+        portal: false,
+        onModelChange,
+      },
+    });
+
+    await waitFor(() => {
+      expect(vi.mocked(getModelsForProviderForLoadingState)).toHaveBeenCalledWith('claude-code');
+    });
+    await fireEvent.click(screen.getByRole('button'));
+    await fireEvent.click(await screen.findByRole('option', { name: /Claude Sonnet 4\.8/ }));
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(onModelChange).toHaveBeenCalledWith('claude-sonnet-4-8', {
+      providerId: 'claude-code',
+      modelId: 'claude-sonnet-4-8',
+    });
+    await waitFor(() => {
+      expect(vi.mocked(agentClient.setModel)).toHaveBeenCalledWith(
+        'agent-1',
+        'claude-sonnet-4-8',
+        'ws-1',
+        'claude-code',
       );
     });
   });

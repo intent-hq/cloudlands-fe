@@ -1,4 +1,4 @@
-import { expect } from '@playwright/experimental-ct-svelte';
+import { expect } from './ct-test';
 import type { Page, TestInfo } from '@playwright/test';
 
 /**

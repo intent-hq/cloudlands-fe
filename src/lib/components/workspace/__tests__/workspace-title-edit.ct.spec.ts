@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/experimental-ct-svelte';
+import { expect, test } from '../../../../test/ct-test';
 import { WorkspaceStatusEnum, type Workspace } from '$shared/types';
 import { WorkspaceId } from '$shared/types/branded-ids';
 import WorkspaceSidebarHeader from '../WorkspaceSidebarHeader.svelte';

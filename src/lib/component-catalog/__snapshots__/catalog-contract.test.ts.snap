@@ -2642,6 +2642,22 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:settings:sch
                                   <span class="block font-normal truncate type-body" data-settings-sidebar-label="">
                                     "Devices"
                   <div>
+                    <button class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [--button-icon-padding:0.75rem] active:bg-active aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-inherit font-normal gap-1.5 group/button h-auto hover:bg-hover inline-flex isolate items-center justify-start motion-reduce:transition-none p-0 relative rounded-lg shrink-0 text-left text-muted-foreground transition-[color,opacity] type-caption w-full whitespace-nowrap" data-settings-tab="guest-sessions" data-slot="button" type="button">
+                      <span aria-hidden="true" class="-z-10 absolute bg-transparent duration-spring-fast ease-spring-fast inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
+                      <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
+                        <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
+                          <div class="flex gap-2 items-center min-h-8 min-w-0 px-3 py-0 w-full" data-density="default" data-slot="list-row">
+                            <div class="flex items-center justify-center shrink-0">
+                              <span class="flex items-center justify-center shrink-0 size-4" data-slot="settings-sidebar-icon">
+                                <svg aria-hidden="true" role="img">
+                                  <rect>
+                                  <path>
+                            <div class="flex-1 min-w-0">
+                              <div class="flex gap-2 items-baseline min-w-0">
+                                <div class="min-w-0 text-foreground truncate type-caption">
+                                  <span class="block font-normal truncate type-body" data-settings-sidebar-label="">
+                                    "Guest Sessions"
+                  <div>
                     <button class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [--button-icon-padding:0.75rem] active:bg-active aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-inherit font-normal gap-1.5 group/button h-auto hover:bg-hover inline-flex isolate items-center justify-start motion-reduce:transition-none p-0 relative rounded-lg shrink-0 text-left text-muted-foreground transition-[color,opacity] type-caption w-full whitespace-nowrap" data-settings-tab="setup" data-slot="button" type="button">
                       <span aria-hidden="true" class="-z-10 absolute bg-transparent duration-spring-fast ease-spring-fast inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
                       <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
@@ -2673,6 +2689,22 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:settings:sch
                                 <div class="min-w-0 text-foreground truncate type-caption">
                                   <span class="block font-normal truncate type-body" data-settings-sidebar-label="">
                                     "Advanced"
+                  <div>
+                    <button class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [--button-icon-padding:0.75rem] active:bg-active aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-inherit font-normal gap-1.5 group/button h-auto hover:bg-hover inline-flex isolate items-center justify-start motion-reduce:transition-none p-0 relative rounded-lg shrink-0 text-left text-muted-foreground transition-[color,opacity] type-caption w-full whitespace-nowrap" data-settings-tab="labs" data-slot="button" type="button">
+                      <span aria-hidden="true" class="-z-10 absolute bg-transparent duration-spring-fast ease-spring-fast inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
+                      <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
+                        <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
+                          <div class="flex gap-2 items-center min-h-8 min-w-0 px-3 py-0 w-full" data-density="default" data-slot="list-row">
+                            <div class="flex items-center justify-center shrink-0">
+                              <span class="flex items-center justify-center shrink-0 size-4" data-slot="settings-sidebar-icon">
+                                <svg aria-hidden="true" role="img">
+                                  <rect>
+                                  <path>
+                            <div class="flex-1 min-w-0">
+                              <div class="flex gap-2 items-baseline min-w-0">
+                                <div class="min-w-0 text-foreground truncate type-caption">
+                                  <span class="block font-normal truncate type-body" data-settings-sidebar-label="">
+                                    "Labs"
               <section aria-labelledby="settings-group-agents">
                 <h2 class="font-normal px-3 text-muted-foreground type-caption" id="settings-group-agents">
                   "Agents"
@@ -2930,6 +2962,22 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:settings:sch
                                   <span class="block font-normal truncate type-body" data-settings-sidebar-label="">
                                     "Devices"
                   <div>
+                    <button class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [--button-icon-padding:0.75rem] active:bg-active aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-inherit font-normal gap-1.5 group/button h-auto hover:bg-hover inline-flex isolate items-center justify-start motion-reduce:transition-none p-0 relative rounded-lg shrink-0 text-left text-muted-foreground transition-[color,opacity] type-caption w-full whitespace-nowrap" data-settings-tab="guest-sessions" data-slot="button" type="button">
+                      <span aria-hidden="true" class="-z-10 absolute bg-transparent duration-spring-fast ease-spring-fast inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
+                      <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
+                        <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
+                          <div class="flex gap-2 items-center min-h-8 min-w-0 px-3 py-0 w-full" data-density="default" data-slot="list-row">
+                            <div class="flex items-center justify-center shrink-0">
+                              <span class="flex items-center justify-center shrink-0 size-4" data-slot="settings-sidebar-icon">
+                                <svg aria-hidden="true" role="img">
+                                  <rect>
+                                  <path>
+                            <div class="flex-1 min-w-0">
+                              <div class="flex gap-2 items-baseline min-w-0">
+                                <div class="min-w-0 text-foreground truncate type-caption">
+                                  <span class="block font-normal truncate type-body" data-settings-sidebar-label="">
+                                    "Guest Sessions"
+                  <div>
                     <button class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [--button-icon-padding:0.75rem] active:bg-active aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-inherit font-normal gap-1.5 group/button h-auto hover:bg-hover inline-flex isolate items-center justify-start motion-reduce:transition-none p-0 relative rounded-lg shrink-0 text-left text-muted-foreground transition-[color,opacity] type-caption w-full whitespace-nowrap" data-settings-tab="setup" data-slot="button" type="button">
                       <span aria-hidden="true" class="-z-10 absolute bg-transparent duration-spring-fast ease-spring-fast inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
                       <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
@@ -2961,6 +3009,22 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:settings:sch
                                 <div class="min-w-0 text-foreground truncate type-caption">
                                   <span class="block font-normal truncate type-body" data-settings-sidebar-label="">
                                     "Advanced"
+                  <div>
+                    <button class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [--button-icon-padding:0.75rem] active:bg-active aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-inherit font-normal gap-1.5 group/button h-auto hover:bg-hover inline-flex isolate items-center justify-start motion-reduce:transition-none p-0 relative rounded-lg shrink-0 text-left text-muted-foreground transition-[color,opacity] type-caption w-full whitespace-nowrap" data-settings-tab="labs" data-slot="button" type="button">
+                      <span aria-hidden="true" class="-z-10 absolute bg-transparent duration-spring-fast ease-spring-fast inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
+                      <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
+                        <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
+                          <div class="flex gap-2 items-center min-h-8 min-w-0 px-3 py-0 w-full" data-density="default" data-slot="list-row">
+                            <div class="flex items-center justify-center shrink-0">
+                              <span class="flex items-center justify-center shrink-0 size-4" data-slot="settings-sidebar-icon">
+                                <svg aria-hidden="true" role="img">
+                                  <rect>
+                                  <path>
+                            <div class="flex-1 min-w-0">
+                              <div class="flex gap-2 items-baseline min-w-0">
+                                <div class="min-w-0 text-foreground truncate type-caption">
+                                  <span class="block font-normal truncate type-body" data-settings-sidebar-label="">
+                                    "Labs"
               <section aria-labelledby="settings-group-agents">
                 <h2 class="font-normal px-3 text-muted-foreground type-caption" id="settings-group-agents">
                   "Agents"
@@ -3218,6 +3282,22 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:settings:sch
                                   <span class="block font-normal truncate type-body" data-settings-sidebar-label="">
                                     "Devices"
                   <div>
+                    <button class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [--button-icon-padding:0.75rem] active:bg-active aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-inherit font-normal gap-1.5 group/button h-auto hover:bg-hover inline-flex isolate items-center justify-start motion-reduce:transition-none p-0 relative rounded-lg shrink-0 text-left text-muted-foreground transition-[color,opacity] type-caption w-full whitespace-nowrap" data-settings-tab="guest-sessions" data-slot="button" type="button">
+                      <span aria-hidden="true" class="-z-10 absolute bg-transparent duration-spring-fast ease-spring-fast inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
+                      <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
+                        <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
+                          <div class="flex gap-2 items-center min-h-8 min-w-0 px-3 py-0 w-full" data-density="default" data-slot="list-row">
+                            <div class="flex items-center justify-center shrink-0">
+                              <span class="flex items-center justify-center shrink-0 size-4" data-slot="settings-sidebar-icon">
+                                <svg aria-hidden="true" role="img">
+                                  <rect>
+                                  <path>
+                            <div class="flex-1 min-w-0">
+                              <div class="flex gap-2 items-baseline min-w-0">
+                                <div class="min-w-0 text-foreground truncate type-caption">
+                                  <span class="block font-normal truncate type-body" data-settings-sidebar-label="">
+                                    "Guest Sessions"
+                  <div>
                     <button class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [--button-icon-padding:0.75rem] active:bg-active aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-inherit font-normal gap-1.5 group/button h-auto hover:bg-hover inline-flex isolate items-center justify-start motion-reduce:transition-none p-0 relative rounded-lg shrink-0 text-left text-muted-foreground transition-[color,opacity] type-caption w-full whitespace-nowrap" data-settings-tab="setup" data-slot="button" type="button">
                       <span aria-hidden="true" class="-z-10 absolute bg-transparent duration-spring-fast ease-spring-fast inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
                       <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
@@ -3249,6 +3329,22 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:settings:sch
                                 <div class="min-w-0 text-foreground truncate type-caption">
                                   <span class="block font-normal truncate type-body" data-settings-sidebar-label="">
                                     "Advanced"
+                  <div>
+                    <button class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [--button-icon-padding:0.75rem] active:bg-active aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-inherit font-normal gap-1.5 group/button h-auto hover:bg-hover inline-flex isolate items-center justify-start motion-reduce:transition-none p-0 relative rounded-lg shrink-0 text-left text-muted-foreground transition-[color,opacity] type-caption w-full whitespace-nowrap" data-settings-tab="labs" data-slot="button" type="button">
+                      <span aria-hidden="true" class="-z-10 absolute bg-transparent duration-spring-fast ease-spring-fast inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
+                      <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
+                        <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
+                          <div class="flex gap-2 items-center min-h-8 min-w-0 px-3 py-0 w-full" data-density="default" data-slot="list-row">
+                            <div class="flex items-center justify-center shrink-0">
+                              <span class="flex items-center justify-center shrink-0 size-4" data-slot="settings-sidebar-icon">
+                                <svg aria-hidden="true" role="img">
+                                  <rect>
+                                  <path>
+                            <div class="flex-1 min-w-0">
+                              <div class="flex gap-2 items-baseline min-w-0">
+                                <div class="min-w-0 text-foreground truncate type-caption">
+                                  <span class="block font-normal truncate type-body" data-settings-sidebar-label="">
+                                    "Labs"
               <section aria-labelledby="settings-group-agents">
                 <h2 class="font-normal px-3 text-muted-foreground type-caption" id="settings-group-agents">
                   "Agents"
@@ -3435,6 +3531,22 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:settings:sch
                                   <span class="block font-normal truncate type-body" data-settings-sidebar-label="">
                                     "Devices"
                   <div>
+                    <button class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [--button-icon-padding:0.75rem] active:bg-active aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-inherit font-normal gap-1.5 group/button h-auto hover:bg-hover inline-flex isolate items-center justify-start motion-reduce:transition-none p-0 relative rounded-lg shrink-0 text-left text-muted-foreground transition-[color,opacity] type-caption w-full whitespace-nowrap" data-settings-tab="guest-sessions" data-slot="button" type="button">
+                      <span aria-hidden="true" class="-z-10 absolute bg-transparent duration-spring-fast ease-spring-fast inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
+                      <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
+                        <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
+                          <div class="flex gap-2 items-center min-h-8 min-w-0 px-3 py-0 w-full" data-density="default" data-slot="list-row">
+                            <div class="flex items-center justify-center shrink-0">
+                              <span class="flex items-center justify-center shrink-0 size-4" data-slot="settings-sidebar-icon">
+                                <svg aria-hidden="true" role="img">
+                                  <rect>
+                                  <path>
+                            <div class="flex-1 min-w-0">
+                              <div class="flex gap-2 items-baseline min-w-0">
+                                <div class="min-w-0 text-foreground truncate type-caption">
+                                  <span class="block font-normal truncate type-body" data-settings-sidebar-label="">
+                                    "Guest Sessions"
+                  <div>
                     <button class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [--button-icon-padding:0.75rem] active:bg-active aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-inherit font-normal gap-1.5 group/button h-auto hover:bg-hover inline-flex isolate items-center justify-start motion-reduce:transition-none p-0 relative rounded-lg shrink-0 text-left text-muted-foreground transition-[color,opacity] type-caption w-full whitespace-nowrap" data-settings-tab="setup" data-slot="button" type="button">
                       <span aria-hidden="true" class="-z-10 absolute bg-transparent duration-spring-fast ease-spring-fast inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
                       <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
@@ -3466,6 +3578,22 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:settings:sch
                                 <div class="min-w-0 text-foreground truncate type-caption">
                                   <span class="block font-normal truncate type-body" data-settings-sidebar-label="">
                                     "Advanced"
+                  <div>
+                    <button class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [--button-icon-padding:0.75rem] active:bg-active aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-inherit font-normal gap-1.5 group/button h-auto hover:bg-hover inline-flex isolate items-center justify-start motion-reduce:transition-none p-0 relative rounded-lg shrink-0 text-left text-muted-foreground transition-[color,opacity] type-caption w-full whitespace-nowrap" data-settings-tab="labs" data-slot="button" type="button">
+                      <span aria-hidden="true" class="-z-10 absolute bg-transparent duration-spring-fast ease-spring-fast inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
+                      <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
+                        <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
+                          <div class="flex gap-2 items-center min-h-8 min-w-0 px-3 py-0 w-full" data-density="default" data-slot="list-row">
+                            <div class="flex items-center justify-center shrink-0">
+                              <span class="flex items-center justify-center shrink-0 size-4" data-slot="settings-sidebar-icon">
+                                <svg aria-hidden="true" role="img">
+                                  <rect>
+                                  <path>
+                            <div class="flex-1 min-w-0">
+                              <div class="flex gap-2 items-baseline min-w-0">
+                                <div class="min-w-0 text-foreground truncate type-caption">
+                                  <span class="block font-normal truncate type-body" data-settings-sidebar-label="">
+                                    "Labs"
               <section aria-labelledby="settings-group-agents">
                 <h2 class="font-normal px-3 text-muted-foreground type-caption" id="settings-group-agents">
                   "Agents"
@@ -3723,6 +3851,22 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:settings:sch
                                   <span class="block font-normal truncate type-body" data-settings-sidebar-label="">
                                     "Devices"
                   <div>
+                    <button class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [--button-icon-padding:0.75rem] active:bg-active aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-inherit font-normal gap-1.5 group/button h-auto hover:bg-hover inline-flex isolate items-center justify-start motion-reduce:transition-none p-0 relative rounded-lg shrink-0 text-left text-muted-foreground transition-[color,opacity] type-caption w-full whitespace-nowrap" data-settings-tab="guest-sessions" data-slot="button" type="button">
+                      <span aria-hidden="true" class="-z-10 absolute bg-transparent duration-spring-fast ease-spring-fast inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
+                      <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
+                        <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
+                          <div class="flex gap-2 items-center min-h-8 min-w-0 px-3 py-0 w-full" data-density="default" data-slot="list-row">
+                            <div class="flex items-center justify-center shrink-0">
+                              <span class="flex items-center justify-center shrink-0 size-4" data-slot="settings-sidebar-icon">
+                                <svg aria-hidden="true" role="img">
+                                  <rect>
+                                  <path>
+                            <div class="flex-1 min-w-0">
+                              <div class="flex gap-2 items-baseline min-w-0">
+                                <div class="min-w-0 text-foreground truncate type-caption">
+                                  <span class="block font-normal truncate type-body" data-settings-sidebar-label="">
+                                    "Guest Sessions"
+                  <div>
                     <button class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [--button-icon-padding:0.75rem] active:bg-active aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-inherit font-normal gap-1.5 group/button h-auto hover:bg-hover inline-flex isolate items-center justify-start motion-reduce:transition-none p-0 relative rounded-lg shrink-0 text-left text-muted-foreground transition-[color,opacity] type-caption w-full whitespace-nowrap" data-settings-tab="setup" data-slot="button" type="button">
                       <span aria-hidden="true" class="-z-10 absolute bg-transparent duration-spring-fast ease-spring-fast inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
                       <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
@@ -3754,6 +3898,22 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:settings:sch
                                 <div class="min-w-0 text-foreground truncate type-caption">
                                   <span class="block font-normal truncate type-body" data-settings-sidebar-label="">
                                     "Advanced"
+                  <div>
+                    <button class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [--button-icon-padding:0.75rem] active:bg-active aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-inherit font-normal gap-1.5 group/button h-auto hover:bg-hover inline-flex isolate items-center justify-start motion-reduce:transition-none p-0 relative rounded-lg shrink-0 text-left text-muted-foreground transition-[color,opacity] type-caption w-full whitespace-nowrap" data-settings-tab="labs" data-slot="button" type="button">
+                      <span aria-hidden="true" class="-z-10 absolute bg-transparent duration-spring-fast ease-spring-fast inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
+                      <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
+                        <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
+                          <div class="flex gap-2 items-center min-h-8 min-w-0 px-3 py-0 w-full" data-density="default" data-slot="list-row">
+                            <div class="flex items-center justify-center shrink-0">
+                              <span class="flex items-center justify-center shrink-0 size-4" data-slot="settings-sidebar-icon">
+                                <svg aria-hidden="true" role="img">
+                                  <rect>
+                                  <path>
+                            <div class="flex-1 min-w-0">
+                              <div class="flex gap-2 items-baseline min-w-0">
+                                <div class="min-w-0 text-foreground truncate type-caption">
+                                  <span class="block font-normal truncate type-body" data-settings-sidebar-label="">
+                                    "Labs"
               <section aria-labelledby="settings-group-agents">
                 <h2 class="font-normal px-3 text-muted-foreground type-caption" id="settings-group-agents">
                   "Agents"
@@ -4011,6 +4171,22 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:settings:sch
                                   <span class="block font-normal truncate type-body" data-settings-sidebar-label="">
                                     "Devices"
                   <div>
+                    <button class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [--button-icon-padding:0.75rem] active:bg-active aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-inherit font-normal gap-1.5 group/button h-auto hover:bg-hover inline-flex isolate items-center justify-start motion-reduce:transition-none p-0 relative rounded-lg shrink-0 text-left text-muted-foreground transition-[color,opacity] type-caption w-full whitespace-nowrap" data-settings-tab="guest-sessions" data-slot="button" type="button">
+                      <span aria-hidden="true" class="-z-10 absolute bg-transparent duration-spring-fast ease-spring-fast inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
+                      <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
+                        <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
+                          <div class="flex gap-2 items-center min-h-8 min-w-0 px-3 py-0 w-full" data-density="default" data-slot="list-row">
+                            <div class="flex items-center justify-center shrink-0">
+                              <span class="flex items-center justify-center shrink-0 size-4" data-slot="settings-sidebar-icon">
+                                <svg aria-hidden="true" role="img">
+                                  <rect>
+                                  <path>
+                            <div class="flex-1 min-w-0">
+                              <div class="flex gap-2 items-baseline min-w-0">
+                                <div class="min-w-0 text-foreground truncate type-caption">
+                                  <span class="block font-normal truncate type-body" data-settings-sidebar-label="">
+                                    "Guest Sessions"
+                  <div>
                     <button class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [--button-icon-padding:0.75rem] active:bg-active aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-inherit font-normal gap-1.5 group/button h-auto hover:bg-hover inline-flex isolate items-center justify-start motion-reduce:transition-none p-0 relative rounded-lg shrink-0 text-left text-muted-foreground transition-[color,opacity] type-caption w-full whitespace-nowrap" data-settings-tab="setup" data-slot="button" type="button">
                       <span aria-hidden="true" class="-z-10 absolute bg-transparent duration-spring-fast ease-spring-fast inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
                       <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
@@ -4042,6 +4218,22 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:settings:sch
                                 <div class="min-w-0 text-foreground truncate type-caption">
                                   <span class="block font-normal truncate type-body" data-settings-sidebar-label="">
                                     "Advanced"
+                  <div>
+                    <button class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [--button-icon-padding:0.75rem] active:bg-active aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-inherit font-normal gap-1.5 group/button h-auto hover:bg-hover inline-flex isolate items-center justify-start motion-reduce:transition-none p-0 relative rounded-lg shrink-0 text-left text-muted-foreground transition-[color,opacity] type-caption w-full whitespace-nowrap" data-settings-tab="labs" data-slot="button" type="button">
+                      <span aria-hidden="true" class="-z-10 absolute bg-transparent duration-spring-fast ease-spring-fast inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
+                      <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
+                        <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
+                          <div class="flex gap-2 items-center min-h-8 min-w-0 px-3 py-0 w-full" data-density="default" data-slot="list-row">
+                            <div class="flex items-center justify-center shrink-0">
+                              <span class="flex items-center justify-center shrink-0 size-4" data-slot="settings-sidebar-icon">
+                                <svg aria-hidden="true" role="img">
+                                  <rect>
+                                  <path>
+                            <div class="flex-1 min-w-0">
+                              <div class="flex gap-2 items-baseline min-w-0">
+                                <div class="min-w-0 text-foreground truncate type-caption">
+                                  <span class="block font-normal truncate type-body" data-settings-sidebar-label="">
+                                    "Labs"
               <section aria-labelledby="settings-group-agents">
                 <h2 class="font-normal px-3 text-muted-foreground type-caption" id="settings-group-agents">
                   "Agents"
@@ -4299,6 +4491,22 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:settings:sch
                                   <span class="block font-normal truncate type-body" data-settings-sidebar-label="">
                                     "Devices"
                   <div>
+                    <button class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [--button-icon-padding:0.75rem] active:bg-active aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-inherit font-normal gap-1.5 group/button h-auto hover:bg-hover inline-flex isolate items-center justify-start motion-reduce:transition-none p-0 relative rounded-lg shrink-0 text-left text-muted-foreground transition-[color,opacity] type-caption w-full whitespace-nowrap" data-settings-tab="guest-sessions" data-slot="button" type="button">
+                      <span aria-hidden="true" class="-z-10 absolute bg-transparent duration-spring-fast ease-spring-fast inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
+                      <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
+                        <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
+                          <div class="flex gap-2 items-center min-h-8 min-w-0 px-3 py-0 w-full" data-density="default" data-slot="list-row">
+                            <div class="flex items-center justify-center shrink-0">
+                              <span class="flex items-center justify-center shrink-0 size-4" data-slot="settings-sidebar-icon">
+                                <svg aria-hidden="true" role="img">
+                                  <rect>
+                                  <path>
+                            <div class="flex-1 min-w-0">
+                              <div class="flex gap-2 items-baseline min-w-0">
+                                <div class="min-w-0 text-foreground truncate type-caption">
+                                  <span class="block font-normal truncate type-body" data-settings-sidebar-label="">
+                                    "Guest Sessions"
+                  <div>
                     <button class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [--button-icon-padding:0.75rem] active:bg-active aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-inherit font-normal gap-1.5 group/button h-auto hover:bg-hover inline-flex isolate items-center justify-start motion-reduce:transition-none p-0 relative rounded-lg shrink-0 text-left text-muted-foreground transition-[color,opacity] type-caption w-full whitespace-nowrap" data-settings-tab="setup" data-slot="button" type="button">
                       <span aria-hidden="true" class="-z-10 absolute bg-transparent duration-spring-fast ease-spring-fast inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
                       <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
@@ -4330,6 +4538,22 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:settings:sch
                                 <div class="min-w-0 text-foreground truncate type-caption">
                                   <span class="block font-normal truncate type-body" data-settings-sidebar-label="">
                                     "Advanced"
+                  <div>
+                    <button class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [--button-icon-padding:0.75rem] active:bg-active aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-inherit font-normal gap-1.5 group/button h-auto hover:bg-hover inline-flex isolate items-center justify-start motion-reduce:transition-none p-0 relative rounded-lg shrink-0 text-left text-muted-foreground transition-[color,opacity] type-caption w-full whitespace-nowrap" data-settings-tab="labs" data-slot="button" type="button">
+                      <span aria-hidden="true" class="-z-10 absolute bg-transparent duration-spring-fast ease-spring-fast inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
+                      <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
+                        <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
+                          <div class="flex gap-2 items-center min-h-8 min-w-0 px-3 py-0 w-full" data-density="default" data-slot="list-row">
+                            <div class="flex items-center justify-center shrink-0">
+                              <span class="flex items-center justify-center shrink-0 size-4" data-slot="settings-sidebar-icon">
+                                <svg aria-hidden="true" role="img">
+                                  <rect>
+                                  <path>
+                            <div class="flex-1 min-w-0">
+                              <div class="flex gap-2 items-baseline min-w-0">
+                                <div class="min-w-0 text-foreground truncate type-caption">
+                                  <span class="block font-normal truncate type-body" data-settings-sidebar-label="">
+                                    "Labs"
               <section aria-labelledby="settings-group-agents">
                 <h2 class="font-normal px-3 text-muted-foreground type-caption" id="settings-group-agents">
                   "Agents"
@@ -7214,17 +7438,17 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:combobox:c
                           <div class="aria-disabled:opacity-50 aria-disabled:pointer-events-none bg-transparent border-none cursor-default data-[disabled]:opacity-50 data-[disabled]:pointer-events-none duration-spring-fast ease-spring-fast flex focus-visible:outline-none focus:text-foreground font-normal gap-2 group/menu-item items-center justify-start min-h-(--control-height-small) min-w-0 motion-reduce:transition-none px-2 py-1 relative rounded-(--radius-row) select-none text-left transition-colors type-caption w-full z-10" data-combobox-item="" data-label="Ada Lovelace" data-menu-item="true" data-slot="combobox-option-motion" data-value="ada" id="bits-<id>" role="option">
                             <span class="flex-1 min-w-0 truncate">
                               "Ada Lovelace"
-                            <span aria-hidden="true" class="flex font-medium group-data-[selected]:opacity-100 items-center justify-center ml-auto opacity-0 shrink-0 size-4 text-primary-ink" data-slot="combobox-item-check">
+                            <span aria-hidden="true" class="flex font-medium items-center justify-center ml-auto opacity-0 shrink-0 size-4 text-primary-ink" data-slot="combobox-item-check">
                               "✓"
                           <div aria-selected="true" class="aria-disabled:opacity-50 aria-disabled:pointer-events-none bg-transparent border-none cursor-default data-[disabled]:opacity-50 data-[disabled]:pointer-events-none duration-spring-fast ease-spring-fast flex focus-visible:outline-none focus:text-foreground font-normal gap-2 group/menu-item items-center justify-start min-h-(--control-height-small) min-w-0 motion-reduce:transition-none px-2 py-1 relative rounded-(--radius-row) select-none text-left transition-colors type-caption w-full z-10" data-combobox-item="" data-highlighted="" data-label="Grace Hopper" data-menu-item="true" data-selected="" data-slot="combobox-option-motion" data-value="grace" id="bits-<id>" role="option">
                             <span class="flex-1 min-w-0 truncate">
                               "Grace Hopper"
-                            <span aria-hidden="true" class="flex font-medium group-data-[selected]:opacity-100 items-center justify-center ml-auto opacity-0 shrink-0 size-4 text-primary-ink" data-slot="combobox-item-check">
+                            <span aria-hidden="true" class="flex font-medium items-center justify-center ml-auto opacity-100 shrink-0 size-4 text-primary-ink" data-slot="combobox-item-check">
                               "✓"
                           <div class="aria-disabled:opacity-50 aria-disabled:pointer-events-none bg-transparent border-none cursor-default data-[disabled]:opacity-50 data-[disabled]:pointer-events-none duration-spring-fast ease-spring-fast flex focus-visible:outline-none focus:text-foreground font-normal gap-2 group/menu-item items-center justify-start min-h-(--control-height-small) min-w-0 motion-reduce:transition-none px-2 py-1 relative rounded-(--radius-row) select-none text-left transition-colors type-caption w-full z-10" data-combobox-item="" data-label="A very long option label that remains readable in compact layouts" data-menu-item="true" data-slot="combobox-option-motion" data-value="long" id="bits-<id>" role="option">
                             <span class="flex-1 min-w-0 truncate">
                               "A very long option label that remains readable in compact layouts"
-                            <span aria-hidden="true" class="flex font-medium group-data-[selected]:opacity-100 items-center justify-center ml-auto opacity-0 shrink-0 size-4 text-primary-ink" data-slot="combobox-item-check">
+                            <span aria-hidden="true" class="flex font-medium items-center justify-center ml-auto opacity-0 shrink-0 size-4 text-primary-ink" data-slot="combobox-item-check">
                               "✓"
               <div class="svelte-<scope>" data-catalog-rendered-state="multi-selected" data-catalog-state="combobox-multi">
                 <div class="relative w-full">
@@ -9507,6 +9731,505 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:message-co
                   "States"
                 <dd class="mt-1 text-foreground">
                   "placeholder-suggestion, tab-fill, listbox, keyboard-highlight"
+              <div>
+                <dt>
+                  "Themes"
+                <dd class="mt-1 text-foreground">
+                  "light, dark"",
+}
+`;
+
+exports[`catalog DOM, token, and accessibility contracts > 'primitive:principal-avatar:note-prese…' 1`] = `
+{
+  "declaredStates": [
+    "no-url",
+    "failing-url",
+    "overflow",
+  ],
+  "dom": "<body>
+  <div>
+    <section class="catalog-detail lg:p-10 min-w-0 p-4 sm:p-6 svelte-<scope> w-full">
+      <header class="entry-header svelte-<scope>">
+        <div class="min-w-0">
+          <h1 class="svelte-<scope>">
+            "Principal Avatar"
+          <p class="entry-purpose svelte-<scope>">
+            "Show the avatar of a principal (a user, a workspace member, a message author) and fall back to the initial of their name when the image is missing or fails to load."
+        <details class="entry-inspector svelte-<scope> text-muted-foreground text-xs">
+          <summary class="svelte-<scope>">
+            "Source"
+          <div class="inspector-popover svelte-<scope>">
+            <p class="text-foreground">
+              "Canonical source"
+            <code class="block break-all mt-1">
+              "src/lib/components/ui/PrincipalAvatar.svelte"
+            <dl class="inspector-grid svelte-<scope>">
+              <div>
+                <dt>
+                  "Category"
+                <dd class="mt-1 text-foreground">
+                  "primitive"
+              <div>
+                <dt>
+                  "Removal gate"
+                <dd class="mt-1 text-foreground">
+                  "Retain while any principal renders an avatar; the raw avatar image audit stays at zero."
+      <div class="fixture-grid svelte-<scope>">
+        <article class="fixture-card svelte-<scope>" data-catalog-fixture="note-presence-stack">
+          <div class="fixture-heading svelte-<scope>">
+            <h2 class="svelte-<scope>">
+              "Note header viewers — named by tooltip"
+          <div class="bg-background fixture-preview min-h-20 rounded-md svelte-<scope>" data-catalog-fixture-id="note-presence-stack" data-catalog-preview="principal-avatar">
+            <div class="flex flex-wrap gap-3 items-center max-w-full min-w-0" data-catalog-renderer-fixture="note-presence-stack">
+              <div class="gap-3 grid min-w-0" data-catalog-rendered-state="no-url failing-url overflow">
+                <p class="text-muted-foreground type-caption">
+                  "Other viewers of a note: one with no URL, two with a failed image, and one more person in the overflow chip."
+                <div aria-label="4 other people are viewing this note" class="-space-x-1.5 flex items-center px-1" data-testid="note-presence-avatar-stack" role="group">
+                  <span class="inline-flex" data-delay-duration="0" data-state="closed" data-tooltip-trigger="" id="bits-<id>" role="button" tabindex="0">
+                    <span aria-hidden="true" class="border-2 border-background font-medium h-5 inline-flex items-center justify-center leading-none overflow-hidden rounded-full text-primary-foreground text-xs w-5" data-principal-id="ada">
+                      <span aria-hidden="true" class="grid h-full place-items-center w-full">
+                        "A"
+                    <span class="sr-only">
+                      "Ada Lovelace"
+                  <span class="inline-flex" data-delay-duration="0" data-state="closed" data-tooltip-trigger="" id="bits-<id>" role="button" tabindex="0">
+                    <span aria-hidden="true" class="border-2 border-background font-medium h-5 inline-flex items-center justify-center leading-none overflow-hidden rounded-full text-primary-foreground text-xs w-5" data-principal-id="linus">
+                      <span aria-hidden="true" class="grid h-full place-items-center w-full">
+                        "L"
+                    <span class="sr-only">
+                      "linus"
+                  <span class="inline-flex" data-delay-duration="0" data-state="closed" data-tooltip-trigger="" id="bits-<id>" role="button" tabindex="0">
+                    <span aria-hidden="true" class="border-2 border-background font-medium h-5 inline-flex items-center justify-center leading-none overflow-hidden rounded-full text-primary-foreground text-xs w-5" data-principal-id="grace">
+                      <span aria-hidden="true" class="grid h-full place-items-center w-full">
+                        "G"
+                    <span class="sr-only">
+                      "Grace Hopper"
+                  <span class="bg-muted border-2 border-background font-medium h-5 inline-flex items-center justify-center leading-none min-w-5 px-1 rounded-full text-muted-foreground text-xs">
+                    "+1"
+          <details class="fixture-inspector svelte-<scope> text-muted-foreground text-xs">
+            <summary class="svelte-<scope>">
+              "Fixture details"
+            <dl class="inspector-grid svelte-<scope>">
+              <div>
+                <dt>
+                  "Viewport"
+                <dd class="mt-1 text-foreground">
+                  "both"
+              <div>
+                <dt>
+                  "States"
+                <dd class="mt-1 text-foreground">
+                  "no-url, failing-url, overflow"
+              <div>
+                <dt>
+                  "Themes"
+                <dd class="mt-1 text-foreground">
+                  "light, dark"",
+}
+`;
+
+exports[`catalog DOM, token, and accessibility contracts > 'primitive:principal-avatar:presence-s…' 1`] = `
+{
+  "declaredStates": [
+    "no-url",
+    "failing-url",
+    "self",
+    "owner",
+    "member",
+    "offline",
+    "overflow",
+    "aria-disabled",
+  ],
+  "dom": "<body>
+  <div>
+    <section class="catalog-detail lg:p-10 min-w-0 p-4 sm:p-6 svelte-<scope> w-full">
+      <header class="entry-header svelte-<scope>">
+        <div class="min-w-0">
+          <h1 class="svelte-<scope>">
+            "Principal Avatar"
+          <p class="entry-purpose svelte-<scope>">
+            "Show the avatar of a principal (a user, a workspace member, a message author) and fall back to the initial of their name when the image is missing or fails to load."
+        <details class="entry-inspector svelte-<scope> text-muted-foreground text-xs">
+          <summary class="svelte-<scope>">
+            "Source"
+          <div class="inspector-popover svelte-<scope>">
+            <p class="text-foreground">
+              "Canonical source"
+            <code class="block break-all mt-1">
+              "src/lib/components/ui/PrincipalAvatar.svelte"
+            <dl class="inspector-grid svelte-<scope>">
+              <div>
+                <dt>
+                  "Category"
+                <dd class="mt-1 text-foreground">
+                  "primitive"
+              <div>
+                <dt>
+                  "Removal gate"
+                <dd class="mt-1 text-foreground">
+                  "Retain while any principal renders an avatar; the raw avatar image audit stays at zero."
+      <div class="fixture-grid svelte-<scope>">
+        <article class="fixture-card svelte-<scope>" data-catalog-fixture="presence-stack-action">
+          <div class="fixture-heading svelte-<scope>">
+            <h2 class="svelte-<scope>">
+              "Presence stack — each avatar a button"
+          <div class="bg-background fixture-preview min-h-20 rounded-md svelte-<scope>" data-catalog-fixture-id="presence-stack-action" data-catalog-preview="principal-avatar">
+            <div class="flex flex-wrap gap-3 items-center max-w-full min-w-0" data-catalog-renderer-fixture="presence-stack-action">
+              <div class="gap-3 grid min-w-0" data-catalog-rendered-state="no-url failing-url self owner member offline overflow aria-disabled">
+                <p class="text-muted-foreground type-caption">
+                  "You (no URL), the owner (no URL), a member (failed image), an offline member (failed image), and one more person in the overflow chip."
+                <span aria-label="3 other people here" class="-space-x-1 inline-flex items-center" data-presence-avatar-stack="" data-presence-count="5" role="group">
+                  <span class="inline-flex" id="bits-<id>" tabindex="-1">
+                    <div>
+                      <button aria-label="Ada Lovelace · online" class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [--button-icon-padding:0.75rem] aria-disabled:cursor-not-allowed aria-disabled:opacity-100 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-inherit font-normal gap-1.5 group/button h-auto inline-flex isolate items-center justify-center motion-reduce:transition-none p-0 relative rounded-full shrink-0 text-inherit transition-[color,opacity] type-caption whitespace-nowrap" data-delay-duration="200" data-presence-person-button="ada" data-slot="button" data-state="closed" data-tooltip-trigger="" type="button">
+                        <span aria-hidden="true" class="-z-10 absolute bg-transparent duration-spring-fast ease-spring-fast inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
+                        <span class="border border-background inline-flex ring-2 ring-success rounded-full shrink-0" data-presence-avatar="ada" data-presence-ring="member" data-presence-self="true">
+                          <span class="font-medium h-full inline-flex items-center justify-center leading-none overflow-hidden rounded-full text-primary-foreground w-full" data-presence-avatar-tile="">
+                            <span aria-hidden="true" class="grid h-full place-items-center w-full">
+                              "A"
+                  <span class="inline-flex" id="bits-<id>" tabindex="-1">
+                    <div>
+                      <button aria-label="Grace Hopper · online" class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [--button-icon-padding:0.75rem] aria-disabled:cursor-not-allowed aria-disabled:opacity-100 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-inherit font-normal gap-1.5 group/button h-auto inline-flex isolate items-center justify-center motion-reduce:transition-none p-0 relative rounded-full shrink-0 text-inherit transition-[color,opacity] type-caption whitespace-nowrap" data-delay-duration="200" data-presence-person-button="grace" data-slot="button" data-state="closed" data-tooltip-trigger="" type="button">
+                        <span aria-hidden="true" class="-z-10 absolute bg-transparent duration-spring-fast ease-spring-fast inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
+                        <span class="border border-background inline-flex ring-2 ring-info rounded-full shrink-0" data-presence-avatar="grace" data-presence-ring="owner">
+                          <span class="font-medium h-full inline-flex items-center justify-center leading-none overflow-hidden rounded-full text-primary-foreground w-full" data-presence-avatar-tile="">
+                            <span aria-hidden="true" class="grid h-full place-items-center w-full">
+                              "G"
+                  <span class="inline-flex" id="bits-<id>" tabindex="-1">
+                    <div>
+                      <button aria-label="linus · online" class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [--button-icon-padding:0.75rem] aria-disabled:cursor-not-allowed aria-disabled:opacity-100 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-inherit font-normal gap-1.5 group/button h-auto inline-flex isolate items-center justify-center motion-reduce:transition-none p-0 relative rounded-full shrink-0 text-inherit transition-[color,opacity] type-caption whitespace-nowrap" data-delay-duration="200" data-presence-person-button="linus" data-slot="button" data-state="closed" data-tooltip-trigger="" type="button">
+                        <span aria-hidden="true" class="-z-10 absolute bg-transparent duration-spring-fast ease-spring-fast inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
+                        <span class="border border-background inline-flex ring-2 ring-success rounded-full shrink-0" data-presence-avatar="linus" data-presence-ring="member">
+                          <span class="font-medium h-full inline-flex items-center justify-center leading-none overflow-hidden rounded-full text-primary-foreground w-full" data-presence-avatar-tile="">
+                            <span aria-hidden="true" class="grid h-full place-items-center w-full">
+                              "L"
+                  <span class="inline-flex" id="bits-<id>" tabindex="-1">
+                    <div>
+                      <button aria-disabled="true" aria-label="Cy Offline · offline" class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [--button-icon-padding:0.75rem] aria-disabled:cursor-not-allowed aria-disabled:opacity-100 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-inherit font-normal gap-1.5 group/button h-auto inline-flex isolate items-center justify-center motion-reduce:transition-none p-0 relative rounded-full shrink-0 text-inherit transition-[color,opacity] type-caption whitespace-nowrap" data-delay-duration="200" data-presence-person-button="cy" data-slot="button" data-state="closed" data-tooltip-trigger="" type="button">
+                        <span aria-hidden="true" class="-z-10 absolute bg-transparent duration-spring-fast ease-spring-fast inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
+                        <span class="border border-background inline-flex ring-2 ring-muted-foreground/40 rounded-full shrink-0" data-presence-avatar="cy" data-presence-offline="true" data-presence-ring="offline">
+                          <span class="font-medium grayscale h-full inline-flex items-center justify-center leading-none overflow-hidden rounded-full text-primary-foreground w-full" data-presence-avatar-tile="">
+                            <span aria-hidden="true" class="grid h-full place-items-center w-full">
+                              "C"
+                  <span class="bg-muted border border-background font-medium inline-flex items-center justify-center leading-none px-1 rounded-full shrink-0 text-muted-foreground" data-presence-overflow="1">
+                    "+1"
+                <output aria-live="polite" class="text-muted-foreground type-caption">
+                  "Nobody selected yet"
+          <details class="fixture-inspector svelte-<scope> text-muted-foreground text-xs">
+            <summary class="svelte-<scope>">
+              "Fixture details"
+            <dl class="inspector-grid svelte-<scope>">
+              <div>
+                <dt>
+                  "Viewport"
+                <dd class="mt-1 text-foreground">
+                  "both"
+              <div>
+                <dt>
+                  "States"
+                <dd class="mt-1 text-foreground">
+                  "no-url, failing-url, self, owner, member, offline, overflow, aria-disabled"
+              <div>
+                <dt>
+                  "Themes"
+                <dd class="mt-1 text-foreground">
+                  "light, dark"",
+}
+`;
+
+exports[`catalog DOM, token, and accessibility contracts > 'primitive:principal-avatar:presence-s…' 2`] = `
+{
+  "declaredStates": [
+    "no-url",
+    "failing-url",
+    "self",
+    "owner",
+    "member",
+    "offline",
+    "overflow",
+  ],
+  "dom": "<body>
+  <div>
+    <section class="catalog-detail lg:p-10 min-w-0 p-4 sm:p-6 svelte-<scope> w-full">
+      <header class="entry-header svelte-<scope>">
+        <div class="min-w-0">
+          <h1 class="svelte-<scope>">
+            "Principal Avatar"
+          <p class="entry-purpose svelte-<scope>">
+            "Show the avatar of a principal (a user, a workspace member, a message author) and fall back to the initial of their name when the image is missing or fails to load."
+        <details class="entry-inspector svelte-<scope> text-muted-foreground text-xs">
+          <summary class="svelte-<scope>">
+            "Source"
+          <div class="inspector-popover svelte-<scope>">
+            <p class="text-foreground">
+              "Canonical source"
+            <code class="block break-all mt-1">
+              "src/lib/components/ui/PrincipalAvatar.svelte"
+            <dl class="inspector-grid svelte-<scope>">
+              <div>
+                <dt>
+                  "Category"
+                <dd class="mt-1 text-foreground">
+                  "primitive"
+              <div>
+                <dt>
+                  "Removal gate"
+                <dd class="mt-1 text-foreground">
+                  "Retain while any principal renders an avatar; the raw avatar image audit stays at zero."
+      <div class="fixture-grid svelte-<scope>">
+        <article class="fixture-card svelte-<scope>" data-catalog-fixture="presence-stack-decorative">
+          <div class="fixture-heading svelte-<scope>">
+            <h2 class="svelte-<scope>">
+              "Presence stack — decorative (parent names the people)"
+          <div class="bg-background fixture-preview min-h-20 rounded-md svelte-<scope>" data-catalog-fixture-id="presence-stack-decorative" data-catalog-preview="principal-avatar">
+            <div class="flex flex-wrap gap-3 items-center max-w-full min-w-0" data-catalog-renderer-fixture="presence-stack-decorative">
+              <div class="gap-3 grid min-w-0" data-catalog-rendered-state="no-url failing-url self owner member offline overflow">
+                <p class="text-muted-foreground type-caption">
+                  "You (no URL), the owner (no URL), a member (failed image), an offline member (failed image), and one more person in the overflow chip."
+                <span aria-label="3 other people here" class="-space-x-1 inline-flex items-center" data-presence-avatar-stack="" data-presence-count="5" role="group">
+                  <span class="border border-background inline-flex ring-2 ring-success rounded-full shrink-0" data-presence-avatar="ada" data-presence-ring="member" data-presence-self="true">
+                    <span class="font-medium h-full inline-flex items-center justify-center leading-none overflow-hidden rounded-full text-primary-foreground w-full" data-presence-avatar-tile="">
+                      <span aria-hidden="true" class="grid h-full place-items-center w-full">
+                        "A"
+                  <span class="border border-background inline-flex ring-2 ring-info rounded-full shrink-0" data-presence-avatar="grace" data-presence-ring="owner">
+                    <span class="font-medium h-full inline-flex items-center justify-center leading-none overflow-hidden rounded-full text-primary-foreground w-full" data-presence-avatar-tile="">
+                      <span aria-hidden="true" class="grid h-full place-items-center w-full">
+                        "G"
+                  <span class="border border-background inline-flex ring-2 ring-success rounded-full shrink-0" data-presence-avatar="linus" data-presence-ring="member">
+                    <span class="font-medium h-full inline-flex items-center justify-center leading-none overflow-hidden rounded-full text-primary-foreground w-full" data-presence-avatar-tile="">
+                      <span aria-hidden="true" class="grid h-full place-items-center w-full">
+                        "L"
+                  <span class="border border-background inline-flex ring-2 ring-muted-foreground/40 rounded-full shrink-0" data-presence-avatar="cy" data-presence-offline="true" data-presence-ring="offline">
+                    <span class="font-medium grayscale h-full inline-flex items-center justify-center leading-none overflow-hidden rounded-full text-primary-foreground w-full" data-presence-avatar-tile="">
+                      <span aria-hidden="true" class="grid h-full place-items-center w-full">
+                        "C"
+                  <span class="bg-muted border border-background font-medium inline-flex items-center justify-center leading-none px-1 rounded-full shrink-0 text-muted-foreground" data-presence-overflow="1">
+                    "+1"
+          <details class="fixture-inspector svelte-<scope> text-muted-foreground text-xs">
+            <summary class="svelte-<scope>">
+              "Fixture details"
+            <dl class="inspector-grid svelte-<scope>">
+              <div>
+                <dt>
+                  "Viewport"
+                <dd class="mt-1 text-foreground">
+                  "both"
+              <div>
+                <dt>
+                  "States"
+                <dd class="mt-1 text-foreground">
+                  "no-url, failing-url, self, owner, member, offline, overflow"
+              <div>
+                <dt>
+                  "Themes"
+                <dd class="mt-1 text-foreground">
+                  "light, dark"",
+}
+`;
+
+exports[`catalog DOM, token, and accessibility contracts > 'primitive:principal-avatar:presence-s…' 3`] = `
+{
+  "declaredStates": [
+    "no-url",
+    "failing-url",
+    "self",
+    "owner",
+    "member",
+    "offline",
+    "overflow",
+  ],
+  "dom": "<body>
+  <div>
+    <section class="catalog-detail lg:p-10 min-w-0 p-4 sm:p-6 svelte-<scope> w-full">
+      <header class="entry-header svelte-<scope>">
+        <div class="min-w-0">
+          <h1 class="svelte-<scope>">
+            "Principal Avatar"
+          <p class="entry-purpose svelte-<scope>">
+            "Show the avatar of a principal (a user, a workspace member, a message author) and fall back to the initial of their name when the image is missing or fails to load."
+        <details class="entry-inspector svelte-<scope> text-muted-foreground text-xs">
+          <summary class="svelte-<scope>">
+            "Source"
+          <div class="inspector-popover svelte-<scope>">
+            <p class="text-foreground">
+              "Canonical source"
+            <code class="block break-all mt-1">
+              "src/lib/components/ui/PrincipalAvatar.svelte"
+            <dl class="inspector-grid svelte-<scope>">
+              <div>
+                <dt>
+                  "Category"
+                <dd class="mt-1 text-foreground">
+                  "primitive"
+              <div>
+                <dt>
+                  "Removal gate"
+                <dd class="mt-1 text-foreground">
+                  "Retain while any principal renders an avatar; the raw avatar image audit stays at zero."
+      <div class="fixture-grid svelte-<scope>">
+        <article class="fixture-card svelte-<scope>" data-catalog-fixture="presence-stack-default">
+          <div class="fixture-heading svelte-<scope>">
+            <h2 class="svelte-<scope>">
+              "Presence stack — named by tooltip"
+          <div class="bg-background fixture-preview min-h-20 rounded-md svelte-<scope>" data-catalog-fixture-id="presence-stack-default" data-catalog-preview="principal-avatar">
+            <div class="flex flex-wrap gap-3 items-center max-w-full min-w-0" data-catalog-renderer-fixture="presence-stack-default">
+              <div class="gap-3 grid min-w-0" data-catalog-rendered-state="no-url failing-url self owner member offline overflow">
+                <p class="text-muted-foreground type-caption">
+                  "You (no URL), the owner (no URL), a member (failed image), an offline member (failed image), and one more person in the overflow chip."
+                <span aria-label="3 other people here" class="-space-x-1 inline-flex items-center" data-presence-avatar-stack="" data-presence-count="5" role="group">
+                  <span class="inline-flex" data-delay-duration="0" data-state="closed" data-tooltip-trigger="" id="bits-<id>" role="button" tabindex="0">
+                    <span class="border border-background inline-flex ring-2 ring-success rounded-full shrink-0" data-presence-avatar="ada" data-presence-ring="member" data-presence-self="true">
+                      <span class="font-medium h-full inline-flex items-center justify-center leading-none overflow-hidden rounded-full text-primary-foreground w-full" data-presence-avatar-tile="">
+                        <span aria-hidden="true" class="grid h-full place-items-center w-full">
+                          "A"
+                    <span class="sr-only">
+                      "Ada Lovelace (you)"
+                  <span class="inline-flex" data-delay-duration="0" data-state="closed" data-tooltip-trigger="" id="bits-<id>" role="button" tabindex="0">
+                    <span class="border border-background inline-flex ring-2 ring-info rounded-full shrink-0" data-presence-avatar="grace" data-presence-ring="owner">
+                      <span class="font-medium h-full inline-flex items-center justify-center leading-none overflow-hidden rounded-full text-primary-foreground w-full" data-presence-avatar-tile="">
+                        <span aria-hidden="true" class="grid h-full place-items-center w-full">
+                          "G"
+                    <span class="sr-only">
+                      "Grace Hopper"
+                  <span class="inline-flex" data-delay-duration="0" data-state="closed" data-tooltip-trigger="" id="bits-<id>" role="button" tabindex="0">
+                    <span class="border border-background inline-flex ring-2 ring-success rounded-full shrink-0" data-presence-avatar="linus" data-presence-ring="member">
+                      <span class="font-medium h-full inline-flex items-center justify-center leading-none overflow-hidden rounded-full text-primary-foreground w-full" data-presence-avatar-tile="">
+                        <span aria-hidden="true" class="grid h-full place-items-center w-full">
+                          "L"
+                    <span class="sr-only">
+                      "linus"
+                  <span class="inline-flex" data-delay-duration="0" data-state="closed" data-tooltip-trigger="" id="bits-<id>" role="button" tabindex="0">
+                    <span class="border border-background inline-flex ring-2 ring-muted-foreground/40 rounded-full shrink-0" data-presence-avatar="cy" data-presence-offline="true" data-presence-ring="offline">
+                      <span class="font-medium grayscale h-full inline-flex items-center justify-center leading-none overflow-hidden rounded-full text-primary-foreground w-full" data-presence-avatar-tile="">
+                        <span aria-hidden="true" class="grid h-full place-items-center w-full">
+                          "C"
+                    <span class="sr-only">
+                      "Cy Offline"
+                  <span class="bg-muted border border-background font-medium inline-flex items-center justify-center leading-none px-1 rounded-full shrink-0 text-muted-foreground" data-presence-overflow="1">
+                    "+1"
+          <details class="fixture-inspector svelte-<scope> text-muted-foreground text-xs">
+            <summary class="svelte-<scope>">
+              "Fixture details"
+            <dl class="inspector-grid svelte-<scope>">
+              <div>
+                <dt>
+                  "Viewport"
+                <dd class="mt-1 text-foreground">
+                  "both"
+              <div>
+                <dt>
+                  "States"
+                <dd class="mt-1 text-foreground">
+                  "no-url, failing-url, self, owner, member, offline, overflow"
+              <div>
+                <dt>
+                  "Themes"
+                <dd class="mt-1 text-foreground">
+                  "light, dark"",
+}
+`;
+
+exports[`catalog DOM, token, and accessibility contracts > 'primitive:principal-avatar:tile-states' 1`] = `
+{
+  "declaredStates": [
+    "no-url",
+    "failing-url",
+    "size-16",
+    "size-24",
+    "size-32",
+    "empty-label",
+    "fill",
+  ],
+  "dom": "<body>
+  <div>
+    <section class="catalog-detail lg:p-10 min-w-0 p-4 sm:p-6 svelte-<scope> w-full">
+      <header class="entry-header svelte-<scope>">
+        <div class="min-w-0">
+          <h1 class="svelte-<scope>">
+            "Principal Avatar"
+          <p class="entry-purpose svelte-<scope>">
+            "Show the avatar of a principal (a user, a workspace member, a message author) and fall back to the initial of their name when the image is missing or fails to load."
+        <details class="entry-inspector svelte-<scope> text-muted-foreground text-xs">
+          <summary class="svelte-<scope>">
+            "Source"
+          <div class="inspector-popover svelte-<scope>">
+            <p class="text-foreground">
+              "Canonical source"
+            <code class="block break-all mt-1">
+              "src/lib/components/ui/PrincipalAvatar.svelte"
+            <dl class="inspector-grid svelte-<scope>">
+              <div>
+                <dt>
+                  "Category"
+                <dd class="mt-1 text-foreground">
+                  "primitive"
+              <div>
+                <dt>
+                  "Removal gate"
+                <dd class="mt-1 text-foreground">
+                  "Retain while any principal renders an avatar; the raw avatar image audit stays at zero."
+      <div class="fixture-grid svelte-<scope>">
+        <article class="fixture-card svelte-<scope>" data-catalog-fixture="tile-states">
+          <div class="fixture-heading svelte-<scope>">
+            <h2 class="svelte-<scope>">
+              "Avatar tile — initial and failed image"
+          <div class="bg-background fixture-preview min-h-20 rounded-md svelte-<scope>" data-catalog-fixture-id="tile-states" data-catalog-preview="principal-avatar">
+            <div class="flex flex-wrap gap-3 items-center max-w-full min-w-0" data-catalog-renderer-fixture="tile-states">
+              <div class="gap-4 grid min-w-0" data-catalog-rendered-state="no-url failing-url size-16 size-24 size-32 empty-label fill">
+                <p class="text-muted-foreground type-caption">
+                  "Rows: no URL, a failed image. Columns: 16, 24, and 32 px."
+                <div class="flex gap-3 items-center">
+                  <span class="text-muted-foreground type-caption w-24">
+                    "No URL"
+                  <span>
+                    <span aria-hidden="true" class="bg-muted grid place-items-center rounded-full shrink-0 text-foreground type-caption">
+                      "A"
+                  <span>
+                    <span aria-hidden="true" class="bg-muted grid place-items-center rounded-full shrink-0 text-foreground type-caption">
+                      "A"
+                  <span>
+                    <span aria-hidden="true" class="bg-muted grid place-items-center rounded-full shrink-0 text-foreground type-caption">
+                      "A"
+                <div class="flex gap-3 items-center">
+                  <span class="text-muted-foreground type-caption w-24">
+                    "Failing URL"
+                  <span data-catalog-fail="true">
+                    <span aria-hidden="true" class="bg-muted grid place-items-center rounded-full shrink-0 text-foreground type-caption">
+                      "A"
+                  <span data-catalog-fail="true">
+                    <span aria-hidden="true" class="bg-muted grid place-items-center rounded-full shrink-0 text-foreground type-caption">
+                      "A"
+                  <span data-catalog-fail="true">
+                    <span aria-hidden="true" class="bg-muted grid place-items-center rounded-full shrink-0 text-foreground type-caption">
+                      "A"
+                <div class="flex gap-3 items-center">
+                  <span class="text-muted-foreground type-caption w-24">
+                    "Empty label"
+                  <span>
+                    <span aria-hidden="true" class="bg-muted grid place-items-center rounded-full shrink-0 text-foreground type-caption">
+                      "?"
+                <div class="flex gap-3 items-center">
+                  <span class="text-muted-foreground type-caption w-24">
+                    "Fill in a tile"
+                  <span class="font-medium inline-flex items-center justify-center overflow-hidden rounded-full size-8 text-primary-foreground type-caption">
+                    <span aria-hidden="true" class="grid h-full place-items-center w-full">
+                      "G"
+                  <span class="font-medium inline-flex items-center justify-center overflow-hidden rounded-full size-8 text-primary-foreground type-caption" data-catalog-fail="true">
+                    <span aria-hidden="true" class="grid h-full place-items-center w-full">
+                      "G"
+          <details class="fixture-inspector svelte-<scope> text-muted-foreground text-xs">
+            <summary class="svelte-<scope>">
+              "Fixture details"
+            <dl class="inspector-grid svelte-<scope>">
+              <div>
+                <dt>
+                  "Viewport"
+                <dd class="mt-1 text-foreground">
+                  "both"
+              <div>
+                <dt>
+                  "States"
+                <dd class="mt-1 text-foreground">
+                  "no-url, failing-url, size-16, size-24, size-32, empty-label, fill"
               <div>
                 <dt>
                   "Themes"
@@ -15670,7 +16393,8 @@ exports[`catalog DOM, token, and accessibility contracts > 'product:modals:produ
                                     <span class="min-w-0 truncate">
                                       "Watch release build"
                               <p class="leading-5 text-sm text-subtle">
-                                "You can unarchive this workspace later, but stopped agents and cancelled hooks will not resume automatically."
+                                <span>
+                                  "You can unarchive this workspace later, but stopped agents and cancelled hooks will not resume automatically."
                             <div class="flex gap-2 items-center justify-end mt-6" data-slot="dialog-footer">
                               <div class="flex gap-3 items-center justify-between" data-size="default" data-slot="form-actions">
                                 <div class="flex items-center" data-slot="form-actions-destructive">
@@ -16385,8 +17109,28 @@ exports[`catalog DOM, token, and accessibility contracts > 'product:modals:produ
                                     <span class="[&_svg]:pointer-events-none [&_svg]:size-3 duration-spring-fast ease-spring-fast font-medium gap-1.5 h-6 inline-flex items-center justify-center motion-reduce:transition-none overflow-hidden px-2.5 rounded-(--radius-medium) shrink-0 text-[12px] text-foreground transition-[background-color,color,box-shadow] w-fit whitespace-nowrap" data-color="gray" data-size="default" data-slot="badge" data-variant="solid" tokens=["--accent"]>
                                       <span class="[text-box:trim-both_cap_alphabetic]">
                                         "Uncommitted changes"
+                                <p class="font-normal mt-4 text-muted-foreground type-body">
+                                  "Guests will be removed from this workspace"
+                                <ul class="mt-2 space-y-1">
+                                  <li class="gap-x-2.5 grid grid-cols-[2rem_minmax(0,1fr)] items-center min-w-0 text-muted-foreground type-body">
+                                    <span aria-hidden="true" class="grid h-8 place-items-center w-8">
+                                      <svg role="img">
+                                        <rect>
+                                        <path>
+                                    <span class="min-w-0 truncate">
+                                      "2 collaborators"
+                                  <li class="gap-x-2.5 grid grid-cols-[2rem_minmax(0,1fr)] items-center min-w-0 text-muted-foreground type-body">
+                                    <span aria-hidden="true" class="grid h-8 place-items-center w-8">
+                                      <svg role="img">
+                                        <rect>
+                                        <path>
+                                    <span class="min-w-0 truncate">
+                                      "1 open invite"
                               <p class="leading-5 text-sm text-subtle">
-                                "Intent will permanently remove this workspace from disk after stopping the running work. This cannot be undone."
+                                <span>
+                                  "Intent will permanently remove this workspace from disk after stopping the running work. This cannot be undone."
+                                <span>
+                                  "Guests lose access permanently."
                             <div class="flex gap-2 items-center justify-end mt-6" data-slot="dialog-footer">
                               <div class="flex gap-3 items-center justify-between" data-size="default" data-slot="form-actions">
                                 <div class="flex items-center" data-slot="form-actions-destructive">
@@ -16486,8 +17230,28 @@ exports[`catalog DOM, token, and accessibility contracts > 'product:modals:produ
                                     <span class="[&_svg]:pointer-events-none [&_svg]:size-3 duration-spring-fast ease-spring-fast font-medium gap-1.5 h-6 inline-flex items-center justify-center motion-reduce:transition-none overflow-hidden px-2.5 rounded-(--radius-medium) shrink-0 text-[12px] text-foreground transition-[background-color,color,box-shadow] w-fit whitespace-nowrap" data-color="gray" data-size="default" data-slot="badge" data-variant="solid" tokens=["--accent"]>
                                       <span class="[text-box:trim-both_cap_alphabetic]">
                                         "Uncommitted changes"
+                                <p class="font-normal mt-4 text-muted-foreground type-body">
+                                  "Guests will be removed from this workspace"
+                                <ul class="mt-2 space-y-1">
+                                  <li class="gap-x-2.5 grid grid-cols-[2rem_minmax(0,1fr)] items-center min-w-0 text-muted-foreground type-body">
+                                    <span aria-hidden="true" class="grid h-8 place-items-center w-8">
+                                      <svg role="img">
+                                        <rect>
+                                        <path>
+                                    <span class="min-w-0 truncate">
+                                      "2 collaborators"
+                                  <li class="gap-x-2.5 grid grid-cols-[2rem_minmax(0,1fr)] items-center min-w-0 text-muted-foreground type-body">
+                                    <span aria-hidden="true" class="grid h-8 place-items-center w-8">
+                                      <svg role="img">
+                                        <rect>
+                                        <path>
+                                    <span class="min-w-0 truncate">
+                                      "1 open invite"
                               <p class="leading-5 text-sm text-subtle">
-                                "You can unarchive this workspace later, but stopped agents and cancelled hooks will not resume automatically."
+                                <span>
+                                  "You can unarchive this workspace later, but stopped agents and cancelled hooks will not resume automatically."
+                                <span>
+                                  "Collaborators are removed when a workspace is archived; after unarchiving you will need to invite them again."
                             <div class="flex gap-2 items-center justify-end mt-6" data-slot="dialog-footer">
                               <div class="flex gap-3 items-center justify-between" data-size="default" data-slot="form-actions">
                                 <div class="flex items-center" data-slot="form-actions-destructive">
@@ -16531,6 +17295,9 @@ exports[`catalog DOM, token, and accessibility contracts > 'product:modals:produ
                                   "2 active agents will be stopped"
                                 <p class="font-normal text-muted-foreground type-body">
                                   "1 active background hook will be cancelled"
+                                <p class="font-normal text-muted-foreground type-body">
+                                  "3 guests will be removed from these workspaces"
+                                  "You will need to invite them again after unarchiving."
                             <div class="flex gap-2 items-center justify-end mt-6" data-slot="dialog-footer">
                               <div class="flex gap-3 items-center justify-between" data-size="default" data-slot="form-actions">
                                 <div class="flex items-center" data-slot="form-actions-destructive">
@@ -17628,17 +18395,17 @@ exports[`catalog DOM, token, and accessibility contracts > 'product:popovers:non
                         <div class="aria-disabled:opacity-50 aria-disabled:pointer-events-none bg-transparent border-none cursor-default data-[disabled]:opacity-50 data-[disabled]:pointer-events-none duration-spring-fast ease-spring-fast flex focus-visible:outline-none focus:text-foreground font-normal gap-2 group/menu-item items-center justify-start min-h-(--control-height-small) min-w-0 motion-reduce:transition-none px-2 py-1 relative rounded-(--radius-row) select-none text-left transition-colors type-caption w-full z-10" data-combobox-item="" data-label="Ada Lovelace" data-menu-item="true" data-slot="combobox-option-motion" data-value="ada" id="bits-<id>" role="option">
                           <span class="flex-1 min-w-0 truncate">
                             "Ada Lovelace"
-                          <span aria-hidden="true" class="flex font-medium group-data-[selected]:opacity-100 items-center justify-center ml-auto opacity-0 shrink-0 size-4 text-primary-ink" data-slot="combobox-item-check">
+                          <span aria-hidden="true" class="flex font-medium items-center justify-center ml-auto opacity-0 shrink-0 size-4 text-primary-ink" data-slot="combobox-item-check">
                             "✓"
                         <div aria-selected="true" class="aria-disabled:opacity-50 aria-disabled:pointer-events-none bg-transparent border-none cursor-default data-[disabled]:opacity-50 data-[disabled]:pointer-events-none duration-spring-fast ease-spring-fast flex focus-visible:outline-none focus:text-foreground font-normal gap-2 group/menu-item items-center justify-start min-h-(--control-height-small) min-w-0 motion-reduce:transition-none px-2 py-1 relative rounded-(--radius-row) select-none text-left transition-colors type-caption w-full z-10" data-combobox-item="" data-highlighted="" data-label="Grace Hopper" data-menu-item="true" data-selected="" data-slot="combobox-option-motion" data-value="grace" id="bits-<id>" role="option">
                           <span class="flex-1 min-w-0 truncate">
                             "Grace Hopper"
-                          <span aria-hidden="true" class="flex font-medium group-data-[selected]:opacity-100 items-center justify-center ml-auto opacity-0 shrink-0 size-4 text-primary-ink" data-slot="combobox-item-check">
+                          <span aria-hidden="true" class="flex font-medium items-center justify-center ml-auto opacity-100 shrink-0 size-4 text-primary-ink" data-slot="combobox-item-check">
                             "✓"
                         <div class="aria-disabled:opacity-50 aria-disabled:pointer-events-none bg-transparent border-none cursor-default data-[disabled]:opacity-50 data-[disabled]:pointer-events-none duration-spring-fast ease-spring-fast flex focus-visible:outline-none focus:text-foreground font-normal gap-2 group/menu-item items-center justify-start min-h-(--control-height-small) min-w-0 motion-reduce:transition-none px-2 py-1 relative rounded-(--radius-row) select-none text-left transition-colors type-caption w-full z-10" data-combobox-item="" data-disabled="" data-label="Linus Torvalds" data-menu-item="true" data-slot="combobox-option-motion" data-value="linus" id="bits-<id>" role="option">
                           <span class="flex-1 min-w-0 truncate">
                             "Linus Torvalds"
-                          <span aria-hidden="true" class="flex font-medium group-data-[selected]:opacity-100 items-center justify-center ml-auto opacity-0 shrink-0 size-4 text-primary-ink" data-slot="combobox-item-check">
+                          <span aria-hidden="true" class="flex font-medium items-center justify-center ml-auto opacity-0 shrink-0 size-4 text-primary-ink" data-slot="combobox-item-check">
                             "✓"
               <article class="matrix-cell svelte-<scope>" data-catalog-rendered-state="empty-search searchable-select">
                 <h3 class="font-medium text-muted-foreground type-caption">
@@ -17680,12 +18447,12 @@ exports[`catalog DOM, token, and accessibility contracts > 'product:popovers:non
                         <div class="aria-disabled:opacity-50 aria-disabled:pointer-events-none bg-transparent border-none cursor-default data-[disabled]:opacity-50 data-[disabled]:pointer-events-none duration-spring-fast ease-spring-fast flex focus-visible:outline-none focus:text-foreground font-normal gap-2 group/menu-item items-center justify-start min-h-(--control-height-small) min-w-0 motion-reduce:transition-none px-2 py-1 relative rounded-(--radius-row) select-none text-left transition-colors type-caption w-full z-10" data-combobox-item="" data-label="Ada Lovelace" data-menu-item="true" data-slot="combobox-option-motion" data-value="ada" id="bits-<id>" role="option">
                           <span class="flex-1 min-w-0 truncate">
                             "Ada Lovelace"
-                          <span aria-hidden="true" class="flex font-medium group-data-[selected]:opacity-100 items-center justify-center ml-auto opacity-0 shrink-0 size-4 text-primary-ink" data-slot="combobox-item-check">
+                          <span aria-hidden="true" class="flex font-medium items-center justify-center ml-auto opacity-0 shrink-0 size-4 text-primary-ink" data-slot="combobox-item-check">
                             "✓"
                         <div aria-selected="true" class="aria-disabled:opacity-50 aria-disabled:pointer-events-none bg-transparent border-none cursor-default data-[disabled]:opacity-50 data-[disabled]:pointer-events-none duration-spring-fast ease-spring-fast flex focus-visible:outline-none focus:text-foreground font-normal gap-2 group/menu-item items-center justify-start min-h-(--control-height-small) min-w-0 motion-reduce:transition-none px-2 py-1 relative rounded-(--radius-row) select-none text-left transition-colors type-caption w-full z-10" data-combobox-item="" data-highlighted="" data-label="Grace Hopper" data-menu-item="true" data-selected="" data-slot="combobox-option-motion" data-value="grace" id="bits-<id>" role="option">
                           <span class="flex-1 min-w-0 truncate">
                             "Grace Hopper"
-                          <span aria-hidden="true" class="flex font-medium group-data-[selected]:opacity-100 items-center justify-center ml-auto opacity-0 shrink-0 size-4 text-primary-ink" data-slot="combobox-item-check">
+                          <span aria-hidden="true" class="flex font-medium items-center justify-center ml-auto opacity-100 shrink-0 size-4 text-primary-ink" data-slot="combobox-item-check">
                             "✓"
                       <div aria-labelledby="bits-<id>" data-combobox-group="" id="bits-<id>" role="group">
                         <div class="font-medium px-2 py-1.5 text-muted-foreground type-caption" data-combobox-group-label="" id="bits-<id>">
@@ -17700,7 +18467,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'product:popovers:non
                         <div class="aria-disabled:opacity-50 aria-disabled:pointer-events-none bg-transparent border-none cursor-default data-[disabled]:opacity-50 data-[disabled]:pointer-events-none duration-spring-fast ease-spring-fast flex focus-visible:outline-none focus:text-foreground font-normal gap-2 group/menu-item items-center justify-start min-h-(--control-height-small) min-w-0 motion-reduce:transition-none px-2 py-1 relative rounded-(--radius-row) select-none text-left transition-colors type-caption w-full z-10" data-combobox-item="" data-label="Linus Torvalds" data-menu-item="true" data-slot="combobox-option-motion" data-value="linus" id="bits-<id>" role="option">
                           <span class="flex-1 min-w-0 truncate">
                             "Linus Torvalds"
-                          <span aria-hidden="true" class="flex font-medium group-data-[selected]:opacity-100 items-center justify-center ml-auto opacity-0 shrink-0 size-4 text-primary-ink" data-slot="combobox-item-check">
+                          <span aria-hidden="true" class="flex font-medium items-center justify-center ml-auto opacity-0 shrink-0 size-4 text-primary-ink" data-slot="combobox-item-check">
                             "✓"
               <article class="matrix-cell svelte-<scope>" data-catalog-rendered-state="popover title body">
                 <h3 class="font-medium text-muted-foreground type-caption">
@@ -17760,24 +18527,27 @@ exports[`catalog DOM, token, and accessibility contracts > 'product:popovers:non
                               "In progress"
                             <span aria-hidden="true" class="forced-colors:text-[CanvasText] inline-flex items-center justify-center shrink-0 svelte-<scope> workspace-status-color-active workspace-status-icon" data-workspace-status-visual="dot" data-workspace-status="in_progress">
                               <span class="svelte-<scope> workspace-status-dot" data-workspace-status-dot="">
-                        <div class="min-w-0 mt-1 text-muted-foreground truncate type-caption" data-workspace-hover-card-repo="">
+                        <div class="min-w-0 mt-0.5 text-muted-foreground truncate type-caption" data-workspace-hover-card-repo="">
                           "intent-hq / cloudlands-fe"
                         <p class="line-clamp-3 min-w-0 mt-1 text-muted-foreground type-caption" data-workspace-hover-card-summary="">
                           "Implementing the approved stacked hover-card polish."
                     <div class="border-border border-t my-3" data-workspace-hover-card-divider="">
                     <div class="body-grid gap-3 grid grid-cols-1 items-stretch min-w-0 pb-4 px-5" data-workspace-hover-card-columns="">
                       <section aria-label="Pull requests" class="min-w-0 pull-requests" data-workspace-hover-card-pr-column="">
-                        <div aria-label="Pull requests" class="gap-2 grid min-w-0" data-workspace-hover-card-pr-list="" role="list">
-                          <div aria-label="intent-hq/cloudlands-fe #73 Polish workspace hover cards Open ⏳ 1/5 checks running" class="gap-x-2 grid grid-cols-[1rem_minmax(0,1fr)_auto_auto] items-center min-w-0" data-pr-identity="intent-hq/cloudlands-fe#73" data-pr-status="open" data-workspace-hover-card-pr-row="" role="listitem">
-                            <svg aria-hidden="true" class="justify-self-start shrink-0 text-success" data-icon="code-pull-request" data-weight="regular" role="img">
-                              <rect>
-                              <path>
-                            <span class="min-w-0 text-foreground truncate type-caption" data-workspace-hover-card-pr-title="">
-                              "Polish workspace hover cards"
-                            <span class="shrink-0 text-muted-foreground type-caption" data-workspace-hover-card-pr-status="">
-                              "Open"
-                            <span class="shrink-0 text-muted-foreground type-caption" data-workspace-hover-card-pr-number="">
-                              "#73"
+                        <div aria-label="Pull requests" class="-mx-2 gap-2 grid min-w-0" data-workspace-hover-card-pr-list="" role="list">
+                          <div role="listitem">
+                            <div>
+                              <button aria-label="intent-hq/cloudlands-fe #73 Polish workspace hover cards Open ⏳ 1/5 checks running" class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [--button-icon-padding:0.75rem] aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 border-0! cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring font-inherit font-normal gap-1.5 gap-x-2 grid grid-cols-[1rem_minmax(0,1fr)_auto_auto] group/button h-(--control-height-medium) h-auto! hover:bg-muted/50 isolate items-center justify-normal min-w-0 motion-reduce:transition-none px-0 px-2! py-0 py-0! relative rounded-sm shrink-0 text-inherit text-left transition-colors type-caption w-full whitespace-normal" data-pr-identity="intent-hq/cloudlands-fe#73" data-pr-status="open" data-slot="button" data-workspace-hover-card-pr-row="true" type="button">
+                                <span aria-hidden="true" class="-z-10 absolute bg-transparent duration-spring-fast ease-spring-fast inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
+                                <svg aria-hidden="true" class="justify-self-start shrink-0 text-success" data-icon="code-pull-request" data-weight="regular" role="img">
+                                  <rect>
+                                  <path>
+                                <span class="min-w-0 text-foreground truncate type-caption" data-workspace-hover-card-pr-title="">
+                                  "Polish workspace hover cards"
+                                <span class="shrink-0 text-muted-foreground type-caption" data-workspace-hover-card-pr-status="">
+                                  "Open"
+                                <span class="shrink-0 text-muted-foreground type-caption" data-workspace-hover-card-pr-number="">
+                                  "#73"
               <article class="matrix-cell svelte-<scope>" data-catalog-rendered-state="hover-card github-link">
                 <h3 class="font-medium text-muted-foreground type-caption">
                   "GitHub link card"

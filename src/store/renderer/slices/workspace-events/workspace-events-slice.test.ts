@@ -3,6 +3,7 @@ import type { WorkspaceEvent } from '$features/events/types';
 import { workspaceUnmounted } from '../workspace-lifecycle/workspace-lifecycle-slice';
 import {
   bulkEventsReceived,
+  daemonEventsSubscribed,
   eventReceived,
   eventsCleared,
   eventsLoaded,
@@ -32,6 +33,16 @@ function mockEvent(id: string, workspaceId = WS_1, timestampOverride?: string): 
 describe('workspaceEventsReducer', () => {
   it('returns the initial state', () => {
     expect(workspaceEventsReducer(undefined, { type: '@@INIT' })).toEqual(initialState);
+  });
+
+  it('counts each firehose (re)subscription without touching the workspace buffers', () => {
+    expect(initialState.subscriptionGeneration).toBe(0);
+    let state = workspaceEventsReducer(initialState, eventReceived(WS_1, mockEvent('evt-1')));
+    const buffers = state.byWorkspaceId;
+    state = workspaceEventsReducer(state, daemonEventsSubscribed());
+    state = workspaceEventsReducer(state, daemonEventsSubscribed());
+    expect(state.subscriptionGeneration).toBe(2);
+    expect(state.byWorkspaceId).toBe(buffers);
   });
 
   it('appends a single eventReceived into the workspace buffer', () => {

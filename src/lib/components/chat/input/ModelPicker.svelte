@@ -3,13 +3,7 @@
   import { onMount, tick, untrack } from 'svelte';
   import { writable } from 'svelte/store';
 
-  import { agentClient } from '$features/agent/agent.client';
-  import {
-    applyReasoningEffort,
-    reconcileAgentReasoningEffort,
-  } from '$features/agent/reasoning-effort';
   import { useAgentSession } from '$lib/hooks/useAgentSession.svelte';
-  import { updateSession as updateAgentSessionFields } from '$store/renderer/slices/agent-session/agent-session-slice';
   import { selectAgentReasoningEffort } from '$store/renderer/slices/agent-session/agent-session-selectors';
 
   import Button from '$lib/components/ui/button/button.svelte';
@@ -33,6 +27,7 @@
     type ProviderWarningNotice,
   } from './ModelPickerProviderNotice.svelte';
   import ModelProviderErrorItem from './ModelProviderErrorItem.svelte';
+  import { createAgentModelMutator, isSkippedMutation } from './agent-model-mutator';
 
   import {
     selectSelectedModel,
@@ -80,6 +75,7 @@
     selectNormalizedProviderId,
     selectProviderDisplayName,
   } from '$store/renderer/slices/provider-catalog/provider-catalog-selectors';
+  import { selectIsWorkspaceCollaborator } from '$store/renderer/slices/workspace/workspace-selectors';
   import { getAgentProvider } from '$shared/types/agent-session';
   import { formatProviderLoadError, type ProviderLoadError } from './model-picker-provider-errors';
   import { AUGGIE_LEGACY_GROUP_KEY, buildGroupedModelOptions } from './model-picker-groups';
@@ -134,8 +130,15 @@
   const activeProviderId$ = selectActiveProviderId();
   const modelFetchProviderIds$ = selectModelFetchProviderIds();
   const antigravityModelsAllowed$ = selectIsProviderModelAccessAllowed('antigravity');
+  // Antigravity sign-in is a guest-local fact; a guest-locked picker reads the
+  // host catalog regardless (`isGuestLocked` is declared with the props below
+  // and only read once the picker is rendering).
   function canUseProviderModels(providerId: string): boolean {
-    return normalizeProviderId(providerId) !== 'antigravity' || $antigravityModelsAllowed$;
+    return (
+      normalizeProviderId(providerId) !== 'antigravity' ||
+      $antigravityModelsAllowed$ ||
+      isGuestLocked
+    );
   }
   const availableEnabledProviderIds$ = selectAvailableEnabledProviderIds();
   const selectedModel$ = selectSelectedModel();
@@ -218,7 +221,7 @@
     // model is selected (e.g. "Default ({model})" for the specialist editor's
     // inherit state). Also applies to the catalog-default fallback.
     formatDefaultModelLabel?: (modelLabel: string) => string;
-    // Gates agent-session updates (updateAgentSessionFields, agent.setModel).
+    // Gates agent-session updates (session model write, agent.setModel).
     updateGlobalStore?: boolean;
     // Gates the global selectModel dispatch (persisted default); Settings default picker only.
     updateGlobalDefault?: boolean;
@@ -302,6 +305,22 @@
   });
 
   const effectiveProviderId = $derived(explicitProviderId ?? $activeProviderId$);
+
+  // A guest window (multiplayer w4) or a `collaborator` seat cannot change an
+  // agent's model, and its local provider availability says nothing about the
+  // host: the agent-bound picker renders read-only with the host catalog
+  // label and no availability warnings (intent#5378). The selector fails
+  // closed while the window's identity is still the boot-time default.
+  const workspaceIdStore = writable(untrack(() => workspaceId) ?? '');
+  const isWorkspaceCollaborator$ = selectIsWorkspaceCollaborator(workspaceIdStore);
+  $effect(() => {
+    workspaceIdStore.set(workspaceId ?? '');
+  });
+  const isGuestLocked = $derived(!!agentId && !!workspaceId && $isWorkspaceCollaborator$);
+  const effectiveLocked = $derived(isLocked || isGuestLocked);
+  // Every agent-session mutation goes through this funnel; it re-reads the
+  // live lock on each call, so no call site needs to re-check after an await.
+  const mutate = createAgentModelMutator({ isLocked: () => isGuestLocked });
 
   let agentProviderModels = $state<
     import('$features/auggie/auggie-models.client').AuggieModel[] | null
@@ -473,10 +492,12 @@
   // The per-agent fetch is only needed when the effective provider's models
   // aren't already covered by the all-providers fetch because the agent's
   // provider is since unavailable. Skipping it otherwise avoids a duplicate fetch.
+  // A guest-locked picker always runs it: the all-providers fetch follows the
+  // guest's local availability, so this is its only route to the host catalog.
   const usesAgentProviderFetch = $derived(
     canUseProviderModels(effectiveProviderId) &&
-      effectiveProviderId !== $activeProviderId$ &&
-      !isEffectiveProviderAvailable,
+      (isGuestLocked ||
+        (effectiveProviderId !== $activeProviderId$ && !isEffectiveProviderAvailable)),
   );
 
   // Separate generation counter from fetchAllProviderModels: in unlocked mode
@@ -708,6 +729,15 @@
     propModelAtLocalChange = undefined;
   });
 
+  // A live owner → collaborator role change must not let a deferred update
+  // queued during streaming reach the backend once streaming ends.
+  $effect(() => {
+    if (isGuestLocked && pendingModelUpdate) {
+      logger.info('Dropping deferred model update (picker guest-locked):', { agentId });
+      pendingModelUpdate = null;
+    }
+  });
+
   $effect(() => {
     if (!deferUpdate && pendingModelUpdate) {
       const model = pendingModelUpdate;
@@ -721,8 +751,15 @@
   // for every provider, so a bare pick is attributed to the loaded group that
   // contains the row rather than blanket-attributed to the default provider.
   // A legacy compound prefix (persisted ids) still wins outright; when several
-  // groups own the same bare id — or no loaded group owns it — the default
-  // provider keeps priority (the intent-hq/monorepo#1657 contract).
+  // groups own the same bare id the default provider keeps priority (the
+  // intent-hq/monorepo#1657 contract). The per-agent group — the effective
+  // provider's models when that provider is outside the enabled set (disabled
+  // locally, or never enabled in a guest window, where the host's settings
+  // are administrator-only and `providers.enabled` never hydrates) — is
+  // consulted too, so a pick from it attributes to the agent's provider. With
+  // no owning group, an agent-bound picker attributes the bare id to the
+  // session's own provider (what the daemon resolves a bare `agent.setModel`
+  // id against when `providerId` is absent); otherwise the default provider.
   function resolvePickedTriple(model: string): { providerId: string; modelId: string } {
     const { providerId: legacyProviderId, modelId } = splitLegacyCompoundId(model);
     if (legacyProviderId) return { providerId: legacyProviderId, modelId };
@@ -741,7 +778,10 @@
     for (const [rowProviderId, options] of Object.entries(allProviderModels)) {
       if (matchesIn(rowProviderId, options)) return { providerId: rowProviderId, modelId };
     }
-    return { providerId: $defaultProviderId$, modelId };
+    if (agentProviderModels && matchesIn(effectiveProviderId, agentProviderModels)) {
+      return { providerId: normalizeProviderId(effectiveProviderId), modelId };
+    }
+    return { providerId: explicitProviderId ?? $defaultProviderId$, modelId };
   }
 
   async function applyBackendModelUpdate(model: string) {
@@ -752,7 +792,9 @@
         // daemon resolves a bare id against the session's current provider,
         // rejecting cross-provider picks.
         const pickedProviderId = resolvePickedTriple(model).providerId || undefined;
-        const result = await agentClient.setModel(agentId, model, workspaceId, pickedProviderId);
+        const result = await mutate.setModel(agentId, model, workspaceId, pickedProviderId);
+        // A locked skip is not an RPC failure: nothing to toast or warn about.
+        if (isSkippedMutation(result)) return;
         if (result.ok && result.data.success) {
           logger.info('Updated agent model via IPC:', { agentId, model });
           const targetOption = flatModelOptions.find(
@@ -760,12 +802,7 @@
           );
           const supportedEfforts = targetOption?.data?.effortLevels as string[] | undefined;
           const currentEffort = selectAgentReasoningEffort.select(appStore.state, agentId);
-          await reconcileAgentReasoningEffort(
-            agentId,
-            workspaceId,
-            currentEffort,
-            supportedEfforts,
-          );
+          await mutate.reconcileEffort(agentId, workspaceId, currentEffort, supportedEfforts);
         } else {
           const errorMsg = result.ok ? result.data.error : result.error;
           logger.warn('Failed to update agent model:', {
@@ -784,6 +821,10 @@
   }
 
   async function handleModelSelect(model: string | undefined) {
+    if (isGuestLocked) {
+      dropdownValue = localModel ?? USE_DEFAULT_VALUE;
+      return;
+    }
     if (model !== undefined && !canUseProviderModels(resolvePickedTriple(model).providerId)) {
       dropdownValue = localModel ?? USE_DEFAULT_VALUE;
       return;
@@ -818,7 +859,7 @@
     if (!updateGlobalStore) return;
 
     if (agentId && workspaceId) {
-      appStore.dispatch(updateAgentSessionFields(agentId, { model }));
+      if (!mutate.setSessionModel(agentId, model)) return;
       logger.debug('Updated local session model:', { agentId, model });
 
       if (deferUpdate) {
@@ -1126,6 +1167,7 @@
   // and degraded failures are surfaced by the daemon-health UI instead.
   const hasNoAvailableProvider = $derived(
     !providerId &&
+      !isGuestLocked &&
       $hasCheckedOnce$ &&
       $daemonHealth$ === 'healthy' &&
       $availableEnabledProviderIds$.length === 0,
@@ -1321,6 +1363,7 @@
   });
 
   const isSelectedModelUnavailable = $derived.by(() => {
+    if (isGuestLocked) return false;
     if (!canUseProviderModels(selectedModelProviderId || effectiveProviderId)) return true;
     if (!$hasCheckedOnce$) return false;
     if (isLoadingModels) return false;
@@ -1396,7 +1439,10 @@
     showReasoningFooter ? `${currentModelLabel} · ${currentReasoningLabel}` : currentModelLabel,
   );
   const lockedButtonTitle = $derived(
-    lockedTitle?.trim() || m.chat_modelPicker_modelLocked_title({ model: triggerAccessibleLabel }),
+    isGuestLocked
+      ? m.chat_modelPicker_guestLocked_title()
+      : lockedTitle?.trim() ||
+          m.chat_modelPicker_modelLocked_title({ model: triggerAccessibleLabel }),
   );
   // The in-flight commit window is announced with `aria-busy` and re-entry is
   // ignored in `handleReasoningSelect`; it must not feed the HTML `disabled`
@@ -1404,6 +1450,7 @@
   let updatingReasoningEffort = $state(false);
   const reasoningControlDisabled = $derived(
     reasoningDisabled ||
+      isGuestLocked ||
       (!onReasoningChange && (!agentId || !workspaceId)) ||
       reasoningLevels.length === 0,
   );
@@ -1464,7 +1511,7 @@
         return (await onReasoningChange(value)) !== false;
       }
       if (!agentId || !workspaceId) return false;
-      return await applyReasoningEffort(agentId, workspaceId, value, previous);
+      return await mutate.applyEffort(agentId, workspaceId, value, previous);
     } finally {
       updatingReasoningEffort = false;
     }
@@ -1490,7 +1537,7 @@
   // Only show on pickers tied to an existing agent (agentId) — the workspace
   // initializer creates new agents and shouldn't display fallback warnings.
   const showModelWarning = $derived(
-    !!agentId && (isSelectedModelUnavailable || $fallbackInfo$ !== null),
+    !!agentId && !isGuestLocked && (isSelectedModelUnavailable || $fallbackInfo$ !== null),
   );
 
   // The selected model isn't in the catalog yet, but its provider hasn't
@@ -1545,13 +1592,14 @@
   // Only applies to pickers tied to an existing agent — onboarding doesn't need this.
   $effect(() => {
     if (!agentId) return;
+    if (isGuestLocked) return;
     if (!canUseProviderModels(selectedModelProviderId || effectiveProviderId)) return;
     if (!isSelectedModelUnavailable) return;
     if (flatModelOptions.length === 0) return;
 
-    // Guard against transient unavailability. This effect dispatches
-    // updateAgentSessionFields(agentId, { model }), which PERMANENTLY overwrites
-    // the persisted model on the agent session — including across restarts.
+    // Guard against transient unavailability. This effect writes the session
+    // model (via handleModelSelect), which PERMANENTLY overwrites the
+    // persisted model on the agent session — including across restarts.
     // Only proceed once we're confident the user's provider has truly settled;
     // otherwise a slow/empty per-provider fetch during boot or refresh would
     // silently replace the user's picked model (e.g. Sonnet 4.6 → GPT 5.4).
@@ -1654,6 +1702,7 @@
 
   $effect(() => {
     if (!silentFallback) return;
+    if (isGuestLocked) return;
     if (!canUseProviderModels(selectedModelProviderId || effectiveProviderId)) return;
     if (!isSelectedModelUnavailable) return;
     if (!isLoadingModels && flatModelOptions.length === 0) return;
@@ -1736,6 +1785,7 @@
   }
 
   async function handleModelChange(value: string | string[], event?: MouseEvent) {
+    if (effectiveLocked) return;
     const modelValue = value as string;
     // Gate user-picked changes to a *different* model behind the optional
     // confirmation callback (mid-conversation switch warning). Re-selecting
@@ -1779,7 +1829,7 @@
 
   // Expose open function for keyboard shortcut
   export function open() {
-    if (!isLocked) {
+    if (!effectiveLocked) {
       pointerInteraction = false;
       void dropdownRef?.openAndFocusSearch();
     }
@@ -1791,7 +1841,7 @@
   onkeydown={() => (pointerInteraction = false)}
 />
 
-{#if isLocked}
+{#if effectiveLocked}
   <!-- Show locked state without dropdown -->
   <Button
     {variant}

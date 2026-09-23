@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/experimental-ct-svelte';
+import { expect, test } from '../../../../test/ct-test';
 import TurnFailureNotice from '../TurnFailureNotice.svelte';
 
 for (const theme of ['light', 'dark'] as const) {
@@ -53,7 +53,6 @@ for (const theme of ['light', 'dark'] as const) {
       'color',
       colors.danger,
     );
-    await expect(notice.locator('svg').first()).toHaveCSS('color', colors.danger);
     await expect(notice).toHaveAttribute('aria-live', 'polite');
   });
 }

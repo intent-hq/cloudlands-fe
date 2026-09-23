@@ -196,7 +196,10 @@
         <Button
           variant="ghost"
           type="button"
-          class="p-1 rounded hover:bg-muted transition-colors cursor-pointer"
+          size="icon-compact"
+          iconOnly
+          aria-label={m.workspace_contextItem_openInBrowser_label()}
+          class="rounded hover:bg-muted transition-colors cursor-pointer"
           onclick={handleExternalClick}
         >
           <Fa icon={faExternalLink} size="xs" class="text-ghost" />

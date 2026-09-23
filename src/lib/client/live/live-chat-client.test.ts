@@ -1253,6 +1253,108 @@ describe('LiveChatClient.subscribe (standing §7.1 subscription)', () => {
     off();
   });
 
+  it("carries the user-row entity's author projection onto the materialized message (intentd#1869)", async () => {
+    // A user row served live carries the daemon's serve-time `author`
+    // projection lifted onto each §7.1 entity, exactly as the snapshot page
+    // carries it on the message — so a live human row and a hydrated one
+    // render the same author, and two members' rows keep distinct authors.
+    // Older daemons omit the field: the materialized message carries none.
+    type Authored = {
+      id: string;
+      author?: { principalId: string; displayName?: string | null };
+      metadata?: Record<string, unknown>;
+    };
+    const guest = {
+      principalId: 'principal-guest',
+      login: 'guest',
+      displayName: 'Guest User',
+      avatarUrl: null,
+    };
+    const owner = {
+      principalId: 'principal-owner',
+      login: 'owner',
+      displayName: 'Owner Person',
+      avatarUrl: 'https://avatars.example/owner.png',
+    };
+    mockChatSubscribe();
+    const client = new LiveChatClient();
+    const seen: Array<{ messages: unknown[] }> = [];
+    const off = client.subscribe('agent-1', (t) => seen.push(t));
+    await flush();
+    snapshotPush('sub-1', 0, {
+      ...SEEDED_SNAPSHOT,
+      messages: [
+        {
+          ...SEEDED_SNAPSHOT.messages[0],
+          metadata: { fromPrincipalId: owner.principalId },
+          author: owner,
+        },
+      ],
+    });
+    const hydrated = seen[seen.length - 1].messages[0] as Authored;
+    expect(hydrated.author).toEqual(owner);
+
+    const guestRow = {
+      agentId: 'agent-1',
+      messageId: 'user-msg-guest-1',
+      role: 'user',
+      messageSeq: 1,
+      timestamp: '2026-06-27T01:00:05.000Z',
+      streamingComplete: true,
+      metadata: { fromPrincipalId: guest.principalId },
+      author: guest,
+      block: { type: 'text', id: 'user-msg-guest-1:0', text: 'hello from a guest' },
+    };
+    deltaPush('sub-1', 1, { added: [guestRow], updated: [], removedIds: [] });
+    let last = seen[seen.length - 1];
+    let live = last.messages[1] as Authored;
+    expect(live.id).toBe('user-msg-guest-1');
+    expect(live.metadata).toEqual({ fromPrincipalId: guest.principalId });
+    expect(live.author).toEqual(guest);
+    // Snapshot-vs-delta parity: the two rows keep their own authors.
+    expect((last.messages as Authored[]).map((m) => m.author?.principalId)).toEqual([
+      owner.principalId,
+      guest.principalId,
+    ]);
+
+    // Re-delivery upserts keep the author (same authoritative entity).
+    deltaPush('sub-1', 2, { added: [], updated: [guestRow], removedIds: [] });
+    last = seen[seen.length - 1];
+    live = last.messages[1] as Authored;
+    expect(live.author).toEqual(guest);
+
+    // A later frame for the same row without the field must not clear it.
+    const { author: _dropped, ...rowWithoutAuthor } = guestRow;
+    deltaPush('sub-1', 3, { added: [], updated: [rowWithoutAuthor], removedIds: [] });
+    last = seen[seen.length - 1];
+    live = last.messages[1] as Authored;
+    expect(live.author).toEqual(guest);
+
+    // Version skew: an older daemon's entity carries no author (or a null
+    // one) — the materialized message must not invent one.
+    deltaPush('sub-1', 4, {
+      added: [
+        {
+          agentId: 'agent-1',
+          messageId: 'user-msg-legacy-2',
+          role: 'user',
+          messageSeq: 2,
+          timestamp: '2026-06-27T01:00:06.000Z',
+          streamingComplete: true,
+          author: null,
+          block: { type: 'text', id: 'user-msg-legacy-2:0', text: 'Old daemon row' },
+        },
+      ],
+      updated: [],
+      removedIds: [],
+    });
+    last = seen[seen.length - 1];
+    const legacy = last.messages[2] as Authored;
+    expect(legacy.id).toBe('user-msg-legacy-2');
+    expect(legacy.author).toBeUndefined();
+    off();
+  });
+
   it('drops a malformed array-shaped entity metadata (JSON objects only)', async () => {
     // `typeof [] === "object"` — a malformed wire payload carrying an array
     // must not propagate an invalid shape into `message.metadata`.
@@ -3070,6 +3172,211 @@ describe('LiveChatClient.subscribe incremental delta encoding (§7.1 deltaEncodi
       id: '0190a200-asst:0',
       text: 'fresh start',
     });
+    off();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Text-block `media` on live deltas (PROTOCOL §7.1 image dimension sidecar):
+// a live text chunk carries ONLY the entries that chunk resolved — in both
+// `deltaEncoding` modes — and the client unions them into the in-flight
+// block; the terminal reconcile frame carries the daemon's full union.
+// ---------------------------------------------------------------------------
+
+describe('LiveChatClient.subscribe text-block media sidecar (§7.1)', () => {
+  afterEach(() => {
+    vi.clearAllMocks();
+    reset();
+  });
+
+  const INCREMENTAL_SNAPSHOT = { ...SEEDED_SNAPSHOT, deltaEncoding: 'incremental' };
+  const SHOT = 'workspace-asset://ws-1/shot.png';
+  const DIAGRAM = 'intent://local/file/docs/diagram.png';
+
+  function entity(kind: 'added' | 'updated', block: Record<string, unknown>) {
+    return {
+      [kind]: [{ agentId: 'agent-1', messageId: '0190a200-asst', role: 'assistant', block }],
+      ...(kind === 'added' ? { updated: [] } : { added: [] }),
+      removedIds: [],
+    };
+  }
+
+  function firstBlock(seen: Array<{ messages: Array<{ contentBlocks?: unknown[] }> }>) {
+    return seen[seen.length - 1].messages[1].contentBlocks?.[0];
+  }
+
+  it('unions per-chunk media across incremental fragments and keeps it on media-less chunks', async () => {
+    mockChatSubscribe();
+    const client = new LiveChatClient();
+    const seen: Array<{ messages: Array<{ contentBlocks?: unknown[] }> }> = [];
+    const off = client.subscribe('agent-1', (t) => seen.push(t));
+    await flush();
+
+    snapshotPush('sub-1', 0, INCREMENTAL_SNAPSHOT);
+    deltaPush(
+      'sub-1',
+      1,
+      entity('added', {
+        type: 'text',
+        id: '0190a200-asst:0',
+        textDelta: `![shot](${SHOT})`,
+        media: { [SHOT]: { width: 1440, height: 900 } },
+      }),
+    );
+    expect(firstBlock(seen)).toEqual({
+      type: 'text',
+      id: '0190a200-asst:0',
+      text: `![shot](${SHOT})`,
+      media: { [SHOT]: { width: 1440, height: 900 } },
+    });
+
+    // A chunk that resolved nothing omits the key — the prior entries stay.
+    deltaPush(
+      'sub-1',
+      2,
+      entity('updated', { type: 'text', id: '0190a200-asst:0', textDelta: ' and' }),
+    );
+    expect(firstBlock(seen)).toEqual({
+      type: 'text',
+      id: '0190a200-asst:0',
+      text: `![shot](${SHOT}) and`,
+      media: { [SHOT]: { width: 1440, height: 900 } },
+    });
+
+    // A later chunk carries only ITS entry; a re-sent key is idempotent.
+    deltaPush(
+      'sub-1',
+      3,
+      entity('updated', {
+        type: 'text',
+        id: '0190a200-asst:0',
+        textDelta: ` ![d](${DIAGRAM})`,
+        media: { [DIAGRAM]: { width: 640, height: 480 }, [SHOT]: { width: 1440, height: 900 } },
+      }),
+    );
+    expect(firstBlock(seen)).toEqual({
+      type: 'text',
+      id: '0190a200-asst:0',
+      text: `![shot](${SHOT}) and ![d](${DIAGRAM})`,
+      media: { [SHOT]: { width: 1440, height: 900 }, [DIAGRAM]: { width: 640, height: 480 } },
+    });
+    off();
+  });
+
+  it('unions per-chunk media in full mode too (no encoding echo, full accumulated text)', async () => {
+    mockChatSubscribe();
+    const client = new LiveChatClient();
+    const seen: Array<{ messages: Array<{ contentBlocks?: unknown[] }> }> = [];
+    const off = client.subscribe('agent-1', (t) => seen.push(t));
+    await flush();
+
+    snapshotPush('sub-1', 0, SEEDED_SNAPSHOT);
+    deltaPush(
+      'sub-1',
+      1,
+      entity('added', {
+        type: 'text',
+        id: '0190a200-asst:0',
+        text: `![shot](${SHOT})`,
+        media: { [SHOT]: { width: 1440, height: 900 } },
+      }),
+    );
+    // Full-text replace, but `media` still carries only this chunk's entry.
+    deltaPush(
+      'sub-1',
+      2,
+      entity('updated', {
+        type: 'text',
+        id: '0190a200-asst:0',
+        text: `![shot](${SHOT}) ![d](${DIAGRAM})`,
+        media: { [DIAGRAM]: { width: 640, height: 480 } },
+      }),
+    );
+    expect(firstBlock(seen)).toEqual({
+      type: 'text',
+      id: '0190a200-asst:0',
+      text: `![shot](${SHOT}) ![d](${DIAGRAM})`,
+      media: { [SHOT]: { width: 1440, height: 900 }, [DIAGRAM]: { width: 640, height: 480 } },
+    });
+    off();
+  });
+
+  it('never adds a media key to a text block whose chunks carried none', async () => {
+    mockChatSubscribe();
+    const client = new LiveChatClient();
+    const seen: Array<{ messages: Array<{ contentBlocks?: unknown[] }> }> = [];
+    const off = client.subscribe('agent-1', (t) => seen.push(t));
+    await flush();
+
+    snapshotPush('sub-1', 0, INCREMENTAL_SNAPSHOT);
+    deltaPush(
+      'sub-1',
+      1,
+      entity('added', { type: 'text', id: '0190a200-asst:0', textDelta: 'Plain' }),
+    );
+    deltaPush(
+      'sub-1',
+      2,
+      entity('updated', { type: 'text', id: '0190a200-asst:0', textDelta: ' text' }),
+    );
+
+    const block = firstBlock(seen) as Record<string, unknown>;
+    expect(block).toStrictEqual({ type: 'text', id: '0190a200-asst:0', text: 'Plain text' });
+    expect('media' in block).toBe(false);
+    off();
+  });
+
+  it('terminal reconcile carries the full union and matches the live-reduced block', async () => {
+    mockChatSubscribe();
+    const client = new LiveChatClient();
+    const seen: Array<{ messages: Array<{ contentBlocks?: unknown[] }> }> = [];
+    const off = client.subscribe('agent-1', (t) => seen.push(t));
+    await flush();
+
+    snapshotPush('sub-1', 0, INCREMENTAL_SNAPSHOT);
+    deltaPush(
+      'sub-1',
+      1,
+      entity('added', {
+        type: 'text',
+        id: '0190a200-asst:0',
+        textDelta: `![shot](${SHOT})`,
+        media: { [SHOT]: { width: 1440, height: 900 } },
+      }),
+    );
+    deltaPush(
+      'sub-1',
+      2,
+      entity('updated', {
+        type: 'text',
+        id: '0190a200-asst:0',
+        textDelta: ` ![d](${DIAGRAM})`,
+        media: { [DIAGRAM]: { width: 640, height: 480 } },
+      }),
+    );
+    const live = firstBlock(seen);
+
+    deltaPush('sub-1', 3, {
+      added: [],
+      updated: [
+        {
+          agentId: 'agent-1',
+          messageId: '0190a200-asst',
+          role: 'assistant',
+          block: {
+            type: 'text',
+            id: '0190a200-asst:0',
+            text: `![shot](${SHOT}) ![d](${DIAGRAM})`,
+            media: { [SHOT]: { width: 1440, height: 900 }, [DIAGRAM]: { width: 640, height: 480 } },
+          },
+          messageSeq: 1,
+          timestamp: '2026-06-27T01:00:02.000Z',
+          streamingComplete: true,
+        },
+      ],
+      removedIds: [],
+    });
+    expect(firstBlock(seen)).toEqual(live);
     off();
   });
 });

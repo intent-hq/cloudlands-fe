@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/experimental-ct-svelte';
+import { expect, test } from '../../../../../test/ct-test';
 import ToastStackPreview from '../toast-stack.preview.svelte';
 
 test('conceals rear custom content and restores accessible actions when expanded', async ({

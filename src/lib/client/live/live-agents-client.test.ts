@@ -1003,6 +1003,55 @@ describe('LiveAgentsClient mutations (fake transport)', () => {
     });
   });
 
+  it('setNotificationsMuted forwards agent.update with the boolean notificationsMuted change (§5.5)', async () => {
+    backend.onRequest('agent.update', () => ({ success: true }));
+    const client = new LiveAgentsClient();
+
+    const muted = await client.setNotificationsMuted({
+      agentId: 'agent-1',
+      workspaceId: 'ws-1',
+      notificationsMuted: true,
+    });
+    expect(muted).toEqual({ success: true });
+    expect(backend.requests[0]).toEqual({
+      method: 'agent.update',
+      params: {
+        agentId: 'agent-1',
+        workspaceId: 'ws-1',
+        changes: { notificationsMuted: true },
+      },
+    });
+
+    const unmuted = await client.setNotificationsMuted({
+      agentId: 'agent-1',
+      workspaceId: 'ws-1',
+      notificationsMuted: false,
+    });
+    expect(unmuted).toEqual({ success: true });
+    expect(backend.requests[1]?.params).toEqual({
+      agentId: 'agent-1',
+      workspaceId: 'ws-1',
+      changes: { notificationsMuted: false },
+    });
+  });
+
+  it('setNotificationsMuted folds a daemon rejection into {success:false,error} (no throw)', async () => {
+    backend.onRequest('agent.update', () => {
+      throw new BackendError(
+        buildErrorPayload('BACKEND_ERROR', 'not found: agent session', { rpcCode: -32004 }),
+      );
+    });
+    const client = new LiveAgentsClient();
+
+    const result = await client.setNotificationsMuted({
+      agentId: 'agent-missing',
+      workspaceId: 'ws-1',
+      notificationsMuted: true,
+    });
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('not found: agent session');
+  });
+
   it('setReasoningEffort folds a daemon rejection into {success:false,error} (no throw)', async () => {
     backend.onRequest('agent.update', () => {
       throw new BackendError(
@@ -1319,6 +1368,206 @@ describe('LiveAgentsClient reads thread daemon activity flags (PROTOCOL §5.5)',
     expect(fallback.retiredCount).toBe(0);
   });
 
+  it('list sends scope only when it names a bin — "all" and absent stay off the wire (§5.5 row scope)', async () => {
+    backend.onRequest('agent.list', () => ({ agents: [], retiredCount: 0 }));
+    const client = new LiveAgentsClient();
+
+    await client.list('ws-1', { scope: 'topLevel' });
+    expect(backend.requests[0]).toEqual({
+      method: 'agent.list',
+      params: { workspaceId: 'ws-1', scope: 'topLevel' },
+    });
+
+    await client.list('ws-1', { scope: 'delegated' });
+    expect(backend.requests[1].params).toEqual({ workspaceId: 'ws-1', scope: 'delegated' });
+
+    await client.list('ws-1', { scope: 'background' });
+    expect(backend.requests[2].params).toEqual({ workspaceId: 'ws-1', scope: 'background' });
+
+    // `all` IS the default read, so it carries no flag.
+    await client.list('ws-1', { scope: 'all' });
+    expect(backend.requests[3].params).toEqual({ workspaceId: 'ws-1' });
+  });
+
+  it('listWithMeta surfaces scopeCounts verbatim and leaves it absent for an older daemon (§5.5 row scope)', async () => {
+    backend.onRequest('agent.list', () => ({
+      agents: [],
+      retiredCount: 0,
+      scopeCounts: { topLevel: 2, delegated: 5, background: 1 },
+    }));
+    const client = new LiveAgentsClient();
+
+    const served = await client.listWithMeta('ws-1', { scope: 'topLevel' });
+    expect(served.scopeCounts).toEqual({ topLevel: 2, delegated: 5, background: 1 });
+
+    // Old daemon: no `scopeCounts` key at all — the field must be ABSENT (not
+    // zeroed) so the hydration saga can tell the two daemons apart.
+    backend.onRequest('agent.list', () => ({ agents: [], retiredCount: 0 }));
+    const legacy = await client.listWithMeta('ws-1', { scope: 'topLevel' });
+    expect('scopeCounts' in legacy).toBe(false);
+
+    // A malformed triple is not healed into zeros either.
+    backend.onRequest('agent.list', () => ({
+      agents: [],
+      retiredCount: 0,
+      scopeCounts: { topLevel: 2, delegated: '5' },
+    }));
+    const malformed = await client.listWithMeta('ws-1');
+    expect(malformed.scopeCounts).toBeUndefined();
+  });
+
+  it('list sends parentAgentId alongside scope delegated only when supplied (§5.5 by-parent read)', async () => {
+    backend.onRequest('agent.list', () => ({ agents: [], retiredCount: 0 }));
+    const client = new LiveAgentsClient();
+
+    await client.list('ws-1', { scope: 'delegated', parentAgentId: 'agent-parent' });
+    expect(backend.requests[0]).toEqual({
+      method: 'agent.list',
+      params: { workspaceId: 'ws-1', scope: 'delegated', parentAgentId: 'agent-parent' },
+    });
+
+    await client.list('ws-1', { scope: 'delegated' });
+    expect(backend.requests[1].params).toEqual({ workspaceId: 'ws-1', scope: 'delegated' });
+  });
+
+  it('listWithMeta surfaces delegatedCounts verbatim and leaves it absent for an older daemon (§5.5)', async () => {
+    const delegatedCounts = {
+      running: 2,
+      byParent: {
+        'agent-parent-a': { total: 3, running: 2 },
+        'agent-parent-b': { total: 1, running: 0 },
+      },
+    };
+    backend.onRequest('agent.list', () => ({
+      agents: [],
+      retiredCount: 0,
+      scopeCounts: { topLevel: 2, delegated: 4, background: 0 },
+      delegatedCounts,
+    }));
+    const client = new LiveAgentsClient();
+
+    const served = await client.listWithMeta('ws-1', { scope: 'topLevel' });
+    expect(served.delegatedCounts).toEqual(delegatedCounts);
+
+    // The empty workspace shape `{ running: 0, byParent: {} }` is a served value, not absence.
+    backend.onRequest('agent.list', () => ({
+      agents: [],
+      retiredCount: 0,
+      scopeCounts: { topLevel: 0, delegated: 0, background: 0 },
+      delegatedCounts: { running: 0, byParent: {} },
+    }));
+    const empty = await client.listWithMeta('ws-1', { scope: 'topLevel' });
+    expect(empty.delegatedCounts).toEqual({ running: 0, byParent: {} });
+
+    // Old daemon (serves `scopeCounts` but predates `delegatedCounts`): the
+    // field must be ABSENT (not zeroed) so the store records `null`.
+    backend.onRequest('agent.list', () => ({
+      agents: [],
+      retiredCount: 0,
+      scopeCounts: { topLevel: 2, delegated: 4, background: 0 },
+    }));
+    const legacy = await client.listWithMeta('ws-1', { scope: 'topLevel' });
+    expect('delegatedCounts' in legacy).toBe(false);
+
+    // Malformed shapes are not healed: a missing `byParent`, a non-numeric
+    // `running`, or a malformed parent entry all read as absent.
+    for (const malformed of [
+      { running: 1 },
+      { running: '1', byParent: {} },
+      { running: 1, byParent: [] },
+      { running: 1, byParent: { 'agent-parent-a': { total: '3', running: 1 } } },
+      { running: 1, byParent: { 'agent-parent-a': { total: 3 } } },
+    ]) {
+      backend.onRequest('agent.list', () => ({
+        agents: [],
+        retiredCount: 0,
+        delegatedCounts: malformed,
+      }));
+      const served = await client.listWithMeta('ws-1');
+      expect(served.delegatedCounts).toBeUndefined();
+    }
+  });
+
+  it('list sends orphanedOnly alongside scope delegated only when true (§5.5 orphan-only read)', async () => {
+    backend.onRequest('agent.list', () => ({ agents: [], retiredCount: 0 }));
+    const client = new LiveAgentsClient();
+
+    await client.list('ws-1', { scope: 'delegated', orphanedOnly: true });
+    expect(backend.requests[0]).toEqual({
+      method: 'agent.list',
+      params: { workspaceId: 'ws-1', scope: 'delegated', orphanedOnly: true },
+    });
+
+    // `false` and absent are the same whole-bin read — the flag stays off the wire.
+    await client.list('ws-1', { scope: 'delegated', orphanedOnly: false });
+    expect(backend.requests[1].params).toEqual({ workspaceId: 'ws-1', scope: 'delegated' });
+  });
+
+  it('listWithMeta carries delegatedCounts.orphaned verbatim and leaves it absent for a daemon predating it (§5.5)', async () => {
+    const client = new LiveAgentsClient();
+    const withOrphans = {
+      running: 2,
+      byParent: { 'agent-parent-a': { total: 3, running: 2 } },
+      orphaned: { total: 1, running: 0 },
+    };
+    backend.onRequest('agent.list', () => ({
+      agents: [
+        {
+          id: 'agent-orphan',
+          workspaceId: 'ws-1',
+          name: 'Orphan',
+          status: 'idle',
+          parentAgentId: 'agent-gone',
+        },
+      ],
+      retiredCount: 0,
+      scopeCounts: { topLevel: 2, delegated: 4, background: 0 },
+      delegatedCounts: withOrphans,
+    }));
+    const served = await client.listWithMeta('ws-1', { scope: 'delegated', orphanedOnly: true });
+    expect(served.delegatedCounts).toEqual(withOrphans);
+    expect(served.agents.map((a) => [a.id, a.parentAgentId])).toEqual([
+      ['agent-orphan', 'agent-gone'],
+    ]);
+
+    // The empty pair is a served value (no orphans), not absence.
+    backend.onRequest('agent.list', () => ({
+      agents: [],
+      retiredCount: 0,
+      scopeCounts: { topLevel: 2, delegated: 4, background: 0 },
+      delegatedCounts: { running: 0, byParent: {}, orphaned: { total: 0, running: 0 } },
+    }));
+    const none = await client.listWithMeta('ws-1', { scope: 'topLevel' });
+    expect(none.delegatedCounts?.orphaned).toEqual({ total: 0, running: 0 });
+
+    // A daemon serving `delegatedCounts` but predating `orphaned`: the key
+    // must be ABSENT (never zeroed) so the store gates the orphan-only read off.
+    backend.onRequest('agent.list', () => ({
+      agents: [],
+      retiredCount: 0,
+      scopeCounts: { topLevel: 2, delegated: 4, background: 0 },
+      delegatedCounts: { running: 0, byParent: {} },
+    }));
+    const legacy = await client.listWithMeta('ws-1', { scope: 'topLevel' });
+    expect(legacy.delegatedCounts).toEqual({ running: 0, byParent: {} });
+    expect('orphaned' in (legacy.delegatedCounts ?? {})).toBe(false);
+
+    // A malformed `orphaned` is not healed: the whole field reads as absent.
+    for (const malformed of [
+      { running: 0, byParent: {}, orphaned: { total: 1 } },
+      { running: 0, byParent: {}, orphaned: { total: '1', running: 0 } },
+      { running: 0, byParent: {}, orphaned: null },
+    ]) {
+      backend.onRequest('agent.list', () => ({
+        agents: [],
+        retiredCount: 0,
+        delegatedCounts: malformed,
+      }));
+      const bad = await client.listWithMeta('ws-1', { scope: 'topLevel' });
+      expect(bad.delegatedCounts).toBeUndefined();
+    }
+  });
+
   it('list carries retiredAt verbatim on the retired-only read (§5.5 soft retire)', async () => {
     backend.onRequest('agent.list', () => ({
       agents: [
@@ -1336,6 +1585,27 @@ describe('LiveAgentsClient reads thread daemon activity flags (PROTOCOL §5.5)',
 
     const agents = await client.list('ws-1', { retiredOnly: true });
     expect(agents[0]).toMatchObject({ id: 'agent-retired', retiredAt: '2026-08-20T00:00:00.000Z' });
+  });
+
+  it('list carries the wire parentAgentId on delegated rows and leaves it absent on top-level ones (§5.5 row scope)', async () => {
+    backend.onRequest('agent.list', () => ({
+      agents: [
+        {
+          id: 'agent-child',
+          workspaceId: 'ws-1',
+          name: 'Child',
+          status: 'idle',
+          parentAgentId: 'agent-parent',
+        },
+        { id: 'agent-parent', workspaceId: 'ws-1', name: 'Parent', status: 'idle' },
+      ],
+      retiredCount: 0,
+    }));
+    const client = new LiveAgentsClient();
+
+    const agents = await client.list('ws-1', { scope: 'delegated' });
+    expect(agents[0]).toMatchObject({ id: 'agent-child', parentAgentId: 'agent-parent' });
+    expect(agents[1].parentAgentId).toBeUndefined();
   });
 
   it('restore forwards agent.restore and folds success/error into a MutationResult (§5.5)', async () => {
@@ -1529,6 +1799,28 @@ describe('LiveAgentsClient reads thread daemon activity flags (PROTOCOL §5.5)',
 
     const agent = await client.get('agent-child');
     expect(agent?.hasUnread).toBe(false);
+  });
+
+  it('carries notificationsMuted verbatim and derives hasUnread: false for a muted agent', async () => {
+    // §5.5 AgentLite serves `notificationsMuted` always (like `isBackground`);
+    // the mute suppresses the per-agent unread dot even with an unseen
+    // assistant message.
+    backend.onRequest('agent.get', () => ({
+      agent: {
+        id: 'agent-muted',
+        workspaceId: 'ws-1',
+        name: 'Muted',
+        status: 'idle',
+        notificationsMuted: true,
+        lastMessageRole: 'assistant',
+        lastMessageId: 'm-9',
+        metadata: { lastSeenMessageId: 'm-5' },
+      },
+    }));
+    const client = new LiveAgentsClient();
+
+    const agent = await client.get('agent-muted');
+    expect(agent).toMatchObject({ notificationsMuted: true, hasUnread: false });
   });
 
   it('derives hasUnread: false when the daemon omits lastMessageId (older daemon)', async () => {

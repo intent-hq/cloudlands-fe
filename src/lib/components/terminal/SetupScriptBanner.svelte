@@ -272,8 +272,10 @@
       {/if}
       <Button
         variant="ghost"
+        size="icon-compact"
+        iconOnly
         type="button"
-        class="p-1 text-muted-foreground hover:text-muted-foreground transition-colors cursor-pointer"
+        class="text-muted-foreground hover:text-muted-foreground transition-colors cursor-pointer"
         onclick={close}
         aria-label={m.terminal_setupBanner_close_ariaLabel()}
       >
@@ -321,8 +323,10 @@
         </Button>
         <Button
           variant="ghost"
+          size="icon-compact"
+          iconOnly
           type="button"
-          class="p-1 text-muted-foreground hover:text-muted-foreground transition-colors cursor-pointer"
+          class="text-muted-foreground hover:text-muted-foreground transition-colors cursor-pointer"
           onclick={() => (isExpanded = false)}
           aria-label={m.terminal_setupBanner_closeEditor_label()}
         >

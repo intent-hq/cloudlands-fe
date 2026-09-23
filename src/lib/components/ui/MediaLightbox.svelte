@@ -1,3 +1,5 @@
+<!-- @catalog-exempt: portal-mounted full-screen dialog covered by __tests__/MediaLightbox.test.ts; no catalog fixtures yet -->
+
 <script lang="ts">
   import type { Snippet } from 'svelte';
   import { fade } from '$lib/motion';

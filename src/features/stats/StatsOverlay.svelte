@@ -144,7 +144,9 @@
     <!-- Close affordance -->
     <Button
       variant="ghost"
-      class="stats-close pointer-events-auto fixed top-10 right-5 z-10 flex h-8 w-8 items-center justify-center rounded-lg cursor-pointer"
+      size="icon"
+      iconOnly
+      class="stats-close pointer-events-auto fixed top-10 right-5 z-10 rounded-lg cursor-pointer"
       onclick={close}
       aria-label={m.stats_overlay_close_ariaLabel()}
     >

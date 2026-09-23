@@ -1,3 +1,5 @@
+<!-- @catalog-exempt: full-screen overlay composed from MediaLightbox and ZoomPanViewport; no catalog fixtures yet -->
+
 <script lang="ts">
   /**
    * ImageLightbox - Full-screen image preview lightbox

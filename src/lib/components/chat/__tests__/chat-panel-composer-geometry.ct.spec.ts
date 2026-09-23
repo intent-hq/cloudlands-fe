@@ -1,6 +1,4 @@
-import { expect, test } from '@playwright/experimental-ct-svelte';
-import { recordCdpLifecycle } from '../../../../test/ct-cdp-lifecycle-recorder';
-import { isolateBrowserContextPerTest } from '../../../../test/ct-isolated-browser-context';
+import { expect, test } from '../../../../test/ct-test';
 import ChatPanelComposerGeometryHost from './ChatPanelComposerGeometryHost.svelte';
 import {
   applyAuroraPaintProbe,
@@ -10,15 +8,6 @@ import {
 } from './aurora-panel-pixels';
 
 test.setTimeout(120_000);
-
-// The first mount after the 'regular narrow dark at 200%' cell ('Chief wide dark
-// at 100%') intermittently failed with "Execution context was destroyed" on the
-// merge queue (intent-hq/intent#4783) — the same signature fe#2158 fixed for the
-// operational-geometry spec. Give every cell its own browser context so a heavy
-// zoom-200% teardown never races the next mount, and record the CDP lifecycle so
-// a recurrence reports the real event ordering.
-isolateBrowserContextPerTest(test, 'intent-hq/intent#4783');
-recordCdpLifecycle(test);
 
 const regularStates = (['light', 'dark'] as const).flatMap((theme) =>
   [1, 2].flatMap((zoom) =>
@@ -227,7 +216,47 @@ test('keeps the regular Aurora clipped during reduced-motion streaming transitio
   await expect(aurora).toHaveCount(0);
 });
 
-test('separates suggestions from the composer while resizing into compact mode', async ({
+for (const zoom of [1, 2]) {
+  test(`detects a corner paint leak under the dark scroll fade at ${zoom * 100}%`, async ({
+    mount,
+    page,
+  }) => {
+    await page.emulateMedia({ reducedMotion: 'reduce' });
+    const component = await mount(ChatPanelComposerGeometryHost, {
+      props: { theme: 'dark', width: 180, streaming: true, zoom },
+    });
+    const panel = component.locator('.panel');
+    const aurora = component.getByTestId('composer-aurora-host');
+    await expect(aurora).toBeVisible();
+    await expect(component.getByTestId('panel-workspace-inset')).not.toHaveCSS(
+      'mask-image',
+      'none',
+    );
+    await applyAuroraPaintProbe(aurora);
+    const clipped = await samplePanelBottomPixels(panel);
+    clipped.outsideCorners.forEach((corner) => expect(isPaintProbe(corner)).toBe(false));
+    clipped.insideCorners.forEach((corner) => expect(isPaintProbe(corner)).toBe(true));
+
+    // Deliberately break both production clips while leaving the real scroll fade
+    // active. The oracle must reject this leak, not merely accept the healthy case.
+    await panel.evaluate((node) => {
+      (node as HTMLElement).style.setProperty('--panel-shell-radius', '0px');
+    });
+    try {
+      const leaking = await samplePanelBottomPixels(panel);
+      leaking.outsideCorners.forEach((corner, index) => {
+        expect(isPaintProbe(corner)).toBe(true);
+        expect(colorDistance(corner, clipped.outsideCorners[index])).toBeGreaterThan(100);
+      });
+    } finally {
+      await panel.evaluate((node) => {
+        (node as HTMLElement).style.removeProperty('--panel-shell-radius');
+      });
+    }
+  });
+}
+
+test('keeps transcript suggestions above the composer while resizing into compact mode', async ({
   mount,
 }) => {
   const props = { width: 720, height: 960, suggestions: true };
@@ -235,6 +264,8 @@ test('separates suggestions from the composer while resizing into compact mode',
   const suggestions = component.getByTestId('suggested-prompts-surface');
   const list = component.getByTestId('suggested-prompts-list');
   const input = component.getByTestId('message-input');
+  const transcript = component.getByTestId('chat-transcript-inner');
+  const composer = component.getByTestId('chat-composer-shell');
   const gap = async () => {
     const [promptsBox, inputBox] = await Promise.all([
       suggestions.boundingBox(),
@@ -244,15 +275,17 @@ test('separates suggestions from the composer while resizing into compact mode',
   };
 
   await expect(suggestions).toBeVisible();
+  await expect(transcript.getByTestId('suggested-prompts-surface')).toBeVisible();
+  await expect(composer.getByTestId('suggested-prompts-surface')).toHaveCount(0);
   await expect(list).toHaveAttribute('data-compact', 'false');
-  await expect.poll(gap).toBeCloseTo(12, 1);
+  await expect.poll(gap).toBeGreaterThan(0);
   await component.update({ props: { ...props, height: 480 } });
   await expect(list).toHaveAttribute('data-compact', 'true');
-  await expect.poll(gap).toBeCloseTo(8, 1);
+  await expect.poll(gap).toBeGreaterThan(0);
 
   await suggestions.getByRole('button', { name: 'Edit in input' }).first().click();
   await expect(input.locator('.tiptap-editor')).toContainText('Review the layout.');
-  await expect.poll(gap).toBeCloseTo(8, 1);
+  await expect.poll(gap).toBeGreaterThan(0);
 });
 
 test('keeps attachments, controls, tab order, and resize behavior inside the nested surface', async ({

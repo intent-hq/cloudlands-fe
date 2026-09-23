@@ -1,5 +1,5 @@
 import { fileURLToPath } from 'node:url';
-import { expect, test } from '@playwright/experimental-ct-svelte';
+import { expect, test } from '../../../test/ct-test';
 import { defineGeometrySnapshotSuite } from '$lib/component-catalog/geometry-snapshot';
 import ContextAttachmentsSection from './ContextAttachmentsSection.svelte';
 import { preview } from './context-attachments.preview';

@@ -35,6 +35,7 @@ import {
   BACKEND_CLIENT_DISCONNECTED_EVENT,
   getBackendClientForId,
   getBackendIdForIpcSender,
+  getConnectedDaemonProtocolVersion,
 } from '../../backend/main/backend.ipc';
 import { getFocusedWindowBackendId } from '../../../main/window';
 import { DirectRelay } from '../../backend/main/direct-relay';
@@ -275,6 +276,9 @@ function getBrowserTunnelProvider(
           return null;
         }
       },
+      // Read per tunnel (re)connect: CREDIT is sent only to a daemon whose
+      // hello protocolVersion advertises CREDIT support (intent-hq/intent#5482).
+      getProtocolVersion: () => getConnectedDaemonProtocolVersion(backendContext.backendId),
     });
     tunnelManagers.set(backendContext.client, tunnelManager);
     return tunnelManager;

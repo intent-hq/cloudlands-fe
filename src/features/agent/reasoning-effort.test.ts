@@ -208,6 +208,40 @@ describe('applyReasoningEffort', () => {
     expect(mockDispatch).toHaveBeenCalledTimes(1);
     expect(storeState.agentSessions.byAgentId['agent-1']?.reasoningEffort).toBe('medium');
   });
+
+  it('skips the failure rollback and toast when canMutate is false after the await', async () => {
+    let canMutate = true;
+    mockSetReasoningEffort.mockImplementation(async () => {
+      // The role flips (owner → guest) while the request is pending.
+      canMutate = false;
+      return { success: false, error: 'unsupported' };
+    });
+
+    const applied = await applyReasoningEffort('agent-1', 'ws-1', 'xhigh', 'low', {
+      canMutate: () => canMutate,
+    });
+
+    expect(applied).toBe(false);
+    expect(mockDispatch).toHaveBeenCalledTimes(1);
+    expect(mockDispatch).toHaveBeenCalledWith(
+      updateSession('agent-1', { reasoningEffort: 'xhigh' }),
+    );
+    expect(mockToastError).not.toHaveBeenCalled();
+  });
+
+  it('still rolls back and toasts when canMutate stays true', async () => {
+    mockSetReasoningEffort.mockResolvedValue({ success: false, error: 'unsupported' });
+
+    const applied = await applyReasoningEffort('agent-1', 'ws-1', 'xhigh', 'low', {
+      canMutate: () => true,
+    });
+
+    expect(applied).toBe(false);
+    expect(mockDispatch).toHaveBeenLastCalledWith(
+      updateSession('agent-1', { reasoningEffort: 'low' }),
+    );
+    expect(mockToastError).toHaveBeenCalledWith('unsupported');
+  });
 });
 
 describe('reconcileAgentReasoningEffort', () => {
@@ -256,5 +290,23 @@ describe('reconcileAgentReasoningEffort', () => {
       workspaceId: 'ws-1',
       reasoningEffort: null,
     });
+  });
+
+  it('forwards canMutate so a lock flip mid-flight skips the failure rollback', async () => {
+    setStoredEffort('agent-1', 'xhigh');
+    let canMutate = true;
+    mockSetReasoningEffort.mockImplementation(async () => {
+      canMutate = false;
+      return { success: false, error: 'unsupported' };
+    });
+
+    const applied = await reconcileAgentReasoningEffort('agent-1', 'ws-1', 'xhigh', ['low'], {
+      canMutate: () => canMutate,
+    });
+
+    expect(applied).toBe(false);
+    expect(mockDispatch).toHaveBeenCalledTimes(1);
+    expect(storeState.agentSessions.byAgentId['agent-1']?.reasoningEffort).toBe('low');
+    expect(mockToastError).not.toHaveBeenCalled();
   });
 });

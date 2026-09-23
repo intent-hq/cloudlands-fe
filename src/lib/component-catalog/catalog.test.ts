@@ -1,3 +1,7 @@
+// @verify-changed-triggers: src/lib/components/**
+
+import { existsSync, statSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { canonicalPatternManifest } from '$lib/components/patterns/manifest';
 import { canonicalComponentManifest } from '$lib/components/ui/manifest';
@@ -61,6 +65,16 @@ describe('static component catalog', () => {
     expect(entry?.exports?.[0]).toBe('IntentMarkLoader');
   });
 
+  it('documents the workbench default component without a named barrel export', () => {
+    const entry = getCatalogEntry('diagram-workbench');
+    expect(entry).toMatchObject({
+      source: 'src/lib/components/diagrams/diagram-workbench.preview.svelte',
+      exports: ['DiagramWorkbench'],
+    });
+    // publicImport generates named imports; this product is a default Svelte component.
+    expect(entry?.publicImport).toBeUndefined();
+  });
+
   it('registers exactly one real preview renderer for every canonical fixture', () => {
     const rendererIds = [
       ...canonicalComponentManifest.map(({ id }) => id),
@@ -91,6 +105,7 @@ describe('static component catalog', () => {
     expect(new Set(groupedSlugs).size).toBe(groupedSlugs.length);
     expect(groups.find(({ id }) => id === 'products')?.entries.map(({ slug }) => slug)).toEqual([
       'chat-polish',
+      'diagram-workbench',
       'fields',
       'modals',
       'model-picker',
@@ -140,14 +155,12 @@ it.each(catalogEntries)('resolves the public component export for $slug', (entry
   expect(entry.exports).toContain(expected);
 });
 
-const componentModules = import.meta.glob([
-  '/src/lib/components/**/index.ts',
-  '/src/lib/components/**/*.svelte',
-]);
-
+// Checked on disk rather than through a component glob: knip resolves glob
+// patterns in test entries, so a component glob here would mark every file
+// under `src/lib/components/` as referenced and hide dead components.
 function resolvesToModule(specifier: string): boolean {
-  const path = specifier.replace(/^\$lib\//, '/src/lib/');
-  return path in componentModules || `${path}/index.ts` in componentModules;
+  const path = resolve(process.cwd(), specifier.replace(/^\$lib\//, 'src/lib/'));
+  return (existsSync(path) && statSync(path).isFile()) || existsSync(resolve(path, 'index.ts'));
 }
 
 it.each(catalogEntries)('publishes resolvable import guidance for $slug', (entry) => {
@@ -162,7 +175,7 @@ it.each(catalogEntries)('publishes resolvable import guidance for $slug', (entry
   }
 });
 
-it.each(['chat-polish', 'proposal-card'])(
+it.each(['chat-polish', 'proposal-card', 'diagram-workbench'])(
   'shows a default-component import example for %s',
   (slug) => {
     const entry = getCatalogEntry(slug)!;
@@ -172,6 +185,7 @@ it.each(['chat-polish', 'proposal-card'])(
     expect(match, entry.usage).not.toBeNull();
     expect(match?.[1]).toBe(getCatalogComponentName(entry));
     expect(resolvesToModule(match![2])).toBe(true);
+    expect(match![2].replace(/^\$lib\//, 'src/lib/')).toBe(entry.source);
   },
 );
 

@@ -28,7 +28,9 @@ import {
   HEADER_LEN,
   isConnectionRefusedOpenErr,
   MAX_DATA_PAYLOAD_BYTES,
+  OP_CREDIT,
   OP_DATA,
+  TunnelForbiddenError,
   TunnelManager,
   type TunnelFrame,
   type TunnelSocketLike,
@@ -189,11 +191,15 @@ function makeManager(
     config?: BackendConnectionConfig | null;
     /** Remote ports whose OPENs get a scripted refused OPEN_ERR (see [[refuseOpens]]). */
     refusedPorts?: Set<number>;
+    /** Daemon hello protocolVersion; defaults to the first CREDIT-capable version. */
+    protocolVersion?: string | null;
   } = {},
 ): { manager: TunnelManager; created: FakeTunnelSocket[] } {
   const created: FakeTunnelSocket[] = [];
   const manager = new TunnelManager({
     getConfig: () => (options.config === undefined ? WSS_CONFIG : options.config),
+    getProtocolVersion: () =>
+      options.protocolVersion === undefined ? '10.4' : options.protocolVersion,
     socketFactory: () => {
       const ws = new FakeTunnelSocket();
       if (options.daemon !== false) attachFakeDaemon(ws);
@@ -268,10 +274,17 @@ describe('tunnel frame codec', () => {
       { type: 'data', streamId: 42, payload: Buffer.alloc(0) },
       { type: 'eof', streamId: 9 },
       { type: 'close', streamId: 10 },
+      { type: 'credit', streamId: 11, credit: 64 * 1024 },
+      { type: 'credit', streamId: 12, credit: 0xffffffff },
     ];
     for (const frame of frames) {
       expect(decodeFrame(encodeFrame(frame))).toEqual(frame);
     }
+  });
+
+  it('encodes CREDIT as opcode 0x07 + BE streamId + BE u32 credit', () => {
+    const raw = encodeFrame({ type: 'credit', streamId: 0x01020304, credit: 65536 });
+    expect([...raw]).toEqual([0x07, 1, 2, 3, 4, 0, 1, 0, 0]);
   });
 
   it('rejects malformed frames', () => {
@@ -283,6 +296,17 @@ describe('tunnel frame codec', () => {
     for (const opcode of [0x02, 0x05, 0x06]) {
       expect(() => decodeFrame(Buffer.from([opcode, 0, 0, 0, 1, 1]))).toThrow(FrameDecodeError);
     }
+    // CREDIT payload must be exactly 4 bytes and grant at least one byte.
+    expect(() => decodeFrame(Buffer.from([OP_CREDIT, 0, 0, 0, 1]))).toThrow(/exactly 4 bytes/);
+    expect(() => decodeFrame(Buffer.from([OP_CREDIT, 0, 0, 0, 1, 0, 0, 1]))).toThrow(
+      /exactly 4 bytes/,
+    );
+    expect(() => decodeFrame(Buffer.from([OP_CREDIT, 0, 0, 0, 1, 0, 0, 0, 1, 0]))).toThrow(
+      /exactly 4 bytes/,
+    );
+    expect(() => decodeFrame(Buffer.from([OP_CREDIT, 0, 0, 0, 1, 0, 0, 0, 0]))).toThrow(
+      /at least one byte/,
+    );
   });
 });
 
@@ -1065,6 +1089,7 @@ describe('TunnelManager', () => {
     let holdOpen = false;
     const manager = new TunnelManager({
       getConfig: () => WSS_CONFIG,
+      getProtocolVersion: () => '10.4',
       socketFactory: () => {
         const ws = new FakeTunnelSocket();
         attachFakeDaemon(ws);
@@ -1206,22 +1231,277 @@ describe('TunnelManager', () => {
     // Simulate a congested WebSocket: bufferedAmount above the mark. The
     // chunk that observes the congestion is still framed, then the local
     // socket is paused, so bytes written afterwards must NOT be framed.
+    // Echoed bytes flushing locally still produce CREDIT frames; only
+    // client → daemon DATA frames are the backpressure signal under test.
+    const dataFrames = (): Array<Extract<TunnelFrame, { type: 'data' }>> =>
+      ws.sent.filter((f): f is Extract<TunnelFrame, { type: 'data' }> => f.type === 'data');
     ws.bufferedAmount = 10_000;
     client.write(Buffer.alloc(2048, 1));
-    await waitFor(() => ws.sent.filter((f) => f.type === 'data').length >= 2);
-    const sentWhilePaused = ws.sent.length;
+    await waitFor(() => dataFrames().length >= 2);
+    const sentWhilePaused = dataFrames().length;
     client.write(Buffer.from('held back'));
     await delay(100);
-    expect(ws.sent.length).toBe(sentWhilePaused);
+    expect(dataFrames().length).toBe(sentWhilePaused);
 
     // Drain: the poll resumes the socket and the held bytes flow.
     ws.bufferedAmount = 0;
-    await waitFor(() => ws.sent.length > sentWhilePaused);
-    const last = ws.sent[ws.sent.length - 1];
-    expect(last.type).toBe('data');
-    expect((last as Extract<TunnelFrame, { type: 'data' }>).payload.toString('utf8')).toContain(
-      'held back',
-    );
+    await waitFor(() => dataFrames().length > sentWhilePaused);
+    const last = dataFrames().at(-1)!;
+    expect(last.payload.toString('utf8')).toContain('held back');
+  });
+
+  describe('daemon → client credit replenishment (intent-hq/intent#5482)', () => {
+    const credits = (ws: FakeTunnelSocket, streamId: number): number[] =>
+      ws.sent.flatMap((f) => (f.type === 'credit' && f.streamId === streamId ? [f.credit] : []));
+
+    /** Open one stream on a scripted (daemon-less) tunnel; returns its id and client. */
+    async function openStream(
+      manager: TunnelManager,
+      ws: FakeTunnelSocket,
+      localPort: number,
+    ): Promise<{ streamId: number; client: net.Socket }> {
+      const before = ws.sent.filter((f) => f.type === 'open').length;
+      const client = await connectClient(localPort);
+      await waitFor(() => ws.sent.filter((f) => f.type === 'open').length === before + 1);
+      const streamId = ws.sent.filter((f) => f.type === 'open').at(-1)!.streamId;
+      ws.deliver({ type: 'openOk', streamId });
+      await waitFor(() =>
+        manager.getDiagnostics().streams.some((s) => s.streamId === streamId && s.state === 'open'),
+      );
+      return { streamId, client };
+    }
+
+    it('grants exactly the flushed bytes, coalesced at the 64 KiB threshold', async () => {
+      const { manager, created } = makeManager({ daemon: false });
+      onCleanup(() => manager.dispose());
+      const localPort = await manager.forwardPort(10001);
+      const ws = created[0];
+      const { streamId, client } = await openStream(manager, ws, localPort);
+      onCleanup(() => client.destroy());
+
+      // Nothing is granted before any daemon → client byte has been flushed.
+      expect(credits(ws, streamId)).toEqual([]);
+
+      // 4 × 32 KiB delivered back to back: the first two flushes coalesce into
+      // one 64 KiB grant; the last two are below the threshold until the
+      // backlog is fully flushed, which grants the remainder immediately.
+      const chunk = 32 * 1024;
+      const received = collectUntil(client, 4 * chunk);
+      for (let i = 0; i < 4; i++) {
+        ws.deliver({ type: 'data', streamId, payload: Buffer.alloc(chunk, i + 1) });
+      }
+      const bytes = await received;
+      expect(bytes.length).toBe(4 * chunk);
+      await waitFor(() => credits(ws, streamId).reduce((a, b) => a + b, 0) === 4 * chunk);
+      expect(credits(ws, streamId)).toEqual([64 * 1024, 2 * chunk]);
+
+      // A small backlog below the threshold is granted as soon as it flushes.
+      const small = Buffer.from('tail');
+      const gotSmall = collectUntil(client, small.length);
+      ws.deliver({ type: 'data', streamId, payload: small });
+      await gotSmall;
+      await waitFor(() => credits(ws, streamId).length === 3);
+      expect(credits(ws, streamId)).toEqual([64 * 1024, 2 * chunk, small.length]);
+
+      // Every CREDIT is a valid client → daemon frame on the wire.
+      for (const frame of ws.sent.filter((f) => f.type === 'credit')) {
+        const raw = encodeFrame(frame);
+        expect(raw.readUInt8(0)).toBe(0x07);
+        expect(raw.readUInt32BE(1)).toBe(streamId);
+        expect(raw.length).toBe(HEADER_LEN + 4);
+        expect(raw.readUInt32BE(HEADER_LEN)).toBeGreaterThan(0);
+      }
+    });
+
+    it('a local socket that never drains grants nothing while a sibling keeps granting', async () => {
+      // Deterministic "never flushes" consumer: cork the accepted local socket
+      // of the first stream so its writes stay in Node's buffer (kernel-buffer
+      // stalls are timing-dependent). The manager code path is unchanged.
+      const accepted: net.Socket[] = [];
+      const realCreateServer = net.createServer;
+      const spy = vi.spyOn(net, 'createServer').mockImplementation(((...args: unknown[]) => {
+        const server = (realCreateServer as (...a: unknown[]) => net.Server)(...args);
+        server.on('connection', (socket: net.Socket) => {
+          if (accepted.length === 0) socket.cork();
+          accepted.push(socket);
+        });
+        return server;
+      }) as typeof net.createServer);
+      onCleanup(() => spy.mockRestore());
+
+      const { manager, created } = makeManager({ daemon: false });
+      onCleanup(() => manager.dispose());
+      const localPort = await manager.forwardPort(10001);
+      const ws = created[0];
+      const stalled = await openStream(manager, ws, localPort);
+      onCleanup(() => stalled.client.destroy());
+      const healthy = await openStream(manager, ws, localPort);
+      onCleanup(() => healthy.client.destroy());
+      expect(accepted).toHaveLength(2);
+      expect(accepted[0].writableCorked).toBeGreaterThan(0);
+
+      const chunk = 64 * 1024;
+      const healthyReceived = collectUntil(healthy.client, 2 * chunk);
+      for (let i = 0; i < 4; i++) {
+        ws.deliver({ type: 'data', streamId: stalled.streamId, payload: Buffer.alloc(chunk, 7) });
+      }
+      ws.deliver({ type: 'data', streamId: healthy.streamId, payload: Buffer.alloc(chunk, 8) });
+      ws.deliver({ type: 'data', streamId: healthy.streamId, payload: Buffer.alloc(chunk, 9) });
+      await healthyReceived;
+      await waitFor(() => credits(ws, healthy.streamId).reduce((a, b) => a + b, 0) === 2 * chunk);
+
+      // The stalled stream still holds its bytes locally and has granted nothing.
+      await delay(50);
+      expect(credits(ws, stalled.streamId)).toEqual([]);
+      expect(accepted[0].writableLength).toBe(4 * chunk);
+      expect(
+        manager
+          .getDiagnostics()
+          .streams.map((s) => s.streamId)
+          .sort(),
+      ).toEqual([stalled.streamId, healthy.streamId].sort());
+
+      // Once the stalled socket flushes, only the flushed bytes are granted.
+      const stalledReceived = collectUntil(stalled.client, 4 * chunk);
+      accepted[0].uncork();
+      await stalledReceived;
+      await waitFor(() => credits(ws, stalled.streamId).reduce((a, b) => a + b, 0) === 4 * chunk);
+      expect(credits(ws, stalled.streamId).every((c) => c > 0 && c <= 4 * chunk)).toBe(true);
+    });
+
+    it('does not grant credit for bytes still queued when the stream ends', async () => {
+      const accepted: net.Socket[] = [];
+      const realCreateServer = net.createServer;
+      const spy = vi.spyOn(net, 'createServer').mockImplementation(((...args: unknown[]) => {
+        const server = (realCreateServer as (...a: unknown[]) => net.Server)(...args);
+        server.on('connection', (socket: net.Socket) => {
+          socket.cork();
+          accepted.push(socket);
+        });
+        return server;
+      }) as typeof net.createServer);
+      onCleanup(() => spy.mockRestore());
+
+      const { manager, created } = makeManager({ daemon: false });
+      onCleanup(() => manager.dispose());
+      const localPort = await manager.forwardPort(10001);
+      const ws = created[0];
+      const { streamId, client } = await openStream(manager, ws, localPort);
+      onCleanup(() => client.destroy());
+
+      ws.deliver({ type: 'data', streamId, payload: Buffer.alloc(1024, 1) });
+      await delay(20);
+      expect(accepted[0].writableLength).toBe(1024);
+      // The daemon tears the stream down while the bytes are still queued:
+      // the destroyed socket's write callbacks fail and must not grant.
+      ws.deliver({ type: 'close', streamId });
+      await waitFor(() => !manager.getDiagnostics().streams.some((s) => s.streamId === streamId));
+      await delay(50);
+      expect(credits(ws, streamId)).toEqual([]);
+    });
+
+    it('ignores a daemon-sent CREDIT without disturbing the stream', async () => {
+      const { manager, created } = makeManager({ daemon: false });
+      onCleanup(() => manager.dispose());
+      const localPort = await manager.forwardPort(10001);
+      const ws = created[0];
+      const { streamId, client } = await openStream(manager, ws, localPort);
+      onCleanup(() => client.destroy());
+
+      ws.deliver({ type: 'credit', streamId, credit: 1 });
+      const payload = Buffer.from('still open');
+      const got = collectUntil(client, payload.length);
+      ws.deliver({ type: 'data', streamId, payload });
+      expect((await got).toString('utf8')).toBe('still open');
+      expect(manager.getDiagnostics().streams.some((s) => s.streamId === streamId)).toBe(true);
+    });
+
+    describe('is gated on the daemon hello protocolVersion advertising CREDIT support', () => {
+      /** Flush > 64 KiB through one stream and return the CREDIT grants it produced. */
+      async function flushAndCollectCredits(protocolVersion: string | null): Promise<{
+        grants: number[];
+        ws: FakeTunnelSocket;
+      }> {
+        const { manager, created } = makeManager({ daemon: false, protocolVersion });
+        onCleanup(() => manager.dispose());
+        const localPort = await manager.forwardPort(10001);
+        const ws = created[0];
+        const { streamId, client } = await openStream(manager, ws, localPort);
+        onCleanup(() => client.destroy());
+        const chunk = 40 * 1024;
+        const received = collectUntil(client, 2 * chunk);
+        ws.deliver({ type: 'data', streamId, payload: Buffer.alloc(chunk, 1) });
+        ws.deliver({ type: 'data', streamId, payload: Buffer.alloc(chunk, 2) });
+        expect((await received).length).toBe(2 * chunk);
+        await delay(50);
+        return { grants: credits(ws, streamId), ws };
+      }
+
+      it.each(['10.4', '10.10', '11.0'])(
+        'sends CREDIT when the hello reports %s',
+        async (version) => {
+          const { grants } = await flushAndCollectCredits(version);
+          expect(grants.reduce((a, b) => a + b, 0)).toBe(80 * 1024);
+        },
+      );
+
+      it.each([null, '10.3', '9.9', 'unknown'])(
+        'sends no CREDIT to a %s daemon even after > 64 KiB flushed (byte-identical to a pre-credit client)',
+        async (version) => {
+          const { grants, ws } = await flushAndCollectCredits(version);
+          expect(grants).toEqual([]);
+          expect(ws.sent.some((f) => f.type === 'credit')).toBe(false);
+        },
+      );
+
+      it('re-reads the protocolVersion on every tunnel (re)connect', async () => {
+        let protocolVersion: string | null = '10.3';
+        const created: FakeTunnelSocket[] = [];
+        const manager = new TunnelManager({
+          getConfig: () => WSS_CONFIG,
+          getProtocolVersion: () => protocolVersion,
+          heartbeatIntervalMs: 0,
+          socketFactory: () => {
+            const ws = new FakeTunnelSocket();
+            created.push(ws);
+            queueMicrotask(() => ws.open());
+            return ws;
+          },
+        });
+        onCleanup(() => manager.dispose());
+        const localPort = await manager.forwardPort(10001);
+        const payload = Buffer.alloc(1024, 3);
+
+        const first = await openStream(manager, created[0], localPort);
+        onCleanup(() => first.client.destroy());
+        const gotFirst = collectUntil(first.client, payload.length);
+        created[0].deliver({ type: 'data', streamId: first.streamId, payload });
+        await gotFirst;
+        await delay(50);
+        expect(credits(created[0], first.streamId)).toEqual([]);
+
+        // The daemon is upgraded and the tunnel reconnects: the next socket
+        // sees the new version and starts granting.
+        protocolVersion = '10.4';
+        created[0].drop();
+        await waitFor(() => manager.getDiagnostics().streams.length === 0);
+        const secondClient = await connectClient(localPort);
+        onCleanup(() => secondClient.destroy());
+        await waitFor(() => created.length === 2 && created[1].sent.some((f) => f.type === 'open'));
+        const secondId = created[1].sent.filter((f) => f.type === 'open').at(-1)!.streamId;
+        created[1].deliver({ type: 'openOk', streamId: secondId });
+        await waitFor(() =>
+          manager
+            .getDiagnostics()
+            .streams.some((s) => s.streamId === secondId && s.state === 'open'),
+        );
+        const gotSecond = collectUntil(secondClient, payload.length);
+        created[1].deliver({ type: 'data', streamId: secondId, payload });
+        await gotSecond;
+        await waitFor(() => credits(created[1], secondId).length === 1);
+        expect(credits(created[1], secondId)).toEqual([payload.length]);
+      });
+    });
   });
 
   it('shares one in-flight connect across concurrent forwardPort calls', async () => {
@@ -1266,6 +1546,7 @@ describe('TunnelManager', () => {
     const created: FakeTunnelSocket[] = [];
     const manager = new TunnelManager({
       getConfig: () => WSS_CONFIG,
+      getProtocolVersion: () => '10.4',
       socketFactory: () => {
         const ws = new FakeTunnelSocket();
         created.push(ws);
@@ -1285,6 +1566,7 @@ describe('TunnelManager', () => {
     const created: Array<{ host: string | undefined; ws: FakeTunnelSocket }> = [];
     const manager = new TunnelManager({
       getConfig: () => ({ ...WSS_CONFIG, host: '10.0.0.1', hosts: ['10.0.0.1', '127.0.0.1'] }),
+      getProtocolVersion: () => '10.4',
       socketFactory: (config) => {
         const ws = new FakeTunnelSocket();
         created.push({ host: config.host, ws });
@@ -1317,6 +1599,7 @@ describe('TunnelManager', () => {
     const created: FakeTunnelSocket[] = [];
     const manager = new TunnelManager({
       getConfig: () => ({ ...WSS_CONFIG, host: 'a', hosts: ['a', 'b'] }),
+      getProtocolVersion: () => '10.4',
       socketFactory: () => {
         const ws = new FakeTunnelSocket();
         created.push(ws);
@@ -1424,6 +1707,9 @@ class FakeTunnelWssDaemon {
       this.lastAuthHeader = req.headers.authorization;
       this.lastUpgradeUrl = req.url;
       this.clients.push(socket);
+      socket.on('close', () => {
+        this.clients = this.clients.filter((c) => c !== socket);
+      });
       socket.on('message', (data, isBinary) => {
         if (!isBinary) return;
         const frame = decodeFrame(rawDataToBuffer(data));
@@ -1438,6 +1724,23 @@ class FakeTunnelWssDaemon {
     });
     await new Promise<void>((res) => this.server.listen(0, '127.0.0.1', () => res()));
     this.port = (this.server.address() as AddressInfo).port;
+  }
+
+  /**
+   * Resolves once every accepted tunnel WebSocket has closed on this side.
+   * Bytes a tunnel wrote (e.g. a trailing flush-driven CREDIT) precede its
+   * close on the same TLS stream, so after this the byte counter is quiescent.
+   */
+  async whenClientsClosed(): Promise<void> {
+    await Promise.all(
+      this.clients.map(
+        (c) =>
+          new Promise<void>((res) => {
+            if (c.readyState === c.CLOSED) res();
+            else c.once('close', () => res());
+          }),
+      ),
+    );
   }
 
   async stop(): Promise<void> {
@@ -1458,11 +1761,18 @@ class RejectingTunnelDaemon {
   port = 0;
   fingerprint = '';
   statusCode = 401;
+  private onUpgrade: (() => void) | null = null;
+
+  /** Observe every upgrade attempt (to assert a latched manager stops dialing). */
+  countUpgrades(listener: () => void): void {
+    this.onUpgrade = listener;
+  }
 
   async start(): Promise<void> {
     this.fingerprint = new crypto.X509Certificate(WSS_CERT_PEM).fingerprint256;
     this.server = https.createServer({ cert: WSS_CERT_PEM, key: WSS_KEY_PEM });
     this.server.on('upgrade', (_req, socket) => {
+      this.onUpgrade?.();
       socket.write(
         `HTTP/1.1 ${this.statusCode} Rejected\r\nConnection: close\r\nContent-Length: 0\r\n\r\n`,
       );
@@ -1504,6 +1814,7 @@ describe('tunnel wss wire-level pinning (handshake-enforced, monorepo#4072)', ()
     // No socketFactory override: the REAL createTunnelSocket dials the fake
     // daemon over TLS, so the handshake-level pin is what's under test.
     const manager = new TunnelManager({
+      getProtocolVersion: () => '10.4',
       getConfig: () => ({
         transport: 'wss',
         host: daemon.host,
@@ -1537,6 +1848,10 @@ describe('tunnel wss wire-level pinning (handshake-enforced, monorepo#4072)', ()
     // enforced at the TLS handshake, so the upgrade request — carrying the
     // bearer token in the Authorization header and the `?token=` query — is
     // never written to a host presenting the wrong certificate.
+    // The previous test's pinned tunnel may still be draining (its last echo
+    // grants a CREDIT on flush); wait for its daemon-side close so the byte
+    // baseline below is attributable to this test alone.
+    await daemon.whenClientsClosed();
     daemon.lastAuthHeader = 'sentinel-not-overwritten';
     daemon.lastUpgradeUrl = 'sentinel-not-overwritten';
     const before = daemon.decryptedBytes;
@@ -1562,6 +1877,7 @@ describe('tunnel wss wire-level pinning (handshake-enforced, monorepo#4072)', ()
     await rejecting.start();
     onCleanup(() => rejecting.stop());
     const manager = new TunnelManager({
+      getProtocolVersion: () => '10.4',
       getConfig: () => ({
         transport: 'wss',
         host: rejecting.host,
@@ -1575,5 +1891,31 @@ describe('tunnel wss wire-level pinning (handshake-enforced, monorepo#4072)', ()
     const error = await manager.ensureTunnel().catch((e: unknown) => e);
     expect(error).toBeInstanceOf(AuthRejectedError);
     expect((error as AuthRejectedError).statusCode).toBe(401);
+  });
+
+  it('latches owner-only on a 403 upgrade rejection and stops re-dialing (multiplayer w3)', async () => {
+    const rejecting = new RejectingTunnelDaemon();
+    rejecting.statusCode = 403;
+    let upgrades = 0;
+    await rejecting.start();
+    rejecting.countUpgrades(() => (upgrades += 1));
+    onCleanup(() => rejecting.stop());
+    const manager = new TunnelManager({
+      getConfig: () => ({
+        transport: 'wss',
+        host: rejecting.host,
+        port: rejecting.port,
+        token: TOKEN,
+        fingerprint: rejecting.fingerprint,
+      }),
+      connectTimeoutMs: 2000,
+    });
+    onCleanup(() => manager.dispose());
+    await expect(manager.ensureTunnel()).rejects.toBeInstanceOf(TunnelForbiddenError);
+    expect(upgrades).toBe(1);
+    // Later calls fail fast with the same classification and never redial.
+    await expect(manager.forwardPort(8080)).rejects.toBeInstanceOf(TunnelForbiddenError);
+    await expect(manager.ensureTunnel()).rejects.toBeInstanceOf(TunnelForbiddenError);
+    expect(upgrades).toBe(1);
   });
 });

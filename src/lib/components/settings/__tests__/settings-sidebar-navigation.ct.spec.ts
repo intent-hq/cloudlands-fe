@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/experimental-ct-svelte';
+import { expect, test } from '../../../../test/ct-test';
 import SettingsSidebarPreview from '../settings-sidebar.preview.svelte';
 
 test('keeps Back, grouped settings and specialists on one aligned keyboard sequence', async ({
@@ -21,8 +21,10 @@ test('keeps Back, grouped settings and specialists on one aligned keyboard seque
     'input',
     'connections',
     'devices',
+    'guest-sessions',
     'setup',
     'advanced',
+    'labs',
     'agent-behavior',
     'providers',
   ];

@@ -47,11 +47,13 @@ import {
 import { JsonRpcError } from './json-rpc-errors';
 import {
   buildMainClientHelloParams,
+  getOrCreateClientId,
   persistClientId,
   setLocalHostIdentity,
 } from './client-identity';
 import { formatTransportInfo } from './transport-info';
 import { readPinnedVersion } from './intentd-version-pin';
+import { updateDaemonToPin } from './exact-daemon-update';
 import {
   getLocalDaemonProtocolVersion,
   getSidecarRunLog,
@@ -74,6 +76,13 @@ import { daemonHelloBuildKey, extractDaemonHelloBuildInfo } from './daemon-hello
 import { detectOrphanedSidecar } from './intentd-orphan';
 import { defaultKill, restartOrphanedSidecar } from './orphan-recovery';
 import * as connectionsStore from './connections-store';
+import * as guestSessionsStore from './guest-sessions-store';
+import type {
+  GuestSessionsListResult,
+  GuestWorkspaceRef,
+  LeaveGuestSessionResult,
+  LeaveGuestWorkspaceResult,
+} from '../../../shared/types/guest-sessions';
 import {
   initKeychainSyncLifecycle,
   isKeychainSyncEnabled,
@@ -125,6 +134,9 @@ import {
   ConnectionsCaptureFingerprintSchema,
   ConnectionsForgetSchema,
   ConnectionsListSchema,
+  GuestSessionsLeaveSchema,
+  GuestSessionsLeaveWorkspaceSchema,
+  GuestSessionsListSchema,
   ConnectionsOpenSchema,
   ConnectionsRotateSecretSchema,
   ConnectionsPublishSelfSchema,
@@ -136,13 +148,18 @@ import {
   ConnectionsUnpublishSelfSchema,
   ConnectionsUpdateSchema,
   ConnectionsUpdateBackendSchema,
+  PresenceReportSchema,
 } from '../../../main/ipc-schemas';
 import { createValidatedHandler } from '../../../main/ipc-validation-middleware';
 import { getBackendIdForWebContents, getFocusedWindowBackendId } from '../../../main/window';
+import { PresenceAggregator } from './presence-aggregator';
+import type { PresenceReportResult, PresenceUpdateResult } from '$shared/types/presence';
 
 const logger = new Logger('Backend-IPC');
 const BACKEND = IPC_CHANNELS.BACKEND;
 const CONNECTIONS = IPC_CHANNELS.CONNECTIONS;
+const GUEST_SESSIONS = IPC_CHANNELS.GUEST_SESSIONS;
+const PRESENCE = IPC_CHANNELS.PRESENCE;
 
 // Last daemon build identity logged per connection from a `client.hello`
 // result (#3649): the handshake re-runs on every (re)connect, so dedupe on
@@ -150,6 +167,32 @@ const CONNECTIONS = IPC_CHANNELS.CONNECTIONS;
 // instead of once per reconnect (a daemon upgrade logs again).
 const lastLoggedDaemonBuildKeys = new Map<string, string>();
 const connectedDaemonVersions = new Map<string, string>();
+// Each connected daemon's `client.hello` `protocolVersion`, keyed by
+// connection id and cleared whenever that connection leaves `connected`, so
+// feature gates (e.g. the `/tunnel` CREDIT frame) read the live daemon's
+// version rather than a stale one after a reconnect or daemon upgrade.
+const connectedProtocolVersions = new Map<string, string>();
+// Whether the local client's hello has answered at least once this session:
+// until then the sidecar's startup probe may seed the local version, after
+// that the hello result is the only source (a null/absent hello stays null).
+let localHelloObserved = false;
+
+/**
+ * The `client.hello` `protocolVersion` of the daemon currently connected
+ * under `connectionId`, or `null` when unknown — not connected, disconnected
+ * since, or the hello carried no version. The connected daemon's hello is the
+ * only source for local and remote alike; the sidecar's startup probe
+ * ({@link getLocalDaemonProtocolVersion}) only seeds the local id BEFORE the
+ * first local hello of the session, never after a hello answered without one.
+ */
+export function getConnectedDaemonProtocolVersion(connectionId: string): string | null {
+  const captured = connectedProtocolVersions.get(connectionId);
+  if (captured) return captured;
+  if (connectionId === LOCAL_CONNECTION_ID && !localHelloObserved) {
+    return getLocalDaemonProtocolVersion();
+  }
+  return null;
+}
 
 /**
  * #3649: log the connected daemon's build identity once at INFO so the log
@@ -261,6 +304,8 @@ export function __resetPendingDaemonUpdatesForTesting(): void {
 export function __resetDaemonBuildLogForTesting(): void {
   lastLoggedDaemonBuildKeys.clear();
   connectedDaemonVersions.clear();
+  connectedProtocolVersions.clear();
+  localHelloObserved = false;
 }
 
 /**
@@ -289,6 +334,14 @@ function captureRemoteDaemonVersion(helloResult: unknown, connectionId: string):
 }
 const backendClients = new Map<string, JsonRpcClient>();
 const backendClientConnects = new Map<string, Promise<JsonRpcClient>>();
+/**
+ * Per-id credential generation, bumped whenever the durable credential for
+ * an id is replaced underneath the pool (guest re-join / sync replacement).
+ * A client construction that read its config under an older generation is
+ * stale before it finishes and rebuilds from the fresh record instead of
+ * landing a superseded credential in the pool.
+ */
+const backendCredentialGenerations = new Map<string, number>();
 let handlersRegistered = false;
 
 /** Main-process lifecycle signal for services caching state by pooled client. */
@@ -721,8 +774,9 @@ export function getLocalBackendClient(): JsonRpcClient {
 
 /**
  * Ask one connected backend's daemon to self-update via
- * `system.requestUpdate` (the daemon signals its serve-mode sitter, which
- * installs the newer version and restarts the daemon). Returns a structured
+ * `system.requestUpdate`. Remotes install the main-owned bundle pin and this
+ * promise settles after version confirmation or failure; adopted local daemons
+ * keep the channel-update path. Returns a structured
  * {@link UpdateBackendResult} instead of throwing for daemon-side failures so
  * the renderer can toast a specific message:
  *   - local id in sidecar/unknown mode, or over a non-UDS transport →
@@ -735,7 +789,17 @@ export function getLocalBackendClient(): JsonRpcClient {
  *   - JSON-RPC -32601 → 'unsupported' (daemon too old to know the method);
  *   - any other daemon/transport error → 'failed' with the error message.
  */
-async function requestBackendUpdate(id: string): Promise<UpdateBackendResult> {
+const backendUpdateRequests = new Map<string, Promise<UpdateBackendResult>>();
+
+function requestBackendUpdate(id: string): Promise<UpdateBackendResult> {
+  const pending = backendUpdateRequests.get(id);
+  if (pending) return pending;
+  const request = performBackendUpdate(id).finally(() => backendUpdateRequests.delete(id));
+  backendUpdateRequests.set(id, request);
+  return request;
+}
+
+async function performBackendUpdate(id: string): Promise<UpdateBackendResult> {
   if (id === LOCAL_CONNECTION_ID) {
     // Same predicate as captureLocalUpdateSupported: only an adopted
     // `external` daemon over UDS is self-updatable. External mode is also set
@@ -754,6 +818,23 @@ async function requestBackendUpdate(id: string): Promise<UpdateBackendResult> {
     return { ok: false, reason: 'not-connected' };
   }
   try {
+    if (id !== LOCAL_CONNECTION_ID) {
+      try {
+        return await updateDaemonToPin(
+          target,
+          readPinnedVersion({
+            isPackaged: app.isPackaged,
+            resourcesPath: process.resourcesPath,
+          }),
+          () => {
+            pendingDaemonUpdates.set(id, Date.now());
+          },
+          () => backendClients.get(id) === target,
+        );
+      } finally {
+        clearPendingDaemonUpdate(id);
+      }
+    }
     await target.request('system.requestUpdate');
     pendingDaemonUpdates.set(id, Date.now());
     pendingDaemonUpdateDrops.delete(id);
@@ -792,17 +873,22 @@ export function connectBackendClient(id: string, tokenOverride?: string): Promis
   const pending = backendClientConnects.get(id);
   if (pending) return pending;
 
-  const connecting = buildConfigForConnection(id, tokenOverride)
-    .then(({ config }) => {
+  const connecting = (async () => {
+    for (;;) {
+      const generation = backendCredentialGenerations.get(id) ?? 0;
+      const { config } = await buildConfigForConnection(id, tokenOverride);
       const raced = backendClients.get(id);
       if (raced) return raced;
+      // The credential was replaced while this config was being read: the
+      // config is superseded, so read it again rather than pooling it.
+      if ((backendCredentialGenerations.get(id) ?? 0) !== generation) continue;
       const instance = createAdditionalBackendClient(id, config);
       backendClients.set(id, instance);
       return instance;
-    })
-    .finally(() => {
-      backendClientConnects.delete(id);
-    });
+    }
+  })().finally(() => {
+    backendClientConnects.delete(id);
+  });
   backendClientConnects.set(id, connecting);
   return connecting;
 }
@@ -813,6 +899,7 @@ export function disconnectBackendClient(id: string): void {
   if (!instance) return;
   backendClients.delete(id);
   connectedDaemonVersions.delete(id);
+  connectedProtocolVersions.delete(id);
   // A user-driven dispose ends any update-caused outage as far as the UI is
   // concerned: the rebuilt client's first status must not carry the marker.
   clearPendingDaemonUpdate(id);
@@ -821,7 +908,115 @@ export function disconnectBackendClient(id: string): void {
   void cancelInflightHostExecStreamsForBackendSwitch(instance);
   app.emit(BACKEND_CLIENT_DISCONNECTED_EVENT, instance);
   instance.dispose();
+  // Eviction alone moves a guest id out of `openIds`: `dispose()` on an
+  // already-disconnected client emits no status change, so the forwarder
+  // below never pushes the fresh list on its own.
+  refreshGuestSessionsForPoolChange(id);
 }
+
+/**
+ * Replay the reconnect marker for a client rebuilt under live windows once
+ * it has GENUINELY connected. `connectBackendClient` resolves as soon as the
+ * client is constructed and started — its socket is still dialing — so a
+ * `status: 'connected'` pushed at that point tells the window's renderer the
+ * backend is healthy while the real status is `connecting`: the daemon-loss
+ * overlay dismisses on the fabricated `connected` and re-arms its grace timer
+ * on the next real `disconnected`, which reads as the overlay flickering
+ * whenever the host is unreachable. The rebuilt client's FIRST connect is a
+ * plain `connected`, not a `reconnected`, so the marker is still owed — it
+ * just waits for that connect. A client that is evicted or replaced before
+ * connecting never replays.
+ */
+function replayReconnectOnceConnected(id: string, rebuilt: JsonRpcClient): void {
+  let replayed = false;
+  const replay = (): void => {
+    if (replayed || backendClients.get(id) !== rebuilt) return;
+    replayed = true;
+    broadcast(
+      BACKEND.STATUS,
+      {
+        status: 'connected',
+        reconnected: true,
+        transport: formatTransportInfo(
+          rebuilt.getConfig(),
+          getPinnedVersion(),
+          rebuilt.getConnectedVia(),
+        ),
+        reconnectAttempts: rebuilt.getReconnectAttempts(),
+        ...daemonUpdateMarker(id),
+      },
+      id,
+    );
+    backendReconnectForwarder.emit('reconnected', id);
+  };
+  if (rebuilt.getStatus() === 'connected') {
+    replay();
+    return;
+  }
+  const onStatus = (status: ConnectionStatus): void => {
+    if (status !== 'connected') return;
+    rebuilt.off('status', onStatus);
+    replay();
+  };
+  rebuilt.on('status', onStatus);
+}
+
+/**
+ * A guest re-join (or a keychain sync applying a newer record) replaces the
+ * session's credential — and possibly its principal — in place under the
+ * SAME id. Anything built on the old credential is invalidated at once: the
+ * generation bump makes an in-flight construction re-read the store, and a
+ * pooled client is evicted synchronously so no window keeps acting as the
+ * superseded principal. If that client was serving windows, it is rebuilt
+ * from the fresh record on the connection-operation lane and the reconnect
+ * marker is replayed exactly as the owner `connections:add` path does, so
+ * renderer consumers holding daemon `events.subscribe` leases re-subscribe
+ * against the new client. Subscribed at module scope so it holds regardless
+ * of which entry point registered the IPC handlers.
+ */
+function onGuestCredentialReplaced(id: string): void {
+  backendCredentialGenerations.set(id, (backendCredentialGenerations.get(id) ?? 0) + 1);
+  const hadLiveClient = backendClients.has(id);
+  disconnectBackendClient(id);
+  if (!hadLiveClient) return;
+  void enqueueConnectionOperation(async () => {
+    const rebuilt = await connectBackendClient(id);
+    replayReconnectOnceConnected(id, rebuilt);
+  }).catch((error: unknown) => {
+    logger.warn('Failed to rebuild guest client after credential replacement', {
+      id,
+      error: error instanceof Error ? error.name : typeof error,
+    });
+  });
+}
+guestSessionsStore.onGuestCredentialReplaced(onGuestCredentialReplaced);
+
+/**
+ * A keychain-sync tombstone deleted a live guest session: the guest was
+ * forgotten on another device. The pooled client built on the now-deleted
+ * credential is evicted synchronously (and the generation bump makes an
+ * in-flight construction re-read the store, where the record is gone), so
+ * the forgotten credential stops being usable at once rather than at the next
+ * restart. Windows served by that client are torn down on the connection lane
+ * exactly as a local owner forget does — with the local fallback created
+ * first so the window-all-closed path is never entered mid-teardown.
+ */
+function onGuestSessionRemovedBySync(id: string): void {
+  backendCredentialGenerations.set(id, (backendCredentialGenerations.get(id) ?? 0) + 1);
+  const hadLiveClient = backendClients.has(id);
+  disconnectBackendClient(id);
+  if (!hadLiveClient) return;
+  void enqueueConnectionOperation(async () => {
+    await windowHooks.ensureLocalWindowBeforeClose?.(id);
+    await windowHooks.closeForBackend?.(id);
+  }).catch((error: unknown) => {
+    logger.warn('Failed to close windows of a guest session forgotten elsewhere', {
+      id,
+      error: error instanceof Error ? error.name : typeof error,
+    });
+  });
+}
+guestSessionsStore.onGuestSessionRemovedBySync(onGuestSessionRemovedBySync);
 
 /** Build a pool member and route its renderer events by connection id. */
 function createAdditionalBackendClient(id: string, config: BackendConnectionConfig): JsonRpcClient {
@@ -834,6 +1029,17 @@ function createAdditionalBackendClient(id: string, config: BackendConnectionConf
     id !== LOCAL_CONNECTION_ID && config.host != null && config.port != null
       ? { id, host: config.host, port: config.port }
       : null;
+  // The guest-only `events.subscribe` lease, one per transport generation:
+  // the daemon drops it with the socket, so every non-`connected` status
+  // bumps the generation and forgets it (a late answer from the old socket is
+  // discarded by the generation check), and a hello on a socket that already
+  // holds or is acquiring one — a same-socket capability re-hello — reuses it.
+  // Events on any other subscription are the renderer's.
+  const guestWorkspaceEvents: {
+    generation: number;
+    subscriptionId: string | undefined;
+    subscribing: boolean;
+  } = { generation: 0, subscriptionId: undefined, subscribing: false };
   const instance = new JsonRpcClient({
     config,
     // Enable a liveness heartbeat: reconnect-on-close alone misses a silently
@@ -864,10 +1070,12 @@ function createAdditionalBackendClient(id: string, config: BackendConnectionConf
       // T15: `protocolVersion` from the handshake feeds the protocol-compat
       // check — record it for local, compare it against local for a remote,
       // latched per connection id and broadcast to this backend's windows only.
-      handleHelloProtocolVersion(
-        typeof obj?.protocolVersion === 'string' ? obj.protocolVersion : null,
-        meta,
-      );
+      const helloProtocolVersion =
+        typeof obj?.protocolVersion === 'string' ? obj.protocolVersion : null;
+      if (helloProtocolVersion) connectedProtocolVersions.set(id, helloProtocolVersion);
+      else connectedProtocolVersions.delete(id);
+      if (id === LOCAL_CONNECTION_ID) localHelloObserved = true;
+      handleHelloProtocolVersion(helloProtocolVersion, meta);
       // #3649: log each connected daemon's build identity once at INFO, keyed
       // by connection id so multi-backend setups record every daemon build.
       logDaemonHelloBuild(result, id);
@@ -881,6 +1089,24 @@ function createAdditionalBackendClient(id: string, config: BackendConnectionConf
         // propagates on the next reconnect. Fire-and-forget/fail-soft like
         // the version capture; the store dedupes the unchanged common case.
         void captureRemoteHostname(id);
+        // A guest session's joined-workspace cache refreshes from the host on
+        // the same (re)connect window, and the host's workspace events keep it
+        // fresh between hellos; both are no-ops for paired (owner) backends.
+        void hydrateGuestWorkspaces(id);
+        if (
+          guestWorkspaceEvents.subscriptionId === undefined &&
+          !guestWorkspaceEvents.subscribing
+        ) {
+          const generation = guestWorkspaceEvents.generation;
+          const isCurrent = () =>
+            guestWorkspaceEvents.generation === generation && backendClients.get(id) === instance;
+          guestWorkspaceEvents.subscribing = true;
+          void subscribeGuestWorkspaceEvents(id, instance, isCurrent).then((subscriptionId) => {
+            if (!isCurrent()) return;
+            guestWorkspaceEvents.subscribing = false;
+            guestWorkspaceEvents.subscriptionId = subscriptionId;
+          });
+        }
         // Capture whether the daemon supports self-update (system.status
         // `updateSupported`) so the renderer can gate the Update affordance.
         // Fire-and-forget/fail-soft like the captures above.
@@ -930,9 +1156,18 @@ function createAdditionalBackendClient(id: string, config: BackendConnectionConf
   instance.on('notification', (notification: JsonRpcNotification) => {
     broadcast(BACKEND.NOTIFICATION, notification, id);
     backendNotificationForwarder.emit('notification', id, notification);
+    if (isGuestWorkspaceRefreshEvent(notification, guestWorkspaceEvents.subscriptionId)) {
+      requestGuestWorkspaceRefresh(id);
+    }
   });
   instance.on('status', (status: ConnectionStatus) => {
-    if (status !== 'connected') connectedDaemonVersions.delete(id);
+    if (status !== 'connected') {
+      connectedDaemonVersions.delete(id);
+      connectedProtocolVersions.delete(id);
+      guestWorkspaceEvents.generation += 1;
+      guestWorkspaceEvents.subscriptionId = undefined;
+      guestWorkspaceEvents.subscribing = false;
+    }
     notePendingDaemonUpdateStatus(id, status);
     broadcast(
       BACKEND.STATUS,
@@ -944,6 +1179,8 @@ function createAdditionalBackendClient(id: string, config: BackendConnectionConf
           instance.getConnectedVia(),
         ),
         reconnectAttempts: instance.getReconnectAttempts(),
+        connectionLimited: instance.isConnectionLimited(),
+        connectionLimitRetryAfterMs: instance.getConnectionLimitRetryAfterMs(),
         ...daemonUpdateMarker(id),
       },
       id,
@@ -1318,6 +1555,12 @@ async function captureRemoteHostname(id: string): Promise<void> {
     // Drop the result when this backend's client changed mid-flight — the
     // snapshot client may have answered just before its disposal.
     if (backendClients.get(id) === client) {
+      if ((await guestSessionsStore.findById(id)) !== null) {
+        if (hostname && (await guestSessionsStore.setHostname(id, hostname))) {
+          await broadcastGuestSessionsChanged();
+        }
+        return;
+      }
       const kindChanged = await connectionsStore.setDetectedDeviceKind(id, deviceKind);
       if (hostname) await connectionsStore.setHostname(id, hostname);
       if (hostname || kindChanged) await broadcastConnectionsChanged();
@@ -1333,6 +1576,188 @@ function extractDeviceKind(result: unknown): DetectedDeviceKind | null {
   if (!result || typeof result !== 'object') return null;
   const value = (result as { deviceKind?: unknown }).deviceKind;
   return isDetectedDeviceKind(value) ? value : null;
+}
+
+/**
+ * Pull `{ id, title }` refs out of a `workspace.list` result (PROTOCOL §5 —
+ * `{ workspaces: [{ id, title, ... }] }`); null when the payload is not that
+ * shape, so a malformed answer never overwrites the cached list.
+ */
+function extractWorkspaceRefs(result: unknown): GuestWorkspaceRef[] | null {
+  const rows = (result as { workspaces?: unknown } | null)?.workspaces;
+  if (!Array.isArray(rows)) return null;
+  const refs: GuestWorkspaceRef[] = [];
+  for (const row of rows) {
+    const { id, title } = (row ?? {}) as { id?: unknown; title?: unknown };
+    if (typeof id !== 'string' || typeof title !== 'string') return null;
+    refs.push({ id, title });
+  }
+  return refs;
+}
+
+/**
+ * Per-session count of local membership edits (per-workspace *Leave*). A
+ * hydration snapshot requested before an edit describes a membership that no
+ * longer holds, so it must never be written over the edit — a
+ * `workspace.list` answer that predates a successful *Leave* would otherwise
+ * restore the left workspace.
+ */
+const guestMembershipEpochs = new Map<string, number>();
+
+function bumpGuestMembershipEpoch(id: string): void {
+  guestMembershipEpochs.set(id, (guestMembershipEpochs.get(id) ?? 0) + 1);
+}
+
+/**
+ * Per-session generation of the latest hydration read issued. Only that read
+ * may commit: two hello-triggered `workspace.list` calls on the same pooled
+ * client can answer out of order, and the older answer must not overwrite
+ * the newer membership.
+ */
+const guestHydrationReads = new Map<string, number>();
+
+/**
+ * Hydrate a guest session's joined-workspace list from the host once its
+ * connection is up (every (re)connect hello, like {@link captureRemoteHostname}).
+ * The local list is only a last-known cache: rows imported by keychain sync
+ * (which never carries the list) and rows written before the field existed
+ * have none, and a membership removed on the host must not linger. The
+ * guest connection's `workspace.list` is membership-filtered by the daemon,
+ * so its rows ARE the joined workspaces; the store reconciles by id. Fail-soft:
+ * an unreachable host, a refusal or a malformed answer keeps the cached list.
+ * A snapshot is discarded when the pooled client was replaced, a newer read
+ * was issued, or a local membership edit happened while it was in flight.
+ * The same fences are re-checked by the store at the commit boundary, so a
+ * mutation queued ahead of the write (a same-daemon re-join replacing the
+ * record, a *Leave*) also discards it; an edit that lands during the store
+ * write itself is queued behind it by the store and wins.
+ */
+async function hydrateGuestWorkspaces(id: string): Promise<void> {
+  try {
+    if ((await guestSessionsStore.findById(id)) === null) return;
+    const client = getBackendClientForId(id);
+    const epoch = guestMembershipEpochs.get(id);
+    const read = (guestHydrationReads.get(id) ?? 0) + 1;
+    guestHydrationReads.set(id, read);
+    const stillValid = () =>
+      backendClients.get(id) === client &&
+      guestHydrationReads.get(id) === read &&
+      guestMembershipEpochs.get(id) === epoch;
+    const result = await client.request('workspace.list');
+    if (!stillValid()) return;
+    const refs = extractWorkspaceRefs(result);
+    if (refs === null) {
+      logger.warn('Ignoring malformed workspace.list from guest host', { id });
+      return;
+    }
+    if (await guestSessionsStore.setWorkspaces(id, refs, stillValid)) {
+      await broadcastGuestSessionsChanged();
+    }
+  } catch (error) {
+    logger.warn('Failed to hydrate guest workspaces from host', {
+      id,
+      code: revokeFailureCode(error),
+    });
+  }
+}
+
+/**
+ * Per-session hydration gate: `true` while a hydration is in flight AND a
+ * trailing one was requested meanwhile, `false` while one is in flight with
+ * nothing pending, absent when idle.
+ */
+const guestWorkspaceRefreshPending = new Map<string, boolean>();
+
+/**
+ * Event-driven {@link hydrateGuestWorkspaces}, single-flight with trailing
+ * coalesce: host events arriving while a read is in flight collapse into at
+ * most one follow-up read once it settles, so a burst costs at most two
+ * `workspace.list` calls instead of one per event. The hello path calls
+ * {@link hydrateGuestWorkspaces} directly — its read-generation fence already
+ * settles two hellos on one client.
+ */
+function requestGuestWorkspaceRefresh(id: string): void {
+  if (guestWorkspaceRefreshPending.has(id)) {
+    guestWorkspaceRefreshPending.set(id, true);
+    return;
+  }
+  void (async () => {
+    do {
+      guestWorkspaceRefreshPending.set(id, false);
+      await hydrateGuestWorkspaces(id);
+    } while (guestWorkspaceRefreshPending.get(id));
+    guestWorkspaceRefreshPending.delete(id);
+  })();
+}
+
+/** Host events that can change a guest's cached `{ id, title }` list. */
+const GUEST_WORKSPACE_EVENT_TYPES = ['workspace:updated', 'workspace:deleted'];
+
+/**
+ * Subscribe a guest session's pooled client to the host's workspace events
+ * (PROTOCOL §6.2) so a rename or a membership removal refreshes the cached
+ * joined-workspace list without waiting for the next reconnect hello. The
+ * caller runs it once per transport generation and matches notifications
+ * strictly on the returned id. Resolves `undefined` for a paired (owner)
+ * backend, a replaced client, or a failure (fail-soft: the next hello on the
+ * same socket retries, and the cache still refreshes on every hello).
+ *
+ * `isCurrent` is re-checked after the registry read, BEFORE the request goes
+ * out: the read is a real file read, and a socket that dropped and redialed
+ * while it was pending already cleared the caller's guard, so a request from
+ * here would land a second lease on the new socket (`request()` waits across
+ * a non-connected status instead of failing).
+ */
+async function subscribeGuestWorkspaceEvents(
+  id: string,
+  client: JsonRpcClient,
+  isCurrent: () => boolean,
+): Promise<string | undefined> {
+  try {
+    if ((await guestSessionsStore.findById(id)) === null) return undefined;
+    if (!isCurrent()) return undefined;
+    const result = (await client.request('events.subscribe', {
+      eventTypes: GUEST_WORKSPACE_EVENT_TYPES,
+    })) as { subscriptionId?: unknown } | undefined;
+    if (!isCurrent()) return undefined;
+    if (typeof result?.subscriptionId !== 'string' || !result.subscriptionId) {
+      logger.warn('events.subscribe for guest workspace events returned no subscriptionId', {
+        id,
+      });
+      return undefined;
+    }
+    return result.subscriptionId;
+  } catch (error) {
+    logger.warn('events.subscribe for guest workspace events failed', {
+      id,
+      code: revokeFailureCode(error),
+    });
+    return undefined;
+  }
+}
+
+/**
+ * Whether a daemon notification is a `workspace:updated` / `workspace:deleted`
+ * on the guest subscription that can change the cached list: a title change,
+ * the removed member's final `removedPrincipalId` delta (§6.5, multiplayer
+ * unshare), or a deletion. Other deltas (the debounced `lastActivity` push,
+ * status/attention flips) never touch `{ id, title }` and must not cost a
+ * `workspace.list` round trip.
+ */
+function isGuestWorkspaceRefreshEvent(
+  notification: JsonRpcNotification,
+  subscriptionId: string | undefined,
+): boolean {
+  if (subscriptionId === undefined || notification.method !== 'events.event') return false;
+  const params = notification.params as
+    { subscriptionId?: unknown; event?: { type?: unknown; data?: unknown } } | undefined;
+  if (params?.subscriptionId !== subscriptionId) return false;
+  const type = params.event?.type;
+  if (type === 'workspace:deleted') return true;
+  if (type !== 'workspace:updated') return false;
+  const changes = (params.event?.data as { changes?: unknown } | undefined)?.changes as
+    { title?: unknown; removedPrincipalId?: unknown } | undefined;
+  return typeof changes?.title === 'string' || typeof changes?.removedPrincipalId === 'string';
 }
 
 /**
@@ -1415,7 +1840,7 @@ function extractTcAddress(result: unknown): string | null {
 
 /**
  * Capture whether a freshly-connected remote's daemon supports self-update
- * (`updateSupported` from `system.status`) and persist it on the connection
+ * (`exactUpdateSupported` from `system.status`) and persist it on the connection
  * record, following the `captureRemoteHostname` capture pattern. Runs on
  * every (re)connect hello so a daemon upgrade/downgrade (or a supervision
  * change) refreshes the stored flag; the renderer gates the Update affordance
@@ -1446,7 +1871,13 @@ async function captureRemoteUpdateSupported(id: string): Promise<void> {
     // protects against a stale capture after the client is disposed.
     const client = getBackendClientForId(id);
     const result = await client.request('system.status');
-    const supported = extractUpdateSupported(result);
+    const supported =
+      result &&
+      typeof result === 'object' &&
+      'exactUpdateSupported' in result &&
+      typeof result.exactUpdateSupported === 'boolean'
+        ? result.exactUpdateSupported
+        : null;
     const tcAddress = extractTcAddress(result);
     // Loopback entries are only reachable from the backend itself (the
     // daemon's pairing surfaces filter them the same way); an empty list
@@ -1455,6 +1886,20 @@ async function captureRemoteUpdateSupported(id: string): Promise<void> {
     // Drop the result when this backend's client changed mid-flight — the
     // snapshot client may have answered just before its disposal.
     if (backendClients.get(id) === client) {
+      // A guest session keeps its route metadata in the guest registry: the
+      // tunnel address and interface list learned here replace the invite-time
+      // envelope so later reconnects and keychain sync carry current routes.
+      // Guests never gate an Update affordance, so `updateSupported` is not
+      // recorded for them.
+      if ((await guestSessionsStore.findById(id)) !== null) {
+        const guestTcChanged = await guestSessionsStore.setTcAddress(id, tcAddress);
+        const guestHostsChanged =
+          ips.length > 0 &&
+          backendClients.get(id) === client &&
+          (await guestSessionsStore.setHosts(id, ips));
+        if (guestTcChanged || guestHostsChanged) await broadcastGuestSessionsChanged();
+        return;
+      }
       const changed = await connectionsStore.setUpdateSupported(id, supported);
       const tcChanged = await connectionsStore.setTcAddress(id, tcAddress);
       // Re-check after the awaited writes above: a disconnect/replacement
@@ -1610,12 +2055,21 @@ async function refreshRemoteHosts(id: string): Promise<void> {
     // concurrent disconnect/reconnect replaces the pool entry, and querying
     // the NEW client here would persist another socket's answer.
     const client = getBackendClientForId(id);
-    if (!(await connectionsStore.getDetectHosts(id))) return;
+    // A guest session has no detect-hosts opt-out: the invite envelope's
+    // list is always refreshed from the daemon's current interfaces.
+    const isGuest = (await guestSessionsStore.findById(id)) !== null;
+    if (!isGuest && !(await connectionsStore.getDetectHosts(id))) return;
     const result = await client.request('server.pairingInfo');
     const ips = extractLocalIps(result);
     // Drop the result when this backend's client changed mid-flight — the
     // snapshot client may have answered just before its disposal.
     if (backendClients.get(id) === client) {
+      if (isGuest) {
+        const hostsChanged = ips ? await guestSessionsStore.setHosts(id, ips) : false;
+        const tcChanged = await guestSessionsStore.setTcAddress(id, extractTcAddress(result));
+        if (hostsChanged || tcChanged) await broadcastGuestSessionsChanged();
+        return;
+      }
       if (ips) await connectionsStore.setHosts(id, ips);
       const tcChanged = await connectionsStore.setTcAddress(id, extractTcAddress(result));
       if (ips || tcChanged) await broadcastConnectionsChanged();
@@ -1827,6 +2281,288 @@ function refreshConnectionsForStatusChange(): void {
 }
 
 /**
+ * Push the token-free guest sessions list to every renderer after a local
+ * mutation (invite redeemed, forgotten, hostname captured) or a keychain
+ * pull. Fail-soft per window, like {@link broadcastConnectionsChanged}.
+ */
+async function broadcastGuestSessionsChanged(): Promise<void> {
+  const payload = await buildGuestSessionsListResult();
+  for (const win of BrowserWindow.getAllWindows()) {
+    if (win.isDestroyed()) continue;
+    try {
+      win.webContents.send(GUEST_SESSIONS.CHANGED, payload);
+    } catch (error) {
+      logger.warn('Failed to broadcast guest sessions change', {
+        windowId: win.id,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+}
+
+/**
+ * The token-free guest sessions list plus the ids with a pooled client
+ * (`openIds` — a window for that host was opened) and the subset whose client
+ * is live (`connectedIds` — the nav block's "connected" / "not connected"; a
+ * session outside `openIds` shows no status). Same connectivity source as the
+ * connections list's `connectedIds`.
+ */
+async function buildGuestSessionsListResult(): Promise<GuestSessionsListResult> {
+  const sessions = await guestSessionsStore.list();
+  const ids = sessions.map((session) => session.id);
+  return {
+    sessions,
+    openIds: ids.filter((id) => backendClients.has(id)),
+    connectedIds: ids.filter((id) => backendClients.get(id)?.getStatus() === 'connected'),
+  };
+}
+
+/**
+ * Bounded projection of a failed `principal.revokeSelf` for the main log: the
+ * daemon's numeric code when it answered, otherwise a fixed transport /
+ * timeout marker — never the raw message, which may echo host material.
+ */
+function revokeFailureCode(error: unknown): string {
+  if (error instanceof JsonRpcError) return `rpc:${error.rpcCode}`;
+  if (error instanceof Error && /timed out/i.test(error.message)) return 'timeout';
+  return 'transport';
+}
+
+/**
+ * Bound on the best-effort `principal.revokeSelf` issued by *Leave host*: the
+ * credential is deleted locally right after regardless of the outcome, so a
+ * slow or unreachable host must not hold the local teardown hostage.
+ */
+export const GUEST_REVOKE_SELF_TIMEOUT_MS = 5_000;
+
+/**
+ * *Leave host* (multiplayer w4): ask the host to invalidate this device's
+ * guest credential (`principal.revokeSelf`, best-effort within
+ * {@link GUEST_REVOKE_SELF_TIMEOUT_MS} — only when the session's pooled
+ * client is live; there is no retry queue), then delete the guest session
+ * locally and close that host's windows. Mirrors {@link forgetConnectionLocked}
+ * for the window/pool teardown; a dangling principal on an unreachable host is
+ * the owner's *Remove* to clean up.
+ */
+async function leaveGuestSessionLocked(id: string): Promise<LeaveGuestSessionResult> {
+  if ((await guestSessionsStore.findById(id)) === null) {
+    // Idempotent: a repeated / concurrent leave (another window, a retry after
+    // a lost reply) finds the session already gone — that is completion, not
+    // an error. No second revoke or forget; only a pooled client this id may
+    // still hold is torn down (paired connections keep theirs).
+    if (backendClients.has(id) && !(await connectionsStore.list()).some((c) => c.id === id)) {
+      await windowHooks.ensureLocalWindowBeforeClose?.(id);
+      await windowHooks.closeForBackend?.(id);
+      disconnectBackendClient(id);
+    }
+    return { id, revoked: false };
+  }
+  let revoked = false;
+  const client = backendClients.get(id);
+  if (client && client.getStatus() === 'connected') {
+    try {
+      await client.request('principal.revokeSelf', undefined, {
+        timeoutMs: GUEST_REVOKE_SELF_TIMEOUT_MS,
+      });
+      revoked = true;
+    } catch (error) {
+      logger.warn('principal.revokeSelf failed before leaving guest session (best-effort)', {
+        id,
+        code: revokeFailureCode(error),
+      });
+    }
+  }
+  await guestSessionsStore.forget(id);
+  await windowHooks.ensureLocalWindowBeforeClose?.(id);
+  await windowHooks.closeForBackend?.(id);
+  disconnectBackendClient(id);
+  return { id, revoked };
+}
+
+/**
+ * Bound on the `workspace.members.leave` round trip of a per-workspace
+ * *Leave*, including the dial when the host has no live pooled client.
+ */
+export const GUEST_LEAVE_WORKSPACE_TIMEOUT_MS = 10_000;
+
+/**
+ * A per-workspace *Leave* that did not complete on the host, reduced to a
+ * bounded code before it crosses IPC (the raw transport / daemon message may
+ * echo host material). The local record is left untouched so the user can
+ * retry.
+ */
+export class GuestWorkspaceLeaveError extends Error {
+  constructor(readonly code: string) {
+    // i18n-ignore (bounded machine code, never rendered)
+    super(`guest workspace leave failed: ${code}`);
+    this.name = 'GuestWorkspaceLeaveError';
+  }
+}
+
+/**
+ * The host's `workspace.members.leave` for a per-workspace *Leave*: on the
+ * session's pooled client when it is live, otherwise on a short-lived client
+ * dialled from the stored guest credential (a joined host that was never
+ * opened has no pooled client, and *Leave* must not pool one — that would
+ * flip the nav block to "not connected" for a host with no window).
+ */
+async function requestGuestWorkspaceLeave(id: string, workspaceId: string): Promise<boolean> {
+  const pooled = backendClients.get(id);
+  const request = async (client: JsonRpcClient) => {
+    const result = (await client.request(
+      'workspace.members.leave',
+      { workspaceId },
+      { timeoutMs: GUEST_LEAVE_WORKSPACE_TIMEOUT_MS },
+    )) as { left?: unknown } | null;
+    return result?.left === true;
+  };
+  if (pooled && pooled.getStatus() === 'connected') return request(pooled);
+  const { config } = await buildConfigForConnection(id);
+  const client = new JsonRpcClient({
+    config,
+    helloParams: async () => ({ clientId: await getOrCreateClientId() }),
+  });
+  client.on('error', () => {});
+  let timer: NodeJS.Timeout | undefined;
+  try {
+    return await Promise.race([
+      request(client),
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(() => reject(new Error('timed out')), GUEST_LEAVE_WORKSPACE_TIMEOUT_MS);
+      }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+    client.dispose();
+  }
+}
+
+/**
+ * Per-workspace *Leave* (multiplayer w4): ask the host to drop this
+ * principal's membership (`workspace.members.leave`), then drop the workspace
+ * from the session's local record. The record is dropped when the host
+ * confirms OR answers that the membership is already gone (`-32602`: the
+ * owner removed the guest first); any other failure keeps the record and
+ * rejects with a bounded code so the user can retry. A workspace no longer
+ * in the record (another window already left it) is completion, not an
+ * error, and sends nothing. The session itself is kept even at zero
+ * workspaces — *Leave host* is the only thing that forgets it.
+ */
+async function leaveGuestWorkspaceLocked(
+  id: string,
+  workspaceId: string,
+): Promise<LeaveGuestWorkspaceResult> {
+  const session = await guestSessionsStore.findById(id);
+  if (!session?.workspaces.some((w) => w.id === workspaceId)) {
+    return { id, workspaceId, left: false };
+  }
+  let left = false;
+  try {
+    left = await requestGuestWorkspaceLeave(id, workspaceId);
+  } catch (error) {
+    if (!(error instanceof JsonRpcError && error.rpcCode === -32602)) {
+      const code = revokeFailureCode(error);
+      logger.warn('workspace.members.leave failed; keeping the local record', {
+        id,
+        workspaceId,
+        code,
+      });
+      throw new GuestWorkspaceLeaveError(code);
+    }
+  }
+  bumpGuestMembershipEpoch(id);
+  await guestSessionsStore.leaveWorkspace(id, workspaceId);
+  return { id, workspaceId, left };
+}
+
+/** Register the guest sessions IPC (token-free list, leave, leave-workspace) + the change push. */
+function registerGuestSessionsHandlers(): void {
+  ipcMain.handle(
+    GUEST_SESSIONS.LIST,
+    createValidatedHandler(
+      GuestSessionsListSchema,
+      async (): Promise<GuestSessionsListResult> => buildGuestSessionsListResult(),
+      GUEST_SESSIONS.LIST,
+    ),
+  );
+  ipcMain.handle(
+    GUEST_SESSIONS.LEAVE,
+    createValidatedHandler(
+      GuestSessionsLeaveSchema,
+      async (_event, { id }) => enqueueConnectionOperation(() => leaveGuestSessionLocked(id)),
+      GUEST_SESSIONS.LEAVE,
+    ),
+  );
+  ipcMain.handle(
+    GUEST_SESSIONS.LEAVE_WORKSPACE,
+    createValidatedHandler(
+      GuestSessionsLeaveWorkspaceSchema,
+      async (_event, { id, workspaceId }) =>
+        enqueueConnectionOperation(() => leaveGuestWorkspaceLocked(id, workspaceId)),
+      GUEST_SESSIONS.LEAVE_WORKSPACE,
+    ),
+  );
+  guestSessionsStore.onGuestSessionsMutated(() => {
+    void broadcastGuestSessionsChanged();
+    keychainSyncLifecycle?.requestReconcile();
+  });
+  // A guest session's pooled client appearing (its first 'connecting' moves
+  // the id into `openIds`), connecting or dropping flips its status in the
+  // nav block (same forwarder that keeps the connections list's
+  // `connectedIds` fresh).
+  backendStatusForwarder.on('status', refreshGuestSessionsForPoolChange);
+}
+
+/**
+ * Workspace presence (multiplayer w5): each window's `presence:report` joins
+ * its backend's merged `presence.update` (see {@link PresenceAggregator}). A
+ * window leaving (`destroyed`) drops its contribution; a backend's pooled
+ * client (re)connecting re-sends the merged state, since the daemon binds
+ * presence to the connection and forgets it on close.
+ */
+const presenceAggregator = new PresenceAggregator((backendId, params) =>
+  getBackendClientForId(backendId).request<PresenceUpdateResult>('presence.update', params),
+);
+const presenceTrackedWebContents = new Set<number>();
+
+function registerPresenceHandlers(): void {
+  ipcMain.handle(
+    PRESENCE.REPORT,
+    createValidatedHandler(
+      PresenceReportSchema,
+      async (event, params): Promise<PresenceReportResult> => {
+        const { sender } = event;
+        if (!presenceTrackedWebContents.has(sender.id)) {
+          presenceTrackedWebContents.add(sender.id);
+          sender.once('destroyed', () => {
+            presenceTrackedWebContents.delete(sender.id);
+            presenceAggregator.dropWindow(sender.id);
+          });
+        }
+        const typingSource = await presenceAggregator.report(
+          getBackendIdForWebContents(sender),
+          sender.id,
+          params,
+        );
+        return { typingSource };
+      },
+      PRESENCE.REPORT,
+    ),
+  );
+  backendStatusForwarder.on('status', (backendId: string, status: ConnectionStatus) => {
+    if (status === 'connected') presenceAggregator.reconnected(backendId);
+  });
+}
+
+/** Push a fresh guest list when a pooled client for a guest session id changes. */
+function refreshGuestSessionsForPoolChange(id: string): void {
+  void guestSessionsStore
+    .findById(id)
+    .then((session) => (session ? broadcastGuestSessionsChanged() : undefined))
+    .catch(() => {});
+}
+
+/**
  * Resolve the transport config + cert-mismatch identity for a connection id.
  * `local` maps to the env/UDS default (no pinned cert); a remote id builds the
  * pinned `wss` config from its stored host/port/fingerprint + decrypted token.
@@ -1845,6 +2581,51 @@ class ConnectionSecretUnavailableError extends Error {
   }
 }
 
+/**
+ * The dial envelope of a remote backend id, whichever registry holds it: a
+ * paired (owner) backend from the connections store or a guest session from
+ * the guest-sessions store. Both share one id space (random UUIDs), so the
+ * window/backend layer stays keyed by id alone and never needs to know which
+ * registry a window belongs to. `null` for the local id or an unknown id.
+ */
+export async function resolveBackendRecord(id: string): Promise<{
+  kind: 'owner' | 'guest';
+  id: string;
+  host: string;
+  hosts: string[];
+  port: number;
+  fingerprint: string;
+  tcAddress: string | null;
+  getToken: () => Promise<string | null>;
+} | null> {
+  if (id === LOCAL_CONNECTION_ID) return null;
+  const owner = (await connectionsStore.list()).find((c) => c.id === id && !c.isLocal);
+  if (owner && owner.host != null && owner.port != null && owner.fingerprint != null) {
+    return {
+      kind: 'owner',
+      id,
+      host: owner.host,
+      hosts: owner.hosts?.length ? owner.hosts : [owner.host],
+      port: owner.port,
+      fingerprint: owner.fingerprint,
+      tcAddress: owner.tcAddress ?? null,
+      getToken: () => connectionsStore.getDecryptedToken(id),
+    };
+  }
+  const guest = await guestSessionsStore.findById(id);
+  if (!guest) return null;
+  return {
+    kind: 'guest',
+    id,
+    host: guest.host,
+    hosts: guest.hosts.length ? guest.hosts : [guest.host],
+    port: guest.port,
+    fingerprint: guest.fingerprint,
+    tcAddress: guest.tcAddress,
+    getToken: () => guestSessionsStore.getDecryptedToken(id),
+  };
+}
+
 export async function buildConfigForConnection(
   id: string,
   tokenOverride?: string,
@@ -1855,14 +2636,14 @@ export async function buildConfigForConnection(
   if (id === LOCAL_CONNECTION_ID) {
     return { config: resolveBackendConfig(process.env, { isDev: !app.isPackaged }), meta: null };
   }
-  const record = (await connectionsStore.list()).find((c) => c.id === id && !c.isLocal);
-  if (!record || record.host == null || record.port == null || record.fingerprint == null) {
+  const record = await resolveBackendRecord(id);
+  if (!record) {
     throw new Error(`Unknown or incomplete connection: ${id}`);
   }
   let token: string | null | undefined = tokenOverride;
   if (token === undefined) {
     try {
-      token = await connectionsStore.getDecryptedToken(id);
+      token = await record.getToken();
     } catch {
       throw new ConnectionSecretUnavailableError();
     }
@@ -1874,7 +2655,7 @@ export async function buildConfigForConnection(
   // is excluded whenever a routable candidate exists), so the race dials
   // hosts[0] first — not the raw stored primary, which can be loopback on
   // records synced from before self-publish filtered it out.
-  const dialHosts = record.hosts?.length ? record.hosts : [record.host];
+  const dialHosts = record.hosts;
   return {
     config: {
       transport: 'wss',
@@ -2336,6 +3117,8 @@ export function registerBackendHandlers(): void {
       status: client.getStatus(),
       transport,
       reconnectAttempts: client.getReconnectAttempts(),
+      connectionLimited: client.isConnectionLimited(),
+      connectionLimitRetryAfterMs: client.getConnectionLimitRetryAfterMs(),
       ...daemonUpdateMarker(backendId),
     };
   });
@@ -2407,14 +3190,24 @@ export function registerBackendHandlers(): void {
   });
 
   registerConnectionsHandlers();
+  registerGuestSessionsHandlers();
+  registerPresenceHandlers();
 
   // Keychain sync (T3): pref-gated (opt-out — absent reads as enabled on
   // macOS), fail-soft, fully async. When a reconcile pulls remote changes into
   // the store, refresh every renderer via the existing connections:changed
   // broadcast. Availability changes push connections:sync-status-changed so
-  // the settings UI stays live (T4).
+  // the settings UI stays live (T4). Guest sessions ride the same lifecycle as
+  // a secondary pass against their own keychain service.
   keychainSyncLifecycle = initKeychainSyncLifecycle({
     onRemoteApplied: () => broadcastConnectionsChanged(),
+    guestAdapter: {
+      list: () => guestSessionsStore.listSyncRecords(),
+      async applyRemote(_account, record) {
+        await guestSessionsStore.applyRemoteSyncRecord(record);
+      },
+    },
+    onGuestRemoteApplied: () => broadcastGuestSessionsChanged(),
     onStatusChanged: (status) => {
       for (const win of BrowserWindow.getAllWindows()) {
         if (win.isDestroyed()) continue;
@@ -2621,29 +3414,13 @@ function registerConnectionsHandlers(): void {
             // destroying any windows. The caller opens/focuses it through
             // connections:open.
             const rebuilt = await connectBackendClient(connection.id);
-            // The rebuilt client's FIRST connect is a plain `connected`, not a
-            // `reconnected`, and this backend's windows stay alive across the
-            // swap. Replay the reconnect marker exactly as the instance's own
-            // `reconnected` handler would, so main-process services and
-            // renderer consumers holding daemon `events.subscribe` leases
-            // re-subscribe against the new client (requests queue until the
-            // fresh socket connects, T8).
-            broadcast(
-              BACKEND.STATUS,
-              {
-                status: 'connected',
-                reconnected: true,
-                transport: formatTransportInfo(
-                  rebuilt.getConfig(),
-                  getPinnedVersion(),
-                  rebuilt.getConnectedVia(),
-                ),
-                reconnectAttempts: rebuilt.getReconnectAttempts(),
-                ...daemonUpdateMarker(connection.id),
-              },
-              connection.id,
-            );
-            backendReconnectForwarder.emit('reconnected', connection.id);
+            // This backend's windows stay alive across the swap. Replay the
+            // reconnect marker exactly as the instance's own `reconnected`
+            // handler would — once the fresh socket has connected — so
+            // main-process services and renderer consumers holding daemon
+            // `events.subscribe` leases re-subscribe against the new client
+            // (requests queue until then, T8).
+            replayReconnectOnceConnected(connection.id, rebuilt);
           }
           await broadcastConnectionsChanged();
           return {
@@ -2805,9 +3582,9 @@ function registerConnectionsHandlers(): void {
   );
 
   // Ask one connected remote backend's daemon to self-update: route
-  // `system.requestUpdate` to that backend's pooled client. The daemon signals
-  // its serve-mode sitter (SIGUSR1), which installs the newer version and
-  // gracefully restarts the daemon — the client then reconnects on its own.
+  // `system.requestUpdate` to that backend's pooled client with the main-owned
+  // bundle pin. Capability detection prevents older daemons from ignoring the
+  // target. Adopted local daemons retain their existing channel-update path.
   // The result is structured (never a thrown daemon error) so the renderer can
   // toast a specific message per failure mode: local/method-unknown daemons →
   // 'unsupported', no live client → 'not-connected', a structured daemon error
@@ -3125,6 +3902,7 @@ async function getSelfPublishedState(): Promise<SelfPublishedStateResult> {
 export function disposeAllBackendClients(): void {
   for (const [id, instance] of backendClients) {
     backendClients.delete(id);
+    connectedProtocolVersions.delete(id);
     clearBackendFailureState(id);
     disposeTransferConnectionsForBackend(id);
     instance.dispose();

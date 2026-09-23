@@ -13,7 +13,9 @@ import {
   collectNonFontOsDeps,
   exitCodeFromChild,
   forwardSignalsToChild,
+  heapExhaustionHint,
   parseLauncherArgs,
+  preflightI18n,
   resolveHtmlReportOpen,
   runPlaywright,
   usage,
@@ -140,6 +142,65 @@ describe('buildChildEnv', () => {
     expect(env.PWTEST_CACHE_DIR).toBe('/cache');
     expect(env.PLAYWRIGHT_HTML_OPEN).toBe('on-failure');
   });
+
+  it('defaults NODE_OPTIONS to the 8 GB heap cap when unset', () => {
+    const { env } = buildChildEnv({ env: baseEnv, isTTY: false, root: '/repo' });
+    expect(env.NODE_OPTIONS).toBe('--max-old-space-size=8192');
+  });
+
+  it('appends the heap cap to a pre-set NODE_OPTIONS that has no heap flag', () => {
+    const preset = '--require /x/dd-trace/init';
+    const { env } = buildChildEnv({
+      env: { ...baseEnv, NODE_OPTIONS: preset },
+      isTTY: false,
+      root: '/repo',
+    });
+    expect(env.NODE_OPTIONS).toBe(`${preset} --max-old-space-size=8192`);
+  });
+
+  it.each([
+    ['canonical flag', '--max-old-space-size=2048'],
+    ['V8 underscore alias', '--max_old_space_size=2048'],
+    ['double-quoted token', '"--max-old-space-size=2048"'],
+    ['flag after other options', '--require /x/dd-trace/init --max_old_space_size=2048'],
+  ])('keeps a pre-set NODE_OPTIONS that already chooses a heap size (%s)', (_label, preset) => {
+    const { env } = buildChildEnv({
+      env: { ...baseEnv, NODE_OPTIONS: preset },
+      isTTY: false,
+      root: '/repo',
+    });
+    expect(env.NODE_OPTIONS).toBe(preset);
+  });
+
+  // A percentage cap is an explicit heap choice too, and it would override an
+  // appended --max-old-space-size anyway.
+  it.each([
+    ['canonical flag', '--max-old-space-size-percentage=25'],
+    ['V8 underscore alias', '--max_old_space_size_percentage=25'],
+    ['double-quoted token', '"--max-old-space-size-percentage=25"'],
+    ['flag after other options', '--require /x/dd-trace/init --max-old-space-size-percentage=25'],
+    ['space-separated value', '--require /x/dd-trace/init --max-old-space-size-percentage 25'],
+    ['double-quoted space-separated pair', '"--max-old-space-size-percentage" "25"'],
+  ])('keeps a pre-set NODE_OPTIONS that chooses a heap percentage (%s)', (_label, preset) => {
+    const { env } = buildChildEnv({
+      env: { ...baseEnv, NODE_OPTIONS: preset },
+      isTTY: false,
+      root: '/repo',
+    });
+    expect(env.NODE_OPTIONS).toBe(preset);
+  });
+
+  it('leaves the percentage cap as the flag the heap hint reports', () => {
+    const preset = '--require /x/dd-trace/init --max-old-space-size-percentage=25';
+    const { env } = buildChildEnv({
+      env: { ...baseEnv, NODE_OPTIONS: preset },
+      isTTY: false,
+      root: '/repo',
+    });
+    const hint = heapExhaustionHint({ code: 134, signal: null, env });
+    expect(hint).toContain('--max-old-space-size-percentage=25 (NODE_OPTIONS)');
+    expect(hint).not.toContain('8192');
+  });
 });
 
 describe('exitCodeFromChild', () => {
@@ -233,11 +294,282 @@ describe('runPlaywright', () => {
     expect(code).toBe(1);
   });
 
+  const exitWith = (code: number | null, signal: string | null, env = baseEnv) => {
+    const child = new EventEmitter();
+    const errors: string[] = [];
+    const exits: number[] = [];
+    runPlaywright({
+      cliPath: '/ct/cli.js',
+      args: [],
+      env,
+      spawnImpl: (() => child) as never,
+      printError: (message: string) => errors.push(message),
+      exit: (code: number) => exits.push(code),
+    });
+    child.emit('exit', code, signal);
+    return { errors, exits };
+  };
+
+  it('prints the heap-exhaustion hint once after the SIGABRT line, before exiting', () => {
+    const { errors, exits } = exitWith(null, 'SIGABRT');
+    expect(errors).toHaveLength(2);
+    expect(errors[0]).toBe('playwright died with SIGABRT');
+    expect(errors[1]).toBe(heapExhaustionHint({ code: null, signal: 'SIGABRT', env: baseEnv }));
+    expect(exits).toEqual([exitCodeFromChild(null, 'SIGABRT')]);
+  });
+
+  it('prints the heap-exhaustion hint on exit code 134 and keeps the exit code', () => {
+    const { errors, exits } = exitWith(134, null);
+    expect(errors).toEqual([heapExhaustionHint({ code: 134, signal: null, env: baseEnv })]);
+    expect(exits).toEqual([134]);
+  });
+
+  it.each([
+    [1, null],
+    [0, null],
+  ])('prints no hint for exit code %s', (code, signal) => {
+    const { errors, exits } = exitWith(code, signal);
+    expect(errors).toEqual([]);
+    expect(exits).toEqual([code]);
+  });
+});
+
+describe('heapExhaustionHint', () => {
+  const abort = { code: null, signal: 'SIGABRT' };
+
+  it.each([
+    ['SIGABRT', { code: null, signal: 'SIGABRT' }],
+    ['exit code 134', { code: 134, signal: null }],
+  ])('describes the likely heap exhaustion on %s', (_label, exit) => {
+    const hint = heapExhaustionHint({ ...exit, env: baseEnv });
+    expect(hint).toEqual(expect.any(String));
+    expect(hint).toMatch(/heap/i);
+    expect(hint).toContain('Ineffective mark-compacts near heap limit');
+    expect(hint).toContain('JavaScript heap out of memory');
+    expect(hint).toMatch(/not (evidence of )?a test regression/i);
+    expect(hint).toContain('NODE_OPTIONS=--max-old-space-size=');
+  });
+
+  it.each([
+    ['exit code 1', { code: 1, signal: null }],
+    ['exit code 0', { code: 0, signal: null }],
+    ['SIGTERM', { code: null, signal: 'SIGTERM' }],
+    ['SIGSEGV', { code: null, signal: 'SIGSEGV' }],
+  ])('returns null on %s', (_label, exit) => {
+    expect(heapExhaustionHint({ ...exit, env: baseEnv })).toBeNull();
+  });
+
+  it('names the launcher default when neither NODE_OPTIONS nor CT_NODE_ARGS chooses a heap size', () => {
+    const hint = heapExhaustionHint({
+      ...abort,
+      env: { ...baseEnv, NODE_OPTIONS: '--require /x/dd-trace/init' },
+    });
+    expect(hint).toContain('--max-old-space-size=8192');
+    expect(hint).not.toContain('dd-trace');
+  });
+
+  it('names only the heap-flag token from NODE_OPTIONS, never the full value', () => {
+    const hint = heapExhaustionHint({
+      ...abort,
+      env: { ...baseEnv, NODE_OPTIONS: '--require /x/dd-trace/init --max-old-space-size=2048' },
+    });
+    expect(hint).toContain('--max-old-space-size=2048');
+    expect(hint).not.toContain('8192');
+    expect(hint).not.toContain('dd-trace');
+    expect(hint).not.toContain('--require');
+  });
+
+  it.each([
+    ['V8 underscore alias', '--max_old_space_size=3072', '--max_old_space_size=3072'],
+    ['double-quoted token', '"--max-old-space-size=3072"', '--max-old-space-size=3072'],
+  ])('recognises the %s spelling', (_label, preset, token) => {
+    const hint = heapExhaustionHint({ ...abort, env: { ...baseEnv, NODE_OPTIONS: preset } });
+    expect(hint).toContain(token);
+    expect(hint).not.toContain('8192');
+  });
+
+  it('names a CT_NODE_ARGS heap flag, which overrides NODE_OPTIONS', () => {
+    const hint = heapExhaustionHint({
+      ...abort,
+      env: {
+        ...baseEnv,
+        NODE_OPTIONS: '--require /x/dd-trace/init --max-old-space-size=8192',
+        CT_NODE_ARGS: '--single-threaded-gc --max-old-space-size=4096',
+      },
+    });
+    expect(hint).toContain('--max-old-space-size=4096');
+    expect(hint).not.toContain('8192');
+    expect(hint).not.toContain('dd-trace');
+    expect(hint).not.toContain('--single-threaded-gc');
+  });
+
+  it('tells the caller to raise the CT_NODE_ARGS flag, since NODE_OPTIONS cannot override it', () => {
+    const hint = heapExhaustionHint({
+      ...abort,
+      env: { ...baseEnv, CT_NODE_ARGS: '--max-old-space-size=4096' },
+    });
+    expect(hint).toContain('CT_NODE_ARGS=--max-old-space-size=16384');
+    expect(hint).not.toContain('NODE_OPTIONS=');
+  });
+
+  it('suggests raising NODE_OPTIONS when the flag does not come from CT_NODE_ARGS', () => {
+    const hint = heapExhaustionHint({
+      ...abort,
+      env: { ...baseEnv, NODE_OPTIONS: '--max-old-space-size=2048', CT_NODE_ARGS: '--no-opt' },
+    });
+    expect(hint).toContain('NODE_OPTIONS=--max-old-space-size=16384');
+    expect(hint).not.toContain('CT_NODE_ARGS=');
+  });
+
+  // --max-old-space-size-percentage overrides --max-old-space-size wherever
+  // either is set, so it is the flag in effect even next to the appended default.
+  it('names a NODE_OPTIONS percentage flag over the size flag the launcher appended', () => {
+    const hint = heapExhaustionHint({
+      ...abort,
+      env: {
+        ...baseEnv,
+        NODE_OPTIONS:
+          '--require /x/dd-trace/init --max-old-space-size-percentage=25 --max-old-space-size=8192',
+      },
+    });
+    expect(hint).toContain('--max-old-space-size-percentage=25 (NODE_OPTIONS)');
+    expect(hint).not.toContain('8192');
+    expect(hint).not.toContain('dd-trace');
+  });
+
+  it('names a NODE_OPTIONS percentage flag over a CT_NODE_ARGS size flag', () => {
+    const hint = heapExhaustionHint({
+      ...abort,
+      env: {
+        ...baseEnv,
+        NODE_OPTIONS: '--max-old-space-size-percentage=25',
+        CT_NODE_ARGS: '--max-old-space-size=4096',
+      },
+    });
+    expect(hint).toContain('--max-old-space-size-percentage=25 (NODE_OPTIONS)');
+    expect(hint).not.toContain('4096');
+  });
+
+  it('names a CT_NODE_ARGS percentage flag over a NODE_OPTIONS percentage flag', () => {
+    const hint = heapExhaustionHint({
+      ...abort,
+      env: {
+        ...baseEnv,
+        NODE_OPTIONS: '--max-old-space-size-percentage=25',
+        CT_NODE_ARGS: '--max_old_space_size_percentage=30',
+      },
+    });
+    expect(hint).toContain('--max_old_space_size_percentage=30 (CT_NODE_ARGS)');
+    expect(hint).not.toContain('percentage=25');
+  });
+
+  // Node also takes the percentage as the next token (the absolute flag is a
+  // V8 pass-through and only accepts `=N`).
+  it.each([
+    [
+      'NODE_OPTIONS',
+      { NODE_OPTIONS: '--require /x/dd-trace/init --max-old-space-size-percentage 25' },
+    ],
+    ['NODE_OPTIONS', { NODE_OPTIONS: '"--max-old-space-size-percentage" "25"' }],
+    ['CT_NODE_ARGS', { CT_NODE_ARGS: '--max-old-space-size-percentage 25 --no-opt' }],
+  ])('names a space-separated percentage flag verbatim from %s', (source, vars) => {
+    const hint = heapExhaustionHint({ ...abort, env: { ...baseEnv, ...vars } });
+    expect(hint).toContain(`--max-old-space-size-percentage 25 (${source})`);
+    expect(hint).toContain(`${source}=--max-old-space-size-percentage=50 pnpm run test:ct`);
+    expect(hint).not.toContain('8192');
+    expect(hint).not.toContain('--no-opt');
+    expect(hint).not.toContain('dd-trace');
+  });
+
+  it('ignores a trailing percentage flag with no value', () => {
+    const hint = heapExhaustionHint({
+      ...abort,
+      env: {
+        ...baseEnv,
+        NODE_OPTIONS: '--max-old-space-size=2048 --max-old-space-size-percentage',
+      },
+    });
+    expect(hint).toContain('--max-old-space-size=2048 (NODE_OPTIONS)');
+  });
+
+  it.each([
+    ['doubles the percentage', '--max-old-space-size-percentage=25', '50'],
+    ['caps the raised percentage at 100', '--max-old-space-size-percentage=60', '100'],
+    [
+      'falls back to 50 when the percentage is unparsable',
+      '--max-old-space-size-percentage=lots',
+      '50',
+    ],
+  ])('%s in the retry when a percentage cap is in effect', (_label, preset, raised) => {
+    const hint = heapExhaustionHint({ ...abort, env: { ...baseEnv, NODE_OPTIONS: preset } });
+    expect(hint).toContain(
+      `NODE_OPTIONS=--max-old-space-size-percentage=${raised} pnpm run test:ct`,
+    );
+    expect(hint).not.toContain('--max-old-space-size=16384');
+  });
+
   it('exposes the launcher options in its usage text', () => {
     expect(usage()).toContain(CT_HTML_REPORT_ENV);
     expect(usage()).toContain(OPEN_REPORT_FLAG);
     expect(usage()).toContain(PRINT_OS_DEPS_FLAG);
     expect(usage()).toContain('CT_PORT');
+  });
+});
+
+describe('preflightI18n', () => {
+  const harness = () => {
+    const errors: string[] = [];
+    const exits: number[] = [];
+    const roots: unknown[] = [];
+    return {
+      errors,
+      exits,
+      roots,
+      options: {
+        root: '/repo',
+        exit: (code: number) => exits.push(code),
+        printError: (message: string) => errors.push(message),
+      },
+    };
+  };
+
+  it('proceeds without exiting when the bundle is fresh', async () => {
+    const { errors, exits, roots, options } = harness();
+    const proceed = await preflightI18n({
+      ...options,
+      ensureI18n: async (root: string) => {
+        roots.push(root);
+        return { ok: true, reason: null };
+      },
+    });
+    expect(proceed).toBe(true);
+    expect(roots).toEqual(['/repo']);
+    expect(errors).toEqual([]);
+    expect(exits).toEqual([]);
+  });
+
+  it('reports the reason and exits 1 when the bundle stays stale', async () => {
+    const { errors, exits, options } = harness();
+    const proceed = await preflightI18n({
+      ...options,
+      ensureI18n: async () => ({ ok: false, reason: 'Paraglide bundle is stale' }),
+    });
+    expect(proceed).toBe(false);
+    expect(errors).toEqual(['[run-ct-tests] Paraglide bundle is stale']);
+    expect(exits).toEqual([1]);
+  });
+
+  it('reports a thrown error and exits 1', async () => {
+    const { errors, exits, options } = harness();
+    const proceed = await preflightI18n({
+      ...options,
+      ensureI18n: async () => {
+        throw new Error('compiler crashed');
+      },
+    });
+    expect(proceed).toBe(false);
+    expect(errors).toEqual(['[run-ct-tests] compiler crashed']);
+    expect(exits).toEqual([1]);
   });
 });
 

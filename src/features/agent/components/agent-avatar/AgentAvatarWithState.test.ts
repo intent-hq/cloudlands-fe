@@ -10,31 +10,10 @@ import { agentAvatarCatalogStates, agentAvatarCatalogIdentities } from './agent-
 import { getAgentAvatarStateLabel } from './avatar-state-label';
 import { agentAvatarGeometry, agentAvatarVariants } from './avatar-size';
 
-const source = readFileSync(
-  resolve(process.cwd(), 'src/features/agent/components/agent-avatar/AgentAvatarWithState.svelte'),
-  'utf8',
-);
-const avatarSource = readFileSync(
-  resolve(process.cwd(), 'src/features/agent/components/agent-avatar/AgentAvatar.svelte'),
-  'utf8',
-);
+// Computed-style contracts (semantic surface tokens per state, clipped rounded
+// square, forced-colors surfaces, reduced-motion, stack silhouette) live in
+// __tests__/agent-avatar-waiting.ct.spec.ts, where a real browser resolves them.
 const tokenSource = readFileSync(resolve(process.cwd(), 'src/lib/styles/tokens.css'), 'utf8');
-const stackSource = readFileSync(
-  resolve(process.cwd(), 'src/features/agent/components/agent-avatar/AgentAvatarStack.svelte'),
-  'utf8',
-);
-const catalogSource = readFileSync(
-  resolve(process.cwd(), 'src/features/agent/components/agent-avatar/AgentAvatarCatalog.svelte'),
-  'utf8',
-);
-const tabSource = readFileSync(
-  resolve(process.cwd(), 'src/features/layout/components/panel-tabs/Tab.svelte'),
-  'utf8',
-);
-const settingsSidebarSource = readFileSync(
-  resolve(process.cwd(), 'src/lib/components/settings/AIBehaviorSidebar.svelte'),
-  'utf8',
-);
 
 function productAvatarTags(): Array<{ path: string; tag: string }> {
   const root = resolve(process.cwd(), 'src');
@@ -140,39 +119,20 @@ describe('AgentAvatarWithState', () => {
     }
   });
 
-  it('uses theme-scoped semantic surfaces and fixed reference-art color', () => {
-    expect(source).toContain('data-agent-avatar-surface');
-    expect(source).toContain('border-radius: var(--agent-avatar-corner-radius, 6px)');
-    expect(source).toContain('clip-path: inset(0 round var(--agent-avatar-corner-radius, 6px))');
-    expect(source).not.toContain('::after');
-    expect(source).not.toContain('box-shadow');
-    expect(source).toContain('hsl(var(--agent-avatar-surface-neutral))');
-    expect(source).toContain('hsl(var(--agent-avatar-surface-completed))');
-    expect(source).toContain('hsl(var(--agent-avatar-foreground-completed))');
-    expect(source).toMatch(/agent-avatar-with-state--completed\s*{[^}]*transition: none/);
-    expect(source).toContain('hsl(var(--agent-avatar-surface-attention))');
-    expect(source).toContain('hsl(var(--agent-avatar-surface-active))');
-    expect(source).not.toContain('agent-avatar-with-state--unread');
-    expect(source).toContain('hsl(var(--agent-avatar-surface-waiting))');
-    expect(avatarSource).toContain('hsl(var(--agent-avatar-surface-neutral))');
-    expect(avatarSource).toContain('background-color: var(');
-    expect(avatarSource).toContain('color: #080808');
-    expect(avatarSource).toContain(':global([data-agent-avatar-with-state]) .agent-avatar');
-    expect(avatarSource).toMatch(/data-agent-avatar-with-state[^}]*color: inherit/);
-    expect(avatarSource).toContain('--agent-avatar-background-forced, Canvas');
-    expect(avatarSource).toContain('opacity: 1');
-    expect(source).toContain('--agent-avatar-background-forced: Highlight');
-    expect(source).toContain('--agent-avatar-background-forced: Field');
-    expect(source).toContain('--agent-avatar-background-forced: Mark');
-    expect(source).toContain('color: hsl(var(--agent-avatar-foreground))');
+  it('marks the state wrapper as the single avatar surface', () => {
+    const { container } = render(AgentAvatarWithState, {
+      props: { agentId: 'surface-agent', specialist: 'implementor', state: 'running' },
+    });
+    const surfaces = container.querySelectorAll('[data-agent-avatar-surface]');
+    expect(surfaces).toHaveLength(1);
+    expect(surfaces[0].hasAttribute('data-agent-avatar-with-state')).toBe(true);
+    expect(surfaces[0].querySelector('[data-agent-avatar]')).not.toBeNull();
+  });
+
+  it('defines theme-scoped semantic surface and geometry tokens', () => {
     expect(tokenSource).toContain('--theme-light-agent-avatar-foreground:');
     expect(tokenSource).toContain('--theme-dark-agent-avatar-foreground:');
     expect(tokenSource).toContain('--agent-avatar-foreground:');
-    expect(source.match(/^\s+color:/gm)).toHaveLength(4);
-    expect(source).toMatch(/transition: background-color/);
-    expect(source).toContain('@media (forced-colors: active)');
-    expect(source).toMatch(/forced-colors: active[\s\S]*outline: 1px solid CanvasText/);
-    expect(source).toMatch(/@container style\(--motion-reduced: 1\)[\s\S]*transition: none/);
     for (const family of ['neutral', 'attention', 'failed', 'active', 'waiting']) {
       expect(tokenSource).toContain(`--theme-light-agent-avatar-surface-${family}:`);
       expect(tokenSource).toContain(`--theme-dark-agent-avatar-surface-${family}:`);
@@ -198,10 +158,6 @@ describe('AgentAvatarWithState', () => {
   });
 
   it('keeps the waiting surface calm, accessible, and separate in both themes', () => {
-    expect(source).toMatch(
-      /agent-avatar-with-state--waiting[\s\S]*hsl\(var\(--agent-avatar-surface-waiting\)\)/,
-    );
-    expect(source).toMatch(/forced-colors: active[\s\S]*--waiting[\s\S]*background-color: Field/);
     for (const theme of ['light', 'dark'] as const) {
       const waiting = waitingSurfaceByTheme[theme];
       expect(tokenSource).toContain(
@@ -215,7 +171,7 @@ describe('AgentAvatarWithState', () => {
   });
 
   it('keeps unread agents neutral while the workspace unread status stays blue', () => {
-    expect(source).not.toContain('--agent-avatar-surface-unread');
+    expect(tokenSource).not.toContain('--agent-avatar-surface-unread');
     expect(getAgentAvatarStateLabel('unread')).toMatch(/unread/i);
     for (const theme of ['light', 'dark'] as const) {
       const unread = workspaceUnreadSurfaceByTheme[theme];
@@ -227,12 +183,7 @@ describe('AgentAvatarWithState', () => {
     }
   });
 
-  it('renders a blue unread dot for the unread state only', async () => {
-    expect(source).toContain('background-color: hsl(var(--workspace-status-unread))');
-    expect(source).toMatch(
-      /forced-colors: active[\s\S]*agent-avatar-unread-dot[\s\S]*background-color: CanvasText/,
-    );
-
+  it('renders an unread dot for the unread state only', async () => {
     const props = {
       agentId: 'unread-agent',
       specialist: 'implementor',
@@ -283,32 +234,26 @@ describe('AgentAvatarWithState', () => {
       expect(geometry.overlap).toBeLessThanOrEqual(geometry.surface / 4);
       expect(geometry.radius).toBeLessThan(geometry.surface / 2);
     }
-    expect(catalogSource).not.toMatch(/<AgentAvatarWithState[\s\S]{0,180}\bsize=/);
-    expect(tabSource).not.toMatch(/<AgentAvatarWithState[\s\S]{0,180}\bsize=/);
-    expect(catalogSource).toContain('<AgentAvatarStack');
-    expect(tabSource).toContain('<AgentAvatarStack');
-    expect(tabSource).toContain('variant="emphasized"');
-    expect(tabSource).toContain('overflowId=');
+
+    const { container } = render(AgentAvatarCatalog);
+    const stateAvatars = container.querySelectorAll<HTMLElement>(
+      '.agent-avatar-catalog-states [data-agent-avatar-with-state]',
+    );
+    expect(stateAvatars.length).toBeGreaterThan(0);
+    for (const avatar of stateAvatars) {
+      expect(avatar.getAttribute('data-avatar-variant')).toBe('standard');
+      expect(avatar.style.width).toBe('');
+    }
+    const stack = container.querySelector(
+      '[data-agent-avatar-catalog-stack] [data-agent-avatar-stack]',
+    );
+    expect(stack?.getAttribute('data-avatar-variant')).toBe('emphasized');
   });
 
   it('keeps visible product consumers off zero-clear-space canonical numeric sizes', () => {
-    expect(avatarSource).toContain('.agent-avatar--legacy {\n    padding: 1px;');
-    expect(avatarSource).not.toContain('padding: 0;');
-    expect(settingsSidebarSource).toContain('<AgentAvatar');
-    expect(settingsSidebarSource).toContain('variant="compact"');
-    expect(settingsSidebarSource).not.toMatch(/<AgentAvatar[^>]*\bsize=/s);
     for (const { path, tag } of productAvatarTags()) {
       expect(tag, path).not.toMatch(/\bsize=\{(?:16|20|24|40)\}/);
     }
-  });
-
-  it('uses the card-stack rounded-square silhouette for every overlap layer', () => {
-    expect(stackSource).toContain('border-radius: var(--agent-avatar-corner-radius)');
-    expect(stackSource).toContain("viewBox='0 0 24 24'");
-    expect(stackSource).toContain("x='17' y='-1' width='26' height='26'");
-    expect(stackSource).toContain("rx='8'");
-    expect(stackSource).toContain('mask-size: 100% 100%');
-    expect(stackSource).not.toContain('radial-gradient');
   });
 
   it('keeps the authoritative state precedence unchanged', () => {

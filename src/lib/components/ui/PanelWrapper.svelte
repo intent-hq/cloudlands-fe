@@ -1,3 +1,5 @@
+<!-- @catalog-exempt: panel chrome layout wrapper with no interactive DOM of its own; no catalog fixtures yet -->
+
 <script lang="ts">
   import type { IconDefinition } from '@fortawesome/free-solid-svg-icons';
   import type { Snippet } from 'svelte';

@@ -361,7 +361,10 @@ test('Browser and Shell compact cards expand into tested six-member deck bodies'
   const strip = page.locator('[data-sidebar-tab-strip]');
   await expect(strip.locator('[data-sidebar-collapsed-tab]')).toHaveCount(6);
   await expect(strip).toHaveAttribute('data-active-tab', 'browser');
-  await expect(page.locator('[data-sidebar-browser-list]')).toBeVisible();
+  // The browser list renders no empty-state row since #2441 (compact browser
+  // and shell sidebar cards), so with no browser tabs it mounts as an empty
+  // zero-height container; assert it is mounted rather than painted.
+  await expect(page.locator('[data-sidebar-browser-list]')).toBeAttached();
 
   await strip.locator('[data-sidebar-collapsed-tab][data-active="true"] button').click();
   await bottomCards.nth(1).locator('button').first().click();

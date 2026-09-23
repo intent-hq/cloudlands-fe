@@ -1,4 +1,5 @@
-import { expect, test, type Locator } from '@playwright/experimental-ct-svelte';
+import type { Locator } from '@playwright/experimental-ct-svelte';
+import { expect, test } from '../../../../test/ct-test';
 import AuroraBackgroundColorHost from './AuroraBackgroundColorHost.svelte';
 
 async function colorState(component: Locator) {

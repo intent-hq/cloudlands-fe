@@ -1,4 +1,5 @@
-import { expect, test, type MountResult } from '@playwright/experimental-ct-svelte';
+import type { MountResult } from '@playwright/experimental-ct-svelte';
+import { expect, test } from '../../../../../test/ct-test';
 import {
   failOnConsoleErrors,
   peekConsoleErrors,

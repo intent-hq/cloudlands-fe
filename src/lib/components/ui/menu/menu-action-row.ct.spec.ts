@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/experimental-ct-svelte';
+import { expect, test } from '../../../../test/ct-test';
 import ActionRowHarness from './ActionRowTestHarness.svelte';
 
 test('action rows grow with wrapped content and retain independent leading and trailing slots', async ({

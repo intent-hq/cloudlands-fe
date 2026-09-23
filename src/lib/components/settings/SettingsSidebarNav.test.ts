@@ -61,6 +61,7 @@ describe('SettingsSidebarNav', () => {
     'devices',
     'setup',
     'advanced',
+    'labs',
   ] as const)('preserves selection through the %s tab identifier', async (id) => {
     const onSelect = vi.fn();
     const { container } = render(SettingsSidebarNav, {
@@ -74,6 +75,20 @@ describe('SettingsSidebarNav', () => {
     expect(button.getAttribute('data-state')).toBe('active');
     await fireEvent.click(button);
     expect(onSelect).toHaveBeenCalledWith(id);
+  });
+
+  it('withholds hidden categories while keeping the rest navigable (collaborator, multiplayer w3)', () => {
+    render(SettingsSidebarNav, {
+      activeTab: 'display',
+      onSelect: vi.fn(),
+      agentsNavigation: createSpecialistsNavigation(),
+      hiddenTabs: ['providers', 'connections'],
+    });
+
+    expect(screen.queryByRole('button', { name: 'Providers' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Connections' })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Workspace setup' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Agent defaults' })).toBeTruthy();
   });
 
   it('delegates specialist navigation without making the section heading clickable', async () => {

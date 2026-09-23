@@ -31,9 +31,19 @@
     repoPath: string;
     repoType: 'local' | 'github';
     canChangeTrunk: boolean;
+    /** Owner-only writes (`workspace.update` of `branch` / `baseRef`) are
+     * offered only when true; a collaborator gets read-only labels. */
+    isOwner?: boolean;
   }
 
-  let { workspaceId, trunkBranch, repoPath, repoType, canChangeTrunk }: Props = $props();
+  let {
+    workspaceId,
+    trunkBranch,
+    repoPath,
+    repoType,
+    canChangeTrunk,
+    isOwner = true,
+  }: Props = $props();
   const fieldId = $props.id();
 
   const workspaceIdStore = writable('');
@@ -200,9 +210,13 @@
           bind:open={branchCopy.workingTooltip}
         >
           {#snippet content()}<span
-              >{m.workspace_branchDisplay_workingOn_tooltip({
-                branch: $workspace?.branch || m.workspace_branchDisplay_noBranch_label(),
-              })}</span
+              >{isOwner
+                ? m.workspace_branchDisplay_workingOn_tooltip({
+                    branch: $workspace?.branch || m.workspace_branchDisplay_noBranch_label(),
+                  })
+                : m.workspace_branchDisplay_workingOnReadOnly_tooltip({
+                    branch: $workspace?.branch || m.workspace_branchDisplay_noBranch_label(),
+                  })}</span
             ><br /><span class="text-ghost">{m.workspace_branchDisplay_shiftClickCopy_label()}</span
             >{#if branchCopy.copiedWorking}<span
                 class="text-green-500 ml-1.5 inline-flex items-center gap-1"
@@ -211,8 +225,11 @@
           <Button
             variant="outline"
             size="sm"
+            data-testid="branch-name-button"
             aria-labelledby={`${fieldId}-working ${fieldId}-working-value`}
-            class="w-full min-w-0 cursor-text justify-start text-left text-ui font-normal"
+            class="w-full min-w-0 {isOwner
+              ? 'cursor-text'
+              : 'cursor-default'} justify-start text-left text-ui font-normal"
             onclick={(e) => {
               if (e.shiftKey && $workspace?.branch) {
                 navigator.clipboard.writeText($workspace.branch);
@@ -222,7 +239,7 @@
                   branchCopy.copiedWorking = false;
                   branchCopy.workingTooltip = false;
                 }, 1500);
-              } else {
+              } else if (isOwner) {
                 startEditingBranch();
               }
             }}
@@ -256,6 +273,7 @@
     >
       {#snippet content()}{#if canChangeTrunk}<span
             >{m.workspace_branchDisplay_trunkChange_tooltip()}</span
+          >{:else if !isOwner}<span>{m.workspace_branchDisplay_trunkOwnerOnly_tooltip()}</span
           >{:else}<span>{m.workspace_branchDisplay_trunkLocked_tooltip()}</span>{/if}<br /><span
           class="text-ghost">{m.workspace_branchDisplay_shiftClickCopy_label()}</span
         >{#if branchCopy.copiedTrunk}<span
@@ -292,6 +310,9 @@
             triggerClass="h-(--control-height-small) text-ui font-normal text-foreground"
             hasTriggerIcon={false}
             onchange={async (e) => {
+              // BranchSelector also reports its initial auto-selection; only a
+              // real change of trunk should reach workspace.update.
+              if (e.detail.branch === trunkBranch) return;
               try {
                 const result = await persistWorkspaceChanges({
                   baseRef: e.detail.branch,
