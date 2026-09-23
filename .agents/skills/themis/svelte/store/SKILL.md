@@ -1,10 +1,9 @@
 ---
 name: svelte/store
 description: >-
-  Store import, initialization, disposal, and Store-runtime guidance for the
-  canonical Svelte-readable Store variant. Use for @augmentcode/themis/svelte-store,
-  useInitStore/useRunSaga lifecycle helpers, inherited
-  runSaga/dispatch/state behavior for Svelte-readable Store consumers.
+  Use for Svelte-readable Store imports and runtime lifecycle, including
+  initialization, disposal, state, dispatch, runSaga, useInitStore, and
+  useRunSaga.
 type: sub-skill
 requires:
   - svelte

@@ -1,10 +1,9 @@
 ---
 name: svelte/migration/component-migration
 description: >-
-  Swap Svelte store imports for selectFoo() readables plus Store.dispatch at
-  component init; keep templates reactive via $selectorResult$. Covers the
-  before/after component shape and the #1 runtime crash (lifecycle_outside_component)
-  caused by calling selectors in callbacks.
+  Use when replacing Svelte store imports and template subscriptions with
+  Themis selector readables and dispatch, including callback lifecycle
+  pitfalls.
 type: sub-skill
 requires:
   - svelte/component-integration

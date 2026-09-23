@@ -1,12 +1,8 @@
 ---
 name: core/boolean-preference
 description: >-
-  createBooleanPreference({ sliceName, field, setActionName, toggleActionName })
-  emits a setAction (payload [value: boolean]) and a zero-argument toggleAction,
-  plus a .register(builder) helper that chains both handlers onto a createReducer
-  builder. The field parameter is constrained to keys whose value type is
-  boolean. Use it instead of hand-writing setX / toggleX pairs. Public API:
-  @augmentcode/themis/utils/store/boolean-preference; related guidance: ../SKILL.md §11.
+  Use createBooleanPreference when adding boolean preferences with paired
+  set/toggle actions and reducer registration.
 type: sub-skill
 library: themis
 requires:

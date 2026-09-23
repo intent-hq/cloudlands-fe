@@ -1,9 +1,8 @@
 ---
 name: svelte/migration/writable-stores
 description: >-
-  Convert writable() stores and $state runes into slice initial state plus
-  createAction + createReducer with immutable updates. Covers set / update
-  conversion, non-serializable value rules, and mutation pitfalls.
+  Use when converting Svelte writable() stores or shared $state runes,
+  including set/update calls, into Themis Redux actions and reducers.
 type: sub-skill
 requires:
   - core/actions

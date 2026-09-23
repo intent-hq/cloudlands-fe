@@ -1,12 +1,8 @@
 ---
 name: core/state-serialization
 description: >-
-  Redux state must be structured-cloneable. Allowed: string, number, boolean,
-  null, undefined, plain objects, arrays of primitives. Forbidden: Date, Map,
-  Set, WeakMap, WeakSet, RegExp, Promise, Function, class instances, Error,
-  Symbol. Alternatives: Date → number (ms), Map → Record<string, T>, Set →
-  string[] or Record<string, true>, RegExp → string, Error → { message,
-  stack }.
+  Use when checking Redux state for structured-clone compatibility or
+  replacing non-serializable values such as Date, Map, Set, and Error.
 type: sub-skill
 requires:
   - core

@@ -1,9 +1,8 @@
 ---
 name: svelte/migration/derived-stores
 description: >-
-  Convert derived() stores and $derived runes into store.createSelector when a
-  configured Store exists, composing with upstream selectors via .select(state).
-  Covers Svelte 4 derived() and Svelte 5 $derived / getter conversion.
+  Use when converting Svelte derived() stores, $derived runes, or getters into
+  selectors composed through a configured Themis Store.
 type: sub-skill
 requires:
   - svelte/selectors

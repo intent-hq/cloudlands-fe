@@ -1,13 +1,9 @@
 ---
 name: svelte/selector-lifecycle
 description: >-
-  The three selector call modes and Store-first dispatch rule — the #1
-  source of runtime crashes in themis. Covers selectFoo() at
-  component init (Svelte readable via getContext), selectFoo.select(state) for
-  one-shot reads in event handlers / callbacks / async, yield* selectFoo.effect()
-  inside sagas, and selectFoo.select(state) when composing selectors. Documents
-  Store.dispatch usage, the lifecycle_outside_component crash, and
-  the wrong-shape trap when passing the selector object to yield* select().
+  Use when choosing selector call modes in Svelte components, handlers,
+  callbacks, composition, or sagas, dispatching through Store, or fixing
+  lifecycle_outside_component and selector-shape errors.
 type: sub-skill
 requires:
   - svelte
