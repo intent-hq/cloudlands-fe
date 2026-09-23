@@ -1,0 +1,121 @@
+import type { ResultRow, RunRow } from './types.ts';
+
+export interface ReportOptions {
+  threshold: number;
+  minConfidence: number;
+  kind?: string;
+  failingOnly?: boolean;
+  limit?: number;
+}
+
+export function report(run: RunRow, rows: ResultRow[], options: ReportOptions) {
+  const classified = rows.map((row) => {
+    const lowScore = row.score !== null && row.score.overall < options.threshold;
+    const review =
+      row.warnings.length > 0 ||
+      (row.score !== null && row.score.confidence < options.minConfidence) ||
+      row.target.status !== 'active';
+    const status =
+      row.error || !row.score ? 'error' : lowScore ? 'low-score' : review ? 'review' : 'pass';
+    return { ...row, status, lowScore, review };
+  });
+  const childrenByParent = new Map<string, typeof classified>();
+  const testsByFile = new Map<string, typeof classified>();
+  for (const row of classified) {
+    if (row.target.parentId) {
+      const group = childrenByParent.get(row.target.parentId) ?? [];
+      group.push(row);
+      childrenByParent.set(row.target.parentId, group);
+    }
+    if (row.target.kind === 'test') {
+      const group = testsByFile.get(row.target.file) ?? [];
+      group.push(row);
+      testsByFile.set(row.target.file, group);
+    }
+  }
+  const groups = (kind: 'file' | 'test') => {
+    return classified
+      .filter((r) => r.target.kind === kind)
+      .map((parent) => {
+        const children =
+          (kind === 'test'
+            ? childrenByParent.get(parent.target.id)
+            : testsByFile.get(parent.target.file)) ?? [];
+        const scored = children.filter((r) => r.score !== null);
+        return {
+          id: parent.target.id,
+          name: parent.target.name,
+          children: children.length,
+          scored: scored.length,
+          meanScore: scored.length
+            ? Math.round((scored.reduce((s, r) => s + r.score!.overall, 0) / scored.length) * 10) /
+              10
+            : null,
+          minimumScore: scored.length ? Math.min(...scored.map((r) => r.score!.overall)) : null,
+          lowScores: children.filter((r) => r.lowScore).length,
+          errors: children.filter((r) => r.status === 'error').length,
+        };
+      });
+  };
+  const matching = classified
+    .filter(
+      (r) =>
+        (!options.kind || r.target.kind === options.kind) &&
+        (!options.failingOnly || r.lowScore || r.status === 'error'),
+    )
+    .sort(
+      (a, b) =>
+        (a.score?.overall ?? -1) - (b.score?.overall ?? -1) ||
+        a.target.file.localeCompare(b.target.file) ||
+        a.target.line - b.target.line,
+    );
+  return {
+    run: { ...run, options: JSON.parse(run.options) },
+    rubricNote:
+      'Scores estimate static test quality, not measured defect-prevention probability. Review evidence before changing tests. File scores judge organization; aggregate test and assertion scores separately.',
+    policy: options,
+    summary: {
+      targets: rows.length,
+      files: rows.filter((r) => r.target.kind === 'file').length,
+      tests: rows.filter((r) => r.target.kind === 'test').length,
+      assertions: rows.filter((r) => r.target.kind === 'assertion').length,
+      lowScores: classified.filter((r) => r.lowScore).length,
+      review: classified.filter((r) => r.review).length,
+      errors: classified.filter((r) => r.status === 'error').length,
+      cachedTargets: classified.filter((r) => r.cached).length,
+      matching: matching.length,
+    },
+    aggregates: { files: groups('file'), tests: groups('test') },
+    results: matching.slice(0, options.limit ?? matching.length),
+  };
+}
+
+export function textReport(value: ReturnType<typeof report>): string {
+  const s = value.summary;
+  const lines = [
+    `Run ${value.run.id} (${value.run.status})`,
+    `${s.files} files, ${s.tests} tests, ${s.assertions} assertion sites; ${s.lowScores} low scores, ${s.review} need review, ${s.errors} errors.`,
+    `Threshold: ${value.policy.threshold}/100; confidence floor: ${value.policy.minConfidence}.`,
+    value.rubricNote,
+    '',
+  ];
+  for (const row of value.results) {
+    lines.push(
+      `${row.status.toUpperCase()} ${row.score ? row.score.overall.toFixed(1) : 'n/a'} ${row.target.kind} ${row.target.file}:${row.target.line} ${row.target.name}`,
+    );
+    lines.push(`  id=${row.target.id} trace=${row.traceId}`);
+    if (row.score)
+      lines.push(
+        `  ${Object.entries(row.score.dimensions)
+          .map(([name, d]) => `${name}=${d.score.toFixed(1)}`)
+          .join(' ')} confidence=${row.score.confidence.toFixed(2)}`,
+      );
+    if (row.error) lines.push(`  error: ${row.error}`);
+    if (row.warnings.length) lines.push(`  review: ${row.warnings.join('; ')}`);
+  }
+  if (value.results.length < s.matching)
+    lines.push(
+      `Showing ${value.results.length} of ${s.matching} matching targets; use --limit to show more or --format json.`,
+    );
+  return lines.join('\n');
+}
