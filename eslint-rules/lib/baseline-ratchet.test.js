@@ -392,6 +392,24 @@ describe('readComparisonBaseline base ref', () => {
     ).toEqual(expected('legacy'));
   });
 
+  it('preserves source paths containing tabs when reading the committed tree', () => {
+    const cwd = makeRepo();
+    const git = (...args) =>
+      execFileSync('git', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
+    writeTree(cwd, {
+      'no-raw-controls/src/tab\tname.svelte.json': { owner: 'ui', reason: 'tab' },
+      'no-raw-controls/src/good.svelte.json\tsuffix.svelte.json': { owner: 'ui', reason: 'tab' },
+    });
+    git('add', '-A', '.');
+    git('commit', '-q', '-m', 'tabs');
+    const fromDisk = loadBaseline({ cwd });
+    expect(fromDisk['no-raw-controls'][0].files).toEqual([
+      'src/good.svelte.json\tsuffix.svelte',
+      'src/tab\tname.svelte',
+    ]);
+    expect(readComparisonBaseline({ cwd, env: {} }).baseline).toEqual(fromDisk);
+  });
+
   it('fails loudly on an unresolvable comparison revision', () => {
     const cwd = makeRepo();
     expect(() => readComparisonBaseline({ cwd, env: { LINT_BASELINE_BASE_REF: 'nope' } })).toThrow(

@@ -199,9 +199,13 @@ function gitReadTree(ref, cwd, dir) {
   const blobs = listing
     .split('\0')
     .filter(Boolean)
-    .map((line) => {
-      const [meta, file] = line.split('\t');
-      return { sha: meta.split(' ')[2], file: file.slice(dir.length + 1) };
+    .map((record) => {
+      // `<mode> <type> <sha>\t<path>`; the path itself may contain tabs.
+      const pathStart = record.indexOf('\t') + 1;
+      return {
+        sha: record.slice(0, pathStart - 1).split(' ')[2],
+        file: record.slice(pathStart + dir.length + 1),
+      };
     });
   if (!blobs.length) return [];
   const batch = execFileSync('git', ['cat-file', '--batch'], {
