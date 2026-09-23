@@ -1,8 +1,13 @@
 import type { AgentMessage } from '$shared/types';
+import { getAttentionNotice } from './attention-notice';
 
 export interface ConversationTurn {
   userMessage: AgentMessage | null;
+  /** Assistant output and recognized system notices in transcript order. */
+  bodyMessages: AgentMessage[];
+  /** Assistant-only projection for streaming, model selection, and completion UI. */
   assistantMessages: AgentMessage[];
+  /** Model-change and provider re-home notices retain their placement before the turn body. */
   noticeMessages: AgentMessage[];
 }
 
@@ -60,8 +65,8 @@ export function hasToolOnlyAssistantTurnBoundary(
 ): boolean {
   if (!next || next.userMessage || next.noticeMessages.length > 0) return false;
   return hasToolOnlyAssistantMessageBoundary(
-    current.assistantMessages[current.assistantMessages.length - 1],
-    next.assistantMessages[0],
+    current.bodyMessages[current.bodyMessages.length - 1],
+    next.bodyMessages[0],
   );
 }
 
@@ -71,13 +76,22 @@ export function hasOperationalAssistantTurnBoundary(
 ): boolean {
   if (!next || next.userMessage || next.noticeMessages.length > 0) return false;
   return hasOperationalAssistantMessageBoundary(
-    current.assistantMessages[current.assistantMessages.length - 1],
-    next.assistantMessages[0],
+    current.bodyMessages[current.bodyMessages.length - 1],
+    next.bodyMessages[0],
   );
 }
 
 function isModelChangeNotice(message: AgentMessage): boolean {
-  return message.metadata?.type === 'model_changed';
+  const type = message.metadata?.type;
+  return type === 'model_changed' || type === 'provider_rehomed';
+}
+
+function isInlineSystemNotice(message: AgentMessage): boolean {
+  return (
+    message.role === 'system' &&
+    (message.contentBlocks?.[0]?.meta?.kind === 'interruption' ||
+      getAttentionNotice(message) !== null)
+  );
 }
 
 export function groupIntoTurns(messages: AgentMessage[]): ConversationTurn[] {
@@ -87,13 +101,41 @@ export function groupIntoTurns(messages: AgentMessage[]): ConversationTurn[] {
   for (const message of messages) {
     if (message.role === 'user') {
       if (currentTurn) turns.push(currentTurn);
-      currentTurn = { userMessage: message, assistantMessages: [], noticeMessages: [] };
+      currentTurn = {
+        userMessage: message,
+        bodyMessages: [],
+        assistantMessages: [],
+        noticeMessages: [],
+      };
     } else if (message.role === 'assistant') {
-      if (currentTurn) currentTurn.assistantMessages.push(message);
-      else turns.push({ userMessage: null, assistantMessages: [message], noticeMessages: [] });
+      if (currentTurn) {
+        currentTurn.assistantMessages.push(message);
+        currentTurn.bodyMessages.push(message);
+      } else
+        turns.push({
+          userMessage: null,
+          bodyMessages: [message],
+          assistantMessages: [message],
+          noticeMessages: [],
+        });
     } else if (isModelChangeNotice(message)) {
       if (currentTurn) currentTurn.noticeMessages.push(message);
-      else turns.push({ userMessage: null, assistantMessages: [], noticeMessages: [message] });
+      else
+        turns.push({
+          userMessage: null,
+          bodyMessages: [],
+          assistantMessages: [],
+          noticeMessages: [message],
+        });
+    } else if (isInlineSystemNotice(message)) {
+      if (currentTurn) currentTurn.bodyMessages.push(message);
+      else
+        turns.push({
+          userMessage: null,
+          bodyMessages: [message],
+          assistantMessages: [],
+          noticeMessages: [],
+        });
     }
   }
 
@@ -126,7 +168,7 @@ export function indexConversationTurns<
         turn.userMessage?.id ?? `group-${group.groupKey ?? groupIndex}-turn-${turnIndex}`;
       globalIndexByTurnKey.set(turnKey, globalIndex++);
       if (turn.userMessage) turnKeyByMessageId.set(turn.userMessage.id, turnKey);
-      for (const message of turn.assistantMessages) {
+      for (const message of turn.bodyMessages) {
         turnKeyByMessageId.set(message.id, turnKey);
       }
       for (const message of turn.noticeMessages) {

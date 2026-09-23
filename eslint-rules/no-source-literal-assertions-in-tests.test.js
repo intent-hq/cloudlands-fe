@@ -4,16 +4,21 @@ import path from 'node:path';
 import { RuleTester } from 'eslint';
 import { describe, expect, it } from 'vitest';
 import {
+  baselineCounts,
   findBaselineGrowth,
   lintRuleFromRepoConfig,
+  loadBaseline,
   readComparisonBaseline,
 } from './lib/baseline-ratchet.js';
 import rule from './no-source-literal-assertions-in-tests.js';
 
 const root = process.cwd();
-const baselineFile = 'eslint-rules/no-source-literal-assertions-in-tests.baseline.json';
-const baseline = JSON.parse(fs.readFileSync(path.join(root, baselineFile), 'utf8'));
-const ruleId = 'intent/no-source-literal-assertions-in-tests';
+const ruleName = 'no-source-literal-assertions-in-tests';
+// `eslint-rules/baselines/no-source-literal-assertions-in-tests/<test file>.json`, each
+// holding `{ "count": N }`; delete the file once its reads are fixed.
+const baselineTree = loadBaseline({ cwd: root, rules: [ruleName] });
+const baseline = baselineCounts(baselineTree[ruleName]) ?? {};
+const ruleId = `intent/${ruleName}`;
 
 const testFile = path.resolve('src/features/example/__tests__/example.test.ts');
 const otherTestFile = path.resolve('src/features/other/__tests__/other.test.ts');
@@ -40,27 +45,22 @@ describe('no-source-literal-assertions-in-tests guidance', () => {
 });
 
 describe('no-source-literal-assertions-in-tests baseline ratchet', () => {
-  it('maps sorted, existing package-relative test files to positive counts', () => {
-    const files = Object.keys(baseline);
-    expect(files).toEqual([...files].sort());
-    for (const [file, count] of Object.entries(baseline)) {
+  it('maps existing package-relative test files to counted entries only', () => {
+    for (const exception of baselineTree[ruleName] ?? []) {
+      expect(exception.files, 'every entry must carry a count').toBeUndefined();
+    }
+    for (const file of Object.keys(baseline)) {
       expect(file, `${file} should be package-relative with forward slashes`).toMatch(
         /^[^/\\][^\\]*\.(test|spec)\.(js|ts)$/,
       );
       expect(fs.existsSync(path.join(root, file)), `${file} no longer exists`).toBe(true);
-      expect(Number.isInteger(count) && count >= 1, `${file} count must be >= 1`).toBe(true);
     }
   });
 
   it('never grows a count against the comparison revision', () => {
-    const comparison = readComparisonBaseline({ cwd: root, file: baselineFile });
-    if (!comparison) return;
-    const ruleName = 'no-source-literal-assertions-in-tests';
+    const comparison = readComparisonBaseline({ cwd: root, rules: [ruleName] });
     expect(
-      findBaselineGrowth(
-        { [ruleName]: [{ counts: comparison.baseline }] },
-        { [ruleName]: [{ counts: baseline }] },
-      ),
+      findBaselineGrowth(comparison.baseline, baselineTree),
       `per-file counts may only shrink relative to ${comparison.ref}`,
     ).toEqual({});
   });

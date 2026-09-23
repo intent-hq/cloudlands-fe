@@ -1,5 +1,5 @@
 import { expect, test } from '../../../../test/ct-test';
-import type { Locator } from '@playwright/test';
+import type { Locator, Page } from '@playwright/test';
 import Pickers from './initializer-pickers.preview.svelte';
 import InitialAgentPicker from './initial-agent-picker.preview.svelte';
 
@@ -456,5 +456,100 @@ for (const theme of ['light', 'dark']) {
     }
     await page.keyboard.press('Escape');
     await expect(trigger).toBeFocused();
+  });
+}
+
+// Keyboard-drives focus so `:focus-visible` matches (a scripted `focus()` may not).
+async function tabUntilFocusVisible(page: Page, target: Locator) {
+  for (let step = 0; step < 12; step += 1) {
+    await page.keyboard.press('Tab');
+    if (
+      await target.evaluate(
+        (element) => element === document.activeElement && element.matches(':focus-visible'),
+      )
+    ) {
+      return;
+    }
+  }
+  throw new Error('target never received keyboard focus');
+}
+
+// Resolves a CSS color expression the same way the picker's stylesheet does,
+// so assertions compare against the token/system color rather than a literal.
+async function resolveColor(page: Page, color: string) {
+  return page.evaluate((value) => {
+    const probe = document.createElement('div');
+    probe.style.border = `1px solid ${value}`;
+    probe.style.background = value;
+    document.body.append(probe);
+    const style = getComputedStyle(probe);
+    const result = { border: style.borderTopColor, background: style.backgroundColor };
+    probe.remove();
+    return result;
+  }, color);
+}
+
+// The selected agent card already rests on the input border token (which the
+// light theme resolves to the foreground color), so its focus evidence is the
+// accent background; the trigger's is the border color itself.
+const pickerFocusTargets = [
+  {
+    name: 'agent card',
+    locate: (page: Page) => page.locator('.agent-card').first(),
+    focusChanges: 'background-color' as const,
+    focusBackground: 'color-mix(in srgb, var(--color-accent) 72%, var(--color-card))',
+  },
+  {
+    name: 'specialist trigger',
+    locate: (page: Page) => page.locator('.specialist-trigger'),
+    focusChanges: 'border-top-color' as const,
+    focusBackground: null,
+  },
+];
+
+for (const target of pickerFocusTargets) {
+  test(`${target.name} keyboard focus draws a foreground border without outline or shadow`, async ({
+    mount,
+    page,
+  }) => {
+    await page.setViewportSize({ width: 720, height: 720 });
+    await page.emulateMedia({ reducedMotion: 'reduce' });
+    await mount(InitialAgentPicker, { props: { state: 'populated' } });
+    const element = target.locate(page);
+    const foreground = await resolveColor(page, 'var(--color-foreground)');
+    const resting = await element.evaluate(
+      (e, property) => getComputedStyle(e).getPropertyValue(property),
+      target.focusChanges,
+    );
+
+    await tabUntilFocusVisible(page, element);
+    await expect(element).toHaveCSS('outline-style', 'none');
+    await expect(element).toHaveCSS('box-shadow', 'none');
+    await expect(element).toHaveCSS('border-top-color', foreground.border);
+    await expect(element).not.toHaveCSS(target.focusChanges, resting);
+    if (target.focusBackground) {
+      const background = await resolveColor(page, target.focusBackground);
+      await expect(element).toHaveCSS('background-color', background.background);
+    }
+  });
+
+  test(`${target.name} keyboard focus uses system Highlight and Canvas under forced colors`, async ({
+    mount,
+    page,
+  }) => {
+    await page.setViewportSize({ width: 720, height: 720 });
+    await page.emulateMedia({ reducedMotion: 'reduce', forcedColors: 'active' });
+    await mount(InitialAgentPicker, { props: { state: 'populated' } });
+    const element = target.locate(page);
+    const highlight = await resolveColor(page, 'Highlight');
+    const canvas = await resolveColor(page, 'Canvas');
+    const restingBorder = await element.evaluate((e) => getComputedStyle(e).borderTopColor);
+    expect(restingBorder).not.toBe(highlight.border);
+
+    await tabUntilFocusVisible(page, element);
+    await expect(element).toHaveCSS('outline-style', 'none');
+    await expect(element).toHaveCSS('box-shadow', 'none');
+    await expect(element).toHaveCSS('border-top-color', highlight.border);
+    await expect(element).toHaveCSS('background-color', canvas.background);
   });
 }

@@ -157,6 +157,45 @@ describe('design token audit', () => {
     }
   });
 
+  it('rejects a component-scoped redeclaration of a shared sidebar token', () => {
+    const directory = mkdtempSync(path.join(tmpdir(), 'design-token-audit-'));
+    try {
+      writeFileSync(
+        path.join(directory, 'provider.svelte'),
+        '<div data-slot="sidebar-wrapper"></div>\n<style>\n  [data-slot=sidebar-wrapper] {\n    --sidebar: 0 0% 100%;\n  }\n</style>',
+      );
+      writeFileSync(
+        path.join(directory, 'shell.svelte'),
+        '<script lang="ts">\n  let { tone } = $props();\n</script>\n<aside style:--sidebar-foreground={tone} style="--sidebar-border: 0 0% 90%"></aside>',
+      );
+      writeFileSync(
+        path.join(directory, 'runtime.ts'),
+        "document.body.style.setProperty('--sidebar-accent', '0 0% 50%');",
+      );
+      writeFileSync(
+        path.join(directory, 'shell.ct.spec.ts'),
+        "root.style.setProperty('--sidebar', '0 0% 100%');",
+      );
+      const result = spawnSync(process.execPath, [script, 'check'], {
+        encoding: 'utf8',
+        env: { ...process.env, DESIGN_TOKEN_AUDIT_SOURCE_ROOT: directory },
+      });
+      expect(result.status).toBe(1);
+      const lines = result.stderr.trim().split('\n');
+      expect(lines).toEqual(
+        expect.arrayContaining([
+          expect.stringMatching(/provider\.svelte: redeclares --sidebar;/),
+          expect.stringMatching(/shell\.svelte: redeclares --sidebar-foreground;/),
+          expect.stringMatching(/shell\.svelte: redeclares --sidebar-border;/),
+          expect.stringMatching(/runtime\.ts: redeclares --sidebar-accent;/),
+        ]),
+      );
+      expect(lines.filter((line) => line.includes('redeclares'))).toHaveLength(4);
+    } finally {
+      rmSync(directory, { recursive: true, force: true });
+    }
+  });
+
   it('recognizes Svelte style directive custom-property definitions without exempting other properties', () => {
     const directory = mkdtempSync(path.join(tmpdir(), 'design-token-audit-'));
     try {

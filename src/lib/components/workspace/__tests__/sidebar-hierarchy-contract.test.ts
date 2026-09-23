@@ -28,8 +28,6 @@ describe('workspace sidebar hierarchy presentation contract', () => {
     expect(navigation).toContain('size="icon"');
     expect(navigation).toContain('TITLEBAR_NAVIGATION_CONTROL_CLASS');
     expect(navigation).toContain('data-nav-item={item.id}');
-    expect(navigation).toContain('name="dandelion"');
-    expect(navigation).not.toContain('name="spaces"');
     expect(navigation).not.toContain('SidebarNavHoverCard');
     expect(titleBar).toContain('<SidebarNav />');
     expect(titleBar.indexOf('<SidebarNav />')).toBeLessThan(titleBar.indexOf('<WorkspaceTabStrip'));

@@ -1076,6 +1076,47 @@ describe('multi-backend window sessions', () => {
     });
   });
 
+  describe('workspace bootstrap route', () => {
+    const bounds = { x: 100, y: 100, width: 1024, height: 768 };
+    const loadedPaths = () =>
+      FakeBrowserWindow.getAllWindows().map((w) => new URL(w.webContents.getURL()).pathname);
+
+    it('opens a fresh window on the workspace bootstrap route', async () => {
+      await createWindow();
+      expect(loadedPaths()).toEqual(['/workspace/new']);
+    });
+
+    it('restores a legacy root session onto the bootstrap route and keeps other routes', async () => {
+      fs.writeFileSync(
+        getWindowSessionsPath(),
+        JSON.stringify({
+          local: [
+            { route: '/', bounds },
+            { route: '/workspace/kept', bounds },
+          ],
+        }),
+        'utf-8',
+      );
+
+      await restoreWindowsForBackend('local');
+
+      expect(loadedPaths()).toEqual(['/workspace/new', '/workspace/kept']);
+    });
+
+    it('opens deep-link windows on the bootstrap route carrying the encoded action', async () => {
+      const action = { type: 'open' as const, params: { id: 'workspace_123' } };
+      await createWindowForDeepLink('intent://open?id=workspace_123', {
+        parseDeepLink: () => action,
+        handleDeepLink: vi.fn(async () => {}),
+      } as unknown as DeepLinkHandler);
+
+      const [window] = FakeBrowserWindow.getAllWindows();
+      const url = new URL(window.webContents.getURL());
+      expect(url.pathname).toBe('/workspace/new');
+      expect(JSON.parse(url.searchParams.get('deepLink') ?? 'null')).toEqual(action);
+    });
+  });
+
   describe('renderer window gate', () => {
     const bounds = { x: 100, y: 100, width: 1024, height: 768 };
     // A non-pair deep link whose action opens a NEW window (not `settings`,

@@ -222,9 +222,25 @@ test('keeps outer shells transparent in both themes without flattening contained
       expect(await rows.nth(1).evaluate((node) => getComputedStyle(node).backgroundColor)).not.toBe(
         expected,
       );
-      expect(await background(page, '[data-combined-panel-divider-border]')).not.toBe(expected);
       expect(await background(page, '.sidebar-panel')).toBe(expected);
     }
+
+    const workspaceTab = page.getByRole('tab', { name: 'Workspaces', exact: true });
+    const intentTab = page.getByRole('tab', { name: 'Intent', exact: true });
+    expect(
+      await page.getByRole('tablist').evaluate((node) => getComputedStyle(node).backgroundColor),
+    ).not.toBe(expected);
+    await intentTab.click();
+    await expect(intentTab).toHaveAttribute('aria-selected', 'true');
+    await expect(page.getByRole('tabpanel', { name: 'Intent', exact: true })).toBeVisible();
+    await expect(page.locator('[data-combined-panel-spaces]')).toBeHidden();
+    expect(await background(page, '[data-chief-card-surface]')).toBe(probe);
+    expect(await background(page, '.sidebar-panel')).toBe(expected);
+    await workspaceTab.click();
+    await expect(workspaceTab).toHaveAttribute('aria-selected', 'true');
+    await expect(page.getByRole('tabpanel', { name: 'Workspaces', exact: true })).toBeVisible();
+    await expect(page.locator('[data-combined-panel-chief]')).toBeHidden();
+    expect(await background(page, '.sidebar-panel')).toBe(expected);
 
     await testInfo.attach(`${scenario.theme}-${scenario.width}-${scenario.zoom}x-sidebar-shell`, {
       body: await page.screenshot({ animations: 'disabled', caret: 'hide' }),

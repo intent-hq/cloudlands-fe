@@ -100,7 +100,7 @@
     <div
       class="bg-background rounded-lg w-[420px] max-w-[90vw] shadow-lg border border-border text-foreground"
     >
-      <div class="flex justify-between items-center p-4 border-b border-border">
+      <div class="flex justify-between items-center p-4">
         <h2 class="m-0 text-lg text-foreground">{m.lib_githubAuth_connect_label()}</h2>
         <Button
           variant="ghost"

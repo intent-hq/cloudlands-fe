@@ -7,6 +7,7 @@
   import Fa from 'svelte-fa';
   import { faImage } from '@fortawesome/free-solid-svg-icons';
   import { m } from '$shared/paraglide/messages.js';
+  import { supportsImageActions } from '$lib/utils/image-actions';
 
   interface Props {
     /** Base64 image data — the §5.5 slim thumbnail or nothing when truncated. */
@@ -43,6 +44,8 @@
     onHydrate,
   }: Props = $props();
   let lightboxOpen = $state(false);
+  let imageActionsOpen = $state(false);
+  let imageActionsMenu: ImageActionsMenu | undefined = $state();
   let openerElement: HTMLButtonElement | null = $state(null);
   let failedImageUrl = $state<string | null>(null);
 
@@ -51,7 +54,8 @@
   // A truncated block renders its thumbnail (or placeholder); clicking asks
   // for the original first — the lightbox opens once hydration swaps the
   // full block in (dataTruncated then disappears from the merged block).
-  const needsHydration = $derived(dataTruncated && onHydrate !== undefined);
+  const hasOriginal = $derived(!dataTruncated && !dataIsThumbnail);
+  const needsHydration = $derived(!hasOriginal && onHydrate !== undefined);
   // Same validation as the Markdown sidecar transform: intrinsic pixel
   // dimensions are positive integers, anything else renders the legacy tile.
   const isPositiveInteger = (value: unknown): value is number =>
@@ -70,6 +74,17 @@
     }
     if (imageUrl) lightboxOpen = true;
   }
+
+  function handleContextMenu(event: MouseEvent) {
+    if (!hasOriginal || !imageUrl || !supportsImageActions(imageUrl)) return;
+    event.preventDefault();
+    event.stopPropagation();
+    imageActionsOpen = true;
+  }
+
+  function handleCopy(event: KeyboardEvent | ClipboardEvent) {
+    if (hasOriginal && !imageUnavailable) imageActionsMenu?.handleCopy(event);
+  }
 </script>
 
 <div class="my-2 min-w-0 max-w-2xl" data-chat-image>
@@ -81,20 +96,22 @@
       data-image-sized={sized || undefined}
       data-loaded={sized ? String(hasLoaded) : undefined}
     >
-      <!-- The sized frame opts out of Button's inline-flex content wrapper:
-           it shrink-wraps to the thumbnail's intrinsic size, so the img's
-           `size-full` would resolve against 256×144 instead of the frame. -->
+      <!-- Both frame types opt out of Button's inline-flex content wrapper
+           so the image fills the reserved frame or legacy square tile. -->
       <Button
         variant="plain"
+        wrapContent={false}
         bind:ref={openerElement}
         type="button"
-        wrapContent={!sized}
         class="block {sized
           ? 'absolute inset-0 size-full'
           : 'size-40'} cursor-zoom-in overflow-hidden rounded-lg border border-border bg-muted/30 p-0 shadow-(--elevation-raised) transition-opacity hover:opacity-90 focus-visible:border-ring focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 {showPlaceholder
           ? 'border-dashed'
           : ''} {hydrationLoading ? 'animate-pulse' : ''}"
         onclick={handleClick}
+        oncontextmenu={handleContextMenu}
+        onkeydown={handleCopy}
+        oncopy={handleCopy}
         aria-label={needsHydration
           ? m.chat_imageBlock_loadFullImage_ariaLabel({ alt })
           : m.chat_imageBlock_viewFullSize_ariaLabel({ alt })}
@@ -120,14 +137,16 @@
           <MediaLoadingPlaceholder name={alt} />
         </span>
       {/if}
-      {#if !dataTruncated}
+      {#if hasOriginal}
         <!-- Truncated blocks only carry the low-res write-time thumbnail, so
              the menu would download/copy/inspect the wrong bytes; clicking
              hydrates the original, after which the menu (and the lightbox's)
              acts on the real image. -->
         <ImageActionsMenu
+          bind:this={imageActionsMenu}
           {imageUrl}
           imageName={alt}
+          bind:open={imageActionsOpen}
           triggerClass="absolute right-1.5 top-1.5 opacity-0 transition-opacity focus-visible:opacity-100 group-focus-within:opacity-100 group-hover:opacity-100 data-[state=open]:opacity-100"
         />
       {/if}
@@ -163,6 +182,6 @@
     {imageUrl}
     imageName={alt}
     {openerElement}
-    showActionsMenu
+    showActionsMenu={hasOriginal}
   />
 {/if}

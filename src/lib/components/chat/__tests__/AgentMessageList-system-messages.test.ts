@@ -202,6 +202,73 @@ describe('AgentMessageList - System Messages', () => {
     ).toBeTruthy();
   });
 
+  it('renders a provider_rehomed system message once, naming the old model + provider and the new provider (intent#5737)', () => {
+    // Daemon-persisted re-home row (§5.5, disabled providers): role "system",
+    // the daemon's own sentence as the text block, metadata
+    // { type: "provider_rehomed", reason: "provider_disabled", from, to, fromProvider, toProvider }.
+    const daemonText =
+      'gpt-5-codex (OpenAI Codex) is no longer available — OpenAI Codex was disabled in Settings > Agents; this agent now runs on Augment Auggie.';
+    const messages: AgentMessage[] = [
+      {
+        id: 'msg-1',
+        role: 'user',
+        contentBlocks: [{ type: 'text', text: 'ping' }],
+        timestamp: new Date().toISOString(),
+      },
+      {
+        id: 'msg-2',
+        role: 'system',
+        contentBlocks: [{ type: 'text', text: daemonText }],
+        timestamp: new Date().toISOString(),
+        metadata: {
+          type: 'provider_rehomed',
+          reason: 'provider_disabled',
+          from: 'gpt-5-codex',
+          to: null,
+          fromProvider: 'codex',
+          toProvider: 'auggie',
+        },
+      },
+      {
+        id: 'msg-3',
+        role: 'assistant',
+        contentBlocks: [{ type: 'text', text: 'pong' }],
+        timestamp: new Date().toISOString(),
+      },
+    ];
+
+    render(AgentMessageList, { props: { messages } });
+
+    // One status divider, not an interruption alert. With the empty mocked
+    // store the provider names fall back to their ids.
+    const notices = screen.getAllByRole('status');
+    expect(notices).toHaveLength(1);
+    expect(screen.queryByRole('alert')).toBeNull();
+    const text = notices[0].textContent ?? '';
+    expect(text).toMatch(/gpt-5-codex/);
+    expect(text).toMatch(/codex/);
+    expect(text).toMatch(/disabled/i);
+    expect(text).toMatch(/auggie/);
+    expect(screen.getByText('pong')).toBeTruthy();
+  });
+
+  it('falls back to the daemon text when a provider_rehomed row carries an unknown reason', () => {
+    const daemonText = 'The agent was moved to another provider.';
+    const messages: AgentMessage[] = [
+      {
+        id: 'msg-1',
+        role: 'system',
+        contentBlocks: [{ type: 'text', text: daemonText }],
+        timestamp: new Date().toISOString(),
+        metadata: { type: 'provider_rehomed', reason: 'other', fromProvider: 'codex' },
+      },
+    ];
+
+    render(AgentMessageList, { props: { messages } });
+
+    expect(screen.getByRole('status').textContent).toContain(daemonText);
+  });
+
   it('renders no model-change notice when the transcript has no model_changed row', () => {
     // A reverted-before-send switch persists nothing, so an ordinary
     // transcript must contain no status divider.

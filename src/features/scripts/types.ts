@@ -5,8 +5,6 @@
  * Scripts can be long-running services (dev servers) or one-shot commands (test suites).
  */
 
-import type { WorkspaceId } from '../../shared/types/branded-ids';
-
 /**
  * Script execution mode.
  * - `service`: Long-running, auto-restartable (dev server, file watcher)
@@ -71,15 +69,6 @@ export interface ScriptRuntimeState {
  */
 export interface ScriptWithState extends WorkspaceScript {
   runtime: ScriptRuntimeState;
-}
-
-/**
- * Persistence format for .workspace/scripts.json.
- * Includes a version field for forward compatibility.
- */
-interface ScriptsFileFormat {
-  version: number;
-  scripts: WorkspaceScript[];
 }
 
 /**

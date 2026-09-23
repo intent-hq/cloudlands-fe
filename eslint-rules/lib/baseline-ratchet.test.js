@@ -7,9 +7,12 @@ import { ESLint } from 'eslint';
 import { afterEach, describe, expect, it } from 'vitest';
 import {
   assertBaselineOnlyShrinks,
+  baselinesDir,
   findBaselineGrowth,
   lintPatterns,
   lintRuleFromRepoConfig,
+  loadBaseline,
+  parseBaselineTree,
   parseRegisteredRules,
   readComparisonBaseline,
   ruleScopeOverrides,
@@ -211,56 +214,220 @@ export const designSystemRules = {
   });
 });
 
-describe('readComparisonBaseline base ref', () => {
-  const tmpDirs = [];
-  afterEach(() => {
-    for (const dir of tmpDirs.splice(0)) fs.rmSync(dir, { recursive: true, force: true });
+const tmpDirs = [];
+afterEach(() => {
+  for (const dir of tmpDirs.splice(0)) fs.rmSync(dir, { recursive: true, force: true });
+});
+
+function makeTmpDir() {
+  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'baseline-ratchet-'));
+  tmpDirs.push(cwd);
+  return cwd;
+}
+
+/** Write `entries` (`{ '<rule>/<source>.json': value }`) as the baseline tree under `cwd`. */
+function writeTree(cwd, entries) {
+  fs.rmSync(path.join(cwd, baselinesDir), { recursive: true, force: true });
+  for (const [relative, value] of Object.entries(entries)) {
+    const file = path.join(cwd, baselinesDir, relative);
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(file, `${JSON.stringify(value, null, 2)}\n`);
+  }
+}
+
+describe('baseline directory store', () => {
+  it('groups one entry file per source into owner/reason files and counts groups', () => {
+    const cwd = makeTmpDir();
+    writeTree(cwd, {
+      'no-raw-controls/src/B.svelte.json': { owner: 'ui', reason: 'Legacy' },
+      'no-raw-controls/src/A.svelte.json': { owner: 'ui', reason: 'Legacy' },
+      'no-raw-controls/src/routes/(app)/[id]/C.svelte.json': { owner: 'ui', reason: 'Legacy' },
+      'no-raw-controls/src/D.svelte.json': { owner: 'dialogs', reason: 'Modal' },
+      'no-arbitrary-motion-or-color/src/E.svelte.json': { owner: 'ui', reason: 'Tokens', count: 3 },
+      'no-source-literal-assertions-in-tests/src/x.test.ts.json': { count: 2 },
+    });
+    const noRawControls = [
+      {
+        owner: 'ui',
+        reason: 'Legacy',
+        files: ['src/A.svelte', 'src/B.svelte', 'src/routes/(app)/[id]/C.svelte'],
+      },
+      { owner: 'dialogs', reason: 'Modal', files: ['src/D.svelte'] },
+    ];
+    expect(loadBaseline({ cwd })).toEqual({
+      'no-arbitrary-motion-or-color': [
+        { owner: 'ui', reason: 'Tokens', counts: { 'src/E.svelte': 3 } },
+      ],
+      'no-raw-controls': noRawControls,
+      'no-source-literal-assertions-in-tests': [{ counts: { 'src/x.test.ts': 2 } }],
+    });
+    expect(loadBaseline({ cwd, rules: ['no-raw-controls'] })).toEqual({
+      'no-raw-controls': noRawControls,
+    });
   });
 
-  // A throwaway repo whose two commits differ in the baseline file, so which ref the
-  // env selects is observable through the parsed contents.
-  function makeRepo() {
-    const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'baseline-ratchet-'));
-    tmpDirs.push(cwd);
+  it('is empty (zero debt) without a baselines directory', () => {
+    expect(loadBaseline({ cwd: makeTmpDir() })).toEqual({});
+  });
+
+  it('rejects malformed entries by file', () => {
+    const parse = (relative, value) => () => parseBaselineTree([[relative, JSON.stringify(value)]]);
+    expect(parse('r/src/A.svelte.json', [])).toThrow('must be a JSON object');
+    expect(parse('r/src/A.svelte.json', { owner: ' ', reason: 'x' })).toThrow(
+      `${baselinesDir}/r/src/A.svelte.json: "owner" must be a non-empty string`,
+    );
+    expect(parse('r/src/A.svelte.json', { count: 0 })).toThrow('"count" must be an integer >= 1');
+    expect(parse('r/src/A.svelte.json', { count: 1.5 })).toThrow('"count" must be an integer >= 1');
+    expect(parse('r/src/A.svelte', {})).toThrow('expected <rule>/<source path>.json');
+    expect(parse('r/.json', {})).toThrow('expected <rule>/<source path>.json');
+  });
+
+  it('names only rules the repo config enables, so a mistyped directory cannot hide debt', () => {
+    const enabled = new Set(
+      repoConfig.flatMap((entry) =>
+        Object.entries(entry.rules ?? {})
+          .filter(([ruleId, setting]) => {
+            const severity = Array.isArray(setting) ? setting[0] : setting;
+            return ruleId.startsWith('intent/') && severity !== 'off' && severity !== 0;
+          })
+          .map(([ruleId]) => ruleId.slice('intent/'.length)),
+      ),
+    );
+    const dir = path.join(process.cwd(), baselinesDir);
+    const ruleDirs = fs.existsSync(dir) ? fs.readdirSync(dir) : [];
+    expect(ruleDirs.filter((rule) => !enabled.has(rule))).toEqual([]);
+  });
+});
+
+describe('readComparisonBaseline base ref', () => {
+  // A throwaway repo whose two commits differ in the baseline tree, so which ref the
+  // env selects is observable through the parsed contents. `bareBase` commits the base
+  // revision without any `eslint-rules/baselines/` tree.
+  function makeRepo({ bareBase = false } = {}) {
+    const cwd = makeTmpDir();
     const git = (...args) =>
       execFileSync('git', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
-    const file = 'baseline.json';
-    const write = (value) => fs.writeFileSync(path.join(cwd, file), JSON.stringify(value));
+    const entry = (ref) => ({ 'no-raw-controls/src/A.svelte.json': { owner: 'ui', reason: ref } });
     git('init', '-q', '-b', 'main');
     git('config', 'user.email', 'ratchet@example.com');
     git('config', 'user.name', 'ratchet');
-    write({ ref: 'base' });
-    git('add', file);
+    fs.mkdirSync(path.join(cwd, 'eslint-rules/design-system'), { recursive: true });
+    fs.writeFileSync(
+      path.join(cwd, 'eslint-rules/design-system/index.js'),
+      "export const designSystemRules = {\n  'no-raw-controls': noRawControls,\n};\n",
+    );
+    if (!bareBase) writeTree(cwd, entry('base'));
+    git('add', '.');
     git('commit', '-q', '-m', 'base');
     git('branch', 'base');
-    write({ ref: 'head' });
-    git('commit', '-q', '-am', 'head');
-    return { cwd, file };
+    writeTree(cwd, entry('head'));
+    git('add', '-A', '.');
+    git('commit', '-q', '-m', 'head');
+    return cwd;
   }
 
+  const expected = (reason) => ({
+    'no-raw-controls': [{ owner: 'ui', reason, files: ['src/A.svelte'] }],
+  });
+
   it('reads LINT_BASELINE_BASE_REF, falling back to HEAD when unset', () => {
-    const { cwd, file } = makeRepo();
-    expect(readComparisonBaseline({ cwd, file, env: {} })).toMatchObject({
+    const cwd = makeRepo();
+    expect(readComparisonBaseline({ cwd, env: {} })).toEqual({
       ref: 'HEAD',
-      baseline: { ref: 'head' },
+      baseline: expected('head'),
+      rules: ['no-raw-controls'],
     });
-    expect(
-      readComparisonBaseline({ cwd, file, env: { LINT_BASELINE_BASE_REF: 'base' } }),
-    ).toMatchObject({ ref: 'base', baseline: { ref: 'base' } });
+    expect(readComparisonBaseline({ cwd, env: { LINT_BASELINE_BASE_REF: 'base' } })).toMatchObject({
+      ref: 'base',
+      baseline: expected('base'),
+    });
   });
 
   it('honors the pre-rename DESIGN_SYSTEM_BASELINE_BASE_REF, with the new name winning', () => {
-    const { cwd, file } = makeRepo();
+    const cwd = makeRepo();
     expect(
-      readComparisonBaseline({ cwd, file, env: { DESIGN_SYSTEM_BASELINE_BASE_REF: 'base' } }),
-    ).toMatchObject({ ref: 'base', baseline: { ref: 'base' } });
+      readComparisonBaseline({ cwd, env: { DESIGN_SYSTEM_BASELINE_BASE_REF: 'base' } }),
+    ).toMatchObject({ ref: 'base', baseline: expected('base') });
     expect(
       readComparisonBaseline({
         cwd,
-        file,
         env: { LINT_BASELINE_BASE_REF: 'HEAD', DESIGN_SYSTEM_BASELINE_BASE_REF: 'base' },
       }),
-    ).toMatchObject({ ref: 'HEAD', baseline: { ref: 'head' } });
+    ).toMatchObject({ ref: 'HEAD', baseline: expected('head') });
+  });
+
+  it('narrows to `rules` and treats a rule without a directory as zero debt', () => {
+    const cwd = makeRepo();
+    expect(readComparisonBaseline({ cwd, env: {}, rules: ['no-native-dialogs'] })).toMatchObject({
+      baseline: {},
+    });
+  });
+
+  it('treats a base revision without a baseline tree as zero debt', () => {
+    const cwd = makeRepo({ bareBase: true });
+    const base = readComparisonBaseline({ cwd, env: { LINT_BASELINE_BASE_REF: 'base' } });
+    expect(base).toEqual({ ref: 'base', baseline: {}, rules: ['no-raw-controls'] });
+    const headBaseline = loadBaseline({ cwd });
+    expect(headBaseline).toEqual(expected('head'));
+    expect(findBaselineGrowth(base.baseline, headBaseline)).toEqual({
+      'no-raw-controls': ['src/A.svelte'],
+    });
+    expect(() => assertBaselineOnlyShrinks(base.baseline, headBaseline)).toThrow(
+      'Baseline entries and counts may only shrink',
+    );
+  });
+
+  it('preserves source paths containing tabs when reading the committed tree', () => {
+    const cwd = makeRepo();
+    const git = (...args) =>
+      execFileSync('git', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
+    writeTree(cwd, {
+      'no-raw-controls/src/tab\tname.svelte.json': { owner: 'ui', reason: 'tab' },
+      'no-raw-controls/src/good.svelte.json\tsuffix.svelte.json': { owner: 'ui', reason: 'tab' },
+    });
+    git('add', '-A', '.');
+    git('commit', '-q', '-m', 'tabs');
+    const fromDisk = loadBaseline({ cwd });
+    expect(fromDisk['no-raw-controls'][0].files).toEqual([
+      'src/good.svelte.json\tsuffix.svelte',
+      'src/tab\tname.svelte',
+    ]);
+    expect(readComparisonBaseline({ cwd, env: {} }).baseline).toEqual(fromDisk);
+  });
+
+  it('reads a committed listing larger than the default 1 MiB child-process buffer', () => {
+    const cwd = makeRepo();
+    const git = (...args) =>
+      execFileSync('git', args, {
+        cwd,
+        encoding: 'utf8',
+        stdio: ['ignore', 'pipe', 'ignore'],
+        maxBuffer: 16 * 1024 * 1024,
+      });
+    const segment = 'x'.repeat(60);
+    const entries = {};
+    for (let i = 0; i < 4000; i += 1) {
+      entries[`no-raw-controls/src/${segment}/${segment}/${segment}/entry-${i}.svelte.json`] = {
+        owner: 'ui',
+        reason: 'bulk',
+      };
+    }
+    writeTree(cwd, entries);
+    git('add', '-A', '.');
+    git('commit', '-q', '-m', 'bulk');
+    expect(
+      Buffer.byteLength(git('ls-tree', '-r', '-z', 'HEAD', '--', baselinesDir)),
+    ).toBeGreaterThan(1024 * 1024);
+    const fromDisk = loadBaseline({ cwd });
+    expect(fromDisk['no-raw-controls'][0].files).toHaveLength(4000);
+    expect(readComparisonBaseline({ cwd, env: {} }).baseline).toEqual(fromDisk);
+  });
+
+  it('fails loudly on an unresolvable comparison revision', () => {
+    const cwd = makeRepo();
+    expect(() => readComparisonBaseline({ cwd, env: { LINT_BASELINE_BASE_REF: 'nope' } })).toThrow(
+      'Could not resolve baseline comparison revision nope',
+    );
   });
 });
 

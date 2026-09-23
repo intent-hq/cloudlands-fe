@@ -203,6 +203,7 @@ async function waitForQuiescence(page, { quietMs, quietTimeout }) {
       : 'no geometry change observed';
     throw new Error(
       `scroll geometry did not stay quiet for ${quietMs}ms within ${quietTimeout}ms (${detail}): ${error.message}`,
+      { cause: error },
     );
   }
   const waitedMs = await page.evaluate(

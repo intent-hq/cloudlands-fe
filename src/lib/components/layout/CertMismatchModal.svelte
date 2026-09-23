@@ -55,7 +55,7 @@
     tabindex="-1"
   >
     <!-- Header -->
-    <div class="px-6 py-4 border-b border-border flex items-center justify-between">
+    <div class="px-6 py-4 flex items-center justify-between">
       <div class="flex items-center gap-3">
         <span class="text-red-600 dark:text-red-500"
           ><Fa icon={faExclamationTriangle} size="lg" /></span
