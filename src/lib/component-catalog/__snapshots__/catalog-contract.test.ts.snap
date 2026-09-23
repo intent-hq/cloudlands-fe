@@ -9882,7 +9882,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:principal-
                     <div>
                       <button aria-label="Ada Lovelace · online" class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [--button-icon-padding:0.75rem] aria-disabled:cursor-not-allowed aria-disabled:opacity-100 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-inherit font-normal gap-1.5 group/button h-auto inline-flex isolate items-center justify-center motion-reduce:transition-none p-0 relative rounded-full shrink-0 text-inherit transition-[color,opacity] type-caption whitespace-nowrap" data-delay-duration="200" data-presence-person-button="ada" data-slot="button" data-state="closed" data-tooltip-trigger="" type="button">
                         <span aria-hidden="true" class="-z-10 absolute bg-transparent duration-spring-fast ease-spring-fast inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
-                        <span class="border border-background inline-flex ring-2 ring-success rounded-full shrink-0" data-presence-avatar="ada" data-presence-ring="member" data-presence-self="true">
+                        <span class="border border-background inline-flex relative ring-2 ring-success rounded-full shrink-0" data-presence-avatar="ada" data-presence-ring="member" data-presence-self="true">
                           <span class="font-medium h-full inline-flex items-center justify-center leading-none overflow-hidden rounded-full text-primary-foreground w-full" data-presence-avatar-tile="">
                             <span aria-hidden="true" class="grid h-full place-items-center w-full">
                               "A"
@@ -9890,7 +9890,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:principal-
                     <div>
                       <button aria-label="Grace Hopper · online" class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [--button-icon-padding:0.75rem] aria-disabled:cursor-not-allowed aria-disabled:opacity-100 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-inherit font-normal gap-1.5 group/button h-auto inline-flex isolate items-center justify-center motion-reduce:transition-none p-0 relative rounded-full shrink-0 text-inherit transition-[color,opacity] type-caption whitespace-nowrap" data-delay-duration="200" data-presence-person-button="grace" data-slot="button" data-state="closed" data-tooltip-trigger="" type="button">
                         <span aria-hidden="true" class="-z-10 absolute bg-transparent duration-spring-fast ease-spring-fast inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
-                        <span class="border border-background inline-flex ring-2 ring-info rounded-full shrink-0" data-presence-avatar="grace" data-presence-ring="owner">
+                        <span class="border border-background inline-flex relative ring-2 ring-info rounded-full shrink-0" data-presence-avatar="grace" data-presence-ring="owner">
                           <span class="font-medium h-full inline-flex items-center justify-center leading-none overflow-hidden rounded-full text-primary-foreground w-full" data-presence-avatar-tile="">
                             <span aria-hidden="true" class="grid h-full place-items-center w-full">
                               "G"
@@ -9898,7 +9898,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:principal-
                     <div>
                       <button aria-label="linus · online" class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [--button-icon-padding:0.75rem] aria-disabled:cursor-not-allowed aria-disabled:opacity-100 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-inherit font-normal gap-1.5 group/button h-auto inline-flex isolate items-center justify-center motion-reduce:transition-none p-0 relative rounded-full shrink-0 text-inherit transition-[color,opacity] type-caption whitespace-nowrap" data-delay-duration="200" data-presence-person-button="linus" data-slot="button" data-state="closed" data-tooltip-trigger="" type="button">
                         <span aria-hidden="true" class="-z-10 absolute bg-transparent duration-spring-fast ease-spring-fast inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
-                        <span class="border border-background inline-flex ring-2 ring-success rounded-full shrink-0" data-presence-avatar="linus" data-presence-ring="member">
+                        <span class="border border-background inline-flex relative ring-2 ring-success rounded-full shrink-0" data-presence-avatar="linus" data-presence-ring="member">
                           <span class="font-medium h-full inline-flex items-center justify-center leading-none overflow-hidden rounded-full text-primary-foreground w-full" data-presence-avatar-tile="">
                             <span aria-hidden="true" class="grid h-full place-items-center w-full">
                               "L"
@@ -9906,7 +9906,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:principal-
                     <div>
                       <button aria-disabled="true" aria-label="Cy Offline · offline" class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [--button-icon-padding:0.75rem] aria-disabled:cursor-not-allowed aria-disabled:opacity-100 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-inherit font-normal gap-1.5 group/button h-auto inline-flex isolate items-center justify-center motion-reduce:transition-none p-0 relative rounded-full shrink-0 text-inherit transition-[color,opacity] type-caption whitespace-nowrap" data-delay-duration="200" data-presence-person-button="cy" data-slot="button" data-state="closed" data-tooltip-trigger="" type="button">
                         <span aria-hidden="true" class="-z-10 absolute bg-transparent duration-spring-fast ease-spring-fast inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
-                        <span class="border border-background inline-flex ring-2 ring-muted-foreground/40 rounded-full shrink-0" data-presence-avatar="cy" data-presence-offline="true" data-presence-ring="offline">
+                        <span class="border border-background inline-flex relative ring-2 ring-muted-foreground/40 rounded-full shrink-0" data-presence-avatar="cy" data-presence-offline="true" data-presence-ring="offline">
                           <span class="font-medium grayscale h-full inline-flex items-center justify-center leading-none overflow-hidden rounded-full text-primary-foreground w-full" data-presence-avatar-tile="">
                             <span aria-hidden="true" class="grid h-full place-items-center w-full">
                               "C"
@@ -9986,19 +9986,19 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:principal-
                 <p class="text-muted-foreground type-caption">
                   "You (no URL), the owner (no URL), a member (failed image), an offline member (failed image), and one more person in the overflow chip."
                 <span aria-label="3 other people here" class="-space-x-1 inline-flex items-center" data-presence-avatar-stack="" data-presence-count="5" role="group">
-                  <span class="border border-background inline-flex ring-2 ring-success rounded-full shrink-0" data-presence-avatar="ada" data-presence-ring="member" data-presence-self="true">
+                  <span class="border border-background inline-flex relative ring-2 ring-success rounded-full shrink-0" data-presence-avatar="ada" data-presence-ring="member" data-presence-self="true">
                     <span class="font-medium h-full inline-flex items-center justify-center leading-none overflow-hidden rounded-full text-primary-foreground w-full" data-presence-avatar-tile="">
                       <span aria-hidden="true" class="grid h-full place-items-center w-full">
                         "A"
-                  <span class="border border-background inline-flex ring-2 ring-info rounded-full shrink-0" data-presence-avatar="grace" data-presence-ring="owner">
+                  <span class="border border-background inline-flex relative ring-2 ring-info rounded-full shrink-0" data-presence-avatar="grace" data-presence-ring="owner">
                     <span class="font-medium h-full inline-flex items-center justify-center leading-none overflow-hidden rounded-full text-primary-foreground w-full" data-presence-avatar-tile="">
                       <span aria-hidden="true" class="grid h-full place-items-center w-full">
                         "G"
-                  <span class="border border-background inline-flex ring-2 ring-success rounded-full shrink-0" data-presence-avatar="linus" data-presence-ring="member">
+                  <span class="border border-background inline-flex relative ring-2 ring-success rounded-full shrink-0" data-presence-avatar="linus" data-presence-ring="member">
                     <span class="font-medium h-full inline-flex items-center justify-center leading-none overflow-hidden rounded-full text-primary-foreground w-full" data-presence-avatar-tile="">
                       <span aria-hidden="true" class="grid h-full place-items-center w-full">
                         "L"
-                  <span class="border border-background inline-flex ring-2 ring-muted-foreground/40 rounded-full shrink-0" data-presence-avatar="cy" data-presence-offline="true" data-presence-ring="offline">
+                  <span class="border border-background inline-flex relative ring-2 ring-muted-foreground/40 rounded-full shrink-0" data-presence-avatar="cy" data-presence-offline="true" data-presence-ring="offline">
                     <span class="font-medium grayscale h-full inline-flex items-center justify-center leading-none overflow-hidden rounded-full text-primary-foreground w-full" data-presence-avatar-tile="">
                       <span aria-hidden="true" class="grid h-full place-items-center w-full">
                         "C"
@@ -10077,28 +10077,28 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:principal-
                   "You (no URL), the owner (no URL), a member (failed image), an offline member (failed image), and one more person in the overflow chip."
                 <span aria-label="3 other people here" class="-space-x-1 inline-flex items-center" data-presence-avatar-stack="" data-presence-count="5" role="group">
                   <span class="inline-flex" data-delay-duration="0" data-state="closed" data-tooltip-trigger="" id="bits-<id>" role="button" tabindex="0">
-                    <span class="border border-background inline-flex ring-2 ring-success rounded-full shrink-0" data-presence-avatar="ada" data-presence-ring="member" data-presence-self="true">
+                    <span class="border border-background inline-flex relative ring-2 ring-success rounded-full shrink-0" data-presence-avatar="ada" data-presence-ring="member" data-presence-self="true">
                       <span class="font-medium h-full inline-flex items-center justify-center leading-none overflow-hidden rounded-full text-primary-foreground w-full" data-presence-avatar-tile="">
                         <span aria-hidden="true" class="grid h-full place-items-center w-full">
                           "A"
                     <span class="sr-only">
                       "Ada Lovelace (you)"
                   <span class="inline-flex" data-delay-duration="0" data-state="closed" data-tooltip-trigger="" id="bits-<id>" role="button" tabindex="0">
-                    <span class="border border-background inline-flex ring-2 ring-info rounded-full shrink-0" data-presence-avatar="grace" data-presence-ring="owner">
+                    <span class="border border-background inline-flex relative ring-2 ring-info rounded-full shrink-0" data-presence-avatar="grace" data-presence-ring="owner">
                       <span class="font-medium h-full inline-flex items-center justify-center leading-none overflow-hidden rounded-full text-primary-foreground w-full" data-presence-avatar-tile="">
                         <span aria-hidden="true" class="grid h-full place-items-center w-full">
                           "G"
                     <span class="sr-only">
                       "Grace Hopper"
                   <span class="inline-flex" data-delay-duration="0" data-state="closed" data-tooltip-trigger="" id="bits-<id>" role="button" tabindex="0">
-                    <span class="border border-background inline-flex ring-2 ring-success rounded-full shrink-0" data-presence-avatar="linus" data-presence-ring="member">
+                    <span class="border border-background inline-flex relative ring-2 ring-success rounded-full shrink-0" data-presence-avatar="linus" data-presence-ring="member">
                       <span class="font-medium h-full inline-flex items-center justify-center leading-none overflow-hidden rounded-full text-primary-foreground w-full" data-presence-avatar-tile="">
                         <span aria-hidden="true" class="grid h-full place-items-center w-full">
                           "L"
                     <span class="sr-only">
                       "linus"
                   <span class="inline-flex" data-delay-duration="0" data-state="closed" data-tooltip-trigger="" id="bits-<id>" role="button" tabindex="0">
-                    <span class="border border-background inline-flex ring-2 ring-muted-foreground/40 rounded-full shrink-0" data-presence-avatar="cy" data-presence-offline="true" data-presence-ring="offline">
+                    <span class="border border-background inline-flex relative ring-2 ring-muted-foreground/40 rounded-full shrink-0" data-presence-avatar="cy" data-presence-offline="true" data-presence-ring="offline">
                       <span class="font-medium grayscale h-full inline-flex items-center justify-center leading-none overflow-hidden rounded-full text-primary-foreground w-full" data-presence-avatar-tile="">
                         <span aria-hidden="true" class="grid h-full place-items-center w-full">
                           "C"
