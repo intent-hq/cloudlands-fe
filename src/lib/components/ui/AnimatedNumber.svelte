@@ -1,3 +1,5 @@
+<!-- @catalog-exempt: motion-driven number text with no interactive DOM; no catalog fixtures yet -->
+
 <script lang="ts">
   import { spring, tweenedValue, type SpringTierName } from '$lib/motion';
   import { formatInteger } from '$lib/i18n/format';

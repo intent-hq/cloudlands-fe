@@ -155,6 +155,46 @@ const dismissalMarkerRawReadAllowedFiles = [
 ];
 const dismissalMarkerRawReadMessage =
   'Do not read `dismissedQuestionsMessageId` directly. Use `isQuestionMessageDismissed` (src/shared/utils/question-dismissal.ts) or `sessionHasPendingQuestion` (src/lib/components/chat/questions/pending-questions.ts) so the dismissal comparison stays shared.';
+const dismissalMarkerRawReadSelectors = [
+  {
+    selector: "MemberExpression[computed=false][property.name='dismissedQuestionsMessageId']",
+    message: dismissalMarkerRawReadMessage,
+  },
+  {
+    selector: "MemberExpression[computed=true][property.value='dismissedQuestionsMessageId']",
+    message: dismissalMarkerRawReadMessage,
+  },
+  {
+    selector: "ObjectPattern > Property[key.name='dismissedQuestionsMessageId']",
+    message: dismissalMarkerRawReadMessage,
+  },
+  {
+    selector: "ObjectPattern > Property[key.value='dismissedQuestionsMessageId']",
+    message: dismissalMarkerRawReadMessage,
+  },
+];
+
+// Host modules the shared root layout must not reach (see the
+// src/routes/+layout.svelte override below). `no-restricted-imports` covers
+// static imports only, so dynamic `import()` of the same modules is banned
+// through `no-restricted-syntax`; the specifier must be a string literal so
+// the ban can be checked at all.
+const rootLayoutHostModules = [
+  ['electron-bridge', 'reach the Electron bridge'],
+  ['live-app-client', 'construct the live daemon client'],
+  ['mock-bootstrap', 'seed the browser mock store'],
+];
+const rootLayoutDynamicImportSelectors = [
+  ...rootLayoutHostModules.map(([basename, action]) => ({
+    selector: `ImportExpression[source.type='Literal'][source.value=/${basename}(\\.[jt]s)?$/]`,
+    message: `The root layout is shared with the /sandbox catalog and must not ${action}, statically or via import(). Host wiring belongs in src/routes/(app)/+layout.svelte.`,
+  })),
+  {
+    selector: "ImportExpression[source.type!='Literal']",
+    message:
+      'Dynamic imports in the shared root layout must use a string-literal specifier so the host-module boundary can be lint-checked.',
+  },
+];
 
 // Staged rollout: existing components with direct async data loads are baselined
 // until each flow moves to Redux actions/selectors. New Svelte components and
@@ -691,6 +731,44 @@ export default [
       ],
     },
   },
+  // The root layout is shared by the product app shell and the /sandbox component
+  // catalog: it starts the store lifecycle and loads the global stylesheet, and
+  // nothing more. Host code — the Electron bridge, the live daemon client, the
+  // browser mock-store seeding — belongs to the (app) layout, so a catalog page
+  // never boots a daemon connection or the mock bootstrap. The shared CT-module
+  // path is repeated so this override does not drop that restriction;
+  // src/lib/component-catalog/catalog-shell.test.ts asserts the matrix against
+  // this effective config. The matching dynamic-import ban rides on
+  // `no-restricted-syntax` in the root-layout block after the
+  // dismissedQuestionsMessageId guard below, so that guard does not override it.
+  {
+    files: ['src/routes/+layout.svelte'],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        {
+          paths: [ctSharedModuleRestrictedImportPath],
+          patterns: [
+            {
+              group: internalModuleImportPatterns('$lib', 'lib/electron-bridge'),
+              message:
+                'The root layout is shared with the /sandbox catalog and must not reach the Electron bridge. Host wiring belongs in src/routes/(app)/+layout.svelte.',
+            },
+            {
+              group: internalModuleImportPatterns('$lib', 'lib/client/live/live-app-client'),
+              message:
+                'The root layout is shared with the /sandbox catalog and must not construct the live daemon client. Host wiring belongs in src/routes/(app)/+layout.svelte.',
+            },
+            {
+              group: internalModuleImportPatterns('$store', 'store/renderer/mock-bootstrap'),
+              message:
+                'The root layout is shared with the /sandbox catalog and must not seed the browser mock store. Host wiring belongs in src/routes/(app)/+layout.svelte.',
+            },
+          ],
+        },
+      ],
+    },
+  },
   // Type-aware lint for Electron main-process + preload code. An unawaited
   // promise inside a try/catch silently succeeds: the Electron 42→44 bump made
   // `clipboard.writeText()` async and the WRITE_CLIPBOARD handler kept
@@ -721,24 +799,20 @@ export default [
     files: ['src/**/*.{js,mjs,ts,tsx,svelte}'],
     ignores: [...productionModuleIgnores, ...dismissalMarkerRawReadAllowedFiles],
     rules: {
+      'no-restricted-syntax': ['error', ...dismissalMarkerRawReadSelectors],
+    },
+  },
+  // Root-layout dynamic-import ban (see the `no-restricted-imports` override
+  // above). Placed after the `src/**` `no-restricted-syntax` block because flat
+  // config replaces a rule's options per file rather than merging them, so this
+  // block carries the dismissal selectors too.
+  {
+    files: ['src/routes/+layout.svelte'],
+    rules: {
       'no-restricted-syntax': [
         'error',
-        {
-          selector: "MemberExpression[computed=false][property.name='dismissedQuestionsMessageId']",
-          message: dismissalMarkerRawReadMessage,
-        },
-        {
-          selector: "MemberExpression[computed=true][property.value='dismissedQuestionsMessageId']",
-          message: dismissalMarkerRawReadMessage,
-        },
-        {
-          selector: "ObjectPattern > Property[key.name='dismissedQuestionsMessageId']",
-          message: dismissalMarkerRawReadMessage,
-        },
-        {
-          selector: "ObjectPattern > Property[key.value='dismissedQuestionsMessageId']",
-          message: dismissalMarkerRawReadMessage,
-        },
+        ...dismissalMarkerRawReadSelectors,
+        ...rootLayoutDynamicImportSelectors,
       ],
     },
   },

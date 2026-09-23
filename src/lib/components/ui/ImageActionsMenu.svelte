@@ -1,3 +1,5 @@
+<!-- @catalog-exempt: composition over the catalogued Menu covered by ImageActionsMenu.test.ts; no catalog fixtures yet -->
+
 <script lang="ts">
   /**
    * ImageActionsMenu — ellipsis menu for a chat image (thumbnail or lightbox).
