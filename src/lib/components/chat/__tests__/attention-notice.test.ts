@@ -3,7 +3,7 @@
  */
 import { describe, it, expect } from 'vitest';
 import { render, screen } from '@testing-library/svelte';
-import { getAttentionNotice } from '../attention-notice';
+import { getAttentionNotice, hasMatchingAttentionNotice } from '../attention-notice';
 import DiscussionRequestNotice from '../DiscussionRequestNotice.svelte';
 import BlockerReportNotice from '../BlockerReportNotice.svelte';
 import TurnFailureNotice from '../TurnFailureNotice.svelte';
@@ -58,6 +58,49 @@ describe('getAttentionNotice', () => {
   it('returns null for null/undefined messages', () => {
     expect(getAttentionNotice(null)).toBeNull();
     expect(getAttentionNotice(undefined)).toBeNull();
+  });
+});
+
+describe('hasMatchingAttentionNotice', () => {
+  const request = {
+    kind: 'blocker' as const,
+    reason: 'Need credentials',
+    timestamp: '2026-09-23T03:00:00Z',
+  };
+  const notice = {
+    ...systemMessage('blocker-report', request.reason),
+    timestamp: '2026-09-23T03:00:00.000Z',
+  };
+
+  it('matches a saved notice using its kind, reason, and timestamp', () => {
+    expect(hasMatchingAttentionNotice([notice], request)).toBe(true);
+  });
+
+  it('matches Date timestamps without discarding milliseconds', () => {
+    const timestamp = '2026-09-23T03:00:00.123Z';
+    const message = { ...notice, timestamp: new Date(timestamp) };
+    expect(hasMatchingAttentionNotice([message], { ...request, timestamp })).toBe(true);
+    expect(hasMatchingAttentionNotice([message], request)).toBe(false);
+  });
+
+  it.each([
+    { ...notice, timestamp: '2026-09-22T03:00:00Z' },
+    { ...notice, timestamp: '2026-09-24T03:00:00Z' },
+    { ...notice, timestamp: 'invalid' },
+    { ...notice, timestamp: new Date('invalid') },
+    { ...notice, role: 'assistant' as const },
+    { ...systemMessage('discussion-request', request.reason), timestamp: notice.timestamp },
+    { ...systemMessage('turn-failure', request.reason), timestamp: notice.timestamp },
+    { ...systemMessage('blocker-report', 'A different reason'), timestamp: notice.timestamp },
+  ])('does not hide a request behind an unrelated notice: %j', (message) => {
+    expect(hasMatchingAttentionNotice([message], request)).toBe(false);
+  });
+
+  it('keeps the fallback when there is no identifiable matching notice', () => {
+    expect(hasMatchingAttentionNotice([], request)).toBe(false);
+    expect(hasMatchingAttentionNotice([notice], null)).toBe(false);
+    expect(hasMatchingAttentionNotice([notice], { ...request, timestamp: undefined })).toBe(false);
+    expect(hasMatchingAttentionNotice([notice], { ...request, timestamp: 'invalid' })).toBe(false);
   });
 });
 

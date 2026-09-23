@@ -12,6 +12,7 @@
  */
 import type { AgentMessage } from '$shared/types';
 import { extractAllContent } from '$shared/types';
+import type { AgentAttentionRequest } from '$shared/utils/agent-attention';
 
 type AttentionNoticeKind = 'discussion-request' | 'blocker-report' | 'turn-failure';
 
@@ -44,4 +45,25 @@ export function getAttentionNotice(
     kind: kind as AttentionNoticeKind,
     reason: extractAllContent(message as AgentMessage),
   };
+}
+
+export function hasMatchingAttentionNotice(
+  messages: readonly AgentMessage[],
+  request: AgentAttentionRequest | null,
+): boolean {
+  if (!request?.timestamp) return false;
+  const timestamp = Date.parse(request.timestamp);
+  if (!Number.isFinite(timestamp)) return false;
+  const kind = request.kind === 'blocker' ? 'blocker-report' : 'discussion-request';
+
+  // The daemon uses the same saved_at for the pending request and its notice.
+  return messages.some((message) => {
+    const messageTimestamp =
+      message.timestamp instanceof Date
+        ? message.timestamp.getTime()
+        : Date.parse(message.timestamp);
+    if (messageTimestamp !== timestamp) return false;
+    const notice = getAttentionNotice(message);
+    return notice?.kind === kind && notice.reason === (request.reason ?? '');
+  });
 }

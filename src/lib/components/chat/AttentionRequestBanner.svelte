@@ -2,8 +2,8 @@
   /**
    * AttentionRequestBanner Component
    *
-   * Transcript notice shown when the current agent has a pending
-   * attention request (requestDiscussion / reportBlocker). Scrolls with the
+   * Fallback notice shown when a pending attention request has no matching
+   * saved notice in the loaded conversation. Scrolls with the
    * conversation at the shared content width, and
    * retires automatically when the daemon clears the session fields on the
    * user's next response — a user-origin delivery (sendMessage,
@@ -12,7 +12,12 @@
    * automatic deliveries leave it pending.
    */
   import { writable } from 'svelte/store';
-  import { selectAgentAttentionRequest } from '$store/renderer/slices/agent-session/agent-session-selectors';
+  import {
+    selectAgentAttentionRequest,
+    selectAgentMessages,
+    selectAgentHistoryMessages,
+  } from '$store/renderer/slices/agent-session/agent-session-selectors';
+  import { hasMatchingAttentionNotice } from './attention-notice';
   import ChatNotice from './ChatNotice.svelte';
   import { m } from '$shared/paraglide/messages.js';
 
@@ -29,10 +34,16 @@
   });
 
   const attentionRequest$ = selectAgentAttentionRequest(agentIdStore);
+  const messages$ = selectAgentMessages(agentIdStore);
+  const historyMessages$ = selectAgentHistoryMessages(agentIdStore);
+  const hasSavedNotice = $derived(
+    hasMatchingAttentionNotice($messages$, $attentionRequest$) ||
+      hasMatchingAttentionNotice($historyMessages$, $attentionRequest$),
+  );
   const isBlocker = $derived($attentionRequest$?.kind === 'blocker');
 </script>
 
-{#if $attentionRequest$}
+{#if $attentionRequest$ && !hasSavedNotice}
   <ChatNotice
     title={isBlocker
       ? m.chat_agentCard_attentionBlocker_label()
