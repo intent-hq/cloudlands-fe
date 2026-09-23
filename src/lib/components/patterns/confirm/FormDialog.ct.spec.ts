@@ -1,5 +1,6 @@
 import { expect, test } from '../../../../test/ct-test';
 import FormDialog from './FormDialog.svelte';
+import FormDialogAsyncHarness from './FormDialogAsyncHarness.svelte';
 
 for (const enterKey of ['submit', 'ignore'] as const) {
   test(`Enter activates Cancel without submitting with enterKey=${enterKey}`, async ({
@@ -140,3 +141,30 @@ for (const enterKey of ['submit', 'ignore'] as const) {
     expect(submitted).toBe(0);
   });
 }
+
+test('pending submission blocks dismissal and permits retry after rejection', async ({
+  mount,
+  page,
+}) => {
+  const component = await mount(FormDialogAsyncHarness);
+  const dialog = page.getByRole('dialog');
+  const save = dialog.getByRole('button', { name: 'Save', exact: true });
+  await save.click();
+  await expect(page.getByTestId('submission-count')).toHaveText('1');
+  await expect(save).toBeDisabled();
+  await page.keyboard.press('Enter');
+  await page.keyboard.press('Escape');
+  await page.mouse.click(1, 1);
+  await expect(dialog).toBeVisible();
+  await expect(page.getByTestId('cancellation-count')).toHaveText('0');
+  await expect(page.getByTestId('submission-count')).toHaveText('1');
+  await component.update({ props: { rejectPending: true } });
+  await expect(save).toBeEnabled();
+  await expect(dialog.getByRole('alert')).toBeVisible();
+  await save.click();
+  await expect(page.getByTestId('submission-count')).toHaveText('2');
+  await expect(dialog.getByRole('alert')).toHaveCount(0);
+  await dialog.getByRole('button', { name: 'Cancel', exact: true }).click();
+  await expect(page.getByTestId('cancellation-count')).toHaveText('1');
+  await expect(dialog).toHaveCount(0);
+});
