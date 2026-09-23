@@ -1,8 +1,7 @@
 <!-- @catalog-exempt: composition over the catalogued Menu; no catalog fixtures yet -->
 
 <script lang="ts">
-  import { faEllipsis } from '@fortawesome/free-solid-svg-icons';
-  import Fa from 'svelte-fa';
+  import KebabIcon from '$lib/components/icons/KebabIcon.svelte';
   import { notify } from '$lib/components/patterns/notify';
   import type { VideoSource } from '$shared/types';
   import { m } from '$shared/paraglide/messages.js';
@@ -141,7 +140,7 @@
     aria-label={m.ui_videoActionsMenu_trigger_ariaLabel()}
     onclick={(event: MouseEvent) => event.stopPropagation()}
   >
-    <Fa icon={faEllipsis} size="sm" />
+    <KebabIcon class="size-3.5" />
   </Menu.Trigger>
   <Menu.Content class={contentClass} align="end">
     <Menu.Item onSelect={() => void download()}>
