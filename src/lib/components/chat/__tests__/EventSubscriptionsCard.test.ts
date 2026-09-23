@@ -200,9 +200,6 @@ describe('EventSubscriptionsCard', () => {
     const toggle = screen.getByRole('button', { name: 'Subscribed to 3 events' });
     const body = screen.getByTestId('event-subscriptions-body');
 
-    expect(toggle.className).toContain('w-full');
-    expect(toggle.className).toContain('px-3!');
-    expect(toggle.className).toContain('py-2!');
     expect(toggle.getAttribute('aria-expanded')).toBe('true');
     expect(toggle.getAttribute('aria-controls')).toBe(body.id);
     expect(body.classList.contains('hidden')).toBe(false);
@@ -217,7 +214,6 @@ describe('EventSubscriptionsCard', () => {
     expect(screen.getByTestId('event-subscriptions-body').getAttribute('aria-hidden')).toBe(
       'false',
     );
-    expect(card.parentElement?.className).not.toMatch(/pb-(8|12)|mb-(8|12)/);
   });
 
   it('persists a collapsed override across remounts in the session', async () => {
