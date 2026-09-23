@@ -26,6 +26,7 @@
   import type { BrowserElement } from '$store/renderer/slices/browser/browser-types';
   import { selectPendingBrowserZoom } from '$store/renderer/slices/browser/browser-selectors';
   import { selectMostRecentAgentTab } from '$store/renderer/slices/panel-layout/panel-layout-selectors';
+  import { rebaseRequestedUrlForNavigation } from '$store/renderer/slices/panel-layout/browser-tab-rehydration';
   import {
     acquireBrowserTabMount,
     releaseBrowserTabMount,
@@ -221,14 +222,18 @@
   // instead of replacing it with a generic connection error, and the next
   // navigation clears it.
   let navigationResolverError = '';
-  // Pre-rewrite alias behind the current navigation's tunnel URL; did-navigate
-  // hands it to the parent so the tab persists the alias (re-resolvable after
-  // a restart) rather than the ephemeral forward.
+  // Pre-rewrite alias behind the current navigation and the tunnel URL it
+  // resolved to; did-navigate reconciles the alias with the URL that actually
+  // committed (an HTTP redirect may land elsewhere) and hands it to the parent
+  // so the tab persists the alias (re-resolvable after a restart) rather than
+  // the ephemeral forward.
   let navigationRequestedUrl = '';
+  let navigationResolvedUrl = '';
 
   function beginNavigation(): number {
     navigationResolverError = '';
     navigationRequestedUrl = '';
+    navigationResolvedUrl = '';
     return ++navigationGeneration;
   }
 
@@ -697,7 +702,13 @@
       faviconUrl = '';
       isSecure = e.url?.startsWith('https://');
       errorMessage = '';
-      const requestedUrl = navigationRequestedUrl;
+      // The alias survives only a commit on the resolved origin (path/query/hash
+      // rebased onto the committed ones); a redirect off that origin drops it.
+      const requestedUrl = rebaseRequestedUrlForNavigation(
+        navigationResolvedUrl || undefined,
+        e.url,
+        navigationRequestedUrl || undefined,
+      );
       // A committed main-frame navigation supersedes any pending alias resolution.
       beginNavigation();
       // Update previousUrlProp to prevent the prop-change effect from re-triggering a load
@@ -1200,8 +1211,9 @@
    * the rewritten URL still loads so the webview's own error page shows,
    * and the resolver message survives the resulting did-fail-load. A result
    * that arrives after a newer navigation (or unmount) is dropped. The typed
-   * alias rides along as the committed navigation's requested URL so the tab
-   * persists it instead of the ephemeral tunnel forward.
+   * alias rides along as the committed navigation's requested URL (reconciled
+   * with the committed URL in did-navigate) so the tab persists it instead of
+   * the ephemeral tunnel forward.
    */
   async function loadResolvedAliasUrl(requestedUrl: string) {
     const generation = beginNavigation();
@@ -1224,6 +1236,7 @@
     await loadUrl(resolved.url);
     if (resolved.rewritten) {
       navigationRequestedUrl = requestedUrl;
+      navigationResolvedUrl = resolved.url;
     }
     if (resolved.error && resolved.rewritten) {
       navigationResolverError = resolved.forbidden

@@ -480,7 +480,7 @@ describe('EmbeddedBrowser', () => {
         );
         expect(onNavigate).toHaveBeenCalledWith(
           'http://127.0.0.1:41234/',
-          'http://daemon.localhost:3000',
+          'http://daemon.localhost:3000/',
         );
 
         // The alias belongs to that one navigation: a later page reports none.
@@ -491,6 +491,66 @@ describe('EmbeddedBrowser', () => {
         );
         expect(onNavigate).toHaveBeenCalledTimes(1);
         expect(onNavigate.mock.calls[0]).toEqual(['http://127.0.0.1:41234/docs']);
+      });
+
+      // An HTTP redirect on the resolved load commits a different URL than the
+      // one requested: the alias must describe the page actually shown.
+      it('rebases the alias onto a same-origin redirect target before reporting it', async () => {
+        mocks.invoke.mockImplementation(async (channel: string) =>
+          channel === RESOLVE_CHANNEL
+            ? {
+                url: 'http://127.0.0.1:41234/',
+                rewritten: true,
+                requestedUrl: 'http://daemon.localhost:3000',
+                tunneled: true,
+              }
+            : undefined,
+        );
+        const onNavigate = vi.fn();
+
+        const { webview } = await submitAddress('daemon.localhost:3000', { onNavigate });
+        await waitFor(() =>
+          expect(webview.loadURL).toHaveBeenCalledWith('http://127.0.0.1:41234/'),
+        );
+        onNavigate.mockClear();
+
+        await fireEvent(
+          webview,
+          Object.assign(new Event('did-navigate'), {
+            url: 'http://127.0.0.1:41234/login?next=%2F#top',
+          }),
+        );
+        expect(onNavigate).toHaveBeenCalledWith(
+          'http://127.0.0.1:41234/login?next=%2F#top',
+          'http://daemon.localhost:3000/login?next=%2F#top',
+        );
+      });
+
+      it('drops the alias when the resolved load redirects to another origin', async () => {
+        mocks.invoke.mockImplementation(async (channel: string) =>
+          channel === RESOLVE_CHANNEL
+            ? {
+                url: 'http://127.0.0.1:41234/',
+                rewritten: true,
+                requestedUrl: 'http://daemon.localhost:3000',
+                tunneled: true,
+              }
+            : undefined,
+        );
+        const onNavigate = vi.fn();
+
+        const { webview } = await submitAddress('daemon.localhost:3000', { onNavigate });
+        await waitFor(() =>
+          expect(webview.loadURL).toHaveBeenCalledWith('http://127.0.0.1:41234/'),
+        );
+        onNavigate.mockClear();
+
+        await fireEvent(
+          webview,
+          Object.assign(new Event('did-navigate'), { url: 'https://accounts.example/sign-in' }),
+        );
+        expect(onNavigate).toHaveBeenCalledTimes(1);
+        expect(onNavigate.mock.calls[0]).toEqual(['https://accounts.example/sign-in']);
       });
 
       it('reports no requested URL for a plainly typed address', async () => {
