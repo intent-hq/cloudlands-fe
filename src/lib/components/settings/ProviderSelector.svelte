@@ -6,6 +6,7 @@
    * Self-contained component with inline rendering
    * that can be independently tweaked for settings-specific needs.
    */
+  import KebabIcon from '$lib/components/icons/KebabIcon.svelte';
   import { onMount } from 'svelte';
   import { invoke, shell } from '$lib/electron-bridge';
   import { appClient } from '$lib/client';
@@ -45,7 +46,6 @@
     faBan,
     faCheck,
     faDownload,
-    faEllipsisVertical,
     faFolder,
     faStar,
     faTerminal,
@@ -641,7 +641,7 @@
                             name: provider.name,
                           })}
                         >
-                          <Fa icon={faEllipsisVertical} />
+                          <KebabIcon class="size-3.5" />
                         </Button>
                       {/snippet}
 
