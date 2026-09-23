@@ -6,6 +6,7 @@
    * Self-contained component with inline rendering
    * that can be independently tweaked for settings-specific needs.
    */
+  import KebabIcon from '$lib/components/icons/KebabIcon.svelte';
   import { onMount } from 'svelte';
   import { invoke, shell } from '$lib/electron-bridge';
   import { appClient } from '$lib/client';
@@ -45,7 +46,6 @@
     faBan,
     faCheck,
     faDownload,
-    faEllipsisVertical,
     faFolder,
     faStar,
     faTerminal,
@@ -71,6 +71,7 @@
   import AntigravityConnect from '$features/antigravity/AntigravityConnect.svelte';
   import { selectAntigravitySetupPolicy } from '$store/renderer/slices/antigravity-setup/antigravity-setup-selectors';
   const antigravitySetupPolicy$ = selectAntigravitySetupPolicy();
+  let antigravityConnectOpen = $state(false);
 
   const logger = createLogger('ProviderSelector');
   const activeProviderId = selectActiveProviderId();
@@ -641,12 +642,24 @@
                             name: provider.name,
                           })}
                         >
-                          <Fa icon={faEllipsisVertical} />
+                          <KebabIcon class="size-3.5" />
                         </Button>
                       {/snippet}
 
                       {#snippet content({ close }: { close: () => void })}
                         <div class={hasWarning || needsLogin ? 'w-64 py-1' : 'w-44 py-1'}>
+                          {#if provider.id === 'antigravity'}
+                            <Menu.Item
+                              class="cursor-pointer text-foreground"
+                              onSelect={() => {
+                                close();
+                                antigravityConnectOpen = true;
+                              }}
+                            >
+                              <span class="size-4 shrink-0" aria-hidden="true"></span>
+                              {m.antigravity_setup_connect_label()}
+                            </Menu.Item>
+                          {/if}
                           {#if hasWarning}
                             <div class="border-b border-border pb-1">
                               {#if hasPiAdapterWarning}
@@ -855,7 +868,7 @@
                 </div>
               </div>
               {#if provider.id === 'antigravity'}
-                <AntigravityConnect ready={isReady} />
+                <AntigravityConnect bind:open={antigravityConnectOpen} />
               {/if}
             </div>
           {/each}

@@ -4,6 +4,35 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.178.2](https://github.com/intent-hq/cloudlands-fe/compare/v2.178.1...v2.178.2) (2026-09-23)
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.9.103 ([#2839](https://github.com/intent-hq/cloudlands-fe/issues/2839)) ([c8fd915](https://github.com/intent-hq/cloudlands-fe/commit/c8fd915d5e48e6a320646c0db8091fd43e973211))
+
+## [2.178.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.178.0...v2.178.1) (2026-09-23)
+
+
+### 🐛 Bug Fixes
+
+* **browser:** resolve explicit daemon.localhost / client.localhost aliases typed in the address bar ([#2823](https://github.com/intent-hq/cloudlands-fe/issues/2823)) ([ce9f7bc](https://github.com/intent-hq/cloudlands-fe/commit/ce9f7bc571fd5ad456471cd054ce96795d31a797))
+* bump intentd sidecar to v0.9.102 ([#2835](https://github.com/intent-hq/cloudlands-fe/issues/2835)) ([d522c42](https://github.com/intent-hq/cloudlands-fe/commit/d522c42792c812770f0b5122787b5d13b3689730))
+* **test:** make the tab-strip geometry root and CT specs deterministic under load ([#2826](https://github.com/intent-hq/cloudlands-fe/issues/2826)) ([0a2602b](https://github.com/intent-hq/cloudlands-fe/commit/0a2602bed55b9dc84129480ba607661fce9dfc78))
+
+## [2.178.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.177.2...v2.178.0) (2026-09-23)
+
+
+### 🚀 Features
+
+* **perf:** paired text-rebase alignment benchmark ([#2830](https://github.com/intent-hq/cloudlands-fe/issues/2830)) ([8cd3be9](https://github.com/intent-hq/cloudlands-fe/commit/8cd3be9b23f6ff3917625847f2ea8a32e5981047))
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.9.101 ([#2834](https://github.com/intent-hq/cloudlands-fe/issues/2834)) ([2ca0b1e](https://github.com/intent-hq/cloudlands-fe/commit/2ca0b1e0cb60111559fb491d740a2775b78b5b5b))
+* **model-picker:** warn before send when the agent provider is disabled ([#2829](https://github.com/intent-hq/cloudlands-fe/issues/2829)) ([3543254](https://github.com/intent-hq/cloudlands-fe/commit/354325433ad7bf5e60b57331500bfd6ff7023110))
+
 ## [2.177.2](https://github.com/intent-hq/cloudlands-fe/compare/v2.177.1...v2.177.2) (2026-09-23)
 
 

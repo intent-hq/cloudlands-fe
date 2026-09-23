@@ -132,6 +132,7 @@ export async function clickControl(page, { label, mark, selector, pointer, sampl
   } catch (error) {
     throw new Error(
       `${label}: click never dispatched on ${selector} within ${CLICK_DISPATCH_TIMEOUT_MS}ms: ${error.message}`,
+      { cause: error },
     );
   }
   return page.evaluate(() => window.__chatMotion.motion);

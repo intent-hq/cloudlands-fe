@@ -89,7 +89,7 @@ ${commitList}`;
 
     // If parsing failed, return the whole thing as one item
     return ['Bug fixes and performance improvements'];
-  } catch (error) {
+  } catch {
     console.log('⚠️  Auggie generation failed, using fallback');
     return ['Bug fixes and performance improvements'];
   }

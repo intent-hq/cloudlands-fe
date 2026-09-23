@@ -62,6 +62,7 @@ in a monorepo checkout, where this repo mounts at `packages/cloudlands-fe/`.
 | browser tab contract (`ws.browser.*` actions, `errorCode`, `displayed`) | `src/features/browser/main/browser-action-executor.ts`, `embedded-browser-cdp-service.ts`, the browser-tab-registry saga, `src/shared/types/browser-clients.ts` (`BrowserTabInput` / `BrowserTab` own the `displayed` wire field) — change together with intentd `crates/intent-acp/src/mcp_server/bindings/browser_docs/*.md` (the `ws.browser.docs` text) and `../../docs/protocol/methods/files-terminal-browser.md`; monorepo `make docs-check` cross-checks the shared tokens                           |
 | module boundaries                                                       | ../../docs/fe/MODULE_BOUNDARY_GUIDE.md                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
 | motion perf traces                                                      | `pnpm perf:chat-motion` — ../../docs/fe/DEVELOPER_GUIDE.md#chat-motion-performance-traces                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| alignment / text-rebase perf claims                                     | `pnpm perf:text-rebase --base <ref>` — paired head/base runs of `src/lib/notes/text-rebase-bench.runner.ts` in fresh processes, interleaved with the pair order alternating per run so drift hits both sides (`--head <ref>`, `--runs`, `--repeats`, `--shapes`, `--json`); cite its table in the PR. Bare packages resolve from the current `node_modules` for both trees; the header labels each tree's mapper mode and warns when a pre-#2740 base (`legacy-two-mapper`) is not comparable like-for-like  |
 | debugging                                                               | ../../docs/fe/TROUBLESHOOTING_GUIDE.md, ../../docs/fe/IPC_DEBUG_GUIDE.md                                                                                                                                                                                                                                                                                                                                                                                                                                     |
 | prod stack traces                                                       | `pnpm resolve-stack <tag> < stack.txt` — rebuilds the tag with sourcemaps, maps frames                                                                                                                                                                                                                                                                                                                                                                                                                       |
 | CT run failures (queue ejection triage)                                 | `pnpm ct:failures <run-id \| run-url>` — every failed/flaky CT case of an `Intent PR Checks` run, per shard, from the shard's JSON report artifact (list-log summary fallback); `--attempt N`, `--json`                                                                                                                                                                                                                                                                                                      |
@@ -118,17 +119,16 @@ corepack pnpm run test:playwright
 
 A test that budgets wall time (perf guards, alignment work bounds) must fit its timeout
 under CI runner load, not just in isolation — the local 30 s `testTimeout` by default
-(`vitest.config.ts` raises it to 60 s on CI), or the explicit per-test budget where one is
-documented, such as the 120 s seeded-note `beforeAll` and the 60 s 200-note corpus tests in
-`src/lib/notes/text-rebase.test.ts`. The shared runners starve a fork ~4×, and
-cloudlands-fe#2740 went red three times on guards that took a few seconds locally. Before
-pushing such a test, run `pnpm test:loaded <file or filter> [-- <extra vitest args>]` — it
-runs the default `vitest.config.ts` with one worker pinned to a single core (`taskset`,
-Linux only; macOS runs the loops unpinned and says the reproduction is weaker) that it
-shares with three busy loops, exits with vitest's code, and always kills the loops.
-`LOADED_CORE=<n>` (default: the last core the process may run on) and `LOADED_BUSY=<n>`
-override the core and loop count; `CI` is inherited from your shell, never set or cleared
-by the harness, so the run uses the local 30 s timeout unless you export `CI` yourself.
+(`vitest.config.ts` raises it to 60 s on CI) or the documented per-test budget.
+`intent/no-wall-clock-assertions-in-tests` (in `pnpm run lint`) flags a raw
+`performance.now()` / `Date.now()` elapsed-time assertion against a millisecond budget and
+names the alternatives; today's offenders are baselined under
+`eslint-rules/baselines/no-wall-clock-assertions-in-tests/`, and counts only shrink. Before
+pushing such a test, run `pnpm test:loaded <file or filter> [-- <extra vitest args>]`: one
+worker pinned to a single core (`taskset`, Linux only; unpinned on macOS) shared with three
+busy loops, exiting with vitest's code. `LOADED_CORE=<n>` / `LOADED_BUSY=<n>` override the
+core and loop count; `CI` is inherited from your shell, so the run uses the local 30 s
+timeout unless you export `CI` yourself.
 
 ## Fast UI preview loop
 

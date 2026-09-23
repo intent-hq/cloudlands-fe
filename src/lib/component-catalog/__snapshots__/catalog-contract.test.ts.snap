@@ -64,8 +64,8 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:action-menu:
               <span aria-hidden="true" class="-z-10 absolute bg-transparent duration-spring-fast ease-spring-fast group-active/button:bg-active group-active/button:shadow-[0_0_0_0_var(--active)] group-hover/button:bg-hover group-hover/button:shadow-[0_0_0_1px_var(--hover)] inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
               <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
                 <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
-                  <span aria-hidden="true">
-                    "•••"
+                  <svg aria-hidden="true" class="size-3.5">
+                    <path>
         <output data-testid="selected">
           "none"
       <section data-catalog-rendered-state="overflow">
@@ -84,8 +84,8 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:action-menu:
               <span aria-hidden="true" class="-z-10 absolute bg-transparent duration-spring-fast ease-spring-fast group-active/button:bg-active group-active/button:shadow-[0_0_0_0_var(--active)] group-hover/button:bg-hover group-hover/button:shadow-[0_0_0_1px_var(--hover)] inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
               <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
                 <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
-                  <span aria-hidden="true">
-                    "•••"
+                  <svg aria-hidden="true" class="size-3.5">
+                    <path>
         <output data-testid="selected">
           "none"
   <div data-bits-floating-content-wrapper="" id="bits-<id>">
@@ -176,8 +176,8 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:collection:c
                             <span aria-hidden="true" class="-z-10 absolute bg-transparent duration-spring-fast ease-spring-fast group-active/button:bg-active group-active/button:shadow-[0_0_0_0_var(--active)] group-hover/button:bg-hover group-hover/button:shadow-[0_0_0_1px_var(--hover)] inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
                             <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
                               <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
-                                <span aria-hidden="true">
-                                  "•••"
+                                <svg aria-hidden="true" class="size-3.5">
+                                  <path>
               <div aria-selected="true" class="[&>[data-inset=card]]:mx-0 focus-visible:-outline-offset-1 group/collection-row has-[>[data-inset=card]]:mx-2 min-w-0 relative rounded-(--radius-row) z-10" data-list-index="1" data-slot="list-view-item" role="option" tabindex="-1">
                 <div class="flex gap-3 items-start min-h-12 min-w-0 px-3 py-2.5" data-density="default" data-slot="list-row">
                   <div class="flex-1 min-w-0">
@@ -204,8 +204,8 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:collection:c
                             <span aria-hidden="true" class="-z-10 absolute bg-transparent duration-spring-fast ease-spring-fast group-active/button:bg-active group-active/button:shadow-[0_0_0_0_var(--active)] group-hover/button:bg-hover group-hover/button:shadow-[0_0_0_1px_var(--hover)] inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
                             <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
                               <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
-                                <span aria-hidden="true">
-                                  "•••"
+                                <svg aria-hidden="true" class="size-3.5">
+                                  <path>
               <div aria-selected="true" class="[&>[data-inset=card]]:mx-0 focus-visible:-outline-offset-1 group/collection-row has-[>[data-inset=card]]:mx-2 min-w-0 relative rounded-(--radius-row) z-10" data-list-index="2" data-slot="list-view-item" role="option" tabindex="-1">
                 <div class="flex gap-3 items-start min-h-12 min-w-0 px-3 py-2.5" data-density="default" data-slot="list-row">
                   <div class="flex-1 min-w-0">
@@ -232,8 +232,8 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:collection:c
                             <span aria-hidden="true" class="-z-10 absolute bg-transparent duration-spring-fast ease-spring-fast group-active/button:bg-active group-active/button:shadow-[0_0_0_0_var(--active)] group-hover/button:bg-hover group-hover/button:shadow-[0_0_0_1px_var(--hover)] inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
                             <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
                               <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
-                                <span aria-hidden="true">
-                                  "•••"
+                                <svg aria-hidden="true" class="size-3.5">
+                                  <path>
         <output aria-label="Action count">
           "0"
         <output aria-label="Last action">
@@ -270,8 +270,8 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:collection:c
                             <span aria-hidden="true" class="-z-10 absolute bg-transparent duration-spring-fast ease-spring-fast group-active/button:bg-active group-active/button:shadow-[0_0_0_0_var(--active)] group-hover/button:bg-hover group-hover/button:shadow-[0_0_0_1px_var(--hover)] inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
                             <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
                               <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
-                                <span aria-hidden="true">
-                                  "•••"
+                                <svg aria-hidden="true" class="size-3.5">
+                                  <path>
               <div aria-selected="true" class="[&>[data-inset=card]]:mx-0 focus-visible:-outline-offset-1 group/collection-row has-[>[data-inset=card]]:mx-2 min-w-0 relative rounded-(--radius-row) z-10" data-list-index="1" data-slot="list-view-item" role="option" tabindex="-1">
                 <div class="flex gap-3 items-start min-h-12 min-w-0 px-3 py-2.5" data-density="default" data-slot="list-row">
                   <div class="flex-1 min-w-0">
@@ -298,8 +298,8 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:collection:c
                             <span aria-hidden="true" class="-z-10 absolute bg-transparent duration-spring-fast ease-spring-fast group-active/button:bg-active group-active/button:shadow-[0_0_0_0_var(--active)] group-hover/button:bg-hover group-hover/button:shadow-[0_0_0_1px_var(--hover)] inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
                             <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
                               <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
-                                <span aria-hidden="true">
-                                  "•••"
+                                <svg aria-hidden="true" class="size-3.5">
+                                  <path>
               <div aria-selected="true" class="[&>[data-inset=card]]:mx-0 focus-visible:-outline-offset-1 group/collection-row has-[>[data-inset=card]]:mx-2 min-w-0 relative rounded-(--radius-row) z-10" data-list-index="2" data-slot="list-view-item" role="option" tabindex="-1">
                 <div class="flex gap-3 items-start min-h-12 min-w-0 px-3 py-2.5" data-density="default" data-slot="list-row">
                   <div class="flex-1 min-w-0">
@@ -326,8 +326,8 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:collection:c
                             <span aria-hidden="true" class="-z-10 absolute bg-transparent duration-spring-fast ease-spring-fast group-active/button:bg-active group-active/button:shadow-[0_0_0_0_var(--active)] group-hover/button:bg-hover group-hover/button:shadow-[0_0_0_1px_var(--hover)] inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
                             <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
                               <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
-                                <span aria-hidden="true">
-                                  "•••"
+                                <svg aria-hidden="true" class="size-3.5">
+                                  <path>
         <output aria-label="Action count">
           "0"
         <output aria-label="Last action">
@@ -364,8 +364,8 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:collection:c
                             <span aria-hidden="true" class="-z-10 absolute bg-transparent duration-spring-fast ease-spring-fast group-active/button:bg-active group-active/button:shadow-[0_0_0_0_var(--active)] group-hover/button:bg-hover group-hover/button:shadow-[0_0_0_1px_var(--hover)] inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
                             <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
                               <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
-                                <span aria-hidden="true">
-                                  "•••"
+                                <svg aria-hidden="true" class="size-3.5">
+                                  <path>
               <div aria-selected="true" class="[&>[data-inset=card]]:mx-0 focus-visible:-outline-offset-1 group/collection-row has-[>[data-inset=card]]:mx-2 min-w-0 relative rounded-(--radius-row) z-10" data-list-index="1" data-slot="list-view-item" role="option" tabindex="-1">
                 <div class="flex gap-3 items-start min-h-12 min-w-0 px-3 py-2.5" data-density="default" data-slot="list-row">
                   <div class="flex-1 min-w-0">
@@ -392,8 +392,8 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:collection:c
                             <span aria-hidden="true" class="-z-10 absolute bg-transparent duration-spring-fast ease-spring-fast group-active/button:bg-active group-active/button:shadow-[0_0_0_0_var(--active)] group-hover/button:bg-hover group-hover/button:shadow-[0_0_0_1px_var(--hover)] inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
                             <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
                               <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
-                                <span aria-hidden="true">
-                                  "•••"
+                                <svg aria-hidden="true" class="size-3.5">
+                                  <path>
               <div aria-selected="true" class="[&>[data-inset=card]]:mx-0 focus-visible:-outline-offset-1 group/collection-row has-[>[data-inset=card]]:mx-2 min-w-0 relative rounded-(--radius-row) z-10" data-list-index="2" data-slot="list-view-item" role="option" tabindex="-1">
                 <div class="flex gap-3 items-start min-h-12 min-w-0 px-3 py-2.5" data-density="default" data-slot="list-row">
                   <div class="flex-1 min-w-0">
@@ -420,8 +420,8 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:collection:c
                             <span aria-hidden="true" class="-z-10 absolute bg-transparent duration-spring-fast ease-spring-fast group-active/button:bg-active group-active/button:shadow-[0_0_0_0_var(--active)] group-hover/button:bg-hover group-hover/button:shadow-[0_0_0_1px_var(--hover)] inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
                             <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
                               <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
-                                <span aria-hidden="true">
-                                  "•••"
+                                <svg aria-hidden="true" class="size-3.5">
+                                  <path>
         <output aria-label="Action count">
           "0"
         <output aria-label="Last action">
@@ -458,8 +458,8 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:collection:c
                             <span aria-hidden="true" class="-z-10 absolute bg-transparent duration-spring-fast ease-spring-fast group-active/button:bg-active group-active/button:shadow-[0_0_0_0_var(--active)] group-hover/button:bg-hover group-hover/button:shadow-[0_0_0_1px_var(--hover)] inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
                             <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
                               <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
-                                <span aria-hidden="true">
-                                  "•••"
+                                <svg aria-hidden="true" class="size-3.5">
+                                  <path>
               <div aria-selected="true" class="[&>[data-inset=card]]:mx-0 focus-visible:-outline-offset-1 group/collection-row has-[>[data-inset=card]]:mx-2 min-w-0 relative rounded-(--radius-row) z-10" data-list-index="1" data-slot="list-view-item" role="option" tabindex="-1">
                 <div class="flex gap-3 items-start min-h-12 min-w-0 px-3 py-2.5" data-density="default" data-slot="list-row">
                   <div class="flex-1 min-w-0">
@@ -486,8 +486,8 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:collection:c
                             <span aria-hidden="true" class="-z-10 absolute bg-transparent duration-spring-fast ease-spring-fast group-active/button:bg-active group-active/button:shadow-[0_0_0_0_var(--active)] group-hover/button:bg-hover group-hover/button:shadow-[0_0_0_1px_var(--hover)] inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
                             <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
                               <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
-                                <span aria-hidden="true">
-                                  "•••"
+                                <svg aria-hidden="true" class="size-3.5">
+                                  <path>
               <div aria-selected="true" class="[&>[data-inset=card]]:mx-0 focus-visible:-outline-offset-1 group/collection-row has-[>[data-inset=card]]:mx-2 min-w-0 relative rounded-(--radius-row) z-10" data-list-index="2" data-slot="list-view-item" role="option" tabindex="-1">
                 <div class="flex gap-3 items-start min-h-12 min-w-0 px-3 py-2.5" data-density="default" data-slot="list-row">
                   <div class="flex-1 min-w-0">
@@ -514,8 +514,8 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:collection:c
                             <span aria-hidden="true" class="-z-10 absolute bg-transparent duration-spring-fast ease-spring-fast group-active/button:bg-active group-active/button:shadow-[0_0_0_0_var(--active)] group-hover/button:bg-hover group-hover/button:shadow-[0_0_0_1px_var(--hover)] inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
                             <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
                               <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
-                                <span aria-hidden="true">
-                                  "•••"
+                                <svg aria-hidden="true" class="size-3.5">
+                                  <path>
         <output aria-label="Action count">
           "0"
         <output aria-label="Last action">
@@ -552,8 +552,8 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:collection:c
                             <span aria-hidden="true" class="-z-10 absolute bg-transparent duration-spring-fast ease-spring-fast group-active/button:bg-active group-active/button:shadow-[0_0_0_0_var(--active)] group-hover/button:bg-hover group-hover/button:shadow-[0_0_0_1px_var(--hover)] inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
                             <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
                               <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
-                                <span aria-hidden="true">
-                                  "•••"
+                                <svg aria-hidden="true" class="size-3.5">
+                                  <path>
               <div aria-selected="true" class="[&>[data-inset=card]]:mx-0 focus-visible:-outline-offset-1 group/collection-row has-[>[data-inset=card]]:mx-2 min-w-0 relative rounded-(--radius-row) z-10" data-list-index="1" data-slot="list-view-item" role="option" tabindex="-1">
                 <div class="flex gap-3 items-start min-h-12 min-w-0 px-3 py-2.5" data-density="default" data-slot="list-row">
                   <div class="flex-1 min-w-0">
@@ -580,8 +580,8 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:collection:c
                             <span aria-hidden="true" class="-z-10 absolute bg-transparent duration-spring-fast ease-spring-fast group-active/button:bg-active group-active/button:shadow-[0_0_0_0_var(--active)] group-hover/button:bg-hover group-hover/button:shadow-[0_0_0_1px_var(--hover)] inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
                             <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
                               <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
-                                <span aria-hidden="true">
-                                  "•••"
+                                <svg aria-hidden="true" class="size-3.5">
+                                  <path>
               <div aria-selected="true" class="[&>[data-inset=card]]:mx-0 focus-visible:-outline-offset-1 group/collection-row has-[>[data-inset=card]]:mx-2 min-w-0 relative rounded-(--radius-row) z-10" data-list-index="2" data-slot="list-view-item" role="option" tabindex="-1">
                 <div class="flex gap-3 items-start min-h-12 min-w-0 px-3 py-2.5" data-density="default" data-slot="list-row">
                   <div class="flex-1 min-w-0">
@@ -608,8 +608,8 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:collection:c
                             <span aria-hidden="true" class="-z-10 absolute bg-transparent duration-spring-fast ease-spring-fast group-active/button:bg-active group-active/button:shadow-[0_0_0_0_var(--active)] group-hover/button:bg-hover group-hover/button:shadow-[0_0_0_1px_var(--hover)] inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
                             <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
                               <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
-                                <span aria-hidden="true">
-                                  "•••"
+                                <svg aria-hidden="true" class="size-3.5">
+                                  <path>
         <output aria-label="Action count">
           "0"
         <output aria-label="Last action">
@@ -646,8 +646,8 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:collection:c
                             <span aria-hidden="true" class="-z-10 absolute bg-transparent duration-spring-fast ease-spring-fast group-active/button:bg-active group-active/button:shadow-[0_0_0_0_var(--active)] group-hover/button:bg-hover group-hover/button:shadow-[0_0_0_1px_var(--hover)] inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
                             <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
                               <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
-                                <span aria-hidden="true">
-                                  "•••"
+                                <svg aria-hidden="true" class="size-3.5">
+                                  <path>
               <div aria-selected="true" class="[&>[data-inset=card]]:mx-0 focus-visible:-outline-offset-1 group/collection-row has-[>[data-inset=card]]:mx-2 min-w-0 relative rounded-(--radius-row) z-10" data-list-index="1" data-slot="list-view-item" role="option" tabindex="-1">
                 <div class="flex gap-3 items-start min-h-12 min-w-0 px-3 py-2.5" data-density="default" data-slot="list-row">
                   <div class="flex-1 min-w-0">
@@ -674,8 +674,8 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:collection:c
                             <span aria-hidden="true" class="-z-10 absolute bg-transparent duration-spring-fast ease-spring-fast group-active/button:bg-active group-active/button:shadow-[0_0_0_0_var(--active)] group-hover/button:bg-hover group-hover/button:shadow-[0_0_0_1px_var(--hover)] inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
                             <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
                               <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
-                                <span aria-hidden="true">
-                                  "•••"
+                                <svg aria-hidden="true" class="size-3.5">
+                                  <path>
               <div aria-selected="true" class="[&>[data-inset=card]]:mx-0 focus-visible:-outline-offset-1 group/collection-row has-[>[data-inset=card]]:mx-2 min-w-0 relative rounded-(--radius-row) z-10" data-list-index="2" data-slot="list-view-item" role="option" tabindex="-1">
                 <div class="flex gap-3 items-start min-h-12 min-w-0 px-3 py-2.5" data-density="default" data-slot="list-row">
                   <div class="flex-1 min-w-0">
@@ -702,8 +702,8 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:collection:c
                             <span aria-hidden="true" class="-z-10 absolute bg-transparent duration-spring-fast ease-spring-fast group-active/button:bg-active group-active/button:shadow-[0_0_0_0_var(--active)] group-hover/button:bg-hover group-hover/button:shadow-[0_0_0_1px_var(--hover)] inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
                             <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
                               <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
-                                <span aria-hidden="true">
-                                  "•••"
+                                <svg aria-hidden="true" class="size-3.5">
+                                  <path>
         <output aria-label="Action count">
           "0"
         <output aria-label="Last action">
@@ -740,8 +740,8 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:collection:c
                             <span aria-hidden="true" class="-z-10 absolute bg-transparent duration-spring-fast ease-spring-fast group-active/button:bg-active group-active/button:shadow-[0_0_0_0_var(--active)] group-hover/button:bg-hover group-hover/button:shadow-[0_0_0_1px_var(--hover)] inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
                             <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
                               <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
-                                <span aria-hidden="true">
-                                  "•••"
+                                <svg aria-hidden="true" class="size-3.5">
+                                  <path>
               <div aria-selected="true" class="[&>[data-inset=card]]:mx-0 focus-visible:-outline-offset-1 group/collection-row has-[>[data-inset=card]]:mx-2 min-w-0 relative rounded-(--radius-row) z-10" data-list-index="1" data-slot="list-view-item" role="option" tabindex="-1">
                 <div class="flex gap-3 items-start min-h-12 min-w-0 px-3 py-2.5" data-density="default" data-slot="list-row">
                   <div class="flex-1 min-w-0">
@@ -768,8 +768,8 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:collection:c
                             <span aria-hidden="true" class="-z-10 absolute bg-transparent duration-spring-fast ease-spring-fast group-active/button:bg-active group-active/button:shadow-[0_0_0_0_var(--active)] group-hover/button:bg-hover group-hover/button:shadow-[0_0_0_1px_var(--hover)] inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
                             <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
                               <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
-                                <span aria-hidden="true">
-                                  "•••"
+                                <svg aria-hidden="true" class="size-3.5">
+                                  <path>
               <div aria-selected="true" class="[&>[data-inset=card]]:mx-0 focus-visible:-outline-offset-1 group/collection-row has-[>[data-inset=card]]:mx-2 min-w-0 relative rounded-(--radius-row) z-10" data-list-index="2" data-slot="list-view-item" role="option" tabindex="-1">
                 <div class="flex gap-3 items-start min-h-12 min-w-0 px-3 py-2.5" data-density="default" data-slot="list-row">
                   <div class="flex-1 min-w-0">
@@ -796,8 +796,8 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:collection:c
                             <span aria-hidden="true" class="-z-10 absolute bg-transparent duration-spring-fast ease-spring-fast group-active/button:bg-active group-active/button:shadow-[0_0_0_0_var(--active)] group-hover/button:bg-hover group-hover/button:shadow-[0_0_0_1px_var(--hover)] inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
                             <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
                               <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
-                                <span aria-hidden="true">
-                                  "•••"
+                                <svg aria-hidden="true" class="size-3.5">
+                                  <path>
         <output aria-label="Action count">
           "0"
         <output aria-label="Last action">
@@ -834,8 +834,8 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:collection:c
                             <span aria-hidden="true" class="-z-10 absolute bg-transparent duration-spring-fast ease-spring-fast group-active/button:bg-active group-active/button:shadow-[0_0_0_0_var(--active)] group-hover/button:bg-hover group-hover/button:shadow-[0_0_0_1px_var(--hover)] inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
                             <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
                               <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
-                                <span aria-hidden="true">
-                                  "•••"
+                                <svg aria-hidden="true" class="size-3.5">
+                                  <path>
               <div aria-selected="true" class="[&>[data-inset=card]]:mx-0 focus-visible:-outline-offset-1 group/collection-row has-[>[data-inset=card]]:mx-2 min-w-0 relative rounded-(--radius-row) z-10" data-list-index="1" data-slot="list-view-item" role="option" tabindex="-1">
                 <div class="flex gap-3 items-start min-h-12 min-w-0 px-3 py-2.5" data-density="default" data-slot="list-row">
                   <div class="flex-1 min-w-0">
@@ -862,8 +862,8 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:collection:c
                             <span aria-hidden="true" class="-z-10 absolute bg-transparent duration-spring-fast ease-spring-fast group-active/button:bg-active group-active/button:shadow-[0_0_0_0_var(--active)] group-hover/button:bg-hover group-hover/button:shadow-[0_0_0_1px_var(--hover)] inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
                             <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
                               <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
-                                <span aria-hidden="true">
-                                  "•••"
+                                <svg aria-hidden="true" class="size-3.5">
+                                  <path>
               <div aria-selected="true" class="[&>[data-inset=card]]:mx-0 focus-visible:-outline-offset-1 group/collection-row has-[>[data-inset=card]]:mx-2 min-w-0 relative rounded-(--radius-row) z-10" data-list-index="2" data-slot="list-view-item" role="option" tabindex="-1">
                 <div class="flex gap-3 items-start min-h-12 min-w-0 px-3 py-2.5" data-density="default" data-slot="list-row">
                   <div class="flex-1 min-w-0">
@@ -890,8 +890,8 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:collection:c
                             <span aria-hidden="true" class="-z-10 absolute bg-transparent duration-spring-fast ease-spring-fast group-active/button:bg-active group-active/button:shadow-[0_0_0_0_var(--active)] group-hover/button:bg-hover group-hover/button:shadow-[0_0_0_1px_var(--hover)] inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
                             <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
                               <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
-                                <span aria-hidden="true">
-                                  "•••"
+                                <svg aria-hidden="true" class="size-3.5">
+                                  <path>
         <output aria-label="Action count">
           "0"
         <output aria-label="Last action">
@@ -966,8 +966,8 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:collection:c
                             <span aria-hidden="true" class="-z-10 absolute bg-transparent duration-spring-fast ease-spring-fast group-active/button:bg-active group-active/button:shadow-[0_0_0_0_var(--active)] group-hover/button:bg-hover group-hover/button:shadow-[0_0_0_1px_var(--hover)] inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
                             <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
                               <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
-                                <span aria-hidden="true">
-                                  "•••"
+                                <svg aria-hidden="true" class="size-3.5">
+                                  <path>
               <div aria-selected="true" class="[&>[data-inset=card]]:mx-0 focus-visible:-outline-offset-1 group/collection-row has-[>[data-inset=card]]:mx-2 min-w-0 relative rounded-(--radius-row) z-10" data-list-index="1" data-slot="list-view-item" role="option" tabindex="-1">
                 <div class="flex gap-3 items-start min-h-12 min-w-0 px-3 py-2.5" data-density="default" data-slot="list-row">
                   <div class="flex-1 min-w-0">
@@ -994,8 +994,8 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:collection:c
                             <span aria-hidden="true" class="-z-10 absolute bg-transparent duration-spring-fast ease-spring-fast group-active/button:bg-active group-active/button:shadow-[0_0_0_0_var(--active)] group-hover/button:bg-hover group-hover/button:shadow-[0_0_0_1px_var(--hover)] inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
                             <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
                               <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
-                                <span aria-hidden="true">
-                                  "•••"
+                                <svg aria-hidden="true" class="size-3.5">
+                                  <path>
               <div aria-selected="true" class="[&>[data-inset=card]]:mx-0 focus-visible:-outline-offset-1 group/collection-row has-[>[data-inset=card]]:mx-2 min-w-0 relative rounded-(--radius-row) z-10" data-list-index="2" data-slot="list-view-item" role="option" tabindex="-1">
                 <div class="flex gap-3 items-start min-h-12 min-w-0 px-3 py-2.5" data-density="default" data-slot="list-row">
                   <div class="flex-1 min-w-0">
@@ -1022,8 +1022,8 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:collection:c
                             <span aria-hidden="true" class="-z-10 absolute bg-transparent duration-spring-fast ease-spring-fast group-active/button:bg-active group-active/button:shadow-[0_0_0_0_var(--active)] group-hover/button:bg-hover group-hover/button:shadow-[0_0_0_1px_var(--hover)] inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
                             <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
                               <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
-                                <span aria-hidden="true">
-                                  "•••"
+                                <svg aria-hidden="true" class="size-3.5">
+                                  <path>
         <output aria-label="Action count">
           "0"
         <output aria-label="Last action">
@@ -1060,8 +1060,8 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:collection:c
                             <span aria-hidden="true" class="-z-10 absolute bg-transparent duration-spring-fast ease-spring-fast group-active/button:bg-active group-active/button:shadow-[0_0_0_0_var(--active)] group-hover/button:bg-hover group-hover/button:shadow-[0_0_0_1px_var(--hover)] inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
                             <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
                               <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
-                                <span aria-hidden="true">
-                                  "•••"
+                                <svg aria-hidden="true" class="size-3.5">
+                                  <path>
               <div aria-selected="true" class="[&>[data-inset=card]]:mx-0 focus-visible:-outline-offset-1 group/collection-row has-[>[data-inset=card]]:mx-2 min-w-0 relative rounded-(--radius-row) z-10" data-list-index="1" data-slot="list-view-item" role="option" tabindex="-1">
                 <div class="flex gap-3 items-start min-h-12 min-w-0 px-3 py-2.5" data-density="default" data-slot="list-row">
                   <div class="flex-1 min-w-0">
@@ -1088,8 +1088,8 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:collection:c
                             <span aria-hidden="true" class="-z-10 absolute bg-transparent duration-spring-fast ease-spring-fast group-active/button:bg-active group-active/button:shadow-[0_0_0_0_var(--active)] group-hover/button:bg-hover group-hover/button:shadow-[0_0_0_1px_var(--hover)] inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
                             <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
                               <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
-                                <span aria-hidden="true">
-                                  "•••"
+                                <svg aria-hidden="true" class="size-3.5">
+                                  <path>
               <div aria-selected="true" class="[&>[data-inset=card]]:mx-0 focus-visible:-outline-offset-1 group/collection-row has-[>[data-inset=card]]:mx-2 min-w-0 relative rounded-(--radius-row) z-10" data-list-index="2" data-slot="list-view-item" role="option" tabindex="-1">
                 <div class="flex gap-3 items-start min-h-12 min-w-0 px-3 py-2.5" data-density="default" data-slot="list-row">
                   <div class="flex-1 min-w-0">
@@ -1116,8 +1116,8 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:collection:c
                             <span aria-hidden="true" class="-z-10 absolute bg-transparent duration-spring-fast ease-spring-fast group-active/button:bg-active group-active/button:shadow-[0_0_0_0_var(--active)] group-hover/button:bg-hover group-hover/button:shadow-[0_0_0_1px_var(--hover)] inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
                             <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
                               <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
-                                <span aria-hidden="true">
-                                  "•••"
+                                <svg aria-hidden="true" class="size-3.5">
+                                  <path>
         <output aria-label="Action count">
           "0"
         <output aria-label="Last action">
@@ -1154,8 +1154,8 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:collection:c
                             <span aria-hidden="true" class="-z-10 absolute bg-transparent duration-spring-fast ease-spring-fast group-active/button:bg-active group-active/button:shadow-[0_0_0_0_var(--active)] group-hover/button:bg-hover group-hover/button:shadow-[0_0_0_1px_var(--hover)] inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
                             <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
                               <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
-                                <span aria-hidden="true">
-                                  "•••"
+                                <svg aria-hidden="true" class="size-3.5">
+                                  <path>
               <div aria-selected="true" class="[&>[data-inset=card]]:mx-0 focus-visible:-outline-offset-1 group/collection-row has-[>[data-inset=card]]:mx-2 min-w-0 relative rounded-(--radius-row) z-10" data-list-index="1" data-slot="list-view-item" role="option" tabindex="-1">
                 <div class="flex gap-3 items-start min-h-12 min-w-0 px-3 py-2.5" data-density="default" data-slot="list-row">
                   <div class="flex-1 min-w-0">
@@ -1182,8 +1182,8 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:collection:c
                             <span aria-hidden="true" class="-z-10 absolute bg-transparent duration-spring-fast ease-spring-fast group-active/button:bg-active group-active/button:shadow-[0_0_0_0_var(--active)] group-hover/button:bg-hover group-hover/button:shadow-[0_0_0_1px_var(--hover)] inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
                             <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
                               <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
-                                <span aria-hidden="true">
-                                  "•••"
+                                <svg aria-hidden="true" class="size-3.5">
+                                  <path>
               <div aria-selected="true" class="[&>[data-inset=card]]:mx-0 focus-visible:-outline-offset-1 group/collection-row has-[>[data-inset=card]]:mx-2 min-w-0 relative rounded-(--radius-row) z-10" data-list-index="2" data-slot="list-view-item" role="option" tabindex="-1">
                 <div class="flex gap-3 items-start min-h-12 min-w-0 px-3 py-2.5" data-density="default" data-slot="list-row">
                   <div class="flex-1 min-w-0">
@@ -1210,8 +1210,8 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:collection:c
                             <span aria-hidden="true" class="-z-10 absolute bg-transparent duration-spring-fast ease-spring-fast group-active/button:bg-active group-active/button:shadow-[0_0_0_0_var(--active)] group-hover/button:bg-hover group-hover/button:shadow-[0_0_0_1px_var(--hover)] inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
                             <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
                               <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
-                                <span aria-hidden="true">
-                                  "•••"
+                                <svg aria-hidden="true" class="size-3.5">
+                                  <path>
         <output aria-label="Action count">
           "0"
         <output aria-label="Last action">
@@ -1248,8 +1248,8 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:collection:c
                             <span aria-hidden="true" class="-z-10 absolute bg-transparent duration-spring-fast ease-spring-fast group-active/button:bg-active group-active/button:shadow-[0_0_0_0_var(--active)] group-hover/button:bg-hover group-hover/button:shadow-[0_0_0_1px_var(--hover)] inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
                             <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
                               <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
-                                <span aria-hidden="true">
-                                  "•••"
+                                <svg aria-hidden="true" class="size-3.5">
+                                  <path>
               <div aria-selected="true" class="[&>[data-inset=card]]:mx-0 focus-visible:-outline-offset-1 group/collection-row has-[>[data-inset=card]]:mx-2 min-w-0 relative rounded-(--radius-row) z-10" data-list-index="1" data-slot="list-view-item" role="option" tabindex="-1">
                 <div class="flex gap-3 items-start min-h-12 min-w-0 px-3 py-2.5" data-density="default" data-slot="list-row">
                   <div class="flex-1 min-w-0">
@@ -1276,8 +1276,8 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:collection:c
                             <span aria-hidden="true" class="-z-10 absolute bg-transparent duration-spring-fast ease-spring-fast group-active/button:bg-active group-active/button:shadow-[0_0_0_0_var(--active)] group-hover/button:bg-hover group-hover/button:shadow-[0_0_0_1px_var(--hover)] inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
                             <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
                               <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
-                                <span aria-hidden="true">
-                                  "•••"
+                                <svg aria-hidden="true" class="size-3.5">
+                                  <path>
               <div aria-selected="true" class="[&>[data-inset=card]]:mx-0 focus-visible:-outline-offset-1 group/collection-row has-[>[data-inset=card]]:mx-2 min-w-0 relative rounded-(--radius-row) z-10" data-list-index="2" data-slot="list-view-item" role="option" tabindex="-1">
                 <div class="flex gap-3 items-start min-h-12 min-w-0 px-3 py-2.5" data-density="default" data-slot="list-row">
                   <div class="flex-1 min-w-0">
@@ -1304,8 +1304,8 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:collection:c
                             <span aria-hidden="true" class="-z-10 absolute bg-transparent duration-spring-fast ease-spring-fast group-active/button:bg-active group-active/button:shadow-[0_0_0_0_var(--active)] group-hover/button:bg-hover group-hover/button:shadow-[0_0_0_1px_var(--hover)] inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
                             <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
                               <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
-                                <span aria-hidden="true">
-                                  "•••"
+                                <svg aria-hidden="true" class="size-3.5">
+                                  <path>
         <output aria-label="Action count">
           "0"
         <output aria-label="Last action">
@@ -1342,8 +1342,8 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:collection:c
                             <span aria-hidden="true" class="-z-10 absolute bg-transparent duration-spring-fast ease-spring-fast group-active/button:bg-active group-active/button:shadow-[0_0_0_0_var(--active)] group-hover/button:bg-hover group-hover/button:shadow-[0_0_0_1px_var(--hover)] inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
                             <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
                               <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
-                                <span aria-hidden="true">
-                                  "•••"
+                                <svg aria-hidden="true" class="size-3.5">
+                                  <path>
               <div aria-selected="true" class="[&>[data-inset=card]]:mx-0 focus-visible:-outline-offset-1 group/collection-row has-[>[data-inset=card]]:mx-2 min-w-0 relative rounded-(--radius-row) z-10" data-list-index="1" data-slot="list-view-item" role="option" tabindex="-1">
                 <div class="flex gap-3 items-start min-h-12 min-w-0 px-3 py-2.5" data-density="default" data-slot="list-row">
                   <div class="flex-1 min-w-0">
@@ -1370,8 +1370,8 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:collection:c
                             <span aria-hidden="true" class="-z-10 absolute bg-transparent duration-spring-fast ease-spring-fast group-active/button:bg-active group-active/button:shadow-[0_0_0_0_var(--active)] group-hover/button:bg-hover group-hover/button:shadow-[0_0_0_1px_var(--hover)] inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
                             <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
                               <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
-                                <span aria-hidden="true">
-                                  "•••"
+                                <svg aria-hidden="true" class="size-3.5">
+                                  <path>
               <div aria-selected="true" class="[&>[data-inset=card]]:mx-0 focus-visible:-outline-offset-1 group/collection-row has-[>[data-inset=card]]:mx-2 min-w-0 relative rounded-(--radius-row) z-10" data-list-index="2" data-slot="list-view-item" role="option" tabindex="-1">
                 <div class="flex gap-3 items-start min-h-12 min-w-0 px-3 py-2.5" data-density="default" data-slot="list-row">
                   <div class="flex-1 min-w-0">
@@ -1398,8 +1398,8 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:collection:c
                             <span aria-hidden="true" class="-z-10 absolute bg-transparent duration-spring-fast ease-spring-fast group-active/button:bg-active group-active/button:shadow-[0_0_0_0_var(--active)] group-hover/button:bg-hover group-hover/button:shadow-[0_0_0_1px_var(--hover)] inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
                             <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
                               <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
-                                <span aria-hidden="true">
-                                  "•••"
+                                <svg aria-hidden="true" class="size-3.5">
+                                  <path>
         <output aria-label="Action count">
           "0"
         <output aria-label="Last action">
@@ -18017,36 +18017,18 @@ exports[`catalog DOM, token, and accessibility contracts > 'product:modals:produ
                         <div class="dialog-layout flex flex-1 flex-col min-h-0 min-w-0 svelte-<scope>">
                           <div class="flex flex-col gap-1.5 m-0 min-w-0 pr-14 pt-6 px-6 shrink-0" data-slot="dialog-header">
                             <div aria-level="2" class="[anchor-name:--dialog-title] font-bold text-foreground type-title" data-dialog-title="" data-slot="dialog-title" data-state="open" id="bits-<id>" role="heading">
-                              "Transfer workspace"
+                              "Export workspace"
                           <div class="min-h-0 min-w-0 overflow-y-auto overscroll-contain pb-5 pt-5 px-6" data-slot="dialog-body">
                             <div class="gap-4 grid min-w-0">
                               <div class="min-w-0 space-y-4">
                                 <p class="text-sm text-subtle">
-                                  "Choose a destination for “Design system”."
-                                <div class="space-y-1">
-                                  <span class="block font-medium text-foreground type-caption">
-                                    "Send to another server"
-                                  <p class="text-subtle text-xs" data-testid="transfer-empty-servers">
-                                    "No other servers are connected. Add one via “Connect to another intentd” in the daemon status menu — downloading to a file is still available below."
-                                <div class="space-y-1">
-                                  <div>
-                                    <button aria-pressed="false" class="!px-0 !py-0 [&_svg]:pointer-events-none [&_svg]:shrink-0 [--button-icon-padding:0.75rem] aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-inherit font-normal gap-1.5 group/button h-auto inline-flex isolate items-center justify-start motion-reduce:transition-none px-0 py-0 relative rounded-(--radius-medium) shrink-0 text-foreground text-left transition-[color,opacity] type-caption w-full whitespace-normal" data-slot="button" data-testid="transfer-download-option" type="button">
-                                      <span aria-hidden="true" class="-z-10 absolute bg-transparent duration-spring-fast ease-spring-fast inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
-                                      <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
-                                        <span class="flex-1 max-w-full min-w-0" data-slot="button-label">
-                                          <div class="flex gap-3 items-start min-h-8 min-w-0 px-0 py-1 w-full" data-density="default" data-slot="list-row">
-                                            <div class="first-line-icon type-caption" data-slot="list-row-leading">
-                                              <span class="bg-muted grid place-items-center rounded-lg size-6">
-                                                <svg aria-hidden="true" class="text-foreground" data-icon="download" data-weight="regular" role="img">
-                                                  <rect>
-                                                  <path>
-                                            <div class="flex-1 min-w-0">
-                                              <div class="flex gap-2 items-baseline min-w-0">
-                                                <div class="min-w-0 text-foreground truncate type-caption" data-slot="list-row-title">
-                                                  "Download to file"
-                                              <div class="min-w-0 mt-0.5 text-muted-foreground type-caption">
-                                                "Save the transfer archive to your disk."
-                                            <div class="first-line-icon gap-1 type-caption" data-slot="list-row-trailing">
+                                  "Save “Design system” to a file you can import on another device."
+                                <div>
+                                  <button class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [--button-icon-padding:0.75rem] aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-normal gap-1.5 group/button h-(--control-height-medium) inline-flex isolate items-center justify-center motion-reduce:transition-none px-4 relative rounded-(--radius-medium) shrink-0 text-foreground transition-[color,opacity] type-caption whitespace-nowrap" data-slot="button" type="button">
+                                    <span aria-hidden="true" class="-z-10 absolute bg-transparent duration-spring-fast ease-spring-fast group-active/button:bg-active group-active/button:shadow-[0_0_0_0_var(--active)] group-hover/button:bg-hover group-hover/button:shadow-[0_0_0_1px_var(--hover)] inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
+                                    <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
+                                      <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
+                                        "To transfer directly, connect another device"
                           <div class="dialog-actions flex flex-wrap gap-2 items-center justify-end m-0 min-w-0 pb-6 px-6 shrink-0 svelte-<scope>" data-slot="dialog-footer">
                             <div>
                               <button class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [--button-icon-padding:0.75rem] aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-normal gap-1.5 group/button h-(--control-height-medium) inline-flex isolate items-center justify-center motion-reduce:transition-none px-4 relative rounded-(--radius-medium) shrink-0 text-foreground transition-[color,opacity] type-caption whitespace-nowrap" data-slot="button" type="button">
@@ -18055,11 +18037,11 @@ exports[`catalog DOM, token, and accessibility contracts > 'product:modals:produ
                                   <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
                                     "Cancel"
                             <div>
-                              <button class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [--button-icon-padding:0.75rem] aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-normal gap-1.5 group/button h-(--control-height-medium) inline-flex isolate items-center justify-center motion-reduce:transition-none px-4 relative rounded-(--radius-medium) shrink-0 text-primary-foreground transition-[color,opacity] type-caption whitespace-nowrap" data-slot="button" disabled="" type="button">
+                              <button class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [--button-icon-padding:0.75rem] aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-normal gap-1.5 group/button h-(--control-height-medium) inline-flex isolate items-center justify-center motion-reduce:transition-none px-4 relative rounded-(--radius-medium) shrink-0 text-primary-foreground transition-[color,opacity] type-caption whitespace-nowrap" data-slot="button" type="button">
                                 <span aria-hidden="true" class="-z-10 absolute bg-primary duration-spring-fast ease-spring-fast group-active/button:brightness-90 group-active/button:shadow-none group-hover/button:brightness-95 inset-0 motion-reduce:transition-none pointer-events-none shadow-(--elevation-raised) transition-[box-shadow,background-color,filter]" data-slot="button-surface">
                                 <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
                                   <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
-                                    "Next"
+                                    "Review export"
                         <div>
                           <button aria-label="Close" class="-translate-y-1/2 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg]:size-4 absolute aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 cursor-pointer dialog-close-button disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-normal gap-1.5 group/button inline-flex isolate items-center justify-center motion-reduce:transition-none p-0 right-6 rounded-(--radius-medium) shrink-0 size-(--control-height-small) text-muted-foreground transition-[color,opacity] type-caption whitespace-nowrap" data-dialog-close="" data-slot="button" data-state="open" id="bits-<id>" tabindex="0" type="button">
                             <span aria-hidden="true" class="-z-10 absolute bg-transparent duration-spring-fast ease-spring-fast group-active/button:bg-active group-active/button:shadow-[0_0_0_0_var(--active)] group-hover/button:bg-hover group-hover/button:shadow-[0_0_0_1px_var(--hover)] inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
@@ -19506,8 +19488,8 @@ exports[`catalog DOM, token, and accessibility contracts > 'product:rows:row-fam
                               <span aria-hidden="true" class="-z-10 absolute bg-transparent duration-spring-fast ease-spring-fast group-active/button:bg-active group-active/button:shadow-[0_0_0_0_var(--active)] group-hover/button:bg-hover group-hover/button:shadow-[0_0_0_1px_var(--hover)] inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
                               <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
                                 <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
-                                  <span aria-hidden="true">
-                                    "•••"
+                                  <svg aria-hidden="true" class="size-3.5">
+                                    <path>
                 <div class="row-cell svelte-<scope>" data-row-preview="list-row-selection-states">
                   <div aria-label="Collection row states" aria-multiselectable="true" class="min-w-0 overflow-auto" data-slot="list-view" role="listbox">
                     <div class="min-w-0 relative">

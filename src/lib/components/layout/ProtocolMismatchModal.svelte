@@ -27,14 +27,23 @@
   }
 
   let { static: staticPosition = false, event, onOpenLocal, onContinue }: Props = $props();
+  let open = $state(true);
+  let continued = false;
+
+  function continueAnyway() {
+    if (continued) return;
+    continued = true;
+    open = false;
+    onContinue?.();
+  }
 </script>
 
 <ContentDialog
-  open
+  {open}
   static={staticPosition}
   title={m.modals_protocolMismatch_title()}
   closeLabel={m.modals_protocolMismatch_close_ariaLabel()}
-  onClose={() => onContinue?.()}
+  onClose={continueAnyway}
 >
   <div class="space-y-4 min-w-0">
     <p class="text-sm text-subtle">{m.modals_protocolMismatch_description()}</p>
@@ -63,7 +72,7 @@
     <Button variant="ghost" onclick={() => onOpenLocal?.()}>
       {m.modals_protocolMismatch_openLocal_label()}
     </Button>
-    <Button variant="primary" onclick={() => onContinue?.()}>
+    <Button variant="primary" onclick={continueAnyway}>
       {m.modals_protocolMismatch_continue_label()}
     </Button>
   {/snippet}

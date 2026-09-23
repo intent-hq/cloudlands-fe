@@ -246,11 +246,34 @@ describe('AgentTestRunner', () => {
     expect(report.passed).toBeGreaterThanOrEqual(0);
   });
 
-  it('should run parallel scenarios', async () => {
+  it('should run scenarios concurrently up to maxParallel', async () => {
+    // Each scenario reports when it has entered and then blocks on a gate the
+    // test releases, so concurrency is observed structurally: the first
+    // maxParallel scenarios must all be in flight at once, and the next one
+    // must not start until that batch has finished.
+    const entered: Array<() => void> = [];
+    const enteredPromises = Array.from(
+      { length: 3 },
+      (_, i) => new Promise<void>((resolve) => (entered[i] = resolve)),
+    );
+    const release: Array<() => void> = [];
+    const gates = Array.from(
+      { length: 3 },
+      (_, i) => new Promise<void>((resolve) => (release[i] = resolve)),
+    );
+    const started: number[] = [];
+    let inFlight = 0;
+    let maxInFlight = 0;
+
     const scenarios = Array.from({ length: 3 }, (_, i) =>
       createCustomScenario(`Parallel Test ${i}`, async (harness) => {
+        started.push(i);
+        inFlight++;
+        maxInFlight = Math.max(maxInFlight, inFlight);
+        entered[i]();
         await harness.createAgent({ name: `parallel-agent-${i}` });
-        await delay(100);
+        await gates[i];
+        inFlight--;
       }),
     );
 
@@ -263,13 +286,34 @@ describe('AgentTestRunner', () => {
     };
 
     runner.registerSuite(suite);
-    const startTime = Date.now();
-    const report = await runner.runSuite(suite);
-    const duration = Date.now() - startTime;
+    const reportPromise = runner.runSuite(suite);
 
+    await Promise.all([enteredPromises[0], enteredPromises[1]]);
+    expect(started).toEqual([0, 1]);
+    expect(inFlight).toBe(2);
+
+    release[0]();
+    release[1]();
+    await enteredPromises[2];
+    expect(started).toEqual([0, 1, 2]);
+    expect(inFlight).toBe(1);
+
+    release[2]();
+    const report = await reportPromise;
+
+    // A scenario that timed out while gated is reported as failed and stays
+    // counted in inFlight, so the report must be all-passing for the counts
+    // above to prove parallelism.
+    expect(report.passed).toBe(3);
+    expect(report.failed).toBe(0);
+    expect(inFlight).toBe(0);
     expect(report.results).toHaveLength(3);
-    // Should be faster than sequential (300ms) but account for overhead
-    expect(duration).toBeLessThan(400);
+    expect(report.results.map((r) => r.scenario)).toEqual([
+      'Parallel Test 0',
+      'Parallel Test 1',
+      'Parallel Test 2',
+    ]);
+    expect(maxInFlight).toBe(2);
   });
 
   it('should generate reports', async () => {

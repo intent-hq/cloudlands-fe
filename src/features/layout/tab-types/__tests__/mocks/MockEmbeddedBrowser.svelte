@@ -14,7 +14,7 @@
     url: string;
     workspaceId: string;
     tabId?: string;
-    onNavigate?: (url: string) => void;
+    onNavigate?: (url: string, requestedUrl?: string) => void;
     onTitleChange?: (title: string) => void;
     onFaviconChange?: (url: string) => void;
     viewport?: import('$shared/ipc/workspace-command-payloads').BrowserTabViewport;
@@ -38,6 +38,12 @@
   data-viewport-mode={viewport?.mode}
 >
   <button type="button" onclick={() => onNavigate?.('https://next.example/')}>Navigate</button>
+  <button
+    type="button"
+    onclick={() => onNavigate?.('http://127.0.0.1:41234/', 'http://daemon.localhost:3000')}
+  >
+    Navigate via alias
+  </button>
   <button type="button" onclick={() => onTitleChange?.('Next title')}>Change title</button>
   <button type="button" onclick={() => onFaviconChange?.('https://next.example/favicon.ico')}>
     Change favicon
