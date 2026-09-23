@@ -16,7 +16,8 @@
 // unpinned against every core and the slowdown is much weaker, which the run
 // says up front. `CI` is deliberately left alone: the point is whether a test
 // fits the local 30s `testTimeout` under load. Environment overrides:
-//   LOADED_CORE=<n>  core to pin to (default: the last online core)
+//   LOADED_CORE=<n>  core to pin to (default: the last core this process may
+//                    run on, per /proc/self/status; else the last online core)
 //   LOADED_BUSY=<n>  number of busy loops (default: 3)
 //
 // The busy loops exit on their own when this process disappears (they are
@@ -58,8 +59,19 @@ export function parseCpuList(text) {
   return [...cores].sort((a, b) => a - b);
 }
 
-/** The core to pin to: `LOADED_CORE` when set, else the last online core. */
-export function pickCore(onlineCores, requested) {
+/**
+ * The cores this process may run on, from the `Cpus_allowed_list:` line of a
+ * `/proc/self/status` text, or `null` when the text has no such line. This is
+ * narrower than the machine's online list under a cpuset/cgroup restriction,
+ * where pinning to an online-but-disallowed core makes every `taskset` fail.
+ */
+export function parseAllowedCpuList(statusText) {
+  const match = /^Cpus_allowed_list:\s*(\S+)\s*$/m.exec(statusText);
+  return match ? parseCpuList(match[1]) : null;
+}
+
+/** The core to pin to: `LOADED_CORE` when set, else the last usable core. */
+export function pickCore(usableCores, requested) {
   if (requested !== undefined && requested !== '') {
     const core = Number(requested);
     if (!Number.isInteger(core) || core < 0) {
@@ -67,15 +79,15 @@ export function pickCore(onlineCores, requested) {
         `LOADED_CORE must be a non-negative integer, got ${JSON.stringify(requested)}`,
       );
     }
-    if (onlineCores.length && !onlineCores.includes(core)) {
+    if (usableCores.length && !usableCores.includes(core)) {
       throw new Error(
-        `LOADED_CORE=${core} is not an online core (online: ${onlineCores.join(',')})`,
+        `LOADED_CORE=${core} is not a core this process may run on (usable: ${usableCores.join(',')})`,
       );
     }
     return core;
   }
-  if (!onlineCores.length) throw new Error('No online core found to pin to');
-  return onlineCores[onlineCores.length - 1];
+  if (!usableCores.length) throw new Error('No usable core found to pin to');
+  return usableCores[usableCores.length - 1];
 }
 
 /** The busy-loop count: `LOADED_BUSY` when set, else `DEFAULT_BUSY`. */
@@ -124,7 +136,15 @@ export function planRun({ execPath, vitestBin, vitestArgs, core, busy, pinned, h
   };
 }
 
-function readOnlineCores() {
+// The cores to choose the default from: the set this process is allowed to run
+// on, else the online list, else every cpu Node reports.
+function readUsableCores() {
+  try {
+    const allowed = parseAllowedCpuList(readFileSync('/proc/self/status', 'utf8'));
+    if (allowed && allowed.length) return allowed;
+  } catch {
+    // fall through to the online list
+  }
   try {
     return parseCpuList(readFileSync('/sys/devices/system/cpu/online', 'utf8'));
   } catch {
@@ -150,7 +170,7 @@ function main(argv, env) {
     execPath: process.execPath,
     vitestBin: resolveVitestBin(),
     vitestArgs: parseArgs(argv),
-    core: pinned ? pickCore(readOnlineCores(), env.LOADED_CORE) : undefined,
+    core: pinned ? pickCore(readUsableCores(), env.LOADED_CORE) : undefined,
     busy: pickBusyCount(env.LOADED_BUSY),
     pinned,
     harnessPid: process.pid,

@@ -1,10 +1,15 @@
 // @vitest-environment node
-import { spawn, type ChildProcess } from 'node:child_process';
+import { spawn, spawnSync, type ChildProcess } from 'node:child_process';
+import { readFileSync } from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import {
   BUSY_LOOP_SOURCE,
   DEFAULT_BUSY,
   VITEST_CONFIG,
+  parseAllowedCpuList,
   parseArgs,
   parseCpuList,
   pickBusyCount,
@@ -25,21 +30,50 @@ describe('parseCpuList', () => {
   });
 });
 
-describe('pickCore', () => {
-  it('defaults to the last online core', () => {
-    expect(pickCore([0, 1, 2, 3], undefined)).toBe(3);
-    expect(pickCore([0, 1, 2, 3], '')).toBe(3);
+describe('parseAllowedCpuList', () => {
+  const status = [
+    'Name:\tnode',
+    'Cpus_allowed:\tff',
+    'Cpus_allowed_list:\t4-7,9',
+    'Mems_allowed_list:\t0',
+    '',
+  ].join('\n');
+
+  it('reads the cpuset this process may run on, not the machine-wide list', () => {
+    expect(parseAllowedCpuList(status)).toEqual([4, 5, 6, 7, 9]);
+    expect(parseAllowedCpuList('Cpus_allowed_list:\t0-3\n')).toEqual([0, 1, 2, 3]);
   });
 
-  it('honours an online LOADED_CORE and rejects an offline or malformed one', () => {
+  it('returns null when the status text has no allowed list', () => {
+    expect(parseAllowedCpuList('Name:\tnode\nCpus_allowed:\tff\n')).toBeNull();
+    expect(parseAllowedCpuList('')).toBeNull();
+  });
+
+  it.runIf(process.platform === 'linux')('agrees with the kernel about the current process', () => {
+    // Independent oracle: the live process can run on every core it reports.
+    const live = parseAllowedCpuList(readFileSync('/proc/self/status', 'utf8'));
+    expect(live).not.toBeNull();
+    expect(live!.length).toBeGreaterThan(0);
+    for (const core of live!) expect(core).toBeLessThan(os.cpus().length);
+  });
+});
+
+describe('pickCore', () => {
+  it('defaults to the last usable core', () => {
+    expect(pickCore([0, 1, 2, 3], undefined)).toBe(3);
+    expect(pickCore([0, 1, 2, 3], '')).toBe(3);
+    expect(pickCore([4, 5, 6, 7, 9], undefined)).toBe(9);
+  });
+
+  it('honours a usable LOADED_CORE and rejects a disallowed or malformed one', () => {
     expect(pickCore([0, 1, 2, 3], '1')).toBe(1);
-    expect(() => pickCore([0, 1, 2, 3], '9')).toThrow(/not an online core/);
+    expect(() => pickCore([0, 1, 2, 3], '9')).toThrow(/not a core this process may run on/);
     expect(() => pickCore([0, 1], 'two')).toThrow(/non-negative integer/);
     expect(() => pickCore([0, 1], '-1')).toThrow(/non-negative integer/);
   });
 
-  it('fails when no core is online rather than pinning to nothing', () => {
-    expect(() => pickCore([], undefined)).toThrow(/No online core/);
+  it('fails when no core is usable rather than pinning to nothing', () => {
+    expect(() => pickCore([], undefined)).toThrow(/No usable core/);
   });
 });
 
@@ -200,4 +234,70 @@ describe('busy loop lifecycle', () => {
       await exit;
     }
   });
+});
+
+const hasTaskset =
+  process.platform === 'linux' &&
+  spawnSync('taskset', ['--version'], { stdio: 'ignore' }).status === 0;
+
+describe.runIf(hasTaskset)('harness end to end', () => {
+  const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
+  const harness = path.join(root, 'scripts', 'vitest-loaded.mjs');
+  // A cheap real suite (not this file: the harness would recurse into itself).
+  const cheapFile = 'scripts/check-package-scripts.test.ts';
+
+  /** Live busy loops spawned by the harness with pid `harnessPid`, per `ps`. */
+  function loopsOf(harnessPid: number): number {
+    const { stdout } = spawnSync('ps', ['-eo', 'args'], { encoding: 'utf8' });
+    return stdout
+      .split('\n')
+      .filter(
+        (line) =>
+          line.includes('const parent = Number') && line.trimEnd().endsWith(` ${harnessPid}`),
+      ).length;
+  }
+
+  async function poll(until: () => boolean, ms: number): Promise<boolean> {
+    const deadline = Date.now() + ms;
+    while (Date.now() < deadline) {
+      if (until()) return true;
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+    return until();
+  }
+
+  async function runHarness(vitestArgs: string[]) {
+    const child = spawn(process.execPath, [harness, ...vitestArgs], {
+      cwd: root,
+      env: { ...process.env, LOADED_BUSY: '1' },
+      stdio: ['ignore', 'ignore', 'pipe'],
+    });
+    let stderr = '';
+    child.stderr!.on('data', (chunk: Buffer) => (stderr += chunk.toString()));
+    const pid = child.pid!;
+    const exited = new Promise<number | null>((resolve) =>
+      child.once('exit', (code) => resolve(code)),
+    );
+    let done = false;
+    void exited.then(() => (done = true));
+    const sawLoops = await poll(() => done || loopsOf(pid) >= 1, 10_000);
+    const code = await exited;
+    const loopsGone = await poll(() => loopsOf(pid) === 0, 3_000);
+    return { code, stderr, sawLoops, loopsGone, pid };
+  }
+
+  it('propagates a passing exit code and leaves no busy loop behind', async () => {
+    const run = await runHarness([cheapFile]);
+    expect(run.stderr).toMatch(/test:loaded: vitest pinned to core \d+ with 1 busy loop/);
+    expect(run.sawLoops).toBe(true);
+    expect(run.code).toBe(0);
+    expect(run.loopsGone).toBe(true);
+  }, 25_000);
+
+  it('propagates a failing exit code and leaves no busy loop behind', async () => {
+    const run = await runHarness(['scripts/does-not-exist.test.ts']);
+    expect(run.sawLoops).toBe(true);
+    expect(run.code).toBe(1);
+    expect(run.loopsGone).toBe(true);
+  }, 25_000);
 });
