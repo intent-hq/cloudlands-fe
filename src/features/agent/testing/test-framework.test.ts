@@ -301,6 +301,12 @@ describe('AgentTestRunner', () => {
     release[2]();
     const report = await reportPromise;
 
+    // A scenario that timed out while gated is reported as failed and stays
+    // counted in inFlight, so the report must be all-passing for the counts
+    // above to prove parallelism.
+    expect(report.passed).toBe(3);
+    expect(report.failed).toBe(0);
+    expect(inFlight).toBe(0);
     expect(report.results).toHaveLength(3);
     expect(report.results.map((r) => r.scenario)).toEqual([
       'Parallel Test 0',
