@@ -84,6 +84,8 @@ interface Word {
 const ALLOWLIST: Readonly<Record<string, string>> = Object.freeze({
   'src/lib/components/ui/card/operate-patterns.playwright.config.ts':
     '2026-09-21: intentionally manual visual harness; its spec renders Operate pattern contact sheets into a dated .demo-artifacts/ directory for human review, with no checked-in baselines to compare against in CI',
+  'vitest.text-rebase-bench.config.ts':
+    '2026-09-23: local-only text-rebase benchmark; it times createBidirectionalOffsetMapper over the shapes corpus for a head-vs-base comparison on one host and writes JSON, with no assertion CI could check and timings CI runners could not reproduce',
 });
 
 const normalizePath = (value: string) => posix.normalize(value.replaceAll('\\', '/'));
