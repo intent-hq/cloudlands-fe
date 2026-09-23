@@ -8,7 +8,7 @@ for (const width of [320, 1100]) {
     await page.emulateMedia({ reducedMotion: 'reduce' });
     const root = await mount(MobilePairingQr);
     await page.evaluate(() => document.fonts.ready);
-    await root.locator('#websocket-mobile-pairing button').click();
+    await root.getByRole('button', { name: 'Show QR Code', exact: true }).click();
     await assertMobilePairingQrGeometry(page);
     await page
       .getByRole('dialog')

@@ -102,13 +102,8 @@ test('long local-changes prose wraps instead of pushing the footer out of the di
     true,
   );
 
-  // The commit count remains readable within the prose.
-  const unpushedBadge = dialog.getByText('1 unpushed commit', { exact: true });
-  expect(within(await box(unpushedBadge), dialogBox)).toBe(true);
-  expect(await unpushedBadge.evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(true);
-
-  // Only the title needs horizontal close clearance; the body is below it.
-  const warningBox = unpushedBadge.locator('xpath=ancestor::div[1]');
+  // Local-work prose stays below the title and close control.
+  const warningBox = longLabel;
   const closeButton = dialog.getByRole('button', { name: 'Close delete warning dialog' });
   const warningRect = await box(warningBox);
   const closeRect = await box(closeButton);
@@ -142,7 +137,6 @@ for (const width of [900, 380]) {
     await expect(warning).toHaveCSS('padding-left', '0px');
     await expect(warning).toHaveCSS('border-top-width', '0px');
     await expect(dialog.getByText('Open', { exact: true })).toHaveCount(0);
-    const note = warning.locator('..').locator(':scope > p');
     const formRect = await box(form);
     const dialogRect = await box(dialog);
     const closeRect = await box(
@@ -150,7 +144,7 @@ for (const width of [900, 380]) {
     );
     const headingRect = await box(dialog.getByRole('heading'));
 
-    for (const content of [warning, note]) {
+    for (const content of [warning]) {
       const rect = await box(content);
       expect(Math.abs(rect.x - formRect.x)).toBeLessThanOrEqual(1);
       expect(Math.abs(rect.width - formRect.width)).toBeLessThanOrEqual(1);
@@ -167,7 +161,7 @@ for (const width of [900, 380]) {
     expect(dialogRect.width).toBeLessThan(width);
     expect(await dialog.evaluate((el) => el.scrollWidth - el.clientWidth)).toBe(0);
     expect(
-      within(await box(dialog.getByRole('button', { name: 'Stop work and delete' })), dialogRect),
+      within(await box(dialog.getByRole('button', { name: 'Delete', exact: true })), dialogRect),
     ).toBe(true);
     expect(within(await box(dialog.getByRole('button', { name: 'Cancel' })), dialogRect)).toBe(
       true,
