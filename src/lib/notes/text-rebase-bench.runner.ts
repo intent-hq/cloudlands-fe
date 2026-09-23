@@ -25,8 +25,9 @@
  *   reporter can emit it as a top-level field of the document.
  * - Under the natural clock `deadlineHit` is read off `performance.now`: the
  *   alignment learns its deadline elapsed only by a read at or past it, so a
- *   diff jsdiff itself aborted on `Date.now` counts only once a later read
- *   confirms the budget spent. Under the unbounded clock it is `null`.
+ *   diff that gave up on its own — on its edit-length bound (#2824 on), or on
+ *   jsdiff's `Date.now` timeout in a tree before it — counts only once a later
+ *   read confirms the budget spent. Under the unbounded clock it is `null`.
  *
  * `TEXT_REBASE_BENCH_REPEATS` (default 5) sets the cached sample count and
  * `TEXT_REBASE_BENCH_SHAPES` (comma list) narrows the shapes.

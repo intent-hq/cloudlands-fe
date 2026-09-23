@@ -28,7 +28,7 @@ export interface BenchRow {
 /** The alignment's budget, mirrored from `text-rebase.ts` (`ALIGNMENT_BUDGET_MS`). */
 const ALIGNMENT_BUDGET_MS = 250;
 export const DEFAULT_REPEATS = 5;
-/** `Date.now` step under the unbounded clock; see `text-rebase.test.ts` (`DIFF_STEP_MS`). */
+/** `Date.now` step under the unbounded clock, for trees whose diffs jsdiff timed on it (pre-#2824); see `installClock`. */
 export const DIFF_STEP_MS = 0.05;
 
 interface OffsetMapper {
@@ -92,10 +92,13 @@ export interface InstalledClock {
  * Natural: `performance.now` passes through to the real clock but its reads
  * are watched, so a read at or past `first + budgetMs` — the only way the
  * alignment ever learns its deadline elapsed — marks the deadline hit.
- * Unbounded: `performance.now` is frozen at 0 so the deadline never elapses,
- * and `Date.now` is stepped `DIFF_STEP_MS` a read so jsdiff (which holds the
- * budget it was handed to `Date.now`) still gives up past 5000 edit lengths
- * instead of never ending — exactly `withoutDeadline` in `text-rebase.test.ts`.
+ * Unbounded: `performance.now` is frozen at 0 so the deadline never elapses
+ * (as `withoutDeadline` in `text-rebase.test.ts` freezes it), and `Date.now`
+ * is stepped `DIFF_STEP_MS` a read. Since #2824 every diff is bounded by its
+ * inputs (`maxEditLength`), never by the clock, so on a current tree the step
+ * is inert; a tree from before it handed jsdiff a wall-clock `timeout` held to
+ * `Date.now`, and there the step makes such a diff still give up past 5000
+ * edit lengths instead of never ending.
  */
 export function installClock(mode: BenchClock, budgetMs = ALIGNMENT_BUDGET_MS): InstalledClock {
   const perf = globalThis.performance;
