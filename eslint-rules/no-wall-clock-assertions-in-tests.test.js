@@ -131,6 +131,16 @@ tester.run('no-wall-clock-assertions-in-tests', rule, {
     { code: 'expect(performance.now() - t0).toBeCloseTo(16, 0);', filename: testFile },
     // A clock read on its own is a timestamp, not an elapsed duration.
     { code: 'expect(Date.now()).toBeGreaterThan(0);', filename: testFile },
+    // Fixed-timestamp Date arithmetic never reads the clock.
+    {
+      code: 'expect(new Date(1000).getTime() - new Date(0).getTime()).toBeLessThan(2000);',
+      filename: testFile,
+    },
+    { code: 'expect(+new Date(1000) - +new Date(0)).toBeLessThan(2000);', filename: testFile },
+    {
+      code: "const d = new Date('2026-01-01').getTime() - epoch;\nexpect(d).toBeGreaterThan(0);",
+      filename: testFile,
+    },
     // Non-literal budgets are not millisecond constants the rule can reason about.
     { code: 'expect(performance.now() - t0).toBeLessThan(BUDGET_MS);', filename: testFile },
     {

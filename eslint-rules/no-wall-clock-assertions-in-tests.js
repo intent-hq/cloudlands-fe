@@ -39,11 +39,13 @@ function dottedName(node) {
   return null;
 }
 
+// `new Date()` with no arguments reads the clock; `new Date(1000)` is a fixed timestamp.
 function isNewDate(node) {
   return (
     node?.type === 'NewExpression' &&
     node.callee.type === 'Identifier' &&
-    node.callee.name === 'Date'
+    node.callee.name === 'Date' &&
+    node.arguments.length === 0
   );
 }
 
