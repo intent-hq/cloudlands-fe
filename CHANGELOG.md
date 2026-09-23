@@ -4,6 +4,18 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.177.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.176.0...v2.177.0) (2026-09-23)
+
+
+### 🚀 Features
+
+* add Workspaces and Intent sidebar tabs ([#2751](https://github.com/intent-hq/cloudlands-fe/issues/2751)) ([a7a2b17](https://github.com/intent-hq/cloudlands-fe/commit/a7a2b172716b2a6d56c2e1549f5c329687f245bd))
+
+
+### 🐛 Bug Fixes
+
+* avoid duplicate blocker and discussion notices ([#2818](https://github.com/intent-hq/cloudlands-fe/issues/2818)) ([fe1360d](https://github.com/intent-hq/cloudlands-fe/commit/fe1360dc9ddede7e361e00d266529df83b476e98))
+
 ## [2.176.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.175.0...v2.176.0) (2026-09-23)
 
 
