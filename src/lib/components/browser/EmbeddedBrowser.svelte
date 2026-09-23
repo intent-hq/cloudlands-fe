@@ -58,6 +58,10 @@
   import { matchesShortcut } from '$lib/utils/shortcut-bindings';
   import { effectiveShortcutReadable } from '$lib/utils/effective-shortcuts';
   import { invoke } from '$lib/electron-bridge';
+  import {
+    isExplicitLoopbackAliasUrl,
+    resolveBrowserLinkUrl,
+  } from '$lib/utils/browser-url-resolution';
   import BrowserOverflowMenu from './BrowserOverflowMenu.svelte';
   import BrowserViewportMenu from './BrowserViewportMenu.svelte';
   import BrowserDeviceFrame from './BrowserDeviceFrame.svelte';
@@ -213,7 +217,9 @@
   // Initialize from url prop if valid, otherwise use about:blank. The browser
   // loads exactly the URL it is given — programmatic entry points (script
   // URLs, terminal links) resolve loopback URLs BEFORE opening a tab, and
-  // user-typed address-bar URLs load literally (intent-hq/monorepo#2404).
+  // user-typed address-bar URLs load literally (intent-hq/monorepo#2404),
+  // except an explicit daemon.localhost / client.localhost alias, which
+  // handleFormSubmit resolves first (intent-hq/intent#5710).
   // svelte-ignore state_referenced_locally - intentional: we want initial value, effect syncs later changes
   let currentWebviewUrl = $state<string>(isValidBrowserUrl(url) ? url : 'about:blank');
 
@@ -1124,12 +1130,41 @@
         return;
       }
       logger.info('Loading URL from form', { urlToLoad });
-      loadUrl(urlToLoad);
+      if (isExplicitLoopbackAliasUrl(urlToLoad)) {
+        void loadResolvedAliasUrl(urlToLoad);
+      } else {
+        loadUrl(urlToLoad);
+      }
       appStore.dispatch(
         addRecentUrl(_workspaceId, urlToLoad, undefined, undefined, new Date().toISOString()),
       );
       // Blur the input to indicate the action was taken
       exitUrlEditMode();
+    }
+  }
+
+  /**
+   * An explicit `daemon.localhost` / `client.localhost` alias typed into the
+   * address bar is unambiguous, so it resolves (rewrite → probe → tunnel)
+   * like `browser.exec` navigate does (intent-hq/intent#5710). Bare loopback
+   * URLs never take this path (intent-hq/monorepo#2404). On a resolver error
+   * the rewritten URL still loads so the webview's own error page shows.
+   */
+  async function loadResolvedAliasUrl(requestedUrl: string) {
+    const resolved = await resolveBrowserLinkUrl(requestedUrl, invoke);
+    logger.info('Resolved address-bar loopback alias', {
+      requestedUrl,
+      url: resolved.url,
+      rewritten: resolved.rewritten,
+      tunneled: resolved.tunneled,
+      reason: resolved.reason,
+      error: resolved.error,
+    });
+    await loadUrl(resolved.url);
+    if (resolved.error && resolved.rewritten) {
+      errorMessage = resolved.forbidden
+        ? m.browser_linkOpen_ownerOnlyForward_error()
+        : m.browser_embedded_resolveFailed_error();
     }
   }
 </script>

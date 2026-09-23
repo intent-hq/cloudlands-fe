@@ -369,6 +369,103 @@ describe('EmbeddedBrowser', () => {
       expect(container.querySelector('input')).toBeNull();
     });
 
+    // intent-hq/intent#5710: an explicit daemon.localhost / client.localhost
+    // alias typed into the address bar resolves through browser:resolve-url
+    // like browser.exec does; bare loopback and every other URL keep loading
+    // literally (intent-hq/monorepo#2404).
+    describe('address-bar loopback alias resolution', () => {
+      const RESOLVE_CHANNEL = 'browser:resolve-url';
+
+      const submitAddress = async (typed: string) => {
+        const rendered = renderPage();
+        const webview = rendered.container.querySelector('webview') as HTMLElement & {
+          loadURL: ReturnType<typeof vi.fn>;
+          getURL: () => string;
+        };
+        webview.loadURL = vi.fn().mockResolvedValue(undefined);
+        webview.getURL = () => 'https://example.test/docs';
+        mocks.dispatch.mockClear();
+
+        await fireEvent.click(rendered.getByRole('button', { name: 'Edit browser address' }));
+        const input = rendered.getByRole('textbox', { name: 'Browser address' });
+        await fireEvent.input(input, { target: { value: typed } });
+        await fireEvent.submit(input.closest('form')!);
+        return { ...rendered, webview };
+      };
+
+      const resolveCalls = () =>
+        mocks.invoke.mock.calls.filter(([channel]) => channel === RESOLVE_CHANNEL);
+
+      const recentUrlEntries = () =>
+        mocks.dispatch.mock.calls
+          .map(([action]) => action)
+          .filter((action) => action.type === 'browser/addRecentUrl')
+          .map((action) => action.payload[1]);
+
+      it('resolves an explicit daemon alias and loads the tunneled URL', async () => {
+        mocks.invoke.mockImplementation(async (channel: string) =>
+          channel === RESOLVE_CHANNEL
+            ? {
+                url: 'http://127.0.0.1:41234/',
+                rewritten: true,
+                requestedUrl: 'http://daemon.localhost:3000',
+                tunneled: true,
+              }
+            : undefined,
+        );
+
+        const { webview, queryByText } = await submitAddress('daemon.localhost:3000');
+
+        await waitFor(() =>
+          expect(webview.loadURL).toHaveBeenCalledWith('http://127.0.0.1:41234/'),
+        );
+        expect(resolveCalls()).toEqual([
+          [RESOLVE_CHANNEL, { url: 'http://daemon.localhost:3000' }],
+        ]);
+        expect(recentUrlEntries()).toEqual(['http://daemon.localhost:3000']);
+        expect(queryByText(m.browser_embedded_resolveFailed_error())).toBeNull();
+      });
+
+      it('loads the rewritten URL and shows the resolver error when the alias is unreachable', async () => {
+        mocks.invoke.mockImplementation(async (channel: string) =>
+          channel === RESOLVE_CHANNEL
+            ? {
+                url: 'http://10.0.0.5:3000/',
+                rewritten: true,
+                requestedUrl: 'http://client.localhost:3000',
+                error: 'not reachable from this machine',
+              }
+            : undefined,
+        );
+
+        const { webview, queryByText } = await submitAddress('client.localhost:3000');
+
+        await waitFor(() => expect(webview.loadURL).toHaveBeenCalledWith('http://10.0.0.5:3000/'));
+        await waitFor(() =>
+          expect(queryByText(m.browser_embedded_resolveFailed_error())).not.toBeNull(),
+        );
+        expect(recentUrlEntries()).toEqual(['http://client.localhost:3000']);
+      });
+
+      it('loads a bare loopback address literally without resolving it', async () => {
+        const { webview } = await submitAddress('127.0.0.1:5173');
+
+        await waitFor(() => expect(webview.loadURL).toHaveBeenCalledWith('http://127.0.0.1:5173'));
+        expect(resolveCalls()).toEqual([]);
+        expect(recentUrlEntries()).toEqual(['http://127.0.0.1:5173']);
+      });
+
+      it('loads a non-loopback address literally without resolving it', async () => {
+        const { webview } = await submitAddress('https://example.org/path');
+
+        await waitFor(() =>
+          expect(webview.loadURL).toHaveBeenCalledWith('https://example.org/path'),
+        );
+        expect(resolveCalls()).toEqual([]);
+        expect(recentUrlEntries()).toEqual(['https://example.org/path']);
+      });
+    });
+
     describe('destroyed guest webContents', () => {
       type GuestWebview = HTMLElement & {
         getURL: () => string;

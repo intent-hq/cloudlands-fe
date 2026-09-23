@@ -1,10 +1,32 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
   BROWSER_RESOLVE_URL_CHANNEL,
+  isExplicitLoopbackAliasUrl,
   resolveBrowserLinkUrl,
   rewriteBrowserLinkForDisplay,
   type ResolvedBrowserLink,
 } from './browser-url-resolution';
+
+describe('isExplicitLoopbackAliasUrl', () => {
+  it.each([
+    'http://daemon.localhost:3000/app',
+    'https://DAEMON.localhost/',
+    'http://client.localhost:8080',
+  ])('recognizes the explicit alias %s', (url) => {
+    expect(isExplicitLoopbackAliasUrl(url)).toBe(true);
+  });
+
+  it.each([
+    'http://127.0.0.1:3000/',
+    'http://localhost:3000/',
+    'http://[::1]:3000/',
+    'https://example.org/',
+    'http://other.daemon.localhost/',
+    'not a url',
+  ])('leaves %s alone', (url) => {
+    expect(isExplicitLoopbackAliasUrl(url)).toBe(false);
+  });
+});
 
 describe('resolveBrowserLinkUrl', () => {
   it('sends the URL over browser:resolve-url and returns the resolved payload', async () => {
