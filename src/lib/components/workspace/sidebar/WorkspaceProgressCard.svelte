@@ -976,6 +976,7 @@
               style="max-width: min(20rem, calc(var(--bits-dropdown-menu-content-available-width, 100vw) - 0.625rem))"
             >
               <WorkspaceActionsMenu
+                layout="editors-submenu"
                 filePath={$workspace?.worktreePath ||
                   $workspace?.repositoryPath ||
                   $workspace?.path ||
