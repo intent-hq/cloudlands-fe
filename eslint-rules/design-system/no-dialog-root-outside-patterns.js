@@ -53,6 +53,10 @@ export default {
           'src/features/stats/StatsOverlay.svelte',
           'src/features/daemon-status/DaemonStoppedOverlay.svelte',
           'src/features/daemon-status/DaemonUpdatingOverlay.svelte',
+          // Joining progress owns a cancel-once contract for main-process updates.
+          'src/lib/components/modals/InviteProgressModal.svelte',
+          // Dual embedded/standalone file-browser surface owns its focus and navigation.
+          'src/features/onboarding/messages/DirectoryPickerView.svelte',
         ].includes(filename);
         const nativeModal =
           /^[a-z]/.test(name ?? '') &&
@@ -62,7 +66,13 @@ export default {
               attribute.type === 'SvelteAttribute' &&
               attribute.key.name === 'aria-modal' &&
               attribute.value.some(
-                (value) => value.type === 'SvelteLiteral' && value.value === 'true',
+                (value) =>
+                  (value.type === 'SvelteLiteral' && value.value === 'true') ||
+                  (value.type === 'SvelteMustacheTag' &&
+                    !(
+                      value.expression.type === 'Literal' &&
+                      [false, null, 'false'].includes(value.expression.value)
+                    )),
               ),
           );
         if (roots.has(name) || nativeModal) {

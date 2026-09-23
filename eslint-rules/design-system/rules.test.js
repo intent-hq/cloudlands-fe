@@ -531,12 +531,29 @@ svelteTester.run('no-arbitrary-motion-or-color', noArbitraryMotionOrColor, {
 
 svelteTester.run('no-dialog-root-outside-patterns', noDialogRootOutsidePatterns, {
   valid: [
+    ...['false', 'null', "'false'"].map((expression) => ({
+      code: `<div role="dialog" aria-modal={${expression}} />`,
+      filename: projectFile('src/lib/components/modals/NonModal.svelte'),
+    })),
+    {
+      code: '<div role="alertdialog" aria-modal="true" />',
+      filename: projectFile('src/lib/components/modals/InviteProgressModal.svelte'),
+    },
+    {
+      code: '<div role="dialog" aria-modal={embedded ? undefined : true} />',
+      filename: projectFile('src/features/onboarding/messages/DirectoryPickerView.svelte'),
+    },
     {
       code: '<Dialog.Root />',
       filename: projectFile('src/lib/components/patterns/confirm/FormDialog.svelte'),
     },
   ],
   invalid: [
+    ...['true', 'embedded ? undefined : true', 'modal'].map((expression) => ({
+      code: `<div role="dialog" aria-modal={${expression}} />`,
+      filename: projectFile('src/lib/components/modals/RawModal.svelte'),
+      errors: [{ messageId: 'dialogRoot' }],
+    })),
     {
       code: '<div role="dialog" aria-modal="true" />',
       filename: projectFile('src/lib/components/modals/RawModal.svelte'),

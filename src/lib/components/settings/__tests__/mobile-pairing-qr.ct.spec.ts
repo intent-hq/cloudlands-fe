@@ -1,4 +1,4 @@
-import { test } from '@playwright/experimental-ct-svelte';
+import { test } from '../../../../test/ct-test';
 import MobilePairingQr from '../mobile-pairing-qr.preview.svelte';
 import { assertMobilePairingQrGeometry } from './mobile-pairing-qr.assertions';
 
