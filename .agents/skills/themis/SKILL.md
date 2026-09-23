@@ -1,10 +1,10 @@
 ---
 name: themis
 description: >-
-  Route Themis setup and Store guidance by code path: Svelte/SvelteKit UI,
-  React UI, or Streaming for Node and no-UI code. Use Core for shared
-  Redux/saga concepts and explicit store pruning; choose one Store family per
-  app.
+  Route Themis setup and shared Redux/saga guidance. Choose Svelte or React
+  only with concrete UI evidence; default to Streaming for Node/no-UI paths
+  or absent UI evidence. Use one Store family per app; prune stores only on
+  explicit request.
 type: core
 sources:
   - ./setup/SKILL.md
