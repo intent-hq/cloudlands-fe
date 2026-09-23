@@ -31,7 +31,7 @@
       selector: '[data-diagram-workbench-ready="true"]',
       count: 1,
       generationAttribute: 'data-diagram-workbench-generation',
-      readinessTimeoutMs: 24_000,
+      readinessTimeoutMs: 45_000,
     },
     states: Object.fromEntries(
       Object.entries(DIAGRAM_WORKBENCH_CASES).map(([name, fixture]) => [

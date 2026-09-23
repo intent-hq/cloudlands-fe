@@ -4,6 +4,25 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.175.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.174.0...v2.175.0) (2026-09-23)
+
+
+### 🚀 Features
+
+* **workspace:** tighten hover card rows, keep it open on hover, make agents and PRs clickable ([#2185](https://github.com/intent-hq/cloudlands-fe/issues/2185)) ([859e4bb](https://github.com/intent-hq/cloudlands-fe/commit/859e4bb9c85aeebc96802827e9edc92d60554b71))
+
+
+### 🐛 Bug Fixes
+
+* **browser:** record the real capture session start time so endSession never fails ([#2797](https://github.com/intent-hq/cloudlands-fe/issues/2797)) ([6bd0b4e](https://github.com/intent-hq/cloudlands-fe/commit/6bd0b4efb74ff69200a0d8d5eff5b8b33d12dec9))
+* bump intentd sidecar to v0.9.100 ([#2814](https://github.com/intent-hq/cloudlands-fe/issues/2814)) ([4876aa3](https://github.com/intent-hq/cloudlands-fe/commit/4876aa3959db9621f37a07b2e188deb76184616c))
+* bump intentd sidecar to v0.9.98 ([#2807](https://github.com/intent-hq/cloudlands-fe/issues/2807)) ([1d9b75c](https://github.com/intent-hq/cloudlands-fe/commit/1d9b75c0597932a572229343658a1b5d50c9f023))
+* bump intentd sidecar to v0.9.99 ([#2810](https://github.com/intent-hq/cloudlands-fe/issues/2810)) ([c46cfe2](https://github.com/intent-hq/cloudlands-fe/commit/c46cfe20436b94c9da9256fc2fcfd261a046e899))
+* **chat:** unify notices and scroll follow-up prompts ([#2750](https://github.com/intent-hq/cloudlands-fe/issues/2750)) ([f916a2d](https://github.com/intent-hq/cloudlands-fe/commit/f916a2d46220c796d6180ee427b6fd575babd35b))
+* show dates on chat messages outside today ([#2785](https://github.com/intent-hq/cloudlands-fe/issues/2785)) ([c38e1f7](https://github.com/intent-hq/cloudlands-fe/commit/c38e1f7b07a29b6dc898ab54bf5235181f245914))
+* stop diagram-workbench specs running at the 30 s timeout edge ([#2806](https://github.com/intent-hq/cloudlands-fe/issues/2806)) ([3266623](https://github.com/intent-hq/cloudlands-fe/commit/32666237652bdb4a088f30dce6d79153be85e097))
+* **terminal:** keep the overlay terminal attached after a panel round trip ([#2805](https://github.com/intent-hq/cloudlands-fe/issues/2805)) ([8fe59fa](https://github.com/intent-hq/cloudlands-fe/commit/8fe59fa4fcaa8dee0815d33e60b759c9a494dd7b))
+
 ## [2.174.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.173.0...v2.174.0) (2026-09-22)
 
 

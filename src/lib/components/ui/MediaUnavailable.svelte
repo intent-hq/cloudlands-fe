@@ -1,3 +1,5 @@
+<!-- @catalog-exempt: status tile composed from the catalogued Button; no catalog fixtures yet -->
+
 <script lang="ts">
   import {
     faArrowUpRightFromSquare,

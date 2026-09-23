@@ -1,3 +1,5 @@
+<!-- @catalog-exempt: scroll-measured virtualisation container that needs real layout; no catalog fixtures yet -->
+
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
   import { createLogger } from '$lib/utils/client-logger';

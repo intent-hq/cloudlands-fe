@@ -229,6 +229,28 @@ describe('SetupScriptBanner wire contract', () => {
     });
   });
 
+  it('renders the editor panel resize handle on the shared app-resize-handle contract', async () => {
+    backendRequestMock.mockResolvedValue({ setupScript: null });
+
+    const result = render(SetupScriptBanner, { props: { workspaceId: 'ws-test' } });
+
+    await waitFor(() => {
+      expect(result.container.querySelector('.setup-script-banner')).toBeTruthy();
+    });
+    expect(result.container.querySelector('[data-resize-axis="x"]')).toBeNull();
+
+    (result.getByText('Create setup script').closest('button') as HTMLButtonElement).click();
+    await waitFor(() => {
+      expect(result.getByText('Save')).toBeTruthy();
+    });
+
+    const resizeHandle = result.container.querySelector<HTMLElement>('[data-resize-axis="x"]');
+    expect(resizeHandle).toBeTruthy();
+    expect(resizeHandle!.classList.contains('app-resize-handle')).toBe(true);
+    // The handle belongs to the editor side panel, the element that also hosts Save.
+    expect(resizeHandle!.parentElement!.contains(result.getByText('Save'))).toBe(true);
+  });
+
   it('shows the banner on RPC failure (fallback behavior)', async () => {
     backendRequestMock.mockRejectedValue(new Error('connection failed'));
 
