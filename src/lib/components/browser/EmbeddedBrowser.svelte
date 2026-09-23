@@ -83,7 +83,12 @@
     workspaceId: string;
     /** Unique tab ID for CDP registration */
     tabId?: string;
-    onNavigate?: (url: string) => void;
+    /**
+     * Fired when the webview commits a navigation. `requestedUrl` is the
+     * pre-rewrite alias the user typed when `url` is its resolved tunnel
+     * target, so the tab can be restored by re-resolving it; absent otherwise.
+     */
+    onNavigate?: (url: string, requestedUrl?: string) => void;
     onTitleChange?: (title: string) => void;
     onFaviconChange?: (faviconUrl: string) => void;
     onFocus?: () => void;
@@ -216,9 +221,14 @@
   // instead of replacing it with a generic connection error, and the next
   // navigation clears it.
   let navigationResolverError = '';
+  // Pre-rewrite alias behind the current navigation's tunnel URL; did-navigate
+  // hands it to the parent so the tab persists the alias (re-resolvable after
+  // a restart) rather than the ephemeral forward.
+  let navigationRequestedUrl = '';
 
   function beginNavigation(): number {
     navigationResolverError = '';
+    navigationRequestedUrl = '';
     return ++navigationGeneration;
   }
 
@@ -687,12 +697,17 @@
       faviconUrl = '';
       isSecure = e.url?.startsWith('https://');
       errorMessage = '';
+      const requestedUrl = navigationRequestedUrl;
       // A committed main-frame navigation supersedes any pending alias resolution.
       beginNavigation();
       // Update previousUrlProp to prevent the prop-change effect from re-triggering a load
       // when the parent updates its state in response to onNavigate
       recordEmbeddedBrowserNavigation(navigationSync, e.url);
-      onNavigate?.(e.url);
+      if (requestedUrl) {
+        onNavigate?.(e.url, requestedUrl);
+      } else {
+        onNavigate?.(e.url);
+      }
       updateNavigationState();
     });
 
@@ -1184,7 +1199,9 @@
    * URLs never take this path (intent-hq/monorepo#2404). On a resolver error
    * the rewritten URL still loads so the webview's own error page shows,
    * and the resolver message survives the resulting did-fail-load. A result
-   * that arrives after a newer navigation (or unmount) is dropped.
+   * that arrives after a newer navigation (or unmount) is dropped. The typed
+   * alias rides along as the committed navigation's requested URL so the tab
+   * persists it instead of the ephemeral tunnel forward.
    */
   async function loadResolvedAliasUrl(requestedUrl: string) {
     const generation = beginNavigation();
@@ -1205,6 +1222,9 @@
       error: resolved.error,
     });
     await loadUrl(resolved.url);
+    if (resolved.rewritten) {
+      navigationRequestedUrl = requestedUrl;
+    }
     if (resolved.error && resolved.rewritten) {
       navigationResolverError = resolved.forbidden
         ? m.browser_linkOpen_ownerOnlyForward_error()

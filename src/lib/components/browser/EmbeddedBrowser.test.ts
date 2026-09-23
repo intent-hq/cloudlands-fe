@@ -388,8 +388,8 @@ describe('EmbeddedBrowser', () => {
         await fireEvent.submit(input.closest('form')!);
       };
 
-      const submitAddress = async (typed: string) => {
-        const rendered = renderPage();
+      const submitAddress = async (typed: string, props?: Parameters<typeof renderPage>[0]) => {
+        const rendered = renderPage(props);
         const webview = rendered.container.querySelector('webview') as AddressWebview;
         webview.loadURL = vi.fn().mockResolvedValue(undefined);
         webview.getURL = () => 'https://example.test/docs';
@@ -453,6 +453,57 @@ describe('EmbeddedBrowser', () => {
         ]);
         expect(recentUrlEntries()).toEqual(['http://daemon.localhost:3000']);
         expect(queryByText(m.browser_embedded_resolveFailed_error())).toBeNull();
+      });
+
+      it('reports the typed alias as the requested URL when the tunnel navigation commits', async () => {
+        mocks.invoke.mockImplementation(async (channel: string) =>
+          channel === RESOLVE_CHANNEL
+            ? {
+                url: 'http://127.0.0.1:41234/',
+                rewritten: true,
+                requestedUrl: 'http://daemon.localhost:3000',
+                tunneled: true,
+              }
+            : undefined,
+        );
+        const onNavigate = vi.fn();
+
+        const { webview } = await submitAddress('daemon.localhost:3000', { onNavigate });
+        await waitFor(() =>
+          expect(webview.loadURL).toHaveBeenCalledWith('http://127.0.0.1:41234/'),
+        );
+        onNavigate.mockClear();
+
+        await fireEvent(
+          webview,
+          Object.assign(new Event('did-navigate'), { url: 'http://127.0.0.1:41234/' }),
+        );
+        expect(onNavigate).toHaveBeenCalledWith(
+          'http://127.0.0.1:41234/',
+          'http://daemon.localhost:3000',
+        );
+
+        // The alias belongs to that one navigation: a later page reports none.
+        onNavigate.mockClear();
+        await fireEvent(
+          webview,
+          Object.assign(new Event('did-navigate'), { url: 'http://127.0.0.1:41234/docs' }),
+        );
+        expect(onNavigate).toHaveBeenCalledTimes(1);
+        expect(onNavigate.mock.calls[0]).toEqual(['http://127.0.0.1:41234/docs']);
+      });
+
+      it('reports no requested URL for a plainly typed address', async () => {
+        const onNavigate = vi.fn();
+        const { webview } = await submitAddress('https://example.test/page', { onNavigate });
+        onNavigate.mockClear();
+
+        await fireEvent(
+          webview,
+          Object.assign(new Event('did-navigate'), { url: 'https://example.test/page' }),
+        );
+        expect(onNavigate).toHaveBeenCalledTimes(1);
+        expect(onNavigate.mock.calls[0]).toEqual(['https://example.test/page']);
       });
 
       it('loads the rewritten URL and shows the resolver error when the alias is unreachable', async () => {
