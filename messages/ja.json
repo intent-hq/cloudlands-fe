@@ -6616,5 +6616,9 @@
   "presence_typing_two_label": "{first}と{second}が入力中…",
   "presence_typing_many": "{first}と他{count}人が入力中…",
   "presence_avatarStack_onlyYou_label": "ここにいるのはあなただけです",
-  "presence_person_you_label": "{name}（あなた）"
+  "presence_person_you_label": "{name}（あなた）",
+  "workspace_transfer_export_title": "ワークスペースをエクスポート",
+  "workspace_transfer_export_description": "「{title}」を別のデバイスでインポートできるファイルに保存します。",
+  "workspace_transfer_connectDevice_label": "直接転送するには、別のデバイスを接続してください",
+  "workspace_transfer_reviewExport_label": "エクスポート内容を確認"
 }

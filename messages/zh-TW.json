@@ -6616,5 +6616,9 @@
   "presence_typing_two_label": "{first} 和 {second} 正在輸入…",
   "presence_typing_many": "{first} 和另外 {count} 人正在輸入…",
   "presence_avatarStack_onlyYou_label": "這裡只有你",
-  "presence_person_you_label": "{name}（你）"
+  "presence_person_you_label": "{name}（你）",
+  "workspace_transfer_export_title": "匯出工作區",
+  "workspace_transfer_export_description": "將「{title}」儲存為可在其他裝置上匯入的檔案。",
+  "workspace_transfer_connectDevice_label": "若要直接傳輸，請連接其他裝置",
+  "workspace_transfer_reviewExport_label": "檢視匯出內容"
 }

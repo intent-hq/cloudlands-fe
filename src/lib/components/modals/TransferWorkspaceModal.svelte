@@ -71,6 +71,7 @@
     finalizeStatus?: TransferFinalizeStatus;
     finalizeError?: string | null;
     onSelectDestination?: (destination: TransferDestination) => void;
+    onConnectDevice?: () => void;
     onNext?: () => void;
     onBack?: () => void;
     onCancel?: () => void;
@@ -102,6 +103,7 @@
     finalizeStatus = 'idle',
     finalizeError = null,
     onSelectDestination,
+    onConnectDevice,
     onNext,
     onBack,
     onCancel,
@@ -112,7 +114,13 @@
     onFinalize,
   }: Props = $props();
 
-  const canNext = $derived(step === 'destination' && destination != null);
+  const exportOnly = $derived(connections.length === 0);
+  const canNext = $derived(step === 'destination' && (exportOnly || destination != null));
+
+  function next() {
+    if (exportOnly) onSelectDestination?.({ kind: 'download' });
+    onNext?.();
+  }
 
   /** Download-to-file mode swaps transfer-flavored copy for download copy. */
   const isDownload = $derived(destination?.kind === 'download');
@@ -121,7 +129,9 @@
       ? isDownload
         ? m.workspace_transfer_downloading_title({ title: workspaceTitle })
         : m.workspace_transfer_transferring_title({ title: workspaceTitle })
-      : m.workspace_transfer_modal_title(),
+      : isDownload || (step === 'destination' && exportOnly)
+        ? m.workspace_transfer_export_title()
+        : m.workspace_transfer_modal_title(),
   );
 
   /**
@@ -215,77 +225,86 @@
 >
   <div class="space-y-4 min-w-0">
     {#if step === 'destination'}
-      <p class="text-sm text-subtle">
-        {m.workspace_transfer_destination_description({ title: workspaceTitle })}
-      </p>
-
-      <div class="space-y-1">
-        <span class="block type-caption font-medium text-foreground"
-          >{m.workspace_transfer_servers_label()}</span
-        >
-        {#if connections.length === 0}
-          <p class="text-xs text-subtle" data-testid="transfer-empty-servers">
-            {m.workspace_transfer_emptyServers_message()}
-          </p>
-        {:else}
-          <div class="space-y-1">
-            {#each connections as conn (conn.id)}
-              <Button
-                type="button"
-                variant="plain"
-                truncateLabel={false}
-                class="{optionClass} {isSelected({ kind: 'server', connectionId: conn.id })
-                  ? 'text-primary'
-                  : 'text-foreground'}"
-                data-testid="transfer-server-{conn.id}"
-                aria-pressed={isSelected({ kind: 'server', connectionId: conn.id })}
-                onclick={() => onSelectDestination?.({ kind: 'server', connectionId: conn.id })}
-              >
-                <ListRow class="w-full min-h-8 px-0 py-1">
-                  {#snippet leading()}<span
-                      class="grid size-6 place-items-center rounded-lg bg-muted"
-                      ><Fa
-                        icon={conn.isLocal ? faLaptop : faServer}
-                        class="text-foreground"
-                      /></span
-                    >{/snippet}
-                  {#snippet title()}{formatConnectionLabel(conn)}{/snippet}
-                  {#snippet trailing()}{#if isSelected( { kind: 'server', connectionId: conn.id } )}<Fa
-                        icon={faCheck}
-                        class="text-primary"
-                      />{/if}{/snippet}
-                </ListRow>
-              </Button>
-            {/each}
-          </div>
-        {/if}
-      </div>
-
-      <div class="space-y-1">
-        <Button
-          type="button"
-          variant="plain"
-          truncateLabel={false}
-          class="{optionClass} {isSelected({ kind: 'download' })
-            ? 'text-primary'
-            : 'text-foreground'}"
-          data-testid="transfer-download-option"
-          aria-pressed={isSelected({ kind: 'download' })}
-          onclick={() => onSelectDestination?.({ kind: 'download' })}
-        >
-          <ListRow class="w-full min-h-8 px-0 py-1">
-            {#snippet leading()}<span class="grid size-6 place-items-center rounded-lg bg-muted"
-                ><Fa icon={faDownload} class="text-foreground" /></span
-              >{/snippet}
-            {#snippet title()}{m.workspace_transfer_download_label()}{/snippet}
-            {#snippet description()}{m.workspace_transfer_download_description()}{/snippet}
-            {#snippet trailing()}{#if isSelected({ kind: 'download' })}<Fa
-                  icon={faCheck}
-                  class="text-primary"
-                />{/if}{/snippet}
-          </ListRow>
+      {#if exportOnly}
+        <p class="text-sm text-subtle">
+          {m.workspace_transfer_export_description({ title: workspaceTitle })}
+        </p>
+        <Button variant="ghost" onclick={() => onConnectDevice?.()}>
+          {m.workspace_transfer_connectDevice_label()}
         </Button>
-      </div>
+      {:else}
+        <p class="text-sm text-subtle">
+          {m.workspace_transfer_destination_description({ title: workspaceTitle })}
+        </p>
+
+        <div class="space-y-1">
+          <span class="block type-caption font-medium text-foreground"
+            >{m.workspace_transfer_servers_label()}</span
+          >
+          {#if connections.length === 0}
+            <p class="text-xs text-subtle" data-testid="transfer-empty-servers">
+              {m.workspace_transfer_emptyServers_message()}
+            </p>
+          {:else}
+            <div class="space-y-1">
+              {#each connections as conn (conn.id)}
+                <Button
+                  type="button"
+                  variant="plain"
+                  truncateLabel={false}
+                  class="{optionClass} {isSelected({ kind: 'server', connectionId: conn.id })
+                    ? 'text-primary'
+                    : 'text-foreground'}"
+                  data-testid="transfer-server-{conn.id}"
+                  aria-pressed={isSelected({ kind: 'server', connectionId: conn.id })}
+                  onclick={() => onSelectDestination?.({ kind: 'server', connectionId: conn.id })}
+                >
+                  <ListRow class="w-full min-h-8 px-0 py-1">
+                    {#snippet leading()}<span
+                        class="grid size-6 place-items-center rounded-lg bg-muted"
+                        ><Fa
+                          icon={conn.isLocal ? faLaptop : faServer}
+                          class="text-foreground"
+                        /></span
+                      >{/snippet}
+                    {#snippet title()}{formatConnectionLabel(conn)}{/snippet}
+                    {#snippet trailing()}{#if isSelected( { kind: 'server', connectionId: conn.id } )}<Fa
+                          icon={faCheck}
+                          class="text-primary"
+                        />{/if}{/snippet}
+                  </ListRow>
+                </Button>
+              {/each}
+            </div>
+          {/if}
+        </div>
+
+        <div class="space-y-1">
+          <Button
+            type="button"
+            variant="plain"
+            truncateLabel={false}
+            class="{optionClass} {isSelected({ kind: 'download' })
+              ? 'text-primary'
+              : 'text-foreground'}"
+            data-testid="transfer-download-option"
+            aria-pressed={isSelected({ kind: 'download' })}
+            onclick={() => onSelectDestination?.({ kind: 'download' })}
+          >
+            <ListRow class="w-full min-h-8 px-0 py-1">
+              {#snippet leading()}<span class="grid size-6 place-items-center rounded-lg bg-muted"
+                  ><Fa icon={faDownload} class="text-foreground" /></span
+                >{/snippet}
+              {#snippet title()}{m.workspace_transfer_download_label()}{/snippet}
+              {#snippet description()}{m.workspace_transfer_download_description()}{/snippet}
+              {#snippet trailing()}{#if isSelected({ kind: 'download' })}<Fa
+                    icon={faCheck}
+                    class="text-primary"
+                  />{/if}{/snippet}
+            </ListRow>
+          </Button>
+        </div>
+      {/if}
     {:else if step === 'confirm'}
       <p class="text-sm text-subtle">
         {isDownload
@@ -558,8 +577,8 @@
       <Button variant="ghost" onclick={() => onCancel?.()}>
         {m.workspace_transfer_cancel_label()}
       </Button>
-      <Button variant="primary" onclick={() => onNext?.()} disabled={!canNext}>
-        {m.workspace_transfer_next_label()}
+      <Button variant="primary" onclick={next} disabled={!canNext}>
+        {exportOnly ? m.workspace_transfer_reviewExport_label() : m.workspace_transfer_next_label()}
       </Button>
     {:else if step === 'confirm'}
       <Button variant="ghost" onclick={() => onBack?.()}>

@@ -6616,5 +6616,9 @@
   "presence_typing_two_label": "{first} and {second} are typing…",
   "presence_typing_many": "{first} and {count} others are typing…",
   "presence_avatarStack_onlyYou_label": "Only you here",
-  "presence_person_you_label": "{name} (you)"
+  "presence_person_you_label": "{name} (you)",
+  "workspace_transfer_export_title": "Export workspace",
+  "workspace_transfer_export_description": "Save “{title}” to a file you can import on another device.",
+  "workspace_transfer_connectDevice_label": "To transfer directly, connect another device",
+  "workspace_transfer_reviewExport_label": "Review export"
 }

@@ -6616,5 +6616,9 @@
   "presence_typing_two_label": "{first}님과 {second}님이 입력 중…",
   "presence_typing_many": "{first}님 외 {count}명이 입력 중…",
   "presence_avatarStack_onlyYou_label": "여기에는 나만 있습니다",
-  "presence_person_you_label": "{name} (나)"
+  "presence_person_you_label": "{name} (나)",
+  "workspace_transfer_export_title": "워크스페이스 내보내기",
+  "workspace_transfer_export_description": "다른 기기에서 가져올 수 있는 파일로 “{title}”을 저장합니다.",
+  "workspace_transfer_connectDevice_label": "직접 전송하려면 다른 기기를 연결하세요",
+  "workspace_transfer_reviewExport_label": "내보내기 검토"
 }

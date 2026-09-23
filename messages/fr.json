@@ -6616,5 +6616,9 @@
   "presence_typing_two_label": "{first} et {second} sont en train d’écrire…",
   "presence_typing_many": "{first} et {count} autres sont en train d’écrire…",
   "presence_avatarStack_onlyYou_label": "Vous êtes seul ici",
-  "presence_person_you_label": "{name} (vous)"
+  "presence_person_you_label": "{name} (vous)",
+  "workspace_transfer_export_title": "Exporter l’espace de travail",
+  "workspace_transfer_export_description": "Enregistrez « {title} » dans un fichier à importer sur un autre appareil.",
+  "workspace_transfer_connectDevice_label": "Pour un transfert direct, connectez un autre appareil",
+  "workspace_transfer_reviewExport_label": "Vérifier l’exportation"
 }

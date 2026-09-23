@@ -149,32 +149,40 @@ describe('TransferWorkspaceModal — destination step', () => {
     }
   });
 
-  it('shows the empty-server explainer while download stays available', async () => {
+  it('offers export without a redundant destination selector', async () => {
     const TransferWorkspaceModal = (await import('../TransferWorkspaceModal.svelte')).default;
 
     render(TransferWorkspaceModal, {
       props: { open: true, workspaceTitle: 'My Space', step: 'destination', connections: [] },
     });
 
-    expect(screen.getByTestId('transfer-empty-servers')).toBeTruthy();
-    expect(screen.getByTestId('transfer-download-option')).toBeTruthy();
+    expect(screen.getByText('Export workspace')).toBeTruthy();
+    expect(
+      screen.getByText('Save “My Space” to a file you can import on another device.'),
+    ).toBeTruthy();
+    expect(screen.queryByTestId('transfer-empty-servers')).toBeNull();
+    expect(screen.queryByTestId('transfer-download-option')).toBeNull();
   });
 
-  it('enables Next once a destination is picked and forwards onNext', async () => {
+  it('selects download before requesting the export plan', async () => {
     const TransferWorkspaceModal = (await import('../TransferWorkspaceModal.svelte')).default;
-    const onNext = vi.fn();
+    const onSelectDestination = vi.fn();
+    const onNext = vi.fn(() =>
+      expect(onSelectDestination).toHaveBeenCalledWith({ kind: 'download' }),
+    );
 
     render(TransferWorkspaceModal, {
       props: {
         open: true,
         step: 'destination',
         connections: [],
-        destination: { kind: 'download' },
+        destination: null,
+        onSelectDestination,
         onNext,
       },
     });
 
-    const next = screen.getByRole('button', { name: 'Next' });
+    const next = screen.getByRole('button', { name: 'Review export' });
     expect(next.disabled).toBe(false);
     await fireEvent.click(next);
     expect(onNext).toHaveBeenCalled();
