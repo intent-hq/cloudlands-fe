@@ -42,11 +42,36 @@ vi.mock('diff', async (importOriginal) => {
  */
 function withoutDeadline<T>(fn: () => T): T {
   const now = vi.spyOn(performance, 'now').mockReturnValue(0);
+  const wall = steppedWallClock();
   try {
     return fn();
   } finally {
     now.mockRestore();
+    wall.mockRestore();
   }
+}
+
+/**
+ * The edit lengths a diff may try before it gives up under `withoutDeadline`
+ * and `onSteppedClock`, as the step of `Date.now`: jsdiff holds the `timeout`
+ * the alignment hands it (the budget left on `performance.now`, 250 ms at
+ * most) to `Date.now`, read once per edit length, so on a loaded runner a
+ * diff within the frozen or stepped budget still aborted in real time and
+ * its line fell to the clamped fallback (a 2000-span line, 150 ms of diff
+ * unloaded, mapped its first span to the line's end on a CI shard of 857 s).
+ * Stepped 0.05 ms a read, the budget is 5000 edit lengths: twice what the
+ * 250 ms buy unloaded, and above every diff these tests complete (the
+ * 2000-span line takes 2002, the shared tail after 20 KB of blocks that
+ * never anchor 2927), while a diff that does give up is bounded (its work
+ * is quadratic in its edit lengths; frozen, the diff of a 1 MB pair no four
+ * code units of match never ends).
+ */
+const DIFF_STEP_MS = 0.05;
+
+/** Step `Date.now` by `DIFF_STEP_MS` a read — see `DIFF_STEP_MS`. */
+function steppedWallClock() {
+  let reads = 0;
+  return vi.spyOn(Date, 'now').mockImplementation(() => DIFF_STEP_MS * reads++);
 }
 
 /**
@@ -68,11 +93,13 @@ const BUDGET_READS = 250_000;
 function onSteppedClock<T>(fn: () => T): [result: T, reads: number] {
   let reads = 0;
   const now = vi.spyOn(performance, 'now').mockImplementation(() => 0.001 * reads++);
+  const wall = steppedWallClock();
   try {
     const result = fn();
     return [result, reads];
   } finally {
     now.mockRestore();
+    wall.mockRestore();
   }
 }
 
@@ -2882,19 +2909,24 @@ describe('alignment of link syntax the lexer does not account for', () => {
     // pipe-less note read the whole rest of it: 350 million units of 10 000
     // lines, 0.3 s added to a 150 000-line note on every clock; the U+FFFC a
     // plain-text line ends at was sought the same way.) A fourfold block may
-    // read sixfold, not sixteenfold.
+    // read sixfold, not sixteenfold. The editor projects the shortest block;
+    // the longer blocks are more of the same line, shown by the rule it
+    // verifies.
     it('reads a pipe-less note of many lines in units proportional to its length', async () => {
       const tick = '`';
       const paragraph = 'q'.repeat(129 * 1024);
-      const notes = await Promise.all(
-        [1000, 4000, 16_000].map(async (lines) => {
-          const code = Array.from({ length: lines }, () => '[x](u)').join('\n');
-          const markdown = `${paragraph}\n\n${tick.repeat(3)}\n${code}\n${tick.repeat(3)}`;
-          const plain = await projectWithEditor(markdown, true);
-          expect(plain).toBe(`${paragraph}\n${code}`);
-          return { lines, code, plain, markdown };
-        }),
-      );
+      const note = (lines: number) => {
+        const code = Array.from({ length: lines }, () => '[x](u)').join('\n');
+        return {
+          lines,
+          code,
+          markdown: `${paragraph}\n\n${tick.repeat(3)}\n${code}\n${tick.repeat(3)}`,
+          plain: `${paragraph}\n${code}`,
+        };
+      };
+      const smallest = note(1000);
+      expect(await projectWithEditor(smallest.markdown, true)).toBe(smallest.plain);
+      const notes = [smallest, note(4000), note(16_000)];
       // The code starts after the paragraph and its break; in the markdown
       // after a blank line and the fence too.
       const codeStart = paragraph.length + 1;
