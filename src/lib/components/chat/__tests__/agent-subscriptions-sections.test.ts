@@ -1287,10 +1287,8 @@ describe('AgentSubscriptions unified waiting disclosure', () => {
 
     expect(nativeTrigger.getAttribute('aria-label')).toBe('Task progress: 1 of 2 completed');
     expect(linkedTrigger.getAttribute('aria-label')).toBe('Task progress: 1 of 1 completed');
-    expect(nativeTrigger.className).toContain('h-(--row-action-target-compact)');
-    expect(nativeTrigger.className).toContain('min-w-(--row-action-target-compact)');
-    expect(nativeTrigger.className).toContain('w-fit');
     for (const trigger of [nativeTrigger, linkedTrigger]) {
+      expect(trigger.getAttribute('aria-expanded')).toBe('false');
       expect(within(trigger).getByTestId('task-progress-checklist-icon')).toBeTruthy();
       expect(
         trigger.querySelectorAll('[data-testid="task-progress-checklist-icon"] svg'),
@@ -1309,6 +1307,8 @@ describe('AgentSubscriptions unified waiting disclosure', () => {
     expect(screen.queryByRole('dialog', { name: 'Agent tasks' })).toBeNull();
     await fireEvent.click(nativeTrigger);
     const dialog = await screen.findByRole('dialog', { name: 'Agent tasks' });
+    expect(nativeTrigger.getAttribute('aria-expanded')).toBe('true');
+    expect(linkedTrigger.getAttribute('aria-expanded')).toBe('false');
     expect(document.activeElement).toBe(nativeTrigger);
     expect(within(dialog).getByText('Native task running')).toBeTruthy();
     expect(within(dialog).getByLabelText('Complete: Native task completed')).toBeTruthy();
@@ -1319,10 +1319,13 @@ describe('AgentSubscriptions unified waiting disclosure', () => {
 
     await fireEvent.keyDown(document, { key: 'Escape' });
     await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Agent tasks' })).toBeNull());
+    expect(nativeTrigger.getAttribute('aria-expanded')).toBe('false');
     linkedTrigger.focus();
     expect(screen.queryByRole('dialog', { name: 'Agent tasks' })).toBeNull();
     await fireEvent.click(linkedTrigger);
     const linkedDialog = await screen.findByRole('dialog', { name: 'Agent tasks' });
+    expect(linkedTrigger.getAttribute('aria-expanded')).toBe('true');
+    expect(nativeTrigger.getAttribute('aria-expanded')).toBe('false');
     expect(within(linkedDialog).getByText('Linked workspace task')).toBeTruthy();
     expect(within(linkedDialog).queryByText('Native task running')).toBeNull();
     expect(within(linkedDialog).queryByText('Native task completed')).toBeNull();
