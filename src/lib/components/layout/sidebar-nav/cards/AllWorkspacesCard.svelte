@@ -458,7 +458,7 @@
 
 {#snippet groupActions(workspaces: Workspace[], groupLabel: string)}
   <div
-    class="ml-auto flex shrink-0 items-center gap-0.5 rounded-md bg-accent/95 px-0.5 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 focus-within:opacity-100"
+    class="absolute right-0 top-1/2 -translate-y-1/2 flex items-center gap-0.5 rounded-md bg-accent/95 px-0.5 opacity-0 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto group-focus-within:opacity-100 group-focus-within:pointer-events-auto focus-within:opacity-100 focus-within:pointer-events-auto"
   >
     {#if workspaces.some((workspace) => workspace.status !== WorkspaceStatusEnum.Archived)}
       <Tooltip.Tooltip content={m.layout_allCard_groupArchiveAll_tooltip()}>
@@ -638,7 +638,7 @@
               data-repository-group
               data-repository-key={repositoryGroup.key}
             >
-              <div class="section-header group flex items-center mx-1 pt-2 pb-1 min-w-0">
+              <div class="section-header group relative flex items-center mx-1 pt-2 pb-1 min-w-0">
                 <Button
                   variant="ghost"
                   type="button"
@@ -732,7 +732,7 @@
           {#each groupedByStatus as group (group.id)}
             {@const isExpanded = !$collapsedStatusGroupIds$.includes(group.id)}
             <div
-              class="section-header group flex items-center mx-1 pt-2 pb-1 mt-2 min-w-0"
+              class="section-header group relative flex items-center mx-1 pt-2 pb-1 mt-2 min-w-0"
               data-status-group={group.id}
             >
               <Button
