@@ -3495,9 +3495,13 @@
   // transcript pass rather than regrouping each date bucket for every consumer.
   const conversationTurnIndex = $derived(indexConversationTurns(groupedMessages));
   const hydrationMessages = $derived.by((): HydrationMessage[] =>
-    groupedMessages
-      .flatMap((group) => group.messages)
-      .filter((message) => message.role === 'user' || message.role === 'assistant')
+    conversationTurnIndex.groups
+      .flatMap(({ turns }) =>
+        turns.flatMap((turn) => [
+          ...(turn.userMessage ? [turn.userMessage] : []),
+          ...turn.bodyMessages,
+        ]),
+      )
       .map(({ id, role }) => ({ id, role })),
   );
 
@@ -4227,7 +4231,7 @@
   }
 
   // The controller order is the composed history + live-tail chronology, not
-  // turn position. User and assistant rows both register with the shared
+  // turn position. User, assistant, and inline system rows register with the shared
   // observer and follow the asymmetric displayport frontier; user rows never
   // dehydrate once hydrated (see message-hydration-policy.ts).
   $effect(() => {
