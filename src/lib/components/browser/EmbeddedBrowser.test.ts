@@ -549,6 +549,58 @@ describe('EmbeddedBrowser', () => {
         expect(rendered.queryByText(m.browser_embedded_resolveFailed_error())).toBeNull();
       });
 
+      it.each([
+        ['a link click', 'did-navigate', {}],
+        ['SPA history', 'did-navigate-in-page', { isMainFrame: true }],
+      ])(
+        'drops an alias resolution that finishes after %s in the page',
+        async (_label, eventName, extra) => {
+          const settle = deferredResolver();
+          const rendered = await submitAddress('daemon.localhost:3000');
+          expect(resolveCalls()).toHaveLength(1);
+
+          await fireEvent(
+            rendered.webview,
+            Object.assign(new Event(eventName), { url: 'https://example.test/clicked', ...extra }),
+          );
+
+          settle({
+            url: 'http://127.0.0.1:41234/',
+            rewritten: true,
+            requestedUrl: 'http://daemon.localhost:3000',
+            tunneled: true,
+            error: 'tunnel failed',
+          });
+          await new Promise((resolve) => setTimeout(resolve, 20));
+
+          expect(rendered.webview.loadURL).not.toHaveBeenCalled();
+          expect(rendered.queryByText(m.browser_embedded_resolveFailed_error())).toBeNull();
+        },
+      );
+
+      it('keeps an alias resolution when only an iframe navigated meanwhile', async () => {
+        const settle = deferredResolver();
+        const rendered = await submitAddress('daemon.localhost:3000');
+
+        await fireEvent(
+          rendered.webview,
+          Object.assign(new Event('did-navigate-in-page'), {
+            url: 'https://ads.example.test/frame',
+            isMainFrame: false,
+          }),
+        );
+
+        settle({
+          url: 'http://127.0.0.1:41234/',
+          rewritten: true,
+          requestedUrl: 'http://daemon.localhost:3000',
+          tunneled: true,
+        });
+        await waitFor(() =>
+          expect(rendered.webview.loadURL).toHaveBeenCalledWith('http://127.0.0.1:41234/'),
+        );
+      });
+
       it('drops an alias resolution that finishes after the browser unmounted', async () => {
         const settle = deferredResolver();
         const { webview, unmount } = await submitAddress('daemon.localhost:3000');

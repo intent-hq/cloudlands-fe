@@ -207,8 +207,9 @@
   // Flag to hide webview during URL switch to force recreation
   let isRecreatingWebview = $state(false);
 
-  // Bumped by every explicit navigation (and on unmount) so an async
-  // address-bar alias resolution that finishes after a newer navigation is
+  // Bumped by every explicit navigation (address bar, toolbar, unmount) and by
+  // every committed main-frame guest navigation (link clicks, SPA history) so an
+  // async address-bar alias resolution that finishes after a newer navigation is
   // dropped instead of loading its stale target over the newer page.
   let navigationGeneration = 0;
   // Resolver error attached to the current navigation: did-fail-load keeps it
@@ -686,7 +687,8 @@
       faviconUrl = '';
       isSecure = e.url?.startsWith('https://');
       errorMessage = '';
-      navigationResolverError = '';
+      // A committed main-frame navigation supersedes any pending alias resolution.
+      beginNavigation();
       // Update previousUrlProp to prevent the prop-change effect from re-triggering a load
       // when the parent updates its state in response to onNavigate
       recordEmbeddedBrowserNavigation(navigationSync, e.url);
@@ -700,6 +702,7 @@
       currentWebviewUrl = e.url;
       displayUrl = e.url;
       isSecure = e.url?.startsWith('https://');
+      beginNavigation();
       // Update previousUrlProp to prevent the prop-change effect from re-triggering a load
       recordEmbeddedBrowserNavigation(navigationSync, e.url);
       // Also call onNavigate for in-page navigation (e.g., clicking links that don't reload)
