@@ -154,7 +154,27 @@ test('pending submission blocks dismissal and permits retry after rejection', as
   await expect(save).toBeDisabled();
   await page.keyboard.press('Enter');
   await page.keyboard.press('Escape');
+  // Bits UI debounces outside pointer handling. Keep submission pending until
+  // that handler has actually rejected the click, rather than racing its timer.
+  await page.evaluate(() => {
+    document.addEventListener(
+      'pointerdown',
+      (event) => {
+        (window as Window & { auditOutsidePointer?: PointerEvent }).auditOutsidePointer = event;
+      },
+      { once: true, capture: true },
+    );
+  });
   await page.mouse.click(1, 1);
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () =>
+          (window as Window & { auditOutsidePointer?: PointerEvent }).auditOutsidePointer
+            ?.defaultPrevented,
+      ),
+    )
+    .toBe(true);
   await expect(dialog).toBeVisible();
   await expect(page.getByTestId('cancellation-count')).toHaveText('0');
   await expect(page.getByTestId('submission-count')).toHaveText('1');
