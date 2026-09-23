@@ -135,7 +135,7 @@
       }}
       class={cn(
         textClass,
-        'edit-input relative z-10 bg-transparent border-none outline-none px-0',
+        'edit-input relative z-10 bg-transparent hover:bg-transparent border-none outline-none px-0',
         'focus:outline-none!',
         'min-w-[60px]',
       )}
