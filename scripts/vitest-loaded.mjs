@@ -19,8 +19,9 @@
 //   LOADED_CORE=<n>  core to pin to (default: the last online core)
 //   LOADED_BUSY=<n>  number of busy loops (default: 3)
 //
-// The busy loops exit on their own when this process disappears (they watch
-// their parent pid), on top of being killed on every exit path here.
+// The busy loops exit on their own when this process disappears (they are
+// told this pid and watch their parent pid against it), on top of being killed
+// on every exit path here.
 
 import { spawn, spawnSync } from 'node:child_process';
 import { createRequire } from 'node:module';
@@ -33,10 +34,14 @@ export const DEFAULT_BUSY = 3;
 export const VITEST_CONFIG = 'vitest.config.ts';
 export const USAGE = 'Usage: pnpm test:loaded <vitest file or filter> [-- <extra vitest args>]';
 
-// A CPU-bound loop that polls its parent pid between bursts and exits once the
-// parent is gone, so a SIGKILLed harness cannot leave it behind.
+// A CPU-bound loop, run as `node -e BUSY_LOOP_SOURCE <harness pid>`, that
+// exits as soon as its parent pid is not the harness — checked before the first
+// burst and between bursts, so a harness SIGKILLed even before the loop's own
+// startup finished (the loop then starts already reparented) cannot leave it
+// behind. The pid is passed in rather than read from `process.ppid` at startup
+// for that reason.
 export const BUSY_LOOP_SOURCE =
-  'const parent = process.ppid; for (;;) { for (let i = 0; i < 1e7; i += 1); if (process.ppid !== parent) process.exit(0); }';
+  'const parent = Number(process.argv[1]); for (;;) { if (process.ppid !== parent) process.exit(0); for (let i = 0; i < 1e7; i += 1); }';
 
 /** Parses a Linux cpu list (`0-31`, `0-3,5,7-8`) into the sorted core ids it names. */
 export function parseCpuList(text) {
@@ -96,18 +101,19 @@ export function parseArgs(argv) {
 }
 
 /**
- * The commands to run: `busy` loops, then `vitest`, both prefixed with
- * `taskset -c <core>` when `pinned`. Vitest runs the default config with one
- * worker so the whole file shares the pinned core with the busy loops.
+ * The commands to run: `busy` loops told `harnessPid` to watch for, then
+ * `vitest`, both prefixed with `taskset -c <core>` when `pinned`. Vitest runs
+ * the default config with one worker so the whole file shares the pinned core
+ * with the busy loops.
  */
-export function planRun({ execPath, vitestBin, vitestArgs, core, busy, pinned }) {
+export function planRun({ execPath, vitestBin, vitestArgs, core, busy, pinned, harnessPid }) {
   const prefix = pinned ? ['taskset', '-c', String(core)] : [];
   const command = (args) => {
     const argv = [...prefix, execPath, ...args];
     return { executable: argv[0], args: argv.slice(1) };
   };
   return {
-    busy: Array.from({ length: busy }, () => command(['-e', BUSY_LOOP_SOURCE])),
+    busy: Array.from({ length: busy }, () => command(['-e', BUSY_LOOP_SOURCE, String(harnessPid)])),
     vitest: command([vitestBin, 'run', '--config', VITEST_CONFIG, '--maxWorkers=1', ...vitestArgs]),
     notice: pinned
       ? `test:loaded: vitest pinned to core ${core} with ${busy} busy loop(s)`
@@ -144,6 +150,7 @@ function main(argv, env) {
     core: pinned ? pickCore(readOnlineCores(), env.LOADED_CORE) : undefined,
     busy: pickBusyCount(env.LOADED_BUSY),
     pinned,
+    harnessPid: process.pid,
   });
   console.error(plan.notice);
 

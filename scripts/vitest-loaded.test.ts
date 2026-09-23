@@ -1,4 +1,5 @@
 // @vitest-environment node
+import { spawn, type ChildProcess } from 'node:child_process';
 import { describe, expect, it } from 'vitest';
 import {
   BUSY_LOOP_SOURCE,
@@ -77,6 +78,7 @@ describe('planRun', () => {
     vitestArgs: ['src/a.test.ts', '--reporter=verbose'],
     core: 31,
     busy: 3,
+    harnessPid: 4242,
   };
 
   it('pins the busy loops and a one-worker vitest to the same core', () => {
@@ -85,7 +87,7 @@ describe('planRun', () => {
     for (const loop of plan.busy) {
       expect(loop).toEqual({
         executable: 'taskset',
-        args: ['-c', '31', '/usr/bin/node', '-e', BUSY_LOOP_SOURCE],
+        args: ['-c', '31', '/usr/bin/node', '-e', BUSY_LOOP_SOURCE, '4242'],
       });
     }
     expect(plan.vitest).toEqual({
@@ -111,7 +113,7 @@ describe('planRun', () => {
     expect(plan.busy).toHaveLength(2);
     expect(plan.busy[0]).toEqual({
       executable: '/usr/bin/node',
-      args: ['-e', BUSY_LOOP_SOURCE],
+      args: ['-e', BUSY_LOOP_SOURCE, '4242'],
     });
     expect(plan.vitest.executable).toBe('/usr/bin/node');
     expect(plan.vitest.args).toEqual([
@@ -130,5 +132,46 @@ describe('planRun', () => {
   it('never sets CI in the vitest command line', () => {
     const plan = planRun({ ...base, pinned: true });
     expect(plan.vitest.args.join(' ')).not.toMatch(/\bCI\b/);
+  });
+});
+
+describe('busy loop lifecycle', () => {
+  /** Runs the loop source exactly as the harness does, told `harnessPid`. */
+  function spawnLoop(harnessPid: number): ChildProcess {
+    return spawn(process.execPath, ['-e', BUSY_LOOP_SOURCE, String(harnessPid)], {
+      stdio: 'ignore',
+    });
+  }
+
+  function exitOf(loop: ChildProcess): Promise<number | null> {
+    return new Promise((resolve) => loop.once('exit', (code) => resolve(code)));
+  }
+
+  function settle(ms: number): Promise<void> {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+  }
+
+  it('exits on its own when it starts already orphaned from the harness', async () => {
+    // A harness SIGKILLed before the loop's startup finished leaves the loop
+    // reparented by the time its source runs: its parent is then not the
+    // harness pid it was told, which is the situation this reproduces by
+    // naming a pid that is not this process. Use a pid that does not exist so
+    // it cannot be the adopter either.
+    const loop = spawnLoop(2 ** 22 - 1);
+    const exit = exitOf(loop);
+    await expect(Promise.race([exit, settle(5000).then(() => 'still running')])).resolves.toBe(0);
+  });
+
+  it('keeps running while its parent is the harness it was told', async () => {
+    const loop = spawnLoop(process.pid);
+    const exit = exitOf(loop);
+    try {
+      await expect(Promise.race([exit, settle(500).then(() => 'still running')])).resolves.toBe(
+        'still running',
+      );
+    } finally {
+      loop.kill('SIGKILL');
+      await exit;
+    }
   });
 });
