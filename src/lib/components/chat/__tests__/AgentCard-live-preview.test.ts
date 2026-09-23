@@ -134,9 +134,7 @@ describe('AgentCard live preview precedence', () => {
     const content = container.querySelector('.agent-card-content');
     const trailing = screen.getByTestId('agent-card-trailing-slot');
     expect(trigger.getAttribute('aria-label')).toBe('Task progress: 1 of 7 completed');
-    expect(trigger.className).toContain('h-(--row-action-target-compact)');
-    expect(trigger.className).toContain('min-w-(--row-action-target-compact)');
-    expect(trigger.className).toContain('w-fit');
+    expect(trigger.getAttribute('aria-expanded')).toBe('false');
     expect(
       within(trigger)
         .getAllByTestId('task-progress-status-icon')
@@ -159,6 +157,7 @@ describe('AgentCard live preview precedence', () => {
     expect(screen.queryByRole('dialog', { name: 'Agent tasks' })).toBeNull();
     await fireEvent.click(trigger);
     expect(await screen.findByRole('dialog', { name: 'Agent tasks' })).toBeTruthy();
+    expect(trigger.getAttribute('aria-expanded')).toBe('true');
     expect(document.activeElement).toBe(trigger);
   });
 

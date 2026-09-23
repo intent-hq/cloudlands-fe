@@ -257,13 +257,7 @@ describe('AgentTabType agent model reactivity', () => {
     expect(screen.getByTestId('task-progress-trigger').getAttribute('aria-label')).toBe(
       'Task progress: 1 of 2 completed',
     );
-    expect(screen.getByTestId('task-progress-trigger').className).toContain(
-      'h-(--row-action-target-compact)',
-    );
-    expect(screen.getByTestId('task-progress-trigger').className).toContain(
-      'min-w-(--row-action-target-compact)',
-    );
-    expect(screen.getByTestId('task-progress-trigger').className).toContain('w-fit');
+    expect(screen.getByTestId('task-progress-trigger').getAttribute('aria-expanded')).toBe('false');
     expect(screen.getByTestId('task-progress-checklist-icon')).toBeTruthy();
     expect(
       header.querySelectorAll('[data-testid="task-progress-checklist-icon"] svg'),
@@ -275,6 +269,7 @@ describe('AgentTabType agent model reactivity', () => {
     expect(screen.queryByRole('dialog', { name: 'Agent tasks' })).toBeNull();
     await fireEvent.click(screen.getByTestId('task-progress-trigger'));
     const dialog = await screen.findByRole('dialog', { name: 'Agent tasks' });
+    expect(screen.getByTestId('task-progress-trigger').getAttribute('aria-expanded')).toBe('true');
     expect(dialog.querySelectorAll('[data-testid="task-progress-row"]')).toHaveLength(2);
     expect(dialog.querySelectorAll('[data-testid="task-progress-row-status-icon"]')).toHaveLength(
       2,
