@@ -3,8 +3,9 @@ import ts from 'typescript';
 import { parse } from 'svelte/compiler';
 import { hash, inside, isTestFile, slash, Sources } from './files.ts';
 import type { Analysis, Config, Fragment, Target, Trace } from './types.ts';
+import { CHECKS_VERSION, checkAssertion, checkFixtureLayout } from './assertion-checks.ts';
 
-export const ANALYZER_VERSION = '5';
+export const ANALYZER_VERSION = `6/checks-${CHECKS_VERSION}`;
 type Module = {
   source: ts.SourceFile;
   declarations: Map<string, ts.Node>;
@@ -687,6 +688,7 @@ export class Analyzer {
           ...loc,
           code: loc.code.slice(0, 4000),
           status: test.target.status,
+          findings: checkAssertion(assertion.node, assertion.module.source),
         });
         if (loc.code.length > 4000) warnings.add('Assertion exceeds excerpt budget');
       }
@@ -696,6 +698,15 @@ export class Analyzer {
         );
       if (chain(test.node.expression).some((p) => ['each', 'for'].includes(p)))
         warnings.add('Parameterized test: one static declaration, not expanded runtime cases');
+      targets[0].findings = [
+        ...targets.slice(1).flatMap((target) => target.findings ?? []),
+        ...checkFixtureLayout(
+          test.node,
+          [...new Set(fragments.map((fragment) => fragment.file))]
+            .filter((related) => related.endsWith('.svelte'))
+            .map((related) => ({ file: related, code: this.sources.read(related) })),
+        ),
+      ];
       const trace: Trace = {
         id: '',
         version: ANALYZER_VERSION,
@@ -717,6 +728,7 @@ export class Analyzer {
       endLine: source.split('\n').length,
       code: tests.length ? '' : source.slice(0, this.config.maxContextChars),
       status: 'active',
+      findings: traces.flatMap((trace) => trace.targets[0].findings ?? []),
     };
     const perTestBudget = Math.max(
       0,

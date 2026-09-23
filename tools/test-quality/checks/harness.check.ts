@@ -457,3 +457,71 @@ test('many context warnings cannot crowd production evidence out of a request', 
   assert.ok(state.fragments.some((f) => f.file === 'src/policy.ts'));
   assert.ok(Buffer.byteLength(JSON.stringify(state)) <= 24000);
 });
+
+test('audit persists findings offline and report surfaces them independently of model scores', async (t) => {
+  const { root, put, store, config } = fixture(t);
+  put(
+    'weak.test.ts',
+    `test('literal',()=>{ const response={ok:true}; expect(response.ok).toBe(true); });`,
+  );
+  const cli = fileURLToPath(new URL('../src/cli.ts', import.meta.url));
+  const audited = spawnSync(
+    process.execPath,
+    [
+      cli,
+      'audit',
+      'weak.test.ts',
+      '--root',
+      root,
+      '--env',
+      '.',
+      '--format',
+      'json',
+      '--fail-on-findings',
+    ],
+    { encoding: 'utf8' },
+  );
+  assert.equal(audited.status, 2, audited.stderr);
+  const output = JSON.parse(audited.stdout);
+  assert.equal(output.metrics.requests, 0);
+  assert.equal(output.summary.errors, 0);
+  assert.equal(output.summary.findings, 1);
+  assert.equal(output.scoreMetric, 'static-checks');
+  const saved = spawnSync(
+    process.execPath,
+    [
+      cli,
+      'report',
+      '--root',
+      root,
+      '--run',
+      output.run.id,
+      '--kind',
+      'test',
+      '--failing-only',
+      '--format',
+      'json',
+    ],
+    { encoding: 'utf8' },
+  );
+  assert.equal(saved.status, 0, saved.stderr);
+  assert.equal(JSON.parse(saved.stdout).results[0].target.findings[0].rule, 'fixture-only-value');
+  const { traces } = scan(root, config, ['weak.test.ts'], store);
+  const run = await evaluate(
+    store,
+    traces,
+    { apiKey: 'fixture', batchSize: 8, concurrency: 1, judge: judgeFixture },
+    {},
+  );
+  const value = report(store.run(run.runId), store.results(run.runId), {
+    threshold: 60,
+    minConfidence: 0.6,
+    failingOnly: true,
+    kind: 'test',
+  });
+  assert.equal(value.results.length, 1);
+  assert.equal(value.results[0].score!.overall, 80);
+  assert.equal(value.results[0].status, 'finding');
+  assert.equal(value.results[0].lowScore, false);
+  assert.match(textReport(value), /fixture-only-value/);
+});

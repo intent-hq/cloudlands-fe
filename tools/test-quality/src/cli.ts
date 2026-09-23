@@ -9,6 +9,7 @@ import { Store } from './database.ts';
 import { batches, evaluate, scan } from './runner.ts';
 import { report, textReport } from './report.ts';
 import { DEFAULT_MODEL } from './jev.ts';
+import { CHECKS_VERSION } from './assertion-checks.ts';
 
 const help = `Test quality evaluator (Node 24.15+, standalone package)
 
@@ -16,6 +17,7 @@ node tools/test-quality/src/cli.ts <command> [paths or quoted globs] [options]
 
 Commands:
   scan       Build/cache AST traces offline; list static targets and request count
+  audit      Run explicit assertion checks offline and save findings; no model calls
   evaluate   Judge selected files/tests with Jev and save an immutable run
   report     Read saved scores; no API key or source checkout needed
   trace      Retrieve exact saved context with --id <trace-id>
@@ -31,11 +33,12 @@ Execution: --concurrency <1..32> (default 4) --batch-size <1..8> (default 8)
 Reports:   --run <run-id> (default latest) --format text|json --kind file|test|assertion
            --threshold <0..100> (default 60) --min-confidence <0..1> (default 0.6)
            --failing-only --limit <count> --fail-on-low
+           --fail-on-findings (exit 2 for explicit review findings)
 
 Version 2 thresholds use quality only; criticality is reported separately.
 Earlier saved runs keep their legacy combined score and are labeled accordingly.
 
-Exit codes: 0 success, 1 error or partial run, 2 low score with --fail-on-low.
+Exit codes: 0 success, 1 error or partial run, 2 configured low-score or finding gate.
 Paths are relative to --root. No tests execute. Jev receives selected source excerpts.
 Use --config tools/test-quality/repository.config.json for this repository's aliases.
 Harness checks: pnpm --dir tools/test-quality test
@@ -64,6 +67,7 @@ export async function main(args: string[]): Promise<number> {
       'failing-only': { type: 'boolean' },
       limit: { type: 'string' },
       'fail-on-low': { type: 'boolean' },
+      'fail-on-findings': { type: 'boolean' },
       id: { type: 'string' },
       help: { type: 'boolean', short: 'h' },
     },
@@ -73,7 +77,7 @@ export async function main(args: string[]): Promise<number> {
     console.log(help);
     return 0;
   }
-  if (!['scan', 'evaluate', 'report', 'trace', 'history', 'evaluation'].includes(command))
+  if (!['scan', 'audit', 'evaluate', 'report', 'trace', 'history', 'evaluation'].includes(command))
     throw new Error(`Unknown command: ${command}`);
   const number = (
     key: keyof typeof values,
@@ -108,7 +112,7 @@ export async function main(args: string[]): Promise<number> {
       ? undefined
       : number('max-requests', 0, 0, Number.MAX_SAFE_INTEGER, true);
   const dbPath = path.resolve(root, values.db ?? '.test-quality/results.sqlite');
-  if (!['scan', 'evaluate'].includes(command) && !existsSync(dbPath))
+  if (!['scan', 'audit', 'evaluate'].includes(command) && !existsSync(dbPath))
     throw new Error(`Database not found: ${dbPath}`);
   const store = new Store(dbPath);
   const output = (value: unknown): void => {
@@ -138,10 +142,10 @@ export async function main(args: string[]): Promise<number> {
         cachedFiles: result.cachedFiles,
         traces: result.traces.length,
         targets: result.traces.reduce((n, t) => n + t.targets.length, 0),
-        requestsBeforeScoreCache: result.traces.reduce(
-          (n, t) => n + batches(t, batchSize).length,
-          0,
-        ),
+        requestsBeforeScoreCache:
+          command === 'audit'
+            ? 0
+            : result.traces.reduce((n, t) => n + batches(t, batchSize).length, 0),
         elapsedMs: Math.round(performance.now() - start),
       };
       if (command === 'scan') {
@@ -161,28 +165,44 @@ export async function main(args: string[]): Promise<number> {
           );
         return 0;
       }
-      const envPath = path.resolve(root, values.env ?? '.env');
-      const env = existsSync(envPath) ? parseEnv(readFileSync(envPath, 'utf8')) : {};
-      const apiKey = process.env.TYPESAFE_API_KEY || env.TYPESAFE_API_KEY;
-      const resultEval = await evaluate(
-        store,
-        result.traces,
-        {
-          apiKey,
-          model: values.model,
-          fresh: values.fresh,
-          concurrency,
-          batchSize,
-          maxRequests,
-          progress: (done, total) => {
-            if (done === total || done % 25 === 0)
-              console.error(`Evaluated ${done}/${total} batches`);
+      if (command === 'audit') {
+        runId = store.start({
+          assessment: 'static',
+          checksVersion: CHECKS_VERSION,
+          root,
+          config,
+          selectors,
+          name: values.name,
+        });
+        for (const trace of result.traces)
+          for (const target of trace.targets)
+            store.result(runId, target, trace.id, null, null, trace.warnings, null, false);
+        store.finish(runId, 'complete');
+        metrics = { ...summary, elapsedMs: Math.round(performance.now() - start), requests: 0 };
+      } else {
+        const envPath = path.resolve(root, values.env ?? '.env');
+        const env = existsSync(envPath) ? parseEnv(readFileSync(envPath, 'utf8')) : {};
+        const apiKey = process.env.TYPESAFE_API_KEY || env.TYPESAFE_API_KEY;
+        const resultEval = await evaluate(
+          store,
+          result.traces,
+          {
+            apiKey,
+            model: values.model,
+            fresh: values.fresh,
+            concurrency,
+            batchSize,
+            maxRequests,
+            progress: (done, total) => {
+              if (done === total || done % 25 === 0)
+                console.error(`Evaluated ${done}/${total} batches`);
+            },
           },
-        },
-        { root, config, selectors, name: values.name, scan: summary },
-      );
-      runId = resultEval.runId;
-      metrics = resultEval;
+          { root, config, selectors, name: values.name, scan: summary },
+        );
+        runId = resultEval.runId;
+        metrics = resultEval;
+      }
     }
     const run = store.run(runId);
     const value = report(run, store.results(run.id), {
@@ -198,7 +218,10 @@ export async function main(args: string[]): Promise<number> {
       if (metrics) console.log(JSON.stringify(metrics));
     }
     if (run.status !== 'complete' || value.summary.errors) return 1;
-    return values['fail-on-low'] && value.summary.lowScores ? 2 : 0;
+    return (values['fail-on-low'] && value.summary.lowScores) ||
+      (values['fail-on-findings'] && value.summary.findings)
+      ? 2
+      : 0;
   } finally {
     store.close();
   }

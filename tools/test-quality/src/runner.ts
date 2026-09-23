@@ -60,6 +60,16 @@ export function batches(
     const targets = trace.targets.slice(i, i + batchSize);
     const warnings = [...trace.warnings];
     const shorten = (target: Target, limit: number): Target => {
+      if ((target.findings?.length ?? 0) > 6)
+        warnings.push(
+          `Additional explicit findings for ${target.id} are retained in the saved trace.`,
+        );
+      target = {
+        ...target,
+        findings: target.findings
+          ?.slice(0, 6)
+          .map((finding) => ({ ...finding, code: finding.code.slice(0, 160) })),
+      };
       if (target.code.length <= limit) return target;
       warnings.push(`Request target excerpt truncated: ${target.id}`);
       return { ...target, code: target.code.slice(0, limit) };

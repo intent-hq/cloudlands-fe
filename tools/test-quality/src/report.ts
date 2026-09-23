@@ -12,11 +12,21 @@ export function report(run: RunRow, rows: ResultRow[], options: ReportOptions) {
   const classified = rows.map((row) => {
     const lowScore = row.score !== null && row.score.overall < options.threshold;
     const review =
+      (row.target.findings?.length ?? 0) > 0 ||
       row.warnings.length > 0 ||
       (row.score !== null && row.score.confidence < options.minConfidence) ||
       row.target.status !== 'active';
-    const status =
-      row.error || !row.score ? 'error' : lowScore ? 'low-score' : review ? 'review' : 'pass';
+    const status = row.error
+      ? 'error'
+      : row.target.findings?.length
+        ? 'finding'
+        : lowScore
+          ? 'low-score'
+          : !row.score
+            ? 'unscored'
+            : review
+              ? 'review'
+              : 'pass';
     return { ...row, status, lowScore, review };
   });
   const childrenByParent = new Map<string, typeof classified>();
@@ -65,7 +75,7 @@ export function report(run: RunRow, rows: ResultRow[], options: ReportOptions) {
     .filter(
       (r) =>
         (!options.kind || r.target.kind === options.kind) &&
-        (!options.failingOnly || r.lowScore || r.status === 'error'),
+        (!options.failingOnly || r.lowScore || r.status === 'error' || r.status === 'finding'),
     )
     .sort(
       (a, b) =>
@@ -75,11 +85,16 @@ export function report(run: RunRow, rows: ResultRow[], options: ReportOptions) {
     );
   return {
     run: { ...run, options: JSON.parse(run.options) },
-    scoreMetric: rows.some((row) => row.score?.quality !== undefined)
-      ? 'quality'
-      : 'legacy-combined',
+    scoreMetric:
+      JSON.parse(run.options).assessment === 'static'
+        ? 'static-checks'
+        : rows.some((row) => row.score?.quality !== undefined)
+          ? 'quality'
+          : 'legacy-combined',
     rubricNote:
-      'Version 2 thresholds apply to quality alone; criticality is separate. Earlier runs retain their legacy combined scores. These are static estimates, not measured defect-prevention probabilities. Review evidence before changing tests.',
+      JSON.parse(run.options).assessment === 'static'
+        ? 'Offline AST checks only; no model scores assigned. Findings identify patterns for review, not proven defects. An empty finding list does not certify test quality.'
+        : 'Version 2 thresholds apply to quality alone; criticality is separate. Earlier runs retain their legacy combined scores. These are static estimates, not measured defect-prevention probabilities. Review evidence before changing tests.',
     policy: options,
     summary: {
       targets: rows.length,
@@ -89,6 +104,12 @@ export function report(run: RunRow, rows: ResultRow[], options: ReportOptions) {
       lowScores: classified.filter((r) => r.lowScore).length,
       review: classified.filter((r) => r.review).length,
       errors: classified.filter((r) => r.status === 'error').length,
+      findingTargets: classified.filter((r) => r.status === 'finding').length,
+      findings: new Set(
+        rows
+          .flatMap((row) => row.target.findings ?? [])
+          .map((f) => JSON.stringify([f.rule, f.file, f.line, f.code])),
+      ).size,
       cachedTargets: classified.filter((r) => r.cached).length,
       matching: matching.length,
     },
@@ -102,6 +123,7 @@ export function textReport(value: ReturnType<typeof report>): string {
   const lines = [
     `Run ${value.run.id} (${value.run.status})`,
     `${s.files} files, ${s.tests} tests, ${s.assertions} assertion sites; ${s.lowScores} low scores, ${s.review} need review, ${s.errors} errors.`,
+    `${s.findings} explicit check findings (review candidates, not model scores).`,
     `Threshold: ${value.policy.threshold}/100 (${value.scoreMetric}); confidence floor: ${value.policy.minConfidence}.`,
     value.rubricNote,
     '',
@@ -122,6 +144,10 @@ export function textReport(value: ReturnType<typeof report>): string {
           .join(' ')} confidence=${row.score.confidence.toFixed(2)}`,
       );
     if (row.error) lines.push(`  error: ${row.error}`);
+    for (const finding of row.target.findings ?? [])
+      lines.push(
+        `  finding [${finding.rule}] ${finding.file}:${finding.line}: ${finding.message}\n    ${finding.code.replaceAll('\n', ' ')}`,
+      );
     if (row.warnings.length) lines.push(`  review: ${row.warnings.join('; ')}`);
   }
   if (value.results.length < s.matching)

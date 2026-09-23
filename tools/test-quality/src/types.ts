@@ -7,6 +7,15 @@ export interface Config {
   maxDepth: number;
 }
 
+export interface Finding {
+  rule: 'nullish-equality' | 'empty-every' | 'fixture-only-value' | 'fixture-owned-layout';
+  certainty: 'review';
+  file: string;
+  line: number;
+  code: string;
+  message: string;
+}
+
 export interface Target {
   id: string;
   kind: 'file' | 'test' | 'assertion';
@@ -17,6 +26,7 @@ export interface Target {
   code: string;
   parentId?: string;
   status: 'active' | 'skipped' | 'todo' | 'conditional';
+  findings?: Finding[];
 }
 
 export interface Fragment {
