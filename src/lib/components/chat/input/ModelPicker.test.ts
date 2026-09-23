@@ -3170,6 +3170,66 @@ describe('ModelPicker disabled agent provider (intent#5737)', () => {
     expect(vi.mocked(notify.info)).not.toHaveBeenCalled();
   });
 
+  it('warns while no catalog has resolved yet — the warning never waits behind a fetch', async () => {
+    enabledProvidersMap$.set({ auggie: true, codex: false });
+    mockAgentSession$.set({ id: 'agent-1', workspaceId: 'ws-1', provider: 'codex' });
+    // Every catalog fetch hangs: nothing about the disabled provider can be
+    // learned from the network, only from settings.
+    vi.mocked(getModelsForProviderForLoadingState).mockImplementation(() => new Promise(() => {}));
+
+    render(ModelPicker, {
+      props: {
+        selectedModel: 'codex:gpt-5-codex',
+        agentId: 'agent-1',
+        workspaceId: 'ws-1',
+        portal: false,
+      },
+    });
+
+    const trigger = await screen.findByRole('button');
+    await waitFor(() => {
+      expect(trigger.querySelector('[data-icon="triangle-exclamation"]')).not.toBeNull();
+    });
+    const tooltip = trigger.querySelector('[title]')?.getAttribute('title') ?? '';
+    expect(tooltip).toMatch(/Codex/);
+    expect(tooltip).toMatch(/disabled/i);
+  });
+
+  it('attributes a bare model id shared by several catalogs to the agent provider, not the default one', async () => {
+    enabledProvidersMap$.set({ auggie: true, codex: false });
+    mockAgentSession$.set({ id: 'agent-1', workspaceId: 'ws-1', provider: 'codex' });
+    // Both catalogs list the same bare id; the default provider (auggie) is
+    // enabled, but the agent still sends through codex.
+    vi.mocked(getModelsForProviderForLoadingState).mockImplementation(async (providerId) => {
+      if (providerId === 'codex' || providerId === 'auggie') {
+        return { models: [{ value: 'shared-model', label: 'Shared model', description: '' }] };
+      }
+      return { models: [] };
+    });
+
+    render(ModelPicker, {
+      props: {
+        selectedModel: 'shared-model',
+        agentId: 'agent-1',
+        workspaceId: 'ws-1',
+        portal: false,
+      },
+    });
+
+    const trigger = await screen.findByRole('button');
+    // The enabled default provider's catalog has loaded and owns the id too.
+    await fireEvent.click(trigger);
+    expect(await screen.findByRole('option', { name: /Shared model/ })).toBeTruthy();
+    await fireEvent.keyDown(document.activeElement ?? trigger, { key: 'Escape' });
+
+    await waitFor(() => {
+      expect(trigger.querySelector('[data-icon="triangle-exclamation"]')).not.toBeNull();
+    });
+    const tooltip = trigger.querySelector('[title]')?.getAttribute('title') ?? '';
+    expect(tooltip).toMatch(/Codex/);
+    expect(tooltip).toMatch(/disabled/i);
+  });
+
   it('announces the daemon re-home once when the session lands on another provider', async () => {
     const { agentClient } = await import('$features/agent/agent.client');
     const { notify } = await import('$lib/components/patterns/notify');

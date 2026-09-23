@@ -1067,6 +1067,9 @@
     // A `<provider>:default` selection mapped to its D2 row renders that
     // row's label — resolved even while other providers are still loading.
     if (legacyDefaultMappedOption) return true;
+    // The disabled-provider warning derives from settings alone and must not
+    // wait behind the disabled provider's catalog, which may never load.
+    if (isSelectedModelProviderDisabled) return true;
     if (!isLoadingModels && allProvidersLoaded) return true;
     for (const models of Object.values(allProviderModels)) {
       if (models.some((m) => m.value === localModel)) return true;
@@ -1292,15 +1295,22 @@
       : '',
   );
 
-  // The selected model's own provider (the effective provider when the model
-  // inherits it) was disabled in settings — the pre-send warning state.
+  // Provider the daemon resolves the selected model against on send: a legacy
+  // compound prefix, else the agent's own provider. Catalog ownership is not
+  // authoritative here — a bare id shared by several catalogs would be
+  // attributed to the default provider while the agent still runs elsewhere.
+  const selectedModelGateProviderId = $derived.by(() => {
+    const legacyProviderId =
+      hasExplicitModel && localModel ? splitLegacyCompoundId(localModel).providerId : '';
+    return normalizeProviderId(legacyProviderId || effectiveProviderId);
+  });
+
+  // The provider the selected model is sent through was disabled in settings —
+  // the pre-send warning state.
   const isSelectedModelProviderDisabled = $derived(
     !!agentId &&
       !isGuestLocked &&
-      isProviderDisabledInSettings(
-        $enabledProviders$,
-        selectedModelProviderId || effectiveProviderId,
-      ),
+      isProviderDisabledInSettings($enabledProviders$, selectedModelGateProviderId),
   );
 
   const providerTabIds = $derived.by(() => [
@@ -1601,7 +1611,7 @@
       return {
         title: m.chat_modelPicker_noLongerAvailable_title({ model: currentModelLabel }),
         description: m.chat_modelPicker_providerDisabled_description({
-          provider: providerDisplayName(selectedModelProviderId || effectiveProviderId),
+          provider: providerDisplayName(selectedModelGateProviderId),
         }),
       };
     }
