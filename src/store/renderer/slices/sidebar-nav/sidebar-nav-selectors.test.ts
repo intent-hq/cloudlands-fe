@@ -188,7 +188,7 @@ describe('sidebar nav Chief selectors', () => {
     expect(result).toEqual([
       expect.objectContaining({
         agentId: chief.id,
-        title: 'New chat with Intent',
+        title: 'New chat with Assistant',
         preview: 'No messages yet.',
         messageCount: 0,
       }),
@@ -206,7 +206,7 @@ describe('sidebar nav Chief selectors', () => {
     expect(result).toEqual([
       expect.objectContaining({
         agentId: chief.id,
-        title: 'New chat with Intent',
+        title: 'New chat with Assistant',
         preview: 'No messages yet.',
         messageCount: 0,
       }),

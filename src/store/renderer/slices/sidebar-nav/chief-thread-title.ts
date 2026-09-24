@@ -14,7 +14,7 @@ import { DEFAULT_CHIEF_THREAD_TITLE } from './sidebar-nav-types';
 /**
  * True when `name` is one of the creation placeholders a chief thread can
  * carry before its first real rename: empty/blank, the ChiefCard placeholder
- * (`DEFAULT_CHIEF_THREAD_TITLE`), the legacy "Chief of Staff" name, or a
+ * (`DEFAULT_CHIEF_THREAD_TITLE`), a legacy placeholder, or a
  * generated "New thread …" name. Shared by the title derivation below and
  * the chat-send rename trigger's "daemon-side name is still the placeholder"
  * guard (monorepo#745).
@@ -24,6 +24,7 @@ export function isPlaceholderChiefThreadName(name: string | undefined | null): b
   return (
     !trimmed ||
     trimmed === DEFAULT_CHIEF_THREAD_TITLE ||
+    trimmed === 'New chat with Intent' || // i18n-ignore (matches daemon-stored legacy name)
     trimmed === 'Chief of Staff' || // i18n-ignore (matches daemon-stored legacy name)
     trimmed.startsWith('New thread ') // i18n-ignore (matches daemon-generated placeholder)
   );
