@@ -522,7 +522,6 @@ describe('settings tab route and focus behavior', () => {
     ['machines', 'Devices', 'page'],
     ['interface-system', 'Appearance', 'page'],
     ['input', 'Input and shortcuts', 'page'],
-    ['labs', 'Labs', 'page'],
     ['unknown', 'Appearance', 'page'],
   ])('maps ?tab=%s to %s', async (tab, label, current) => {
     renderSettings(`/settings?tab=${tab}`);
@@ -598,9 +597,6 @@ describe('settings tab route and focus behavior', () => {
     ['/settings?tab=advanced#websocket-api', 'Devices', 'websocket-api'],
     ['/settings?tab=agent-behavior#agent-features', 'Agent defaults', 'agent-features'],
     ['/settings?tab=behavior#agent-features', 'Agent defaults', 'agent-features'],
-    ['/settings?tab=labs#labs-multiplayer', 'Labs', 'labs-multiplayer'],
-    ['/settings#labs-multiplayer', 'Labs', 'labs-multiplayer'],
-    ['/settings#multiplayer', 'Labs', 'labs-multiplayer'],
   ])('routes canonical and legacy URL %s to %s', async (url, category, sectionId) => {
     renderSettings(url);
 
