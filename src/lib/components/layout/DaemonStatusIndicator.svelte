@@ -89,7 +89,6 @@
    */
 
   import { m } from '$shared/paraglide/messages.js';
-  import { tick } from 'svelte';
   import { cn } from '$lib/utils';
   import { formatTransportLabel } from '$lib/utils/daemon-status-format';
   import Fa from 'svelte-fa';
@@ -175,25 +174,6 @@
 
   let dropdownOpen = $state(false);
   let menuBody = $state<HTMLDivElement | null>(null);
-  let detailsContent = $state<HTMLDivElement | null>(null);
-
-  async function focusInformationalDetails(event: KeyboardEvent & { currentTarget: HTMLElement }) {
-    if (!['ArrowRight', 'Enter', ' '].includes(event.key)) return;
-    const trigger = event.currentTarget;
-    // Let the primitive open first. It focuses enabled items, but has no fallback
-    // for informational content; ArrowLeft must originate inside the submenu.
-    await tick();
-    const content = detailsContent;
-    if (
-      content &&
-      trigger.getAttribute('aria-expanded') === 'true' &&
-      document.activeElement === trigger &&
-      !content.querySelector('[data-menu-item]:not([data-disabled]):not([aria-disabled="true"])')
-    ) {
-      content.focus({ preventScroll: true });
-    }
-  }
-
   // Align the details surface to the parent menu, not its inset first row.
   const menuAnchor = $derived(menuBody?.closest<HTMLElement>('[data-slot="menu-content"]') ?? null);
   let liveUptimeSeconds = $state<number | undefined>(undefined);
@@ -592,15 +572,11 @@
     -->
     <div bind:this={menuBody} class="min-w-56 w-max max-w-80">
       <Menu.Sub>
-        <Menu.SubTrigger
-          class="w-full cursor-pointer text-xs px-3 py-1.5"
-          onkeydown={focusInformationalDetails}
-        >
+        <Menu.SubTrigger class="w-full cursor-pointer text-xs px-3 py-1.5">
           {detailsStatusLabel}
         </Menu.SubTrigger>
         <!-- This details panel aligns to the whole menu, not the triggering row. -->
         <Menu.SubContent
-          bind:ref={detailsContent}
           side="left"
           align="start"
           alignOffset={0}
