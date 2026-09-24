@@ -14,7 +14,7 @@ export function thinking(id: string, text: string): ContentBlock {
   return { type: 'thinking', id, text };
 }
 
-export function withReasoningLayout(
+function withReasoningLayout(
   children: ContentBlock[],
   layout: ReasoningLayout,
   completed: boolean,

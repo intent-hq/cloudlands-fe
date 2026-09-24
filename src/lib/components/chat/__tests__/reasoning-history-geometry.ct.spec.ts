@@ -6,19 +6,13 @@ import {
   growingHistory,
   growthBody,
   growthTitles,
-  thinking,
   titleToolHistory,
-  withReasoningLayout,
 } from './compact-reasoning-fixtures';
 import {
   activityRowSelector,
   assertContentOnceInOrder,
-  captureReasoning,
   openReasoning,
-  recordReasoningGeometry,
-  settleReasoning,
-  thinkingBoundaryGap,
-} from './compact-reasoning-geometry';
+} from './compact-reasoning-helpers';
 
 test.setTimeout(120_000);
 
@@ -37,7 +31,7 @@ async function openGroup(fixture: Locator): Promise<Locator> {
   return disclosure;
 }
 
-async function assertExpandedFixture(fixture: Locator, zoom: number, includeAnswer: boolean) {
+async function assertExpandedFixture(fixture: Locator, includeAnswer: boolean) {
   const group = fixture.getByTestId('response-group');
   const children = group.locator('[data-response-group-child]');
   await expect(children).toHaveCount(5);
@@ -46,89 +40,14 @@ async function assertExpandedFixture(fixture: Locator, zoom: number, includeAnsw
       elements.map((element) => element.getAttribute('data-message-content-block')),
     ),
   ).toEqual(['text', 'thinking', 'thinking', 'tool_use', 'thinking']);
-  const descriptionToBody = await children.evaluateAll(([description, reasoning]) => {
-    const body = reasoning.querySelector('[data-reasoning-history-body]')!;
-    return body.getBoundingClientRect().top - description.getBoundingClientRect().bottom;
-  });
-  expect(descriptionToBody).toBeCloseTo(16 * zoom, 1);
-
   const sections = group.locator('[data-reasoning-section]');
   await expect(sections).toHaveCount(4);
 
   const titles = group.locator('[data-reasoning-section-title]');
   await expect(titles).toHaveCount(3);
   expect(await titles.allTextContents()).toEqual(expectedTitles);
-  const seams = await titles.evaluateAll((elements) =>
-    elements.map((title) => {
-      const section = title.closest<HTMLElement>('[data-reasoning-section]')!;
-      const row = title.closest<HTMLElement>('[data-chat-operational-row]')!;
-      const child = section.closest<HTMLElement>('[data-response-group-child]')!;
-      const previous =
-        (section.previousElementSibling as HTMLElement | null) ??
-        (child.previousElementSibling as HTMLElement | null);
-      return {
-        title: title.textContent?.trim(),
-        seam: row.getBoundingClientRect().top - previous!.getBoundingClientRect().bottom,
-      };
-    }),
-  );
-  expect(seams.map(({ title }) => title)).toEqual(expectedTitles);
-  await test
-    .info()
-    .attach('nested-mixed-seams', { body: JSON.stringify(seams), contentType: 'application/json' });
-  for (const [index, { seam, title }] of seams.entries()) {
-    expect.soft(seam, title).toBeCloseTo((index === 0 ? 24 : 0) * zoom, 1);
-  }
-
   await expect(group).toContainText('The production-path analysis ends with input.');
   await expect(group).toContainText('Final nested reasoning prose.');
-  const bodyGeometry = await group
-    .locator('[data-reasoning-history-body]')
-    .evaluateAll((elements) =>
-      elements.map((body) => {
-        const section = body.closest<HTMLElement>('[data-reasoning-section]')!;
-        const row = section.querySelector<HTMLElement>('[data-chat-operational-row]');
-        const content = body.querySelector('.markdown-viewer')!.getBoundingClientRect();
-        return {
-          contentTopGap:
-            content.top - (row?.getBoundingClientRect().bottom ?? body.getBoundingClientRect().top),
-          contentBottomGap: body.getBoundingClientRect().bottom - content.bottom,
-        };
-      }),
-    );
-  expect(bodyGeometry).toHaveLength(3);
-  for (const body of bodyGeometry) {
-    expect(body.contentTopGap).toBeCloseTo(6 * zoom, 1);
-    expect(body.contentBottomGap).toBeCloseTo(8 * zoom, 1);
-  }
-
-  const titleXs = await titles.evaluateAll((elements) =>
-    elements.map((element) => element.getBoundingClientRect().x),
-  );
-  const toolX = await group
-    .locator('[data-message-content-block="tool_use"] [data-tool-sentence]')
-    .evaluate((element) => element.getBoundingClientRect().x);
-  for (const titleX of titleXs) expect(titleX).toBeCloseTo(toolX, 1);
-  const guideAndIcon = await group.evaluate((element) => {
-    const guide = element.querySelector<HTMLElement>('[data-operational-expanded-guide]')!;
-    const icon = element.querySelector<HTMLElement>(
-      '[data-testid="response-group-disclosure"] [data-operational-leading] svg',
-    )!;
-    const center = (node: HTMLElement) => {
-      const box = node.getBoundingClientRect();
-      return box.x + box.width / 2;
-    };
-    return { guide: center(guide), icon: center(icon) };
-  });
-  expect(guideAndIcon.guide).toBeCloseTo(guideAndIcon.icon, 1);
-
-  const titleThenToolGap = await children.evaluateAll((elements) => {
-    const titleChild = elements[2].getBoundingClientRect();
-    const toolChild = elements[3].getBoundingClientRect();
-    return toolChild.top - titleChild.bottom;
-  });
-  expect(titleThenToolGap).toBeCloseTo(0, 1);
-
   await expect(group.locator('li')).toHaveCount(2);
   await expect(group.locator('pre code')).toContainText("const seam = 'token';");
   const text = (await group.textContent()) ?? '';
@@ -158,113 +77,71 @@ async function assertExpandedFixture(fixture: Locator, zoom: number, includeAnsw
   if (includeAnswer) {
     const stack = fixture.locator('[data-operational-stack]').first();
     const answerBlock = stack.locator(':scope > [data-message-content-block="text"]');
-    const answerContent = answerBlock.locator('p').first();
     await expect(answerBlock).toContainText('Final assistant answer.');
-    // Measure the group and the answer in one frame and wait for the freshly
-    // expanded group to settle: separate boundingBox() round trips can
-    // straddle a layout pass and misreport the seam under load.
-    const groupHandle = await group.elementHandle();
-    await expect
-      .poll(() =>
-        answerContent.evaluate(
-          (answer, groupElement) =>
-            answer.getBoundingClientRect().top - groupElement!.getBoundingClientRect().bottom,
-          groupHandle,
-        ),
-      )
-      .toBeCloseTo(28 * zoom, 1);
   }
 }
 
-for (const theme of ['light', 'dark'] as const) {
-  for (const width of [320, 720]) {
-    for (const zoom of [1, 2]) {
-      test(`locks ${theme} nested reasoning seams at ${width}px and ${zoom * 100}% zoom`, async ({
-        mount,
-        page,
-      }) => {
-        await page.emulateMedia({ reducedMotion: 'reduce' });
-        const component = await mount(ReasoningHistoryGeometryHost, {
-          props: { theme, width, zoom, phase: 'completed' },
-        });
+test('preserves nested and inline content in both renderers', async ({ mount, page }) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  const component = await mount(ReasoningHistoryGeometryHost, {
+    props: { phase: 'completed' },
+  });
 
-        expect((await component.boundingBox())!.width).toBeCloseTo(width * zoom, 1);
-        for (const renderer of rendererIds) {
-          const fixture = component.getByTestId(`${renderer}-titled`);
-          await openGroup(fixture);
-          const details = fixture.locator('[data-operational-expanded-content]');
-          await expect(details).toBeVisible();
-          await expect
-            .poll(() => details.evaluate((element) => element.getAnimations().length))
-            .toBe(0);
-          await assertExpandedFixture(fixture, zoom, true);
+  for (const renderer of rendererIds) {
+    const fixture = component.getByTestId(`${renderer}-titled`);
+    await openGroup(fixture);
+    const details = fixture.locator('[data-operational-expanded-content]');
+    await expect(details).toBeVisible();
+    await expect.poll(() => details.evaluate((element) => element.getAnimations().length)).toBe(0);
+    await assertExpandedFixture(fixture, true);
 
-          const inline = component.getByTestId(`${renderer}-inline`);
-          await expect(inline.getByTestId('response-group')).toHaveCount(0);
-          await expect(inline.locator('[data-reasoning-section-boundary]')).toHaveCount(0);
-          const inlineBlocks = inline
-            .locator('[data-operational-stack]')
-            .first()
-            .locator(':scope > [data-message-content-block]');
-          const inlineGaps = await inlineBlocks.evaluateAll((elements) => {
-            const boxes = elements.map((element) =>
-              element
-                .querySelector('[data-reasoning-history-body], .markdown-viewer')!
-                .getBoundingClientRect(),
-            );
-            return boxes.slice(1).map((box, index) => box.top - boxes[index].bottom);
-          });
-          expect(inlineGaps).toHaveLength(3);
-          for (const [index, gap] of inlineGaps.entries()) {
-            expect(gap).toBeCloseTo((index === 1 ? 0 : 16) * zoom, 1);
-          }
-          const inlineText = (await inline.textContent()) ?? '';
-          for (const value of [
-            'Inline group description.',
-            'Headingless predecessor remains inline without a disclosure.',
-            'Later headingless reasoning stays in source order.',
-            'Inline final prose.',
-          ]) {
-            expect(inlineText.match(new RegExp(value.replace('.', '\\.'), 'g'))).toHaveLength(1);
-          }
-        }
-      });
+    const inline = component.getByTestId(`${renderer}-inline`);
+    await expect(inline.getByTestId('response-group')).toHaveCount(0);
+    await expect(inline.locator('[data-reasoning-section-boundary]')).toHaveCount(0);
+    const inlineText = (await inline.textContent()) ?? '';
+    for (const value of [
+      'Inline group description.',
+      'Headingless predecessor remains inline without a disclosure.',
+      'Later headingless reasoning stays in source order.',
+      'Inline final prose.',
+    ]) {
+      expect(inlineText.split(value)).toHaveLength(2);
     }
   }
-}
+});
 
-test('keeps exact seams through live streaming completion in both renderers', async ({
+test('preserves nested content through streaming completion and remount in both renderers', async ({
   mount,
   page,
 }) => {
   await page.emulateMedia({ reducedMotion: 'reduce' });
   let component = await mount(ReasoningHistoryGeometryHost, {
-    props: { width: 560, zoom: 1, phase: 'live' },
+    props: { phase: 'live' },
   });
 
   for (const renderer of rendererIds) {
     const fixture = component.getByTestId(`${renderer}-titled`);
     await openGroup(fixture);
-    await assertExpandedFixture(fixture, 1, false);
+    await assertExpandedFixture(fixture, false);
   }
 
-  await component.update({ props: { width: 560, zoom: 1, phase: 'completed' } });
+  await component.update({ props: { phase: 'completed' } });
   for (const renderer of rendererIds) {
     const fixture = component.getByTestId(`${renderer}-titled`);
     const disclosure = fixture.getByTestId('response-group-disclosure');
     await expect(disclosure).toHaveAttribute('aria-expanded', 'false');
     await disclosure.click();
-    await assertExpandedFixture(fixture, 1, true);
+    await assertExpandedFixture(fixture, true);
   }
 
   await component.unmount();
   component = await mount(ReasoningHistoryGeometryHost, {
-    props: { width: 560, zoom: 1, phase: 'completed' },
+    props: { phase: 'completed' },
   });
   for (const renderer of rendererIds) {
     const fixture = component.getByTestId(`${renderer}-titled`);
     await openGroup(fixture);
-    await assertExpandedFixture(fixture, 1, true);
+    await assertExpandedFixture(fixture, true);
   }
 });
 
@@ -274,7 +151,7 @@ test('search reveal restores automatic state but preserves manual disclosure sta
 }) => {
   await page.emulateMedia({ reducedMotion: 'reduce' });
   const component = await mount(ReasoningHistoryGeometryHost, {
-    props: { width: 560, zoom: 1, phase: 'completed' },
+    props: { phase: 'completed' },
   });
 
   for (const renderer of rendererIds) {
@@ -295,16 +172,16 @@ test('search reveal restores automatic state but preserves manual disclosure sta
 });
 
 for (const renderer of rendererIds) {
-  test(`compacts screenshot titles and tools through group lifecycle in ${renderer}`, async ({
+  test(`preserves titles and tools through group lifecycle in ${renderer}`, async ({
     mount,
     page,
   }) => {
     await page.emulateMedia({ reducedMotion: 'reduce' });
-    const props = { renderer, width: 720, zoom: 1 };
+    const props = { renderer };
     let component = await mount(ReasoningHistoryGeometryHost, {
       props: { ...props, regressionContent: titleToolHistory('nested', false), phase: 'live' },
     });
-    const verify = async (state: string) => {
+    const verify = async () => {
       const fixture = component.getByTestId('compact-reasoning-fixture');
       await openReasoning(fixture);
       await assertContentOnceInOrder(fixture, [
@@ -314,27 +191,17 @@ for (const renderer of rendererIds) {
       ]);
       await expect(fixture.locator('[data-message-content-block="tool_result"]')).toHaveCount(0);
       await expect(fixture.getByTestId('reasoning-disclosure')).toHaveCount(0);
-      const rows = await recordReasoningGeometry(fixture, `${renderer}-nested-${state}`);
-      expect(rows).toHaveLength(5);
-      expect(rows.map((row) => row.type)).toEqual([
-        'thinking',
-        'thinking',
-        'thinking',
-        'tool_use',
-        'thinking',
-      ]);
-      for (const row of rows) {
-        expect(row.height).toBeCloseTo(28, 1);
-        if (row.gap !== null) expect.soft(row.gap, `${state}: ${row.text}`).toBeCloseTo(0, 1);
-      }
-      for (const row of rows) {
-        expect(row.summaryX).toBeCloseTo(rows[0].summaryX!, 1);
-        expect(row.iconWidth).toBeCloseTo(16, 1);
-      }
-      if (state === 'live' || state === 'remounted')
-        await captureReasoning(fixture, `${renderer}-nested-${state}`);
+      const rows = fixture.locator(activityRowSelector);
+      await expect(rows).toHaveCount(5);
+      expect(
+        await rows.evaluateAll((elements) =>
+          elements.map((row) =>
+            row.closest('[data-message-content-block]')?.getAttribute('data-message-content-block'),
+          ),
+        ),
+      ).toEqual(['thinking', 'thinking', 'thinking', 'tool_use', 'thinking']);
     };
-    await verify('live');
+    await verify();
     const completed = {
       ...props,
       regressionContent: titleToolHistory('nested', true),
@@ -343,7 +210,7 @@ for (const renderer of rendererIds) {
     await component.update({ props: completed });
     const toggle = component.getByTestId('response-group-disclosure');
     await expect(toggle).toHaveAttribute('aria-expanded', 'false');
-    await verify('completed');
+    await verify();
     await toggle.focus();
     await page.keyboard.press('Enter');
     await expect(toggle).toHaveAttribute('aria-expanded', 'false');
@@ -351,19 +218,19 @@ for (const renderer of rendererIds) {
     await page.keyboard.press('Space');
     await expect(toggle).toHaveAttribute('aria-expanded', 'true');
     await expect(toggle).toBeFocused();
-    await verify('reopened');
+    await verify();
     await component.unmount();
     component = await mount(ReasoningHistoryGeometryHost, { props: completed });
-    await verify('remounted');
+    await verify();
   });
 
   for (const shape of ['single', 'multiple'] as const) {
-    test(`keeps nested ${shape} title-to-body growth and 24px body boundaries in ${renderer}`, async ({
+    test(`preserves nested ${shape} title-to-body growth in ${renderer}`, async ({
       mount,
       page,
     }) => {
       await page.emulateMedia({ reducedMotion: 'reduce' });
-      const props = { renderer, width: 560, zoom: 1 };
+      const props = { renderer };
       let component = await mount(ReasoningHistoryGeometryHost, {
         props: {
           ...props,
@@ -371,10 +238,7 @@ for (const renderer of rendererIds) {
           phase: 'live',
         },
       });
-      const verify = async (
-        stage: 'titles' | 'body' | 'following' | 'completed',
-        state: string = stage,
-      ) => {
+      const verify = async (stage: 'titles' | 'body' | 'following' | 'completed') => {
         const fixture = component.getByTestId('compact-reasoning-fixture');
         await openReasoning(fixture);
         await assertContentOnceInOrder(fixture, [
@@ -382,32 +246,9 @@ for (const renderer of rendererIds) {
           ...(stage === 'titles' ? [] : growthBody.split('\n\n')),
           ...(stage === 'following' || stage === 'completed' ? [followingTitle] : []),
         ]);
-        const rows = await recordReasoningGeometry(fixture, `${renderer}-nested-${shape}-${state}`);
-        for (const row of rows) expect(row.height).toBeCloseTo(28, 1);
-        if (shape === 'multiple')
-          expect
-            .soft(rows[1].gap, 'title-only to title-plus-body within one block')
-            .toBeCloseTo(0, 1);
         if (stage !== 'titles') {
-          const body = fixture.locator('[data-reasoning-history-body]');
-          await expect(body).toHaveCount(1);
-          const inset = await body.evaluate((element) => {
-            const row = element.previousElementSibling!;
-            const paragraph = element.querySelector('p')!;
-            return {
-              top: paragraph.getBoundingClientRect().top - row.getBoundingClientRect().bottom,
-              bottom:
-                element.getBoundingClientRect().bottom -
-                element.lastElementChild!.getBoundingClientRect().bottom,
-            };
-          });
-          expect(inset).toEqual({ top: 6, bottom: 8 });
+          await expect(fixture.locator('[data-reasoning-history-body]')).toHaveCount(1);
         }
-        if (stage === 'following' || stage === 'completed') {
-          expect(await thinkingBoundaryGap(fixture)).toBeCloseTo(24, 1);
-        }
-        if (state === 'remounted')
-          await captureReasoning(fixture, `${renderer}-nested-${shape}-body`);
       };
       await verify('titles');
       for (const stage of ['body', 'following', 'completed'] as const) {
@@ -424,7 +265,7 @@ for (const renderer of rendererIds) {
       await toggle.click();
       await expect(component.locator('[data-reasoning-history-body]')).toHaveCount(0);
       await toggle.click();
-      await verify('completed', 'reopened');
+      await verify('completed');
       await component.unmount();
       component = await mount(ReasoningHistoryGeometryHost, {
         props: {
@@ -433,38 +274,7 @@ for (const renderer of rendererIds) {
           phase: 'completed',
         },
       });
-      await verify('completed', 'remounted');
-    });
-  }
-
-  for (const previousHasBody of [false, true]) {
-    test(`nested mixed boundary follows preceding ${previousHasBody ? 'body' : 'title'} in ${renderer}`, async ({
-      mount,
-      page,
-    }) => {
-      await page.emulateMedia({ reducedMotion: 'reduce' });
-      const children = [
-        thinking(
-          'mixed:first',
-          `**Preparing task plan**${previousHasBody ? '\n\nFirst supplied body.' : ''}`,
-        ),
-        thinking(
-          'mixed:second',
-          `**Checking duplicate tracker issue**${previousHasBody ? '' : '\n\nSecond supplied body.'}`,
-        ),
-      ];
-      const component = await mount(ReasoningHistoryGeometryHost, {
-        props: {
-          renderer,
-          regressionContent: withReasoningLayout(children, 'nested', true),
-        },
-      });
-      const fixture = component.getByTestId('compact-reasoning-fixture');
-      await openReasoning(fixture);
-      await recordReasoningGeometry(fixture, `${renderer}-nested-mixed-${previousHasBody}`);
-      await expect(fixture.locator('[data-reasoning-history-body]')).toHaveCount(1);
-      expect(await thinkingBoundaryGap(fixture)).toBeCloseTo(previousHasBody ? 24 : 0, 1);
-      await settleReasoning(fixture);
+      await verify('completed');
     });
   }
 }

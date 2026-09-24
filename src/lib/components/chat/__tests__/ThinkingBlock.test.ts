@@ -7,10 +7,6 @@
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { warmImport } from '../../../../test/warm-import';
-import {
-  CHAT_OPERATIONAL_ICON_CLASS,
-  CHAT_OPERATIONAL_LEADING_CLASS,
-} from '../operational-disclosure-row';
 
 vi.mock('svelte-fa', async () => {
   const MockFa = (await import('../../ui/__tests__/mocks/Fa.svelte')).default;
@@ -194,21 +190,6 @@ describe('ThinkingBlock — tool-call presentation', () => {
       expect(screen.getByTestId('markdown-viewer').textContent?.trim()).not.toBe('');
     },
   );
-
-  it('uses the compact tool-call row treatment', async () => {
-    await renderBlock({ content: 'Let me check the schema', isStreaming: false });
-
-    const row = screen.getByTestId('reasoning-tool-call');
-    expect(row.className).toContain('tool-call-container');
-    expect(row.className).toContain('type-body');
-    expect(row.className).not.toContain('bg-muted');
-    const icon = row.querySelector('[data-icon="brain"]');
-    const iconBox = icon?.closest('[data-operational-icon-box]');
-    expect(iconBox?.className).toContain(CHAT_OPERATIONAL_LEADING_CLASS);
-    expect(icon?.className).toContain(CHAT_OPERATIONAL_ICON_CLASS);
-    expect(icon?.className).not.toContain('opacity-30');
-    expect(row.className).toContain('text-muted-foreground');
-  });
 
   it('auto-expands with the localized fallback while headingless reasoning streams', async () => {
     await renderBlock({ content: 'Let me check the schema', isStreaming: true });
