@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onDestroy, untrack } from 'svelte';
   import { faComment } from '@fortawesome/free-solid-svg-icons';
-  import type { AgentMessage, AgentSession, ContentBlock } from '$shared/types';
+  import type { AgentMessage, AgentSession, ContentBlock, PendingProposalRef } from '$shared/types';
   import { AgentStatus } from '$shared/types/agent.types';
   import AgentTabType from '$features/layout/tab-types/AgentTabType.svelte';
   import InitialAgentChatTabType from './InitialAgentChatTabType.svelte';
@@ -9,7 +9,10 @@
   import PanelLayout from '$lib/components/layout/panel-system/PanelLayout.svelte';
   import { startRootStoreLifecycle } from '$store/renderer/root-store-lifecycle';
   import { store } from '$store/renderer/store';
-  import { bulkUpsertSessions } from '$store/renderer/slices/agent-session/agent-session-slice';
+  import {
+    bulkUpsertSessions,
+    replaceMessages,
+  } from '$store/renderer/slices/agent-session/agent-session-slice';
   import {
     initializeLayout,
     setRestoreStatus,
@@ -36,6 +39,8 @@
     pendingAssistantStatus,
     pendingEvent = false,
     cardSeamMessages,
+    liveMessages,
+    pendingProposals,
   }: {
     theme?: 'light' | 'dark';
     zoom?: number;
@@ -49,11 +54,15 @@
     pendingAssistantStatus?: 'thinking' | 'error' | 'model-unavailable' | 'idle' | 'reply';
     pendingEvent?: boolean;
     cardSeamMessages?: AgentMessage[];
+    liveMessages?: AgentMessage[];
+    pendingProposals?: PendingProposalRef[];
   } = $props();
   const setupCardFixture = untrack(() => setupCardOnly);
   const reasoningSearchFixture = untrack(() => reasoningSearchOnly);
   const pendingFixture = untrack(() => pendingAssistantStatus !== undefined);
   const cardSeamFixture = untrack(() => cardSeamMessages);
+  const liveFixture = untrack(() => liveMessages);
+  const pendingProposalFixture = untrack(() => pendingProposals);
   const workspaceId = 'chat-panel-operational-geometry';
   const agentId = 'chat-panel-operational-agent';
   const timestamp = '2026-08-17T12:00:00.000Z';
@@ -533,6 +542,7 @@
   ]);
   // svelte-ignore state_referenced_locally -- each CT mount uses one immutable fixture scenario.
   const messages =
+    liveFixture ??
     cardSeamFixture ??
     (pendingFixture
       ? pendingMessages
@@ -565,7 +575,11 @@
     isProcessing: !cardSeamFixture && !setupCardFixture && !reasoningSearchFixture,
     isResponding: !cardSeamFixture && !setupCardFixture && !reasoningSearchFixture,
     isInitialAgent: setupCardFixture,
-    metadata: setupCardFixture ? { isInitialAgent: true } : undefined,
+    metadata: setupCardFixture
+      ? { isInitialAgent: true }
+      : pendingProposalFixture
+        ? { pendingProposals: pendingProposalFixture }
+        : undefined,
     messages,
     createdAt: timestamp,
     updatedAt: timestamp,
@@ -619,6 +633,14 @@
     }),
   );
   store.dispatch(setRestoreStatus(workspaceId, 'restored'));
+
+  $effect(() => {
+    if (!liveFixture || !liveMessages) return;
+    const nextMessages = liveMessages;
+    untrack(() => {
+      store.dispatch(replaceMessages(agentId, nextMessages));
+    });
+  });
 
   $effect(() => {
     if (!pendingFixture) return;
