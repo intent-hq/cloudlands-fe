@@ -560,7 +560,178 @@ const dependency = customDiagram(
 
 const emptyCustom = customDiagram(9, 'architecture', [], []);
 
+const invitationFlow = `flowchart TD
+    A[Open invite and review host and access] --> B{Valid saved Intent session for this host and identity}
+    B -- Yes --> C[Reuse verified identity]
+    B -- No --> D[Sign in for collaboration with GitHub or GitLab]
+    D --> E[Host sends a one time challenge]
+    E --> F[Device publishes proof in a gist or public snippet]
+    F --> G[Host checks proof and account identity]
+    G --> H{Proof and invitation accepted}
+    C --> H
+    H -- No --> X[Explain the problem without granting access]
+    H -- Yes --> I[Grant invite scope and issue or reuse Intent session]
+    I --> J[Save session on this device]
+    J --> K[Connect and fetch current role from host]
+    R[Later app launch] --> K
+    K --> L{Effective role}
+    L -- Host member --> M[Create and fully manage all workspaces]
+    L -- Workspace guest --> N[Access only invited workspaces]`;
+
+const layoutEdgeCases = {
+  'mermaid-invitation': {
+    kind: 'mermaid',
+    title: 'Invitation and returning session',
+    description: 'The reported diagram: unequal branches, long decisions, a late entry, and roles.',
+    visualContract:
+      'Follow either sign-in route into the same acceptance decision, then clearly distinguish both roles.',
+    source: invitationFlow,
+  },
+  'mermaid-invitation-horizontal': {
+    kind: 'mermaid',
+    title: 'Horizontal invitation',
+    description: 'The same graph with an explicitly horizontal direction.',
+    source: invitationFlow.replace('flowchart TD', 'flowchart LR'),
+  },
+  'mermaid-invitation-reversed': {
+    kind: 'mermaid',
+    title: 'Bottom-up invitation',
+    description: 'The same graph preserves an explicitly bottom-up reading order.',
+    source: invitationFlow.replace('flowchart TD', 'flowchart BT'),
+  },
+  'mermaid-unequal-branches': {
+    kind: 'mermaid',
+    title: 'Shortcut beside a long branch',
+    description: 'A cached result skips several steps before both routes converge.',
+    source: `flowchart TD
+  A[Request] --> B{Cached?}
+  B -->|Yes| C[Read cache]
+  B -->|No| D[Authenticate]
+  D --> E[Fetch records]
+  E --> F[Transform]
+  F --> G[Store result]
+  C --> H[Respond]
+  G --> H`,
+  },
+  'mermaid-late-entry': {
+    kind: 'mermaid',
+    title: 'Independent late entry',
+    description: 'Two entry paths join an existing flow at different depths.',
+    source: `flowchart TD
+  A[New account] --> B[Verify email]
+  B --> C[Choose organization]
+  C --> D[Load permissions]
+  R[Returning account] --> D
+  D --> E[Open workspace]
+  S[Open saved link] --> E
+  E --> F[Start work]`,
+  },
+  'mermaid-decision-ladder': {
+    kind: 'mermaid',
+    title: 'Repeated decisions and shared rejection',
+    description: 'Multiple checks exit into the same terminal outcome.',
+    source: `flowchart TD
+  A{Account exists?} -->|Yes| B{Identity verified?}
+  B -->|Yes| C{Invitation still valid?}
+  C -->|Yes| D{Workspace available?}
+  D -->|Yes| E[Grant access]
+  A -->|No| X[Explain why access was denied]
+  B -->|No| X
+  C -->|No| X
+  D -->|No| X`,
+  },
+  'mermaid-long-decision': {
+    kind: 'mermaid',
+    title: 'Long decision and branch labels',
+    description: 'Sentence-length decisions must retain legible labels and separate routes.',
+    source: `flowchart TD
+  A[Review the request] --> B{Does this device have a valid saved session for the selected host and account identity?}
+  B -->|Session is valid for this account| C[Continue using the verified identity]
+  B -->|Session is missing or has expired| D[Ask the user to sign in again]
+  C --> E[Connect to the selected host]
+  D --> E`,
+  },
+  'mermaid-many-roles': {
+    kind: 'mermaid',
+    title: 'Wide role fan-out',
+    description: 'Five labeled outcomes converge into a shared audit log.',
+    source: `flowchart TD
+  A{Effective role} -->|Owner| B[Manage organization]
+  A -->|Member| C[Manage workspaces]
+  A -->|Guest| D[Open invited workspaces]
+  A -->|Auditor| E[Read activity]
+  A -->|Suspended| F[Request review]
+  B --> G[(Audit log)]
+  C --> G
+  D --> G
+  E --> G
+  F --> G`,
+  },
+  'mermaid-retry-and-exit': {
+    kind: 'mermaid',
+    title: 'Retry with a terminal exit',
+    description: 'A decision has forward, backward, and terminal paths.',
+    source: `flowchart TD
+  A[Submit proof] --> B{Proof accepted?}
+  B -->|Yes| C[Connect]
+  B -->|Try again| A
+  B -->|Cancel| D[Leave invitation]
+  C --> E[Open workspace]`,
+  },
+  'mermaid-parallel-checks': {
+    kind: 'mermaid',
+    title: 'Parallel checks and a bypass',
+    description: 'Parallel branches have unequal depth and a direct bypass into their join.',
+    source: `flowchart TD
+  A[Request] --> B[Check identity]
+  A --> C[Check invitation]
+  A --> D[Check host]
+  B --> E[Verify signature]
+  E --> F[Accepted]
+  C --> F
+  D --> G[Read policy]
+  G --> H[Read membership]
+  H --> F
+  A -.->|Trusted local session| F
+  F --> I[Connect]`,
+  },
+  'mermaid-right-to-left': {
+    kind: 'mermaid',
+    title: 'Right-to-left decisions',
+    description: 'Horizontal branches keep their authored reading direction.',
+    source: `flowchart RL
+  A[Open invitation] --> B{Session valid?}
+  B -->|Yes| C[Reuse identity]
+  B -->|No| D[Sign in]
+  D --> E[Verify proof]
+  C --> F[Connect]
+  E --> F`,
+  },
+  'mermaid-grouped-invitation': {
+    kind: 'mermaid',
+    title: 'Invitation across trust boundaries',
+    description: 'Groups separate device and host work, with a returning route across boundaries.',
+    source: `flowchart TD
+  subgraph Device[This device]
+    A[Open invitation] --> B{Saved session?}
+    B -->|No| C[Publish proof]
+    J[Save session]
+  end
+  subgraph Host[Selected host]
+    D[Verify proof] --> E{Accepted?}
+    E -->|Yes| F[Issue session]
+    E -->|No| X[Explain rejection]
+    K[Fetch current role]
+  end
+  C --> D
+  B -->|Yes| K
+  F --> J
+  J --> K`,
+  },
+} satisfies Record<string, DiagramWorkbenchCase>;
+
 export const MERMAID_WORKBENCH_CASES = Object.freeze({
+  ...layoutEdgeCases,
   'mermaid-single-node': {
     kind: 'mermaid',
     title: 'Single Unicode node',
@@ -900,6 +1071,7 @@ export const DIAGRAM_WORKBENCH_CASE_GROUPS = Object.freeze([
   {
     id: 'stress',
     caseIds: [
+      ...(Object.keys(layoutEdgeCases) as (keyof typeof layoutEdgeCases)[]),
       'mermaid-single-node',
       'mermaid-two-node',
       'mermaid-disconnected',
