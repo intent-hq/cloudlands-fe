@@ -358,7 +358,10 @@ describe('tool-result production renderer parity', () => {
     const message = reconcileToolResultMessage(liveGroupedOrphanBlocks());
 
     expect(findChatSearchMatches([message], 'Current visible live child', new Map())).toEqual([
-      expect.objectContaining({ blockPath: 'b:0:c:1', disclosurePath: [] }),
+      expect.objectContaining({
+        blockPath: 'b:0:c:1:body',
+        disclosurePath: ['group:b:0', 'reasoning:b:0:c:1'],
+      }),
     ]);
     expect(findChatSearchMatches([message], 'live-grouped-orphan', new Map())).toEqual([
       expect.objectContaining({ blockPath: 'b:0:c:2', disclosurePath: ['group:b:0'] }),

@@ -68,6 +68,8 @@
     dedupeKeys,
     getResponseGroupBlockKeys,
     getResponseGroupChildBoundary,
+    getResponseGroupCurrentChildIndex,
+    isTerminalResponseGroup,
     isNestedReasoningSectionBoundary,
     isNestedReasoningSectionStart,
     normalizeResponseGroups,
@@ -588,13 +590,6 @@
     return block.type !== 'tool_result' || isStandaloneToolResult(toolResultClassification, block);
   }
 
-  let lastVisibleTopLevelBlockIndex = $derived.by(() => {
-    for (let i = groupedBlocks.length - 1; i >= 0; i--) {
-      if (isVisibleTopLevelBlock(groupedBlocks[i])) return i;
-    }
-    return -1;
-  });
-
   /**
    * Index of the last group child that actually renders. tool_result children
    * are skipped by the group render loop, and text children that are empty
@@ -897,6 +892,7 @@
     {#if reasoningHistory}
       <ReasoningHistoryBlock
         content={getContentBlockText(block) || m.chat_shared_processing_fallback()}
+        {searchPath}
         isStreaming={isStreaming && isLastBlock}
         {workspaceId}
         {adjacentOperationalRow}
@@ -904,6 +900,7 @@
     {:else}
       <ThinkingBlock
         content={getContentBlockText(block) || m.chat_shared_processing_fallback()}
+        {searchPath}
         isStreaming={isStreaming && isLastBlock}
         {workspaceId}
         {adjacentOperationalRow}
@@ -966,7 +963,7 @@
       ? 'calc(var(--operational-row-inline-padding) + var(--operational-leading-slot-size) + var(--operational-leading-gap))'
       : undefined}
     data-message-content-block={childBlock.type}
-    data-chat-search-block-path={childBlock.type === 'tool_result'
+    data-chat-search-block-path={childBlock.type === 'tool_result' || childBlock.type === 'thinking'
       ? undefined
       : chatSearchBlockPath(groupIndex, childIndex)}
     data-response-group-child
@@ -998,6 +995,19 @@
     {#if block.type === 'content_group'}
       {@const group = block as ContentBlockGroup}
       {@const childKeys = getResponseGroupBlockKeys(group.children)}
+      {@const currentIndex = getResponseGroupCurrentChildIndex(group)}
+      {#snippet currentChild()}
+        {#if currentIndex >= 0}
+          {#key childKeys[currentIndex]}
+            {@render renderResponseGroupChild(
+              group,
+              blockIndex,
+              group.children[currentIndex],
+              currentIndex,
+            )}
+          {/key}
+        {/if}
+      {/snippet}
       {#if shouldRenderResponseGroupInline(group)}
         {#each group.children as childBlock, childIndex (childKeys[childIndex])}
           {#if isVisibleGroupChild(childBlock)}
@@ -1017,11 +1027,12 @@
           <ResponseGroup
             name={group.name}
             isStreaming={group.isStreaming}
-            isTerminal={blockIndex === lastVisibleTopLevelBlockIndex}
+            isTerminal={isTerminalResponseGroup(groupedBlocks, blockIndex, isVisibleTopLevelBlock)}
             {isLastConversationMessage}
             blocks={group.children.filter(isVisibleGroupChild)}
             searchPath={chatSearchBlockPath(blockIndex)}
             reasoningPhase={group.isReasoningPhase}
+            currentChild={currentIndex >= 0 ? currentChild : undefined}
             adjacentOperationalRow={isAdjacentOperationalClusterRow(
               groupedBlocks,
               blockIndex,

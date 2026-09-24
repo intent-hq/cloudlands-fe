@@ -195,7 +195,7 @@ for (const theme of ['light', 'dark'] as const) {
       await expect(trigger).toHaveAttribute('aria-expanded', 'false');
       await expect(body).toHaveCount(0);
       await expect(preview).toHaveCount(1);
-      await expect(group.locator('[data-response-group-child]')).toHaveCount(2);
+      await expect(group.locator('[data-response-group-child]')).toHaveCount(1);
       await expect(group.getByTestId(`response-group-focus-${position}`)).toHaveText(
         `Focusable ${position} detail for initial chunk`,
       );
@@ -227,7 +227,7 @@ for (const theme of ['light', 'dark'] as const) {
       await expect(trigger).toHaveAttribute('aria-expanded', 'false');
       await expect(body).toHaveCount(0);
       await expect(preview).toHaveCount(1);
-      await expect(group.locator('[data-response-group-child]')).toHaveCount(2);
+      await expect(group.locator('[data-response-group-child]')).toHaveCount(1);
       await expect(group.getByTestId(`response-group-focus-${position}`)).toHaveCount(1);
       await expect(groupContainer).toHaveCSS('margin-bottom', '0px');
     }

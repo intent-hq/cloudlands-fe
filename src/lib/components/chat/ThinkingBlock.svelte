@@ -25,6 +25,7 @@
     workspaceId?: string;
     class?: string;
     adjacentOperationalRow?: boolean;
+    searchPath?: string;
   }
 
   let {
@@ -34,6 +35,7 @@
     workspaceId,
     class: className = '',
     adjacentOperationalRow = false,
+    searchPath,
   }: Props = $props();
 
   // Auto-expand while streaming, collapse when done
@@ -41,16 +43,32 @@
 
   // Track if user has manually toggled
   let userToggled = $state(false);
+  let searchExpanded = $state(false);
+  let beforeSearch = false;
 
   $effect(() => {
-    if (!userToggled) {
+    if (!userToggled && !searchExpanded) {
       isExpanded = autoExpandWhileStreaming && isStreaming;
     }
   });
 
   function toggle() {
+    searchExpanded = false;
     userToggled = true;
     isExpanded = !isExpanded;
+  }
+
+  function expandForSearch() {
+    if (searchExpanded) return;
+    beforeSearch = isExpanded;
+    searchExpanded = true;
+    isExpanded = true;
+  }
+
+  function restoreSearchExpansion() {
+    if (!searchExpanded) return;
+    searchExpanded = false;
+    isExpanded = beforeSearch;
   }
 
   function handleDisclosureKeydown(event: KeyboardEvent) {
@@ -90,7 +108,11 @@
 {/snippet}
 
 {#snippet details()}
-  <div class="reasoning-expanded-body" data-reasoning-expanded-body>
+  <div
+    class="reasoning-expanded-body"
+    data-reasoning-expanded-body
+    data-chat-search-block-path={searchPath ? `${searchPath}:body` : undefined}
+  >
     <MarkdownViewer
       content={reasoningContent.body}
       {isStreaming}
@@ -114,6 +136,7 @@
       streaming={isStreaming}
       testId="reasoning-tool-call"
       summaryTestId="reasoning-summary"
+      summarySearchPath={searchPath ? `${searchPath}:title:${index}:summary` : undefined}
       class={className}
     />
   {/each}
@@ -141,6 +164,10 @@
     testId="reasoning-tool-call"
     disclosureTestId="reasoning-disclosure"
     summaryTestId="reasoning-summary"
+    searchDisclosureId={searchPath ? `reasoning:${searchPath}` : undefined}
+    summarySearchPath={searchPath ? `${searchPath}:summary` : undefined}
+    onSearchExpand={expandForSearch}
+    onSearchRestore={restoreSearchExpansion}
     class={className}
   />
 {/if}

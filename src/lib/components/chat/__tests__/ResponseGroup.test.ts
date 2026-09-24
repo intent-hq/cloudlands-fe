@@ -167,7 +167,13 @@ describe('ResponseGroup - collapse state model', () => {
   it('keeps expanded prose unconstrained with canonical top spacing', async () => {
     const blocks = [{ type: 'text', text: 'Expanded prose' }] as ContentBlock[];
     const { container } = render(ResponseGroup, {
-      props: { name: 'Constrained group', isStreaming: true, blocks, children },
+      props: {
+        name: 'Constrained group',
+        isStreaming: true,
+        blocks,
+        children,
+        currentChild: children,
+      },
     });
     await fireEvent.click(header(container));
     const expanded = container.querySelector('[data-operational-expanded-content]')!;
@@ -187,6 +193,7 @@ describe('ResponseGroup - collapse state model', () => {
           isStreaming: true,
           blocks,
           children,
+          currentChild: children,
         },
       });
       const btn = header(container);
@@ -222,6 +229,7 @@ describe('ResponseGroup - collapse state model', () => {
         isStreaming: true,
         blocks: initialBlocks,
         children: createRawSnippet(detailFactory),
+        currentChild: createRawSnippet(detailFactory),
       },
     });
     const btn = header(container);
@@ -330,7 +338,7 @@ describe('ResponseGroup - collapse state model', () => {
     expect(details(container)).not.toBeNull();
 
     resetEffectFlushSyncCalls();
-    await rerender({ blocks: liveBlocks });
+    await rerender({ blocks: liveBlocks, currentChild: children });
 
     expect(effectFlushSyncCalls()).toBe(0);
     expect(btn.getAttribute('aria-expanded')).toBe('false');
@@ -348,7 +356,7 @@ describe('ResponseGroup - collapse state model', () => {
       const body = details(container)!;
       expect(body.getAttribute('aria-hidden')).toBeNull();
 
-      await rerender({ blocks: liveBlocks });
+      await rerender({ blocks: liveBlocks, currentChild: children });
 
       expect(btn.getAttribute('aria-expanded')).toBe('false');
       expect(details(container)).toBe(body);
@@ -399,7 +407,7 @@ describe('ResponseGroup - collapse state model', () => {
       const btn = header(container);
       const body = details(container)!;
 
-      await rerender({ blocks: liveBlocks });
+      await rerender({ blocks: liveBlocks, currentChild: children });
       expect(btn.getAttribute('aria-expanded')).toBe('false');
       expect(details(container)).toBe(body);
       expect(body.getAttribute('aria-hidden')).toBe('true');
@@ -427,7 +435,13 @@ describe('ResponseGroup - collapse state model', () => {
     const styleSpy = mockMeasuredPreviewStyle();
     try {
       const { container, rerender } = render(ResponseGroup, {
-        props: { name: 'Live group', isStreaming: true, blocks: liveBlocks, children },
+        props: {
+          name: 'Live group',
+          isStreaming: true,
+          blocks: liveBlocks,
+          children,
+          currentChild: children,
+        },
       });
       expect(previewContent(container)).not.toBeNull();
 
@@ -459,7 +473,13 @@ describe('ResponseGroup - collapse state model', () => {
     );
     try {
       const { container, rerender } = render(ResponseGroup, {
-        props: { name: 'Live group', isStreaming: true, blocks: liveBlocks, children },
+        props: {
+          name: 'Live group',
+          isStreaming: true,
+          blocks: liveBlocks,
+          children,
+          currentChild: children,
+        },
       });
       expect(previewContent(container)).not.toBeNull();
 
@@ -475,7 +495,13 @@ describe('ResponseGroup - collapse state model', () => {
     const styleSpy = mockMeasuredPreviewStyle();
     try {
       const { container } = render(ResponseGroup, {
-        props: { name: 'Live group', isStreaming: true, blocks: liveBlocks, children },
+        props: {
+          name: 'Live group',
+          isStreaming: true,
+          blocks: liveBlocks,
+          children,
+          currentChild: children,
+        },
       });
       const btn = header(container);
       expect(previewContent(container)).not.toBeNull();
@@ -499,6 +525,7 @@ describe('ResponseGroup - collapse state model', () => {
           isTerminal: true,
           blocks: liveBlocks,
           children,
+          currentChild: children,
         },
       });
       const btn = header(container);
@@ -524,6 +551,7 @@ describe('ResponseGroup - collapse state model', () => {
           isTerminal: true,
           blocks: liveBlocks,
           children,
+          currentChild: children,
         },
       });
       const btn = header(container);
@@ -543,7 +571,7 @@ describe('ResponseGroup - collapse state model', () => {
     }
   });
 
-  it('renders every visible child in the constrained streaming preview', async () => {
+  it('renders only the current child in the constrained streaming preview', async () => {
     const allChildren = createRawSnippet(() => ({
       render: () =>
         '<div><div data-response-group-child data-testid="preview-child-first">first chunk</div><div data-response-group-child data-testid="preview-child-second">second chunk</div></div>',
@@ -553,14 +581,23 @@ describe('ResponseGroup - collapse state model', () => {
       { type: 'text', text: 'second chunk' },
     ] as ContentBlock[];
     const { container } = render(ResponseGroup, {
-      props: { name: 'Live group', isStreaming: true, blocks, children: allChildren },
+      props: {
+        name: 'Live group',
+        isStreaming: true,
+        blocks,
+        children: allChildren,
+        currentChild: createRawSnippet(() => ({
+          render: () =>
+            '<div data-response-group-child data-testid="preview-child-second">second chunk</div>',
+        })),
+      },
     });
 
     const scroller = container.querySelector('.cylinder-scroller') as HTMLElement;
     expect(header(container).getAttribute('aria-expanded')).toBe('false');
     expect(scroller.style.maxHeight).toContain('100px');
-    expect(scroller.querySelectorAll('[data-response-group-child]')).toHaveLength(2);
-    expect(scroller.querySelector('[data-testid="preview-child-first"]')).not.toBeNull();
+    expect(scroller.querySelectorAll('[data-response-group-child]')).toHaveLength(1);
+    expect(scroller.querySelector('[data-testid="preview-child-first"]')).toBeNull();
     expect(scroller.querySelector('[data-testid="preview-child-second"]')).not.toBeNull();
     expect(container.querySelector('[data-testid="response-group-snippet"]')).toBeNull();
 
@@ -915,6 +952,8 @@ describe('ResponseGroup - block identity', () => {
         sourceName: 'Prepping',
         isReasoningPhase: true,
         hasAdjacentReasoningHistory: true,
+        adjacentReasoningHistoryCount: 1,
+        hasDescription: true,
         children: [
           description,
           {
@@ -960,6 +999,8 @@ describe('ResponseGroup - block identity', () => {
         sourceName: 'Prepping',
         isReasoningPhase: true,
         hasAdjacentReasoningHistory: true,
+        adjacentReasoningHistoryCount: 1,
+        hasDescription: false,
         children: [preceding, tool, laterReasoning],
       },
     ]);
@@ -1022,7 +1063,7 @@ describe('ResponseGroup - block identity', () => {
     ).toBe(false);
   });
 
-  it('does not pair ordinary authored groups or adjacent prose', () => {
+  it('keeps authored groups separate and retains adjacent reasoning prose in phase history', () => {
     const titledReasoning = {
       type: 'thinking',
       text: '**Assessing availability**\n\n**Planning workspace setup**',
@@ -1045,12 +1086,15 @@ describe('ResponseGroup - block identity', () => {
       authoredGroup,
     ]);
     expect(normalizeResponseGroups([proseReasoning, reasoningGroup])).toEqual([
-      proseReasoning,
       {
         ...reasoningGroup,
-        name: '',
+        name: 'Assessing availability',
         sourceName: 'Prepping',
         isReasoningPhase: true,
+        hasDescription: true,
+        hasAdjacentReasoningHistory: true,
+        adjacentReasoningHistoryCount: 1,
+        children: [description, { type: 'thinking', text: 'Explain the next step.' }],
       },
     ]);
   });
@@ -1425,7 +1469,7 @@ describe('MessageContent - top-level response rows', () => {
     ['MessageContent', () => import('../MessageContent.svelte')],
     ['StreamingMessageContent', () => import('../StreamingMessageContent.svelte')],
   ] as const)(
-    'renders all collapsed %s preview children with normal group spacing',
+    'renders only the current collapsed %s preview child with normal group spacing',
     async (_name, loadComponent) => {
       const Component = (await loadComponent()).default;
       const content: ContentBlock[] = [
@@ -1441,8 +1485,8 @@ describe('MessageContent - top-level response rows', () => {
       const preview = container.querySelector('[data-operational-preview-content]')!;
       expect(preview).not.toBeNull();
       expect(preview.className).not.toMatch(/\bpt-4\b/);
-      expect(preview.querySelectorAll('[data-response-group-child]')).toHaveLength(2);
-      expect(preview.querySelector('[data-message-content-block="text"]')).not.toBeNull();
+      expect(preview.querySelectorAll('[data-response-group-child]')).toHaveLength(1);
+      expect(preview.querySelector('[data-message-content-block="text"]')).toBeNull();
       const previewChild = preview.querySelector('[data-message-content-block="tool_use"]')!;
       expect(previewChild).not.toBeNull();
       expect(previewChild.className).toMatch(/\bpt-4\b/);

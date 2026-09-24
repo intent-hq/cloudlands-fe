@@ -65,6 +65,8 @@
     dedupeKeys,
     getResponseGroupBlockKeys,
     getResponseGroupChildBoundary,
+    getResponseGroupCurrentChildIndex,
+    isTerminalResponseGroup,
     isNestedReasoningSectionBoundary,
     isNestedReasoningSectionStart,
     normalizeResponseGroups,
@@ -391,15 +393,12 @@
     if (contentBlock.type === 'tool_result') {
       return isStandaloneToolResult(toolResultClassification, contentBlock);
     }
-    return contentBlock.type === 'tool_use' || contentBlock.type === 'thinking';
+    return (
+      contentBlock.type === 'tool_use' ||
+      contentBlock.type === 'thinking' ||
+      contentBlock.type === 'plan'
+    );
   }
-
-  const lastVisibleTopLevelBlockIndex = $derived.by(() => {
-    for (let i = groupedBlocks.length - 1; i >= 0; i--) {
-      if (isVisibleTopLevelBlock(groupedBlocks[i])) return i;
-    }
-    return -1;
-  });
 </script>
 
 {#snippet renderParsedContentBlock(
@@ -517,6 +516,7 @@
   adjacentOperationalRow = false,
   reasoningHistory = false,
   searchPath: string | undefined = undefined,
+  currentChild = false,
 )}
   {@const proposal = getProposalFromBlock(block)}
   {#if proposal !== null}
@@ -663,13 +663,17 @@
     {#if reasoningHistory}
       <ReasoningHistoryBlock
         content={getContentBlockText(block) || m.chat_shared_processing_fallback()}
+        {searchPath}
+        isStreaming={isStreaming && currentChild}
         {workspaceId}
         {adjacentOperationalRow}
       />
     {:else}
       <ThinkingBlock
         content={getContentBlockText(block) || m.chat_shared_processing_fallback()}
-        isStreaming={isStreaming && !nested && blockIndex === groupedBlocks.length - 1}
+        {searchPath}
+        isStreaming={isStreaming &&
+          (currentChild || (!nested && blockIndex === groupedBlocks.length - 1))}
         {workspaceId}
         {adjacentOperationalRow}
       />
@@ -718,7 +722,7 @@
       ? 'calc(var(--operational-row-inline-padding) + var(--operational-leading-slot-size) + var(--operational-leading-gap))'
       : undefined}
     data-message-content-block={childBlock.type}
-    data-chat-search-block-path={childBlock.type === 'tool_result'
+    data-chat-search-block-path={childBlock.type === 'tool_result' || childBlock.type === 'thinking'
       ? undefined
       : chatSearchBlockPath(groupIndex, childIndex)}
     data-response-group-child
@@ -733,6 +737,7 @@
       isAdjacentOperationalClusterRow(group.children, childIndex, isVisibleGroupChild),
       group.isReasoningPhase,
       chatSearchBlockPath(groupIndex, childIndex),
+      group.isStreaming && childIndex === getResponseGroupCurrentChildIndex(group),
     )}
   </div>
 {/snippet}
@@ -742,6 +747,19 @@
     {#if block.type === 'content_group'}
       {@const group = block as ContentBlockGroup}
       {@const childKeys = getResponseGroupBlockKeys(group.children)}
+      {@const currentIndex = getResponseGroupCurrentChildIndex(group)}
+      {#snippet currentChild()}
+        {#if currentIndex >= 0}
+          {#key childKeys[currentIndex]}
+            {@render renderResponseGroupChild(
+              group,
+              blockIndex,
+              group.children[currentIndex],
+              currentIndex,
+            )}
+          {/key}
+        {/if}
+      {/snippet}
       {#if shouldRenderResponseGroupInline(group)}
         {#each group.children as childBlock, childIndex (childKeys[childIndex])}
           {#if isVisibleGroupChild(childBlock)}
@@ -761,11 +779,12 @@
           <ResponseGroup
             name={group.name}
             isStreaming={group.isStreaming}
-            isTerminal={blockIndex === lastVisibleTopLevelBlockIndex}
+            isTerminal={isTerminalResponseGroup(groupedBlocks, blockIndex, isVisibleTopLevelBlock)}
             {isLastConversationMessage}
             blocks={group.children.filter(isVisibleGroupChild)}
             searchPath={chatSearchBlockPath(blockIndex)}
             reasoningPhase={group.isReasoningPhase}
+            currentChild={currentIndex >= 0 ? currentChild : undefined}
             adjacentOperationalRow={isAdjacentOperationalClusterRow(
               groupedBlocks,
               blockIndex,
