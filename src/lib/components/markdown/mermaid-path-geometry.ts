@@ -2600,6 +2600,7 @@ export function repairFlowchartRouteClearance(svg: SVGSVGElement) {
         ]
       : route.points;
     let points = chooseRoute(initialPoints);
+    if (!fixed && !ingress && points.length > 4) points = chooseRoute(points, true);
     if (!fixed && !ingress && !svg.querySelector('g.cluster'))
       points = separateFlowchartVerticalLane(
         points,
@@ -3099,8 +3100,13 @@ function attachCardinalPorts(
   const points = route.map((point) => ({ ...point }));
   if (source) {
     const next = points[1];
+    const previousStart = points[0];
     points[0] = source.point;
     const vertical = source.side === 'top' || source.side === 'bottom';
+    if (points.length > 2) {
+      if (vertical && Math.abs(previousStart.x - next.x) < 0.001) next.x = source.point.x;
+      else if (!vertical && Math.abs(previousStart.y - next.y) < 0.001) next.y = source.point.y;
+    }
     const aligned = vertical
       ? Math.abs(next.x - source.point.x) < 0.001
       : Math.abs(next.y - source.point.y) < 0.001;
@@ -3116,8 +3122,14 @@ function attachCardinalPorts(
   }
   if (target) {
     const previous = points[points.length - 2];
+    const previousEnd = points[points.length - 1];
     points[points.length - 1] = target.point;
     const vertical = target.side === 'top' || target.side === 'bottom';
+    if (points.length > 2) {
+      if (vertical && Math.abs(previousEnd.x - previous.x) < 0.001) previous.x = target.point.x;
+      else if (!vertical && Math.abs(previousEnd.y - previous.y) < 0.001)
+        previous.y = target.point.y;
+    }
     const aligned = vertical
       ? Math.abs(previous.x - target.point.x) < 0.001
       : Math.abs(previous.y - target.point.y) < 0.001;
