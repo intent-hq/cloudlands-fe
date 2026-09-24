@@ -58,6 +58,7 @@
     states: {
       grouped: { props: { initialQuery: '' }, setup },
       context: { props: { initialQuery: '#' }, setup },
+      multiplayer: { props: { initialQuery: 'multiplayer' }, setup },
     },
   });
 </script>

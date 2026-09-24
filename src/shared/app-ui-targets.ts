@@ -186,16 +186,6 @@ const APP_UI_TARGETS: AppUiTarget[] = [
     }),
   ),
   settingsTarget({
-    id: 'labs-multiplayer',
-    tab: 'labs',
-    hashAliases: ['labs-multiplayer', 'multiplayer', 'labs'],
-    scrollSelector: '#labs-multiplayer',
-    highlightSelector: '[data-highlight-id="labs-multiplayer"]',
-    label: 'Settings: Multiplayer (Labs)',
-    route: '/settings?tab=labs#labs-multiplayer',
-    description: 'Experimental Multiplayer lab toggle.',
-  }),
-  settingsTarget({
     id: 'general',
     tab: 'advanced',
     hashAliases: ['general', 'reset'],
