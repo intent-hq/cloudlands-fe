@@ -5,7 +5,7 @@
  * shell is rendered with every heavy child replaced by a marker so only the
  * frame geometry classes are under test.
  */
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, render, screen } from '@testing-library/svelte';
 import { createRawSnippet } from 'svelte';
 
@@ -142,9 +142,31 @@ describe('workspace frame outer inset', () => {
     appStore.init();
   });
 
-  afterEach(() => {
+  afterEach(async () => {
+    // Finish layout startup while its component and store are still alive.
+    await vi.dynamicImportSettled();
     cleanup();
     appStore.dispose();
+  });
+
+  afterAll(async () => {
+    // Real layout imports must finish within each test's cleanup, before Vitest
+    // drains the worker's console RPCs. Spies call through to preserve all output.
+    const spies = (['log', 'info', 'debug', 'warn', 'error'] as const).map((method) =>
+      vi.spyOn(console, method),
+    );
+    try {
+      await vi.dynamicImportSettled();
+      const lateMessages = spies.flatMap((spy) =>
+        spy.mock.calls.map((args) => args.map(String).join(' ')),
+      );
+      expect(
+        lateMessages,
+        'layout initialization must settle before the test suite finishes',
+      ).toEqual([]);
+    } finally {
+      for (const spy of spies) spy.mockRestore();
+    }
   });
 
   function renderShell() {
