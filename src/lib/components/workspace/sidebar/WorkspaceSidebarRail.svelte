@@ -44,7 +44,7 @@
     if (tabId !== activeTab) {
       const previousIndex = tabs.findIndex((tab) => tab.id === activeTab);
       const nextIndex = tabs.findIndex((tab) => tab.id === tabId);
-      contentOffset = previousIndex < 0 ? 0 : nextIndex > previousIndex ? -8 : 8;
+      contentOffset = previousIndex < 0 ? 0 : nextIndex > previousIndex ? -48 : 48;
     }
     activeTrigger =
       railElement?.querySelector<HTMLElement>('[data-sidebar-rail-tab="' + tabId + '"]') ??
@@ -152,9 +152,9 @@
     }}
     onInteractOutside={() => (keyboardOpen = false)}
   >
-    <div use:animatedHeight={{ tier: 'moderate' }}>
+    <div class="overflow-hidden" use:animatedHeight={{ tier: 'moderate' }}>
       {#key activeTab}
-        <div in:springIn={{ tier: 'fast', x: 0, y: contentOffset, scale: 1 }}>
+        <div in:springIn={{ tier: 'moderate', x: 0, y: contentOffset, scale: 1 }}>
           {@render children()}
         </div>
       {/key}
