@@ -57,7 +57,7 @@ import { authRejectedReceived } from '../../connections/connections-slice';
 import { selectAllTabs, selectHiddenTabs } from '../../panel-layout/panel-layout-selectors';
 import { destroyOwnedTabsForWorkspace } from '../../panel-layout/panel-layout-slice';
 import { selectActiveWorkspaceIds } from '../../tab-state/tab-state-selectors';
-import { selectWorkspaceItems } from '../../workspace/workspace-selectors';
+import { selectWorkspaceById, selectWorkspaceItems } from '../../workspace/workspace-selectors';
 import { removeWorkspaceEntity, resetWorkspaceState } from '../../workspace/workspace-slice';
 import { workspaceDeleted } from '../../workspace-lifecycle/workspace-lifecycle-slice';
 import {
@@ -77,6 +77,7 @@ import {
   hostedRosterLoading,
   hostedRosterReceived,
   hostedRosterWithheld,
+  hostedSweepReportReceived,
   leaveGuestSessionRequested,
   leaveGuestWorkspaceRequested,
   leaveOperationSettled,
@@ -97,6 +98,8 @@ import {
   selectGuestSessionsLoaded,
   selectHostedRemovingPrincipalIds,
   selectHostedRosterMemberCounts,
+  selectHostedRoster,
+  selectHostedSweepReport,
   selectIsHostedWorkspaceListed,
   selectWindowGuestSession,
 } from '../guest-sessions-selectors';
@@ -169,21 +172,35 @@ function* hydrate(action: ReturnType<typeof loadGuestSessionsRequested>): SagaGe
   }
 }
 
-function* leave(action: ReturnType<typeof leaveGuestSessionRequested>): SagaGenerator<void> {
+function* leave(
+  flights: Map<string, Array<ReturnType<typeof leaveGuestSessionRequested>>>,
+  action: ReturnType<typeof leaveGuestSessionRequested>,
+): SagaGenerator<void> {
   const [id] = action.payload;
-  let settled = false;
+  const joiners = flights.get(id);
+  if (joiners) {
+    joiners.push(action);
+    return;
+  }
+  flights.set(id, []);
+  let outcome:
+    { result: LeaveGuestSessionResult } | { failure: GuestSessionOperationError } | null = null;
   yield* put(leaveOperationStarted(id));
   try {
     const result = yield* call(invokeLeave, { id });
-    yield* put(action.success(result));
-    settled = true;
+    outcome = { result };
   } catch (error) {
-    yield* put(action.failure(toGuestSessionFailure(error)));
-    settled = true;
+    outcome = { failure: toGuestSessionFailure(error) };
   } finally {
-    if (!settled && (yield* cancelled()))
-      yield* put(action.failure(new GuestSessionOperationError('cancelled')));
+    outcome ??= { failure: new GuestSessionOperationError('cancelled') };
+    const joined = [action, ...(flights.get(id) ?? [])];
+    flights.delete(id);
     yield* put(leaveOperationSettled(id));
+    for (const request of joined) {
+      yield* put(
+        'result' in outcome ? request.success(outcome.result) : request.failure(outcome.failure),
+      );
+    }
   }
 }
 
@@ -194,22 +211,35 @@ function* leave(action: ReturnType<typeof leaveGuestSessionRequested>): SagaGene
  * refused) leaves the record as is for a retry.
  */
 function* leaveWorkspace(
+  flights: Map<string, Array<ReturnType<typeof leaveGuestWorkspaceRequested>>>,
   action: ReturnType<typeof leaveGuestWorkspaceRequested>,
 ): SagaGenerator<void> {
   const [id, workspaceId] = action.payload;
-  let settled = false;
+  const key = JSON.stringify([id, workspaceId]);
+  const joiners = flights.get(key);
+  if (joiners) {
+    joiners.push(action);
+    return;
+  }
+  flights.set(key, []);
+  let outcome:
+    { result: LeaveGuestWorkspaceResult } | { failure: GuestSessionOperationError } | null = null;
   yield* put(leaveWorkspaceOperationStarted(id, workspaceId));
   try {
     const result = yield* call(invokeLeaveWorkspace, { id, workspaceId });
-    yield* put(action.success(result));
-    settled = true;
+    outcome = { result };
   } catch (error) {
-    yield* put(action.failure(toGuestSessionFailure(error)));
-    settled = true;
+    outcome = { failure: toGuestSessionFailure(error) };
   } finally {
-    if (!settled && (yield* cancelled()))
-      yield* put(action.failure(new GuestSessionOperationError('cancelled')));
+    outcome ??= { failure: new GuestSessionOperationError('cancelled') };
+    const joined = [action, ...(flights.get(key) ?? [])];
+    flights.delete(key);
     yield* put(leaveWorkspaceOperationSettled(id, workspaceId));
+    for (const request of joined) {
+      yield* put(
+        'result' in outcome ? request.success(outcome.result) : request.failure(outcome.failure),
+      );
+    }
   }
 }
 
@@ -575,6 +605,22 @@ function* removeAllHostedGuests(
     return;
   }
   inFlight.set(workspaceId, []);
+  const workspace = yield* selectWorkspaceById.effect(workspaceId);
+  const roster = yield* selectHostedRoster.effect(workspaceId);
+  const previous = yield* selectHostedSweepReport.effect(workspaceId);
+  const reportContext = {
+    workspaceId,
+    workspaceTitle: workspace?.title ?? previous?.workspaceTitle ?? '',
+    memberLabels: {
+      ...previous?.memberLabels,
+      ...Object.fromEntries(
+        roster.members.map((member) => [
+          member.principalId,
+          member.displayName ?? member.login ?? member.principalId,
+        ]),
+      ),
+    },
+  };
   let outcome: SweepOutcome | null = null;
   yield* put(removeAllGuestsOperationStarted(workspaceId));
   try {
@@ -597,6 +643,28 @@ function* removeAllHostedGuests(
   } finally {
     // Cancelled (saga teardown) is the only way out without an outcome.
     outcome ??= { failure: new HostedRosterOperationError('cancelled') };
+    if ('result' in outcome) {
+      const result = outcome.result;
+      if (result.failedMembers.length || result.failedInvites.length || result.invitesUnavailable) {
+        yield* put(
+          hostedSweepReportReceived({
+            ...reportContext,
+            failedMemberIds: result.failedMembers.map((member) => member.principalId),
+            failedInviteLabels: result.failedInvites.map((invite) => invite.pinLogin ?? ''),
+            invitesUnavailable: result.invitesUnavailable !== null,
+          }),
+        );
+      }
+    } else if (outcome.failure.code !== 'cancelled' && outcome.failure.code !== 'forbidden') {
+      yield* put(
+        hostedSweepReportReceived({
+          ...reportContext,
+          failedMemberIds: [],
+          failedInviteLabels: [],
+          invitesUnavailable: false,
+        }),
+      );
+    }
     const joined = [action, ...(inFlight.get(workspaceId) ?? [])];
     inFlight.delete(workspaceId);
     for (const request of joined) {
@@ -748,11 +816,16 @@ function* tearDownOnGuestAuthRejection(
 
 function* watchActions(): SagaGenerator<void> {
   const sweepsInFlight: SweepsInFlight = new Map();
+  const leavesInFlight = new Map<string, Array<ReturnType<typeof leaveGuestSessionRequested>>>();
+  const workspaceLeavesInFlight = new Map<
+    string,
+    Array<ReturnType<typeof leaveGuestWorkspaceRequested>>
+  >();
   yield* all([
     takeLeading(loadGuestSessionsRequested, hydrate),
-    // takeEvery: each leave targets one host id and main serializes the work.
-    takeEvery(leaveGuestSessionRequested, leave),
-    takeEvery(leaveGuestWorkspaceRequested, leaveWorkspace),
+    // Repeated leaves join their existing flight; main orders conflicting host mutations.
+    takeEvery(leaveGuestSessionRequested, leave, leavesInFlight),
+    takeEvery(leaveGuestWorkspaceRequested, leaveWorkspace, workspaceLeavesInFlight),
     call(watchRosterLoads),
     takeEvery(removeHostedMemberRequested, removeHostedMember),
     // takeEvery, keyed single-flight inside: a same-workspace request joins

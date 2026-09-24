@@ -7,7 +7,11 @@
  * window's shared workspaces (a read-through view of `workspace.members.list`).
  */
 
-import { createCollection } from '@augmentcode/themis/utils/collections/collection-utils';
+import {
+  addItem,
+  createCollection,
+  removeItem,
+} from '@augmentcode/themis/utils/collections/collection-utils';
 import { createAction, createAsyncAction } from '@augmentcode/themis/utils/store/create-action';
 import { createReducer } from '@augmentcode/themis/utils/store/create-reducer';
 import { removeWorkspaceEntity, resetWorkspaceState } from '../workspace/workspace-slice';
@@ -18,6 +22,7 @@ import {
   type GuestSessionRecord,
   type GuestSessionsListResult,
   type GuestSessionsState,
+  type HostedSweepReport,
   type LeaveGuestSessionResult,
   type LeaveGuestWorkspaceResult,
   type RemoveAllHostedGuestsResult,
@@ -38,6 +43,10 @@ export const initialState: GuestSessionsState = {
   listUnavailable: false,
   leavingIds: [],
   leavingWorkspaceKeys: [],
+  failedLeaveIds: [],
+  failedLeaveWorkspaceKeys: [],
+  failedMemberKeys: [],
+  sweepReports: createCollection<HostedSweepReport, 'workspaceId'>('workspaceId'),
   hostedRosters: {},
   removingMemberKeys: [],
   clearingWorkspaceIds: [],
@@ -149,6 +158,10 @@ export const removeAllGuestsOperationSettled = createAction<[workspaceId: string
   'guestSessions/removeAllGuestsSettled',
 );
 
+export const hostedSweepReportReceived = createAction<[report: HostedSweepReport]>(
+  'guestSessions/hostedSweepReportReceived',
+);
+
 // ---------------------------------------------------------------------------
 // Reducer
 // ---------------------------------------------------------------------------
@@ -169,8 +182,20 @@ guestSessionsReducer.with(guestSessionsListUnavailable, (state) =>
 );
 
 guestSessionsReducer.with(leaveOperationStarted, (state, { payload: [id] }) =>
-  state.leavingIds.includes(id) ? state : { ...state, leavingIds: [...state.leavingIds, id] },
+  state.leavingIds.includes(id)
+    ? state
+    : {
+        ...state,
+        leavingIds: [...state.leavingIds, id],
+        failedLeaveIds: withoutId(state.failedLeaveIds, id),
+      },
 );
+guestSessionsReducer.with(leaveGuestSessionRequested.failure, (state, { payload }) => {
+  const id = payload.request[0];
+  return payload.error.message === 'cancelled' || state.failedLeaveIds.includes(id)
+    ? state
+    : { ...state, failedLeaveIds: [...state.failedLeaveIds, id] };
+});
 guestSessionsReducer.with(leaveOperationSettled, (state, { payload: [id] }) => ({
   ...state,
   leavingIds: state.leavingIds.filter((leaving) => leaving !== id),
@@ -182,7 +207,11 @@ guestSessionsReducer.with(
     const key = guestWorkspaceKey(id, workspaceId);
     return state.leavingWorkspaceKeys.includes(key)
       ? state
-      : { ...state, leavingWorkspaceKeys: [...state.leavingWorkspaceKeys, key] };
+      : {
+          ...state,
+          leavingWorkspaceKeys: [...state.leavingWorkspaceKeys, key],
+          failedLeaveWorkspaceKeys: withoutId(state.failedLeaveWorkspaceKeys, key),
+        };
   },
 );
 guestSessionsReducer.with(
@@ -195,6 +224,13 @@ guestSessionsReducer.with(
     };
   },
 );
+
+guestSessionsReducer.with(leaveGuestWorkspaceRequested.failure, (state, { payload }) => {
+  const key = guestWorkspaceKey(...payload.request);
+  return payload.error.message === 'cancelled' || state.failedLeaveWorkspaceKeys.includes(key)
+    ? state
+    : { ...state, failedLeaveWorkspaceKeys: [...state.failedLeaveWorkspaceKeys, key] };
+});
 
 /** `withheld` is terminal: a load / result / failure landing on it is dropped. */
 function isWithheld(state: GuestSessionsState, workspaceId: string): boolean {
@@ -248,21 +284,33 @@ guestSessionsReducer.with(hostedRosterWithheld, (state, { payload: [workspaceId]
         },
         removingMemberKeys: withoutWorkspaceKeys(state.removingMemberKeys, workspaceId),
         clearingWorkspaceIds: withoutId(state.clearingWorkspaceIds, workspaceId),
+        failedMemberKeys: withoutWorkspaceKeys(state.failedMemberKeys, workspaceId),
       },
 );
 
 /** Drop one workspace's roster + *Remove* / sweep markers (deleted / removed entity). */
 function purgeHostedRoster(state: GuestSessionsState, workspaceId: string): GuestSessionsState {
+  const failedMemberKeys = withoutWorkspaceKeys(state.failedMemberKeys, workspaceId);
+  const sweepReports = removeItem(state.sweepReports, workspaceId);
   const removingMemberKeys = withoutWorkspaceKeys(state.removingMemberKeys, workspaceId);
   const clearingWorkspaceIds = withoutId(state.clearingWorkspaceIds, workspaceId);
   if (!(workspaceId in state.hostedRosters)) {
     return removingMemberKeys === state.removingMemberKeys &&
-      clearingWorkspaceIds === state.clearingWorkspaceIds
+      clearingWorkspaceIds === state.clearingWorkspaceIds &&
+      failedMemberKeys === state.failedMemberKeys &&
+      sweepReports === state.sweepReports
       ? state
-      : { ...state, removingMemberKeys, clearingWorkspaceIds };
+      : { ...state, removingMemberKeys, clearingWorkspaceIds, failedMemberKeys, sweepReports };
   }
   const { [workspaceId]: _purged, ...hostedRosters } = state.hostedRosters;
-  return { ...state, hostedRosters, removingMemberKeys, clearingWorkspaceIds };
+  return {
+    ...state,
+    hostedRosters,
+    removingMemberKeys,
+    clearingWorkspaceIds,
+    failedMemberKeys,
+    sweepReports,
+  };
 }
 
 function withoutId(ids: string[], id: string): string[] {
@@ -286,9 +334,18 @@ guestSessionsReducer.with(removeWorkspaceEntity, (state, { payload: [workspaceId
 guestSessionsReducer.with(resetWorkspaceState, (state) =>
   Object.keys(state.hostedRosters).length === 0 &&
   state.removingMemberKeys.length === 0 &&
-  state.clearingWorkspaceIds.length === 0
+  state.clearingWorkspaceIds.length === 0 &&
+  state.failedMemberKeys.length === 0 &&
+  state.sweepReports.ids.length === 0
     ? state
-    : { ...state, hostedRosters: {}, removingMemberKeys: [], clearingWorkspaceIds: [] },
+    : {
+        ...state,
+        hostedRosters: {},
+        removingMemberKeys: [],
+        clearingWorkspaceIds: [],
+        failedMemberKeys: [],
+        sweepReports: initialState.sweepReports,
+      },
 );
 
 guestSessionsReducer.with(
@@ -297,7 +354,11 @@ guestSessionsReducer.with(
     const key = hostedMemberKey(workspaceId, principalId);
     return state.removingMemberKeys.includes(key)
       ? state
-      : { ...state, removingMemberKeys: [...state.removingMemberKeys, key] };
+      : {
+          ...state,
+          removingMemberKeys: [...state.removingMemberKeys, key],
+          failedMemberKeys: withoutId(state.failedMemberKeys, key),
+        };
   },
 );
 guestSessionsReducer.with(
@@ -311,9 +372,32 @@ guestSessionsReducer.with(
 guestSessionsReducer.with(removeAllGuestsOperationStarted, (state, { payload: [workspaceId] }) =>
   state.clearingWorkspaceIds.includes(workspaceId)
     ? state
-    : { ...state, clearingWorkspaceIds: [...state.clearingWorkspaceIds, workspaceId] },
+    : {
+        ...state,
+        clearingWorkspaceIds: [...state.clearingWorkspaceIds, workspaceId],
+        sweepReports: removeItem(state.sweepReports, workspaceId),
+      },
 );
 guestSessionsReducer.with(removeAllGuestsOperationSettled, (state, { payload: [workspaceId] }) => ({
   ...state,
   clearingWorkspaceIds: withoutId(state.clearingWorkspaceIds, workspaceId),
+}));
+
+guestSessionsReducer.with(removeHostedMemberRequested.failure, (state, { payload }) => {
+  const [workspaceId, principalId] = payload.request;
+  if (
+    payload.error.message === 'forbidden' ||
+    payload.error.message === 'cancelled' ||
+    isWithheld(state, workspaceId)
+  )
+    return state;
+  const key = hostedMemberKey(workspaceId, principalId);
+  return state.failedMemberKeys.includes(key)
+    ? state
+    : { ...state, failedMemberKeys: [...state.failedMemberKeys, key] };
+});
+
+guestSessionsReducer.with(hostedSweepReportReceived, (state, { payload: [report] }) => ({
+  ...state,
+  sweepReports: addItem(state.sweepReports, report),
 }));
