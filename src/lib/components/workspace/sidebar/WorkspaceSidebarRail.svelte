@@ -75,7 +75,7 @@
 >
   <nav
     bind:this={railElement}
-    class="flex h-full flex-col items-center gap-1 py-3"
+    class="flex h-full flex-col items-center gap-1 pt-5 pb-3"
     aria-label={m.workspace_layout_ariaLabel()}
     data-workspace-sidebar-rail
   >
@@ -85,7 +85,6 @@
           variant="ghost"
           size="icon"
           iconOnly
-          class={tab.id === 'overview' ? 'mb-3' : ''}
           aria-label={tab.id === 'overview'
             ? m.layout_titleBar_toggleSidebar_ariaLabel()
             : tab.label}
