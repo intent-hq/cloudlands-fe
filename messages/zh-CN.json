@@ -5455,6 +5455,8 @@
   "lib_commandPalette_openHud_command": "打开 HUD",
   "lib_commandPalette_openUsageStats_command": "打开使用统计",
   "lib_commandPalette_settings_command": "设置",
+  "lib_commandPalette_showLabsInSettings_label": "在设置中显示实验室",
+  "lib_commandPalette_hideLabsInSettings_label": "在设置中隐藏实验室",
   "lib_commandPalette_newAgentChat_command": "新建智能体聊天",
   "lib_commandPalette_newTerminal_command": "新建终端",
   "lib_commandPalette_newNote_command": "新建笔记",

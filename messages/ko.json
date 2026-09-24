@@ -5455,6 +5455,8 @@
   "lib_commandPalette_openHud_command": "HUD 열기",
   "lib_commandPalette_openUsageStats_command": "사용 통계 열기",
   "lib_commandPalette_settings_command": "설정",
+  "lib_commandPalette_showLabsInSettings_label": "설정에 랩 표시",
+  "lib_commandPalette_hideLabsInSettings_label": "설정에서 랩 숨기기",
   "lib_commandPalette_newAgentChat_command": "새 에이전트 채팅",
   "lib_commandPalette_newTerminal_command": "새 터미널",
   "lib_commandPalette_newNote_command": "새 노트",

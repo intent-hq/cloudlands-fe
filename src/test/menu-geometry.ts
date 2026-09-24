@@ -29,23 +29,40 @@ export async function menuTextGeometry(label: Locator) {
 }
 
 export async function expectMenuFirstLine(row: Locator, label: Locator) {
-  const text = await menuTextGeometry(label);
-  const accessories = await row
-    .locator(
-      ':scope > [data-slot="menu-item-leading"] svg, :scope > [data-slot="menu-item-indicator"] svg, :scope > [data-slot="menu-sub-chevron"] svg, kbd',
-    )
-    .evaluateAll((nodes) =>
-      nodes.map((node) => {
+  const labelElement = await label.elementHandle();
+  if (!labelElement) throw new Error('Expected menu label element');
+  const { textCenter, accessories } = await row.evaluate((element, labelNode) => {
+    const walker = document.createTreeWalker(labelNode, NodeFilter.SHOW_TEXT, {
+      acceptNode: (node) =>
+        node.textContent?.trim() && !node.parentElement?.closest('[aria-hidden="true"]')
+          ? NodeFilter.FILTER_ACCEPT
+          : NodeFilter.FILTER_REJECT,
+    });
+    const text = walker.nextNode();
+    if (!text) throw new Error('Expected visible menu label text');
+    const range = document.createRange();
+    range.selectNodeContents(text);
+    const first = range.getClientRects()[0];
+    // Read labels and accessories in the same frame while the popup is being placed.
+    return {
+      textCenter: first.top + first.height / 2,
+      accessories: Array.from(
+        element.querySelectorAll(
+          ':scope > [data-slot="menu-item-leading"] svg, :scope > [data-slot="menu-item-indicator"] svg, :scope > [data-slot="menu-sub-chevron"] svg, kbd',
+        ),
+      ).map((node) => {
         const rect = node.getBoundingClientRect();
         return {
           slot: node.parentElement?.dataset.slot ?? node.tagName,
           center: rect.top + rect.height / 2,
         };
       }),
-    );
+    };
+  }, labelElement);
+  await labelElement.dispose();
   expect(accessories.length).toBeGreaterThan(0);
   for (const accessory of accessories) {
-    expect(Math.abs(accessory.center - text.center), accessory.slot).toBeLessThanOrEqual(1.5);
+    expect(Math.abs(accessory.center - textCenter), accessory.slot).toBeLessThanOrEqual(1.5);
   }
 }
 

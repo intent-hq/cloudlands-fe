@@ -7,6 +7,18 @@ import type { SidebarMenuEntry } from '$lib/components/ui/sidebar-context-menu/t
 
 afterEach(cleanup);
 
+it('opens with its default accessible label and dispatches the selected command', async () => {
+  const onClick = vi.fn();
+  render(SidebarContextMenu, {
+    props: { x: 10, y: 10, items: [{ id: 'open', label: 'Open agent', onClick }] },
+  });
+  const command = await screen.findByRole('menuitem', { name: 'Open agent' });
+  expect(screen.getByRole('menu').getAttribute('aria-label')).toBeTruthy();
+  await fireEvent.click(command);
+  expect(onClick).toHaveBeenCalledOnce();
+  await waitFor(() => expect(screen.queryByRole('menu')).toBeNull());
+});
+
 it('keeps metadata labels out of command roles, navigation and dispatch', async () => {
   const onClick = vi.fn();
   const items: SidebarMenuEntry[] = [

@@ -5455,6 +5455,8 @@
   "lib_commandPalette_openHud_command": "Ouvrir le HUD",
   "lib_commandPalette_openUsageStats_command": "Ouvrir les statistiques d’utilisation",
   "lib_commandPalette_settings_command": "Paramètres",
+  "lib_commandPalette_showLabsInSettings_label": "Afficher Labs dans les paramètres",
+  "lib_commandPalette_hideLabsInSettings_label": "Masquer Labs dans les paramètres",
   "lib_commandPalette_newAgentChat_command": "Nouvelle discussion avec un agent",
   "lib_commandPalette_newTerminal_command": "Nouveau terminal",
   "lib_commandPalette_newNote_command": "Nouvelle note",
