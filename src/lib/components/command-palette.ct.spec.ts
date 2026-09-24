@@ -1,6 +1,33 @@
 import { expect, test } from '../../test/ct-test';
 import CommandPalettePreview from './command-palette.preview.svelte';
 
+test('ordinary open clears the visible recovery filter without disrupting typing or go-to-line', async ({
+  mount,
+  page,
+}) => {
+  await page.setViewportSize({ width: 360, height: 600 });
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  const component = await mount(CommandPalettePreview, {
+    props: { initialQuery: 'GitLab', withoutWorkspace: true },
+    hooksConfig: { geometrySnapshot: { scene: 'command-palette', state: 'gitlab-off' } },
+  });
+  const dialog = page.getByRole('dialog');
+  const input = dialog.getByRole('textbox');
+  await expect(input).toHaveValue('GitLab');
+  await component.update({ props: { initialQuery: '', withoutWorkspace: true } });
+  await expect(input).toHaveValue('');
+  await expect(input).toBeFocused();
+
+  await input.fill('my search');
+  await component.update({ props: { initialQuery: '', withoutWorkspace: false } });
+  await expect(input).toHaveValue('my search');
+  await component.update({ props: { initialQuery: ':', withoutWorkspace: false } });
+  await expect(input).toHaveValue(':');
+  await input.fill(':42');
+  await input.press('Enter');
+  await expect(dialog).toHaveCount(0);
+});
+
 test('GitLab command supports keyboard activation and reopening at compact width', async ({
   mount,
   page,
