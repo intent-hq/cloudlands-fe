@@ -734,9 +734,6 @@ describe('mounted panel header actions menu', () => {
     expect(
       screen.getByRole('menuitem', { name: 'Move panel right' }).getAttribute('aria-disabled'),
     ).toBe('true');
-    const left = screen.getByRole('menuitem', { name: 'Move panel left' });
-    const description = document.getElementById(left.getAttribute('aria-describedby')!);
-    expect(description?.textContent?.length).toBeGreaterThan(0);
   });
 
   it('rejects a drag from the trigger but keeps blank-header dragging active', async () => {

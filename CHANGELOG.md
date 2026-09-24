@@ -4,6 +4,29 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.180.2](https://github.com/intent-hq/cloudlands-fe/compare/v2.180.1...v2.180.2) (2026-09-24)
+
+
+### 🐛 Bug Fixes
+
+* stabilize streaming chat updates ([#2857](https://github.com/intent-hq/cloudlands-fe/issues/2857)) ([b66fb1f](https://github.com/intent-hq/cloudlands-fe/commit/b66fb1f26db18e3db497328e99ce201b0c3cdb66))
+
+## [2.180.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.180.0...v2.180.1) (2026-09-24)
+
+
+### 🐛 Bug Fixes
+
+* **browser:** Preserve live tabs across workspace switches ([#2587](https://github.com/intent-hq/cloudlands-fe/issues/2587)) ([b031a20](https://github.com/intent-hq/cloudlands-fe/commit/b031a20cc5f62da8622a9318ec4981cf21c73271))
+* bump intentd sidecar to v0.9.104 ([#2856](https://github.com/intent-hq/cloudlands-fe/issues/2856)) ([1a2ba03](https://github.com/intent-hq/cloudlands-fe/commit/1a2ba0318030f0a4347680ea34c62183fd2aaeec))
+* **settings:** center device row contents vertically ([#2852](https://github.com/intent-hq/cloudlands-fe/issues/2852)) ([9baf943](https://github.com/intent-hq/cloudlands-fe/commit/9baf94359be61848f359809c5f33c7d0fb707963))
+
+## [2.180.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.179.2...v2.180.0) (2026-09-23)
+
+
+### 🚀 Features
+
+* standardize dropdown menus and picker interactions ([#2821](https://github.com/intent-hq/cloudlands-fe/issues/2821)) ([f3e9ef0](https://github.com/intent-hq/cloudlands-fe/commit/f3e9ef0f709b9306cdc44e4c2410ed3c6a128351))
+
 ## [2.179.2](https://github.com/intent-hq/cloudlands-fe/compare/v2.179.1...v2.179.2) (2026-09-23)
 
 

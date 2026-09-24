@@ -530,7 +530,7 @@
   aria-labelledby={`device-${device.id}-name`}
   aria-busy={busy !== null}
 >
-  <ListRow class="px-4 sm:px-5">
+  <ListRow class="items-center px-4 sm:px-5 [&>[data-slot]]:self-center">
     {#snippet leading()}
       <span class="flex items-center gap-3">
         <span

@@ -1,15 +1,9 @@
 ---
 name: core/channel-effects
 description: >-
-  Generic EventChannel consumers for sagas. Use redux-saga takeEvery(channel,
-  worker) for every-event consumption and takeLatest(channel, worker) for
-  latest-only consumption. Own app-provided channel lifecycle explicitly and
-  call channel.close() in a finally block on cancel / failure. Use these
-  patterns for app-provided EventChannel factories, websocket, DOM-event, or IPC
-  EventChannel consumers.
-  Distinct from selector-channels — do NOT wrap a selector-derived channel in
-  generic EventChannel consumers; use takeEveryFromSelector /
-  takeLatestFromSelector instead.
+  Use for consuming app-provided EventChannels in sagas, including websocket,
+  DOM, IPC, and cleanup. For selector-derived channels, use
+  core/selector-channels.
 type: sub-skill
 requires:
   - core

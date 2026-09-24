@@ -5,11 +5,35 @@ type CtPage = Parameters<Parameters<typeof test.beforeEach>[1]>[0]['page'];
 type Locator = ReturnType<CtPage['locator']>;
 
 /** Measure painted text, including anonymous flex text, rather than a stretched wrapper. */
-export async function menuTextGeometry(label: Locator, row?: Locator) {
-  const rowElement = row ? await row.elementHandle() : null;
+export async function menuTextGeometry(label: Locator) {
+  return label.evaluate((element) => {
+    const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT, {
+      acceptNode: (node) =>
+        node.textContent?.trim() && !node.parentElement?.closest('[aria-hidden="true"]')
+          ? NodeFilter.FILTER_ACCEPT
+          : NodeFilter.FILTER_REJECT,
+    });
+    const text = walker.nextNode();
+    if (!text) throw new Error('Expected visible menu label text');
+    const range = document.createRange();
+    range.selectNodeContents(text);
+    const lines = Array.from(range.getClientRects());
+    const first = lines[0];
+    const menu = element.closest('[role="menu"]')?.getBoundingClientRect();
+    return {
+      left: first.left - (menu?.left ?? 0),
+      center: first.top + first.height / 2,
+      lines: lines.length,
+    };
+  });
+}
+
+export async function expectMenuFirstLine(row: Locator, label: Locator) {
+  const labelElement = await label.elementHandle();
+  if (!labelElement) throw new Error('Expected menu label element');
   try {
-    return await label.evaluate((element, accessoryRow) => {
-      const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT, {
+    const { textCenter, accessories } = await row.evaluate((element, labelNode) => {
+      const walker = document.createTreeWalker(labelNode, NodeFilter.SHOW_TEXT, {
         acceptNode: (node) =>
           node.textContent?.trim() && !node.parentElement?.closest('[aria-hidden="true"]')
             ? NodeFilter.FILTER_ACCEPT
@@ -19,40 +43,29 @@ export async function menuTextGeometry(label: Locator, row?: Locator) {
       if (!text) throw new Error('Expected visible menu label text');
       const range = document.createRange();
       range.selectNodeContents(text);
-      const lines = Array.from(range.getClientRects());
-      const first = lines[0];
-      const menu = element.closest('[role="menu"]')?.getBoundingClientRect();
-      // Floating placement can change between browser calls. Sample both sides
-      // of the alignment assertion in this same synchronous layout snapshot.
-      const accessories = Array.from(
-        accessoryRow?.querySelectorAll(
-          ':scope > [data-slot="menu-item-leading"] svg, :scope > [data-slot="menu-item-indicator"] svg, :scope > [data-slot="menu-sub-chevron"] svg, kbd',
-        ) ?? [],
-      ).map((node) => {
-        const rect = node.getBoundingClientRect();
-        return {
-          slot: node.parentElement?.dataset.slot ?? node.tagName,
-          center: rect.top + rect.height / 2,
-        };
-      });
+      const first = range.getClientRects()[0];
+      // Read labels and accessories in the same frame while the popup is being placed.
       return {
-        left: first.left - (menu?.left ?? 0),
-        center: first.top + first.height / 2,
-        lines: lines.length,
-        accessories,
+        textCenter: first.top + first.height / 2,
+        accessories: Array.from(
+          element.querySelectorAll(
+            ':scope > [data-slot="menu-item-leading"] svg, :scope > [data-slot="menu-item-indicator"] svg, :scope > [data-slot="menu-sub-chevron"] svg, kbd',
+          ),
+        ).map((node) => {
+          const rect = node.getBoundingClientRect();
+          return {
+            slot: node.parentElement?.dataset.slot ?? node.tagName,
+            center: rect.top + rect.height / 2,
+          };
+        }),
       };
-    }, rowElement);
+    }, labelElement);
+    expect(accessories.length).toBeGreaterThan(0);
+    for (const accessory of accessories) {
+      expect(Math.abs(accessory.center - textCenter), accessory.slot).toBeLessThanOrEqual(1.5);
+    }
   } finally {
-    await rowElement?.dispose();
-  }
-}
-
-export async function expectMenuFirstLine(row: Locator, label: Locator) {
-  const text = await menuTextGeometry(label, row);
-  const { accessories } = text;
-  expect(accessories.length).toBeGreaterThan(0);
-  for (const accessory of accessories) {
-    expect(Math.abs(accessory.center - text.center), accessory.slot).toBeLessThanOrEqual(1.5);
+    await labelElement.dispose();
   }
 }
 

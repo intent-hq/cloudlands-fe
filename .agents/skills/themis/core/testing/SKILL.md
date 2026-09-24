@@ -1,15 +1,9 @@
 ---
 name: core/testing
 description: >-
-  Required vi.mock("typed-redux-saga") boilerplate mapping each effect to
-  redux-saga/effects so redux-saga-test-plan can interpret them (the call
-  mock MUST use Array.isArray to handle [context, method] tuple calls).
-  Use expectSaga for integration (.withState / .put / .call / .provide /
-  .dispatch / .silentRun) and testSaga for step-by-step (.next / .fork /
-  .isDone). Reducer tests are pure — assert reference equality on no-op
-  actions. State-integrity verification must prove derived values live in
-  selectors and action/selector/saga owners are not duplicated. Source:
-  @augmentcode/themis/docs/TESTING.md, ../SKILL.md §14.
+  Use when testing Themis sagas or reducers with Vitest, typed-redux-saga
+  mocks, expectSaga, or testSaga, including no-op reference equality and
+  state/owner integrity.
 type: sub-skill
 library: themis
 requires:

@@ -1,13 +1,8 @@
 ---
 name: core/collections
 description: >-
-  Normalized entity storage via Collection<T, K>: createCollection plus addItem,
-  addItems, addItemAt, upsertItem, updateItem, replaceItem, removeItem,
-  filterCollection, getItem, getItems, findItem, filterItems, and reference
-  counting (increaseRefsCount, decreaseRefsCount, getRefsCount,
-  addItemAndCountRef). All operations are immutable and return a new Collection
-  (or the same reference on a no-op). Public API:
-  @augmentcode/themis/utils/collections/collection-utils; docs: @augmentcode/themis/docs/COLLECTIONS.md.
+  Use for normalized entity storage with Themis Collection helpers, including
+  immutable CRUD, lookups, filtering, and reference counting.
 type: sub-skill
 library: themis
 requires:
