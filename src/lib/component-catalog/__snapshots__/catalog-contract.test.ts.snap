@@ -2776,7 +2776,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:settings:sch
                       <span aria-hidden="true" class="-z-10 absolute bg-transparent duration-spring-fast ease-spring-fast inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
                       <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
                         <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
-                          <div class="flex gap-2 items-start min-h-8 min-w-0 px-3 py-0 w-full" data-density="default" data-slot="list-row">
+                          <div class="[&>[data-slot=list-row-leading]]:self-center flex gap-2 items-center min-h-8 min-w-0 px-3 py-0 w-full" data-density="default" data-slot="list-row">
                             <div class="first-line-icon type-caption" data-slot="list-row-leading">
                               <span class="flex items-center justify-center shrink-0 size-4" data-slot="settings-sidebar-icon">
                                 <svg aria-hidden="true" role="img">
@@ -2792,7 +2792,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:settings:sch
                       <span aria-hidden="true" class="-z-10 absolute bg-transparent duration-spring-fast ease-spring-fast inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
                       <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
                         <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
-                          <div class="flex gap-2 items-start min-h-8 min-w-0 px-3 py-0 w-full" data-density="default" data-slot="list-row">
+                          <div class="[&>[data-slot=list-row-leading]]:self-center flex gap-2 items-center min-h-8 min-w-0 px-3 py-0 w-full" data-density="default" data-slot="list-row">
                             <div class="first-line-icon type-caption" data-slot="list-row-leading">
                               <span class="flex items-center justify-center shrink-0 size-4" data-slot="settings-sidebar-icon">
                                 <svg aria-hidden="true" role="img">
@@ -2808,7 +2808,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:settings:sch
                       <span aria-hidden="true" class="-z-10 absolute bg-transparent duration-spring-fast ease-spring-fast inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
                       <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
                         <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
-                          <div class="flex gap-2 items-start min-h-8 min-w-0 px-3 py-0 w-full" data-density="default" data-slot="list-row">
+                          <div class="[&>[data-slot=list-row-leading]]:self-center flex gap-2 items-center min-h-8 min-w-0 px-3 py-0 w-full" data-density="default" data-slot="list-row">
                             <div class="first-line-icon type-caption" data-slot="list-row-leading">
                               <span class="flex items-center justify-center shrink-0 size-4" data-slot="settings-sidebar-icon">
                                 <svg aria-hidden="true" role="img">
@@ -2828,7 +2828,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:settings:sch
                       <span aria-hidden="true" class="-z-10 absolute bg-transparent duration-spring-fast ease-spring-fast inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
                       <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
                         <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
-                          <div class="flex gap-2 items-start min-h-8 min-w-0 px-3 py-0 w-full" data-density="default" data-slot="list-row">
+                          <div class="[&>[data-slot=list-row-leading]]:self-center flex gap-2 items-center min-h-8 min-w-0 px-3 py-0 w-full" data-density="default" data-slot="list-row">
                             <div class="first-line-icon type-caption" data-slot="list-row-leading">
                               <span class="flex items-center justify-center shrink-0 size-4" data-slot="settings-sidebar-icon">
                                 <svg aria-hidden="true" role="img">
@@ -2844,7 +2844,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:settings:sch
                       <span aria-hidden="true" class="-z-10 absolute bg-transparent duration-spring-fast ease-spring-fast inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
                       <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
                         <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
-                          <div class="flex gap-2 items-start min-h-8 min-w-0 px-3 py-0 w-full" data-density="default" data-slot="list-row">
+                          <div class="[&>[data-slot=list-row-leading]]:self-center flex gap-2 items-center min-h-8 min-w-0 px-3 py-0 w-full" data-density="default" data-slot="list-row">
                             <div class="first-line-icon type-caption" data-slot="list-row-leading">
                               <span class="flex items-center justify-center shrink-0 size-4" data-slot="settings-sidebar-icon">
                                 <svg aria-hidden="true" role="img">
@@ -2860,7 +2860,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:settings:sch
                       <span aria-hidden="true" class="-z-10 absolute bg-transparent duration-spring-fast ease-spring-fast inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
                       <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
                         <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
-                          <div class="flex gap-2 items-start min-h-8 min-w-0 px-3 py-0 w-full" data-density="default" data-slot="list-row">
+                          <div class="[&>[data-slot=list-row-leading]]:self-center flex gap-2 items-center min-h-8 min-w-0 px-3 py-0 w-full" data-density="default" data-slot="list-row">
                             <div class="first-line-icon type-caption" data-slot="list-row-leading">
                               <span class="flex items-center justify-center shrink-0 size-4" data-slot="settings-sidebar-icon">
                                 <svg aria-hidden="true" role="img">
@@ -2876,7 +2876,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:settings:sch
                       <span aria-hidden="true" class="-z-10 absolute bg-transparent duration-spring-fast ease-spring-fast inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
                       <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
                         <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
-                          <div class="flex gap-2 items-start min-h-8 min-w-0 px-3 py-0 w-full" data-density="default" data-slot="list-row">
+                          <div class="[&>[data-slot=list-row-leading]]:self-center flex gap-2 items-center min-h-8 min-w-0 px-3 py-0 w-full" data-density="default" data-slot="list-row">
                             <div class="first-line-icon type-caption" data-slot="list-row-leading">
                               <span class="flex items-center justify-center shrink-0 size-4" data-slot="settings-sidebar-icon">
                                 <svg aria-hidden="true" role="img">
@@ -2892,7 +2892,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:settings:sch
                       <span aria-hidden="true" class="-z-10 absolute bg-transparent duration-spring-fast ease-spring-fast inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
                       <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
                         <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
-                          <div class="flex gap-2 items-start min-h-8 min-w-0 px-3 py-0 w-full" data-density="default" data-slot="list-row">
+                          <div class="[&>[data-slot=list-row-leading]]:self-center flex gap-2 items-center min-h-8 min-w-0 px-3 py-0 w-full" data-density="default" data-slot="list-row">
                             <div class="first-line-icon type-caption" data-slot="list-row-leading">
                               <span class="flex items-center justify-center shrink-0 size-4" data-slot="settings-sidebar-icon">
                                 <svg aria-hidden="true" role="img">
@@ -2908,7 +2908,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:settings:sch
                       <span aria-hidden="true" class="-z-10 absolute bg-transparent duration-spring-fast ease-spring-fast inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
                       <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
                         <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
-                          <div class="flex gap-2 items-start min-h-8 min-w-0 px-3 py-0 w-full" data-density="default" data-slot="list-row">
+                          <div class="[&>[data-slot=list-row-leading]]:self-center flex gap-2 items-center min-h-8 min-w-0 px-3 py-0 w-full" data-density="default" data-slot="list-row">
                             <div class="first-line-icon type-caption" data-slot="list-row-leading">
                               <span class="flex items-center justify-center shrink-0 size-4" data-slot="settings-sidebar-icon">
                                 <svg aria-hidden="true" role="img">
@@ -2928,7 +2928,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:settings:sch
                       <span aria-hidden="true" class="-z-10 absolute bg-transparent duration-spring-fast ease-spring-fast inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
                       <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
                         <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
-                          <div class="flex gap-2 items-start min-h-8 min-w-0 px-3 py-0 w-full" data-density="default" data-slot="list-row">
+                          <div class="[&>[data-slot=list-row-leading]]:self-center flex gap-2 items-center min-h-8 min-w-0 px-3 py-0 w-full" data-density="default" data-slot="list-row">
                             <div class="first-line-icon type-caption" data-slot="list-row-leading">
                               <span class="flex items-center justify-center shrink-0 size-4" data-slot="settings-sidebar-icon">
                                 <svg aria-hidden="true" role="img">
@@ -2944,7 +2944,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:settings:sch
                       <span aria-hidden="true" class="-z-10 absolute bg-transparent duration-spring-fast ease-spring-fast inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
                       <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
                         <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
-                          <div class="flex gap-2 items-start min-h-8 min-w-0 px-3 py-0 w-full" data-density="default" data-slot="list-row">
+                          <div class="[&>[data-slot=list-row-leading]]:self-center flex gap-2 items-center min-h-8 min-w-0 px-3 py-0 w-full" data-density="default" data-slot="list-row">
                             <div class="first-line-icon type-caption" data-slot="list-row-leading">
                               <span class="flex items-center justify-center shrink-0 size-4" data-slot="settings-sidebar-icon">
                                 <svg aria-hidden="true" role="img">
@@ -3096,7 +3096,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:settings:sch
                       <span aria-hidden="true" class="-z-10 absolute bg-transparent duration-spring-fast ease-spring-fast inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
                       <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
                         <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
-                          <div class="flex gap-2 items-start min-h-8 min-w-0 px-3 py-0 w-full" data-density="default" data-slot="list-row">
+                          <div class="[&>[data-slot=list-row-leading]]:self-center flex gap-2 items-center min-h-8 min-w-0 px-3 py-0 w-full" data-density="default" data-slot="list-row">
                             <div class="first-line-icon type-caption" data-slot="list-row-leading">
                               <span class="flex items-center justify-center shrink-0 size-4" data-slot="settings-sidebar-icon">
                                 <svg aria-hidden="true" role="img">
@@ -3112,7 +3112,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:settings:sch
                       <span aria-hidden="true" class="-z-10 absolute bg-transparent duration-spring-fast ease-spring-fast inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
                       <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
                         <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
-                          <div class="flex gap-2 items-start min-h-8 min-w-0 px-3 py-0 w-full" data-density="default" data-slot="list-row">
+                          <div class="[&>[data-slot=list-row-leading]]:self-center flex gap-2 items-center min-h-8 min-w-0 px-3 py-0 w-full" data-density="default" data-slot="list-row">
                             <div class="first-line-icon type-caption" data-slot="list-row-leading">
                               <span class="flex items-center justify-center shrink-0 size-4" data-slot="settings-sidebar-icon">
                                 <svg aria-hidden="true" role="img">
@@ -3128,7 +3128,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:settings:sch
                       <span aria-hidden="true" class="-z-10 absolute bg-transparent duration-spring-fast ease-spring-fast inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
                       <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
                         <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
-                          <div class="flex gap-2 items-start min-h-8 min-w-0 px-3 py-0 w-full" data-density="default" data-slot="list-row">
+                          <div class="[&>[data-slot=list-row-leading]]:self-center flex gap-2 items-center min-h-8 min-w-0 px-3 py-0 w-full" data-density="default" data-slot="list-row">
                             <div class="first-line-icon type-caption" data-slot="list-row-leading">
                               <span class="flex items-center justify-center shrink-0 size-4" data-slot="settings-sidebar-icon">
                                 <svg aria-hidden="true" role="img">
@@ -3148,7 +3148,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:settings:sch
                       <span aria-hidden="true" class="-z-10 absolute bg-transparent duration-spring-fast ease-spring-fast inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
                       <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
                         <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
-                          <div class="flex gap-2 items-start min-h-8 min-w-0 px-3 py-0 w-full" data-density="default" data-slot="list-row">
+                          <div class="[&>[data-slot=list-row-leading]]:self-center flex gap-2 items-center min-h-8 min-w-0 px-3 py-0 w-full" data-density="default" data-slot="list-row">
                             <div class="first-line-icon type-caption" data-slot="list-row-leading">
                               <span class="flex items-center justify-center shrink-0 size-4" data-slot="settings-sidebar-icon">
                                 <svg aria-hidden="true" role="img">
@@ -3164,7 +3164,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:settings:sch
                       <span aria-hidden="true" class="-z-10 absolute bg-transparent duration-spring-fast ease-spring-fast inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
                       <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
                         <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
-                          <div class="flex gap-2 items-start min-h-8 min-w-0 px-3 py-0 w-full" data-density="default" data-slot="list-row">
+                          <div class="[&>[data-slot=list-row-leading]]:self-center flex gap-2 items-center min-h-8 min-w-0 px-3 py-0 w-full" data-density="default" data-slot="list-row">
                             <div class="first-line-icon type-caption" data-slot="list-row-leading">
                               <span class="flex items-center justify-center shrink-0 size-4" data-slot="settings-sidebar-icon">
                                 <svg aria-hidden="true" role="img">
@@ -3180,7 +3180,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:settings:sch
                       <span aria-hidden="true" class="-z-10 absolute bg-transparent duration-spring-fast ease-spring-fast inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
                       <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
                         <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
-                          <div class="flex gap-2 items-start min-h-8 min-w-0 px-3 py-0 w-full" data-density="default" data-slot="list-row">
+                          <div class="[&>[data-slot=list-row-leading]]:self-center flex gap-2 items-center min-h-8 min-w-0 px-3 py-0 w-full" data-density="default" data-slot="list-row">
                             <div class="first-line-icon type-caption" data-slot="list-row-leading">
                               <span class="flex items-center justify-center shrink-0 size-4" data-slot="settings-sidebar-icon">
                                 <svg aria-hidden="true" role="img">
@@ -3196,7 +3196,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:settings:sch
                       <span aria-hidden="true" class="-z-10 absolute bg-transparent duration-spring-fast ease-spring-fast inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
                       <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
                         <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
-                          <div class="flex gap-2 items-start min-h-8 min-w-0 px-3 py-0 w-full" data-density="default" data-slot="list-row">
+                          <div class="[&>[data-slot=list-row-leading]]:self-center flex gap-2 items-center min-h-8 min-w-0 px-3 py-0 w-full" data-density="default" data-slot="list-row">
                             <div class="first-line-icon type-caption" data-slot="list-row-leading">
                               <span class="flex items-center justify-center shrink-0 size-4" data-slot="settings-sidebar-icon">
                                 <svg aria-hidden="true" role="img">
@@ -3212,7 +3212,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:settings:sch
                       <span aria-hidden="true" class="-z-10 absolute bg-transparent duration-spring-fast ease-spring-fast inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
                       <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
                         <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
-                          <div class="flex gap-2 items-start min-h-8 min-w-0 px-3 py-0 w-full" data-density="default" data-slot="list-row">
+                          <div class="[&>[data-slot=list-row-leading]]:self-center flex gap-2 items-center min-h-8 min-w-0 px-3 py-0 w-full" data-density="default" data-slot="list-row">
                             <div class="first-line-icon type-caption" data-slot="list-row-leading">
                               <span class="flex items-center justify-center shrink-0 size-4" data-slot="settings-sidebar-icon">
                                 <svg aria-hidden="true" role="img">
@@ -3228,7 +3228,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:settings:sch
                       <span aria-hidden="true" class="-z-10 absolute bg-transparent duration-spring-fast ease-spring-fast inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
                       <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
                         <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
-                          <div class="flex gap-2 items-start min-h-8 min-w-0 px-3 py-0 w-full" data-density="default" data-slot="list-row">
+                          <div class="[&>[data-slot=list-row-leading]]:self-center flex gap-2 items-center min-h-8 min-w-0 px-3 py-0 w-full" data-density="default" data-slot="list-row">
                             <div class="first-line-icon type-caption" data-slot="list-row-leading">
                               <span class="flex items-center justify-center shrink-0 size-4" data-slot="settings-sidebar-icon">
                                 <svg aria-hidden="true" role="img">
@@ -3248,7 +3248,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:settings:sch
                       <span aria-hidden="true" class="-z-10 absolute bg-transparent duration-spring-fast ease-spring-fast inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
                       <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
                         <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
-                          <div class="flex gap-2 items-start min-h-8 min-w-0 px-3 py-0 w-full" data-density="default" data-slot="list-row">
+                          <div class="[&>[data-slot=list-row-leading]]:self-center flex gap-2 items-center min-h-8 min-w-0 px-3 py-0 w-full" data-density="default" data-slot="list-row">
                             <div class="first-line-icon type-caption" data-slot="list-row-leading">
                               <span class="flex items-center justify-center shrink-0 size-4" data-slot="settings-sidebar-icon">
                                 <svg aria-hidden="true" role="img">
@@ -3264,7 +3264,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:settings:sch
                       <span aria-hidden="true" class="-z-10 absolute bg-transparent duration-spring-fast ease-spring-fast inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
                       <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
                         <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
-                          <div class="flex gap-2 items-start min-h-8 min-w-0 px-3 py-0 w-full" data-density="default" data-slot="list-row">
+                          <div class="[&>[data-slot=list-row-leading]]:self-center flex gap-2 items-center min-h-8 min-w-0 px-3 py-0 w-full" data-density="default" data-slot="list-row">
                             <div class="first-line-icon type-caption" data-slot="list-row-leading">
                               <span class="flex items-center justify-center shrink-0 size-4" data-slot="settings-sidebar-icon">
                                 <svg aria-hidden="true" role="img">
@@ -3416,7 +3416,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:settings:sch
                       <span aria-hidden="true" class="-z-10 absolute bg-transparent duration-spring-fast ease-spring-fast inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
                       <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
                         <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
-                          <div class="flex gap-2 items-start min-h-8 min-w-0 px-3 py-0 w-full" data-density="default" data-slot="list-row">
+                          <div class="[&>[data-slot=list-row-leading]]:self-center flex gap-2 items-center min-h-8 min-w-0 px-3 py-0 w-full" data-density="default" data-slot="list-row">
                             <div class="first-line-icon type-caption" data-slot="list-row-leading">
                               <span class="flex items-center justify-center shrink-0 size-4" data-slot="settings-sidebar-icon">
                                 <svg aria-hidden="true" role="img">
@@ -3432,7 +3432,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:settings:sch
                       <span aria-hidden="true" class="-z-10 absolute bg-transparent duration-spring-fast ease-spring-fast inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
                       <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
                         <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
-                          <div class="flex gap-2 items-start min-h-8 min-w-0 px-3 py-0 w-full" data-density="default" data-slot="list-row">
+                          <div class="[&>[data-slot=list-row-leading]]:self-center flex gap-2 items-center min-h-8 min-w-0 px-3 py-0 w-full" data-density="default" data-slot="list-row">
                             <div class="first-line-icon type-caption" data-slot="list-row-leading">
                               <span class="flex items-center justify-center shrink-0 size-4" data-slot="settings-sidebar-icon">
                                 <svg aria-hidden="true" role="img">
@@ -3448,7 +3448,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:settings:sch
                       <span aria-hidden="true" class="-z-10 absolute bg-transparent duration-spring-fast ease-spring-fast inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
                       <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
                         <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
-                          <div class="flex gap-2 items-start min-h-8 min-w-0 px-3 py-0 w-full" data-density="default" data-slot="list-row">
+                          <div class="[&>[data-slot=list-row-leading]]:self-center flex gap-2 items-center min-h-8 min-w-0 px-3 py-0 w-full" data-density="default" data-slot="list-row">
                             <div class="first-line-icon type-caption" data-slot="list-row-leading">
                               <span class="flex items-center justify-center shrink-0 size-4" data-slot="settings-sidebar-icon">
                                 <svg aria-hidden="true" role="img">
@@ -3468,7 +3468,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:settings:sch
                       <span aria-hidden="true" class="-z-10 absolute bg-transparent duration-spring-fast ease-spring-fast inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
                       <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
                         <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
-                          <div class="flex gap-2 items-start min-h-8 min-w-0 px-3 py-0 w-full" data-density="default" data-slot="list-row">
+                          <div class="[&>[data-slot=list-row-leading]]:self-center flex gap-2 items-center min-h-8 min-w-0 px-3 py-0 w-full" data-density="default" data-slot="list-row">
                             <div class="first-line-icon type-caption" data-slot="list-row-leading">
                               <span class="flex items-center justify-center shrink-0 size-4" data-slot="settings-sidebar-icon">
                                 <svg aria-hidden="true" role="img">
@@ -3484,7 +3484,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:settings:sch
                       <span aria-hidden="true" class="-z-10 absolute bg-transparent duration-spring-fast ease-spring-fast inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
                       <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
                         <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
-                          <div class="flex gap-2 items-start min-h-8 min-w-0 px-3 py-0 w-full" data-density="default" data-slot="list-row">
+                          <div class="[&>[data-slot=list-row-leading]]:self-center flex gap-2 items-center min-h-8 min-w-0 px-3 py-0 w-full" data-density="default" data-slot="list-row">
                             <div class="first-line-icon type-caption" data-slot="list-row-leading">
                               <span class="flex items-center justify-center shrink-0 size-4" data-slot="settings-sidebar-icon">
                                 <svg aria-hidden="true" role="img">
@@ -3500,7 +3500,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:settings:sch
                       <span aria-hidden="true" class="-z-10 absolute bg-transparent duration-spring-fast ease-spring-fast inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
                       <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
                         <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
-                          <div class="flex gap-2 items-start min-h-8 min-w-0 px-3 py-0 w-full" data-density="default" data-slot="list-row">
+                          <div class="[&>[data-slot=list-row-leading]]:self-center flex gap-2 items-center min-h-8 min-w-0 px-3 py-0 w-full" data-density="default" data-slot="list-row">
                             <div class="first-line-icon type-caption" data-slot="list-row-leading">
                               <span class="flex items-center justify-center shrink-0 size-4" data-slot="settings-sidebar-icon">
                                 <svg aria-hidden="true" role="img">
@@ -3516,7 +3516,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:settings:sch
                       <span aria-hidden="true" class="-z-10 absolute bg-transparent duration-spring-fast ease-spring-fast inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
                       <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
                         <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
-                          <div class="flex gap-2 items-start min-h-8 min-w-0 px-3 py-0 w-full" data-density="default" data-slot="list-row">
+                          <div class="[&>[data-slot=list-row-leading]]:self-center flex gap-2 items-center min-h-8 min-w-0 px-3 py-0 w-full" data-density="default" data-slot="list-row">
                             <div class="first-line-icon type-caption" data-slot="list-row-leading">
                               <span class="flex items-center justify-center shrink-0 size-4" data-slot="settings-sidebar-icon">
                                 <svg aria-hidden="true" role="img">
@@ -3532,7 +3532,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:settings:sch
                       <span aria-hidden="true" class="-z-10 absolute bg-transparent duration-spring-fast ease-spring-fast inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
                       <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
                         <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
-                          <div class="flex gap-2 items-start min-h-8 min-w-0 px-3 py-0 w-full" data-density="default" data-slot="list-row">
+                          <div class="[&>[data-slot=list-row-leading]]:self-center flex gap-2 items-center min-h-8 min-w-0 px-3 py-0 w-full" data-density="default" data-slot="list-row">
                             <div class="first-line-icon type-caption" data-slot="list-row-leading">
                               <span class="flex items-center justify-center shrink-0 size-4" data-slot="settings-sidebar-icon">
                                 <svg aria-hidden="true" role="img">
@@ -3548,7 +3548,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:settings:sch
                       <span aria-hidden="true" class="-z-10 absolute bg-transparent duration-spring-fast ease-spring-fast inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
                       <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
                         <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
-                          <div class="flex gap-2 items-start min-h-8 min-w-0 px-3 py-0 w-full" data-density="default" data-slot="list-row">
+                          <div class="[&>[data-slot=list-row-leading]]:self-center flex gap-2 items-center min-h-8 min-w-0 px-3 py-0 w-full" data-density="default" data-slot="list-row">
                             <div class="first-line-icon type-caption" data-slot="list-row-leading">
                               <span class="flex items-center justify-center shrink-0 size-4" data-slot="settings-sidebar-icon">
                                 <svg aria-hidden="true" role="img">
@@ -3568,7 +3568,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:settings:sch
                       <span aria-hidden="true" class="-z-10 absolute bg-transparent duration-spring-fast ease-spring-fast inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
                       <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
                         <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
-                          <div class="flex gap-2 items-start min-h-8 min-w-0 px-3 py-0 w-full" data-density="default" data-slot="list-row">
+                          <div class="[&>[data-slot=list-row-leading]]:self-center flex gap-2 items-center min-h-8 min-w-0 px-3 py-0 w-full" data-density="default" data-slot="list-row">
                             <div class="first-line-icon type-caption" data-slot="list-row-leading">
                               <span class="flex items-center justify-center shrink-0 size-4" data-slot="settings-sidebar-icon">
                                 <svg aria-hidden="true" role="img">
@@ -3584,7 +3584,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:settings:sch
                       <span aria-hidden="true" class="-z-10 absolute bg-transparent duration-spring-fast ease-spring-fast inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
                       <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
                         <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
-                          <div class="flex gap-2 items-start min-h-8 min-w-0 px-3 py-0 w-full" data-density="default" data-slot="list-row">
+                          <div class="[&>[data-slot=list-row-leading]]:self-center flex gap-2 items-center min-h-8 min-w-0 px-3 py-0 w-full" data-density="default" data-slot="list-row">
                             <div class="first-line-icon type-caption" data-slot="list-row-leading">
                               <span class="flex items-center justify-center shrink-0 size-4" data-slot="settings-sidebar-icon">
                                 <svg aria-hidden="true" role="img">
@@ -3665,7 +3665,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:settings:sch
                       <span aria-hidden="true" class="-z-10 absolute bg-transparent duration-spring-fast ease-spring-fast inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
                       <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
                         <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
-                          <div class="flex gap-2 items-start min-h-8 min-w-0 px-3 py-0 w-full" data-density="default" data-slot="list-row">
+                          <div class="[&>[data-slot=list-row-leading]]:self-center flex gap-2 items-center min-h-8 min-w-0 px-3 py-0 w-full" data-density="default" data-slot="list-row">
                             <div class="first-line-icon type-caption" data-slot="list-row-leading">
                               <span class="flex items-center justify-center shrink-0 size-4" data-slot="settings-sidebar-icon">
                                 <svg aria-hidden="true" role="img">
@@ -3681,7 +3681,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:settings:sch
                       <span aria-hidden="true" class="-z-10 absolute bg-transparent duration-spring-fast ease-spring-fast inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
                       <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
                         <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
-                          <div class="flex gap-2 items-start min-h-8 min-w-0 px-3 py-0 w-full" data-density="default" data-slot="list-row">
+                          <div class="[&>[data-slot=list-row-leading]]:self-center flex gap-2 items-center min-h-8 min-w-0 px-3 py-0 w-full" data-density="default" data-slot="list-row">
                             <div class="first-line-icon type-caption" data-slot="list-row-leading">
                               <span class="flex items-center justify-center shrink-0 size-4" data-slot="settings-sidebar-icon">
                                 <svg aria-hidden="true" role="img">
@@ -3697,7 +3697,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:settings:sch
                       <span aria-hidden="true" class="-z-10 absolute bg-transparent duration-spring-fast ease-spring-fast inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
                       <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
                         <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
-                          <div class="flex gap-2 items-start min-h-8 min-w-0 px-3 py-0 w-full" data-density="default" data-slot="list-row">
+                          <div class="[&>[data-slot=list-row-leading]]:self-center flex gap-2 items-center min-h-8 min-w-0 px-3 py-0 w-full" data-density="default" data-slot="list-row">
                             <div class="first-line-icon type-caption" data-slot="list-row-leading">
                               <span class="flex items-center justify-center shrink-0 size-4" data-slot="settings-sidebar-icon">
                                 <svg aria-hidden="true" role="img">
@@ -3717,7 +3717,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:settings:sch
                       <span aria-hidden="true" class="-z-10 absolute bg-transparent duration-spring-fast ease-spring-fast inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
                       <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
                         <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
-                          <div class="flex gap-2 items-start min-h-8 min-w-0 px-3 py-0 w-full" data-density="default" data-slot="list-row">
+                          <div class="[&>[data-slot=list-row-leading]]:self-center flex gap-2 items-center min-h-8 min-w-0 px-3 py-0 w-full" data-density="default" data-slot="list-row">
                             <div class="first-line-icon type-caption" data-slot="list-row-leading">
                               <span class="flex items-center justify-center shrink-0 size-4" data-slot="settings-sidebar-icon">
                                 <svg aria-hidden="true" role="img">
@@ -3733,7 +3733,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:settings:sch
                       <span aria-hidden="true" class="-z-10 absolute bg-transparent duration-spring-fast ease-spring-fast inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
                       <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
                         <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
-                          <div class="flex gap-2 items-start min-h-8 min-w-0 px-3 py-0 w-full" data-density="default" data-slot="list-row">
+                          <div class="[&>[data-slot=list-row-leading]]:self-center flex gap-2 items-center min-h-8 min-w-0 px-3 py-0 w-full" data-density="default" data-slot="list-row">
                             <div class="first-line-icon type-caption" data-slot="list-row-leading">
                               <span class="flex items-center justify-center shrink-0 size-4" data-slot="settings-sidebar-icon">
                                 <svg aria-hidden="true" role="img">
@@ -3749,7 +3749,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:settings:sch
                       <span aria-hidden="true" class="-z-10 absolute bg-transparent duration-spring-fast ease-spring-fast inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
                       <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
                         <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
-                          <div class="flex gap-2 items-start min-h-8 min-w-0 px-3 py-0 w-full" data-density="default" data-slot="list-row">
+                          <div class="[&>[data-slot=list-row-leading]]:self-center flex gap-2 items-center min-h-8 min-w-0 px-3 py-0 w-full" data-density="default" data-slot="list-row">
                             <div class="first-line-icon type-caption" data-slot="list-row-leading">
                               <span class="flex items-center justify-center shrink-0 size-4" data-slot="settings-sidebar-icon">
                                 <svg aria-hidden="true" role="img">
@@ -3765,7 +3765,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:settings:sch
                       <span aria-hidden="true" class="-z-10 absolute bg-transparent duration-spring-fast ease-spring-fast inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
                       <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
                         <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
-                          <div class="flex gap-2 items-start min-h-8 min-w-0 px-3 py-0 w-full" data-density="default" data-slot="list-row">
+                          <div class="[&>[data-slot=list-row-leading]]:self-center flex gap-2 items-center min-h-8 min-w-0 px-3 py-0 w-full" data-density="default" data-slot="list-row">
                             <div class="first-line-icon type-caption" data-slot="list-row-leading">
                               <span class="flex items-center justify-center shrink-0 size-4" data-slot="settings-sidebar-icon">
                                 <svg aria-hidden="true" role="img">
@@ -3781,7 +3781,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:settings:sch
                       <span aria-hidden="true" class="-z-10 absolute bg-transparent duration-spring-fast ease-spring-fast inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
                       <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
                         <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
-                          <div class="flex gap-2 items-start min-h-8 min-w-0 px-3 py-0 w-full" data-density="default" data-slot="list-row">
+                          <div class="[&>[data-slot=list-row-leading]]:self-center flex gap-2 items-center min-h-8 min-w-0 px-3 py-0 w-full" data-density="default" data-slot="list-row">
                             <div class="first-line-icon type-caption" data-slot="list-row-leading">
                               <span class="flex items-center justify-center shrink-0 size-4" data-slot="settings-sidebar-icon">
                                 <svg aria-hidden="true" role="img">
@@ -3797,7 +3797,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:settings:sch
                       <span aria-hidden="true" class="-z-10 absolute bg-transparent duration-spring-fast ease-spring-fast inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
                       <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
                         <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
-                          <div class="flex gap-2 items-start min-h-8 min-w-0 px-3 py-0 w-full" data-density="default" data-slot="list-row">
+                          <div class="[&>[data-slot=list-row-leading]]:self-center flex gap-2 items-center min-h-8 min-w-0 px-3 py-0 w-full" data-density="default" data-slot="list-row">
                             <div class="first-line-icon type-caption" data-slot="list-row-leading">
                               <span class="flex items-center justify-center shrink-0 size-4" data-slot="settings-sidebar-icon">
                                 <svg aria-hidden="true" role="img">
@@ -3817,7 +3817,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:settings:sch
                       <span aria-hidden="true" class="-z-10 absolute bg-transparent duration-spring-fast ease-spring-fast inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
                       <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
                         <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
-                          <div class="flex gap-2 items-start min-h-8 min-w-0 px-3 py-0 w-full" data-density="default" data-slot="list-row">
+                          <div class="[&>[data-slot=list-row-leading]]:self-center flex gap-2 items-center min-h-8 min-w-0 px-3 py-0 w-full" data-density="default" data-slot="list-row">
                             <div class="first-line-icon type-caption" data-slot="list-row-leading">
                               <span class="flex items-center justify-center shrink-0 size-4" data-slot="settings-sidebar-icon">
                                 <svg aria-hidden="true" role="img">
@@ -3833,7 +3833,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:settings:sch
                       <span aria-hidden="true" class="-z-10 absolute bg-transparent duration-spring-fast ease-spring-fast inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
                       <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
                         <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
-                          <div class="flex gap-2 items-start min-h-8 min-w-0 px-3 py-0 w-full" data-density="default" data-slot="list-row">
+                          <div class="[&>[data-slot=list-row-leading]]:self-center flex gap-2 items-center min-h-8 min-w-0 px-3 py-0 w-full" data-density="default" data-slot="list-row">
                             <div class="first-line-icon type-caption" data-slot="list-row-leading">
                               <span class="flex items-center justify-center shrink-0 size-4" data-slot="settings-sidebar-icon">
                                 <svg aria-hidden="true" role="img">
@@ -3985,7 +3985,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:settings:sch
                       <span aria-hidden="true" class="-z-10 absolute bg-transparent duration-spring-fast ease-spring-fast inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
                       <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
                         <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
-                          <div class="flex gap-2 items-start min-h-8 min-w-0 px-3 py-0 w-full" data-density="default" data-slot="list-row">
+                          <div class="[&>[data-slot=list-row-leading]]:self-center flex gap-2 items-center min-h-8 min-w-0 px-3 py-0 w-full" data-density="default" data-slot="list-row">
                             <div class="first-line-icon type-caption" data-slot="list-row-leading">
                               <span class="flex items-center justify-center shrink-0 size-4" data-slot="settings-sidebar-icon">
                                 <svg aria-hidden="true" role="img">
@@ -4001,7 +4001,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:settings:sch
                       <span aria-hidden="true" class="-z-10 absolute bg-transparent duration-spring-fast ease-spring-fast inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
                       <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
                         <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
-                          <div class="flex gap-2 items-start min-h-8 min-w-0 px-3 py-0 w-full" data-density="default" data-slot="list-row">
+                          <div class="[&>[data-slot=list-row-leading]]:self-center flex gap-2 items-center min-h-8 min-w-0 px-3 py-0 w-full" data-density="default" data-slot="list-row">
                             <div class="first-line-icon type-caption" data-slot="list-row-leading">
                               <span class="flex items-center justify-center shrink-0 size-4" data-slot="settings-sidebar-icon">
                                 <svg aria-hidden="true" role="img">
@@ -4017,7 +4017,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:settings:sch
                       <span aria-hidden="true" class="-z-10 absolute bg-transparent duration-spring-fast ease-spring-fast inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
                       <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
                         <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
-                          <div class="flex gap-2 items-start min-h-8 min-w-0 px-3 py-0 w-full" data-density="default" data-slot="list-row">
+                          <div class="[&>[data-slot=list-row-leading]]:self-center flex gap-2 items-center min-h-8 min-w-0 px-3 py-0 w-full" data-density="default" data-slot="list-row">
                             <div class="first-line-icon type-caption" data-slot="list-row-leading">
                               <span class="flex items-center justify-center shrink-0 size-4" data-slot="settings-sidebar-icon">
                                 <svg aria-hidden="true" role="img">
@@ -4037,7 +4037,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:settings:sch
                       <span aria-hidden="true" class="-z-10 absolute bg-transparent duration-spring-fast ease-spring-fast inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
                       <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
                         <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
-                          <div class="flex gap-2 items-start min-h-8 min-w-0 px-3 py-0 w-full" data-density="default" data-slot="list-row">
+                          <div class="[&>[data-slot=list-row-leading]]:self-center flex gap-2 items-center min-h-8 min-w-0 px-3 py-0 w-full" data-density="default" data-slot="list-row">
                             <div class="first-line-icon type-caption" data-slot="list-row-leading">
                               <span class="flex items-center justify-center shrink-0 size-4" data-slot="settings-sidebar-icon">
                                 <svg aria-hidden="true" role="img">
@@ -4053,7 +4053,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:settings:sch
                       <span aria-hidden="true" class="-z-10 absolute bg-transparent duration-spring-fast ease-spring-fast inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
                       <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
                         <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
-                          <div class="flex gap-2 items-start min-h-8 min-w-0 px-3 py-0 w-full" data-density="default" data-slot="list-row">
+                          <div class="[&>[data-slot=list-row-leading]]:self-center flex gap-2 items-center min-h-8 min-w-0 px-3 py-0 w-full" data-density="default" data-slot="list-row">
                             <div class="first-line-icon type-caption" data-slot="list-row-leading">
                               <span class="flex items-center justify-center shrink-0 size-4" data-slot="settings-sidebar-icon">
                                 <svg aria-hidden="true" role="img">
@@ -4069,7 +4069,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:settings:sch
                       <span aria-hidden="true" class="-z-10 absolute bg-transparent duration-spring-fast ease-spring-fast inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
                       <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
                         <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
-                          <div class="flex gap-2 items-start min-h-8 min-w-0 px-3 py-0 w-full" data-density="default" data-slot="list-row">
+                          <div class="[&>[data-slot=list-row-leading]]:self-center flex gap-2 items-center min-h-8 min-w-0 px-3 py-0 w-full" data-density="default" data-slot="list-row">
                             <div class="first-line-icon type-caption" data-slot="list-row-leading">
                               <span class="flex items-center justify-center shrink-0 size-4" data-slot="settings-sidebar-icon">
                                 <svg aria-hidden="true" role="img">
@@ -4085,7 +4085,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:settings:sch
                       <span aria-hidden="true" class="-z-10 absolute bg-transparent duration-spring-fast ease-spring-fast inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
                       <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
                         <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
-                          <div class="flex gap-2 items-start min-h-8 min-w-0 px-3 py-0 w-full" data-density="default" data-slot="list-row">
+                          <div class="[&>[data-slot=list-row-leading]]:self-center flex gap-2 items-center min-h-8 min-w-0 px-3 py-0 w-full" data-density="default" data-slot="list-row">
                             <div class="first-line-icon type-caption" data-slot="list-row-leading">
                               <span class="flex items-center justify-center shrink-0 size-4" data-slot="settings-sidebar-icon">
                                 <svg aria-hidden="true" role="img">
@@ -4101,7 +4101,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:settings:sch
                       <span aria-hidden="true" class="-z-10 absolute bg-transparent duration-spring-fast ease-spring-fast inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
                       <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
                         <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
-                          <div class="flex gap-2 items-start min-h-8 min-w-0 px-3 py-0 w-full" data-density="default" data-slot="list-row">
+                          <div class="[&>[data-slot=list-row-leading]]:self-center flex gap-2 items-center min-h-8 min-w-0 px-3 py-0 w-full" data-density="default" data-slot="list-row">
                             <div class="first-line-icon type-caption" data-slot="list-row-leading">
                               <span class="flex items-center justify-center shrink-0 size-4" data-slot="settings-sidebar-icon">
                                 <svg aria-hidden="true" role="img">
@@ -4117,7 +4117,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:settings:sch
                       <span aria-hidden="true" class="-z-10 absolute bg-transparent duration-spring-fast ease-spring-fast inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
                       <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
                         <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
-                          <div class="flex gap-2 items-start min-h-8 min-w-0 px-3 py-0 w-full" data-density="default" data-slot="list-row">
+                          <div class="[&>[data-slot=list-row-leading]]:self-center flex gap-2 items-center min-h-8 min-w-0 px-3 py-0 w-full" data-density="default" data-slot="list-row">
                             <div class="first-line-icon type-caption" data-slot="list-row-leading">
                               <span class="flex items-center justify-center shrink-0 size-4" data-slot="settings-sidebar-icon">
                                 <svg aria-hidden="true" role="img">
@@ -4137,7 +4137,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:settings:sch
                       <span aria-hidden="true" class="-z-10 absolute bg-transparent duration-spring-fast ease-spring-fast inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
                       <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
                         <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
-                          <div class="flex gap-2 items-start min-h-8 min-w-0 px-3 py-0 w-full" data-density="default" data-slot="list-row">
+                          <div class="[&>[data-slot=list-row-leading]]:self-center flex gap-2 items-center min-h-8 min-w-0 px-3 py-0 w-full" data-density="default" data-slot="list-row">
                             <div class="first-line-icon type-caption" data-slot="list-row-leading">
                               <span class="flex items-center justify-center shrink-0 size-4" data-slot="settings-sidebar-icon">
                                 <svg aria-hidden="true" role="img">
@@ -4153,7 +4153,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:settings:sch
                       <span aria-hidden="true" class="-z-10 absolute bg-transparent duration-spring-fast ease-spring-fast inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
                       <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
                         <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
-                          <div class="flex gap-2 items-start min-h-8 min-w-0 px-3 py-0 w-full" data-density="default" data-slot="list-row">
+                          <div class="[&>[data-slot=list-row-leading]]:self-center flex gap-2 items-center min-h-8 min-w-0 px-3 py-0 w-full" data-density="default" data-slot="list-row">
                             <div class="first-line-icon type-caption" data-slot="list-row-leading">
                               <span class="flex items-center justify-center shrink-0 size-4" data-slot="settings-sidebar-icon">
                                 <svg aria-hidden="true" role="img">
@@ -4305,7 +4305,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:settings:sch
                       <span aria-hidden="true" class="-z-10 absolute bg-transparent duration-spring-fast ease-spring-fast inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
                       <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
                         <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
-                          <div class="flex gap-2 items-start min-h-8 min-w-0 px-3 py-0 w-full" data-density="default" data-slot="list-row">
+                          <div class="[&>[data-slot=list-row-leading]]:self-center flex gap-2 items-center min-h-8 min-w-0 px-3 py-0 w-full" data-density="default" data-slot="list-row">
                             <div class="first-line-icon type-caption" data-slot="list-row-leading">
                               <span class="flex items-center justify-center shrink-0 size-4" data-slot="settings-sidebar-icon">
                                 <svg aria-hidden="true" role="img">
@@ -4321,7 +4321,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:settings:sch
                       <span aria-hidden="true" class="-z-10 absolute bg-transparent duration-spring-fast ease-spring-fast inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
                       <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
                         <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
-                          <div class="flex gap-2 items-start min-h-8 min-w-0 px-3 py-0 w-full" data-density="default" data-slot="list-row">
+                          <div class="[&>[data-slot=list-row-leading]]:self-center flex gap-2 items-center min-h-8 min-w-0 px-3 py-0 w-full" data-density="default" data-slot="list-row">
                             <div class="first-line-icon type-caption" data-slot="list-row-leading">
                               <span class="flex items-center justify-center shrink-0 size-4" data-slot="settings-sidebar-icon">
                                 <svg aria-hidden="true" role="img">
@@ -4337,7 +4337,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:settings:sch
                       <span aria-hidden="true" class="-z-10 absolute bg-transparent duration-spring-fast ease-spring-fast inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
                       <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
                         <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
-                          <div class="flex gap-2 items-start min-h-8 min-w-0 px-3 py-0 w-full" data-density="default" data-slot="list-row">
+                          <div class="[&>[data-slot=list-row-leading]]:self-center flex gap-2 items-center min-h-8 min-w-0 px-3 py-0 w-full" data-density="default" data-slot="list-row">
                             <div class="first-line-icon type-caption" data-slot="list-row-leading">
                               <span class="flex items-center justify-center shrink-0 size-4" data-slot="settings-sidebar-icon">
                                 <svg aria-hidden="true" role="img">
@@ -4357,7 +4357,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:settings:sch
                       <span aria-hidden="true" class="-z-10 absolute bg-transparent duration-spring-fast ease-spring-fast inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
                       <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
                         <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
-                          <div class="flex gap-2 items-start min-h-8 min-w-0 px-3 py-0 w-full" data-density="default" data-slot="list-row">
+                          <div class="[&>[data-slot=list-row-leading]]:self-center flex gap-2 items-center min-h-8 min-w-0 px-3 py-0 w-full" data-density="default" data-slot="list-row">
                             <div class="first-line-icon type-caption" data-slot="list-row-leading">
                               <span class="flex items-center justify-center shrink-0 size-4" data-slot="settings-sidebar-icon">
                                 <svg aria-hidden="true" role="img">
@@ -4373,7 +4373,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:settings:sch
                       <span aria-hidden="true" class="-z-10 absolute bg-transparent duration-spring-fast ease-spring-fast inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
                       <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
                         <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
-                          <div class="flex gap-2 items-start min-h-8 min-w-0 px-3 py-0 w-full" data-density="default" data-slot="list-row">
+                          <div class="[&>[data-slot=list-row-leading]]:self-center flex gap-2 items-center min-h-8 min-w-0 px-3 py-0 w-full" data-density="default" data-slot="list-row">
                             <div class="first-line-icon type-caption" data-slot="list-row-leading">
                               <span class="flex items-center justify-center shrink-0 size-4" data-slot="settings-sidebar-icon">
                                 <svg aria-hidden="true" role="img">
@@ -4389,7 +4389,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:settings:sch
                       <span aria-hidden="true" class="-z-10 absolute bg-transparent duration-spring-fast ease-spring-fast inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
                       <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
                         <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
-                          <div class="flex gap-2 items-start min-h-8 min-w-0 px-3 py-0 w-full" data-density="default" data-slot="list-row">
+                          <div class="[&>[data-slot=list-row-leading]]:self-center flex gap-2 items-center min-h-8 min-w-0 px-3 py-0 w-full" data-density="default" data-slot="list-row">
                             <div class="first-line-icon type-caption" data-slot="list-row-leading">
                               <span class="flex items-center justify-center shrink-0 size-4" data-slot="settings-sidebar-icon">
                                 <svg aria-hidden="true" role="img">
@@ -4405,7 +4405,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:settings:sch
                       <span aria-hidden="true" class="-z-10 absolute bg-transparent duration-spring-fast ease-spring-fast inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
                       <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
                         <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
-                          <div class="flex gap-2 items-start min-h-8 min-w-0 px-3 py-0 w-full" data-density="default" data-slot="list-row">
+                          <div class="[&>[data-slot=list-row-leading]]:self-center flex gap-2 items-center min-h-8 min-w-0 px-3 py-0 w-full" data-density="default" data-slot="list-row">
                             <div class="first-line-icon type-caption" data-slot="list-row-leading">
                               <span class="flex items-center justify-center shrink-0 size-4" data-slot="settings-sidebar-icon">
                                 <svg aria-hidden="true" role="img">
@@ -4421,7 +4421,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:settings:sch
                       <span aria-hidden="true" class="-z-10 absolute bg-transparent duration-spring-fast ease-spring-fast inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
                       <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
                         <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
-                          <div class="flex gap-2 items-start min-h-8 min-w-0 px-3 py-0 w-full" data-density="default" data-slot="list-row">
+                          <div class="[&>[data-slot=list-row-leading]]:self-center flex gap-2 items-center min-h-8 min-w-0 px-3 py-0 w-full" data-density="default" data-slot="list-row">
                             <div class="first-line-icon type-caption" data-slot="list-row-leading">
                               <span class="flex items-center justify-center shrink-0 size-4" data-slot="settings-sidebar-icon">
                                 <svg aria-hidden="true" role="img">
@@ -4437,7 +4437,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:settings:sch
                       <span aria-hidden="true" class="-z-10 absolute bg-transparent duration-spring-fast ease-spring-fast inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
                       <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
                         <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
-                          <div class="flex gap-2 items-start min-h-8 min-w-0 px-3 py-0 w-full" data-density="default" data-slot="list-row">
+                          <div class="[&>[data-slot=list-row-leading]]:self-center flex gap-2 items-center min-h-8 min-w-0 px-3 py-0 w-full" data-density="default" data-slot="list-row">
                             <div class="first-line-icon type-caption" data-slot="list-row-leading">
                               <span class="flex items-center justify-center shrink-0 size-4" data-slot="settings-sidebar-icon">
                                 <svg aria-hidden="true" role="img">
@@ -4457,7 +4457,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:settings:sch
                       <span aria-hidden="true" class="-z-10 absolute bg-transparent duration-spring-fast ease-spring-fast inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
                       <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
                         <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
-                          <div class="flex gap-2 items-start min-h-8 min-w-0 px-3 py-0 w-full" data-density="default" data-slot="list-row">
+                          <div class="[&>[data-slot=list-row-leading]]:self-center flex gap-2 items-center min-h-8 min-w-0 px-3 py-0 w-full" data-density="default" data-slot="list-row">
                             <div class="first-line-icon type-caption" data-slot="list-row-leading">
                               <span class="flex items-center justify-center shrink-0 size-4" data-slot="settings-sidebar-icon">
                                 <svg aria-hidden="true" role="img">
@@ -4473,7 +4473,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:settings:sch
                       <span aria-hidden="true" class="-z-10 absolute bg-transparent duration-spring-fast ease-spring-fast inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
                       <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
                         <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
-                          <div class="flex gap-2 items-start min-h-8 min-w-0 px-3 py-0 w-full" data-density="default" data-slot="list-row">
+                          <div class="[&>[data-slot=list-row-leading]]:self-center flex gap-2 items-center min-h-8 min-w-0 px-3 py-0 w-full" data-density="default" data-slot="list-row">
                             <div class="first-line-icon type-caption" data-slot="list-row-leading">
                               <span class="flex items-center justify-center shrink-0 size-4" data-slot="settings-sidebar-icon">
                                 <svg aria-hidden="true" role="img">
@@ -4625,7 +4625,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:settings:sch
                       <span aria-hidden="true" class="-z-10 absolute bg-transparent duration-spring-fast ease-spring-fast inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
                       <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
                         <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
-                          <div class="flex gap-2 items-start min-h-8 min-w-0 px-3 py-0 w-full" data-density="default" data-slot="list-row">
+                          <div class="[&>[data-slot=list-row-leading]]:self-center flex gap-2 items-center min-h-8 min-w-0 px-3 py-0 w-full" data-density="default" data-slot="list-row">
                             <div class="first-line-icon type-caption" data-slot="list-row-leading">
                               <span class="flex items-center justify-center shrink-0 size-4" data-slot="settings-sidebar-icon">
                                 <svg aria-hidden="true" role="img">
@@ -4641,7 +4641,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:settings:sch
                       <span aria-hidden="true" class="-z-10 absolute bg-transparent duration-spring-fast ease-spring-fast inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
                       <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
                         <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
-                          <div class="flex gap-2 items-start min-h-8 min-w-0 px-3 py-0 w-full" data-density="default" data-slot="list-row">
+                          <div class="[&>[data-slot=list-row-leading]]:self-center flex gap-2 items-center min-h-8 min-w-0 px-3 py-0 w-full" data-density="default" data-slot="list-row">
                             <div class="first-line-icon type-caption" data-slot="list-row-leading">
                               <span class="flex items-center justify-center shrink-0 size-4" data-slot="settings-sidebar-icon">
                                 <svg aria-hidden="true" role="img">
@@ -4657,7 +4657,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:settings:sch
                       <span aria-hidden="true" class="-z-10 absolute bg-transparent duration-spring-fast ease-spring-fast inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
                       <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
                         <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
-                          <div class="flex gap-2 items-start min-h-8 min-w-0 px-3 py-0 w-full" data-density="default" data-slot="list-row">
+                          <div class="[&>[data-slot=list-row-leading]]:self-center flex gap-2 items-center min-h-8 min-w-0 px-3 py-0 w-full" data-density="default" data-slot="list-row">
                             <div class="first-line-icon type-caption" data-slot="list-row-leading">
                               <span class="flex items-center justify-center shrink-0 size-4" data-slot="settings-sidebar-icon">
                                 <svg aria-hidden="true" role="img">
@@ -4677,7 +4677,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:settings:sch
                       <span aria-hidden="true" class="-z-10 absolute bg-transparent duration-spring-fast ease-spring-fast inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
                       <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
                         <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
-                          <div class="flex gap-2 items-start min-h-8 min-w-0 px-3 py-0 w-full" data-density="default" data-slot="list-row">
+                          <div class="[&>[data-slot=list-row-leading]]:self-center flex gap-2 items-center min-h-8 min-w-0 px-3 py-0 w-full" data-density="default" data-slot="list-row">
                             <div class="first-line-icon type-caption" data-slot="list-row-leading">
                               <span class="flex items-center justify-center shrink-0 size-4" data-slot="settings-sidebar-icon">
                                 <svg aria-hidden="true" role="img">
@@ -4693,7 +4693,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:settings:sch
                       <span aria-hidden="true" class="-z-10 absolute bg-transparent duration-spring-fast ease-spring-fast inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
                       <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
                         <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
-                          <div class="flex gap-2 items-start min-h-8 min-w-0 px-3 py-0 w-full" data-density="default" data-slot="list-row">
+                          <div class="[&>[data-slot=list-row-leading]]:self-center flex gap-2 items-center min-h-8 min-w-0 px-3 py-0 w-full" data-density="default" data-slot="list-row">
                             <div class="first-line-icon type-caption" data-slot="list-row-leading">
                               <span class="flex items-center justify-center shrink-0 size-4" data-slot="settings-sidebar-icon">
                                 <svg aria-hidden="true" role="img">
@@ -4709,7 +4709,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:settings:sch
                       <span aria-hidden="true" class="-z-10 absolute bg-transparent duration-spring-fast ease-spring-fast inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
                       <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
                         <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
-                          <div class="flex gap-2 items-start min-h-8 min-w-0 px-3 py-0 w-full" data-density="default" data-slot="list-row">
+                          <div class="[&>[data-slot=list-row-leading]]:self-center flex gap-2 items-center min-h-8 min-w-0 px-3 py-0 w-full" data-density="default" data-slot="list-row">
                             <div class="first-line-icon type-caption" data-slot="list-row-leading">
                               <span class="flex items-center justify-center shrink-0 size-4" data-slot="settings-sidebar-icon">
                                 <svg aria-hidden="true" role="img">
@@ -4725,7 +4725,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:settings:sch
                       <span aria-hidden="true" class="-z-10 absolute bg-transparent duration-spring-fast ease-spring-fast inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
                       <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
                         <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
-                          <div class="flex gap-2 items-start min-h-8 min-w-0 px-3 py-0 w-full" data-density="default" data-slot="list-row">
+                          <div class="[&>[data-slot=list-row-leading]]:self-center flex gap-2 items-center min-h-8 min-w-0 px-3 py-0 w-full" data-density="default" data-slot="list-row">
                             <div class="first-line-icon type-caption" data-slot="list-row-leading">
                               <span class="flex items-center justify-center shrink-0 size-4" data-slot="settings-sidebar-icon">
                                 <svg aria-hidden="true" role="img">
@@ -4741,7 +4741,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:settings:sch
                       <span aria-hidden="true" class="-z-10 absolute bg-transparent duration-spring-fast ease-spring-fast inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
                       <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
                         <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
-                          <div class="flex gap-2 items-start min-h-8 min-w-0 px-3 py-0 w-full" data-density="default" data-slot="list-row">
+                          <div class="[&>[data-slot=list-row-leading]]:self-center flex gap-2 items-center min-h-8 min-w-0 px-3 py-0 w-full" data-density="default" data-slot="list-row">
                             <div class="first-line-icon type-caption" data-slot="list-row-leading">
                               <span class="flex items-center justify-center shrink-0 size-4" data-slot="settings-sidebar-icon">
                                 <svg aria-hidden="true" role="img">
@@ -4757,7 +4757,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:settings:sch
                       <span aria-hidden="true" class="-z-10 absolute bg-transparent duration-spring-fast ease-spring-fast inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
                       <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
                         <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
-                          <div class="flex gap-2 items-start min-h-8 min-w-0 px-3 py-0 w-full" data-density="default" data-slot="list-row">
+                          <div class="[&>[data-slot=list-row-leading]]:self-center flex gap-2 items-center min-h-8 min-w-0 px-3 py-0 w-full" data-density="default" data-slot="list-row">
                             <div class="first-line-icon type-caption" data-slot="list-row-leading">
                               <span class="flex items-center justify-center shrink-0 size-4" data-slot="settings-sidebar-icon">
                                 <svg aria-hidden="true" role="img">
@@ -4777,7 +4777,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:settings:sch
                       <span aria-hidden="true" class="-z-10 absolute bg-transparent duration-spring-fast ease-spring-fast inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
                       <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
                         <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
-                          <div class="flex gap-2 items-start min-h-8 min-w-0 px-3 py-0 w-full" data-density="default" data-slot="list-row">
+                          <div class="[&>[data-slot=list-row-leading]]:self-center flex gap-2 items-center min-h-8 min-w-0 px-3 py-0 w-full" data-density="default" data-slot="list-row">
                             <div class="first-line-icon type-caption" data-slot="list-row-leading">
                               <span class="flex items-center justify-center shrink-0 size-4" data-slot="settings-sidebar-icon">
                                 <svg aria-hidden="true" role="img">
@@ -4793,7 +4793,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:settings:sch
                       <span aria-hidden="true" class="-z-10 absolute bg-transparent duration-spring-fast ease-spring-fast inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
                       <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
                         <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
-                          <div class="flex gap-2 items-start min-h-8 min-w-0 px-3 py-0 w-full" data-density="default" data-slot="list-row">
+                          <div class="[&>[data-slot=list-row-leading]]:self-center flex gap-2 items-center min-h-8 min-w-0 px-3 py-0 w-full" data-density="default" data-slot="list-row">
                             <div class="first-line-icon type-caption" data-slot="list-row-leading">
                               <span class="flex items-center justify-center shrink-0 size-4" data-slot="settings-sidebar-icon">
                                 <svg aria-hidden="true" role="img">
