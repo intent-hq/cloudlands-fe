@@ -3,25 +3,18 @@
 
   interface Props {
     locked?: boolean;
-    collapsed?: boolean;
   }
   export const preview = definePreview<Props>({
     id: 'changes-summary',
     title: 'Changes sidebar summary',
     defaultState: 'editable',
-    states: {
-      editable: { props: {} },
-      locked: { props: { locked: true } },
-      rail: { props: { collapsed: true } },
-    },
+    states: { editable: { props: {} }, locked: { props: { locked: true } } },
   });
 </script>
 
 <script lang="ts">
   import { onDestroy } from 'svelte';
   import MultiSelectTabbedSidebar from '../MultiSelectTabbedSidebar.svelte';
-  import WorkspaceLayout from '../WorkspaceLayout.svelte';
-  import { setCollapsed } from '$store/renderer/slices/ui-layout/ui-layout-slice';
   import { startRootStoreLifecycle } from '$store/renderer/root-store-lifecycle';
   import { store } from '$store/renderer/store';
   import {
@@ -39,7 +32,7 @@
   import { installChangesSummaryMocks } from './changes-summary.preview-fixtures';
   import { ChangeStage } from '$features/file-tracking/types';
 
-  let { locked = false, collapsed = false }: Props = $props();
+  let { locked = false }: Props = $props();
   const workspaceId = 'changes-summary-preview';
   const timestamp = '2026-09-01T00:00:00Z';
   const branch = 'feature/a-long-working-branch-for-sidebar-layout';
@@ -100,9 +93,6 @@
   );
   store.dispatch(setMultiSelectSidebarSelectedTabs(workspaceId, ['changes']));
   $effect(() => {
-    store.dispatch(setCollapsed(collapsed));
-  });
-  $effect(() => {
     store.dispatch(
       setCommitsData(
         workspaceId,
@@ -123,7 +113,6 @@
     );
   });
   onDestroy(() => {
-    store.dispatch(setCollapsed(false));
     restoreMocks();
     store.dispatch(removeWorkspaceEntity(workspaceId));
     dispose();
@@ -131,14 +120,5 @@
 </script>
 
 <div class="w-full h-[620px] bg-sidebar" data-testid="changes-summary-preview">
-  {#if collapsed}
-    <WorkspaceLayout>
-      {#snippet sidebar(isCollapsed = false)}
-        <MultiSelectTabbedSidebar {workspaceId} collapsed={isCollapsed} />
-      {/snippet}
-      {#snippet content()}<div class="h-full w-full bg-background"></div>{/snippet}
-    </WorkspaceLayout>
-  {:else}
-    <MultiSelectTabbedSidebar {workspaceId} />
-  {/if}
+  <MultiSelectTabbedSidebar {workspaceId} />
 </div>

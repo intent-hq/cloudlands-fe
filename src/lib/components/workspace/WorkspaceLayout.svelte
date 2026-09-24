@@ -13,6 +13,9 @@
 
   import type { Snippet } from 'svelte';
   import { springIn, crispOut } from '$lib/motion';
+  import WorkspaceSidebarRail from './sidebar/WorkspaceSidebarRail.svelte';
+  import { store as appStore } from '$store/renderer/store';
+  import { toggleSidebar } from '$store/renderer/slices/ui-layout/ui-layout-slice';
 
   // Components
   import ResizablePanel from '$lib/components/layout/ResizablePanel.svelte';
@@ -24,7 +27,7 @@
   // Props
   interface Props {
     // Snippets for each section
-    sidebar: Snippet<[boolean?]>;
+    sidebar: Snippet;
     content: Snippet;
     terminalOverlay?: Snippet;
     modals?: Snippet;
@@ -104,7 +107,7 @@
               in:springIn={{ tier: 'moderate', x: -12, y: 0, scale: 1 }}
               out:crispOut={{ tier: 'fast', x: -12, y: 0, scale: 1 }}
             >
-              {@render sidebar(true)}
+              <WorkspaceSidebarRail onExpand={() => appStore.dispatch(toggleSidebar())} />
             </div>
           {/if}
         </div>
@@ -134,7 +137,7 @@
             in:springIn={{ tier: 'moderate', x: 12, y: 0, scale: 1 }}
             out:crispOut={{ tier: 'fast', x: 12, y: 0, scale: 1 }}
           >
-            {@render sidebar(false)}
+            {@render sidebar()}
           </div>
         {/if}
       </ResizablePanel>

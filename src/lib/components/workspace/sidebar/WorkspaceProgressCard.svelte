@@ -111,18 +111,12 @@
   const readyLogger = createLogger('ReadyTasks');
 
   interface Props {
-    compactHeading?: boolean;
     workspaceId?: string;
     onOpenNote?: (noteId: string) => void;
     onAcceptChanges?: () => void;
   }
 
-  let {
-    workspaceId,
-    onOpenNote: _onOpenNote,
-    onAcceptChanges,
-    compactHeading = false,
-  }: Props = $props();
+  let { workspaceId, onOpenNote: _onOpenNote, onAcceptChanges }: Props = $props();
 
   const workspaceIdStore = writable('');
   $effect(() => {
@@ -924,9 +918,7 @@
             onblur={saveTitle}
             onkeydown={handleTitleKeydown}
             noFocusStyle
-            class="edit-input relative z-10 {compactHeading
-              ? 'text-ui'
-              : 'text-xl'} font-semibold text-foreground bg-transparent hover:bg-transparent border-none
+            class="edit-input relative z-10 text-xl font-semibold text-foreground bg-transparent hover:bg-transparent border-none
                py-0.5 rounded
                outline-none w-full leading-normal
                focus:ring-none! focus:outline-none!
@@ -936,9 +928,7 @@
         {:else}
           <Button
             variant="plain"
-            class="relative z-10 {compactHeading
-              ? 'text-ui'
-              : 'text-xl'} font-semibold text-foreground bg-transparent {!$workspace?.title
+            class="relative z-10 text-xl font-semibold text-foreground bg-transparent {!$workspace?.title
               ? 'opacity-50'
               : ''}
                border-none py-0.5 pr-1 rounded cursor-text text-left

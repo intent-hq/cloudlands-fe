@@ -61,7 +61,7 @@ describe('resource icon tile source contract', () => {
     expect(tabs).toContain('icon: RESOURCE_ICON_BY_KIND.note');
     expect(tabs).toContain('icon: RESOURCE_ICON_BY_KIND.changes');
     expect(sidebar).toContain('border border-border bg-sidebar p-2');
-    expect(sidebar).toContain("!collapsed && 'rounded-lg border border-border bg-sidebar'");
+    expect(sidebar).toContain('border border-border bg-sidebar"');
     expect(sidebar).toContain('background-color: hsl(var(--sidebar))');
     expect(browser).toContain('border border-border bg-sidebar px-3');
     expect(terminal).toContain('border border-border bg-sidebar px-3');
