@@ -225,22 +225,6 @@ describe('PerformanceOptimizer', () => {
     });
   });
 
-  describe('Worker Thread Management', () => {
-    it('should initialize worker pool', () => {
-      // Worker pool is only initialized in Node.js environment
-      // In test environment, Worker is mocked but window is defined
-      // So worker pool initialization is skipped
-      // This is expected behavior - no workers in browser environment
-      expect(true).toBe(true);
-    });
-
-    it('should handle worker errors gracefully', async () => {
-      // Worker functionality is not available in test environment
-      // This is expected - workers are only used in Node.js production environment
-      expect(true).toBe(true);
-    });
-  });
-
   describe('Performance Statistics', () => {
     it('should calculate percentile response times', async () => {
       // Execute multiple operations with mock resolved values

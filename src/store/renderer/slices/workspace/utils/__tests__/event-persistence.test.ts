@@ -4,7 +4,7 @@
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { EventPersistenceService, importEventsFromFile } from '../event-persistence';
-import type { WorkspaceEvent } from '$features/events/types';
+import type { FileChangedEvent, WorkspaceEvent } from '$features/events/types';
 import { installLocalStorageMock } from '$store/renderer/utils/test-helpers/local-storage-mock';
 
 // Mock browser environment
@@ -134,12 +134,30 @@ describe('EventPersistenceService', () => {
 
 describe('importEventsFromFile', () => {
   it('should import events from valid file', async () => {
+    const importedEvents: FileChangedEvent[] = [
+      {
+        id: 'evt-1',
+        workspaceId: 'ws-1',
+        type: 'file:changed',
+        timestamp: '2024-01-01T00:00:00Z',
+        actor: { type: 'user' },
+        data: { path: '/workspace/src/first.ts', relativePath: 'src/first.ts', action: 'modify' },
+      },
+      {
+        id: 'evt-2',
+        workspaceId: 'ws-1',
+        type: 'file:changed',
+        timestamp: '2024-01-01T00:01:00Z',
+        actor: { type: 'agent', id: 'agent-2' },
+        data: { path: '/workspace/src/second.ts', relativePath: 'src/second.ts', action: 'create' },
+      },
+    ];
     const mockFile = {
-      text: vi.fn().mockResolvedValue(JSON.stringify({ events: [{ id: 'evt-1' }] })),
+      text: vi.fn().mockResolvedValue(JSON.stringify({ events: importedEvents })),
     } as unknown as File;
 
     const events = await importEventsFromFile(mockFile);
-    expect(events).toHaveLength(1);
+    expect(events).toEqual(importedEvents);
   });
 
   it('should throw on invalid file format', async () => {

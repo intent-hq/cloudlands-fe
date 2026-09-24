@@ -114,21 +114,54 @@ describe('Safe Parsers', () => {
   describe('safeParseAgentMessages', () => {
     it('should parse arrays of messages', () => {
       const messages = [
-        { id: 'msg-1', role: 'user', content: 'hello', timestamp: new Date() },
-        { id: 'msg-2', role: 'assistant', content: 'hi', timestamp: new Date() },
+        {
+          id: 'msg-1',
+          role: 'user',
+          content: 'hello',
+          timestamp: new Date('2024-01-01T00:00:00Z'),
+        },
+        {
+          id: 'msg-2',
+          role: 'assistant',
+          content: 'hi',
+          timestamp: new Date('2024-01-01T00:00:00Z'),
+        },
       ];
       const result = safeParseAgentMessages(messages);
-      expect(result).toHaveLength(2);
+      expect(result).toEqual([
+        {
+          id: 'msg-1',
+          role: 'user',
+          content: 'hello',
+          timestamp: new Date('2024-01-01T00:00:00Z'),
+        },
+        {
+          id: 'msg-2',
+          role: 'assistant',
+          content: 'hi',
+          timestamp: new Date('2024-01-01T00:00:00Z'),
+        },
+      ]);
     });
 
     it('should filter out invalid messages', () => {
       const messages = [
-        { id: 'msg-1', role: 'user', content: 'hello', timestamp: new Date() },
+        {
+          id: 'msg-1',
+          role: 'user',
+          content: 'hello',
+          timestamp: new Date('2024-01-01T00:00:00Z'),
+        },
         { id: 'msg-2' },
-        { id: 'msg-3', role: 'assistant', content: 'hi', timestamp: new Date() },
+        {
+          id: 'msg-3',
+          role: 'assistant',
+          content: 'hi',
+          timestamp: new Date('2024-01-01T00:00:00Z'),
+        },
       ];
       const result = safeParseAgentMessages(messages);
-      expect(result).toHaveLength(2);
+      expect(result.map(({ id }) => id)).toEqual(['msg-1', 'msg-3']);
     });
 
     it('should return empty array for non-arrays', () => {

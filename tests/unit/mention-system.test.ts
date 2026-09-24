@@ -6,12 +6,15 @@
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { MentionSystem } from '../../src/lib/services/mentions/mention-system';
-import type { SearchContext } from '../../src/lib/services/mentions/types';
+import { providerRegistry } from '../../src/lib/services/mentions/providers';
+import type { Provider, SearchContext } from '../../src/lib/services/mentions/types';
+
+const { searchMock } = vi.hoisted(() => ({ searchMock: vi.fn() }));
 
 // Mock the search service
 vi.mock('../../src/lib/services/mentions/search-service', () => ({
   DebouncedSearchService: class MockSearchService {
-    search = vi.fn().mockResolvedValue([]);
+    search = searchMock;
     isLoading = vi.fn().mockReturnValue(false);
   },
 }));
@@ -31,6 +34,7 @@ describe('MentionSystem', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    searchMock.mockReset().mockResolvedValue([]);
     mentionSystem = new MentionSystem({
       debounceMs: 300,
       maxResults: 10,
@@ -73,9 +77,15 @@ describe('MentionSystem', () => {
     });
 
     it('should sanitize query by trimming whitespace', async () => {
+      const provider: Provider = {
+        id: 'test-provider',
+        triggers: [],
+        search: vi.fn().mockResolvedValue([]),
+      };
+      vi.mocked(providerRegistry.getDefault).mockReturnValueOnce([provider]);
       await mentionSystem.search('  test  ', mockContext);
-      // Should not throw
-      expect(true).toBe(true);
+      expect(searchMock).toHaveBeenCalledExactlyOnceWith('test', [provider], mockContext);
+      expect(searchMock.mock.calls[0][2]).toBe(mockContext);
     });
 
     it('should return empty array when no providers available', async () => {

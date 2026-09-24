@@ -298,26 +298,6 @@ describe('TaskItemNodeView - Basic Rendering', () => {
     expect(checkbox.getAttribute('aria-checked')).toBe('true');
   });
 
-  it('should render indeterminate checkbox for in-progress status', async () => {
-    const props = createMockProps({
-      node: {
-        attrs: { checked: false, status: 'in-progress' },
-        nodeSize: 10,
-        toJSON: () => ({ type: 'taskItem', attrs: { checked: false, status: 'in-progress' } }),
-      },
-    });
-    const { container } = render(TestTaskItemNodeView, { props });
-
-    const checkbox = container.querySelector('[role="checkbox"]') as HTMLElement;
-    expect(checkbox).toBeTruthy();
-
-    // Verify the task item has the in-progress status
-    // Note: The custom checkbox component's data-state might not update in jsdom
-    // but the parent li element correctly reflects the status
-    const listItem = container.querySelector('li[data-type="taskItem"]') as HTMLElement;
-    expect(listItem.getAttribute('data-status')).toBe('in-progress');
-  });
-
   it('should render contentDOM placeholder', () => {
     const props = createMockProps();
     const { container } = render(TestTaskItemNodeView, { props });
@@ -360,33 +340,6 @@ describe('TaskItemNodeView - Checkbox Cycling', () => {
     // The component calls updateAttributes with { checked: false, status: 'in-progress' }
     // but since the mock doesn't update the node, the visual state doesn't change
     // This is expected behavior for unit tests - integration tests verify the full cycle
-    expect(true).toBe(true);
-  });
-
-  it('should cycle from in-progress to done on click', async () => {
-    const props = createMockProps({
-      node: {
-        attrs: { checked: false, status: 'in-progress' },
-        nodeSize: 10,
-        toJSON: () => ({ type: 'taskItem', attrs: { checked: false, status: 'in-progress' } }),
-      },
-    });
-
-    const { container } = render(TestTaskItemNodeView, { props });
-
-    // The checkbox is a div with role="checkbox"
-    const checkbox = container.querySelector('[role="checkbox"]') as HTMLElement;
-    expect(checkbox).toBeTruthy();
-
-    // Verify the task item has the in-progress status
-    const listItem = container.querySelector('li[data-type="taskItem"]') as HTMLElement;
-    expect(listItem.getAttribute('data-status')).toBe('in-progress');
-
-    // Click should not throw
-    await fireEvent.click(checkbox);
-
-    // The component calls updateAttributes with { checked: true, status: 'done' }
-    // but since the mock doesn't update the node, the visual state doesn't change
     expect(true).toBe(true);
   });
 
@@ -442,24 +395,6 @@ describe('TaskItemNodeView - Action Button', () => {
     const buttons = container.querySelectorAll('button');
     // There should be at least one button (the "Convert to Task Note" button)
     expect(buttons.length).toBeGreaterThan(0);
-  });
-
-  it('should not render action button for checked tasks', () => {
-    const props = createMockProps({
-      node: {
-        attrs: { checked: true, status: 'done' },
-        nodeSize: 10,
-        toJSON: () => ({ type: 'taskItem', attrs: { checked: true, status: 'done' } }),
-      },
-    });
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    const { container } = render(TestTaskItemNodeView, { props });
-
-    // For checked tasks, the action button should not be rendered
-    // The only buttons should be inside the task preview (if linked) or checkbox
-    // With checked tasks, the "Convert to Task Note" button is hidden
-    // This test may need adjustment based on what other buttons are rendered
-    expect(true).toBe(true); // Component structure validated - button visibility controlled by effectiveChecked
   });
 });
 

@@ -1,3 +1,4 @@
+import { m } from '$shared/paraglide/messages.js';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
 import { tick } from 'svelte';
@@ -2178,15 +2179,6 @@ describe('ModelPicker multi-provider mode', () => {
     expect(screen.getByRole('button').className).toContain('border-border!');
   });
 
-  it('shows default model text when no model is explicitly selected', () => {
-    render(ModelPicker, {
-      props: {},
-    });
-
-    const container = document.body;
-    expect(container).toBeTruthy();
-  });
-
   it('shows the selected model label in the trigger button', () => {
     render(ModelPicker, {
       props: {
@@ -2238,18 +2230,24 @@ describe('ModelPicker multi-provider mode', () => {
     expect(screen.getByRole('button').textContent).toContain('Model 1');
   });
 
-  it('shows default model option when selectedModel is null (BE-persisted unset)', async () => {
-    render(ModelPicker, {
-      props: {
-        selectedModel: null,
-        portal: false,
-      },
-    });
+  it.each([undefined, null])(
+    'shows the default model when selectedModel is %s',
+    async (selectedModel) => {
+      render(ModelPicker, {
+        props: {
+          selectedModel,
+          portal: false,
+        },
+      });
 
-    await waitFor(() => {
-      expect(screen.getByRole('button').textContent).toContain('Default model');
-    });
-  });
+      await fireEvent.click(screen.getByRole('button'));
+      // Seeing the loaded catalog option proves initialization has settled.
+      expect(await screen.findByRole('option', { name: /Model 1/ })).toBeTruthy();
+      expect(
+        screen.getByRole('button', { name: m.chat_modelPicker_defaultModel_label() }),
+      ).toBeTruthy();
+    },
+  );
 
   it('does not silently switch when the selected model is a compound default-provider ID matching a bare dropdown entry', async () => {
     const { agentClient } = await import('$features/agent/agent.client');

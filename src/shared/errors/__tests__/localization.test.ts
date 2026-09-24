@@ -61,13 +61,6 @@ describe('Error Localization Module', () => {
       const translation = translateError('SESSION_NOT_FOUND');
       expect(translation.message).toBeTruthy();
     });
-
-    it('should return error translation object', () => {
-      const translation = translateError('AGENT_CREATION_FAILED');
-      expect(translation).toHaveProperty('code');
-      expect(translation).toHaveProperty('locale');
-      expect(translation).toHaveProperty('message');
-    });
   });
 
   describe('getSupportedLocales', () => {

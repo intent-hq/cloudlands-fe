@@ -159,5 +159,4 @@ describe('workspace activity timestamps', () => {
   // helpers themselves. `lastActivity` is now daemon-authoritative on every
   // wire path (PROTOCOL.md §5.1 / §9.1); the FE renders whatever the daemon
   // returns without healing.
-  it.skip('retired: FE no longer derives lastActivity', () => {});
 });

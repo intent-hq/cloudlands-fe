@@ -14,8 +14,11 @@ describe('Error Recovery Module', () => {
   describe('getRecoverySuggestions', () => {
     it('should return suggestions for known error code', () => {
       const suggestions = getRecoverySuggestions('AGENT_CREATION_FAILED');
-      expect(Array.isArray(suggestions)).toBe(true);
-      expect(suggestions.length).toBeGreaterThan(0);
+      expect(suggestions.map(({ action, automatic }) => ({ action, automatic }))).toEqual([
+        { action: 'retry', automatic: false },
+        { action: 'check-config', automatic: false },
+        { action: 'check-resources', automatic: false },
+      ]);
     });
 
     it('should return default suggestion for unknown error code', () => {
@@ -52,6 +55,7 @@ describe('Error Recovery Module', () => {
     it('should return recovery hints with suggestions', () => {
       const hints = getRecoveryHints('AGENT_CREATION_FAILED');
       expect(hints.code).toBe('AGENT_CREATION_FAILED');
+      expect(hints.helpLink).toBeUndefined();
       expect(Array.isArray(hints.suggestions)).toBe(true);
       expect(hints.suggestions.length).toBeGreaterThan(0);
     });
@@ -60,12 +64,6 @@ describe('Error Recovery Module', () => {
       const helpLink = 'https://example.com/help';
       const hints = getRecoveryHints('AGENT_CREATION_FAILED', helpLink);
       expect(hints.helpLink).toBe(helpLink);
-    });
-
-    it('should work without help link', () => {
-      const hints = getRecoveryHints('AGENT_CREATION_FAILED');
-      expect(hints.code).toBeTruthy();
-      expect(hints.suggestions).toBeTruthy();
     });
   });
 
@@ -148,12 +146,6 @@ describe('Error Recovery Module', () => {
       const suggestions = getRecoverySuggestions('PROVIDER_PROCESS_DIED');
       const restart = suggestions.find((s) => s.action === 'restart');
       expect(restart?.automatic).toBe(true);
-    });
-
-    it('should mark manual actions as non-automatic', () => {
-      const suggestions = getRecoverySuggestions('AGENT_CREATION_FAILED');
-      const manual = suggestions.filter((s) => !s.automatic);
-      expect(manual.length).toBeGreaterThan(0);
     });
   });
 });

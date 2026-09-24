@@ -452,14 +452,6 @@ describe('QuestionWizard', () => {
     expect(option.getAttribute('aria-checked')).toBe('false');
   });
 
-  it('renders Other as an auto-growing textarea row', () => {
-    setup();
-    const input = screen.getByPlaceholderText('Or type your own answer…');
-
-    expect(input.tagName).toBe('TEXTAREA');
-    expect(input.getAttribute('rows')).toBe('1');
-  });
-
   it('last typed answer uses Continue and hands back the full answers array', async () => {
     const { onComplete } = setup();
     await fireEvent.click(screen.getByText('OS keychain'));

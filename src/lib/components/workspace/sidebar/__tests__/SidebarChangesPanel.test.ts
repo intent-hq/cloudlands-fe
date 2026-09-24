@@ -1,6 +1,6 @@
 import { m } from '$shared/paraglide/messages.js';
 import { describe, it, expect, beforeEach, vi, type Mock } from 'vitest';
-import { render, fireEvent, waitFor } from '@testing-library/svelte';
+import { render, fireEvent, waitFor, within } from '@testing-library/svelte';
 import type { TrackedChange, CommitInfo } from '$features/file-tracking/types';
 import { ChangeStage } from '$features/file-tracking/types';
 import { warmImport } from '../../../../../test/warm-import';
@@ -913,11 +913,14 @@ describe('SidebarChangesPanel', () => {
       const { container } = await renderPanel();
 
       await waitFor(() => {
-        const text = container.textContent;
-        expect(text).toContain('feat: add feature');
-        expect(text).toContain('fix: bug fix');
-        // Should show "Pushed to remote" divider
-        expect(text).toContain('Pushed to remote');
+        const unpushedRow = within(container).getByRole('button', { name: 'feat: add feature' })
+          .parentElement!.parentElement!.parentElement!;
+        const pushedRow = within(container).getByRole('button', { name: 'fix: bug fix' })
+          .parentElement!.parentElement!.parentElement!;
+        expect(within(unpushedRow).getByTestId('commit-push-button')).toBeTruthy();
+        expect(within(unpushedRow).queryByTestId('commit-undo-push-button')).toBeNull();
+        expect(within(pushedRow).getByTestId('commit-undo-push-button')).toBeTruthy();
+        expect(within(pushedRow).queryByTestId('commit-push-button')).toBeNull();
       });
     });
 
@@ -983,7 +986,7 @@ describe('SidebarChangesPanel', () => {
         pullRequests: [
           {
             number: 42,
-            title: 'Merged PR',
+            title: 'Improve navigation',
             url: 'https://github.com/testorg/testrepo/pull/42',
             status: 'Merged',
             createdAt: new Date().toISOString(),
@@ -996,8 +999,8 @@ describe('SidebarChangesPanel', () => {
       const { container } = await renderPanel();
 
       await waitFor(() => {
-        const text = container.textContent;
-        expect(text).toContain('Merged PR');
+        const row = within(container).getByTitle(m.workspace_prSection_merged_label());
+        expect(within(row).getByRole('button', { name: /Improve navigation/ })).toBeTruthy();
       });
     });
 
@@ -1040,7 +1043,7 @@ describe('SidebarChangesPanel', () => {
         pullRequests: [
           {
             number: 42,
-            title: 'Draft PR',
+            title: 'Improve navigation',
             url: 'https://github.com/testorg/testrepo/pull/42',
             status: 'Draft',
             createdAt: new Date().toISOString(),
@@ -1053,8 +1056,8 @@ describe('SidebarChangesPanel', () => {
       const { container } = await renderPanel();
 
       await waitFor(() => {
-        const text = container.textContent;
-        expect(text).toContain('Draft PR');
+        const row = within(container).getByTitle(m.workspace_prSection_statusDraft_label());
+        expect(within(row).getByRole('button', { name: /Improve navigation/ })).toBeTruthy();
       });
     });
 
@@ -1759,9 +1762,18 @@ describe('SidebarChangesPanel', () => {
       const { container } = await renderPanel();
 
       await waitFor(() => {
-        const text = container.textContent || '';
-        expect(text).toContain('Unstaged');
-        expect(text).toContain('Staged');
+        const unstagedRow = container.querySelector(
+          '[data-file-path="src/unstaged.ts"]',
+        ) as HTMLElement;
+        const stagedRow = container.querySelector(
+          '[data-file-path="src/staged.ts"]',
+        ) as HTMLElement;
+        expect(unstagedRow).toBeTruthy();
+        expect(stagedRow).toBeTruthy();
+        expect(within(unstagedRow).getByTestId('stage-btn')).toBeTruthy();
+        expect(within(unstagedRow).queryByTestId('unstage-btn')).toBeNull();
+        expect(within(stagedRow).getByTestId('unstage-btn')).toBeTruthy();
+        expect(within(stagedRow).queryByTestId('stage-btn')).toBeNull();
       });
     });
 
