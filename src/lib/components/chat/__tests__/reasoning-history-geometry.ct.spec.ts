@@ -46,23 +46,14 @@ async function assertExpandedFixture(fixture: Locator, zoom: number, includeAnsw
       elements.map((element) => element.getAttribute('data-message-content-block')),
     ),
   ).toEqual(['text', 'thinking', 'thinking', 'tool_use', 'thinking']);
-  expect
-    .soft(
-      await children.evaluateAll((elements) =>
-        elements.map((element) => getComputedStyle(element).paddingTop),
-      ),
-    )
-    .toEqual(['0px', '16px', '24px', '0px', '0px']);
+  const descriptionToBody = await children.evaluateAll(([description, reasoning]) => {
+    const body = reasoning.querySelector('[data-reasoning-history-body]')!;
+    return body.getBoundingClientRect().top - description.getBoundingClientRect().bottom;
+  });
+  expect(descriptionToBody).toBeCloseTo(16 * zoom, 1);
 
   const sections = group.locator('[data-reasoning-section]');
   await expect(sections).toHaveCount(4);
-  expect
-    .soft(
-      await sections.evaluateAll((elements) =>
-        elements.map((element) => getComputedStyle(element).paddingTop),
-      ),
-    )
-    .toEqual(['0px', '0px', '0px', '0px']);
 
   const titles = group.locator('[data-reasoning-section-title]');
   await expect(titles).toHaveCount(3);
@@ -89,26 +80,27 @@ async function assertExpandedFixture(fixture: Locator, zoom: number, includeAnsw
     expect.soft(seam, title).toBeCloseTo((index === 0 ? 24 : 0) * zoom, 1);
   }
 
+  await expect(group).toContainText('The production-path analysis ends with input.');
+  await expect(group).toContainText('Final nested reasoning prose.');
   const bodyGeometry = await group
     .locator('[data-reasoning-history-body]')
     .evaluateAll((elements) =>
       elements.map((body) => {
         const section = body.closest<HTMLElement>('[data-reasoning-section]')!;
         const row = section.querySelector<HTMLElement>('[data-chat-operational-row]');
+        const content = body.querySelector('.markdown-viewer')!.getBoundingClientRect();
         return {
-          rowToBody: row
-            ? body.getBoundingClientRect().top - row.getBoundingClientRect().bottom
-            : null,
-          paddingTop: getComputedStyle(body).paddingTop,
-          paddingBottom: getComputedStyle(body).paddingBottom,
+          contentTopGap:
+            content.top - (row?.getBoundingClientRect().bottom ?? body.getBoundingClientRect().top),
+          contentBottomGap: body.getBoundingClientRect().bottom - content.bottom,
         };
       }),
     );
-  expect(bodyGeometry).toEqual([
-    { rowToBody: null, paddingTop: '6px', paddingBottom: '8px' },
-    { rowToBody: 0, paddingTop: '6px', paddingBottom: '8px' },
-    { rowToBody: 0, paddingTop: '6px', paddingBottom: '8px' },
-  ]);
+  expect(bodyGeometry).toHaveLength(3);
+  for (const body of bodyGeometry) {
+    expect(body.contentTopGap).toBeCloseTo(6 * zoom, 1);
+    expect(body.contentBottomGap).toBeCloseTo(8 * zoom, 1);
+  }
 
   const titleXs = await titles.evaluateAll((elements) =>
     elements.map((element) => element.getBoundingClientRect().x),
@@ -181,10 +173,6 @@ async function assertExpandedFixture(fixture: Locator, zoom: number, includeAnsw
         ),
       )
       .toBeCloseTo(28 * zoom, 1);
-    expect(await group.evaluate((element) => getComputedStyle(element).marginBottom)).toBe('12px');
-    expect(await answerBlock.evaluate((element) => getComputedStyle(element).paddingTop)).toBe(
-      '16px',
-    );
   }
 }
 
@@ -218,19 +206,18 @@ for (const theme of ['light', 'dark'] as const) {
             .locator('[data-operational-stack]')
             .first()
             .locator(':scope > [data-message-content-block]');
-          expect(
-            await inlineBlocks.evaluateAll((elements) =>
-              elements.map((element) => ({
-                type: element.getAttribute('data-message-content-block'),
-                paddingTop: getComputedStyle(element).paddingTop,
-              })),
-            ),
-          ).toEqual([
-            { type: 'text', paddingTop: '0px' },
-            { type: 'thinking', paddingTop: '16px' },
-            { type: 'thinking', paddingTop: '0px' },
-            { type: 'text', paddingTop: '16px' },
-          ]);
+          const inlineGaps = await inlineBlocks.evaluateAll((elements) => {
+            const boxes = elements.map((element) =>
+              element
+                .querySelector('[data-reasoning-history-body], .markdown-viewer')!
+                .getBoundingClientRect(),
+            );
+            return boxes.slice(1).map((box, index) => box.top - boxes[index].bottom);
+          });
+          expect(inlineGaps).toHaveLength(3);
+          for (const [index, gap] of inlineGaps.entries()) {
+            expect(gap).toBeCloseTo((index === 1 ? 0 : 16) * zoom, 1);
+          }
           const inlineText = (await inline.textContent()) ?? '';
           for (const value of [
             'Inline group description.',

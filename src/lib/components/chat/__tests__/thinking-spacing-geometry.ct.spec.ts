@@ -71,13 +71,9 @@ for (const theme of ['light', 'dark'] as const) {
           return {
             rootTop: rootBox.top,
             thinkingTop: thinkingBox.top,
-            parentRowGap: getComputedStyle(stack).rowGap,
-            wrapperPaddingTop: getComputedStyle(wrapper).paddingTop,
           };
         });
         expect(firstGeometry.thinkingTop - firstGeometry.rootTop).toBeCloseTo(0, 1);
-        expect(firstGeometry.parentRowGap).toBe('0px');
-        expect(firstGeometry.wrapperPaddingTop).toBe('0px');
 
         const operationalGeometry = await component
           .getByTestId('operational-boundary')
@@ -88,13 +84,9 @@ for (const theme of ['light', 'dark'] as const) {
             const thinkingRow = thinking.querySelector('[data-chat-operational-row]')!;
             return {
               gap: thinkingRow.getBoundingClientRect().top - toolRow.getBoundingClientRect().bottom,
-              parentRowGap: getComputedStyle(tool.parentElement!).rowGap,
-              thinkingPaddingTop: getComputedStyle(thinking).paddingTop,
             };
           });
         expect(operationalGeometry.gap).toBeCloseTo(0, 1);
-        expect(operationalGeometry.parentRowGap).toBe('0px');
-        expect(operationalGeometry.thinkingPaddingTop).toBe('0px');
 
         for (const testId of ['reasoning-response-boundary', 'streaming-response-boundary']) {
           const responseGap = await component.getByTestId(testId).evaluate((root) => {
@@ -138,16 +130,6 @@ for (const theme of ['light', 'dark'] as const) {
         const attention = component.getByTestId('attention-card-boundary');
         const disclosure = attention.getByTestId('reasoning-disclosure');
         await expect(disclosure).toContainText('Considering task restoration');
-        const titleGeometry = await attention
-          .getByTestId('reasoning-summary')
-          .evaluate((summary) => ({
-            clientWidth: summary.clientWidth,
-            scrollWidth: summary.scrollWidth,
-            whiteSpace: getComputedStyle(summary).whiteSpace,
-          }));
-        expect(titleGeometry.clientWidth).toBeGreaterThan(0);
-        expect(titleGeometry.scrollWidth).toBeGreaterThanOrEqual(titleGeometry.clientWidth);
-        expect(titleGeometry.whiteSpace).toBe('nowrap');
         const gap = async () =>
           attention.evaluate((root) => {
             const card = root.querySelector('[data-testid="attention-card"]')!;

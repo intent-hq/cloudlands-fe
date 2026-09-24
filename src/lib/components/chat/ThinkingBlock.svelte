@@ -59,7 +59,7 @@
     toggle();
   }
 
-  const reasoningContent = $derived(extractReasoningHeading(content));
+  const reasoningContent = $derived(extractReasoningHeading(content, { preserveInlineText: true }));
   const standaloneTitles = $derived(extractStandaloneReasoningTitles(content));
   const instanceId = $props.id();
   const detailsId = `reasoning-details-${instanceId}`;

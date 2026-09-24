@@ -105,6 +105,62 @@ describe('extractReasoningHistory', () => {
 });
 
 describe('explicit standalone reasoning titles', () => {
+  describe.each([
+    ['bold-only', (text: string) => `**${text}**`],
+    ['ATX', (text: string) => `## ${text}`],
+    ['setext', (text: string) => `${text}\n---`],
+  ] as const)('readable %s titles', (_style, heading) => {
+    it.each([
+      ['Checking `src/*.ts` files', 'Checking src/*.ts files'],
+      ['Comparing a < b and c > d', 'Comparing a < b and c > d'],
+      ['Checking _private field', 'Checking _private field'],
+      ['Reading &amp; writing', 'Reading & writing'],
+      ['Reading &#35; and &#x1F600; entities', 'Reading # and 😀 entities'],
+      ['Reading `&amp;` literally', 'Reading &amp; literally'],
+      ['Checking \\*literal\\* marks', 'Checking *literal* marks'],
+      ['Checking *active* and ~~old~~ paths', 'Checking active and old paths'],
+      ['Reading [docs](https://example.com) links', 'Reading docs links'],
+      ['Reading ![diagram](https://example.com/a.png) labels', 'Reading diagram labels'],
+      ['Checking ~one~ path', 'Checking ~one~ path'],
+      ['Reading `<tag>_x~*` literally', 'Reading <tag>_x~* literally'],
+    ])('preserves the readable inline text in %s', (source, expected) => {
+      expect(extractStandaloneReasoningTitles(heading(source))).toEqual([expected]);
+    });
+  });
+
+  it.each([
+    '**Checking `src/*.ts` &amp; _private**',
+    '## Checking `src/*.ts` &amp; _private',
+    'Checking `src/*.ts` &amp; _private\n---',
+  ])('can preserve a disclosure title without changing its exact body: %s', (title) => {
+    const body = '  Body with `src/*.ts`, _private and &amp;.\n\nAnother paragraph.\n';
+    expect(extractReasoningHeading(`${title}\n\n${body}`, { preserveInlineText: true })).toEqual({
+      heading: 'Checking src/*.ts & _private',
+      body,
+    });
+    expect(extractReasoningHeading(`${title}\n\n${body}`)).toEqual({
+      heading: 'Checking src/.ts &amp; private',
+      body,
+    });
+  });
+
+  it.each([
+    ['Checking `src/*.ts` files', 'Checking src/.ts files'],
+    ['Comparing a < b and c > d', 'Comparing a d'],
+    ['Checking _private field', 'Checking private field'],
+    ['Reading &amp; writing', 'Reading &amp; writing'],
+  ])('retains the legacy general/history projection for %s', (source, legacyTitle) => {
+    const content = `**${source}**\n\nBody paragraph.`;
+    expect(extractReasoningHeading(content)).toEqual({
+      heading: legacyTitle,
+      body: 'Body paragraph.',
+    });
+    expect(extractReasoningHistory(content)).toEqual([
+      { title: legacyTitle, body: 'Body paragraph.' },
+    ]);
+    expect(extractStandaloneReasoningTitle(`**${source}**`)).toBe(legacyTitle);
+  });
+
   it.each([
     '    code\n---',
     '\tcode\n---',

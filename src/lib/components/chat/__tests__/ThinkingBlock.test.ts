@@ -31,6 +31,70 @@ async function renderBlock(props: { content: string; isStreaming?: boolean }) {
 }
 
 describe('ThinkingBlock — tool-call presentation', () => {
+  it.each([
+    '**Checking `src/*.ts` &amp; _private**',
+    '## Checking `src/*.ts` &amp; _private',
+    'Checking `src/*.ts` &amp; _private\n---',
+  ])('preserves the literal title and original body through growth: %s', async (title) => {
+    const expected = 'Checking src/*.ts & _private';
+    const body = '  Body with `src/*.ts`, _private and &amp;.\n\nAnother paragraph.\n';
+    const content = `${title}\n\n${body}`;
+    const view = await renderBlock({ content: title, isStreaming: true });
+    expect(screen.queryByRole('button')).toBeNull();
+
+    await view.rerender({ content, isStreaming: true });
+    const toggle = screen.getByRole('button');
+    expect(toggle.getAttribute('aria-expanded')).toBe('true');
+    expect(screen.getByTestId('markdown-viewer').textContent).toBe(body);
+    expect(toggle.textContent?.trim()).toBe(expected);
+
+    await view.rerender({ content, isStreaming: false });
+    expect(toggle.textContent?.trim()).toBe(expected);
+    expect(toggle.getAttribute('aria-expanded')).toBe('false');
+    await fireEvent.click(toggle);
+    expect(screen.getAllByTestId('markdown-viewer')).toHaveLength(1);
+    expect(screen.getByTestId('markdown-viewer').textContent).toBe(body);
+    view.unmount();
+
+    const reopened = await renderBlock({ content });
+    const restoredToggle = screen.getByRole('button');
+    expect(restoredToggle.textContent?.trim()).toBe(expected);
+    expect(restoredToggle.getAttribute('aria-expanded')).toBe('false');
+    await fireEvent.click(restoredToggle);
+    expect(screen.getAllByTestId('markdown-viewer')).toHaveLength(1);
+    expect(screen.getByTestId('markdown-viewer').textContent).toBe(body);
+    expect(reopened.container.querySelectorAll('[data-chat-operational-row]')).toHaveLength(1);
+  });
+
+  it.each([
+    ['Checking `src/*.ts` files', 'Checking src/*.ts files'],
+    ['Comparing a < b and c > d', 'Comparing a < b and c > d'],
+    ['Checking _private field', 'Checking _private field'],
+    ['Reading &amp; writing', 'Reading & writing'],
+    ['Reading `&amp;` literally', 'Reading &amp; literally'],
+    ['Checking \\*literal\\* marks', 'Checking *literal* marks'],
+  ])('preserves %s in all explicit row labels through completion', async (source, expected) => {
+    const content = `**${source}**\n\n## ${source}\n\n${source}\n---`;
+    const view = await renderBlock({ content, isStreaming: true });
+    const verify = () => {
+      const rows = [...view.container.querySelectorAll('[data-chat-operational-row]')];
+      expect(rows.map((row) => row.textContent?.trim())).toEqual([expected, expected, expected]);
+      expect(screen.queryByRole('button')).toBeNull();
+      expect(screen.queryByTestId('markdown-viewer')).toBeNull();
+    };
+    verify();
+    await view.rerender({ content, isStreaming: false });
+    verify();
+    view.unmount();
+    const reopened = await renderBlock({ content });
+    expect(
+      [...reopened.container.querySelectorAll('[data-chat-operational-row]')].map((row) =>
+        row.textContent?.trim(),
+      ),
+    ).toEqual([expected, expected, expected]);
+    expect(screen.queryByRole('button')).toBeNull();
+  });
+
   describe.each([true, false])('explicit summaries (streaming=%s)', (isStreaming) => {
     it.each([
       '**Locating collection links**',

@@ -1,3 +1,6 @@
+import { Marked } from 'marked';
+import { strikethroughDoubleTilde } from '$lib/utils/marked-strikethrough';
+
 export interface ReasoningHeading {
   heading: string | null;
   body: string;
@@ -10,6 +13,22 @@ export interface ReasoningHistoryItem {
 
 const MAX_TITLE_CHARACTERS = 80;
 const MAX_TITLE_WORDS = 10;
+
+const inlineMarkdown = new Marked(strikethroughDoubleTilde, {
+  renderer: {
+    image({ tokens }) {
+      return this.parser.parseInline(tokens);
+    },
+  },
+});
+
+function markdownInlineToReadableText(value: string): string {
+  // The inert template decodes entities after Markdown has protected code and escapes.
+  // Only its text is returned; the parsed HTML is never mounted.
+  const template = document.createElement('template');
+  template.innerHTML = inlineMarkdown.parseInline(value, { async: false });
+  return (template.content.textContent ?? '').replace(/\s+/g, ' ').trim();
+}
 
 function markdownInlineToPlainText(value: string): string {
   return value
@@ -33,6 +52,7 @@ function isShortTitleLike(rawLine: string, plainText: string): boolean {
   if (!plainText || plainText.length > MAX_TITLE_CHARACTERS) return false;
   if (plainText.split(/\s+/).length > MAX_TITLE_WORDS) return false;
   if (/[.!?;]$/.test(plainText)) return false;
+  // i18n-ignore (Markdown block syntax, not display text)
   return !/^[ \t]*(?:[-+*][ \t]+|\d+[.)][ \t]+|>|```|~~~|\|)/.test(rawLine);
 }
 
@@ -70,7 +90,7 @@ function extractLeadingStrongReasoningTitle(
   const title = markdownInlineToPlainText(strongTitle[1]);
   if (!isShortTitleLike(strongTitle[0], title)) return null;
   return {
-    title,
+    title: singleSpanOnly ? markdownInlineToReadableText(strongTitle[1]) : title,
     body: bodyAfterHeading(content, leading.length + strongTitle[0].length),
   };
 }
@@ -81,7 +101,7 @@ export function extractStandaloneReasoningTitles(content: string): string[] | nu
   let remainder = content;
 
   while (remainder.trim()) {
-    const markdown = extractMarkdownReasoningHeading(remainder, true);
+    const markdown = extractMarkdownReasoningHeading(remainder, true, markdownInlineToReadableText);
     const explicit = markdown.heading
       ? { title: markdown.heading, body: markdown.body }
       : extractLeadingStrongReasoningTitle(remainder, true);
@@ -136,6 +156,7 @@ function isStandaloneSetextTitle(line: string): boolean {
 function extractMarkdownReasoningHeading(
   content: string,
   standaloneOnly = false,
+  projectInline = markdownInlineToPlainText,
 ): ReasoningHeading {
   const leading = content.match(/^(?:\uFEFF)?(?:[ \t]*(?:\r\n|\n|\r))*/)?.[0] ?? '';
   const candidate = content.slice(leading.length);
@@ -149,7 +170,10 @@ function extractMarkdownReasoningHeading(
   if (atx) {
     const heading = markdownInlineToPlainText(atx[1]);
     if (heading) {
-      return { heading, body: bodyAfterHeading(content, leading.length + atx[0].length) };
+      return {
+        heading: projectInline(atx[1]),
+        body: bodyAfterHeading(content, leading.length + atx[0].length),
+      };
     }
   }
 
@@ -162,15 +186,24 @@ function extractMarkdownReasoningHeading(
   ) {
     const heading = markdownInlineToPlainText(setext[1]);
     if (heading) {
-      return { heading, body: bodyAfterHeading(content, leading.length + setext[0].length) };
+      return {
+        heading: projectInline(setext[1]),
+        body: bodyAfterHeading(content, leading.length + setext[0].length),
+      };
     }
   }
 
   return { heading: null, body: content };
 }
 
-export function extractReasoningHeading(content: string): ReasoningHeading {
-  const markdown = extractMarkdownReasoningHeading(content);
+export function extractReasoningHeading(
+  content: string,
+  { preserveInlineText = false }: { preserveInlineText?: boolean } = {},
+): ReasoningHeading {
+  const projectInline = preserveInlineText
+    ? markdownInlineToReadableText
+    : markdownInlineToPlainText;
+  const markdown = extractMarkdownReasoningHeading(content, false, projectInline);
   if (markdown.heading) return markdown;
 
   const leading = content.match(/^(?:\uFEFF)?(?:[ \t]*(?:\r\n|\n|\r))*/)?.[0] ?? '';
@@ -179,7 +212,9 @@ export function extractReasoningHeading(content: string): ReasoningHeading {
   if (shortTitle) {
     const heading = markdownInlineToPlainText(shortTitle[1]);
     const body = content.slice(leading.length + shortTitle[0].length);
-    if (body.trim() && isShortTitleLike(shortTitle[1], heading)) return { heading, body };
+    if (body.trim() && isShortTitleLike(shortTitle[1], heading)) {
+      return { heading: projectInline(shortTitle[1]), body };
+    }
   }
 
   return { heading: null, body: content };
