@@ -53,7 +53,11 @@
   import { cancelGitHubAuth } from '$store/renderer/slices/github-auth/github-auth-slice';
   import { selectGitHubAuthIsAuthenticating } from '$store/renderer/slices/github-auth/github-auth-selectors';
   import { cancelGitLabAuth } from '$store/renderer/slices/gitlab-auth/gitlab-auth-slice';
-  import { selectGitLabAuthIsAuthenticating } from '$store/renderer/slices/gitlab-auth/gitlab-auth-selectors';
+  import {
+    selectGitLabAuthIsAuthenticating,
+    selectGitLabAuthIsConfigured,
+  } from '$store/renderer/slices/gitlab-auth/gitlab-auth-selectors';
+  import { selectLabsGitLabEnabled } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
 
   import ProjectPickerMessage from '$features/onboarding/messages/ProjectPickerMessage.svelte';
   import type { IssueSelectionData } from '$lib/components/workspace/initializer/IssueSuggestions.svelte';
@@ -756,6 +760,8 @@
   const isRequirementsStep = $derived($onboardingStep$ === 'requirements');
   const isWelcomeStep = $derived($onboardingStep$ === 'welcome');
   const isForgeStep = $derived($onboardingStep$ === 'forge');
+  const gitlabEnabled$ = selectLabsGitLabEnabled();
+  const gitlabConfigured$ = selectGitLabAuthIsConfigured();
   const isProjectStep = $derived($onboardingStep$ === 'project');
   const isConfiguringStep = $derived(
     $onboardingStep$ === 'configuring' || $onboardingStep$ === 'ready',
@@ -1702,7 +1708,9 @@
                         <div in:fly={{ tier: 'slow', distance: 10 }} style="order: 2">
                           <div class="space-y-3">
                             <h2 class="text-5xl font-semibold tracking-tight leading-tight">
-                              {m.onboarding_page_connectForge_title()}
+                              {$gitlabEnabled$ || $gitlabConfigured$
+                                ? m.onboarding_page_connectForge_title()
+                                : m.onboarding_forgeStep_connectGithub_label()}
                             </h2>
                             <p class="text-lg text-muted-foreground">
                               {m.onboarding_page_connectForge_before()}

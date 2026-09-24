@@ -6711,5 +6711,6 @@
   "workspace_transfer_connectDevice_label": "若要直接傳輸，請連接其他裝置",
   "workspace_transfer_reviewExport_label": "檢視匯出內容",
   "settings_labs_gitlab_label": "GitLab",
-  "settings_labs_gitlab_description": "在設定和初始設定中連線至 GitLab。關閉後，現有連線和共用工作階段仍可繼續使用。"
+  "settings_labs_gitlab_description": "在設定和初始設定中連線至 GitLab。關閉後，現有連線和共用工作階段仍可繼續使用。",
+  "onboarding_forgeStep_connectGithubLater_description": "你可以稍後在設定中連線 GitHub"
 }

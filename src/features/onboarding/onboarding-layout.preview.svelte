@@ -45,6 +45,7 @@
   import CompactWorkspaceInitializer from '$lib/components/workspace/CompactWorkspaceInitializer.svelte';
   import { previewProviders } from '$lib/components/settings/provider-selector.preview';
   import { store as appStore } from '$store/renderer/store';
+  import { systemStatusSuccess } from '$store/renderer/slices/daemon-health/daemon-health-slice';
   import { setLabsGitLabEnabled } from '$store/renderer/slices/user-preferences/user-preferences-slice';
   import { goToStep } from '$store/renderer/slices/onboarding/onboarding-slice';
   import { selectOnboardingStep } from '$store/renderer/slices/onboarding/onboarding-selectors';
@@ -180,6 +181,20 @@
   }
   const seededForge = untrack(() => step === 'forge');
   if (seededForge) {
+    // The browser mock intentionally advertises no protocol capabilities.
+    // These scenes exercise a daemon that can serve GitLab authentication.
+    appStore.dispatch(
+      systemStatusSuccess(
+        {
+          running: true,
+          listenMode: 'local',
+          protocolVersion: '10.5',
+          host: { os: 'linux', arch: 'x86_64', locality: 'local' },
+        },
+        new Date().toISOString(),
+        appStore.state.daemonHealth.connectionGeneration,
+      ),
+    );
     appStore.dispatch(setLabsGitLabEnabled(untrack(() => gitlabEnabled)));
     seedForge(untrack(() => forge));
   }

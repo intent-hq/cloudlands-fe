@@ -281,7 +281,9 @@
         <span class="ml-1 opacity-50">⌘↵</span>
       </Button>
       <p class="text-xs text-muted-foreground">
-        {m.onboarding_forgeStep_connectLater_description()}
+        {gitlabSetupAvailable
+          ? m.onboarding_forgeStep_connectLater_description()
+          : m.onboarding_forgeStep_connectGithubLater_description()}
       </p>
     {/if}
   </div>
