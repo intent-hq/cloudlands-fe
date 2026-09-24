@@ -589,26 +589,6 @@
   function isVisibleGroupChild(block: ContentBlock): boolean {
     return block.type !== 'tool_result' || isStandaloneToolResult(toolResultClassification, block);
   }
-
-  /**
-   * Index of the last group child that actually renders. tool_result children
-   * are skipped by the group render loop, and text children that are empty
-   * after stripping suggested prompts render nothing — a hidden trailing
-   * child must not steal the "last block" streaming flag from the final
-   * visible one.
-   */
-  function lastRenderableChildIndex(children: ContentBlock[]): number {
-    for (let i = children.length - 1; i >= 0; i--) {
-      const child = children[i];
-      if (!isVisibleGroupChild(child)) continue;
-      if (child.type === 'text') {
-        const text = child.text || (child as any).content || '';
-        if (!parseSuggestedPrompts(text).cleanedContent.trim()) continue;
-      }
-      return i;
-    }
-    return -1;
-  }
 </script>
 
 {#snippet renderParsedContentBlock(
@@ -975,7 +955,7 @@
       `${groupIndex}-${childIndex}`,
       group.isStreaming &&
         groupIndex === groupedBlocks.length - 1 &&
-        childIndex === lastRenderableChildIndex(group.children),
+        childIndex === getResponseGroupCurrentChildIndex(group),
       nested,
       isAdjacentOperationalClusterRow(group.children, childIndex, isVisibleGroupChild),
       group.isReasoningPhase,

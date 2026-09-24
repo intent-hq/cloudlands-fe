@@ -156,6 +156,45 @@ describe('tool-result production renderer parity', () => {
   });
 
   it.each(surfaces)(
+    'keeps current reasoning streaming before a trailing orphan result in $name chat',
+    async (surface) => {
+      const message = reconcileToolResultMessage(liveGroupedOrphanBlocks());
+      const view = surface.render(message.contentBlocks ?? [], true);
+      const disclosure = view.getByTestId('response-group-disclosure');
+
+      expect(disclosure.getAttribute('aria-expanded')).toBe('false');
+      expect(view.getByTestId('reasoning-disclosure').getAttribute('aria-expanded')).toBe('true');
+      expect(
+        view.container.querySelector('[data-chat-search-block-path="b:0:c:1:body"]')?.textContent,
+      ).toContain('Current visible live child.');
+      expect(resultRows(view.container)).toHaveLength(0);
+
+      await fireEvent.click(disclosure);
+      expect(view.getByTestId('reasoning-disclosure').getAttribute('aria-expanded')).toBe('true');
+      expect(resultRows(view.container)).toHaveLength(1);
+      expect(resultRows(view.container)[0].textContent).toContain('live-grouped-orphan');
+
+      const complete = reconcileToolResultMessage(liveGroupedOrphanBlocks(), true);
+      await view.rerender(
+        surface.name === 'normal workspace'
+          ? {
+              messages: [complete],
+              streamingContent: complete.contentBlocks,
+              isStreaming: false,
+              enableTransitions: false,
+            }
+          : { content: complete.contentBlocks ?? [], isStreaming: false, role: 'assistant' },
+      );
+      // The workspace surface remounts the completed message with its group closed.
+      const completedDisclosure = view.getByTestId('response-group-disclosure');
+      if (completedDisclosure.getAttribute('aria-expanded') === 'false') {
+        await fireEvent.click(completedDisclosure);
+      }
+      expect(view.getByTestId('reasoning-disclosure').getAttribute('aria-expanded')).toBe('false');
+    },
+  );
+
+  it.each(surfaces)(
     'keeps a terminal group expanded when its newly visible child is an orphan in $name chat',
     async (surface) => {
       vi.useFakeTimers();
