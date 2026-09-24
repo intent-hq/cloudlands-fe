@@ -31,6 +31,35 @@ async function renderBlock(props: { content: string; isStreaming?: boolean }) {
 }
 
 describe('ThinkingBlock — tool-call presentation', () => {
+  describe.each([true, false])('explicit summaries (streaming=%s)', (isStreaming) => {
+    it.each([
+      '**Locating collection links**',
+      '# Locating collection links',
+      'Locating collection links\n---',
+    ])('renders %s as one noninteractive row without an empty body', async (content) => {
+      const view = await renderBlock({ content, isStreaming });
+      expect(view.container.textContent?.match(/Locating collection links/g)).toHaveLength(1);
+      expect(view.container.querySelectorAll('[data-chat-operational-row]')).toHaveLength(1);
+      expect(screen.queryByRole('button')).toBeNull();
+      expect(screen.queryByTestId('markdown-viewer')).toBeNull();
+      expect(view.container.querySelector('[aria-expanded]')).toBeNull();
+    });
+
+    it('renders multiple complete bold summaries once each in source order', async () => {
+      const view = await renderBlock({
+        content: '**Preparing task plan**\n\n**Checking duplicate tracker issue**',
+        isStreaming,
+      });
+      const rows = [...view.container.querySelectorAll('[data-chat-operational-row]')];
+      expect(rows.map((row) => row.textContent?.trim())).toEqual([
+        'Preparing task plan',
+        'Checking duplicate tracker issue',
+      ]);
+      expect(screen.queryByRole('button')).toBeNull();
+      expect(screen.queryByTestId('markdown-viewer')).toBeNull();
+    });
+  });
+
   it('uses the compact tool-call row treatment', async () => {
     await renderBlock({ content: 'Let me check the schema', isStreaming: false });
 

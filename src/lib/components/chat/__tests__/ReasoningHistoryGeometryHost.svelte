@@ -5,15 +5,25 @@
   import { store } from '$store/renderer/store';
   import MessageContent from '../MessageContent.svelte';
   import StreamingMessageContent from '../StreamingMessageContent.svelte';
+  import type { ReasoningRenderer } from './compact-reasoning-fixtures';
 
   interface Props {
     theme?: 'light' | 'dark';
     width?: number;
     zoom?: number;
     phase?: 'live' | 'completed';
+    regressionContent?: ContentBlock[];
+    renderer?: ReasoningRenderer;
   }
 
-  let { theme = 'light', width = 720, zoom = 1, phase = 'completed' }: Props = $props();
+  let {
+    theme = 'light',
+    width = 720,
+    zoom = 1,
+    phase = 'completed',
+    regressionContent,
+    renderer = 'message',
+  }: Props = $props();
   const disposeStore = startRootStoreLifecycle(store, { startSagas: () => [] });
   onDestroy(disposeStore);
 
@@ -86,12 +96,22 @@
   style:zoom
   data-testid="history-geometry-host"
 >
-  <div data-testid="message-titled"><MessageContent content={history} {isStreaming} /></div>
-  <div data-testid="streaming-titled">
-    <StreamingMessageContent content={history} {isStreaming} />
-  </div>
-  <div data-testid="message-inline"><MessageContent content={inlineHistory} /></div>
-  <div data-testid="streaming-inline">
-    <StreamingMessageContent content={inlineHistory} isStreaming={false} />
-  </div>
+  {#if regressionContent}
+    <div data-testid="compact-reasoning-fixture">
+      {#if renderer === 'message'}
+        <MessageContent content={regressionContent} {isStreaming} />
+      {:else}
+        <StreamingMessageContent content={regressionContent} {isStreaming} />
+      {/if}
+    </div>
+  {:else}
+    <div data-testid="message-titled"><MessageContent content={history} {isStreaming} /></div>
+    <div data-testid="streaming-titled">
+      <StreamingMessageContent content={history} {isStreaming} />
+    </div>
+    <div data-testid="message-inline"><MessageContent content={inlineHistory} /></div>
+    <div data-testid="streaming-inline">
+      <StreamingMessageContent content={inlineHistory} isStreaming={false} />
+    </div>
+  {/if}
 </section>

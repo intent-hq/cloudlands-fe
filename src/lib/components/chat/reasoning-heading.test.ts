@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { extractReasoningHeading, extractReasoningHistory } from './reasoning-heading';
+import {
+  extractReasoningHeading,
+  extractReasoningHistory,
+  extractStandaloneReasoningTitle,
+} from './reasoning-heading';
 
 describe('extractReasoningHeading', () => {
   it('extracts a formatted Markdown heading after leading blank lines', () => {
@@ -42,6 +46,19 @@ describe('extractReasoningHeading', () => {
 });
 
 describe('extractReasoningHistory', () => {
+  it('keeps each explicit title when a paragraph arrives on the final heading', () => {
+    const titles = '**Preparing task plan**\n\n**Checking duplicate tracker issue**';
+    expect(extractReasoningHistory(titles)).toEqual([
+      { title: 'Preparing task plan', body: '' },
+      { title: 'Checking duplicate tracker issue', body: '' },
+    ]);
+    const body = 'The supplied paragraph stays readable.\n\nA second paragraph stays in order.';
+    expect(extractReasoningHistory(`${titles}\n\n${body}`)).toEqual([
+      { title: 'Preparing task plan', body: '' },
+      { title: 'Checking duplicate tracker issue', body },
+    ]);
+  });
+
   it('extracts every consecutive reasoning title before the body', () => {
     expect(
       extractReasoningHistory(
@@ -75,5 +92,32 @@ describe('extractReasoningHistory', () => {
         body: 'Body paragraph.\n\n**Emphasized body text**',
       },
     ]);
+  });
+});
+
+describe('explicit standalone reasoning titles', () => {
+  it('recognizes a complete bold-only summary without inventing a body', () => {
+    expect(extractStandaloneReasoningTitle('**Locating collection links**')).toBe(
+      'Locating collection links',
+    );
+    expect(extractReasoningHistory('**Locating collection links**')).toEqual([
+      { title: 'Locating collection links', body: '' },
+    ]);
+  });
+
+  it.each([
+    'Let me check the schema',
+    '**Locating collection links',
+    '**Locating collection links** with more prose.',
+    '**Locating collection links**\n\nReadable body.',
+  ])('does not call body prose or incomplete markup a standalone title: %s', (content) => {
+    expect(extractStandaloneReasoningTitle(content)).toBeNull();
+  });
+
+  it('preserves the headingless short-prose disclosure input', () => {
+    expect(extractReasoningHeading('Let me check the schema')).toEqual({
+      heading: null,
+      body: 'Let me check the schema',
+    });
   });
 });
