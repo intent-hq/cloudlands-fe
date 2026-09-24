@@ -127,7 +127,7 @@
     customAnchor={activeTrigger}
     side="right"
     align="start"
-    alignOffset={-7}
+    alignOffset={-11}
     sideOffset={4}
     trapFocus={false}
     preventScroll={false}
