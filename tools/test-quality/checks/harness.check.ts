@@ -351,6 +351,31 @@ for (const status of [401, 402, 403]) {
   });
 }
 
+test('opens the circuit after repeated service failures and leaves remaining targets resumable', async (t) => {
+  const { root, store, config } = fixture(t);
+  const { traces } = scan(root, config, [], store);
+  let calls = 0;
+  const result = await evaluate(
+    store,
+    traces,
+    {
+      apiKey: 'fixture',
+      concurrency: 1,
+      batchSize: 8,
+      maxConsecutiveFailures: 2,
+      judge: async () => {
+        calls++;
+        throw new JevHttpError(503);
+      },
+    },
+    {},
+  );
+  assert.equal(calls, 2);
+  assert.equal(result.skippedRequests, traces.length - 2);
+  assert.equal(store.run(result.runId).status, 'partial');
+  assert.ok(store.results(result.runId).some((row) => row.error?.includes('consecutive failed')));
+});
+
 test('bounds concurrency while preserving every result', async (t) => {
   const { root, store, config } = fixture(t);
   const { traces } = scan(root, config, [], store);

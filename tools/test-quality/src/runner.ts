@@ -4,6 +4,7 @@ import { ANALYZER_VERSION, Analyzer } from './analyzer.ts';
 import { Store } from './database.ts';
 import { DEFAULT_MODEL, DEFAULT_GATEWAY_MODEL, ENDPOINTS, JevHttpError, judge } from './jev.ts';
 import type { JevProvider } from './jev.ts';
+import { createRequestPacer } from './request-pacing.ts';
 import { RUBRIC, RUBRIC_VERSION, buildQuestions } from './rubric.ts';
 import type { Config, Judgment, Target, Trace } from './types.ts';
 
@@ -117,6 +118,8 @@ export function batches(
 export interface EvaluateOptions {
   model?: string;
   provider?: JevProvider;
+  requestIntervalMs?: number;
+  maxConsecutiveFailures?: number;
   apiKey?: string;
   concurrency: number;
   batchSize: number;
@@ -125,7 +128,13 @@ export interface EvaluateOptions {
   judge?: (
     state: unknown,
     targets: { id: string; kind: string }[],
-    options: { apiKey: string; model: string; provider: JevProvider },
+    options: {
+      apiKey: string;
+      model: string;
+      provider: JevProvider;
+      beforeRequest?: () => Promise<void>;
+      onBackoff?: (delayMs: number) => void;
+    },
   ) => Promise<Judgment>;
   progress?: (done: number, total: number) => void;
 }
@@ -145,6 +154,17 @@ export async function evaluate(
   skippedRequests: number;
 }> {
   const provider = options.provider ?? 'typesafe';
+  const requestIntervalMs = options.requestIntervalMs ?? (provider === 'vercel' ? 1000 : 0);
+  const maxConsecutiveFailures = options.maxConsecutiveFailures ?? 5;
+  if (
+    !Number.isInteger(requestIntervalMs) ||
+    requestIntervalMs < 0 ||
+    requestIntervalMs > 60_000 ||
+    !Number.isInteger(maxConsecutiveFailures) ||
+    maxConsecutiveFailures < 1
+  )
+    throw new Error('Invalid request pacing configuration');
+  const pacer = createRequestPacer(requestIntervalMs);
   const model = options.model ?? (provider === 'vercel' ? DEFAULT_GATEWAY_MODEL : DEFAULT_MODEL);
   const rubricHash = hash([RUBRIC_VERSION, RUBRIC]);
   const jobs = traces.flatMap((trace) =>
@@ -171,6 +191,8 @@ export async function evaluate(
     metadata,
     model,
     provider,
+    requestIntervalMs,
+    maxConsecutiveFailures,
     rubricVersion: RUBRIC_VERSION,
     rubricHash,
     concurrency: options.concurrency,
@@ -182,7 +204,8 @@ export async function evaluate(
   let inputTokens = 0;
   let attemptedRequests = 0;
   let skippedRequests = 0;
-  let accountError: string | undefined;
+  let stopReason: string | undefined;
+  let consecutiveFailures = 0;
   const started = performance.now();
   const worker = async (): Promise<void> => {
     while (cursor < jobs.length) {
@@ -190,9 +213,9 @@ export async function evaluate(
       try {
         let evaluation = job.cached;
         if (!evaluation) {
-          if (accountError) {
+          if (stopReason) {
             skippedRequests++;
-            throw new Error(`Not attempted after account failure: ${accountError}`);
+            throw new Error(`Not attempted: ${stopReason}`);
           }
           const start = performance.now();
           attemptedRequests++;
@@ -200,7 +223,13 @@ export async function evaluate(
             apiKey: options.apiKey!,
             model,
             provider,
+            beforeRequest: async () => {
+              await pacer.wait();
+              if (stopReason) throw new Error(`Not attempted: ${stopReason}`);
+            },
+            onBackoff: pacer.defer,
           });
+          consecutiveFailures = 0;
           inputTokens += judgment.usage.input_tokens;
           const id = store.saveEvaluation(
             job.key,
@@ -231,8 +260,15 @@ export async function evaluate(
             !!job.cached,
           );
       } catch (error) {
-        if (error instanceof JevHttpError && [401, 402, 403].includes(error.status))
-          accountError = error.message;
+        if (!stopReason) {
+          consecutiveFailures++;
+          if (error instanceof JevHttpError && [401, 402, 403].includes(error.status))
+            stopReason = `Account failure: ${error.message}`;
+          else if (error instanceof JevHttpError && (error.retryAfterMs ?? 0) > 60_000)
+            stopReason = `Server requested a ${error.retryAfterMs}ms cooldown; resume later.`;
+          else if (consecutiveFailures >= maxConsecutiveFailures)
+            stopReason = `Stopped after ${consecutiveFailures} consecutive failed batches.`;
+        }
         errors++;
         const message = error instanceof Error ? error.message : 'Evaluation failed';
         const safe = options.apiKey ? message.replaceAll(options.apiKey, '[redacted]') : message;

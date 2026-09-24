@@ -12,13 +12,15 @@ export type JevProvider = keyof typeof ENDPOINTS;
 
 export class JevHttpError extends Error {
   status: number;
-  constructor(status: number) {
+  retryAfterMs?: number;
+  constructor(status: number, retryAfterMs?: number) {
     super(`Jev request failed (HTTP ${status}).`);
     this.status = status;
+    this.retryAfterMs = retryAfterMs;
   }
 }
 const MAX_RETRIES = 5;
-const MAX_DELAY_MS = 10_000;
+const MAX_DELAY_MS = 60_000;
 const TRANSIENT_STATUSES = new Set([408, 425, 429, 500, 502, 503, 504, 529]);
 // Jev serializes score/probabilities independently to two decimals (observed live).
 const ROUNDING_HALF_UNIT = 0.005;
@@ -59,6 +61,8 @@ export interface JudgeOptions {
   fetch?: typeof fetch;
   timeoutMs?: number;
   retries?: number;
+  beforeRequest?: () => Promise<void>;
+  onBackoff?: (delayMs: number) => void;
 }
 
 function invalidResponse(): never {
@@ -179,14 +183,19 @@ function validateResponse(
   };
 }
 
-function retryDelay(response: Response | undefined, attempt: number): number {
+function retryDelay(
+  response: Response | undefined,
+  attempt: number,
+  provider: JevProvider,
+): number {
   const header = response?.headers.get('retry-after');
   if (header !== null && header !== undefined) {
     const seconds = /^\d+(?:\.\d+)?$/.test(header.trim()) ? Number(header) : NaN;
     const ms = Number.isFinite(seconds) ? seconds * 1000 : Date.parse(header) - Date.now();
-    if (Number.isFinite(ms)) return Math.min(MAX_DELAY_MS, Math.max(0, ms));
+    if (Number.isFinite(ms)) return Math.max(0, ms);
   }
-  return Math.min(MAX_DELAY_MS, 250 * 2 ** attempt);
+  const base = provider === 'vercel' ? 5_000 : 1_000;
+  return Math.min(MAX_DELAY_MS, base * 2 ** attempt + Math.random() * base);
 }
 
 function transientError(error: unknown, signal: AbortSignal): boolean {
@@ -235,6 +244,7 @@ export async function judge(
   }
   const request = options.fetch ?? globalThis.fetch;
   for (let attempt = 0; attempt <= retries; attempt++) {
+    await options.beforeRequest?.();
     const signal = AbortSignal.timeout(timeoutMs);
     let response: Response | undefined;
     let payload: unknown;
@@ -252,7 +262,9 @@ export async function judge(
       if (response.ok) payload = await response.json();
     } catch (error) {
       if (transientError(error, signal) && attempt < retries) {
-        await sleep(retryDelay(undefined, attempt));
+        const delayMs = retryDelay(undefined, attempt, provider);
+        options.onBackoff?.(delayMs);
+        await sleep(delayMs);
         continue;
       }
       if (error instanceof SyntaxError) invalidResponse();
@@ -265,10 +277,18 @@ export async function judge(
     } catch {
       /* Best-effort connection cleanup. */
     }
-    if (!TRANSIENT_STATUSES.has(response.status) || attempt === retries) {
-      throw new JevHttpError(response.status);
+    const delayMs = TRANSIENT_STATUSES.has(response.status)
+      ? retryDelay(response, attempt, provider)
+      : undefined;
+    if (delayMs !== undefined && delayMs <= MAX_DELAY_MS) options.onBackoff?.(delayMs);
+    if (
+      !TRANSIENT_STATUSES.has(response.status) ||
+      attempt === retries ||
+      delayMs! > MAX_DELAY_MS
+    ) {
+      throw new JevHttpError(response.status, delayMs);
     }
-    await sleep(retryDelay(response, attempt));
+    await sleep(delayMs!);
   }
   throw new Error('Jev retry limit reached.');
 }

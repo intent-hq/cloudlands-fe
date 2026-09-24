@@ -442,7 +442,7 @@ test('stops at the configured retry bound', async () => {
 for (const [name, header, delay] of [
   ['seconds', '2', 2000],
   ['HTTP date', 'Wed, 23 Sep 2026 22:00:02 GMT', 2000],
-  ['bounded long delay', '999999', 10_000],
+  ['longer than the former cap', '20', 20_000],
 ] as const) {
   test(`honors Retry-After ${name}`, async (context) => {
     context.mock.timers.enable({
@@ -465,7 +465,51 @@ for (const [name, header, delay] of [
   });
 }
 
+test('does not retry early when the server asks for a long cooldown', async () => {
+  let calls = 0;
+  await assert.rejects(
+    judge(state, targets, {
+      apiKey,
+      fetch: async () => {
+        calls++;
+        return respond({}, 429, { 'Retry-After': '120' });
+      },
+    }),
+    (error: Error & { retryAfterMs?: number }) => error.retryAfterMs === 120_000,
+  );
+  assert.equal(calls, 1);
+});
+
+test('Gateway retries use the shared gate and randomized cooldown', async (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  t.mock.method(Math, 'random', () => 0.5);
+  let gates = 0;
+  let calls = 0;
+  const cooldowns: number[] = [];
+  const raw = serviceResponse();
+  raw.model = 'jev';
+  const pending = judge(state, targets, {
+    apiKey,
+    provider: 'vercel',
+    beforeRequest: async () => {
+      gates++;
+    },
+    onBackoff: (delay) => cooldowns.push(delay),
+    fetch: async () => (++calls === 1 ? respond({}, 503) : respond(raw)),
+  });
+  await setImmediate();
+  assert.deepEqual(cooldowns, [7500]);
+  t.mock.timers.tick(7499);
+  await setImmediate();
+  assert.equal(calls, 1);
+  t.mock.timers.tick(1);
+  await pending;
+  assert.equal(gates, 2);
+  assert.equal(calls, 2);
+});
+
 test('retries a network failure without leaking the original exception', async (context) => {
+  context.mock.method(Math, 'random', () => 0);
   context.mock.timers.enable({ apis: ['setTimeout'] });
   let calls = 0;
   const pending = judge(state, targets, {
@@ -476,12 +520,13 @@ test('retries a network failure without leaking the original exception', async (
     },
   });
   await setImmediate();
-  context.mock.timers.tick(250);
+  context.mock.timers.tick(1000);
   await pending;
   assert.equal(calls, 2);
 });
 
 test('retries a transport timeout and sanitizes exhausted network errors', async (context) => {
+  context.mock.method(Math, 'random', () => 0);
   context.mock.timers.enable({ apis: ['setTimeout'] });
   let calls = 0;
   const pending = judge(state, targets, {
@@ -492,7 +537,7 @@ test('retries a transport timeout and sanitizes exhausted network errors', async
     },
   });
   await setImmediate();
-  context.mock.timers.tick(250);
+  context.mock.timers.tick(1000);
   await pending;
   assert.equal(calls, 2);
   await assert.rejects(
