@@ -724,7 +724,7 @@ jobs:
           sparse-checkout-cone-mode: false
           sparse-checkout: |
             /docs/protocol/fixtures/transfer-selection/
-            /scripts/check-transfer-selection-contract.mjs
+            /scripts/
       - name: Fetch baseline comparison commit
         run: |
           if [ -n "$LINT_BASELINE_BASE_REF" ]; then
