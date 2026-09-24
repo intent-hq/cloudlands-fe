@@ -1608,7 +1608,7 @@ ${source}`;
       const usesUngroupedFlowchart = usesHtmlLabels && !/\bsubgraph\b/.test(renderCode);
       config.layout = usesStateDiagram ? 'elk' : 'dagre';
       if (usesUngroupedFlowchart) {
-        config.flowchart = { ...config.flowchart, curve: 'linear' };
+        config.flowchart = { ...config.flowchart, curve: 'basis' };
       }
       if (compactLayout) {
         config.flowchart = {
