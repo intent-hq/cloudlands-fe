@@ -1,4 +1,5 @@
 import type { ResultRow, RunRow } from './types.ts';
+import type { Writable } from 'node:stream';
 
 export interface ReportOptions {
   threshold: number;
@@ -155,4 +156,37 @@ export function textReport(value: ReturnType<typeof report>): string {
       `Showing ${value.results.length} of ${s.matching} matching targets; use --limit to show more or --format json.`,
     );
   return lines.join('\n');
+}
+
+export async function writeJsonReport(
+  value: ReturnType<typeof report> & { metrics?: unknown },
+  output: Writable,
+): Promise<void> {
+  let buffer = '';
+  const flush = async () => {
+    const chunk = buffer;
+    buffer = '';
+    await new Promise<void>((resolve, reject) => {
+      output.write(chunk, (error) => (error ? reject(error) : resolve()));
+    });
+  };
+  const append = async (chunk: string) => {
+    buffer += chunk;
+    if (buffer.length >= 65_536) await flush();
+  };
+  await append('{');
+  let first = true;
+  for (const [key, field] of Object.entries(value)) {
+    if (field === undefined) continue;
+    await append(`${first ? '' : ','}${JSON.stringify(key)}:`);
+    first = false;
+    if (Array.isArray(field)) {
+      await append('[');
+      for (let index = 0; index < field.length; index++)
+        await append(`${index ? ',' : ''}${JSON.stringify(field[index]) ?? 'null'}`);
+      await append(']');
+    } else await append(JSON.stringify(field));
+  }
+  await append('}\n');
+  if (buffer) await flush();
 }

@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { readConfig } from './files.ts';
 import { Store } from './database.ts';
 import { batches, evaluate, scan } from './runner.ts';
-import { report, textReport } from './report.ts';
+import { report, textReport, writeJsonReport } from './report.ts';
 import { DEFAULT_MODEL, DEFAULT_GATEWAY_MODEL } from './jev.ts';
 import { CHECKS_VERSION } from './assertion-checks.ts';
 
@@ -249,7 +249,7 @@ export async function main(args: string[]): Promise<number> {
       failingOnly: values['failing-only'],
       limit,
     });
-    if (format === 'json') output({ ...value, metrics });
+    if (format === 'json') await writeJsonReport({ ...value, metrics }, process.stdout);
     else {
       console.log(textReport(value));
       if (metrics) console.log(JSON.stringify(metrics));

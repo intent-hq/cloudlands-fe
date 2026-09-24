@@ -6,10 +6,11 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import { Writable } from 'node:stream';
 import { defaults, inventory, selectedFiles } from '../src/files.ts';
 import { Store } from '../src/database.ts';
 import { batches, evaluate, scan } from '../src/runner.ts';
-import { report, textReport } from '../src/report.ts';
+import { report, textReport, writeJsonReport } from '../src/report.ts';
 import type { Judgment } from '../src/types.ts';
 import { JevHttpError } from '../src/jev.ts';
 
@@ -43,6 +44,55 @@ describe.skip('retired', () => { check('old case', () => verify(permitted('admin
   const config = { ...defaults, aliases: { '@src': 'src' } };
   return { root, put, store, config };
 }
+
+test('streams a large JSON report through a slow sink without losing rows or escaping', async () => {
+  const value = report(
+    { id: 'export', started: '', finished: null, status: 'complete', options: '{}' },
+    [],
+    { threshold: 60, minConfidence: 0.6 },
+  );
+  value.results = Array.from({ length: 500 }, (_, index) => ({
+    target: {
+      id: String(index),
+      kind: 'assertion',
+      name: 'quoted "name"\n雪',
+      file: 'example.test.ts',
+      line: index + 1,
+      endLine: index + 1,
+      code: 'x'.repeat(2000),
+      status: 'active',
+    },
+    traceId: 'trace',
+    evaluationId: null,
+    score: null,
+    model: null,
+    warnings: [],
+    error: null,
+    cached: false,
+    status: 'unscored',
+    lowScore: false,
+    review: false,
+  }));
+  const chunks: Buffer[] = [];
+  const sink = new Writable({
+    highWaterMark: 1,
+    write(chunk, _encoding, callback) {
+      setImmediate(() => {
+        chunks.push(Buffer.from(chunk));
+        callback();
+      });
+    },
+  });
+  await writeJsonReport({ ...value, metrics: undefined }, sink);
+  const decoded = JSON.parse(Buffer.concat(chunks).toString());
+  assert.equal(decoded.results.length, 500);
+  assert.equal(decoded.results[499].target.line, 500);
+  assert.equal(decoded.results[499].target.name, 'quoted "name"\n雪');
+  assert.equal(decoded.results[0].score, null);
+  assert.equal(Object.hasOwn(decoded, 'metrics'), false);
+  assert.ok(chunks.length > 1);
+  assert.ok(chunks.every((chunk) => chunk.length < 100_000));
+});
 
 const judgeFixture = async (
   _state: unknown,
