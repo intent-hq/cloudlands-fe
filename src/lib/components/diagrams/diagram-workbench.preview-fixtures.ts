@@ -5,6 +5,7 @@ import type {
   DiagramPrimitive,
   DiagramState,
 } from '$shared/types/notes-primitives';
+import { EXTRA_DIAGRAM_LAYOUT_CASES } from './diagram-layout-edge-cases';
 
 export type DiagramWorkbenchCase =
   | {
@@ -731,6 +732,7 @@ const layoutEdgeCases = {
 } satisfies Record<string, DiagramWorkbenchCase>;
 
 export const MERMAID_WORKBENCH_CASES = Object.freeze({
+  ...EXTRA_DIAGRAM_LAYOUT_CASES,
   ...layoutEdgeCases,
   'mermaid-single-node': {
     kind: 'mermaid',
@@ -1072,6 +1074,7 @@ export const DIAGRAM_WORKBENCH_CASE_GROUPS = Object.freeze([
     id: 'stress',
     caseIds: [
       ...(Object.keys(layoutEdgeCases) as (keyof typeof layoutEdgeCases)[]),
+      ...(Object.keys(EXTRA_DIAGRAM_LAYOUT_CASES) as (keyof typeof EXTRA_DIAGRAM_LAYOUT_CASES)[]),
       'mermaid-single-node',
       'mermaid-two-node',
       'mermaid-disconnected',
