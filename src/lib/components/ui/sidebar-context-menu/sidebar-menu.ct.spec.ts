@@ -65,9 +65,28 @@ test('first-line measurement is atomic across popup movement and still rejects m
     ['kbd', 'KBD'],
   ]) {
     const accessory = row.locator(selector);
-    await accessory.evaluate((element) => element.setAttribute('style', 'translate: 0 8px'));
-    await expect(expectMenuFirstLine(row, label)).rejects.toThrow(slot);
-    await accessory.evaluate((element) => element.removeAttribute('style'));
+    const originalStyle = await accessory.getAttribute('style');
+    try {
+      // Reduced motion shortens transitions but does not disable them. Inject a
+      // settled offset so this negative control cannot sample its first frame.
+      await accessory.evaluate((element) => {
+        element.style.transitionProperty = 'none';
+        element.style.translate = '0 8px';
+      });
+      await expect(expectMenuFirstLine(row, label)).rejects.toThrow(slot);
+    } finally {
+      await accessory.evaluate((element, style) => {
+        if (style === null) element.removeAttribute('style');
+        else element.setAttribute('style', style);
+        // Restoring transition-property can start a return transition.
+        for (const animation of element.getAnimations()) {
+          if (animation instanceof CSSTransition && animation.transitionProperty === 'translate') {
+            animation.finish();
+          }
+        }
+      }, originalStyle);
+    }
+    await expectMenuFirstLine(row, label);
   }
 });
 
