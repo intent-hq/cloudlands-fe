@@ -23,7 +23,7 @@
   // Props
   interface Props {
     // Snippets for each section
-    sidebar: Snippet;
+    sidebar: Snippet<[boolean?]>;
     content: Snippet;
     terminalOverlay?: Snippet;
     modals?: Snippet;
@@ -90,6 +90,11 @@
       {/if}
 
       <!-- Sidebar -->
+      {#if $sidebarIsCollapsed && !startCollapsed && active}
+        <div class="h-full w-12 shrink-0" data-workspace-sidebar-rail-shell>
+          {@render sidebar(true)}
+        </div>
+      {/if}
       <ResizablePanel
         {active}
         side={sidebarSide}
@@ -106,7 +111,9 @@
           ? 'mr-auto ml-0'
           : 'ml-auto mr-0'}"
       >
-        {@render sidebar()}
+        {#if !$sidebarIsCollapsed || startCollapsed}
+          {@render sidebar(false)}
+        {/if}
       </ResizablePanel>
 
       {#if sidebarSide === 'left'}

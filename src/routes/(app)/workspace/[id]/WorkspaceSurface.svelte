@@ -757,7 +757,7 @@
      ============================================================================ -->
 
 <!-- Sidebar Snippet -->
-{#snippet sidebarContent()}
+{#snippet sidebarContent(collapsed = false)}
   {#if !active}
     <div class="h-full w-full"></div>
   {:else if showOnboarding || isCreatingWorkspace}
@@ -782,6 +782,7 @@
         : ''}
     >
       <MultiSelectTabbedSidebar
+        {collapsed}
         workspaceId={$workspace?.id || workspaceId}
         {panelLayoutId}
         onCreateNote={handleCreateNote}
