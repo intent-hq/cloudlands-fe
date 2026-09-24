@@ -865,19 +865,29 @@ describe('Labs Settings visibility', () => {
     expect(selectLabsGitLabEnabled.select(appStore.state)).toBe(false);
   });
 
-  it('opens Labs after Show navigation while another Settings hash is active', async () => {
-    const { container } = renderSettings('/settings?tab=display#note-font');
-    appStore.dispatch(setLabsSettingsVisible(true));
-    window.history.pushState({}, '', '/settings?tab=labs#labs');
-    mocks.page.url.href = window.location.href;
+  it.each(['labs', 'labs-gitlab'])(
+    'reveals and routes to #%s without enabling GitLab while another Settings hash is active',
+    async (hash) => {
+      const { container } = renderSettings('/settings?tab=display#note-font');
+      expect(screen.queryByRole('button', { name: 'Labs' })).toBeNull();
+      expect(container.querySelector('#labs-gitlab')).toBeNull();
+      appStore.dispatch(setLabsSettingsVisible(true));
+      window.history.pushState({}, '', `/settings?tab=labs#${hash}`);
+      mocks.page.url.href = window.location.href;
 
-    await waitFor(() =>
-      expect(screen.getByRole('button', { name: 'Labs' }).getAttribute('aria-current')).toBe(
-        'page',
-      ),
-    );
-    expect(container.querySelector('#labs-multiplayer')).not.toBeNull();
-  });
+      await waitFor(() =>
+        expect(screen.getByRole('button', { name: 'Labs' }).getAttribute('aria-current')).toBe(
+          'page',
+        ),
+      );
+      expect(container.querySelector(resolveHashToTarget(hash)!.highlightSelector!)).not.toBeNull();
+      expect(window.location.hash).toBe(`#${hash}`);
+      expect(screen.getByRole('switch', { name: 'GitLab' }).getAttribute('aria-checked')).toBe(
+        'false',
+      );
+      expect(selectLabsGitLabEnabled.select(appStore.state)).toBe(false);
+    },
+  );
 
   it('returns active Labs to Display on Hide and preserves experiment changes on Show', async () => {
     appStore.dispatch(setLabsSettingsVisible(true));
@@ -951,7 +961,10 @@ describe('Labs Settings visibility', () => {
         'page',
       ),
     );
-    expect(document.getElementById('labs-multiplayer')).not.toBeNull();
+    expect(
+      document.getElementById(url.includes('labs-gitlab') ? 'labs-gitlab' : 'labs-multiplayer'),
+    ).not.toBeNull();
+    expect(selectLabsGitLabEnabled.select(appStore.state)).toBe(false);
   });
 
   it('keeps a sidebar tab selection when saved Labs visibility arrives after mount', async () => {
