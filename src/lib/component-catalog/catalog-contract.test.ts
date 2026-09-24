@@ -133,7 +133,7 @@ function normalizeValue(value: string): string {
   return value
     .replace(/\bsvelte-[a-z0-9]+\b/g, 'svelte-<scope>')
     .replace(/\bbits-[a-z0-9-]+/g, 'bits-<id>')
-    .replace(/\bc[0-9]+(?=-|$)/g, 'c<id>')
+    .replace(/\bc[0-9]+(?=[-\s"']|$)/g, 'c<id>')
     .replace(/\s+/g, ' ')
     .trim();
 }
