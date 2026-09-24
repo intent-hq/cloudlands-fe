@@ -193,17 +193,18 @@ describe('Chief card migration contract', () => {
     appStore.dispatch(setChiefActiveAgentId(STALE_THREAD_ID));
     appStore.dispatch(setAgentsLoaded(CHIEF_WORKSPACE_ID, true));
     render(ChiefCard, { props: { expanded: true } });
-    await settle();
-
-    expect(screen.getByTestId('mock-chat-panel').textContent).toBe(STALE_THREAD_ID);
+    await waitFor(() =>
+      expect(screen.getByTestId('mock-chat-panel').textContent).toBe(STALE_THREAD_ID),
+    );
     const saved = appStore.state.agentSessions.byAgentId[STALE_THREAD_ID];
     await fireEvent.click(
       screen.getByRole('button', { name: m.layout_chiefCard_newThread_tooltip() }),
     );
-    await settle();
+    await waitFor(() => {
+      expect(appStore.state.sidebarNav.chiefActiveAgentId).toBe(CURRENT_THREAD_ID);
+      expect(screen.getByTestId('mock-chat-panel').textContent).toBe(CURRENT_THREAD_ID);
+    });
     expect(launchActions).toHaveLength(0);
-    expect(appStore.state.sidebarNav.chiefActiveAgentId).toBe(CURRENT_THREAD_ID);
-    expect(screen.getByTestId('mock-chat-panel').textContent).toBe(CURRENT_THREAD_ID);
     expect(appStore.state.agentSessions.byAgentId[STALE_THREAD_ID]).toBe(saved);
   });
 
