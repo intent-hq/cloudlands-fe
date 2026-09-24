@@ -1174,7 +1174,15 @@
                   />
                 </SettingsFieldRow>
               </section>
-              <GitLabLabsSettings />
+              <section
+                id="labs-gitlab"
+                data-highlight-id="labs-gitlab"
+                use:highlightTarget
+                data-slot="settings-section-body"
+                class="px-6 py-4"
+              >
+                <GitLabLabsSettings />
+              </section>
             </div>
           </div>
         {/if}
