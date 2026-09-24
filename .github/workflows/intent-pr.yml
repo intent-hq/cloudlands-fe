@@ -711,9 +711,20 @@ jobs:
       # OOM lesson — monorepo#3352 — was a job-wide 8 GB cap, not this).
       NODE_OPTIONS: '--max-old-space-size=4096'
       LINT_BASELINE_BASE_REF: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha }}
+      TRANSFER_SELECTION_FIXTURE_ROOT: ${{ github.workspace }}/.cache/transfer-selection-contract/docs/protocol/fixtures/transfer-selection
     steps:
       - name: Checkout
         uses: actions/checkout@v7
+      - name: Checkout shared transfer-selection fixtures
+        uses: actions/checkout@v7
+        with:
+          repository: intent-hq/intent
+          ref: main
+          path: .cache/transfer-selection-contract
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /docs/protocol/fixtures/transfer-selection/
+            /scripts/check-transfer-selection-contract.mjs
       - name: Fetch baseline comparison commit
         run: |
           if [ -n "$LINT_BASELINE_BASE_REF" ]; then
@@ -743,7 +754,9 @@ jobs:
         # so a leg never depends on test internals to stay self-contained.
         run: pnpm run generate:ipc-channels
       - name: Unit tests
-        run: pnpm run test:unit --shard=${{ matrix.shard }}/2
+        run: |
+          node scripts/transfer-selection-fixtures.mjs
+          pnpm run test:unit --shard=${{ matrix.shard }}/2
 
   test-integration:
     # The integration suite from the pre-split Unit & Integration Tests job
