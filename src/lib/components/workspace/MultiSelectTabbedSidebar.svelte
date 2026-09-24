@@ -482,11 +482,11 @@
     };
   }
 
-  function launcherGridReveal(_node: Element): TransitionConfig {
+  function launcherGridReveal(_node: Element, index = 0): TransitionConfig {
     if (prefersReducedMotion()) return { duration: 0 };
 
     return {
-      delay: spring.moderate.settleMs,
+      delay: spring.moderate.settleMs + index * 24,
       duration: spring.fast.settleMs,
       css: (t) => `opacity: ${t};`,
     };
@@ -1351,11 +1351,11 @@
             class="flex h-full min-h-0 items-end px-6 pt-4"
             data-testid="sidebar-launchers"
             data-launcher-layout="tiles"
-            in:launcherGridReveal|global
           >
             <div class="grid h-56 w-full auto-rows-fr grid-cols-2 gap-3" data-sidebar-launcher-grid>
-              {#each TAB_DEFINITIONS.filter((definition) => definition.id in LAUNCHER_GRID_POSITIONS) as tab (tab.id)}
+              {#each TAB_DEFINITIONS.filter((definition) => definition.id in LAUNCHER_GRID_POSITIONS) as tab, index (tab.id)}
                 <div
+                  in:launcherGridReveal|global={index}
                   class="group/launcher relative flex h-full min-h-0 w-full min-w-0 cursor-pointer overflow-hidden rounded-lg border border-border bg-sidebar p-2 text-foreground transition-colors"
                   data-sidebar-launcher={tab.id}
                   data-sidebar-card-surface

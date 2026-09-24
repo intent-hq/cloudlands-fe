@@ -27,6 +27,11 @@
   let railElement = $state<HTMLElement>();
   const activeDefinition = $derived(tabs.find((tab) => tab.id === activeTab));
 
+  function iconReveal(node: Element, index: number) {
+    const transition = springIn(node, { tier: 'fast', x: -4, y: 0, scale: 1 });
+    return { ...transition, delay: transition.duration === 0 ? 0 : index * 24 };
+  }
+
   function cancelClose() {
     clearTimeout(closeTimer);
   }
@@ -62,44 +67,48 @@
     aria-label={m.workspace_layout_ariaLabel()}
     data-workspace-sidebar-rail
   >
-    {#each tabs as tab (tab.id)}
-      <Button
-        variant="ghost"
-        size="icon"
-        iconOnly
-        class={tab.id === 'overview' ? 'mb-3' : ''}
-        aria-label={tab.id === 'overview' ? m.layout_titleBar_toggleSidebar_ariaLabel() : tab.label}
-        title={tab.id === 'overview' ? m.layout_titleBar_toggleSidebar_ariaLabel() : undefined}
-        aria-haspopup="dialog"
-        aria-expanded={activeTab === tab.id}
-        aria-controls={activeTab === tab.id ? previewId : undefined}
-        data-sidebar-rail-expand={tab.id === 'overview' || undefined}
-        data-sidebar-rail-tab={tab.id}
-        onpointerenter={(event) => {
-          if (event.pointerType === 'mouse') showTab(tab.id, false);
-        }}
-        onpointerleave={scheduleClose}
-        onclick={() => {
-          if (tab.id === 'overview') {
+    {#each tabs as tab, index (tab.id)}
+      <div in:iconReveal|global={index}>
+        <Button
+          variant="ghost"
+          size="icon"
+          iconOnly
+          class={tab.id === 'overview' ? 'mb-3' : ''}
+          aria-label={tab.id === 'overview'
+            ? m.layout_titleBar_toggleSidebar_ariaLabel()
+            : tab.label}
+          title={tab.id === 'overview' ? m.layout_titleBar_toggleSidebar_ariaLabel() : undefined}
+          aria-haspopup="dialog"
+          aria-expanded={activeTab === tab.id}
+          aria-controls={activeTab === tab.id ? previewId : undefined}
+          data-sidebar-rail-expand={tab.id === 'overview' || undefined}
+          data-sidebar-rail-tab={tab.id}
+          onpointerenter={(event) => {
+            if (event.pointerType === 'mouse') showTab(tab.id, false);
+          }}
+          onpointerleave={scheduleClose}
+          onclick={() => {
+            if (tab.id === 'overview') {
+              cancelClose();
+              onExpand();
+            } else showTab(tab.id, true);
+          }}
+          onkeydown={(event) => {
+            keyboardOpen = true;
             cancelClose();
-            onExpand();
-          } else showTab(tab.id, true);
-        }}
-        onkeydown={(event) => {
-          keyboardOpen = true;
-          cancelClose();
-          if (event.key === 'ArrowRight') {
-            event.preventDefault();
-            showTab(tab.id, true);
-          }
-        }}
-      >
-        {#if tab.id === 'overview'}
-          <IntentNavigationIcon name="sidebar" size={16} />
-        {:else}
-          <Fa icon={tab.icon} class="size-4" />
-        {/if}
-      </Button>
+            if (event.key === 'ArrowRight') {
+              event.preventDefault();
+              showTab(tab.id, true);
+            }
+          }}
+        >
+          {#if tab.id === 'overview'}
+            <IntentNavigationIcon name="sidebar" size={16} />
+          {:else}
+            <Fa icon={tab.icon} class="size-4" />
+          {/if}
+        </Button>
+      </div>
     {/each}
   </nav>
   <Popover.Content
@@ -132,7 +141,7 @@
   >
     <div use:animatedHeight={{ tier: 'moderate' }}>
       {#key activeTab}
-      <div in:springIn={{ tier: 'fast', x: -4, y: 0, scale: 1 }}>
+        <div in:springIn={{ tier: 'fast', x: -4, y: 0, scale: 1 }}>
           {@render children()}
         </div>
       {/key}
