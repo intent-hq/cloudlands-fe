@@ -5,7 +5,6 @@
     'settings',
     'dandelion',
     'sidebar',
-    'grid',
   ] as const;
 
   export type IntentNavigationIconName = (typeof intentNavigationIconNames)[number];
@@ -32,12 +31,7 @@
   focusable="false"
   data-navigation-icon={name}
 >
-  {#if name === 'grid'}
-    <rect x="2" y="2" width="4.5" height="4.5" rx="1" stroke="currentColor" />
-    <rect x="9.5" y="2" width="4.5" height="4.5" rx="1" stroke="currentColor" />
-    <rect x="2" y="9.5" width="4.5" height="4.5" rx="1" stroke="currentColor" />
-    <rect x="9.5" y="9.5" width="4.5" height="4.5" rx="1" stroke="currentColor" />
-  {:else if name === 'sidebar'}
+  {#if name === 'sidebar'}
     <rect x="1.5" y="2.5" width="13" height="11" rx="1.5" stroke="currentColor" stroke-width="1" />
     <path d="M5.5 2.5V13.5" stroke="currentColor" stroke-width="1" />
   {:else if name === 'spaces'}
