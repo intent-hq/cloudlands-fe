@@ -1,5 +1,43 @@
+import type { Locator } from '@playwright/test';
 import { expect, test } from '../../../../test/ct-test';
 import SettingsSidebarPreview from '../settings-sidebar.preview.svelte';
+
+const sidebarRows =
+  '[data-settings-tab], [data-settings-agent-row], [data-settings-sidebar-back] button';
+
+async function expectCenteredRows(rows: Locator) {
+  const geometry = await rows.evaluateAll((elements) =>
+    elements.map((row) => {
+      const bounds = row.getBoundingClientRect();
+      const centerY = bounds.y + bounds.height / 2;
+      const content = row.querySelectorAll(
+        '[data-settings-sidebar-label], [data-slot="list-row-leading"] > *, kbd',
+      );
+      const surface = row.querySelector('[data-slot="button-surface"]')!.getBoundingClientRect();
+      return {
+        id: row.getAttribute('data-settings-tab') || row.id || 'back',
+        offsets: [...content].map((node) => {
+          const rect = node.getBoundingClientRect();
+          return Math.abs(rect.y + rect.height / 2 - centerY);
+        }),
+        surfaceOffsets: [
+          surface.x - bounds.x,
+          surface.y - bounds.y,
+          surface.width - bounds.width,
+          surface.height - bounds.height,
+        ].map(Math.abs),
+      };
+    }),
+  );
+  expect(geometry.length).toBeGreaterThan(0);
+  for (const row of geometry) {
+    expect(row.offsets.length, row.id).toBeGreaterThanOrEqual(2);
+    expect(Math.max(...row.offsets), `${row.id} content is centered`).toBeLessThanOrEqual(1);
+    expect(Math.max(...row.surfaceOffsets), `${row.id} surface fills the row`).toBeLessThanOrEqual(
+      1,
+    );
+  }
+}
 
 test('keeps Back, grouped settings and specialists on one aligned keyboard sequence', async ({
   mount,
@@ -11,7 +49,9 @@ test('keeps Back, grouped settings and specialists on one aligned keyboard seque
   const specialists = component.locator('[data-settings-agent-row]');
   const back = component.locator('[data-settings-sidebar-back] button');
   await expect(specialists).toHaveCount(3);
+  await expectCenteredRows(component.locator(sidebarRows));
   await back.focus();
+  await expectCenteredRows(back);
   await page.keyboard.press('Enter');
   await expect(component.locator('[data-settings-back-count]')).toHaveText('1');
   await page.keyboard.press('Tab');
@@ -32,6 +72,7 @@ test('keeps Back, grouped settings and specialists on one aligned keyboard seque
     await expect(tab).toBeFocused();
     await page.keyboard.press('Enter');
     await expect(tab).toHaveAttribute('aria-current', 'page');
+    await expectCenteredRows(tab);
     await page.keyboard.press('Tab');
   }
   await expect(specialists.first()).toBeFocused();
@@ -52,26 +93,25 @@ test('keeps Back, grouped settings and specialists on one aligned keyboard seque
   });
   expect(focusStyle.style).not.toBe('none');
   expect(focusStyle.width).toBeGreaterThanOrEqual(1);
-  const geometry = await component
-    .locator('[data-settings-tab], [data-settings-agent-row], [data-settings-sidebar-back] button')
-    .evaluateAll((rows) =>
-      rows.map((row) => {
-        const list = row.querySelector('[data-slot="list-row"]')!;
-        const title = row.querySelector('[data-settings-sidebar-label]')!;
-        const style = getComputedStyle(title);
-        const icon = list.firstElementChild!.firstElementChild!.getBoundingClientRect();
-        return {
-          x: title.getBoundingClientRect().x,
-          height: row.getBoundingClientRect().height,
-          font: style.fontSize,
-          weight: style.fontWeight,
-          overflow: row.scrollWidth - row.clientWidth,
-          iconWidth: icon.width,
-          iconHeight: icon.height,
-          gap: parseFloat(getComputedStyle(list).columnGap),
-        };
-      }),
-    );
+  await expectCenteredRows(component.locator(sidebarRows));
+  const geometry = await component.locator(sidebarRows).evaluateAll((rows) =>
+    rows.map((row) => {
+      const list = row.querySelector('[data-slot="list-row"]')!;
+      const title = row.querySelector('[data-settings-sidebar-label]')!;
+      const style = getComputedStyle(title);
+      const icon = list.firstElementChild!.firstElementChild!.getBoundingClientRect();
+      return {
+        x: title.getBoundingClientRect().x,
+        height: row.getBoundingClientRect().height,
+        font: style.fontSize,
+        weight: style.fontWeight,
+        overflow: row.scrollWidth - row.clientWidth,
+        iconWidth: icon.width,
+        iconHeight: icon.height,
+        gap: parseFloat(getComputedStyle(list).columnGap),
+      };
+    }),
+  );
   expect(
     Math.max(...geometry.map((row) => row.x)) - Math.min(...geometry.map((row) => row.x)),
   ).toBeLessThanOrEqual(1);
@@ -138,6 +178,7 @@ test('keeps narrow rows inside the sidebar and truncates long specialist labels 
     });
   });
   expect(bounds.every((row) => row.within && row.overflow <= 1 && row.height === 32)).toBe(true);
+  await expectCenteredRows(component.locator(sidebarRows));
   await specialist.focus();
   await page.keyboard.press('Enter');
   await expect(specialist).toHaveAttribute('aria-current', 'page');
@@ -145,6 +186,7 @@ test('keeps narrow rows inside the sidebar and truncates long specialist labels 
   await expect(component.locator('#create-specialist')).toBeFocused();
   await page.keyboard.press('Enter');
   await expect(component.locator('#create-specialist')).toHaveAttribute('aria-current', 'page');
+  await expectCenteredRows(component.locator(sidebarRows));
 });
 
 for (const theme of ['light', 'dark'] as const) {
@@ -157,12 +199,15 @@ for (const theme of ['light', 'dark'] as const) {
       theme === 'dark',
     );
     const component = await mount(SettingsSidebarPreview);
+    await page.evaluate(() => document.fonts.ready);
+    await expectCenteredRows(component.locator(sidebarRows));
     const tab = component.locator('[data-settings-tab="providers"]');
     const before = await tab.evaluate((node) => getComputedStyle(node).backgroundColor);
     await tab.hover();
     await expect
       .poll(() => tab.evaluate((node) => getComputedStyle(node).backgroundColor))
       .not.toBe(before);
+    await expectCenteredRows(tab);
     await tab.click();
     await page.mouse.move(1000, 0);
     await expect(tab).toHaveAttribute('aria-current', 'page');
@@ -170,11 +215,21 @@ for (const theme of ['light', 'dark'] as const) {
       .poll(() => tab.evaluate((node) => getComputedStyle(node).backgroundColor))
       .not.toBe(before);
     expect(await tab.evaluate((node) => getComputedStyle(node).boxShadow)).toBe('none');
+    await expectCenteredRows(tab);
     const specialist = component.locator('[data-settings-agent-row]').first();
+    await specialist.hover();
+    await expectCenteredRows(specialist);
     await specialist.click();
     await page.mouse.move(1000, 0);
     await expect(specialist).toHaveAttribute('aria-current', 'page');
     await expect(tab).not.toHaveAttribute('aria-current', 'page');
     expect(await specialist.evaluate((node) => getComputedStyle(node).boxShadow)).toBe('none');
+    await expectCenteredRows(specialist);
+    const back = component.locator('[data-settings-sidebar-back] button');
+    await back.hover();
+    await expectCenteredRows(back);
+    const create = component.locator('#create-specialist');
+    await create.hover();
+    await expectCenteredRows(create);
   });
 }

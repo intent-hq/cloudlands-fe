@@ -151,7 +151,9 @@
                 ? 'bg-foreground/5 text-foreground'
                 : 'text-muted-foreground'}"
             >
-              <ListRow class="min-h-8 w-full gap-2 px-3 py-0">
+              <ListRow
+                class="min-h-8 w-full items-center gap-2 px-3 py-0 [&>[data-slot=list-row-leading]]:self-center"
+              >
                 {#snippet leading()}
                   <span
                     data-slot="settings-sidebar-icon"
