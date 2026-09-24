@@ -4,12 +4,6 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { WorkspaceStatus } from '$shared/types';
-import { store as appStore } from '$store/renderer/store';
-import {
-  initialState as initialUserPreferences,
-  userPreferencesReducer,
-  type UserPreferencesState,
-} from '$store/renderer/slices/user-preferences/user-preferences-slice';
 
 const {
   gotoMock,
@@ -25,7 +19,7 @@ const {
   paletteMruEntries,
   paletteFileMru,
   collaboratorState,
-  userPreferencesState,
+  multiplayerState,
 } = vi.hoisted(() => {
   const createSelectorReadable = <TArg, TValue>(arg: TArg, resolver: (value: any) => TValue) => ({
     subscribe: (fn: (value: TValue) => void) => {
@@ -52,7 +46,7 @@ const {
     paletteMruEntries: { value: [] as any[] },
     paletteFileMru: { value: {} as Record<string, number> },
     collaboratorState: { workspace: false, client: false },
-    userPreferencesState: { value: undefined as UserPreferencesState | undefined },
+    multiplayerState: { enabled: false },
   };
 });
 
@@ -139,7 +133,7 @@ vi.mock('$store/renderer/store', async () => {
     state: () => ({
       workspaceNotes: { byWorkspaceId: {} },
       workspaceAgents: { byWorkspaceId: {} },
-      userPreferences: userPreferencesState.value,
+      userPreferences: { labsMultiplayerEnabled: multiplayerState.enabled },
     }),
     dispatch: reduxDispatchMock,
   });
@@ -225,6 +219,7 @@ vi.mock('@fortawesome/free-solid-svg-icons', () => ({
   faTerminal: { iconName: 'terminal' },
   faCommentDots: { iconName: 'comment-dots' },
   faFileAlt: { iconName: 'file-alt' },
+  faFlask: { iconName: 'flask' },
   faCodeBranch: { iconName: 'code-branch' },
   faPlus: { iconName: 'plus' },
   faGlobe: { iconName: 'globe' },
@@ -265,46 +260,36 @@ describe('CommandPalette new actions', () => {
     paletteFileMru.value = {};
     collaboratorState.workspace = false;
     collaboratorState.client = false;
-    userPreferencesState.value = initialUserPreferences;
-    reduxDispatchMock.mockImplementation((action) => {
-      userPreferencesState.value = userPreferencesReducer(userPreferencesState.value, action);
-      (appStore as unknown as { emitState(): void }).emitState();
-      return action;
-    });
+    multiplayerState.enabled = false;
   });
 
-  it.each([
-    { workspaceId: undefined, inputMethod: 'click' },
-    { workspaceId: 'ws-1', inputMethod: 'keyboard' },
-  ])(
-    'shows and hides Labs using $inputMethod with workspace $workspaceId',
-    async ({ workspaceId, inputMethod }) => {
+  it.each([false, true])(
+    'changes experimental multiplayer from enabled=%s through command search without a workspace',
+    async (enabled) => {
+      multiplayerState.enabled = enabled;
       const onClose = vi.fn();
-      const view = render(CommandPalette, { props: { isOpen: true, workspaceId, onClose } });
+      render(CommandPalette, { props: { isOpen: true, onClose } });
       const input = screen.getByRole('textbox');
-      await fireEvent.input(input, { target: { value: 'Labs' } });
-      const show = await screen.findByRole('button', { name: /Show Labs in Settings/i });
-      expect(screen.queryByRole('button', { name: /Hide Labs in Settings/i })).toBeNull();
 
-      if (inputMethod === 'keyboard') await fireEvent.keyDown(input, { key: 'Enter' });
-      else await fireEvent.click(show);
+      await fireEvent.input(input, { target: { value: 'multiplayer' } });
+      const command = await screen.findByRole('button', {
+        name: enabled ? /Disable experimental multiplayer/i : /Enable experimental multiplayer/i,
+      });
+      expect(
+        screen.queryByRole('button', {
+          name: enabled ? /Enable experimental multiplayer/i : /Disable experimental multiplayer/i,
+        }),
+      ).toBeNull();
 
-      expect(userPreferencesState.value?.labsSettingsVisible).toBe(true);
-      expect(navigateToSettingsMock).toHaveBeenCalledWith({ tab: 'labs', hash: 'labs' });
+      reduxDispatchMock.mockClear();
+      if (enabled) await fireEvent.click(command);
+      else await fireEvent.keyDown(input, { key: 'Enter' });
+
+      expect(reduxDispatchMock).toHaveBeenCalledWith({
+        type: 'userPreferences/setLabsMultiplayerEnabled',
+        payload: [!enabled],
+      });
       expect(onClose).toHaveBeenCalledOnce();
-      await screen.findByRole('button', { name: /Hide Labs in Settings/i });
-      expect(screen.queryByRole('button', { name: /Show Labs in Settings/i })).toBeNull();
-
-      await view.rerender({ workspaceId: 'ws-2' });
-      const hide = await screen.findByRole('button', { name: /Hide Labs in Settings/i });
-      if (inputMethod === 'keyboard') await fireEvent.keyDown(input, { key: 'Enter' });
-      else await fireEvent.click(hide);
-
-      expect(userPreferencesState.value?.labsSettingsVisible).toBe(false);
-      expect(navigateToSettingsMock).toHaveBeenCalledTimes(1);
-      expect(onClose).toHaveBeenCalledTimes(2);
-      expect(await screen.findByRole('button', { name: /Show Labs in Settings/i })).toBeTruthy();
-      expect(screen.queryByRole('button', { name: /Hide Labs in Settings/i })).toBeNull();
     },
   );
 

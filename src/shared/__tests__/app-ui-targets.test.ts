@@ -51,7 +51,6 @@ describe('app UI targets registry', () => {
       devices: 'devices',
       'websocket-api': 'devices',
       'guest-sessions': 'guest-sessions',
-      'labs-multiplayer': 'labs',
     } as const;
 
     const targets = getAppUiTargets();

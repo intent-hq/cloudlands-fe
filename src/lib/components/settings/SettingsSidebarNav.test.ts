@@ -61,7 +61,6 @@ describe('SettingsSidebarNav', () => {
     'devices',
     'setup',
     'advanced',
-    'labs',
   ] as const)('preserves selection through the %s tab identifier', async (id) => {
     const onSelect = vi.fn();
     const { container } = render(SettingsSidebarNav, {
