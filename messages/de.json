@@ -2194,7 +2194,7 @@
   "chat_chiefEmptyState_agentPerformance_prompt": "Analysieren Sie die letzten Arbeitsbereiche und Agenten-Aktivitäten auf Möglichkeiten, die Agenten-Leistung zu verbessern. Schlagen Sie Spezialisten-Änderungen, AGENTS.md-Updates und Codebasis-/Tooling-Änderungen vor, die zukünftige Agenten schneller und zuverlässiger machen würden.",
   "chat_chiefEmptyState_assignedPrs_label": "Arbeitsbereiche für die neuesten mir zugewiesenen PRs erstellen.",
   "chat_chiefEmptyState_assignedPrs_prompt": "Erstellen Sie Arbeitsbereiche für die neuesten mir zugewiesenen PRs, gruppiert nach Dringlichkeit und mit dem passenden Spezialisten für jeden Arbeitsbereich.",
-  "chat_chiefEmptyState_intro_label": "Bitten Sie Assistant, Ihnen bei der Nutzung der App zu helfen: Arbeitsbereiche verwalten, Einstellungen anpassen, Spezialisten koordinieren und die nächstbeste Aktion finden.",
+  "chat_chiefEmptyState_intro_label": "Bitten Sie den Assistenten, Ihnen bei der Nutzung der App zu helfen: Arbeitsbereiche verwalten, Einstellungen anpassen, Spezialisten koordinieren und die nächstbeste Aktion finden.",
   "chat_chiefEmptyState_morningBrief_label": "Mein Tagesbriefing für heute vorbereiten.",
   "chat_chiefEmptyState_morningBrief_prompt": "Geben Sie mir ein kompaktes Tagesbriefing für heute: aktive Arbeitsbereiche, PRs/Issues, die Aufmerksamkeit benötigen, blockierte oder wartende Agenten und die wirkungsvollsten nächsten Aktionen.",
   "chat_chiefEmptyState_randomTheme_label": "Zu einem zufälligen Theme wechseln.",

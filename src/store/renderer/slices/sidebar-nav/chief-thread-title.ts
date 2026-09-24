@@ -24,6 +24,7 @@ export function isPlaceholderChiefThreadName(name: string | undefined | null): b
   return (
     !trimmed ||
     trimmed === DEFAULT_CHIEF_THREAD_TITLE ||
+    trimmed === 'New chat with Assistant' || // i18n-ignore (matches previously stored placeholder)
     trimmed === 'New chat with Intent' || // i18n-ignore (matches daemon-stored legacy name)
     trimmed === 'Chief of Staff' || // i18n-ignore (matches daemon-stored legacy name)
     trimmed.startsWith('New thread ') // i18n-ignore (matches daemon-generated placeholder)

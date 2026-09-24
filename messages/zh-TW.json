@@ -2194,7 +2194,7 @@
   "chat_chiefEmptyState_agentPerformance_prompt": "分析最近的工作區和智慧體活動，尋找提升智慧體效能的方法。提出專家設定更改、AGENTS.md 更新以及程式碼庫/工具方面的改進，使未來的智慧體更快、更可靠。",
   "chat_chiefEmptyState_assignedPrs_label": "為最新指派給我的 PR 建立工作區。",
   "chat_chiefEmptyState_assignedPrs_prompt": "為最新指派給我的 PR 建立工作區，按緊急程度分組，併為每個工作區選擇合適的專家。",
-  "chat_chiefEmptyState_intro_label": "讓 Assistant 幫你使用此應用程式：管理工作區、調整設定、協調專家，並找到下一步最佳行動。",
+  "chat_chiefEmptyState_intro_label": "讓助手幫你使用此應用程式：管理工作區、調整設定、協調專家，並找到下一步最佳行動。",
   "chat_chiefEmptyState_morningBrief_label": "為我準備今天的每日簡報。",
   "chat_chiefEmptyState_morningBrief_prompt": "給我一份簡明的今日簡報：活躍的工作區、需要關注的 PR/議題、被阻塞或等待中的智慧體，以及最有價值的後續行動。",
   "chat_chiefEmptyState_randomTheme_label": "幫我隨機切換一個主題。",

@@ -11,13 +11,15 @@ describe('formatChiefThreadName', () => {
     expect(isPlaceholderChiefThreadName(name)).toBe(true);
   });
 
-  it.each(['New chat with Intent', 'Chief of Staff', 'New thread May 1st'])(
-    'keeps legacy placeholder %s eligible for renaming',
-    (name) => {
-      expect(isPlaceholderChiefThreadName(name)).toBe(true);
-      expect(getChiefThreadTitle({ name, messages: [] })).toBe('New chat with Assistant');
-    },
-  );
+  it.each([
+    'New chat with Assistant',
+    'New chat with Intent',
+    'Chief of Staff',
+    'New thread May 1st',
+  ])('keeps legacy placeholder %s eligible for renaming', (name) => {
+    expect(isPlaceholderChiefThreadName(name)).toBe(true);
+    expect(getChiefThreadTitle({ name, messages: [] })).toBe('New chat');
+  });
 
   it('preserves custom thread titles', () => {
     const name = 'Review my release plan';

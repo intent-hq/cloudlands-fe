@@ -2194,7 +2194,7 @@
   "chat_chiefEmptyState_agentPerformance_prompt": "최근 작업 공간과 에이전트 활동을 분석하여 에이전트 성능을 개선할 방법을 찾아 주세요. 향후 에이전트를 더 빠르고 안정적으로 만들 수 있는 스페셜리스트 변경, AGENTS.md 업데이트, 코드베이스/도구 변경을 제안해 주세요.",
   "chat_chiefEmptyState_assignedPrs_label": "나에게 할당된 최신 PR을 위한 작업 공간을 만듭니다.",
   "chat_chiefEmptyState_assignedPrs_prompt": "나에게 할당된 최신 PR을 처리할 작업 공간을 긴급도별로 그룹화하고 각 작업 공간에 적합한 스페셜리스트를 지정하여 만들어 주세요.",
-  "chat_chiefEmptyState_intro_label": "Assistant에게 앱 사용에 대한 도움을 요청하세요: 작업 공간 관리, 설정 조정, 스페셜리스트 조율, 다음 최적의 작업 찾기 등.",
+  "chat_chiefEmptyState_intro_label": "어시스턴트에게 앱 사용에 대한 도움을 요청하세요: 작업 공간 관리, 설정 조정, 스페셜리스트 조율, 다음 최적의 작업 찾기 등.",
   "chat_chiefEmptyState_morningBrief_label": "오늘의 데일리 브리핑을 준비합니다.",
   "chat_chiefEmptyState_morningBrief_prompt": "오늘의 간결한 데일리 브리핑을 작성해 주세요: 활성 작업 공간, 주의가 필요한 PR/이슈, 차단되거나 대기 중인 에이전트, 가장 효과적인 다음 작업.",
   "chat_chiefEmptyState_randomTheme_label": "임의의 테마로 전환합니다.",

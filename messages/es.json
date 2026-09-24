@@ -2194,7 +2194,7 @@
   "chat_chiefEmptyState_agentPerformance_prompt": "Analice los espacios de trabajo recientes y la actividad de los agentes en busca de formas de mejorar su rendimiento. Proponga cambios de especialistas, actualizaciones de AGENTS.md y cambios de base de código/herramientas que hagan que los futuros agentes sean más rápidos y fiables.",
   "chat_chiefEmptyState_assignedPrs_label": "Crear espacios de trabajo para las últimas PR asignadas a mí.",
   "chat_chiefEmptyState_assignedPrs_prompt": "Cree espacios de trabajo para abordar las últimas PR asignadas a mí, agrupadas por urgencia y con el especialista adecuado para cada espacio de trabajo.",
-  "chat_chiefEmptyState_intro_label": "Pida a Assistant que le ayude a usar la aplicación: administrar espacios de trabajo, ajustar la configuración, coordinar especialistas y encontrar su siguiente mejor acción.",
+  "chat_chiefEmptyState_intro_label": "Pida al asistente que le ayude a usar la aplicación: administrar espacios de trabajo, ajustar la configuración, coordinar especialistas y encontrar su siguiente mejor acción.",
   "chat_chiefEmptyState_morningBrief_label": "Preparar mi resumen diario de hoy.",
   "chat_chiefEmptyState_morningBrief_prompt": "Deme un resumen diario conciso de hoy: espacios de trabajo activos, PR/issues que necesitan atención, agentes bloqueados o en espera, y las siguientes acciones de mayor impacto.",
   "chat_chiefEmptyState_randomTheme_label": "Cambiarme a un tema aleatorio.",

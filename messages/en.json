@@ -2194,7 +2194,7 @@
   "chat_chiefEmptyState_agentPerformance_prompt": "Analyze recent workspaces and agent activity for ways to improve agent performance. Propose specialist changes, AGENTS.md updates, and codebase/tooling changes that would make future agents faster and more reliable.",
   "chat_chiefEmptyState_assignedPrs_label": "Make workspaces for the latest PRs assigned to me.",
   "chat_chiefEmptyState_assignedPrs_prompt": "Make workspaces to tackle the latest PRs assigned to me, grouped by urgency with the right specialist for each workspace.",
-  "chat_chiefEmptyState_intro_label": "Ask Assistant to help you use the app: manage workspaces, tune settings, coordinate specialists, and find your next best action.",
+  "chat_chiefEmptyState_intro_label": "Ask the assistant to help you use the app: manage workspaces, tune settings, coordinate specialists, and find your next best action.",
   "chat_chiefEmptyState_morningBrief_label": "Prepare my daily brief for today.",
   "chat_chiefEmptyState_morningBrief_prompt": "Give me a concise daily brief for today: active workspaces, PRs/issues that need attention, blocked or waiting agents, and the highest-leverage next actions.",
   "chat_chiefEmptyState_randomTheme_label": "Switch me to a random theme.",
