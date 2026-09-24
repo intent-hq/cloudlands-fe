@@ -53,7 +53,19 @@ function extractLeadingStrongReasoningTitle(
   const candidate = content.slice(leading.length);
   const strongTitle = candidate.match(/^\*\*([^\r\n]+)\*\*[ \t]*(?:(?:\r\n|\n|\r)|$)/);
   if (!strongTitle) return null;
-  if (singleSpanOnly && strongTitle[1].includes('**')) return null;
+  if (singleSpanOnly) {
+    const inner = strongTitle[1];
+    const trailingBackslashes = inner.match(/\\+$/)?.[0].length ?? 0;
+    if (
+      inner !== inner.trim() ||
+      inner.includes('**') ||
+      inner.startsWith('*') ||
+      inner.endsWith('*') ||
+      trailingBackslashes % 2 !== 0
+    ) {
+      return null;
+    }
+  }
 
   const title = markdownInlineToPlainText(strongTitle[1]);
   if (!isShortTitleLike(strongTitle[0], title)) return null;
@@ -69,7 +81,7 @@ export function extractStandaloneReasoningTitles(content: string): string[] | nu
   let remainder = content;
 
   while (remainder.trim()) {
-    const markdown = extractMarkdownReasoningHeading(remainder);
+    const markdown = extractMarkdownReasoningHeading(remainder, true);
     const explicit = markdown.heading
       ? { title: markdown.heading, body: markdown.body }
       : extractLeadingStrongReasoningTitle(remainder, true);
@@ -111,9 +123,25 @@ export function extractReasoningHistory(content: string): ReasoningHistoryItem[]
   return items;
 }
 
-function extractMarkdownReasoningHeading(content: string): ReasoningHeading {
+function isStandaloneSetextTitle(line: string): boolean {
+  const candidate = line.replace(/^ {0,3}/, '');
+  // These start other Markdown blocks, even when a horizontal rule follows.
+  return (
+    !/^(?:\s|>|`{3}|~{3}|(?:[-+*]|\d+[.)])(?:[ \t]|$)|#{1,6}(?:[ \t]|$)|<|\[[^\]]*\]:)/.test(
+      candidate,
+    ) && !/^(?:(?:\*[ \t]*){3,}|(?:_[ \t]*){3,}|(?:-[ \t]*){3,})$/.test(candidate)
+  );
+}
+
+function extractMarkdownReasoningHeading(
+  content: string,
+  standaloneOnly = false,
+): ReasoningHeading {
   const leading = content.match(/^(?:\uFEFF)?(?:[ \t]*(?:\r\n|\n|\r))*/)?.[0] ?? '';
   const candidate = content.slice(leading.length);
+  if (standaloneOnly && /^(?: {4}| {0,3}\t)/.test(candidate)) {
+    return { heading: null, body: content };
+  }
 
   const atx = candidate.match(
     /^[ \t]{0,3}#{1,6}[ \t]+([^\r\n]*?)(?:[ \t]+#+)?[ \t]*(?:\r\n|\n|\r|$)/,
@@ -126,9 +154,12 @@ function extractMarkdownReasoningHeading(content: string): ReasoningHeading {
   }
 
   const setext = candidate.match(
-    /^([^\r\n]+)(?:\r\n|\n|\r)[ \t]{0,3}(?:=+|-+)[ \t]*(?:\r\n|\n|\r|$)/,
+    /^([^\r\n]+)(?:\r\n|\n|\r)([ \t]{0,3})(?:=+|-+)[ \t]*(?:\r\n|\n|\r|$)/,
   );
-  if (setext) {
+  if (
+    setext &&
+    (!standaloneOnly || (isStandaloneSetextTitle(setext[1]) && !setext[2].includes('\t')))
+  ) {
     const heading = markdownInlineToPlainText(setext[1]);
     if (heading) {
       return { heading, body: bodyAfterHeading(content, leading.length + setext[0].length) };

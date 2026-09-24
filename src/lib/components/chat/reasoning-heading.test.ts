@@ -106,9 +106,43 @@ describe('extractReasoningHistory', () => {
 
 describe('explicit standalone reasoning titles', () => {
   it.each([
+    '    code\n---',
+    '\tcode\n---',
+    '\t# Read source',
+    'Read source\n\t---',
+    '- Read source\n---',
+    '1. Read source\n---',
+    '> Read source\n---',
+    '```text\n---',
+    '<div>Read source</div>\n---',
+    '[source]: file.ts\n---',
+    '---\n---',
+  ])('keeps non-heading Markdown blocks after a title in the body: %s', (body) => {
+    const content = `# Plan\n\n${body}`;
+    expect(extractStandaloneReasoningTitles(content)).toBeNull();
+    expect(extractReasoningHeading(content)).toEqual({ heading: 'Plan', body });
+    expect(extractReasoningHistory(content)).toEqual([{ title: 'Plan', body: body.trim() }]);
+  });
+
+  it.each([
+    '** Read source**',
+    '**Read source **',
+    '**\tRead source**',
+    '**Read source\\**',
+    '***Read source**',
+    '**Read source***',
+  ])('keeps literal strong delimiters as body text: %s', (content) => {
+    expect(extractStandaloneReasoningTitles(content)).toBeNull();
+    expect(extractReasoningHeading(content)).toEqual({ heading: null, body: content });
+  });
+
+  it.each([
     '**Locating collection links**',
     '# Locating collection links',
     'Locating collection links\n---',
+    '   ## Locating collection links',
+    '   Locating collection links\n   ---',
+    '**Locating** `collection` links\n===',
   ])('classifies explicit title-only content: %s', (content) => {
     expect(extractStandaloneReasoningTitles(content)).toEqual(['Locating collection links']);
   });

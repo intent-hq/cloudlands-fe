@@ -74,6 +74,21 @@ describe('ThinkingBlock — tool-call presentation', () => {
   });
 
   it.each([
+    { content: '# Plan\n\n    code\n---', body: '    code\n---' },
+    { content: '# Plan\n\n- Read source\n---', body: '- Read source\n---' },
+    { content: '** Read source**', body: '** Read source**' },
+    { content: '**Read source **', body: '**Read source **' },
+  ])('keeps body-shaped Markdown behind its disclosure: $content', async ({ content, body }) => {
+    await renderBlock({ content });
+    const toggle = screen.getByRole('button');
+    expect(toggle.getAttribute('aria-expanded')).toBe('false');
+    expect(screen.queryByTestId('markdown-viewer')).toBeNull();
+    await fireEvent.click(toggle);
+    expect(toggle.getAttribute('aria-expanded')).toBe('true');
+    expect(screen.getByTestId('markdown-viewer').textContent).toBe(body);
+  });
+
+  it.each([
     '**Locating collection links',
     '**Locating collection links** with more prose.',
     '# Locating collection links\n\nLet me check the schema',
