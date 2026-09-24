@@ -93,7 +93,7 @@
       <!-- Sidebar -->
       {#if !startCollapsed && active}
         <div
-          class="h-full shrink-0 overflow-hidden transition-[width] duration-spring-slow ease-spring-slow motion-reduce:transition-none"
+          class="relative z-20 h-full shrink-0 overflow-visible transition-[width] duration-spring-slow ease-spring-slow motion-reduce:transition-none"
           style:width={$sidebarIsCollapsed ? '48px' : '0px'}
           inert={!$sidebarIsCollapsed}
           data-workspace-sidebar-rail-shell
@@ -101,8 +101,8 @@
           {#if $sidebarIsCollapsed}
             <div
               class="h-full w-12"
-              in:springIn={{ tier: 'moderate', x: -4 }}
-              out:crispOut={{ tier: 'fast' }}
+              in:springIn={{ tier: 'moderate', x: -12, y: 0, scale: 1 }}
+              out:crispOut={{ tier: 'fast', x: -12, y: 0, scale: 1 }}
             >
               {@render sidebar(true)}
             </div>
@@ -131,8 +131,8 @@
             class="h-full"
             style:min-width={`${sidebarMinWidth}px`}
             inert={$sidebarIsCollapsed}
-            in:springIn={{ tier: 'moderate', x: -8 }}
-            out:crispOut={{ tier: 'fast' }}
+            in:springIn={{ tier: 'moderate', x: 12, y: 0, scale: 1 }}
+            out:crispOut={{ tier: 'fast', x: 12, y: 0, scale: 1 }}
           >
             {@render sidebar(false)}
           </div>

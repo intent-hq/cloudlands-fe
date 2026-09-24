@@ -132,7 +132,7 @@
   >
     <div use:animatedHeight={{ tier: 'moderate' }}>
       {#key activeTab}
-        <div in:springIn={{ tier: 'fast', x: -4 }}>
+      <div in:springIn={{ tier: 'fast', x: -4, y: 0, scale: 1 }}>
           {@render children()}
         </div>
       {/key}
