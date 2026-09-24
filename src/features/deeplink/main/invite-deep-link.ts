@@ -21,23 +21,15 @@
  *    `invite.challenge { inviteId, secret }` for the invite's preview and a
  *    short-lived single-use nonce. No fingerprint confirmation is asked of
  *    the user — the pin is checked mechanically at the handshake, not by eye.
- * 2. Read the forge account the guest's OWN daemon is signed in as: GitHub
- *    first (`github.getUser` — the same `GET /user` probe `github.authStatus`
- *    reduces to `isConfigured`, but returning the login the prove prompt
- *    names), else GitLab (`sourceControl.authStatus { provider: "gitlab" }`,
- *    whose `host` names the instance the proof is made on). Neither signed
- *    in puts the consent modal in its neutral `connect-forge` state first —
- *    Settings → Connections for GitLab, or "Sign in to GitHub" — before
- *    anything is asked of GitHub (a `rate-limited` probe is NOT "not signed
- *    in": it fails the join with its own reason, since signing in again
- *    cannot help). That choice, or a GitHub token that
- *    predates the `gist` scope the proof needs (`github-scope-missing`),
- *    leads to the `sign-in-required` state: the guest's own `github.connect`
- *    device flow (code copied to the clipboard; "Open GitHub" opens the URL)
- *    is awaited from the moment the code is shown — a code entered on another
- *    device completes the sign-in without the button — while the modal shows
- *    "waiting for GitHub" after "Open GitHub". These prompts appear only at
- *    join time, never at startup.
+ * 2. Select the required account from `pinIdentity` (provider, canonical
+ *    instance and stable account ID). An explicit unpinned response follows
+ *    `principal.me`, matching the identity chosen in Settings. Only that forge
+ *    is probed; an unrelated rate limit cannot block the join. Old hosts that
+ *    omit the field keep the GitHub-first fallback, as does explicit null on
+ *    a pre-seam sidecar. An explicit pin never falls back. No setting or
+ *    connection changes are made here. A missing GitHub connection or gist
+ *    scope can lead to the existing, user-consented GitHub sign-in flow;
+ *    afterwards the account is checked again against the same requirement.
  * 3. Consent proper: the modal's `prove` state ("Join <title> on <host> as
  *    @login", "what the host learns", Join). It renders in the renderer
  *    (`main/invite-consent.ts`, `invite-consent:*` channels) and stays up in
@@ -133,6 +125,7 @@ import {
 } from '../../backend/main/invite-connection';
 import type { JsonRpcClient } from '../../backend/main/json-rpc-client';
 import { JsonRpcError } from '../../backend/main/json-rpc-errors';
+import type { PrincipalIdentity } from '../../workspace-sharing/types';
 import { isAllowedVerificationUri } from '../utils/verification-uri';
 
 const logger = new Logger('InviteDeepLink');
@@ -171,9 +164,20 @@ type NoticeLabels = Partial<PromptLabels> & { identityHost?: string };
 /** The forge account the guest's own daemon is signed in as. */
 interface LocalIdentity extends InviteIdentityProvider {
   login: string;
+  /** Absent only on the legacy login-only path. */
+  externalUserId?: string;
 }
 
 const GITHUB_HOST = 'github.com';
+
+/** Selection failures carry only a bounded, localized reason. */
+class InviteIdentityError extends Error {
+  constructor(readonly reason: 'pin-mismatch' | 'identity-unavailable') {
+    // i18n-ignore (internal error, fixed text)
+    super('invite identity unavailable');
+    this.name = 'InviteIdentityError';
+  }
+}
 
 /**
  * Why the returning-guest path did not complete the join, as a bounded code
@@ -436,7 +440,7 @@ type ProveOutcome =
   | { kind: 'cancelled' }
   | { kind: 'sign-in-required'; reason: InviteSignInReason }
   | { kind: 'proof-refused'; code: ProofRefusalCode }
-  | { kind: 'account-changed'; login: string };
+  | { kind: 'account-changed'; identity: LocalIdentity };
 
 /** Host refusals of the proof that a fresh challenge can cure. */
 type ProofRefusalCode = 'proof-invalid' | 'proof-expired';
@@ -468,7 +472,7 @@ async function joinWithIdentityProof(
   };
   Object.assign(noticeLabels, labels);
 
-  let identity = await connecting.wait(readLocalIdentity(client));
+  let identity = await connecting.wait(readInviteIdentity(client, challenge));
   let signInReason: InviteSignInReason | null = identity === null ? 'not-connected' : null;
   let signedIn = false;
   let consented = false;
@@ -481,10 +485,20 @@ async function joinWithIdentityProof(
           signInReason === 'scope-missing' ? 'github-scope-missing' : 'github-not-connected',
         );
       }
-      const signIn = await signInToGitHub(client, signInReason, labels, prompts, connecting);
+      const signIn = await signInToGitHub(
+        client,
+        signInReason,
+        labels,
+        prompts,
+        connecting,
+        challenge.pinIdentity == null,
+      );
       if (signIn.kind === 'cancelled') return;
       signedIn = true;
-      identity = { provider: 'github', host: GITHUB_HOST, login: signIn.login };
+      identity = hasIdentityRequirement(challenge)
+        ? await readInviteIdentity(client, challenge)
+        : { provider: 'github', host: GITHUB_HOST, login: signIn.login };
+      if (identity === null) throw new InviteIdentityError('identity-unavailable');
       signInReason = null;
       // The account may differ from the one first read: consent names it anew.
       consented = false;
@@ -531,7 +545,7 @@ async function joinWithIdentityProof(
         signInReason = outcome.reason;
         break;
       case 'account-changed':
-        identity = { ...current, login: outcome.login };
+        identity = outcome.identity;
         consent = null;
         consented = false;
         break;
@@ -546,7 +560,16 @@ async function joinWithIdentityProof(
           return;
         }
         retried = true;
-        challenge = await connection.challenge(inviteId, secret);
+        const refreshed = await connection.challenge(inviteId, secret);
+        if (Object.hasOwn(challenge, 'pinIdentity') && !Object.hasOwn(refreshed, 'pinIdentity')) {
+          throw new InviteIdentityError(
+            challenge.pinIdentity ? 'pin-mismatch' : 'identity-unavailable',
+          );
+        }
+        challenge = refreshed;
+        identity = await readInviteIdentity(client, challenge);
+        if (!sameIdentity(current, identity)) consented = false;
+        signInReason = identity === null ? 'not-connected' : null;
         break;
     }
   }
@@ -576,6 +599,28 @@ async function proveIdentity(
   void consent?.cancelledWhileWaiting.then(() => {
     cancelled = true;
   });
+  const readCurrent = () =>
+    consent === null
+      ? readInviteIdentity(client, challenge)
+      : Promise.race([
+          readInviteIdentity(client, challenge),
+          consent.cancelledWhileWaiting.then(() => 'cancelled' as const),
+        ]);
+
+  // The account may have changed while consent was open. Probe only the
+  // required forge, before publishing anything, and bind consent to its ID.
+  if (hasIdentityRequirement(challenge)) {
+    const latest = await readCurrent();
+    if (latest === 'cancelled' || cancelled) {
+      consent?.dismiss('cancelled');
+      return { kind: 'cancelled' };
+    }
+    if (latest === null) return { kind: 'sign-in-required', reason: 'not-connected' };
+    if (!sameIdentity(identity, latest)) {
+      consent?.dismiss('superseded');
+      return { kind: 'account-changed', identity: latest };
+    }
+  }
 
   let proof: PublishedProof;
   try {
@@ -596,13 +641,48 @@ async function proveIdentity(
     logger.info('User cancelled the invite while the identity proof was being made');
     return { kind: 'cancelled' };
   }
+  if (hasIdentityRequirement(challenge)) {
+    try {
+      // GitLab returns the actual snippet author's stable ID. The GitHub
+      // alias has no ID field, so recheck GET /user as well as proof.login.
+      if (
+        proof.provider === 'gitlab' &&
+        (proof.account?.provider !== identity.provider ||
+          proof.account.host !== identity.host ||
+          proof.account.externalUserId !== identity.externalUserId)
+      )
+        throw new InviteIdentityError(
+          challenge.pinIdentity ? 'pin-mismatch' : 'identity-unavailable',
+        );
+      const latest = await readCurrent();
+      if (latest === 'cancelled' || cancelled) {
+        void deleteProof(client, proof);
+        consent?.dismiss('cancelled');
+        return { kind: 'cancelled' };
+      }
+      if (latest === null) throw new InviteIdentityError('identity-unavailable');
+      if (!sameIdentity(identity, latest)) {
+        void deleteProof(client, proof);
+        consent?.dismiss('superseded');
+        return { kind: 'account-changed', identity: latest };
+      }
+      if (proof.login !== identity.login) {
+        throw new InviteIdentityError(
+          challenge.pinIdentity ? 'pin-mismatch' : 'identity-unavailable',
+        );
+      }
+    } catch (error) {
+      void deleteProof(client, proof);
+      throw error;
+    }
+  }
   if (proof.login !== identity.login) {
     void deleteProof(client, proof);
     consent?.dismiss('superseded');
     logger.info('Identity proof named a different forge account than consented; asking again', {
       provider: identity.provider,
     });
-    return { kind: 'account-changed', login: proof.login };
+    return { kind: 'account-changed', identity: { ...identity, login: proof.login } };
   }
 
   let credential: Awaited<ReturnType<InviteConnection['prove']>>;
@@ -645,7 +725,13 @@ async function proveIdentity(
  */
 type PublishedProof =
   | { provider: 'github'; gistId: string; login: string }
-  | { provider: 'gitlab'; host: string; proofId: string; login: string };
+  | {
+      provider: 'gitlab';
+      host: string;
+      proofId: string;
+      login: string;
+      account: PrincipalIdentity | null;
+    };
 
 async function createProof(
   client: JsonRpcClient,
@@ -660,11 +746,25 @@ async function createProof(
     );
     return { provider: 'github', gistId: result.gistId, login: result.login };
   }
-  const result = await client.request<{ proofId: string; login: string }>(
-    'sourceControl.identityProof.create',
-    { provider: 'gitlab', host: identity.host, nonce, hostLabel },
-  );
-  return { provider: 'gitlab', host: identity.host, proofId: result.proofId, login: result.login };
+  const result = await client.request<{
+    proofId: string;
+    login: string;
+    provider: string;
+    host: string;
+    externalUserId: string | null;
+  }>('sourceControl.identityProof.create', {
+    provider: 'gitlab',
+    host: identity.host,
+    nonce,
+    hostLabel,
+  });
+  return {
+    provider: 'gitlab',
+    host: identity.host,
+    proofId: result.proofId,
+    login: result.login,
+    account: validIdentity(result) ? result : null,
+  };
 }
 
 /** The `invite.prove` proof fields: `gistId` for GitHub (every host reads it), the triple for GitLab. */
@@ -736,8 +836,9 @@ async function signInToGitHub(
   labels: PromptLabels,
   prompts: ConsentPrompts,
   connecting: ConnectingProgress,
+  offerForgeChoice = true,
 ): Promise<SignInResult> {
-  if (reason === 'not-connected') {
+  if (reason === 'not-connected' && offerForgeChoice) {
     const choice = prompts.show({ requestId: randomUUID(), mode: 'connect-forge', ...labels });
     if ((await choice.decision) === 'cancel') {
       choice.dismiss('cancelled');
@@ -955,9 +1056,10 @@ async function readLocalLogin(client: JsonRpcClient): Promise<string | null> {
 
 /** The `sourceControl.authStatus` fields the GitLab identity read uses (PROTOCOL §5.27). */
 interface ForgeAuthStatusResult {
+  provider?: unknown;
   isConfigured?: boolean;
   host?: unknown;
-  user?: { login?: unknown } | null;
+  user?: { id?: unknown; login?: unknown } | null;
 }
 
 /**
@@ -968,6 +1070,128 @@ interface ForgeAuthStatusResult {
  * the local sidecar's hello, never on the host's.
  */
 const IDENTITY_SEAM_MIN_PROTOCOL = { major: 10, minor: 8 } as const;
+
+function identitySeamSupported(): boolean {
+  return protocolVersionAtLeast(
+    getConnectedDaemonProtocolVersion(LOCAL_CONNECTION_ID),
+    IDENTITY_SEAM_MIN_PROTOCOL.major,
+    IDENTITY_SEAM_MIN_PROTOCOL.minor,
+  );
+}
+
+/** Validate the daemon's canonical authority, never repair a malformed wire identity. */
+function validIdentity(value: unknown): value is PrincipalIdentity {
+  if (!value || typeof value !== 'object') return false;
+  const { provider, host, externalUserId } = value as Partial<PrincipalIdentity>;
+  if (provider !== 'github' && provider !== 'gitlab') return false;
+  if (
+    typeof host !== 'string' ||
+    typeof externalUserId !== 'string' ||
+    !externalUserId ||
+    externalUserId.trim() !== externalUserId
+  )
+    return false;
+  if (provider === 'github') return host === GITHUB_HOST;
+  try {
+    const url = new URL(`https://${host}`);
+    return (
+      url.host === host &&
+      url.pathname === '/' &&
+      !url.username &&
+      !url.password &&
+      !url.search &&
+      !url.hash
+    );
+  } catch {
+    return false;
+  }
+}
+
+function sameIdentity(a: LocalIdentity, b: LocalIdentity | null): boolean {
+  return (
+    b !== null &&
+    a.provider === b.provider &&
+    a.host === b.host &&
+    a.externalUserId === b.externalUserId &&
+    a.login === b.login
+  );
+}
+
+/** Old hosts omit the field; old sidecars cannot select an unpinned neutral identity. */
+function hasIdentityRequirement(inspection: InviteInspection): boolean {
+  return (
+    Object.hasOwn(inspection, 'pinIdentity') &&
+    (inspection.pinIdentity !== null || identitySeamSupported())
+  );
+}
+
+/**
+ * Explicit pins override the local choice. Explicit null follows principal.me
+ * (the Settings identity), without asking an unrelated forge. Omission keeps
+ * the legacy GitHub-first flow; null on a pre-seam sidecar does too. A pin is
+ * always enforced, even on an old sidecar, and is never treated as unpinned.
+ */
+async function readInviteIdentity(
+  client: JsonRpcClient,
+  inspection: InviteInspection,
+): Promise<LocalIdentity | null> {
+  if (!hasIdentityRequirement(inspection)) return readLocalIdentity(client);
+  const pin = inspection.pinIdentity;
+  const failure = new InviteIdentityError(pin === null ? 'identity-unavailable' : 'pin-mismatch');
+  let required: PrincipalIdentity;
+  if (pin !== null) {
+    if (!validIdentity(pin)) throw failure;
+    required = pin;
+  } else {
+    const principal = await client.request<{ identity?: unknown }>('principal.me', {});
+    if (principal?.identity == null) return null;
+    if (!validIdentity(principal.identity)) throw failure;
+    required = principal.identity;
+  }
+  if (required.provider === 'github') {
+    let result: { user?: { id?: unknown; login?: unknown } | null };
+    try {
+      result = await client.request('github.getUser');
+    } catch (error) {
+      const refusal = IdentityProofError.from(error);
+      if (refusal.proofCode === 'rate-limited') throw refusal;
+      throw failure;
+    }
+    const user = result?.user;
+    if (user == null) return null;
+    const login = nonBlank(user.login);
+    if (
+      !login ||
+      typeof user.id !== 'number' ||
+      !Number.isSafeInteger(user.id) ||
+      String(user.id) !== required.externalUserId
+    )
+      throw failure;
+    return { ...required, login };
+  }
+  if (!identitySeamSupported()) throw failure;
+  let status: ForgeAuthStatusResult;
+  try {
+    status = await client.request('sourceControl.authStatus', {
+      provider: required.provider,
+      host: required.host,
+    });
+  } catch (error) {
+    const refusal = IdentityProofError.from(error, 'gitlab');
+    if (refusal.proofCode === 'rate-limited') throw refusal;
+    throw failure;
+  }
+  const login = nonBlank(status?.user?.login);
+  if (
+    !login ||
+    status?.isConfigured !== true ||
+    status.provider !== required.provider ||
+    status.host !== required.host ||
+    status.user?.id !== required.externalUserId
+  )
+    throw failure;
+  return { ...required, login };
+}
 
 /**
  * The forge account the guest's own daemon is signed in as: GitHub when it
@@ -982,12 +1206,7 @@ const IDENTITY_SEAM_MIN_PROTOCOL = { major: 10, minor: 8 } as const;
 async function readLocalIdentity(client: JsonRpcClient): Promise<LocalIdentity | null> {
   const githubLogin = await readLocalLogin(client);
   if (githubLogin !== null) return { provider: 'github', host: GITHUB_HOST, login: githubLogin };
-  const seamSupported = protocolVersionAtLeast(
-    getConnectedDaemonProtocolVersion(LOCAL_CONNECTION_ID),
-    IDENTITY_SEAM_MIN_PROTOCOL.major,
-    IDENTITY_SEAM_MIN_PROTOCOL.minor,
-  );
-  if (!seamSupported) return null;
+  if (!identitySeamSupported()) return null;
   try {
     const result = await client.request<ForgeAuthStatusResult>('sourceControl.authStatus', {
       provider: 'gitlab',
@@ -1257,6 +1476,7 @@ export async function routeInviteLinkFromOs(
  * else is logged as `unknown` — `Error.name` is arbitrary, writable text.
  */
 function describeErrorForLog(error: unknown): Record<string, unknown> {
+  if (error instanceof InviteIdentityError) return { kind: 'identity', reason: error.reason };
   if (error instanceof PinMismatchError) return { kind: 'pin-mismatch' };
   if (error instanceof InviteRpcError) {
     return { kind: 'rpc', rpcCode: error.code, inviteCode: error.inviteCode };
@@ -1410,6 +1630,7 @@ async function showPlaintextWarning(
  * crosses to the renderer — never the error's text.
  */
 function classifyInviteFailure(error: unknown): InviteFailureReason {
+  if (error instanceof InviteIdentityError) return error.reason;
   if (error instanceof PinMismatchError) return 'cert-mismatch';
   if (error instanceof InviteTransportError) return error.transportCode;
   if (error instanceof guestSessionsStore.GuestEncryptionUnavailableError) {

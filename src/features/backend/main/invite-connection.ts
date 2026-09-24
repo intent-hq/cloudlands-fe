@@ -47,6 +47,7 @@ import { createRequire } from 'node:module';
 import type { IncomingMessage } from 'node:http';
 import type { RawData, WebSocket as WsWebSocket } from 'ws';
 import { Logger } from '$shared/logger';
+import type { PrincipalIdentity } from '../../workspace-sharing/types';
 import { PinMismatchError, normalizeFingerprint, pinnedTlsConnect } from './backend-connection';
 import {
   createTailcatTunnel,
@@ -100,6 +101,8 @@ export interface InviteInspection {
   workspaceTitle: string;
   hostname?: string;
   prettyHostname?: string;
+  /** Required account; null means unpinned. Older hosts omit this field. */
+  pinIdentity?: PrincipalIdentity | null;
 }
 
 /** `invite.challenge` result: the inspection plus the nonce the proof gist must carry. */

@@ -70,6 +70,12 @@
           },
         },
       },
+      'notice-pin-mismatch': {
+        props: { notice: { ...base, kind: 'failed', reason: 'pin-mismatch' } },
+      },
+      'notice-identity-unavailable': {
+        props: { notice: { ...base, kind: 'failed', reason: 'identity-unavailable' } },
+      },
     },
   });
 </script>

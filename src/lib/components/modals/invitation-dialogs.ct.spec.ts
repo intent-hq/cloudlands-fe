@@ -44,3 +44,27 @@ test('joining remains cancellable without duplicate join requests', async ({ mou
   await expect(page.getByRole('alertdialog')).toHaveCount(0);
   await expect(page.getByLabel('Responses')).toHaveText('open,cancel');
 });
+
+for (const noticeReason of ['pin-mismatch', 'identity-unavailable'] as const) {
+  test(`${noticeReason}: account guidance fits a narrow dialog and acknowledges with keyboard`, async ({
+    mount,
+    page,
+  }) => {
+    await page.setViewportSize({ width: 360, height: 480 });
+    await mount(Harness, { props: { kind: 'notice', noticeReason } });
+    const opener = page.getByRole('button', { name: 'Open invitation' });
+    await opener.click();
+    const dialog = page.getByRole('alertdialog');
+    await expect(dialog).toBeVisible();
+    expect(
+      await dialog.evaluate((node) => node.scrollWidth - node.clientWidth),
+    ).toBeLessThanOrEqual(1);
+    const acknowledge = dialog.getByRole('button', { name: 'OK', exact: true });
+    await expect(acknowledge).toBeInViewport();
+    await acknowledge.focus();
+    await page.keyboard.press('Enter');
+    await expect(dialog).toHaveCount(0);
+    await expect(opener).toBeFocused();
+    await expect(page.getByLabel('Responses')).toHaveText('acknowledged');
+  });
+}

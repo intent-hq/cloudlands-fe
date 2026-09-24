@@ -54,6 +54,7 @@ export type InviteFailureReason =
   | 'revoked'
   | 'redeemed'
   | 'pin-mismatch'
+  | 'identity-unavailable'
   | 'proof-invalid'
   | 'proof-expired'
   | 'host-github-unreachable'

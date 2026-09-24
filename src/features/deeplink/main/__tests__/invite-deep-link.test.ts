@@ -2748,6 +2748,8 @@ describe('handleInviteDeepLink — GitLab identity', () => {
     login: 'gl-user',
     provider: 'gitlab',
     host: GITLAB_HOST,
+    externalUserId: '4711',
+    avatarUrl: null,
   };
 
   /** A guest daemon with no GitHub connection and a configured GitLab one. */
@@ -2760,7 +2762,7 @@ describe('handleInviteDeepLink — GitLab identity', () => {
         provider: 'gitlab',
         host: GITLAB_HOST,
         isConfigured: true,
-        user: { login: 'gl-user' },
+        user: { id: '4711', login: 'gl-user' },
       };
     });
     onLocal('sourceControl.identityProof.create', () => GITLAB_PROOF);
@@ -2844,7 +2846,7 @@ describe('handleInviteDeepLink — GitLab identity', () => {
     expect(openBackendWindow).toHaveBeenCalledWith('guest-id');
   });
 
-  it('GitHub wins when both forges are connected (the GitLab probe is never made)', async () => {
+  it('legacy missing pin metadata keeps GitHub first when both forges are connected', async () => {
     onLocal('github.getUser', () => ({ user: { login: 'octocat' } }));
     onLocal('github.identityProof.create', () => PROOF);
     onLocal('github.identityProof.delete', () => ({ ok: true }));
@@ -2856,6 +2858,59 @@ describe('handleInviteDeepLink — GitLab identity', () => {
       gistId: PROOF.gistId,
       login: PROOF.login,
     });
+  });
+
+  it('a GitLab pin selects GitLab with both forges connected and cleans up its proof', async () => {
+    challenge.mockResolvedValue({
+      ...CHALLENGE,
+      pinIdentity: { provider: 'gitlab', host: GITLAB_HOST, externalUserId: '4711' },
+    });
+    onLocal('github.getUser', () => ({ user: { id: 42, login: 'octocat' } }));
+    onLocal('github.identityProof.create', () => PROOF);
+    onLocal('github.identityProof.delete', () => ({ ok: true }));
+    onLocal('sourceControl.authStatus', (params) => {
+      expect(params).toEqual({ provider: 'gitlab', host: GITLAB_HOST });
+      return {
+        provider: 'gitlab',
+        host: GITLAB_HOST,
+        isConfigured: true,
+        user: { id: '4711', login: 'gl-user' },
+      };
+    });
+    showInviteConsent.mockReturnValue(fakeConsent('open').prompt);
+
+    await handleInviteDeepLink(LINK);
+
+    expect(challenge).toHaveBeenCalledExactlyOnceWith('inv-1', SECRET);
+    expect(localCalls('sourceControl.identityProof.create')).toEqual([
+      [
+        'sourceControl.identityProof.create',
+        {
+          provider: 'gitlab',
+          host: GITLAB_HOST,
+          nonce: CHALLENGE.nonce,
+          hostLabel: '192.168.1.10',
+        },
+      ],
+    ]);
+    expect(prove).toHaveBeenCalledExactlyOnceWith('inv-1', SECRET, {
+      nonce: CHALLENGE.nonce,
+      provider: 'gitlab',
+      host: GITLAB_HOST,
+      proofId: 'snip-77',
+      login: 'gl-user',
+    });
+    expect(localCalls('sourceControl.identityProof.delete')).toEqual([
+      [
+        'sourceControl.identityProof.delete',
+        { provider: 'gitlab', host: GITLAB_HOST, proofId: 'snip-77' },
+      ],
+    ]);
+    expect(localCalls('github.identityProof.create')).toEqual([]);
+    for (const method of ['settings.set', 'sourceControl.revoke', 'github.disconnect']) {
+      expect(localCalls(method)).toEqual([]);
+    }
+    expect(guestAdd).toHaveBeenCalledOnce();
   });
 
   it('a GitLab connection without a resolved user or a daemon without sourceControl.* reads as not connected', async () => {
@@ -3005,6 +3060,499 @@ describe('handleInviteDeepLink — GitLab identity', () => {
 // `opening` from the point of no return to the window. Cancel while
 // connecting aborts the join quietly; Cancel while opening only skips the
 // window — the credential is stored and the membership stands.
+
+describe('handleInviteDeepLink — invitation identity requirements', () => {
+  const GITLAB_PIN = {
+    provider: 'gitlab',
+    host: 'gitlab.example.com:8443',
+    externalUserId: '4711',
+  };
+  const GITHUB_PIN = { provider: 'github', host: 'github.com', externalUserId: '42' };
+  const snippet = {
+    ...GITLAB_PIN,
+    proofId: 'snippet-1',
+    login: 'gl-user',
+    avatarUrl: null,
+  };
+  const status = {
+    provider: 'gitlab',
+    host: GITLAB_PIN.host,
+    isConfigured: true,
+    oauthUrl: '',
+    configuredButNeedsUpdate: false,
+    updatedScopes: '',
+    deviceFlow: null,
+    method: 'pat',
+    deviceGrantSupported: false,
+    user: { id: '4711', login: 'gl-user' },
+  };
+
+  function setPrincipal(identity: unknown): void {
+    onLocal('principal.me', (params) => {
+      expect(params).toEqual({});
+      return {
+        id: 'primary',
+        login: 'gl-user',
+        displayName: null,
+        avatarUrl: null,
+        isAdministrator: true,
+        identity,
+      };
+    });
+  }
+
+  function expectNoProof(): void {
+    expect(localCalls('github.identityProof.create')).toEqual([]);
+    expect(localCalls('sourceControl.identityProof.create')).toEqual([]);
+    expect(prove).not.toHaveBeenCalled();
+    expect(guestAdd).not.toHaveBeenCalled();
+  }
+
+  beforeEach(() => {
+    localProtocolVersion.mockReturnValue('10.8'); // protocol-version-ok: fixture hello
+    challenge.mockResolvedValue({ ...CHALLENGE, pinIdentity: GITLAB_PIN });
+    onLocal('github.getUser', () => ({ user: { id: 42, login: 'octocat' } }));
+    onLocal('sourceControl.authStatus', (params) => {
+      expect(params).toEqual({ provider: 'gitlab', host: GITLAB_PIN.host });
+      return status;
+    });
+    onLocal('sourceControl.identityProof.create', () => snippet);
+    onLocal('sourceControl.identityProof.delete', () => ({ ok: true }));
+    setPrincipal(GITHUB_PIN);
+    showInviteConsent.mockImplementation(() => fakeConsent('open').prompt);
+    showInviteNotice.mockResolvedValue(true);
+  });
+
+  it('a GitLab pin never probes a rate-limited irrelevant GitHub account', async () => {
+    onLocal('github.getUser', () => {
+      throw localRefusal('rate-limited');
+    });
+    await handleInviteDeepLink(LINK);
+    expect(localCalls('github.getUser')).toEqual([]);
+    expect(localCalls('principal.me')).toEqual([]);
+    expect(localCalls('sourceControl.authStatus')).toEqual(
+      Array(3).fill(['sourceControl.authStatus', { provider: 'gitlab', host: GITLAB_PIN.host }]),
+    );
+    expect(prove).toHaveBeenCalledExactlyOnceWith('inv-1', SECRET, {
+      nonce: CHALLENGE.nonce,
+      provider: 'gitlab',
+      host: GITLAB_PIN.host,
+      proofId: snippet.proofId,
+      login: 'gl-user',
+    });
+    expect(localCalls('sourceControl.identityProof.delete')).toEqual([
+      [
+        'sourceControl.identityProof.delete',
+        { provider: 'gitlab', host: GITLAB_PIN.host, proofId: snippet.proofId },
+      ],
+    ]);
+  });
+
+  it('a GitHub pin overrides selected GitLab and never probes rate-limited GitLab', async () => {
+    challenge.mockResolvedValue({ ...CHALLENGE, pinIdentity: GITHUB_PIN });
+    setPrincipal(GITLAB_PIN);
+    onLocal('sourceControl.authStatus', () => {
+      throw localRefusal('rate-limited');
+    });
+    await handleInviteDeepLink(LINK);
+    expect(localCalls('sourceControl.authStatus')).toEqual([]);
+    expect(localCalls('principal.me')).toEqual([]);
+    expect(prove).toHaveBeenCalledExactlyOnceWith('inv-1', SECRET, {
+      nonce: CHALLENGE.nonce,
+      gistId: PROOF.gistId,
+      login: 'octocat',
+    });
+    expect(localCalls('github.identityProof.delete')).toEqual([
+      ['github.identityProof.delete', { gistId: PROOF.gistId }],
+    ]);
+  });
+
+  it.each(['gitlab.com', 'gitlab.acme.internal:9443', '[::1]:8443'])(
+    'uses the canonical pinned instance %s in probe, proof and cleanup',
+    async (host) => {
+      challenge.mockResolvedValue({ ...CHALLENGE, pinIdentity: { ...GITLAB_PIN, host } });
+      onLocal('sourceControl.authStatus', (params) => {
+        expect(params).toEqual({ provider: 'gitlab', host });
+        return { ...status, host };
+      });
+      onLocal('sourceControl.identityProof.create', () => ({ ...snippet, host }));
+      await handleInviteDeepLink(LINK);
+      expect(localCalls('sourceControl.identityProof.create')).toEqual([
+        [
+          'sourceControl.identityProof.create',
+          { provider: 'gitlab', host, nonce: CHALLENGE.nonce, hostLabel: '192.168.1.10' },
+        ],
+      ]);
+      expect(prove).toHaveBeenCalledWith('inv-1', SECRET, {
+        nonce: CHALLENGE.nonce,
+        provider: 'gitlab',
+        host,
+        proofId: snippet.proofId,
+        login: 'gl-user',
+      });
+      expect(localCalls('sourceControl.identityProof.delete')).toEqual([
+        [
+          'sourceControl.identityProof.delete',
+          { provider: 'gitlab', host, proofId: snippet.proofId },
+        ],
+      ]);
+    },
+  );
+
+  it.each([
+    ['wrong provider', { provider: 'github' }],
+    ['wrong instance', { host: 'another.gitlab.example.com:8443' }],
+    ['same hostname, different port', { host: 'gitlab.example.com' }],
+    ['same login, different stable ID', { user: { id: '9000', login: 'gl-user' } }],
+    ['missing stable ID', { user: { login: 'gl-user' } }],
+    ['numeric instead of string ID', { user: { id: 4711, login: 'gl-user' } }],
+    ['invented externalUserId field', { user: { externalUserId: '4711', login: 'gl-user' } }],
+    ['no connection', { isConfigured: false, user: null }],
+    ['no resolved user', { user: null }],
+    ['missing login', { user: { id: '4711' } }],
+  ])('a GitLab pin refuses %s before publishing any proof', async (_label, patch) => {
+    onLocal('sourceControl.authStatus', () => ({ ...status, ...patch }));
+    await handleInviteDeepLink(LINK);
+    expectNoProof();
+    expect(localCalls('github.getUser')).toEqual([]);
+    expect(localCalls('github.connect')).toEqual([]);
+    expect(showInviteConsent).not.toHaveBeenCalled();
+    expect(showInviteNotice).toHaveBeenCalledWith(
+      expect.objectContaining({ reason: 'pin-mismatch' }),
+    );
+  });
+
+  it.each([
+    undefined,
+    false,
+    [],
+    {},
+    '',
+    { ...GITLAB_PIN, provider: 'other' },
+    { ...GITLAB_PIN, host: '' },
+    { ...GITLAB_PIN, host: 'https://gitlab.example.com' },
+    { ...GITLAB_PIN, host: 'GitLab.example.com' },
+    { ...GITLAB_PIN, host: 'gitlab.example.com/path' },
+    { ...GITLAB_PIN, host: 'u@github.com' },
+    { ...GITLAB_PIN, host: 'gitlab.com?secret=hidden' },
+    { ...GITLAB_PIN, externalUserId: '' },
+    { ...GITLAB_PIN, externalUserId: ' 4711' },
+    { ...GITLAB_PIN, externalUserId: 4711 },
+    { ...GITHUB_PIN, host: 'github.enterprise.test' },
+  ])('malformed non-null pin metadata fails closed: %j', async (pinIdentity) => {
+    challenge.mockResolvedValue({ ...CHALLENGE, pinIdentity });
+    await handleInviteDeepLink(LINK);
+    expectNoProof();
+    expect(localRequest).not.toHaveBeenCalled();
+    expect(showInviteNotice).toHaveBeenCalledWith(
+      expect.objectContaining({ reason: 'pin-mismatch' }),
+    );
+  });
+
+  it.each([GITHUB_PIN, GITLAB_PIN])(
+    'explicitly unpinned uses principal.me identity $provider',
+    async (identity) => {
+      challenge.mockResolvedValue({ ...CHALLENGE, pinIdentity: null });
+      setPrincipal(identity);
+      if (identity.provider === 'gitlab') {
+        onLocal('github.getUser', () => {
+          throw localRefusal('rate-limited');
+        });
+      } else {
+        onLocal('sourceControl.authStatus', () => {
+          throw localRefusal('rate-limited');
+        });
+      }
+      await handleInviteDeepLink(LINK);
+      expect(localCalls('principal.me')).toEqual(Array(3).fill(['principal.me', {}]));
+      expect(showInviteConsent.mock.calls[0][0]).toMatchObject({
+        mode: 'prove',
+        identity: {
+          provider: identity.provider,
+          host: identity.host,
+        },
+      });
+      expect(
+        localCalls(identity.provider === 'gitlab' ? 'github.getUser' : 'sourceControl.authStatus'),
+      ).toEqual([]);
+      expect(guestAdd).toHaveBeenCalledOnce();
+      for (const [method] of localRequest.mock.calls) {
+        expect([
+          'principal.me',
+          'github.getUser',
+          'sourceControl.authStatus',
+          'github.identityProof.create',
+          'github.identityProof.delete',
+          'sourceControl.identityProof.create',
+          'sourceControl.identityProof.delete',
+        ]).toContain(method);
+      }
+    },
+  );
+
+  it('a malformed chosen identity never falls back to connected GitHub', async () => {
+    challenge.mockResolvedValue({ ...CHALLENGE, pinIdentity: null });
+    setPrincipal({ ...GITLAB_PIN, externalUserId: null });
+    await handleInviteDeepLink(LINK);
+    expectNoProof();
+    expect(localCalls('github.getUser')).toEqual([]);
+    expect(showInviteNotice).toHaveBeenCalledWith(
+      expect.objectContaining({ reason: 'identity-unavailable' }),
+    );
+  });
+
+  it('an unavailable selected GitLab account never falls back to connected GitHub', async () => {
+    challenge.mockResolvedValue({ ...CHALLENGE, pinIdentity: null });
+    setPrincipal(GITLAB_PIN);
+    onLocal('sourceControl.authStatus', () => ({ ...status, isConfigured: false, user: null }));
+    await handleInviteDeepLink(LINK);
+    expectNoProof();
+    expect(localCalls('github.getUser')).toEqual([]);
+    expect(showInviteNotice).toHaveBeenCalledWith(
+      expect.objectContaining({ reason: 'identity-unavailable' }),
+    );
+  });
+
+  it('explicit null on an old sidecar keeps the documented GitHub legacy path', async () => {
+    localProtocolVersion.mockReturnValue('10.7'); // protocol-version-ok: old-sidecar fixture
+    challenge.mockResolvedValue({ ...CHALLENGE, pinIdentity: null });
+    setPrincipal(GITLAB_PIN);
+    await handleInviteDeepLink(LINK);
+    expect(localCalls('principal.me')).toEqual([]);
+    expect(localCalls('sourceControl.authStatus')).toEqual([]);
+    expect(localCalls('github.identityProof.create')).toHaveLength(1);
+    expect(guestAdd).toHaveBeenCalledOnce();
+  });
+
+  it('an old sidecar cannot bypass a GitLab pin through GitHub', async () => {
+    localProtocolVersion.mockReturnValue('10.7'); // protocol-version-ok: old-sidecar fixture
+    await handleInviteDeepLink(LINK);
+    expectNoProof();
+    expect(localRequest).not.toHaveBeenCalled();
+  });
+
+  it.each([42, 9000])(
+    'an old sidecar still enforces a GitHub pin against numeric ID %s',
+    async (id) => {
+      localProtocolVersion.mockReturnValue('10.7'); // protocol-version-ok: old-sidecar fixture
+      challenge.mockResolvedValue({ ...CHALLENGE, pinIdentity: GITHUB_PIN });
+      onLocal('github.getUser', () => ({ user: { id, login: 'octocat' } }));
+      await handleInviteDeepLink(LINK);
+      if (id === 42) expect(guestAdd).toHaveBeenCalledOnce();
+      else expectNoProof();
+      expect(localCalls('sourceControl.authStatus')).toEqual([]);
+    },
+  );
+
+  it('a pinned account change during consent is rejected before proof creation', async () => {
+    const consent = fakeConsent('pending');
+    showInviteConsent.mockReturnValueOnce(consent.prompt);
+    const join = handleInviteDeepLink(LINK);
+    await vi.waitFor(() => expect(showInviteConsent).toHaveBeenCalledOnce());
+    onLocal('sourceControl.authStatus', () => ({
+      ...status,
+      user: { id: '9000', login: 'gl-user' },
+    }));
+    consent.decide('open');
+    await join;
+    expectNoProof();
+    expect(consent.prompt.dismiss).toHaveBeenCalledWith('failed');
+  });
+
+  it('an unpinned chosen provider change during consent requests consent for the new account', async () => {
+    challenge.mockResolvedValue({ ...CHALLENGE, pinIdentity: null });
+    setPrincipal(GITLAB_PIN);
+    const first = fakeConsent('pending');
+    showInviteConsent.mockReturnValueOnce(first.prompt);
+    const join = handleInviteDeepLink(LINK);
+    await vi.waitFor(() => expect(showInviteConsent).toHaveBeenCalledOnce());
+    setPrincipal(GITHUB_PIN);
+    first.decide('open');
+    await join;
+    expect(showInviteConsent.mock.calls.map(([p]) => p.identity.provider)).toEqual([
+      'gitlab',
+      'github',
+    ]);
+    expect(localCalls('sourceControl.identityProof.create')).toEqual([]);
+    expect(localCalls('github.identityProof.create')).toHaveLength(1);
+    expect(first.prompt.dismiss).toHaveBeenCalledWith('superseded');
+  });
+
+  it.each([
+    { externalUserId: '9000' },
+    { externalUserId: null },
+    { provider: 'github' },
+    { host: 'other.gitlab.example.com:8443' },
+  ])('a changed proof identity %j is deleted without being sent to the host', async (patch) => {
+    onLocal('sourceControl.identityProof.create', () => ({ ...snippet, ...patch }));
+    await handleInviteDeepLink(LINK);
+    expect(prove).not.toHaveBeenCalled();
+    expect(guestAdd).not.toHaveBeenCalled();
+    expect(localCalls('sourceControl.identityProof.delete')).toEqual([
+      [
+        'sourceControl.identityProof.delete',
+        { provider: 'gitlab', host: GITLAB_PIN.host, proofId: snippet.proofId },
+      ],
+    ]);
+  });
+
+  it('same-login GitHub account swap during proof creation is deleted and never proven', async () => {
+    challenge.mockResolvedValue({ ...CHALLENGE, pinIdentity: GITHUB_PIN });
+    onLocal('github.identityProof.create', () => {
+      onLocal('github.getUser', () => ({ user: { id: 9000, login: 'octocat' } }));
+      return PROOF;
+    });
+    await handleInviteDeepLink(LINK);
+    expect(prove).not.toHaveBeenCalled();
+    expect(localCalls('github.identityProof.delete')).toHaveLength(1);
+  });
+
+  it('a changed pin on refreshed challenge is checked before another proof', async () => {
+    prove.mockRejectedValueOnce(new InviteRpcError(-32602, { code: 'proof-expired' }));
+    challenge
+      .mockResolvedValueOnce({ ...CHALLENGE, pinIdentity: GITLAB_PIN })
+      .mockResolvedValueOnce({
+        ...CHALLENGE,
+        nonce: 'nonce-2',
+        pinIdentity: { ...GITLAB_PIN, externalUserId: '9000' },
+      });
+    await handleInviteDeepLink(LINK);
+    expect(challenge).toHaveBeenCalledTimes(2);
+    expect(localCalls('sourceControl.identityProof.create')).toHaveLength(1);
+    expect(localCalls('sourceControl.identityProof.delete')).toHaveLength(1);
+    expect(prove).toHaveBeenCalledTimes(1);
+    expect(guestAdd).not.toHaveBeenCalled();
+  });
+
+  it('a refreshed pin selecting another connected forge needs fresh consent', async () => {
+    prove.mockRejectedValueOnce(new InviteRpcError(-32602, { code: 'proof-invalid' }));
+    challenge
+      .mockResolvedValueOnce({ ...CHALLENGE, pinIdentity: GITLAB_PIN })
+      .mockResolvedValueOnce({ ...CHALLENGE, nonce: 'nonce-2', pinIdentity: GITHUB_PIN });
+    await handleInviteDeepLink(LINK);
+    expect(showInviteConsent.mock.calls.map(([p]) => p.identity.provider)).toEqual([
+      'gitlab',
+      'github',
+    ]);
+    expect(prove).toHaveBeenLastCalledWith('inv-1', SECRET, {
+      nonce: 'nonce-2',
+      gistId: PROOF.gistId,
+      login: PROOF.login,
+    });
+    expect(guestAdd).toHaveBeenCalledOnce();
+  });
+
+  it.each([42, 9000])('GitHub pin revalidates stable ID %s after sign-in', async (id) => {
+    challenge.mockResolvedValue({ ...CHALLENGE, pinIdentity: GITHUB_PIN });
+    onLocal('github.getUser', () => ({ user: null }));
+    const signingIn = fakeConsent('pending');
+    showInviteConsent.mockReturnValueOnce(signingIn.prompt);
+    const join = handleInviteDeepLink(LINK);
+    await vi.waitFor(() => expect(showInviteConsent).toHaveBeenCalledOnce());
+    expect(showInviteConsent.mock.calls[0][0].mode).toBe('sign-in-required');
+    onLocal('github.getUser', () => ({ user: { id, login: 'octocat' } }));
+    emitAuthChanged('authorized');
+    await join;
+    if (id === 42) expect(guestAdd).toHaveBeenCalledOnce();
+    else expectNoProof();
+    expect(localCalls('sourceControl.authStatus')).toEqual([]);
+  });
+
+  it('a pinned relevant probe rate limit stays a rate limit with no fallback', async () => {
+    onLocal('sourceControl.authStatus', () => {
+      throw localRefusal('rate-limited');
+    });
+    await handleInviteDeepLink(LINK);
+    expectNoProof();
+    expect(localCalls('github.getUser')).toEqual([]);
+    expect(showInviteNotice).toHaveBeenCalledWith(
+      expect.objectContaining({ reason: 'gitlab-rate-limited' }),
+    );
+  });
+
+  it.each([2, 3])(
+    'cancel during account revalidation probe %s ends quietly and cleans any proof',
+    async (blockedProbe) => {
+      const consent = fakeConsent('open');
+      showInviteConsent.mockReturnValueOnce(consent.prompt);
+      let release!: (result: unknown) => void;
+      let probes = 0;
+      onLocal('sourceControl.authStatus', () => {
+        if (++probes === blockedProbe)
+          return new Promise((resolve) => {
+            release = resolve;
+          });
+        return status;
+      });
+      const join = handleInviteDeepLink(LINK);
+      await vi.waitFor(() => expect(probes).toBe(blockedProbe));
+      consent.cancelWaiting();
+      await join;
+      release(status);
+      await Promise.resolve();
+      expect(prove).not.toHaveBeenCalled();
+      expect(guestAdd).not.toHaveBeenCalled();
+      expect(showInviteNotice).not.toHaveBeenCalled();
+      expect(localCalls('sourceControl.identityProof.create')).toHaveLength(
+        blockedProbe === 3 ? 1 : 0,
+      );
+      expect(localCalls('sourceControl.identityProof.delete')).toHaveLength(
+        blockedProbe === 3 ? 1 : 0,
+      );
+      expect(consent.prompt.dismiss).toHaveBeenCalledWith('cancelled');
+      expect(close).toHaveBeenCalledOnce();
+    },
+  );
+
+  it('a refreshed challenge cannot drop known pin metadata and use a legacy fallback', async () => {
+    prove.mockRejectedValueOnce(new InviteRpcError(-32602, { code: 'proof-expired' }));
+    challenge
+      .mockResolvedValueOnce({ ...CHALLENGE, pinIdentity: GITLAB_PIN })
+      .mockResolvedValueOnce(CHALLENGE);
+    await handleInviteDeepLink(LINK);
+    expect(localCalls('github.getUser')).toEqual([]);
+    expect(localCalls('sourceControl.identityProof.create')).toHaveLength(1);
+    expect(localCalls('sourceControl.identityProof.delete')).toHaveLength(1);
+    expect(prove).toHaveBeenCalledTimes(1);
+    expect(guestAdd).not.toHaveBeenCalled();
+  });
+
+  it('unchanged pin on refreshed challenge reuses consent and publishes only the new nonce', async () => {
+    prove.mockRejectedValueOnce(new InviteRpcError(-32602, { code: 'proof-expired' }));
+    challenge
+      .mockResolvedValueOnce({ ...CHALLENGE, pinIdentity: GITLAB_PIN })
+      .mockResolvedValueOnce({ ...CHALLENGE, pinIdentity: GITLAB_PIN, nonce: 'nonce-2' });
+    await handleInviteDeepLink(LINK);
+    expect(showInviteConsent).toHaveBeenCalledOnce();
+    expect(localCalls('sourceControl.identityProof.create')[1]).toEqual([
+      'sourceControl.identityProof.create',
+      { provider: 'gitlab', host: GITLAB_PIN.host, nonce: 'nonce-2', hostLabel: '192.168.1.10' },
+    ]);
+    expect(guestAdd).toHaveBeenCalledOnce();
+    expect(localCalls('sourceControl.identityProof.delete')).toHaveLength(2);
+  });
+
+  it('a changed chosen account during proof creation is deleted before fresh consent', async () => {
+    challenge.mockResolvedValue({ ...CHALLENGE, pinIdentity: null });
+    setPrincipal(GITLAB_PIN);
+    onLocal('sourceControl.identityProof.create', () => {
+      setPrincipal(GITHUB_PIN);
+      return snippet;
+    });
+    await handleInviteDeepLink(LINK);
+    expect(showInviteConsent.mock.calls.map(([p]) => p.identity.provider)).toEqual([
+      'gitlab',
+      'github',
+    ]);
+    expect(localCalls('sourceControl.identityProof.delete')).toHaveLength(1);
+    expect(prove).toHaveBeenCalledExactlyOnceWith('inv-1', SECRET, {
+      nonce: CHALLENGE.nonce,
+      gistId: PROOF.gistId,
+      login: PROOF.login,
+    });
+  });
+});
+
 describe('handleInviteDeepLink — progress dialog', () => {
   const RETURNING_SESSION = {
     id: 'guest-id',

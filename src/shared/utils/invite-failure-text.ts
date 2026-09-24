@@ -26,6 +26,8 @@ export function describeInviteFailureReason(
       return m.deeplink_inviteError_redeemed();
     case 'pin-mismatch':
       return m.deeplink_inviteError_pinMismatch();
+    case 'identity-unavailable':
+      return m.deeplink_inviteError_identityUnavailable();
     case 'proof-invalid':
       return m.deeplink_inviteError_proofInvalid();
     case 'proof-expired':
