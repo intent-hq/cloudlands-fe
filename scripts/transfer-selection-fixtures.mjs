@@ -37,6 +37,9 @@ async function readRequiredJson(file) {
 // Connected runs supply the freshly emitted response path. Component CI supplies
 // an explicit monorepo fixture root and consumes its checked-in golden. Neither
 // mode invents sessions or silently skips when the shared contract is absent.
+// Preserve the monorepo layout: docs/protocol/fixtures/transfer-selection and
+// scripts/check-transfer-selection-contract.mjs must come from the same checkout.
+// An explicitly empty root/output is invalid; only an unset value uses defaults.
 export async function loadTransferSelectionFixtures({
   fixtureRoot = process.env.TRANSFER_SELECTION_FIXTURE_ROOT ?? monorepoFixtures,
   generated = process.env.TRANSFER_SELECTION_GENERATED,
@@ -45,12 +48,13 @@ export async function loadTransferSelectionFixtures({
 } = {}) {
   const root = requiredPath(fixtureRoot, 'TRANSFER_SELECTION_FIXTURE_ROOT');
   const generatedPath = requiredPath(
-    generated ?? path.join(root, 'public-sessions.json'),
+    generated === undefined ? path.join(root, 'public-sessions.json') : generated,
     'TRANSFER_SELECTION_GENERATED',
   );
   const validator = requiredPath(
-    validatorPath ??
-      path.resolve(root, '../../../../scripts/check-transfer-selection-contract.mjs'),
+    validatorPath === undefined
+      ? path.resolve(root, '../../../../scripts/check-transfer-selection-contract.mjs')
+      : validatorPath,
     'validatorPath',
   );
   let shared;

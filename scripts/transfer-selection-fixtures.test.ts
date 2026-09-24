@@ -6,11 +6,12 @@ import { cp, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import os from 'node:os';
 import path from 'node:path';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { loadTransferSelectionFixtures } from './transfer-selection-fixtures.mjs';
 
 const directories: string[] = [];
 afterEach(async () => {
+  vi.unstubAllEnvs();
   await Promise.all(directories.splice(0).map((dir) => rm(dir, { recursive: true, force: true })));
 });
 
@@ -24,6 +25,25 @@ describe('transfer selection fixture loading', () => {
   it.each(['fixtureRoot', 'generated', 'validatorPath'])('rejects an empty %s', async (key) => {
     await expect(loadTransferSelectionFixtures({ [key]: '' })).rejects.toThrow(/non-empty/);
   });
+
+  it.each(['fixtureRoot', 'generated', 'validatorPath'])(
+    'rejects invalid %s values',
+    async (key) => {
+      for (const value of [null, false, 0, ' ']) {
+        await expect(loadTransferSelectionFixtures({ [key]: value })).rejects.toThrow(/non-empty/);
+      }
+    },
+  );
+
+  it.each(['TRANSFER_SELECTION_FIXTURE_ROOT', 'TRANSFER_SELECTION_GENERATED'])(
+    'rejects an empty %s environment override',
+    async (key) => {
+      vi.stubEnv(key, '');
+      await expect(loadTransferSelectionFixtures()).rejects.toThrow(
+        `${key} must be a non-empty path`,
+      );
+    },
+  );
 
   it('fails clearly when the shared validator is missing', async () => {
     const root = await temporaryRoot();
