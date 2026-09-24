@@ -75,7 +75,7 @@
 >
   <nav
     bind:this={railElement}
-    class="flex h-full flex-col items-center gap-1 pt-[22px] pb-3"
+    class="flex h-full flex-col items-center gap-1 pt-[23px] pb-3"
     aria-label={m.workspace_layout_ariaLabel()}
     data-workspace-sidebar-rail
   >
