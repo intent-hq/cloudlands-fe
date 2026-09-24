@@ -4286,11 +4286,7 @@ function routeNestedDecisionHierarchy(svg: SVGSVGElement, edges: FlowchartRoute[
     const metadataTarget = diamondBoundaryPort(d, 'top', -8);
     const branchSource = diamondBoundaryPort(d, 'right', -8);
     const returnSource = diamondBoundaryPort(d, 'right', 8);
-    const returnTarget = pointAt(m, 0, 0.68);
-    const noY = Math.max(
-      Math.min(returnSource.y, returnTarget.y),
-      Math.min(s.y - 24, Math.max(returnSource.y, returnTarget.y)),
-    );
+    const returnTarget = { x: m.x, y: returnSource.y };
     const addSource = diamondBoundaryPort(d, 'bottom', -10);
     const retryTarget = diamondBoundaryPort(d, 'bottom', 10);
     const branchTarget = { x: m.x, y: branchSource.y };
@@ -4341,15 +4337,7 @@ function routeNestedDecisionHierarchy(svg: SVGSVGElement, edges: FlowchartRoute[
       {
         edge: returnBranch,
         role: 'decision-return',
-        points: [
-          returnSource,
-          { x: d.x + d.width + 40, y: returnSource.y },
-          { x: d.x + d.width + 40, y: noY },
-          { x: m.x - 12, y: noY },
-          { x: m.x - 12, y: returnTarget.y },
-          returnTarget,
-        ],
-        labelSegment: 2,
+        points: [returnSource, returnTarget],
         sourceSide: 'right',
       },
       {
