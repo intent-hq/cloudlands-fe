@@ -120,6 +120,14 @@ describe('explicit standalone reasoning titles', () => {
       ['Reading `<Widget>&amp;` literally', 'Reading <Widget>&amp; literally'],
       ['Checking &lt;Widget&gt; &amp; props', 'Checking <Widget> & props'],
       ['Reading &amp;lt;Widget&amp;gt; literally', 'Reading &lt;Widget&gt; literally'],
+      ['Checking<br>schema', 'Checking schema'],
+      ['Checking<br/>schema', 'Checking schema'],
+      ['Checking<BR />schema', 'Checking schema'],
+      ['Checking`<br>`schema', 'Checking<br>schema'],
+      ['Checking&lt;br&gt;schema', 'Checking<br>schema'],
+      ['Checking<br class="note">schema', 'Checking<br class="note">schema'],
+      ['Checking H<sub>2</sub>O', 'Checking H2O'],
+      ['Checking m<sup>2</sup>', 'Checking m2'],
       ['Reading &amp; writing', 'Reading & writing'],
       ['Reading &#35; and &#x1F600; entities', 'Reading # and 😀 entities'],
       ['Reading `&amp;` literally', 'Reading &amp; literally'],
@@ -157,6 +165,8 @@ describe('explicit standalone reasoning titles', () => {
     ['Checking <Widget> props', 'Checking props'],
     ['Reviewing Array<T> types', 'Reviewing Array types'],
     ['Checking <span>label</span> nodes', 'Checking label nodes'],
+    ['Checking<br>schema', 'Checkingschema'],
+    ['Checking<br/>schema', 'Checkingschema'],
     ['Reading &amp; writing', 'Reading &amp; writing'],
   ])('retains the legacy general/history projection for %s', (source, legacyTitle) => {
     const content = `**${source}**\n\nBody paragraph.`;

@@ -44,10 +44,17 @@ describe('ThinkingBlock — tool-call presentation', () => {
     ['**Checking <span>label</span> nodes**', 'Checking <span>label</span> nodes'],
     ['## Checking <span>label</span> nodes', 'Checking <span>label</span> nodes'],
     ['Checking <span>label</span> nodes\n---', 'Checking <span>label</span> nodes'],
+    ['**Checking<br>schema**', 'Checking schema'],
+    ['## Checking<br>schema', 'Checking schema'],
+    ['Checking<br>schema\n---', 'Checking schema'],
+    ['**Checking<br/>schema**', 'Checking schema'],
+    ['## Checking<br/>schema', 'Checking schema'],
+    ['Checking<br/>schema\n---', 'Checking schema'],
   ])(
     'preserves the literal title and original body through growth: %s',
     async (title, expected) => {
-      const body = '  Body with `src/*.ts`, _private, <Widget> and &amp;.\n\nAnother paragraph.\n';
+      const body =
+        '  Body with `src/*.ts`, _private, <Widget>, <br> and &amp;.\n\nAnother paragraph.\n';
       const content = `${title}\n\n${body}`;
       const view = await renderBlock({ content: title, isStreaming: true });
       expect(screen.queryByRole('button')).toBeNull();
@@ -63,6 +70,7 @@ describe('ThinkingBlock — tool-call presentation', () => {
       expect(toggle.textContent?.trim()).toBe(expected);
       expect(toggle.getAttribute('aria-expanded')).toBe('false');
       await fireEvent.click(toggle);
+      expect(toggle.textContent?.trim()).toBe(expected);
       expect(screen.getAllByTestId('markdown-viewer')).toHaveLength(1);
       expect(screen.getByTestId('markdown-viewer').textContent).toBe(body);
       view.unmount();
@@ -72,6 +80,7 @@ describe('ThinkingBlock — tool-call presentation', () => {
       expect(restoredToggle.textContent?.trim()).toBe(expected);
       expect(restoredToggle.getAttribute('aria-expanded')).toBe('false');
       await fireEvent.click(restoredToggle);
+      expect(restoredToggle.textContent?.trim()).toBe(expected);
       expect(screen.getAllByTestId('markdown-viewer')).toHaveLength(1);
       expect(screen.getByTestId('markdown-viewer').textContent).toBe(body);
       expect(reopened.container.querySelectorAll('[data-chat-operational-row]')).toHaveLength(1);
@@ -85,6 +94,10 @@ describe('ThinkingBlock — tool-call presentation', () => {
     ['Checking <Widget> props', 'Checking <Widget> props'],
     ['Reviewing Array<T> types', 'Reviewing Array<T> types'],
     ['Checking <span>label</span> nodes', 'Checking <span>label</span> nodes'],
+    ['Checking<br>schema', 'Checking schema'],
+    ['Checking<br/>schema', 'Checking schema'],
+    ['Checking`<br>`schema', 'Checking<br>schema'],
+    ['Checking&lt;br&gt;schema', 'Checking<br>schema'],
     ['Reading &amp; writing', 'Reading & writing'],
     ['Reading `&amp;` literally', 'Reading &amp; literally'],
     ['Checking \\*literal\\* marks', 'Checking *literal* marks'],

@@ -31,6 +31,9 @@ function markdownInlineToReadableText(value: string): string {
   // Only its text is returned; the parsed HTML is never mounted.
   const template = document.createElement('template');
   template.innerHTML = inlineMarkdown.parseInline(value, { async: false });
+  for (const lineBreak of template.content.querySelectorAll('br')) {
+    lineBreak.replaceWith(' ');
+  }
   return (template.content.textContent ?? '').replace(/\s+/g, ' ').trim();
 }
 
