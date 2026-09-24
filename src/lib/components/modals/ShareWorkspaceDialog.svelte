@@ -89,6 +89,8 @@
     githubConnected?: boolean;
     /** `sourceControl.authStatus { provider: "gitlab" }.isConfigured` as mirrored by the gitlab-auth slice. */
     gitlabConnected?: boolean;
+    /** Labs gates new provider choices, never an existing identity or pin. */
+    gitlabEnabled?: boolean;
     /** The GitLab instance the host's connection targets (`pinHost` for a GitLab pin). */
     gitlabHost?: string;
     /**
@@ -162,6 +164,7 @@
     workspaceTitle = '',
     githubConnected = false,
     gitlabConnected = false,
+    gitlabEnabled = false,
     gitlabHost = '',
     identitySeamSupported = false,
     identityProvider = null,
@@ -216,13 +219,15 @@
   });
   /** Only the GitHub typeahead exists; a GitLab pin is free text. */
   const pinTypeahead = $derived(pinProvider === 'github');
-  const pinProviderItems = $derived([
-    { value: 'github', label: m.workspace_share_pinProvider_github_label() },
-    {
-      value: 'gitlab',
-      label: m.workspace_share_pinProvider_gitlab_label({ host: gitlabHost }),
-    },
-  ]);
+  const pinProviderItems = $derived(
+    [
+      { value: 'github', label: m.workspace_share_pinProvider_github_label() },
+      {
+        value: 'gitlab',
+        label: m.workspace_share_pinProvider_gitlab_label({ host: gitlabHost }),
+      },
+    ].filter((item) => item.value !== 'gitlab' || gitlabEnabled || pinProvider === 'gitlab'),
+  );
   /** The cap is known and spent: no further invite can be minted. */
   const atGuestCap = $derived(
     guestCount !== null && guestLimit !== null && guestCount >= guestLimit,
@@ -304,6 +309,7 @@
   }
 
   function handlePinProviderChange(value: string) {
+    if (value === 'gitlab' && !gitlabEnabled) return;
     pinProviderDraft = value === 'github' || value === 'gitlab' ? value : '';
     selectedUser = null;
     suggestionsDismissed = false;
@@ -526,17 +532,25 @@
         >
           <div class="flex items-center gap-2 text-sm font-medium">
             <Fa icon={faGithub} />
-            <Fa icon={faGitlab} />
-            {m.workspace_share_forgeRequired_title()}
+            {#if gitlabEnabled}<Fa icon={faGitlab} />{/if}
+            {gitlabEnabled
+              ? m.workspace_share_forgeRequired_title()
+              : m.workspace_share_githubRequired_title()}
           </div>
-          <p class="text-sm text-subtle">{m.workspace_share_forgeRequired_description()}</p>
+          <p class="text-sm text-subtle">
+            {gitlabEnabled
+              ? m.workspace_share_forgeRequired_description()
+              : m.workspace_share_githubRequired_description()}
+          </p>
           <div class="flex items-center gap-2">
             <Button variant="secondary" size="sm" onclick={() => onConnectGitHub?.()}>
               {m.workspace_share_connectGithub_label()}
             </Button>
-            <Button variant="ghost-light" size="sm" onclick={() => onOpenConnections?.()}>
-              {m.workspace_share_openConnections_label()}
-            </Button>
+            {#if gitlabEnabled}
+              <Button variant="ghost-light" size="sm" onclick={() => onOpenConnections?.()}>
+                {m.workspace_share_openConnections_label()}
+              </Button>
+            {/if}
           </div>
         </div>
       {:else}
@@ -622,7 +636,7 @@
               : m.workspace_share_pinLogin_label()}
           </Label>
           <div class="flex flex-wrap items-center gap-2">
-            {#if pinProviderChoosable}
+            {#if pinProviderChoosable && (gitlabEnabled || pinProvider === 'gitlab')}
               <div class="w-40 shrink-0">
                 <Select.Root
                   bind:open={pinProviderMenuOpen}
@@ -640,7 +654,11 @@
                   </Select.Trigger>
                   <Select.Content class="z-(--layer-modal)">
                     {#each pinProviderItems as item (item.value)}
-                      <Select.Item value={item.value} label={item.label}>
+                      <Select.Item
+                        value={item.value}
+                        label={item.label}
+                        disabled={item.value === 'gitlab' && !gitlabEnabled}
+                      >
                         <span class="flex min-w-0 items-center gap-2">
                           <Fa icon={item.value === 'gitlab' ? faGitlab : faGithub} />
                           <span class="truncate">{item.label}</span>

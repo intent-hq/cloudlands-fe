@@ -1,15 +1,18 @@
 <script lang="ts">
   /**
-   * In-app one-button notice for an `intent://invite` join (replaces the
+   * In-app notice for an `intent://invite` join (replaces the
    * native message boxes when a renderer window is available): either the
    * join failed (`failed`, sentence chosen by the bounded reason code) or the
    * credential had to be stored without OS encryption (`plaintext`). OK /
-   * Escape / backdrop / × all acknowledge exactly once.
+   * Escape / backdrop / × all acknowledge exactly once. Account failures
+   * also link to Labs or Connections according to the saved GitLab choice.
    */
   import { Button } from '$lib/components/ui/button';
   import { ContentDialog } from '$lib/components/patterns/confirm';
   import type { InviteNoticeShowPayload } from '$shared/ipc/invite-notice';
   import { describeInviteFailureReason } from '$shared/utils/invite-failure-text';
+  import { selectLabsGitLabEnabled } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
+  import { navigateToSettings } from '$lib/utils/workspace-navigation';
   import { m } from '$shared/paraglide/messages.js';
 
   interface Props {
@@ -24,6 +27,14 @@
   const dialogTitleId = 'invite-notice-dialog-title';
   const dialogDescriptionId = 'invite-notice-dialog-description';
 
+  const gitlabEnabled$ = selectLabsGitLabEnabled();
+  const needsAccountSetup = $derived(
+    payload?.kind === 'failed' &&
+      (payload.reason === 'proof-gitlab-not-connected' ||
+        payload.reason === 'proof-gitlab-scope-missing' ||
+        payload.reason === 'pin-mismatch' ||
+        payload.reason === 'identity-unavailable'),
+  );
   const failed = $derived(payload?.kind === 'failed');
   const title = $derived(
     failed ? m.deeplink_inviteFailed_title() : m.deeplink_invitePlaintext_title(),
@@ -43,6 +54,15 @@
         })
       : null,
   );
+
+  function openAccountSetup() {
+    acknowledge();
+    void navigateToSettings(
+      $gitlabEnabled$
+        ? { tab: 'connections', hash: 'integrations' }
+        : { tab: 'labs', hash: 'labs-gitlab' },
+    ).catch(() => {});
+  }
 
   function acknowledge() {
     if (!open) return;
@@ -64,6 +84,13 @@
   >
     <p class="type-body break-words">{message}</p>
     {#snippet footer()}
+      {#if needsAccountSetup}
+        <Button variant="secondary" onclick={openAccountSetup}>
+          {$gitlabEnabled$
+            ? m.workspace_share_openConnections_label()
+            : m.inviteNotice_modal_enableGitlab_label()}
+        </Button>
+      {/if}
       <Button onclick={acknowledge}>{m.deeplink_inviteFailed_ok_button()}</Button>
     {/snippet}
   </ContentDialog>

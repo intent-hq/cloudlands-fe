@@ -7,12 +7,20 @@
    * the forge instance the host could not read the proof on.
    */
   import { definePreview } from '$lib/component-catalog/preview-definition';
+  import { store as appStore } from '$store/renderer/store';
+  import { setLabsGitLabEnabled } from '$store/renderer/slices/user-preferences/user-preferences-slice';
   import type { InviteConsentShowPayload } from '$shared/ipc/invite-consent';
   import type { InviteNoticeShowPayload } from '$shared/ipc/invite-notice';
 
   interface InviteJoinPromptsProps {
     consent?: InviteConsentShowPayload;
     notice?: InviteNoticeShowPayload;
+  }
+
+  function enableGitLab() {
+    const before = appStore.state.userPreferences.labsGitLabEnabled;
+    appStore.dispatch(setLabsGitLabEnabled(true));
+    return () => appStore.dispatch(setLabsGitLabEnabled(before));
   }
 
   const GITLAB_HOST = 'gitlab.example.com';
@@ -44,9 +52,11 @@
         props: { consent: { ...base, mode: 'confirm', login: 'octocat' } },
       },
       'connect-forge': {
+        setup: enableGitLab,
         props: { consent: { ...base, mode: 'connect-forge' } },
       },
       'sign-in-required': {
+        setup: enableGitLab,
         props: {
           consent: {
             ...base,
@@ -69,6 +79,9 @@
             identityHost: GITLAB_HOST,
           },
         },
+      },
+      'connect-forge-lab-off': {
+        props: { consent: { ...base, mode: 'connect-forge' } },
       },
       'notice-pin-mismatch': {
         props: { notice: { ...base, kind: 'failed', reason: 'pin-mismatch' } },

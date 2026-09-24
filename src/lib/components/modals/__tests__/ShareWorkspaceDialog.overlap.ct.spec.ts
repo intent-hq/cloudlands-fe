@@ -174,6 +174,7 @@ test('the pin-provider picker stays inside the modal, and Escape closes it befor
     props: {
       ...props,
       gitlabConnected: true,
+      gitlabEnabled: true,
       gitlabHost: 'gitlab.example.com',
       identitySeamSupported: true,
       identityProvider: 'github' as const,

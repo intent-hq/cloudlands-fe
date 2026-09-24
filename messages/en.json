@@ -5989,8 +5989,8 @@
   "deeplink_inviteError_expired": "This invite link has expired.",
   "deeplink_inviteError_revoked": "This invite link was revoked.",
   "deeplink_inviteError_redeemed": "This invite link was already used.",
-  "deeplink_inviteError_pinMismatch": "This invite requires a different forge account. Connect the invited account in Settings → Connections, then open the invite again.",
-  "deeplink_inviteError_identityUnavailable": "Your chosen identity is unavailable. Check the account in Settings → Connections, then open the invite again.",
+  "deeplink_inviteError_pinMismatch": "This invite requires a different forge account. Connect the invited account in Settings → Connections, then open the invite again. If the required account is on GitLab, enable GitLab in Settings → Labs first.",
+  "deeplink_inviteError_identityUnavailable": "Your chosen identity is unavailable. Check the account in Settings → Connections, then open the invite again. If the required account is on GitLab, enable GitLab in Settings → Labs first.",
   "deeplink_inviteError_denied": "GitHub sign-in was cancelled.",
   "deeplink_inviteError_flowExpired": "The GitHub code expired before it was entered.",
   "deeplink_inviteError_workspaceFull": "This workspace is full. Ask the owner to free a seat.",
@@ -6014,8 +6014,8 @@
   "deeplink_inviteError_proofNotConnected": "This Intent is not signed in to GitHub. Sign in and open the link again.",
   "deeplink_inviteError_proofScopeMissing": "This Intent’s GitHub sign-in lacks the gist permission the identity proof needs. Sign in to GitHub again, then open the link again.",
   "deeplink_inviteError_proofGithubUnreachable": "GitHub could not be reached to publish the identity proof. Check your connection and try again.",
-  "deeplink_inviteError_proofGitlabNotConnected": "This Intent is not connected to GitLab. Connect it in Settings → Connections and open the link again.",
-  "deeplink_inviteError_proofGitlabScopeMissing": "This Intent’s GitLab connection lacks the api scope the identity proof needs. Reconnect GitLab in Settings → Connections, then open the link again.",
+  "deeplink_inviteError_proofGitlabNotConnected": "This Intent is not connected to GitLab. Connect it in Settings → Connections and open the link again. If the required account is on GitLab, enable GitLab in Settings → Labs first.",
+  "deeplink_inviteError_proofGitlabScopeMissing": "This Intent’s GitLab connection lacks the api scope the identity proof needs. Reconnect GitLab in Settings → Connections, then open the link again. If the required account is on GitLab, enable GitLab in Settings → Labs first.",
   "deeplink_inviteError_proofGitlabUnreachable": "Your GitLab instance could not be reached to publish the identity proof. Check your connection and try again.",
   "deeplink_inviteError_proofFailed": "The identity proof could not be made. Open the link again to retry.",
   "deeplink_inviteError_githubRateLimited": "GitHub is temporarily rate limiting requests for this account, so the identity proof cannot be made right now. Wait a while, then open the link again.",
@@ -6754,5 +6754,6 @@
   "workspace_transfer_connectDevice_label": "To transfer directly, connect another device",
   "workspace_transfer_reviewExport_label": "Review export",
   "settings_labs_gitlab_label": "GitLab",
-  "settings_labs_gitlab_description": "Connect GitLab in Settings and onboarding. Existing connections and shared sessions keep working when this is off."
+  "settings_labs_gitlab_description": "Connect GitLab in Settings and onboarding. Existing connections and shared sessions keep working when this is off.",
+  "inviteNotice_modal_enableGitlab_label": "Enable GitLab in Labs"
 }

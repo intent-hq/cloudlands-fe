@@ -5989,8 +5989,8 @@
   "deeplink_inviteError_expired": "Ce lien d’invitation a expiré.",
   "deeplink_inviteError_revoked": "Ce lien d’invitation a été révoqué.",
   "deeplink_inviteError_redeemed": "Ce lien d’invitation a déjà été utilisé.",
-  "deeplink_inviteError_pinMismatch": "Cette invitation nécessite un autre compte de forge. Connectez le compte invité dans Paramètres → Connexions, puis ouvrez à nouveau l’invitation.",
-  "deeplink_inviteError_identityUnavailable": "L’identité choisie est indisponible. Vérifiez le compte dans Paramètres → Connexions, puis ouvrez à nouveau l’invitation.",
+  "deeplink_inviteError_pinMismatch": "Cette invitation nécessite un autre compte de forge. Connectez le compte invité dans Paramètres → Connexions, puis ouvrez à nouveau l’invitation. Si le compte requis est sur GitLab, activez d’abord GitLab dans Paramètres → Labs.",
+  "deeplink_inviteError_identityUnavailable": "L’identité choisie est indisponible. Vérifiez le compte dans Paramètres → Connexions, puis ouvrez à nouveau l’invitation. Si le compte requis est sur GitLab, activez d’abord GitLab dans Paramètres → Labs.",
   "deeplink_inviteError_denied": "La connexion GitHub a été annulée.",
   "deeplink_inviteError_flowExpired": "Le code GitHub a expiré avant d’être saisi.",
   "deeplink_inviteError_workspaceFull": "Cet espace de travail est complet. Demandez au propriétaire de libérer une place.",
@@ -6014,8 +6014,8 @@
   "deeplink_inviteError_proofNotConnected": "Cet Intent n'est pas connecté à GitHub. Connectez-vous puis rouvrez le lien.",
   "deeplink_inviteError_proofScopeMissing": "La connexion GitHub de cet Intent n'a pas la permission gist dont la preuve d'identité a besoin. Reconnectez-vous à GitHub puis rouvrez le lien.",
   "deeplink_inviteError_proofGithubUnreachable": "GitHub n'a pas pu être joint pour publier la preuve d'identité. Vérifiez votre connexion et réessayez.",
-  "deeplink_inviteError_proofGitlabNotConnected": "Cet Intent n’est pas connecté à GitLab. Connectez-le dans Réglages → Connexions et ouvrez de nouveau le lien.",
-  "deeplink_inviteError_proofGitlabScopeMissing": "La connexion GitLab de cet Intent n’a pas la portée api nécessaire à la preuve d’identité. Reconnectez GitLab dans Réglages → Connexions, puis ouvrez de nouveau le lien.",
+  "deeplink_inviteError_proofGitlabNotConnected": "Cet Intent n’est pas connecté à GitLab. Connectez-le dans Réglages → Connexions et ouvrez de nouveau le lien. Si le compte requis est sur GitLab, activez d’abord GitLab dans Paramètres → Labs.",
+  "deeplink_inviteError_proofGitlabScopeMissing": "La connexion GitLab de cet Intent n’a pas la portée api nécessaire à la preuve d’identité. Reconnectez GitLab dans Réglages → Connexions, puis ouvrez de nouveau le lien. Si le compte requis est sur GitLab, activez d’abord GitLab dans Paramètres → Labs.",
   "deeplink_inviteError_proofGitlabUnreachable": "Votre instance GitLab est injoignable pour publier la preuve d’identité. Vérifiez votre connexion et réessayez.",
   "deeplink_inviteError_proofFailed": "La preuve d'identité n'a pas pu être créée. Rouvrez le lien pour réessayer.",
   "deeplink_inviteError_githubRateLimited": "GitHub limite temporairement les requêtes de ce compte : la preuve d'identité ne peut pas être créée pour le moment. Patientez un peu, puis rouvrez le lien.",
@@ -6754,5 +6754,6 @@
   "workspace_transfer_connectDevice_label": "Pour un transfert direct, connectez un autre appareil",
   "workspace_transfer_reviewExport_label": "Vérifier l’exportation",
   "settings_labs_gitlab_label": "GitLab",
-  "settings_labs_gitlab_description": "Connectez GitLab dans les paramètres et lors de la configuration initiale. Les connexions et sessions partagées existantes continuent de fonctionner lorsque cette option est désactivée."
+  "settings_labs_gitlab_description": "Connectez GitLab dans les paramètres et lors de la configuration initiale. Les connexions et sessions partagées existantes continuent de fonctionner lorsque cette option est désactivée.",
+  "inviteNotice_modal_enableGitlab_label": "Activer GitLab dans Labs"
 }

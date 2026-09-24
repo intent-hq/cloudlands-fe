@@ -15,6 +15,7 @@
   interface ShareDialogPreviewProps {
     githubConnected: boolean;
     gitlabConnected: boolean;
+    gitlabEnabled: boolean;
     identitySeamSupported: boolean;
     identityProvider: IdentityProvider | null;
     members: WorkspaceMember[];
@@ -101,6 +102,7 @@
   const bothConnected: ShareDialogPreviewProps = {
     githubConnected: true,
     gitlabConnected: true,
+    gitlabEnabled: true,
     identitySeamSupported: true,
     identityProvider: 'gitlab',
     members: [owner, gitlabGuest, githubGuest, legacyGuest],
@@ -114,6 +116,7 @@
     defaultState: 'both-connected',
     states: {
       'both-connected': { props: bothConnected },
+      'gitlab-lab-off': { props: { ...bothConnected, gitlabEnabled: false } },
       'gitlab-only': {
         props: { ...bothConnected, githubConnected: false, invites: [gitlabPinnedInvite] },
       },

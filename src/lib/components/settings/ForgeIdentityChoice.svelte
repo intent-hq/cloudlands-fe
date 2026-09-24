@@ -34,6 +34,7 @@
     selectIdentityProviderChoosable,
     selectIdentitySaving,
   } from '$store/renderer/slices/identity/identity-selectors';
+  import { selectLabsGitLabEnabled } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
   import { selectDaemonSupportsIdentitySeam } from '$store/renderer/slices/daemon-health/daemon-health-selectors';
   import {
     selectGitHubAuthIsAuthenticated,
@@ -45,6 +46,7 @@
     selectGitLabAuthUser,
   } from '$store/renderer/slices/gitlab-auth/gitlab-auth-selectors';
 
+  const gitlabEnabled$ = selectLabsGitLabEnabled();
   const supported$ = selectDaemonSupportsIdentitySeam();
   const effective$ = selectEffectiveIdentityProvider();
   const current$ = selectCurrentIdentity();
@@ -104,17 +106,21 @@
   const githubOptionLabel = $derived(identityLabel('github'));
   const gitlabOptionLabel = $derived(identityLabel('gitlab'));
   /** Offer the connected forges when both are, or when the primary is unlinked. */
-  const offerChoice = $derived($choosable$ || $effective$ === null);
+  const offerChoice = $derived(
+    ($choosable$ && ($gitlabEnabled$ || $effective$ === 'gitlab')) ||
+      ($effective$ === null && ($githubConnected$ || ($gitlabEnabled$ && $gitlabConnected$))),
+  );
 
   async function handleChoice(value: string) {
     if (value !== 'github' && value !== 'gitlab') return;
-    if (value === $effective$ || $saving$) return;
+    if (value === $effective$ || $saving$ || (value === 'gitlab' && !$gitlabEnabled$)) return;
     const confirmed = await confirm({
       title: m.settings_connections_identity_switch_title({ identity: identityLabel(value) }),
       description: m.settings_connections_identity_switch_description(),
       confirmLabel: m.settings_connections_identity_switch_confirm_label(),
     });
-    if (!confirmed) return;
+    if (!confirmed || (value === 'gitlab' && !selectLabsGitLabEnabled.select(appStore.state)))
+      return;
     appStore.dispatch(setIdentityProviderRequested(value));
   }
 </script>
@@ -143,7 +149,7 @@
       <p class="type-body col-start-2 text-muted-foreground">
         {#if !$effective$}
           {m.settings_connections_identity_unlinked_description()}
-        {:else if $choosable$}
+        {:else if offerChoice}
           {m.settings_connections_identity_choose_description()}
         {:else}
           {m.settings_connections_identity_single_description({
@@ -172,9 +178,10 @@
                 <span class="truncate">{githubOptionLabel}</span>
               </ToggleGroup.Item>
             {/if}
-            {#if $gitlabConnected$}
+            {#if $gitlabConnected$ && ($gitlabEnabled$ || $effective$ === 'gitlab')}
               <ToggleGroup.Item
                 value="gitlab"
+                disabled={!$gitlabEnabled$}
                 class="h-auto gap-2 px-3 py-1.5"
                 data-testid="forge-identity-option-gitlab"
               >

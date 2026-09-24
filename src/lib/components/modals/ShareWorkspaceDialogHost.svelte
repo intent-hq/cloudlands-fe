@@ -48,6 +48,7 @@
     selectGitLabAuthHost,
     selectGitLabAuthIsConfigured,
   } from '$store/renderer/slices/gitlab-auth/gitlab-auth-selectors';
+  import { selectLabsGitLabEnabled } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
   import { selectEffectiveIdentityProvider } from '$store/renderer/slices/identity/identity-selectors';
   import { selectDaemonSupportsIdentitySeam } from '$store/renderer/slices/daemon-health/daemon-health-selectors';
   import { navigateToSettings } from '$lib/utils/workspace-navigation';
@@ -64,6 +65,7 @@
   const workspaceId$ = selectShareWorkspaceId();
   const workspaceTitle$ = selectShareWorkspaceTitle();
   const githubConnected$ = selectGitHubAuthIsAuthenticated();
+  const gitlabEnabled$ = selectLabsGitLabEnabled();
   const gitlabConnected$ = selectGitLabAuthIsConfigured();
   const gitlabHost$ = selectGitLabAuthHost();
   const identitySeamSupported$ = selectDaemonSupportsIdentitySeam();
@@ -105,6 +107,7 @@
   workspaceTitle={$workspaceTitle$}
   githubConnected={$githubConnected$}
   gitlabConnected={$gitlabConnected$}
+  gitlabEnabled={$gitlabEnabled$}
   gitlabHost={$gitlabHost$}
   identitySeamSupported={$identitySeamSupported$}
   identityProvider={$identityProvider$}
@@ -132,7 +135,11 @@
   onConnectGitHub={() => appStore.dispatch(openGitHubAuthModal(null))}
   onOpenConnections={() => {
     appStore.dispatch(closeShareDialog());
-    void navigateToSettings({ tab: 'connections', hash: 'integrations' }).catch(() => {});
+    void navigateToSettings(
+      selectLabsGitLabEnabled.select(appStore.state)
+        ? { tab: 'connections', hash: 'integrations' }
+        : { tab: 'labs', hash: 'labs-gitlab' },
+    ).catch(() => {});
   }}
   onCreateInvite={(pinLogin, pin) =>
     appStore.dispatch(shareInviteCreateRequested(pin ? { pinLogin, pin } : { pinLogin }))}

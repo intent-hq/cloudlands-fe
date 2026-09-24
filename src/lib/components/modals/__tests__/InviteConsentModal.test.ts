@@ -2,9 +2,22 @@
  * @vitest-environment jsdom
  */
 import { fireEvent, render, screen } from '@testing-library/svelte';
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { warmImport } from '../../../../test/warm-import';
 import type { InviteConsentShowPayload } from '$shared/ipc/invite-consent';
+
+const labs = vi.hoisted(() => ({ enabled: false }));
+vi.mock('$store/renderer/store', async () => {
+  const { createAppStoreMockModule } =
+    await import('$store/renderer/utils/test-helpers/store-mock');
+  return createAppStoreMockModule({
+    state: () => ({ userPreferences: { labsGitLabEnabled: labs.enabled } }),
+  });
+});
+beforeEach(() => {
+  labs.enabled = false;
+  vi.clearAllMocks();
+});
 
 vi.mock('svelte-fa', async () => ({
   default: (await import('../../workspace/sidebar/__tests__/mocks/Fa.svelte')).default,
@@ -73,6 +86,24 @@ async function loadModal() {
 }
 
 describe('InviteConsentModal', () => {
+  it.each([PAYLOAD, CONNECT_FORGE_PAYLOAD])(
+    'keeps GitHub usable without offering hidden GitLab setup in $mode',
+    async (payload) => {
+      const onRespond = vi.fn();
+      const Modal = await loadModal();
+      render(Modal, { props: { open: true, payload, onRespond } });
+      expect(screen.queryByTestId('invite-consent-open-connections')).toBeNull();
+      expect(screen.queryByTestId('invite-consent-connect-gitlab')).toBeNull();
+      await fireEvent.click(
+        screen.getByRole('button', {
+          name: payload.mode === 'connect-forge' ? 'Sign in to GitHub' : 'Open GitHub',
+        }),
+      );
+      expect(onRespond).toHaveBeenCalledExactlyOnceWith('open');
+      expect(navigateToSettings).not.toHaveBeenCalled();
+    },
+  );
+
   it('sign-in-required: shows the workspace, host, device code and verification URL, no Join button', async () => {
     const InviteConsentModal = await loadModal();
 
@@ -276,6 +307,7 @@ describe('InviteConsentModal', () => {
   });
 
   it('sign-in-required (not connected): the GitLab alternative cancels the join and opens Connections', async () => {
+    labs.enabled = true;
     const onRespond = vi.fn();
     const InviteConsentModal = await loadModal();
 
@@ -298,6 +330,7 @@ describe('InviteConsentModal', () => {
   });
 
   it('connect-forge: offers Connections (cancels the join) and Sign in to GitHub (open) with no device code asked for', async () => {
+    labs.enabled = true;
     const onRespond = vi.fn();
     const InviteConsentModal = await loadModal();
 

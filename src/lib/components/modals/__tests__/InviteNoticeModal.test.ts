@@ -2,15 +2,33 @@
  * @vitest-environment jsdom
  */
 import { fireEvent, render, screen } from '@testing-library/svelte';
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { warmImport } from '../../../../test/warm-import';
 import type { InviteNoticeShowPayload } from '$shared/ipc/invite-notice';
 import { describeInviteFailureReason } from '$shared/utils/invite-failure-text';
 import { m } from '$shared/paraglide/messages.js';
 
+const labs = vi.hoisted(() => ({ enabled: false }));
+vi.mock('$store/renderer/store', async () => {
+  const { createAppStoreMockModule } =
+    await import('$store/renderer/utils/test-helpers/store-mock');
+  return createAppStoreMockModule({
+    state: () => ({ userPreferences: { labsGitLabEnabled: labs.enabled } }),
+  });
+});
+beforeEach(() => {
+  labs.enabled = false;
+  vi.clearAllMocks();
+});
+
 vi.mock('svelte-fa', async () => ({
   default: (await import('../../workspace/sidebar/__tests__/mocks/Fa.svelte')).default,
 }));
+
+const { navigateToSettings } = vi.hoisted(() => ({
+  navigateToSettings: vi.fn(() => Promise.resolve()),
+}));
+vi.mock('$lib/utils/workspace-navigation', () => ({ navigateToSettings }));
 
 const FAILED: InviteNoticeShowPayload = {
   requestId: 'req-1',
@@ -37,6 +55,48 @@ async function loadModal() {
 }
 
 describe('InviteNoticeModal', () => {
+  it.each([
+    'pin-mismatch',
+    'identity-unavailable',
+    'proof-gitlab-not-connected',
+    'proof-gitlab-scope-missing',
+  ] as const)(
+    'offers a Labs enable route for %s while setup is hidden, preserving the failure payload',
+    async (reason) => {
+      const Modal = await loadModal();
+      const payload = { ...FAILED, reason };
+      const onAcknowledge = vi.fn();
+      render(Modal, { props: { open: true, payload, onAcknowledge } });
+      await fireEvent.click(screen.getByRole('button', { name: 'Enable GitLab in Labs' }));
+      expect(navigateToSettings).toHaveBeenCalledExactlyOnceWith({
+        tab: 'labs',
+        hash: 'labs-gitlab',
+      });
+      expect(onAcknowledge).toHaveBeenCalledOnce();
+      expect(screen.queryByRole('alertdialog')).toBeNull();
+      expect(payload).toEqual({ ...FAILED, reason });
+    },
+  );
+
+  it('routes enabled GitLab setup to Connections after acknowledging the failed join', async () => {
+    labs.enabled = true;
+    const Modal = await loadModal();
+    const onAcknowledge = vi.fn();
+    render(Modal, {
+      props: {
+        open: true,
+        payload: { ...FAILED, reason: 'proof-gitlab-not-connected' },
+        onAcknowledge,
+      },
+    });
+    await fireEvent.click(screen.getByRole('button', { name: 'Open Connections' }));
+    expect(navigateToSettings).toHaveBeenCalledExactlyOnceWith({
+      tab: 'connections',
+      hash: 'integrations',
+    });
+    expect(onAcknowledge).toHaveBeenCalledOnce();
+  });
+
   it('failed: titles the dialog as a failure and shows the sentence for the bounded reason', async () => {
     const InviteNoticeModal = await loadModal();
 
