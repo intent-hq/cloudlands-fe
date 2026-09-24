@@ -26,14 +26,10 @@ import { selectThemeError } from '$store/renderer/slices/theme/theme-selectors';
 import { setThemeError } from '$store/renderer/slices/theme/theme-slice';
 import {
   selectCodeFontFamily,
-  selectLabsMultiplayerEnabled,
   selectNotificationEnabled,
 } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
 import {
   setCodeFontFamily,
-  setLabsGitLabEnabled,
-  setLabsMultiplayerEnabled,
-  setLabsSettingsVisible,
   setNotificationEnabled,
 } from '$store/renderer/slices/user-preferences/user-preferences-slice';
 import {
@@ -49,7 +45,6 @@ import {
   installUpdate,
   simulateSetState,
 } from '$store/renderer/slices/auto-update/auto-update-slice';
-import { selectLabsGitLabEnabled } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
 import { resolveHashToTarget } from '$shared/app-ui-targets';
 import { IPC_CHANNELS } from '$shared/ipc-registry';
 import { mockInvoke, registerMockIpcHandler, resetMockIpcRouter } from '$shared/ipc-mock-router';
@@ -166,10 +161,7 @@ beforeEach(() => {
     value: vi.fn(),
     configurable: true,
   });
-  appStore.dispatch(setLabsGitLabEnabled(false));
   appStore.dispatch(simulateSetState({ status: 'idle' }));
-  appStore.dispatch(setLabsSettingsVisible(false));
-  appStore.dispatch(setLabsMultiplayerEnabled(false));
   // No sagas run here: settle the window's guest/owner identity as an owner
   // (multiplayer w4) so the administrator-only tabs are rendered.
   appStore.dispatch(guestSessionsListUnavailable());
@@ -502,21 +494,6 @@ describe('settings tab route and focus behavior', () => {
     expect(main?.getAttribute('aria-labelledby')).toBe(heading.id);
   });
 
-  it('toggles the GitLab lab through the routed settings control and retains it on remount', async () => {
-    appStore.dispatch(setLabsSettingsVisible(true));
-    const first = renderSettings('/settings?tab=labs#labs-gitlab');
-    const control = await screen.findByRole('switch', { name: 'GitLab' });
-    expect(control.getAttribute('aria-checked')).toBe('false');
-    await fireEvent.click(control);
-    expect(selectLabsGitLabEnabled.select(appStore.state)).toBe(true);
-    first.unmount();
-    renderSettings('/settings#labs-gitlab');
-    const reopened = await screen.findByRole('switch', { name: 'GitLab' });
-    expect(reopened.getAttribute('aria-checked')).toBe('true');
-    await fireEvent.click(reopened);
-    expect(selectLabsGitLabEnabled.select(appStore.state)).toBe(false);
-  });
-
   it('renders route content through the integrated settings page and sidebar', async () => {
     const { container } = renderSettings('/settings?tab=setup');
     const settingsPage = container.querySelector('[data-slot="settings-page"]');
@@ -545,7 +522,6 @@ describe('settings tab route and focus behavior', () => {
     ['machines', 'Devices', 'page'],
     ['interface-system', 'Appearance', 'page'],
     ['input', 'Input and shortcuts', 'page'],
-    ['labs', 'Appearance', 'page'],
     ['unknown', 'Appearance', 'page'],
   ])('maps ?tab=%s to %s', async (tab, label, current) => {
     renderSettings(`/settings?tab=${tab}`);
@@ -813,172 +789,6 @@ describe('settings back and footer behavior', () => {
     const dispatchSpy = vi.spyOn(appStore, 'dispatch');
     await fireEvent.click(update);
     expect(dispatchSpy).toHaveBeenCalledWith(installUpdate());
-  });
-});
-
-describe('Labs Settings visibility', () => {
-  const labsUrls = [
-    '/settings?tab=labs',
-    '/settings#labs',
-    '/settings#labs-multiplayer',
-    '/settings#multiplayer',
-    '/settings?tab=labs#labs-multiplayer',
-    '/settings#labs-gitlab',
-    '/settings?tab=labs#labs-gitlab',
-  ];
-
-  it.each(labsUrls)(
-    'withholds hidden Labs for initial and mounted navigation to %s',
-    async (url) => {
-      const view = renderSettings(url);
-      expect(screen.queryByRole('button', { name: 'Labs' })).toBeNull();
-      expect(view.container.querySelector('#labs')).toBeNull();
-      expect(screen.getByRole('button', { name: 'Appearance' }).getAttribute('aria-current')).toBe(
-        'page',
-      );
-      view.unmount();
-
-      const mounted = renderSettings('/settings?tab=display');
-      window.history.pushState({}, '', url);
-      mocks.page.url.href = window.location.href;
-      window.dispatchEvent(new HashChangeEvent('hashchange'));
-      await waitFor(() =>
-        expect(
-          screen.getByRole('button', { name: 'Appearance' }).getAttribute('aria-current'),
-        ).toBe('page'),
-      );
-      expect(screen.queryByRole('button', { name: 'Labs' })).toBeNull();
-      expect(mounted.container.querySelector('#labs')).toBeNull();
-    },
-  );
-
-  it.each(labsUrls)('opens opted-in Labs for %s', async (url) => {
-    appStore.dispatch(setLabsSettingsVisible(true));
-    const { container } = renderSettings(url);
-    await waitFor(() =>
-      expect(screen.getByRole('button', { name: 'Labs' }).getAttribute('aria-current')).toBe(
-        'page',
-      ),
-    );
-    expect(container.querySelector('#labs-multiplayer')).not.toBeNull();
-    expect(container.querySelector('#labs-gitlab')).not.toBeNull();
-    expect(selectLabsGitLabEnabled.select(appStore.state)).toBe(false);
-  });
-
-  it.each(['labs', 'labs-gitlab'])(
-    'reveals and routes to #%s without enabling GitLab while another Settings hash is active',
-    async (hash) => {
-      const { container } = renderSettings('/settings?tab=display#note-font');
-      expect(screen.queryByRole('button', { name: 'Labs' })).toBeNull();
-      expect(container.querySelector('#labs-gitlab')).toBeNull();
-      appStore.dispatch(setLabsSettingsVisible(true));
-      window.history.pushState({}, '', `/settings?tab=labs#${hash}`);
-      mocks.page.url.href = window.location.href;
-
-      await waitFor(() =>
-        expect(screen.getByRole('button', { name: 'Labs' }).getAttribute('aria-current')).toBe(
-          'page',
-        ),
-      );
-      expect(container.querySelector(resolveHashToTarget(hash)!.highlightSelector!)).not.toBeNull();
-      expect(window.location.hash).toBe(`#${hash}`);
-      expect(screen.getByRole('switch', { name: 'GitLab' }).getAttribute('aria-checked')).toBe(
-        'false',
-      );
-      expect(selectLabsGitLabEnabled.select(appStore.state)).toBe(false);
-    },
-  );
-
-  it('returns active Labs to Display on Hide and preserves experiment changes on Show', async () => {
-    appStore.dispatch(setLabsSettingsVisible(true));
-    renderSettings('/settings?tab=labs#labs-multiplayer');
-    await fireEvent.click(screen.getByRole('switch', { name: 'Multiplayer' }));
-    await fireEvent.click(screen.getByRole('switch', { name: 'GitLab' }));
-    expect(selectLabsMultiplayerEnabled.select(appStore.state)).toBe(true);
-    expect(selectLabsGitLabEnabled.select(appStore.state)).toBe(true);
-
-    appStore.dispatch(setLabsSettingsVisible(false));
-    await waitFor(() =>
-      expect(screen.getByRole('button', { name: 'Appearance' }).getAttribute('aria-current')).toBe(
-        'page',
-      ),
-    );
-    expect(screen.queryByRole('button', { name: 'Labs' })).toBeNull();
-    expect(document.getElementById('labs')).toBeNull();
-    expect(new URL(window.location.href).searchParams.get('tab')).toBe('display');
-    expect(window.location.hash).toBe('');
-    expect(selectLabsMultiplayerEnabled.select(appStore.state)).toBe(true);
-    expect(selectLabsGitLabEnabled.select(appStore.state)).toBe(true);
-
-    appStore.dispatch(setLabsSettingsVisible(true));
-    await fireEvent.click(await screen.findByRole('button', { name: 'Labs' }));
-    expect(screen.getByRole('switch', { name: 'Multiplayer' }).getAttribute('aria-checked')).toBe(
-      'true',
-    );
-    expect(screen.getByRole('switch', { name: 'GitLab' }).getAttribute('aria-checked')).toBe(
-      'true',
-    );
-  });
-
-  it('keeps the current non-Labs tab and URL when Labs is hidden', async () => {
-    appStore.dispatch(setLabsSettingsVisible(true));
-    renderSettings('/settings?tab=app-behavior#updates');
-    const url = window.location.href;
-    appStore.dispatch(setLabsSettingsVisible(false));
-    await waitFor(() => expect(screen.queryByRole('button', { name: 'Labs' })).toBeNull());
-    expect(screen.getByRole('button', { name: 'General' }).getAttribute('aria-current')).toBe(
-      'page',
-    );
-    expect(window.location.href).toBe(url);
-  });
-
-  it('keeps a sidebar tab selection when Labs is hidden', async () => {
-    appStore.dispatch(setLabsSettingsVisible(true));
-    renderSettings('/settings?tab=labs#labs');
-    await fireEvent.click(screen.getByRole('button', { name: 'General' }));
-    expect(screen.getByRole('button', { name: 'General' }).getAttribute('aria-current')).toBe(
-      'page',
-    );
-    const url = window.location.href;
-
-    appStore.dispatch(setLabsSettingsVisible(false));
-
-    await waitFor(() => expect(screen.queryByRole('button', { name: 'Labs' })).toBeNull());
-    expect(screen.getByRole('button', { name: 'General' }).getAttribute('aria-current')).toBe(
-      'page',
-    );
-    expect(window.location.href).toBe(url);
-  });
-
-  it.each(labsUrls)('opens the saved Labs link %s after preference hydration', async (url) => {
-    renderSettings(url);
-    expect(screen.queryByRole('button', { name: 'Labs' })).toBeNull();
-
-    appStore.dispatch(setLabsSettingsVisible(true));
-
-    await waitFor(() =>
-      expect(screen.getByRole('button', { name: 'Labs' }).getAttribute('aria-current')).toBe(
-        'page',
-      ),
-    );
-    expect(
-      document.getElementById(url.includes('labs-gitlab') ? 'labs-gitlab' : 'labs-multiplayer'),
-    ).not.toBeNull();
-    expect(selectLabsGitLabEnabled.select(appStore.state)).toBe(false);
-  });
-
-  it('keeps a sidebar tab selection when saved Labs visibility arrives after mount', async () => {
-    renderSettings('/settings?tab=labs#labs');
-    await fireEvent.click(screen.getByRole('button', { name: 'General' }));
-    const url = window.location.href;
-
-    appStore.dispatch(setLabsSettingsVisible(true));
-
-    await waitFor(() => expect(screen.queryByRole('button', { name: 'Labs' })).not.toBeNull());
-    expect(screen.getByRole('button', { name: 'General' }).getAttribute('aria-current')).toBe(
-      'page',
-    );
-    expect(window.location.href).toBe(url);
   });
 });
 

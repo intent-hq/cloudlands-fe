@@ -41,6 +41,8 @@
   import type { InviteConsentAction, InviteConsentShowPayload } from '$shared/ipc/invite-consent';
   import { m } from '$shared/paraglide/messages.js';
   import { selectLabsGitLabEnabled } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
+  import { store as appStore } from '$store/renderer/store';
+  import { openPalette } from '$store/renderer/slices/palette/palette-slice';
   import { navigateToSettings } from '$lib/utils/workspace-navigation';
 
   interface Props {
@@ -79,11 +81,11 @@
 
   function openConnectionsSettings() {
     cancel();
-    void navigateToSettings(
-      $gitlabEnabled$
-        ? { tab: 'connections', hash: 'integrations' }
-        : { tab: 'labs', hash: 'labs-gitlab' },
-    ).catch(() => {});
+    if (!selectLabsGitLabEnabled.select(appStore.state)) {
+      appStore.dispatch(openPalette('GitLab')); // i18n-ignore (brand search matches every locale)
+      return;
+    }
+    void navigateToSettings({ tab: 'connections', hash: 'integrations' }).catch(() => {});
   }
 </script>
 

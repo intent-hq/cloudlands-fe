@@ -27,4 +27,12 @@ describe('paletteReducer', () => {
     });
     expect(paletteReducer(initialState, togglePalette()).isOpen).toBe(true);
   });
+
+  it('opens a recovery search without changing recent entries, and clears it for a normal open', () => {
+    const before = { ...initialState, fileMru: { 'notes/context.ts': 123 } };
+    const opened = paletteReducer(before, openPalette('GitLab'));
+    expect(opened).toEqual({ ...before, isOpen: true, query: 'GitLab' });
+    expect(paletteReducer(opened, openPalette())).toEqual({ ...before, isOpen: true, query: '' });
+    expect(paletteReducer(opened, closePalette())).toEqual(before);
+  });
 });

@@ -6,12 +6,13 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { warmImport } from '../../../../test/warm-import';
 import type { InviteConsentShowPayload } from '$shared/ipc/invite-consent';
 
-const labs = vi.hoisted(() => ({ enabled: false }));
+const labs = vi.hoisted(() => ({ enabled: false, dispatch: vi.fn() }));
 vi.mock('$store/renderer/store', async () => {
   const { createAppStoreMockModule } =
     await import('$store/renderer/utils/test-helpers/store-mock');
   return createAppStoreMockModule({
     state: () => ({ userPreferences: { labsGitLabEnabled: labs.enabled } }),
+    dispatch: labs.dispatch,
   });
 });
 beforeEach(() => {
@@ -86,6 +87,22 @@ async function loadModal() {
 }
 
 describe('InviteConsentModal', () => {
+  it('opens command search if GitLab is disabled before its already-visible setup link is activated', async () => {
+    labs.enabled = true;
+    const onRespond = vi.fn();
+    const Modal = await loadModal();
+    render(Modal, { props: { open: true, payload: CONNECT_FORGE_PAYLOAD, onRespond } });
+    const link = screen.getByTestId('invite-consent-open-connections');
+    labs.enabled = false;
+    await fireEvent.click(link);
+    expect(onRespond).toHaveBeenCalledExactlyOnceWith('cancel');
+    expect(navigateToSettings).not.toHaveBeenCalled();
+    expect(labs.dispatch).toHaveBeenCalledExactlyOnceWith({
+      type: 'palette/open',
+      payload: ['GitLab'],
+    });
+  });
+
   it.each([PAYLOAD, CONNECT_FORGE_PAYLOAD])(
     'keeps GitHub usable without offering hidden GitLab setup in $mode',
     async (payload) => {

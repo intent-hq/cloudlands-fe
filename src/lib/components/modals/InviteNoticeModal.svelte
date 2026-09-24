@@ -5,14 +5,14 @@
    * join failed (`failed`, sentence chosen by the bounded reason code) or the
    * credential had to be stored without OS encryption (`plaintext`). OK /
    * Escape / backdrop / × all acknowledge exactly once. Account failures
-   * also link to Labs or Connections according to the saved GitLab choice.
+   * open the command menu or Connections according to the saved GitLab choice.
    */
   import { Button } from '$lib/components/ui/button';
   import { ContentDialog } from '$lib/components/patterns/confirm';
   import type { InviteNoticeShowPayload } from '$shared/ipc/invite-notice';
   import { describeInviteFailureReason } from '$shared/utils/invite-failure-text';
   import { selectLabsGitLabEnabled } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
-  import { setLabsSettingsVisible } from '$store/renderer/slices/user-preferences/user-preferences-slice';
+  import { openPalette } from '$store/renderer/slices/palette/palette-slice';
   import { store as appStore } from '$store/renderer/store';
   import { navigateToSettings } from '$lib/utils/workspace-navigation';
   import { m } from '$shared/paraglide/messages.js';
@@ -67,13 +67,12 @@
   function openAccountSetup() {
     if (!open) return;
     const showGitLab = needsGitLabEnable;
-    if (showGitLab) appStore.dispatch(setLabsSettingsVisible(true));
     acknowledge();
-    void navigateToSettings(
-      showGitLab
-        ? { tab: 'labs', hash: 'labs-gitlab' }
-        : { tab: 'connections', hash: 'integrations' },
-    ).catch(() => {});
+    if (showGitLab) {
+      appStore.dispatch(openPalette('GitLab')); // i18n-ignore (brand search matches every locale)
+      return;
+    }
+    void navigateToSettings({ tab: 'connections', hash: 'integrations' }).catch(() => {});
   }
 
   function acknowledge() {
@@ -99,7 +98,7 @@
       {#if needsAccountSetup}
         <Button variant="secondary" onclick={openAccountSetup}>
           {needsGitLabEnable
-            ? m.inviteNotice_modal_enableGitlab_label()
+            ? m.inviteNotice_modal_findGitlabCommand_label()
             : m.workspace_share_openConnections_label()}
         </Button>
       {/if}

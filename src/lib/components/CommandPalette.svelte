@@ -35,8 +35,14 @@
   import { isCmdClickModifier } from '$shared/utils/link-helpers';
 
   import { selectBrowserRecentUrls } from '$store/renderer/slices/browser/browser-selectors';
-  import { selectLabsSettingsVisible } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
-  import { setLabsSettingsVisible } from '$store/renderer/slices/user-preferences/user-preferences-slice';
+  import {
+    selectLabsGitLabEnabled,
+    selectLabsMultiplayerEnabled,
+  } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
+  import {
+    setLabsGitLabEnabled,
+    setLabsMultiplayerEnabled,
+  } from '$store/renderer/slices/user-preferences/user-preferences-slice';
   import { initBrowserWorkspace } from '$store/renderer/slices/browser/browser-slice';
   import {
     selectHidesAgentLifecycleActions,
@@ -129,7 +135,8 @@
 
   let searchQuery = $state('');
   const workspaceItems = selectWorkspaceItems();
-  const labsSettingsVisible$ = selectLabsSettingsVisible();
+  const labsMultiplayerEnabled$ = selectLabsMultiplayerEnabled();
+  const labsGitLabEnabled$ = selectLabsGitLabEnabled();
   // Collaborators (multiplayer w3) are refused on terminal + browser methods and
   // cannot create workspaces, so those commands and result groups are withheld.
   const isCollaborator$ = selectIsWorkspaceCollaborator(workspaceIdStore);
@@ -146,8 +153,10 @@
         !($isCollaborator$ && WORKSPACE_OWNER_ONLY_COMMAND_IDS.has(command.id)) &&
         !($hidesAgentLifecycleActions$ && command.id === 'new-agent') &&
         !($isCollaboratorOnlyClient$ && command.id === 'new-workspace') &&
-        !($labsSettingsVisible$ && command.id === 'show-labs-in-settings') &&
-        !(!$labsSettingsVisible$ && command.id === 'hide-labs-in-settings'),
+        !($labsMultiplayerEnabled$ && command.id === 'enable-experimental-multiplayer') &&
+        !(!$labsMultiplayerEnabled$ && command.id === 'disable-experimental-multiplayer') &&
+        !($labsGitLabEnabled$ && command.id === 'enable-experimental-gitlab') &&
+        !(!$labsGitLabEnabled$ && command.id === 'disable-experimental-gitlab'),
     ),
   );
   const currentChanges$ = selectCurrentChanges(workspaceIdStore);
@@ -560,8 +569,6 @@
     const messages = groupMessages;
     // Track activeFilter to trigger recomputation when it changes
     activeFilter;
-    // Preference changes must refresh commands even when the query stays the same.
-    commands;
 
     // Cancel any pending computation
     if (resultComputeRaf !== null) {
@@ -807,12 +814,17 @@
       case 'settings':
         navigateToSettings();
         return true;
-      case 'show-labs-in-settings':
-        appStore.dispatch(setLabsSettingsVisible(true));
-        navigateToSettings({ tab: 'labs', hash: 'labs' });
+      case 'enable-experimental-multiplayer':
+        appStore.dispatch(setLabsMultiplayerEnabled(true));
         return true;
-      case 'hide-labs-in-settings':
-        appStore.dispatch(setLabsSettingsVisible(false));
+      case 'disable-experimental-multiplayer':
+        appStore.dispatch(setLabsMultiplayerEnabled(false));
+        return true;
+      case 'enable-experimental-gitlab':
+        appStore.dispatch(setLabsGitLabEnabled(true));
+        return true;
+      case 'disable-experimental-gitlab':
+        appStore.dispatch(setLabsGitLabEnabled(false));
         return true;
       case 'new-agent':
         if (workspaceId && !$hidesAgentLifecycleActions$) {

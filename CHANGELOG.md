@@ -4,6 +4,21 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.181.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.180.2...v2.181.0) (2026-09-24)
+
+
+### 🚀 Features
+
+* make Labs settings an opt-in command ([#2861](https://github.com/intent-hq/cloudlands-fe/issues/2861)) ([31c22ae](https://github.com/intent-hq/cloudlands-fe/commit/31c22ae362895456d935eed0687c6dbd557a5139))
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.9.105 ([#2874](https://github.com/intent-hq/cloudlands-fe/issues/2874)) ([448e6f2](https://github.com/intent-hq/cloudlands-fe/commit/448e6f2bcdf0c27c7b11f6c9f7dc7826d57c2b5e))
+* center settings sidebar row content ([#5786](https://github.com/intent-hq/cloudlands-fe/issues/5786)) ([#2870](https://github.com/intent-hq/cloudlands-fe/issues/2870)) ([c05b7e4](https://github.com/intent-hq/cloudlands-fe/commit/c05b7e4b1284713257faaf99dc7e08e62aeff3cf))
+* preserve production translation namespace exports ([#2865](https://github.com/intent-hq/cloudlands-fe/issues/2865)) ([9054cab](https://github.com/intent-hq/cloudlands-fe/commit/9054cab9563035072a8ffcd55aff17a1b4904e5c))
+* simplify disabled panel movement actions ([#2863](https://github.com/intent-hq/cloudlands-fe/issues/2863)) ([08c17b7](https://github.com/intent-hq/cloudlands-fe/commit/08c17b771502f4cad227f5349ba8d7f3dfa8a295))
+
 ## [2.180.2](https://github.com/intent-hq/cloudlands-fe/compare/v2.180.1...v2.180.2) (2026-09-24)
 
 

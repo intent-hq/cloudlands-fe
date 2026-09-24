@@ -135,11 +135,7 @@
   onConnectGitHub={() => appStore.dispatch(openGitHubAuthModal(null))}
   onOpenConnections={() => {
     appStore.dispatch(closeShareDialog());
-    void navigateToSettings(
-      selectLabsGitLabEnabled.select(appStore.state)
-        ? { tab: 'connections', hash: 'integrations' }
-        : { tab: 'labs', hash: 'labs-gitlab' },
-    ).catch(() => {});
+    void navigateToSettings({ tab: 'connections', hash: 'integrations' }).catch(() => {});
   }}
   onCreateInvite={(pinLogin, pin) =>
     appStore.dispatch(shareInviteCreateRequested(pin ? { pinLogin, pin } : { pinLogin }))}

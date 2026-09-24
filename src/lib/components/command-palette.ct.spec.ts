@@ -1,6 +1,34 @@
 import { expect, test } from '../../test/ct-test';
 import CommandPalettePreview from './command-palette.preview.svelte';
 
+test('GitLab command supports keyboard activation and reopening at compact width', async ({
+  mount,
+  page,
+}) => {
+  await page.setViewportSize({ width: 360, height: 600 });
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await mount(CommandPalettePreview, {
+    props: { initialQuery: 'GitLab', withoutWorkspace: true },
+    hooksConfig: { geometrySnapshot: { scene: 'command-palette', state: 'gitlab-off' } },
+  });
+  const dialog = page.getByRole('dialog');
+  const input = dialog.getByRole('textbox');
+  await expect(input).toBeFocused();
+  const enable = dialog.getByRole('button', { name: /Enable experimental GitLab/i });
+  await expect(enable).toBeVisible();
+  const box = (await enable.boundingBox())!;
+  expect(box.x).toBeGreaterThanOrEqual(0);
+  expect(box.x + box.width).toBeLessThanOrEqual(360);
+  await input.press('Enter');
+  await expect(dialog).toHaveCount(0);
+  await page.getByRole('button', { name: 'Open palette' }).click();
+  await expect(input).toBeFocused();
+  await dialog.getByRole('button', { name: /Disable experimental GitLab/i }).click();
+  await expect(dialog).toHaveCount(0);
+  await page.getByRole('button', { name: 'Open palette' }).click();
+  await expect(enable).toBeVisible();
+});
+
 for (const width of [1280, 360]) {
   test(`palette keeps multiline rows, action pills, and footer contained at ${width}px`, async ({
     mount,

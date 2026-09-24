@@ -11,6 +11,7 @@
   import { setLabsGitLabEnabled } from '$store/renderer/slices/user-preferences/user-preferences-slice';
   import type { InviteConsentShowPayload } from '$shared/ipc/invite-consent';
   import type { InviteNoticeShowPayload } from '$shared/ipc/invite-notice';
+  import { closePalette } from '$store/renderer/slices/palette/palette-slice';
 
   interface InviteJoinPromptsProps {
     consent?: InviteConsentShowPayload;
@@ -21,6 +22,16 @@
     const before = appStore.state.userPreferences.labsGitLabEnabled;
     appStore.dispatch(setLabsGitLabEnabled(true));
     return () => appStore.dispatch(setLabsGitLabEnabled(before));
+  }
+
+  function setupGitLabRecovery() {
+    const before = appStore.state.userPreferences.labsGitLabEnabled;
+    appStore.dispatch(setLabsGitLabEnabled(false));
+    appStore.dispatch(closePalette());
+    return () => {
+      appStore.dispatch(closePalette());
+      appStore.dispatch(setLabsGitLabEnabled(before));
+    };
   }
 
   const GITLAB_HOST = 'gitlab.example.com';
@@ -87,6 +98,7 @@
         props: { notice: { ...base, kind: 'failed', reason: 'pin-mismatch' } },
       },
       'notice-gitlab-pin-mismatch': {
+        setup: setupGitLabRecovery,
         props: {
           notice: { ...base, kind: 'failed', reason: 'pin-mismatch', accountProvider: 'gitlab' },
         },
@@ -101,8 +113,15 @@
 <script lang="ts">
   import InviteConsentModal from './InviteConsentModal.svelte';
   import InviteNoticeModal from './InviteNoticeModal.svelte';
+  import CommandPalette from '../CommandPalette.svelte';
+  import {
+    selectIsPaletteOpen,
+    selectPaletteQuery,
+  } from '$store/renderer/slices/palette/palette-selectors';
 
   let { consent, notice }: InviteJoinPromptsProps = $props();
+  const isPaletteOpen$ = selectIsPaletteOpen();
+  const paletteQuery$ = selectPaletteQuery();
 </script>
 
 <div class="relative min-h-[560px] w-full">
@@ -112,4 +131,9 @@
   {#if notice}
     <InviteNoticeModal open payload={notice} />
   {/if}
+  <CommandPalette
+    isOpen={$isPaletteOpen$}
+    initialQuery={$paletteQuery$}
+    onClose={() => appStore.dispatch(closePalette())}
+  />
 </div>

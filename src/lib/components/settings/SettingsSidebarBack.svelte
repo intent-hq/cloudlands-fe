@@ -16,7 +16,9 @@
     onclick={onBack}
     class="h-auto w-full justify-start rounded-lg p-0 text-left type-caption font-normal text-muted-foreground hover:bg-hover active:bg-active"
   >
-    <ListRow class="min-h-8 w-full gap-2 px-3 py-0">
+    <ListRow
+      class="min-h-8 w-full items-center gap-2 px-3 py-0 [&>[data-slot=list-row-leading]]:self-center [&>[data-slot=list-row-trailing]]:self-center"
+    >
       {#snippet leading()}
         <span class="flex size-4 shrink-0 items-center justify-center">
           <ArrowLeftIcon size={16} weight="regular" />

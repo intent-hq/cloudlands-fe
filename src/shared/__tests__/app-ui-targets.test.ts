@@ -7,12 +7,6 @@ import {
 } from '../app-ui-targets';
 
 describe('app UI targets registry', () => {
-  it('routes the GitLab Labs anchor without taking over the Labs landing target', () => {
-    expect(resolveHashToTarget('labs-gitlab')).toMatchObject({ tab: 'labs', id: 'labs-gitlab' });
-    expect(resolveHashToTarget('labs')).toMatchObject({ id: 'labs-multiplayer' });
-    expect(isResolvableNavTarget('/settings?tab=labs#labs-gitlab')).toBe(true);
-  });
-
   it('keeps every settings route aligned with its tab and hash target', () => {
     const settingsTargets = getAppUiTargets().filter(
       (target) => target.category === 'settings' && target.route,
@@ -57,8 +51,6 @@ describe('app UI targets registry', () => {
       devices: 'devices',
       'websocket-api': 'devices',
       'guest-sessions': 'guest-sessions',
-      'labs-multiplayer': 'labs',
-      'labs-gitlab': 'labs',
     } as const;
 
     const targets = getAppUiTargets();
