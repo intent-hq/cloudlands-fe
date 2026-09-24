@@ -25,9 +25,13 @@ export function describeInviteFailureReason(
     case 'redeemed':
       return m.deeplink_inviteError_redeemed();
     case 'pin-mismatch':
-      return m.deeplink_inviteError_pinMismatch();
+      return m.deeplink_inviteError_pinMismatch({
+        showLabsCommand: m.lib_commandPalette_showLabsInSettings_label(),
+      });
     case 'identity-unavailable':
-      return m.deeplink_inviteError_identityUnavailable();
+      return m.deeplink_inviteError_identityUnavailable({
+        showLabsCommand: m.lib_commandPalette_showLabsInSettings_label(),
+      });
     case 'proof-invalid':
       return m.deeplink_inviteError_proofInvalid();
     case 'proof-expired':
@@ -57,9 +61,13 @@ export function describeInviteFailureReason(
     case 'proof-github-unreachable':
       return m.deeplink_inviteError_proofGithubUnreachable();
     case 'proof-gitlab-not-connected':
-      return m.deeplink_inviteError_proofGitlabNotConnected();
+      return m.deeplink_inviteError_proofGitlabNotConnected({
+        showLabsCommand: m.lib_commandPalette_showLabsInSettings_label(),
+      });
     case 'proof-gitlab-scope-missing':
-      return m.deeplink_inviteError_proofGitlabScopeMissing();
+      return m.deeplink_inviteError_proofGitlabScopeMissing({
+        showLabsCommand: m.lib_commandPalette_showLabsInSettings_label(),
+      });
     case 'proof-gitlab-unreachable':
       return m.deeplink_inviteError_proofGitlabUnreachable();
     case 'proof-failed':
