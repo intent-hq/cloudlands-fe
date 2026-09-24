@@ -1085,6 +1085,8 @@
   "ui_linkTooltip_gitHubActionsHint_tooltip": "Haga clic para ver acciones · Mantenga {key} para abrir en la aplicación",
   "ui_linkTooltip_copied_label": "¡Copiado!",
   "ui_linkTooltip_gitHubLoading_ariaLabel": "Cargando detalles de GitHub…",
+  "ui_linkTooltip_gitHubRateLimited_description": "GitHub está limitando las solicitudes. Vuelve a pasar el cursor más tarde para reintentar.",
+  "ui_linkTooltip_gitHubUnavailable_description": "Los detalles de GitHub no están disponibles. Vuelve a pasar el cursor para reintentar.",
   "ui_linkTooltip_gitHubStateOpen_label": "Abierto",
   "ui_linkTooltip_gitHubStateClosed_label": "Cerrado",
   "ui_linkTooltip_gitHubStateMerged_label": "Fusionado",
