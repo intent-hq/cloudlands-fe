@@ -1,9 +1,5 @@
 export const CHIEF_SPECIALIST_ID = 'chief-of-staff';
-export const CHIEF_PROMPT_VERSION = 2;
-// `agent.create` currently accepts arbitrary metadata but AgentLite does not
-// persist it. Sessions created after this rollout therefore use their daemon-
-// persisted creation time as the reload-safe v2 marker.
-export const CHIEF_PROMPT_V2_INTRODUCED_AT = '2026-07-28T18:01:00.000Z';
+export const CHIEF_PROMPT_VERSION = 3;
 
 export const CHIEF_RUNTIME_IDENTITY = `## Assistant Runtime Identity
 

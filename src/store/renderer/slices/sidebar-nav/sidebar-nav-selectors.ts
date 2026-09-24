@@ -8,11 +8,7 @@ import { extractAllContent, type AgentMessage, type AgentSession } from '$shared
 import { CHIEF_WORKSPACE_ID, type ChiefThreadPreview } from './sidebar-nav-types';
 import { getChiefThreadTitle } from './chief-thread-title';
 import { m } from '$shared/paraglide/messages.js';
-import {
-  CHIEF_PROMPT_V2_INTRODUCED_AT,
-  CHIEF_PROMPT_VERSION,
-  CHIEF_SPECIALIST_ID,
-} from '$shared/chief-agent-config';
+import { CHIEF_PROMPT_VERSION, CHIEF_SPECIALIST_ID } from '$shared/chief-agent-config';
 
 function getMessageTimestamp(message: AgentMessage | undefined): number {
   const value = message?.timestamp;
@@ -59,12 +55,9 @@ function getChiefSessions(state: StoreState): AgentSession[] {
 }
 
 function hasCurrentChiefIdentity(session: AgentSession): boolean {
-  const createdAt = new Date(session.createdAt).getTime();
-  const introducedAt = new Date(CHIEF_PROMPT_V2_INTRODUCED_AT).getTime();
   return (
     session.metadata?.specialist === CHIEF_SPECIALIST_ID &&
-    (session.metadata?.chiefPromptVersion === CHIEF_PROMPT_VERSION ||
-      (Number.isFinite(createdAt) && createdAt >= introducedAt))
+    session.metadata?.chiefPromptVersion === CHIEF_PROMPT_VERSION
   );
 }
 

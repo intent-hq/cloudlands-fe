@@ -683,6 +683,38 @@ describe('agent-session-slice reducer', () => {
       expect(next.byAgentId['a1'].metadata?.completionReport).toBe('Done — tests pass, PR ready.');
     });
 
+    it.each([false, true])(
+      'refreshes chief prompt identity with listProjection=%s without losing no-op reuse',
+      (listProjection) => {
+        const snapshot = (chiefPromptVersion?: number) =>
+          makeSession('a1', '__chief__', {
+            metadata: {
+              specialist: 'chief-of-staff',
+              ...(chiefPromptVersion !== undefined ? { chiefPromptVersion } : {}),
+            },
+          });
+        let state = agentSessionReducer(
+          initialState,
+          bulkUpsertSessions([snapshot()], { listProjection }),
+        );
+        for (const version of [3, 2, 3, undefined]) {
+          const refreshed = agentSessionReducer(
+            state,
+            bulkUpsertSessions([snapshot(version)], { listProjection }),
+          );
+          expect(refreshed).not.toBe(state);
+          expect(refreshed.byAgentId.a1.metadata?.chiefPromptVersion).toBe(version);
+          expect(
+            agentSessionReducer(
+              refreshed,
+              bulkUpsertSessions([snapshot(version)], { listProjection }),
+            ),
+          ).toBe(refreshed);
+          state = refreshed;
+        }
+      },
+    );
+
     it('applies an upsert when only metadata.dismissedQuestionsMessageId changes (cross-window reconcile)', () => {
       const state = agentSessionReducer(initialState, upsertSession(makeSession('a1', 'ws-1')));
 

@@ -1031,6 +1031,7 @@ type SessionComparisonSnapshot = Pick<
   attentionRequestReason: string | undefined;
   attentionRequestTimestamp: string | undefined;
   specialist: string | undefined;
+  chiefPromptVersion: number | undefined;
   completionReport: string | undefined;
   taskNoteId: string | undefined;
   dismissedQuestionsMessageId: string | undefined;
@@ -1086,6 +1087,7 @@ function toSessionComparisonSnapshot(session: StoredAgentSession): SessionCompar
     attentionRequestReason: attentionRequest?.reason,
     attentionRequestTimestamp: attentionRequest?.timestamp,
     specialist: typeof metadata?.specialist === 'string' ? metadata.specialist : undefined,
+    chiefPromptVersion: metadata?.chiefPromptVersion,
     completionReport:
       typeof metadata?.completionReport === 'string' ? metadata.completionReport : undefined,
     taskNoteId: typeof metadata?.taskNoteId === 'string' ? metadata.taskNoteId : undefined,
