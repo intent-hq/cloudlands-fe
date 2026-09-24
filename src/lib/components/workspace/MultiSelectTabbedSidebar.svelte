@@ -977,7 +977,10 @@
   >
     <!-- Fixed Top Section: Progress Card -->
     {#if !collapsed || railTab === 'overview'}
-      <div class="shrink-0 px-6 pb-2 pt-5" data-workspace-title-region>
+      <div
+        class={cn('shrink-0 px-6 pb-2', collapsed ? 'pt-2' : 'pt-5')}
+        data-workspace-title-region
+      >
         <WorkspaceProgressCard {workspaceId} onOpenNote={handleOpenNoteInPanel} />
       </div>
     {/if}
@@ -1037,7 +1040,7 @@
                   >
                     <!-- Panel header/description -->
                     {#if tab && !tab.hideHeader}
-                      <div class="px-4 pb-1 pt-4">
+                      <div class={cn('px-4 pb-1', collapsed ? 'pt-2' : 'pt-4')}>
                         <h6
                           class="text-ui font-semibold text-foreground flex items-center gap-2 mb-0.5"
                         >
