@@ -4,6 +4,13 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.182.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.182.0...v2.182.1) (2026-09-24)
+
+
+### 🐛 Bug Fixes
+
+* smooth focus backgrounds and selection indicators without overshoot ([#2748](https://github.com/intent-hq/cloudlands-fe/issues/2748)) ([5547929](https://github.com/intent-hq/cloudlands-fe/commit/5547929239265fea06311262a15c7405b92f448e))
+
 ## [2.182.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.181.0...v2.182.0) (2026-09-24)
 
 
