@@ -37,11 +37,15 @@ test('collapsed rail previews stay interactive and preserve the expanded card', 
     body: await page.screenshot(),
     contentType: 'image/png',
   });
-  await page.keyboard.press('Escape');
-
+  const previewElement = await preview.elementHandle();
   const context = rail.locator('[data-sidebar-rail-tab="context"]');
   await context.hover();
   await expect(page.locator('[data-sidebar-rail-preview="context"]')).toBeVisible();
+  expect(
+    await previewElement!.evaluate(
+      (node) => node === document.querySelector('[data-sidebar-rail-preview="context"]'),
+    ),
+  ).toBe(true);
   const contextHeight = (await page.locator('[data-sidebar-rail-preview="context"]').boundingBox())!
     .height;
   expect(contextHeight).toBeLessThan(changesHeight);

@@ -982,7 +982,7 @@
       </div>
     {/if}
 
-    {#if !isNewWorkspaceSession}
+    {#if !isNewWorkspaceSession && !(collapsed && railTab === 'overview')}
       <div
         class={cn(
           'sidebar-stage grid min-h-0 flex-1',
@@ -1523,7 +1523,7 @@
         {/if}
       </div>
     {/if}
-    {#if !collapsed || railTab === 'overview'}
+    {#if !collapsed}
       <!-- Compact launchers stay fixed; only collapsed tabs resize beneath an expanded card. -->
       <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
       <div

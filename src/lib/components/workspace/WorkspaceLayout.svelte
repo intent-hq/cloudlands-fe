@@ -12,6 +12,7 @@
    */
 
   import type { Snippet } from 'svelte';
+  import { springIn, crispOut } from '$lib/motion';
 
   // Components
   import ResizablePanel from '$lib/components/layout/ResizablePanel.svelte';
@@ -90,9 +91,22 @@
       {/if}
 
       <!-- Sidebar -->
-      {#if $sidebarIsCollapsed && !startCollapsed && active}
-        <div class="h-full w-12 shrink-0" data-workspace-sidebar-rail-shell>
-          {@render sidebar(true)}
+      {#if !startCollapsed && active}
+        <div
+          class="h-full shrink-0 overflow-hidden transition-[width] duration-spring-slow ease-spring-slow motion-reduce:transition-none"
+          style:width={$sidebarIsCollapsed ? '48px' : '0px'}
+          inert={!$sidebarIsCollapsed}
+          data-workspace-sidebar-rail-shell
+        >
+          {#if $sidebarIsCollapsed}
+            <div
+              class="h-full w-12"
+              in:springIn={{ tier: 'moderate', x: -4 }}
+              out:crispOut={{ tier: 'fast' }}
+            >
+              {@render sidebar(true)}
+            </div>
+          {/if}
         </div>
       {/if}
       <ResizablePanel
@@ -112,17 +126,21 @@
           : 'ml-auto mr-0'}"
       >
         {#if !$sidebarIsCollapsed || startCollapsed}
-          {@render sidebar(false)}
+          <div
+            class="h-full"
+            style:min-width={`${sidebarMinWidth}px`}
+            inert={$sidebarIsCollapsed}
+            in:springIn={{ tier: 'moderate', x: -8 }}
+            out:crispOut={{ tier: 'fast' }}
+          >
+            {@render sidebar(false)}
+          </div>
         {/if}
       </ResizablePanel>
 
       {#if sidebarSide === 'left'}
         <!-- Main Content Area (Panel Layout) - rendered after when sidebar is on left -->
-        <div
-          class="main-content-area flex h-full min-w-0 z-10 bg-sidebar {$sidebarIsCollapsed
-            ? 'pl-2 sm:pl-3'
-            : ''}"
-        >
+        <div class="main-content-area flex h-full min-w-0 z-10 bg-sidebar">
           {@render content()}
         </div>
       {/if}
