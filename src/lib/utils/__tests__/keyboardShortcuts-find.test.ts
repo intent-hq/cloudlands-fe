@@ -2,6 +2,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { KeyboardShortcutManager } from '../keyboardShortcuts';
 import { registerGlobalSearchShortcuts } from '../global-search-shortcuts';
+import { getPanelFindOwner } from '../panel-find-owner';
 import { resolveShortcut, type ShortcutOverrides } from '../shortcut-bindings';
 
 describe.each([
@@ -146,5 +147,58 @@ describe.each([
     manager.detach();
     expect(press().defaultPrevented).toBe(false);
     expect(openGlobalSearch).not.toHaveBeenCalled();
+  });
+
+  it('chooses the DOM-focused panel over stale focus flags, then falls back outside panels', () => {
+    const calls = [vi.fn(), vi.fn()];
+    const panels = calls.map((open, index) => {
+      const panel = document.createElement('section');
+      panel.dataset.panelFindShortcutOwner = 'true';
+      panel.dataset.panelFindFocused = String(index === 0);
+      const input = document.createElement('input');
+      panel.append(input);
+      document.body.append(panel);
+      listen(window, (event) => {
+        if (event.defaultPrevented || getPanelFindOwner(event) !== panel) return;
+        event.preventDefault();
+        open();
+      });
+      return { panel, input };
+    });
+    panels[1].input.focus();
+    press({}, panels[1].input);
+    expect(calls[0]).not.toHaveBeenCalled();
+    expect(calls[1]).toHaveBeenCalledOnce();
+    expect(openGlobalSearch).not.toHaveBeenCalled();
+    panels[0].input.focus();
+    press({}, panels[0].input);
+    expect(calls[0]).toHaveBeenCalledOnce();
+    const outside = document.createElement('button');
+    document.body.append(outside);
+    outside.focus();
+    press({}, outside);
+    expect(openGlobalSearch).toHaveBeenCalledOnce();
+    expect(calls[0]).toHaveBeenCalledOnce();
+    expect(calls[1]).toHaveBeenCalledOnce();
+  });
+
+  it('uses a unique layout owner only when DOM focus is absent', () => {
+    const panel = document.createElement('section');
+    panel.dataset.panelFindShortcutOwner = 'true';
+    panel.dataset.panelFindFocused = 'true';
+    document.body.append(panel);
+    const local = vi.fn();
+    listen(window, (event) => {
+      if (getPanelFindOwner(event) === panel) {
+        event.preventDefault();
+        local();
+      }
+    });
+    press();
+    expect(local).toHaveBeenCalledOnce();
+    document.body.append(panel.cloneNode(true));
+    press();
+    expect(local).toHaveBeenCalledOnce();
+    expect(openGlobalSearch).toHaveBeenCalledOnce();
   });
 });
