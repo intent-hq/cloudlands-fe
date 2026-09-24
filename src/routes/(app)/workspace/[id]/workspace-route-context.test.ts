@@ -14,6 +14,7 @@ const mocks = vi.hoisted(() => ({
   routeId: 'workspace-a',
   notify: undefined as (() => void) | undefined,
   openWorkspaceIds: ['workspace-a', 'workspace-b'],
+  browserWorkspaceIds: [] as string[],
   workspaceItems: [
     { id: 'workspace-a', title: 'A' },
     { id: 'workspace-b', title: 'B' },
@@ -42,6 +43,9 @@ vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
 }));
 vi.mock('$store/renderer/slices/tab-state/tab-state-selectors', () => ({
   selectActiveWorkspaceIds: () => readable(mocks.openWorkspaceIds),
+}));
+vi.mock('$store/renderer/slices/panel-layout/panel-layout-selectors', () => ({
+  selectBrowserWorkspaceIds: () => readable(mocks.browserWorkspaceIds),
 }));
 vi.mock('./WorkspaceSurface.svelte', async () => {
   const component = (await import('./__tests__/mocks/MockWorkspaceSurfacePart.svelte')).default;
@@ -74,9 +78,46 @@ function surfaces(container: HTMLElement) {
 describe('workspace route page', () => {
   beforeEach(() => {
     mocks.routeId = 'workspace-a';
+    mocks.openWorkspaceIds = ['workspace-a', 'workspace-b'];
+    mocks.browserWorkspaceIds = [];
+    mocks.workspaceItems = [
+      { id: 'workspace-a', title: 'A' },
+      { id: 'workspace-b', title: 'B' },
+    ];
   });
 
   afterEach(cleanup);
+
+  it('keeps the browser workspace instance when navigation exceeds the surface cache limit', async () => {
+    mocks.openWorkspaceIds = ['workspace-a', 'workspace-b', 'workspace-c', 'workspace-d'];
+    mocks.workspaceItems = mocks.openWorkspaceIds.map((id) => ({ id, title: id }));
+    mocks.browserWorkspaceIds = ['workspace-a'];
+    const { container } = render(WorkspacePage);
+    const browserSurface = container.querySelector('[data-workspace-id="workspace-a"]');
+    expect(browserSurface).not.toBeNull();
+
+    for (const workspaceId of ['workspace-b', 'workspace-c', 'workspace-d']) {
+      navigateTo(workspaceId);
+      await waitFor(() =>
+        expect(surfaces(container)).toContainEqual({
+          workspaceId,
+          active: 'true',
+          retained: 'true',
+        }),
+      );
+      expect(container.querySelector('[data-workspace-id="workspace-a"]')).toBe(browserSurface);
+    }
+
+    navigateTo('workspace-a');
+    await waitFor(() =>
+      expect(surfaces(container)).toContainEqual({
+        workspaceId: 'workspace-a',
+        active: 'true',
+        retained: 'true',
+      }),
+    );
+    expect(container.querySelector('[data-workspace-id="workspace-a"]')).toBe(browserSurface);
+  });
 
   it('routes workspace changes through the active-gated retention surface', async () => {
     const { container } = render(WorkspacePage);

@@ -54,6 +54,7 @@
     type RenderContentBlock,
   } from '$lib/utils/messageParser';
   import ResponseGroup from './ResponseGroup.svelte';
+  import { safeDisclosureTransition } from './disclosure-motion';
   import {
     getOperationalClusterSpacingClass,
     isAdjacentOperationalClusterRow,
@@ -155,6 +156,18 @@
    * recreates DOM elements due to reactive content updates.
    */
   const animatedKeys = new Set<string>();
+
+  // Existing rows must not replay their entrance when a live transcript mounts.
+  // svelte-ignore state_referenced_locally -- initial tool identities are an intentional snapshot.
+  const enteredToolKeys = new Set(
+    content.filter((block) => block.type === 'tool_use').map((block) => block.id),
+  );
+
+  function enterToolRow(node: Element, key: string) {
+    if (!isStreaming || enteredToolKeys.has(key)) return { duration: 0 };
+    enteredToolKeys.add(key);
+    return safeDisclosureTransition(node, { tier: 'moderate', y: 0 }, { direction: 'in' });
+  }
 
   /**
    * Svelte action that adds the slide-up animation class once per unique
@@ -793,7 +806,7 @@
     {@const toolBlock = block as ToolUseBlock}
     {@const toolResultBlock = findToolResult(toolResultsMap, toolBlock)}
     {@const resultContent = getToolResultPayload(toolResultBlock)}
-    <div class="relative w-full min-w-0">
+    <div class="relative w-full min-w-0" in:enterToolRow|global={toolBlock.id} data-tool-entry>
       <ToolCall
         toolUse={toolBlock}
         toolState={toolStates.get(toolBlock.id) || 'running'}
@@ -1031,7 +1044,10 @@
         data-chat-search-block-path={block.type === 'text'
           ? chatSearchBlockPath(blockIndex)
           : undefined}
-        use:animateIn={{ animate: isStreaming, key: blockKeys[blockIndex] }}
+        use:animateIn={{
+          animate: isStreaming && block.type !== 'tool_use',
+          key: blockKeys[blockIndex],
+        }}
       >
         {@render renderContentBlock(
           block as ContentBlock,
