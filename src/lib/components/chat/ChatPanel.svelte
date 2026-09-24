@@ -3561,84 +3561,157 @@
   // Watch pending turns against the transcript viewport. The persistent
   // LazyTurn shell survives content hydration changes, so observation does
   // not go stale when a card is replaced by a placeholder and restored.
+  const hasPendingProposalRefs = $derived(pendingProposalRefs.length > 0);
+  let reconcilePendingProposalTargets = $state.raw<(() => void) | null>(null);
+
   $effect(() => {
-    const refs = pendingProposalRefs;
     const root = scrollContainer;
-    void $agentMessages$;
-    void $pendingProposalRecovery$;
-    void $proposalLifecycleMap$;
-    if (!isActive || !root || refs.length === 0) {
+    const boundAgentId = agentId;
+    if (!isActive || !root || !hasPendingProposalRefs) {
       offscreenPendingProposalMessageId = null;
       return;
     }
 
-    const retainedMessageId = untrack(() => offscreenPendingProposalMessageId);
-    if (retainedMessageId && !refs.some((ref) => ref.messageId === retainedMessageId)) {
-      offscreenPendingProposalMessageId = null;
+    let disposed = false;
+    const targetsByRef = new Map<
+      string,
+      { element: HTMLElement; turnKey: string | undefined; hydrated: boolean }
+    >();
+    // Samples belong to elements, not refs: a new ref sharing a shell must
+    // inherit its sample even if IntersectionObserver never emits again.
+    const visibilityByTarget = new Map<Element, boolean | undefined>();
+    const isCurrent = () =>
+      !disposed && isActive && agentId === boundAgentId && scrollContainer === root;
+    const isConnectedTarget = (target: Element) => target.isConnected && root.contains(target);
+
+    function publishVisibility() {
+      if (!isCurrent()) return;
+      const recovered = $pendingProposalRecovery$;
+      offscreenPendingProposalMessageId =
+        pendingProposalRefs.find((ref) => {
+          const target = targetsByRef.get(`${ref.messageId}\u0000${ref.proposalId}`)?.element;
+          if (target && isConnectedTarget(target)) {
+            return visibilityByTarget.get(target) === false;
+          }
+          const entry = recovered?.[ref.messageId];
+          return (
+            entry?.status === 'found' &&
+            entry.proposals?.some((proposal) => proposal.proposalId === ref.proposalId)
+          );
+        })?.messageId ?? null;
     }
 
-    let disposed = false;
-    let observer: IntersectionObserver | null = null;
-    tick().then(() => {
-      if (disposed || !isActive || scrollContainer !== root) return;
-      const refKeysByTarget = new Map<Element, string[]>();
-      const visibility = new Map<string, boolean>();
+    const observer =
+      typeof IntersectionObserver === 'undefined'
+        ? null
+        : new IntersectionObserver(
+            (entries) => {
+              if (!isCurrent()) return;
+              for (const entry of entries) {
+                if (visibilityByTarget.has(entry.target) && isConnectedTarget(entry.target)) {
+                  visibilityByTarget.set(entry.target, entry.isIntersecting);
+                }
+              }
+              publishVisibility();
+            },
+            { root, threshold: 0.01 },
+          );
+
+    reconcilePendingProposalTargets = () => {
+      if (!isCurrent()) return;
+      const refs = pendingProposalRefs;
+      const refKeys = new Set<string>();
       const claimed = new Set<Element>();
-      const recovered = $pendingProposalRecovery$;
       for (const ref of refs) {
         const refKey = `${ref.messageId}\u0000${ref.proposalId}`;
+        refKeys.add(refKey);
+        const cached = targetsByRef.get(refKey);
+        const turnKey = messageIdToTurnKey.get(ref.messageId);
+        const hydrated = hydratedMessageIds.has(ref.messageId);
+        // Message shells are keyed by message id and survive virtualization.
+        // Revisit this cache if LazyTurn identity or transcript windowing changes.
+        // Fallback targets also need rediscovery when their message hydrates or moves.
+        if (
+          cached &&
+          isConnectedTarget(cached.element) &&
+          (cached.element.dataset.lazyTurnKey === ref.messageId ||
+            (cached.turnKey === turnKey && cached.hydrated === hydrated))
+        ) {
+          claimed.add(cached.element);
+        } else {
+          targetsByRef.delete(refKey);
+        }
+      }
+      // Reserve retained card fallbacks before discovering new refs, so a
+      // metadata reorder cannot give their card to an unkeyed new proposal.
+      for (const ref of refs) {
+        const refKey = `${ref.messageId}\u0000${ref.proposalId}`;
+        if (targetsByRef.has(refKey)) continue;
+        const turnKey = messageIdToTurnKey.get(ref.messageId);
         const message = root.querySelector<HTMLElement>(
           `[data-message-id="${CSS.escape(ref.messageId)}"]`,
         );
         let target = message?.closest<HTMLElement>('[data-lazy-turn-key]') ?? null;
         if (!target) {
-          const turnKey = messageIdToTurnKey.get(ref.messageId);
           target = turnKey
             ? root.querySelector<HTMLElement>(`[data-lazy-turn-key="${CSS.escape(turnKey)}"]`)
             : null;
         }
         if (!target && message) target = findPendingProposalCard(message, ref, claimed);
-        if (!target) {
-          const recoveredEntry = recovered?.[ref.messageId];
-          if (
-            recoveredEntry?.status === 'found' &&
-            recoveredEntry.proposals?.some((entry) => entry.proposalId === ref.proposalId)
-          ) {
-            visibility.set(refKey, false);
-          }
-          continue;
-        }
+        if (!target || !isConnectedTarget(target)) continue;
+        targetsByRef.set(refKey, {
+          element: target,
+          turnKey,
+          hydrated: hydratedMessageIds.has(ref.messageId),
+        });
         claimed.add(target);
-        refKeysByTarget.set(target, [...(refKeysByTarget.get(target) ?? []), refKey]);
       }
-      if (refKeysByTarget.size === 0 || typeof IntersectionObserver === 'undefined') {
-        offscreenPendingProposalMessageId =
-          refs.find((ref) => visibility.get(`${ref.messageId}\u0000${ref.proposalId}`) === false)
-            ?.messageId ?? null;
-        return;
+      for (const refKey of targetsByRef.keys()) {
+        if (!refKeys.has(refKey)) targetsByRef.delete(refKey);
       }
-      // Keep the last observation until the replacement observer samples;
-      // clearing it here resizes the transcript on every streamed update.
-      observer = new IntersectionObserver(
-        (entries) => {
-          if (disposed) return;
-          for (const entry of entries) {
-            for (const refKey of refKeysByTarget.get(entry.target) ?? []) {
-              visibility.set(refKey, entry.isIntersecting);
-            }
-          }
-          offscreenPendingProposalMessageId =
-            refs.find((ref) => visibility.get(`${ref.messageId}\u0000${ref.proposalId}`) === false)
-              ?.messageId ?? null;
-        },
-        { root, threshold: 0.01 },
-      );
-      for (const target of refKeysByTarget.keys()) observer.observe(target);
-    });
+      for (const target of visibilityByTarget.keys()) {
+        if (!claimed.has(target)) {
+          observer?.unobserve(target);
+          visibilityByTarget.delete(target);
+        }
+      }
+      for (const target of claimed) {
+        if (!visibilityByTarget.has(target)) {
+          visibilityByTarget.set(target, undefined);
+          observer?.observe(target);
+        }
+      }
+      publishVisibility();
+    };
 
     return () => {
       disposed = true;
       observer?.disconnect();
+      targetsByRef.clear();
+      visibilityByTarget.clear();
+      reconcilePendingProposalTargets = null;
+      offscreenPendingProposalMessageId = null;
+    };
+  });
+
+  // Keep broad discovery triggers for late-mounted/recovered content, but do
+  // not tie the observer's lifetime to transcript or metadata object identity.
+  $effect(() => {
+    const reconcile = reconcilePendingProposalTargets;
+    void pendingProposalRefs;
+    void $agentMessages$;
+    void $pendingProposalRecovery$;
+    void $proposalLifecycleMap$;
+    void $transcriptHydration$;
+    void hydratedMessageIds;
+    void messageIdToTurnKey;
+    if (!reconcile) return;
+    let obsolete = false;
+    tick().then(() => {
+      if (!obsolete) reconcile();
+    });
+    return () => {
+      obsolete = true;
     };
   });
 
