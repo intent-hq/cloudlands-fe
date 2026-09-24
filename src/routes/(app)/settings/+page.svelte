@@ -25,7 +25,6 @@
   import OpenInAppsSettings from '$lib/components/settings/OpenInAppsSettings.svelte';
   import LanguageSettings from '$lib/components/settings/LanguageSettings.svelte';
   import GitHubLinkSettings from '$lib/components/settings/GitHubLinkSettings.svelte';
-  import GitLabLabsSettings from '$lib/components/settings/GitLabLabsSettings.svelte';
   import KeyboardShortcutsSettings from '$lib/components/settings/KeyboardShortcutsSettings.svelte';
   import ColorThemeSettings from '$lib/components/settings/ColorThemeSettings.svelte';
   import ReduceMotionOnBatterySettings from '$lib/components/settings/ReduceMotionOnBatterySettings.svelte';
@@ -52,7 +51,6 @@
     setAgentFontStyle,
     setChatAuroraEnabled,
     setCodeFontFamily,
-    setLabsMultiplayerEnabled,
     setNoteFontStyle,
     setShellTransparencyEnabled,
     setUpdateChannel,
@@ -65,8 +63,6 @@
     selectCodeFontFamilyCSS,
     selectCodeFontOptions,
     selectIsNoteMonospace,
-    selectLabsSettingsVisible,
-    selectLabsMultiplayerEnabled,
     selectNoteFontStyle,
     selectShellTransparencyEnabled,
     selectUpdateChannel,
@@ -98,8 +94,6 @@
   const codeFontOptions = selectCodeFontOptions();
   const chatAuroraEnabled = selectChatAuroraEnabled();
   const shellTransparencyEnabled = selectShellTransparencyEnabled();
-  const labsMultiplayerEnabled = selectLabsMultiplayerEnabled();
-  const labsSettingsVisible = selectLabsSettingsVisible();
   const themePreference = selectThemePreference();
   const daemonTransport$ = selectDaemonTransport();
   const isCollaboratorOnlyClient$ = selectIsCollaboratorOnlyClient();
@@ -125,13 +119,12 @@
     'guest-sessions',
     'setup',
     'advanced',
-    'labs',
     'input',
     'specialists',
   ];
 
   function isSettingsTab(tab: string): tab is SettingsTab {
-    return validTabs.includes(tab as SettingsTab) && (tab !== 'labs' || $labsSettingsVisible);
+    return validTabs.includes(tab as SettingsTab);
   }
 
   const hashToTab: Record<string, SettingsTab> = {
@@ -185,10 +178,6 @@
     reset: 'advanced',
     general: 'advanced',
     developer: 'advanced',
-    labs: 'labs',
-    'labs-multiplayer': 'labs',
-    'labs-gitlab': 'labs',
-    multiplayer: 'labs',
   };
 
   function resolveHashTab(targetId: string): SettingsTab | undefined {
@@ -233,7 +222,6 @@
 
   // Update URL when tab changes
   function setActiveTab(tab: SettingsTab) {
-    if (tab === 'labs' && !$labsSettingsVisible) tab = 'display';
     if (tab !== activeTab) {
       if (hashScrollTimer !== undefined) clearTimeout(hashScrollTimer);
       hashScrollTimer = undefined;
@@ -256,27 +244,17 @@
   // collaborator-only default is a safe placeholder, not an answer, and
   // redirecting on it would drop a `?tab=providers` deep link for an
   // administrator (intent-hq/intent#5514).
-  const hiddenTabs = $derived<readonly SettingsTab[]>([
-    ...($isCollaboratorOnlyClient$ ? (['providers', 'connections'] as const) : []),
-    ...(!$labsSettingsVisible ? (['labs'] as const) : []),
-  ]);
+  const hiddenTabs = $derived<readonly SettingsTab[]>(
+    $isCollaboratorOnlyClient$ ? ['providers', 'connections'] : [],
+  );
   $effect(() => {
-    if (
-      (activeTab === 'labs' && !$labsSettingsVisible) ||
-      ($windowIdentitySettled$ && hiddenTabs.includes(activeTab))
-    ) {
-      setActiveTab('display');
-    }
+    if ($windowIdentitySettled$ && hiddenTabs.includes(activeTab)) setActiveTab('display');
   });
 
   // Keep the rendered pane in sync when SvelteKit navigates within the mounted settings page.
   $effect(() => {
-    const routeHref = page.url.href;
-    // Sidebar selections replace browser history without updating page.url. Use
-    // the current location when a visibility change reruns this effect.
-    const url = new URL(browser ? window.location.href : routeHref);
-    const tabParam = url.searchParams.get('tab');
-    const targetId = url.hash.slice(1);
+    const tabParam = page.url.searchParams.get('tab');
+    const targetId = page.url.hash.slice(1);
     const nextTab = resolveTabFromUrl(tabParam, targetId);
 
     untrack(() => {
@@ -1138,53 +1116,6 @@
               </div>
             </div>
           {/if}
-        {/if}
-
-        <!-- Labs -->
-        {#if activeTab === 'labs' && $labsSettingsVisible}
-          <div id="labs" data-highlight-id="labs" use:highlightTarget>
-            <h2 class="type-title mb-3 text-foreground">
-              {m.settings_section_labs()}
-            </h2>
-            <p class="type-body text-subtle mb-3">
-              {m.settings_labs_disclaimer_description()}
-            </p>
-            <div class="flex flex-col bg-card rounded-xl divide-y divide-border">
-              <section
-                id="labs-multiplayer"
-                data-highlight-id="labs-multiplayer"
-                use:highlightTarget
-                data-slot="settings-section-body"
-                class="px-6 py-4"
-              >
-                <SettingsFieldRow
-                  id="settings-labs-multiplayer-label-field"
-                  label={m.settings_labs_multiplayer_label()}
-                  description={m.settings_labs_multiplayer_description()}
-                  experimental
-                >
-                  <Switch
-                    id="labs-multiplayer-switch"
-                    size="sm"
-                    class="mb-auto"
-                    checked={$labsMultiplayerEnabled}
-                    onCheckedChange={(enabled) =>
-                      appStore.dispatch(setLabsMultiplayerEnabled(enabled))}
-                    ariaLabel={m.settings_labs_multiplayer_label()}
-                  />
-                </SettingsFieldRow>
-              </section>
-              <section
-                id="labs-gitlab"
-                data-highlight-id="labs-gitlab"
-                use:highlightTarget
-                data-slot="settings-section-body"
-                class="px-6 py-4"
-              >
-                <GitLabLabsSettings />
-              </section>
-            </div>
-          </div>
         {/if}
       </main>
     </div>

@@ -9,6 +9,7 @@
     loadWorkspaceNotesSucceeded,
   } from '$store/renderer/slices/workspace-notes/workspace-notes-slice';
   import { clearWorkspace, setChangesData } from '$store/renderer/slices/changes/changes-slice';
+  import { setLabsGitLabEnabled } from '$store/renderer/slices/user-preferences/user-preferences-slice';
 
   const workspaceId = WorkspaceId('preview-command-palette');
   const timestamp = '2026-09-15T12:00:00.000Z';
@@ -51,13 +52,30 @@
     };
   }
 
-  export const preview = definePreview<{ initialQuery: string }>({
+  function setupGitLab(enabled: boolean) {
+    return () => {
+      const before = appStore.state.userPreferences.labsGitLabEnabled;
+      appStore.dispatch(setLabsGitLabEnabled(enabled));
+      return () => appStore.dispatch(setLabsGitLabEnabled(before));
+    };
+  }
+
+  export const preview = definePreview<{ initialQuery: string; withoutWorkspace?: boolean }>({
     id: 'command-palette',
     title: 'Command palette',
     defaultState: 'grouped',
     states: {
       grouped: { props: { initialQuery: '' }, setup },
       context: { props: { initialQuery: '#' }, setup },
+      multiplayer: { props: { initialQuery: 'multiplayer' }, setup },
+      'gitlab-off': {
+        props: { initialQuery: 'GitLab', withoutWorkspace: true },
+        setup: setupGitLab(false),
+      },
+      'gitlab-on': {
+        props: { initialQuery: 'GitLab', withoutWorkspace: true },
+        setup: setupGitLab(true),
+      },
     },
   });
 </script>
@@ -65,11 +83,19 @@
 <script lang="ts">
   import CommandPalette from './CommandPalette.svelte';
   import { Button } from '$lib/components/ui/button';
-  let { initialQuery = '' }: { initialQuery?: string } = $props();
+  let {
+    initialQuery = '',
+    withoutWorkspace = false,
+  }: { initialQuery?: string; withoutWorkspace?: boolean } = $props();
   let isOpen = $state(true);
 </script>
 
 <div class="min-h-[700px]" data-command-palette-preview>
   <Button onclick={() => (isOpen = true)}>Open palette</Button>
-  <CommandPalette bind:isOpen {workspaceId} {initialQuery} onClose={() => (isOpen = false)} />
+  <CommandPalette
+    bind:isOpen
+    workspaceId={withoutWorkspace ? undefined : workspaceId}
+    {initialQuery}
+    onClose={() => (isOpen = false)}
+  />
 </div>
