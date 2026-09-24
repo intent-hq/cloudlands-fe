@@ -261,8 +261,6 @@ describe('editorial conversation presentation contract', () => {
     // Render-aware turn-body decisions are covered by subscription-card-spacing.test.ts;
     // chat-panel-visible-card-seams.ct.spec.ts and chat-panel-pending-status-spacing.ct.spec.ts
     // measure the production transcript for hidden/visible bodies and pending-status transitions.
-    // Card/batch/attention seam precedence is covered by subscription-card-gap
-    // and attention-flow-spacing-geometry browser tests using measured gaps.
     expect(panel).not.toContain('data-testid="chat-scroll-to-bottom-button"');
     expect(panel).toContain('showAgentCards={!isDelegatedBackgroundTaskAgent}');
     expect(panel).not.toContain('agentEventsForCards');

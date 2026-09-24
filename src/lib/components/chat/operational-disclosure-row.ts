@@ -8,12 +8,8 @@ export const OPERATIONAL_ROW_GEOMETRY_TOKENS_CLASS =
 export const OPERATIONAL_ROW_TONE_CLASS =
   'type-body font-family-child font-normal text-muted-foreground';
 
-export const OPERATIONAL_ROW_LINE_CLASS = `${OPERATIONAL_ROW_GEOMETRY_TOKENS_CLASS} relative flex min-h-9 w-full min-w-0 max-w-full items-center gap-[var(--operational-leading-gap)] overflow-hidden px-[var(--operational-row-inline-padding)] py-2`;
-
 /** Top-level assistant prose starts where operational summary text starts. */
 export const OPERATIONAL_ASSISTANT_PROSE_INSET_CLASS = `${OPERATIONAL_ROW_GEOMETRY_TOKENS_CLASS} min-w-0 max-w-full pl-[calc(var(--operational-row-inline-padding)+var(--operational-leading-slot-size)+var(--operational-leading-gap))]`;
-
-export const OPERATIONAL_SUMMARY_CLASS = 'min-w-0 shrink truncate whitespace-nowrap';
 
 /** Expanded content shares the operational summary text origin. */
 export const OPERATIONAL_EXPANDED_CONTENT_CLASS = `${OPERATIONAL_ROW_GEOMETRY_TOKENS_CLASS} min-w-0 max-w-full pl-[calc(var(--operational-row-inline-padding)+var(--operational-leading-slot-size)+var(--operational-leading-gap))] pt-1.5`;
