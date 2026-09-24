@@ -28,6 +28,68 @@ test('right-click descriptions keep the icon and shortcut centered on the first 
   await expect(trigger).toBeFocused();
 });
 
+test('first-line measurement is atomic across popup movement and still rejects misaligned accessories', async ({
+  mount,
+  page,
+}) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await mount(SidebarMenuHarness, { props: { multiline: true } });
+  await page.getByRole('button', { name: 'Workspace', exact: true }).click({ button: 'right' });
+  const root = page.getByRole('menu', { name: 'Workspace actions' });
+  const row = root.getByRole('menuitem', { name: 'Locked', exact: true });
+  const label = row.getByText('Locked', { exact: true });
+  await expect(row).toBeVisible();
+  await page.evaluate(() => document.fonts.ready);
+  await row.scrollIntoViewIfNeeded();
+  const before = (await root.boundingBox())!;
+
+  await label.evaluate((element) => {
+    const menu = element.closest<HTMLElement>('[role="menu"]')!;
+    const original = Range.prototype.getClientRects;
+    Range.prototype.getClientRects = function () {
+      const rects = original.call(this);
+      if (element.contains(this.commonAncestorContainer)) {
+        Range.prototype.getClientRects = original;
+        // Reproduce placement moving the entire popup after the text read,
+        // without faking either the text or accessory geometry.
+        queueMicrotask(() => (menu.style.translate = '0 29px'));
+      }
+      return rects;
+    };
+  });
+  await expectMenuFirstLine(row, label);
+  expect((await root.boundingBox())!.y).not.toBe(before.y);
+
+  for (const [selector, slot] of [
+    ['[data-slot="menu-item-leading"] svg', 'menu-item-leading'],
+    ['kbd', 'KBD'],
+  ]) {
+    const accessory = row.locator(selector);
+    const originalStyle = await accessory.getAttribute('style');
+    try {
+      // Reduced motion shortens transitions but does not disable them. Inject a
+      // settled offset so this negative control cannot sample its first frame.
+      await accessory.evaluate((element) => {
+        element.style.transitionProperty = 'none';
+        element.style.translate = '0 8px';
+      });
+      await expect(expectMenuFirstLine(row, label)).rejects.toThrow(slot);
+    } finally {
+      await accessory.evaluate((element, style) => {
+        if (style === null) element.removeAttribute('style');
+        else element.setAttribute('style', style);
+        // Restoring transition-property can start a return transition.
+        for (const animation of element.getAnimations()) {
+          if (animation instanceof CSSTransition && animation.transitionProperty === 'translate') {
+            animation.finish();
+          }
+        }
+      }, originalStyle);
+    }
+    await expectMenuFirstLine(row, label);
+  }
+});
+
 async function anatomy(menu: Locator) {
   return menu.evaluate((element) => {
     const surface = getComputedStyle(element);
