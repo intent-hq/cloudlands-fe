@@ -115,7 +115,7 @@
           }}
         >
           {#if tab.id === 'overview'}
-            <IntentNavigationIcon name="sidebar" size={16} />
+            <IntentNavigationIcon name="grid" size={16} />
           {:else}
             <Fa icon={tab.icon} class="size-4" />
           {/if}
