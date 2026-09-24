@@ -1262,13 +1262,16 @@
                         {:else if tabId === 'files'}
                           <div
                             class={cn(
-                              'flex min-h-0 flex-col px-4 transition-all duration-spring-moderate ease-spring-moderate motion-reduce:transition-none',
-                              collapsed ? 'h-[min(480px,calc(100dvh-180px))]' : 'h-full',
+                              'flex min-h-0 flex-col transition-all duration-spring-moderate ease-spring-moderate motion-reduce:transition-none',
+                              collapsed ? 'h-[min(480px,calc(100dvh-180px))] pl-4' : 'h-full px-4',
                             )}
                           >
                             <!-- File filter controls -->
                             <div
-                              class="flex shrink-0 items-center gap-2 pb-2"
+                              class={cn(
+                                'flex shrink-0 items-center gap-2 pb-2',
+                                collapsed && 'pr-4',
+                              )}
                               data-file-tree-toolbar
                             >
                               <ExpandableFileSearch
