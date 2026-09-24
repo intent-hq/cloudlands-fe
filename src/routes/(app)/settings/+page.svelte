@@ -25,6 +25,7 @@
   import OpenInAppsSettings from '$lib/components/settings/OpenInAppsSettings.svelte';
   import LanguageSettings from '$lib/components/settings/LanguageSettings.svelte';
   import GitHubLinkSettings from '$lib/components/settings/GitHubLinkSettings.svelte';
+  import GitLabLabsSettings from '$lib/components/settings/GitLabLabsSettings.svelte';
   import KeyboardShortcutsSettings from '$lib/components/settings/KeyboardShortcutsSettings.svelte';
   import ColorThemeSettings from '$lib/components/settings/ColorThemeSettings.svelte';
   import ReduceMotionOnBatterySettings from '$lib/components/settings/ReduceMotionOnBatterySettings.svelte';
@@ -52,7 +53,6 @@
     setChatAuroraEnabled,
     setCodeFontFamily,
     setLabsMultiplayerEnabled,
-    setLabsGitLabEnabled,
     setNoteFontStyle,
     setShellTransparencyEnabled,
     setUpdateChannel,
@@ -67,7 +67,6 @@
     selectIsNoteMonospace,
     selectLabsSettingsVisible,
     selectLabsMultiplayerEnabled,
-    selectLabsGitLabEnabled,
     selectNoteFontStyle,
     selectShellTransparencyEnabled,
     selectUpdateChannel,
@@ -100,7 +99,6 @@
   const chatAuroraEnabled = selectChatAuroraEnabled();
   const shellTransparencyEnabled = selectShellTransparencyEnabled();
   const labsMultiplayerEnabled = selectLabsMultiplayerEnabled();
-  const labsGitLabEnabled = selectLabsGitLabEnabled();
   const labsSettingsVisible = selectLabsSettingsVisible();
   const themePreference = selectThemePreference();
   const daemonTransport$ = selectDaemonTransport();
@@ -1176,29 +1174,7 @@
                   />
                 </SettingsFieldRow>
               </section>
-              <section
-                id="labs-gitlab"
-                data-highlight-id="labs-gitlab"
-                use:highlightTarget
-                data-slot="settings-section-body"
-                class="px-6 py-4"
-              >
-                <SettingsFieldRow
-                  id="settings-labs-gitlab-label-field"
-                  label={m.settings_labs_gitlab_label()}
-                  description={m.settings_labs_gitlab_description()}
-                  experimental
-                >
-                  <Switch
-                    id="labs-gitlab-switch"
-                    size="sm"
-                    class="mb-auto"
-                    checked={$labsGitLabEnabled}
-                    onCheckedChange={(enabled) => appStore.dispatch(setLabsGitLabEnabled(enabled))}
-                    ariaLabel={m.settings_labs_gitlab_label()}
-                  />
-                </SettingsFieldRow>
-              </section>
+              <GitLabLabsSettings />
             </div>
           </div>
         {/if}
