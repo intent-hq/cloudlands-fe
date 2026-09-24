@@ -317,6 +317,57 @@ describe('CommandPalette new actions', () => {
     ).toEqual([]);
   });
 
+  it.each(['GitLab', ':'])(
+    'clears the visible %s query for an ordinary open while the palette remains open',
+    async (initialQuery) => {
+      const onClose = vi.fn();
+      const view = render(CommandPalette, { props: { isOpen: true, initialQuery, onClose } });
+      const input = screen.getByRole('textbox') as HTMLInputElement;
+      await waitFor(() => expect(input.value).toBe(initialQuery));
+      await fireEvent.input(input, { target: { value: `${initialQuery}42` } });
+
+      await view.rerender({ initialQuery: '' });
+
+      await waitFor(() => expect(input.value).toBe(''));
+      expect(screen.getByRole('dialog')).not.toBeNull();
+      expect(onClose).not.toHaveBeenCalled();
+      expect(
+        reduxDispatchMock.mock.calls.filter(([action]) =>
+          action.type.startsWith('userPreferences/'),
+        ),
+      ).toEqual([]);
+    },
+  );
+
+  it('preserves typed text across unrelated updates and still handles go-to-line requests', async () => {
+    const onClose = vi.fn();
+    const view = render(CommandPalette, {
+      props: { isOpen: true, initialQuery: 'GitLab', onClose },
+    });
+    const input = screen.getByRole('textbox') as HTMLInputElement;
+    await fireEvent.input(input, { target: { value: 'my search' } });
+
+    gitlabState.enabled = true;
+    storeEvents.emit();
+    await view.rerender({ workspaceId: 'ws-1' });
+    expect(input.value).toBe('my search');
+
+    await view.rerender({ initialQuery: ':' });
+    await waitFor(() => expect(input.value).toBe(':'));
+    await fireEvent.input(input, { target: { value: ':42' } });
+    const goToLine = vi.fn();
+    window.addEventListener('workspace:go-to-line', goToLine);
+    try {
+      await fireEvent.keyDown(input, { key: 'Enter' });
+      expect(goToLine).toHaveBeenCalledExactlyOnceWith(
+        expect.objectContaining({ detail: { line: 42 } }),
+      );
+      expect(onClose).toHaveBeenCalledOnce();
+    } finally {
+      window.removeEventListener('workspace:go-to-line', goToLine);
+    }
+  });
+
   it.each([false, true])(
     'changes experimental multiplayer from enabled=%s through command search without a workspace',
     async (enabled) => {

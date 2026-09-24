@@ -920,12 +920,11 @@
     const currentInitialQuery = initialQuery || '';
     if (currentInitialQuery !== prevInitialQuery) {
       prevInitialQuery = currentInitialQuery;
-      // Only update searchQuery if the initialQuery actually changed to a non-empty value
-      if (currentInitialQuery !== '') {
-        untrack(() => {
-          searchQuery = currentInitialQuery;
-        });
-      }
+      // Ordinary opens clear recovery/go-to-line queries. Unchanged props must
+      // leave user typing intact across unrelated parent or store updates.
+      untrack(() => {
+        searchQuery = currentInitialQuery;
+      });
     }
   });
 </script>
