@@ -269,8 +269,12 @@
 
   // Keep the rendered pane in sync when SvelteKit navigates within the mounted settings page.
   $effect(() => {
-    const tabParam = page.url.searchParams.get('tab');
-    const targetId = page.url.hash.slice(1);
+    const routeHref = page.url.href;
+    // Sidebar selections replace browser history without updating page.url. Use
+    // the current location when a visibility change reruns this effect.
+    const url = new URL(browser ? window.location.href : routeHref);
+    const tabParam = url.searchParams.get('tab');
+    const targetId = url.hash.slice(1);
     const nextTab = resolveTabFromUrl(tabParam, targetId);
 
     untrack(() => {

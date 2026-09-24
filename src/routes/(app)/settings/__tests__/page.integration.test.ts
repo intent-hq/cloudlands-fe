@@ -893,6 +893,52 @@ describe('Labs Settings visibility', () => {
     );
     expect(window.location.href).toBe(url);
   });
+
+  it('keeps a sidebar tab selection when Labs is hidden', async () => {
+    appStore.dispatch(setLabsSettingsVisible(true));
+    renderSettings('/settings?tab=labs#labs');
+    await fireEvent.click(screen.getByRole('button', { name: 'General' }));
+    expect(screen.getByRole('button', { name: 'General' }).getAttribute('aria-current')).toBe(
+      'page',
+    );
+    const url = window.location.href;
+
+    appStore.dispatch(setLabsSettingsVisible(false));
+
+    await waitFor(() => expect(screen.queryByRole('button', { name: 'Labs' })).toBeNull());
+    expect(screen.getByRole('button', { name: 'General' }).getAttribute('aria-current')).toBe(
+      'page',
+    );
+    expect(window.location.href).toBe(url);
+  });
+
+  it.each(labsUrls)('opens the saved Labs link %s after preference hydration', async (url) => {
+    renderSettings(url);
+    expect(screen.queryByRole('button', { name: 'Labs' })).toBeNull();
+
+    appStore.dispatch(setLabsSettingsVisible(true));
+
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Labs' }).getAttribute('aria-current')).toBe(
+        'page',
+      ),
+    );
+    expect(document.getElementById('labs-multiplayer')).not.toBeNull();
+  });
+
+  it('keeps a sidebar tab selection when saved Labs visibility arrives after mount', async () => {
+    renderSettings('/settings?tab=labs#labs');
+    await fireEvent.click(screen.getByRole('button', { name: 'General' }));
+    const url = window.location.href;
+
+    appStore.dispatch(setLabsSettingsVisible(true));
+
+    await waitFor(() => expect(screen.queryByRole('button', { name: 'Labs' })).not.toBeNull());
+    expect(screen.getByRole('button', { name: 'General' }).getAttribute('aria-current')).toBe(
+      'page',
+    );
+    expect(window.location.href).toBe(url);
+  });
 });
 
 describe('settings hash target integration', () => {
