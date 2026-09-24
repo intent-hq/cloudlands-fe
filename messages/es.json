@@ -6755,5 +6755,6 @@
   "workspace_transfer_reviewExport_label": "Revisar exportación",
   "settings_labs_gitlab_label": "GitLab",
   "settings_labs_gitlab_description": "Conecta GitLab en Ajustes y durante la configuración inicial. Las conexiones y sesiones compartidas existentes siguen funcionando aunque esta opción esté desactivada.",
-  "inviteNotice_modal_enableGitlab_label": "Activar GitLab en Labs"
+  "inviteNotice_modal_enableGitlab_label": "Activar GitLab en Labs",
+  "onboarding_forgeStep_connectGithubLater_description": "Puedes conectar GitHub más tarde desde Configuración"
 }

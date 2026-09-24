@@ -6755,5 +6755,6 @@
   "workspace_transfer_reviewExport_label": "查看导出内容",
   "settings_labs_gitlab_label": "GitLab",
   "settings_labs_gitlab_description": "在设置和初始设置中连接 GitLab。关闭后，现有连接和共享会话仍可继续使用。",
-  "inviteNotice_modal_enableGitlab_label": "在 Labs 中启用 GitLab"
+  "inviteNotice_modal_enableGitlab_label": "在 Labs 中启用 GitLab",
+  "onboarding_forgeStep_connectGithubLater_description": "你可以稍后在设置中连接 GitHub"
 }

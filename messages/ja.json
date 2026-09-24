@@ -6755,5 +6755,6 @@
   "workspace_transfer_reviewExport_label": "エクスポート内容を確認",
   "settings_labs_gitlab_label": "GitLab",
   "settings_labs_gitlab_description": "設定と初期設定で GitLab に接続できます。オフにしても、既存の接続と共有セッションは引き続き利用できます。",
-  "inviteNotice_modal_enableGitlab_label": "Labs で GitLab を有効にする"
+  "inviteNotice_modal_enableGitlab_label": "Labs で GitLab を有効にする",
+  "onboarding_forgeStep_connectGithubLater_description": "GitHub は後で設定から接続できます"
 }

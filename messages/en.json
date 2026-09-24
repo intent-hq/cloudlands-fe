@@ -6755,5 +6755,6 @@
   "workspace_transfer_reviewExport_label": "Review export",
   "settings_labs_gitlab_label": "GitLab",
   "settings_labs_gitlab_description": "Connect GitLab in Settings and onboarding. Existing connections and shared sessions keep working when this is off.",
-  "inviteNotice_modal_enableGitlab_label": "Enable GitLab in Labs"
+  "inviteNotice_modal_enableGitlab_label": "Enable GitLab in Labs",
+  "onboarding_forgeStep_connectGithubLater_description": "You can connect GitHub later from Settings"
 }
