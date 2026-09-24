@@ -3368,6 +3368,85 @@ describe('ChatPanel mounted lifecycle', () => {
     expect(screen.queryByTestId('pending-proposal-chip')).toBeNull();
   });
 
+  it('keeps the pending-proposal chip during streaming observer refreshes', async () => {
+    mocks.draftGet.mockResolvedValue(null);
+    MockChatIntersectionObserver.instances = [];
+    vi.stubGlobal('IntersectionObserver', MockChatIntersectionObserver);
+    const session = {
+      id: 'agent-a',
+      status: 'active',
+      messages: [],
+      backendSessionId: 'backend-session-a',
+      metadata: {
+        pendingProposals: [{ proposalId: 'toolu-1', messageId: 'proposal-message' }],
+      },
+    };
+    const proposalMessage = {
+      id: 'proposal-message',
+      role: 'assistant',
+      content: 'Proposal',
+      createdAt: '2026-09-23T12:00:00.000Z',
+    };
+    const liveMessage = {
+      id: 'live-message',
+      role: 'assistant',
+      content: 'Streaming response',
+      createdAt: '2026-09-23T12:01:00.000Z',
+      isStreaming: true,
+    };
+    mocks.agentSession.set(session);
+    mocks.agentSessionIsStreaming.set(true);
+    mocks.agentMessages.set([proposalMessage, liveMessage]);
+    const view = render(ChatPanel, {
+      props: { workspace: workspace('workspace-a'), agentId: 'agent-a', isActive: true },
+    });
+    await tick();
+    await tick();
+    const shell = view.container
+      .querySelector('[data-message-id="proposal-message"]')!
+      .closest('[data-lazy-turn-key]')!;
+    const currentObserver = () =>
+      MockChatIntersectionObserver.instances.findLast(
+        (candidate) => candidate.options?.threshold === 0.01 && candidate.observed.has(shell),
+      )!;
+    let observer = currentObserver();
+    expect(observer).toBeDefined();
+    observer.fire([{ target: shell, isIntersecting: false }]);
+    await tick();
+    const chip = screen.getByTestId('pending-proposal-chip');
+
+    for (let chunk = 1; chunk <= 3; chunk += 1) {
+      const previousObserver = observer;
+      mocks.agentMessages.set([
+        proposalMessage,
+        { ...liveMessage, content: `${liveMessage.content} ${chunk}` },
+      ]);
+      await tick();
+      await tick();
+      expect(screen.queryByTestId('pending-proposal-chip')).toBe(chip);
+      observer = currentObserver();
+      expect(observer).not.toBe(previousObserver);
+      previousObserver.fire([{ target: shell, isIntersecting: true }]);
+      await tick();
+      expect(screen.queryByTestId('pending-proposal-chip')).toBe(chip);
+      observer.fire([{ target: shell, isIntersecting: false }]);
+      await tick();
+      expect(screen.queryByTestId('pending-proposal-chip')).toBe(chip);
+    }
+
+    observer.fire([{ target: shell, isIntersecting: true }]);
+    await tick();
+    expect(screen.queryByTestId('pending-proposal-chip')).toBeNull();
+    observer.fire([{ target: shell, isIntersecting: false }]);
+    await tick();
+    expect(screen.queryByTestId('pending-proposal-chip')).not.toBeNull();
+    mocks.agentSession.set({ ...session, metadata: { pendingProposals: [] } });
+    await tick();
+    observer.fire([{ target: shell, isIntersecting: false }]);
+    await tick();
+    expect(screen.queryByTestId('pending-proposal-chip')).toBeNull();
+  });
+
   it('loads a recovered nonresident proposal message before scrolling to its inline card', async () => {
     mocks.draftGet.mockResolvedValue(null);
     mocks.agentSession.set({

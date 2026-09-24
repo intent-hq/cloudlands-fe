@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onDestroy, untrack } from 'svelte';
   import { faComment } from '@fortawesome/free-solid-svg-icons';
-  import type { AgentMessage, AgentSession, ContentBlock } from '$shared/types';
+  import type { AgentMessage, AgentSession, ContentBlock, PendingProposalRef } from '$shared/types';
   import { AgentStatus } from '$shared/types/agent.types';
   import AgentTabType from '$features/layout/tab-types/AgentTabType.svelte';
   import InitialAgentChatTabType from './InitialAgentChatTabType.svelte';
@@ -40,6 +40,7 @@
     pendingEvent = false,
     cardSeamMessages,
     liveMessages,
+    pendingProposals,
   }: {
     theme?: 'light' | 'dark';
     zoom?: number;
@@ -54,12 +55,14 @@
     pendingEvent?: boolean;
     cardSeamMessages?: AgentMessage[];
     liveMessages?: AgentMessage[];
+    pendingProposals?: PendingProposalRef[];
   } = $props();
   const setupCardFixture = untrack(() => setupCardOnly);
   const reasoningSearchFixture = untrack(() => reasoningSearchOnly);
   const pendingFixture = untrack(() => pendingAssistantStatus !== undefined);
   const cardSeamFixture = untrack(() => cardSeamMessages);
   const liveFixture = untrack(() => liveMessages);
+  const pendingProposalFixture = untrack(() => pendingProposals);
   const workspaceId = 'chat-panel-operational-geometry';
   const agentId = 'chat-panel-operational-agent';
   const timestamp = '2026-08-17T12:00:00.000Z';
@@ -572,7 +575,11 @@
     isProcessing: !cardSeamFixture && !setupCardFixture && !reasoningSearchFixture,
     isResponding: !cardSeamFixture && !setupCardFixture && !reasoningSearchFixture,
     isInitialAgent: setupCardFixture,
-    metadata: setupCardFixture ? { isInitialAgent: true } : undefined,
+    metadata: setupCardFixture
+      ? { isInitialAgent: true }
+      : pendingProposalFixture
+        ? { pendingProposals: pendingProposalFixture }
+        : undefined,
     messages,
     createdAt: timestamp,
     updatedAt: timestamp,

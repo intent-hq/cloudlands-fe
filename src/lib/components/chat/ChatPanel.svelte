@@ -3612,11 +3612,11 @@
             ?.messageId ?? null;
         return;
       }
-      offscreenPendingProposalMessageId =
-        refs.find((ref) => visibility.get(`${ref.messageId}\u0000${ref.proposalId}`) === false)
-          ?.messageId ?? null;
+      // Keep the last observation until the replacement observer samples;
+      // clearing it here resizes the transcript on every streamed update.
       observer = new IntersectionObserver(
         (entries) => {
+          if (disposed) return;
           for (const entry of entries) {
             for (const refKey of refKeysByTarget.get(entry.target) ?? []) {
               visibility.set(refKey, entry.isIntersecting);
