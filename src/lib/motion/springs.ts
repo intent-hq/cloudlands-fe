@@ -1,13 +1,8 @@
 import { prefersReducedMotion } from '$lib/utils/reduced-motion';
+import { untrack } from 'svelte';
 import { cubicOut } from 'svelte/easing';
-import {
-  Spring as SvelteSpring,
-  spring as svelteSpring,
-  tweened as svelteTweened,
-  type SpringOptions,
-  type SpringUpdateOptions,
-  type TweenOptions,
-} from 'svelte/motion';
+import { Tween, tweened as svelteTweened } from 'svelte/motion';
+import { get } from 'svelte/store';
 
 export type SpringTierName = 'fast' | 'moderate' | 'slow';
 
@@ -17,76 +12,108 @@ export interface SpringExit {
   readonly easing: (t: number) => number;
 }
 
-export interface SpringTier extends Required<SpringOptions> {
-  /** Approximate visual settling time, in milliseconds. */
+export interface SpringTier {
+  /** Bounded easing duration, in milliseconds. */
   readonly settleMs: number;
+  readonly easing: (t: number) => number;
   readonly exit: SpringExit;
 }
 
 /**
- * Shared Svelte Spring options. Pass a tier directly to `new Spring(value, tier)`.
- * Every tier is critically damped and approaches its resting target without overshoot.
+ * Shared, non-overshooting motion tiers. The spring names are compatibility names,
+ * not physical simulations: easing must stay bounded even after a dropped frame
+ * or an interrupted/reversed target change.
  */
 export const spring = {
   fast: {
-    stiffness: 0.8,
-    damping: 0.989,
-    precision: 0.001,
     settleMs: 80,
+    easing: cubicOut,
     exit: { duration: 60, easing: cubicOut },
   },
   moderate: {
-    stiffness: 0.4,
-    damping: 0.865,
-    precision: 0.001,
     settleMs: 160,
+    easing: cubicOut,
     exit: { duration: 120, easing: cubicOut },
   },
   slow: {
-    stiffness: 0.25,
-    damping: 0.75,
-    precision: 0.001,
     settleMs: 240,
+    easing: cubicOut,
     exit: { duration: 160, easing: cubicOut },
   },
 } as const satisfies Record<SpringTierName, SpringTier>;
 
 export { prefersReducedMotion } from '$lib/utils/reduced-motion';
 
-/** A tier-bound Spring whose updates settle immediately for reduced motion. */
-export class Spring<T> extends SvelteSpring<T> {
+/** Compatibility API backed by bounded easing, never spring momentum. */
+export class Spring<T> {
+  readonly #motion: Tween<T>;
+  readonly #tier: SpringTier;
+  #settled = Promise.resolve();
+
   constructor(value: T, tier: SpringTierName = 'moderate') {
-    super(value, spring[tier]);
+    this.#tier = spring[tier];
+    this.#motion = new Tween(value);
   }
 
-  override set(value: T, options?: SpringUpdateOptions): Promise<void> {
-    return super.set(value, prefersReducedMotion() ? { ...options, instant: true } : options);
+  get current(): T {
+    return this.#motion.current;
+  }
+
+  get target(): T {
+    return this.#motion.target;
+  }
+
+  set target(value: T) {
+    void this.set(value);
+  }
+
+  set(value: T, options?: { instant?: boolean }): Promise<void> {
+    return untrack(() => {
+      const instant = options?.instant || prefersReducedMotion();
+      if (!instant && Object.is(value, this.#motion.target)) return this.#settled;
+      // Stop the previous task now, not on the next frame. Otherwise it can move
+      // farther toward the old target before a reversal starts.
+      void this.#motion.set(this.#motion.current, { duration: 0 });
+      this.#settled = this.#motion.set(value, {
+        duration: instant ? 0 : this.#tier.settleMs,
+        easing: this.#tier.easing,
+      });
+      return this.#settled;
+    });
   }
 }
 
-/** Tier-bound compatibility wrapper for Svelte's legacy spring store. */
+/** Legacy store API with the same bounded easing and instant-update semantics. */
 export function springValue<T>(value: T, tier: SpringTierName = 'moderate') {
-  const store = svelteSpring(value, spring[tier]);
-  const set = store.set.bind(store);
-  const update = store.update.bind(store);
-  store.set = (next, options) =>
-    set(next, prefersReducedMotion() ? { ...options, hard: true } : options);
-  store.update = (updater, options) =>
-    update(updater, prefersReducedMotion() ? { ...options, hard: true } : options);
-  return store;
+  const store = svelteTweened(value);
+  let target = value;
+  let settled = Promise.resolve();
+  const set = (next: T, options?: { hard?: boolean }) => {
+    const instant = options?.hard || prefersReducedMotion();
+    if (!instant && Object.is(next, target)) return settled;
+    target = next;
+    void store.set(get(store), { duration: 0 });
+    settled = store.set(next, {
+      duration: instant ? 0 : spring[tier].settleMs,
+      easing: spring[tier].easing,
+    });
+    return settled;
+  };
+  return {
+    subscribe: store.subscribe,
+    set,
+    update: (updater: (target: T, current: T) => T, options?: { hard?: boolean }) =>
+      set(updater(target, get(store)), options),
+  };
 }
 
 /** Tier-bound compatibility wrapper for Svelte's legacy tweened store. */
 export function tweenedValue<T>(value: T, tier: SpringTierName = 'moderate') {
-  const options = (): TweenOptions<T> => ({
-    duration: prefersReducedMotion() ? 0 : spring[tier].settleMs,
-    easing: spring[tier].exit.easing,
-  });
-  const store = svelteTweened(value, options());
+  const store = springValue(value, tier);
   return {
     subscribe: store.subscribe,
-    set: (next: T) => store.set(next, options()),
-    update: (updater: (value: T) => T) => store.update(updater, options()),
+    set: (next: T) => store.set(next),
+    update: (updater: (value: T) => T) => store.update(updater),
   };
 }
 
