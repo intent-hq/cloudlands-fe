@@ -5426,6 +5426,8 @@
   "lib_commandPalette_openHud_command": "HUDを開く",
   "lib_commandPalette_openUsageStats_command": "使用状況を開く",
   "lib_commandPalette_settings_command": "設定",
+  "lib_commandPalette_showLabsInSettings_label": "設定にラボを表示",
+  "lib_commandPalette_hideLabsInSettings_label": "設定のラボを非表示",
   "lib_commandPalette_newAgentChat_command": "新しいエージェントチャット",
   "lib_commandPalette_newTerminal_command": "新しいターミナル",
   "lib_commandPalette_newNote_command": "新しいノート",

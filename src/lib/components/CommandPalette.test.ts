@@ -4,6 +4,12 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { WorkspaceStatus } from '$shared/types';
+import { store as appStore } from '$store/renderer/store';
+import {
+  initialState as initialUserPreferences,
+  userPreferencesReducer,
+  type UserPreferencesState,
+} from '$store/renderer/slices/user-preferences/user-preferences-slice';
 
 const {
   gotoMock,
@@ -19,6 +25,7 @@ const {
   paletteMruEntries,
   paletteFileMru,
   collaboratorState,
+  userPreferencesState,
 } = vi.hoisted(() => {
   const createSelectorReadable = <TArg, TValue>(arg: TArg, resolver: (value: any) => TValue) => ({
     subscribe: (fn: (value: TValue) => void) => {
@@ -45,6 +52,7 @@ const {
     paletteMruEntries: { value: [] as any[] },
     paletteFileMru: { value: {} as Record<string, number> },
     collaboratorState: { workspace: false, client: false },
+    userPreferencesState: { value: undefined as UserPreferencesState | undefined },
   };
 });
 
@@ -131,6 +139,7 @@ vi.mock('$store/renderer/store', async () => {
     state: () => ({
       workspaceNotes: { byWorkspaceId: {} },
       workspaceAgents: { byWorkspaceId: {} },
+      userPreferences: userPreferencesState.value,
     }),
     dispatch: reduxDispatchMock,
   });
@@ -256,7 +265,48 @@ describe('CommandPalette new actions', () => {
     paletteFileMru.value = {};
     collaboratorState.workspace = false;
     collaboratorState.client = false;
+    userPreferencesState.value = initialUserPreferences;
+    reduxDispatchMock.mockImplementation((action) => {
+      userPreferencesState.value = userPreferencesReducer(userPreferencesState.value, action);
+      (appStore as unknown as { emitState(): void }).emitState();
+      return action;
+    });
   });
+
+  it.each([
+    { workspaceId: undefined, inputMethod: 'click' },
+    { workspaceId: 'ws-1', inputMethod: 'keyboard' },
+  ])(
+    'shows and hides Labs using $inputMethod with workspace $workspaceId',
+    async ({ workspaceId, inputMethod }) => {
+      const onClose = vi.fn();
+      const view = render(CommandPalette, { props: { isOpen: true, workspaceId, onClose } });
+      const input = screen.getByRole('textbox');
+      await fireEvent.input(input, { target: { value: 'Labs' } });
+      const show = await screen.findByRole('button', { name: /Show Labs in Settings/i });
+      expect(screen.queryByRole('button', { name: /Hide Labs in Settings/i })).toBeNull();
+
+      if (inputMethod === 'keyboard') await fireEvent.keyDown(input, { key: 'Enter' });
+      else await fireEvent.click(show);
+
+      expect(userPreferencesState.value?.labsSettingsVisible).toBe(true);
+      expect(navigateToSettingsMock).toHaveBeenCalledWith({ tab: 'labs', hash: 'labs' });
+      expect(onClose).toHaveBeenCalledOnce();
+      await screen.findByRole('button', { name: /Hide Labs in Settings/i });
+      expect(screen.queryByRole('button', { name: /Show Labs in Settings/i })).toBeNull();
+
+      await view.rerender({ workspaceId: 'ws-2' });
+      const hide = await screen.findByRole('button', { name: /Hide Labs in Settings/i });
+      if (inputMethod === 'keyboard') await fireEvent.keyDown(input, { key: 'Enter' });
+      else await fireEvent.click(hide);
+
+      expect(userPreferencesState.value?.labsSettingsVisible).toBe(false);
+      expect(navigateToSettingsMock).toHaveBeenCalledTimes(1);
+      expect(onClose).toHaveBeenCalledTimes(2);
+      expect(await screen.findByRole('button', { name: /Show Labs in Settings/i })).toBeTruthy();
+      expect(screen.queryByRole('button', { name: /Hide Labs in Settings/i })).toBeNull();
+    },
+  );
 
   it('withholds agent-creation, terminal, browser, and workspace-creation commands and results for collaborators', async () => {
     collaboratorState.workspace = true;

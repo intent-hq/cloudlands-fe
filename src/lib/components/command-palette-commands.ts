@@ -35,6 +35,20 @@ export const COMMAND_PALETTE_COMMANDS = [
     shortcut: '⌘,',
   },
   {
+    id: 'show-labs-in-settings',
+    get label() {
+      return m.lib_commandPalette_showLabsInSettings_label();
+    },
+    icon: faCog,
+  },
+  {
+    id: 'hide-labs-in-settings',
+    get label() {
+      return m.lib_commandPalette_hideLabsInSettings_label();
+    },
+    icon: faCog,
+  },
+  {
     id: 'new-agent',
     get label() {
       return m.lib_commandPalette_newAgentChat_command();
