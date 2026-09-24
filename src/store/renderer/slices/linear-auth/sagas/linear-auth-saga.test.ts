@@ -15,7 +15,15 @@ vi.mock('$lib/client', () => ({
 vi.mock('$lib/utils/client-logger', () => ({ createLogger: () => ({ error: vi.fn() }) }));
 
 import { m } from '$shared/paraglide/messages.js';
-import { connectLinear, initializeLinearAuth, logoutLinear } from '../linear-auth-slice';
+import {
+  cancelLinearAuth,
+  connectLinear,
+  consumeLinearAuth,
+  initializeLinearAuth,
+  linearAuthReducer,
+  logoutLinear,
+  startLinearAuth,
+} from '../linear-auth-slice';
 import { linearAuthSaga } from './linear-auth-saga';
 
 const settle = async () => {
@@ -28,12 +36,21 @@ const settle = async () => {
 function harness() {
   const channel = stdChannel();
   const dispatched: unknown[] = [];
-  const task = runSaga({ channel, dispatch: (action) => dispatched.push(action) }, linearAuthSaga);
-  return { channel, dispatched, task };
+  let state = linearAuthReducer.initialState;
+  const dispatch = (action: Parameters<typeof linearAuthReducer>[1]) => {
+    state = linearAuthReducer(state, action);
+    dispatched.push(action);
+    channel.put(action);
+  };
+  const task = runSaga(
+    { channel, dispatch, getState: () => ({ linearAuth: state }) },
+    linearAuthSaga,
+  );
+  return { channel: { put: dispatch }, dispatched, task, state: () => state };
 }
 
 describe('linearAuthSaga', () => {
-  beforeEach(() => vi.clearAllMocks());
+  beforeEach(() => vi.resetAllMocks());
 
   it('stores the trimmed token with the exact settings request and re-probes status', async () => {
     mocks.update.mockResolvedValue(undefined);
@@ -50,19 +67,12 @@ describe('linearAuthSaga', () => {
       [[{ path: 'linear.token', value: 'lin-test-token' }]],
     ]);
     expect(mocks.getAuthState.mock.calls).toEqual([[true]]);
-    expect(run.dispatched).toEqual([
-      { type: 'linearAuth/setError', payload: [null] },
-      { type: 'linearAuth/setIsAuthenticating', payload: [true] },
-      {
-        type: 'linearAuth/setAuthState',
-        payload: {
-          isAuthenticated: true,
-          requiresDaemonAuth: false,
-          oauthUrl: null,
-        },
-      },
-      { type: 'linearAuth/setIsAuthenticating', payload: [false] },
-    ]);
+    expect(run.state()).toMatchObject({
+      isAuthenticated: true,
+      isAuthenticating: false,
+      requiresDaemonAuth: false,
+      operation: { status: 'succeeded' },
+    });
     run.task.cancel();
     await run.task.toPromise();
   });
@@ -75,22 +85,16 @@ describe('linearAuthSaga', () => {
     await settle();
 
     expect(mocks.reset.mock.calls).toEqual([['linear.token']]);
-    expect(run.dispatched).toEqual([
-      {
-        type: 'linearAuth/setAuthState',
-        payload: {
-          isAuthenticated: true,
-          requiresDaemonAuth: false,
-          oauthUrl: null,
-        },
-      },
-      { type: 'linearAuth/setError', payload: [m.linearAuth_service_envKeyStillActive_error()] },
-    ]);
+    expect(run.state()).toMatchObject({
+      isAuthenticated: true,
+      error: m.linearAuth_service_envKeyStillActive_error(),
+      operation: { status: 'failed' },
+    });
     run.task.cancel();
     await run.task.toPromise();
   });
 
-  it('runs overlapping connects independently and reports the rejected key exactly', async () => {
+  it('orders overlapping credential writes and rejects stale completion', async () => {
     let resolveFirst!: () => void;
     mocks.update
       .mockReturnValueOnce(
@@ -107,6 +111,8 @@ describe('linearAuthSaga', () => {
     await settle();
     run.channel.put(connectLinear('second'));
     await settle();
+    expect(mocks.update).toHaveBeenCalledTimes(1);
+    expect(run.state().isAuthenticating).toBe(true);
     resolveFirst();
     await settle();
 
@@ -114,31 +120,13 @@ describe('linearAuthSaga', () => {
       [[{ path: 'linear.token', value: 'first' }]],
       [[{ path: 'linear.token', value: 'second' }]],
     ]);
-    expect(run.dispatched).toEqual([
-      { type: 'linearAuth/setError', payload: [null] },
-      { type: 'linearAuth/setIsAuthenticating', payload: [true] },
-      { type: 'linearAuth/setError', payload: [null] },
-      { type: 'linearAuth/setIsAuthenticating', payload: [true] },
-      {
-        type: 'linearAuth/setAuthState',
-        payload: {
-          isAuthenticated: true,
-          requiresDaemonAuth: false,
-          oauthUrl: null,
-        },
-      },
-      { type: 'linearAuth/setIsAuthenticating', payload: [false] },
-      {
-        type: 'linearAuth/setAuthState',
-        payload: {
-          isAuthenticated: false,
-          requiresDaemonAuth: false,
-          oauthUrl: null,
-        },
-      },
-      { type: 'linearAuth/setError', payload: [m.linearAuth_service_keyRejected_error()] },
-      { type: 'linearAuth/setIsAuthenticating', payload: [false] },
-    ]);
+    expect(mocks.getAuthState).toHaveBeenCalledTimes(1);
+    expect(run.state()).toMatchObject({
+      isAuthenticated: true,
+      error: null,
+      isAuthenticating: false,
+      operation: { status: 'succeeded' },
+    });
     run.task.cancel();
     await run.task.toPromise();
   });
@@ -149,12 +137,11 @@ describe('linearAuthSaga', () => {
     run.channel.put(connectLinear('secret-key'));
     await settle();
 
-    expect(run.dispatched).toEqual([
-      { type: 'linearAuth/setError', payload: [null] },
-      { type: 'linearAuth/setIsAuthenticating', payload: [true] },
-      { type: 'linearAuth/setError', payload: ['settings unavailable'] },
-      { type: 'linearAuth/setIsAuthenticating', payload: [false] },
-    ]);
+    expect(run.state()).toMatchObject({
+      error: 'settings unavailable',
+      isAuthenticating: false,
+      operation: { status: 'failed' },
+    });
     run.task.cancel();
     await run.task.toPromise();
   });
@@ -170,10 +157,99 @@ describe('linearAuthSaga', () => {
 
     expect(mocks.getAuthState.mock.calls).toEqual([[true]]);
     expect(mocks.reset.mock.calls).toEqual([['linear.token']]);
-    expect(run.dispatched).toEqual([
-      { type: 'linearAuth/setError', payload: ['reset unavailable'] },
-    ]);
+    expect(run.state()).toMatchObject({
+      error: 'reset unavailable',
+      operation: { status: 'failed' },
+    });
     run.task.cancel();
     await run.task.toPromise();
+  });
+
+  it('cancels only the owning consumer and ignores the late key validation', async () => {
+    let resolve!: (value: unknown) => void;
+    mocks.update.mockResolvedValue(undefined);
+    mocks.getAuthState.mockReturnValue(
+      new Promise((done) => {
+        resolve = done;
+      }),
+    );
+    const run = harness();
+    run.channel.put(connectLinear('test-key', { requestId: 'connect', consumerId: 'panel' }));
+    await settle();
+    run.channel.put(cancelLinearAuth('unrelated'));
+    expect(run.state().operation?.status).toBe('pending');
+    run.channel.put(cancelLinearAuth('connect'));
+    resolve({ isAuthenticated: true, requiresDaemonAuth: false });
+    await settle();
+    expect(run.state()).toMatchObject({
+      isAuthenticated: false,
+      isAuthenticating: false,
+      operation: { status: 'cancelled' },
+    });
+    run.channel.put(consumeLinearAuth('connect'));
+    expect(run.state().operation).toBeNull();
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('keeps reset behind the in-flight write and cannot resurrect auth after logout', async () => {
+    let resolve!: () => void;
+    mocks.update.mockReturnValue(
+      new Promise<void>((done) => {
+        resolve = done;
+      }),
+    );
+    mocks.reset.mockResolvedValue(undefined);
+    mocks.getAuthState.mockResolvedValue({ isAuthenticated: false, requiresDaemonAuth: false });
+    const run = harness();
+    run.channel.put(connectLinear('test-key'));
+    run.channel.put(logoutLinear());
+    expect(mocks.reset).not.toHaveBeenCalled();
+    resolve();
+    await settle();
+    expect(mocks.reset.mock.calls).toEqual([['linear.token']]);
+    expect(run.state()).toMatchObject({
+      isAuthenticated: false,
+      operation: { kind: 'logout', status: 'succeeded' },
+    });
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('shares the legacy start status owner and makes reads latest-wins', async () => {
+    let resolve!: (value: unknown) => void;
+    mocks.getAuthState
+      .mockReturnValueOnce(
+        new Promise((done) => {
+          resolve = done;
+        }),
+      )
+      .mockResolvedValueOnce({ isAuthenticated: false, requiresDaemonAuth: true });
+    const run = harness();
+    run.channel.put(initializeLinearAuth());
+    run.channel.put(startLinearAuth());
+    await settle();
+    resolve({ isAuthenticated: true, requiresDaemonAuth: false });
+    await settle();
+    expect(run.state()).toMatchObject({ isAuthenticated: false, requiresDaemonAuth: true });
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('settles pending work on saga teardown without publishing late results', async () => {
+    let resolve!: () => void;
+    mocks.update.mockReturnValue(
+      new Promise<void>((done) => {
+        resolve = done;
+      }),
+    );
+    const run = harness();
+    run.channel.put(connectLinear('test-key'));
+    run.task.cancel();
+    await run.task.toPromise();
+    resolve();
+    await settle();
+    expect(mocks.getAuthState).not.toHaveBeenCalled();
+    expect(run.state().operation?.status).toBe('cancelled');
   });
 });

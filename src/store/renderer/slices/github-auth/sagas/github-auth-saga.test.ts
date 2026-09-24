@@ -51,7 +51,11 @@ function harness(seed = initialState) {
     { channel, dispatch, getState: () => ({ githubAuth: state }) },
     githubAuthSaga,
   );
-  return { channel, dispatched, state: () => state, task };
+  const send = (action: Parameters<typeof githubAuthReducer>[1]) => {
+    state = githubAuthReducer(state, action);
+    channel.put(action);
+  };
+  return { channel: { put: send }, dispatched, state: () => state, task };
 }
 
 describe('githubAuthSaga', () => {
@@ -271,12 +275,13 @@ describe('githubAuthSaga', () => {
     await settle();
 
     expect(mocks.logout.mock.calls).toEqual([[]]);
-    expect(run.dispatched).toEqual([{ type: 'githubAuth/logoutCompleted', payload: [] }]);
+    expect(run.state()).toMatchObject({ isAuthenticated: false, isDisconnecting: false });
+    expect(run.dispatched).toContainEqual({ type: 'githubAuth/logoutCompleted', payload: [] });
     run.task.cancel();
     await run.task.toPromise();
   });
 
-  it('runs repeated status requests concurrently like the middleware', async () => {
+  it('makes repeated status requests latest-wins', async () => {
     let resolveFirst!: (value: unknown) => void;
     mocks.getAuthState
       .mockReturnValueOnce(
@@ -305,16 +310,6 @@ describe('githubAuthSaga', () => {
           isAuthenticated: false,
           requiresDaemonAuth: false,
           user: null,
-          needsScopeUpdate: false,
-          oauthUrl: null,
-        },
-      },
-      {
-        type: 'githubAuth/setAuthState',
-        payload: {
-          isAuthenticated: true,
-          requiresDaemonAuth: false,
-          user: { login: 'octo', name: null, email: null, avatar_url: 'avatar' },
           needsScopeUpdate: false,
           oauthUrl: null,
         },
@@ -395,7 +390,7 @@ describe('githubAuthSaga', () => {
     await run.task.toPromise();
   });
 
-  it('dispatches exact cancel, logout, and terminal-event failures', async () => {
+  it('reports cancel/logout failures and ignores late terminal events after cancellation', async () => {
     mocks.checkAuthComplete.mockRejectedValue(new Error('probe unavailable'));
     mocks.cancelAuth.mockResolvedValue({ success: false, error: 'cancel rejected' });
     mocks.logout.mockResolvedValue({ success: false, error: 'logout rejected' });
@@ -411,9 +406,107 @@ describe('githubAuthSaga', () => {
 
     expect(run.dispatched).toEqual([
       { type: 'githubAuth/setError', payload: ['cancel rejected'] },
+      { type: 'githubAuth/setDisconnecting', payload: [true] },
       { type: 'githubAuth/setError', payload: ['logout rejected'] },
-      { type: 'githubAuth/setError', payload: [m.githubAuth_service_codeExpired_error()] },
+      { type: 'githubAuth/setDisconnecting', payload: [false] },
     ]);
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('cannot restart polling from a start response arriving after cancel', async () => {
+    let resolve!: (value: unknown) => void;
+    mocks.startAuth.mockReturnValue(
+      new Promise((done) => {
+        resolve = done;
+      }),
+    );
+    mocks.cancelAuth.mockResolvedValue({ success: true });
+    const run = harness();
+    run.channel.put(startGitHubAuth());
+    run.channel.put(cancelGitHubAuth());
+    await settle();
+    resolve({
+      success: true,
+      userCode: 'STALE',
+      verificationUri: 'https://github.com/login/device',
+      expiresIn: 900,
+      interval: 5,
+    });
+    await settle();
+    expect(run.state()).toMatchObject({ isAuthenticating: false, deviceFlow: null });
+    expect(mocks.checkAuthComplete).not.toHaveBeenCalled();
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('discards in-flight and newly arriving authorization callbacks after cancel', async () => {
+    let resolve!: (value: unknown) => void;
+    mocks.getUser.mockReturnValue(
+      new Promise((done) => {
+        resolve = done;
+      }),
+    );
+    mocks.cancelAuth.mockResolvedValue({ success: true });
+    const run = harness();
+    run.channel.put(githubAuthChanged('authorized'));
+    run.channel.put(cancelGitHubAuth());
+    await settle();
+    resolve({ login: 'stale', name: null, email: null, avatar_url: '' });
+    run.channel.put(githubAuthChanged('authorized'));
+    await settle();
+    expect(mocks.getUser).toHaveBeenCalledTimes(1);
+    expect(run.state()).toMatchObject({ isAuthenticated: false, user: null });
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('uses one completion owner for polling and compatibility focus requests, then removes focus on teardown', async () => {
+    mocks.startAuth.mockResolvedValue({
+      success: true,
+      userCode: 'CODE',
+      verificationUri: 'https://github.com/login/device',
+      expiresIn: 900,
+      interval: 5,
+    });
+    mocks.checkAuthComplete.mockReturnValue(new Promise(() => {}));
+    const run = harness();
+    run.channel.put(startGitHubAuth());
+    await settle();
+    window.dispatchEvent(new Event('focus'));
+    run.channel.put(checkGitHubAuthStatus());
+    await settle();
+    expect(mocks.checkAuthComplete).toHaveBeenCalledTimes(1);
+    run.task.cancel();
+    await run.task.toPromise();
+    const count = run.dispatched.length;
+    window.dispatchEvent(new Event('focus'));
+    expect(run.dispatched).toHaveLength(count);
+  });
+
+  it('shows disconnecting until the actual logout settles, not a timer', async () => {
+    let resolve!: (value: unknown) => void;
+    mocks.logout.mockReturnValue(
+      new Promise((done) => {
+        resolve = done;
+      }),
+    );
+    const run = harness({ ...initialState, isAuthenticated: true });
+    run.channel.put(logoutGitHub());
+    await settle();
+    expect(run.state()).toMatchObject({ isAuthenticated: true, isDisconnecting: true });
+    resolve({ success: true });
+    await settle();
+    expect(run.state()).toMatchObject({ isAuthenticated: false, isDisconnecting: false });
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('still handles terminal failure events for an uncancelled flow', async () => {
+    const run = harness();
+    run.channel.put(githubAuthChanged('expired'));
+    await settle();
+    expect(run.state().error).toBe(m.githubAuth_service_codeExpired_error());
     run.task.cancel();
     await run.task.toPromise();
   });

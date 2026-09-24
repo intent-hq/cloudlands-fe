@@ -8,6 +8,8 @@ import type { GitHubAuthState, GitHubDeviceFlowInfo } from './github-auth-types'
 // ============================================================================
 
 export const initialState: GitHubAuthState = {
+  callbacksCancelled: false,
+  isDisconnecting: false,
   isAuthenticated: false,
   requiresDaemonAuth: false,
   user: null,
@@ -36,6 +38,7 @@ export const cancelGitHubAuth = createAction('githubAuth/cancelAuth');
 
 /** Trigger: log out of GitHub */
 export const logoutGitHub = createAction('githubAuth/logout');
+export const setGitHubDisconnecting = createAction<[value: boolean]>('githubAuth/setDisconnecting');
 
 /** Set full auth state from backend response */
 export const setGitHubAuthState = createAction(
@@ -104,6 +107,16 @@ export const logoutCompleted = createAction('githubAuth/logoutCompleted');
 // ============================================================================
 
 export const githubAuthReducer = createReducer<GitHubAuthState>(initialState);
+
+githubAuthReducer.with(startGitHubAuth, (state) => ({ ...state, callbacksCancelled: false }));
+githubAuthReducer.with(initializeGitHubAuth, (state) => ({ ...state, callbacksCancelled: false }));
+githubAuthReducer.with(cancelGitHubAuth, (state) => ({ ...state, callbacksCancelled: true }));
+githubAuthReducer.with(logoutGitHub, (state) => ({ ...state, callbacksCancelled: true }));
+
+githubAuthReducer.with(setGitHubDisconnecting, (state, { payload: [isDisconnecting] }) => ({
+  ...state,
+  isDisconnecting,
+}));
 
 githubAuthReducer.with(setGitHubAuthState, (state, { payload }) => ({
   ...state,

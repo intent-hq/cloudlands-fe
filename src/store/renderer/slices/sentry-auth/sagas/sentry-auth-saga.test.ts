@@ -12,7 +12,14 @@ vi.mock('$features/sentry-auth/renderer/sentry-auth.client', () => ({
 }));
 vi.mock('$lib/utils/client-logger', () => ({ createLogger: () => ({ error: vi.fn() }) }));
 
-import { connectSentry, initializeSentryAuth, logoutSentry } from '../sentry-auth-slice';
+import {
+  cancelSentryAuth,
+  connectSentry,
+  consumeSentryAuth,
+  initializeSentryAuth,
+  logoutSentry,
+  sentryAuthReducer,
+} from '../sentry-auth-slice';
 import { sentryAuthSaga } from './sentry-auth-saga';
 
 const settle = async () => {
@@ -25,12 +32,21 @@ const settle = async () => {
 function harness() {
   const channel = stdChannel();
   const dispatched: unknown[] = [];
-  const task = runSaga({ channel, dispatch: (action) => dispatched.push(action) }, sentryAuthSaga);
-  return { channel, dispatched, task };
+  let state = sentryAuthReducer.initialState;
+  const dispatch = (action: Parameters<typeof sentryAuthReducer>[1]) => {
+    state = sentryAuthReducer(state, action);
+    dispatched.push(action);
+    channel.put(action);
+  };
+  const task = runSaga(
+    { channel, dispatch, getState: () => ({ sentryAuth: state }) },
+    sentryAuthSaga,
+  );
+  return { channel: { put: dispatch }, dispatched, task, state: () => state };
 }
 
 describe('sentryAuthSaga', () => {
-  beforeEach(() => vi.clearAllMocks());
+  beforeEach(() => vi.resetAllMocks());
 
   it('connects with exact arguments and strips wire-only project fields', async () => {
     mocks.saveConfig.mockResolvedValue({ success: true, organizationName: 'Acme Inc' });
@@ -50,26 +66,15 @@ describe('sentryAuthSaga', () => {
 
     expect(mocks.saveConfig.mock.calls).toEqual([['acme', 'sentry-test-token']]);
     expect(mocks.fetchProjects.mock.calls).toEqual([[]]);
-    expect(run.dispatched).toEqual([
-      { type: 'sentryAuth/setError', payload: [null] },
-      { type: 'sentryAuth/setConnecting', payload: [true] },
-      { type: 'sentryAuth/setConnected', payload: { organization: 'acme' } },
-      { type: 'sentryAuth/setLoadingProjects', payload: [true] },
-      {
-        type: 'sentryAuth/setProjects',
-        payload: [
-          [
-            {
-              id: '1',
-              slug: 'web',
-              name: 'Web',
-              platform: 'javascript',
-              isMember: true,
-            },
-          ],
-        ],
-      },
-      { type: 'sentryAuth/setLoadingProjects', payload: [false] },
+    expect(run.state()).toMatchObject({
+      isAuthenticated: true,
+      organization: 'acme',
+      isConnecting: false,
+      isLoadingProjects: false,
+      operation: { status: 'succeeded' },
+    });
+    expect(run.state().projects).toEqual([
+      { id: '1', slug: 'web', name: 'Web', platform: 'javascript', isMember: true },
     ]);
     run.task.cancel();
     await run.task.toPromise();
@@ -91,17 +96,11 @@ describe('sentryAuthSaga', () => {
 
     expect(mocks.getAuthState.mock.calls).toEqual([[]]);
     expect(mocks.logout.mock.calls).toEqual([[]]);
-    expect(run.dispatched).toEqual([
-      {
-        type: 'sentryAuth/setAuthState',
-        payload: {
-          isAuthenticated: true,
-          organization: 'acme',
-          error: null,
-        },
-      },
-      { type: 'sentryAuth/setLoggedOut', payload: [] },
-    ]);
+    expect(run.state()).toMatchObject({
+      isAuthenticated: false,
+      organization: null,
+      operation: { kind: 'logout', status: 'succeeded' },
+    });
     run.task.cancel();
     await run.task.toPromise();
   });
@@ -113,12 +112,11 @@ describe('sentryAuthSaga', () => {
     await settle();
 
     expect(mocks.fetchProjects.mock.calls).toEqual([]);
-    expect(run.dispatched).toEqual([
-      { type: 'sentryAuth/setError', payload: [null] },
-      { type: 'sentryAuth/setConnecting', payload: [true] },
-      { type: 'sentryAuth/setError', payload: ['invalid token'] },
-      { type: 'sentryAuth/setConnecting', payload: [false] },
-    ]);
+    expect(run.state()).toMatchObject({
+      isConnecting: false,
+      error: 'invalid token',
+      operation: { status: 'failed' },
+    });
     run.task.cancel();
     await run.task.toPromise();
   });
@@ -130,18 +128,17 @@ describe('sentryAuthSaga', () => {
     run.channel.put(connectSentry('acme', 'sentry-secret'));
     await settle();
 
-    expect(run.dispatched).toEqual([
-      { type: 'sentryAuth/setError', payload: [null] },
-      { type: 'sentryAuth/setConnecting', payload: [true] },
-      { type: 'sentryAuth/setConnected', payload: { organization: 'acme' } },
-      { type: 'sentryAuth/setLoadingProjects', payload: [true] },
-      { type: 'sentryAuth/setLoadingProjects', payload: [false] },
-    ]);
+    expect(run.state()).toMatchObject({
+      isAuthenticated: true,
+      isConnecting: false,
+      isLoadingProjects: false,
+      operation: { status: 'succeeded' },
+    });
     run.task.cancel();
     await run.task.toPromise();
   });
 
-  it('runs overlapping connects independently like the middleware', async () => {
+  it('serializes overlapping connects and ignores the superseded error', async () => {
     let resolveFirst!: (value: { success: false; error: string }) => void;
     mocks.saveConfig
       .mockReturnValueOnce(
@@ -156,6 +153,7 @@ describe('sentryAuthSaga', () => {
     await settle();
     run.channel.put(connectSentry('second', 'second-secret'));
     await settle();
+    expect(mocks.saveConfig).toHaveBeenCalledTimes(1);
     resolveFirst({ success: false, error: 'first rejected' });
     await settle();
 
@@ -163,18 +161,13 @@ describe('sentryAuthSaga', () => {
       ['first', 'first-secret'],
       ['second', 'second-secret'],
     ]);
-    expect(run.dispatched).toEqual([
-      { type: 'sentryAuth/setError', payload: [null] },
-      { type: 'sentryAuth/setConnecting', payload: [true] },
-      { type: 'sentryAuth/setError', payload: [null] },
-      { type: 'sentryAuth/setConnecting', payload: [true] },
-      { type: 'sentryAuth/setConnected', payload: { organization: 'second' } },
-      { type: 'sentryAuth/setLoadingProjects', payload: [true] },
-      { type: 'sentryAuth/setProjects', payload: [[]] },
-      { type: 'sentryAuth/setLoadingProjects', payload: [false] },
-      { type: 'sentryAuth/setError', payload: ['first rejected'] },
-      { type: 'sentryAuth/setConnecting', payload: [false] },
-    ]);
+    expect(run.state()).toMatchObject({
+      isAuthenticated: true,
+      organization: 'second',
+      isConnecting: false,
+      error: null,
+      operation: { status: 'succeeded' },
+    });
     run.task.cancel();
     await run.task.toPromise();
   });
@@ -190,8 +183,106 @@ describe('sentryAuthSaga', () => {
 
     expect(mocks.getAuthState.mock.calls).toEqual([[]]);
     expect(mocks.logout.mock.calls).toEqual([[]]);
-    expect(run.dispatched).toEqual([]);
+    expect(run.state()).toMatchObject({
+      isAuthenticated: false,
+      error: null,
+      operation: { status: 'failed' },
+    });
     run.task.cancel();
     await run.task.toPromise();
+  });
+
+  it('holds busy state through project loading and cancels the owning request only', async () => {
+    let resolve!: (value: unknown) => void;
+    mocks.saveConfig.mockResolvedValue({ success: true });
+    mocks.fetchProjects.mockReturnValue(
+      new Promise((done) => {
+        resolve = done;
+      }),
+    );
+    const run = harness();
+    run.channel.put(
+      connectSentry('acme', 'test-token', { requestId: 'save', consumerId: 'panel' }),
+    );
+    await settle();
+    expect(run.state()).toMatchObject({ isConnecting: true, isLoadingProjects: true });
+    run.channel.put(cancelSentryAuth('other'));
+    expect(run.state().operation?.status).toBe('pending');
+    run.channel.put(cancelSentryAuth('save'));
+    resolve([{ id: 'stale', slug: 'old', name: 'Old' }]);
+    await settle();
+    expect(run.state()).toMatchObject({
+      projects: [],
+      isConnecting: false,
+      isLoadingProjects: false,
+      operation: { status: 'cancelled' },
+    });
+    run.channel.put(consumeSentryAuth('save'));
+    expect(run.state().operation).toBeNull();
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('orders logout after config writes without publishing stale authorization', async () => {
+    let resolve!: (value: unknown) => void;
+    mocks.saveConfig.mockReturnValue(
+      new Promise((done) => {
+        resolve = done;
+      }),
+    );
+    mocks.logout.mockResolvedValue(undefined);
+    const run = harness();
+    run.channel.put(connectSentry('acme', 'test-token'));
+    run.channel.put(logoutSentry());
+    expect(mocks.logout).not.toHaveBeenCalled();
+    resolve({ success: true });
+    await settle();
+    expect(mocks.logout).toHaveBeenCalledTimes(1);
+    expect(mocks.fetchProjects).not.toHaveBeenCalled();
+    expect(run.state()).toMatchObject({
+      isAuthenticated: false,
+      operation: { status: 'succeeded', kind: 'logout' },
+    });
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('invalidates an outstanding initialization when logout begins', async () => {
+    let resolve!: (value: unknown) => void;
+    mocks.getAuthState.mockReturnValue(
+      new Promise((done) => {
+        resolve = done;
+      }),
+    );
+    mocks.logout.mockResolvedValue(undefined);
+    const run = harness();
+    run.channel.put(initializeSentryAuth());
+    run.channel.put(logoutSentry());
+    await settle();
+    resolve({ isAuthenticated: true, organization: 'stale' });
+    await settle();
+    expect(run.state()).toMatchObject({ isAuthenticated: false, organization: null });
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('settles teardown and discards a late save result', async () => {
+    let resolve!: (value: unknown) => void;
+    mocks.saveConfig.mockReturnValue(
+      new Promise((done) => {
+        resolve = done;
+      }),
+    );
+    const run = harness();
+    run.channel.put(connectSentry('acme', 'test-token'));
+    run.task.cancel();
+    await run.task.toPromise();
+    resolve({ success: true });
+    await settle();
+    expect(run.state()).toMatchObject({
+      isAuthenticated: false,
+      operation: { status: 'cancelled' },
+    });
+    expect(mocks.fetchProjects).not.toHaveBeenCalled();
   });
 });

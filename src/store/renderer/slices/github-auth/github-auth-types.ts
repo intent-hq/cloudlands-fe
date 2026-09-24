@@ -8,6 +8,9 @@ import type { GitHubDeviceFlow, GitHubUser } from '$features/github-auth/types';
 export type GitHubDeviceFlowInfo = Omit<GitHubDeviceFlow, 'status'>;
 
 export type GitHubAuthState = {
+  /** Locally cancelled flows cannot publish uncorrelated daemon callbacks. */
+  callbacksCancelled: boolean;
+  isDisconnecting: boolean;
   /** Whether user is authenticated with GitHub via the daemon */
   isAuthenticated: boolean;
   /** Whether user needs to authenticate with the daemon first */

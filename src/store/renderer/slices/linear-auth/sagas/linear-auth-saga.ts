@@ -2,15 +2,29 @@ import { linearAuthClient } from '$features/linear-auth/renderer/linear-auth.cli
 import { appClient } from '$lib/client';
 import { createLogger } from '$lib/utils/client-logger';
 import { m } from '$shared/paraglide/messages.js';
-import { call, put, takeEvery, type SagaGenerator } from 'typed-redux-saga';
+import { buffers } from 'redux-saga';
+import {
+  actionChannel,
+  call,
+  cancelled,
+  fork,
+  put,
+  race,
+  take,
+  takeLatest,
+  type SagaGenerator,
+} from 'typed-redux-saga';
+import { selectLinearAuthOperation } from '../linear-auth-selectors';
 
 import {
   connectLinear,
+  cancelLinearAuth,
+  consumeLinearAuth,
   initializeLinearAuth,
   logoutLinear,
   setLinearAuthState,
   setLinearError,
-  setLinearIsAuthenticating,
+  settleLinearAuth,
   startLinearAuth,
 } from '../linear-auth-slice';
 
@@ -29,84 +43,113 @@ function* probe(): SagaGenerator<void> {
   }
 }
 
-function* connect(apiKey: string): SagaGenerator<void> {
+function* isCurrent(requestId: string): SagaGenerator<boolean> {
+  const operation = yield* selectLinearAuthOperation.effect();
+  return operation?.requestId === requestId && operation.status === 'pending';
+}
+
+function* connect(apiKey: string, requestId: string): SagaGenerator<boolean> {
   const key = apiKey.trim();
   if (!key) {
     yield* put(setLinearError(m.linearAuth_service_enterApiKey_error()));
-    return;
+    return false;
   }
-  yield* put(setLinearError(null));
-  yield* put(setLinearIsAuthenticating(true));
   try {
     yield* call(
       [appClient.settings, appClient.settings.update],
       [{ path: LINEAR_TOKEN_SETTING_PATH, value: key }],
     );
+    if (!(yield* call(isCurrent, requestId))) return false;
     const state: Awaited<ReturnType<typeof linearAuthClient.getAuthState>> = yield* call(
       [linearAuthClient, linearAuthClient.getAuthState],
       true,
     );
+    if (!(yield* call(isCurrent, requestId))) return false;
     yield* put(setLinearAuthState(state.isAuthenticated, false, null));
     if (!state.isAuthenticated)
       yield* put(setLinearError(m.linearAuth_service_keyRejected_error()));
+    return state.isAuthenticated;
   } catch (error) {
-    yield* put(
-      setLinearError(
-        error instanceof Error ? error.message : m.linearAuth_service_storeKeyFailed_error(),
-      ),
-    );
+    if (yield* call(isCurrent, requestId))
+      yield* put(
+        setLinearError(
+          error instanceof Error ? error.message : m.linearAuth_service_storeKeyFailed_error(),
+        ),
+      );
     logger.error('Failed to connect Linear auth', error);
-  } finally {
-    yield* put(setLinearIsAuthenticating(false));
+    return false;
   }
 }
 
-function* logout(): SagaGenerator<void> {
+function* logout(requestId: string): SagaGenerator<boolean> {
   try {
     yield* call([appClient.settings, appClient.settings.reset], LINEAR_TOKEN_SETTING_PATH);
   } catch (error) {
-    yield* put(
-      setLinearError(
-        error instanceof Error ? error.message : m.linearAuth_service_clearKeyFailed_error(),
-      ),
-    );
+    if (yield* call(isCurrent, requestId))
+      yield* put(
+        setLinearError(
+          error instanceof Error ? error.message : m.linearAuth_service_clearKeyFailed_error(),
+        ),
+      );
     logger.error('Failed to clear Linear auth', error);
-    return;
+    return false;
   }
+  if (!(yield* call(isCurrent, requestId))) return false;
   try {
     const state: Awaited<ReturnType<typeof linearAuthClient.getAuthState>> = yield* call(
       [linearAuthClient, linearAuthClient.getAuthState],
       true,
     );
+    if (!(yield* call(isCurrent, requestId))) return false;
     yield* put(setLinearAuthState(state.isAuthenticated, state.requiresDaemonAuth, null));
     if (state.isAuthenticated)
       yield* put(setLinearError(m.linearAuth_service_envKeyStillActive_error()));
+    return !state.isAuthenticated;
   } catch {
-    yield* put(setLinearAuthState(false, false, null));
+    if (yield* call(isCurrent, requestId)) yield* put(setLinearAuthState(false, false, null));
+    return true;
   }
 }
 
-function* initializeLinearWorker(
-  _action: ReturnType<typeof initializeLinearAuth>,
-): SagaGenerator<void> {
-  yield* call(probe);
+function* probeWorker(): SagaGenerator<void> {
+  const operation = yield* selectLinearAuthOperation.effect();
+  if (operation?.status === 'pending') return;
+  yield* race({
+    probe: call(probe),
+    invalidated: take([connectLinear, logoutLinear, cancelLinearAuth, consumeLinearAuth]),
+  });
 }
 
-function* startLinearWorker(_action: ReturnType<typeof startLinearAuth>): SagaGenerator<void> {
-  yield* call(probe);
-}
-
-function* connectLinearWorker(action: ReturnType<typeof connectLinear>): SagaGenerator<void> {
-  yield* call(connect, action.payload[0]);
-}
-
-function* logoutLinearWorker(_action: ReturnType<typeof logoutLinear>): SagaGenerator<void> {
-  yield* call(logout);
+function* mutations(): SagaGenerator<void> {
+  // Credential writes cannot be aborted on the wire. Drain each write before
+  // starting its successor, but publish only for the still-current request.
+  const requests = yield* actionChannel([connectLinear, logoutLinear], buffers.expanding());
+  try {
+    while (true) {
+      const action: ReturnType<typeof connectLinear> | ReturnType<typeof logoutLinear> =
+        yield* take(requests);
+      const { requestId } = action.payload.request;
+      if (!(yield* call(isCurrent, requestId))) continue;
+      try {
+        const connectRequest =
+          'apiKey' in action.payload ? (action as ReturnType<typeof connectLinear>).payload : null;
+        const success = connectRequest
+          ? yield* call(connect, connectRequest.apiKey, requestId)
+          : yield* call(logout, requestId);
+        yield* put(settleLinearAuth(requestId, success ? 'succeeded' : 'failed'));
+      } finally {
+        if (yield* cancelled()) yield* put(settleLinearAuth(requestId, 'cancelled'));
+      }
+    }
+  } finally {
+    requests.close();
+    const operation = yield* selectLinearAuthOperation.effect();
+    if (operation?.status === 'pending')
+      yield* put(settleLinearAuth(operation.requestId, 'cancelled'));
+  }
 }
 
 export function* linearAuthSaga(): SagaGenerator<void> {
-  yield* takeEvery(initializeLinearAuth, initializeLinearWorker);
-  yield* takeEvery(startLinearAuth, startLinearWorker);
-  yield* takeEvery(connectLinear, connectLinearWorker);
-  yield* takeEvery(logoutLinear, logoutLinearWorker);
+  yield* fork(mutations);
+  yield* takeLatest([initializeLinearAuth, startLinearAuth], probeWorker);
 }

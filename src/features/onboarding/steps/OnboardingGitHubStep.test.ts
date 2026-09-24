@@ -37,6 +37,8 @@ vi.mock('$features/navigation/link-handler', () => ({
 import OnboardingGitHubStep from './OnboardingGitHubStep.svelte';
 
 const idleState = (): GitHubAuthState => ({
+  callbacksCancelled: false,
+  isDisconnecting: false,
   isAuthenticated: false,
   requiresDaemonAuth: false,
   user: null,
