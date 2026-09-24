@@ -42,17 +42,6 @@
   aria-label={m.workspace_layout_ariaLabel()}
   data-workspace-sidebar-rail
 >
-  <Button
-    variant="ghost"
-    size="icon"
-    iconOnly
-    aria-label={m.layout_titleBar_toggleSidebar_ariaLabel()}
-    title={m.layout_titleBar_toggleSidebar_ariaLabel()}
-    onclick={onExpand}
-    data-sidebar-rail-expand
-  >
-    <IntentNavigationIcon name="sidebar" size={16} />
-  </Button>
   {#each tabs as tab (tab.id)}
     <Popover.Root
       open={activeTab === tab.id}
@@ -70,7 +59,10 @@
             size="icon"
             iconOnly
             class={tab.id === 'overview' ? 'mb-3' : ''}
-            aria-label={tab.label}
+            aria-label={tab.id === 'overview'
+              ? m.layout_titleBar_toggleSidebar_ariaLabel()
+              : tab.label}
+            data-sidebar-rail-expand={tab.id === 'overview' || undefined}
             data-sidebar-rail-tab={tab.id}
             onpointerenter={(event) => {
               if (event.pointerType !== 'mouse') return;
@@ -81,6 +73,10 @@
             onpointerleave={scheduleClose}
             onclick={() => {
               cancelClose();
+              if (tab.id === 'overview') {
+                onExpand();
+                return;
+              }
               keyboardOpen = true;
               activeTab = tab.id;
             }}
@@ -89,7 +85,11 @@
               cancelClose();
             }}
           >
-            <Fa icon={tab.icon} class="size-4" />
+            {#if tab.id === 'overview'}
+              <IntentNavigationIcon name="sidebar" size={16} />
+            {:else}
+              <Fa icon={tab.icon} class="size-4" />
+            {/if}
           </Button>
         {/snippet}
       </Popover.Trigger>
@@ -99,7 +99,7 @@
         sideOffset={8}
         trapFocus={false}
         preventScroll={false}
-        class="h-[min(640px,calc(100dvh-32px))] w-[min(360px,calc(100vw-72px))] p-0"
+        class="max-h-[min(640px,calc(100dvh-32px))] w-[min(360px,calc(100vw-72px))] overflow-y-auto p-0"
         aria-label={tab.label}
         data-sidebar-rail-preview={tab.id}
         onpointerenter={cancelClose}

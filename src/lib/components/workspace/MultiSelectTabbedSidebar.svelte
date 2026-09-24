@@ -969,7 +969,11 @@
 {#snippet sidebarBody()}
   <div
     bind:this={sidebarElement}
-    class={cn('relative flex h-full flex-col overflow-hidden bg-transparent', className)}
+    class={cn(
+      'relative flex flex-col bg-transparent',
+      collapsed ? 'h-auto' : 'h-full overflow-hidden',
+      className,
+    )}
   >
     <!-- Fixed Top Section: Progress Card -->
     {#if !collapsed || railTab === 'overview'}
@@ -994,8 +998,13 @@
             {@html '<!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->'}
             <div
               role="presentation"
-              class="sidebar-expanded-card-shell absolute inset-x-0 z-20 grid min-h-0 min-w-0 overflow-hidden px-4 pb-1 pt-3"
-              style={`top: ${collapsed ? 0 : expandedOverlayTop}px; bottom: ${collapsed ? 0 : expandedOverlayBottom}px;`}
+              class={cn(
+                'sidebar-expanded-card-shell z-20 grid min-h-0 min-w-0 overflow-hidden',
+                collapsed ? 'relative' : 'absolute inset-x-0 px-4 pb-1 pt-3',
+              )}
+              style={collapsed
+                ? undefined
+                : `top: ${expandedOverlayTop}px; bottom: ${expandedOverlayBottom}px;`}
               data-sidebar-overlay
               data-sidebar-switch-direction={sidebarTabSwitchDirection}
               onclick={handleExpandedOverlayClick}
@@ -1004,7 +1013,10 @@
                 {@const { tabId, workspaceId: cardWorkspaceId } = selectedCard}
                 {@const tab = TAB_DEFINITIONS.find((t) => t.id === tabId)}
                 <div
-                  class="sidebar-expanded-card relative z-10 flex min-h-0 w-full min-w-0 flex-col overflow-hidden rounded-lg border border-border bg-sidebar"
+                  class={cn(
+                    'sidebar-expanded-card relative z-10 flex min-h-0 w-full min-w-0 flex-col overflow-hidden',
+                    !collapsed && 'rounded-lg border border-border bg-sidebar',
+                  )}
                   data-sidebar-card-surface
                   data-sidebar-card-workspace={cardWorkspaceId}
                   data-sidebar-card-tab={tabId}
@@ -1249,7 +1261,10 @@
                           </div>
                         {:else if tabId === 'files'}
                           <div
-                            class="flex h-full min-h-0 flex-col px-4 transition-all duration-spring-moderate ease-spring-moderate motion-reduce:transition-none"
+                            class={cn(
+                              'flex min-h-0 flex-col px-4 transition-all duration-spring-moderate ease-spring-moderate motion-reduce:transition-none',
+                              collapsed ? 'h-[min(480px,calc(100dvh-180px))]' : 'h-full',
+                            )}
                           >
                             <!-- File filter controls -->
                             <div

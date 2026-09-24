@@ -14,6 +14,7 @@ test('collapsed rail previews stay interactive and preserve the expanded card', 
   const preview = page.locator('[data-sidebar-rail-preview="changes"]');
   await changes.hover();
   await expect(preview.locator('[data-branch-summary]')).toBeVisible();
+  const changesHeight = (await preview.boundingBox())!.height;
   await preview.hover();
   await expect(preview).toBeVisible();
 
@@ -41,10 +42,13 @@ test('collapsed rail previews stay interactive and preserve the expanded card', 
   const context = rail.locator('[data-sidebar-rail-tab="context"]');
   await context.hover();
   await expect(page.locator('[data-sidebar-rail-preview="context"]')).toBeVisible();
+  const contextHeight = (await page.locator('[data-sidebar-rail-preview="context"]').boundingBox())!
+    .height;
+  expect(contextHeight).toBeLessThan(changesHeight);
   await page.mouse.move(1000, 750);
   await expect(page.locator('[data-sidebar-rail-preview="context"]')).toHaveCount(0);
 
-  await rail.locator('[data-sidebar-rail-tab="overview"]').click();
+  await rail.locator('[data-sidebar-rail-expand]').hover();
   await expect(page.locator('[data-sidebar-rail-preview="overview"]')).toBeVisible();
   await page.keyboard.press('Escape');
   await rail.locator('[data-sidebar-rail-expand]').click();
