@@ -4,9 +4,8 @@
  * list (open dispatch, current-backend check, no Switch/Forget), and the
  * add-backend entry.
  *
- * Uses the same mock-store pattern as DaemonStatusIndicator.test.ts so the
- * connections slice (including `windowBackendId`) can be seeded per test and
- * dispatches asserted.
+ * Uses a mock store so the connections slice (including `windowBackendId`)
+ * can be seeded per test and dispatches asserted.
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/svelte';
@@ -35,8 +34,7 @@ vi.mock('$store/renderer/store', async () => {
 });
 
 // Preload once at module scope so the import graph (ui/menu pulls the bits-ui
-// barrel) is cold-transformed during collection — same rationale as the
-// DaemonStatusIndicator suite.
+// barrel) is cold-transformed during collection.
 const HudBackendMenuPreloaded = (await import('./HudBackendMenu.svelte')).default;
 void HudBackendMenuPreloaded;
 
