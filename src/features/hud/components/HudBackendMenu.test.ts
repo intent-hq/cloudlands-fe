@@ -11,6 +11,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/svelte';
 import { createCollection } from '@augmentcode/themis/utils/collections/collection-utils';
 import type { StoreState } from '$store/renderer/types';
+import { initialState as initialConnectionsState } from '$store/renderer/slices/connections/connections-slice';
 
 let mockStoreState: Partial<StoreState> = {};
 let mockDispatch = vi.fn();
@@ -64,6 +65,7 @@ const remoteRecord = {
 
 function withConnections(windowBackendId: string) {
   return {
+    ...initialConnectionsState,
     connections: createCollection('id', [localRecord, remoteRecord]),
     activeId: 'local',
     windowBackendId,
