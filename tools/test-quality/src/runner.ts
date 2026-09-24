@@ -119,6 +119,7 @@ export interface EvaluateOptions {
   model?: string;
   provider?: JevProvider;
   requestIntervalMs?: number;
+  inputTokensPerSecond?: number;
   maxConsecutiveFailures?: number;
   retries?: number;
   apiKey?: string;
@@ -159,6 +160,7 @@ export async function evaluate(
   const requestIntervalMs = options.requestIntervalMs ?? (provider === 'vercel' ? 1000 : 0);
   const maxConsecutiveFailures = options.maxConsecutiveFailures ?? 5;
   const retries = options.retries ?? 2;
+  const inputTokensPerSecond = options.inputTokensPerSecond ?? 0;
   if (
     !Number.isInteger(requestIntervalMs) ||
     requestIntervalMs < 0 ||
@@ -167,10 +169,12 @@ export async function evaluate(
     maxConsecutiveFailures < 1 ||
     !Number.isInteger(retries) ||
     retries < 0 ||
-    retries > 5
+    retries > 5 ||
+    !Number.isSafeInteger(inputTokensPerSecond) ||
+    (inputTokensPerSecond !== 0 && inputTokensPerSecond < 65_536)
   )
     throw new Error('Invalid request pacing configuration');
-  const pacer = createRequestPacer(requestIntervalMs);
+  const pacer = createRequestPacer(requestIntervalMs, inputTokensPerSecond);
   const model = options.model ?? (provider === 'vercel' ? DEFAULT_GATEWAY_MODEL : DEFAULT_MODEL);
   const rubricHash = hash([RUBRIC_VERSION, RUBRIC]);
   const jobs = traces.flatMap((trace) =>
@@ -198,6 +202,7 @@ export async function evaluate(
     model,
     provider,
     requestIntervalMs,
+    inputTokensPerSecond,
     maxConsecutiveFailures,
     retries,
     rubricVersion: RUBRIC_VERSION,
@@ -226,17 +231,20 @@ export async function evaluate(
           }
           const start = performance.now();
           attemptedRequests++;
+          let recordUsage: ((tokens: number) => void) | undefined;
           const judgment = await (options.judge ?? judge)(job.state, job.targets, {
             apiKey: options.apiKey!,
             model,
             provider,
             retries,
             beforeRequest: async () => {
-              await pacer.wait();
+              // Reserve Jev's full 64k context until successful usage is known.
+              recordUsage = await pacer.wait(inputTokensPerSecond ? 65_536 : 0);
               if (stopReason) throw new Error(`Not attempted: ${stopReason}`);
             },
             onBackoff: pacer.defer,
           });
+          recordUsage?.(judgment.usage.input_tokens);
           consecutiveFailures = 0;
           inputTokens += judgment.usage.input_tokens;
           const id = store.saveEvaluation(

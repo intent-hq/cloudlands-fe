@@ -32,6 +32,7 @@ Provider:  --provider typesafe|vercel (default typesafe)
            --model <id> (typesafe: ${DEFAULT_MODEL}; vercel: ${DEFAULT_GATEWAY_MODEL}) --fresh
 Execution: --concurrency <1..32> (default 4) --batch-size <1..8> (default 8)
            --request-interval-ms <0..60000> (vercel default 1000; typesafe 0)
+           --input-tokens-per-second <65536+> (optional rolling token budget)
            --max-consecutive-failures <count> (default 5)
            --retries <0..5> (default 2; use 0 to stop without retrying a failed call)
            --max-requests <count> (fail before spending if exceeded)
@@ -64,6 +65,7 @@ export async function main(args: string[]): Promise<number> {
       fresh: { type: 'boolean' },
       concurrency: { type: 'string' },
       'request-interval-ms': { type: 'string' },
+      'input-tokens-per-second': { type: 'string' },
       'max-consecutive-failures': { type: 'string' },
       retries: { type: 'string' },
       'batch-size': { type: 'string' },
@@ -123,6 +125,10 @@ export async function main(args: string[]): Promise<number> {
   );
   const maxConsecutiveFailures = number('max-consecutive-failures', 5, 1, 100, true);
   const retries = number('retries', 2, 0, 5, true);
+  const inputTokensPerSecond =
+    values['input-tokens-per-second'] === undefined
+      ? undefined
+      : number('input-tokens-per-second', 0, 65_536, Number.MAX_SAFE_INTEGER, true);
   const batchSize = number('batch-size', 8, 1, 8, true);
   const threshold = number('threshold', 60, 0, 100);
   const minConfidence = number('min-confidence', 0.6, 0, 1);
@@ -216,6 +222,7 @@ export async function main(args: string[]): Promise<number> {
             apiKey,
             provider,
             requestIntervalMs,
+            inputTokensPerSecond,
             maxConsecutiveFailures,
             retries,
             model: values.model,
