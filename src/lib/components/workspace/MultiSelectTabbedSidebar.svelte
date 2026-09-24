@@ -1582,13 +1582,7 @@
 {/snippet}
 
 {#if collapsed}
-  <WorkspaceSidebarRail
-    tabs={TAB_DEFINITIONS.filter((tab) => !(isCollaborator && OWNER_ONLY_TAB_IDS.has(tab.id)))}
-    bind:activeTab={railTab}
-    onExpand={() => appStore.dispatch(toggleSidebar())}
-  >
-    {@render sidebarBody()}
-  </WorkspaceSidebarRail>
+  <WorkspaceSidebarRail onExpand={() => appStore.dispatch(toggleSidebar())} />
 {:else}
   {@render sidebarBody()}
 {/if}
