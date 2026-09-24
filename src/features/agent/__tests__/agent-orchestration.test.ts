@@ -136,12 +136,13 @@ describe('Agent Orchestration', () => {
       agentSubscribe(workspaceId, 'agent-1', 'Test Agent', { eventTypes: ['agent:idle'] });
 
       updateAgentStatus(workspaceId, 'agent-1', 'responding');
+      expect(getAgentSubscriptionStatus(workspaceId, 'agent-1')).toBe('responding');
       updateAgentStatus(workspaceId, 'agent-1', 'idle');
+      expect(getAgentSubscriptionStatus(workspaceId, 'agent-1')).toBe('idle');
       updateAgentStatus(workspaceId, 'agent-1', 'responding');
+      expect(getAgentSubscriptionStatus(workspaceId, 'agent-1')).toBe('responding');
       updateAgentStatus(workspaceId, 'agent-1', 'idle');
-
-      // No errors should occur
-      expect(true).toBe(true);
+      expect(getAgentSubscriptionStatus(workspaceId, 'agent-1')).toBe('idle');
     });
   });
 

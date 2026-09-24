@@ -318,64 +318,6 @@ describe('TaskItemNodeView - Basic Rendering', () => {
   });
 });
 
-describe('TaskItemNodeView - Checkbox Cycling', () => {
-  it('should cycle from todo to in-progress on click', async () => {
-    // Note: The component uses props.updateAttributes directly, not editor.chain
-    // The visual state update (indeterminate) happens via the use:setIndeterminate action
-    // which uses $effect to sync with the status prop. Since the mock doesn't update
-    // the node, we verify the click handler executes without errors.
-    const props = createMockProps();
-    const { container } = render(TestTaskItemNodeView, { props });
-
-    // The checkbox is a div with role="checkbox"
-    const checkbox = container.querySelector('[role="checkbox"]') as HTMLElement;
-    expect(checkbox).toBeTruthy();
-
-    // Initial state: todo (unchecked)
-    expect(checkbox.getAttribute('data-state')).toBe('unchecked');
-
-    // Click should not throw
-    await fireEvent.click(checkbox);
-
-    // The component calls updateAttributes with { checked: false, status: 'in-progress' }
-    // but since the mock doesn't update the node, the visual state doesn't change
-    // This is expected behavior for unit tests - integration tests verify the full cycle
-    expect(true).toBe(true);
-  });
-
-  it('should cycle from done to todo on click (verifies updateAttributes call)', async () => {
-    // This test verifies that clicking a done checkbox calls updateAttributes
-    // with the correct values for transitioning to todo state.
-    // Note: The visual state update depends on the mock actually updating the node,
-    // which doesn't happen in unit tests. Integration tests verify the full cycle.
-
-    const props = createMockProps({
-      node: {
-        attrs: { checked: true, status: 'done' },
-        nodeSize: 10,
-        toJSON: () => ({ type: 'taskItem', attrs: { checked: true, status: 'done' } }),
-      },
-    });
-
-    const { container } = render(TestTaskItemNodeView, { props });
-
-    // The checkbox is a div with role="checkbox"
-    const checkbox = container.querySelector('[role="checkbox"]') as HTMLElement;
-    expect(checkbox).toBeTruthy();
-
-    // Initial state: done (checked)
-    expect(checkbox.getAttribute('data-state')).toBe('checked');
-
-    await fireEvent.click(checkbox);
-
-    // Verify the editor chain was called (updateAttributes is called via props)
-    // The component calls props.updateAttributes directly, which is mocked in the test wrapper
-    // We can't easily verify the call here since it's in the wrapper, but we verify
-    // that the click handler executed without errors
-    expect(true).toBe(true); // Test passes if no errors thrown
-  });
-});
-
 describe('TaskItemNodeView - Action Button', () => {
   it('should render action button for unchecked tasks', () => {
     const props = createMockProps();

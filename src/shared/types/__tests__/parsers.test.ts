@@ -177,7 +177,10 @@ describe('Safe Parsers', () => {
         { id: 'tool-2', name: 'test2', timestamp: '2024-01-01T00:00:00Z' },
       ];
       const result = safeParseToolCalls(calls);
-      expect(result).toHaveLength(2);
+      expect(result).toEqual([
+        { id: 'tool-1', name: 'test', timestamp: '2024-01-01T00:00:00Z' },
+        { id: 'tool-2', name: 'test2', timestamp: '2024-01-01T00:00:00Z' },
+      ]);
     });
 
     it('should filter out invalid tool calls', () => {

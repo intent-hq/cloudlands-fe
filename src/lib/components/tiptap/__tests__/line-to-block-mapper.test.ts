@@ -635,7 +635,6 @@ More content here.`;
   });
 
   it('should provide per-line attributions for code blocks', async () => {
-    // This test documents the DESIRED behavior for per-line code block attribution
     const markdown = `# Heading
 
 \`\`\`sql
@@ -664,16 +663,27 @@ WHERE id = 1;
 
     const blockAttributions = mapLineAttributionsToBlocks(editor, lineAttributions, markdown);
 
-    // Current behavior: code block gets ONE attribution (latest timestamp = 5000)
-    // Desired behavior: code block should have per-line attributions
-
-    // For now, just verify we get attributions for the blocks
-    expect(blockAttributions.size).toBeGreaterThanOrEqual(3); // heading, code block, heading
-
-    // Note: Once per-line attribution is implemented, verify:
-    // - Code block position maps to an array of line attributions
-    // - Each line within the code block has its own timestamp
-    // - Lines 3-6 should each be individually attributable
+    const attributedBlocks: Array<{ text: string; attribution: unknown }> = [];
+    editor.state.doc.forEach((node, offset) => {
+      attributedBlocks.push({
+        text: node.textContent,
+        attribution: blockAttributions.get(offset + 1),
+      });
+    });
+    expect(attributedBlocks).toEqual([
+      { text: 'Heading', attribution: { timestamp: 1000 } },
+      {
+        text: 'SELECT * FROM users\nWHERE id = 1;',
+        attribution: {
+          type: 'codeBlock',
+          lines: [
+            { lineIndex: 0, attribution: { timestamp: 3000 } },
+            { lineIndex: 1, attribution: { timestamp: 4000 } },
+          ],
+        },
+      },
+      { text: 'Next Section', attribution: { timestamp: 6000 } },
+    ]);
   });
 
   it('should handle complex document with multiple code blocks and headings', async () => {
