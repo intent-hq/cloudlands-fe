@@ -36,6 +36,7 @@
     pendingAssistantStatus,
     pendingEvent = false,
     cardSeamMessages,
+    liveMessages,
   }: {
     theme?: 'light' | 'dark';
     zoom?: number;
@@ -49,11 +50,13 @@
     pendingAssistantStatus?: 'thinking' | 'error' | 'model-unavailable' | 'idle' | 'reply';
     pendingEvent?: boolean;
     cardSeamMessages?: AgentMessage[];
+    liveMessages?: AgentMessage[];
   } = $props();
   const setupCardFixture = untrack(() => setupCardOnly);
   const reasoningSearchFixture = untrack(() => reasoningSearchOnly);
   const pendingFixture = untrack(() => pendingAssistantStatus !== undefined);
   const cardSeamFixture = untrack(() => cardSeamMessages);
+  const liveFixture = untrack(() => liveMessages);
   const workspaceId = 'chat-panel-operational-geometry';
   const agentId = 'chat-panel-operational-agent';
   const timestamp = '2026-08-17T12:00:00.000Z';
@@ -533,6 +536,7 @@
   ]);
   // svelte-ignore state_referenced_locally -- each CT mount uses one immutable fixture scenario.
   const messages =
+    liveFixture ??
     cardSeamFixture ??
     (pendingFixture
       ? pendingMessages
@@ -619,6 +623,18 @@
     }),
   );
   store.dispatch(setRestoreStatus(workspaceId, 'restored'));
+
+  $effect(() => {
+    if (!liveFixture || !liveMessages) return;
+    const nextMessages = liveMessages;
+    untrack(() => {
+      store.dispatch(
+        bulkUpsertSessions([{ ...session, messages: nextMessages }], {
+          preserveExplicitRuntimeFlags: false,
+        }),
+      );
+    });
+  });
 
   $effect(() => {
     if (!pendingFixture) return;
