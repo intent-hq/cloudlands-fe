@@ -479,7 +479,7 @@
     if (prefersReducedMotion()) return { duration: 0 };
 
     return {
-      delay: spring.moderate.settleMs + index * 24,
+      delay: spring.moderate.settleMs + (index * spring.slow.settleMs) / 10,
       duration: spring.fast.settleMs,
       css: (t) => `opacity: ${t}; transform: translateY(${(1 - t) * 4}px);`,
     };
