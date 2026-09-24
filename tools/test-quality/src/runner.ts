@@ -120,6 +120,7 @@ export interface EvaluateOptions {
   provider?: JevProvider;
   requestIntervalMs?: number;
   maxConsecutiveFailures?: number;
+  retries?: number;
   apiKey?: string;
   concurrency: number;
   batchSize: number;
@@ -132,6 +133,7 @@ export interface EvaluateOptions {
       apiKey: string;
       model: string;
       provider: JevProvider;
+      retries?: number;
       beforeRequest?: () => Promise<void>;
       onBackoff?: (delayMs: number) => void;
     },
@@ -156,12 +158,16 @@ export async function evaluate(
   const provider = options.provider ?? 'typesafe';
   const requestIntervalMs = options.requestIntervalMs ?? (provider === 'vercel' ? 1000 : 0);
   const maxConsecutiveFailures = options.maxConsecutiveFailures ?? 5;
+  const retries = options.retries ?? 2;
   if (
     !Number.isInteger(requestIntervalMs) ||
     requestIntervalMs < 0 ||
     requestIntervalMs > 60_000 ||
     !Number.isInteger(maxConsecutiveFailures) ||
-    maxConsecutiveFailures < 1
+    maxConsecutiveFailures < 1 ||
+    !Number.isInteger(retries) ||
+    retries < 0 ||
+    retries > 5
   )
     throw new Error('Invalid request pacing configuration');
   const pacer = createRequestPacer(requestIntervalMs);
@@ -193,6 +199,7 @@ export async function evaluate(
     provider,
     requestIntervalMs,
     maxConsecutiveFailures,
+    retries,
     rubricVersion: RUBRIC_VERSION,
     rubricHash,
     concurrency: options.concurrency,
@@ -223,6 +230,7 @@ export async function evaluate(
             apiKey: options.apiKey!,
             model,
             provider,
+            retries,
             beforeRequest: async () => {
               await pacer.wait();
               if (stopReason) throw new Error(`Not attempted: ${stopReason}`);

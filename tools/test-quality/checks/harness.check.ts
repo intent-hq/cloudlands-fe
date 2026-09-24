@@ -376,6 +376,35 @@ test('opens the circuit after repeated service failures and leaves remaining tar
   assert.ok(store.results(result.runId).some((row) => row.error?.includes('consecutive failed')));
 });
 
+for (const status of [429, 503]) {
+  test(`strict stop sends no more HTTP calls after the first ${status}`, async (t) => {
+    const { root, store, config } = fixture(t);
+    const { traces } = scan(root, config, [], store);
+    let calls = 0;
+    t.mock.method(globalThis, 'fetch', async () => {
+      calls++;
+      return new Response('{}', { status });
+    });
+    const result = await evaluate(
+      store,
+      traces,
+      {
+        apiKey: 'fixture',
+        concurrency: 1,
+        batchSize: 8,
+        retries: 0,
+        maxConsecutiveFailures: 1,
+      },
+      {},
+    );
+    assert.equal(calls, 1);
+    assert.equal(result.requests, 1);
+    assert.equal(result.skippedRequests, traces.length - 1);
+    assert.equal(store.run(result.runId).status, 'partial');
+    assert.equal(store.results(result.runId).filter((row) => row.score !== null).length, 0);
+  });
+}
+
 test('bounds concurrency while preserving every result', async (t) => {
   const { root, store, config } = fixture(t);
   const { traces } = scan(root, config, [], store);

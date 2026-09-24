@@ -33,6 +33,7 @@ Provider:  --provider typesafe|vercel (default typesafe)
 Execution: --concurrency <1..32> (default 4) --batch-size <1..8> (default 8)
            --request-interval-ms <0..60000> (vercel default 1000; typesafe 0)
            --max-consecutive-failures <count> (default 5)
+           --retries <0..5> (default 2; use 0 to stop without retrying a failed call)
            --max-requests <count> (fail before spending if exceeded)
 Reports:   --run <run-id> (default latest) --format text|json --kind file|test|assertion
            --threshold <0..100> (default 60) --min-confidence <0..1> (default 0.6)
@@ -64,6 +65,7 @@ export async function main(args: string[]): Promise<number> {
       concurrency: { type: 'string' },
       'request-interval-ms': { type: 'string' },
       'max-consecutive-failures': { type: 'string' },
+      retries: { type: 'string' },
       'batch-size': { type: 'string' },
       'max-requests': { type: 'string' },
       run: { type: 'string' },
@@ -120,6 +122,7 @@ export async function main(args: string[]): Promise<number> {
     true,
   );
   const maxConsecutiveFailures = number('max-consecutive-failures', 5, 1, 100, true);
+  const retries = number('retries', 2, 0, 5, true);
   const batchSize = number('batch-size', 8, 1, 8, true);
   const threshold = number('threshold', 60, 0, 100);
   const minConfidence = number('min-confidence', 0.6, 0, 1);
@@ -214,6 +217,7 @@ export async function main(args: string[]): Promise<number> {
             provider,
             requestIntervalMs,
             maxConsecutiveFailures,
+            retries,
             model: values.model,
             fresh: values.fresh,
             concurrency,
