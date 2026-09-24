@@ -3205,6 +3205,31 @@ describe('handleInviteDeepLink — invitation identity requirements', () => {
     },
   );
 
+  it.each(
+    [GITHUB_PIN, GITLAB_PIN].flatMap((identity) =>
+      [false, true].map((pinned) => ({ identity, pinned })),
+    ),
+  )(
+    'carries only the required provider in account recovery for $identity.provider (pinned=$pinned)',
+    async ({ identity, pinned }) => {
+      challenge.mockResolvedValue({ ...CURRENT_CHALLENGE, pinIdentity: pinned ? identity : null });
+      setPrincipal(identity);
+      onLocal('github.getUser', () => ({ user: { id: 999, login: 'other' } }));
+      onLocal('sourceControl.authStatus', () => ({ ...status, isConfigured: false, user: null }));
+      await handleInviteDeepLink(LINK);
+      expectNoProof();
+      expect(showInviteNotice).toHaveBeenCalledWith(
+        expect.objectContaining({
+          reason: pinned ? 'pin-mismatch' : 'identity-unavailable',
+          accountProvider: identity.provider,
+        }),
+      );
+      expect(localCalls('settings.set')).toEqual([]);
+      expect(localCalls('sourceControl.revoke')).toEqual([]);
+      expect(localCalls('github.connect')).toEqual([]);
+    },
+  );
+
   it.each([
     ['wrong provider', { provider: 'github' }],
     ['wrong instance', { host: 'another.gitlab.example.com:8443' }],
@@ -3253,6 +3278,7 @@ describe('handleInviteDeepLink — invitation identity requirements', () => {
     expect(showInviteNotice).toHaveBeenCalledWith(
       expect.objectContaining({ reason: 'pin-mismatch' }),
     );
+    expect(showInviteNotice.mock.calls.at(-1)?.[0].accountProvider).toBeUndefined();
   });
 
   it.each([GITHUB_PIN, GITLAB_PIN])(
@@ -3335,6 +3361,7 @@ describe('handleInviteDeepLink — invitation identity requirements', () => {
     await handleInviteDeepLink(LINK);
     expectNoProof();
     expect(localRequest).not.toHaveBeenCalled();
+    expect(showInviteNotice.mock.calls.at(-1)?.[0].accountProvider).toBeUndefined();
   });
 
   it.each([42, 9000])(

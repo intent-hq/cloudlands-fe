@@ -8,12 +8,13 @@ import type { InviteNoticeShowPayload } from '$shared/ipc/invite-notice';
 import { describeInviteFailureReason } from '$shared/utils/invite-failure-text';
 import { m } from '$shared/paraglide/messages.js';
 
-const labs = vi.hoisted(() => ({ enabled: false }));
+const labs = vi.hoisted(() => ({ enabled: false, dispatch: vi.fn() }));
 vi.mock('$store/renderer/store', async () => {
   const { createAppStoreMockModule } =
     await import('$store/renderer/utils/test-helpers/store-mock');
   return createAppStoreMockModule({
     state: () => ({ userPreferences: { labsGitLabEnabled: labs.enabled } }),
+    dispatch: labs.dispatch,
   });
 });
 beforeEach(() => {
@@ -55,12 +56,7 @@ async function loadModal() {
 }
 
 describe('InviteNoticeModal', () => {
-  it.each([
-    'pin-mismatch',
-    'identity-unavailable',
-    'proof-gitlab-not-connected',
-    'proof-gitlab-scope-missing',
-  ] as const)(
+  it.each(['proof-gitlab-not-connected', 'proof-gitlab-scope-missing'] as const)(
     'offers a Labs enable route for %s while setup is hidden, preserving the failure payload',
     async (reason) => {
       const Modal = await loadModal();
@@ -75,6 +71,64 @@ describe('InviteNoticeModal', () => {
       expect(onAcknowledge).toHaveBeenCalledOnce();
       expect(screen.queryByRole('alertdialog')).toBeNull();
       expect(payload).toEqual({ ...FAILED, reason });
+      expect(labs.dispatch).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each(['pin-mismatch', 'identity-unavailable'] as const)(
+    'keeps %s recovery neutral for unknown or GitHub accounts',
+    async (reason) => {
+      const Modal = await loadModal();
+      for (const accountProvider of [undefined, 'github'] as const) {
+        const onAcknowledge = vi.fn();
+        const view = render(Modal, {
+          props: { open: true, payload: { ...FAILED, reason, accountProvider }, onAcknowledge },
+        });
+        expect(screen.queryByRole('button', { name: 'Enable GitLab in Labs' })).toBeNull();
+        await fireEvent.click(screen.getByRole('button', { name: 'Open Connections' }));
+        expect(navigateToSettings).toHaveBeenLastCalledWith({
+          tab: 'connections',
+          hash: 'integrations',
+        });
+        expect(onAcknowledge).toHaveBeenCalledOnce();
+        expect(labs.dispatch).not.toHaveBeenCalled();
+        view.unmount();
+      }
+    },
+  );
+
+  it.each(['pin-mismatch', 'identity-unavailable'] as const)(
+    'routes confirmed GitLab %s recovery to Labs without changing the preference',
+    async (reason) => {
+      const Modal = await loadModal();
+      const payload = { ...FAILED, reason, accountProvider: 'gitlab' as const };
+      const onAcknowledge = vi.fn();
+      render(Modal, { props: { open: true, payload, onAcknowledge } });
+      await fireEvent.click(screen.getByRole('button', { name: 'Enable GitLab in Labs' }));
+      expect(navigateToSettings).toHaveBeenCalledExactlyOnceWith({
+        tab: 'labs',
+        hash: 'labs-gitlab',
+      });
+      expect(onAcknowledge).toHaveBeenCalledOnce();
+      expect(labs.dispatch).not.toHaveBeenCalled();
+      expect(payload.accountProvider).toBe('gitlab');
+    },
+  );
+
+  it.each(['host-unreachable', 'proof-gitlab-unreachable', 'generic'] as const)(
+    'does not turn unrelated %s failures into account setup',
+    async (reason) => {
+      const Modal = await loadModal();
+      render(Modal, {
+        props: { open: true, payload: { ...FAILED, reason, accountProvider: 'gitlab' } },
+      });
+      expect(screen.queryByRole('button', { name: 'Enable GitLab in Labs' })).toBeNull();
+      expect(screen.queryByRole('button', { name: 'Open Connections' })).toBeNull();
+      await fireEvent.click(
+        screen.getByRole('button', { name: m.deeplink_inviteFailed_ok_button() }),
+      );
+      expect(navigateToSettings).not.toHaveBeenCalled();
+      expect(labs.dispatch).not.toHaveBeenCalled();
     },
   );
 

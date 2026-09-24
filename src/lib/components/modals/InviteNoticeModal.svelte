@@ -35,6 +35,13 @@
         payload.reason === 'pin-mismatch' ||
         payload.reason === 'identity-unavailable'),
   );
+  const needsGitLabEnable = $derived(
+    needsAccountSetup &&
+      !$gitlabEnabled$ &&
+      (payload?.accountProvider === 'gitlab' ||
+        payload?.reason === 'proof-gitlab-not-connected' ||
+        payload?.reason === 'proof-gitlab-scope-missing'),
+  );
   const failed = $derived(payload?.kind === 'failed');
   const title = $derived(
     failed ? m.deeplink_inviteFailed_title() : m.deeplink_invitePlaintext_title(),
@@ -58,9 +65,9 @@
   function openAccountSetup() {
     acknowledge();
     void navigateToSettings(
-      $gitlabEnabled$
-        ? { tab: 'connections', hash: 'integrations' }
-        : { tab: 'labs', hash: 'labs-gitlab' },
+      needsGitLabEnable
+        ? { tab: 'labs', hash: 'labs-gitlab' }
+        : { tab: 'connections', hash: 'integrations' },
     ).catch(() => {});
   }
 
@@ -86,9 +93,9 @@
     {#snippet footer()}
       {#if needsAccountSetup}
         <Button variant="secondary" onclick={openAccountSetup}>
-          {$gitlabEnabled$
-            ? m.workspace_share_openConnections_label()
-            : m.inviteNotice_modal_enableGitlab_label()}
+          {needsGitLabEnable
+            ? m.inviteNotice_modal_enableGitlab_label()
+            : m.workspace_share_openConnections_label()}
         </Button>
       {/if}
       <Button onclick={acknowledge}>{m.deeplink_inviteFailed_ok_button()}</Button>

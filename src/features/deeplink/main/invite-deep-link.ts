@@ -172,7 +172,10 @@ const GITHUB_HOST = 'github.com';
 
 /** Selection failures carry only a bounded, localized reason. */
 class InviteIdentityError extends Error {
-  constructor(readonly reason: 'pin-mismatch' | 'identity-unavailable') {
+  constructor(
+    readonly reason: 'pin-mismatch' | 'identity-unavailable',
+    public accountProvider?: 'github' | 'gitlab',
+  ) {
     // i18n-ignore (internal error, fixed text)
     super('invite identity unavailable');
     this.name = 'InviteIdentityError';
@@ -424,7 +427,14 @@ export async function handleInviteDeepLink(url: string): Promise<void> {
     // The handoff dismiss is a no-op once the modal was dismissed `joined`;
     // the failure notice still shows.
     await showFailure(
-      { kind: 'failed', reason: classifyInviteFailure(error), ...labels },
+      {
+        kind: 'failed',
+        reason: classifyInviteFailure(error),
+        ...labels,
+        ...(error instanceof InviteIdentityError && error.accountProvider
+          ? { accountProvider: error.accountProvider }
+          : {}),
+      },
       { consent: prompts?.current() ?? null, outcome: 'failed' },
     );
   } finally {
@@ -561,6 +571,7 @@ async function joinWithIdentityProof(
         if (Object.hasOwn(challenge, 'pinIdentity') && !Object.hasOwn(refreshed, 'pinIdentity')) {
           throw new InviteIdentityError(
             challenge.pinIdentity ? 'pin-mismatch' : 'identity-unavailable',
+            current.provider,
           );
         }
         challenge = refreshed;
@@ -650,6 +661,7 @@ async function proveIdentity(
       )
         throw new InviteIdentityError(
           challenge.pinIdentity ? 'pin-mismatch' : 'identity-unavailable',
+          identity.provider,
         );
       const latest = await readCurrent();
       if (latest === 'cancelled' || cancelled) {
@@ -657,7 +669,7 @@ async function proveIdentity(
         consent?.dismiss('cancelled');
         return { kind: 'cancelled' };
       }
-      if (latest === null) throw new InviteIdentityError('identity-unavailable');
+      if (latest === null) throw new InviteIdentityError('identity-unavailable', identity.provider);
       if (!sameIdentity(identity, latest)) {
         void deleteProof(client, proof);
         consent?.dismiss('superseded');
@@ -666,6 +678,7 @@ async function proveIdentity(
       if (proof.login !== identity.login) {
         throw new InviteIdentityError(
           challenge.pinIdentity ? 'pin-mismatch' : 'identity-unavailable',
+          identity.provider,
         );
       }
     } catch (error) {
@@ -983,7 +996,7 @@ async function signInToGitHub(
     consent.dismiss('cancelled');
     return { kind: 'cancelled' };
   }
-  if (identity === null) throw new InviteIdentityError('identity-unavailable');
+  if (identity === null) throw new InviteIdentityError('identity-unavailable', 'github');
   logger.info('Guest daemon signed in to GitHub for the invite', { reason });
   // The consent for the join itself follows as its own prompt (it names the
   // account just signed in); this one is superseded by it.
@@ -1168,6 +1181,7 @@ async function readInviteIdentity(
     required = principal.identity;
   }
   if (required.provider === 'github') {
+    failure.accountProvider = 'github';
     let result: { user?: { id?: unknown; login?: unknown } | null };
     try {
       result = await client.request('github.getUser');
@@ -1189,6 +1203,7 @@ async function readInviteIdentity(
     return { ...required, login };
   }
   if (!identitySeamSupported()) throw failure;
+  failure.accountProvider = 'gitlab';
   let status: ForgeAuthStatusResult;
   try {
     status = await client.request('sourceControl.authStatus', {

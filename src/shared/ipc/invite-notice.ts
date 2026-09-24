@@ -1,7 +1,7 @@
 /**
  * Invite-notice IPC payload contract (main ⇄ renderer).
  *
- * The main process (`src/main/invite-notice.ts`) renders the two one-button
+ * The main process (`src/main/invite-notice.ts`) renders the two acknowledgement
  * notices of an `intent://invite` join (`features/deeplink/main/invite-deep-link.ts`)
  * in the renderer instead of native message boxes: the "could not join" failure
  * and the "credential stored without encryption" warning. Same shape as the
@@ -96,6 +96,8 @@ export interface InviteNoticeShowPayload {
   hostLabel?: string;
   /** For `identity-unverifiable`: the forge instance the host could not read the proof on. */
   identityHost?: string;
+  /** Display-only account recovery hint; never used to select a pin, account, or proof. */
+  accountProvider?: 'github' | 'gitlab';
 }
 
 /** `invite-notice:ack` payload (renderer → main invoke). */
