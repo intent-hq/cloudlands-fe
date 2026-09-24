@@ -45,11 +45,13 @@ describe('ThinkingBlock — tool-call presentation', () => {
       expect(view.container.querySelector('[aria-expanded]')).toBeNull();
     });
 
-    it('renders multiple complete bold summaries once each in source order', async () => {
-      const view = await renderBlock({
-        content: '**Preparing task plan**\n\n**Checking duplicate tracker issue**',
-        isStreaming,
-      });
+    it.each([
+      '**Preparing task plan**\n\n**Checking duplicate tracker issue**',
+      '# Preparing task plan\n\n## Checking duplicate tracker issue',
+      'Preparing task plan\n===\n\nChecking duplicate tracker issue\n---',
+      '**Preparing task plan**\n\n## Checking duplicate tracker issue',
+    ])('renders multiple complete summaries once each in source order: %s', async (content) => {
+      const view = await renderBlock({ content, isStreaming });
       const rows = [...view.container.querySelectorAll('[data-chat-operational-row]')];
       expect(rows.map((row) => row.textContent?.trim())).toEqual([
         'Preparing task plan',
@@ -59,6 +61,32 @@ describe('ThinkingBlock — tool-call presentation', () => {
       expect(screen.queryByTestId('markdown-viewer')).toBeNull();
     });
   });
+
+  it('retains prose containing separate bold fragments behind its disclosure', async () => {
+    const content = '**I** will inspect **schema**';
+    await renderBlock({ content });
+    const toggle = screen.getByRole('button');
+    expect(toggle.getAttribute('aria-expanded')).toBe('false');
+    expect(screen.queryByTestId('markdown-viewer')).toBeNull();
+    await fireEvent.click(toggle);
+    expect(toggle.getAttribute('aria-expanded')).toBe('true');
+    expect(screen.getByTestId('markdown-viewer').textContent).toBe(content);
+  });
+
+  it.each([
+    '**Locating collection links',
+    '**Locating collection links** with more prose.',
+    '# Locating collection links\n\nLet me check the schema',
+    '**Locating collection links**\n\nLet me check the schema',
+    '    # Locating collection links',
+  ])(
+    'keeps incomplete headings and supplied body content behind a disclosure: %s',
+    async (content) => {
+      await renderBlock({ content, isStreaming: true });
+      expect(screen.getByRole('button').getAttribute('aria-expanded')).toBe('true');
+      expect(screen.getByTestId('markdown-viewer').textContent?.trim()).not.toBe('');
+    },
+  );
 
   it('uses the compact tool-call row treatment', async () => {
     await renderBlock({ content: 'Let me check the schema', isStreaming: false });

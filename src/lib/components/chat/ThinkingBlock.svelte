@@ -8,7 +8,7 @@
   import { faBrain } from '@fortawesome/free-solid-svg-icons';
   import MarkdownViewer from '$lib/components/markdown/MarkdownViewer.svelte';
   import { m } from '$shared/paraglide/messages.js';
-  import { extractReasoningHeading } from './reasoning-heading';
+  import { extractReasoningHeading, extractStandaloneReasoningTitles } from './reasoning-heading';
   import {
     CHAT_OPERATIONAL_ICON_CLASS,
     OPERATIONAL_EXPANDED_CONTENT_CLASS,
@@ -60,6 +60,7 @@
   }
 
   const reasoningContent = $derived(extractReasoningHeading(content));
+  const standaloneTitles = $derived(extractStandaloneReasoningTitles(content));
   const instanceId = $props.id();
   const detailsId = `reasoning-details-${instanceId}`;
   const toggleLabel = $derived(
@@ -78,12 +79,12 @@
   {/if}
 {/snippet}
 
-{#snippet summary()}
+{#snippet summaryText(label: string)}
   <span class="min-w-0 truncate whitespace-nowrap font-normal">
     {#if isStreaming}
-      <ShimmerOverlay duration={1.92}>{toggleLabel}</ShimmerOverlay>
+      <ShimmerOverlay duration={1.92}>{label}</ShimmerOverlay>
     {:else}
-      {toggleLabel}
+      {label}
     {/if}
   </span>
 {/snippet}
@@ -99,28 +100,50 @@
   </div>
 {/snippet}
 
-<ChatOperationalRow
-  {leading}
-  {summary}
-  showChevron={false}
-  {details}
-  animateDetailsHeight
-  interactive
-  expanded={isExpanded}
-  controls={detailsId}
-  {detailsId}
-  ariaLabel={toggleLabel}
-  summaryTitle={toggleLabel}
-  onclick={toggle}
-  onkeydown={handleDisclosureKeydown}
-  detailsClass="{OPERATIONAL_EXPANDED_CONTENT_CLASS} pb-2 type-caption text-muted-foreground [&_.markdown-content]:text-sm [&_.markdown-content]:leading-relaxed [&_.markdown-content]:text-muted-foreground"
-  {adjacentOperationalRow}
-  streaming={isStreaming}
-  testId="reasoning-tool-call"
-  disclosureTestId="reasoning-disclosure"
-  summaryTestId="reasoning-summary"
-  class={className}
-/>
+{#if standaloneTitles}
+  {#each standaloneTitles as title, index (index)}
+    {#snippet summary()}
+      {@render summaryText(title)}
+    {/snippet}
+    <ChatOperationalRow
+      {leading}
+      {summary}
+      ariaLabel={title}
+      summaryTitle={title}
+      adjacentOperationalRow={adjacentOperationalRow || index > 0}
+      streaming={isStreaming}
+      testId="reasoning-tool-call"
+      summaryTestId="reasoning-summary"
+      class={className}
+    />
+  {/each}
+{:else}
+  {#snippet summary()}
+    {@render summaryText(toggleLabel)}
+  {/snippet}
+  <ChatOperationalRow
+    {leading}
+    {summary}
+    showChevron={false}
+    {details}
+    animateDetailsHeight
+    interactive
+    expanded={isExpanded}
+    controls={detailsId}
+    {detailsId}
+    ariaLabel={toggleLabel}
+    summaryTitle={toggleLabel}
+    onclick={toggle}
+    onkeydown={handleDisclosureKeydown}
+    detailsClass="{OPERATIONAL_EXPANDED_CONTENT_CLASS} pb-2 type-caption text-muted-foreground [&_.markdown-content]:text-sm [&_.markdown-content]:leading-relaxed [&_.markdown-content]:text-muted-foreground"
+    {adjacentOperationalRow}
+    streaming={isStreaming}
+    testId="reasoning-tool-call"
+    disclosureTestId="reasoning-disclosure"
+    summaryTestId="reasoning-summary"
+    class={className}
+  />
+{/if}
 
 <style>
   .reasoning-expanded-body :global(.markdown-viewer) {

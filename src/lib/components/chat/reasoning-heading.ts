@@ -47,11 +47,13 @@ export function extractStandaloneReasoningTitle(content: string): string | null 
 
 function extractLeadingStrongReasoningTitle(
   content: string,
+  singleSpanOnly = false,
 ): { title: string; body: string } | null {
   const leading = content.match(/^(?:[ \t]*(?:\r\n|\n|\r))*/)?.[0] ?? '';
   const candidate = content.slice(leading.length);
   const strongTitle = candidate.match(/^\*\*([^\r\n]+)\*\*[ \t]*(?:(?:\r\n|\n|\r)|$)/);
   if (!strongTitle) return null;
+  if (singleSpanOnly && strongTitle[1].includes('**')) return null;
 
   const title = markdownInlineToPlainText(strongTitle[1]);
   if (!isShortTitleLike(strongTitle[0], title)) return null;
@@ -59,6 +61,24 @@ function extractLeadingStrongReasoningTitle(
     title,
     body: bodyAfterHeading(content, leading.length + strongTitle[0].length),
   };
+}
+
+/** Null retains the body disclosure; plain-line history titles never qualify. */
+export function extractStandaloneReasoningTitles(content: string): string[] | null {
+  const titles: string[] = [];
+  let remainder = content;
+
+  while (remainder.trim()) {
+    const markdown = extractMarkdownReasoningHeading(remainder);
+    const explicit = markdown.heading
+      ? { title: markdown.heading, body: markdown.body }
+      : extractLeadingStrongReasoningTitle(remainder, true);
+    if (!explicit) return null;
+    titles.push(explicit.title);
+    remainder = explicit.body;
+  }
+
+  return titles.length ? titles : null;
 }
 
 export function extractReasoningHistory(content: string): ReasoningHistoryItem[] {
@@ -91,7 +111,7 @@ export function extractReasoningHistory(content: string): ReasoningHistoryItem[]
   return items;
 }
 
-export function extractReasoningHeading(content: string): ReasoningHeading {
+function extractMarkdownReasoningHeading(content: string): ReasoningHeading {
   const leading = content.match(/^(?:\uFEFF)?(?:[ \t]*(?:\r\n|\n|\r))*/)?.[0] ?? '';
   const candidate = content.slice(leading.length);
 
@@ -115,6 +135,15 @@ export function extractReasoningHeading(content: string): ReasoningHeading {
     }
   }
 
+  return { heading: null, body: content };
+}
+
+export function extractReasoningHeading(content: string): ReasoningHeading {
+  const markdown = extractMarkdownReasoningHeading(content);
+  if (markdown.heading) return markdown;
+
+  const leading = content.match(/^(?:\uFEFF)?(?:[ \t]*(?:\r\n|\n|\r))*/)?.[0] ?? '';
+  const candidate = content.slice(leading.length);
   const shortTitle = candidate.match(/^([^\r\n]+)(?:\r\n|\n|\r)(?:[ \t]*(?:\r\n|\n|\r))+/);
   if (shortTitle) {
     const heading = markdownInlineToPlainText(shortTitle[1]);

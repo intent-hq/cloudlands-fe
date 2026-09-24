@@ -3,6 +3,7 @@ import {
   extractReasoningHeading,
   extractReasoningHistory,
   extractStandaloneReasoningTitle,
+  extractStandaloneReasoningTitles,
 } from './reasoning-heading';
 
 describe('extractReasoningHeading', () => {
@@ -93,9 +94,57 @@ describe('extractReasoningHistory', () => {
       },
     ]);
   });
+
+  it('retains the existing history fallback for separate bold fragments', () => {
+    const content = '**I** will inspect **schema**';
+    expect(extractReasoningHeading(content)).toEqual({ heading: null, body: content });
+    expect(extractReasoningHistory(content)).toEqual([
+      { title: 'I will inspect schema', body: '' },
+    ]);
+  });
 });
 
 describe('explicit standalone reasoning titles', () => {
+  it.each([
+    '**Locating collection links**',
+    '# Locating collection links',
+    'Locating collection links\n---',
+  ])('classifies explicit title-only content: %s', (content) => {
+    expect(extractStandaloneReasoningTitles(content)).toEqual(['Locating collection links']);
+  });
+
+  it('keeps mixed heading styles in source order, including duplicate titles', () => {
+    expect(
+      extractStandaloneReasoningTitles(
+        '\n**Preparing task plan**\n\n## Checking duplicate tracker issue\n\nPreparing task plan\n===\n',
+      ),
+    ).toEqual(['Preparing task plan', 'Checking duplicate tracker issue', 'Preparing task plan']);
+  });
+
+  it.each([
+    '',
+    ' \n\t',
+    'Let me check the schema',
+    '**Locating collection links',
+    '**Locating collection links** with more prose.',
+    '**I** will inspect **schema**',
+    '**Locating collection links**\n\nLet me check the schema',
+    '# Locating collection links\n\nLet me check the schema',
+    '    # Locating collection links',
+    '```\n# Locating collection links\n```',
+  ])('retains non-title content in the disclosure path: %s', (content) => {
+    expect(extractStandaloneReasoningTitles(content)).toBeNull();
+  });
+
+  it('stops classifying a multi-heading summary as title-only when its body arrives', () => {
+    const content = '**Preparing task plan**\n\n**Checking duplicate tracker issue**';
+    expect(extractStandaloneReasoningTitles(content)).toHaveLength(2);
+    expect(extractStandaloneReasoningTitles(`${content}\n\nReadable body.`)).toBeNull();
+    expect(
+      extractStandaloneReasoningTitles(`${content}\n\n**I** will inspect **schema**`),
+    ).toBeNull();
+  });
+
   it('recognizes a complete bold-only summary without inventing a body', () => {
     expect(extractStandaloneReasoningTitle('**Locating collection links**')).toBe(
       'Locating collection links',
