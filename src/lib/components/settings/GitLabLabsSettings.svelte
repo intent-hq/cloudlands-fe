@@ -1,6 +1,5 @@
 <script lang="ts">
   import { SettingsForm, defineSettings } from '$lib/components/patterns/settings';
-  import { highlightTarget } from '$lib/components/ui/highlight/highlight-target';
   import { m } from '$shared/paraglide/messages.js';
   import { selectLabsGitLabEnabled } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
   import { setLabsGitLabEnabled } from '$store/renderer/slices/user-preferences/user-preferences-slice';
@@ -33,12 +32,4 @@
   );
 </script>
 
-<section
-  id="labs-gitlab"
-  data-highlight-id="labs-gitlab"
-  use:highlightTarget
-  data-slot="settings-section-body"
-  class="px-6 py-4"
->
-  <SettingsForm {schema} embedded compact={false} />
-</section>
+<SettingsForm {schema} embedded compact={false} />
