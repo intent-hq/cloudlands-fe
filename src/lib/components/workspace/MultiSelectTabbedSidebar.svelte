@@ -981,7 +981,11 @@
         class={cn('shrink-0 px-6 pb-2', collapsed ? 'pt-3' : 'pt-5')}
         data-workspace-title-region
       >
-        <WorkspaceProgressCard {workspaceId} onOpenNote={handleOpenNoteInPanel} />
+        <WorkspaceProgressCard
+          {workspaceId}
+          compactHeading={collapsed}
+          onOpenNote={handleOpenNoteInPanel}
+        />
       </div>
     {/if}
 
