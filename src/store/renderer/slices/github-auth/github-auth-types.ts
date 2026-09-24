@@ -8,6 +8,8 @@ import type { GitHubDeviceFlow, GitHubUser } from '$features/github-auth/types';
 export type GitHubDeviceFlowInfo = Omit<GitHubDeviceFlow, 'status'>;
 
 export type GitHubAuthState = {
+  /** Latest queued/in-flight credential mutation; null once its I/O settles. */
+  mutationRequestId: string | null;
   /** Locally cancelled flows cannot publish uncorrelated daemon callbacks. */
   callbacksCancelled: boolean;
   isDisconnecting: boolean;

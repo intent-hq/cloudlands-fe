@@ -223,7 +223,7 @@ describe('sentryAuthSaga', () => {
     await run.task.toPromise();
   });
 
-  it('orders logout after config writes without publishing stale authorization', async () => {
+  it('orders logout after config writes and finishes with the revoked resource state', async () => {
     let resolve!: (value: unknown) => void;
     mocks.saveConfig.mockReturnValue(
       new Promise((done) => {
@@ -264,6 +264,121 @@ describe('sentryAuthSaga', () => {
     expect(run.state()).toMatchObject({ isAuthenticated: false, organization: null });
     run.task.cancel();
     await run.task.toPromise();
+  });
+
+  it.each([
+    ['consumer dismissal', consumeSentryAuth, null],
+    [
+      'explicit cancellation',
+      cancelSentryAuth,
+      { requestId: 'save', consumerId: 'picker', kind: 'connect', status: 'cancelled' },
+    ],
+  ] as const)(
+    'reconciles a successful save after %s without reviving the UI result',
+    async (_, dismiss, expectedOperation) => {
+      const save = Promise.withResolvers<{ success: boolean }>();
+      mocks.saveConfig.mockReturnValue(save.promise);
+      const run = harness();
+      try {
+        run.channel.put(
+          connectSentry('acme', 'fixture-token', { requestId: 'save', consumerId: 'picker' }),
+        );
+        run.channel.put(dismiss('save'));
+        save.resolve({ success: true });
+        await settle();
+        expect(run.state()).toMatchObject({
+          isAuthenticated: true,
+          organization: 'acme',
+          isConnecting: false,
+          isLoadingProjects: false,
+          operation: expectedOperation,
+        });
+        expect(mocks.fetchProjects).not.toHaveBeenCalled();
+      } finally {
+        run.task.cancel();
+        await run.task.toPromise();
+      }
+    },
+  );
+
+  it('invalidates a probe started after consumer dismissal when the save commits', async () => {
+    const save = Promise.withResolvers<{ success: boolean }>();
+    const probe = Promise.withResolvers<{ isAuthenticated: boolean; organization: null }>();
+    mocks.saveConfig.mockReturnValue(save.promise);
+    mocks.getAuthState.mockReturnValue(probe.promise);
+    const run = harness();
+    try {
+      run.channel.put(
+        connectSentry('acme', 'fixture-token', { requestId: 'save', consumerId: 'picker' }),
+      );
+      run.channel.put(consumeSentryAuth('save'));
+      run.channel.put(initializeSentryAuth());
+      expect(mocks.getAuthState).toHaveBeenCalledTimes(1);
+      save.resolve({ success: true });
+      await settle();
+      probe.resolve({ isAuthenticated: false, organization: null });
+      await settle();
+      expect(run.state()).toMatchObject({
+        isAuthenticated: true,
+        organization: 'acme',
+        operation: null,
+      });
+    } finally {
+      run.task.cancel();
+      await run.task.toPromise();
+    }
+  });
+
+  it('keeps the committed organization when a superseding save fails', async () => {
+    const save = Promise.withResolvers<{ success: boolean }>();
+    mocks.saveConfig
+      .mockReturnValueOnce(save.promise)
+      .mockResolvedValueOnce({ success: false, error: 'replacement rejected' });
+    const run = harness();
+    try {
+      run.channel.put(
+        connectSentry('acme', 'fixture-token', { requestId: 'first', consumerId: 'picker' }),
+      );
+      run.channel.put(
+        connectSentry('second', 'fixture-token', { requestId: 'second', consumerId: 'settings' }),
+      );
+      expect(mocks.saveConfig).toHaveBeenCalledTimes(1);
+      save.resolve({ success: true });
+      await settle();
+      expect(run.state()).toMatchObject({
+        isAuthenticated: true,
+        organization: 'acme',
+        operation: { requestId: 'second', status: 'failed' },
+        error: 'replacement rejected',
+      });
+      expect(mocks.fetchProjects).not.toHaveBeenCalled();
+    } finally {
+      run.task.cancel();
+      await run.task.toPromise();
+    }
+  });
+
+  it('reconciles a consumed logout without resurrecting its consumer result', async () => {
+    const logout = Promise.withResolvers<void>();
+    mocks.getAuthState.mockResolvedValue({ isAuthenticated: true, organization: 'acme' });
+    mocks.logout.mockReturnValue(logout.promise);
+    const run = harness();
+    try {
+      run.channel.put(initializeSentryAuth());
+      await settle();
+      run.channel.put(logoutSentry({ requestId: 'logout', consumerId: 'settings' }));
+      run.channel.put(consumeSentryAuth('logout'));
+      logout.resolve();
+      await settle();
+      expect(run.state()).toMatchObject({
+        isAuthenticated: false,
+        organization: null,
+        operation: null,
+      });
+    } finally {
+      run.task.cancel();
+      await run.task.toPromise();
+    }
   });
 
   it('settles teardown and discards a late save result', async () => {

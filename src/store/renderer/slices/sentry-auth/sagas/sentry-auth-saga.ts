@@ -70,12 +70,15 @@ function* connect(
       organization,
       apiToken,
     );
-    if (!(yield* call(isCurrent, requestId))) return false;
     if (!result.success) {
-      yield* put(setSentryError(result.error ?? m.sentryAuth_service_connectFailed_error()));
+      if (yield* call(isCurrent, requestId))
+        yield* put(setSentryError(result.error ?? m.sentryAuth_service_connectFailed_error()));
       return false;
     }
+    // The serialized write committed even if its UI consumer has gone away.
+    // Reconcile resource truth, but do not revive that consumer's follow-up work.
     yield* put(setSentryConnected(organization));
+    if (!(yield* call(isCurrent, requestId))) return true;
     yield* put(setSentryLoadingProjects(true));
     try {
       const projects: Awaited<ReturnType<typeof sentryAuthClient.fetchProjects>> = yield* call([
@@ -99,10 +102,10 @@ function* connect(
   }
 }
 
-function* logout(requestId: string): SagaGenerator<boolean> {
+function* logout(): SagaGenerator<boolean> {
   try {
     yield* call([sentryAuthClient, sentryAuthClient.logout]);
-    if (yield* call(isCurrent, requestId)) yield* put(setSentryLoggedOut());
+    yield* put(setSentryLoggedOut());
     return true;
   } catch (error) {
     logger.error('Failed to log out of Sentry', error);
@@ -115,7 +118,14 @@ function* initializeSentryWorker(): SagaGenerator<void> {
   if (operation?.status === 'pending') return;
   yield* race({
     probe: call(initialize),
-    invalidated: take([connectSentry, logoutSentry, cancelSentryAuth, consumeSentryAuth]),
+    invalidated: take([
+      connectSentry,
+      logoutSentry,
+      cancelSentryAuth,
+      consumeSentryAuth,
+      setSentryConnected,
+      setSentryLoggedOut,
+    ]),
   });
 }
 
@@ -136,7 +146,7 @@ function* mutations(): SagaGenerator<void> {
             : null;
         const success = connectRequest
           ? yield* call(connect, connectRequest.organization, connectRequest.apiToken, requestId)
-          : yield* call(logout, requestId);
+          : yield* call(logout);
         yield* put(settleSentryAuth(requestId, success ? 'succeeded' : 'failed'));
       } finally {
         if (yield* cancelled()) yield* put(settleSentryAuth(requestId, 'cancelled'));

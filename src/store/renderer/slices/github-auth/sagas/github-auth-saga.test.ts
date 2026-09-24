@@ -154,7 +154,9 @@ describe('githubAuthSaga', () => {
           },
         ],
       },
+      { type: 'githubAuth/settleMutation', payload: [expect.any(String)] },
       { type: 'githubAuth/authCancelled', payload: [] },
+      { type: 'githubAuth/settleMutation', payload: [expect.any(String)] },
     ]);
     run.task.cancel();
     await run.task.toPromise();
@@ -191,6 +193,7 @@ describe('githubAuthSaga', () => {
           },
         ],
       },
+      { type: 'githubAuth/settleMutation', payload: [expect.any(String)] },
     ]);
     run.task.cancel();
     await run.task.toPromise();
@@ -263,6 +266,7 @@ describe('githubAuthSaga', () => {
     expect(run.dispatched).toEqual([
       { type: 'githubAuth/setAuthenticating', payload: [true] },
       { type: 'githubAuth/setError', payload: ['device denied'] },
+      { type: 'githubAuth/settleMutation', payload: [expect.any(String)] },
     ]);
     run.task.cancel();
     await run.task.toPromise();
@@ -373,6 +377,7 @@ describe('githubAuthSaga', () => {
           },
         ],
       },
+      { type: 'githubAuth/settleMutation', payload: [expect.any(String)] },
       {
         type: 'githubAuth/setAuthState',
         payload: {
@@ -406,9 +411,11 @@ describe('githubAuthSaga', () => {
 
     expect(run.dispatched).toEqual([
       { type: 'githubAuth/setError', payload: ['cancel rejected'] },
+      { type: 'githubAuth/settleMutation', payload: [expect.any(String)] },
       { type: 'githubAuth/setDisconnecting', payload: [true] },
       { type: 'githubAuth/setError', payload: ['logout rejected'] },
       { type: 'githubAuth/setDisconnecting', payload: [false] },
+      { type: 'githubAuth/settleMutation', payload: [expect.any(String)] },
     ]);
     run.task.cancel();
     await run.task.toPromise();
@@ -500,6 +507,117 @@ describe('githubAuthSaga', () => {
     expect(run.state()).toMatchObject({ isAuthenticated: false, isDisconnecting: false });
     run.task.cancel();
     await run.task.toPromise();
+  });
+
+  it('drains logout before reconnect and reconciles the revoked credential before starting again', async () => {
+    const logout = Promise.withResolvers<{ success: boolean }>();
+    const start = Promise.withResolvers<{ success: boolean; error: string }>();
+    mocks.logout.mockReturnValue(logout.promise);
+    mocks.startAuth.mockReturnValue(start.promise);
+    const run = harness({
+      ...initialState,
+      isAuthenticated: true,
+      user: { login: 'old', name: null, email: null, avatar_url: '' },
+    });
+    try {
+      run.channel.put(logoutGitHub());
+      run.channel.put(startGitHubAuth({ reconnect: true }));
+      run.channel.put(initializeGitHubAuth());
+      run.channel.put(checkGitHubAuthStatus());
+      run.channel.put(githubAuthChanged('authorized'));
+      await settle();
+      expect(mocks.startAuth).not.toHaveBeenCalled();
+      expect(mocks.getAuthState).not.toHaveBeenCalled();
+      expect(mocks.checkAuthComplete).not.toHaveBeenCalled();
+      expect(mocks.getUser).not.toHaveBeenCalled();
+      expect(run.state().isDisconnecting).toBe(true);
+
+      logout.resolve({ success: true });
+      await settle();
+      expect(mocks.startAuth.mock.calls).toEqual([[{ reconnect: true }]]);
+      expect(run.dispatched).toContainEqual({ type: 'githubAuth/logoutCompleted', payload: [] });
+      expect(run.state()).toMatchObject({
+        isAuthenticated: false,
+        user: null,
+        isDisconnecting: false,
+        isAuthenticating: true,
+      });
+      start.resolve({ success: false, error: 'reconnect rejected' });
+      await settle();
+      expect(run.state()).toMatchObject({
+        isAuthenticated: false,
+        isAuthenticating: false,
+        error: 'reconnect rejected',
+      });
+    } finally {
+      run.task.cancel();
+      await run.task.toPromise();
+    }
+  });
+
+  it('does not start a queued reconnect cancelled while logout is in flight', async () => {
+    const logout = Promise.withResolvers<{ success: boolean }>();
+    mocks.logout.mockReturnValue(logout.promise);
+    mocks.cancelAuth.mockResolvedValue({ success: true });
+    const run = harness({ ...initialState, isAuthenticated: true });
+    try {
+      run.channel.put(logoutGitHub());
+      run.channel.put(startGitHubAuth({ reconnect: true }));
+      run.channel.put(cancelGitHubAuth());
+      await settle();
+      expect(mocks.startAuth).not.toHaveBeenCalled();
+      expect(mocks.cancelAuth).not.toHaveBeenCalled();
+      logout.resolve({ success: true });
+      await settle();
+      expect(mocks.startAuth).not.toHaveBeenCalled();
+      expect(mocks.cancelAuth).toHaveBeenCalledTimes(1);
+      expect(run.state()).toMatchObject({
+        isAuthenticated: false,
+        isAuthenticating: false,
+        isDisconnecting: false,
+        callbacksCancelled: true,
+      });
+    } finally {
+      run.task.cancel();
+      await run.task.toPromise();
+    }
+  });
+
+  it('orders logout after an already-sent start without publishing its obsolete device flow', async () => {
+    const start = Promise.withResolvers<{
+      success: boolean;
+      userCode: string;
+      verificationUri: string;
+      expiresIn: number;
+      interval: number;
+    }>();
+    mocks.startAuth.mockReturnValue(start.promise);
+    mocks.logout.mockResolvedValue({ success: true });
+    const run = harness({ ...initialState, isAuthenticated: true });
+    try {
+      run.channel.put(startGitHubAuth({ reconnect: true }));
+      run.channel.put(logoutGitHub());
+      await settle();
+      expect(mocks.logout).not.toHaveBeenCalled();
+      start.resolve({
+        success: true,
+        userCode: 'OBSOLETE',
+        verificationUri: 'https://github.com/login/device',
+        expiresIn: 900,
+        interval: 5,
+      });
+      await settle();
+      expect(mocks.logout).toHaveBeenCalledTimes(1);
+      expect(mocks.checkAuthComplete).not.toHaveBeenCalled();
+      expect(run.state()).toMatchObject({
+        isAuthenticated: false,
+        isAuthenticating: false,
+        deviceFlow: null,
+      });
+    } finally {
+      run.task.cancel();
+      await run.task.toPromise();
+    }
   });
 
   it('still handles terminal failure events for an uncancelled flow', async () => {

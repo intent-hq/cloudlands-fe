@@ -2,9 +2,13 @@ import { githubAuthClient } from '$features/github-auth/renderer/github-auth.cli
 import type { GitHubDeviceFlow, GitHubUser, StartAuthOptions } from '$features/github-auth/types';
 import { createLogger } from '$lib/utils/client-logger';
 import { m } from '$shared/paraglide/messages.js';
+import { buffers } from 'redux-saga';
 import {
+  actionChannel,
   call,
+  cancelled,
   delay,
+  fork,
   put,
   race,
   take,
@@ -17,6 +21,7 @@ import {
   selectGitHubAuthCallbacksCancelled,
   selectGitHubAuthDeviceFlow,
   selectGitHubAuthIsAuthenticating,
+  selectGitHubAuthMutationRequestId,
 } from '../github-auth-selectors';
 import { takeEveryFromWindowEvent } from '../../../utils/ipc-channel';
 import {
@@ -34,6 +39,7 @@ import {
   setGitHubAuthError,
   setGitHubAuthState,
   setOAuthInfo,
+  settleGitHubAuthMutation,
   startGitHubAuth,
 } from '../github-auth-slice';
 
@@ -139,13 +145,18 @@ function* initialize(): SagaGenerator<void> {
   }
 }
 
-function* start(options?: StartAuthOptions): SagaGenerator<void> {
+function* isCurrentMutation(requestId: string): SagaGenerator<boolean> {
+  return (yield* selectGitHubAuthMutationRequestId.effect()) === requestId;
+}
+
+function* start(requestId: string, options?: StartAuthOptions): SagaGenerator<void> {
   yield* put(setAuthenticating(true));
   try {
     const result: Awaited<ReturnType<typeof githubAuthClient.startAuth>> = yield* call(
       [githubAuthClient, githubAuthClient.startAuth],
       options,
     );
+    if (!(yield* call(isCurrentMutation, requestId))) return;
     if (!result.success) {
       yield* put(setGitHubAuthError(result.error || m.githubAuth_service_startFailed_error()));
       return;
@@ -168,6 +179,7 @@ function* start(options?: StartAuthOptions): SagaGenerator<void> {
     yield* put(setOAuthInfo(result.oauthUrl ?? null, result.needsScopeUpdate ?? false));
     yield* put(setDeviceFlowInfo({ userCode, verificationUri, expiresIn, interval }));
   } catch (error) {
+    if (!(yield* call(isCurrentMutation, requestId))) return;
     const message = error instanceof Error ? error.message : m.githubAuth_service_unknown_error();
     yield* put(
       setGitHubAuthError(
@@ -235,15 +247,11 @@ function* authChanged(
 function* initializeGitHubAuthWorker(
   _action: ReturnType<typeof initializeGitHubAuth>,
 ): SagaGenerator<void> {
+  if (yield* selectGitHubAuthMutationRequestId.effect()) return;
   yield* race({
     initialized: call(initialize),
     invalidated: take([startGitHubAuth, cancelGitHubAuth, logoutGitHub, githubAuthChanged]),
   });
-}
-
-function* startGitHubAuthWorker(action: ReturnType<typeof startGitHubAuth>): SagaGenerator<void> {
-  const [options] = action.payload ?? [];
-  yield* race({ started: call(start, options), cancelled: take([cancelGitHubAuth, logoutGitHub]) });
 }
 
 function* checkGitHubAuthStatusWorker(
@@ -251,6 +259,7 @@ function* checkGitHubAuthStatusWorker(
 ): SagaGenerator<void> {
   // The poll owns completion I/O while a device flow exists. Focus merely
   // wakes that poll, so compatibility callers cannot start a second request.
+  if (yield* selectGitHubAuthMutationRequestId.effect()) return;
   if (yield* selectGitHubAuthDeviceFlow.effect()) return;
   if (yield* selectGitHubAuthCallbacksCancelled.effect()) return;
   yield* race({
@@ -259,14 +268,44 @@ function* checkGitHubAuthStatusWorker(
   });
 }
 
-function* cancelGitHubAuthWorker(
-  _action: ReturnType<typeof cancelGitHubAuth>,
-): SagaGenerator<void> {
-  yield* race({ cancelled: call(cancelAuth), replaced: take([startGitHubAuth, logoutGitHub]) });
-}
-
-function* logoutGitHubWorker(_action: ReturnType<typeof logoutGitHub>): SagaGenerator<void> {
-  yield* race({ loggedOut: call(logout), replaced: take(startGitHubAuth) });
+function* mutations(): SagaGenerator<void> {
+  // These RPCs cannot be aborted. Drain each write before starting the next;
+  // a new intent invalidates old start results, never a confirmed revocation.
+  const requests = yield* actionChannel(
+    [startGitHubAuth, cancelGitHubAuth, logoutGitHub],
+    buffers.expanding(),
+  );
+  try {
+    while (true) {
+      const action:
+        | ReturnType<typeof startGitHubAuth>
+        | ReturnType<typeof cancelGitHubAuth>
+        | ReturnType<typeof logoutGitHub> = yield* take(requests);
+      const { requestId } = action.payload;
+      if (action.type === startGitHubAuth.type) {
+        if (!(yield* call(isCurrentMutation, requestId))) continue;
+        yield* call(
+          start,
+          requestId,
+          (action as ReturnType<typeof startGitHubAuth>).payload.options,
+        );
+      } else if (action.type === cancelGitHubAuth.type) {
+        yield* call(cancelAuth);
+      } else {
+        yield* call(logout);
+      }
+      yield* put(settleGitHubAuthMutation(requestId));
+    }
+  } finally {
+    requests.close();
+    if (yield* cancelled()) {
+      const requestId = yield* selectGitHubAuthMutationRequestId.effect();
+      if (requestId !== null) {
+        yield* put(settleGitHubAuthMutation(requestId));
+        yield* put(setAuthenticating(false));
+      }
+    }
+  }
 }
 
 function* authNotificationWorker(
@@ -275,6 +314,7 @@ function* authNotificationWorker(
   // The daemon callback has no request ID. A local cancellation closes the
   // current flow's callback window until a deliberate new start/hydration.
   const [status] = action.payload;
+  if ((yield* selectGitHubAuthMutationRequestId.effect()) && status !== 'revoked') return;
   if ((yield* selectGitHubAuthCallbacksCancelled.effect()) && status !== 'revoked') return;
   yield* race({
     changed: call(authChanged, status),
@@ -292,11 +332,9 @@ function* windowFocused(): SagaGenerator<void> {
 }
 
 export function* githubAuthSaga(): SagaGenerator<void> {
+  yield* fork(mutations);
   yield* takeLatest(initializeGitHubAuth, initializeGitHubAuthWorker);
-  yield* takeLatest(startGitHubAuth, startGitHubAuthWorker);
   yield* takeLeading(checkGitHubAuthStatus, checkGitHubAuthStatusWorker);
-  yield* takeLatest(cancelGitHubAuth, cancelGitHubAuthWorker);
-  yield* takeLatest(logoutGitHub, logoutGitHubWorker);
   yield* takeLatest(githubAuthChanged, authNotificationWorker);
   yield* takeEveryFromWindowEvent('focus', windowFocused);
   yield* takeLatest(setDeviceFlowInfo, pollDeviceFlowWorker);

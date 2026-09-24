@@ -17,11 +17,18 @@ import { backendRequest } from '$lib/client/live/backend-transport';
 import { __resetGitHubAuthStatusForTests } from '$features/github-auth/renderer/github-auth-status.client';
 import { connectLinear, linearAuthReducer, logoutLinear } from '../linear-auth/linear-auth-slice';
 import { linearAuthSaga } from '../linear-auth/sagas/linear-auth-saga';
-import { connectSentry, logoutSentry, sentryAuthReducer } from '../sentry-auth/sentry-auth-slice';
+import {
+  connectSentry,
+  consumeSentryAuth,
+  logoutSentry,
+  sentryAuthReducer,
+} from '../sentry-auth/sentry-auth-slice';
 import { sentryAuthSaga } from '../sentry-auth/sagas/sentry-auth-saga';
 import {
   cancelGitHubAuth,
   githubAuthReducer,
+  logoutGitHub,
+  setGitHubAuthState,
   startGitHubAuth,
 } from '../github-auth/github-auth-slice';
 import { githubAuthSaga } from '../github-auth/sagas/github-auth-saga';
@@ -129,6 +136,75 @@ describe('provider saga wire contracts through production clients and IPC adapte
       ['settings.reset', { path: 'accounts.sentry.organization' }],
     ]);
     expect(run.state().sentryAuth.isAuthenticated).toBe(false);
+  });
+
+  it('reconciles the Sentry wire write after the picker dismisses its pending request', async () => {
+    const saved = Promise.withResolvers<{ applied: []; revision: number }>();
+    request
+      .mockReturnValueOnce(saved.promise)
+      .mockResolvedValueOnce({ authenticated: true, organization: 'acme' });
+    const run = harness(sentryAuthSaga);
+    run.dispatch(
+      connectSentry('acme', 'fixture-token', { requestId: 'save', consumerId: 'picker' }),
+    );
+    await vi.waitFor(() => expect(request).toHaveBeenCalledOnce());
+    run.dispatch(consumeSentryAuth('save'));
+    saved.resolve({ applied: [], revision: 1 });
+    await vi.waitFor(() => expect(run.state().sentryAuth.isAuthenticated).toBe(true));
+    expect(request.mock.calls).toEqual([
+      [
+        'settings.update',
+        {
+          changes: [
+            { path: 'accounts.sentry.token', value: 'fixture-token' },
+            { path: 'accounts.sentry.organization', value: 'acme' },
+          ],
+        },
+      ],
+      ['sentry.authStatus'],
+    ]);
+    expect(run.state().sentryAuth).toMatchObject({ organization: 'acme', operation: null });
+  });
+
+  it('waits for the GitHub revoke acknowledgement before reconnecting over the wire', async () => {
+    const revoked = Promise.withResolvers<{ ok: true }>();
+    request
+      .mockReturnValueOnce(revoked.promise)
+      .mockResolvedValueOnce({
+        isConfigured: false,
+        oauthUrl: '',
+        configuredButNeedsUpdate: false,
+        updatedScopes: '',
+        deviceFlow: null,
+      })
+      .mockRejectedValueOnce(new Error('reconnect rejected'));
+    const run = harness(githubAuthSaga);
+    run.dispatch(
+      setGitHubAuthState({
+        isAuthenticated: true,
+        requiresDaemonAuth: false,
+        user: null,
+        needsScopeUpdate: false,
+        oauthUrl: null,
+      }),
+    );
+    run.dispatch(logoutGitHub());
+    run.dispatch(startGitHubAuth({ reconnect: true }));
+    await vi.waitFor(() => expect(request.mock.calls).toEqual([['github.revoke']]));
+    expect(run.state().githubAuth).toMatchObject({ isAuthenticated: true, isDisconnecting: true });
+    revoked.resolve({ ok: true });
+    await vi.waitFor(() => expect(run.state().githubAuth.error).toBe('reconnect rejected'));
+    expect(request.mock.calls).toEqual([
+      ['github.revoke'],
+      ['github.authStatus'],
+      ['github.connect'],
+    ]);
+    expect(run.state().githubAuth).toMatchObject({
+      isAuthenticated: false,
+      isDisconnecting: false,
+      isAuthenticating: false,
+      mutationRequestId: null,
+    });
   });
 
   it('starts and cancels GitHub device flow through the same wire owner', async () => {

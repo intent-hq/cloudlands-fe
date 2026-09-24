@@ -14,6 +14,7 @@ import {
   setGitHubAuthState,
   setGitHubDisconnecting,
   setOAuthInfo,
+  settleGitHubAuthMutation,
   startGitHubAuth,
 } from './github-auth-slice';
 
@@ -25,10 +26,27 @@ describe('github auth reducer', () => {
     expect(state.callbacksCancelled).toBe(true);
     state = githubAuthReducer(state, startGitHubAuth());
     expect(state.callbacksCancelled).toBe(false);
-    state = githubAuthReducer(state, logoutGitHub());
+    const logout = logoutGitHub();
+    state = githubAuthReducer(state, logout);
     expect(state.callbacksCancelled).toBe(true);
     state = githubAuthReducer(state, initializeGitHubAuth());
+    expect(state.callbacksCancelled).toBe(true);
+    state = githubAuthReducer(state, settleGitHubAuthMutation(logout.payload.requestId));
+    state = githubAuthReducer(state, initializeGitHubAuth());
     expect(state.callbacksCancelled).toBe(false);
+  });
+
+  it('keeps the latest mutation pending when an older write settles', () => {
+    const logout = logoutGitHub();
+    const reconnect = startGitHubAuth({ reconnect: true });
+    expect(githubAuthReducer.initialState.mutationRequestId).toBeNull();
+    let state = githubAuthReducer(githubAuthReducer.initialState, logout);
+    expect(state.mutationRequestId).toBe(logout.payload.requestId);
+    state = githubAuthReducer(state, reconnect);
+    state = githubAuthReducer(state, settleGitHubAuthMutation(logout.payload.requestId));
+    expect(state.mutationRequestId).toBe(reconnect.payload.requestId);
+    state = githubAuthReducer(state, settleGitHubAuthMutation(reconnect.payload.requestId));
+    expect(state.mutationRequestId).toBeNull();
   });
 
   it('keeps authenticated state until logout succeeds and exposes pending logout', () => {
