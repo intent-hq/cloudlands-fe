@@ -255,6 +255,14 @@ async function verifyCatalogContract(testCase: ContractCase) {
 describe('catalog generated identity normalization', () => {
   it.each([
     ['c123', 'c<id>'],
+    ['c123 c124', 'c<id> c<id>'],
+    ['c123\tc124\nc125', 'c<id> c<id> c<id>'],
+    ['"c123"', '"c<id>"'],
+    ["'c123'", "'c<id>'"],
+    [
+      'id="c123" aria-labelledby="c123 c124-label"',
+      'id="c<id>" aria-labelledby="c<id> c<id>-label"',
+    ],
     ['c123-trigger', 'c<id>-trigger'],
     ['c123-group-0 c124-group-1', 'c<id>-group-0 c<id>-group-1'],
     ['c123label', 'c123label'],
