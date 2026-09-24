@@ -8,7 +8,10 @@ export async function openReasoning(fixture: Locator) {
   const group = fixture.getByTestId('response-group-disclosure');
   if ((await group.count()) && (await group.getAttribute('aria-expanded')) === 'false')
     await group.click();
-  for (const disclosure of await fixture.getByTestId('reasoning-disclosure').all()) {
+  const disclosures = fixture.locator(
+    '[data-testid="reasoning-disclosure"], [data-testid="reasoning-history-row"] button',
+  );
+  for (const disclosure of await disclosures.all()) {
     if ((await disclosure.getAttribute('aria-expanded')) === 'false') await disclosure.click();
   }
 }
