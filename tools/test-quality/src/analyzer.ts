@@ -1,11 +1,12 @@
 import path from 'node:path';
 import ts from 'typescript';
 import { parse } from 'svelte/compiler';
+import { templateEvidence } from './component-evidence.ts';
 import { hash, inside, isTestFile, slash, Sources } from './files.ts';
 import type { Analysis, Config, Fragment, Target, Trace } from './types.ts';
 import { CHECKS_VERSION, checkAssertion, checkFixtureLayout } from './assertion-checks.ts';
 
-export const ANALYZER_VERSION = `6/checks-${CHECKS_VERSION}`;
+export const ANALYZER_VERSION = `7/checks-${CHECKS_VERSION}`;
 type Module = {
   source: ts.SourceFile;
   declarations: Map<string, ts.Node>;
@@ -91,9 +92,6 @@ function parseModule(file: string, text: string): Module {
           c === '\n' || ranges.some(([start, end]) => i >= start && i < end) ? c : ' ',
         )
         .join('');
-      warnings.push(
-        `${file}: Svelte script and bounded component excerpt; template references are partial static evidence`,
-      );
     } catch {
       warnings.push(`${file}: Svelte parse failed; component excerpt only`);
       script = '';
@@ -244,11 +242,12 @@ function testNodes(file: string, module: Module): TestNode[] {
           const hooks = ts.isBlock(callback.body)
             ? callback.body.statements.filter(
                 (s) =>
-                  ts.isExpressionStatement(s) &&
-                  ts.isCallExpression(s.expression) &&
-                  chain(s.expression).some((p) =>
-                    /^(beforeAll|beforeEach|afterAll|afterEach)$/.test(p),
-                  ),
+                  declaredNames(s).length > 0 ||
+                  (ts.isExpressionStatement(s) &&
+                    ts.isCallExpression(s.expression) &&
+                    chain(s.expression).some((p) =>
+                      /^(beforeAll|beforeEach|afterAll|afterEach)$/.test(p),
+                    )),
               )
             : [];
           visit(callback.body, [...parents, title], [...scope, ...hooks], status);
@@ -372,6 +371,7 @@ export class Analyzer {
   analyze(file: string): Analysis {
     const module = this.module(file);
     const tests = testNodes(file, module);
+    const testNames = new Map(tests.map((t) => [t, names(t.node)]));
     const dependencies: Record<string, string> = { [file]: this.sources.digest(file) };
     const traces: Trace[] = [];
     for (const test of tests) {
@@ -380,20 +380,61 @@ export class Analyzer {
       const seen = new Set<string>();
       const pending: { priority: number; run: () => void }[] = [];
       const interest = new Set<string>();
+      const instances = new Map<string, string>();
+      const methodsByClass = new Map<string, Set<string>>();
+      const instanceDeclarations = (node: ts.Node): void => {
+        if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name)) {
+          if (node.initializer && ts.isNewExpression(node.initializer))
+            instances.set(node.name.text, node.initializer.expression.getText(module.source));
+          else if (node.type && ts.isTypeReferenceNode(node.type))
+            instances.set(node.name.text, node.type.typeName.getText(module.source));
+        }
+        if (
+          ts.isBinaryExpression(node) &&
+          ts.isIdentifier(node.left) &&
+          ts.isNewExpression(node.right)
+        )
+          instances.set(node.left.text, node.right.expression.getText(module.source));
+        ts.forEachChild(node, instanceDeclarations);
+      };
+      for (const node of [test.node, ...test.scope, ...module.declarations.values()])
+        instanceDeclarations(node);
       const collectInterest = (node: ts.Node): void => {
         if (ts.isPropertyAccessExpression(node)) {
-          const root = chain(node)[0];
-          const imported = module.imports.get(root);
-          if (imported && this.resolve(file, imported.specifier)) interest.add(node.name.text);
+          interest.add(node.name.text);
+          const receiver = chain(node.expression)[0];
+          const className =
+            instances.get(receiver) ?? (module.imports.has(receiver) ? receiver : undefined);
+          if (className) {
+            const symbol = module.imports.get(className)?.imported ?? className;
+            const methods = methodsByClass.get(symbol) ?? new Set<string>();
+            methods.add(node.name.text);
+            methodsByClass.set(symbol, methods);
+          }
         }
         ts.forEachChild(node, collectInterest);
       };
-      collectInterest(test.node);
+      for (const node of [test.node, ...test.scope]) collectInterest(node);
+      const scoped = new Map(module.declarations);
+      for (const node of test.scope) for (const name of declaredNames(node)) scoped.set(name, node);
+      const requiredOmissions: string[] = [];
+      const omit = (reason: string): void => {
+        warnings.add(reason);
+        requiredOmissions.push(reason);
+      };
+
       const helperAssertions: { file: string; node: ts.CallExpression; module: Module }[] = [];
-      let chars = test.target.code.length;
+      let chars = Math.min(test.target.code.length, this.config.maxContextChars / 2);
       if (test.target.code.length > this.config.maxContextChars / 2)
-        warnings.add('Test body exceeds context budget; excerpt truncated');
-      const add = (sourceFile: string, node: ts.Node, reason: string, depth: number): void => {
+        omit('Test body exceeds context budget; excerpt truncated');
+      const add = (
+        sourceFile: string,
+        node: ts.Node,
+        reason: string,
+        depth: number,
+        required = true,
+        rank?: number,
+      ): void => {
         const m = this.module(sourceFile);
         const key = `${sourceFile}:${node.pos}:${node.end}`;
         if (seen.has(key)) return;
@@ -403,7 +444,10 @@ export class Analyzer {
         const setup = reason === 'Test setup or teardown';
         const mock = setup && /\b(?:mock|doMock)\s*\(/.test(node.getText(m.source));
         const priority =
-          depth * 2 + (mock ? 6 : setup ? -2 : ts.isFunctionDeclaration(node) ? 0 : 1);
+          rank ??
+          (sourceFile === file
+            ? (setup ? -22 : -50) + depth
+            : depth * 2 + (mock ? -20 : setup ? -18 : ts.isFunctionDeclaration(node) ? 0 : 1));
         pending.push({
           priority,
           run: () => {
@@ -413,14 +457,18 @@ export class Analyzer {
               fragments.length >= this.config.maxFragments ||
               chars >= this.config.maxContextChars
             ) {
-              warnings.add('Related-code traversal reached its configured budget');
+              (required ? omit : (s: string) => warnings.add(s))(
+                `Required context omitted by budget/depth: ${sourceFile}:${location(node, m.source).line} (${reason})`,
+              );
               return;
             }
             const loc = location(node, m.source);
-            const remaining = Math.min(2400, this.config.maxContextChars - chars);
+            const remaining = Math.min(required ? 6000 : 2400, this.config.maxContextChars - chars);
             const code = loc.code.slice(0, remaining);
             if (code.length < loc.code.length)
-              warnings.add(`Truncated related declaration in ${sourceFile}:${loc.line}`);
+              (required ? omit : (s: string) => warnings.add(s))(
+                `Truncated related declaration in ${sourceFile}:${loc.line}`,
+              );
             fragments.push({
               file: sourceFile,
               ...loc,
@@ -428,6 +476,7 @@ export class Analyzer {
               code,
               reason,
               priority,
+              required,
             });
             chars += code.length;
             if (
@@ -438,7 +487,7 @@ export class Analyzer {
               for (const assertion of assertionNodes(node, m))
                 helperAssertions.push({ file: sourceFile, node: assertion, module: m });
             }
-            follow(sourceFile, node, depth + 1);
+            follow(sourceFile, node, depth + 1, required, priority + 2);
           },
         });
       };
@@ -449,59 +498,142 @@ export class Analyzer {
         if (seen.has(exportKey)) return;
         seen.add(exportKey);
         if (depth > this.config.maxDepth) {
-          warnings.add('Related-code traversal reached its configured depth');
+          omit(`Required export omitted by depth: ${sourceFile}:${symbol}`);
           return;
         }
         if (sourceFile.endsWith('.svelte')) {
-          if (!seen.has(`component:${sourceFile}`)) {
-            seen.add(`component:${sourceFile}`);
+          if (seen.has(`component:${sourceFile}`)) return;
+          seen.add(`component:${sourceFile}`);
+          warnings.add(
+            `${sourceFile}: template references are bounded static evidence, not runtime coverage`,
+          );
+          const text = this.sources.read(sourceFile);
+          let bindings: ReturnType<typeof templateEvidence>;
+          try {
+            bindings = templateEvidence(text);
+          } catch {
+            omit(`Svelte bindings unresolved: ${sourceFile}`);
+            return;
+          }
+          const eventNames = new Set<string>();
+          const testText = test.target.code.toLowerCase();
+          for (const event of [
+            'paste',
+            'click',
+            'keydown',
+            'keyup',
+            'input',
+            'change',
+            'submit',
+            'focus',
+            'blur',
+          ])
+            if (
+              testText.includes(event) ||
+              (event === 'keydown' && /keyboard|keypress|press\(/.test(testText))
+            )
+              eventNames.add(event);
+          if (eventNames.has('keydown')) eventNames.add('click');
+          const selected = bindings.filter((b) => b.events.some((e) => eventNames.has(e)));
+          // Prefer the control whose accessible selector or handler matches test vocabulary.
+          const words = new Set(
+            (testText.match(/[a-z]{4,}/g) ?? []).filter(
+              (w) =>
+                ![
+                  'expect',
+                  'screen',
+                  'button',
+                  'await',
+                  'const',
+                  'test',
+                  'true',
+                  'false',
+                  'query',
+                  'role',
+                ].includes(w),
+            ),
+          );
+          const affinity = (b: (typeof bindings)[number]) =>
+            [...words].filter((w) => b.code.toLowerCase().includes(w)).length;
+          selected.sort((a, b) => affinity(b) - affinity(a));
+          const strongest = selected.length ? affinity(selected[0]) : 0;
+          const relevant = selected.filter((b) => affinity(b) === strongest).slice(0, 3);
+          if (selected.filter((b) => affinity(b) === strongest).length > 3)
+            omit(`Ambiguous event path in ${sourceFile}; only three candidate bindings included`);
+
+          const bindingNames = (b: (typeof bindings)[number]) =>
+            relevant.includes(b)
+              ? Object.entries(b.handlers ?? {})
+                  .filter(([event]) => eventNames.has(event))
+                  .flatMap(([, refs]) => refs)
+              : b.names;
+          const stateNames = new Set<string>();
+          const queueBinding = (b: (typeof bindings)[number], priority: number): void => {
+            const key = `binding:${sourceFile}:${b.start}`;
+            if (seen.has(key)) return;
+            seen.add(key);
             pending.push({
-              priority: depth * 2,
+              priority,
               run: () => {
-                const text = this.sources.read(sourceFile);
-                const templateStart = text.lastIndexOf('</script>') + '</script>'.length;
-                const styleStart = text.indexOf('<style', templateStart);
-                const templateEnd = styleStart < 0 ? text.length : styleStart;
-                const ranges =
-                  templateStart > 8
-                    ? [
-                        [0, templateStart],
-                        [templateStart, templateEnd],
-                      ]
-                    : [[0, templateEnd]];
-                for (const [start, end] of ranges) {
-                  const remaining = Math.max(
-                    0,
-                    Math.min(1800, this.config.maxContextChars - chars),
-                  );
-                  if (fragments.length >= this.config.maxFragments || !remaining) {
-                    warnings.add('Related-code traversal reached its configured budget');
-                    break;
-                  }
-                  const code = text.slice(start, Math.min(end, start + remaining));
-                  const line = text.slice(0, start).split('\n').length;
-                  fragments.push({
-                    file: sourceFile,
-                    line,
-                    endLine: line + code.split('\n').length - 1,
-                    code,
-                    reason: start === 0 ? 'Svelte script excerpt' : 'Svelte template excerpt',
-                    priority: depth * 2,
-                  });
-                  chars += code.length;
+                const line = text.slice(0, b.start).split('\n').length;
+                const remaining = this.config.maxContextChars - chars;
+                if (fragments.length >= this.config.maxFragments || remaining < b.code.length) {
+                  omit(`Required Svelte binding omitted by budget: ${sourceFile}:${line}`);
+                  return;
                 }
-                warnings.add(
-                  `${sourceFile}: bounded component excerpts; template references are partial static evidence`,
-                );
-                for (const [local, imported] of m.imports) {
-                  if (text.slice(templateStart, templateEnd).includes(`<${local}`)) {
-                    const resolved = this.resolve(sourceFile, imported.specifier);
-                    if (resolved) exported(resolved, imported.imported, depth + 1);
+                fragments.push({
+                  file: sourceFile,
+                  line,
+                  endLine: line + b.code.split('\n').length - 1,
+                  code: b.code,
+                  reason: 'Svelte event/state/render binding',
+                  priority,
+                  required: true,
+                });
+                chars += b.code.length;
+                for (const name of bindingNames(b)) {
+                  const declaration = m.declarations.get(name);
+                  if (declaration) {
+                    for (const referenced of names(declaration)) stateNames.add(referenced);
+                    add(
+                      sourceFile,
+                      declaration,
+                      `Svelte binding reference to ${name}`,
+                      depth,
+                      true,
+                      priority + 2,
+                    );
                   }
                 }
-                follow(sourceFile, m.source, depth + 1);
+                if (b.component) {
+                  const imported = m.imports.get(b.component);
+                  const resolved = imported && this.resolve(sourceFile, imported.specifier);
+                  // Leaf controls are external implementation context; the parent binding is primary evidence.
+                  if (resolved && !/^(Button|Icon|Fa|Tooltip)$/.test(b.component))
+                    exported(resolved, imported!.imported, depth + 1);
+                }
               },
             });
+          };
+          for (const b of relevant) {
+            for (const name of bindingNames(b)) {
+              if (m.declarations.has(name)) stateNames.add(name);
+              const declaration = m.declarations.get(name);
+              if (declaration)
+                for (const ref of names(declaration))
+                  if (m.declarations.has(ref)) stateNames.add(ref);
+            }
+          }
+          relevant.forEach((b) => queueBinding(b, -40));
+          bindings
+            .filter((b) => !relevant.includes(b) && b.names.some((n) => stateNames.has(n)))
+            .sort((a, b) => Number(b.code.includes('bind:')) - Number(a.code.includes('bind:')))
+            .forEach((b) => queueBinding(b, -36));
+          if (!selected.length) {
+            // Render-only tests still need props and conditional output, not a component prefix.
+            bindings.slice(0, 8).forEach((b) => queueBinding(b, -35));
+            if (bindings.length > 8)
+              omit(`Render context is partial for ${sourceFile}; no matched event path`);
           }
           return;
         }
@@ -513,6 +645,42 @@ export class Analyzer {
         }
         const declaration = m.declarations.get(symbol);
         if (declaration) {
+          if (ts.isClassDeclaration(declaration)) {
+            const requested = new Set(methodsByClass.get(symbol) ?? []);
+            const members = new Set<ts.ClassElement>();
+            for (let pass = 0; pass < 4; pass++)
+              for (const member of declaration.members) {
+                if (
+                  member.name &&
+                  requested.has(member.name.getText(m.source)) &&
+                  !members.has(member)
+                ) {
+                  members.add(member);
+                  const visit = (n: ts.Node): void => {
+                    if (
+                      ts.isPropertyAccessExpression(n) &&
+                      n.expression.kind === ts.SyntaxKind.ThisKeyword
+                    )
+                      requested.add(n.name.text);
+                    ts.forEachChild(n, visit);
+                  };
+                  visit(member);
+                }
+              }
+            if (members.size) {
+              for (const member of members)
+                add(
+                  sourceFile,
+                  member,
+                  'Invoked instance member and its this references',
+                  depth,
+                  true,
+                  -15,
+                );
+              return;
+            }
+            omit(`Instance methods unresolved for ${symbol} in ${sourceFile}`);
+          }
           if (declaration.getText(m.source).length > 2400) {
             let candidates: readonly ts.Node[] = [];
             if (ts.isFunctionDeclaration(declaration) && declaration.body)
@@ -558,7 +726,7 @@ export class Analyzer {
             ? this.resolve(sourceFile, alias.specifier)
             : sourceFile;
           if (targetFile) exported(targetFile, alias.imported, depth + 1);
-          else warnings.add(`Unresolved re-export ${symbol} in ${sourceFile}`);
+          else omit(`Unresolved re-export ${symbol} in ${sourceFile}`);
           return;
         }
         const imported = m.imports.get(symbol);
@@ -571,14 +739,27 @@ export class Analyzer {
           const targetFile = this.resolve(sourceFile, specifier);
           if (targetFile) exported(targetFile, symbol, depth + 1);
         }
-        if (!m.stars.length) warnings.add(`Declaration ${symbol} not resolved in ${sourceFile}`);
+        if (!m.stars.length) omit(`Declaration ${symbol} not resolved in ${sourceFile}`);
       };
-      const follow = (sourceFile: string, node: ts.Node, depth: number): void => {
+      const follow = (
+        sourceFile: string,
+        node: ts.Node,
+        depth: number,
+        required = true,
+        rank?: number,
+      ): void => {
         const m = this.module(sourceFile);
         for (const name of names(node)) {
-          const declaration = m.declarations.get(name);
+          const declaration = (sourceFile === file ? scoped : m.declarations).get(name);
           if (declaration && declaration !== node)
-            add(sourceFile, declaration, `Local reference to ${name}`, depth);
+            add(
+              sourceFile,
+              declaration,
+              `Local reference to ${name}`,
+              depth,
+              required,
+              sourceFile === file ? -49 + depth : rank,
+            );
           const imported = m.imports.get(name);
           if (imported) {
             const resolved = this.resolve(sourceFile, imported.specifier);
@@ -589,7 +770,7 @@ export class Analyzer {
                 (a) => imported.specifier === a || imported.specifier.startsWith(`${a}/`),
               )
             )
-              warnings.add(`Unresolved local import ${imported.specifier} in ${sourceFile}`);
+              omit(`Unresolved local import ${imported.specifier} in ${sourceFile}`);
           }
         }
         const visit = (child: ts.Node): void => {
@@ -653,7 +834,46 @@ export class Analyzer {
         visit(node);
       };
       follow(file, test.node, 0);
-      for (const hook of test.scope) add(file, hook, 'Test setup or teardown', 0);
+      for (const hook of test.scope)
+        if (!declaredNames(hook).length) add(file, hook, 'Test setup or teardown', 0);
+      const neighborCandidates = tests
+        .filter((t) => t !== test)
+        .map((t) => ({
+          t,
+          overlap: [...testNames.get(t)!].filter((n) => testNames.get(test)!.has(n)).length,
+        }))
+        .sort(
+          (a, b) =>
+            b.overlap - a.overlap ||
+            Math.abs(a.t.target.line - test.target.line) -
+              Math.abs(b.t.target.line - test.target.line),
+        )
+        .slice(0, 2);
+      for (const { t } of neighborCandidates)
+        pending.push({
+          priority: 100,
+          run: () => {
+            if (
+              fragments.length >= this.config.maxFragments ||
+              chars + t.target.code.length > this.config.maxContextChars
+            ) {
+              warnings.add(
+                `Neighbor evidence omitted by budget: ${file}:${t.target.line}; redundancy unconfirmed`,
+              );
+              return;
+            }
+            fragments.push({
+              file,
+              line: t.target.line,
+              endLine: t.target.endLine,
+              code: t.target.code,
+              reason: 'Neighbor test for overlap review',
+              priority: 100,
+              required: false,
+            });
+            chars += t.target.code.length;
+          },
+        });
       let steps = 0;
       while (pending.length && steps++ < 500) {
         pending.sort((a, b) => a.priority - b.priority);
@@ -707,12 +927,24 @@ export class Analyzer {
             .map((related) => ({ file: related, code: this.sources.read(related) })),
         ),
       ];
+      for (const warning of warnings)
+        if (
+          /unresolved|not resolved|unavailable|Computed import|syntax diagnostics|parse failed|Assertion exceeds|work limit|Selected relevant statements|Referenced file excerpt truncated/.test(
+            warning,
+          ) &&
+          !requiredOmissions.includes(warning)
+        )
+          requiredOmissions.push(warning);
       const trace: Trace = {
         id: '',
         version: ANALYZER_VERSION,
         file,
         targets,
         fragments,
+        evidence: {
+          completeness: requiredOmissions.length ? 'partial' : 'bounded',
+          omissions: requiredOmissions,
+        },
         warnings: [...warnings],
         dependencies: {},
       };

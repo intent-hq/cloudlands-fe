@@ -13,21 +13,24 @@ export function report(run: RunRow, rows: ResultRow[], options: ReportOptions) {
   const classified = rows.map((row) => {
     const lowScore = row.score !== null && row.score.overall < options.threshold;
     const review =
+      row.decision?.disposition === 'insufficient-evidence' ||
       (row.target.findings?.length ?? 0) > 0 ||
       row.warnings.length > 0 ||
       (row.score !== null && row.score.confidence < options.minConfidence) ||
       row.target.status !== 'active';
     const status = row.error
       ? 'error'
-      : row.target.findings?.length
-        ? 'finding'
-        : lowScore
-          ? 'low-score'
-          : !row.score
-            ? 'unscored'
-            : review
-              ? 'review'
-              : 'pass';
+      : row.decision?.disposition === 'insufficient-evidence'
+        ? 'insufficient-evidence'
+        : row.target.findings?.length
+          ? 'finding'
+          : lowScore
+            ? 'low-score'
+            : !row.score
+              ? 'unscored'
+              : review
+                ? 'review'
+                : 'pass';
     return { ...row, status, lowScore, review };
   });
   const childrenByParent = new Map<string, typeof classified>();
@@ -134,6 +137,17 @@ export function textReport(value: ReturnType<typeof report>): string {
       `${row.status.toUpperCase()} ${row.score ? row.score.overall.toFixed(1) : 'n/a'} ${row.target.kind} ${row.target.file}:${row.target.line} ${row.target.name}`,
     );
     lines.push(`  id=${row.target.id} trace=${row.traceId}`);
+    lines.push(`  evidence completeness: ${row.evidence?.completeness ?? 'unknown'}`);
+    if (row.decision) {
+      lines.push(
+        `  proposed decision: ${row.decision.disposition}; evidence: ${row.decision.evidence.completeness}`,
+      );
+      lines.push(`  reason: ${row.decision.rationale}`);
+      lines.push(
+        `  references: ${row.decision.evidenceRefs.map((ref) => `${ref}${row.decision?.evidenceLocations?.[ref] ? ` (${row.decision.evidenceLocations[ref]})` : ''}`).join(', ') || 'none'}`,
+      );
+      lines.push(`  plausible behavior still passing: ${row.decision.counterexample}`);
+    } else lines.push('  decision: unavailable (no saved disposition; a score is not a decision)');
     if (row.score?.quality !== undefined)
       lines.push(
         `  quality=${row.score.quality.toFixed(1)} criticality=${row.score.criticality?.toFixed(1)} criticalityConfidence=${row.score.criticalityConfidence?.toFixed(2)}`,
@@ -158,10 +172,7 @@ export function textReport(value: ReturnType<typeof report>): string {
   return lines.join('\n');
 }
 
-export async function writeJsonReport(
-  value: ReturnType<typeof report> & { metrics?: unknown },
-  output: Writable,
-): Promise<void> {
+export async function writeJsonReport(value: object, output: Writable): Promise<void> {
   let buffer = '';
   const flush = async () => {
     const chunk = buffer;

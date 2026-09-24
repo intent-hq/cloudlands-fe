@@ -2,7 +2,15 @@ import { DatabaseSync } from 'node:sqlite';
 import { mkdirSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
 import path from 'node:path';
-import type { Analysis, Judgment, ResultRow, RunRow, Target, Trace } from './types.ts';
+import type {
+  Analysis,
+  Judgment,
+  ResultRow,
+  RunRow,
+  Target,
+  Trace,
+  EvidenceCompleteness,
+} from './types.ts';
 
 export class Store {
   db: DatabaseSync;
@@ -11,7 +19,7 @@ export class Store {
     this.db = new DatabaseSync(file);
     this.db.exec('PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON; PRAGMA busy_timeout=5000;');
     const version = this.db.prepare('PRAGMA user_version').get() as { user_version: number };
-    if (version.user_version > 1) throw new Error('Database schema is newer than this evaluator');
+    if (version.user_version > 2) throw new Error('Database schema is newer than this evaluator');
     this.db.exec(`
       CREATE TABLE IF NOT EXISTS analysis_cache (key TEXT PRIMARY KEY, data TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS traces (id TEXT PRIMARY KEY, file TEXT NOT NULL, data TEXT NOT NULL);
@@ -31,8 +39,21 @@ export class Store {
       );
       CREATE INDEX IF NOT EXISTS result_scores ON results(run_id, kind, score);
       CREATE INDEX IF NOT EXISTS result_history ON results(target_id, run_id);
-      PRAGMA user_version=1;
+
     `);
+    if (
+      !(this.db.prepare('PRAGMA table_info(results)').all() as { name: string }[]).some(
+        (c) => c.name === 'decision',
+      )
+    )
+      this.db.exec('ALTER TABLE results ADD COLUMN decision TEXT');
+    if (
+      !(this.db.prepare('PRAGMA table_info(results)').all() as { name: string }[]).some(
+        (c) => c.name === 'evidence',
+      )
+    )
+      this.db.exec('ALTER TABLE results ADD COLUMN evidence TEXT');
+    this.db.exec('PRAGMA user_version=2');
   }
   close(): void {
     this.db.close();
@@ -71,7 +92,7 @@ export class Store {
   }
   finish(id: string, status: string): void {
     this.db
-      .prepare('UPDATE runs SET finished=?, status=? WHERE id=?')
+      .prepare('UPDATE runs SET finished=?, status=? WHERE id=? AND finished IS NULL')
       .run(new Date().toISOString(), status, id);
   }
   run(id?: string): RunRow {
@@ -123,10 +144,13 @@ export class Store {
     warnings: string[],
     error: string | null,
     cached: boolean,
+    context?: EvidenceCompleteness,
   ): void {
+    if (this.run(run).finished !== null) throw new Error('Cannot add results to a finished run');
     const score = judgment?.scores[target.id] ?? null;
+    const evidence = judgment?.reviews?.[target.id]?.evidence ?? context ?? null;
     this.db
-      .prepare('INSERT OR REPLACE INTO results VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)')
+      .prepare('INSERT INTO results VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)')
       .run(
         run,
         target.id,
@@ -142,6 +166,8 @@ export class Store {
         JSON.stringify(warnings),
         error,
         Number(cached),
+        judgment?.reviews?.[target.id] ? JSON.stringify(judgment.reviews[target.id]) : null,
+        evidence ? JSON.stringify(evidence) : null,
       );
   }
   results(runId: string): ResultRow[] {
@@ -159,6 +185,8 @@ export class Store {
       warnings: JSON.parse(String(r.warnings)),
       error: r.error === null ? null : String(r.error),
       cached: r.cached === 1,
+      decision: r.decision == null ? null : JSON.parse(String(r.decision)),
+      evidence: r.evidence == null ? null : JSON.parse(String(r.evidence)),
     }));
   }
   evaluation(id: number): unknown {

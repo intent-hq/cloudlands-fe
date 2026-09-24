@@ -1,3 +1,4 @@
+import { DECISION_VERSION, reviewQuestions } from './decisions.ts';
 import { performance } from 'node:perf_hooks';
 import { hash, inventory, selectedFiles, Sources } from './files.ts';
 import { ANALYZER_VERSION, Analyzer } from './analyzer.ts';
@@ -56,7 +57,12 @@ export function scan(
 export function batches(
   trace: Trace,
   batchSize: number,
-): { targets: Target[]; state: Record<string, unknown>; warnings: string[] }[] {
+): {
+  targets: Target[];
+  state: Record<string, unknown>;
+  warnings: string[];
+  omittedFragments: Trace['fragments'];
+}[] {
   const result = [];
   for (let i = 0; i < trace.targets.length; i += batchSize) {
     const targets = trace.targets.slice(i, i + batchSize);
@@ -83,34 +89,71 @@ export function batches(
         ? { id: trace.targets[0].id }
         : shorten(trace.targets[0], 5000),
       targets: targets.map((t) => shorten(t, t.kind === 'test' ? 5000 : 2000)),
+      evidence: trace.evidence
+        ? { ...trace.evidence, omissions: trace.evidence.omissions.slice(0, 8) }
+        : {
+            completeness: 'unknown' as const,
+            omissions: ['Historical trace has no evidence completeness assessment'],
+          },
+      evidenceCatalog: {} as Record<
+        string,
+        { file: string; line: number; endLine: number; role: string }
+      >,
       fragments: [] as Trace['fragments'],
       warnings:
         warnings.length > 8
           ? [
               ...warnings.slice(0, 8),
-              `${warnings.length - 8} additional context warnings; full list retained in saved trace and result. Evidence is incomplete.`,
+              `${warnings.length - 8} additional context warnings; full list retained in saved trace and result. See evidence completeness for essential omissions.`,
             ]
           : [...warnings],
     };
-    let omitted = 0;
+    const omittedFragments: Trace['fragments'] = [];
     for (const fragment of [...trace.fragments].sort(
       (a, b) => (a.priority ?? 0) - (b.priority ?? 0),
     )) {
       state.fragments.push(fragment);
-      if (Buffer.byteLength(JSON.stringify(state)) > 23000) {
+      if (Buffer.byteLength(JSON.stringify(state)) > 19000) {
         state.fragments.pop();
-        omitted++;
+        omittedFragments.push(fragment);
       }
     }
+    const omitted = omittedFragments.length;
+    const essentialOmissions = omittedFragments.filter((f) => f.required !== false);
     if (omitted)
       warnings.push(
-        `${omitted} context fragments omitted by request byte budget; inspect saved trace`,
+        `${omitted} context fragments omitted by request byte budget (${essentialOmissions.length} required); inspect saved trace`,
       );
+    if (
+      essentialOmissions.length ||
+      warnings.some((w) => w.startsWith('Request target excerpt truncated'))
+    )
+      state.evidence = {
+        completeness: 'partial',
+        omissions: [...state.evidence.omissions, 'Required request evidence omitted or truncated'],
+      };
     if (omitted)
-      state.warnings.push(`${omitted} context fragments omitted by request byte budget.`);
+      state.warnings.push(
+        `${omitted} context fragments omitted by request byte budget (${essentialOmissions.length} required). Missing optional neighbors do not establish redundancy.`,
+      );
+    for (const t of state.targets)
+      state.evidenceCatalog[`target:${t.id}`] = {
+        file: t.file,
+        line: t.line,
+        endLine: t.endLine,
+        role: 'target',
+      };
+    state.fragments.forEach((f, index) => {
+      state.evidenceCatalog[`fragment:${index}`] = {
+        file: f.file,
+        line: f.line,
+        endLine: f.endLine,
+        role: f.reason === 'Neighbor test for overlap review' ? 'neighbor' : f.reason,
+      };
+    });
     if (Buffer.byteLength(JSON.stringify(state)) > 24000)
       throw new Error('Target metadata exceeds request budget; reduce batch size');
-    result.push({ targets, state, warnings });
+    result.push({ targets, state, warnings, omittedFragments });
   }
   return result;
 }
@@ -179,7 +222,14 @@ export async function evaluate(
   const rubricHash = hash([RUBRIC_VERSION, RUBRIC]);
   const jobs = traces.flatMap((trace) =>
     batches(trace, options.batchSize).map((batch) => {
-      const key = hash([trace.id, batch.state, buildQuestions(batch.targets), rubricHash, model]);
+      const key = hash([
+        trace.id,
+        batch.state,
+        { ...buildQuestions(batch.targets), ...reviewQuestions(batch.state, batch.targets) },
+        rubricHash,
+        DECISION_VERSION,
+        model,
+      ]);
       return {
         trace,
         ...batch,
@@ -206,6 +256,7 @@ export async function evaluate(
     maxConsecutiveFailures,
     retries,
     rubricVersion: RUBRIC_VERSION,
+    decisionVersion: DECISION_VERSION,
     rubricHash,
     concurrency: options.concurrency,
     batchSize: options.batchSize,
@@ -257,7 +308,10 @@ export async function evaluate(
               endpoint: ENDPOINTS[provider],
               model,
               state: job.state,
-              questions: buildQuestions(job.targets),
+              questions: {
+                ...buildQuestions(job.targets),
+                ...reviewQuestions(job.state, job.targets),
+              },
             },
             judgment,
             performance.now() - start,
@@ -274,6 +328,7 @@ export async function evaluate(
             job.warnings,
             null,
             !!job.cached,
+            job.state.evidence as Trace['evidence'],
           );
       } catch (error) {
         if (!stopReason) {
@@ -289,7 +344,17 @@ export async function evaluate(
         const message = error instanceof Error ? error.message : 'Evaluation failed';
         const safe = options.apiKey ? message.replaceAll(options.apiKey, '[redacted]') : message;
         for (const target of job.targets)
-          store.result(runId, target, job.trace.id, null, null, job.warnings, safe, false);
+          store.result(
+            runId,
+            target,
+            job.trace.id,
+            null,
+            null,
+            job.warnings,
+            safe,
+            false,
+            job.state.evidence as Trace['evidence'],
+          );
       }
       options.progress?.(++done, jobs.length);
     }

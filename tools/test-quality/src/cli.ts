@@ -1,4 +1,13 @@
 #!/usr/bin/env node
+import {
+  calibrationEvidence,
+  calibrationReport,
+  prepareCalibration,
+  readCalibration,
+  textCalibration,
+} from './calibration.ts';
+import { hash } from './files.ts';
+import type { ResultRow } from './types.ts';
 import { parseArgs, parseEnv } from 'node:util';
 import { existsSync, readFileSync, realpathSync } from 'node:fs';
 import path from 'node:path';
@@ -22,6 +31,7 @@ Commands:
   report     Read saved scores; no API key or source checkout needed
   trace      Retrieve exact saved context with --id <trace-id>
   evaluation Retrieve actual request and raw response with --id <evaluation-id>
+  calibrate  Frozen-reference calibration; defaults to offline dry-run
   history    Retrieve a target's score history with --id <target-id>
 
 Selection: --root <path> --config <json> --name <substring>
@@ -41,7 +51,12 @@ Reports:   --run <run-id> (default latest) --format text|json --kind file|test|a
            --failing-only --limit <count> --fail-on-low
            --fail-on-findings (exit 2 for explicit review findings)
 
-Version 2 thresholds use quality only; criticality is reported separately.
+Calibration: --cases <json> --split development|held-out|all (default development)
+             --calibration-mode dry-run|baseline|evaluate|saved (default dry-run)
+             evaluate requires explicit --db and --max-requests; saved requires --db/--run.
+             One test-level request per case, no assertion/file calls. Labels never enter requests.
+
+Version 3 thresholds use quality only; criticality is reported separately.
 Earlier saved runs keep their legacy combined score and are labeled accordingly.
 
 Exit codes: 0 success, 1 error or partial run, 2 configured low-score or finding gate.
@@ -55,6 +70,9 @@ export async function main(args: string[]): Promise<number> {
     args,
     allowPositionals: true,
     options: {
+      cases: { type: 'string' },
+      split: { type: 'string' },
+      'calibration-mode': { type: 'string' },
       root: { type: 'string' },
       config: { type: 'string' },
       name: { type: 'string' },
@@ -88,7 +106,18 @@ export async function main(args: string[]): Promise<number> {
     console.log(help);
     return 0;
   }
-  if (!['scan', 'audit', 'evaluate', 'report', 'trace', 'history', 'evaluation'].includes(command))
+  if (
+    ![
+      'scan',
+      'audit',
+      'evaluate',
+      'report',
+      'trace',
+      'history',
+      'evaluation',
+      'calibrate',
+    ].includes(command)
+  )
     throw new Error(`Unknown command: ${command}`);
   const number = (
     key: keyof typeof values,
@@ -138,6 +167,98 @@ export async function main(args: string[]): Promise<number> {
     values['max-requests'] === undefined
       ? undefined
       : number('max-requests', 0, 0, Number.MAX_SAFE_INTEGER, true);
+  if (command === 'calibrate') {
+    const mode = values['calibration-mode'] ?? 'dry-run';
+    const split = values.split ?? 'development';
+    if (!['dry-run', 'baseline', 'evaluate', 'saved'].includes(mode))
+      throw new Error('Invalid --calibration-mode');
+    if (split !== 'development' && split !== 'held-out' && split !== 'all')
+      throw new Error('Invalid --split');
+    const data = readCalibration(
+      path.resolve(
+        values.cases ?? fileURLToPath(new URL('../calibration/reviewed-v1.json', import.meta.url)),
+      ),
+    );
+    const config = readConfig(values.config ? path.resolve(values.config) : undefined);
+    const prepared = prepareCalibration(root, config, data, split);
+    let rows: ResultRow[] = [];
+    let evaluation: unknown;
+    if (mode === 'evaluate' || mode === 'saved') {
+      if (
+        !values.db ||
+        (mode === 'evaluate' && maxRequests === undefined) ||
+        (mode === 'saved' && !values.run)
+      )
+        throw new Error(
+          'Calibration evaluate requires --db and --max-requests; saved requires --db and --run',
+        );
+      const calibrationDb = path.resolve(root, values.db);
+      if (calibrationDb === path.resolve(root, '.test-quality/results.sqlite'))
+        throw new Error('Use a separate calibration database to preserve historical results');
+      if (mode === 'saved' && !existsSync(calibrationDb))
+        throw new Error('Saved calibration database not found');
+      const store = new Store(calibrationDb);
+      try {
+        if (mode === 'evaluate') {
+          for (const trace of prepared.traces)
+            store.saveAnalysis(trace.id, {
+              traces: [trace],
+              dependencies: trace.dependencies,
+              warnings: trace.warnings,
+            });
+          const envPath = path.resolve(root, values.env ?? '.env');
+          const env = existsSync(envPath) ? parseEnv(readFileSync(envPath, 'utf8')) : {};
+          const keyName = provider === 'vercel' ? 'AI_GATEWAY_API_KEY' : 'TYPESAFE_API_KEY';
+          const result = await evaluate(
+            store,
+            prepared.traces,
+            {
+              apiKey: process.env[keyName] || env[keyName],
+              provider,
+              model: values.model,
+              requestIntervalMs,
+              inputTokensPerSecond,
+              maxConsecutiveFailures,
+              retries,
+              concurrency,
+              batchSize: 1,
+              maxRequests,
+              fresh: values.fresh,
+            },
+            { calibrationHash: hash(data), sourceRevision: data.sourceRevision, split, config },
+          );
+          rows = store.results(result.runId);
+          evaluation = result;
+        } else {
+          const run = store.run(values.run);
+          const metadata = JSON.parse(run.options).metadata;
+          if (
+            metadata?.calibrationHash !== hash(data) ||
+            metadata?.sourceRevision !== data.sourceRevision
+          )
+            throw new Error('Saved calibration run does not match frozen manifest/revision');
+          rows = store.results(run.id);
+          for (const row of rows) {
+            const trace = prepared.traces.find((t) => t.targets[0].id === row.target.id);
+            if (trace && trace.id !== row.traceId)
+              throw new Error(
+                'Saved calibration evidence differs; use the original analyzer/configuration or rerun explicitly',
+              );
+          }
+        }
+      } finally {
+        store.close();
+      }
+    }
+    const value = calibrationReport(data, prepared.cases, rows, mode, {
+      ...calibrationEvidence(prepared.traces),
+      requestsMade: mode === 'evaluate' ? (evaluation as { requests: number }).requests : 0,
+      evaluation,
+    });
+    if (format === 'json') await writeJsonReport(value, process.stdout);
+    else console.log(textCalibration(value));
+    return rows.some((r) => r.error) ? 1 : 0;
+  }
   const dbPath = path.resolve(root, values.db ?? '.test-quality/results.sqlite');
   if (!['scan', 'audit', 'evaluate'].includes(command) && !existsSync(dbPath))
     throw new Error(`Database not found: ${dbPath}`);
@@ -203,7 +324,17 @@ export async function main(args: string[]): Promise<number> {
         });
         for (const trace of result.traces)
           for (const target of trace.targets)
-            store.result(runId, target, trace.id, null, null, trace.warnings, null, false);
+            store.result(
+              runId,
+              target,
+              trace.id,
+              null,
+              null,
+              trace.warnings,
+              null,
+              false,
+              trace.evidence,
+            );
         store.finish(runId, 'complete');
         metrics = {
           ...summary,

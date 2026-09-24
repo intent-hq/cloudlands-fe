@@ -36,6 +36,7 @@ export interface Fragment {
   code: string;
   reason: string;
   priority?: number;
+  required?: boolean;
 }
 
 export interface Trace {
@@ -46,6 +47,7 @@ export interface Trace {
   fragments: Fragment[];
   warnings: string[];
   dependencies: Record<string, string>;
+  evidence?: EvidenceCompleteness;
 }
 
 export interface Analysis {
@@ -74,6 +76,7 @@ export interface Judgment {
   usage: { input_tokens: number; output_tokens: number };
   answers: Record<string, unknown>;
   scores: Record<string, Score>;
+  reviews?: Record<string, ReviewDecision>;
 }
 
 export interface RunRow {
@@ -93,4 +96,24 @@ export interface ResultRow {
   warnings: string[];
   error: string | null;
   cached: boolean;
+  decision?: ReviewDecision | null;
+  evidence?: EvidenceCompleteness | null;
+}
+
+export interface EvidenceCompleteness {
+  completeness: 'bounded' | 'partial' | 'unknown';
+  omissions: string[];
+}
+export type Disposition =
+  'keep' | 'strengthen' | 'consolidate' | 'remove' | 'insufficient-evidence' | 'retire-skipped';
+export interface ReviewDecision {
+  disposition: Disposition;
+  proposed?: string;
+  rationale: string;
+  evidenceRefs: string[];
+  evidenceLocations?: Record<string, string>;
+  counterexample: string;
+  confidence: number;
+  evidence: EvidenceCompleteness;
+  policyVersion: string;
 }

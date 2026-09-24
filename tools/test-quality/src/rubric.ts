@@ -1,4 +1,4 @@
-export const RUBRIC_VERSION = 'test-quality-v2';
+export const RUBRIC_VERSION = 'test-quality-v3';
 
 export interface Target {
   id: string;
@@ -107,6 +107,7 @@ export function buildQuestions(targets: Target[]): Record<string, ScoreQuestion>
           rubric.instructions,
           'Judge quality independently of defect severity: a low-impact test can be excellent. Criticality is reported separately and never contributes to the quality score. Inspect what actually fails, not what the test name claims.',
           'Missing imports, truncated code, unresolved helpers, and omitted context mean missing evidence, not poor tests. Do not assign a low level solely because evidence is missing, invent unseen behavior, or treat uncertainty as a defect. Use uncertainty across plausible levels when evidence is insufficient. Low levels require visible evidence of the described weakness.',
+          'Existence after a real transition can be a strong oracle; unconditional existence is different. Props and selector mocks can supply inputs while the real subject still routes or renders outcomes. Judge infrastructure self-tests against their declared infrastructure contract, never as application coverage. Ask what plausible broken behavior would still pass. No mutation results or runtime costs are available unless explicitly supplied.',
           'Return a static-review rating on these five ordered levels. This is not a measured defect-prevention probability or a recommendation to delete tests.',
         ].join('\n'),
         criteria: [...rubric.criteria],

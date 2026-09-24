@@ -619,3 +619,78 @@ test('rejects invalid configuration and unserializable state before sending requ
   await assert.rejects(judge(state, [], { apiKey, fetch: fetchMock }));
   assert.equal(calls, 0);
 });
+
+test('uses documented Choice answers for evidence-linked decisions without free-text response fields', async () => {
+  const { reviewQuestions, reviewKey } = await import('../src/decisions.ts');
+  const reviewState = {
+    ...state,
+    targets: [{ id: 'test:17', kind: 'test', status: 'active', code: 'expect(true).toBe(true)' }],
+    evidence: { completeness: 'bounded', omissions: [] },
+    evidenceCatalog: { site: { file: 'example.test.ts', line: 3, endLine: 3, role: 'target' } },
+  };
+  const chosen: Record<string, string> = {
+    disposition: 'remove',
+    basis: 'tautology',
+    evidence: 'site',
+    neighbor: 'none',
+    completeness: 'sufficient',
+    counterexample: 'disconnected',
+  };
+  const choiceQuestions = reviewQuestions(reviewState, targets);
+  const raw = serviceResponse();
+  const choiceAnswers = Object.fromEntries(
+    Object.entries(choiceQuestions).map(([key, q]) => {
+      const field = JSON.parse(key)[2];
+      const choice = chosen[field];
+      return [
+        key,
+        {
+          type: 'choice',
+          choice,
+          confidence: 1,
+          probabilities: Object.fromEntries(
+            Object.keys(q.criteria).map((k) => [k, k === choice ? 1 : 0]),
+          ),
+        },
+      ];
+    }),
+  );
+  const response = { ...raw, answers: { ...raw.answers, ...choiceAnswers } };
+  const options = {
+    apiKey,
+    fetch: async (_url: unknown, init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body));
+      assert.deepEqual(body.questions[reviewKey('test:17', 'disposition')], {
+        type: 'choice',
+        instructions: choiceQuestions[reviewKey('test:17', 'disposition')].instructions,
+        criteria: {
+          keep: 'Meaningful contract protected; no demonstrated change needed.',
+          strengthen: 'Retain useful intent but improve a visibly weak oracle or setup.',
+          consolidate:
+            'Combine with visible neighboring coverage without losing a distinct contract.',
+          remove:
+            'Visible unconditional/disconnected case, or confirmed redundant case with replacement proof.',
+          'insufficient-evidence': 'Cannot justify a decision with the available evidence.',
+          'retire-skipped': 'Obsolete skipped declaration, not active test removal.',
+        },
+      });
+      assert.equal(Object.hasOwn(body, 'response_format'), false);
+      return respond(response);
+    },
+  };
+  const result = await judge(reviewState, targets, options);
+  assert.equal(result.reviews?.['test:17'].disposition, 'remove');
+  assert.equal(result.reviews?.['test:17'].evidenceLocations?.site, 'example.test.ts:3-3');
+  assert.equal(result.scores['test:17'].quality, 53.125);
+  const bad = structuredClone(response);
+  (bad.answers as Record<string, unknown>)[reviewKey('test:17', 'evidence')] = {
+    type: 'choice',
+    choice: 'invented',
+    confidence: 1,
+    probabilities: { invented: 1 },
+  };
+  await assert.rejects(
+    judge(reviewState, targets, { apiKey, fetch: async () => respond(bad) }),
+    /invalid response/,
+  );
+});

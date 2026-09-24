@@ -1,3 +1,6 @@
+import { reviewQuestions, decide, isReviewState } from './decisions.ts';
+import type { ChoiceQuestion, ChoiceAnswer } from './decisions.ts';
+import type { ReviewDecision } from './types.ts';
 import { buildQuestions, questionKey, RUBRIC } from './rubric.ts';
 import type { ScoreQuestion, Target } from './rubric.ts';
 
@@ -52,6 +55,7 @@ export interface Judgment {
   usage: { input_tokens: number; output_tokens: number };
   answers: Record<string, unknown>;
   scores: Record<string, TargetScore>;
+  reviews?: Record<string, ReviewDecision>;
 }
 
 export interface JudgeOptions {
@@ -127,7 +131,8 @@ function validateResponse(
   value: unknown,
   model: string,
   targets: Target[],
-  questions: Record<string, ScoreQuestion>,
+  questions: Record<string, ScoreQuestion | ChoiceQuestion>,
+  state: unknown,
 ): Judgment {
   if (!record(value)) invalidResponse();
   const { model: actualModel, answers, usage } = value;
@@ -145,6 +150,31 @@ function validateResponse(
   )
     invalidResponse();
 
+  const choices: Record<string, ChoiceAnswer> = {};
+  for (const [key, question] of Object.entries(questions))
+    if (question.type === 'choice') {
+      const a = answers[key];
+      const keys = Object.keys(question.criteria);
+      if (
+        !record(a) ||
+        a.type !== 'choice' ||
+        typeof a.choice !== 'string' ||
+        !keys.includes(a.choice) ||
+        !inRange(a.confidence, 0, 1) ||
+        !record(a.probabilities) ||
+        !sameKeys(a.probabilities, keys)
+      )
+        invalidResponse();
+      const probabilities = a.probabilities as Record<string, number>;
+      if (
+        !Object.values(probabilities).every((p) => inRange(p, 0, 1)) ||
+        Math.abs(Object.values(probabilities).reduce((x, y) => x + y, 0) - 1) >
+          keys.length * ROUNDING_HALF_UNIT + FLOAT_EPSILON ||
+        Object.values(probabilities).some((p) => p > probabilities[a.choice as string] + 0.01)
+      )
+        invalidResponse();
+      choices[key] = a as unknown as ChoiceAnswer;
+    }
   const entries: Array<[string, TargetScore]> = [];
   for (const target of targets) {
     const dimensions: Record<string, DimensionScore> = {};
@@ -153,7 +183,7 @@ function validateResponse(
     let confidence = 1;
     for (const [dimension, rubric] of Object.entries(RUBRIC)) {
       const key = questionKey(target.id, dimension);
-      const answer = validateAnswer(answers[key], questions[key]!);
+      const answer = validateAnswer(answers[key], questions[key] as ScoreQuestion);
       dimensions[dimension] = answer;
       weightedScore += answer.score * rubric.weight;
       weight += rubric.weight;
@@ -180,6 +210,9 @@ function validateResponse(
     },
     answers,
     scores: Object.fromEntries(entries),
+    ...(isReviewState(state)
+      ? { reviews: Object.fromEntries(targets.map((t) => [t.id, decide(state, t, choices)])) }
+      : {}),
   };
 }
 
@@ -232,7 +265,7 @@ export async function judge(
   )
     throw new Error('Invalid Jev configuration.');
   if (targets.length === 0) throw new Error('Jev requires at least one target.');
-  const questions = buildQuestions(targets);
+  const questions = { ...buildQuestions(targets), ...reviewQuestions(state, targets) };
   let body: string;
   try {
     if (state === null || (typeof state !== 'string' && typeof state !== 'object')) {
@@ -270,7 +303,7 @@ export async function judge(
       if (error instanceof SyntaxError) invalidResponse();
       throw new Error('Jev request failed due to a transport error or timeout.');
     }
-    if (response.ok) return validateResponse(payload, model, targets, questions);
+    if (response.ok) return validateResponse(payload, model, targets, questions, state);
     // Discard error bodies without reading or echoing potentially sensitive content.
     try {
       await response.body?.cancel();

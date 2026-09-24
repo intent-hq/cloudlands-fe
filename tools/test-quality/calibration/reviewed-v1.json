@@ -1,0 +1,1411 @@
+{
+  "version": "reviewed-candidates-v1",
+  "labelProvenance": "Agent source review; not independently human-adjudicated ground truth.",
+  "selection": "All 62 static test declarations with quality <60 and confidence >=0.6 from the completed audit. Deliberately selected, not representative of the full suite.",
+  "runId": "faec5b80-1de3-4854-8305-95a5f7c6515e",
+  "sourceRevision": "d5555eefc5912d8f3efc07aa520725fcc5fed269",
+  "reviewNotes": ["803847c9-072e-4ad3-9f75-a556ee346a5d", "cef683e6-bedf-4c0e-a252-d7bc0ead4021"],
+  "cases": [
+    {
+      "id": "6fd1dc7bddd0777a4ecc48712f4f449303d66ab2e91891e6ac3678f2fbe7446c",
+      "file": "tests/unit/performance-optimizer.test.ts",
+      "line": 237,
+      "name": "PerformanceOptimizer > Worker Thread Management > should handle worker errors gracefully",
+      "status": "active",
+      "sourceHash": "73f32b5a0721784973626ab4e528ab0b1e42b48946fc2996b7662fc361a7ea18",
+      "testCode": "it('should handle worker errors gracefully', async () => {\n      // Worker functionality is not available in test environment\n      // This is expected - workers are only used in Node.js production environment\n      expect(true).toBe(true);\n    })",
+      "expectedDisposition": "remove",
+      "reason": "Both worker cases only assert true equals true; current PerformanceOptimizer has no worker implementation.",
+      "evidence": [
+        "tests/unit/performance-optimizer.test.ts:229",
+        "tests/unit/performance-optimizer.test.ts:237",
+        "src/features/agent/services/performance-optimizer.ts:45"
+      ],
+      "baseline": {
+        "quality": 1.075,
+        "confidence": 0.84,
+        "traceId": "4f58bc6fc37955e9560b9a24c3d2ef64bd78344e020355b121d070128242cc17",
+        "evaluationId": 33960
+      },
+      "family": "agent-infrastructure"
+    },
+    {
+      "id": "abaac39767d70fdf7cfe936f2f5f4eb1c9ffcd8d09f05b7c85cc98d58520be0b",
+      "file": "tests/unit/performance-optimizer.test.ts",
+      "line": 229,
+      "name": "PerformanceOptimizer > Worker Thread Management > should initialize worker pool",
+      "status": "active",
+      "sourceHash": "73f32b5a0721784973626ab4e528ab0b1e42b48946fc2996b7662fc361a7ea18",
+      "testCode": "it('should initialize worker pool', () => {\n      // Worker pool is only initialized in Node.js environment\n      // In test environment, Worker is mocked but window is defined\n      // So worker pool initialization is skipped\n      // This is expected behavior - no workers in browser environment\n      expect(true).toBe(true);\n    })",
+      "expectedDisposition": "remove",
+      "reason": "Both worker cases only assert true equals true; current PerformanceOptimizer has no worker implementation.",
+      "evidence": [
+        "tests/unit/performance-optimizer.test.ts:229",
+        "tests/unit/performance-optimizer.test.ts:237",
+        "src/features/agent/services/performance-optimizer.ts:45"
+      ],
+      "baseline": {
+        "quality": 1.1625,
+        "confidence": 0.84,
+        "traceId": "7a93a68570ddb0194ae5d08adca41e5e68f71cb7cc248191a250cd94f6d9a007",
+        "evaluationId": 33959
+      },
+      "family": "agent-infrastructure"
+    },
+    {
+      "id": "47e3a1245dd131fa9b2967a8c94868c2bbbf7941a9119862f266ab59419ede34",
+      "file": "tests/integration/contextual-menu-fixes.test.ts",
+      "line": 82,
+      "name": "Contextual Menu Agent Launch Fixes > Integration > should not show duplicate messages after refresh",
+      "status": "active",
+      "sourceHash": "63584fb087cac96cd2e5c635875a7c65d2372641194af002a204d6df86e9820e",
+      "testCode": "it('should not show duplicate messages after refresh', () => {\n      // Verify that messages are not duplicated on page refresh\n      const messageCount = 1;\n      expect(messageCount).toBe(1);\n    })",
+      "expectedDisposition": "remove",
+      "reason": "Local literals and fixtures only; no production imports or behavioral calls. Integration lane includes this file. Remove package script references if deleting the whole file.",
+      "evidence": [
+        "tests/integration/contextual-menu-fixes.test.ts:9",
+        "tests/integration/vitest.integration.config.ts:25",
+        "package.json:169",
+        "src/shared/utils/__tests__/message-dedup.test.ts:27"
+      ],
+      "baseline": {
+        "quality": 1.3,
+        "confidence": 0.77,
+        "traceId": "ba23d07a101427dff479446f5b9d89623e13fb52aef2e45b446f12a99222859f",
+        "evaluationId": 33625
+      },
+      "family": "agent-infrastructure"
+    },
+    {
+      "id": "3a74ca97651a6cde5c98725399d8f4541f9b1ab76d79c2479a58ab6e244f4b5d",
+      "file": "tests/integration/contextual-menu-fixes.test.ts",
+      "line": 42,
+      "name": "Contextual Menu Agent Launch Fixes > Streaming state initialization > should restore streaming state on ChatPanel mount",
+      "status": "active",
+      "sourceHash": "63584fb087cac96cd2e5c635875a7c65d2372641194af002a204d6df86e9820e",
+      "testCode": "it('should restore streaming state on ChatPanel mount', () => {\n      // Verify that ChatPanel checks both session store and unified store for streaming state\n      const isStreaming = true;\n      const isProcessing = true;\n      expect(isStreaming).toBe(true);\n      expect(isProcessing).toBe(true);\n    })",
+      "expectedDisposition": "remove",
+      "reason": "Local literals and fixtures only; no production imports or behavioral calls. Integration lane includes this file. Remove package script references if deleting the whole file.",
+      "evidence": [
+        "tests/integration/contextual-menu-fixes.test.ts:9",
+        "tests/integration/vitest.integration.config.ts:25",
+        "package.json:169",
+        "src/shared/utils/__tests__/message-dedup.test.ts:27"
+      ],
+      "baseline": {
+        "quality": 1.325,
+        "confidence": 0.76,
+        "traceId": "e2c087d37b26000f51fcb37a32968b4bf06884e8316336504fc6fc1ceeac62f3",
+        "evaluationId": 33620
+      },
+      "family": "agent-infrastructure"
+    },
+    {
+      "id": "ec39ac8185dd7e3c31006007a6fbd4b61e40797bdbe86df150b114dda827c649",
+      "file": "src/lib/components/tiptap/__tests__/TaskItemNodeView.test.ts",
+      "line": 447,
+      "name": "TaskItemNodeView - Action Button > should not render action button for checked tasks",
+      "status": "active",
+      "sourceHash": "d94567db28e8fa02d3963a8801a91253c893943fcc6e85c05da7da48755cef61",
+      "testCode": "it('should not render action button for checked tasks', () => {\n    const props = createMockProps({\n      node: {\n        attrs: { checked: true, status: 'done' },\n        nodeSize: 10,\n        toJSON: () => ({ type: 'taskItem', attrs: { checked: true, status: 'done' } }),\n      },\n    });\n    // eslint-disable-next-line @typescript-eslint/no-unused-vars\n    const { container } = render(TestTaskItemNodeView, { props });\n\n    // For checked tasks, the action button should not be rendered\n    // The only buttons should be inside the task preview (if linked) or checkbox\n    // With checked tasks, the \"Convert to Task Note\" button is hidden\n    // This test may need adjustment based on what other buttons are rendered\n    expect(true).toBe(true); // Component structure validated - button visibility controlled by effectiveChecked\n  })",
+      "expectedDisposition": "remove",
+      "reason": "Weak unit assertion is covered by an existing browser contract. For checkbox cycling, comments also disagree with current unlinked-task semantics. Retain meaningful neighboring and browser tests.",
+      "evidence": [
+        "src/lib/components/tiptap/__tests__/TestTaskItemNodeView.test.svelte:32",
+        "src/lib/components/tiptap/__tests__/TaskItemNodeView.ct.spec.ts:125",
+        "src/lib/components/tiptap/__tests__/TaskItemNodeView.ct.spec.ts:179",
+        "src/lib/components/tiptap/TaskItemNodeView.svelte:149"
+      ],
+      "baseline": {
+        "quality": 1.4875,
+        "confidence": 0.9,
+        "traceId": "b4245570abb91330319b0092694d72491fa04f806f21aafa77ca686237297809",
+        "evaluationId": 18923
+      },
+      "family": "editor-markdown-mentions"
+    },
+    {
+      "id": "79b3e9fcd135103610083a0da429edf286686a315fc850115eace91af5adb759",
+      "file": "tests/integration/contextual-menu-fixes.test.ts",
+      "line": 52,
+      "name": "Contextual Menu Agent Launch Fixes > Message duplication prevention > should not duplicate messages on stream complete",
+      "status": "active",
+      "sourceHash": "63584fb087cac96cd2e5c635875a7c65d2372641194af002a204d6df86e9820e",
+      "testCode": "it('should not duplicate messages on stream complete', () => {\n      // Verify that agent-factory does not handle message updates\n      // Only agent.service handles streaming events\n      const handlerCount = 1; // Only agent.service should handle\n      expect(handlerCount).toBe(1);\n    })",
+      "expectedDisposition": "remove",
+      "reason": "Local literals and fixtures only; no production imports or behavioral calls. Integration lane includes this file. Remove package script references if deleting the whole file.",
+      "evidence": [
+        "tests/integration/contextual-menu-fixes.test.ts:9",
+        "tests/integration/vitest.integration.config.ts:25",
+        "package.json:169",
+        "src/shared/utils/__tests__/message-dedup.test.ts:27"
+      ],
+      "baseline": {
+        "quality": 1.4875,
+        "confidence": 0.8,
+        "traceId": "b3f334122a545fe033a1757c52615eec4c36c2e3b1e7c7e52ce5a7c43ed38045",
+        "evaluationId": 33621
+      },
+      "family": "agent-infrastructure"
+    },
+    {
+      "id": "82eacd215f2c6ad9c34d7657ccbb6498d740d748ef15c1cc80298c785f1317a1",
+      "file": "src/features/workspace/__tests__/workspace-activity-timestamps.test.ts",
+      "line": 162,
+      "name": "workspace activity timestamps > retired: FE no longer derives lastActivity",
+      "status": "skipped",
+      "sourceHash": "cb47356ebd413c6c7d08270e4e6e0321d54a222def5ebe8265a8fa03e496d2aa",
+      "testCode": "it.skip('retired: FE no longer derives lastActivity', () => {})",
+      "expectedDisposition": "retire-skipped",
+      "reason": "Already-skipped empty placeholder for daemon-owned behavior; deleting it is documentation cleanup, not runtime savings.",
+      "evidence": ["src/features/workspace/__tests__/workspace-activity-timestamps.test.ts:162"],
+      "baseline": {
+        "quality": 1.6875,
+        "confidence": 0.86,
+        "traceId": "647042f15de89007b48b3279a36d10d11a8ff3db18713bcf8cdd54411bc6ac22",
+        "evaluationId": 10331
+      },
+      "family": "workspace-ui-persistence"
+    },
+    {
+      "id": "74f208305f4aa40bd15e06cadde72f31ee820d717ac6513f4fa7779f8a302f82",
+      "file": "tests/integration/contextual-menu-fixes.test.ts",
+      "line": 67,
+      "name": "Contextual Menu Agent Launch Fixes > Integration > should show typing indicator immediately when agent is created",
+      "status": "active",
+      "sourceHash": "63584fb087cac96cd2e5c635875a7c65d2372641194af002a204d6df86e9820e",
+      "testCode": "it('should show typing indicator immediately when agent is created', () => {\n      // Verify that ChatPanel shows streaming UI immediately\n      const uiElements = ['typing-indicator', 'prompt-box'];\n      expect(uiElements.length).toBe(2);\n    })",
+      "expectedDisposition": "remove",
+      "reason": "Local literals and fixtures only; no production imports or behavioral calls. Integration lane includes this file. Remove package script references if deleting the whole file.",
+      "evidence": [
+        "tests/integration/contextual-menu-fixes.test.ts:9",
+        "tests/integration/vitest.integration.config.ts:25",
+        "package.json:169",
+        "src/shared/utils/__tests__/message-dedup.test.ts:27"
+      ],
+      "baseline": {
+        "quality": 1.875,
+        "confidence": 0.72,
+        "traceId": "8aef61a8fec558350ac5de1e059b1704be2de4821c10d93747b51c535b0f217f",
+        "evaluationId": 33623
+      },
+      "family": "agent-infrastructure"
+    },
+    {
+      "id": "c70b0366a62af1f3f67297e10cd881eab8f04fa6cdd20ec066df6b6c4e7308fa",
+      "file": "tests/integration/contextual-menu-fixes.test.ts",
+      "line": 32,
+      "name": "Contextual Menu Agent Launch Fixes > Streaming state initialization > should set streaming state before sending initial message",
+      "status": "active",
+      "sourceHash": "63584fb087cac96cd2e5c635875a7c65d2372641194af002a204d6df86e9820e",
+      "testCode": "it('should set streaming state before sending initial message', () => {\n      // Verify that streaming state is set in both unified store and session store\n      const streamingState = {\n        active: true,\n        buffer: '',\n        contentBlocks: [],\n      };\n      expect(streamingState.active).toBe(true);\n    })",
+      "expectedDisposition": "remove",
+      "reason": "Local literals and fixtures only; no production imports or behavioral calls. Integration lane includes this file. Remove package script references if deleting the whole file.",
+      "evidence": [
+        "tests/integration/contextual-menu-fixes.test.ts:9",
+        "tests/integration/vitest.integration.config.ts:25",
+        "package.json:169",
+        "src/shared/utils/__tests__/message-dedup.test.ts:27"
+      ],
+      "baseline": {
+        "quality": 1.975,
+        "confidence": 0.62,
+        "traceId": "ff153edb2b27467267058799ac10c2247766c3341c36dbba7be33a43b4be706d",
+        "evaluationId": 33619
+      },
+      "family": "agent-infrastructure"
+    },
+    {
+      "id": "d0371357e5cc9d741db12785a30f1f7130beca7475aa1101a92e62a101ce9710",
+      "file": "tests/integration/contextual-menu-fixes.test.ts",
+      "line": 59,
+      "name": "Contextual Menu Agent Launch Fixes > Message duplication prevention > should let agent.service handle all streaming events",
+      "status": "active",
+      "sourceHash": "63584fb087cac96cd2e5c635875a7c65d2372641194af002a204d6df86e9820e",
+      "testCode": "it('should let agent.service handle all streaming events', () => {\n      // Verify that agent-factory only registers a minimal handler for cleanup\n      const factoryHandlerResponsibilities = ['cleanup'];\n      expect(factoryHandlerResponsibilities).toContain('cleanup');\n    })",
+      "expectedDisposition": "remove",
+      "reason": "Local literals and fixtures only; no production imports or behavioral calls. Integration lane includes this file. Remove package script references if deleting the whole file.",
+      "evidence": [
+        "tests/integration/contextual-menu-fixes.test.ts:9",
+        "tests/integration/vitest.integration.config.ts:25",
+        "package.json:169",
+        "src/shared/utils/__tests__/message-dedup.test.ts:27"
+      ],
+      "baseline": {
+        "quality": 2,
+        "confidence": 0.66,
+        "traceId": "eab1b7c2a84fcdc3a2348739c5f274ed63ba4e723b1a32bb9e183d116bb669a3",
+        "evaluationId": 33622
+      },
+      "family": "agent-infrastructure"
+    },
+    {
+      "id": "cb9e7e18150f03f35c184a773c39a3529364c634e5a52ac30d579b8c73cd19d6",
+      "file": "tests/integration/contextual-menu-fixes.test.ts",
+      "line": 73,
+      "name": "Contextual Menu Agent Launch Fixes > Integration > should display tool calls as they arrive",
+      "status": "active",
+      "sourceHash": "63584fb087cac96cd2e5c635875a7c65d2372641194af002a204d6df86e9820e",
+      "testCode": "it('should display tool calls as they arrive', () => {\n      // Verify that tool blocks are displayed in real-time\n      const toolBlocks = [\n        { type: 'tool_use', name: 'search' },\n        { type: 'tool_result', tool_use_id: 'tool_1' },\n      ];\n      expect(toolBlocks.length).toBeGreaterThan(0);\n    })",
+      "expectedDisposition": "remove",
+      "reason": "Local literals and fixtures only; no production imports or behavioral calls. Integration lane includes this file. Remove package script references if deleting the whole file.",
+      "evidence": [
+        "tests/integration/contextual-menu-fixes.test.ts:9",
+        "tests/integration/vitest.integration.config.ts:25",
+        "package.json:169",
+        "src/shared/utils/__tests__/message-dedup.test.ts:27"
+      ],
+      "baseline": {
+        "quality": 2.1375,
+        "confidence": 0.67,
+        "traceId": "0f83f165a1ba752925833646d4444575dfe64fd591589b517ef512bcf350c11f",
+        "evaluationId": 33624
+      },
+      "family": "agent-infrastructure"
+    },
+    {
+      "id": "99853bb3ff1f21dceb6a003e2a1f00248bd8b2165d06cc653dfc5fcfa6271da3",
+      "file": "tests/integration/contextual-menu-fixes.test.ts",
+      "line": 21,
+      "name": "Contextual Menu Agent Launch Fixes > Tool calls display > should update sessionStore when tool blocks arrive",
+      "status": "active",
+      "sourceHash": "63584fb087cac96cd2e5c635875a7c65d2372641194af002a204d6df86e9820e",
+      "testCode": "it('should update sessionStore when tool blocks arrive', () => {\n      // Verify that tool blocks are propagated to ChatPanel via sessionStore\n      const mockData = {\n        type: 'content-blocks',\n        data: { type: 'tool_use', id: 'tool_1', name: 'test_tool' },\n      };\n      expect(mockData.data.type).toBe('tool_use');\n    })",
+      "expectedDisposition": "remove",
+      "reason": "Local literals and fixtures only; no production imports or behavioral calls. Integration lane includes this file. Remove package script references if deleting the whole file.",
+      "evidence": [
+        "tests/integration/contextual-menu-fixes.test.ts:9",
+        "tests/integration/vitest.integration.config.ts:25",
+        "package.json:169",
+        "src/shared/utils/__tests__/message-dedup.test.ts:27"
+      ],
+      "baseline": {
+        "quality": 2.2625,
+        "confidence": 0.62,
+        "traceId": "d05ccf2edc9703004dcd3c93854b69c17a7c345ec7af4dda633d1d2f2865320e",
+        "evaluationId": 33618
+      },
+      "family": "agent-infrastructure"
+    },
+    {
+      "id": "db274afc2d0eacacc9e5a5c0497e4ceab32f555154e0b813efbe72620fc19b8b",
+      "file": "tests/unit/mention-system.test.ts",
+      "line": 75,
+      "name": "MentionSystem > search > should sanitize query by trimming whitespace",
+      "status": "active",
+      "sourceHash": "f6ae01e99d0800b2685e6d5a85c80919631c0ccaf455d7e369e3d0988a732369",
+      "testCode": "it('should sanitize query by trimming whitespace', async () => {\n      await mentionSystem.search('  test  ', mockContext);\n      // Should not throw\n      expect(true).toBe(true);\n    })",
+      "expectedDisposition": "strengthen",
+      "reason": "Calls production search but checks no result. All providers are mocked empty, so trim can be removed without changing observed behavior. Supply a provider and assert the real search-service instance receives trimmed input and unchanged context.",
+      "evidence": [
+        "tests/unit/mention-system.test.ts:19",
+        "tests/unit/mention-system.test.ts:75",
+        "src/lib/services/mentions/mention-system.ts:159"
+      ],
+      "baseline": {
+        "quality": 2.975,
+        "confidence": 0.78,
+        "traceId": "681ce6ab9f1cb1be707e4e0d0dcd7e79cbabaabe9ea1290f126b8a00ee7badc5",
+        "evaluationId": 33897
+      },
+      "family": "editor-markdown-mentions"
+    },
+    {
+      "id": "a30ca8e0658d89914860879794e10e64e096051e699f743e61376bfbc8353d3a",
+      "file": "src/lib/components/chat/input/ModelPicker.test.ts",
+      "line": 2181,
+      "name": "ModelPicker multi-provider mode > shows default model text when no model is explicitly selected",
+      "status": "active",
+      "sourceHash": "c934d2219fdc0296914f87082cb0dc9a9db0303be4f4b85fb3642f5af4e14874",
+      "testCode": "it('shows default model text when no model is explicitly selected', () => {\n    render(ModelPicker, {\n      props: {},\n    });\n\n    const container = document.body;\n    expect(container).toBeTruthy();\n  })",
+      "expectedDisposition": "strengthen",
+      "reason": "Only checks document.body after render. Assert the default trigger outcome after asynchronous initialization; consolidate undefined/null cases with existing default-model behavior tests.",
+      "evidence": [
+        "src/lib/components/chat/input/ModelPicker.test.ts:2181",
+        "src/lib/components/chat/input/ModelPicker.test.ts:2241",
+        "src/lib/components/chat/input/ModelPicker.test.ts:4065"
+      ],
+      "baseline": {
+        "quality": 9.9,
+        "confidence": 0.83,
+        "traceId": "21d61f1638f2a9182c52bcc951c6a8785bdd9e23840278fb3fa12dd21a78f33d",
+        "evaluationId": 14979
+      },
+      "family": "chat-interactions"
+    },
+    {
+      "id": "258061306fca9089b8609cfb4726118cb584ab9bff4c13dc4f316a42e9ed6491",
+      "file": "src/lib/components/tiptap/__tests__/TaskItemNodeView.test.ts",
+      "line": 366,
+      "name": "TaskItemNodeView - Checkbox Cycling > should cycle from in-progress to done on click",
+      "status": "active",
+      "sourceHash": "d94567db28e8fa02d3963a8801a91253c893943fcc6e85c05da7da48755cef61",
+      "testCode": "it('should cycle from in-progress to done on click', async () => {\n    const props = createMockProps({\n      node: {\n        attrs: { checked: false, status: 'in-progress' },\n        nodeSize: 10,\n        toJSON: () => ({ type: 'taskItem', attrs: { checked: false, status: 'in-progress' } }),\n      },\n    });\n\n    const { container } = render(TestTaskItemNodeView, { props });\n\n    // The checkbox is a div with role=\"checkbox\"\n    const checkbox = container.querySelector('[role=\"checkbox\"]') as HTMLElement;\n    expect(checkbox).toBeTruthy();\n\n    // Verify the task item has the in-progress status\n    const listItem = container.querySelector('li[data-type=\"taskItem\"]') as HTMLElement;\n    expect(listItem.getAttribute('data-status')).toBe('in-progress');\n\n    // Click should not throw\n    await fireEvent.click(checkbox);\n\n    // The component calls updateAttributes with { checked: true, status: 'done' }\n    // but since the mock doesn't update the node, the visual state doesn't change\n    expect(true).toBe(true);\n  })",
+      "expectedDisposition": "remove",
+      "reason": "Weak unit assertion is covered by an existing browser contract. For checkbox cycling, comments also disagree with current unlinked-task semantics. Retain meaningful neighboring and browser tests.",
+      "evidence": [
+        "src/lib/components/tiptap/__tests__/TestTaskItemNodeView.test.svelte:32",
+        "src/lib/components/tiptap/__tests__/TaskItemNodeView.ct.spec.ts:125",
+        "src/lib/components/tiptap/__tests__/TaskItemNodeView.ct.spec.ts:179",
+        "src/lib/components/tiptap/TaskItemNodeView.svelte:149"
+      ],
+      "baseline": {
+        "quality": 16.1375,
+        "confidence": 0.64,
+        "traceId": "a7db797eac9a6ea521f3fe721ff3f58dad6b080b907798c4b1cd417a807b0afe",
+        "evaluationId": 18919
+      },
+      "family": "editor-markdown-mentions"
+    },
+    {
+      "id": "bf02b5d8ef3ffaaf2b489ad0918c47bb74d39ed0026de56500e10f99ec9c1395",
+      "file": "src/features/agent/__tests__/workspace-isolation.test.ts",
+      "line": 226,
+      "name": "Workspace Isolation > Null Byte Injection Prevention > should validate path strings do not contain null bytes",
+      "status": "active",
+      "sourceHash": "cb995754043a0a4bba6900d041f94abde456da7cf770cff94f54f2d887d389b0",
+      "testCode": "it('should validate path strings do not contain null bytes', () => {\n      const validPath = 'src/file.ts';\n      const invalidPath = 'src/file\\x00.ts';\n\n      expect(validPath.includes('\\x00')).toBe(false);\n      expect(invalidPath.includes('\\x00')).toBe(true);\n    })",
+      "expectedDisposition": "remove",
+      "reason": "Checks String.includes on local paths rather than application validation. Preserve actual null-byte rejection tests in main/shared validators.",
+      "evidence": [
+        "src/features/agent/__tests__/workspace-isolation.test.ts:226",
+        "src/main/__tests__/workspace-validation.test.ts:38",
+        "src/shared/validation/__tests__/validation.test.ts:189",
+        "src/shared/validation/__tests__/validation.test.ts:204"
+      ],
+      "baseline": {
+        "quality": 16.65,
+        "confidence": 0.61,
+        "traceId": "de6d2f488b73f8e80201efd768c82cfef9196b9276bb3f879334d72b6cd3c1eb",
+        "evaluationId": 2795
+      },
+      "family": "agent-infrastructure"
+    },
+    {
+      "id": "b16e629b833501f61487b4ea8920328ac9eae499abc8019855df0b96821954c5",
+      "file": "src/lib/components/tiptap/CustomTaskItem.test.ts",
+      "line": 137,
+      "name": "CustomTaskItem > Functionality Tests (Logic Only) > should create proper CSS anchor names",
+      "status": "active",
+      "sourceHash": "3aea2c0630b33a24a622fdc022fddfa830afe14d6937488c2cf081cdc9868b72",
+      "testCode": "it('should create proper CSS anchor names', () => {\n      // Test the naming convention used in the implementation\n      const anchorId = 'abc123def';\n      const anchorName = `task-menu-anchor-${anchorId}`;\n      const cssAnchorName = `--${anchorName}`;\n\n      expect(anchorName).toBe('task-menu-anchor-abc123def');\n      expect(cssAnchorName).toBe('--task-menu-anchor-abc123def');\n    })",
+      "expectedDisposition": "remove",
+      "reason": "Builds and checks local string templates. Current CustomTaskItem has no corresponding task-menu-anchor implementation. Preserve real extension/command behavior.",
+      "evidence": [
+        "src/lib/components/tiptap/CustomTaskItem.test.ts:137",
+        "src/lib/components/tiptap/CustomTaskItem.ts:65"
+      ],
+      "baseline": {
+        "quality": 18.9875,
+        "confidence": 0.63,
+        "traceId": "c4cf4f5a0f758644ad26d6573804490df2240d16a0d18516184a40553443a738",
+        "evaluationId": 18786
+      },
+      "family": "editor-markdown-mentions"
+    },
+    {
+      "id": "e342ef1b75b86cd54dd319b9bffba546d388baa71926fe96c640bdda8cd4fb15",
+      "file": "src/lib/components/diagrams/diagram-workbench.preview.test.ts",
+      "line": 107,
+      "name": "diagram workbench fixtures > defines minimal examples and explicit contracts for the added showcase cases",
+      "status": "active",
+      "sourceHash": "1d4cc9572a48c2b84ff15e05f4dfbe6b52b54efae56a613ebec269ab47cfea73",
+      "testCode": "it('defines minimal examples and explicit contracts for the added showcase cases', () => {\n    const showcaseIds = [\n      'mermaid-single-node',\n      'mermaid-minimal-sequence',\n      'mermaid-minimal-state',\n      'mermaid-state-recovery',\n      'mermaid-minimal-class',\n      'mermaid-minimal-entity-relationship',\n      'mermaid-nested-routing',\n      'custom-service-boundaries',\n      'custom-delivery-walkthrough',\n    ] as const;\n\n    for (const id of showcaseIds) {\n      const fixture = DIAGRAM_WORKBENCH_CASES[id];\n      expect(fixture.title.trim()).not.toBe('');\n      expect(fixture.description.trim()).not.toBe('');\n      expect(fixture.visualContract?.trim()).not.toBe('');\n    }\n  })",
+      "expectedDisposition": "remove",
+      "reason": "Static fixture metadata checks do not verify rendering; optional visualContract may be missing and still pass not.toBe(empty string). Keep neighboring schema, layout and interaction coverage.",
+      "evidence": [
+        "src/lib/components/diagrams/diagram-workbench.preview.test.ts:107",
+        "src/lib/components/diagrams/diagram-workbench.preview.test.ts:147"
+      ],
+      "baseline": {
+        "quality": 27.925,
+        "confidence": 0.61,
+        "traceId": "d96b33333293d55e2c49e8ac240a7872c98b6c64b6e5fc9495d1300c62fb8d36",
+        "evaluationId": 16123
+      },
+      "family": "diagrams"
+    },
+    {
+      "id": "df4b6a9a935ca616d83d95b76be3e8087af3f5b3a83b76e744f18d3c8e31e809",
+      "file": "src/lib/components/tiptap/__tests__/block-position-resolver.test.ts",
+      "line": 289,
+      "name": "Text Node Walking Helpers > buildTextOffsetMap > should handle empty text nodes",
+      "status": "active",
+      "sourceHash": "2e67b0cc74d021343e9841b30bc5349b97cf4539638e53054d0543f09c9b07e1",
+      "testCode": "it('should handle empty text nodes', () => {\n      const div = document.createElement('div');\n      const span1 = document.createElement('span');\n      span1.textContent = 'Hello';\n      const span2 = document.createElement('span');\n      span2.textContent = '';\n      const span3 = document.createElement('span');\n      span3.textContent = 'World';\n      div.appendChild(span1);\n      div.appendChild(span2);\n      div.appendChild(span3);\n\n      const textNodes = getAllTextNodes(div);\n      const offsetMap = buildTextOffsetMap(textNodes);\n\n      // Should skip empty text nodes or handle them gracefully\n      expect(offsetMap.length).toBeGreaterThan(0);\n    })",
+      "expectedDisposition": "strengthen",
+      "reason": "Production functions are called, but nonempty result does not verify offsets or empty-node handling. Create an actual empty Text node and assert full expected node-to-offset mapping.",
+      "evidence": ["src/lib/components/tiptap/__tests__/block-position-resolver.test.ts:289"],
+      "baseline": {
+        "quality": 44.5,
+        "confidence": 0.65,
+        "traceId": "2dc3a80ea97cc4b8f658ddc562ad86cb3700a48fbd3c67f9fae9639f3b133104",
+        "evaluationId": 18989
+      },
+      "family": "editor-markdown-mentions"
+    },
+    {
+      "id": "fde47c0e115afa427e372ff4ddc78f52cb12942255ee3498815ae9b5faef9ad2",
+      "file": "src/lib/utils/__tests__/vscode-theme-parser.test.ts",
+      "line": 282,
+      "name": "parseVSCodeTheme > maps button.background to --primary",
+      "status": "active",
+      "sourceHash": "9e6b0e0996b50bc8ba29d2e3964bd3bea68663ade3dad1f9fc9de858c5cfcec7",
+      "testCode": "it('maps button.background to --primary', () => {\n    const result = parseVSCodeTheme(MINIMAL_DARK_THEME);\n    expect(result.cssVariables['--primary']).toBeDefined();\n  })",
+      "expectedDisposition": "strengthen",
+      "reason": "Definedness cannot distinguish actual button-color mapping from a fallback. Use an independently expected observable mapped color that respects the documented contrast policy.",
+      "evidence": [
+        "src/lib/utils/__tests__/vscode-theme-parser.test.ts:282",
+        "src/lib/utils/vscode-theme-parser.ts:154",
+        "src/lib/utils/vscode-theme-parser.ts:727"
+      ],
+      "baseline": {
+        "quality": 46.25,
+        "confidence": 0.62,
+        "traceId": "9f30bd924d76998753197ebc7f99049f994a6ee4eb08d0782f8f1d8acbf895ed",
+        "evaluationId": 23497
+      },
+      "family": "theme-parser"
+    },
+    {
+      "id": "0fb75fd2b69e3fd81962e179862d8c56c5a42b001072dbdd91fa272920a9cce2",
+      "file": "src/features/agent/services/__tests__/unified-agent-factory.test.ts",
+      "line": 550,
+      "name": "UnifiedAgentFactory > active-provider availability guard (D1-B) > creates the agent normally when the active provider is available",
+      "status": "active",
+      "sourceHash": "d9e4b2de2be9a9cbf9da7f21a06ed9a2d0972b1a0ca17a69b88a9a0c2c4018dc",
+      "testCode": "it('creates the agent normally when the active provider is available', async () => {\n      mockStoreState.current = {\n        ...mockStoreState.current,\n        providerSettings: { enabledProviders: {} },\n        model: { defaultProviderId: 'claude-code' },\n        agentAvailability: {\n          hasCheckedOnce: true,\n          providerStatusMap: { 'claude-code': { available: true } },\n        },\n      };\n\n      const result = await factory.createAgent(mockWorkspace, {\n        name: 'Test Agent',\n        workspaceId: mockWorkspace.id as any,\n      });\n\n      expect(result.success).toBe(true);\n    })",
+      "expectedDisposition": "keep",
+      "reason": "Exercises real createAgent with provider available and asserts success, paired with unavailable-provider rejection next door. Prevents an always-reject availability guard; modest oracle does not make it vacuous.",
+      "evidence": ["src/features/agent/services/__tests__/unified-agent-factory.test.ts:550"],
+      "baseline": {
+        "quality": 53.5625,
+        "confidence": 0.6,
+        "traceId": "0a8924aa0d977d2d91c90ec489efcad6e5ea2bd1efb88243f35160c5829a4df1",
+        "evaluationId": 3264
+      },
+      "family": "agent-infrastructure"
+    },
+    {
+      "id": "e7ccc527f35c58884eccdfb788bd1b448b6e4a580f39de922d46eb2cfd1cb17b",
+      "file": "src/lib/components/chat/input/SimpleRichInput.test.ts",
+      "line": 450,
+      "name": "SimpleRichInput image paste > adds a pasted image thumbnail without entering a reactive update loop",
+      "status": "active",
+      "sourceHash": "be658d1994ce89cc3b9b3c7b5dd1906e39d738ee33122b5eec67ed842f4f86d1",
+      "testCode": "it('adds a pasted image thumbnail without entering a reactive update loop', async () => {\n    render(SimpleRichInput, { props: { value: '', contextItems: [] } });\n    const file = new File(['image-bytes'], 'pasted.png', { type: 'image/png' });\n\n    await fireEvent.paste(screen.getByTestId('message-input'), {\n      clipboardData: {\n        items: [{ kind: 'file', type: 'image/png', getAsFile: () => file }],\n      },\n    });\n\n    expect(await screen.findByRole('img', { name: 'pasted.png' })).toBeTruthy();\n  })",
+      "expectedDisposition": "keep",
+      "reason": "A real clipboard paste drives SimpleRichInput and produces the named image thumbnail. This is an observable event outcome, not unconditional presence or fixture-only behavior. It protects successful paste rendering; it does not independently establish freedom from every reactive loop.",
+      "evidence": [
+        "src/lib/components/chat/input/SimpleRichInput.svelte:1072",
+        "src/lib/components/chat/input/SimpleRichInput.svelte:1098"
+      ],
+      "baseline": {
+        "quality": 47.0125,
+        "confidence": 0.64,
+        "traceId": "f00a8323df5e10e48eeee0eec2c3297d3d184b00c03ae80e6df86794fe6a554c",
+        "evaluationId": 15068
+      },
+      "family": "editor-markdown-mentions"
+    },
+    {
+      "id": "769bb040709528ebeb57190d54b3fc8ed370ed09ae1bad383eb7d8a42ab9c0df",
+      "file": "src/shared/__tests__/utils.test.ts",
+      "line": 18,
+      "name": "getSafeHomeDir > should return a non-empty path",
+      "status": "active",
+      "sourceHash": "34bef3dd6f870c9b9c58813b205de76009db5a4c1318c8dcc14efeb177ed77ae",
+      "testCode": "it('should return a non-empty path', () => {\n    const result = getSafeHomeDir();\n    expect(result).toBeTruthy();\n    expect(result.length).toBeGreaterThan(1);\n  })",
+      "expectedDisposition": "remove",
+      "reason": "The nonempty/path-length checks repeat assertions later in this file. Consolidate the retained path contract and preserve actual-home and absolute-path coverage. The current environment-dependent cases do not establish invalid-home fallback behavior; do not claim that deletion proves the fallback chain.",
+      "evidence": [
+        "src/shared/__tests__/utils.test.ts:65",
+        "src/shared/__tests__/utils.test.ts:70",
+        "src/shared/main/utils.ts:53"
+      ],
+      "baseline": {
+        "quality": 48.45,
+        "confidence": 0.61,
+        "traceId": "133f93ea7bc845313584ce289abbcf01a498b9b1f3eb51bb5adabcdfa93d2f36",
+        "evaluationId": 25280
+      },
+      "family": "shared-path-utilities"
+    },
+    {
+      "id": "f261d32f50ec02a556f969590318d2ac7867f8b6e5866281053456788e05fbc9",
+      "file": "src/shared/errors/__tests__/localization.test.ts",
+      "line": 65,
+      "name": "Error Localization Module > translateError > should return error translation object",
+      "status": "active",
+      "sourceHash": "79ee527e942138acaa996975f04c3a9ea27296a77a0dffab0a8636e503a789fd",
+      "testCode": "it('should return error translation object', () => {\n      const translation = translateError('AGENT_CREATION_FAILED');\n      expect(translation).toHaveProperty('code');\n      expect(translation).toHaveProperty('locale');\n      expect(translation).toHaveProperty('message');\n    })",
+      "expectedDisposition": "remove",
+      "reason": "Property-existence assertions repeat the stronger translated-error object case immediately above. Changing the error code does not exercise a different object-construction branch. Preserve locale selection and context interpolation tests; no exact translated-copy test is needed.",
+      "evidence": [
+        "src/shared/errors/__tests__/localization.test.ts:45",
+        "src/shared/errors/localization.ts:46"
+      ],
+      "baseline": {
+        "quality": 48.55,
+        "confidence": 0.61,
+        "traceId": "fabf0e861eb2c574572c7f3e0622a8cfed1e3e6822a6bb997dae620c15c1e317",
+        "evaluationId": 25344
+      },
+      "family": "error-recovery-localization"
+    },
+    {
+      "id": "44846bb744d7c44cb1d85a22153afabdd20508e6cabb5dcfe7faba93650ef10b",
+      "file": "src/lib/services/mentions/fuzzy-matcher.test.ts",
+      "line": 162,
+      "name": "pathFuzzyMatch > should score filename matches higher",
+      "status": "active",
+      "sourceHash": "bb1ab8436716a39ee09fc1acc67bfe0d230ab9acf5f55bf6c74e1df6a2087637",
+      "testCode": "it('should score filename matches higher', () => {\n    const withFilename = pathFuzzyMatch('routes/page', 'src/routes/shared/+page.svelte');\n    const withoutFilename = pathFuzzyMatch('routes/shared', 'src/routes/shared/+page.svelte');\n    expect(withFilename).not.toBeNull();\n    expect(withoutFilename).not.toBeNull();\n    // Both should have valid scores\n    expect(withFilename!.score).toBeGreaterThan(0);\n    expect(withoutFilename!.score).toBeGreaterThan(0);\n  })",
+      "expectedDisposition": "strengthen",
+      "reason": "The filename-ranking claim only checks two positive scores. Use matched cases that isolate filename position and assert the intended ordering. Do not simply compare the current two scores: adjacency and exact-segment bonuses also differ, and the preceding test intentionally asserts the opposite ordering for this pair.",
+      "evidence": [
+        "src/lib/services/mentions/fuzzy-matcher.test.ts:152",
+        "src/lib/services/mentions/fuzzy-matcher.ts:263"
+      ],
+      "baseline": {
+        "quality": 48.825,
+        "confidence": 0.65,
+        "traceId": "ef563eb259d13249b516b3952e15f0a43fafe034d62ee88b42b2a904ee2004be",
+        "evaluationId": 22155
+      },
+      "family": "editor-markdown-mentions"
+    },
+    {
+      "id": "eb4572d03a5870d50fe83429122e90e1f0c29efcdea0129e38251a2b47cfac09",
+      "file": "src/lib/utils/__tests__/markdown-processor.test.ts",
+      "line": 202,
+      "name": "TipTap Markdown Processor - Round Trip Tests > Edge Cases > should handle multiple blank lines",
+      "status": "active",
+      "sourceHash": "7ce6359675f4ca20e24acd65cc59acb85d90fac07b5510eb502a712f27bb1cdd",
+      "testCode": "it('should handle multiple blank lines', async () => {\n      const markdown = 'Paragraph 1\\n\\n\\n\\nParagraph 2';\n      const html = await processMarkdownToHTML(markdown);\n      const result = processHTMLToMarkdown(html);\n      // TipTap normalizes multiple blank lines to single blank line\n      expect(result).toContain('Paragraph 1');\n      expect(result).toContain('Paragraph 2');\n    })",
+      "expectedDisposition": "remove",
+      "reason": "The two text-substring checks do not protect blank-line behavior. Stronger tests already verify empty-paragraph counts, serialization, and editor round trips. The candidate's normalization comment is stale: current production preserves extra blank lines as empty paragraphs. Preserve the stronger suite instead of rewriting to the stale comment.",
+      "evidence": [
+        "src/lib/utils/markdown-processor.test.ts:300",
+        "src/lib/utils/markdown-processor.test.ts:309",
+        "src/lib/utils/markdown-processor.test.ts:320",
+        "src/lib/utils/markdown-processor.ts:487"
+      ],
+      "baseline": {
+        "quality": 49.8875,
+        "confidence": 0.63,
+        "traceId": "b32c030320f5e0cdfd7f660e1bc004614342acc2ae1fe75846b29dfa38125246",
+        "evaluationId": 22622
+      },
+      "family": "editor-markdown-mentions"
+    },
+    {
+      "id": "6b770781f8b3958d6865d529d47f6121ce54c28909d6964b42621dd3854116b8",
+      "file": "src/lib/components/chat/questions/__tests__/QuestionWizard.test.ts",
+      "line": 455,
+      "name": "QuestionWizard > renders Other as an auto-growing textarea row",
+      "status": "active",
+      "sourceHash": "60fa39ec1241cbabd2afa1e341c1018975f7cbe5958fcc08a40687fbc871e6af",
+      "testCode": "it('renders Other as an auto-growing textarea row', () => {\n    setup();\n    const input = screen.getByPlaceholderText('Or type your own answer\u2026');\n\n    expect(input.tagName).toBe('TEXTAREA');\n    expect(input.getAttribute('rows')).toBe('1');\n  })",
+      "expectedDisposition": "remove",
+      "reason": "Tag spelling and rows=1 duplicate the case at line 294 and do not test auto-growth. Remove this static presentation case; preserve the neighboring Shift+Enter and free-text submission behavior. Do not describe the surviving static case as proof of resizing either.",
+      "evidence": [
+        "src/lib/components/chat/questions/__tests__/QuestionWizard.test.ts:294",
+        "src/lib/components/chat/questions/__tests__/QuestionWizard.test.ts:304",
+        "src/lib/components/chat/questions/__tests__/QuestionWizard.test.ts:502"
+      ],
+      "baseline": {
+        "quality": 50.35,
+        "confidence": 0.61,
+        "traceId": "b0cade21f28122d5a53259721c2f9dce15a4789e3dbff4e7a34bb7ce44c708b5",
+        "evaluationId": 15716
+      },
+      "family": "chat-interactions"
+    },
+    {
+      "id": "dc8a4c0948e7d8649525da06d6c094f28e061ea548e001da154aa3fe7112dd79",
+      "file": "src/lib/components/chat/__tests__/video-content-routing.test.ts",
+      "line": 38,
+      "name": "agent video renderer routing > mounts the internal video block for standalone video markdown",
+      "status": "active",
+      "sourceHash": "a61836025c3c9a257e11d4eb5b51044e862f5ad991a60a8f18eebee4242fbaf9",
+      "testCode": "it('mounts the internal video block for standalone video markdown', async () => {\n    const MessageContent = (await import('../MessageContent.svelte')).default;\n    const { container } = render(MessageContent, {\n      props: {\n        content: [\n          block({\n            type: 'text',\n            text: '![demo](intent://local/file/.demo-artifacts/demo.webm)',\n          }),\n        ],\n        role: 'assistant',\n        workspaceId: 'workspace-1',\n      },\n    });\n\n    expect(container.querySelector('[data-chat-video]')).toBeTruthy();\n  })",
+      "expectedDisposition": "keep",
+      "reason": "Actual MessageContent parses standalone video markdown and selects the internal video component. Only MarkdownViewer and the store seam are mocked; the asserted video marker comes from the selected production route. Preserve alongside the neighboring non-video and workspace-arrival cases.",
+      "evidence": [
+        "src/lib/components/chat/__tests__/video-content-routing.test.ts:7",
+        "src/lib/components/chat/__tests__/video-content-routing.test.ts:58",
+        "src/lib/components/chat/MessageContent.svelte:478"
+      ],
+      "baseline": {
+        "quality": 50.475,
+        "confidence": 0.64,
+        "traceId": "f69904f205760b6f36c2ad23dc6695dbde121b616fcc8e7f7002a4f5ebde067b",
+        "evaluationId": 14821
+      },
+      "family": "chat-interactions"
+    },
+    {
+      "id": "bfdd45c1f6b7fbe1d1284b8fd8a7e1c547207dd2090cc7a9ef4e07ed29c6170b",
+      "file": "src/lib/components/tiptap/__tests__/TaskItemNodeView.test.ts",
+      "line": 301,
+      "name": "TaskItemNodeView - Basic Rendering > should render indeterminate checkbox for in-progress status",
+      "status": "active",
+      "sourceHash": "d94567db28e8fa02d3963a8801a91253c893943fcc6e85c05da7da48755cef61",
+      "testCode": "it('should render indeterminate checkbox for in-progress status', async () => {\n    const props = createMockProps({\n      node: {\n        attrs: { checked: false, status: 'in-progress' },\n        nodeSize: 10,\n        toJSON: () => ({ type: 'taskItem', attrs: { checked: false, status: 'in-progress' } }),\n      },\n    });\n    const { container } = render(TestTaskItemNodeView, { props });\n\n    const checkbox = container.querySelector('[role=\"checkbox\"]') as HTMLElement;\n    expect(checkbox).toBeTruthy();\n\n    // Verify the task item has the in-progress status\n    // Note: The custom checkbox component's data-state might not update in jsdom\n    // but the parent li element correctly reflects the status\n    const listItem = container.querySelector('li[data-type=\"taskItem\"]') as HTMLElement;\n    expect(listItem.getAttribute('data-status')).toBe('in-progress');\n  })",
+      "expectedDisposition": "remove",
+      "reason": "The unit case claims indeterminate state but only checks existence and the parent status attribute. The browser suite already checks the real current contract: in-progress remains aria-checked=false. Preserve that browser case; do not add a mixed-state assertion based on the stale unit title.",
+      "evidence": ["src/lib/components/tiptap/__tests__/TaskItemNodeView.ct.spec.ts:80"],
+      "baseline": {
+        "quality": 50.8625,
+        "confidence": 0.65,
+        "traceId": "1a36225d47ae0e345651e1ba98cdeab3d84f3019dd62e4a938ed8eb0bf5c3c48",
+        "evaluationId": 18915
+      },
+      "family": "editor-markdown-mentions"
+    },
+    {
+      "id": "d4a0daa10676887c16da6648ab8d42f04604b9c858a720d0bc660645a93805e9",
+      "file": "src/shared/errors/__tests__/recovery.test.ts",
+      "line": 65,
+      "name": "Error Recovery Module > getRecoveryHints > should work without help link",
+      "status": "active",
+      "sourceHash": "fa88f5a211038e3d3bdb6167400656775a286dffbf836b8083f70abb11980d29",
+      "testCode": "it('should work without help link', () => {\n      const hints = getRecoveryHints('AGENT_CREATION_FAILED');\n      expect(hints.code).toBeTruthy();\n      expect(hints.suggestions).toBeTruthy();\n    })",
+      "expectedDisposition": "remove",
+      "reason": "The no-help-link case does not observe helpLink and repeats the same call with weaker assertions than the preceding recovery-hints test. Preserve the stronger object case and the supplied-help-link case. If absence is an important contract, put that assertion into the retained no-link call rather than keeping this duplicate.",
+      "evidence": [
+        "src/shared/errors/__tests__/recovery.test.ts:51",
+        "src/shared/errors/__tests__/recovery.test.ts:58",
+        "src/shared/errors/recovery.ts:385"
+      ],
+      "baseline": {
+        "quality": 52.525,
+        "confidence": 0.71,
+        "traceId": "46756ec42a12d7258761321a86b0dd825dac3cabf51de1a2ca4f33e1cc22ac40",
+        "evaluationId": 25399
+      },
+      "family": "error-recovery-localization"
+    },
+    {
+      "id": "95232ee9f78a8eac662c3b68ff5285e993abb450009aaeeddc0b39a6e8f9d9ac",
+      "file": "src/shared/errors/__tests__/recovery.test.ts",
+      "line": 153,
+      "name": "Error Recovery Module > Automatic Recovery > should mark manual actions as non-automatic",
+      "status": "active",
+      "sourceHash": "fa88f5a211038e3d3bdb6167400656775a286dffbf836b8083f70abb11980d29",
+      "testCode": "it('should mark manual actions as non-automatic', () => {\n      const suggestions = getRecoverySuggestions('AGENT_CREATION_FAILED');\n      const manual = suggestions.filter((s) => !s.automatic);\n      expect(manual.length).toBeGreaterThan(0);\n    })",
+      "expectedDisposition": "strengthen",
+      "reason": "Finding any falsy automatic field does not show that the intended manual actions remain manual; an unrelated or missing flag can satisfy it. Assert the named manual recovery actions and their intended automatic semantics, independently of the exported production table. Combine with the known-error lookup case where practical.",
+      "evidence": [
+        "src/shared/errors/recovery.ts:24",
+        "src/shared/errors/recovery.ts:369",
+        "src/shared/errors/__tests__/recovery.test.ts:139"
+      ],
+      "baseline": {
+        "quality": 52.7375,
+        "confidence": 0.62,
+        "traceId": "5665593fe6049f8fd4c8016029c7b8287a87498a2d4bf14e688ec3e322c95146",
+        "evaluationId": 25406
+      },
+      "family": "error-recovery-localization"
+    },
+    {
+      "id": "c5a6c1a20c338ce0767577b4e0911cae36a2b9dfaa5b686350b9fa056785680f",
+      "file": "src/lib/services/mentions/fuzzy-matcher.test.ts",
+      "line": 34,
+      "name": "fuzzyMatch > should be case-insensitive",
+      "status": "active",
+      "sourceHash": "bb1ab8436716a39ee09fc1acc67bfe0d230ab9acf5f55bf6c74e1df6a2087637",
+      "testCode": "it('should be case-insensitive', () => {\n    const result1 = fuzzyMatch('TEST', 'test');\n    const result2 = fuzzyMatch('test', 'TEST');\n    expect(result1).not.toBeNull();\n    expect(result2).not.toBeNull();\n  })",
+      "expectedDisposition": "keep",
+      "reason": "Non-null is a valid oracle for the binary matching contract. The test calls the actual fuzzy matcher with opposite casing in both directions; making matching case-sensitive would break it. Numeric ranking is a different contract covered by other cases.",
+      "evidence": [
+        "src/lib/services/mentions/fuzzy-matcher.ts:26",
+        "src/lib/services/mentions/fuzzy-matcher.test.ts:34"
+      ],
+      "baseline": {
+        "quality": 52.7625,
+        "confidence": 0.62,
+        "traceId": "54b50f0437d6c7106f57f4fc5999ecb2632d00d1521964ef91943ae0dba648eb",
+        "evaluationId": 22136
+      },
+      "family": "editor-markdown-mentions"
+    },
+    {
+      "id": "3fa17c031220f439ee2529ee26e44a8c750d3528e7b71db4c7154476ef04239b",
+      "file": "src/lib/components/workspace/sidebar/__tests__/SidebarChangesPanel.test.ts",
+      "line": 1038,
+      "name": "SidebarChangesPanel > Rendering > renders PR section with draft PR",
+      "status": "active",
+      "sourceHash": "cb21edb56c24c3b49db63524b4da095e98a0f30e20950f15e09de9dfe96b1f32",
+      "testCode": "it('renders PR section with draft PR', async () => {\n      const workspace = makeWorkspace({\n        pullRequests: [\n          {\n            number: 42,\n            title: 'Draft PR',\n            url: 'https://github.com/testorg/testrepo/pull/42',\n            status: 'Draft',\n            createdAt: new Date().toISOString(),\n            updatedAt: new Date().toISOString(),\n          },\n        ],\n      });\n      mockWorkspaceStore.findById.mockReturnValue(workspace);\n\n      const { container } = await renderPanel();\n\n      await waitFor(() => {\n        const text = container.textContent;\n        expect(text).toContain('Draft PR');\n      });\n    })",
+      "expectedDisposition": "strengthen",
+      "reason": "The fixture title is Draft PR, and the assertion only finds that title. A renderer that ignores draft status can pass. Use a neutral title and observe a documented status-dependent accessible state or available action, checking existing PRSection coverage before adding another case.",
+      "evidence": [
+        "src/lib/components/workspace/sidebar/SidebarChangesPanel.svelte:1281",
+        "src/lib/components/workspace/sidebar/PRSection.svelte"
+      ],
+      "baseline": {
+        "quality": 52.9125,
+        "confidence": 0.6,
+        "traceId": "4272aed1983e24d7430086081d16014af3e40e0b970eec5f05871eee29e9aef0",
+        "evaluationId": 21229
+      },
+      "family": "workspace-ui-persistence"
+    },
+    {
+      "id": "419b8be5eb65a79db1d812abc8d899e9b1a0c034d82e4d59f40c6cbd228850ea",
+      "file": "src/lib/components/workspace/sidebar/__tests__/SidebarChangesPanel.test.ts",
+      "line": 981,
+      "name": "SidebarChangesPanel > Rendering > renders PR section with merged PR",
+      "status": "active",
+      "sourceHash": "cb21edb56c24c3b49db63524b4da095e98a0f30e20950f15e09de9dfe96b1f32",
+      "testCode": "it('renders PR section with merged PR', async () => {\n      const workspace = makeWorkspace({\n        pullRequests: [\n          {\n            number: 42,\n            title: 'Merged PR',\n            url: 'https://github.com/testorg/testrepo/pull/42',\n            status: 'Merged',\n            createdAt: new Date().toISOString(),\n            updatedAt: new Date().toISOString(),\n          },\n        ],\n      });\n      mockWorkspaceStore.findById.mockReturnValue(workspace);\n\n      const { container } = await renderPanel();\n\n      await waitFor(() => {\n        const text = container.textContent;\n        expect(text).toContain('Merged PR');\n      });\n    })",
+      "expectedDisposition": "strengthen",
+      "reason": "The fixture title is Merged PR, so finding it does not verify merged-state behavior. Use a neutral title and check an actual merged-state consequence. Preserve the separate historical-plus-open coexistence regression; that test has a different purpose.",
+      "evidence": [
+        "src/lib/components/workspace/sidebar/SidebarChangesPanel.svelte:1281",
+        "src/lib/components/workspace/sidebar/__tests__/SidebarChangesPanel.test.ts:1004",
+        "src/lib/components/workspace/sidebar/PRSection.svelte"
+      ],
+      "baseline": {
+        "quality": 53.5875,
+        "confidence": 0.63,
+        "traceId": "036221dc4f7fa52e83a8a9c677230ec40d6b9652b7ab0d2399c84f5fa66058ee",
+        "evaluationId": 21227
+      },
+      "family": "workspace-ui-persistence"
+    },
+    {
+      "id": "17fcd6910bb34be0586e13e62383654b6312c67362f1e9bc4ab4df52f3ea7ac0",
+      "file": "src/shared/errors/__tests__/recovery.test.ts",
+      "line": 15,
+      "name": "Error Recovery Module > getRecoverySuggestions > should return suggestions for known error code",
+      "status": "active",
+      "sourceHash": "fa88f5a211038e3d3bdb6167400656775a286dffbf836b8083f70abb11980d29",
+      "testCode": "it('should return suggestions for known error code', () => {\n      const suggestions = getRecoverySuggestions('AGENT_CREATION_FAILED');\n      expect(Array.isArray(suggestions)).toBe(true);\n      expect(suggestions.length).toBeGreaterThan(0);\n    })",
+      "expectedDisposition": "strengthen",
+      "reason": "Both known-code lookup and unknown-code fallback return nonempty arrays. The present assertion cannot distinguish them. Assert stable recovery action identifiers required for this known error using independent expectations, not RECOVERY_SUGGESTIONS as the oracle.",
+      "evidence": [
+        "src/shared/errors/recovery.ts:24",
+        "src/shared/errors/recovery.ts:369",
+        "src/shared/errors/__tests__/recovery.test.ts:21"
+      ],
+      "baseline": {
+        "quality": 53.8375,
+        "confidence": 0.72,
+        "traceId": "c6e33cc5f67659850f84f2516c6dbe3544b5101e285847c29f1c3ae8fcb99a23",
+        "evaluationId": 25392
+      },
+      "family": "error-recovery-localization"
+    },
+    {
+      "id": "995a53ebb0f53952b980e7a8a3636523066dbbe2df973ea1e7b9c9de081e89d9",
+      "file": "src/lib/components/workspace/sidebar/__tests__/SidebarChangesPanel.test.ts",
+      "line": 924,
+      "name": "SidebarChangesPanel > Rendering > renders PR section with open PR",
+      "status": "active",
+      "sourceHash": "cb21edb56c24c3b49db63524b4da095e98a0f30e20950f15e09de9dfe96b1f32",
+      "testCode": "it('renders PR section with open PR', async () => {\n      const workspace = makeWorkspace({\n        pullRequests: [\n          {\n            number: 42,\n            title: 'My PR',\n            url: 'https://github.com/testorg/testrepo/pull/42',\n            status: 'Open',\n            createdAt: new Date().toISOString(),\n            updatedAt: new Date().toISOString(),\n          },\n        ],\n      });\n      mockWorkspaceStore.findById.mockReturnValue(workspace);\n\n      const { container } = await renderPanel();\n\n      await waitFor(() => {\n        const text = container.textContent;\n        expect(text).toContain('My PR');\n      });\n    })",
+      "expectedDisposition": "keep",
+      "reason": "This is a basic data-to-rendered-PR title case through the actual panel and PR section. It detects losing the PR rendering path. Keep one such baseline; it does not establish open-state-specific action behavior, which should not be credited to this assertion.",
+      "evidence": [
+        "src/lib/components/workspace/sidebar/SidebarChangesPanel.svelte:1281",
+        "src/lib/components/workspace/sidebar/PRSection.svelte"
+      ],
+      "baseline": {
+        "quality": 54.325,
+        "confidence": 0.66,
+        "traceId": "5f588e73d7cb9dd6a2687474b3bd4e66358ff2f4c2829f0264d98e1d8ad18d8c",
+        "evaluationId": 21225
+      },
+      "family": "workspace-ui-persistence"
+    },
+    {
+      "id": "a971289a4ae68fe7c02551ebafadf2a431fc247fc1b3539b695ad0f01687a5c8",
+      "file": "src/lib/components/chat/__tests__/AgentsList.test.ts",
+      "line": 94,
+      "name": "AgentsList > should render with array of agents",
+      "status": "active",
+      "sourceHash": "32541cafcd21821b851dc15fda977c2410f4b46767d70d869e185fb2ca71b818",
+      "testCode": "it('should render with array of agents', () => {\n    const { container } = render(AgentsList, {\n      props: {\n        agents: mockAgents,\n        collapsed: false,\n      },\n    });\n\n    expect(container.textContent).toContain('Test Agent 1');\n    expect(container.textContent).toContain('Test Agent 2');\n  })",
+      "expectedDisposition": "keep",
+      "reason": "The real AgentsList receives two agents and renders both names. Mocks replace navigation and selector boundaries, not the list rendering under test. This protects collection rendering alongside separate collapsed and empty-input cases.",
+      "evidence": [
+        "src/lib/components/chat/AgentsList.svelte",
+        "src/lib/components/chat/__tests__/AgentsList.test.ts:102",
+        "src/lib/components/chat/__tests__/AgentsList.test.ts:132"
+      ],
+      "baseline": {
+        "quality": 54.4375,
+        "confidence": 0.61,
+        "traceId": "3c7ea6c87cf769468d41dea86aebf87359dd945172ebb0eb1f98e69f02da352b",
+        "evaluationId": 12229
+      },
+      "family": "chat-interactions"
+    },
+    {
+      "id": "cdbe2135fba6a7b729390176d6b068e0d20a50a8d05a05533e6224d7670dc62c",
+      "file": "src/lib/components/workspace/sidebar/__tests__/SidebarChangesPanel.test.ts",
+      "line": 905,
+      "name": "SidebarChangesPanel > Rendering > renders commit list with pushed vs unpushed commits",
+      "status": "active",
+      "sourceHash": "cb21edb56c24c3b49db63524b4da095e98a0f30e20950f15e09de9dfe96b1f32",
+      "testCode": "it('renders commit list with pushed vs unpushed commits', async () => {\n      const commits = [\n        makeCommit({ hash: 'abc123', message: 'feat: add feature', isPushed: false }),\n        makeCommit({ hash: 'def456', message: 'fix: bug fix', isPushed: true }),\n      ];\n      mockFileTrackingStore.commits = commits;\n      mockWorkspaceStore.findById.mockReturnValue(makeWorkspace());\n\n      const { container } = await renderPanel();\n\n      await waitFor(() => {\n        const text = container.textContent;\n        expect(text).toContain('feat: add feature');\n        expect(text).toContain('fix: bug fix');\n        // Should show \"Pushed to remote\" divider\n        expect(text).toContain('Pushed to remote');\n      });\n    })",
+      "expectedDisposition": "strengthen",
+      "reason": "Both commit messages plus a divider can pass when the pushed/unpushed assignment is wrong. Assert each commit's membership in its intended status group or status-dependent action, not just unconditional text or visual order.",
+      "evidence": [
+        "src/lib/components/workspace/sidebar/SidebarChangesPanel.svelte:1249",
+        "src/lib/components/workspace/sidebar/CommitsTimeline.svelte"
+      ],
+      "baseline": {
+        "quality": 55.8375,
+        "confidence": 0.66,
+        "traceId": "7f77d55b3432fa47ddb405b63c5489c4dededfc443843b02a521bb39f6705dd3",
+        "evaluationId": 21224
+      },
+      "family": "workspace-ui-persistence"
+    },
+    {
+      "id": "ef40b5b464eab71ddc16b149a59619ab9f84959ebe0214b84c8cc7052af8856d",
+      "file": "src/lib/utils/__tests__/choice-block-markdown.test.ts",
+      "line": 13,
+      "name": "Choice Block - Markdown Processing > Parsing (Markdown \u2192 HTML) - V2 Structure > should recognize choice block and convert to HTML div",
+      "status": "skipped",
+      "sourceHash": "ec6928d56c6738be458a34267104fff75228a5c7abedf6c4bd6db44dc00d2d78",
+      "testCode": "it('should recognize choice block and convert to HTML div', async () => {\n      const markdown = `\\`\\`\\`choice\nWhich one?\n( ) Option A\n(x) Option B\n\\`\\`\\``;\n\n      const html = await processMarkdownToHTML(markdown);\n\n      // Should create a div with data-type=\"choice-block\"\n      expect(html).toContain('data-type=\"choice-block\"');\n    })",
+      "expectedDisposition": "retire-skipped",
+      "reason": "The enclosing describe is explicitly skipped because markdown processing leaves choice fences as code and TipTap owns structured choice nodes. Retire this obsolete processor expectation while preserving serialization and editor choice behavior. It currently costs no executed test case; this is declaration cleanup.",
+      "evidence": [
+        "src/lib/utils/__tests__/choice-block-markdown.test.ts:8",
+        "src/lib/utils/__tests__/choice-block-markdown.test.ts:80",
+        "src/lib/components/tiptap/__tests__/choice-question-enter.test.ts:29"
+      ],
+      "baseline": {
+        "quality": 56.25,
+        "confidence": 0.6,
+        "traceId": "5356c1d746259644241cd3c4b97f40d78980c97b8d797a1d1182c7ab9a9f3516",
+        "evaluationId": 22285
+      },
+      "family": "editor-markdown-mentions"
+    },
+    {
+      "id": "3dc5f5ba898aedbe0f49fad9b8f43f0afcb1f25c7797d743505e9480c0409cd5",
+      "file": "src/lib/services/mentions/fuzzy-matcher.test.ts",
+      "line": 121,
+      "name": "pathFuzzyMatch > should match exact path segments",
+      "status": "active",
+      "sourceHash": "bb1ab8436716a39ee09fc1acc67bfe0d230ab9acf5f55bf6c74e1df6a2087637",
+      "testCode": "it('should match exact path segments', () => {\n    const result = pathFuzzyMatch('src/index', 'src/index.ts');\n    expect(result).not.toBeNull();\n    expect(result?.score).toBeGreaterThan(0);\n  })",
+      "expectedDisposition": "keep",
+      "reason": "An ordered path-segment query is passed to the real matcher and must produce a match. Paired with unmatched and empty-input cases, this is a legitimate positive contract. The score check is modest, but the test is neither vacuous nor fixture-only.",
+      "evidence": [
+        "src/lib/services/mentions/fuzzy-matcher.test.ts:121",
+        "src/lib/services/mentions/fuzzy-matcher.test.ts:147",
+        "src/lib/services/mentions/fuzzy-matcher.ts:263"
+      ],
+      "baseline": {
+        "quality": 56.45,
+        "confidence": 0.62,
+        "traceId": "b46a4d1dcb1fbcb9b2ddb7a330338cbf8fc6e68f56288124eac04f0734759929",
+        "evaluationId": 22148
+      },
+      "family": "editor-markdown-mentions"
+    },
+    {
+      "id": "48de18a2c0bb51b451f079cb686b38b7a1fba1cee52eb6f586b38cd716c9c1f9",
+      "file": "src/lib/utils/__tests__/tasks-block-markdown.test.ts",
+      "line": 142,
+      "name": "Task Block - Markdown Processing > Parsing (Markdown \u2192 HTML) > should render multiple @@@task blocks as skeleton loaders",
+      "status": "active",
+      "sourceHash": "88d5902b61e08f0ee9be7ec5fbc5da7bece38b1a8745f5061547e0169d2aa00e",
+      "testCode": "it('should render multiple @@@task blocks as skeleton loaders', async () => {\n      const markdown = `@@@task\n# Task One\nContent one.\n@@@\n\n@@@task\n# Task Two\nContent two.\n@@@\n\n@@@task\n# Task Three\nContent three.\n@@@`;\n\n      const html = await processMarkdownToHTML(markdown);\n\n      // All @@@task blocks should render as skeleton loaders\n      expect(html).toContain('data-type=\"task-block\"');\n      expect(html).toContain('task-block-pending');\n      expect(html).toContain('task-block-checkbox');\n    })",
+      "expectedDisposition": "strengthen",
+      "reason": "Three input task blocks are accepted if just one skeleton exists. Assert three parsed task-block outputs and their relevant disabled placeholder state. Production skeletons intentionally omit task titles and body text, so do not require those strings in this rendering mode.",
+      "evidence": [
+        "src/lib/utils/tiptap-task-block-extension.ts:35",
+        "src/lib/utils/tiptap-task-block-extension.ts:75"
+      ],
+      "baseline": {
+        "quality": 56.65,
+        "confidence": 0.62,
+        "traceId": "84694c126855a93bb5d7a81a47133d7cac3143486e54c6548f6a6faf0efba4cc",
+        "evaluationId": 23200
+      },
+      "family": "editor-markdown-mentions"
+    },
+    {
+      "id": "2bdb1a765202ed77229cd6cc6a22626b053f3a96fec36827c25f575c4ea0bc62",
+      "file": "src/lib/components/workspace/sidebar/__tests__/SidebarChangesPanel.test.ts",
+      "line": 1752,
+      "name": "SidebarChangesPanel > State Management > renders both unstaged and staged changes simultaneously",
+      "status": "active",
+      "sourceHash": "cb21edb56c24c3b49db63524b4da095e98a0f30e20950f15e09de9dfe96b1f32",
+      "testCode": "it('renders both unstaged and staged changes simultaneously', async () => {\n      const unstaged = [makeChange({ relativePath: 'src/unstaged.ts' })];\n      const staged = [makeChange({ relativePath: 'src/staged.ts', stage: ChangeStage.Staged })];\n      mockFileTrackingStore.unstagedChanges = unstaged;\n      mockFileTrackingStore.stagedChanges = staged;\n      mockWorkspaceStore.findById.mockReturnValue(makeWorkspace());\n\n      const { container } = await renderPanel();\n\n      await waitFor(() => {\n        const text = container.textContent || '';\n        expect(text).toContain('Unstaged');\n        expect(text).toContain('Staged');\n      });\n    })",
+      "expectedDisposition": "strengthen",
+      "reason": "The two section headings do not establish that both files are rendered in the correct stage. Check each distinct file's membership in the staged or unstaged section through the production grouping. The mocked file-row leaf may be used to observe which props the real parent routes.",
+      "evidence": [
+        "src/lib/components/workspace/sidebar/__tests__/SidebarChangesPanel.test.ts:570",
+        "src/lib/components/workspace/sidebar/SidebarChangesPanel.svelte:1218"
+      ],
+      "baseline": {
+        "quality": 56.675,
+        "confidence": 0.64,
+        "traceId": "f17107e4969dceb981f470a3c90e493f25a63f2f043703b232dd6aa1394151b6",
+        "evaluationId": 21256
+      },
+      "family": "workspace-ui-persistence"
+    },
+    {
+      "id": "99fea46bd0dbe9156de665efa188e61ae7cc6664ffcea52570da76d6dd2c224c",
+      "file": "src/lib/components/workspace/sidebar/__tests__/CommitsTimeline.test.ts",
+      "line": 263,
+      "name": "CommitsTimeline > renders commits from the selector with correct messages",
+      "status": "active",
+      "sourceHash": "e653076d6a1fe91042d14d93146986edf971d10484bd6204ab1b5a6df0be7bfe",
+      "testCode": "it('renders commits from the selector with correct messages', async () => {\n    mocks.ftCommits.push(\n      makeCommit('abc', 'feat: one'),\n      makeCommit('def', 'fix: two', { isPushed: true }),\n    );\n    const { container } = await renderTimeline();\n    expect(container.textContent).toContain('feat: one');\n    expect(container.textContent).toContain('fix: two');\n  })",
+      "expectedDisposition": "keep",
+      "reason": "The actual timeline reads the selector seam and renders two distinct commit messages. This detects a dropped or disconnected commit list. Store mocking does not make the resulting production rendering fixture-only; grouping and actions have separate tests.",
+      "evidence": [
+        "src/lib/components/workspace/sidebar/__tests__/CommitsTimeline.test.ts:74",
+        "src/lib/components/workspace/sidebar/CommitsTimeline.svelte"
+      ],
+      "baseline": {
+        "quality": 56.95,
+        "confidence": 0.65,
+        "traceId": "8f158e68bbfadbd7fe54d147a7f2204b4bb6002900b37dc98a1898d3826f6e75",
+        "evaluationId": 21101
+      },
+      "family": "workspace-ui-persistence"
+    },
+    {
+      "id": "35e55afeddc0b1d3870c4247829c48cb498f6e960eb1a50aa80929ebf9395df1",
+      "file": "src/lib/utils/__tests__/large-content-markdown.test.ts",
+      "line": 76,
+      "name": "Large Content Processing > should process large plain markdown (>5000 chars) correctly",
+      "status": "active",
+      "sourceHash": "01cfba5c0b9d75f14f9d9326026880a644e1f53c6c76092da2e67edc93571cdd",
+      "testCode": "it('should process large plain markdown (>5000 chars) correctly', async () => {\n    const markdown = generateLargeMarkdown();\n    expect(markdown.length).toBeGreaterThan(5000);\n\n    const html = await processMarkdownToHTML(markdown);\n\n    // Verify basic structure is preserved\n    expect(html).toContain('<h2>');\n    expect(html).toContain('Section 0');\n    expect(html).toContain('Section 29');\n    expect(html).toContain('Lorem ipsum');\n    expect(html).toContain('<p>');\n  })",
+      "expectedDisposition": "keep",
+      "reason": "The generated large input is a precondition, then the actual markdown processor must produce HTML containing both the beginning and the tail section. That catches truncation and failed parsing on large content. The input-length assertion alone is not the test's oracle. No runtime-performance guarantee is established.",
+      "evidence": [
+        "src/lib/utils/__tests__/large-content-markdown.test.ts:71",
+        "src/lib/utils/markdown-processor.ts:593"
+      ],
+      "baseline": {
+        "quality": 57.3625,
+        "confidence": 0.66,
+        "traceId": "e368fdcf1bd5789319c88586348791dd0f7934583c1a046fcb6e3a8ca3eeffc0",
+        "evaluationId": 22580
+      },
+      "family": "editor-markdown-mentions"
+    },
+    {
+      "id": "d304c96fcb9a386de79f16f5bc360ffe23b08dc29340cf9a5ceb65446c177cb9",
+      "file": "src/lib/components/chat/__tests__/ChatMessage-image-lightbox.test.ts",
+      "line": 285,
+      "name": "ChatMessage image lightbox > opens lightbox with Enter key",
+      "status": "active",
+      "sourceHash": "e8efaf88d4a2e6e684fd5187521431003fd7b7de1b344d5e52c8273e434c311b",
+      "testCode": "it('opens lightbox with Enter key', async () => {\n    const message = createMessageWithImage();\n    render(ChatMessage, { props: { message } });\n\n    const imageButton = screen.getByRole('button', {\n      name: /view attached image 1 of 1 full size/i,\n    });\n\n    // Press Enter key\n    await fireEvent.keyDown(imageButton, { key: 'Enter' });\n\n    // Check if lightbox appears\n    await waitFor(() => {\n      const dialog = screen.getByRole('dialog', { name: /image preview/i });\n      expect(dialog).toBeTruthy();\n    });\n  })",
+      "expectedDisposition": "keep",
+      "reason": "Enter on the actual ChatMessage thumbnail causes an image-preview dialog to open. This is a keyboard interaction contract with real component state, not an unconditional visibility check. Preserve it separately from mouse activation.",
+      "evidence": [
+        "src/lib/components/chat/ChatMessage.svelte:965",
+        "src/lib/components/chat/ChatMessage.svelte:1754",
+        "src/lib/components/chat/ChatMessage.svelte:1917"
+      ],
+      "baseline": {
+        "quality": 57.375,
+        "confidence": 0.7,
+        "traceId": "de0627cf370c2e4f9df36739958847adaecac1e747ec45715c9e5f88786ab20e",
+        "evaluationId": 12469
+      },
+      "family": "chat-interactions"
+    },
+    {
+      "id": "0cb99fe7c871d949200a88f6111a57e7162facd87aa3c7371f0a839e58766e9e",
+      "file": "src/lib/components/settings/LegacyImportSettings.test.ts",
+      "line": 91,
+      "name": "LegacyImportSettings > renders error state from the slice",
+      "status": "active",
+      "sourceHash": "27442dd53d833c17d4ed99213f3048eadabac92ec91d2e46cab9f2f05dc571fe",
+      "testCode": "it('renders error state from the slice', () => {\n    mocks.state.error = 'Local connection required';\n    render(LegacyImportSettings);\n\n    expect(screen.getByRole('alert')).toBeTruthy();\n  })",
+      "expectedDisposition": "keep",
+      "reason": "The actual LegacyImportSettings consumes error state and chooses an accessible alert branch. The injected error is input to production conditional rendering, not a test of the fixture object. The assertion protects error visibility, though not precise error-detail propagation.",
+      "evidence": [
+        "src/lib/components/settings/LegacyImportSettings.svelte:58",
+        "src/lib/components/settings/LegacyImportSettings.test.ts:48"
+      ],
+      "baseline": {
+        "quality": 57.475,
+        "confidence": 0.6,
+        "traceId": "47356ecefebc3e360d97ebc9c85629468bda14cd483a7c5b2cadd3321fa9687c",
+        "evaluationId": 18413
+      },
+      "family": "legacy-import"
+    },
+    {
+      "id": "05169e87f13edcff4742edfdb937823dd77b884f7581fd8b54161fd74ed49179",
+      "file": "src/features/comments/__tests__/anchor-normalization-integration.test.ts",
+      "line": 125,
+      "name": "Anchor Normalization Integration > Lists with normalized anchors > should find anchors in unordered list item",
+      "status": "active",
+      "sourceHash": "49849b923614f44b63d341994ed7ad70e2e0e4dd6ba3d13ff00d66f9f868eb61",
+      "testCode": "it('should find anchors in unordered list item', async () => {\n      const markdown = '- <!--anchor:list-test:start-->List item<!--anchor:list-test:end-->';\n      const html = await processMarkdownToHTML(markdown, { preserveAnchors: true });\n\n      // Fix missing data-anchor-id attributes and load into editor\n      const fixedHtml = fixAnchorAttributes(html);\n      editor.commands.setContent(fixedHtml);\n\n      const anchors = findCommentAnchors(editor.state.doc, 'list-test');\n      expect(anchors.start).toBeDefined();\n      expect(anchors.end).toBeDefined();\n    })",
+      "expectedDisposition": "strengthen",
+      "reason": "The integration test repairs markdown output with fixAnchorAttributes before TipTap reads it. This helper can hide a regression in the producer's required data-anchor-id. Feed untouched production HTML into the editor and assert that the expected ordered anchor pair belongs to the list item. Do not infer that a current production bug exists from the old workaround.",
+      "evidence": [
+        "src/features/comments/__tests__/anchor-normalization-integration.test.ts:20",
+        "src/lib/utils/markdown-processor.ts:827",
+        "src/lib/components/tiptap/CommentAnchor.ts:76",
+        "src/lib/components/tiptap/CommentAnchor.ts:232"
+      ],
+      "baseline": {
+        "quality": 57.6875,
+        "confidence": 0.61,
+        "traceId": "e509fad7a41b74d725538727efdf9ffc4e4d4494cd045034aeb2f2232bbfa863",
+        "evaluationId": 5359
+      },
+      "family": "editor-markdown-mentions"
+    },
+    {
+      "id": "3e1807490bbadb232aba660cf88c249e83ade4e3fef01cc8ada2ce053e284045",
+      "file": "src/lib/components/settings/GitWorkspaceSettings.test.ts",
+      "line": 224,
+      "name": "GitWorkspaceSettings \u2014 CoW isolation toggle > associates the CoW description with its toggle",
+      "status": "active",
+      "sourceHash": "7c4ffa78b3d1e17ed644f3309862a788e1ac72653dac6c82efd02ac50d8f22d4",
+      "testCode": "it('associates the CoW description with its toggle', async () => {\n    mocks.mockCapabilities.mockResolvedValue({ cowSupported: true });\n\n    render(GitWorkspaceSettings);\n\n    const toggle = await waitFor(() => screen.getByRole('checkbox', { name: COW_LABEL }));\n    const descriptionId = toggle.getAttribute('aria-describedby');\n    expect(descriptionId ? document.getElementById(descriptionId) : null).toBeTruthy();\n  })",
+      "expectedDisposition": "keep",
+      "reason": "The capability-dependent CoW control exposes aria-describedby, and the test resolves that relationship to a real DOM element. This is accessibility wiring rather than CSS spelling. It does not prove the exact description content, but severing the association breaks the check.",
+      "evidence": [
+        "src/lib/components/settings/GitWorkspaceSettings.svelte:325",
+        "src/lib/components/settings/GitWorkspaceSettings.svelte:333"
+      ],
+      "baseline": {
+        "quality": 57.7375,
+        "confidence": 0.6,
+        "traceId": "c19aa5ad7cd32f9af175c6d1100a9578eab97fc2155a045895d66c18ef7bef26",
+        "evaluationId": 18313
+      },
+      "family": "workspace-ui-persistence"
+    },
+    {
+      "id": "e64de75c34fa4c9b95da21c6813954e263934a1878401b32754c96fd8ace50f0",
+      "file": "src/lib/components/workspace/initializer/__tests__/RepoAndBranchPicker.test.ts",
+      "line": 199,
+      "name": "RepoAndBranchPicker > summarises the GitHub clone flow without claiming a worktree is created",
+      "status": "active",
+      "sourceHash": "e00b83277fc5f2e5d57f025f136d9d76df61fe7d4d04d2de60224eb882c72569",
+      "testCode": "it('summarises the GitHub clone flow without claiming a worktree is created', () => {\n    const { container } = render(RepoAndBranchPicker, {\n      props: {\n        repoType: 'github',\n        githubUrl: 'https://github.com/intent-hq/monorepo',\n        repoPath: 'intent-hq/monorepo',\n        branch: 'main',\n      },\n    });\n\n    const text = container.textContent?.replace(/\\s+/g, ' ') ?? '';\n    expect(text).toContain('Clone');\n    expect(text).toContain('and work off');\n    expect(text).not.toContain('worktree');\n  })",
+      "expectedDisposition": "remove",
+      "reason": "The assertions enforce literal explanatory copy: Clone, and work off, and absence of worktree. They neither initiate cloning nor verify workspace creation. This is a static-copy test under the repository's testing policy. Do not represent it as runtime clone-flow coverage or delete actual initialization/action tests.",
+      "evidence": [
+        "src/lib/components/workspace/initializer/__tests__/RepoAndBranchPicker.test.ts:199",
+        "src/lib/components/workspace/initializer/RepoAndBranchPicker.svelte"
+      ],
+      "baseline": {
+        "quality": 57.7875,
+        "confidence": 0.6,
+        "traceId": "4d4a25a20bfb7f3c2006b814d6f07f4d588cdf6fecce63aa2f0d751f0ec54539",
+        "evaluationId": 20607
+      },
+      "family": "workspace-ui-persistence"
+    },
+    {
+      "id": "d887bf49783f0939b2e5fddb2f3bc3e85cec2bf36ad91f346c6e443dfe9c2a99",
+      "file": "src/lib/components/chat/__tests__/ChatMessage-image-lightbox.test.ts",
+      "line": 303,
+      "name": "ChatMessage image lightbox > opens lightbox with Space key",
+      "status": "active",
+      "sourceHash": "e8efaf88d4a2e6e684fd5187521431003fd7b7de1b344d5e52c8273e434c311b",
+      "testCode": "it('opens lightbox with Space key', async () => {\n    const message = createMessageWithImage();\n    render(ChatMessage, { props: { message } });\n\n    const imageButton = screen.getByRole('button', {\n      name: /view attached image 1 of 1 full size/i,\n    });\n\n    // Press Space key\n    await fireEvent.keyDown(imageButton, { key: ' ' });\n\n    // Check if lightbox appears\n    await waitFor(() => {\n      const dialog = screen.getByRole('dialog', { name: /image preview/i });\n      expect(dialog).toBeTruthy();\n    });\n  })",
+      "expectedDisposition": "keep",
+      "reason": "Space activation exercises the actual ChatMessage keyboard branch and opens the real image-preview dialog. Preserve this key contract even though Enter uses the same handler; removing support for one key can regress independently.",
+      "evidence": [
+        "src/lib/components/chat/ChatMessage.svelte:1754",
+        "src/lib/components/chat/ChatMessage.svelte:1917"
+      ],
+      "baseline": {
+        "quality": 57.85,
+        "confidence": 0.67,
+        "traceId": "6c92b29ecf028b629d59f47e8a4e2ccf0e36861f4de9b4937355cddb771d228f",
+        "evaluationId": 12470
+      },
+      "family": "chat-interactions"
+    },
+    {
+      "id": "456259ceded5eb54e33deb87ff30a72db99e561e0ffed878cf22013024d56773",
+      "file": "src/shared/types/__tests__/parsers.test.ts",
+      "line": 115,
+      "name": "Safe Parsers > safeParseAgentMessages > should parse arrays of messages",
+      "status": "active",
+      "sourceHash": "519d78be5bd3134051105c5314697260ce7ee150da9d252426833bf9eebf5a6d",
+      "testCode": "it('should parse arrays of messages', () => {\n      const messages = [\n        { id: 'msg-1', role: 'user', content: 'hello', timestamp: new Date() },\n        { id: 'msg-2', role: 'assistant', content: 'hi', timestamp: new Date() },\n      ];\n      const result = safeParseAgentMessages(messages);\n      expect(result).toHaveLength(2);\n    })",
+      "expectedDisposition": "strengthen",
+      "reason": "Length two cannot show that the two valid messages and their identities/content survived parsing. Assert preserved values in the returned output. Keep the invalid-message neighbor and strengthen its retained-ID oracle rather than deriving expected output from the implementation.",
+      "evidence": [
+        "src/shared/types/parsers.ts:90",
+        "src/shared/types/__tests__/parsers.test.ts:125"
+      ],
+      "baseline": {
+        "quality": 58.1625,
+        "confidence": 0.64,
+        "traceId": "6358490d50a16f3a350b6e31f1a791d60dfa6488ca4e104148c998adfb2328fe",
+        "evaluationId": 25950
+      },
+      "family": "wire-parsers"
+    },
+    {
+      "id": "4c1bae430821dc50e346cebc56a2c0650b245e6faabea3f4a0fcc41ef259661d",
+      "file": "src/lib/components/chat/__tests__/ChatMessage-image-lightbox.test.ts",
+      "line": 252,
+      "name": "ChatMessage image lightbox > opens lightbox when image thumbnail is clicked",
+      "status": "active",
+      "sourceHash": "e8efaf88d4a2e6e684fd5187521431003fd7b7de1b344d5e52c8273e434c311b",
+      "testCode": "it('opens lightbox when image thumbnail is clicked', async () => {\n    const message = createMessageWithImage();\n    render(ChatMessage, { props: { message } });\n\n    // Find the image button\n    const imageButton = screen.getByRole('button', {\n      name: /view attached image 1 of 1 full size/i,\n    });\n    expect(imageButton).toBeTruthy();\n\n    // Click the image\n    await fireEvent.click(imageButton);\n\n    // Check if lightbox dialog appears\n    await waitFor(() => {\n      const dialog = screen.getByRole('dialog', { name: /image preview/i });\n      expect(dialog).toBeTruthy();\n    });\n  })",
+      "expectedDisposition": "keep",
+      "reason": "Clicking a real ChatMessage thumbnail opens the real dialog. This is observable mouse behavior. Keep alongside keyboard activation and close/focus tests; the harmless redundant truthy check used while locating the button does not invalidate the later interaction oracle.",
+      "evidence": [
+        "src/lib/components/chat/ChatMessage.svelte:965",
+        "src/lib/components/chat/ChatMessage.svelte:1917",
+        "src/lib/components/chat/__tests__/ChatMessage-image-lightbox.test.ts:322"
+      ],
+      "baseline": {
+        "quality": 58.2375,
+        "confidence": 0.65,
+        "traceId": "77633a90800bb18ca0367f543cb710d203c5b38c23787b7e758f2c7d511bcc05",
+        "evaluationId": 12467
+      },
+      "family": "chat-interactions"
+    },
+    {
+      "id": "5e9c74f8edf1503f66fe7056ee82b24e7dd2e6172487bbbeb034484a7091733d",
+      "file": "tests/unit/mention-providers.test.ts",
+      "line": 216,
+      "name": "PersonalityProvider > should return personality options",
+      "status": "active",
+      "sourceHash": "a253c01ce728483ecd8857699123125a4f33ad7c02be2af663c86b8cd5ef478d",
+      "testCode": "it('should return personality options', async () => {\n    const context: SearchContext = { workspaceId: 'test-workspace' };\n    const results = await provider.search('', context);\n\n    expect(results.length).toBeGreaterThan(0);\n    expect(results[0]).toMatchObject({\n      type: 'personality',\n    });\n  })",
+      "expectedDisposition": "keep",
+      "reason": "The actual PersonalityProvider maps its application-owned catalog into mention candidates. An empty query must return candidates of the expected type. The catalog is not a locally duplicated test implementation. Keep basic positive coverage; the adjacent empty-result-prone filter test needs separate attention.",
+      "evidence": [
+        "src/lib/services/mentions/providers/index.ts:359",
+        "src/lib/services/mentions/providers/index.ts:403",
+        "tests/unit/mention-providers.test.ts:226"
+      ],
+      "baseline": {
+        "quality": 58.3,
+        "confidence": 0.64,
+        "traceId": "e3fa60d0456a96b3c57b3b39ecee32dd61bf7e59e1e00caa7221d9c659c8d3d7",
+        "evaluationId": 33880
+      },
+      "family": "editor-markdown-mentions"
+    },
+    {
+      "id": "2a6df2821f409fb3b81c6b854d5601b685159a464c09e8502ef85614cdf47e81",
+      "file": "src/lib/utils/__tests__/front-matter.test.ts",
+      "line": 71,
+      "name": "YAML Front Matter - Markdown Processing > should process markdown without front matter normally",
+      "status": "active",
+      "sourceHash": "b7893c1063bea2316e5cfceb867f8eeadc3da9004da0a965ed410a40a68bf8ff",
+      "testCode": "it('should process markdown without front matter normally', async () => {\n    const markdown = '# Normal Heading\\n\\nJust regular content.';\n    const html = await processMarkdownToHTML(markdown);\n    expect(html).toContain('Normal Heading');\n    expect(html).toContain('Just regular content');\n  })",
+      "expectedDisposition": "keep",
+      "reason": "A no-front-matter input must retain heading and body content through the real processor. This is the ordinary-input countercase to front-matter stripping, not an unconditional element assertion. It protects content retention; HTML heading semantics are not established by these substring checks.",
+      "evidence": [
+        "src/lib/utils/__tests__/front-matter.test.ts:49",
+        "src/lib/utils/markdown-processor.ts:35",
+        "src/lib/utils/markdown-processor.ts:593"
+      ],
+      "baseline": {
+        "quality": 58.4,
+        "confidence": 0.69,
+        "traceId": "e605b29984a26441d127c3d6cc6149f9b932088eec8a243323c03b7f519ee369",
+        "evaluationId": 22474
+      },
+      "family": "editor-markdown-mentions"
+    },
+    {
+      "id": "5b94562d353cff7c60ce539627f306c00b365c9fb1bf1ce86837fb817d95672e",
+      "file": "src/lib/components/chat/__tests__/AttachmentPreview-lightbox.test.ts",
+      "line": 60,
+      "name": "AttachmentPreview thumbnail lightbox > opens lightbox with Space key",
+      "status": "active",
+      "sourceHash": "1d101b83c97acc115c256f71ca9e4ba05617bf261a505376a2c03a510bcdce32",
+      "testCode": "it('opens lightbox with Space key', async () => {\n    render(AttachmentPreview, {\n      props: {\n        id: 'test-img',\n        name: 'test.png',\n        type: 'image/png',\n        imageData: mockImageData,\n        imageMimeType: mockImageMimeType,\n        variant: 'thumbnail',\n      },\n    });\n\n    const thumbnailButton = screen.getByRole('button', { name: /view test\\.png full size/i });\n\n    // Press Space key\n    await fireEvent.keyDown(thumbnailButton, { key: ' ' });\n\n    // Check if lightbox appears\n    await waitFor(() => {\n      const dialog = screen.getByRole('dialog', { name: /image preview/i });\n      expect(dialog).toBeTruthy();\n    });\n  })",
+      "expectedDisposition": "keep",
+      "reason": "Space on the actual AttachmentPreview button changes component state and opens the dialog. This component has its own keyboard handler, so ChatMessage coverage is not a substitute. No mocked dialog is used.",
+      "evidence": [
+        "src/lib/components/chat/AttachmentPreview.svelte:141",
+        "src/lib/components/chat/AttachmentPreview.svelte:147"
+      ],
+      "baseline": {
+        "quality": 58.8,
+        "confidence": 0.68,
+        "traceId": "258de2cb60ada7a51bc88361574e918d65727f909008bda5e46f83076abde268",
+        "evaluationId": 12243
+      },
+      "family": "chat-interactions"
+    },
+    {
+      "id": "f9fae8cbcd1bc6e17125e349886d32235f46e3904ae1f7f9c46eee02cfc3083b",
+      "file": "src/features/comments/__tests__/anchor-normalization-integration.test.ts",
+      "line": 152,
+      "name": "Anchor Normalization Integration > Lists with normalized anchors > should find anchors in task list item",
+      "status": "active",
+      "sourceHash": "49849b923614f44b63d341994ed7ad70e2e0e4dd6ba3d13ff00d66f9f868eb61",
+      "testCode": "it('should find anchors in task list item', async () => {\n      const markdown = '- [ ] <!--anchor:task-test:start-->Task item<!--anchor:task-test:end-->';\n      const html = await processMarkdownToHTML(markdown, { preserveAnchors: true });\n\n      // Fix missing data-anchor-id attributes and load into editor\n      const fixedHtml = fixAnchorAttributes(html);\n      editor.commands.setContent(fixedHtml);\n\n      const anchors = findCommentAnchors(editor.state.doc, 'task-test');\n      expect(anchors.start).toBeDefined();\n      expect(anchors.end).toBeDefined();\n    })",
+      "expectedDisposition": "strengthen",
+      "reason": "As in the unordered-list case, the test repairs production anchor attributes before asserting they can be found. Remove that repair from the end-to-end path. Also exercise task-list semantics with the appropriate editor extensions if that remains the named contract; this setup currently installs StarterKit plus CommentAnchor only.",
+      "evidence": [
+        "src/features/comments/__tests__/anchor-normalization-integration.test.ts:20",
+        "src/features/comments/__tests__/anchor-normalization-integration.test.ts:36",
+        "src/lib/utils/markdown-processor.ts:827",
+        "src/lib/components/tiptap/CommentAnchor.ts:76"
+      ],
+      "baseline": {
+        "quality": 58.8625,
+        "confidence": 0.6,
+        "traceId": "dd00e810b6c8490b17503b522152005d5e7f7f6694a7e89cb38e733a349bcc66",
+        "evaluationId": 5269
+      },
+      "family": "editor-markdown-mentions"
+    },
+    {
+      "id": "8e33e5e6912e6b330ae160eb8ea594b9dcb7c582e88e78354f7b0ac9e6102ca3",
+      "file": "src/lib/components/workspace/sidebar/__tests__/SidebarChangesPanel.test.ts",
+      "line": 1004,
+      "name": "SidebarChangesPanel > Rendering > renders both a merged historical PR and a newly opened PR from workspace.pullRequests",
+      "status": "active",
+      "sourceHash": "cb21edb56c24c3b49db63524b4da095e98a0f30e20950f15e09de9dfe96b1f32",
+      "testCode": "it('renders both a merged historical PR and a newly opened PR from workspace.pullRequests', async () => {\n      // Post-refresh shape: pr.refresh / pr:linked fold the daemon-owned\n      // per-branch list, which retains merged history alongside the new PR.\n      const workspace = makeWorkspace({\n        pullRequests: [\n          {\n            number: 299,\n            title: 'Old merged PR',\n            url: 'https://github.com/testorg/testrepo/pull/299',\n            status: 'Merged',\n            createdAt: new Date().toISOString(),\n            updatedAt: new Date().toISOString(),\n          },\n          {\n            number: 300,\n            title: 'Newly discovered PR',\n            url: 'https://github.com/testorg/testrepo/pull/300',\n            status: 'Open',\n            createdAt: new Date().toISOString(),\n            updatedAt: new Date().toISOString(),\n          },\n        ],\n      });\n      mockWorkspaceStore.findById.mockReturnValue(workspace);\n\n      const { container } = await renderPanel();\n\n      await waitFor(() => {\n        const text = container.textContent;\n        expect(text).toContain('Old merged PR');\n        expect(text).toContain('Newly discovered PR');\n      });\n    })",
+      "expectedDisposition": "keep",
+      "reason": "The real panel must retain the historical merged PR and newly opened PR simultaneously. Both distinct titles must survive, so collapsing to only the active PR fails. Unlike the single-status title cases, this assertion directly observes its coexistence claim.",
+      "evidence": [
+        "src/lib/components/workspace/sidebar/SidebarChangesPanel.svelte:219",
+        "src/lib/components/workspace/sidebar/SidebarChangesPanel.svelte:1281"
+      ],
+      "baseline": {
+        "quality": 58.875,
+        "confidence": 0.61,
+        "traceId": "85e8405565b6dde2fbc0c30894d1620163d9866263eec227b82e270b7f89fff2",
+        "evaluationId": 21228
+      },
+      "family": "workspace-ui-persistence"
+    },
+    {
+      "id": "5a63ee43bb59c7c1f89df946ee5356664d69f22d85a2f542d5c53f9daa60d55a",
+      "file": "src/lib/components/chat/__tests__/AttachmentPreview-lightbox.test.ts",
+      "line": 36,
+      "name": "AttachmentPreview thumbnail lightbox > opens lightbox with Enter key",
+      "status": "active",
+      "sourceHash": "1d101b83c97acc115c256f71ca9e4ba05617bf261a505376a2c03a510bcdce32",
+      "testCode": "it('opens lightbox with Enter key', async () => {\n    render(AttachmentPreview, {\n      props: {\n        id: 'test-img',\n        name: 'test.png',\n        type: 'image/png',\n        imageData: mockImageData,\n        imageMimeType: mockImageMimeType,\n        variant: 'thumbnail',\n      },\n    });\n\n    const thumbnailButton = screen.getByRole('button', { name: /view test\\.png full size/i });\n\n    // Press Enter key\n    await fireEvent.keyDown(thumbnailButton, { key: 'Enter' });\n\n    // Check if lightbox appears\n    await waitFor(() => {\n      const dialog = screen.getByRole('dialog', { name: /image preview/i });\n      expect(dialog).toBeTruthy();\n    });\n  })",
+      "expectedDisposition": "keep",
+      "reason": "Enter on the actual AttachmentPreview button opens the real dialog. This protects the component's distinct accessibility path; fixture image bytes provide input rather than the observed dialog behavior.",
+      "evidence": [
+        "src/lib/components/chat/AttachmentPreview.svelte:141",
+        "src/lib/components/chat/AttachmentPreview.svelte:147"
+      ],
+      "baseline": {
+        "quality": 58.9125,
+        "confidence": 0.7,
+        "traceId": "4c434f5361563d785d6a5e35a6607ffea9e4998110b42dc87fb68110319f1b5e",
+        "evaluationId": 12242
+      },
+      "family": "chat-interactions"
+    },
+    {
+      "id": "779f93aab8afea5a767569b11a70df6646cd15b33dcfbf6330eb0b4c42c8b282",
+      "file": "src/features/comments/__tests__/markdown-comment-anchors.test.ts",
+      "line": 85,
+      "name": "Comment Anchors and Markdown Syntax > List Syntax > should preserve bullet list when anchors are inside list item",
+      "status": "active",
+      "sourceHash": "1386fe9b3cfb17b8cbc687a9186864550729877eb0bce0dc20186f4b040f29ed",
+      "testCode": "it('should preserve bullet list when anchors are inside list item', async () => {\n      const markdown = '- <!--anchor:cmt-1:start-->First item<!--anchor:cmt-1:end-->';\n      const html = await processMarkdownToHTML(markdown, { preserveAnchors: true });\n\n      expect(html).toContain('<ul');\n      expect(html).toContain('<li');\n      expect(html).toContain('First item');\n    })",
+      "expectedDisposition": "keep",
+      "reason": "The actual markdown processor must retain unordered-list structure and item text when anchors occur inside the item. This is a syntax-preservation contract. It does not by itself prove anchor identity or exact list nesting, which should be covered separately rather than erasing this useful regression case.",
+      "evidence": [
+        "src/features/comments/__tests__/markdown-comment-anchors.test.ts:85",
+        "src/lib/utils/markdown-processor.ts:827"
+      ],
+      "baseline": {
+        "quality": 59.3375,
+        "confidence": 0.63,
+        "traceId": "58aba358528fc445455a07f03bde916b832588b5d6617e492cd533a09db6bfae",
+        "evaluationId": 5477
+      },
+      "family": "editor-markdown-mentions"
+    },
+    {
+      "id": "cd7e1a8c7a8bb5e1ebf304d9df081d8e85bae3d46fe147051e097bea7fcef466",
+      "file": "tests/unit/mention-providers.test.ts",
+      "line": 292,
+      "name": "CommandProvider > should return special commands",
+      "status": "active",
+      "sourceHash": "a253c01ce728483ecd8857699123125a4f33ad7c02be2af663c86b8cd5ef478d",
+      "testCode": "it('should return special commands', async () => {\n    const context: SearchContext = { workspaceId: 'test-workspace' };\n    const results = await provider.search('', context);\n\n    expect(results.length).toBeGreaterThan(0);\n    expect(results[0]).toMatchObject({\n      type: 'command',\n    });\n  })",
+      "expectedDisposition": "strengthen",
+      "reason": "The first candidate's type and nonempty list are weak and overlap the two following required-command cases. Consolidate these into one independent expected set of stable command IDs and types, preserving the default-context and clear-context commands without increasing test count.",
+      "evidence": [
+        "tests/unit/mention-providers.test.ts:302",
+        "tests/unit/mention-providers.test.ts:310",
+        "src/lib/services/mentions/providers/index.ts:421"
+      ],
+      "baseline": {
+        "quality": 59.675,
+        "confidence": 0.64,
+        "traceId": "b4978eea958de9f3ff147db9a7178c8af119c6a2952c1acc2edceb1c7fbedeac",
+        "evaluationId": 33888
+      },
+      "family": "editor-markdown-mentions"
+    },
+    {
+      "id": "d60b102f33a7f3aaa8cca9b7de0a55e9a9ea8e3f272420aaae5530430c5b42bf",
+      "file": "src/features/agent/testing/test-framework.test.ts",
+      "line": 84,
+      "name": "AgentTestHarness > should simulate streaming",
+      "status": "active",
+      "sourceHash": "7a71d0cf9fdff8f18a600ad187d26148ff88dffafa4cf5bbd92387c98f88a4c4",
+      "testCode": "it('should simulate streaming', async () => {\n    await harness.start();\n\n    const agent = await harness.createAgent();\n    const tokens: string[] = [];\n\n    harness.on('streamToken', ({ token }) => {\n      tokens.push(token);\n    });\n\n    await harness.sendMessage(agent.id, 'Stream test', { streaming: true });\n\n    expect(tokens.length).toBeGreaterThan(0);\n    expect(tokens.join('')).toContain('test');\n\n    await harness.stop();\n  })",
+      "expectedDisposition": "keep",
+      "reason": "This is explicitly a self-test of AgentTestHarness. Its real sendMessage method selects streaming and emits tokens, so an event observation is valid infrastructure behavior even though the harness simulates agents. Do not credit it with testing production agent streaming, and do not reject it merely because its subject is test infrastructure.",
+      "evidence": [
+        "src/features/agent/testing/test-framework.test.ts:1",
+        "src/features/agent/testing/agent-test-harness.ts:341",
+        "src/features/agent/testing/agent-test-harness.ts:730"
+      ],
+      "baseline": {
+        "quality": 59.725,
+        "confidence": 0.6,
+        "traceId": "7c6dca9e82e9f31ecf0f82bb7a7829a087cac5200011294812c337b06cb95cfc",
+        "evaluationId": 3393
+      },
+      "family": "agent-infrastructure"
+    },
+    {
+      "id": "e22eb486df298d1822ec27d7be5d3e18f5f08bce36d4165611a29f8cd34688fe",
+      "file": "src/store/renderer/slices/workspace/utils/__tests__/event-persistence.test.ts",
+      "line": 136,
+      "name": "importEventsFromFile > should import events from valid file",
+      "status": "active",
+      "sourceHash": "27a0da6e8a0f5768867ccb6f3fbeb4c7a7d67cb50d74566aa8b60f5ac0ce2c91",
+      "testCode": "it('should import events from valid file', async () => {\n    const mockFile = {\n      text: vi.fn().mockResolvedValue(JSON.stringify({ events: [{ id: 'evt-1' }] })),\n    } as unknown as File;\n\n    const events = await importEventsFromFile(mockFile);\n    expect(events).toHaveLength(1);\n  })",
+      "expectedDisposition": "strengthen",
+      "reason": "The real file importer parses JSON, but a one-element result of the wrong shape still passes. Use a representative event and assert the preserved event fields, preferably with multiple distinct events. File.text is a valid external seam; this is not fixture-only behavior. Preserve invalid-format rejection.",
+      "evidence": [
+        "src/store/renderer/slices/workspace/utils/event-persistence.ts:167",
+        "src/store/renderer/slices/workspace/utils/__tests__/event-persistence.test.ts:145"
+      ],
+      "baseline": {
+        "quality": 59.8625,
+        "confidence": 0.68,
+        "traceId": "68a0069fc1bfe127aa33a430bcacb293b105eae35b7dbdfc2eadd5d2e8a1a89e",
+        "evaluationId": 32323
+      },
+      "family": "workspace-ui-persistence"
+    }
+  ]
+}
