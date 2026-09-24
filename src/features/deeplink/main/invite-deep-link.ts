@@ -491,14 +491,11 @@ async function joinWithIdentityProof(
         labels,
         prompts,
         connecting,
-        challenge.pinIdentity == null,
+        challenge,
       );
       if (signIn.kind === 'cancelled') return;
       signedIn = true;
-      identity = hasIdentityRequirement(challenge)
-        ? await readInviteIdentity(client, challenge)
-        : { provider: 'github', host: GITHUB_HOST, login: signIn.login };
-      if (identity === null) throw new InviteIdentityError('identity-unavailable');
+      identity = signIn.identity;
       signInReason = null;
       // The account may differ from the one first read: consent names it anew.
       consented = false;
@@ -796,7 +793,7 @@ interface GithubAuthStatusResult {
 /** Terminal states of the guest's own device flow, as `github:auth-changed` names them. */
 type SignInStatus = 'authorized' | 'denied' | 'expired' | 'error';
 
-type SignInResult = { kind: 'signed-in'; login: string } | { kind: 'cancelled' };
+type SignInResult = { kind: 'signed-in'; identity: LocalIdentity } | { kind: 'cancelled' };
 
 /**
  * Generation of the latest sign-in started by an invite. A `github.connect`
@@ -815,7 +812,7 @@ let signInGeneration = 0;
  * terminal transition is awaited from that moment — the code may be entered
  * on any device, so "Open GitHub" only launches the URL here. Cancel (before
  * or after "Open GitHub") aborts the flow locally (`github.cancelAuth`, best
- * effort). Resolves with the login the daemon is now signed in as. The
+ * effort). Resolves with the revalidated identity the daemon is signed in as. The
  * `github.connect` start is raced against the `connecting` dialog's Cancel
  * while that dialog is still up (a device flow that starts after the cancel
  * is aborted on arrival — unless a later sign-in owns the live flow by then);
@@ -836,9 +833,9 @@ async function signInToGitHub(
   labels: PromptLabels,
   prompts: ConsentPrompts,
   connecting: ConnectingProgress,
-  offerForgeChoice = true,
+  challenge: InviteChallenge,
 ): Promise<SignInResult> {
-  if (reason === 'not-connected' && offerForgeChoice) {
+  if (reason === 'not-connected' && challenge.pinIdentity == null) {
     const choice = prompts.show({ requestId: randomUUID(), mode: 'connect-forge', ...labels });
     if ((await choice.decision) === 'cancel') {
       choice.dismiss('cancelled');
@@ -963,12 +960,34 @@ async function signInToGitHub(
   } finally {
     wait.stop();
   }
-  const login = await readLocalLogin(client);
+  // Authorization can finish before the user clicks Open GitHub. Both the
+  // first Cancel and a Cancel from the waiting state must keep working while
+  // the sign-in prompt remains visible during the account reads below.
+  const cancelled = Symbol();
+  const cancelSignal = Promise.race([
+    consent.cancelledWhileWaiting.then<typeof cancelled>(() => cancelled),
+    consent.decision.then<typeof cancelled>((decision) =>
+      decision === 'cancel' ? cancelled : new Promise<never>(() => {}),
+    ),
+  ]);
+  const login = await Promise.race([cancelSignal, readLocalLogin(client)]);
+  if (login === cancelled) {
+    consent.dismiss('cancelled');
+    return { kind: 'cancelled' };
+  }
   if (login === null) throw new InviteFlowError('sign-in-failed');
+  const identity = hasIdentityRequirement(challenge)
+    ? await Promise.race([cancelSignal, readInviteIdentity(client, challenge)])
+    : { provider: 'github' as const, host: GITHUB_HOST, login };
+  if (identity === cancelled) {
+    consent.dismiss('cancelled');
+    return { kind: 'cancelled' };
+  }
+  if (identity === null) throw new InviteIdentityError('identity-unavailable');
   logger.info('Guest daemon signed in to GitHub for the invite', { reason });
   // The consent for the join itself follows as its own prompt (it names the
   // account just signed in); this one is superseded by it.
-  return { kind: 'signed-in', login };
+  return { kind: 'signed-in', identity };
 }
 
 /**

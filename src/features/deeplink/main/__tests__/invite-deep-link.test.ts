@@ -3458,6 +3458,65 @@ describe('handleInviteDeepLink — invitation identity requirements', () => {
     expect(localCalls('sourceControl.authStatus')).toEqual([]);
   });
 
+  it.each(
+    ['pinned', 'explicit-null'].flatMap((selection) =>
+      (['open', 'pending'] as const).flatMap((decision) =>
+        ['resolve', 'reject'].map((settlement) => ({ selection, decision, settlement })),
+      ),
+    ),
+  )(
+    '$selection: cancel during post-sign-in identity validation ($decision, late $settlement)',
+    async ({ selection, decision, settlement }) => {
+      const pinned = selection === 'pinned';
+      challenge.mockResolvedValue({
+        ...CHALLENGE,
+        pinIdentity: pinned ? GITHUB_PIN : null,
+      });
+      setPrincipal(GITHUB_PIN);
+      onLocal('github.getUser', () => ({ user: null }));
+      if (!pinned) connectFirst();
+      const signIn = fakeConsent(decision);
+      showInviteConsent.mockReturnValueOnce(signIn.prompt);
+      const joining = handleInviteDeepLink(LINK);
+      const promptCount = pinned ? 1 : 2;
+      await vi.waitFor(() => expect(showInviteConsent).toHaveBeenCalledTimes(promptCount));
+      expect(showInviteConsent.mock.calls.at(-1)?.[0].mode).toBe('sign-in-required');
+
+      let probes = 0;
+      let release!: (result: unknown) => void;
+      let reject!: (error: unknown) => void;
+      onLocal('github.getUser', () => {
+        // Allow the existing login read, then block the pinned/chosen identity check.
+        if (++probes === 2)
+          return new Promise((resolve, refuse) => {
+            release = resolve;
+            reject = refuse;
+          });
+        return { user: { id: 42, login: 'octocat' } };
+      });
+      emitAuthChanged('authorized');
+      await vi.waitFor(() => expect(probes).toBe(2));
+      if (decision === 'pending') signIn.decide('cancel');
+      else signIn.cancelWaiting();
+      try {
+        // Cancellation ends the join even if the account RPC never settles.
+        await vi.waitFor(() => expect(close).toHaveBeenCalledOnce());
+      } finally {
+        if (settlement === 'resolve') release({ user: { id: 42, login: 'octocat' } });
+        else reject(localRefusal('rate-limited'));
+        await joining;
+        await new Promise<void>((resolve) => setImmediate(resolve));
+      }
+      expect(showInviteConsent).toHaveBeenCalledTimes(promptCount);
+      expect(signIn.prompt.dismiss).toHaveBeenCalledExactlyOnceWith('cancelled');
+      expectNoProof();
+      expect(showInviteNotice).not.toHaveBeenCalled();
+      expect(showMessageBox).not.toHaveBeenCalled();
+      expect(openBackendWindow).not.toHaveBeenCalled();
+      expect(logLines.join('\n')).not.toContain('Invite deep link handling failed');
+    },
+  );
+
   it('a pinned relevant probe rate limit stays a rate limit with no fallback', async () => {
     onLocal('sourceControl.authStatus', () => {
       throw localRefusal('rate-limited');
