@@ -3,7 +3,7 @@
   import Fa from 'svelte-fa';
   import { Button } from '$lib/components/ui/button';
   import * as Popover from '$lib/components/ui/popover';
-  import GridFourIcon from 'phosphor-svelte/lib/GridFourIcon';
+  import ArrowLineRightIcon from 'phosphor-svelte/lib/ArrowLineRightIcon';
   import { animatedHeight, springIn } from '$lib/motion';
   import { m } from '$shared/paraglide/messages.js';
   import type { TabDefinition } from '../multi-select-sidebar-tabs';
@@ -114,7 +114,7 @@
           }}
         >
           {#if tab.id === 'overview'}
-            <GridFourIcon size={16} weight="regular" />
+            <ArrowLineRightIcon size={16} weight="regular" />
           {:else}
             <Fa icon={tab.icon} class="size-4" />
           {/if}
