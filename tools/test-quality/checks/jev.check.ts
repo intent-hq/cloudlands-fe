@@ -59,6 +59,28 @@ function respond(value: unknown, status = 200, headers?: HeadersInit): Response 
   return new Response(JSON.stringify(value), { status, headers });
 }
 
+test('routes the Gateway Jev alias with the Gateway credential', async () => {
+  const raw = serviceResponse();
+  raw.model = 'jev';
+  const result = await judge(state, targets, {
+    apiKey: 'gateway-check-key',
+    provider: 'vercel',
+    fetch: async (url, init) => {
+      assert.equal(url, 'https://ai-gateway.vercel.sh/typesafe/v1/systemone');
+      assert.equal(init?.redirect, 'manual');
+      assert.equal(new Headers(init?.headers).get('Authorization'), 'Bearer gateway-check-key');
+      assert.deepEqual(JSON.parse(init?.body as string), {
+        model: 'jev',
+        state,
+        questions: buildQuestions(targets),
+      });
+      return respond(raw);
+    },
+  });
+  assert.equal(result.model, 'jev');
+  assert.equal(result.scores['test:17']?.quality, 53.125);
+});
+
 test('sends the documented HTTP request and computes independently known weighted scores', async () => {
   let calls = 0;
   const raw = serviceResponse();
@@ -144,7 +166,10 @@ test('criticality and its uncertainty cannot change quality or quality confidenc
     answer.probabilities = Object.fromEntries(
       [0, 1, 2, 3, 4].map((level) => [level, Number(level === criticality)]),
     );
-    const result = await judge(state, targets, { apiKey, fetch: async () => respond(raw) });
+    const result = await judge(state, targets, {
+      apiKey,
+      fetch: async () => respond(raw),
+    });
     const score = result.scores['test:17']!;
     assert.equal(score.quality, 53.125);
     assert.equal(score.confidence, 0.25);

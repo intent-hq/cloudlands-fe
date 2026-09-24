@@ -3,7 +3,20 @@ import type { ScoreQuestion, Target } from './rubric.ts';
 
 /** Pinned from https://docs.typesafe.ai/models.md on 2026-09-23. */
 export const DEFAULT_MODEL = 'jev-1.13.0';
-const ENDPOINT = 'https://api.typesafe.ai/v1/systemone';
+export const DEFAULT_GATEWAY_MODEL = 'jev';
+export const ENDPOINTS = {
+  typesafe: 'https://api.typesafe.ai/v1/systemone',
+  vercel: 'https://ai-gateway.vercel.sh/typesafe/v1/systemone',
+};
+export type JevProvider = keyof typeof ENDPOINTS;
+
+export class JevHttpError extends Error {
+  status: number;
+  constructor(status: number) {
+    super(`Jev request failed (HTTP ${status}).`);
+    this.status = status;
+  }
+}
 const MAX_RETRIES = 5;
 const MAX_DELAY_MS = 10_000;
 const TRANSIENT_STATUSES = new Set([408, 425, 429, 500, 502, 503, 504, 529]);
@@ -41,6 +54,7 @@ export interface Judgment {
 
 export interface JudgeOptions {
   apiKey: string;
+  provider?: JevProvider;
   model?: string;
   fetch?: typeof fetch;
   timeoutMs?: number;
@@ -115,8 +129,8 @@ function validateResponse(
   const { model: actualModel, answers, usage } = value;
   if (
     typeof actualModel !== 'string' ||
-    !/^jev-\d+\.\d+\.\d+$/.test(actualModel) ||
-    (model !== 'jev-latest' && model !== 'jev-preview' && actualModel !== model) ||
+    (!(model === 'jev' && actualModel === 'jev') && !/^jev-\d+\.\d+\.\d+$/.test(actualModel)) ||
+    (!['jev', 'jev-latest', 'jev-preview'].includes(model) && actualModel !== model) ||
     !record(answers) ||
     !sameKeys(answers, Object.keys(questions)) ||
     !record(usage) ||
@@ -188,14 +202,18 @@ export async function judge(
   targets: Target[],
   options: JudgeOptions,
 ): Promise<Judgment> {
-  const model = options.model ?? DEFAULT_MODEL;
+  const provider = options.provider ?? 'typesafe';
+  const model = options.model ?? (provider === 'vercel' ? DEFAULT_GATEWAY_MODEL : DEFAULT_MODEL);
   const timeoutMs = options.timeoutMs ?? 30_000;
   const retries = options.retries ?? 2;
   if (
+    !Object.hasOwn(ENDPOINTS, provider) ||
     typeof options.apiKey !== 'string' ||
     !options.apiKey.trim() ||
     /[\r\n]/.test(options.apiKey) ||
-    !/^(?:jev-\d+\.\d+\.\d+|jev-latest|jev-preview)$/.test(model) ||
+    !(provider === 'vercel'
+      ? model === 'jev'
+      : /^(?:jev-\d+\.\d+\.\d+|jev-latest|jev-preview)$/.test(model)) ||
     !Number.isInteger(timeoutMs) ||
     timeoutMs < 1 ||
     timeoutMs > 120_000 ||
@@ -221,7 +239,7 @@ export async function judge(
     let response: Response | undefined;
     let payload: unknown;
     try {
-      response = await request(ENDPOINT, {
+      response = await request(ENDPOINTS[provider], {
         method: 'POST',
         headers: {
           Authorization: `Bearer ${options.apiKey}`,
@@ -248,7 +266,7 @@ export async function judge(
       /* Best-effort connection cleanup. */
     }
     if (!TRANSIENT_STATUSES.has(response.status) || attempt === retries) {
-      throw new Error(`Jev request failed (HTTP ${response.status}).`);
+      throw new JevHttpError(response.status);
     }
     await sleep(retryDelay(response, attempt));
   }

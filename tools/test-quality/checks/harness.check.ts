@@ -11,6 +11,7 @@ import { Store } from '../src/database.ts';
 import { batches, evaluate, scan } from '../src/runner.ts';
 import { report, textReport } from '../src/report.ts';
 import type { Judgment } from '../src/types.ts';
+import { JevHttpError } from '../src/jev.ts';
 
 function fixture(t: TestContext) {
   const root = mkdtempSync(path.join(tmpdir(), 'test-quality-'));
@@ -205,7 +206,12 @@ test('persists complete runs and reuses judgments without spending or an API key
     calls++;
     return judgeFixture(state, targets);
   };
-  const options = { apiKey: 'local-fixture', concurrency: 2, batchSize: 8, judge: countingJudge };
+  const options = {
+    apiKey: 'local-fixture',
+    concurrency: 2,
+    batchSize: 8,
+    judge: countingJudge,
+  };
   const first = await evaluate(store, traces, options, {});
   assert.equal(calls, traces.length);
   assert.equal(first.errors, 0);
@@ -238,7 +244,7 @@ test('persists complete runs and reuses judgments without spending or an API key
     evaluate(store, traces, { ...options, fresh: true, maxRequests: 0 }, {}),
     /exceeding/,
   );
-  const third = await evaluate(store, traces, { ...options, model: 'different-model' }, {});
+  const third = await evaluate(store, traces, { ...options, provider: 'vercel' }, {});
   assert.equal(third.requests, traces.length);
 });
 
@@ -267,12 +273,83 @@ test('records API failures as partial results and retries failed jobs on later r
   const retry = await evaluate(
     store,
     traces,
-    { apiKey: 'local-secret', concurrency: 1, batchSize: 8, judge: judgeFixture },
+    {
+      apiKey: 'local-secret',
+      concurrency: 1,
+      batchSize: 8,
+      judge: judgeFixture,
+    },
     {},
   );
   assert.equal(retry.requests, 1);
   assert.equal(store.run(retry.runId).status, 'complete');
 });
+
+for (const status of [401, 402, 403]) {
+  test(`stops uncached requests after HTTP ${status} and preserves cached results`, async (t) => {
+    const { root, store, config } = fixture(t);
+    const { traces } = scan(root, config, [], store);
+    await evaluate(
+      store,
+      [traces.at(-1)!],
+      {
+        apiKey: 'fixture',
+        provider: 'vercel',
+        concurrency: 1,
+        batchSize: 8,
+        judge: judgeFixture,
+      },
+      {},
+    );
+    let calls = 0;
+    const result = await evaluate(
+      store,
+      traces,
+      {
+        apiKey: 'gateway-secret',
+        provider: 'vercel',
+        concurrency: 1,
+        batchSize: 8,
+        judge: async (_state, _targets, options) => {
+          calls++;
+          assert.equal(options.provider, 'vercel');
+          throw new JevHttpError(status);
+        },
+      },
+      {},
+    );
+    assert.equal(calls, 1);
+    assert.equal(result.requests, 1);
+    assert.equal(result.cacheHits, 1);
+    assert.equal(result.skippedRequests, traces.length - 2);
+    assert.equal(
+      store.results(result.runId).length,
+      traces.reduce((n, trace) => n + trace.targets.length, 0),
+    );
+    assert.equal(store.run(result.runId).status, 'partial');
+    assert.ok(store.results(result.runId).some((row) => row.cached && row.score));
+    assert.ok(store.results(result.runId).some((row) => row.error?.startsWith('Not attempted')));
+    const resumed = await evaluate(
+      store,
+      traces,
+      {
+        apiKey: 'gateway-secret',
+        provider: 'vercel',
+        concurrency: 1,
+        batchSize: 8,
+        judge: judgeFixture,
+      },
+      {},
+    );
+    assert.equal(resumed.requests, traces.length - 1);
+    assert.equal(store.run(resumed.runId).status, 'complete');
+    const saved = store.evaluation(
+      store.results(resumed.runId).find((row) => !row.cached)!.evaluationId!,
+    ) as { request: { provider: string; endpoint: string } };
+    assert.equal(saved.request.provider, 'vercel');
+    assert.equal(saved.request.endpoint, 'https://ai-gateway.vercel.sh/typesafe/v1/systemone');
+  });
+}
 
 test('bounds concurrency while preserving every result', async (t) => {
   const { root, store, config } = fixture(t);
@@ -324,7 +401,12 @@ test('a failed trace write cannot leave a reusable incomplete analysis cache', (
     `CREATE TRIGGER reject_second BEFORE INSERT ON traces WHEN NEW.id = '${traces[1].id}' BEGIN SELECT RAISE(ABORT, 'fixture write failure'); END;`,
   );
   assert.throws(
-    () => isolated.saveAnalysis('atomic', { traces, dependencies: {}, warnings: [] }),
+    () =>
+      isolated.saveAnalysis('atomic', {
+        traces,
+        dependencies: {},
+        warnings: [],
+      }),
     /fixture write failure/,
   );
   assert.equal(isolated.cachedAnalysis('atomic'), undefined);
@@ -451,7 +533,10 @@ test('many context warnings cannot crowd production evidence out of a request', 
     ),
   };
   const [batch] = batches(trace, 8);
-  const state = batch.state as { warnings: string[]; fragments: { file: string }[] };
+  const state = batch.state as {
+    warnings: string[];
+    fragments: { file: string }[];
+  };
   assert.equal(batch.warnings.length, 180);
   assert.ok(state.warnings.length < 12);
   assert.ok(state.fragments.some((f) => f.file === 'src/policy.ts'));

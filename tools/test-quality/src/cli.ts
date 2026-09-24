@@ -8,7 +8,7 @@ import { readConfig } from './files.ts';
 import { Store } from './database.ts';
 import { batches, evaluate, scan } from './runner.ts';
 import { report, textReport } from './report.ts';
-import { DEFAULT_MODEL } from './jev.ts';
+import { DEFAULT_MODEL, DEFAULT_GATEWAY_MODEL } from './jev.ts';
 import { CHECKS_VERSION } from './assertion-checks.ts';
 
 const help = `Test quality evaluator (Node 24.15+, standalone package)
@@ -26,8 +26,10 @@ Commands:
 
 Selection: --root <path> --config <json> --name <substring>
 Storage:   --db <path> (default: <root>/.test-quality/results.sqlite)
-Provider:  --env <path> (default: <root>/.env), TYPESAFE_API_KEY
-           --model <id> (default: ${DEFAULT_MODEL}) --fresh
+Provider:  --provider typesafe|vercel (default typesafe)
+           --env <path> (default: <root>/.env)
+           TYPESAFE_API_KEY for typesafe; AI_GATEWAY_API_KEY for vercel
+           --model <id> (typesafe: ${DEFAULT_MODEL}; vercel: ${DEFAULT_GATEWAY_MODEL}) --fresh
 Execution: --concurrency <1..32> (default 4) --batch-size <1..8> (default 8)
            --max-requests <count> (fail before spending if exceeded)
 Reports:   --run <run-id> (default latest) --format text|json --kind file|test|assertion
@@ -55,6 +57,7 @@ export async function main(args: string[]): Promise<number> {
       db: { type: 'string' },
       env: { type: 'string' },
       model: { type: 'string' },
+      provider: { type: 'string' },
       fresh: { type: 'boolean' },
       concurrency: { type: 'string' },
       'batch-size': { type: 'string' },
@@ -102,6 +105,9 @@ export async function main(args: string[]): Promise<number> {
   if (values.kind && !['file', 'test', 'assertion'].includes(values.kind))
     throw new Error('--kind must be file, test, or assertion');
   const concurrency = number('concurrency', 4, 1, 32, true);
+  const provider = values.provider ?? 'typesafe';
+  if (provider !== 'typesafe' && provider !== 'vercel')
+    throw new Error('--provider must be typesafe or vercel');
   const batchSize = number('batch-size', 8, 1, 8, true);
   const threshold = number('threshold', 60, 0, 100);
   const minConfidence = number('min-confidence', 0.6, 0, 1);
@@ -178,16 +184,22 @@ export async function main(args: string[]): Promise<number> {
           for (const target of trace.targets)
             store.result(runId, target, trace.id, null, null, trace.warnings, null, false);
         store.finish(runId, 'complete');
-        metrics = { ...summary, elapsedMs: Math.round(performance.now() - start), requests: 0 };
+        metrics = {
+          ...summary,
+          elapsedMs: Math.round(performance.now() - start),
+          requests: 0,
+        };
       } else {
         const envPath = path.resolve(root, values.env ?? '.env');
         const env = existsSync(envPath) ? parseEnv(readFileSync(envPath, 'utf8')) : {};
-        const apiKey = process.env.TYPESAFE_API_KEY || env.TYPESAFE_API_KEY;
+        const keyName = provider === 'vercel' ? 'AI_GATEWAY_API_KEY' : 'TYPESAFE_API_KEY';
+        const apiKey = process.env[keyName] || env[keyName];
         const resultEval = await evaluate(
           store,
           result.traces,
           {
             apiKey,
+            provider,
             model: values.model,
             fresh: values.fresh,
             concurrency,

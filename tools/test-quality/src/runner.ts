@@ -2,7 +2,8 @@ import { performance } from 'node:perf_hooks';
 import { hash, inventory, selectedFiles, Sources } from './files.ts';
 import { ANALYZER_VERSION, Analyzer } from './analyzer.ts';
 import { Store } from './database.ts';
-import { DEFAULT_MODEL, judge } from './jev.ts';
+import { DEFAULT_MODEL, DEFAULT_GATEWAY_MODEL, ENDPOINTS, JevHttpError, judge } from './jev.ts';
+import type { JevProvider } from './jev.ts';
 import { RUBRIC, RUBRIC_VERSION, buildQuestions } from './rubric.ts';
 import type { Config, Judgment, Target, Trace } from './types.ts';
 
@@ -115,6 +116,7 @@ export function batches(
 
 export interface EvaluateOptions {
   model?: string;
+  provider?: JevProvider;
   apiKey?: string;
   concurrency: number;
   batchSize: number;
@@ -123,7 +125,7 @@ export interface EvaluateOptions {
   judge?: (
     state: unknown,
     targets: { id: string; kind: string }[],
-    options: { apiKey: string; model: string },
+    options: { apiKey: string; model: string; provider: JevProvider },
   ) => Promise<Judgment>;
   progress?: (done: number, total: number) => void;
 }
@@ -140,8 +142,10 @@ export async function evaluate(
   errors: number;
   inputTokens: number;
   elapsedMs: number;
+  skippedRequests: number;
 }> {
-  const model = options.model ?? DEFAULT_MODEL;
+  const provider = options.provider ?? 'typesafe';
+  const model = options.model ?? (provider === 'vercel' ? DEFAULT_GATEWAY_MODEL : DEFAULT_MODEL);
   const rubricHash = hash([RUBRIC_VERSION, RUBRIC]);
   const jobs = traces.flatMap((trace) =>
     batches(trace, options.batchSize).map((batch) => {
@@ -161,11 +165,12 @@ export async function evaluate(
     );
   if (requests && !options.apiKey)
     throw new Error(
-      'Set TYPESAFE_API_KEY in the selected .env file or environment to evaluate uncached tests',
+      `Set ${provider === 'vercel' ? 'AI_GATEWAY_API_KEY' : 'TYPESAFE_API_KEY'} in the selected .env file or environment to evaluate uncached tests`,
     );
   const runId = store.start({
     metadata,
     model,
+    provider,
     rubricVersion: RUBRIC_VERSION,
     rubricHash,
     concurrency: options.concurrency,
@@ -175,6 +180,9 @@ export async function evaluate(
   let done = 0;
   let errors = 0;
   let inputTokens = 0;
+  let attemptedRequests = 0;
+  let skippedRequests = 0;
+  let accountError: string | undefined;
   const started = performance.now();
   const worker = async (): Promise<void> => {
     while (cursor < jobs.length) {
@@ -182,10 +190,16 @@ export async function evaluate(
       try {
         let evaluation = job.cached;
         if (!evaluation) {
+          if (accountError) {
+            skippedRequests++;
+            throw new Error(`Not attempted after account failure: ${accountError}`);
+          }
           const start = performance.now();
+          attemptedRequests++;
           const judgment = await (options.judge ?? judge)(job.state, job.targets, {
             apiKey: options.apiKey!,
             model,
+            provider,
           });
           inputTokens += judgment.usage.input_tokens;
           const id = store.saveEvaluation(
@@ -193,7 +207,13 @@ export async function evaluate(
             job.trace.id,
             model,
             rubricHash,
-            { model, state: job.state, questions: buildQuestions(job.targets) },
+            {
+              provider,
+              endpoint: ENDPOINTS[provider],
+              model,
+              state: job.state,
+              questions: buildQuestions(job.targets),
+            },
             judgment,
             performance.now() - start,
           );
@@ -211,6 +231,8 @@ export async function evaluate(
             !!job.cached,
           );
       } catch (error) {
+        if (error instanceof JevHttpError && [401, 402, 403].includes(error.status))
+          accountError = error.message;
         errors++;
         const message = error instanceof Error ? error.message : 'Evaluation failed';
         const safe = options.apiKey ? message.replaceAll(options.apiKey, '[redacted]') : message;
@@ -229,10 +251,11 @@ export async function evaluate(
   }
   return {
     runId,
-    requests,
+    requests: attemptedRequests,
     cacheHits: jobs.length - requests,
     errors,
     inputTokens,
     elapsedMs: Math.round(performance.now() - started),
+    skippedRequests,
   };
 }
