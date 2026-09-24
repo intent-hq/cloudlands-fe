@@ -15,7 +15,8 @@ const context = vi.hoisted(() => ({
 }));
 
 // Only state/transport boundaries are isolated. Identity, provider catalog,
-// provider settings and model selectors, reducers, and the picker remain real.
+// provider settings and model selectors, catalog adapters, reducers, and the
+// picker remain real.
 vi.mock('$store/renderer/store', async () => {
   const { createAppStoreMockModule } =
     await import('$store/renderer/utils/test-helpers/store-mock');
@@ -43,9 +44,9 @@ vi.mock('$features/agent/reasoning-effort', () => ({
   applyReasoningEffort: vi.fn(async () => true),
   reconcileAgentReasoningEffort: vi.fn(async () => true),
 }));
-vi.mock('$store/renderer/slices/model/model-utils', () => ({
-  getModelsForProvider: vi.fn(),
-  getModelsForProviderForLoadingState: vi.fn(),
+vi.unmock('$lib/electron-bridge');
+vi.mock('$lib/client/live/backend-transport', () => ({
+  backendRequest: vi.fn(),
 }));
 vi.mock('$lib/utils/workspace-navigation', () => ({ navigateToSettings: vi.fn() }));
 vi.mock('$lib/components/patterns/notify', () => ({
@@ -75,10 +76,8 @@ import {
   initialState as providerModelsInitialState,
   providerModelsReducer,
 } from '$store/renderer/slices/provider-models/provider-models-slice';
-import {
-  getModelsForProvider,
-  getModelsForProviderForLoadingState,
-} from '$store/renderer/slices/model/model-utils';
+import { backendRequest } from '$lib/client/live/backend-transport';
+import '$store/renderer/seeders/model-catalog-bridge-seeder';
 import ModelPicker from './ModelPicker.svelte';
 
 // Validation is mandatory at collection time, before any component is mounted.
@@ -120,6 +119,7 @@ function makeState(codexEnabled: boolean) {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  vi.stubGlobal('electronAPI', undefined);
   context.dispatch.mockImplementation((action) => {
     context.state = {
       ...context.state,
@@ -129,22 +129,19 @@ beforeEach(() => {
     (store as unknown as { emitState(): void }).emitState();
     return action;
   });
-  const modelsFor = (providerId: string) =>
-    (contract.models[providerId] ?? []).map(({ provider, id, name, effortLevels }) => ({
-      value: `${provider}:${id}`,
-      label: name,
-      description: '',
-      effortLevels,
-    }));
-  vi.mocked(getModelsForProvider).mockImplementation(async (providerId) => modelsFor(providerId));
-  vi.mocked(getModelsForProviderForLoadingState).mockImplementation(async (providerId) => ({
-    models: modelsFor(providerId),
-  }));
+  vi.mocked(backendRequest).mockImplementation(async (method, params) => {
+    expect(method).toBe('models.list');
+    const { providerId } = params as { providerId: string };
+    expect(params).toEqual({ providerId });
+    expect(contract.models).toHaveProperty(providerId);
+    return { providerId, models: contract.models[providerId] };
+  });
 });
 
 afterEach(() => {
   cleanup();
   context.session = undefined;
+  vi.unstubAllGlobals();
 });
 
 async function mountSession(session: AgentSession, codexEnabled: boolean) {
@@ -163,6 +160,14 @@ async function mountSession(session: AgentSession, codexEnabled: boolean) {
     expect(context.state.model.loadingState.codex?.status).toBe('success');
   });
   await tick();
+  // Model loading must preserve each daemon ID, with provenance in the
+  // provider cache key. Prefixed values would exercise the legacy ID path.
+  for (const { id: providerId } of contract.providersCatalog.providers) {
+    expect(backendRequest).toHaveBeenCalledWith('models.list', { providerId });
+    expect(
+      context.state.providerModels.byProviderId[providerId]?.models.map(({ value }) => value),
+    ).toEqual(contract.models[providerId].map(({ id }) => id));
+  }
   return screen.getByRole('button');
 }
 
