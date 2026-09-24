@@ -3572,6 +3572,11 @@
       return;
     }
 
+    const retainedMessageId = untrack(() => offscreenPendingProposalMessageId);
+    if (retainedMessageId && !refs.some((ref) => ref.messageId === retainedMessageId)) {
+      offscreenPendingProposalMessageId = null;
+    }
+
     let disposed = false;
     let observer: IntersectionObserver | null = null;
     tick().then(() => {

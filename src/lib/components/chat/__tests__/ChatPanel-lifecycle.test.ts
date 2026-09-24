@@ -3447,6 +3447,73 @@ describe('ChatPanel mounted lifecycle', () => {
     expect(screen.queryByTestId('pending-proposal-chip')).toBeNull();
   });
 
+  it('retains only still-pending chip targets while replacement observations are delayed', async () => {
+    mocks.draftGet.mockResolvedValue(null);
+    MockChatIntersectionObserver.instances = [];
+    vi.stubGlobal('IntersectionObserver', MockChatIntersectionObserver);
+    const proposalA = { proposalId: 'toolu-a', messageId: 'proposal-a' };
+    const proposalB = { proposalId: 'toolu-b', messageId: 'proposal-b' };
+    const session = {
+      id: 'agent-a',
+      status: 'active',
+      messages: [],
+      backendSessionId: 'backend-session-a',
+      metadata: { pendingProposals: [proposalA] },
+    };
+    mocks.agentSession.set(session);
+    mocks.agentMessages.set([
+      searchableAssistant('proposal-a', 'First proposal'),
+      searchableAssistant('proposal-b', 'Replacement proposal'),
+    ]);
+    const view = render(ChatPanel, {
+      props: { workspace: workspace('workspace-a'), agentId: 'agent-a', isActive: true },
+    });
+    await tick();
+    await tick();
+    const messageA = view.container.querySelector<HTMLElement>('[data-message-id="proposal-a"]')!;
+    const messageB = view.container.querySelector<HTMLElement>('[data-message-id="proposal-b"]')!;
+    const shellA = messageA.closest('[data-lazy-turn-key]')!;
+    const shellB = messageB.closest('[data-lazy-turn-key]')!;
+    const currentObserver = (shell: Element) =>
+      MockChatIntersectionObserver.instances.findLast(
+        (candidate) => candidate.options?.threshold === 0.01 && candidate.observed.has(shell),
+      )!;
+    const initialObserver = currentObserver(shellA);
+    expect(initialObserver).toBeDefined();
+    initialObserver.fire([{ target: shellA, isIntersecting: false }]);
+    await tick();
+    const chip = screen.getByTestId('pending-proposal-chip');
+
+    mocks.agentSession.set({ ...session, metadata: { pendingProposals: [proposalB, proposalA] } });
+    await tick();
+    await tick();
+    expect(screen.queryByTestId('pending-proposal-chip')).toBe(chip);
+    const previousObserver = currentObserver(shellA);
+    expect(previousObserver).not.toBe(initialObserver);
+
+    mocks.agentSession.set({ ...session, metadata: { pendingProposals: [proposalB] } });
+    await tick();
+    await tick();
+    expect(screen.queryByTestId('pending-proposal-chip')).toBeNull();
+    previousObserver.fire([{ target: shellA, isIntersecting: false }]);
+    await tick();
+    expect(screen.queryByTestId('pending-proposal-chip')).toBeNull();
+
+    const replacementObserver = currentObserver(shellB);
+    expect(replacementObserver).not.toBe(previousObserver);
+    replacementObserver.fire([{ target: shellB, isIntersecting: false }]);
+    await tick();
+    const replacementBounds = vi.spyOn(messageB, 'getBoundingClientRect');
+    mocks.animateScrollTo.mockClear();
+    await fireEvent.click(screen.getByTestId('pending-proposal-chip'));
+    await tick();
+    flushFrame();
+    await vi.waitFor(() => {
+      expect(replacementBounds).toHaveBeenCalled();
+      expect(mocks.animateScrollTo).toHaveBeenCalledOnce();
+    });
+  });
+
   it('loads a recovered nonresident proposal message before scrolling to its inline card', async () => {
     mocks.draftGet.mockResolvedValue(null);
     mocks.agentSession.set({
