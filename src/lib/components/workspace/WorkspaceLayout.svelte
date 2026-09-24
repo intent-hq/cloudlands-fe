@@ -111,6 +111,7 @@
       {/if}
       <ResizablePanel
         {active}
+        resizable={!$sidebarIsCollapsed}
         side={sidebarSide}
         minWidth={sidebarMinWidth}
         maxWidth={sidebarMaxWidth}
