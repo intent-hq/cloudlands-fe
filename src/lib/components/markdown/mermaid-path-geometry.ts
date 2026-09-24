@@ -62,8 +62,35 @@ export function buildFlowchartDecisionBranchPoints(
   occupied: Bounds[],
   compact = false,
 ): Point[] {
-  const sourceSide = branch === 'upper' ? 'top' : 'right';
+  if (target.y >= source.y + source.height + 16) {
+    const start = boundsPort(source, 'bottom');
+    const end = boundsPort(target, 'top');
+    const laneY = (start.y + end.y) / 2;
+    const candidate = simplifyOrthogonalPoints([
+      start,
+      { x: start.x, y: laneY },
+      { x: end.x, y: laneY },
+      end,
+    ]);
+    const obstacles = occupied.filter(
+      (bounds) =>
+        ![source, target].some(
+          (endpoint) =>
+            Math.abs(bounds.x - endpoint.x) < 0.001 &&
+            Math.abs(bounds.y - endpoint.y) < 0.001 &&
+            Math.abs(bounds.width - endpoint.width) < 0.001 &&
+            Math.abs(bounds.height - endpoint.height) < 0.001,
+        ),
+    );
+    if (
+      segments(candidate).every(
+        (segment) => !obstacles.some((bounds) => segmentCrossesBounds(segment, bounds, 8)),
+      )
+    )
+      return candidate;
+  }
   const stackedTarget = branch === 'upper' && target.y >= source.y + source.height;
+  const sourceSide = branch === 'upper' && !stackedTarget ? 'top' : 'right';
   if (compact && stackedTarget) {
     const sourcePort = boundsPort(source, 'bottom');
     const targetTop = boundsPort(target, 'top');
@@ -98,22 +125,6 @@ export function buildFlowchartDecisionBranchPoints(
   const targetPort = boundsPort(target, targetSide);
   const clearance = compact ? 16 : 32;
   if (sourceSide === 'top') {
-    if (stackedTarget) {
-      const laneX =
-        Math.max(
-          source.x + source.width,
-          target.x + target.width,
-          ...occupied.map((bounds) => bounds.x + bounds.width),
-        ) + clearance;
-      const leadY = sourcePort.y - 12;
-      return simplifyOrthogonalPoints([
-        sourcePort,
-        { x: sourcePort.x, y: leadY },
-        { x: laneX, y: leadY },
-        { x: laneX, y: targetPort.y },
-        targetPort,
-      ]);
-    }
     const laneY = Math.min(...occupied.map((bounds) => bounds.y), target.y, source.y) - clearance;
     if (Math.abs(sourcePort.x - targetPort.x) < 0.001) {
       const laneX =
@@ -3175,21 +3186,12 @@ function allocateDiamondAttachments(svg: SVGSVGElement, paths: SVGPathElement[])
       .filter((point) => point.length === 2 && point.every(Number.isFinite))
       .map(([x, y]) => ({ x, y }));
     if (!identity || points.length < 2) continue;
-    const labelText = flowchartLabelForPath(svg, path)?.textContent?.trim().toLocaleLowerCase();
     const sourceNode = flowchartNode(svg, identity.source);
     const sourceShape = sourceNode && shapeForNode(sourceNode);
     if (sourceShape && isDiamondShape(sourceShape)) {
       const bounds = boundsInPathSpace(sourceShape, path);
       if (bounds) {
-        const inferred = cardinalSideFromDirection(pointAt(bounds, 0.5, 0.5), points[1]);
-        const side: CardinalSide =
-          path.dataset.decisionBranch === 'upper' && path.dataset.compactFlowchart === 'true'
-            ? 'bottom'
-            : path.dataset.decisionBranch === 'upper' || labelText === 'yes'
-              ? 'top'
-              : path.dataset.decisionBranch === 'lower' || labelText === 'no'
-                ? 'right'
-                : inferred;
+        const side = cardinalSideFromDirection(pointAt(bounds, 0.5, 0.5), points[1]);
         uses.push({
           path,
           role: 'source',
@@ -4291,8 +4293,7 @@ function routeNestedDecisionHierarchy(svg: SVGSVGElement, edges: FlowchartRoute[
     );
     const addSource = diamondBoundaryPort(d, 'bottom', -10);
     const retryTarget = diamondBoundaryPort(d, 'bottom', 10);
-    const branchTarget = pointAt(m, 0, 0.32);
-    const yesY = Math.min(branchSource.y, branchTarget.y) - 24;
+    const branchTarget = { x: m.x, y: branchSource.y };
     routes.push(
       {
         edge: primaryIngress,
@@ -4334,14 +4335,7 @@ function routeNestedDecisionHierarchy(svg: SVGSVGElement, edges: FlowchartRoute[
       {
         edge: primaryBranch,
         role: 'primary-branch',
-        points: [
-          branchSource,
-          { x: d.x + d.width + 24, y: branchSource.y },
-          { x: d.x + d.width + 24, y: yesY },
-          { x: m.x - 24, y: yesY },
-          { x: m.x - 24, y: branchTarget.y },
-          branchTarget,
-        ],
+        points: [branchSource, branchTarget],
         sourceSide: 'right',
       },
       {
