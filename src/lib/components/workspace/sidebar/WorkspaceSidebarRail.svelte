@@ -25,6 +25,9 @@
   let keyboardOpen = false;
   let lastTab: string | null = null;
   let railElement = $state<HTMLElement>();
+  let activeTrigger = $state<HTMLElement>();
+  let triggerTop = $state(0);
+  let contentOffset = $state(0);
   const activeDefinition = $derived(tabs.find((tab) => tab.id === activeTab));
 
   function iconReveal(node: Element, index: number) {
@@ -38,6 +41,15 @@
 
   function showTab(tabId: string, keyboard: boolean) {
     cancelClose();
+    if (tabId !== activeTab) {
+      const previousIndex = tabs.findIndex((tab) => tab.id === activeTab);
+      const nextIndex = tabs.findIndex((tab) => tab.id === tabId);
+      contentOffset = previousIndex < 0 ? 0 : nextIndex > previousIndex ? -8 : 8;
+    }
+    activeTrigger =
+      railElement?.querySelector<HTMLElement>('[data-sidebar-rail-tab="' + tabId + '"]') ??
+      undefined;
+    triggerTop = activeTrigger?.getBoundingClientRect().top ?? 0;
     keyboardOpen = keyboard;
     lastTab = tabId;
     activeTab = tabId;
@@ -113,13 +125,14 @@
   </nav>
   <Popover.Content
     id={previewId}
-    customAnchor={railElement}
+    customAnchor={activeTrigger}
     side="right"
     align="start"
     sideOffset={4}
     trapFocus={false}
     preventScroll={false}
-    class="max-h-[min(640px,calc(100dvh-32px))] w-[min(360px,calc(100vw-72px))] overflow-y-auto p-0"
+    class="w-[min(360px,calc(100vw-72px))] overflow-y-auto p-0"
+    style={`max-height: min(640px, calc(100dvh - ${triggerTop}px - 16px));`}
     aria-label={activeDefinition?.label}
     data-sidebar-rail-preview={activeTab}
     onpointerenter={cancelClose}
@@ -141,7 +154,7 @@
   >
     <div use:animatedHeight={{ tier: 'moderate' }}>
       {#key activeTab}
-        <div in:springIn={{ tier: 'fast', x: -4, y: 0, scale: 1 }}>
+        <div in:springIn={{ tier: 'fast', x: 0, y: contentOffset, scale: 1 }}>
           {@render children()}
         </div>
       {/key}
