@@ -12,10 +12,12 @@
     remote = false,
     bottom = false,
     left = false,
+    agentMemory = false,
   } = $props<{
     remote?: boolean;
     bottom?: boolean;
     left?: boolean;
+    agentMemory?: boolean;
   }>();
 
   // No root lifecycle or sagas: synthetic records cannot open a real connection.
@@ -56,6 +58,8 @@
         uptimeSeconds: 5400,
         cpuPercent: 3.2,
         memoryBytes: 157286400,
+        // svelte-ignore state_referenced_locally - initial fixture state only
+        ...(agentMemory ? { agentMemoryBytes: 104857600, agentProcessCount: 1 } : {}),
         fingerprint: null,
         protocolVersion: '2.5', // protocol-version-ok: synthetic wire fixture
         host: { os: 'macos', arch: 'aarch64', hasDisplay: true, locality: 'local' },

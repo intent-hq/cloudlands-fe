@@ -127,21 +127,89 @@ test('flips details away from the left edge and supports keyboard return to devi
   await mount(DaemonStatusIndicatorGeometryHost, { props: { left: true } });
   const trigger = page.getByTestId('daemon-status-fixture').getByRole('button');
   await trigger.focus();
-  await trigger.press('ArrowDown');
+  await page.keyboard.press('ArrowDown');
   const subTrigger = page.locator('[data-slot="menu-sub-trigger"]');
   await expect(subTrigger).toBeFocused();
-  await subTrigger.press('ArrowRight');
+  await page.keyboard.press('ArrowRight');
   const details = page.locator('[data-slot="menu-sub-content"]');
   await expect(details).toBeVisible();
+  await expect(details).toBeFocused();
   await expect(details).toHaveAttribute('data-side', 'right');
   const parent = page.locator('[data-slot="menu-content"]');
   await expect
     .poll(async () => Math.abs((await details.boundingBox())!.y - (await parent.boundingBox())!.y))
     .toBeLessThanOrEqual(1);
   await page.keyboard.press('ArrowLeft');
+  await expect(subTrigger).toHaveAttribute('aria-expanded', 'false');
+  await expect(details).toBeHidden();
   await expect(subTrigger).toBeFocused();
-  await subTrigger.press('End');
+  await page.keyboard.press('End');
   await expect(parent.getByRole('menuitem', { name: /Manage devices/ })).toBeFocused();
+  await page.keyboard.press('Escape');
+  await expect(trigger).toHaveAttribute('aria-expanded', 'false');
+  await expect(trigger).toBeFocused();
+});
+
+for (const key of ['Enter', 'Space']) {
+  test(`informational details accept ${key} and return keyboard focus`, async ({ mount, page }) => {
+    await mount(DaemonStatusIndicatorGeometryHost);
+    const trigger = page.getByTestId('daemon-status-fixture').getByRole('button');
+    await trigger.focus();
+    await page.keyboard.press('ArrowDown');
+    const subTrigger = page.locator('[data-slot="menu-sub-trigger"]');
+    await expect(subTrigger).toBeFocused();
+    await page.keyboard.press(key);
+    const details = page.locator('[data-slot="menu-sub-content"]');
+    await expect(details).toBeFocused();
+    await page.keyboard.press('ArrowLeft');
+    await expect(details).toBeHidden();
+    await expect(subTrigger).toHaveAttribute('aria-expanded', 'false');
+    await expect(subTrigger).toBeFocused();
+    await page.keyboard.press('Escape');
+    await expect(trigger).toHaveAttribute('aria-expanded', 'false');
+    await expect(trigger).toBeFocused();
+  });
+}
+
+test('pointer-opened informational details keep trigger focus until keyboard entry', async ({
+  mount,
+  page,
+}) => {
+  await mount(DaemonStatusIndicatorGeometryHost);
+  const trigger = page.getByTestId('daemon-status-fixture').getByRole('button');
+  await trigger.click();
+  const subTrigger = page.locator('[data-slot="menu-sub-trigger"]');
+  await subTrigger.hover();
+  const details = page.locator('[data-slot="menu-sub-content"]');
+  await expect(details).toBeVisible();
+  await expect(subTrigger).toBeFocused();
+  await subTrigger.click();
+  await expect(subTrigger).toBeFocused();
+  await page.keyboard.press('ArrowRight');
+  await expect(details).toBeFocused();
+  await page.keyboard.press('ArrowLeft');
+  await expect(details).toBeHidden();
+  await expect(subTrigger).toHaveAttribute('aria-expanded', 'false');
+  await expect(subTrigger).toBeFocused();
+  await page.keyboard.press('Escape');
+  await expect(trigger).toHaveAttribute('aria-expanded', 'false');
+  await expect(trigger).toBeFocused();
+});
+
+test('details with an enabled action retain first-item keyboard focus', async ({ mount, page }) => {
+  await mount(DaemonStatusIndicatorGeometryHost, { props: { agentMemory: true } });
+  const trigger = page.getByTestId('daemon-status-fixture').getByRole('button');
+  await trigger.focus();
+  await page.keyboard.press('ArrowDown');
+  const subTrigger = page.locator('[data-slot="menu-sub-trigger"]');
+  await expect(subTrigger).toBeFocused();
+  await page.keyboard.press('ArrowRight');
+  const details = page.locator('[data-slot="menu-sub-content"]');
+  await expect(details.getByRole('menuitem', { name: /agent memory/i })).toBeFocused();
+  await page.keyboard.press('ArrowLeft');
+  await expect(details).toBeHidden();
+  await expect(subTrigger).toHaveAttribute('aria-expanded', 'false');
+  await expect(subTrigger).toBeFocused();
   await page.keyboard.press('Escape');
   await expect(trigger).toHaveAttribute('aria-expanded', 'false');
   await expect(trigger).toBeFocused();
