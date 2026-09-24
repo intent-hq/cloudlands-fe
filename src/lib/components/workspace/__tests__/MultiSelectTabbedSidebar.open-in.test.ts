@@ -748,7 +748,7 @@ describe('MultiSelectTabbedSidebar Files Open In', () => {
     );
   });
 
-  it('uses interactive shared-stack agents and filled overflow tiles', async () => {
+  it('keeps agent overflow and opens Spec without trailing note shortcuts', async () => {
     mocks.agents = Array.from({ length: 8 }, (_, index) => makeAgent(`agent-${index}`));
     mocks.notes = Array.from({ length: 8 }, (_, index) => ({
       id: index === 7 ? 'spec' : `note-${index}`,
@@ -761,40 +761,13 @@ describe('MultiSelectTabbedSidebar Files Open In', () => {
       relativePath: `file-${index}.ts`,
     }));
     const Sidebar = (await import('../MultiSelectTabbedSidebar.svelte')).default;
-    const { container, getByRole } = render(Sidebar, { props: { workspaceId: 'ws-1' } });
+    const { container } = render(Sidebar, { props: { workspaceId: 'ws-1' } });
     const agentCard = container.querySelector<HTMLElement>('[data-sidebar-launcher="agents"]')!;
     const agentStack = agentCard.querySelector<HTMLElement>('[data-agent-avatar-stack]')!;
     const agentOverflow = agentStack.querySelector<HTMLElement>('[data-agent-avatar-overflow]')!;
     const contextStack = container.querySelector<HTMLElement>(
       '[data-sidebar-launcher="context"] [data-sidebar-launcher-icons]',
     )!;
-    const noteOverflow = getByRole('button', { name: /2 more notes/ });
-    const expectNoteOverflowStyle = (overflow: HTMLElement) => {
-      expect(overflow.className).toContain('launcher-overflow-button');
-      expect(overflow.className).toContain('text-xs');
-      expect(overflow.className).toContain('font-medium');
-      expect(overflow.className).toContain('leading-3');
-      expect(overflow.className).toContain('text-muted-foreground');
-      expect(overflow.className).toContain('whitespace-nowrap');
-      expect(overflow.className).toContain('bg-muted!');
-      expect(overflow.className).toContain('border-0!');
-      expect(overflow.className).toContain('px-1.5!');
-      expect(overflow.className).toContain('shadow-none!');
-      expect(overflow.className).toContain('min-w-5');
-      expect(overflow.className).toContain('rounded-md!');
-      expect(overflow.className).toContain('hover:bg-muted\/80!');
-      expect(overflow.className).toContain('hover:text-foreground');
-      expect(overflow.className).toContain('focus-visible:text-foreground');
-      expect(overflow.className).not.toMatch(/font-semibold/);
-      const style = getComputedStyle(overflow);
-      expect(overflow.style.fontSize).toBe('');
-      expect(style.lineHeight).toBe('12px');
-      expect(style.fontWeight).toBe('500');
-      expect(style.borderRadius).toBe('6px');
-      expect(overflow.style.background).toContain('--muted');
-      expect(style.paddingTop).toBe('0px');
-      expect(style.boxShadow).toBe('none');
-    };
 
     expect(agentCard.classList.contains('overflow-hidden')).toBe(true);
     expect(agentStack.querySelectorAll('[data-agent-avatar-stack-item]')).toHaveLength(6);
@@ -802,10 +775,12 @@ describe('MultiSelectTabbedSidebar Files Open In', () => {
     expect(agentOverflow.matches('button, [role="button"], [tabindex]')).toBe(false);
     expect(agentOverflow.textContent).toBe('+2');
     expect(agentOverflow.className).toContain('agent-avatar-stack-overflow');
-    expect(contextStack.style.gridTemplateColumns).toBe(
-      'max-content repeat(4, 15px) 36px max-content',
+    expect(contextStack.querySelectorAll('[data-sidebar-context]')).toHaveLength(1);
+    expect(contextStack.querySelector('[data-sidebar-context-overflow]')).toBeNull();
+    await fireEvent.click(contextStack.querySelector('[data-sidebar-context="spec"]')!);
+    expect(mocks.openUserTab).toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'note', noteId: 'spec', workspaceId: 'ws-1' }),
     );
-    expectNoteOverflowStyle(noteOverflow);
     for (const theme of ['light', 'dark'] as const) {
       document.documentElement.classList.toggle('dark', theme === 'dark');
       document.documentElement.dataset.theme = theme;
