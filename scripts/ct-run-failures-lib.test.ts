@@ -21,13 +21,18 @@ const FILES_MENU_SPEC = 'src/lib/components/workspace/__tests__/files-open-menu.
 const JOBS_PAYLOAD = {
   total_count: 7,
   jobs: [
-    { id: 1, name: 'Lint & Typecheck', conclusion: 'success' },
-    { id: 44, name: 'Component Tests (shard 4/4)', conclusion: 'failure' },
-    { id: 11, name: 'Component Tests (shard 1/4)', conclusion: 'success' },
-    { id: 22, name: 'Component Tests (shard 2/4)', conclusion: 'success' },
-    { id: 5, name: 'Component Tests (quarantine, advisory)', conclusion: 'success' },
-    { id: 33, name: 'Component Tests (shard 3/4)', conclusion: null },
-    { id: 6, name: 'Unit Tests', conclusion: 'success' },
+    { id: 1, name: 'Lint & Typecheck', status: 'completed', conclusion: 'success' },
+    { id: 44, name: 'Component Tests (shard 4/4)', status: 'completed', conclusion: 'failure' },
+    { id: 11, name: 'Component Tests (shard 1/4)', status: 'completed', conclusion: 'success' },
+    { id: 22, name: 'Component Tests (shard 2/4)', status: 'completed', conclusion: 'success' },
+    {
+      id: 5,
+      name: 'Component Tests (quarantine, advisory)',
+      status: 'completed',
+      conclusion: 'success',
+    },
+    { id: 33, name: 'Component Tests (shard 3/4)', status: 'in_progress', conclusion: null },
+    { id: 6, name: 'Unit Tests', status: 'completed', conclusion: 'success' },
   ],
 };
 
@@ -209,6 +214,7 @@ describe('parseCtJobs', () => {
         jobId: 11,
         shard: 1,
         shardCount: 4,
+        status: 'completed',
         conclusion: 'success',
         name: 'Component Tests (shard 1/4)',
       },
@@ -216,14 +222,23 @@ describe('parseCtJobs', () => {
         jobId: 22,
         shard: 2,
         shardCount: 4,
+        status: 'completed',
         conclusion: 'success',
         name: 'Component Tests (shard 2/4)',
       },
-      { jobId: 33, shard: 3, shardCount: 4, conclusion: null, name: 'Component Tests (shard 3/4)' },
+      {
+        jobId: 33,
+        shard: 3,
+        shardCount: 4,
+        status: 'in_progress',
+        conclusion: null,
+        name: 'Component Tests (shard 3/4)',
+      },
       {
         jobId: 44,
         shard: 4,
         shardCount: 4,
+        status: 'completed',
         conclusion: 'failure',
         name: 'Component Tests (shard 4/4)',
       },
@@ -232,7 +247,9 @@ describe('parseCtJobs', () => {
 
   it('accepts a bare jobs array and returns [] when there are no CT jobs', () => {
     expect(parseCtJobs(JOBS_PAYLOAD.jobs)).toHaveLength(4);
-    expect(parseCtJobs({ jobs: [{ id: 1, name: 'Lint', conclusion: 'success' }] })).toEqual([]);
+    expect(
+      parseCtJobs({ jobs: [{ id: 1, name: 'Lint', status: 'completed', conclusion: 'success' }] }),
+    ).toEqual([]);
     expect(parseCtJobs(undefined)).toEqual([]);
   });
 });
@@ -508,6 +525,7 @@ describe('formatReport', () => {
   it('reports an all-green run with zero red shards and no job list', () => {
     const green = parseCtJobs(JOBS_PAYLOAD).map((s) => ({
       ...s,
+      status: 'completed',
       conclusion: 'success',
       source: null,
       cases: [],

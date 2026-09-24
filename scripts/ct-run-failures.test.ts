@@ -69,11 +69,35 @@ describe('parseArgs', () => {
 const JOBS = {
   total_count: 5,
   jobs: [
-    { id: 1, name: 'Lint & Typecheck', conclusion: 'success', run_attempt: 1 },
-    { id: 11, name: 'Component Tests (shard 1/4)', conclusion: 'success', run_attempt: 1 },
-    { id: 22, name: 'Component Tests (shard 2/4)', conclusion: 'failure', run_attempt: 1 },
-    { id: 33, name: 'Component Tests (shard 3/4)', conclusion: 'failure', run_attempt: 1 },
-    { id: 44, name: 'Component Tests (shard 4/4)', conclusion: 'failure', run_attempt: 1 },
+    { id: 1, name: 'Lint & Typecheck', status: 'completed', conclusion: 'success', run_attempt: 1 },
+    {
+      id: 11,
+      name: 'Component Tests (shard 1/4)',
+      status: 'completed',
+      conclusion: 'success',
+      run_attempt: 1,
+    },
+    {
+      id: 22,
+      name: 'Component Tests (shard 2/4)',
+      status: 'completed',
+      conclusion: 'failure',
+      run_attempt: 1,
+    },
+    {
+      id: 33,
+      name: 'Component Tests (shard 3/4)',
+      status: 'completed',
+      conclusion: 'failure',
+      run_attempt: 1,
+    },
+    {
+      id: 44,
+      name: 'Component Tests (shard 4/4)',
+      status: 'completed',
+      conclusion: 'failure',
+      run_attempt: 1,
+    },
   ],
 };
 
@@ -158,7 +182,7 @@ function servePage(fixture: Page | Page[], path: string) {
 }
 
 function fakeRunner({
-  logs = {} as Record<number, string>,
+  logs = {} as Record<number, string | Error>,
   jobs = JOBS as Page | Page[],
   artifacts = ARTIFACTS as Page | Page[],
   latestAttempt = 1,
@@ -174,7 +198,9 @@ function fakeRunner({
     },
     jobLog: (_repo: string, jobId: number) => {
       calls.push(`log ${jobId}`);
-      return logs[jobId] ?? '';
+      const log = logs[jobId];
+      if (log instanceof Error) throw log;
+      return log ?? '';
     },
     jsonReport: (_repo: string, _runId: string, name: string) => {
       calls.push(`download ${name}`);
@@ -185,6 +211,30 @@ function fakeRunner({
 }
 
 describe('collectRun shard resolution', () => {
+  it.each(['queued', 'in_progress'])(
+    'does not request artifacts or logs when every shard is %s',
+    (status) => {
+      const { runner, calls } = fakeRunner({
+        jobs: {
+          total_count: 1,
+          jobs: [{ ...JOBS.jobs[2], status, conclusion: null }],
+        },
+        logs: { 22: new GhError('gh api failed: HTTP 404: Not Found') },
+      });
+      const { shards, warnings } = collectRun({
+        runId: RUN_ID,
+        repo: DEFAULT_REPO,
+        attempt: undefined,
+        runner,
+      });
+      expect(shards).toEqual([
+        expect.objectContaining({ jobId: 22, source: null, cases: [], pending: true }),
+      ]);
+      expect(warnings).toEqual([]);
+      expect(calls).toEqual([`api repos/${DEFAULT_REPO}/actions/runs/${RUN_ID}/jobs?${PAGE_1}`]);
+    },
+  );
+
   it('skips green shards, reads JSON where the artifact has a report, and falls back to the log otherwise', () => {
     const { runner, calls } = fakeRunner({
       logs: { 33: LOG_WITH_SUMMARY, 44: LOG_WITHOUT_SUMMARY },
@@ -250,6 +300,7 @@ describe('collectRun shard resolution', () => {
       Array.from({ length: count }, (_, i) => ({
         id: 1000 + i,
         name: `${prefix} ${i}`,
+        status: 'completed',
         conclusion: 'success',
         run_attempt: 1,
         expired: false,
@@ -259,7 +310,13 @@ describe('collectRun shard resolution', () => {
       {
         total_count: 101,
         jobs: [
-          { id: 22, name: 'Component Tests (shard 2/4)', conclusion: 'failure', run_attempt: 1 },
+          {
+            id: 22,
+            name: 'Component Tests (shard 2/4)',
+            status: 'completed',
+            conclusion: 'failure',
+            run_attempt: 1,
+          },
         ],
       },
     ];
@@ -295,6 +352,7 @@ describe('collectRun shard resolution', () => {
       jobs: Array.from({ length: 100 }, (_, i) => ({
         id: 1000 + i,
         name: i === 99 ? 'Component Tests (shard 1/4)' : `Unit ${i}`,
+        status: 'completed',
         conclusion: 'success',
         run_attempt: 1,
       })),
@@ -419,7 +477,13 @@ describe('collectRun shard resolution', () => {
     const attempt1Jobs = {
       total_count: 1,
       jobs: [
-        { id: 33, name: 'Component Tests (shard 2/4)', conclusion: 'failure', run_attempt: 1 },
+        {
+          id: 33,
+          name: 'Component Tests (shard 2/4)',
+          status: 'completed',
+          conclusion: 'failure',
+          run_attempt: 1,
+        },
       ],
     };
     const log = [...requiredLaneHeader(2), ...REQUIRED_FAILED_SUMMARY].join('\n');
@@ -465,7 +529,9 @@ describe('collectRun shard resolution', () => {
     const { runner, calls } = fakeRunner({
       jobs: {
         total_count: 1,
-        jobs: [{ id: 1, name: 'publish', conclusion: 'success', run_attempt: 1 }],
+        jobs: [
+          { id: 1, name: 'publish', status: 'completed', conclusion: 'success', run_attempt: 1 },
+        ],
       },
     });
     expect(
@@ -591,7 +657,15 @@ function installFakeGh(log: string) {
   writeFileSync(join(dir, 'job.log'), log);
   const jobs = {
     total_count: 1,
-    jobs: [{ id: 22, name: 'Component Tests (shard 2/4)', conclusion: 'failure', run_attempt: 1 }],
+    jobs: [
+      {
+        id: 22,
+        name: 'Component Tests (shard 2/4)',
+        status: 'completed',
+        conclusion: 'failure',
+        run_attempt: 1,
+      },
+    ],
   };
   const script = [
     `#!${process.execPath}`,
@@ -675,6 +749,71 @@ describe('main', () => {
     };
   }
 
+  it.each([
+    { status: 'queued', json: false },
+    { status: 'in_progress', json: false },
+    { status: 'queued', json: true },
+    { status: 'in_progress', json: true },
+  ])('reports completed failures beside a $status shard (json=$json)', ({ status, json }) => {
+    const { io, stdout, stderr } = capture();
+    const { runner, calls } = fakeRunner({
+      jobs: {
+        total_count: 2,
+        jobs: [JOBS.jobs[2], { ...JOBS.jobs[3], status, conclusion: null }],
+      },
+      logs: { 33: new GhError('gh api failed: HTTP 404: Not Found') },
+    });
+    expect(main([RUN_ID, ...(json ? ['--json'] : [])], { createRunner: () => runner, ...io })).toBe(
+      0,
+    );
+    if (json) {
+      const report = JSON.parse(stdout());
+      expect(report.totals).toEqual({ failed: 1, flaky: 0, redShards: 1 });
+      expect(report.shards).toEqual([
+        expect.objectContaining({
+          jobId: 22,
+          source: 'json',
+          cases: [expect.objectContaining({ status: 'failed', title: 'breaks' })],
+        }),
+        expect.objectContaining({
+          jobId: 33,
+          conclusion: null,
+          pending: true,
+          source: null,
+          cases: [],
+        }),
+      ]);
+    } else {
+      expect(stdout()).toContain('lib/a.ct.spec.ts:3:1  breaks');
+      expect(stdout()).toContain('shard 3/4  pending');
+      const total = stdout().trim().split('\n').at(-1);
+      expect(total).toContain('Total: 1 failed, 0 flaky across 1 red shard');
+      expect(total).toContain(`/job/22`);
+      expect(total).not.toContain(`/job/33`);
+    }
+    expect(stderr()).toBe('');
+    expect(calls).toEqual([
+      `api repos/${DEFAULT_REPO}/actions/runs/${RUN_ID}/jobs?${PAGE_1}`,
+      `api repos/${DEFAULT_REPO}/actions/runs/${RUN_ID}/artifacts?${PAGE_1}`,
+      'download playwright-ct-report-2-of-4',
+    ]);
+  });
+
+  it.each(['HTTP 404: Not Found', 'HTTP 401: Bad credentials', 'network connection failed'])(
+    'keeps completed-job log errors fatal: %s',
+    (message) => {
+      const { io, stdout, stderr } = capture();
+      const { runner, calls } = fakeRunner({
+        jobs: { total_count: 1, jobs: [JOBS.jobs[3]] },
+        logs: { 33: new GhError(`gh api failed: ${message}`) },
+      });
+      expect(main([RUN_ID], { createRunner: () => runner, ...io })).toBe(3);
+      expect(stdout()).toBe('');
+      expect(stderr()).toContain(message);
+      expect(calls).toContain('log 33');
+    },
+  );
+
   it('prints the listing and exits 0 even with failures', () => {
     const { io, stdout, stderr } = capture();
     const { runner } = fakeRunner({ logs: { 33: LOG_WITH_SUMMARY, 44: LOG_WITHOUT_SUMMARY } });
@@ -699,7 +838,9 @@ describe('main', () => {
     const { runner } = fakeRunner({
       jobs: {
         total_count: 1,
-        jobs: [{ id: 1, name: 'publish', conclusion: 'success', run_attempt: 1 }],
+        jobs: [
+          { id: 1, name: 'publish', status: 'completed', conclusion: 'success', run_attempt: 1 },
+        ],
       },
     });
     expect(main([RUN_ID], { createRunner: () => runner, ...io })).toBe(2);
@@ -723,7 +864,13 @@ describe('main', () => {
     const jobs = {
       total_count: 1,
       jobs: [
-        { id: 22, name: 'Component Tests (shard 2/4)', conclusion: 'failure', run_attempt: 1 },
+        {
+          id: 22,
+          name: 'Component Tests (shard 2/4)',
+          status: 'completed',
+          conclusion: 'failure',
+          run_attempt: 1,
+        },
       ],
     };
     const artifacts = {
