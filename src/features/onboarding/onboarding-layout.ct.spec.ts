@@ -137,3 +137,30 @@ test('starter suggestions have tight text gaps and preserve keyboard selection a
   await page.keyboard.press('ArrowUp');
   await expect(component.locator('#suggestion-shuffle')).toHaveAttribute('aria-selected', 'true');
 });
+
+for (const gitlabEnabled of [false, true]) {
+  test(`forge setup preserves keyboard access with GitLab Labs ${gitlabEnabled ? 'on' : 'off'}`, async ({
+    mount,
+    page,
+  }) => {
+    await page.setViewportSize({ width: 720, height: 900 });
+    const component = await mount(Preview, { props: { step: 'forge', gitlabEnabled } });
+    const github = component.getByRole('button', { name: 'Connect GitHub', exact: true });
+    await github.focus();
+    await page.keyboard.press('Tab');
+    if (gitlabEnabled) {
+      const gitlab = component.getByRole('button', { name: 'Connect GitLab', exact: true });
+      await expect(gitlab).toBeFocused();
+      await page.keyboard.press('Enter');
+      const host = component.locator('input[type=text]');
+      await expect(host).toBeVisible();
+      const form = component.getByTestId('gitlab-connect-form');
+      expect(await form.evaluate((el) => el.scrollWidth - el.clientWidth)).toBeLessThanOrEqual(1);
+    } else {
+      await expect(component.getByRole('button', { name: /Skip for now/ })).toBeFocused();
+      await expect(
+        component.getByRole('button', { name: 'Connect GitLab', exact: true }),
+      ).toHaveCount(0);
+    }
+  });
+}

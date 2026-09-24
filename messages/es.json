@@ -6752,5 +6752,7 @@
   "workspace_transfer_export_title": "Exportar espacio de trabajo",
   "workspace_transfer_export_description": "Guarda «{title}» en un archivo que puedas importar en otro dispositivo.",
   "workspace_transfer_connectDevice_label": "Para transferir directamente, conecta otro dispositivo",
-  "workspace_transfer_reviewExport_label": "Revisar exportación"
+  "workspace_transfer_reviewExport_label": "Revisar exportación",
+  "settings_labs_gitlab_label": "GitLab",
+  "settings_labs_gitlab_description": "Conecta GitLab en Ajustes y durante la configuración inicial. Las conexiones y sesiones compartidas existentes siguen funcionando aunque esta opción esté desactivada."
 }

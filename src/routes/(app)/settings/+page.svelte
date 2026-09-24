@@ -52,6 +52,7 @@
     setChatAuroraEnabled,
     setCodeFontFamily,
     setLabsMultiplayerEnabled,
+    setLabsGitLabEnabled,
     setNoteFontStyle,
     setShellTransparencyEnabled,
     setUpdateChannel,
@@ -65,6 +66,7 @@
     selectCodeFontOptions,
     selectIsNoteMonospace,
     selectLabsMultiplayerEnabled,
+    selectLabsGitLabEnabled,
     selectNoteFontStyle,
     selectShellTransparencyEnabled,
     selectUpdateChannel,
@@ -97,6 +99,7 @@
   const chatAuroraEnabled = selectChatAuroraEnabled();
   const shellTransparencyEnabled = selectShellTransparencyEnabled();
   const labsMultiplayerEnabled = selectLabsMultiplayerEnabled();
+  const labsGitLabEnabled = selectLabsGitLabEnabled();
   const themePreference = selectThemePreference();
   const daemonTransport$ = selectDaemonTransport();
   const isCollaboratorOnlyClient$ = selectIsCollaboratorOnlyClient();
@@ -184,6 +187,7 @@
     developer: 'advanced',
     labs: 'labs',
     'labs-multiplayer': 'labs',
+    'labs-gitlab': 'labs',
     multiplayer: 'labs',
   };
 
@@ -1156,6 +1160,29 @@
                     onCheckedChange={(enabled) =>
                       appStore.dispatch(setLabsMultiplayerEnabled(enabled))}
                     ariaLabel={m.settings_labs_multiplayer_label()}
+                  />
+                </SettingsFieldRow>
+              </section>
+              <section
+                id="labs-gitlab"
+                data-highlight-id="labs-gitlab"
+                use:highlightTarget
+                data-slot="settings-section-body"
+                class="px-6 py-4"
+              >
+                <SettingsFieldRow
+                  id="settings-labs-gitlab-label-field"
+                  label={m.settings_labs_gitlab_label()}
+                  description={m.settings_labs_gitlab_description()}
+                  experimental
+                >
+                  <Switch
+                    id="labs-gitlab-switch"
+                    size="sm"
+                    class="mb-auto"
+                    checked={$labsGitLabEnabled}
+                    onCheckedChange={(enabled) => appStore.dispatch(setLabsGitLabEnabled(enabled))}
+                    ariaLabel={m.settings_labs_gitlab_label()}
                   />
                 </SettingsFieldRow>
               </section>

@@ -333,5 +333,6 @@
   "workspace_share_pinProvider_github_label": "*",
   "workspace_share_pinProvider_gitlab_label": "*",
   "workspace_share_member_identityRole_label": ["de", "es", "fr", "ko", "zh-CN", "zh-TW"],
-  "presence_person_forge_label": ["de", "es", "fr", "ko", "zh-CN", "zh-TW"]
+  "presence_person_forge_label": ["de", "es", "fr", "ko", "zh-CN", "zh-TW"],
+  "settings_labs_gitlab_label": ["de", "es", "fr", "ja", "ko", "zh-CN", "zh-TW"]
 }

@@ -6752,5 +6752,7 @@
   "workspace_transfer_export_title": "导出工作区",
   "workspace_transfer_export_description": "将“{title}”保存为可在其他设备上导入的文件。",
   "workspace_transfer_connectDevice_label": "要直接传输，请连接其他设备",
-  "workspace_transfer_reviewExport_label": "查看导出内容"
+  "workspace_transfer_reviewExport_label": "查看导出内容",
+  "settings_labs_gitlab_label": "GitLab",
+  "settings_labs_gitlab_description": "在设置和初始设置中连接 GitLab。关闭后，现有连接和共享会话仍可继续使用。"
 }

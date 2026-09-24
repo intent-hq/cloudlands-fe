@@ -246,6 +246,7 @@ export const mockUserPreferences: UserPreferencesState = {
   shellTransparencyEnabled: true,
   reduceMotionOnBattery: false,
   labsMultiplayerEnabled: false,
+  labsGitLabEnabled: false,
   agentFontStyle: 'sans',
   noteFontStyle: 'sans',
   codeFontFamily: 'JetBrains Mono',

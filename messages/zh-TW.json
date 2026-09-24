@@ -6752,5 +6752,7 @@
   "workspace_transfer_export_title": "匯出工作區",
   "workspace_transfer_export_description": "將「{title}」儲存為可在其他裝置上匯入的檔案。",
   "workspace_transfer_connectDevice_label": "若要直接傳輸，請連接其他裝置",
-  "workspace_transfer_reviewExport_label": "檢視匯出內容"
+  "workspace_transfer_reviewExport_label": "檢視匯出內容",
+  "settings_labs_gitlab_label": "GitLab",
+  "settings_labs_gitlab_description": "在設定和初始設定中連線至 GitLab。關閉後，現有連線和共用工作階段仍可繼續使用。"
 }

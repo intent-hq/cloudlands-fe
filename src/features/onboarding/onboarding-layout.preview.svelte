@@ -13,6 +13,7 @@
     step?: OnboardingStep;
     compact?: boolean;
     forge?: ForgeScenario;
+    gitlabEnabled?: boolean;
   }
   export const preview = definePreview<Props>({
     id: 'onboarding-layout',
@@ -21,9 +22,14 @@
     states: {
       welcome: { props: { step: 'welcome' } },
       forge: { props: { step: 'forge' } },
+      'forge-gitlab-enabled': { props: { step: 'forge', gitlabEnabled: true } },
       'forge-github-device': { props: { step: 'forge', forge: 'github-device' } },
-      'forge-gitlab-device': { props: { step: 'forge', forge: 'gitlab-device' } },
-      'forge-gitlab-connecting': { props: { step: 'forge', forge: 'gitlab-connecting' } },
+      'forge-gitlab-device': {
+        props: { step: 'forge', forge: 'gitlab-device', gitlabEnabled: true },
+      },
+      'forge-gitlab-connecting': {
+        props: { step: 'forge', forge: 'gitlab-connecting', gitlabEnabled: true },
+      },
       'forge-connected-github': { props: { step: 'forge', forge: 'connected-github' } },
       'forge-connected-gitlab': { props: { step: 'forge', forge: 'connected-gitlab' } },
       project: { props: { step: 'project' } },
@@ -39,6 +45,7 @@
   import CompactWorkspaceInitializer from '$lib/components/workspace/CompactWorkspaceInitializer.svelte';
   import { previewProviders } from '$lib/components/settings/provider-selector.preview';
   import { store as appStore } from '$store/renderer/store';
+  import { setLabsGitLabEnabled } from '$store/renderer/slices/user-preferences/user-preferences-slice';
   import { goToStep } from '$store/renderer/slices/onboarding/onboarding-slice';
   import { selectOnboardingStep } from '$store/renderer/slices/onboarding/onboarding-selectors';
   import { selectProviderCatalogEntries } from '$store/renderer/slices/provider-catalog/provider-catalog-selectors';
@@ -67,7 +74,13 @@
   } from '$store/renderer/slices/gitlab-auth/gitlab-auth-slice';
   import type { GitLabAuthState } from '$store/renderer/slices/gitlab-auth/gitlab-auth-types';
 
-  let { step = 'configuring', compact = false, forge = 'idle' }: Props = $props();
+  let {
+    step = 'configuring',
+    compact = false,
+    forge = 'idle',
+    gitlabEnabled = false,
+  }: Props = $props();
+  const previousGitLabEnabled = appStore.state.userPreferences.labsGitLabEnabled;
   const previousStep = selectOnboardingStep.select(appStore.state);
   const previousProviders = selectProviderCatalogEntries.select(appStore.state);
   const previousStatuses = selectProviderStatusMap.select(appStore.state);
@@ -166,7 +179,10 @@
     applyGitLab(gitlab);
   }
   const seededForge = untrack(() => step === 'forge');
-  if (seededForge) seedForge(untrack(() => forge));
+  if (seededForge) {
+    appStore.dispatch(setLabsGitLabEnabled(untrack(() => gitlabEnabled)));
+    seedForge(untrack(() => forge));
+  }
   appStore.dispatch(providerCatalogLoaded({ providers: previewProviders }));
   for (const provider of previewProviders) {
     appStore.dispatch(
@@ -193,6 +209,7 @@
     if (seededForge) {
       applyGitHub(previousGitHub);
       applyGitLab(previousGitLab);
+      appStore.dispatch(setLabsGitLabEnabled(previousGitLabEnabled));
     }
   });
 </script>

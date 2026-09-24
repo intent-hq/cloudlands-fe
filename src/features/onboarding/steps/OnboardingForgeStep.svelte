@@ -37,6 +37,7 @@
     selectGitLabAuthIsConfigured,
     selectGitLabAuthUser,
   } from '$store/renderer/slices/gitlab-auth/gitlab-auth-selectors';
+  import { selectLabsGitLabEnabled } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
   import { selectDaemonSupportsSourceControlAuth } from '$store/renderer/slices/daemon-health/daemon-health-selectors';
   import GitHubDeviceCodeCard from '$lib/components/GitHubDeviceCodeCard.svelte';
   import GitLabConnectForm from '$lib/components/GitLabConnectForm.svelte';
@@ -68,6 +69,8 @@
   const gitlabUser$ = selectGitLabAuthUser();
   const gitlabHost$ = selectGitLabAuthHost();
   const gitlabSupported$ = selectDaemonSupportsSourceControlAuth();
+  const gitlabEnabled$ = selectLabsGitLabEnabled();
+  const gitlabSetupAvailable = $derived($gitlabEnabled$ && $gitlabSupported$);
 
   const anyConnected = $derived($githubIsAuthenticated$ || $gitlabIsConfigured$);
   // A flow in progress opens its panel even before the user re-picks it (e.g.
@@ -76,14 +79,15 @@
   // bounce back to the chooser. The GitLab panel is never resumed or kept open
   // on a daemon that does not serve its auth methods.
   $effect(() => {
+    if (!gitlabSetupAvailable && choice === 'gitlab') choice = null;
     if (choice !== null) return;
     if ($githubIsAuthenticating$) choice = 'github';
-    else if ($gitlabIsAuthenticating$ && $gitlabSupported$) choice = 'gitlab';
+    else if ($gitlabIsAuthenticating$ && gitlabSetupAvailable) choice = 'gitlab';
   });
   const activeChoice = $derived.by<ForgeChoice | null>(() => {
     const resolved =
       choice ?? ($githubIsAuthenticating$ ? 'github' : $gitlabIsAuthenticating$ ? 'gitlab' : null);
-    return resolved === 'gitlab' && !$gitlabSupported$ ? null : resolved;
+    return resolved === 'gitlab' && !gitlabSetupAvailable ? null : resolved;
   });
 
   onMount(() => {
@@ -117,6 +121,7 @@
   }
 
   function handleChooseGitLab() {
+    if (!selectLabsGitLabEnabled.select(appStore.state)) return;
     choice = 'gitlab';
   }
 
@@ -252,7 +257,7 @@
           {m.onboarding_forgeStep_connectGithub_label()}
         </Button>
       {/if}
-      {#if $gitlabSupported$}
+      {#if gitlabSetupAvailable}
         <Button class="group/button" size="xl" variant="outline" onclick={handleChooseGitLab}>
           <Fa icon={faGitlab} />
           {m.onboarding_forgeStep_connectGitlab_label()}

@@ -6752,5 +6752,7 @@
   "workspace_transfer_export_title": "Export workspace",
   "workspace_transfer_export_description": "Save “{title}” to a file you can import on another device.",
   "workspace_transfer_connectDevice_label": "To transfer directly, connect another device",
-  "workspace_transfer_reviewExport_label": "Review export"
+  "workspace_transfer_reviewExport_label": "Review export",
+  "settings_labs_gitlab_label": "GitLab",
+  "settings_labs_gitlab_description": "Connect GitLab in Settings and onboarding. Existing connections and shared sessions keep working when this is off."
 }

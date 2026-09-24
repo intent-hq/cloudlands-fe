@@ -42,6 +42,7 @@ import {
   selectGithubLinkDefaultAction,
   selectHasCompletedProviderSetup,
   selectLabsMultiplayerEnabled,
+  selectLabsGitLabEnabled,
   selectLanguagePreference,
   selectNotificationEnabled,
   selectNotificationVolume,
@@ -95,6 +96,7 @@ import {
   setGithubLinkDefaultAction,
   setHasCompletedProviderSetup,
   setLabsMultiplayerEnabled,
+  setLabsGitLabEnabled,
   setLanguagePreference,
   setNotificationEnabled,
   setNoteFontStyle,
@@ -290,6 +292,8 @@ async function readCurrentSettingValue(definition: AppSettingDefinition): Promis
       return selectShellTransparencyEnabled.select(state);
     case 'labs.multiplayer':
       return selectLabsMultiplayerEnabled.select(state);
+    case 'labs.gitlab':
+      return selectLabsGitLabEnabled.select(state);
     case 'workspaceList.showArchived':
       return selectShowArchived.select(state);
     case 'workspaceList.groupByRepo':
@@ -394,6 +398,9 @@ function dispatchReduxAction(path: string, value: unknown): boolean {
       return true;
     case 'labs.multiplayer':
       appStore.dispatch(setLabsMultiplayerEnabled(Boolean(value)));
+      return true;
+    case 'labs.gitlab':
+      appStore.dispatch(setLabsGitLabEnabled(Boolean(value)));
       return true;
     case 'workspaceList.showArchived':
       appStore.dispatch(setShowArchived(Boolean(value)));

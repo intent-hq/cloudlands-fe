@@ -6752,5 +6752,7 @@
   "workspace_transfer_export_title": "ワークスペースをエクスポート",
   "workspace_transfer_export_description": "「{title}」を別のデバイスでインポートできるファイルに保存します。",
   "workspace_transfer_connectDevice_label": "直接転送するには、別のデバイスを接続してください",
-  "workspace_transfer_reviewExport_label": "エクスポート内容を確認"
+  "workspace_transfer_reviewExport_label": "エクスポート内容を確認",
+  "settings_labs_gitlab_label": "GitLab",
+  "settings_labs_gitlab_description": "設定と初期設定で GitLab に接続できます。オフにしても、既存の接続と共有セッションは引き続き利用できます。"
 }

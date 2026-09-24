@@ -196,6 +196,16 @@ const APP_UI_TARGETS: AppUiTarget[] = [
     description: 'Experimental Multiplayer lab toggle.',
   }),
   settingsTarget({
+    id: 'labs-gitlab',
+    tab: 'labs',
+    hashAliases: ['labs-gitlab'],
+    scrollSelector: '#labs-gitlab',
+    highlightSelector: '[data-highlight-id="labs-gitlab"]',
+    label: 'Settings: GitLab (Labs)',
+    route: '/settings?tab=labs#labs-gitlab',
+    description: 'Experimental GitLab lab toggle.',
+  }),
+  settingsTarget({
     id: 'general',
     tab: 'advanced',
     hashAliases: ['general', 'reset'],

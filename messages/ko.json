@@ -6752,5 +6752,7 @@
   "workspace_transfer_export_title": "워크스페이스 내보내기",
   "workspace_transfer_export_description": "다른 기기에서 가져올 수 있는 파일로 “{title}”을 저장합니다.",
   "workspace_transfer_connectDevice_label": "직접 전송하려면 다른 기기를 연결하세요",
-  "workspace_transfer_reviewExport_label": "내보내기 검토"
+  "workspace_transfer_reviewExport_label": "내보내기 검토",
+  "settings_labs_gitlab_label": "GitLab",
+  "settings_labs_gitlab_description": "설정과 초기 설정에서 GitLab에 연결합니다. 이 기능을 꺼도 기존 연결과 공유 세션은 계속 작동합니다."
 }
