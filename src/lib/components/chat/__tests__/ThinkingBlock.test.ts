@@ -32,44 +32,59 @@ async function renderBlock(props: { content: string; isStreaming?: boolean }) {
 
 describe('ThinkingBlock — tool-call presentation', () => {
   it.each([
-    '**Checking `src/*.ts` &amp; _private**',
-    '## Checking `src/*.ts` &amp; _private',
-    'Checking `src/*.ts` &amp; _private\n---',
-  ])('preserves the literal title and original body through growth: %s', async (title) => {
-    const expected = 'Checking src/*.ts & _private';
-    const body = '  Body with `src/*.ts`, _private and &amp;.\n\nAnother paragraph.\n';
-    const content = `${title}\n\n${body}`;
-    const view = await renderBlock({ content: title, isStreaming: true });
-    expect(screen.queryByRole('button')).toBeNull();
+    ['**Checking `src/*.ts` &amp; _private**', 'Checking src/*.ts & _private'],
+    ['## Checking `src/*.ts` &amp; _private', 'Checking src/*.ts & _private'],
+    ['Checking `src/*.ts` &amp; _private\n---', 'Checking src/*.ts & _private'],
+    ['**Checking <Widget> props**', 'Checking <Widget> props'],
+    ['## Checking <Widget> props', 'Checking <Widget> props'],
+    ['Checking <Widget> props\n---', 'Checking <Widget> props'],
+    ['**Reviewing Array<T> types**', 'Reviewing Array<T> types'],
+    ['## Reviewing Array<T> types', 'Reviewing Array<T> types'],
+    ['Reviewing Array<T> types\n---', 'Reviewing Array<T> types'],
+    ['**Checking <span>label</span> nodes**', 'Checking <span>label</span> nodes'],
+    ['## Checking <span>label</span> nodes', 'Checking <span>label</span> nodes'],
+    ['Checking <span>label</span> nodes\n---', 'Checking <span>label</span> nodes'],
+  ])(
+    'preserves the literal title and original body through growth: %s',
+    async (title, expected) => {
+      const body = '  Body with `src/*.ts`, _private, <Widget> and &amp;.\n\nAnother paragraph.\n';
+      const content = `${title}\n\n${body}`;
+      const view = await renderBlock({ content: title, isStreaming: true });
+      expect(screen.queryByRole('button')).toBeNull();
+      expect.soft(view.container.textContent?.trim()).toBe(expected);
 
-    await view.rerender({ content, isStreaming: true });
-    const toggle = screen.getByRole('button');
-    expect(toggle.getAttribute('aria-expanded')).toBe('true');
-    expect(screen.getByTestId('markdown-viewer').textContent).toBe(body);
-    expect(toggle.textContent?.trim()).toBe(expected);
+      await view.rerender({ content, isStreaming: true });
+      const toggle = screen.getByRole('button');
+      expect(toggle.getAttribute('aria-expanded')).toBe('true');
+      expect(screen.getByTestId('markdown-viewer').textContent).toBe(body);
+      expect(toggle.textContent?.trim()).toBe(expected);
 
-    await view.rerender({ content, isStreaming: false });
-    expect(toggle.textContent?.trim()).toBe(expected);
-    expect(toggle.getAttribute('aria-expanded')).toBe('false');
-    await fireEvent.click(toggle);
-    expect(screen.getAllByTestId('markdown-viewer')).toHaveLength(1);
-    expect(screen.getByTestId('markdown-viewer').textContent).toBe(body);
-    view.unmount();
+      await view.rerender({ content, isStreaming: false });
+      expect(toggle.textContent?.trim()).toBe(expected);
+      expect(toggle.getAttribute('aria-expanded')).toBe('false');
+      await fireEvent.click(toggle);
+      expect(screen.getAllByTestId('markdown-viewer')).toHaveLength(1);
+      expect(screen.getByTestId('markdown-viewer').textContent).toBe(body);
+      view.unmount();
 
-    const reopened = await renderBlock({ content });
-    const restoredToggle = screen.getByRole('button');
-    expect(restoredToggle.textContent?.trim()).toBe(expected);
-    expect(restoredToggle.getAttribute('aria-expanded')).toBe('false');
-    await fireEvent.click(restoredToggle);
-    expect(screen.getAllByTestId('markdown-viewer')).toHaveLength(1);
-    expect(screen.getByTestId('markdown-viewer').textContent).toBe(body);
-    expect(reopened.container.querySelectorAll('[data-chat-operational-row]')).toHaveLength(1);
-  });
+      const reopened = await renderBlock({ content });
+      const restoredToggle = screen.getByRole('button');
+      expect(restoredToggle.textContent?.trim()).toBe(expected);
+      expect(restoredToggle.getAttribute('aria-expanded')).toBe('false');
+      await fireEvent.click(restoredToggle);
+      expect(screen.getAllByTestId('markdown-viewer')).toHaveLength(1);
+      expect(screen.getByTestId('markdown-viewer').textContent).toBe(body);
+      expect(reopened.container.querySelectorAll('[data-chat-operational-row]')).toHaveLength(1);
+    },
+  );
 
   it.each([
     ['Checking `src/*.ts` files', 'Checking src/*.ts files'],
     ['Comparing a < b and c > d', 'Comparing a < b and c > d'],
     ['Checking _private field', 'Checking _private field'],
+    ['Checking <Widget> props', 'Checking <Widget> props'],
+    ['Reviewing Array<T> types', 'Reviewing Array<T> types'],
+    ['Checking <span>label</span> nodes', 'Checking <span>label</span> nodes'],
     ['Reading &amp; writing', 'Reading & writing'],
     ['Reading `&amp;` literally', 'Reading &amp; literally'],
     ['Checking \\*literal\\* marks', 'Checking *literal* marks'],

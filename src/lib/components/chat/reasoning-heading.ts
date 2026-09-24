@@ -1,4 +1,5 @@
 import { Marked } from 'marked';
+import { escapeHtmlTags } from '$lib/utils/markdown-processor';
 import { strikethroughDoubleTilde } from '$lib/utils/marked-strikethrough';
 
 export interface ReasoningHeading {
@@ -16,6 +17,9 @@ const MAX_TITLE_WORDS = 10;
 
 const inlineMarkdown = new Marked(strikethroughDoubleTilde, {
   renderer: {
+    html({ text }) {
+      return escapeHtmlTags(text);
+    },
     image({ tokens }) {
       return this.parser.parseInline(tokens);
     },

@@ -114,6 +114,12 @@ describe('explicit standalone reasoning titles', () => {
       ['Checking `src/*.ts` files', 'Checking src/*.ts files'],
       ['Comparing a < b and c > d', 'Comparing a < b and c > d'],
       ['Checking _private field', 'Checking _private field'],
+      ['Checking <Widget> props', 'Checking <Widget> props'],
+      ['Reviewing Array<T> types', 'Reviewing Array<T> types'],
+      ['Checking <span>label</span> nodes', 'Checking <span>label</span> nodes'],
+      ['Reading `<Widget>&amp;` literally', 'Reading <Widget>&amp; literally'],
+      ['Checking &lt;Widget&gt; &amp; props', 'Checking <Widget> & props'],
+      ['Reading &amp;lt;Widget&amp;gt; literally', 'Reading &lt;Widget&gt; literally'],
       ['Reading &amp; writing', 'Reading & writing'],
       ['Reading &#35; and &#x1F600; entities', 'Reading # and 😀 entities'],
       ['Reading `&amp;` literally', 'Reading &amp; literally'],
@@ -148,6 +154,9 @@ describe('explicit standalone reasoning titles', () => {
     ['Checking `src/*.ts` files', 'Checking src/.ts files'],
     ['Comparing a < b and c > d', 'Comparing a d'],
     ['Checking _private field', 'Checking private field'],
+    ['Checking <Widget> props', 'Checking props'],
+    ['Reviewing Array<T> types', 'Reviewing Array types'],
+    ['Checking <span>label</span> nodes', 'Checking label nodes'],
     ['Reading &amp; writing', 'Reading &amp; writing'],
   ])('retains the legacy general/history projection for %s', (source, legacyTitle) => {
     const content = `**${source}**\n\nBody paragraph.`;
