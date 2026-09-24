@@ -50,7 +50,7 @@ for (const width of [288, 100]) {
   }) => {
     const component = await mount(SidebarTabsPreview, { props: { width } });
     const workspaces = component.getByRole('tab', { name: 'Workspaces', exact: true });
-    const intent = component.getByRole('tab', { name: 'Intent', exact: true });
+    const intent = component.getByRole('tab', { name: 'Assistant', exact: true });
     const heading = component.getByRole('heading', { name: 'All workspaces', exact: true });
     const titles = component.locator('[data-workspace-card-title]');
     const rows = component.locator('[data-workspace-card-row]');
@@ -118,7 +118,7 @@ test('pointer tab changes enter from the destination side without remounting con
   await expect(spaces).toHaveCSS('animation-name', 'none');
   await observePaneMotion(spaces);
   await observePaneMotion(chief);
-  await component.getByRole('tab', { name: 'Intent', exact: true }).click();
+  await component.getByRole('tab', { name: 'Assistant', exact: true }).click();
   await expect.poll(() => chief.getAttribute('data-observed-motions')).not.toBe('[]');
   const [forward] = JSON.parse((await chief.getAttribute('data-observed-motions'))!);
   expect(forward.fromX).toBeGreaterThan(0);
@@ -151,7 +151,7 @@ for (const preference of ['os', 'battery'] as const) {
     if (preference === 'battery') {
       await page.evaluate(() => document.documentElement.setAttribute('data-reduce-motion', ''));
     }
-    await component.getByRole('tab', { name: 'Intent', exact: true }).click();
+    await component.getByRole('tab', { name: 'Assistant', exact: true }).click();
     const chief = component.locator('[data-combined-panel-chief]');
     await expect(chief).toBeVisible();
     await expect(chief).toHaveCSS('animation-name', 'none');
@@ -174,7 +174,7 @@ test('arrows, Home and End select tabs without moving focus into hidden content'
 }) => {
   const component = await mount(SidebarTabsPreview);
   const workspaces = component.getByRole('tab', { name: 'Workspaces', exact: true });
-  const intent = component.getByRole('tab', { name: 'Intent', exact: true });
+  const intent = component.getByRole('tab', { name: 'Assistant', exact: true });
   const spacesPanel = component.locator('[data-combined-panel-spaces]');
   const intentPanel = component.locator('[data-combined-panel-chief]');
   const shell = component.locator('[data-sidebar-panel]');
@@ -216,7 +216,7 @@ test('switching tabs preserves the real workspace search and mounted panel eleme
 }) => {
   const component = await mount(SidebarTabsPreview);
   const workspaces = component.getByRole('tab', { name: 'Workspaces', exact: true });
-  const intent = component.getByRole('tab', { name: 'Intent', exact: true });
+  const intent = component.getByRole('tab', { name: 'Assistant', exact: true });
   const spacesPanel = component.locator('[data-combined-panel-spaces]');
   const intentPanel = component.locator('[data-combined-panel-chief]');
   const spacesElement = await spacesPanel.elementHandle();
@@ -248,7 +248,7 @@ test('external openPanel navigation changes the selected tab in the existing she
   mount,
 }) => {
   const component = await mount(SidebarTabsPreview, { props: { initialTab: 'chief' } });
-  const intent = component.getByRole('tab', { name: 'Intent', exact: true });
+  const intent = component.getByRole('tab', { name: 'Assistant', exact: true });
   await expect(intent).toHaveAttribute('aria-selected', 'true');
   const shell = await component.locator('[data-sidebar-panel]').elementHandle();
   await component.update({ props: { initialTab: 'all-workspaces' } });
@@ -269,7 +269,7 @@ test('both tabs remain inside the 100px minimum panel and usable by pointer and 
   const component = await mount(SidebarTabsPreview, { props: { width: 100 } });
   const shell = component.locator('[data-sidebar-panel]');
   const workspaces = component.getByRole('tab', { name: 'Workspaces', exact: true });
-  const intent = component.getByRole('tab', { name: 'Intent', exact: true });
+  const intent = component.getByRole('tab', { name: 'Assistant', exact: true });
   const tablist = component.getByRole('tablist');
   await expect(workspaces).toBeVisible();
   await expect(shell).toHaveCSS('width', '100px');
@@ -306,7 +306,7 @@ test('drag resizing changes the keyboard axis without remounting workspace searc
   const component = await mount(SidebarTabsPreview);
   const tablist = component.getByRole('tablist');
   const workspaces = component.getByRole('tab', { name: 'Workspaces', exact: true });
-  const intent = component.getByRole('tab', { name: 'Intent', exact: true });
+  const intent = component.getByRole('tab', { name: 'Assistant', exact: true });
   await component.locator('[data-combined-panel-search-toggle]').click();
   const search = component.getByRole('textbox');
   await search.fill('release');
