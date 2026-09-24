@@ -1,16 +1,8 @@
 ---
 name: core/actions
 description: >-
-  createAction<[Params]>(type) produces action creators with positional-tuple
-  payloads; an optional payloadModifier transforms args into any payload shape.
-  createAsyncAction<[Args], SuccessPayload>(asyncType, stagesType) produces a
-  request/success/failure triplet plus a promise on each request. Always
-  namespace action types as "sliceName/actionName". Action creators expose
-  .type and .toString, so they are passed directly to takeEvery/takeLatest —
-  never .type. Async creators expose static .success/.failure creators on the
-  creator itself, and per-instance success/failure/promise on each dispatched
-  action. Each action type has one canonical owner; search for existing action
-  creators before adding another.
+  Use when creating Themis actions with createAction or createAsyncAction,
+  including tuple payloads, async request promises, and action ownership.
 type: sub-skill
 requires:
   - core

@@ -77,6 +77,7 @@
   static={staticPosition}
   bind:contentRef
   size="editor"
+  allowOverflow
   title={m.modals_newSpace_title()}
   closeLabel={m.ui_updateToast_close_ariaLabel()}
   escapeKeydownBehavior="ignore"

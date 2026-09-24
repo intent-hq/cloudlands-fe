@@ -1,11 +1,9 @@
 ---
 name: core/state-integrity
 description: >-
-  Hard rules for canonical Redux state and deduplicated ownership. Store only
-  canonical state: no derived fields, no duplicated entity copies, no parallel
-  arrays/maps for the same records, and no reducer-maintained selector outputs.
-  Actions, selectors, and sagas must each have one canonical owner and one
-  implementation. Includes preflight searches and verifier handoff evidence.
+  Use when modeling or reviewing canonical Redux state and
+  action/selector/saga ownership, including derived data, duplicated entities,
+  and duplicate implementations.
 type: sub-skill
 requires:
   - core

@@ -19,6 +19,7 @@
     useSurface,
   } from '$lib/components/ui/surface-context';
   import { useSize } from '$lib/components/ui/size-context';
+  import { provideDialogPortalTarget } from './dialog-portal-context';
 
   let {
     ref = $bindable(null),
@@ -56,6 +57,7 @@
   const density = useSize();
   const open = () => forceMount || rootOpen();
   const presence = createOverlayPresence(open);
+  provideDialogPortalTarget(() => ref);
 
   // Interactions inside a lightbox stacked above the dialog (see
   // ImageLightbox's data-image-lightbox-root) are not outside interactions:

@@ -1,10 +1,8 @@
 ---
 name: core/redux-saga
 description: >-
-  Generic redux-saga API reference for agents. Covers createSagaMiddleware,
-  middleware.run, runSaga, Effect creators, effect combinators, watcher helpers,
-  channel support, buffers, Task/Channel/Buffer/SagaMonitor interfaces,
-  cancellation, context, blocking vs non-blocking semantics, and testing helpers.
+  Use for redux-saga API semantics: middleware, runSaga, effects, watchers,
+  channels, buffers, tasks, cancellation, context, and testing helpers.
 type: core
 sources:
   - https://redux-saga.js.org/docs/api

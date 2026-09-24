@@ -272,6 +272,7 @@
       primary: showPresenceStack ? notePrimaryActions : undefined,
       display: noteDisplayActions,
       actions: noteActions,
+      destructive: tab.noteId && !isSpecNote(tab.noteId) ? noteDestructiveActions : undefined,
     });
   });
 </script>
@@ -297,6 +298,9 @@
   {#if noteFilePath}
     <OpenComboButton filePath={noteFilePath} {workspaceId} isDirectory={false} embedded />
   {/if}
+{/snippet}
+
+{#snippet noteDestructiveActions()}
   {#if tab.noteId && !isSpecNote(tab.noteId)}
     <Menu.CommandItem
       icon={faTrash}

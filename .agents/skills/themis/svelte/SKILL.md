@@ -1,11 +1,9 @@
 ---
 name: svelte
 description: >-
-  Svelte-readable routing index for frontend-facing themis work
-  only when the touched code path has concrete Svelte/SvelteKit evidence. Use for
-  Store component wiring, Svelte readable selector lifecycle, and
-  migration touchpoints. Use the Svelte subtree for Svelte/SvelteKit behavior and
-  route shared Redux/redux-saga concepts to ../core/SKILL.md.
+  Route Themis Store wiring, readable selector lifecycle, and migration
+  guidance only for frontend paths with concrete Svelte/SvelteKit evidence.
+  Use Core for shared Redux/saga concepts.
 triggers:
   - Svelte
   - SvelteKit

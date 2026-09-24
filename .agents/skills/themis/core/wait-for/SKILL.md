@@ -1,10 +1,8 @@
 ---
 name: core/wait-for
 description: >-
-  Concise agent rules for waitFor(selector, argsTuple, predicate, timeoutMs?).
-  Use when a saga must pause until a named selector reaches a predicate. It
-  checks the current value first, subscribes through createChannelFromSelector,
-  returns true on match and false on timeout, and closes the channel in finally.
+  Use waitFor when a saga must pause until a named selector matches a
+  predicate, optionally with a timeout.
 type: sub-skill
 requires:
   - core

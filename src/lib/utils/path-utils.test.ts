@@ -1,6 +1,25 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { isAbsolutePathOutsideRoot, isTildePath } from './path-utils';
+import { isAbsolutePathOutsideRoot, isTildePath, toNativePath } from './path-utils';
+
+describe('toNativePath', () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it('converts clipboard paths to Windows separators', () => {
+    vi.stubGlobal('navigator', { platform: 'Win32' });
+    expect(toNativePath('C:/repo/src/file.ts')).toBe('C:\\repo\\src\\file.ts');
+  });
+
+  it.each(['MacIntel', 'Linux x86_64'])('keeps Unix separators on %s', (platform) => {
+    vi.stubGlobal('navigator', { platform });
+    expect(toNativePath('/repo/src/file.ts')).toBe('/repo/src/file.ts');
+  });
+
+  it('is safe without a renderer navigator', () => {
+    vi.stubGlobal('navigator', undefined);
+    expect(toNativePath('/repo/src/file.ts')).toBe('/repo/src/file.ts');
+  });
+});
 
 describe('isAbsolutePathOutsideRoot', () => {
   it('returns false for relative paths (they resolve against the root)', () => {

@@ -12,10 +12,9 @@
    */
   import { fade } from '$lib/motion';
   import { Button } from '$lib/components/ui/button';
-  import { menuItem } from '$lib/components/ui/menu';
-  import { cn } from '$lib/utils';
+  import { Select } from '$lib/components/ui/select';
   import Fa from 'svelte-fa';
-  import { faChevronDown, faCheck, faDownload, faXmark } from '@fortawesome/free-solid-svg-icons';
+  import { faChevronDown, faDownload, faXmark } from '@fortawesome/free-solid-svg-icons';
   import AgentPassportCard from './AgentPassportCard.svelte';
   import ModelsCard from './ModelsCard.svelte';
   import ProvidersCard from './ProvidersCard.svelte';
@@ -94,7 +93,7 @@
   });
 
   function handleKeydown(event: KeyboardEvent) {
-    if (!$isOpen$) return;
+    if (!$isOpen$ || event.defaultPrevented) return;
     if (event.key === 'Escape') {
       event.preventDefault();
       if (dropdownOpen) {
@@ -174,43 +173,29 @@
 
       {#if $mode$ !== '24h'}
         <div class="relative">
-          <Button
-            variant="secondary"
-            size="sm"
-            onclick={() => (dropdownOpen = !dropdownOpen)}
-            aria-haspopup="listbox"
-            aria-expanded={dropdownOpen}
-          >
-            {$periodKey$ ? periodLabel($mode$, $periodKey$) : '—'}
-            <span class="opacity-60 text-[9px] a11y-ignore"
-              ><Fa icon={faChevronDown} size={9} /></span
+          <Select.Root value={$periodKey$ ?? ''} bind:open={dropdownOpen} onchange={pickPeriod}>
+            <Select.Trigger
+              variant="secondary"
+              aria-label={m.stats_overlay_period_ariaLabel()}
+              aria-busy={$loading$}
+              class="h-8 min-w-40"
             >
-          </Button>
-          {#if dropdownOpen}
-            <div
-              class="absolute top-full mt-1 left-0 z-[4] w-40 rounded-lg border border-border bg-popover text-popover-foreground p-1 shadow-md"
-              role="listbox"
-            >
+              {$periodKey$ ? periodLabel($mode$, $periodKey$) : '—'}
+              <span class="opacity-60" aria-hidden="true"><Fa icon={faChevronDown} size={9} /></span
+              >
+            </Select.Trigger>
+            <Select.Content portal class="z-[60] min-w-40">
               {#each options as key (key)}
-                <Button
-                  variant="ghost"
-                  class={cn(menuItem(), 'justify-between', key === $periodKey$ && 'bg-muted')}
-                  role="option"
-                  aria-selected={key === $periodKey$}
-                  onclick={() => pickPeriod(key)}
-                >
+                <Select.Item value={key} label={periodLabel($mode$, key)}>
                   {periodLabel($mode$, key)}
-                  {#if key === $periodKey$}
-                    <span><Fa icon={faCheck} size={9} /></span>
-                  {/if}
-                </Button>
+                </Select.Item>
               {:else}
-                <div class="px-2 py-1.5 type-caption text-muted-foreground">
+                <div class="px-2 py-1.5 type-caption text-muted-foreground" role="status">
                   {m.stats_overlay_noData_label()}
                 </div>
               {/each}
-            </div>
-          {/if}
+            </Select.Content>
+          </Select.Root>
         </div>
       {/if}
     </div>

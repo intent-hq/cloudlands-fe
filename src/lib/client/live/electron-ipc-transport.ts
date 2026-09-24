@@ -175,11 +175,17 @@ export function createElectronIpcBackendTransport(): BackendTransport {
       const api = electronAPI();
       if (!api)
         throw new BackendError({ code: 'UNAVAILABLE', message: 'Backend bridge unavailable' });
-      const invokePayload: { method: string; params?: unknown; timeoutMs?: number } = {
+      const invokePayload: {
+        method: string;
+        params?: unknown;
+        timeoutMs?: number;
+        localMachine?: boolean;
+      } = {
         method,
         params: toPlainJson(params),
       };
       if (options?.timeoutMs !== undefined) invokePayload.timeoutMs = options.timeoutMs;
+      if (options?.localMachine) invokePayload.localMachine = true;
       const response = (await api.invoke(BACKEND.REQUEST, invokePayload)) as BackendResult<T>;
       return unwrap(response);
     },

@@ -76,6 +76,8 @@ export interface BackendNotification {
 
 /** Per-call options for `BackendTransport.request`. */
 export interface BackendRequestOptions {
+  /** Address this desktop's daemon from a window bound to another device. */
+  localMachine?: boolean;
   /**
    * Overrides the transport's default request timeout for a single call. Used
    * for long-running daemon operations (e.g. `git.pull`) whose own bound

@@ -383,7 +383,7 @@ describe('MultiSelectTabbedSidebar Files Open In', () => {
           // The visual-state helper already activates the real trigger with Enter.
           await waitFor(() => expect(view.getByRole('menu')).toBeTruthy());
           expect(view.container.querySelector('[data-sidebar-launcher="files"]')).toBeTruthy();
-          expect(view.getByRole('menuitem', { name: 'Copy path' })).toBeTruthy();
+          expect(view.getByRole('menuitemradio', { name: 'Copy path' })).toBeTruthy();
         },
       };
     });
@@ -410,7 +410,9 @@ describe('MultiSelectTabbedSidebar Files Open In', () => {
     expect(getByText('Other')).toBeTruthy();
     expect(getByText('Copy path')).toBeTruthy();
 
-    await fireEvent.click(getByRole('menuitem', { name: 'Visual Studio Code' }));
+    const editor = getByRole('menuitemradio', { name: 'Visual Studio Code' });
+    expect(editor.getAttribute('aria-checked')).toBe('true');
+    await fireEvent.click(editor);
     await waitFor(() => expect(mocks.invoke).toHaveBeenCalledWith('vscode:open', '/tmp/project'));
     await waitFor(() => expect(document.body.querySelector('[role="menu"]')).toBeNull());
   });

@@ -1,13 +1,9 @@
 ---
 name: core/core-policy
 description: >-
-  Top-level architectural rules for themis. Redux owns all shared
-  state and stores canonical facts only; components render and dispatch; side
-  effects live in sagas; state must be structured-cloneable; arrays hold
-  primitives only (use Collection<T,K> for entities); legacy family-local shared
-  stores are deprecated — migrate to Redux on contact; slice types go in
-  {slice-name}-types.ts so cross-process imports do not pull in reducers or saga
-  code.
+  Use for Themis architecture decisions about shared Redux state,
+  component/saga responsibilities, serialization, entity storage, legacy store
+  migration, and slice type boundaries.
 type: sub-skill
 requires:
   - core

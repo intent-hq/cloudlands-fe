@@ -35,6 +35,8 @@
   import { isCmdClickModifier } from '$shared/utils/link-helpers';
 
   import { selectBrowserRecentUrls } from '$store/renderer/slices/browser/browser-selectors';
+  import { selectLabsSettingsVisible } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
+  import { setLabsSettingsVisible } from '$store/renderer/slices/user-preferences/user-preferences-slice';
   import { initBrowserWorkspace } from '$store/renderer/slices/browser/browser-slice';
   import {
     selectHidesAgentLifecycleActions,
@@ -127,6 +129,7 @@
 
   let searchQuery = $state('');
   const workspaceItems = selectWorkspaceItems();
+  const labsSettingsVisible$ = selectLabsSettingsVisible();
   // Collaborators (multiplayer w3) are refused on terminal + browser methods and
   // cannot create workspaces, so those commands and result groups are withheld.
   const isCollaborator$ = selectIsWorkspaceCollaborator(workspaceIdStore);
@@ -142,7 +145,9 @@
       (command) =>
         !($isCollaborator$ && WORKSPACE_OWNER_ONLY_COMMAND_IDS.has(command.id)) &&
         !($hidesAgentLifecycleActions$ && command.id === 'new-agent') &&
-        !($isCollaboratorOnlyClient$ && command.id === 'new-workspace'),
+        !($isCollaboratorOnlyClient$ && command.id === 'new-workspace') &&
+        !($labsSettingsVisible$ && command.id === 'show-labs-in-settings') &&
+        !(!$labsSettingsVisible$ && command.id === 'hide-labs-in-settings'),
     ),
   );
   const currentChanges$ = selectCurrentChanges(workspaceIdStore);
@@ -555,6 +560,8 @@
     const messages = groupMessages;
     // Track activeFilter to trigger recomputation when it changes
     activeFilter;
+    // Preference changes must refresh commands even when the query stays the same.
+    commands;
 
     // Cancel any pending computation
     if (resultComputeRaf !== null) {
@@ -799,6 +806,13 @@
         return true;
       case 'settings':
         navigateToSettings();
+        return true;
+      case 'show-labs-in-settings':
+        appStore.dispatch(setLabsSettingsVisible(true));
+        navigateToSettings({ tab: 'labs', hash: 'labs' });
+        return true;
+      case 'hide-labs-in-settings':
+        appStore.dispatch(setLabsSettingsVisible(false));
         return true;
       case 'new-agent':
         if (workspaceId && !$hidesAgentLifecycleActions$) {

@@ -9,19 +9,20 @@ import CheckboxItem from './menu-checkbox-item.svelte';
 import RadioItem from './menu-radio-item.svelte';
 import SubTrigger from './menu-sub-trigger.svelte';
 import SubContent from './menu-sub-content.svelte';
+import Sub from './menu-sub.svelte';
 import Separator from './menu-separator.svelte';
 import StackedContent from './menu-stacked-content.svelte';
 import Label from './menu-label.svelte';
+import Indicator from './menu-indicator.svelte';
 
 const Portal = MenuPrimitive.Portal;
 const CheckboxGroup = MenuPrimitive.CheckboxGroup;
 const RadioGroup = MenuPrimitive.RadioGroup;
-const Sub = MenuPrimitive.Sub;
 const Group = MenuPrimitive.Group;
 const GroupHeading = MenuPrimitive.GroupHeading;
 export { menuMetadata, menuSemantics } from './menu.meta';
 export { getPageTargetIndex } from './menu-roving-focus';
-export { menuItem } from './menu-recipes';
+export { menuItem, menuOverlay } from './menu-recipes';
 export type { StackedMenuGroup, StackedMenuItem } from './menu-stacked-content.types';
 
 export {
@@ -44,6 +45,7 @@ export {
   Separator,
   StackedContent,
   Label,
+  Indicator,
   Root as Menu,
   Item as MenuItem,
   Sub as MenuSub,

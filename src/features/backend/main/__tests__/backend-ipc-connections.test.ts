@@ -4235,6 +4235,36 @@ describe('per-window backend IPC routing', () => {
     });
   });
 
+  it('routes explicit host settings requests from a remote window to the local client', async () => {
+    const { mod } = await loadModule();
+    const localClient = mod.getBackendClient();
+    const remoteClient = await mod.connectBackendClient('remote-1');
+    const { remoteSender } = installBackendWindows();
+    mod.registerBackendHandlers();
+    const request = findHandler('backend:request')!;
+    vi.mocked(localClient.request).mockClear();
+    vi.mocked(remoteClient.request).mockClear();
+    const changes = [{ path: 'server.wsApi.port', value: 5182 }];
+    vi.mocked(localClient.request).mockResolvedValueOnce({ applied: changes, revision: 2 });
+
+    await expect(
+      request(
+        { sender: remoteSender },
+        {
+          method: 'settings.update',
+          params: { changes },
+          localMachine: true,
+        },
+      ),
+    ).resolves.toEqual({ ok: true, result: { applied: changes, revision: 2 } });
+    expect(localClient.request).toHaveBeenCalledWith(
+      'settings.update',
+      { changes },
+      { timeoutMs: undefined },
+    );
+    expect(remoteClient.request).not.toHaveBeenCalled();
+  });
+
   it('keeps a remote request failure isolated from local requests', async () => {
     const { mod } = await loadModule();
     const localClient = mod.getBackendClient();

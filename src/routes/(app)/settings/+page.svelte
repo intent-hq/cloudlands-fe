@@ -62,9 +62,9 @@
     selectChatAuroraEnabled,
     selectCodeFontFamily,
     selectCodeFontFamilyCSS,
-    selectCodeFontFamilyLabel,
     selectCodeFontOptions,
     selectIsNoteMonospace,
+    selectLabsSettingsVisible,
     selectLabsMultiplayerEnabled,
     selectNoteFontStyle,
     selectShellTransparencyEnabled,
@@ -94,11 +94,11 @@
   const agentFontStyle = selectAgentFontStyle();
   const codeFontFamily = selectCodeFontFamily();
   const codeFontFamilyCSS = selectCodeFontFamilyCSS();
-  const codeFontFamilyLabel = selectCodeFontFamilyLabel();
   const codeFontOptions = selectCodeFontOptions();
   const chatAuroraEnabled = selectChatAuroraEnabled();
   const shellTransparencyEnabled = selectShellTransparencyEnabled();
   const labsMultiplayerEnabled = selectLabsMultiplayerEnabled();
+  const labsSettingsVisible = selectLabsSettingsVisible();
   const themePreference = selectThemePreference();
   const daemonTransport$ = selectDaemonTransport();
   const isCollaboratorOnlyClient$ = selectIsCollaboratorOnlyClient();
@@ -130,7 +130,7 @@
   ];
 
   function isSettingsTab(tab: string): tab is SettingsTab {
-    return validTabs.includes(tab as SettingsTab);
+    return validTabs.includes(tab as SettingsTab) && (tab !== 'labs' || $labsSettingsVisible);
   }
 
   const hashToTab: Record<string, SettingsTab> = {
@@ -231,6 +231,7 @@
 
   // Update URL when tab changes
   function setActiveTab(tab: SettingsTab) {
+    if (tab === 'labs' && !$labsSettingsVisible) tab = 'display';
     if (tab !== activeTab) {
       if (hashScrollTimer !== undefined) clearTimeout(hashScrollTimer);
       hashScrollTimer = undefined;
@@ -253,17 +254,27 @@
   // collaborator-only default is a safe placeholder, not an answer, and
   // redirecting on it would drop a `?tab=providers` deep link for an
   // administrator (intent-hq/intent#5514).
-  const hiddenTabs = $derived<readonly SettingsTab[]>(
-    $isCollaboratorOnlyClient$ ? ['providers', 'connections'] : [],
-  );
+  const hiddenTabs = $derived<readonly SettingsTab[]>([
+    ...($isCollaboratorOnlyClient$ ? (['providers', 'connections'] as const) : []),
+    ...(!$labsSettingsVisible ? (['labs'] as const) : []),
+  ]);
   $effect(() => {
-    if ($windowIdentitySettled$ && hiddenTabs.includes(activeTab)) setActiveTab('display');
+    if (
+      (activeTab === 'labs' && !$labsSettingsVisible) ||
+      ($windowIdentitySettled$ && hiddenTabs.includes(activeTab))
+    ) {
+      setActiveTab('display');
+    }
   });
 
   // Keep the rendered pane in sync when SvelteKit navigates within the mounted settings page.
   $effect(() => {
-    const tabParam = page.url.searchParams.get('tab');
-    const targetId = page.url.hash.slice(1);
+    const routeHref = page.url.href;
+    // Sidebar selections replace browser history without updating page.url. Use
+    // the current location when a visibility change reruns this effect.
+    const url = new URL(browser ? window.location.href : routeHref);
+    const tabParam = url.searchParams.get('tab');
+    const targetId = url.hash.slice(1);
     const nextTab = resolveTabFromUrl(tabParam, targetId);
 
     untrack(() => {
@@ -808,24 +819,27 @@
                   label={m.settings_font_code_label()}
                   description={m.settings_font_code_description()}
                 >
-                  <div class="w-[180px] flex-shrink-0">
-                    <Select.Root value={$codeFontFamily} onchange={handleCodeFontChange}>
-                      <Select.Trigger>
-                        <span class="truncate" style:font-family={$codeFontFamilyCSS}>
-                          {$codeFontFamilyLabel}
-                        </span>
-                      </Select.Trigger>
-                      <Select.Content portal class="max-h-[300px] w-[180px]">
-                        {#each $codeFontOptions as option}
-                          <Select.Item value={option.value}>
-                            <span class="truncate" style:font-family={option.fontFamily}>
-                              {option.label}
-                            </span>
-                          </Select.Item>
-                        {/each}
-                      </Select.Content>
-                    </Select.Root>
-                  </div>
+                  {#snippet control({ labelId, descriptionId })}
+                    <div class="w-[180px] flex-shrink-0">
+                      <Select.Root value={$codeFontFamily} onchange={handleCodeFontChange}>
+                        <Select.Trigger aria-labelledby={labelId} aria-describedby={descriptionId}>
+                          <span class="truncate" style:font-family={$codeFontFamilyCSS}>
+                            {$codeFontOptions.find((option) => option.value === $codeFontFamily)
+                              ?.label ?? $codeFontFamily}
+                          </span>
+                        </Select.Trigger>
+                        <Select.Content portal class="max-h-[300px] w-[180px]">
+                          {#each $codeFontOptions as option}
+                            <Select.Item value={option.value}>
+                              <span class="truncate" style:font-family={option.fontFamily}>
+                                {option.label}
+                              </span>
+                            </Select.Item>
+                          {/each}
+                        </Select.Content>
+                      </Select.Root>
+                    </div>
+                  {/snippet}
                 </SettingsFieldRow>
               </section>
             </div>
@@ -1125,7 +1139,7 @@
         {/if}
 
         <!-- Labs -->
-        {#if activeTab === 'labs'}
+        {#if activeTab === 'labs' && $labsSettingsVisible}
           <div id="labs" data-highlight-id="labs" use:highlightTarget>
             <h2 class="type-title mb-3 text-foreground">
               {m.settings_section_labs()}

@@ -13,6 +13,7 @@ import {
   buildButtonBackgroundAudit,
   buildPatternAdoptionAudit,
   buildRawPrincipalAvatarAudit,
+  legacyUiCallerFailures,
   runUiComponentAudit,
 } from './ui-component-audit';
 import { buildUiComponentInventory } from './ui-component-inventory';
@@ -83,6 +84,41 @@ describe('UI component metadata schema', () => {
 });
 
 describe('UI component inventory gate', () => {
+  it('rejects new static and dynamic legacy callers without blocking removal or canonical adoption', () => {
+    const inventory = buildUiComponentInventory();
+    const component = inventory.components.find(
+      (entry) => entry.publicImport === '$lib/components/ui/dropdown-menu.svelte',
+    )!;
+    const metadata = parseUiComponentMetadata({
+      ...component,
+      publicImport: '$lib/components/ui/menu',
+      category: 'primitive',
+      legacyImports: [component.publicImport],
+      callers: ['src/features/existing/Actions.svelte'],
+      replacement: null,
+    });
+    const withCallers = (callers: string[], dynamicImports: string[] = []) => ({
+      ...inventory,
+      components: [{ ...component, callers, dynamicImports }],
+    });
+
+    expect(legacyUiCallerFailures(withCallers(metadata.callers), [metadata])).toEqual([]);
+    expect(legacyUiCallerFailures(withCallers([]), [metadata])).toEqual([]);
+    expect(
+      legacyUiCallerFailures(
+        withCallers(
+          [...metadata.callers, 'src/features/new/Overflow.svelte'],
+          ['src/features/new/Context.svelte'],
+        ),
+        [metadata],
+      ),
+    ).toEqual([
+      expect.stringContaining('src/features/new/Context.svelte: new legacy caller'),
+      expect.stringContaining('src/features/new/Overflow.svelte: new legacy caller'),
+    ]);
+    expect(legacyUiCallerFailures({ ...inventory, components: [] }, [metadata])).toEqual([]);
+  });
+
   it('validates the checked-in inventory and its folder template', () => {
     const inventory = buildUiComponentInventory();
     expect(() => parseUiComponentInventory(inventory)).not.toThrow();
@@ -142,32 +178,15 @@ describe('UI component inventory gate', () => {
     );
 
     expect(toggleGroup?.callers).toEqual([
-      'src/features/layout/tab-types/AgentViewSettingsDropdown.svelte',
-      'src/features/layout/tab-types/NoteViewSettingsDropdown.svelte',
       'src/lib/component-catalog/CatalogControls.svelte',
       'src/lib/component-catalog/renderers/BasicCatalogPreview.svelte',
       'src/lib/components/patterns/settings/custom-controls.ts',
       'src/lib/components/workspace/initializer/AddRemoteSetupModal.svelte',
       'src/routes/(app)/settings/+page.svelte',
     ]);
+    expect(dropdownMenu?.callers.length).toBeLessThanOrEqual(11);
+    expect(dropdownMenu?.callers).toEqual([...new Set(dropdownMenu?.callers)].sort());
     // DiagramBlock migrated to DiagramActionsMenu's canonical Menu in d9229ea037.
-    expect(dropdownMenu?.callers).toEqual([
-      'src/features/external-editors/components/FileActionsDropdown.svelte',
-      'src/features/external-editors/components/OpenComboButton.svelte',
-      'src/lib/components/chat/BackgroundHooksRow.svelte',
-      'src/lib/components/chat/MonitoredPrsRow.svelte',
-      'src/lib/components/chat/RegularAgentWelcome.svelte',
-      'src/lib/components/chat/SpecialistDropdown.svelte',
-      'src/lib/components/layout/DaemonStatusIndicator.svelte',
-      'src/lib/components/layout/panel-system/PanelTabBar.svelte',
-      'src/lib/components/modals/PullConflictDialog.svelte',
-      'src/lib/components/patterns/settings/custom-controls.ts',
-      'src/lib/components/workspace/TaskStatusIndicator.svelte',
-      'src/lib/components/workspace/WorkspaceSidebarHeader.svelte',
-      'src/lib/components/workspace/initializer/InitialAgentPicker.svelte',
-      'src/lib/components/workspace/sidebar/WorkspaceProgressCard.svelte',
-    ]);
-    expect(dropdownMenu?.callers).toContain('src/lib/components/chat/RegularAgentWelcome.svelte');
     expect(dropdownMenu?.callers).not.toContain(
       'src/lib/components/notes/primitives/DiagramBlock.svelte',
     );

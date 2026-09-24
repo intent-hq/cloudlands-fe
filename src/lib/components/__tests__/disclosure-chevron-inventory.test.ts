@@ -5,6 +5,7 @@ import { describe, expect, it } from 'vitest';
 
 // VirtualizedFileTree's right-closed/down-open contract is exercised against native
 // SVG ink and disclosure actions in file-explorer/__tests__/file-tree-disclosure.ct.spec.ts.
+// BranchSelector now uses named aria-expanded controls without disclosure glyphs.
 const rotatedDisclosureFiles = [
   'src/lib/components/chat/AgentSubscriptions.svelte',
   'src/lib/components/chat/ChatOperationalRow.svelte',
@@ -14,7 +15,6 @@ const rotatedDisclosureFiles = [
   'src/lib/components/settings/mcp/McpServerCard.svelte',
   'src/lib/components/ui/CollapsiblePanel.svelte',
   'src/lib/components/workspace/WorkspaceAgentsList.svelte',
-  'src/lib/components/workspace/initializer/BranchSelector.svelte',
   'src/lib/components/workspace/sidebar/CommitsTimeline.svelte',
   'src/lib/components/workspace/sidebar/McpServersSection.svelte',
   'src/lib/components/workspace/sidebar/PRSection.svelte',
@@ -25,7 +25,7 @@ const rotatedDisclosureFiles = [
 const swappedDisclosureFiles = [
   'src/features/file-tracking/components/diff/DiffHeader.svelte',
   'src/features/onboarding/steps/WorkspaceCreationError.svelte',
-  'src/features/workspace/components/WorkspaceActionsMenu.svelte',
+  'src/features/workspace/components/WorkspaceActionItems.svelte',
   'src/lib/components/chat/ChatChangesPanel.svelte',
   'src/lib/components/chat/InlinePermissionRequest.svelte',
   'src/lib/components/code-review/walkthrough/CodeWalkthroughSection.svelte',
@@ -42,7 +42,7 @@ const source = (path: string) => readFileSync(resolve(process.cwd(), path), 'utf
 
 describe('disclosure chevron inventory', () => {
   it('keeps every audited source on the rendered left-closed and down-open contract', () => {
-    expect(rotatedDisclosureFiles).toHaveLength(14);
+    expect(rotatedDisclosureFiles).toHaveLength(13);
     expect(swappedDisclosureFiles).toHaveLength(13);
 
     for (const path of rotatedDisclosureFiles) {

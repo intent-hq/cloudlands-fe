@@ -32,9 +32,11 @@
   import { Button } from '$lib/components/ui/button';
   import SidebarContextMenu from '$lib/components/ui/sidebar-context-menu/SidebarContextMenu.svelte';
   import SidebarOverflowMenu from '$lib/components/ui/sidebar-context-menu/SidebarOverflowMenu.svelte';
-  import type {
-    SidebarMenuEntry,
-    SidebarMenuItem,
+  import {
+    getSidebarContextPosition,
+    type SidebarContextPosition,
+    type SidebarMenuEntry,
+    type SidebarMenuItem,
   } from '$lib/components/ui/sidebar-context-menu/types';
   import {
     incrementContextMenuOpen,
@@ -57,6 +59,7 @@
   import {
     selectWorkspacePinnedKeySlot,
     selectWorkspaceResolvedKeySlot,
+    selectHardwareConsoleKeySlots,
   } from '$store/renderer/slices/hardware-console/hardware-console-selectors';
   import { AGENT_KEY_COUNT } from '$features/hardware-console/assignment/key-assignment';
   import { microConnectedReadable } from '$features/hardware-console/device/connection-status';
@@ -64,6 +67,7 @@
   import {
     selectHidesOwnerWorkspaceActions,
     selectWorkspaceActivePullRequest,
+    selectWorkspaceById,
   } from '$store/renderer/slices/workspace/workspace-selectors';
   import { selectPrMonitors } from '$store/renderer/slices/pr-monitor/pr-monitor-selectors';
   import { constructPrUrl } from '$lib/components/workspace/sidebar/sidebar-changes-utils';
@@ -586,20 +590,37 @@
     }
   });
 
-  let contextMenu: { x: number; y: number } | null = $state(null);
+  let contextMenu: (SidebarContextPosition & { workspaceId: string }) | null = $state(null);
   let overflowMenuOpen = $state(false);
   let hadContextMenu = false;
+  let menuWorkspaceId: string | undefined;
 
-  function handleContextMenu(e: MouseEvent) {
+  $effect(() => {
+    const nextWorkspaceId = workspace?.id;
+    if (menuWorkspaceId !== nextWorkspaceId) {
+      menuWorkspaceId = nextWorkspaceId;
+      overflowMenuOpen = false;
+    }
+    if (contextMenu && contextMenu.workspaceId !== workspace?.id) closeContextMenu();
+  });
+
+  function handleContextMenu(e: MouseEvent | KeyboardEvent) {
     if (!workspace) return;
-    e.preventDefault();
-    e.stopPropagation();
+    const position = getSidebarContextPosition(e);
+    if (!position) return;
     overflowMenuOpen = false;
     if (getContextMenuItems().length === 0) {
       contextMenu = null;
       return;
     }
-    contextMenu = { x: e.clientX, y: e.clientY };
+    contextMenu = {
+      ...position,
+      returnFocus:
+        e.target instanceof HTMLElement
+          ? (e.target.closest('button') ?? rowElement?.querySelector('button') ?? null)
+          : null,
+      workspaceId: workspace.id,
+    };
   }
 
   function closeContextMenu() {
@@ -649,24 +670,26 @@
     if ($microConnected$) {
       const pinnedSlot = selectWorkspacePinnedKeySlot.select(appStore.state, workspace.id);
       const resolvedSlot = selectWorkspaceResolvedKeySlot.select(appStore.state, workspace.id);
+      const occupiedSlots = selectHardwareConsoleKeySlots.select(appStore.state);
       const assignSubmenu: SidebarMenuItem[] = [];
       for (let slot = 0; slot < AGENT_KEY_COUNT; slot += 1) {
+        const occupantId = occupiedSlots[slot];
+        const occupant =
+          occupantId && occupantId !== workspace.id
+            ? selectWorkspaceById.select(appStore.state, occupantId)
+            : undefined;
         assignSubmenu.push({
           id: `assign-micro-key-${slot + 1}`,
-          label: m.workspace_card_assignMicroKeyNumber_label({ number: formatInteger(slot + 1) }),
+          label: occupant
+            ? m.workspace_card_assignOccupiedMicroKey_label({
+                number: formatInteger(slot + 1),
+                title: occupant.title,
+              })
+            : m.workspace_card_assignMicroKeyNumber_label({ number: formatInteger(slot + 1) }),
           checked: pinnedSlot === slot,
+          closeOnSelect: true,
           onClick: () => {
             appStore.dispatch(pinWorkspaceToKey(slot, workspace.id));
-            closeContextMenu();
-          },
-        });
-      }
-      if (resolvedSlot !== null) {
-        assignSubmenu.push({
-          id: 'unassign-micro-key',
-          label: m.workspace_card_unassignMicroKey_label(),
-          onClick: () => {
-            appStore.dispatch(markKeySlotUnassigned(resolvedSlot));
             closeContextMenu();
           },
         });
@@ -676,8 +699,19 @@
         label: m.workspace_card_assignMicroKey_label(),
         icon: faKeyboard,
         onClick: () => {},
+        selection: 'single',
         submenu: assignSubmenu,
       });
+      if (resolvedSlot !== null) {
+        items.push({
+          id: 'unassign-micro-key',
+          label: m.workspace_card_unassignMicroKey_label(),
+          onClick: () => {
+            appStore.dispatch(markKeySlotUnassigned(resolvedSlot));
+            closeContextMenu();
+          },
+        });
+      }
     }
 
     if ($hidesOwnerActions$) return items;
@@ -810,6 +844,7 @@
     use:highlightTarget={{ id: highlightId }}
     onclick={(e) => onClick?.(e)}
     onkeydown={(event) => {
+      handleContextMenu(event);
       if (event.target === event.currentTarget) handleKeydown(event);
     }}
     oncontextmenu={handleContextMenu}
@@ -1075,8 +1110,10 @@
     {@const contextMenuItems = getContextMenuItems()}
     {#if contextMenuItems.length > 0}
       <SidebarContextMenu
-        x={contextMenu.x}
-        y={contextMenu.y}
+        x={contextMenu?.x ?? 0}
+        y={contextMenu?.y ?? 0}
+        returnFocus={contextMenu?.returnFocus}
+        ariaLabel={m.workspace_progressCard_actions_ariaLabel()}
         items={contextMenuItems}
         onClickOutside={closeContextMenu}
       />

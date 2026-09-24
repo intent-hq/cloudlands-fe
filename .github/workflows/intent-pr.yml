@@ -1165,9 +1165,9 @@ jobs:
     needs: [route, release-fast-path]
     if: ${{ !cancelled() && (github.event_name == 'merge_group' || needs.release-fast-path.outputs.root_playwright_required == 'true') && needs.route.result == 'success' && needs.release-fast-path.outputs.fast_path != 'true' }}
     runs-on: ${{ fromJSON(needs.route.outputs.linux_labels) }}
-    # Single-worker run of ~25 specs, each booting its own Vite harness;
-    # 30 min is ~2x the expected wall time plus setup (install / browsers).
-    timeout-minutes: 30
+    # The single-worker suite exhausted a 30-minute job budget near completion.
+    # Allow setup and suite headroom within the 60-minute queue budget (intent#5843).
+    timeout-minutes: 45
     permissions:
       contents: read
     env:
@@ -1233,7 +1233,7 @@ jobs:
         # packages whose fetch blew test-ct's budget (intent#4723) — so
         # install the browser alone; a missing lib fails the first spec
         # loudly rather than silently. Step-level timeout so a download
-        # stall fails here in minutes, not at the 30-min job budget.
+        # stall fails here in minutes instead of exhausting the overall job budget.
         if: needs.route.outputs.linux_burst == 'true'
         timeout-minutes: 8
         run: pnpm exec playwright install chromium

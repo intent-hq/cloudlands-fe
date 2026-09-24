@@ -39,7 +39,7 @@ describe('workspace tab context actions', () => {
     const { entries, ids, handlers } = menu();
     expect(ids).toEqual(['close', '-', 'close-others', 'close-right']);
 
-    for (const entry of entries) if (!isSeparator(entry)) entry.onClick();
+    for (const entry of entries) if ('onClick' in entry) entry.onClick();
     expect(handlers.onClose).toHaveBeenCalledTimes(1);
     expect(handlers.onCloseTabs).toHaveBeenNthCalledWith(1, ['first', 'last'], 'middle');
     expect(handlers.onCloseTabs).toHaveBeenNthCalledWith(2, ['last']);
@@ -48,8 +48,11 @@ describe('workspace tab context actions', () => {
   it('disables bulk closes that would close nothing', () => {
     const { entries } = menu({ order: ['only'], workspaceId: 'only' });
     const disabled = entries.flatMap((entry) =>
-      !isSeparator(entry) && entry.disabled ? [entry.id] : [],
+      'onClick' in entry && entry.disabled ? [entry.id] : [],
     );
     expect(disabled).toEqual(['close-others', 'close-right']);
+    for (const entry of entries) {
+      if ('onClick' in entry && entry.disabled) expect(entry.disabledReason).toBeTruthy();
+    }
   });
 });

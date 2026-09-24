@@ -1,10 +1,8 @@
 ---
 name: svelte/migration/side-effects
 description: >-
-  Move store subscriptions, $effect blocks, async calls, fetches, timers, and
-  IPC listeners into sagas using takeEvery/takeLatest + call/put/delay. Covers
-  the fetch/localStorage/$effect to saga conversion and the "side effects in
-  reducers" pitfall.
+  Use when moving Svelte store subscriptions, $effect blocks, fetches,
+  localStorage, timers, or IPC listeners into sagas.
 type: sub-skill
 requires:
   - core/sagas

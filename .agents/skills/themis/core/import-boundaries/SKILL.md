@@ -1,12 +1,8 @@
 ---
 name: core/import-boundaries
 description: >-
-  Which store modules components may import (actions, selectors, types,
-  and the initialized Store instance for dispatch/one-shot reads) and which
-  are forbidden (saga files, operation modules, reducer internals, collection
-  utils). Component files must never import typed-redux-saga or redux-saga.
-  Services/non-component TS may import actions and selectors;
-  sagas may import anything inside the store directory.
+  Use when checking which store modules components, services, and sagas may
+  import, including dispatch access and forbidden saga/reducer internals.
 type: sub-skill
 requires:
   - core
