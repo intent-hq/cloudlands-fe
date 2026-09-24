@@ -141,3 +141,77 @@ for (const following of [true, false]) {
     }
   });
 }
+
+for (const codeBlock of [false, true]) {
+  test(`keeps streamed ${codeBlock ? 'code lines' : 'prose line breaks'} from bouncing`, async ({
+    mount,
+    page,
+  }, testInfo) => {
+    await page.emulateMedia({ reducedMotion: 'no-preference' });
+    await page.setViewportSize({ width: 960, height: 1000 });
+    let text = codeBlock ? '```typescript\nconst value0 = 0;' : 'Streaming line 0.';
+    const liveMessages = (): AgentMessage[] => [
+      ...history,
+      {
+        id: 'live-response',
+        role: 'assistant',
+        timestamp: '2026-09-23T12:01:00.000Z',
+        isStreaming: true,
+        streamingComplete: false,
+        contentBlocks: [{ type: 'text', id: 'live-text', text }],
+      } as AgentMessage,
+    ];
+    const host = await mount(ChatPanelOperationalGeometryHost, {
+      props: { width: 560, liveMessages: liveMessages() },
+    });
+    const scroll = host.getByTestId('chat-transcript-scroll-viewport');
+    const live = host.locator('[data-message-id="live-response"]');
+    await expect(live).toContainText(codeBlock ? 'value0' : 'Streaming line 0');
+    await page.evaluate(() => document.fonts.ready);
+    await expect
+      .poll(() => scroll.evaluate((node) => node.scrollHeight - node.clientHeight - node.scrollTop))
+      .toBeLessThanOrEqual(2);
+    await scroll.evaluate((node) => {
+      const root = node as SampledRoot;
+      root.frames = [];
+      root.sampling = true;
+      const sample = () => {
+        const tail = root.querySelector('[data-message-id="live-response"]');
+        root.frames!.push({
+          top: root.scrollTop,
+          height: root.scrollHeight,
+          distance: root.scrollHeight - root.clientHeight - root.scrollTop,
+          tailHeight: tail?.getBoundingClientRect().height ?? 0,
+        });
+        if (root.sampling) requestAnimationFrame(sample);
+      };
+      requestAnimationFrame(sample);
+    });
+    for (let line = 1; line <= 12; line += 1) {
+      for (const chunk of [
+        '\n',
+        codeBlock ? `const value${line} = ${line};` : `Streaming line ${line}.`,
+      ]) {
+        text += chunk;
+        await host.update({ props: { width: 560, liveMessages: liveMessages() } });
+        // Publish each boundary through the viewer's trailing streaming throttle.
+        await page.waitForTimeout(200);
+      }
+      await expect(live).toContainText(codeBlock ? `value${line}` : `Streaming line ${line}`);
+    }
+    const frames = await scroll.evaluate((node) => {
+      const root = node as SampledRoot;
+      root.sampling = false;
+      return root.frames!;
+    });
+    await testInfo.attach('line-boundary-scroll-frames', {
+      body: JSON.stringify(frames),
+      contentType: 'application/json',
+    });
+    expect(frames.length).toBeGreaterThan(24);
+    expect(frames.at(-1)!.tailHeight).toBeGreaterThan(frames[0].tailHeight);
+    const heightDrops = frames.slice(1).map((frame, i) => frames[i].tailHeight - frame.tailHeight);
+    expect(Math.max(...heightDrops)).toBeLessThanOrEqual(2);
+    expect(Math.max(...frames.map((frame) => Math.abs(frame.distance)))).toBeLessThanOrEqual(2);
+  });
+}

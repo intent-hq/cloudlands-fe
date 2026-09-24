@@ -9,7 +9,10 @@
   import PanelLayout from '$lib/components/layout/panel-system/PanelLayout.svelte';
   import { startRootStoreLifecycle } from '$store/renderer/root-store-lifecycle';
   import { store } from '$store/renderer/store';
-  import { bulkUpsertSessions } from '$store/renderer/slices/agent-session/agent-session-slice';
+  import {
+    bulkUpsertSessions,
+    replaceMessages,
+  } from '$store/renderer/slices/agent-session/agent-session-slice';
   import {
     initializeLayout,
     setRestoreStatus,
@@ -628,11 +631,7 @@
     if (!liveFixture || !liveMessages) return;
     const nextMessages = liveMessages;
     untrack(() => {
-      store.dispatch(
-        bulkUpsertSessions([{ ...session, messages: nextMessages }], {
-          preserveExplicitRuntimeFlags: false,
-        }),
-      );
+      store.dispatch(replaceMessages(agentId, nextMessages));
     });
   });
 
