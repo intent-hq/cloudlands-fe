@@ -475,8 +475,8 @@ for (const renderer of rendererIds) {
       const fixture = component.getByTestId('compact-reasoning-fixture');
       await openReasoning(fixture);
       await recordReasoningGeometry(fixture, `${renderer}-nested-mixed-${previousHasBody}`);
-      expect(await thinkingBoundaryGap(fixture)).toBeCloseTo(previousHasBody ? 24 : 0, 1);
       await expect(fixture.locator('[data-reasoning-history-body]')).toHaveCount(1);
+      expect(await thinkingBoundaryGap(fixture)).toBeCloseTo(previousHasBody ? 24 : 0, 1);
       await settleReasoning(fixture);
     });
   }
