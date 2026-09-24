@@ -28,7 +28,7 @@
   const activeDefinition = $derived(tabs.find((tab) => tab.id === activeTab));
 
   function iconReveal(node: Element, index: number) {
-    const transition = springIn(node, { tier: 'fast', x: -4, y: 0, scale: 1 });
+    const transition = springIn(node, { tier: 'fast', x: -6, y: 0, scale: 1 });
     return { ...transition, delay: transition.duration === 0 ? 0 : index * 24 };
   }
 

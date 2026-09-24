@@ -488,7 +488,7 @@
     return {
       delay: spring.moderate.settleMs + index * 24,
       duration: spring.fast.settleMs,
-      css: (t) => `opacity: ${t};`,
+      css: (t) => `opacity: ${t}; transform: translateY(${(1 - t) * 4}px);`,
     };
   }
 
@@ -1541,18 +1541,22 @@
         {#if isLauncherOverview}
           {#if !isCollaborator}
             {#if !isNewWorkspaceSession}
-              <SidebarBrowserLauncher
-                {workspaceId}
-                {panelLayoutId}
-                onExpand={() => handleTabClick('browser')}
-                expanded={selectedTabs.has('browser')}
-              />
+              <div class="min-w-0" in:launcherGridReveal|global={4}>
+                <SidebarBrowserLauncher
+                  {workspaceId}
+                  {panelLayoutId}
+                  onExpand={() => handleTabClick('browser')}
+                  expanded={selectedTabs.has('browser')}
+                />
+              </div>
             {/if}
-            <WorkspaceTerminalDock
-              {workspaceId}
-              onExpand={() => handleTabClick('shell')}
-              expanded={selectedTabs.has('shell')}
-            />
+            <div class="min-w-0" in:launcherGridReveal|global={isNewWorkspaceSession ? 0 : 5}>
+              <WorkspaceTerminalDock
+                {workspaceId}
+                onExpand={() => handleTabClick('shell')}
+                expanded={selectedTabs.has('shell')}
+              />
+            </div>
           {/if}
         {:else}
           <SidebarExpandedTabStrip
