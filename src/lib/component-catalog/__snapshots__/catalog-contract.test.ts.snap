@@ -19392,9 +19392,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'product:popovers:non
                 <dt>
                   "Themes"
                 <dd class="mt-1 text-foreground">
-                  "light, dark"
-  <div class="portal-container">
-    <div>",
+                  "light, dark"",
 }
 `;
 
