@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { selectLabsGitLabEnabled } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
+  import { selectGitLabAuthIsConfigured } from '$store/renderer/slices/gitlab-auth/gitlab-auth-selectors';
   import { onMount } from 'svelte';
   import { m } from '$shared/paraglide/messages.js';
   import { store as appStore } from '$store/renderer/store';
@@ -19,6 +21,8 @@
   let isLoading = $state(true);
 
   // Integration metadata for skeleton rendering (names are brand names — not translated)
+  const gitlabEnabled$ = selectLabsGitLabEnabled();
+  const gitlabConfigured$ = selectGitLabAuthIsConfigured();
   const integrations = [
     {
       icon: 'github',
@@ -51,7 +55,7 @@
 {#if isLoading}
   <!-- Skeleton loading state - shows structure with known info -->
   <div class="divide-y divide-border [&>*:first-child]:pt-0 [&>*:last-child]:pb-0">
-    {#each integrations as integration}
+    {#each integrations.filter((item) => item.icon !== 'gitlab' || $gitlabEnabled$ || $gitlabConfigured$) as integration}
       <div class="grid grid-cols-[1rem_minmax(0,1fr)_auto] items-start gap-x-3 gap-y-1 py-3">
         <div class="first-line-icon type-body w-4 text-ghost">
           {#if integration.icon === 'github'}

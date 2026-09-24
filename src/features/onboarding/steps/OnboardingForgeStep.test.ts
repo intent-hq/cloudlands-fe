@@ -19,15 +19,25 @@ import {
   setGitLabAuthStatus,
   takeGitLabPatToken,
 } from '$store/renderer/slices/gitlab-auth/gitlab-auth-slice';
+import {
+  initialState as preferenceDefaults,
+  setLabsGitLabEnabled,
+  userPreferencesReducer,
+} from '$store/renderer/slices/user-preferences/user-preferences-slice';
+import {
+  resetOnboarding,
+  setOnboardingFullFlowRequested,
+} from '$store/renderer/slices/onboarding/onboarding-slice';
 import type { GitLabAuthState } from '$store/renderer/slices/gitlab-auth/gitlab-auth-types';
 
 const mocks = vi.hoisted(() => {
   const dispatch = vi.fn();
+  const userPreferences: { value: unknown } = { value: null };
   const githubAuth: { value: unknown } = { value: null };
   const gitlabAuth: { value: unknown } = { value: null };
   const daemonHealthStats: { value: unknown } = { value: null };
   const handleLink = vi.fn(() => Promise.resolve(true));
-  return { dispatch, githubAuth, gitlabAuth, daemonHealthStats, handleLink };
+  return { dispatch, userPreferences, githubAuth, gitlabAuth, daemonHealthStats, handleLink };
 });
 
 vi.mock('$store/renderer/store', async () => {
@@ -35,6 +45,7 @@ vi.mock('$store/renderer/store', async () => {
     await import('$store/renderer/utils/test-helpers/store-mock');
   return createAppStoreMockModule({
     state: () => ({
+      userPreferences: mocks.userPreferences.value,
       githubAuth: mocks.githubAuth.value,
       gitlabAuth: mocks.gitlabAuth.value,
       daemonHealth: { stats: mocks.daemonHealthStats.value },
@@ -93,14 +104,95 @@ const findButton = (root: HTMLElement, label: string) =>
 const dispatched = (type: string) =>
   mocks.dispatch.mock.calls.map(([action]) => action).filter((action) => action?.type === type);
 
+const setPreference = async (enabled: boolean) => {
+  mocks.userPreferences.value = userPreferencesReducer(
+    preferenceDefaults,
+    setLabsGitLabEnabled(enabled),
+  );
+  const { appStore } = (await import('$store/renderer/store')) as unknown as {
+    appStore: { emitState: () => void };
+  };
+  appStore.emitState();
+};
+
 beforeEach(() => {
   vi.clearAllMocks();
+  mocks.userPreferences.value = { ...preferenceDefaults };
   mocks.githubAuth.value = idleGitHub();
   mocks.gitlabAuth.value = idleGitLab();
   mocks.daemonHealthStats.value = supportingDaemonStats();
 });
 
 describe('OnboardingForgeStep', () => {
+  it('keeps GitLab setup off for a fresh profile while GitHub and Skip work', async () => {
+    const props = baseProps();
+    const { container } = render(OnboardingForgeStep, { props });
+    expect(findButton(container, 'Connect GitLab')).toBeUndefined();
+    await fireEvent.click(findButton(container, 'Connect GitHub')!);
+    expect(dispatched('githubAuth/startAuth')).toHaveLength(1);
+    await fireEvent.click(findButton(container, 'Skip for now')!);
+    expect(props.onSkip).toHaveBeenCalledOnce();
+  });
+
+  it.each([true, false])(
+    'respects GitLab %s after the full onboarding flow is reopened',
+    async (enabled) => {
+      mocks.userPreferences.value = userPreferencesReducer(
+        preferenceDefaults,
+        setLabsGitLabEnabled(enabled),
+      );
+      const first = render(OnboardingForgeStep, { props: baseProps() });
+      if (enabled) await fireEvent.click(findButton(first.container, 'Connect GitLab')!);
+      await fireEvent.click(findButton(first.container, 'Skip for now')!);
+      first.unmount();
+      for (const action of [setOnboardingFullFlowRequested(true), resetOnboarding()]) {
+        mocks.userPreferences.value = userPreferencesReducer(
+          mocks.userPreferences.value as typeof preferenceDefaults,
+          action,
+        );
+      }
+      const second = render(OnboardingForgeStep, { props: baseProps() });
+      expect(Boolean(findButton(second.container, 'Connect GitLab'))).toBe(enabled);
+      expect(
+        mocks.dispatch.mock.calls.some(([action]) => action.type.startsWith('userPreferences/')),
+      ).toBe(false);
+    },
+  );
+
+  it('reacts to delayed Labs hydration and closes a selected form when disabled', async () => {
+    const { container } = render(OnboardingForgeStep, { props: baseProps() });
+    expect(findButton(container, 'Connect GitLab')).toBeUndefined();
+    await setPreference(true);
+    await fireEvent.click(findButton(container, 'Connect GitLab')!);
+    expect(container.querySelector('[data-testid="gitlab-connect-form"]')).toBeTruthy();
+    await setPreference(false);
+    await waitFor(() =>
+      expect(container.querySelector('[data-testid="gitlab-connect-form"]')).toBeNull(),
+    );
+    expect(findButton(container, 'Connect GitHub')).toBeTruthy();
+    await setPreference(true);
+    await waitFor(() => expect(findButton(container, 'Connect GitLab')).toBeTruthy());
+    expect(container.querySelector('[data-testid="gitlab-connect-form"]')).toBeNull();
+  });
+
+  it('keeps a pending grant hidden while Labs is off and preserves a saved account', async () => {
+    const saved = {
+      ...idleGitLab(),
+      isConfigured: true,
+      user: { id: '7', login: 'saved' },
+      method: 'pat',
+      isAuthenticating: true,
+    };
+    mocks.gitlabAuth.value = saved;
+    const props = baseProps();
+    const { container } = render(OnboardingForgeStep, { props });
+    expect(container.querySelector('[data-testid="gitlab-connect-form"]')).toBeNull();
+    await fireEvent.click(findButton(container, 'Continue')!);
+    expect(props.onContinue).toHaveBeenCalledOnce();
+    expect(mocks.gitlabAuth.value).toEqual(saved);
+    expect(dispatched('gitlabAuth/logout')).toHaveLength(0);
+  });
+
   it('hydrates both forges on mount (githubAuth/initialize + gitlabAuth/initialize)', async () => {
     render(OnboardingForgeStep, { props: baseProps() });
     await waitFor(() => {
@@ -110,6 +202,7 @@ describe('OnboardingForgeStep', () => {
   });
 
   it('idle: offers GitHub, GitLab and Skip; GitHub starts the device flow, Skip advances', async () => {
+    mocks.userPreferences.value = { ...preferenceDefaults, labsGitLabEnabled: true };
     const props = baseProps();
     const { container } = render(OnboardingForgeStep, { props });
 
@@ -127,6 +220,7 @@ describe('OnboardingForgeStep', () => {
   });
 
   it('hides the GitLab option when the daemon protocol predates sourceControl.* auth; GitHub and Skip remain', async () => {
+    mocks.userPreferences.value = { ...preferenceDefaults, labsGitLabEnabled: true };
     mocks.daemonHealthStats.value = { ...supportingDaemonStats(), protocolVersion: '10.4' };
     const props = baseProps();
     const { container } = render(OnboardingForgeStep, { props });
@@ -140,6 +234,7 @@ describe('OnboardingForgeStep', () => {
   });
 
   it('hides the GitLab option before the daemon has reported its protocol version', () => {
+    mocks.userPreferences.value = { ...preferenceDefaults, labsGitLabEnabled: true };
     mocks.daemonHealthStats.value = null;
     const { container } = render(OnboardingForgeStep, { props: baseProps() });
 
@@ -149,6 +244,7 @@ describe('OnboardingForgeStep', () => {
   });
 
   it('offers the GitLab option once a later system.status poll reports a supporting protocol', async () => {
+    mocks.userPreferences.value = { ...preferenceDefaults, labsGitLabEnabled: true };
     mocks.daemonHealthStats.value = null;
     const { container } = render(OnboardingForgeStep, { props: baseProps() });
     expect(findButton(container, 'Connect GitLab')).toBeUndefined();
@@ -162,6 +258,7 @@ describe('OnboardingForgeStep', () => {
   });
 
   it('does not resume a pending GitLab grant into the connect panel when the daemon protocol is too old or unknown', async () => {
+    mocks.userPreferences.value = { ...preferenceDefaults, labsGitLabEnabled: true };
     for (const stats of [{ ...supportingDaemonStats(), protocolVersion: '10.4' }, null]) {
       mocks.daemonHealthStats.value = stats;
       mocks.gitlabAuth.value = {
@@ -184,6 +281,7 @@ describe('OnboardingForgeStep', () => {
   });
 
   it('closes an already-open GitLab panel when a later poll reports a protocol that no longer supports it', async () => {
+    mocks.userPreferences.value = { ...preferenceDefaults, labsGitLabEnabled: true };
     const { container } = render(OnboardingForgeStep, { props: baseProps() });
     await fireEvent.click(findButton(container, 'Connect GitLab')!);
     expect(container.querySelector('[data-testid="forge-step-gitlab"]')).toBeTruthy();
@@ -224,6 +322,7 @@ describe('OnboardingForgeStep', () => {
   });
 
   it('GitLab: choosing it shows the host input; connect dispatches startDeviceAuth with the normalized host', async () => {
+    mocks.userPreferences.value = { ...preferenceDefaults, labsGitLabEnabled: true };
     const { container } = render(OnboardingForgeStep, { props: baseProps() });
 
     await fireEvent.click(findButton(container, 'Connect GitLab')!);
@@ -243,6 +342,7 @@ describe('OnboardingForgeStep', () => {
   });
 
   it('GitLab: an empty host falls back to gitlab.com on the wire', async () => {
+    mocks.userPreferences.value = { ...preferenceDefaults, labsGitLabEnabled: true };
     const { container } = render(OnboardingForgeStep, { props: baseProps() });
     await fireEvent.click(findButton(container, 'Connect GitLab')!);
     const panel = container.querySelector('[data-testid="forge-step-gitlab"]')!;
@@ -255,6 +355,7 @@ describe('OnboardingForgeStep', () => {
   });
 
   it('GitLab pending device grant: renders the code card; "use a token" cancels and shows the PAT field', async () => {
+    mocks.userPreferences.value = { ...preferenceDefaults, labsGitLabEnabled: true };
     mocks.gitlabAuth.value = {
       ...idleGitLab(),
       isAuthenticating: true,
@@ -286,6 +387,7 @@ describe('OnboardingForgeStep', () => {
   });
 
   it('GitLab without device grant support: leads with the PAT field and connects with host + token', async () => {
+    mocks.userPreferences.value = { ...preferenceDefaults, labsGitLabEnabled: true };
     mocks.gitlabAuth.value = {
       ...idleGitLab(),
       host: 'gitlab.example.com',
@@ -322,6 +424,7 @@ describe('OnboardingForgeStep', () => {
   });
 
   it("GitLab PAT: the token link opens the instance's personal access token page", async () => {
+    mocks.userPreferences.value = { ...preferenceDefaults, labsGitLabEnabled: true };
     mocks.gitlabAuth.value = {
       ...idleGitLab(),
       host: 'gitlab.example.com',
@@ -339,6 +442,7 @@ describe('OnboardingForgeStep', () => {
   });
 
   it('GitLab: an unsupported-device-grant error surfaces with the PAT field', async () => {
+    mocks.userPreferences.value = { ...preferenceDefaults, labsGitLabEnabled: true };
     mocks.gitlabAuth.value = {
       ...idleGitLab(),
       deviceGrantSupported: false,
@@ -374,6 +478,7 @@ describe('OnboardingForgeStep', () => {
   });
 
   it('already connected to GitLab: shows provider, @login and host, and Continue', async () => {
+    mocks.userPreferences.value = { ...preferenceDefaults, labsGitLabEnabled: true };
     mocks.gitlabAuth.value = {
       ...idleGitLab(),
       host: 'gitlab.example.com',
@@ -396,6 +501,7 @@ describe('OnboardingForgeStep', () => {
   });
 
   it('a GitLab credential the daemon expired renders disconnected again, with the error and Connect', async () => {
+    mocks.userPreferences.value = { ...preferenceDefaults, labsGitLabEnabled: true };
     const connected: GitLabAuthState = {
       ...idleGitLab(),
       host: 'gitlab.example.com',
@@ -439,6 +545,7 @@ describe('OnboardingForgeStep', () => {
   });
 
   it('skipping while a GitLab grant is pending cancels it before advancing', async () => {
+    mocks.userPreferences.value = { ...preferenceDefaults, labsGitLabEnabled: true };
     mocks.gitlabAuth.value = {
       ...idleGitLab(),
       isAuthenticating: true,

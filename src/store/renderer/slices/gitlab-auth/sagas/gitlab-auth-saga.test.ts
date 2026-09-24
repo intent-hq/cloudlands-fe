@@ -33,7 +33,13 @@ import {
   initialState,
   logoutGitLab,
   startGitLabDeviceAuth,
+  takeGitLabPatToken,
 } from '../gitlab-auth-slice';
+import {
+  initialState as preferenceDefaults,
+  userPreferencesReducer,
+  setLabsGitLabEnabled,
+} from '../../user-preferences/user-preferences-slice';
 import { gitlabAuthSaga } from './gitlab-auth-saga';
 
 const settle = async () => {
@@ -74,25 +80,127 @@ const UNCONFIGURED_STATUS = {
   deviceGrantSupported: true,
 };
 
-function harness(seed = initialState) {
+function harness(seed = initialState, labsGitLabEnabled = false) {
+  let userPreferences = { ...preferenceDefaults, labsGitLabEnabled };
   const channel = stdChannel();
   let state = seed;
   const dispatched: unknown[] = [];
   const dispatch = (action: never) => {
     dispatched.push(action);
     state = gitlabAuthReducer(state, action);
+    userPreferences = userPreferencesReducer(userPreferences, action);
     channel.put(action);
     return action;
   };
   const task = runSaga(
-    { channel, dispatch, getState: () => ({ gitlabAuth: state }) },
+    { channel, dispatch, getState: () => ({ gitlabAuth: state, userPreferences }) },
     gitlabAuthSaga,
   );
-  return { channel, dispatched, state: () => state, task };
+  return { channel, dispatched, dispatch, state: () => state, task };
 }
 
 describe('gitlabAuthSaga', () => {
   beforeEach(() => vi.clearAllMocks());
+
+  it('refuses new GitLab device/PAT setup while off and consumes the staged token', async () => {
+    const run = harness();
+    try {
+      run.channel.put(startGitLabDeviceAuth(HOST));
+      const pat = connectGitLabWithToken(HOST, 'secret-pat');
+      run.channel.put(pat);
+      await settle();
+      expect(mocks.connect).not.toHaveBeenCalled();
+      expect(takeGitLabPatToken(pat.payload.tokenRef)).toBeNull();
+      expect(run.state()).toEqual(initialState);
+    } finally {
+      run.task.cancel();
+      await run.task.toPromise();
+    }
+  });
+
+  it('cancels a pending grant on disable, ignores a late result, and preserves saved credentials', async () => {
+    let finish!: (result: unknown) => void;
+    mocks.connect.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        }),
+    );
+    mocks.cancelAuth.mockResolvedValue({ success: true });
+    const saved = {
+      ...initialState,
+      host: HOST,
+      isConfigured: true,
+      user: WIRE_USER,
+      method: 'pat' as const,
+    };
+    const run = harness(saved, true);
+    try {
+      run.channel.put(startGitLabDeviceAuth(HOST));
+      await settle();
+      expect(run.state().isAuthenticating).toBe(true);
+      run.dispatch(setLabsGitLabEnabled(false) as never);
+      await settle();
+      expect(mocks.cancelAuth.mock.calls).toEqual([['gitlab', HOST]]);
+      finish({ success: true, deviceFlow: PENDING_FLOW });
+      await settle();
+      expect(run.state()).toMatchObject({ ...saved, isAuthenticating: false, deviceFlow: null });
+      expect(mocks.revoke).not.toHaveBeenCalled();
+      expect(mocks.getStatus).not.toHaveBeenCalled();
+    } finally {
+      run.task.cancel();
+      await run.task.toPromise();
+    }
+  });
+
+  it('cancels a hydrated pending grant while off without dropping the saved connection', async () => {
+    mocks.getStatus.mockResolvedValue({ ...CONFIGURED_STATUS, deviceFlow: PENDING_FLOW });
+    mocks.cancelAuth.mockResolvedValue({ success: true });
+    const run = harness();
+    try {
+      run.channel.put(initializeGitLabAuth());
+      await settle();
+      expect(mocks.cancelAuth.mock.calls).toEqual([['gitlab', HOST]]);
+      expect(run.state()).toMatchObject({
+        host: HOST,
+        isConfigured: true,
+        user: WIRE_USER,
+        isAuthenticating: false,
+        deviceFlow: null,
+      });
+      expect(mocks.revoke).not.toHaveBeenCalled();
+    } finally {
+      run.task.cancel();
+      await run.task.toPromise();
+    }
+  });
+
+  it('resumes a pending grant when the saved opt-in arrives before delayed auth hydration', async () => {
+    let finish!: (status: unknown) => void;
+    mocks.getStatus.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        }),
+    );
+    mocks.getStatus.mockResolvedValue({ ...UNCONFIGURED_STATUS, deviceFlow: PENDING_FLOW });
+    const run = harness();
+    try {
+      run.channel.put(initializeGitLabAuth());
+      run.dispatch(setLabsGitLabEnabled(true) as never);
+      finish({ ...UNCONFIGURED_STATUS, deviceFlow: PENDING_FLOW });
+      await settle();
+      expect(run.state()).toMatchObject({
+        host: HOST,
+        isAuthenticating: true,
+        deviceFlow: PENDING_INFO,
+      });
+      expect(mocks.cancelAuth).not.toHaveBeenCalled();
+    } finally {
+      run.task.cancel();
+      await run.task.toPromise();
+    }
+  });
 
   it('verifier: a focus read begun before default-host hydration cannot attach the old identity', async () => {
     let resolveDefault!: (value: unknown) => void;
@@ -104,7 +212,7 @@ describe('gitlabAuthSaga', () => {
           else resolveFocus = resolve;
         }),
     );
-    const run = harness();
+    const run = harness(initialState, true);
     try {
       run.channel.put(initializeGitLabAuth());
       await settle();
@@ -132,7 +240,7 @@ describe('gitlabAuthSaga', () => {
         }),
     );
     mocks.getStatus.mockResolvedValue({ ...CONFIGURED_STATUS, host: HOST });
-    const run = harness();
+    const run = harness(initialState, true);
     try {
       run.channel.put(initializeGitLabAuth(HOST));
       await settle();
@@ -157,7 +265,7 @@ describe('gitlabAuthSaga', () => {
             resolveInitial = resolve;
           }),
       );
-      const run = harness();
+      const run = harness(initialState, true);
       try {
         run.channel.put(initializeGitLabAuth(HOST));
         await settle();
@@ -182,7 +290,7 @@ describe('gitlabAuthSaga', () => {
           })
         : Promise.resolve({ ...UNCONFIGURED_STATUS, host: HOST }),
     );
-    const run = harness();
+    const run = harness(initialState, true);
     try {
       run.channel.put(gitlabAuthChanged('authorized', OTHER_HOST));
       await settle();
@@ -206,7 +314,7 @@ describe('gitlabAuthSaga', () => {
           resolveNew = resolve;
         }),
     );
-    const run = harness();
+    const run = harness(initialState, true);
     try {
       run.channel.put(initializeGitLabAuth(HOST));
       await settle();
@@ -223,7 +331,7 @@ describe('gitlabAuthSaga', () => {
 
   it('initialize reads sourceControl.authStatus for the host and hydrates field by field', async () => {
     mocks.getStatus.mockResolvedValue(CONFIGURED_STATUS);
-    const run = harness();
+    const run = harness(initialState, true);
     run.channel.put(initializeGitLabAuth(HOST));
     await settle();
 
@@ -252,7 +360,7 @@ describe('gitlabAuthSaga', () => {
     mocks.getStatus
       .mockResolvedValueOnce({ ...UNCONFIGURED_STATUS, deviceFlow: PENDING_FLOW })
       .mockResolvedValueOnce({ ...CONFIGURED_STATUS, method: 'device' });
-    const run = harness();
+    const run = harness(initialState, true);
     run.channel.put(initializeGitLabAuth());
     await settle();
 
@@ -300,7 +408,7 @@ describe('gitlabAuthSaga', () => {
           else resolveScoped = resolve;
         }),
     );
-    const run = harness();
+    const run = harness(initialState, true);
     run.channel.put(initializeGitLabAuth());
     await settle();
     run.channel.put(initializeGitLabAuth(HOST));
@@ -342,7 +450,7 @@ describe('gitlabAuthSaga', () => {
       return Promise.resolve({ ...UNCONFIGURED_STATUS, host: HOST, deviceFlow: PENDING_FLOW });
     });
     mocks.connect.mockResolvedValue({ success: true, deviceFlow: PENDING_INFO });
-    const run = harness();
+    const run = harness(initialState, true);
     run.channel.put(initializeGitLabAuth());
     await settle();
     run.channel.put(startGitLabDeviceAuth(HOST));
@@ -379,7 +487,7 @@ describe('gitlabAuthSaga', () => {
         : Promise.resolve({ ...UNCONFIGURED_STATUS, host: HOST, deviceFlow: PENDING_FLOW }),
     );
     mocks.connect.mockResolvedValue({ success: true, deviceFlow: PENDING_INFO });
-    const run = harness({ ...initialState, host: HOST });
+    const run = harness({ ...initialState, host: HOST }, true);
     run.channel.put(initializeGitLabAuth());
     await settle();
     run.channel.put(startGitLabDeviceAuth(HOST));
@@ -406,7 +514,7 @@ describe('gitlabAuthSaga', () => {
           })
         : Promise.resolve({ ...UNCONFIGURED_STATUS, host: HOST }),
     );
-    const run = harness();
+    const run = harness(initialState, true);
     run.channel.put(gitlabAuthChanged('expired', OTHER_HOST));
     await settle();
     run.channel.put(initializeGitLabAuth(HOST));
@@ -433,7 +541,7 @@ describe('gitlabAuthSaga', () => {
           })
         : Promise.resolve({ ...UNCONFIGURED_STATUS, host: HOST }),
     );
-    const run = harness();
+    const run = harness(initialState, true);
     run.channel.put(gitlabAuthChanged('authorized', OTHER_HOST));
     await settle();
     run.channel.put(initializeGitLabAuth(HOST));
@@ -462,7 +570,7 @@ describe('gitlabAuthSaga', () => {
       },
     });
     mocks.getStatus.mockResolvedValue({ ...CONFIGURED_STATUS, method: 'device' });
-    const run = harness();
+    const run = harness(initialState, true);
     run.channel.put(startGitLabDeviceAuth(HOST));
     await settle();
 
@@ -495,7 +603,7 @@ describe('gitlabAuthSaga', () => {
       error: 'device grant unsupported on gitlab.example.com',
       code: 'device-grant-unsupported',
     });
-    const run = harness({ ...initialState, deviceGrantSupported: true });
+    const run = harness({ ...initialState, deviceGrantSupported: true }, true);
     run.channel.put(startGitLabDeviceAuth(HOST));
     await settle();
 
@@ -516,7 +624,7 @@ describe('gitlabAuthSaga', () => {
   it('submits a PAT straight to the daemon and completes from the fresh status', async () => {
     mocks.connect.mockResolvedValue({ success: true });
     mocks.getStatus.mockResolvedValue(CONFIGURED_STATUS);
-    const run = harness();
+    const run = harness(initialState, true);
     run.channel.put(connectGitLabWithToken(HOST, 'glpat-secret'));
     await settle();
 
@@ -540,7 +648,7 @@ describe('gitlabAuthSaga', () => {
       error: 'GitLab returned 401',
       code: 'source-control-unauthorized',
     });
-    const run = harness();
+    const run = harness(initialState, true);
     run.channel.put(connectGitLabWithToken(HOST, 'glpat-bad'));
     await settle();
 
@@ -563,7 +671,7 @@ describe('gitlabAuthSaga', () => {
       }),
     );
     mocks.cancelAuth.mockResolvedValue({ success: true });
-    const run = harness();
+    const run = harness(initialState, true);
     run.channel.put(startGitLabDeviceAuth(HOST));
     await settle();
     run.channel.put(cancelGitLabAuth());
@@ -586,13 +694,16 @@ describe('gitlabAuthSaga', () => {
   it('settles logout only after the daemon confirms the revoke for the selected host', async () => {
     mocks.revoke.mockResolvedValueOnce({ success: false, error: 'still held' });
     mocks.revoke.mockResolvedValueOnce({ success: true });
-    const run = harness({
-      ...initialState,
-      host: HOST,
-      isConfigured: true,
-      user: WIRE_USER,
-      method: 'pat',
-    });
+    const run = harness(
+      {
+        ...initialState,
+        host: HOST,
+        isConfigured: true,
+        user: WIRE_USER,
+        method: 'pat',
+      },
+      true,
+    );
     run.channel.put(logoutGitLab());
     await settle();
     expect(run.state().isConfigured).toBe(true);
@@ -621,13 +732,16 @@ describe('gitlabAuthSaga', () => {
     );
     mocks.connect.mockResolvedValue({ success: true, deviceFlow: PENDING_INFO });
     mocks.cancelAuth.mockResolvedValue({ success: true });
-    const run = harness({
-      ...initialState,
-      host: OTHER_HOST,
-      isConfigured: true,
-      user: WIRE_USER,
-      method: 'device',
-    });
+    const run = harness(
+      {
+        ...initialState,
+        host: OTHER_HOST,
+        isConfigured: true,
+        user: WIRE_USER,
+        method: 'device',
+      },
+      true,
+    );
     // Switching to B drops A's identity: B is unconfigured until B connects.
     const identityB = { host: HOST, isConfigured: false, user: null, method: null };
     const pendingOnB = { ...identityB, isAuthenticating: true, deviceFlow: PENDING_INFO };
@@ -660,13 +774,16 @@ describe('gitlabAuthSaga', () => {
 
   it('a rejected PAT for instance B does not leave B configured with A’s identity', async () => {
     mocks.connect.mockResolvedValue({ success: false, error: 'bad token' });
-    const run = harness({
-      ...initialState,
-      host: OTHER_HOST,
-      isConfigured: true,
-      user: WIRE_USER,
-      method: 'pat',
-    });
+    const run = harness(
+      {
+        ...initialState,
+        host: OTHER_HOST,
+        isConfigured: true,
+        user: WIRE_USER,
+        method: 'pat',
+      },
+      true,
+    );
 
     run.channel.put(connectGitLabWithToken(HOST, 'glpat-x'));
     await settle();
@@ -687,13 +804,16 @@ describe('gitlabAuthSaga', () => {
   it('a same-host reconnect keeps the configured identity while the new grant is pending', async () => {
     mocks.getStatus.mockResolvedValue({ ...CONFIGURED_STATUS, deviceFlow: PENDING_FLOW });
     mocks.connect.mockResolvedValue({ success: true, deviceFlow: PENDING_INFO });
-    const run = harness({
-      ...initialState,
-      host: HOST,
-      isConfigured: true,
-      user: WIRE_USER,
-      method: 'pat',
-    });
+    const run = harness(
+      {
+        ...initialState,
+        host: HOST,
+        isConfigured: true,
+        user: WIRE_USER,
+        method: 'pat',
+      },
+      true,
+    );
 
     run.channel.put(startGitLabDeviceAuth(HOST.toUpperCase()));
     await settle();
@@ -714,7 +834,7 @@ describe('gitlabAuthSaga', () => {
       .mockResolvedValueOnce({ ...UNCONFIGURED_STATUS, host: HOST, deviceFlow: PENDING_FLOW })
       .mockResolvedValueOnce({ ...CONFIGURED_STATUS, host: HOST, method: 'device' });
     mocks.connect.mockResolvedValue({ success: true, deviceFlow: PENDING_INFO });
-    const run = harness({ ...initialState, host: OTHER_HOST, isConfigured: true });
+    const run = harness({ ...initialState, host: OTHER_HOST, isConfigured: true }, true);
 
     run.channel.put(startGitLabDeviceAuth(HOST));
     await settle();
@@ -736,12 +856,15 @@ describe('gitlabAuthSaga', () => {
 
   it('maps the daemon auth-changed transitions onto the slice', async () => {
     mocks.getStatus.mockResolvedValue({ ...CONFIGURED_STATUS, method: 'device' });
-    const run = harness({
-      ...initialState,
-      host: HOST,
-      isAuthenticating: true,
-      deviceFlow: PENDING_FLOW,
-    });
+    const run = harness(
+      {
+        ...initialState,
+        host: HOST,
+        isAuthenticating: true,
+        deviceFlow: PENDING_FLOW,
+      },
+      true,
+    );
 
     run.channel.put(gitlabAuthChanged('authorized', HOST));
     await settle();
@@ -772,13 +895,16 @@ describe('gitlabAuthSaga', () => {
 
   it('expired for a connected host re-reads the status and drops the identity the daemon lost', async () => {
     mocks.getStatus.mockResolvedValue(UNCONFIGURED_STATUS);
-    const run = harness({
-      ...initialState,
-      host: HOST,
-      isConfigured: true,
-      user: WIRE_USER,
-      method: 'device',
-    });
+    const run = harness(
+      {
+        ...initialState,
+        host: HOST,
+        isConfigured: true,
+        user: WIRE_USER,
+        method: 'device',
+      },
+      true,
+    );
 
     run.channel.put(gitlabAuthChanged('expired', HOST));
     await settle();
@@ -799,15 +925,18 @@ describe('gitlabAuthSaga', () => {
 
   it('an expired pending grant keeps an independently valid credential for the same host', async () => {
     mocks.getStatus.mockResolvedValue(CONFIGURED_STATUS);
-    const run = harness({
-      ...initialState,
-      host: HOST,
-      isConfigured: true,
-      user: WIRE_USER,
-      method: 'pat',
-      isAuthenticating: true,
-      deviceFlow: PENDING_INFO,
-    });
+    const run = harness(
+      {
+        ...initialState,
+        host: HOST,
+        isConfigured: true,
+        user: WIRE_USER,
+        method: 'pat',
+        isAuthenticating: true,
+        deviceFlow: PENDING_INFO,
+      },
+      true,
+    );
 
     run.channel.put(gitlabAuthChanged('expired', HOST));
     await settle();
@@ -828,13 +957,16 @@ describe('gitlabAuthSaga', () => {
 
   it('expired never clears the identity blindly when the status read fails', async () => {
     mocks.getStatus.mockRejectedValue(new Error('daemon unreachable'));
-    const run = harness({
-      ...initialState,
-      host: HOST,
-      isConfigured: true,
-      user: WIRE_USER,
-      method: 'pat',
-    });
+    const run = harness(
+      {
+        ...initialState,
+        host: HOST,
+        isConfigured: true,
+        user: WIRE_USER,
+        method: 'pat',
+      },
+      true,
+    );
 
     run.channel.put(gitlabAuthChanged('expired', HOST));
     await settle();
@@ -851,13 +983,16 @@ describe('gitlabAuthSaga', () => {
 
   it('expired for another instance leaves the selected host untouched', async () => {
     mocks.getStatus.mockResolvedValue(UNCONFIGURED_STATUS);
-    const run = harness({
-      ...initialState,
-      host: HOST,
-      isConfigured: true,
-      user: WIRE_USER,
-      method: 'pat',
-    });
+    const run = harness(
+      {
+        ...initialState,
+        host: HOST,
+        isConfigured: true,
+        user: WIRE_USER,
+        method: 'pat',
+      },
+      true,
+    );
 
     run.channel.put(gitlabAuthChanged('expired', OTHER_HOST));
     await settle();
@@ -895,10 +1030,14 @@ describe('gitlabAuthSaga PAT handling under Redux action logging', () => {
     const consoleSpies = CONSOLE_METHODS.map((method) =>
       vi.spyOn(console, method).mockImplementation(() => {}),
     );
-    const store = new Store({ gitlabAuth: gitlabAuthReducer }, undefined, {
-      logReduxActions: true,
-      sagaMonitor: true,
-    });
+    const store = new Store(
+      { gitlabAuth: gitlabAuthReducer, userPreferences: userPreferencesReducer },
+      undefined,
+      {
+        logReduxActions: true,
+        sagaMonitor: true,
+      },
+    );
     const traced: unknown[] = [];
     const unobserve = [
       store.traceStreams.reduxAction.observe((event) => traced.push(event)),
@@ -907,6 +1046,7 @@ describe('gitlabAuthSaga PAT handling under Redux action logging', () => {
     store.init();
     const stopSaga = store.runSaga(gitlabAuthSaga);
     try {
+      store.dispatch(setLabsGitLabEnabled(true));
       const action = connectGitLabWithToken(HOST, sentinel);
       store.dispatch(action);
       await settle();

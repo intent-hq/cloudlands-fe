@@ -30,6 +30,7 @@ import {
 } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
 import {
   setCodeFontFamily,
+  setLabsGitLabEnabled,
   setNotificationEnabled,
 } from '$store/renderer/slices/user-preferences/user-preferences-slice';
 import {
@@ -45,6 +46,7 @@ import {
   installUpdate,
   simulateSetState,
 } from '$store/renderer/slices/auto-update/auto-update-slice';
+import { selectLabsGitLabEnabled } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
 import { resolveHashToTarget } from '$shared/app-ui-targets';
 import { IPC_CHANNELS } from '$shared/ipc-registry';
 import { mockInvoke, registerMockIpcHandler, resetMockIpcRouter } from '$shared/ipc-mock-router';
@@ -161,6 +163,7 @@ beforeEach(() => {
     value: vi.fn(),
     configurable: true,
   });
+  appStore.dispatch(setLabsGitLabEnabled(false));
   appStore.dispatch(simulateSetState({ status: 'idle' }));
   // No sagas run here: settle the window's guest/owner identity as an owner
   // (multiplayer w4) so the administrator-only tabs are rendered.
@@ -494,6 +497,20 @@ describe('settings tab route and focus behavior', () => {
     expect(main?.getAttribute('aria-labelledby')).toBe(heading.id);
   });
 
+  it('toggles the GitLab lab through the routed settings control and retains it on remount', async () => {
+    const first = renderSettings('/settings?tab=labs#labs-gitlab');
+    const control = await screen.findByRole('switch', { name: 'GitLab' });
+    expect(control.getAttribute('aria-checked')).toBe('false');
+    await fireEvent.click(control);
+    expect(selectLabsGitLabEnabled.select(appStore.state)).toBe(true);
+    first.unmount();
+    renderSettings('/settings#labs-gitlab');
+    const reopened = await screen.findByRole('switch', { name: 'GitLab' });
+    expect(reopened.getAttribute('aria-checked')).toBe('true');
+    await fireEvent.click(reopened);
+    expect(selectLabsGitLabEnabled.select(appStore.state)).toBe(false);
+  });
+
   it('renders route content through the integrated settings page and sidebar', async () => {
     const { container } = renderSettings('/settings?tab=setup');
     const settingsPage = container.querySelector('[data-slot="settings-page"]');
@@ -598,6 +615,8 @@ describe('settings tab route and focus behavior', () => {
     ['/settings?tab=advanced#websocket-api', 'Devices', 'websocket-api'],
     ['/settings?tab=agent-behavior#agent-features', 'Agent defaults', 'agent-features'],
     ['/settings?tab=behavior#agent-features', 'Agent defaults', 'agent-features'],
+    ['/settings?tab=labs#labs-gitlab', 'Labs', 'labs-gitlab'],
+    ['/settings#labs-gitlab', 'Labs', 'labs-gitlab'],
     ['/settings?tab=labs#labs-multiplayer', 'Labs', 'labs-multiplayer'],
     ['/settings#labs-multiplayer', 'Labs', 'labs-multiplayer'],
     ['/settings#multiplayer', 'Labs', 'labs-multiplayer'],

@@ -326,5 +326,6 @@
   "settings_sidebar_agents_label": ["fr"],
   "settings_sidebar_labs_label": ["de", "fr", "es"],
   "presence_avatarStack_more_label": "*",
-  "workspace_progressCard_presenceOffline_tooltip": ["de"]
+  "workspace_progressCard_presenceOffline_tooltip": ["de"],
+  "settings_labs_gitlab_label": ["de", "es", "fr", "ja", "ko", "zh-CN", "zh-TW"]
 }

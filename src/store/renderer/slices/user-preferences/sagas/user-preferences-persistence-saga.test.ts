@@ -1,5 +1,10 @@
 import { runSaga, stdChannel } from 'redux-saga';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import {
+  resetOnboarding,
+  setOnboardingFullFlowRequested,
+  goToStep,
+} from '../../onboarding/onboarding-slice';
 import { SYSTEM_CHANNELS } from '$shared/ipc/channels';
 
 const mocks = vi.hoisted(() => ({
@@ -39,6 +44,8 @@ import {
   setGithubLinkDefaultAction,
   setHasCompletedProviderSetup,
   setLabsMultiplayerEnabled,
+  setLabsGitLabEnabled,
+  toggleLabsGitLab,
   setLanguagePreference,
   setNoteFontStyle,
   setReduceMotionOnBattery,
@@ -178,6 +185,7 @@ describe('userPreferencesPersistenceSaga', () => {
       'appearance:shellTransparencyEnabled': false,
       'appearance:reduceMotionOnBattery': false,
       'labs:multiplayerEnabled': true,
+      'labs:gitlabEnabled': true,
       'agent-font-settings': { fontStyle: 'monospace' },
       'note-font-settings': { fontStyle: 'sans' },
       'code-font-settings': { fontFamily: 'Monaco' },
@@ -203,6 +211,7 @@ describe('userPreferencesPersistenceSaga', () => {
       [setShellTransparencyEnabled(false)],
       [setReduceMotionOnBattery(false)],
       [setLabsMultiplayerEnabled(true)],
+      [setLabsGitLabEnabled(true)],
       [setAgentFontStyle('monospace')],
       [setNoteFontStyle('sans')],
       [setCodeFontFamily('Monaco')],
@@ -248,6 +257,70 @@ describe('userPreferencesPersistenceSaga', () => {
       expect(hydrated.labsMultiplayerEnabled).toBe(stored);
     },
   );
+
+  it.each([undefined, null, 'true', 'false', 1, 0, {}, []])(
+    'keeps the GitLab lab off for missing or invalid storage: %j',
+    async (stored) => {
+      mocks.getJSON.mockImplementation((key: string) =>
+        key === 'labs:gitlabEnabled' ? stored : undefined,
+      );
+      const run = startPreferenceStore();
+      await settle();
+      expect(run.getUserPreferences().labsGitLabEnabled).toBe(false);
+      expect(mocks.setJSON.mock.calls.filter(([key]) => key === 'labs:gitlabEnabled')).toEqual([]);
+      await run.stop();
+    },
+  );
+
+  it.each([true, false])(
+    'persists GitLab %s across onboarding reruns and restart',
+    async (enabled) => {
+      const storage: Record<string, unknown> = {};
+      mocks.getJSON.mockImplementation((key: string) => storage[key]);
+      mocks.setJSON.mockImplementation((key: string, value: unknown) => {
+        storage[key] = value;
+      });
+      const first = startPreferenceStore();
+      await settle();
+      first.dispatch(setLabsGitLabEnabled(!enabled));
+      first.dispatch(toggleLabsGitLab());
+      first.dispatch(setOnboardingFullFlowRequested(true));
+      first.dispatch(resetOnboarding());
+      first.dispatch(goToStep('forge'));
+      await settle();
+      expect(first.getUserPreferences().labsGitLabEnabled).toBe(enabled);
+      expect(storage['labs:gitlabEnabled']).toBe(enabled);
+      expect(first.getUserPreferences().labsMultiplayerEnabled).toBe(false);
+      await first.stop();
+      const restarted = startPreferenceStore();
+      await settle();
+      expect(restarted.getUserPreferences().labsGitLabEnabled).toBe(enabled);
+      restarted.dispatch(resetOnboarding());
+      expect(restarted.getUserPreferences().labsGitLabEnabled).toBe(enabled);
+      await restarted.stop();
+    },
+  );
+
+  it('keeps GitLab off until delayed preference hydration finishes without resetting it on rerun', async () => {
+    let finish!: (enabled: boolean) => void;
+    mocks.getJSON.mockImplementation((key: string) =>
+      key === 'labs:gitlabEnabled'
+        ? new Promise<boolean>((resolve) => {
+            finish = resolve;
+          })
+        : undefined,
+    );
+    const run = startPreferenceStore();
+    expect(run.getUserPreferences().labsGitLabEnabled).toBe(false);
+    run.dispatch(resetOnboarding());
+    finish(true);
+    await settle();
+    expect(run.getUserPreferences().labsGitLabEnabled).toBe(true);
+    run.dispatch(setOnboardingFullFlowRequested(true));
+    run.dispatch(resetOnboarding());
+    expect(run.getUserPreferences().labsGitLabEnabled).toBe(true);
+    await run.stop();
+  });
 
   it('persists an agent font action and restores it in a fresh store', async () => {
     const stored: Record<string, unknown> = {};

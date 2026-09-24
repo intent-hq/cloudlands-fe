@@ -15,6 +15,7 @@ import {
   setGithubLinkDefaultAction,
   setHasCompletedProviderSetup,
   setLabsMultiplayerEnabled,
+  setLabsGitLabEnabled,
   setNotificationEnabled,
   setNoteFontStyle,
   setLanguagePreference,
@@ -34,6 +35,7 @@ import {
   toggleHasCompletedProviderSetup,
   toggleChatAurora,
   toggleLabsMultiplayer,
+  toggleLabsGitLab,
   toggleReduceMotionOnBattery,
   toggleShowArchived,
   toggleShowReasoningBlocks,
@@ -58,6 +60,7 @@ import {
   selectIsAgentMonospace,
   selectIsNoteMonospace,
   selectLabsMultiplayerEnabled,
+  selectLabsGitLabEnabled,
   selectLanguagePreference,
   selectNoteFontStyle,
   selectNoteFontStyleLabel,
@@ -392,6 +395,19 @@ describe('userPreferencesReducer', () => {
     });
   });
 
+  describe('labs preference actions', () => {
+    it('defaults the GitLab lab to disabled', () => {
+      expect(initialState.labsGitLabEnabled).toBe(false);
+    });
+
+    it('sets and toggles labsGitLabEnabled', () => {
+      const enabled = userPreferencesReducer(initialState, setLabsGitLabEnabled(true));
+      const disabled = userPreferencesReducer(enabled, toggleLabsGitLab());
+      expect(enabled.labsGitLabEnabled).toBe(true);
+      expect(disabled.labsGitLabEnabled).toBe(false);
+    });
+  });
+
   describe('language preference actions', () => {
     it('defaults to the system preference', () => {
       expect(initialState.languagePreference).toBe('system');
@@ -485,6 +501,15 @@ describe('userPreferencesReducer', () => {
         } as any),
       ).toBe(true);
       expect(selectLabsMultiplayerEnabled.select({} as any)).toBe(false);
+    });
+    it('selects labsGitLabEnabled (default false, missing slice safe)', () => {
+      expect(selectLabsGitLabEnabled.select(state)).toBe(false);
+      expect(
+        selectLabsGitLabEnabled.select({
+          userPreferences: { ...initialState, labsGitLabEnabled: true },
+        } as any),
+      ).toBe(true);
+      expect(selectLabsGitLabEnabled.select({} as any)).toBe(false);
     });
 
     it('selects font settings from userPreferences', () => {
