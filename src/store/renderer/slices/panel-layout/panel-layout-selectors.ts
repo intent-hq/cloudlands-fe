@@ -255,6 +255,13 @@ export const selectWorkspaceHasBrowserTabs = store.createSelector<[wsId: string]
   },
 );
 
+/** Workspace surfaces with browser sessions must survive working-set eviction. */
+export const selectBrowserWorkspaceIds = store.createSelector((state) =>
+  Object.keys(state.panelLayout.byWorkspaceId).filter((workspaceId) =>
+    selectWorkspaceHasBrowserTabs.select(state, workspaceId),
+  ),
+);
+
 /** Select visible horizontal panel-column counts for workspace width reservation. */
 export const selectPanelColumnCountsByWorkspaceId = store.createSelector((state) => {
   return Object.fromEntries(
