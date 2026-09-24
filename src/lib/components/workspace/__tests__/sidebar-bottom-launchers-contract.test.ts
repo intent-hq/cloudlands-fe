@@ -17,7 +17,7 @@ describe('workspace sidebar bottom launchers', () => {
     const browserLauncher = source('../SidebarBrowserLauncher.svelte');
     const terminalDock = source('../WorkspaceTerminalDock.svelte');
     const bottomStart = sidebar.indexOf('<!-- Compact launchers stay fixed;');
-    const bottomEnd = sidebar.indexOf('\n</div>\n\n<style>', bottomStart);
+    const bottomEnd = sidebar.indexOf('{/snippet}', bottomStart);
     const bottomLaunchers = sidebar.slice(bottomStart, bottomEnd);
     const overviewStart = bottomLaunchers.indexOf('{#if isLauncherOverview}');
     const expandedStart = bottomLaunchers.indexOf('{:else}', overviewStart);
@@ -146,9 +146,7 @@ describe('workspace sidebar bottom launchers', () => {
     expect(progress).not.toContain('data-workspace-view-pr');
     expect(progress).not.toContain('viewPullRequestAction');
     expect(sidebar).not.toContain('data-sidebar-changes-sync');
-    expect(sidebar).toContain(
-      'filePath={$fileExplorerWorkspacePath}\n                          {workspaceId}',
-    );
+    expect(sidebar).toMatch(/filePath=\{\$fileExplorerWorkspacePath\}\s*\{workspaceId\}/);
     expect(sidebar).toContain('data-files-open-in');
   });
 });

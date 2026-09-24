@@ -291,7 +291,7 @@ describe('editorial workspace shell presentation contract', () => {
     expect(sidebar).toContain('<WorkspaceTerminalDock');
     expect(sidebar).toContain("onExpand={() => handleTabClick('shell')}");
     expect(sidebar).toContain(
-      "class={cn('relative flex h-full flex-col overflow-hidden bg-transparent', className)}",
+      "collapsed ? 'h-auto' : 'h-full overflow-hidden'",
     );
     expect(dock).toContain('{#each $terminals$.slice(0, 1) as terminal (terminal.id)}');
     expect(dock).toContain('data-dev-script-count');
