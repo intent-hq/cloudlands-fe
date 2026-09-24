@@ -12,6 +12,8 @@
   import type { InviteNoticeShowPayload } from '$shared/ipc/invite-notice';
   import { describeInviteFailureReason } from '$shared/utils/invite-failure-text';
   import { selectLabsGitLabEnabled } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
+  import { setLabsSettingsVisible } from '$store/renderer/slices/user-preferences/user-preferences-slice';
+  import { store as appStore } from '$store/renderer/store';
   import { navigateToSettings } from '$lib/utils/workspace-navigation';
   import { m } from '$shared/paraglide/messages.js';
 
@@ -63,9 +65,12 @@
   );
 
   function openAccountSetup() {
+    if (!open) return;
+    const showGitLab = needsGitLabEnable;
+    if (showGitLab) appStore.dispatch(setLabsSettingsVisible(true));
     acknowledge();
     void navigateToSettings(
-      needsGitLabEnable
+      showGitLab
         ? { tab: 'labs', hash: 'labs-gitlab' }
         : { tab: 'connections', hash: 'integrations' },
     ).catch(() => {});

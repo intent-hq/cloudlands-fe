@@ -7,6 +7,7 @@ import { warmImport } from '../../../../test/warm-import';
 import type { InviteNoticeShowPayload } from '$shared/ipc/invite-notice';
 import { describeInviteFailureReason } from '$shared/utils/invite-failure-text';
 import { m } from '$shared/paraglide/messages.js';
+import { setLabsSettingsVisible } from '$store/renderer/slices/user-preferences/user-preferences-slice';
 
 const labs = vi.hoisted(() => ({ enabled: false, dispatch: vi.fn() }));
 vi.mock('$store/renderer/store', async () => {
@@ -63,6 +64,7 @@ describe('InviteNoticeModal', () => {
       const payload = { ...FAILED, reason };
       const onAcknowledge = vi.fn();
       render(Modal, { props: { open: true, payload, onAcknowledge } });
+      expect(labs.dispatch).not.toHaveBeenCalled();
       await fireEvent.click(screen.getByRole('button', { name: 'Enable GitLab in Labs' }));
       expect(navigateToSettings).toHaveBeenCalledExactlyOnceWith({
         tab: 'labs',
@@ -71,7 +73,7 @@ describe('InviteNoticeModal', () => {
       expect(onAcknowledge).toHaveBeenCalledOnce();
       expect(screen.queryByRole('alertdialog')).toBeNull();
       expect(payload).toEqual({ ...FAILED, reason });
-      expect(labs.dispatch).not.toHaveBeenCalled();
+      expect(labs.dispatch).toHaveBeenCalledExactlyOnceWith(setLabsSettingsVisible(true));
     },
   );
 
@@ -98,19 +100,46 @@ describe('InviteNoticeModal', () => {
   );
 
   it.each(['pin-mismatch', 'identity-unavailable'] as const)(
-    'routes confirmed GitLab %s recovery to Labs without changing the preference',
+    'reveals Labs for confirmed GitLab %s without enabling GitLab',
     async (reason) => {
       const Modal = await loadModal();
       const payload = { ...FAILED, reason, accountProvider: 'gitlab' as const };
       const onAcknowledge = vi.fn();
       render(Modal, { props: { open: true, payload, onAcknowledge } });
+      expect(labs.dispatch).not.toHaveBeenCalled();
       await fireEvent.click(screen.getByRole('button', { name: 'Enable GitLab in Labs' }));
       expect(navigateToSettings).toHaveBeenCalledExactlyOnceWith({
         tab: 'labs',
         hash: 'labs-gitlab',
       });
       expect(onAcknowledge).toHaveBeenCalledOnce();
+      expect(labs.dispatch).toHaveBeenCalledExactlyOnceWith(setLabsSettingsVisible(true));
+      expect(payload.accountProvider).toBe('gitlab');
+    },
+  );
+
+  it.each(['ok', 'escape'] as const)(
+    'keeps Labs hidden when a GitLab setup notice is dismissed with %s',
+    async (dismiss) => {
+      const Modal = await loadModal();
+      const payload = {
+        ...FAILED,
+        reason: 'pin-mismatch' as const,
+        accountProvider: 'gitlab' as const,
+      };
+      const onAcknowledge = vi.fn();
+      render(Modal, { props: { open: true, payload, onAcknowledge } });
+      if (dismiss === 'ok') {
+        await fireEvent.click(
+          screen.getByRole('button', { name: m.deeplink_inviteFailed_ok_button() }),
+        );
+      } else {
+        await fireEvent.keyDown(document.activeElement!, { key: 'Escape' });
+      }
+      expect(onAcknowledge).toHaveBeenCalledOnce();
+      expect(screen.queryByRole('alertdialog')).toBeNull();
       expect(labs.dispatch).not.toHaveBeenCalled();
+      expect(navigateToSettings).not.toHaveBeenCalled();
       expect(payload.accountProvider).toBe('gitlab');
     },
   );
@@ -149,6 +178,7 @@ describe('InviteNoticeModal', () => {
       hash: 'integrations',
     });
     expect(onAcknowledge).toHaveBeenCalledOnce();
+    expect(labs.dispatch).not.toHaveBeenCalled();
   });
 
   it('failed: titles the dialog as a failure and shows the sentence for the bounded reason', async () => {

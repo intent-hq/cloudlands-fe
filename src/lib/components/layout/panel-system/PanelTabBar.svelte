@@ -518,9 +518,6 @@
         icon: faArrowLeft,
         shortcut: movePaneLeftShortcutHint,
         disabled: !onMovePaneLeft,
-        disabledReason: !onMovePaneLeft
-          ? m.layout_panelTabBar_moveUnavailable_description()
-          : undefined,
         onClick: () => onMovePaneLeft?.(),
       },
       {
@@ -529,9 +526,6 @@
         icon: faArrowRight,
         shortcut: movePaneRightShortcutHint,
         disabled: !onMovePaneRight,
-        disabledReason: !onMovePaneRight
-          ? m.layout_panelTabBar_moveUnavailable_description()
-          : undefined,
         onClick: () => onMovePaneRight?.(),
       },
       {
@@ -1380,9 +1374,6 @@
           label={m.layout_panelTabBar_moveTabLeft_label()}
           iconWeight="regular"
           disabled={!onMoveLeft}
-          disabledReason={!onMoveLeft
-            ? m.layout_panelTabBar_moveUnavailable_description()
-            : undefined}
           onclick={() => {
             onMoveLeft?.();
             close();
@@ -1393,9 +1384,6 @@
           label={m.layout_panelTabBar_moveTabRight_label()}
           iconWeight="regular"
           disabled={!onMoveRight}
-          disabledReason={!onMoveRight
-            ? m.layout_panelTabBar_moveUnavailable_description()
-            : undefined}
           onclick={() => {
             onMoveRight?.();
             close();
@@ -1413,9 +1401,6 @@
           iconWeight="regular"
           shortcut={movePaneLeftShortcutHint}
           disabled={!onMovePaneLeft}
-          disabledReason={!onMovePaneLeft
-            ? m.layout_panelTabBar_moveUnavailable_description()
-            : undefined}
           onclick={() => {
             onMovePaneLeft?.();
             close();
@@ -1427,9 +1412,6 @@
           iconWeight="regular"
           shortcut={movePaneRightShortcutHint}
           disabled={!onMovePaneRight}
-          disabledReason={!onMovePaneRight
-            ? m.layout_panelTabBar_moveUnavailable_description()
-            : undefined}
           onclick={() => {
             onMovePaneRight?.();
             close();
