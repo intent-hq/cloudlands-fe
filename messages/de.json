@@ -5421,6 +5421,8 @@
   "lib_commandPalette_openHud_command": "HUD öffnen",
   "lib_commandPalette_openUsageStats_command": "Nutzungsstatistiken öffnen",
   "lib_commandPalette_settings_command": "Einstellungen",
+  "lib_commandPalette_enableExperimentalMultiplayer_label": "Experimentellen Mehrspielermodus aktivieren",
+  "lib_commandPalette_disableExperimentalMultiplayer_label": "Experimentellen Mehrspielermodus deaktivieren",
   "lib_commandPalette_newAgentChat_command": "Neuer Agenten-Chat",
   "lib_commandPalette_newTerminal_command": "Neues Terminal",
   "lib_commandPalette_newNote_command": "Neue Notiz",

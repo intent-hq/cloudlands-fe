@@ -5421,6 +5421,8 @@
   "lib_commandPalette_openHud_command": "打开 HUD",
   "lib_commandPalette_openUsageStats_command": "打开使用统计",
   "lib_commandPalette_settings_command": "设置",
+  "lib_commandPalette_enableExperimentalMultiplayer_label": "启用实验性多人协作",
+  "lib_commandPalette_disableExperimentalMultiplayer_label": "禁用实验性多人协作",
   "lib_commandPalette_newAgentChat_command": "新建智能体聊天",
   "lib_commandPalette_newTerminal_command": "新建终端",
   "lib_commandPalette_newNote_command": "新建笔记",

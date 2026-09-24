@@ -5421,6 +5421,8 @@
   "lib_commandPalette_openHud_command": "HUD 열기",
   "lib_commandPalette_openUsageStats_command": "사용 통계 열기",
   "lib_commandPalette_settings_command": "설정",
+  "lib_commandPalette_enableExperimentalMultiplayer_label": "실험적 멀티플레이어 활성화",
+  "lib_commandPalette_disableExperimentalMultiplayer_label": "실험적 멀티플레이어 비활성화",
   "lib_commandPalette_newAgentChat_command": "새 에이전트 채팅",
   "lib_commandPalette_newTerminal_command": "새 터미널",
   "lib_commandPalette_newNote_command": "새 노트",
