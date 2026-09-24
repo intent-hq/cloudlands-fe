@@ -123,9 +123,9 @@ describe('workspace sidebar hierarchy presentation contract', () => {
     const notes = source('../sidebar/NotesPanel.svelte');
     const changes = source('../sidebar/SidebarChangesPanel.svelte');
 
-    expect(sidebar).toContain('shrink-0 px-6 pb-2 pt-5');
+    expect(sidebar).toContain("'shrink-0 px-6 pb-2', collapsed ? 'pt-3' : 'pt-5'");
     expect(sidebar).toContain('data-workspace-title-region');
-    expect(sidebar).toContain('<div class="px-4 pb-1 pt-4">');
+    expect(sidebar).toContain("'px-4 pb-1', collapsed ? 'pt-3' : 'pt-4'");
     const addContext = selfClosingTag(sidebar, 'AddContextSection');
     expect(addContext).toContain('onAddNote={onCreateNote}');
     expect(addContext).toMatch(/\bcompact\b/);
