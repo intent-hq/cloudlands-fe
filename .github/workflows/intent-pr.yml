@@ -721,6 +721,7 @@ jobs:
           repository: intent-hq/intent
           ref: main
           path: .cache/transfer-selection-contract
+          persist-credentials: false
           sparse-checkout-cone-mode: false
           sparse-checkout: |
             /docs/protocol/fixtures/transfer-selection/
@@ -755,6 +756,9 @@ jobs:
         run: pnpm run generate:ipc-channels
       - name: Unit tests
         run: |
+          contract_sha=$(git -C .cache/transfer-selection-contract rev-parse HEAD)
+          echo "Transfer selection contract: intent-hq/intent@$contract_sha"
+          echo "Transfer selection contract: intent-hq/intent@$contract_sha" >> "$GITHUB_STEP_SUMMARY"
           node scripts/transfer-selection-fixtures.mjs
           pnpm run test:unit --shard=${{ matrix.shard }}/2
 
