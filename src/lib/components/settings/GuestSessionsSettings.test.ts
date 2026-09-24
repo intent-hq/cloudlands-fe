@@ -974,6 +974,68 @@ describe('GuestSessionsSettings', () => {
       await waitFor(() => expect(mocks.removeMember).toHaveBeenCalledTimes(2));
     });
 
+    it('does not revive a failed removal for a re-added member and keeps retry state current', async () => {
+      mocks.rosters = { 'ws-1': { status: 'loaded', members: [owner, collaborator] } };
+      mocks.removeMember.mockImplementationOnce(() => ({
+        promise: Promise.reject(new HostedRosterOperationError('transport')),
+      }));
+      render(GuestSessionsSettings);
+      const roster = screen.getByTestId('hosted-workspace-roster');
+      const confirmRemoval = async () => {
+        await fireEvent.click(within(roster).getByRole('button', { name: 'Remove' }));
+        await fireEvent.click(
+          within(screen.getByRole('dialog')).getByRole('button', { name: 'Remove' }),
+        );
+        await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+      };
+      const refresh = async (members: WorkspaceMember[]) => {
+        mocks.rosters['ws-1'] = { status: 'loaded', members };
+        const action = guestActions.loadHostedRosterRequested('ws-1');
+        appStore.dispatch(action);
+        await action.promise;
+      };
+      await confirmRemoval();
+      await within(roster).findByRole('alert');
+      await refresh([owner, collaborator]);
+      expect(within(roster).getByRole('button', { name: 'Retry' })).toBeTruthy();
+
+      await refresh([owner]);
+      await waitFor(() => expect(within(roster).queryByRole('alert')).toBeNull());
+      const readded = { ...collaborator, addedAt: '2026-09-24T00:00:00Z' };
+      await refresh([owner, readded]);
+      await within(roster).findByRole('button', { name: 'Remove' });
+      expect(within(roster).queryByRole('alert')).toBeNull();
+      expect(mocks.removeMember).toHaveBeenCalledTimes(1);
+
+      mocks.removeMember.mockImplementationOnce(() => ({
+        promise: Promise.reject(new HostedRosterOperationError('transport')),
+      }));
+      await confirmRemoval();
+      const alert = await within(roster).findByRole('alert');
+      const retry = Promise.withResolvers<{ removed: boolean }>();
+      mocks.removeMember.mockImplementationOnce(() => ({ promise: retry.promise }));
+      await fireEvent.click(within(alert).getByRole('button', { name: 'Retry' }));
+      await refresh([owner, readded]);
+      await waitFor(() => expect(within(roster).queryByRole('alert')).toBeNull());
+      expect(
+        (within(roster).getByRole('button', { name: 'Remove' }) as HTMLButtonElement).disabled,
+      ).toBe(true);
+      expect(transport.request).toHaveBeenCalledWith('workspace.members.list', {
+        workspaceId: 'ws-1',
+      });
+      expect(transport.request).toHaveBeenCalledWith('workspace.members.remove', {
+        workspaceId: 'ws-1',
+        principalId: 'p-collab',
+      });
+      expect(mocks.removeMember).toHaveBeenCalledTimes(3);
+      retry.resolve({ removed: true });
+      await waitFor(() =>
+        expect(
+          (within(roster).getByRole('button', { name: 'Remove' }) as HTMLButtonElement).disabled,
+        ).toBe(false),
+      );
+    });
+
     it('retries the removal that failed, never a later cancelled dialog target', async () => {
       const second: WorkspaceMember = {
         ...collaborator,

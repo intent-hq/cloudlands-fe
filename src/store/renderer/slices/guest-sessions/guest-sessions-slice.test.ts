@@ -103,6 +103,65 @@ describe('guestSessionsReducer', () => {
     expect(state.removingMemberKeys).toEqual([hostedMemberKey('ws-1', 'principal-1')]);
   });
 
+  it('forgets a removed membership failure before the same principal joins again', () => {
+    const removal = removeHostedMemberRequested('ws-1', MEMBER.principalId);
+    removal.promise.catch(() => {});
+    let state = guestSessionsReducer(initialState, hostedRosterReceived('ws-1', [MEMBER]));
+    state = guestSessionsReducer(
+      state,
+      removal.failure(new HostedRosterOperationError('transport')),
+    );
+    expect(state.failedMemberKeys).toEqual([hostedMemberKey('ws-1', MEMBER.principalId)]);
+
+    state = guestSessionsReducer(state, hostedRosterReceived('ws-1', []));
+    expect(state.failedMemberKeys).toEqual([]);
+    state = guestSessionsReducer(
+      state,
+      hostedRosterReceived('ws-1', [{ ...MEMBER, addedAt: '2026-09-24T00:00:00Z' }]),
+    );
+    expect(state.failedMemberKeys).toEqual([]);
+  });
+
+  it('prunes only absent members while retaining current failures and independent workspace retries', () => {
+    const remaining = { ...MEMBER, principalId: 'principal-3' };
+    let state = guestSessionsReducer(
+      initialState,
+      hostedRosterReceived('ws-1', [MEMBER, remaining]),
+    );
+    state = guestSessionsReducer(state, hostedRosterReceived('ws-10', [MEMBER]));
+    for (const [workspaceId, principalId] of [
+      ['ws-1', MEMBER.principalId],
+      ['ws-1', remaining.principalId],
+      ['ws-10', MEMBER.principalId],
+    ]) {
+      const removal = removeHostedMemberRequested(workspaceId, principalId);
+      removal.promise.catch(() => {});
+      state = guestSessionsReducer(
+        state,
+        removal.failure(new HostedRosterOperationError('transport')),
+      );
+    }
+    const failures = state.failedMemberKeys;
+    state = guestSessionsReducer(state, hostedRosterLoading('ws-1'));
+    state = guestSessionsReducer(state, hostedRosterFailed('ws-1'));
+    expect(state.failedMemberKeys).toBe(failures);
+    state = guestSessionsReducer(state, hostedRosterReceived('ws-1', [MEMBER, remaining]));
+    expect(state.failedMemberKeys).toBe(failures);
+
+    state = guestSessionsReducer(state, hostedRosterReceived('ws-1', [remaining]));
+    expect(state.failedMemberKeys).toEqual([
+      hostedMemberKey('ws-1', remaining.principalId),
+      hostedMemberKey('ws-10', MEMBER.principalId),
+    ]);
+    state = guestSessionsReducer(
+      state,
+      removeMemberOperationStarted('ws-1', remaining.principalId),
+    );
+    state = guestSessionsReducer(state, hostedRosterReceived('ws-1', [remaining]));
+    expect(state.failedMemberKeys).toEqual([hostedMemberKey('ws-10', MEMBER.principalId)]);
+    expect(state.removingMemberKeys).toEqual([hostedMemberKey('ws-1', remaining.principalId)]);
+  });
+
   it('does not offer retry for cancelled leaves or forbidden/cancelled member removals', () => {
     const leave = leaveGuestSessionRequested('guest-1');
     leave.promise.catch(() => {});

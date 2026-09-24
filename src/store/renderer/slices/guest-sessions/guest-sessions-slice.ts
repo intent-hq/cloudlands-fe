@@ -251,14 +251,25 @@ guestSessionsReducer.with(hostedRosterLoading, (state, { payload: [workspaceId] 
         },
       },
 );
-guestSessionsReducer.with(hostedRosterReceived, (state, { payload: [workspaceId, members] }) =>
-  isWithheld(state, workspaceId)
-    ? state
-    : {
-        ...state,
-        hostedRosters: { ...state.hostedRosters, [workspaceId]: { status: 'loaded', members } },
-      },
-);
+guestSessionsReducer.with(hostedRosterReceived, (state, { payload: [workspaceId, members] }) => {
+  if (isWithheld(state, workspaceId)) return state;
+  const prefix = hostedMemberKey(workspaceId, '');
+  const memberKeys = new Set(
+    members.map((member) => hostedMemberKey(workspaceId, member.principalId)),
+  );
+  // A retry belongs to the membership that failed, not a later re-addition.
+  const failedMemberKeys = state.failedMemberKeys.filter(
+    (key) => !key.startsWith(prefix) || memberKeys.has(key),
+  );
+  return {
+    ...state,
+    hostedRosters: { ...state.hostedRosters, [workspaceId]: { status: 'loaded', members } },
+    failedMemberKeys:
+      failedMemberKeys.length === state.failedMemberKeys.length
+        ? state.failedMemberKeys
+        : failedMemberKeys,
+  };
+});
 guestSessionsReducer.with(hostedRosterFailed, (state, { payload: [workspaceId] }) =>
   isWithheld(state, workspaceId)
     ? state
