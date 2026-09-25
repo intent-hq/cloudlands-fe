@@ -885,9 +885,6 @@ jobs:
         # gitignored. (build-config / ipc-channels are main-process-only and
         # not needed by the CT vite build.)
         run: pnpm run generate:i18n
-      - name: Resolve CT playwright version
-        id: ct-playwright
-        run: echo "version=$(node scripts/run-ct-tests.mjs --print-playwright-version)" >> "$GITHUB_OUTPUT"
       - name: Point Playwright at per-slot paths (tinybox)
         # The 8 tinybox runner slots share one $HOME: concurrent shards
         # installing into the default ~/.cache/ms-playwright would clobber
@@ -920,6 +917,17 @@ jobs:
           slot=$(printf '%s' "$RUNNER_NAME" | grep -oE '[0-9]+$' || true)
           echo "CT_PORT=$((3100 + ${slot:-0}))" >> "$GITHUB_ENV"
           echo "PWTEST_CACHE_DIR=$RUNNER_TEMP/playwright-transform-cache" >> "$GITHUB_ENV"
+      - name: Resolve CT browser identity and paths
+        id: ct-browser
+        run: |
+          node scripts/run-ct-tests.mjs --print-browser-plan > "$RUNNER_TEMP/ct-browser-plan.json"
+          node --input-type=module -e '
+          import { readFileSync } from "node:fs";
+          const plan = JSON.parse(readFileSync(process.argv[1], "utf8"));
+          console.log(`cache-key=${plan.cacheKey}`);
+          console.log(`cache-dir=${plan.cacheDir}`);
+          console.log(`readiness-marker=${plan.readinessMarker}`);
+          ' "$RUNNER_TEMP/ct-browser-plan.json" >> "$GITHUB_OUTPUT"
       - name: Cache Playwright browsers
         # Burst path only: tinybox's per-slot browsers dir (above) is
         # persistent, so the GH cache tarball round-trip would be pure
@@ -928,8 +936,8 @@ jobs:
         uses: actions/cache@v6
         id: playwright-cache
         with:
-          path: ~/.cache/ms-playwright
-          key: playwright-browsers-${{ runner.os }}-${{ steps.ct-playwright.outputs.version }}
+          path: ${{ steps.ct-browser.outputs.cache-dir }}
+          key: playwright-browsers-${{ runner.os }}-${{ runner.arch }}-${{ steps.ct-browser.outputs.cache-key }}
       - name: Harden apt against mirror stalls
         # Burst path only: the mirror+file indirection is specific to the
         # GH-hosted image, and the step persistently edits /etc/apt — it
@@ -977,8 +985,8 @@ jobs:
         # step's budget and ejected PRs from the merge queue (intent#4723).
         # The CT harness uses the repo-bundled Inter Variable font and waits
         # on document.fonts.ready, so no suite depends on those system fonts.
-        # Instead: take the package list from the CT-aligned playwright's own
-        # `install-deps --dry-run` (parsed strictly and font-filtered by the
+        # Instead: take the package list from the pinned browser supplier's own
+        # `install-deps --dry-run` missing-package report (strictly parsed by the
         # launcher's --print-os-deps helper; see playwright-os-deps-lib.mjs),
         # and call apt only for packages dpkg reports missing — zero network
         # on a warm image, and a missing non-font lib still gets installed (or
@@ -990,7 +998,7 @@ jobs:
         run: |
           set -euo pipefail
           node scripts/run-ct-tests.mjs --install-browsers chromium
-          if ! pkgs="$(node scripts/run-ct-tests.mjs --print-os-deps chromium)" || [ -z "$pkgs" ]; then
+          if ! pkgs="$(node scripts/run-ct-tests.mjs --print-os-deps chromium)"; then
             echo "::error::Could not derive the non-font Chromium OS dependency list from install-deps --dry-run"
             exit 1
           fi
@@ -1028,7 +1036,7 @@ jobs:
         timeout-minutes: 8
         run: |
           set -euo pipefail
-          marker="$PLAYWRIGHT_BROWSERS_PATH/.with-deps-${{ steps.ct-playwright.outputs.version }}"
+          marker="${{ steps.ct-browser.outputs.readiness-marker }}"
           if [ -f "$marker" ]; then
             node scripts/run-ct-tests.mjs --install-browsers chromium
           else
@@ -1094,8 +1102,8 @@ jobs:
           SAMPLER_PID=$!
           trap 'kill "$SAMPLER_PID" 2>/dev/null || true' EXIT
           # Required lane: everything NOT tagged @quarantine. Retries stay
-          # on (retries: 2 in playwright-ct.config.ts, trace on first retry)
-          # so a real flake still leaves a trace behind, but
+          # on (retries: 2 in playwright-ct.config.ts). The original failing
+          # attempt retains its trace even when a retry passes, and
           # --fail-on-flaky-tests turns a pass-on-retry into a red shard
           # instead of silent 3x runtime. This job is merge-queue-only, so
           # a red shard ejects the queue entry: a flaky test must be fixed

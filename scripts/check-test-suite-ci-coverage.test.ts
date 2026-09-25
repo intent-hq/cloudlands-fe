@@ -82,7 +82,9 @@ interface Word {
 /** Uncovered suites with a reason they have no CI job: path → one-line justification. */
 const ALLOWLIST: Readonly<Record<string, string>> = Object.freeze({
   'playwright-ct-lifetime.config.ts':
-    '2026-09-25: opt-in browser lifetime comparison for intent-hq/intent#5481; deliberately timed-out tests verify cancellation and late responses, and the default CT browser must remain unchanged until independent validation',
+    '2026-09-25: opt-in browser lifetime comparison for intent-hq/intent#5481; deliberately timed-out tests verify cancellation and late responses with explicitly identified diagnostic browsers',
+  'playwright-ct-evidence.config.ts':
+    '2026-09-25: opt-in intentional first-attempt failure for intent-hq/intent#5481; proves artifact retention and a red strict-flaky exit after a passing retry, so it cannot run in the passing CI lane',
   'src/lib/components/ui/card/operate-patterns.playwright.config.ts':
     '2026-09-21: intentionally manual visual harness; its spec renders Operate pattern contact sheets into a dated .demo-artifacts/ directory for human review, with no checked-in baselines to compare against in CI',
   'vitest.text-rebase-bench.config.ts':
