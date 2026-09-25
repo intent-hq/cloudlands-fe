@@ -566,9 +566,9 @@
 
   {#snippet content()}
     <!--
-      Intrinsic width: grow to fit the widest stat row (no value wrapping)
-      between the 224px floor and a 320px cap. At the cap the Connection
-      row's min-w-0 truncate takes over instead of widening the menu.
+      Intrinsic width: grow to fit the widest stat row between the 224px
+      floor and a 320px cap. At the cap the Connection value wraps onto
+      up to two right-aligned lines instead of widening the menu.
     -->
     <div bind:this={menuBody} class="min-w-56 w-max max-w-80">
       <Menu.Sub>
@@ -819,8 +819,9 @@
                       <span class="text-subtle shrink-0"
                         >{m.layout_daemonStatus_connection_label()}</span
                       >
-                      <span class="text-xs min-w-0 truncate" title={transportLabel}
-                        >{transportLabel}</span
+                      <span
+                        class="text-xs min-w-0 line-clamp-2 break-words text-right"
+                        title={transportLabel}>{transportLabel}</span
                       >
                     </div>
                   {:else}
