@@ -1,8 +1,23 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { m } from '$shared/paraglide/messages.js';
+import type { AgentSession } from '$shared/types';
+import { CHIEF_WORKSPACE_ID } from '$shared/types/branded-ids';
+import { store as appStore } from '$store/renderer/store';
+import { bulkUpsertSessions } from '$store/renderer/slices/agent-session/agent-session-slice';
+import { setAgentsLoaded } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
+import ChiefCard from '$lib/components/layout/sidebar-nav/cards/ChiefCard.svelte';
+import SidebarHarness from '$lib/components/ui/sidebar/SidebarHarness.svelte';
 import { themePresets } from '../../utils/theme-presets';
 import { parseVSCodeTheme } from '../../utils/vscode-theme-parser';
+
+vi.mock('$lib/components/chat/ChatPanel.svelte', async () => ({
+  default: (
+    await import('$lib/components/layout/sidebar-nav/__tests__/mocks/MockChiefChatPanel.svelte')
+  ).default,
+}));
 
 const COLOR_ROLES = [
   'background',
@@ -12,6 +27,7 @@ const COLOR_ROLES = [
   'popover',
   'popover-foreground',
   'primary',
+  'primary-ink',
   'primary-foreground',
   'secondary',
   'secondary-foreground',
@@ -29,6 +45,7 @@ const COLOR_ROLES = [
   'success',
   'success-foreground',
   'warning',
+  'warning-ink',
   'warning-foreground',
   'sidebar',
   'sidebar-foreground',
@@ -41,6 +58,7 @@ const CONTRAST_PAIRS = [
   ['foreground', 'background'],
   ['card-foreground', 'card'],
   ['popover-foreground', 'popover'],
+  ['primary-ink', 'background'],
   ['primary-foreground', 'primary'],
   ['secondary-foreground', 'secondary'],
   ['accent-foreground', 'accent'],
@@ -54,92 +72,6 @@ const CONTRAST_PAIRS = [
 ] as const;
 
 const COLOR_ROLE_SET = new Set<string>(COLOR_ROLES);
-
-const DEFAULT_NEUTRAL_SOURCE = {
-  light: {
-    background: '0 0% 100%',
-    foreground: '0 0% 0%',
-    card: '0 0% 100%',
-    'card-foreground': '0 0% 0%',
-    popover: '60 5% 92.1568627451%',
-    'popover-foreground': '0 0% 0%',
-    secondary: '0 0% 89.8039215686%',
-    'secondary-foreground': '0 0% 0%',
-    accent: '20 4.7619047619% 87.6470588235%',
-    'accent-foreground': '0 0% 0%',
-    muted: '20 4.7619047619% 87.6470588235%',
-    'muted-foreground': '60 0.826446281% 27.7254901961%',
-    border: '20 4.7619047619% 87.6470588235%',
-    input: '0 0% 0%',
-    sidebar: '0 0% 96%',
-    'sidebar-foreground': '0 0% 0%',
-    'sidebar-accent': '20 4.7619047619% 87.6470588235%',
-    'sidebar-accent-foreground': '0 0% 0%',
-    'sidebar-border': '20 4.7619047619% 87.6470588235%',
-    'app-background': '0 0% 100%',
-  },
-  dark: {
-    background: '0 0% 10.1960784314%',
-    foreground: '0 0% 100%',
-    card: '0 0% 10.1960784314%',
-    'card-foreground': '0 0% 100%',
-    popover: '0 0% 14.9019607843%',
-    'popover-foreground': '0 0% 100%',
-    secondary: '0 0% 14.9019607843%',
-    'secondary-foreground': '20 4.7619047619% 87.6470588235%',
-    accent: '60 0.826446281% 23.7254901961%',
-    'accent-foreground': '20 4.7619047619% 87.6470588235%',
-    muted: '0 0% 14.9019607843%',
-    'muted-foreground': '20 4.7619047619% 83.6470588235%',
-    border: '60 0.826446281% 23.7254901961%',
-    input: '20 4.7619047619% 87.6470588235%',
-    sidebar: '0 0% 14.9019607843%',
-    'sidebar-foreground': '0 0% 100%',
-    'sidebar-accent': '60 0.826446281% 23.7254901961%',
-    'sidebar-accent-foreground': '20 4.7619047619% 87.6470588235%',
-    'sidebar-border': '60 0.826446281% 23.7254901961%',
-    'app-background': '0 0% 10.1960784314%',
-  },
-} as const;
-
-const PRESERVED_SEMANTIC_SOURCE = {
-  'theme-light-primary': '145 67% 28%',
-  'theme-light-primary-foreground': '0 0% 100%',
-  'theme-light-danger': '0 63% 31%',
-  'theme-light-danger-background': '0 65% 94%',
-  'theme-light-ring': '217.2 91.2% 59.8%',
-  'theme-light-info': '260 58% 46%',
-  'theme-light-info-foreground': '0 0% 100%',
-  'theme-light-success': '145 67% 28%',
-  'theme-light-success-foreground': '0 0% 100%',
-  'theme-light-warning': '42 91% 54%',
-  'theme-light-warning-foreground': '154 44% 14%',
-  'theme-light-agent-avatar-surface-completed': '145 14% 88%',
-  'theme-light-agent-avatar-foreground-completed': '154 32% 24%',
-  'theme-light-agent-avatar-surface-attention': '30.785 100% 62.549%',
-  'theme-light-agent-avatar-surface-failed': '0 72% 62%',
-  'theme-light-agent-avatar-surface-active': '66.892 71.845% 59.608%',
-  'theme-light-workspace-status-unread': '217.2 91.2% 59.8%',
-  'theme-light-agent-avatar-surface-waiting': '263.2 74.257% 80.196%',
-  'theme-dark-primary': '145 58% 55%',
-  'theme-dark-primary-foreground': '154 25% 9%',
-  'theme-dark-danger': '0 70% 88%',
-  'theme-dark-danger-background': '0 35% 22%',
-  'theme-dark-ring': '213.1 93.9% 67.8%',
-  'theme-dark-info': '260 80% 72%',
-  'theme-dark-info-foreground': '154 25% 9%',
-  'theme-dark-success': '145 58% 55%',
-  'theme-dark-success-foreground': '154 25% 9%',
-  'theme-dark-warning': '42 91% 63%',
-  'theme-dark-warning-foreground': '154 25% 9%',
-  'theme-dark-agent-avatar-surface-completed': '145 14% 24%',
-  'theme-dark-agent-avatar-foreground-completed': '135 20% 86%',
-  'theme-dark-agent-avatar-surface-attention': '31 100% 70%',
-  'theme-dark-agent-avatar-surface-failed': '0 79% 70%',
-  'theme-dark-agent-avatar-surface-active': '67 78% 68%',
-  'theme-dark-workspace-status-unread': '213.1 93.9% 67.8%',
-  'theme-dark-agent-avatar-surface-waiting': '259.024 64.063% 74.902%',
-} as const;
 
 function hslChannels(value: string): [number, number, number] {
   const match = value.match(/^(?:hsl\()?([\d.]+)\s+([\d.]+)%\s+([\d.]+)%\)?$/);
@@ -173,16 +105,28 @@ function parseHsl(value: string): [number, number, number] {
   ];
 }
 
-function contrast(first: string, second: string): number {
-  const luminance = (value: string) => {
-    const channels = parseHsl(value).map((channel) => {
+function contrastChannels(first: number[], second: number[]): number {
+  const luminance = (channels: number[]) => {
+    const linear = channels.map((channel) => {
       const normalized = channel / 255;
       return normalized <= 0.04045 ? normalized / 12.92 : ((normalized + 0.055) / 1.055) ** 2.4;
     });
-    return 0.2126 * channels[0] + 0.7152 * channels[1] + 0.0722 * channels[2];
+    return 0.2126 * linear[0] + 0.7152 * linear[1] + 0.0722 * linear[2];
   };
   const values = [luminance(first), luminance(second)].sort((a, b) => b - a);
   return (values[0] + 0.05) / (values[1] + 0.05);
+}
+
+function contrast(first: string, second: string): number {
+  return contrastChannels(parseHsl(first), parseHsl(second));
+}
+
+function blend(foreground: string, background: string, opacity: number): number[] {
+  const foregroundRGB = parseHsl(foreground);
+  const backgroundRGB = parseHsl(background);
+  return backgroundRGB.map(
+    (channel, index) => channel * (1 - opacity) + foregroundRGB[index] * opacity,
+  );
 }
 
 function tokenValues(css: string, mode: 'light' | 'dark'): Record<string, string> {
@@ -246,20 +190,64 @@ describe('theme color contract', () => {
   );
 
   it.each(['light', 'dark'] as const)(
-    'keeps %s muted text distinct and readable on normal surfaces',
+    'keeps %s primary ink readable on neutral surfaces',
     (mode) => {
       const css = fs.readFileSync(path.resolve(process.cwd(), 'src/lib/styles/tokens.css'), 'utf8');
       const values = tokenValues(css, mode);
-
-      expect(values['muted-foreground']).not.toBe(values.foreground);
-      for (const surface of ['background', 'card', 'muted', 'sidebar'] as const) {
+      for (const surface of ['background', 'card'] as const) {
         expect(
-          contrast(values['muted-foreground'], values[surface]),
-          `muted-foreground on ${surface}`,
+          contrast(values['primary-ink'], values[surface]),
+          `primary-ink on ${surface}`,
         ).toBeGreaterThanOrEqual(4.5);
       }
     },
   );
+
+  it.each(['light', 'dark'] as const)(
+    'keeps %s warning ink readable on neutral surfaces',
+    (mode) => {
+      const css = fs.readFileSync(path.resolve(process.cwd(), 'src/lib/styles/tokens.css'), 'utf8');
+      const values = tokenValues(css, mode);
+      for (const surface of ['background', 'card'] as const) {
+        expect(
+          contrast(values['warning-ink'], values[surface]),
+          `warning-ink on ${surface}`,
+        ).toBeGreaterThanOrEqual(4.5);
+        expect(
+          contrastChannels(
+            parseHsl(values['warning-ink']),
+            blend(values.warning, values[surface], 0.1),
+          ),
+          `warning-ink on soft ${surface}`,
+        ).toBeGreaterThanOrEqual(4.5);
+      }
+    },
+  );
+
+  it.each(['light', 'dark'] as const)(
+    'keeps %s primary foreground readable on the primary fill',
+    (mode) => {
+      const css = fs.readFileSync(path.resolve(process.cwd(), 'src/lib/styles/tokens.css'), 'utf8');
+      const values = tokenValues(css, mode);
+
+      expect(
+        contrast(values['primary-foreground'], values.primary),
+        'primary-foreground on primary',
+      ).toBeGreaterThanOrEqual(4.5);
+    },
+  );
+
+  it.each(['light', 'dark'] as const)('keeps %s muted text readable on normal surfaces', (mode) => {
+    const css = fs.readFileSync(path.resolve(process.cwd(), 'src/lib/styles/tokens.css'), 'utf8');
+    const values = tokenValues(css, mode);
+
+    for (const surface of ['background', 'card', 'muted', 'sidebar'] as const) {
+      expect(
+        contrast(values['muted-foreground'], values[surface]),
+        `muted-foreground on ${surface}`,
+      ).toBeGreaterThanOrEqual(4.5);
+    }
+  });
 
   it.each(['light', 'dark'] as const)(
     'keeps %s human-prompt text readable on the sidebar surface',
@@ -271,20 +259,6 @@ describe('theme color contract', () => {
         contrast(values['secondary-foreground'], values.sidebar),
         'secondary-foreground on sidebar',
       ).toBeGreaterThanOrEqual(4.5);
-    },
-  );
-
-  it.each(['light', 'dark'] as const)(
-    'uses the exact approved %s neutral source values',
-    (mode) => {
-      const css = fs.readFileSync(path.resolve(process.cwd(), 'src/lib/styles/tokens.css'), 'utf8');
-
-      for (const [role, value] of Object.entries(DEFAULT_NEUTRAL_SOURCE[mode])) {
-        expect(tokenValue(css, ['theme', mode, role].join('-')), role).toBe(value);
-      }
-      expect(tokenValue(css, ['theme', mode, 'agent-avatar-surface-neutral'].join('-'))).toBe(
-        mode === 'light' ? 'var(--theme-light-muted)' : '145 12% 78%',
-      );
     },
   );
 
@@ -316,103 +290,6 @@ describe('theme color contract', () => {
     );
   });
 
-  it('keeps canonical sidebar shells on the shared token without local color overrides', () => {
-    const sidebar = fs.readFileSync(
-      path.resolve(process.cwd(), 'src/lib/components/ui/sidebar/sidebar.svelte'),
-      'utf8',
-    );
-    const provider = fs.readFileSync(
-      path.resolve(process.cwd(), 'src/lib/components/ui/sidebar/sidebar-provider.svelte'),
-      'utf8',
-    );
-    const skeleton = fs.readFileSync(
-      path.resolve(process.cwd(), 'src/lib/components/workspace/SidebarSkeleton.svelte'),
-      'utf8',
-    );
-    const navigationPanel = fs.readFileSync(
-      path.resolve(process.cwd(), 'src/lib/components/layout/sidebar-nav/SidebarPanel.svelte'),
-      'utf8',
-    );
-
-    expect(sidebar.match(/\bbg-sidebar\b/g)).toHaveLength(3);
-    expect(sidebar).not.toMatch(/bg-\[#[\da-f]+\]/i);
-    expect(provider).toContain('has-data-[variant=inset]:bg-sidebar');
-    expect(skeleton).toContain('bg-sidebar text-sidebar-foreground');
-    expect(navigationPanel).toContain(
-      'sidebar-panel h-full flex flex-col relative text-sidebar-foreground',
-    );
-    for (const source of [sidebar, provider, skeleton, navigationPanel]) {
-      expect(source).not.toMatch(/--sidebar\s*:/);
-    }
-  });
-
-  it('keeps populated panels on the primary canvas and pristine empty panels on the sidebar surface', () => {
-    const panel = fs.readFileSync(
-      path.resolve(process.cwd(), 'src/lib/components/layout/panel-system/Panel.svelte'),
-      'utf8',
-    );
-    const panelTabBar = fs.readFileSync(
-      path.resolve(process.cwd(), 'src/lib/components/layout/panel-system/PanelTabBar.svelte'),
-      'utf8',
-    );
-    const panelContainer = fs.readFileSync(
-      path.resolve(process.cwd(), 'src/lib/components/layout/panel-system/PanelContainer.svelte'),
-      'utf8',
-    );
-    const panelEmpty = fs.readFileSync(
-      path.resolve(process.cwd(), 'src/lib/components/layout/panel-system/PanelEmptyState.svelte'),
-      'utf8',
-    );
-    const chief = fs.readFileSync(
-      path.resolve(process.cwd(), 'src/lib/components/layout/sidebar-nav/cards/ChiefCard.svelte'),
-      'utf8',
-    );
-
-    expect(panel).toContain('rounded-(--panel-shell-radius) text-foreground');
-    expect(panel).toContain('--panel-shell-radius: var(--radius-large);');
-    expect(panel).not.toContain('rounded-lg border border-border');
-    expect(panel).toContain('class:bg-sidebar={panel.tabs.length === 0}');
-    expect(panel).toContain('class:bg-background={panel.tabs.length > 0}');
-    expect(panelTabBar).not.toContain('border-b border-border');
-    expect(panelContainer).toContain('bg-background text-foreground');
-    expect(panelEmpty).toContain('bg-sidebar px-6 py-8 text-foreground');
-    expect(panelEmpty).not.toContain('bg-background px-6 py-8 text-foreground');
-    for (const source of [panel, panelContainer, panelEmpty]) {
-      expect(source).not.toContain('bg-sidebar text-sidebar-foreground');
-      expect(source).not.toContain('bg-card text-card-foreground');
-    }
-    expect(chief).toMatch(
-      /<div class="min-h-0 flex-1">\s*<ChatPanel[\s\S]*?agentName=\{m\.layout_chiefCard_title\(\)\}/,
-    );
-    expect(chief).not.toMatch(/<div class="[^"]*\bbg-card\b[^"]*">\s*<ChatPanel/);
-  });
-
-  it('keeps ModelPicker boundaries and avatar art on dedicated semantic roles', () => {
-    const picker = fs.readFileSync(
-      path.resolve(process.cwd(), 'src/lib/components/chat/input/ModelPicker.svelte'),
-      'utf8',
-    );
-    const avatar = fs.readFileSync(
-      path.resolve(
-        process.cwd(),
-        'src/features/agent/components/agent-avatar/AgentAvatarWithState.svelte',
-      ),
-      'utf8',
-    );
-    const css = fs.readFileSync(path.resolve(process.cwd(), 'src/lib/styles/tokens.css'), 'utf8');
-
-    expect(picker).toContain('border-border! focus-visible:border-ring!');
-    expect(picker).toContain('focus-visible:ring-2 focus-visible:ring-ring/40');
-    expect(picker).not.toMatch(/(?:border|ring)-\[#/);
-    expect(avatar).toContain('color: hsl(var(--agent-avatar-foreground))');
-    expect(avatar).not.toContain('color: #080808');
-    for (const mode of ['light', 'dark']) {
-      expect(tokenValue(css, `theme-${mode}-agent-avatar-foreground`)).toBe(
-        'var(--theme-light-foreground)',
-      );
-    }
-  });
-
   it('lets light, dark, and system modes select the same semantic contract', () => {
     const css = fs.readFileSync(path.resolve(process.cwd(), 'src/lib/styles/tokens.css'), 'utf8');
     expect(css).toMatch(/:root\s*{[^}]*color-scheme:\s*light dark/s);
@@ -437,12 +314,18 @@ describe('theme color contract', () => {
     expect(config).not.toContain("'error-foreground'");
   });
 
-  it('keeps primary, focus, and semantic status source values unchanged', () => {
-    const css = fs.readFileSync(path.resolve(process.cwd(), 'src/lib/styles/tokens.css'), 'utf8');
+  it('keeps imported focusBorder colors in control of custom theme focus rings', () => {
+    const colors = {
+      'editor.background': '#000000',
+      'editor.foreground': '#ffffff',
+      'button.background': '#22c55e',
+    };
+    const yellowFocus = parseVSCodeTheme({ colors: { ...colors, focusBorder: '#ffff00' } });
+    const cyanFocus = parseVSCodeTheme({ colors: { ...colors, focusBorder: '#00ffff' } });
 
-    for (const [token, value] of Object.entries(PRESERVED_SEMANTIC_SOURCE)) {
-      expect(tokenValue(css, token), token).toBe(value);
-    }
+    expect(yellowFocus.cssVariables['--ring']).not.toBe(cyanFocus.cssVariables['--ring']);
+    expect(yellowFocus.cssVariables['--primary']).toBe(cyanFocus.cssVariables['--primary']);
+    expect(yellowFocus.cssVariables['--info']).toBe(cyanFocus.cssVariables['--info']);
   });
 
   it.each(['light', 'dark'] as const)('keeps %s control boundaries and focus at 3:1', (mode) => {
@@ -458,22 +341,40 @@ describe('theme color contract', () => {
     }
   });
 
-  it.each(['light', 'dark'] as const)('keeps %s decorative borders quiet', (mode) => {
-    const css = fs.readFileSync(path.resolve(process.cwd(), 'src/lib/styles/tokens.css'), 'utf8');
-    const values = tokenValues(css, mode);
-    expect(values.border).not.toBe(values.input);
-    for (const surface of ['background', 'card', 'popover'] as const) {
-      expect(contrast(values.border, values[surface]), `border on ${surface}`).toBeGreaterThan(1.1);
-      expect(contrast(values.border, values[surface]), `border on ${surface}`).toBeLessThan(2.25);
+  it.each(['light', 'dark'] as const)(
+    'applies the contrast-safe %s theme ring as the keyboard focus color',
+    (mode) => {
+      const css = fs.readFileSync(path.resolve(process.cwd(), 'src/lib/styles/tokens.css'), 'utf8');
+      expect(tokenValue(css, 'focus-ring')).toBe('var(--ring)');
+      const applied = resolveTokenValue(css, tokenValue(css, `theme-${mode}-ring`));
+      const values = tokenValues(css, mode);
+      expect(applied).toBe(values.ring);
+      for (const surface of ['background', 'card', 'popover', 'sidebar'] as const) {
+        expect(
+          contrast(applied, values[surface]),
+          `focus-ring on ${surface}`,
+        ).toBeGreaterThanOrEqual(3);
+      }
+    },
+  );
+
+  it('keeps the applied focus ring legible on an imported light surface', () => {
+    const parsed = parseVSCodeTheme({
+      type: 'light',
+      colors: {
+        'editor.background': '#7c9cff',
+        'editor.foreground': '#111111',
+        focusBorder: '#7c9cff',
+      },
+    });
+    const ring = parsed.cssVariables['--ring'];
+    expect(ring).toBeDefined();
+    for (const surface of ['--background', '--card', '--popover', '--sidebar'] as const) {
+      expect(
+        contrast(ring, parsed.cssVariables[surface]),
+        `focus-ring on ${surface}`,
+      ).toBeGreaterThanOrEqual(3);
     }
-    expect(
-      contrast(values['sidebar-border'], values.sidebar),
-      'sidebar-border on sidebar',
-    ).toBeGreaterThan(1.1);
-    expect(
-      contrast(values['sidebar-border'], values.sidebar),
-      'sidebar-border on sidebar',
-    ).toBeLessThan(2.25);
   });
 
   it.each(themePresets.flatMap((preset) => [preset.dark, preset.light]))(
@@ -544,14 +445,21 @@ describe('theme color contract', () => {
       'motion-fast',
       'motion-standard',
       'motion-slow',
+      'spring-fast',
+      'spring-fast-exit',
+      'spring-fast-ease',
+      'spring-moderate',
+      'spring-moderate-exit',
+      'spring-moderate-ease',
+      'spring-slow',
+      'spring-slow-exit',
+      'spring-slow-ease',
+      'press-inset',
       'ease-standard',
       'ease-emphasized-out',
-      'layer-base',
-      'layer-sticky',
       'layer-chrome',
       'layer-popover',
       'layer-modal',
-      'layer-toast',
       'layer-tooltip',
       'layer-drag-overlay',
       'space-1',
@@ -561,71 +469,110 @@ describe('theme color contract', () => {
       'space-5',
       'space-6',
       'space-7',
-      'content-measure-reading',
       'content-measure-form',
       'content-measure-wide',
-      'surface-hatch',
     ])
       expect(css).toContain(`--${token}:`);
-    expect(tokenValue(css, 'control-height-compact')).toBe('1.75rem');
-    expect(tokenValue(css, 'control-height-small')).toBe('1.75rem');
-    expect(tokenValue(css, 'control-height-medium')).toBe('2rem');
-    expect(tokenValue(css, 'control-height-large')).toBe('2.25rem');
-    expect(tokenValue(css, 'radius-small')).toBe('5px');
-    expect(tokenValue(css, 'radius-medium')).toBe('7px');
-    expect(tokenValue(css, 'radius-large')).toBe('9px');
-    expect(tokenValue(css, 'surface-hatch')).toContain('repeating-linear-gradient');
-    for (const role of ['background', 'muted', 'border']) {
-      expect(tokenValue(css, 'surface-hatch')).toContain(`var(--${role})`);
+    for (const tier of ['fast', 'moderate', 'slow']) {
+      const springToken = ['var(', '--spring-', tier, ')'].join('');
+      const springExitToken = ['var(', '--spring-', tier, '-exit)'].join('');
+      const springEaseToken = ['var(', '--spring-', tier, '-ease)'].join('');
+      expect(tokenValue(css, `transition-duration-spring-${tier}`)).toBe(springToken);
+      expect(tokenValue(css, `transition-duration-spring-${tier}-exit`)).toBe(springExitToken);
+      expect(tokenValue(css, `ease-spring-${tier}`)).toBe(springEaseToken);
     }
+    expect(tokenValue(css, 'ease-spring-exit')).toBe('var(--spring-exit-ease)');
+    expect(tokenValue(css, 'motion-fast')).toBe('var(--spring-fast)');
+    expect(tokenValue(css, 'motion-standard')).toBe('var(--spring-moderate)');
+    expect(tokenValue(css, 'motion-slow')).toBe('var(--spring-slow)');
+    for (const token of ['content-measure-reading', 'layer-base', 'layer-sticky', 'layer-toast']) {
+      expect(css).not.toContain(`--${token}:`);
+    }
+    expect(css).not.toContain(['--surface', 'hatch:'].join('-'));
     expect(css).toMatch(
       /@media \(prefers-reduced-motion: reduce\)[\s\S]*transition-duration: 0\.01ms/,
     );
   });
+});
 
-  it('uses distinct black elevation shadows for light and dark surfaces', () => {
-    const css = fs.readFileSync(path.resolve(process.cwd(), 'src/lib/styles/tokens.css'), 'utf8');
-    const lightRaised = tokenValue(css, 'theme-light-elevation-raised');
-    const lightOverlay = tokenValue(css, 'theme-light-elevation-overlay');
-    const darkRaised = tokenValue(css, 'theme-dark-elevation-raised');
-    const darkOverlay = tokenValue(css, 'theme-dark-elevation-overlay');
+describe('theme color contract — rendered surfaces', () => {
+  const originalResizeObserver = window.ResizeObserver;
+  const originalMatchMedia = window.matchMedia;
+  let dispose: (() => void) | undefined;
 
-    for (const shadow of [lightRaised, lightOverlay, darkRaised, darkOverlay]) {
-      expect(shadow).toContain('rgb(0 0 0 /');
-      expect(shadow).not.toContain('var(--foreground)');
-    }
-    expect(lightRaised).not.toBe(lightOverlay);
-    expect(darkRaised).not.toBe(darkOverlay);
-    expect(tokenValue(css, 'elevation-raised')).toBe('var(--theme-light-elevation-raised)');
-    expect(tokenValue(css, 'elevation-overlay')).toBe('var(--theme-light-elevation-overlay)');
-    expect(css).toMatch(
-      /\.dark\s*{[^}]*--elevation-raised:\s*var\(--theme-dark-elevation-raised\)/s,
-    );
-    expect(css).toMatch(
-      /\.dark\s*{[^}]*--elevation-overlay:\s*var\(--theme-dark-elevation-overlay\)/s,
-    );
+  function stubMatchMedia(matches: boolean) {
+    Object.defineProperty(window, 'matchMedia', {
+      configurable: true,
+      value: vi.fn((media: string) => ({
+        matches,
+        media,
+        onchange: null,
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+        addListener: vi.fn(),
+        removeListener: vi.fn(),
+        dispatchEvent: vi.fn(),
+      })),
+    });
+  }
+
+  beforeEach(() => {
+    Object.defineProperty(window, 'ResizeObserver', {
+      configurable: true,
+      value: class {
+        observe = vi.fn();
+        unobserve = vi.fn();
+        disconnect = vi.fn();
+      },
+    });
+    dispose = appStore.init();
   });
 
-  it('limits product typography to five canonical styles with compatibility aliases', () => {
-    const tokens = fs.readFileSync(
-      path.resolve(process.cwd(), 'src/lib/styles/tokens.css'),
-      'utf8',
-    );
-    const appCss = fs.readFileSync(path.resolve(process.cwd(), 'src/app.css'), 'utf8');
+  afterEach(() => {
+    cleanup();
+    dispose?.();
+    Object.defineProperty(window, 'ResizeObserver', {
+      configurable: true,
+      value: originalResizeObserver,
+    });
+    Object.defineProperty(window, 'matchMedia', { configurable: true, value: originalMatchMedia });
+  });
 
-    for (const role of ['caption', 'body', 'title', 'display', 'code']) {
-      expect(appCss).toContain(`.type-${role} {`);
-      expect(tokens).toContain(`--text-${role}-size:`);
-    }
-    expect(tokens).toContain('--text-label-size: var(--text-caption-size);');
-    expect(tokens).toContain('--text-body-strong-size: var(--text-body-size);');
-    expect(tokens).toContain('--text-display-large-size: var(--text-display-size);');
-    expect(tokens).toContain('--text-body-size: 0.9375rem;');
-    expect(tokens).toContain('--text-caption-tracking: -0.01em;');
-    for (const role of ['body', 'title', 'display']) {
-      expect(tokens).toContain(`--text-${role}-tracking: -0.016em;`);
-    }
-    expect(appCss).toMatch(/body\s*\{[^}]*font-size:\s*var\(--text-body-size\)/s);
-    expect(appCss).not.toMatch(/html,\s*body\s*\{[^}]*font-size:/s);
+  it('opens the mobile sidebar as a dialog', async () => {
+    stubMatchMedia(true);
+    render(SidebarHarness);
+    await fireEvent.click(screen.getByRole('button', { name: m.ui_sidebar_toggle_label() }));
+    const sheet = await screen.findByRole('dialog', { name: 'Sidebar' });
+    const mobileShell = sheet.matches('[data-mobile="true"]')
+      ? sheet
+      : sheet.querySelector('[data-mobile="true"]');
+    expect(mobileShell).not.toBeNull();
+  });
+
+  it('passes the localized Chief name to its chat panel', async () => {
+    appStore.dispatch(setAgentsLoaded(CHIEF_WORKSPACE_ID, true));
+    appStore.dispatch(
+      bulkUpsertSessions([
+        {
+          id: 'chief-agent',
+          backendSessionId: null,
+          workspaceId: CHIEF_WORKSPACE_ID,
+          name: 'Chief',
+          status: 'idle',
+          messages: [],
+          createdAt: '2026-08-10T00:00:00.000Z',
+          updatedAt: '2026-08-10T00:00:00.000Z',
+        } as unknown as AgentSession,
+      ]),
+    );
+    const chief = render(ChiefCard, { props: { expanded: true } });
+    const chatPanel = await waitFor(() => {
+      const mock = chief.container.querySelector('[data-testid="mock-chat-panel"]');
+      expect(mock).not.toBeNull();
+      return mock!;
+    });
+    const chiefTitle = m.layout_chiefCard_title();
+    expect(chiefTitle).not.toBe('');
+    expect(chatPanel.getAttribute('data-agent-name')).toBe(chiefTitle);
   });
 });

@@ -90,7 +90,7 @@ check_pattern() {
   filtered=$(echo "$results" | filter_baseline || true)
   [ -z "$filtered" ] && return
 
-  printf '%s' "$filtered" > "$TMPFILE"
+  printf '%s\n' "$filtered" > "$TMPFILE"
   found=$(grep -c '' "$TMPFILE" || true)
   if [ "$found" -gt 0 ]; then
     echo -e "\n${RED}[$label]${NC} — $found violation(s):"

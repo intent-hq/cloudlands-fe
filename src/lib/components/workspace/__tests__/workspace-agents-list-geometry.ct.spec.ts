@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/experimental-ct-svelte';
+import { expect, test } from '../../../../test/ct-test';
 import WorkspaceAgentsListGeometryHarness from './mocks/WorkspaceAgentsListGeometryHarness.svelte';
 
 const platformModifier = process.platform === 'darwin' ? 'Meta' : 'Control';
@@ -145,9 +145,13 @@ test('keeps narrow 200% Agents-panel rows single-line and collision-free', async
   );
   await expect(longRow.locator('[data-panel-open-state]')).toHaveCount(0);
   await expect(longRow.locator('[data-agent-row-time]')).toHaveCount(1);
-  await expect(
-    component.locator('[data-agent-panel-row="background-active"] [data-agent-background-badge]'),
-  ).toHaveCount(1);
+  const backgroundRow = component.locator('[data-agent-panel-row="background-active"]');
+  await backgroundRow.focus();
+  await backgroundRow.press('Space');
+  await expect(component.locator('[data-selected-agent]')).toHaveAttribute(
+    'data-selected-agent',
+    'background-active',
+  );
 
   await component.locator('[data-agent-search]').fill('delegated search target');
   await expect(component.locator('[data-agent-panel-row="coordinator"]')).toHaveCount(1);
@@ -155,6 +159,11 @@ test('keeps narrow 200% Agents-panel rows single-line and collision-free', async
     1,
   );
   await expect(component.locator('[data-agent-panel-row="long-name"]')).toHaveCount(0);
+  await component.locator('[data-agent-panel-row="delegated-search-target"]').click();
+  await expect(component.locator('[data-selected-agent]')).toHaveAttribute(
+    'data-selected-agent',
+    'delegated-search-target',
+  );
 });
 
 test('keeps every Agents-panel row and disclosure transparent with accessible state cues', async ({
@@ -198,7 +207,7 @@ test('keeps every Agents-panel row and disclosure transparent with accessible st
       const style = getComputedStyle(node);
       return { style: style.outlineStyle, width: style.outlineWidth };
     });
-    expect(focus).toEqual({ style: 'solid', width: '2px' });
+    expect(focus).toEqual({ style: 'solid', width: '1px' });
 
     for (const selector of [
       '[data-agent-delegation-toggle="coordinator"]',
@@ -227,21 +236,68 @@ test('keeps every Agents-panel row and disclosure transparent with accessible st
   await page.emulateMedia({ forcedColors: 'none' });
 });
 
-test('keeps virtualized Agents-panel slots aligned to the same row height', async ({ mount }) => {
-  const component = await mount(WorkspaceAgentsListGeometryHarness, {
-    props: { width: 220, zoom: 2, virtual: true },
+for (const zoom of [1, 2]) {
+  test(`keeps virtualized Agents-panel slots aligned to the same row height at ${zoom * 100}%`, async ({
+    mount,
+    page,
+  }) => {
+    const component = await mount(WorkspaceAgentsListGeometryHarness, {
+      props: { width: 220, zoom, virtual: true },
+    });
+    const slots = component.locator('[data-index]');
+    await expect(slots.first()).toBeVisible();
+    // `has` locators are matched relative to each slot, so they must be page-rooted.
+    const slotsWith = (selector: string) => slots.filter({ has: page.locator(selector) });
+
+    // The count-only group renders as a collapsed bar inside a virtual slot.
+    const countedToggle = component.locator('[data-agent-delegation-toggle="parent-00"]');
+    await expect(countedToggle).toHaveAttribute('aria-expanded', 'false');
+    await expect(slotsWith('[data-agent-list-row="delegatedGroup"]')).not.toHaveCount(0);
+    await expect(
+      slotsWith('[data-agent-delegation-toggle="parent-00"]').locator(
+        '[data-agent-list-row="delegatedGroup"]',
+      ),
+    ).toHaveCount(1);
+
+    // Expanding the hydrated group renders its child rows inside virtual slots.
+    const loadedToggle = component.locator('[data-agent-delegation-toggle="parent-01"]');
+    await loadedToggle.click();
+    await expect(loadedToggle).toHaveAttribute('aria-expanded', 'true');
+    for (const childId of ['child-a', 'child-b']) {
+      await expect(slotsWith(`[data-agent-panel-row="${childId}"]`)).toHaveCount(1);
+    }
+
+    // Every slot is exactly one row tall and no row kind overflows its slot.
+    const geometry = await slots.evaluateAll((nodes) =>
+      nodes.map((slot) => ({
+        styleHeight: getComputedStyle(slot).height,
+        height: slot.getBoundingClientRect().height,
+        rows: Array.from(slot.querySelectorAll<HTMLElement>('[data-agent-list-row]')).map(
+          (row) => ({
+            kind: row.dataset.agentListRow,
+            height: row.getBoundingClientRect().height,
+          }),
+        ),
+      })),
+    );
+    expect(geometry.length).toBeGreaterThan(0);
+    const kinds = new Set(geometry.flatMap((slot) => slot.rows.map((row) => row.kind)));
+    expect(kinds).toContain('agent');
+    expect(kinds).toContain('delegatedGroup');
+    for (const slot of geometry) {
+      expect(slot.styleHeight).toBe('40px');
+      expect(slot.height).toBe(40 * zoom);
+      expect(slot.rows.length).toBeGreaterThan(0);
+      for (const row of slot.rows) expect(row.height).toBeLessThanOrEqual(40 * zoom);
+    }
+    expect(new Set(geometry.map((slot) => slot.height)).size).toBe(1);
+
+    await expect(component.locator('[data-testid="agent-card-preview"]')).toHaveCount(0);
+    const row = component.locator('[data-agent-panel-row]').first();
+    expect(await background(row)).toBe(transparent);
+    await row.hover();
+    expect(await background(row)).toBe(transparent);
+    await row.focus();
+    expect(await background(row)).toBe(transparent);
   });
-  const slots = component.locator('[data-index]');
-  await expect(slots.first()).toBeVisible();
-  for (const slot of await slots.all()) {
-    expect(await slot.evaluate((node) => getComputedStyle(node).height)).toBe('40px');
-    expect((await slot.boundingBox())?.height).toBe(80);
-  }
-  await expect(component.locator('[data-testid="agent-card-preview"]')).toHaveCount(0);
-  const row = component.locator('[data-agent-panel-row]').first();
-  expect(await background(row)).toBe(transparent);
-  await row.hover();
-  expect(await background(row)).toBe(transparent);
-  await row.focus();
-  expect(await background(row)).toBe(transparent);
-});
+}

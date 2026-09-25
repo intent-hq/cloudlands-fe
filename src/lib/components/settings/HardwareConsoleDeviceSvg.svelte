@@ -52,8 +52,8 @@
    * x-mark, branching; the factory-linked 2U Mic pair rendered as two
    * keycaps under a shared outline; terminal-in-hexagon logo).
    *
-   * The encoder and joystick pop small explainer cards describing their
-   * fixed (non-configurable) behavior. While `agentKeysInteractive` (a
+   * The encoder and joystick pop small explainer cards; the encoder card
+   * follows the shared rotation preference. While `agentKeysInteractive` (a
    * device is connected), the agent keys show display-only numbered slot
    * squares (binding numbering: second row = slots 1-4, top row = slots
    * 5-6 — matching AGENT_KEY_IDS) and clicking an assigned key (including
@@ -64,6 +64,7 @@
   import { formatInteger } from '$lib/i18n/format';
   import { getPhosphorIconComponent } from '$lib/icons/phosphor-icons';
   import type { HardwareDeviceModel } from '$features/hardware-console/input/types';
+  import type { HardwareConsoleEncoderBehavior } from '$store/renderer/slices/hardware-console/hardware-console-types';
   import MicroKeySlotSquare from '$features/hardware-console/components/MicroKeySlotSquare.svelte';
 
   /** Resolved assignment of one agent-key slot. */
@@ -83,6 +84,8 @@
   interface Props {
     /** Device model to render; controls the action-key faces. */
     model?: HardwareDeviceModel;
+    /** Shared rotation preference shown in the knob explainer. */
+    encoderBehavior?: HardwareConsoleEncoderBehavior;
     /** 0-based selected action-key slot, or null when none is selected. */
     selectedSlot?: number | null;
     onSelectKey?: (slot: number) => void;
@@ -107,6 +110,7 @@
 
   let {
     model = 'creator-micro-2',
+    encoderBehavior = 'agent-effort',
     selectedSlot = null,
     onSelectKey,
     actionSlots,
@@ -179,7 +183,7 @@
     }
   }
 
-  // Knob / joystick fixed-behavior explainers.
+  // Knob / joystick behavior explainers.
   let openExplainer = $state<'knob' | 'joystick' | null>(null);
   let explainerEl = $state<HTMLElement | null>(null);
   let knobEl = $state<SVGGElement | null>(null);
@@ -305,7 +309,7 @@
       stroke-width="2"
     />
 
-    <!-- Encoder knob (top-left cell): click pops the fixed-behavior explainer -->
+    <!-- Encoder knob (top-left cell): click explains its selected behavior -->
     <g
       bind:this={knobEl}
       role="button"
@@ -463,7 +467,7 @@
             data-icon={faceIcon.iconName}
             aria-hidden="true"
             class={'pointer-events-none ' +
-              (selectedSlot === key.slot ? 'text-primary' : 'text-foreground/70 a11y-ignore')}
+              (selectedSlot === key.slot ? 'text-primary-ink' : 'text-foreground/70 a11y-ignore')}
           />
         {:else if codex && key.slot === 6}
           <!-- Codex logo key: terminal inside a hexagon -->
@@ -481,7 +485,7 @@
             data-icon={faTerminal.iconName}
             aria-hidden="true"
             class={'pointer-events-none ' +
-              (selectedSlot === key.slot ? 'text-primary' : 'text-foreground/70 a11y-ignore')}
+              (selectedSlot === key.slot ? 'text-primary-ink' : 'text-foreground/70 a11y-ignore')}
           />
         {/if}
       </g>
@@ -498,13 +502,13 @@
         aria-hidden="true"
         class={'pointer-events-none ' +
           (selectedSlot === 4 || selectedSlot === 5
-            ? 'text-primary'
+            ? 'text-primary-ink'
             : 'text-foreground/70 a11y-ignore')}
       />
     {/if}
   </svg>
 
-  <!-- Knob / joystick fixed-behavior explainer card -->
+  <!-- Knob / joystick behavior explainer card -->
   {#if openExplainer !== null}
     <div
       bind:this={explainerEl}
@@ -516,24 +520,30 @@
         ? 'left-2'
         : 'right-2'}"
     >
-      <p class="text-xs font-medium text-foreground">{explainerLabel}</p>
+      <p class="type-body font-medium text-foreground">{explainerLabel}</p>
       {#if openExplainer === 'knob'}
-        <p class="text-xs text-subtle mt-1.5">
-          {m.settings_hardware_knobExplainer_rotate_description()}
+        <p class="type-body text-subtle mt-1.5">
+          {encoderBehavior === 'agent-effort'
+            ? m.settings_hardware_knobExplainer_effort_description()
+            : m.settings_hardware_knobExplainer_rotate_description()}
         </p>
-        <p class="text-xs text-subtle mt-1.5">
+        <p class="type-body text-subtle mt-1.5">
           {m.settings_hardware_knobExplainer_click_description()}
         </p>
       {:else}
-        <p class="text-xs text-subtle mt-1.5">
+        <p class="type-body text-subtle mt-1.5">
           {m.settings_hardware_joystickExplainer_hold_description()}
         </p>
-        <p class="text-xs text-subtle mt-1.5">
+        <p class="type-body text-subtle mt-1.5">
           {m.settings_hardware_joystickExplainer_cancel_description()}
         </p>
       {/if}
-      <p class="text-xs text-subtle/70 mt-2 italic">
-        {m.settings_hardware_explainer_fixed_description()}
+      <p class="type-body text-subtle/70 mt-2 italic">
+        {openExplainer === 'knob'
+          ? m.settings_hardware_knobExplainer_configurable_description({
+              setting: m.settings_hardware_encoderBehavior_label(),
+            })
+          : m.settings_hardware_explainer_fixed_description()}
       </p>
     </div>
   {/if}
@@ -550,9 +560,9 @@
       style={agentKeyPopoverStyle}
       class="absolute z-20 w-50 rounded-lg border border-border bg-popover p-3 shadow-lg"
     >
-      <p class="text-xs font-medium text-foreground truncate">{agentKeyPopoverName}</p>
+      <p class="type-body font-medium text-foreground truncate">{agentKeyPopoverName}</p>
       {#if agentKeyPopoverStatus}
-        <p class="text-xs text-subtle mt-1">{agentKeyPopoverStatus}</p>
+        <p class="type-body text-subtle mt-1">{agentKeyPopoverStatus}</p>
       {/if}
     </div>
   {/if}

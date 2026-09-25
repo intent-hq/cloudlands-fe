@@ -5,7 +5,7 @@ const mocks = vi.hoisted(() => ({ getMessageBlock: vi.fn(), toastError: vi.fn() 
 vi.mock('$lib/client', () => ({
   appClient: { agents: { getMessageBlock: mocks.getMessageBlock } },
 }));
-vi.mock('svelte-sonner', () => ({ toast: { error: mocks.toastError } }));
+vi.mock('$lib/components/patterns/notify', () => ({ notify: { error: mocks.toastError } }));
 
 import type { AgentMessage, AgentSession, ContentBlock } from '$shared/types';
 import { AgentStatus } from '$shared/types';

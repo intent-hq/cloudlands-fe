@@ -1,4 +1,5 @@
-import { expect, test, type Locator, type Page } from '@playwright/experimental-ct-svelte';
+import type { Locator, Page } from '@playwright/experimental-ct-svelte';
+import { expect, test } from '../../../test/ct-test';
 import sharp from 'sharp';
 import WorkspaceTabStripGeometryPreview from './workspace-tab-strip-geometry.preview.svelte';
 import { WORKSPACE_TAB_MAX_SCROLL_STEP_PX } from './workspace-tab-lifecycle-motion';
@@ -681,6 +682,14 @@ for (const { controlsWidth, startsRightScrolled } of [
       await page.waitForTimeout(50);
     }
 
+    // The outro is a 200 ms Web Animation. Under CPU load consecutive rAF
+    // callbacks land 100–270 ms apart, so sampling the width by frame count
+    // can skip straight from ~160 px to a detached slot (0 px). Instead: wait
+    // for the outro animation to exist on the slot, freeze it with
+    // `playbackRate = 0` (it stays `running`, so Svelte's tick loop keeps
+    // applying the per-frame geometry), then advance its `currentTime` on a
+    // virtual 60 Hz clock until the width is mid-collapse. The frozen outro
+    // cannot finish before the reopen click below interrupts it.
     const interruptedWidth = await component
       .locator('[data-close-tab]')
       .evaluate(async (button) => {
@@ -688,11 +697,43 @@ for (const { controlsWidth, startsRightScrolled } of [
           '[data-workspace-tab-motion="geometry-gamma"]',
         );
         if (!slot) throw new Error('Missing gamma tab slot');
+        const nextFrame = () =>
+          new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+        const findOutro = () =>
+          slot.getAnimations().find((animation) => {
+            const effect = animation.effect;
+            if (!(effect instanceof KeyframeEffect) || animation.playState === 'finished') {
+              return false;
+            }
+            const duration = effect.getTiming().duration;
+            return (
+              typeof duration === 'number' &&
+              duration > 0 &&
+              effect.getKeyframes().some((keyframe) => 'width' in keyframe)
+            );
+          });
         (button as HTMLButtonElement).click();
+        let outro: Animation | undefined;
+        for (let frame = 0; frame < 120 && !outro; frame += 1) {
+          await nextFrame();
+          outro = findOutro();
+          if (!slot.isConnected) break;
+        }
+        if (!outro) {
+          throw new Error(
+            `Gamma tab outro animation never started (connected=${slot.isConnected}, width=${slot.getBoundingClientRect().width})`,
+          );
+        }
+        outro.playbackRate = 0;
+        const duration = (outro.effect as KeyframeEffect).getTiming().duration as number;
+        const step = 1000 / 60;
+        let virtualTime = 0;
         for (let frame = 0; frame < 120; frame += 1) {
-          await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
           const width = slot.getBoundingClientRect().width;
           if (width > 30 && width < 140) return width;
+          virtualTime = Math.min(duration - step, virtualTime + step);
+          outro.currentTime = virtualTime;
+          await nextFrame();
         }
         return slot.getBoundingClientRect().width;
       });
@@ -1034,3 +1075,47 @@ test('settles tab lifecycle changes immediately with reduced motion', async ({ m
     .click();
   await expect(tab).toHaveCount(0);
 });
+
+for (const zoomFactor of [1, 1.1, 1.25]) {
+  test(`active tab covers the panel seam at zoom ${zoomFactor}`, async ({ mount, page }) => {
+    await page.emulateMedia({ reducedMotion: 'reduce' });
+    const component = await mount(WorkspaceTabStripGeometryPreview, {
+      props: { activeWorkspaceId: 'geometry-alpha', zoomFactor },
+    });
+    await expectMaskAttachedToActiveTab(component);
+    const close = component.locator(
+      '[data-workspace-tab][data-active="true"] [data-workspace-tab-close]',
+    );
+    const target = await close.boundingBox();
+    const glyph = await close.locator('svg').boundingBox();
+    expect((target?.width ?? 0) * zoomFactor).toBeGreaterThanOrEqual(27.9);
+    expect((target?.height ?? 0) * zoomFactor).toBeGreaterThanOrEqual(27.9);
+    expect((glyph?.width ?? 0) * zoomFactor).toBeCloseTo(14, 1);
+    expect((glyph?.height ?? 0) * zoomFactor).toBeCloseTo(14, 1);
+    const tab = await component.locator('[data-workspace-tab][data-active="true"]').boundingBox();
+    const panel = await component.locator('[data-preview-panel]').boundingBox();
+    if (!tab || !panel) throw new Error('Missing seam geometry');
+    expect(Math.abs(tab.y + tab.height - panel.y)).toBeLessThan(0.1);
+    const clip = {
+      x: Math.ceil(tab.x + 8),
+      y: Math.floor(panel.y - 2),
+      width: Math.floor(tab.width - 16),
+      height: 6,
+    };
+    const { data, info } = await sharp(await page.screenshot({ clip }))
+      .removeAlpha()
+      .raw()
+      .toBuffer({ resolveWithObject: true });
+    const reference = [...data.subarray(data.length - info.channels, data.length)];
+    // The counter-scaled mask ends on a fractional device row at zoom 1.25 and
+    // its antialiased edge quantizes the (identical) sidebar colour by one
+    // unit; a visible seam line differs from the reference by far more.
+    for (let offset = 0; offset < data.length; offset += info.channels) {
+      const pixel = [...data.subarray(offset, offset + info.channels)];
+      const delta = Math.max(...pixel.map((value, index) => Math.abs(value - reference[index])));
+      expect(delta, `pixel ${offset / info.channels} = ${pixel.join(',')}`).toBeLessThanOrEqual(
+        zoomFactor === 1.25 ? 1 : 0,
+      );
+    }
+  });
+}

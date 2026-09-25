@@ -1,11 +1,9 @@
 ---
 name: core/selector-tracing
 description: >-
-  Diagnose Store-created selector performance from opt-in interval aggregates
-  and privacy-safe lifetime summaries. Covers the flat traceSelectors contract,
-  execution, cache, invalidation, argument, result, cadence, and Redux action records,
-  bounded p95 interpretation, lifecycle, and production safety across all Store
-  families.
+  Use when diagnosing Store selector performance with traceSelectors,
+  including cache hits, invalidations, cadence, aggregates, and lifetime
+  summaries across Store families.
 type: sub-skill
 requires:
   - core

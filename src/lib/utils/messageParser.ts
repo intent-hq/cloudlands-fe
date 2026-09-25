@@ -23,6 +23,12 @@ import type { SuggestedPrompt } from '$shared/types';
 import type { ContentBlock } from '$shared/types/content-block';
 import type { VideoSource } from '$shared/types/content-block';
 import { splitWorkspaceVideoMarkdown } from './workspace-file-video';
+import { scanMessageFences } from './message-fences';
+import { parseIncrementalDiagramJson } from './incrementalDiagramJson';
+import {
+  promptVisibleText,
+  splitPromptMarkdownLinks,
+} from '$lib/components/chat/suggested-prompt-markdown-links';
 
 const logger = new Logger('MessageParser');
 
@@ -59,6 +65,9 @@ export interface ParsedContent {
     path?: string;
     mode?: string;
     diagramData?: unknown; // Parsed DiagramPrimitive data
+    diagramError?: string;
+    rawSource?: string;
+    fenceStart?: number;
     workspaceCardData?: { workspaceIds: string[] };
     navLinkData?: { target: string; label?: string };
     videoData?: {
@@ -784,7 +793,11 @@ function parseSpecialBlock(blockText: string): ParsedContent | null {
   return null;
 }
 
-export function parseAgentMessage(content: string, workspaceId?: string): ParsedContent[] {
+export function parseAgentMessage(
+  content: string,
+  workspaceId?: string,
+  options?: { isStreaming: boolean },
+): ParsedContent[] {
   if (!content) return [];
 
   const mediaSegments = splitWorkspaceVideoMarkdown(content, workspaceId);
@@ -792,7 +805,7 @@ export function parseAgentMessage(content: string, workspaceId?: string): Parsed
     return mergeConsecutiveTextBlocks(
       mediaSegments.flatMap((segment): ParsedContent[] =>
         segment.type === 'markdown'
-          ? parseAgentMessage(segment.content, workspaceId)
+          ? parseAgentMessage(segment.content, workspaceId, options)
           : [
               {
                 type: 'video',
@@ -815,17 +828,59 @@ export function parseAgentMessage(content: string, workspaceId?: string): Parsed
   // Instead of running 5 separate regex passes, we find all special blocks at once
   const specialBlocks: Array<{ start: number; end: number; block: ParsedContent }> = [];
 
+  const fences = scanMessageFences(content);
+  for (const fence of fences) {
+    if (!['mermaid', 'diagram', 'ws-block:diagram'].includes(fence.language)) continue;
+    if (!fence.closed && !options) continue;
+    const metadata: ParsedContent['metadata'] = {
+      rawSource: fence.source,
+      fenceStart: fence.start,
+      isStreaming: Boolean(options?.isStreaming && !fence.closed),
+    };
+    const type = fence.language === 'mermaid' ? 'mermaid' : 'diagram';
+    if (type === 'diagram') {
+      if (!fence.closed && !options?.isStreaming) {
+        // The message stream ended before this fence closed. A JSON prefix that
+        // merely looks complete must not be accepted as a finished diagram.
+        metadata.diagramData = null;
+        metadata.diagramError = 'Message ended before the diagram was complete';
+      } else {
+        const projection = parseIncrementalDiagramJson(fence.source, fence.closed);
+        metadata.diagramData = projection.diagram;
+        metadata.diagramError = projection.error;
+      }
+    }
+    specialBlocks.push({
+      start: fence.start,
+      end: fence.end,
+      block: { type, content: fence.source.trim(), metadata },
+    });
+  }
+
   // Reset regex state
   COMBINED_SPECIAL_REGEX.lastIndex = 0;
 
-  let match;
+  let match: RegExpExecArray | null;
   while ((match = COMBINED_SPECIAL_REGEX.exec(content)) !== null) {
     const blockText = match[0];
+    const matchIndex = match.index;
+    // The fence scanner owns diagrams and shields examples inside ordinary code.
+    if (/^[`~]{3,}(?:mermaid|diagram|ws-block:diagram)\b/.test(blockText)) continue;
+    if (fences.some((fence) => matchIndex > fence.start && matchIndex < fence.end)) continue;
     const parsed = parseSpecialBlock(blockText);
     if (parsed) {
+      // Explicit snippet wrappers own their fenced contents, even a Mermaid example.
+      for (let i = specialBlocks.length - 1; i >= 0; i--) {
+        if (
+          specialBlocks[i].start >= matchIndex &&
+          specialBlocks[i].end <= matchIndex + blockText.length
+        ) {
+          specialBlocks.splice(i, 1);
+        }
+      }
       specialBlocks.push({
-        start: match.index,
-        end: match.index + blockText.length,
+        start: matchIndex,
+        end: matchIndex + blockText.length,
         block: parsed,
       });
     }
@@ -1664,7 +1719,11 @@ const FENCE_LINE_REGEX = /^ {0,3}(`{3,}|~{3,})(.*)$/;
 /** At most this many prompts surface as chips; extra lines are dropped. */
 const MAX_SUGGESTED_PROMPTS = 4;
 
-/** Prompts longer than this are treated as captured body text and dropped. */
+/**
+ * Prompts whose visible text (markdown link labels in place of their
+ * `[label](url)` syntax) is longer than this are treated as captured body
+ * text and dropped.
+ */
 const MAX_SUGGESTED_PROMPT_LENGTH = 200;
 
 /**
@@ -1710,20 +1769,41 @@ interface SuggestedPromptsParseResult {
   cleanedContent: string;
 }
 
+function isValidSuggestedPromptText(text: string): boolean {
+  if (text.length === 0) return false;
+  return promptVisibleText(text).length <= MAX_SUGGESTED_PROMPT_LENGTH;
+}
+
+/**
+ * Index of the legacy `Label|` delimiter: the first `|` outside any inline
+ * markdown link, so pipes in a link label or destination never split the line.
+ */
+function legacyLabelPipeIndex(line: string): number {
+  let offset = 0;
+  for (const part of splitPromptMarkdownLinks(line)) {
+    if (part.type === 'text') {
+      const pipe = part.content.indexOf('|');
+      if (pipe !== -1) return offset + pipe;
+      offset += part.content.length;
+    } else {
+      offset += part.label.length + part.url.length + '[]()'.length;
+    }
+  }
+  return -1;
+}
+
 function parseSuggestedPromptLine(line: string): SuggestedPrompt | null {
   const fullDelayMatch = line.match(DELAY_PREFIX_REGEX);
   if (fullDelayMatch) {
     const text = fullDelayMatch[2].trim();
-    return text.length > 0 && text.length <= MAX_SUGGESTED_PROMPT_LENGTH ? text : null;
+    return isValidSuggestedPromptText(text) ? text : null;
   }
 
-  const pipeIndex = line.indexOf('|');
+  const pipeIndex = legacyLabelPipeIndex(line);
   let promptPart = pipeIndex === -1 ? line : line.slice(pipeIndex + 1).trim();
   const delayMatch = promptPart.match(DELAY_PREFIX_REGEX);
   if (delayMatch) promptPart = delayMatch[2].trim();
-  return promptPart.length > 0 && promptPart.length <= MAX_SUGGESTED_PROMPT_LENGTH
-    ? promptPart
-    : null;
+  return isValidSuggestedPromptText(promptPart) ? promptPart : null;
 }
 
 /**

@@ -26,6 +26,7 @@
   import { resolveToolLeadingIcon } from './tool-leading-icon';
   import { resolveBrowserScreenshotSource } from './browser-screenshot-source';
   import { Button } from '$lib/components/ui/button';
+  import { cn } from '$lib/utils';
 
   interface Props {
     toolUse: ToolUseBlock;
@@ -237,13 +238,15 @@
           }}>{segment.text}</span
         >
       {:else if workspaceId}
-        <button
+        <Button
           type="button"
+          variant="plain"
+          truncateLabel={false}
           data-testid="tool-call-file-link"
-          class="min-w-0 truncate whitespace-pre border-0 bg-transparent p-0 text-left font-normal underline-offset-2 hover:underline focus-visible:underline focus-visible:outline-none"
+          class="type-body min-w-0 truncate whitespace-pre border-0 bg-transparent p-0 text-left font-normal underline-offset-2 hover:underline focus-visible:underline focus-visible:outline-none"
           data-tool-secondary
           aria-label={displayModel.accessibleSentence}
-          onclick={openFile}>{segment.text}</button
+          onclick={openFile}>{segment.text}</Button
         >
       {:else}
         <span
@@ -271,7 +274,7 @@
     <a
       href={noteUrl(toolDisplay.noteId)}
       data-testid="tool-call-note-link"
-      class="{COMPACT_TOOL_TRAILING_CLASS} hover:underline"
+      class={cn(COMPACT_TOOL_TRAILING_CLASS, 'type-body hover:underline')}
       aria-label={displayModel.accessibleSentence}
       onclick={async (event) => {
         event.preventDefault();
@@ -329,7 +332,8 @@
     {summary}
     trailing={hasTrailing ? trailing : undefined}
     showChevron={false}
-    details={expanded ? details : undefined}
+    {details}
+    animateDetailsHeight
     interactive={isExpandable}
     {expanded}
     controls={detailsId}
@@ -354,8 +358,9 @@
 
   <!-- Inline image preview for Figma screenshots (always visible, not just when expanded) -->
   {#if !expanded && parsedResult?.type === 'figma' && parsedResult.figmaScreenshot && toolState === 'completed'}
-    <button
+    <Button
       type="button"
+      variant="plain"
       class="block w-full px-2 pb-1 cursor-pointer bg-transparent border-0 p-0 text-left"
       onclick={() => {
         if (isExpandable) expanded = !expanded;
@@ -369,7 +374,7 @@
           style="max-height: 200px; max-width: 400px"
         />
       </div>
-    </button>
+    </Button>
   {/if}
 
   <!-- Browser screenshots use the same always-visible collapsed preview as Figma results. -->

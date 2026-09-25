@@ -4,6 +4,7 @@ import { agentFactory } from '$features/agent/services/agent-factory';
 import { buildTaskAgentInitialMessage } from '$features/notes/utils/task-agent-message-builder';
 import { appClient } from '$lib/client';
 import { backendRequest } from '$lib/client/live/backend-transport';
+import { isForbiddenErrorResponse } from '$lib/client/live/backend-transport-types';
 import { SPECIALISTS } from '$lib/constants/specialists';
 import { createLogger } from '$lib/utils/client-logger';
 import { generateSpecialistAgentName } from '$lib/utils/agent-name-generator';
@@ -34,7 +35,10 @@ import {
   selectExplicitReasoningEffort,
   selectSpecialists,
 } from '../../specialists/specialists-selectors';
-import { selectWorkspaceById } from '../../workspace/workspace-selectors';
+import {
+  selectHidesAgentLifecycleActions,
+  selectWorkspaceById,
+} from '../../workspace/workspace-selectors';
 import { selectNoteById } from '../../workspace-notes/workspace-notes-selectors';
 import { createChiefVirtualWorkspace } from '../chief-virtual-workspace';
 import { selectAllWorkspaceAgents } from '../workspace-agents-selectors';
@@ -55,9 +59,27 @@ function hasUsableSession(session: AgentSession | undefined): boolean {
   return !!session?.backendSessionId && session.status !== AgentStatus.Pending;
 }
 
+/**
+ * Normalises a creation failure into the `Error` handed to `action.failure`.
+ * A daemon `-32003` refusal keeps its `rpcCode` (so `showCreationError` still
+ * routes it to the refusal toast) but carries the localized not-permitted
+ * sentence instead of the raw daemon text, so promise-bearing callers render
+ * the same message the toast does.
+ */
 function creationError(error: unknown, fallback = m.agent_creation_createFailed_error()): Error {
+  if (isForbiddenErrorResponse(error)) {
+    return Object.assign(new Error(m.agent_creation_notPermitted_error()), {
+      rpcCode: (error as { rpcCode: number }).rpcCode,
+      cause: error,
+    });
+  }
   if (error instanceof Error) return error;
   return new Error(error ? String(error) : fallback);
+}
+
+/** The typed transport error when the factory captured one, else its flattened text. */
+function factoryFailure(result: { error?: string; cause?: unknown }): unknown {
+  return result.cause ?? result.error;
 }
 
 function isProviderModelMismatch(error: unknown): boolean {
@@ -65,10 +87,22 @@ function isProviderModelMismatch(error: unknown): boolean {
   return /\bmodel\b.+\bdoes not belong to provider\b/i.test(message);
 }
 
-async function showCreationError(error: unknown): Promise<void> {
+async function showCreationRefused(): Promise<void> {
   try {
-    const { toast } = await import('svelte-sonner');
-    toast.error(m.agent_creation_createFailed_error(), {
+    const { notify } = await import('$lib/components/patterns/notify');
+    notify.error(m.agent_creation_notPermitted_error(), {
+      description: m.agent_creation_notPermitted_description(),
+    });
+  } catch (toastError) {
+    logger.error('Failed to surface agent creation refusal', toastError);
+  }
+}
+
+async function showCreationError(error: unknown): Promise<void> {
+  if (isForbiddenErrorResponse(error)) return showCreationRefused();
+  try {
+    const { notify } = await import('$lib/components/patterns/notify');
+    notify.error(m.agent_creation_createFailed_error(), {
       description: isProviderModelMismatch(error)
         ? m.agent_creation_providerModelMismatch_description()
         : m.agent_creation_failed_description(),
@@ -76,6 +110,21 @@ async function showCreationError(error: unknown): Promise<void> {
   } catch (toastError) {
     logger.error('Failed to surface agent creation error', toastError);
   }
+}
+
+/**
+ * Agent creation (`agent.create` / `agent.delegate` / `agent.wakeOrCreate`) is
+ * refused with -32003 for a collaborator connection. The gated affordances are
+ * already withheld; a request that still arrives (shortcut, palette, stale
+ * surface) is refused here before anything is sent, with the same localized
+ * sentence the daemon's refusal would render.
+ */
+function* refusedForCollaborator(wsId: string): SagaGenerator<boolean> {
+  const hidden = yield* selectHidesAgentLifecycleActions.effect(wsId);
+  if (!hidden) return false;
+  logger.warn('Agent creation refused for a collaborator connection', { workspaceId: wsId });
+  yield* call(showCreationRefused);
+  return true;
 }
 
 function* validateWorkspace(wsId: string): SagaGenerator<Workspace | null> {
@@ -123,6 +172,7 @@ function* openCreatedAgent(
 
 function* createBasicAgent(action: ReturnType<typeof createAgentRequested>): SagaGenerator<void> {
   const [wsId, agentType, options] = action.payload;
+  if (yield* call(refusedForCollaborator, wsId)) return;
   const workspace = yield* call(validateWorkspace, wsId);
   if (!workspace) return;
   const agents = yield* selectAllWorkspaceAgents.effect(wsId);
@@ -146,7 +196,7 @@ function* createBasicAgent(action: ReturnType<typeof createAgentRequested>): Sag
     });
     if (!result.success || !result.agent) {
       logger.error('Failed to create agent', { workspaceId: wsId, error: result.error });
-      yield* call(showCreationError, result.error);
+      yield* call(showCreationError, factoryFailure(result));
       return;
     }
     yield* call(registerCreatedAgent, wsId, result.agent, agents);
@@ -167,6 +217,7 @@ function* createSpecialistAgent(
   action: ReturnType<typeof createAgentWithSpecialistRequested>,
 ): SagaGenerator<void> {
   const [wsId, specialistId, options] = action.payload;
+  if (yield* call(refusedForCollaborator, wsId)) return;
   const workspace = yield* call(validateWorkspace, wsId);
   if (!workspace) return;
   const agents = yield* selectAllWorkspaceAgents.effect(wsId);
@@ -215,7 +266,7 @@ function* createSpecialistAgent(
     });
     if (!result.success || !result.agent) {
       logger.error('Failed to create specialist agent', { workspaceId: wsId, error: result.error });
-      yield* call(showCreationError, result.error);
+      yield* call(showCreationError, factoryFailure(result));
       return;
     }
     yield* call(registerCreatedAgent, wsId, result.agent, agents);
@@ -236,6 +287,7 @@ function* runAgentForNote(
   action: ReturnType<typeof runAgentForNoteRequested>,
 ): SagaGenerator<void> {
   const [wsId, noteId, noteTitle] = action.payload;
+  if (yield* call(refusedForCollaborator, wsId)) return;
   const workspace = yield* call(validateWorkspace, wsId);
   if (!workspace) return;
   let note = yield* selectNoteById.effect(wsId, noteId);
@@ -312,7 +364,7 @@ function* runAgentForNote(
         noteId,
         error: result.error,
       });
-      yield* call(showCreationError, result.error);
+      yield* call(showCreationError, factoryFailure(result));
       return;
     }
     yield* put(openAgentTabRequested(wsId, { agentId: result.agentId }));
@@ -326,6 +378,7 @@ function* delegateExistingTask(
   action: ReturnType<typeof delegateExistingTaskRequested>,
 ): SagaGenerator<void> {
   const [wsId, noteId, , openAgent] = action.payload;
+  if (yield* call(refusedForCollaborator, wsId)) return;
   const workspace = yield* call(validateWorkspace, wsId);
   if (!workspace) return;
   try {
@@ -357,6 +410,11 @@ function* createFromConfig(
   const [wsId, config, options] = action.payload;
   let settled = false;
   try {
+    if (yield* call(refusedForCollaborator, wsId)) {
+      yield* put(action.failure(new Error(m.agent_creation_notPermitted_error())));
+      settled = true;
+      return;
+    }
     const workspace = yield* call(validateWorkspace, wsId);
     if (!workspace) throw new Error(m.agent_creation_workspaceUnavailable_error());
     const agents = yield* selectAllWorkspaceAgents.effect(wsId);
@@ -364,7 +422,7 @@ function* createFromConfig(
       ...config,
       workspaceId: WorkspaceId(wsId),
     });
-    if (!result.success || !result.agent) throw creationError(result.error);
+    if (!result.success || !result.agent) throw creationError(factoryFailure(result));
     yield* call(registerCreatedAgent, wsId, result.agent, agents);
     yield* put(setActiveAgentId(wsId, result.agent.id));
     yield* call(openCreatedAgent, wsId, result.agent, options);

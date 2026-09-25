@@ -463,5 +463,8 @@ describe('default sandbox server', () => {
       expect(process.env.GOMAXPROCS).toBe('3');
       expect(process.env.INTENT_UI_PREVIEW).toBe(previousEnvironment.INTENT_UI_PREVIEW);
     }
-  });
+    // Boots two real Vite dev servers and drives each first page load through the
+    // dependency optimizer (~7s alone), so a loaded host in a full-suite run blows the
+    // 30s pool default while the test passes in isolation. Same budget as ct-discovery.
+  }, 120_000);
 });

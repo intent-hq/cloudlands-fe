@@ -49,6 +49,11 @@
   } from '$store/renderer/slices/pr-branch-lookup/pr-branch-lookup-slice';
   import { selectPrBranchLookupEntries } from '$store/renderer/slices/pr-branch-lookup/pr-branch-lookup-selectors';
   import type { PrBranchLookupRequest } from '$store/renderer/slices/pr-branch-lookup/pr-branch-lookup-types';
+  import {
+    selectNewWorkspaceDefaultSpecialist,
+    selectWorkspaceInitializerHydrated,
+  } from '$store/renderer/slices/workspace-initializer/workspace-initializer-selectors';
+  import { selectSpecialists } from '$store/renderer/slices/specialists/specialists-selectors';
   import { store as appStore } from '$store/renderer/store';
   import RepoAndBranchPicker from '$lib/components/workspace/initializer/RepoAndBranchPicker.svelte';
   import type { BranchListInfo } from '$lib/components/workspace/initializer/BranchSelector.svelte';
@@ -139,6 +144,15 @@
   const prBranchLookupInFlightKeys = new Set<string>();
 
   const prBranchLookupEntries = selectPrBranchLookupEntries();
+  // The New Workspace modal's effective initial agent is the fallback when a
+  // workspace-create proposal does not name a specialist. It is read (not
+  // subscribed) so later modal edits never rewrite a card's selection; the
+  // only re-reads are the late-hydration ones below.
+  const workspaceInitializerHydrated = selectWorkspaceInitializerHydrated();
+  const specialists = selectSpecialists();
+  // True while the card's specialist is still that fallback: never edited by
+  // the user, restored from a draft, or named by the proposal.
+  let specialistIsModalDefault = false;
 
   const fields = $derived(proposal.preview.fields ?? []);
   const bulkItems = $derived(proposal.preview.bulkItems ?? []);
@@ -312,7 +326,10 @@
     workspaceIsNewRepo = workspaceCreate.isNewRepo ?? false;
     workspaceIsValidPath = workspaceCreate.isValidPath ?? false;
     workspaceScope = workspaceCreate.scope ?? '';
-    workspaceSpecialist = workspaceCreate.specialist ?? null;
+    specialistIsModalDefault = workspaceCreate.specialist === undefined;
+    workspaceSpecialist = specialistIsModalDefault
+      ? selectNewWorkspaceDefaultSpecialist.select(appStore.state)
+      : (workspaceCreate.specialist ?? null);
     prBranchUserEdited = false;
     prBranchLookupKey = '';
     prBranchLookupRequest = undefined;
@@ -324,12 +341,26 @@
       workspaceTitle = draft.title;
       workspaceInitialPrompt = draft.initialPrompt;
       workspaceSpecialist = draft.specialist;
+      specialistIsModalDefault = false;
       if (draft.branch && draft.branch !== workspaceBranch) {
         // Restored user-chosen branch: suppress the PR-head lookup override.
         workspaceBranch = draft.branch;
         prBranchUserEdited = true;
       }
     }
+  });
+
+  // The initializer's remembered settings and the specialist catalog hydrate
+  // asynchronously, so a card mounted before they settle resolved the
+  // first-launch default. Re-resolve once hydrated (and as the catalog loads)
+  // while the selection is still that fallback — never over an explicit
+  // specialist, a restored draft, or a user edit. Ordinary later modal edits
+  // do not re-run this: the default itself is read untracked.
+  $effect(() => {
+    if (!$workspaceInitializerHydrated) return;
+    void $specialists;
+    if (!isWorkspaceCreate || !specialistIsModalDefault) return;
+    workspaceSpecialist = untrack(() => selectNewWorkspaceDefaultSpecialist.select(appStore.state));
   });
 
   $effect(() => {
@@ -577,7 +608,7 @@
           ? preview.specialist
           : typeof getInitialAgentValue('specialist') === 'string'
             ? (getInitialAgentValue('specialist') as string)
-            : (stringParam('specialist') ?? null),
+            : stringParam('specialist'),
     };
   }
 
@@ -1028,7 +1059,7 @@
                   <div
                     bind:this={branchRowElement}
                     class={branchNeedsAttention
-                      ? 'min-w-0 max-w-[50%] rounded-md ring-1 ring-amber-500/70 focus:outline-none'
+                      ? 'min-w-0 max-w-[50%] rounded-md ring-1 ring-warning/30 focus:outline-none'
                       : 'min-w-0 max-w-[50%] focus:outline-none'}
                     data-testid="proposal-branch-picker"
                     data-branch-warning={branchNeedsAttention ? 'true' : undefined}
@@ -1055,7 +1086,7 @@
                 {#if proposedBranchMissing}
                   <p
                     id={`${metadataIdPrefix}-branch-mismatch`}
-                    class="type-caption mt-1 text-amber-600 dark:text-amber-400"
+                    class="type-caption mt-1 text-warning-ink"
                     data-testid="proposal-branch-mismatch-warning"
                   >
                     {m.chat_proposalCard_branchNotFound_label({
@@ -1102,13 +1133,14 @@
                 class="w-full"
                 onchange={(id) => {
                   workspaceSpecialist = id;
+                  specialistIsModalDefault = false;
                 }}
               />
             </div>
           </div>
 
           {#if proposal.preview.warnings?.length}
-            <div class="type-caption text-warning">
+            <div class="type-caption text-warning-ink">
               {#each proposal.preview.warnings as warning}
                 <div>⚠ {warning}</div>
               {/each}
@@ -1136,8 +1168,8 @@
             >{m.chat_shared_discard_label()}</Button
           >
           <Button
+            variant="primary"
             size="sm"
-            class="border-primary bg-primary text-primary-foreground hover:border-primary hover:bg-primary/90 hover:text-primary-foreground active:bg-primary/80"
             disabled={actionDisabled}
             onclick={handleApply}
             aria-keyshortcuts="Enter"
@@ -1152,7 +1184,7 @@
                     : m.chat_proposalCard_createWorkspace_label()}
             </span>
             {#if isSiblingWorkspaceCreate ? showWorkspaceShortcutHint : !isApplying && !isFailed}
-              <span class="opacity-50">{shortcutModifier}+↵</span>
+              <span>{shortcutModifier}+↵</span>
             {/if}
           </Button>
         </div>
@@ -1370,7 +1402,7 @@
         {/if}
 
         {#if proposal.preview.warnings?.length}
-          <div class="type-caption text-warning">
+          <div class="type-caption text-warning-ink">
             {#each proposal.preview.warnings as warning}
               <div>⚠ {warning}</div>
             {/each}
@@ -1411,8 +1443,8 @@
             >{m.chat_shared_discard_label()}</Button
           >
           <Button
+            variant="primary"
             size="sm"
-            class="border-primary bg-primary text-primary-foreground hover:border-primary hover:bg-primary/90 hover:text-primary-foreground active:bg-primary/80"
             disabled={actionDisabled}
             onclick={handleApply}
             aria-keyshortcuts="Enter"

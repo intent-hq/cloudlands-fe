@@ -4,6 +4,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import os from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { warmImport } from '../src/test/warm-import';
 import { canonicalComponentManifest } from '../src/lib/components/ui/manifest';
 import { uiComponentGuardrails } from './ui-component-guardrails';
 import { buildUiComponentInventory } from './ui-component-inventory';
@@ -17,21 +18,34 @@ import {
 
 const root = process.cwd();
 const canonicalImports = [
+  'accordion',
+  'ask-user-questions',
   'badge',
   'breadcrumb',
   'button',
   'button-group',
   'card',
   'checkbox',
+  'checkbox-group',
   'combobox',
+  'copy-input',
   'dialog',
+  'dropdown',
   'file-input',
+  'grouped-combobox',
   'indicators',
   'input',
+  'input-group',
+  'input-message',
+  'kbd',
   'label',
   'list',
   'menu',
+  'message-composer',
+  'proximity-highlight',
+  'radio-group',
   'scroll-area',
+  'searchable-select',
   'select',
   'separator',
   'settings-field-row',
@@ -42,22 +56,51 @@ const canonicalImports = [
   'skeleton',
   'slider',
   'switch',
+  'table',
+  'tabs',
   'textarea',
+  'toast',
   'toggle',
   'toggle-group',
   'tooltip',
 ] as const;
+// Single-file components published under their `.svelte` path rather than a folder barrel.
+const canonicalFileImports = ['PrincipalAvatar.svelte'] as const;
+
+// `button-group` is published from the root barrel as the `ButtonGroup` namespace.
+function rootNamespaceFor(publicImport: string): string {
+  return publicImport.replace(/(?:^|-)([a-z])/g, (_match, letter: string) => letter.toUpperCase());
+}
+
+async function loadPublicComponentApis() {
+  const rootApi: Record<string, unknown> = await import('../src/lib/components/ui');
+  const subpathApis = await Promise.all(
+    canonicalImports.map(
+      (publicImport) =>
+        import(`../src/lib/components/ui/${publicImport}/index.ts`) as Promise<
+          Record<string, unknown>
+        >,
+    ),
+  );
+  return { rootApi, subpathApis };
+}
+
+warmImport(loadPublicComponentApis);
 
 describe('Gate C public component contract', () => {
-  it('publishes a discoverability API while preserving canonical subpaths', () => {
-    const rootApi = readFileSync(path.join(root, 'src/lib/components/ui/index.ts'), 'utf8');
-    for (const publicImport of canonicalImports) {
-      expect(rootApi, publicImport).toContain(`from './${publicImport}'`);
+  it('publishes a discoverability API while preserving canonical subpaths', async () => {
+    const { rootApi, subpathApis } = await loadPublicComponentApis();
+    canonicalImports.forEach((publicImport, index) => {
+      const namespace = rootApi[rootNamespaceFor(publicImport)];
+      expect(namespace, publicImport).toBeDefined();
+      expect(Object.keys(namespace as object).sort(), publicImport).toEqual(
+        Object.keys(subpathApis[index]).sort(),
+      );
       expect(existsSync(path.join(root, `src/lib/components/ui/${publicImport}/index.ts`))).toBe(
         true,
       );
-    }
-    expect(rootApi).toContain("from './manifest'");
+    });
+    expect(rootApi.canonicalComponentManifest).toBe(canonicalComponentManifest);
   });
 
   it('keeps catalog fixtures out of runtime component barrels', () => {
@@ -72,7 +115,9 @@ describe('Gate C public component contract', () => {
 
   it('aggregates schema-validated source metadata with fixtures and verification owners', () => {
     expect(canonicalComponentManifest.map(({ publicImport }) => publicImport)).toEqual(
-      canonicalImports.map((component) => `$lib/components/ui/${component}`).sort(),
+      [...canonicalImports, ...canonicalFileImports]
+        .map((component) => `$lib/components/ui/${component}`)
+        .sort(),
     );
     for (const component of canonicalComponentManifest) {
       expect(component.fixtures.length, component.publicImport).toBeGreaterThan(0);
@@ -103,12 +148,23 @@ describe('Gate C generated migration ledger', () => {
       expect(entry.removalGate, entry.oldImport).toMatch(/zero|migrate|callers/i);
     }
 
+    // DiagramBlock's export actions now use canonical Menu through DiagramActionsMenu.
+    expect(
+      ledger.find(({ oldImport }) => oldImport.endsWith('dropdown-menu.svelte'))?.callers.length,
+    ).toBeLessThanOrEqual(11);
     expect(
       ledger.find(({ oldImport }) => oldImport.endsWith('dropdown-menu.svelte'))?.callers,
-    ).toHaveLength(17);
+    ).not.toContain('src/lib/components/notes/primitives/DiagramBlock.svelte');
     expect(ledger.find(({ oldImport }) => oldImport.endsWith('/dropdown'))).toMatchObject({
       replacement: 'ledger:src/lib/components/ui/dropdown/dropdown-caller-ledger.ts',
-      callers: expect.arrayContaining(['src/lib/components/settings/mcp/McpServerCard.svelte']),
+      callers: [
+        'src/lib/component-catalog/renderers/ChoiceCatalogPreview.svelte',
+        'src/lib/component-catalog/renderers/PopoversCatalogPreview.svelte',
+        'src/lib/components/chat/input/ModelPicker.svelte',
+        'src/lib/components/chat/input/ModelPickerGroupHeader.svelte',
+        'src/lib/components/chat/input/model-picker-groups.ts',
+        'src/lib/components/chat/input/model-picker-utils.ts',
+      ],
     });
     expect(buildUiMigrationLedger(root)).toEqual(ledger);
   });
@@ -128,9 +184,7 @@ describe('Gate C generated migration ledger', () => {
       '$lib/components/ui/content-header',
       '$lib/components/ui/diff',
       '$lib/components/ui/tab',
-      '$lib/components/ui/grouped-combobox',
       '$lib/components/ui/searchable-combobox',
-      '$lib/components/ui/searchable-select',
     ];
     expect(publicImports).not.toEqual(expect.arrayContaining(reconciledImports));
     expect(existsSync(path.join(root, 'src/lib/components/icons/ProviderIcon.svelte'))).toBe(false);
@@ -138,8 +192,8 @@ describe('Gate C generated migration ledger', () => {
     const retained = new Map(
       buildUiMigrationLedger(root).map((entry) => [entry.oldImport, entry.callers.length]),
     );
-    expect(retained.get('$lib/components/ui/dropdown-menu.svelte')).toBe(17);
-    expect(retained.get('$lib/components/ui/dropdown')).toBe(7);
+    expect(retained.get('$lib/components/ui/dropdown-menu.svelte')).toBeLessThanOrEqual(11);
+    expect(retained.get('$lib/components/ui/dropdown')).toBe(6);
   });
 });
 
@@ -189,9 +243,14 @@ describe('Gate C structural ratchets', () => {
   });
 
   it('ratchets raw controls outside approved primitive implementations', () => {
+    const policy = JSON.parse(
+      readFileSync(path.join(root, 'scripts/ui-component-raw-element-allowlist.json'), 'utf8'),
+    ) as { exceptions: unknown[] };
     const counts = countRawUiControls(root);
-    for (const tag of ['button', 'input', 'select', 'textarea'] as const) {
-      expect(counts[tag], tag).toBeLessThanOrEqual(uiComponentGuardrails.rawControls[tag]);
-    }
+    const zeroControls = { button: 0, input: 0, select: 0, textarea: 0 };
+
+    expect(policy.exceptions).toEqual([]);
+    expect(uiComponentGuardrails.rawControls).toEqual(zeroControls);
+    expect(counts).toEqual(zeroControls);
   });
 });

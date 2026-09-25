@@ -24,18 +24,18 @@
     return Math.abs(h);
   }
   const palette = [
-    '#8B5E3C', // brown
-    '#6B7280', // slate
-    '#3F83F8', // blue
-    '#10B981', // green
-    '#D97706', // amber
-    '#EC4899', // pink
+    'hsl(var(--agent-avatar-surface-neutral))',
+    'hsl(var(--agent-avatar-surface-neutral))',
+    'hsl(var(--agent-avatar-surface-waiting))',
+    'hsl(var(--agent-avatar-surface-active))',
+    'hsl(var(--agent-avatar-surface-attention))',
+    'hsl(var(--agent-avatar-surface-neutral))',
   ];
   let bg = $derived(palette[stringHash(name) % palette.length]);
 </script>
 
 <div
-  class={`inline-flex items-center justify-center rounded-full text-white font-semibold select-none ${className}`}
+  class={`inline-flex items-center justify-center rounded-full text-[hsl(var(--agent-avatar-foreground))] font-semibold select-none ${className}`}
   style={`width:${size}px;height:${size}px;background:${bg};font-size:${Math.max(
     10,
     Math.floor(size * 0.45),

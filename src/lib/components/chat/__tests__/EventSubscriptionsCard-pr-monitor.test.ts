@@ -16,9 +16,6 @@ vi.mock('../AgentSubscriptions.svelte', async () => ({
 vi.mock('../BackgroundHooksRow.svelte', async () => ({
   default: (await import('./mocks/MockHookEventSection.svelte')).default,
 }));
-vi.mock('../BrowserTabsRow.svelte', async () => ({
-  default: (await import('./mocks/MockBrowserTabsSection.svelte')).default,
-}));
 
 import {
   backendRequest,
@@ -27,6 +24,7 @@ import {
   onBackendNotification,
 } from '$lib/client/live/backend-transport';
 import { store as appStore } from '$store/renderer/store';
+import { setSubscriptionSnapshot } from '$store/renderer/slices/agent-subscription-ui/agent-subscription-ui-slice';
 import { prMonitorSaga } from '$store/renderer/slices/pr-monitor/sagas/pr-monitor-saga';
 import { removeWorkspaceEntity } from '$store/renderer/slices/workspace/workspace-slice';
 import {
@@ -61,6 +59,19 @@ function monitor(agentId = AGENT, workspaceId: string = CHIEF_WORKSPACE_ID): PrM
 beforeAll(() => appStore.init());
 beforeEach(() => {
   vi.clearAllMocks();
+  // The stubbed agent section does not fetch its snapshot; settle that independent lane.
+  for (const workspaceId of [CHIEF_WORKSPACE_ID, OTHER_WORKSPACE]) {
+    for (const agentId of [AGENT, 'chief-thread-two']) {
+      appStore.dispatch(
+        setSubscriptionSnapshot(workspaceId, agentId, {
+          subscriptions: [],
+          delegationGroups: [],
+          agentStatuses: {},
+          waitingState: 'idle',
+        }),
+      );
+    }
+  }
   vi.mocked(backendRequest).mockResolvedValue({ monitors: [] });
   vi.mocked(backendSubscribe).mockImplementation(async ({ workspaceId }) => ({
     subscriptionId: `pr-sub-${workspaceId}`,
@@ -156,12 +167,13 @@ describe('Chief PR-monitor subscription ownership', () => {
   });
 
   it('keeps one live subscription while collapsed and shares it across mounted cards', async () => {
-    vi.mocked(backendRequest).mockResolvedValue({ monitors: [monitor()] });
+    const monitors = [monitor(), { ...monitor(), monitorId: 'monitor-second', prNumber: 43 }];
+    vi.mocked(backendRequest).mockResolvedValue({ monitors });
     const first = render(EventSubscriptionsCard, {
       workspaceId: CHIEF_WORKSPACE_ID,
       agentId: AGENT,
     });
-    await waitFor(() => expect(screen.getByTestId('monitored-pr-chip')).toBeTruthy());
+    await waitFor(() => expect(screen.getAllByTestId('monitored-pr-chip')).toHaveLength(2));
     const second = render(EventSubscriptionsCard, {
       workspaceId: CHIEF_WORKSPACE_ID,
       agentId: 'chief-thread-two',
@@ -172,21 +184,21 @@ describe('Chief PR-monitor subscription ownership', () => {
     await waitFor(() => expect(screen.getAllByTestId('event-subscriptions-body')).toHaveLength(1));
     expect(backendUnsubscribe).not.toHaveBeenCalled();
     const notification = vi.mocked(onBackendNotification).mock.calls[0][0];
-    notification({
-      method: 'events.event',
-      params: {
-        subscriptionId: `pr-sub-${CHIEF_WORKSPACE_ID}`,
-        event: {
-          type: 'prMonitor:cancelled',
-          workspaceId: CHIEF_WORKSPACE_ID,
-          data: { monitorId: monitor().monitorId },
+    for (const row of monitors)
+      notification({
+        method: 'events.event',
+        params: {
+          subscriptionId: `pr-sub-${CHIEF_WORKSPACE_ID}`,
+          event: {
+            type: 'prMonitor:cancelled',
+            workspaceId: CHIEF_WORKSPACE_ID,
+            data: { monitorId: row.monitorId },
+          },
         },
-      },
-    });
+      });
     await waitFor(() =>
       expect(appStore.state.prMonitor.byWorkspaceId[CHIEF_WORKSPACE_ID].monitors.ids).toEqual([]),
     );
-    await fireEvent.click(screen.getByTestId('event-subscriptions-summary'));
     await waitFor(() => {
       expect(screen.queryByTestId('pr-monitors-snapshot-status')).toBeNull();
       expect(screen.queryByTestId('monitored-pr-chip')).toBeNull();
@@ -199,32 +211,42 @@ describe('Chief PR-monitor subscription ownership', () => {
     expect(backendUnsubscribe).toHaveBeenCalledExactlyOnceWith(`pr-sub-${CHIEF_WORKSPACE_ID}`);
   });
 
-  it('releases an inactive Chief card and reloads its snapshot on reactivation', async () => {
-    vi.mocked(backendRequest).mockResolvedValue({ monitors: [monitor()] });
-    const view = render(EventSubscriptionsCard, {
-      workspaceId: CHIEF_WORKSPACE_ID,
-      agentId: AGENT,
-      isActive: true,
-    });
-    await waitFor(() => expect(screen.getByTestId('monitored-pr-chip')).toBeTruthy());
-    await view.rerender({ workspaceId: CHIEF_WORKSPACE_ID, agentId: AGENT, isActive: false });
-    expect(backendUnsubscribe).toHaveBeenCalledExactlyOnceWith(`pr-sub-${CHIEF_WORKSPACE_ID}`);
+  it.each([false, true])(
+    'releases and reloads a Chief card with suppressTopGap=%s',
+    async (suppressTopGap) => {
+      vi.mocked(backendRequest).mockResolvedValue({ monitors: [monitor()] });
+      const view = render(EventSubscriptionsCard, {
+        workspaceId: CHIEF_WORKSPACE_ID,
+        agentId: AGENT,
+        isActive: true,
+        suppressTopGap,
+      });
+      await waitFor(() => expect(screen.getByTestId('monitored-pr-chip')).toBeTruthy());
+      // The initial seed and post-subscribe-ack reconciliation each read the snapshot.
+      await waitFor(() => expect(backendRequest).toHaveBeenCalledTimes(2));
+      await view.rerender({ suppressTopGap: !suppressTopGap });
+      expect(backendRequest).toHaveBeenCalledTimes(2);
+      expect(backendSubscribe).toHaveBeenCalledTimes(1);
+      expect(backendUnsubscribe).not.toHaveBeenCalled();
+      await view.rerender({ workspaceId: CHIEF_WORKSPACE_ID, agentId: AGENT, isActive: false });
+      expect(backendUnsubscribe).toHaveBeenCalledExactlyOnceWith(`pr-sub-${CHIEF_WORKSPACE_ID}`);
 
-    vi.mocked(backendRequest).mockClear().mockResolvedValue({ monitors: [] });
-    await view.rerender({ workspaceId: CHIEF_WORKSPACE_ID, agentId: AGENT, isActive: true });
-    await waitFor(() => expect(screen.queryByTestId('monitored-pr-chip')).toBeNull());
-    expect(backendRequest).toHaveBeenLastCalledWith('prMonitor.list', {
-      workspaceId: CHIEF_WORKSPACE_ID,
-    });
-    expect(backendSubscribe).toHaveBeenCalledTimes(2);
-    expect(backendSubscribe).toHaveBeenLastCalledWith({
-      eventTypes: ['prMonitor:*'],
-      workspaceId: CHIEF_WORKSPACE_ID,
-    });
-    view.unmount();
-    expect(backendUnsubscribe).toHaveBeenCalledTimes(2);
-    expect(appStore.state.tabState.currentTabId).toBeNull();
-  });
+      vi.mocked(backendRequest).mockClear().mockResolvedValue({ monitors: [] });
+      await view.rerender({ workspaceId: CHIEF_WORKSPACE_ID, agentId: AGENT, isActive: true });
+      await waitFor(() => expect(screen.queryByTestId('monitored-pr-chip')).toBeNull());
+      expect(backendRequest).toHaveBeenLastCalledWith('prMonitor.list', {
+        workspaceId: CHIEF_WORKSPACE_ID,
+      });
+      expect(backendSubscribe).toHaveBeenCalledTimes(2);
+      expect(backendSubscribe).toHaveBeenLastCalledWith({
+        eventTypes: ['prMonitor:*'],
+        workspaceId: CHIEF_WORKSPACE_ID,
+      });
+      view.unmount();
+      expect(backendUnsubscribe).toHaveBeenCalledTimes(2);
+      expect(appStore.state.tabState.currentTabId).toBeNull();
+    },
+  );
 
   it('keeps the selected-tab lease but disposes a retained inactive card after switching away', async () => {
     appStore.dispatch(openWorkspaceTab(OTHER_WORKSPACE));
@@ -243,6 +265,25 @@ describe('Chief PR-monitor subscription ownership', () => {
     );
     view.unmount();
     expect(backendUnsubscribe).toHaveBeenCalledTimes(1);
+  });
+
+  it('renders a prMonitor.list row carrying pausedUntil as paused through the real saga', async () => {
+    const paused: PrMonitorRow = {
+      ...monitor(),
+      lastPolledAt: new Date(Date.now() - 12 * 60_000).toISOString(),
+      pausedUntil: new Date(Date.now() + 30 * 60_000).toISOString(),
+      lastError: 'forge rate limit hit; polling paused',
+    };
+    vi.mocked(backendRequest).mockResolvedValue({ monitors: [paused] });
+    render(EventSubscriptionsCard, { workspaceId: CHIEF_WORKSPACE_ID, agentId: AGENT });
+    const summary = await waitFor(() => screen.getByTestId('monitored-pr-summary'));
+    expect(summary.closest('[data-monitor-state]')?.getAttribute('data-monitor-paused')).toBe(
+      'true',
+    );
+    await fireEvent.click(summary);
+    expect(screen.getByTestId('monitored-pr-readiness').textContent).toMatch(
+      /^Monitoring paused until .* \(GitHub rate limit\); last checked 12 minutes ago\.$/,
+    );
   });
 
   it('does not acquire subscriptions for isolated catalog previews', async () => {

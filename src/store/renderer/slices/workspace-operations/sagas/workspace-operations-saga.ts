@@ -10,12 +10,13 @@ import {
   spawn,
   take,
   takeEvery,
+  takeLeading,
   type SagaGenerator,
 } from 'typed-redux-saga';
 
 import { invoke } from '$lib/electron-bridge';
 import { getProposalId } from '$lib/components/chat/proposals/proposal-id';
-import { withToastCountdown } from '$lib/components/ui/toast';
+import { withToastCountdown } from '$lib/components/patterns/notify';
 import { getActiveWorkNames, type ActiveWorkNames } from '$lib/utils/delete-warning-utils';
 import { createLogger } from '$lib/utils/client-logger';
 import type { WorkspaceProposalApplyPayload } from '$shared/app-workspace-operations';
@@ -47,32 +48,33 @@ import { selectWorkspaceById, selectWorkspaceItems } from '../../workspace/works
 import { workspaceClient } from '../../workspace/utils/workspace.client';
 import {
   applyWorkspaceProposal,
-  bulkArchiveActiveWorkComputed,
+  bulkActiveWorkComputed,
+  bulkOperationFinished,
+  bulkOperationStarted,
   closeArchiveWarning,
   closeBulkArchiveConfirm,
-  closeBulkDeleteArchivedConfirm,
-  closeBulkDeleteWarningConfirm,
+  closeBulkDeleteConfirm,
   closeDeleteWarning,
   closeRemoveRepoConfirm,
   confirmArchiveWorkspace,
   confirmBulkArchive,
-  confirmBulkDeleteArchived,
-  confirmBulkDeleteWarning,
+  confirmBulkDelete,
   confirmDeleteWorkspace,
   confirmRemoveRepo,
-  openBulkDeleteWarningConfirm,
   openArchiveWarning,
   openBulkArchiveConfirm,
+  openBulkDeleteConfirm,
   openDeleteWarning,
   requestArchiveWorkspace,
   requestDeleteWorkspace,
   requestUnarchiveWorkspace,
 } from '../workspace-operations-slice';
 import {
-  selectBulkArchiveComputeToken,
+  selectBulkComputeToken,
+  selectBulkOperationInFlight,
+  selectBulkPreflightReady,
   selectPendingArchiveWorkspaceId,
-  selectPendingBulkDeleteRepoKey,
-  selectPendingBulkRepoKey,
+  selectPendingBulkWorkspaceIds,
   selectPendingDeleteWorkspaceId,
   selectPendingRemoveRepoPath,
 } from '../workspace-operations-selectors';
@@ -90,8 +92,8 @@ export const WORKSPACE_DELETION_TOMBSTONE_TTL_MS = 60_000;
 type RemoveRepoResponse = { success: boolean; data?: { removed: boolean }; error?: string };
 
 async function getToast() {
-  const { toast } = await import('svelte-sonner');
-  return toast;
+  const { notify } = await import('$lib/components/patterns/notify');
+  return notify;
 }
 
 function* applyWorkspaceChanges(
@@ -101,28 +103,29 @@ function* applyWorkspaceChanges(
   yield* put(bulkUpdateWorkspaceEntities([updateWorkspaceEntity(workspaceId, changes)]));
 }
 
-function workspaceMatchesRepoKey(workspace: Workspace, repoKey: string): boolean {
-  if (workspace.repositoryOwner && workspace.repositoryName) {
-    return `${workspace.repositoryOwner}/${workspace.repositoryName}` === repoKey;
-  }
-  return workspace.repositoryPath ? workspace.repositoryPath === repoKey : repoKey === 'unknown';
+function workspacesForIds(workspaceIds: string[], workspaces: Workspace[]): Workspace[] {
+  const byId = new Map<string, Workspace>(workspaces.map((workspace) => [workspace.id, workspace]));
+  return workspaceIds.flatMap((workspaceId) => {
+    const workspace = byId.get(workspaceId);
+    return workspace ? [workspace] : [];
+  });
 }
 
-function activeForRepo(repoKey: string, workspaces: Workspace[]): Workspace[] {
-  return workspaces.filter(
-    (workspace) =>
-      workspace.status !== WorkspaceStatusEnum.Archived &&
-      workspace.status !== WorkspaceStatusEnum.Deleted &&
-      workspaceMatchesRepoKey(workspace, repoKey),
-  );
-}
-
-function hasActiveWork({ agentNames, hookNames, openPrs, localChanges }: ActiveWorkNames): boolean {
+// Single-workspace gating: guests alone (collaborators or open invites) open
+// the warning too, since archive/delete removes them from the workspace.
+function hasActiveWork({
+  agentNames,
+  hookNames,
+  openPrs,
+  localChanges,
+  guests,
+}: ActiveWorkNames): boolean {
   return (
     agentNames.length > 0 ||
     hookNames.length > 0 ||
     openPrs.length > 0 ||
-    Boolean(localChanges?.hasUnpushedCommits || localChanges?.hasUncommittedChanges)
+    Boolean(localChanges?.hasUnpushedCommits || localChanges?.hasUncommittedChanges) ||
+    guests.collaboratorCount + guests.openInviteCount > 0
   );
 }
 
@@ -131,29 +134,28 @@ function getSingleWorkspaceActiveWork(workspaceId: string): Promise<ActiveWorkNa
   return getActiveWorkNames(workspaceId, { includeLocalChanges: true });
 }
 
-// Bulk flows count only agents/hooks — open PRs never change bulk counts and
-// local changes are never fetched (no `workspace.localChanges` fan-out).
-function countActiveWork(items: ActiveWorkNames[]): { agentCount: number; hookCount: number } {
+// Bulk flows count agents/hooks/open PRs and guests but never fetch local changes
+// (no `workspace.localChanges` fan-out).
+function countActiveWork(items: ActiveWorkNames[]): {
+  agentCount: number;
+  hookCount: number;
+  openPrCount: number;
+  guestCount: number;
+} {
   return items.reduce(
     (counts, item) => ({
       agentCount: counts.agentCount + item.agentNames.length,
       hookCount: counts.hookCount + item.hookNames.length,
+      openPrCount: counts.openPrCount + item.openPrs.length,
+      guestCount: counts.guestCount + item.guests.collaboratorCount + item.guests.openInviteCount,
     }),
-    { agentCount: 0, hookCount: 0 },
+    { agentCount: 0, hookCount: 0, openPrCount: 0, guestCount: 0 },
   );
 }
 
 function* collectActiveWork(workspaces: Workspace[]): SagaGenerator<ActiveWorkNames[]> {
   return yield* call(() =>
     Promise.all(workspaces.map((workspace) => getActiveWorkNames(workspace.id))),
-  );
-}
-
-function archivedForRepo(repoKey: string, workspaces: Workspace[]): Workspace[] {
-  return workspaces.filter(
-    (workspace) =>
-      workspace.status === WorkspaceStatusEnum.Archived &&
-      workspaceMatchesRepoKey(workspace, repoKey),
   );
 }
 
@@ -187,7 +189,7 @@ function* deleteWithUndo(workspace: Workspace): SagaGenerator<void> {
     yield* put(removeWorkspaceEntity(workspace.id));
     yield* put(markWorkspacePendingDeletion(workspace.id));
 
-    const toast = yield* call(getToast);
+    const notify = yield* call(getToast);
     try {
       const result = yield* call([workspaceClient, workspaceClient.delete], workspace.id, {
         undoDelayMs: WORKSPACE_OPERATION_UNDO_DURATION_MS,
@@ -195,18 +197,18 @@ function* deleteWithUndo(workspace: Workspace): SagaGenerator<void> {
       if (!result.ok) {
         settled = true;
         yield* restoreWorkspace(workspace);
-        toast.error(m.workspace_ops_deleteFailed_error());
+        notify.error(m.workspace_ops_deleteFailed_error());
         return;
       }
     } catch (error) {
       logger.error('workspace.delete failed', { workspaceId: workspace.id, error });
       settled = true;
       yield* restoreWorkspace(workspace);
-      toast.error(m.workspace_ops_deleteFailed_error());
+      notify.error(m.workspace_ops_deleteFailed_error());
       return;
     }
 
-    toast.warning(
+    notify.warning(
       m.workspace_ops_deleted_toast({ title: workspace.title || m.workspace_ops_space_fallback() }),
       withToastCountdown(
         {
@@ -233,7 +235,7 @@ function* deleteWithUndo(workspace: Workspace): SagaGenerator<void> {
       }
       // Race-safe non-error: the daemon already committed (or the cancel RPC
       // failed) — never resurrect the workspace locally.
-      toast.error(m.workspace_ops_undoFailed_error());
+      notify.error(m.workspace_ops_undoFailed_error());
     }
     settled = true;
     // The daemon commits at the deadline. Keep the tombstone for a grace
@@ -322,7 +324,7 @@ function* archive(action: ReturnType<typeof requestArchiveWorkspace>): SagaGener
 }
 
 function* archiveWorkspaceById(workspaceId: string): SagaGenerator<void> {
-  const toast = yield* call(getToast);
+  const notify = yield* call(getToast);
   const workspace = yield* selectWorkspaceById.effect(workspaceId);
   try {
     const result = yield* call(
@@ -330,7 +332,7 @@ function* archiveWorkspaceById(workspaceId: string): SagaGenerator<void> {
       workspaceId as WorkspaceId,
     );
     if (!result.ok) {
-      toast.error(m.workspace_ops_archiveFailed_error());
+      notify.error(m.workspace_ops_archiveFailed_error());
       return;
     }
     yield* applyWorkspaceChanges(workspaceId, {
@@ -339,7 +341,7 @@ function* archiveWorkspaceById(workspaceId: string): SagaGenerator<void> {
     });
     const undo = createUndoChannel();
     yield* fork(watchArchiveUndo, workspaceId as WorkspaceId, undo);
-    toast.warning(
+    notify.warning(
       m.workspace_ops_archived_toast({
         title: workspace?.title || m.workspace_ops_space_fallback(),
       }),
@@ -353,13 +355,13 @@ function* archiveWorkspaceById(workspaceId: string): SagaGenerator<void> {
     );
   } catch (error) {
     logger.error('workspace.archive failed', { workspaceId, error });
-    toast.error(m.workspace_ops_archiveFailed_error());
+    notify.error(m.workspace_ops_archiveFailed_error());
   }
 }
 
 function* unarchive(action: ReturnType<typeof requestUnarchiveWorkspace>): SagaGenerator<void> {
   const [workspaceId] = action.payload;
-  const toast = yield* call(getToast);
+  const notify = yield* call(getToast);
   const workspace = yield* selectWorkspaceById.effect(workspaceId);
   try {
     const result = yield* call(
@@ -367,21 +369,21 @@ function* unarchive(action: ReturnType<typeof requestUnarchiveWorkspace>): SagaG
       workspaceId as WorkspaceId,
     );
     if (!result.ok) {
-      toast.error(m.workspace_ops_unarchiveFailed_error());
+      notify.error(m.workspace_ops_unarchiveFailed_error());
       return;
     }
     yield* applyWorkspaceChanges(workspaceId, {
       status: WorkspaceStatusEnum.Active,
       archived: false,
     });
-    toast.success(
+    notify.success(
       m.workspace_ops_unarchived_toast({
         title: workspace?.title || m.workspace_ops_space_fallback(),
       }),
     );
   } catch (error) {
     logger.error('workspace.unarchive failed', { workspaceId, error });
-    toast.error(m.workspace_ops_unarchiveFailed_error());
+    notify.error(m.workspace_ops_unarchiveFailed_error());
   }
 }
 
@@ -404,83 +406,102 @@ function* watchBulkArchiveUndo(ids: WorkspaceId[], undo: Channel<true>): SagaGen
 }
 
 function* bulkArchive(): SagaGenerator<void> {
-  const repoKey = yield* selectPendingBulkRepoKey.effect();
-  yield* put(closeBulkArchiveConfirm());
-  if (!repoKey) {
-    logger.error('bulkArchive called without a repo key');
-    return;
-  }
-  const toast = yield* call(getToast);
+  const preflightReady = yield* selectBulkPreflightReady.effect();
+  const operationInFlight = yield* selectBulkOperationInFlight.effect();
+  if (!preflightReady || operationInFlight) return;
+  const workspaceIds = yield* selectPendingBulkWorkspaceIds.effect();
   const workspaces = yield* selectWorkspaceItems.effect();
-  const targets = activeForRepo(repoKey, workspaces);
-  if (targets.length === 0) {
-    toast.info(m.workspace_ops_noActiveToArchive_message());
-    return;
-  }
-  const results = yield* call(() =>
-    Promise.allSettled(
-      targets.map((workspace) =>
-        workspaceClient.archive(workspace.id).then((result) => ({ id: workspace.id, result })),
-      ),
-    ),
+  const targets = workspacesForIds(workspaceIds, workspaces).filter(
+    (workspace) =>
+      workspace.status !== WorkspaceStatusEnum.Archived &&
+      workspace.status !== WorkspaceStatusEnum.Deleted,
   );
-  const archivedIds: WorkspaceId[] = [];
-  let failCount = 0;
-  for (const result of results) {
-    if (result.status === 'fulfilled' && result.value.result.ok) {
-      archivedIds.push(result.value.id);
-      yield* applyWorkspaceChanges(result.value.id, {
-        status: WorkspaceStatusEnum.Archived,
-        archived: true,
-      });
-    } else failCount++;
-  }
-  if (archivedIds.length > 0) {
-    const undo = createUndoChannel();
-    yield* fork(watchBulkArchiveUndo, archivedIds, undo);
-    const message =
-      archivedIds.length === 1
-        ? m.workspace_ops_archivedCount_one({ count: archivedIds.length })
-        : m.workspace_ops_archivedCount_many({ count: archivedIds.length });
-    toast.warning(
-      message,
-      withToastCountdown(
-        {
-          duration: WORKSPACE_OPERATION_UNDO_DURATION_MS,
-          action: { label: m.workspace_ops_undo_label(), onClick: () => undo.put(true) },
-        },
-        { pauseOnHover: false },
+  yield* put(bulkOperationStarted({ kind: 'archive', workspaceIds: targets.map(({ id }) => id) }));
+  yield* put(closeBulkArchiveConfirm());
+  try {
+    const notify = yield* call(getToast);
+    if (targets.length === 0) {
+      notify.info(m.workspace_ops_noActiveToArchive_message());
+      return;
+    }
+    const results = yield* call(() =>
+      Promise.allSettled(
+        targets.map((workspace) =>
+          workspaceClient.archive(workspace.id).then((result) => ({ id: workspace.id, result })),
+        ),
       ),
     );
+    const archivedIds: WorkspaceId[] = [];
+    let failCount = 0;
+    for (const result of results) {
+      if (result.status === 'fulfilled' && result.value.result.ok) {
+        archivedIds.push(result.value.id);
+        yield* applyWorkspaceChanges(result.value.id, {
+          status: WorkspaceStatusEnum.Archived,
+          archived: true,
+        });
+      } else failCount++;
+    }
+    if (archivedIds.length > 0) {
+      const undo = createUndoChannel();
+      yield* spawn(watchBulkArchiveUndo, archivedIds, undo);
+      const message =
+        archivedIds.length === 1
+          ? m.workspace_ops_archivedCount_one({ count: archivedIds.length })
+          : m.workspace_ops_archivedCount_many({ count: archivedIds.length });
+      notify.warning(
+        message,
+        withToastCountdown(
+          {
+            duration: WORKSPACE_OPERATION_UNDO_DURATION_MS,
+            action: { label: m.workspace_ops_undo_label(), onClick: () => undo.put(true) },
+          },
+          { pauseOnHover: false },
+        ),
+      );
+    }
+    if (failCount > 0) {
+      notify.error(
+        failCount === 1
+          ? m.workspace_ops_archiveFailedCount_one({ count: failCount })
+          : m.workspace_ops_archiveFailedCount_many({ count: failCount }),
+      );
+    }
+  } finally {
+    yield* put(bulkOperationFinished());
   }
-  if (failCount > 0) {
-    toast.error(
-      failCount === 1
-        ? m.workspace_ops_archiveFailedCount_one({ count: failCount })
-        : m.workspace_ops_archiveFailedCount_many({ count: failCount }),
-    );
-  }
+}
+
+function* computeBulkActiveWork(
+  kind: 'archive' | 'delete',
+  workspaceIds: string[],
+): SagaGenerator<void> {
+  const token = yield* selectBulkComputeToken.effect();
+  const workspaces = yield* selectWorkspaceItems.effect();
+  const targets = workspacesForIds(workspaceIds, workspaces);
+  const counts = countActiveWork(yield* collectActiveWork(targets));
+  yield* put(bulkActiveWorkComputed({ kind, ...counts, token }));
 }
 
 function* computeBulkArchiveActiveWork(
   action: ReturnType<typeof openBulkArchiveConfirm>,
 ): SagaGenerator<void> {
-  const [repoKey] = action.payload;
-  const token = yield* selectBulkArchiveComputeToken.effect();
-  const workspaces = yield* selectWorkspaceItems.effect();
-  const targets = activeForRepo(repoKey, workspaces);
-  const counts = countActiveWork(yield* collectActiveWork(targets));
-  yield* put(bulkArchiveActiveWorkComputed({ repoKey, ...counts, token }));
+  yield* computeBulkActiveWork('archive', action.payload[0].workspaceIds);
 }
 
-function* performBulkDelete(repoKey: string): SagaGenerator<void> {
-  const toast = yield* call(getToast);
-  const workspaces = yield* selectWorkspaceItems.effect();
-  const targets = archivedForRepo(repoKey, workspaces);
+function* computeBulkDeleteActiveWork(
+  action: ReturnType<typeof openBulkDeleteConfirm>,
+): SagaGenerator<void> {
+  yield* computeBulkActiveWork('delete', action.payload[0].workspaceIds);
+}
+
+function* performBulkDelete(targets: Workspace[]): SagaGenerator<string[]> {
+  const notify = yield* call(getToast);
   if (targets.length === 0) {
-    toast.info(m.workspace_ops_noArchivedToDelete_message());
-    return;
+    notify.info(m.workspace_ops_noWorkspacesToDelete_message());
+    return [];
   }
+  const deletedIds: string[] = [];
   let deleteCount = 0;
   let timeoutCount = 0;
   let failCount = 0;
@@ -489,8 +510,8 @@ function* performBulkDelete(repoKey: string): SagaGenerator<void> {
       const result = yield* call([workspaceClient, workspaceClient.delete], workspace.id);
       if (result.ok) {
         deleteCount++;
+        deletedIds.push(workspace.id);
         yield* put(removeWorkspaceEntity(workspace.id));
-        yield* put(markWorkspacePendingDeletion(workspace.id));
         yield* spawn(clearTombstoneAfterGrace, workspace.id);
       } else if (result.error?.includes('timed out')) timeoutCount++;
       else failCount++;
@@ -499,59 +520,55 @@ function* performBulkDelete(repoKey: string): SagaGenerator<void> {
     }
   }
   if (deleteCount > 0) {
-    toast.success(
+    notify.success(
       deleteCount === 1
         ? m.workspace_ops_permanentlyDeletedCount_one({ count: deleteCount })
         : m.workspace_ops_permanentlyDeletedCount_many({ count: deleteCount }),
     );
   }
   if (timeoutCount > 0) {
-    toast.info(
+    notify.info(
       timeoutCount === 1
         ? m.workspace_ops_stillDeleting_one({ count: timeoutCount })
         : m.workspace_ops_stillDeleting_many({ count: timeoutCount }),
     );
   }
   if (failCount > 0) {
-    toast.error(
+    notify.error(
       failCount === 1
         ? m.workspace_ops_deleteFailedCount_one({ count: failCount })
         : m.workspace_ops_deleteFailedCount_many({ count: failCount }),
     );
   }
+  return deletedIds;
 }
 
-function* bulkDeleteArchived(): SagaGenerator<void> {
-  const repoKey = yield* selectPendingBulkRepoKey.effect();
-  yield* put(closeBulkDeleteArchivedConfirm());
-  if (!repoKey) {
-    logger.error('bulkDeleteArchived called without a repo key');
-    return;
-  }
+function* bulkDelete(): SagaGenerator<void> {
+  const preflightReady = yield* selectBulkPreflightReady.effect();
+  const operationInFlight = yield* selectBulkOperationInFlight.effect();
+  if (!preflightReady || operationInFlight) return;
+  const workspaceIds = yield* selectPendingBulkWorkspaceIds.effect();
   const workspaces = yield* selectWorkspaceItems.effect();
-  const targets = archivedForRepo(repoKey, workspaces);
-  if (targets.length === 0) {
-    (yield* call(getToast)).info(m.workspace_ops_noArchivedToDelete_message());
-    return;
+  const targets = workspacesForIds(workspaceIds, workspaces);
+  const reservedIds = targets.map(({ id }) => id);
+  yield* put(bulkOperationStarted({ kind: 'delete', workspaceIds: reservedIds }));
+  yield* put(closeBulkDeleteConfirm());
+  let deletedIds: string[] = [];
+  try {
+    for (const workspaceId of reservedIds) {
+      yield* put(markWorkspacePendingDeletion(workspaceId));
+    }
+    for (const workspace of targets) {
+      yield* call(navigateAwayIfViewing, workspace.id);
+    }
+    deletedIds = yield* performBulkDelete(targets);
+  } finally {
+    const deletedIdSet = new Set(deletedIds);
+    for (const workspaceId of reservedIds) {
+      if (!deletedIdSet.has(workspaceId)) yield* put(clearWorkspacePendingDeletion(workspaceId));
+    }
+    yield* put(bulkOperationFinished());
   }
-  const counts = countActiveWork(yield* collectActiveWork(targets));
-  if (counts.agentCount > 0 || counts.hookCount > 0) {
-    yield* put(
-      openBulkDeleteWarningConfirm({ repoKey, workspaceCount: targets.length, ...counts }),
-    );
-    return;
-  }
-  yield* performBulkDelete(repoKey);
-}
-
-function* bulkDeleteAfterWarning(): SagaGenerator<void> {
-  const repoKey = yield* selectPendingBulkDeleteRepoKey.effect();
-  yield* put(closeBulkDeleteWarningConfirm());
-  if (!repoKey) {
-    logger.error('bulkDeleteAfterWarning called without a repo key');
-    return;
-  }
-  yield* performBulkDelete(repoKey);
 }
 
 function* removeRepoFromRegistry(): SagaGenerator<void> {
@@ -641,7 +658,7 @@ function* applyBulkProposal(payload: WorkspaceProposalApplyPayload): SagaGenerat
     return;
   }
   yield* put(proposalApplyStarted({ proposalId, startedAt: Date.now() }));
-  const toast = yield* call(getToast);
+  const notify = yield* call(getToast);
   if (!isDelete) {
     const results = yield* call(() =>
       Promise.allSettled(
@@ -671,7 +688,7 @@ function* applyBulkProposal(payload: WorkspaceProposalApplyPayload): SagaGenerat
       return;
     }
     yield* put(proposalApplySucceeded({ proposalId, completedAt: Date.now() }));
-    toast.success(
+    notify.success(
       count === 1
         ? m.workspace_ops_archivedCount_one({ count })
         : m.workspace_ops_archivedCount_many({ count }),
@@ -706,14 +723,14 @@ function* applyBulkProposal(payload: WorkspaceProposalApplyPayload): SagaGenerat
   }
   yield* put(proposalApplySucceeded({ proposalId, completedAt: Date.now() }));
   if (deleted > 0) {
-    toast.success(
+    notify.success(
       deleted === 1
         ? m.workspace_ops_deletedCount_one({ count: deleted })
         : m.workspace_ops_deletedCount_many({ count: deleted }),
     );
   }
   if (timedOut > 0) {
-    toast.info(
+    notify.info(
       timedOut === 1
         ? m.workspace_ops_stillDeleting_one({ count: timedOut })
         : m.workspace_ops_stillDeleting_many({ count: timedOut }),
@@ -734,10 +751,10 @@ export function* workspaceOperationsSaga(): SagaGenerator<void> {
     takeEvery(confirmArchiveWorkspace, confirmArchive),
     takeEvery(requestArchiveWorkspace, archive),
     takeEvery(openBulkArchiveConfirm, computeBulkArchiveActiveWork),
+    takeEvery(openBulkDeleteConfirm, computeBulkDeleteActiveWork),
     takeEvery(requestUnarchiveWorkspace, unarchive),
-    takeEvery(confirmBulkArchive, bulkArchive),
-    takeEvery(confirmBulkDeleteArchived, bulkDeleteArchived),
-    takeEvery(confirmBulkDeleteWarning, bulkDeleteAfterWarning),
+    takeLeading(confirmBulkArchive, bulkArchive),
+    takeLeading(confirmBulkDelete, bulkDelete),
     takeEvery(confirmRemoveRepo, removeRepoFromRegistry),
     takeEvery(applyWorkspaceProposal, applyProposal),
   ]);

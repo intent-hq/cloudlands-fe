@@ -1,11 +1,29 @@
+import { spawn } from 'node:child_process';
+import { EventEmitter } from 'node:events';
+import {
+  closeSync,
+  existsSync,
+  mkdtempSync,
+  openSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
   MIN_FILES,
+  RSS_FILE_ENV,
   createOutputCollector,
   evaluateRun,
   formatDiagnostic,
+  formatPeakRss,
+  heapCapMB,
   parseMachineLine,
+  readRssMiB,
   syncEnv,
+  runSvelteCheck,
 } from './run-svelte-check.mjs';
 
 describe('parseMachineLine', () => {
@@ -235,5 +253,236 @@ describe('evaluateRun', () => {
     const failures = evaluateRun({ exitCode: 0, completed: { ...completed, errors: 2 } });
     expect(failures).toHaveLength(1);
     expect(failures[0]).toContain('2 errors');
+  });
+});
+
+describe('runSvelteCheck', () => {
+  it.each([undefined, '', '  ', '--single-threaded-gc', '  --single-threaded-gc   --no-opt  '])(
+    'passes node arguments %s',
+    async (nodeArgs) => {
+      const child = new EventEmitter();
+      const calls: unknown[][] = [];
+      const result = runSvelteCheck({
+        cliPath: '/checker.js',
+        args: ['--output', 'machine-verbose'],
+        outputFd: 42,
+        env: { CT_NODE_ARGS: nodeArgs },
+        spawnImpl: ((...args: unknown[]) => {
+          calls.push(args);
+          return child;
+        }) as never,
+        sampleRss: () => null,
+      });
+      expect(calls[0]?.[0]).toBe(process.execPath);
+      const expectedTail = [
+        ...(nodeArgs?.trim() ? nodeArgs.trim().split(/\s+/) : []),
+        '/checker.js',
+        '--output',
+        'machine-verbose',
+      ];
+      const spawnArgs = calls[0]?.[1] as string[];
+      expect(spawnArgs.slice(-expectedTail.length)).toEqual(expectedTail);
+      expect(spawnArgs).toContain('--report-on-fatalerror');
+      expect(spawnArgs[spawnArgs.indexOf('--import') + 1]).toMatch(/^data:text\/javascript,/);
+      const spawnEnv = (calls[0]?.[2] as { env: Record<string, string> }).env;
+      expect(spawnEnv[RSS_FILE_ENV]).toBeTruthy();
+      child.emit('close', 0, null);
+      await expect(result).resolves.toEqual({ exitCode: 0, peakRssMiB: null });
+    },
+  );
+
+  it.each(['SIGSEGV', 'SIGTERM'])('reports %s and fails when killed', async (signal) => {
+    const child = new EventEmitter();
+    const errors: string[] = [];
+    const result = runSvelteCheck({
+      cliPath: '/checker.js',
+      args: [],
+      outputFd: 42,
+      spawnImpl: (() => child) as never,
+      printError: (message: string) => errors.push(message),
+      sampleRss: () => null,
+    });
+    child.emit('close', null, signal);
+    await expect(result).resolves.toMatchObject({ exitCode: 1 });
+    expect(errors).toEqual([`svelte-check died with ${signal}`]);
+  });
+
+  it('keeps the peak of the sampled RSS across the run, including an OOM abort', async () => {
+    const child = Object.assign(new EventEmitter(), { pid: 4242 });
+    const samples = [512, 3900, 3700];
+    const sampledPids: unknown[] = [];
+    const result = runSvelteCheck({
+      cliPath: '/checker.js',
+      args: [],
+      outputFd: 42,
+      spawnImpl: (() => child) as never,
+      printError: () => {},
+      sampleRss: (pid: unknown) => {
+        sampledPids.push(pid);
+        return samples.shift() ?? null;
+      },
+      sampleIntervalMs: 1,
+    });
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    child.emit('close', null, 'SIGABRT');
+    await expect(result).resolves.toEqual({ exitCode: 1, peakRssMiB: 3900 });
+    expect(sampledPids.every((pid) => pid === 4242)).toBe(true);
+  });
+
+  it('prefers the high-water mark the child left behind over the sparse samples', async () => {
+    const child = Object.assign(new EventEmitter(), { pid: 4242 });
+    const probeDir = mkdtempSync(path.join(tmpdir(), 'rss-probe-test-'));
+    let rssFile: string | undefined;
+    const result = runSvelteCheck({
+      cliPath: '/checker.js',
+      args: [],
+      outputFd: 42,
+      spawnImpl: ((_cmd: string, _args: string[], opts: { env: Record<string, string> }) => {
+        rssFile = opts.env[RSS_FILE_ENV];
+        return child;
+      }) as never,
+      printError: () => {},
+      sampleRss: () => 128,
+      sampleIntervalMs: 60_000,
+      probeDir,
+    });
+    expect(rssFile && path.dirname(rssFile)).toBe(probeDir);
+    writeFileSync(rssFile as string, String(3999 * 1024));
+    child.emit('close', 0, null);
+    await expect(result).resolves.toEqual({ exitCode: 0, peakRssMiB: 3999 });
+    expect(existsSync(probeDir)).toBe(false);
+  });
+
+  describe('with a real child process', () => {
+    // The oracle (the child's own maxRSS) travels through a file named by this
+    // env var, not through stdout: anything preloaded into the child (a Datadog
+    // tracer's startup log, intent-hq/intent#5509) shares the child's stdout.
+    const ORACLE_FILE_ENV = 'RSS_TEST_ORACLE_FILE';
+    const touch256MiBAndExit = (exitCode: number) =>
+      [
+        "import { writeFileSync } from 'node:fs';",
+        'Buffer.alloc(256 * 1024 * 1024, 1);',
+        `writeFileSync(process.env.${ORACLE_FILE_ENV}, String(process.resourceUsage().maxRSS));`,
+        `process.exit(${exitCode});`,
+      ].join('\n');
+
+    // `preload` is injected as its own argv entries: CT_NODE_ARGS is split on
+    // whitespace with no quoting, so a tmpdir containing a space would break
+    // the path apart.
+    const runChild = async (code: string, nodeArgs = '', preload?: string) => {
+      const dir = mkdtempSync(path.join(tmpdir(), 'rss-child-test-'));
+      const outputPath = path.join(dir, 'output');
+      const oraclePath = path.join(dir, 'oracle');
+      const outputFd = openSync(outputPath, 'w');
+      const errors: string[] = [];
+      const result = await runSvelteCheck({
+        cliPath: code,
+        args: [],
+        outputFd,
+        env: {
+          ...process.env,
+          CT_NODE_ARGS: `${nodeArgs} --input-type=module --eval`,
+          [ORACLE_FILE_ENV]: oraclePath,
+        },
+        spawnImpl: preload
+          ? (((cmd: string, argv: string[], opts: object) =>
+              spawn(cmd, ['--require', preload, ...argv], opts)) as never)
+          : undefined,
+        printError: (message: string) => errors.push(message),
+      });
+      closeSync(outputFd);
+      const output = readFileSync(outputPath, 'utf8');
+      const childMaxRssMiB = existsSync(oraclePath)
+        ? Math.round(Number(readFileSync(oraclePath, 'utf8')) / 1024)
+        : null;
+      rmSync(dir, { recursive: true, force: true });
+      return { ...result, errors, output, childMaxRssMiB };
+    };
+
+    it.each([0, 1])(
+      'reports a child that touched 256 MiB and exited %i, even within one interval',
+      async (exitCode) => {
+        const { peakRssMiB, childMaxRssMiB, ...rest } = await runChild(
+          touch256MiBAndExit(exitCode),
+        );
+        expect(rest).toMatchObject({ exitCode, errors: [] });
+        expect(childMaxRssMiB).toBeGreaterThanOrEqual(256);
+        expect(peakRssMiB).toBeGreaterThanOrEqual(childMaxRssMiB as number);
+      },
+    );
+
+    // intent-hq/intent#5509: a host with Datadog tracing injected into Node
+    // (NODE_OPTIONS -r dd-trace/init) prints its startup configuration to the
+    // child's stdout before anything the child writes itself.
+    it('measures the peak when a preload writes a startup banner to the child stdout first', async () => {
+      const banner =
+        'DATADOG TRACER CONFIGURATION - {"date":"2026-09-20T00:00:00.000Z","service":"node","enabled":true}';
+      const preloadDir = mkdtempSync(path.join(tmpdir(), 'rss banner preload-'));
+      const preload = path.join(preloadDir, 'banner.cjs');
+      writeFileSync(preload, `process.stdout.write(${JSON.stringify(`${banner}\n`)});`);
+      try {
+        const { peakRssMiB, childMaxRssMiB, output, ...rest } = await runChild(
+          touch256MiBAndExit(0),
+          '',
+          preload,
+        );
+        expect(rest).toEqual({ exitCode: 0, errors: [] });
+        expect(output).toContain(banner);
+        expect(childMaxRssMiB).toBeGreaterThanOrEqual(256);
+        expect(peakRssMiB).toBeGreaterThanOrEqual(childMaxRssMiB as number);
+      } finally {
+        rmSync(preloadDir, { recursive: true, force: true });
+      }
+    });
+
+    it('still reports a peak after a V8 heap-limit OOM abort', async () => {
+      const { exitCode, peakRssMiB, errors } = await runChild(
+        [
+          "import { closeSync, openSync } from 'node:fs';",
+          "closeSync(2); openSync('/dev/null', 'w');",
+          'const a = []; for (;;) a.push(new Array(1e5).fill(1));',
+        ].join('\n'),
+        '--max-old-space-size=32',
+      );
+      expect(exitCode).toBe(1);
+      expect(errors).toEqual(['svelte-check died with SIGABRT']);
+      expect(peakRssMiB).toBeGreaterThanOrEqual(32);
+    }, 30_000);
+  });
+});
+
+describe('readRssMiB', () => {
+  it('reads a positive RSS for the current process', () => {
+    const rss = readRssMiB(process.pid);
+    expect(rss).not.toBeNull();
+    expect(rss).toBeGreaterThan(0);
+  });
+
+  it('returns null for a missing pid or a process that is gone', () => {
+    expect(readRssMiB(undefined)).toBeNull();
+    expect(readRssMiB(2 ** 22 - 1)).toBeNull();
+  });
+});
+
+describe('heapCapMB and formatPeakRss', () => {
+  it('reads the last --max-old-space-size across NODE_OPTIONS and CT_NODE_ARGS', () => {
+    expect(heapCapMB({ NODE_OPTIONS: '--max-old-space-size=4096' })).toBe(4096);
+    expect(
+      heapCapMB({
+        NODE_OPTIONS: '--max-old-space-size=4096',
+        CT_NODE_ARGS: '--max-old-space-size=6144',
+      }),
+    ).toBe(6144);
+    expect(heapCapMB({})).toBeNull();
+  });
+
+  it('formats the peak with the cap it ran under and stays silent without a sample', () => {
+    expect(formatPeakRss(3412, { NODE_OPTIONS: '--max-old-space-size=4096' })).toBe(
+      'svelte-check peak RSS: 3412 MiB (--max-old-space-size=4096)',
+    );
+    expect(formatPeakRss(3412, {})).toBe(
+      'svelte-check peak RSS: 3412 MiB (no --max-old-space-size set)',
+    );
+    expect(formatPeakRss(null, {})).toBeNull();
   });
 });

@@ -1,10 +1,8 @@
 ---
 name: core/redux-action-logging
 description: >-
-  Opt-in Redux action logging for Store, ReactStore, and StreamingStore. Covers
-  the construction-time logReduxActions option, grouped console records,
-  presentation styles, immutable `reduxAction` stream events, unchanged-state
-  output, and lazy path-keyed changes.
+  Use when configuring logReduxActions or inspecting dispatch logs, state
+  diffs, and reduxAction stream events across Store families.
 type: sub-skill
 requires:
   - core

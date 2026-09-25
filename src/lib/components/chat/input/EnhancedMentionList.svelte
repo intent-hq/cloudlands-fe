@@ -1,10 +1,6 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
-  import type {
-    MentionCandidate,
-    MentionGroup,
-    BreadcrumbItem,
-  } from '$lib/services/mentions/types';
+  import { onDestroy, tick } from 'svelte';
+  import type { MentionCandidate, MentionGroup } from '$lib/services/mentions/types';
   import { isMentionGroup } from '$lib/services/mentions/types';
   import { BreadcrumbController } from '$lib/services/mentions/breadcrumb-controller.svelte';
   import { getIconForType } from '$lib/services/mentions/icon-map';
@@ -58,21 +54,34 @@
     faBolt,
   } from '@fortawesome/free-solid-svg-icons';
   import type { IconDefinition } from '@fortawesome/free-solid-svg-icons';
+  import { Button } from '$lib/components/ui/button';
+  import { menuItem } from '$lib/components/ui/menu';
 
   interface Props {
     items: (MentionCandidate | MentionGroup)[];
     command: (props: any) => void;
     onClose?: () => void;
     loading?: boolean;
+    listboxId?: string;
+    onActiveOptionChange?: (id: string | undefined) => void;
   }
 
-  let { items = [], command, onClose, loading = false }: Props = $props();
+  const componentId = $props.id();
+  let {
+    items = [],
+    command,
+    onClose,
+    loading = false,
+    listboxId = `${componentId}-listbox`,
+    onActiveOptionChange,
+  }: Props = $props();
 
   let selectedIndex = $state(0);
-  let breadcrumbs: BreadcrumbItem[] = $state([]);
-  // svelte-ignore state_referenced_locally -- initial seed only; the items-change effect below keeps it in sync.
-  let currentItems: (MentionCandidate | MentionGroup)[] = $state(items);
-  let breadcrumbController: BreadcrumbController;
+  const breadcrumbController = new BreadcrumbController();
+  const breadcrumbs = $derived(breadcrumbController.breadcrumbs);
+  const currentItems = $derived(
+    breadcrumbController.isInGroup() ? breadcrumbController.currentItems : items,
+  );
   let listElement: HTMLDivElement;
 
   // Prevent mouseenter from changing selectedIndex when the popup first appears
@@ -82,7 +91,6 @@
   // Get the currently selected item for preview
   // Note: selectedIndex is a visual-order index (matching grouped display order),
   // so we look up via visualOrderItems which is derived from groupedItems.
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const selectedItem = $derived.by(() => {
     // visualOrderItems may not be initialized yet during first render pass,
     // fall back to currentItems for safety
@@ -156,32 +164,7 @@
     return iconMap[iconName] || faFile;
   }
 
-  onMount(() => {
-    breadcrumbController = new BreadcrumbController();
-
-    // Subscribe to breadcrumb changes
-    const unsubscribeBreadcrumbs = breadcrumbController.subscribeToBreadcrumbs((b) => {
-      breadcrumbs = b;
-    });
-
-    const unsubscribeItems = breadcrumbController.subscribeToCurrentItems((items) => {
-      if (items.length > 0) {
-        currentItems = items;
-      } else {
-        currentItems = $state.snapshot(items);
-      }
-    });
-
-    // Don't add keyboard event listener here - it will be handled by TipTap
-    // document.addEventListener('keydown', handleKeyDown);
-
-    return () => {
-      unsubscribeBreadcrumbs();
-      unsubscribeItems();
-      breadcrumbController.destroy();
-      // document.removeEventListener('keydown', handleKeyDown);
-    };
-  });
+  onDestroy(() => breadcrumbController.destroy());
 
   function handleKeyDown(event: KeyboardEvent): boolean {
     // Let breadcrumb controller handle navigation first
@@ -205,6 +188,11 @@
         return true;
 
       case 'ArrowRight':
+        if (!selectedItem || !isMentionGroup(selectedItem)) return false;
+        event.preventDefault();
+        event.stopPropagation();
+        enterHandler();
+        return true;
       case 'Enter':
         event.preventDefault();
         event.stopPropagation();
@@ -234,12 +222,14 @@
 
   function upHandler() {
     const len = visualOrderItems.length;
+    if (len === 0) return;
     selectedIndex = (selectedIndex + len - 1) % len;
     scrollToSelected();
   }
 
   function downHandler() {
     const len = visualOrderItems.length;
+    if (len === 0) return;
     selectedIndex = (selectedIndex + 1) % len;
     scrollToSelected();
   }
@@ -248,11 +238,12 @@
     selectItem(selectedIndex);
   }
 
-  function scrollToSelected() {
+  async function scrollToSelected() {
+    await tick();
     if (!listElement) return;
     const selectedEl = listElement.querySelector('.mention-item.selected');
     if (selectedEl) {
-      selectedEl.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+      selectedEl.scrollIntoView?.({ block: 'nearest', behavior: 'instant' });
     }
   }
 
@@ -277,16 +268,9 @@
 
   // Reset selected index when items change
   $effect(() => {
-    // Defensive check: ensure items is an array
-    const itemList = Array.isArray(items) ? items : [];
-    if (itemList.length > 0) {
-      currentItems = breadcrumbs.length > 0 ? currentItems : itemList;
-      selectedIndex = 0;
-      // When items change (popup opens/updates), ignore mouse events until
-      // the user actually moves the mouse. This prevents onmouseenter from
-      // changing selectedIndex when the popup appears under the cursor.
-      ignoreMouseUntilMove = true;
-    }
+    currentItems;
+    selectedIndex = 0;
+    ignoreMouseUntilMove = true;
   });
 
   // Expose onKeyDown for parent
@@ -325,6 +309,11 @@
   // Flat array in visual (grouped) order — used for arrow key navigation
   // so that selectedIndex follows the display order, not the original array order.
   const visualOrderItems = $derived(Array.from(groupedItems.values()).flat());
+  function optionId(item: MentionCandidate | MentionGroup) {
+    return `${componentId}-option-${encodeURIComponent(`${isMentionGroup(item) ? 'group' : item.type}:${item.id}`)}`;
+  }
+  const activeOptionId = $derived(selectedItem ? optionId(selectedItem) : undefined);
+  $effect(() => onActiveOptionChange?.(activeOptionId));
 </script>
 
 <div class="enhanced-mention-list" bind:this={listElement}>
@@ -334,23 +323,37 @@
     <div class="mention-list-section">
       {#if breadcrumbs.length > 0}
         <div class="breadcrumbs">
-          <button class="breadcrumb-item" onclick={() => breadcrumbController.navigateToRoot()}>
+          <Button
+            variant="plain"
+            class="breadcrumb-item"
+            onmousedown={(event) => event.preventDefault()}
+            onclick={() => breadcrumbController.navigateToRoot()}
+          >
             {m.chat_mentionList_all_label()}
-          </button>
+          </Button>
           {#each breadcrumbs as crumb, i (crumb.id || `crumb-${i}`)}
             <span class="breadcrumb-separator">›</span>
-            <button class="breadcrumb-item" onclick={() => navigateToBreadcrumb(i)}>
+            <Button
+              variant="plain"
+              class="breadcrumb-item"
+              onmousedown={(event) => event.preventDefault()}
+              onclick={() => navigateToBreadcrumb(i)}
+            >
               {#if crumb.icon}
                 <span class="breadcrumb-icon">{crumb.icon}</span>
               {/if}
               {crumb.label}
-            </button>
+            </Button>
           {/each}
         </div>
       {/if}
 
       {#if loading && currentItems.length === 0}
-        <div class="mention-loading">
+        <div
+          class="mention-loading"
+          role="status"
+          aria-label={m.ui_combobox_loadingOptions_message()}
+        >
           {#each [0, 1, 2, 3] as i (i)}
             <div class="mention-skeleton">
               <div class="skeleton-icon"></div>
@@ -359,17 +362,34 @@
           {/each}
         </div>
       {:else if currentItems.length > 0}
-        <!-- svelte-ignore a11y_no_static_element_interactions -->
-        <div class="mention-items" onmousemove={() => (ignoreMouseUntilMove = false)}>
+        <div
+          class="mention-items"
+          id={listboxId}
+          role="listbox"
+          tabindex="-1"
+          aria-label={m.chat_mentionList_ariaLabel()}
+          aria-activedescendant={activeOptionId}
+          aria-busy={loading}
+          onkeydown={handleKeyDown}
+          onmousemove={() => (ignoreMouseUntilMove = false)}
+        >
           {#each Array.from(groupedItems.entries()) as [groupName, groupItems] (groupName)}
-            {#each groupItems as item (item.id)}
+            {#each groupItems as item (optionId(item))}
               {@const visualIndex = visualOrderItems.indexOf(item)}
               {@const icon = getIcon(item)}
               {@const isSelected = visualIndex === selectedIndex}
               {@const isAgent = !isMentionGroup(item) && item.type === 'agent'}
-              <button
-                class="mention-item"
-                class:selected={isSelected}
+              <Button
+                variant="plain"
+                wrapContent={false}
+                class="{menuItem()} mention-item {isSelected ? 'selected' : ''}"
+                id={optionId(item)}
+                role="option"
+                aria-selected={isSelected}
+                aria-label={item.label}
+                tabindex={-1}
+                onpointerdown={(event) => event.preventDefault()}
+                onmousedown={(event) => event.preventDefault()}
                 onclick={() => selectItem(visualIndex)}
                 onmouseenter={() => {
                   if (!ignoreMouseUntilMove) selectedIndex = visualIndex;
@@ -388,21 +408,24 @@
                 <div class="mention-content">
                   <div class="mention-label-line">
                     <span class="mention-label">{item.label}</span>
-                    {#if !isMentionGroup(item) && item.subtitle}
-                      <span class="mention-subtitle">{item.subtitle}</span>
+                    {#if !isMentionGroup(item) && (item.type === 'agent' || item.type === 'specialist') && item.group}
+                      <span class="mention-kind">{item.group}</span>
                     {/if}
                   </div>
+                  {#if !isMentionGroup(item) && item.subtitle}
+                    <span class="mention-subtitle">{item.subtitle}</span>
+                  {/if}
                 </div>
 
                 {#if isMentionGroup(item)}
                   <span class="group-arrow"><Fa icon={faChevronRight} size="xs" /></span>
                 {/if}
-              </button>
+              </Button>
             {/each}
           {/each}
         </div>
       {:else}
-        <div class="mention-empty">{m.chat_mentionList_noResults_label()}</div>
+        <div class="mention-empty" role="status">{m.chat_mentionList_noResults_label()}</div>
       {/if}
     </div>
   </div>
@@ -413,28 +436,20 @@
     display: flex;
     flex-direction: column;
     width: 100%;
+    min-width: 0;
+    max-width: calc(100vw - var(--space-4));
+    max-height: min(300px, var(--mention-available-height, calc(100dvh - var(--space-4))));
     background: hsl(var(--popover));
     border: 1px solid hsl(var(--border));
-    border-radius: 0;
+    border-radius: var(--radius-medium);
+    box-shadow: var(--elevation-overlay);
     overflow: hidden;
     font-family: var(--font-family);
-    animation: mention-appear 0.08s ease-out;
-  }
-
-  @keyframes mention-appear {
-    from {
-      opacity: 0;
-      transform: translateY(-4px);
-    }
-    to {
-      opacity: 1;
-      transform: translateY(0);
-    }
   }
 
   .mention-container {
     display: flex;
-    max-height: 300px;
+    min-height: 0;
     overflow: hidden;
   }
 
@@ -442,6 +457,8 @@
     display: flex;
     flex-direction: column;
     width: 100%;
+    min-width: 0;
+    min-height: 0;
     overflow: hidden;
     flex: 1;
   }
@@ -450,30 +467,32 @@
   .breadcrumbs {
     display: flex;
     align-items: center;
-    padding: 3px 8px;
+    flex-wrap: wrap;
+    flex-shrink: 0;
+    padding: var(--space-1);
     background: hsl(var(--muted) / 0.3);
     border-bottom: 1px solid hsl(var(--border));
     font-size: 11px;
     gap: 3px;
   }
 
-  .breadcrumb-item {
+  .breadcrumbs :global(.breadcrumb-item) {
     background: none;
     border: none;
     color: hsl(var(--muted-foreground));
     cursor: pointer;
     padding: 2px 6px;
-    border-radius: 0;
-    transition:
-      all 0.2s cubic-bezier(0.4, 0, 0.2, 1),
-      transform 0.1s ease;
+    height: auto;
+    max-width: 100%;
+    border-radius: var(--radius-small);
+    transition: none;
     display: flex;
     align-items: center;
     gap: 3px;
     font-size: 11px;
   }
 
-  .breadcrumb-item:hover {
+  .breadcrumbs :global(.breadcrumb-item:hover) {
     color: hsl(var(--foreground));
     background: hsl(var(--accent) / 0.8);
   }
@@ -490,8 +509,11 @@
   /* Items list */
   .mention-items {
     flex: 1;
+    min-height: 0;
+    overflow-x: hidden;
     overflow-y: auto;
-    padding: 4px;
+    overscroll-behavior: contain;
+    padding: var(--space-1);
     scrollbar-width: thin;
     scrollbar-color: hsl(var(--muted)) transparent;
   }
@@ -507,84 +529,81 @@
   .mention-items::-webkit-scrollbar-thumb {
     background: hsl(var(--muted));
     border-radius: 0;
-    transition: background 0.2s ease;
+    transition: background var(--spring-moderate) var(--spring-moderate-ease);
   }
 
   .mention-items::-webkit-scrollbar-thumb:hover {
     background: hsl(var(--muted-foreground) / 0.5);
   }
 
-  .mention-item {
+  .mention-items :global(.mention-item) {
     display: flex;
     align-items: center;
-    gap: 6px;
-    padding: 3px 8px;
+    justify-content: flex-start;
+    gap: var(--space-2);
+    padding: 6px var(--space-2);
+    height: auto;
+    min-height: var(--control-height-medium);
+    min-width: 0;
     background: transparent;
     border: none;
-    border-radius: 0;
+    border-radius: var(--radius-small);
     cursor: pointer;
     text-align: left;
     width: 100%;
-    transition:
-      background-color 0.15s ease,
-      transform 0.1s ease,
-      box-shadow 0.15s ease;
+    transition: none;
     color: hsl(var(--foreground));
     position: relative;
   }
 
-  .mention-item:hover {
-    background: hsl(var(--muted) / 0.6);
+  .mention-items :global(.mention-item:hover) {
+    background: hsl(var(--hover));
   }
 
-  .mention-item.selected {
-    background: hsl(var(--primary) / 0.12);
+  .mention-items :global(.mention-item.selected) {
+    background: hsl(var(--selected));
     box-shadow: none;
   }
 
-  .mention-item.selected:hover {
-    background: hsl(var(--primary) / 0.15);
+  .mention-items :global(.mention-item.selected:hover) {
+    background: hsl(var(--selected));
   }
 
-  .mention-item:focus-visible {
-    outline: 2px solid hsl(var(--primary));
-    outline-offset: 2px;
+  .mention-items :global(.mention-item:focus-visible) {
+    outline: 1px solid hsl(var(--primary-ink));
+    outline-offset: -1px;
   }
 
   .mention-icon {
     flex-shrink: 0;
-    width: 8px;
-    height: 8px;
+    width: 18px;
+    height: 18px;
+    font-size: 14px;
     display: flex;
     align-items: center;
     justify-content: center;
     background: transparent;
-    border-radius: 0;
-    color: hsl(var(--foreground));
-    opacity: 0.2;
-    transition:
-      all 0.2s cubic-bezier(0.4, 0, 0.2, 1),
-      transform 0.15s ease;
-  }
-
-  .mention-item:hover .mention-icon {
-    background: transparent;
+    color: hsl(var(--muted-foreground));
   }
 
   .mention-icon.selected {
     background: transparent;
     color: hsl(var(--foreground));
-    opacity: 0.3;
   }
 
   .mention-agent-avatar {
     flex-shrink: 0;
+    width: 18px;
+    height: 18px;
     display: flex;
     align-items: center;
     justify-content: center;
   }
 
   .mention-content {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
     flex: 1;
     min-width: 0;
   }
@@ -601,13 +620,22 @@
     font-size: 12px;
     font-weight: 500;
     color: hsl(var(--foreground));
-    flex-shrink: 0;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
     white-space: nowrap;
+  }
+
+  .mention-kind {
+    flex-shrink: 0;
+    font-size: 11px;
+    font-weight: 400;
+    color: hsl(var(--muted-foreground));
   }
 
   .mention-subtitle {
     font-size: 11px;
-    color: hsl(var(--muted-foreground) / 0.6);
+    color: hsl(var(--muted-foreground));
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -617,47 +645,41 @@
 
   .group-arrow {
     flex-shrink: 0;
-    color: hsl(var(--muted-foreground) / 0.5);
-    transition:
-      transform 0.2s cubic-bezier(0.4, 0, 0.2, 1),
-      color 0.15s ease;
-  }
-
-  .mention-item:hover .group-arrow {
     color: hsl(var(--muted-foreground));
   }
 
-  .mention-item.selected .group-arrow {
-    color: hsl(var(--primary));
+  .mention-items :global(.mention-item.selected .group-arrow) {
+    color: hsl(var(--primary-ink));
   }
 
   /* Empty state */
   .mention-empty {
-    padding: 3px 8px;
+    padding: var(--space-3);
     font-size: 12px;
-    color: var(--sd-color-text-secondary, rgba(255, 255, 255, 0.4));
+    color: hsl(var(--muted-foreground));
     text-align: left;
   }
 
   /* Loading skeleton */
   .mention-loading {
-    padding: 4px;
+    padding: var(--space-1);
+    overflow: hidden;
   }
 
   .mention-skeleton {
     display: flex;
     align-items: center;
-    gap: 6px;
-    padding: 3px 8px;
-    height: 28px;
+    gap: var(--space-2);
+    padding: 6px var(--space-2);
+    height: 44px;
   }
 
   .skeleton-icon {
-    width: 8px;
-    height: 8px;
+    width: 18px;
+    height: 18px;
     border-radius: 2px;
     background: hsl(var(--muted-foreground) / 0.1);
-    animation: skeleton-pulse 1s ease-in-out infinite;
+    animation: skeleton-pulse calc(var(--spring-slow) * 4) var(--spring-slow-ease) infinite;
     flex-shrink: 0;
   }
 
@@ -665,22 +687,22 @@
     height: 10px;
     border-radius: 3px;
     background: hsl(var(--muted-foreground) / 0.1);
-    animation: skeleton-pulse 1s ease-in-out infinite;
+    animation: skeleton-pulse calc(var(--spring-slow) * 4) var(--spring-slow-ease) infinite;
   }
 
   .mention-skeleton:nth-child(2) .skeleton-icon,
   .mention-skeleton:nth-child(2) .skeleton-text {
-    animation-delay: 0.1s;
+    animation-delay: calc(var(--spring-fast-exit) * 2);
   }
 
   .mention-skeleton:nth-child(3) .skeleton-icon,
   .mention-skeleton:nth-child(3) .skeleton-text {
-    animation-delay: 0.2s;
+    animation-delay: calc(var(--spring-fast-exit) * 4);
   }
 
   .mention-skeleton:nth-child(4) .skeleton-icon,
   .mention-skeleton:nth-child(4) .skeleton-text {
-    animation-delay: 0.3s;
+    animation-delay: calc(var(--spring-fast-exit) * 6);
   }
 
   @keyframes skeleton-pulse {
@@ -690,6 +712,17 @@
     }
     50% {
       opacity: 1;
+    }
+  }
+
+  @container style(--motion-reduced: 1) {
+    .skeleton-icon,
+    .skeleton-text {
+      animation: none;
+    }
+
+    .mention-items::-webkit-scrollbar-thumb {
+      transition: none;
     }
   }
 </style>

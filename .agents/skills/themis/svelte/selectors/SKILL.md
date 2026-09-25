@@ -1,14 +1,9 @@
 ---
 name: svelte/selectors
 description: >-
-  store.createSelector((state, ...args) => value) is the public app-local
-  selector creation tied to a configured Store. Generic/shared selector helpers
-  should accept a configured Store rather than importing standalone creation utilities.
-  Use collection utilities such as getItem/getItems inside Store-bound selectors
-  for O(1) collection lookups; proxy tracking is internal to Store selectors.
-  Selectors are composed via .select(state) — never by calling selectFoo()
-  inside another selector. .select (one-shot) and .effect() (saga) are the
-  escape hatches from the default readable-store call mode.
+  Use when creating or composing Svelte Store-bound selectors with
+  store.createSelector, including collection lookups, cached readables, proxy
+  tracking, and one-shot or saga reads.
 type: sub-skill
 requires:
   - svelte

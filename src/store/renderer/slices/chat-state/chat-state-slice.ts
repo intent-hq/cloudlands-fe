@@ -1,4 +1,4 @@
-import { createAction } from '@augmentcode/themis/utils/store/create-action';
+import { createAction, createAsyncAction } from '@augmentcode/themis/utils/store/create-action';
 import { createReducer } from '@augmentcode/themis/utils/store/create-reducer';
 import type {
   ChatAgentState,
@@ -10,6 +10,7 @@ import type {
   ModelUnavailableInfo,
   QuotaExceededInfo,
   QueuedRetryRecord,
+  QueuedMessageSendOutcome,
   SendMessagePayload,
   InitializeChatOptions,
   PendingProposalRecovery,
@@ -777,6 +778,15 @@ export const initializeChatRequested = createAction(
   }),
 );
 
+/**
+ * Declare the exact child transcripts needed by one mounted subscription-list
+ * owner. The chat subscribe saga reference-counts owners, opens only the listed
+ * agent streams, and releases them when the owner updates or unmounts.
+ */
+export const retainedChatTranscriptsSet = createAction<
+  [ownerId: string, wsId: string, agentIds: string[]]
+>('chatState/retainedChatTranscriptsSet');
+
 /** Request transcript reconciliation from a daemon event or reconnect path. */
 export const refreshChatTranscriptRequested = createAction<[wsId: string, agentId: string]>(
   'chatState/refreshChatTranscriptRequested',
@@ -945,6 +955,12 @@ export const sendMessage = createAction(
   'chatState/sendMessage',
   (agentId: string, payload: SendMessagePayload & { wsId: string }) => ({ agentId, payload }),
 );
+
+/** Acknowledged atomic send-now: never copies or removes the queued payload locally. */
+export const sendQueuedMessageNowRequested = createAsyncAction<
+  [agentId: string, wsId: string, messageId: string],
+  QueuedMessageSendOutcome
+>('chatState/sendQueuedMessageNow', 'chatState/sendQueuedMessageNowRequested');
 
 // ============================================================================
 // Reducer

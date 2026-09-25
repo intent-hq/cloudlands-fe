@@ -11,7 +11,7 @@
  * the composer is gated (`gateActive`) so a mount-time empty save cannot
  * erase the persisted draft; a fallback releases the gate after 5s if the
  * daemon doesn't answer. The gate's loading indicator is deferred behind
- * `gateVisible` (500ms) so a fast restore never blinks a spinner.
+ * `gateVisible` delay so a fast restore never blinks a spinner.
  *
  * The restore re-runs whenever the `(workspaceId, agentId)` pair changes:
  * the composer resets, dirty-tracking resets, and a late-resolving restore
@@ -46,6 +46,8 @@ export interface ChatDraftManagerOptions {
   setInputValue: (text: string) => void;
   contextItems: () => ContextItem[];
   setContextItems: (items: ContextItem[]) => void;
+  /** Shared items already follow the current pair; a rebind must not clear them. */
+  contextItemsAreScoped?: boolean;
   /** Push restored text into the rich input editor (e.g. setContent). */
   applyEditorContent: (text: string) => void;
   onSaveError?: (error: unknown) => void;
@@ -165,7 +167,7 @@ export function createChatDraftManager(options: ChatDraftManagerOptions): ChatDr
         // reset the composer — its content belongs to the old pair.
         flushPendingSave();
         options.setInputValue('');
-        options.setContextItems([]);
+        if (!options.contextItemsAreScoped) options.setContextItems([]);
         options.applyEditorContent('');
       }
 
@@ -175,10 +177,13 @@ export function createChatDraftManager(options: ChatDraftManagerOptions): ChatDr
         // previously visited pair never shows the loading indicator,
         // regardless of the background revalidation's latency.
         gateActive = false;
+        const hasLiveAttachments = options.contextItems().length > 0;
         const hydratedText = cached.text;
         const hydratedAttachmentsJson = JSON.stringify(cached.attachments);
         options.setInputValue(cached.text);
-        options.setContextItems(deserializeDraftAttachments(cached.attachments));
+        if (!hasLiveAttachments) {
+          options.setContextItems(deserializeDraftAttachments(cached.attachments));
+        }
         options.applyEditorContent(cached.text);
         lastPersisted = { text: cached.text, attachmentsJson: hydratedAttachmentsJson };
 
@@ -208,7 +213,7 @@ export function createChatDraftManager(options: ChatDraftManagerOptions): ChatDr
               options.inputValue() === hydratedText &&
               JSON.stringify(serializeDraftAttachments(options.contextItems())) ===
                 hydratedAttachmentsJson;
-            if (!untouched) return;
+            if (hasLiveAttachments || !untouched) return;
             if (freshText !== hydratedText) {
               options.setInputValue(freshText);
               options.applyEditorContent(freshText);

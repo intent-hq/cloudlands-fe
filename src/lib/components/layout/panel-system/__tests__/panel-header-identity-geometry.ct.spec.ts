@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/experimental-ct-svelte';
+import { expect, test } from '../../../../../test/ct-test';
 import PanelHeaderIdentityHost from './mocks/PanelHeaderIdentityHost.svelte';
 
 const panelTypes = ['agent', 'note', 'file', 'terminal', 'browser', 'settings'] as const;
@@ -110,7 +110,9 @@ test('uses aligned Swiss action rows in the empty panel', async ({ mount }) => {
   const geometry = await actions.evaluateAll((elements) =>
     elements.map((action) => {
       const row = action as HTMLElement;
-      const leftGroup = row.firstElementChild as HTMLElement;
+      // Button paints its surface on a leading `button-surface` slot; the
+      // content group is the first non-slot child.
+      const leftGroup = row.querySelector<HTMLElement>(':scope > :not([data-slot])')!;
       const glyph = leftGroup.querySelector<SVGElement>('svg')!;
       const label = leftGroup.lastElementChild as HTMLElement;
       const hint = row.querySelector<HTMLElement>('kbd')!;

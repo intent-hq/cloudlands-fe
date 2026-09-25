@@ -1,7 +1,6 @@
 <script lang="ts">
   import { tick } from 'svelte';
   import { Input } from '$lib/components/ui/input';
-  import { Button } from '$lib/components/ui/button';
   import { pushEscapeLayer } from '$lib/utils/escapeLayers';
   import { m } from '$shared/paraglide/messages.js';
   import SidebarActionIcon from './SidebarActionIcon.svelte';
@@ -74,7 +73,7 @@
         type="search"
         aria-label={placeholder}
         {placeholder}
-        class="h-7 min-w-0 bg-transparent! py-0 pl-7 pr-7 text-xs shadow-none! placeholder:text-muted-foreground/60!"
+        class="h-7 min-w-0 bg-transparent! py-0 pl-7 pr-7 text-xs shadow-none! placeholder:text-muted-foreground!"
         noFocusStyle
         onblur={() => {
           if (!query) void close(false);
@@ -82,22 +81,26 @@
         onkeydown={handleKeydown}
         data-sidebar-search-input={scope}
       />
-      <Button
-        variant="ghost"
-        size="icon-xs"
-        class="absolute right-0 top-0 flex items-center justify-center rounded-md text-muted-foreground outline-none transition-colors hover:text-foreground focus-visible:bg-muted motion-reduce:transition-none"
-        onclick={() => {
-          query = '';
-          inputRef?.focus();
-        }}
-        aria-label={m.workspace_sidebarSearch_clear_ariaLabel()}
-        data-sidebar-search-clear={scope}
-      >
-        <SidebarActionIcon icon="close" />
-      </Button>
+      <span class="absolute right-0 top-0">
+        <SidebarHeaderAction
+          icon="close"
+          data-sidebar-search-clear={scope}
+          label={m.workspace_sidebarSearch_clear_ariaLabel()}
+          onclick={() => {
+            query = '';
+            inputRef?.focus();
+          }}
+        />
+      </span>
     </div>
   {:else}
-    <SidebarHeaderAction bind:ref={triggerRef} icon="search" label={placeholder} onclick={expand} />
+    <SidebarHeaderAction
+      bind:ref={triggerRef}
+      icon="search"
+      label={placeholder}
+      class="focus-visible:outline-solid {scope === 'files' ? 'text-muted-foreground!' : ''}"
+      onclick={expand}
+    />
   {/if}
 </div>
 
@@ -114,6 +117,10 @@
     transform: translateY(-50%);
     color: hsl(var(--muted-foreground));
     pointer-events: none;
+  }
+
+  [data-sidebar-search='files'] [data-sidebar-search-expanded] > :global(svg) {
+    left: calc((var(--control-height-compact) - 0.875rem) / 2);
   }
 
   :global([data-sidebar-search-input]::-webkit-search-cancel-button) {

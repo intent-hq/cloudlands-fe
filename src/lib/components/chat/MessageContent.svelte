@@ -1,5 +1,6 @@
 <script lang="ts">
   import type { ContentBlock, ToolUseBlock, MessageRole } from '$shared/types';
+  import type { TextBlockMedia } from '$shared/types/content-block';
   import { dedupeAgentVideoContentBlocks, normalizeAgentVideoContentBlocks } from '$shared/types';
   import {
     classifyToolResults,
@@ -20,6 +21,7 @@
   import ToolCall from './ToolCall.svelte';
   import ThinkingBlock from './ThinkingBlock.svelte';
   import ReasoningHistoryBlock from './ReasoningHistoryBlock.svelte';
+  import ExecutionPlanCard from './ExecutionPlanCard.svelte';
   import CodeBlock from '$lib/components/editor/CodeBlock.svelte';
   import MarkdownViewer from '$lib/components/markdown/MarkdownViewer.svelte';
   import AugmentCodeSnippet from '$lib/components/editor/AugmentCodeSnippet.svelte';
@@ -31,7 +33,8 @@
   import ChatImageBlock from './ChatImageBlock.svelte';
   import ChatVideoBlock from './ChatVideoBlock.svelte';
   import ChatReferenceBlock from './ChatReferenceBlock.svelte';
-  import DiagramRenderer from '$lib/components/diagrams/DiagramRenderer.svelte';
+  import StreamingDiagramRenderer from '$lib/components/diagrams/StreamingDiagramRenderer.svelte';
+  import DiagramPresentation from '$lib/components/diagrams/DiagramPresentation.svelte';
   import MermaidRenderer from '$lib/components/markdown/MermaidRenderer.svelte';
   import ChatCliBlock from './ChatCliBlock.svelte';
   import ChatAgentActionBlock from './ChatAgentActionBlock.svelte';
@@ -70,7 +73,7 @@
   import NavLink from './NavLink.svelte';
 
   import { createLogger } from '$lib/utils/client-logger';
-  import { fly } from 'svelte/transition';
+  import { fly } from '$lib/motion';
   import { m } from '$shared/paraglide/messages.js';
 
   import {
@@ -240,7 +243,7 @@
         const contentBlock = block as ContentBlock;
         if (contentBlock.text) {
           const { cleanedContent } = parseSuggestedPrompts(contentBlock.text);
-          const parsed = parseAgentMessage(cleanedContent, workspaceId);
+          const parsed = parseAgentMessage(cleanedContent, workspaceId, { isStreaming });
           map.set(
             String(index),
             filterWorkspaceCardsCoveredByIds(groupParsedBlocks(parsed), bulkProposalWorkspaceIds),
@@ -251,7 +254,7 @@
         group.children.forEach((child, childIndex) => {
           if (child.type === 'text' && child.text) {
             const { cleanedContent } = parseSuggestedPrompts(child.text);
-            const parsed = parseAgentMessage(cleanedContent, workspaceId);
+            const parsed = parseAgentMessage(cleanedContent, workspaceId, { isStreaming });
             map.set(
               `${index}-${childIndex}`,
               filterWorkspaceCardsCoveredByIds(groupParsedBlocks(parsed), bulkProposalWorkspaceIds),
@@ -398,17 +401,25 @@
   });
 </script>
 
-{#snippet renderParsedContentBlock(parsedBlock: ParsedContent, insetProse = false)}
+{#snippet renderParsedContentBlock(
+  parsedBlock: ParsedContent,
+  insetProse = false,
+  media: TextBlockMedia | undefined = undefined,
+)}
   {#if insetProse}
     <div class={OPERATIONAL_ASSISTANT_PROSE_INSET_CLASS}>
-      {@render renderParsedContentBlockBody(parsedBlock, insetProse)}
+      {@render renderParsedContentBlockBody(parsedBlock, insetProse, media)}
     </div>
   {:else}
-    {@render renderParsedContentBlockBody(parsedBlock, insetProse)}
+    {@render renderParsedContentBlockBody(parsedBlock, insetProse, media)}
   {/if}
 {/snippet}
 
-{#snippet renderParsedContentBlockBody(parsedBlock: ParsedContent, insetProse: boolean)}
+{#snippet renderParsedContentBlockBody(
+  parsedBlock: ParsedContent,
+  insetProse: boolean,
+  media: TextBlockMedia | undefined,
+)}
   {#if parsedBlock.type === 'augment_code_snippet'}
     <AugmentCodeSnippet
       code={parsedBlock.content}
@@ -428,14 +439,17 @@
         {parsedBlock.content}
       </div>
     </div>
-  {:else if parsedBlock.type === 'diagram' && parsedBlock.metadata?.diagramData}
-    <div class="diagram-block my-2">
-      <DiagramRenderer
-        diagram={parsedBlock.metadata.diagramData as DiagramPrimitive}
-        editable={false}
+  {:else if parsedBlock.type === 'diagram'}
+    <DiagramPresentation kind="custom">
+      <StreamingDiagramRenderer
+        diagram={(parsedBlock.metadata?.diagramData as DiagramPrimitive | null) ?? null}
+        isStreaming={parsedBlock.metadata?.isStreaming ?? false}
+        source={parsedBlock.metadata?.rawSource ?? parsedBlock.content}
+        sourceError={parsedBlock.metadata?.diagramError}
+        viewResetKey={String(parsedBlock.metadata?.fenceStart ?? '')}
         onBindingClick={handleDiagramBindingClick}
       />
-    </div>
+    </DiagramPresentation>
   {:else if parsedBlock.type === 'patch' && parsedBlock.metadata?.patchData}
     {@const patchData = parsedBlock.metadata.patchData}
     <PatchBlockContent
@@ -467,9 +481,13 @@
   {:else if parsedBlock.type === 'digest'}
     <DigestCard digest={parsedBlock.content || ''} />
   {:else if parsedBlock.type === 'mermaid'}
-    <div class="mermaid-block my-2">
-      <MermaidRenderer code={parsedBlock.content || ''} />
-    </div>
+    <DiagramPresentation kind="mermaid" rendererOwnsActions>
+      <MermaidRenderer
+        code={parsedBlock.metadata?.rawSource ?? parsedBlock.content ?? ''}
+        isStreaming={parsedBlock.metadata?.isStreaming ?? false}
+        showExportButton
+      />
+    </DiagramPresentation>
   {:else if parsedBlock.type === 'code'}
     <CodeBlock
       code={parsedBlock.content || ''}
@@ -483,6 +501,7 @@
         {workspaceId}
         taskBlockRenderMode="content"
         chatImageThumbnails
+        {media}
         onFileClick={(path, options) => handleOpenFile({ path, ...options })}
       />
     </div>
@@ -504,12 +523,12 @@
       <InlineProposal {agentId} {workspaceId} {messageId} {proposal} />
     {/if}
   {:else if isNavLinkBlock(block)}
-    <div class="w-full" in:fly={{ y: 10, duration: 200 }}>
+    <div class="w-full" in:fly={{ axis: 'y', distance: 10, tier: 'moderate' }}>
       <NavLink target={block.target} label={block.label} {workspaceId} />
     </div>
   {:else if block.type === 'text' && block.text}
     {@const parsedContent = parsedContentMap.get(parsedKey) || []}
-    <div class="w-full" in:fly={{ y: 10, duration: 200 }}>
+    <div class="w-full" in:fly={{ axis: 'y', distance: 10, tier: 'moderate' }}>
       {#if isStreaming}
         <!-- During streaming, use simple text display to avoid expensive markdown processing -->
         <div
@@ -523,7 +542,7 @@
       {:else if parsedContent.length > 0}
         <!-- Render parsed content blocks -->
         {#each parsedContent as renderBlock, parsedBlockIndex (`${parsedKey}-parsed-${parsedBlockIndex}`)}
-          {@render renderParsedContentBlock(renderBlock as ParsedContent, !nested)}
+          {@render renderParsedContentBlock(renderBlock as ParsedContent, !nested, block.media)}
         {/each}
       {:else}
         <!-- Only render fallback if text has content after stripping suggested prompts -->
@@ -539,6 +558,7 @@
               {workspaceId}
               taskBlockRenderMode="content"
               chatImageThumbnails
+              media={block.media}
               onFileClick={(path, options) => handleOpenFile({ path, ...options })}
             />
           </div>
@@ -546,10 +566,12 @@
       {/if}
     </div>
   {:else if block.type === 'image' && (block.data || block.dataTruncated) && block.mimeType}
-    <div class="w-full" in:fly={{ y: 10, duration: 200 }}>
+    <div class="w-full" in:fly={{ axis: 'y', distance: 10, tier: 'moderate' }}>
       <ChatImageBlock
         data={block.data}
         mimeType={block.mimeType}
+        width={block.width}
+        height={block.height}
         dataTruncated={block.dataTruncated === true}
         dataIsThumbnail={block.dataIsThumbnail === true}
         hydrationLoading={imageHydrationLoading(block.id)}
@@ -567,7 +589,7 @@
     {@const toolResult = findToolResult(toolResultsMap, toolBlock)}
     {@const toolState = toolStates.get(toolBlock.id) || 'completed'}
     {@const resultContent = getToolResultPayload(toolResult)}
-    <div class="w-full" in:fly={{ y: 10, duration: 200 }}>
+    <div class="w-full" in:fly={{ axis: 'y', distance: 10, tier: 'moderate' }}>
       <ToolCall
         toolUse={toolBlock}
         {toolState}
@@ -581,7 +603,10 @@
     </div>
   {:else if block.type === 'tool_result' && isStandaloneToolResult(toolResultClassification, block)}
     {@const resultPresentation = getStandaloneToolResultPresentation(block)}
-    <div class="border border-border rounded-md" in:fly={{ y: 10, duration: 200 }}>
+    <div
+      class="border border-border rounded-md"
+      in:fly={{ axis: 'y', distance: 10, tier: 'moderate' }}
+    >
       <div class="px-3 py-2 bg-muted/50 border-b border-border">
         <span class="type-caption text-subtle">{m.chat_messageContent_toolResult_label()}</span>
       </div>
@@ -631,6 +656,8 @@
         {/if}
       </div>
     </div>
+  {:else if block.type === 'plan' && block.entries}
+    <ExecutionPlanCard entries={block.entries} />
   {:else if block.type === 'thinking'}
     {#if reasoningHistory}
       <ReasoningHistoryBlock

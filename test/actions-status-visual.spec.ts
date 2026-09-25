@@ -46,22 +46,15 @@ test('captures Actions & status at genuine 200% device scale with reduced motion
   });
 
   try {
-    await page.goto(`${baseUrl}sandbox`, { waitUntil: 'networkidle' });
-    const reduceMotion = page.getByRole('switch', { name: 'Reduce motion' });
-    if (!(await reduceMotion.isChecked())) await reduceMotion.click();
+    // Wave 11 batch 5a (388bffff) retired the gallery group filter; use the live Button page.
+    await page.goto(`${baseUrl}sandbox/button?motion=reduced`, { waitUntil: 'networkidle' });
+    await page.getByRole('button', { name: 'Customize preview' }).click();
+    const reduceMotion = page
+      .getByRole('group', { name: 'Motion' })
+      .getByRole('radio', { name: 'Reduced', exact: true });
     await expect(reduceMotion).toBeChecked();
-    await page.getByTestId('catalog-group-filter').click();
-    await page.getByRole('option', { name: 'Actions & status' }).click();
-
-    const gallery = page.getByTestId('catalog-gallery');
-    const actionEntries = gallery.locator('[data-catalog-gallery-entry]');
-    await expect(actionEntries).toHaveCount(5);
-    for (const slug of ['badge', 'button', 'button-group', 'toggle', 'toggle-group']) {
-      await expect(gallery.locator(`[data-catalog-gallery-entry="${slug}"]`)).toBeVisible();
-    }
-
-    const runAction = page.getByRole('button', { name: 'Run action' });
-    const heading = page.getByRole('heading', { name: 'Actions & status', exact: true });
+    const runAction = page.getByRole('button', { name: '1. Primary', exact: true });
+    const heading = page.getByRole('main').getByRole('heading', { level: 1 });
     const [headingBox, motion] = await Promise.all([
       heading.boundingBox(),
       runAction.evaluate((element) => {
@@ -102,7 +95,7 @@ test('captures Actions & status at genuine 200% device scale with reduced motion
     expect(pngDimensions(screenshot).height).toBeGreaterThan(physical.height);
     writeFileSync(path.join(artifactDir, 'actions-status-zoom-200.png'), screenshot);
   } finally {
-    await cdp.send('Emulation.clearDeviceMetricsOverride');
+    if (!page.isClosed()) await cdp.send('Emulation.clearDeviceMetricsOverride');
   }
 });
 

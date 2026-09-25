@@ -5,9 +5,10 @@
    *
    * Reads/writes the daemon-owned `agentFeatures.*` settings via
    * settings.list / settings.update (PROTOCOL §5.12), following the
-   * WorkspaceApiSettings pattern. Thirteen booleans, each coerced to its own
-   * daemon default when absent (see agent-feature-definitions.ts): all
-   * default on except `peerAgents`, the one opt-in toggle.
+   * WorkspaceApiSettings pattern. Thirteen booleans with daemon defaults
+   * (see agent-feature-definitions.ts): all default on, while explicit false
+   * values remain off. Peer controls require a registered peerAgents entry;
+   * an older daemon that omits it keeps those controls unavailable.
    *
    * Toggles are captured at agent-session creation, so changes apply to
    * newly created sessions only — existing sessions keep the surface they
@@ -22,10 +23,14 @@
    * disabled while the feature is off).
    */
   import { onMount } from 'svelte';
-  import { Toggle } from '$lib/components/ui/toggle';
-  import { Button } from '$lib/components/ui/button';
-  import { Input } from '$lib/components/ui/input';
-  import { toast } from '$lib/components/ui/toast';
+  import {
+    SettingsForm,
+    defineSettings,
+    defineSettingsCustomControls,
+    type SettingEntry,
+  } from '$lib/components/patterns/settings';
+  import { Button, Input } from '$lib/components/patterns/settings/custom-controls';
+  import { notify } from '$lib/components/patterns/notify';
   import { appClient } from '$lib/client';
   import { m } from '$shared/paraglide/messages.js';
 
@@ -48,7 +53,7 @@
   const MIN_MAX_TOP_LEVEL_AGENTS = 1;
   const DEFAULT_MAX_TOP_LEVEL_AGENTS = 20;
 
-  // An absent settings.list entry coerces to the feature's daemon default.
+  // Coerce values to daemon defaults; peer-agent support is checked separately.
   function coerceValue(path: FeaturePath, value: unknown): boolean {
     return typeof value === 'boolean' ? value : FEATURE_DEFAULTS[path];
   }
@@ -56,6 +61,9 @@
   let loading = $state(true);
   // Seed from per-feature daemon defaults (PROTOCOL §5.12)
   let values = $state<Record<FeaturePath, boolean>>({ ...FEATURE_DEFAULTS });
+  // settings.list includes registered defaults even without a stored preference.
+  let peerAgentsSupported = $state(false);
+  let peerAgentsEnabled = $derived(peerAgentsSupported && values['agentFeatures.peerAgents']);
   // Daemon-provided approximate token cost per toggle (§5.12 `tokenImpact`);
   // absent on older daemons or unannotated entries → no line rendered.
   let tokenImpacts = $state<Partial<Record<FeaturePath, string>>>({});
@@ -80,6 +88,7 @@
       const settings = await appClient.settings.list();
       for (const path of FEATURE_PATHS) {
         const entry = settings.find((s: { path: string; value: unknown }) => s.path === path);
+        if (path === 'agentFeatures.peerAgents') peerAgentsSupported = entry !== undefined;
         values[path] = coerceValue(path, entry?.value);
         tokenImpacts[path] = typeof entry?.tokenImpact === 'string' ? entry.tokenImpact : undefined;
       }
@@ -98,7 +107,7 @@
         editedMaxAgents = String(maxAgents.value);
       }
     } catch (error) {
-      toast.error(
+      notify.error(
         m.settings_agentFeatures_loadError({
           error: error instanceof Error ? error.message : String(error),
         }),
@@ -109,20 +118,22 @@
   }
 
   async function handleToggle(path: FeaturePath, checked: boolean) {
+    if (path === 'agentFeatures.peerAgents' && !peerAgentsSupported) return;
+    values[path] = checked;
     try {
       const result = await appClient.settings.update([{ path, value: checked }]);
 
       // Check if the daemon rolled back the setting on failure
       const applied = result.find((r: { path: string; value: unknown }) => r.path === path);
       if (applied && applied.value !== checked) {
-        toast.error(m.settings_agentFeatures_rollbackError());
+        notify.error(m.settings_agentFeatures_rollbackError());
         values[path] = coerceValue(path, applied.value);
         return;
       }
 
       values[path] = checked;
     } catch (error) {
-      toast.error(
+      notify.error(
         m.settings_agentFeatures_saveError({
           error: error instanceof Error ? error.message : String(error),
         }),
@@ -152,7 +163,7 @@
       if (applied && applied.value !== newValue) {
         const rolledBackValue =
           typeof applied.value === 'number' ? applied.value : persistedDebounce;
-        toast.error(m.settings_agentFeatures_rollbackError());
+        notify.error(m.settings_agentFeatures_rollbackError());
         persistedDebounce = rolledBackValue;
         editedDebounce = String(rolledBackValue);
         return;
@@ -160,7 +171,7 @@
 
       persistedDebounce = newValue;
     } catch (error) {
-      toast.error(
+      notify.error(
         m.settings_agentFeatures_saveError({
           error: error instanceof Error ? error.message : String(error),
         }),
@@ -171,7 +182,17 @@
     }
   }
 
+  function isValidDebounce(value: string): boolean {
+    const debounce = Number(value);
+    return (
+      Number.isInteger(debounce) &&
+      debounce >= MIN_DEBOUNCE_SECONDS &&
+      debounce <= MAX_DEBOUNCE_SECONDS
+    );
+  }
+
   async function handleMaxAgentsSave() {
+    if (!peerAgentsEnabled) return;
     const newValue = Number(editedMaxAgents);
     if (!Number.isInteger(newValue) || newValue < MIN_MAX_TOP_LEVEL_AGENTS) {
       return; // invalid input, do nothing
@@ -188,7 +209,7 @@
       if (applied && applied.value !== newValue) {
         const rolledBackValue =
           typeof applied.value === 'number' ? applied.value : persistedMaxAgents;
-        toast.error(m.settings_agentFeatures_rollbackError());
+        notify.error(m.settings_agentFeatures_rollbackError());
         persistedMaxAgents = rolledBackValue;
         editedMaxAgents = String(rolledBackValue);
         return;
@@ -196,7 +217,7 @@
 
       persistedMaxAgents = newValue;
     } catch (error) {
-      toast.error(
+      notify.error(
         m.settings_agentFeatures_saveError({
           error: error instanceof Error ? error.message : String(error),
         }),
@@ -206,124 +227,128 @@
       maxAgentsSaving = false;
     }
   }
+
+  const schema = $derived.by(() => {
+    const entries: SettingEntry[] = [];
+    for (const feature of FEATURES) {
+      const currentValue =
+        feature.path === 'agentFeatures.peerAgents' ? peerAgentsEnabled : values[feature.path];
+      entries.push({
+        kind: 'switch',
+        id: feature.path,
+        label: feature.label(),
+        description: feature.description(),
+        featureCode: feature.path,
+        disabled: loading || (feature.path === 'agentFeatures.peerAgents' && !peerAgentsSupported),
+        // i18n-ignore (daemon-provided wire text, PROTOCOL §5.12 tokenImpact)
+        status: tokenImpacts[feature.path],
+        statusTone: 'subtle',
+        get: () => currentValue,
+        set: (checked: boolean) => handleToggle(feature.path, checked),
+      });
+      if (feature.path === 'agentFeatures.prMonitor') {
+        entries.push({
+          kind: 'custom',
+          id: 'pr-monitor-debounce',
+          label: m.settings_agentFeatures_prMonitorDebounce_label(),
+          disabled: loading || debounceSaving || !values['agentFeatures.prMonitor'],
+          busy: debounceSaving,
+        });
+      }
+      if (feature.path === 'agentFeatures.peerAgents') {
+        entries.push({
+          kind: 'custom',
+          id: 'max-top-level-agents',
+          label: m.settings_agentFeatures_maxTopLevelAgents_label(),
+          disabled: loading || maxAgentsSaving || !peerAgentsEnabled,
+          busy: maxAgentsSaving,
+        });
+      }
+    }
+    return defineSettings({
+      sections: [
+        {
+          id: 'agent-features',
+          title: m.settings_section_agentFeatures(),
+          description: m.settings_agentFeatures_newSessionsNote(),
+          entries,
+        },
+      ],
+    });
+  });
 </script>
 
-<div class="flex flex-col bg-card rounded-xl divide-y divide-border">
-  <!-- New-sessions-only note -->
-  <section class="px-6 py-4">
-    <p class="text-xs text-amber-500/90">
-      {m.settings_agentFeatures_newSessionsNote()}
-    </p>
-  </section>
-
-  {#each FEATURES as feature (feature.path)}
-    <section class="px-6 py-5">
-      <div class="flex items-center justify-between">
-        <div>
-          <p class="text-sm font-medium text-foreground">{feature.label()}</p>
-          <p class="text-xs text-subtle mt-1">{feature.description()}</p>
-          {#if tokenImpacts[feature.path]}
-            <!-- i18n-ignore (daemon-provided wire text, PROTOCOL §5.12 tokenImpact) -->
-            <p class="text-xs text-ghost mt-1">{tokenImpacts[feature.path]}</p>
-          {/if}
-        </div>
-        <Toggle
-          pressed={values[feature.path]}
-          onclick={() => handleToggle(feature.path, !values[feature.path])}
-          variant="indicator"
+{#snippet debounceControl()}
+  {@const valid = isValidDebounce(editedDebounce)}
+  <div class="flex flex-col items-end gap-1">
+    <div class="flex items-center gap-2">
+      <Input
+        type="number"
+        min={MIN_DEBOUNCE_SECONDS}
+        max={MAX_DEBOUNCE_SECONDS}
+        bind:value={editedDebounce}
+        disabled={loading || debounceSaving || !values['agentFeatures.prMonitor']}
+        aria-label={m.settings_agentFeatures_prMonitorDebounce_ariaLabel()}
+        class="w-24"
+      />
+      {#if Number(editedDebounce) !== persistedDebounce}
+        <Button
+          variant="secondary"
           size="xs"
-          class="mb-auto"
-          disabled={loading}
-          ariaLabel={feature.label()}
-        />
-      </div>
-      {#if feature.path === 'agentFeatures.prMonitor'}
-        <!-- i18n-ignore (template expression, not user-facing text) -->
-        {@const debounceNum = Number(editedDebounce)}
-        <!-- i18n-ignore (template expression, not user-facing text) -->
-        {@const isDebounceValid =
-          Number.isInteger(debounceNum) &&
-          debounceNum >= MIN_DEBOUNCE_SECONDS &&
-          debounceNum <= MAX_DEBOUNCE_SECONDS}
-        <div class="mt-3 flex items-center justify-between gap-3">
-          <span class="text-sm text-muted-foreground"
-            >{m.settings_agentFeatures_prMonitorDebounce_label()}</span
-          >
-          <div class="flex items-center gap-2">
-            <div class="shrink-0 w-24">
-              <Input
-                type="number"
-                min={MIN_DEBOUNCE_SECONDS}
-                max={MAX_DEBOUNCE_SECONDS}
-                bind:value={editedDebounce}
-                disabled={loading || debounceSaving || !values['agentFeatures.prMonitor']}
-                aria-label={m.settings_agentFeatures_prMonitorDebounce_ariaLabel()}
-                class="h-9 text-sm"
-              />
-            </div>
-            {#if Number(editedDebounce) !== persistedDebounce}
-              <button
-                type="button"
-                onclick={handleDebounceSave}
-                disabled={debounceSaving || !isDebounceValid || !values['agentFeatures.prMonitor']}
-                class="px-3 py-1 text-xs font-medium text-foreground bg-accent hover:bg-accent/80 rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                {debounceSaving
-                  ? m.settings_agentFeatures_prMonitorDebounce_saving()
-                  : m.settings_agentFeatures_prMonitorDebounce_save()}
-              </button>
-            {/if}
-          </div>
-        </div>
-        {#if !isDebounceValid}
-          <p class="text-xs text-amber-500/90 mt-1">
-            {m.settings_agentFeatures_prMonitorDebounce_invalid()}
-          </p>
-        {/if}
+          onclick={handleDebounceSave}
+          disabled={debounceSaving || !valid || !values['agentFeatures.prMonitor']}
+        >
+          {debounceSaving
+            ? m.settings_agentFeatures_prMonitorDebounce_saving()
+            : m.settings_agentFeatures_prMonitorDebounce_save()}
+        </Button>
       {/if}
-      {#if feature.path === 'agentFeatures.peerAgents'}
-        <!-- i18n-ignore (template expression, not user-facing text) -->
-        {@const maxAgentsNum = Number(editedMaxAgents)}
-        <!-- i18n-ignore (template expression, not user-facing text) -->
-        {@const isMaxAgentsValid =
-          Number.isInteger(maxAgentsNum) && maxAgentsNum >= MIN_MAX_TOP_LEVEL_AGENTS}
-        <div class="mt-3 flex items-center justify-between gap-3">
-          <span class="text-sm text-muted-foreground"
-            >{m.settings_agentFeatures_maxTopLevelAgents_label()}</span
-          >
-          <div class="flex items-center gap-2">
-            <div class="shrink-0 w-24">
-              <Input
-                type="number"
-                min={MIN_MAX_TOP_LEVEL_AGENTS}
-                bind:value={editedMaxAgents}
-                disabled={loading || maxAgentsSaving || !values['agentFeatures.peerAgents']}
-                aria-label={m.settings_agentFeatures_maxTopLevelAgents_ariaLabel()}
-                class="h-9 text-sm"
-              />
-            </div>
-            {#if Number(editedMaxAgents) !== persistedMaxAgents}
-              <Button
-                variant="secondary"
-                size="xs"
-                onclick={handleMaxAgentsSave}
-                disabled={maxAgentsSaving ||
-                  !isMaxAgentsValid ||
-                  !values['agentFeatures.peerAgents']}
-              >
-                {maxAgentsSaving
-                  ? m.settings_agentFeatures_maxTopLevelAgents_saving()
-                  : m.settings_agentFeatures_maxTopLevelAgents_save()}
-              </Button>
-            {/if}
-          </div>
-        </div>
-        {#if !isMaxAgentsValid}
-          <p class="text-xs text-amber-500/90 mt-1">
-            {m.settings_agentFeatures_maxTopLevelAgents_invalid()}
-          </p>
-        {/if}
+    </div>
+    {#if !valid}<p class="type-caption text-warning-ink">
+        {m.settings_agentFeatures_prMonitorDebounce_invalid()}
+      </p>{/if}
+  </div>
+{/snippet}
+
+{#snippet maxAgentsControl()}
+  <!-- i18n-ignore (template expression, not user-facing text) -->
+  {@const maxAgentsNum = Number(editedMaxAgents)}
+  <!-- i18n-ignore (template expression, not user-facing text) -->
+  {@const valid = Number.isInteger(maxAgentsNum) && maxAgentsNum >= MIN_MAX_TOP_LEVEL_AGENTS}
+  <div class="flex flex-col items-end gap-1">
+    <div class="flex items-center gap-2">
+      <Input
+        type="number"
+        min={MIN_MAX_TOP_LEVEL_AGENTS}
+        bind:value={editedMaxAgents}
+        disabled={loading || maxAgentsSaving || !peerAgentsEnabled}
+        aria-label={m.settings_agentFeatures_maxTopLevelAgents_ariaLabel()}
+        class="w-24"
+      />
+      {#if Number(editedMaxAgents) !== persistedMaxAgents}
+        <Button
+          variant="secondary"
+          size="xs"
+          onclick={handleMaxAgentsSave}
+          disabled={maxAgentsSaving || !valid || !peerAgentsEnabled}
+        >
+          {maxAgentsSaving
+            ? m.settings_agentFeatures_maxTopLevelAgents_saving()
+            : m.settings_agentFeatures_maxTopLevelAgents_save()}
+        </Button>
       {/if}
-    </section>
-  {/each}
-</div>
+    </div>
+    {#if !valid}<p class="type-caption text-warning-ink">
+        {m.settings_agentFeatures_maxTopLevelAgents_invalid()}
+      </p>{/if}
+  </div>
+{/snippet}
+
+<SettingsForm
+  {schema}
+  compact={false}
+  custom={defineSettingsCustomControls({
+    'pr-monitor-debounce': debounceControl,
+    'max-top-level-agents': maxAgentsControl,
+  })}
+/>

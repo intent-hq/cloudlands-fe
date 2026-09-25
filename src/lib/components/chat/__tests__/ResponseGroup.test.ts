@@ -7,7 +7,7 @@
  */
 import { describe, it, expect, vi } from 'vitest';
 import { fireEvent, render, waitFor } from '@testing-library/svelte';
-import { createRawSnippet } from 'svelte';
+import { createRawSnippet, tick } from 'svelte';
 import ResponseGroup from '../ResponseGroup.svelte';
 import {
   dedupeKeys,
@@ -28,6 +28,19 @@ import { ChatTranscriptReconciler } from '$lib/client/live/live-chat-client';
 import { warmImport } from '../../../../test/warm-import';
 import type { ContentBlock } from '$shared/types';
 import ResponseGroupCollapseHost from './ResponseGroupCollapseHost.svelte';
+import {
+  effectFlushSyncCalls,
+  resetEffectFlushSyncCalls,
+} from './mocks/effect-flush-sync-spy.svelte';
+
+// Count `flushSync` calls made from inside effect bodies: a nested flush during
+// an outer batch nulls the batch, and the next effect in that traversal that
+// writes state crashes in `schedule_effect` (sveltejs/svelte#18546).
+vi.mock('svelte', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('svelte')>();
+  const { wrapFlushSync } = await import('./mocks/effect-flush-sync-spy.svelte');
+  return { ...actual, flushSync: wrapFlushSync(actual.flushSync) };
+});
 
 vi.mock('svelte-fa', async () => {
   const MockFa = (await import('../../ui/__tests__/mocks/Fa.svelte')).default;
@@ -279,15 +292,12 @@ describe('ResponseGroup - collapse state model', () => {
 
   // jsdom reports zero layout height, which short-circuits the disclosure
   // motion; give the preview container a measurable height so its outro runs.
-  function mockMeasuredPreviewStyle() {
+  function mockMeasuredPreviewStyle(selector = '[data-operational-preview-content]') {
     const original = window.getComputedStyle.bind(window);
     return vi
       .spyOn(window, 'getComputedStyle')
       .mockImplementation((element: Element, pseudo?: string | null) => {
-        if (
-          element instanceof HTMLElement &&
-          element.matches('[data-operational-preview-content]')
-        ) {
+        if (element instanceof HTMLElement && element.matches(selector)) {
           return {
             height: '40px',
             opacity: '1',
@@ -302,6 +312,116 @@ describe('ResponseGroup - collapse state model', () => {
   }
 
   const liveBlocks = [{ type: 'text', text: 'live chunk' }] as ContentBlock[];
+
+  // Svelte sets `inert` as a property where the DOM exposes it and as an
+  // attribute otherwise; jsdom differs by version, so accept either.
+  function isInert(element: HTMLElement): boolean {
+    return (
+      Boolean((element as HTMLElement & { inert?: boolean }).inert) || element.hasAttribute('inert')
+    );
+  }
+
+  it('collapses from the streaming edge without a synchronous flush inside the effect', async () => {
+    const { container, rerender } = render(ResponseGroup, {
+      props: { name: 'Live group', isStreaming: true, children },
+    });
+    const btn = header(container);
+    expect(btn.getAttribute('aria-expanded')).toBe('true');
+    expect(details(container)).not.toBeNull();
+
+    resetEffectFlushSyncCalls();
+    await rerender({ blocks: liveBlocks });
+
+    expect(effectFlushSyncCalls()).toBe(0);
+    expect(btn.getAttribute('aria-expanded')).toBe('false');
+    await waitFor(() => expect(details(container)).toBeNull());
+    expect(previewContent(container)).not.toBeNull();
+  });
+
+  it('hides the closing details from assistive tech before the collapse removes them', async () => {
+    const styleSpy = mockMeasuredPreviewStyle('[data-operational-expanded-content]');
+    try {
+      const { container, rerender } = render(ResponseGroup, {
+        props: { name: 'Live group', isStreaming: true, children },
+      });
+      const btn = header(container);
+      const body = details(container)!;
+      expect(body.getAttribute('aria-hidden')).toBeNull();
+
+      await rerender({ blocks: liveBlocks });
+
+      expect(btn.getAttribute('aria-expanded')).toBe('false');
+      expect(details(container)).toBe(body);
+      expect(body.getAttribute('aria-hidden')).toBe('true');
+      expect((body as HTMLElement & { inert?: boolean }).inert || body.hasAttribute('inert')).toBe(
+        true,
+      );
+      await waitFor(() => expect(details(container)).toBeNull());
+    } finally {
+      styleSpy.mockRestore();
+    }
+  });
+
+  it('cancels a pending collapse when re-expanded within the same task', async () => {
+    const { container } = render(ResponseGroup, { props: { name: 'Group', children } });
+    const btn = header(container);
+    await fireEvent.click(btn);
+    await waitFor(() => expect(btn.getAttribute('aria-expanded')).toBe('true'));
+    const body = details(container)!;
+
+    // Native `click()` runs the handlers synchronously without the harness
+    // flushing in between, so both toggles land in one batch: the second
+    // must cancel the two-phase collapse the first one started.
+    resetEffectFlushSyncCalls();
+    btn.click();
+    btn.click();
+    await tick();
+
+    expect(effectFlushSyncCalls()).toBe(0);
+    expect(btn.getAttribute('aria-expanded')).toBe('true');
+    expect(details(container)).toBe(body);
+    expect(body.getAttribute('aria-hidden')).toBeNull();
+    expect(isInert(body)).toBe(false);
+
+    // The cancelled collapse must not leave `isClosing` stuck: a later
+    // collapse still runs to completion.
+    await fireEvent.click(btn);
+    await waitFor(() => expect(btn.getAttribute('aria-expanded')).toBe('false'));
+    await waitFor(() => expect(details(container)).toBeNull());
+  });
+
+  it('reopens the same details node when re-expanded during a measured outro', async () => {
+    const styleSpy = mockMeasuredPreviewStyle('[data-operational-expanded-content]');
+    try {
+      const { container, rerender } = render(ResponseGroup, {
+        props: { name: 'Live group', isStreaming: true, children },
+      });
+      const btn = header(container);
+      const body = details(container)!;
+
+      await rerender({ blocks: liveBlocks });
+      expect(btn.getAttribute('aria-expanded')).toBe('false');
+      expect(details(container)).toBe(body);
+      expect(body.getAttribute('aria-hidden')).toBe('true');
+      expect(isInert(body)).toBe(true);
+
+      resetEffectFlushSyncCalls();
+      await fireEvent.click(btn);
+
+      expect(effectFlushSyncCalls()).toBe(0);
+      expect(btn.getAttribute('aria-expanded')).toBe('true');
+      expect(details(container)).toBe(body);
+      expect(body.getAttribute('aria-hidden')).toBeNull();
+      expect(isInert(body)).toBe(false);
+
+      // The interrupted outro must not remove the reopened details later on.
+      await new Promise((resolve) => setTimeout(resolve, 400));
+      expect(details(container)).toBe(body);
+      expect(body.getAttribute('aria-hidden')).toBeNull();
+    } finally {
+      styleSpy.mockRestore();
+    }
+  });
 
   it('animates the streaming preview out instead of removing it instantly', async () => {
     const styleSpy = mockMeasuredPreviewStyle();
@@ -1088,6 +1208,7 @@ describe('MessageContent - top-level response rows', () => {
         {
           id: 'message-result-visibility',
           role: 'assistant',
+          timestamp: '2026-01-01T00:00:00.000Z',
           contentBlocks,
         },
       ],

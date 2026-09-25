@@ -26,7 +26,7 @@ export interface NodeStyleConfig {
   labelLineHeight: number;
   /** Font size for the kind/type label in pixels */
   kindFontSize: number;
-  /** Character width ratio for kind (accounts for uppercase + letter-spacing) */
+  /** Conservative character width ratio for sentence-case kind labels */
   kindCharWidthRatio: number;
   /** Line height for kind */
   kindLineHeight: number;
@@ -49,7 +49,7 @@ export const DEFAULT_NODE_STYLE: NodeStyleConfig = {
   labelFontSize: 13,
   labelCharWidthRatio: 0.6,
   labelLineHeight: 1.26,
-  kindFontSize: 8,
+  kindFontSize: 11,
   kindCharWidthRatio: 0.88,
   kindLineHeight: 1.0,
   paddingX: 16,
@@ -58,6 +58,14 @@ export const DEFAULT_NODE_STYLE: NodeStyleConfig = {
   maxLines: 3,
   maxWidth: 250,
 };
+
+/** Shared by connector measurement and paint; secondary size, compact multiline rhythm. */
+export const EDGE_LABEL_STYLE = Object.freeze({
+  fontSize: DEFAULT_NODE_STYLE.kindFontSize,
+  lineHeight: DEFAULT_NODE_STYLE.labelLineHeight,
+  paddingX: 6,
+  paddingY: 4,
+});
 
 /**
  * Computed node position and size for rendering

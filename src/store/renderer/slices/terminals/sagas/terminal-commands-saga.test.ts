@@ -1,3 +1,4 @@
+import { createCollection } from '@augmentcode/themis/utils/collections/collection-utils';
 import { runSaga, stdChannel } from 'redux-saga';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -22,13 +23,23 @@ import {
   terminalsReducer,
 } from '../terminals-slice';
 import { terminalCommandsSaga } from './terminal-commands-saga';
+import { initialState as guestSessionsInitialState } from '../../guest-sessions/guest-sessions-slice';
+import { LOCAL_CONNECTION_ID } from '$shared/types/connections';
+
+/** The window-identity slices `selectIsWorkspaceCollaborator` reads: an owner window on the local backend. */
+const ownerWindowSlices = {
+  connections: { activeId: LOCAL_CONNECTION_ID, windowBackendId: LOCAL_CONNECTION_ID },
+  // Settled owner window: guest list received, no host joined.
+  guestSessions: { ...guestSessionsInitialState, hasReceivedList: true },
+};
 
 const settle = async () => {
   for (let i = 0; i < 6; i += 1) await Promise.resolve();
 };
 
-function startSaga() {
+function startSaga(myRole: 'owner' | 'collaborator' = 'owner') {
   let terminals = terminalsReducer(undefined, { type: '@@init' } as never);
+  const workspace = { workspaces: createCollection('id', [{ id: 'ws-1', myRole }]) };
   const input = stdChannel();
   const dispatched: unknown[] = [];
   const dispatch = (action: unknown) => {
@@ -38,14 +49,14 @@ function startSaga() {
     return action;
   };
   const task = runSaga(
-    { channel: input, dispatch, getState: () => ({ terminals }) },
+    { channel: input, dispatch, getState: () => ({ ...ownerWindowSlices, terminals, workspace }) },
     terminalCommandsSaga,
   );
   const send = (action: unknown) => {
     terminals = terminalsReducer(terminals, action as never);
     input.put(action as never);
   };
-  const getState = () => ({ terminals }) as never;
+  const getState = () => ({ ...ownerWindowSlices, terminals, workspace }) as never;
   return { dispatched, send, task, getState };
 }
 
@@ -65,6 +76,19 @@ describe('terminalCommandsSaga', () => {
       workspaceId: 'ws-1',
     });
     expect(dispatched).toEqual([]);
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it('drops createTerminalRequested for a collaborator workspace (multiplayer w3)', async () => {
+    const { dispatched, send, task } = startSaga('collaborator');
+
+    send(createTerminalRequested('ws-1'));
+    await settle();
+
+    expect(mocks.dispatchWindowEvent).not.toHaveBeenCalled();
+    expect(dispatched).toEqual([]);
+    expect(task.isRunning()).toBe(true);
     task.cancel();
     await task.toPromise();
   });

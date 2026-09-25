@@ -8,12 +8,14 @@
    */
 
   import Fa from 'svelte-fa';
-  import { faCodeCommit, faSpinner } from '@fortawesome/free-solid-svg-icons';
+  import { faCodeCommit } from '@fortawesome/free-solid-svg-icons';
 
   import { openWorkspaceCommitChangeset } from '$store/renderer/slices/workspace-navigation/workspace-navigation-slice';
   import { store as appStore } from '$store/renderer/store';
   import { m } from '$shared/paraglide/messages.js';
   import { formatInteger } from '$lib/i18n/format';
+  import { Button } from '$lib/components/ui/button';
+  import { IntentMarkLoader } from '$lib/components/ui/indicators';
 
   export type CommitStatus =
     | { state: 'committing' }
@@ -40,7 +42,7 @@
     <div class="w-full flex items-center gap-2 px-2 py-1.5 text-subtle rounded-lg min-w-0">
       <div class="flex items-center gap-2 flex-1 min-w-0">
         {#if status.state === 'committing'}
-          <Fa icon={faSpinner} class="opacity-30 animate-spin" size="xs" />
+          <IntentMarkLoader size={12} class="opacity-30 text-subtle" />
           <span class="truncate min-w-0 text-left flex-1 text-subtle">
             {m.chat_autoCommitStatus_committing_label()}
           </span>
@@ -48,13 +50,14 @@
           <Fa icon={faCodeCommit} class="text-ghost" size="xs" />
           <span class="truncate min-w-0 text-left flex-1">
             {m.chat_autoCommitStatus_committed_label()}
-            <button
+            <Button
+              variant="plain"
               onclick={handleOpenCommitChangeset}
               class="text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
               title={status.message}
             >
               {status.message}
-            </button>
+            </Button>
             <span class="text-subtle">
               {status.fileCount === 1
                 ? m.chat_autoCommitStatus_fileCount_one({ count: formatInteger(status.fileCount) })
@@ -64,10 +67,10 @@
             </span>
           </span>
         {:else if status.state === 'hook-failure'}
-          <Fa icon={faCodeCommit} class="opacity-30 text-amber-500/70" size="xs" />
+          <Fa icon={faCodeCommit} class="opacity-30 text-warning-ink" size="xs" />
           <span class="truncate min-w-0 text-left flex-1">
             {#if status.status === 'waking-agent'}
-              <span class="text-amber-500/70">{m.chat_autoCommitStatus_hooksFailed_label()}</span>
+              <span class="text-warning-ink">{m.chat_autoCommitStatus_hooksFailed_label()}</span>
               <span class="text-subtle">
                 {m.chat_autoCommitStatus_fixingAttempt_label({
                   attempt: formatInteger(status.retryCount),

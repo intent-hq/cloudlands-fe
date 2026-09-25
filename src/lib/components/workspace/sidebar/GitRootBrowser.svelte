@@ -11,7 +11,7 @@
    * selection restores today's behavior exactly.
    */
   import { writable } from 'svelte/store';
-  import { untrack } from 'svelte';
+  import { untrack, type Snippet } from 'svelte';
   import {
     selectHasSecondaryGitRoots,
     selectWorkspaceGitRootEntries,
@@ -28,9 +28,10 @@
      * root is selected) so the parent can hide/show the primary changes body
      * and follow the selection in its PR sections (monorepo#2053). */
     onSelectedRootChange?: (entry: WorkspaceGitRootEntry | null) => void;
+    onRefreshActionChange?: (action: Snippet | undefined) => void;
   }
 
-  let { workspaceId, onSelectedRootChange }: Props = $props();
+  let { workspaceId, onSelectedRootChange, onRefreshActionChange }: Props = $props();
 
   // svelte-ignore state_referenced_locally - intentional initial capture; the $effect below syncs later changes
   const workspaceIdStore = writable(workspaceId);
@@ -43,6 +44,7 @@
   const workspaceAgents$ = selectAllWorkspaceAgents(workspaceIdStore);
 
   let selectedRootKey = $state('primary');
+  let rootRemoved = $state(false);
 
   const selectedRootEntry = $derived(
     ($gitRootEntries$ ?? []).find((e) => e.key === selectedRootKey),
@@ -71,10 +73,12 @@
       if (lastWorkspaceId !== wsId) {
         lastWorkspaceId = wsId;
         selectedRootKey = 'primary';
+        rootRemoved = false;
         return;
       }
       if (selectedRootKey !== 'primary' && !entries.some((e) => e.key === selectedRootKey)) {
         selectedRootKey = 'primary';
+        rootRemoved = true;
       }
     });
   });
@@ -96,7 +100,13 @@
 
 {#if $hasSecondaryGitRoots$}
   <div class="mb-2 mt-1" data-testid="git-root-selector">
-    <Select.Root value={selectedRootKey} onchange={(value) => (selectedRootKey = value)}>
+    <Select.Root
+      value={selectedRootKey}
+      onchange={(value) => {
+        selectedRootKey = value;
+        rootRemoved = false;
+      }}
+    >
       <Select.Trigger
         class="py-1 h-7 text-ui"
         aria-label={m.workspace_sidebarChanges_rootSelector_ariaLabel()}
@@ -110,7 +120,10 @@
       <Select.Content portal class="max-h-72">
         {#each $gitRootEntries$ ?? [] as entry (entry.key)}
           <Select.Item value={entry.key} label={rootDisplayLabel(entry)}>
-            <span class="truncate">{rootDisplayLabel(entry)}</span>
+            <span class="block truncate">{rootDisplayLabel(entry)}</span>
+            <span class="block truncate text-muted-foreground type-caption" title={entry.path}
+              >{entry.path}</span
+            >
           </Select.Item>
         {/each}
       </Select.Content>
@@ -128,6 +141,10 @@
   {#if isSecondaryRootSelected && selectedRootEntry}
     <!-- Read-only per-root browsing; the workspace-scoped PR sections and all
          mutation affordances stay on the primary root view. -->
-    <SecondaryRootChangesView {workspaceId} entry={selectedRootEntry} />
+    <SecondaryRootChangesView {workspaceId} entry={selectedRootEntry} {onRefreshActionChange} />
   {/if}
 {/if}
+
+<span role="status" class="sr-only"
+  >{rootRemoved ? m.workspace_sidebarChanges_rootRemoved_status() : ''}</span
+>

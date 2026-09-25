@@ -1,4 +1,4 @@
-import type { GitHubUser } from '$features/github-auth/types';
+import type { GitHubUser, StartAuthOptions } from '$features/github-auth/types';
 import { createAction } from '@augmentcode/themis/utils/store/create-action';
 import { createReducer } from '@augmentcode/themis/utils/store/create-reducer';
 import type { GitHubAuthState, GitHubDeviceFlowInfo } from './github-auth-types';
@@ -8,6 +8,9 @@ import type { GitHubAuthState, GitHubDeviceFlowInfo } from './github-auth-types'
 // ============================================================================
 
 export const initialState: GitHubAuthState = {
+  mutationRequestId: null,
+  callbacksCancelled: false,
+  isDisconnecting: false,
   isAuthenticated: false,
   requiresDaemonAuth: false,
   user: null,
@@ -25,14 +28,31 @@ export const initialState: GitHubAuthState = {
 /** Trigger: fetch auth state from backend and hydrate */
 export const initializeGitHubAuth = createAction('githubAuth/initialize');
 
-/** Trigger: start the OAuth authentication flow */
-export const startGitHubAuth = createAction('githubAuth/startAuth');
+/**
+ * Trigger: start the OAuth authentication flow. `{ reconnect: true }` forces
+ * a fresh device flow on an already-connected account (scope upgrades).
+ */
+export const startGitHubAuth = createAction(
+  'githubAuth/startAuth',
+  (options?: StartAuthOptions) => ({
+    options,
+    requestId: crypto.randomUUID(),
+  }),
+);
 
 /** Trigger: cancel ongoing authentication */
-export const cancelGitHubAuth = createAction('githubAuth/cancelAuth');
+export const cancelGitHubAuth = createAction('githubAuth/cancelAuth', () => ({
+  requestId: crypto.randomUUID(),
+}));
 
 /** Trigger: log out of GitHub */
-export const logoutGitHub = createAction('githubAuth/logout');
+export const logoutGitHub = createAction('githubAuth/logout', () => ({
+  requestId: crypto.randomUUID(),
+}));
+export const settleGitHubAuthMutation = createAction<[requestId: string]>(
+  'githubAuth/settleMutation',
+);
+export const setGitHubDisconnecting = createAction<[value: boolean]>('githubAuth/setDisconnecting');
 
 /** Set full auth state from backend response */
 export const setGitHubAuthState = createAction(
@@ -101,6 +121,33 @@ export const logoutCompleted = createAction('githubAuth/logoutCompleted');
 // ============================================================================
 
 export const githubAuthReducer = createReducer<GitHubAuthState>(initialState);
+
+githubAuthReducer.with(startGitHubAuth, (state, { payload: { requestId } }) => ({
+  ...state,
+  mutationRequestId: requestId,
+  callbacksCancelled: false,
+}));
+githubAuthReducer.with(initializeGitHubAuth, (state) =>
+  state.mutationRequestId === null ? { ...state, callbacksCancelled: false } : state,
+);
+githubAuthReducer.with(cancelGitHubAuth, (state, { payload: { requestId } }) => ({
+  ...state,
+  mutationRequestId: requestId,
+  callbacksCancelled: true,
+}));
+githubAuthReducer.with(logoutGitHub, (state, { payload: { requestId } }) => ({
+  ...state,
+  mutationRequestId: requestId,
+  callbacksCancelled: true,
+}));
+githubAuthReducer.with(settleGitHubAuthMutation, (state, { payload: [requestId] }) =>
+  state.mutationRequestId === requestId ? { ...state, mutationRequestId: null } : state,
+);
+
+githubAuthReducer.with(setGitHubDisconnecting, (state, { payload: [isDisconnecting] }) => ({
+  ...state,
+  isDisconnecting,
+}));
 
 githubAuthReducer.with(setGitHubAuthState, (state, { payload }) => ({
   ...state,

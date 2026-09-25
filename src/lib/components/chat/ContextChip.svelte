@@ -95,19 +95,24 @@
 </script>
 
 {#if clickable}
-  <button
-    type="button"
-    class="group/button type-caption flex shrink-0 cursor-pointer items-center gap-1.5 whitespace-nowrap rounded bg-muted/70 px-2 py-0.5 text-muted-foreground transition-colors hover:bg-muted"
-    title={tooltip ?? m.chat_contextChip_open_title({ label })}
-    {onclick}
-  >
-    <Fa icon={displayIcon} size="15" class="opacity-30" />
-    <span class="font-medium truncate" style:max-width={maxLabelWidth}>{label}</span>
+  <div class="group/button relative flex shrink-0">
+    <Button
+      type="button"
+      variant="plain"
+      class="type-caption flex shrink-0 cursor-pointer items-center gap-1.5 whitespace-nowrap rounded bg-muted/70 px-2 py-0.5 text-muted-foreground transition-colors hover:bg-muted {removable
+        ? 'pr-7'
+        : ''}"
+      title={tooltip ?? m.chat_contextChip_open_title({ label })}
+      {onclick}
+    >
+      <Fa icon={displayIcon} size="15" class="opacity-30" />
+      <span class="font-medium truncate" style:max-width={maxLabelWidth}>{label}</span>
+    </Button>
     {#if removable}
       <Button
         variant="ghost-light"
         size="icon-xs"
-        class="opacity-0 group-hover/button:opacity-100 -my-1 -mr-2 -ml-2 transition-opacity"
+        class="absolute right-0 top-1/2 -translate-y-1/2 opacity-0 transition-opacity group-hover/button:opacity-100 focus-visible:opacity-100"
         onclick={(e: MouseEvent) => {
           e.stopPropagation();
           onRemove?.();
@@ -118,7 +123,7 @@
         <Fa icon={faXmark} size="10" />
       </Button>
     {/if}
-  </button>
+  </div>
 {:else}
   <div
     class="group/button type-caption flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded bg-muted/70 px-2 py-0.5 text-subtle"

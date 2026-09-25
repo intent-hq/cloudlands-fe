@@ -1,4 +1,8 @@
 <script lang="ts">
+  import { Button } from '$lib/components/ui/button';
+  import { Input } from '$lib/components/ui/input';
+  import { ActionRow } from '$lib/components/ui/menu';
+  import { ShortcutChip } from '$lib/components/ui/kbd';
   /**
    * Global Modal Command Palette (Cmd/Ctrl+K)
    *
@@ -6,10 +10,10 @@
    * This is the app-wide palette, not the inline slash-command suggester used
    * in text inputs.
    */
-  import { onMount, untrack } from 'svelte';
+  import { onMount, tick, untrack } from 'svelte';
   import { writable } from 'svelte/store';
   import { goto } from '$app/navigation';
-  import { fly } from 'svelte/transition';
+  import { fly } from '$lib/motion';
   import { navigateToSettings } from '$lib/utils/workspace-navigation';
   import Fa from 'svelte-fa';
   import {
@@ -31,8 +35,15 @@
   import { isCmdClickModifier } from '$shared/utils/link-helpers';
 
   import { selectBrowserRecentUrls } from '$store/renderer/slices/browser/browser-selectors';
+  import { selectLabsMultiplayerEnabled } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
+  import { setLabsMultiplayerEnabled } from '$store/renderer/slices/user-preferences/user-preferences-slice';
   import { initBrowserWorkspace } from '$store/renderer/slices/browser/browser-slice';
-  import { selectWorkspaceItems } from '$store/renderer/slices/workspace/workspace-selectors';
+  import {
+    selectHidesAgentLifecycleActions,
+    selectIsCollaboratorOnlyClient,
+    selectIsWorkspaceCollaborator,
+    selectWorkspaceItems,
+  } from '$store/renderer/slices/workspace/workspace-selectors';
   import { createAgentRequested } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
   import { createTerminalRequested } from '$store/renderer/slices/terminals/terminals-slice';
   import { createNoteRequested } from '$store/renderer/slices/note-read-tracking/note-read-tracking-slice';
@@ -118,7 +129,27 @@
 
   let searchQuery = $state('');
   const workspaceItems = selectWorkspaceItems();
-  const commands = COMMAND_PALETTE_COMMANDS;
+  const labsMultiplayerEnabled$ = selectLabsMultiplayerEnabled();
+  // Collaborators (multiplayer w3) are refused on terminal + browser methods and
+  // cannot create workspaces, so those commands and result groups are withheld.
+  const isCollaborator$ = selectIsWorkspaceCollaborator(workspaceIdStore);
+  const isCollaboratorOnlyClient$ = selectIsCollaboratorOnlyClient();
+  // Agent create is likewise refused (-32003) for a collaborator connection.
+  const hidesAgentLifecycleActions$ = selectHidesAgentLifecycleActions(workspaceIdStore);
+  const WORKSPACE_OWNER_ONLY_COMMAND_IDS: ReadonlySet<string> = new Set([
+    'new-terminal',
+    'open-url',
+  ]);
+  const commands = $derived(
+    COMMAND_PALETTE_COMMANDS.filter(
+      (command) =>
+        !($isCollaborator$ && WORKSPACE_OWNER_ONLY_COMMAND_IDS.has(command.id)) &&
+        !($hidesAgentLifecycleActions$ && command.id === 'new-agent') &&
+        !($isCollaboratorOnlyClient$ && command.id === 'new-workspace') &&
+        !($labsMultiplayerEnabled$ && command.id === 'enable-experimental-multiplayer') &&
+        !(!$labsMultiplayerEnabled$ && command.id === 'disable-experimental-multiplayer'),
+    ),
+  );
   const currentChanges$ = selectCurrentChanges(workspaceIdStore);
   const workspaceAgents$ = selectAllWorkspaceAgents(workspaceIdStore);
   const allNotes$ = selectAllNotes(workspaceIdStore);
@@ -128,6 +159,7 @@
   const paletteMruEntries$ = selectPaletteMruEntries();
   const paletteFileMru$ = selectPaletteFileMru();
   let inputRef: HTMLInputElement | undefined = $state(undefined);
+  let resultsRef: HTMLDivElement | undefined = $state(undefined);
   let isLoadingFiles = $state(false);
   let activeFilter: PaletteFilter | null = $state(null); // Filter by type
 
@@ -214,9 +246,10 @@
       _time: formatRelativeTime(c.attribution.timestamp),
     }));
   });
-  let terminals: WorkspaceObject[] = $state([]);
+  let loadedTerminals: WorkspaceObject[] = $state([]);
+  let terminals: WorkspaceObject[] = $derived($isCollaborator$ ? [] : loadedTerminals);
   let browserUrls: WorkspaceObject[] = $derived.by(() =>
-    $browserRecentUrls$.map((url) => {
+    ($isCollaborator$ ? [] : $browserRecentUrls$).map((url) => {
       // Extract domain from URL for display
       let domain = url.url;
       try {
@@ -276,7 +309,7 @@
   $effect(() => {
     if (!workspaceId) {
       untrack(() => {
-        terminals = [];
+        loadedTerminals = [];
       });
       return;
     }
@@ -292,7 +325,7 @@
     // Load non-Redux terminal metadata for this workspace.
     untrack(() => {
       const terminalMetadata = terminalManager.loadTerminalMetadata(wsId);
-      terminals = terminalMetadata
+      loadedTerminals = terminalMetadata
         .map((t: any) => {
           // Get the latest command from history tracker
           const lastCommand = terminalHistoryTracker.getLastCommand(t.terminalId);
@@ -610,6 +643,14 @@
     return -1;
   }
 
+  function scrollToSelection() {
+    void tick().then(() => {
+      resultsRef
+        ?.querySelector<HTMLElement>(`[data-palette-index="${selectedIndex}"]`)
+        ?.scrollIntoView?.({ block: 'nearest' });
+    });
+  }
+
   function handleKeyDown(e: KeyboardEvent) {
     if (e.key === 'Escape') {
       e.preventDefault();
@@ -625,6 +666,7 @@
       const nextIndex = findSelectableIndex(searchResults, selectedIndex + 1, 1);
       if (nextIndex !== -1) {
         selectedIndex = nextIndex;
+        scrollToSelection();
       }
     } else if (e.key === 'ArrowUp') {
       e.preventDefault();
@@ -632,6 +674,7 @@
       const prevIndex = findSelectableIndex(searchResults, selectedIndex - 1, -1);
       if (prevIndex !== -1) {
         selectedIndex = prevIndex;
+        scrollToSelection();
       }
     } else if (e.key === 'Enter') {
       e.preventDefault();
@@ -755,18 +798,26 @@
   function handleCommand(commandId: string): boolean {
     switch (commandId) {
       case 'new-workspace':
-        appStore.dispatch(setShowCreateModal(true));
+        if (!$isCollaboratorOnlyClient$) {
+          appStore.dispatch(setShowCreateModal(true));
+        }
         return true;
       case 'settings':
         navigateToSettings();
         return true;
+      case 'enable-experimental-multiplayer':
+        appStore.dispatch(setLabsMultiplayerEnabled(true));
+        return true;
+      case 'disable-experimental-multiplayer':
+        appStore.dispatch(setLabsMultiplayerEnabled(false));
+        return true;
       case 'new-agent':
-        if (workspaceId) {
+        if (workspaceId && !$hidesAgentLifecycleActions$) {
           appStore.dispatch(createAgentRequested(workspaceId));
         }
         return true;
       case 'new-terminal':
-        if (workspaceId) {
+        if (workspaceId && !$isCollaborator$) {
           appStore.dispatch(createTerminalRequested(workspaceId));
         }
         return true;
@@ -782,7 +833,7 @@
         return true;
       case 'open-url':
         // Open a browser panel with default URL
-        if (workspaceId) {
+        if (workspaceId && !$isCollaborator$) {
           appStore.dispatch(openWorkspaceBrowser(workspaceId, 'about:blank'));
         }
         return true;
@@ -885,33 +936,33 @@
 {#if isOpen}
   <!-- Command Palette -->
   <div
-    class="fixed top-[12%] left-1/2 -translate-x-1/2 w-full max-w-[560px] z-50"
+    class="fixed top-[12%] left-1/2 -translate-x-1/2 w-[calc(100%-1rem)] max-w-[560px] z-50"
     role="dialog"
     aria-modal="true"
     aria-label={m.lib_commandPalette_quickActions_ariaLabel()}
     tabindex="-1"
     onkeydown={handleContainerKeyDown}
-    transition:fly={{ y: 6, duration: 200 }}
+    transition:fly={{ axis: 'y', distance: 6, tier: 'moderate' }}
   >
     <div
-      class="bg-background overflow-hidden"
-      style="box-shadow: 0 0 0 1px rgba(0,0,0,0.04), 0 4px 24px rgba(0,0,0,0.12), 0 8px 48px rgba(0,0,0,0.08);"
+      class="flex max-h-[80dvh] flex-col overflow-hidden rounded-lg border border-border bg-popover text-popover-foreground shadow-(--elevation-overlay)"
       role="document"
       tabindex="-1"
     >
       <!-- Search Input -->
-      <div class="flex items-center gap-2.5 px-3 h-10">
-        <Fa icon={faSearch} class="text-[14px] text-foreground/30" />
+      <div class="flex shrink-0 items-center gap-2 px-3 py-2">
+        <Fa icon={faSearch} class="size-4 shrink-0 text-muted-foreground" />
 
-        <input
-          bind:this={inputRef}
+        <Input
+          bind:ref={inputRef}
           bind:value={searchQuery}
           onkeydown={handleKeyDown}
           type="text"
           placeholder={isGoToLineMode
             ? m.lib_commandPalette_goToLine_placeholder()
             : m.lib_commandPalette_filter_placeholder()}
-          class="flex-1 bg-transparent outline-none text-[15px] text-foreground placeholder:text-foreground/35 focus:outline-none! focus:ring-0!"
+          noFocusStyle
+          class="min-w-0 flex-1 border-0 bg-transparent px-0 shadow-none"
           autocorrect="off"
           autocapitalize="off"
           spellcheck="false"
@@ -923,23 +974,20 @@
           {m.lib_commandPalette_resultsCount_status({ count: searchResults.length })}
         </div>
 
-        <kbd
-          class="text-ui px-1.5 py-1 rounded-[5px] bg-foreground/6 text-subtle font-medium border border-foreground/6"
-        >
-          {m.lib_commandPalette_esc_label()}
-        </kbd>
+        <ShortcutChip>{m.lib_commandPalette_esc_label()}</ShortcutChip>
       </div>
 
       <!-- Divider -->
-      <div class="h-px bg-foreground/[0.06]"></div>
+      <div class="h-px shrink-0 bg-border"></div>
 
       <!-- Go to Line mode -->
       {#if isGoToLineMode}
-        <div class="max-h-[480px] overflow-y-auto py-1">
+        <div class="min-h-0 max-h-[480px] overflow-y-auto p-1">
           <div class="px-3 py-2">
             {#if goToLineNumber != null && goToLineNumber > 0}
-              <button
-                class="w-full px-3 py-2 flex items-center gap-3 text-left rounded-md bg-foreground/[0.04] hover:bg-foreground/[0.06] transition-colors duration-50"
+              <Button
+                variant="ghost"
+                class="w-full px-3 py-2 flex items-center gap-3 text-left rounded-md bg-foreground/[0.04] hover:bg-foreground/[0.06] transition-colors duration-spring-fast ease-spring-fast motion-reduce:transition-none"
                 onclick={() => {
                   if (goToLineNumber != null && goToLineNumber > 0) {
                     dispatchWindowEvent('workspace:go-to-line', { line: goToLineNumber });
@@ -950,7 +998,7 @@
                 <span class="text-[14px] font-medium text-foreground"
                   >{m.lib_commandPalette_goToLine_label({ line: goToLineNumber })}</span
                 >
-              </button>
+              </Button>
             {:else}
               <p class="text-[13px] text-subtle px-3">
                 {m.lib_commandPalette_invalidLine_message()}
@@ -960,132 +1008,128 @@
         </div>
         <!-- Results -->
       {:else if searchResults.length > 0 || isLoadingFiles || isLoadingMessages}
-        <div class="max-h-[480px] overflow-y-auto py-1">
+        <div
+          bind:this={resultsRef}
+          class="min-h-0 max-h-[480px] overflow-y-auto p-1"
+          data-palette-results
+        >
           {#each searchResults as item, index (item._idx !== undefined ? item._idx : `fallback-${index}`)}
             {#if item._borderAbove}
               <!-- Border above section -->
-              <div class="h-px bg-foreground/[0.06] my-1.5"></div>
+              <div class="my-1.5 h-px bg-border"></div>
             {:else if item._newActionsRow}
               <!-- New Actions Row (horizontal pills) - no label -->
-              <div class="px-3 py-1.5 flex gap-2 justify-between items-center">
+              <div class="flex flex-wrap items-center justify-between gap-2 px-2 py-1.5">
                 <!-- Left side: workspace-specific actions -->
-                <div class="flex gap-2">
+                <div class="flex flex-wrap gap-2">
                   {#each searchResults.filter((r) => r._newAction && !r._newWorkspace) as action}
-                    <button
-                      class="flex items-center gap-2 px-3 py-1.5 rounded-lg border transition-colors duration-100
-                             {selectedIndex === action._idx
-                        ? 'border-foreground/[0.12] bg-foreground/[0.04]'
-                        : 'border-foreground/[0.08] bg-foreground/[0.02] hover:bg-foreground/[0.04] hover:border-foreground/[0.12]'}"
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      active={selectedIndex === action._idx}
+                      aria-current={selectedIndex === action._idx ? 'true' : undefined}
+                      data-palette-index={action._idx}
                       onclick={() => selectItem(action)}
-                      onmouseenter={() => (selectedIndex = action._idx)}
+                      onpointermove={() => (selectedIndex = action._idx)}
                     >
-                      <Fa icon={faPlus} class="text-ui text-subtle" />
-                      <span class="text-[13px] font-medium text-subtle">
-                        {action.pillLabel ?? action.label}
-                      </span>
-                    </button>
+                      {#snippet leadingIcon()}<Fa icon={faPlus} class="size-3.5" />{/snippet}
+                      {action.pillLabel ?? action.label}
+                    </Button>
                   {/each}
                 </div>
 
                 <!-- Right side: New Workspace -->
                 {#each searchResults.filter((r) => r._newWorkspace) as wsAction}
-                  <button
-                    class="flex items-center gap-2 px-3 py-1.5 rounded-lg border transition-colors duration-100
-                           {selectedIndex === wsAction._idx
-                      ? 'border-foreground/[0.12] bg-foreground/[0.04]'
-                      : 'border-foreground/[0.08] bg-foreground/[0.02] hover:bg-foreground/[0.04] hover:border-foreground/[0.12]'}"
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    active={selectedIndex === wsAction._idx}
+                    aria-current={selectedIndex === wsAction._idx ? 'true' : undefined}
+                    data-palette-index={wsAction._idx}
                     onclick={() => selectItem(wsAction)}
-                    onmouseenter={() => (selectedIndex = wsAction._idx)}
+                    onpointermove={() => (selectedIndex = wsAction._idx)}
                   >
-                    <Fa icon={faPlus} class="text-ui text-subtle" />
-                    <span class="text-[13px] font-medium text-subtle">
-                      {wsAction.pillLabel ?? wsAction.label}
-                    </span>
-                  </button>
+                    {#snippet leadingIcon()}<Fa icon={faPlus} class="size-3.5" />{/snippet}
+                    {wsAction.pillLabel ?? wsAction.label}
+                  </Button>
                 {/each}
               </div>
             {:else if item._groupLabel}
               <!-- Group Label with shortcut key -->
-              <div class="px-3 pt-2 pb-1 {index > 0 ? 'mt-0.5' : ''}">
-                <div
-                  class="flex items-center justify-between text-ui font-semibold text-muted-foreground uppercase tracking-wide"
-                >
+              <div class="px-2 pt-2 pb-1 {index > 0 ? 'mt-0.5' : ''}">
+                <div class="flex items-center justify-between type-caption text-muted-foreground">
                   <span>{item._groupLabel}</span>
                   {#if item._shortcutKey}
-                    <kbd
-                      class="text-ui px-1.5 py-0.5 rounded bg-foreground/[0.04] text-foreground/30 normal-case"
-                    >
-                      {item._shortcutKey}
-                    </kbd>
+                    <ShortcutChip>{item._shortcutKey}</ShortcutChip>
                   {/if}
                 </div>
               </div>
             {:else if item._showMore}
               <!-- Show More Button -->
-              <button
-                class="w-full px-3 py-1.5 flex items-center justify-center gap-2 text-left transition-colors duration-50
-                       hover:bg-foreground/[0.03]"
+              <ActionRow
+                data-palette-index={index}
+                selected={selectedIndex === index}
                 onclick={() => selectItem(item)}
               >
-                <span class="text-[13px] text-subtle">
-                  {showMoreLabel(item._count, item._itemType)}
-                </span>
-              </button>
+                {#snippet title()}
+                  <span class="text-muted-foreground"
+                    >{showMoreLabel(item._count, item._itemType)}</span
+                  >
+                {/snippet}
+              </ActionRow>
             {:else if !item._newAction}
               <!-- Regular Item -->
-              <button
-                class="w-full px-3 py-1.5 flex items-start gap-3 text-left transition-colors duration-50
-                       {selectedIndex === index
-                  ? 'bg-foreground/[0.04]'
-                  : 'hover:bg-foreground/[0.03]'}"
-                onclick={() => selectItem(item)}
-                onmouseenter={() => (selectedIndex = index)}
-              >
-                <!-- Icon or Avatar -->
-                {#if item.type === 'agent'}
-                  <div class="flex-none mt-0.5">
-                    <AgentAvatar agentId={item.id} size={18} />
-                  </div>
-                {:else if item.navigationIcon}
-                  <IntentNavigationIcon
-                    name={item.navigationIcon}
-                    size={16}
-                    class="text-ghost flex-none mt-0.5"
-                  />
-                {:else}
-                  <Fa icon={item.icon} class="text-[15px] text-foreground/25 flex-none mt-0.5" />
-                {/if}
-
-                <div class="flex-1 min-w-0 flex flex-col gap-0.5">
-                  <!-- First line: label and time -->
-                  <CommandPaletteItemTitle {item} />
-
-                  <!-- Second line: description or breadcrumbs -->
-                  {#if item.description || item.breadcrumbs || item.path}
-                    <div class="text-xs text-subtle truncate">
-                      {#if item.type === 'note' && item.breadcrumbs}
-                        {item.breadcrumbs}
-                      {:else if item.type === 'change' || item.type === 'file'}
-                        <span class="text-subtle">{item.path || item.description}</span>
-                      {:else}
-                        {item.description}
-                      {/if}
-                    </div>
+              {#snippet rowDescription()}
+                <span class="block truncate">
+                  {#if item.type === 'note' && item.breadcrumbs}
+                    {item.breadcrumbs}
+                  {:else if item.type === 'change' || item.type === 'file'}
+                    {item.path || item.description}
+                  {:else}
+                    {item.description}
                   {/if}
-                </div>
+                </span>
+              {/snippet}
+              <ActionRow
+                data-palette-index={index}
+                data-palette-result
+                selected={selectedIndex === index}
+                aria-current={selectedIndex === index ? 'true' : undefined}
+                description={item.description || item.breadcrumbs || item.path
+                  ? rowDescription
+                  : undefined}
+                onclick={() => selectItem(item)}
+                onpointermove={() => (selectedIndex = index)}
+                onpointerdown={(event) => event.preventDefault()}
+              >
+                {#snippet leading()}
+                  {#if item.type === 'agent'}
+                    <AgentAvatar agentId={item.id} variant="compact" />
+                  {:else if item.navigationIcon}
+                    <IntentNavigationIcon
+                      name={item.navigationIcon}
+                      size={16}
+                      class="text-muted-foreground"
+                    />
+                  {:else}
+                    <Fa icon={item.icon} class="size-4 text-muted-foreground" />
+                  {/if}
+                {/snippet}
 
-                {#if item.shortcut}
-                  <kbd
-                    class="text-ui px-1.5 py-0.5 rounded-[4px] bg-foreground/[0.05] text-foreground/35 font-medium"
-                  >
-                    {item.shortcut}
-                  </kbd>
-                {/if}
+                {#snippet title()}
+                  <CommandPaletteItemTitle {item} />
+                {/snippet}
 
-                {#if selectedIndex === index && !item._groupLabel}
-                  <span class="text-subtle text-[13px]">↵</span>
-                {/if}
-              </button>
+                {#snippet trailing()}
+                  {#if item.shortcut}
+                    <ShortcutChip>{item.shortcut}</ShortcutChip>
+                  {/if}
+
+                  {#if selectedIndex === index && !item._groupLabel}
+                    <ShortcutChip>↵</ShortcutChip>
+                  {/if}
+                {/snippet}
+              </ActionRow>
             {/if}
           {/each}
 
@@ -1112,24 +1156,20 @@
       {/if}
 
       <!-- Footer -->
-      <div class="h-px bg-foreground/[0.05]"></div>
-      <div class="px-3 h-[30px] flex items-center gap-5 text-ui text-subtle">
+      <div class="h-px shrink-0 bg-border"></div>
+      <div
+        class="flex shrink-0 flex-wrap items-center gap-x-5 gap-y-2 px-3 py-2 type-caption text-muted-foreground"
+      >
         <span class="flex items-center gap-1.5">
-          <kbd class="px-1.5 py-0.5 rounded-[4px] bg-foreground/[0.04] text-subtle font-medium"
-            >↑↓</kbd
-          >
+          <ShortcutChip>↑↓</ShortcutChip>
           <span>{m.lib_commandPalette_navigate_label()}</span>
         </span>
         <span class="flex items-center gap-1.5">
-          <kbd class="px-1.5 py-0.5 rounded-[4px] bg-foreground/[0.04] text-subtle font-medium"
-            >↵</kbd
-          >
+          <ShortcutChip>↵</ShortcutChip>
           <span>{m.lib_commandPalette_select_label()}</span>
         </span>
         <span class="flex items-center gap-1.5">
-          <kbd class="px-1.5 py-0.5 rounded-[4px] bg-foreground/[0.04] text-subtle font-medium"
-            >{m.lib_commandPalette_esc_label()}</kbd
-          >
+          <ShortcutChip>{m.lib_commandPalette_esc_label()}</ShortcutChip>
           <span>{m.lib_commandPalette_footerClose_label()}</span>
         </span>
       </div>

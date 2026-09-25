@@ -132,7 +132,54 @@ describe('ChatMessage image lightbox', () => {
     });
   });
 
-  it('renders an image block delivered by a live chat delta', () => {
+  it.each(['user', 'assistant'] as const)(
+    'renders a %s image block delivered by a live chat delta',
+    (role) => {
+      const reconciler = new ChatTranscriptReconciler();
+      reconciler.applySnapshot(0, {
+        agentId: 'agent-image',
+        messages: [],
+        truncated: false,
+        totalMessages: 0,
+      });
+      expect(
+        reconciler.applyDelta(1, {
+          added: [
+            {
+              messageId: 'msg-live-image',
+              role,
+              block: {
+                type: 'image',
+                id: 'msg-live-image:0',
+                data: mockImageData,
+                mimeType: mockImageMimeType,
+              },
+            },
+          ],
+          updated: [],
+          removedIds: [],
+        }),
+      ).toBe('applied');
+
+      const message = reconciler.transcript().messages[0];
+      expect(message.contentBlocks?.[0]).toMatchObject({
+        type: 'image',
+        data: mockImageData,
+        mimeType: mockImageMimeType,
+      });
+      render(ChatMessage, { props: { message } });
+
+      expect(
+        screen
+          .getByRole('img', {
+            name: role === 'assistant' ? 'Image from agent' : 'Attached image 1',
+          })
+          .getAttribute('src'),
+      ).toBe(`data:${mockImageMimeType};base64,${mockImageData}`);
+    },
+  );
+
+  it('reserves the intrinsic aspect box for an image block carrying width/height from a live delta (§7.1)', async () => {
     const reconciler = new ChatTranscriptReconciler();
     reconciler.applySnapshot(0, {
       agentId: 'agent-image',
@@ -140,36 +187,36 @@ describe('ChatMessage image lightbox', () => {
       truncated: false,
       totalMessages: 0,
     });
-    expect(
-      reconciler.applyDelta(1, {
-        added: [
-          {
-            messageId: 'msg-live-image',
-            role: 'assistant',
-            block: {
-              type: 'image',
-              id: 'msg-live-image:0',
-              data: mockImageData,
-              mimeType: mockImageMimeType,
-            },
+    reconciler.applyDelta(1, {
+      added: [
+        {
+          messageId: 'msg-sized-image',
+          role: 'assistant',
+          block: {
+            type: 'image',
+            id: 'msg-sized-image:0',
+            data: mockImageData,
+            mimeType: mockImageMimeType,
+            width: 1440,
+            height: 900,
           },
-        ],
-        updated: [],
-        removedIds: [],
-      }),
-    ).toBe('applied');
+        },
+      ],
+      updated: [],
+      removedIds: [],
+    });
 
     const message = reconciler.transcript().messages[0];
-    expect(message.contentBlocks?.[0]).toMatchObject({
-      type: 'image',
-      data: mockImageData,
-      mimeType: mockImageMimeType,
-    });
-    render(ChatMessage, { props: { message } });
+    const { container } = render(ChatMessage, { props: { message } });
 
-    expect(screen.getByRole('img', { name: 'Image from agent' }).getAttribute('src')).toBe(
-      `data:${mockImageMimeType};base64,${mockImageData}`,
-    );
+    const frame = container.querySelector<HTMLElement>('[data-image-sized]');
+    expect(frame).not.toBeNull();
+    expect(frame!.style.aspectRatio).toBe('1440 / 900');
+    expect(frame!.dataset.loaded).toBe('false');
+
+    await fireEvent.load(screen.getByRole('img', { name: 'Image from agent' }));
+    expect(frame!.dataset.loaded).toBe('true');
+    expect(frame!.style.aspectRatio).toBe('1440 / 900');
   });
 
   it('renders protocol-shaped image content returned by an agent tool', () => {
@@ -477,6 +524,115 @@ describe('ChatMessage image lightbox', () => {
         timestamp: new Date('2024-01-01T12:00:00Z'),
       } as AgentMessage;
     }
+
+    it.each(['user', 'assistant'] as const)(
+      'keeps a snapshot-ingressed %s legacy slim placeholder actionable for hydration',
+      async (role) => {
+        const reconciler = new ChatTranscriptReconciler('agent-1');
+        const placeholder = {
+          type: 'image',
+          id: 'msg-legacy-slim:0',
+          mimeType: mockImageMimeType,
+          dataTruncated: true,
+          dataBytes: 8192,
+        };
+        reconciler.applySnapshot(0, {
+          agentId: 'agent-1',
+          messages: [
+            {
+              id: 'msg-legacy-slim',
+              agentId: 'agent-1',
+              role,
+              timestamp: '2026-09-07T00:00:00.000Z',
+              contentBlocks: [placeholder],
+            },
+          ],
+          truncated: false,
+          totalMessages: 1,
+        });
+        const message = reconciler.transcript().messages[0];
+        mockStoreMessage.value = message;
+        render(ChatMessage, {
+          props: { message, agentId: 'agent-1', messageId: 'msg-legacy-slim' },
+        });
+
+        await fireEvent.click(
+          role === 'assistant'
+            ? screen.getByTestId('chat-image-placeholder')
+            : screen.getByRole('button', { name: /view attached image 1 of 1 full size/i }),
+        );
+
+        expect(dispatchMock).toHaveBeenCalledWith(
+          expect.objectContaining({
+            type: 'chatState/messageBlockHydrationRequested',
+            payload: ['agent-1', 'msg-legacy-slim', 'msg-legacy-slim:0'],
+          }),
+        );
+      },
+    );
+
+    it('retains a sent image without thumbnail through failed hydration, retry and full-image load', async () => {
+      const message = createTruncatedMessage();
+      delete message.contentBlocks[1].data;
+      delete message.contentBlocks[1].dataIsThumbnail;
+      mockStoreMessage.value = message;
+      function setHydration(entry: Record<string, unknown>) {
+        mockStoreState.value = {
+          chatState: {
+            byAgentId: {
+              'agent-1': {
+                hydratedBlocks: { 'msg-slim|msg-slim:1': entry },
+              },
+            },
+          },
+        };
+        (mockStore as unknown as { emitState: () => void }).emitState();
+      }
+      dispatchMock.mockImplementation((action) => {
+        if (action.type === 'chatState/messageBlockHydrationRequested') {
+          setHydration({ status: 'loading', seq: 1 });
+        }
+      });
+      render(ChatMessage, { props: { message, agentId: 'agent-1', messageId: 'msg-slim' } });
+      const button = screen.getByRole('button', { name: /view attached image 1 of 1 full size/i });
+      await fireEvent.click(button);
+      await fireEvent.click(button);
+      expect(
+        dispatchMock.mock.calls.filter(
+          ([action]) => action.type === 'chatState/messageBlockHydrationRequested',
+        ),
+      ).toHaveLength(1);
+      expect(screen.queryByRole('dialog', { name: /image preview/i })).toBeNull();
+      setHydration({ status: 'error', seq: 1, error: 'offline' });
+      await waitFor(() => expect(button.getAttribute('aria-busy')).toBe('false'));
+      expect(screen.queryByRole('dialog', { name: /image preview/i })).toBeNull();
+      expect(screen.getByTestId('chat-message-image-placeholder')).toBeTruthy();
+      await fireEvent.click(button);
+      setHydration({
+        status: 'loaded',
+        seq: 2,
+        block: {
+          type: 'image',
+          id: 'msg-slim:1',
+          data: fullImageData,
+          mimeType: mockImageMimeType,
+        },
+      });
+      await waitFor(() => {
+        const dialog = screen.getByRole('dialog', { name: /image preview/i });
+        expect(within(dialog).getByRole('img').getAttribute('src')).toBe(
+          `data:${mockImageMimeType};base64,${fullImageData}`,
+        );
+        expect(button.querySelector('img')?.getAttribute('src')).toBe(
+          `data:${mockImageMimeType};base64,${fullImageData}`,
+        );
+      });
+      expect(
+        dispatchMock.mock.calls.filter(
+          ([action]) => action.type === 'chatState/messageBlockHydrationRequested',
+        ),
+      ).toHaveLength(2);
+    });
 
     it('clicking a truncated attachment dispatches a hydration request instead of opening', async () => {
       const message = createTruncatedMessage();

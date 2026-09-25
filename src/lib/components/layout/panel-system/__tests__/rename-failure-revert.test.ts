@@ -16,8 +16,9 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
-vi.mock('svelte-sonner', () => ({
-  toast: {
+vi.mock('$lib/components/patterns/notify', async () => ({
+  ...(await vi.importActual('$lib/components/ui/toast/toast-countdown')),
+  notify: {
     success: vi.fn(),
     error: vi.fn(),
     info: vi.fn(),
@@ -26,7 +27,7 @@ vi.mock('svelte-sonner', () => ({
   },
 }));
 
-import { toast } from 'svelte-sonner';
+import { notify } from '$lib/components/patterns/notify';
 import { renameWithUndo, reversibleActions } from '$lib/utils/reversible-actions';
 
 /**
@@ -155,8 +156,8 @@ describe('PanelLayout agent rename failure revert', () => {
     expect(updateTabTitle).toHaveBeenNthCalledWith(2, 'tab-1', 'Old Name');
 
     // The error surfaces as a toast.error; no undo toast should appear.
-    expect(toast.error).toHaveBeenCalled();
-    expect(toast.warning).not.toHaveBeenCalled();
+    expect(notify.error).toHaveBeenCalled();
+    expect(notify.warning).not.toHaveBeenCalled();
   });
 
   it('does not revert when renameSession resolves successfully', async () => {
@@ -189,8 +190,8 @@ describe('PanelLayout agent rename failure revert', () => {
     expect(updateTabTitle).toHaveBeenCalledWith('tab-2', 'New');
 
     // Undo toast is shown, not an error.
-    expect(toast.warning).toHaveBeenCalled();
-    expect(toast.error).not.toHaveBeenCalled();
+    expect(notify.warning).toHaveBeenCalled();
+    expect(notify.error).not.toHaveBeenCalled();
   });
 
   it('preserves pre-rename nameExplicitlySet=false on revert (auto-named session)', async () => {

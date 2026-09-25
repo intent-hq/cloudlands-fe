@@ -78,6 +78,12 @@ vi.mock('../json-rpc-client', () => {
     getReconnectAttempts(): number {
       return 0;
     }
+    isConnectionLimited(): boolean {
+      return false;
+    }
+    getConnectionLimitRetryAfterMs(): number | null {
+      return null;
+    }
   }
   return { JsonRpcClient: FakeJsonRpcClient };
 });
@@ -128,6 +134,47 @@ vi.mock('../connections-store', () => ({
   setHosts: store.setHosts,
 }));
 
+// Guest sessions (multiplayer): a joined host resolves through this store
+// instead of the connections registry, and its hostname capture persists to
+// it. Empty by default; the guest test below seeds one record.
+const guestStore = vi.hoisted(() => ({
+  findById: vi.fn(),
+  getDecryptedToken: vi.fn(),
+  setHostname: vi.fn(),
+}));
+vi.mock('../guest-sessions-store', () => ({
+  list: vi.fn(async () => []),
+  findById: guestStore.findById,
+  forget: vi.fn(async () => true),
+  leaveWorkspace: vi.fn(async () => true),
+  setWorkspaces: vi.fn(async () => false),
+  getDecryptedToken: guestStore.getDecryptedToken,
+  setHostname: guestStore.setHostname,
+  setTcAddress: vi.fn(async () => false),
+  setHosts: vi.fn(async () => false),
+  listSyncRecords: vi.fn(async () => []),
+  applyRemoteSyncRecord: vi.fn(async () => false),
+  onGuestSessionsMutated: () => () => {},
+  onGuestCredentialReplaced: () => () => {},
+  onGuestSessionRemovedBySync: () => () => {},
+}));
+
+const GUEST = {
+  id: 'guest-1',
+  label: 'tc.example.ts.net',
+  host: 'tc.example.ts.net',
+  hosts: ['tc.example.ts.net'],
+  port: 8443,
+  fingerprint: 'EE:FF:00:11',
+  tcAddress: 'tc.example.ts.net',
+  hostname: null,
+  principalId: 'prn_7',
+  login: 'octocat',
+  tokenEncrypted: true,
+  workspaces: [{ id: 'ws-guest', title: 'Guest project' }],
+  updatedAt: 1,
+};
+
 const REMOTE = {
   id: 'remote-1',
   label: '10.0.0.5:8443',
@@ -177,6 +224,9 @@ beforeEach(() => {
   store.getDetectHosts.mockResolvedValue(false);
   store.setHosts.mockResolvedValue(undefined);
   store.setDetectedDeviceKind.mockResolvedValue(false);
+  guestStore.findById.mockResolvedValue(null);
+  guestStore.getDecryptedToken.mockResolvedValue(null);
+  guestStore.setHostname.mockResolvedValue(true);
   vi.mocked(BrowserWindow.getAllWindows).mockReturnValue([]);
 });
 
@@ -277,6 +327,31 @@ describe('openBackendWindow hostname labeling', () => {
     const mod = await loadModule();
 
     await expect(mod.openBackendWindow('remote-1')).resolves.toEqual({ id: 'remote-1' });
+  });
+
+  it('captures a guest host’s pretty hostname into the guest session and re-broadcasts guest sessions', async () => {
+    hostStatus.value = {
+      hostname: 'studio.local',
+      prettyHostname: 'Clement’s Mac Studio',
+      os: 'macos',
+      arch: 'aarch64',
+    };
+    guestStore.findById.mockImplementation(async (id: string) => (id === GUEST.id ? GUEST : null));
+    guestStore.getDecryptedToken.mockResolvedValue('guest-token');
+    const send = installWindow();
+    const mod = await loadModule();
+
+    await mod.openBackendWindow(GUEST.id);
+
+    await vi.waitFor(() =>
+      expect(guestStore.setHostname).toHaveBeenCalledWith(GUEST.id, 'Clement’s Mac Studio'),
+    );
+    // The guest record — not the paired-connection registry — is the write target.
+    expect(store.setHostname).not.toHaveBeenCalled();
+    expect(store.setDetectedDeviceKind).not.toHaveBeenCalled();
+    await vi.waitFor(() =>
+      expect(send.mock.calls.some(([c]) => c === 'guest-sessions:changed')).toBe(true),
+    );
   });
 });
 

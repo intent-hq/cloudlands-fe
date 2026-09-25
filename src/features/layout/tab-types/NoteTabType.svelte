@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onDestroy } from 'svelte';
+  import { writable } from 'svelte/store';
   import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-session-selectors';
   /**
    * Note Tab Type Component
@@ -33,12 +34,14 @@
   import NoteVersionHistory from '$lib/components/workspace/NoteVersionHistory.svelte';
   import SpecWritingOnboarding from '$lib/components/workspace/SpecWritingOnboarding.svelte';
   import { Button } from '$lib/components/ui/button';
-  import { withToastCountdown } from '$lib/components/ui/toast';
+  import { withToastCountdown } from '$lib/components/patterns/notify';
   import { Skeleton } from '$lib/components/ui/skeleton';
   import * as Menu from '$lib/components/ui/menu';
   import OpenComboButton from '$features/external-editors/components/OpenComboButton.svelte';
   import NoteViewSettingsDropdown from './NoteViewSettingsDropdown.svelte';
-  import { selectScrollPosition } from '$store/renderer/slices/tab-state/tab-state-selectors';
+  import RenderedNotePreview from './RenderedNotePreview.svelte';
+  import NotePresenceAvatarStack from '$features/notes/note-presence/NotePresenceAvatarStack.svelte';
+  import { selectAllScrollPositions } from '$store/renderer/slices/tab-state/tab-state-selectors';
   import { saveScrollPosition } from '$store/renderer/slices/tab-state/tab-state-slice';
 
   import Fa from 'svelte-fa';
@@ -46,6 +49,7 @@
   import { m } from '$shared/paraglide/messages.js';
   import { store as appStore } from '$store/renderer/store';
   import NoteContentSurface, { type NoteContentState } from './NoteContentSurface.svelte';
+  import { selectNoteViewMode } from '$store/renderer/slices/transient-ui/transient-ui-selectors';
 
   const logger = createLogger('NoteTabType');
 
@@ -55,12 +59,21 @@
 
   // svelte-ignore state_referenced_locally
   const workspace = selectWorkspaceById(workspaceId);
-  const scrollPosition = selectScrollPosition(tab.id);
+  const scrollPositions = selectAllScrollPositions();
+  const scrollPosition = $derived($scrollPositions[tab.id]);
 
   // svelte-ignore state_referenced_locally
   const note = selectNoteById(workspaceId, tab.noteId);
   // svelte-ignore state_referenced_locally
   const notesState = selectWorkspaceNotesState(workspaceId);
+  // svelte-ignore state_referenced_locally - initial selector target; effects below retarget on prop changes
+  const noteViewWorkspaceIdStore = writable(workspaceId);
+  // svelte-ignore state_referenced_locally - initial selector target; effects below retarget on prop changes
+  const noteViewNoteIdStore = writable(tab.noteId ?? '');
+  $effect(() => noteViewWorkspaceIdStore.set(workspaceId));
+  $effect(() => noteViewNoteIdStore.set(tab.noteId ?? ''));
+  const noteViewModeStore = selectNoteViewMode(noteViewWorkspaceIdStore, noteViewNoteIdStore);
+  const noteViewMode = $derived($noteViewModeStore);
 
   // Version history state
   let showVersionHistory = $state(false);
@@ -160,6 +173,7 @@
     if (isSpecNote(tab.noteId)) return !isInitialSpecWriteInProgress;
     return true;
   });
+  const showRenderedPreview = $derived(noteViewMode === 'preview' && !showSpecOnboarding);
 
   const noteContentState = $derived.by<NoteContentState>(() => {
     if (!tab.noteId) return 'missing';
@@ -167,9 +181,14 @@
     if (noteContentLoadFailed) return 'error';
     if (noteContentStale) return 'loading';
     if (!noteEditable) return 'read-only';
+    if (showRenderedPreview) return 'read-only';
     if (!$note.content?.trim()) return 'empty';
     return 'editor';
   });
+
+  function handlePreviewScrollPositionSave(scrollKey: string, scrollTop: number) {
+    appStore.dispatch(saveScrollPosition(scrollKey, scrollTop));
+  }
 
   async function handleCopyNote() {
     if (!$note) return;
@@ -189,8 +208,8 @@
   async function handleDeleteNote() {
     if (!tab.noteId || isNoteDeleting) return;
     if (isSpecNote(tab.noteId)) {
-      const { toast } = await import('svelte-sonner');
-      toast.error(m.layout_noteTab_cannotDeleteSpec_error());
+      const { notify } = await import('$lib/components/patterns/notify');
+      notify.error(m.layout_noteTab_cannotDeleteSpec_error());
       return;
     }
     const noteIdToDelete = tab.noteId;
@@ -203,8 +222,8 @@
       void deleteNote(workspaceId, noteIdToDelete);
 
       // Show undo toast
-      const { toast } = await import('svelte-sonner');
-      const toastId = toast.warning(
+      const { notify } = await import('$lib/components/patterns/notify');
+      const toastId = notify.warning(
         m.layout_noteTab_deletedNote_toast({ title: noteTitle }),
         withToastCountdown(
           {
@@ -222,10 +241,10 @@
                         parentId: savedNote.parentId,
                         visibility: savedNote.visibility,
                       });
-                      toast.dismiss(toastId);
+                      notify.dismiss(toastId);
                     } catch (err) {
                       logger.error('Failed to restore note', err);
-                      toast.error(m.layout_noteTab_restoreFailed_error());
+                      notify.error(m.layout_noteTab_restoreFailed_error());
                     }
                   },
                 }
@@ -236,19 +255,33 @@
       );
     } catch (error) {
       logger.error('Failed to delete note', error);
-      const { toast } = await import('svelte-sonner');
-      toast.error(m.layout_noteTab_deleteFailed_error());
+      const { notify } = await import('$lib/components/patterns/notify');
+      notify.error(m.layout_noteTab_deleteFailed_error());
     } finally {
       isNoteDeleting = false;
     }
   }
 
+  // Other people's presence is only possible in a shared workspace.
+  const showPresenceStack = $derived(($workspace?.memberCount ?? 0) >= 2 && !!tab.noteId);
+
   // Register header actions
   $effect(() => {
     if (!headerContext || !isActive) return;
-    headerContext.registerActions({ display: noteDisplayActions, actions: noteActions });
+    headerContext.registerActions({
+      primary: showPresenceStack ? notePrimaryActions : undefined,
+      display: noteDisplayActions,
+      actions: noteActions,
+      destructive: tab.noteId && !isSpecNote(tab.noteId) ? noteDestructiveActions : undefined,
+    });
   });
 </script>
+
+{#snippet notePrimaryActions()}
+  {#if tab.noteId}
+    <NotePresenceAvatarStack {workspaceId} noteId={tab.noteId} />
+  {/if}
+{/snippet}
 
 {#snippet noteDisplayActions()}
   {#if tab.noteId}
@@ -265,6 +298,9 @@
   {#if noteFilePath}
     <OpenComboButton filePath={noteFilePath} {workspaceId} isDirectory={false} embedded />
   {/if}
+{/snippet}
+
+{#snippet noteDestructiveActions()}
   {#if tab.noteId && !isSpecNote(tab.noteId)}
     <Menu.CommandItem
       icon={faTrash}
@@ -305,13 +341,22 @@
     {:else if showSpecOnboarding}
       <!-- Show onboarding when coordinator is writing initial spec -->
       <SpecWritingOnboarding agentId={initialSpecWriterAgentId} {workspaceId} />
+    {:else if showRenderedPreview}
+      <RenderedNotePreview
+        content={$note.content || ''}
+        {workspaceId}
+        noteId={tab.noteId}
+        scrollKey={tab.id}
+        initialScrollPosition={scrollPosition}
+        onScrollPositionSave={handlePreviewScrollPositionSave}
+      />
     {:else if $workspace}
       <NoteWithComments
         workspace={$workspace}
         noteId={tab.noteId}
         editable={noteEditable}
         {isPanelFocused}
-        initialScrollPosition={$scrollPosition}
+        initialScrollPosition={scrollPosition}
         onScrollPositionSave={(scrollTop: number) =>
           appStore.dispatch(saveScrollPosition(tab.id, scrollTop))}
       />

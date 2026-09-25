@@ -165,6 +165,15 @@ vi.mock('$store/renderer/store', async () => {
       providerCatalog,
       providerSettings: { enabledProviders: {} },
       model: { defaultProviderId: 'auggie' },
+      // The picker's guest/collaborator gate reads the caller role: a settled
+      // owner window keeps these label regressions on the unlocked path.
+      workspace: { hasLoaded: false, workspaces: { idField: 'id', map: {}, ids: [] } },
+      connections: { windowBackendId: 'local', hasReceivedList: true },
+      guestSessions: {
+        sessions: { idField: 'id', map: {}, ids: [] },
+        hasReceivedList: true,
+        listUnavailable: false,
+      },
     }),
     dispatch: mockReduxDispatch,
   });
@@ -221,6 +230,7 @@ vi.mock('$store/renderer/slices/daemon-health/daemon-health-selectors', () => ({
 
 vi.mock('$store/renderer/slices/provider-settings/provider-settings-selectors', () => ({
   selectActiveProviderId: () => activeProviderId$,
+  selectEnabledProviders: () => readable({}),
   selectModelFetchProviderIds: () => enabledProviderIds$,
   selectIsProviderModelAccessAllowed: () => readable(true),
   selectAvailableEnabledProviderIds: () => enabledProviderIds$,
@@ -253,7 +263,9 @@ vi.mock('$shared/types/agent-session', () => ({
 }));
 
 vi.mock('$lib/utils/workspace-navigation', () => ({ navigateToSettings: vi.fn() }));
-vi.mock('svelte-sonner', () => ({ toast: { error: vi.fn(), info: vi.fn(), warning: vi.fn() } }));
+vi.mock('$lib/components/patterns/notify', () => ({
+  notify: { error: vi.fn(), info: vi.fn(), warning: vi.fn() },
+}));
 
 import { store as appStore } from '$store/renderer/store';
 import { updateSession as updateAgentSessionFields } from '$store/renderer/slices/agent-session/agent-session-slice';
@@ -396,6 +408,52 @@ describe('ModelPicker trigger label regressions', () => {
     expect(screen.getByTestId('provider-icon').getAttribute('data-provider-id')).toBe(
       'claude-code',
     );
+  });
+
+  it.each([
+    { showDefaultOption: true, expected: 'Default (Balanced)' },
+    { showDefaultOption: false, expected: 'Balanced' },
+  ])(
+    'signals inheritance only when the default option is shown: $showDefaultOption',
+    ({ showDefaultOption, expected }) => {
+      availableModels$.set([{ value: 'auggie:balanced', label: 'Balanced' }]);
+      render(ModelPicker, {
+        props: {
+          selectedModel: undefined,
+          defaultModelId: 'auggie:balanced',
+          showDefaultOption,
+          isLocked: true,
+        },
+      });
+      expect(screen.getByRole('button').textContent?.trim()).toBe(expected);
+    },
+  );
+
+  it('lets the caller format the resolved inherited model', () => {
+    availableModels$.set([{ value: 'auggie:balanced', label: 'Balanced' }]);
+    render(ModelPicker, {
+      props: {
+        selectedModel: undefined,
+        defaultModelId: 'auggie:balanced',
+        showDefaultOption: true,
+        formatDefaultModelLabel: (model) => `Inherited: ${model}`,
+        isLocked: true,
+      },
+    });
+    expect(screen.getByRole('button').textContent?.trim()).toBe('Inherited: Balanced');
+  });
+
+  it('wraps the resolved catalog default when inheritance is selected', () => {
+    availableModels$.set([{ value: 'auggie:balanced', label: 'Balanced', isDefault: true }]);
+    render(ModelPicker, {
+      props: {
+        selectedModel: undefined,
+        fallbackToCatalogDefault: true,
+        showDefaultOption: true,
+        isLocked: true,
+      },
+    });
+    expect(screen.getByRole('button').textContent?.trim()).toBe('Default (Balanced)');
   });
 
   it('still renders the default-model fallback label for the bare "default" sentinel', () => {
@@ -555,6 +613,45 @@ describe('ModelPicker trigger label regressions', () => {
       'claude-code',
     );
     expect(vi.mocked(getModelsForProviderForLoadingState)).toHaveBeenCalledWith('claude-code');
+  });
+
+  it('attributes a bare session model to the agent provider when that provider is outside the enabled set (guest window)', async () => {
+    // Guest-window shape: the host's settings are not readable
+    // (`settings.list` is administrator-only), so `providers.enabled` never
+    // hydrates and only the first-catalog-row default provider (auggie) is
+    // enabled locally — the host agent's provider (claude-code) is reached
+    // only through the per-agent fetch. The daemon pins a BARE model id on
+    // the session, so catalog-ownership attribution must consult that
+    // per-agent group instead of falling back to the default provider.
+    selectedModel$.set(undefined);
+    availableModels$.set([{ value: 'butler', label: 'Auggie Butler' }]);
+    enabledProviderIds$.set(['auggie']);
+    activeProviderId$.set('auggie');
+    sessions.set('agent-1', {
+      id: 'agent-1',
+      workspaceId: 'ws-1',
+      provider: 'claude-code',
+      model: 'claude-opus-4-8',
+    });
+    sessionVersion$.update((value) => value + 1);
+
+    render(ModelPicker, {
+      props: {
+        selectedModel: 'claude-opus-4-8',
+        agentId: 'agent-1',
+        workspaceId: 'ws-1',
+        isLocked: true,
+      },
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, 80));
+    await tick();
+
+    expect(vi.mocked(getModelsForProviderForLoadingState)).toHaveBeenCalledWith('claude-code');
+    expect(screen.getByRole('button').textContent ?? '').toContain('Claude Opus 4.8');
+    expect(screen.getByTestId('provider-icon').getAttribute('data-provider-id')).toBe(
+      'claude-code',
+    );
   });
 
   it('does not render a provider icon for unknown provider IDs', () => {

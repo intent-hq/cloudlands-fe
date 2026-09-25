@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
   arePanelTabCachesEqual,
-  BROWSER_TAB_CACHE_TTL_MS,
   getNextPanelTabCacheExpiryDelay,
+  initializePanelTabCache,
   updatePanelTabCache,
   type PanelTabCacheTab,
 } from '../panel-tab-cache';
@@ -12,6 +12,18 @@ function tabs(...ids: string[]): PanelTabCacheTab[] {
 }
 
 describe('panel tab cache', () => {
+  it('seeds active content before the first cache effect', () => {
+    const cache = initializePanelTabCache(true, tabs('active', 'inactive'), 'active', 100);
+
+    expect(Array.from(cache.entries())).toEqual([['active', 100]]);
+  });
+
+  it('keeps an initially hidden panel dormant', () => {
+    const cache = initializePanelTabCache(false, tabs('active'), 'active', 100);
+
+    expect(cache.size).toBe(0);
+  });
+
   it('keeps the active tab and drops tabs no longer in the panel', () => {
     const cache = new Map([
       ['active', 100],
@@ -44,21 +56,31 @@ describe('panel tab cache', () => {
     expect(next.has('recent')).toBe(true);
   });
 
-  it('keeps an inactive browser tab mounted until its 30-minute ttl elapses', () => {
+  it('retains visited user browser tabs through time and cache pressure until they close', () => {
     const browserTabs: PanelTabCacheTab[] = [
-      { id: 'active', type: 'note' },
-      { id: 'browser', type: 'browser' },
+      { id: 'browser-a', type: 'browser' },
+      { id: 'browser-b', type: 'browser' },
+      { id: 'unvisited', type: 'browser' },
+      { id: 'note', type: 'note' },
     ];
-    const cache = new Map([
-      ['active', 0],
-      ['browser', 0],
-    ]);
+    let cache = initializePanelTabCache(true, browserTabs, 'browser-a', 0);
+    cache = updatePanelTabCache(cache, browserTabs, 'browser-b', 100);
+    cache = updatePanelTabCache(cache, browserTabs, 'note', 60 * 60 * 1000, {
+      maxInactiveTabs: 0,
+    });
+    expect([...cache.keys()].sort()).toEqual(['browser-a', 'browser-b', 'note']);
+    expect(
+      getNextPanelTabCacheExpiryDelay(cache, 'note', 60 * 60 * 1000, 30_000, browserTabs),
+    ).toBeNull();
 
-    const fresh = updatePanelTabCache(cache, browserTabs, 'active', BROWSER_TAB_CACHE_TTL_MS - 1);
-    const stale = updatePanelTabCache(cache, browserTabs, 'active', BROWSER_TAB_CACHE_TTL_MS);
-
-    expect(fresh.has('browser')).toBe(true);
-    expect(stale.has('browser')).toBe(false);
+    cache = updatePanelTabCache(
+      cache,
+      browserTabs.filter((tab) => tab.id !== 'browser-a'),
+      'note',
+      60 * 60 * 1000,
+    );
+    expect(cache.has('browser-a')).toBe(false);
+    expect(cache.has('browser-b')).toBe(true);
   });
 
   it('caps inactive tabs by evicting the oldest entries first', () => {
@@ -80,7 +102,7 @@ describe('panel tab cache', () => {
     expect(Array.from(next.keys()).sort()).toEqual(['active', 'middle', 'newest']);
   });
 
-  it('evicts non-browser tabs before a fresh cached browser tab', () => {
+  it('does not count browser tabs against the inactive content cap', () => {
     const cache = new Map([
       ['active', 400],
       ['browser', 100],
@@ -99,7 +121,7 @@ describe('panel tab cache', () => {
       maxInactiveTabs: 2,
     });
 
-    expect(Array.from(next.keys()).sort()).toEqual(['active', 'browser', 'diff']);
+    expect(Array.from(next.keys()).sort()).toEqual(['active', 'browser', 'diff', 'note']);
   });
 
   it('returns the delay until the next inactive tab expires', () => {
@@ -113,7 +135,7 @@ describe('panel tab cache', () => {
     expect(getNextPanelTabCacheExpiryDelay(new Map([['active', 1_000]]), 'active', 900)).toBeNull();
   });
 
-  it('schedules browser expiry using the browser-specific ttl', () => {
+  it('does not schedule expiry for user browser tabs', () => {
     const cache = new Map([
       ['active', 100],
       ['browser', 100],
@@ -123,9 +145,7 @@ describe('panel tab cache', () => {
       { id: 'browser', type: 'browser' },
     ];
 
-    expect(getNextPanelTabCacheExpiryDelay(cache, 'active', 200, 30_000, browserTabs)).toBe(
-      BROWSER_TAB_CACHE_TTL_MS - 100,
-    );
+    expect(getNextPanelTabCacheExpiryDelay(cache, 'active', 200, 30_000, browserTabs)).toBeNull();
   });
 
   it('compares cache contents by tab id and timestamp', () => {
@@ -152,7 +172,7 @@ describe('panel tab cache', () => {
         cache,
         [{ id: 'active' }, owned],
         'active',
-        BROWSER_TAB_CACHE_TTL_MS + 1,
+        60 * 60 * 1000 + 1,
         { ttlMs: 100 },
       );
       expect(next.has('owned')).toBe(true);

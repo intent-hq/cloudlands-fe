@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/experimental-ct-svelte';
+import { expect, test } from '../../../../../test/ct-test';
 import type { Locator } from '@playwright/test';
 import PanelStructuralColumnFitHarness from './mocks/PanelStructuralColumnFitHarness.svelte';
 
@@ -29,17 +29,13 @@ const MAX_ENDPOINT_ROUNDING_PIXELS = 2;
 function measureFit(component: Locator) {
   return component.evaluate(() => {
     const inset = document.querySelector<HTMLElement>('[data-testid="panel-workspace-inset"]')!;
-    const canvas = document.querySelector<HTMLElement>(
-      '.panel-canvas-resize-handle',
-    )!.parentElement!;
-    const handle = document.querySelector<HTMLElement>('.panel-canvas-resize-handle')!;
+    const canvas = document.querySelector<HTMLElement>('.panel-canvas-frame')!;
     const renderedCanvas = document.querySelector<HTMLElement>(
       '.panel-split-container.horizontal',
     )!;
     const panels = Array.from(document.querySelectorAll<HTMLElement>('[data-panel-id]'));
     const insetRect = inset.getBoundingClientRect();
     const canvasRect = canvas.getBoundingClientRect();
-    const handleRect = handle.getBoundingClientRect();
     const renderedCanvasRect = renderedCanvas.getBoundingClientRect();
     const rightmostRect = panels.at(-1)!.getBoundingClientRect();
     const styles = getComputedStyle(inset);
@@ -52,7 +48,6 @@ function measureFit(component: Locator) {
       insetScrollWidth: inset.scrollWidth,
       insetClientWidth: inset.clientWidth,
       canvasRight: canvasRect.right,
-      handleCenter: handleRect.left + handleRect.width / 2,
       renderedCanvasRight: renderedCanvasRect.right,
       visibleRight: insetRect.right - (Number.parseFloat(styles.paddingRight) || 0),
       rightmostRight: rightmostRect.right,
@@ -101,7 +96,7 @@ for (const viewportWidth of [640, 1200]) {
           .toBeLessThanOrEqual(MAX_ENDPOINT_ROUNDING_PIXELS);
         const fit = await measureFit(component);
 
-        expect(Math.abs(fit.handleCenter - fit.renderedCanvasRight)).toBeLessThanOrEqual(1);
+        expect(Math.abs(fit.canvasRight - fit.renderedCanvasRight)).toBeLessThanOrEqual(1);
         expect(fit.canvasWidth).toBeLessThanOrEqual(fit.availableWidth);
         expect(maxDevicePixelOverflow(fit, edgeAllowance)).toBeLessThanOrEqual(
           MAX_ENDPOINT_ROUNDING_PIXELS,

@@ -28,8 +28,6 @@ describe('workspace sidebar hierarchy presentation contract', () => {
     expect(navigation).toContain('size="icon"');
     expect(navigation).toContain('TITLEBAR_NAVIGATION_CONTROL_CLASS');
     expect(navigation).toContain('data-nav-item={item.id}');
-    expect(navigation).toContain('name="dandelion"');
-    expect(navigation).not.toContain('name="spaces"');
     expect(navigation).not.toContain('SidebarNavHoverCard');
     expect(titleBar).toContain('<SidebarNav />');
     expect(titleBar.indexOf('<SidebarNav />')).toBeLessThan(titleBar.indexOf('<WorkspaceTabStrip'));
@@ -96,7 +94,8 @@ describe('workspace sidebar hierarchy presentation contract', () => {
     expect(sharedProgress).toContain('segment.visualState');
     expect(progress).toContain('content={taskListTooltip}');
     expect(progress).toContain('bg-secondary!');
-    expect(progress).toContain('overflow-x-hidden overflow-y-auto px-2 pt-2');
+    expect(progress).toContain('overflow-x-hidden overflow-y-auto px-2 py-1');
+    expect(progress).not.toMatch(/\bp[tb]-\d/);
     expect(progress).toContain('onclick={() => specNoteId && onTaskClick?.(specNoteId)}');
     expect(progress).toContain('onclick={() => onTaskClick?.(task.note.id as string)}');
     expect(progress).toContain('TASK_STATUS_INDICATOR_CLASSES[status]');
@@ -214,13 +213,13 @@ describe('workspace sidebar hierarchy presentation contract', () => {
     expect(sidebar).toContain('mountedLauncherRect ?? launcherRects.get(tabId)');
     expect(sidebar).toContain('launcherRect.left - cardRect.left');
     expect(sidebar).toContain('launcherRect.width / cardRect.width');
-    expect(sidebar).toContain('duration: 300');
+    expect(sidebar).toContain('duration: spring.slow.settleMs');
     expect(sidebar).toContain('transform-origin: top left');
     expect(sidebar).toContain('getFixedContainingBlockOffset(node)');
     expect(sidebar).toContain('position: fixed; left: ${fixedLeft}px');
-    expect(sidebar).toContain("direction === 'expand' ? cubicOut(t) : cubicIn(t)");
+    expect(sidebar).toContain('spring.slow.exit.easing(t)');
     expect(sidebar).toContain('data-sidebar-expanded-content');
-    expect(sidebar).toContain("window.matchMedia('(prefers-reduced-motion: reduce)').matches");
+    expect(sidebar).toContain('prefersReducedMotion()');
     expect(sidebar).not.toContain('--sidebar-card-content-');
     expect(transitions).not.toContain('--sidebar-card-content-');
     expect(transitions).not.toContain('grid-template-rows');
@@ -230,9 +229,9 @@ describe('workspace sidebar hierarchy presentation contract', () => {
   it('waits to reveal the launcher grid until the collapsing card reaches its source', () => {
     const sidebar = source('../MultiSelectTabbedSidebar.svelte');
 
-    expect(sidebar).toContain('function launcherGridReveal(_node: Element)');
-    expect(sidebar).toContain('delay: 210');
-    expect(sidebar).toContain('duration: 90');
+    expect(sidebar).toContain('function launcherGridReveal(');
+    expect(sidebar).toContain('delay: spring.moderate.settleMs');
+    expect(sidebar).toContain('duration: spring.fast.settleMs');
     expect(sidebar).toContain('in:launcherGridReveal|global');
   });
 

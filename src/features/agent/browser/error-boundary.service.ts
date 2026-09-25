@@ -6,7 +6,7 @@
  */
 
 import { createLogger } from '$lib/utils/client-logger';
-import { toast } from 'svelte-sonner';
+import { notify as notifyService } from '$lib/components/patterns/notify';
 import { AgentError, AgentErrorCode } from '../errors/agent-errors';
 import { RETRY } from '$shared/constants';
 import { cleanErrorMessage } from '$shared/errors/messages';
@@ -98,7 +98,9 @@ class ErrorBoundaryService {
           const delay = exponentialBackoff ? retryDelay * Math.pow(2, attempt - 1) : retryDelay;
 
           if (notifyOnRetry) {
-            toast.warning(m.agent_errorBoundary_retrying_message({ seconds: delay / 1000 }));
+            notifyService.warning(
+              m.agent_errorBoundary_retrying_message({ seconds: delay / 1000 }),
+            );
           }
 
           onRetry?.(attempt);
@@ -125,7 +127,7 @@ class ErrorBoundaryService {
       lowerMessage.includes('all models unavailable');
 
     if (notify && !isModelsExhaustedError) {
-      toast.error(userMessage);
+      notifyService.error(userMessage);
     }
 
     // Always throw once retries are exhausted (AUDIT-P0-2): the caller must
@@ -168,7 +170,7 @@ class ErrorBoundaryService {
       });
 
       if (options.notify) {
-        toast.error(cleanErrorMessage(err.message));
+        notifyService.error(cleanErrorMessage(err.message));
       }
 
       // No fallback path (AUDIT-P0-2): always throw so callers can render

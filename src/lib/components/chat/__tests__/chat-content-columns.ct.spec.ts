@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/experimental-ct-svelte';
+import { expect, test } from '../../../../test/ct-test';
 import type { Locator } from '@playwright/test';
 import ChatPanelOperationalGeometryHost from './ChatPanelOperationalGeometryHost.svelte';
 import {
@@ -183,21 +183,15 @@ for (const { width, expectedLeftInset, expectedComposerInset, label } of transcr
       'padding-bottom',
       expectedComposerInset,
     );
-    await expect(component.locator('.tiptap-editor.regular-composer-content-inset')).toHaveCSS(
-      'padding-left',
-      expectedComposerInset,
-    );
-    await expect(component.locator('.tiptap-editor.regular-composer-content-inset')).toHaveCSS(
-      'padding-right',
-      expectedComposerInset,
-    );
+    await expect(component.locator('.tiptap-editor')).toHaveCSS('padding-left', '14px');
+    await expect(component.locator('.tiptap-editor')).toHaveCSS('padding-right', '8px');
     await expect(component.locator('[data-chat-input-action-bar]')).toHaveCSS(
       'padding-left',
-      expectedComposerInset,
+      '14px',
     );
     await expect(component.locator('[data-chat-input-action-bar]')).toHaveCSS(
       'padding-right',
-      expectedComposerInset,
+      '8px',
     );
 
     if (width < 640) {
@@ -215,9 +209,19 @@ for (const { width, expectedLeftInset, expectedComposerInset, label } of transcr
       expect(Math.abs(center(avatarBox!) - center(iconBox!))).toBeLessThanOrEqual(1);
       expect(Math.abs(titleBox!.x - summaryBox!.x)).toBeLessThanOrEqual(1);
     } else {
-      await component
-        .getByTestId('chat-transcript-scroll-viewport')
-        .evaluate((node) => node.scrollTo(0, node.scrollHeight));
+      const viewport = component.getByTestId('chat-transcript-scroll-viewport');
+      await viewport.hover();
+      const delta = await viewport.evaluate((node) => {
+        const prompt = node.querySelector<HTMLElement>('[data-pinned-prompt-id]');
+        const turn = prompt?.closest('[data-conversation-turn]');
+        if (!prompt || !turn) throw new Error('Expected a user turn in the transcript');
+        return (
+          (prompt.getBoundingClientRect().bottom + turn.getBoundingClientRect().bottom) / 2 -
+          node.getBoundingClientRect().top
+        );
+      });
+      // Upward wheel input releases follow-bottom; programmatic scrolling does not.
+      await page.mouse.wheel(0, delta);
       await expect(component.getByTestId('pinned-user-prompt')).toBeVisible();
       await expect(component.getByTestId('pinned-prompt-overlay-lane')).toHaveCSS(
         'padding-left',

@@ -8,6 +8,13 @@
   import { m } from '$shared/paraglide/messages.js';
   import { chatPolishFixtureAdapter } from '../chat-polish/chat-polish-fixture-adapter';
   import { getChatPolishScenario } from '../chat-polish/chat-polish-scenarios';
+  import type { TaskProgressItem } from '$lib/components/chat/workspace-task-fallback';
+  import {
+    getSubscriptionCardSeam,
+    isChatCardMessage,
+    isSubscriptionCardMessage,
+  } from '$lib/components/chat/subscription-card-spacing';
+  import type { ChatPolishScenario } from '../chat-polish/chat-polish-types';
 
   let {
     fixture,
@@ -16,11 +23,58 @@
   }: { fixture: UiComponentFixture; compact?: boolean; stickySimulation?: boolean } = $props();
   const scenario = $derived(getChatPolishScenario(fixture.id));
 
+  function subscriptionAgentTasks(index: number): TaskProgressItem[] {
+    const pending = {
+      id: `fixture-task-${index}-pending`,
+      title: 'Review layout',
+      status: 'pending',
+    } as const;
+    const running = {
+      id: `fixture-task-${index}-running`,
+      title: 'Verify behavior',
+      status: 'running',
+    } as const;
+    const completed = {
+      id: `fixture-task-${index}-completed`,
+      title: 'Map states',
+      status: 'completed',
+    } as const;
+    if (index === 0) return [pending];
+    if (index === 1) return [running];
+    if (index === 2) return [completed];
+    if (index === 3) return [pending, running, completed];
+    if (index === 4) {
+      return [
+        pending,
+        running,
+        completed,
+        { id: `fixture-task-${index}-waiting`, title: 'Wait for review', status: 'waiting' },
+        { id: `fixture-task-${index}-blocked`, title: 'Resolve blocker', status: 'blocked' },
+        {
+          id: `fixture-task-${index}-discussion`,
+          title: 'Discuss result',
+          status: 'discussion_needed',
+        },
+        { id: `fixture-task-${index}-review`, title: 'Approve result', status: 'review_required' },
+      ];
+    }
+    return [pending, completed];
+  }
+
+  function isCard(item: ChatPolishScenario['items'][number] | undefined) {
+    return (
+      item?.kind === 'wake' ||
+      item?.kind === 'subscriptions' ||
+      (item?.kind === 'message' && isChatCardMessage(item.message))
+    );
+  }
+
   function subscriptionAgents(count: number, finishedCount = 0) {
     return Array.from({ length: count }, (_, index) => ({
       id: `fixture-agent-${index + 1}`,
       name: m.sandbox_chatPolish_agentName_label({ number: String(index + 1) }),
       finished: index >= count - finishedCount,
+      taskProgress: subscriptionAgentTasks(index),
     }));
   }
 </script>
@@ -38,12 +92,30 @@
       data-chat-polish-conversation={scenario.id}
       data-testid="chat-polish-conversation"
     >
-      {#each scenario.items as item (item.kind === 'message' ? item.message.id : item.id)}
+      {#each scenario.items as item, index (item.kind === 'message' ? item.message.id : item.id)}
+        {@const previousItem = scenario.items[index - 1]}
+        {@const previousIsCard = isCard(previousItem)}
+        {@const currentIsCard = isCard(item)}
+        {@const seam =
+          index > 0 ? getSubscriptionCardSeam(previousIsCard, currentIsCard) : undefined}
+        {#if seam}
+          <div
+            class="chat-polish-card-gap"
+            data-card-seam={seam}
+            data-before-card={currentIsCard}
+            data-after-user-bubble={seam === 'content' &&
+              previousItem?.kind === 'message' &&
+              previousIsCard &&
+              !isSubscriptionCardMessage(previousItem.message)}
+            aria-hidden="true"
+          ></div>
+        {/if}
         {#if item.kind === 'message'}
           <div class="chat-polish-message" data-preview-message-role={item.message.role}>
             <ChatMessage
               message={item.message}
               isStreaming={item.isStreaming}
+              suppressAutomatedWakeTopSpacing
               isSticky={item.message.role === 'user' && (stickySimulation || item.isSticky)}
               readOnly={chatPolishFixtureAdapter.readOnly}
               {...chatPolishFixtureAdapter.messageProps}
@@ -54,6 +126,7 @@
             <EventWakeupBanner
               metadata={{ type: 'event_notification', ...item.wake }}
               asDivider
+              suppressTopGap
               {compact}
               showAgentCards={false}
             />
@@ -74,6 +147,7 @@
                 agents: subscriptionAgents(item.agentCount, item.finishedCount),
               }}
               {compact}
+              suppressTopGap
             />
           </div>
         {:else if item.kind === 'changed-files'}
@@ -93,23 +167,32 @@
 </div>
 
 <style>
+  /* Keep the catalog-only gap control effective after operational rows lost production margins. */
+  .chat-polish-conversation :global([data-adjacent-operational-row='true']) {
+    margin-top: var(--chat-operational-row-gap);
+  }
+
   .chat-polish-preview {
     width: min(100%, var(--chat-polish-panel-width, 510px));
     padding: var(--chat-polish-content-inset, 22px);
     border-radius: var(--chat-polish-card-radius, 9px);
   }
-  .chat-polish-message[data-preview-message-role='user'] {
-    margin-bottom: var(--chat-polish-user-bottom-gap, 24px);
+  .chat-polish-card-gap {
+    height: var(--chat-polish-wake-bottom-gap, 24px);
+    flex-shrink: 0;
   }
-  .chat-polish-wake {
-    margin-block: var(--chat-polish-wake-top-gap, 20px) var(--chat-polish-wake-bottom-gap, 16px);
+  .chat-polish-card-gap[data-before-card='true'] {
+    height: var(--chat-polish-wake-top-gap, 24px);
   }
-  .chat-polish-subscription {
-    margin-bottom: var(--chat-polish-subscription-bottom-gap, 16px);
+  .chat-polish-card-gap[data-after-user-bubble='true'] {
+    height: var(--chat-polish-user-bottom-gap, 24px);
+  }
+  .chat-polish-card-gap[data-card-seam='cards'] {
+    height: var(--chat-polish-subscription-bottom-gap, 16px);
   }
   :global(.chat-polish-preview .turn-failure-notice) {
-    margin-block: var(--chat-polish-failure-notice-top-gap, 16px)
-      var(--chat-polish-failure-notice-bottom-gap, 16px);
+    margin-block: var(--chat-polish-failure-notice-top-gap, 40px)
+      var(--chat-polish-failure-notice-bottom-gap, 0px);
   }
   :global(.chat-polish-preview [data-adjacent-operational-row='true']) {
     margin-top: var(--chat-operational-row-gap, 0px);

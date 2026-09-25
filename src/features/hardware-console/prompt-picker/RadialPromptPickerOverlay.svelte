@@ -10,7 +10,7 @@
    * presentational — all input handling and insertion live in the
    * prompt-picker service.
    */
-  import { fade, scale } from 'svelte/transition';
+  import { fade, scale } from '$lib/motion';
   import { m } from '$shared/paraglide/messages.js';
   import { selectHardwareConsoleRadialPrompt } from '$store/renderer/slices/hardware-console/hardware-console-selectors';
   import { radialCancelSector, radialPromptTurn } from './radial-layout';
@@ -46,12 +46,18 @@
 {#if $radial$.open}
   <div
     class="radial-backdrop fixed inset-0 z-50"
-    transition:fade={{ duration: 120 }}
-    role="listbox"
+    transition:fade={{ tier: 'moderate' }}
+    role="region"
     aria-label={m.hardwareConsole_radialPromptPicker_menu_ariaLabel()}
   >
-    <div class="absolute inset-0 flex items-center justify-center">
-      <div class="relative" transition:scale={{ duration: 140, start: 0.9 }}>
+    <p class="sr-only" role="status" aria-atomic="true">
+      {cancelHighlighted
+        ? m.hardwareConsole_radialPromptPicker_cancel_label()
+        : $radial$.prompts[$radial$.sector ?? 0]}
+      {m.hardwareConsole_radialPromptPicker_keyboard_description()}
+    </p>
+    <div class="absolute inset-0 flex items-center justify-center" aria-hidden="true">
+      <div class="relative" transition:scale={{ tier: 'moderate', distance: 0.1 }}>
         <div
           class="radial-hub absolute left-0 top-0 -translate-x-1/2 -translate-y-1/2 rounded-full px-4 py-2 text-xs"
         >
@@ -66,8 +72,6 @@
             class="radial-item absolute max-w-64 -translate-x-1/2 -translate-y-1/2 rounded-lg px-3 py-2 text-sm"
             class:radial-item-active={$radial$.sector === item.index}
             style="left: {item.x}px; top: {item.y}px;"
-            role="option"
-            aria-selected={$radial$.sector === item.index}
             title={item.text}
           >
             {truncate(item.text)}
@@ -77,8 +81,6 @@
           class="radial-item radial-cancel absolute -translate-x-1/2 -translate-y-1/2 rounded-lg px-3 py-2 text-sm"
           class:radial-item-active={$radial$.sector === cancelSector}
           style="left: {cancelPosition.x}px; top: {cancelPosition.y}px;"
-          role="option"
-          aria-selected={$radial$.sector === cancelSector}
         >
           {m.hardwareConsole_radialPromptPicker_cancel_label()}
         </div>

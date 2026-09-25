@@ -15,6 +15,7 @@ import { NotesPrimitivesSerializer } from './notes-primitives-serializer';
 import type { MarkdownWorkerResponse } from './markdown-worker';
 import { decodeDiffContent } from './diff-patch-utils';
 import { parseFilePathLineSuffix } from '$shared/utils/link-helpers';
+import { MAX_MATH_SOURCE_LENGTH, protectMathSource, renderKatexToString } from './marked-math';
 
 const logger = new Logger('MarkdownProcessor');
 const primitivesSerializer = new NotesPrimitivesSerializer();
@@ -80,7 +81,6 @@ function getMarkdownWorker(): Worker {
       const { id, html, error } = event.data;
       const callback = workerCallbacks.get(id);
       if (callback) {
-        workerCallbacks.delete(id);
         if (error) {
           callback.reject(new Error(error));
         } else {
@@ -106,11 +106,11 @@ const WORKER_TIMEOUT_MS = 30_000;
  */
 async function parseMarkdownMainThread(
   markdown: string,
-  pipeline?: { preserveAnchors: boolean },
+  pipeline?: { preserveAnchors: boolean; renderMath: boolean },
 ): Promise<string> {
   const content = pipeline?.preserveAnchors ? normalizeAnchorPositions(markdown) : markdown;
 
-  const markedInst = getMarkedInstance();
+  const markedInst = getMarkedInstance(pipeline?.renderMath);
   let html = await markedInst.parse(content);
 
   if (pipeline?.preserveAnchors) {
@@ -127,42 +127,45 @@ async function parseMarkdownMainThread(
  */
 function parseMarkdownInWorker(
   markdown: string,
-  pipeline?: { preserveAnchors: boolean },
+  pipeline?: { preserveAnchors: boolean; renderMath: boolean },
 ): Promise<string> {
   return new Promise((resolve, reject) => {
-    try {
-      const id = workerRequestId++;
-      let settled = false;
+    const id = workerRequestId++;
+    let settled = false;
 
-      const timeoutHandle = setTimeout(() => {
-        if (settled) return;
-        settled = true;
-        workerCallbacks.delete(id);
-        logger.warn('[markdown-worker] Worker timed out, falling back to main thread', {
-          id,
-          markdownLength: markdown.length,
-          timeoutMs: WORKER_TIMEOUT_MS,
-        });
-        // Fall back to main-thread parsing with full pipeline
-        parseMarkdownMainThread(markdown, pipeline).then(resolve, reject);
-      }, WORKER_TIMEOUT_MS);
+    const retireRequest = () => {
+      if (settled) return false;
+      settled = true;
+      clearTimeout(timeoutHandle);
+      workerCallbacks.delete(id);
+      return true;
+    };
 
-      workerCallbacks.set(id, {
-        resolve: (html) => {
-          if (settled) return;
-          settled = true;
-          clearTimeout(timeoutHandle);
-          resolve(html);
-        },
-        reject: (err) => {
-          if (settled) return;
-          settled = true;
-          clearTimeout(timeoutHandle);
-          reject(err);
-        },
+    const timeoutHandle = setTimeout(() => {
+      if (!retireRequest()) return;
+      logger.warn('[markdown-worker] Worker timed out, falling back to main thread', {
+        id,
+        markdownLength: markdown.length,
+        timeoutMs: WORKER_TIMEOUT_MS,
       });
+      // Fall back to main-thread parsing with full pipeline
+      parseMarkdownMainThread(markdown, pipeline).then(resolve, reject);
+    }, WORKER_TIMEOUT_MS);
+
+    workerCallbacks.set(id, {
+      resolve: (html) => {
+        if (!retireRequest()) return;
+        resolve(html);
+      },
+      reject: (err) => {
+        if (!retireRequest()) return;
+        reject(err);
+      },
+    });
+    try {
       getMarkdownWorker().postMessage({ id, markdown, pipeline });
     } catch (err) {
+      if (!retireRequest()) return;
       // Worker failed to create — fall back to main thread with full pipeline
       logger.warn('[markdown-worker] Failed to post to worker, falling back to main thread', err);
       parseMarkdownMainThread(markdown, pipeline).then(resolve, reject);
@@ -265,26 +268,39 @@ const ANCHOR_COMMENT_REGEX = /<!--\s*anchor:([^:]+):([^-]+)\s*-->/g;
  * @param content - The markdown content to process
  * @returns Content with HTML-like tags escaped (except in code blocks)
  */
-function escapeHtmlTags(content: string): string {
+export function escapeHtmlTags(content: string): string {
   // Step 1: Extract code blocks to preserve their content
-  const codeBlocks: string[] = [];
+  // Choose a namespace absent from the input: user text cannot forge a reference,
+  // and restoring a protected source cannot introduce another placeholder.
+  let prefix = '__MARKDOWN_SOURCE_';
+  while (content.includes(prefix)) prefix += '_';
+  const protectedSources: string[] = [];
+  const protect = (source: string) => {
+    const index = protectedSources.push(source) - 1;
+    return `${prefix}${index}__`;
+  };
+  const restore = (source: string) =>
+    source.replace(
+      new RegExp(`${prefix}(\\d+)__`, 'g'),
+      (_match, index) => protectedSources[parseInt(index, 10)],
+    );
   let processedContent = content;
 
   // Extract fenced code blocks first (they can contain backticks)
   // Match: ```lang\ncode\n``` or ```\ncode\n```
   processedContent = processedContent.replace(/```[\s\S]*?```/g, (match) => {
-    const index = codeBlocks.length;
-    codeBlocks.push(match);
-    return `__CODE_BLOCK_${index}__`;
+    return protect(match);
   });
 
   // Extract inline code (single backticks)
   // Match: `code` but not `` (empty)
   processedContent = processedContent.replace(/`([^`]+)`/g, (match) => {
-    const index = codeBlocks.length;
-    codeBlocks.push(match);
-    return `__CODE_BLOCK_${index}__`;
+    return protect(match);
   });
+
+  // Math must reach its tokenizer byte-for-byte in both literal and rendered modes.
+  // Keep placeholders until tag escaping finishes, including tags spanning formulas.
+  processedContent = protectMathSource(processedContent, (source) => protect(restore(source)));
 
   // Step 2: Escape HTML tags in the remaining text
   // Match potential HTML tags: <tagname>, </tagname>, <tagname />, <tagname attr="value">
@@ -303,10 +319,9 @@ function escapeHtmlTags(content: string): string {
     },
   );
 
-  // Step 3: Restore code blocks
-  processedContent = processedContent.replace(/__CODE_BLOCK_(\d+)__/g, (_match, index) => {
-    return codeBlocks[parseInt(index, 10)];
-  });
+  // Step 3: Restore code and TeX before parsing; neither markers nor decoded
+  // entities cross the parser/worker boundary.
+  processedContent = restore(processedContent);
 
   return processedContent;
 }
@@ -319,14 +334,16 @@ function escapeHtmlTags(content: string): string {
  */
 
 // Create a singleton instance of the marked processor
-let markedInstance: ReturnType<typeof createTiptapTaskListMarked> | null = null;
+const markedInstances = new Map<boolean, ReturnType<typeof createTiptapTaskListMarked>>();
 
 /**
  * Get the singleton marked instance with Tiptap task list support
  */
-function getMarkedInstance() {
+function getMarkedInstance(renderMath = false) {
+  let markedInstance = markedInstances.get(renderMath);
   if (!markedInstance) {
-    markedInstance = createTiptapTaskListMarked();
+    markedInstance = createTiptapTaskListMarked({ renderMath });
+    markedInstances.set(renderMath, markedInstance);
   }
   return markedInstance;
 }
@@ -443,6 +460,131 @@ function processWsBlocks(content: string): string {
   return processedContent;
 }
 
+// Stands in for an empty paragraph while serializing; the HTML parser never
+// yields a NUL in text content, so it cannot collide with note content.
+const EMPTY_PARAGRAPH_MARKER = '\u0000';
+const EMPTY_PARAGRAPH_MARKER_REGEX = /\u0000/g;
+
+const FENCE_OPEN_REGEX = /^ {0,3}(`{3,}|~{3,})/;
+const TASK_BLOCK_OPEN_REGEX = /^@@@tasks?(?:[ \t]|$)/;
+const TASK_BLOCK_CLOSE_REGEX = /^@@@\s*$/;
+const LIST_ITEM_REGEX = /^[ \t]*(?:[-*+]|\d+[.)])\s/;
+const INDENTED_LINE_REGEX = /^(?: {2,}|\t)/;
+// Blocks that interrupt a paragraph (CommonMark): ATX heading, blockquote,
+// thematic break, HTML block. Fences and `@@@task` openers are matched separately.
+const PARAGRAPH_INTERRUPT_REGEX =
+  /^ {0,3}(?:#{1,6}(?:[ \t]|$)|>|(?:\*[ \t]*){3,}$|(?:-[ \t]*){3,}$|(?:_[ \t]*){3,}$|<[a-zA-Z!/?])/;
+
+/**
+ * Turn blank lines beyond the paragraph separator back into empty paragraphs.
+ *
+ * The editor serializes each empty paragraph as one extra blank line (see
+ * `processHTMLToMarkdown`), so a run of k blank lines between two blocks stands
+ * for k-1 empty paragraphs, a leading run of k for k, and a trailing run of k
+ * for k-1. Each becomes a `<p></p>` HTML block that marked passes through.
+ * Blank lines inside fenced code, `@@@task` blocks, inside a list (between two
+ * items, after a continuation line, at any nesting) and before an indented line
+ * keep their markdown meaning and are left alone.
+ */
+function expandBlankLinesToEmptyParagraphs(markdown: string): string {
+  const lines = markdown.split('\n');
+  // A trailing newline yields one empty split entry that is not a blank line.
+  if (lines.length > 1 && lines[lines.length - 1] === '') lines.pop();
+
+  const out: string[] = [];
+  let fence: { char: string; length: number } | null = null;
+  let inTaskBlock = false;
+  let pendingBlank: string[] = [];
+  let sawContent = false;
+  // A list marker (at any indent) enters list context; indented lines and lazy
+  // paragraph continuations (an unindented line directly after paragraph text)
+  // stay in it; a block boundary — an interrupting block, a fence, a task block,
+  // or a blank-line run followed by a non-list, non-indented line — leaves it.
+  let inList = false;
+  let previousWasParagraphText = false;
+
+  const pushEmptyParagraphs = (count: number): void => {
+    for (let i = 0; i < count; i++) out.push('<p></p>', '');
+  };
+
+  const flushBlankRun = (nextLine: string | undefined): void => {
+    const count = pendingBlank.length;
+    if (count === 0) return;
+    if (!sawContent) {
+      pushEmptyParagraphs(count);
+    } else if (nextLine === undefined) {
+      out.push('');
+      pushEmptyParagraphs(count - 1);
+    } else if (
+      count >= 2 &&
+      !INDENTED_LINE_REGEX.test(nextLine) &&
+      !(inList && LIST_ITEM_REGEX.test(nextLine))
+    ) {
+      out.push('');
+      pushEmptyParagraphs(count - 1);
+    } else {
+      out.push(...pendingBlank);
+    }
+    pendingBlank = [];
+  };
+
+  for (const line of lines) {
+    if (fence) {
+      out.push(line);
+      const closeMatch = FENCE_OPEN_REGEX.exec(line);
+      if (
+        closeMatch &&
+        closeMatch[1][0] === fence.char &&
+        closeMatch[1].length >= fence.length &&
+        line.slice(closeMatch[0].length).trim() === ''
+      ) {
+        fence = null;
+      }
+      previousWasParagraphText = false;
+      continue;
+    }
+    if (inTaskBlock) {
+      out.push(line);
+      if (TASK_BLOCK_CLOSE_REGEX.test(line)) inTaskBlock = false;
+      previousWasParagraphText = false;
+      continue;
+    }
+    if (line.trim() === '') {
+      pendingBlank.push(line);
+      continue;
+    }
+
+    const followsBlankRun = pendingBlank.length > 0;
+    flushBlankRun(line);
+    sawContent = true;
+    out.push(line);
+
+    const openMatch = FENCE_OPEN_REGEX.exec(line);
+    const opensTaskBlock = !openMatch && TASK_BLOCK_OPEN_REGEX.test(line);
+    const interruptsParagraph =
+      openMatch !== null || opensTaskBlock || PARAGRAPH_INTERRUPT_REGEX.test(line);
+
+    if (LIST_ITEM_REGEX.test(line)) {
+      inList = true;
+    } else if (
+      !INDENTED_LINE_REGEX.test(line) &&
+      (interruptsParagraph || followsBlankRun || !previousWasParagraphText)
+    ) {
+      inList = false;
+    }
+    previousWasParagraphText = !interruptsParagraph;
+
+    if (openMatch) {
+      fence = { char: openMatch[1][0], length: openMatch[1].length };
+    } else if (opensTaskBlock) {
+      inTaskBlock = true;
+    }
+  }
+  flushBlankRun(undefined);
+
+  return out.join('\n');
+}
+
 /**
  * Process markdown content to HTML with Tiptap task list support
  *
@@ -467,6 +609,8 @@ export async function processMarkdownToHTML(
     workspaceId?: string;
     /** Render Mermaid and diff fences as visible source instead of TipTap node placeholders */
     renderRichFencesAsCode?: boolean;
+    /** Render supported TeX delimiters for read-only Markdown consumers. */
+    renderMath?: boolean;
     /**
      * Cache-busting token appended as `?v=` to rewritten workspace-file image
      * URLs. Defaults to a fresh token per call so a regenerated file renders
@@ -486,6 +630,7 @@ export async function processMarkdownToHTML(
     taskBlockRenderMode = 'placeholder',
     workspaceId,
     renderRichFencesAsCode = false,
+    renderMath = false,
     workspaceFileVersion,
   } = options;
 
@@ -518,7 +663,7 @@ export async function processMarkdownToHTML(
   // Check cache first — use a fast hash + length instead of the full content string as key.
   // Including content.length virtually eliminates hash collision risk (different-length
   // strings that produce the same 53-bit hash would be needed).
-  const cacheKey = `${fastHash(content)}:${content.length}|${allowEmpty}|${skipIfHTML}|${preserveAnchors}|${processPrimitives}|${taskBlockRenderMode}|${workspaceId ?? ''}|${renderRichFencesAsCode}`;
+  const cacheKey = `${fastHash(content)}:${content.length}|${allowEmpty}|${skipIfHTML}|${preserveAnchors}|${processPrimitives}|${taskBlockRenderMode}|${workspaceId ?? ''}|${renderRichFencesAsCode}|${renderMath}`;
   const cached = getCachedMarkdown(cacheKey);
   if (cached !== null) {
     return stampVersions(cached);
@@ -570,6 +715,8 @@ export async function processMarkdownToHTML(
         });
       }
     }
+    // Runs before the worker/main-thread fork so both paths see the same input.
+    processedContent = expandBlankLinesToEmptyParagraphs(processedContent);
     const t2 = isLargeContent ? performance.now() : 0;
 
     // --- Worker pipeline (normalize → legacy syntax → marked.parse → anchor conversion) ---
@@ -579,14 +726,14 @@ export async function processMarkdownToHTML(
     let htmlOut: string;
     if (isLargeContent) {
       // Offload normalize + legacy syntax + marked.parse + anchor conversion to worker
-      htmlOut = await parseMarkdownInWorker(processedContent, { preserveAnchors });
+      htmlOut = await parseMarkdownInWorker(processedContent, { preserveAnchors, renderMath });
     } else {
       // Small content: run everything on main thread
       const normalizedContent = preserveAnchors
         ? normalizeAnchorPositions(processedContent)
         : processedContent;
 
-      const markedInst = getMarkedInstance();
+      const markedInst = getMarkedInstance(renderMath);
       const result = await markedInst.parse(normalizedContent);
       htmlOut = preserveAnchors ? convertHTMLCommentsToSpanAnchors(result) : result;
     }
@@ -612,7 +759,9 @@ export async function processMarkdownToHTML(
     if (isLargeContent) await yieldToEventLoop();
 
     // Sanitize the HTML to prevent XSS
-    htmlOut = sanitizeMarkdownHTML(htmlOut, workspaceId);
+    htmlOut = sanitizeMarkdownHTML(htmlOut, workspaceId, {
+      preserveKatexLayoutStyles: renderMath,
+    });
     const t6 = isLargeContent ? performance.now() : 0;
 
     // Debug: Check if primitive divs survived sanitization
@@ -1063,6 +1212,7 @@ function injectMentionSpans(html: string): string {
         blocked ||
         BLOCK_TAGS.has(el.tagName) ||
         el.hasAttribute('data-mention') ||
+        el.hasAttribute('data-math-source') ||
         el.tagName === 'A';
       for (const child of Array.from(el.childNodes)) {
         walk(child, isBlocked);
@@ -1136,6 +1286,39 @@ export function processHTMLToMarkdown(
     return '';
   }
 
+  const validatedMathSource = (el: Element): string | undefined => {
+    const source = el.getAttribute('data-math-source');
+    const isInline = el.tagName === 'SPAN' && el.classList.contains('math-inline');
+    const isDisplay = el.tagName === 'DIV' && el.classList.contains('math-display');
+    if (!source || (!isInline && !isDisplay)) return undefined;
+
+    const delimited = isInline
+      ? (/^\$((?:\\.|[^\\$\n])+?)\$$/.exec(source) ?? /^\\\(((?:\\.|[^\\\n])*?)\\\)$/.exec(source))
+      : (/^\$\$[ \t]*([\s\S]*?)[ \t]*\$\$$/.exec(source) ??
+        /^\\\[[ \t]*([\s\S]*?)[ \t]*\\\]$/.exec(source));
+    if (!delimited) return undefined;
+    if (delimited[1].length > MAX_MATH_SOURCE_LENGTH || el.childNodes.length !== 1)
+      return undefined;
+
+    try {
+      const canonicalContainer = document.createElement('div');
+      const canonicalWrapper = document.createElement(isInline ? 'span' : 'div');
+      canonicalWrapper.className = isInline ? 'math-inline' : 'math-display';
+      canonicalWrapper.setAttribute('data-math-source', source);
+      canonicalWrapper.innerHTML = renderKatexToString(delimited[1], isDisplay);
+      canonicalContainer.innerHTML = sanitizeMarkdownHTML(canonicalWrapper.outerHTML, workspaceId, {
+        preserveKatexLayoutStyles: true,
+      });
+      return canonicalContainer.firstElementChild?.firstElementChild?.isEqualNode(
+        el.firstElementChild,
+      )
+        ? source
+        : undefined;
+    } catch {
+      return undefined;
+    }
+  };
+
   // Convert span anchors to HTML comments first if preserving anchors
   const htmlToProcess = preserveAnchors ? convertSpanAnchorsToComments(html) : html;
 
@@ -1148,7 +1331,9 @@ export function processHTMLToMarkdown(
     div.innerHTML = htmlToProcess;
   } else {
     // Sanitize normally when not preserving anchors
-    const sanitized = sanitizeMarkdownHTML(htmlToProcess, workspaceId);
+    const sanitized = sanitizeMarkdownHTML(htmlToProcess, workspaceId, {
+      preserveKatexLayoutStyles: true,
+    });
     div.innerHTML = sanitized;
   }
 
@@ -1168,13 +1353,18 @@ export function processHTMLToMarkdown(
         result += node.textContent || '';
       } else if (node.nodeType === Node.ELEMENT_NODE) {
         const childEl = node as Element;
+        const mathSource = validatedMathSource(childEl);
         // Handle inline formatting elements
         if (childEl.tagName === 'STRONG' || childEl.tagName === 'B') {
           result += `**${processInlineContent(childEl)}**`;
         } else if (childEl.tagName === 'EM' || childEl.tagName === 'I') {
           result += `*${processInlineContent(childEl)}*`;
+        } else if (childEl.tagName === 'BR') {
+          result += '\n';
         } else if (childEl.tagName === 'CODE') {
           result += `\`${childEl.textContent || ''}\``;
+        } else if (mathSource) {
+          result += mathSource;
         } else if (childEl.tagName === 'SPAN') {
           if (childEl.hasAttribute('data-mention')) {
             // Preserve canonical @-token using mention metadata
@@ -1487,7 +1677,10 @@ export function processHTMLToMarkdown(
    * Convert common elements to markdown
    */
   const convertElement = (el: Element): string => {
-    if (el.tagName === 'IMG') {
+    const mathSource = validatedMathSource(el);
+    if (mathSource) {
+      return `${mathSource}${el.tagName === 'DIV' ? '\n\n' : ''}`;
+    } else if (el.tagName === 'IMG') {
       // Handle image elements
       const rawSrc = el.getAttribute('src') || '';
       const src = workspaceFileImageUrlToIntentFileUrl(rawSrc) ?? rawSrc;
@@ -1503,7 +1696,9 @@ export function processHTMLToMarkdown(
       const name = el.getAttribute('data-name') || '';
       return src ? `![${name}](${src})\n\n` : '';
     } else if (el.tagName === 'P') {
-      return `${processInlineContent(el)}\n\n`;
+      const inline = processInlineContent(el);
+      if (inline.trim() === '') return EMPTY_PARAGRAPH_MARKER;
+      return `${inline}\n\n`;
     } else if (el.tagName === 'H1') {
       return `# ${processInlineContent(el)}\n\n`;
     } else if (el.tagName === 'H2') {
@@ -1520,6 +1715,31 @@ export function processHTMLToMarkdown(
       // Use the new recursive list converter
       return `${convertList(el, 0)}\n`;
     } else if (el.tagName === 'BLOCKQUOTE') {
+      // A blockquote made only of paragraphs is emitted one quoted paragraph at a time,
+      // separated by a bare `>` line, so multi-paragraph quotes stay valid markdown.
+      // Every line inside a paragraph (hard breaks emit `\n`) carries the marker too,
+      // otherwise the text after the break would leave the quote.
+      // Blockquotes with any other block children keep the legacy inline flattening.
+      const quoteLines = (text: string): string =>
+        text
+          .split('\n')
+          .map((line) => (line ? `> ${line}` : '>'))
+          .join('\n');
+      const childNodes = Array.from(el.childNodes);
+      const paragraphs = childNodes.filter(
+        (node): node is Element =>
+          node.nodeType === Node.ELEMENT_NODE && (node as Element).tagName === 'P',
+      );
+      const onlyParagraphs =
+        paragraphs.length > 0 &&
+        childNodes.every(
+          (node) =>
+            paragraphs.includes(node as Element) ||
+            (node.nodeType === Node.TEXT_NODE && !(node.textContent || '').trim()),
+        );
+      if (onlyParagraphs) {
+        return `${paragraphs.map((p) => quoteLines(processInlineContent(p))).join('\n>\n')}\n\n`;
+      }
       return `> ${processInlineContent(el)}\n\n`;
     } else if (el.tagName === 'CODE') {
       return `\`${el.textContent}\``;
@@ -1825,9 +2045,19 @@ export function processHTMLToMarkdown(
     return '';
   };
 
+  let trailingEmptyParagraphs = 0;
+  let blockBeforeTrailingEmpties: string | null = null;
+
   // Process all child nodes (these are top-level nodes)
   for (const child of Array.from(div.childNodes)) {
     const nodeResult = processNode(child, true); // Pass true for isTopLevel
+    if (nodeResult === EMPTY_PARAGRAPH_MARKER) {
+      trailingEmptyParagraphs++;
+    } else if (nodeResult.trim() !== '') {
+      trailingEmptyParagraphs = 0;
+      blockBeforeTrailingEmpties =
+        child.nodeType === Node.ELEMENT_NODE ? (child as Element).tagName : null;
+    }
     // Debug: Log each node being processed
     if (child.nodeType === Node.ELEMENT_NODE) {
       const el = child as Element;
@@ -1853,8 +2083,23 @@ export function processHTMLToMarkdown(
     markdown += nodeResult;
   }
 
-  // Clean up extra newlines
-  markdown = markdown.replace(/\n{3,}/g, '\n\n').trim();
+  // The editor's TrailingNode appends one empty paragraph after any non-paragraph
+  // last block and re-adds it on load, so that single one is not content.
+  if (
+    trailingEmptyParagraphs === 1 &&
+    blockBeforeTrailingEmpties !== null &&
+    blockBeforeTrailingEmpties !== 'P'
+  ) {
+    const markerIndex = markdown.lastIndexOf(EMPTY_PARAGRAPH_MARKER);
+    markdown = markdown.slice(0, markerIndex) + markdown.slice(markerIndex + 1);
+  }
+
+  // Clean up extra newlines, then let each empty paragraph add one blank line
+  // beyond the paragraph separator (the inverse of expandBlankLinesToEmptyParagraphs).
+  markdown = markdown
+    .replace(/\n{3,}/g, '\n\n')
+    .trim()
+    .replace(EMPTY_PARAGRAPH_MARKER_REGEX, '\n');
 
   logger.debug('[markdown-processor] processHTMLToMarkdown OUTPUT:', {
     markdownLength: markdown.length,

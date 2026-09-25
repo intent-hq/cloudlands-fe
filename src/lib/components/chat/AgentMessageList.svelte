@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { extractAllContent, type AgentMessage } from '$shared/types';
+  import { extractAllContent, type AgentMessage, type Workspace } from '$shared/types';
   import ChatMessage from './ChatMessage.svelte';
   import StreamingMessageContent from './StreamingMessageContent.svelte';
   import InterruptionNotice from './InterruptionNotice.svelte';
@@ -9,11 +9,13 @@
   import TurnFailureNotice from './TurnFailureNotice.svelte';
   import QuestionsDismissedNotice from './QuestionsDismissedNotice.svelte';
   import AutoUnarchivedNotice from './AutoUnarchivedNotice.svelte';
+  import ProviderRehomedNotice from './ProviderRehomedNotice.svelte';
   import { getModelChangeNotice } from './model-change-notice';
   import { getAttentionNotice } from './attention-notice';
   import { getQuestionsDismissedNotice } from './questions-dismissed-notice';
   import { getAutoUnarchivedNotice } from './auto-unarchived-notice';
-  import { fade } from 'svelte/transition';
+  import { getProviderRehomedNotice } from './rehome-notice';
+  import { crispOut, spring, springIn } from '$lib/motion';
   import { m } from '$shared/paraglide/messages.js';
   import { getPresentedUserMessageText } from '$lib/utils/user-message-presentation';
   import { extractSearchableContent } from './chat-search';
@@ -31,6 +33,8 @@
     animationDuration?: number;
     onCopy?: (content: string) => void;
     workspaceId?: string;
+    /** Owning workspace; its `ownerPrincipalId` gates the collaborator preamble strip. */
+    workspace?: Workspace | null;
   }
 
   let {
@@ -43,13 +47,15 @@
     showInitStatus = false,
     initializationStatus = null,
     enableTransitions = true,
-    animationDuration = 300,
+    animationDuration = spring.slow.settleMs,
     onCopy,
     workspaceId,
+    workspace = null,
   }: Props = $props();
 
   // PERF: Cache for filtered messages to avoid re-filtering on unrelated updates
-  // Keyed by message count + search query to invalidate when relevant data changes
+  // Keyed by message count + search query + owner principal (it changes which
+  // preamble text is searchable) to invalidate when relevant data changes
   let lastFilterKey = '';
   let cachedFilteredMessages: AgentMessage[] = [];
 
@@ -60,15 +66,16 @@
       return messages;
     }
 
-    // Create a cache key based on message count and search query
-    const filterKey = `${messages.length}:${searchQuery}`;
+    // Create a cache key based on message count, search query and owner principal
+    const ownerPrincipalId = workspace?.ownerPrincipalId ?? null;
+    const filterKey = `${messages.length}:${ownerPrincipalId ?? ''}:${searchQuery}`;
     if (filterKey === lastFilterKey) {
       return cachedFilteredMessages;
     }
 
     const lowerQuery = searchQuery.toLowerCase();
     const result = messages.filter((msg) => {
-      const content = extractSearchableContent(msg);
+      const content = extractSearchableContent(msg, ownerPrincipalId);
       return content.toLowerCase().includes(lowerQuery);
     });
 
@@ -98,6 +105,11 @@
     navigator.clipboard.writeText(content);
     onCopy?.(content);
   }
+
+  function messageIn(node: Element) {
+    if (!enableTransitions) return { duration: 0 };
+    return { ...springIn(node, { tier: 'slow', y: 0, scale: 1 }), duration: animationDuration };
+  }
 </script>
 
 <div class="message-list">
@@ -105,6 +117,7 @@
     {@const modelChangeNotice = getModelChangeNotice(message)}
     {@const questionsDismissedNotice = getQuestionsDismissedNotice(message)}
     {@const autoUnarchivedNotice = getAutoUnarchivedNotice(message)}
+    {@const providerRehomedNotice = getProviderRehomedNotice(message)}
     <div
       id="message-{message.id}"
       class="message-wrapper group/message"
@@ -112,7 +125,8 @@
       class:user-message={message.role === 'user'}
       class:assistant-message={message.role === 'assistant'}
       class:system-message={message.role === 'system'}
-      transition:fade={{ duration: enableTransitions ? animationDuration : 0 }}
+      in:messageIn
+      out:crispOut={{ tier: 'slow' }}
     >
       <!-- Fallback path: AgentMessageList does not receive `agentId` via props/context,
            so we can't use ChatMessage's Redux-backed subscription here. Pass the
@@ -135,8 +149,19 @@
              Discriminated on metadata type before role branching so it renders
              regardless of the exact role the daemon persists. -->
         <AutoUnarchivedNotice title={extractAllContent(message) || undefined} />
+      {:else if providerRehomedNotice}
+        <!-- Daemon-persisted provider re-home notice - centered inline divider. -->
+        <ProviderRehomedNotice
+          notice={providerRehomedNotice}
+          fallbackText={extractAllContent(message) || undefined}
+        />
       {:else if message.role === 'user'}
-        <ChatMessage {message} onCopy={() => handleCopy(getPresentedUserMessageText(message))} />
+        <ChatMessage
+          {message}
+          {workspace}
+          onCopy={() =>
+            handleCopy(getPresentedUserMessageText(message, workspace?.ownerPrincipalId))}
+        />
       {:else if message.role === 'assistant'}
         <div class="assistant-message-container">
           {#if isStreaming && index === messages.length - 1}
@@ -168,7 +193,11 @@
   {/each}
 
   {#if showInitStatus && initializationStatus}
-    <div class="initialization-status" transition:fade={{ duration: 200 }}>
+    <div
+      class="initialization-status"
+      in:springIn={{ tier: 'moderate', y: 0, scale: 1 }}
+      out:crispOut={{ tier: 'moderate' }}
+    >
       <div class="status-content">
         <div class="status-spinner"></div>
         <span>{initializationStatus}</span>
@@ -196,14 +225,14 @@
   .message-wrapper {
     display: flex;
     flex-direction: column;
-    animation: slideIn 0.3s ease-out;
+    animation: slideIn var(--spring-slow) var(--spring-slow-ease);
   }
 
   .message-wrapper.highlighted {
     background-color: hsl(var(--warning) / 0.2);
     border-radius: 0.5rem;
     padding: 0.5rem;
-    transition: background-color 0.3s ease;
+    transition: background-color var(--spring-slow) var(--spring-slow-ease);
   }
 
   .message-wrapper.user-message {
@@ -246,9 +275,9 @@
     width: 1rem;
     height: 1rem;
     border: 2px solid hsl(var(--border));
-    border-top-color: hsl(var(--primary));
+    border-top-color: hsl(var(--primary-ink));
     border-radius: 50%;
-    animation: spin 1s linear infinite;
+    animation: spin calc(var(--spring-slow) * 4) linear infinite;
   }
 
   .empty-state {
@@ -278,7 +307,7 @@
   }
 
   :global(.highlight-flash) {
-    animation: flash 1s ease-out;
+    animation: flash calc(var(--spring-slow) * 4) var(--spring-exit-ease);
   }
 
   @keyframes flash {
@@ -288,6 +317,18 @@
     }
     50% {
       background-color: hsl(var(--warning) / 0.2);
+    }
+  }
+
+  @container style(--motion-reduced: 1) {
+    .message-wrapper,
+    .status-spinner,
+    :global(.highlight-flash) {
+      animation: none;
+    }
+
+    .message-wrapper.highlighted {
+      transition: none;
     }
   }
 </style>

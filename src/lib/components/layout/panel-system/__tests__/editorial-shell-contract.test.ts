@@ -1,5 +1,5 @@
 // @verify-changed-triggers: ../Panel.svelte, ../PanelContainer.svelte, ../PanelLayout.svelte,
-//   ../PanelSplitHandle.svelte, ../PanelTabBar.svelte, ../LayoutPresetDropdown.svelte,
+//   ../PanelSplitHandle.svelte, ../PanelTabBar.svelte,
 //   ../../WindowTitleBar.svelte, ../../WorkspaceTabStrip.svelte,
 //   ../../sidebar-nav/SidebarNav.svelte, ../../sidebar-nav/SidebarPanel.svelte,
 //   ../../../workspace/WorkspaceLayout.svelte, ../../../workspace/WorkspaceSidebarHeader.svelte,
@@ -61,9 +61,7 @@ describe('editorial workspace shell presentation contract', () => {
     expect(panel).toContain('min-width: 0');
     expect(panel).not.toContain('min-width: 30em');
     expect(panel).toContain('box-shadow: var(--elevation-raised)');
-    expect(panel).toMatch(
-      /\.panel\[data-empty-panel-shell='true'\]:not\(\[data-focus-border-visible='true'\]\)\s*\{\s*border-width: 0;/,
-    );
+    // Focus-invariant border and child geometry are exercised in panel-shell-corners.ct.spec.ts.
     expect(panel).toMatch(/\.panel\[data-empty-panel-shell='true'\]\s*\{\s*box-shadow: none;/);
     expect(panel).not.toMatch(/\.panel\[data-empty-panel-shell='true'\]\s*\{\s*border-width: 0;/);
     expect(panel).not.toContain('.panel:focus-visible');
@@ -100,47 +98,18 @@ describe('editorial workspace shell presentation contract', () => {
     expect(handle).toContain('height: 16px');
   });
 
-  it('renders one content-aware header per panel without the legacy tab strip', () => {
-    const tabBar = source('../PanelTabBar.svelte');
+  // Content-aware header/menu composition is exercised at runtime in
+  // panel-header-actions-menu.test.ts, including absent content sections.
 
-    expect(tabBar).not.toContain('border-b border-border');
-    expect(tabBar).toContain('h-[var(--panel-header-height)] bg-card');
-    expect(tabBar).toContain('items-center bg-sidebar pr-2.5');
-    expect(tabBar).toContain('showTabStrip = false');
-    expect(tabBar).toContain("!showTabStrip && 'hidden'");
-    expect(tabBar).toContain('data-panel-tab-bar');
-    expect(tabBar).toContain('data-panel-tabless-header');
-    expect(tabBar).toContain('data-panel-content-header');
-    expect(tabBar).toContain('m.layout_panelTabBar_closePane_ariaLabel()');
-    expect(tabBar).toContain("{#snippet panelActionsDropdown(location: 'tabBar' | 'compact')}");
-    expect(tabBar).toContain('bind:open={panelActionsMenuOpen[location]}');
-    expect(tabBar).toContain("{@render panelActionsDropdown('tabBar')}");
-    expect(tabBar).toContain("{@render panelActionsDropdown('compact')}");
-    expect(tabBar).toContain('{#snippet panelCloseButton(tab: PanelTab | null = null)}');
-    expect(tabBar).toContain('data-testid="panel-close-button"');
-    expect(tabBar).toContain('data-panel-actions-section="display"');
-    expect(tabBar).toContain('data-panel-actions-section="actions"');
-    expect(tabBar).toContain('m.layout_panelTabBar_displaySection_label()');
-    expect(tabBar).toContain('m.layout_panelTabBar_actionsSection_label()');
-    expect(tabBar).toContain('{@render contentActions?.display?.()}');
-    expect(tabBar).toContain('{@render contentActions?.actions?.()}');
-    expect(tabBar).not.toContain('{@render contentActions()}');
-    expect(tabBar).toContain('<Menu.Separator />');
-    expect(tabBar).toContain('<Menu.CommandItem');
-    expect(tabBar).not.toContain('color-mix');
-  });
-
-  it('limits direct manipulation and presets to the horizontal panel stack', () => {
+  it('limits direct manipulation to the horizontal panel stack', () => {
     const panel = source('../Panel.svelte');
     const layout = source('../PanelLayout.svelte');
-    const presets = source('../LayoutPresetDropdown.svelte');
 
     expect(panel).toContain('Tabless panels only split along the horizontal stack.');
     expect(layout).toContain("if (direction !== 'horizontal') return;");
     expect(layout).toMatch(
       /moveTabToSplitLevel\(\s*draggedPane\.tabId,\s*draggedPane\.panelId,\s*\[\],\s*placement\.position,\s*'horizontal',\s*\)/,
     );
-    expect(presets).not.toContain("id: 'split-vertical'");
   });
 
   it('reserves browser-style tab chords for global workspace tabs', () => {
@@ -175,7 +144,7 @@ describe('editorial workspace shell presentation contract', () => {
     expect(sidebar).toContain('data-sidebar-agent={agent.id}');
     expect(launcherMarkup).toContain('itemContent={launcherAgentAvatar}');
     expect(launcherMarkup).toContain('data-sidebar-context={note.id}');
-    expect(launcherMarkup).toContain('data-sidebar-changes-resource');
+    // Launcher action/expansion behavior: MultiSelectTabbedSidebar.open-in.test.ts round-trip.
     expect(launcherMarkup).not.toContain('data-sidebar-change=');
     expect(launcherMarkup).not.toContain('content={`${tab.label}:');
     expect(launcherMarkup).toContain('data-files-open-in');
@@ -232,12 +201,9 @@ describe('editorial workspace shell presentation contract', () => {
     expect(tabs).toContain('w-fit min-w-0 max-w-[100%]');
     expect(tabs).toContain('use:reportActiveTabBounds={isCurrent}');
     expect(titlebar).toContain('data-active-tab-border-mask');
-    expect(titlebar).toContain('absolute -bottom-px z-[60] h-px bg-sidebar');
     expect(nav).not.toContain('faBell');
     expect(nav).not.toContain("id: 'settings'");
     expect(nav).toContain('data-titlebar-spaces-control');
-    expect(nav).toContain('name="dandelion"');
-    expect(nav).not.toContain('name="spaces"');
     expect(titlebar).not.toContain('ChiefTrigger');
     expect(workspaceHeader).toContain('label: m.ui_sidebar_toggle_label()');
     expect(workspaceHeader).toContain('appStore.dispatch(toggleSidebar())');
@@ -272,7 +238,6 @@ describe('editorial workspace shell presentation contract', () => {
     expect(navigation).not.toContain('aria-expanded');
     expect(navigation).not.toContain('aria-controls');
     expect(navigation).not.toContain('SidebarNavHoverCard');
-    expect(navigation).toContain('name="dandelion"');
     expect(appLayout).toContain('class="workspace-main flex');
     expect(sidebarPanel).toContain('data-panel-item={$panelItem$}');
     expect(sidebarPanel).not.toContain("$panelItem$ === 'chief' ? 'bg-background' : ''");

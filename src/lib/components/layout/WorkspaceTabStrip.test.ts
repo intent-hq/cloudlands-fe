@@ -1,9 +1,9 @@
 /** @vitest-environment jsdom */
+import RealTooltip from '$lib/components/ui/tooltip/TooltipRich.svelte';
+import RealTooltipShortcut from '$lib/components/ui/tooltip/TooltipShortcut.svelte';
 import { m } from '$shared/paraglide/messages.js';
 import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { flushSync, tick } from 'svelte';
-import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { WorkspaceTabStatus } from '$store/renderer/slices/hud/hud-types';
 import { WORKSPACE_TAB_MOVED_EVENT } from '$features/workspace/utils/workspace-tab-move-event';
@@ -12,6 +12,20 @@ import {
   configuredVisualStates,
   exerciseVisualStates,
 } from '$lib/components/__tests__/helpers/visual-state-characterization';
+import {
+  effectFlushSyncCalls,
+  resetEffectFlushSyncCalls,
+} from '$lib/components/chat/__tests__/mocks/effect-flush-sync-spy.svelte';
+
+// Count `flushSync` calls made from inside effect bodies: a nested flush during
+// an outer batch nulls the batch, and the next effect in that traversal that
+// writes state crashes in `schedule_effect` (sveltejs/svelte#18546).
+vi.mock('svelte', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('svelte')>();
+  const { wrapFlushSync } =
+    await import('$lib/components/chat/__tests__/mocks/effect-flush-sync-spy.svelte');
+  return { ...actual, flushSync: wrapFlushSync(actual.flushSync) };
+});
 
 const mocks = vi.hoisted(() => ({
   dispatch: vi.fn(),
@@ -46,6 +60,8 @@ vi.mock('$store/renderer/store', () => ({
     get state() {
       return { tabState: { currentTabId: mocks.nextCurrentId } };
     },
+    createSelector: (select: (state: unknown, ...args: unknown[]) => unknown) =>
+      Object.assign(() => readable(undefined), { select }),
   },
 }));
 vi.mock('$store/renderer/slices/tab-state/tab-state-selectors', () => ({
@@ -75,6 +91,7 @@ vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
           statusMessage: 'Polishing the workspace navigation experience.',
           activity: 'agent_running',
           displayStatus: 'in_progress',
+          myRole: 'owner',
         },
         {
           id: 'ws-2',
@@ -82,6 +99,7 @@ vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
           branch: 'main',
           repositoryName: 'intent',
           displayStatus: 'idle',
+          myRole: 'collaborator',
         },
         {
           id: 'ws-3',
@@ -128,8 +146,10 @@ vi.mock('$lib/components/workspace/WorkspaceHoverCard.svelte', async () => ({
 }));
 vi.mock('$lib/components/ui/tooltip', async () => {
   const MockTooltip = (await import('./__tests__/mocks/MockWorkspaceTooltipRich.svelte')).default;
-  const RealTooltip = (await import('$lib/components/ui/tooltip/TooltipRich.svelte')).default;
   return {
+    get TooltipShortcut() {
+      return RealTooltipShortcut;
+    },
     get TooltipRich() {
       return mocks.useRealTooltip ? RealTooltip : MockTooltip;
     },
@@ -186,6 +206,10 @@ function makePointerEvent(type: string, clientX: number, clientY = 20, pointerId
 
 function tabButton(source: HTMLElement) {
   return source.querySelector<HTMLElement>('[role="tab"]')!;
+}
+
+function tabScroller() {
+  return document.querySelector<HTMLElement>('[data-workspace-tab-scroller]')!;
 }
 
 async function enterTabTooltip(tooltipRoot: HTMLElement) {
@@ -313,7 +337,7 @@ describe('WorkspaceTabStrip', () => {
     expect(hydratedSurface.querySelectorAll('[role="tab"]')).toHaveLength(1);
     expect(loadingSurface.querySelectorAll('[role="tab"]')).toHaveLength(1);
     expect(hydrated.className).toContain('h-full w-full');
-    expect(loading.className).toContain('absolute -inset-px');
+    expect(loading.className).toContain('absolute -inset-x-px inset-y-0');
     expect(hydrated.closest('[data-testid="workspace-tab-tooltip-root"]')?.className).toContain(
       'absolute -inset-px',
     );
@@ -366,11 +390,23 @@ describe('WorkspaceTabStrip', () => {
     expect(cluster.className).not.toMatch(/(?:^|\s)w-14(?:\s|$)/);
     expect(controls.className).toContain('ml-auto');
     expect(controls.lastElementChild).toBe(closeSpace);
-    expect(closeSpace.className).toContain('size-5');
     expect(title.className).toContain('min-w-0');
     expect(title.className).toContain('flex-1');
     expect(title.nextElementSibling).toBe(controls);
     expect(cluster.parentElement).toBe(controls);
+  });
+
+  it('renders no presence stack and allows hovering every card, owner or not', () => {
+    render(WorkspaceTabStrip, { props: { activeWorkspaceId: 'ws-2' } });
+    for (const name of [/Alpha/, /Beta/, /Gamma/]) {
+      const tab = screen.getByRole('tab', { name });
+      expect(tab.querySelector('[data-presence-avatar-stack]')).toBeNull();
+      expect(
+        tab
+          .closest<HTMLElement>('[data-testid="workspace-tab-tooltip-root"]')!
+          .getAttribute('data-tooltip-disable-hoverable-content'),
+      ).toBe('false');
+    }
   });
 
   it.each([
@@ -385,7 +421,7 @@ describe('WorkspaceTabStrip', () => {
     expect(indicator?.getAttribute('style')).toContain('width: 14px; height: 14px');
     expect(indicator?.getAttribute('aria-hidden')).toBe('true');
     expect(dot?.classList.contains('workspace-status-dot')).toBe(true);
-    expect(tab.getAttribute('aria-label')).toBe('Alpha. RUNNING: 1 (Coordinator)');
+    expect(tab.getAttribute('aria-label')).toBe('Alpha. Running: 1 (Coordinator)');
   });
 
   it('dims archived workspace tab titles in current and non-current states', () => {
@@ -440,7 +476,7 @@ describe('WorkspaceTabStrip', () => {
     render(WorkspaceTabStrip);
 
     const tab = screen.getByRole('tab', {
-      name: 'Alpha. QUESTION: 1 (Coordinator) · UNREAD: 1 (Builder) · RUNNING: 1 (Builder)',
+      name: 'Alpha. Question: 1 (Coordinator) · Unread: 1 (Builder) · Running: 1 (Builder)',
     });
     const statuses = tab.querySelectorAll('[data-workspace-status]');
     expect(statuses).toHaveLength(1);
@@ -450,18 +486,60 @@ describe('WorkspaceTabStrip', () => {
     expect(tab.querySelector('[data-workspace-tab-status-overflow]')).toBeNull();
   });
 
-  it('keeps persisted tabs opaque and stationary during initial hydration', () => {
-    const source = readFileSync(
-      resolve(process.cwd(), 'src/lib/components/layout/WorkspaceTabStrip.svelte'),
-      'utf8',
-    );
+  it('keeps persisted tabs opaque and stationary during initial hydration', async () => {
+    // Svelte runs every intro transition through the Web Animations API, so a
+    // tab that flies or fades in animates its motion wrapper on mount.
+    const animate = vi.spyOn(Element.prototype, 'animate');
+    try {
+      render(WorkspaceTabStrip);
+      await tick();
 
-    expect(source).not.toContain('in:fly');
-    expect(source).not.toContain('out:fly');
-    expect(source).toContain('animate:flip');
-    expect(source).toContain('<WorkspaceHoverCard {workspace} activeAgentIds={runningAgentIds} />');
-    expect(source).not.toContain('ensureWorkspaceTasksLoaded');
-    expect(source).not.toContain('data-workspace-tab-progress');
+      const wrappers = document.querySelectorAll<HTMLElement>('[data-workspace-tab-motion]');
+      expect(wrappers).toHaveLength(3);
+      expect(animate).not.toHaveBeenCalled();
+      for (const wrapper of wrappers) {
+        expect(wrapper.style.opacity).toBe('');
+        expect(wrapper.style.transform).toBe('');
+      }
+      // The strip renders task progress only inside the shared hover card,
+      // which owns the task load; the strip itself never requests it.
+      expect(mocks.dispatch).not.toHaveBeenCalledWith(
+        expect.objectContaining({ type: 'workspaceTasks/ensureWorkspaceTasksLoaded' }),
+      );
+    } finally {
+      animate.mockRestore();
+    }
+  });
+
+  it('slides persisted tabs into a new order instead of remounting them', async () => {
+    render(WorkspaceTabStrip);
+    await tick();
+    const wrappersBefore = Array.from(
+      document.querySelectorAll<HTMLElement>('[data-workspace-tab-motion]'),
+    );
+    for (const wrapper of wrappersBefore) {
+      // Geometry follows DOM position so a reorder measures a displacement.
+      wrapper.getBoundingClientRect = function () {
+        const index = Array.from(this.parentElement?.children ?? []).indexOf(this);
+        return makeRect(index * 162);
+      };
+    }
+    const animate = vi.spyOn(Element.prototype, 'animate');
+    try {
+      emitTabOrder(['ws-2', 'ws-1', 'ws-3']);
+      await tick();
+
+      expect(renderedTabOrder()).toEqual(['ws-2', 'ws-1', 'ws-3']);
+      const wrappersAfter = Array.from(
+        document.querySelectorAll<HTMLElement>('[data-workspace-tab-motion]'),
+      );
+      expect(new Set(wrappersAfter)).toEqual(new Set(wrappersBefore));
+      const animated = new Set(animate.mock.contexts as Element[]);
+      expect(animated.has(wrappersBefore[0])).toBe(true);
+      expect(animated.has(wrappersBefore[1])).toBe(true);
+    } finally {
+      animate.mockRestore();
+    }
   });
 
   it('keeps the final active-tab surface while workspace metadata loads', () => {
@@ -584,6 +662,45 @@ describe('WorkspaceTabStrip', () => {
     }
   });
 
+  it('keeps the real card open when the pointer enters it and resets hover intent after Escape', async () => {
+    vi.useFakeTimers();
+    mocks.useRealTooltip = true;
+    const view = render(WorkspaceTabStrip, { props: { activeWorkspaceId: 'ws-2' } });
+    try {
+      const alpha = screen.getByRole('tab', { name: /Alpha/ });
+      const tab = alpha.closest<HTMLElement>('[data-workspace-tab]')!;
+      await fireEvent.mouseEnter(tab);
+      await fireEvent.pointerMove(alpha, { pointerType: 'mouse' });
+      await vi.advanceTimersByTimeAsync(800);
+
+      const content = document.querySelector<HTMLElement>(
+        '[data-workspace-tab-hover-content="ws-1"]',
+      )!;
+      expect(content).not.toBeNull();
+      await fireEvent.pointerLeave(alpha, { pointerType: 'mouse', relatedTarget: content });
+      await fireEvent.mouseLeave(tab);
+      await fireEvent.pointerEnter(content, { pointerType: 'mouse' });
+      await fireEvent.pointerMove(content, { pointerType: 'mouse' });
+      await vi.advanceTimersByTimeAsync(300);
+
+      expect(content.isConnected).toBe(true);
+      for (let node: HTMLElement | null = content; node; node = node.parentElement) {
+        expect(getComputedStyle(node).pointerEvents).not.toBe('none');
+      }
+      expect(workspaceHoverCardIntentSession.currentOpenDelay).toBe(0);
+
+      await fireEvent.keyDown(content, { key: 'Escape' });
+      await vi.advanceTimersByTimeAsync(300);
+      expect(document.querySelector('[data-workspace-tab-hover-content]')).toBeNull();
+      expect(workspaceHoverCardIntentSession.currentOpenDelay).toBe(800);
+      expect(mocks.dispatch).not.toHaveBeenCalled();
+    } finally {
+      view.unmount();
+      workspaceHoverCardIntentSession.reset();
+      vi.useRealTimers();
+    }
+  });
+
   it('preserves keyboard focus when the focused tab becomes current', async () => {
     mocks.useRealTooltip = true;
     const view = render(WorkspaceTabStrip, { props: { activeWorkspaceId: 'ws-2' } });
@@ -601,9 +718,7 @@ describe('WorkspaceTabStrip', () => {
     const view = render(WorkspaceTabStrip, { props: { activeWorkspaceId: 'ws-3' } });
 
     try {
-      const tablist = screen.getByRole('tablist', {
-        name: m.layout_workspaceTabStrip_openSpaces_ariaLabel(),
-      });
+      const tablist = tabScroller();
       expect(getComputedStyle(tablist).paddingLeft).toBe('16px');
       expect(getComputedStyle(tablist).marginLeft).toBe('8px');
       expect(tablist.className).toContain('pr-3');
@@ -614,7 +729,7 @@ describe('WorkspaceTabStrip', () => {
       const alpha = screen.getByRole('tab', { name: /Alpha/ });
       expect(alpha.getAttribute('aria-selected')).toBe('false');
       const tooltipRoot = alpha.closest<HTMLElement>('[data-testid="workspace-tab-tooltip-root"]')!;
-      expect(tooltipRoot.getAttribute('data-tooltip-disable-hoverable-content')).toBe('true');
+      expect(tooltipRoot.getAttribute('data-tooltip-disable-hoverable-content')).toBe('false');
       await enterTabTooltip(tooltipRoot);
       vi.advanceTimersByTime(799);
       await tick();
@@ -821,9 +936,7 @@ describe('WorkspaceTabStrip', () => {
         ),
       ).map((flare) => getComputedStyle(flare).opacity);
 
-    const tablist = screen.getByRole('tablist', {
-      name: m.layout_workspaceTabStrip_openSpaces_ariaLabel(),
-    });
+    const tablist = tabScroller();
     const firstTab = document.querySelector('[data-workspace-tab="ws-1"]')!;
     expect(getComputedStyle(tablist).paddingLeft).toBe('16px');
     expect(getComputedStyle(tablist).marginLeft).toBe('8px');
@@ -860,15 +973,51 @@ describe('WorkspaceTabStrip', () => {
     expect(flareOpacity(loadingTab)).toEqual(['0', '0']);
   });
 
+  it('defers activation geometry until the batched frame and ignores superseded tabs', async () => {
+    const onActiveTabBoundsChange = vi.fn();
+    const { container, rerender } = render(WorkspaceTabStrip, {
+      props: { activeWorkspaceId: 'ws-1', onActiveTabBoundsChange },
+    });
+    container.classList.add('window-title-bar');
+    const strip = container.querySelector<HTMLElement>('[data-workspace-tab-scroller]')!;
+    strip.getBoundingClientRect = () => makeRect(0, 20, 600);
+    Object.defineProperties(strip, {
+      scrollWidth: { value: 600, configurable: true },
+      clientWidth: { value: 600, configurable: true },
+    });
+    setTabGeometry();
+    const second = document.querySelector<HTMLElement>('[data-workspace-tab="ws-2"]')!;
+    const third = document.querySelector<HTMLElement>('[data-workspace-tab="ws-3"]')!;
+    const secondReads = vi.spyOn(second, 'getBoundingClientRect');
+    const thirdReads = vi.spyOn(third, 'getBoundingClientRect');
+    const frames: FrameRequestCallback[] = [];
+    vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
+      frames.push(callback);
+      return frames.length;
+    });
+    onActiveTabBoundsChange.mockClear();
+
+    await rerender({ activeWorkspaceId: 'ws-2' });
+    await rerender({ activeWorkspaceId: 'ws-3' });
+    expect(secondReads).not.toHaveBeenCalled();
+    expect(thirdReads).not.toHaveBeenCalled();
+    expect(third.querySelector('[role="tab"]')?.getAttribute('aria-selected')).toBe('true');
+
+    frames.splice(0).forEach((frame) => frame(performance.now()));
+    expect(secondReads).not.toHaveBeenCalled();
+    expect(thirdReads).toHaveBeenCalledTimes(1);
+    expect(onActiveTabBoundsChange).toHaveBeenLastCalledWith(
+      expect.objectContaining({ left: 324, width: 160 }),
+    );
+  });
+
   it('refreshes the active-tab border bounds when title-bar positioning changes', async () => {
     const onActiveTabBoundsChange = vi.fn();
     const { container, rerender } = render(WorkspaceTabStrip, {
       props: { activeWorkspaceId: 'ws-1', onActiveTabBoundsChange },
     });
     container.classList.add('window-title-bar');
-    const strip = screen.getByRole('tablist', {
-      name: m.layout_workspaceTabStrip_openSpaces_ariaLabel(),
-    });
+    const strip = tabScroller();
     const activeTab = document.querySelector<HTMLElement>('[data-workspace-tab="ws-1"]')!;
     strip.getBoundingClientRect = () => makeRect(0, 20, 500);
     activeTab.getBoundingClientRect = () => makeRect(100);
@@ -887,7 +1036,7 @@ describe('WorkspaceTabStrip', () => {
     });
   });
 
-  describe('parent effects flushed from teardown paths', () => {
+  describe('parent effects flushed from tracking effects and teardown paths', () => {
     let defaultMatchMedia: (query: string) => MediaQueryList;
     let getAnimations: typeof Element.prototype.getAnimations;
 
@@ -907,20 +1056,23 @@ describe('WorkspaceTabStrip', () => {
       Element.prototype.getAnimations = getAnimations;
     });
 
-    function renderHarness(siblingGate: 'bounds-cleared' | 'tracking-idle') {
+    function renderHarness(
+      siblingGate: 'bounds-cleared' | 'tracking-idle',
+      measureInsetWhileTracking?: () => number,
+    ) {
       const errors: unknown[] = [];
       const onProbeMounted = vi.fn();
       const view = render(WorkspaceTabStripTeardownHarness, {
         props: {
           activeWorkspaceId: 'ws-1',
           siblingGate,
+          measureInsetWhileTracking,
           onError: (error) => errors.push(error),
           onProbeMounted,
         },
       });
-      const strip = screen.getByRole('tablist', {
-        name: m.layout_workspaceTabStrip_openSpaces_ariaLabel(),
-      });
+      expect(errors).toEqual([]);
+      const strip = tabScroller();
       strip.getBoundingClientRect = () => makeRect(0, 20, 500);
       setTabGeometry();
       return { ...view, errors, onProbeMounted };
@@ -950,6 +1102,26 @@ describe('WorkspaceTabStrip', () => {
       expect(onProbeMounted).toHaveBeenCalledTimes(1);
       expect(container.querySelector('[data-active-tab-bounds="none"]')).toBeTruthy();
       expect(renderedTabOrder()).toEqual(['ws-2', 'ws-3']);
+    });
+
+    it('mounts a bounds-dependent sibling when an action deactivates the tab without removing it', async () => {
+      const { component, container, rerender, errors, onProbeMounted } =
+        renderHarness('bounds-cleared');
+      flushSync(() => component.update({ horizontalPositionTrackingKey: 1 }));
+      expect(container.querySelector('[data-active-tab-bounds="set"]')).toBeTruthy();
+      flushSync(() => component.update({ showSibling: true }));
+      expect(onProbeMounted).not.toHaveBeenCalled();
+
+      await rerender({ activeWorkspaceId: 'ws-outside-strip' });
+      await tick();
+
+      expectSiblingMounted(container, errors);
+      expect(onProbeMounted).toHaveBeenCalledTimes(1);
+      expect(container.querySelector('[data-active-tab-bounds="none"]')).toBeTruthy();
+      expect(renderedTabOrder()).toEqual(['ws-1', 'ws-2', 'ws-3']);
+      expect(
+        screen.getAllByRole('tab').every((tab) => tab.getAttribute('aria-selected') === 'false'),
+      ).toBe(true);
     });
 
     it('mounts a sibling that depends on idle tracking only after a restarted tracking motion settles', async () => {
@@ -982,15 +1154,79 @@ describe('WorkspaceTabStrip', () => {
       expectSiblingMounted(container, errors);
       expect(container.querySelector('[data-active-tab-tracking="false"]')).toBeTruthy();
     });
+
+    it('keeps the batch alive when a later parent effect writes state the tracking effect reads', async () => {
+      const frames: FrameRequestCallback[] = [];
+      vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
+        frames.push(callback);
+        return frames.length;
+      });
+      const measureInsetWhileTracking = vi.fn(() => 4);
+      // The mount batch already runs the tracking effect; renderHarness asserts
+      // the boundary caught nothing there.
+      const { component, container, errors, onProbeMounted } = renderHarness(
+        'tracking-idle',
+        measureInsetWhileTracking,
+      );
+      expect(measureInsetWhileTracking).toHaveBeenCalled();
+      expect(container.querySelector('[data-active-tab-tracking="true"]')).toBeTruthy();
+      flushSync(() => component.update({ showSibling: true }));
+      expect(onProbeMounted).not.toHaveBeenCalled();
+
+      frames.at(-1)!(10_000);
+      await tick();
+      expectSiblingMounted(container, errors);
+      expect(container.querySelector('[data-active-tab-tracking="false"]')).toBeTruthy();
+
+      try {
+        flushSync(() => component.update({ horizontalPositionTrackingKey: 1 }));
+      } catch (error) {
+        errors.push(error);
+      }
+      await tick();
+
+      expect(errors).toEqual([]);
+      expect(container.querySelector('[data-teardown-boundary-failed]')).toBeNull();
+      expect(container.querySelector('[data-active-tab-tracking="true"]')).toBeTruthy();
+      expect(container.querySelector('[data-teardown-effect-probe]')).toBeNull();
+
+      frames.at(-1)!(20_000);
+      await tick();
+
+      expectSiblingMounted(container, errors);
+      expect(container.querySelector('[data-active-tab-tracking="false"]')).toBeTruthy();
+    });
+
+    it('reports active-tab bounds from the overflow effect without flushing synchronously', async () => {
+      const frames: FrameRequestCallback[] = [];
+      vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
+        frames.push(callback);
+        return frames.length;
+      });
+      resetEffectFlushSyncCalls();
+      const { container, errors } = renderHarness('bounds-cleared');
+      expect(effectFlushSyncCalls()).toBe(0);
+
+      try {
+        flushSync(() => emitTabOrder(['ws-2', 'ws-1', 'ws-3']));
+      } catch (error) {
+        errors.push(error);
+      }
+      await tick();
+
+      expect(errors).toEqual([]);
+      expect(effectFlushSyncCalls()).toBe(0);
+      expect(container.querySelector('[data-teardown-boundary-failed]')).toBeNull();
+      expect(container.querySelector('[data-active-tab-bounds="set"]')).toBeTruthy();
+      expect(renderedTabOrder()).toEqual(['ws-2', 'ws-1', 'ws-3']);
+    });
   });
 
   it('changes the observable leading inset while preserving flare clearance', async () => {
     const { rerender } = render(WorkspaceTabStrip, {
       props: { leadingInsetPx: 15, scrollerMarginLeftPx: -6 },
     });
-    const tablist = screen.getByRole('tablist', {
-      name: m.layout_workspaceTabStrip_openSpaces_ariaLabel(),
-    });
+    const tablist = tabScroller();
 
     expect(getComputedStyle(tablist).paddingLeft).toBe('6px');
     expect(getComputedStyle(tablist).marginLeft).toBe('-6px');
@@ -1002,6 +1238,29 @@ describe('WorkspaceTabStrip', () => {
 
     await rerender({ leadingInsetPx: 4, scrollerMarginLeftPx: 8 });
     expect(getComputedStyle(tablist).paddingLeft).toBe('6px');
+  });
+
+  it('owns only tab roles from the semantic tablist', () => {
+    render(WorkspaceTabStrip);
+    const tablist = screen.getByRole('tablist', {
+      name: m.layout_workspaceTabStrip_openSpaces_ariaLabel(),
+    });
+    const tabs = screen.getAllByRole('tab');
+    const ownedIds = tablist.getAttribute('aria-owns')?.split(' ') ?? [];
+
+    expect(ownedIds).toEqual(tabs.map((tab) => tab.id));
+    expect(
+      ownedIds.every((id) => document.getElementById(id)?.getAttribute('role') === 'tab'),
+    ).toBe(true);
+    expect(tablist.childElementCount).toBe(0);
+    expect(tablist.contains(document.querySelector('[aria-live="polite"]'))).toBe(false);
+    expect(
+      tablist.contains(document.querySelector('[data-testid="workspace-tab-tooltip-root"]')),
+    ).toBe(false);
+    for (const close of screen.getAllByRole('button', { name: /Close/ })) {
+      expect(tablist.contains(close)).toBe(false);
+      expect(close.closest('[role="tab"]')).toBeNull();
+    }
   });
 
   it('keeps the close control outside the hover trigger and isolated from navigation', async () => {
@@ -1025,7 +1284,7 @@ describe('WorkspaceTabStrip', () => {
     const loadingSurface = document.querySelector('[data-workspace-tab="ws-3"]')!;
     const close = screen.getByRole('button', { name: 'Close ws-3' });
 
-    expect(close.parentElement).toBe(loadingSurface);
+    expect(close.closest('[data-workspace-tab="ws-3"]')).toBe(loadingSurface);
     expect(close.className).toContain('absolute right-1 z-10');
     await fireEvent.click(close);
 
@@ -1048,10 +1307,25 @@ describe('WorkspaceTabStrip', () => {
 
     await fireEvent.mouseDown(document.body);
     await fireEvent.contextMenu(screen.getByRole('tab', { name: 'Loading workspace ws-3' }));
-    expect(
-      (screen.getByRole('menuitem', { name: 'Close tabs to the right' }) as HTMLButtonElement)
-        .disabled,
-    ).toBe(true);
+    const closeRight = screen.getByRole('menuitem', { name: 'Close tabs to the right' });
+    expect(closeRight.getAttribute('aria-disabled')).toBe('true');
+    mocks.dispatch.mockClear();
+    await fireEvent.click(closeRight);
+    expect(mocks.dispatch).not.toHaveBeenCalled();
+    expect(mocks.goto).not.toHaveBeenCalled();
+  });
+
+  it('does not offer Share from the tab context menu, even on an owned tab', async () => {
+    render(WorkspaceTabStrip);
+
+    // Alpha reports `myRole: 'owner'`; Share lives in the workspace ⋯ menu only.
+    await fireEvent.contextMenu(screen.getByRole('tab', { name: /Alpha/ }));
+    await screen.findByRole('menuitem', { name: 'Close' });
+
+    expect(screen.queryByRole('menuitem', { name: 'Share…' })).toBeNull();
+    expect(mocks.dispatch).not.toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'workspaceShare/openDialog' }),
+    );
   });
 
   it('closes other workspace tabs in order and focuses the context target', async () => {
@@ -1106,9 +1380,7 @@ describe('WorkspaceTabStrip', () => {
     );
 
     render(WorkspaceTabStrip);
-    const strip = screen.getByRole('tablist', {
-      name: m.layout_workspaceTabStrip_openSpaces_ariaLabel(),
-    });
+    const strip = tabScroller();
     expect(strip.className).toContain('-mr-2.5');
     expect(strip.className).not.toMatch(/(?:^|\s)mr-1(?:\s|$)/);
 
@@ -1137,9 +1409,7 @@ describe('WorkspaceTabStrip', () => {
       },
     );
     render(WorkspaceTabStrip);
-    const strip = screen.getByRole('tablist', {
-      name: m.layout_workspaceTabStrip_openSpaces_ariaLabel(),
-    });
+    const strip = tabScroller();
     Object.defineProperties(strip, {
       scrollWidth: { value: 300, configurable: true },
       clientWidth: { value: 300, configurable: true },
@@ -1157,9 +1427,7 @@ describe('WorkspaceTabStrip', () => {
 
   it('scrolls a newly active final tab fully inside the strip', async () => {
     const { rerender } = render(WorkspaceTabStrip, { props: { activeWorkspaceId: 'ws-1' } });
-    const strip = screen.getByRole('tablist', {
-      name: m.layout_workspaceTabStrip_openSpaces_ariaLabel(),
-    });
+    const strip = tabScroller();
     const finalTab = document.querySelector<HTMLElement>('[data-workspace-tab="ws-3"]')!;
     Object.defineProperty(strip, 'scrollLeft', { value: 0, writable: true });
     strip.getBoundingClientRect = () => ({ left: 100, right: 400, width: 300 }) as DOMRect;
@@ -1176,9 +1444,7 @@ describe('WorkspaceTabStrip', () => {
       props: { activeWorkspaceId: 'ws-1', onActiveTabBoundsChange },
     });
     container.classList.add('window-title-bar');
-    const strip = screen.getByRole('tablist', {
-      name: m.layout_workspaceTabStrip_openSpaces_ariaLabel(),
-    });
+    const strip = tabScroller();
     const activeTab = document.querySelector<HTMLElement>('[data-workspace-tab="ws-1"]')!;
     let scrollLeft = 120;
     const scrollLeftSetter = vi.fn((value: number) => {
@@ -1301,9 +1567,7 @@ describe('WorkspaceTabStrip', () => {
     mocks.dispatch.mockClear();
     const source = document.querySelector<HTMLElement>('[data-workspace-tab="ws-1"]')!;
     const tab = tabButton(source);
-    const strip = screen.getByRole('tablist', {
-      name: m.layout_workspaceTabStrip_openSpaces_ariaLabel(),
-    });
+    const strip = tabScroller();
 
     expect(tab.className).toContain('cursor-pointer');
     expect(source.className).toContain('cursor-pointer');
@@ -1323,7 +1587,7 @@ describe('WorkspaceTabStrip', () => {
     expect(source.className).not.toContain('shadow-lg');
     expect(strip.className).toContain('cursor-grabbing');
     expect(source.style.left).toBe('8px');
-    expect(source.style.top).toBe('18px');
+    expect(source.style.top).toBe('20px');
     const reservedSlot = document.querySelector<HTMLElement>(
       '[data-workspace-tab-placeholder="ws-1"]',
     );
@@ -1333,12 +1597,12 @@ describe('WorkspaceTabStrip', () => {
 
     await fireEvent(tab, makePointerEvent('pointermove', 120, -900));
     expect(source.style.left).toBe('40px');
-    expect(source.style.top).toBe('18px');
+    expect(source.style.top).toBe('20px');
 
     await fireEvent(tab, makePointerEvent('pointermove', 250, 900));
 
     expect(source.style.left).toBe('170px');
-    expect(source.style.top).toBe('18px');
+    expect(source.style.top).toBe('20px');
     expect(renderedTabOrder()).toEqual(['ws-2', 'ws-1', 'ws-3']);
     expect(
       document
@@ -1393,10 +1657,7 @@ describe('WorkspaceTabStrip', () => {
 
     expect(renderedTabOrder()).toEqual(['ws-1', 'ws-2', 'ws-3']);
     expect(document.querySelector('[data-workspace-tab-placeholder]')).toBeNull();
-    expect(
-      screen.getByRole('tablist', { name: m.layout_workspaceTabStrip_openSpaces_ariaLabel() })
-        .className,
-    ).not.toContain('cursor-grabbing');
+    expect(tabScroller().className).not.toContain('cursor-grabbing');
     expect(
       mocks.dispatch.mock.calls
         .map(([action]) => action)
@@ -1430,9 +1691,7 @@ describe('WorkspaceTabStrip', () => {
     const runFrames = (count: number) => {
       for (let index = 0; index < count; index += 1) frames.shift()?.(0);
     };
-    const strip = screen.getByRole('tablist', {
-      name: m.layout_workspaceTabStrip_openSpaces_ariaLabel(),
-    });
+    const strip = tabScroller();
     const source = document.querySelector<HTMLElement>('[data-workspace-tab="ws-2"]')!;
     Object.defineProperties(strip, {
       scrollLeft: { value: 100, writable: true },
@@ -1491,10 +1750,7 @@ describe('WorkspaceTabStrip', () => {
     );
     expect(source.style.left).toBe('');
     expect(document.querySelector('[data-workspace-tab-placeholder]')).toBeNull();
-    expect(
-      screen.getByRole('tablist', { name: m.layout_workspaceTabStrip_openSpaces_ariaLabel() })
-        .className,
-    ).not.toContain('cursor-grabbing');
+    expect(tabScroller().className).not.toContain('cursor-grabbing');
   });
 
   it('moves the final tab to the first endpoint with one persisted action', async () => {
@@ -1540,23 +1796,20 @@ describe('WorkspaceTabStrip', () => {
     expect(source.className).toContain('border-b-0');
     expect(source.className).toContain('shadow-none');
     expect(source.className).not.toContain('shadow-lg');
-    expect(
-      screen.getByRole('tablist', { name: m.layout_workspaceTabStrip_openSpaces_ariaLabel() })
-        .className,
-    ).not.toContain('cursor-grabbing');
+    expect(tabScroller().className).not.toContain('cursor-grabbing');
     expect(
       mocks.dispatch.mock.calls.some(([action]) => action.type === 'tabState/moveWorkspace'),
     ).toBe(false);
     expect(mocks.dispatch).toHaveBeenCalledWith({ type: 'tabState/endDrag', payload: [] });
   });
 
-  it('keeps keyboard focus perceivable without a perimeter outline, ring, or focus-only shadow', () => {
+  it('keeps loaded and loading tabs available to the shared focus contract', () => {
     mocks.loadedWorkspaceIds.delete('ws-3');
     render(WorkspaceTabStrip);
 
     for (const tab of screen.getAllByRole('tab')) {
-      expect(tab.className).toContain('outline-none');
-      expect(tab.className).not.toMatch(/focus-visible:(?:ring|outline|shadow)/);
+      expect(tab.matches('button[role="tab"]')).toBe(true);
+      expect(tab.id).not.toBe('');
     }
     expect(
       screen.getByRole('tab', { name: /Alpha/ }).querySelector('[data-workspace-tab-title]'),
@@ -1573,7 +1826,7 @@ describe('WorkspaceTabStrip', () => {
     ).toBeTruthy();
     for (const close of screen.getAllByRole('button', { name: /Close/ })) {
       expect(close.hasAttribute('data-workspace-tab-close')).toBe(true);
-      expect(close.className).not.toMatch(/focus-visible:(?:ring|outline|shadow)/);
+      expect(close.className).toContain('focus-visible:ring-0');
     }
   });
 
@@ -1588,6 +1841,6 @@ describe('WorkspaceTabStrip', () => {
 
     expect(document.querySelector('[data-workspace-drop-placement]')).toBeNull();
     expect(document.querySelector('[data-workspace-stack-preview]')).toBeNull();
-    expect(source.style.top).toBe('18px');
+    expect(source.style.top).toBe('20px');
   });
 });

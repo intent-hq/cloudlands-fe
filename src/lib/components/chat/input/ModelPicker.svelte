@@ -3,13 +3,7 @@
   import { onMount, tick, untrack } from 'svelte';
   import { writable } from 'svelte/store';
 
-  import { agentClient } from '$features/agent/agent.client';
-  import {
-    applyReasoningEffort,
-    reconcileAgentReasoningEffort,
-  } from '$features/agent/reasoning-effort';
   import { useAgentSession } from '$lib/hooks/useAgentSession.svelte';
-  import { updateSession as updateAgentSessionFields } from '$store/renderer/slices/agent-session/agent-session-slice';
   import { selectAgentReasoningEffort } from '$store/renderer/slices/agent-session/agent-session-selectors';
 
   import Button from '$lib/components/ui/button/button.svelte';
@@ -33,6 +27,7 @@
     type ProviderWarningNotice,
   } from './ModelPickerProviderNotice.svelte';
   import ModelProviderErrorItem from './ModelProviderErrorItem.svelte';
+  import { createAgentModelMutator, isSkippedMutation } from './agent-model-mutator';
 
   import {
     selectSelectedModel,
@@ -60,6 +55,7 @@
   import {
     selectActiveProviderId,
     selectAvailableEnabledProviderIds,
+    selectEnabledProviders,
     selectIsProviderModelAccessAllowed,
     selectModelFetchProviderIds,
   } from '$store/renderer/slices/provider-settings/provider-settings-selectors';
@@ -80,12 +76,14 @@
     selectNormalizedProviderId,
     selectProviderDisplayName,
   } from '$store/renderer/slices/provider-catalog/provider-catalog-selectors';
+  import { selectIsWorkspaceCollaborator } from '$store/renderer/slices/workspace/workspace-selectors';
   import { getAgentProvider } from '$shared/types/agent-session';
   import { formatProviderLoadError, type ProviderLoadError } from './model-picker-provider-errors';
   import { AUGGIE_LEGACY_GROUP_KEY, buildGroupedModelOptions } from './model-picker-groups';
   import {
     filterDefaultPseudoOptions,
     findModelFallbackOption,
+    isProviderDisabledInSettings,
     isProviderEnabled,
     isUserProviderSettled,
     normalizeModelIdForMatch,
@@ -95,14 +93,16 @@
   import { pushEscapeLayer } from '$lib/utils/escapeLayers';
   import { createLogger } from '$lib/utils/client-logger';
   import { navigateToSettings } from '$lib/utils/workspace-navigation';
-  import { toast } from 'svelte-sonner';
+  import { notify } from '$lib/components/patterns/notify';
   import { m } from '$shared/paraglide/messages.js';
+  import { IntentMarkLoader } from '$lib/components/ui/indicators';
+  import { Indicator } from '$lib/components/ui/menu';
   import {
     faArrowsRotate,
-    faCheck,
     faChevronDown,
     faLock,
     faPlus,
+    faXmark,
     faTriangleExclamation,
   } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
@@ -131,10 +131,18 @@
   const activeProviderId$ = selectActiveProviderId();
   const modelFetchProviderIds$ = selectModelFetchProviderIds();
   const antigravityModelsAllowed$ = selectIsProviderModelAccessAllowed('antigravity');
+  // Antigravity sign-in is a guest-local fact; a guest-locked picker reads the
+  // host catalog regardless (`isGuestLocked` is declared with the props below
+  // and only read once the picker is rendering).
   function canUseProviderModels(providerId: string): boolean {
-    return normalizeProviderId(providerId) !== 'antigravity' || $antigravityModelsAllowed$;
+    return (
+      normalizeProviderId(providerId) !== 'antigravity' ||
+      $antigravityModelsAllowed$ ||
+      isGuestLocked
+    );
   }
   const availableEnabledProviderIds$ = selectAvailableEnabledProviderIds();
+  const enabledProviders$ = selectEnabledProviders();
   const selectedModel$ = selectSelectedModel();
   const availableModels$ = selectAvailableModels();
   const availableModelsProviderId$ = selectAvailableModelsProviderId();
@@ -175,6 +183,7 @@
     confirmModelChange?: (
       from: string | null | undefined,
       to: string | null,
+      labels?: { from: string; to: string },
     ) => boolean | Promise<boolean>;
     providerId?: string;
     isCompact?: boolean;
@@ -213,9 +222,9 @@
     defaultOptionDescription?: string;
     // Wraps the resolved defaultModelId label on the trigger when no explicit
     // model is selected (e.g. "Default ({model})" for the specialist editor's
-    // inherit state). Only applied when defaultModelId is set.
+    // inherit state). Also applies to the catalog-default fallback.
     formatDefaultModelLabel?: (modelLabel: string) => string;
-    // Gates agent-session updates (updateAgentSessionFields, agent.setModel).
+    // Gates agent-session updates (session model write, agent.setModel).
     updateGlobalStore?: boolean;
     // Gates the global selectModel dispatch (persisted default); Settings default picker only.
     updateGlobalDefault?: boolean;
@@ -299,6 +308,22 @@
   });
 
   const effectiveProviderId = $derived(explicitProviderId ?? $activeProviderId$);
+
+  // A guest window (multiplayer w4) or a `collaborator` seat cannot change an
+  // agent's model, and its local provider availability says nothing about the
+  // host: the agent-bound picker renders read-only with the host catalog
+  // label and no availability warnings (intent#5378). The selector fails
+  // closed while the window's identity is still the boot-time default.
+  const workspaceIdStore = writable(untrack(() => workspaceId) ?? '');
+  const isWorkspaceCollaborator$ = selectIsWorkspaceCollaborator(workspaceIdStore);
+  $effect(() => {
+    workspaceIdStore.set(workspaceId ?? '');
+  });
+  const isGuestLocked = $derived(!!agentId && !!workspaceId && $isWorkspaceCollaborator$);
+  const effectiveLocked = $derived(isLocked || isGuestLocked);
+  // Every agent-session mutation goes through this funnel; it re-reads the
+  // live lock on each call, so no call site needs to re-check after an await.
+  const mutate = createAgentModelMutator({ isLocked: () => isGuestLocked });
 
   let agentProviderModels = $state<
     import('$features/auggie/auggie-models.client').AuggieModel[] | null
@@ -467,13 +492,44 @@
     isProviderEnabled($availableEnabledProviderIds$, effectiveProviderId),
   );
 
+  // An existing agent whose current provider was explicitly disabled in
+  // Settings > Agents (intent#5737). Read from `providers.enabled` alone — not
+  // the available+enabled set, which also drops providers whose probe failed,
+  // and not a daemon event — so the picker can warn before any message is
+  // sent. The daemon refuses to run the agent on a disabled provider and
+  // re-homes it on the next send, so unlike the cloudlands-fe#749 policy
+  // (keep a since-unavailable provider selectable) the model is reported as
+  // unavailable and the disabled provider's group is not offered. A
+  // guest-locked picker never sees the host's settings and stays read-only.
+  const isEffectiveProviderDisabled = $derived(
+    !!agentId &&
+      !isGuestLocked &&
+      isProviderDisabledInSettings($enabledProviders$, effectiveProviderId),
+  );
+
+  // Providers whose models the picker may offer. The available+enabled set
+  // always admits the default provider (`model.defaultProvider`) even when it
+  // was disabled in settings, so its catalog keeps loading for the fetch and
+  // warning paths — but the daemon refuses every turn on a disabled provider
+  // and a disabled default has no re-home target, so its rows must not be
+  // selectable (intent#5737). Same settings blind spot as above for guests.
+  const selectableProviderIds = $derived(
+    isGuestLocked
+      ? $availableEnabledProviderIds$
+      : $availableEnabledProviderIds$.filter(
+          (pid) => !isProviderDisabledInSettings($enabledProviders$, pid),
+        ),
+  );
+
   // The per-agent fetch is only needed when the effective provider's models
   // aren't already covered by the all-providers fetch because the agent's
   // provider is since unavailable. Skipping it otherwise avoids a duplicate fetch.
+  // A guest-locked picker always runs it: the all-providers fetch follows the
+  // guest's local availability, so this is its only route to the host catalog.
   const usesAgentProviderFetch = $derived(
     canUseProviderModels(effectiveProviderId) &&
-      effectiveProviderId !== $activeProviderId$ &&
-      !isEffectiveProviderAvailable,
+      (isGuestLocked ||
+        (effectiveProviderId !== $activeProviderId$ && !isEffectiveProviderAvailable)),
   );
 
   // Separate generation counter from fetchAllProviderModels: in unlocked mode
@@ -705,6 +761,15 @@
     propModelAtLocalChange = undefined;
   });
 
+  // A live owner → collaborator role change must not let a deferred update
+  // queued during streaming reach the backend once streaming ends.
+  $effect(() => {
+    if (isGuestLocked && pendingModelUpdate) {
+      logger.info('Dropping deferred model update (picker guest-locked):', { agentId });
+      pendingModelUpdate = null;
+    }
+  });
+
   $effect(() => {
     if (!deferUpdate && pendingModelUpdate) {
       const model = pendingModelUpdate;
@@ -718,8 +783,15 @@
   // for every provider, so a bare pick is attributed to the loaded group that
   // contains the row rather than blanket-attributed to the default provider.
   // A legacy compound prefix (persisted ids) still wins outright; when several
-  // groups own the same bare id — or no loaded group owns it — the default
-  // provider keeps priority (the intent-hq/monorepo#1657 contract).
+  // groups own the same bare id the default provider keeps priority (the
+  // intent-hq/monorepo#1657 contract). The per-agent group — the effective
+  // provider's models when that provider is outside the enabled set (disabled
+  // locally, or never enabled in a guest window, where the host's settings
+  // are administrator-only and `providers.enabled` never hydrates) — is
+  // consulted too, so a pick from it attributes to the agent's provider. With
+  // no owning group, an agent-bound picker attributes the bare id to the
+  // session's own provider (what the daemon resolves a bare `agent.setModel`
+  // id against when `providerId` is absent); otherwise the default provider.
   function resolvePickedTriple(model: string): { providerId: string; modelId: string } {
     const { providerId: legacyProviderId, modelId } = splitLegacyCompoundId(model);
     if (legacyProviderId) return { providerId: legacyProviderId, modelId };
@@ -738,7 +810,10 @@
     for (const [rowProviderId, options] of Object.entries(allProviderModels)) {
       if (matchesIn(rowProviderId, options)) return { providerId: rowProviderId, modelId };
     }
-    return { providerId: $defaultProviderId$, modelId };
+    if (agentProviderModels && matchesIn(effectiveProviderId, agentProviderModels)) {
+      return { providerId: normalizeProviderId(effectiveProviderId), modelId };
+    }
+    return { providerId: explicitProviderId ?? $defaultProviderId$, modelId };
   }
 
   async function applyBackendModelUpdate(model: string) {
@@ -749,7 +824,9 @@
         // daemon resolves a bare id against the session's current provider,
         // rejecting cross-provider picks.
         const pickedProviderId = resolvePickedTriple(model).providerId || undefined;
-        const result = await agentClient.setModel(agentId, model, workspaceId, pickedProviderId);
+        const result = await mutate.setModel(agentId, model, workspaceId, pickedProviderId);
+        // A locked skip is not an RPC failure: nothing to toast or warn about.
+        if (isSkippedMutation(result)) return;
         if (result.ok && result.data.success) {
           logger.info('Updated agent model via IPC:', { agentId, model });
           const targetOption = flatModelOptions.find(
@@ -757,12 +834,7 @@
           );
           const supportedEfforts = targetOption?.data?.effortLevels as string[] | undefined;
           const currentEffort = selectAgentReasoningEffort.select(appStore.state, agentId);
-          await reconcileAgentReasoningEffort(
-            agentId,
-            workspaceId,
-            currentEffort,
-            supportedEfforts,
-          );
+          await mutate.reconcileEffort(agentId, workspaceId, currentEffort, supportedEfforts);
         } else {
           const errorMsg = result.ok ? result.data.error : result.error;
           logger.warn('Failed to update agent model:', {
@@ -771,7 +843,7 @@
             error: errorMsg,
           });
           if (errorMsg) {
-            toast.error(errorMsg, { duration: 6000 });
+            notify.error(errorMsg, { duration: 6000 });
           }
         }
       } catch (error) {
@@ -781,12 +853,22 @@
   }
 
   async function handleModelSelect(model: string | undefined) {
+    if (isGuestLocked) {
+      dropdownValue = localModel ?? USE_DEFAULT_VALUE;
+      return;
+    }
     if (model !== undefined && !canUseProviderModels(resolvePickedTriple(model).providerId)) {
       dropdownValue = localModel ?? USE_DEFAULT_VALUE;
       return;
     }
     logger.debug('Model selected:', { model, previousModel: localModel, workspaceId, agentId });
     logger.debug('Model pick flags:', { deferUpdate, updateGlobalStore, updateGlobalDefault });
+    // An explicit pick while the agent's provider is disabled is the user's
+    // own switch: the daemon's re-home must not be announced (intent#5737).
+    if (isEffectiveProviderDisabled || disabledProviderSnapshot) {
+      disabledProviderSnapshot = null;
+      reHomeAnnouncementSuppressed = true;
+    }
     // Update local state before async work so the UI responds immediately.
     propModelAtLocalChange = selectedModel;
     userChangedModel = true;
@@ -815,7 +897,7 @@
     if (!updateGlobalStore) return;
 
     if (agentId && workspaceId) {
-      appStore.dispatch(updateAgentSessionFields(agentId, { model }));
+      if (!mutate.setSessionModel(agentId, model)) return;
       logger.debug('Updated local session model:', { agentId, model });
 
       if (deferUpdate) {
@@ -957,6 +1039,11 @@
     defaultModelId ? mapDefaultPseudoSelection(defaultModelId) : undefined,
   );
 
+  function formatResolvedDefaultLabel(model: string): string {
+    if (formatDefaultModelLabel) return formatDefaultModelLabel(model);
+    return showDefaultOption ? m.chat_modelPicker_defaultModelPreview_label({ model }) : model;
+  }
+
   const currentModelLabel = $derived.by(() => {
     if (hasExplicitModel) {
       return localModel
@@ -970,17 +1057,12 @@
     // defaultModelLabel (e.g. "Provider default"), then the bare model id. A
     // `<provider>:default` preview maps to its D2 row's label first.
     if (defaultModelId) {
-      const resolvedLabel =
-        defaultModelIdMappedOption?.label ??
-        getModelLabel(defaultModelId) ??
-        defaultModelLabel ??
-        parseCompoundModelId(defaultModelId).modelId;
-      return formatDefaultModelLabel ? formatDefaultModelLabel(resolvedLabel) : resolvedLabel;
+      const resolvedLabel = defaultModelIdMappedOption?.label ?? getModelLabel(defaultModelId);
+      if (resolvedLabel) return formatResolvedDefaultLabel(resolvedLabel);
+      return defaultModelLabel ?? parseCompoundModelId(defaultModelId).modelId;
     }
     if (catalogDefaultFallbackOption) {
-      return formatDefaultModelLabel
-        ? formatDefaultModelLabel(catalogDefaultFallbackOption.label)
-        : catalogDefaultFallbackOption.label;
+      return formatResolvedDefaultLabel(catalogDefaultFallbackOption.label);
     }
     return defaultModelLabel ?? m.chat_modelPicker_defaultModel_label();
   });
@@ -1005,6 +1087,9 @@
     // A `<provider>:default` selection mapped to its D2 row renders that
     // row's label — resolved even while other providers are still loading.
     if (legacyDefaultMappedOption) return true;
+    // The disabled-provider warning derives from settings alone and must not
+    // wait behind the disabled provider's catalog, which may never load.
+    if (isSelectedModelProviderDisabled) return true;
     if (!isLoadingModels && allProvidersLoaded) return true;
     for (const models of Object.values(allProviderModels)) {
       if (models.some((m) => m.value === localModel)) return true;
@@ -1045,12 +1130,13 @@
 
   const flatModelOptions = $derived<DropdownOption[]>([
     ...(showDefaultOption ? [useDefaultOption] : []),
-    ...$availableEnabledProviderIds$.flatMap(
-      (pid) => allProviderModels[normalizeProviderId(pid)] ?? [],
-    ),
-    // Keep the agent's current provider selectable even if it was since
-    // disabled, so the selected model isn't treated as unavailable.
-    ...(isEffectiveProviderAvailable || !fallbackModelsMatchEffectiveProvider
+    ...selectableProviderIds.flatMap((pid) => allProviderModels[normalizeProviderId(pid)] ?? []),
+    // Keep the agent's current provider selectable while it is merely
+    // unavailable, so the selected model isn't treated as unavailable — but
+    // not once it was disabled in settings (see isEffectiveProviderDisabled).
+    ...(isEffectiveProviderAvailable ||
+    isEffectiveProviderDisabled ||
+    !fallbackModelsMatchEffectiveProvider
       ? []
       : toDropdownOptions(availableModels)),
   ]);
@@ -1123,6 +1209,7 @@
   // and degraded failures are surfaced by the daemon-health UI instead.
   const hasNoAvailableProvider = $derived(
     !providerId &&
+      !isGuestLocked &&
       $hasCheckedOnce$ &&
       $daemonHealth$ === 'healthy' &&
       $availableEnabledProviderIds$.length === 0,
@@ -1144,7 +1231,7 @@
     if (hasNoAvailableProvider) {
       if (!noProviderToastShown) {
         noProviderToastShown = true;
-        toast.error(m.chat_modelPicker_noProviderAvailable_toast(), {
+        notify.error(m.chat_modelPicker_noProviderAvailable_toast(), {
           id: 'no-provider-available',
           duration: 6000,
           action: {
@@ -1186,7 +1273,8 @@
       effectiveProviderId,
       availableModels,
       availableModelsProviderId,
-      enabledProviderIds: $availableEnabledProviderIds$,
+      enabledProviderIds: selectableProviderIds,
+      effectiveProviderDisabled: isEffectiveProviderDisabled,
       allProviderModels,
       allProviderLoading,
       allProviderErrors,
@@ -1225,15 +1313,32 @@
       : '',
   );
 
+  // Provider the daemon resolves the selected model against on send: a legacy
+  // compound prefix, else the agent's own provider. Catalog ownership is not
+  // authoritative here — a bare id shared by several catalogs would be
+  // attributed to the default provider while the agent still runs elsewhere.
+  const selectedModelGateProviderId = $derived.by(() => {
+    const legacyProviderId =
+      hasExplicitModel && localModel ? splitLegacyCompoundId(localModel).providerId : '';
+    return normalizeProviderId(legacyProviderId || effectiveProviderId);
+  });
+
+  // The provider the selected model is sent through was disabled in settings —
+  // the pre-send warning state.
+  const isSelectedModelProviderDisabled = $derived(
+    !!agentId &&
+      !isGuestLocked &&
+      isProviderDisabledInSettings($enabledProviders$, selectedModelGateProviderId),
+  );
+
   const providerTabIds = $derived.by(() => [
     ...new Set([
-      ...$availableEnabledProviderIds$.map((id) => normalizeProviderId(id)),
+      ...selectableProviderIds.map((id) => normalizeProviderId(id)),
       ...groupedModelOptions
         .filter((group) => group.key !== 'default')
         .map((group) => group.parentKey ?? group.key),
     ]),
   ]);
-  const providerTabsEnabled = $derived(showReasoning && providerTabIds.length > 1);
   const preferredBrowseProviderId = $derived(
     providerTabIds.includes(selectedModelProviderId)
       ? selectedModelProviderId
@@ -1242,20 +1347,27 @@
         : (providerTabIds[0] ?? ''),
   );
   let activeBrowseProviderId = $state('');
+  let providerBrowseChanged = $state(false);
+  const providerTabsEnabled = $derived(activeBrowseProviderId !== '');
 
   $effect(() => {
-    if (!providerTabIds.includes(activeBrowseProviderId)) {
+    if (
+      !providerTabIds.includes(activeBrowseProviderId) ||
+      (dropdownOpen && !providerBrowseChanged)
+    ) {
       activeBrowseProviderId = preferredBrowseProviderId;
     }
   });
 
   $effect(() => {
-    if (dropdownOpen && providerTabsEnabled) {
-      activeBrowseProviderId = preferredBrowseProviderId;
+    if (dropdownOpen) {
+      activeBrowseProviderId = untrack(() => preferredBrowseProviderId);
+    } else {
+      providerBrowseChanged = false;
     }
   });
 
-  // Display groups — provider tabs replace the tall group stack in the chat picker.
+  // Display groups — every picker browses one provider at a time.
   const displayGroups = $derived.by(() =>
     groupedModelOptions
       .filter((group) => {
@@ -1311,7 +1423,47 @@
     return !values.has(normalizeModelIdForMatch(localModel, effectiveProviderId));
   });
 
+  // Follow the daemon's re-home (intent#5737): while the agent's provider is
+  // disabled the warning derives from settings alone; when the session then
+  // lands on another provider (the daemon moves it on the next send and the
+  // agent-updated event refreshes `explicitProviderId`), announce the switch
+  // once with the existing fallback toast and keep the from/to note in the
+  // picker. The FE never performs the switch itself. A user pick in the
+  // meantime, or the provider being re-enabled, cancels the announcement.
+  let disabledProviderSnapshot = $state<{
+    agentId: string;
+    providerId: string;
+    fromModel: string;
+  } | null>(null);
+  // Set by an explicit pick while the provider is disabled: the user chose
+  // the switch, so the daemon's re-home must not be announced as its own.
+  let reHomeAnnouncementSuppressed = $state(false);
+
+  // The agent-updated event that re-homes the agent refreshes the session's
+  // provider and model together, but the `selectedModel` prop can land in a
+  // later flush. Until the prop matches the session model the old model is
+  // stale, so neither the announcement nor the auto-fallback may act on it.
+  // A re-home onto the provider default lands with no `model` on the AgentLite
+  // row (§5.5 omits it), so an absent model on a present session means "no
+  // pinned model", and the prop must catch up to that too.
+  const isAwaitingReHomedModel = $derived.by(() => {
+    const snapshot = disabledProviderSnapshot;
+    if (!snapshot || snapshot.agentId !== agentId || isEffectiveProviderDisabled) return false;
+    const session = $agentSession$;
+    if (!session) return false;
+    const sessionModel = session.model;
+    const sessionModelId =
+      typeof sessionModel === 'string' ? splitLegacyCompoundId(sessionModel).modelId : '';
+    const localModelId =
+      hasExplicitModel && localModel ? splitLegacyCompoundId(localModel).modelId : '';
+    return sessionModelId !== localModelId;
+  });
+
   const isSelectedModelUnavailable = $derived.by(() => {
+    if (isGuestLocked) return false;
+    // Settings-derived: does not wait for catalog loads or availability probes.
+    if (isSelectedModelProviderDisabled) return true;
+    if (isAwaitingReHomedModel) return false;
     if (!canUseProviderModels(selectedModelProviderId || effectiveProviderId)) return true;
     if (!$hasCheckedOnce$) return false;
     if (isLoadingModels) return false;
@@ -1372,24 +1524,29 @@
       : null,
   );
   const currentReasoningLabel = $derived(
-    currentReasoningEffort
-      ? reasoningLevelLabel(currentReasoningEffort)
-      : m.chat_effortPicker_level_auto(),
+    persistedReasoningEffort && !reasoningLevels.includes(persistedReasoningEffort)
+      ? m.chat_effortPicker_unavailable_label({
+          level: reasoningLevelLabel(persistedReasoningEffort),
+        })
+      : currentReasoningEffort
+        ? reasoningLevelLabel(currentReasoningEffort)
+        : m.chat_effortPicker_level_auto(),
   );
   const currentReasoningLevelIndex = $derived(
     currentReasoningEffort ? reasoningLevels.indexOf(currentReasoningEffort) : -1,
   );
   const showTriggerReasoningGauge = $derived(
-    currentReasoningEffort !== null &&
-      currentReasoningEffort !== 'none' &&
-      currentReasoningLevelIndex >= 0,
+    showReasoningFooter && currentReasoningEffort !== 'none',
   );
   const triggerLabel = $derived(currentModelLabel);
   const triggerAccessibleLabel = $derived(
     showReasoningFooter ? `${currentModelLabel} · ${currentReasoningLabel}` : currentModelLabel,
   );
   const lockedButtonTitle = $derived(
-    lockedTitle?.trim() || m.chat_modelPicker_modelLocked_title({ model: triggerAccessibleLabel }),
+    isGuestLocked
+      ? m.chat_modelPicker_guestLocked_title()
+      : lockedTitle?.trim() ||
+          m.chat_modelPicker_modelLocked_title({ model: triggerAccessibleLabel }),
   );
   // The in-flight commit window is announced with `aria-busy` and re-entry is
   // ignored in `handleReasoningSelect`; it must not feed the HTML `disabled`
@@ -1397,6 +1554,7 @@
   let updatingReasoningEffort = $state(false);
   const reasoningControlDisabled = $derived(
     reasoningDisabled ||
+      isGuestLocked ||
       (!onReasoningChange && (!agentId || !workspaceId)) ||
       reasoningLevels.length === 0,
   );
@@ -1406,29 +1564,43 @@
       nonBlockingProviderWarnings.length > 0,
   );
 
+  const railProviderIds = $derived(providerTabIds);
+  const refreshProviderId = $derived(activeBrowseProviderId || preferredBrowseProviderId);
+  let pointerInteraction = $state(false);
+
+  function clearModelSearch(event: MouseEvent) {
+    modelSearchValue = '';
+    (event.currentTarget as HTMLElement)
+      .closest('[data-slot="dropdown-content"]')
+      ?.querySelector<HTMLInputElement>('[role="searchbox"]')
+      ?.focus();
+  }
+
   function selectProviderTab(providerId: string) {
+    providerBrowseChanged = true;
     activeBrowseProviderId = providerId;
   }
 
   function handleProviderTabKeydown(event: KeyboardEvent, providerId: string) {
-    const currentIndex = providerTabIds.indexOf(providerId);
+    const currentIndex = railProviderIds.indexOf(providerId);
     if (currentIndex < 0) return;
 
     let nextIndex: number | undefined;
-    if (event.key === 'ArrowRight') nextIndex = (currentIndex + 1) % providerTabIds.length;
-    if (event.key === 'ArrowLeft') {
-      nextIndex = (currentIndex - 1 + providerTabIds.length) % providerTabIds.length;
+    if (event.key === 'ArrowRight' || event.key === 'ArrowDown')
+      nextIndex = (currentIndex + 1) % railProviderIds.length;
+    if (event.key === 'ArrowLeft' || event.key === 'ArrowUp') {
+      nextIndex = (currentIndex - 1 + railProviderIds.length) % railProviderIds.length;
     }
     if (event.key === 'Home') nextIndex = 0;
-    if (event.key === 'End') nextIndex = providerTabIds.length - 1;
+    if (event.key === 'End') nextIndex = railProviderIds.length - 1;
     if (nextIndex === undefined) return;
 
     event.preventDefault();
     event.stopPropagation();
-    activeBrowseProviderId = providerTabIds[nextIndex] ?? providerId;
-    const tabs = (
-      event.currentTarget as HTMLButtonElement
-    ).parentElement?.querySelectorAll<HTMLButtonElement>('[role="tab"]');
+    selectProviderTab(railProviderIds[nextIndex] ?? providerId);
+    const tabs = (event.currentTarget as HTMLButtonElement)
+      .closest('[role="tablist"]')
+      ?.querySelectorAll<HTMLButtonElement>('[role="tab"]');
     tabs?.[nextIndex]?.focus();
   }
 
@@ -1443,7 +1615,7 @@
         return (await onReasoningChange(value)) !== false;
       }
       if (!agentId || !workspaceId) return false;
-      return await applyReasoningEffort(agentId, workspaceId, value, previous);
+      return await mutate.applyEffort(agentId, workspaceId, value, previous);
     } finally {
       updatingReasoningEffort = false;
     }
@@ -1469,7 +1641,7 @@
   // Only show on pickers tied to an existing agent (agentId) — the workspace
   // initializer creates new agents and shouldn't display fallback warnings.
   const showModelWarning = $derived(
-    !!agentId && (isSelectedModelUnavailable || $fallbackInfo$ !== null),
+    !!agentId && !isGuestLocked && (isSelectedModelUnavailable || $fallbackInfo$ !== null),
   );
 
   // The selected model isn't in the catalog yet, but its provider hasn't
@@ -1478,6 +1650,7 @@
   const showModelLoading = $derived(
     !!agentId &&
       $fallbackInfo$ === null &&
+      !isSelectedModelProviderDisabled &&
       isSelectedModelMissingFromCatalog &&
       (!$hasCheckedOnce$ ||
         isLoadingModels ||
@@ -1493,6 +1666,14 @@
 
   // Warning message to display
   const warningMessage = $derived.by(() => {
+    if (isSelectedModelProviderDisabled) {
+      return {
+        title: m.chat_modelPicker_noLongerAvailable_title({ model: currentModelLabel }),
+        description: m.chat_modelPicker_providerDisabled_description({
+          provider: providerDisplayName(selectedModelGateProviderId),
+        }),
+      };
+    }
     if (isSelectedModelUnavailable) {
       return {
         title: m.chat_modelPicker_noLongerAvailable_title({
@@ -1511,6 +1692,55 @@
     return null;
   });
 
+  // Native tooltip on the trigger: the warning reason while one is shown
+  // ("<model> is no longer available — <provider> is disabled"), else the label.
+  const triggerTitle = $derived(
+    showModelWarning && warningMessage
+      ? m.chat_modelPicker_warning_tooltip({
+          title: warningMessage.title,
+          description: warningMessage.description,
+        })
+      : triggerAccessibleLabel,
+  );
+
+  // Re-home announcement (see `disabledProviderSnapshot`).
+  $effect(() => {
+    if (!agentId) {
+      disabledProviderSnapshot = null;
+      reHomeAnnouncementSuppressed = false;
+      return;
+    }
+    const currentProviderId = normalizeProviderId(effectiveProviderId);
+    if (isEffectiveProviderDisabled) {
+      if (!disabledProviderSnapshot && !untrack(() => reHomeAnnouncementSuppressed)) {
+        disabledProviderSnapshot = {
+          agentId,
+          providerId: currentProviderId,
+          fromModel: untrack(() => currentModelLabel),
+        };
+      }
+      return;
+    }
+    reHomeAnnouncementSuppressed = false;
+    const snapshot = disabledProviderSnapshot;
+    if (!snapshot) return;
+    if (isAwaitingReHomedModel) return;
+    disabledProviderSnapshot = null;
+    if (snapshot.agentId !== agentId) return;
+    if (snapshot.providerId === currentProviderId) return;
+    const toModel = untrack(() => currentModelLabel);
+    logger.info('Agent re-homed by the daemon after its provider was disabled:', {
+      agentId,
+      fromProvider: snapshot.providerId,
+      toProvider: currentProviderId,
+    });
+    setFallbackInfo({ fromModel: snapshot.fromModel, toModel });
+    notify.info(
+      m.chat_modelPicker_unavailableSwitched_toast({ from: snapshot.fromModel, to: toModel }),
+      { duration: 5000 },
+    );
+  });
+
   function findFallbackOption(restrictToProvider?: string): DropdownOption | undefined {
     return findModelFallbackOption({
       options: flatModelOptions,
@@ -1524,13 +1754,17 @@
   // Only applies to pickers tied to an existing agent — onboarding doesn't need this.
   $effect(() => {
     if (!agentId) return;
+    if (isGuestLocked) return;
+    // A disabled provider is re-homed by the daemon on the next send; the FE
+    // must not `agent.setModel` its way around the gate (intent#5737).
+    if (isSelectedModelProviderDisabled) return;
     if (!canUseProviderModels(selectedModelProviderId || effectiveProviderId)) return;
     if (!isSelectedModelUnavailable) return;
     if (flatModelOptions.length === 0) return;
 
-    // Guard against transient unavailability. This effect dispatches
-    // updateAgentSessionFields(agentId, { model }), which PERMANENTLY overwrites
-    // the persisted model on the agent session — including across restarts.
+    // Guard against transient unavailability. This effect writes the session
+    // model (via handleModelSelect), which PERMANENTLY overwrites the
+    // persisted model on the agent session — including across restarts.
     // Only proceed once we're confident the user's provider has truly settled;
     // otherwise a slow/empty per-provider fetch during boot or refresh would
     // silently replace the user's picked model (e.g. Sonnet 4.6 → GPT 5.4).
@@ -1595,7 +1829,7 @@
       });
 
       // Show toast notification explaining the switch
-      toast.info(
+      notify.info(
         m.chat_modelPicker_unavailableSwitched_toast({
           from: unavailableModelName,
           to: fallbackModelName,
@@ -1633,6 +1867,7 @@
 
   $effect(() => {
     if (!silentFallback) return;
+    if (isGuestLocked) return;
     if (!canUseProviderModels(selectedModelProviderId || effectiveProviderId)) return;
     if (!isSelectedModelUnavailable) return;
     if (!isLoadingModels && flatModelOptions.length === 0) return;
@@ -1684,7 +1919,7 @@
       }
 
       const providerName = providerDisplayName(currentProvider);
-      toast.warning(m.chat_modelPicker_noModelsForProvider_toast({ provider: providerName }), {
+      notify.warning(m.chat_modelPicker_noModelsForProvider_toast({ provider: providerName }), {
         description: m.chat_modelPicker_tryRefreshing_description(),
       });
     })();
@@ -1694,6 +1929,7 @@
   let dropdownRef = $state<{
     focusTrigger: () => void;
     dismissAndFocusTrigger: () => void;
+    openAndFocusSearch: () => Promise<void>;
   } | null>(null);
 
   $effect(() => {
@@ -1713,7 +1949,8 @@
     clearFallbackInfo();
   }
 
-  async function handleModelChange(value: string | string[]) {
+  async function handleModelChange(value: string | string[], event?: MouseEvent) {
+    if (effectiveLocked) return;
     const modelValue = value as string;
     // Gate user-picked changes to a *different* model behind the optional
     // confirmation callback (mid-conversation switch warning). Re-selecting
@@ -1730,6 +1967,13 @@
       const confirmed = await confirmModelChange(
         localModel,
         modelValue === USE_DEFAULT_VALUE ? null : modelValue,
+        {
+          from: currentModelLabel,
+          to:
+            modelValue === USE_DEFAULT_VALUE
+              ? m.chat_modelPicker_defaultModel_label()
+              : (getModelLabel(modelValue) ?? parseCompoundModelId(modelValue).modelId),
+        },
       );
       if (!confirmed) {
         // Revert the dropdown's internal selection back to the current model.
@@ -1737,7 +1981,9 @@
         return;
       }
     }
-    if (modalAware) {
+    // Keyboard selection removes the focused search/listbox. Return to its
+    // trigger instead of leaving focus on body; pointer callers keep their policy.
+    if (modalAware || !event) {
       queueMicrotask(() => {
         dropdownOpen = false;
         dropdownRef?.focusTrigger();
@@ -1755,13 +2001,19 @@
 
   // Expose open function for keyboard shortcut
   export function open() {
-    if (!isLocked) {
-      dropdownOpen = true;
+    if (!effectiveLocked) {
+      pointerInteraction = false;
+      void dropdownRef?.openAndFocusSearch();
     }
   }
 </script>
 
-{#if isLocked}
+<svelte:window
+  onpointerdown={() => (pointerInteraction = true)}
+  onkeydown={() => (pointerInteraction = false)}
+/>
+
+{#if effectiveLocked}
   <!-- Show locked state without dropdown -->
   <Button
     {variant}
@@ -1782,14 +2034,11 @@
         <ProviderIcon providerId={triggerProviderId} class="size-3.5" />
       {/if}
       <span class="flex-1 text-left truncate">{triggerLabel}</span>
-      {#if showReasoningFooter && currentReasoningEffort === null}
-        <span class="shrink-0 text-xs" data-testid="model-reasoning-strength"
-          >· {currentReasoningLabel}</span
-        >
-      {:else if showTriggerReasoningGauge}
+      {#if showTriggerReasoningGauge}
         <EffortGauge
           value={currentReasoningLevelIndex}
           max={Math.max(1, reasoningLevels.length - 1)}
+          centered={currentReasoningEffort === null}
           testId="model-reasoning-effort-gauge"
           class="[&_line]:transition-none!"
         />
@@ -1803,14 +2052,11 @@
           <ProviderIcon providerId={triggerProviderId} class="size-3.5" />
         {/if}
         <span class="text-xs truncate">{triggerLabel}</span>
-        {#if showReasoningFooter && currentReasoningEffort === null}
-          <span class="shrink-0 text-xs" data-testid="model-reasoning-strength"
-            >· {currentReasoningLabel}</span
-          >
-        {:else if showTriggerReasoningGauge}
+        {#if showTriggerReasoningGauge}
           <EffortGauge
             value={currentReasoningLevelIndex}
             max={Math.max(1, reasoningLevels.length - 1)}
+            centered={currentReasoningEffort === null}
             testId="model-reasoning-effort-gauge"
             class="[&_line]:transition-none!"
           />
@@ -1843,26 +2089,9 @@
   {/snippet}
 
   {#snippet dropdownFooter()}
-    {#if showReasoningFooter}
-      <div class="px-2 py-2" data-testid="model-reasoning-section">
-        <EffortPicker
-          mode="embedded"
-          {agentId}
-          {workspaceId}
-          effortLevels={reasoningLevels}
-          effort={persistedReasoningEffort}
-          disabled={reasoningControlDisabled}
-          busy={updatingReasoningEffort}
-          {modalAware}
-          onEffortChange={handleReasoningSelect}
-        />
-      </div>
-    {/if}
     {#if !allProvidersLoaded && Object.keys(allProviderModels).length > 0}
       <div class="px-3 py-2 flex items-center gap-2 text-xs text-muted-foreground">
-        <div
-          class="size-3 border-2 border-muted-foreground/30 border-t-muted-foreground rounded-full animate-spin"
-        ></div>
+        <IntentMarkLoader size={12} />
         <span>{m.chat_modelPicker_loadingMore_label()}</span>
       </div>
     {/if}
@@ -1881,6 +2110,22 @@
         {/each}
       </div>
     {/if}
+    {#if showReasoningFooter}
+      <div class="w-full min-w-0 px-3 py-2" data-testid="model-reasoning-section">
+        <EffortPicker
+          mode="embedded"
+          class="w-full min-w-0 gap-2! [&>div]:w-24 [&>span]:min-w-0 [&>span>span]:truncate"
+          {agentId}
+          {workspaceId}
+          effortLevels={reasoningLevels}
+          effort={persistedReasoningEffort}
+          disabled={reasoningControlDisabled}
+          busy={updatingReasoningEffort}
+          {modalAware}
+          onEffortChange={handleReasoningSelect}
+        />
+      </div>
+    {/if}
   {/snippet}
 
   <Dropdown
@@ -1896,22 +2141,22 @@
     variant={variant === 'outline' ? 'outline' : variant === 'default' ? 'default' : 'ghost'}
     size={size === 'xs' ? 'xs' : 'sm'}
     searchable={!hasNoAvailableProvider}
-    placeholder={m.chat_modelPicker_searchModels_placeholder()}
-    class="min-w-0"
-    headerClass={providerTabsEnabled ? 'bg-popover! border-b!' : 'border-b-0!'}
+    searchChrome
+    placeholder={m.ui_dropdown_search_ariaLabel()}
+    class="min-w-0 max-w-full"
+    headerClass={cn('model-picker-header border-b-0!', !hasNoAvailableProvider && 'pt-9')}
     triggerClass={cn(
-      'max-w-full',
-      (variant === 'outline' || variant === 'default') &&
-        'w-full justify-between border-border! focus-visible:border-ring! focus-visible:ring-2 focus-visible:ring-ring/40',
+      'max-w-full px-2!',
+      (variant === 'outline' || variant === 'default') && 'w-full justify-between border-border!',
       triggerClass,
     )}
     contentClass={cn(
-      'max-w-[calc(100vw-32px)] bg-background! text-foreground!',
-      '[&_[role=searchbox]]:border-b! [&_[role=searchbox]]:border-solid! [&_[role=searchbox]]:border-border!',
-      showReasoning ? 'w-85 h-90 min-h-0 max-h-90 flex flex-col' : 'w-[332px]',
+      'model-picker-panel max-w-[calc(100vw-16px)] bg-popover! text-foreground! w-96 h-[360px] min-h-0 flex flex-col rounded-xl pl-12',
+      pointerInteraction && 'model-picker-pointer',
     )}
-    contentMaxHeight={showReasoning ? 360 : undefined}
-    fillContentHeight={showReasoning}
+    contentMaxHeight={360}
+    fillContentHeight
+    animate={false}
     {portal}
     {collisionBoundary}
     {groupHeader}
@@ -1930,34 +2175,28 @@
           'inline-flex items-center gap-2 truncate min-w-0',
           (variant === 'outline' || variant === 'default') && 'flex-1',
         )}
-        title={isTriggerLabelResolved ? triggerAccessibleLabel : ''}
+        title={isTriggerLabelResolved ? triggerTitle : ''}
         aria-label={isTriggerLabelResolved ? triggerAccessibleLabel : undefined}
       >
         {#if isCompact}
           <Fa icon={faSettings} class="h-4 w-4" />
         {:else if isTriggerLabelResolved}
           {#if showModelLoading}
-            <span
-              class="size-3 border-2 border-muted-foreground/30 border-t-muted-foreground rounded-full animate-spin shrink-0"
-              role="status"
-              aria-label={modelLoadingTitle}
-              title={modelLoadingTitle}
-            ></span>
+            <span class="size-3 shrink-0" title={modelLoadingTitle}>
+              <IntentMarkLoader size={12} />
+            </span>
           {:else if showModelWarning}
-            <Fa icon={faTriangleExclamation} class="h-3 w-3 text-amber-600 shrink-0" />
+            <Fa icon={faTriangleExclamation} class="h-3 w-3 text-warning-ink shrink-0" />
           {/if}
           {#if hasProviderIcon(triggerProviderId)}
             <ProviderIcon providerId={triggerProviderId} class="size-3.5" />
           {/if}
           <span class="truncate">{triggerLabel}</span>
-          {#if showReasoningFooter && currentReasoningEffort === null}
-            <span class="shrink-0 text-xs" data-testid="model-reasoning-strength"
-              >· {currentReasoningLabel}</span
-            >
-          {:else if showTriggerReasoningGauge}
+          {#if showTriggerReasoningGauge}
             <EffortGauge
               value={currentReasoningLevelIndex}
               max={Math.max(1, reasoningLevels.length - 1)}
+              centered={currentReasoningEffort === null}
               testId="model-reasoning-effort-gauge"
               class="[&_line]:transition-none!"
             />
@@ -1972,21 +2211,26 @@
     {/snippet}
 
     {#snippet header()}
-      {#if providerTabsEnabled}
+      <div
+        class="absolute inset-y-0 left-0 flex w-12 flex-col items-center gap-1 border-r border-border bg-muted/20 py-2"
+        data-testid="model-provider-rail"
+      >
         <div
-          class="flex items-center gap-1 px-2 pt-2"
+          class="flex min-h-0 flex-1 flex-col items-center gap-1 overflow-y-auto"
           role="tablist"
+          aria-orientation="vertical"
           aria-label={m.chat_modelPicker_modelProviders_label()}
           data-testid="model-provider-tabs"
         >
-          {#each providerTabIds as providerTabId (providerTabId)}
+          {#each railProviderIds as providerTabId (providerTabId)}
             <Button
               variant="ghost"
-              size="icon"
+              size="icon-sm"
               iconOnly={true}
               role="tab"
               aria-selected={providerTabId === activeBrowseProviderId}
               aria-label={providerDisplayName(providerTabId)}
+              title={providerDisplayName(providerTabId)}
               tabindex={providerTabId === activeBrowseProviderId ? 0 : -1}
               class={cn(
                 'text-muted-foreground hover:bg-muted/40',
@@ -1998,9 +2242,11 @@
               <ProviderIcon providerId={providerTabId} class="size-4" size={16} />
             </Button>
           {/each}
+        </div>
+        {#if !hasNoAvailableProvider}
           <Button
             variant="ghost"
-            size="icon"
+            size="icon-sm"
             iconOnly={true}
             aria-label={m.chat_modelPicker_noProviderAvailable_openSettings_label()}
             class="text-muted-foreground hover:bg-muted/40"
@@ -2009,42 +2255,55 @@
           >
             <Fa icon={faPlus} class="size-3 text-muted-foreground/50" />
           </Button>
-          <Button
-            variant="ghost"
-            size="xs"
-            iconOnly={true}
-            title={m.chat_modelPicker_refreshGroup_title({
-              group: providerDisplayName(activeBrowseProviderId),
-            })}
-            aria-label={m.chat_modelPicker_refreshGroup_title({
-              group: providerDisplayName(activeBrowseProviderId),
-            })}
-            class={cn(
-              'ml-auto text-subtle hover:bg-muted/40',
-              refreshingProviders.has(activeBrowseProviderId) && 'opacity-50! cursor-not-allowed',
-            )}
-            data-testid="model-provider-refresh-button"
-            disabled={refreshingProviders.has(activeBrowseProviderId)}
-            onclick={() => void handleRefreshProvider(activeBrowseProviderId)}
-          >
+        {/if}
+      </div>
+      {#if modelSearchValue}
+        <Button
+          variant="ghost"
+          size="icon-xs"
+          iconOnly
+          class="absolute right-10 top-1.5 z-20"
+          aria-label={m.chat_modelPicker_clearSearch_ariaLabel()}
+          onclick={clearModelSearch}
+        >
+          <Fa icon={faXmark} class="size-3" />
+        </Button>
+      {/if}
+      {#if refreshProviderId}
+        <Button
+          variant="ghost"
+          size="icon-xs"
+          iconOnly={true}
+          title={m.chat_modelPicker_refreshGroup_title({
+            group: providerDisplayName(refreshProviderId),
+          })}
+          aria-label={m.chat_modelPicker_refreshGroup_title({
+            group: providerDisplayName(refreshProviderId),
+          })}
+          class={cn(
+            'absolute right-2 top-1.5 text-subtle hover:bg-muted/40',
+            refreshingProviders.has(refreshProviderId) && 'opacity-50!',
+          )}
+          data-testid="model-provider-refresh-button"
+          aria-busy={refreshingProviders.has(refreshProviderId)}
+          disabled={refreshingProviders.has(refreshProviderId)}
+          onclick={() => void handleRefreshProvider(refreshProviderId)}
+        >
+          {#if refreshingProviders.has(refreshProviderId)}
+            <IntentMarkLoader size={12} />
+          {:else}
             <Fa
               icon={faArrowsRotate}
               size={10}
-              class={cn(
-                'text-subtle transition-transform duration-500',
-                refreshingProviders.has(activeBrowseProviderId) && 'animate-spin',
-              )}
+              class="text-subtle transition-transform duration-spring-slow ease-spring-slow motion-reduce:transition-none"
             />
-          </Button>
-        </div>
+          {/if}
+        </Button>
       {/if}
       {#if showModelWarning && warningMessage}
         <div class="px-3 py-2.5 border-b border-border bg-warning/5">
           <div class="flex items-start gap-2" role="alert">
-            <Fa
-              icon={faTriangleExclamation}
-              class="h-3.5 w-3.5 text-warning-foreground mt-0.5 shrink-0"
-            />
+            <Fa icon={faTriangleExclamation} class="h-3.5 w-3.5 text-warning-ink mt-0.5 shrink-0" />
             <div class="min-w-0">
               <div class="text-xs font-medium text-foreground leading-tight">
                 {warningMessage.title}
@@ -2062,12 +2321,10 @@
       {@const providerLoadError = option.data?.providerLoadError as ProviderLoadError | undefined}
       {@const providerLoading = option.data?.providerLoading as boolean | undefined}
 
-      <div class="flex gap-2 w-full min-w-0">
+      <div class="flex items-center gap-2.5 w-full min-w-0 py-1">
         {#if providerLoading}
           <div class="flex items-center gap-2 text-muted-foreground text-sm">
-            <div
-              class="size-3 border-2 border-muted-foreground/30 border-t-muted-foreground rounded-full animate-spin"
-            ></div>
+            <IntentMarkLoader size={12} />
             <span>{option.label}</span>
           </div>
         {:else if providerLoadError}
@@ -2079,26 +2336,21 @@
           />
         {:else}
           <div class="flex-1 min-w-0">
-            <div class="flex items-baseline justify-between gap-2">
-              <span
-                class={cn(
-                  'truncate text-sm font-medium',
-                  option.value === USE_DEFAULT_VALUE && 'italic text-muted-foreground',
-                  selected && 'font-medium',
-                )}
-              >
-                {option.label}
-              </span>
-              {#if selected}
-                <Fa icon={faCheck} class="text-xs text-primary shrink-0" />
-              {/if}
-            </div>
+            <span
+              class={cn(
+                'block truncate text-sm font-normal',
+                option.value === USE_DEFAULT_VALUE && 'text-muted-foreground',
+              )}
+            >
+              {option.label}
+            </span>
             {#if option.description}
               <div class="text-xs text-subtle truncate mt-0.5" title={option.description}>
                 {option.description}
               </div>
             {/if}
           </div>
+          <Indicator state={selected ? 'checked' : 'empty'} />
         {/if}
       </div>
     {/snippet}
@@ -2122,3 +2374,41 @@
     class={resolvedNoticeClass}
   />
 {/if}
+
+<style>
+  :global(.model-picker-panel > div:has(> input[role='searchbox'])) {
+    position: absolute;
+    top: 0.25rem;
+    left: 3.5rem;
+    right: 2.5rem;
+    width: auto;
+    padding: 0;
+    z-index: 10;
+    background: transparent;
+    border-radius: var(--radius-medium);
+  }
+  :global(.model-picker-panel > div:has(> input[role='searchbox']) > svg) {
+    display: none;
+  }
+  :global(.model-picker-panel input[role='searchbox']) {
+    height: 2rem;
+    padding: 0 1.75rem 0 0.25rem;
+    border: 0;
+    background: transparent;
+    box-shadow: none;
+    outline: none;
+    border-radius: var(--radius-medium);
+    caret-color: var(--color-foreground);
+  }
+  :global(.model-picker-panel.model-picker-pointer) {
+    transition: opacity var(--spring-fast) var(--spring-fast-ease);
+    @starting-style {
+      opacity: 0;
+    }
+  }
+  @container style(--motion-reduced: 1) {
+    :global(.model-picker-panel.model-picker-pointer) {
+      transition: none;
+    }
+  }
+</style>

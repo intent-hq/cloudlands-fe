@@ -7,13 +7,15 @@
   import {
     faRobot,
     faPlay,
-    faSpinner,
     faArrowUpRightFromSquare,
     faCheck,
   } from '@fortawesome/free-solid-svg-icons';
-  import { toast } from 'svelte-sonner';
+  import { IntentMarkLoader } from '$lib/components/ui/indicators';
+  import { notify } from '$lib/components/patterns/notify';
   import { parseAgentTypeId } from '$shared/types/agent.types';
   import { selectSelectedModel } from '$store/renderer/slices/model/model-selectors';
+  import { selectHidesAgentLifecycleActions } from '$store/renderer/slices/workspace/workspace-selectors';
+  import { writable } from 'svelte/store';
 
   import { WorkspaceId } from '$shared/types/branded-ids';
   import AgentAvatar from '$features/agent/components/agent-avatar/AgentAvatar.svelte';
@@ -37,6 +39,14 @@
 
   // Get workspaceId from extension options
   let workspaceId = $derived(extension?.options?.workspaceId as string | undefined);
+  const wsIdStore = writable<string>('');
+  $effect(() => {
+    wsIdStore.set(workspaceId ?? '');
+  });
+  // Running the action creates an agent (`agent.create`), refused (-32003) for
+  // a collaborator connection: the run affordance is withheld. Viewing an
+  // already-linked agent is not a lifecycle action and stays available.
+  const hidesAgentLifecycleActions$ = selectHidesAgentLifecycleActions(wsIdStore);
 
   function getErrorMessage(err: unknown): string {
     if (err instanceof Error) return err.message;
@@ -47,26 +57,25 @@
   // Get button state
   let buttonState = $derived.by(() => {
     if (running) {
-      return { label: m.notes_agentActionBlock_running_label(), icon: faSpinner, spin: true };
+      return { label: m.notes_agentActionBlock_running_label(), icon: null };
     }
     if (agentId) {
       return {
         label: m.notes_agentActionBlock_view_label(),
         icon: faArrowUpRightFromSquare,
-        spin: false,
       };
     }
     if (primitive?.lastRun?.status === 'success') {
-      return { label: m.notes_agentActionBlock_done_label(), icon: faCheck, spin: false };
+      return { label: m.notes_agentActionBlock_done_label(), icon: faCheck };
     }
-    return { label: m.notes_agentActionBlock_run_label(), icon: faPlay, spin: false };
+    return { label: m.notes_agentActionBlock_run_label(), icon: faPlay };
   });
 
   // Run the agent action
   async function runAction() {
     if (!primitive || running) return;
     if (!workspaceId) {
-      toast.error(m.notes_agentActionBlock_noWorkspace_error());
+      notify.error(m.notes_agentActionBlock_noWorkspace_error());
       return;
     }
     running = true;
@@ -119,7 +128,7 @@
         });
       }
 
-      toast.success(m.notes_agentActionBlock_started_label());
+      notify.success(m.notes_agentActionBlock_started_label());
     } catch (err) {
       const errorMessage = getErrorMessage(err);
       logger.error('[runAction] Error running agent action', {
@@ -146,7 +155,7 @@
         });
       }
 
-      toast.error(errorMessage);
+      notify.error(errorMessage);
     }
   }
 
@@ -188,30 +197,37 @@
     >
       {#if linkedAgentId}
         <!-- Show agent avatar that opens the agent panel -->
-        <button
+        <Button
           type="button"
+          variant="ghost"
           class="shrink-0 rounded-sm transition-opacity hover:opacity-80"
           onclick={(e) => handleOpenAgent(e, linkedAgentId)}
           title={m.notes_agentActionBlock_viewAgent_tooltip()}
         >
           <AgentAvatar agentId={linkedAgentId} variant="compact" />
-        </button>
+        </Button>
       {:else}
         <Fa icon={faRobot} size="sm" class="shrink-0 text-muted-foreground" />
       {/if}
       <span class="min-w-0 flex-1 truncate">
         {primitive.goal}
       </span>
-      <Button
-        variant="ghost-light"
-        size="sm"
-        class="type-caption shrink-0"
-        onclick={handleButtonClick}
-        disabled={running}
-      >
-        <Fa icon={buttonState.icon} size="xs" class={buttonState.spin ? 'animate-spin' : ''} />
-        {buttonState.label}
-      </Button>
+      {#if agentId || !$hidesAgentLifecycleActions$}
+        <Button
+          variant="ghost-light"
+          size="sm"
+          class="type-caption shrink-0"
+          onclick={handleButtonClick}
+          disabled={running}
+        >
+          {#if running}
+            <IntentMarkLoader size={12} />
+          {:else if buttonState.icon}
+            <Fa icon={buttonState.icon} size="xs" />
+          {/if}
+          {buttonState.label}
+        </Button>
+      {/if}
     </div>
   {:else}
     <div class="ws-block-widget type-caption my-2 text-muted-foreground">

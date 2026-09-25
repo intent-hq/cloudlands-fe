@@ -11,6 +11,12 @@ import { flushSync } from 'svelte';
 
 import { store as appStore } from '$store/renderer/store';
 import { setWorkspaceEntity } from '$store/renderer/slices/workspace/workspace-slice';
+import { connectionsListReceived } from '$store/renderer/slices/connections/connections-slice';
+import { guestSessionsListReceived } from '$store/renderer/slices/guest-sessions/guest-sessions-slice';
+import { selectIsGuestWindow } from '$store/renderer/slices/guest-sessions/guest-sessions-selectors';
+import { LOCAL_CONNECTION_ID } from '$shared/types/connections';
+import type { GuestSessionRecord } from '$shared/types/guest-sessions';
+import * as m from '$shared/paraglide/messages.js';
 import {
   requestThemePreferenceChange,
   setThemePreference,
@@ -217,14 +223,14 @@ describe('HudHeader theme switcher with SYSTEM mode', () => {
     const btn = screen.getByTestId('hud-header-theme-btn');
 
     // Default preference is `system` (same as the main app's default).
-    expect(btn.textContent?.trim()).toBe('THEME · SYSTEM');
+    expect(btn.textContent?.trim()).toBe('Theme · system');
 
     await fireEvent.click(btn);
     await settle();
     expect(themeState().preference).toBe('light');
     await waitFor(() => {
       flushSync();
-      expect(btn.textContent?.trim()).toBe('THEME · LIGHT');
+      expect(btn.textContent?.trim()).toBe('Theme · light');
     });
 
     await fireEvent.click(btn);
@@ -232,7 +238,7 @@ describe('HudHeader theme switcher with SYSTEM mode', () => {
     expect(themeState().preference).toBe('dark');
     await waitFor(() => {
       flushSync();
-      expect(btn.textContent?.trim()).toBe('THEME · DARK');
+      expect(btn.textContent?.trim()).toBe('Theme · dark');
     });
 
     await fireEvent.click(btn);
@@ -240,7 +246,7 @@ describe('HudHeader theme switcher with SYSTEM mode', () => {
     expect(themeState().preference).toBe('system');
     await waitFor(() => {
       flushSync();
-      expect(btn.textContent?.trim()).toBe('THEME · SYSTEM');
+      expect(btn.textContent?.trim()).toBe('Theme · system');
     });
 
     await fireEvent.click(btn);
@@ -248,7 +254,7 @@ describe('HudHeader theme switcher with SYSTEM mode', () => {
     expect(themeState().preference).toBe('light');
     await waitFor(() => {
       flushSync();
-      expect(btn.textContent?.trim()).toBe('THEME · LIGHT');
+      expect(btn.textContent?.trim()).toBe('Theme · light');
     });
   });
 
@@ -287,7 +293,7 @@ describe('HudHeader theme switcher with SYSTEM mode', () => {
 
     expect(themeState().preference).toBe('system');
     expect(themeState().name).toBe('dark');
-    expect(btn.textContent?.trim()).toBe('THEME · SYSTEM');
+    expect(btn.textContent?.trim()).toBe('Theme · system');
   });
 });
 
@@ -309,17 +315,17 @@ describe('HudHeader sound-effects toggle', () => {
     cleanup();
   });
 
-  it('renders the speaker button immediately LEFT of the theme button, same styling', () => {
+  it('renders separate sound and theme controls with the same HUD styling', () => {
     render(HudHeader, { props: { nowMs: NOW_MS } });
 
     const soundBtn = screen.getByTestId('hud-header-sound-btn');
     const themeBtn = screen.getByTestId('hud-header-theme-btn');
-    // The button sits in the hover group (with the volume slider) whose
-    // next sibling is the theme button.
+    // The sound button stays in the hover group that owns the volume slider,
+    // while the theme control remains independently operable.
     const group = screen.getByTestId('hud-header-sound-group');
     expect(soundBtn.closest('[data-testid="hud-header-sound-group"]')).toBe(group);
-    expect(group.nextElementSibling).toBe(themeBtn);
-    // Same bordered JetBrains Mono uppercase look as the theme button, and
+    expect(themeBtn.closest('[data-testid="hud-header-sound-group"]')).toBeNull();
+    // Same bordered JetBrains Mono look as the theme button, and
     // still clickable inside the frameless window's drag region.
     expect(soundBtn.classList.contains('hud-header-sound-btn')).toBe(true);
     expect(soundBtn.closest('.app-drag-region')).toBe(screen.getByTestId('hud-header'));
@@ -329,7 +335,7 @@ describe('HudHeader sound-effects toggle', () => {
     render(HudHeader, { props: { nowMs: NOW_MS } });
 
     const soundBtn = screen.getByTestId('hud-header-sound-btn');
-    expect(soundBtn.textContent?.trim()).toBe('SOUND · OFF');
+    expect(soundBtn.textContent?.trim()).toBe('Sound · off');
     expect(soundBtn.getAttribute('aria-pressed')).toBe('false');
     expect(soundBtn.getAttribute('aria-label')).toBe('Toggle HUD sound effects');
   });
@@ -340,13 +346,13 @@ describe('HudHeader sound-effects toggle', () => {
 
     await fireEvent.click(soundBtn);
     flushSync();
-    expect(soundBtn.textContent?.trim()).toBe('SOUND · ON');
+    expect(soundBtn.textContent?.trim()).toBe('Sound · on');
     expect(soundBtn.getAttribute('aria-pressed')).toBe('true');
     expect(window.localStorage.setItem).toHaveBeenCalledWith(HUD_SOUND_ENABLED_STORAGE_KEY, 'true');
 
     await fireEvent.click(soundBtn);
     flushSync();
-    expect(soundBtn.textContent?.trim()).toBe('SOUND · OFF');
+    expect(soundBtn.textContent?.trim()).toBe('Sound · off');
     expect(soundBtn.getAttribute('aria-pressed')).toBe('false');
     expect(window.localStorage.setItem).toHaveBeenCalledWith(
       HUD_SOUND_ENABLED_STORAGE_KEY,
@@ -373,7 +379,7 @@ describe('HudHeader sound-effects toggle', () => {
     render(HudHeader, { props: { nowMs: NOW_MS } });
 
     const soundBtn = screen.getByTestId('hud-header-sound-btn');
-    expect(soundBtn.textContent?.trim()).toBe('SOUND · ON');
+    expect(soundBtn.textContent?.trim()).toBe('Sound · on');
     expect(soundBtn.getAttribute('aria-pressed')).toBe('true');
   });
 });
@@ -435,6 +441,28 @@ describe('HudHeader master-volume slider', () => {
     expect(slider.closest('.app-drag-region')).toBe(screen.getByTestId('hud-header'));
   });
 
+  it('marks the whole sound group no-drag so pointer travel onto the slider keeps it mounted', async () => {
+    // Same mechanism as #1907: the global rule only exempts interactive
+    // elements, so the group's own box (flex gap + slider wrapper) would stay
+    // draggable and Electron would dispatch mouseleave — unmounting the
+    // slider — as soon as the pointer left the button. The group opts out as
+    // a whole via the global .app-no-drag class while the header itself
+    // remains the drag region.
+    render(HudHeader, { props: { nowMs: NOW_MS } });
+    const group = screen.getByTestId('hud-header-sound-group');
+    const header = screen.getByTestId('hud-header');
+
+    expect(group.classList.contains('app-no-drag')).toBe(true);
+    expect(header.classList.contains('app-no-drag')).toBe(false);
+    expect(header.classList.contains('app-drag-region')).toBe(true);
+
+    await fireEvent.mouseEnter(group);
+    flushSync();
+    const slider = screen.getByTestId('hud-header-volume-slider');
+    expect(slider.closest('.app-no-drag')).toBe(group);
+    expect(screen.getByTestId('hud-header-sound-btn').closest('.app-no-drag')).toBe(group);
+  });
+
   it('dragging updates the shared master volume live and persists it', async () => {
     render(HudHeader, { props: { nowMs: NOW_MS } });
 
@@ -446,5 +474,121 @@ describe('HudHeader master-volume slider', () => {
     flushSync();
     expect(getHudSoundVolume()).toBe(0.75);
     expect(window.localStorage.setItem).toHaveBeenCalledWith(HUD_SOUND_VOLUME_STORAGE_KEY, '0.75');
+  });
+});
+
+/**
+ * A guest window (bound to a host this app joined, multiplayer w4) lists only
+ * the workspaces shared with it, so the repo filter's "all" option reads
+ * "All shared workspaces" — both as the trigger label with no repo picked and
+ * as the menu's first row. An owner window keeps "All workspaces".
+ */
+describe('HudHeader repo filter "all" label in a guest window (multiplayer w4)', () => {
+  const GUEST: GuestSessionRecord = {
+    id: 'guest-1',
+    label: 'tc.example.ts.net',
+    host: '10.0.0.9',
+    hosts: ['10.0.0.9'],
+    port: 8443,
+    fingerprint: 'AB:CD',
+    tcAddress: 'tc.example.ts.net',
+    hostname: 'Host Mac',
+    principalId: 'principal-1',
+    login: 'octocat',
+    tokenEncrypted: true,
+    workspaces: [],
+    updatedAt: 1,
+  };
+  const LOCAL_CONNECTION = {
+    id: LOCAL_CONNECTION_ID,
+    label: 'This machine (local)',
+    host: null,
+    port: null,
+    fingerprint: null,
+    isLocal: true,
+  };
+  const GUEST_CONNECTION = {
+    id: GUEST.id,
+    label: GUEST.label,
+    host: GUEST.host,
+    port: GUEST.port,
+    fingerprint: GUEST.fingerprint,
+    isLocal: false,
+  };
+
+  function bindWindowToGuest() {
+    appStore.dispatch(
+      connectionsListReceived({
+        connections: [LOCAL_CONNECTION, GUEST_CONNECTION],
+        activeId: GUEST.id,
+        windowBackendId: GUEST.id,
+      }),
+    );
+    appStore.dispatch(
+      guestSessionsListReceived({ sessions: [GUEST], openIds: [], connectedIds: [] }),
+    );
+  }
+
+  function bindWindowToLocal() {
+    appStore.dispatch(
+      connectionsListReceived({
+        connections: [LOCAL_CONNECTION],
+        activeId: LOCAL_CONNECTION_ID,
+        windowBackendId: LOCAL_CONNECTION_ID,
+      }),
+    );
+    appStore.dispatch(guestSessionsListReceived({ sessions: [], openIds: [], connectedIds: [] }));
+  }
+
+  function repoTriggerLabel(container: HTMLElement) {
+    return container
+      .querySelector('[data-testid="hud-header-filters"] .hud-header-filter-label')
+      ?.textContent?.trim();
+  }
+
+  afterEach(() => {
+    cleanup();
+    bindWindowToLocal();
+  });
+
+  it('labels the repo filter "All workspaces" in an owner window', () => {
+    bindWindowToLocal();
+    const { container } = render(HudHeader, { props: { nowMs: NOW_MS } });
+
+    expect(selectIsGuestWindow.select(appStore.state)).toBe(false);
+    expect(repoTriggerLabel(container)).toBe(m.hud_filter_allWorkspaces_label());
+  });
+
+  it('labels the repo filter "All shared workspaces" in a guest window', () => {
+    bindWindowToGuest();
+    const { container } = render(HudHeader, { props: { nowMs: NOW_MS } });
+
+    expect(selectIsGuestWindow.select(appStore.state)).toBe(true);
+    expect(repoTriggerLabel(container)).toBe(m.hud_filter_allSharedWorkspaces_label());
+  });
+
+  it('follows the window identity live when the window binds to a joined host', async () => {
+    bindWindowToLocal();
+    const { container } = render(HudHeader, { props: { nowMs: NOW_MS } });
+    expect(repoTriggerLabel(container)).toBe(m.hud_filter_allWorkspaces_label());
+
+    bindWindowToGuest();
+    await waitFor(() =>
+      expect(repoTriggerLabel(container)).toBe(m.hud_filter_allSharedWorkspaces_label()),
+    );
+  });
+
+  it('names the menu\'s "all" row after the same guest-aware label', async () => {
+    bindWindowToGuest();
+    render(HudHeader, { props: { nowMs: NOW_MS } });
+
+    await fireEvent.click(screen.getByLabelText(m.hud_filter_repoMenu_ariaLabel()));
+    await waitFor(() => {
+      const rows = Array.from(document.querySelectorAll('.hud-header-menu-name')).map((el) =>
+        el.textContent?.trim(),
+      );
+      expect(rows).toContain(m.hud_filter_allSharedWorkspaces_label());
+      expect(rows).not.toContain(m.hud_filter_allWorkspaces_label());
+    });
   });
 });

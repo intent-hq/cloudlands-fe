@@ -2,6 +2,7 @@ import { useSidebar } from './context.svelte.js';
 import Content from './sidebar-content.svelte';
 import Footer from './sidebar-footer.svelte';
 import GroupAction from './sidebar-group-action.svelte';
+import GroupActions from './sidebar-group-actions.svelte';
 import GroupContent from './sidebar-group-content.svelte';
 import GroupLabel from './sidebar-group-label.svelte';
 import Group from './sidebar-group.svelte';
@@ -9,6 +10,7 @@ import Header from './sidebar-header.svelte';
 import Input from './sidebar-input.svelte';
 import Inset from './sidebar-inset.svelte';
 import MenuAction from './sidebar-menu-action.svelte';
+import MenuActions from './sidebar-menu-actions.svelte';
 import MenuBadge from './sidebar-menu-badge.svelte';
 import MenuButton from './sidebar-menu-button.svelte';
 import MenuItem from './sidebar-menu-item.svelte';
@@ -22,21 +24,27 @@ import Rail from './sidebar-rail.svelte';
 import Separator from './sidebar-separator.svelte';
 import Trigger from './sidebar-trigger.svelte';
 import Root from './sidebar.svelte';
+import Harness from './SidebarHarness.svelte';
+import Callout from './sidebar-callout.svelte';
 
 export { sidebarMetadata } from './sidebar.meta';
 
 export {
+  Callout,
   Content,
   Footer,
   Group,
   GroupAction,
+  GroupActions,
   GroupContent,
   GroupLabel,
   Header,
+  Harness,
   Input,
   Inset,
   Menu,
   MenuAction,
+  MenuActions,
   MenuBadge,
   MenuButton,
   MenuItem,
@@ -50,17 +58,21 @@ export {
   Separator,
   //
   Root as Sidebar,
+  Callout as SidebarCallout,
   Content as SidebarContent,
   Footer as SidebarFooter,
   Group as SidebarGroup,
   GroupAction as SidebarGroupAction,
+  GroupActions as SidebarGroupActions,
   GroupContent as SidebarGroupContent,
   GroupLabel as SidebarGroupLabel,
   Header as SidebarHeader,
+  Harness as SidebarHarness,
   Input as SidebarInput,
   Inset as SidebarInset,
   Menu as SidebarMenu,
   MenuAction as SidebarMenuAction,
+  MenuActions as SidebarMenuActions,
   MenuBadge as SidebarMenuBadge,
   MenuButton as SidebarMenuButton,
   MenuItem as SidebarMenuItem,

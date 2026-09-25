@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { Button, IntentMarkLoader } from '$lib/components/patterns/settings/custom-controls';
   /**
    * RTK Settings Component
    *
@@ -10,7 +11,6 @@
    * like other daemon-backed settings (e.g., AgentBackendSettings.svelte).
    */
 
-  import Toggle from '$lib/components/ui/toggle/toggle.svelte';
   import { SYSTEM_CHANNELS } from '$shared/ipc/channels';
   import { onMount } from 'svelte';
   import { m } from '$shared/paraglide/messages.js';
@@ -23,11 +23,17 @@
   } from '$store/renderer/slices/terminals/terminals-slice';
   import { ROOT_WORKSPACE_ID } from '$lib/components/terminal/RootQuakeTerminalOverlay.svelte';
   import { store as appStore } from '$store/renderer/store';
-  import { toast } from '$lib/components/ui/toast';
+  import { notify } from '$lib/components/patterns/notify';
+  import {
+    SettingsForm,
+    defineSettings,
+    defineSettingsCustomControls,
+  } from '$lib/components/patterns/settings';
 
   let rtkAvailable = $state(false);
   let rtkEnabled = $state(false);
   let loaded = $state(false);
+  let settingKnown = $state(false);
   let checking = $state(false);
   let settingsError = $state('');
   let updating = $state(false);
@@ -36,13 +42,19 @@
 
   onMount(async () => {
     // Read rtk.enabled from daemon settings catalog (LiveSettingsClient.get folds errors to null)
-    const entry = await appClient.settings.get(SETTING_PATH);
-    if (entry === null) {
+    try {
+      const entry = await appClient.settings.get(SETTING_PATH);
+      if (entry === null) {
+        settingsError = m.settings_rtk_loadError();
+        console.error('Failed to load RTK settings: daemon returned null');
+      } else {
+        rtkEnabled = typeof entry.value === 'boolean' ? entry.value : false;
+        settingKnown = true;
+        settingsError = '';
+      }
+    } catch (error) {
       settingsError = m.settings_rtk_loadError();
-      console.error('Failed to load RTK settings: daemon returned null');
-    } else {
-      rtkEnabled = typeof entry.value === 'boolean' ? entry.value : false;
-      settingsError = '';
+      console.error('Failed to load RTK settings:', error);
     }
 
     // Check if rtk is installed (separate failure domain)
@@ -83,11 +95,11 @@
         // Daemon-first invariant: never fabricate a tab without a PTY behind
         // it — surface the failure instead.
         console.error(
-          // i18n-ignore (developer log)
+          // i18n-ignore -- developer-only diagnostic; the user sees the localized notification below
           'Failed to create install terminal:',
           result.success ? 'missing id' : result.error,
         );
-        toast.error(m.terminal_adapter_openFailed_error());
+        notify.error(m.terminal_adapter_openFailed_error());
         return;
       }
       const termId = result.id;
@@ -114,78 +126,108 @@
     } catch (error) {
       // Daemon-first invariant: no fabricated fallback tab — surface the
       // failure instead.
-      // i18n-ignore (developer log)
+      // i18n-ignore -- developer-only diagnostic; the user sees the localized notification below
       console.error('Failed to create install terminal:', error);
-      toast.error(m.terminal_adapter_openFailed_error());
+      notify.error(m.terminal_adapter_openFailed_error());
     }
   }
 
-  async function handleToggle() {
+  async function handleToggle(checked: boolean) {
     if (updating) return; // Guard against re-entrancy
-    const newValue = !rtkEnabled;
+    const previousValue = rtkEnabled;
+    rtkEnabled = checked;
     updating = true;
     try {
-      await appClient.settings.update([{ path: SETTING_PATH, value: newValue }]);
-      rtkEnabled = newValue;
+      await appClient.settings.update([{ path: SETTING_PATH, value: checked }]);
       settingsError = '';
     } catch (error) {
+      rtkEnabled = previousValue;
       settingsError = m.settings_rtk_saveError();
       console.error('Failed to update rtk.enabled setting:', error);
     } finally {
       updating = false;
     }
   }
+
+  const schema = $derived.by(() =>
+    defineSettings({
+      sections: [
+        {
+          id: 'rtk',
+          title: m.settings_rtk_label(),
+          entries: [
+            loaded && settingKnown
+              ? {
+                  kind: 'switch',
+                  id: 'rtk-enabled',
+                  label: m.settings_rtk_label(),
+                  get: () => rtkEnabled,
+                  set: handleToggle,
+                  error: () => settingsError || undefined,
+                  disabled: () => !rtkAvailable || updating,
+                }
+              : {
+                  kind: 'custom',
+                  id: 'rtk-enabled',
+                  label: m.settings_rtk_label(),
+                  busy: !loaded,
+                  error: () => settingsError || undefined,
+                },
+          ],
+        },
+      ],
+    }),
+  );
 </script>
 
-{#if loaded}
-  {#if settingsError}
-    <div class="text-xs text-danger mb-2">
-      {settingsError}
-    </div>
+{#snippet rtkDescription()}
+  {#if !loaded}
+    {m.ui_spinner_loading_ariaLabel()}
+  {:else}
+    <span class="block">
+      {rtkAvailable ? m.settings_rtk_enabledDescription() : m.settings_rtk_notInstalled()}
+      {#if !rtkAvailable}
+        <Button
+          variant="link"
+          size="sm"
+          type="button"
+          class="h-auto px-0"
+          onclick={recheckRtk}
+          disabled={checking}
+          >{checking ? m.settings_rtk_checking() : m.settings_rtk_checkAgain()}</Button
+        >
+      {/if}
+    </span>
+    {#if !rtkAvailable}
+      <span class="block">
+        {m.settings_rtk_installHint_before()}
+        <Button variant="link" size="sm" type="button" class="h-auto px-0" onclick={installRtk}
+          ><!-- i18n-ignore (shell command) -->brew install rtk</Button
+        >
+        {m.settings_rtk_installHint_orVisit()}
+        <Button
+          variant="link"
+          size="sm"
+          href="https://github.com/rtk-ai/rtk"
+          target="_blank"
+          rel="noopener noreferrer"
+          class="h-auto px-0"><!-- i18n-ignore (URL) -->github.com/rtk-ai/rtk</Button
+        >.
+      </span>
+    {/if}
   {/if}
-  <div class="flex justify-between">
-    <div>
-      <p class="text-sm font-medium text-foreground">{m.settings_rtk_label()}</p>
-      <p class="text-xs text-subtle">
-        {#if rtkAvailable}
-          {m.settings_rtk_enabledDescription()}
-        {:else}
-          <span class="text-muted-foreground">{m.settings_rtk_notInstalled()}</span>
-          <button
-            type="button"
-            class="text-primary hover:underline cursor-pointer text-xs ml-1"
-            onclick={recheckRtk}
-            disabled={checking}
-            >{checking ? m.settings_rtk_checking() : m.settings_rtk_checkAgain()}</button
-          >
-        {/if}
-      </p>
-    </div>
-    <Toggle
-      pressed={rtkEnabled}
-      onclick={handleToggle}
-      variant="indicator"
-      size="xs"
-      class="mb-auto"
-      disabled={!rtkAvailable}
-      ariaLabel={m.settings_rtk_label()}
-    />
-  </div>
-  {#if !rtkAvailable}
-    <p class="text-xs text-muted-foreground mt-2">
-      {m.settings_rtk_installHint_before()}
-      <button
-        type="button"
-        class="text-primary hover:underline cursor-pointer font-mono"
-        onclick={installRtk}><!-- i18n-ignore (shell command) -->brew install rtk</button
-      >
-      {m.settings_rtk_installHint_orVisit()}
-      <a
-        href="https://github.com/rtk-ai/rtk"
-        target="_blank"
-        rel="noopener noreferrer"
-        class="text-primary hover:underline"><!-- i18n-ignore (URL) -->github.com/rtk-ai/rtk</a
-      >.
-    </p>
-  {/if}
-{/if}
+{/snippet}
+
+{#snippet loadingControl()}
+  {#if !loaded}<IntentMarkLoader size={20} />{/if}
+{/snippet}
+
+<div data-rtk-settings class="min-w-0 w-full">
+  <SettingsForm
+    {schema}
+    embedded
+    compact={false}
+    custom={defineSettingsCustomControls({ 'rtk-enabled': loadingControl })}
+    descriptions={{ 'rtk-enabled': rtkDescription }}
+  />
+</div>

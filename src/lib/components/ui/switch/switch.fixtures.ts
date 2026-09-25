@@ -7,10 +7,13 @@ export const switchFixtures = [
     states: [
       'off',
       'on',
+      'solid-primary',
+      'inverted-thumb',
       'disabled',
       'invalid',
       'required-invalid',
       'keyboard-focus',
+      'spring-reversal',
       'compact',
       'reduced-motion',
     ],

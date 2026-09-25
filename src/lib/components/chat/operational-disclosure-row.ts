@@ -1,4 +1,6 @@
 import { safeSlide } from '$lib/utils/animations';
+import { prefersReducedMotion } from '$lib/utils/reduced-motion';
+import { extractStandaloneReasoningTitles } from './reasoning-heading';
 
 /** Shared presentation contract for quiet, collapsible operational chat rows. */
 export const OPERATIONAL_ROW_GEOMETRY_TOKENS_CLASS =
@@ -7,12 +9,8 @@ export const OPERATIONAL_ROW_GEOMETRY_TOKENS_CLASS =
 export const OPERATIONAL_ROW_TONE_CLASS =
   'type-body font-family-child font-normal text-muted-foreground';
 
-export const OPERATIONAL_ROW_LINE_CLASS = `${OPERATIONAL_ROW_GEOMETRY_TOKENS_CLASS} relative flex min-h-9 w-full min-w-0 max-w-full items-center gap-[var(--operational-leading-gap)] overflow-hidden px-[var(--operational-row-inline-padding)] py-2`;
-
 /** Top-level assistant prose starts where operational summary text starts. */
 export const OPERATIONAL_ASSISTANT_PROSE_INSET_CLASS = `${OPERATIONAL_ROW_GEOMETRY_TOKENS_CLASS} min-w-0 max-w-full pl-[calc(var(--operational-row-inline-padding)+var(--operational-leading-slot-size)+var(--operational-leading-gap))]`;
-
-export const OPERATIONAL_SUMMARY_CLASS = 'min-w-0 shrink truncate whitespace-nowrap';
 
 /** Expanded content shares the operational summary text origin. */
 export const OPERATIONAL_EXPANDED_CONTENT_CLASS = `${OPERATIONAL_ROW_GEOMETRY_TOKENS_CLASS} min-w-0 max-w-full pl-[calc(var(--operational-row-inline-padding)+var(--operational-leading-slot-size)+var(--operational-leading-gap))] pt-1.5`;
@@ -28,7 +26,7 @@ export const OPERATIONAL_GROUP_CHILD_CONTENT_CLASS = `${OPERATIONAL_ROW_GEOMETRY
 /** Nested operational rows shift right without overflowing the group. */
 export const OPERATIONAL_GROUP_CHILD_ROW_CLASS = `${OPERATIONAL_ROW_GEOMETRY_TOKENS_CLASS} operational-group-child-row ml-2 min-w-0 w-[calc(100%-0.5rem)] max-w-[calc(100%-0.5rem)]`;
 
-/** Match the existing 24px editorial seam before a new nested reasoning title. */
+/** Preserve 24px before a nested reasoning title that follows body content. */
 export const NESTED_REASONING_SECTION_SEAM_CLASS = 'pt-6';
 
 export const OPERATIONAL_PRIMARY_CLASS = 'text-muted-foreground';
@@ -44,25 +42,24 @@ export const CHAT_OPERATIONAL_ICON_CLASS = 'h-[16px]! w-[16px]! shrink-0';
 
 export const CHAT_OPERATIONAL_ROW_CLASS = `${OPERATIONAL_ROW_GEOMETRY_TOKENS_CLASS} relative grid h-7 w-full min-w-0 max-w-full grid-cols-[var(--operational-leading-slot-size)_minmax(0,1fr)_auto] items-center gap-[var(--operational-leading-gap)] overflow-hidden rounded-md px-[var(--operational-row-inline-padding)] type-body transition-colors duration-[var(--motion-fast)] motion-reduce:transition-none`;
 
-export const CHAT_OPERATIONAL_LEADING_CLASS = `a11y-ignore pointer-events-none flex size-[var(--operational-leading-slot-size)] min-w-[var(--operational-leading-slot-size)] shrink-0 items-center justify-center ${CHAT_OPERATIONAL_SUMMARY_TONE_CLASS}`;
+export const CHAT_OPERATIONAL_LEADING_CLASS = `a11y-ignore pointer-events-none flex size-[var(--operational-leading-slot-size)] min-w-[var(--operational-leading-slot-size)] shrink-0 items-center justify-center [&_svg]:size-[16px]! ${CHAT_OPERATIONAL_SUMMARY_TONE_CLASS}`;
 
-export const CHAT_OPERATIONAL_SUMMARY_CLASS = `block min-w-0 max-w-full truncate overflow-hidden text-ellipsis whitespace-nowrap border-0 bg-transparent p-0 text-left ${CHAT_OPERATIONAL_SUMMARY_TONE_CLASS}`;
+export const CHAT_OPERATIONAL_SUMMARY_CLASS = `type-body block min-w-0 max-w-full truncate overflow-hidden text-ellipsis whitespace-nowrap border-0 bg-transparent p-0 text-left ${CHAT_OPERATIONAL_SUMMARY_TONE_CLASS}`;
 
 export const CHAT_OPERATIONAL_TRAILING_CLASS =
-  'flex min-w-0 shrink-0 items-center gap-1 whitespace-nowrap';
+  'type-body flex min-w-0 shrink-0 items-center gap-1 whitespace-nowrap';
 
 export const CHAT_OPERATIONAL_CHEVRON_CLASS =
   'h-[16px]! w-[16px]! shrink-0 opacity-60 transition-transform duration-[var(--motion-fast)] motion-reduce:transition-none';
 
 export function safeOperationalDetailsTransition(node: Element) {
-  const reduced =
-    typeof window !== 'undefined' &&
-    window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
-  return safeSlide(node, { axis: 'y', duration: reduced ? 0 : 150 });
+  return safeSlide(node, { axis: 'y', duration: prefersReducedMotion() ? 0 : 150 });
 }
 
 interface OperationalClusterBlock {
   type: string;
+  text?: string;
+  content?: string;
 }
 
 export function isOperationalClusterBlock(block: OperationalClusterBlock): boolean {
@@ -105,7 +102,11 @@ export function getOperationalClusterSpacingClass<T extends OperationalClusterBl
 
   const previous = blocks[previousIndex];
   if (previous.type === 'thinking' && block.type === 'thinking') {
-    return compactConsecutiveThinking ? '' : 'pt-14';
+    if (compactConsecutiveThinking) return '';
+    const titlesOnly =
+      extractStandaloneReasoningTitles(previous.text ?? previous.content ?? '') !== null &&
+      extractStandaloneReasoningTitles(block.text ?? block.content ?? '') !== null;
+    return titlesOnly ? '' : 'pt-14';
   }
   const previousIsOperational = isOperationalClusterBlock(previous);
   const currentIsOperational = isOperationalClusterBlock(block);

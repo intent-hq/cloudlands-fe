@@ -1,10 +1,12 @@
 import { runSaga, stdChannel, type Task } from 'redux-saga';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
   get: vi.fn(),
+  getConversation: vi.fn(),
   updateSpecialist: vi.fn(),
   rename: vi.fn(),
+  setNotificationsMuted: vi.fn(),
   deleteAgent: vi.fn(),
   cancelDelete: vi.fn(),
   dismissQuestions: vi.fn(),
@@ -12,13 +14,16 @@ const mocks = vi.hoisted(() => ({
   restore: vi.fn(),
   warning: vi.fn(),
   error: vi.fn(),
+  dismiss: vi.fn(),
 }));
 vi.mock('$lib/client', () => ({
   appClient: {
     agents: {
       get: mocks.get,
+      getConversation: mocks.getConversation,
       updateSpecialist: mocks.updateSpecialist,
       rename: mocks.rename,
+      setNotificationsMuted: mocks.setNotificationsMuted,
       delete: mocks.deleteAgent,
       cancelDelete: mocks.cancelDelete,
       dismissQuestions: mocks.dismissQuestions,
@@ -27,20 +32,38 @@ vi.mock('$lib/client', () => ({
     },
   },
 }));
-vi.mock('svelte-sonner', () => ({
-  toast: { warning: mocks.warning, error: mocks.error },
+vi.mock('$lib/components/patterns/notify', async () => ({
+  ...(await vi.importActual('$lib/components/ui/toast/toast-countdown')),
+  notify: { warning: mocks.warning, error: mocks.error, dismiss: mocks.dismiss },
 }));
 
 import {
   clearPendingAgentDeletions,
+  getPendingAgentDeletion,
   listPendingAgentDeletions,
 } from '$features/agent/utils/pending-agent-deletions';
+import { agentAttentionToastId } from '$features/agent/agent-attention-toast-service';
+import { loadChatTranscript } from '$features/agent/chat-read-service';
+import { store as appStore } from '$store/renderer/store';
 import type { AgentSession } from '$shared/types';
 import { AgentStatus } from '$shared/types';
 import {
   refreshWorkspaceSubscriptionEntriesRequested,
   removeWatchedAgent,
 } from '../../agent-subscription-ui/agent-subscription-ui-slice';
+import { selectAgentSubscriptions } from '../../agent-subscription-ui/agent-subscription-ui-selectors';
+import {
+  connectionsListReceived,
+  connectionsReducer,
+  initialState as connectionsInitialState,
+} from '../../connections/connections-slice';
+import {
+  guestSessionsListReceived,
+  guestSessionsReducer,
+  initialState as guestSessionsInitialState,
+} from '../../guest-sessions/guest-sessions-slice';
+import type { GuestSessionRecord } from '../../guest-sessions/guest-sessions-types';
+import { initialState as workspaceInitialState } from '../../workspace/workspace-slice';
 import {
   activateAgentRequested,
   deleteAgentWithUndoRequested,
@@ -49,10 +72,12 @@ import {
   restoreAgentSessionRequested,
   restoreRetiredAgentRequested,
   saveAgentSessionRequested,
+  setAgentNotificationsMutedRequested,
   undoAgentDeletionRequested,
   initialState as workspaceAgentsInitialState,
   workspaceAgentsReducer,
 } from '../../workspace-agents/workspace-agents-slice';
+import { selectWorkspaceAgentIds } from '../../workspace-agents/workspace-agents-selectors';
 import {
   agentProposalResolveRequested,
   agentSessionDismissQuestionsRequested,
@@ -70,7 +95,8 @@ import {
   agentScopedProposalKey,
   proposalResolutionReconciled,
 } from '../../proposal-lifecycle/proposal-lifecycle-slice';
-import { TOAST_COUNTDOWN_CLASS } from '$lib/components/ui/toast';
+import { selectAgentSession } from '../agent-session-selectors';
+import { TOAST_COUNTDOWN_CLASS } from '$lib/components/patterns/notify';
 import { AGENT_DELETION_TOMBSTONE_TTL_MS, agentMutationSaga } from './agent-mutation-saga';
 
 const WS = 'ws-mutation';
@@ -102,15 +128,65 @@ function session(id = A1, overrides: Partial<AgentSession> = {}): AgentSession {
  * `agentSessions` slice is folded through the real reducer on every dispatch, so
  * mid-request selects observe earlier writes the way the app store does.
  */
+const GUEST_SESSION: GuestSessionRecord = {
+  id: 'guest-1',
+  label: 'studio.local',
+  host: '10.0.0.5',
+  hosts: ['10.0.0.5'],
+  port: 8443,
+  fingerprint: 'AB:CD',
+  tcAddress: null,
+  hostname: 'studio.local',
+  principalId: 'prin-guest',
+  login: 'octocat',
+  tokenEncrypted: true,
+  updatedAt: 1,
+};
+
+/**
+ * Window identity for the delete gate: a settled owner window (guest session
+ * list hydrated, no joined host) or a settled guest window (the window's
+ * backend id is a joined host).
+ */
+function windowIdentity(guest = false) {
+  return {
+    workspace: { ...workspaceInitialState, hasLoaded: true },
+    connections: guest
+      ? connectionsReducer(
+          connectionsInitialState,
+          connectionsListReceived({
+            connections: [],
+            activeId: GUEST_SESSION.id,
+            windowBackendId: GUEST_SESSION.id,
+          }),
+        )
+      : connectionsInitialState,
+    guestSessions: guestSessionsReducer(
+      guestSessionsInitialState,
+      guestSessionsListReceived({
+        sessions: guest ? [GUEST_SESSION] : [],
+        openIds: [],
+        connectedIds: [],
+      }),
+    ),
+  };
+}
+
 function start(
   sessions: Record<string, AgentSession> = { [A1]: session() },
-  { live = false }: { live?: boolean } = {},
+  { live = false, guest = false }: { live?: boolean; guest?: boolean } = {},
 ) {
   const channel = stdChannel();
   const dispatched: any[] = [];
-  let state = { agentSessions: { ...agentSessionInitialState, byAgentId: sessions } };
+  const identity = windowIdentity(guest);
+  let state = {
+    ...identity,
+    agentSessions: { ...agentSessionInitialState, byAgentId: sessions },
+  };
   const dispatch = (action: any) => {
-    if (live) state = { agentSessions: agentSessionReducer(state.agentSessions, action) };
+    if (live) {
+      state = { ...identity, agentSessions: agentSessionReducer(state.agentSessions, action) };
+    }
     dispatched.push(action);
     channel.put(action);
     return action;
@@ -125,6 +201,8 @@ async function stop(task: Task): Promise<void> {
 }
 
 describe('agentMutationSaga', () => {
+  beforeAll(() => appStore.init());
+
   beforeEach(() => {
     vi.useFakeTimers();
     mocks.deleteAgent.mockResolvedValue({ success: true });
@@ -295,6 +373,162 @@ describe('agentMutationSaga', () => {
     await stop(task);
   });
 
+  it('mutes optimistically, clears hasUnread, and forwards exact agent.update params', async () => {
+    mocks.setNotificationsMuted.mockResolvedValue({ success: true });
+    const unread = session(A1, {
+      lastMessageRole: 'assistant',
+      lastMessageId: 'm-9',
+      hasUnread: true,
+      metadata: { lastSeenMessageId: 'm-5' },
+    });
+    const { channel, dispatched, task } = start({ [A1]: unread });
+    const action = setAgentNotificationsMutedRequested(WS, A1, true);
+    channel.put(action);
+
+    await expect(action.promise).resolves.toBeUndefined();
+    expect(mocks.setNotificationsMuted).toHaveBeenCalledWith({
+      agentId: A1,
+      workspaceId: WS,
+      notificationsMuted: true,
+    });
+    expect(dispatched).toContainEqual(
+      updateSession(A1, { notificationsMuted: true, hasUnread: false }),
+    );
+    await stop(task);
+  });
+
+  it('unmuting restores hasUnread when the newest assistant message is still unseen', async () => {
+    mocks.setNotificationsMuted.mockResolvedValue({ success: true });
+    const muted = session(A1, {
+      notificationsMuted: true,
+      lastMessageRole: 'assistant',
+      lastMessageId: 'm-9',
+      hasUnread: false,
+      metadata: { lastSeenMessageId: 'm-5' },
+    });
+    const { channel, dispatched, task } = start({ [A1]: muted });
+    const action = setAgentNotificationsMutedRequested(WS, A1, false);
+    channel.put(action);
+
+    await expect(action.promise).resolves.toBeUndefined();
+    expect(dispatched).toContainEqual(
+      updateSession(A1, { notificationsMuted: false, hasUnread: true }),
+    );
+    await stop(task);
+  });
+
+  it('muting dismisses the sticky attention toast the agent already raised; unmuting does not', async () => {
+    mocks.setNotificationsMuted.mockResolvedValue({ success: true });
+    const { channel, task } = start({ [A1]: session(A1, { attentionRequestKind: 'blocker' }) });
+    const mute = setAgentNotificationsMutedRequested(WS, A1, true);
+    channel.put(mute);
+    await expect(mute.promise).resolves.toBeUndefined();
+    await settle();
+    expect(mocks.dismiss).toHaveBeenCalledWith(agentAttentionToastId(A1));
+
+    mocks.dismiss.mockClear();
+    const unmute = setAgentNotificationsMutedRequested(WS, A1, false);
+    channel.put(unmute);
+    await expect(unmute.promise).resolves.toBeUndefined();
+    await settle();
+    expect(mocks.dismiss).not.toHaveBeenCalled();
+    await stop(task);
+  });
+
+  it('a rejected mute leaves the attention toast in place', async () => {
+    mocks.setNotificationsMuted.mockResolvedValue({ success: false, error: 'mute rejected' });
+    const { channel, task } = start({ [A1]: session(A1, { attentionRequestKind: 'blocker' }) });
+    const action = setAgentNotificationsMutedRequested(WS, A1, true);
+    channel.put(action);
+    await expect(action.promise).rejects.toThrow('mute rejected');
+    await settle();
+    expect(mocks.dismiss).not.toHaveBeenCalled();
+    await stop(task);
+  });
+
+  it('rolls back the optimistic mute and surfaces the daemon failure', async () => {
+    mocks.setNotificationsMuted.mockResolvedValue({ success: false, error: 'mute rejected' });
+    const unread = session(A1, {
+      lastMessageRole: 'assistant',
+      lastMessageId: 'm-9',
+      hasUnread: true,
+      metadata: { lastSeenMessageId: 'm-5' },
+    });
+    const { channel, dispatched, task } = start({ [A1]: unread }, { live: true });
+    const action = setAgentNotificationsMutedRequested(WS, A1, true);
+    channel.put(action);
+
+    await expect(action.promise).rejects.toThrow('mute rejected');
+    const updates = dispatched.filter((candidate) => candidate.type === updateSession.type);
+    expect(updates).toEqual([
+      updateSession(A1, { notificationsMuted: true, hasUnread: false }),
+      updateSession(A1, { notificationsMuted: undefined, hasUnread: true }),
+    ]);
+    expect(mocks.error).toHaveBeenCalledWith('mute rejected');
+    await stop(task);
+  });
+
+  it('rollback re-derives unread from a newer assistant message that landed mid-request', async () => {
+    const pending = Promise.withResolvers<{ success: boolean; error?: string }>();
+    mocks.setNotificationsMuted.mockReturnValue(pending.promise);
+    const seen = session(A1, {
+      lastMessageRole: 'assistant',
+      lastMessageId: 'm-1',
+      hasUnread: false,
+      metadata: { lastSeenMessageId: 'm-1' },
+    });
+    const { channel, dispatch, dispatched, task, getState } = start({ [A1]: seen }, { live: true });
+    const action = setAgentNotificationsMutedRequested(WS, A1, true);
+    channel.put(action);
+    await settle();
+    expect(mocks.setNotificationsMuted).toHaveBeenCalledTimes(1);
+
+    dispatch(updateSession(A1, { lastMessageId: 'm-2', lastMessageRole: 'assistant' }));
+    pending.resolve({ success: false, error: 'mute rejected' });
+
+    await expect(action.promise).rejects.toThrow('mute rejected');
+    const updates = dispatched.filter((candidate) => candidate.type === updateSession.type);
+    expect(updates.at(-1)).toEqual(
+      updateSession(A1, { notificationsMuted: undefined, hasUnread: true }),
+    );
+    const final = selectAgentSession.select(getState() as never, A1);
+    expect(final?.notificationsMuted).toBeUndefined();
+    expect(final?.hasUnread).toBe(true);
+    await stop(task);
+  });
+
+  it('rollback re-derives unread after the seen marker advanced mid-request', async () => {
+    const pending = Promise.withResolvers<{ success: boolean; error?: string }>();
+    mocks.setNotificationsMuted.mockReturnValue(pending.promise);
+    const unread = session(A1, {
+      lastMessageRole: 'assistant',
+      lastMessageId: 'm-9',
+      hasUnread: true,
+      metadata: { lastSeenMessageId: 'm-5' },
+    });
+    const { channel, dispatch, dispatched, task, getState } = start(
+      { [A1]: unread },
+      { live: true },
+    );
+    const action = setAgentNotificationsMutedRequested(WS, A1, true);
+    channel.put(action);
+    await settle();
+    expect(mocks.setNotificationsMuted).toHaveBeenCalledTimes(1);
+
+    dispatch(updateSession(A1, { metadata: { lastSeenMessageId: 'm-9' } }));
+    pending.resolve({ success: false, error: 'mute rejected' });
+
+    await expect(action.promise).rejects.toThrow('mute rejected');
+    const updates = dispatched.filter((candidate) => candidate.type === updateSession.type);
+    expect(updates.at(-1)).toEqual(
+      updateSession(A1, { notificationsMuted: undefined, hasUnread: false }),
+    );
+    const final = selectAgentSession.select(getState() as never, A1);
+    expect(final?.notificationsMuted).toBeUndefined();
+    expect(final?.hasUnread).toBe(false);
+    await stop(task);
+  });
+
   it('restores an immediately deleted session once and rejects on daemon failure', async () => {
     mocks.deleteAgent.mockResolvedValue({ success: false, error: 'delete rejected' });
     const { channel, dispatched, task } = start();
@@ -307,6 +541,130 @@ describe('agentMutationSaga', () => {
       [restoreStoredSessions([session() as StoredAgentSession])],
     );
     await stop(task);
+  });
+
+  it('tombstones immediate deletion before a stale conversation read can rehydrate it', async () => {
+    const agentId = 'agent-immediate-stale-read';
+    const staleSession = session(agentId, { taskNoteId: 'task-stale-read' });
+    const conversationStarted = Promise.withResolvers<void>();
+    let resolveConversation!: (value: unknown) => void;
+    mocks.get.mockResolvedValueOnce(staleSession);
+    mocks.getConversation.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveConversation = resolve;
+          conversationStarted.resolve();
+        }),
+    );
+
+    const hydration = loadChatTranscript(agentId);
+    // Wait for the held request itself, not the read service's number of microtasks.
+    await conversationStarted.promise;
+    expect(mocks.getConversation).toHaveBeenCalledWith(agentId, 50, undefined);
+
+    const { channel, task } = start({ [agentId]: staleSession });
+    const deletion = deleteAgentSessionRequested(WS, agentId);
+    channel.put(deletion);
+    await expect(deletion.promise).resolves.toBeUndefined();
+    expect(getPendingAgentDeletion(agentId)).toEqual(
+      expect.objectContaining({ wsId: WS, agentId, snapshot: staleSession }),
+    );
+
+    resolveConversation({ messages: [], truncated: false, totalMessages: 0, nextToken: null });
+    await hydration;
+    expect(selectAgentSession.select(appStore.state, agentId)).toBeUndefined();
+    expect(selectWorkspaceAgentIds.select(appStore.state, WS)).not.toContain(agentId);
+    expect(selectAgentSubscriptions.select(appStore.state, WS, agentId)).toEqual([]);
+
+    await vi.advanceTimersByTimeAsync(AGENT_DELETION_TOMBSTONE_TTL_MS);
+    expect(getPendingAgentDeletion(agentId)).toBeUndefined();
+    await stop(task);
+  });
+
+  it('keeps a newer same-agent immediate-delete tombstone when an older attempt fails', async () => {
+    const firstDelete = Promise.withResolvers<{ success: false; error: string }>();
+    mocks.deleteAgent
+      .mockReturnValueOnce(firstDelete.promise)
+      .mockResolvedValueOnce({ success: true });
+    const { channel, dispatched, task } = start();
+
+    const first = deleteAgentSessionRequested(WS, A1);
+    channel.put(first);
+    await settle();
+    const firstEntry = getPendingAgentDeletion(A1);
+
+    const second = deleteAgentSessionRequested(WS, A1);
+    channel.put(second);
+    await expect(second.promise).resolves.toBeUndefined();
+    const secondEntry = getPendingAgentDeletion(A1);
+    expect(secondEntry).toBeDefined();
+    expect(secondEntry).not.toBe(firstEntry);
+
+    firstDelete.resolve({ success: false, error: 'older delete rejected' });
+    await expect(first.promise).rejects.toThrow('older delete rejected');
+    expect(getPendingAgentDeletion(A1)).toBe(secondEntry);
+    expect(dispatched.filter((candidate) => candidate.type === restoreStoredSessions.type)).toEqual(
+      [],
+    );
+    expect(dispatched.filter((candidate) => candidate.type === bulkUpsertSessions.type)).toEqual(
+      [],
+    );
+
+    await vi.advanceTimersByTimeAsync(AGENT_DELETION_TOMBSTONE_TTL_MS);
+    expect(getPendingAgentDeletion(A1)).toBeUndefined();
+    await stop(task);
+  });
+
+  it('rolls back only the failed agent while a different immediate delete succeeds', async () => {
+    const secondAgent = 'agent-2';
+    const firstDelete = Promise.withResolvers<{ success: false; error: string }>();
+    const secondDelete = Promise.withResolvers<{ success: true }>();
+    mocks.deleteAgent
+      .mockReturnValueOnce(firstDelete.promise)
+      .mockReturnValueOnce(secondDelete.promise);
+    const { channel, dispatched, task } = start({
+      [A1]: session(),
+      [secondAgent]: session(secondAgent),
+    });
+
+    const first = deleteAgentSessionRequested(WS, A1);
+    const second = deleteAgentSessionRequested(WS, secondAgent);
+    channel.put(first);
+    channel.put(second);
+    await settle();
+
+    firstDelete.resolve({ success: false, error: 'first rejected' });
+    await expect(first.promise).rejects.toThrow('first rejected');
+    expect(getPendingAgentDeletion(A1)).toBeUndefined();
+    expect(getPendingAgentDeletion(secondAgent)).toBeDefined();
+    expect(dispatched.filter((candidate) => candidate.type === restoreStoredSessions.type)).toEqual(
+      [restoreStoredSessions([session() as StoredAgentSession])],
+    );
+    expect(dispatched.some((candidate) => candidate.type === bulkUpsertSessions.type)).toBe(false);
+
+    secondDelete.resolve({ success: true });
+    await expect(second.promise).resolves.toBeUndefined();
+    expect(getPendingAgentDeletion(secondAgent)).toBeDefined();
+    await stop(task);
+  });
+
+  it('clears and restores the owned immediate-delete tombstone on saga cancellation', async () => {
+    const pendingDelete = Promise.withResolvers<{ success: true }>();
+    mocks.deleteAgent.mockReturnValueOnce(pendingDelete.promise);
+    const { channel, dispatched, task } = start();
+    const deletion = deleteAgentSessionRequested(WS, A1);
+    channel.put(deletion);
+    await settle();
+    expect(getPendingAgentDeletion(A1)).toBeDefined();
+
+    task.cancel();
+    await task.toPromise();
+    await expect(deletion.promise).rejects.toThrow();
+    expect(getPendingAgentDeletion(A1)).toBeUndefined();
+    expect(dispatched.filter((candidate) => candidate.type === restoreStoredSessions.type)).toEqual(
+      [restoreStoredSessions([session() as StoredAgentSession])],
+    );
+    expect(dispatched.some((candidate) => candidate.type === bulkUpsertSessions.type)).toBe(false);
   });
 
   it('surfaces a daemon dismiss-questions failure as an error toast and rejects', async () => {
@@ -496,6 +854,34 @@ describe('agentMutationSaga', () => {
     await expect(deletion.promise).rejects.toThrow('delete rejected');
     expect(dispatched).toContainEqual(refreshWorkspaceSubscriptionEntriesRequested(WS));
     expect(mocks.error).toHaveBeenCalledWith('delete rejected');
+    expect(listPendingAgentDeletions()).toEqual([]);
+    await stop(task);
+  });
+
+  it('refuses the delete in a guest window before hiding the session or sending anything', async () => {
+    mocks.deleteAgent.mockResolvedValue({ success: true, scheduled: true, deleteAt: 'x' });
+    const { channel, dispatched, task } = start(undefined, { guest: true });
+    const deletion = deleteAgentWithUndoRequested(WS, A1);
+    channel.put(deletion);
+
+    await expect(deletion.promise).rejects.toThrow("You can't delete agents in this workspace");
+    expect(mocks.deleteAgent).not.toHaveBeenCalled();
+    expect(mocks.error).toHaveBeenCalledWith("You can't delete agents in this workspace");
+    expect(mocks.warning).not.toHaveBeenCalled();
+    expect(dispatched).not.toContainEqual(removeSession(A1));
+    expect(listPendingAgentDeletions()).toEqual([]);
+    await stop(task);
+  });
+
+  it('renders the not-permitted sentence when the daemon refuses the delete with -32003', async () => {
+    mocks.deleteAgent.mockResolvedValue({ success: false, forbidden: true, error: 'Forbidden' });
+    const { channel, dispatched, task } = start();
+    const deletion = deleteAgentWithUndoRequested(WS, A1);
+    channel.put(deletion);
+
+    await expect(deletion.promise).rejects.toThrow("You can't delete agents in this workspace");
+    expect(dispatched).toContainEqual(refreshWorkspaceSubscriptionEntriesRequested(WS));
+    expect(mocks.error).toHaveBeenCalledWith("You can't delete agents in this workspace");
     expect(listPendingAgentDeletions()).toEqual([]);
     await stop(task);
   });

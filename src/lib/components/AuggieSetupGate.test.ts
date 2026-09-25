@@ -30,8 +30,8 @@ vi.mock('$lib/electron-bridge', () => ({
   shell: { open: vi.fn() },
 }));
 
-vi.mock('svelte-sonner', () => ({
-  toast: { error: vi.fn(), success: vi.fn() },
+vi.mock('$lib/components/patterns/notify', () => ({
+  notify: { error: vi.fn(), success: vi.fn() },
 }));
 
 vi.mock('$store/renderer/store', async () => {

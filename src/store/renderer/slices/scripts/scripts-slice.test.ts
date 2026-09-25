@@ -1,11 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import {
   MAX_OUTPUT_CHARS,
-  MAX_OUTPUT_CHUNKS,
   appendScriptOutput,
   clearScriptOperations,
   emptyWorkspaceState,
-  removeScript,
   restartScriptRequested,
   scriptOperationFailed,
   scriptOperationSucceeded,

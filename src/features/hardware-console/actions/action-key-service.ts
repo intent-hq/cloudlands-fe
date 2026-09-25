@@ -22,7 +22,11 @@
  * The app-owned saga orchestrates hydration, persistence, timers, and
  * cancellation; this module retains the reusable input and settings helpers.
  */
-import { appClient } from '$lib/client';
+import {
+  HARDWARE_CONSOLE_SETTINGS_PATH,
+  readHardwareConsoleSettingsBag,
+  persistHardwareConsoleSettingsPatch,
+} from '../settings-bag';
 import { store as appStore } from '$store/renderer/store';
 import { createLogger } from '$lib/utils/client-logger';
 import { navigateToRoute } from '$lib/utils/navigation.client';
@@ -31,7 +35,6 @@ import { m } from '$shared/paraglide/messages.js';
 import type { HardwareConsoleManager } from '../device/device-manager';
 import { HardwareInputDecoder } from '../input/input-decoder';
 import type { HardwareDeviceModel, LogicalKeyId } from '../input/types';
-import { HARDWARE_CONSOLE_SETTINGS_PATH } from '../assignment/key-pin-persistence-service';
 import {
   actionKeyToSlot,
   migrateLegacyCm2DefaultActionMapping,
@@ -67,9 +70,11 @@ export const COMPOSER_FOCUS_DELAYS_MS = [150, 600] as const;
 const COMPOSER_FOCUS_ARM_TTL_MS = 15_000;
 
 /** Lazily pull the toast lib so this service stays light. */
-let toastPromise: Promise<(typeof import('svelte-sonner'))['toast']> | null = null;
+let toastPromise: Promise<(typeof import('$lib/components/patterns/notify'))['notify']> | null =
+  null;
 function getToast() {
-  if (!toastPromise) toastPromise = import('svelte-sonner').then((module) => module.toast);
+  if (!toastPromise)
+    toastPromise = import('$lib/components/patterns/notify').then((module) => module.notify);
   return toastPromise;
 }
 
@@ -138,8 +143,8 @@ export function consumeArmedComposerFocus(now = Date.now()): boolean {
 }
 
 async function showUnavailableToast(message: string): Promise<void> {
-  const toast = await getToast();
-  toast.info(message, {
+  const notify = await getToast();
+  notify.info(message, {
     id: UNAVAILABLE_HINT_TOAST_ID,
     duration: UNAVAILABLE_HINT_DURATION_MS,
   });
@@ -283,45 +288,18 @@ export function installHardwareConsoleActionKeys(
   };
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
-
-async function readBag(): Promise<Record<string, unknown> | null> {
-  const setting = await appClient.settings.get(HARDWARE_CONSOLE_SETTINGS_PATH);
-  if (setting === null) return null;
-  return isRecord(setting.value) ? setting.value : {};
-}
-
-/** Read the bag for a read-modify-write, failing when the read failed so a persist can never wipe sibling fields. */
-async function readBagForPersist(): Promise<Record<string, unknown>> {
-  const bag = await readBag();
-  if (bag === null) {
-    throw new Error(
-      `settings.get(${HARDWARE_CONSOLE_SETTINGS_PATH}) returned null — daemon read failed; skipping persist to avoid wiping the bag`,
-    );
-  }
-  return bag;
-}
-
 /** Read-modify-write: replace only `actionMappingByModel`, preserving sibling fields. */
 export async function persistHardwareConsoleActionMapping(
   actionMappingByModel: Record<HardwareDeviceModel, ActionKeyActionId[]>,
 ): Promise<void> {
-  const bag = await readBagForPersist();
-  await appClient.settings.update([
-    { path: HARDWARE_CONSOLE_SETTINGS_PATH, value: { ...bag, actionMappingByModel } },
-  ]);
+  await persistHardwareConsoleSettingsPatch({ actionMappingByModel });
 }
 
 /** Read-modify-write: replace only `cycleScopeByFamily`, preserving sibling fields. */
 export async function persistHardwareConsoleCycleScopes(
   cycleScopeByFamily: Record<string, string>,
 ): Promise<void> {
-  const bag = await readBagForPersist();
-  await appClient.settings.update([
-    { path: HARDWARE_CONSOLE_SETTINGS_PATH, value: { ...bag, cycleScopeByFamily } },
-  ]);
+  await persistHardwareConsoleSettingsPatch({ cycleScopeByFamily });
 }
 
 export async function loadHardwareConsoleActionKeySettings(): Promise<{
@@ -329,7 +307,7 @@ export async function loadHardwareConsoleActionKeySettings(): Promise<{
   cycleScopeByFamily: ReturnType<typeof normalizeCycleScopeByFamily>;
   migratedDefaults: boolean;
 }> {
-  const bag = await readBag();
+  const bag = await readHardwareConsoleSettingsBag();
   if (bag === null) {
     throw new Error(
       `settings.get(${HARDWARE_CONSOLE_SETTINGS_PATH}) returned null — daemon read failed`,

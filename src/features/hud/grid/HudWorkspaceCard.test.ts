@@ -228,11 +228,11 @@ describe('HudWorkspaceCard waiting status suffix', () => {
 
     const spans = stateSpans(container);
     expect(spans).toHaveLength(2);
-    expect(spans[0].textContent).toBe('IN PROGRESS');
+    expect(spans[0].textContent).toBe('In progress');
     // Base label keeps its state color; only the suffix carries the dimmed
     // muted-foreground class.
     expect(spans[0].classList.contains('hud-ws-card-state-waiting')).toBe(false);
-    expect(spans[1].textContent).toBe('/ WAITING');
+    expect(spans[1].textContent).toBe('/ waiting');
     expect(spans[1].classList.contains('hud-ws-card-state-waiting')).toBe(true);
   });
 
@@ -245,8 +245,8 @@ describe('HudWorkspaceCard waiting status suffix', () => {
     });
 
     const spans = stateSpans(container);
-    expect(spans[0].textContent).toBe('COMPLETE');
-    expect(spans[1].textContent).toBe('/ WAITING');
+    expect(spans[0].textContent).toBe('Complete');
+    expect(spans[1].textContent).toBe('/ waiting');
   });
 
   it('renders no suffix when the flag is off', () => {
@@ -255,7 +255,7 @@ describe('HudWorkspaceCard waiting status suffix', () => {
     });
 
     expect(stateSpans(container)).toHaveLength(1);
-    expect(container.textContent).not.toContain('/ WAITING');
+    expect(container.textContent).not.toContain('/ waiting');
   });
 });
 
@@ -274,7 +274,7 @@ describe('HudWorkspaceCard unread overlay', () => {
     expect(dogear).toBeTruthy();
     expect(dogear?.getAttribute('aria-hidden')).toBe('true');
     // The real state banner still renders — unread overlays, never masks.
-    expect(container.textContent).toContain('COMPLETE');
+    expect(container.textContent).toContain('Complete');
   });
 
   it('omits the dog-ear when the flag is off', () => {

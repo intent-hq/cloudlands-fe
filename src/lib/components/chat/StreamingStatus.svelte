@@ -2,14 +2,13 @@
   StreamingStatus.svelte
 
   Streaming status indicator:
-  - Normal: Spinner with "Thinking"
+  - Normal: Intent mark with "Thinking"
   - Slot/memory wait: "Thinking" plus a red row explaining the admission wait
   - Error/Timeout: clear failed state with Try Again button
 -->
 <script lang="ts">
   import { onDestroy } from 'svelte';
-  import { fade } from 'svelte/transition';
-  import { cubicOut } from 'svelte/easing';
+  import { crispOut, fade } from '$lib/motion';
   import Fa from 'svelte-fa';
   import {
     faRotateRight,
@@ -113,8 +112,6 @@
     onStop?: () => void;
     /** Callback to cancel the stalled turn and re-send the last input (monorepo#3402) */
     onStalledRetry?: () => void;
-    /** Seed for spinner colors (typically agent ID) */
-    seed?: string;
     /** Additional class names */
     class?: string;
   }
@@ -144,7 +141,6 @@
     onRetryWithProvider,
     onStop,
     onStalledRetry,
-    seed,
     class: className = '',
   }: Props = $props();
 
@@ -279,12 +275,12 @@
 <StreamingTypingIndicator
   visible={thinkingVisible}
   message={statusMessage}
+  showMessage={Boolean(error)}
   lifecycleMessage={latestStatusEvent?.message}
   elapsed={elapsedTime}
   onHoverChange={(hovered) => (thinkingHovered = hovered)}
   variant={markVariant}
-  {seed}
-  class="mt-2 {className}"
+  class="mt-[var(--space-3)] {className}"
 />
 
 {#if queueWait && queueWaitMessage}
@@ -297,8 +293,8 @@
       'type-caption mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 rounded-md border border-danger/20 bg-danger/5 py-2 pl-2 pr-1 text-danger',
       className,
     )}
-    in:fade={{ duration: 200, easing: cubicOut }}
-    out:fade={{ duration: 150, easing: cubicOut }}
+    in:fade={{ tier: 'moderate' }}
+    out:crispOut={{ tier: 'moderate' }}
   >
     <Fa icon={faExclamationTriangle} class="shrink-0 text-danger/70" />
     <span class="min-w-0 flex-1 break-words" data-testid="slot-wait-message"
@@ -323,8 +319,8 @@
       'type-caption mt-2 flex items-center gap-2 rounded-md border border-warning/20 bg-warning/5 py-2 pl-2 pr-1',
       className,
     )}
-    in:fade={{ duration: 200, easing: cubicOut }}
-    out:fade={{ duration: 150, easing: cubicOut }}
+    in:fade={{ tier: 'moderate' }}
+    out:fade={{ tier: 'moderate' }}
   >
     <!-- Static live announcement: announced once when the stall appears. The
          visible label ticks every second and must stay out of the live region
@@ -332,8 +328,8 @@
     <span role="status" class="sr-only" data-testid="stalled-announcement"
       >{m.chat_streamingStatus_stalledAnnouncement_label()}</span
     >
-    <Fa icon={faExclamationTriangle} class="shrink-0 text-warning/70" />
-    <span class="min-w-0 flex-1 truncate text-warning" data-testid="stalled-message"
+    <Fa icon={faExclamationTriangle} class="shrink-0 text-warning-ink" />
+    <span class="min-w-0 flex-1 truncate text-warning-ink" data-testid="stalled-message"
       >{m.chat_streamingStatus_stalled_label({ duration: stalledElapsed ?? '' })}</span
     >
     {#if onStalledRetry}
@@ -376,14 +372,14 @@
           'rounded-md border border-warning/20 bg-warning/5 pl-2 pr-3',
         className,
       )}
-      in:fade={{ duration: 200, easing: cubicOut }}
-      out:fade={{ duration: 150, easing: cubicOut }}
+      in:fade={{ tier: 'moderate' }}
+      out:fade={{ tier: 'moderate' }}
     >
       <div class="flex items-start gap-2">
         <div class="flex min-w-0 flex-1 items-start gap-2">
           {#if status === 'model-unavailable' && modelUnavailable}
-            <Fa icon={faExclamationTriangle} class="shrink-0 text-warning/70" />
-            <span class="text-warning">
+            <Fa icon={faExclamationTriangle} class="shrink-0 text-warning-ink" />
+            <span class="text-warning-ink">
               {m.chat_streamingStatus_modelUnavailable_before()}
               <code class="px-1 py-0.5 bg-muted rounded text-ui"
                 >{modelUnavailable.failedModel}</code
@@ -419,7 +415,7 @@
                   iconOnly
                   tooltip={m.error_boundary_copyDetails_tooltip()}
                   aria-label={m.error_boundary_copyDetails_tooltip()}
-                  class="absolute top-3 left-0 -translate-y-1/2 text-muted-foreground"
+                  class="absolute top-2 left-0 -translate-y-1/2 text-muted-foreground"
                 >
                   <Fa icon={errorCopied ? faCheck : faCopy} class="shrink-0" />
                 </Button>

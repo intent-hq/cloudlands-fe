@@ -27,8 +27,8 @@ const mockToast = vi.hoisted(() => ({
   warning: vi.fn(),
 }));
 
-vi.mock('svelte-sonner', () => ({
-  toast: mockToast,
+vi.mock('$lib/components/patterns/notify', () => ({
+  notify: mockToast,
 }));
 
 describe('WorkspaceApiSettings', () => {
@@ -81,7 +81,9 @@ describe('WorkspaceApiSettings', () => {
       expect(mockToast.error).toHaveBeenCalled();
     });
     // Toggle remains checked (rolled back to true)
-    expect(screen.getByRole('switch').getAttribute('aria-checked')).toBe('true');
+    await waitFor(() =>
+      expect(screen.getByRole('switch').getAttribute('aria-checked')).toBe('true'),
+    );
   });
 
   it('shows toast.error and reverts toggle when settings.update omits the toggled path', async () => {
@@ -109,7 +111,7 @@ describe('WorkspaceApiSettings', () => {
 
     await fireEvent.input(input, { target: { value: '250000' } });
 
-    const saveButton = await waitFor(() => screen.getByText('Save'));
+    const saveButton = await waitFor(() => screen.getByRole('button', { name: 'Save' }));
     await fireEvent.click(saveButton);
 
     // Assert: settings.update was called with exact payload
@@ -129,7 +131,9 @@ describe('WorkspaceApiSettings', () => {
 
     await fireEvent.input(input, { target: { value: '500' } });
 
-    const saveButton = await waitFor(() => screen.getByText('Save') as HTMLButtonElement);
+    const saveButton = await waitFor(
+      () => screen.getByRole('button', { name: 'Save' }) as HTMLButtonElement,
+    );
     expect(saveButton.disabled).toBe(true);
     expect(mocks.mockSettingsUpdate).not.toHaveBeenCalled();
   });
@@ -141,7 +145,9 @@ describe('WorkspaceApiSettings', () => {
 
     await fireEvent.input(input, { target: { value: '' } });
 
-    const saveButton = await waitFor(() => screen.getByText('Save') as HTMLButtonElement);
+    const saveButton = await waitFor(
+      () => screen.getByRole('button', { name: 'Save' }) as HTMLButtonElement,
+    );
     expect(saveButton.disabled).toBe(true);
     await fireEvent.click(saveButton);
     expect(mocks.mockSettingsUpdate).not.toHaveBeenCalled();
@@ -155,7 +161,7 @@ describe('WorkspaceApiSettings', () => {
     const input = await waitFor(() => screen.getByDisplayValue('100000') as HTMLInputElement);
 
     await fireEvent.input(input, { target: { value: '250000' } });
-    await fireEvent.click(await waitFor(() => screen.getByText('Save')));
+    await fireEvent.click(await waitFor(() => screen.getByRole('button', { name: 'Save' })));
 
     await waitFor(() => expect(mockToast.error).toHaveBeenCalled());
     await waitFor(() => expect(input.value).toBe('100000'));
@@ -173,7 +179,7 @@ describe('WorkspaceApiSettings', () => {
 
     await fireEvent.input(input, { target: { value: '0' } });
 
-    const saveButton = await waitFor(() => screen.getByText('Save'));
+    const saveButton = await waitFor(() => screen.getByRole('button', { name: 'Save' }));
     await fireEvent.click(saveButton);
 
     await waitFor(() => {
@@ -194,7 +200,7 @@ describe('WorkspaceApiSettings', () => {
 
     await fireEvent.input(input, { target: { value: '250000' } });
 
-    const saveButton = await waitFor(() => screen.getByText('Save'));
+    const saveButton = await waitFor(() => screen.getByRole('button', { name: 'Save' }));
     await fireEvent.click(saveButton);
 
     await waitFor(() => {
@@ -226,7 +232,7 @@ describe('WorkspaceApiSettings', () => {
 
       await fireEvent.input(input, { target: { value: '8000' } });
 
-      const saveButton = await waitFor(() => screen.getByText('Save'));
+      const saveButton = await waitFor(() => screen.getByRole('button', { name: 'Save' }));
       await fireEvent.click(saveButton);
 
       await waitFor(() => {
@@ -247,11 +253,15 @@ describe('WorkspaceApiSettings', () => {
       await waitFor(() => expect(input.value).toBe('4000'));
 
       await fireEvent.input(input, { target: { value: '499' } });
-      let saveButton = await waitFor(() => screen.getByText('Save') as HTMLButtonElement);
+      let saveButton = await waitFor(
+        () => screen.getByRole('button', { name: 'Save' }) as HTMLButtonElement,
+      );
       expect(saveButton.disabled).toBe(true);
 
       await fireEvent.input(input, { target: { value: '100001' } });
-      saveButton = await waitFor(() => screen.getByText('Save') as HTMLButtonElement);
+      saveButton = await waitFor(
+        () => screen.getByRole('button', { name: 'Save' }) as HTMLButtonElement,
+      );
       expect(saveButton.disabled).toBe(true);
 
       expect(mocks.mockSettingsUpdate).not.toHaveBeenCalled();
@@ -270,7 +280,7 @@ describe('WorkspaceApiSettings', () => {
       await waitFor(() => expect(input.value).toBe('4000'));
 
       await fireEvent.input(input, { target: { value: '8000' } });
-      await fireEvent.click(await waitFor(() => screen.getByText('Save')));
+      await fireEvent.click(await waitFor(() => screen.getByRole('button', { name: 'Save' })));
 
       await waitFor(() => expect(mockToast.error).toHaveBeenCalled());
       await waitFor(() => expect(input.value).toBe('4000'));
@@ -288,7 +298,7 @@ describe('WorkspaceApiSettings', () => {
       await waitFor(() => expect(input.value).toBe('4000'));
 
       await fireEvent.input(input, { target: { value: '8000' } });
-      await fireEvent.click(await waitFor(() => screen.getByText('Save')));
+      await fireEvent.click(await waitFor(() => screen.getByRole('button', { name: 'Save' })));
 
       await waitFor(() => expect(mockToast.error).toHaveBeenCalled());
       await waitFor(() => expect(input.value).toBe('4000'));
@@ -305,7 +315,9 @@ describe('WorkspaceApiSettings', () => {
 
       await fireEvent.input(input, { target: { value: '' } });
 
-      const saveButton = await waitFor(() => screen.getByText('Save') as HTMLButtonElement);
+      const saveButton = await waitFor(
+        () => screen.getByRole('button', { name: 'Save' }) as HTMLButtonElement,
+      );
       expect(saveButton.disabled).toBe(true);
       await fireEvent.click(saveButton);
       expect(mocks.mockSettingsUpdate).not.toHaveBeenCalled();
@@ -324,7 +336,7 @@ describe('WorkspaceApiSettings', () => {
       await waitFor(() => expect(input.value).toBe('4000'));
 
       await fireEvent.input(input, { target: { value: '8000' } });
-      await fireEvent.click(await waitFor(() => screen.getByText('Save')));
+      await fireEvent.click(await waitFor(() => screen.getByRole('button', { name: 'Save' })));
 
       await waitFor(() => {
         expect(mockToast.error).toHaveBeenCalledWith(
@@ -352,7 +364,7 @@ describe('WorkspaceApiSettings', () => {
 
       await fireEvent.input(input, { target: { value: '30' } });
 
-      const saveButton = await waitFor(() => screen.getByText('Save'));
+      const saveButton = await waitFor(() => screen.getByRole('button', { name: 'Save' }));
       await fireEvent.click(saveButton);
 
       await waitFor(() => {
@@ -383,7 +395,7 @@ describe('WorkspaceApiSettings', () => {
       await waitFor(() => expect(input.value).toBe('30'));
 
       await fireEvent.input(input, { target: { value: '0' } });
-      await fireEvent.click(await waitFor(() => screen.getByText('Save')));
+      await fireEvent.click(await waitFor(() => screen.getByRole('button', { name: 'Save' })));
 
       await waitFor(() => {
         expect(mocks.mockSettingsUpdate).toHaveBeenCalledWith([
@@ -401,11 +413,15 @@ describe('WorkspaceApiSettings', () => {
       await waitFor(() => expect(input.value).toBe('0'));
 
       await fireEvent.input(input, { target: { value: '-1' } });
-      let saveButton = await waitFor(() => screen.getByText('Save') as HTMLButtonElement);
+      let saveButton = await waitFor(
+        () => screen.getByRole('button', { name: 'Save' }) as HTMLButtonElement,
+      );
       expect(saveButton.disabled).toBe(true);
 
       await fireEvent.input(input, { target: { value: '3651' } });
-      saveButton = await waitFor(() => screen.getByText('Save') as HTMLButtonElement);
+      saveButton = await waitFor(
+        () => screen.getByRole('button', { name: 'Save' }) as HTMLButtonElement,
+      );
       expect(saveButton.disabled).toBe(true);
 
       expect(mocks.mockSettingsUpdate).not.toHaveBeenCalled();
@@ -424,7 +440,7 @@ describe('WorkspaceApiSettings', () => {
       await waitFor(() => expect(input.value).toBe('0'));
 
       await fireEvent.input(input, { target: { value: '30' } });
-      await fireEvent.click(await waitFor(() => screen.getByText('Save')));
+      await fireEvent.click(await waitFor(() => screen.getByRole('button', { name: 'Save' })));
 
       await waitFor(() => expect(mockToast.error).toHaveBeenCalled());
       await waitFor(() => expect(input.value).toBe('0'));
@@ -442,7 +458,7 @@ describe('WorkspaceApiSettings', () => {
       await waitFor(() => expect(input.value).toBe('0'));
 
       await fireEvent.input(input, { target: { value: '30' } });
-      await fireEvent.click(await waitFor(() => screen.getByText('Save')));
+      await fireEvent.click(await waitFor(() => screen.getByRole('button', { name: 'Save' })));
 
       await waitFor(() => expect(mockToast.error).toHaveBeenCalled());
       await waitFor(() => expect(input.value).toBe('0'));
@@ -466,7 +482,9 @@ describe('WorkspaceApiSettings', () => {
 
       await fireEvent.input(input, { target: { value: '' } });
 
-      const saveButton = await waitFor(() => screen.getByText('Save') as HTMLButtonElement);
+      const saveButton = await waitFor(
+        () => screen.getByRole('button', { name: 'Save' }) as HTMLButtonElement,
+      );
       expect(saveButton.disabled).toBe(true);
       await fireEvent.click(saveButton);
       expect(mocks.mockSettingsUpdate).not.toHaveBeenCalled();
@@ -485,7 +503,7 @@ describe('WorkspaceApiSettings', () => {
       await waitFor(() => expect(input.value).toBe('0'));
 
       await fireEvent.input(input, { target: { value: '30' } });
-      await fireEvent.click(await waitFor(() => screen.getByText('Save')));
+      await fireEvent.click(await waitFor(() => screen.getByRole('button', { name: 'Save' })));
 
       await waitFor(() => {
         expect(mockToast.error).toHaveBeenCalledWith(

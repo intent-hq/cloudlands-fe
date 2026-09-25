@@ -111,7 +111,7 @@ async function openGithubTab(
   onProjectChange: (selection: ProjectSelection) => void,
 ): Promise<HTMLInputElement> {
   render(ProjectPickerMessage, { props: { onProjectChange } });
-  const tabButton = screen.getByRole('button', {
+  const tabButton = screen.getByRole('tab', {
     name: m.onboarding_projectPicker_githubRepo_label(),
   });
   await fireEvent.click(tabButton);
@@ -189,13 +189,13 @@ describe('ProjectPickerMessage — GitHub tab picked-repo selection', () => {
       await fireEvent.input(screen.getByRole('combobox'), { target: { value: 'no-match' } });
       expect(screen.queryAllByRole('option')).toHaveLength(0);
       await fireEvent.click(
-        screen.getByRole('button', {
+        screen.getByRole('tab', {
           name: m.onboarding_projectPicker_githubRepo_label(),
           exact: true,
         }),
       );
       await fireEvent.click(
-        screen.getByRole('button', {
+        screen.getByRole('tab', {
           name: m.onboarding_projectPicker_localFolder_label(),
           exact: true,
         }),
@@ -210,9 +210,13 @@ describe('ProjectPickerMessage — GitHub tab picked-repo selection', () => {
     }
   });
 
-  it.each([false, true])(
-    'does not discover for saved GitHub preferences (hydrated before mount: %s)',
-    async (hydratedBeforeMount) => {
+  it.each(
+    [false, true].flatMap((hydratedBeforeMount) =>
+      ['click', 'Enter', ' '].map((activation) => ({ hydratedBeforeMount, activation })),
+    ),
+  )(
+    'discovers only after $activation on Local with saved GitHub preferences (hydrated before mount: $hydratedBeforeMount)',
+    async ({ hydratedBeforeMount, activation }) => {
       mockDaemon();
       const hydration = hydrateWorkspaceInitializer({
         lastSelectedRepo: {
@@ -236,17 +240,27 @@ describe('ProjectPickerMessage — GitHub tab picked-repo selection', () => {
         expect(backendRequestMock).not.toHaveBeenCalledWith('workspace.findRepositories', {
           directory: '/home/dev',
         });
-        await fireEvent.click(
-          screen.getByRole('button', {
-            name: m.onboarding_projectPicker_localFolder_label(),
-            exact: true,
-          }),
-        );
+        const localTab = screen.getByRole('tab', {
+          name: m.onboarding_projectPicker_localFolder_label(),
+          exact: true,
+        });
+        await fireEvent.focus(localTab);
+        expect(localTab).toHaveAttribute('aria-selected', 'false');
+        expect(backendRequestMock).not.toHaveBeenCalledWith('repo.list', {});
+        if (activation === 'click') await fireEvent.click(localTab);
+        else await fireEvent.keyDown(localTab, { key: activation });
+        await waitFor(() => expect(selections.at(-1)?.type).toBe('local'));
+        expect(localTab).toHaveAttribute('aria-selected', 'true');
         await waitFor(() =>
           expect(backendRequestMock).toHaveBeenCalledWith('workspace.findRepositories', {
             directory: '/home/dev',
           }),
         );
+        expect(
+          backendRequestMock.mock.calls.filter(
+            ([method]) => method === 'workspace.findRepositories',
+          ),
+        ).toHaveLength(1);
       } finally {
         cleanup();
         stop();
@@ -279,7 +293,7 @@ describe('ProjectPickerMessage — GitHub tab picked-repo selection', () => {
     },
   );
 
-  it.each(['local-prefill', 'local-click'])(
+  it.each(['local-prefill', 'click', 'Enter', ' '])(
     'honors an explicit %s before preference hydration',
     async (source) => {
       mockDaemon();
@@ -288,21 +302,35 @@ describe('ProjectPickerMessage — GitHub tab picked-repo selection', () => {
       const stop = appStore.runSaga(localRepoDiscoverySaga);
       try {
         render(ProjectPickerMessage);
-        if (source === 'local-click') {
+        if (source !== 'local-prefill') {
           await tick();
           expect(backendRequestMock).not.toHaveBeenCalledWith('repo.list', {});
-          await fireEvent.click(
-            screen.getByRole('button', {
-              name: m.onboarding_projectPicker_localFolder_label(),
-              exact: true,
-            }),
-          );
+          const localTab = screen.getByRole('tab', {
+            name: m.onboarding_projectPicker_localFolder_label(),
+            exact: true,
+          });
+          expect(localTab).toHaveAttribute('aria-selected', 'true');
+          await fireEvent.focus(localTab);
+          expect(backendRequestMock).not.toHaveBeenCalledWith('repo.list', {});
+          if (source === 'click') await fireEvent.click(localTab);
+          else await fireEvent.keyDown(localTab, { key: source });
         }
         await waitFor(() =>
           expect(backendRequestMock).toHaveBeenCalledWith('workspace.findRepositories', {
             directory: '/home/dev',
           }),
         );
+        await fireEvent.click(
+          screen.getByRole('tab', {
+            name: m.onboarding_projectPicker_localFolder_label(),
+            exact: true,
+          }),
+        );
+        expect(
+          backendRequestMock.mock.calls.filter(
+            ([method]) => method === 'workspace.findRepositories',
+          ),
+        ).toHaveLength(1);
       } finally {
         cleanup();
         stop();

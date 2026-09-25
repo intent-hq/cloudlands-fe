@@ -14,11 +14,14 @@ import {
   setGroupByRepo,
   setGithubLinkDefaultAction,
   setHasCompletedProviderSetup,
+  setLabsMultiplayerEnabled,
+  setLabsSettingsVisible,
   setNotificationEnabled,
   setNoteFontStyle,
   setLanguagePreference,
   setShowArchived,
   setSpellcheckEnabled,
+  setReduceMotionOnBattery,
   setShowReasoningBlocks,
   setShellTransparencyEnabled,
   setShortcutOverride,
@@ -31,6 +34,9 @@ import {
   toggleGroupByRepo,
   toggleHasCompletedProviderSetup,
   toggleChatAurora,
+  toggleLabsMultiplayer,
+  toggleLabsSettingsVisibility,
+  toggleReduceMotionOnBattery,
   toggleShowArchived,
   toggleShowReasoningBlocks,
   toggleShellTransparency,
@@ -53,12 +59,15 @@ import {
   selectHasCompletedProviderSetup,
   selectIsAgentMonospace,
   selectIsNoteMonospace,
+  selectLabsMultiplayerEnabled,
+  selectLabsSettingsVisible,
   selectLanguagePreference,
   selectNoteFontStyle,
   selectNoteFontStyleLabel,
   selectNotificationEnabled,
   selectNotificationVolume,
   selectShowArchived,
+  selectReduceMotionOnBattery,
   selectShowReasoningBlocks,
   selectShellTransparencyEnabled,
   selectSoundEnabled,
@@ -345,9 +354,17 @@ describe('userPreferencesReducer', () => {
   });
 
   describe('appearance preference actions', () => {
-    it('defaults both preferences to enabled', () => {
+    it('defaults aurora and shell transparency to enabled and reduceMotionOnBattery to disabled', () => {
       expect(initialState.chatAuroraEnabled).toBe(true);
       expect(initialState.shellTransparencyEnabled).toBe(true);
+      expect(initialState.reduceMotionOnBattery).toBe(false);
+    });
+
+    it('sets and toggles reduceMotionOnBattery', () => {
+      const enabled = userPreferencesReducer(initialState, setReduceMotionOnBattery(true));
+      const disabled = userPreferencesReducer(enabled, toggleReduceMotionOnBattery());
+      expect(enabled.reduceMotionOnBattery).toBe(true);
+      expect(disabled.reduceMotionOnBattery).toBe(false);
     });
 
     it('sets and toggles chatAuroraEnabled', () => {
@@ -362,6 +379,45 @@ describe('userPreferencesReducer', () => {
       const enabled = userPreferencesReducer(disabled, toggleShellTransparency());
       expect(disabled.shellTransparencyEnabled).toBe(false);
       expect(enabled.shellTransparencyEnabled).toBe(true);
+    });
+  });
+
+  describe('Labs Settings visibility', () => {
+    it('starts hidden and supports setting and toggling both directions', () => {
+      const fresh = userPreferencesReducer(undefined, { type: '@@INIT' });
+      expect(selectLabsSettingsVisible.select({ userPreferences: fresh } as any)).toBe(false);
+
+      const shown = userPreferencesReducer(fresh, setLabsSettingsVisible(true));
+      expect(selectLabsSettingsVisible.select({ userPreferences: shown } as any)).toBe(true);
+      const hidden = userPreferencesReducer(shown, setLabsSettingsVisible(false));
+      expect(hidden.labsSettingsVisible).toBe(false);
+      const toggled = userPreferencesReducer(hidden, toggleLabsSettingsVisibility());
+      expect(toggled.labsSettingsVisible).toBe(true);
+      expect(
+        userPreferencesReducer(toggled, toggleLabsSettingsVisibility()).labsSettingsVisible,
+      ).toBe(false);
+    });
+
+    it('preserves experiment values while showing and hiding Settings', () => {
+      const enabled = userPreferencesReducer(initialState, setLabsMultiplayerEnabled(true));
+      const shown = userPreferencesReducer(enabled, setLabsSettingsVisible(true));
+      const hidden = userPreferencesReducer(shown, toggleLabsSettingsVisibility());
+      expect(shown.labsMultiplayerEnabled).toBe(true);
+      expect(hidden.labsMultiplayerEnabled).toBe(true);
+      expect(hidden).toEqual(enabled);
+    });
+  });
+
+  describe('labs preference actions', () => {
+    it('defaults the Multiplayer lab to disabled', () => {
+      expect(initialState.labsMultiplayerEnabled).toBe(false);
+    });
+
+    it('sets and toggles labsMultiplayerEnabled', () => {
+      const enabled = userPreferencesReducer(initialState, setLabsMultiplayerEnabled(true));
+      const disabled = userPreferencesReducer(enabled, toggleLabsMultiplayer());
+      expect(enabled.labsMultiplayerEnabled).toBe(true);
+      expect(disabled.labsMultiplayerEnabled).toBe(false);
     });
   });
 
@@ -429,7 +485,7 @@ describe('userPreferencesReducer', () => {
       expect(selectShowReasoningBlocks.select({} as any)).toBe(false);
     });
 
-    it('selects appearance preferences with enabled fallbacks', () => {
+    it('selects appearance preferences with their default fallbacks', () => {
       expect(
         selectChatAuroraEnabled.select({
           userPreferences: { ...initialState, chatAuroraEnabled: false },
@@ -440,8 +496,24 @@ describe('userPreferencesReducer', () => {
           userPreferences: { ...initialState, shellTransparencyEnabled: false },
         } as any),
       ).toBe(false);
+      expect(
+        selectReduceMotionOnBattery.select({
+          userPreferences: { ...initialState, reduceMotionOnBattery: true },
+        } as any),
+      ).toBe(true);
       expect(selectChatAuroraEnabled.select({} as any)).toBe(true);
       expect(selectShellTransparencyEnabled.select({} as any)).toBe(true);
+      expect(selectReduceMotionOnBattery.select({} as any)).toBe(false);
+    });
+
+    it('selects labsMultiplayerEnabled (default false, missing slice safe)', () => {
+      expect(selectLabsMultiplayerEnabled.select(state)).toBe(false);
+      expect(
+        selectLabsMultiplayerEnabled.select({
+          userPreferences: { ...initialState, labsMultiplayerEnabled: true },
+        } as any),
+      ).toBe(true);
+      expect(selectLabsMultiplayerEnabled.select({} as any)).toBe(false);
     });
 
     it('selects font settings from userPreferences', () => {

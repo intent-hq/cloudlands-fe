@@ -1,6 +1,9 @@
 <script lang="ts">
   import { Tooltip as TooltipPrimitive } from 'bits-ui';
   import { cn } from '$lib/utils.js';
+  import './tooltip-motion.css';
+  import { clampSurface, setSurface, useSurface } from '$lib/components/ui/surface-context';
+  import { useStaticOverlay } from '../static-overlay-context.svelte';
 
   let {
     ref = $bindable(null),
@@ -9,41 +12,75 @@
     side = 'top',
     children,
     arrowClasses,
+    portalTarget,
+    staticPosition,
     ...restProps
   }: TooltipPrimitive.ContentProps & {
     arrowClasses?: string;
+    portalTarget?: Element | string;
+    staticPosition?: boolean;
   } = $props();
+
+  const rootStaticPosition = useStaticOverlay();
+  const isStatic = $derived(staticPosition ?? rootStaticPosition());
+  const surface = clampSurface(useSurface() + 2);
+  setSurface(surface);
 </script>
 
-<TooltipPrimitive.Portal>
-  <TooltipPrimitive.Content
+{#snippet tooltipBody()}
+  {@render children?.()}
+{/snippet}
+
+{#if isStatic}
+  <TooltipPrimitive.ContentStatic
     bind:ref
     role="tooltip"
     data-slot="tooltip-content"
-    {sideOffset}
-    {side}
+    data-static-position
+    data-surface-level={surface}
+    data-overlay-surface
     class={cn(
-      'type-body z-(--layer-tooltip) w-fit text-balance rounded-md border border-border bg-popover px-3 py-1.5 text-popover-foreground shadow-(--elevation-overlay) outline-none animate-in fade-in-0 zoom-in-95 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95 data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 origin-(--bits-tooltip-content-transform-origin) motion-reduce:animate-none motion-reduce:transition-none',
+      'tooltip-motion overlay-surface type-caption z-(--layer-tooltip) w-fit max-w-xs whitespace-pre-wrap text-balance bg-foreground px-2 py-1 text-background [&_kbd]:text-background/70',
       className,
     )}
     onFocusOutside={() => {}}
-    {...restProps}
+    {...restProps as any}
   >
-    {@render children?.()}
-    <TooltipPrimitive.Arrow>
-      {#snippet child({ props })}
-        <div
-          class={cn(
-            'z-(--layer-tooltip) size-2.5 rotate-45 rounded-[2px] border-b border-r border-border bg-popover',
-            'data-[side=top]:translate-x-1/2 data-[side=top]:translate-y-[calc(-50%_+_2px)]',
-            'data-[side=bottom]:-translate-x-1/2 data-[side=bottom]:-translate-y-[calc(-50%_+_1px)]',
-            'data-[side=right]:translate-x-[calc(50%_+_2px)] data-[side=right]:translate-y-1/2',
-            'data-[side=left]:-translate-y-[calc(50%_-_3px)]',
-            arrowClasses,
-          )}
-          {...props}
-        ></div>
-      {/snippet}
-    </TooltipPrimitive.Arrow>
-  </TooltipPrimitive.Content>
-</TooltipPrimitive.Portal>
+    {@render tooltipBody()}
+  </TooltipPrimitive.ContentStatic>
+{:else}
+  <TooltipPrimitive.Portal to={portalTarget}>
+    <TooltipPrimitive.Content
+      bind:ref
+      role="tooltip"
+      data-slot="tooltip-content"
+      data-surface-level={surface}
+      data-overlay-surface
+      {sideOffset}
+      {side}
+      class={cn(
+        'tooltip-motion overlay-surface type-caption z-(--layer-tooltip) w-fit max-w-xs whitespace-pre-wrap text-balance bg-foreground px-2 py-1 text-background [&_kbd]:text-background/70',
+        className,
+      )}
+      onFocusOutside={() => {}}
+      {...restProps}
+    >
+      {@render children?.()}
+      <TooltipPrimitive.Arrow>
+        {#snippet child({ props })}
+          <div
+            class={cn(
+              'z-(--layer-tooltip) size-2.5 rotate-45 rounded-[2px] bg-foreground',
+              'data-[side=top]:translate-x-1/2 data-[side=top]:translate-y-[calc(-50%_+_2px)]',
+              'data-[side=bottom]:-translate-x-1/2 data-[side=bottom]:-translate-y-[calc(-50%_+_1px)]',
+              'data-[side=right]:translate-x-[calc(50%_+_2px)] data-[side=right]:translate-y-1/2',
+              'data-[side=left]:-translate-y-[calc(50%_-_3px)]',
+              arrowClasses,
+            )}
+            {...props}
+          ></div>
+        {/snippet}
+      </TooltipPrimitive.Arrow>
+    </TooltipPrimitive.Content>
+  </TooltipPrimitive.Portal>
+{/if}

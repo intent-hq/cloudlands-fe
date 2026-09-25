@@ -37,27 +37,31 @@
   import GitBranchIcon from '$lib/components/icons/GitBranchIcon.svelte';
   import LineChangesBadge from '$lib/components/shared/LineChangesBadge.svelte';
   import { Button } from '$lib/components/ui/button';
+  import { IntentMarkLoader } from '$lib/components/ui/indicators';
   import RelativeTime from '$lib/components/ui/RelativeTime.svelte';
   import { Skeleton } from '$lib/components/ui/skeleton';
   import { writeTextToClipboard } from '$lib/utils/clipboard';
   import { m } from '$shared/paraglide/messages.js';
   import { formatInteger } from '$lib/i18n/format';
-  import {
-    faArrowsRotate,
-    faChevronDown,
-    faCodeCommit,
-    faSpinner,
-  } from '@fortawesome/free-solid-svg-icons';
+  import { faChevronDown, faCodeCommit } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
-  import { slide } from 'svelte/transition';
-  import { toast } from 'svelte-sonner';
+  import type { Snippet } from 'svelte';
+  import ChangesRefreshAction from './ChangesRefreshAction.svelte';
+  import { slide } from '$lib/motion';
+  import { notify } from '$lib/components/patterns/notify';
 
   interface Props {
     workspaceId: string;
     entry: WorkspaceGitRootEntry;
+    onRefreshActionChange?: (action: Snippet | undefined) => void;
   }
 
-  let { workspaceId, entry }: Props = $props();
+  let { workspaceId, entry, onRefreshActionChange }: Props = $props();
+
+  $effect(() => {
+    onRefreshActionChange?.(refreshAction);
+    return () => onRefreshActionChange?.(undefined);
+  });
 
   const gitRootId = $derived(entry.gitRoot?.id ?? '');
   // The root's HEAD when first tracked (registration or sweep backfill);
@@ -211,9 +215,9 @@
     if (!branchName) return;
     try {
       await writeTextToClipboard(branchName);
-      toast.success(m.workspace_sidebarChanges_branchCopied_label());
+      notify.success(m.workspace_sidebarChanges_branchCopied_label());
     } catch {
-      toast.error(m.workspace_sidebarChanges_copyBranchFailed_error());
+      notify.error(m.workspace_sidebarChanges_copyBranchFailed_error());
     }
   }
 
@@ -229,10 +233,14 @@
       case 'C':
         return 'text-blue-600 dark:text-blue-400';
       default:
-        return 'text-amber-600 dark:text-amber-400';
+        return 'text-warning-ink';
     }
   }
 </script>
+
+{#snippet refreshAction()}
+  <ChangesRefreshAction disabled={loading} onclick={load} />
+{/snippet}
 
 <div class="flex flex-col gap-3" data-testid="secondary-root-changes-view">
   <!-- Root branch line + refresh -->
@@ -251,15 +259,9 @@
     {:else}
       <span class="text-ui truncate min-w-0">{branchLabel}</span>
     {/if}
-    <button
-      type="button"
-      class="ml-auto p-1 rounded hover:bg-muted transition-colors text-muted-foreground hover:text-foreground disabled:opacity-50 cursor-pointer"
-      onclick={load}
-      disabled={loading}
-      title={m.workspace_sidebarChanges_refreshGitStatus_tooltip()}
-    >
-      <Fa icon={faArrowsRotate} class="text-subtle {loading ? 'animate-spin' : ''}" size={10} />
-    </button>
+    {#if !onRefreshActionChange}
+      <span class="ml-auto">{@render refreshAction()}</span>
+    {/if}
   </div>
 
   {#if loading && !status}
@@ -351,11 +353,7 @@
             aria-label={m.workspace_sidebarChanges_rootShowOlder_ariaLabel()}
             onclick={() => (olderExpanded = !olderExpanded)}
           >
-            <div
-              class="relative flex items-center gap-2 pr-3 w-fit bg-sidebar mr-auto py-1.5 z-10 group-hover/boundary:opacity-100 {olderExpanded
-                ? 'opacity-100'
-                : 'opacity-60'}"
-            >
+            <div class="relative z-10 mr-auto flex w-fit items-center gap-2 bg-sidebar py-1.5 pr-3">
               <span class="flex items-center gap-1.5 text-ui text-subtle bg-sidebar select-none">
                 {m.workspace_sidebarChanges_rootRegistered_label()}
                 <Fa
@@ -370,10 +368,7 @@
 
           {#if olderExpanded}
             <!-- Older commits (dimmed, at/below the registration boundary) -->
-            <ul
-              class="flex flex-col opacity-60 hover:opacity-100 transition-opacity"
-              data-testid="secondary-root-older-commits"
-            >
+            <ul class="flex flex-col" data-testid="secondary-root-older-commits">
               {#each olderCommits as commit (commit.hash)}
                 {@render commitRow(commit)}
               {/each}
@@ -390,7 +385,7 @@
             onclick={load}
           >
             {#if loading}
-              <Fa icon={faSpinner} class="animate-spin mr-1" size="xs" />
+              <IntentMarkLoader size={12} class="mr-1" />
             {/if}
             {m.workspace_sidebarChanges_rootShowMoreCommits_label()}
           </Button>
@@ -470,9 +465,14 @@
 
     <!-- Expanded lazy file list (read-only; clicking a file opens the same changeset) -->
     {#if isExpanded}
-      <div class="pl-5 pr-1.5 pb-0.5 pt-0.5 space-y-px" transition:slide={{ duration: 150 }}>
+      <div class="pl-5 pr-1.5 pb-0.5 pt-0.5 space-y-px" transition:slide={{ tier: 'moderate' }}>
         {#each files as file (file.path)}
-          <FileRow {file} muted={true} onFileClick={() => openCommitChangeset(commit)} />
+          <FileRow
+            contextKey={`${workspaceId}:${gitRootId}:${commit.hash}`}
+            {file}
+            muted={true}
+            onFileClick={() => openCommitChangeset(commit)}
+          />
         {/each}
       </div>
     {/if}

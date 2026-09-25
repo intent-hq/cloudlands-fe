@@ -7,21 +7,27 @@ export const listMetadata = parseUiComponentMetadata({
   publicImport: '$lib/components/ui/list',
   legacyImports: [],
   exports: ['ListContainer', 'ListEmpty', 'ListItem', 'ListSection', 'listMetadata'],
+  // Minimal composition from the editorial-list default fixture.
+  usage: `<script lang="ts">
+  import * as List from '$lib/components/ui/list';
+</script>
+
+<List.ListContainer>
+  <List.ListItem title="Overview" />
+</List.ListContainer>`,
   category: 'pattern',
   owner: '012-E',
   callers: [
     'src/lib/component-catalog/renderers/ContentFieldCatalogPreview.svelte',
-    'src/lib/components/browser/BrowserPanel.svelte',
     'src/lib/components/file-explorer/VirtualizedFileTree.svelte',
     'src/lib/components/file-explorer/file-tree-view.svelte',
-    'src/lib/components/file-tracking/FileChangesList.svelte',
-    'src/lib/components/file-tracking/TreeNode.svelte',
-    'src/lib/components/notes/NotesPanel.svelte',
     'src/lib/components/terminal/QuakeTerminalOverlay.svelte',
     'src/lib/components/terminal/TerminalSidebar.svelte',
     'src/lib/components/workspace/WorkspaceAgentsList.svelte',
+    'src/lib/components/workspace/list-labels.preview.svelte',
     'src/lib/components/workspace/sidebar/ContextPanel.svelte',
     'src/lib/components/workspace/sidebar/NotesPanel.svelte',
+    'src/routes/sandbox/recipes/+page.svelte',
   ],
   replacement: null,
   characterizationTest: 'src/lib/components/ui/list/list.test.ts',

@@ -4,9 +4,10 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
-// Mock svelte-sonner
-vi.mock('svelte-sonner', () => ({
-  toast: {
+// Mock $lib/components/patterns/notify
+vi.mock('$lib/components/patterns/notify', async () => ({
+  ...(await vi.importActual('$lib/components/ui/toast/toast-countdown')),
+  notify: {
     success: vi.fn(),
     error: vi.fn(),
     info: vi.fn(),
@@ -21,7 +22,7 @@ import {
   archiveWithUndo,
   confirmAction,
 } from '../reversible-actions';
-import { toast } from 'svelte-sonner';
+import { notify } from '$lib/components/patterns/notify';
 
 describe('reversible-actions', () => {
   beforeEach(() => {
@@ -46,7 +47,7 @@ describe('reversible-actions', () => {
       await promise;
 
       expect(action).toHaveBeenCalled();
-      expect(toast.success).toHaveBeenCalledWith('Test action');
+      expect(notify.success).toHaveBeenCalledWith('Test action');
     });
 
     it('should show undo option when onUndo is provided', async () => {
@@ -60,7 +61,7 @@ describe('reversible-actions', () => {
         onUndo,
       });
 
-      expect(toast.warning).toHaveBeenCalledWith(
+      expect(notify.warning).toHaveBeenCalledWith(
         'Test action',
         expect.objectContaining({
           action: expect.objectContaining({ label: 'Undo' }),
@@ -80,7 +81,7 @@ describe('reversible-actions', () => {
         duration: 15,
       });
 
-      expect(toast.warning).toHaveBeenCalledWith(
+      expect(notify.warning).toHaveBeenCalledWith(
         'Test action',
         expect.objectContaining({
           duration: 15000,
@@ -100,7 +101,7 @@ describe('reversible-actions', () => {
       });
 
       expect(result).toBe(false);
-      expect(toast.error).toHaveBeenCalled();
+      expect(notify.error).toHaveBeenCalled();
     });
   });
 
@@ -144,7 +145,7 @@ describe('reversible-actions', () => {
       await deleteWithUndo('item', deleteAction, undoAction);
 
       expect(deleteAction).toHaveBeenCalled();
-      expect(toast.warning).toHaveBeenCalledWith('Deleted item', expect.anything());
+      expect(notify.warning).toHaveBeenCalledWith('Deleted item', expect.anything());
     });
   });
 
@@ -156,7 +157,7 @@ describe('reversible-actions', () => {
       await archiveWithUndo('item', archiveAction, unarchiveAction);
 
       expect(archiveAction).toHaveBeenCalled();
-      expect(toast.warning).toHaveBeenCalledWith('Archived item', expect.anything());
+      expect(notify.warning).toHaveBeenCalledWith('Archived item', expect.anything());
     });
   });
 

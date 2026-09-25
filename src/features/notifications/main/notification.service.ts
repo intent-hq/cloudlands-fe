@@ -7,7 +7,8 @@
  * every remote intentd connection), each with `workspaceId` omitted so events
  * are delivered across ALL of that backend's workspaces. Native OS
  * notifications are routed per-event by `event.workspaceId`, and follow-up
- * RPCs (`agent.list`, workspace title) go to the EMITTING backend's client.
+ * RPCs (`agent.get` / `agent.listActive`, workspace title) go to the EMITTING
+ * backend's client.
  *
  * Persisted notification preferences live on the daemon under `notifications.*`
  * (PROTOCOL.md §5.12); the legacy `notificationSettings` electron-store bag is
@@ -27,6 +28,7 @@ import { CHIEF_WORKSPACE_ID, WorkspaceId } from '../../../shared/types/branded-i
 import { LOCAL_CONNECTION_ID } from '../../../shared/types/connections';
 import type { AgentIdleEvent } from '../../events/types';
 import type { JsonRpcClient, JsonRpcNotification } from '../../backend/main/json-rpc-client';
+import { readIdleNotificationGate } from '../utils/idle-gate';
 import {
   BACKEND_CLIENT_DISCONNECTED_EVENT,
   getBackendClient,
@@ -457,8 +459,9 @@ export class NotificationService {
    * Handle an agent:idle event delivered by a per-backend daemon
    * subscription. All per-workspace behavior (suppression, focus gating,
    * sound and click routing) keys off `event.workspaceId`; follow-up RPCs
-   * (`agent.list`, workspace title) go to the EMITTING backend's client
-   * (`backendId`, defaulting to local for direct callers/tests).
+   * (`agent.get` / `agent.listActive`, workspace title) go to the EMITTING
+   * backend's client (`backendId`, defaulting to local for direct
+   * callers/tests).
    */
   async handleAgentIdle(
     event: AgentIdleEvent,
@@ -488,6 +491,17 @@ export class NotificationService {
         return;
       }
 
+      // Fast path: per-agent mute stamped on the payload (§5.5
+      // `notificationsMuted`, present only when true). Absent on older
+      // daemons, in which case the agent.get gate below still applies.
+      if (event.data.notificationsMuted === true) {
+        logger.debug('Skipping notification for muted agent', {
+          workspaceId,
+          agentName: event.data.agentName,
+        });
+        return;
+      }
+
       // Fast path: the event's workspace is archived — archived workspaces
       // never notify. Absent on older daemons (treated as not archived).
       if (event.data.workspaceArchived === true) {
@@ -501,7 +515,8 @@ export class NotificationService {
       // Fast path: the agent ended its turn while awaiting delegated
       // sub-agents (pending completion watches) — the workspace isn't truly
       // quiet even if the children haven't started responding yet. Absent on
-      // older daemons, in which case the agent.list gate below still applies.
+      // older daemons, in which case the agent.listActive gate below still
+      // applies.
       if (event.data.isWaitingForOtherAgents === true) {
         logger.debug('Skipping notification for agent waiting on other agents', {
           workspaceId,
@@ -530,29 +545,21 @@ export class NotificationService {
         return;
       }
 
-      // `agent.list` (PROTOCOL.md §5.5) serves two purposes: AgentLite
-      // `metadata` carries `isBackground`/`specialist` (absent from the
-      // daemon idle payload), and `isStreaming`/`isResponding` feed the
-      // other-agents-active suppression gate below. Routed to the EMITTING
-      // backend — the workspace only exists there.
-      const agentList = (await client.request('agent.list', {
-        workspaceId,
-      })) as
-        | {
-            agents?: Array<{
-              id?: string;
-              provider?: string;
-              isStreaming?: boolean;
-              isResponding?: boolean;
-              metadata?: { isBackground?: boolean; specialist?: string };
-            }>;
-          }
-        | undefined;
-      const agents = agentList?.agents ?? [];
-      const idleAgent = agents.find((agent) => agent.id === event.data.agentId);
+      // Bounded wire gate (utils/idle-gate.ts, intent#5531 — never the
+      // unscoped `agent.list`): `agent.get` for the idle agent's own
+      // `metadata` (`isBackground`/`specialist`, absent from the daemon idle
+      // payload) / `notificationsMuted` / `provider`, then `agent.listActive`
+      // + per-active-sibling `agent.get` for the other-agents-active
+      // suppression. Routed to the EMITTING backend — the workspace only
+      // exists there.
+      const verdict = await readIdleNotificationGate(
+        (method, params) => client.request(method, params),
+        { workspaceId, agentId: event.data.agentId },
+      );
+      const idleAgent = verdict.idleAgent;
 
       // Skip background agents — delegated child completions stay quiet.
-      if (idleAgent?.metadata?.isBackground === true) {
+      if (verdict.kind === 'background') {
         logger.debug('Skipping notification for background agent (metadata)', {
           workspaceId,
           agentName: event.data.agentName,
@@ -560,17 +567,22 @@ export class NotificationService {
         return;
       }
 
-      const otherActiveAgents = agents.filter(
-        (agent) =>
-          (agent.isStreaming === true || agent.isResponding === true) &&
-          agent.id !== event.data.agentId,
-      );
+      // Skip muted agents (AgentLite top-level `notificationsMuted`) —
+      // parity with the payload fast path for idle events that predate the
+      // stamp.
+      if (verdict.kind === 'muted') {
+        logger.debug('Skipping notification for muted agent (agent.get)', {
+          workspaceId,
+          agentName: event.data.agentName,
+        });
+        return;
+      }
 
-      if (otherActiveAgents.length > 0) {
+      if (verdict.kind === 'others-active') {
         logger.debug('Other agents still active, skipping notification', {
           workspaceId,
           agentName: event.data.agentName,
-          otherActiveCount: otherActiveAgents.length,
+          otherActiveCount: verdict.otherActiveCount,
         });
         return;
       }
@@ -930,7 +942,7 @@ export class NotificationService {
         const existingMain = getMainWindow();
         const setAsMain = !existingMain || existingMain.isDestroyed();
         const { workArea } = screen.getPrimaryDisplay();
-        createWindowForSession({ route, bounds: workArea }, setAsMain);
+        await createWindowForSession({ route, bounds: workArea }, setAsMain);
         logger.info('Notification click opened a new window (no regular window was live)', {
           workspaceId,
           route,

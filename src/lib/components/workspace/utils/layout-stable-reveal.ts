@@ -1,4 +1,4 @@
-export interface LayoutRevealElements {
+interface LayoutRevealElements {
   container: HTMLElement;
   target: HTMLElement;
 }

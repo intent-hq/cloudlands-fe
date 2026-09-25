@@ -21,6 +21,7 @@
   import { Select } from '$lib/components/ui/select';
   import EffortGauge from './EffortGauge.svelte';
   import { m } from '$shared/paraglide/messages.js';
+  import { reasoningEffortLabel as levelLabel } from '$features/agent/utils/reasoning-effort-label';
   import { applyReasoningEffort } from '$features/agent/reasoning-effort';
   import { store as appStore } from '$store/renderer/store';
   import { selectAgentReasoningEffort } from '$store/renderer/slices/agent-session/agent-session-selectors';
@@ -69,21 +70,6 @@
       : selectAgentReasoningEffort
   )(agentIdStore);
 
-  /** Provider-level ids get a translated label; unknown levels render verbatim. */
-  const LEVEL_LABELS: Record<string, () => string> = {
-    none: () => m.chat_shared_valueOff_label(),
-    minimal: () => m.chat_effortPicker_level_minimal(),
-    low: () => m.chat_effortPicker_level_low(),
-    medium: () => m.chat_effortPicker_level_medium(),
-    high: () => m.chat_effortPicker_level_high(),
-    xhigh: () => m.chat_effortPicker_level_xhigh(),
-    max: () => m.chat_effortPicker_level_max(),
-  };
-
-  function levelLabel(level: string): string {
-    return LEVEL_LABELS[level]?.() ?? level;
-  }
-
   type EffortOption = {
     value: string;
     label: string;
@@ -114,8 +100,7 @@
   ]);
   const selectItems = $derived(options.map(({ value, label }) => ({ value, label })));
 
-  // An effort the newly selected model does not advertise keeps the underlying
-  // provider-default value without guessing which concrete level the provider uses.
+  // Keep unsupported persisted values visible without inventing selectable levels.
   const persistedValue = $derived(embedded ? effort : ($reasoningEffort$ ?? null));
   const persistedOptionValue = $derived.by(() => {
     if (persistedValue === null || persistedValue === undefined) return AUTO_OPTION_VALUE;
@@ -124,7 +109,12 @@
   });
   let selectedOptionValue = $state('');
   const selectedOption = $derived(options.find((option) => option.value === selectedOptionValue));
-  const selectedLabel = $derived(selectedOption?.label ?? m.chat_effortPicker_level_auto());
+  const selectedLabel = $derived(
+    selectedOption?.label ??
+      (persistedValue
+        ? m.chat_effortPicker_unavailable_label({ level: levelLabel(persistedValue) })
+        : m.chat_effortPicker_level_auto()),
+  );
   const selectedLevelIndex = $derived(selectedOption?.levelIndex ?? -1);
   let selectOpen = $state(false);
   let pickerRoot = $state<HTMLDivElement | null>(null);
@@ -225,7 +215,10 @@
           wrapperId={contentId}
           portal
           dropUp={!embedded}
-          class={cn('effort-picker-content', embedded && 'z-[101]!')}
+          class={cn(
+            'effort-picker-content w-max min-w-(--bits-select-anchor-width)',
+            embedded && 'z-[101]!',
+          )}
         >
           {#each options as option (option.value)}
             <Select.Item value={option.value} label={option.label}>{option.label}</Select.Item>

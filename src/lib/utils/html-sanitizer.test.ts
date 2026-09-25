@@ -142,4 +142,55 @@ describe('html-sanitizer', () => {
 
     expect(sanitizeMarkdownHTML(html)).not.toContain('javascript:');
   });
+
+  it('preserves the narrowly allowlisted KaTeX accessibility and radical markup', () => {
+    const html =
+      '<span class="math-inline" data-math-source="$x$"><span class="katex"><span class="katex-mathml"><math><semantics><mrow><msqrt><mi>x</mi></msqrt></mrow><annotation encoding="application/x-tex">x</annotation></semantics></math></span><svg viewBox="0 0 1 1"><path d="M0 0"></path></svg></span></span>';
+    const sanitized = sanitizeMarkdownHTML(html);
+
+    expect(sanitized).toContain('data-math-source="$x$"');
+    expect(sanitized).toContain('<math>');
+    expect(sanitized).toContain('<msqrt>');
+    expect(sanitized).toContain('<annotation encoding="application/x-tex">x</annotation>');
+    expect(sanitized).toContain('<path d="M0 0"></path>');
+  });
+
+  it('still strips executable attributes and protocols from math-shaped HTML', () => {
+    const html =
+      '<span data-math-source="$x$" onclick="alert(1)"><math onload="alert(2)"><mrow><mi>x</mi></mrow></math><svg><a href="javascript:alert(3)">x</a></svg></span>';
+    const sanitized = sanitizeMarkdownHTML(html);
+
+    expect(sanitized).not.toContain('onclick');
+    expect(sanitized).not.toContain('onload');
+    expect(sanitized).not.toContain('javascript:');
+    expect(sanitized).toContain('<math>');
+  });
+
+  it('preserves only constrained KaTeX layout declarations when explicitly enabled', () => {
+    const html =
+      '<span class="math-inline" data-math-source="$x$"><span class="katex"><span style="height:1.2em; top:-0.3em; border-width:0.04em; position:relative; color:red; background:url(javascript:alert(1))">x</span></span></span>';
+
+    const sanitized = sanitizeMarkdownHTML(html, undefined, {
+      preserveKatexLayoutStyles: true,
+    });
+
+    expect(sanitized).toContain(
+      'style="height:1.2em;top:-0.3em;border-width:0.04em;position:relative;"',
+    );
+    expect(sanitized).not.toContain('color:');
+    expect(sanitized).not.toContain('background:');
+    expect(sanitized).not.toContain('javascript:');
+  });
+
+  it('strips styles outside generated KaTeX descendants and without explicit opt-in', () => {
+    const katex =
+      '<span class="math-inline" data-math-source="$x$"><span class="katex"><span style="height:1em">x</span></span></span>';
+    const forged =
+      '<span class="math-inline" data-math-source="$x$"><span style="height:1em">x</span></span>';
+
+    expect(sanitizeMarkdownHTML(katex)).not.toContain('style=');
+    expect(
+      sanitizeMarkdownHTML(forged, undefined, { preserveKatexLayoutStyles: true }),
+    ).not.toContain('style=');
+  });
 });

@@ -4,7 +4,7 @@
  * lifecycle, while `(app)` owns product sagas, chrome, and overlays.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, render, screen } from '@testing-library/svelte';
+import { cleanup, render, screen, waitFor } from '@testing-library/svelte';
 import { createRawSnippet } from 'svelte';
 import { installConsoleTeardownGuard } from './helpers/console-teardown-guard';
 
@@ -13,7 +13,10 @@ import { installConsoleTeardownGuard } from './helpers/console-teardown-guard';
 installConsoleTeardownGuard();
 
 const mockPage = vi.hoisted(() => ({ pathname: '/' }));
-const mocks = vi.hoisted(() => ({ startAppStoreLifecycle: vi.fn(() => () => {}) }));
+const mocks = vi.hoisted(() => ({
+  dismissSplashElement: vi.fn(),
+  startAppStoreLifecycle: vi.fn(() => () => {}),
+}));
 
 vi.mock('$app/navigation', () => ({
   goto: vi.fn(),
@@ -42,8 +45,15 @@ vi.mock('$store/renderer/app-store-lifecycle', () => ({
 }));
 vi.mock('$store/renderer/sagas', () => ({ startAllAppSagas: () => [] }));
 vi.mock('$store/renderer/seeders', () => ({}));
+// Native animation behavior is covered in window-blur-animations.ct.spec.ts.
+vi.mock('$lib/actions/pause-window-animations', () => ({
+  pauseWindowAnimations: () => ({ destroy() {} }),
+}));
 vi.mock('$features/layout/tab-types/register-all', () => ({ registerAllTabTypes: () => {} }));
-vi.mock('$features/backend/splash-gate', () => ({ wireSplashGate: () => () => {} }));
+vi.mock('$features/backend/splash-gate', () => ({
+  dismissSplashElement: mocks.dismissSplashElement,
+  wireSplashGate: () => () => {},
+}));
 vi.mock('$lib/utils/diff-highlighter-preloader', () => ({ preloadDiffHighlighter: () => {} }));
 vi.mock('$lib/utils/monaco-workers', () => ({ configureMonacoWorkers: async () => {} }));
 vi.mock('$features/agent/interrupted-agents-service', () => ({
@@ -108,7 +118,7 @@ vi.mock('$features/daemon-status/DaemonUpdatingOverlay.svelte', async () => ({
   default: (await import('./mocks/Marker.svelte')).default,
 }));
 vi.mock('$lib/components/terminal/RootQuakeTerminalOverlay.svelte', async () => ({
-  default: (await import('./mocks/Marker.svelte')).default,
+  default: (await import('./mocks/RootQuakeTerminalOverlayMarker.svelte')).default,
 }));
 vi.mock('$lib/components/modals/FeatureCodeDialog.svelte', async () => ({
   default: (await import('./mocks/Marker.svelte')).default,
@@ -127,6 +137,14 @@ vi.mock('$lib/components/ui/tooltip/LinkTooltip.svelte', async () => ({
 }));
 
 import { store as appStore } from '$store/renderer/store';
+import {
+  replaceWorkspaceList,
+  setWorkspaceHasLoaded,
+} from '$store/renderer/slices/workspace/workspace-slice';
+import { guestSessionsListReceived } from '$store/renderer/slices/guest-sessions/guest-sessions-slice';
+import { selectIsTerminalOverlayOpenForWorkspace } from '$store/renderer/slices/terminals/terminals-selectors';
+import { ROOT_WORKSPACE_ID, type WorkspaceId } from '$shared/types/branded-ids';
+import { WorkspaceStatus, type Workspace } from '$shared/types';
 import AppLayout from '../(app)/+layout.svelte';
 import RootLayout from '../+layout.svelte';
 import HudLayout from '../hud/+layout.svelte';
@@ -138,6 +156,7 @@ const childrenSnippet = createRawSnippet(() => ({
 describe('+layout.svelte isHudRoute chrome-less gating', () => {
   beforeEach(() => {
     appStore.init();
+    mocks.dismissSplashElement.mockClear();
     mocks.startAppStoreLifecycle.mockClear();
   });
 
@@ -186,6 +205,9 @@ describe('+layout.svelte isHudRoute chrome-less gating', () => {
     expect(screen.getAllByTestId('encoder-cycle-hud-marker').length).toBeGreaterThan(0);
     expect(screen.getAllByTestId('action-key-hud-marker').length).toBeGreaterThan(0);
     expect(screen.getByTestId('hud-gating-children')).toBeTruthy();
+    // The sandbox-isolation Playwright specs assert this marker has count 0 on
+    // preview routes; it must exist on the app shell for that check to mean anything.
+    expect(screen.getByTestId('app-ready')).toBeTruthy();
     expect(mocks.startAppStoreLifecycle).toHaveBeenCalledOnce();
   });
 
@@ -203,5 +225,88 @@ describe('+layout.svelte isHudRoute chrome-less gating', () => {
 
     view.unmount();
     expect(stopAppStoreLifecycle).toHaveBeenCalledOnce();
+  });
+
+  it('dismisses the splash and removes the static drag region on mount', () => {
+    const splash = document.createElement('div');
+    splash.id = 'splash';
+    document.body.appendChild(splash);
+    const dragRegion = document.createElement('div');
+    dragRegion.id = 'app-drag-region';
+    document.body.appendChild(dragRegion);
+
+    render(HudLayout, { props: { children: childrenSnippet } });
+
+    expect(mocks.dismissSplashElement).toHaveBeenCalledOnce();
+    expect(mocks.dismissSplashElement).toHaveBeenCalledWith(splash);
+    expect(dragRegion.isConnected).toBe(false);
+    splash.remove();
+  });
+});
+
+function makeWorkspace(id: string, myRole: Workspace['myRole']): Workspace {
+  return {
+    id: id as WorkspaceId,
+    title: id,
+    branch: 'main',
+    changesets: [],
+    timeline: [],
+    conversationInfo: [],
+    status: WorkspaceStatus.Active,
+    createdAt: '2026-01-01T00:00:00Z',
+    updatedAt: '2026-01-01T00:00:00Z',
+    myRole,
+  } as Workspace;
+}
+
+describe('+layout.svelte root terminal gating for collaborators (multiplayer w3)', () => {
+  beforeEach(() => {
+    appStore.init();
+    mocks.startAppStoreLifecycle.mockClear();
+    mockPage.pathname = '/';
+  });
+
+  afterEach(() => {
+    cleanup();
+    appStore.dispose();
+  });
+
+  function loadWorkspaces(role: Workspace['myRole']) {
+    // The window's guest/owner identity has settled (multiplayer w4): no host
+    // joined, so only the workspace roles decide.
+    appStore.dispatch(guestSessionsListReceived({ sessions: [], openIds: [], connectedIds: [] }));
+    appStore.dispatch(replaceWorkspaceList([makeWorkspace('ws-1', role)]));
+    appStore.dispatch(setWorkspaceHasLoaded(true));
+  }
+
+  function pressToggleTerminal() {
+    window.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'j', ctrlKey: true, bubbles: true, cancelable: true }),
+    );
+  }
+
+  it('renders the root overlay and toggles it from the shortcut for an owner', async () => {
+    loadWorkspaces('owner');
+    render(AppLayout, { props: { children: childrenSnippet } });
+
+    expect(screen.getAllByTestId('root-quake-terminal-overlay-marker').length).toBeGreaterThan(0);
+    pressToggleTerminal();
+    await waitFor(() => {
+      expect(
+        selectIsTerminalOverlayOpenForWorkspace.select(appStore.state, ROOT_WORKSPACE_ID),
+      ).toBe(true);
+    });
+  });
+
+  it('withholds the root overlay and ignores the shortcut for a collaborator-only client', async () => {
+    loadWorkspaces('collaborator');
+    render(AppLayout, { props: { children: childrenSnippet } });
+
+    expect(screen.queryByTestId('root-quake-terminal-overlay-marker')).toBeNull();
+    pressToggleTerminal();
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(selectIsTerminalOverlayOpenForWorkspace.select(appStore.state, ROOT_WORKSPACE_ID)).toBe(
+      false,
+    );
   });
 });

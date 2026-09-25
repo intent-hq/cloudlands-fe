@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/experimental-ct-svelte';
+import { expect, test } from '../../../../../test/ct-test';
 import type { Locator, Page } from '@playwright/test';
 import WorkspaceProgressCardEditGeometryHost from './mocks/WorkspaceProgressCardEditGeometryHost.svelte';
 
@@ -7,22 +7,33 @@ import WorkspaceProgressCardEditGeometryHost from './mocks/WorkspaceProgressCard
 const MENU_COLLISION_PADDING = 8;
 const MENU_ROW_MIN_WIDTH_PX = 192;
 
+type BoundingBox = NonNullable<Awaited<ReturnType<Locator['boundingBox']>>>;
+
+// bits-ui parks the floating wrapper at translate(0, -200%) until floating-ui
+// reports its first placement, so a visible menu can still read x=0 / y<0 for a
+// frame or two on a slow runner.
+function isPositionedOnPage(box: BoundingBox | null): box is BoundingBox {
+  return box !== null && box.x > 0 && box.y >= 0;
+}
+
 async function openWorkspaceActionsMenu(component: Locator, page: Page) {
   await component.getByRole('button', { name: 'Workspace actions' }).click();
   const menu = page.getByRole('menu');
   await expect(menu).toBeVisible();
-  await expect(menu.getByRole('button').first()).toBeVisible();
+  await expect(menu.getByRole('menuitem').first()).toBeVisible();
+  await expect.poll(async () => isPositionedOnPage(await menu.boundingBox())).toBe(true);
   return menu;
 }
 
 // Floating positioning settles a frame after open; wait for two identical
-// consecutive reads before asserting geometry.
+// consecutive on-page reads before asserting geometry.
 async function settledBoundingBox(target: Locator) {
   let previous = JSON.stringify(await target.boundingBox());
   await expect
     .poll(async () => {
-      const current = JSON.stringify(await target.boundingBox());
-      const settled = current === previous;
+      const box = await target.boundingBox();
+      const current = JSON.stringify(box);
+      const settled = isPositionedOnPage(box) && current === previous;
       previous = current;
       return settled;
     })
@@ -42,7 +53,7 @@ async function expectMenuInsideCollisionPadding(menu: Locator, page: Page) {
 
 function collectTruncatedLabels(menu: Locator) {
   return menu.evaluate((node) =>
-    Array.from(node.querySelectorAll<HTMLElement>('button span'))
+    Array.from(node.querySelectorAll<HTMLElement>('[role="menuitem"] span'))
       .filter((span) => getComputedStyle(span).textOverflow === 'ellipsis')
       .map((span) => ({
         text: span.textContent?.trim() ?? '',
@@ -116,6 +127,23 @@ async function expectValidEditBox(control: Locator) {
   expect(result.clipped).toBe(false);
 }
 
+test('keeps the active workspace card branch label at normal weight, including hover and focus', async ({
+  mount,
+}) => {
+  const component = await mount(WorkspaceProgressCardEditGeometryHost);
+  const branch = component.locator('[data-sidebar-branch-label]');
+  const repository = component.locator('[data-sidebar-repository-label]');
+  const trigger = component.getByRole('button', { name: 'edit-geometry', exact: true });
+
+  await expect(repository).toHaveCSS('font-weight', '400');
+  await expect(branch).toHaveCSS('font-weight', '400');
+  await trigger.hover();
+  await expect(branch).toHaveCSS('font-weight', '400');
+  await trigger.focus();
+  await expect(trigger).toBeFocused();
+  await expect(branch).toHaveCSS('font-weight', '400');
+});
+
 test('keeps the workspace title edit decoration visible, padded, unclipped, and motion-safe', async ({
   mount,
   page,
@@ -161,7 +189,7 @@ test('keeps the workspace actions menu inside the collision padding at a 320px v
   const menu = await openWorkspaceActionsMenu(component, page);
   const box = await expectMenuInsideCollisionPadding(menu, page);
   // The 12rem row floor still applies: a 320px viewport leaves room for it.
-  const row = await settledBoundingBox(menu.getByRole('button').first());
+  const row = await settledBoundingBox(menu.getByRole('menuitem').first());
   expect(row.width).toBeGreaterThanOrEqual(MENU_ROW_MIN_WIDTH_PX - 0.5);
 
   await page.screenshot({ path: testInfo.outputPath('workspace-actions-menu-320.png') });
@@ -181,7 +209,7 @@ test('shows every workspace actions menu label untruncated at a normal viewport'
 
   const menu = await openWorkspaceActionsMenu(component, page);
   const box = await expectMenuInsideCollisionPadding(menu, page);
-  const row = await settledBoundingBox(menu.getByRole('button').first());
+  const row = await settledBoundingBox(menu.getByRole('menuitem').first());
   expect(row.width).toBeGreaterThanOrEqual(MENU_ROW_MIN_WIDTH_PX - 0.5);
 
   const labels = await collectTruncatedLabels(menu);
@@ -194,4 +222,45 @@ test('shows every workspace actions menu label untruncated at a normal viewport'
     body: JSON.stringify({ viewport: page.viewportSize(), menu: box, row, labels }),
     contentType: 'application/json',
   });
+});
+
+test('aligns the Open in flyout borders and first rows and preserves keyboard return', async ({
+  mount,
+  page,
+}, testInfo) => {
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  const component = await mount(WorkspaceProgressCardEditGeometryHost, {
+    props: { desktop: true },
+    hooksConfig: { mockBackend: {} },
+  });
+  const root = await openWorkspaceActionsMenu(component, page);
+  const rootBox = await settledBoundingBox(root);
+  const parent = root.getByRole('menuitem', { name: 'Open in...', exact: true });
+  await parent.focus();
+  await page.keyboard.press('ArrowRight');
+
+  const editor = page.getByRole('menuitem', { name: 'Open in Visual Studio Code', exact: true });
+  await expect(editor).toBeFocused();
+  const submenu = page.getByRole('menu').filter({ has: editor });
+  const rowBox = await settledBoundingBox(parent);
+  const editorBox = await settledBoundingBox(editor);
+  const submenuBox = await settledBoundingBox(submenu);
+  expect(Math.abs(submenuBox.y - rootBox.y)).toBeLessThanOrEqual(0.5);
+  expect(Math.abs(editorBox.y - rowBox.y)).toBeLessThanOrEqual(0.5);
+  // Collision handling may flip the flyout to the left; either side stays outside its parent.
+  expect(
+    submenuBox.x >= rowBox.x + rowBox.width || submenuBox.x + submenuBox.width <= rowBox.x,
+  ).toBe(true);
+  expect(submenuBox.y + submenuBox.height).toBeLessThanOrEqual(page.viewportSize()!.height);
+
+  await page.screenshot({ path: testInfo.outputPath('workspace-open-in-top-aligned.png') });
+  await testInfo.attach('submenu geometry', {
+    body: JSON.stringify({ root: rootBox, parent: rowBox, submenu: submenuBox, editor: editorBox }),
+    contentType: 'application/json',
+  });
+  await page.keyboard.press('ArrowLeft');
+  await expect(editor).toHaveCount(0);
+  await expect(parent).toBeFocused();
+  await expect(root).toBeVisible();
 });

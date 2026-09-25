@@ -34,27 +34,26 @@
   } from '$lib/components/file-tracking/accept-changes/types';
   import AgentAvatar from '$features/agent/components/agent-avatar/AgentAvatar.svelte';
   import { Button } from '$lib/components/ui/button';
+  import { IntentMarkLoader } from '$lib/components/ui/indicators';
+  import { Switch } from '$lib/components/ui/switch';
   import { Tooltip } from '$lib/components/ui/tooltip';
-  import Toggle from '$lib/components/ui/toggle/toggle.svelte';
-  import { toast } from '$lib/components/ui/toast';
+  import { notify } from '$lib/components/patterns/notify';
+  import { confirm } from '$lib/components/patterns/confirm';
   import { m } from '$shared/paraglide/messages.js';
   import { faNote } from '$lib/icons/faNote';
   import { logger } from '$lib/utils/client-logger';
   import type { WorkspaceId } from '$shared/types/branded-ids';
-  import {
-    faCodeCommit,
-    faLock,
-    faMinus,
-    faPlus,
-    faSpinner,
-    faUser,
-  } from '@fortawesome/free-solid-svg-icons';
-  import { tick } from 'svelte';
+  import { faCodeCommit, faLock, faMinus, faPlus, faUser } from '@fortawesome/free-solid-svg-icons';
+  import { onDestroy, tick } from 'svelte';
   import { writable } from 'svelte/store';
   import Fa from 'svelte-fa';
   import { flip } from 'svelte/animate';
-  import { quintOut } from 'svelte/easing';
-  import { slide } from 'svelte/transition';
+  import {
+    prefersReducedMotion,
+    slide,
+    spring,
+    type ImmediateMotionConfig as TransitionConfig,
+  } from '$lib/motion';
   import DividerButton from './DividerButton.svelte';
   import {
     getGroupKey,
@@ -84,6 +83,11 @@
     onFileClicked?: (path: string, staged: boolean) => void;
     openPanelTabs?: PanelTab[];
     activePanelTab?: PanelTab | null;
+    /** Every mutating control (auto-commit toggle, per-group commit via
+     * `accept-changes.execute`, stage / unstage / revert via `git.stage` /
+     * `git.unstage` / `git.discard`) renders only when true; a collaborator
+     * gets the read-only change list. */
+    isOwner?: boolean;
   }
 
   let {
@@ -97,27 +101,28 @@
     onFileClicked,
     openPanelTabs = [],
     activePanelTab,
+    isOwner = true,
   }: Props = $props();
 
   // Transition functions matching parent's animation coordination
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  function send(node: Element, params: { key: any }) {
+  function send(node: Element, params: { key: any }): TransitionConfig {
     if (isWorkspaceSwitching) return { duration: 0 };
     const rect = node.getBoundingClientRect();
     if (rect.width === 0 || rect.height === 0) {
       return { duration: 0, css: () => '' };
     }
-    return slide(node, { duration: 200, easing: quintOut, delay: 0, axis: 'y' });
+    return slide(node, { axis: 'y', tier: 'moderate' }, { direction: 'out' }) as TransitionConfig;
   }
 
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  function receive(node: Element, params: { key: any }) {
+  function receive(node: Element, params: { key: any }): TransitionConfig {
     if (isWorkspaceSwitching) return { duration: 0 };
     const rect = node.getBoundingClientRect();
     if (rect.width === 0 || rect.height === 0) {
       return { duration: 0, css: () => '' };
     }
-    return slide(node, { duration: 200, easing: quintOut, delay: 0, axis: 'y' });
+    return slide(node, { axis: 'y', tier: 'moderate' }, { direction: 'in' }) as TransitionConfig;
   }
 
   // Redux selectors
@@ -164,6 +169,9 @@
 
   // Loading state
   let isStaging = $state(false);
+
+  let unstagedExpanded = $state(true);
+  let stagedExpanded = $state(true);
 
   // Collapsed state for agent groups
   let collapsedAgentGroups = $state(new Set<string>());
@@ -355,7 +363,7 @@
         // git status, so isStaging holds until the lists have moved.
         const result = await stageFilesViaSeam(workspaceId, paths);
         if (!result.success) {
-          toast.error(m.workspace_fileChanges_stageFailed_error(), {
+          notify.error(m.workspace_fileChanges_stageFailed_error(), {
             description: result.error || m.workspace_prSection_unknownError_label(),
           });
         }
@@ -377,7 +385,7 @@
         // Unstage through the AppClient seam (git.unstage).
         const result = await unstageFilesViaSeam(workspaceId, paths);
         if (!result.success) {
-          toast.error(m.workspace_fileChanges_unstageFailed_error(), {
+          notify.error(m.workspace_fileChanges_unstageFailed_error(), {
             description: result.error || m.workspace_prSection_unknownError_label(),
           });
         }
@@ -399,7 +407,7 @@
     // Stage through the AppClient seam (git.stage).
     const stageResult = await stageFilesViaSeam(workspaceId, filesToStage);
     if (!stageResult.success) {
-      toast.error(m.workspace_fileChanges_stageFailed_error(), {
+      notify.error(m.workspace_fileChanges_stageFailed_error(), {
         description: stageResult.error || m.workspace_prSection_unknownError_label(),
       });
     }
@@ -434,7 +442,7 @@
     // Unstage through the AppClient seam (git.unstage).
     const unstageResult = await unstageFilesViaSeam(workspaceId, filesToUnstage);
     if (!unstageResult.success) {
-      toast.error(m.workspace_fileChanges_unstageFailed_error(), {
+      notify.error(m.workspace_fileChanges_unstageFailed_error(), {
         description: unstageResult.error || m.workspace_prSection_unknownError_label(),
       });
     }
@@ -457,7 +465,15 @@
     }
   }
 
+  let confirmingRevert = false;
+  let disposed = false;
+  onDestroy(() => {
+    disposed = true;
+  });
+
   async function handleRevertFile(path: string) {
+    if (confirmingRevert || !isOwner) return;
+    const targetWorkspaceId = workspaceId;
     const filesToRevert =
       isFileSelected(path, false) && selectedUnstagedFiles.length > 0
         ? selectedUnstagedFiles.filter((p) => !isFileLockedByAgent(p, false))
@@ -466,14 +482,40 @@
       logger.warn('Cannot revert file from locked agent', { path });
       return;
     }
-    // Revert through the AppClient seam (git.discard; DESTRUCTIVE).
-    const revertResult = await discardFilesViaSeam(workspaceId, filesToRevert);
-    if (!revertResult.success) {
-      toast.error(m.workspace_fileChanges_revertFailed_error(), {
-        description: revertResult.error || m.workspace_prSection_unknownError_label(),
+    if (!filesToRevert.length) return;
+    confirmingRevert = true;
+    try {
+      const accepted = await confirm({
+        title: m.fileTracking_changes_discardChanges_tooltip(),
+        description: filesToRevert.join('\n'),
+        confirmLabel: m.fileTracking_changes_discard_label(),
+        destructive: true,
       });
+      if (!accepted || disposed || workspaceId !== targetWorkspaceId || !isOwner) return;
+      // Never widen or retarget the confirmed set after a refresh or workspace switch.
+      const currentChanges = selectFtUnstagedChanges.select(appStore.state, targetWorkspaceId);
+      const currentLocks = selectLockedAgentIds.select(appStore.state, targetWorkspaceId);
+      if (
+        filesToRevert.some((filePath) => {
+          const change = currentChanges.find(
+            (change) => (change.relativePath || change.file) === filePath,
+          );
+          const agentId = change?.attribution?.agent?.agentId;
+          return !change || (agentId && agentId in currentLocks);
+        })
+      )
+        return;
+      // Revert through the AppClient seam (git.discard; DESTRUCTIVE).
+      const revertResult = await discardFilesViaSeam(targetWorkspaceId, filesToRevert);
+      if (!revertResult.success) {
+        notify.error(m.workspace_fileChanges_revertFailed_error(), {
+          description: revertResult.error || m.workspace_prSection_unknownError_label(),
+        });
+      }
+      if (!disposed && workspaceId === targetWorkspaceId) clearSelection();
+    } finally {
+      confirmingRevert = false;
     }
-    clearSelection();
   }
 
   async function handleStageGroup(group: AgentChangeGroup) {
@@ -485,7 +527,7 @@
     // Stage through the AppClient seam (git.stage).
     const result = await stageFilesViaSeam(workspaceId, paths);
     if (!result.success) {
-      toast.error(m.workspace_fileChanges_stageFailed_error(), {
+      notify.error(m.workspace_fileChanges_stageFailed_error(), {
         description: result.error || m.workspace_prSection_unknownError_label(),
       });
     }
@@ -500,7 +542,7 @@
     // Unstage through the AppClient seam (git.unstage).
     const result = await unstageFilesViaSeam(workspaceId, paths);
     if (!result.success) {
-      toast.error(m.workspace_fileChanges_unstageFailed_error(), {
+      notify.error(m.workspace_fileChanges_unstageFailed_error(), {
         description: result.error || m.workspace_prSection_unknownError_label(),
       });
     }
@@ -532,13 +574,13 @@
           console.warn('Failed to refresh stores after group commit:', e);
         }
       } else {
-        toast.error(m.workspace_fileChanges_commitFailed_error(), {
+        notify.error(m.workspace_fileChanges_commitFailed_error(), {
           description: result.error || m.workspace_prSection_unknownError_label(),
         });
       }
     } catch (error) {
       logger.error('Failed to commit agent group', error as Error);
-      toast.error(m.workspace_fileChanges_commitFailed_error(), {
+      notify.error(m.workspace_fileChanges_commitFailed_error(), {
         description:
           error instanceof Error ? error.message : m.workspace_prSection_unknownError_label(),
       });
@@ -571,7 +613,7 @@
         await commitSingleGroup(next.group, next.section);
       } catch (error) {
         logger.error('Group commit failed', error as Error);
-        toast.error(m.workspace_fileChanges_commitFailed_error(), {
+        notify.error(m.workspace_fileChanges_commitFailed_error(), {
           description:
             error instanceof Error ? error.message : m.workspace_prSection_unknownError_label(),
         });
@@ -632,37 +674,48 @@
 <div>
   <TimelineSection
     title={m.workspace_fileChanges_unstaged_label()}
-    subtitle={m.workspace_fileChanges_new_label()}
+    collapsible
+    expanded={unstagedExpanded}
+    onToggle={() => (unstagedExpanded = !unstagedExpanded)}
     active={hasUnstaged}
-    activeColor="bg-amber-500"
+    activeColor="bg-warning"
   >
     {#snippet action()}
-      <!-- Auto-commit toggle -->
-      <div class="flex items-center justify-between gap-2 -my-0.5">
-        <Tooltip
-          content={$autoCommitEnabled
-            ? m.workspace_fileChanges_autoCommitOn_tooltip()
-            : m.workspace_fileChanges_autoCommitOff_tooltip()}
-          side="right"
-          contentClass="w-[12rem]"
-          disableHoverableContent={false}
-          disableCloseOnTriggerClick={true}
+      <!-- Auto-commit toggle (workspace.setAutoCommit is owner-only) -->
+      {#if isOwner}
+        <div
+          class="-my-0.5 ml-auto flex min-w-0 items-center justify-end gap-2"
+          data-testid="auto-commit-toggle"
         >
-          <Toggle
-            variant="switch"
-            size="xs"
-            onLabel="Auto-commit"
-            offLabel="Auto-commit"
-            pressed={$autoCommitEnabled}
-            class="border-0! font-normal text-subtle flex-row-reverse -mr-1 whitespace-nowrap"
-            onclick={() => {
-              if (workspaceId) {
-                appStore.dispatch(setAutoCommitEnabled(workspaceId as string, !$autoCommitEnabled));
-              }
-            }}
-          />
-        </Tooltip>
-      </div>
+          <Tooltip
+            content={$autoCommitEnabled
+              ? m.workspace_fileChanges_autoCommitOn_tooltip()
+              : m.workspace_fileChanges_autoCommitOff_tooltip()}
+            side="right"
+            contentClass="w-[12rem]"
+            class="min-w-0 items-center justify-end gap-2"
+            disableHoverableContent={false}
+            disableCloseOnTriggerClick={true}
+          >
+            <span class="text-ui min-w-0 truncate text-subtle">
+              {m.workspace_commitDrawer_autoCommit_label()}
+            </span>
+            <Switch
+              size="xs"
+              checked={$autoCommitEnabled}
+              class="shrink-0"
+              ariaLabel={m.workspace_commitDrawer_autoCommit_label()}
+              onCheckedChange={() => {
+                if (workspaceId) {
+                  appStore.dispatch(
+                    setAutoCommitEnabled(workspaceId as string, !$autoCommitEnabled),
+                  );
+                }
+              }}
+            />
+          </Tooltip>
+        </div>
+      {/if}
     {/snippet}
 
     {#if hasUnstaged}
@@ -676,10 +729,13 @@
             {@const queuePos = getGroupQueuePosition(group, 'unstaged')}
             <div class="space-y-px">
               <!-- Agent header -->
-              <div class="relative group/agent-header flex items-center gap-1.5 py-0.5 -ml-1 px-1">
-                <button
+              <div class="relative group/agent-header flex h-7 items-center gap-1.5 px-2">
+                <Button
+                  variant="ghost"
                   type="button"
-                  class="group/row flex items-center gap-1.5 flex-1 min-w-0 text-left cursor-pointer rounded px-1 -mx-1"
+                  size="compact"
+                  wrapContent={false}
+                  class="group/row flex h-7 items-center gap-1.5 flex-1 min-w-0 text-left cursor-pointer rounded px-2 -mx-2"
                   onclick={() => toggleAgentGroup(group.agentId)}
                 >
                   {#if isLocked}
@@ -690,7 +746,11 @@
                       <Fa icon={faLock} class="text-subtle shrink-0" size={10} />
                     </Tooltip>
                   {/if}
-                  <span class="text-ui opacity-50 truncate flex-1 {isLocked ? 'opacity-40' : ''}">
+                  <span
+                    class="text-ui flex-1 truncate text-muted-foreground {isLocked
+                      ? 'opacity-40'
+                      : ''}"
+                  >
                     {getAgentDisplayName(group)}
                   </span>
                   {#if group.agentId}
@@ -708,7 +768,7 @@
                         : ''}"
                     />
                   {/if}
-                </button>
+                </Button>
                 <!-- Action buttons -->
                 <div
                   class="bg-sidebar absolute top-1/2 right-1 transform translate-x-1 transition-transform {commitState !==
@@ -734,7 +794,8 @@
                       <Fa icon={faNote} class="h-2.5! w-2.5!" />
                     </Button>
                   {/if}
-                  {#if !isLocked}
+                  <!-- Group stage / commit mutate the worktree (owner-only) -->
+                  {#if isOwner && !isLocked}
                     <Button
                       variant="ghost-light"
                       size="icon-xs"
@@ -750,7 +811,7 @@
                     {#if commitState === 'active'}
                       <Tooltip content="Committing..." side="top">
                         <span class="h-5 w-5 flex items-center justify-center">
-                          <Fa icon={faSpinner} class="h-2.5! w-2.5! animate-spin text-primary" />
+                          <IntentMarkLoader size={10} class="text-primary-ink" />
                         </span>
                       </Tooltip>
                     {:else if commitState === 'queued'}
@@ -764,7 +825,7 @@
                           cancelGroupCommit(group, 'unstaged');
                         }}
                       >
-                        <span class="text-ui font-semibold text-primary leading-none"
+                        <span class="text-ui font-semibold text-primary-ink leading-none"
                           >{queuePos}</span
                         >
                       </Button>
@@ -773,6 +834,7 @@
                         variant="ghost-light"
                         size="icon-xs"
                         class="h-5 w-5"
+                        data-testid="group-commit-button"
                         tooltip={m.workspace_fileChanges_stageAndCommit_tooltip()}
                         onclick={(e: MouseEvent) => {
                           e.stopPropagation();
@@ -787,7 +849,7 @@
               </div>
               <!-- Files in group -->
               {#if !isCollapsed}
-                <div class="pl-1" transition:slide={{ duration: 150 }}>
+                <div class="pl-1" transition:slide={{ tier: 'moderate' }}>
                   {#each group.files as file (file.path)}
                     {@const panelState = getFilePanelState(file.path)}
                     <div
@@ -796,9 +858,11 @@
                       out:send|global={{ key: file.path }}
                     >
                       <FileRow
+                        contextKey={workspaceId}
+                        compact
                         {file}
-                        showStageAction={!isLocked}
-                        showRevertAction={!isLocked}
+                        showStageAction={isOwner && !isLocked}
+                        showRevertAction={isOwner && !isLocked}
                         locked={isLocked}
                         active={isFileActive(file.path, false)}
                         selected={isFileSelected(file.path, false)}
@@ -829,12 +893,16 @@
               data-file-key="unstaged:{change.relativePath}"
               in:receive|global={{ key: change.relativePath }}
               out:send|global={{ key: change.relativePath }}
-              animate:flip={{ duration: isWorkspaceSwitching ? 0 : 100 }}
+              animate:flip={{
+                duration: isWorkspaceSwitching || prefersReducedMotion() ? 0 : spring.fast.settleMs,
+              }}
             >
               <FileRow
+                contextKey={workspaceId}
+                compact
                 file={toUIFileChange(change, false)}
-                showStageAction
-                showRevertAction
+                showStageAction={isOwner}
+                showRevertAction={isOwner}
                 active={isFileActive(change.relativePath, false)}
                 selected={isFileSelected(change.relativePath, false)}
                 focused={isFileFocused(change.relativePath, false)}
@@ -856,10 +924,10 @@
   </TimelineSection>
 </div>
 
-<!-- Divider with Stage all / Unstage all buttons -->
+<!-- Divider with Stage all / Unstage all buttons (git.stage / git.unstage are owner-only in this tab) -->
 <div>
   <TimelineDivider>
-    {#if hasUnstaged}
+    {#if isOwner && hasUnstaged}
       <DividerButton
         onclick={handleStageAll}
         disabled={isStaging}
@@ -869,8 +937,14 @@
         {m.workspace_fileChanges_stageAll_label()}
       </DividerButton>
     {/if}
-    {#if hasStaged}
-      <DividerButton onclick={handleUnstageAll} disabled={isStaging} loading={isStaging} arrowUp>
+    {#if isOwner && hasStaged}
+      <DividerButton
+        onclick={handleUnstageAll}
+        disabled={isStaging}
+        loading={isStaging}
+        arrowUp
+        data-testid="unstage-all-button"
+      >
         {m.workspace_fileChanges_unstageAll_label()}
       </DividerButton>
     {/if}
@@ -881,7 +955,9 @@
 <div>
   <TimelineSection
     title={m.workspace_fileChanges_staged_label()}
-    subtitle={m.workspace_fileChanges_approved_label()}
+    collapsible
+    expanded={stagedExpanded}
+    onToggle={() => (stagedExpanded = !stagedExpanded)}
     active={hasStaged}
     activeColor="bg-emerald-500"
   >
@@ -896,13 +972,16 @@
             {@const queuePos = getGroupQueuePosition(group, 'staged')}
             <div class="space-y-px">
               <!-- Agent header -->
-              <div class="relative group/agent-header flex items-center gap-1.5 py-0.5 -ml-1 px-1">
-                <button
+              <div class="relative group/agent-header flex h-7 items-center gap-1.5 px-2">
+                <Button
+                  variant="ghost"
                   type="button"
-                  class="group/row flex items-center gap-1.5 flex-1 min-w-0 text-left cursor-pointer rounded px-1 -mx-1"
+                  size="compact"
+                  wrapContent={false}
+                  class="group/row flex h-7 items-center gap-1.5 flex-1 min-w-0 text-left cursor-pointer rounded px-2 -mx-2"
                   onclick={() => toggleAgentGroup(group.agentId)}
                 >
-                  <span class="text-ui opacity-50 truncate flex-1">
+                  <span class="text-ui flex-1 truncate text-muted-foreground">
                     {getAgentDisplayName(group)}
                   </span>
 
@@ -921,7 +1000,7 @@
                         : ''}"
                     />
                   {/if}
-                </button>
+                </Button>
                 <!-- Action buttons -->
                 <div
                   class="bg-sidebar absolute top-1/2 right-1 transform translate-x-1 transition-transform {commitState !==
@@ -947,7 +1026,8 @@
                       <Fa icon={faNote} class="h-2.5! w-2.5!" />
                     </Button>
                   {/if}
-                  {#if !isLocked}
+                  <!-- Group unstage / commit mutate the worktree (owner-only) -->
+                  {#if isOwner && !isLocked}
                     <Button
                       variant="ghost-light"
                       size="icon-xs"
@@ -963,7 +1043,7 @@
                     {#if commitState === 'active'}
                       <Tooltip content="Committing..." side="top">
                         <span class="h-5 w-5 flex items-center justify-center">
-                          <Fa icon={faSpinner} class="h-2.5! w-2.5! animate-spin text-primary" />
+                          <IntentMarkLoader size={10} class="text-primary-ink" />
                         </span>
                       </Tooltip>
                     {:else if commitState === 'queued'}
@@ -977,7 +1057,7 @@
                           cancelGroupCommit(group, 'staged');
                         }}
                       >
-                        <span class="text-ui font-semibold text-primary leading-none"
+                        <span class="text-ui font-semibold text-primary-ink leading-none"
                           >{queuePos}</span
                         >
                       </Button>
@@ -986,6 +1066,7 @@
                         variant="ghost-light"
                         size="icon-xs"
                         class="h-5 w-5"
+                        data-testid="group-commit-button"
                         tooltip={m.workspace_commitDrawer_commit_label()}
                         onclick={(e: MouseEvent) => {
                           e.stopPropagation();
@@ -1000,7 +1081,7 @@
               </div>
               <!-- Files in group -->
               {#if !isCollapsed}
-                <div class="pl-1" transition:slide={{ duration: 150 }}>
+                <div class="pl-1" transition:slide={{ tier: 'moderate' }}>
                   {#each group.files as file (file.path)}
                     {@const panelState = getFilePanelState(file.path)}
                     <div
@@ -1009,8 +1090,10 @@
                       out:send|global={{ key: file.path }}
                     >
                       <FileRow
+                        contextKey={workspaceId}
+                        compact
                         {file}
-                        showStageAction={!isLocked}
+                        showStageAction={isOwner && !isLocked}
                         locked={isLocked}
                         active={isFileActive(file.path, true)}
                         selected={isFileSelected(file.path, true)}
@@ -1042,8 +1125,10 @@
               out:send|global={{ key: change.relativePath }}
             >
               <FileRow
+                contextKey={workspaceId}
+                compact
                 file={toUIFileChange(change, true)}
-                showStageAction
+                showStageAction={isOwner}
                 active={isFileActive(change.relativePath, true)}
                 selected={isFileSelected(change.relativePath, true)}
                 focused={isFileFocused(change.relativePath, true)}

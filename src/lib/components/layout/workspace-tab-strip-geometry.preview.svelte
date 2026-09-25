@@ -6,6 +6,7 @@
     initialOpenWorkspaceIds?: string[];
     interactive?: boolean;
     sidebarPanelOpen?: boolean;
+    zoomFactor?: number;
   }
 
   const ids = ['geometry-alpha', 'geometry-beta', 'geometry-gamma'];
@@ -15,7 +16,10 @@
     title: 'Workspace tab-strip geometry',
     defaultState: 'first-tab',
     states: {
+      default: { props: {} },
       'first-tab': { props: { activeWorkspaceId: ids[0] } },
+      'zoom-110': { props: { activeWorkspaceId: ids[0], zoomFactor: 1.1 } },
+      'zoom-125': { props: { activeWorkspaceId: ids[0], zoomFactor: 1.25 } },
       'middle-tab': { props: { activeWorkspaceId: ids[1] } },
       'open-close': { props: { initialOpenWorkspaceIds: ids.slice(0, 2), interactive: true } },
       'sidebar-closed': { props: { activeWorkspaceId: ids[0], sidebarPanelOpen: false } },
@@ -27,6 +31,7 @@
 <script lang="ts">
   import { WorkspaceStatus, type Workspace } from '$shared/types';
   import { onMount } from 'svelte';
+  import { watchReducedMotion } from '$lib/utils/reduced-motion.svelte';
   import { WorkspaceId } from '$shared/types/branded-ids';
   import { Button } from '$lib/components/ui/button';
   import IntentNavigationIcon from '$lib/icons/IntentNavigationIcon.svelte';
@@ -43,6 +48,7 @@
     getWorkspaceTabLeadingInsetPx,
     getWorkspaceTabScrollerMarginLeftPx,
     WINDOW_TITLEBAR_HEIGHT_PX,
+    getCounterScaledTitlebarHeight,
     WORKSPACE_TAB_MOTION_DURATION_MS,
     WORKSPACE_TAB_MOTION_EASING,
     type WorkspaceTabBorderMaskBounds,
@@ -55,10 +61,11 @@
     initialOpenWorkspaceIds = ids,
     interactive = false,
     sidebarPanelOpen = true,
+    zoomFactor = 1,
   }: WorkspaceTabStripGeometryPreviewProps = $props();
   let activeTabBounds = $state<WorkspaceTabBorderMaskBounds | null>(null);
   let activeTabTracking = $state(false);
-  let prefersReducedMotion = $state(false);
+  const reducedMotion = watchReducedMotion();
   const leadingInsetPx = $derived(getWorkspaceTabLeadingInsetPx(sidebarPanelOpen));
   const scrollerMarginLeftPx = $derived(getWorkspaceTabScrollerMarginLeftPx(sidebarPanelOpen));
 
@@ -91,21 +98,21 @@
 
   initializeTabs();
 
-  onMount(() => {
-    const motionQuery = window.matchMedia('(prefers-reduced-motion: reduce)');
-    const updateMotionPreference = () => (prefersReducedMotion = motionQuery.matches);
-    updateMotionPreference();
-    motionQuery.addEventListener('change', updateMotionPreference);
-    return () => motionQuery.removeEventListener('change', updateMotionPreference);
-  });
+  onMount(() => reducedMotion.cleanup);
 </script>
 
 <div
   class="window-title-bar-wrapper"
-  style:height="{WINDOW_TITLEBAR_HEIGHT_PX}px"
+  style:height="{getCounterScaledTitlebarHeight(zoomFactor)}px"
   data-titlebar-geometry-root
 >
-  <div class="window-title-bar" style:height="{WINDOW_TITLEBAR_HEIGHT_PX}px">
+  <div
+    class="window-title-bar"
+    style:height="{WINDOW_TITLEBAR_HEIGHT_PX}px"
+    style:transform="scale({1 / zoomFactor})"
+    style:transform-origin="top left"
+    style:width="{100 * zoomFactor}%"
+  >
     <div class={TITLEBAR_LEFT_DRAG_SURFACE_CLASS} data-titlebar-left-drag-surface>
       <div class="fixed-controls">
         <span class="preview-logo" data-preview-logo>
@@ -138,7 +145,7 @@
         style:left={`${activeTabBounds.left}px`}
         style:width={`${activeTabBounds.width}px`}
         style:mask-image={getWorkspaceTabBorderMaskImage(activeTabBounds)}
-        style:transition={activeTabTracking || prefersReducedMotion
+        style:transition={activeTabTracking || reducedMotion.current
           ? 'none'
           : `left ${WORKSPACE_TAB_MOTION_DURATION_MS}ms ${WORKSPACE_TAB_MOTION_EASING}, width ${WORKSPACE_TAB_MOTION_DURATION_MS}ms ${WORKSPACE_TAB_MOTION_EASING}`}
         data-active-tab-border-mask
@@ -181,8 +188,8 @@
 
   .active-tab-mask {
     position: absolute;
-    bottom: -1px;
-    height: 1px;
+    bottom: -2px;
+    height: 4px;
     background: hsl(var(--sidebar));
     pointer-events: none;
   }

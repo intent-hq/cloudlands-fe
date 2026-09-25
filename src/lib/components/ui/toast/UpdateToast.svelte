@@ -9,15 +9,11 @@
    * - Up to date: Success message (brief)
    */
 
-  import { fly } from 'svelte/transition';
-  import {
-    faArrowsRotate,
-    faCakeCandles,
-    faDownload,
-    faRotateRight,
-    faTriangleExclamation,
-  } from '@fortawesome/free-solid-svg-icons';
-  import Fa from 'svelte-fa';
+  import { untrack } from 'svelte';
+  import { crispOut, springIn } from '$lib/motion';
+  import ArrowsClockwiseIcon from 'phosphor-svelte/lib/ArrowsClockwiseIcon';
+  import ConfettiIcon from 'phosphor-svelte/lib/ConfettiIcon';
+  import { readable } from 'svelte/store';
 
   import {
     selectAutoUpdateStatus,
@@ -34,6 +30,21 @@
   import { m } from '$shared/paraglide/messages.js';
   import { formatNumber, formatInteger } from '$lib/i18n/format';
   import ToastCloseButton from './ToastCloseButton.svelte';
+  import ToastGlyph from './ToastGlyph.svelte';
+  import { Button } from '$lib/components/ui/button';
+  import type { UpdateInfo, UpdateProgress, UpdateStatus } from '$features/auto-update/types';
+
+  interface PreviewState {
+    status: UpdateStatus;
+    updateInfo?: UpdateInfo | null;
+    progress?: UpdateProgress | null;
+    currentVersion?: string;
+    error?: string | null;
+    availableDescription?: string;
+    remainingSeconds?: number;
+    onInstall?: () => void;
+    onDownload?: () => void;
+  }
 
   interface Props {
     /** Callback when toast should be dismissed */
@@ -42,23 +53,46 @@
     onAutoDismiss?: () => void;
     /** Provided automatically by Sonner for custom toast components */
     closeToast?: () => void;
+    /** Deterministic presentational state for catalogs and tests. */
+    previewState?: PreviewState;
   }
 
-  let { onDismiss, onAutoDismiss, closeToast }: Props = $props();
+  let { onDismiss, onAutoDismiss, closeToast, previewState }: Props = $props();
 
   function handleClose() {
     onDismiss?.();
     closeToast?.();
   }
 
-  const status$ = selectAutoUpdateStatus();
-  const progress$ = selectAutoUpdateProgress();
-  const updateInfo$ = selectAutoUpdateInfo();
-  const currentVersion$ = selectAutoUpdateCurrentVersion();
-  const error$ = selectAutoUpdateError();
+  const initialPreviewState = untrack(() => previewState);
+  const status$ = initialPreviewState
+    ? readable(initialPreviewState.status)
+    : selectAutoUpdateStatus();
+  const progress$ = initialPreviewState
+    ? readable(initialPreviewState.progress ?? null)
+    : selectAutoUpdateProgress();
+  const updateInfo$ = initialPreviewState
+    ? readable(initialPreviewState.updateInfo ?? null)
+    : selectAutoUpdateInfo();
+  const currentVersion$ = initialPreviewState
+    ? readable(initialPreviewState.currentVersion ?? '')
+    : selectAutoUpdateCurrentVersion();
+  const error$ = initialPreviewState
+    ? readable(initialPreviewState.error ?? null)
+    : selectAutoUpdateError();
 
-  // Derived state from selectors
-  let progressPercent = $derived($progress$ ? Math.round($progress$.percent) : 0);
+  let status = $derived(previewState?.status ?? $status$);
+  let progress = $derived(previewState?.progress ?? $progress$);
+  let updateInfo = $derived(previewState?.updateInfo ?? $updateInfo$);
+  let currentVersion = $derived(previewState?.currentVersion ?? $currentVersion$);
+  let updateError = $derived(previewState?.error ?? $error$);
+  let progressPercent = $derived(progress ? Math.round(progress.percent) : 0);
+  let remainingSeconds = $derived(
+    previewState?.remainingSeconds ??
+      (progress && progress.bytesPerSecond > 0
+        ? Math.max(0, Math.ceil((progress.total - progress.transferred) / progress.bytesPerSecond))
+        : null),
+  );
 
   // Format bytes per second
   function formatSpeed(bytesPerSecond: number): string {
@@ -77,18 +111,26 @@
   }
 
   function handleInstall() {
+    if (previewState) {
+      previewState.onInstall?.();
+      return;
+    }
     appStore.dispatch(installUpdate());
   }
 
   function handleDownload() {
+    if (previewState) {
+      previewState.onDownload?.();
+      return;
+    }
     appStore.dispatch(downloadUpdate());
   }
 
   // Auto-dismiss when up-to-date or error after a delay
   $effect(() => {
     const autoDismiss = onAutoDismiss ?? onDismiss;
-    if (($status$ === 'not-available' || $status$ === 'error') && autoDismiss) {
-      const delay = $status$ === 'error' ? 5000 : 3000; // Longer for errors so user can read
+    if ((status === 'not-available' || status === 'error') && autoDismiss) {
+      const delay = status === 'error' ? 5000 : 3000; // Longer for errors so user can read
       const timeout = setTimeout(() => {
         autoDismiss();
       }, delay);
@@ -98,92 +140,99 @@
 </script>
 
 <div class="update-toast">
-  {#if $status$ === 'downloaded' || $status$ === 'downloading' || $status$ === 'error'}
-    <ToastCloseButton onclick={handleClose} ariaLabel={m.ui_updateToast_close_ariaLabel()} />
-  {/if}
-  {#if $status$ === 'checking'}
-    <div class="flex items-center gap-3">
-      <div class="icon checking">
-        <Fa icon={faArrowsRotate} class="animate-spin" />
-      </div>
-      <div class="text">
-        <div class="title">{m.ui_updateToast_checking_label()}</div>
-      </div>
+  {#if status === 'checking'}
+    <div class="toast-row">
+      <ToastGlyph variant="loading" />
+      <div class="title">{m.ui_updateToast_checking_label()}</div>
     </div>
-  {:else if $status$ === 'available'}
-    <div class="flex items-center gap-3">
-      <div class="icon downloading">
-        <Fa icon={faDownload} class="animate-pulse" />
+  {:else if status === 'available'}
+    <div class="toast-row">
+      <ToastGlyph variant="update" />
+      <div class="title">
+        {m.ui_updateToast_available_label({ version: updateInfo?.version || '' })}
       </div>
-      <div class="text flex-1">
-        <div class="title">
-          {m.ui_updateToast_available_label({ version: $updateInfo$?.version || '' })}
-        </div>
-        <div class="description">{m.ui_updateToast_readyToDownload_description()}</div>
-      </div>
-      <button class="action-btn success" onclick={handleDownload}>
-        <Fa icon={faDownload} class="mr-1" />
+      <Button
+        variant="primary"
+        size="compact"
+        class="toast-action ml-auto"
+        onclick={handleDownload}
+      >
         {m.ui_updateToast_download_label()}
-      </button>
+      </Button>
     </div>
-  {:else if $status$ === 'downloading'}
-    <div class="flex flex-col gap-2">
-      <div class="flex items-center gap-3">
-        <div class="icon downloading">
-          <Fa icon={faDownload} />
+    <div class="description">
+      {previewState?.availableDescription ?? m.ui_updateToast_readyToDownload_description()}
+    </div>
+  {:else if status === 'downloading'}
+    <div class="toast-downloading">
+      <div class="toast-row">
+        <ToastGlyph variant="update" />
+        <div class="title">
+          {m.ui_updateToast_downloading_label({ version: updateInfo?.version || '' })}
         </div>
-        <div class="text flex-1">
-          <div class="title">
-            {m.ui_updateToast_downloading_label({ version: $updateInfo$?.version || '' })}
-          </div>
-          <div class="description">
-            {progressPercent}%{$progress$ ? ` · ${formatSpeed($progress$.bytesPerSecond)}` : ''}
-          </div>
-        </div>
+        <span class="toast-progress-label">{formatInteger(progressPercent)}%</span>
+        <ToastCloseButton
+          inline
+          onclick={handleClose}
+          ariaLabel={m.ui_updateToast_close_ariaLabel()}
+        />
+      </div>
+      <div class="description">
+        {#if progress}{formatSpeed(progress.bytesPerSecond)}{/if}{#if remainingSeconds != null}
+          · {m.ui_updateToast_remainingSeconds_label({
+            seconds: formatInteger(remainingSeconds),
+          })}
+        {/if}
       </div>
       <div class="progress-bar">
         <div class="progress-fill" style="width: {progressPercent}%"></div>
       </div>
     </div>
-  {:else if $status$ === 'downloaded'}
-    <div class="flex items-center gap-3">
-      <div class="icon-celebrate" transition:fly={{ y: 30, duration: 300 }}>
-        <Fa icon={faCakeCandles} size="2x" />
+  {:else if status === 'downloaded'}
+    <div class="toast-row">
+      <div
+        class="icon-celebrate"
+        in:springIn={{ tier: 'slow', y: 30, scale: 1 }}
+        out:crispOut={{ tier: 'slow' }}
+      >
+        <ConfettiIcon size={16} weight="fill" aria-hidden="true" />
       </div>
-      <div class="text flex-1">
-        <div class="title">{m.ui_updateToast_updateReady_label()}</div>
-        <div class="description">
-          {m.ui_updateToast_readyToInstall_description({ version: $updateInfo$?.version ?? '' })}
-        </div>
-      </div>
-      <button class="action-btn success" onclick={handleInstall}>
-        <Fa icon={faRotateRight} class="mr-1" />
+      <div class="title">{m.ui_updateToast_updateReady_label()}</div>
+      <Button variant="primary" size="compact" class="toast-action" onclick={handleInstall}>
+        <ArrowsClockwiseIcon size={16} weight="regular" aria-hidden="true" />
         {m.ui_updateToast_install_label()}
-      </button>
+      </Button>
+      <ToastCloseButton
+        inline
+        onclick={handleClose}
+        ariaLabel={m.ui_updateToast_close_ariaLabel()}
+      />
     </div>
-  {:else if $status$ === 'not-available'}
-    <div class="flex items-center gap-3">
+    <div class="description">
+      {m.ui_updateToast_readyToInstall_description({ version: updateInfo?.version ?? '' })}
+    </div>
+  {:else if status === 'not-available'}
+    <div class="toast-row">
       <div class="icon-celebrate">
-        <Fa icon={faCakeCandles} size="2x" />
+        <ConfettiIcon size={16} weight="fill" aria-hidden="true" />
       </div>
-      <div class="text">
-        <div class="title">{m.ui_updateToast_upToDate_label()}</div>
-        <div class="description">
-          {m.ui_updateToast_runningVersion_description({ version: $currentVersion$ ?? '' })}
-        </div>
-      </div>
+      <div class="title">{m.ui_updateToast_upToDate_label()}</div>
     </div>
-  {:else if $status$ === 'error'}
-    <div class="flex items-center gap-3">
-      <div class="icon error">
-        <Fa icon={faTriangleExclamation} />
-      </div>
-      <div class="text flex-1">
-        <div class="title">{m.ui_updateToast_checkFailed_label()}</div>
-        <div class="description">
-          {$error$ || m.ui_updateToast_unknown_error()}
-        </div>
-      </div>
+    <div class="description">
+      {m.ui_updateToast_runningVersion_description({ version: currentVersion ?? '' })}
+    </div>
+  {:else if status === 'error'}
+    <div class="toast-row">
+      <ToastGlyph variant="error" />
+      <div class="title">{m.ui_updateToast_checkFailed_label()}</div>
+      <ToastCloseButton
+        inline
+        onclick={handleClose}
+        ariaLabel={m.ui_updateToast_close_ariaLabel()}
+      />
+    </div>
+    <div class="description">
+      {updateError || m.ui_updateToast_unknown_error()}
     </div>
   {/if}
 </div>
@@ -196,93 +245,99 @@
     overflow: visible;
   }
 
-  .icon {
+  .toast-row {
+    --toast-header-height: 1.5rem;
     display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 2rem;
-    height: 2rem;
-    border-radius: 0;
-    flex-shrink: 0;
+    align-items: flex-start;
+    gap: calc(var(--space-1) * 2.5);
   }
 
-  .icon.checking {
-    background: hsl(var(--primary) / 0.1);
-    color: hsl(var(--primary));
+  .toast-row:has(:global(.toast-action)) {
+    --toast-header-height: var(--toast-action-height, var(--control-height-compact));
   }
 
-  .icon.downloading {
-    background: hsl(217 91% 60% / 0.1);
-    color: hsl(217 91% 60%);
+  .toast-row > :global([data-toast-glyph]),
+  .icon-celebrate {
+    margin-top: calc((var(--toast-header-height) - 1rem) / 2);
+  }
+
+  .toast-row :global(.toast-close-btn) {
+    margin-top: calc((var(--toast-header-height) - 1.5rem) / 2);
   }
 
   .icon-celebrate {
     display: flex;
     align-items: center;
     justify-content: center;
-    width: 2rem;
-    height: 2rem;
+    width: 1rem;
+    height: 1rem;
     flex-shrink: 0;
-    color: hsl(var(--muted-foreground) / 0.3);
-  }
-
-  .icon.error {
-    background: hsl(0 84% 60% / 0.1);
-    color: hsl(0 84% 60%);
-  }
-
-  .text {
-    min-width: 0;
+    color: hsl(var(--success));
   }
 
   .title {
-    font-weight: 600;
-    font-size: 0.875rem;
+    flex: 1;
+    min-width: 0;
+    font-weight: 500;
+    font-size: var(--toast-title-size, 0.8125rem);
+    line-height: 1.4;
+    margin-top: max(
+      0px,
+      calc((var(--toast-header-height) - var(--toast-title-size, 0.8125rem) * 1.4) / 2)
+    );
     color: hsl(var(--foreground));
     overflow-wrap: anywhere;
   }
 
   .description {
-    font-size: 0.75rem;
+    font-size: var(--toast-description-size, 0.8125rem);
+    font-weight: 400;
+    line-height: 1.4;
     color: hsl(var(--muted-foreground));
-    margin-top: 0.125rem;
+    margin-top: 0.25rem;
+    margin-left: 1.625rem;
     overflow-wrap: anywhere;
   }
 
   .progress-bar {
     height: 4px;
     background: hsl(var(--muted));
-    border-radius: 0;
+    border-radius: var(--radius-full);
     overflow: hidden;
+    margin-left: 1.625rem;
+    margin-top: 0.75rem;
   }
 
   .progress-fill {
     height: 100%;
-    background: hsl(217 91% 60%);
-    border-radius: 0;
-    transition: width 0.2s ease;
+    background: hsl(var(--ring));
+    border-radius: var(--radius-full);
+    transition: width var(--spring-moderate) var(--spring-moderate-ease);
   }
 
-  .action-btn {
-    padding: 0.375rem 0.75rem;
-    border-radius: 0;
-    font-size: 0.75rem;
-    font-weight: 600;
-    cursor: pointer;
-    transition: all 0.15s ease;
-    border: none;
-    display: flex;
-    align-items: center;
-    gap: 0.25rem;
+  .toast-progress-label {
     flex-shrink: 0;
+    color: hsl(var(--muted-foreground));
+    font-size: 0.8125rem;
+    line-height: 1.4;
+    margin-top: max(0px, calc((var(--toast-header-height) - 0.8125rem * 1.4) / 2));
   }
 
-  .action-btn.success {
-    background: hsl(142 76% 36%);
-    color: white;
+  .update-toast :global(.toast-action) {
+    flex-shrink: 0;
+    min-height: var(--toast-action-height, var(--control-height-compact));
+    border-radius: var(--toast-action-radius, var(--radius));
   }
 
-  .action-btn.success:hover {
-    background: hsl(142 76% 30%);
+  :global(.toast-action:focus-visible) {
+    outline: 1px solid hsl(var(--focus-ring));
+    outline-offset: 2px;
+    box-shadow: none;
+  }
+
+  @container style(--motion-reduced: 1) {
+    .progress-fill {
+      transition: none;
+    }
   }
 </style>

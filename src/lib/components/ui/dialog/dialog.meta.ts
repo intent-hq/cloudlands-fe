@@ -27,7 +27,22 @@ export const dialogMetadata = parseUiComponentMetadata({
     'Root',
     'Title',
     'Trigger',
+    'useDialogPortalTarget',
   ],
+  // Minimal composition from the dialog-state-matrix default fixture.
+  usage: `<script lang="ts">
+  import * as Dialog from '$lib/components/ui/dialog';
+</script>
+
+<Dialog.Root>
+  <Dialog.Trigger>Open dialog</Dialog.Trigger>
+  <Dialog.Content>
+    <Dialog.Header>
+      <Dialog.Title>Workspace details</Dialog.Title>
+      <Dialog.Description>Review the workspace information.</Dialog.Description>
+    </Dialog.Header>
+  </Dialog.Content>
+</Dialog.Root>`,
   category: 'primitive',
   owner: '007-B4',
   callers: [],

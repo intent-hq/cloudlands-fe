@@ -23,6 +23,9 @@
   import { createLogger } from '$lib/utils/client-logger';
   import { shell } from '$lib/electron-bridge';
   import { Input } from '$lib/components/ui/input';
+  import { Button } from '$lib/components/ui/button';
+  import { menuItem } from '$lib/components/ui/menu';
+  import { IntentMarkLoader } from '$lib/components/ui/indicators';
   import GitHubAuthBanner from '$lib/components/GitHubAuthBanner.svelte';
   import GitHubAvatar from '$lib/components/ui/GitHubAvatar.svelte';
 
@@ -45,7 +48,7 @@
     selectGithubRepoSearchResults,
   } from '$store/renderer/slices/github-repo-search/github-repo-search-selectors';
   import { faGithub } from '@fortawesome/free-brands-svg-icons';
-  import { faArrowUpRightFromSquare, faSpinner } from '@fortawesome/free-solid-svg-icons';
+  import { faArrowRotateRight, faArrowUpRightFromSquare } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
   import { store as appStore } from '$store/renderer/store';
 
@@ -286,6 +289,7 @@
         noFocusStyle
         class="border-0 bg-transparent! shadow-none focus-visible:ring-0 text-sm"
         role="combobox"
+        aria-label={m.onboarding_githubRepoTab_repoList_ariaLabel()}
         aria-autocomplete="list"
         aria-controls="github-repo-list"
         aria-expanded={combinedRepos.length > 0}
@@ -307,17 +311,19 @@
     <GitHubAuthBanner message={m.onboarding_githubRepoTab_signIn_description()} />
   {:else if $reposError$}
     <div
+      role="alert"
       class="rounded-lg border border-danger/30 bg-danger-background/5 px-3 py-2.5 text-xs text-danger space-y-2"
     >
       <p>{m.onboarding_githubRepoTab_loadFailed_error({ error: $reposError$ })}</p>
-      <button
+      <Button
+        variant="ghost"
         type="button"
         class="inline-flex items-center gap-1.5 text-xs underline underline-offset-2 cursor-pointer hover:no-underline"
         onclick={refreshRepos}
       >
-        <Fa icon={faSpinner} size="xs" />
+        <Fa icon={faArrowRotateRight} size="xs" />
         <span>{m.onboarding_githubRepoTab_tryAgain_label()}</span>
-      </button>
+      </Button>
     </div>
   {:else}
     <div
@@ -332,15 +338,19 @@
           {#each combinedRepos as repo, index (repo.id)}
             {@const isFocused = index === focusedIndex}
             {@const isCommitted = githubUrl === `https://github.com/${repo.owner}/${repo.name}`}
-            <button
+            <Button
+              variant="ghost"
               type="button"
               id="github-repo-option-{index}"
               role="option"
               aria-selected={isCommitted}
-              class="group/row w-full flex items-center gap-3 py-2.5 px-3 text-left rounded-lg transition-colors cursor-pointer
-                {isCommitted ? 'bg-foreground text-background pl-2.5' : ''}
-                {isFocused && !isCommitted ? 'bg-muted/40' : ''}
-                {!isFocused && !isCommitted ? 'hover:bg-muted/30' : ''}"
+              class={cn(
+                menuItem(),
+                'group/row gap-3 px-3 py-2.5 cursor-pointer',
+                isCommitted && 'bg-foreground text-background pl-2.5',
+                isFocused && !isCommitted && 'bg-muted/40',
+                !isFocused && !isCommitted && 'hover:bg-muted/30',
+              )}
               onclick={() => {
                 handleSelectRepo(repo);
                 githubInputRef?.focus();
@@ -389,17 +399,17 @@
               >
                 <Fa icon={faArrowUpRightFromSquare} size="xs" />
               </span>
-            </button>
+            </Button>
           {/each}
         </div>
       {:else if $reposLoading$ && !$reposLoaded$}
         <div class="py-4 flex items-center justify-center gap-2 text-sm text-muted-foreground">
-          <Fa icon={faSpinner} size="xs" class="animate-spin" />
+          <IntentMarkLoader size={12} />
           <span>{m.onboarding_githubRepoTab_loadingRepos_label()}</span>
         </div>
       {:else if githubInput.trim() && $searchLoading$}
         <div class="py-4 flex items-center justify-center gap-2 text-sm text-muted-foreground">
-          <Fa icon={faSpinner} size="xs" class="animate-spin" />
+          <IntentMarkLoader size={12} />
           <span>{m.onboarding_githubRepoTab_searching_label({ query: githubInput.trim() })}</span>
         </div>
       {:else if githubInput.trim()}

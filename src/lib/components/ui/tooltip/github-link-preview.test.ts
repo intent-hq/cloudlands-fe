@@ -7,7 +7,7 @@ vi.mock('$lib/client', () => ({
 }));
 
 import {
-  GITHUB_LINK_PREVIEW_TTL_MS,
+  classifyGitHubLinkPreviewError,
   clearGitHubLinkPreviewCache,
   createPreviewRequest,
   loadGitHubLinkPreview,
@@ -42,6 +42,23 @@ const ISSUE: GitHubIssueDetails = {
   updatedAt: '2026-01-02T10:00:00Z',
   url: ISSUE_URL,
 };
+
+describe('classifyGitHubLinkPreviewError', () => {
+  it('uses the structured rate-limit code without depending on error text', () => {
+    expect(classifyGitHubLinkPreviewError({ data: { code: 'rate-limited' } })).toBe('rate-limited');
+  });
+
+  it.each([
+    new Error('source control rate limited'),
+    { data: { code: 'not-found' } },
+    { data: 'rate-limited' },
+    { data: { code: 429 } },
+    null,
+    undefined,
+  ])('leaves unclassified failures unavailable: %j', (error) => {
+    expect(classifyGitHubLinkPreviewError(error)).toBe('unavailable');
+  });
+});
 
 function makeClient(): GitHubLinkPreviewClient & {
   githubPullRequest: ReturnType<typeof vi.fn>;
@@ -84,24 +101,24 @@ describe('loadGitHubLinkPreview', () => {
     expect(preview).toEqual({ kind: 'issue', ...ISSUE });
   });
 
-  it('serves a second hover from cache within the TTL, then re-fetches after it', async () => {
+  it('does not cache resolved previews: each settled hover asks the daemon again', async () => {
     const client = makeClient();
     await loadGitHubLinkPreview(PR_URL, { client });
-    vi.advanceTimersByTime(GITHUB_LINK_PREVIEW_TTL_MS - 1);
-    await loadGitHubLinkPreview(PR_URL, { client });
-    expect(client.githubPullRequest).toHaveBeenCalledTimes(1);
-
-    vi.advanceTimersByTime(2);
     await loadGitHubLinkPreview(PR_URL, { client });
     expect(client.githubPullRequest).toHaveBeenCalledTimes(2);
   });
 
-  it('keys the cache per item so distinct links do not collide', async () => {
+  it('shares in-flight requests per item so distinct concurrent links do not collide', async () => {
     const client = makeClient();
-    await loadGitHubLinkPreview(PR_URL, { client });
-    await loadGitHubLinkPreview('https://github.com/octo/intent/pull/43', { client });
-    await loadGitHubLinkPreview('https://github.com/octo/intent/issues/42', { client });
+    await Promise.all([
+      loadGitHubLinkPreview(PR_URL, { client }),
+      loadGitHubLinkPreview(PR_URL, { client }),
+      loadGitHubLinkPreview('https://github.com/octo/intent/pull/43', { client }),
+      loadGitHubLinkPreview('https://github.com/octo/intent/issues/42', { client }),
+    ]);
     expect(client.githubPullRequest).toHaveBeenCalledTimes(2);
+    expect(client.githubPullRequest).toHaveBeenCalledWith('octo', 'intent', 42);
+    expect(client.githubPullRequest).toHaveBeenCalledWith('octo', 'intent', 43);
     expect(client.githubIssue).toHaveBeenCalledTimes(1);
   });
 
@@ -133,7 +150,7 @@ describe('loadGitHubLinkPreview', () => {
     expect(client.githubPullRequest).toHaveBeenCalledTimes(2);
   });
 
-  it('aborting rejects the caller but the shared request still fills the cache', async () => {
+  it('aborting rejects the caller but the shared request still resolves the other hover', async () => {
     const client = makeClient();
     let release!: (value: GitHubPullRequestDetails) => void;
     client.githubPullRequest.mockImplementationOnce(
@@ -148,7 +165,6 @@ describe('loadGitHubLinkPreview', () => {
 
     release(PR);
     await expect(other).resolves.toEqual({ kind: 'pr', ...PR });
-    await loadGitHubLinkPreview(PR_URL, { client });
     expect(client.githubPullRequest).toHaveBeenCalledTimes(1);
   });
 

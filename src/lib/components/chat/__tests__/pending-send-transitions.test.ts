@@ -12,6 +12,7 @@ import {
   MESSAGE_SEND_MATCH_RETRY_INTERVAL_MS,
 } from '../pending-send-transitions';
 import PendingSendTransitionHost from './PendingSendTransitionHost.svelte';
+import { spring } from '$lib/motion';
 
 const originalAnimate = HTMLElement.prototype.animate;
 const originalScrollTo = HTMLElement.prototype.scrollTo;
@@ -111,7 +112,7 @@ describe('pending send transitions controller', () => {
 
     expect(animate).toHaveBeenCalledWith(
       expect.any(Array),
-      expect.objectContaining({ duration: 280 }),
+      expect.objectContaining({ duration: spring.slow.settleMs }),
     );
     expect(transitions.hasPending()).toBe(false);
     expect(setRowHidden).toHaveBeenLastCalledWith('app-msg-1', false);
@@ -282,7 +283,7 @@ describe('pending send transitions controller', () => {
     await vi.advanceTimersByTimeAsync(MESSAGE_SEND_MATCH_RETRY_INTERVAL_MS);
     expect(animate).toHaveBeenCalledWith(
       expect.any(Array),
-      expect.objectContaining({ duration: 280 }),
+      expect.objectContaining({ duration: spring.slow.settleMs }),
     );
     expect(transitions.hasPending()).toBe(false);
   });

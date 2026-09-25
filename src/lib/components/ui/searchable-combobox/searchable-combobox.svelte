@@ -1,6 +1,7 @@
 <script lang="ts">
   import type { Snippet } from 'svelte';
   import Combobox, { type ComboboxOption } from '../combobox';
+  import { Input } from '$lib/components/ui/input';
   import Tooltip from '../tooltip/Tooltip.svelte';
   import { cn } from '$lib/utils';
   import { m } from '$shared/paraglide/messages.js';
@@ -10,6 +11,13 @@
     value?: string;
     options?: Option[];
     placeholder?: string;
+    ariaLabel?: string;
+    ariaLabelledby?: string;
+    ariaDescribedby?: string;
+    emptyText?: string;
+    errorText?: string;
+    retryText?: string;
+    onSearchError?: (error: unknown, query: string) => void;
     disabled?: boolean;
     triggerLabel?: string;
     onSearch?: (query: string) => Promise<Option[]> | Option[];
@@ -37,6 +45,13 @@
     value = $bindable(''),
     options = [],
     placeholder = m.ui_searchableCombobox_select_placeholder(),
+    ariaLabel,
+    ariaLabelledby,
+    ariaDescribedby,
+    emptyText,
+    errorText,
+    retryText,
+    onSearchError,
     disabled = false,
     triggerLabel,
     onSearch,
@@ -63,20 +78,21 @@
   let renamingOptionValue = $state<string | null>(null);
   let renameValue = $state('');
 
-  const canonicalOptions = $derived(
-    options.map((option) => ({
-      value: option.value,
-      label: option.label,
-      description: option.description,
-      disabled: option.data?.isSelectable === false,
-    })),
-  );
+  function canonicalOption(option: Option): ComboboxOption {
+    return { ...option, disabled: option.data?.isSelectable === false };
+  }
 
-  function handleChange(nextValue: string | string[]) {
+  const canonicalOptions = $derived(options.map(canonicalOption));
+
+  async function handleSearch(query: string) {
+    return ((await onSearch?.(query)) ?? []).map(canonicalOption);
+  }
+
+  function handleChange(nextValue: string | string[], option?: ComboboxOption) {
     if (typeof nextValue !== 'string') return;
     onChange?.(
       nextValue,
-      options.find((option) => option.value === nextValue),
+      (option as Option | undefined) ?? options.find((option) => option.value === nextValue),
     );
   }
 
@@ -109,16 +125,18 @@
 
 {#snippet canonicalOptionDescription(option: ComboboxOption)}
   {#if renamingOptionValue === option.value}
-    <input
+    <Input
       aria-label={m.ui_searchableCombobox_renameOption_ariaLabel({ name: option.label })}
       bind:value={renameValue}
       onclick={(event) => event.stopPropagation()}
+      onpointerup={(event) => event.stopPropagation()}
       onkeydown={(event) => {
         event.stopPropagation();
         if (event.key === 'Enter') itemActionContext(option as Option).commitRename(renameValue);
         else if (event.key === 'Escape') itemActionContext(option as Option).cancelRename();
       }}
       class="min-w-0 flex-1 border-b border-accent bg-transparent text-sm outline-none"
+      noFocusStyle
     />
   {:else}
     {@render optionDescription?.(option as Option)}
@@ -131,6 +149,7 @@
       class="shrink-0"
       role="presentation"
       onclick={(event) => event.stopPropagation()}
+      onpointerup={(event) => event.stopPropagation()}
       onkeydown={(event) => event.stopPropagation()}
     >
       {@render itemActions?.(itemActionContext(option as Option))}
@@ -150,13 +169,19 @@
     inputClass={cn(inputClass, triggerClass)}
     contentClass={dropdownClass}
     side={dropdownPosition}
-    ariaLabel={placeholder}
+    ariaLabel={ariaLabel ?? placeholder}
+    {ariaLabelledby}
+    {ariaDescribedby}
+    {emptyText}
+    {errorText}
+    {retryText}
     portal={false}
     {header}
     optionDescription={optionDescription || itemActions ? canonicalOptionDescription : undefined}
     optionActions={itemActions ? canonicalOptionActions : undefined}
     {footer}
-    onsearch={onSearch}
+    onsearch={onSearch ? handleSearch : undefined}
+    onsearcherror={onSearchError}
     onchange={handleChange}
     onopenchange={handleOpenChange}
   />

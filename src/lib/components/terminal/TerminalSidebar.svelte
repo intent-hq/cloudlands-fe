@@ -1,7 +1,9 @@
 <script lang="ts">
+  import { Input } from '$lib/components/ui/input';
   /* eslint-disable max-lines */
   import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-session-selectors';
   import { flip } from 'svelte/animate';
+  import { prefersReducedMotion, spring } from '$lib/motion';
   import { scriptsClient } from '$features/scripts/scripts.client';
   import type { ScriptCategory, ScriptMode, ScriptWithState } from '$features/scripts/types';
   import { getScriptStatusKind, isLiveScriptStatus } from '$features/scripts/utils/script-status';
@@ -19,7 +21,8 @@
   import Button from '$lib/components/ui/button/button.svelte';
   import { ListContainer, ListItem, ListSection } from '$lib/components/ui/list';
   import { Skeleton } from '$lib/components/ui/skeleton';
-  import { toast, withToastCountdown } from '$lib/components/ui/toast';
+  import { IntentMarkLoader } from '$lib/components/ui/indicators';
+  import { notify, withToastCountdown } from '$lib/components/patterns/notify';
   import { useBackgroundAgent } from '$lib/hooks/use-background-agent.svelte';
   import {
     selectExecutorIsRunning,
@@ -44,7 +47,6 @@
     faPlus,
     faRotateRight,
     faSearch,
-    faSpinner,
     faStop,
     faTerminal,
     faTrash,
@@ -226,7 +228,7 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
       showAgentAssist = selectScriptEntries.select(appStore.state, workspaceId).length === 0;
 
       if (parts.length > 0) {
-        toast.success(
+        notify.success(
           m.terminal_sidebar_scriptsUpdated_success({ changes: parts.join(', ') }),
           withToastCountdown(
             {
@@ -249,7 +251,7 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
                     });
                   }
                   appStore.dispatch(refreshScripts(workspaceId));
-                  toast.success(m.terminal_sidebar_scriptsRestored_success());
+                  notify.success(m.terminal_sidebar_scriptsRestored_success());
                 },
               },
               duration: 10000,
@@ -258,11 +260,11 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
           ),
         );
       } else {
-        toast.info(m.terminal_sidebar_noScriptChanges_info());
+        notify.info(m.terminal_sidebar_noScriptChanges_info());
       }
       if (skippedRunning.size > 0) {
         const skippedNames = [...skippedRunning];
-        toast.warning(
+        notify.warning(
           skippedNames.length === 1
             ? m.scripts_detect_skippedRunning_one({ name: skippedNames[0] })
             : m.scripts_detect_skippedRunning_many({
@@ -307,20 +309,20 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
       showAgentAssist = selectScriptEntries.select(appStore.state, workspaceId).length === 0;
 
       if (createdCount > 0) {
-        toast.success(
+        notify.success(
           createdCount === 1
             ? m.terminal_sidebar_detectedNew_one({ count: createdCount })
             : m.terminal_sidebar_detectedNew_many({ count: createdCount }),
         );
       } else {
-        toast.info(m.terminal_sidebar_noNewScripts_info());
+        notify.info(m.terminal_sidebar_noNewScripts_info());
       }
       return;
     }
 
     // Neither format matched
     logger.warn('DETECTED_SCRIPTS result is not recognized format');
-    toast.info(m.terminal_sidebar_unexpectedFormat_info());
+    notify.info(m.terminal_sidebar_unexpectedFormat_info());
     await runLocalDetect({ source: 'fallback' });
   }
 
@@ -335,7 +337,7 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
         logger.warn('Failed to parse DETECTED_SCRIPTS result', {
           error: e instanceof Error ? e.message : String(e),
         });
-        toast.info(m.terminal_sidebar_agentDetectFailed_info());
+        notify.info(m.terminal_sidebar_agentDetectFailed_info());
         await runLocalDetect({ source: 'fallback' });
       }
     },
@@ -379,7 +381,7 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
       }
 
       logger.warn('Script detection agent failed, falling back to local detection');
-      toast.info(m.terminal_sidebar_agentDetectFailed_info());
+      notify.info(m.terminal_sidebar_agentDetectFailed_info());
       await runLocalDetect({ source: 'fallback' });
     },
   });
@@ -403,17 +405,17 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
       showAgentAssist = detectedCount === 0;
 
       if (detectedCount > 0) {
-        toast.success(
+        notify.success(
           detectedCount === 1
             ? m.terminal_sidebar_detectedFromFiles_one({ count: detectedCount })
             : m.terminal_sidebar_detectedFromFiles_many({ count: detectedCount }),
         );
       } else {
-        toast.info(m.terminal_sidebar_noScriptsLocally_info());
+        notify.info(m.terminal_sidebar_noScriptsLocally_info());
       }
       const skippedRunning = result.skippedRunning ?? [];
       if (skippedRunning.length > 0) {
-        toast.warning(
+        notify.warning(
           skippedRunning.length === 1
             ? m.scripts_detect_skippedRunning_one({ name: skippedRunning[0] })
             : m.scripts_detect_skippedRunning_many({
@@ -433,7 +435,7 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
         error: e instanceof Error ? e.message : String(e),
         source: options.source ?? 'primary',
       });
-      toast.error(m.terminal_quakeOverlay_detectFailed_error());
+      notify.error(m.terminal_quakeOverlay_detectFailed_error());
     } finally {
       detectFlow = 'idle';
     }
@@ -525,7 +527,7 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
   function getStatusColor(script: ScriptWithState): string {
     const kind = getScriptStatusKind(script.runtime);
     if (kind === 'running' || kind === 'succeeded') return 'bg-green-500';
-    if (kind === 'restarting') return 'bg-amber-500';
+    if (kind === 'restarting') return 'bg-warning';
     if (kind === 'failed') return 'bg-red-500';
     if (kind === 'stopped') return 'bg-muted-foreground/60';
     return 'bg-muted-foreground/40';
@@ -614,7 +616,7 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
 
     const workspace = $activeWorkspace;
     if (!workspace) {
-      toast.info(m.terminal_sidebar_openWorkspaceFirst_info());
+      notify.info(m.terminal_sidebar_openWorkspaceFirst_info());
       return;
     }
 
@@ -659,11 +661,11 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
           saveToRepoStatus = 'idle';
         }, 1500);
       } else {
-        toast.error(result.error || m.terminal_sidebar_saveToRepoFailed_error());
+        notify.error(result.error || m.terminal_sidebar_saveToRepoFailed_error());
         saveToRepoStatus = 'idle';
       }
     } catch {
-      toast.error(m.terminal_sidebar_saveToRepoFailed_error());
+      notify.error(m.terminal_sidebar_saveToRepoFailed_error());
       saveToRepoStatus = 'idle';
     }
   }
@@ -789,7 +791,7 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
       void scriptsClient
         .update(workspaceId, editingScriptId, { name: editingScriptName.trim() })
         .then((result) => {
-          if (!result.success && result.error) toast.warning(result.error);
+          if (!result.success && result.error) notify.warning(result.error);
         })
         .catch((error) => logger.error('Script update failed', error))
         .finally(() => appStore.dispatch(refreshScripts(workspaceId)));
@@ -943,9 +945,10 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
             <Fa icon={faPlus} size="xs" />
           </Button>
           {#if isAgentDetecting && $_scriptDetectAgentId$}
-            <button
+            <Button
+              variant="plain"
               type="button"
-              class="-mt-0.5 -mb-1 flex items-center gap-1 px-1 rounded text-muted-foreground/60 hover:text-muted-foreground transition-colors cursor-pointer shrink-0"
+              class="-mt-0.5 -mb-1 flex items-center gap-1 px-1 rounded text-muted-foreground hover:text-foreground transition-colors cursor-pointer shrink-0"
               onclick={(e) => {
                 e.stopPropagation();
                 const wsId = $activeWorkspace?.id;
@@ -971,17 +974,17 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
                 />
               </div>
               <span class="text-ui">{m.terminal_sidebar_askingAgent_label()}</span>
-            </button>
+            </Button>
           {:else if isAgentDetecting}
             <div class="-mt-0.5 -mb-1 flex items-center gap-1 px-1 text-muted-foreground">
               <!-- a11y-ignore -->
-              <Fa icon={faSpinner} size="xs" class="animate-spin" />
+              <IntentMarkLoader size={12} />
               <span class="text-ui">{m.terminal_sidebar_askingAgent_label()}</span>
             </div>
           {:else if isLocalDetecting}
             <div class="-mt-0.5 -mb-1 flex items-center gap-1 px-1 text-muted-foreground">
               <!-- a11y-ignore -->
-              <Fa icon={faSpinner} size="xs" class="animate-spin" />
+              <IntentMarkLoader size={12} />
               <span class="text-ui">{m.terminal_sidebar_scanningFiles_label()}</span>
             </div>
           {:else if hasScripts}
@@ -1038,17 +1041,17 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
             class="px-2 py-2 border-b border-border flex flex-col gap-1.5"
             onkeydown={handleAddFormKeydown}
           >
-            <input
+            <Input
               type="text"
               bind:value={newName}
               placeholder={m.terminal_quakeOverlay_name_placeholder()}
-              class="w-full text-xs bg-muted/50 border border-border rounded-md px-2 py-1.5 outline-none focus:border-primary/50 focus:bg-background text-foreground placeholder:text-muted-foreground/50 transition-colors"
+              class="w-full text-xs bg-muted/50 border border-border rounded-md px-2 py-1.5 outline-none focus:border-primary-ink/50 focus:bg-background text-foreground placeholder:text-muted-foreground transition-colors"
             />
-            <input
+            <Input
               type="text"
               bind:value={newCommand}
               placeholder={m.terminal_sidebar_command_placeholder()}
-              class="w-full text-xs bg-muted/50 border border-border rounded-md px-2 py-1.5 outline-none focus:border-primary/50 focus:bg-background text-foreground placeholder:text-muted-foreground/50 font-mono transition-colors"
+              class="w-full text-xs bg-muted/50 border border-border rounded-md px-2 py-1.5 outline-none focus:border-primary-ink/50 focus:bg-background text-foreground placeholder:text-muted-foreground font-mono transition-colors"
             />
             <div class="flex items-center gap-1.5 justify-end">
               <Button variant="ghost-light" size="xs" onclick={() => (showAddForm = false)}>
@@ -1069,9 +1072,15 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
 
         <!-- Script List -->
         {#if hasScripts}
-          <ListContainer spacing="compact" class="py-0.5 px-1.5">
+          <ListContainer spacing="compact" class="py-1 px-1.5">
             {#each visibleScripts as script (script.id)}
-              <div animate:flip={{ duration: 200 }} data-script-id={script.id}>
+              <div
+                animate:flip={{
+                  duration: prefersReducedMotion() ? 0 : spring.moderate.settleMs,
+                  easing: spring.moderate.exit.easing,
+                }}
+                data-script-id={script.id}
+              >
                 <ListItem
                   size="sm"
                   class={cn(
@@ -1106,15 +1115,16 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
                         : 'pointer-events-none absolute'}
                     >
                       {#if editingScriptId === script.id}
-                        <input
+                        <Input
                           type="text"
                           data-edit-script={script.id}
                           bind:value={editingScriptName}
                           onblur={finishEditingScript}
                           onkeydown={handleEditScriptKeydown}
                           onclick={(e) => e.stopPropagation()}
+                          noFocusStyle
                           placeholder={m.terminal_quakeOverlay_name_placeholder()}
-                          class="relative z-10 w-full cursor-text border-none bg-transparent p-0 text-sm outline-none focus:outline-none! focus:ring-0!"
+                          class="pointer-events-auto relative z-10 w-full cursor-text border-none bg-transparent hover:bg-transparent p-0 text-sm outline-none focus:outline-none! focus:ring-0!"
                         />
                       {/if}
                       <span
@@ -1131,7 +1141,8 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
               </div>
             {/each}
             {#if showScriptListToggle}
-              <button
+              <Button
+                variant="ghost-light"
                 type="button"
                 class="w-full text-left px-2 py-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
                 onclick={() => (showAllScripts = !showAllScripts)}
@@ -1139,7 +1150,7 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
                 {showAllScripts
                   ? m.terminal_sidebar_showLess_label()
                   : m.terminal_sidebar_moreScripts_label({ count: hiddenScriptCount })}
-              </button>
+              </Button>
             {/if}
           </ListContainer>
 
@@ -1160,56 +1171,63 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
                 {#if script}
                   {#if selectedScriptIds.size > 1}
                     <!-- Multi-select actions -->
-                    <button
+                    <Button
+                      variant="ghost-light"
                       type="button"
                       class="w-full text-left px-3 py-1.5 text-sm hover:bg-accent cursor-pointer transition-colors"
                       onclick={() => handleContextMenuAction('startAll')}
                     >
                       {m.terminal_sidebar_startAll_label()}
-                    </button>
-                    <button
+                    </Button>
+                    <Button
+                      variant="ghost-light"
                       type="button"
                       class="w-full text-left px-3 py-1.5 text-sm hover:bg-accent cursor-pointer transition-colors"
                       onclick={() => handleContextMenuAction('stopAll')}
                     >
                       {m.terminal_sidebar_stopAll_label()}
-                    </button>
+                    </Button>
                   {:else}
                     <!-- Single-select actions -->
                     {#if isLiveScriptStatus(script.runtime.status)}
-                      <button
+                      <Button
+                        variant="ghost-light"
                         type="button"
                         class="w-full text-left px-3 py-1.5 text-sm hover:bg-accent cursor-pointer transition-colors"
                         onclick={() => handleContextMenuAction('stop')}
                       >
                         {m.terminal_quakeOverlay_stop_label()}
-                      </button>
-                      <button
+                      </Button>
+                      <Button
+                        variant="ghost-light"
                         type="button"
                         class="w-full text-left px-3 py-1.5 text-sm hover:bg-accent cursor-pointer transition-colors"
                         onclick={() => handleContextMenuAction('restart')}
                       >
                         {m.terminal_quakeOverlay_restart_label()}
-                      </button>
+                      </Button>
                     {:else}
-                      <button
+                      <Button
+                        variant="ghost-light"
                         type="button"
                         class="w-full text-left px-3 py-1.5 text-sm hover:bg-accent cursor-pointer transition-colors"
                         onclick={() => handleContextMenuAction('start')}
                       >
                         {m.terminal_quakeOverlay_start_label()}
-                      </button>
+                      </Button>
                     {/if}
-                    <button
+                    <Button
+                      variant="ghost-light"
                       type="button"
                       class="w-full text-left px-3 py-1.5 text-sm hover:bg-accent cursor-pointer transition-colors"
                       onclick={() => handleContextMenuAction('edit')}
                     >
                       {m.terminal_sidebar_edit_label()}
-                    </button>
+                    </Button>
                   {/if}
                   <div class="border-t border-border my-1"></div>
-                  <button
+                  <Button
+                    variant="plain"
                     type="button"
                     class="w-full text-left px-3 py-1.5 text-sm hover:bg-accent cursor-pointer transition-colors text-danger hover:bg-danger-background/10"
                     onclick={() => handleContextMenuAction('delete')}
@@ -1217,7 +1235,7 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
                     {selectedScriptIds.size > 1
                       ? m.terminal_sidebar_deleteMany_label({ count: selectedScriptIds.size })
                       : m.terminal_sidebar_delete_label()}
-                  </button>
+                  </Button>
                 {/if}
               {/if}
             </div>
@@ -1324,7 +1342,7 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
 </div>
 
 <style>
-  @media (prefers-reduced-motion: reduce) {
+  @container style(--motion-reduced: 1) {
     [data-script-rename-decoration] {
       transition-duration: 0s !important;
     }

@@ -19,7 +19,7 @@
  */
 import { appClient } from '$lib/client';
 import type { CreatePrerequisiteOptions, MutationResult } from '$lib/client';
-import { toast } from '$lib/components/ui/toast';
+import { notify } from '$lib/components/patterns/notify';
 import type { TaskStatus, WorkspaceTask } from '$shared/types';
 import { store as appStore } from '$store/renderer/store';
 import {
@@ -81,7 +81,7 @@ function reconcileTaskConflict(
     }
   }
   logger.warn('Task mutation conflicted; reloaded the latest version', { noteId });
-  toast.warning(m.tasks_write_conflict_title(), {
+  notify.warning(m.tasks_write_conflict_title(), {
     description: m.tasks_write_conflict_description(),
   });
   return true;
@@ -110,6 +110,7 @@ export async function updateTaskNoteStatus(
     if (reconcileTaskConflict(workspaceId, noteId, result)) return;
     if (previous !== undefined) applyStatus(workspaceId, noteId, previous);
     logger.error('Failed to update task status', result.error);
+    notify.error(m.notes_writeService_updateFailed_error());
   }
 }
 

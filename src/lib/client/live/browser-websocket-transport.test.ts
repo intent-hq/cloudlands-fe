@@ -155,6 +155,20 @@ describe('sanitizeWsUrlForDisplay', () => {
 });
 
 describe('BrowserWebSocketTransport', () => {
+  it('rejects local-machine requests instead of sending them to the browser daemon', async () => {
+    const { transport, sockets } = createHarness();
+    await expect(
+      transport.request(
+        'settings.update',
+        {
+          changes: [{ path: 'server.wsApi.enabled', value: false }],
+        },
+        { localMachine: true },
+      ),
+    ).rejects.toThrow('Local machine requests require the desktop bridge');
+    expect(sockets).toHaveLength(0);
+    transport.dispose();
+  });
   it('connects lazily and sends a JSON-RPC 2.0 request frame', async () => {
     const { transport, sockets, socket } = createHarness();
     expect(sockets).toHaveLength(0);
@@ -371,6 +385,37 @@ describe('BrowserWebSocketTransport', () => {
     await expect(after).resolves.toEqual([]);
     transport.dispose();
   });
+
+  it.each(['close', 'timeout'])(
+    'replays startup work after an initial connect %s',
+    async (failure) => {
+      vi.useFakeTimers();
+      const { transport, socket } = createHarness({ connectTimeoutMs: 100, reconnectDelayMs: 100 });
+      const recovered = vi.fn(() => transport.request('workspace.list', {}));
+      transport.onReconnected(recovered);
+      const failed = transport
+        .request('workspace.list', {})
+        .catch((error: BackendError) => error.code);
+      if (failure === 'close') socket().drop();
+      else await vi.advanceTimersByTimeAsync(100);
+      expect(await failed).toBe('TRANSPORT_ERROR');
+      expect(recovered).not.toHaveBeenCalled();
+
+      await vi.advanceTimersByTimeAsync(100);
+      socket().open();
+      await flush();
+      expect(recovered).toHaveBeenCalledOnce();
+      expect(socket().lastFrame()).toEqual({
+        jsonrpc: '2.0',
+        id: 2,
+        method: 'workspace.list',
+        params: {},
+      });
+      socket().receive({ jsonrpc: '2.0', id: 2, result: { workspaces: [] } });
+      await expect(recovered.mock.results[0].value).resolves.toEqual({ workspaces: [] });
+      transport.dispose();
+    },
+  );
 
   it('queues requests behind an armed backoff timer instead of connecting immediately', async () => {
     vi.useFakeTimers();

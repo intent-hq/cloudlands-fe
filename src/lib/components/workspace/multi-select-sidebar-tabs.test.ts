@@ -29,4 +29,10 @@ describe('multi-select sidebar tabs', () => {
     expect([...normalizeSelectedTabs(['browser', 'shell'])]).toEqual(['browser']);
     expect([...normalizeSelectedTabs(['unknown'])]).toEqual(['overview']);
   });
+
+  it('drops persisted browser and shell selections for collaborators (multiplayer w3)', () => {
+    expect([...normalizeSelectedTabs(['browser', 'shell'], true)]).toEqual(['overview']);
+    expect([...normalizeSelectedTabs(['shell', 'files'], true)]).toEqual(['files']);
+    expect([...normalizeSelectedTabs(['browser', 'shell'], false)]).toEqual(['browser']);
+  });
 });

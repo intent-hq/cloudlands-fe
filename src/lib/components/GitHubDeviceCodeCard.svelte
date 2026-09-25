@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { Button } from '$lib/components/ui/button';
   import { faArrowUpRightFromSquare } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
 
@@ -13,17 +14,27 @@
     verificationUri: string;
     /** Compact layout for tight surfaces like the sidebar banner. */
     compact?: boolean;
+    /**
+     * Override for the "Open GitHub" action. When set, the card does not open
+     * the URL itself — the caller owns the open (e.g. the invite consent modal,
+     * where main opens the allowlisted URL and the modal enters its waiting state).
+     */
+    onOpen?: () => void;
   }
 
-  let { userCode, verificationUri, compact = false }: Props = $props();
+  let { userCode, verificationUri, compact = false, onOpen }: Props = $props();
 
   function handleOpenGitHub() {
+    if (onOpen) {
+      onOpen();
+      return;
+    }
     // GitHub URLs always route to the external browser via the link handler.
     void handleLink(verificationUri, {});
   }
 </script>
 
-<div class={compact ? 'space-y-2' : 'space-y-3'}>
+<div class={compact ? 'grid gap-2' : 'grid gap-4'}>
   <div
     class="flex items-center justify-center gap-1 bg-muted rounded {compact
       ? 'py-1.5 px-2'
@@ -42,16 +53,15 @@
       label={m.lib_githubDeviceCode_copyCode_label()}
     />
   </div>
-  <button
+  <Button
     type="button"
-    class="inline-flex items-center justify-center gap-2 bg-[#238636] text-white border-none rounded cursor-pointer hover:bg-[#2ea043] {compact
-      ? 'px-3 py-1.5 text-xs'
-      : 'px-6 py-3 text-base w-full'}"
+    variant="primary"
+    class={compact ? undefined : 'w-full'}
     onclick={handleOpenGitHub}
   >
     <span>{m.lib_githubDeviceCode_openGithub_label()}</span>
     <Fa icon={faArrowUpRightFromSquare} size="xs" />
-  </button>
+  </Button>
   <p class="text-xs text-subtle">
     {m.lib_githubDeviceCode_enterCodeAt_before()}
     <span class="font-mono break-all">{verificationUri}</span>

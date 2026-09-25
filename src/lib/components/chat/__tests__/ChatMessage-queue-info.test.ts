@@ -4,6 +4,7 @@
 import { fireEvent, render, screen } from '@testing-library/svelte';
 import { describe, it, expect, vi } from 'vitest';
 import type { AgentMessage } from '$shared/types';
+import { formatFullDateTime } from '$lib/i18n/format';
 
 const { dispatchMock } = vi.hoisted(() => ({ dispatchMock: vi.fn() }));
 
@@ -113,9 +114,11 @@ function userMessage(text: string, metadata?: Record<string, unknown>): AgentMes
 }
 
 describe('ChatMessage queued-delivery notice', () => {
-  it('renders only the queue wait duration and hides the [SYSTEM NOTE] line', () => {
+  it('moves delivery metadata into actions without mutating the persisted message', () => {
+    const message = userMessage(ANNOTATED_TEXT, QUEUE_INFO_METADATA);
+    const stored = structuredClone(message);
     const { container, unmount } = render(ChatMessage, {
-      props: { message: userMessage(ANNOTATED_TEXT, QUEUE_INFO_METADATA) },
+      props: { message },
     });
 
     const chip = screen.getByTestId('queued-message-notice');
@@ -123,12 +126,14 @@ describe('ChatMessage queued-delivery notice', () => {
     expect(copy.textContent).toBe('Waited in queue for 2m');
     expect(copy.textContent).not.toContain('Queued at');
     expect(copy.textContent).not.toContain('before delivery');
-    expect(chip.getAttribute('title')).toBeTruthy();
-    expect(chip.className).toContain('text-subtle');
-    expect(chip.className).toContain('mb-1.5');
+    expect(chip.getAttribute('title')).toBe(formatFullDateTime('2026-01-01T11:58:00Z'));
+    expect(chip.closest('[data-testid="message-actions"]')).toBe(
+      screen.getByTestId('message-actions'),
+    );
     // Body keeps the message text but not the raw note
     expect(screen.getByText('hello queued world')).toBeTruthy();
     expect(container.textContent).not.toContain('[SYSTEM NOTE]');
+    expect(message).toEqual(stored);
     unmount();
   });
 
@@ -184,26 +189,33 @@ describe('ChatMessage queued-delivery notice', () => {
     expect(screen.getByText('hello queued world')).toBeTruthy();
   });
 
-  it('truncates the queued notice to one line only while sticky', async () => {
+  it('keeps metadata keyboard-discoverable and actions functional after pinning', async () => {
+    const previous = vi.fn();
     const { rerender } = render(ChatMessage, {
       props: {
         message: userMessage(ANNOTATED_TEXT, QUEUE_INFO_METADATA),
         isSticky: false,
+        onScrollToPrevious: previous,
       },
     });
 
-    const notice = screen.getByTestId('queued-message-notice');
-    const text = screen.getByTestId('queued-message-notice-text');
-    expect(notice.className).not.toContain('overflow-hidden');
-    expect(text.className).not.toContain('truncate');
+    const metadata = screen.getByRole('button', { name: 'Waited in queue for 2m' });
+    expect(metadata.tabIndex).toBe(0);
 
     await rerender({
       message: userMessage(ANNOTATED_TEXT, QUEUE_INFO_METADATA),
       isSticky: true,
+      onScrollToPrevious: previous,
     });
 
-    expect(notice.className).toContain('overflow-hidden');
-    expect(text.className).toContain('truncate');
+    const notice = screen.getByTestId('queued-message-notice');
+    expect(notice.closest('[data-testid="message-actions"]')).toBe(
+      screen.getByTestId('message-actions'),
+    );
+    metadata.focus();
+    expect(document.activeElement).toBe(metadata);
+    await fireEvent.click(screen.getByRole('button', { name: 'Scroll to previous message' }));
+    expect(previous).toHaveBeenCalledTimes(1);
   });
 
   it('hides exact legacy trailing notes without adding a queue chip', () => {
@@ -253,7 +265,12 @@ describe('ChatMessage queued-delivery notice', () => {
     expect(screen.queryByTestId('queued-message-notice')).toBeNull();
     await fireEvent.click(screen.getByTestId('agent-message-disclosure-toggle'));
     const chip = screen.getByTestId('queued-message-notice');
-    expect(chip.className).toContain('text-subtle');
-    expect(screen.getByText('hello queued world')).toBeTruthy();
+    expect(chip.closest('[data-testid="message-actions"]')).toBe(
+      screen.getByTestId('message-actions'),
+    );
+    const bodyId = screen
+      .getByTestId('agent-message-disclosure-toggle')
+      .getAttribute('aria-controls');
+    expect(document.getElementById(bodyId!)?.textContent).toContain('hello queued world');
   });
 });

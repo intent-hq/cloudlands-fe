@@ -88,10 +88,13 @@
     selectNoteById,
     selectNewlyCreatedNoteId,
   } from '$store/renderer/slices/workspace-notes/workspace-notes-selectors';
+  import { selectHidesAgentLifecycleActions } from '$store/renderer/slices/workspace/workspace-selectors';
   import { processMarkdownToHTML, processHTMLToMarkdown } from '$lib/utils/markdown-processor';
   import { createWorkspaceFileVersion } from '$lib/utils/workspace-file-image';
   import { setupEditorListeners } from '$lib/utils/editor-listeners';
   import { updateCommentDecorations } from '$lib/components/tiptap/CommentDecorations';
+  import { bindRemoteCursors } from './note-with-comments/remote-cursors-binding';
+  import { joinNotePresence } from '$features/notes/note-presence/note-presence-service';
   import { pruneTaskAgentAssociationsForNote } from '$store/renderer/slices/task-agent-associations/task-agent-associations-slice';
   import { selectAssociationsForNote } from '$store/renderer/slices/task-agent-associations/task-agent-associations-selectors';
   import { selectSelectedModel } from '$store/renderer/slices/model/model-selectors';
@@ -570,6 +573,9 @@
   const currentNote$ = selectNoteById(workspaceIdStore, noteIdStore);
   const currentNote = $derived($currentNote$ ?? null);
   const rawNoteViewEnabled$ = selectIsRawNoteViewEnabled(workspaceIdStore, noteIdStore);
+  // Both task-menu actions launch an agent; the popovers are withheld
+  // (never disabled) where the daemon would refuse the create.
+  const hidesAgentLifecycleActions$ = selectHidesAgentLifecycleActions(workspaceIdStore);
   let isRawNoteViewEnabled = $derived($rawNoteViewEnabled$ === true);
   let shouldShowRawNoteView = $derived(
     isRawNoteViewEnabled && !isInitializing && !isTooLargeForRichEditor,
@@ -1016,15 +1022,29 @@
     // is what the pipeline would then apply. A save already in flight is not
     // safe either: the daemon dispatches requests concurrently, so the restore
     // could commit first — wait for its ack too. Mirrors the saga's own flush.
-    if (saveDebounceTimer) {
-      clearTimeout(saveDebounceTimer);
-      saveDebounceTimer = null;
-      void saveEditorContent();
-    }
-    await settleNoteContent(targetWorkspaceId, targetNoteId);
-    if (isComponentDestroyed || noteId !== targetNoteId || workspace?.id !== targetWorkspaceId) {
-      return;
-    }
+    // A keystroke typed while that settle is pending lands on the component
+    // debounce again, where the write-service cannot see it: settle only
+    // covers its own queue. Stage and settle until both are quiescent, so it
+    // is persisted as its own pre-restore version like the typing before the
+    // click, rather than dropped by the restored apply or merged onto the
+    // restored text by a save sent after the restore RPC (intent#4887).
+    // No iteration cap: a pass repeats only when the debounce is armed again
+    // during it (new typing, or the external-update stageUnsavedEdits
+    // fallback), and each such pass drains that debounce into the write-
+    // service before settling again, so the loop ends once outstanding
+    // writes have settled and nothing re-arms the debounce. Capping and
+    // dispatching anyway would recreate the bug.
+    do {
+      if (saveDebounceTimer) {
+        clearTimeout(saveDebounceTimer);
+        saveDebounceTimer = null;
+        void saveEditorContent();
+      }
+      await settleNoteContent(targetWorkspaceId, targetNoteId);
+      if (isComponentDestroyed || noteId !== targetNoteId || workspace?.id !== targetWorkspaceId) {
+        return;
+      }
+    } while (saveDebounceTimer);
 
     logger.info('[RestoreVersion] Dispatching restoreNoteVersion', {
       noteId: targetNoteId,
@@ -1744,6 +1764,38 @@
     lastKnownRev = reduxRev;
   });
 
+  // Remote cursors (multiplayer w5): only a shared workspace has peers to
+  // show, and only the rich editor can render decorations. The presence
+  // lease is held for as long as this editor instance is bound.
+  $effect(() => {
+    const boundEditor = editor;
+    const wsId = workspace?.id;
+    const memberCount = workspace?.memberCount ?? 0;
+    if (
+      !boundEditor ||
+      !wsId ||
+      !noteId ||
+      memberCount < 2 ||
+      !isInitialized ||
+      isRawNoteViewEnabled ||
+      isTooLargeForRichEditor
+    ) {
+      return;
+    }
+    if (boundEditor.isDestroyed) return;
+    const session = joinNotePresence(wsId, noteId);
+    const unbind = bindRemoteCursors({
+      editor: boundEditor,
+      session,
+      getBaseText: () => lastKnownContent,
+      getBaseRev: () => lastKnownRev,
+    });
+    return () => {
+      unbind();
+      session.release();
+    };
+  });
+
   // // Watch for editable prop changes and update editor
   // $effect(() => {
   //   // Read editable reactively to trigger effect when it changes
@@ -2064,7 +2116,7 @@
   {/if}
 
   <!-- Editor Container -->
-  <div class="editor-container flex relative flex-1 overflow-hidden">
+  <div class="editor-container flex flex-col min-h-0 relative flex-1 overflow-hidden">
     <!-- Version History View -->
     <section
       class="note-content-container flex-1 pt-6 overflow-y-auto"
@@ -2132,7 +2184,7 @@
         {#if isTooLargeForRichEditor}
           <div class="w-full p-4">
             <div
-              class="mb-3 rounded-md bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 px-4 py-2 text-sm text-yellow-800 dark:text-yellow-200"
+              class="mb-3 rounded-md bg-warning/10 border border-warning/30 px-4 py-2 text-sm text-warning-ink"
             >
               {m.workspace_noteWithComments_tooLarge_label({
                 sizeKb: formatInteger(Math.round(plainTextFallbackContent.length / 1024)),
@@ -2219,7 +2271,7 @@
 </div>
 
 <!-- Task Menu Popovers - Rendered based on discovered task buttons -->
-{#if !shouldShowRawNoteView}
+{#if !shouldShowRawNoteView && !$hidesAgentLifecycleActions$}
   {#each taskMenuData as menuData (menuData.id)}
     <TaskMenu
       id={menuData.id}
@@ -2298,7 +2350,7 @@
 
   /* Drag and drop visual feedback for images */
   :global(.tiptap-editor-wrapper.is-dragging) {
-    outline: 2px dashed hsl(var(--primary));
+    outline: 1px dashed hsl(var(--primary-ink));
     outline-offset: -2px;
     background-color: hsl(var(--primary) / 0.05);
   }

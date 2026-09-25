@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/experimental-ct-svelte';
+import { expect, test } from '../../../../test/ct-test';
 import TerminalSidebarEditGeometryHost from './mocks/TerminalSidebarEditGeometryHost.svelte';
 
 function isTransparent(color: string) {
@@ -21,7 +21,7 @@ test('keeps script rename decoration visible, padded, unclipped, and motion-safe
     isTransparent(await decoration.evaluate((node) => getComputedStyle(node).borderTopColor)),
   ).toBe(true);
 
-  await component.getByText('build geometry', { exact: true }).dblclick();
+  await component.locator('[data-script-id="script-geometry"] [data-slot="list-item"]').dblclick();
   const input = component.locator('[data-edit-script="script-geometry"]');
   await expect(input).toBeFocused();
   const result = await input.evaluate((node) => {
@@ -57,6 +57,9 @@ test('keeps script rename decoration visible, padded, unclipped, and motion-safe
       borderColor: style.borderTopColor,
       transitionDurations: style.transitionDuration.split(',').map((value) => value.trim()),
       hasOverflowAncestor: clientRect !== null,
+      decorationRect: decorationRect.toJSON(),
+      clientRect,
+      ancestor: overflowAncestor?.outerHTML.slice(0, 300),
       clipped:
         clientRect === null ||
         decorationRect.left < clientRect.left - 0.5 ||
@@ -66,6 +69,11 @@ test('keeps script rename decoration visible, padded, unclipped, and motion-safe
     };
   });
 
+  await test.info().attach('rename-geometry', {
+    body: JSON.stringify(result, null, 2),
+    contentType: 'application/json',
+  });
+  await component.screenshot({ path: test.info().outputPath('script-rename.png') });
   expect(result.margins.left).toBeGreaterThanOrEqual(4);
   expect(result.margins.right).toBeGreaterThanOrEqual(4);
   expect(result.margins.top).toBeGreaterThanOrEqual(2);

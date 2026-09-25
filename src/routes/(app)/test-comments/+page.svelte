@@ -1,8 +1,10 @@
 <script lang="ts">
+  import * as m from '$shared/paraglide/messages.js';
   import { onMount, onDestroy } from 'svelte';
   import { Editor } from '@tiptap/core';
   import { createEditorConfig } from '$lib/utils/editor-config';
   import { CommentManagerV2 } from '$features/comments/comment-manager-v2';
+  import { alert as showAlert } from '$lib/components/patterns/confirm';
 
   import {
     selectComments,
@@ -63,6 +65,7 @@ More content here for testing purposes.`;
     editor = new Editor(
       createEditorConfig({
         element: editorElement,
+        ariaLabel: m.workspace_noteWithComments_editor_ariaLabel(),
         content: testContent,
         editable: true,
         enableComments: true,
@@ -120,7 +123,7 @@ More content here for testing purposes.`;
 
     const { from, to } = editor.state.selection;
     if (from === to) {
-      alert('Please select some text to comment on');
+      void showAlert('Please select some text to comment on');
       return;
     }
 
@@ -182,14 +185,14 @@ More content here for testing purposes.`;
 
 <style>
   :global(.comment-highlight) {
-    background-color: rgba(255, 235, 59, 0.2);
-    border-bottom: 2px solid rgba(255, 235, 59, 0.5);
+    background-color: hsl(var(--warning) / 0.1);
+    border-bottom: 2px solid hsl(var(--warning) / 0.5);
     cursor: pointer;
     transition: all 0.2s ease;
   }
 
   :global(.comment-highlight:hover) {
-    background-color: rgba(255, 235, 59, 0.3);
-    border-bottom-color: rgba(255, 235, 59, 0.8);
+    background-color: hsl(var(--warning) / 0.2);
+    border-bottom-color: hsl(var(--warning) / 0.8);
   }
 </style>

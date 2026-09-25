@@ -1,7 +1,7 @@
 <script lang="ts">
   import AgentAvatarWithState from '$features/agent/components/agent-avatar/AgentAvatarWithState.svelte';
   import { getAvatarStateForSession } from '$features/agent/components/agent-avatar/avatar-state';
-  import { deriveWizardPendingQuestions } from '$lib/components/chat/questions/wizard-gate';
+  import { deriveAgentHasPendingQuestion } from '$lib/components/chat/questions/wizard-gate';
   import {
     selectAgentProvider,
     selectAgentSession,
@@ -31,7 +31,7 @@
   );
   const hasQuestion = $derived(
     $hasCapturedQuestion$ ||
-      deriveWizardPendingQuestions(appStore.state, agentId, $session$?.messages ?? []) !== null,
+      deriveAgentHasPendingQuestion(appStore.state, agentId, $session$?.messages ?? []),
   );
   const state = $derived(
     getAvatarStateForSession($session$, {

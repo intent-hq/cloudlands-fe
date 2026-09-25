@@ -8,6 +8,7 @@ import {
   isEmittedMockIpcEventChannel,
   mockInvoke,
   mockIpcListenerCount,
+  overrideMockIpcHandler,
   registerMockIpcHandler,
   resetMockIpcRouter,
   setMockIpcInvokeFallback,
@@ -19,6 +20,44 @@ import {
 describe('ipc-mock-router', () => {
   beforeEach(() => {
     resetMockIpcRouter();
+  });
+
+  describe('overrideMockIpcHandler', () => {
+    it('restores the original async handler and forwards arguments', async () => {
+      const original = vi.fn(async (...args: unknown[]) => ({ args }));
+      registerMockIpcHandler('demo:scope', original);
+      const dispose = overrideMockIpcHandler('demo:scope', () => 'preview');
+      expect(await mockInvoke('demo:scope')).toBe('preview');
+      expect(original).not.toHaveBeenCalled();
+      dispose();
+      expect(await mockInvoke('demo:scope', 42)).toEqual({ args: [42] });
+      expect(original).toHaveBeenCalledWith(42);
+      registerMockIpcHandler('demo:scope', () => 'later');
+      dispose();
+      expect(await mockInvoke('demo:scope')).toBe('later');
+    });
+
+    it('restores absence and allows repeated disposal', async () => {
+      const dispose = overrideMockIpcHandler('demo:scope', () => 'preview');
+      expect(await mockInvoke('demo:scope')).toBe('preview');
+      dispose();
+      dispose();
+      expect(hasMockIpcHandler('demo:scope')).toBe(false);
+      await expect(mockInvoke('demo:scope')).rejects.toBeInstanceOf(UnbridgedMockIpcChannelError);
+    });
+
+    it('rejects out-of-order cleanup even for identical nested handlers', async () => {
+      registerMockIpcHandler('demo:scope', () => 'product');
+      const handler = () => 'preview';
+      const outer = overrideMockIpcHandler('demo:scope', handler);
+      const inner = overrideMockIpcHandler('demo:scope', handler);
+      expect(outer).toThrow(/reverse order/);
+      expect(await mockInvoke('demo:scope')).toBe('preview');
+      inner();
+      expect(await mockInvoke('demo:scope')).toBe('preview');
+      outer();
+      expect(await mockInvoke('demo:scope')).toBe('product');
+    });
   });
 
   describe('mockInvoke', () => {

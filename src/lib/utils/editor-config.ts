@@ -230,6 +230,7 @@ const SelectionPreservation = Extension.create({
 });
 
 interface EditorConfigOptions {
+  ariaLabel?: string;
   element: HTMLElement;
   content: string;
   editable: boolean;
@@ -253,6 +254,7 @@ interface EditorConfigOptions {
  */
 export function createEditorConfig(options: EditorConfigOptions): EditorOptions {
   const {
+    ariaLabel = m.workspace_noteWithComments_editor_ariaLabel(),
     element,
     content,
     editable,
@@ -385,7 +387,7 @@ export function createEditorConfig(options: EditorConfigOptions): EditorOptions 
         createWorkspacesLink({
           openOnClick: false,
           HTMLAttributes: {
-            class: 'text-primary underline cursor-pointer',
+            class: 'text-primary-ink underline cursor-pointer',
           },
         }),
         TaskList.configure({
@@ -800,7 +802,7 @@ export function createEditorConfig(options: EditorConfigOptions): EditorOptions 
         createWorkspacesLink({
           openOnClick: false,
           HTMLAttributes: {
-            class: 'text-primary underline cursor-pointer',
+            class: 'text-primary-ink underline cursor-pointer',
           },
         }),
         TaskList.configure({
@@ -1059,6 +1061,9 @@ export function createEditorConfig(options: EditorConfigOptions): EditorOptions 
     },
     editorProps: {
       attributes: {
+        role: 'textbox',
+        'aria-multiline': 'true',
+        'aria-label': ariaLabel,
         class:
           'tiptap-editor h-full !outline-none focus:!outline-none border-none prose prose-sm dark:prose-invert max-w-none',
       },

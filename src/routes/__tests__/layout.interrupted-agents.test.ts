@@ -17,6 +17,8 @@ installConsoleTeardownGuard();
 const interruptedService = vi.hoisted(() => ({
   resolveInterruptedAgents: vi.fn(async () => {}),
   showHandler: null as ((agents: InterruptedAgent[]) => void) | null,
+  LiveAppClientStub: class {},
+  installedClient: null as unknown,
 }));
 
 vi.mock('$app/navigation', () => ({
@@ -43,21 +45,27 @@ vi.mock('$store/renderer/app-store-lifecycle', () => ({
 vi.mock('$store/renderer/sagas', () => ({ startAllAppSagas: () => [] }));
 vi.mock('$store/renderer/seeders', () => ({}));
 vi.mock('$features/layout/tab-types/register-all', () => ({ registerAllTabTypes: () => {} }));
-vi.mock('$features/backend/splash-gate', () => ({ wireSplashGate: () => () => {} }));
+vi.mock('$features/backend/splash-gate', () => ({
+  dismissSplashElement: () => {},
+  wireSplashGate: () => () => {},
+}));
 vi.mock('$lib/utils/diff-highlighter-preloader', () => ({ preloadDiffHighlighter: () => {} }));
 vi.mock('$lib/utils/monaco-workers', () => ({ configureMonacoWorkers: async () => {} }));
 vi.mock('$features/agent/interrupted-agents-service', () => ({
   installInterruptedAgentsService: (
-    _client: unknown,
+    client: unknown,
     showHandler: (agents: InterruptedAgent[]) => void,
   ) => {
+    interruptedService.installedClient = client;
     interruptedService.showHandler = showHandler;
     return () => {};
   },
   notifyInterruptedAgentsModalClosed: () => {},
   resolveInterruptedAgents: interruptedService.resolveInterruptedAgents,
 }));
-vi.mock('$lib/client/live/live-app-client', () => ({ LiveAppClient: class {} }));
+vi.mock('$lib/client/live/live-app-client', () => ({
+  LiveAppClient: interruptedService.LiveAppClientStub,
+}));
 
 vi.mock('$lib/components/modals/InterruptedAgentsModal.svelte', async () => ({
   default: (await import('./mocks/InterruptedAgentsModalProbe.svelte')).default,
@@ -205,13 +213,19 @@ describe('+layout.svelte interrupted-agents resolve handlers', () => {
     delete (globalThis as Record<string, unknown>).__releaseNotesModalProps;
   });
 
+  it('installs the interrupted-agents service on the live daemon client', async () => {
+    await renderLayout();
+
+    expect(interruptedService.installedClient).toBeInstanceOf(interruptedService.LiveAppClientStub);
+  });
+
   it('routes resume-selected through resolveInterruptedAgents (stops the watcher)', async () => {
     await renderLayout();
 
     await modalProps().onResumeSelected?.(['agent-1'], ['agent-2']);
 
     expect(interruptedService.resolveInterruptedAgents).toHaveBeenCalledWith(
-      expect.anything(),
+      expect.any(interruptedService.LiveAppClientStub),
       ['agent-1'],
       ['agent-2'],
     );
@@ -223,7 +237,7 @@ describe('+layout.svelte interrupted-agents resolve handlers', () => {
     await modalProps().onAbandonAll?.(['agent-1', 'agent-2']);
 
     expect(interruptedService.resolveInterruptedAgents).toHaveBeenCalledWith(
-      expect.anything(),
+      expect.any(interruptedService.LiveAppClientStub),
       [],
       ['agent-1', 'agent-2'],
     );

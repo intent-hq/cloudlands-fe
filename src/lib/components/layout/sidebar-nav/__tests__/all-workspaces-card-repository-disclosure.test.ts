@@ -105,9 +105,42 @@ describe('AllWorkspacesCard repository disclosure', () => {
     appStore.init();
     appStore.dispatch(resetWorkspaceState());
     appStore.dispatch(setPinnedWorkspaceIds([]));
+    appStore.dispatch(hydrateSidebarNav({ collapsedRepoGroupKeys: [] }));
     appStore.dispatch(setAllSpacesViewMode('recent'));
     appStore.dispatch(setShowArchivedWorkspaces(false));
     vi.mocked(goto).mockReset();
+  });
+
+  it('hides repo rows and show-more, retains collapse on remount, and skips hidden rows during navigation', async () => {
+    const view = renderRepositoryView(() => {
+      seedRepository('alpha', 4);
+      seedRepository('beta', 3, 10);
+    });
+    const group = await waitFor(() => repositoryGroup('alpha'));
+    const toggle = within(group).getByRole('button', { name: 'alpha', exact: true });
+    const time = group.querySelector('[data-workspace-card-time]');
+    expect(time).not.toBeNull();
+    expect(time?.closest('[hidden]')).toBeNull();
+    await fireEvent.click(toggle);
+    await waitFor(() => expect(toggle.getAttribute('aria-expanded')).toBe('false'));
+    expect(document.getElementById(toggle.getAttribute('aria-controls')!)?.hidden).toBe(true);
+    expect(within(group).queryByRole('button', { name: 'Show more' })).toBeNull();
+    expect(within(group).queryByRole('button', { name: 'alpha space 1' })).toBeNull();
+    expect(time?.closest('[hidden]')?.id).toBe(toggle.getAttribute('aria-controls'));
+    const search = screen.getByPlaceholderText(m.layout_activeCard_search_placeholder());
+    await fireEvent.keyDown(search, { key: 'Home' });
+    await fireEvent.keyDown(search, { key: 'Enter' });
+    await waitFor(() => expect(goto).toHaveBeenCalledWith('/workspace/beta-1'));
+    view.unmount();
+    renderRepositoryView(() => {});
+    const restored = await screen.findByRole('button', { name: 'alpha', exact: true });
+    expect(restored.getAttribute('aria-expanded')).toBe('false');
+    await fireEvent.click(restored);
+    await waitFor(() => expect(restored.getAttribute('aria-expanded')).toBe('true'));
+    expect(screen.getByRole('button', { name: 'alpha space 1' })).toBeTruthy();
+    const restoredTime = repositoryGroup('alpha').querySelector('[data-workspace-card-time]');
+    expect(restoredTime).not.toBeNull();
+    expect(restoredTime?.closest('[hidden]')).toBeNull();
   });
 
   it('renders all three members without a disclosure control', async () => {

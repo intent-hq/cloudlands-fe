@@ -86,7 +86,7 @@ describe('mapEventToFeedEntry (PROTOCOL §6.3/§6.5-shaped payloads)', () => {
 
   it('suppresses went-idle agent:status-changed rows (duplicate of agent:idle)', () => {
     // The daemon emits agent:idle AND agent:status-changed → idle at the same
-    // instant; both would chip "AGENT IDLE" in different colors. Only the
+    // instant; both would chip "Agent idle" in different colors. Only the
     // canonical agent:idle renders.
     expect(
       mapEventToFeedEntry(

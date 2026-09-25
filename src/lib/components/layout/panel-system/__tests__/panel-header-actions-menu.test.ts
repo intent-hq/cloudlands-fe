@@ -99,8 +99,8 @@ vi.mock('$store/renderer/slices/permission/permission-selectors', () => ({
 vi.mock('$store/renderer/slices/hud/hud-selectors', () => ({
   selectHudAgentHasPendingQuestion: () => readable(false),
 }));
-vi.mock('$lib/components/ui/toast', () => ({
-  toast: { success: vi.fn(), error: vi.fn() },
+vi.mock('$lib/components/patterns/notify', () => ({
+  notify: { success: vi.fn(), error: vi.fn() },
 }));
 vi.mock('$features/agent/components/agent-avatar/AgentAvatar.svelte', async () => ({
   default: (await import('$lib/components/workspace/__tests__/mocks/MockAgentAvatar.svelte'))
@@ -200,13 +200,112 @@ beforeEach(() => {
   });
 });
 
-afterEach(() => {
+afterEach(async () => {
+  await vi.dynamicImportSettled();
   setDraggedPane(null);
   cleanup();
   vi.unstubAllGlobals();
 });
 
+describe('traditional tab context commands', () => {
+  let clipboardDescriptor: PropertyDescriptor | undefined;
+  beforeEach(() => {
+    clipboardDescriptor = Object.getOwnPropertyDescriptor(navigator, 'clipboard');
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: { writeText: vi.fn().mockResolvedValue(undefined) },
+    });
+  });
+  afterEach(() => {
+    if (clipboardDescriptor) Object.defineProperty(navigator, 'clipboard', clipboardDescriptor);
+    else Reflect.deleteProperty(navigator, 'clipboard');
+  });
+
+  it.each([
+    { type: 'file', filePath: '/work/src/example.ts', expected: 'example.ts' },
+    { type: 'diff', diffPath: '/work/src/change.ts', expected: 'change.ts' },
+    { type: 'note', noteId: 'note-two', expected: 'note-two.md' },
+    { type: 'agent', agentId: 'agent-two', expected: 'agent-two.json' },
+  ])('copies the context $type filename, not the active tab filename', async (entry) => {
+    const writeText = vi.spyOn(navigator.clipboard, 'writeText').mockResolvedValue();
+    const target = { ...entry, id: 'target', title: 'Target', closable: true } as PanelTab;
+    const { container } = renderHeader('note', {
+      tabs: [tab('note'), target],
+      showTabStrip: true,
+    });
+    await fireEvent.contextMenu(container.querySelector('[data-tab-id="target"]')!);
+    await fireEvent.click(await screen.findByRole('menuitem', { name: 'Copy Filename' }));
+    expect(writeText).toHaveBeenCalledExactlyOnceWith(entry.expected);
+    writeText.mockRestore();
+  });
+
+  it('opens the context browser URL once without selecting that tab', async () => {
+    const onTabClick = vi.fn();
+    const { container } = renderHeader('note', {
+      showTabStrip: true,
+      onTabClick,
+      tabs: [
+        tab('note'),
+        {
+          id: 'target',
+          type: 'browser',
+          title: 'Browser',
+          browserUrl: 'https://example.org/context',
+        },
+      ],
+    });
+    vi.mocked(invoke).mockClear();
+    await fireEvent.contextMenu(container.querySelector('[data-tab-id="target"]')!);
+    await fireEvent.click(await screen.findByRole('menuitem', { name: 'Open in Browser' }));
+    expect(invoke).toHaveBeenCalledWith('shell:openExternal', {
+      url: 'https://example.org/context',
+    });
+    expect(
+      vi.mocked(invoke).mock.calls.filter(([channel]) => channel === 'shell:openExternal'),
+    ).toHaveLength(1);
+    expect(onTabClick).not.toHaveBeenCalled();
+  });
+
+  it('keeps remote file copy while excluding native reveal', async () => {
+    mocks.workspaceHostLocal = false;
+    const writeText = vi.spyOn(navigator.clipboard, 'writeText').mockResolvedValue();
+    const { container } = renderHeader('note', {
+      showTabStrip: true,
+      tabs: [{ id: 'target', type: 'file', title: 'Remote', filePath: '/remote/file.ts' }],
+      activeTabId: 'target',
+    });
+    await fireEvent.contextMenu(container.querySelector('[data-tab-id="target"]')!);
+    await screen.findByRole('menu');
+    expect(
+      screen.queryByRole('menuitem', { name: /Reveal in (Finder|Explorer|File Manager)/i }),
+    ).toBeNull();
+    await fireEvent.click(screen.getByRole('menuitem', { name: 'Copy Absolute Path' }));
+    expect(writeText).toHaveBeenCalledExactlyOnceWith('/remote/file.ts');
+    writeText.mockRestore();
+  });
+});
+
 describe('mounted panel header actions menu', () => {
+  it('removes unregistered content sections while retaining working panel commands', async () => {
+    const onZoomToggle = vi.fn();
+    const view = renderHeader('note', { onZoomToggle });
+    const trigger = panelTrigger(view.container);
+    await fireEvent.click(trigger);
+    const menu = await screen.findByRole('menu');
+    expect(within(menu).getByTestId('content-display-action')).toBeTruthy();
+    expect(within(menu).getByTestId('content-command-action')).toBeTruthy();
+
+    await view.rerender({ contentActions: undefined });
+    expect(within(menu).queryByTestId('content-display-action')).toBeNull();
+    expect(within(menu).queryByTestId('content-command-action')).toBeNull();
+    expect(menu.querySelector('[data-panel-actions-section="display"]')).toBeNull();
+    expect(menu.querySelector('[data-panel-actions-section="actions"]')).toBeNull();
+    await fireEvent.click(within(menu).getByRole('menuitem', { name: /Zoom Panel/i }));
+    expect(onZoomToggle).toHaveBeenCalledOnce();
+    await waitFor(() => expect(screen.queryByRole('menu')).toBeNull());
+    expect(trigger.getAttribute('aria-expanded')).toBe('false');
+  });
+
   it('keeps identity left and orders every action at the right edge', () => {
     const onClosePanel = vi.fn();
     const populated = renderHeader('note', {
@@ -407,12 +506,42 @@ describe('mounted panel header actions menu', () => {
       expect(menu.querySelector('[data-panel-actions-section="display"]')).toBeTruthy();
       expect(menu.querySelector('[data-panel-actions-section="actions"]')).toBeTruthy();
       expect(menu.querySelector('[data-panel-actions-section="open-in"]')).toBeNull();
-      const actionsSection = menu.querySelector('[data-panel-actions-section="actions"]')!;
-      const separators = Array.from(menu.querySelectorAll('[data-slot="menu-separator"]'));
-      expect(separators).toHaveLength(1);
-      expect(separators[0].compareDocumentPosition(actionsSection)).toBe(
-        Node.DOCUMENT_POSITION_FOLLOWING,
-      );
+    },
+  );
+
+  it.each([true, false])(
+    'routes the file through the shared Open in section only on a local host (local=%s)',
+    async (isLocal) => {
+      mocks.workspaceHostLocal = isLocal;
+      const fileTab: PanelTab = {
+        id: 'file-tab',
+        type: 'file',
+        title: 'main.ts',
+        filePath: 'src/main.ts',
+        closable: true,
+      };
+      const { container } = renderHeader('note', {
+        tabs: [fileTab],
+        activeTabId: fileTab.id,
+      });
+      const trigger = panelTrigger(container);
+      await fireEvent.click(trigger);
+
+      const menu = await screen.findByRole('menu');
+      if (!isLocal) {
+        expect(menu.querySelector('[data-panel-actions-section="open-in"]')).toBeNull();
+        expect(within(menu).queryByRole('menuitem', { name: 'Open in mock editor' })).toBeNull();
+        return;
+      }
+
+      await vi.dynamicImportSettled();
+      const section = menu.querySelector<HTMLElement>('[data-panel-actions-section="open-in"]')!;
+      const openIn = await within(section).findByText('Open in mock editor');
+      expect(within(menu).getAllByText('Open in mock editor')).toHaveLength(1);
+      expect(openIn.getAttribute('data-file-path')).toBe('src/main.ts');
+      expect(openIn.getAttribute('data-workspace-id')).toBe('workspace-1');
+      await fireEvent.click(openIn);
+      await waitFor(() => expect(trigger.getAttribute('aria-expanded')).toBe('false'));
     },
   );
 
@@ -553,16 +682,16 @@ describe('mounted panel header actions menu', () => {
     expect(onZoomToggle).toHaveBeenCalledOnce();
 
     await fireEvent.click(trigger);
-    await fireEvent.click(await screen.findByRole('menuitem', { name: 'Move left' }));
+    await fireEvent.click(await screen.findByRole('menuitem', { name: 'Move tab left' }));
     expect(onMoveLeft).toHaveBeenCalledOnce();
 
     await fireEvent.click(trigger);
-    await fireEvent.click(await screen.findByRole('menuitem', { name: 'Move right' }));
+    await fireEvent.click(await screen.findByRole('menuitem', { name: 'Move tab right' }));
     expect(onMoveRight).toHaveBeenCalledOnce();
     await waitFor(() => expect(screen.queryByRole('menu')).toBeNull());
 
     await fireEvent.click(trigger);
-    const movePaneLeft = await screen.findByRole('menuitem', { name: 'Move active pane left' });
+    const movePaneLeft = await screen.findByRole('menuitem', { name: 'Move panel left' });
     expect(movePaneLeft.textContent).toContain(
       formatShortcut(SHORTCUTS.MOVE_PANE_PREVIOUS_COLUMN.key),
     );
@@ -570,7 +699,7 @@ describe('mounted panel header actions menu', () => {
     expect(onMovePaneLeft).toHaveBeenCalledOnce();
 
     await fireEvent.click(trigger);
-    await fireEvent.click(await screen.findByRole('menuitem', { name: 'Move active pane right' }));
+    await fireEvent.click(await screen.findByRole('menuitem', { name: 'Move panel right' }));
     expect(onMovePaneRight).toHaveBeenCalledOnce();
 
     await fireEvent.click(trigger);
@@ -598,14 +727,12 @@ describe('mounted panel header actions menu', () => {
     await fireEvent.click(panelTrigger(container));
 
     expect(
-      (await screen.findByRole('menuitem', { name: 'Move active pane left' })).getAttribute(
+      (await screen.findByRole('menuitem', { name: 'Move panel left' })).getAttribute(
         'aria-disabled',
       ),
     ).toBe('true');
     expect(
-      screen
-        .getByRole('menuitem', { name: 'Move active pane right' })
-        .getAttribute('aria-disabled'),
+      screen.getByRole('menuitem', { name: 'Move panel right' }).getAttribute('aria-disabled'),
     ).toBe('true');
   });
 

@@ -1,3 +1,5 @@
+<!-- @catalog-exempt: deprecated wrapper over the catalogued Menu (replacement $lib/components/ui/menu); covered by __tests__/dropdown-menu-escape.test.ts -->
+
 <script module lang="ts">
   let closeActiveMenu: (() => void) | null = null;
 </script>
@@ -15,6 +17,7 @@
     side = 'bottom',
     portal = true,
     collisionPadding = 8,
+    alignIconColumn = false,
     trigger,
     content,
     contentClass = '',
@@ -26,6 +29,7 @@
     side?: 'top' | 'bottom' | 'left' | 'right';
     portal?: boolean;
     collisionPadding?: number;
+    alignIconColumn?: boolean;
     trigger?: Snippet<[{ toggle: () => void; open: boolean; props: Record<string, unknown> }]>;
     content?: Snippet<[{ close: () => void }]>;
     contentClass?: string;
@@ -99,6 +103,7 @@
       {side}
       {portal}
       {collisionPadding}
+      {alignIconColumn}
       preventScroll={false}
       class={contentClass}
       maxHeight={contentMaxHeight}

@@ -16,17 +16,18 @@ import type { ConnectionRecord } from '$shared/types/connections';
 vi.mock('$store/renderer/store', async () => {
   const { createAppStoreMockModule } =
     await import('$store/renderer/utils/test-helpers/store-mock');
+  const { initialState } = await import('$store/renderer/slices/connections/connections-slice');
   return createAppStoreMockModule({
     state: {
-      connections: { connectedIds: [], pinnedDaemonVersion: null, keychainSync: null },
+      connections: initialState,
     },
     dispatch: vi.fn(),
   });
 });
 
 const toastSuccess = vi.fn();
-vi.mock('$lib/components/ui/toast', () => ({
-  toast: {
+vi.mock('$lib/components/patterns/notify', () => ({
+  notify: {
     get success() {
       return toastSuccess;
     },

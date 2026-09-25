@@ -1,4 +1,9 @@
 <script lang="ts">
+  import {
+    defineSettings,
+    SettingsFieldRow,
+    SettingsForm,
+  } from '$lib/components/patterns/settings';
   /**
    * Hardware / Creator Micro settings panel.
    *
@@ -14,10 +19,12 @@
    */
   import { onMount } from 'svelte';
   import Fa from 'svelte-fa';
-  import Toggle from '$lib/components/ui/toggle/toggle.svelte';
-  import { Select } from '$lib/components/ui/select';
-  import Button from '$lib/components/ui/button/button.svelte';
-  import Checkbox from '$lib/components/ui/checkbox/checkbox.svelte';
+  import {
+    Button,
+    Checkbox,
+    Select,
+    Switch,
+  } from '$lib/components/patterns/settings/custom-controls';
   import { m } from '$shared/paraglide/messages.js';
   import { MACOS_INPUT_MONITORING_SETTINGS_URL } from '$shared/constants';
   import { formatNumber } from '$lib/i18n/format';
@@ -26,12 +33,15 @@
     setActionKeyMapping,
     setCycleScope,
     setHardwareConsoleEnabled,
+    setHardwareConsoleEncoderBehavior,
     setPromptPickerLimit,
   } from '$store/renderer/slices/hardware-console/hardware-console-slice';
   import {
     selectHardwareConsoleActionMappingsByModel,
     selectHardwareConsoleCycleScopes,
     selectHardwareConsoleEnabled,
+    selectHardwareConsoleEncoderBehavior,
+    selectHardwareConsoleEncoderBehaviorSaveFailed,
     selectHardwareConsoleKeySlots,
     selectPromptPickerLimit,
   } from '$store/renderer/slices/hardware-console/hardware-console-selectors';
@@ -72,11 +82,50 @@
   import HardwareConsoleDeviceSvg, { codexCapLabel } from './HardwareConsoleDeviceSvg.svelte';
 
   const enabled$ = selectHardwareConsoleEnabled();
+  const encoderBehavior$ = selectHardwareConsoleEncoderBehavior();
+  const encoderSaveFailed$ = selectHardwareConsoleEncoderBehaviorSaveFailed();
   const promptPickerLimit$ = selectPromptPickerLimit();
   const actionMappingsByModel$ = selectHardwareConsoleActionMappingsByModel();
   const cycleScopes$ = selectHardwareConsoleCycleScopes();
   const keySlots$ = selectHardwareConsoleKeySlots();
   const workspaceItems$ = selectWorkspaceItems();
+
+  const encoderSettings = $derived(
+    defineSettings({
+      sections: [
+        {
+          id: 'hardware-encoder',
+          title: m.settings_hardware_encoderBehavior_label(),
+          entries: [
+            {
+              kind: 'select',
+              id: 'hardware-encoder-behavior',
+              label: m.settings_hardware_encoderBehavior_label(),
+              description: m.settings_hardware_encoderBehavior_description(),
+              get: () => $encoderBehavior$,
+              set: (value) => {
+                if (value === 'agent-effort' || value === 'workspace-switch') {
+                  appStore.dispatch(setHardwareConsoleEncoderBehavior(value));
+                }
+              },
+              error: () =>
+                $encoderSaveFailed$ ? m.settings_hardware_encoderBehavior_save_error() : undefined,
+              options: [
+                {
+                  value: 'agent-effort',
+                  label: m.settings_hardware_encoderBehavior_effort_label(),
+                },
+                {
+                  value: 'workspace-switch',
+                  label: m.settings_hardware_encoderBehavior_workspaces_label(),
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    }),
+  );
 
   // Cycle-scope checkbox rows: one per togglable family, labeled with the
   // family's action label from the registry (locale-reactive getter).
@@ -144,8 +193,8 @@
     });
   });
 
-  function handleEnabledChange(value: string | boolean) {
-    appStore.dispatch(setHardwareConsoleEnabled(Boolean(value)));
+  function handleEnabledChange(enabled: boolean) {
+    appStore.dispatch(setHardwareConsoleEnabled(enabled));
   }
 
   function handleLimitChange(value: string) {
@@ -307,33 +356,32 @@
 
 <div class="flex flex-col bg-card rounded-xl divide-y divide-border">
   <!-- Enable toggle -->
-  <section class="px-6 py-5">
-    <div class="flex items-center justify-between">
-      <div>
-        <p class="text-sm font-medium text-foreground">{m.settings_hardware_enable_label()}</p>
-        <p class="text-xs text-subtle mt-1">{m.settings_hardware_enable_description()}</p>
-      </div>
-      <Toggle
-        pressed={$enabled$}
-        onChange={handleEnabledChange}
-        variant="indicator"
+  <section data-slot="settings-section-body" class="px-6 py-4">
+    <SettingsFieldRow
+      id="hardware-enabled"
+      label={m.settings_hardware_enable_label()}
+      description={m.settings_hardware_enable_description()}
+    >
+      <Switch
+        checked={$enabled$}
+        onCheckedChange={handleEnabledChange}
         size="xs"
         class="mb-auto"
         ariaLabel={m.settings_hardware_enable_label()}
       />
-    </div>
+    </SettingsFieldRow>
   </section>
 
   {#if $enabled$}
     <!-- Connection status -->
-    <section class="px-6 py-4">
+    <section data-slot="settings-section-body" class="px-6 py-4">
       <div class="flex items-center justify-between gap-4">
         <div class="min-w-0">
-          <p class="text-sm font-medium text-foreground">
+          <p class="type-body font-medium text-foreground">
             {m.settings_hardware_status_label()}
           </p>
           {#if connectionStatus === 'connected' && deviceName}
-            <p class="text-xs text-subtle mt-0.5">
+            <p class="type-body text-subtle mt-0.5">
               <span class="inline-block w-2 h-2 rounded-full bg-green-500 mr-1.5 align-middle"
               ></span>{m.settings_hardware_status_connected_label({ name: deviceName })}
               {#if statusDetails}
@@ -342,25 +390,25 @@
               {/if}
             </p>
           {:else if connectionStatus === 'connecting'}
-            <p class="text-xs text-subtle mt-0.5">
+            <p class="type-body text-subtle mt-0.5">
               {m.settings_hardware_status_connecting_label()}
             </p>
           {:else if connectionStatus === 'unavailable'}
-            <p class="text-xs text-subtle mt-0.5">
+            <p class="type-body text-subtle mt-0.5">
               {m.settings_hardware_status_unavailable_label()}
             </p>
           {:else if showConnectError}
             {#if showInputMonitoringHint}
-              <p class="text-xs text-amber-500/90 mt-0.5">
+              <p class="type-body text-warning-ink mt-0.5">
                 {m.settings_hardware_inputMonitoring_error()}
               </p>
-              <p class="text-xs text-subtle mt-1">
+              <p class="type-body text-subtle mt-1">
                 {m.settings_hardware_inputMonitoring_regrant_description()}
               </p>
               <!-- A NotAllowedError is not always Input Monitoring (e.g. the
                    device claimed exclusively elsewhere), so keep the raw
                    error detail visible in case the guidance misdiagnoses. -->
-              <p class="text-xs text-subtle/70 mt-1">
+              <p class="type-body text-subtle/70 mt-1">
                 {m.settings_hardware_connectError_label({ error: lastConnectError?.message ?? '' })}
               </p>
               <Button
@@ -372,17 +420,17 @@
                 {m.settings_hardware_inputMonitoring_openSettings_button()}
               </Button>
             {:else}
-              <p class="text-xs text-amber-500/90 mt-0.5">
+              <p class="type-body text-warning-ink mt-0.5">
                 {m.settings_hardware_connectError_label({ error: lastConnectError?.message ?? '' })}
               </p>
             {/if}
           {:else}
-            <p class="text-xs text-subtle mt-0.5">
+            <p class="type-body text-subtle mt-0.5">
               {m.settings_hardware_status_disconnected_label()}
             </p>
           {/if}
           {#if connectFailed && !showConnectError}
-            <p class="text-xs text-amber-500/90 mt-1">
+            <p class="type-body text-warning-ink mt-1">
               {m.settings_hardware_connectFailed_error()}
             </p>
           {/if}
@@ -404,14 +452,15 @@
     </section>
 
     <!-- Action keys: device graphic + assignment dropdown -->
-    <section class="px-6 py-5">
-      <p class="text-sm font-medium text-foreground">{m.settings_hardware_actionKeys_label()}</p>
-      <p class="text-xs text-subtle mt-1 mb-4">
+    <section data-slot="settings-section-body" class="px-6 py-4">
+      <p class="type-body font-medium text-foreground">{m.settings_hardware_actionKeys_label()}</p>
+      <p class="type-body text-subtle mt-1 mb-4">
         {m.settings_hardware_actionKeys_description()}
       </p>
       <div class="flex flex-col sm:flex-row gap-6 items-start">
         <HardwareConsoleDeviceSvg
           model={deviceModel}
+          encoderBehavior={$encoderBehavior$}
           {selectedSlot}
           onSelectKey={(slot) => (selectedSlot = slot)}
           {actionSlots}
@@ -421,11 +470,11 @@
         />
         <div class="w-full sm:w-60 shrink-0">
           {#if selectedSlot !== null}
-            <p class="text-xs font-medium text-muted-foreground mb-2">
+            <p id="hardware-selected-key" class="type-body font-medium text-muted-foreground mb-2">
               {selectedKeyLabel}
             </p>
             <Select.Root value={selectedActionId ?? 'none'} onchange={handleActionChange}>
-              <Select.Trigger>
+              <Select.Trigger aria-labelledby="hardware-selected-key">
                 <span class="truncate">{selectedActionLabel}</span>
               </Select.Trigger>
               <Select.Content portal class="max-h-75">
@@ -440,7 +489,7 @@
               </Select.Content>
             </Select.Root>
             {#if selectedActionId === 'push-to-talk'}
-              <ul class="text-xs text-subtle mt-2 space-y-0.5">
+              <ul class="type-caption text-subtle mt-2 space-y-0.5">
                 <li>{m.settings_hardware_pttHint_hold_description()}</li>
                 <li>{m.settings_hardware_pttHint_tap_description()}</li>
                 <li>{m.settings_hardware_pttHint_doublePress_description()}</li>
@@ -448,12 +497,12 @@
               </ul>
             {/if}
             {#if showLinkedKeyWarning}
-              <p class="text-xs text-amber-500/90 mt-2">
+              <p class="type-body text-warning-ink mt-2">
                 {m.settings_hardware_linkedKey_warning()}
               </p>
             {/if}
           {:else}
-            <p class="text-xs text-subtle">
+            <p class="type-body text-subtle">
               {m.settings_hardware_actionKeys_selectPrompt()}
             </p>
           {/if}
@@ -471,17 +520,21 @@
       </div>
     </section>
 
+    <section data-slot="settings-section-body" class="px-6 py-4">
+      <SettingsForm schema={encoderSettings} embedded compact={false} />
+    </section>
+
     <!-- Cycle scope: which cycle actions include sub-agents -->
-    <section class="px-6 py-5">
-      <p class="text-sm font-medium text-foreground">
+    <section data-slot="settings-section-body" class="px-6 py-4">
+      <p class="type-body font-medium text-foreground">
         {m.settings_hardware_cycleScope_label()}
       </p>
-      <p class="text-xs text-subtle mt-1 mb-3">
+      <p class="type-body text-subtle mt-1 mb-3">
         {m.settings_hardware_cycleScope_description()}
       </p>
       <div class="flex flex-col gap-2">
         {#each cycleScopeFamilies as family (family.familyId)}
-          <label class="flex items-center gap-2 text-sm text-foreground cursor-pointer w-fit">
+          <label class="flex items-center gap-2 type-body text-foreground cursor-pointer w-fit">
             <Checkbox
               checked={$cycleScopes$[family.familyId] === 'all'}
               onCheckedChange={(checked) => handleCycleScopeChange(family.familyId, checked)}
@@ -497,19 +550,23 @@
     </section>
 
     <!-- Prompt picker limit -->
-    <section class="px-6 py-5">
+    <section data-slot="settings-section-body" class="px-6 py-4">
       <div class="flex items-center justify-between">
         <div>
-          <p class="text-sm font-medium text-foreground">
+          <p class="type-body font-medium text-foreground">
             {m.settings_hardware_promptLimit_label()}
           </p>
-          <p class="text-xs text-subtle mt-1">
+          <p class="type-body text-subtle mt-1">
             {m.settings_hardware_promptLimit_description()}
           </p>
         </div>
         <div class="w-22.5 flex-shrink-0">
-          <Select.Root value={String($promptPickerLimit$)} onchange={handleLimitChange}>
-            <Select.Trigger>
+          <Select.Root
+            value={String($promptPickerLimit$)}
+            invalid={!promptLimitOptions.includes($promptPickerLimit$)}
+            onchange={handleLimitChange}
+          >
+            <Select.Trigger aria-label={m.settings_hardware_promptLimit_label()}>
               <span>{$promptPickerLimit$}</span>
             </Select.Trigger>
             <Select.Content portal class="max-h-75 w-22.5">

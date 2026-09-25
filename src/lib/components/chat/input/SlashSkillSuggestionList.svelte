@@ -3,34 +3,41 @@
   import { Tooltip } from '$lib/components/ui/tooltip';
   import type { SkillInfo } from '$store/renderer/slices/skills/skills-types';
   import { m } from '$shared/paraglide/messages.js';
+  import { cn } from '$lib/utils';
+  import { menuItem } from '$lib/components/ui/menu';
 
   interface Props {
     items?: readonly SkillInfo[];
     loading?: boolean;
     error?: string | null;
-    listboxId: string;
+    listboxId?: string;
     onSelect: (skill: SkillInfo) => void;
     onDismiss?: () => void;
+    onRetry?: () => void;
     onActiveOptionChange?: (optionId: string | undefined) => void;
   }
 
+  const componentId = $props.id();
   let {
     items = [],
     loading = false,
     error = null,
-    listboxId,
+    listboxId = `${componentId}-listbox`,
     onSelect,
     onDismiss,
+    onRetry,
     onActiveOptionChange,
   }: Props = $props();
 
-  const componentId = $props.id();
   let selectedIndex = $state(0);
   let listElement = $state<HTMLDivElement>();
 
   const selectedOptionId = $derived(
-    items.length > 0 ? `${componentId}-option-${selectedIndex}` : undefined,
+    !loading && !error && items[selectedIndex] ? optionId(items[selectedIndex]) : undefined,
   );
+  function optionId(item: SkillInfo) {
+    return `${componentId}-option-${encodeURIComponent(`${item.name}:${item.location}`)}`;
+  }
 
   $effect(() => {
     items;
@@ -57,10 +64,11 @@
 
   function selectItem(index: number) {
     const item = items[index];
-    if (item) onSelect(item);
+    if (item && !loading && !error) onSelect(item);
   }
 
   function handleKeyDown(event: KeyboardEvent): boolean {
+    if ((loading || error) && event.key !== 'Escape') return false;
     switch (event.key) {
       case 'ArrowUp':
         if (items.length === 0) return false;
@@ -107,6 +115,14 @@
   {:else if error}
     <div class="slash-skill-state" role="alert">
       {m.chat_slashSkillSuggestionList_loadFailed_label()}
+      {#if onRetry}
+        <Button
+          variant="ghost"
+          size="sm"
+          onpointerdown={(event) => event.preventDefault()}
+          onclick={onRetry}>{m.ui_errorToast_retry_label()}</Button
+        >
+      {/if}
     </div>
   {:else if items.length === 0}
     <div class="slash-skill-state" role="status">
@@ -127,11 +143,17 @@
         <Tooltip content={item.description} side="right" align="start" size="sm" class="w-full">
           <Button
             type="button"
-            id={`${componentId}-option-${index}`}
+            id={optionId(item)}
             variant="ghost"
             size="sm"
-            class={`slash-skill-option h-auto w-full justify-start rounded-none border-0 bg-transparent px-2 py-1.5 text-left text-inherit shadow-none hover:border-0 hover:text-inherit focus-visible:border-0 focus-visible:ring-0 active:border-0 ${selectedIndex === index ? 'active' : ''}`}
+            labelClass="type-body"
+            class={cn(
+              menuItem(),
+              'slash-skill-option h-auto rounded-none border-0 bg-transparent py-1.5 text-inherit shadow-none hover:border-0 hover:text-inherit focus-visible:border-0 active:border-0',
+              selectedIndex === index && 'active',
+            )}
             role="option"
+            tabindex={-1}
             aria-label={item.name}
             aria-selected={selectedIndex === index}
             onpointerenter={() => (selectedIndex = index)}
@@ -159,7 +181,7 @@
   }
 
   :global(.slash-skill-option:focus-visible) {
-    outline: 2px solid hsl(var(--primary));
+    outline: 1px solid hsl(var(--primary-ink));
     outline-offset: -2px;
   }
 

@@ -257,7 +257,9 @@ test('Agents card shares adaptive stack geometry at boundary counts', async ({ p
             'running',
             ...Array.from({ length: visibleCount - 1 }, () => 'idle'),
           ]);
-          expect(geometry.items.at(-1)?.mask).toBe('none');
+          // Upstream panel polish (0519bd81): the overflow tile overlaps the final avatar too.
+          if (geometry.overflow) expect(geometry.items.at(-1)?.mask).toContain('url(');
+          else expect(geometry.items.at(-1)?.mask).toBe('none');
           expect(geometry.items.slice(0, -1).every(({ mask }) => mask.includes('url('))).toBe(true);
           const steps = geometry.items
             .slice(1)
@@ -312,6 +314,8 @@ test('visible Agents stack avatars support hover, focus, Enter, and Space', asyn
   await buttons.nth(0).hover();
   await expect(page.locator('[data-sidebar-hover-card="agent"]')).toBeVisible();
   await page.mouse.move(0, 0);
+  // Wait for the previous hover card exit before asserting the next focused card.
+  await expect(page.locator('[data-sidebar-hover-card="agent"]')).toHaveCount(0);
   await buttons.nth(1).focus();
   await expect(buttons.nth(1)).toBeFocused();
   await expect(page.locator('[data-sidebar-hover-card="agent"]')).toBeVisible();
@@ -357,7 +361,10 @@ test('Browser and Shell compact cards expand into tested six-member deck bodies'
   const strip = page.locator('[data-sidebar-tab-strip]');
   await expect(strip.locator('[data-sidebar-collapsed-tab]')).toHaveCount(6);
   await expect(strip).toHaveAttribute('data-active-tab', 'browser');
-  await expect(page.locator('[data-sidebar-browser-list]')).toBeVisible();
+  // The browser list renders no empty-state row since #2441 (compact browser
+  // and shell sidebar cards), so with no browser tabs it mounts as an empty
+  // zero-height container; assert it is mounted rather than painted.
+  await expect(page.locator('[data-sidebar-browser-list]')).toBeAttached();
 
   await strip.locator('[data-sidebar-collapsed-tab][data-active="true"] button').click();
   await bottomCards.nth(1).locator('button').first().click();

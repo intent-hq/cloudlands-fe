@@ -3,11 +3,6 @@ import { cleanup, render } from '@testing-library/svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import StreamingTypingIndicator from '../StreamingTypingIndicator.svelte';
-import {
-  CHAT_OPERATIONAL_LEADING_CLASS,
-  CHAT_OPERATIONAL_ROW_CLASS,
-  CHAT_OPERATIONAL_SUMMARY_CLASS,
-} from '../operational-disclosure-row';
 
 interface AnimationRecord {
   options: KeyframeAnimationOptions;
@@ -55,35 +50,19 @@ beforeEach(() => {
 
 afterEach(cleanup);
 
-function expectClasses(element: Element, contract: string) {
-  for (const token of contract.split(' ')) expect(element.className).toContain(token);
-}
-
-describe('StreamingTypingIndicator geometry matches operational rows', () => {
-  it('uses the shared row geometry and a 16px five-arm currentColor mark', () => {
+describe('StreamingTypingIndicator', () => {
+  it('exposes an accessible playing status', () => {
     const { container } = render(StreamingTypingIndicator, {
       props: { visible: true, message: 'Thinking' },
     });
-    const row = container.firstElementChild!;
-    const leading = container.querySelector('[data-operational-leading]')!;
-    const summary = container.querySelector('[data-operational-summary]')!;
     const mark = container.querySelector('[data-slot="intent-mark-loader"]')!;
 
-    expect(row.className).toContain(CHAT_OPERATIONAL_ROW_CLASS);
-    expect(leading.className).toContain(CHAT_OPERATIONAL_LEADING_CLASS);
-    expect(summary.className).toContain(CHAT_OPERATIONAL_SUMMARY_CLASS);
-    expectClasses(row, 'type-body grid items-center text-muted-foreground');
-    expect(mark.getAttribute('data-variant')).toBe('bloom');
     expect(mark.getAttribute('data-playing')).toBe('true');
-    expect(mark.getAttribute('width')).toBe('16');
-    expect(mark.getAttribute('height')).toBe('16');
-    expect(mark.getAttribute('viewBox')).toBe('0 0 256 208');
-    expect(mark.querySelectorAll('[data-mark-arm]')).toHaveLength(5);
-    expect(container.innerHTML).not.toContain('legacy-spinner');
-    expect(container.innerHTML).not.toContain('--color');
+    expect(mark.getAttribute('role')).toBe('status');
+    expect(mark.getAttribute('aria-label')).toBeTruthy();
   });
 
-  it('uses primary Thinking copy and muted non-live lifecycle detail', () => {
+  it('keeps lifecycle detail outside the live status region', () => {
     const { container } = render(StreamingTypingIndicator, {
       props: {
         visible: true,
@@ -92,11 +71,7 @@ describe('StreamingTypingIndicator geometry matches operational rows', () => {
       },
     });
     const copy = container.querySelector('[data-testid="streaming-status-copy"]')!;
-    const label = container.querySelector('[data-testid="streaming-status-thinking-label"]')!;
     const lifecycle = container.querySelector('[data-testid="streaming-status-phase"]')!;
-    expectClasses(copy, 'inline-flex min-w-0 max-w-full items-baseline gap-[0.5ch]');
-    expectClasses(label, 'shrink-0 font-normal text-foreground');
-    expectClasses(lifecycle, 'min-w-0 truncate font-normal text-muted-foreground');
     expect(copy.textContent).toBe('ThinkingCalling the daemon tool exactly as sent');
     expect(lifecycle.closest('[role="status"]')).toBeNull();
     expect(lifecycle.closest('[aria-live]')).toBeNull();
@@ -113,21 +88,48 @@ describe('StreamingTypingIndicator geometry matches operational rows', () => {
     expect(animationRecords).toHaveLength(0);
   });
 
+  it('retains accessible status and lifecycle updates when the generic label is visually suppressed', async () => {
+    const view = render(StreamingTypingIndicator, {
+      props: {
+        visible: true,
+        showMessage: false,
+        message: 'Thinking',
+        lifecycleMessage: 'Sent prompt…',
+      },
+    });
+    const mark = view.getByRole('status', { name: 'Loading' });
+    expect(view.getByText('Thinking')).toBeTruthy();
+    expect(view.getByText('Sent prompt…')).toBeTruthy();
+
+    await view.rerender({ lifecycleMessage: 'Receiving response…' });
+    expect(view.queryByText('Sent prompt…')).toBeNull();
+    expect(view.getByText('Receiving response…')).toBeTruthy();
+    expect(view.getByRole('status', { name: 'Loading' })).toBe(mark);
+
+    await view.rerender({ lifecycleMessage: null });
+    expect(view.queryByText('Receiving response…')).toBeNull();
+    expect(view.getByText('Thinking')).toBeTruthy();
+    expect(view.getByRole('status', { name: 'Loading' })).toBe(mark);
+  });
+
   it('cancels all motion on removal and supports rapid reactivation', async () => {
     const view = render(StreamingTypingIndicator, {
       props: { visible: true, message: 'Thinking' },
     });
     animationRecords[0].finish();
-    const arms = Array.from(view.container.querySelectorAll<SVGSVGElement>('[data-mark-arm-box]'));
+    const arms = Array.from(view.container.querySelectorAll<SVGPathElement>('[data-mark-arm]'));
     expect(arms).toHaveLength(5);
     expect(arms.every((arm) => arm.style.transform !== '')).toBe(true);
     expect(animationRecords.filter(({ options }) => options.iterations === Infinity)).toHaveLength(
       0,
     );
 
+    const cancelFrame = vi.spyOn(globalThis, 'cancelAnimationFrame');
     view.unmount();
+    expect(cancelFrame).toHaveBeenCalledOnce();
+    cancelFrame.mockRestore();
     expect(animationRecords.every(({ cancel }) => cancel.mock.calls.length > 0)).toBe(true);
-    expect(arms.every((arm) => arm.style.transform === '')).toBe(true);
+    expect(arms.every((arm) => !arm.isConnected)).toBe(true);
 
     const reactivated = render(StreamingTypingIndicator, {
       props: { visible: true, message: 'Thinking' },

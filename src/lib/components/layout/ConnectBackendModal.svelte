@@ -9,9 +9,9 @@
    *      connection (`addConnectionRequested`, which encrypts the token in main)
    *      and open a window for it (`openConnectionRequested`).
    *
-   * On macOS a "Save to iCloud" checkbox (default checked) controls whether the
-   * stored record syncs via iCloud Keychain. Unchecking adds the connection with
-   * `syncExcluded: true` (local-only). Keeping it checked while keychain sync is
+   * On macOS a "Save to iCloud" switch (default on) controls whether the
+   * stored record syncs via iCloud Keychain. Turning it off adds the connection with
+   * `syncExcluded: true` (local-only). Keeping it on while keychain sync is
    * explicitly disabled inserts a `syncConfirm` step before the add: confirming
    * adds the backend first, then enables machine-global sync
    * (`setKeychainSyncEnabledRequested`) — so a failed add leaves no
@@ -24,24 +24,28 @@
    * and surfaces inline errors.
    */
 
+  import { ContentDialog } from '$lib/components/patterns/confirm';
+  import { onDestroy, untrack } from 'svelte';
   import { Button } from '$lib/components/ui/button';
   import DeviceIconPicker from '$lib/components/DeviceIconPicker.svelte';
-  import { Checkbox } from '$lib/components/ui/checkbox';
   import { Input } from '$lib/components/ui/input';
-  import { Label } from '$lib/components/ui/label';
-  import Fa from 'svelte-fa';
-  import { faXmark } from '@fortawesome/free-solid-svg-icons';
+  import {
+    SettingsFieldRow,
+    SettingsControl,
+    type SwitchSetting,
+  } from '$lib/components/patterns/settings';
   import { m } from '$shared/paraglide/messages.js';
   import { openExternalUrl } from '$lib/utils/open-external';
   import { store as appStore } from '$store/renderer/store';
   import {
-    captureFingerprintRequested,
-    addConnectionRequested,
-    openConnectionRequested,
+    connectionWorkflowRequested,
+    connectionWorkflowCleared,
     loadKeychainSyncStateRequested,
-    setKeychainSyncEnabledRequested,
   } from '$store/renderer/slices/connections/connections-slice';
-  import { selectKeychainSyncState } from '$store/renderer/slices/connections/connections-selectors';
+  import {
+    selectKeychainSyncState,
+    selectConnectionWorkflow,
+  } from '$store/renderer/slices/connections/connections-selectors';
   import {
     DEFAULT_CONNECTION_ACCENT,
     type ConnectionAccent,
@@ -109,19 +113,40 @@
   let detectHosts = $state(true);
   let saveToICloud = $state(true);
   let fingerprint = $state('');
-  let busy = $state(false);
-  let error = $state<string | null>(null);
+  const consumerId = $props.id();
+  const workflow$ = selectConnectionWorkflow(consumerId);
+  const busy = $derived(!!$workflow$ && $workflow$.phase !== 'settled');
+  const error = $derived.by(() => {
+    const outcome = $workflow$?.outcome;
+    if (outcome?.kind === 'error') return outcome.message;
+    if (outcome?.kind === 'syncError') return outcome.message;
+    if (outcome?.kind === 'secretUnavailable') return m.modals_connect_secretUnavailable_error();
+    if (outcome?.kind === 'captureRejected')
+      return outcome.statusCode === 403
+        ? m.modals_connect_wsApiDisabled_error()
+        : m.modals_connect_tokenRejected_error();
+    return null;
+  });
+  onDestroy(() => appStore.dispatch(connectionWorkflowCleared(consumerId)));
+  $effect(() => {
+    const outcome = $workflow$?.outcome;
+    if (outcome?.kind === 'captured') {
+      fingerprint = outcome.fingerprint;
+      step = 'confirm';
+      appStore.dispatch(connectionWorkflowCleared(consumerId));
+    } else if (outcome?.kind === 'done') untrack(close);
+  });
   let firstInput: HTMLInputElement | null = $state(null);
   const accentOptions = $derived(
     connectionAccentOptions(prefillAccent === undefined ? defaultAccent : prefillAccent),
   );
 
-  // Keychain sync state gates the iCloud checkbox: `supported` is the platform
+  // Keychain sync state gates the iCloud switch: `supported` is the platform
   // gate (macOS only), `enabled` decides whether the syncConfirm step is needed.
   // While the async state load is pending (or failed), fall back to a
-  // synchronous platform check so the consent checkbox renders on macOS even
+  // synchronous platform check so the consent switch renders on macOS even
   // when the user outraces the load — otherwise the add would proceed with the
-  // synced default behind a checkbox the user never saw. The loaded state wins
+  // synced default behind a switch the user never saw. The loaded state wins
   // once present.
   const platformIsMac =
     typeof window !== 'undefined' &&
@@ -129,6 +154,27 @@
   const syncState$ = selectKeychainSyncState();
   const syncSupported = $derived($syncState$?.supported ?? platformIsMac);
   const syncEnabled = $derived($syncState$?.enabled ?? false);
+
+  const detectHostsEntry = $derived<SwitchSetting>({
+    kind: 'switch',
+    id: 'connect-detect-hosts',
+    label: m.modals_connect_detectHosts_label(),
+    description: m.modals_connect_detectHosts_description(),
+    get: () => detectHosts,
+    set: (value) => {
+      detectHosts = value;
+    },
+  });
+  const saveToICloudEntry = $derived<SwitchSetting>({
+    kind: 'switch',
+    id: 'connect-save-to-icloud',
+    label: m.modals_connect_saveToICloud_label(),
+    description: m.modals_connect_saveToICloud_description(),
+    get: () => saveToICloud,
+    set: (value) => {
+      saveToICloud = value;
+    },
+  });
 
   const portNumber = $derived(Number(port.trim()));
   const canSubmitDetails = $derived(
@@ -153,8 +199,7 @@
     detectHosts = true;
     saveToICloud = true;
     fingerprint = '';
-    busy = false;
-    error = null;
+    appStore.dispatch(connectionWorkflowCleared(consumerId));
   }
 
   /**
@@ -188,122 +233,69 @@
     reset();
   }
 
-  function toMessage(e: unknown): string {
-    return e instanceof Error ? e.message : String(e);
-  }
-
-  async function handleCapture() {
+  function handleCapture() {
     if (!canSubmitDetails) return;
-    busy = true;
-    error = null;
-    try {
-      const action = captureFingerprintRequested({
-        host: host.trim(),
-        port: portNumber,
-        token: token.trim(),
-      });
-      appStore.dispatch(action);
-      const result = await action.promise;
-      if (!result.tokenValid) {
-        // The daemon rejected the token on the capture upgrade (PROTOCOL §2.1:
-        // 401 bad token, 403 WS API disabled) — stay on the details step so the
-        // user can correct it instead of storing a connection that cannot auth.
-        error =
-          result.statusCode === 403
-            ? m.modals_connect_wsApiDisabled_error()
-            : m.modals_connect_tokenRejected_error();
-        return;
-      }
-      fingerprint = result.fingerprint;
-      step = 'confirm';
-    } catch (e) {
-      error = toMessage(e);
-    } finally {
-      busy = false;
-    }
+    appStore.dispatch(
+      connectionWorkflowRequested(consumerId, {
+        kind: 'capture',
+        params: {
+          host: host.trim(),
+          port: portNumber,
+          token: token.trim(),
+        },
+      }),
+    );
   }
 
-  async function handleConfirm() {
-    // Sync explicitly off but the box kept: enabling iCloud sync is
+  function handleConfirm() {
+    // Sync explicitly off but the switch kept on: enabling iCloud sync is
     // machine-global, so ask first instead of flipping it silently. Both
     // answers still add the backend (decline just excludes it from sync).
     if (syncSupported && !syncEnabled && saveToICloud) {
-      error = null;
+      appStore.dispatch(connectionWorkflowCleared(consumerId));
       step = 'syncConfirm';
       return;
     }
-    await storeAndOpen(syncSupported && !saveToICloud);
+    storeAndOpen(syncSupported && !saveToICloud);
   }
 
-  async function storeAndOpen(syncExcluded: boolean, opts: { enableSyncAfterAdd?: boolean } = {}) {
-    busy = true;
-    error = null;
+  function storeAndOpen(syncExcluded: boolean, opts: { enableSyncAfterAdd?: boolean } = {}) {
     const trimmedHost = host.trim();
-    try {
-      const addAction = addConnectionRequested({
-        label: name.trim(),
-        accent,
-        deviceIcon,
-        host: trimmedHost,
-        port: portNumber,
-        fingerprint,
-        token: token.trim(),
-        ...(tcAddress ? { tcAddress } : {}),
-        detectHosts,
-        ...(syncExcluded ? { syncExcluded: true } : {}),
-      });
-      appStore.dispatch(addAction);
-      const { connection } = await addAction.promise;
-      if (opts.enableSyncAfterAdd) {
-        // Enable machine-global sync only once the add succeeded, so a failed
-        // add (bad token, WSS off on the target) leaves no machine-global
-        // side effect. A retry re-runs the add as an idempotent upsert.
-        const syncAction = setKeychainSyncEnabledRequested(true);
-        appStore.dispatch(syncAction);
-        await syncAction.promise;
-      }
-      const openAction = openConnectionRequested(connection.id);
-      appStore.dispatch(openAction);
-      const openResult = await openAction.promise;
-      if (openResult.status === 'secret-unavailable') {
-        // The device was stored but its token could not be read back (keychain
-        // locked or entry gone) — a resolved failure, not a success (#3783).
-        // Stay open so the outcome is visible; recovery lives in Devices settings.
-        error = m.modals_connect_secretUnavailable_error();
-        busy = false;
-        return;
-      }
-      close();
-    } catch (e) {
-      error = toMessage(e);
-      busy = false;
-    }
+    appStore.dispatch(
+      connectionWorkflowRequested(consumerId, {
+        kind: 'connect',
+        enableSync: opts.enableSyncAfterAdd === true,
+        params: {
+          label: name.trim(),
+          accent,
+          deviceIcon,
+          host: trimmedHost,
+          port: portNumber,
+          fingerprint,
+          token: token.trim(),
+          ...(tcAddress ? { tcAddress } : {}),
+          detectHosts,
+          ...(syncExcluded ? { syncExcluded: true } : {}),
+        },
+      }),
+    );
   }
 
-  async function handleEnableSyncAndAdd() {
-    await storeAndOpen(false, { enableSyncAfterAdd: true });
+  function handleEnableSyncAndAdd() {
+    storeAndOpen(false, { enableSyncAfterAdd: true });
   }
 
-  async function handleDeclineSync() {
-    await storeAndOpen(true);
+  function handleDeclineSync() {
+    storeAndOpen(true);
   }
 
   function back() {
     step = 'details';
-    error = null;
-  }
-
-  function handleKeydown(e: KeyboardEvent) {
-    if (e.key === 'Escape') {
-      e.stopPropagation();
-      close();
-    } else {
-      e.stopPropagation();
-    }
+    appStore.dispatch(connectionWorkflowCleared(consumerId));
   }
 
   const inputClass =
-    'w-full px-3 py-2 bg-background border border-border rounded text-foreground text-sm focus:outline-none focus:border-primary';
+    'w-full px-3 py-2 bg-background border border-border rounded text-foreground text-sm focus:outline-none focus:border-primary-ink';
 
   function accentLabel(value: ConnectionAccent): string {
     if (value === null) return m.settings_devices_accentNone_label();
@@ -334,15 +326,17 @@
   let wasOpen = false;
   $effect(() => {
     const justOpened = open && !wasOpen;
+    const justClosed = !open && wasOpen;
     wasOpen = open;
+    if (justClosed) untrack(reset);
     if (justOpened) {
       if (prefillLabel && name === '') name = prefillLabel;
       accent = prefillAccent === undefined ? defaultAccent : prefillAccent;
       if (prefillHost && host === '') host = prefillHost;
       if (prefillPort != null && port === DEFAULT_WS_PORT) port = String(prefillPort);
-      // Refresh the keychain sync state so the iCloud checkbox gate is current
+      // Refresh the keychain sync state so the iCloud switch gate is current
       // even when settings never loaded it. A failed load leaves the state
-      // null → the checkbox stays hidden and the add proceeds normally.
+      // null → the platform fallback determines whether the switch is visible.
       const loadAction = loadKeychainSyncStateRequested();
       appStore.dispatch(loadAction);
       loadAction.promise.catch(() => {});
@@ -350,56 +344,59 @@
   });
 </script>
 
-{#if open}
-  <div
-    class="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
-    role="presentation"
-    onclick={close}
-    onkeydown={handleKeydown}
+{#snippet toggleRow(entry: SwitchSetting)}
+  <SettingsFieldRow
+    id={`${entry.id}-field`}
+    label={entry.label}
+    description={entry.description}
+    htmlFor={entry.id}
+    disabled={busy}
+    {busy}
+    compact
+    class="grid-cols-[minmax(0,1fr)_auto] items-start py-0 first:pt-0 last:pb-0 [&_[data-field-control]]:w-auto"
   >
-    <div
-      class="bg-background border border-border rounded-lg shadow-lg w-full max-w-md overflow-hidden flex flex-col"
-      onclick={(e) => e.stopPropagation()}
-      onkeydown={handleKeydown}
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="connect-modal-title"
-      tabindex="-1"
-    >
-      <!-- Header -->
-      <div class="px-6 py-4 border-b border-border flex items-center justify-between">
-        <h2 id="connect-modal-title" class="text-lg font-semibold">{m.modals_connect_title()}</h2>
-        <Button
-          variant="ghost"
-          size="icon"
-          onclick={close}
-          aria-label={m.modals_connect_close_ariaLabel()}
-        >
-          <Fa icon={faXmark} />
-        </Button>
-      </div>
+    {#snippet control(context)}
+      <SettingsControl {entry} context={{ ...context, entry, controlId: entry.id }} />
+    {/snippet}
+  </SettingsFieldRow>
+{/snippet}
 
-      <!-- Content -->
-      <div class="p-6 space-y-4">
-        {#if step === 'details'}
-          <p class="text-sm text-subtle">{m.modals_connect_details_description()}</p>
+{#if open}
+  <ContentDialog
+    bind:open
+    title={m.modals_connect_title()}
+    closeLabel={m.modals_connect_close_ariaLabel()}
+    {busy}
+    initialFocus={firstInput}
+    onClose={close}
+    dismissOnInteractOutside={false}
+  >
+    <div class="space-y-4" aria-busy={busy}>
+      <p class="text-sm text-subtle" role="status" aria-live="polite">
+        {step === 'details'
+          ? m.modals_connect_details_description()
+          : step === 'confirm'
+            ? m.modals_connect_confirmStep_description()
+            : m.modals_connect_enableSync_description()}
+      </p>
+      {#if step === 'details'}
+        <div class="space-y-1">
+          <label class="text-xs text-subtle" for="connect-name"
+            >{m.modals_connect_name_label()}</label
+          >
+          <Input
+            id="connect-name"
+            bind:ref={firstInput}
+            bind:value={name}
+            type="text"
+            placeholder={m.modals_connect_name_placeholder()}
+            class={inputClass}
+            autocomplete="off"
+          />
+        </div>
 
-          <div class="space-y-1">
-            <label class="text-xs text-subtle" for="connect-name"
-              >{m.modals_connect_name_label()}</label
-            >
-            <Input
-              id="connect-name"
-              bind:ref={firstInput}
-              bind:value={name}
-              type="text"
-              placeholder={m.modals_connect_name_placeholder()}
-              class={inputClass}
-              autocomplete="off"
-            />
-          </div>
-
-          <fieldset class="space-y-1">
+        <div class="flex min-w-0 items-end gap-4" data-connect-appearance>
+          <fieldset class="min-w-0 flex-1 space-y-1">
             <legend class="text-xs text-subtle">{m.settings_devices_accent_label()}</legend>
             <div class="flex flex-wrap gap-1">
               {#each accentOptions as option}
@@ -434,135 +431,121 @@
             </div>
           </fieldset>
 
-          <DeviceIconPicker record={{ deviceIcon }} bind:value={deviceIcon} portal={true} />
+          <DeviceIconPicker
+            record={{ deviceIcon }}
+            bind:value={deviceIcon}
+            portal={true}
+            contentClass="z-[calc(var(--layer-modal)+1)]"
+          />
+        </div>
 
-          <div class="space-y-1">
-            <label class="text-xs text-subtle" for="connect-host"
-              >{m.modals_connect_host_label()}</label
-            >
-            <input
-              id="connect-host"
-              bind:value={host}
-              type="text"
-              placeholder={m.modals_connect_host_placeholder()}
-              class={inputClass}
-              autocorrect="off"
-              autocapitalize="off"
-              spellcheck="false"
-              onpaste={handleHostPaste}
-              oninput={handleHostInput}
-            />
-          </div>
-
-          <div class="space-y-1">
-            <label class="text-xs text-subtle" for="connect-port"
-              >{m.modals_connect_port_label()}</label
-            >
-            <input
-              id="connect-port"
-              bind:value={port}
-              type="text"
-              inputmode="numeric"
-              placeholder={m.modals_connect_port_placeholder()}
-              class={inputClass}
-              autocorrect="off"
-              autocapitalize="off"
-              spellcheck="false"
-            />
-          </div>
-
-          <div class="space-y-1">
-            <label class="text-xs text-subtle" for="connect-token"
-              >{m.modals_connect_token_label()}</label
-            >
-            <input
-              id="connect-token"
-              bind:value={token}
-              type="password"
-              placeholder={m.modals_connect_token_placeholder()}
-              class={inputClass}
-              autocorrect="off"
-              autocapitalize="off"
-              spellcheck="false"
-            />
-          </div>
-
-          <div class="space-y-1">
-            <div class="flex items-center gap-2">
-              <Checkbox id="connect-detect-hosts" bind:checked={detectHosts} />
-              <Label for="connect-detect-hosts" class="text-sm font-normal"
-                >{m.modals_connect_detectHosts_label()}</Label
-              >
-            </div>
-            <p class="text-xs text-subtle">{m.modals_connect_detectHosts_description()}</p>
-          </div>
-
-          {#if syncSupported}
-            <div class="space-y-1">
-              <div class="flex items-center gap-2">
-                <Checkbox id="connect-save-to-icloud" bind:checked={saveToICloud} />
-                <Label for="connect-save-to-icloud" class="text-sm font-normal"
-                  >{m.modals_connect_saveToICloud_label()}</Label
-                >
-              </div>
-              <p class="text-xs text-subtle">{m.modals_connect_saveToICloud_description()}</p>
-            </div>
-          {/if}
-
-          <p class="text-xs text-subtle">{m.modals_connect_whereToFind_help()}</p>
-          <p class="text-xs text-subtle">
-            {m.modals_connect_headless_before()}
-            <a
-              href={INTENTD_REPO_URL}
-              class="text-primary hover:underline"
-              onclick={openIntentdRepo}><!-- i18n-ignore (URL) -->github.com/intent-hq/intentd</a
-            >
-            {m.modals_connect_headless_after()}
-          </p>
-        {:else if step === 'confirm'}
-          <p class="text-sm text-subtle">{m.modals_connect_confirmStep_description()}</p>
-          <div class="space-y-1">
-            <span class="text-xs text-subtle">{m.modals_connect_fingerprint_label()}</span>
-            <!-- i18n-ignore (cert fingerprint hex, not translatable copy) -->
-            <p class="font-mono text-xs break-all bg-muted/50 rounded p-2">{fingerprint}</p>
-          </div>
-        {:else}
-          <p class="text-sm text-subtle">{m.modals_connect_enableSync_description()}</p>
-        {/if}
-
-        {#if error}
-          <p class="text-xs text-danger">{error}</p>
-        {/if}
-      </div>
-
-      <!-- Footer -->
-      <div class="px-6 py-4 border-t border-border flex justify-end gap-2">
-        {#if step === 'details'}
-          <Button variant="ghost" onclick={close}>{m.modals_connect_cancel_label()}</Button>
-          <Button variant="default" onclick={handleCapture} disabled={!canSubmitDetails}>
-            {busy ? m.modals_connect_connecting_label() : m.modals_connect_continue_label()}
-          </Button>
-        {:else if step === 'confirm'}
-          <Button variant="ghost" onclick={back} disabled={busy}
-            >{m.modals_connect_back_label()}</Button
+        <div class="space-y-1">
+          <label class="text-xs text-subtle" for="connect-host"
+            >{m.modals_connect_host_label()}</label
           >
-          <Button variant="default" onclick={handleConfirm} disabled={busy}>
-            {busy ? m.modals_connect_connecting_label() : m.modals_connect_confirm_label()}
-          </Button>
-        {:else}
-          <Button variant="ghost" onclick={back} disabled={busy}
-            >{m.modals_connect_back_label()}</Button
+          <Input
+            id="connect-host"
+            bind:value={host}
+            type="text"
+            placeholder={m.modals_connect_host_placeholder()}
+            class={inputClass}
+            autocorrect="off"
+            autocapitalize="off"
+            spellcheck="false"
+            onpaste={handleHostPaste}
+            oninput={handleHostInput}
+          />
+        </div>
+
+        <div class="space-y-1">
+          <label class="text-xs text-subtle" for="connect-port"
+            >{m.modals_connect_port_label()}</label
           >
-          <Button variant="ghost" onclick={handleDeclineSync} disabled={busy}>
-            {m.modals_connect_enableSync_decline_label()}
-          </Button>
-          <Button variant="default" onclick={handleEnableSyncAndAdd} disabled={busy}>
-            {busy
-              ? m.modals_connect_connecting_label()
-              : m.modals_connect_enableSync_confirm_label()}
-          </Button>
+          <Input
+            id="connect-port"
+            bind:value={port}
+            type="text"
+            inputmode="numeric"
+            placeholder={m.modals_connect_port_placeholder()}
+            class={inputClass}
+            autocorrect="off"
+            autocapitalize="off"
+            spellcheck="false"
+          />
+        </div>
+
+        <div class="space-y-1">
+          <label class="text-xs text-subtle" for="connect-token"
+            >{m.modals_connect_token_label()}</label
+          >
+          <Input
+            id="connect-token"
+            bind:value={token}
+            type="password"
+            placeholder={m.modals_connect_token_placeholder()}
+            class={inputClass}
+            autocorrect="off"
+            autocapitalize="off"
+            spellcheck="false"
+          />
+        </div>
+
+        {@render toggleRow(detectHostsEntry)}
+
+        {#if syncSupported}
+          {@render toggleRow(saveToICloudEntry)}
         {/if}
-      </div>
+
+        <p class="text-xs text-subtle">{m.modals_connect_whereToFind_help()}</p>
+        <p class="text-xs text-subtle">
+          {m.modals_connect_headless_before()}
+          <a
+            href={INTENTD_REPO_URL}
+            class="text-primary-ink hover:underline"
+            onclick={openIntentdRepo}><!-- i18n-ignore (URL) -->github.com/intent-hq/intentd</a
+          >
+          {m.modals_connect_headless_after()}
+        </p>
+      {:else if step === 'confirm'}
+        <div class="space-y-1">
+          <span class="text-xs text-subtle">{m.modals_connect_fingerprint_label()}</span>
+          <!-- i18n-ignore (cert fingerprint hex, not translatable copy) -->
+          <p class="font-mono text-xs break-all bg-muted/50 rounded p-2">{fingerprint}</p>
+        </div>
+      {/if}
+
+      {#if error}
+        <p class="text-xs text-danger" role="alert">{error}</p>
+      {/if}
     </div>
-  </div>
+
+    <!-- Footer -->
+    {#snippet footer()}
+      {#if step === 'details'}
+        <Button variant="ghost" disabled={busy} onclick={close}
+          >{m.modals_connect_cancel_label()}</Button
+        >
+        <Button variant="default" onclick={handleCapture} disabled={!canSubmitDetails}>
+          {busy ? m.modals_connect_connecting_label() : m.modals_connect_continue_label()}
+        </Button>
+      {:else if step === 'confirm'}
+        <Button variant="ghost" onclick={back} disabled={busy}
+          >{m.modals_connect_back_label()}</Button
+        >
+        <Button variant="default" onclick={handleConfirm} disabled={busy}>
+          {busy ? m.modals_connect_connecting_label() : m.modals_connect_confirm_label()}
+        </Button>
+      {:else}
+        <Button variant="ghost" onclick={back} disabled={busy}
+          >{m.modals_connect_back_label()}</Button
+        >
+        <Button variant="ghost" onclick={handleDeclineSync} disabled={busy}>
+          {m.modals_connect_enableSync_decline_label()}
+        </Button>
+        <Button variant="default" onclick={handleEnableSyncAndAdd} disabled={busy}>
+          {busy ? m.modals_connect_connecting_label() : m.modals_connect_enableSync_confirm_label()}
+        </Button>
+      {/if}
+    {/snippet}
+  </ContentDialog>
 {/if}

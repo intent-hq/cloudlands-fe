@@ -32,6 +32,8 @@ import { chatSendSaga } from './slices/chat-state/sagas/chat-send-saga';
 import { chatSubscribeSaga } from './slices/chat-state/sagas/chat-subscribe-saga';
 import { switchTimingSaga } from './slices/chat-state/sagas/switch-timing-saga';
 import { connectionsSaga } from './slices/connections/sagas/connections-saga';
+import { guestSessionsSaga } from './slices/guest-sessions/sagas/guest-sessions-saga';
+import { presenceSaga } from './slices/presence/sagas/presence-saga';
 import { contextSaga } from './slices/context/sagas/context-saga';
 import { daemonHealthSaga } from './slices/daemon-health/sagas/daemon-health-saga';
 import { directoryPickerSaga } from './slices/directory-picker/sagas/directory-picker-saga';
@@ -46,8 +48,10 @@ import { acceptChangesStatusSaga } from './slices/git/sagas/accept-changes-statu
 import { gitRootsSaga } from './slices/git-roots/sagas/git-roots-saga';
 import { githubAuthSaga } from './slices/github-auth/sagas/github-auth-saga';
 import { githubRepoSearchSaga } from './slices/github-repo-search/sagas/github-repo-search-saga';
+import { githubUserSearchSaga } from './slices/github-user-search/sagas/github-user-search-saga';
 import { actionKeySaga } from './slices/hardware-console/sagas/action-key-saga';
 import { hardwareConsoleDeviceSaga } from './slices/hardware-console/sagas/hardware-console-device-saga';
+import { encoderPreferenceSaga } from './slices/hardware-console/sagas/encoder-preference-saga';
 import { keyPinPersistenceSaga } from './slices/hardware-console/sagas/key-pin-persistence-saga';
 import { promptPickerSaga } from './slices/hardware-console/sagas/prompt-picker-saga';
 import { voiceTranscriptionSaga } from './slices/hardware-console/sagas/voice-transcription-saga';
@@ -66,6 +70,7 @@ import {
 import { browserTabRegistrySaga } from './slices/panel-layout/sagas/browser-tab-registry-saga';
 import { panelLayoutSaga } from './slices/panel-layout/sagas/panel-layout-saga';
 import { permissionResponseSaga } from './slices/permission/sagas/permission-response-saga';
+import { powerSaga } from './slices/power/sagas/power-saga';
 import { proposalLifecycleSaga } from './slices/proposal-lifecycle/sagas/proposal-lifecycle-saga';
 import { providerSettingsSaga } from './slices/provider-settings/sagas/provider-settings-saga';
 import { antigravitySetupSaga } from './slices/antigravity-setup/sagas/antigravity-setup-saga';
@@ -111,6 +116,7 @@ import { workspaceNotesSaga } from './slices/workspace-notes/sagas/workspace-not
 import { workspaceOperationsSaga } from './slices/workspace-operations/sagas/workspace-operations-saga';
 import { workspaceSettingsSaga } from './slices/workspace-settings/sagas/workspace-settings-saga';
 import { workspaceTransferSaga } from './slices/workspace-transfer/sagas/workspace-transfer-saga';
+import { workspaceShareSaga } from './slices/workspace-share/sagas/workspace-share-saga';
 import { workspaceImportSaga } from './slices/workspace-import/sagas/workspace-import-saga';
 
 export type AppSaga = Parameters<Store<any, any>['runSaga']>[0];
@@ -120,6 +126,7 @@ export type AppSagaCancel = ReturnType<Store<any, any>['runSaga']>;
 export function* hardwareConsoleSaga() {
   yield* all([
     call(hardwareConsoleDeviceSaga),
+    call(encoderPreferenceSaga),
     call(actionKeySaga),
     call(keyPinPersistenceSaga),
     call(promptPickerSaga),
@@ -132,6 +139,8 @@ export const sagas = [
   daemonEventsSaga,
   daemonHealthSaga,
   connectionsSaga,
+  guestSessionsSaga,
+  presenceSaga,
   settingsHydrationSaga,
   activeStreamsSaga,
   agentReadSaga,
@@ -163,6 +172,7 @@ export const sagas = [
   workspaceNavigationLayoutSaga,
   workspaceOperationsSaga,
   workspaceTransferSaga,
+  workspaceShareSaga,
   workspaceImportSaga,
   scriptsOperationSaga,
   lifecycleReadSaga,
@@ -183,6 +193,7 @@ export const sagas = [
   hardwareConsoleSaga,
   voiceSettingsSaga,
   themeSaga,
+  powerSaga,
   autoUpdateSaga,
   specialistsSaga,
   proposalLifecycleSaga,
@@ -190,6 +201,7 @@ export const sagas = [
   specialistProposalHistorySaga,
   githubAuthSaga,
   githubRepoSearchSaga,
+  githubUserSearchSaga,
   sentryAuthSaga,
   linearAuthSaga,
   mcpSettingsSaga,

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import * as Tabs from '$lib/components/ui/tabs';
   /**
    * ProjectPickerMessage — Message 2 of the onboarding flow.
    *
@@ -18,8 +19,7 @@
   import { m } from '$shared/paraglide/messages.js';
   import { createLogger } from '$lib/utils/client-logger';
   import { invoke } from '$shared/generated/ipc-client';
-  import { fly } from 'svelte/transition';
-  import { cubicOut } from 'svelte/easing';
+  import { fly } from '$lib/motion';
   import LocalRepoTab from './LocalRepoTab.svelte';
   import GitHubRepoTab from './GitHubRepoTab.svelte';
   import NewProjectTab from './NewProjectTab.svelte';
@@ -74,11 +74,7 @@
   let { onProjectChange, onSelectAndAdvance, hideHeading = false }: Props = $props();
 
   // Tab state
-  const TAB_ORDER: TabId[] = ['local', 'github', 'new'];
   let activeTab = $state<TabId>('local');
-  let previousTabIndex = $state(0);
-  let currentTabIndex = $derived(TAB_ORDER.indexOf(activeTab));
-  let slideDirection = $derived(currentTabIndex >= previousTabIndex ? 1 : -1);
 
   // Local repo state
   let localRepoPath = $state('');
@@ -309,7 +305,7 @@
   });
 
   // The initial Local tab is provisional until saved preferences have resolved.
-  // Explicit Local clicks below can still request discovery before hydration.
+  // Explicit Local activation below can still request discovery before hydration.
   $effect(() => {
     if (pickerMounted && (didApplyPrefill || didApplyPersistedRepo) && activeTab === 'local') {
       appStore.dispatch(discoverLocalReposRequested());
@@ -339,12 +335,9 @@
 </script>
 
 <!-- Message content — flies in from bottom -->
-<div class="space-y-5" data-message in:fly={{ y: 30, duration: 500, easing: cubicOut }}>
+<div class="space-y-5" data-message in:fly={{ tier: 'slow', distance: 30 }}>
   {#if !hideHeading}
-    <h2
-      class="text-2xl font-semibold tracking-tight"
-      in:fly={{ y: 14, duration: 400, delay: 80, easing: cubicOut }}
-    >
+    <h2 class="text-2xl font-semibold tracking-tight" in:fly={{ tier: 'slow', distance: 14 }}>
       {m.onboarding_projectPicker_chooseProject_title()}
     </h2>
     <p class="text-base text-muted-foreground leading-relaxed font-light max-w-lg">
@@ -353,87 +346,93 @@
   {/if}
 
   <!-- Tab bar -->
-  <div
-    class="flex gap-0 rounded-lg p-1 border border-border bg-muted/30"
-    in:fly={{ y: 12, duration: 350, delay: 150, easing: cubicOut }}
+  <Tabs.Root
+    value={activeTab}
+    activationMode="manual"
+    onValueChange={(value) => {
+      activeTab = value as TabId;
+      notifyParent();
+    }}
   >
-    {#each tabs as tab (tab.id)}
-      <button
-        type="button"
-        class="flex-1 px-3 py-2.5 text-sm rounded-md cursor-pointer transition-all duration-200
-          {activeTab === tab.id
-          ? 'bg-foreground font-medium text-background shadow-sm'
-          : 'text-muted-foreground hover:text-foreground'}"
-        onclick={() => {
-          previousTabIndex = TAB_ORDER.indexOf(activeTab);
-          activeTab = tab.id;
-          if (tab.id === 'local') appStore.dispatch(discoverLocalReposRequested());
-          notifyParent();
-        }}
-      >
-        {tab.label}
-      </button>
-    {/each}
-  </div>
+    <Tabs.List class="w-full" aria-label={m.onboarding_projectPicker_chooseProject_title()}>
+      {#each tabs as tab (tab.id)}
+        <!-- Request on activation, even when Local is already selected before hydration. -->
+        <Tabs.Trigger
+          value={tab.id}
+          class="flex-1"
+          onclick={() => {
+            if (tab.id === 'local') appStore.dispatch(discoverLocalReposRequested());
+          }}
+          onkeydown={(event) => {
+            if (tab.id === 'local' && (event.key === 'Enter' || event.key === ' ')) {
+              appStore.dispatch(discoverLocalReposRequested());
+            }
+          }}
+        >
+          {tab.label}
+        </Tabs.Trigger>
+      {/each}
+    </Tabs.List>
 
-  <!-- Tab content -->
-  <div class="min-h-[120px]" in:fly={{ y: 10, duration: 300, delay: 250, easing: cubicOut }}>
-    {#key activeTab}
-      <div in:fly={{ x: slideDirection * 150, duration: 250, easing: cubicOut }}>
-        {#if activeTab === 'local'}
-          <LocalRepoTab
-            selectedPath={localRepoPath}
-            onSelect={(path, scope, initGit) => {
-              localRepoPath = path;
-              localScope = scope;
-              localInitGit = initGit === true;
-              notifyParent();
-            }}
-            onSelectAndAdvance={(path, scope, initGit) => {
-              // Capture reactive prop before state changes invalidate it.
-              // Use typeof guard: during component teardown the Svelte 5
-              // reactive proxy can return a truthy non-callable value,
-              // which ?.() does not guard against.
-              const advance = onSelectAndAdvance;
-              localRepoPath = path;
-              localScope = scope;
-              localInitGit = initGit === true;
-              notifyParent();
-              if (typeof advance === 'function') advance();
-            }}
-          />
-        {:else if activeTab === 'github'}
-          <GitHubRepoTab
-            {githubUrl}
-            onGithubUrlChange={(url) => {
-              githubUrl = url;
-              notifyParent();
-            }}
-            onSelectAndAdvance={(url) => {
-              // Capture reactive prop before state changes invalidate it.
-              // Use typeof guard (see LocalRepoTab callback above).
-              const advance = onSelectAndAdvance;
-              githubUrl = url;
-              notifyParent();
-              if (typeof advance === 'function') advance();
-            }}
-          />
-        {:else if activeTab === 'new'}
-          <NewProjectTab
-            {parentPath}
-            {projectName}
-            nameError={projectNameError || newProjectDirError}
-            onParentPathChange={(path) => {
-              parentPath = path;
-              notifyParent();
-            }}
-            onProjectNameChange={(name) => {
-              projectName = name;
-              notifyParent();
-            }}
-          />
-        {/if}
-      </div>
-    {/key}
-  </div>
+    <!-- Tab content -->
+    <div class="min-h-[120px]" in:fly={{ tier: 'slow', distance: 10 }}>
+      {#key activeTab}
+        <Tabs.Content value={activeTab}>
+          {#if activeTab === 'local'}
+            <LocalRepoTab
+              selectedPath={localRepoPath}
+              onSelect={(path, scope, initGit) => {
+                localRepoPath = path;
+                localScope = scope;
+                localInitGit = initGit === true;
+                notifyParent();
+              }}
+              onSelectAndAdvance={(path, scope, initGit) => {
+                // Capture reactive prop before state changes invalidate it.
+                // Use typeof guard: during component teardown the Svelte 5
+                // reactive proxy can return a truthy non-callable value,
+                // which ?.() does not guard against.
+                const advance = onSelectAndAdvance;
+                localRepoPath = path;
+                localScope = scope;
+                localInitGit = initGit === true;
+                notifyParent();
+                if (typeof advance === 'function') advance();
+              }}
+            />
+          {:else if activeTab === 'github'}
+            <GitHubRepoTab
+              {githubUrl}
+              onGithubUrlChange={(url) => {
+                githubUrl = url;
+                notifyParent();
+              }}
+              onSelectAndAdvance={(url) => {
+                // Capture reactive prop before state changes invalidate it.
+                // Use typeof guard (see LocalRepoTab callback above).
+                const advance = onSelectAndAdvance;
+                githubUrl = url;
+                notifyParent();
+                if (typeof advance === 'function') advance();
+              }}
+            />
+          {:else if activeTab === 'new'}
+            <NewProjectTab
+              {parentPath}
+              {projectName}
+              nameError={projectNameError || newProjectDirError}
+              onParentPathChange={(path) => {
+                parentPath = path;
+                notifyParent();
+              }}
+              onProjectNameChange={(name) => {
+                projectName = name;
+                notifyParent();
+              }}
+            />
+          {/if}
+        </Tabs.Content>
+      {/key}
+    </div>
+  </Tabs.Root>
 </div>

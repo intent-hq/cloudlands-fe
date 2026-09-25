@@ -8,19 +8,27 @@ import {
 } from 'redux-saga';
 import {
   all,
+  actionChannel,
   call,
   cancelled,
   fork,
   join,
   put,
   take,
-  takeEvery,
-  takeLeading,
+  takeLatest,
   type SagaGenerator,
 } from 'typed-redux-saga';
 
 import { canRequestDeviceUpdate } from '$lib/utils/device-update-eligibility';
-import { formatConnectionLabel } from '$lib/utils/connection-label';
+import { formatConnectionLabel, formatGuestSessionLabel } from '$lib/utils/connection-label';
+import { takeEveryByContextFIFO, takeLatestInContext } from '../../../utils/context-saga-effects';
+import {
+  selectConnectionWorkflow,
+  selectKeychainSyncState,
+  selectSelfPublication,
+  selectConnectionRecoveryTarget,
+} from '../connections-selectors';
+import type { ConnectionWorkflowOutcome } from '../connections-types';
 import { IPC_CHANNELS } from '$shared/ipc-registry';
 import {
   CONNECTIONS_CHANGED_EVENT,
@@ -57,6 +65,9 @@ import type {
   UpdateConnectionResult,
   UpdateBackendParams,
   UpdateBackendResult,
+  PublishSelfResult,
+  SelfPublishedStateResult,
+  UnpublishSelfResult,
 } from '$shared/types/connections';
 import {
   addConnectionRequested,
@@ -83,6 +94,13 @@ import {
   testConnectionRequested,
   updateConnectionRequested,
   updateBackendRequested,
+  connectionWorkflowRequested,
+  connectionWorkflowCleared,
+  connectionWorkflowProgress,
+  connectionWorkflowFinished,
+  selfPublicationRequested,
+  selfPublicationReceived,
+  selfPublicationBusyChanged,
 } from '../connections-slice';
 
 const CONNECTIONS = IPC_CHANNELS.CONNECTIONS;
@@ -220,18 +238,18 @@ async function invokeUpdateBackend(params: UpdateBackendParams): Promise<UpdateB
  * (same pattern as the boot-fallback toast) keep the saga module light.
  */
 async function showUpdateBackendToast(result: UpdateBackendResult): Promise<void> {
-  const [{ toast }, { m }] = await Promise.all([
-    import('svelte-sonner'),
+  const [{ notify }, { m }] = await Promise.all([
+    import('$lib/components/patterns/notify'),
     import('$shared/paraglide/messages.js'),
   ]);
   if (result.ok) {
-    toast.success(m.layout_daemonStatus_updateRequested_toast());
+    notify.success(m.layout_daemonStatus_updateRequested_toast());
   } else if (result.reason === 'unsupported') {
-    toast.error(m.layout_daemonStatus_updateUnsupported_toast());
+    notify.error(m.layout_daemonStatus_updateUnsupported_toast());
   } else if (result.reason === 'not-connected') {
-    toast.error(m.layout_daemonStatus_updateNotConnected_toast());
+    notify.error(m.layout_daemonStatus_updateNotConnected_toast());
   } else {
-    toast.error(m.layout_daemonStatus_updateFailed_toast({ message: result.message ?? '' }));
+    notify.error(m.layout_daemonStatus_updateFailed_toast({ message: result.message ?? '' }));
   }
 }
 
@@ -241,11 +259,11 @@ async function showUpdateBackendToast(result: UpdateBackendResult): Promise<void
  * not user-oriented, unlike daemon-side 'failed' messages.
  */
 async function showUpdateBackendRequestErrorToast(): Promise<void> {
-  const [{ toast }, { m }] = await Promise.all([
-    import('svelte-sonner'),
+  const [{ notify }, { m }] = await Promise.all([
+    import('$lib/components/patterns/notify'),
     import('$shared/paraglide/messages.js'),
   ]);
-  toast.error(m.layout_daemonStatus_updateRequestError_toast());
+  notify.error(m.layout_daemonStatus_updateRequestError_toast());
 }
 
 type UpdateBackendAction = ReturnType<typeof updateBackendRequested>;
@@ -262,11 +280,11 @@ async function showDaemonBehindPinToast(
   pinnedVersion: string,
   onUpdate: () => void,
 ): Promise<void> {
-  const [{ toast }, { m }] = await Promise.all([
-    import('svelte-sonner'),
+  const [{ notify }, { m }] = await Promise.all([
+    import('$lib/components/patterns/notify'),
     import('$shared/paraglide/messages.js'),
   ]);
-  toast.warning(
+  notify.warning(
     m.layout_daemonStatus_daemonBehind_toast({
       // The local entry's persisted label is an English fallback — use the
       // localized label, same as DeviceRow and the daemon-status menu.
@@ -289,8 +307,8 @@ async function showDaemonBehindPinToast(
 
 /** Dismiss a behind-pin toast previously raised for `connectionId`. */
 async function dismissDaemonBehindPinToast(connectionId: string): Promise<void> {
-  const { toast } = await import('svelte-sonner');
-  toast.dismiss(`connections-daemon-behind-${connectionId}`);
+  const { notify } = await import('$lib/components/patterns/notify');
+  notify.dismiss(`connections-daemon-behind-${connectionId}`);
 }
 
 /**
@@ -653,30 +671,390 @@ function* consumeConnectionsEvents(
   }
 }
 
+type WorkflowAction = ReturnType<typeof connectionWorkflowRequested>;
+type WriteAction =
+  | ReturnType<
+      | typeof addConnectionRequested
+      | typeof updateConnectionRequested
+      | typeof rotateConnectionSecretRequested
+      | typeof openConnectionRequested
+      | typeof forgetConnectionRequested
+      | typeof updateBackendRequested
+      | typeof loadKeychainSyncStateRequested
+      | typeof setKeychainSyncEnabledRequested
+      | typeof selfPublicationRequested
+    >
+  | WorkflowAction;
+
+function writeKey(action: WriteAction): string {
+  if (action.type === connectionWorkflowRequested.toString()) {
+    const { intent } = (action as WorkflowAction).payload;
+    if (intent.kind === 'connect') return `target:${intent.params.host}:${intent.params.port}`;
+    if ('id' in intent) return `device:${intent.id}`;
+    if ('id' in intent.params) return `device:${intent.params.id}`;
+    return 'capture';
+  }
+  if (action.type === addConnectionRequested.toString()) {
+    const [params] = (action as ReturnType<typeof addConnectionRequested>).payload;
+    return `target:${params.host}:${params.port}`;
+  }
+  const first = (action as Exclude<WriteAction, WorkflowAction>).payload[0];
+  if (typeof first === 'string' && action.type !== selfPublicationRequested.toString())
+    return `device:${first}`;
+  if (typeof first === 'object' && first && 'id' in first) return `device:${first.id}`;
+  return 'keychain';
+}
+
+function* discardWrite(action: WriteAction): SagaGenerator<void> {
+  if (action.type === connectionWorkflowRequested.toString()) {
+    const { consumerId, requestId } = (action as WorkflowAction).payload;
+    yield* put(connectionWorkflowFinished(consumerId, requestId, { kind: 'cancelled' }));
+  } else {
+    yield* put(
+      (action as Exclude<WriteAction, WorkflowAction>).failure(
+        new Error('Connection request was cancelled'),
+      ),
+    );
+  }
+}
+
+function* enableSyncForWorkflow(action: WorkflowAction): SagaGenerator<boolean> {
+  const { consumerId, requestId } = action.payload;
+  yield* put(connectionWorkflowProgress(consumerId, requestId, 'sync'));
+  const sync = setKeychainSyncEnabledRequested(true);
+  yield* put(sync);
+  try {
+    yield* call(() => sync.promise);
+    return true;
+  } catch (error) {
+    yield* put(
+      connectionWorkflowFinished(consumerId, requestId, {
+        kind: 'syncError',
+        message: toError(error).message,
+      }),
+    );
+    return false;
+  }
+}
+
+function* workflowIsCurrent(action: WorkflowAction): SagaGenerator<boolean> {
+  const current = yield* selectConnectionWorkflow.effect(action.payload.consumerId);
+  return current?.requestId === action.payload.requestId;
+}
+
+function* recoverOpenInSettings(action: WorkflowAction, id: string): SagaGenerator<void> {
+  const [{ notify }, { m }, { navigateToSettings }] = yield* call(() =>
+    Promise.all([
+      import('$lib/components/patterns/notify'),
+      import('$shared/paraglide/messages.js'),
+      import('$lib/utils/workspace-navigation'),
+    ]),
+  );
+  if (!(yield* workflowIsCurrent(action))) return;
+  const { guest, connection } = yield* selectConnectionRecoveryTarget.effect(id);
+  yield* call(
+    notify.error,
+    guest
+      ? m.layout_daemonStatus_guestSecretUnavailable_error({
+          label: formatGuestSessionLabel(guest),
+        })
+      : m.layout_daemonStatus_secretUnavailable_error({
+          label:
+            connection && !connection.isLocal
+              ? formatConnectionLabel(connection)
+              : m.layout_daemonStatus_localConnection_label(),
+        }),
+  );
+  if (yield* workflowIsCurrent(action))
+    yield* call(navigateToSettings, { tab: guest ? 'guest-sessions' : 'devices' });
+}
+
+function* runWorkflow(action: WorkflowAction): SagaGenerator<void> {
+  const { consumerId, requestId, intent } = action.payload;
+  let outcome: ConnectionWorkflowOutcome = { kind: 'done' };
+  try {
+    if (!(yield* workflowIsCurrent(action))) return;
+    if (intent.kind === 'capture') {
+      const result = yield* call(invokeCaptureFingerprint, intent.params);
+      outcome = result.tokenValid
+        ? { kind: 'captured', fingerprint: result.fingerprint }
+        : { kind: 'captureRejected', statusCode: result.statusCode };
+    } else if (intent.kind === 'connect') {
+      const add = addConnectionRequested(intent.params);
+      add.promise.catch(() => {});
+      yield* call(addConnection, add);
+      const { connection } = yield* call(() => add.promise);
+      if (!(yield* workflowIsCurrent(action))) return;
+      if (intent.enableSync && !(yield* enableSyncForWorkflow(action))) return;
+      if (!(yield* workflowIsCurrent(action))) return;
+      const open = openConnectionRequested(connection.id);
+      open.promise.catch(() => {});
+      yield* call(openConnection, open);
+      const result = yield* call(() => open.promise);
+      if (result.status === 'secret-unavailable') outcome = { kind: 'secretUnavailable' };
+    } else if (intent.kind === 'save' || intent.kind === 'localIcon') {
+      if (intent.kind === 'save' && intent.secret) {
+        yield* put(connectionWorkflowProgress(consumerId, requestId, 'secret'));
+        const result = yield* call(invokeRotateConnectionSecret, intent.secret);
+        if (result.status !== 'updated') {
+          yield* put(
+            connectionWorkflowFinished(consumerId, requestId, {
+              kind: 'blocked',
+              operation: 'secret',
+              result,
+            }),
+          );
+          return;
+        }
+        yield* put(connectionWorkflowProgress(consumerId, requestId, 'running', true));
+      }
+      if (!(yield* workflowIsCurrent(action))) return;
+      const result = yield* call(invokeUpdateConnection, intent.params);
+      if (result.status !== 'updated') {
+        outcome =
+          result.status === 'secret-unavailable'
+            ? { kind: 'secretUnavailable' }
+            : { kind: 'blocked', operation: 'update', result };
+      } else if (
+        intent.kind === 'save' &&
+        intent.enableSync &&
+        (yield* workflowIsCurrent(action))
+      ) {
+        if (!(yield* enableSyncForWorkflow(action))) return;
+      }
+    } else if (intent.kind === 'test') {
+      const result = yield* call(invokeTestConnection, intent.params);
+      outcome =
+        result.status === 'success'
+          ? { kind: 'tested' }
+          : result.status === 'secret-unavailable'
+            ? { kind: 'secretUnavailable' }
+            : { kind: 'blocked', operation: 'test', result };
+    } else if (intent.kind === 'open') {
+      const open = openConnectionRequested(intent.id);
+      open.promise.catch(() => {});
+      yield* call(openConnection, open);
+      const result = yield* call(() => open.promise);
+      if (result.status === 'secret-unavailable') {
+        outcome = { kind: 'secretUnavailable' };
+        if (intent.recovery === 'settings' && (yield* workflowIsCurrent(action)))
+          yield* recoverOpenInSettings(action, intent.id);
+      }
+    } else if (intent.kind === 'forget') {
+      yield* call(invokeForgetConnection, { id: intent.id });
+    } else {
+      const update = updateBackendRequested(intent.id);
+      update.promise.catch(() => {});
+      yield* call(updateBackend, update);
+      yield* call(() => update.promise);
+    }
+    yield* put(connectionWorkflowFinished(consumerId, requestId, outcome));
+  } catch (error) {
+    yield* put(
+      connectionWorkflowFinished(consumerId, requestId, {
+        kind: 'error',
+        message: toError(error).message,
+      }),
+    );
+    if (intent.kind === 'localIcon') {
+      const [{ notify }, { m }] = yield* call(() =>
+        Promise.all([
+          import('$lib/components/patterns/notify'),
+          import('$shared/paraglide/messages.js'),
+        ]),
+      );
+      yield* call(notify.error, m.settings_devices_update_error());
+    }
+  } finally {
+    if (yield* cancelled())
+      yield* put(connectionWorkflowFinished(consumerId, requestId, { kind: 'cancelled' }));
+  }
+}
+
+function* publication(action: ReturnType<typeof selfPublicationRequested>): SagaGenerator<void> {
+  const [operation] = action.payload;
+  let settled = false;
+  yield* put(selfPublicationBusyChanged(true));
+  try {
+    const api = getApi();
+    if (!api) throw new Error('electronAPI is not available');
+    if (operation === 'load') {
+      const [sync, self] = yield* all([
+        call(invokeSyncGetState),
+        call([api, api.invoke], CONNECTIONS.SELF_PUBLISHED_STATE),
+      ]);
+      yield* put(keychainSyncStateReceived(sync));
+      yield* put(selfPublicationReceived(self as SelfPublishedStateResult));
+    } else if (operation === 'refresh') {
+      yield* call([api, api.invoke], CONNECTIONS.REFRESH_SELF);
+    } else {
+      const sync = yield* selectKeychainSyncState.effect();
+      const self = yield* selectSelfPublication.effect();
+      const publish =
+        operation === 'publish' ||
+        (operation === 'autoPublish' &&
+          sync?.supported &&
+          sync.enabled &&
+          self &&
+          !self.published &&
+          !self.suppressed);
+      const unpublish = operation === 'autoUnpublish' && sync?.supported && self?.published;
+      if (publish || unpublish) {
+        const [{ notify }, { m }] = yield* call(() =>
+          Promise.all([
+            import('$lib/components/patterns/notify'),
+            import('$shared/paraglide/messages.js'),
+          ]),
+        );
+        if (publish) {
+          const result = (yield* call(
+            [api, api.invoke],
+            CONNECTIONS.PUBLISH_SELF,
+          )) as PublishSelfResult;
+          yield* put(
+            selfPublicationReceived({
+              published: true,
+              suppressed: false,
+              selfConnectionId: result.connection.id,
+            }),
+          );
+          yield* call(notify.success, m.settings_wsApi_publishSelf_success());
+        } else {
+          const result = (yield* call(
+            [api, api.invoke],
+            CONNECTIONS.UNPUBLISH_SELF,
+          )) as UnpublishSelfResult;
+          yield* put(
+            selfPublicationReceived({
+              published: false,
+              suppressed: self?.suppressed ?? false,
+              selfConnectionId: null,
+            }),
+          );
+          if (result.removed) yield* call(notify.success, m.settings_wsApi_unpublishSelf_success());
+        }
+      }
+    }
+    yield* put(action.success(undefined as never));
+    settled = true;
+  } catch (error) {
+    if (operation === 'load') yield* put(selfPublicationReceived(null));
+    else if (operation !== 'refresh') {
+      const [{ notify }, { m }] = yield* call(() =>
+        Promise.all([
+          import('$lib/components/patterns/notify'),
+          import('$shared/paraglide/messages.js'),
+        ]),
+      );
+      const params = { error: toError(error).message };
+      yield* call(
+        notify.error,
+        operation === 'autoUnpublish'
+          ? m.settings_wsApi_unpublishSelf_error(params)
+          : m.settings_wsApi_publishSelf_error(params),
+      );
+    }
+    yield* put(action.failure(toError(error)));
+    settled = true;
+  } finally {
+    yield* put(selfPublicationBusyChanged(false));
+    if (!settled && (yield* cancelled()))
+      yield* put(action.failure(new Error('Self publication was cancelled')));
+  }
+}
+
+function* runWrite(action: WriteAction): SagaGenerator<void> {
+  if (action.type === connectionWorkflowRequested.toString())
+    yield* runWorkflow(action as WorkflowAction);
+  else if (action.type === addConnectionRequested.toString())
+    yield* addConnection(action as ReturnType<typeof addConnectionRequested>);
+  else if (action.type === updateConnectionRequested.toString())
+    yield* updateConnection(action as ReturnType<typeof updateConnectionRequested>);
+  else if (action.type === rotateConnectionSecretRequested.toString())
+    yield* rotateConnectionSecret(action as ReturnType<typeof rotateConnectionSecretRequested>);
+  else if (action.type === openConnectionRequested.toString())
+    yield* openConnection(action as ReturnType<typeof openConnectionRequested>);
+  else if (action.type === forgetConnectionRequested.toString())
+    yield* forgetConnection(action as ReturnType<typeof forgetConnectionRequested>);
+  else if (action.type === updateBackendRequested.toString())
+    yield* updateBackend(action as ReturnType<typeof updateBackendRequested>);
+  else if (action.type === loadKeychainSyncStateRequested.toString())
+    yield* loadKeychainSyncState(action as ReturnType<typeof loadKeychainSyncStateRequested>);
+  else if (action.type === setKeychainSyncEnabledRequested.toString())
+    yield* setKeychainSyncEnabled(action as ReturnType<typeof setKeychainSyncEnabledRequested>);
+  else yield* publication(action as ReturnType<typeof selfPublicationRequested>);
+}
+
+function* watchWorkflowReads(
+  reads: Channel<WorkflowAction | ReturnType<typeof connectionWorkflowCleared>>,
+): SagaGenerator<void> {
+  yield* takeLatestInContext(
+    reads,
+    (action) =>
+      action.type === connectionWorkflowCleared.toString()
+        ? (action as ReturnType<typeof connectionWorkflowCleared>).payload[0]
+        : (action as WorkflowAction).payload.consumerId,
+    function* (action) {
+      if (action.type === connectionWorkflowRequested.toString())
+        yield* runWorkflow(action as WorkflowAction);
+    },
+  );
+}
+
 function* watchConnectionsActions(
   tracker: DaemonBehindTracker,
   updateActions: Channel<UpdateBackendAction>,
 ): SagaGenerator<void> {
-  yield* all([
-    takeLeading(loadConnectionsRequested, hydrateConnections, tracker, updateActions),
-    takeLeading(captureFingerprintRequested, captureFingerprint),
-    takeLeading(addConnectionRequested, addConnection),
-    takeEvery(updateConnectionRequested, updateConnection),
-    takeEvery(testConnectionRequested, testConnection),
-    takeEvery(rotateConnectionSecretRequested, rotateConnectionSecret),
-    // takeEvery, not takeLeading: each open targets one backend id and main
-    // serializes the work, so a second open dispatched while the first is in
-    // flight must still invoke and settle its own promise.
-    takeEvery(openConnectionRequested, openConnection),
-    takeLeading(forgetConnectionRequested, forgetConnection),
-    // takeEvery, not takeLeading: each action targets one backend id, and
-    // multiple connected remotes can be updated back-to-back — takeLeading
-    // would drop the second action, leaving its promise unresolved and the
-    // user without a toast.
-    takeEvery(updateBackendRequested, updateBackend),
-    takeLeading(loadKeychainSyncStateRequested, loadKeychainSyncState),
-    takeLeading(setKeychainSyncEnabledRequested, setKeychainSyncEnabled),
-  ]);
+  const writes = sagaChannel<WriteAction>(buffers.expanding());
+  const reads = sagaChannel<WorkflowAction | ReturnType<typeof connectionWorkflowCleared>>(
+    buffers.expanding(),
+  );
+  const requests = yield* actionChannel(
+    [
+      connectionWorkflowRequested,
+      connectionWorkflowCleared,
+      addConnectionRequested,
+      updateConnectionRequested,
+      rotateConnectionSecretRequested,
+      openConnectionRequested,
+      forgetConnectionRequested,
+      updateBackendRequested,
+      loadKeychainSyncStateRequested,
+      setKeychainSyncEnabledRequested,
+      selfPublicationRequested,
+    ],
+    buffers.expanding(),
+  );
+  try {
+    yield* takeEveryByContextFIFO(writes, writeKey, runWrite, { onDiscardPending: discardWrite });
+    yield* fork(watchWorkflowReads, reads);
+    yield* takeLatest(loadConnectionsRequested, hydrateConnections, tracker, updateActions);
+    yield* takeLatestInContext(
+      captureFingerprintRequested,
+      (action) => `${action.payload[0].host}:${action.payload[0].port}`,
+      captureFingerprint,
+    );
+    yield* takeLatestInContext(
+      testConnectionRequested,
+      (action) => action.payload[0].id,
+      testConnection,
+    );
+    while (true) {
+      const action = yield* take(requests);
+      if (action.type === connectionWorkflowCleared.toString())
+        yield* put(reads, action as ReturnType<typeof connectionWorkflowCleared>);
+      else if (
+        action.type === connectionWorkflowRequested.toString() &&
+        ['capture', 'test'].includes((action as WorkflowAction).payload.intent.kind)
+      )
+        yield* put(reads, action as WorkflowAction);
+      else yield* put(writes, action as WriteAction);
+    }
+  } finally {
+    requests.close();
+    writes.close();
+    reads.close();
+  }
 }
 
 /** Re-dispatch toast-action clicks into the store (a toast onClick runs outside saga context). */
@@ -688,8 +1066,6 @@ function* pumpUpdateActions(updateActions: Channel<UpdateBackendAction>): SagaGe
 }
 
 export function* connectionsSaga(): SagaGenerator<void> {
-  if (!getApi()) return;
-
   const events = createConnectionsEventChannel();
   const updateActions = sagaChannel<UpdateBackendAction>();
   const tracker: DaemonBehindTracker = { evaluatedById: new Map(), toastedIds: new Set() };
@@ -697,8 +1073,9 @@ export function* connectionsSaga(): SagaGenerator<void> {
   const pumpTask = yield* fork(pumpUpdateActions, updateActions);
   const actionsTask = yield* fork(watchConnectionsActions, tracker, updateActions);
   const initial = loadConnectionsRequested();
+  initial.promise.catch(() => {});
   try {
-    yield* call(hydrateConnections, tracker, updateActions, initial);
+    yield* put(initial);
     yield* all([join(eventTask), join(pumpTask), join(actionsTask)]);
   } finally {
     events.close();

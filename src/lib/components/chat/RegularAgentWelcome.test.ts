@@ -1,7 +1,7 @@
 /**
  * @vitest-environment jsdom
  */
-import { cleanup, fireEvent, render, screen } from '@testing-library/svelte';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AgentSession } from '$shared/types/agent-session';
 
@@ -42,6 +42,8 @@ const mocks = vi.hoisted(() => {
       id: 'ui-designer',
       name: 'UI Designer',
       description: 'Designs polished, accessible product interfaces.',
+      defaultBehaviorPrompt:
+        'Inspect the interface.\n\nPreserve keyboard behavior.\n\nVerify the result.',
       source: 'bundled',
     },
   ]);
@@ -61,11 +63,6 @@ vi.mock('$store/renderer/slices/github-auth/github-auth-selectors', () => ({
 
 vi.mock('$lib/utils/workspace-navigation', () => ({
   navigateToSettings: mocks.navigateToSettings,
-}));
-
-vi.mock('$lib/components/ui/dropdown-menu.svelte', async () => ({
-  default: (await import('../workspace/initializer/__tests__/mocks/MockDropdownMenu.svelte'))
-    .default,
 }));
 
 vi.mock('$features/agent/components/agent-avatar/AgentAvatar.svelte', async () => ({
@@ -98,21 +95,15 @@ describe('RegularAgentWelcome specialist picker', () => {
     render(RegularAgentWelcome, { props: { session: session(), onSpecialistChange } });
 
     const trigger = screen.getByTestId('specialist-picker-trigger');
-    expect(trigger.textContent).toContain('General');
-    expect(trigger.textContent).toContain('No specialized behavior');
     expect(trigger.getAttribute('aria-expanded')).toBe('false');
 
     await fireEvent.click(trigger);
     expect(trigger.getAttribute('aria-expanded')).toBe('true');
-    const option = document.querySelector<HTMLButtonElement>(
-      '[data-specialist-option="ui-designer"]',
-    );
-    expect(option).not.toBeNull();
-    expect(option?.textContent).toContain('Designs polished, accessible product interfaces.');
+    const option = await screen.findByRole('menuitemradio', { name: /UI Designer/ });
 
-    await fireEvent.click(option!);
+    await fireEvent.click(option);
     expect(onSpecialistChange).toHaveBeenCalledWith('ui-designer');
-    expect(document.querySelector('[data-specialist-option="ui-designer"]')).toBeNull();
+    await waitFor(() => expect(trigger.getAttribute('aria-expanded')).toBe('false'));
   });
 
   it('lists and selects each team specialist', async () => {
@@ -126,18 +117,12 @@ describe('RegularAgentWelcome specialist picker', () => {
       ['verifier', 'Verifier'],
     ] as const;
 
-    await fireEvent.click(trigger);
     for (const [id, name] of teamSpecialists) {
-      const option = document.querySelector<HTMLButtonElement>(`[data-specialist-option="${id}"]`);
-      expect(option).not.toBeNull();
-      expect(option?.textContent).toContain(name);
-    }
-
-    for (const [id] of teamSpecialists) {
-      const option = document.querySelector<HTMLButtonElement>(`[data-specialist-option="${id}"]`);
-      await fireEvent.click(option!);
-      expect(onSpecialistChange).toHaveBeenLastCalledWith(id);
       await fireEvent.click(trigger);
+      const option = await screen.findByRole('menuitemradio', { name: new RegExp(name) });
+      await fireEvent.click(option);
+      expect(onSpecialistChange).toHaveBeenLastCalledWith(id);
+      await waitFor(() => expect(trigger.getAttribute('aria-expanded')).toBe('false'));
     }
   });
 
@@ -147,13 +132,25 @@ describe('RegularAgentWelcome specialist picker', () => {
     });
 
     const trigger = screen.getByTestId('specialist-picker-trigger');
-    expect(trigger.textContent).toContain('UI Designer');
     await fireEvent.click(trigger);
+    const selected = await screen.findByRole('menuitemradio', { name: /UI Designer/ });
+    expect(selected.getAttribute('aria-checked')).toBe('true');
+  });
 
-    expect(
-      document
-        .querySelector('[data-specialist-option="ui-designer"]')
-        ?.getAttribute('aria-pressed'),
-    ).toBe('true');
+  it('expands and collapses the selected prompt and preserves customize routing', async () => {
+    render(RegularAgentWelcome, { props: { session: session('ui-designer') } });
+    const more = screen.getByRole('button', { name: /Show more/i });
+    expect(more.getAttribute('aria-expanded')).toBe('false');
+    await fireEvent.click(more);
+    expect(screen.getByRole('button', { name: /Show less/i }).getAttribute('aria-expanded')).toBe(
+      'true',
+    );
+    await fireEvent.click(screen.getByRole('button', { name: /Show less/i }));
+    expect(more.getAttribute('aria-expanded')).toBe('false');
+    await fireEvent.click(screen.getByRole('button', { name: /Customize/i }));
+    expect(mocks.navigateToSettings).toHaveBeenCalledWith({
+      specialist: 'ui-designer',
+      hash: 'specialists',
+    });
   });
 });

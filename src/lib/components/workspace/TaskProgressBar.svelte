@@ -3,6 +3,7 @@
   import { Tooltip } from '$lib/components/ui/tooltip';
   import TaskStatusIcon from '$lib/components/tiptap/TaskStatusIcon.svelte';
   import AgentAvatarWithState from '$features/agent/components/agent-avatar/AgentAvatarWithState.svelte';
+  import { Button } from '$lib/components/ui/button';
   import type { AvatarState } from '$features/agent/components/agent-avatar/avatar-state';
   import type { TaskStatus } from '$shared/types';
   import type { BuiltinSpecialistId } from '$lib/constants/specialists';
@@ -208,7 +209,21 @@
     {/snippet}
 
     <!-- Bar visualization -->
-    <div class={cn('flex items-end cursor-default', className)} style:gap>
+    <Button
+      variant="plain"
+      type="button"
+      wrapContent={false}
+      class={cn(
+        'flex h-auto min-w-0 shrink items-end justify-start cursor-default rounded-none border-0',
+        className,
+      )}
+      style={`gap: ${gap}`}
+      aria-label={m.workspace_taskProgressBar_tasksRatio_label({
+        completed: formatInteger(stats.completed),
+        total: formatInteger(stats.total),
+      })}
+      data-task-progress-trigger
+    >
       {#each taskBars as status}
         <div
           class="rounded-[0.5px]"
@@ -217,6 +232,6 @@
           style:background-color={barColor[status]}
         ></div>
       {/each}
-    </div>
+    </Button>
   </Tooltip>
 {/if}

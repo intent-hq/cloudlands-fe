@@ -1,10 +1,10 @@
 <script lang="ts">
   import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-session-selectors';
   /* eslint-disable max-lines */
-  import { onMount, tick } from 'svelte';
+  import { onMount, tick, type Snippet } from 'svelte';
   import { writable } from 'svelte/store';
-  import { toast } from 'svelte-sonner';
-  import { withToastCountdown } from '$lib/components/ui/toast';
+  import { notify } from '$lib/components/patterns/notify';
+  import { withToastCountdown } from '$lib/components/patterns/notify';
   import { createLogger } from '$lib/utils/client-logger';
   import type { Workspace } from '$shared/types';
   import { CHIEF_WORKSPACE_ID } from '$shared/types/branded-ids';
@@ -21,6 +21,8 @@
   } from '$lib/client/live/live-prompt-enhancement';
   import { TooltipShortcut } from '$lib/components/ui/tooltip';
   import TooltipRich from '$lib/components/ui/tooltip/TooltipRich.svelte';
+  import { surfaceClasses } from '$lib/components/ui/surface-context';
+  import ArrowUpIcon from 'phosphor-svelte/lib/ArrowUpIcon';
 
   import { updateSession as updateAgentSessionFields } from '$store/renderer/slices/agent-session/agent-session-slice';
 
@@ -33,16 +35,13 @@
   import {
     faMicrophone,
     faPaperclip,
-    faArrowRight,
-    faSpinner,
     faXmark,
-    faStop,
     faPlus,
-    faClock,
     faWandMagicSparkles,
     faRotateLeft,
     faAt,
   } from '$lib/icons/phosphor-icons';
+  import { IntentMarkLoader } from '$lib/components/ui/indicators';
   import {
     selectPttRecording,
     selectVoiceTranscribing,
@@ -56,7 +55,8 @@
   import { showVoiceSetupToast } from '$features/hardware-console/voice/voice-setup-toast';
   import { selectEffectiveVoiceEngine } from '$store/renderer/slices/voice-settings/voice-settings-selectors';
   import type { PttContext } from '$features/hardware-console/voice/ptt-controller';
-  import Button from '../../ui/button/button.svelte';
+  import { Button } from '$lib/components/ui/button';
+  import { Input } from '$lib/components/ui/input';
   import TipTapEditor from './TipTapEditor.svelte';
   import ModelPicker from './ModelPicker.svelte';
   import ModelSwitchConfirmDialog from '../ModelSwitchConfirmDialog.svelte';
@@ -65,6 +65,10 @@
   import ContextChip from '../ContextChip.svelte';
   import ContextPickerButton from './ContextPickerButton.svelte';
   import * as Menu from '$lib/components/ui/menu';
+  import * as Popover from '$lib/components/ui/popover';
+  import { OVERLAY_VIEWPORT_GUTTER } from '$lib/components/ui/overlay-positioning';
+  import { ShortcutChip } from '$lib/components/ui/kbd';
+  import { pushEscapeLayer } from '$lib/utils/escapeLayers';
   import type { StackedMenuGroup } from '$lib/components/ui/menu';
   import { parseImageDataUrl } from './image-data-url';
   import {
@@ -72,6 +76,7 @@
     selectSkillsError,
     selectSkillsLoading,
   } from '$store/renderer/slices/skills/skills-selectors';
+  import { loadSkillsRequested } from '$store/renderer/slices/skills/skills-slice';
 
   import {
     togglePanel as togglePanelAction,
@@ -82,7 +87,8 @@
     selectSelections,
   } from '$store/renderer/slices/multi-panel-context/multi-panel-context-selectors';
 
-  import { slide } from 'svelte/transition';
+  import { safeDisclosureTransition } from '../disclosure-motion';
+  import { effectiveShortcutReadable } from '$lib/utils/effective-shortcuts';
 
   const logger = createLogger('SimpleRichInput');
 
@@ -90,6 +96,8 @@
   const pttRecording$ = selectPttRecording();
   const voiceTranscribing$ = selectVoiceTranscribing();
   const effectiveVoiceEngine$ = selectEffectiveVoiceEngine();
+  const sendShortcut$ = effectiveShortcutReadable('chat.send');
+  const forceSendShortcut$ = effectiveShortcutReadable('chat.force-send');
 
   // Catalog-backed local shims for the legacy provider-config helpers.
   function normalizeProviderId(providerId: string): string {
@@ -160,6 +168,10 @@
     contentInsetClassName?: string;
     /** Override the action bar's important trailing-edge padding (defaults to `pr-1.5!`). */
     actionBarEndClassName?: string;
+    /** Optional local portal target for composer tooltips. */
+    tooltipPortalTarget?: Element | string;
+    /** Daemon-backed queue rendered inside the composer's recessed queue region. */
+    queueRegion?: Snippet;
     /**
      * The parent owns file drag-and-drop (e.g. ChatPanel's full-panel drop
      * target): the container's own drag handlers and drop overlay are disabled
@@ -232,6 +244,8 @@
     editorClassName = 'px-2!',
     contentInsetClassName = undefined,
     actionBarEndClassName = 'pr-1.5!',
+    tooltipPortalTarget,
+    queueRegion,
     externalDropTarget = false,
     onsubmit,
     onforcesubmit,
@@ -255,9 +269,7 @@
   // effective provider, matching the daemon's derivation.
   const enhanceAvailable = $derived(isEnhancePromptAvailable($defaultProviderId$));
 
-  const contentInsetClasses = $derived(
-    contentInsetClassName ?? (edgeDocked ? 'px-4 sm:px-6' : 'px-2'),
-  );
+  const contentInsetClasses = $derived(contentInsetClassName ?? 'px-2');
 
   // Track if enhancement is in progress
   let isEnhancing = $state(false);
@@ -271,6 +283,15 @@
     clearPendingUpdate: () => void;
   } | null = $state(null);
   let contextPickerRef: { open: (anchor?: HTMLElement) => Promise<void> } | null = $state(null);
+  let promptActionsOpen = $state(false);
+  let contextFlyoutOpen = $state(false);
+  let contextFlyoutTrigger = $state<HTMLDivElement | null>(null);
+  let contextFlyoutRef = $state<HTMLDivElement | null>(null);
+  let contextFlyoutSide = $state<'right' | 'bottom'>('right');
+  const contextFlyoutGap = 4;
+  let restoreContextTrigger = false;
+  let insertingContextMention = false;
+  const contextFlyoutId = $props.id();
   // svelte-ignore state_referenced_locally -- intentional initial snapshots for transition detection.
   let previousDisabled = $state(disabled);
   // svelte-ignore state_referenced_locally -- intentional initial snapshots for transition detection.
@@ -331,7 +352,7 @@
 
   const micContext: PttContext = {
     dispatch: (action) => appStore.dispatch(action as { type: string }),
-    showHint: (message) => toast.info(message),
+    showHint: (message) => notify.info(message),
   };
 
   function handleMicClick() {
@@ -512,7 +533,7 @@
       );
   }
 
-  let fileInput: HTMLInputElement;
+  let fileInput = $state<HTMLInputElement | null>(null);
 
   // Track dismissed main panel context - stores a key that identifies the dismissed context
   // When the main panel changes to something different, we reset this to show the new context
@@ -535,6 +556,9 @@
   let isResizing = $state(false);
   let containerHeight = $state<number | null>(null); // null = use auto-expand mode
   let isComposerFocused = $state(false);
+  let isComposerHovered = $state(false);
+  let isDragging = $state(false);
+  let dragCounter = $state(0);
   let initialY = 0;
   let initialHeight = 0;
 
@@ -556,7 +580,6 @@
     value.trim().length > 0 || contextItems.length > 0 || hasInlineImages,
   );
   const showPlaceholder = $derived(inputLocked || (isComposerFocused && !hasComposerContent));
-
   // Automatic geometry expands only for real composer content. Focus reveals
   // the placeholder without changing the compact idle height.
   let dynamicDefaultHeight = $derived.by(() => {
@@ -577,6 +600,29 @@
 
   // When user manually resizes, we use their height; otherwise auto-expand
   let isAutoExpand = $derived(containerHeight === null);
+  const ringState = $derived(
+    isDragging
+      ? 'drag'
+      : isComposerFocused
+        ? 'focus'
+        : isComposerHovered && !disabled
+          ? 'hover'
+          : 'rest',
+  );
+  const edgeShadow = $derived(
+    ringState === 'drag'
+      ? '0 0 0 1px hsl(var(--focus-ring)), var(--shadow-surface-2)'
+      : ringState === 'hover'
+        ? '0 0 0 1px hsl(var(--border)), var(--shadow-surface-2)'
+        : undefined,
+  );
+  const composerStyle = $derived(
+    `${
+      isAutoExpand
+        ? `min-height: ${dynamicDefaultHeight}px; max-height: ${maxAutoHeight}px;`
+        : `height: ${containerHeight}px;`
+    }${edgeShadow ? ` box-shadow: ${edgeShadow};` : ''}`,
+  );
 
   // Model selection
   // svelte-ignore state_referenced_locally -- intentional initial snapshot; later prop changes sync below.
@@ -645,6 +691,8 @@
     toModelLabel: string;
     fromProviderName: string;
     toProviderName: string;
+    fromProviderId: string;
+    toProviderId: string;
     resolve: (confirmed: boolean) => void;
   } | null>(null);
 
@@ -676,6 +724,7 @@
   function confirmModelSwitch(
     from: string | null | undefined,
     to: string | null,
+    labels?: { from: string; to: string },
   ): boolean | Promise<boolean> {
     if (!requiresModelSwitchConfirmation) return true;
 
@@ -689,10 +738,12 @@
         // fall back to the default config's display name and would misclassify
         // a cross-provider switch as model-only.
         isProviderChange: fromInfo.providerId !== toInfo.providerId,
-        fromModelLabel: fromInfo.modelLabel,
-        toModelLabel: toInfo.modelLabel,
+        fromModelLabel: labels?.from ?? fromInfo.modelLabel,
+        toModelLabel: labels?.to ?? toInfo.modelLabel,
         fromProviderName: fromInfo.providerName,
         toProviderName: toInfo.providerName,
+        fromProviderId: fromInfo.providerId,
+        toProviderId: toInfo.providerId,
         resolve,
       };
     });
@@ -771,7 +822,7 @@
           }),
         );
       }
-      toast.error(
+      notify.error(
         error instanceof Error
           ? error.message
           : m.chat_richInput_switchFailed_error({
@@ -850,7 +901,7 @@
         // one) based on whatever the component state holds at click time.
         const undoValueForToast = originalPrompt;
         const enhancedValueForToast = result.enhanced;
-        toast.success(
+        notify.success(
           m.chat_richInput_promptEnhanced_toast(),
           withToastCountdown({
             duration: 10000,
@@ -875,7 +926,7 @@
         return;
       }
       logger.error('Failed to enhance prompt:', error);
-      toast.error(
+      notify.error(
         error instanceof EnhancePromptUnavailableError
           ? m.chat_richInput_enhanceUnavailable_error()
           : error instanceof Error && error.message
@@ -921,10 +972,6 @@
     // Reset the input
     target.value = '';
   }
-
-  // Drag and drop state
-  let isDragging = $state(false);
-  let dragCounter = $state(0);
 
   // Handle drag events for file drop
   function handleDragEnter(e: DragEvent) {
@@ -983,7 +1030,7 @@
       // host filesystem, which a remote daemon cannot do. Any folder in the
       // drop rejects the WHOLE drop when remote (files included).
       if (isRemoteBackend()) {
-        toast.error(m.chat_richInput_folderDropRemote_error());
+        notify.error(m.chat_richInput_folderDropRemote_error());
         return;
       }
       for (const folder of folderFiles) {
@@ -1018,7 +1065,7 @@
       logger.warn('Dropped folder has no resolvable absolute path; skipping', {
         name: folder.name,
       });
-      toast.error(m.onboarding_promptStep_attachmentNoPath_error({ name: folder.name }));
+      notify.error(m.onboarding_promptStep_attachmentNoPath_error({ name: folder.name }));
       return;
     }
     // Windows-aware basename fallback ('\' or '/' separators).
@@ -1156,7 +1203,7 @@
         hasSourcePath: !!item.sourcePath,
       });
       patchItem({ placementStatus: 'failed' });
-      toast.error(m.chat_richInput_attachmentPlaceFailed_error({ name: item.label }));
+      notify.error(m.chat_richInput_attachmentPlaceFailed_error({ name: item.label }));
       return;
     }
 
@@ -1200,7 +1247,7 @@
         attachmentId: result.attachmentId,
         size: result.size,
       });
-      toast.success(m.chat_richInput_addedFile_toast({ name: result.fileName }));
+      notify.success(m.chat_richInput_addedFile_toast({ name: result.fileName }));
     } catch (error) {
       if (isPlacementCancellation(error, aborter.signal)) {
         // User removed the attachment mid-upload — the item is already gone
@@ -1215,7 +1262,7 @@
         placementError: detail,
         placementProgress: undefined,
       });
-      toast.error(
+      notify.error(
         detail
           ? m.chat_richInput_attachmentPlaceFailedDetail_error({ name: item.label, detail })
           : m.chat_richInput_attachmentPlaceFailed_error({ name: item.label }),
@@ -1359,6 +1406,49 @@
     }
   });
 
+  function openContextFlyout() {
+    restoreContextTrigger = false;
+    contextFlyoutOpen = true;
+  }
+
+  function closeContextFlyout() {
+    restoreContextTrigger = true;
+    contextFlyoutOpen = false;
+  }
+
+  $effect(() => {
+    if (!contextFlyoutOpen) return;
+    return pushEscapeLayer(closeContextFlyout);
+  });
+
+  $effect(() => {
+    // The embedded body is the direct child of the owning Popover surface.
+    const content = contextFlyoutRef?.parentElement;
+    const trigger = contextFlyoutTrigger;
+    if (!contextFlyoutOpen || !content || !trigger) return;
+    function updatePlacement() {
+      const anchor = trigger!.getBoundingClientRect();
+      const horizontalRoom = Math.max(anchor.left, window.innerWidth - anchor.right);
+      // Bits flips horizontally but cannot shift a side flyout across its anchor.
+      // When neither side fits, vertical placement preserves the shared gutters.
+      contextFlyoutSide =
+        horizontalRoom - OVERLAY_VIEWPORT_GUTTER - contextFlyoutGap < content!.offsetWidth
+          ? 'bottom'
+          : 'right';
+    }
+    updatePlacement();
+    const observer = new ResizeObserver(updatePlacement);
+    observer.observe(content);
+    observer.observe(trigger);
+    window.addEventListener('resize', updatePlacement);
+    window.addEventListener('scroll', updatePlacement, true);
+    return () => {
+      observer.disconnect();
+      window.removeEventListener('resize', updatePlacement);
+      window.removeEventListener('scroll', updatePlacement, true);
+    };
+  });
+
   const promptActionGroups = $derived.by((): StackedMenuGroup[] => {
     const groups: StackedMenuGroup[] = [
       {
@@ -1369,9 +1459,6 @@
             icon: faAt,
             label: m.chat_contextPicker_addContext_ariaLabel(),
             shortcut: '@',
-            onSelect: (event) => {
-              void contextPickerRef?.open(event.currentTarget as HTMLElement);
-            },
           },
           {
             id: 'attach-files',
@@ -1417,6 +1504,28 @@
 
     return groups;
   });
+
+  const buttonMode = $derived<'send' | 'queue' | 'stop'>(
+    !showStopButton ? 'send' : canSend ? 'queue' : 'stop',
+  );
+  const buttonLabel = $derived(
+    editMode
+      ? m.chat_richInput_saveAndResend_label()
+      : buttonMode === 'stop'
+        ? m.chat_richInput_stopStreaming_ariaLabel()
+        : buttonMode === 'queue'
+          ? m.chat_richInput_queueMessage_ariaLabel()
+          : m.chat_richInput_sendMessage_ariaLabel(),
+  );
+  const buttonTooltipLabel = $derived(
+    buttonMode === 'stop'
+      ? m.chat_richInput_stop_label()
+      : buttonMode === 'queue'
+        ? m.chat_richInput_queueMessage_ariaLabel()
+        : editMode
+          ? m.chat_richInput_saveAndResend_label()
+          : m.chat_richInput_send_label(),
+  );
 </script>
 
 <svelte:window onkeydowncapture={handleMicEscape} />
@@ -1424,20 +1533,14 @@
 <div
   bind:this={containerRef}
   class={cn(
-    'relative rich-input-container flex flex-col overflow-hidden text-card-foreground duration-(--motion-fast) ease-(--ease-standard) motion-reduce:transition-none',
+    'relative rich-input-container flex flex-col overflow-hidden rounded-(--radius-large) border-0 p-2 has-[[data-chat-input-queue-region]>_*]:pt-0 text-card-foreground transition-[box-shadow,color,min-height] duration-spring-fast ease-spring-fast motion-reduce:transition-none',
+    surfaceClasses(2, 2),
     isAutoExpand
       ? 'transition-[border-color,background-color,box-shadow,min-height]'
       : 'transition-[border-color,background-color,box-shadow]',
-    edgeDocked
-      ? 'rounded-lg border-0 bg-sidebar shadow-none'
-      : 'rounded-lg border border-border shadow-(--elevation-raised) focus-within:border-ring focus-within:ring-0',
-    {
-      'border-primary border-dashed': isDragging,
-    },
+    edgeDocked && 'px-0',
   )}
-  style={isAutoExpand
-    ? `min-height: ${dynamicDefaultHeight}px; max-height: ${maxAutoHeight}px;`
-    : `height: ${containerHeight}px;`}
+  style={composerStyle}
   ondragenter={externalDropTarget ? undefined : handleDragEnter}
   ondragleave={externalDropTarget ? undefined : handleDragLeave}
   ondragover={externalDropTarget ? undefined : handleDragOver}
@@ -1445,16 +1548,19 @@
   onpaste={handlePaste}
   onfocusin={handleFocusIn}
   onfocusout={handleFocusOut}
+  onmouseenter={() => (isComposerHovered = true)}
+  onmouseleave={() => (isComposerHovered = false)}
   role="region"
   aria-label={m.chat_richInput_dropSupport_ariaLabel()}
   data-testid="message-input"
+  data-ring-state={ringState}
 >
   <!-- Drop zone overlay -->
   {#if isDragging}
     <div
-      class="absolute inset-0 bg-primary/5 z-20 flex items-center justify-center pointer-events-none"
+      class="absolute inset-0 z-20 flex items-center justify-center rounded-(--radius-large) border border-dashed border-primary-ink bg-primary/5 pointer-events-none"
     >
-      <div class="flex flex-col items-center gap-2 text-primary">
+      <div class="flex flex-col items-start gap-2 text-left text-primary-ink">
         <Fa icon={faPaperclip} class="w-6 h-6" />
         <span class="text-sm font-medium">{m.chat_richInput_dropFiles_label()}</span>
       </div>
@@ -1462,7 +1568,8 @@
   {/if}
 
   <!-- Resize Handle - at bottom when in edit mode, top otherwise. Double-click to reset to auto-expand -->
-  <button
+  <Button
+    variant="plain"
     class="app-resize-handle resize-handle absolute left-1/2 z-10 h-4 w-12 -translate-x-1/2 opacity-0 pointer-events-none group-[.focused]/panel:opacity-100 group-[.focused]/panel:pointer-events-auto {editMode
       ? 'bottom-[-0.5px] translate-y-1/2'
       : 'top-[-0.5px] -translate-y-1/2'}"
@@ -1472,8 +1579,18 @@
     onmousedown={startResize}
     ondblclick={handleResizeDoubleClick}
     aria-label={m.chat_richInput_resize_ariaLabel()}
-    tabindex="-1"
-  ></button>
+    tabindex={-1}
+  ></Button>
+
+  {#if queueRegion}
+    <div
+      class="min-h-0 shrink overflow-y-auto overscroll-contain has-[>_*]:mb-2"
+      style:max-height="{(containerHeight ?? maxAutoHeight) / 2}px"
+      data-chat-input-queue-region
+    >
+      {@render queueRegion()}
+    </div>
+  {/if}
 
   <!-- Non-image context items and selections - shown above editor when present -->
   {#if nonImageItems.length > 0}
@@ -1537,7 +1654,7 @@
   <!-- svelte-ignore a11y_click_events_have_key_events -->
   <!-- svelte-ignore a11y_no_static_element_interactions -->
   <div
-    class="editor-wrapper relative min-h-0 cursor-text pt-1 {isAutoExpand
+    class="editor-wrapper relative min-h-6 cursor-text {isAutoExpand
       ? 'flex-1 overflow-y-auto'
       : 'flex-1 overflow-hidden'} {editMode ? 'pr-5' : ''}"
     class:placeholder-hidden={!showPlaceholder}
@@ -1546,7 +1663,7 @@
     <TipTapEditor
       bind:this={tiptap}
       class={isAutoExpand ? '' : 'h-full overflow-y-auto'}
-      {editorClassName}
+      editorClassName={cn('text-sm! leading-5!', editorClassName)}
       minHeight={20}
       maxHeight={isAutoExpand ? 9999 : 9999}
       {autoFocus}
@@ -1559,6 +1676,9 @@
       skills={$skills$}
       skillsLoading={$skillsLoading$}
       skillsError={$skillsError$}
+      onSkillsRetry={() => {
+        if (workspace?.id) appStore.dispatch(loadSkillsRequested(workspace.id));
+      }}
       onUpdate={(text) => {
         handleCancelEnhance();
         if (
@@ -1619,12 +1739,10 @@
   {/if}
 
   <!-- Hidden file input - accepts any file type -->
-  <input bind:this={fileInput} type="file" multiple class="hidden" onchange={handleFileChange} />
+  <Input bind:ref={fileInput} type="file" multiple class="hidden" onchange={handleFileChange} />
   <!-- Action Bar -->
   <div
-    class="action-bar flex items-center justify-between pb-1.5 {actionBarEndClassName} pt-0 text-muted-foreground transition-opacity duration-150 {edgeDocked
-      ? 'flex-wrap gap-y-1'
-      : ''} {contentInsetClasses}"
+    class="action-bar mt-1 flex shrink-0 items-center justify-between gap-2 pb-0 {actionBarEndClassName} pt-0 text-muted-foreground transition-opacity duration-spring-fast ease-spring-fast motion-reduce:transition-none {contentInsetClasses}"
     data-chat-input-action-bar
   >
     <div class="flex items-center gap-2 min-w-0" data-chat-input-primary-actions>
@@ -1633,7 +1751,7 @@
         {selectedModel}
         variant="ghost-light"
         size="xs"
-        triggerClass="px-0 font-medium text-muted-foreground hover:bg-transparent hover:text-foreground [&_svg]:size-4"
+        triggerClass="relative -left-2 font-medium text-muted-foreground hover:bg-hover hover:text-foreground [&_svg]:size-4"
         isLocked={isModelLocked}
         confirmModelChange={confirmModelSwitch}
         deferUpdate={isStreaming}
@@ -1679,12 +1797,15 @@
       />
     </div>
 
-    <div
-      class="flex items-center gap-1 min-w-0 {edgeDocked ? 'flex-wrap justify-end' : 'shrink-0'}"
-      data-chat-input-submit-actions
-    >
+    <div class="flex min-w-0 shrink-0 items-center gap-1.5" data-chat-input-submit-actions>
       <div class="relative inline-block">
-        <Menu.Root>
+        <Menu.Root
+          bind:open={promptActionsOpen}
+          onOpenChange={(open) => {
+            if (open) insertingContextMention = false;
+            else contextFlyoutOpen = false;
+          }}
+        >
           <Menu.Trigger>
             {#snippet child({ props })}
               <Button
@@ -1699,12 +1820,126 @@
               </Button>
             {/snippet}
           </Menu.Trigger>
-          <Menu.StackedContent groups={promptActionGroups} align="end" side="top" class="w-52" />
+          <Menu.Content
+            align="end"
+            side="top"
+            class="w-60"
+            onInteractOutside={(event) => {
+              if (event.target instanceof Node && contextFlyoutRef?.contains(event.target)) {
+                event.preventDefault();
+              }
+            }}
+            onCloseAutoFocus={(event) => {
+              if (insertingContextMention) event.preventDefault();
+            }}
+          >
+            {#each promptActionGroups as group, index (group.id)}
+              {#if index > 0}<Menu.Separator />{/if}
+              <Menu.Group>
+                {#each group.items as item (item.id)}
+                  {#if item.id === 'add-context'}
+                    <Popover.Root bind:open={contextFlyoutOpen}>
+                      <Menu.Item
+                        bind:ref={contextFlyoutTrigger}
+                        aria-haspopup="dialog"
+                        aria-expanded={contextFlyoutOpen}
+                        aria-controls={contextFlyoutOpen ? contextFlyoutId : undefined}
+                        onSelect={(event) => {
+                          event.preventDefault();
+                          openContextFlyout();
+                        }}
+                        onpointermove={(event) => {
+                          if (event.pointerType === 'mouse' && !contextFlyoutOpen) {
+                            openContextFlyout();
+                          }
+                        }}
+                        onkeydown={(event) => {
+                          if (event.key !== 'ArrowRight') return;
+                          event.preventDefault();
+                          openContextFlyout();
+                        }}
+                      >
+                        {#snippet leading()}
+                          <Fa icon={faAt} size={16} class="size-4 text-muted-foreground" />
+                        {/snippet}
+                        <span class="min-w-0 flex-1">{item.label}</span>
+                        <span class="ml-5 flex h-lh shrink-0 items-center" aria-hidden="true">
+                          <ShortcutChip>@</ShortcutChip>
+                        </span>
+                        <Menu.Indicator state="submenu" />
+                      </Menu.Item>
+                      <Popover.Content
+                        id={contextFlyoutId}
+                        customAnchor={contextFlyoutTrigger}
+                        role="dialog"
+                        aria-label={m.chat_contextPicker_selectPanels_ariaLabel()}
+                        aria-describedby={`${contextFlyoutId}-description`}
+                        side={contextFlyoutSide}
+                        sideOffset={contextFlyoutGap}
+                        align="start"
+                        class="flex w-80 max-h-(--bits-popover-content-available-height) flex-col p-0"
+                        onCloseAutoFocus={(event) => {
+                          event.preventDefault();
+                          if (restoreContextTrigger && promptActionsOpen) {
+                            contextFlyoutTrigger?.focus();
+                          }
+                        }}
+                        onkeydown={(event) => {
+                          // Text inputs keep Left for moving the caret.
+                          if (event.key !== 'ArrowLeft' || event.target instanceof HTMLInputElement)
+                            return;
+                          event.preventDefault();
+                          closeContextFlyout();
+                        }}
+                      >
+                        <ContextPickerButton
+                          bind:bodyRef={contextFlyoutRef}
+                          panels={availablePanels}
+                          selections={availableSelections}
+                          {workspace}
+                          {disabled}
+                          currentAgentId={agentId}
+                          onToggle={handleTogglePanel}
+                          onToggleSelection={handleToggleSelection}
+                          onInsertMention={async (mention) => {
+                            // The picker calls onPick synchronously; let both focus scopes
+                            // unmount before placing the mention and caret in the editor.
+                            await tick();
+                            tiptap?.insertMention(mention);
+                          }}
+                          onPick={() => {
+                            insertingContextMention = true;
+                            contextFlyoutOpen = false;
+                            promptActionsOpen = false;
+                          }}
+                          renderTrigger={false}
+                          descriptionId={`${contextFlyoutId}-description`}
+                          embedded
+                        />
+                      </Popover.Content>
+                    </Popover.Root>
+                  {:else}
+                    <Menu.CommandItem
+                      icon={item.icon}
+                      label={item.label}
+                      shortcut={item.shortcut}
+                      disabled={item.disabled}
+                      onSelect={item.onSelect}
+                    />
+                  {/if}
+                {/each}
+              </Menu.Group>
+            {/each}
+          </Menu.Content>
         </Menu.Root>
       </div>
 
       {#if micTranscribing}
-        <TooltipShortcut label={m.chat_richInput_micCancelTranscribing_label()} side="top">
+        <TooltipShortcut
+          label={m.chat_richInput_micCancelTranscribing_label()}
+          side="top"
+          portalTarget={tooltipPortalTarget}
+        >
           <Button
             variant="ghost-light"
             size="icon-sm"
@@ -1713,11 +1948,16 @@
             aria-label={m.chat_richInput_micCancelTranscribing_label()}
             data-testid="composer-mic-button"
           >
-            <Fa icon={faSpinner} size="sm" class="animate-spin" />
+            <IntentMarkLoader size={14} />
           </Button>
         </TooltipShortcut>
       {:else if micRecording}
-        <TooltipShortcut label={m.chat_richInput_micStop_label()} shortcut="Escape" side="top">
+        <TooltipShortcut
+          label={m.chat_richInput_micStop_label()}
+          shortcut="Escape"
+          side="top"
+          portalTarget={tooltipPortalTarget}
+        >
           <Button
             variant="ghost-light"
             size="icon-sm"
@@ -1732,7 +1972,11 @@
           </Button>
         </TooltipShortcut>
       {:else if $effectiveVoiceEngine$ !== 'unavailable'}
-        <TooltipShortcut label={m.chat_richInput_micStart_label()} side="top">
+        <TooltipShortcut
+          label={m.chat_richInput_micStart_label()}
+          side="top"
+          portalTarget={tooltipPortalTarget}
+        >
           <Button
             variant="ghost-light"
             size="icon-sm"
@@ -1748,96 +1992,63 @@
         </TooltipShortcut>
       {/if}
 
-      {#if showStopButton}
-        <!-- Stop button — visible whenever the agent is responding/running,
-             mirroring the Thinking indicator so users can interrupt across
-             the pre-first-chunk, streaming, and waiting-on-subagents windows. -->
-        <TooltipShortcut label={m.chat_richInput_stop_label()} side="top">
-          <Button
-            variant="ghost-light"
-            size="icon-sm"
-            onclick={() => onstop?.()}
-            aria-label={m.chat_richInput_stopStreaming_ariaLabel()}
-            class="text-muted-foreground"
-          >
-            <Fa icon={faStop} size="sm" />
-          </Button>
-        </TooltipShortcut>
-
-        {#if canSend}
-          <div class="flex items-center gap-1" transition:slide={{ axis: 'x', duration: 200 }}>
-            <TooltipShortcut
-              label={m.chat_richInput_queueMessage_ariaLabel()}
-              shortcut="Enter"
-              side="top"
-            >
-              <Button
-                variant="ghost-light"
-                size="icon-sm"
-                onclick={handleSubmit}
-                disabled={isEnhancing}
-                aria-label={m.chat_richInput_queueMessage_ariaLabel()}
-              >
-                <Fa icon={faClock} size="sm" />
-              </Button>
-            </TooltipShortcut>
-            <TooltipShortcut
-              label={m.chat_richInput_interruptAndSend_ariaLabel()}
-              shortcut="cmd+Enter"
-              side="top"
-            >
-              <Button
-                variant="ghost-light"
-                size="icon-sm"
-                onclick={handleForceSubmit}
-                disabled={isEnhancing}
-                aria-label={m.chat_richInput_interruptAndSend_ariaLabel()}
-                data-testid="interrupt-btn"
-              >
-                <Fa icon={faArrowRight} size="sm" />
-              </Button>
-            </TooltipShortcut>
-          </div>
-        {/if}
-      {:else if editMode}
-        <!-- Edit mode: Cancel and Save buttons -->
-        <div class="flex items-center gap-1">
-          <div class="absolute top-0.5 right-0.5">
-            <TooltipShortcut label={m.chat_richInput_cancel_label()} shortcut="Escape" side="top">
-              <Button variant="ghost-light" size="xs" onclick={() => oncancel?.()}>
-                <Fa icon={faXmark} size="sm" />
-              </Button>
-            </TooltipShortcut>
-          </div>
+      {#if editMode}
+        <div class="absolute right-2 top-2">
           <TooltipShortcut
-            label={m.chat_richInput_saveAndResend_label()}
-            shortcut="cmd+Enter"
+            label={m.chat_richInput_cancel_label()}
+            shortcut="Escape"
             side="top"
+            portalTarget={tooltipPortalTarget}
           >
             <Button
               variant="ghost-light"
-              size="icon-sm"
-              aria-label={m.chat_richInput_saveAndResend_label()}
-              onclick={handleSubmit}
-              disabled={disabled || inputLocked || !canSend || isEnhancing}
+              size="icon-xs"
+              aria-label={m.chat_richInput_cancel_label()}
+              onclick={() => oncancel?.()}
             >
-              <Fa icon={faArrowRight} size="sm" />
+              <Fa icon={faXmark} size="sm" />
             </Button>
           </TooltipShortcut>
         </div>
-      {:else}
-        <TooltipShortcut label={m.chat_richInput_send_label()} shortcut="Enter" side="top">
-          <Button
-            variant="ghost-light"
-            size="icon-sm"
-            onclick={handleSubmit}
-            disabled={disabled || inputLocked || !canSend || isEnhancing}
-            aria-label={m.chat_richInput_sendMessage_ariaLabel()}
-          >
-            <Fa icon={faArrowRight} size="sm" />
-          </Button>
-        </TooltipShortcut>
       {/if}
+      <TooltipShortcut
+        label={buttonTooltipLabel}
+        shortcut={buttonMode === 'stop' ? undefined : $sendShortcut$}
+        secondary={buttonMode === 'queue' && onforcesubmit && $forceSendShortcut$
+          ? {
+              label: m.chat_queuedMessages_sendImmediately_label(),
+              shortcut: $forceSendShortcut$,
+            }
+          : undefined}
+        side="top"
+        portalTarget={tooltipPortalTarget}
+      >
+        <Button
+          variant="primary"
+          size="icon-sm"
+          iconOnly
+          onclick={buttonMode === 'stop' ? () => onstop?.() : handleSubmit}
+          disabled={buttonMode === 'stop'
+            ? disabled
+            : disabled || inputLocked || !canSend || isEnhancing}
+          aria-label={buttonLabel}
+          data-mode={buttonMode}
+          data-testid="composer-submit-button"
+        >
+          {#key buttonMode === 'stop'}
+            <span
+              class="flex items-center"
+              transition:safeDisclosureTransition={{ axis: 'x', tier: 'fast' }}
+            >
+              {#if buttonMode === 'stop'}
+                <span class="size-3 rounded-[3px] bg-current" aria-hidden="true"></span>
+              {:else}
+                <ArrowUpIcon size={19} weight="regular" aria-hidden="true" />
+              {/if}
+            </span>
+          {/key}
+        </Button>
+      </TooltipShortcut>
     </div>
   </div>
 </div>
@@ -1850,6 +2061,8 @@
   toModelLabel={modelSwitchDialog?.toModelLabel ?? ''}
   fromProviderName={modelSwitchDialog?.fromProviderName ?? ''}
   toProviderName={modelSwitchDialog?.toProviderName ?? ''}
+  fromProviderId={modelSwitchDialog?.fromProviderId ?? ''}
+  toProviderId={modelSwitchDialog?.toProviderId ?? ''}
   onConfirm={() => settleModelSwitchDialog(true)}
   onCancel={() => settleModelSwitchDialog(false)}
 />
@@ -1861,7 +2074,7 @@
 
   .editor-wrapper :global(.tiptap-editor p.is-editor-empty:first-child::before),
   .editor-wrapper :global(.tiptap-editor p.is-empty:first-child::before) {
-    transition: opacity 300ms ease-in-out;
+    transition: opacity var(--spring-slow) var(--spring-slow-ease);
   }
 
   .editor-wrapper.placeholder-hidden :global(.tiptap-editor p.is-editor-empty:first-child::before),
@@ -1892,7 +2105,7 @@
       transparent
     );
     background-size: 200% 100%;
-    animation: shimmer 2s infinite;
+    animation: shimmer calc(var(--spring-slow) * 8) var(--spring-slow-ease) infinite;
     pointer-events: none;
     overflow: hidden;
     z-index: 1;
@@ -1907,7 +2120,7 @@
     }
   }
 
-  @media (prefers-reduced-motion: reduce) {
+  @container style(--motion-reduced: 1) {
     .editor-wrapper :global(.tiptap-editor p.is-editor-empty:first-child::before),
     .editor-wrapper :global(.tiptap-editor p.is-empty:first-child::before) {
       transition: none;

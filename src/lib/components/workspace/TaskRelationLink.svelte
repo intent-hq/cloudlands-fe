@@ -8,8 +8,9 @@
   conflict edges, both consistent with the existing task-row chip semantics.
 -->
 <script lang="ts">
+  import { Button } from '$lib/components/ui/button';
   import Fa from 'svelte-fa';
-  import { faHourglassHalf, faTriangleExclamation } from '@fortawesome/free-solid-svg-icons';
+  import { faHourglass, faTriangleExclamation } from '@fortawesome/free-solid-svg-icons';
   import TaskStatusIcon from '$lib/components/tiptap/TaskStatusIcon.svelte';
   import { navigateToNote, findSourcePanelId } from '$lib/utils/workspace-navigation';
   import type { NoteId } from '$shared/types';
@@ -50,20 +51,21 @@
   }
 </script>
 
-<button
+<Button
   type="button"
+  variant="ghost"
   onclick={handleClick}
-  class="inline-flex items-center gap-1.5 min-w-0 max-w-full rounded px-2 py-0.5 text-left cursor-pointer transition-colors {variant ===
+  class="inline-flex items-center gap-1.5 h-6 min-w-0 max-w-full rounded px-2 py-0 text-left cursor-pointer transition-colors {variant ===
   'conflict'
-    ? 'bg-warning/10 text-warning hover:bg-warning/20'
+    ? 'bg-transparent text-warning-ink hover:bg-warning/20'
     : unmet
-      ? 'bg-muted text-subtle hover:bg-muted/80'
-      : 'bg-muted/30 text-subtle hover:bg-muted/60'}"
+      ? 'bg-transparent text-subtle hover:bg-muted/80'
+      : 'bg-transparent text-subtle hover:bg-muted/60'}"
 >
   {#if variant === 'conflict'}
     <Fa icon={faTriangleExclamation} size="xs" class="shrink-0" />
   {:else}
-    <!-- inert: TaskStatusIcon renders its own <button>; neutralize it so this
+    <!-- inert: TaskStatusIcon renders its own button; neutralize it so this
          chip's root button stays the only interactive/focusable control. -->
     <span class="contents" inert>
       {#key status}
@@ -77,7 +79,7 @@
       class="shrink-0 inline-flex items-center"
       title={m.workspace_taskRelationLink_unmet_tooltip()}
     >
-      <Fa icon={faHourglassHalf} size="xs" />
+      <Fa icon={faHourglass} size="xs" />
     </span>
   {/if}
-</button>
+</Button>

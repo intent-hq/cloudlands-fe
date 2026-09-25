@@ -8,7 +8,8 @@ const {
   selectWorkspaceByIdMock,
   selectCurrentWorkspaceTabIdMock,
   selectSelectedModelMock,
-  toastCustomMock,
+  selectHidesAgentLifecycleActionsMock,
+  appErrorMock,
 } = vi.hoisted(() => ({
   dismissMock: vi.fn(),
   dispatchMock: vi.fn(),
@@ -17,19 +18,16 @@ const {
   selectWorkspaceByIdMock: vi.fn(),
   selectCurrentWorkspaceTabIdMock: vi.fn(),
   selectSelectedModelMock: vi.fn(),
-  toastCustomMock: vi.fn(),
+  selectHidesAgentLifecycleActionsMock: vi.fn(),
+  appErrorMock: vi.fn(),
 }));
 
-vi.mock('$lib/components/ui/toast', () => ({
-  toast: {
-    custom: toastCustomMock,
+vi.mock('$lib/components/patterns/notify', () => ({
+  notify: {
+    appError: appErrorMock,
     error: vi.fn(),
     success: vi.fn(),
   },
-}));
-
-vi.mock('$lib/components/ui/toast/ErrorToast.svelte', () => ({
-  default: 'ErrorToast',
 }));
 
 vi.mock('$store/renderer/store', async () => {
@@ -48,6 +46,7 @@ vi.mock('$store/renderer/slices/model/model-selectors', () => ({
 
 vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
   selectWorkspaceById: { select: selectWorkspaceByIdMock },
+  selectHidesAgentLifecycleActions: { select: selectHidesAgentLifecycleActionsMock },
 }));
 
 vi.mock('$store/renderer/slices/tab-state/tab-state-selectors', () => ({
@@ -81,6 +80,36 @@ describe('showErrorToast', () => {
     selectWorkspaceByIdMock.mockReturnValue({ id: 'ws-1' });
     selectCurrentWorkspaceTabIdMock.mockReturnValue('ws-1');
     selectSelectedModelMock.mockReturnValue('selector-global-model');
+    selectHidesAgentLifecycleActionsMock.mockReturnValue(false);
+  });
+
+  const error = () =>
+    ({
+      id: 'error-1',
+      title: 'Broken',
+      message: 'Something went wrong',
+      timestamp: new Date('2026-03-17T00:00:00.000Z'),
+      type: 'error',
+      recoverable: true,
+    }) as any;
+
+  it('offers the debug-with-agent action when the active workspace allows agent creation', () => {
+    showErrorToast(error());
+
+    const [props] = appErrorMock.mock.calls[0];
+    expect(props.onDebug).toEqual(expect.any(Function));
+    expect(selectHidesAgentLifecycleActionsMock).toHaveBeenCalledWith(legacyState, 'ws-1');
+  });
+
+  it('withholds the debug-with-agent action when agent lifecycle actions are hidden', () => {
+    selectHidesAgentLifecycleActionsMock.mockReturnValue(true);
+
+    showErrorToast(error());
+
+    const [props] = appErrorMock.mock.calls[0];
+    expect(props.onDebug).toBeUndefined();
+    expect(props.onCopy).toEqual(expect.any(Function));
+    expect(dispatchMock).not.toHaveBeenCalled();
   });
 
   it('uses the global selected model when launching the debug agent', async () => {
@@ -95,8 +124,8 @@ describe('showErrorToast', () => {
 
     showErrorToast(error);
 
-    const [, options] = toastCustomMock.mock.calls[0];
-    await options.componentProps.onDebug();
+    const [props] = appErrorMock.mock.calls[0];
+    await props.onDebug();
 
     expect(selectSelectedModelMock).toHaveBeenCalledWith(legacyState);
     expect(dispatchMock).toHaveBeenCalledWith(
@@ -116,24 +145,5 @@ describe('showErrorToast', () => {
       }),
     );
     expect(dismissMock).toHaveBeenCalledWith('error-1');
-  });
-
-  // Content-only component — the severity tint rides the wrapper class.
-  it.each([
-    ['error', '!border-danger/50'],
-    ['warning', '!border-warning/50'],
-    ['info', '!border-info/50'],
-  ])('passes the %s severity wrapper border class', (type, expectedClass) => {
-    showErrorToast({
-      id: `error-${type}`,
-      title: 'Broken',
-      message: 'Something went wrong',
-      timestamp: new Date('2026-03-17T00:00:00.000Z'),
-      type,
-      recoverable: false,
-    } as any);
-
-    const [, options] = toastCustomMock.mock.calls[0];
-    expect(options.class).toBe(expectedClass);
   });
 });

@@ -1,4 +1,5 @@
 import { expect, test, type Locator, type Page } from '@playwright/test';
+import { execFileSync } from 'node:child_process';
 import { resolve } from 'node:path';
 import { svelte } from '@sveltejs/vite-plugin-svelte';
 import { createServer, type Plugin, type ViteDevServer } from 'vite';
@@ -19,7 +20,9 @@ const virtualModules: Record<string, string> = {
     export const resolveEmptyWindowDestination = () => '/';`,
   '$lib/components/ui/tooltip': `
     import Tooltip from '/src/lib/components/layout/__tests__/mocks/MockWorkspaceTooltipRich.svelte';
-    export const TooltipRich = Tooltip;`,
+    export const TooltipRich = Tooltip;
+    export const TooltipShortcut = Tooltip;
+    export { Tooltip };`,
   '$lib/components/workspace/WorkspaceHoverCard.svelte': `
     export { default } from '/src/lib/components/layout/__tests__/mocks/MockWorkspaceHoverCard.svelte';`,
   '$lib/components/workspace/utils/workspace-tab-status-presentation': `
@@ -56,13 +59,24 @@ const virtualModules: Record<string, string> = {
       globalThis.__workspaceTabScenario.currentId = workspaceId;
       currentSubscribers.forEach((run) => run(workspaceId));
     };
-    export const selectWorkspaceTabOrder = () =>
-      readable(() => globalThis.__workspaceTabScenario.tabOrder);`,
+    export const selectWorkspaceTabOrder = Object.assign(
+      () => readable(() => globalThis.__workspaceTabScenario.tabOrder),
+      { select: () => globalThis.__workspaceTabScenario.tabOrder },
+    );`,
   '$store/renderer/slices/workspace/workspace-selectors': `
     const readable = (read) => ({ subscribe(run) { run(read()); return () => {}; } });
     export const selectWorkspaceItems = Object.assign(
       () => readable(() => globalThis.__workspaceTabScenario.workspaces),
       { select: () => globalThis.__workspaceTabScenario.workspaces },
+    );`,
+  '$store/renderer/slices/presence/presence-selectors': `
+    const readable = (read) => ({ subscribe(run) { run(read()); return () => {}; } });
+    export const selectPresenceRosters = () => readable(() => ({}));
+    export const selectPresenceMembers = () => readable(() => ({}));
+    export const selectPresenceOwnPrincipalId = () => readable(() => null);
+    export const selectWorkspacePresencePeople = Object.assign(
+      () => readable(() => []),
+      { select: () => [] },
     );`,
   '$store/renderer/slices/hud/hud-selectors': `
     const readable = (read) => ({ subscribe(run) { run(read()); return () => {}; } });
@@ -72,9 +86,13 @@ const virtualModules: Record<string, string> = {
     export const store = {
       dispatch(action) { globalThis.__workspaceTabScenario.actions.push(action); },
       get state() { return {}; },
+      getReadableState() { return { subscribe(run) { run({}); return () => {}; } }; },
     };`,
   '$shared/paraglide/messages.js': `
     export const m = {
+      layout_panelTabBar_close_label: () => 'Close',
+      layout_panelTabBar_closeAllOthers_label: () => 'Close all others',
+      layout_panelTabBar_closeTabsToRight_label: () => 'Close tabs to the right',
       layout_workspaceTabStrip_openSpaces_ariaLabel: () => 'Open spaces',
       layout_workspaceTabStrip_untitled_label: () => 'Untitled',
       layout_workspaceTabStrip_status_ariaLabel: ({ name, statuses }) => name + '. ' + statuses,
@@ -95,17 +113,27 @@ const virtualModules: Record<string, string> = {
       workspace_statusIcon_prMerged_label: () => 'PR merged',
     };`,
   '@fortawesome/free-solid-svg-icons': `
+    export const faArrowRight = { iconName: 'arrow-right' };
+    export const faCheck = { iconName: 'check' };
+    export const faChevronRight = { iconName: 'chevron-right' };
     export const faCircleCheck = { iconName: 'circle-check' };
     export const faCircleQuestion = { iconName: 'circle-question' };
     export const faClock = { iconName: 'clock' };
     export const faCodeMerge = { iconName: 'code-merge' };
     export const faCodePullRequest = { iconName: 'code-pull-request' };
     export const faEllipsis = { iconName: 'ellipsis' };
+    export const faHourglassHalf = { iconName: 'hourglass-half' };
+    export const faLayerGroup = { iconName: 'layer-group' };
     export const faTriangleExclamation = { iconName: 'triangle-exclamation' };
     export const faXmark = { iconName: 'xmark' };`,
 };
 
 function geometryStubs(): Plugin {
+  const componentPath = 'src/lib/components/layout/WorkspaceTabStrip.svelte';
+  const sourceRef = process.env.WORKSPACE_TAB_STRIP_REF;
+  const baselineSource = sourceRef
+    ? execFileSync('git', ['show', `${sourceRef}:${componentPath}`], { encoding: 'utf8' })
+    : null;
   const aliasRoots = new Map([
     ['$lib', resolve(process.cwd(), 'src/lib')],
     ['$store', resolve(process.cwd(), 'src/store')],
@@ -131,12 +159,28 @@ function geometryStubs(): Plugin {
     resolveId(source) {
       if (source === 'svelte-fa')
         return resolve(process.cwd(), 'src/lib/components/ui/__tests__/mocks/Fa.svelte');
+      // Let the initial scan discover icon dependencies before the browser mounts.
+      if (source === '@fortawesome/free-solid-svg-icons')
+        return resolve(process.cwd(), 'src/lib/icons/phosphor-icons.ts');
+      // Vite scans .svelte imports from disk, even when resolved to virtual JS (#4624).
+      if (
+        source === '$lib/components/workspace/WorkspaceHoverCard.svelte' ||
+        source === resolve(process.cwd(), 'src/lib/components/workspace/WorkspaceHoverCard.svelte')
+      ) {
+        return resolve(
+          process.cwd(),
+          'src/lib/components/layout/__tests__/mocks/MockWorkspaceHoverCard.svelte',
+        );
+      }
       const canonical = canonicalSource(source);
-      if (canonical) return virtualPrefix + canonical;
+      if (canonical) return virtualPrefix + canonical + '.js';
       return null;
     },
     load(id) {
-      return id.startsWith(virtualPrefix) ? virtualModules[id.slice(virtualPrefix.length)] : null;
+      if (baselineSource && id === resolve(process.cwd(), componentPath)) return baselineSource;
+      return id.startsWith(virtualPrefix)
+        ? virtualModules[id.slice(virtualPrefix.length, -3)]
+        : null;
     },
   };
 }
@@ -147,6 +191,7 @@ test.beforeAll(async () => {
     configFile: false,
     root: process.cwd(),
     cacheDir: viteHarnessCacheDir('workspace-tab-strip-status-geometry'),
+    optimizeDeps: { entries: ['src/lib/components/layout/WorkspaceTabStrip.svelte'] },
     plugins: [geometryStubs(), svelte({ configFile: resolve(process.cwd(), 'svelte.config.js') })],
     resolve: {
       alias: {
@@ -218,8 +263,8 @@ async function mountStrip(
     target.append(mask);
     const stripProps = {
       onActiveTabBoundsChange(bounds: { left: number; width: number } | null) {
-        mask.style.left = bounds ? `${bounds.left - 6}px` : '';
-        mask.style.width = bounds ? `${Math.max(0, bounds.width + 13)}px` : '';
+        mask.style.left = bounds ? `${bounds.left}px` : '';
+        mask.style.width = bounds ? `${bounds.width}px` : '';
       },
       onActiveTabTrackingChange(tracking: boolean) {
         mask.dataset.tracking = String(tracking);
@@ -258,11 +303,24 @@ async function mountStrip(
       let currentPanelOpen = panelOpen;
       let currentPanelWidth = panelWidth;
       let component: ReturnType<typeof mount> | null = null;
-      const applyPanelLayout = () => {
+      // Under reduced motion the tokens.css blanket gives every element a
+      // 0.01ms transition-duration, so each inline change below spawns a real
+      // CSSTransition that holds the previous geometry until the document
+      // timeline passes its start (one or two frames). Gate on those
+      // transitions settling instead of counting frames.
+      const settlePanelLayout = async () => {
+        for (;;) {
+          const animations = [controls, sidebar].flatMap((element) => element.getAnimations());
+          if (animations.length === 0) return;
+          await Promise.allSettled(animations.map((animation) => animation.finished));
+        }
+      };
+      const applyPanelLayout = async () => {
         const offset = currentPanelOpen ? currentPanelWidth + 8 : 116;
         controls.style.marginLeft = `${offset}px`;
         controls.style.width = `calc(100% - ${offset}px)`;
         sidebar.style.flexBasis = `${currentPanelOpen ? currentPanelWidth : 0}px`;
+        await settlePanelLayout();
       };
       const renderStrip = async () => {
         if (component) await unmount(component);
@@ -274,17 +332,17 @@ async function mountStrip(
         await tick();
         await new Promise<void>((resolveFrame) => requestAnimationFrame(() => resolveFrame()));
       };
-      applyPanelLayout();
+      await applyPanelLayout();
       await renderStrip();
 
       Object.assign(globalThis, {
-        __setWorkspacePanelWidth(width: number) {
+        async __setWorkspacePanelWidth(width: number) {
           currentPanelWidth = width;
-          applyPanelLayout();
+          await applyPanelLayout();
         },
         async __setWorkspacePanelOpen(open: boolean) {
           currentPanelOpen = open;
-          applyPanelLayout();
+          await applyPanelLayout();
           await renderStrip();
         },
         __remountWorkspaceTabStrip: renderStrip,
@@ -305,6 +363,19 @@ async function settle(page: Page) {
   await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => resolve())));
 }
 
+async function tabFocusTuple(tab: Locator) {
+  return tab.evaluate((node) => {
+    const style = getComputedStyle(node);
+    return {
+      outlineWidth: style.outlineWidth,
+      outlineStyle: style.outlineStyle,
+      outlineOffset: style.outlineOffset,
+      boxShadow: style.boxShadow,
+      focusVisible: node.matches(':focus-visible'),
+    };
+  });
+}
+
 async function expectNormalActiveShape(
   page: Page,
   workspaceId: string,
@@ -322,9 +393,20 @@ async function expectNormalActiveShape(
   });
   expect(radii.leading).toBeGreaterThan(0);
   expect(radii.trailing).toBe(radii.leading);
-  await expect(tab.locator('[data-workspace-tab-leading-flare]')).toHaveCount(1);
-  await expect(tab.locator('[data-workspace-tab-trailing-flare]')).toHaveCount(1);
-  if (assertHeight) expect((await box(tab)).height).toBeCloseTo(32 * zoom, 0);
+  const leadingFlare = tab.locator('[data-workspace-tab-leading-flare]');
+  const trailingFlare = tab.locator('[data-workspace-tab-trailing-flare]');
+  await expect(leadingFlare).toHaveCount(1);
+  await expect(trailingFlare).toHaveCount(1);
+  const [tabBox, leadingFlareBox, trailingFlareBox] = await Promise.all([
+    box(tab),
+    box(leadingFlare),
+    box(trailingFlare),
+  ]);
+  const tabBottom = tabBox.y + tabBox.height;
+  // The flare reaches through the panel border immediately below the tab.
+  expect(leadingFlareBox.y + leadingFlareBox.height).toBeCloseTo(tabBottom + zoom, 1);
+  expect(trailingFlareBox.y + trailingFlareBox.height).toBeCloseTo(tabBottom + zoom, 1);
+  if (assertHeight) expect(tabBox.height).toBeCloseTo(32 * zoom, 0);
   return radii;
 }
 
@@ -357,9 +439,11 @@ test('keeps the normal first-tab curve, both flares, and 24px panel gutter acros
       });
 
       for (const panelWidth of scenario.panelWidths) {
-        await page.evaluate((width) => {
-          (
-            globalThis as typeof globalThis & { __setWorkspacePanelWidth: (value: number) => void }
+        await page.evaluate(async (width) => {
+          await (
+            globalThis as typeof globalThis & {
+              __setWorkspacePanelWidth: (value: number) => Promise<void>;
+            }
           ).__setWorkspacePanelWidth(width);
         }, panelWidth);
         await settle(page);
@@ -534,7 +618,7 @@ test('keeps titles, statuses, and close controls disjoint at 160px and constrain
     expect(titleBox.x + titleBox.width).toBeLessThanOrEqual(statusBox.x + 0.5);
     expect(statusBox.x + statusBox.width).toBeLessThanOrEqual(closeBox.x + 0.5);
     expect(closeBox.x + closeBox.width).toBeLessThanOrEqual(activeBox.x + activeBox.width + 0.5);
-    expect(titleBox.width).toBeCloseTo(activeBox.width - 58 * scale, 0);
+    expect(titleBox.width).toBeCloseTo(activeBox.width - 66 * scale, 0);
     await expect(active).toHaveAttribute('data-active', 'true');
     await expect(inactive).toHaveAttribute('data-active', 'false');
     await expect(active.locator('[role="tab"]')).toHaveAttribute(
@@ -735,6 +819,25 @@ test('Escape-cancelled real pointer drag suppresses its browser click', async ({
   ).toEqual([{ type: 'open', payload: ['inactive'] }]);
 });
 
+for (const theme of ['light', 'dark'] as const) {
+  test(`uses the shared 1px focus outline in the ${theme} theme`, async ({ page }) => {
+    await mountStrip(page, { viewport: 900, zoom: 1, reduced: true, theme });
+    const tab = page.locator('[data-workspace-tab="active"] [role="tab"]');
+
+    await tab.focus();
+    await expect(tab).toBeFocused();
+    const focus = await tabFocusTuple(tab);
+
+    expect(focus).toMatchObject({
+      outlineWidth: '1px',
+      outlineStyle: 'solid',
+      boxShadow: 'none',
+      focusVisible: true,
+    });
+    expect(Number.parseFloat(focus.outlineOffset)).not.toBe(0);
+  });
+}
+
 test('drag keeps one horizontal real tab and drops it at the invisible reserved slot', async ({
   page,
 }) => {
@@ -764,8 +867,14 @@ test('drag keeps one horizontal real tab and drops it at the invisible reserved 
     await dragOver(pointerX);
     const tracked = await box(active);
     const titlebarBounds = await box(titlebar);
+    const scrollerBounds = await box(strip);
+    const clippedLeft = Math.max(tracked.x, scrollerBounds.x);
+    const clippedRight = Math.min(
+      tracked.x + tracked.width,
+      scrollerBounds.x + scrollerBounds.width,
+    );
     expect(tracked.x).toBeCloseTo(origin.x + pointerX - startX, 1);
-    expect(tracked.y).toBeCloseTo(origin.y - 2, 1);
+    expect(tracked.y).toBeCloseTo(origin.y, 1);
     await expect(mask).toHaveAttribute('data-tracking', 'true');
     expect(
       await mask.evaluate((node) => ({
@@ -774,9 +883,10 @@ test('drag keeps one horizontal real tab and drops it at the invisible reserved 
         width: Number.parseFloat((node as HTMLElement).style.width),
       })),
     ).toEqual({
-      left: expect.closeTo(tracked.x - titlebarBounds.x - 6, 1),
+      // Main 550fd55d clips the seam mask to the visible scroller interval.
+      left: expect.closeTo(clippedLeft - titlebarBounds.x, 1),
       transition: 'none',
-      width: expect.closeTo(tracked.width + 13, 1),
+      width: expect.closeTo(clippedRight - clippedLeft, 1),
     });
   }
 
@@ -813,9 +923,9 @@ test('drag keeps one horizontal real tab and drops it at the invisible reserved 
     outlineStyle: 'none',
   });
   expect(dragged.x).toBeCloseTo(origin.x + dragX - startX, 1);
-  expect(dragged.y).toBeCloseTo(origin.y - 2, 1);
-  expect(leadingFlare.y + leadingFlare.height).toBeCloseTo(origin.y + origin.height, 1);
-  expect(trailingFlare.y + trailingFlare.height).toBeCloseTo(origin.y + origin.height, 1);
+  expect(dragged.y).toBeCloseTo(origin.y, 1);
+  expect(leadingFlare.y + leadingFlare.height).toBeCloseTo(origin.y + origin.height + 1, 1);
+  expect(trailingFlare.y + trailingFlare.height).toBeCloseTo(origin.y + origin.height + 1, 1);
   expect(
     await page
       .locator('[data-workspace-tab-motion]')

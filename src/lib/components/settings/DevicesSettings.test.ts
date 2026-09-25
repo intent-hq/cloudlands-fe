@@ -8,6 +8,7 @@ import type { ConnectionRecord, KeychainSyncStateResult } from '$shared/types/co
 
 const mocks = vi.hoisted(() => ({
   loaded: true,
+  currentConnectionId: 'local',
   connections: [] as ConnectionRecord[],
   pinnedVersion: null as string | null,
   connectedIds: [] as string[],
@@ -20,6 +21,8 @@ const mocks = vi.hoisted(() => ({
   canRequestDeviceUpdate: null as
     (typeof import('$lib/utils/device-update-eligibility'))['canRequestDeviceUpdate'] | null,
   dispatch: vi.fn(),
+  start: async () => {},
+  stop: async () => {},
   update: vi.fn(),
   test: vi.fn(),
   rotate: vi.fn(),
@@ -28,6 +31,9 @@ const mocks = vi.hoisted(() => ({
   updateBackend: vi.fn(),
   setSyncEnabled: vi.fn(),
   toastError: vi.fn(),
+  settingsList: vi.fn(),
+  settingsUpdate: vi.fn(),
+  pairingInfo: vi.fn(),
   readable: <T>(get: () => T) => ({
     subscribe(run: (value: T) => void) {
       run(get());
@@ -36,19 +42,37 @@ const mocks = vi.hoisted(() => ({
   }),
 }));
 
-vi.mock('$store/renderer/store', () => ({
-  store: { dispatch: mocks.dispatch },
+vi.mock('$lib/client', () => ({
+  localMachineClient: {
+    settings: { list: mocks.settingsList, update: mocks.settingsUpdate },
+    server: { pairingInfo: mocks.pairingInfo, rotateToken: vi.fn() },
+  },
+  appClient: {
+    settings: { list: mocks.settingsList, update: mocks.settingsUpdate },
+    server: { pairingInfo: mocks.pairingInfo, rotateToken: vi.fn() },
+  },
 }));
 
-vi.mock('$store/renderer/slices/connections/connections-selectors', () => ({
-  selectConnections: () => mocks.readable(() => mocks.connections),
-  selectConnectionsLoaded: () => mocks.readable(() => mocks.loaded),
-  selectRemoteConnections: () =>
-    mocks.readable(() => mocks.connections.filter((connection) => !connection.isLocal)),
-  selectKeychainSyncState: () => mocks.readable(() => mocks.keychainSync),
-  selectPinnedDaemonVersion: () => mocks.readable(() => mocks.pinnedVersion),
-  selectConnectedIds: () => mocks.readable(() => mocks.connectedIds),
-}));
+vi.mock('$store/renderer/store', async () => {
+  const { createConnectionsHarness } =
+    await import('$store/renderer/slices/connections/test-harness');
+  const { createCollection } =
+    await import('@augmentcode/themis/utils/collections/collection-utils');
+  const harness = createConnectionsHarness(
+    () => ({
+      windowBackendId: mocks.currentConnectionId,
+      connections: createCollection('id', mocks.connections),
+      hasReceivedList: mocks.loaded,
+      keychainSync: mocks.keychainSync,
+      pinnedVersion: mocks.pinnedVersion,
+      connectedIds: mocks.connectedIds,
+    }),
+    mocks.dispatch,
+  );
+  mocks.start = harness.start;
+  mocks.stop = harness.stop;
+  return { store: harness.store };
+});
 
 vi.mock('$lib/utils/device-update-eligibility', async (importOriginal) => {
   const actual = await importOriginal<typeof import('$lib/utils/device-update-eligibility')>();
@@ -65,17 +89,8 @@ vi.mock('$lib/utils/device-update-eligibility', async (importOriginal) => {
   };
 });
 
-vi.mock('$store/renderer/slices/connections/connections-slice', () => ({
-  updateConnectionRequested: (params: unknown) => mocks.update(params),
-  testConnectionRequested: (params: unknown) => mocks.test(params),
-  rotateConnectionSecretRequested: (params: unknown) => mocks.rotate(params),
-  openConnectionRequested: (id: string) => mocks.open(id),
-  forgetConnectionRequested: (id: string) => mocks.forget(id),
-  updateBackendRequested: (id: string) => mocks.updateBackend(id),
-  captureFingerprintRequested: vi.fn(),
-  addConnectionRequested: vi.fn(),
-  loadKeychainSyncStateRequested: () => ({ promise: Promise.resolve() }),
-  setKeychainSyncEnabledRequested: (enabled: boolean) => mocks.setSyncEnabled(enabled),
+vi.mock('$lib/components/patterns/notify', () => ({
+  notify: { error: mocks.toastError, success: vi.fn() },
 }));
 
 vi.mock('$lib/components/ui/toast', () => ({
@@ -108,9 +123,29 @@ const remote: ConnectionRecord = {
 };
 
 describe('DevicesSettings', () => {
-  beforeEach(() => {
+  beforeEach(async () => {
     vi.clearAllMocks();
+    mocks.settingsList.mockResolvedValue([
+      { path: 'server.wsApi.enabled', value: false },
+      { path: 'server.wsApi.port', value: 5181 },
+    ]);
+    mocks.settingsUpdate.mockImplementation(async (changes) => {
+      mocks.settingsList.mockResolvedValue([
+        { path: 'server.wsApi.port', value: 5181 },
+        ...changes,
+      ]);
+      return changes;
+    });
+    mocks.pairingInfo.mockResolvedValue({
+      token: 'test-token',
+      certFingerprint: 'AA:BB',
+      port: 5181,
+      path: '/ws',
+      localIps: ['127.0.0.1'],
+      hostname: 'test-machine',
+    });
     mocks.loaded = true;
+    mocks.currentConnectionId = 'local';
     mocks.connections = [local, remote];
     mocks.pinnedVersion = null;
     mocks.connectedIds = [];
@@ -152,9 +187,43 @@ describe('DevicesSettings', () => {
       payload: [enabled],
       promise: Promise.resolve({ supported: true, enabled, status: null }),
     }));
+    window.electronAPI = {
+      ...window.electronAPI,
+      on: vi.fn(() => 'listener'),
+      offById: vi.fn(),
+      invoke: vi.fn((channel: string, params?: any) => {
+        if (channel === 'connections:list')
+          return Promise.resolve({
+            connections: mocks.connections,
+            activeId: 'local',
+            windowBackendId: 'local',
+          });
+        if (channel === 'connections:update') return mocks.update(params).promise;
+        if (channel === 'connections:test') return mocks.test(params).promise;
+        if (channel === 'connections:rotate-secret') return mocks.rotate(params).promise;
+        if (channel === 'connections:open') return mocks.open(params.id).promise;
+        if (channel === 'connections:forget') return mocks.forget(params.id).promise;
+        if (channel === 'connections:update-backend') return mocks.updateBackend(params.id).promise;
+        if (channel === 'connections:sync-get-state')
+          return Promise.resolve(
+            mocks.keychainSync ?? { supported: false, enabled: false, status: null },
+          );
+        if (channel === 'connections:sync-set-enabled')
+          return mocks.setSyncEnabled(params.enabled).promise;
+        if (channel === 'connections:self-published-state')
+          return Promise.resolve({ published: false, suppressed: false, selfConnectionId: null });
+        if (channel === 'connections:refresh-self') return Promise.resolve({ refreshed: false });
+        throw new Error(`Unexpected channel ${channel}`);
+      }),
+    } as Window['electronAPI'];
+    await mocks.start();
+    mocks.dispatch.mockClear();
   });
 
-  afterEach(cleanup);
+  afterEach(async () => {
+    cleanup();
+    await mocks.stop();
+  });
 
   it('shows named remotes without duplicating their address or visible status text', () => {
     render(DevicesSettings);
@@ -164,7 +233,8 @@ describe('DevicesSettings', () => {
     expect(screen.getByRole('status', { name: 'Status: Not open' }).textContent).toBe('');
     expect(screen.getByText('This machine (local)')).toBeTruthy();
     expect(screen.queryByRole('textbox')).toBeNull();
-    expect(mocks.dispatch).not.toHaveBeenCalled();
+    expect(mocks.open).not.toHaveBeenCalled();
+    expect(mocks.update).not.toHaveBeenCalled();
   });
 
   it('shows only the raw version beside the name when connected', () => {
@@ -264,9 +334,7 @@ describe('DevicesSettings', () => {
     await openAction('Connect');
 
     expect(mocks.open).toHaveBeenCalledWith(remote.id);
-    expect(mocks.dispatch).toHaveBeenCalledWith(
-      expect.objectContaining({ type: 'connections/openRequested', payload: [remote.id] }),
-    );
+    expect(window.electronAPI!.invoke).toHaveBeenCalledWith('connections:open', { id: remote.id });
     expect(mocks.test).not.toHaveBeenCalled();
     expect(mocks.update).not.toHaveBeenCalled();
   });
@@ -352,12 +420,53 @@ describe('DevicesSettings', () => {
       pinnedVersion: '0.9.1',
     });
 
-    it('marks a device whose captured daemon version is behind the pin, even while disconnected', () => {
+    it('describes the displayed version when the captured daemon version is behind the pin', async () => {
       mocks.pinnedVersion = '0.9.1';
-      mocks.connections = [local, { ...remote, daemonVersion: 'v0.9.0' }];
+      mocks.connections = [
+        local,
+        { ...remote, daemonVersion: 'v0.9.0', intentdVersion: '6.8.0', status: 'connected' },
+      ];
       render(DevicesSettings);
 
-      expect(screen.getByRole('img', { name: behindLabel })).toBeTruthy();
+      const version = screen.getByRole('button', { name: '6.8.0' });
+      version.focus();
+      const tooltip = await screen.findByRole('tooltip');
+      expect(tooltip.textContent?.trim()).toBe(behindLabel);
+      expect(version.getAttribute('aria-describedby')).toBe(tooltip.id);
+      expect(screen.queryByRole('img', { name: behindLabel })).toBeNull();
+    });
+
+    it.each(['disconnected', 'missing'] as const)(
+      'does not invent a displayed version for a %s behind device',
+      (state) => {
+        mocks.pinnedVersion = '0.9.1';
+        mocks.connections = [
+          local,
+          {
+            ...remote,
+            daemonVersion: '0.9.0',
+            intentdVersion: state === 'disconnected' ? '6.8.0' : undefined,
+            status: state === 'disconnected' ? 'not-open' : 'connected',
+          },
+        ];
+        render(DevicesSettings);
+
+        expect(screen.queryByText('6.8.0')).toBeNull();
+        expect(screen.queryByText('0.9.0')).toBeNull();
+        expect(screen.queryByRole('img', { name: behindLabel })).toBeNull();
+      },
+    );
+
+    it('leaves a current displayed version without a warning trigger', () => {
+      mocks.pinnedVersion = '0.9.1';
+      mocks.connections = [
+        local,
+        { ...remote, daemonVersion: '0.9.1', intentdVersion: '6.8.0', status: 'connected' },
+      ];
+      render(DevicesSettings);
+
+      expect(screen.getByText('6.8.0')).toBeTruthy();
+      expect(screen.queryByRole('button', { name: '6.8.0' })).toBeNull();
     });
 
     it('shows no indicator for up-to-date or unknown versions', () => {
@@ -391,12 +500,9 @@ describe('DevicesSettings', () => {
       await openAction('Update');
 
       expect(mocks.updateBackend).toHaveBeenCalledWith('remote-1');
-      expect(mocks.dispatch).toHaveBeenCalledWith(
-        expect.objectContaining({
-          type: 'connections/updateBackendRequested',
-          payload: ['remote-1'],
-        }),
-      );
+      expect(window.electronAPI!.invoke).toHaveBeenCalledWith('connections:update-backend', {
+        id: 'remote-1',
+      });
       expect(mocks.update).not.toHaveBeenCalled();
     });
 
@@ -417,19 +523,26 @@ describe('DevicesSettings', () => {
       mocks.connectedIds = ['remote-1', 'remote-2'];
       mocks.connections = [
         local,
-        { ...remote, daemonVersion: '0.9.0', updateSupported: false, status: 'connected' },
+        {
+          ...remote,
+          daemonVersion: '0.9.0',
+          intentdVersion: '0.9.0',
+          updateSupported: false,
+          status: 'connected',
+        },
         {
           ...remote,
           id: 'remote-2',
           label: 'Other Mac',
           daemonVersion: '0.9.0',
+          intentdVersion: '0.9.0',
           status: 'connected',
         },
       ];
       render(DevicesSettings);
 
-      // The behind-pin badge stays informational even without update support.
-      expect(screen.getAllByRole('img', { name: behindLabel })).toHaveLength(2);
+      // Version warnings stay informational even without update support.
+      expect(screen.getAllByRole('button', { name: '0.9.0' })).toHaveLength(2);
 
       await fireEvent.click(screen.getByRole('button', { name: 'Actions for Studio Mac' }));
       await screen.findByRole('menuitem', { name: 'Edit' });
@@ -451,18 +564,21 @@ describe('DevicesSettings', () => {
       pinnedVersion: '0.9.1',
     });
 
-    it('lists the local machine first with its connection status and no remote-only actions', () => {
+    it('allows editing the local machine without remote-only connection actions', async () => {
       render(DevicesSettings);
 
       const [firstRow] = screen.getAllByRole('article');
       expect(within(firstRow).getByText(localLabel)).toBeTruthy();
       expect(within(firstRow).getByRole('status', { name: 'Status: Connected' })).toBeTruthy();
-      // Ineligible local rows expose no actions at all — Connect, Edit, and
-      // Remove are remote-only.
-      expect(screen.queryByRole('button', { name: `Actions for ${localLabel}` })).toBeNull();
+      await fireEvent.click(screen.getByRole('button', { name: `Actions for ${localLabel}` }));
+      expect(screen.queryByRole('menuitem', { name: 'Connect' })).toBeNull();
+      expect(screen.queryByRole('menuitem', { name: 'Remove' })).toBeNull();
+      await fireEvent.click(await screen.findByRole('menuitem', { name: 'Edit' }));
+      await fireEvent.click(screen.getByRole('button', { name: 'Advanced', exact: true }));
+      expect(screen.getByRole('spinbutton', { name: 'Port' })).toBeTruthy();
     });
 
-    it('shows no badge or Update affordance for the sidecar local row', () => {
+    it('shows no badge or Update affordance for the sidecar local row', async () => {
       // Sidecar mode: the local record is never enriched with daemonVersion /
       // updateSupported, so the real predicates keep both affordances hidden.
       mocks.pinnedVersion = '0.9.1';
@@ -471,10 +587,11 @@ describe('DevicesSettings', () => {
       render(DevicesSettings);
 
       expect(screen.queryByRole('img')).toBeNull();
-      expect(screen.queryByRole('button', { name: `Actions for ${localLabel}` })).toBeNull();
+      await fireEvent.click(screen.getByRole('button', { name: `Actions for ${localLabel}` }));
+      expect(screen.queryByRole('menuitem', { name: 'Update' })).toBeNull();
     });
 
-    it('offers the badge and Update when the shared predicates deem the local row eligible', async () => {
+    it('offers the version warning and Update when the shared predicates deem the local row eligible', async () => {
       const actual = await vi.importActual<typeof import('$lib/utils/device-update-eligibility')>(
         '$lib/utils/device-update-eligibility',
       );
@@ -487,25 +604,27 @@ describe('DevicesSettings', () => {
         actual.canRequestDeviceUpdate({ ...conn, isLocal: false }, ids, pinned);
       mocks.pinnedVersion = '0.9.1';
       mocks.connectedIds = ['local'];
-      mocks.connections = [{ ...local, daemonVersion: '0.9.0', updateSupported: true }, remote];
+      mocks.connections = [
+        { ...local, daemonVersion: '0.9.0', intentdVersion: '0.9.0', updateSupported: true },
+        remote,
+      ];
       render(DevicesSettings);
 
-      expect(screen.getByRole('img', { name: behindLabel })).toBeTruthy();
+      const version = screen.getByRole('button', { name: '0.9.0' });
+      version.focus();
+      expect((await screen.findByRole('tooltip')).textContent?.trim()).toBe(behindLabel);
 
       await fireEvent.click(screen.getByRole('button', { name: `Actions for ${localLabel}` }));
       expect(await screen.findByRole('menuitem', { name: 'Update' })).toBeTruthy();
       expect(screen.queryByRole('menuitem', { name: 'Connect' })).toBeNull();
-      expect(screen.queryByRole('menuitem', { name: 'Edit' })).toBeNull();
+      expect(screen.getByRole('menuitem', { name: 'Edit' })).toBeTruthy();
       expect(screen.queryByRole('menuitem', { name: 'Remove' })).toBeNull();
 
       await fireEvent.click(screen.getByRole('menuitem', { name: 'Update' }));
       expect(mocks.updateBackend).toHaveBeenCalledWith('local');
-      expect(mocks.dispatch).toHaveBeenCalledWith(
-        expect.objectContaining({
-          type: 'connections/updateBackendRequested',
-          payload: ['local'],
-        }),
-      );
+      expect(window.electronAPI!.invoke).toHaveBeenCalledWith('connections:update-backend', {
+        id: 'local',
+      });
     });
   });
 
@@ -558,9 +677,49 @@ describe('DevicesSettings', () => {
     );
   });
 
+  it('enabling remote access from the collapsed local row opens configuration', async () => {
+    mocks.connections = [local];
+    render(DevicesSettings);
+    const toggle = screen.getByRole('switch', { name: m.settings_wsApi_enable_label() });
+    await waitFor(() => expect(toggle.getAttribute('aria-disabled')).not.toBe('true'));
+    await fireEvent.click(toggle);
+    await waitFor(() =>
+      expect(mocks.settingsUpdate).toHaveBeenCalledWith([
+        { path: 'server.wsApi.enabled', value: true },
+      ]),
+    );
+    await waitFor(() => expect(mocks.pairingInfo).toHaveBeenCalled());
+    expect(await screen.findByRole('button', { name: m.settings_wsApi_showQrCode() })).toBeTruthy();
+    expect(toggle.getAttribute('aria-checked')).toBe('true');
+  });
+
+  it('keeps local configuration closed if enabling remote access fails', async () => {
+    mocks.connections = [local];
+    mocks.settingsUpdate.mockRejectedValueOnce(new Error('listener failed'));
+    render(DevicesSettings);
+    const toggle = screen.getByRole('switch', { name: m.settings_wsApi_enable_label() });
+    await waitFor(() => expect((toggle as HTMLButtonElement).disabled).toBe(false));
+    await fireEvent.click(toggle);
+    await waitFor(() => expect(mocks.toastError).toHaveBeenCalled());
+    expect(toggle.getAttribute('aria-checked')).toBe('false');
+    expect(screen.queryByRole('button', { name: m.settings_devices_advanced_label() })).toBeNull();
+  });
+
+  it('opens local configuration when requested by the remote-access deep link', async () => {
+    render(DevicesSettings, { localSettingsRequested: 1 });
+    expect(
+      screen.getByRole('button', { name: 'Advanced', exact: true }).getAttribute('aria-expanded'),
+    ).toBe('false');
+  });
+
   it('persists a local icon override through connections:update', async () => {
     mocks.connections = [local];
     render(DevicesSettings);
+
+    await openAction('Edit', m.layout_daemonStatus_localConnection_label());
+    await fireEvent.click(
+      screen.getByRole('button', { name: m.settings_devices_advanced_label() }),
+    );
 
     const picker = screen.getByTestId('device-icon-picker-trigger');
     expect(picker.getAttribute('aria-label')).toContain('Automatic (Laptop)');
@@ -590,6 +749,11 @@ describe('DevicesSettings', () => {
       }),
     }));
     render(DevicesSettings);
+
+    await openAction('Edit', m.layout_daemonStatus_localConnection_label());
+    await fireEvent.click(
+      screen.getByRole('button', { name: m.settings_devices_advanced_label() }),
+    );
 
     const picker = screen.getByTestId('device-icon-picker-trigger');
     expect(picker.getAttribute('aria-label')).toContain('Robot');
@@ -867,6 +1031,58 @@ describe('DevicesSettings', () => {
     });
   });
 
+  it('reveals host settings only after Edit from a remote window', async () => {
+    mocks.currentConnectionId = 'remote-1';
+    render(DevicesSettings);
+    const name = m.settings_devices_hostMachine_label();
+    expect(screen.queryByRole('switch', { name: m.settings_wsApi_enable_label() })).toBeNull();
+    await openAction('Edit', name);
+    expect(
+      await screen.findByRole('switch', { name: m.settings_wsApi_enable_label() }),
+    ).toBeTruthy();
+    await fireEvent.click(
+      screen.getByRole('button', { name: m.settings_devices_advanced_label() }),
+    );
+    expect(await screen.findByRole('spinbutton', { name: 'Port' })).toBeTruthy();
+    await openAction('Edit', name);
+    expect(screen.queryByRole('button', { name: m.settings_devices_advanced_label() })).toBeNull();
+    expect(screen.queryByRole('switch', { name: m.settings_wsApi_enable_label() })).toBeNull();
+  });
+
+  it('immediately hides Advanced when closing enabled local settings', async () => {
+    mocks.settingsList.mockResolvedValue([
+      { path: 'server.wsApi.enabled', value: true },
+      { path: 'server.wsApi.port', value: 5181 },
+      { path: 'server.tunnel.enabled', value: true },
+    ]);
+    render(DevicesSettings);
+    const name = m.layout_daemonStatus_localConnection_label();
+    await openAction('Edit', name);
+    await screen.findByRole('button', { name: m.settings_wsApi_showQrCode() });
+    await fireEvent.click(
+      screen.getByRole('button', { name: m.settings_devices_advanced_label() }),
+    );
+    await openAction('Edit', name);
+    expect(screen.queryByRole('button', { name: m.settings_devices_advanced_label() })).toBeNull();
+  });
+
+  it.each(['local', 'remote'])('toggles the %s editor with the Edit action', async (kind) => {
+    render(DevicesSettings);
+    const name = kind === 'local' ? m.layout_daemonStatus_localConnection_label() : 'Studio Mac';
+    const editor = () =>
+      kind === 'local'
+        ? screen.queryByRole('button', { name: 'Advanced', exact: true })
+        : screen.queryByRole('form', { name: 'Edit Studio Mac' });
+
+    await openAction('Edit', name);
+    expect(editor()).toBeTruthy();
+    await openAction('Edit', name);
+    await waitFor(() => expect(editor()).toBeNull());
+    await openAction('Edit', name);
+    expect(editor()).toBeTruthy();
+    expect(mocks.update).not.toHaveBeenCalled();
+  });
+
   it('replaces the first inline panel when a second device action opens', async () => {
     mocks.connections = [
       local,
@@ -915,9 +1131,7 @@ describe('DevicesSettings', () => {
     await waitFor(() => expect(testButton.getAttribute('aria-busy')).toBeNull());
     expect(within(form).getByRole('status')).toBeTruthy();
     expect(mocks.update).not.toHaveBeenCalled();
-    expect(mocks.dispatch).not.toHaveBeenCalledWith(
-      expect.objectContaining({ type: expect.stringMatching(/open/i) }),
-    );
+    expect(mocks.open).not.toHaveBeenCalled();
   });
 
   it('announces a failed connection test and leaves the action available to retry', async () => {

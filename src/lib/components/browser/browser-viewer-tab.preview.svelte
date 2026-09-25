@@ -56,7 +56,7 @@
       onGoBack={() => (lastAction = 'back')}
       onGoForward={() => (lastAction = 'forward')}
       onRefresh={() => (lastAction = 'refresh')}
-      onClose={({ force }) => (lastAction = force ? 'force-close' : 'close')}
+      onClose={() => (lastAction = 'force-close')}
     />
     <div
       class="flex flex-1 items-center justify-center bg-muted/20 text-xs text-muted-foreground"

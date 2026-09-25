@@ -54,7 +54,6 @@ describe('StreamingStatus rendered UI', () => {
     const { container } = render(StreamingStatus, {
       props: {
         isProcessing: true,
-        seed: 'agent-1',
         statusEvents: [
           { phase: 'prompt', message: 'Sent prompt…', level: 'info', timestamp: 1000 },
         ],
@@ -71,14 +70,14 @@ describe('StreamingStatus rendered UI', () => {
     expect(row.className).toContain(
       'grid-cols-[var(--operational-leading-slot-size)_minmax(0,1fr)_auto]',
     );
-    expect(row.className).toContain('mt-2');
+    expect(row.className).toContain('mt-[var(--space-3)]');
     expect(mark.getAttribute('data-variant')).toBe('pulse');
     expect(mark.getAttribute('data-playing')).toBe('true');
     expect(mark.getAttribute('width')).toBe('16');
     expect(mark.parentElement?.className).toContain('size-[var(--operational-leading-slot-size)]');
     expect(screen.getAllByRole('status')).toHaveLength(1);
     expect(label.textContent).toBe('Thinking');
-    expect(label.className).toContain('text-foreground');
+    expect(label.className).toContain('sr-only');
     expect(lifecycle.textContent).toBe('Sent prompt…');
     expect(lifecycle.className).toContain('text-muted-foreground');
     expect(lifecycle.className).toContain('truncate');
@@ -222,7 +221,7 @@ describe('StreamingStatus rendered UI', () => {
     expect(copyButton).toBeTruthy();
     expect(copyButton.className).toContain('text-muted-foreground');
     expect(copyButton.className).toContain('absolute');
-    expect(copyButton.className).toContain('top-3');
+    expect(copyButton.className).toContain('top-2');
     expect(copyButton.className).toContain('-translate-y-1/2');
     expect(copyButton.getAttribute('data-variant')).toBe('ghost-light');
     expect(copyButton.getAttribute('data-size')).toBe('icon-sm');
@@ -373,7 +372,6 @@ describe('StreamingStatus rendered UI', () => {
       props: {
         isStreaming: false,
         isProcessing: false,
-        seed: 'agent-1',
       },
     });
 
@@ -393,7 +391,6 @@ describe('StreamingStatus rendered UI', () => {
     await rerender({
       error: null,
       isProcessing: true,
-      seed: 'agent-1',
     });
 
     await waitFor(() => expect(screen.queryByTestId('error-title')).toBeNull());

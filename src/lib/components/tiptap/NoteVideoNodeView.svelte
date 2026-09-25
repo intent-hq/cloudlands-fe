@@ -12,6 +12,7 @@
     workspaceAssetVideoSource,
   } from '$lib/utils/workspace-file-image';
   import { m } from '$shared/paraglide/messages.js';
+  import { Button } from '$lib/components/ui/button';
 
   let { node, selected, editor, extension }: NodeViewProps = $props();
 
@@ -66,14 +67,16 @@
         class="absolute right-1.5 top-1.5 flex gap-1 opacity-0 transition-opacity group-focus-within:opacity-100 group-hover:opacity-100"
         contenteditable="false"
       >
-        <button
+        <Button
           type="button"
+          variant="ghost"
+          size="icon-xs"
           class="flex h-7 w-7 items-center justify-center rounded-md bg-black/60 text-white hover:bg-black/75 focus-visible:ring-2 focus-visible:ring-ring"
           onclick={openLightbox}
           aria-label={m.chat_videoBlock_play_ariaLabel({ name: videoName })}
         >
           <Fa icon={faExpand} size="sm" />
-        </button>
+        </Button>
         <VideoActionsMenu {videoUrl} {videoName} {mimeType} sourceKind="workspace" />
       </div>
     {/if}
@@ -95,7 +98,7 @@
   }
 
   :global(.note-video-node.selected video) {
-    outline: 2px solid hsl(var(--ring));
+    outline: 1px solid hsl(var(--ring));
     outline-offset: 2px;
   }
 </style>

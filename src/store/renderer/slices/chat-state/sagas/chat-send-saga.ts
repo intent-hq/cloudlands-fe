@@ -68,6 +68,7 @@ import {
   chatStopInitiated,
   refreshChatTranscriptRequested,
   sendMessage,
+  sendQueuedMessageNowRequested,
   transcriptHydrationSettled,
 } from '../chat-state-slice';
 import {
@@ -76,12 +77,13 @@ import {
   selectChatStatusEvents,
   selectTranscriptHydration,
 } from '../chat-state-selectors';
-import type { SendMessagePayload } from '../chat-state-types';
+import type { QueuedMessageSendOutcome, SendMessagePayload } from '../chat-state-types';
 
 const logger = createLogger('ChatSendSaga');
 const CANCELLED_ERROR = 'Chat send operation cancelled';
 
 type SendAction = ReturnType<typeof sendMessage>;
+type SendQueuedNowAction = ReturnType<typeof sendQueuedMessageNowRequested>;
 type RemoveAction = ReturnType<typeof removeQueuedMessageRequested>;
 type StopAction = ReturnType<typeof agentSessionStopChatRequested>;
 type RetryAction = ReturnType<typeof agentSessionRetryLastMessageRequested>;
@@ -90,6 +92,7 @@ type RetryProviderAction = ReturnType<typeof agentSessionRetryWithProviderReques
 type RetryFromStalledAction = ReturnType<typeof agentSessionRetryFromStalledRequested>;
 type ChatCommand =
   | SendAction
+  | SendQueuedNowAction
   | RemoveAction
   | StopAction
   | RetryAction
@@ -99,6 +102,7 @@ type ChatCommand =
 
 const ORDINARY_CHAT_COMMANDS = [
   sendMessage,
+  sendQueuedMessageNowRequested,
   removeQueuedMessageRequested,
   agentSessionRetryLastMessageRequested,
   agentSessionRetryWithModelRequested,
@@ -174,22 +178,44 @@ function* renameChiefThreadIfPlaceholder(
   }
 }
 
-function* sendQueuedNow(agentId: string, wsId: string, messageId: string): SagaGenerator<void> {
+function* sendQueuedNow(
+  agentId: string,
+  wsId: string,
+  messageId: string,
+): SagaGenerator<QueuedMessageSendOutcome> {
+  const result = yield* call([appClient.agents, appClient.agents.sendQueuedNow], {
+    agentId,
+    workspaceId: wsId,
+    messageId,
+  });
+  if (!result.success) {
+    throw new Error(result.error ?? m.agent_chatSend_sendNowRejected_error());
+  }
+  // A restored/quarantined entry is still queued, NOT a started turn. The
+  // daemon's queue events reconcile it; never remove then resend on the FE.
+  if (result.quarantined) return 'quarantined';
+  if (result.queued) return 'queued';
+  if (typeof result.turnId === 'string') {
+    yield* put(chatQueueProcessingReceived(agentId, result.turnId));
+  }
+  return 'delivered';
+}
+
+function* handleSendQueuedNow(action: SendQueuedNowAction): SagaGenerator<void> {
+  let settled = false;
   try {
-    const result = yield* call([appClient.agents, appClient.agents.sendQueuedNow], {
-      agentId,
-      workspaceId: wsId,
-      messageId,
-    });
-    if (!result.success) {
-      yield* put(chatLastAttemptedMessageSet(agentId, null));
-      yield* put(chatSendFailed(agentId, result.error ?? m.agent_chatSend_sendNowRejected_error()));
-    } else if (typeof result.turnId === 'string') {
-      yield* put(chatQueueProcessingReceived(agentId, result.turnId));
-    }
+    const outcome = yield* call(sendQueuedNow, ...action.payload);
+    yield* put(action.success(outcome));
+    settled = true;
   } catch (error) {
-    yield* put(chatLastAttemptedMessageSet(agentId, null));
-    yield* put(chatSendFailed(agentId, error instanceof Error ? error.message : String(error)));
+    // The row owns this error. Do not replace the running turn's retry
+    // payload, clear the composer, or fall back to an ordinary send.
+    yield* put(action.failure(error instanceof Error ? error : new Error(String(error))));
+    settled = true;
+  } finally {
+    if (!settled && (yield* cancelled())) {
+      yield* put(action.failure(new Error(CANCELLED_ERROR)));
+    }
   }
 }
 
@@ -333,7 +359,12 @@ function* handleSend(action: SendAction): SagaGenerator<void> {
   const { agentId, payload } = action.payload;
   if (!agentId || !payload.wsId) return;
   if (payload.queuedMessageId) {
-    yield* call(sendQueuedNow, agentId, payload.wsId, payload.queuedMessageId);
+    try {
+      yield* call(sendQueuedNow, agentId, payload.wsId, payload.queuedMessageId);
+    } catch (error) {
+      yield* put(chatLastAttemptedMessageSet(agentId, null));
+      yield* put(chatSendFailed(agentId, error instanceof Error ? error.message : String(error)));
+    }
     return;
   }
   if (!hasSendableMessageContent(payload.text, payload)) return;
@@ -419,8 +450,8 @@ function* handleStop(action: StopAction): SagaGenerator<void> {
 
 async function showNothingToRetry(): Promise<void> {
   try {
-    const { toast } = await import('svelte-sonner');
-    toast.info(m.agent_chatSend_nothingToRetry_toast());
+    const { notify } = await import('$lib/components/patterns/notify');
+    notify.info(m.agent_chatSend_nothingToRetry_toast());
   } catch (error) {
     logger.error('Failed to surface retry no-op feedback', error);
   }
@@ -477,8 +508,8 @@ function* handleRetryWithModel(action: RetryModelAction): SagaGenerator<void> {
 
 async function showRetryProviderError(message: string): Promise<void> {
   try {
-    const { toast } = await import('svelte-sonner');
-    toast.error(message, { duration: 6000 });
+    const { notify } = await import('$lib/components/patterns/notify');
+    notify.error(message, { duration: 6000 });
   } catch (error) {
     logger.error('Failed to surface provider-retry failure', error);
   }
@@ -720,6 +751,7 @@ function getCommandAgentId(action: ChatCommand): string {
     ? (action as SendAction).payload.agentId
     : (
         action as
+          | SendQueuedNowAction
           | RemoveAction
           | StopAction
           | RetryAction
@@ -730,7 +762,9 @@ function getCommandAgentId(action: ChatCommand): string {
 }
 
 function* rejectCommand(action: ChatCommand, error: Error): SagaGenerator<void> {
-  if (action.type === agentSessionStopChatRequested.type) {
+  if (action.type === sendQueuedMessageNowRequested.type) {
+    yield* put((action as SendQueuedNowAction).failure(error));
+  } else if (action.type === agentSessionStopChatRequested.type) {
     yield* put((action as StopAction).failure(error));
   } else if (action.type === agentSessionRetryLastMessageRequested.type) {
     yield* put((action as RetryAction).failure(error));
@@ -747,6 +781,8 @@ function* runChatCommand(action: ChatCommand): SagaGenerator<void> {
   try {
     if (action.type === sendMessage.type) {
       yield* call(handleSend, action as SendAction);
+    } else if (action.type === sendQueuedMessageNowRequested.type) {
+      yield* call(handleSendQueuedNow, action as SendQueuedNowAction);
     } else if (action.type === removeQueuedMessageRequested.type) {
       yield* call(handleRemove, action as RemoveAction);
     } else if (action.type === agentSessionStopChatRequested.type) {

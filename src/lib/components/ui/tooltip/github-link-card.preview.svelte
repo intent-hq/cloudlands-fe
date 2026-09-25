@@ -1,6 +1,7 @@
 <script lang="ts" module>
   import { definePreview } from '$lib/component-catalog/preview-definition';
-  import { MockAppClient } from '$lib/client';
+  import { appClient, MockAppClient } from '$lib/client';
+  import { mockGitHubPullRequestQueued } from '$lib/client/mock/fixtures';
   import { clearGitHubLinkPreviewCache, type GitHubLinkPreviewClient } from './github-link-preview';
 
   export interface GitHubLinkCardPreviewProps {
@@ -8,6 +9,7 @@
     expected: string;
     url: string;
     client: GitHubLinkPreviewClient;
+    interactive?: boolean;
   }
 
   const mock = new MockAppClient().integrations;
@@ -30,7 +32,29 @@
     expected: string,
     url: string,
     client: GitHubLinkPreviewClient,
-  ) => ({ props: { label, expected, url, client }, setup: clearGitHubLinkPreviewCache });
+    interactive = false,
+  ) => ({
+    props: { label, expected, url, client, interactive },
+    setup: clearGitHubLinkPreviewCache,
+  });
+
+  function setupHoverClient(client: GitHubLinkPreviewClient) {
+    const originalPull = appClient.integrations.githubPullRequest;
+    const originalIssue = appClient.integrations.githubIssue;
+    // Simulate latency only for actual hovers; the inline fixture settles immediately.
+    appClient.integrations.githubPullRequest = async (...args) => {
+      await new Promise((resolve) => setTimeout(resolve, 800));
+      return client.githubPullRequest(...args);
+    };
+    appClient.integrations.githubIssue = async (...args) => {
+      await new Promise((resolve) => setTimeout(resolve, 800));
+      return client.githubIssue(...args);
+    };
+    return () => {
+      appClient.integrations.githubPullRequest = originalPull;
+      appClient.integrations.githubIssue = originalIssue;
+    };
+  }
 
   export const preview = definePreview<GitHubLinkCardPreviewProps>({
     id: 'github-link-card',
@@ -62,6 +86,12 @@
           updatedAt: '2026-01-03T09:30:00.000Z',
         }),
       ),
+      'pr-queued': scenario(
+        'PR — queued',
+        'Hourglass icon + Queued badge in the info tone for a PR in the merge queue.',
+        `${REPO_URL}/pull/${mockGitHubPullRequestQueued.number}`,
+        mock,
+      ),
       'pr-draft': scenario(
         'PR — draft',
         'Muted icon + Draft badge; long title clamps to two lines.',
@@ -87,7 +117,7 @@
       ),
       error: scenario(
         'Error (not configured / not found)',
-        'Falls back to the plain URL tooltip — no error copy.',
+        'Keeps the PR reference, unavailable explanation, URL, and link actions.',
         `${REPO_URL}/pull/404`,
         {
           githubPullRequest: async () => {
@@ -98,6 +128,21 @@
           },
         },
       ),
+      'rate-limited': scenario(
+        'GitHub rate limit',
+        'Keeps the PR reference and explains the rate limit. Hover the link to exercise loading and failure; click for actions.',
+        `${REPO_URL}/pull/42`,
+        {
+          githubPullRequest: async () => {
+            throw Object.assign(new Error('source control rate limited'), {
+              rpcCode: -32603,
+              data: { code: 'rate-limited' },
+            });
+          },
+          githubIssue: mock.githubIssue,
+        },
+        true,
+      ),
     },
   });
 </script>
@@ -107,36 +152,51 @@
   import { m } from '$shared/paraglide/messages.js';
   import GitHubLinkCard from './GitHubLinkCard.svelte';
   import LinkTooltip from './LinkTooltip.svelte';
-  import { loadGitHubLinkPreview } from './github-link-preview';
+  import { classifyGitHubLinkPreviewError, loadGitHubLinkPreview } from './github-link-preview';
   import { formatUrlForDisplay, type LinkTooltipPreview } from './link-tooltip-state.svelte';
+  import {
+    createLinkTooltipHandler,
+    createGlobalLinkClickHandler,
+  } from '$features/navigation/link-handler';
+  import LinkActionMenu from '$features/navigation/LinkActionMenu.svelte';
 
-  let { label, expected, url, client }: GitHubLinkCardPreviewProps = $props();
+  let { label, expected, url, client, interactive = false }: GitHubLinkCardPreviewProps = $props();
   let linkPreview = $state<LinkTooltipPreview>({ status: 'loading' });
+  let container: HTMLElement;
 
   onMount(() => {
     let cancelled = false;
+    // Only the rate-limit scene installs the interactive client, including in the All view.
+    const restoreClient = interactive ? setupHoverClient(client) : undefined;
+    const stopHover = interactive ? createLinkTooltipHandler(container) : undefined;
+    const stopClick = interactive ? createGlobalLinkClickHandler(container, {}) : undefined;
     loadGitHubLinkPreview(url, { client }).then(
       (data) => {
         if (!cancelled) linkPreview = data ? { status: 'ready', data } : { status: 'idle' };
       },
-      () => {
-        if (!cancelled) linkPreview = { status: 'error' };
+      (error: unknown) => {
+        if (!cancelled)
+          linkPreview = { status: 'error', reason: classifyGitHubLinkPreviewError(error) };
       },
     );
     return () => {
       cancelled = true;
+      stopHover?.();
+      stopClick?.();
+      restoreClient?.();
     };
   });
 
-  const cardPreview = $derived(
-    linkPreview.status === 'loading' || linkPreview.status === 'ready' ? linkPreview : null,
-  );
+  const cardPreview = $derived(linkPreview.status !== 'idle' ? linkPreview : null);
 </script>
 
-<!-- Mounted (hidden) so the shared `.link-tooltip` styles are present for the inline render. -->
-<LinkTooltip />
+<!-- The import supplies shared styles; only the interactive scene mounts the singleton hosts. -->
+{#if interactive}
+  <LinkTooltip />
+  <LinkActionMenu />
+{/if}
 
-<article class="grid max-w-md gap-3" data-preview-scenario={label}>
+<article bind:this={container} class="grid max-w-md gap-3" data-preview-scenario={label}>
   <div>
     <h3 class="text-sm font-semibold">{label}</h3>
     <p class="text-xs leading-5 text-muted-foreground">{expected}</p>

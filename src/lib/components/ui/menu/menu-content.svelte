@@ -1,6 +1,15 @@
 <script lang="ts">
   import { DropdownMenu as MenuPrimitive } from 'bits-ui';
+  import { tick } from 'svelte';
   import { cn } from '$lib/utils.js';
+  import ListHighlight from './menu-list-highlight.svelte';
+  import { menuOverlay } from './menu-recipes';
+  import { clampSurface, setSurface, useSurface } from '$lib/components/ui/surface-context';
+  import { OPTION_LIST_CONTAINER_CLASS } from '$lib/styles/option-list-row';
+  import { useStaticOverlay } from '../static-overlay-context.svelte';
+  import { OVERLAY_VIEWPORT_GUTTER } from '$lib/components/ui/overlay-positioning';
+  import { handleMenuPageKey, setMenuTabStop, syncMenuTabStopFromFocus } from './menu-roving-focus';
+  import { createMenuLayout } from './menu-layout-context.svelte';
 
   const uid = $props.id();
 
@@ -10,52 +19,131 @@
     class: className,
     portal = true,
     portalProps,
+    staticPosition,
+    alignIconColumn = false,
     sideOffset = 4,
+    collisionPadding = OVERLAY_VIEWPORT_GUTTER,
+    onkeydown,
+    onfocusin,
+    onOpenAutoFocus,
     // bits-ui 2.18.1: DropdownMenu.Content sizes via the 'dropdown-menu'-prefixed
     // floating CSS vars, while SubContent (menu-sub-content.svelte) uses the shared
     // 'menu' prefix — the differing var names between the two files are intentional.
     maxHeight = 'var(--bits-dropdown-menu-content-available-height, calc(100dvh - 1rem))',
+    children,
     ...restProps
   }: MenuPrimitive.ContentProps & {
     portal?: boolean;
     portalProps?: MenuPrimitive.PortalProps;
     maxHeight?: string;
+    staticPosition?: boolean;
+    /** Align declared leading slots, iconless rows and headings across this popup. */
+    alignIconColumn?: boolean;
   } = $props();
 
+  const rootStaticPosition = useStaticOverlay();
+  createMenuLayout(() => alignIconColumn);
+  const isStatic = $derived(staticPosition ?? rootStaticPosition());
+  const surface = clampSurface(useSurface() + 2);
+  setSurface(surface);
   const contentClass = $derived(
     cn(
-      'type-body z-(--layer-popover) min-w-40 overflow-y-auto overscroll-contain rounded-md border border-border bg-popover p-1 text-popover-foreground shadow-(--elevation-overlay) outline-none focus-visible:border-input focus-visible:ring-3 focus-visible:ring-ring/50',
-      'data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=open]:fade-in-0 data-[state=closed]:fade-out-0 data-[state=open]:zoom-in-95 data-[state=closed]:zoom-out-95',
-      'duration-[var(--motion-fast)] motion-reduce:animate-none motion-reduce:transition-none',
+      menuOverlay(),
+      OPTION_LIST_CONTAINER_CLASS,
+      'min-w-40 overflow-y-auto overscroll-contain',
       className,
     ),
   );
 
   $effect(() => {
-    if (ref) ref.id = id;
+    const content = ref;
+    if (!content) return;
+    content.id = id;
+    void tick().then(() => {
+      if (ref === content) setMenuTabStop(content);
+    });
   });
+
+  function handleOpenAutoFocus(event: Event) {
+    onOpenAutoFocus?.(event);
+    if (event.defaultPrevented) return;
+    // Focus the content first so Bits initializes keyboard entry before our tab stop.
+    // Skip when focus already moved inside the content: re-focusing the container
+    // makes Bits focus the first item again and resets keyboard navigation.
+    event.preventDefault();
+    const content = ref;
+    requestAnimationFrame(() => {
+      if (!content || ref !== content || content.dataset.state !== 'open') return;
+      if (content.contains(document.activeElement)) return;
+      content.focus();
+    });
+  }
+
+  function handleKeydown(event: KeyboardEvent & { currentTarget: HTMLDivElement }) {
+    onkeydown?.(event);
+    if (!event.defaultPrevented) handleMenuPageKey(event.currentTarget, event);
+  }
+
+  function handleFocusin(event: FocusEvent & { currentTarget: HTMLDivElement }) {
+    onfocusin?.(event);
+    syncMenuTabStopFromFocus(event.currentTarget, event.target);
+  }
 </script>
 
-{#if portal}
+{#if isStatic}
+  <MenuPrimitive.ContentStatic
+    bind:ref
+    {id}
+    preventScroll={false}
+    data-slot="menu-content"
+    data-static-position
+    data-surface-level={surface}
+    class={contentClass}
+    style="max-height: {maxHeight}"
+    onkeydown={handleKeydown}
+    onfocusin={handleFocusin}
+    onOpenAutoFocus={handleOpenAutoFocus}
+    {...restProps as any}
+  >
+    <ListHighlight />
+    {@render children?.()}
+  </MenuPrimitive.ContentStatic>
+{:else if portal}
   <MenuPrimitive.Portal {...portalProps}>
     <MenuPrimitive.Content
       bind:ref
       {id}
       data-slot="menu-content"
+      data-surface-level={surface}
       class={contentClass}
       {sideOffset}
+      {collisionPadding}
       style="max-height: {maxHeight}"
+      onkeydown={handleKeydown}
+      onfocusin={handleFocusin}
+      onOpenAutoFocus={handleOpenAutoFocus}
       {...restProps}
-    />
+    >
+      <ListHighlight />
+      {@render children?.()}
+    </MenuPrimitive.Content>
   </MenuPrimitive.Portal>
 {:else}
   <MenuPrimitive.Content
     bind:ref
     {id}
     data-slot="menu-content"
+    data-surface-level={surface}
     class={contentClass}
     {sideOffset}
+    {collisionPadding}
     style="max-height: {maxHeight}"
+    onkeydown={handleKeydown}
+    onfocusin={handleFocusin}
+    onOpenAutoFocus={handleOpenAutoFocus}
     {...restProps}
-  />
+  >
+    <ListHighlight />
+    {@render children?.()}
+  </MenuPrimitive.Content>
 {/if}

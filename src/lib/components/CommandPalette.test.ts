@@ -18,6 +18,8 @@ const {
   createSelectorReadable,
   paletteMruEntries,
   paletteFileMru,
+  collaboratorState,
+  multiplayerState,
 } = vi.hoisted(() => {
   const createSelectorReadable = <TArg, TValue>(arg: TArg, resolver: (value: any) => TValue) => ({
     subscribe: (fn: (value: TValue) => void) => {
@@ -43,6 +45,8 @@ const {
     createSelectorReadable,
     paletteMruEntries: { value: [] as any[] },
     paletteFileMru: { value: {} as Record<string, number> },
+    collaboratorState: { workspace: false, client: false },
+    multiplayerState: { enabled: false },
   };
 });
 
@@ -96,6 +100,16 @@ vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
       return () => {};
     },
   }),
+  selectIsWorkspaceCollaborator: (workspaceIdArg: any) =>
+    createSelectorReadable(workspaceIdArg, () => collaboratorState.workspace),
+  selectHidesAgentLifecycleActions: (workspaceIdArg: any) =>
+    createSelectorReadable(workspaceIdArg, () => collaboratorState.workspace),
+  selectIsCollaboratorOnlyClient: () => ({
+    subscribe: (fn: (value: boolean) => void) => {
+      fn(collaboratorState.client);
+      return () => {};
+    },
+  }),
 }));
 vi.mock('$features/agent/browser', () => ({}));
 
@@ -119,6 +133,7 @@ vi.mock('$store/renderer/store', async () => {
     state: () => ({
       workspaceNotes: { byWorkspaceId: {} },
       workspaceAgents: { byWorkspaceId: {} },
+      userPreferences: { labsMultiplayerEnabled: multiplayerState.enabled },
     }),
     dispatch: reduxDispatchMock,
   });
@@ -204,6 +219,7 @@ vi.mock('@fortawesome/free-solid-svg-icons', () => ({
   faTerminal: { iconName: 'terminal' },
   faCommentDots: { iconName: 'comment-dots' },
   faFileAlt: { iconName: 'file-alt' },
+  faFlask: { iconName: 'flask' },
   faCodeBranch: { iconName: 'code-branch' },
   faPlus: { iconName: 'plus' },
   faGlobe: { iconName: 'globe' },
@@ -242,6 +258,69 @@ describe('CommandPalette new actions', () => {
     sessionSessions.value = [];
     paletteMruEntries.value = [];
     paletteFileMru.value = {};
+    collaboratorState.workspace = false;
+    collaboratorState.client = false;
+    multiplayerState.enabled = false;
+  });
+
+  it.each([false, true])(
+    'changes experimental multiplayer from enabled=%s through command search without a workspace',
+    async (enabled) => {
+      multiplayerState.enabled = enabled;
+      const onClose = vi.fn();
+      render(CommandPalette, { props: { isOpen: true, onClose } });
+      const input = screen.getByRole('textbox');
+
+      await fireEvent.input(input, { target: { value: 'multiplayer' } });
+      const command = await screen.findByRole('button', {
+        name: enabled ? /Disable experimental multiplayer/i : /Enable experimental multiplayer/i,
+      });
+      expect(
+        screen.queryByRole('button', {
+          name: enabled ? /Enable experimental multiplayer/i : /Disable experimental multiplayer/i,
+        }),
+      ).toBeNull();
+
+      reduxDispatchMock.mockClear();
+      if (enabled) await fireEvent.click(command);
+      else await fireEvent.keyDown(input, { key: 'Enter' });
+
+      expect(reduxDispatchMock).toHaveBeenCalledWith({
+        type: 'userPreferences/setLabsMultiplayerEnabled',
+        payload: [!enabled],
+      });
+      expect(onClose).toHaveBeenCalledOnce();
+    },
+  );
+
+  it('withholds agent-creation, terminal, browser, and workspace-creation commands and results for collaborators', async () => {
+    collaboratorState.workspace = true;
+    collaboratorState.client = true;
+    vi.mocked(terminalManager.loadTerminalMetadata).mockReturnValue([
+      { terminalId: 'term-1', title: 'Owner Shell', createdAt: new Date().toISOString() },
+    ] as any);
+    browserRecentUrls.value = [
+      { url: 'https://example.com', title: 'Example', lastVisited: new Date().toISOString() },
+    ];
+
+    render(CommandPalette, { props: { isOpen: true, workspaceId: 'ws-1', onClose: vi.fn() } });
+
+    await screen.findByRole('button', { name: 'Note' });
+    expect(screen.queryByRole('button', { name: 'Agent Chat' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Terminal' })).toBeNull();
+    expect(screen.queryByRole('button', { name: /Open URL in Browser/i })).toBeNull();
+    expect(screen.queryByRole('button', { name: /New Workspace/i })).toBeNull();
+
+    const input = screen.getByRole('textbox');
+    await fireEvent.input(input, { target: { value: 'Owner Shell' } });
+    await waitFor(() => {
+      expect(screen.queryByRole('button', { name: /Owner Shell/ })).toBeNull();
+    });
+    await fireEvent.input(input, { target: { value: 'Example' } });
+    await waitFor(() => {
+      expect(screen.queryByRole('button', { name: /example\.com/ })).toBeNull();
+    });
+    expect(reduxDispatchMock).not.toHaveBeenCalledWith(createTerminalRequested('ws-1'));
   });
 
   it('dispatches Redux actions for agent, terminal, note, and file from keyboard', async () => {
@@ -250,8 +329,8 @@ describe('CommandPalette new actions', () => {
     render(CommandPalette, { props: { isOpen: true, workspaceId: 'ws-1', onClose } });
 
     await waitFor(() => {
-      expect(screen.getByRole('button', { name: 'Agent Chat' }).className).toContain(
-        'bg-foreground/[0.04]',
+      expect(screen.getByRole('button', { name: 'Agent Chat' }).getAttribute('aria-current')).toBe(
+        'true',
       );
     });
 
@@ -367,6 +446,22 @@ describe('CommandPalette new actions', () => {
     }
 
     events.forEach((event, index) => window.removeEventListener(event, listeners[index]));
+  });
+
+  it('keeps current-row state on actionable results through search, arrows, and hover', async () => {
+    render(CommandPalette, { props: { isOpen: true, workspaceId: 'ws-1', onClose: vi.fn() } });
+    const input = screen.getByRole('textbox');
+    await fireEvent.input(input, { target: { value: 'attach' } });
+    const context = await screen.findByRole('button', { name: /Attach context/i });
+    const files = await screen.findByRole('button', { name: /Attach files/i });
+    await fireEvent.pointerMove(context);
+    expect(context.getAttribute('aria-current')).toBe('true');
+    await fireEvent.keyDown(input, { key: 'ArrowDown' });
+    expect(files.getAttribute('aria-current')).toBe('true');
+    expect(context.hasAttribute('aria-current')).toBe(false);
+    await fireEvent.keyDown(input, { key: 'ArrowUp' });
+    expect(context.getAttribute('aria-current')).toBe('true');
+    expect(files.hasAttribute('aria-current')).toBe(false);
   });
 });
 

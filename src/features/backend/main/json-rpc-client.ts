@@ -17,6 +17,7 @@ import { JsonRpcError, type JsonRpcErrorShape } from './json-rpc-errors';
 import {
   AuthRejectedError,
   type BackendConnectionConfig,
+  ConnectionLimitError,
   createBackendSocket,
   describeBackendConfig,
   type ConnectedVia,
@@ -113,8 +114,8 @@ const HELLO_HANDSHAKE_TIMEOUT_MS = 5_000;
 /**
  * Events: `notification` (JsonRpcNotification), `status` (ConnectionStatus),
  * `reconnected` (void — fires when a successful connect follows an earlier
- * connected state so consumers can replay `events.subscribe` calls and
- * refresh coarse state after a daemon restart), `error` (Error),
+ * connected state or failed dial so consumers can retry startup work, replay
+ * `events.subscribe`, and refresh state after a daemon restart), `error` (Error),
  * `heartbeat` (void), `cert-warning` ({@link HostCertMismatch} — a NON-FATAL
  * per-host pin mismatch observed by the multi-host connection race (#1746);
  * informative only, never treated as a connection failure).
@@ -151,10 +152,15 @@ export class JsonRpcClient extends EventEmitter {
   private consecutiveHealthCheckFailures = 0;
   private connectWaiters: Array<{ resolve: () => void; reject: (e: Error) => void }> = [];
   private readonly pending = new Map<number, PendingRequest>();
-  /** Sticky flag so `reconnected` only fires on the 2nd (or later) successful connect. */
+  /** A successful connection or failed dial requires recovery on the next connect. */
   private hasBeenConnected = false;
+  private hasConnectionFailed = false;
   /** Consecutive reconnect attempts since the last successful connect (#1750). */
   private reconnectAttempts = 0;
+  /** The last connect attempt was refused by the guest connection cap (HTTP 503). */
+  private connectionLimited = false;
+  /** The daemon-requested wait before the next attempt while `connectionLimited`. */
+  private connectionLimitRetryAfterMs: number | null = null;
   /** Handlers for daemon-initiated (reverse) requests, keyed by method name. */
   private readonly reverseHandlers = new Map<string, ReverseRequestHandler>();
 
@@ -194,6 +200,27 @@ export class JsonRpcClient extends EventEmitter {
     return this.reconnectAttempts;
   }
 
+  /**
+   * True while the most recent connect attempt was refused with HTTP 503 by
+   * the daemon's guest connection cap (intent-hq/intentd#1917); cleared by
+   * the next successful connect or a failure of any other kind. Surfaced to
+   * the renderer via the backend:status broadcast so the daemon-loss UI can
+   * name the cap instead of the generic reconnect copy.
+   */
+  isConnectionLimited(): boolean {
+    return this.connectionLimited;
+  }
+
+  /**
+   * The wait the refusing daemon asked for (its `Retry-After`, clamped, or
+   * the default cadence) while {@link isConnectionLimited}; `null` otherwise.
+   * The slow retry is scheduled on exactly this value, so the renderer can
+   * show the actual wait.
+   */
+  getConnectionLimitRetryAfterMs(): number | null {
+    return this.connectionLimited ? this.connectionLimitRetryAfterMs : null;
+  }
+
   /** Connection config (transport type and target). */
   getConfig(): BackendConnectionConfig {
     return this.config;
@@ -209,11 +236,21 @@ export class JsonRpcClient extends EventEmitter {
     return this.connectedVia;
   }
 
-  /** Begin connecting (idempotent). */
+  /**
+   * Begin connecting (idempotent). While the connection-limit cooldown is
+   * armed this is a no-op: the scheduled slow retry is the only path that
+   * re-presents the refused upgrade, so on-demand starts (and the requests
+   * that trigger them) cannot collapse the slow cadence back into a loop.
+   */
   start(): void {
     if (this.disposed) return;
-    if (this.socket || this.status === 'connecting') return;
+    if (this.socket || this.status === 'connecting' || this.reconnectTimer) return;
+    if (this.isInConnectionLimitCooldown()) return;
     this.connect();
+  }
+
+  private isInConnectionLimitCooldown(): boolean {
+    return this.connectionLimited && this.reconnectTimer !== null;
   }
 
   /** Tear down the client: close the socket, clear timers, reject pending. */
@@ -340,6 +377,13 @@ export class JsonRpcClient extends EventEmitter {
 
   private ensureConnected(): Promise<void> {
     if (this.status === 'connected') return Promise.resolve();
+    // Fail fast with the cap refusal instead of parking the request behind
+    // the slow retry (or re-dialing ahead of it).
+    if (this.isInConnectionLimitCooldown()) {
+      return Promise.reject(
+        new ConnectionLimitError(this.connectionLimitRetryAfterMs ?? undefined),
+      );
+    }
     this.start();
     return new Promise<void>((resolve, reject) => {
       this.connectWaiters.push({ resolve, reject });
@@ -414,8 +458,10 @@ export class JsonRpcClient extends EventEmitter {
   private finishConnect(): void {
     this.currentReconnectDelay = this.reconnectDelayMs;
     this.reconnectAttempts = 0;
-    const wasReconnect = this.hasBeenConnected;
+    this.connectionLimited = false;
+    const wasReconnect = this.hasBeenConnected || this.hasConnectionFailed;
     this.hasBeenConnected = true;
+    this.hasConnectionFailed = false;
     this.setStatus('connected');
     this.flushWaiters();
     this.startHeartbeat();
@@ -431,6 +477,7 @@ export class JsonRpcClient extends EventEmitter {
 
   private onConnectionFailure(error: Error): void {
     if (this.disposed) return;
+    this.hasConnectionFailed = true;
     this.emitError(error);
     this.stopHeartbeat();
     this.teardownSocket();
@@ -438,6 +485,11 @@ export class JsonRpcClient extends EventEmitter {
     // Reject in-flight connection waiters so pending request() calls fail fast
     // instead of hanging across reconnect attempts.
     this.failWaiters(error);
+    // Decided BEFORE the status broadcast so the `disconnected` push already
+    // carries the cap posture.
+    this.connectionLimited = error instanceof ConnectionLimitError;
+    this.connectionLimitRetryAfterMs =
+      error instanceof ConnectionLimitError ? error.retryAfterMs : null;
     this.setStatus('disconnected');
     // A 401/403 auth rejection (PROTOCOL §2.1) is not transient: every retry
     // would re-present the same stale credential and fail identically, so the
@@ -450,6 +502,16 @@ export class JsonRpcClient extends EventEmitter {
         statusCode: error.statusCode,
       });
       return;
+    }
+    if (error instanceof ConnectionLimitError) {
+      // Keep retrying (a seat may free), but on the slow bounded cadence the
+      // daemon asked for: the ordinary backoff would re-present the same
+      // refused upgrade every 5s.
+      logger.warn('Backend refused the connection: guest connection limit reached', {
+        target: describeBackendConfig(this.config),
+        retryInMs: error.retryAfterMs,
+      });
+      this.currentReconnectDelay = Math.max(this.currentReconnectDelay, error.retryAfterMs);
     }
     this.scheduleReconnect();
   }

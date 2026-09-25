@@ -2,14 +2,14 @@
  * GitHub issue / PR details for the link hover card.
  *
  * `loadGitHubLinkPreview` resolves a `github.com/{owner}/{repo}/(pull|issues)/{n}`
- * URL to its details through the `AppClient` integrations seam, with a
- * 60 s in-memory cache (re-hovers within the TTL do not re-fetch), one shared
- * in-flight promise per item (concurrent hovers de-dupe to one request), and
- * NO negative caching — a failed request is forgotten as soon as it settles so
- * the next hover retries. Failures propagate: the card renders its URL-only
- * fallback. `createPreviewRequest` is the stale-response guard for the
- * singleton tooltip: a late response for a previous hover must never
- * overwrite the current one.
+ * URL to its details through the `AppClient` integrations seam, with one
+ * shared in-flight promise per item (concurrent hovers de-dupe to one
+ * request). Resolved previews are NOT cached here: the daemon's shared PR
+ * cache (`prCache.maxAgeSeconds`) is the single cache, so every hover asks
+ * the daemon and a failed request is retried on the next hover. Failures
+ * propagate: the card keeps the reference and explains the failure. `createPreviewRequest`
+ * is the stale-response guard for the singleton tooltip: a late response for
+ * a previous hover must never overwrite the current one.
  *
  * `$lib/client` is imported lazily on the first fetch: this module is reached
  * from the tooltip barrel, and a static import would make every barrel
@@ -23,28 +23,32 @@ import type { GitHubIssueOrPrRef } from '$shared/utils/link-helpers';
 export type GitHubLinkPreview =
   ({ kind: 'pr' } & GitHubPullRequestDetails) | ({ kind: 'issue' } & GitHubIssueDetails);
 
-/** How long a resolved preview is served from cache without a re-fetch. */
-export const GITHUB_LINK_PREVIEW_TTL_MS = 60_000;
+export type GitHubLinkPreviewFailure = 'rate-limited' | 'unavailable';
+
+/** Use the daemon's structured discriminator, never its raw error prose. */
+export function classifyGitHubLinkPreviewError(error: unknown): GitHubLinkPreviewFailure {
+  if (error && typeof error === 'object' && 'data' in error) {
+    const data = error.data;
+    if (data && typeof data === 'object' && 'code' in data && data.code === 'rate-limited') {
+      return 'rate-limited';
+    }
+  }
+  return 'unavailable';
+}
 
 /** The slice of the integrations seam the preview loader depends on. */
 export type GitHubLinkPreviewClient = Pick<IntegrationsClient, 'githubPullRequest' | 'githubIssue'>;
 
 export interface LoadGitHubLinkPreviewOptions {
-  /** Rejects the caller's promise on abort; the shared request keeps running so the cache still fills. */
+  /** Rejects the caller's promise on abort; the shared request keeps running for the other hovers sharing it. */
   signal?: AbortSignal;
   /** Injection seam (tests); defaults to the process-wide `appClient.integrations`. */
   client?: GitHubLinkPreviewClient;
 }
 
-interface CacheEntry {
-  value: GitHubLinkPreview;
-  expiresAt: number;
-}
-
-const cache = new Map<string, CacheEntry>();
 const inFlight = new Map<string, Promise<GitHubLinkPreview>>();
 
-function cacheKey(ref: GitHubIssueOrPrRef): string {
+function requestKey(ref: GitHubIssueOrPrRef): string {
   return `${ref.owner}/${ref.repo}#${ref.number}/${ref.kind}`;
 }
 
@@ -92,32 +96,20 @@ export async function loadGitHubLinkPreview(
   const ref = parseGitHubIssueOrPrUrl(url);
   if (!ref) return null;
 
-  const key = cacheKey(ref);
-  const cached = cache.get(key);
-  if (cached) {
-    if (cached.expiresAt > Date.now()) return cached.value;
-    cache.delete(key);
-  }
-
+  const key = requestKey(ref);
   let pending = inFlight.get(key);
   if (!pending) {
-    pending = fetchPreview(ref, options.client)
-      .then((value) => {
-        cache.set(key, { value, expiresAt: Date.now() + GITHUB_LINK_PREVIEW_TTL_MS });
-        return value;
-      })
-      .finally(() => {
-        if (inFlight.get(key) === pending) inFlight.delete(key);
-      });
+    pending = fetchPreview(ref, options.client).finally(() => {
+      if (inFlight.get(key) === pending) inFlight.delete(key);
+    });
     inFlight.set(key, pending);
   }
 
   return options.signal ? raceAbort(pending, options.signal) : pending;
 }
 
-/** Drop every cached preview and in-flight handle (tests). */
+/** Drop every in-flight handle (tests). */
 export function clearGitHubLinkPreviewCache(): void {
-  cache.clear();
   inFlight.clear();
 }
 

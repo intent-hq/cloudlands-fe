@@ -121,7 +121,8 @@ test('uses the computed sidebar surface in light and dark themes', async ({ page
     expect(state.background).not.toBe(state.hostBackground);
     expect(state.assistantBackground).toBe('rgba(0, 0, 0, 0)');
     expect(state.contrast).toBeGreaterThanOrEqual(4.5);
-    expect(state.borderRadius).toBe('9px');
+    // Batch 7b (165c72ff) standardizes rounded surfaces at 8px.
+    expect(state.borderRadius).toBe('8px');
     expect(state.borderWidth).toBe('0px');
     expect(state.pinnedBorderWidth).toBe('0px');
     expect(state.padding).toEqual(['8px', '12px', '8px', '12px']);

@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, render, screen } from '@testing-library/svelte';
+import { cleanup, fireEvent, render, screen } from '@testing-library/svelte';
 
 const makeReadable = <T>(value: T) => ({
   subscribe: (run: (value: T) => void) => {
@@ -15,34 +15,36 @@ const agentFlags = vi.hoisted(() => ({
   isWaitingOnTool: false,
 }));
 
-vi.mock('$store/renderer/slices/agent-session/agent-session-selectors', () => ({
-  selectAgentSession: () =>
-    makeReadable(
-      agentFlags.isResponding || agentFlags.isBlockedWaiting
-        ? {
-            id: 'agent-1',
-            backendSessionId: null,
-            workspaceId: 'workspace-1',
-            name: 'Agent',
-            status: agentFlags.isBlockedWaiting ? 'waiting' : 'active',
-            messages: [],
-            isResponding: agentFlags.isResponding,
-            isWaitingOnTool: agentFlags.isWaitingOnTool,
-            isWaitingForOtherAgents: agentFlags.isBlockedWaiting,
-          }
-        : null,
-    ),
-  selectAgentIsResponding: () => makeReadable(agentFlags.isResponding),
-  selectAgentPreview: Object.assign(() => makeReadable(null), { select: () => null }),
-  // Mirrors the stored-session predicate: the raw waiting reason includes an
-  // unresolved tool_use on the in-flight turn.
-  selectAgentIsWaiting: () =>
-    makeReadable(agentFlags.isBlockedWaiting || agentFlags.isWaitingOnTool),
-  selectAgentIsBlockedWaiting: () => makeReadable(agentFlags.isBlockedWaiting),
-  selectAgentSessionStreamingContent: () => makeReadable(''),
-  selectAgentSessionHasStreamOwnedMessage: () => makeReadable(false),
-  selectAgentProvider: () => makeReadable(undefined),
-}));
+vi.mock('$store/renderer/slices/agent-session/agent-session-selectors', () => {
+  const session = () =>
+    agentFlags.isResponding || agentFlags.isBlockedWaiting
+      ? {
+          id: 'agent-1',
+          backendSessionId: null,
+          workspaceId: 'workspace-1',
+          name: 'Agent',
+          status: agentFlags.isBlockedWaiting ? 'waiting' : 'active',
+          messages: [],
+          isResponding: agentFlags.isResponding,
+          isWaitingOnTool: agentFlags.isWaitingOnTool,
+          isWaitingForOtherAgents: agentFlags.isBlockedWaiting,
+        }
+      : null;
+  return {
+    selectAgentSession: Object.assign(() => makeReadable(session()), { select: () => session() }),
+    selectAgentIsResponding: () => makeReadable(agentFlags.isResponding),
+    selectAgentDetailHydrated: () => makeReadable(false),
+    selectAgentPreview: Object.assign(() => makeReadable(null), { select: () => null }),
+    // Mirrors the stored-session predicate: the raw waiting reason includes an
+    // unresolved tool_use on the in-flight turn.
+    selectAgentIsWaiting: () =>
+      makeReadable(agentFlags.isBlockedWaiting || agentFlags.isWaitingOnTool),
+    selectAgentIsBlockedWaiting: () => makeReadable(agentFlags.isBlockedWaiting),
+    selectAgentSessionStreamingContent: () => makeReadable(''),
+    selectAgentSessionHasStreamOwnedMessage: () => makeReadable(false),
+    selectAgentProvider: () => makeReadable(undefined),
+  };
+});
 
 vi.mock('$store/renderer/slices/chat-state/chat-state-selectors', () => ({
   selectChatReceivedFirstChunk: () => makeReadable(false),
@@ -67,6 +69,7 @@ vi.mock('$store/renderer/slices/hud/hud-selectors', () => ({
 }));
 
 vi.mock('$lib/components/chat/questions/wizard-gate', () => ({
+  deriveAgentHasPendingQuestion: () => false,
   deriveWizardPendingQuestions: () => null,
 }));
 
@@ -85,6 +88,7 @@ vi.mock('$lib/components/ui/tooltip', async () => {
     Root: SlotOnly,
     Trigger: SlotOnly,
     Content: SlotOnly,
+    TooltipShortcut: SlotOnly,
   };
 });
 
@@ -123,6 +127,24 @@ describe('isCompleted avatar state wiring', () => {
     expect(screen.getByTestId('mock-avatar-with-state').dataset.state).toBe('idle');
   });
 
+  it('AgentCard keeps status-stack by default and forwards an explicit checklist presentation', () => {
+    const taskProgress = [
+      { id: 'pending', title: 'Inspect the row', status: 'pending' as const },
+      { id: 'completed', title: 'Map the task', status: 'completed' as const },
+    ];
+    const defaultView = render(AgentCard, { props: { agentId: 'agent-1', taskProgress } });
+
+    expect(screen.getByTestId('task-progress-icon-stack')).toBeTruthy();
+    expect(screen.queryByTestId('task-progress-checklist-icon')).toBeNull();
+    defaultView.unmount();
+
+    render(AgentCard, {
+      props: { agentId: 'agent-1', taskProgress, taskProgressPresentation: 'checklist' },
+    });
+    expect(screen.getByTestId('task-progress-checklist-icon')).toBeTruthy();
+    expect(screen.queryByTestId('task-progress-icon-stack')).toBeNull();
+  });
+
   it('AgentCard presents wake-up details in one compact inline row', () => {
     render(AgentCard, {
       props: {
@@ -159,10 +181,12 @@ describe('isCompleted avatar state wiring', () => {
     ).toEqual([]);
   });
 
-  it('uses the emphasized single-line grammar for Agents-panel rows', () => {
+  it('uses the emphasized single-line grammar for Agents-panel rows', async () => {
+    const onActivate = vi.fn<(event: MouseEvent | KeyboardEvent) => void>();
     render(AgentCard, {
       props: {
         agentId: 'agent-panel',
+        onclick: onActivate,
         agentName: 'A very long agent name',
         panelRow: true,
         hidePreview: true,
@@ -179,10 +203,23 @@ describe('isCompleted avatar state wiring', () => {
     expect(screen.getByTestId('mock-avatar-with-state').dataset.variant).toBe('emphasized');
     expect(row.querySelector('[data-agent-row-name]')?.className).toContain('truncate');
     expect(row.querySelector('[data-agent-row-trailing]')).toBeTruthy();
-    expect(row.querySelector('[data-agent-background-badge]')).toBeTruthy();
     expect(row.querySelector('[data-panel-open-count]')).toBeNull();
     expect(screen.queryByTestId('agent-card-preview')).toBeNull();
     expect(row.textContent).not.toContain('must not be exposed');
+
+    await fireEvent.click(row);
+    expect(onActivate).toHaveBeenNthCalledWith(1, expect.any(MouseEvent));
+    await fireEvent.keyDown(row, { key: 'Enter' });
+    expect(onActivate).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({ type: 'keydown', key: 'Enter' }),
+    );
+    await fireEvent.keyDown(row, { key: ' ' });
+    expect(onActivate).toHaveBeenNthCalledWith(
+      3,
+      expect.objectContaining({ type: 'keydown', key: ' ' }),
+    );
+    expect(onActivate).toHaveBeenCalledTimes(3);
   });
 
   it('AgentCard renders running, not completed, for a re-woken completed agent', () => {

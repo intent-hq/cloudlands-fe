@@ -1,5 +1,4 @@
 export const PANEL_TAB_CACHE_TTL_MS = 30_000;
-export const BROWSER_TAB_CACHE_TTL_MS = 30 * 60 * 1000; // 30 minutes for browser tabs
 export const MAX_CACHED_INACTIVE_TABS = 3;
 
 export type PanelTabCacheTab = { id: string; type?: string; ownerAgentId?: string };
@@ -19,6 +18,16 @@ export type PanelTabCacheOptions = {
   ttlMs?: number;
   maxInactiveTabs?: number;
 };
+
+export function initializePanelTabCache(
+  panelActive: boolean,
+  tabs: readonly PanelTabCacheTab[],
+  activeTabId: string | null | undefined,
+  now: number,
+  options?: PanelTabCacheOptions,
+): Map<string, number> {
+  return panelActive ? updatePanelTabCache(new Map(), tabs, activeTabId, now, options) : new Map();
+}
 
 const DEFAULT_OPTIONS = {
   ttlMs: PANEL_TAB_CACHE_TTL_MS,
@@ -46,7 +55,7 @@ export function updatePanelTabCache(
 ): Map<string, number> {
   const { ttlMs, maxInactiveTabs } = resolveOptions(options);
   const existingTabIds = new Set(tabs.map((tab) => tab.id));
-  const tabTypeMap = new Map(tabs.map((tab) => [tab.id, tab.type]));
+  const browserTabIds = new Set(tabs.filter((tab) => tab.type === 'browser').map((tab) => tab.id));
   const alwaysMountedIds = new Set(tabs.filter(isAlwaysMountedTab).map((tab) => tab.id));
   const nextCache = new Map<string, number>();
 
@@ -67,24 +76,18 @@ export function updatePanelTabCache(
   }
 
   for (const [tabId, timestamp] of nextCache) {
-    if (tabId !== activeTabId && !alwaysMountedIds.has(tabId)) {
-      // Use longer TTL for browser tabs to avoid unnecessary reloads
-      const tabType = tabTypeMap.get(tabId);
-      const effectiveTtl = tabType === 'browser' ? BROWSER_TAB_CACHE_TTL_MS : ttlMs;
-      if (now - timestamp >= effectiveTtl) {
+    if (tabId !== activeTabId && !browserTabIds.has(tabId)) {
+      if (now - timestamp >= ttlMs) {
         nextCache.delete(tabId);
       }
     }
   }
 
+  // A mounted browser owns live page state that cannot be restored from its
+  // URL. Keep it until closure, outside the disposable content cache's cap.
   const inactiveEntries = Array.from(nextCache.entries())
-    .filter(([tabId]) => tabId !== activeTabId && !alwaysMountedIds.has(tabId))
-    .sort(([aId, aTimestamp], [bId, bTimestamp]) => {
-      const aIsBrowser = tabTypeMap.get(aId) === 'browser';
-      const bIsBrowser = tabTypeMap.get(bId) === 'browser';
-      if (aIsBrowser !== bIsBrowser) return aIsBrowser ? 1 : -1;
-      return aTimestamp - bTimestamp;
-    });
+    .filter(([tabId]) => tabId !== activeTabId && !browserTabIds.has(tabId))
+    .sort(([, aTimestamp], [, bTimestamp]) => aTimestamp - bTimestamp);
 
   while (inactiveEntries.length > maxInactiveTabs) {
     const oldest = inactiveEntries.shift();
@@ -103,15 +106,12 @@ export function getNextPanelTabCacheExpiryDelay(
   ttlMs = PANEL_TAB_CACHE_TTL_MS,
   tabs: readonly PanelTabCacheTab[] = [],
 ): number | null {
-  const tabTypeMap = new Map(tabs.map((tab) => [tab.id, tab.type]));
-  const alwaysMountedIds = new Set(tabs.filter(isAlwaysMountedTab).map((tab) => tab.id));
+  const browserTabIds = new Set(tabs.filter((tab) => tab.type === 'browser').map((tab) => tab.id));
   let nextDelay: number | null = null;
 
   for (const [tabId, timestamp] of cache) {
-    if (tabId === activeTabId || alwaysMountedIds.has(tabId)) continue;
-    const tabType = tabTypeMap.get(tabId);
-    const effectiveTtl = tabType === 'browser' ? BROWSER_TAB_CACHE_TTL_MS : ttlMs;
-    const delay = Math.max(0, effectiveTtl - (now - timestamp));
+    if (tabId === activeTabId || browserTabIds.has(tabId)) continue;
+    const delay = Math.max(0, ttlMs - (now - timestamp));
     nextDelay = nextDelay === null ? delay : Math.min(nextDelay, delay);
   }
 

@@ -1,31 +1,34 @@
 <script lang="ts" module>
   import type { IconDefinition } from '@fortawesome/free-solid-svg-icons';
   import type { Snippet } from 'svelte';
+  import type { InstalledEditor } from '$store/renderer/slices/external-editors/external-editors-slice';
 
   /**
    * Additional menu action that can be added to the workspace actions menu
    */
   export interface MenuAction {
+    id: string;
     label: string;
     icon?: IconDefinition;
     /** Custom icon snippet (takes priority over `icon` if both are provided) */
     iconSnippet?: Snippet;
+    editor?: InstalledEditor;
     onClick: () => void;
     dividerBefore?: boolean;
     variant?: 'default' | 'destructive';
     shortcut?: string;
     /** Marks the item as active/selected (renders a check indicator). */
     checked?: boolean;
-    /** Child items expanded inline on click; `onClick` is ignored when set. */
+    disabled?: boolean;
+    /** Child menu items; `onClick` is ignored when set. */
     submenu?: MenuAction[];
+    /** Checked submenu children are one exclusive radio selection; commands stay separate. */
+    selection?: 'single';
   }
 </script>
 
 <script lang="ts">
-  import {
-    resolveEditorFallbackIcon,
-    resolveEditorIcon,
-  } from '$lib/components/shared/icons/editor-icon';
+  import type { IconWeight } from 'phosphor-svelte';
   import { invoke } from '$lib/electron-bridge';
   import { appClient } from '$lib/client';
   import { fetchEditors } from '$store/renderer/slices/external-editors/external-editors-slice';
@@ -33,33 +36,29 @@
   import { selectIsWorkspaceHostLocal } from '$store/renderer/slices/workspace/workspace-selectors';
 
   import { createLogger } from '$lib/utils/client-logger';
-  import { isAbsolutePath, toNativePath, isWindowsPlatform } from '$lib/utils/path-utils';
+  import { isAbsolutePath, toNativePath } from '$lib/utils/path-utils';
   import { hasCapability } from '$lib/utils/platform-capabilities';
   import { dispatchWindowEvent } from '$lib/utils/window-events';
   import { m } from '$shared/paraglide/messages.js';
   import {
     faBoxArchive,
     faBoxOpen,
-    faCheck,
-    faChevronDown,
-    faChevronLeft,
+    faCopy,
     faFile,
-    faSpinner,
     faTrash,
     faUpRightFromSquare,
   } from '@fortawesome/free-solid-svg-icons';
   import { onMount } from 'svelte';
   import { writable } from 'svelte/store';
-  import Fa from 'svelte-fa';
-  import { toast } from 'svelte-sonner';
-  import { withToastCountdown } from '$lib/components/ui/toast';
-  import { Button } from '$lib/components/ui/button';
-  import * as Menu from '$lib/components/ui/menu';
-  import { formatShortcut } from '$lib/utils/shortcuts';
+  import { notify } from '$lib/components/patterns/notify';
+  import { withToastCountdown } from '$lib/components/patterns/notify';
+  import WorkspaceActionItems from './WorkspaceActionItems.svelte';
   import { store as appStore } from '$store/renderer/store';
 
   interface Props {
-    layout?: 'list' | 'submenu';
+    /** Menu layouts nest app choices while keeping copy actions at the root. */
+    layout?: 'list' | 'submenu' | 'menu' | 'editors-submenu';
+    iconWeight?: IconWeight;
     filePath?: string;
     workspaceId?: string;
     isDirectory?: boolean;
@@ -84,6 +83,7 @@
 
   let {
     layout = 'list',
+    iconWeight,
     filePath = '',
     workspaceId = '',
     isDirectory = true,
@@ -124,11 +124,6 @@
   // "Choose app" for applications that are not installed or enabled.
   const visibleEditors = $derived($installedEditors$);
 
-  // Shared layout so every row's icon and label line up in the same columns.
-  const menuItemClass =
-    // i18n-ignore (CSS class list, not user-facing text)
-    'w-full min-w-0 justify-start gap-2 pl-2! pr-2.5! focus-visible:border-transparent! focus-visible:bg-secondary focus-visible:ring-0!';
-  const iconSlotClass = 'flex size-4 shrink-0 items-center justify-center';
   // "Choose app" shows a LOCAL app picker against a workspace file path, so
   // like the editor list above it, it must disappear when the daemon is
   // remote (monorepo#883) or the workspace checkout is remote (monorepo#2171).
@@ -264,7 +259,7 @@
     } catch (error) {
       logger.error('Failed to open in VSCode:', error);
       // i18n-ignore (brand name)
-      toast.error(
+      notify.error(
         error instanceof Error
           ? error.message
           : m.ui_workspaceActions_openFailed_error({ name: 'VS Code' }),
@@ -295,7 +290,7 @@
     } catch (error) {
       logger.error('Failed to open in JetBrains:', error);
       // i18n-ignore (brand name)
-      toast.error(
+      notify.error(
         error instanceof Error
           ? error.message
           : m.ui_workspaceActions_openFailed_error({ name: 'JetBrains' }),
@@ -352,7 +347,7 @@
     } catch (error) {
       logger.error('Failed to open in Xcode:', error);
       // i18n-ignore (brand name)
-      toast.error(
+      notify.error(
         error instanceof Error
           ? error.message
           : m.ui_workspaceActions_openFailed_error({ name: 'Xcode' }),
@@ -421,7 +416,7 @@
       onClose?.();
     } catch (error) {
       logger.error(`[WorkspaceActionsMenu] Failed to open in ${editor.appName}:`, error);
-      toast.error(
+      notify.error(
         error instanceof Error
           ? error.message
           : m.ui_workspaceActions_openFailed_error({ name: editor.appName }),
@@ -460,7 +455,7 @@
         // i18n-ignore (IPC sentinel string from the main process, not UI copy)
         if (result?.error !== 'No application selected') {
           logger.error('Failed to open with other app:', result?.error);
-          toast.error(result?.error || m.ui_workspaceActions_openOtherFailed_error());
+          notify.error(result?.error || m.ui_workspaceActions_openOtherFailed_error());
         }
         return;
       }
@@ -468,7 +463,7 @@
       onClose?.();
     } catch (error) {
       logger.error('Failed to open with other app:', error);
-      toast.error(
+      notify.error(
         error instanceof Error ? error.message : m.ui_workspaceActions_openOtherFailed_error(),
       );
     }
@@ -556,7 +551,7 @@
         onFileDeleted?.();
         onClose?.();
 
-        const toastId = toast.warning(
+        const toastId = notify.warning(
           m.ui_workspaceActions_deletedFile_label({ name: fileName }),
           withToastCountdown({
             duration: 15000,
@@ -574,17 +569,17 @@
                     type: 'create',
                     filePath: pathToDelete,
                   });
-                  toast.dismiss(toastId);
+                  notify.dismiss(toastId);
                 } catch (err) {
                   logger.error('[WorkspaceActionsMenu] Failed to restore file', err);
-                  toast.error(m.ui_workspaceActions_restoreFileFailed_error());
+                  notify.error(m.ui_workspaceActions_restoreFileFailed_error());
                 }
               },
             },
           }),
         );
       } else {
-        toast.error(
+        notify.error(
           m.ui_workspaceActions_deleteFileFailedDetail_error({
             error: result?.error || m.ui_workspaceActions_unknown_error(),
           }),
@@ -592,7 +587,7 @@
       }
     } catch (err) {
       logger.error('[WorkspaceActionsMenu] Error deleting file', err);
-      toast.error(m.ui_workspaceActions_deleteFileFailed_error());
+      notify.error(m.ui_workspaceActions_deleteFileFailed_error());
     } finally {
       isDeletingFile = false;
     }
@@ -608,293 +603,109 @@
     }
   }
 
-  // Inline-expanded submenu (label-keyed); one open at a time.
-  let openSubmenuLabel: string | null = $state(null);
-
-  function handleActionClick(action: MenuAction) {
-    if (action.submenu) {
-      openSubmenuLabel = openSubmenuLabel === action.label ? null : action.label;
-      return;
+  const menuActions: MenuAction[] = $derived.by(() => {
+    const result: MenuAction[] = [];
+    if (showFileActions) {
+      if (canOpenExternalEditors && $isWorkspaceHostLocal$) {
+        result.push({
+          id: 'open-in',
+          label: m.ui_openCombo_openInApp_tooltip(),
+          icon: faUpRightFromSquare,
+          onClick: () => {},
+          submenu: [
+            ...visibleEditors.map((editor) => ({
+              id: `editor:${editor.id}`,
+              label: m.ui_workspaceActions_openIn_label({ name: editor.name }),
+              editor,
+              onClick: () => {
+                void openInEditor(editor);
+              },
+            })),
+            {
+              id: 'choose-app',
+              label: m.ui_workspaceActions_chooseApp_label(),
+              icon: faUpRightFromSquare,
+              onClick: () => {
+                void openWithOther();
+              },
+            },
+          ],
+        });
+      }
+      result.push({
+        id: 'copy-absolute-path',
+        label: m.ui_workspaceActions_copyAbsolutePath_label(),
+        icon: faCopy,
+        disabled: !resolvedPath,
+        dividerBefore: result.length > 0,
+        onClick: () => {
+          void copyAbsolutePath();
+        },
+      });
+      if (!isWorkspaceRoot)
+        result.push({
+          id: 'copy-relative-path',
+          label: m.ui_workspaceActions_copyRelativePath_label(),
+          icon: faCopy,
+          disabled: !filePath,
+          onClick: () => {
+            void copyWorkspacePath();
+          },
+        });
+      if (showFileNameCopy && !isDirectory)
+        result.push({
+          id: 'copy-file-name',
+          label: m.ui_workspaceActions_copyFileName_label(),
+          icon: faFile,
+          disabled: !filePath,
+          onClick: () => {
+            void copyFileName();
+          },
+        });
     }
-    action.onClick();
-    onClose?.();
-  }
+    const additional = (actions: MenuAction[]): MenuAction[] =>
+      actions.map((action) => ({
+        ...action,
+        submenu: action.submenu ? additional(action.submenu) : undefined,
+        onClick: () => {
+          action.onClick();
+          onClose?.();
+        },
+      }));
+    result.push(...additional(additionalActions));
+    if (showArchiveOption && (onArchive || onUnarchive))
+      result.push({
+        id: 'archive-workspace',
+        label: isArchived
+          ? m.ui_workspaceActions_unarchiveSpace_label()
+          : m.ui_workspaceActions_archiveSpace_label(),
+        icon: isArchived ? faBoxOpen : faBoxArchive,
+        dividerBefore: result.length > 0,
+        onClick: handleArchive,
+      });
+    if (showDeleteOption && onDelete)
+      result.push({
+        id: 'delete-workspace',
+        label: m.ui_workspaceActions_deleteSpace_label(),
+        icon: faTrash,
+        variant: 'destructive',
+        dividerBefore: result.length > 0,
+        onClick: handleDelete,
+      });
+    if (showDeleteFileOption && !isDirectory)
+      result.push({
+        id: 'delete-file',
+        label: m.ui_workspaceActions_deleteFile_label(),
+        icon: faTrash,
+        variant: 'destructive',
+        disabled: isDeletingFile || !resolvedPath || !workspaceId,
+        dividerBefore: result.length > 0,
+        onClick: () => {
+          void handleDeleteFile();
+        },
+      });
+    return result;
+  });
 </script>
 
-<div class="w-full overflow-hidden">
-  {#if showFileActions && layout === 'submenu'}
-    <Menu.Sub>
-      <Menu.SubTrigger>
-        <Fa icon={faUpRightFromSquare} size="12" class="w-4 text-muted-foreground opacity-70" />
-        <span>{m.ui_openCombo_openInApp_tooltip()}</span>
-      </Menu.SubTrigger>
-      <Menu.SubContent class="w-60">
-        {#if canOpenExternalEditors && $isWorkspaceHostLocal$}
-          {#each visibleEditors as editor (editor.id)}
-            {@const IconComponent = resolveEditorIcon(editor)}
-            <Menu.Item onclick={() => openInEditor(editor)}>
-              <span class={iconSlotClass} aria-hidden="true">
-                {#if editor.iconBase64}
-                  <img
-                    src="data:image/png;base64,{editor.iconBase64}"
-                    alt={editor.name}
-                    class="size-4"
-                  />
-                {:else if IconComponent}
-                  <IconComponent size={12} />
-                {:else}
-                  <Fa
-                    icon={resolveEditorFallbackIcon(editor.category)}
-                    size="12"
-                    class="opacity-50"
-                  />
-                {/if}
-              </span>
-              <span class="min-w-0 flex-1 truncate">
-                {m.ui_workspaceActions_openIn_label({ name: editor.name })}
-              </span>
-            </Menu.Item>
-          {/each}
-
-          <Menu.Item onclick={openWithOther}>
-            <span class={iconSlotClass} aria-hidden="true">
-              <Fa icon={faUpRightFromSquare} size="12" class="opacity-50" />
-            </span>
-            <span class="min-w-0 flex-1 truncate">{m.ui_workspaceActions_chooseApp_label()}</span>
-          </Menu.Item>
-          <Menu.Separator />
-        {/if}
-
-        <Menu.Item onclick={copyAbsolutePath}>
-          <span class="{iconSlotClass} text-xs font-black font-mono opacity-50" aria-hidden="true">
-            {isWindowsPlatform() ? '\\' : '/'}
-          </span>
-          <span class="min-w-0 flex-1 truncate">
-            {m.ui_workspaceActions_copyAbsolutePath_label()}
-          </span>
-        </Menu.Item>
-
-        {#if !isWorkspaceRoot}
-          <Menu.Item onclick={copyWorkspacePath}>
-            <span class="{iconSlotClass} text-xs font-black font-mono opacity-50" aria-hidden="true"
-              >./</span
-            >
-            <span class="min-w-0 flex-1 truncate">
-              {m.ui_workspaceActions_copyRelativePath_label()}
-            </span>
-          </Menu.Item>
-        {/if}
-
-        {#if showFileNameCopy && !isDirectory}
-          <Menu.Item onclick={copyFileName}>
-            <span class={iconSlotClass} aria-hidden="true">
-              <Fa icon={faFile} size="12" class="opacity-50" />
-            </span>
-            <span class="min-w-0 flex-1 truncate">
-              {m.ui_workspaceActions_copyFileName_label()}
-            </span>
-          </Menu.Item>
-        {/if}
-      </Menu.SubContent>
-    </Menu.Sub>
-  {:else if showFileActions}
-    {#if canOpenExternalEditors && $isWorkspaceHostLocal$}
-      <!-- Open Actions - dynamically rendered based on installed editors -->
-      <div class="space-y-0.5">
-        {#each visibleEditors as editor (editor.id)}
-          {@const IconComponent = resolveEditorIcon(editor)}
-          <Button
-            variant="ghost"
-            onclick={() => openInEditor(editor)}
-            class={menuItemClass}
-            size="sm"
-          >
-            <span class={iconSlotClass}>
-              {#if editor.iconBase64}
-                <img
-                  src="data:image/png;base64,{editor.iconBase64}"
-                  alt={editor.name}
-                  class="size-4"
-                />
-              {:else if IconComponent}
-                <IconComponent size={12} />
-              {:else}
-                <Fa
-                  icon={resolveEditorFallbackIcon(editor.category)}
-                  size="12"
-                  class="opacity-50"
-                />
-              {/if}
-            </span>
-            <span
-              class="truncate min-w-0"
-              title={m.ui_workspaceActions_openIn_label({ name: editor.name })}
-              >{m.ui_workspaceActions_openIn_label({ name: editor.name })}</span
-            >
-          </Button>
-        {/each}
-
-        <!-- Other... option to pick any app -->
-        <Button
-          variant="ghost"
-          onclick={openWithOther}
-          class="{menuItemClass} text-subtle"
-          size="sm"
-        >
-          <span class={iconSlotClass}>
-            <Fa icon={faUpRightFromSquare} size="12" class="opacity-50" />
-          </span>
-          <span class="truncate min-w-0" title={m.ui_workspaceActions_chooseApp_label()}
-            >{m.ui_workspaceActions_chooseApp_label()}</span
-          >
-        </Button>
-      </div>
-      <div class="my-1 h-px bg-border"></div>
-    {/if}
-
-    <!-- Copy Actions -->
-    <div class="space-y-0.5">
-      <Button variant="ghost" onclick={copyAbsolutePath} class={menuItemClass} size="sm">
-        <span class="{iconSlotClass} text-xs font-black font-mono opacity-50">
-          {isWindowsPlatform() ? '\\' : '/'}
-        </span>
-        <span class="truncate min-w-0" title={m.ui_workspaceActions_copyAbsolutePath_label()}
-          >{m.ui_workspaceActions_copyAbsolutePath_label()}</span
-        >
-      </Button>
-
-      {#if !isWorkspaceRoot}
-        <Button variant="ghost" onclick={copyWorkspacePath} class={menuItemClass} size="sm">
-          <span class="{iconSlotClass} text-xs font-black font-mono opacity-50">./</span>
-          <span class="truncate min-w-0" title={m.ui_workspaceActions_copyRelativePath_label()}
-            >{m.ui_workspaceActions_copyRelativePath_label()}</span
-          >
-        </Button>
-      {/if}
-
-      {#if showFileNameCopy && !isDirectory}
-        <Button variant="ghost" onclick={copyFileName} class={menuItemClass} size="sm">
-          <span class={iconSlotClass}>
-            <Fa icon={faFile} size="12" class="opacity-50" />
-          </span>
-          <span class="truncate min-w-0" title={m.ui_workspaceActions_copyFileName_label()}
-            >{m.ui_workspaceActions_copyFileName_label()}</span
-          >
-        </Button>
-      {/if}
-    </div>
-  {/if}
-
-  <!-- Additional Actions -->
-  {#if additionalActions.length > 0}
-    {#each additionalActions as action, i (`action-${i}-${action.label}`)}
-      {#if action.dividerBefore}
-        <div class="my-1 h-px bg-border"></div>
-      {/if}
-      <Button
-        variant="ghost"
-        onclick={() => handleActionClick(action)}
-        class="{menuItemClass} {action.variant === 'destructive'
-          ? 'hover:bg-danger hover:text-danger-background'
-          : ''}"
-        size="sm"
-      >
-        <span class={iconSlotClass}>
-          {#if action.iconSnippet}
-            {@render action.iconSnippet()}
-          {:else if action.icon}
-            <Fa icon={action.icon} size="12" class="opacity-50" />
-          {/if}
-        </span>
-        <span class="truncate min-w-0" title={action.label}>{action.label}</span>
-        {#if action.submenu}
-          <Fa
-            icon={openSubmenuLabel === action.label ? faChevronDown : faChevronLeft}
-            size="12"
-            class="ml-auto opacity-50"
-          />
-        {:else if action.shortcut}
-          <kbd class="type-caption ml-auto shrink-0 font-normal text-subtle">
-            {formatShortcut(action.shortcut)}
-          </kbd>
-        {/if}
-      </Button>
-      {#if action.submenu && openSubmenuLabel === action.label}
-        {#each action.submenu as subaction (`sub-${subaction.label}`)}
-          <Button
-            variant="ghost"
-            onclick={() => {
-              subaction.onClick();
-              onClose?.();
-            }}
-            class="pl-8! gap-2.25! w-full min-w-0 justify-start"
-            size="sm"
-          >
-            <span class="truncate min-w-0" title={subaction.label}>{subaction.label}</span>
-            {#if subaction.checked}
-              <Fa icon={faCheck} size="12" class="ml-auto opacity-50" />
-            {/if}
-          </Button>
-        {/each}
-      {/if}
-    {/each}
-  {/if}
-
-  <!-- Archive Action -->
-  {#if showArchiveOption && (onArchive || onUnarchive)}
-    <Button variant="ghost" onclick={handleArchive} class={menuItemClass} size="sm">
-      <span class={iconSlotClass}>
-        <Fa icon={isArchived ? faBoxOpen : faBoxArchive} size="12" class="opacity-50" />
-      </span>
-      <span
-        class="truncate"
-        title={isArchived
-          ? m.ui_workspaceActions_unarchiveSpace_label()
-          : m.ui_workspaceActions_archiveSpace_label()}
-        >{isArchived
-          ? m.ui_workspaceActions_unarchiveSpace_label()
-          : m.ui_workspaceActions_archiveSpace_label()}</span
-      >
-    </Button>
-  {/if}
-
-  <!-- Delete Action -->
-  {#if showDeleteOption && onDelete}
-    <Button
-      variant="ghost"
-      onclick={handleDelete}
-      class="{menuItemClass} hover:bg-danger hover:text-danger-background"
-      size="sm"
-    >
-      <span class={iconSlotClass}>
-        <Fa icon={faTrash} size="12" class="opacity-50" />
-      </span>
-      <span class="truncate min-w-0" title={m.ui_workspaceActions_deleteSpace_label()}
-        >{m.ui_workspaceActions_deleteSpace_label()}</span
-      >
-    </Button>
-  {/if}
-
-  <!-- Delete File Action -->
-  {#if showDeleteFileOption && !isDirectory}
-    <div class="my-1 h-px bg-border"></div>
-    <Button
-      variant="ghost"
-      onclick={handleDeleteFile}
-      disabled={isDeletingFile}
-      class="{menuItemClass} hover:bg-danger hover:text-danger-background"
-      size="sm"
-    >
-      <span class={iconSlotClass}>
-        {#if isDeletingFile}
-          <Fa icon={faSpinner} size="12" class="opacity-50 animate-spin" />
-        {:else}
-          <Fa icon={faTrash} size="12" class="opacity-50" />
-        {/if}
-      </span>
-      <span class="truncate min-w-0" title={m.ui_workspaceActions_deleteFile_label()}
-        >{m.ui_workspaceActions_deleteFile_label()}</span
-      >
-    </Button>
-  {/if}
-</div>
+<WorkspaceActionItems actions={menuActions} menu={layout !== 'list'} {iconWeight} />

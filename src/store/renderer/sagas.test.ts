@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { actionKeySaga } from './slices/hardware-console/sagas/action-key-saga';
 import { hardwareConsoleDeviceSaga } from './slices/hardware-console/sagas/hardware-console-device-saga';
+import { encoderPreferenceSaga } from './slices/hardware-console/sagas/encoder-preference-saga';
 import { keyPinPersistenceSaga } from './slices/hardware-console/sagas/key-pin-persistence-saga';
 import { promptPickerSaga } from './slices/hardware-console/sagas/prompt-picker-saga';
 import { voiceTranscriptionSaga } from './slices/hardware-console/sagas/voice-transcription-saga';
@@ -12,6 +13,8 @@ describe('renderer app saga registry', () => {
     'daemonEventsSaga',
     'daemonHealthSaga',
     'connectionsSaga',
+    'guestSessionsSaga',
+    'presenceSaga',
     'settingsHydrationSaga',
     'activeStreamsSaga',
     'agentReadSaga',
@@ -43,6 +46,7 @@ describe('renderer app saga registry', () => {
     'workspaceNavigationLayoutSaga',
     'workspaceOperationsSaga',
     'workspaceTransferSaga',
+    'workspaceShareSaga',
     'workspaceImportSaga',
     'scriptsOperationSaga',
     'lifecycleReadSaga',
@@ -63,6 +67,7 @@ describe('renderer app saga registry', () => {
     'hardwareConsoleSaga',
     'voiceSettingsSaga',
     'themeSaga',
+    'powerSaga',
     'autoUpdateSaga',
     'specialistsSaga',
     'proposalLifecycleSaga',
@@ -70,6 +75,7 @@ describe('renderer app saga registry', () => {
     'specialistProposalHistorySaga',
     'githubAuthSaga',
     'githubRepoSearchSaga',
+    'githubUserSearchSaga',
     'sentryAuthSaga',
     'linearAuthSaga',
     'mcpSettingsSaga',
@@ -141,10 +147,11 @@ describe('renderer app saga registry', () => {
     );
 
     expect(effect.type).toBe('ALL');
-    expect(effect.payload).toHaveLength(5);
-    expect(childEffects.map((child) => child.type)).toEqual(Array(5).fill('CALL'));
+    expect(effect.payload).toHaveLength(6);
+    expect(childEffects.map((child) => child.type)).toEqual(Array(6).fill('CALL'));
     expect(childEffects.map((child) => child.payload.fn)).toEqual([
       hardwareConsoleDeviceSaga,
+      encoderPreferenceSaga,
       actionKeySaga,
       keyPinPersistenceSaga,
       promptPickerSaga,

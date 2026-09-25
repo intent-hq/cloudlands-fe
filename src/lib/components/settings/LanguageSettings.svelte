@@ -1,5 +1,6 @@
 <script lang="ts">
-  import { Select } from '$lib/components/ui/select';
+  import { SettingsFieldRow } from '$lib/components/patterns/settings';
+  import { Select } from '$lib/components/patterns/settings/custom-controls';
   import { m } from '$shared/paraglide/messages.js';
   import { store as appStore } from '$store/renderer/store';
   import { setLanguagePreference } from '$store/renderer/slices/user-preferences/user-preferences-slice';
@@ -12,17 +13,16 @@
   // Catalog-driven: options come straight from the compiled Paraglide locales,
   // so new catalogs added to messages/ appear here automatically. Each locale
   // is labeled with its endonym (its own name in that language).
-  const options = [
+  const options = $derived([
     { value: SYSTEM_LANGUAGE_PREFERENCE, label: m.settings_language_system_option() },
     ...getAvailableLocales().map((locale) => ({
       value: locale as string,
       label: getLocaleEndonym(locale),
     })),
-  ];
+  ]);
 
   const selectedLabel = $derived(
-    options.find((option) => option.value === $languagePreference)?.label ??
-      m.settings_language_system_option(),
+    options.find((option) => option.value === $languagePreference)?.label ?? $languagePreference,
   );
 
   function handleLanguageChange(value: string) {
@@ -30,25 +30,25 @@
   }
 </script>
 
-<div class="flex items-center justify-between">
-  <div>
-    <p class="text-sm font-medium text-foreground">{m.settings_language_label()}</p>
-    <p class="text-xs text-subtle mt-0.5">
-      {m.settings_language_description()}
-    </p>
-  </div>
-  <div class="w-45 flex-shrink-0">
-    <Select.Root value={$languagePreference} onchange={handleLanguageChange}>
-      <Select.Trigger>
-        <span class="truncate">{selectedLabel}</span>
-      </Select.Trigger>
-      <Select.Content portal class="max-h-75 w-45">
-        {#each options as option (option.value)}
-          <Select.Item value={option.value}>
-            <span class="truncate">{option.label}</span>
-          </Select.Item>
-        {/each}
-      </Select.Content>
-    </Select.Root>
-  </div>
-</div>
+<SettingsFieldRow
+  id="language-preference"
+  label={m.settings_language_label()}
+  description={m.settings_language_description()}
+>
+  {#snippet control({ labelId, descriptionId })}
+    <div class="w-45 flex-shrink-0">
+      <Select.Root value={$languagePreference} onchange={handleLanguageChange}>
+        <Select.Trigger aria-labelledby={labelId} aria-describedby={descriptionId}>
+          <span class="truncate">{selectedLabel}</span>
+        </Select.Trigger>
+        <Select.Content portal class="max-h-75 w-45">
+          {#each options as option (option.value)}
+            <Select.Item value={option.value}>
+              <span class="truncate">{option.label}</span>
+            </Select.Item>
+          {/each}
+        </Select.Content>
+      </Select.Root>
+    </div>
+  {/snippet}
+</SettingsFieldRow>

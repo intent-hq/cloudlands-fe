@@ -1,11 +1,20 @@
-// @verify-changed-triggers: vitest.config.ts, playwright.config.ts, test/actions-status-visual.spec.ts
+// @verify-changed-triggers: vitest.config.ts, .gitignore, playwright.config.ts, test/actions-status-visual.spec.ts
 
-import { execFileSync } from 'node:child_process';
-import { mkdirSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
+import { execFileSync, spawnSync } from 'node:child_process';
+import {
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  symlinkSync,
+  writeFileSync,
+} from 'node:fs';
 import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   acquireVerificationLock,
   collectChangedFiles,
@@ -21,16 +30,17 @@ import {
   verificationLockKey,
   vitestExcludePatterns,
 } from './verify-changed.mjs';
+import { lockOwner } from './verification-lock.mjs';
 
 const requireFromTest = createRequire(import.meta.url);
 
-function vitestList(root: string, filter: string) {
+function vitestList(root: string, filter: string, config = 'vitest.config.ts') {
   const bin = join(requireFromTest.resolve('vitest/package.json'), '..', 'vitest.mjs');
-  return execFileSync(
-    process.execPath,
-    [bin, 'list', '--root', root, '--config', 'vitest.config.ts', filter],
-    { cwd: process.cwd(), encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] },
-  )
+  return execFileSync(process.execPath, [bin, 'list', '--root', root, '--config', config, filter], {
+    cwd: process.cwd(),
+    encoding: 'utf8',
+    stdio: ['ignore', 'pipe', 'pipe'],
+  })
     .split('\n')
     .filter(Boolean);
 }
@@ -86,6 +96,10 @@ function branchWithCommit(root: string, file = 'src/committed.ts') {
   return file;
 }
 
+function trackOriginMain(root: string, ref = 'refs/heads/main') {
+  git(root, 'update-ref', 'refs/remotes/origin/main', ref);
+}
+
 function deferred() {
   let resolve!: () => void;
   const promise = new Promise<void>((done) => {
@@ -130,6 +144,7 @@ function runnerOptions(
 }
 
 afterEach(() => {
+  vi.unstubAllEnvs();
   for (const path of temporaryPaths.splice(0)) rmSync(path, { recursive: true, force: true });
 });
 
@@ -154,9 +169,10 @@ describe('verify-changed arguments and paths', () => {
     expect(() => parseArgs(['--base', '--dry-run'])).toThrow('--base');
   });
 
-  it('collects committed branch files only when a base is given', () => {
+  it('collectChangedFiles includes committed branch files only when a base is given', () => {
     const root = gitRepository();
     const committed = branchWithCommit(root);
+    trackOriginMain(root);
     writeFileSync(join(root, 'src/untracked.ts'), '');
 
     expect(collectChangedFiles(root)).toEqual(['src/untracked.ts']);
@@ -192,6 +208,342 @@ describe('verify-changed arguments and paths', () => {
 });
 
 describe('verification planning', () => {
+  describe('snapshot ownership', () => {
+    const owner = 'src/lib/component-catalog/catalog-contract.test.ts';
+    const snapshot = 'src/lib/component-catalog/__snapshots__/catalog-contract.test.ts.snap';
+
+    function snapshotRoot(files: Record<string, string>) {
+      return fixtureRoot({
+        'vitest.config.ts': 'export default { test: { exclude: [] } };',
+        'tests/integration/vitest.integration.config.ts':
+          "export default { test: { include: ['tests/integration/**/*.test.ts'], exclude: [] } };",
+        ...files,
+      });
+    }
+
+    function planFor(files: string[], root: string) {
+      return createVerificationPlan(files, { root, ctTests: [], declaredSuites: [] });
+    }
+
+    it('routes the existing catalog snapshot to its unit test without broad checks', () => {
+      const plan = planFor([snapshot], process.cwd());
+      expect(plan.files).toEqual([snapshot]);
+      expect(plan.fallbackReasons).toEqual([]);
+      expect(plan.checks.map((check) => check.id)).toEqual(['vitest-direct']);
+      expect(plan.checks[0].args).toEqual([
+        'exec',
+        'vitest',
+        'run',
+        '--config',
+        'vitest.config.ts',
+        owner,
+      ]);
+    });
+
+    it.each(['present', 'deleted'])('runs the surviving owner of a %s snapshot', (state) => {
+      const root = snapshotRoot({ [owner]: '', [snapshot]: '' });
+      if (state === 'deleted') rmSync(join(root, snapshot));
+      const plan = planFor([snapshot], root);
+      expect(plan.fallbackReasons).toEqual([]);
+      expect(plan.checks.map((check) => check.id)).toEqual(['vitest-direct']);
+      expect(plan.checks[0].args).toContain(owner);
+      expect(plan.checks[0].args).not.toContain(snapshot);
+    });
+
+    it('deduplicates an owner changed alongside its repeated snapshot path', () => {
+      const root = snapshotRoot({ [owner]: '', [snapshot]: '' });
+      const plan = planFor([snapshot, owner, snapshot], root);
+      expect(plan.fallbackReasons).toEqual([]);
+      expect(plan.checks.find((check) => check.id === 'vitest-direct')?.args).toEqual([
+        'exec',
+        'vitest',
+        'run',
+        '--config',
+        'vitest.config.ts',
+        owner,
+      ]);
+      expect(plan.checks.map((check) => check.id)).toEqual([
+        'prettier',
+        'eslint',
+        'architecture',
+        'knip',
+        'vitest-direct',
+        'tsc-renderer',
+      ]);
+    });
+
+    it('retains source, component, declared-trigger and deleted-test checks in a mixed plan', () => {
+      const source = 'src/lib/Widget.svelte';
+      const componentTest = 'src/lib/Widget.ct.spec.ts';
+      const deletedTest = 'src/lib/other/removed.test.ts';
+      const declaredTest = 'scripts/snapshot-contract.test.ts';
+      const root = snapshotRoot({
+        [owner]: '',
+        [snapshot]: '',
+        [source]: '<button />',
+        [componentTest]: "import Widget from './Widget.svelte';",
+        [declaredTest]: '',
+        'src/lib/other/survivor.test.ts': '',
+      });
+      const plan = createVerificationPlan([source, snapshot, deletedTest], {
+        root,
+        ctTests: [componentTest],
+        declaredSuites: [{ path: declaredTest, triggers: [snapshot] }],
+      });
+      expect(plan.fallbackReasons).toEqual([]);
+      expect(plan.checks.map((check) => check.id)).toEqual([
+        'prettier',
+        'eslint',
+        'architecture',
+        'knip',
+        'vitest-direct',
+        'vitest-related',
+        'vitest-declared',
+        'vitest-ui-invariants',
+        'ct-related',
+        'svelte-check',
+        'tsc-renderer',
+      ]);
+      expect(plan.checks.find((check) => check.id === 'vitest-direct')?.args).toEqual([
+        'exec',
+        'vitest',
+        'run',
+        '--config',
+        'vitest.config.ts',
+        owner,
+        'src/lib/other',
+      ]);
+      expect(plan.checks.find((check) => check.id === 'vitest-related')?.args).toContain(source);
+      expect(plan.checks.find((check) => check.id === 'ct-related')?.args).toContain(componentTest);
+      expect(plan.checks.find((check) => check.id === 'vitest-declared')?.args).toContain(
+        declaredTest,
+      );
+    });
+
+    it('retains a fallback selected by another changed file', () => {
+      const root = snapshotRoot({ [owner]: '', [snapshot]: '', 'native/tool.bin': '' });
+      const plan = planFor([snapshot, 'native/tool.bin'], root);
+      expect(plan.fallbackReasons).toEqual(['native/tool.bin']);
+      expect(plan.checks.map((check) => check.id)).toEqual([
+        'architecture',
+        'vitest-full',
+        'svelte-check',
+        'tsc-renderer',
+        'generate-build-config',
+        'tsc-main',
+        'generate-ipc-channels',
+        'tsc-preload',
+      ]);
+    });
+
+    it.each([
+      ['tests/integration/example.test.ts', 'scripts/custom.snap'],
+      ['tests/integration/__snapshots__/example.test.ts.snap', 'native/tool.bin'],
+    ])('retains integration coverage for %s alongside fallback for %s', (changed, fallback) => {
+      const integrationTest = 'tests/integration/example.test.ts';
+      const root = snapshotRoot({ [integrationTest]: '', [changed]: '', [fallback]: '' });
+      const plan = planFor([changed, fallback], root);
+      expect(plan.fallbackReasons).toEqual([fallback]);
+      expect(plan.checks.map((check) => check.id)).toContain('vitest-full');
+      expect(plan.checks.find((check) => check.id === 'vitest-integration')?.args).toEqual([
+        'exec',
+        'vitest',
+        'run',
+        '--config',
+        'tests/integration/vitest.integration.config.ts',
+        integrationTest,
+      ]);
+    });
+
+    it.each(['missing', 'deleted'])(
+      'falls back for a %s owner even with surviving sibling tests',
+      (state) => {
+        const root = snapshotRoot({
+          [owner]: '',
+          [snapshot]: '',
+          'src/lib/component-catalog/other.test.ts': '',
+        });
+        rmSync(join(root, owner));
+        if (state === 'deleted') rmSync(join(root, snapshot));
+        const plan = planFor(state === 'deleted' ? [snapshot, owner] : [snapshot], root);
+        expect(plan.fallbackReasons).toEqual([snapshot]);
+        expect(plan.checks.map((check) => check.id)).toContain('vitest-full');
+        for (const check of plan.checks) expect(check.args).not.toContain(owner);
+      },
+    );
+
+    it.each([
+      'src/lib/component-catalog/catalog-contract.test.ts.snap',
+      'src/lib/component-catalog/__snapshots__/catalog-contract.snap',
+      'src/lib/component-catalog/__snapshots__/nested/catalog-contract.test.ts.snap',
+      'scripts/__snapshots__/missing.test.ts.snap',
+      'tests/integration/__snapshots__/missing.test.ts.snap',
+      'docs/custom.snap',
+    ])('keeps an unsupported or unresolved path conservative: %s', (path) => {
+      const root = snapshotRoot({ [owner]: '', [path]: '' });
+      const plan = planFor([path], root);
+      expect(plan.fallbackReasons).toEqual([path]);
+      expect(plan.checks.map((check) => check.id)).toContain('vitest-full');
+    });
+
+    it('requires the exact owner extension when similarly named tests exist', () => {
+      const root = snapshotRoot({
+        [snapshot]: '',
+        'src/lib/component-catalog/catalog-contract.test.js': '',
+        'src/lib/component-catalog/catalog-contract.spec.ts': '',
+      });
+      expect(planFor([snapshot], root).fallbackReasons).toEqual([snapshot]);
+      writeFileSync(join(root, owner), '');
+      const plan = planFor([snapshot], root);
+      expect(plan.fallbackReasons).toEqual([]);
+      expect(plan.checks[0].args).toEqual([
+        'exec',
+        'vitest',
+        'run',
+        '--config',
+        'vitest.config.ts',
+        owner,
+      ]);
+    });
+
+    it('does not accept an owner that is a directory', () => {
+      const root = snapshotRoot({ [snapshot]: '' });
+      mkdirSync(join(root, owner));
+      expect(planFor([snapshot], root).fallbackReasons).toEqual([snapshot]);
+    });
+
+    it.each([
+      ['src/lib/Widget.ct.spec.ts', 'ct-related', ['run', 'test:ct', '--']],
+      ['src/.dev/Widget.ct.spec.ts', 'ct-related', ['run', 'test:ct', '--']],
+      ['test/browser.spec.ts', 'playwright-direct', ['exec', 'playwright', 'test']],
+      ['test/.dev/browser.spec.ts', 'playwright-direct', ['exec', 'playwright', 'test']],
+      [
+        'tests/integration/example.test.ts',
+        'vitest-integration',
+        ['exec', 'vitest', 'run', '--config', 'tests/integration/vitest.integration.config.ts'],
+      ],
+    ])('routes the snapshot of %s through its owning runner', (test, checkId, args) => {
+      const path = test.replace(/([^/]+)$/, '__snapshots__/$1.snap');
+      const root = snapshotRoot({ '.gitignore': '.dev/\n', [test]: '', [path]: '' });
+      const plan = planFor([path], root);
+      expect(plan.fallbackReasons).toEqual([]);
+      expect(plan.checks.map((check) => check.id)).toEqual([checkId]);
+      expect(plan.checks[0].args).toEqual([...args, test]);
+    });
+
+    it.each([
+      'tests/remote-env/remote-env.test.ts',
+      'src/lib/Widget.visual.spec.ts',
+      'test/current-main-baseline.spec.ts',
+      'scripts/probe.ct.spec.ts',
+      'tests/integration/helper.spec.ts',
+    ])('falls back when the owning test has no automatic runner: %s', (test) => {
+      const path = test.replace(/([^/]+)$/, '__snapshots__/$1.snap');
+      const root = snapshotRoot({ [test]: '', [path]: '' });
+      const plan = planFor([path], root);
+      expect(plan.fallbackReasons).toEqual([path]);
+      expect(plan.checks.map((check) => check.id)).toContain('vitest-full');
+      for (const check of plan.checks) expect(check.args).not.toContain(test);
+    });
+
+    it('does not select a snapshot owner excluded by the unit config', () => {
+      const root = snapshotRoot({
+        'vitest.config.ts': `export default { test: { exclude: ['**/catalog-contract.test.ts'] } };`,
+        [owner]: "import { test } from 'vitest'; test('excluded', () => {});",
+        [snapshot]: '',
+      });
+      expect(vitestList(root, owner)).toEqual([]);
+      const plan = planFor([snapshot], root);
+      expect(plan.fallbackReasons).toEqual([snapshot]);
+      expect(plan.checks.map((check) => check.id)).toContain('vitest-full');
+    });
+
+    describe.each([
+      ['unit', owner, 'vitest.config.ts'],
+      [
+        'integration',
+        'tests/integration/example.test.ts',
+        'tests/integration/vitest.integration.config.ts',
+      ],
+    ])('unresolved %s snapshot exclusion policies', (_, test, config) => {
+      it.each(['missing', 'invalid'])('falls back for a %s runner config', (state) => {
+        const path = test.replace(/([^/]+)$/, '__snapshots__/$1.snap');
+        const root = snapshotRoot({ [test]: '', [path]: '' });
+        if (state === 'missing') rmSync(join(root, config));
+        else writeFileSync(join(root, config), 'export default { test: {');
+        const plan = planFor([path], root);
+        expect(plan.fallbackReasons).toEqual([path]);
+        expect(plan.checks.map((check) => check.id)).toContain('vitest-full');
+      });
+
+      it.each([
+        ['callback config', "export default () => ({ test: { exclude: ['**/*.test.ts'] } });"],
+        [
+          'partly computed exclusions',
+          "const excluded = ['**/*.test.ts']; export default { test: { exclude: ['**/node_modules/**', ...excluded] } };",
+        ],
+      ])('falls back when %s cannot establish a runnable owner', (_, configSource) => {
+        const path = test.replace(/([^/]+)$/, '__snapshots__/$1.snap');
+        const root = snapshotRoot({
+          [config]: configSource,
+          [test]: "import { test } from 'vitest'; test('excluded', () => {});",
+          [path]: '',
+        });
+        expect(vitestList(root, test, config)).toEqual([]);
+        const plan = planFor([path], root);
+        expect(plan.fallbackReasons).toEqual([path]);
+        expect(plan.checks.map((check) => check.id)).toContain('vitest-full');
+        for (const check of plan.checks) expect(check.args).not.toContain(test);
+      });
+    });
+
+    it('respects the unit runner directory exclusions derived from gitignore', () => {
+      const test = 'src/.dev/owner.test.ts';
+      const path = 'src/.dev/__snapshots__/owner.test.ts.snap';
+      const root = snapshotRoot({ '.gitignore': '.dev/\n', [test]: '', [path]: '' });
+      const plan = planFor([path], root);
+      expect(plan.fallbackReasons).toEqual([path]);
+      expect(plan.checks.map((check) => check.id)).toContain('vitest-full');
+    });
+
+    it.each([
+      ['.dev', true],
+      ['build', false],
+    ])('uses integration exclusions for snapshot owners under %s', (directory, runnable) => {
+      const test = `tests/integration/${directory}/example.test.ts`;
+      const path = `tests/integration/${directory}/__snapshots__/example.test.ts.snap`;
+      const config = 'tests/integration/vitest.integration.config.ts';
+      const root = snapshotRoot({
+        '.gitignore': '.dev/\n',
+        [config]: `export default { test: {
+          include: ['tests/integration/**/*.test.ts'],
+          exclude: ['**/node_modules/**', '**/dist/**', '**/build/**'],
+        } };`,
+        [test]: "import { test } from 'vitest'; test('kept', () => {});",
+        [path]: '',
+      });
+      expect(vitestList(root, test, config)).toEqual(runnable ? [`${test} > kept`] : []);
+      const plan = planFor([path], root);
+      if (runnable) {
+        expect(plan.fallbackReasons).toEqual([]);
+        expect(plan.checks.map((check) => check.id)).toEqual(['vitest-integration']);
+        expect(plan.checks[0].args).toContain(test);
+      } else {
+        expect(plan.fallbackReasons).toEqual([path]);
+        expect(plan.checks.map((check) => check.id)).toContain('vitest-full');
+      }
+    });
+
+    it('treats glob characters in the owner path literally', () => {
+      const test = 'src/routes/(app)/[id]/owner.test.ts';
+      const path = 'src/routes/(app)/[id]/__snapshots__/owner.test.ts.snap';
+      const root = snapshotRoot({ [test]: '', [path]: '' });
+      const plan = planFor([path], root);
+      expect(plan.fallbackReasons).toEqual([]);
+      expect(plan.checks[0].args).toContain(test);
+    });
+  });
+
   it('selects related Vitest and only the renderer boundary', () => {
     const root = fixtureRoot({ 'src/lib/example.ts': 'export const value = 1;' });
     const plan = createVerificationPlan(['src/lib/example.ts'], { root, ctTests: [] });
@@ -204,6 +556,480 @@ describe('verification planning', () => {
       'vitest-ui-invariants',
       'tsc-renderer',
     ]);
+  });
+
+  describe('required translation validation', () => {
+    const inventorySuite = 'scripts/check-hardcoded-strings.test.ts';
+    const source = 'src/lib/components/chat/reasoning-heading.ts';
+    const translationChecks = (plan: ReturnType<typeof createVerificationPlan>) =>
+      plan.checks.filter((check) => check.id === 'i18n-strings');
+
+    it('covers the historical 16-file compact reasoning change from intent#5855', () => {
+      // git diff --name-only d564268d7898ad35dbde206b8e94656c327184da...
+      // b55c5be7a6118dbe2025bdb0c540145a0e38c7a3 (the merge-base comparison).
+      const files = [
+        'src/lib/components/chat/ReasoningHistoryBlock.svelte',
+        'src/lib/components/chat/ThinkingBlock.svelte',
+        'src/lib/components/chat/__tests__/AssistantProseGeometryHost.svelte',
+        'src/lib/components/chat/__tests__/ReasoningHistoryGeometryHost.svelte',
+        'src/lib/components/chat/__tests__/ThinkingBlock.test.ts',
+        'src/lib/components/chat/__tests__/ThinkingSpacingGeometryHost.svelte',
+        'src/lib/components/chat/__tests__/assistant-prose-geometry.ct.spec.ts',
+        'src/lib/components/chat/__tests__/compact-reasoning-fixtures.ts',
+        'src/lib/components/chat/__tests__/compact-reasoning-geometry.ts',
+        'src/lib/components/chat/__tests__/reasoning-history-geometry.ct.spec.ts',
+        'src/lib/components/chat/__tests__/thinking-block-rendering.test.ts',
+        'src/lib/components/chat/__tests__/thinking-spacing-geometry.ct.spec.ts',
+        'src/lib/components/chat/operational-disclosure-row.ts',
+        'src/lib/components/chat/reasoning-heading.test.ts',
+        source,
+        'src/lib/components/chat/response-group-blocks.ts',
+      ];
+      const root = fixtureRoot(Object.fromEntries(files.map((file) => [file, ''])));
+      const plan = createVerificationPlan(files, { root, ctTests: [] });
+      expect(translationChecks(plan)).toMatchObject([
+        { args: ['run', 'lint:i18n-strings'], lockKind: null },
+      ]);
+      expect(plan.fallbackReasons).toEqual([]);
+      expect(plan.checks.map((check) => check.id)).toEqual(
+        expect.arrayContaining(['vitest-direct', 'vitest-related', 'ct-related', 'svelte-check']),
+      );
+      expect(plan.checks.map((check) => check.id)).not.toContain('vitest-full');
+    });
+
+    it.each([
+      source,
+      'src/lib/components/chat/ThinkingBlock.svelte',
+      'src/hooks.client.ts',
+      'src/routes/(app)/+layout.svelte',
+      'src/features/settings/labels.ts',
+      'src/features/agent/main/stream-manager.ts',
+      'src/shared/errors/messages.ts',
+      'src/store/renderer/seeders/provider-status-bridge-seeder.ts',
+      'src/lib/components/chat/streaming-status.preview-fixtures.svelte',
+    ])('selects the full scan for enforced source %s, including deletion', (file) => {
+      const root = fixtureRoot({ [file]: '' });
+      for (const deleted of [false, true]) {
+        if (deleted) rmSync(join(root, file));
+        const plan = createVerificationPlan([file], { root, ctTests: [] });
+        expect(translationChecks(plan)).toMatchObject([{ args: ['run', 'lint:i18n-strings'] }]);
+      }
+    });
+
+    it.each([
+      'src/lib/components/chat/__tests__/fixture.ts',
+      'src/lib/components/chat/__mocks__/fixture.svelte',
+      'src/lib/components/chat/node_modules/package/fixture.ts',
+      'src/lib/components/chat/dist/fixture.ts',
+      'src/lib/components/chat/build/fixture.ts',
+      'src/lib/components/chat/.svelte-kit/fixture.ts',
+      'src/lib/components/chat/.git/fixture.ts',
+      'src/lib/components/chat/reasoning-heading.test.ts',
+      'src/lib/components/chat/chat.spec.ts',
+      'src/lib/components/chat/types.d.ts',
+      'src/lib/components/chat/ChatHarness.svelte',
+      'src/lib/components/chat/chat.test-harness.svelte',
+      'src/lib/components/chat/chat.fixtures.ts',
+      'src/lib/components/chat/chat.preview.ts',
+      'src/lib/components/chat/chat.preview.svelte',
+      'src/lib/components/chat/chat.preview-fixtures.ts',
+      'src/lib/components/chat/chat.meta.ts',
+      'src/lib/components/chat/chat.playwright.config.ts',
+      'src/lib/components/chat/helper.js',
+      'src/lib/components-extra/helper.ts',
+      'src/hooks.client.ts-extra.ts',
+      'src/features/agent/testing/prompt.ts',
+      'src/features/agent/agent-launch-core/prompt.ts',
+      'src/features/acp-official/main/server/prompt.ts',
+      'src/features/cortex/cortex-acp/prompt.ts',
+      'src/shared/errors/recovery.ts',
+      'src/main/index.ts',
+      'src/lib/utils/helper.ts',
+      'messages/en.json',
+      'docs/guide.md',
+    ])('preserves the scanner enforcement boundary for %s', (file) => {
+      const root = fixtureRoot({ [file]: '' });
+      const plan = createVerificationPlan([file], { root, ctTests: [] });
+      expect(translationChecks(plan)).toEqual([]);
+    });
+
+    it.each([
+      ['direct', inventorySuite, 'vitest-direct'],
+      ['declared', source, 'vitest-declared'],
+      ['full suite', 'vitest.config.ts', 'vitest-full'],
+      ['fallback', 'package.json', 'vitest-full'],
+      ['surviving test directory', 'scripts/deleted.test.ts', 'vitest-direct'],
+    ])('reuses %s inventory coverage without an additional scan', (kind, changed, checkId) => {
+      const root = fixtureRoot({
+        [source]: '',
+        [inventorySuite]: '',
+        'vitest.config.ts': 'export default { test: { exclude: [] } };',
+        'package.json': '{}',
+      });
+      const plan = createVerificationPlan([source, changed], {
+        root,
+        ctTests: [],
+        declaredSuites: kind === 'declared' ? [{ path: inventorySuite, triggers: [source] }] : [],
+      });
+      const coverage = plan.checks.find((check) => check.id === checkId);
+      expect(coverage).toBeDefined();
+      if (kind === 'direct' || kind === 'declared') {
+        expect(coverage?.args).toContain(inventorySuite);
+      }
+      if (kind === 'surviving test directory') expect(coverage?.args).toContain('scripts');
+      expect(translationChecks(plan)).toEqual([]);
+    });
+
+    it.each([
+      ['surviving test directory', [], 'vitest-direct'],
+      ['full unit fallback', ['vitest.config.ts'], 'vitest-full'],
+    ])('keeps the scan when the inventory suite was deleted under %s', (_, extraFiles, checkId) => {
+      const root = fixtureRoot({
+        [source]: "export const label = 'Save your work';",
+        'scripts/remaining.test.ts': '',
+        'vitest.config.ts': '',
+      });
+      const plan = createVerificationPlan([source, inventorySuite, ...extraFiles], {
+        root,
+        ctTests: [],
+        declaredSuites: [],
+      });
+      expect(plan.checks.find((check) => check.id === checkId)).toBeDefined();
+      expect(translationChecks(plan)).toMatchObject([{ args: ['run', 'lint:i18n-strings'] }]);
+    });
+
+    it.each([
+      ['direct', inventorySuite, 'vitest-direct'],
+      ['declared', source, 'vitest-declared'],
+      ['surviving test directory', 'scripts/deleted.test.ts', 'vitest-direct'],
+      ['full unit fallback', 'vitest.config.ts', 'vitest-full'],
+    ])('keeps the scan when the inventory suite is excluded under %s', (kind, changed, checkId) => {
+      const root = fixtureRoot({
+        [source]: "export const label = 'Save your work';",
+        [inventorySuite]: "import { test } from 'vitest';\ntest('inventory', () => {});",
+        'scripts/remaining.test.ts': "import { test } from 'vitest';\ntest('kept', () => {});",
+        'vitest.config.ts':
+          "export default { test: { exclude: ['**/check-hardcoded-strings.test.ts'] } };",
+      });
+      if (kind === 'surviving test directory') {
+        expect(vitestList(root, 'scripts')).toEqual(['scripts/remaining.test.ts > kept']);
+      }
+      const plan = createVerificationPlan([source, changed], {
+        root,
+        ctTests: [],
+        declaredSuites: kind === 'declared' ? [{ path: inventorySuite, triggers: [source] }] : [],
+      });
+      expect(plan.checks.find((check) => check.id === checkId)).toBeDefined();
+      expect(translationChecks(plan)).toMatchObject([{ args: ['run', 'lint:i18n-strings'] }]);
+    });
+
+    describe('Vitest exclusion parsing', () => {
+      const test = "import { test } from 'vitest';\ntest('kept', () => {});";
+      const selections = [
+        ['direct', inventorySuite],
+        ['declared', source],
+        ['directory', 'scripts/deleted.test.ts'],
+        ['full', 'vitest.config.ts'],
+      ];
+
+      function inventoryRoot(config: string) {
+        return fixtureRoot({
+          [source]: "export const label = 'Save your work';",
+          [inventorySuite]: test,
+          'scripts/remaining.spec.ts': test,
+          'vitest.config.ts': config,
+        });
+      }
+
+      it.each([
+        "['**/node_modules/**', '**/*.test.[tj]s']",
+        '["**/node_modules/**", "**/*.test.[tj]s"]',
+        '["**/node_modules/**", "scripts/check-hardcoded-strings.test.ts"]',
+        `[
+          '**/node_modules/**',
+          /* ] 'ignore-this-comment' */ "**/*.test.[tj]s", // ] 'also-a-comment'
+        ]`,
+      ])('retains translation validation for excluded inventory: %s', (exclude) => {
+        const root = inventoryRoot(`export default { test: { exclude: ${exclude} } };`);
+        expect(vitestList(root, 'scripts')).toEqual(['scripts/remaining.spec.ts > kept']);
+        for (const [kind, changed] of selections) {
+          const plan = createVerificationPlan([source, changed], {
+            root,
+            ctTests: [],
+            declaredSuites:
+              kind === 'declared' ? [{ path: inventorySuite, triggers: [source] }] : [],
+          });
+          expect(translationChecks(plan), kind).toHaveLength(1);
+        }
+      });
+
+      it('reads only the real test exclusions and preserves quoted glob contents', () => {
+        const root = inventoryRoot(`
+          // exclude: ['scripts/check-hardcoded-strings.test.ts']
+          const example = "exclude: ['scripts/check-hardcoded-strings.test.ts']";
+          export default {
+            cacheDir: '.cache/vitest',
+            test: { exclude: [
+              '**/node_modules/**',
+              '**/url//fixture.test.ts',
+              "**/owner's/[tj]est.ts",
+              '**/escaped\\u002dname.test.ts',
+            ] },
+          };
+        `);
+        expect(vitestExcludePatterns(root)).toEqual([
+          '**/node_modules/**',
+          '**/url//fixture.test.ts',
+          "**/owner's/[tj]est.ts",
+          '**/escaped-name.test.ts',
+        ]);
+        expect(vitestList(root, 'scripts').sort()).toEqual([
+          `${inventorySuite} > kept`,
+          'scripts/remaining.spec.ts > kept',
+        ]);
+        const plan = createVerificationPlan([source, 'vitest.config.ts'], { root, ctTests: [] });
+        expect(translationChecks(plan)).toEqual([]);
+      });
+
+      it.each([
+        "const excluded = ['**/*.test.ts']; export default { test: { exclude: excluded } };",
+        "const excluded = ['**/*.test.ts']; export default { test: { exclude: [...excluded] } };",
+        "export default { test: { exclude: [process.env.EXCLUDED_TEST || '**/*.test.ts'] } };",
+        "const settings = { exclude: ['**/*.test.ts'] }; export default { test: { exclude: [], ...settings } };",
+        "export default { test: { ['exclude']: ['**/*.test.ts'] } };",
+        "const config = { test: { exclude: ['**/*.test.ts'] } }; export default config;",
+        'export default () => ({ test: { exclude: [] } });',
+        "export default { test: { exclude: [], include: ['**/*.spec.ts'] } };",
+        "export default { test: { exclude: [], testNamePattern: 'surviving' } };",
+        'export default { test: { exclude: [',
+      ])('keeps the scan when exclusion coverage cannot be established: %s', (config) => {
+        const root = inventoryRoot(config);
+        for (const [kind, changed] of selections) {
+          const plan = createVerificationPlan([source, changed], {
+            root,
+            ctTests: [],
+            declaredSuites:
+              kind === 'declared' ? [{ path: inventorySuite, triggers: [source] }] : [],
+          });
+          expect(translationChecks(plan), kind).toHaveLength(1);
+        }
+      });
+
+      it.each([
+        'typecheck: { enabled: true, only: true }, passWithNoTests: true',
+        "related: ['scripts/remaining.spec.ts']",
+        "shard: '2/2'",
+        "tagsFilter: ['smoke']",
+        "cliExclude: ['**/check-hardcoded-strings.test.ts']",
+        'listTags: true',
+        'changed: true',
+        'clearCache: true',
+        "mergeReports: './reports'",
+      ])('keeps translation validation for built-in execution mode %s', (mode) => {
+        const root = inventoryRoot(`export default { test: { exclude: [], ${mode} } };`);
+        for (const [kind, changed] of selections) {
+          const plan = createVerificationPlan([source, changed], {
+            root,
+            ctTests: [],
+            declaredSuites:
+              kind === 'declared' ? [{ path: inventorySuite, triggers: [source] }] : [],
+          });
+          expect(translationChecks(plan), kind).toHaveLength(1);
+        }
+      });
+
+      it('reuses the repository exclusion policy without adding a duplicate inventory scan', () => {
+        const plan = createVerificationPlan([source, inventorySuite], {
+          root: process.cwd(),
+          ctTests: [],
+          declaredSuites: [],
+        });
+        expect(translationChecks(plan)).toEqual([]);
+      });
+
+      it.each([
+        "const __dirname = '/different/config';",
+        "const path = { join: () => '/different/.gitignore' };",
+        "const gitignoreDirExcludes = () => ['**/*.test.ts'];",
+      ])('does not trust a shadowed helper binding: %s', (binding) => {
+        const root = inventoryRoot(`
+          import { defineConfig } from 'vitest/config';
+          import path from 'node:path';
+          import { gitignoreDirExcludes } from './scripts/gitignore-dir-excludes.mjs';
+          export default defineConfig(() => {
+            ${binding}
+            return { test: { exclude: [
+              ...gitignoreDirExcludes(path.join(__dirname, '.gitignore')),
+            ] } };
+          });
+        `);
+        writeFileSync(join(root, '.gitignore'), 'node_modules/');
+        const plan = createVerificationPlan([source, 'vitest.config.ts'], { root, ctTests: [] });
+        expect(translationChecks(plan)).toHaveLength(1);
+      });
+
+      it('resolves only the known gitignore helper spread and respects its exclusions', () => {
+        const root = inventoryRoot(`
+          import path from 'node:path';
+          import { gitignoreDirExcludes } from './scripts/gitignore-dir-excludes.mjs';
+          export default { test: { exclude: [
+            ...gitignoreDirExcludes(path.join(__dirname, '.gitignore')),
+          ] } };
+        `);
+        symlinkSync(
+          join(process.cwd(), 'scripts/gitignore-dir-excludes.mjs'),
+          join(root, 'scripts/gitignore-dir-excludes.mjs'),
+        );
+        for (const [ignored, covered] of [
+          ['node_modules/', true],
+          ['node_modules/\nscripts/', false],
+        ] as const) {
+          writeFileSync(join(root, '.gitignore'), ignored);
+          expect(vitestList(root, 'scripts').sort()).toEqual(
+            covered ? [`${inventorySuite} > kept`, 'scripts/remaining.spec.ts > kept'] : [],
+          );
+          const plan = createVerificationPlan([source, 'vitest.config.ts'], { root, ctTests: [] });
+          expect(translationChecks(plan)).toHaveLength(covered ? 0 : 1);
+        }
+      });
+
+      it.each([
+        ['a bracket glob', "exclude: ['**/node_modules/**', '**/*.test.[tj]s']"],
+        ['testNamePattern', "testNamePattern: 'kept'"],
+        ['typecheck.only', 'typecheck: { enabled: true, only: true }, passWithNoTests: true'],
+        ['related', "related: ['scripts/remaining.spec.ts']"],
+        ['shard', "shard: '2/2'"],
+        ['tagsFilter', "tagsFilter: ['smoke']"],
+        ['cliExclude', "cliExclude: ['**/check-hardcoded-strings.test.ts']"],
+        ['listTags', 'listTags: true'],
+      ])(
+        'propagates a real scan failure when %s filters inventory from the full suite',
+        async (mode, filtering) => {
+          const root = inventoryRoot(`export default {
+          cacheDir: '.cache/vitest',
+          test: {
+            ${mode === 'a bracket glob' ? '' : "exclude: ['**/node_modules/**'],"}
+            tags: [{ name: 'smoke' }], ${filtering}
+          },
+        };`);
+          writeFileSync(
+            join(root, inventorySuite),
+            `
+          import { test } from 'vitest';
+          import { execFileSync } from 'node:child_process';
+          test('inventory', () => {
+            execFileSync(process.execPath, [${JSON.stringify(join(process.cwd(), 'scripts/check-hardcoded-strings.mjs'))}, 'src/lib/components']);
+          });
+        `,
+          );
+          writeFileSync(
+            join(root, 'scripts/remaining.spec.ts'),
+            `
+            import { test } from 'vitest';
+            test('kept', { tags: ['smoke'] }, () => {});
+          `,
+          );
+          if (mode === 'a bracket glob' || mode === 'testNamePattern')
+            expect(vitestList(root, 'scripts')).toEqual(['scripts/remaining.spec.ts > kept']);
+          writeFileSync(
+            join(root, 'package.json'),
+            JSON.stringify({
+              scripts: {
+                'lint:i18n-strings': 'node scripts/check-hardcoded-strings.mjs src/lib/components',
+              },
+            }),
+          );
+          symlinkSync(join(process.cwd(), 'node_modules'), join(root, 'node_modules'), 'dir');
+          symlinkSync(
+            join(process.cwd(), 'scripts/check-hardcoded-strings.mjs'),
+            join(root, 'scripts/check-hardcoded-strings.mjs'),
+          );
+          vi.stubEnv('NODE_COMPILE_CACHE', join(root, 'node-compile-cache'));
+          const options = {
+            log() {},
+            checkNode: () => ({ ok: true }),
+            checkDeps: () => ({ ok: true }),
+            ensureI18n: async () => ({ ok: true }),
+            // Execute both actual selected gates, omitting only unrelated tooling.
+            runPlan: (plan: ReturnType<typeof createVerificationPlan>, cwd: string) =>
+              runVerificationPlan(
+                {
+                  ...plan,
+                  checks: plan.checks.filter((check) =>
+                    ['i18n-strings', 'vitest-full'].includes(check.id),
+                  ),
+                },
+                cwd,
+              ),
+          };
+          const plan = createVerificationPlan([source, 'vitest.config.ts'], {
+            root,
+            ctTests: [],
+            declaredSuites: [],
+          });
+          // Prove the actual configured suite can pass without running inventory.
+          await runVerificationPlan(
+            {
+              ...plan,
+              checks: plan.checks.filter((check) => check.id === 'vitest-full'),
+            },
+            root,
+          );
+          await expect(runCli([source, 'vitest.config.ts'], root, options)).rejects.toThrow(
+            /failed with exit code 1/,
+          );
+          writeFileSync(join(root, source), '');
+          await expect(runCli([source, 'vitest.config.ts'], root, options)).resolves.toBe(0);
+        },
+      );
+    });
+
+    it('does not mistake unrelated declared or UI invariant suites for inventory coverage', () => {
+      const root = fixtureRoot({ [source]: '', 'scripts/other.test.ts': '' });
+      const plan = createVerificationPlan([source], {
+        root,
+        ctTests: [],
+        declaredSuites: [{ path: 'scripts/other.test.ts', triggers: [source] }],
+      });
+      expect(plan.checks.map((check) => check.id)).toEqual(
+        expect.arrayContaining(['architecture', 'vitest-declared', 'vitest-ui-invariants']),
+      );
+      expect(translationChecks(plan)).toHaveLength(1);
+    });
+
+    it.each([
+      ['src/lib/components/label.ts', "export const label = 'Save your work';"],
+      ['src/lib/components/Label.svelte', '<button>Save your work</button>'],
+    ])('fails affected execution on actual translation violations in %s', async (file, content) => {
+      const root = fixtureRoot({
+        [file]: content,
+        'package.json': JSON.stringify({
+          scripts: {
+            'lint:i18n-strings': 'node scripts/check-hardcoded-strings.mjs src/lib/components',
+          },
+        }),
+      });
+      mkdirSync(join(root, 'scripts'));
+      symlinkSync(
+        join(process.cwd(), 'scripts/check-hardcoded-strings.mjs'),
+        join(root, 'scripts/check-hardcoded-strings.mjs'),
+      );
+      // pnpm enables Node's compile cache; keep it inside this fixture's cleanup.
+      vi.stubEnv('NODE_COMPILE_CACHE', join(root, 'node-compile-cache'));
+      const options = {
+        log() {},
+        checkNode: () => ({ ok: true }),
+        checkDeps: () => ({ ok: true }),
+        ensureI18n: async () => ({ ok: true }),
+        // Isolate this gate from unrelated checks, but execute the selected
+        // package command and real scanner through the production runner.
+        runPlan: (plan: ReturnType<typeof createVerificationPlan>, cwd: string) =>
+          runVerificationPlan({ ...plan, checks: translationChecks(plan) }, cwd),
+      };
+      await expect(runCli([file], root, options)).rejects.toThrow(/failed with exit code 1/);
+      writeFileSync(join(root, file), '');
+      await expect(runCli([file], root, options)).resolves.toBe(0);
+    });
   });
 
   it('runs the architecture gates for any code change under src/', () => {
@@ -242,6 +1068,36 @@ describe('verification planning', () => {
       ctTests: [],
     });
     expect(otherScript.checks.map((check) => check.id)).not.toContain('architecture');
+  });
+
+  it('lints changed scripts/ files but not e2e/ or test/ files', () => {
+    const root = fixtureRoot({
+      'scripts/verify-changed.mjs': '',
+      'scripts/type-check.ts': '',
+      'scripts/legacy.cjs': '',
+      'e2e/flow.spec.ts': '',
+      'test/harness.mjs': '',
+      'test/fixtures/legacy.cjs': '',
+    });
+    const plan = createVerificationPlan(
+      [
+        'scripts/verify-changed.mjs',
+        'scripts/type-check.ts',
+        'scripts/legacy.cjs',
+        'e2e/flow.spec.ts',
+        'test/harness.mjs',
+        'test/fixtures/legacy.cjs',
+      ],
+      { root, ctTests: [] },
+    );
+    const eslint = plan.checks.find((check) => check.id === 'eslint');
+    expect(eslint?.args).toEqual([
+      'exec',
+      'eslint',
+      'scripts/verify-changed.mjs',
+      'scripts/type-check.ts',
+      'scripts/legacy.cjs',
+    ]);
   });
 
   it('runs the type-check:validate wrapper only when scripts/type-check.ts changes', () => {
@@ -353,6 +1209,67 @@ describe('verification planning', () => {
       ctTests: [],
     });
     expect(deletedPlan.checks.map((check) => check.id)).toContain('vitest-ui-invariants');
+  });
+
+  it('runs the full component suite for CT-contract paths and nothing else', () => {
+    const root = fixtureRoot({
+      'src/app.css': "@import '$lib/styles/tokens.css';",
+      'src/lib/styles/tokens.css': ':root { --color: red; }',
+      'scripts/run-ct-tests.mjs': '',
+      'playwright-ct.config.ts': '',
+      'playwright/index.ts': '',
+      'src/lib/component-catalog/capture-stability.ts': '',
+      'src/lib/component-catalog/geometry-probe.ts': '',
+      'src/lib/component-catalog/preview-definition.ts': '',
+      'src/lib/component-catalog/catalog.ts': '',
+      'src/foo.test.ts': '',
+      'src/lib/example.ts': '',
+    });
+    const ids = (files: string[]) =>
+      createVerificationPlan(files, { root, ctTests: [] }).checks.map((check) => check.id);
+    for (const file of [
+      'src/lib/styles/tokens.css',
+      'src/lib/styles/removed.css',
+      'src/app.css',
+      'scripts/run-ct-tests.mjs',
+      'playwright-ct.config.ts',
+      'playwright/index.ts',
+      'src/lib/component-catalog/capture-stability.ts',
+      'src/lib/component-catalog/geometry-probe.ts',
+      'src/lib/component-catalog/preview-definition.ts',
+      'package.json',
+      'pnpm-lock.yaml',
+    ]) {
+      expect(ids([file]), file).toContain('ct-full');
+      expect(ids([file]), file).not.toContain('ct-related');
+    }
+    for (const file of [
+      'src/foo.test.ts',
+      'src/lib/example.ts',
+      'src/lib/component-catalog/catalog.ts',
+      'scripts/verify-changed.mjs',
+    ]) {
+      expect(ids([file]), file).not.toContain('ct-full');
+      expect(ids([file]), file).not.toContain('ct-related');
+    }
+  });
+
+  it('keeps CT specs and geometry goldens on the related lane, not the full suite', () => {
+    const geometryTest = 'src/lib/components/ui/button/button.geometry.ct.spec.ts';
+    const golden = 'src/lib/components/ui/button/__geometry__/button.geometry.json';
+    const root = fixtureRoot({
+      [geometryTest]: "import Preview from './button.preview.svelte';",
+      'src/lib/components/ui/button/button.preview.svelte': '<button />',
+      [golden]: '{}',
+    });
+    const ids = (files: string[]) =>
+      createVerificationPlan(files, { root, ctTests: [geometryTest] }).checks.map(
+        (check) => check.id,
+      );
+    for (const file of [geometryTest, golden]) {
+      expect(ids([file]), file).toContain('ct-related');
+      expect(ids([file]), file).not.toContain('ct-full');
+    }
   });
 
   describe('suites declaring verify:changed triggers', () => {
@@ -546,6 +1463,24 @@ describe('verification planning', () => {
     expect(plan.checks.map((check) => check.id)).toContain('svelte-check');
   });
 
+  it('selects a component test through the Svelte components its host imports, one hop only', () => {
+    const root = fixtureRoot({
+      'src/lib/__tests__/progress.ct.spec.ts': "import Host from './ProgressHost.svelte';",
+      'src/lib/__tests__/ProgressHost.svelte':
+        "import Progress from '../Progress.svelte';\nimport { fixtures } from './fixtures';",
+      'src/lib/__tests__/fixtures.ts': '',
+      'src/lib/Progress.svelte': "import Button from './Button.svelte';",
+      'src/lib/Button.svelte': '<button />',
+    });
+    const ctTests = ['src/lib/__tests__/progress.ct.spec.ts'];
+    const options = { root, ctTests };
+
+    expect(findRelatedCtTests(['src/lib/__tests__/ProgressHost.svelte'], options)).toEqual(ctTests);
+    expect(findRelatedCtTests(['src/lib/Progress.svelte'], options)).toEqual(ctTests);
+    expect(findRelatedCtTests(['src/lib/__tests__/fixtures.ts'], options)).toEqual([]);
+    expect(findRelatedCtTests(['src/lib/Button.svelte'], options)).toEqual([]);
+  });
+
   it('selects scene geometry for previews, fixtures, snapshots, and imported components', () => {
     const geometryTest = 'src/lib/components/workspace/workspace-hover-card.geometry.ct.spec.ts';
     const root = fixtureRoot({
@@ -626,8 +1561,22 @@ describe('verification planning', () => {
       'tsc-preload',
     ]);
     expect(plan.checks.find((check) => check.id === 'vitest-full')?.lockKind).toBe('vitest-full');
+    expect(plan.checks.find((check) => check.id === 'vitest-full')?.args).toEqual([
+      'exec',
+      'vitest',
+      'run',
+      '--config',
+      'vitest.config.ts',
+      '--maxWorkers=1',
+    ]);
     expect(plan.checks.find((check) => check.id === 'svelte-check')?.lockKind).toBeNull();
     expect(plan.checks.find((check) => check.id === 'tsc-renderer')?.lockKind).toBeNull();
+    expect(plan.checks.find((check) => check.id === 'generate-build-config')?.args).toEqual([
+      'run',
+      'generate:build-config',
+      '--',
+      '--if-missing',
+    ]);
   });
 
   it('runs changed integration tests with their own Vitest config', () => {
@@ -644,8 +1593,15 @@ describe('verification planning', () => {
   it('classifies test paths by the runner that owns them', () => {
     expect(testRunner('test/splash-loader.spec.ts')).toBe('playwright');
     expect(testRunner('test/nested/geometry.spec.ts')).toBe('playwright');
+    // playwright.config.ts `testIgnore` names (playwright/root-spec-pattern.mjs) run
+    // only through playwright.manual.config.ts, so they are not the Playwright lane.
     expect(testRunner('test/current-main-baseline.spec.ts')).toBe('manual');
     expect(testRunner('test/catalog-manual-review.capture.spec.ts')).toBe('manual');
+    expect(testRunner('test/electron-browser-lifetime.spec.ts')).toBe('manual');
+    expect(testRunner('test/nested/electron-browser-lifetime.spec.ts')).toBe('manual');
+    // Playwright matches testMatch with nocase + dot, so these are root specs too.
+    expect(testRunner('test/Foo.SPEC.ts')).toBe('playwright');
+    expect(testRunner('test/.hidden/x.spec.ts')).toBe('playwright');
     expect(testRunner('test/actions-status-visual.spec.ts')).toBe('playwright');
     expect(testRunner('test/added.visual.spec.ts')).toBe('playwright');
     expect(testRunner('test/added.ct.spec.ts')).toBe('playwright');
@@ -661,6 +1617,16 @@ describe('verification planning', () => {
     expect(testRunner('tests/unit/edge-cases.test.ts')).toBe('vitest');
     expect(testRunner('src/test/factories/__tests__/workspace.factory.test.ts')).toBe('vitest');
     expect(testRunner('src/lib/__tests__/button.ct.spec.ts')).toBe('ct');
+    // Playwright matches testMatch with nocase + dot, so these are CT specs too.
+    expect(testRunner('src/.fixtures/button.ct.spec.ts')).toBe('ct');
+    expect(testRunner('src/.hidden.ct.spec.ts')).toBe('ct');
+    expect(testRunner('src/button.CT.spec.ts')).toBe('ct');
+    expect(testRunner('src/button.CT.SPEC.TS')).toBe('ct');
+    // Only the files playwright-ct.config.ts discovers (`**/*.ct.spec.ts`) are
+    // CT; vitest.config.ts excludes just that pattern, so a `.ct.test.ts` under
+    // `src/` is a Vitest suite, not a CT one.
+    expect(testRunner('src/x/y.ct.test.ts')).toBe('vitest');
+    expect(testRunner('src/x/y.ct.spec.tsx')).toBe('vitest');
     expect(testRunner('scripts/verify-changed.test.ts')).toBe('vitest');
     expect(testRunner('src/lib/example.ts')).toBeNull();
   });
@@ -888,6 +1854,16 @@ describe('verification planning', () => {
     }
   });
 
+  it('feeds playwright/ sources to vitest related so their colocated suites run', () => {
+    const root = fixtureRoot({
+      'playwright/ct-spec-pattern.mjs': 'export const CT_TEST_DIR = "src";',
+      'playwright/ct-spec-pattern.test.ts': "import './ct-spec-pattern.mjs';",
+    });
+    const plan = createVerificationPlan(['playwright/ct-spec-pattern.mjs'], { root, ctTests: [] });
+    const related = plan.checks.find((check) => check.id === 'vitest-related');
+    expect(related?.args).toContain('playwright/ct-spec-pattern.mjs');
+  });
+
   it('runs the whole Playwright browser suite when its config changes', () => {
     const root = fixtureRoot({ 'playwright.config.ts': '', 'test/a.spec.ts': '' });
     const plan = createVerificationPlan(['playwright.config.ts', 'test/a.spec.ts'], {
@@ -899,6 +1875,25 @@ describe('verification planning', () => {
     expect(ids).not.toContain('playwright-direct');
     expect(plan.fallbackReasons).toEqual([]);
   });
+
+  // playwright.config.ts reads testDir/testMatch/testIgnore from these modules, so
+  // a change there can reroute root discovery the same way a config edit does.
+  it.each(['playwright/root-spec-pattern.mjs', 'playwright/ct-spec-pattern.mjs'])(
+    'runs the whole Playwright browser suite when %s changes',
+    (module) => {
+      const root = fixtureRoot({ [module]: 'export const ROOT_TEST_DIR = "test";' });
+      const plan = createVerificationPlan([module], { root, ctTests: [] });
+      const ids = plan.checks.map((check) => check.id);
+      expect(ids).toContain('playwright-full');
+      expect(plan.fallbackReasons).toEqual([]);
+    },
+  );
+
+  it('does not run the whole Playwright browser suite for other playwright/ sources', () => {
+    const root = fixtureRoot({ 'playwright/ct-port.ts': 'export const CT_PORT = 3100;' });
+    const plan = createVerificationPlan(['playwright/ct-port.ts'], { root, ctTests: [] });
+    expect(plan.checks.map((check) => check.id)).not.toContain('playwright-full');
+  });
 });
 
 describe('empty change set guard', () => {
@@ -907,8 +1902,7 @@ describe('empty change set guard', () => {
     return { lines, options: { log: (line: string) => lines.push(line) } };
   }
 
-  it('exits 2 with the --base hint when a clean worktree collects nothing', async () => {
-    const root = gitRepository();
+  async function expectNothingToVerify(root: string) {
     for (const argv of [[], ['--dry-run']]) {
       const { lines, options } = capture();
       expect(await runCli(argv, root, options), argv.join(' ')).toBe(2);
@@ -916,6 +1910,64 @@ describe('empty change set guard', () => {
       expect(lines[0]).toContain('nothing to verify');
       expect(lines[0]).toContain('pass --base origin/main');
     }
+  }
+
+  it('exits 2 with the --base hint when a clean worktree has no origin/main ref', async () => {
+    await expectNothingToVerify(gitRepository());
+  });
+
+  it('exits 2 with the --base hint when a clean worktree is not ahead of origin/main', async () => {
+    const root = gitRepository();
+    trackOriginMain(root);
+    await expectNothingToVerify(root);
+
+    branchWithCommit(root);
+    trackOriginMain(root, 'refs/heads/feature');
+    await expectNothingToVerify(root);
+  });
+
+  it('exits 2 without throwing when a clean branch is ahead but origin/main is missing', async () => {
+    const root = gitRepository();
+    branchWithCommit(root);
+    await expectNothingToVerify(root);
+  });
+
+  it('defaults to origin/main as the base on a clean branch that is ahead of it', async () => {
+    const root = gitRepository();
+    const committed = branchWithCommit(root);
+    trackOriginMain(root);
+    for (const argv of [[], ['--dry-run']]) {
+      const { lines, options } = capture();
+      const planned: string[][] = [];
+      const gates = {
+        checkNode: () => ({ ok: true, reason: null }),
+        checkDeps: () => ({ ok: true, reason: null }),
+        ensureI18n: async () => ({ ok: true, reason: null }),
+        runPlan: async (plan: { files: string[] }) => {
+          planned.push(plan.files);
+        },
+      };
+      expect(await runCli(argv, root, { ...options, ...gates }), argv.join(' ')).toBe(0);
+      expect(lines[0]).toBe(
+        'verify:changed: worktree clean; verifying commits since merge-base with origin/main',
+      );
+      expect(lines).toContain(`  - ${committed}`);
+      expect(lines.some((line) => /verify:changed: [1-9][0-9]* check\(s\)/.test(line))).toBe(true);
+      expect(lines.some((line) => line.includes('nothing to verify'))).toBe(false);
+      expect(planned).toEqual(argv.includes('--dry-run') ? [] : [[committed]]);
+    }
+  });
+
+  it('verifies the working-tree set without the fallback when changes are uncommitted', async () => {
+    const root = gitRepository();
+    const committed = branchWithCommit(root);
+    trackOriginMain(root);
+    writeFileSync(join(root, 'src/untracked.ts'), '');
+    const { lines, options } = capture();
+    expect(await runCli(['--dry-run'], root, options)).toBe(0);
+    expect(lines).toContain('  - src/untracked.ts');
+    expect(lines).not.toContain(`  - ${committed}`);
+    expect(lines.some((line) => line.includes('worktree clean'))).toBe(false);
   });
 
   it('omits the hint when --base was already supplied', async () => {
@@ -1050,12 +2102,10 @@ describe('expensive-check coordination', () => {
     const lockPath = join(parent, 'lock');
     const cwd = '/current/worktree';
     const release = await acquireVerificationLock({ lockPath, timeoutMs: 15, pollMs: 5, cwd });
-    expect(JSON.parse(readFileSync(join(lockPath, 'owner.json'), 'utf8'))).toMatchObject({
-      pid: process.pid,
-      cwd,
-    });
+    expect(lockOwner(lockPath)).toMatchObject({ pid: process.pid, cwd });
     release();
-    expect(() => readFileSync(join(lockPath, 'owner.json'), 'utf8')).toThrow();
+    expect(existsSync(lockPath)).toBe(false);
+    expect(readdirSync(parent)).toEqual([]);
   });
 
   it('times out without removing or stopping a live owner', async () => {
@@ -1068,13 +2118,58 @@ describe('expensive-check coordination', () => {
     await expect(acquireVerificationLock({ lockPath, timeoutMs: 15, pollMs: 5 })).rejects.toThrow(
       new RegExp(`owner pid ${process.pid} cwd ${ownerCwd}; waited [0-9]+ms`),
     );
-    expect(JSON.parse(readFileSync(join(lockPath, 'owner.json'), 'utf8')).token).toBe('other');
+    expect(lockOwner(lockPath).token).toBe('other');
+  });
+
+  it('reclaims a lock whose owner process is gone', async () => {
+    const lockPath = temporaryDirectory();
+    const deadPid = spawnSync(process.execPath, ['-e', '0']).pid;
+    writeFileSync(
+      join(lockPath, 'owner-dead.json'),
+      JSON.stringify({ pid: deadPid, cwd: '/gone', token: 'dead' }),
+    );
+
+    const release = await acquireVerificationLock({ lockPath, timeoutMs: 15, pollMs: 5 });
+    expect(lockOwner(lockPath).pid).toBe(process.pid);
+    release();
+    expect(existsSync(lockPath)).toBe(false);
+  });
+
+  it('never removes a lock another contender re-created while reclaiming the same stale owner', async () => {
+    const lockPath = temporaryDirectory();
+    writeFileSync(join(lockPath, 'owner-dead.json'), 'not json');
+    let inspections = 0;
+
+    await expect(
+      acquireVerificationLock({
+        lockPath,
+        timeoutMs: 15,
+        pollMs: 5,
+        statLock(path: string) {
+          // Between this contender judging the owner stale and acting on it, another
+          // contender finishes the same reclaim and acquires the lock.
+          if (inspections++ === 0) {
+            rmSync(path, { recursive: true, force: true });
+            mkdirSync(path);
+            writeFileSync(
+              join(path, 'owner-fresh.json'),
+              JSON.stringify({ pid: process.pid, cwd: '/other/worktree', token: 'fresh' }),
+            );
+          }
+          return { mtimeMs: Date.now() - 5 * 60 * 60 * 1000 } as ReturnType<typeof statSync>;
+        },
+      }),
+    ).rejects.toThrow(new RegExp(`owner pid ${process.pid} cwd /other/worktree; waited [0-9]+ms`));
+
+    expect(inspections).toBe(1);
+    expect(lockOwner(lockPath).token).toBe('fresh');
   });
 
   it('retries when the lock disappears before its metadata can be inspected', async () => {
     const parent = temporaryDirectory();
     const lockPath = join(parent, 'lock');
     mkdirSync(lockPath);
+    writeFileSync(join(lockPath, 'owner.json'), 'not json');
 
     const release = await acquireVerificationLock({
       lockPath,
@@ -1086,12 +2181,13 @@ describe('expensive-check coordination', () => {
       },
     });
 
-    expect(readFileSync(join(lockPath, 'owner.json'), 'utf8')).toContain(String(process.pid));
+    expect(lockOwner(lockPath).pid).toBe(process.pid);
     release();
   });
 
   it('preserves unexpected lock inspection errors', async () => {
     const lockPath = temporaryDirectory();
+    writeFileSync(join(lockPath, 'owner.json'), 'not json');
     const error = Object.assign(new Error('lock inspection failed'), { code: 'EACCES' });
 
     await expect(
@@ -1109,6 +2205,9 @@ describe('expensive-check coordination', () => {
   it('uses per-kind keys and bounded default waits', () => {
     expect(verificationLockKey(testCheck('ct', 'ct'), {})).toBe('ct-3100');
     expect(verificationLockKey(testCheck('ct', 'ct'), { CT_PORT: '03101' })).toBe('ct-3101');
+    expect(verificationLockKey(testCheck('ct', 'ct'), { CT_PORT: ' 3102 ' })).toBe('ct-3102');
+    expect(verificationLockKey(testCheck('ct', 'ct'), { CT_PORT: '' })).toBe('ct-3100');
+    expect(verificationLockKey(testCheck('ct', 'ct'), { CT_PORT: ' ' })).toBe('ct-3100');
     expect(verificationLockKey(testCheck('vitest', 'vitest-full'), {})).toBe('vitest-full');
     expect(verificationLockKey(testCheck('tsc', null), {})).toBeNull();
     expect(lockTimeout('ct-3100', undefined)).toBe(240_000);

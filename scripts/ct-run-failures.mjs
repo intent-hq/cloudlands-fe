@@ -1,0 +1,293 @@
+#!/usr/bin/env node
+// ct-run-failures.mjs — `pnpm ct:failures <run-id>`: list every failing and
+// flaky Playwright CT case of an `Intent PR Checks` run, per shard.
+//
+// Resolves the run's `Component Tests (shard N/M)` jobs via `gh`, reads each
+// red shard's JSON report from its `playwright-ct-report-N-of-M` artifact and
+// falls back to the job log's list-reporter summary when the artifact is
+// missing, expired, gone by download time, or predates the JSON reporter.
+// Parsing lives in ct-run-failures-lib.mjs; this file owns argv, `gh`, and
+// the temp dir.
+//
+// Exit codes: 0 listing produced (with or without failures), 2 usage error or
+// no CT jobs in the run, 3 `gh` failure (its stderr is surfaced verbatim).
+import { execFileSync } from 'node:child_process';
+import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import {
+  casesFromJsonReport,
+  casesFromListLog,
+  formatReport,
+  hasListLogSummary,
+  parseCtJobs,
+  requiredLaneLog,
+} from './ct-run-failures-lib.mjs';
+
+export const DEFAULT_REPO = 'intent-hq/cloudlands-fe';
+const RUN_URL = /\/actions\/runs\/(\d+)(?:[/?#]|$)/;
+const REPORT_PATH = join('playwright-report', 'results.json');
+
+export const USAGE = `usage: ct-run-failures.mjs <run-id | run-url> [--repo owner/name] [--attempt N] [--json]
+
+Lists every failed and flaky Playwright CT case of an Intent PR Checks run, per shard.
+  --repo      GitHub repository (default ${DEFAULT_REPO})
+  --attempt   run attempt to inspect (default: latest)
+  --json      print the machine-readable report instead of text
+Exit codes: 0 listing printed, 2 usage error or no CT jobs, 3 gh failure.`;
+
+export class UsageError extends Error {}
+export class GhError extends Error {}
+/** A `gh run download` failure meaning the artifact vanished since it was listed. */
+export class ArtifactGoneError extends GhError {}
+
+// `gh run download` re-lists the run and skips expired artifacts, so one
+// deleted or expired since our own listing surfaces as "no artifact matches";
+// a 404/410 on the archive itself is the same race one step later. Anything
+// else (auth, network, a 404 on the listing) stays a plain `GhError`.
+const ARTIFACT_GONE =
+  /error downloading .*: HTTP (?:404|410)\b|no artifact matches any of the names or patterns provided|no valid artifacts found to download/;
+
+/** Parse argv (without node/script) into options; throws `UsageError`. */
+export function parseArgs(argv) {
+  const opts = {
+    runId: undefined,
+    repo: DEFAULT_REPO,
+    attempt: undefined,
+    json: false,
+    help: false,
+  };
+  for (let i = 0; i < argv.length; i += 1) {
+    const arg = argv[i];
+    if (arg === '--help' || arg === '-h') {
+      opts.help = true;
+    } else if (arg === '--json') {
+      opts.json = true;
+    } else if (arg === '--repo' || arg === '--attempt') {
+      const value = argv[i + 1];
+      if (value === undefined || value.startsWith('--'))
+        throw new UsageError(`${arg} needs a value`);
+      i += 1;
+      if (arg === '--repo') {
+        if (!/^[^/\s]+\/[^/\s]+$/.test(value))
+          throw new UsageError(`--repo expects owner/name, got ${value}`);
+        opts.repo = value;
+      } else {
+        if (!/^[1-9]\d*$/.test(value))
+          throw new UsageError(`--attempt expects a positive integer, got ${value}`);
+        opts.attempt = Number(value);
+      }
+    } else if (arg.startsWith('-')) {
+      throw new UsageError(`unknown option ${arg}`);
+    } else if (opts.runId !== undefined) {
+      throw new UsageError(`unexpected argument ${arg}`);
+    } else {
+      const runId = /^\d+$/.test(arg) ? arg : RUN_URL.exec(arg)?.[1];
+      if (!runId) throw new UsageError(`expected a run id or …/actions/runs/<id> URL, got ${arg}`);
+      opts.runId = runId;
+    }
+  }
+  if (!opts.help && opts.runId === undefined) throw new UsageError('missing <run-id>');
+  return opts;
+}
+
+// A raw job log (build output, retry traces, then the summary) can exceed
+// Node's default 1 MiB `maxBuffer`, which would kill `gh` mid-stream.
+export const GH_MAX_BUFFER = 64 * 1024 * 1024;
+
+/** Run `gh` and return its stdout; `maxBuffer` is overridable for tests only. */
+export function gh(args, { maxBuffer = GH_MAX_BUFFER } = {}) {
+  try {
+    return execFileSync('gh', args, {
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'pipe'],
+      maxBuffer,
+    });
+  } catch (error) {
+    const command = `gh ${args.slice(0, 2).join(' ')}`;
+    if (error?.code === 'ENOBUFS')
+      throw new GhError(`${command} output exceeded the ${maxBuffer} byte buffer limit`);
+    const stderr = String(error?.stderr ?? '').trim();
+    throw new GhError(`${command} failed${stderr ? `: ${stderr}` : ''}`);
+  }
+}
+
+const PER_PAGE = 100;
+
+/**
+ * Follow a paginated listing (`jobs`, `artifacts`) page by page and return the
+ * concatenated `key` items; a short page or reaching `total_count` ends it.
+ */
+function listAll(runner, path, key) {
+  const items = [];
+  for (let page = 1; ; page += 1) {
+    const payload = runner.api(`${path}?per_page=${PER_PAGE}&page=${page}`);
+    const chunk = Array.isArray(payload?.[key]) ? payload[key] : [];
+    items.push(...chunk);
+    const total = payload?.total_count;
+    if (chunk.length < PER_PAGE || (typeof total === 'number' && items.length >= total))
+      return items;
+  }
+}
+
+/**
+ * The real `gh` boundary; tests inject a fake with the same shape, or a fake
+ * `run` to assert the exact `gh` argv.
+ */
+export function createGhRunner({ tmpDir, run = gh }) {
+  return {
+    api: (path) => JSON.parse(run(['api', path])),
+    // `--allow-escape-sequences`: the list reporter's ANSI colours make gh
+    // refuse to emit the log otherwise.
+    jobLog: (repo, jobId) =>
+      run(['api', '--allow-escape-sequences', `repos/${repo}/actions/jobs/${jobId}/logs`]),
+    // The Playwright JSON report of a shard artifact, or null when the artifact
+    // has none (uploaded before the JSON reporter existed). Throws
+    // `ArtifactGoneError` when the artifact vanished since it was listed.
+    jsonReport: (repo, runId, artifactName) => {
+      const dest = join(tmpDir, artifactName);
+      try {
+        run(['run', 'download', runId, '--repo', repo, '--name', artifactName, '--dir', dest]);
+      } catch (error) {
+        if (error instanceof GhError && ARTIFACT_GONE.test(error.message))
+          throw new ArtifactGoneError(error.message);
+        throw error;
+      }
+      const file = join(dest, REPORT_PATH);
+      return existsSync(file) ? JSON.parse(readFileSync(file, 'utf8')) : null;
+    },
+  };
+}
+
+const LOG_WARNING =
+  'no JSON report artifact — derived from the list-reporter summary; locations may point at generator helpers';
+const NO_LANE_WARNING =
+  'required-lane step not found in the job log — parsed the whole log; an advisory quarantine summary may mask the required lane';
+const NO_SUMMARY_NOTE = 'red, no test summary found — see job URL';
+
+/**
+ * Resolve the run's shards and their cases through `runner`. Returns
+ * `{ shards, attempt, warnings }` — `shards` is `formatReport` input, empty
+ * when the run has no CT shard jobs; `warnings` are the log-fallback notices.
+ */
+export function collectRun({ runId, repo, attempt, runner }) {
+  const jobsPath =
+    attempt === undefined
+      ? `repos/${repo}/actions/runs/${runId}/jobs`
+      : `repos/${repo}/actions/runs/${runId}/attempts/${attempt}/jobs`;
+  const allJobs = listAll(runner, jobsPath, 'jobs');
+  const jobs = parseCtJobs(allJobs);
+  if (jobs.length === 0) return { shards: [], attempt, warnings: [] };
+  const resolvedAttempt = attempt ?? allJobs[0]?.run_attempt;
+
+  const warnings = [];
+  // Artifacts are run-wide and carry no attempt number, so a re-run overwrites
+  // them: for a non-latest attempt only that attempt's job logs are trustworthy.
+  let useArtifacts = true;
+  if (attempt !== undefined) {
+    const latest = runner.api(`repos/${repo}/actions/runs/${runId}`)?.run_attempt;
+    if (latest !== undefined && latest !== attempt) {
+      useArtifacts = false;
+      warnings.push(
+        `artifacts are run-wide; attempt ${attempt} is not the latest (${latest}), using job logs`,
+      );
+    }
+  }
+  let artifacts;
+  const shards = jobs.map((job) => {
+    if (job.status !== 'completed') return { ...job, source: null, cases: [], pending: true };
+    if (job.conclusion === 'success') return { ...job, source: null, cases: [] };
+    const name = `playwright-ct-report-${job.shard}-of-${job.shardCount}`;
+    let artifact;
+    if (useArtifacts) {
+      artifacts ??= listAll(runner, `repos/${repo}/actions/runs/${runId}/artifacts`, 'artifacts');
+      const matching = artifacts.filter((a) => a?.name === name && !a.expired);
+      // `gh run download --name` cannot target an artifact id: after a rerun
+      // several same-named artifacts may survive and it could fetch a stale one.
+      if (matching.length > 1) {
+        warnings.push(
+          `shard ${job.shard}/${job.shardCount}: multiple artifacts named ${name} (rerun); using job logs`,
+        );
+      } else {
+        artifact = matching[0];
+      }
+    }
+    let report = null;
+    if (artifact) {
+      try {
+        report = runner.jsonReport(repo, runId, name);
+      } catch (error) {
+        if (!(error instanceof ArtifactGoneError)) throw error;
+        warnings.push(
+          `shard ${job.shard}/${job.shardCount}: artifact ${name} disappeared before it could be downloaded; using job logs`,
+        );
+      }
+    }
+    if (report) return { ...job, source: 'json', cases: casesFromJsonReport(report) };
+    const fullLog = runner.jobLog(repo, job.jobId);
+    // Only the required lane's segment: on shard 1 the advisory quarantine
+    // lane runs afterwards and prints its own summary block.
+    const laneLog = requiredLaneLog(fullLog);
+    const log = laneLog ?? fullLog;
+    if (!hasListLogSummary(log)) return { ...job, source: null, cases: [], note: NO_SUMMARY_NOTE };
+    if (laneLog === null) warnings.push(`shard ${job.shard}/${job.shardCount}: ${NO_LANE_WARNING}`);
+    warnings.push(`shard ${job.shard}/${job.shardCount}: ${LOG_WARNING}`);
+    return { ...job, source: 'log', cases: casesFromListLog(log) };
+  });
+  return { shards, attempt: resolvedAttempt, warnings };
+}
+
+/**
+ * Run the CLI: parse `argv`, collect through `runner` (created from
+ * `createRunner({ tmpDir })` when omitted), print to `stdout` / `stderr`, and
+ * return the exit code.
+ */
+export function main(argv, { createRunner = createGhRunner, stdout, stderr } = {}) {
+  const out = (line) => (stdout ?? process.stdout).write(`${line}\n`);
+  const err = (line) => (stderr ?? process.stderr).write(`${line}\n`);
+  let opts;
+  try {
+    opts = parseArgs(argv);
+  } catch (error) {
+    if (!(error instanceof UsageError)) throw error;
+    err(`error: ${error.message}`);
+    err(USAGE);
+    return 2;
+  }
+  if (opts.help) {
+    out(USAGE);
+    return 0;
+  }
+
+  const tmpDir = mkdtempSync(join(tmpdir(), 'ct-run-failures-'));
+  try {
+    const { runId, repo } = opts;
+    const runner = createRunner({ tmpDir });
+    const { shards, attempt, warnings } = collectRun({
+      runId,
+      repo,
+      attempt: opts.attempt,
+      runner,
+    });
+    if (shards.length === 0) {
+      err(`Run ${runId} (${repo}) has no Component Tests shard jobs.`);
+      return 2;
+    }
+    for (const warning of warnings) err(`warning: ${warning}`);
+    const report = formatReport({ runId, repo, attempt, shards });
+    out(opts.json ? JSON.stringify(report.json, null, 2) : report.text);
+    return 0;
+  } catch (error) {
+    if (!(error instanceof GhError)) throw error;
+    err(`error: ${error.message}`);
+    return 3;
+  } finally {
+    rmSync(tmpDir, { recursive: true, force: true });
+  }
+}
+
+const isDirectRun = process.argv[1] && fileURLToPath(import.meta.url) === resolve(process.argv[1]);
+if (isDirectRun) {
+  process.exitCode = main(process.argv.slice(2));
+}

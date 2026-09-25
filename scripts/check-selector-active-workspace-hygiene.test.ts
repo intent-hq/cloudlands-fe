@@ -1,4 +1,4 @@
-// @verify-changed-triggers: scripts/check-selector-active-workspace-hygiene.mjs, src/store/renderer/seeders/file-bridge-seeder.ts
+// @verify-changed-triggers: scripts/check-selector-active-workspace-hygiene.mjs
 
 import { execFileSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
@@ -41,11 +41,36 @@ function runGate(dir: string) {
 
 describe('selector active-workspace hygiene gate', () => {
   it('keeps the file bridge seeder independent of active workspace selection', () => {
-    const seeder = readFileSync(
-      join(repoRoot, 'src/store/renderer/seeders/file-bridge-seeder.ts'),
-      'utf8',
+    // The lazily imported active-workspace fallback the seeder once carried
+    // (removed in #1184); the gate must reject it if it ever comes back.
+    withFixture(
+      {
+        'src/store/renderer/seeders/file-bridge-seeder.ts': `
+          async function resolveWorkspaceId(record: Record<string, unknown>) {
+            const explicit = record.workspaceId;
+            if (typeof explicit === 'string' && explicit) return explicit;
+            const [{ store }, { selectActiveWorkspaceId }] = await Promise.all([
+              import('$store/renderer/store'),
+              import('$store/renderer/slices/workspace/workspace-selectors'),
+            ]);
+            const active = selectActiveWorkspaceId.select(store.state);
+            return typeof active === 'string' && active ? active : null;
+          }
+
+          export async function handler(arg: Record<string, unknown>) {
+            return resolveWorkspaceId(arg);
+          }
+        `,
+      },
+      (dir) => {
+        const result = runGate(dir);
+        expect(result.exitCode).toBe(1);
+        expect(result.output).toContain('src/store/renderer/seeders/file-bridge-seeder.ts');
+        expect(result.output).toContain(
+          '[non-component selector.select] selectActiveWorkspaceId.select(store.state)',
+        );
+      },
     );
-    expect(seeder).not.toContain('resolveWorkspaceId');
   });
 
   it('flags every active/current workspace selector import in non-component modules', () => {

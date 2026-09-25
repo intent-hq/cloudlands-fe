@@ -2,11 +2,13 @@
  * Error Toast Utility
  * Shows errors using the built-in toast system
  */
-import { toast } from '$lib/components/ui/toast';
-import ErrorToast from '$lib/components/ui/toast/ErrorToast.svelte';
+import { notify } from '$lib/components/patterns/notify';
 import { errorReporter } from '$lib/utils/error-reporter';
 import { selectSelectedModel } from '$store/renderer/slices/model/model-selectors';
-import { selectWorkspaceById } from '$store/renderer/slices/workspace/workspace-selectors';
+import {
+  selectHidesAgentLifecycleActions,
+  selectWorkspaceById,
+} from '$store/renderer/slices/workspace/workspace-selectors';
 import { WorkspaceId } from '$shared/types/branded-ids';
 import { createAgentTypeId } from '$shared/types/agent.types';
 import { createAgentFromConfigRequested } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
@@ -49,7 +51,7 @@ async function copyError(error: AppError): Promise<void> {
   lines.push('*Paste this into a support message or GitHub issue.*'); // i18n-ignore (support report content)
 
   await navigator.clipboard.writeText(lines.join('\n'));
-  toast.success(m.error_toast_copied_message());
+  notify.success(m.error_toast_copied_message());
 }
 
 /**
@@ -61,7 +63,7 @@ async function sendToAgent(error: AppError): Promise<void> {
     ? selectWorkspaceById.select(appStore.state, activeWorkspaceId)
     : undefined;
   if (!workspace) {
-    toast.error(m.error_toast_noSpace_error());
+    notify.error(m.error_toast_noSpace_error());
     return;
   }
 
@@ -106,39 +108,36 @@ async function attemptRecovery(error: AppError): Promise<void> {
   const success = await errorHandler.attemptRecovery(error.id);
   if (success) {
     errorHandler.dismiss(error.id);
-    toast.success(m.error_recovery_success());
+    notify.success(m.error_recovery_success());
   } else {
-    toast.error(m.error_recovery_failed());
+    notify.error(m.error_recovery_failed());
   }
 }
 
 /**
- * Severity-tinted border class for the Sonner toast wrapper — ErrorToast is
- * content-only, so the single wrapper border carries the tint.
+ * Whether "Debug with AI" may be offered: it creates an agent (`agent.create`),
+ * refused (-32003) for a collaborator connection, so the affordance is withheld
+ * for the active workspace of a guest / collaborator window.
  */
-function getWrapperBorderClass(type: string): string {
-  switch (type) {
-    case 'warning':
-      return '!border-warning/50';
-    case 'info':
-      return '!border-info/50';
-    default:
-      return '!border-danger/50';
-  }
+function canOfferDebugAgent(): boolean {
+  const state = appStore.state;
+  const activeWorkspaceId = selectCurrentWorkspaceTabId.select(state) ?? '';
+  return !selectHidesAgentLifecycleActions.select(state, activeWorkspaceId);
 }
 
 /**
  * Show an error as a toast notification
  */
 export function showErrorToast(error: AppError): void {
-  toast.custom(ErrorToast, {
-    componentProps: {
+  notify.appError(
+    {
       error,
       onCopy: () => copyError(error),
-      onDebug: () => sendToAgent(error),
+      onDebug: canOfferDebugAgent() ? () => sendToAgent(error) : undefined,
       onRetry: error.recoverable ? () => attemptRecovery(error) : undefined,
     },
-    duration: error.type === 'info' ? 5000 : 15000,
-    class: getWrapperBorderClass(error.type),
-  });
+    {
+      duration: error.type === 'info' ? 5000 : 15000,
+    },
+  );
 }

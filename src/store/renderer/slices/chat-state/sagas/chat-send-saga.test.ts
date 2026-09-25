@@ -30,8 +30,8 @@ const mocks = vi.hoisted(() => ({
   ),
 }));
 vi.mock('$features/agent/agent-send', () => ({ sendMessage: mocks.send }));
-vi.mock('svelte-sonner', () => ({
-  toast: { info: mocks.toastInfo, error: mocks.toastError },
+vi.mock('$lib/components/patterns/notify', () => ({
+  notify: { info: mocks.toastInfo, error: mocks.toastError },
 }));
 vi.mock('../../model/model-utils', () => ({
   getModelsForProviderForLoadingState: mocks.getModelsForProvider,
@@ -94,6 +94,7 @@ import {
   chatStateReducer,
   refreshChatTranscriptRequested,
   sendMessage,
+  sendQueuedMessageNowRequested,
   streamActivityReceived,
   streamStatusReceived,
   transcriptHydrationSettled,
@@ -482,6 +483,88 @@ describe('chatSendSaga', () => {
     ).toBe(true);
     run.task.cancel();
     await run.task.toPromise();
+  });
+
+  it.each([
+    { result: { success: true, queued: false, turnId: 'turn-now' }, outcome: 'delivered' },
+    { result: { success: true, queued: true }, outcome: 'queued' },
+    { result: { success: true, queued: true, quarantined: true }, outcome: 'quarantined' },
+  ])(
+    'acknowledges send-now as $outcome without changing the composer or stored attachments',
+    async ({ result, outcome }) => {
+      mocks.sendQueuedNow.mockResolvedValue(result);
+      const run = harness();
+      const entries: QueuedMessage[] = [
+        {
+          id: 'chosen',
+          content: 'review fixture',
+          queuedAt: '2026-01-01T00:00:00.000Z',
+          position: 0,
+          imageBlocks: [{ type: 'image', attachmentId: 'fixture-image' }],
+          fileBlocks: [{ type: 'file', attachmentId: 'fixture-file', fileName: 'fixture.txt' }],
+        },
+      ];
+      run.dispatch(replaceAgentQueue(AGENT, entries));
+      run.setChat(chatLastAttemptedMessageSet(AGENT, { text: 'running turn' }));
+      run.dispatch.mockClear();
+      const action = sendQueuedMessageNowRequested(AGENT, WS, 'chosen');
+      run.channel.put(action);
+      await expect(action.promise).resolves.toBe(outcome);
+      expect(mocks.sendQueuedNow).toHaveBeenCalledExactlyOnceWith({
+        agentId: AGENT,
+        workspaceId: WS,
+        messageId: 'chosen',
+      });
+      expect(mocks.send).not.toHaveBeenCalled();
+      expect(mocks.removeQueued).not.toHaveBeenCalled();
+      expect(mocks.toImageReferenceBlocks).not.toHaveBeenCalled();
+      expect(
+        run.dispatch.mock.calls.some(
+          ([sent]) =>
+            sent.type === 'transientUi/clearChatDraft' ||
+            sent.type === chatLastAttemptedMessageSet.type ||
+            sent.type.startsWith('agentQueue/'),
+        ),
+      ).toBe(false);
+      if (outcome === 'delivered') {
+        expect(run.dispatch).toHaveBeenCalledWith(chatQueueProcessingReceived(AGENT, 'turn-now'));
+      } else {
+        expect(
+          run.dispatch.mock.calls.some(([sent]) => sent.type === chatQueueProcessingReceived.type),
+        ).toBe(false);
+      }
+      run.task.cancel();
+      await run.task.toPromise();
+    },
+  );
+
+  it('rejects failed and cancelled send-now requests without retrying or dropping the queued item', async () => {
+    mocks.sendQueuedNow.mockResolvedValueOnce({ success: false, error: 'already drained' });
+    const run = harness();
+    const failed = sendQueuedMessageNowRequested(AGENT, WS, 'gone');
+    run.channel.put(failed);
+    await expect(failed.promise).rejects.toThrow('already drained');
+    mocks.sendQueuedNow.mockReturnValue(new Promise(() => {}));
+    const active = sendQueuedMessageNowRequested(AGENT, WS, 'waiting');
+    const queued = sendQueuedMessageNowRequested(AGENT, WS, 'later');
+    run.channel.put(active);
+    run.channel.put(queued);
+    const cancelled = Promise.all([
+      expect(active.promise).rejects.toThrow('cancelled'),
+      expect(queued.promise).rejects.toThrow('cancelled'),
+    ]);
+    run.task.cancel();
+    await cancelled;
+    await run.task.toPromise();
+    expect(mocks.sendQueuedNow).toHaveBeenCalledTimes(2);
+    expect(mocks.send).not.toHaveBeenCalled();
+    expect(mocks.removeQueued).not.toHaveBeenCalled();
+    expect(
+      run.dispatch.mock.calls.some(
+        ([sent]) =>
+          sent.type === chatSendFailed.type || sent.type === chatLastAttemptedMessageSet.type,
+      ),
+    ).toBe(false);
   });
 
   it('surfaces a direct-send RPC failure via chatSendFailed with the retry payload preserved (monorepo#3040)', async () => {

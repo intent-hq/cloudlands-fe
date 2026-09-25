@@ -1,7 +1,7 @@
 import { cleanup, fireEvent, render, screen } from '@testing-library/svelte';
 import { tick } from 'svelte';
 import DefaultAgentModelSettings from '$lib/components/settings/DefaultAgentModelSettings.svelte';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { runSaga, stdChannel, type Task } from 'redux-saga';
 import { getItems } from '@augmentcode/themis/utils/collections/collection-utils';
 import { backendReconnected } from '../../workspace-lifecycle/workspace-lifecycle-slice';
@@ -34,6 +34,10 @@ import { loadModelsOnBootWorker } from './model-boot-saga';
 import type { AppSettingChange } from '$lib/client/app-client';
 
 const request = vi.mocked(backendRequest);
+const matchMediaImplementation = vi.mocked(window.matchMedia).getMockImplementation()!;
+beforeEach(() => {
+  vi.mocked(window.matchMedia).mockImplementation(matchMediaImplementation);
+});
 let dispose: (() => void) | undefined;
 const tasks: Task[] = [];
 const cancelSagas: (() => void)[] = [];

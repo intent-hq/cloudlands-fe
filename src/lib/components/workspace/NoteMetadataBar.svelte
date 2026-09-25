@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { Button } from '$lib/components/ui/button';
   import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-session-selectors';
   import type { Note, AgentMessage, AgentSession } from '$shared/types';
   import type { WorkspaceId, AgentId } from '$shared/types/branded-ids';
@@ -14,7 +15,10 @@
   } from '$lib/utils/get-file-changes-from-messages';
   import { SPEC_NOTE_ID } from '$shared/constants/notes';
 
-  import { selectWorkspaceById } from '$store/renderer/slices/workspace/workspace-selectors';
+  import {
+    selectHidesAgentLifecycleActions,
+    selectWorkspaceById,
+  } from '$store/renderer/slices/workspace/workspace-selectors';
   import { selectAllNotes } from '$store/renderer/slices/workspace-notes/workspace-notes-selectors';
   import { selectAllWorkspaceAgents } from '$store/renderer/slices/workspace-agents/workspace-agents-selectors';
   import { openAgentTabRequested } from '$store/renderer/slices/app-layout/app-layout-slice';
@@ -41,6 +45,9 @@
 
   const workspaceId$ = toStore(() => workspaceId as string);
   const workspace$ = selectWorkspaceById(workspaceId$);
+  // "Run agent" creates a session (`agent.wakeOrCreate`), refused (-32003)
+  // for a collaborator connection: the play affordance is withheld.
+  const hidesAgentLifecycleActions$ = selectHidesAgentLifecycleActions(workspaceId$);
 
   // Reactive list of workspace agents. selectAllWorkspaceAgents already
   // scopes to the current workspace, so no manual filtering is needed.
@@ -142,6 +149,7 @@
 
   // Handle running an agent for this note (creates agent and sends initial message)
   function handleRunAgent() {
+    if ($hidesAgentLifecycleActions$) return;
     appStore.dispatch(
       runAgentForNoteRequested(
         workspaceId,
@@ -207,7 +215,7 @@
       class="w-full max-w-[var(--content-max-width,60rem)] px-[var(--content-gutter-left)] pt-12 mb-6 flex flex-col"
     >
       <!-- Status row -->
-      <div class="grid grid-cols-[120px_1fr] items-start min-h-7 py-0.5 min-w-0">
+      <div class="grid grid-cols-[120px_1fr] items-start min-h-6 min-w-0">
         <div class="text-subtle pt-0.5">{m.workspace_noteMetadataBar_status_label()}</div>
         <div class="flex items-center min-h-6 -mt-0.5">
           <TaskStatusIndicator
@@ -220,53 +228,64 @@
       </div>
 
       <!-- Assignee row -->
-      <div class="grid grid-cols-[120px_1fr] items-start min-h-7 py-0.5 min-w-0">
+      <div class="grid grid-cols-[120px_1fr] items-start min-h-6 min-w-0">
         <div class="text-subtle pt-0.5">{m.workspace_noteMetadataBar_assignee_label()}</div>
-        <div class="flex flex-col gap-1.5 min-h-6 min-w-0 overflow-hidden">
+        <div class="flex flex-col gap-0.5 min-h-6 min-w-0 overflow-hidden">
           {#if assignedAgents.length === 0}
-            <button
-              onclick={handleRunAgent}
-              class="inline-flex items-center justify-center h-6 w-4 rounded text-muted-foreground hover:text-muted-foreground transition-colors cursor-pointer"
-              title={m.workspace_noteMetadataBar_runAgent_tooltip()}
-            >
-              <Fa icon={faPlay} class="text-xs" />
-            </button>
+            {#if !$hidesAgentLifecycleActions$}
+              <Button
+                variant="ghost"
+                size="icon-compact"
+                iconOnly
+                onclick={handleRunAgent}
+                class="size-6 rounded text-muted-foreground hover:text-muted-foreground transition-colors cursor-pointer"
+                title={m.workspace_noteMetadataBar_runAgent_tooltip()}
+              >
+                <Fa icon={faPlay} class="text-xs" />
+              </Button>
+            {/if}
           {:else}
-            <div class="flex flex-wrap items-center gap-1.5 min-w-0">
+            <div class="flex flex-wrap items-center gap-0.5 min-w-0">
               {#each assignedAgents as agentId (agentId)}
-                <button
+                <Button
+                  variant="ghost"
                   onclick={(e) => handleAgentClick(e, agentId)}
-                  class="inline-flex items-center gap-1 min-w-0 py-0.5 pl-0.5 pr-2 rounded bg-muted/30 px-2 cursor-pointer"
+                  class="inline-flex items-center gap-1 h-6 min-w-0 py-0 pl-0.5 pr-2 rounded bg-transparent cursor-pointer"
                 >
                   <AgentAvatar size={22} {agentId} />
                   <span class="truncate font-medium text-subtle -mt-0.5"
                     >{getAgentName(agentId)}</span
                   >
-                </button>
+                </Button>
               {/each}
-              <button
-                onclick={handleRunAgent}
-                class="inline-flex items-center justify-center h-6 w-4 rounded text-muted-foreground hover:text-muted-foreground transition-colors cursor-pointer"
-                title={m.workspace_noteMetadataBar_runAgent_tooltip()}
-              >
-                <Fa icon={faPlay} class="text-xs" />
-              </button>
+              {#if !$hidesAgentLifecycleActions$}
+                <Button
+                  variant="ghost"
+                  size="icon-compact"
+                  iconOnly
+                  onclick={handleRunAgent}
+                  class="size-6 rounded text-muted-foreground hover:text-muted-foreground transition-colors cursor-pointer"
+                  title={m.workspace_noteMetadataBar_runAgent_tooltip()}
+                >
+                  <Fa icon={faPlay} class="text-xs" />
+                </Button>
+              {/if}
             </div>
-            <!-- <button
+            <!-- <Button
               onclick={handleViewAllChanges}
               class= text-muted-foreground hover:text-muted-foreground transition-colors cursor-pointer text-left"
             >
               View all changes
-            </button> -->
+            </Button> -->
           {/if}
         </div>
       </div>
 
       <!-- Relations rows (hidden when the task has no relations) -->
       {#if dependsOn.length > 0}
-        <div class="grid grid-cols-[120px_1fr] items-start min-h-7 py-0.5 min-w-0">
+        <div class="grid grid-cols-[120px_1fr] items-start min-h-6 min-w-0">
           <div class="text-subtle pt-0.5">{m.workspace_noteMetadataBar_dependsOn_label()}</div>
-          <div class="flex flex-wrap items-center gap-1.5 min-h-6 min-w-0">
+          <div class="flex flex-wrap items-center gap-0.5 min-h-6 min-w-0">
             {#each dependsOn as depId (depId)}
               <TaskRelationLink
                 {workspaceId}
@@ -278,9 +297,9 @@
         </div>
       {/if}
       {#if dependedOnBy.length > 0}
-        <div class="grid grid-cols-[120px_1fr] items-start min-h-7 py-0.5 min-w-0">
+        <div class="grid grid-cols-[120px_1fr] items-start min-h-6 min-w-0">
           <div class="text-subtle pt-0.5">{m.workspace_noteMetadataBar_dependedOnBy_label()}</div>
-          <div class="flex flex-wrap items-center gap-1.5 min-h-6 min-w-0">
+          <div class="flex flex-wrap items-center gap-0.5 min-h-6 min-w-0">
             {#each dependedOnBy as dependentId (dependentId)}
               <TaskRelationLink {workspaceId} noteId={dependentId} />
             {/each}
@@ -288,9 +307,9 @@
         </div>
       {/if}
       {#if conflictsWith.length > 0}
-        <div class="grid grid-cols-[120px_1fr] items-start min-h-7 py-0.5 min-w-0">
+        <div class="grid grid-cols-[120px_1fr] items-start min-h-6 min-w-0">
           <div class="text-subtle pt-0.5">{m.workspace_noteMetadataBar_conflictsWith_label()}</div>
-          <div class="flex flex-wrap items-center gap-1.5 min-h-6 min-w-0">
+          <div class="flex flex-wrap items-center gap-0.5 min-h-6 min-w-0">
             {#each conflictsWith as conflictId (conflictId)}
               <TaskRelationLink {workspaceId} noteId={conflictId} variant="conflict" />
             {/each}

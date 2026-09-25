@@ -1,6 +1,5 @@
 <script lang="ts">
-  import { faArrowDown } from '@fortawesome/free-solid-svg-icons';
-  import Fa from 'svelte-fa';
+  import ArrowDownIcon from 'phosphor-svelte/lib/ArrowDownIcon';
   import { Button } from '$lib/components/ui/button';
   import { m } from '$shared/paraglide/messages.js';
   import { CHAT_ICON_SIZE } from './chat-icon-size';
@@ -20,12 +19,16 @@
   data-testid="chat-scroll-to-bottom-button"
   {onclick}
   {disabled}
-  class="rounded-md text-muted-foreground shadow-none"
   data-icon-size={CHAT_ICON_SIZE.compact}
   aria-label={label}
   tooltip={label}
   tooltipSide="bottom"
   tooltipDelayDuration={300}
 >
-  <Fa icon={faArrowDown} size={CHAT_ICON_SIZE.compact} class="size-4!" />
+  <ArrowDownIcon
+    size={CHAT_ICON_SIZE.compact}
+    weight="regular"
+    aria-hidden="true"
+    class="size-4!"
+  />
 </Button>

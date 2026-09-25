@@ -1,5 +1,10 @@
 <script lang="ts">
-  import { getPhosphorIconComponent, type IconDefinition } from '$lib/icons/phosphor-icons';
+  import type { IconWeight } from 'phosphor-svelte';
+  import {
+    getPhosphorIconComponent,
+    getPhosphorIconWeight,
+    type IconDefinition,
+  } from '$lib/icons/phosphor-icons';
 
   type IconSize = 'xs' | 'sm' | 'lg' | `${number}x`;
   type FlipDir = 'horizontal' | 'vertical' | 'both';
@@ -11,6 +16,7 @@
     id?: string;
     style?: string;
     icon: IconDefinition;
+    weight?: IconWeight;
     title?: string;
     size?: number | string | IconSize;
     color?: string;
@@ -21,7 +27,6 @@
     translateY?: string | number;
     rotate?: number | string;
     flip?: FlipDir;
-    spin?: boolean;
     pulse?: boolean;
     primaryColor?: string;
     secondaryColor?: string;
@@ -36,6 +41,7 @@
     id,
     style,
     icon,
+    weight,
     title,
     size,
     color,
@@ -46,7 +52,6 @@
     translateY,
     rotate,
     flip,
-    spin,
     pulse,
     primaryColor,
     secondaryColor,
@@ -73,7 +78,10 @@
   const normalizedSize = $derived(normalizeSize(size as any));
   const Icon = $derived(getPhosphorIconComponent(icon));
   const iconWeight = $derived(
-    secondaryColor || secondaryOpacity || primaryOpacity || swapOpacity ? 'duotone' : 'bold',
+    weight ??
+      (secondaryColor || secondaryOpacity || primaryOpacity || swapOpacity
+        ? 'duotone'
+        : getPhosphorIconWeight(icon)),
   );
   const mirrored = $derived(flip === 'horizontal' || flip === 'both');
   const transform = $derived.by(() => {
@@ -96,7 +104,7 @@
       .join('; '),
   );
   const computedClass = $derived(
-    [className, spin ? 'animate-spin' : '', pulse ? 'animate-pulse' : ''].filter(Boolean).join(' '),
+    [className, pulse ? 'animate-pulse' : ''].filter(Boolean).join(' '),
   );
 </script>
 

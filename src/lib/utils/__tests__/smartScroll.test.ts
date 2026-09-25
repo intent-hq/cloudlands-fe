@@ -1150,6 +1150,76 @@ describe('followBottom policy', () => {
     action.destroy();
   });
 
+  it('pins from the lease settle when the container opts out of native anchoring', () => {
+    // The disclosure body sits inside a message, not directly under the
+    // scroller, so only its lease observes it for resizes.
+    const message = document.createElement('div');
+    const body = document.createElement('div');
+    message.append(body);
+    container.append(message);
+    container.style.overflowAnchor = 'none';
+    const action = followBottom(container, { follow: true });
+    runSettleTail();
+    const mutation = beforeFollowBottomMutation(body);
+    expect(resizeActive.has(body)).toBe(true);
+    scrollHeight += 18;
+    mutation.request();
+    expect(scrollTop).toBe(618);
+
+    // The terminal tick restores the natural box in the same step that
+    // releases the lease, and the release ends the body's resize
+    // observation. Without a native anchor the only pin left would be the
+    // next settle frame, so the settle itself must snap to the new maximum
+    // before a same-frame reader runs.
+    scrollHeight += 24;
+    mutation.settle();
+    expect(scrollTop).toBe(642);
+    expect(resizeActive.has(body)).toBe(false);
+    runSettleTail();
+    expect(scrollTop).toBe(642);
+    expect(animationFrames).toHaveLength(0);
+    action.destroy();
+  });
+
+  it('keeps an opted-out container at the bottom through a disclosure intro end', () => {
+    const message = document.createElement('div');
+    const child = document.createElement('div');
+    message.append(child);
+    container.append(message);
+    container.style.overflowAnchor = 'none';
+    const action = followBottom(container, { follow: true });
+    runSettleTail();
+    vi.spyOn(window, 'getComputedStyle').mockReturnValue({
+      height: '40px',
+      opacity: '1',
+      paddingTop: '0px',
+      paddingBottom: '0px',
+      marginTop: '0px',
+      marginBottom: '0px',
+    } as CSSStyleDeclaration);
+    vi.stubGlobal(
+      'matchMedia',
+      vi.fn(() => ({ matches: false })),
+    );
+    const intro = safeDisclosureTransition(child, {}, { direction: 'in' });
+
+    // Regression (intent#5373): a late final frame lands the intro end from a
+    // low t, so the natural-height restore is the round's largest growth. A
+    // same-frame reader ordered after the tick must still see an exact pin.
+    intro.tick?.(0.6, 0.4);
+    scrollHeight += 24;
+    intro.tick?.(0.6, 0.4);
+    expect(scrollTop).toBe(624);
+    scrollHeight += 16;
+    intro.tick?.(1, 0);
+    expect(scrollTop).toBe(640);
+    expect(hasActiveFollowBottomMutation(container)).toBe(false);
+    runSettleTail();
+    expect(scrollTop).toBe(640);
+    expect(animationFrames).toHaveLength(0);
+    action.destroy();
+  });
+
   it('re-acquires a reversed disclosure lease without reading geometry inside the tick', () => {
     const child = document.createElement('div');
     container.append(child);
@@ -1554,6 +1624,81 @@ describe('followBottom policy', () => {
     runFrame();
 
     expect(scrollTop).toBe(300);
+    action.destroy();
+  });
+
+  it.each([true, false])(
+    'keeps repeated activation updates layout-free before the first frame (follow=%s)',
+    (follow) => {
+      const options = { enabled: true, follow };
+      const action = followBottom(container, options);
+      runSettleTail();
+      action.update({ ...options, enabled: false });
+      scrollHeight += 100;
+      const heightReads = vi.spyOn(container, 'scrollHeight', 'get');
+      const viewportReads = vi.spyOn(container, 'clientHeight', 'get');
+
+      action.update(options);
+      for (let update = 0; update < 20; update += 1) action.update({ ...options });
+
+      expect(heightReads).not.toHaveBeenCalled();
+      expect(viewportReads).not.toHaveBeenCalled();
+      expect(animationFrames).toHaveLength(1);
+      runFrame();
+      expect(heightReads).toHaveBeenCalledTimes(1);
+      expect(viewportReads).toHaveBeenCalledTimes(1);
+      expect(scrollTop).toBe(follow ? 700 : 600);
+      action.destroy();
+    },
+  );
+
+  it('coalesces unchanged follow updates and reports the latest threshold without scrolling', () => {
+    const onScrollStateChange = vi.fn();
+    const options = { follow: false, threshold: 100, onScrollStateChange };
+    scrollTop = 480;
+    const action = followBottom(container, options);
+    runSettleTail();
+    expect(onScrollStateChange).toHaveBeenLastCalledWith({
+      distanceFromBottom: 120,
+      isAtBottom: false,
+      isFollowing: false,
+    });
+    onScrollStateChange.mockClear();
+    const heightReads = vi.spyOn(container, 'scrollHeight', 'get');
+    const viewportReads = vi.spyOn(container, 'clientHeight', 'get');
+    const topWrites = vi.spyOn(container, 'scrollTop', 'set');
+
+    for (let update = 0; update < 20; update += 1) action.update({ ...options });
+    action.update({ ...options, threshold: 150 });
+    expect(heightReads).not.toHaveBeenCalled();
+    expect(viewportReads).not.toHaveBeenCalled();
+    expect(onScrollStateChange).not.toHaveBeenCalled();
+    expect(animationFrames).toHaveLength(1);
+    runFrame();
+    expect(heightReads).toHaveBeenCalledTimes(1);
+    expect(viewportReads).toHaveBeenCalledTimes(1);
+    expect(topWrites).not.toHaveBeenCalled();
+    expect(onScrollStateChange).toHaveBeenCalledExactlyOnceWith({
+      distanceFromBottom: 120,
+      isAtBottom: true,
+      isFollowing: false,
+    });
+    action.destroy();
+  });
+
+  it.each(['disable', 'destroy'])('cancels coalesced update reporting on %s', (operation) => {
+    const onScrollStateChange = vi.fn();
+    const options = { follow: false, onScrollStateChange };
+    const action = followBottom(container, options);
+    runSettleTail();
+    onScrollStateChange.mockClear();
+    const heightReads = vi.spyOn(container, 'scrollHeight', 'get');
+    action.update(options);
+    if (operation === 'disable') action.update({ ...options, enabled: false });
+    else action.destroy();
+    runFrame();
+    expect(heightReads).not.toHaveBeenCalled();
+    expect(onScrollStateChange).not.toHaveBeenCalled();
     action.destroy();
   });
 

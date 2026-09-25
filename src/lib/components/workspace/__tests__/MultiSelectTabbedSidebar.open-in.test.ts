@@ -6,6 +6,8 @@ import { cleanup, fireEvent, render, waitFor, within } from '@testing-library/sv
 import { tick } from 'svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AgentSession } from '$shared/types';
+import { m } from '$shared/paraglide/messages.js';
+import { spring } from '$lib/motion';
 
 import type { InstalledEditor } from '$store/renderer/slices/external-editors/external-editors-slice';
 import {
@@ -107,8 +109,8 @@ vi.mock('$lib/utils/platform-capabilities', () => ({
   isElectronPlatform: () => true,
 }));
 vi.mock('$lib/electron-bridge', () => ({ invoke: mocks.invoke }));
-vi.mock('$lib/components/ui/toast', () => ({
-  toast: { success: vi.fn(), error: vi.fn() },
+vi.mock('$lib/components/patterns/notify', () => ({
+  notify: { success: vi.fn(), error: vi.fn() },
 }));
 vi.mock('$app/navigation', () => ({ goto: vi.fn() }));
 vi.mock('$features/navigation/link-handler', () => ({ handleLink: mocks.handleLink }));
@@ -146,6 +148,17 @@ vi.mock('$store/renderer/slices/workspace-agents/workspace-agents-selectors', ()
   selectIsLoadingRetiredAgents: mocks.selector(false),
   selectRetiredAgentsLoaded: mocks.selector(false),
   selectRetiredCount: mocks.selector(0),
+  selectScopeCounts: mocks.selector(null),
+  selectDelegatedAgentsLoaded: mocks.selector(false),
+  selectIsLoadingDelegatedAgents: mocks.selector(false),
+  selectDelegatedCounts: mocks.selector(null),
+  selectLoadedDelegatedParentIds: mocks.selector({}),
+  selectLoadingDelegatedParentIds: mocks.selector({}),
+  selectOrphanedDelegatedAgentsLoaded: mocks.selector(false),
+  selectOrphanedDelegatedAgentIds: mocks.selector({}),
+  selectIsLoadingOrphanedDelegatedAgents: mocks.selector(false),
+  selectBackgroundAgentsLoaded: mocks.selector(false),
+  selectIsLoadingBackgroundAgents: mocks.selector(false),
   selectWorkspaceHasUnreadForegroundAgents: mocks.selector(false),
 }));
 vi.mock('$store/renderer/slices/agent-session/agent-session-selectors', () => ({
@@ -172,6 +185,8 @@ vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
   })),
   selectWorkspaceActivePullRequest: mocks.selector(null),
   selectIsWorkspaceHostLocal: mocks.selector(true),
+  isWorkspacePullRequestPoolTruncated: () => false,
+  selectIsWorkspaceCollaborator: mocks.selector(false),
 }));
 vi.mock('$store/renderer/slices/pr-monitor/pr-monitor-selectors', () => ({
   selectPrMonitors: mocks.selector([]),
@@ -243,9 +258,6 @@ vi.mock('$features/agent/components/agent-avatar/AgentAvatarWithState.svelte', a
 vi.mock('$lib/components/ui/button', async () => ({
   Button: (await import('../../ui/__tests__/mocks/button.svelte')).default,
 }));
-vi.mock('$lib/components/ui/dropdown-menu.svelte', async () => ({
-  default: (await import('../../ui/__tests__/mocks/dropdown-menu.svelte')).default,
-}));
 
 vi.mock('../CreateAgentSection.svelte', async () => ({
   default: (await import('../sidebar/__tests__/mocks/MockSimple.svelte')).default,
@@ -263,6 +275,9 @@ vi.mock('../sidebar/WorkspaceProgressCard.svelte', async () => ({
   default: (await import('./mocks/WorkspaceProgressCard.svelte')).default,
 }));
 vi.mock('../WorkspaceTerminalDock.svelte', async () => ({
+  default: (await import('../sidebar/__tests__/mocks/MockSimple.svelte')).default,
+}));
+vi.mock('../WorkspaceShellList.svelte', async () => ({
   default: (await import('../sidebar/__tests__/mocks/MockSimple.svelte')).default,
 }));
 vi.mock('../SidebarBrowserLauncher.svelte', async () => ({
@@ -284,7 +299,7 @@ vi.mock('../sidebar', async () => {
 
 warmImport(() => import('../../ui/__tests__/mocks/Fa.svelte'));
 warmImport(() => import('../../ui/__tests__/mocks/button.svelte'));
-warmImport(() => import('../../ui/__tests__/mocks/dropdown-menu.svelte'));
+warmImport(() => import('$lib/components/ui/dropdown-menu.svelte'));
 warmImport(() => import('./mocks/FilesPanel.svelte'));
 warmImport(() => import('./mocks/ContextPanel.svelte'));
 warmImport(() => import('./mocks/WorkspaceAgentsList.svelte'));
@@ -365,12 +380,10 @@ describe('MultiSelectTabbedSidebar Files Open In', () => {
         ...view,
         target,
         assertCapability: async () => {
-          await fireEvent.click(target);
-          await waitFor(() =>
-            expect(view.container.querySelector('.dropdown-content')).toBeTruthy(),
-          );
+          // The visual-state helper already activates the real trigger with Enter.
+          await waitFor(() => expect(view.getByRole('menu')).toBeTruthy());
           expect(view.container.querySelector('[data-sidebar-launcher="files"]')).toBeTruthy();
-          expect(view.getByText('Copy path')).toBeTruthy();
+          expect(view.getByRole('menuitemradio', { name: 'Copy path' })).toBeTruthy();
         },
       };
     });
@@ -388,20 +401,20 @@ describe('MultiSelectTabbedSidebar Files Open In', () => {
     const glyph = trigger.querySelector('[data-files-open-in] .fa-icon');
 
     expect(glyph?.classList.contains('size-4!')).toBe(true);
-    await fireEvent.pointerDown(trigger);
     await fireEvent.keyDown(trigger, { key: 'Enter' });
-    await fireEvent.keyDown(trigger, { key: ' ' });
     expect(fullCardTrigger?.getAttribute('aria-expanded')).toBe('false');
 
-    await fireEvent.click(trigger);
-    await waitFor(() => expect(container.querySelector('.dropdown-content')).toBeTruthy());
+    await waitFor(() => expect(getByRole('menu')).toBeTruthy());
     expect(container.querySelector('[data-testid="sidebar-launchers"]')).toBeTruthy();
     expect(fullCardTrigger?.getAttribute('aria-expanded')).toBe('false');
     expect(getByText('Other')).toBeTruthy();
     expect(getByText('Copy path')).toBeTruthy();
 
-    await fireEvent.click(getByText('Visual Studio Code'));
+    const editor = getByRole('menuitemradio', { name: 'Visual Studio Code' });
+    expect(editor.getAttribute('aria-checked')).toBe('true');
+    await fireEvent.click(editor);
     await waitFor(() => expect(mocks.invoke).toHaveBeenCalledWith('vscode:open', '/tmp/project'));
+    await waitFor(() => expect(document.body.querySelector('[role="menu"]')).toBeNull());
   });
 
   it('lists every workspace PR in the Changes trailing dropdown and opens the clicked one', async () => {
@@ -434,7 +447,6 @@ describe('MultiSelectTabbedSidebar Files Open In', () => {
     const label = launcher.querySelector<HTMLElement>('[data-sidebar-launcher-label]')!;
     const dropdown = launcher.querySelector<HTMLElement>('[data-sidebar-pr-dropdown]')!;
     const trigger = launcher.querySelector<HTMLButtonElement>('[data-sidebar-pr-trigger]')!;
-    const resource = container.querySelector<HTMLElement>('[data-sidebar-changes-resource]');
 
     expect(label.textContent).toBe('Changes');
     expect(label.nextElementSibling).toBe(dropdown);
@@ -452,11 +464,6 @@ describe('MultiSelectTabbedSidebar Files Open In', () => {
     // The menu content is portaled, so a closed menu renders no rows anywhere.
     expect(document.body.querySelector('[data-sidebar-pr-link]')).toBeNull();
     expect(launcher.textContent).not.toContain('1,373');
-    expect(
-      resource
-        ?.querySelector('[data-resource-icon-tile]')
-        ?.getAttribute('data-resource-icon-variant'),
-    ).toBe('emphasized');
 
     await fireEvent.click(trigger);
     await waitFor(() => expect(trigger.getAttribute('aria-expanded')).toBe('true'));
@@ -486,6 +493,98 @@ describe('MultiSelectTabbedSidebar Files Open In', () => {
     await fireEvent.click(cardAction);
     expect(mocks.dispatch).toHaveBeenCalledWith(
       expect.objectContaining({ type: 'sidebarNav/setMultiSelectSidebarSelectedTabs' }),
+    );
+  });
+
+  it('round-trips the Changes launcher without redirecting direct PR actions', async () => {
+    const prUrl = 'https://github.com/intent-hq/project/pull/77';
+    mocks.pullRequests = [
+      {
+        id: 'pr-77',
+        number: 77,
+        url: prUrl,
+        title: 'Launcher round-trip pull request',
+        status: 'Open',
+        createdAt: '2026-08-12T00:00:00.000Z',
+        updatedAt: '2026-08-12T00:00:00.000Z',
+      },
+    ];
+    const Sidebar = (await import('../MultiSelectTabbedSidebar.svelte')).default;
+    await mocks.dispatch.withImplementation(
+      (action) => {
+        if (action?.type === 'sidebarNav/setMultiSelectSidebarSelectedTabs') {
+          const [workspaceId, tabIds] = action.payload as [string, string[]];
+          mocks.setSelectedTabs(workspaceId, tabIds);
+        }
+        return action;
+      },
+      async () => {
+        const { container } = render(Sidebar, { props: { workspaceId: 'ws-1' } });
+        const selections = () =>
+          mocks.dispatch.mock.calls
+            .map(([action]) => action)
+            .filter((action) => action.type === 'sidebarNav/setMultiSelectSidebarSelectedTabs');
+        const openPr = async (owner: HTMLElement) => {
+          const trigger = owner.querySelector<HTMLButtonElement>('[data-sidebar-pr-trigger]')!;
+          await fireEvent.click(trigger);
+          await waitFor(() => expect(trigger.getAttribute('aria-expanded')).toBe('true'));
+          const link = await waitFor(() => {
+            const found = document.body.querySelector<HTMLElement>(
+              '[role="menu"] [data-sidebar-pr-link]',
+            );
+            expect(found).not.toBeNull();
+            return found!;
+          });
+          expect(link.dataset.sidebarPrUrl).toBe(prUrl);
+          await fireEvent.click(link);
+          await waitFor(() => expect(trigger.getAttribute('aria-expanded')).toBe('false'));
+          await waitFor(() => expect(document.body.querySelector('[role="menu"]')).toBeNull());
+        };
+        const launcher = container.querySelector<HTMLElement>('[data-sidebar-launcher="changes"]')!;
+        await openPr(launcher);
+        expect(mocks.handleLink.mock.calls).toEqual([[prUrl, { workspaceId: 'ws-1' }]]);
+        expect(selections()).toEqual([]);
+        expect(container.querySelector('[data-sidebar-card-tab="changes"]')).toBeNull();
+
+        await fireEvent.click(within(launcher).getByRole('button', { name: 'Expand panel' }));
+        const expandedSelection = {
+          type: 'sidebarNav/setMultiSelectSidebarSelectedTabs',
+          payload: ['ws-1', ['changes']],
+        };
+        expect(selections()).toEqual([expandedSelection]);
+        await waitFor(() =>
+          expect(container.querySelector('[data-testid="sidebar-launchers"]')).toBeNull(),
+        );
+        const card = container.querySelector<HTMLElement>('[data-sidebar-card-tab="changes"]')!;
+        expect(card).not.toBeNull();
+        await openPr(card);
+        expect(mocks.handleLink.mock.calls).toEqual([
+          [prUrl, { workspaceId: 'ws-1' }],
+          [prUrl, { workspaceId: 'ws-1' }],
+        ]);
+        expect(selections()).toEqual([expandedSelection]);
+        expect(container.querySelector('[data-sidebar-card-tab="changes"]')).toBe(card);
+
+        await fireEvent.click(card.querySelector<HTMLButtonElement>('[data-sidebar-close]')!);
+        const expectedSelections = [
+          expandedSelection,
+          { type: 'sidebarNav/setMultiSelectSidebarSelectedTabs', payload: ['ws-1', ['overview']] },
+        ];
+        expect(selections()).toEqual(expectedSelections);
+        await waitFor(() =>
+          expect(container.querySelector('[data-sidebar-card-tab="changes"]')).toBeNull(),
+        );
+        const restored = container.querySelector<HTMLElement>('[data-sidebar-launcher="changes"]')!;
+        expect(restored).not.toBeNull();
+        await openPr(restored);
+        expect(mocks.handleLink.mock.calls).toEqual([
+          [prUrl, { workspaceId: 'ws-1' }],
+          [prUrl, { workspaceId: 'ws-1' }],
+          [prUrl, { workspaceId: 'ws-1' }],
+        ]);
+        expect(selections()).toEqual(expectedSelections);
+        expect(container.querySelector('[data-sidebar-card-tab="changes"]')).toBeNull();
+      },
     );
   });
 
@@ -561,7 +660,15 @@ describe('MultiSelectTabbedSidebar Files Open In', () => {
 
     expect(container.querySelector('[data-sidebar-pr-trigger]')).toBeNull();
     expect(document.body.querySelector('[data-sidebar-pr-link]')).toBeNull();
-    expect(container.querySelector('[data-sidebar-changes-resource]')).not.toBeNull();
+    await fireEvent.click(
+      container.querySelector<HTMLButtonElement>(
+        '[data-sidebar-launcher="changes"] .launcher-tile-action',
+      )!,
+    );
+    expect(mocks.dispatch).toHaveBeenCalledWith({
+      type: 'sidebarNav/setMultiSelectSidebarSelectedTabs',
+      payload: ['ws-1', ['changes']],
+    });
   });
 
   it.each([
@@ -1279,7 +1386,7 @@ describe('MultiSelectTabbedSidebar Files Open In', () => {
       expect(
         animations.some(
           ({ node, duration }) =>
-            node.matches('[data-sidebar-card-tab="changes"]') && duration === 300,
+            node.matches('[data-sidebar-card-tab="changes"]') && duration === spring.slow.settleMs,
         ),
       ).toBe(true),
     );
@@ -1291,7 +1398,8 @@ describe('MultiSelectTabbedSidebar Files Open In', () => {
     await waitFor(() =>
       expect(
         animations.filter(
-          ({ node, duration }) => node.matches('.sidebar-expanded-card') && duration === 180,
+          ({ node, duration }) =>
+            node.matches('.sidebar-expanded-card') && duration === spring.moderate.settleMs,
         ),
       ).toHaveLength(2),
     );
@@ -1304,7 +1412,7 @@ describe('MultiSelectTabbedSidebar Files Open In', () => {
       expect(
         animations.some(
           ({ node, duration }) =>
-            node.matches('[data-sidebar-card-tab="files"]') && duration === 300,
+            node.matches('[data-sidebar-card-tab="files"]') && duration === spring.slow.settleMs,
         ),
       ).toBe(true),
     );
@@ -1337,5 +1445,31 @@ describe('MultiSelectTabbedSidebar Files Open In', () => {
 
     expect(second.container.querySelector('.sidebar-expanded-card')).not.toBeNull();
     expect(second.container.querySelector('[data-expanded-agent="agent-1"]')).not.toBeNull();
+  });
+
+  it('describes the expanded Shells card but leaves the Agents card without prose', async () => {
+    const { TAB_DEFINITIONS } = await import('../multi-select-sidebar-tabs');
+    const shellDescription = TAB_DEFINITIONS.find((tab) => tab.id === 'shell')!.description;
+    const agentsDescription = TAB_DEFINITIONS.find((tab) => tab.id === 'agents')!.description;
+    const Sidebar = (await import('../MultiSelectTabbedSidebar.svelte')).default;
+
+    const orchestrationLabel = m.workspace_initialAgentPicker_teamMode_label();
+
+    mocks.selectedTabs = ['shell'];
+    const shell = render(Sidebar, { props: { workspaceId: 'ws-1' } });
+    const shellCard = shell.container.querySelector<HTMLElement>('.sidebar-expanded-card')!;
+    expect(within(shellCard).getByText(shellDescription)).toBeTruthy();
+    expect(shell.queryByText(orchestrationLabel)).toBeNull();
+
+    cleanup();
+    mocks.agents = [makeAgent('agent-1')];
+    mocks.selectedTabs = ['agents'];
+    const agents = render(Sidebar, { props: { workspaceId: 'ws-1' } });
+    const agentsCard = agents.container.querySelector<HTMLElement>('.sidebar-expanded-card')!;
+    expect(within(agentsCard).queryByText(agentsDescription)).toBeNull();
+    expect(within(agentsCard).queryByText(shellDescription)).toBeNull();
+    // The initializer's orchestration mode copy belongs to the picker, not the sidebar.
+    expect(agents.queryByText(orchestrationLabel)).toBeNull();
+    expect(agents.queryByLabelText(orchestrationLabel)).toBeNull();
   });
 });

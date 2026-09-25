@@ -1,15 +1,16 @@
 // @vitest-environment jsdom
 // @ui-invariant
 import { cleanup, render } from '@testing-library/svelte';
-import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { cardMetadata } from '$lib/components/ui/card';
 import { cardFixtures } from '$lib/components/ui/card/card.fixtures';
+import { copyInputFixtures } from '$lib/components/ui/copy-input/copy-input.fixtures';
 import { spinnerMetadata } from '$lib/components/ui/indicators';
 import { spinnerFixtures } from '$lib/components/ui/indicators/spinner.fixtures';
 import { inputMetadata } from '$lib/components/ui/input';
 import { inputFixtures } from '$lib/components/ui/input/input.fixtures';
+import { inputGroupFixtures } from '$lib/components/ui/input-group/input-group.fixtures';
+import { inputMessageFixtures } from '$lib/components/ui/input-message/input-message.fixtures';
 import { labelMetadata } from '$lib/components/ui/label';
 import { labelFixtures } from '$lib/components/ui/label/label.fixtures';
 import { listMetadata } from '$lib/components/ui/list';
@@ -18,6 +19,7 @@ import { separatorMetadata } from '$lib/components/ui/separator';
 import { separatorFixtures } from '$lib/components/ui/separator/separator.fixtures';
 import { skeletonMetadata } from '$lib/components/ui/skeleton';
 import { skeletonFixtures } from '$lib/components/ui/skeleton/skeleton.fixtures';
+import { tableFixtures } from '$lib/components/ui/table/table.fixtures';
 import { textareaMetadata } from '$lib/components/ui/textarea';
 import { textareaFixtures } from '$lib/components/ui/textarea/textarea.fixtures';
 import { buildUiComponentInventory } from '../../../../scripts/ui-component-inventory';
@@ -31,7 +33,16 @@ const cases = [
   ['label', labelFixtures[0]],
   ['separator', separatorFixtures[0]],
   ['skeleton', skeletonFixtures[0]],
-  ['spinner', spinnerFixtures[0]],
+  ['loading-indicator', spinnerFixtures[0]],
+] as const;
+// Every renderer branch, so a raw control or physical palette class added to
+// any of them is caught by the DOM invariant matrix.
+const controlCases = [
+  ...cases,
+  ['copy-input', copyInputFixtures[0]],
+  ['input-group', inputGroupFixtures[0]],
+  ['input-message', inputMessageFixtures[0]],
+  ['table', tableFixtures[0]],
 ] as const;
 const metadata = [
   cardMetadata,
@@ -88,25 +99,63 @@ describe('ContentFieldCatalogPreview', () => {
     expect(separator.getByRole('separator').getAttribute('data-orientation')).toBe('vertical');
     cleanup();
 
-    const spinner = render(ContentFieldCatalogPreview, {
-      props: { componentId: 'spinner', fixture: spinnerFixtures[0] },
+    const skeleton = render(ContentFieldCatalogPreview, {
+      props: { componentId: 'skeleton', fixture: skeletonFixtures[0] },
     });
-    expect(spinner.getAllByRole('status', { name: 'Loading' })).toHaveLength(6);
+    expect(skeleton.getByRole('status', { name: 'Loading preview' })).toBeTruthy();
+    cleanup();
+
+    const loadingIndicator = render(ContentFieldCatalogPreview, {
+      props: { componentId: 'loading-indicator', fixture: spinnerFixtures[0] },
+    });
+    expect(
+      Array.from(loadingIndicator.container.querySelectorAll('[data-loader-variant]')).map((row) =>
+        row.getAttribute('data-loader-variant'),
+      ),
+    ).toEqual(['bloom', 'pulse', 'twist']);
+    expect(
+      Array.from(loadingIndicator.container.querySelectorAll('[data-loader-size]')).map((row) =>
+        Number(row.getAttribute('data-loader-size')),
+      ),
+    ).toEqual([16, 24, 32]);
+    const paused = loadingIndicator.container.querySelector('[data-loader-paused]');
+    const pausedMark = paused?.querySelector('[data-slot="intent-mark-loader"]');
+    expect(pausedMark?.getAttribute('data-playing')).toBe('false');
+    expect(pausedMark?.getAttribute('width')).toBe('16');
+    expect(pausedMark?.querySelectorAll('[data-mark-arm]')).toHaveLength(5);
+    expect(
+      loadingIndicator.container
+        .querySelector('[data-loader-context="button"]')
+        ?.querySelector('[data-slot="intent-mark-loader"]'),
+    ).not.toBeNull();
+    expect(
+      loadingIndicator.container
+        .querySelector('[data-loader-context="list-row"]')
+        ?.querySelector('[data-slot="intent-mark-loader"]')
+        ?.getAttribute('width'),
+    ).toBe('14');
   });
 
-  it('contains no raw controls or physical palette utilities', () => {
-    const source = readFileSync(
-      resolve(
-        process.cwd(),
-        'src/lib/component-catalog/renderers/ContentFieldCatalogPreview.svelte',
-      ),
-      'utf8',
-    );
-    expect(source).not.toMatch(/<(?:button|input|textarea|select)(?:\s|>)/);
-    expect(source).not.toMatch(
-      /(?:bg|border|text)-(?:white|black|red|blue|green|gray|zinc|slate|neutral|stone|amber|yellow|purple|violet|indigo|sky|cyan|teal|emerald|lime|orange|rose|pink)-/,
-    );
-  });
+  it.each(controlCases)(
+    'renders %s controls only through canonical components and semantic colors',
+    (componentId, fixture) => {
+      const { container } = render(ContentFieldCatalogPreview, { props: { componentId, fixture } });
+      const controls = Array.from(
+        container.querySelectorAll<HTMLElement>('button, input, textarea, select'),
+      );
+      const rawControls = controls.filter((control) => !control.hasAttribute('data-slot'));
+      expect(rawControls.map((control) => control.outerHTML)).toEqual([]);
+
+      const paletteClasses = Array.from(container.querySelectorAll('[class]'))
+        .flatMap((element) => Array.from(element.classList))
+        .filter((className) =>
+          /(?:bg|border|text)-(?:white|black|red|blue|green|gray|zinc|slate|neutral|stone|amber|yellow|purple|violet|indigo|sky|cyan|teal|emerald|lime|orange|rose|pink)-/.test(
+            className,
+          ),
+        );
+      expect(paletteClasses).toEqual([]);
+    },
+  );
 
   it('keeps public exports, aliases, callers, and dynamic imports aligned to source discovery', () => {
     const inventory = buildUiComponentInventory();
@@ -115,7 +164,14 @@ describe('ContentFieldCatalogPreview', () => {
         ({ publicImport }) => publicImport === record.publicImport,
       );
       expect(discovered, record.publicImport).toBeTruthy();
-      expect(record.exports, record.publicImport).toEqual(discovered?.exports);
+      const expectedExports =
+        record === spinnerMetadata
+          ? [
+              'IntentMarkLoader',
+              ...(discovered?.exports.filter((name) => name !== 'IntentMarkLoader') ?? []),
+            ]
+          : discovered?.exports;
+      expect(record.exports, record.publicImport).toEqual(expectedExports);
       expect(record.legacyImports, record.publicImport).toEqual(discovered?.legacyImports);
       expect(record.callers, record.publicImport).toEqual(discovered?.callers);
       expect(record.dynamicImports, record.publicImport).toEqual(discovered?.dynamicImports);

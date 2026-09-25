@@ -90,7 +90,7 @@
     <CopyButton
       text={code}
       size="xs"
-      class="bg-white/80 hover:bg-gray-100 text-gray-500 hover:text-gray-700 backdrop-blur-sm dark:bg-[#2d2d3a]/80 dark:hover:bg-[#3d3d4a] dark:text-gray-400 dark:hover:text-gray-200"
+      class="bg-background/80 hover:bg-hover text-muted-foreground hover:text-foreground backdrop-blur-sm"
     />
   </div>
 

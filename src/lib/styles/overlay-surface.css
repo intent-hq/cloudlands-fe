@@ -1,0 +1,13 @@
+.overlay-surface {
+  --overlay-surface-border-width: 0px;
+  --overlay-surface-border-color: transparent;
+
+  border: var(--overlay-surface-border-width) solid var(--overlay-surface-border-color);
+  border-radius: var(--radius-medium);
+  box-shadow: var(--elevation-overlay);
+}
+
+.dark .overlay-surface {
+  --overlay-surface-border-width: 1px;
+  --overlay-surface-border-color: hsl(var(--border));
+}

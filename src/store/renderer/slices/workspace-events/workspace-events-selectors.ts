@@ -2,6 +2,11 @@ import { store } from '../../store';
 import type { WorkspaceEvent } from '$features/events/types';
 import { emptyWorkspaceEventsState } from './workspace-events-slice';
 
+/** `0` until the daemon-events firehose is live; +1 per (re)subscription. */
+export const selectDaemonEventsSubscriptionGeneration = store.createSelector<[], number>(
+  (state) => state.workspaceEvents.subscriptionGeneration,
+);
+
 export const selectWorkspaceEvents = store.createSelector<[workspaceId: string], WorkspaceEvent[]>(
   (state, workspaceId) => {
     return (state.workspaceEvents.byWorkspaceId[workspaceId] ?? emptyWorkspaceEventsState).events;

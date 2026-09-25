@@ -119,8 +119,8 @@ vi.mock('$lib/utils/client-logger', () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
 }));
 
-vi.mock('svelte-sonner', () => ({
-  toast: { success: mocks.toastSuccess, error: mocks.toastError },
+vi.mock('$lib/components/patterns/notify', () => ({
+  notify: { success: mocks.toastSuccess, error: mocks.toastError },
 }));
 
 vi.mock('svelte-fa', async () => ({ default: (await import('./mocks/Fa.svelte')).default }));
@@ -739,7 +739,7 @@ describe('SecondaryRootChangesView', () => {
     expect(container.textContent).not.toContain('stale-branch');
   });
 
-  it('splits the list at registeredCommitSha: divider + dimmed older commits behind the expander', async () => {
+  it('splits the list at registeredCommitSha with older commits behind the expander', async () => {
     mocks.getStatus.mockResolvedValue({ ok: true, data: makeStatus('main') });
     mocks.getHistory.mockResolvedValue({
       ok: true,
@@ -770,10 +770,9 @@ describe('SecondaryRootChangesView', () => {
     await fireEvent.click(toggle);
     await waitFor(() => expect(toggle.getAttribute('aria-expanded')).toBe('true'));
     const older = getByTestId('secondary-root-older-commits');
-    // Boundary commit renders inside the dimmed older section (inclusive).
+    // Boundary commit renders inside the older section (inclusive).
     expect(older.textContent).toContain('chore: at registration');
     expect(older.textContent).toContain('feat: before registration');
-    expect(older.className).toContain('opacity-60');
 
     // Collapse again
     await fireEvent.click(toggle);

@@ -9,6 +9,7 @@
     faCircleExclamation,
   } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
+  import { Button } from '$lib/components/ui/button';
   import { onDestroy } from 'svelte';
   import StreamingMessageContent from './StreamingMessageContent.svelte';
   import MessageActions from './MessageActions.svelte';
@@ -24,7 +25,7 @@
   import { getModelChangeNotice } from './model-change-notice';
   import { getAttentionNotice } from './attention-notice';
   import { parseStoredMessage } from '$lib/utils/parseStoredMessage';
-  import { safeSlide } from '$lib/utils/animations';
+  import { safeDisclosureTransition } from './disclosure-motion';
   import type { ContextItem } from './input/context-api';
   import type { FileBlock, ImageBlock } from '$lib/client/app-client';
   import { openWorkspaceAttachment } from '$store/renderer/slices/workspace-navigation/workspace-navigation-slice';
@@ -48,6 +49,7 @@
     resolveFinishReasonNotice,
   } from './message-display-utils';
   import ImageLightbox from '$lib/components/ui/ImageLightbox.svelte';
+  import PrincipalAvatar from '$lib/components/ui/PrincipalAvatar.svelte';
   import EditRegenerateConfirmDialog from './EditRegenerateConfirmDialog.svelte';
   import { evictAttachmentImageUrl, resolveAttachmentImageUrl } from './attachment-image-url';
   import { onBackendReconnected } from '$lib/client/live/backend-transport';
@@ -55,7 +57,11 @@
   import type { ContentBlock } from '$shared/types/content-block';
   import AgentMessageAttributionHeader from './AgentMessageAttributionHeader.svelte';
   import { getAgentMessageAttribution } from '$lib/utils/agent-message-attribution';
-  import QueuedMessageNoticeHeader from './QueuedMessageNoticeHeader.svelte';
+  import {
+    getCollaboratorSenderAttribution,
+    singleLineName,
+  } from '$lib/utils/collaborator-sender-attribution';
+  import { getHumanMessageAuthor, getMessageAuthorLabel } from '$lib/utils/message-authorship';
   import { getQueueInfo } from '$lib/utils/queue-info';
   import { getPresentedUserMessageText } from '$lib/utils/user-message-presentation';
   import AutomatedWakeCardHeader from './AutomatedWakeCardHeader.svelte';
@@ -65,11 +71,14 @@
     SUBSCRIPTION_CARD_CONTAINMENT_CLASS,
     SUBSCRIPTION_CARD_SURFACE_CLASS,
     SUBSCRIPTION_IN_THREAD_CARD_SPACING_CLASS,
+    SUBSCRIPTION_WAKE_BODY_PADDING_CLASS,
   } from './subscription-disclosure';
   import QuestionsDismissedNotice from './QuestionsDismissedNotice.svelte';
   import { getQuestionsDismissedNotice } from './questions-dismissed-notice';
   import AutoUnarchivedNotice from './AutoUnarchivedNotice.svelte';
   import { getAutoUnarchivedNotice } from './auto-unarchived-notice';
+  import ProviderRehomedNotice from './ProviderRehomedNotice.svelte';
+  import { getProviderRehomedNotice } from './rehome-notice';
   import ChatOperationalRow from './ChatOperationalRow.svelte';
   import { CHAT_OPERATIONAL_ICON_CLASS } from './operational-disclosure-row';
 
@@ -194,6 +203,11 @@
     /** Workspace for SimpleRichInput in edit mode */
     workspace?: Workspace | null;
     /**
+     * The viewer's own principal (`presence.ownPrincipalId`): their own rows
+     * render no author identity. `null` = not yet known, every author shown.
+     */
+    ownPrincipalId?: string | null;
+    /**
      * Called when user wants to edit and resend the message. `blocks`
      * carries the attachment content blocks restored/edited in the edit
      * strip (PROTOCOL §5.5) so edit/regenerate never drops attachments.
@@ -245,6 +259,7 @@
     hideToolCalls = false,
     sessionMetadata,
     workspace = null,
+    ownPrincipalId = null,
     onEditSubmit,
     editModel,
     onRegenerate,
@@ -316,6 +331,9 @@
   // Daemon-persisted auto-unarchive transcript row (metadata type "auto_unarchived")
   let autoUnarchivedNotice = $derived(getAutoUnarchivedNotice(message));
 
+  // Daemon-persisted provider re-home transcript row (metadata type "provider_rehomed")
+  let providerRehomedNotice = $derived(getProviderRehomedNotice(message));
+
   // Daemon-persisted attention-request row (meta.kind "discussion-request"/"blocker-report")
   let attentionNotice = $derived(getAttentionNotice(message));
 
@@ -383,11 +401,6 @@
     role === 'user' ? getAgentMessageAttribution(message?.metadata) : null,
   );
   let isAgentMessageExpanded = $state(false);
-  let agentMessagePreview = $derived(
-    message
-      ? (role === 'user' ? getPresentedUserMessageText(message) : extractAllContent(message)).trim()
-      : '',
-  );
   let agentMessageBodyId = $derived(`agent-message-body-${message?.id ?? 'pending'}`);
 
   // Queued-delivery info for messages drained from the pending queue
@@ -408,6 +421,47 @@
   );
   let isAutomatedWakeExpanded = $state(false);
   let automatedWakeBodyId = $derived(`automated-wake-body-${message?.id ?? 'pending'}`);
+
+  // Human author identity (multiplayer w2): shown only once the workspace has
+  // more than one member, on plain human rows — agent-to-agent sends and
+  // automated wakes carry their own sender header. Reads the daemon's
+  // serve-time `author` projection verbatim; single-member workspaces, the
+  // viewer's own rows and rows without the projection render unchanged.
+  //
+  // A row whose content starts with the daemon's collaborator sender preamble
+  // (exact match against the text rebuilt from the same projection) always
+  // shows the sender chip with the guest role — the preamble itself is
+  // display-stripped by the presentation boundary, so the chip is the only
+  // place the sender and their role remain visible, for owner and guest alike.
+  // The workspace owner's own rows never qualify (the daemon prepends the
+  // preamble for collaborators only), so an owner-typed lookalike line stays.
+  let collaboratorSender = $derived(
+    role === 'user' && !agentAttribution && !automatedWakePresentation
+      ? getCollaboratorSenderAttribution(message, workspace?.ownerPrincipalId)
+      : null,
+  );
+  let humanAuthor = $derived(
+    collaboratorSender
+      ? collaboratorSender.author
+      : role === 'user' &&
+          (workspace?.memberCount ?? 0) >= 2 &&
+          !agentAttribution &&
+          !automatedWakePresentation
+        ? getHumanMessageAuthor(message, ownPrincipalId)
+        : null,
+  );
+  let humanAuthorLabel = $derived.by(() => {
+    if (!humanAuthor) return null;
+    if (!collaboratorSender) return getMessageAuthorLabel(humanAuthor);
+    // Same shape and sanitizer as the stripped preamble: `@login (Display
+    // Name)`, then `@login`, then the display name alone — control characters
+    // and whitespace runs collapse exactly as the daemon's `single_line_name`.
+    const cleanLogin = singleLineName(humanAuthor.login);
+    const login = cleanLogin ? `@${cleanLogin}` : null;
+    const name = singleLineName(humanAuthor.displayName);
+    // i18n-ignore (handle + name composition, mirrors the daemon preamble)
+    return login && name ? `${login} (${name})` : (login ?? name);
+  });
 
   // Local state
   let messageElement = $state<HTMLDivElement>();
@@ -827,7 +881,8 @@
       $hydratedBlocks$,
     ).filter(
       (block: any) =>
-        block.type === 'image' && ((block.data && block.mimeType) || block.attachmentId),
+        block.type === 'image' &&
+        ((block.data && block.mimeType) || block.attachmentId || block.dataTruncated === true),
     );
   });
 
@@ -898,7 +953,7 @@
     blockId: string;
     openerElement: HTMLButtonElement;
     index: number;
-    thumbnailBlock: ContentBlock & { data: string; mimeType: string };
+    thumbnailBlock: ContentBlock;
   } | null>(null);
 
   function isAttachmentHydrationLoading(blockId: string | undefined): boolean {
@@ -929,9 +984,9 @@
       lightboxOpen = true;
       return;
     }
-    if (!isImageBlock(imageBlock)) return;
     const hydrationMessageId = message?.id ?? messageId;
     if (imageBlock.dataTruncated === true && agentId && hydrationMessageId && imageBlock.id) {
+      if (pendingLightboxHydration?.blockId === imageBlock.id) return;
       pendingLightboxHydration = {
         blockId: imageBlock.id,
         openerElement,
@@ -941,6 +996,7 @@
       appStore.dispatch(messageBlockHydrationRequested(agentId, hydrationMessageId, imageBlock.id));
       return;
     }
+    if (!isImageBlock(imageBlock) || !imageBlock.data) return;
     lightboxImageUrl = `data:${imageBlock.mimeType};base64,${imageBlock.data}`;
     lightboxImageName =
       imageBlock.fileName ||
@@ -984,6 +1040,9 @@
       );
     }
     pendingLightboxHydration = null;
+    // Legacy slim images have no thumbnail to fall back to. Keep the tile
+    // actionable for retry rather than opening an empty data URL on failure.
+    if (!isImageBlock(block) || !block.data) return;
     lightboxImageUrl = `data:${block.mimeType};base64,${block.data}`;
     lightboxImageName =
       block.fileName ||
@@ -1028,7 +1087,7 @@
     const rawText =
       automatedWakePresentation?.bodyText ??
       (role === 'user' && message
-        ? getPresentedUserMessageText(message)
+        ? getPresentedUserMessageText(message, workspace?.ownerPrincipalId)
         : extractTextFromMessage());
     if (role === 'user') {
       const parsed = parseContextFromMessage(rawText);
@@ -1114,7 +1173,7 @@
 
     // Extract text and tool blocks from contentBlocks
     if (role === 'user' && message) {
-      const presentedText = getPresentedUserMessageText(message);
+      const presentedText = getPresentedUserMessageText(message, workspace?.ownerPrincipalId);
       if (presentedText.trim()) parts.push(presentedText);
     }
     if (message?.contentBlocks && Array.isArray(message.contentBlocks)) {
@@ -1193,7 +1252,9 @@
   function handleStartEdit() {
     // Presentation-only delivery notes stay out of edit/retry text while the
     // canonical stored content remains unchanged.
-    const rawText = message ? getPresentedUserMessageText(message) : getMessageText();
+    const rawText = message
+      ? getPresentedUserMessageText(message, workspace?.ownerPrincipalId)
+      : getMessageText();
     const parsed = parseStoredMessage(rawText);
     editValue = parsed.userMessage;
 
@@ -1379,13 +1440,19 @@
 {:else if autoUnarchivedNotice}
   <!-- Daemon-persisted auto-unarchive notice row - centered inline divider -->
   <AutoUnarchivedNotice title={extractAllContent(message) || undefined} />
+{:else if providerRehomedNotice}
+  <!-- Daemon-persisted provider re-home notice row - centered inline divider -->
+  <ProviderRehomedNotice
+    notice={providerRehomedNotice}
+    fallbackText={extractAllContent(message) || undefined}
+  />
 {:else if questionOnlyTurn && !shouldShowStoppedIndicator && !finishReasonNoticeLabel}
   <!-- Agent Q&A is wizard-only: question-only turns render no bubble -->{:else}
   <div
     bind:this={messageElement}
-    class="group group/message transition-transform duration-200 ease-out {role === 'user'
+    class="{role === 'user'
       ? 'user-message'
-      : 'relative assistant-message'}"
+      : 'relative assistant-message'} group group/message transition-transform duration-spring-moderate ease-spring-moderate motion-reduce:transition-none"
     data-message-id={ownsMessageIdentity ? message?.id : undefined}
     data-message-role={ownsMessageIdentity ? role : undefined}
     inert={readOnly}
@@ -1393,7 +1460,7 @@
     {#if role === 'user'}
       {#if isEditing}
         <!-- Edit mode - use SimpleRichInput for rich editing experience -->
-        <div class="rounded-xs" transition:safeSlide={{ axis: 'y', duration: 200 }}>
+        <div class="rounded-xs" transition:safeDisclosureTransition={{ tier: 'moderate' }}>
           <SimpleRichInput
             bind:value={editValue}
             bind:contextItems={editContextItems}
@@ -1418,7 +1485,7 @@
             ? 'automated-wake-card'
             : undefined}
           class="{agentAttribution
-            ? `${SUBSCRIPTION_CARD_CONTAINMENT_CLASS} ${SUBSCRIPTION_CARD_SURFACE_CLASS}`
+            ? `relative ${SUBSCRIPTION_CARD_CONTAINMENT_CLASS} ${SUBSCRIPTION_CARD_SURFACE_CLASS}`
             : automatedWakePresentation
               ? `relative ${suppressAutomatedWakeTopSpacing ? 'mt-0' : SUBSCRIPTION_IN_THREAD_CARD_SPACING_CLASS} ${SUBSCRIPTION_CARD_CONTAINMENT_CLASS} ${SUBSCRIPTION_CARD_SURFACE_CLASS}`
               : USER_MESSAGE_SURFACE_CLASS} {onEditSubmit &&
@@ -1435,7 +1502,7 @@
             handleStartEdit()}
         >
           <!-- Actions -->
-          {#if (!agentAttribution && !automatedWakePresentation) || isAgentMessageExpanded}
+          {#if (!agentAttribution && !automatedWakePresentation) || isAgentMessageExpanded || (automatedWakePresentation && isAutomatedWakeExpanded && queueInfo)}
             <MessageActions
               role="user"
               onCopy={handleCopy}
@@ -1443,7 +1510,10 @@
               {onScrollToPrevious}
               timestamp={message.timestamp}
               createdAt={messageCreatedAt}
-              class="absolute right-1 z-10 {agentAttribution ? 'bottom-1' : 'top-1'}"
+              {queueInfo}
+              class="absolute right-1 z-10 {agentAttribution || automatedWakePresentation
+                ? 'bottom-1'
+                : 'top-1'}"
             />
           {/if}
 
@@ -1451,7 +1521,6 @@
           {#if agentAttribution}
             <AgentMessageAttributionHeader
               attribution={agentAttribution}
-              preview={agentMessagePreview}
               expanded={isAgentMessageExpanded}
               controlsId={agentMessageBodyId}
               ontoggle={() => (isAgentMessageExpanded = !isAgentMessageExpanded)}
@@ -1466,6 +1535,42 @@
             />
           {/if}
 
+          <!-- Human author identity in multi-member workspaces, and the
+               collaborator (guest) sender chip on preamble-carrying rows -->
+          {#if humanAuthor && !isSticky}
+            <div
+              class="type-caption mb-1 flex min-w-0 items-center gap-1.5 text-subtle"
+              data-testid="user-message-author"
+              data-principal-id={humanAuthor.principalId}
+              data-sender-role={collaboratorSender ? 'collaborator' : undefined}
+              aria-label={collaboratorSender
+                ? m.chat_chatMessage_collaboratorAuthor_ariaLabel({
+                    name: humanAuthorLabel ?? m.chat_chatMessage_authorUnknown_label(),
+                  })
+                : m.chat_chatMessage_author_ariaLabel({
+                    name: humanAuthorLabel ?? m.chat_chatMessage_authorUnknown_label(),
+                  })}
+            >
+              <PrincipalAvatar
+                avatarUrl={humanAuthor.avatarUrl}
+                label={humanAuthorLabel ?? ''}
+                size={16}
+                class="font-medium leading-none text-muted-foreground"
+                referrerpolicy="no-referrer"
+                testid="user-message-author-avatar"
+              />
+              <span class="truncate" data-testid="user-message-author-name"
+                >{humanAuthorLabel ?? m.chat_chatMessage_authorUnknown_label()}</span
+              >
+              {#if collaboratorSender}
+                <span aria-hidden="true" class="shrink-0">·</span>
+                <span class="shrink-0" data-testid="user-message-author-role"
+                  >{m.chat_chatMessage_collaboratorRole_label()}</span
+                >
+              {/if}
+            </div>
+          {/if}
+
           {#if (!agentAttribution || isAgentMessageExpanded) && (!automatedWakePresentation || isAutomatedWakeExpanded)}
             <div
               id={agentAttribution
@@ -1474,7 +1579,7 @@
                   ? automatedWakeBodyId
                   : undefined}
               class={agentAttribution || automatedWakePresentation
-                ? 'w-full min-w-0 max-w-full overflow-hidden border-t border-border px-3 py-2'
+                ? `w-full min-w-0 max-w-full overflow-hidden border-t border-border ${automatedWakePresentation ? SUBSCRIPTION_WAKE_BODY_PADDING_CLASS : 'px-3 py-2'}`
                 : 'contents'}
               data-testid={agentAttribution
                 ? 'agent-message-expanded-body'
@@ -1483,15 +1588,10 @@
                   : undefined}
               transition:safeSubscriptionSlide
             >
-              <!-- Queued-delivery notice for messages drained from the pending queue -->
-              {#if queueInfo}
-                <QueuedMessageNoticeHeader {queueInfo} {isSticky} class="mb-1.5" />
-              {/if}
-
               <div
                 class="type-body select-text text-pretty {agentAttribution ||
                 automatedWakePresentation
-                  ? 'font-medium! text-foreground'
+                  ? 'font-medium text-foreground'
                   : USER_MESSAGE_TEXT_CLASS} {agentAttribution
                   ? ''
                   : isSticky
@@ -1537,8 +1637,9 @@
                     pill.url ||
                     pill.type === 'spec'
                   )}
-                  <button
+                  <Button
                     type="button"
+                    variant="plain"
                     class="type-caption mx-0.5 inline-flex items-center gap-1 whitespace-nowrap rounded-md bg-muted/60 px-1.5 py-1 align-middle font-medium text-foreground/80 transition-colors hover:bg-muted hover:text-foreground"
                     title={pill.content || pill.path || pill.noteId || pill.label}
                     onclick={(e) => {
@@ -1551,7 +1652,7 @@
                     <span class="truncate font-medium" style="max-width: 180px;" title={pill.label}
                       >{pill.label}</span
                     >
-                  </button>
+                  </Button>
                 {/each}
                 <!-- Render text with inline @mentions as chips -->
                 {#each parsedMessage.segments as segment, i (i)}
@@ -1582,8 +1683,9 @@
                       segment.mentionType === 'spec' ||
                       segment.url
                     )}
-                    <button
+                    <Button
                       type="button"
+                      variant="plain"
                       class="type-caption mx-0.5 inline-flex items-center gap-1 whitespace-nowrap rounded-md bg-muted/60 px-1.5 py-1 align-middle font-medium text-foreground/80 transition-colors hover:bg-muted hover:text-foreground"
                       title={segment.path ||
                         segment.noteId ||
@@ -1627,7 +1729,7 @@
                       <span class="truncate" style="max-width: 180px;" title={segment.label}
                         >{segment.label}</span
                       >
-                    </button>
+                    </Button>
                   {/if}
                 {/each}
               </div>
@@ -1636,13 +1738,18 @@
                 <div class="flex flex-wrap gap-1.5 mt-2">
                   {#each imageBlocks as imageBlock, i (i)}
                     {@const src = imageBlockSrc(imageBlock)}
-                    <button
+                    <Button
                       type="button"
-                      class="relative group/image p-0 border-0 bg-transparent cursor-pointer overflow-hidden w-10 h-10 shrink-0 focus:outline-none focus:ring-2 focus:ring-primary rounded"
-                      class:animate-pulse={isAttachmentHydrationLoading(imageBlock.id)}
+                      variant="plain"
+                      wrapContent={false}
+                      class="relative group/image p-0 border-0 bg-transparent cursor-pointer overflow-hidden w-10 h-10 shrink-0 rounded {isAttachmentHydrationLoading(
+                        imageBlock.id,
+                      )
+                        ? 'animate-pulse'
+                        : ''}"
                       aria-busy={isAttachmentHydrationLoading(imageBlock.id)}
                       onclick={(e) => {
-                        openImageLightbox(imageBlock, e.currentTarget, i);
+                        openImageLightbox(imageBlock, e.currentTarget as HTMLButtonElement, i);
                       }}
                       onkeydown={(e) => {
                         if (e.key === 'Enter' || e.key === ' ') {
@@ -1673,7 +1780,7 @@
                           data-testid="chat-message-image-placeholder"
                         ></div>
                       {/if}
-                    </button>
+                    </Button>
                   {/each}
                 </div>
               {/if}
@@ -1684,8 +1791,9 @@
                 <div class="flex flex-wrap gap-1.5 mt-2">
                   {#each fileBlocks as fileBlock, i (i)}
                     {@const secondary = fileChipSecondaryText(fileBlock)}
-                    <button
+                    <Button
                       type="button"
+                      variant="plain"
                       data-testid="chat-message-file-chip"
                       class="type-caption flex cursor-pointer items-center gap-1.5 rounded border border-border bg-muted/50 px-2 py-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
                       onclick={() => openAttachmentReference(fileBlock)}
@@ -1696,9 +1804,9 @@
                       <Fa icon={faFile} class="w-3 h-3" />
                       <span class="truncate" style="max-width: 150px;">{fileBlock.fileName}</span>
                       {#if secondary}
-                        <span class="opacity-60 shrink-0">{secondary}</span>
+                        <span class="shrink-0">{secondary}</span>
                       {/if}
-                    </button>
+                    </Button>
                   {/each}
                 </div>
               {/if}
@@ -1719,7 +1827,8 @@
       {/if}
     {:else if role === 'assistant'}
       <!-- Assistant Message -->
-      <div class="type-body text-pretty text-foreground">
+      <!-- Reserve toolbar height only for rendered prose, never empty or tool-only rows. -->
+      <div class="type-body has-[[data-assistant-prose]]:min-h-8 text-pretty text-foreground">
         <StreamingMessageContent
           content={combinedContent}
           {isStreaming}

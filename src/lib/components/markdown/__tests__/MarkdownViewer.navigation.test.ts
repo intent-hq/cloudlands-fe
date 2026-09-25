@@ -9,6 +9,9 @@ const handleLink = vi.hoisted(() => vi.fn(() => Promise.resolve(true)));
 const dispatch = vi.hoisted(() => vi.fn());
 
 vi.mock('$features/navigation/link-handler', () => ({ handleLink }));
+vi.mock('$lib/components/patterns/notify', () => ({
+  notify: { error: vi.fn(), success: vi.fn(), warning: vi.fn(), info: vi.fn() },
+}));
 vi.mock('$store/renderer/store', () => ({ store: { dispatch } }));
 
 warmImport(() => import('../MarkdownViewer.svelte'));
@@ -122,4 +125,34 @@ describe('MarkdownViewer panel navigation', () => {
       expect.objectContaining({ event: expect.any(KeyboardEvent) }),
     );
   });
+
+  it.each(['https://example.com/image.png', 'data:image/png;base64,iVBORw0KGgo='])(
+    'keeps linked %s images navigating while offering their own actions',
+    async (src) => {
+      const MarkdownViewer = (await import('../MarkdownViewer.svelte')).default;
+      const { container } = render(MarkdownViewer, {
+        props: { content: `[![linked image](${src})](https://example.com/details)` },
+      });
+      const link = await screen.findByRole('link', { name: /linked image/i });
+      link.focus();
+      const trigger = await screen.findByRole('button', { name: /image options/i });
+      const image = container.querySelector('img')!;
+      expect(image.tabIndex).toBe(-1);
+      await fireEvent.keyDown(trigger, { key: 'ArrowDown' });
+      expect(await screen.findByRole('menuitem', { name: /copy image/i })).toBeTruthy();
+      expect(handleLink).not.toHaveBeenCalled();
+      await fireEvent.keyDown(screen.getByRole('menu'), { key: 'Escape' });
+      expect(await fireEvent.contextMenu(image)).toBe(false);
+      expect(await screen.findByRole('menuitem', { name: /copy image/i })).toBeTruthy();
+      expect(handleLink).not.toHaveBeenCalled();
+      expect(screen.queryByRole('dialog')).toBeNull();
+      await fireEvent.keyDown(screen.getByRole('menu'), { key: 'Escape' });
+      await fireEvent.click(image);
+      expect(handleLink).toHaveBeenCalledWith(
+        'https://example.com/details',
+        expect.objectContaining({ rawHref: 'https://example.com/details' }),
+      );
+      expect(screen.queryByRole('dialog')).toBeNull();
+    },
+  );
 });

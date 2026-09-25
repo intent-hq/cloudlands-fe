@@ -1,3 +1,5 @@
+<!-- @catalog-exempt: pointer-driven zoom/pan viewport covered by __tests__/ZoomPanViewport.test.ts; no catalog fixtures yet -->
+
 <script lang="ts">
   /**
    * ZoomPanViewport - Reusable zoom/pan viewport for arbitrary content
@@ -18,6 +20,7 @@
   } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
   import Button from './button/button.svelte';
+  import { Slider } from '$lib/components/ui/slider';
   import { m } from '$shared/paraglide/messages.js';
   import { formatNumber } from '$lib/i18n/format';
 
@@ -27,9 +30,11 @@
     minZoom?: number;
     /** Upper zoom bound. */
     maxZoom?: number;
+    /** Reports scale changes after the content transform updates. */
+    onScaleChange?: (scale: number) => void;
   }
 
-  let { children, minZoom = 0.25, maxZoom = 8 }: Props = $props();
+  let { children, minZoom = 0.25, maxZoom = 8, onScaleChange }: Props = $props();
 
   const KEYBOARD_ZOOM_FACTOR = 1.25;
   const WHEEL_ZOOM_INTENSITY = 0.0015;
@@ -42,6 +47,10 @@
   let dragging = $state(false);
 
   let viewportElement: HTMLDivElement | null = $state(null);
+
+  $effect(() => {
+    onScaleChange?.(scale);
+  });
 
   let dragPointerId: number | null = null;
   let lastPointerX = 0;
@@ -227,18 +236,19 @@
     >
       <Fa icon={faMagnifyingGlassMinus} />
     </Button>
-    <input
-      type="range"
-      class="w-36 accent-white"
-      min={minZoom}
-      max={maxZoom}
-      step="0.01"
-      value={scale}
-      oninput={handleSliderInput}
-      aria-label={m.ui_zoomPanViewport_zoomSlider_ariaLabel()}
-      title={m.ui_zoomPanViewport_zoomSlider_ariaLabel()}
-      data-testid="zoom-pan-slider"
-    />
+    <div class="w-36">
+      <Slider
+        class="accent-white"
+        min={minZoom}
+        max={maxZoom}
+        step="0.01"
+        value={scale}
+        oninput={handleSliderInput}
+        aria-label={m.ui_zoomPanViewport_zoomSlider_ariaLabel()}
+        title={m.ui_zoomPanViewport_zoomSlider_ariaLabel()}
+        data-testid="zoom-pan-slider"
+      />
+    </div>
     <Button
       variant="ghost"
       size="icon-sm"

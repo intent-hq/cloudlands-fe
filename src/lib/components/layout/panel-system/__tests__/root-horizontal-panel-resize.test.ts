@@ -127,7 +127,7 @@ function splitHandle(index: number): HTMLButtonElement {
   const root = document.querySelector<HTMLElement>('.panel-split-container.horizontal')!;
   return Array.from(
     root.querySelectorAll<HTMLButtonElement>(
-      ':scope > .panel-split-handle-wrapper > button[data-resize-axis="x"]',
+      ':scope > .panel-split-handle-wrapper > div > button[data-resize-axis="x"]',
     ),
   )[index];
 }
@@ -287,10 +287,12 @@ describe('root horizontal panel resizing', () => {
     );
   });
 
-  it('keeps the viewport fixed while its right edge updates relative proportions', async () => {
+  it('does not resize from the outer edge in viewport mode', async () => {
     await renderLayout(false);
-    const handle = document.querySelector<HTMLButtonElement>('.panel-canvas-resize-handle')!;
-    await fireEvent.mouseDown(handle, { clientX: 1200 });
+    expect(document.querySelector('.panel-canvas-resize-handle')).toBeNull();
+    const canvas = document.querySelector<HTMLElement>('.panel-canvas-frame')!;
+    const before = panelGeometry();
+    await fireEvent.mouseDown(canvas, { clientX: 1200 });
     await fireEvent.mouseMove(document, { clientX: 1290 });
     await tick();
     expect(canvasWidth()).toBe(INITIAL_CANVAS_WIDTH);
@@ -299,6 +301,7 @@ describe('root horizontal panel resizing', () => {
     ).toBeCloseTo(INITIAL_CANVAS_WIDTH, 6);
     await fireEvent.mouseUp(document);
     await waitFor(() => expect(canvasWidth()).toBe(INITIAL_CANVAS_WIDTH));
+    expect(panelGeometry()).toEqual(before);
   });
 
   it.each([true, false])(
@@ -385,29 +388,23 @@ describe('root horizontal panel resizing', () => {
     expect(selectPanelCanvasWidth.select(appStore.state, WORKSPACE_ID)).toBe(INITIAL_CANVAS_WIDTH);
   });
 
-  it('changes only the final panel at the outer edge and has no pointer-up jump', async () => {
+  it('does not alter widths or persisted state from the outer edge in columns mode', async () => {
     await renderLayout(true);
-    const handle = document.querySelector<HTMLButtonElement>('.panel-canvas-resize-handle')!;
+    expect(document.querySelector('.panel-canvas-resize-handle')).toBeNull();
+    const canvas = document.querySelector<HTMLElement>('.panel-canvas-frame')!;
+    const before = appStore.state.panelLayout.byWorkspaceId[WORKSPACE_ID];
     const inset = document.querySelector<HTMLElement>('[data-testid="panel-workspace-inset"]')!;
     inset.scrollLeft = 120;
 
-    await fireEvent.mouseDown(handle, { clientX: 1200 });
+    await fireEvent.mouseDown(canvas, { clientX: 1200 });
     await fireEvent.mouseMove(document, { clientX: 1290 });
     await tick();
-    expectGeometry(panelGeometry(), [320, 500, 454]);
-    expect(canvasWidth()).toBe(1290);
+    expectGeometry(panelGeometry(), INITIAL_WIDTHS);
+    expect(canvasWidth()).toBe(INITIAL_CANVAS_WIDTH);
 
     await fireEvent.mouseUp(document);
-    expect(selectPanelCanvasWidth.select(appStore.state, WORKSPACE_ID)).toBe(1290);
-    const committedRoot = selectPanelLayoutRoot.select(appStore.state, WORKSPACE_ID);
-    expect(committedRoot.type).toBe('split');
-    if (committedRoot.type === 'split') {
-      expect(committedRoot.sizes.map((size) => (size / 100) * 1274)).toEqual([
-        expect.closeTo(320, 8),
-        expect.closeTo(500, 8),
-        expect.closeTo(454, 8),
-      ]);
-    }
+    expect(appStore.state.panelLayout.byWorkspaceId[WORKSPACE_ID]).toBe(before);
+    expect(inset.scrollLeft).toBe(120);
   });
 
   it('rehydrates committed percentages to the exact same pixels and complete right edge', async () => {

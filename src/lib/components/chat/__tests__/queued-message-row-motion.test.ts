@@ -4,6 +4,7 @@ import {
   captureQueuedMessageRowMotion,
   queuedMessageRowTransition,
 } from '../queued-message-row-motion';
+import { spring } from '$lib/motion';
 import { followBottom, hasActiveFollowBottomMutation } from '$lib/utils/smartScroll';
 
 interface AnimationStub {
@@ -294,7 +295,7 @@ describe('queued message row motion', () => {
     const transition = queuedMessageRowTransition(harness.node, undefined, { direction: 'out' });
 
     transition.tick?.(0.5, 0.5);
-    clock += 180 * 2 + 499;
+    clock += spring.moderate.settleMs * 2 + 499;
     expect(hasActiveFollowBottomMutation(scroll.root)).toBe(true);
 
     clock += 1;

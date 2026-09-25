@@ -55,6 +55,12 @@ export type UserPreferencesState = {
   showReasoningBlocks: boolean;
   chatAuroraEnabled: boolean;
   shellTransparencyEnabled: boolean;
+  /** Whether motion is reduced while the machine runs on battery. */
+  reduceMotionOnBattery: boolean;
+  /** Whether the experimental Labs tab is visible in Settings. */
+  labsSettingsVisible: boolean;
+  /** Whether the Multiplayer lab (experimental) is enabled. */
+  labsMultiplayerEnabled: boolean;
   agentFontStyle: AgentFontStyle;
   noteFontStyle: NoteFontStyle;
   codeFontFamily: string;
@@ -104,6 +110,9 @@ export const initialState: UserPreferencesState = {
   showReasoningBlocks: false,
   chatAuroraEnabled: true,
   shellTransparencyEnabled: true,
+  reduceMotionOnBattery: false,
+  labsSettingsVisible: false,
+  labsMultiplayerEnabled: false,
   ...fontSettingsInitialState,
   ...notificationSettingsInitialState,
   activityLogPresets: [],
@@ -263,6 +272,39 @@ export const setShellTransparencyEnabled = shellTransparencyPreference.setAction
 
 export const toggleShellTransparency = shellTransparencyPreference.toggleAction;
 
+const reduceMotionOnBatteryPreference = createBooleanPreference<UserPreferencesState>({
+  sliceName: 'userPreferences',
+  field: 'reduceMotionOnBattery',
+  setActionName: 'setReduceMotionOnBattery',
+  toggleActionName: 'toggleReduceMotionOnBattery',
+});
+
+export const setReduceMotionOnBattery = reduceMotionOnBatteryPreference.setAction;
+
+export const toggleReduceMotionOnBattery = reduceMotionOnBatteryPreference.toggleAction;
+
+const labsSettingsVisibilityPreference = createBooleanPreference<UserPreferencesState>({
+  sliceName: 'userPreferences',
+  field: 'labsSettingsVisible',
+  setActionName: 'setLabsSettingsVisible',
+  toggleActionName: 'toggleLabsSettingsVisibility',
+});
+
+export const setLabsSettingsVisible = labsSettingsVisibilityPreference.setAction;
+
+export const toggleLabsSettingsVisibility = labsSettingsVisibilityPreference.toggleAction;
+
+const labsMultiplayerPreference = createBooleanPreference<UserPreferencesState>({
+  sliceName: 'userPreferences',
+  field: 'labsMultiplayerEnabled',
+  setActionName: 'setLabsMultiplayerEnabled',
+  toggleActionName: 'toggleLabsMultiplayer',
+});
+
+export const setLabsMultiplayerEnabled = labsMultiplayerPreference.setAction;
+
+export const toggleLabsMultiplayer = labsMultiplayerPreference.toggleAction;
+
 export const userPreferencesReducer = createReducer<UserPreferencesState>(initialState);
 spellcheckPreference.register(userPreferencesReducer);
 showArchivedPreference.register(userPreferencesReducer);
@@ -271,6 +313,9 @@ hasCompletedProviderSetupPreference.register(userPreferencesReducer);
 showReasoningBlocksPreference.register(userPreferencesReducer);
 chatAuroraPreference.register(userPreferencesReducer);
 shellTransparencyPreference.register(userPreferencesReducer);
+reduceMotionOnBatteryPreference.register(userPreferencesReducer);
+labsSettingsVisibilityPreference.register(userPreferencesReducer);
+labsMultiplayerPreference.register(userPreferencesReducer);
 userPreferencesReducer.with(setUpdateChannel, (state, { payload: [channel] }) => ({
   ...state,
   updateChannel: channel,

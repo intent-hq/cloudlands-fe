@@ -1,5 +1,6 @@
 <script lang="ts">
   import Fa from 'svelte-fa';
+  import { Button } from '$lib/components/ui/button';
   import { faArrowRight, faCode } from '@fortawesome/free-solid-svg-icons';
   import CodeBlock from '$lib/components/editor/CodeBlock.svelte';
   import { parseSemanticId } from '$shared/types/notes-primitives';
@@ -65,8 +66,9 @@
   class="ws-block-widget type-body my-2 overflow-hidden rounded-md border border-border bg-card text-foreground shadow-(--elevation-raised)"
 >
   {#if clickable}
-    <button
+    <Button
       type="button"
+      variant="plain"
       class="group flex min-h-9 w-full items-center gap-2 px-3 py-1.5 text-left transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 focus-visible:ring-inset"
       onclick={handleClick}
       title={m.notes_referenceBlock_goToFile_tooltip()}
@@ -83,7 +85,7 @@
         size="xs"
         class="shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5 group-hover:text-foreground motion-reduce:transition-none"
       />
-    </button>
+    </Button>
   {:else}
     <div class="flex min-h-9 items-center gap-2 px-3 py-1.5">
       <Fa icon={faCode} size="xs" class="shrink-0 text-muted-foreground" />

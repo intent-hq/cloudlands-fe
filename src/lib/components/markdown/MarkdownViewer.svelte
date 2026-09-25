@@ -1,4 +1,6 @@
 <script lang="ts">
+  import './markdown-math.css';
+  import { classifyMarkdownContent } from '$lib/utils/markdown-content-complexity';
   import { mount, onDestroy, unmount } from 'svelte';
   import { logger } from '$lib/utils/client-logger';
   import { processMarkdownToHTML } from '$lib/utils/markdown-processor';
@@ -11,12 +13,25 @@
   import { splitWorkspaceVideoMarkdown } from '$lib/utils/workspace-file-video';
   import RecursiveMarkdownViewer from './MarkdownViewer.svelte';
   import MediaUnavailable from '$lib/components/ui/MediaUnavailable.svelte';
-  import { parseWorkspaceFileImageUrl } from '$lib/utils/image-actions';
+  import MediaLoadingPlaceholder from '$lib/components/ui/MediaLoadingPlaceholder.svelte';
+  import { parseWorkspaceFileImageUrl, supportsImageActions } from '$lib/utils/image-actions';
+  import {
+    imageActionsHaveFocus,
+    imageActionsPosition,
+    imageAtTarget,
+    isActionableImage,
+    sizedImageLabel,
+  } from './markdown-image-dom';
   import {
     createWorkspaceFileVersion,
     parseIntentFileTarget,
     workspaceAssetVideoSource,
   } from '$lib/utils/workspace-file-image';
+  import {
+    IMAGE_SIZED_ATTR,
+    stampMarkdownImageDimensions,
+  } from '$lib/utils/markdown-image-dimensions';
+  import type { TextBlockMedia } from '$shared/types/content-block';
 
   import {
     openWorkspaceFile,
@@ -45,6 +60,12 @@
     forceExternalLinks?: boolean;
     /** Show rich fenced blocks as source when no TipTap node views are mounted. */
     renderRichFencesAsCode?: boolean;
+    /**
+     * Text-block image dimension sidecar (PROTOCOL §7.1), keyed by Markdown
+     * `src`. Matching images render in a pre-sized frame with a placeholder
+     * until they load; images without an entry keep the legacy rendering.
+     */
+    media?: TextBlockMedia;
   }
 
   let {
@@ -59,6 +80,7 @@
     chatImageThumbnails = false,
     forceExternalLinks = false,
     renderRichFencesAsCode = false,
+    media,
   }: Props = $props();
 
   // One cache-busting token per viewer instance: re-processing the same
@@ -74,262 +96,123 @@
       : content,
   );
 
-  // PERF: Detect content complexity to choose rendering strategy
-  // - Simple: plain text, no markdown - render as <p>
-  // - Static: has markdown - render the processed HTML directly (no TipTap)
-  //
-  // Read-only rendering never needs a live ProseMirror view: the markdown
-  // processor already emits final HTML for task lists (read-only checkboxes),
-  // tables, images, and intent:// links, and the container click/keydown
-  // handlers below provide the interactivity.
-
-  // Patterns that need markdown processing (rendered as processed static HTML)
-  const needsProcessingPatterns = [
-    /^\s*[-*]\s*\[[ x]\]/m, // Task lists (rendered read-only)
-    // i18n-ignore (scanner false positive: backticks in regex literal confuse the string tracker)
-    /```/, // Code blocks (triple backticks)
-    /`[^`]+`/, // Inline code (single backticks)
-    /\|.*\|/, // Tables
-    /\[.*\]\(.*\)/, // Links
-    /!\[.*\]\(.*\)/, // Images
-    /<[a-z][\s\S]*>/i, // HTML tags
-    /^#{1,6}\s/m, // Headers
-    /^\s*>\s/m, // Blockquotes
-    /\*\*[^*]+\*\*/, // Bold (double asterisks)
-    /\*[^*]+\*/, // Italic (single asterisks)
-    /_[^_]+_/, // Italic (underscores)
-    /~~[^~]+~~/, // Strikethrough
-    /^[-*_]{3,}\s*$/m, // Horizontal rules
-    /^\s*[-*+]\s/m, // Unordered lists
-    /^\s*\d+\.\s/m, // Ordered lists
-    // @-mentions and bare file paths that injectMentionSpans converts to mention chips
-    /@note\//, // @note/... mentions
-    /@context\[/, // @context[...] mentions
-    /@\//, // @/absolute/path mentions
-    /@[A-Za-z0-9._-]+\/[^\s]*\.[A-Za-z0-9]+/, // @relative/path/file.ext mentions
-    /@[A-Za-z0-9._-]+\.[A-Za-z0-9]+/, // @file.ext mentions
-    /@auggie-personality-/, // @auggie-personality-* persona mentions
-    /intent:\/\//, // intent:// protocol URLs
-    /\b[A-Za-z0-9][A-Za-z0-9._-]+\.(?:json|js|ts|tsx|jsx|md|mdx|yaml|yml|svelte|html|css|scss|py|go|rs|rb|java|kt|swift|m|mm|hpp|h|hh|c|cc|cpp|sh|toml|lock|ini|conf|txt|csv|sql)\b/, // bare filenames like file.ext
-    /\b[A-Za-z0-9._-]+(?:\/[A-Za-z0-9._-]+)+\.(?:json|js|ts|tsx|jsx|md|mdx|yaml|yml|svelte|html|css|scss|py|go|rs|rb|java|kt|swift|m|mm|hpp|h|hh|c|cc|cpp|sh|toml|lock|ini|conf|txt|csv|sql)\b/, // bare paths like dir/file.ext
-  ];
-
-  const contentComplexity = $derived.by(() => {
-    if (!markdownContent) return 'simple';
-    // Check if needs markdown processing
-    if (needsProcessingPatterns.some((pattern) => pattern.test(markdownContent))) {
-      return 'static';
-    }
-    return 'simple';
-  });
+  const contentComplexity = $derived(classifyMarkdownContent(markdownContent));
 
   // Track static content element for click handling
   let staticContentElement: HTMLElement | null = $state(null);
-
   let processedContent = $state('');
-  let lastProcessedContent = '';
-  // The rendered HTML also depends on workspaceId (short-form intent://local/file/
-  // image links resolve against it), so it participates in the memoization guard
-  let lastProcessedWorkspaceId: string | undefined;
-  let lastRenderRichFencesAsCode = false;
+  // Only the latest requested render may publish, including when an older worker
+  // finishes after streaming has ended or the viewer has been destroyed.
+  let renderVersion = 0;
+  const STREAMING_THROTTLE_MS = 150;
+  let lastUpdateTime = -Infinity;
+  let pendingUpdateTimer: ReturnType<typeof setTimeout> | null = null;
+  let pendingUpdate: (() => void) | null = null;
 
-  // PERF: Track streaming state to throttle re-renders during streaming
-  let isCurrentlyStreaming = false;
-  let streamingContentElement: HTMLElement | null = $state(null);
-
-  // PERF: Create throttled update function once (not per streaming session)
-  const STREAMING_THROTTLE_MS = 150; // Slightly higher throttle during streaming for better perf
-  let lastUpdateTime = 0;
-  let pendingUpdateRafId: number | null = null;
-  let pendingContent: string | null = null;
-
-  // Process markdown to HTML for the static render path
-  async function updateContentFull(markdown: string) {
-    // Skip if content hasn't actually changed
-    if (
-      markdown === lastProcessedContent &&
-      workspaceId === lastProcessedWorkspaceId &&
-      renderRichFencesAsCode === lastRenderRichFencesAsCode
-    ) {
-      return;
-    }
-
-    if (!markdown) {
-      processedContent = '';
-      lastProcessedContent = '';
-      lastProcessedWorkspaceId = workspaceId;
-      lastRenderRichFencesAsCode = renderRichFencesAsCode;
-      return;
-    }
-
+  async function updateContent(
+    markdown: string,
+    options: Parameters<typeof processMarkdownToHTML>[1],
+    imageMedia: TextBlockMedia | undefined,
+    version: number,
+  ) {
     try {
-      const html = await processMarkdownToHTML(markdown, {
-        allowEmpty: true,
-        skipIfHTML: false,
-        preserveAnchors: true,
-        taskBlockRenderMode,
-        workspaceId,
-        renderRichFencesAsCode,
-        workspaceFileVersion,
-      });
-      processedContent = html;
-      lastProcessedContent = markdown;
-      lastProcessedWorkspaceId = workspaceId;
-      lastRenderRichFencesAsCode = renderRichFencesAsCode;
-      // Note: Scroll management is handled by the parent component via followBottom action
+      const html = await processMarkdownToHTML(markdown, options);
+      if (version !== renderVersion) return;
+      // Svelte owns this HTML and the adjacent image-actions overlay. Replacing
+      // the container's innerHTML would remove Svelte's anchors and the overlay.
+      processedContent = stampMarkdownImageDimensions(html, imageMedia, options?.workspaceId);
     } catch (error) {
+      if (version !== renderVersion) return;
       logger.error('Failed to process markdown:', error);
-      // Escape HTML for safety — processedContent is injected with {@html}
+      // Escape HTML for safety — processedContent is injected with {@html}.
       const escaped = markdown.replace(
         /[&<>"']/g,
         (m) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[m] || m,
       );
       processedContent = `<p>${escaped}</p>`;
-      lastProcessedContent = markdown;
-      lastProcessedWorkspaceId = workspaceId;
     }
   }
 
-  // PERF: Lightweight streaming update - writes innerHTML directly
-  async function updateContentStreaming(markdown: string) {
-    // Skip if content hasn't actually changed
-    if (
-      markdown === lastProcessedContent &&
-      workspaceId === lastProcessedWorkspaceId &&
-      renderRichFencesAsCode === lastRenderRichFencesAsCode
-    ) {
+  function flushStreamingUpdate() {
+    if (!pendingUpdate) return;
+    const remaining = STREAMING_THROTTLE_MS - (performance.now() - lastUpdateTime);
+    if (remaining > 0) {
+      pendingUpdateTimer = setTimeout(() => {
+        pendingUpdateTimer = null;
+        flushStreamingUpdate();
+      }, remaining);
       return;
     }
-
-    if (!markdown) {
-      lastProcessedContent = '';
-      lastProcessedWorkspaceId = workspaceId;
-      lastRenderRichFencesAsCode = renderRichFencesAsCode;
-      if (streamingContentElement) {
-        streamingContentElement.innerHTML = '';
-      }
-      return;
-    }
-
-    try {
-      const html = await processMarkdownToHTML(markdown, {
-        allowEmpty: true,
-        skipIfHTML: false,
-        preserveAnchors: true,
-        taskBlockRenderMode,
-        workspaceId,
-        renderRichFencesAsCode,
-        workspaceFileVersion,
-      });
-      lastProcessedContent = markdown;
-      lastProcessedWorkspaceId = workspaceId;
-      lastRenderRichFencesAsCode = renderRichFencesAsCode;
-      processedContent = html;
-
-      // PERF: During streaming, update innerHTML directly to avoid re-rendering
-      // the whole {@html} block on every throttled tick
-      if (streamingContentElement) {
-        streamingContentElement.innerHTML = html;
-      }
-    } catch (error) {
-      logger.error('Failed to process streaming markdown:', error);
-      if (streamingContentElement) {
-        // Escape HTML for safety
-        const escaped = markdown.replace(
-          /[&<>"']/g,
-          (m) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[m] || m,
-        );
-        streamingContentElement.innerHTML = `<p>${escaped}</p>`;
-      }
-      lastProcessedContent = markdown;
-      lastProcessedWorkspaceId = workspaceId;
-    }
+    const update = pendingUpdate;
+    pendingUpdate = null;
+    lastUpdateTime = performance.now();
+    update();
   }
 
-  // PERF: Throttled update with RAF batching
-  function scheduleStreamingUpdate(markdown: string) {
-    pendingContent = markdown;
-
-    const now = performance.now();
-    const timeSinceLastUpdate = now - lastUpdateTime;
-
-    // If enough time has passed, update immediately
-    if (timeSinceLastUpdate >= STREAMING_THROTTLE_MS) {
-      lastUpdateTime = now;
-      updateContentStreaming(markdown);
-      pendingContent = null;
-    } else if (pendingUpdateRafId === null) {
-      // Schedule update for after throttle period
-      pendingUpdateRafId = requestAnimationFrame(() => {
-        pendingUpdateRafId = null;
-        if (pendingContent !== null) {
-          lastUpdateTime = performance.now();
-          updateContentStreaming(pendingContent);
-          pendingContent = null;
-        }
-      });
-    }
-    // If RAF is already scheduled, the pending update will be used
-  }
-
-  // Cleanup pending updates
   function cancelPendingUpdates() {
-    if (pendingUpdateRafId !== null) {
-      cancelAnimationFrame(pendingUpdateRafId);
-      pendingUpdateRafId = null;
+    if (pendingUpdateTimer !== null) {
+      clearTimeout(pendingUpdateTimer);
+      pendingUpdateTimer = null;
     }
-    pendingContent = null;
+    pendingUpdate = null;
+    lastUpdateTime = -Infinity;
   }
 
-  // Update content when prop changes
   $effect(() => {
-    const wasStreaming = isCurrentlyStreaming;
-    isCurrentlyStreaming = isStreaming;
+    // Capture every rendering dependency now, not in the trailing timer or after
+    // awaiting the processor. A new input immediately invalidates in-flight work.
+    const markdown = markdownContent;
+    const options = {
+      allowEmpty: true,
+      skipIfHTML: false,
+      preserveAnchors: true,
+      taskBlockRenderMode,
+      workspaceId,
+      renderRichFencesAsCode,
+      renderMath: !isStreaming,
+      workspaceFileVersion,
+    };
+    const imageMedia = media;
+    const version = ++renderVersion;
+    const update = () => void updateContent(markdown, options, imageMedia, version);
 
     if (isStreaming) {
-      // Use throttled streaming update
-      scheduleStreamingUpdate(markdownContent);
+      pendingUpdate = update;
+      if (pendingUpdateTimer === null) flushStreamingUpdate();
     } else {
-      // Clean up pending updates when streaming ends
-      if (wasStreaming) {
-        cancelPendingUpdates();
-      }
-      // Direct update when not streaming
-      updateContentFull(markdownContent);
+      cancelPendingUpdates();
+      update();
     }
   });
 
-  // Lightbox state for inline workspace-file images
+  // Lightbox state for supported inline images.
   let lightboxOpen = $state(false);
   let lightboxImageUrl = $state('');
   let lightboxImageAlt = $state<string | undefined>(undefined);
   let lightboxOpenerElement = $state<HTMLElement | null>(null);
 
-  // Hover overlay: workspace-backed images get an image actions menu.
+  // Hover overlay: supported image sources share one image actions menu.
   // The images live in {@html}-managed DOM, so a single Svelte-rendered
   // trigger is positioned over whichever image is hovered or focused.
   let hoveredImage = $state<HTMLImageElement | null>(null);
-  let hoveredImagePosition = $state({ top: 0, left: 0 });
+  let hoveredImagePosition = $state({ top: 0, right: 0 });
   let imageActionsOpen = $state(false);
+  let imageActionsMenu: ImageActionsMenu | undefined = $state();
   let imageActionsOverlayElement = $state<HTMLElement | null>(null);
 
-  function isWorkspaceImage(image: HTMLImageElement): boolean {
-    const src = image.getAttribute('src') || '';
-    return src.startsWith('workspace-file://') || src.startsWith('workspace-asset://');
-  }
-
   function handleImageInteraction(event: MouseEvent | FocusEvent): void {
+    // Pointer movement must not replace the keyboard-focused image's actions.
+    if (
+      event.type === 'mouseover' &&
+      imageActionsHaveFocus(hoveredImage, imageActionsOverlayElement)
+    )
+      return;
     const target = event.target;
-    if (target instanceof HTMLImageElement && isWorkspaceImage(target)) {
-      if (hoveredImage === target) return;
-      const container = event.currentTarget as HTMLElement;
-      const imageRect = target.getBoundingClientRect();
-      const containerRect = container.getBoundingClientRect();
-      hoveredImage = target;
-      hoveredImagePosition = {
-        top: imageRect.top - containerRect.top + 6,
-        left: imageRect.right - containerRect.left - 34,
-      };
+    const image = imageAtTarget(target);
+    if (image && isActionableImage(image)) {
+      if (hoveredImage === image) return;
+      hoveredImage = image;
+      hoveredImagePosition = imageActionsPosition(image, event.currentTarget as HTMLElement);
     } else if (hoveredImage && !imageActionsOpen) {
       // Keep the overlay while the pointer is on the trigger itself.
       if (target instanceof Node && imageActionsOverlayElement?.contains(target)) return;
@@ -338,11 +221,65 @@
   }
 
   function handleImageHoverLeave(): void {
-    if (!imageActionsOpen) hoveredImage = null;
+    if (!imageActionsOpen && !imageActionsHaveFocus(hoveredImage, imageActionsOverlayElement)) {
+      hoveredImage = null;
+    }
   }
+
+  function handleImageContextMenu(event: MouseEvent): void {
+    const image = imageAtTarget(event.target);
+    if (!image || !isActionableImage(image)) return;
+    event.preventDefault();
+    event.stopPropagation();
+    handleImageInteraction(event);
+    imageActionsOpen = true;
+  }
+
+  const IMAGE_FRAME_CLASS = 'markdown-image-frame';
 
   function mediaFallbacks(node: HTMLElement) {
     const mountedPlaceholders = new Map<HTMLElement, ReturnType<typeof mount>>();
+
+    function imageFrame(media: HTMLElement): HTMLElement | null {
+      const parent = media.parentElement;
+      return parent?.classList.contains(IMAGE_FRAME_CLASS) ? parent : null;
+    }
+
+    // Sized images (`width`/`height` from the text block's media sidecar)
+    // sit in a frame that already occupies their final box and shows an
+    // icon + path placeholder until the bytes arrive.
+    function frameSizedImage(image: HTMLImageElement) {
+      const width = Number(image.getAttribute('width'));
+      const height = Number(image.getAttribute('height'));
+      if (!(width > 0 && height > 0)) return;
+      const frame = document.createElement('span');
+      frame.className = IMAGE_FRAME_CLASS;
+      frame.style.aspectRatio = `${width} / ${height}`;
+      frame.style.width = `min(${width}px, 100%)`;
+      frame.dataset.loaded = 'false';
+      image.replaceWith(frame);
+      frame.appendChild(image);
+      const placeholderHost = frame.appendChild(document.createElement('span'));
+      placeholderHost.className = 'markdown-image-frame-placeholder';
+      mountedPlaceholders.set(
+        placeholderHost,
+        mount(MediaLoadingPlaceholder, {
+          target: placeholderHost,
+          props: { name: sizedImageLabel(image, workspaceId) },
+        }),
+      );
+      const reveal = () => {
+        frame.dataset.loaded = 'true';
+        const placeholder = mountedPlaceholders.get(placeholderHost);
+        if (placeholder) {
+          void unmount(placeholder);
+          mountedPlaceholders.delete(placeholderHost);
+        }
+        placeholderHost.remove();
+      };
+      if (image.complete && image.naturalWidth > 0) reveal();
+      else image.addEventListener('load', reveal, { once: true });
+    }
 
     function replaceMedia(
       media: HTMLImageElement | HTMLVideoElement,
@@ -360,7 +297,7 @@
         undefined;
       const host = document.createElement(media instanceof HTMLVideoElement ? 'div' : 'span');
       host.className = 'media-unavailable-host';
-      media.replaceWith(host);
+      (imageFrame(media) ?? media).replaceWith(host);
       if (hoveredImage === media) hoveredImage = null;
       const fallback = mount(MediaUnavailable, {
         target: host,
@@ -387,10 +324,11 @@
 
     function reconcile() {
       for (const image of node.querySelectorAll<HTMLImageElement>('img')) {
-        if (isWorkspaceImage(image)) {
+        if (isActionableImage(image) && !image.closest('a')) {
           image.tabIndex = 0;
           image.setAttribute('role', 'button');
         }
+        if (image.hasAttribute(IMAGE_SIZED_ATTR) && !imageFrame(image)) frameSizedImage(image);
       }
       for (const media of node.querySelectorAll<HTMLImageElement>('[data-media-unsupported]')) {
         replaceMedia(media, 'unsupported');
@@ -437,11 +375,11 @@
     const target = event.target as HTMLElement;
     const anchor = target.closest('a');
 
-    // Inline workspace-file images open in the lightbox (unless wrapped in a
+    // Supported inline images open in the lightbox (unless wrapped in a
     // link, in which case the link wins)
     if (!anchor && target instanceof HTMLImageElement) {
       const src = target.getAttribute('src') || '';
-      if (src.startsWith('workspace-file://') || src.startsWith('workspace-asset://')) {
+      if (supportsImageActions(src)) {
         event.preventDefault();
         event.stopPropagation();
         event.stopImmediatePropagation();
@@ -531,9 +469,11 @@
   }
 
   function handleLinkKeydown(event: KeyboardEvent): void {
+    handleImageCopy(event);
+    if (event.defaultPrevented) return;
     if (
       event.target instanceof HTMLImageElement &&
-      isWorkspaceImage(event.target) &&
+      isActionableImage(event.target) &&
       (event.key === 'Enter' || event.key === ' ')
     ) {
       handleLinkClick(event);
@@ -543,6 +483,12 @@
     handleLinkClick(event);
   }
 
+  function handleImageCopy(event: KeyboardEvent | ClipboardEvent): void {
+    const image = imageAtTarget(event.target);
+    if (!image || !isActionableImage(image)) return;
+    imageActionsMenu?.handleCopy(event, image.getAttribute('src') || '');
+  }
+
   function getSourcePanelId(event: MouseEvent | KeyboardEvent): string | undefined {
     const target = event.target;
     if (!(target instanceof HTMLElement)) return undefined;
@@ -550,7 +496,7 @@
   }
 
   onDestroy(() => {
-    // Clean up pending streaming updates
+    renderVersion += 1;
     cancelPendingUpdates();
   });
 </script>
@@ -563,11 +509,12 @@
   {#if hoveredImage}
     <div
       bind:this={imageActionsOverlayElement}
-      class="absolute z-10"
-      style="top: {hoveredImagePosition.top}px; left: {hoveredImagePosition.left}px;"
+      class="image-actions-overlay absolute z-10"
+      style="top: {hoveredImagePosition.top}px; right: {hoveredImagePosition.right}px;"
       data-testid="markdown-image-actions-overlay"
     >
       <ImageActionsMenu
+        bind:this={imageActionsMenu}
         imageUrl={hoveredImage.getAttribute('src') || ''}
         imageName={hoveredImage.getAttribute('alt') || undefined}
         bind:open={imageActionsOpen}
@@ -592,6 +539,7 @@
           {chatImageThumbnails}
           {forceExternalLinks}
           {renderRichFencesAsCode}
+          {media}
         />
       {/if}
     {/each}
@@ -602,10 +550,11 @@
     role="group"
     class="markdown-viewer streaming-content {className}"
     class:chat-image-thumbnails={chatImageThumbnails}
-    bind:this={streamingContentElement}
     use:mediaFallbacks
     onclick={handleLinkClick}
     onkeydown={handleLinkKeydown}
+    oncopy={handleImageCopy}
+    oncontextmenu={handleImageContextMenu}
     onmouseover={handleImageInteraction}
     onfocusin={handleImageInteraction}
     onmouseleave={handleImageHoverLeave}
@@ -630,6 +579,8 @@
     use:mediaFallbacks
     onclick={handleLinkClick}
     onkeydown={handleLinkKeydown}
+    oncopy={handleImageCopy}
+    oncontextmenu={handleImageContextMenu}
     onmouseover={handleImageInteraction}
     onfocusin={handleImageInteraction}
     onmouseleave={handleImageHoverLeave}
@@ -680,13 +631,13 @@
     contain: layout style;
   }
 
-  /* Apply same spacing to static content children */
-  .markdown-viewer.static-content > :global(* + *) {
+  /* Paragraph spacing must not offset the positioned image controls. */
+  .markdown-viewer.static-content > :global(* + :not(.image-actions-overlay)) {
     margin-top: 0.75rem;
   }
 
   /* PERF: Apply same styles to streaming content (direct children) */
-  .markdown-viewer.streaming-content > :global(* + *) {
+  .markdown-viewer.streaming-content > :global(* + :not(.image-actions-overlay)) {
     margin-top: 0.75rem;
   }
 
@@ -996,7 +947,7 @@
   }
 
   .markdown-viewer :global(.markdown-link) {
-    color: hsl(var(--primary));
+    color: hsl(var(--primary-ink));
   }
 
   .markdown-viewer :global(a:hover),
@@ -1007,6 +958,12 @@
 
   .markdown-viewer :global(.markdown-link:hover) {
     opacity: 0.8;
+  }
+
+  /* Keep sentence punctuation visually attached to inline intent-link pills. */
+  .markdown-viewer :global(.mention-chip) {
+    margin-inline: 0;
+    padding-inline: 0.25rem;
   }
 
   /* Blockquotes */
@@ -1062,20 +1019,61 @@
     border-radius: 0.375rem;
   }
 
-  /* Workspace-backed images open in a lightbox on click */
-  .markdown-viewer :global(img[src^='workspace-file://']),
-  .markdown-viewer :global(img[src^='workspace-asset://']) {
+  /* Only unlinked, supported images open in the lightbox. */
+  .markdown-viewer :global(img[role='button']) {
     cursor: zoom-in;
   }
 
   /* Chat transcript: inline workspace file images render as fixed square
-     bordered thumbnails (cropped), matching ChatImageBlock */
-  .markdown-viewer.chat-image-thumbnails :global(img[src^='workspace-file://']) {
+     bordered thumbnails (cropped), matching ChatImageBlock. Images sized from
+     the text block's media sidecar keep their own frame instead. */
+  .markdown-viewer.chat-image-thumbnails
+    :global(img[src^='workspace-file://']:not([data-image-sized])) {
     width: 10rem;
     height: 10rem;
     object-fit: cover;
     border: 1px solid hsl(var(--border));
     border-radius: 0.5rem;
+  }
+
+  /* Reserved box for images with daemon-probed dimensions: the frame takes
+     the final layout size (aspect-ratio + width set inline from width/height
+     attrs) before any bytes arrive, showing a bordered icon + path placeholder
+     until the image loads. */
+  .markdown-viewer :global(.markdown-image-frame) {
+    position: relative;
+    display: block;
+    max-width: 100%;
+    overflow: hidden;
+    border-radius: 0.5rem;
+  }
+
+  .markdown-viewer :global(.markdown-image-frame[data-loaded='false']) {
+    border: 1px dashed hsl(var(--border));
+    background: hsl(var(--muted) / 0.3);
+  }
+
+  .markdown-viewer :global(.markdown-image-frame > img) {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    max-width: none;
+    object-fit: contain;
+    border-radius: 0;
+  }
+
+  .markdown-viewer :global(.markdown-image-frame[data-loaded='false'] > img) {
+    opacity: 0;
+  }
+
+  .markdown-viewer :global(.markdown-image-frame-placeholder) {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0.5rem;
   }
 
   /* Task Block - Skeleton loader styled like final checkbox state */

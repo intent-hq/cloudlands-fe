@@ -15,6 +15,7 @@ const mocks = vi.hoisted(() => {
   const stageFiles = vi.fn();
   const unstageFiles = vi.fn();
   const discardFiles = vi.fn();
+  const confirm = vi.fn();
   const selector = <T>(getter: () => T) => {
     const fn = () => ({
       subscribe(run: (v: T) => void) {
@@ -33,6 +34,7 @@ const mocks = vi.hoisted(() => {
     stageFiles,
     unstageFiles,
     discardFiles,
+    confirm,
     selector,
     getAutoCommit: () => autoCommit,
     setAutoCommit: (v: boolean) => {
@@ -148,8 +150,10 @@ vi.mock('$features/git/git-write-service', () => ({
   commit: vi.fn(),
 }));
 
-vi.mock('$lib/components/ui/toast', () => ({
-  toast: {
+vi.mock('$lib/components/patterns/confirm', () => ({ confirm: mocks.confirm }));
+
+vi.mock('$lib/components/patterns/notify', () => ({
+  notify: {
     error: vi.fn(),
     success: vi.fn(),
     info: vi.fn(),
@@ -159,11 +163,6 @@ vi.mock('$lib/components/ui/toast', () => ({
 
 vi.mock('$lib/components/file-tracking/accept-changes/FileRow.svelte', async () => {
   const { default: MockComponent } = await import('./mocks/MockFileRow.svelte');
-  return { default: MockComponent };
-});
-
-vi.mock('$lib/components/ui/Header.svelte', async () => {
-  const { default: MockComponent } = await import('./mocks/MockSimple.svelte');
   return { default: MockComponent };
 });
 
@@ -227,6 +226,7 @@ describe('FileChangesSection', () => {
     mocks.stageFiles.mockReset().mockResolvedValue({ success: true });
     mocks.unstageFiles.mockReset().mockResolvedValue({ success: true });
     mocks.discardFiles.mockReset().mockResolvedValue({ success: true });
+    mocks.confirm.mockReset().mockResolvedValue(true);
     mockExecute.mockReset().mockResolvedValue({ success: true });
     mocks.unstaged.splice(0, mocks.unstaged.length);
     mocks.staged.splice(0, mocks.staged.length);
@@ -243,6 +243,34 @@ describe('FileChangesSection', () => {
     expect(rows.length).toBe(3);
     const paths = Array.from(rows).map((r) => r.getAttribute('data-file-path'));
     expect(paths).toEqual(expect.arrayContaining(['src/a.ts', 'src/b.ts', 'src/c.ts']));
+  });
+
+  it('independently collapses and expands file sections', async () => {
+    mocks.unstaged.push(makeChange('src/unstaged.ts'));
+    mocks.staged.push(makeChange('src/staged.ts', { stage: ChangeStage.Staged }));
+    const { container, getByRole } = await renderSection();
+    const unstaged = getByRole('button', { name: 'Unstaged' });
+    const staged = getByRole('button', { name: 'Staged' });
+    const file = (path: string) => container.querySelector(`[data-file-path="${path}"]`);
+    expect(file('src/unstaged.ts')).not.toBeNull();
+    expect(file('src/staged.ts')).not.toBeNull();
+    expect(unstaged.getAttribute('aria-expanded')).toBe('true');
+    expect(staged.getAttribute('aria-expanded')).toBe('true');
+
+    await fireEvent.click(unstaged);
+    await waitFor(() => expect(file('src/unstaged.ts')).toBeNull());
+    expect(file('src/staged.ts')).not.toBeNull();
+    expect(unstaged.getAttribute('aria-expanded')).toBe('false');
+    await fireEvent.click(unstaged);
+    await waitFor(() => expect(file('src/unstaged.ts')).not.toBeNull());
+
+    await fireEvent.click(staged);
+    await waitFor(() => expect(file('src/staged.ts')).toBeNull());
+    expect(file('src/unstaged.ts')).not.toBeNull();
+    expect(staged.getAttribute('aria-expanded')).toBe('false');
+    await fireEvent.click(staged);
+    await waitFor(() => expect(file('src/staged.ts')).not.toBeNull());
+    expect(staged.getAttribute('aria-expanded')).toBe('true');
   });
 
   it('renders a path once in each section when it has staged and unstaged changes', async () => {
@@ -325,6 +353,52 @@ describe('FileChangesSection', () => {
     const { getAllByTestId } = await renderSection();
     await fireEvent.click(getAllByTestId('revert-btn')[0]);
     expect(mocks.discardFiles).toHaveBeenCalledWith('ws-1', ['src/a.ts']);
+    expect(mocks.confirm).toHaveBeenCalledWith(
+      expect.objectContaining({
+        destructive: true,
+        description: 'src/a.ts',
+      }),
+    );
+  });
+
+  it('does not discard when confirmation is canceled', async () => {
+    mocks.confirm.mockResolvedValue(false);
+    mocks.unstaged.push(makeChange('src/a.ts'));
+    const { getAllByTestId } = await renderSection();
+    await fireEvent.click(getAllByTestId('revert-btn')[0]);
+    expect(mocks.discardFiles).not.toHaveBeenCalled();
+  });
+
+  it('does not retarget a pending discard after switching workspaces', async () => {
+    let accept!: (value: boolean) => void;
+    mocks.confirm.mockReturnValue(
+      new Promise<boolean>((resolve) => {
+        accept = resolve;
+      }),
+    );
+    mocks.unstaged.push(makeChange('src/a.ts'));
+    const { getAllByTestId, rerender } = await renderSection();
+    await fireEvent.click(getAllByTestId('revert-btn')[0]);
+    await rerender({ workspaceId: 'ws-other' });
+    accept(true);
+    await Promise.resolve();
+    expect(mocks.discardFiles).not.toHaveBeenCalled();
+  });
+
+  it('revalidates a file lock after confirmation', async () => {
+    let accept!: (value: boolean) => void;
+    mocks.confirm.mockReturnValue(
+      new Promise<boolean>((resolve) => {
+        accept = resolve;
+      }),
+    );
+    mocks.unstaged.push(makeChange('src/a.ts', { agentId: 'agent-1' }));
+    const { getAllByTestId } = await renderSection();
+    await fireEvent.click(getAllByTestId('revert-btn')[0]);
+    mocks.setLockedAgentIds({ 'agent-1': true });
+    accept(true);
+    await Promise.resolve();
+    expect(mocks.discardFiles).not.toHaveBeenCalled();
   });
 
   it('locked agent groups do not expose a stage action on FileRow', async () => {
@@ -353,7 +427,6 @@ describe('FileChangesSection', () => {
     const { container } = await renderSection();
     const toggle = container.querySelector('button[role="switch"], [role="switch"]') as HTMLElement;
     expect(toggle).toBeDefined();
-    expect(toggle.className).toContain('border-0!');
     await fireEvent.click(toggle);
     expect(mocks.dispatch).toHaveBeenCalledWith(
       expect.objectContaining({

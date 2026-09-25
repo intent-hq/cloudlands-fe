@@ -21,8 +21,11 @@ import {
   selectGroupByRepo,
   selectGithubLinkDefaultAction,
   selectHasCompletedProviderSetup,
+  selectLabsSettingsVisible,
+  selectLabsMultiplayerEnabled,
   selectLanguagePreference,
   selectNoteFontStyle,
+  selectReduceMotionOnBattery,
   selectShowArchived,
   selectShowReasoningBlocks,
   selectShellTransparencyEnabled,
@@ -44,8 +47,11 @@ import {
   setGroupByRepo,
   setGithubLinkDefaultAction,
   setHasCompletedProviderSetup,
+  setLabsSettingsVisible,
+  setLabsMultiplayerEnabled,
   setLanguagePreference,
   setNoteFontStyle,
+  setReduceMotionOnBattery,
   setShowArchived,
   setShowReasoningBlocks,
   setShellTransparencyEnabled,
@@ -55,6 +61,9 @@ import {
   toggleGroupByRepo,
   toggleHasCompletedProviderSetup,
   toggleChatAurora,
+  toggleLabsSettingsVisibility,
+  toggleLabsMultiplayer,
+  toggleReduceMotionOnBattery,
   toggleShowArchived,
   toggleShowReasoningBlocks,
   toggleShellTransparency,
@@ -71,6 +80,9 @@ const COMPLETED_PROVIDER_SETUP_STORAGE_KEY = 'workspace-list:completedProviderSe
 const SHOW_REASONING_BLOCKS_STORAGE_KEY = 'chat:showReasoningBlocks';
 const CHAT_AURORA_STORAGE_KEY = 'chat:auroraEnabled';
 const SHELL_TRANSPARENCY_STORAGE_KEY = 'appearance:shellTransparencyEnabled';
+const REDUCE_MOTION_ON_BATTERY_STORAGE_KEY = 'appearance:reduceMotionOnBattery';
+const LABS_SETTINGS_VISIBLE_STORAGE_KEY = 'labs:settingsVisible';
+const LABS_MULTIPLAYER_STORAGE_KEY = 'labs:multiplayerEnabled';
 const AGENT_STORAGE_KEY = 'agent-font-settings';
 const NOTE_STORAGE_KEY = 'note-font-settings';
 const CODE_STORAGE_KEY = 'code-font-settings';
@@ -168,6 +180,25 @@ export function* hydrateUserPreferencesWorker() {
   );
   if (typeof shellTransparencyEnabled === 'boolean') {
     yield* put(setShellTransparencyEnabled(shellTransparencyEnabled));
+  }
+
+  const reduceMotionOnBattery = yield* getLocalStorageJSON<boolean>(
+    REDUCE_MOTION_ON_BATTERY_STORAGE_KEY,
+  );
+  if (typeof reduceMotionOnBattery === 'boolean') {
+    yield* put(setReduceMotionOnBattery(reduceMotionOnBattery));
+  }
+
+  const labsSettingsVisible = yield* getLocalStorageJSON<boolean>(
+    LABS_SETTINGS_VISIBLE_STORAGE_KEY,
+  );
+  if (typeof labsSettingsVisible === 'boolean') {
+    yield* put(setLabsSettingsVisible(labsSettingsVisible));
+  }
+
+  const labsMultiplayerEnabled = yield* getLocalStorageJSON<boolean>(LABS_MULTIPLAYER_STORAGE_KEY);
+  if (typeof labsMultiplayerEnabled === 'boolean') {
+    yield* put(setLabsMultiplayerEnabled(labsMultiplayerEnabled));
   }
 
   const agentFont = yield* getLocalStorageJSON<unknown>(AGENT_STORAGE_KEY);
@@ -270,6 +301,27 @@ function* persistShellTransparencyWorker() {
   );
 }
 
+function* persistReduceMotionOnBatteryWorker() {
+  yield* setLocalStorageJSON(
+    REDUCE_MOTION_ON_BATTERY_STORAGE_KEY,
+    yield* selectReduceMotionOnBattery.effect(),
+  );
+}
+
+function* persistLabsSettingsVisibilityWorker() {
+  yield* setLocalStorageJSON(
+    LABS_SETTINGS_VISIBLE_STORAGE_KEY,
+    yield* selectLabsSettingsVisible.effect(),
+  );
+}
+
+function* persistLabsMultiplayerWorker() {
+  yield* setLocalStorageJSON(
+    LABS_MULTIPLAYER_STORAGE_KEY,
+    yield* selectLabsMultiplayerEnabled.effect(),
+  );
+}
+
 function* persistAgentFontWorker() {
   yield* setLocalStorageJSON(AGENT_STORAGE_KEY, {
     fontStyle: yield* selectAgentFontStyle.effect(),
@@ -342,6 +394,18 @@ function* watchUserPreferenceWrites() {
   yield* takeEvery(
     [setShellTransparencyEnabled, toggleShellTransparency],
     persistShellTransparencyWorker,
+  );
+  yield* takeEvery(
+    [setReduceMotionOnBattery, toggleReduceMotionOnBattery],
+    persistReduceMotionOnBatteryWorker,
+  );
+  yield* takeEvery(
+    [setLabsSettingsVisible, toggleLabsSettingsVisibility],
+    persistLabsSettingsVisibilityWorker,
+  );
+  yield* takeEvery(
+    [setLabsMultiplayerEnabled, toggleLabsMultiplayer],
+    persistLabsMultiplayerWorker,
   );
   yield* takeEvery([setAgentFontStyle], persistAgentFontWorker);
   yield* takeEvery([setNoteFontStyle, cycleNoteFontStyle], persistNoteFontWorker);

@@ -77,9 +77,7 @@
       600 10px Inter,
       system-ui,
       sans-serif;
-    letter-spacing: 0.18em;
     color: hsl(var(--muted-foreground));
-    text-transform: uppercase;
   }
   .hud-burn-rule {
     flex: 1;
@@ -127,7 +125,7 @@
     color: hsl(var(--foreground));
   }
   .hud-burn-rate.up {
-    color: hsl(var(--primary));
+    color: hsl(var(--primary-ink));
   }
   .hud-burn-rate.down {
     color: hsl(var(--danger));

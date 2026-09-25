@@ -1,11 +1,11 @@
 <script lang="ts">
+  import KebabIcon from '$lib/components/icons/KebabIcon.svelte';
   import Fa from 'svelte-fa';
   import { differenceInDays } from 'date-fns';
   import { formatDistanceToNow, formatShortDate, formatInteger } from '$lib/i18n/format';
   import { Button } from '$lib/components/ui/button';
   import type { Workspace } from '$shared/types';
-  import { slide, fade } from 'svelte/transition';
-  import { spring } from 'svelte/motion';
+  import { fade, slide, springValue } from '$lib/motion';
   import InitialsAvatar from './InitialsAvatar.svelte';
   import UnifiedCommentThread from './UnifiedCommentThread.svelte';
   import {
@@ -14,7 +14,6 @@
     faEdit,
     faTimes,
     faReply,
-    faEllipsisV,
     faLightbulb,
     faExclamationTriangle,
     faCircleQuestion,
@@ -121,13 +120,7 @@
 
   // Animation for position changes
   // svelte-ignore state_referenced_locally - intentional initial capture; the $effect below syncs later changes
-  const position = spring(
-    { x: offset, y: 0 },
-    {
-      stiffness: 0.2,
-      damping: 0.8,
-    },
-  );
+  const position = springValue({ x: offset, y: 0 }, 'slow');
 
   $effect(() => {
     position.set({ x: offset, y: 0 });
@@ -228,14 +221,16 @@
   onmouseleave={handleMouseLeave}
 >
   {#if hasConnectionLine}
-    <div class="connection-line" transition:fade={{ duration: 200 }}></div>
+    <div class="connection-line" transition:fade={{ tier: 'moderate' }}></div>
   {/if}
 
   {#if effectiveDisplayMode === 'icon' && !focused}
     <!-- Icon-only mode when not focused -->
-    <button
-      class="icon-button {getCommentColor(comment.type, comment.status)}"
-      class:has-replies={replies.length > 0}
+    <Button
+      variant="ghost"
+      class="icon-button {getCommentColor(comment.type, comment.status)} {replies.length > 0
+        ? 'has-replies'
+        : ''}"
       onclick={() => onShow?.()}
       aria-label="{comment.author}: {truncateContent(comment.content || '')}"
     >
@@ -245,13 +240,13 @@
           <span class="reply-badge">{replies.length}</span>
         {/if}
       </div>
-    </button>
+    </Button>
 
     <!-- Hover card for icon mode -->
     {#if showHoverCard}
       <div
         class="hover-card"
-        transition:slide={{ axis: 'x', duration: 200 }}
+        transition:slide={{ axis: 'x', tier: 'moderate' }}
         role="group"
         onmouseenter={() => clearTimeout(hoverTimeout)}
         onmouseleave={handleMouseLeave}
@@ -302,7 +297,7 @@
               onShow?.();
             }}
           >
-            <Fa icon={faEllipsisV} size="xs" />
+            <KebabIcon class="size-3.5" />
           </Button>
         {/if}
       </div>
@@ -315,7 +310,13 @@
               <Fa icon={faCheck} size="xs" />
               {m.tiptap_responsiveThread_resolve_label()}
             </Button>
-            <Button size="xs" variant="ghost" onclick={() => onClose?.()}>
+            <Button
+              size="icon-compact"
+              iconOnly
+              variant="ghost"
+              aria-label={m.tiptap_responsiveThread_close_ariaLabel()}
+              onclick={() => onClose?.()}
+            >
               <Fa icon={faTimes} size="xs" />
             </Button>
           </div>
@@ -368,7 +369,7 @@
 <style>
   .comment-thread-container {
     position: relative;
-    transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    transition: transform var(--motion-slow) var(--spring-slow-ease);
   }
 
   /* Icon mode styles - Clean and minimal */
@@ -387,7 +388,7 @@
     align-items: center;
     justify-content: center;
     cursor: pointer;
-    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    transition: all var(--spring-moderate) var(--spring-moderate-ease);
     position: relative;
     box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
   }
@@ -395,7 +396,7 @@
   .icon-button:hover {
     transform: scale(1.05);
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-    border-color: var(--primary);
+    border-color: var(--primary-ink);
   }
 
   .icon-button.orphaned {
@@ -518,7 +519,7 @@
     width: 100%;
     min-width: 180px;
     cursor: pointer;
-    transition: all 0.2s;
+    transition: all var(--spring-moderate) var(--spring-moderate-ease);
     box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
   }
 
@@ -607,7 +608,7 @@
 
   /* Focus and collapse states */
   .focused {
-    width: 300px;
+    width: var(--comment-focused-width, 300px);
     max-width: 300px;
     box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
     z-index: 20 !important;

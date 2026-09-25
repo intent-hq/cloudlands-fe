@@ -1,17 +1,23 @@
 <script lang="ts">
-  import Button from '$lib/components/ui/button/button.svelte';
-  import Input from '$lib/components/ui/input/input.svelte';
-  import Label from '$lib/components/ui/label/label.svelte';
-  import Fa from 'svelte-fa';
-  import { faXmark, faServer, faKey } from '@fortawesome/free-solid-svg-icons';
-  import { fade, scale } from 'svelte/transition';
-  import { scaleConfig } from '$lib/utils/animations';
+  import { Button } from '$lib/components/ui/button';
+  import { FormDialog } from '$lib/components/patterns/confirm';
+  import { Input } from '$lib/components/ui/input';
+  import { Label } from '$lib/components/ui/label';
+  import { InputMessage } from '$lib/components/ui/input-message';
+  import * as ToggleGroup from '$lib/components/ui/toggle-group';
   import { createLogger } from '$lib/utils/client-logger';
-  import { portal } from '$lib/actions/portal';
   import { m } from '$shared/paraglide/messages.js';
 
   interface Props {
     isOpen: boolean;
+    portalTarget?: string | HTMLElement;
+    inline?: boolean;
+    initialSetup?: Partial<
+      Pick<
+        RemoteSetup,
+        'name' | 'host' | 'port' | 'wsUrl' | 'username' | 'workspacePath' | 'branch'
+      >
+    >;
     onclose: () => void;
     onsave: (setup: RemoteSetup) => void;
   }
@@ -33,22 +39,29 @@
 
   type AuthMode = 'agent' | 'keyfile' | 'password';
 
-  let { isOpen, onclose, onsave }: Props = $props();
+  let { isOpen, onclose, onsave, inline = false, initialSetup }: Props = $props();
 
   const logger = createLogger('AddRemoteSetupModal');
 
   // Form state
-  let name = $state('');
+  // svelte-ignore state_referenced_locally - initial form values
+  let name = $state(initialSetup?.name ?? '');
   let transport = $state<'ssh' | 'websocket'>('ssh');
-  let host = $state('');
-  let port = $state(22);
-  let wsUrl = $state('');
-  let username = $state('');
+  // svelte-ignore state_referenced_locally - initial form values
+  let host = $state(initialSetup?.host ?? '');
+  // svelte-ignore state_referenced_locally - initial form values
+  let port = $state(initialSetup?.port ?? 22);
+  // svelte-ignore state_referenced_locally - initial form values
+  let wsUrl = $state(initialSetup?.wsUrl ?? '');
+  // svelte-ignore state_referenced_locally - initial form values
+  let username = $state(initialSetup?.username ?? '');
   let password = $state('');
   let keyPath = $state('');
   let authMode = $state<AuthMode>('agent');
-  let workspacePath = $state('');
-  let branch = $state('main');
+  // svelte-ignore state_referenced_locally - initial form values
+  let workspacePath = $state(initialSetup?.workspacePath ?? '');
+  // svelte-ignore state_referenced_locally - initial form values
+  let branch = $state(initialSetup?.branch ?? 'main');
   let error = $state('');
 
   const isFormValid = $derived(
@@ -112,273 +125,208 @@
 </script>
 
 {#if isOpen}
-  <div class="fixed inset-0 z-[9999] flex items-center justify-center" use:portal={'body'}>
-    <!-- Backdrop -->
-    <button
-      type="button"
-      class="absolute inset-0 bg-black/50 cursor-default"
-      onclick={handleClose}
-      aria-label={m.workspace_addRemoteSetupModal_close_ariaLabel()}
-      transition:fade={{ duration: 150 }}
-    ></button>
-
-    <!-- Modal -->
-    <div
-      class="relative bg-sidebar border border-border shadow-xs w-full max-w-lg max-h-[90vh] overflow-y-auto px-12 py-8"
-      transition:scale={scaleConfig()}
-    >
-      <!-- Header -->
-      <div class="flex items-center justify-between mb-4">
-        <h2 class="text-lg font-semibold flex items-center gap-2">
-          <Fa icon={faServer} class="text-ghost" />
-          {m.workspace_addRemoteSetupModal_title()}
-        </h2>
-        <Button
-          onclick={handleClose}
-          variant="ghost"
-          size="icon"
-          aria-label={m.workspace_addRemoteSetupModal_close_ariaLabel()}
-        >
-          <Fa icon={faXmark} />
-        </Button>
+  <FormDialog
+    open={isOpen}
+    static={inline}
+    title={m.workspace_addRemoteSetupModal_title()}
+    closeLabel={m.workspace_addRemoteSetupModal_close_ariaLabel()}
+    submitLabel={m.workspace_addRemoteSetupModal_addSetup_label()}
+    cancelLabel={m.workspace_addRemoteSetupModal_cancel_label()}
+    size="lg"
+    canSubmit={isFormValid}
+    onSubmit={handleSave}
+    onCancel={handleClose}
+  >
+    <!-- Content -->
+    <div class="space-y-4">
+      <div>
+        <Label for="name">{m.workspace_addRemoteSetupModal_setupName_label()}</Label>
+        <Input
+          id="name"
+          bind:value={name}
+          placeholder={m.workspace_addRemoteSetupModal_setupName_placeholder()}
+          class="mt-1"
+        />
       </div>
 
-      <!-- Content -->
-      <div class="space-y-4">
-        <div>
-          <Label for="name">{m.workspace_addRemoteSetupModal_setupName_label()}</Label>
-          <Input
-            id="name"
-            bind:value={name}
-            placeholder={m.workspace_addRemoteSetupModal_setupName_placeholder()}
-            class="mt-1"
-          />
+      <!-- Connection Details -->
+      <div class="space-y-3">
+        <h3 class="text-sm font-medium">
+          {m.workspace_addRemoteSetupModal_connectionDetails_label()}
+        </h3>
+
+        <!-- Transport type selector -->
+        <div class="flex gap-2">
+          <Button
+            variant="ghost"
+            type="button"
+            aria-pressed={transport === 'ssh'}
+            class="flex-1 px-3 py-1.5 text-sm rounded-md border transition-colors {transport ===
+            'ssh'
+              ? 'bg-primary text-primary-foreground border-primary'
+              : 'bg-background text-muted-foreground border-border hover:bg-muted'}"
+            onclick={() => {
+              if (transport !== 'ssh') {
+                resetForm();
+                transport = 'ssh';
+              }
+            }}
+          >
+            <!-- i18n-ignore (protocol name) -->
+            SSH
+          </Button>
+          <Button
+            variant="ghost"
+            type="button"
+            aria-pressed={transport === 'websocket'}
+            class="flex-1 px-3 py-1.5 text-sm rounded-md border transition-colors {transport ===
+            'websocket'
+              ? 'bg-primary text-primary-foreground border-primary'
+              : 'bg-background text-muted-foreground border-border hover:bg-muted'}"
+            onclick={() => {
+              if (transport !== 'websocket') {
+                resetForm();
+                transport = 'websocket';
+              }
+            }}
+          >
+            <!-- i18n-ignore (protocol name) -->
+            WebSocket
+          </Button>
         </div>
 
-        <!-- Connection Details -->
-        <div class="space-y-3">
-          <h3 class="text-sm font-medium">
-            {m.workspace_addRemoteSetupModal_connectionDetails_label()}
-          </h3>
-
-          <!-- Transport type selector -->
-          <div class="flex gap-2">
-            <button
-              type="button"
-              class="flex-1 px-3 py-1.5 text-sm rounded-md border transition-colors {transport ===
-              'ssh'
-                ? 'bg-primary text-primary-foreground border-primary'
-                : 'bg-background text-muted-foreground border-border hover:bg-muted'}"
-              onclick={() => {
-                if (transport !== 'ssh') {
-                  resetForm();
-                  transport = 'ssh';
-                }
-              }}
-            >
-              <!-- i18n-ignore (protocol name) -->
-              SSH
-            </button>
-            <button
-              type="button"
-              class="flex-1 px-3 py-1.5 text-sm rounded-md border transition-colors {transport ===
-              'websocket'
-                ? 'bg-primary text-primary-foreground border-primary'
-                : 'bg-background text-muted-foreground border-border hover:bg-muted'}"
-              onclick={() => {
-                if (transport !== 'websocket') {
-                  resetForm();
-                  transport = 'websocket';
-                }
-              }}
-            >
-              <!-- i18n-ignore (protocol name) -->
-              WebSocket
-            </button>
-          </div>
-
-          {#if transport === 'ssh'}
-            <div class="grid grid-cols-2 gap-3">
-              <div>
-                <Label for="host">{m.workspace_addRemoteSetupModal_host_label()}</Label>
-                <!-- i18n-ignore (example hostname placeholder) -->
-                <Input id="host" bind:value={host} placeholder="dev.example.com" class="mt-1" />
-              </div>
-              <div>
-                <Label for="port">{m.workspace_addRemoteSetupModal_port_label()}</Label>
-                <Input id="port" type="number" bind:value={port} placeholder="22" class="mt-1" />
-              </div>
-            </div>
-          {:else}
-            <div>
-              <Label for="wsUrl">{m.workspace_addRemoteSetupModal_wsUrl_label()}</Label>
-              <Input
-                id="wsUrl"
-                bind:value={wsUrl}
-                placeholder={/* i18n-ignore (example URL placeholder) */ 'wss://dev.example.com/ws'}
-                class="mt-1"
-              />
-            </div>
-          {/if}
-
-          <div>
-            <Label for="username">{m.workspace_addRemoteSetupModal_username_label()}</Label>
-            <!-- i18n-ignore (example username placeholder) -->
-            <Input id="username" bind:value={username} placeholder="john" class="mt-1" />
-          </div>
-        </div>
-
-        <!-- Authentication (SSH only) -->
         {#if transport === 'ssh'}
-          <div class="space-y-3">
-            <h3 class="text-sm font-medium">
-              {m.workspace_addRemoteSetupModal_authentication_label()}
-            </h3>
-
-            <!-- Auth mode radio buttons -->
-            <div class="space-y-2">
-              <!-- SSH Agent option -->
-              <label
-                class="flex items-start gap-3 p-2 rounded-md border cursor-pointer transition-colors {authMode ===
-                'agent'
-                  ? 'border-primary bg-primary/5'
-                  : 'border-border hover:bg-muted/50'}"
-              >
-                <input
-                  type="radio"
-                  name="authMode"
-                  value="agent"
-                  checked={authMode === 'agent'}
-                  onchange={() => {
-                    authMode = 'agent';
-                  }}
-                  class="mt-1"
-                />
-                <div class="flex-1">
-                  <div class="flex items-center gap-2">
-                    <Fa icon={faKey} class="text-ghost text-xs" />
-                    <span class="text-sm font-medium"
-                      >{m.workspace_addRemoteSetupModal_sshAgent_label()}</span
-                    >
-                  </div>
-                </div>
-              </label>
-
-              <!-- Key file option -->
-              <label
-                class="flex items-start gap-3 p-2 rounded-md border cursor-pointer transition-colors {authMode ===
-                'keyfile'
-                  ? 'border-primary bg-primary/5'
-                  : 'border-border hover:bg-muted/50'}"
-              >
-                <input
-                  type="radio"
-                  name="authMode"
-                  value="keyfile"
-                  checked={authMode === 'keyfile'}
-                  onchange={() => {
-                    authMode = 'keyfile';
-                  }}
-                  class="mt-1"
-                />
-                <div class="flex-1">
-                  <span class="text-sm font-medium"
-                    >{m.workspace_addRemoteSetupModal_keyFile_label()}</span
-                  >
-                  {#if authMode === 'keyfile'}
-                    <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
-                    <!-- stopPropagation prevents clicks on interactive elements from bubbling
-                         to the parent <label>, which would steal focus to the radio button -->
-                    <div class="mt-1" onclick={(e) => e.stopPropagation()}>
-                      <!-- i18n-ignore (example path placeholder) -->
-                      <Input bind:value={keyPath} placeholder="~/.ssh/id_rsa" class="mt-1 h-8" />
-                    </div>
-                  {/if}
-                </div>
-              </label>
-
-              <!-- Password option -->
-              <label
-                class="flex items-start gap-3 p-2 rounded-md border cursor-pointer transition-colors {authMode ===
-                'password'
-                  ? 'border-primary bg-primary/5'
-                  : 'border-border hover:bg-muted/50'}"
-              >
-                <input
-                  type="radio"
-                  name="authMode"
-                  value="password"
-                  checked={authMode === 'password'}
-                  onchange={() => {
-                    authMode = 'password';
-                  }}
-                  class="mt-1"
-                />
-                <div class="flex-1">
-                  <span class="text-sm font-medium"
-                    >{m.workspace_addRemoteSetupModal_password_label()}</span
-                  >
-                  {#if authMode === 'password'}
-                    <div class="mt-1">
-                      <Input
-                        type="password"
-                        bind:value={password}
-                        placeholder="••••••••"
-                        class="h-8"
-                      />
-                    </div>
-                  {/if}
-                </div>
-              </label>
+          <div class="grid grid-cols-[minmax(0,1fr)_5rem] gap-3">
+            <div>
+              <Label for="host">{m.workspace_addRemoteSetupModal_host_label()}</Label>
+              <!-- i18n-ignore (example hostname placeholder) -->
+              <Input id="host" bind:value={host} placeholder="dev.example.com" class="mt-1" />
+            </div>
+            <div>
+              <Label for="port">{m.workspace_addRemoteSetupModal_port_label()}</Label>
+              <Input id="port" type="number" bind:value={port} placeholder="22" class="mt-1" />
             </div>
           </div>
         {:else}
-          <!-- WebSocket info - no SSH auth needed -->
-          <div class="text-sm text-subtle bg-muted/50 px-3 py-2 rounded-md">
-            <p>
-              {m.workspace_addRemoteSetupModal_websocketAuth_description()}
-            </p>
+          <div>
+            <Label for="wsUrl">{m.workspace_addRemoteSetupModal_wsUrl_label()}</Label>
+            <Input
+              id="wsUrl"
+              bind:value={wsUrl}
+              placeholder={/* i18n-ignore (example URL placeholder) */ 'wss://dev.example.com/ws'}
+              class="mt-1"
+            />
           </div>
         {/if}
 
-        <!-- Repository Path -->
         <div>
-          <Label for="workspacePath">{m.workspace_addRemoteSetupModal_repoPath_label()}</Label>
-          <Input
-            id="workspacePath"
-            bind:value={workspacePath}
-            placeholder={/* i18n-ignore (example path placeholder) */ '/home/user/myrepo'}
-            class="mt-1"
-          />
-          <p class="text-xs text-subtle mt-1">
-            {m.workspace_addRemoteSetupModal_repoPath_description()}
-          </p>
+          <Label for="username">{m.workspace_addRemoteSetupModal_username_label()}</Label>
+          <!-- i18n-ignore (example username placeholder) -->
+          <Input id="username" bind:value={username} placeholder="john" class="mt-1" />
         </div>
-
-        <!-- Branch Name -->
-        <div>
-          <Label for="branch">{m.workspace_addRemoteSetupModal_branch_label()}</Label>
-          <!-- i18n-ignore (branch name placeholder) -->
-          <Input id="branch" bind:value={branch} placeholder="main" class="mt-1" />
-          <p class="text-xs text-subtle mt-1">
-            {m.workspace_addRemoteSetupModal_branch_description()}
-          </p>
-        </div>
-
-        {#if error}
-          <div class="text-sm text-danger">{error}</div>
-        {/if}
       </div>
 
-      <!-- Footer -->
-      <div class="flex justify-end gap-2 mt-6">
-        <Button onclick={handleClose} variant="outline"
-          >{m.workspace_addRemoteSetupModal_cancel_label()}</Button
-        >
-        <Button onclick={handleSave} disabled={!isFormValid}
-          >{m.workspace_addRemoteSetupModal_addSetup_label()}</Button
-        >
+      <!-- Authentication (SSH only) -->
+      {#if transport === 'ssh'}
+        <div class="space-y-3">
+          <h3 class="text-sm font-medium">
+            {m.workspace_addRemoteSetupModal_authentication_label()}
+          </h3>
+
+          <ToggleGroup.Root
+            type="single"
+            bind:value={
+              () => authMode,
+              (value) => {
+                if (value === 'agent' || value === 'keyfile' || value === 'password')
+                  authMode = value;
+              }
+            }
+            aria-label={m.workspace_addRemoteSetupModal_authentication_label()}
+            variant="outline"
+            class="flex w-full"
+          >
+            <ToggleGroup.Item
+              value="agent"
+              class="min-w-0 flex-1"
+              onclick={(event) => {
+                if (authMode === 'agent') event.preventDefault();
+              }}
+              onkeydown={(event) => {
+                if (authMode === 'agent' && ['Enter', ' '].includes(event.key))
+                  event.preventDefault();
+              }}>{m.workspace_addRemoteSetupModal_sshAgent_label()}</ToggleGroup.Item
+            >
+            <ToggleGroup.Item
+              value="keyfile"
+              class="min-w-0 flex-1"
+              onclick={(event) => {
+                if (authMode === 'keyfile') event.preventDefault();
+              }}
+              onkeydown={(event) => {
+                if (authMode === 'keyfile' && ['Enter', ' '].includes(event.key))
+                  event.preventDefault();
+              }}>{m.workspace_addRemoteSetupModal_keyFile_label()}</ToggleGroup.Item
+            >
+            <ToggleGroup.Item
+              value="password"
+              class="min-w-0 flex-1"
+              onclick={(event) => {
+                if (authMode === 'password') event.preventDefault();
+              }}
+              onkeydown={(event) => {
+                if (authMode === 'password' && ['Enter', ' '].includes(event.key))
+                  event.preventDefault();
+              }}>{m.workspace_addRemoteSetupModal_password_label()}</ToggleGroup.Item
+            >
+          </ToggleGroup.Root>
+          {#if authMode === 'keyfile'}
+            {@const keyPathExample = '~/.ssh/id_rsa'}
+            <Input
+              bind:value={keyPath}
+              placeholder={keyPathExample}
+              aria-label={m.workspace_addRemoteSetupModal_keyFile_label()}
+            />
+          {/if}
+          {#if authMode === 'password'}
+            <Input
+              type="password"
+              bind:value={password}
+              placeholder="••••••••"
+              aria-label={m.workspace_addRemoteSetupModal_password_label()}
+            />
+          {/if}
+        </div>
+      {:else}
+        <!-- WebSocket info - no SSH auth needed -->
+        <div class="type-caption text-subtle">
+          <p>
+            {m.workspace_addRemoteSetupModal_websocketAuth_description()}
+          </p>
+        </div>
+      {/if}
+
+      <!-- Repository Path -->
+      <div>
+        <Label for="workspacePath">{m.workspace_addRemoteSetupModal_repoPath_label()}</Label>
+        <Input
+          id="workspacePath"
+          bind:value={workspacePath}
+          placeholder={/* i18n-ignore (example path placeholder) */ '/home/user/myrepo'}
+          class="mt-1"
+        />
       </div>
+
+      <!-- Branch Name -->
+      <div>
+        <Label for="branch">{m.workspace_addRemoteSetupModal_branch_label()}</Label>
+        <!-- i18n-ignore (branch name placeholder) -->
+        <Input id="branch" bind:value={branch} placeholder="main" class="mt-1" />
+      </div>
+
+      {#if error}
+        <InputMessage tone="error">{error}</InputMessage>
+      {/if}
     </div>
-  </div>
+  </FormDialog>
 {/if}

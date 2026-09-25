@@ -19,7 +19,17 @@ vi.mock('$store/renderer/store', async () => {
     await import('$store/renderer/slices/daemon-health/daemon-health-slice');
   const { connectionsReducer, initialState: connectionsInitialState } =
     await import('$store/renderer/slices/connections/connections-slice');
-  let state = { daemonHealth: initialState, connections: connectionsInitialState };
+  const { guestSessionsReducer, initialState: guestSessionsInitialState } =
+    await import('$store/renderer/slices/guest-sessions/guest-sessions-slice');
+  const { userPreferencesReducer, initialState: userPreferencesInitialState } =
+    await import('$store/renderer/slices/user-preferences/user-preferences-slice');
+  const freshState = () => ({
+    daemonHealth: initialState,
+    connections: connectionsInitialState,
+    guestSessions: guestSessionsInitialState,
+    userPreferences: userPreferencesInitialState,
+  });
+  let state = freshState();
   const listeners = new Set<() => void>();
   const channel = stdChannel();
   const store = {
@@ -27,7 +37,7 @@ vi.mock('$store/renderer/store', async () => {
       return state;
     },
     init() {
-      state = { daemonHealth: initialState, connections: connectionsInitialState };
+      state = freshState();
       listeners.forEach((listener) => listener());
       return () => {};
     },
@@ -38,16 +48,18 @@ vi.mock('$store/renderer/store', async () => {
       state = {
         daemonHealth: daemonHealthReducer(state.daemonHealth, action as never),
         connections: connectionsReducer(state.connections, action as never),
+        guestSessions: guestSessionsReducer(state.guestSessions, action as never),
+        userPreferences: userPreferencesReducer(state.userPreferences, action as never),
       };
       channel.put(action);
       listeners.forEach((listener) => listener());
       return action;
     },
-    createSelector<T>(select: (value: typeof state) => T) {
+    createSelector<T, A extends unknown[]>(select: (value: typeof state, ...args: A) => T) {
       return Object.assign(
-        () => ({
+        (...args: A) => ({
           subscribe(run: (value: T) => void) {
-            const update = () => run(select(state));
+            const update = () => run(select(state, ...args));
             update();
             listeners.add(update);
             return () => listeners.delete(update);
@@ -55,8 +67,8 @@ vi.mock('$store/renderer/store', async () => {
         }),
         {
           select,
-          effect: function* () {
-            return select(state);
+          effect: function* (...args: A) {
+            return select(state, ...args);
           },
         },
       );
@@ -71,9 +83,8 @@ vi.mock('$store/renderer/store', async () => {
 
 import { store as appStore } from '$store/renderer/store';
 import { IPC_CHANNELS } from '$shared/ipc-registry';
-import { mockInvoke, resetMockIpcRouter } from '$shared/ipc-mock-router';
+import { mockInvoke, registerMockIpcHandler, resetMockIpcRouter } from '$shared/ipc-mock-router';
 import { connectionStatusChanged } from '$store/renderer/slices/daemon-health/daemon-health-slice';
-import { connectionsListReceived } from '$store/renderer/slices/connections/connections-slice';
 import type { ConnectionRecord } from '$shared/types/connections';
 import type { BackendTransportInfo } from '$store/renderer/slices/daemon-health/daemon-health-types';
 import { daemonHealthSaga } from '$store/renderer/slices/daemon-health/sagas/daemon-health-saga';
@@ -82,9 +93,19 @@ import {
   certWarningsReceived,
   connectionsListReceived,
   connectOperationStarted,
-  openConnectionRequested,
+  connectionWorkflowRequested,
+  connectionWorkflowFinished,
 } from '$store/renderer/slices/connections/connections-slice';
 import { LOCAL_CONNECTION_ID } from '$shared/types/connections';
+import {
+  guestSessionsListReceived,
+  leaveGuestSessionRequested,
+  leaveOperationStarted,
+  leaveOperationSettled,
+} from '$store/renderer/slices/guest-sessions/guest-sessions-slice';
+import type { GuestSessionRecord } from '$shared/types/guest-sessions';
+import { setZoomFactor } from '$store/renderer/slices/user-preferences/user-preferences-slice';
+import { WINDOW_TITLEBAR_HEIGHT_PX } from '$lib/components/layout/titlebar-geometry';
 
 const route = vi.hoisted(() => ({ pathname: '/' }));
 
@@ -131,6 +152,8 @@ async function showOverlay(
     sidecarStartupFailed?: boolean;
     reason?: string;
     reconnectAttempts?: number;
+    connectionLimited?: boolean;
+    connectionLimitRetryAfterMs?: number | null;
   },
 ) {
   bootTransport = transport;
@@ -314,10 +337,11 @@ describe('DaemonStoppedOverlay', () => {
     render(DaemonStoppedOverlay);
     await showOverlay(externalTransport);
     expect(screen.getByTestId('daemon-stopped-spawn-sidecar')).toBeTruthy();
-    expect(overlay()!.textContent).toContain('external intentd daemon was lost');
     // External mode gets the "local intentd instead of the remote server" note,
-    // not the local data-dir caveat.
-    expect(overlay()!.textContent).toContain('instead of the remote server');
+    // not the local data-dir caveat. The positive match is the only signal that
+    // the external-note branch rendered (the negative alone also passes with no
+    // note at all), so it stays despite being copy.
+    expect(overlay()!.textContent).toContain('workspaces and agents, not the remote server');
     expect(overlay()!.textContent).not.toContain('may use a different data directory');
   });
 
@@ -325,10 +349,9 @@ describe('DaemonStoppedOverlay', () => {
     render(DaemonStoppedOverlay);
     await showOverlay({ mode: 'external-ws', target: 'ws://127.0.0.1:5181/ws' });
     expect(screen.getByTestId('daemon-stopped-spawn-sidecar')).toBeTruthy();
-    expect(overlay()!.textContent).toContain('external intentd daemon was lost');
   });
 
-  it('shows the lost connection details from the active connection record (#1750)', async () => {
+  it('names the machine from the active connection record in the title and description (#1750)', async () => {
     const remote: ConnectionRecord = {
       id: 'conn-1',
       label: '192.168.1.20:5181',
@@ -347,23 +370,26 @@ describe('DaemonStoppedOverlay', () => {
       }),
     );
     await showOverlay({ mode: 'external-ws', target: 'wss:192.168.1.20:5181' });
-    const details = screen.getByTestId('daemon-stopped-connection-details');
-    expect(details.textContent).toContain('Lost connection to studio.local (192.168.1.20:5181)');
+    expect(screen.getByRole('alertdialog', { name: /studio\.local/ })).toBeTruthy();
+    expect(document.getElementById('daemon-stopped-description')!.textContent).toContain(
+      'studio.local',
+    );
+    // The machine name lives in the title/description; no separate detail line.
+    expect(screen.queryByTestId('daemon-stopped-connection-details')).toBeNull();
   });
 
-  it('falls back to the transport target for the details line when no remote record is active (#1750)', async () => {
+  it('falls back to the transport target as the machine name when no remote record is active (#1750)', async () => {
     render(DaemonStoppedOverlay);
     await showOverlay(externalTransport);
     // external-uds adoption: the active connection is the local entry, so the
     // socket path from the transport is the best available target detail.
-    const details = screen.getByTestId('daemon-stopped-connection-details');
-    expect(details.textContent).toContain('Lost connection to /tmp/i.sock');
+    expect(screen.getByRole('alertdialog', { name: /\/tmp\/i\.sock/ })).toBeTruthy();
   });
 
-  it('hides the connection-details line in sidecar mode', async () => {
+  it('does not name the transport target in sidecar mode', async () => {
     render(DaemonStoppedOverlay);
     await showOverlay(sidecarTransport);
-    expect(screen.queryByTestId('daemon-stopped-connection-details')).toBeNull();
+    expect(overlay()!.textContent).not.toContain('/tmp/i.sock');
   });
 
   it('shows the reconnect attempt count in the retrying line (#1750)', async () => {
@@ -384,6 +410,54 @@ describe('DaemonStoppedOverlay', () => {
     const retrying = screen.getByTestId('daemon-stopped-retrying').textContent!;
     expect(retrying).toContain('Retrying connection');
     expect(retrying).not.toContain('attempt');
+  });
+
+  // Multiplayer guest caps (intent-hq/intentd#1917): a 503-refused connect
+  // is transient, so the retry indicator stays, but the copy names the
+  // host's connection cap instead of the generic lost-connection wording.
+  it('names the host connection cap while main retries a 503-refused connect, and reverts', async () => {
+    render(DaemonStoppedOverlay);
+    await showOverlay(externalTransport, { reconnectAttempts: 1, connectionLimited: true });
+
+    expect(screen.getByTestId('daemon-stopped-connection-limit')).toBeTruthy();
+    expect(screen.getByTestId('daemon-stopped-retrying')).toBeTruthy();
+    const limitedText = overlay()!.textContent!;
+
+    // A later failure of another kind drops the cap posture.
+    dispatchAndFlush(
+      connectionStatusChanged('disconnected', undefined, {
+        reconnectAttempts: 2,
+        connectionLimited: false,
+      }),
+    );
+    expect(screen.queryByTestId('daemon-stopped-connection-limit')).toBeNull();
+    expect(overlay()!.textContent).not.toBe(limitedText);
+  });
+
+  // The 503 refusal carries the host's Retry-After; the cap copy shows that
+  // actual wait (in seconds) rather than a vague "automatically".
+  it('shows the wait main scheduled from the host Retry-After in the cap copy', async () => {
+    render(DaemonStoppedOverlay);
+    await showOverlay(externalTransport, {
+      reconnectAttempts: 1,
+      connectionLimited: true,
+      connectionLimitRetryAfterMs: 45_000,
+    });
+
+    const capCopy = screen.getByTestId('daemon-stopped-connection-limit');
+    expect(capCopy.textContent).toContain('45');
+
+    // A refreshed refusal with a different wait updates the copy in place.
+    dispatchAndFlush(
+      connectionStatusChanged('disconnected', undefined, {
+        reconnectAttempts: 2,
+        connectionLimited: true,
+        connectionLimitRetryAfterMs: 120_000,
+      }),
+    );
+    const refreshed = screen.getByTestId('daemon-stopped-connection-limit').textContent!;
+    expect(refreshed).toContain('120');
+    expect(refreshed).not.toContain('45');
   });
 
   describe('passive per-host cert warnings (#1746 follow-up)', () => {
@@ -566,7 +640,8 @@ describe('DaemonStoppedOverlay', () => {
   it('says "could not connect" with the sidecar fallback when never connected in external posture', async () => {
     render(DaemonStoppedOverlay);
     await showOverlayNeverConnected(externalTransport);
-    expect(overlay()!.textContent).toContain('Could not connect to the external intentd daemon');
+    // Sole discriminator between the never-connected and lost-connection
+    // branches of the external copy.
     expect(overlay()!.textContent).not.toContain('was lost');
     // Buttons follow the same transport-mode rules as the lost-connection posture.
     expect(screen.getByTestId('daemon-stopped-spawn-sidecar').textContent).toContain(
@@ -634,15 +709,12 @@ describe('DaemonStoppedOverlay', () => {
       );
     }
 
-    it('offers "Open local" and routes it through backend:open-local-and-spawn', async () => {
+    it('routes the local action through backend:open-local-and-spawn in a remote window', async () => {
       render(DaemonStoppedOverlay);
       await showOverlay(wsTransport);
       bindWindowToRemote();
 
       const button = screen.getByTestId('daemon-stopped-spawn-sidecar') as HTMLButtonElement;
-      expect(button.textContent).toContain('Open local');
-      // The remote-window note explains this window keeps its own backend.
-      expect(overlay()!.textContent).toContain('stays connected to the remote backend');
 
       await fireEvent.click(button);
       await vi.waitFor(() => {
@@ -668,22 +740,21 @@ describe('DaemonStoppedOverlay', () => {
       expect(invokeMock).not.toHaveBeenCalledWith(BACKEND.OPEN_LOCAL_AND_SPAWN);
     });
 
-    it('lists other backends as "Open …" actions that dispatch openConnectionRequested', async () => {
+    it('lists other backends by name as actions that dispatch openConnectionRequested', async () => {
       render(DaemonStoppedOverlay);
       await showOverlay(wsTransport);
       bindWindowToRemote();
 
       const openButtons = screen.getAllByTestId('daemon-stopped-open-backend');
       expect(openButtons).toHaveLength(1);
-      expect(openButtons[0].textContent).toContain('Open');
       expect(openButtons[0].textContent).toContain('Other Mac');
 
       const dispatchSpy = vi.spyOn(appStore, 'dispatch');
       await fireEvent.click(openButtons[0]);
       const dispatched = dispatchSpy.mock.calls
         .map(([action]) => action as { type: string; payload?: unknown[] })
-        .find((action) => action.type === openConnectionRequested.type);
-      expect(dispatched?.payload).toEqual(['remote-2']);
+        .find((action) => action.type === connectionWorkflowRequested.type);
+      expect(dispatched?.payload).toMatchObject({ intent: { kind: 'open', id: 'remote-2' } });
       // Open-only: the legacy retargeting action must never fire from the
       // overlay. Literal type string: the remove-switch change deleted the
       // action creator, and this negative assertion must survive that.
@@ -706,10 +777,13 @@ describe('DaemonStoppedOverlay', () => {
       const originalDispatch = appStore.dispatch.bind(appStore);
       const dispatchSpy = vi.spyOn(appStore, 'dispatch').mockImplementation((action) => {
         const result = originalDispatch(action);
-        if ((action as { type: string }).type === openConnectionRequested.type) {
-          (action as ReturnType<typeof openConnectionRequested>).success({
-            status: 'secret-unavailable',
-          });
+        if (action.type === connectionWorkflowRequested.type) {
+          const { consumerId, requestId } = (
+            action as ReturnType<typeof connectionWorkflowRequested>
+          ).payload;
+          originalDispatch(
+            connectionWorkflowFinished(consumerId, requestId, { kind: 'secretUnavailable' }),
+          );
         }
         return result;
       });
@@ -750,11 +824,11 @@ describe('DaemonStoppedOverlay', () => {
       const originalDispatch = appStore.dispatch.bind(appStore);
       const dispatchSpy = vi.spyOn(appStore, 'dispatch').mockImplementation((action) => {
         const result = originalDispatch(action);
-        if ((action as { type: string }).type === openConnectionRequested.type) {
-          (action as ReturnType<typeof openConnectionRequested>).success({
-            status: 'opened',
-            id: 'remote-2',
-          });
+        if (action.type === connectionWorkflowRequested.type) {
+          const { consumerId, requestId } = (
+            action as ReturnType<typeof connectionWorkflowRequested>
+          ).payload;
+          originalDispatch(connectionWorkflowFinished(consumerId, requestId, { kind: 'done' }));
         }
         return result;
       });
@@ -866,19 +940,19 @@ describe('DaemonStoppedOverlay', () => {
       );
     });
 
-    it('hides the connection-details line and attempt counter in the token-rejected state (#957)', async () => {
+    it('hides the machine-named title and attempt counter in the token-rejected state (#957)', async () => {
       render(DaemonStoppedOverlay);
       await showOverlay(wsTransport, { reconnectAttempts: 3 });
       activateRemote();
-      // Before the rejection latches, the external posture shows the lost
-      // connection details for the active remote.
-      expect(screen.getByTestId('daemon-stopped-connection-details')).toBeTruthy();
+      // Before the rejection latches, the external posture names the active
+      // remote in the title.
+      expect(screen.getByRole('alertdialog', { name: /Studio Mac/ })).toBeTruthy();
 
       rejectAuth(401);
 
       // The auth-rejected copy already names host:port; the generic external
-      // details line and the retrying/attempt counter would be misleading.
-      expect(screen.queryByTestId('daemon-stopped-connection-details')).toBeNull();
+      // title and the retrying/attempt counter would be misleading.
+      expect(screen.queryByRole('alertdialog', { name: /Studio Mac/ })).toBeNull();
       expect(screen.queryByTestId('daemon-stopped-retrying')).toBeNull();
     });
 
@@ -974,6 +1048,451 @@ describe('DaemonStoppedOverlay', () => {
         'true',
       );
     });
+  });
+
+  describe('revoked-guest posture (multiplayer w4: auth rejected by a host joined as a guest)', () => {
+    // The stored `label` is the join-time address; `hostname` is the pretty
+    // name captured from the host after joining. The two differ so a raw
+    // `.label` render is distinguishable from the hostname-first label.
+    const GUEST: GuestSessionRecord = {
+      id: 'guest-1',
+      label: 'tc.example.ts.net',
+      host: '10.0.0.9',
+      hosts: ['10.0.0.9'],
+      port: 8443,
+      fingerprint: 'AB:CD',
+      tcAddress: 'tc.example.ts.net',
+      hostname: 'Clement’s Mac Studio',
+      principalId: 'principal-1',
+      login: 'octocat',
+      tokenEncrypted: true,
+      updatedAt: 1,
+    };
+    const GUEST_CONNECTION = {
+      id: GUEST.id,
+      label: GUEST.label,
+      host: GUEST.host,
+      port: GUEST.port,
+      fingerprint: GUEST.fingerprint,
+      accent: 'indigo' as const,
+      isLocal: false,
+    };
+    const LOCAL = {
+      id: LOCAL_CONNECTION_ID,
+      label: 'This machine (local)',
+      host: null,
+      port: null,
+      fingerprint: null,
+      isLocal: true,
+    };
+    const wsTransport: BackendTransportInfo = {
+      mode: 'external-ws',
+      target: 'wss://10.0.0.9:8443/ws',
+    };
+
+    function bindWindowToGuest() {
+      dispatchAndFlush(
+        connectionsListReceived({
+          connections: [LOCAL, GUEST_CONNECTION],
+          activeId: GUEST.id,
+          windowBackendId: GUEST.id,
+        }),
+      );
+      dispatchAndFlush(
+        guestSessionsListReceived({ sessions: [GUEST], openIds: [], connectedIds: [] }),
+      );
+    }
+
+    function rejectAuth() {
+      dispatchAndFlush(
+        authRejectedReceived({ id: GUEST.id, host: GUEST.host, port: GUEST.port, statusCode: 401 }),
+      );
+    }
+
+    it('replaces the re-pair state with the revoked copy and a Leave host action', async () => {
+      render(DaemonStoppedOverlay);
+      await showOverlay(wsTransport);
+      bindWindowToGuest();
+      rejectAuth();
+
+      expect(overlay()!.textContent).toContain('You no longer have access');
+      // Hostname-first: the revoked copy names the captured machine, not the
+      // dialled address the session was stored under.
+      const description = document.getElementById('daemon-stopped-description')!.textContent!;
+      expect(description).toContain('Clement’s Mac Studio');
+      expect(description).not.toContain('tc.example.ts.net');
+      // A guest credential cannot be re-paired: no token re-entry, no
+      // sidecar spawn, no misleading retry indicator.
+      expect(screen.queryByTestId('daemon-stopped-repair')).toBeNull();
+      expect(screen.queryByTestId('daemon-stopped-spawn-sidecar')).toBeNull();
+      expect(screen.queryByTestId('daemon-stopped-retrying')).toBeNull();
+      expect(screen.queryByTestId('daemon-stopped-known-backends')).toBeNull();
+      expect(screen.getByTestId('daemon-stopped-guest-leave')).toBeTruthy();
+    });
+
+    it('falls back to the stored address when no hostname has been captured yet', async () => {
+      render(DaemonStoppedOverlay);
+      await showOverlay(wsTransport);
+      dispatchAndFlush(
+        connectionsListReceived({
+          connections: [LOCAL, GUEST_CONNECTION],
+          activeId: GUEST.id,
+          windowBackendId: GUEST.id,
+        }),
+      );
+      dispatchAndFlush(
+        guestSessionsListReceived({
+          sessions: [{ ...GUEST, hostname: null }],
+          openIds: [],
+          connectedIds: [],
+        }),
+      );
+      rejectAuth();
+
+      const description = document.getElementById('daemon-stopped-description')!.textContent!;
+      expect(description).toContain('tc.example.ts.net');
+      expect(description).not.toContain('Clement’s Mac Studio');
+    });
+
+    it('keeps the re-pair state for a rejected owner backend that is not a guest session', async () => {
+      render(DaemonStoppedOverlay);
+      await showOverlay(wsTransport);
+      dispatchAndFlush(
+        connectionsListReceived({
+          connections: [LOCAL, GUEST_CONNECTION],
+          activeId: GUEST.id,
+          windowBackendId: GUEST.id,
+        }),
+      );
+      rejectAuth();
+
+      expect(overlay()!.textContent).toContain('Authentication rejected');
+      expect(screen.getByTestId('daemon-stopped-repair')).toBeTruthy();
+      expect(screen.queryByTestId('daemon-stopped-guest-leave')).toBeNull();
+    });
+
+    it('dispatches the saga-owned leave for this session and surfaces a failure', async () => {
+      const dispatchSpy = vi.spyOn(appStore, 'dispatch');
+      render(DaemonStoppedOverlay);
+      await showOverlay(wsTransport);
+      bindWindowToGuest();
+      rejectAuth();
+      dispatchSpy.mockClear();
+
+      await fireEvent.click(screen.getByTestId('daemon-stopped-guest-leave'));
+
+      const leave = dispatchSpy.mock.calls
+        .map(([action]) => action as ReturnType<typeof leaveGuestSessionRequested>)
+        .find((action) => action.type === leaveGuestSessionRequested.type);
+      expect(leave?.payload).toEqual([GUEST.id]);
+      dispatchAndFlush(leaveOperationStarted(GUEST.id));
+      expect(screen.getByTestId('daemon-stopped-guest-leave').textContent).toContain('Leaving');
+
+      dispatchAndFlush(leave!.failure(new Error('ipc failed')));
+      dispatchAndFlush(leaveOperationSettled(GUEST.id));
+      await vi.waitFor(() => {
+        expect(screen.getByTestId('daemon-stopped-guest-leave-error').textContent).toContain(
+          'Clement’s Mac Studio',
+        );
+      });
+      expect(screen.getByTestId('daemon-stopped-guest-leave').textContent).toContain('Leave host');
+      dispatchSpy.mockRestore();
+    });
+  });
+
+  describe('offline-host posture (multiplayer: guest window, host unreachable)', () => {
+    const GUEST: GuestSessionRecord = {
+      id: 'guest-1',
+      label: 'tc.example.ts.net',
+      host: '10.0.0.9',
+      hosts: ['10.0.0.9'],
+      port: 8443,
+      fingerprint: 'AB:CD',
+      tcAddress: 'tc.example.ts.net',
+      hostname: 'Clement’s Mac Studio',
+      principalId: 'principal-1',
+      login: 'octocat',
+      tokenEncrypted: true,
+      updatedAt: 1,
+    };
+    const GUEST_CONNECTION = {
+      id: GUEST.id,
+      label: GUEST.label,
+      host: GUEST.host,
+      port: GUEST.port,
+      fingerprint: GUEST.fingerprint,
+      accent: 'indigo' as const,
+      isLocal: false,
+    };
+    // A paired (owner) remote backend: same shape as a guest connection, but
+    // with no guest-session record behind it.
+    const PAIRED = {
+      id: 'conn-paired',
+      label: 'studio.example.com',
+      host: '10.0.0.5',
+      port: 8443,
+      fingerprint: 'EF:01',
+      accent: 'amber' as const,
+      isLocal: false,
+    };
+    const LOCAL = {
+      id: LOCAL_CONNECTION_ID,
+      label: 'This machine (local)',
+      host: null,
+      port: null,
+      fingerprint: null,
+      isLocal: true,
+    };
+    const wsTransport: BackendTransportInfo = {
+      mode: 'external-ws',
+      target: 'wss://10.0.0.9:8443/ws',
+    };
+
+    function bindWindowToGuest() {
+      dispatchAndFlush(
+        connectionsListReceived({
+          connections: [LOCAL, GUEST_CONNECTION, PAIRED],
+          activeId: GUEST.id,
+          windowBackendId: GUEST.id,
+        }),
+      );
+      dispatchAndFlush(
+        guestSessionsListReceived({ sessions: [GUEST], openIds: [GUEST.id], connectedIds: [] }),
+      );
+    }
+
+    function bindWindowToPaired() {
+      dispatchAndFlush(
+        connectionsListReceived({
+          connections: [LOCAL, GUEST_CONNECTION, PAIRED],
+          activeId: PAIRED.id,
+          windowBackendId: PAIRED.id,
+        }),
+      );
+      dispatchAndFlush(
+        guestSessionsListReceived({ sessions: [GUEST], openIds: [], connectedIds: [] }),
+      );
+    }
+
+    it('names the host, keeps the retry indicator and withholds every owner recovery', async () => {
+      render(DaemonStoppedOverlay);
+      await showOverlay(wsTransport, { reconnectAttempts: 3 });
+      bindWindowToGuest();
+
+      expect(overlay()!.dataset.posture).toBe('guest-offline');
+      const description = document.getElementById('daemon-stopped-description')!.textContent!;
+      expect(description).toContain('Clement’s Mac Studio');
+      expect(screen.getByTestId('daemon-stopped-retrying').textContent).toContain('3');
+      // No owner-side action in a guest window: nothing to spawn, open,
+      // re-pair or fail over to — the host is simply away.
+      expect(screen.queryByTestId('daemon-stopped-spawn-sidecar')).toBeNull();
+      expect(screen.queryByTestId('daemon-stopped-known-backends')).toBeNull();
+      expect(screen.queryByTestId('daemon-stopped-repair')).toBeNull();
+      expect(screen.queryByTestId('daemon-stopped-connection-details')).toBeNull();
+      expect(screen.getByTestId('daemon-stopped-close-window')).toBeTruthy();
+      expect(screen.getByTestId('daemon-stopped-guest-leave')).toBeTruthy();
+    });
+
+    it('"Close window" asks main to close this window over window:close', async () => {
+      const closeSpy = vi.fn(async () => ({ success: true }));
+      registerMockIpcHandler(IPC_CHANNELS.WINDOW.CLOSE, closeSpy);
+      render(DaemonStoppedOverlay);
+      await showOverlay(wsTransport);
+      bindWindowToGuest();
+
+      await fireEvent.click(screen.getByTestId('daemon-stopped-close-window'));
+
+      await vi.waitFor(() => {
+        expect(closeSpy).toHaveBeenCalledOnce();
+      });
+      // The overlay stays until main actually tears the window down.
+      expect(overlay()).toBeTruthy();
+    });
+
+    it('"Leave host" confirms first, then dispatches the saga-owned leave for this session', async () => {
+      const dispatchSpy = vi.spyOn(appStore, 'dispatch');
+      render(DaemonStoppedOverlay);
+      await showOverlay(wsTransport);
+      bindWindowToGuest();
+      dispatchSpy.mockClear();
+
+      await fireEvent.click(screen.getByTestId('daemon-stopped-guest-leave'));
+
+      const findLeave = () =>
+        dispatchSpy.mock.calls
+          .map(([action]) => action as ReturnType<typeof leaveGuestSessionRequested>)
+          .find((action) => action.type === leaveGuestSessionRequested.type);
+      expect(screen.getByRole('dialog')).toBeTruthy();
+      expect(findLeave()).toBeUndefined();
+
+      const confirmButtons = screen.getAllByRole('button', { name: 'Leave host' });
+      await fireEvent.click(confirmButtons[confirmButtons.length - 1]);
+
+      await vi.waitFor(() => {
+        expect(findLeave()?.payload).toEqual([GUEST.id]);
+      });
+      dispatchSpy.mockRestore();
+    });
+
+    it('stops short of the title bar and is not modal, so the daemon-status switcher stays reachable', async () => {
+      // Stand-in for the title bar's daemon-status indicator: a sibling of the
+      // overlay portal in the document, as WindowTitleBar is.
+      const indicator = document.createElement('button');
+      indicator.dataset.testid = 'titlebar-indicator';
+      const onIndicator = vi.fn();
+      indicator.addEventListener('click', onIndicator);
+      document.body.appendChild(indicator);
+      try {
+        render(DaemonStoppedOverlay);
+        await showOverlay(wsTransport);
+        bindWindowToGuest();
+
+        const el = overlay()!;
+        expect(el.style.top).toBe(`${WINDOW_TITLEBAR_HEIGHT_PX}px`);
+        expect(el.getAttribute('aria-modal')).toBeNull();
+        // Zoom counter-scales the title bar, and the overlay follows it.
+        dispatchAndFlush(setZoomFactor(1.25));
+        expect(overlay()!.style.top).toBe(`${WINDOW_TITLEBAR_HEIGHT_PX / 1.25}px`);
+
+        expect(indicator.closest('[aria-hidden="true"], [inert]')).toBeNull();
+        await fireEvent.click(indicator);
+        expect(onIndicator).toHaveBeenCalledOnce();
+      } finally {
+        indicator.remove();
+      }
+    });
+
+    it('keeps the connection-limited posture for a guest window at the host cap', async () => {
+      render(DaemonStoppedOverlay);
+      await showOverlay(wsTransport, { connectionLimited: true });
+      bindWindowToGuest();
+
+      expect(screen.getByTestId('daemon-stopped-connection-limit')).toBeTruthy();
+      expect(overlay()!.dataset.posture).toBeUndefined();
+      expect(screen.queryByTestId('daemon-stopped-guest-offline')).toBeNull();
+      expect(overlay()!.getAttribute('aria-modal')).toBe('true');
+    });
+
+    it('keeps the owner posture, copy and Switch to Local for a paired remote backend that is not a guest session', async () => {
+      render(DaemonStoppedOverlay);
+      await showOverlay(wsTransport);
+      bindWindowToPaired();
+
+      expect(overlay()!.dataset.posture).toBeUndefined();
+      expect(overlay()!.style.top).toBe('0px');
+      expect(overlay()!.getAttribute('aria-modal')).toBe('true');
+      expect(screen.getByTestId('daemon-stopped-spawn-sidecar').textContent).toContain(
+        'Switch to Local',
+      );
+      expect(screen.getByTestId('daemon-stopped-known-backends')).toBeTruthy();
+      expect(screen.queryByTestId('daemon-stopped-guest-offline')).toBeNull();
+      expect(screen.queryByTestId('daemon-stopped-close-window')).toBeNull();
+    });
+  });
+
+  it('stays visible across repeated connecting/disconnected reconnect cycles in a guest window (host offline)', async () => {
+    const GUEST: GuestSessionRecord = {
+      id: 'guest-1',
+      label: 'tc.example.ts.net',
+      host: '10.0.0.9',
+      hosts: ['10.0.0.9'],
+      port: 8443,
+      fingerprint: 'AB:CD',
+      tcAddress: 'tc.example.ts.net',
+      hostname: 'Host',
+      principalId: 'principal-1',
+      login: 'octocat',
+      tokenEncrypted: true,
+      updatedAt: 1,
+    };
+    const wsTransport: BackendTransportInfo = {
+      mode: 'external-ws',
+      target: 'wss://10.0.0.9:8443/ws',
+    };
+    const connections = [
+      {
+        id: LOCAL_CONNECTION_ID,
+        label: 'local',
+        host: null,
+        port: null,
+        fingerprint: null,
+        isLocal: true,
+      },
+      {
+        id: GUEST.id,
+        label: GUEST.label,
+        host: GUEST.host,
+        port: GUEST.port,
+        fingerprint: GUEST.fingerprint,
+        accent: 'indigo' as const,
+        isLocal: false,
+      },
+    ];
+    const listPayload = () => ({ connections, activeId: GUEST.id, windowBackendId: GUEST.id });
+    const guestPayload = (connected: boolean) => ({
+      sessions: [GUEST],
+      openIds: [GUEST.id],
+      connectedIds: connected ? [GUEST.id] : [],
+    });
+
+    // Drive the real push path: main's `backend:status` pushes enter the
+    // daemon-health saga's electron channel (takeWithBackoff) rather than the
+    // reducer directly, exactly as a guest window receives them.
+    const statusListeners = new Set<(payload: unknown) => void>();
+    const pushStatus = (payload: Record<string, unknown>) => {
+      for (const listener of statusListeners) listener(payload);
+      flushSync();
+    };
+    stopDaemonHealthSaga?.();
+    invokeMock.mockImplementation(async (channel: string, ...args: unknown[]) => {
+      if (channel === BACKEND.GET_STATUS) {
+        // Boot snapshot of a guest window whose pooled client is mid-dial.
+        return { status: 'connecting', transport: wsTransport, reconnectAttempts: 0 };
+      }
+      return mockInvoke(channel, ...args);
+    });
+    vi.stubGlobal('electronAPI', {
+      invoke: invokeMock,
+      on: vi.fn((channel: string, listener: (payload: unknown) => void) => {
+        if (channel === BACKEND.STATUS) statusListeners.add(listener);
+        return `listener-${channel}`;
+      }),
+      offById: vi.fn(),
+    });
+    appStore.init();
+    stopDaemonHealthSaga = appStore.runSaga(daemonHealthSaga);
+
+    render(DaemonStoppedOverlay);
+    dispatchAndFlush(connectionsListReceived(listPayload()));
+    dispatchAndFlush(guestSessionsListReceived(guestPayload(false)));
+    await vi.advanceTimersByTimeAsync(0);
+    pushStatus({ status: 'disconnected', transport: wsTransport, reconnectAttempts: 0 });
+    await vi.advanceTimersByTimeAsync(DAEMON_STOPPED_GRACE_MS + 50);
+    await vi.waitFor(() => {
+      expect(overlay()).toBeTruthy();
+    });
+
+    // Per cycle (log evidence, ~8 s): 'connecting' (attempt N) → the tunnel
+    // candidate times out at 3 s → 'disconnected' → client backoff. Every
+    // status push also fans out a connections:changed / guest-sessions:changed
+    // re-broadcast to the window.
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      pushStatus({ status: 'connecting', transport: wsTransport, reconnectAttempts: attempt });
+      dispatchAndFlush(connectionsListReceived(listPayload()));
+      dispatchAndFlush(guestSessionsListReceived(guestPayload(false)));
+      await vi.advanceTimersByTimeAsync(0);
+      expect(overlay(), `hidden after connecting #${attempt}`).toBeTruthy();
+      await vi.advanceTimersByTimeAsync(3000);
+      expect(overlay(), `hidden mid-connect #${attempt}`).toBeTruthy();
+      pushStatus({ status: 'disconnected', transport: wsTransport, reconnectAttempts: attempt });
+      dispatchAndFlush(connectionsListReceived(listPayload()));
+      dispatchAndFlush(connectionsListReceived(listPayload()));
+      dispatchAndFlush(guestSessionsListReceived(guestPayload(false)));
+      await vi.advanceTimersByTimeAsync(0);
+      expect(overlay(), `hidden after disconnected #${attempt}`).toBeTruthy();
+      await vi.advanceTimersByTimeAsync(5000);
+      expect(overlay(), `hidden during backoff #${attempt}`).toBeTruthy();
+    }
   });
 
   it('issues no daemon wire requests itself (reconnect resubscription is RESUB-1 main-side)', async () => {

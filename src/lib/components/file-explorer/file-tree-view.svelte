@@ -289,7 +289,7 @@
 
     if (status === '??') return 'text-gray-500'; // Untracked
     if (indexStatus === 'A' || workingStatus === 'A') return 'text-green-700 dark:text-green-400'; // Added
-    if (indexStatus === 'M' || workingStatus === 'M') return 'text-yellow-700 dark:text-yellow-400'; // Modified
+    if (indexStatus === 'M' || workingStatus === 'M') return 'text-warning-ink'; // Modified
     if (indexStatus === 'D' || workingStatus === 'D') return 'text-red-700 dark:text-red-400'; // Deleted
     if (indexStatus === 'R' || workingStatus === 'R') return 'text-blue-700 dark:text-blue-400'; // Renamed
     if (indexStatus === 'C' || workingStatus === 'C') return 'text-cyan-700 dark:text-cyan-400'; // Copied
@@ -327,7 +327,7 @@
   let lastSyncTime = 0;
 
   // Watch for changes in the stores and sync local git status display
-  // This ensures we stay in sync with CodeChangesPanel WITHOUT triggering cascading refreshes
+  // WITHOUT triggering cascading refreshes
   $effect(() => {
     if (initialized && workspaceId) {
       // Watch for changes in file tracking store
@@ -600,6 +600,7 @@
                     active={selectedFile === result.path}
                     selected={searchSelectedIndex === i}
                     title={result.name}
+                    titleClass="type-body font-normal leading-(--text-body-line-height)"
                     subtitle={result.relativePath}
                     onclick={(event) => {
                       selectedFile = result.path;

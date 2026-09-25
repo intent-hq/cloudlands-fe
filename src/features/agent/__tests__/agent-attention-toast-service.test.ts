@@ -1,9 +1,9 @@
 /**
  * Agent-attention toast service tests.
  *
- * The toast seam is faked via `vi.mock('svelte-sonner')` (existing pattern);
+ * The toast seam is faked via `vi.mock('$lib/components/patterns/notify')` (existing pattern);
  * these tests lock in the stickiness contract (duration: Infinity, stable
- * per-agent id, only close/Switch To dismiss) and the "Switch To" wiring
+ * per-agent id, clear/close/Switch To dismiss) and the "Switch To" wiring
  * (workspace activation + cross-workspace goto + agent-tab dispatch).
  */
 import { m } from '$shared/paraglide/messages.js';
@@ -33,8 +33,8 @@ const {
   storeStateMock: { value: {} as Record<string, unknown> },
 }));
 
-vi.mock('svelte-sonner', () => ({
-  toast: {
+vi.mock('$lib/components/patterns/notify', () => ({
+  notify: {
     custom: toastCustomMock,
     info: toastInfoMock,
     dismiss: toastDismissMock,
@@ -97,7 +97,6 @@ function lastCustomCall(): {
   id: string;
   componentProps: Record<string, any>;
   duration: number;
-  class?: string;
 } {
   const call = toastCustomMock.mock.calls[toastCustomMock.mock.calls.length - 1];
   expect(call).toBeDefined();
@@ -134,10 +133,9 @@ describe('agent-attention-toast-service', () => {
     expect(call.componentProps.title).toBe('Implementor requests a discussion');
     expect(call.componentProps.reason).toBe('Need a decision on the API shape');
     expect(call.componentProps.kind).toBe('discussion');
-    expect(call.class).toBe('!border-primary/50');
   });
 
-  it('flavors blocker toasts with the destructive tint and blocker title', async () => {
+  it('flavors blocker toasts with the blocker title and kind', async () => {
     await showAgentAttentionToast({
       workspaceId: WS,
       agentId: AGENT,
@@ -149,7 +147,6 @@ describe('agent-attention-toast-service', () => {
     const call = lastCustomCall();
     expect(call.componentProps.title).toBe('Verifier reports a blocker');
     expect(call.componentProps.kind).toBe('blocker');
-    expect(call.class).toBe('!border-danger/50');
   });
 
   describe('micro key-slot badge', () => {
@@ -201,6 +198,48 @@ describe('agent-attention-toast-service', () => {
       const call = lastCustomCall();
       expect(call.componentProps.title).toBe('Implementor requests a discussion');
       expect(call.componentProps.keySlot).toBeNull();
+    });
+  });
+
+  describe('muted-agent suppression', () => {
+    const request = {
+      workspaceId: WS,
+      agentId: AGENT,
+      agentName: 'Implementor',
+      kind: 'discussion' as const,
+      reason: 'Need a decision',
+    };
+
+    it('suppresses the toast when the payload carries notificationsMuted: true', async () => {
+      vi.spyOn(document, 'hasFocus').mockReturnValue(false);
+
+      await showAgentAttentionToast({ ...request, notificationsMuted: true });
+
+      expect(toastCustomMock).not.toHaveBeenCalled();
+      expect(toastDismissMock).not.toHaveBeenCalled();
+    });
+
+    it('suppresses the toast when the tracked session is muted (payload without the stamp)', async () => {
+      vi.spyOn(document, 'hasFocus').mockReturnValue(false);
+      storeStateMock.value = {
+        agentSessions: { byAgentId: { [AGENT]: { id: AGENT, notificationsMuted: true } } },
+      };
+
+      await showAgentAttentionToast(request);
+
+      expect(toastCustomMock).not.toHaveBeenCalled();
+    });
+
+    it('shows the toast for an unmuted session and for unknown agents', async () => {
+      vi.spyOn(document, 'hasFocus').mockReturnValue(false);
+      storeStateMock.value = {
+        agentSessions: { byAgentId: { [AGENT]: { id: AGENT, notificationsMuted: false } } },
+      };
+
+      await showAgentAttentionToast(request);
+      await showAgentAttentionToast({ ...request, agentId: 'agent-unknown' });
+
+      expect(toastCustomMock).toHaveBeenCalledTimes(2);
     });
   });
 
@@ -414,6 +453,31 @@ describe('agent-attention-toast-service', () => {
     });
   });
 
+  it.each(['discussion', 'blocker'] as const)(
+    'dismisses only the matching %s toast and allows a fresh request',
+    async (kind) => {
+      const request = {
+        workspaceId: WS,
+        agentId: AGENT,
+        agentName: 'Implementor',
+        kind,
+        reason: 'Original request',
+      };
+      await showAgentAttentionToast(request);
+      await showAgentAttentionToast({ ...request, agentId: 'other-agent' });
+
+      await dismissAgentAttentionToast(AGENT);
+
+      expect(toastDismissMock.mock.calls).toEqual([['agent-attention:agent-attn-1']]);
+      await showAgentAttentionToast({ ...request, reason: 'Fresh request' });
+      expect(toastCustomMock).toHaveBeenCalledTimes(3);
+      expect(lastCustomCall()).toMatchObject({
+        id: 'agent-attention:agent-attn-1',
+        componentProps: { reason: 'Fresh request', kind },
+      });
+    },
+  );
+
   describe('showWorkspaceAutoUnarchiveToast', () => {
     const notice = { workspaceId: WS, agentId: AGENT, agentName: 'Builder' };
 
@@ -472,5 +536,123 @@ describe('agent-attention-toast-service', () => {
         ]);
       });
     });
+  });
+});
+
+describe('agent-attention-toast-service lazy loading', () => {
+  function deferred() {
+    let resolve!: () => void;
+    const promise = new Promise<void>((done) => {
+      resolve = done;
+    });
+    return { promise, resolve };
+  }
+
+  let notifyReady: ReturnType<typeof deferred>;
+  let componentReady: ReturnType<typeof deferred>;
+  let importsStarted: Promise<void[]>;
+  let service: typeof import('../agent-attention-toast-service');
+  const request = {
+    workspaceId: WS,
+    agentId: AGENT,
+    agentName: 'Implementor',
+    kind: 'discussion' as const,
+    reason: 'Original request',
+  };
+
+  beforeEach(async () => {
+    vi.resetModules();
+    vi.clearAllMocks();
+    storeStateMock.value = {};
+    notifyReady = deferred();
+    componentReady = deferred();
+    const notifyStarted = deferred();
+    const componentStarted = deferred();
+    importsStarted = Promise.all([notifyStarted.promise, componentStarted.promise]);
+    vi.doMock('$lib/components/patterns/notify', async () => {
+      notifyStarted.resolve();
+      await notifyReady.promise;
+      return { notify: { custom: toastCustomMock, dismiss: toastDismissMock } };
+    });
+    vi.doMock('$lib/components/ui/toast', async () => {
+      componentStarted.resolve();
+      await componentReady.promise;
+      return { AgentAttentionToast: 'AgentAttentionToast' };
+    });
+    service = await import('../agent-attention-toast-service');
+  });
+
+  afterEach(async () => {
+    notifyReady.resolve();
+    componentReady.resolve();
+    await vi.dynamicImportSettled();
+    vi.doUnmock('$lib/components/patterns/notify');
+    vi.doUnmock('$lib/components/ui/toast');
+    vi.restoreAllMocks();
+  });
+
+  it.each(['discussion', 'blocker'] as const)(
+    'does not render a cleared %s request when its component finishes loading',
+    async (kind) => {
+      const showing = service.showAgentAttentionToast({ ...request, kind });
+      await importsStarted;
+
+      const dismissing = service.dismissAgentAttentionToast(AGENT);
+      notifyReady.resolve();
+      await dismissing;
+      expect(toastDismissMock).toHaveBeenCalledWith('agent-attention:agent-attn-1');
+
+      componentReady.resolve();
+      await showing;
+      expect(toastCustomMock).not.toHaveBeenCalled();
+    },
+  );
+
+  it('shows only the fresh request after a clear while both imports are pending', async () => {
+    const stale = service.showAgentAttentionToast(request);
+    await importsStarted;
+    const dismissing = service.dismissAgentAttentionToast(AGENT);
+    const fresh = service.showAgentAttentionToast({ ...request, reason: 'Fresh request' });
+
+    componentReady.resolve();
+    notifyReady.resolve();
+    await Promise.all([stale, dismissing, fresh]);
+
+    expect(toastCustomMock).toHaveBeenCalledTimes(1);
+    expect(lastCustomCall()).toMatchObject({
+      id: 'agent-attention:agent-attn-1',
+      componentProps: { reason: 'Fresh request' },
+    });
+  });
+
+  it("keeps another agent's pending toast when one request is cleared during loading", async () => {
+    const stale = service.showAgentAttentionToast(request);
+    const other = service.showAgentAttentionToast({ ...request, agentId: 'other-agent' });
+    await importsStarted;
+    const dismissing = service.dismissAgentAttentionToast(AGENT);
+
+    notifyReady.resolve();
+    componentReady.resolve();
+    await Promise.all([stale, other, dismissing]);
+
+    expect(toastCustomMock).toHaveBeenCalledTimes(1);
+    expect(lastCustomCall().id).toBe('agent-attention:other-agent');
+    expect(toastDismissMock.mock.calls).toEqual([['agent-attention:agent-attn-1']]);
+  });
+
+  it('Switch To cancels a pending toast and still navigates to the conversation', async () => {
+    const showing = service.showAgentAttentionToast(request);
+    await importsStarted;
+    const switching = service.switchToAttentionAgent(WS, AGENT);
+    notifyReady.resolve();
+    await switching;
+
+    componentReady.resolve();
+    await showing;
+
+    expect(toastCustomMock).not.toHaveBeenCalled();
+    expect(toastDismissMock).toHaveBeenCalledWith('agent-attention:agent-attn-1');
+    expect(navigateToRouteMock).toHaveBeenCalledWith(`/workspace/${WS}`);
+    expect(dispatchMock).toHaveBeenCalledWith(openAgentTabRequested(WS, { agentId: AGENT }));
   });
 });

@@ -66,6 +66,25 @@ describe('app settings schema', () => {
       defaultValue: true,
       apply: { kind: 'redux-action', action: 'userPreferences/setShellTransparencyEnabled' },
     });
+    expect(findAppSettingDefinition('appearance.reduceMotionOnBattery')).toMatchObject({
+      category: 'theme',
+      type: 'boolean',
+      source: 'local-storage',
+      storageKey: 'appearance:reduceMotionOnBattery',
+      defaultValue: false,
+      apply: { kind: 'redux-action', action: 'userPreferences/setReduceMotionOnBattery' },
+    });
+  });
+
+  it('defines the Multiplayer lab preference as an opt-in local-storage boolean', () => {
+    expect(findAppSettingDefinition('labs.multiplayer')).toMatchObject({
+      category: 'labs',
+      type: 'boolean',
+      source: 'local-storage',
+      storageKey: 'labs:multiplayerEnabled',
+      defaultValue: false,
+      apply: { kind: 'redux-action', action: 'userPreferences/setLabsMultiplayerEnabled' },
+    });
   });
 
   it('exposes theme preset IDs as enum values', () => {

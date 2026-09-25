@@ -14,7 +14,7 @@
  */
 import { Logger } from '$shared/logger';
 import { onBackendReconnected, electronAPI } from '$lib/client/live/backend-transport';
-import type { InterruptedAgent } from '$lib/client/app-client';
+import type { InterruptedAgent, ResolveInterruptedResult } from '$lib/client/app-client';
 import { m } from '$shared/paraglide/messages.js';
 
 const BACKEND = {
@@ -82,61 +82,64 @@ export function notifyInterruptedAgentsModalClosed(): void {
 
 /**
  * Modal resume/abandon handler (`agent.resolveInterrupted`, PROTOCOL §5.35).
- * Stops the cross-window watcher (the modal closed locally), sends the
- * resolve, and toasts per-arm results. Omits empty arrays per the intentd
- * router contract.
+ * Resolves only the explicit IDs. Keep watching unresolved agents while the
+ * dialog remains open; callers display per-agent failures and can retry.
  */
 export async function resolveInterruptedAgents(
   appClient: any,
   resumeIds: string[],
   abandonIds: string[],
-): Promise<void> {
-  notifyInterruptedAgentsModalClosed();
-  if (resumeIds.length === 0 && abandonIds.length === 0) return;
+): Promise<ResolveInterruptedResult> {
+  if (resumeIds.length === 0 && abandonIds.length === 0)
+    return { resumed: [], abandoned: [], failed: [] };
   const abandonOnly = resumeIds.length === 0;
   try {
     const params: { resume?: string[]; abandon?: string[] } = {};
     if (resumeIds.length > 0) params.resume = resumeIds;
     if (abandonIds.length > 0) params.abandon = abandonIds;
 
-    const result = await appClient.agents.resolveInterrupted(params);
+    const result: ResolveInterruptedResult = await appClient.agents.resolveInterrupted(params);
+    for (const id of [...result.resumed, ...result.abandoned]) openAgentIds?.delete(id);
+    if (openAgentIds?.size === 0) notifyInterruptedAgentsModalClosed();
     logger.info('Resolved interrupted agents', { result });
-    import('svelte-sonner')
-      .then(({ toast }) => {
+    import('$lib/components/patterns/notify')
+      .then(({ notify }) => {
         const resumed = result.resumed.length;
         const abandoned = result.abandoned.length;
         const failed = result.failed.length;
         if (resumed > 0)
-          toast.success(
+          notify.success(
             resumed === 1
               ? m.layout_appShell_resumedAgents_one({ count: resumed })
               : m.layout_appShell_resumedAgents_many({ count: resumed }),
           );
         if (abandonOnly && abandoned > 0)
-          toast.info(
+          notify.info(
             abandoned === 1
               ? m.layout_appShell_abandonedAgents_one({ count: abandoned })
               : m.layout_appShell_abandonedAgents_many({ count: abandoned }),
           );
         if (failed > 0)
-          toast.error(
+          notify.error(
             failed === 1
               ? m.layout_appShell_resolveFailedCount_one({ count: failed })
               : m.layout_appShell_resolveFailedCount_many({ count: failed }),
           );
       })
       .catch(() => {});
+    return result;
   } catch (error) {
     logger.error('Failed to resolve interrupted agents', { error });
-    import('svelte-sonner')
-      .then(({ toast }) => {
-        toast.error(
+    import('$lib/components/patterns/notify')
+      .then(({ notify }) => {
+        notify.error(
           abandonOnly
             ? m.layout_appShell_abandonInterruptedFailed_error()
             : m.layout_appShell_resolveInterruptedFailed_error(),
         );
       })
       .catch(() => {});
+    throw error;
   }
 }
 

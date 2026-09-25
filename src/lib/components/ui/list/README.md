@@ -36,8 +36,8 @@ A flexible list item component with consistent height and spacing.
 
 **Size configurations:**
 
-- `sm`: 32px min height, 12px icon, smaller text
-- `md`: 40px min height, 14px icon, standard text
+- `sm`: 28px min height, 12px icon, compact text
+- `md`: 36px min height, 14px icon, default text
 
 ### ListSection
 

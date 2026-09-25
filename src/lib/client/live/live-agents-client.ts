@@ -11,12 +11,21 @@ import { isAgentNotFoundError } from '$features/agent/utils/agent-not-found-erro
 import { AgentStatus, isContentBlock } from '$shared/types';
 import { AgentId, WorkspaceId } from '$shared/types/branded-ids';
 import { deriveAgentHasUnread } from '$shared/utils/agent-unread';
-import type { AgentMessage, AgentSession, ContentBlock } from '$shared/types';
+import type {
+  AgentDelegatedCounts,
+  AgentDelegatedParentCounts,
+  AgentMessage,
+  AgentScopeCounts,
+  AgentSession,
+  ContentBlock,
+} from '$shared/types';
 import type { QueuedMessage } from '$shared/types/agent-session';
 import type {
   AgentCancelDeleteResult,
   AgentCreateRequest,
   AgentDeleteResult,
+  AgentListOptions,
+  AgentListResult,
   AgentsClient,
   FileBlock,
   ImageBlock,
@@ -29,6 +38,7 @@ import type {
   UserMessageIndexResult,
 } from '../app-client';
 import { backendRequest } from './backend-transport';
+import { isForbiddenErrorResponse } from './backend-transport-types';
 import { createDeltaSubscription } from './delta-subscription';
 import {
   mutationErrorMessage,
@@ -89,6 +99,12 @@ function normalizeAgent(raw: Record<string, unknown>): AgentSession {
   if (typeof raw.retiredAt === 'string' && raw.retiredAt.length > 0) {
     session.retiredAt = raw.retiredAt;
   }
+  // `parentAgentId` (§5.5 row scope — the daemon's bin partition key) is
+  // presence-detected the same way: set on delegated rows, omitted on
+  // top-level ones. Both the list and detail projections serve it.
+  if (typeof raw.parentAgentId === 'string' && raw.parentAgentId.length > 0) {
+    session.parentAgentId = AgentId(raw.parentAgentId);
+  }
   // Per-agent unread (monorepo#1597): derived here so every AgentLite ingest
   // path — list/get reads, new-message pushes, and the agent:updated marker
   // convergence after agent.markSeen — recomputes it through one seam.
@@ -96,32 +112,100 @@ function normalizeAgent(raw: Record<string, unknown>): AgentSession {
   return session;
 }
 
+/**
+ * `scopeCounts` (§5.5 row scope) is presence-detected: a daemon that supports
+ * `scope` serves the full `{ topLevel, delegated, background }` triple on every
+ * response; an older daemon omits it (and ignored the `scope` param). Only the
+ * documented shape is accepted — a partial or non-numeric object reads as
+ * absent rather than being healed into zeros.
+ */
+function readScopeCounts(value: unknown): AgentScopeCounts | undefined {
+  if (!value || typeof value !== 'object') return undefined;
+  const { topLevel, delegated, background } = value as Record<string, unknown>;
+  if (
+    typeof topLevel !== 'number' ||
+    typeof delegated !== 'number' ||
+    typeof background !== 'number'
+  ) {
+    return undefined;
+  }
+  return { topLevel, delegated, background };
+}
+
+/**
+ * `delegatedCounts` (§5.5) is presence-detected the same way: a daemon that
+ * serves it carries `{ running, byParent }` on every response, with `byParent`
+ * always an object (possibly empty). Only the documented shape is accepted —
+ * a missing `byParent`, a non-numeric `running`, or a malformed entry reads
+ * as absent rather than being healed. `orphaned` is presence-detected inside
+ * it: carried verbatim when the daemon serves the `{ total, running }` pair,
+ * left absent (never defaulted) on a daemon predating it; a malformed
+ * `orphaned` reads the whole field as absent like any other malformed entry.
+ */
+function readDelegatedCounts(value: unknown): AgentDelegatedCounts | undefined {
+  if (!value || typeof value !== 'object') return undefined;
+  const { running, byParent, orphaned } = value as Record<string, unknown>;
+  if (typeof running !== 'number') return undefined;
+  if (!byParent || typeof byParent !== 'object' || Array.isArray(byParent)) return undefined;
+  const parents: Record<string, AgentDelegatedParentCounts> = {};
+  for (const [parentAgentId, entry] of Object.entries(byParent as Record<string, unknown>)) {
+    const parentCounts = readParentCounts(entry);
+    if (!parentCounts) return undefined;
+    parents[parentAgentId] = parentCounts;
+  }
+  if (orphaned === undefined) return { running, byParent: parents };
+  const orphanedCounts = readParentCounts(orphaned);
+  if (!orphanedCounts) return undefined;
+  return { running, byParent: parents, orphaned: orphanedCounts };
+}
+
+function readParentCounts(entry: unknown): AgentDelegatedParentCounts | undefined {
+  if (!entry || typeof entry !== 'object') return undefined;
+  const { total, running } = entry as Record<string, unknown>;
+  if (typeof total !== 'number' || typeof running !== 'number') return undefined;
+  return { total, running };
+}
+
 export class LiveAgentsClient implements AgentsClient {
-  async list(workspaceId: string, options?: { retiredOnly?: boolean }): Promise<AgentSession[]> {
+  async list(workspaceId: string, options?: AgentListOptions): Promise<AgentSession[]> {
     const { agents } = await this.listWithMeta(workspaceId, options);
     return agents;
   }
 
-  async listWithMeta(
-    workspaceId: string,
-    options?: { retiredOnly?: boolean },
-  ): Promise<{ agents: AgentSession[]; retiredCount: number }> {
+  async listWithMeta(workspaceId: string, options?: AgentListOptions): Promise<AgentListResult> {
     // `retiredOnly` (§5.5 soft retire) rides the wire only when true —
     // the daemon treats absent and `false` identically, so the default read
     // carries no flags (retired rows excluded daemon-side) even for an
-    // explicit `retiredOnly: false` caller. `retiredCount` is served on every
-    // read variant; the FE assumes a daemon that serves it and defaults to 0
-    // only if the field is somehow absent.
+    // explicit `retiredOnly: false` caller. `scope` (§5.5 row scope) rides
+    // only when it names a bin — `all` is the default read and stays off the
+    // wire. `retiredCount` is served on every read variant; the FE assumes a
+    // daemon that serves it and defaults to 0 only if the field is somehow
+    // absent. `scopeCounts` is deliberately NOT defaulted: its absence is the
+    // old-daemon signal the hydration saga branches on.
     const params: Record<string, unknown> = { workspaceId };
     if (options?.retiredOnly) params.retiredOnly = true;
-    const result = await backendRequest<{ agents?: unknown[]; retiredCount?: number }>(
-      'agent.list',
-      params,
-    );
+    if (options?.scope && options.scope !== 'all') params.scope = options.scope;
+    // `parentAgentId` narrows a delegated read to one parent's direct children
+    // and rides only when supplied (the daemon rejects it on any other scope).
+    if (options?.parentAgentId) params.parentAgentId = options.parentAgentId;
+    // `orphanedOnly` narrows a delegated read to the orphaned rows and rides
+    // only when true (the daemon rejects it on any other scope or with
+    // `parentAgentId`; older daemons ignore it).
+    if (options?.orphanedOnly) params.orphanedOnly = true;
+    const result = await backendRequest<{
+      agents?: unknown[];
+      retiredCount?: number;
+      scopeCounts?: unknown;
+      delegatedCounts?: unknown;
+    }>('agent.list', params);
     const agents = Array.isArray(result?.agents) ? result.agents : [];
+    const scopeCounts = readScopeCounts(result?.scopeCounts);
+    const delegatedCounts = readDelegatedCounts(result?.delegatedCounts);
     return {
       agents: agents.map((a) => normalizeAgent(a as Record<string, unknown>)),
       retiredCount: typeof result?.retiredCount === 'number' ? result.retiredCount : 0,
+      ...(scopeCounts ? { scopeCounts } : {}),
+      ...(delegatedCounts ? { delegatedCounts } : {}),
     };
   }
 
@@ -460,17 +544,24 @@ export class LiveAgentsClient implements AgentsClient {
     // NO `agent:queue:processing` event, the RPC response replaces it, §5.5),
     // surfaced on the MutationResult (monorepo#1057).
     try {
-      const result = await backendRequest<{ turnId?: unknown } | undefined>(
-        'agent.sendQueuedMessageNow',
-        {
-          agentId: params.agentId,
-          workspaceId: params.workspaceId,
-          messageId: params.messageId,
-        },
-      );
-      return typeof result?.turnId === 'string'
-        ? { success: true, turnId: result.turnId }
-        : { success: true };
+      const result = await backendRequest<{
+        success: boolean;
+        queued: boolean;
+        quarantined?: boolean;
+        queuedMessage?: QueuedMessage;
+        turnId?: string;
+      }>('agent.sendQueuedMessageNow', {
+        agentId: params.agentId,
+        workspaceId: params.workspaceId,
+        messageId: params.messageId,
+      });
+      return {
+        success: result.success,
+        queued: result.queued,
+        ...(result.quarantined !== undefined ? { quarantined: result.quarantined } : {}),
+        ...(result.queuedMessage ? { queuedMessage: result.queuedMessage } : {}),
+        ...(!result.queued && result.turnId ? { turnId: result.turnId } : {}),
+      };
     } catch (error) {
       // Same error shaping as `runMutation` (which this method bypassed to
       // extract `turnId`): fold JSON-RPC "Internal error" + `data.detail`
@@ -601,6 +692,21 @@ export class LiveAgentsClient implements AgentsClient {
       changes: { reasoningEffort: params.reasoningEffort },
     });
   }
+  async setNotificationsMuted(params: {
+    agentId: string;
+    workspaceId: string;
+    notificationsMuted: boolean;
+  }): Promise<MutationResult> {
+    // `agent.update` (§5.5) partial writer; `notificationsMuted` rides the
+    // `changes` object as a boolean (the daemon rejects anything else with
+    // -32602). The daemon persists the flag and emits `agent:updated`, whose
+    // AgentLite push re-derives `hasUnread` through `normalizeAgent`.
+    return runMutation('agent.update', {
+      agentId: params.agentId,
+      workspaceId: params.workspaceId,
+      changes: { notificationsMuted: params.notificationsMuted },
+    });
+  }
   async updateSpecialist(params: {
     agentId: string;
     workspaceId: string;
@@ -661,7 +767,9 @@ export class LiveAgentsClient implements AgentsClient {
         ? { success: true, scheduled: true, deleteAt }
         : { success: true };
     } catch (error) {
-      return { success: false, error: mutationErrorMessage(error) };
+      return isForbiddenErrorResponse(error)
+        ? { success: false, forbidden: true, error: mutationErrorMessage(error) }
+        : { success: false, error: mutationErrorMessage(error) };
     }
   }
   async cancelDelete(agentId: string): Promise<AgentCancelDeleteResult> {

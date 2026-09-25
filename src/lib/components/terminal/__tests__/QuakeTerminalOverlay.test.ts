@@ -2,7 +2,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/sv
 import { tick } from 'svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { mockDispatch, mockUpdate, scriptEntries, selectorSubscribers, terminalState, toast } =
+const { mockDispatch, mockUpdate, scriptEntries, selectorSubscribers, terminalState, notify } =
   vi.hoisted(() => ({
     mockDispatch: vi.fn(),
     mockUpdate: vi.fn(),
@@ -18,7 +18,7 @@ const { mockDispatch, mockUpdate, scriptEntries, selectorSubscribers, terminalSt
         { activeId: string | null; isOpen: boolean; terminals: any[] }
       >,
     },
-    toast: { error: vi.fn(), info: vi.fn(), success: vi.fn() },
+    notify: { error: vi.fn(), info: vi.fn(), success: vi.fn() },
   }));
 
 vi.mock('$store/renderer/store', async () => {
@@ -138,7 +138,7 @@ vi.mock('$features/scripts/scripts.client', () => ({
   },
 }));
 
-vi.mock('$lib/components/ui/toast', () => ({ toast }));
+vi.mock('$lib/components/patterns/notify', () => ({ notify }));
 vi.mock('$features/terminal/terminal-manager.svelte', () => ({
   terminalManager: { clearTerminal: vi.fn(), disposeTerminal: vi.fn() },
 }));
@@ -237,7 +237,7 @@ describe('QuakeTerminalOverlay lifecycle', () => {
 
     resolveUpdate({ success: false, error: 'Rename rejected' });
 
-    await waitFor(() => expect(toast.error).toHaveBeenCalledWith('Rename rejected'));
+    await waitFor(() => expect(notify.error).toHaveBeenCalledWith('Rename rejected'));
     expect(mockDispatch).not.toHaveBeenCalledWith(
       expect.objectContaining({ type: 'scripts/refresh' }),
     );
@@ -347,6 +347,24 @@ describe('QuakeTerminalOverlay lifecycle', () => {
     );
     expect(panel.getAttribute('aria-hidden')).toBe('false');
   });
+
+  it.each([
+    ['workspace', () => render(QuakeTerminalOverlay, { props: { workspaceId: 'ws-1' as any } })],
+    ['root', () => render(RootQuakeTerminalOverlay)],
+  ])(
+    'renders the %s overlay resize handle on the shared app-resize-handle contract',
+    (_, renderOverlay) => {
+      const { container } = renderOverlay();
+      const panel = container.querySelector<HTMLElement>('.terminal-panel');
+      const resizeHandle = container.querySelector<HTMLElement>('[data-resize-axis="y"]');
+
+      expect(panel).toBeTruthy();
+      expect(resizeHandle).toBeTruthy();
+      expect(panel!.contains(resizeHandle)).toBe(true);
+      expect(resizeHandle!.classList.contains('app-resize-handle')).toBe(true);
+      expect(resizeHandle!.getAttribute('data-resize-indicator')).toBe('short');
+    },
+  );
 
   it.each([
     [

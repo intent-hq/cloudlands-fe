@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/experimental-ct-svelte';
+import { expect, test } from '../../../test/ct-test';
 import ProviderCard from './ProviderCard.svelte';
 
 for (const theme of ['light', 'dark']) {
@@ -33,6 +33,11 @@ for (const theme of ['light', 'dark']) {
     await expect(login).toBeVisible();
     const contrast = await login.evaluate((button) => {
       const style = getComputedStyle(button);
+      const surface = button.querySelector<HTMLElement>('[data-slot="button-surface"]');
+      if (!surface) throw new Error('button surface slot missing');
+      const surfaceStyle = getComputedStyle(surface);
+      const buttonBox = button.getBoundingClientRect();
+      const surfaceBox = surface.getBoundingClientRect();
       const canvas = document.createElement('canvas');
       canvas.width = canvas.height = 1;
       const context = canvas.getContext('2d')!;
@@ -49,12 +54,21 @@ for (const theme of ['light', 'dark']) {
         });
         return linear[0]! * 0.2126 + linear[1]! * 0.7152 + linear[2]! * 0.0722;
       };
-      const background = rgba(style.backgroundColor);
+      const background = rgba(surfaceStyle.backgroundColor);
       const foreground = rgba(style.color);
       const light = Math.max(luminance(background), luminance(foreground));
       const dark = Math.min(luminance(background), luminance(foreground));
-      return { alpha: background[3], ratio: (light + 0.05) / (dark + 0.05) };
+      return {
+        alpha: background[3],
+        ratio: (light + 0.05) / (dark + 0.05),
+        surfaceCoversButton:
+          Math.abs(surfaceBox.left - buttonBox.left) < 1 &&
+          Math.abs(surfaceBox.top - buttonBox.top) < 1 &&
+          Math.abs(surfaceBox.width - buttonBox.width) < 1 &&
+          Math.abs(surfaceBox.height - buttonBox.height) < 1,
+      };
     });
+    expect(contrast.surfaceCoversButton).toBe(true);
     expect(contrast.alpha).toBe(255);
     expect(contrast.ratio).toBeGreaterThanOrEqual(4.5);
     await card.screenshot({

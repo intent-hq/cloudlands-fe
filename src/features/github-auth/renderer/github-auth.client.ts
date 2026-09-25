@@ -5,6 +5,8 @@ import type {
   GitHubAuthStatus,
   GithubRepo,
   GitHubUser,
+  GithubUserSearchHit,
+  StartAuthOptions,
   StartAuthResult,
 } from '../types';
 
@@ -32,10 +34,13 @@ export const githubAuthClient = {
   },
 
   /**
-   * Start GitHub authentication - opens OAuth URL in browser
+   * Start GitHub authentication - opens OAuth URL in browser.
+   * `reconnect: true` forces a fresh device flow on an existing connection.
    */
-  async startAuth(): Promise<StartAuthResult> {
-    return await invoke<StartAuthResult>(GITHUB_AUTH_CHANNELS.START_AUTH);
+  async startAuth(options?: StartAuthOptions): Promise<StartAuthResult> {
+    return options
+      ? await invoke<StartAuthResult>(GITHUB_AUTH_CHANNELS.START_AUTH, options)
+      : await invoke<StartAuthResult>(GITHUB_AUTH_CHANNELS.START_AUTH);
   },
 
   /**
@@ -127,6 +132,23 @@ export const githubAuthClient = {
     try {
       return await invoke<{ success: boolean; data?: GithubRepo[]; error?: string }>(
         GITHUB_AUTH_CHANNELS.SEARCH_REPOS,
+        { query },
+      );
+    } catch (error) {
+      return { success: false, error: error instanceof Error ? error.message : String(error) };
+    }
+  },
+
+  /**
+   * Login-prefix GitHub user search (`github.users.search`, §5.27) for the
+   * Share dialog's pin typeahead. Same envelope contract as `searchRepos`.
+   */
+  async searchUsers(
+    query: string,
+  ): Promise<{ success: boolean; data?: GithubUserSearchHit[]; error?: string }> {
+    try {
+      return await invoke<{ success: boolean; data?: GithubUserSearchHit[]; error?: string }>(
+        GITHUB_AUTH_CHANNELS.SEARCH_USERS,
         { query },
       );
     } catch (error) {

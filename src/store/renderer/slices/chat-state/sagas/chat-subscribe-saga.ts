@@ -6,6 +6,10 @@
  * `chatSubscribeSaga()` observes the concrete subscription lifecycle actions:
  *  - `initializeChatRequested` opens one standing subscription for that agent
  *    (deduped per agent id; skipped while a soft-hidden deletion is pending).
+ *  - `retainedChatTranscriptsSet` reference-counts the exact child-agent set
+ *    shown by mounted subscription lists. First coverage loads the AgentLite
+ *    shell through the existing read saga and opens the standing transcript;
+ *    final release closes it unless a normal agent panel still owns it.
  *  - `markAgentAsViewed` swaps subscriptions on agent switch: it closes every
  *    other agent's subscription and (re)opens the viewed agent's when its
  *    session exists — so switching chats never leaks registrations. The swap
@@ -127,6 +131,7 @@ import {
   chatTranscriptSnapshotApplied,
   chatTranscriptSnapshotRerequested,
   initializeChatRequested,
+  retainedChatTranscriptsSet,
   refreshChatTranscriptRequested,
   transcriptHydrationSettled,
 } from '$store/renderer/slices/chat-state/chat-state-slice';
@@ -247,17 +252,16 @@ interface SubscriptionCoordinator {
    */
   leaseReleases: Channel<string>;
   /**
-   * Agents spared from a sweep — the viewed-agent swap's, an applied
-   * clear's close-all, or a scoped clear's own-slot close — because a live
-   * consumer held a chat interest lease at sweep time (a mounted ChatPanel
-   * instance, an in-flight chat-read hydration; monorepo#3295, replacing
-   * the heuristic loading/acquiring/panel-tab spares of the
-   * #2864/#2917/#3073/#3185 family). Revisited when the agent's LAST lease
-   * releases (watchLeaseReleases): with nothing depending on it and no
-   * re-view, the deferred close runs then instead of leaking the
-   * subscription. The spare defers the close, it never cancels it.
+   * Agents whose close was deferred because a live consumer held a chat
+   * interest lease. The close can come from a viewed-agent sweep, an applied
+   * or scoped clear, or the final retained-transcript owner release. Revisited
+   * when the agent's LAST lease releases (watchLeaseReleases): with no other
+   * retention and no re-view, the deferred close runs then instead of leaking
+   * the subscription.
    */
   pendingSweepCloses: Set<string>;
+  retainedTranscriptOwners: Map<string, { wsId: string; agentIds: Set<string> }>;
+  retainedTranscriptAgents: Map<string, { wsId: string; ownerIds: Set<string> }>;
 }
 
 function createCompletion(): TransitionCompletion {
@@ -480,9 +484,13 @@ function claimsLiveness(message: AgentMessage): boolean {
   return message.isStreaming === true || message.streamingComplete === false;
 }
 
-/** The same row with its streaming flags settled; content untouched. */
+/**
+ * The same row with its streaming flags settled; content untouched. The
+ * settle is the renderer's, not a §7.1 terminal delivery, so the row is
+ * `provisional` until a snapshot/delta replaces it by id.
+ */
 function settleStreaming(message: AgentMessage): AgentMessage {
-  return { ...message, isStreaming: false, streamingComplete: true };
+  return { ...message, isStreaming: false, streamingComplete: true, provisional: true };
 }
 
 /**
@@ -658,11 +666,20 @@ function* handleSubscriptionEvent(
  */
 const resumeAnchors = new Map<string, string>();
 
-/** The newest fully-persisted message id, or undefined when none exists. */
+/**
+ * The newest fully-persisted message id, or undefined when none exists.
+ * Partial rows (still streaming) and `provisional` rows are skipped: a
+ * provisional row was settled by the renderer (covered-path terminal
+ * placeholder, firehose-settled row, close-time normalize) and the §7.1
+ * reconcile has not replaced it yet — anchoring on it would make the reopen
+ * skip that message's daemon-canonical contents. Anchoring one row earlier
+ * only refetches more, never less.
+ */
 function newestPersistedMessageId(messages: AgentMessage[]): string | undefined {
   for (let i = messages.length - 1; i >= 0; i -= 1) {
     const message = messages[i];
     if (message.isStreaming === true || message.streamingComplete === false) continue;
+    if (message.provisional === true) continue;
     if (typeof message.id === 'string' && message.id.length > 0) return message.id;
   }
   return undefined;
@@ -1017,6 +1034,92 @@ function closeMatchingSlots(
   return completions;
 }
 
+function isTranscriptRetained(coordinator: SubscriptionCoordinator, agentId: string): boolean {
+  return coordinator.retainedTranscriptAgents.has(agentId);
+}
+
+function removeRetainedAgent(coordinator: SubscriptionCoordinator, agentId: string): void {
+  const retained = coordinator.retainedTranscriptAgents.get(agentId);
+  if (!retained) return;
+  coordinator.retainedTranscriptAgents.delete(agentId);
+  for (const ownerId of retained.ownerIds) {
+    const owner = coordinator.retainedTranscriptOwners.get(ownerId);
+    owner?.agentIds.delete(agentId);
+    if (owner?.agentIds.size === 0) coordinator.retainedTranscriptOwners.delete(ownerId);
+  }
+}
+
+function removeRetainedWorkspace(coordinator: SubscriptionCoordinator, wsId: string): void {
+  for (const [ownerId, owner] of [...coordinator.retainedTranscriptOwners.entries()]) {
+    if (owner.wsId !== wsId) continue;
+    for (const agentId of owner.agentIds) {
+      const retained = coordinator.retainedTranscriptAgents.get(agentId);
+      retained?.ownerIds.delete(ownerId);
+      if (retained?.ownerIds.size === 0) coordinator.retainedTranscriptAgents.delete(agentId);
+    }
+    coordinator.retainedTranscriptOwners.delete(ownerId);
+  }
+}
+
+function* releaseRetainedTranscriptIfUnused(
+  coordinator: SubscriptionCoordinator,
+  agentId: string,
+): SagaGenerator<void> {
+  if (isTranscriptRetained(coordinator, agentId)) return;
+  if ((yield* selectCurrentlyViewedAgentId.effect()) === agentId) return;
+  if (yield* call(hasChatInterestLease, agentId)) {
+    coordinator.pendingSweepCloses.add(agentId);
+    return;
+  }
+  enqueueClose(coordinator, agentId);
+}
+
+function* setRetainedChatTranscripts(
+  coordinator: SubscriptionCoordinator,
+  ownerId: string,
+  wsId: string,
+  agentIds: string[],
+): SagaGenerator<void> {
+  if (!ownerId || !wsId) return;
+  const previous = coordinator.retainedTranscriptOwners.get(ownerId);
+  const previousIds = previous?.agentIds ?? new Set<string>();
+  const nextIds = new Set(agentIds.filter(Boolean));
+  const released: string[] = [];
+  const added: string[] = [];
+
+  for (const agentId of previousIds) {
+    if (previous?.wsId === wsId && nextIds.has(agentId)) continue;
+    const retained = coordinator.retainedTranscriptAgents.get(agentId);
+    retained?.ownerIds.delete(ownerId);
+    if (retained?.ownerIds.size === 0) {
+      coordinator.retainedTranscriptAgents.delete(agentId);
+      released.push(agentId);
+    }
+  }
+
+  for (const agentId of nextIds) {
+    if (previous?.wsId === wsId && previousIds.has(agentId)) continue;
+    const retained = coordinator.retainedTranscriptAgents.get(agentId);
+    if (retained) {
+      retained.ownerIds.add(ownerId);
+    } else {
+      coordinator.retainedTranscriptAgents.set(agentId, { wsId, ownerIds: new Set([ownerId]) });
+      added.push(agentId);
+    }
+  }
+
+  if (nextIds.size > 0) {
+    coordinator.retainedTranscriptOwners.set(ownerId, { wsId, agentIds: nextIds });
+  } else {
+    coordinator.retainedTranscriptOwners.delete(ownerId);
+  }
+
+  for (const agentId of added) {
+    yield* put(initializeChatRequested(agentId, { wsId }));
+  }
+  for (const agentId of released) yield* releaseRetainedTranscriptIfUnused(coordinator, agentId);
+}
+
 /**
  * Bounded fallback for the switch-back transcript reveal gate. Margin for the
  * healed registration's fresh snapshot to arrive and apply (mirrors the
@@ -1138,6 +1241,7 @@ function* handleViewed(coordinator: SubscriptionCoordinator, agentId: string): S
     (otherId, slot) =>
       otherId !== agentId &&
       (slot.wsId === CHIEF_WORKSPACE_ID) === viewedIsChief &&
+      !isTranscriptRetained(coordinator, otherId) &&
       !spared.has(otherId),
   );
   const session = yield* selectAgentSession.effect(agentId);
@@ -1147,8 +1251,8 @@ function* handleViewed(coordinator: SubscriptionCoordinator, agentId: string): S
 }
 
 /**
- * Revisit an agent spared from a sweep because a lease was held, now that
- * its LAST lease has released (every panel instance destroyed, every
+ * Revisit an agent whose close was deferred because a lease was held, now
+ * that its LAST lease has released (every panel instance destroyed, every
  * hydration settled/failed/cancelled). A re-viewed agent stays: the view is
  * an authoritative keep the swap will retire on the next switch. A tab
  * persisted in a panel layout without a live lease holds nothing open — an
@@ -1164,6 +1268,7 @@ function* runDeferredSweepCloseIfUnleased(
   if (!coordinator.pendingSweepCloses.has(agentId)) return;
   if (yield* call(hasChatInterestLease, agentId)) return;
   coordinator.pendingSweepCloses.delete(agentId);
+  if (isTranscriptRetained(coordinator, agentId)) return;
   if ((yield* selectCurrentlyViewedAgentId.effect()) === agentId) return;
   enqueueClose(coordinator, agentId);
 }
@@ -1266,6 +1371,7 @@ function* emitOrCycleSnapshot(
 
 type ChatSubscribeAction =
   | ReturnType<typeof initializeChatRequested>
+  | ReturnType<typeof retainedChatTranscriptsSet>
   | ReturnType<typeof chatSendStarted>
   | ReturnType<typeof markAgentAsViewed>
   | ReturnType<typeof transcriptHydrationSettled>
@@ -1288,6 +1394,11 @@ function* routeLifecycleAction(
       typeof initializeChatRequested
     >['payload'];
     if (agentId) yield* enqueueOpen(coordinator, agentId, wsId);
+  } else if (action.type === retainedChatTranscriptsSet.type) {
+    const [ownerId, wsId, agentIds] = action.payload as ReturnType<
+      typeof retainedChatTranscriptsSet
+    >['payload'];
+    yield* setRetainedChatTranscripts(coordinator, ownerId, wsId, agentIds);
   } else if (action.type === chatSendStarted.type) {
     const { agentId } = action.payload as ReturnType<typeof chatSendStarted>['payload'];
     if (coordinator.slots.has(agentId)) coordinator.locallyStartedTurns.add(agentId);
@@ -1319,7 +1430,7 @@ function* routeLifecycleAction(
       typeof clearCurrentlyViewedAgent
     >['payload'];
     if (scopeAgentId && (yield* isChiefChatAgent(coordinator, scopeAgentId))) {
-      enqueueClose(coordinator, scopeAgentId);
+      if (!isTranscriptRetained(coordinator, scopeAgentId)) enqueueClose(coordinator, scopeAgentId);
     } else if ((yield* selectCurrentlyViewedAgentId.effect()) === null) {
       // Same-agent remount hole in the monorepo#1215 guard (monorepo#2864):
       // on a ChatPanel remount for the SAME agent, the new instance's
@@ -1349,7 +1460,10 @@ function* routeLifecycleAction(
       }
       closeMatchingSlots(
         coordinator,
-        (agentId, slot) => slot.wsId !== CHIEF_WORKSPACE_ID && !leased.has(agentId),
+        (agentId, slot) =>
+          slot.wsId !== CHIEF_WORKSPACE_ID &&
+          !isTranscriptRetained(coordinator, agentId) &&
+          !leased.has(agentId),
       );
     } else if (scopeAgentId) {
       // Another agent is still viewed, so this scoped clear was a reducer
@@ -1366,7 +1480,9 @@ function* routeLifecycleAction(
       // contract while a lease is still held (a cached-but-mounted
       // deactivated panel, a remounting instance, or an in-flight
       // hydration).
-      if (!(yield* call(hasChatInterestLease, scopeAgentId))) {
+      if (isTranscriptRetained(coordinator, scopeAgentId)) {
+        coordinator.pendingSweepCloses.delete(scopeAgentId);
+      } else if (!(yield* call(hasChatInterestLease, scopeAgentId))) {
         enqueueClose(coordinator, scopeAgentId);
       } else {
         coordinator.pendingSweepCloses.add(scopeAgentId);
@@ -1384,12 +1500,15 @@ function* routeLifecycleAction(
     for (const session of sessions) replayPendingSnapshot(coordinator, session.id);
   } else if (action.type === removeSession.type) {
     const [agentId] = action.payload as ReturnType<typeof removeSession>['payload'];
+    removeRetainedAgent(coordinator, agentId);
     enqueueClose(coordinator, agentId, true);
   } else if (action.type === removeWorkspaceSessions.type) {
     const [wsId] = action.payload as ReturnType<typeof removeWorkspaceSessions>['payload'];
+    removeRetainedWorkspace(coordinator, wsId);
     closeMatchingSlots(coordinator, (_agentId, slot) => slot.wsId === wsId, true);
   } else if (action.type === workspaceDeleted.type) {
     const [wsId, agentIds] = action.payload as ReturnType<typeof workspaceDeleted>['payload'];
+    removeRetainedWorkspace(coordinator, wsId);
     for (const agentId of agentIds) resumeAnchors.delete(agentId);
     closeMatchingSlots(
       coordinator,
@@ -1397,6 +1516,8 @@ function* routeLifecycleAction(
       true,
     );
   } else {
+    coordinator.retainedTranscriptOwners.clear();
+    coordinator.retainedTranscriptAgents.clear();
     closeMatchingSlots(coordinator, () => true, true);
   }
 }
@@ -1442,6 +1563,8 @@ function disposeCoordinator(coordinator: SubscriptionCoordinator): string[] {
   // retires them; only the bookkeeping map needs clearing.
   coordinator.revealGateWatchers.clear();
   coordinator.pendingSweepCloses.clear();
+  coordinator.retainedTranscriptOwners.clear();
+  coordinator.retainedTranscriptAgents.clear();
   return agentIds;
 }
 
@@ -1455,6 +1578,8 @@ export function* chatSubscribeSaga(): SagaGenerator<void> {
     revealGateWatchers: new Map(),
     leaseReleases: createChannel(buffers.expanding<string>()),
     pendingSweepCloses: new Set(),
+    retainedTranscriptOwners: new Map(),
+    retainedTranscriptAgents: new Map(),
   };
   const unsubscribeLeaseReleases = onLastChatInterestLeaseReleased((agentId) =>
     coordinator.leaseReleases.put(agentId),
@@ -1462,6 +1587,7 @@ export function* chatSubscribeSaga(): SagaGenerator<void> {
   const lifecycleActions = yield* actionChannel(
     [
       initializeChatRequested,
+      retainedChatTranscriptsSet,
       chatSendStarted,
       markAgentAsViewed,
       transcriptHydrationSettled,

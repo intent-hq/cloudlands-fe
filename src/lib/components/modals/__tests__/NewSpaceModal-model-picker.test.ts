@@ -1,6 +1,7 @@
 /** @vitest-environment jsdom */
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { tick } from 'svelte';
 
 const mocks = vi.hoisted(() => {
   const readable = <T>(value: T) => ({
@@ -56,6 +57,7 @@ vi.mock('$store/renderer/slices/workspace-initializer/workspace-initializer-sele
 
 vi.mock('$store/renderer/slices/provider-settings/provider-settings-selectors', () => ({
   selectActiveProviderId: () => mocks.readable('auggie'),
+  selectEnabledProviders: () => mocks.readable({}),
   selectModelFetchProviderIds: () => mocks.readable(['auggie']),
   selectIsProviderModelAccessAllowed: () => mocks.readable(true),
   selectAvailableEnabledProviderIds: () => mocks.readable(['auggie']),
@@ -162,8 +164,8 @@ vi.mock('$features/agent/agent.client', () => ({
 }));
 vi.mock('$features/agent/browser', () => ({}));
 vi.mock('$lib/utils/workspace-navigation', () => ({ navigateToSettings: vi.fn() }));
-vi.mock('svelte-sonner', () => ({
-  toast: { error: vi.fn(), info: vi.fn(), warning: vi.fn(), success: vi.fn() },
+vi.mock('$lib/components/patterns/notify', () => ({
+  notify: { error: vi.fn(), info: vi.fn(), warning: vi.fn(), success: vi.fn() },
 }));
 
 vi.mock('$features/setup-scripts', async (importOriginal) => ({
@@ -250,6 +252,7 @@ vi.mock('svelte-fa', async () => ({
 }));
 
 import NewSpaceModal from '../NewSpaceModal.svelte';
+import CompactWorkspaceInitializer from '../../workspace/CompactWorkspaceInitializer.svelte';
 import { setCompactWorkspaceInitializerFormState } from '$store/renderer/slices/workspace-initializer/workspace-initializer-slice';
 
 function persistedStates() {
@@ -267,6 +270,12 @@ function pickerTrigger(card: HTMLElement) {
   const trigger = card.querySelector('button[aria-haspopup="listbox"]');
   expect(trigger).toBeTruthy();
   return trigger as HTMLButtonElement;
+}
+
+function dropdownContent(listbox: HTMLElement) {
+  const content = listbox.closest('[data-slot="dropdown-content"]');
+  expect(content).toBeTruthy();
+  return content as HTMLElement;
 }
 
 function rect(left: number, top: number, width: number, height: number): DOMRect {
@@ -298,6 +307,25 @@ describe('NewSpaceModal model-picker composition', () => {
   afterEach(() => {
     cleanup();
     sessionStorage.clear();
+    vi.useRealTimers();
+    vi.restoreAllMocks();
+  });
+
+  it('does not let initializer timers override modal focus, while inline prompts still autofocus', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    const focus = vi.spyOn(HTMLElement.prototype, 'focus');
+    const modal = render(NewSpaceModal, { props: { open: true, onClose: mocks.onClose } });
+    await tick();
+    const modalPrompt = screen.getByTestId('mock-rich-textarea');
+    await vi.advanceTimersByTimeAsync(500);
+    expect(focus.mock.contexts).not.toContain(modalPrompt);
+    modal.unmount();
+
+    render(CompactWorkspaceInitializer, { props: { isExpanded: true } });
+    await tick();
+    const inlinePrompt = screen.getByTestId('mock-rich-textarea');
+    await vi.advanceTimersByTimeAsync(500);
+    expect(focus.mock.contexts).toContain(inlinePrompt);
   });
 
   it('selects models in both modes without bubbling, closing, or losing persisted state', async () => {
@@ -310,10 +338,11 @@ describe('NewSpaceModal model-picker composition', () => {
     stubGeometry(dialog, teamTrigger, rect(140, 520, 150, 28));
     await fireEvent.click(teamTrigger);
     const teamListbox = await within(dialog).findByRole('listbox');
+    const teamContent = dropdownContent(teamListbox);
     expect(dialog.contains(teamListbox)).toBe(true);
-    expect(teamListbox.dataset.side).toBe('top');
-    expect(teamListbox.style.maxHeight).toBe('360px');
-    expect(parseFloat(teamListbox.style.maxWidth)).toBeLessThanOrEqual(824);
+    expect(teamContent.dataset.side).toBe('top');
+    expect(teamContent.style.maxHeight).toBe('360px');
+    expect(parseFloat(teamContent.style.maxWidth)).toBeLessThanOrEqual(824);
     expect(
       await within(teamListbox).findByRole('option', { name: /^GPT 5\.1 Model 1/ }),
     ).toBeTruthy();
@@ -335,10 +364,11 @@ describe('NewSpaceModal model-picker composition', () => {
     await fireEvent.click(pickerTrigger(team));
     const reasoningTrigger = await within(dialog).findByTestId('effort-picker-trigger');
     await fireEvent.click(reasoningTrigger);
-    const reasoningPopup = document.getElementById(
+    const reasoningListbox = document.getElementById(
       reasoningTrigger.getAttribute('aria-controls')!,
     )!;
-    const reasoningListbox = within(reasoningPopup).getByRole('listbox');
+    expect(reasoningListbox.getAttribute('role')).toBe('listbox');
+    expect(reasoningListbox.getAttribute('tabindex')).toBe('-1');
     await fireEvent.pointerUp(within(reasoningListbox).getByRole('option', { name: 'High' }), {
       pointerType: 'mouse',
     });
@@ -371,8 +401,9 @@ describe('NewSpaceModal model-picker composition', () => {
     stubGeometry(dialog, singleTrigger, rect(600, 120, 150, 28));
     await fireEvent.click(singleTrigger);
     const singleListbox = await within(dialog).findByRole('listbox');
-    expect(singleListbox.dataset.side).toBe('bottom');
-    expect(singleListbox.style.maxHeight).toBe('360px');
+    const singleContent = dropdownContent(singleListbox);
+    expect(singleContent.dataset.side).toBe('bottom');
+    expect(singleContent.style.maxHeight).toBe('360px');
     await fireEvent.click(
       await within(singleListbox).findByRole('option', { name: /GPT 5\.5/ }, { timeout: 5000 }),
     );
@@ -493,13 +524,15 @@ describe('NewSpaceModal model-picker composition', () => {
       trigger.focus();
       await fireEvent.click(trigger);
       const listbox = await within(dialog).findByRole('listbox');
-      expect(listbox.dataset.side).toBe('top');
-      expect(parseFloat(listbox.style.maxHeight)).toBeLessThanOrEqual(306);
-      expect(parseFloat(listbox.style.maxWidth)).toBeLessThanOrEqual(472);
-      const scroller = listbox.querySelector('[data-scroll-container]') as HTMLElement;
-      expect(scroller.className).toContain('overflow-y-auto');
+      const content = dropdownContent(listbox);
+      expect(content.dataset.side).toBe('top');
+      expect(parseFloat(content.style.maxHeight)).toBeLessThanOrEqual(306);
+      expect(parseFloat(content.style.maxWidth)).toBeLessThanOrEqual(472);
+      expect(listbox.className).toContain('overflow-y-auto');
 
-      const search = within(listbox).getByRole('searchbox', { name: 'Search options' });
+      const search = within(content).getByRole('searchbox', { name: 'Search options' });
+      expect(search.getAttribute('aria-controls')).toBe(listbox.id);
+      expect(listbox.contains(search)).toBe(false);
       await within(listbox).findByRole('option', { name: /^GPT 5\.12 Last model/ });
       await fireEvent.keyDown(search, { key: 'End' });
       expect(

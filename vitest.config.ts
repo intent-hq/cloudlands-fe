@@ -3,6 +3,8 @@ import path from 'path';
 import os from 'os';
 import { readFileSync } from 'fs';
 import { gitignoreDirExcludes } from './scripts/gitignore-dir-excludes.mjs';
+import { PARAGLIDE_STALE_MESSAGE, ensureRepoParaglide } from './scripts/paraglide-inputs-hash.mjs';
+import { FORK_EXEC_ARGV } from './scripts/vitest-fork-exec-argv.mjs';
 
 // CI-only tuning for shared self-hosted runners (intent-hq/monorepo#3082; the
 // recurrence class #3032/#2586/#1406/#1171/#545). The CI unit job runs on the
@@ -20,28 +22,47 @@ const isCI = !!process.env.CI && process.env.CI !== 'false';
 // so on any core count the CI path differs from '50%' only via the 16 cap.
 const ciMaxWorkers = Math.max(1, Math.min(16, Math.round(os.availableParallelism() / 2)));
 
+/**
+ * Produces src/shared/paraglide through the locked, staged publisher when it is
+ * missing or stale, so tests can import m.* functions without a separate
+ * generate:i18n run. Upstream's paraglideVitePlugin is deliberately not used:
+ * it writes into the outdir on its own and races the publisher when several
+ * Vitest/Vite processes start together (intent-hq/intent#4565).
+ */
+export function generatedParaglidePlugin({ ensure = ensureRepoParaglide } = {}) {
+  return {
+    name: 'ensure-generated-paraglide',
+    enforce: 'pre' as const,
+    async buildStart() {
+      if (!(await ensure({ rootDir: __dirname, ifStale: true }))) {
+        throw new Error(`[generate:i18n] ${PARAGLIDE_STALE_MESSAGE}`);
+      }
+    },
+  };
+}
+
 export default defineConfig(async () => {
   const { svelte } = await import('@sveltejs/vite-plugin-svelte');
-  const { paraglideVitePlugin } = await import('@inlang/paraglide-js');
 
   // Mirror vite.config.mjs's __APP_VERSION__ define so components that render
   // the app version (e.g. HudFooter) resolve it under vitest.
   const packageJson = JSON.parse(readFileSync(path.join(__dirname, 'package.json'), 'utf8'));
 
   return {
-    plugins: [
-      // Compiles messages/{locale}.json into src/shared/paraglide so tests can
-      // import m.* functions without a separate generate:i18n run.
-      paraglideVitePlugin({
-        project: path.resolve(__dirname, 'project.inlang'),
-        outdir: path.resolve(__dirname, 'src/shared/paraglide'),
-      }),
-      svelte(),
-    ],
+    plugins: [generatedParaglidePlugin(), svelte()],
     test: {
       globals: true,
       environment: 'jsdom',
       setupFiles: ['./src/test-setup.ts'],
+      // Node 24's V8 Sparkplug/GC regression (nodejs/node#62393) SIGSEGVs long
+      // test runs: forks surface it as dropped files, while threads crash the
+      // controller directly. Keep process isolation and disable only Sparkplug
+      // in workers until the pinned runtime contains the upstream fix. The
+      // setup file strips these flags from process.execArgv again inside each
+      // fork so worker_threads constructed with an explicit execArgv (e.g. by
+      // @lix-js/sdk) are not rejected with ERR_WORKER_INVALID_EXEC_ARGV.
+      pool: 'forks',
+      execArgv: [...FORK_EXEC_ARGV],
       // Redirects every worker's os.tmpdir() into a private root and fails the
       // run if a test leaves a temp entry behind (see src/test-global-setup.ts).
       globalSetup: ['./src/test-global-setup.ts'],
@@ -60,6 +81,15 @@ export default defineConfig(async () => {
       testTimeout: isCI ? 60_000 : 30_000,
       hookTimeout: isCI ? 60_000 : 30_000,
       teardownTimeout: 10000,
+      // Pin typescript-eslint's single-run inference off in every worker so the
+      // ESLint rule tests behave the same locally and on CI (cloudlands-fe#2506).
+      // typescript-estree's `inferSingleRun` turns single-run mode on under
+      // `CI=true` and then builds its TypeScript Program from the files on disk,
+      // so a type-aware `lintText` probe whose content differs from the on-disk
+      // file is typed against the disk file and type-aware rules cannot fire —
+      // a deterministic CI-only failure of tests that pass locally. `'false'`
+      // matches the local default (a watch Program over the probe's own text).
+      env: { TSESTREE_SINGLE_RUN: 'false' },
       exclude: [
         '**/node_modules/**',
         '**/dist/**',
@@ -94,53 +124,92 @@ export default defineConfig(async () => {
       ],
     },
     resolve: {
-      alias: {
-        '@': path.resolve(__dirname, './src'),
-        $lib: path.resolve(__dirname, './src/lib'),
-        $store: path.resolve(__dirname, './src/store'),
-        $features: path.resolve(__dirname, './src/features'),
-        $shared: path.resolve(__dirname, './src/shared'),
-        $app: path.resolve(__dirname, './src/__mocks__/$app'),
-        '@fortawesome/fontawesome-common-types': path.resolve(
-          __dirname,
-          './src/lib/icons/phosphor-icons.ts',
-        ),
-        '@fortawesome/fontawesome-svg-core': path.resolve(
-          __dirname,
-          './src/lib/icons/phosphor-icons.ts',
-        ),
-        '@fortawesome/free-brands-svg-icons': path.resolve(
-          __dirname,
-          './src/lib/icons/phosphor-icons.ts',
-        ),
-        '@fortawesome/free-regular-svg-icons': path.resolve(
-          __dirname,
-          './src/lib/icons/phosphor-icons.ts',
-        ),
-        '@fortawesome/free-solid-svg-icons': path.resolve(
-          __dirname,
-          './src/lib/icons/phosphor-icons.ts',
-        ),
-        'svelte-fa': path.resolve(__dirname, './src/lib/components/shared/icons/fa-proxy.ts'),
+      alias: [
+        // Match the complete worker specifiers before the API alias. Consume ?worker
+        // so Vite loads the stub as a module, not as a browser Worker wrapper.
+        {
+          find: /^monaco-editor\/editor\/editor\.worker\?worker$/,
+          replacement: path.resolve(__dirname, './src/__mocks__/monaco-worker.ts'),
+        },
+        {
+          find: /^monaco-editor\/language\/json\/json\.worker\?worker$/,
+          replacement: path.resolve(__dirname, './src/__mocks__/monaco-worker.ts'),
+        },
+        {
+          find: /^monaco-editor\/language\/css\/css\.worker\?worker$/,
+          replacement: path.resolve(__dirname, './src/__mocks__/monaco-worker.ts'),
+        },
+        {
+          find: /^monaco-editor\/language\/html\/html\.worker\?worker$/,
+          replacement: path.resolve(__dirname, './src/__mocks__/monaco-worker.ts'),
+        },
+        {
+          find: /^monaco-editor\/language\/typescript\/ts\.worker\?worker$/,
+          replacement: path.resolve(__dirname, './src/__mocks__/monaco-worker.ts'),
+        },
         // Test-only stub: avoid resolving the real monaco-editor (heavy and ESM-export sensitive)
-        'monaco-editor': path.resolve(__dirname, './src/__mocks__/monaco-editor'),
+        // Exact matching keeps other Monaco subpaths out of the bare API mock.
+        {
+          find: /^monaco-editor$/,
+          replacement: path.resolve(__dirname, './src/__mocks__/monaco-editor'),
+        },
+        { find: '@', replacement: path.resolve(__dirname, './src') },
+        { find: '$lib', replacement: path.resolve(__dirname, './src/lib') },
+        { find: '$store', replacement: path.resolve(__dirname, './src/store') },
+        { find: '$features', replacement: path.resolve(__dirname, './src/features') },
+        { find: '$shared', replacement: path.resolve(__dirname, './src/shared') },
+        { find: '$app', replacement: path.resolve(__dirname, './src/__mocks__/$app') },
+        {
+          find: '@fortawesome/fontawesome-common-types',
+          replacement: path.resolve(__dirname, './src/lib/icons/phosphor-icons.ts'),
+        },
+        {
+          find: '@fortawesome/fontawesome-svg-core',
+          replacement: path.resolve(__dirname, './src/lib/icons/phosphor-icons.ts'),
+        },
+        {
+          find: '@fortawesome/free-brands-svg-icons',
+          replacement: path.resolve(__dirname, './src/lib/icons/phosphor-icons.ts'),
+        },
+        {
+          find: '@fortawesome/free-regular-svg-icons',
+          replacement: path.resolve(__dirname, './src/lib/icons/phosphor-icons.ts'),
+        },
+        {
+          find: '@fortawesome/free-solid-svg-icons',
+          replacement: path.resolve(__dirname, './src/lib/icons/phosphor-icons.ts'),
+        },
+        {
+          find: 'svelte-fa',
+          replacement: path.resolve(__dirname, './src/lib/components/shared/icons/fa-proxy.ts'),
+        },
         // Test-only stub: avoid resolving protocol-adapter's complex dependency chain
-        '$features/protocol/protocol-adapter': path.resolve(
-          __dirname,
-          './src/__mocks__/protocol-adapter',
-        ),
+        {
+          find: '$features/protocol/protocol-adapter',
+          replacement: path.resolve(__dirname, './src/__mocks__/protocol-adapter'),
+        },
         // Test-only stub: avoid resolving ws browser bundle (missing createWebSocketStream)
-        ws: path.resolve(__dirname, './src/__mocks__/ws'),
+        { find: 'ws', replacement: path.resolve(__dirname, './src/__mocks__/ws') },
         // Test-only stubs: avoid promisify(exec) at module load time (breaks jsdom)
-        '$shared/git/git-env': path.resolve(__dirname, './src/__mocks__/git-env'),
-        '$shared/main/async-utils': path.resolve(__dirname, './src/__mocks__/async-utils'),
+        {
+          find: '$shared/git/git-env',
+          replacement: path.resolve(__dirname, './src/__mocks__/git-env'),
+        },
+        {
+          find: '$shared/main/async-utils',
+          replacement: path.resolve(__dirname, './src/__mocks__/async-utils'),
+        },
         // Test-only stub: lru_map module doesn't provide proper ESM exports
-        lru_map: path.resolve(__dirname, './src/__mocks__/lru_map'),
+        { find: 'lru_map', replacement: path.resolve(__dirname, './src/__mocks__/lru_map') },
         // Test-only stub: @pierre/diffs/worker has lru_map ESM import issues
-        '@pierre/diffs/worker': path.resolve(__dirname, './src/__mocks__/@pierre/diffs/worker'),
-      },
+        {
+          find: '@pierre/diffs/worker',
+          replacement: path.resolve(__dirname, './src/__mocks__/@pierre/diffs/worker'),
+        },
+      ],
       conditions: ['import', 'module', 'browser', 'default'],
-      extensions: ['.mjs', '.js', '.ts', '.jsx', '.tsx', '.json', '.svelte'],
+      // Do not list '.svelte' here: knip turns non-default extensions into `src/**/*.<ext>` entries, hiding every unused Svelte component from `pnpm lint:dead-code`.
+      extensions: ['.mjs', '.js', '.ts', '.jsx', '.tsx', '.json'],
     },
     define: {
       __APP_VERSION__: JSON.stringify(packageJson.version),

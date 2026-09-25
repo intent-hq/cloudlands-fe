@@ -61,7 +61,7 @@
 /* Type-based styles */
 .comment-type-suggestion {
   background-color: hsl(var(--primary) / 0.15);
-  border-bottom-color: hsl(var(--primary) / 0.4);
+  border-bottom-color: hsl(var(--primary-ink) / 0.4);
   border-bottom-style: dashed;
 }
 
@@ -304,7 +304,7 @@
 
 .comment-type-icon.suggestion {
   background: hsl(var(--primary) / 0.2);
-  color: hsl(var(--primary));
+  color: hsl(var(--primary-ink));
 }
 
 .comment-type-icon.change-request {

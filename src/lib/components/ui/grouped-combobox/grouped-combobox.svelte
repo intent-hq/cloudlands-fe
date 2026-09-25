@@ -1,6 +1,7 @@
 <script lang="ts">
   import type { Snippet } from 'svelte';
   import Combobox, { type ComboboxGroup, type ComboboxOption } from '../combobox';
+  import { Button } from '$lib/components/ui/button';
   import Tooltip from '../tooltip/Tooltip.svelte';
   import type { GroupedOption, OptionGroup } from './types';
   import { m } from '$shared/paraglide/messages.js';
@@ -9,8 +10,15 @@
     value?: string;
     groups?: OptionGroup[];
     placeholder?: string;
+    ariaLabel?: string;
+    ariaLabelledby?: string;
+    ariaDescribedby?: string;
+    emptyText?: string;
+    errorText?: string;
+    retryText?: string;
+    onSearchError?: (error: unknown, query: string) => void;
     disabled?: boolean;
-    onSearch?: (query: string) => OptionGroup[];
+    onSearch?: (query: string) => OptionGroup[] | Promise<OptionGroup[]>;
     onChange?: (value: string, option?: GroupedOption, event?: MouseEvent) => void;
     onOpen?: () => void;
     onClose?: () => void;
@@ -26,12 +34,21 @@
     tooltip?: string | Snippet;
     tooltipSide?: 'top' | 'right' | 'bottom' | 'left';
     defaultCollapsed?: boolean;
+    open?: boolean;
+    staticPosition?: boolean;
   }
 
   let {
     value = $bindable(''),
     groups = [],
     placeholder = m.ui_groupedCombobox_select_placeholder(),
+    ariaLabel,
+    ariaLabelledby,
+    ariaDescribedby,
+    emptyText,
+    errorText,
+    retryText,
+    onSearchError,
     disabled = false,
     onSearch,
     onChange,
@@ -49,10 +66,11 @@
     tooltip,
     tooltipSide = 'top',
     defaultCollapsed = true,
+    open = $bindable(false),
+    staticPosition = false,
   }: Props = $props();
 
   let searchQuery = $state('');
-  let searchedGroups = $state<OptionGroup[] | null>(null);
   let collapsedGroups = $state<Set<string>>(new Set());
   let collapseInitialized = false;
 
@@ -68,30 +86,18 @@
   });
 
   const canonicalGroups: ComboboxGroup[] = $derived(
-    (searchedGroups ?? groups).map((group) => ({
-      key: group.key,
-      label: group.label,
-      options:
-        collapsedGroups.has(group.key) && !searchQuery
-          ? []
-          : group.options.map((option) => ({
-              value: option.value,
-              label: option.label,
-              description: option.description,
-              icon: option.icon,
-              data: option.data,
-            })),
-      icon: group.icon,
-      data: group.data,
+    groups.map((group) => ({
+      ...group,
+      collapsed: collapsedGroups.has(group.key),
     })),
   );
 
-  function handleChange(nextValue: string | string[]) {
+  function handleChange(nextValue: string | string[], selectedOption?: ComboboxOption) {
     if (typeof nextValue !== 'string') return;
     const option = groups
       .flatMap((group) => group.options)
       .find((item) => item.value === nextValue);
-    onChange?.(nextValue, option);
+    onChange?.(nextValue, (selectedOption as GroupedOption | undefined) ?? option);
   }
 
   function handleOpenChange(isOpen: boolean) {
@@ -101,7 +107,6 @@
 
   function handleQueryChange(query: string) {
     searchQuery = query;
-    searchedGroups = query && onSearch ? onSearch(query) : null;
   }
 
   function toggleGroup(key: string) {
@@ -121,21 +126,25 @@
 {/snippet}
 
 {#snippet canonicalGroupAction(group: ComboboxGroup)}
-  <button
+  <Button
+    variant="plain"
     type="button"
+    data-list-overlay
+    aria-expanded={Boolean(searchQuery) || !collapsedGroups.has(group.key)}
     aria-label={m.ui_groupedCombobox_toggleGroup_ariaLabel({ group: group.label })}
     onclick={() => toggleGroup(group.key)}
   >
-    {collapsedGroups.has(group.key)
+    {!searchQuery && collapsedGroups.has(group.key)
       ? m.ui_groupedCombobox_expandGroup_label()
       : m.ui_groupedCombobox_collapseGroup_label()}
-  </button>
+  </Button>
   {@render groupAction?.(group as OptionGroup)}
 {/snippet}
 
 {#snippet combobox()}
   <Combobox
     bind:value
+    bind:open
     groups={canonicalGroups}
     {disabled}
     {placeholder}
@@ -143,8 +152,14 @@
     class={className}
     inputClass={triggerClass}
     contentClass={dropdownClass}
-    ariaLabel={placeholder}
-    portal={false}
+    ariaLabel={ariaLabel ?? placeholder}
+    {ariaLabelledby}
+    {ariaDescribedby}
+    {emptyText}
+    {errorText}
+    {retryText}
+    portal={!staticPosition}
+    {staticPosition}
     {header}
     {headerAction}
     {footer}
@@ -152,6 +167,8 @@
     groupDescription={groupDescription ? canonicalGroupDescription : undefined}
     groupAction={canonicalGroupAction}
     onquerychange={handleQueryChange}
+    onsearch={onSearch}
+    onsearcherror={onSearchError}
     onchange={handleChange}
     onopenchange={handleOpenChange}
   />

@@ -7,6 +7,34 @@ class MentionSuggestionRenderer {
   private popup: HTMLDivElement | null = null;
   private editorElement: HTMLElement | null = null;
   private inputContainer: HTMLElement | null = null;
+  private readonly listboxId = `mention-listbox-${crypto.randomUUID()}`;
+  private previousAria = new Map<string, string | null>();
+
+  private attachEditor(element: HTMLElement) {
+    if (this.editorElement === element) return;
+    this.editorElement = element;
+    for (const name of ['aria-controls', 'aria-activedescendant', 'aria-haspopup']) {
+      this.previousAria.set(name, element.getAttribute(name));
+    }
+  }
+
+  private accessibilityProps() {
+    return {
+      listboxId: this.listboxId,
+      onClose: () => this.onExit(),
+      onActiveOptionChange: (id: string | undefined) => {
+        if (!this.editorElement || !this.popup) return;
+        this.editorElement.setAttribute('aria-haspopup', 'listbox');
+        if (id) {
+          this.editorElement.setAttribute('aria-controls', this.listboxId);
+          this.editorElement.setAttribute('aria-activedescendant', id);
+        } else {
+          this.editorElement.removeAttribute('aria-controls');
+          this.editorElement.removeAttribute('aria-activedescendant');
+        }
+      },
+    };
+  }
   // Generation counter to handle the race between onBeforeStart/onStart/onExit.
   // onBeforeStart increments it (runs synchronously before async items()),
   // onStart/onUpdate only proceed if their generation matches the current one.
@@ -22,7 +50,7 @@ class MentionSuggestionRenderer {
 
     // Store reference to editor element for positioning
     if (props.editor?.view?.dom) {
-      this.editorElement = props.editor.view.dom;
+      this.attachEditor(props.editor.view.dom);
     }
 
     // Show the popup immediately with a loading state — don't wait for async items()
@@ -38,6 +66,7 @@ class MentionSuggestionRenderer {
         items: [],
         command: () => {},
         loading: true,
+        ...this.accessibilityProps(),
       },
     });
   }
@@ -60,7 +89,7 @@ class MentionSuggestionRenderer {
 
     // Fallback: if onBeforeStart didn't run (shouldn't happen), create from scratch
     if (props.editor?.view?.dom) {
-      this.editorElement = props.editor.view.dom;
+      this.attachEditor(props.editor.view.dom);
     }
 
     this.popup = document.createElement('div');
@@ -74,6 +103,7 @@ class MentionSuggestionRenderer {
         items: props.items,
         command: props.command,
         loading: false,
+        ...this.accessibilityProps(),
       },
     });
   }
@@ -123,11 +153,15 @@ class MentionSuggestionRenderer {
     // Get container dimensions
     const containerRect = this.inputContainer.getBoundingClientRect();
     const viewportHeight = window.innerHeight;
+    const viewportWidth = window.innerWidth;
+    const viewportMargin = 8;
+    const anchorGap = 4;
 
     // Set position to fixed, anchored to container
     this.popup.style.position = 'fixed';
-    this.popup.style.left = `${containerRect.left}px`;
-    this.popup.style.width = `${containerRect.width}px`;
+    this.popup.style.width = `${Math.min(containerRect.width, viewportWidth - viewportMargin * 2)}px`;
+    const popupWidth = this.popup.getBoundingClientRect().width;
+    this.popup.style.left = `${Math.max(viewportMargin, Math.min(containerRect.left, viewportWidth - popupWidth - viewportMargin))}px`;
     this.popup.style.zIndex = '1000';
 
     // Calculate available space
@@ -137,15 +171,19 @@ class MentionSuggestionRenderer {
 
     // Determine if we should position above or below
     const shouldPositionAbove = spaceBelow < estimatedPopupHeight && spaceAbove > spaceBelow;
+    this.popup.style.setProperty(
+      '--mention-available-height',
+      `${Math.max(0, (shouldPositionAbove ? spaceAbove : spaceBelow) - anchorGap - viewportMargin)}px`,
+    );
 
     if (shouldPositionAbove) {
       // Position above: popup bottom aligns with container top
       this.popup.style.top = 'auto';
-      this.popup.style.bottom = `${viewportHeight - containerRect.top + 4}px`;
+      this.popup.style.bottom = `${viewportHeight - containerRect.top + anchorGap}px`;
     } else {
       // Position below: popup top aligns with container bottom
       this.popup.style.bottom = 'auto';
-      this.popup.style.top = `${containerRect.bottom + 4}px`;
+      this.popup.style.top = `${containerRect.bottom + anchorGap}px`;
     }
 
     logger.info('[MentionSuggestionRenderer] Popup positioned at:', {
@@ -171,7 +209,7 @@ class MentionSuggestionRenderer {
 
     // Store reference to editor element if not already captured
     if (!this.editorElement && props.editor?.view?.dom) {
-      this.editorElement = props.editor.view.dom;
+      this.attachEditor(props.editor.view.dom);
     }
 
     // If neither popup nor component exist, initialize everything (onStart was skipped
@@ -205,6 +243,7 @@ class MentionSuggestionRenderer {
           items: props.items,
           command: props.command,
           loading: false,
+          ...this.accessibilityProps(),
         },
       });
     }
@@ -214,14 +253,19 @@ class MentionSuggestionRenderer {
   }
 
   onKeyDown(props: any) {
-    if (props.event.key === 'Escape') {
-      props.event.stopPropagation();
-      return true;
-    }
     return this.component?.onKeyDown?.(props) || false;
   }
 
   private cleanup() {
+    if (this.editorElement) {
+      for (const [name, value] of this.previousAria) {
+        if (value === null) this.editorElement.removeAttribute(name);
+        else this.editorElement.setAttribute(name, value);
+      }
+    }
+    this.previousAria.clear();
+    this.editorElement = null;
+    this.inputContainer = null;
     if (this.popup && this.popup.parentNode) {
       this.popup.parentNode.removeChild(this.popup);
     }

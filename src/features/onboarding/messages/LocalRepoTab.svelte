@@ -20,8 +20,10 @@
   import { faFolder } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
   import Input from '$lib/components/ui/input/input.svelte';
+  import { Button } from '$lib/components/ui/button';
   import GitHubAvatar from '$lib/components/ui/GitHubAvatar.svelte';
   import { cn } from '$lib/utils';
+  import { menuItem } from '$lib/components/ui/menu';
   import DirectoryPickerModal from './DirectoryPickerModal.svelte';
   import { pickDirectory } from '$lib/directory-picker-service';
 
@@ -211,25 +213,29 @@
     />
     <div class="absolute right-1.5 top-1/2 -translate-y-1/2 flex items-center gap-0.5">
       {#if searchQuery}
-        <button
+        <Button
+          variant="ghost"
           type="button"
           class="text-muted-foreground/50 hover:text-foreground text-xs cursor-pointer p-1.5 rounded hover:bg-muted/40 transition-colors"
           onclick={() => {
             searchQuery = '';
             searchInputRef?.focus();
           }}
-          aria-label={m.onboarding_localRepoTab_clearSearch_ariaLabel()}>✕</button
+          aria-label={m.onboarding_localRepoTab_clearSearch_ariaLabel()}>✕</Button
         >
       {/if}
-      <button
+      <Button
+        variant="ghost"
         type="button"
-        class="text-muted-foreground/60 hover:text-foreground cursor-pointer p-1.5 mr-0.5 rounded hover:bg-muted/40 transition-colors"
+        size="icon-compact"
+        iconOnly
+        class="text-muted-foreground/60 hover:text-foreground cursor-pointer mr-0.5 rounded hover:bg-muted/40 transition-colors"
         onclick={handleSelectFolder}
         aria-label={m.onboarding_localRepoTab_browse_ariaLabel()}
         title={m.onboarding_localRepoTab_browse_ariaLabel()}
       >
         <Fa icon={faFolder} size="sm" />
-      </button>
+      </Button>
     </div>
   </div>
 
@@ -254,19 +260,17 @@
         {#each filteredRepos as repo, index (repo.path)}
           {@const isFocused = index === focusedIndex}
           {@const isCommitted = repo.path === selectedPath}
-          <button
+          <Button
+            variant="ghost"
             type="button"
             id="local-repo-option-{index}"
             role="option"
             aria-selected={isCommitted}
-            class={cn(
-              'w-full flex items-center gap-3 py-2.5 px-3 text-left rounded-lg transition-colors cursor-pointer',
-              {
-                'bg-foreground text-background pl-2.5': isCommitted,
-                'bg-muted/40': isFocused && !isCommitted,
-                'hover:bg-muted/30': !isFocused && !isCommitted,
-              },
-            )}
+            class={cn(menuItem(), 'gap-3 px-3 py-2.5 cursor-pointer', {
+              'bg-foreground text-background pl-2.5': isCommitted,
+              'bg-muted/40': isFocused && !isCommitted,
+              'hover:bg-muted/30': !isFocused && !isCommitted,
+            })}
             onclick={() => {
               void handleSelectPath(repo.path);
               searchInputRef?.focus();
@@ -323,7 +327,7 @@
             >
               <path d="M9 5l7 7-7 7" />
             </svg>
-          </button>
+          </Button>
           {#if isCommitted && initGitPath === repo.path}
             <div
               role="status"

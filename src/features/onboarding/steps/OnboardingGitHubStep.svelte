@@ -15,7 +15,6 @@
     initializeGitHubAuth,
     startGitHubAuth,
     cancelGitHubAuth,
-    checkGitHubAuthStatus,
   } from '$store/renderer/slices/github-auth/github-auth-slice';
   import {
     selectGitHubAuthIsAuthenticated,
@@ -28,6 +27,7 @@
   import GitHubDeviceCodeCard from '$lib/components/GitHubDeviceCodeCard.svelte';
   import { m } from '$shared/paraglide/messages.js';
   import { Button } from '$lib/components/ui/button';
+  import { IntentMarkLoader } from '$lib/components/ui/indicators';
 
   interface Props {
     /** Advance to the next onboarding step (Continue when connected). */
@@ -50,22 +50,6 @@
     // stored device-flow token) renders as connected instead of forcing a
     // reconnect. Also resumes a still-pending device flow (§5.27).
     appStore.dispatch(initializeGitHubAuth());
-
-    // Check auth status immediately when window gains focus so the UI
-    // updates snappily when the user returns from the browser.
-    const handleFocus = () => {
-      const state = appStore.state;
-      const isAuthenticating = selectGitHubAuthIsAuthenticating.select(state);
-      const deviceFlow = selectGitHubAuthDeviceFlow.select(state);
-      if (isAuthenticating && deviceFlow) {
-        appStore.dispatch(checkGitHubAuthStatus());
-      }
-    };
-
-    window.addEventListener('focus', handleFocus);
-    return () => {
-      window.removeEventListener('focus', handleFocus);
-    };
   });
 
   function handleConnect() {
@@ -106,30 +90,27 @@
         verificationUri={$deviceFlow$.verificationUri}
       />
       <div class="flex items-center gap-2 text-subtle text-sm">
-        <div
-          class="w-4 h-4 border-[2px] border-border border-t-blue-600 rounded-full animate-spin"
-        ></div>
+        <IntentMarkLoader size={16} class="shrink-0" />
         <span>{m.onboarding_githubStep_waitingForAuthorization_label()}</span>
-        <button
+        <Button
+          variant="ghost"
           type="button"
           class="text-muted-foreground hover:text-foreground cursor-pointer transition-colors ml-2"
           onclick={handleCancel}
         >
           {m.onboarding_githubStep_cancel_label()}
-        </button>
+        </Button>
       </div>
     </div>
   {:else if $isAuthenticating$}
     <div class="flex items-center gap-2 text-subtle text-sm">
-      <div
-        class="w-4 h-4 border-[2px] border-border border-t-blue-600 rounded-full animate-spin"
-      ></div>
+      <IntentMarkLoader size={16} class="shrink-0" />
       <span>{m.onboarding_githubStep_startingAuthentication_label()}</span>
     </div>
   {:else if $requiresDaemonAuth$}
     <p class="text-sm text-subtle">{m.onboarding_githubStep_requiresDaemonAuth_label()}</p>
   {:else}
-    <Button class="group/button" size="xl" onclick={handleConnect}>
+    <Button class="group/button" size="xl" variant="primary" onclick={handleConnect}>
       <Fa icon={faGithub} />
       {m.onboarding_githubStep_connectGithub_label()}
     </Button>
@@ -141,7 +122,7 @@
 
   <div class="flex flex-col items-start gap-2 mt-9">
     {#if $isAuthenticated$}
-      <Button class="group/button" size="xl" onclick={onContinue}>
+      <Button class="group/button" size="xl" variant="primary" onclick={onContinue}>
         {m.onboarding_githubStep_continue_label()}
         <span class="ml-1 opacity-50">⌘↵</span>
       </Button>

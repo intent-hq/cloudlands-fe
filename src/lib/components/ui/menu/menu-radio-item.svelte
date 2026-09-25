@@ -3,36 +3,44 @@
   import type { Snippet } from 'svelte';
   import { cn } from '$lib/utils.js';
   import type { WithoutChildrenOrChild } from '$lib/utils.js';
+  import { menuItem } from './menu-recipes';
+  import Indicator from './menu-indicator.svelte';
+  import { useMenuIconColumn } from './menu-layout-context.svelte';
 
   let {
     ref = $bindable(null),
     class: className,
+    closeOnSelect = false,
+    leading,
     children,
     ...restProps
   }: WithoutChildrenOrChild<MenuPrimitive.RadioItemProps> & {
     children?: Snippet;
+    leading?: Snippet;
   } = $props();
+  const reserveIcon = useMenuIconColumn(() => !!leading);
 </script>
 
 {#snippet radioContent({ checked }: { checked: boolean })}
-  <span
-    class="absolute left-2 flex size-4 items-center justify-center text-primary"
-    aria-hidden="true"
-  >
-    {checked ? '●' : ''}
-  </span>
+  {#if leading || reserveIcon()}
+    <span
+      data-slot="menu-item-leading"
+      class="flex h-lh w-4 shrink-0 items-center justify-center"
+      aria-hidden="true"
+    >
+      {@render leading?.()}
+    </span>
+  {/if}
   {@render children?.()}
+  <Indicator state={checked ? 'checked' : 'empty'} />
 {/snippet}
 
 <MenuPrimitive.RadioItem
   bind:ref
   children={radioContent}
   data-slot="menu-radio-item"
-  class={cn(
-    'type-body relative flex min-h-7 cursor-default select-none items-center rounded-md py-1 pl-8 pr-2 outline-none',
-    'focus:bg-accent focus:text-accent-foreground data-[highlighted]:bg-accent data-[state=checked]:bg-accent/60 data-[disabled]:pointer-events-none data-[disabled]:opacity-50',
-    'transition-colors duration-[var(--motion-fast)] motion-reduce:transition-none',
-    className,
-  )}
+  data-menu-item
+  {closeOnSelect}
+  class={cn(menuItem(), className)}
   {...restProps}
 />

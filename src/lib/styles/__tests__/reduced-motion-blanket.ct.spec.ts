@@ -1,0 +1,297 @@
+import type { Page } from '@playwright/experimental-ct-svelte';
+import { expect, test } from '../../../test/ct-test';
+import CommentThreadEditingHarness from '../../components/tiptap/comments/__tests__/CommentThreadEditingHarness.svelte';
+
+// Real-browser contract for the tokens.css global motion blanket: the root
+// `data-reduce-motion` attribute (battery saver) must zero the same surfaces
+// as the OS `prefers-reduced-motion` media query — root, root pseudo-elements,
+// descendants, and descendant pseudo-elements — and restoring the attribute
+// must return every surface to its authored motion.
+
+type Target = 'root' | 'root::before' | 'root::after' | 'child' | 'child::before' | 'child::after';
+const TARGETS: Target[] = [
+  'root',
+  'root::before',
+  'root::after',
+  'child',
+  'child::before',
+  'child::after',
+];
+
+interface Motion {
+  transitionDuration: string;
+  animationDuration: string;
+  animationIterationCount: string;
+}
+
+const AUTHORED: Motion = {
+  transitionDuration: '3s',
+  animationDuration: '4s',
+  animationIterationCount: 'infinite',
+};
+// Chromium serializes the blanket's `0.01ms` as seconds.
+const REDUCED: Motion = {
+  transitionDuration: '1e-05s',
+  animationDuration: '1e-05s',
+  animationIterationCount: '1',
+};
+
+const PROBE_ID = 'reduced-motion-blanket-probe';
+
+async function installProbe(page: Page) {
+  await page.evaluate((id) => {
+    const style = document.createElement('style');
+    style.id = `${id}-style`;
+    style.textContent = `
+      @keyframes ${id}-spin { to { transform: rotate(1turn); } }
+      html, html::before, html::after, #${id}, #${id}::before, #${id}::after {
+        content: '';
+        transition: opacity 3s linear;
+        animation: ${id}-spin 4s linear infinite;
+      }
+    `;
+    document.head.append(style);
+    const child = document.createElement('div');
+    child.id = id;
+    document.body.append(child);
+  }, PROBE_ID);
+}
+
+async function readMotion(page: Page): Promise<Record<Target, Motion>> {
+  return page.evaluate((id) => {
+    const root = document.documentElement;
+    const child = document.getElementById(id)!;
+    const read = (element: Element, pseudo?: string) => {
+      const style = getComputedStyle(element, pseudo);
+      return {
+        transitionDuration: style.transitionDuration,
+        animationDuration: style.animationDuration,
+        animationIterationCount: style.animationIterationCount,
+      };
+    };
+    return {
+      root: read(root),
+      'root::before': read(root, '::before'),
+      'root::after': read(root, '::after'),
+      child: read(child),
+      'child::before': read(child, '::before'),
+      'child::after': read(child, '::after'),
+    };
+  }, PROBE_ID);
+}
+
+async function setBatteryAttribute(page: Page, on: boolean) {
+  await page.evaluate((enabled) => {
+    if (enabled) document.documentElement.setAttribute('data-reduce-motion', '');
+    else document.documentElement.removeAttribute('data-reduce-motion');
+  }, on);
+}
+
+function expectAll(actual: Record<Target, Motion>, expected: Motion) {
+  for (const target of TARGETS) {
+    expect(actual[target], target).toEqual(expected);
+  }
+}
+
+test.beforeEach(async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: 'no-preference' });
+  await installProbe(page);
+});
+
+test('full motion: authored durations stay in effect everywhere', async ({ page }) => {
+  expectAll(await readMotion(page), AUTHORED);
+});
+
+test('battery mode: the root attribute blankets root, root pseudos, descendants, and descendant pseudos', async ({
+  page,
+}) => {
+  await setBatteryAttribute(page, true);
+  expectAll(await readMotion(page), REDUCED);
+});
+
+test('OS preference: the media blanket covers the same surfaces', async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  expectAll(await readMotion(page), REDUCED);
+});
+
+test('both sources: motion stays reduced', async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await setBatteryAttribute(page, true);
+  expectAll(await readMotion(page), REDUCED);
+});
+
+test('restored: removing the attribute returns every surface to authored motion', async ({
+  page,
+}) => {
+  await setBatteryAttribute(page, true);
+  expectAll(await readMotion(page), REDUCED);
+  await setBatteryAttribute(page, false);
+  expectAll(await readMotion(page), AUTHORED);
+});
+
+test('--motion-reduced mirrors both sources on the root', async ({ page }) => {
+  const flag = () =>
+    page.evaluate(() =>
+      getComputedStyle(document.documentElement).getPropertyValue('--motion-reduced').trim(),
+    );
+  expect(await flag()).toBe('0');
+  await setBatteryAttribute(page, true);
+  expect(await flag()).toBe('1');
+  await setBatteryAttribute(page, false);
+  expect(await flag()).toBe('0');
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  expect(await flag()).toBe('1');
+});
+
+test('catalog overrides keep the token and every blanket surface in agreement', async ({
+  page,
+}) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await setBatteryAttribute(page, true);
+  const flag = () =>
+    page.evaluate(() =>
+      getComputedStyle(document.documentElement).getPropertyValue('--motion-reduced').trim(),
+    );
+  await page.evaluate(() => document.documentElement.classList.add('catalog-full-motion'));
+  expect(await flag()).toBe('0');
+  expectAll(await readMotion(page), AUTHORED);
+  await page.evaluate(() => document.documentElement.classList.add('catalog-reduced-motion'));
+  expect(await flag()).toBe('1');
+  expectAll(await readMotion(page), REDUCED);
+  await page.emulateMedia({ reducedMotion: 'no-preference' });
+  await setBatteryAttribute(page, false);
+  expectAll(await readMotion(page), REDUCED);
+  await page.evaluate(() => document.documentElement.classList.remove('catalog-reduced-motion'));
+  expectAll(await readMotion(page), AUTHORED);
+  await setBatteryAttribute(page, true);
+  await page.evaluate(() => document.documentElement.classList.remove('catalog-full-motion'));
+  expectAll(await readMotion(page), REDUCED);
+});
+
+// app.css's canonical scrollbar rule must not hand every element its own
+// `scrollbar-color` declaration: under the blanket's non-zero duration each restyle
+// of such an element started a `scrollbar-color` transition, so a busy subtree (the
+// diagram workbench rendering 43 cases) paid thousands of live transitions per pass
+// and reduced-motion readiness ran 3× slower than full motion (intent-hq/intent#5687).
+test('reduced motion: restyling descendants starts no scrollbar-color transitions', async ({
+  page,
+}) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  // The media flip restyles the whole document once; let everything it started finish.
+  await page.waitForFunction(() => document.getAnimations().length === 0);
+  const result = await page.evaluate(async (id) => {
+    const className = `${id}-restyle`;
+    const style = document.createElement('style');
+    style.textContent = `.${className} { color: rgb(1, 2, 3); }`;
+    document.head.append(style);
+    const host = document.createElement('div');
+    const nodes = Array.from({ length: 40 }, () =>
+      host.appendChild(document.createElement('span')),
+    );
+    document.body.append(host);
+    await new Promise<void>((resolve) =>
+      requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+    );
+    const transitionsOf = (property: string) =>
+      document
+        .getAnimations()
+        .filter((a) => a instanceof CSSTransition && a.transitionProperty === property).length;
+    const settled = document.getAnimations().length;
+    for (const node of nodes) node.classList.add(className);
+    void getComputedStyle(nodes[0]).color;
+    return {
+      settled,
+      color: transitionsOf('color'),
+      scrollbarColor: transitionsOf('scrollbar-color'),
+    };
+  }, PROBE_ID);
+  expect(result.settled).toBe(0);
+  // The blanket shortens transitions rather than removing them, so the restyle is observable.
+  expect(result.color).toBe(40);
+  expect(result.scrollbarColor).toBe(0);
+});
+
+test('the canonical scrollbar-color reaches descendants by inheritance', async ({ page }) => {
+  const result = await page.evaluate((id) => {
+    const wrapper = document.createElement('div');
+    const leaf = wrapper.appendChild(document.createElement('span'));
+    document.getElementById(id)!.append(wrapper);
+    const color = (element: Element) => getComputedStyle(element).scrollbarColor;
+    return { root: color(document.documentElement), leaf: color(leaf) };
+  }, PROBE_ID);
+  expect(result.root).not.toBe('auto');
+  expect(result.leaf).toBe(result.root);
+});
+
+// The oracle for "declared on every element" is the browser's own matcher: a bare,
+// class-less element must match no rule that declares `scrollbar-color`, whatever the
+// selector's spelling (`*`, `:where(:not(...))`, `html *`, ...).
+test('no stylesheet rule that matches a bare element declares scrollbar-color', async ({
+  page,
+}) => {
+  const offenders = await page.evaluate((id) => {
+    const parent = document.createElement('div');
+    const nested = parent.appendChild(document.createElement('span'));
+    const direct = document.createElement('span');
+    document.getElementById(id)!.append(parent, direct);
+    const probes = [direct, nested, parent];
+    const matched: string[] = [];
+    const visit = (rules: CSSRuleList) => {
+      for (const rule of rules) {
+        if (rule instanceof CSSStyleRule) {
+          if (rule.style.getPropertyValue('scrollbar-color') === '') continue;
+          let applies = false;
+          try {
+            applies = probes.some((probe) => probe.matches(rule.selectorText));
+          } catch {
+            applies = false;
+          }
+          if (applies) matched.push(rule.selectorText);
+        } else if ('cssRules' in rule) {
+          visit((rule as CSSGroupingRule).cssRules);
+        }
+      }
+    };
+    for (const sheet of document.styleSheets) {
+      try {
+        visit(sheet.cssRules);
+      } catch {
+        // Cross-origin sheets are unreadable; none of ours are.
+      }
+    }
+    return matched;
+  }, PROBE_ID);
+  expect(offenders).toEqual([]);
+});
+
+// A component that overrides `scrollbar-color` on its own scroller (the comment thread's
+// `.custom-scrollbar`) must not restyle the editor it hosts while a comment is edited:
+// that nested scroller keeps the canonical colour in both themes.
+for (const theme of ['light', 'dark'] as const) {
+  test(`the editor opened inside a .custom-scrollbar comment keeps the canonical scrollbar-color (${theme})`, async ({
+    mount,
+    page,
+  }) => {
+    await page.evaluate((selected) => {
+      document.documentElement.classList.toggle('dark', selected === 'dark');
+    }, theme);
+    const thread = await mount(CommentThreadEditingHarness);
+    // The action bar is revealed on hover; the edit mode is what is under test here.
+    await thread.getByRole('button', { name: 'Edit', exact: true }).dispatchEvent('click');
+    const editor = thread.locator('.custom-scrollbar .tiptap-container');
+    await expect(editor).toBeVisible();
+    const colors = await editor.evaluate((element) => {
+      const color = (target: Element) => getComputedStyle(target).scrollbarColor;
+      return {
+        root: color(document.documentElement),
+        host: color(element.closest('.custom-scrollbar')!),
+        editor: color(element),
+      };
+    });
+    expect(colors.root).not.toBe('auto');
+    // The component's own override is in effect on the host scroller ...
+    expect(colors.host).not.toBe(colors.root);
+    // ... and does not leak onto the scroller it hosts.
+    expect(colors.editor).toBe(colors.root);
+  });
+}

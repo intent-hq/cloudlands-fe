@@ -1,4 +1,5 @@
 <script lang="ts" module>
+  import { Button } from '$lib/components/ui/button';
   // The Chief chat can render in two sidebar hosts at once (the hover card and
   // combined workspace panel). The chief virtual workspace is shared, so
   // mount/unmount is refcounted: only the last live instance unmounts it.
@@ -7,16 +8,13 @@
 
 <script lang="ts">
   import { onDestroy } from 'svelte';
-  import { faChevronDown, faPlus, faSpinner, faTrash } from '@fortawesome/free-solid-svg-icons';
+  import { faChevronDown, faPlus, faTrash } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
+  import { IntentMarkLoader } from '$lib/components/ui/indicators';
   import { m } from '$shared/paraglide/messages.js';
-  import { toast } from 'svelte-sonner';
+  import { notify } from '$lib/components/patterns/notify';
   import ChatPanel from '$lib/components/chat/ChatPanel.svelte';
-  import {
-    Dropdown,
-    type DropdownItemProps,
-    type DropdownOption,
-  } from '$lib/components/ui/dropdown';
+  import { Select } from '$lib/components/ui/select';
   import { store as appStore } from '$store/renderer/store';
   import {
     setChiefActiveAgentId,
@@ -42,6 +40,7 @@
   } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
   import { selectAgentsLoaded } from '$store/renderer/slices/workspace-agents/workspace-agents-selectors';
   import { selectHasResolvableProvider } from '$store/renderer/slices/model/model-selectors';
+  import { selectHidesAgentLifecycleActions } from '$store/renderer/slices/workspace/workspace-selectors';
   import { createAgentTypeId } from '$shared/types/agent.types';
   import { CHIEF_WORKSPACE_ID } from '$shared/types/branded-ids';
   import {
@@ -64,17 +63,29 @@
   const chiefActiveAgentId$ = selectChiefActiveAgentId();
   const chiefAgentsLoaded$ = selectAgentsLoaded(CHIEF_WORKSPACE_ID);
   const hasResolvableProvider$ = selectHasResolvableProvider();
+  // Chief threads are agents: creating / deleting one is refused (-32003) for
+  // a collaborator connection, so the affordances (and the auto-start) are
+  // withheld in a guest window.
+  const hidesAgentLifecycleActions$ = selectHidesAgentLifecycleActions(CHIEF_WORKSPACE_ID);
 
   interface Props {
     expanded?: boolean;
     /** Rendered inside the combined Home panel: the panel owns the close
         button and height, so hide the close X and don't force a min height. */
     embedded?: boolean;
+    /** Mount chat on first activation, then retain drafts without claiming focus or read state. */
+    isActive?: boolean;
     collapsed?: boolean;
     ontoggle?: () => void;
   }
 
-  let { expanded = false, embedded = false, collapsed = false, ontoggle }: Props = $props();
+  let {
+    expanded = false,
+    embedded = false,
+    isActive = true,
+    collapsed = false,
+    ontoggle,
+  }: Props = $props();
 
   const CHIEF_WORKSPACE_TIMESTAMP = '2026-01-01T00:00:00.000Z';
   const chiefWorkspace: Workspace = {
@@ -94,6 +105,7 @@
   let isCreatingThread = $state(false);
   let hasAutoStartedRef = $state(false);
   let isWorkspaceRegistered = $state(false);
+  let hasActivatedChat = $state(false);
 
   const activeChiefThread = $derived(
     $chiefActiveAgentId$
@@ -115,14 +127,6 @@
   // ChatPanel prop/key expressions re-evaluate lazily, so they must never
   // dereference a possibly-null activeThread (it can empty while mounted).
   const activeAgentId = $derived(activeThread?.agentId ?? null);
-  const threadOptions = $derived<DropdownOption[]>(
-    $chiefThreads$.map((thread) => ({
-      value: thread.agentId,
-      label: thread.title,
-      data: { isActive: thread.isActive },
-      class: activeAgentId === thread.agentId ? 'bg-muted/70 text-foreground' : '',
-    })),
-  );
   const currentPreview = $derived(activeThread ?? $chiefPreview$);
   const title = $derived(currentPreview?.title ?? m.layout_chiefCard_startThread_label());
   const preview = $derived(currentPreview?.preview ?? m.layout_chiefCard_preview_description());
@@ -141,6 +145,12 @@
     ensureChiefWorkspaceRegistered();
   });
 
+  $effect.pre(() => {
+    // ChatPanel initializes its transcript on mount, even when inactive.
+    // Defer that first mount until selection, then keep the draft alive on tab changes.
+    if (expanded && isActive && activeAgentId) hasActivatedChat = true;
+  });
+
   $effect(() => {
     if (activeChiefThread && selectedAgentId !== activeChiefThread.agentId) {
       selectedAgentId = activeChiefThread.agentId;
@@ -154,6 +164,7 @@
   $effect(() => {
     if (
       !expanded ||
+      !isActive ||
       !isWorkspaceRegistered ||
       !$chiefAgentsLoaded$ ||
       isCreatingThread ||
@@ -178,8 +189,9 @@
     }
     // No resolvable provider/model (fresh backend, providers.active unset):
     // agent.create would be rejected by the daemon, so skip silently and let
-    // this effect retry once a provider is configured.
-    if (!$hasResolvableProvider$) return;
+    // this effect retry once a provider is configured. Likewise for a
+    // collaborator connection, whose agent.create is refused (-32003).
+    if (!$hasResolvableProvider$ || $hidesAgentLifecycleActions$) return;
     hasAutoStartedRef = true;
     void createNewThread();
   });
@@ -214,6 +226,7 @@
   }
 
   function handleNewThreadClick() {
+    if ($hidesAgentLifecycleActions$) return;
     appStore.dispatch(setChiefCollapsed(false));
     void createNewThread();
   }
@@ -221,6 +234,7 @@
   function handleDeleteThread(event: MouseEvent, agentId: string, threadTitle: string) {
     event.preventDefault();
     event.stopPropagation();
+    if ($hidesAgentLifecycleActions$) return;
     appStore.dispatch(deleteAgentWithUndoRequested(CHIEF_WORKSPACE_ID, agentId, threadTitle));
   }
 
@@ -285,7 +299,7 @@
     } catch (error) {
       if (ownsCreation) {
         const message = error instanceof Error ? error.message : String(error);
-        toast.error(m.layout_chiefCard_startFailed_error({ message }));
+        notify.error(m.layout_chiefCard_startFailed_error({ message }));
       }
     } finally {
       isCreatingThread = false;
@@ -295,7 +309,8 @@
 
 {#if !expanded}
   <div class="p-3">
-    <button
+    <Button
+      variant="ghost"
       type="button"
       class="block w-full cursor-pointer rounded-sm text-left outline-none"
       onclick={openChiefPanel}
@@ -303,7 +318,7 @@
     >
       <p class="type-body truncate font-medium text-foreground">{title}</p>
       <p class="type-caption mt-1 text-muted-foreground line-clamp-3">{preview}</p>
-    </button>
+    </Button>
   </div>
 {:else}
   <div class="flex h-full flex-col {embedded ? 'min-h-0' : 'min-h-[460px]'}">
@@ -319,8 +334,10 @@
     >
       <div class="flex min-w-0 flex-1 items-center gap-1.5">
         {#if collapsed && ontoggle}
-          <button
+          <Button
             type="button"
+            variant="ghost"
+            size="xs"
             class="flex h-7! min-w-0 max-w-full flex-1 items-center justify-start px-1.5! text-foreground"
             aria-expanded="false"
             aria-controls="combined-panel-chief-content"
@@ -328,90 +345,85 @@
             <span class="text-ui min-w-0 flex-1 truncate text-left font-medium">
               {activeThread?.title ?? m.layout_chiefCard_startThread_label()}
             </span>
-          </button>
+          </Button>
         {:else}
-          <Dropdown
-            value={selectedAgentId ?? undefined}
-            options={threadOptions}
-            onchange={handleThreadChange}
-            searchable={false}
-            portal={true}
-            variant="inline"
-            size="xs"
-            class="min-w-0 max-w-full"
-            triggerClass="h-7! max-w-full min-w-0 justify-start gap-1.5 px-1.5! text-foreground hover:bg-muted/50"
-            contentClass="min-w-48 max-w-[calc(100vw-32px)] sm:max-w-80"
-          >
-            {#snippet trigger()}
+          <Select.Root value={selectedAgentId ?? ''} onchange={handleThreadChange}>
+            <Select.Trigger
+              variant="ghost"
+              aria-label={m.layout_chiefCard_threadPicker_ariaLabel()}
+              class="h-7! max-w-full min-w-0 justify-start gap-1.5 px-1.5! text-foreground hover:bg-muted/50"
+            >
               <span class="text-ui min-w-0 flex-1 truncate text-left font-medium">
                 {activeThread?.title ?? m.layout_chiefCard_startThread_label()}
               </span>
-            {/snippet}
-
-            {#snippet item({ option, selected, highlighted }: DropdownItemProps)}
-              {@const thread = $chiefThreads$.find(
-                (candidate) => candidate.agentId === option.value,
-              )}
-              <div class="flex min-w-0 flex-1 items-center gap-1.5">
-                {#if thread?.isActive}
-                  <span
-                    class="h-1.5 w-1.5 shrink-0 rounded-full bg-blue-500"
-                    aria-label={m.layout_chiefCard_activeThread_ariaLabel()}
-                  ></span>
-                {:else}
-                  <span class="h-1.5 w-1.5 shrink-0"></span>
-                {/if}
-                <span class="truncate {selected ? 'font-medium text-foreground' : ''}"
-                  >{option.label}</span
-                >
-              </div>
-              <span
-                role="button"
-                tabindex={-1}
-                class="ml-1 flex h-5 w-5 shrink-0 cursor-pointer items-center justify-center rounded text-muted-foreground/70 transition-colors hover:text-danger {highlighted
-                  ? 'opacity-100'
-                  : 'opacity-0'}"
-                onclick={(e) => handleDeleteThread(e, option.value, option.label)}
-                aria-label={m.layout_chiefCard_deleteThread_ariaLabel({ title: option.label })}
-                title={m.layout_chiefCard_deleteThread_tooltip()}
-              >
-                <Fa icon={faTrash} size="xs" />
-              </span>
-            {/snippet}
-
-            {#snippet empty()}
-              <div class="type-caption px-3 py-4 text-center text-subtle">
-                {m.layout_chiefCard_noThreads_label()}
-              </div>
-            {/snippet}
-          </Dropdown>
+            </Select.Trigger>
+            <Select.Content portal class="min-w-48 max-w-[calc(100vw-32px)] sm:max-w-80">
+              {#each $chiefThreads$ as thread (thread.agentId)}
+                <Select.Item value={thread.agentId} label={thread.title}>
+                  <span class="flex min-w-0 items-center gap-1.5">
+                    {#if thread.isActive}
+                      <span
+                        class="h-1.5 w-1.5 shrink-0 rounded-full bg-primary"
+                        aria-label={m.layout_chiefCard_activeThread_ariaLabel()}
+                      ></span>
+                    {/if}
+                    <span class="truncate">{thread.title}</span>
+                  </span>
+                </Select.Item>
+              {:else}
+                <div role="status" class="type-caption px-3 py-4 text-center text-subtle">
+                  {m.layout_chiefCard_noThreads_label()}
+                </div>
+              {/each}
+            </Select.Content>
+          </Select.Root>
+          {#if activeThread && !$hidesAgentLifecycleActions$}
+            <Button
+              variant="ghost"
+              size="icon-xs"
+              aria-label={m.layout_chiefCard_deleteThread_ariaLabel({ title: activeThread.title })}
+              title={m.layout_chiefCard_deleteThread_tooltip()}
+              onclick={(event) => {
+                if (activeThread)
+                  handleDeleteThread(event, activeThread.agentId, activeThread.title);
+              }}
+            >
+              <Fa icon={faTrash} size="xs" />
+            </Button>
+          {/if}
         {/if}
       </div>
-      <div
-        class="flex shrink-0 items-center overflow-hidden transition-[width,opacity,margin] duration-150 motion-reduce:transition-none {collapsed
-          ? 'pointer-events-none -mr-1 w-0 opacity-0'
-          : 'mr-0 w-6 opacity-100'}"
-      >
-        <button
-          class="flex h-6 w-6 shrink-0 cursor-pointer items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted/50 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-60"
-          onclick={handleNewThreadClick}
-          disabled={isCreatingThread || collapsed}
-          tabindex={collapsed ? -1 : undefined}
-          aria-hidden={collapsed ? 'true' : undefined}
-          aria-label={m.layout_chiefCard_newThread_tooltip()}
-          title={m.layout_chiefCard_newThread_tooltip()}
+      {#if !$hidesAgentLifecycleActions$}
+        <div
+          class="flex shrink-0 items-center overflow-hidden transition-[width,opacity,margin] duration-spring-moderate ease-spring-moderate motion-reduce:transition-none {collapsed
+            ? 'pointer-events-none -mr-1 w-0 opacity-0'
+            : 'mr-0 w-6 opacity-100'}"
         >
-          <Fa
-            icon={isCreatingThread ? faSpinner : faPlus}
-            size="xs"
-            class={isCreatingThread ? 'animate-spin' : ''}
-          />
-        </button>
-      </div>
+          <Button
+            variant="ghost"
+            size="icon-compact"
+            class="flex h-6 w-6 shrink-0 cursor-pointer items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted/50 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-60"
+            onclick={handleNewThreadClick}
+            disabled={isCreatingThread || collapsed}
+            tabindex={collapsed ? -1 : undefined}
+            aria-hidden={collapsed ? 'true' : undefined}
+            aria-label={m.layout_chiefCard_newThread_tooltip()}
+            title={m.layout_chiefCard_newThread_tooltip()}
+          >
+            {#if isCreatingThread}
+              <IntentMarkLoader size={12} />
+            {:else}
+              <Fa icon={faPlus} size="xs" />
+            {/if}
+          </Button>
+        </div>
+      {/if}
       {#if ontoggle}
-        <button
+        <Button
           type="button"
-          class="flex h-7 w-6 shrink-0 cursor-pointer items-center justify-center rounded-sm text-muted-foreground outline-none hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring"
+          variant="ghost-light"
+          size="icon-xs"
+          class="flex h-7 w-6 shrink-0 cursor-pointer items-center justify-center rounded-sm text-muted-foreground outline-none hover:text-foreground focus-visible:outline-1 focus-visible:outline-ring"
           aria-label={m.layout_chiefCard_title()}
           aria-expanded={!collapsed}
           aria-controls="combined-panel-chief-content"
@@ -423,7 +435,7 @@
             size="xs"
             class="shrink-0 transition-transform {collapsed ? 'rotate-90' : ''}"
           />
-        </button>
+        </Button>
       {/if}
     </div>
 
@@ -440,15 +452,15 @@
       hidden={Boolean(ontoggle && collapsed)}
     >
       <section class="flex h-full min-h-0 flex-col">
-        {#if activeAgentId}
+        {#if hasActivatedChat && activeAgentId}
           {#key activeAgentId}
             <div class="min-h-0 flex-1">
               <ChatPanel
                 workspace={chiefWorkspace}
                 agentId={activeAgentId}
                 agentName={m.layout_chiefCard_title()}
-                isActive={true}
-                autoFocus={true}
+                isActive={isActive && !collapsed}
+                autoFocus={isActive && !collapsed && !embedded}
               />
             </div>
           {/key}

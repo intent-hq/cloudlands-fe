@@ -1,5 +1,5 @@
 <script lang="ts">
-  import CatalogGallery from '$lib/component-catalog/CatalogGallery.svelte';
+  import CatalogIntroduction from '$lib/component-catalog/CatalogIntroduction.svelte';
 </script>
 
-<CatalogGallery />
+<CatalogIntroduction />

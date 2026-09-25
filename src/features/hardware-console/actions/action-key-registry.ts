@@ -3,8 +3,8 @@
  * workspace top-level agents, the global cross-workspace cycle family
  * (in-progress, attention, idle, unread, failed agents), stop agent, see
  * spec, toggle workspace sidebar tabs, new agent, new workspace, switch
- * panel layouts, cycle open windows, push to talk (hold-capable), and
- * none/unassigned.
+ * panel layouts, cycle open windows, push to talk (hold-capable), close
+ * (the Cmd+W cascade), and none/unassigned.
  *
  * Each entry carries a label (i18n getter), an icon, an availability
  * predicate, and an execute function. Both evaluate against an
@@ -31,6 +31,7 @@ import {
   faTableColumns,
   faWindowMaximize,
   faWindowRestore,
+  faXmark,
 } from '@fortawesome/free-solid-svg-icons';
 import { m } from '$shared/paraglide/messages.js';
 import { type Workspace } from '$shared/types';
@@ -795,6 +796,36 @@ export const ACTION_KEY_REGISTRY: readonly ActionKeyDefinition[] = [
     },
     executeUp(context) {
       handleVoiceKeyUp(context);
+    },
+  },
+  {
+    id: 'close-tab',
+    get label() {
+      return m.hardwareConsole_actionKey_closeTab_label();
+    },
+    icon: faXmark,
+    isAvailable() {
+      return true;
+    },
+    execute(context) {
+      // Read the path synchronously at press time: a workspace switch that
+      // lands before the dynamic import resolves must not redirect the close
+      // to the newly selected workspace.
+      const pressPath = window.location.pathname;
+      // Dynamic import: close-active-tab.ts reaches the app store and the
+      // workspace-tab-navigation selectors (`store.createSelector` at module
+      // scope), which would crash if evaluated eagerly here — see the
+      // switch-window-layouts note above. It also keeps the bridge invoke
+      // out of this registry (window-cycle.ts pattern).
+      void import('./close-active-tab')
+        .then(({ closeActiveTab }) => {
+          if (closeActiveTab(pressPath, context.navigate) === null) {
+            context.showHint(m.hardwareConsole_actionKey_closeTab_nothingToClose_hint());
+          }
+        })
+        .catch((error: unknown) => {
+          logger.error('Failed to close the active tab', { error });
+        });
     },
   },
   {

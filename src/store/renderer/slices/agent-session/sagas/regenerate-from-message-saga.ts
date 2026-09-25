@@ -90,8 +90,8 @@ class NoRegenerateSourceError extends RegenerateAbortedError {
 
 async function showRegenerateError(message: string): Promise<void> {
   try {
-    const { toast } = await import('svelte-sonner');
-    toast.error(message);
+    const { notify } = await import('$lib/components/patterns/notify');
+    notify.error(message);
   } catch (error) {
     logger.error('Failed to surface regenerate error', error);
   }

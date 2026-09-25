@@ -9,8 +9,8 @@
 <script lang="ts">
   import Fa from 'svelte-fa';
   import type { Snippet } from 'svelte';
-  import { flushSync, onDestroy } from 'svelte';
-  import type { TransitionConfig } from 'svelte/transition';
+  import { onDestroy } from 'svelte';
+  import type { ImmediateMotionConfig as TransitionConfig, SpringTierName } from '$lib/motion';
   import type { ContentBlock } from '$shared/types';
   import { getContentBlockText } from '$shared/utils/content-block-helpers';
   import { m } from '$shared/paraglide/messages.js';
@@ -67,7 +67,7 @@
   let prevTerminal = false;
   let collapseTimer: ReturnType<typeof setTimeout> | null = null;
   let contentEl: HTMLElement | undefined = $state();
-  let triggerEl: HTMLButtonElement | undefined = $state();
+  let triggerEl: HTMLButtonElement | null = $state(null);
   const instanceId = $props.id();
   const detailsId = `response-group-details-${instanceId}`;
   let searchOwnsExpansion = false;
@@ -84,11 +84,18 @@
 
     if (!isExpanded) return;
     if (contentEl?.contains(document.activeElement)) triggerEl?.focus({ preventScroll: true });
-    flushSync(() => {
-      isClosing = true;
-    });
-    isExpanded = false;
+    isClosing = true;
   }
+
+  // Two-phase collapse: `isClosing` renders first so the details body is
+  // inert and hidden from assistive tech before its outro starts, then this
+  // effect flips `isExpanded` in the following batch. A synchronous flush
+  // would do the same ordering, but `setExpanded` also runs from the
+  // streaming-edge effect below, and a `flushSync` inside an effect body
+  // nulls the outer batch mid-traversal (sveltejs/svelte#18546).
+  $effect(() => {
+    if (isClosing) isExpanded = false;
+  });
 
   function clearCollapseTimer() {
     if (!collapseTimer) return;
@@ -219,7 +226,7 @@
   // props instead.
   function previewTransition(
     node: Element,
-    params: { duration?: number; y?: number } = {},
+    params: { tier?: SpringTierName; y?: number } = {},
     options: { direction?: 'in' | 'out' | 'both' } = {},
   ): TransitionConfig {
     if (isExpanded || (!isStreaming && isTerminal && disclosureOverride !== 'collapsed')) {
@@ -289,7 +296,7 @@
   summaryTitle={accessibleSummary}
   onclick={toggle}
   {detailsId}
-  previewClass={OPERATIONAL_GROUP_CONTENT_CLASS}
+  previewClass={`${OPERATIONAL_GROUP_CONTENT_CLASS} pt-[var(--space-2)]`}
   detailsClass={groupContentClass}
   {previewTransition}
   detailsTransition={safeDisclosureTransition}

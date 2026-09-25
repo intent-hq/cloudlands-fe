@@ -7,20 +7,31 @@
    *
    * Performance optimizations:
    * - Throttled to 30fps instead of 60fps (halves GPU usage)
-   * - Renders the backing buffer at half the CSS resolution
+   * - Renders at native display resolution for smooth gradients
    * - Pauses when tab is hidden (Page Visibility API)
    * - Simplified shader with fewer blobs (5 instead of 10)
-   * - Respects prefers-reduced-motion
+   * - Respects reduced motion (OS preference or battery saver)
    */
   import { onMount, onDestroy } from 'svelte';
+  import type { AuroraBenchmarkOptions } from './aurora-performance';
   import { browser } from '$app/environment';
-  import { scheduleLayoutRead, type CancelLayoutTask } from '$lib/utils/layout-phases';
+  import {
+    scheduleLayoutRead,
+    scheduleLayoutWrite,
+    type CancelLayoutTask,
+  } from '$lib/utils/layout-phases';
+  import {
+    onReducedMotionChange,
+    prefersReducedMotion as isReducedMotionPreferred,
+  } from '$lib/utils/reduced-motion';
 
   interface Props {
     agentId?: string;
+    /** Developer benchmark only; remount when changing these controls. */
+    benchmark?: AuroraBenchmarkOptions;
   }
 
-  let { agentId = 'default' }: Props = $props();
+  let { agentId = 'default', benchmark }: Props = $props();
 
   let canvas = $state<HTMLCanvasElement>();
   let gl = $state<WebGLRenderingContext | null>(null);
@@ -39,46 +50,11 @@
   let semanticColorReady = false;
 
   // Target 30fps instead of 60fps to reduce GPU usage
-  const TARGET_FRAME_TIME = 1000 / 30; // ~33ms per frame
-  // The effect is intentionally soft, so Retina supersampling adds fragment work without useful detail.
-  const MAX_RENDER_DPR = 0.5;
+  const targetFrameTime = $derived(benchmark?.frameRate === 'display' ? 0 : 1000 / 30);
 
   // Random seed for variety each session
-  const seed = Math.random() * 1000;
-
-  const fract = (value: number) => value - Math.floor(value);
-
-  function seededRandom(id: number) {
-    let x = fract((id * 127.1 + seed) * 0.1031);
-    let y = fract((id * 311.7 + seed * 1.7) * 0.1031);
-    let z = x;
-    const offset = x * (y + 33.33) + y * (z + 33.33) + z * (x + 33.33);
-    x += offset;
-    y += offset;
-    z += offset;
-    return fract((x + y) * z);
-  }
-
-  const phaseOffsets = new Float32Array(
-    Array.from({ length: 5 }, (_, index) => seededRandom(index + 1) * 6.28),
-  );
-  const blobCenters = new Float32Array(10);
-
-  function updateBlobCenters(time: number) {
-    const [r1, r2, r3, r4, r5] = phaseOffsets;
-    blobCenters.set([
-      0.15 + Math.sin(time * 0.8 + r1) * 0.35 + Math.cos(time * 0.5 + r1) * 0.15,
-      0.25 + Math.cos(time * 0.7 + r1) * 0.4,
-      0.85 + Math.cos(time * 0.7 + r2) * 0.4,
-      0.3 + Math.sin(time * 0.65 + r2) * 0.45,
-      0.35 + Math.sin(time * 0.9 + r3) * 0.3,
-      0.2 + Math.cos(time * 0.85 + r3) * 0.4,
-      0.5 + Math.sin(time + r4) * 0.35,
-      0.35 + Math.sin(time * 2 + r4) * 0.25,
-      0.65 + Math.cos(time * 0.85 + r5) * 0.35,
-      0.28 + Math.sin(time * 0.75 + r5) * 0.4,
-    ]);
-  }
+  const randomSeed = Math.random() * 1000;
+  const seed = $derived(benchmark?.seed ?? randomSeed);
 
   // Cached uniform locations (avoid getUniformLocation every frame)
   let uniformLocations: {
@@ -87,8 +63,7 @@
     color1: WebGLUniformLocation | null;
     color2: WebGLUniformLocation | null;
     color3: WebGLUniformLocation | null;
-    centers: WebGLUniformLocation | null;
-    phases: WebGLUniformLocation | null;
+    seed: WebGLUniformLocation | null;
   } | null = null;
 
   // Cached device pixel ratio (updated on resize, not every frame)
@@ -96,6 +71,22 @@
   let cachedCanvasWidth: number | null = null;
   let cachedCanvasHeight: number | null = null;
   let canvasResizeObserver: ResizeObserver | null = null;
+  let sizeReadPending = false;
+  let cancelSizeRead: CancelLayoutTask | null = null;
+  let cancelSizeWrite: CancelLayoutTask | null = null;
+
+  function scheduleCanvasSizeUpdate() {
+    if (sizeReadPending || destroyed) return;
+    sizeReadPending = true;
+    cancelSizeRead = scheduleLayoutRead(() => {
+      sizeReadPending = false;
+      if (!canvas || destroyed) return;
+      cachedCanvasWidth ??= canvas.clientWidth;
+      cachedCanvasHeight ??= canvas.clientHeight;
+      cancelSizeWrite?.();
+      cancelSizeWrite = scheduleLayoutWrite(() => updateCanvasSize());
+    });
+  }
 
   function getSemanticAuroraColor(): [number, number, number] | null {
     if (!canvas) return null;
@@ -168,6 +159,7 @@
 
   // Simplified shader: 5 blobs instead of 10, reduced fbm iterations (2 instead of 4)
   // This reduces GPU load by ~60% while maintaining visual quality
+  // i18n-ignore (GLSL shader source, not user-facing text)
   const fragmentShaderSource = `
     precision mediump float;
     uniform float u_time;
@@ -175,14 +167,18 @@
     uniform vec3 u_color1;
     uniform vec3 u_color2;
     uniform vec3 u_color3;
-    uniform vec2 u_centers[5];
-    uniform float u_phases[5];
+    uniform float u_seed;
 
-    // Hash function for grain and randomness
+    // Hash function for the session's blob phases
     float hash(vec2 p) {
       vec3 p3 = fract(vec3(p.xyx) * 0.1031);
       p3 += dot(p3, p3.yzx + 33.33);
       return fract((p3.x + p3.y) * p3.z);
+    }
+
+    // Seeded random - different each session
+    float rand(float id) {
+      return hash(vec2(id * 127.1 + u_seed, id * 311.7 + u_seed * 1.7));
     }
 
     // Smooth noise function
@@ -220,36 +216,57 @@
       vec2 uv = gl_FragCoord.xy / u_resolution;
       float time = u_time * 0.6;
 
-      // Vertical gradient
-      float verticalFade = pow(1.0 - uv.y, 1.0);
+      // Keep the glow near the composer and fade gently into the conversation.
+      float verticalFade = pow(1.0 - uv.y, 2.0);
 
       // Color variety (reduced from 10 to 5)
       vec3 color4 = mix(u_color1, u_color3, 0.5);
       vec3 color5 = mix(u_color2, u_color1, 0.65);
 
-      float r1 = u_phases[0];
-      float r2 = u_phases[1];
-      float r3 = u_phases[2];
-      float r4 = u_phases[3];
-      float r5 = u_phases[4];
+      // Random offsets per blob for variety each session
+      float r1 = rand(1.0) * 6.28;
+      float r2 = rand(2.0) * 6.28;
+      float r3 = rand(3.0) * 6.28;
+      float r4 = rand(4.0) * 6.28;
+      float r5 = rand(5.0) * 6.28;
 
-      vec2 c1 = u_centers[0];
+      // Blob 1 - circular, big movement
+      vec2 c1 = vec2(
+        0.15 + sin(time * 0.8 + r1) * 0.35 + cos(time * 0.5 + r1) * 0.15,
+        0.25 + cos(time * 0.7 + r1) * 0.4
+      );
       float b1 = blob(uv, c1, 0.56);
       b1 *= 0.6 + fbm(uv * 2.5 + time * 0.6 + r1) * 0.6;
 
-      vec2 c2 = u_centers[1];
+      // Blob 2 - sweeps across
+      vec2 c2 = vec2(
+        0.85 + cos(time * 0.7 + r2) * 0.4,
+        0.3 + sin(time * 0.65 + r2) * 0.45
+      );
       float b2 = blob(uv, c2, 0.504);
       b2 *= 0.6 + fbm(uv * 2.8 + time * 0.5 + r2) * 0.6;
 
-      vec2 c3 = u_centers[2];
+      // Blob 3 - circular orbit
+      vec2 c3 = vec2(
+        0.35 + sin(time * 0.9 + r3) * 0.3,
+        0.2 + cos(time * 0.85 + r3) * 0.4
+      );
       float b3 = blob(uv, c3, 0.616);
       b3 *= 0.6 + fbm(uv * 2.2 + time * 0.55 + r3) * 0.6;
 
-      vec2 c4 = u_centers[3];
+      // Blob 4 - figure 8 motion
+      vec2 c4 = vec2(
+        0.5 + sin(time * 1.0 + r4) * 0.35,
+        0.35 + sin(time * 2.0 + r4) * 0.25
+      );
       float b4 = blob(uv, c4, 0.538);
       b4 *= 0.6 + fbm(uv * 3.0 + time * 0.6 + r4) * 0.6;
 
-      vec2 c5 = u_centers[4];
+      // Blob 5 - opposite phase
+      vec2 c5 = vec2(
+        0.65 + cos(time * 0.85 + r5) * 0.35,
+        0.28 + sin(time * 0.75 + r5) * 0.4
+      );
       float b5 = blob(uv, c5, 0.47);
       b5 *= 0.6 + fbm(uv * 2.6 + time * 0.5 + r5) * 0.6;
 
@@ -273,11 +290,7 @@
       // Breathing pulse
       intensity *= 0.85 + sin(time * 0.5) * 0.15;
 
-      // Simplified grain (less expensive)
-      float grainValue = hash(gl_FragCoord.xy);
-      color = color + (grainValue - 0.5) * 0.15;
-
-      float alpha = intensity * 0.9;
+      float alpha = intensity * 0.65;
       gl_FragColor = vec4(color * alpha, alpha);
     }
   `;
@@ -375,21 +388,18 @@
       color1: gl.getUniformLocation(program, 'u_color1'),
       color2: gl.getUniformLocation(program, 'u_color2'),
       color3: gl.getUniformLocation(program, 'u_color3'),
-      centers: gl.getUniformLocation(program, 'u_centers[0]'),
-      phases: gl.getUniformLocation(program, 'u_phases[0]'),
+      seed: gl.getUniformLocation(program, 'u_seed'),
     };
-    gl.useProgram(program);
-    gl.uniform1fv(uniformLocations.phases, phaseOffsets);
     scheduleSemanticColorSync();
 
-    updateCanvasSize();
+    scheduleCanvasSizeUpdate();
 
     startTime = performance.now();
     render();
   }
 
   function updateCanvasSize(width?: number, height?: number) {
-    if (!canvas) return;
+    if (!canvas || destroyed) return;
 
     const cssWidth = width ?? cachedCanvasWidth ?? canvas.clientWidth;
     const cssHeight = height ?? cachedCanvasHeight ?? canvas.clientHeight;
@@ -416,7 +426,6 @@
       }
     });
     canvasResizeObserver.observe(canvas);
-    updateCanvasSize();
   }
 
   function scheduleRender() {
@@ -448,14 +457,14 @@
       return;
     }
 
-    // Throttle to ~30fps to reduce GPU usage
+    // Production stays at 30fps; the benchmark can follow the display cadence.
     const now = performance.now();
     const elapsed = now - lastFrameTime;
-    if (elapsed < TARGET_FRAME_TIME) {
+    if (elapsed < targetFrameTime) {
       scheduleRender();
       return;
     }
-    lastFrameTime = now - (elapsed % TARGET_FRAME_TIME);
+    lastFrameTime = targetFrameTime ? now - (elapsed % targetFrameTime) : now;
 
     const width = canvas.width;
     const height = canvas.height;
@@ -480,9 +489,9 @@
       return;
     }
 
-    updateBlobCenters(elapsedSeconds * 0.6);
-    gl.uniform2fv(uniformLocations.centers, blobCenters);
+    gl.uniform1f(uniformLocations.seed, seed);
     gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+    benchmark?.onDraw({ time: now, submissionMs: performance.now() - now, width, height });
 
     scheduleRender();
   }
@@ -492,6 +501,11 @@
     cancelColorRead?.();
     cancelColorRead = null;
     colorReadPending = false;
+    cancelSizeRead?.();
+    cancelSizeWrite?.();
+    cancelSizeRead = null;
+    cancelSizeWrite = null;
+    sizeReadPending = false;
     canvasResizeObserver?.disconnect();
     canvasResizeObserver = null;
     if (gl) {
@@ -534,8 +548,8 @@
   }
 
   // Handle reduced motion preference changes
-  function handleMotionPreference(e: MediaQueryListEvent) {
-    prefersReducedMotion = e.matches;
+  function handleMotionPreference(reduced: boolean) {
+    prefersReducedMotion = reduced;
     if (prefersReducedMotion) cancelScheduledRender();
     else scheduleRender();
   }
@@ -550,8 +564,11 @@
     const dpr = window.devicePixelRatio || 1;
     const dprQuery = window.matchMedia(`(resolution: ${dpr}dppx)`);
     const handler = () => {
-      cachedDpr = Math.min(window.devicePixelRatio || 1, MAX_RENDER_DPR);
-      updateCanvasSize();
+      cachedDpr = Math.min(
+        window.devicePixelRatio || 1,
+        benchmark?.pixelRatio === 0.5 ? 0.5 : Infinity,
+      );
+      scheduleCanvasSizeUpdate();
       // Remove old listener and set up a new one with the updated DPR
       dprQuery.removeEventListener('change', handler);
       setupDprListener();
@@ -564,8 +581,11 @@
     // Check initial states
     isPageVisible = !document.hidden;
     isWindowFocused = !document.documentElement.hasAttribute('data-window-blurred');
-    prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-    cachedDpr = Math.min(window.devicePixelRatio || 1, MAX_RENDER_DPR);
+    prefersReducedMotion = isReducedMotionPreferred();
+    cachedDpr = Math.min(
+      window.devicePixelRatio || 1,
+      benchmark?.pixelRatio === 0.5 ? 0.5 : Infinity,
+    );
 
     // Listen for visibility changes
     document.addEventListener('visibilitychange', handleVisibilityChange);
@@ -576,14 +596,13 @@
     });
 
     // Listen for motion preference changes
-    const motionQuery = window.matchMedia('(prefers-reduced-motion: reduce)');
-    motionQuery.addEventListener('change', handleMotionPreference);
+    const stopWatchingMotion = onReducedMotionChange(handleMotionPreference);
 
     // Listen for DPR changes (e.g., moving between retina/non-retina displays)
     setupDprListener();
     setupCanvasResizeObserver();
 
-    const handleSemanticColorChange = () => syncSemanticAuroraColor();
+    const handleSemanticColorChange = () => scheduleSemanticColorSync();
     const themeObserver = new MutationObserver(handleSemanticColorChange);
     themeObserver.observe(document.documentElement, {
       attributes: true,
@@ -596,7 +615,7 @@
     return () => {
       document.removeEventListener('visibilitychange', handleVisibilityChange);
       windowFocusObserver.disconnect();
-      motionQuery.removeEventListener('change', handleMotionPreference);
+      stopWatchingMotion();
       window.removeEventListener('theme-changed', handleSemanticColorChange);
       themeObserver.disconnect();
       dprCleanup?.();

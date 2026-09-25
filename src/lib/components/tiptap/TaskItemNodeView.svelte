@@ -18,7 +18,7 @@
     faPlay,
     faLinkSlash,
     faListCheck,
-    faHourglassHalf,
+    faHourglass,
     faTriangleExclamation,
   } from '@fortawesome/free-solid-svg-icons';
   import Button from '../ui/button/button.svelte';
@@ -35,6 +35,7 @@
     createPrerequisiteTask,
   } from '$features/tasks/tasks-write-service';
   import { delegateExistingTaskRequested } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
+  import { selectHidesAgentLifecycleActions } from '$store/renderer/slices/workspace/workspace-selectors';
   import { writable } from 'svelte/store';
   import type { NoteId, TaskStatus } from '$shared/types';
   import TaskStatusIcon from './TaskStatusIcon.svelte';
@@ -59,6 +60,9 @@
     wsIdStore.set(owningWorkspaceId ?? routeWorkspaceId ?? '');
   });
   let workspaceId = $derived(owningWorkspaceId ?? routeWorkspaceId ?? '');
+  // Delegation creates an agent (`agent.delegate`), refused (-32003) for a
+  // collaborator connection: the assign affordance is withheld.
+  const hidesAgentLifecycleActions$ = selectHidesAgentLifecycleActions(wsIdStore);
 
   // Core derived state
   let checked = $derived(node.attrs.checked ?? false);
@@ -290,7 +294,7 @@
   }
 
   function emitLinkedTaskDelegateEvent() {
-    if (!linkedTaskNoteId) return;
+    if (!linkedTaskNoteId || $hidesAgentLifecycleActions$) return;
     // Prefer the linked note's own workspaceId (it may differ from the route
     // workspace if the task lives in a different workspace), then use the
     // immutable route context.
@@ -395,7 +399,7 @@
       <div
         data-task-item-row
         data-density="compact"
-        class="my-0.5 flex h-8 w-full min-w-0 items-center gap-1.5 overflow-hidden bg-transparent text-left transition-colors"
+        class="my-0.5 flex min-h-8 w-full min-w-0 items-center gap-1.5 overflow-hidden bg-transparent text-left transition-colors"
         role="group"
         contenteditable="false"
       >
@@ -416,7 +420,7 @@
         <span
           data-task-row-content
           data-task-row-title
-          class="min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap font-medium [&_p]:m-0"
+          class="min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap font-normal text-[length:inherit] [&_p]:m-0"
         >
           <NodeViewContent />
         </span>
@@ -430,7 +434,7 @@
       <div
         data-task-item-row
         data-density="compact"
-        class="group/task my-0.5 flex h-8 w-full min-w-0 items-center gap-1.5 overflow-hidden bg-transparent text-left transition-colors"
+        class="group/task my-0.5 flex min-h-8 w-full min-w-0 items-center gap-1.5 overflow-hidden bg-transparent text-left transition-colors"
         contenteditable="false"
       >
         <span
@@ -447,12 +451,13 @@
             />
           {/key}
         </span>
-        <button
+        <Button
           type="button"
+          variant="plain"
           data-testid="linked-task-title"
           data-task-row-content
           data-task-row-title
-          class="min-w-0 flex-1 cursor-pointer overflow-hidden text-ellipsis whitespace-nowrap border-0 bg-transparent p-0 text-left font-medium outline-none focus-visible:ring-2 focus-visible:ring-primary/40 {linkedTaskNotFound
+          class="min-w-0 flex-1 cursor-pointer h-auto! overflow-hidden text-ellipsis whitespace-nowrap border-0 bg-transparent p-0 text-left font-normal text-[length:inherit] leading-[inherit] outline-none focus-visible:ring-2 focus-visible:ring-primary-ink/40 {linkedTaskNotFound
             ? 'text-muted-foreground italic'
             : ''}"
           onclick={(e) => handleOpenLinkedNote(e)}
@@ -464,7 +469,7 @@
           }}
         >
           {linkedTaskTitle}
-        </button>
+        </Button>
         <div data-task-row-trailing class="ml-auto flex shrink-0 items-center gap-1.5">
           {#if unmetDependsOn.length > 0 && !effectiveChecked}
             <Tooltip
@@ -490,7 +495,7 @@
                 class="inline-flex items-center gap-1 rounded-full bg-muted px-1.5 py-0.5 text-xs font-medium text-subtle"
                 contenteditable="false"
               >
-                <Fa icon={faHourglassHalf} size="xs" />
+                <Fa icon={faHourglass} size="xs" />
                 {m.tiptap_taskItem_waitsOn_label({ count: unmetDependsOn.length })}
               </span>
             </Tooltip>
@@ -516,7 +521,7 @@
               {/snippet}
               <span
                 data-task-row-conflict
-                class="inline-flex items-center gap-1 rounded-full bg-warning/10 px-1.5 py-0.5 text-xs font-medium text-warning"
+                class="inline-flex items-center gap-1 rounded-full bg-warning/10 px-1.5 py-0.5 text-xs font-medium text-warning-ink"
                 contenteditable="false"
               >
                 <Fa icon={faTriangleExclamation} size="xs" />
@@ -535,10 +540,10 @@
                 convertToInlineTask();
               }}
             >
-              <Fa icon={faLinkSlash} class="text-warning" />
+              <Fa icon={faLinkSlash} class="text-warning-ink" />
             </Button>
           {/if}
-          {#if !effectiveAgentId && !effectiveChecked}
+          {#if !effectiveAgentId && !effectiveChecked && !$hidesAgentLifecycleActions$}
             <Button
               variant="ghost-light"
               size="icon-xs"
@@ -564,7 +569,7 @@
     <!-- Simple checkbox layout -->
     <div class="min-w-0 w-full flex items-start gap-1.5 py-1 pl-1">
       <span class="shrink-0 flex mt-1" contenteditable="false">
-        <!-- <input type="checkbox" {checked} onclick={handleNormalCheckboxClick} /> -->
+        <!-- The Checkbox primitive replaces the former native checkbox here. -->
         <Checkbox {checked} onCheckedChange={handleNormalCheckboxClick} />
       </span>
       <div class="flex-1 min-w-0">

@@ -1,10 +1,8 @@
 ---
 name: core/debugging
 description: >-
-  Inspect runtime state via window.svelteRedux.reduxContext after
-  Store.initDevTool() exposes an initialized Store instance. Multiple exposed
-  stores produce a reduxContext array and a console.error. Use reducer tests for
-  reference-equality diagnostics. Public Store API: @augmentcode/themis/svelte-store; devtools registration is package-internal implementation context.
+  Use when inspecting Store state through window.svelteRedux.reduxContext or
+  Store.initDevTool(), or diagnosing reducer reference equality.
 type: sub-skill
 library: themis
 requires:

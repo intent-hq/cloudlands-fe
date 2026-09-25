@@ -855,6 +855,21 @@ export const reconcileStaleAgentTabs = createAction<
 // --- Clear workspace ---
 export const clearPanelLayout = createAction<[wsId: string]>('panelLayout/clearPanelLayout');
 
+/**
+ * Destroy every tab of a type in a workspace — visible, hidden, recently
+ * closed, and in layout history — so nothing can restore or reopen one
+ * (multiplayer w3: a collaborator's restored layout must hold no terminal or
+ * browser tab, and `reopenClosedTab` / undo must not bring one back).
+ */
+export const destroyTabsByType = createAction(
+  'panelLayout/destroyTabsByType',
+  (wsId: string, tabType: PanelTabType, timestamp?: number) => ({
+    wsId,
+    tabType,
+    timestamp: timestamp ?? Date.now(),
+  }),
+);
+
 export const closeTabsByType = createAction(
   'panelLayout/closeTabsByType',
   (
@@ -2672,6 +2687,36 @@ panelLayoutReducer.with(closeTabsByType, (state, { payload }) => {
   }
   return result;
 });
+// --- Destroy Tabs By Type (multiplayer w3) ---
+panelLayoutReducer.with(destroyTabsByType, (state, { payload }) => {
+  const { wsId, tabType, timestamp } = payload;
+  const isType = (tab: PanelTab) => tab.type === tabType;
+  const before = getWorkspaceState(state, wsId);
+  const tabsToDestroy: { tabId: string; panelId: string }[] = [];
+  for (const [pId, panel] of Object.entries(before.panels)) {
+    for (const tab of panel.tabs) {
+      if (isType(tab)) tabsToDestroy.push({ tabId: tab.id, panelId: pId });
+    }
+  }
+  let result = state;
+  for (const { tabId, panelId } of tabsToDestroy) {
+    result = selfDispatch(result, closeTab(wsId, tabId, panelId, timestamp, true));
+  }
+  const ws = getWorkspaceState(result, wsId);
+  let hiddenTabs = ws.hiddenTabs;
+  for (const tab of getItems(ws.hiddenTabs)) {
+    if (isType(tab)) hiddenTabs = removeItem(hiddenTabs, tab.id);
+  }
+  const recentlyClosed = ws.recentlyClosed.filter((entry) => !isType(entry.tab));
+  const untouched =
+    hiddenTabs === ws.hiddenTabs && recentlyClosed.length === ws.recentlyClosed.length;
+  const next = purgeTabsFromLayoutHistory(
+    untouched ? ws : { ...ws, hiddenTabs, recentlyClosed },
+    isType,
+  );
+  if (next === ws) return result;
+  return setWorkspaceState(result, wsId, next);
+});
 // --- Close Tabs By Agent ID ---
 panelLayoutReducer.with(closeTabsByAgentId, (state, { payload }) => {
   const { wsId, agentId, timestamp } = payload;
@@ -3396,10 +3441,17 @@ panelLayoutReducer.with(applyBrowserTabRegistryRow, (state, { payload: [wsId, ta
       emulatedSize: _size,
       ...rest
     } = tab;
-    // A viewport derived from a now-cleared emulation is stale too; a local
-    // (geometry) viewport of a never-emulated tab is kept.
+    // Viewport mode is local geometry (the registry carries only dimensions):
+    // preserve Fit only for an echo of its retained offscreen size, or a fixed
+    // mode whose dimensions still match. A changed canonical size becomes Custom.
+    // Legacy tabs without a viewport also default to Fit.
+    const previousSize =
+      !tab.viewport || tab.viewport.mode === 'fit' ? tab.emulatedSize : tab.viewport;
     const viewport = row.emulatedSize
-      ? { mode: 'custom' as const, ...row.emulatedSize }
+      ? previousSize?.width === row.emulatedSize.width &&
+        previousSize.height === row.emulatedSize.height
+        ? tab.viewport
+        : { mode: 'custom' as const, ...row.emulatedSize }
       : tab.emulatedSize
         ? { mode: 'fit' as const }
         : tab.viewport;

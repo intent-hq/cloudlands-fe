@@ -33,6 +33,7 @@ import { IPC_CHANNELS } from '$shared/ipc-registry';
 import { addMockIpcListener, mockInvoke, resetMockIpcRouter } from '$shared/ipc-mock-router';
 import {
   registerAppVersionBridge,
+  registerWindowCloseBridge,
   registerWindowCycleFocusBridge,
   registerWindowFullScreenBridge,
   registerWindowFullScreenEventRelay,
@@ -194,6 +195,47 @@ describe('window cycle-focus bridge (cycle-open-windows action)', () => {
     registerWindowCycleFocusBridge();
 
     await expect(mockInvoke(IPC_CHANNELS.WINDOW.CYCLE_FOCUS)).resolves.toBeUndefined();
+  });
+});
+
+describe('window close bridge (Cmd+W cascade window step, guest-offline "Close window")', () => {
+  beforeEach(() => {
+    resetMockIpcRouter();
+  });
+
+  afterEach(() => {
+    (window as any).electronAPI = originalElectronAPI;
+    resetMockIpcRouter();
+  });
+
+  it('forwards window:close and its payload to window.electronAPI.invoke when bridged', async () => {
+    const invokeSpy = vi.fn(async () => ({ success: true }));
+    (window as any).electronAPI = { ...(originalElectronAPI || {}), invoke: invokeSpy };
+    registerWindowCloseBridge();
+
+    const result = await mockInvoke<{ success: boolean }>(IPC_CHANNELS.WINDOW.CLOSE, {});
+
+    expect(result).toEqual({ success: true });
+    expect(invokeSpy).toHaveBeenCalledOnce();
+    expect(invokeSpy).toHaveBeenCalledWith(IPC_CHANNELS.WINDOW.CLOSE, {});
+  });
+
+  it('forwards window:close exactly once when the payload is omitted', async () => {
+    const invokeSpy = vi.fn(async () => ({ success: true }));
+    (window as any).electronAPI = { ...(originalElectronAPI || {}), invoke: invokeSpy };
+    registerWindowCloseBridge();
+
+    const result = await mockInvoke<{ success: boolean }>(IPC_CHANNELS.WINDOW.CLOSE);
+
+    expect(result).toEqual({ success: true });
+    expect(invokeSpy).toHaveBeenCalledExactlyOnceWith(IPC_CHANNELS.WINDOW.CLOSE, undefined);
+  });
+
+  it('resolves undefined when no preload bridge exists (browser dev build)', async () => {
+    (window as any).electronAPI = undefined;
+    registerWindowCloseBridge();
+
+    await expect(mockInvoke(IPC_CHANNELS.WINDOW.CLOSE, {})).resolves.toBeUndefined();
   });
 });
 

@@ -3,6 +3,7 @@
   import { isCmdClickModifier } from '$shared/utils/link-helpers';
   import type { AgentSession } from '$shared/types';
   import './multi-select-sidebar-transitions.css';
+  import { prefersReducedMotion } from '$lib/utils/reduced-motion';
   import {
     selectStagedWorkingChanges,
     selectUnstagedWorkingChanges,
@@ -32,15 +33,29 @@
     refreshUnreadNotes,
   } from '$store/renderer/slices/note-read-tracking/note-read-tracking-slice';
   import {
+    fetchBackgroundAgentsRequested,
+    fetchDelegatedAgentsRequested,
+    fetchOrphanedDelegatedAgentsRequested,
     fetchRetiredAgentsRequested,
     restoreRetiredAgentRequested,
   } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
   import {
     selectAllWorkspaceAgents,
+    selectBackgroundAgentsLoaded,
+    selectDelegatedAgentsLoaded,
+    selectDelegatedCounts,
     selectIsLoadingAgents,
+    selectIsLoadingBackgroundAgents,
+    selectIsLoadingDelegatedAgents,
+    selectIsLoadingOrphanedDelegatedAgents,
     selectIsLoadingRetiredAgents,
+    selectLoadedDelegatedParentIds,
+    selectLoadingDelegatedParentIds,
+    selectOrphanedDelegatedAgentIds,
+    selectOrphanedDelegatedAgentsLoaded,
     selectRetiredAgentsLoaded,
     selectRetiredCount,
+    selectScopeCounts,
     selectWorkspaceHasUnreadForegroundAgents,
   } from '$store/renderer/slices/workspace-agents/workspace-agents-selectors';
   import { selectAgentIsRunning } from '$store/renderer/slices/agent-session/agent-session-selectors';
@@ -63,12 +78,11 @@
   import { buildWorkspacePRPresentationModel } from './sidebar/workspace-pr-presentation';
   import { constructPrUrl, legacyWorkspacePullRequest } from './sidebar/sidebar-changes-utils';
   import { selectPrMonitors } from '$store/renderer/slices/pr-monitor/pr-monitor-selectors';
+  import { spring, type ImmediateMotionConfig as TransitionConfig } from '$lib/motion';
 
-  import { onDestroy, onMount, tick } from 'svelte';
-  import { cubicIn, cubicOut } from 'svelte/easing';
+  import { onDestroy, onMount, tick, type Snippet } from 'svelte';
   import { writable } from 'svelte/store';
   import Fa from 'svelte-fa';
-  import type { TransitionConfig } from 'svelte/transition';
   import CreateAgentSection from './CreateAgentSection.svelte';
   import ExpandableFileSearch from './sidebar/ExpandableFileSearch.svelte';
   import { FilesPanel, SidebarChangesPanel, isChildNote, isSpecNote } from './sidebar';
@@ -87,6 +101,7 @@
   import SidebarBrowserList from './SidebarBrowserList.svelte';
   import { selectEffectiveFileExplorerWorkspacePath } from '$store/renderer/slices/file-explorer/file-explorer-selectors';
   import {
+    selectIsWorkspaceCollaborator,
     selectWorkspaceActivePullRequest,
     selectWorkspaceById,
   } from '$store/renderer/slices/workspace/workspace-selectors';
@@ -103,7 +118,7 @@
     selectHudAgentHasPendingQuestion,
     selectHudQuestionsByAgentId,
   } from '$store/renderer/slices/hud/hud-selectors';
-  import { deriveWizardPendingQuestions } from '$lib/components/chat/questions/wizard-gate';
+  import { deriveAgentHasPendingQuestion } from '$lib/components/chat/questions/wizard-gate';
   import {
     deriveAgentLauncherItems,
     deriveNoteLauncherItems,
@@ -115,6 +130,7 @@
   import {
     LAUNCHER_GRID_POSITIONS,
     normalizeSelectedTabs,
+    OWNER_ONLY_TAB_IDS,
     TAB_DEFINITIONS,
     type LauncherTabId,
     type TabId,
@@ -150,6 +166,8 @@
     onAcceptChanges,
     class: className,
   }: Props = $props();
+
+  let changesRefreshAction = $state<Snippet>();
 
   // Reactive writable store that mirrors workspaceId so Redux selectors
   // re-evaluate whenever the prop changes (called at component init time).
@@ -223,6 +241,17 @@
   const retiredCount$ = selectRetiredCount(workspaceIdStore);
   const retiredAgentsLoaded$ = selectRetiredAgentsLoaded(workspaceIdStore);
   const loadingRetired$ = selectIsLoadingRetiredAgents(workspaceIdStore);
+  const scopeCounts$ = selectScopeCounts(workspaceIdStore);
+  const delegatedAgentsLoaded$ = selectDelegatedAgentsLoaded(workspaceIdStore);
+  const loadingDelegated$ = selectIsLoadingDelegatedAgents(workspaceIdStore);
+  const delegatedCounts$ = selectDelegatedCounts(workspaceIdStore);
+  const loadedDelegatedParentIds$ = selectLoadedDelegatedParentIds(workspaceIdStore);
+  const loadingDelegatedParentIds$ = selectLoadingDelegatedParentIds(workspaceIdStore);
+  const orphanedDelegatedAgentsLoaded$ = selectOrphanedDelegatedAgentsLoaded(workspaceIdStore);
+  const orphanedDelegatedAgentIds$ = selectOrphanedDelegatedAgentIds(workspaceIdStore);
+  const loadingOrphanedDelegated$ = selectIsLoadingOrphanedDelegatedAgents(workspaceIdStore);
+  const backgroundAgentsLoaded$ = selectBackgroundAgentsLoaded(workspaceIdStore);
+  const loadingBackground$ = selectIsLoadingBackgroundAgents(workspaceIdStore);
   const hasUnreadForegroundAgents$ = selectWorkspaceHasUnreadForegroundAgents(workspaceIdStore);
   const hudQuestionsByAgentId$ = selectHudQuestionsByAgentId();
 
@@ -232,7 +261,7 @@
     void $hudQuestionsByAgentId$;
     const hasQuestion =
       selectHudAgentHasPendingQuestion.select(appStore.state, agent.id) ||
-      deriveWizardPendingQuestions(appStore.state, agent.id, agent.messages) !== null;
+      deriveAgentHasPendingQuestion(appStore.state, agent.id, agent.messages);
     return getAvatarStateForSession(agent, { hasQuestion });
   }
 
@@ -315,23 +344,31 @@
       ? `repeat(${itemCount - 1}, ${LAUNCHER_STEP_SIZE}px) ${LAUNCHER_VISIBLE_SIZE}px`
       : `${LAUNCHER_VISIBLE_SIZE}px`;
   }
+  // Collaborators (multiplayer w3) are refused on terminal + browser methods, so
+  // the shell dock, browser launcher, their strip tabs, and any persisted
+  // selection of those tabs are withheld up front. The selector fails closed: a
+  // guest window (multiplayer w4) reads as collaborator whatever `myRole` the
+  // row carries, and so does every window until its identity has settled.
+  const isCollaborator$ = selectIsWorkspaceCollaborator(workspaceIdStore);
+  const isCollaborator = $derived($isCollaborator$);
   const selectedTabIds = selectMultiSelectSidebarSelectedTabIds(workspaceIdStore);
-  const selectedTabs = $derived(normalizeSelectedTabs($selectedTabIds));
+  const selectedTabs = $derived(normalizeSelectedTabs($selectedTabIds, isCollaborator));
   let agentSearchQuery = $state('');
   let contextSearchQuery = $state('');
   const expandedStripTabs = $derived(
-    TAB_DEFINITIONS.filter((definition) => definition.id !== 'overview').map(
-      ({ id, label, icon }) => ({
-        id,
-        label,
-        icon,
-        unread: id === 'agents' && $hasUnreadForegroundAgents$,
-        unreadLabel:
-          id === 'agents'
-            ? m.workspace_multiSelectSidebar_agentsTabUnread_ariaLabel({ label })
-            : undefined,
-      }),
-    ),
+    TAB_DEFINITIONS.filter(
+      (definition) =>
+        definition.id !== 'overview' && !(isCollaborator && OWNER_ONLY_TAB_IDS.has(definition.id)),
+    ).map(({ id, label, icon }) => ({
+      id,
+      label,
+      icon,
+      unread: id === 'agents' && $hasUnreadForegroundAgents$,
+      unreadLabel:
+        id === 'agents'
+          ? m.workspace_multiSelectSidebar_agentsTabUnread_ariaLabel({ label })
+          : undefined,
+    })),
   );
   let sidebarTabSwitchDirection = $state<'left' | 'right' | 'none'>('none');
   let openLauncherHoverKey = $state<string | null>(null);
@@ -391,14 +428,14 @@
     },
   ): TransitionConfig {
     if (cardWorkspaceId !== workspaceId) return { duration: 0 };
-    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return { duration: 0 };
+    if (prefersReducedMotion()) return { duration: 0 };
 
     if (sidebarTabSwitchDirection !== 'none') {
       const incomingOffset = sidebarTabSwitchDirection === 'right' ? 24 : -24;
       const offset = direction === 'expand' ? incomingOffset : -incomingOffset;
       return {
-        duration: 180,
-        easing: cubicOut,
+        duration: spring.moderate.settleMs,
+        easing: spring.moderate.exit.easing,
         css: (t, u) =>
           `opacity: ${t}; transform: translateX(${u * offset}px); will-change: opacity, transform;`,
       };
@@ -427,9 +464,10 @@
     const content = node.querySelector<HTMLElement>('[data-sidebar-expanded-content]');
 
     return {
-      duration: 300,
+      duration: spring.slow.settleMs,
       css: (t) => {
-        const shellProgress = direction === 'expand' ? cubicOut(t) : cubicIn(t);
+        const shellProgress =
+          direction === 'expand' ? spring.slow.exit.easing(t) : 1 - spring.slow.exit.easing(1 - t);
         const shellInverse = 1 - shellProgress;
         return `position: fixed; left: ${fixedLeft}px; top: ${fixedTop}px; width: ${cardRect.width}px; height: ${cardRect.height}px; transform-origin: top left; transform: translate(${shellInverse * translateX}px, ${shellInverse * translateY}px) scale(${scaleX + shellProgress * (1 - scaleX)}, ${scaleY + shellProgress * (1 - scaleY)}); background-color: hsl(var(--sidebar)); will-change: transform;`;
       },
@@ -437,13 +475,13 @@
     };
   }
 
-  function launcherGridReveal(_node: Element): TransitionConfig {
-    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return { duration: 0 };
+  function launcherGridReveal(_node: Element, index = 0): TransitionConfig {
+    if (prefersReducedMotion()) return { duration: 0 };
 
     return {
-      delay: 210,
-      duration: 90,
-      css: (t) => `opacity: ${t};`,
+      delay: spring.moderate.settleMs + (index * spring.slow.settleMs) / 10,
+      duration: spring.fast.settleMs,
+      css: (t) => `opacity: ${t}; transform: translateY(${(1 - t) * 4}px);`,
     };
   }
 
@@ -748,8 +786,8 @@
         );
         if (workspacePath) {
           navigator.clipboard.writeText(workspacePath);
-          import('$lib/components/ui/toast').then(({ toast }) => {
-            toast.success(m.ui_openCombo_pathCopied_label());
+          import('$lib/components/patterns/notify').then(({ notify }) => {
+            notify.success(m.ui_openCombo_pathCopied_label());
           });
         }
       }
@@ -843,7 +881,17 @@
 
   $effect(() => {
     if (isLauncherOverview) return;
-    return pushEscapeLayer(() => dismissExpandedCard(true));
+    return pushEscapeLayer(() => {
+      // Let the Changes editor/pickers cancel before dismissing their containing card.
+      if (
+        sidebarElement?.querySelector(
+          '[data-branch-summary] input:not([readonly]), [data-branch-summary] [role="combobox"][aria-expanded="true"], [data-testid="git-root-selector"] [aria-expanded="true"]',
+        )
+      ) {
+        return false;
+      }
+      dismissExpandedCard(true);
+    });
   });
 
   $effect(() => {
@@ -1000,8 +1048,15 @@
                               label={m.menu_new_terminal()}
                               onclick={createTerminal}
                             />
-                          {:else if tabId === 'changes' && workspacePrRows.length > 0}
-                            <SidebarPrDropdown rows={workspacePrRows} {workspaceId} side="bottom" />
+                          {:else if tabId === 'changes'}
+                            {@render changesRefreshAction?.()}
+                            {#if workspacePrRows.length > 0}
+                              <SidebarPrDropdown
+                                rows={workspacePrRows}
+                                {workspaceId}
+                                side="bottom"
+                              />
+                            {/if}
                           {/if}
                           <SidebarHeaderAction
                             icon="close"
@@ -1010,9 +1065,11 @@
                           />
                         </span>
                       </h6>
-                      {#if tabId !== 'agents' && tabId !== 'shell'}
+                      {#if tabId !== 'agents'}
                         <p
-                          class="text-ui text-subtle mt-0.5 leading-snug transition-all duration-200"
+                          class="{tabId === 'files'
+                            ? 'type-body'
+                            : 'text-ui'} text-subtle mt-0.5 leading-snug transition-all duration-spring-moderate ease-spring-moderate motion-reduce:transition-none"
                         >
                           {#if tabId === 'context' && $workspace?.isRemote}
                             {tab.description}
@@ -1025,45 +1082,37 @@
                           {:else if tabId === 'context' && $workspace?.path}
                             {tab.description}
                             {m.workspace_multiSelectSidebar_contextAndMetadataLiveIn_before()}
-                            <span class="inline-flex items-baseline gap-1">
-                              <OpenComboButton
-                                filePath={$workspace.path + '/.workspace'}
-                                {workspaceId}
-                                isDirectory={true}
-                                variant="sidebar"
-                                compact
-                                class="inline-flex"
+                            <OpenComboButton
+                              filePath={$workspace.path + '/.workspace'}
+                              {workspaceId}
+                              isDirectory={true}
+                              variant="sidebar"
+                              inline
+                            >
+                              <span
+                                ><!-- i18n-ignore (file path) -->/{$workspace.path
+                                  .split(/[/\\]/)
+                                  .slice(-1)[0]}/.workspace<!-- i18n-ignore (file path) --></span
                               >
-                                <span
-                                  class="text-inherit underline underline-offset-2 decoration-muted-foreground/20"
-                                  ><!-- i18n-ignore (file path) -->/{$workspace.path
-                                    .split(/[/\\]/)
-                                    .slice(-1)[0]}/.workspace<!-- i18n-ignore (file path) --></span
-                                >
-                              </OpenComboButton></span
-                            >.
+                            </OpenComboButton>.
                           {:else if tabId === 'files' && $fileExplorerWorkspacePath}
                             {$workspace?.skipWorktree
                               ? m.workspace_multiSelectSidebar_workingDirectlyIn_before()
                               : m.workspace_multiSelectSidebar_repoCopyLivesIn_before()}
-                            <span class="inline-flex items-baseline gap-1">
-                              <OpenComboButton
-                                filePath={$fileExplorerWorkspacePath}
-                                {workspaceId}
-                                isDirectory={true}
-                                variant="sidebar"
-                                compact
-                                class="inline-flex"
-                              >
-                                <span
-                                  class="text-inherit underline underline-offset-2 decoration-muted-foreground/20"
-                                  >/{$fileExplorerWorkspacePath
-                                    .split(/[/\\]/)
-                                    .slice(-2)
-                                    .join('/')}.</span
-                                >
-                              </OpenComboButton></span
+                            <OpenComboButton
+                              filePath={$fileExplorerWorkspacePath}
+                              {workspaceId}
+                              isDirectory={true}
+                              variant="sidebar"
+                              inline
                             >
+                              <span
+                                >/{$fileExplorerWorkspacePath
+                                  .split(/[/\\]/)
+                                  .slice(-2)
+                                  .join('/')}.</span
+                              >
+                            </OpenComboButton>
                           {:else}
                             {tab.description}
                           {/if}
@@ -1083,7 +1132,10 @@
                       use:scrollFade
                     >
                       {#if tabId === 'agents'}
-                        <div class="px-4 transition-all duration-200" data-testid="agent-panel">
+                        <div
+                          class="px-4 transition-all duration-spring-moderate ease-spring-moderate motion-reduce:transition-none"
+                          data-testid="agent-panel"
+                        >
                           <WorkspaceAgentsList
                             agents={$allWorkspaceAgents}
                             loading={$agentsLoading}
@@ -1096,6 +1148,28 @@
                             onLoadRetired={() => {
                               appStore.dispatch(fetchRetiredAgentsRequested(workspaceId));
                             }}
+                            scopeCounts={$scopeCounts$}
+                            delegatedAgentsLoaded={$delegatedAgentsLoaded$}
+                            loadingDelegated={$loadingDelegated$}
+                            onLoadDelegated={(parentAgentId) => {
+                              appStore.dispatch(
+                                fetchDelegatedAgentsRequested(workspaceId, parentAgentId),
+                              );
+                            }}
+                            delegatedCounts={$delegatedCounts$}
+                            loadedDelegatedParentIds={$loadedDelegatedParentIds$}
+                            loadingDelegatedParentIds={$loadingDelegatedParentIds$}
+                            orphanedDelegatedAgentsLoaded={$orphanedDelegatedAgentsLoaded$}
+                            orphanedDelegatedAgentIds={$orphanedDelegatedAgentIds$}
+                            loadingOrphanedDelegated={$loadingOrphanedDelegated$}
+                            onLoadOrphanedDelegated={() => {
+                              appStore.dispatch(fetchOrphanedDelegatedAgentsRequested(workspaceId));
+                            }}
+                            backgroundAgentsLoaded={$backgroundAgentsLoaded$}
+                            loadingBackground={$loadingBackground$}
+                            onLoadBackground={() => {
+                              appStore.dispatch(fetchBackgroundAgentsRequested(workspaceId));
+                            }}
                             onSelect={({ agentId, event }) =>
                               handleOpenAgentInPanel(agentId, event)}
                             onRestoreRetired={({ agentId }) => {
@@ -1104,7 +1178,9 @@
                           />
                         </div>
                       {:else if tabId === 'context'}
-                        <div class="px-4 transition-all duration-200">
+                        <div
+                          class="px-4 transition-all duration-spring-moderate ease-spring-moderate motion-reduce:transition-none"
+                        >
                           <ContextPanel
                             notes={$notes}
                             {workspaceId}
@@ -1121,12 +1197,13 @@
                         </div>
                       {:else if tabId === 'changes'}
                         <div
-                          class="flex h-full flex-1 flex-col px-4 transition-all duration-200"
+                          class="flex h-full flex-1 flex-col px-4 transition-all duration-spring-moderate ease-spring-moderate motion-reduce:transition-none"
                           data-sidebar-changes-panel
                         >
                           <div class="w-full flex-1">
                             <SidebarChangesPanel
                               {workspaceId}
+                              onRefreshActionChange={(action) => (changesRefreshAction = action)}
                               activeFilePath={effectiveActiveFilePath}
                               activeFileStaged={effectiveActiveFileStaged}
                               isAllChangesViewActive={effectiveIsAllChangesViewActive}
@@ -1152,7 +1229,9 @@
                           </div>
                         </div>
                       {:else if tabId === 'files'}
-                        <div class="flex h-full min-h-0 flex-col px-4 transition-all duration-200">
+                        <div
+                          class="flex h-full min-h-0 flex-col px-4 transition-all duration-spring-moderate ease-spring-moderate motion-reduce:transition-none"
+                        >
                           <!-- File filter controls -->
                           <div class="flex shrink-0 items-center gap-2 pb-2" data-file-tree-toolbar>
                             <ExpandableFileSearch
@@ -1172,7 +1251,7 @@
                               variant="ghost"
                               size="icon-xs"
                               class="shrink-0 {showOnlyChangedFiles
-                                ? 'text-primary'
+                                ? 'text-primary-ink'
                                 : 'text-subtle'}"
                               tooltip={showOnlyChangedFiles
                                 ? m.workspace_multiSelectSidebar_showAllFiles_tooltip()
@@ -1235,11 +1314,11 @@
           class="flex h-full min-h-0 items-end px-6 pt-4"
           data-testid="sidebar-launchers"
           data-launcher-layout="tiles"
-          in:launcherGridReveal|global
         >
           <div class="grid h-56 w-full auto-rows-fr grid-cols-2 gap-3" data-sidebar-launcher-grid>
-            {#each TAB_DEFINITIONS.filter((definition) => definition.id in LAUNCHER_GRID_POSITIONS) as tab (tab.id)}
+            {#each TAB_DEFINITIONS.filter((definition) => definition.id in LAUNCHER_GRID_POSITIONS) as tab, index (tab.id)}
               <div
+                in:launcherGridReveal|global={index}
                 class="group/launcher relative flex h-full min-h-0 w-full min-w-0 cursor-pointer overflow-hidden rounded-lg border border-border bg-sidebar p-2 text-foreground transition-colors"
                 data-sidebar-launcher={tab.id}
                 data-sidebar-card-surface
@@ -1347,14 +1426,6 @@
                           <span aria-hidden="true">+{launcherNoteOverflowCount}</span>
                         </Button>
                       {/if}
-                    {:else if tab.id === 'changes'}
-                      <span
-                        class="pointer-events-none flex size-9 shrink-0 items-center justify-center"
-                        data-sidebar-changes-resource
-                        data-launcher-leading-item="true"
-                      >
-                        <ResourceIconTile kind="changes" variant="emphasized" />
-                      </span>
                     {/if}
                   </div>
                   <div
@@ -1394,11 +1465,9 @@
                           isDirectory={true}
                           side="top"
                           variant="sidebar"
+                          iconOnly
                         >
-                          <span
-                            class="inline-flex size-7 cursor-pointer items-center justify-center rounded text-muted-foreground transition-colors hover:bg-background/70 hover:text-foreground focus-visible:text-foreground"
-                            data-files-open-in
-                          >
+                          <span class="inline-flex items-center justify-center" data-files-open-in>
                             <Fa icon={faArrowUpRightFromSquare} class="size-4!" />
                             <span class="sr-only">{m.ui_openCombo_openInApp_tooltip()}</span>
                           </span>
@@ -1420,7 +1489,7 @@
     bind:this={bottomLaunchersElement}
     role="presentation"
     class={cn(
-      'relative z-30 w-full shrink-0 pb-3 transition-all duration-500',
+      'relative z-30 w-full shrink-0 pb-3 transition-all duration-spring-slow ease-spring-slow motion-reduce:transition-none',
       isLauncherOverview ? 'grid gap-3 px-6 pt-3' : 'px-4 pt-2',
       isLauncherOverview ? (isNewWorkspaceSession ? 'grid-cols-1' : 'grid-cols-2') : '',
     )}
@@ -1429,19 +1498,25 @@
     onclick={isLauncherOverview ? undefined : handleExpandedFooterClick}
   >
     {#if isLauncherOverview}
-      {#if !isNewWorkspaceSession}
-        <SidebarBrowserLauncher
-          {workspaceId}
-          {panelLayoutId}
-          onExpand={() => handleTabClick('browser')}
-          expanded={selectedTabs.has('browser')}
-        />
+      {#if !isCollaborator}
+        {#if !isNewWorkspaceSession}
+          <div class="min-w-0" in:launcherGridReveal|global={4}>
+            <SidebarBrowserLauncher
+              {workspaceId}
+              {panelLayoutId}
+              onExpand={() => handleTabClick('browser')}
+              expanded={selectedTabs.has('browser')}
+            />
+          </div>
+        {/if}
+        <div class="min-w-0" in:launcherGridReveal|global={isNewWorkspaceSession ? 0 : 5}>
+          <WorkspaceTerminalDock
+            {workspaceId}
+            onExpand={() => handleTabClick('shell')}
+            expanded={selectedTabs.has('shell')}
+          />
+        </div>
       {/if}
-      <WorkspaceTerminalDock
-        {workspaceId}
-        onExpand={() => handleTabClick('shell')}
-        expanded={selectedTabs.has('shell')}
-      />
     {:else}
       <SidebarExpandedTabStrip
         tabs={expandedStripTabs}

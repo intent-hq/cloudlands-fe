@@ -35,15 +35,29 @@ export interface DaemonStatusCheckFailure {
  * system.status wire payload shape (intentd control.rs §5.7, §12.3).
  * New fields (maxAgents, version, uptimeSeconds) are optional for graceful
  * degradation when the daemon lacks them.
+ *
+ * A Collaborator caller receives the guest-safe projection (intentd #1934,
+ * `control::collaborator_status_json`): only `running`, `listenMode`, `port`,
+ * `version`, `buildCommit`, `protocolVersion`, `fingerprint`, `localIps`,
+ * `tcAddress`, `hostname`, `prettyHostname` and `host.{os, arch, locality,
+ * deviceKind, hardwareModel}`. `transports`, daemon-global counts (`clients`,
+ * `agents`, `maxAgents`), process/disk telemetry and `host.hasDisplay` are
+ * administrator-only and therefore optional here — consumers derive row
+ * visibility from field presence, never from a guest flag. The exact
+ * projected key set is pinned as a typed literal in
+ * `daemon-health.test-fixtures.ts` (covered by `pnpm run check`).
  */
 export interface SystemStatusWirePayload {
   running: boolean;
   listenMode: string;
-  transports: string[];
+  /** Administrator-only: omitted from the collaborator projection. */
+  transports?: string[];
   port?: number | null;
-  clients: number;
-  agents: number;
-  /** New in PR #244, may be missing on older daemons. */
+  /** Administrator-only: omitted from the collaborator projection. */
+  clients?: number;
+  /** Administrator-only: omitted from the collaborator projection. */
+  agents?: number;
+  /** New in PR #244, may be missing on older daemons. Administrator-only. */
   maxAgents?: number;
   /** New in PR #244, may be missing on older daemons. */
   version?: string;
@@ -59,6 +73,16 @@ export interface SystemStatusWirePayload {
   workspacesDiskAvailableBytes?: number;
   /** Total bytes on the volume holding the workspaces root. May be missing on older daemons. */
   workspacesDiskTotalBytes?: number;
+  /** Process count in the daemon's descendant tree; null until the first sample. May be missing on older daemons. */
+  childProcesses?: number | null;
+  /** Aggregate RSS of the daemon's descendant tree in bytes; null until the first sample. May be missing on older daemons. */
+  childMemoryBytes?: number | null;
+  /** High-water mark of the sampled descendant-tree memory since daemon start; null until the first sample. May be missing on older daemons. */
+  childMemoryPeakBytes?: number | null;
+  /** Memory attributable to spawned agent adapters (sum of the per-agent buckets) in bytes; null until the first sample. May be missing on older daemons. */
+  agentMemoryBytes?: number | null;
+  /** Spawned agents with a live root pid; null until the first sample. May be missing on older daemons. */
+  agentProcessCount?: number | null;
   fingerprint?: string | null;
   /** Local OS hostname (additive routing field, §5.7). May be missing on older daemons. */
   hostname?: string;
@@ -66,9 +90,49 @@ export interface SystemStatusWirePayload {
   host: {
     os: string;
     arch: string;
-    hasDisplay: boolean;
+    /** Administrator-only: omitted from the collaborator projection. */
+    hasDisplay?: boolean;
     locality: 'local' | 'remote';
   };
+}
+
+/** One OS process in an agent's sampled process tree (`agent.memoryUsage`). */
+interface AgentMemoryProcessWirePayload {
+  pid: number;
+  parentPid: number;
+  name: string;
+  /** Full command line as sampled. */
+  cmdline: string;
+  /** Resident memory (RSS) in bytes. */
+  memoryBytes: number;
+}
+
+/** One spawned agent adapter and its process tree (`agent.memoryUsage`). */
+interface AgentMemoryUsageAgentWirePayload {
+  agentId: string;
+  agentName: string;
+  workspaceId: string;
+  provider: string;
+  model?: string;
+  rootPid: number;
+  processCount: number;
+  /** Resident memory summed across the agent's process tree, in bytes. */
+  memoryBytes: number;
+  processes: AgentMemoryProcessWirePayload[];
+}
+
+/**
+ * agent.memoryUsage wire payload (daemon-wide, no params). `agents` is
+ * sorted by `memoryBytes` descending by the daemon; `sampledAt` and
+ * `totalBytes` are null (and `agents` empty) before the first sample or when
+ * no process-tree probe is installed.
+ */
+export interface AgentMemoryUsageWirePayload {
+  /** ISO 8601 time of the sample, or null before the first sample. */
+  sampledAt: string | null;
+  /** Sum of every agent's `memoryBytes`, or null before the first sample. */
+  totalBytes: number | null;
+  agents: AgentMemoryUsageAgentWirePayload[];
 }
 
 /**
@@ -145,8 +209,10 @@ export interface BackendTransportInfo {
  * Stats payload exposed by selectors for the health dropdown menu.
  */
 export interface DaemonHealthStats {
-  clients: number;
-  agents: number;
+  /** Absent when the daemon omits it (collaborator projection, intentd #1934). */
+  clients?: number;
+  /** Absent when the daemon omits it (collaborator projection, intentd #1934). */
+  agents?: number;
   maxAgents?: number;
   listenMode: string;
   port?: number | null;
@@ -166,6 +232,16 @@ export interface DaemonHealthStats {
   workspacesDiskTotalBytes?: number;
   /** Daemon-reported local OS hostname (§5.7). Optional for older daemons. */
   hostname?: string;
+  /** Process count in the daemon's descendant tree; null until the first sample. Optional for older daemons. */
+  childProcesses?: number | null;
+  /** Aggregate RSS of the daemon's descendant tree in bytes; null until the first sample. Optional for older daemons. */
+  childMemoryBytes?: number | null;
+  /** High-water mark of the sampled descendant-tree memory since daemon start; null until the first sample. Optional for older daemons. */
+  childMemoryPeakBytes?: number | null;
+  /** Memory attributable to spawned agent adapters in bytes; null until the first sample. Optional for older daemons. */
+  agentMemoryBytes?: number | null;
+  /** Spawned agents with a live root pid; null until the first sample. Optional for older daemons. */
+  agentProcessCount?: number | null;
   os: string;
   arch: string;
   /** FE connection mode (sidecar UDS vs external WebSocket). Optional for backward compatibility. */
@@ -196,6 +272,19 @@ export interface DaemonHealthState {
    * the first retry; the daemon-loss overlay renders it as retry progress.
    */
   reconnectAttempts: number;
+  /**
+   * True while the last connect attempt was refused with HTTP 503 by the
+   * host's guest connection cap (intent-hq/intentd#1917). Main keeps
+   * retrying on a slow bounded cadence; the daemon-loss overlay names the
+   * cap instead of the generic reconnect copy. Cleared on connect.
+   */
+  connectionLimited: boolean;
+  /**
+   * The wait main scheduled before its next attempt while `connectionLimited`
+   * (the daemon's `Retry-After`, clamped, or the default cadence); null
+   * otherwise. The overlay shows it where it names the cap.
+   */
+  connectionLimitRetryAfterMs: number | null;
   /**
    * Daemon-reported connection locality from the last system.status poll
    * (`host.locality`, PROTOCOL §5.7/§5.14), or null before the first poll.
@@ -277,6 +366,16 @@ export interface DaemonHealthState {
   unslothStopping: boolean;
   /** Error string when the last unsloth.stop request failed. */
   unslothStopError: string | null;
+  /**
+   * Last agent.memoryUsage result, or null before the first fetch / after the
+   * breakdown closes. Fetched only while the agent memory breakdown is open
+   * (refreshed on a fixed cadence there), never in the background.
+   */
+  agentMemoryUsage: AgentMemoryUsageWirePayload | null;
+  /** True while an agent.memoryUsage fetch is in flight. */
+  agentMemoryUsageFetching: boolean;
+  /** True when the last agent.memoryUsage fetch failed; cleared by the next success or close. */
+  agentMemoryUsageError: boolean;
 }
 
 /**

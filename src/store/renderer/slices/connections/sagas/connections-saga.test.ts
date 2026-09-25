@@ -1,14 +1,16 @@
 import { runSaga, stdChannel } from 'redux-saga';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-// The update saga lazy-imports svelte-sonner for its outcome toasts.
-const toast = vi.hoisted(() => ({
+// The update saga lazy-imports $lib/components/patterns/notify for its outcome toasts.
+const notify = vi.hoisted(() => ({
   success: vi.fn(),
   error: vi.fn(),
   warning: vi.fn(),
   dismiss: vi.fn(),
 }));
-vi.mock('svelte-sonner', () => ({ toast }));
+vi.mock('$lib/components/patterns/notify', () => ({ notify }));
+const navigation = vi.hoisted(() => ({ navigateToSettings: vi.fn().mockResolvedValue(undefined) }));
+vi.mock('$lib/utils/workspace-navigation', () => navigation);
 
 import {
   CONNECTION_CHANNELS,
@@ -34,7 +36,10 @@ import {
   testConnectionRequested,
   updateConnectionRequested,
   updateBackendRequested,
+  connectionWorkflowRequested,
+  connectionWorkflowCleared,
 } from '../connections-slice';
+import { initialState as initialGuestState } from '../../guest-sessions/guest-sessions-slice';
 import { selectIsConnecting, selectIsOpeningConnection } from '../connections-selectors';
 import type { StoreState } from '../../../types';
 import { connectionsSaga } from './connections-saga';
@@ -71,24 +76,25 @@ let offById: ReturnType<typeof vi.fn>;
 function start() {
   const channel = stdChannel();
   const dispatched: any[] = [];
-  let state = { connections: initialState };
+  let state = { connections: initialState, guestSessions: initialGuestState };
   const dispatch = (action: any) => {
     dispatched.push(action);
-    state = { connections: connectionsReducer(state.connections, action) };
+    state = { ...state, connections: connectionsReducer(state.connections, action) };
     channel.put(action);
     return action;
   };
   const task = runSaga({ channel, dispatch, getState: () => state }, connectionsSaga);
-  return { channel, dispatched, getState: () => state, task };
+  return { channel, dispatch, dispatched, getState: () => state, task };
 }
 
 describe('connectionsSaga', () => {
   beforeEach(() => {
+    navigation.navigateToSettings.mockClear();
     callbacks = {};
-    toast.success.mockClear();
-    toast.error.mockClear();
-    toast.warning.mockClear();
-    toast.dismiss.mockClear();
+    notify.success.mockClear();
+    notify.error.mockClear();
+    notify.warning.mockClear();
+    notify.dismiss.mockClear();
     invoke = vi.fn(async (channel: string, params?: unknown) => {
       if (channel === CONNECTION_CHANNELS.LIST)
         return {
@@ -122,6 +128,198 @@ describe('connectionsSaga', () => {
   });
 
   afterEach(() => vi.unstubAllGlobals());
+
+  it('uses latest reads per consumer and ignores late capture results after clear', async () => {
+    const releases: Array<(value: { fingerprint: string; tokenValid: boolean }) => void> = [];
+    const original = invoke.getMockImplementation()!;
+    invoke.mockImplementation((channel: string, params?: unknown) =>
+      channel === CONNECTION_CHANNELS.CAPTURE_FINGERPRINT
+        ? new Promise((resolve) => releases.push(resolve))
+        : original(channel, params),
+    );
+    const run = start();
+    const request = () =>
+      connectionWorkflowRequested('modal', {
+        kind: 'capture',
+        params: { host: 'example.invalid', port: 5181 },
+      });
+    run.dispatch(request());
+    run.dispatch(request());
+    expect(releases).toHaveLength(2);
+    releases[1]({ fingerprint: 'new', tokenValid: true });
+    await vi.waitFor(() =>
+      expect(getItems(run.getState().connections.workflows)[0].outcome).toEqual({
+        kind: 'captured',
+        fingerprint: 'new',
+      }),
+    );
+    releases[0]({ fingerprint: 'old', tokenValid: true });
+    await settle();
+    expect(getItems(run.getState().connections.workflows)[0].outcome).toEqual({
+      kind: 'captured',
+      fingerprint: 'new',
+    });
+    run.dispatch(request());
+    run.dispatch(connectionWorkflowCleared('modal'));
+    releases[2]({ fingerprint: 'closed', tokenValid: true });
+    await settle();
+    expect(getItems(run.getState().connections.workflows)).toEqual([]);
+    expect(invoke).toHaveBeenCalledWith(CONNECTION_CHANNELS.CAPTURE_FINGERPRINT, {
+      host: 'example.invalid',
+      port: 5181,
+    });
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('stops follow-up connect effects when its consumer closes during add', async () => {
+    let release!: (value: { connection: ConnectionRecord; switched: boolean }) => void;
+    const original = invoke.getMockImplementation()!;
+    invoke.mockImplementation((channel: string, params?: unknown) =>
+      channel === CONNECTION_CHANNELS.ADD
+        ? new Promise((resolve) => {
+            release = resolve;
+          })
+        : original(channel, params),
+    );
+    const run = start();
+    run.dispatch(
+      connectionWorkflowRequested('modal', {
+        kind: 'connect',
+        enableSync: true,
+        params: {
+          label: 'Host',
+          host: 'example.invalid',
+          port: 5181,
+          fingerprint: 'AA',
+          token: 'fixture-only',
+        },
+      }),
+    );
+    run.dispatch(connectionWorkflowCleared('modal'));
+    release({ connection: REMOTE, switched: false });
+    await settle();
+    expect(invoke).not.toHaveBeenCalledWith(CONNECTION_CHANNELS.OPEN, { id: REMOTE.id });
+    expect(invoke).not.toHaveBeenCalledWith(CONNECTION_CHANNELS.SYNC_SET_ENABLED, {
+      enabled: true,
+    });
+    expect(getItems(run.getState().connections.workflows)).toEqual([]);
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('preserves shared add and open busy state throughout the connect workflow', async () => {
+    let releaseAdd!: (value: { connection: ConnectionRecord; switched: boolean }) => void;
+    let releaseOpen!: (value: { status: 'opened'; id: string }) => void;
+    const original = invoke.getMockImplementation()!;
+    invoke.mockImplementation((channel: string, params?: unknown) => {
+      if (channel === CONNECTION_CHANNELS.ADD)
+        return new Promise((resolve) => {
+          releaseAdd = resolve;
+        });
+      if (channel === CONNECTION_CHANNELS.OPEN)
+        return new Promise((resolve) => {
+          releaseOpen = resolve;
+        });
+      return original(channel, params);
+    });
+    const run = start();
+    const params = {
+      label: 'Host',
+      host: 'example.invalid',
+      port: 5181,
+      fingerprint: 'AA',
+      token: 'fixture-only',
+    };
+    run.dispatch(
+      connectionWorkflowRequested('modal', { kind: 'connect', enableSync: false, params }),
+    );
+    expect(run.getState().connections.status).toBe('connecting');
+    expect(invoke).toHaveBeenCalledWith(CONNECTION_CHANNELS.ADD, params);
+    releaseAdd({ connection: REMOTE, switched: false });
+    await vi.waitFor(() => expect(run.getState().connections.openingIds).toEqual([REMOTE.id]));
+    expect(run.getState().connections.status).toBe('connecting');
+    expect(invoke).toHaveBeenCalledWith(CONNECTION_CHANNELS.OPEN, { id: REMOTE.id });
+    releaseOpen({ status: 'opened', id: REMOTE.id });
+    await vi.waitFor(() =>
+      expect(getItems(run.getState().connections.workflows)[0].outcome).toEqual({ kind: 'done' }),
+    );
+    expect(run.getState().connections.openingIds).toEqual([]);
+    expect(run.getState().connections.status).toBe('idle');
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('serializes unlike writes to one device without blocking another device', async () => {
+    let release!: (value: unknown) => void;
+    const original = invoke.getMockImplementation()!;
+    invoke.mockImplementation((channel: string, params?: unknown) =>
+      channel === CONNECTION_CHANNELS.UPDATE
+        ? new Promise((resolve) => {
+            release = resolve;
+          })
+        : original(channel, params),
+    );
+    const run = start();
+    run.dispatch(
+      connectionWorkflowRequested('edit', {
+        kind: 'save',
+        enableSync: false,
+        params: { id: REMOTE.id, label: 'Renamed' },
+      }),
+    );
+    run.dispatch(connectionWorkflowRequested('remove', { kind: 'forget', id: REMOTE.id }));
+    run.dispatch(connectionWorkflowRequested('other', { kind: 'forget', id: 'remote-2' }));
+    await vi.waitFor(() =>
+      expect(invoke).toHaveBeenCalledWith(CONNECTION_CHANNELS.FORGET, { id: 'remote-2' }),
+    );
+    expect(invoke).not.toHaveBeenCalledWith(CONNECTION_CHANNELS.FORGET, { id: REMOTE.id });
+    release({ status: 'updated', connection: { ...REMOTE, label: 'Renamed' } });
+    await vi.waitFor(() =>
+      expect(invoke).toHaveBeenCalledWith(CONNECTION_CHANNELS.FORGET, { id: REMOTE.id }),
+    );
+    await vi.waitFor(() =>
+      expect(
+        getItems(run.getState().connections.workflows).every((entry) => entry.phase === 'settled'),
+      ).toBe(true),
+    );
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('routes a current secret-unavailable recovery but never one cleared during open', async () => {
+    const original = invoke.getMockImplementation()!;
+    let release!: (value: { status: 'secret-unavailable' }) => void;
+    invoke.mockImplementation((channel: string, params?: unknown) =>
+      channel === CONNECTION_CHANNELS.OPEN
+        ? new Promise((resolve) => {
+            release = resolve;
+          })
+        : original(channel, params),
+    );
+    const run = start();
+    const request = () =>
+      connectionWorkflowRequested('indicator', {
+        kind: 'open',
+        id: REMOTE.id,
+        recovery: 'settings',
+      });
+    run.dispatch(request());
+    run.dispatch(connectionWorkflowCleared('indicator'));
+    release({ status: 'secret-unavailable' });
+    await settle();
+    expect(navigation.navigateToSettings).not.toHaveBeenCalled();
+    expect(notify.error).not.toHaveBeenCalled();
+    run.dispatch(request());
+    await settle();
+    release({ status: 'secret-unavailable' });
+    await vi.waitFor(() =>
+      expect(navigation.navigateToSettings).toHaveBeenCalledWith({ tab: 'devices' }),
+    );
+    expect(notify.error).toHaveBeenCalledTimes(1);
+    run.task.cancel();
+    await run.task.toPromise();
+  });
 
   it('hydrates the initial list, replays sticky mismatch, and preserves the exact list request', async () => {
     const mismatch = {
@@ -436,7 +634,7 @@ describe('connectionsSaga', () => {
     await run.task.toPromise();
   });
 
-  it('keeps a repeat same-id open in flight until its own RPC settles', async () => {
+  it('serializes repeat same-id opens and settles every promise', async () => {
     const deferred: Array<(value: { status: 'opened'; id: string }) => void> = [];
     invoke.mockImplementation(async (channel: string) => {
       if (channel === CONNECTION_CHANNELS.LIST)
@@ -454,13 +652,14 @@ describe('connectionsSaga', () => {
     const second = openConnectionRequested('remote-1');
     run.channel.put(first);
     run.channel.put(second);
-    await vi.waitFor(() => expect(deferred).toHaveLength(2));
-    expect(run.getState().connections.openingIds).toEqual(['remote-1', 'remote-1']);
+    await vi.waitFor(() => expect(deferred).toHaveLength(1));
+    expect(run.getState().connections.openingIds).toEqual(['remote-1']);
 
     // Only the first RPC settles: the second open is still outstanding, so the
     // id stays tracked and the global status stays busy.
     deferred[0]({ status: 'opened', id: 'remote-1' });
     await expect(first.promise).resolves.toEqual({ status: 'opened', id: 'remote-1' });
+    await vi.waitFor(() => expect(deferred).toHaveLength(2));
     expect(run.getState().connections.openingIds).toEqual(['remote-1']);
     expect(run.getState().connections.status).toBe('connecting');
 
@@ -496,7 +695,7 @@ describe('connectionsSaga', () => {
     const second = openConnectionRequested('remote-1');
     run.channel.put(first);
     run.channel.put(second);
-    await vi.waitFor(() => expect(deferred).toHaveLength(2));
+    await vi.waitFor(() => expect(deferred).toHaveLength(1));
     let secondSettled = false;
     second.promise.then(
       () => (secondSettled = true),
@@ -508,10 +707,10 @@ describe('connectionsSaga', () => {
     // busy selectors true.
     deferred[0].reject(new Error('boom'));
     await expect(first.promise).rejects.toThrow('boom');
-    await settle();
+    await vi.waitFor(() => expect(deferred).toHaveLength(2));
     expect(secondSettled).toBe(false);
     expect(run.getState().connections.openingIds).toEqual(['remote-1']);
-    expect(run.getState().connections.error).toBe('boom');
+    expect(run.getState().connections.error).toBeNull();
     expect(selectIsOpeningConnection.select(storeState(), 'remote-1')).toBe(true);
     expect(selectIsConnecting.select(storeState())).toBe(true);
 
@@ -541,14 +740,12 @@ describe('connectionsSaga', () => {
     const second = openConnectionRequested('remote-1');
     run.channel.put(first);
     run.channel.put(second);
-    await vi.waitFor(() =>
-      expect(run.getState().connections.openingIds).toEqual(['remote-1', 'remote-1']),
-    );
+    await vi.waitFor(() => expect(run.getState().connections.openingIds).toEqual(['remote-1']));
 
     run.task.cancel();
     await run.task.toPromise();
     await expect(first.promise).rejects.toThrow('Connection open was cancelled');
-    await expect(second.promise).rejects.toThrow('Connection open was cancelled');
+    await expect(second.promise).rejects.toThrow('Connection request was cancelled');
     expect(run.getState().connections.openingIds).toEqual([]);
     expect(selectIsConnecting.select(run.getState() as unknown as StoreState)).toBe(false);
   });
@@ -664,7 +861,7 @@ describe('connectionsSaga', () => {
     await run.task.toPromise();
   });
 
-  it('takes only the leading same-action request while other action owners remain independent', async () => {
+  it('queues same-target adds while other action owners remain independent', async () => {
     let resolveAdd: ((value: { connection: ConnectionRecord }) => void) | undefined;
     invoke.mockImplementation(async (channel: string) => {
       if (channel === CONNECTION_CHANNELS.LIST)
@@ -686,8 +883,8 @@ describe('connectionsSaga', () => {
       fingerprint: REMOTE.fingerprint!,
       token: 'secret',
     });
-    const ignored = addConnectionRequested({
-      label: 'ignored',
+    const second = addConnectionRequested({
+      label: 'second',
       host: REMOTE.host!,
       port: REMOTE.port!,
       fingerprint: REMOTE.fingerprint!,
@@ -695,7 +892,7 @@ describe('connectionsSaga', () => {
     });
     run.channel.put(first);
     await settle();
-    run.channel.put(ignored);
+    run.channel.put(second);
 
     const capture = captureFingerprintRequested({ host: REMOTE.host!, port: REMOTE.port! });
     run.channel.put(capture);
@@ -706,6 +903,13 @@ describe('connectionsSaga', () => {
 
     resolveAdd?.({ connection: REMOTE });
     await expect(first.promise).resolves.toEqual({ connection: REMOTE });
+    await vi.waitFor(() =>
+      expect(
+        invoke.mock.calls.filter(([channel]) => channel === CONNECTION_CHANNELS.ADD),
+      ).toHaveLength(2),
+    );
+    resolveAdd?.({ connection: REMOTE });
+    await expect(second.promise).resolves.toEqual({ connection: REMOTE });
     run.task.cancel();
     await run.task.toPromise();
   });
@@ -814,8 +1018,8 @@ describe('connectionsSaga', () => {
     run.channel.put(action);
     await expect(action.promise).resolves.toEqual({ ok: true });
     expect(invoke).toHaveBeenCalledWith(CONNECTION_CHANNELS.UPDATE_BACKEND, { id: 'remote-1' });
-    expect(toast.success).toHaveBeenCalledTimes(1);
-    expect(toast.error).not.toHaveBeenCalled();
+    expect(notify.success).toHaveBeenCalledTimes(1);
+    expect(notify.error).not.toHaveBeenCalled();
 
     run.task.cancel();
     await run.task.toPromise();
@@ -849,7 +1053,7 @@ describe('connectionsSaga', () => {
     await expect(first.promise).resolves.toEqual({ ok: true });
     expect(invoke).toHaveBeenCalledWith(CONNECTION_CHANNELS.UPDATE_BACKEND, { id: 'remote-1' });
     expect(invoke).toHaveBeenCalledWith(CONNECTION_CHANNELS.UPDATE_BACKEND, { id: 'remote-2' });
-    expect(toast.success).toHaveBeenCalledTimes(2);
+    expect(notify.success).toHaveBeenCalledTimes(2);
 
     run.task.cancel();
     await run.task.toPromise();
@@ -877,10 +1081,10 @@ describe('connectionsSaga', () => {
       // A structured failure resolves (no throw) — the toast carries the news.
       await expect(action.promise).resolves.toEqual(expected);
     }
-    expect(toast.error).toHaveBeenCalledTimes(3);
+    expect(notify.error).toHaveBeenCalledTimes(3);
     // The daemon's message is embedded in the failed-toast text.
-    expect(String(toast.error.mock.calls[2]![0])).toContain('daemon is not sitter-supervised');
-    expect(toast.success).not.toHaveBeenCalled();
+    expect(String(notify.error.mock.calls[2]![0])).toContain('daemon is not sitter-supervised');
+    expect(notify.success).not.toHaveBeenCalled();
 
     run.task.cancel();
     await run.task.toPromise();
@@ -899,7 +1103,7 @@ describe('connectionsSaga', () => {
     const action = updateBackendRequested('remote-1');
     run.channel.put(action);
     await expect(action.promise).rejects.toThrow('bridge unavailable');
-    expect(toast.error).toHaveBeenCalledTimes(1);
+    expect(notify.error).toHaveBeenCalledTimes(1);
 
     run.task.cancel();
     await run.task.toPromise();
@@ -930,8 +1134,8 @@ describe('connectionsSaga', () => {
       // v-prefixed reported versions must not double the template's own "v".
       const vBehind = { ...BEHIND, daemonVersion: 'v0.9.0' };
       changed([LOCAL, vBehind], [BEHIND.id], 'v0.10.0');
-      await vi.waitFor(() => expect(toast.warning).toHaveBeenCalledTimes(1));
-      const [message, options] = toast.warning.mock.calls[0]!;
+      await vi.waitFor(() => expect(notify.warning).toHaveBeenCalledTimes(1));
+      const [message, options] = notify.warning.mock.calls[0]!;
       expect(String(message)).toContain('Studio Mac');
       expect(String(message)).toContain('v0.9.0');
       expect(String(message)).toContain('v0.10.0');
@@ -945,8 +1149,8 @@ describe('connectionsSaga', () => {
       // toast still applies — no dismissal either.
       changed([LOCAL, vBehind], [BEHIND.id], 'v0.10.0');
       await settle();
-      expect(toast.warning).toHaveBeenCalledTimes(1);
-      expect(toast.dismiss).not.toHaveBeenCalled();
+      expect(notify.warning).toHaveBeenCalledTimes(1);
+      expect(notify.dismiss).not.toHaveBeenCalled();
 
       run.task.cancel();
       await run.task.toPromise();
@@ -957,11 +1161,11 @@ describe('connectionsSaga', () => {
       await settle();
 
       changed([LOCAL, BEHIND], [BEHIND.id], '0.10.0');
-      await vi.waitFor(() => expect(toast.warning).toHaveBeenCalledTimes(1));
+      await vi.waitFor(() => expect(notify.warning).toHaveBeenCalledTimes(1));
       changed([LOCAL, BEHIND], [], '0.10.0');
       await settle();
       changed([LOCAL, BEHIND], [BEHIND.id], '0.10.0');
-      await vi.waitFor(() => expect(toast.warning).toHaveBeenCalledTimes(2));
+      await vi.waitFor(() => expect(notify.warning).toHaveBeenCalledTimes(2));
 
       run.task.cancel();
       await run.task.toPromise();
@@ -972,18 +1176,18 @@ describe('connectionsSaga', () => {
       await settle();
 
       changed([LOCAL, BEHIND], [BEHIND.id], '0.10.0');
-      await vi.waitFor(() => expect(toast.warning).toHaveBeenCalledTimes(1));
-      expect(toast.dismiss).not.toHaveBeenCalled();
+      await vi.waitFor(() => expect(notify.warning).toHaveBeenCalledTimes(1));
+      expect(notify.dismiss).not.toHaveBeenCalled();
 
       changed([LOCAL, BEHIND], [], '0.10.0');
-      await vi.waitFor(() => expect(toast.dismiss).toHaveBeenCalledTimes(1));
-      expect(toast.dismiss).toHaveBeenCalledWith(`connections-daemon-behind-${BEHIND.id}`);
+      await vi.waitFor(() => expect(notify.dismiss).toHaveBeenCalledTimes(1));
+      expect(notify.dismiss).toHaveBeenCalledWith(`connections-daemon-behind-${BEHIND.id}`);
 
       // The toast was already dismissed: a further disconnected re-broadcast
       // must not dismiss again.
       changed([LOCAL, BEHIND], [], '0.10.0');
       await settle();
-      expect(toast.dismiss).toHaveBeenCalledTimes(1);
+      expect(notify.dismiss).toHaveBeenCalledTimes(1);
 
       run.task.cancel();
       await run.task.toPromise();
@@ -994,14 +1198,14 @@ describe('connectionsSaga', () => {
       await settle();
 
       changed([LOCAL, BEHIND], [BEHIND.id], '0.10.0');
-      await vi.waitFor(() => expect(toast.warning).toHaveBeenCalledTimes(1));
+      await vi.waitFor(() => expect(notify.warning).toHaveBeenCalledTimes(1));
 
       // The version refresh (e.g. after a successful update) re-evaluates the
       // still-connected backend as no longer behind the pin.
       changed([LOCAL, { ...BEHIND, daemonVersion: '0.10.0' }], [BEHIND.id], '0.10.0');
-      await vi.waitFor(() => expect(toast.dismiss).toHaveBeenCalledTimes(1));
-      expect(toast.dismiss).toHaveBeenCalledWith(`connections-daemon-behind-${BEHIND.id}`);
-      expect(toast.warning).toHaveBeenCalledTimes(1);
+      await vi.waitFor(() => expect(notify.dismiss).toHaveBeenCalledTimes(1));
+      expect(notify.dismiss).toHaveBeenCalledWith(`connections-daemon-behind-${BEHIND.id}`);
+      expect(notify.warning).toHaveBeenCalledTimes(1);
 
       run.task.cancel();
       await run.task.toPromise();
@@ -1012,7 +1216,7 @@ describe('connectionsSaga', () => {
       await settle();
 
       changed([LOCAL, BEHIND], [BEHIND.id], '0.10.0');
-      await vi.waitFor(() => expect(toast.warning).toHaveBeenCalledTimes(1));
+      await vi.waitFor(() => expect(notify.warning).toHaveBeenCalledTimes(1));
 
       // Still connected, but the broadcast lost its verdict inputs (e.g. a
       // refresh raced the fire-and-forget captures): no daemonVersion, no
@@ -1023,13 +1227,13 @@ describe('connectionsSaga', () => {
       await settle();
       changed([LOCAL, { ...BEHIND, updateSupported: undefined }], [BEHIND.id], '0.10.0');
       await settle();
-      expect(toast.dismiss).not.toHaveBeenCalled();
-      expect(toast.warning).toHaveBeenCalledTimes(1);
+      expect(notify.dismiss).not.toHaveBeenCalled();
+      expect(notify.warning).toHaveBeenCalledTimes(1);
 
       // A later conclusive verdict (back at the pin) still dismisses.
       changed([LOCAL, { ...BEHIND, daemonVersion: '0.10.0' }], [BEHIND.id], '0.10.0');
-      await vi.waitFor(() => expect(toast.dismiss).toHaveBeenCalledTimes(1));
-      expect(toast.dismiss).toHaveBeenCalledWith(`connections-daemon-behind-${BEHIND.id}`);
+      await vi.waitFor(() => expect(notify.dismiss).toHaveBeenCalledTimes(1));
+      expect(notify.dismiss).toHaveBeenCalledWith(`connections-daemon-behind-${BEHIND.id}`);
 
       run.task.cancel();
       await run.task.toPromise();
@@ -1045,8 +1249,8 @@ describe('connectionsSaga', () => {
       await settle();
       changed([LOCAL, { ...BEHIND, updateSupported: false }], [], '0.10.0');
       await settle();
-      expect(toast.warning).not.toHaveBeenCalled();
-      expect(toast.dismiss).not.toHaveBeenCalled();
+      expect(notify.warning).not.toHaveBeenCalled();
+      expect(notify.dismiss).not.toHaveBeenCalled();
 
       run.task.cancel();
       await run.task.toPromise();
@@ -1061,16 +1265,16 @@ describe('connectionsSaga', () => {
       // id must NOT count as evaluated.
       changed([LOCAL, { ...BEHIND, daemonVersion: null }], [BEHIND.id], '0.10.0');
       await settle();
-      expect(toast.warning).not.toHaveBeenCalled();
+      expect(notify.warning).not.toHaveBeenCalled();
 
       // The capture's write/broadcast arrives: still counts as the transition.
       changed([LOCAL, BEHIND], [BEHIND.id], '0.10.0');
-      await vi.waitFor(() => expect(toast.warning).toHaveBeenCalledTimes(1));
+      await vi.waitFor(() => expect(notify.warning).toHaveBeenCalledTimes(1));
 
       // Unchanged re-broadcast after the conclusive one: silent.
       changed([LOCAL, BEHIND], [BEHIND.id], '0.10.0');
       await settle();
-      expect(toast.warning).toHaveBeenCalledTimes(1);
+      expect(notify.warning).toHaveBeenCalledTimes(1);
 
       run.task.cancel();
       await run.task.toPromise();
@@ -1082,12 +1286,12 @@ describe('connectionsSaga', () => {
 
       changed([LOCAL, { ...BEHIND, updateSupported: false }], [BEHIND.id], '0.10.0');
       await settle();
-      expect(toast.warning).not.toHaveBeenCalled();
+      expect(notify.warning).not.toHaveBeenCalled();
 
       // Re-broadcasts of the same conclusive state stay silent too.
       changed([LOCAL, { ...BEHIND, updateSupported: false }], [BEHIND.id], '0.10.0');
       await settle();
-      expect(toast.warning).not.toHaveBeenCalled();
+      expect(notify.warning).not.toHaveBeenCalled();
 
       run.task.cancel();
       await run.task.toPromise();
@@ -1100,17 +1304,17 @@ describe('connectionsSaga', () => {
       // A stale/conclusive false is evaluated but suppressed.
       changed([LOCAL, { ...BEHIND, updateSupported: false }], [BEHIND.id], '0.10.0');
       await settle();
-      expect(toast.warning).not.toHaveBeenCalled();
+      expect(notify.warning).not.toHaveBeenCalled();
 
       // The fire-and-forget capture then flips the flag with the SAME
       // daemonVersion: the refresh must re-evaluate and toast exactly once.
       changed([LOCAL, BEHIND], [BEHIND.id], '0.10.0');
-      await vi.waitFor(() => expect(toast.warning).toHaveBeenCalledTimes(1));
+      await vi.waitFor(() => expect(notify.warning).toHaveBeenCalledTimes(1));
 
       // Unchanged re-broadcast after the toast: silent.
       changed([LOCAL, BEHIND], [BEHIND.id], '0.10.0');
       await settle();
-      expect(toast.warning).toHaveBeenCalledTimes(1);
+      expect(notify.warning).toHaveBeenCalledTimes(1);
 
       run.task.cancel();
       await run.task.toPromise();
@@ -1124,11 +1328,11 @@ describe('connectionsSaga', () => {
       // unknown is inconclusive, so the id must NOT count as evaluated.
       changed([LOCAL, { ...BEHIND, updateSupported: null }], [BEHIND.id], '0.10.0');
       await settle();
-      expect(toast.warning).not.toHaveBeenCalled();
+      expect(notify.warning).not.toHaveBeenCalled();
 
       // The capture's write/broadcast arrives: still counts as the transition.
       changed([LOCAL, BEHIND], [BEHIND.id], '0.10.0');
-      await vi.waitFor(() => expect(toast.warning).toHaveBeenCalledTimes(1));
+      await vi.waitFor(() => expect(notify.warning).toHaveBeenCalledTimes(1));
 
       run.task.cancel();
       await run.task.toPromise();
@@ -1147,13 +1351,13 @@ describe('connectionsSaga', () => {
         return {};
       });
       const run = start();
-      await vi.waitFor(() => expect(toast.warning).toHaveBeenCalledTimes(1));
+      await vi.waitFor(() => expect(notify.warning).toHaveBeenCalledTimes(1));
 
       // The first post-hydration broadcast of the same pool stays silent —
       // the hydration announcement seeded the tracker.
       changed([LOCAL, BEHIND], [BEHIND.id], '0.10.0');
       await settle();
-      expect(toast.warning).toHaveBeenCalledTimes(1);
+      expect(notify.warning).toHaveBeenCalledTimes(1);
 
       run.task.cancel();
       await run.task.toPromise();
@@ -1175,12 +1379,12 @@ describe('connectionsSaga', () => {
         changed(pool, connectedIds, '0.10.0', own);
       }
       await settle();
-      expect(toast.warning).not.toHaveBeenCalled();
+      expect(notify.warning).not.toHaveBeenCalled();
 
       // Behind but no pinned version reported: silent.
       changed([LOCAL, BEHIND], [BEHIND.id]);
       await settle();
-      expect(toast.warning).not.toHaveBeenCalled();
+      expect(notify.warning).not.toHaveBeenCalled();
 
       run.task.cancel();
       await run.task.toPromise();
@@ -1194,19 +1398,19 @@ describe('connectionsSaga', () => {
       // is not this window's to announce.
       changed([LOCAL, BEHIND], [BEHIND.id], '0.10.0', LOCAL.id);
       await settle();
-      expect(toast.warning).not.toHaveBeenCalled();
+      expect(notify.warning).not.toHaveBeenCalled();
 
       // Window bound to a different remote: same silence.
       const other = { ...REMOTE, id: 'remote-2', daemonVersion: '0.10.0' };
       changed([LOCAL, BEHIND, other], [BEHIND.id, other.id], '0.10.0', other.id);
       await settle();
-      expect(toast.warning).not.toHaveBeenCalled();
+      expect(notify.warning).not.toHaveBeenCalled();
 
       // The skipped backend was never marked evaluated: the window that owns
       // it still announces on its own broadcast.
       changed([LOCAL, BEHIND], [BEHIND.id], '0.10.0', BEHIND.id);
-      await vi.waitFor(() => expect(toast.warning).toHaveBeenCalledTimes(1));
-      expect(toast.warning.mock.calls[0]![1].id).toBe(`connections-daemon-behind-${BEHIND.id}`);
+      await vi.waitFor(() => expect(notify.warning).toHaveBeenCalledTimes(1));
+      expect(notify.warning.mock.calls[0]![1].id).toBe(`connections-daemon-behind-${BEHIND.id}`);
 
       run.task.cancel();
       await run.task.toPromise();
@@ -1223,8 +1427,8 @@ describe('connectionsSaga', () => {
       await settle();
 
       changed([LOCAL, BEHIND], [BEHIND.id], '0.10.0');
-      await vi.waitFor(() => expect(toast.warning).toHaveBeenCalledTimes(1));
-      const [, options] = toast.warning.mock.calls[0]!;
+      await vi.waitFor(() => expect(notify.warning).toHaveBeenCalledTimes(1));
+      const [, options] = notify.warning.mock.calls[0]!;
       options.action.onClick();
       await vi.waitFor(() =>
         expect(invoke).toHaveBeenCalledWith(CONNECTION_CHANNELS.UPDATE_BACKEND, {
@@ -1232,7 +1436,7 @@ describe('connectionsSaga', () => {
         }),
       );
       // The outcome surfaces via the existing per-result update toast.
-      await vi.waitFor(() => expect(toast.success).toHaveBeenCalledTimes(1));
+      await vi.waitFor(() => expect(notify.success).toHaveBeenCalledTimes(1));
 
       run.task.cancel();
       await run.task.toPromise();
@@ -1246,13 +1450,13 @@ describe('connectionsSaga', () => {
       // silent, and not marked evaluated.
       changed([LOCAL], [LOCAL.id], '0.10.0', LOCAL.id);
       await settle();
-      expect(toast.warning).not.toHaveBeenCalled();
+      expect(notify.warning).not.toHaveBeenCalled();
 
       // The external-daemon capture enriches the local record: toast once.
       const localExternal = { ...LOCAL, daemonVersion: '0.9.0', updateSupported: true };
       changed([localExternal], [LOCAL.id], '0.10.0', LOCAL.id);
-      await vi.waitFor(() => expect(toast.warning).toHaveBeenCalledTimes(1));
-      const [message, options] = toast.warning.mock.calls[0]!;
+      await vi.waitFor(() => expect(notify.warning).toHaveBeenCalledTimes(1));
+      const [message, options] = notify.warning.mock.calls[0]!;
       expect(String(message)).toContain('This machine (local)');
       expect(String(message)).toContain('v0.9.0');
       expect(String(message)).toContain('v0.10.0');
@@ -1261,7 +1465,7 @@ describe('connectionsSaga', () => {
       // Unchanged re-broadcast: silent.
       changed([localExternal], [LOCAL.id], '0.10.0', LOCAL.id);
       await settle();
-      expect(toast.warning).toHaveBeenCalledTimes(1);
+      expect(notify.warning).toHaveBeenCalledTimes(1);
 
       run.task.cancel();
       await run.task.toPromise();
@@ -1281,8 +1485,8 @@ describe('connectionsSaga', () => {
         updateSupported: true,
       };
       changed([localExternal], [LOCAL.id], '0.10.0', LOCAL.id);
-      await vi.waitFor(() => expect(toast.warning).toHaveBeenCalledTimes(1));
-      const [message] = toast.warning.mock.calls[0]!;
+      await vi.waitFor(() => expect(notify.warning).toHaveBeenCalledTimes(1));
+      const [message] = notify.warning.mock.calls[0]!;
       expect(String(message)).toContain('This machine (local)');
       expect(String(message)).not.toContain('persisted-fallback-label');
 
@@ -1302,8 +1506,8 @@ describe('connectionsSaga', () => {
 
       const localExternal = { ...LOCAL, daemonVersion: '0.9.0', updateSupported: true };
       changed([localExternal], [LOCAL.id], '0.10.0', LOCAL.id);
-      await vi.waitFor(() => expect(toast.warning).toHaveBeenCalledTimes(1));
-      const [, options] = toast.warning.mock.calls[0]!;
+      await vi.waitFor(() => expect(notify.warning).toHaveBeenCalledTimes(1));
+      const [, options] = notify.warning.mock.calls[0]!;
       options.action.onClick();
       await vi.waitFor(() =>
         expect(invoke).toHaveBeenCalledWith(CONNECTION_CHANNELS.UPDATE_BACKEND, {
@@ -1311,7 +1515,7 @@ describe('connectionsSaga', () => {
         }),
       );
       // The outcome surfaces via the existing per-result update toast.
-      await vi.waitFor(() => expect(toast.success).toHaveBeenCalledTimes(1));
+      await vi.waitFor(() => expect(notify.success).toHaveBeenCalledTimes(1));
 
       run.task.cancel();
       await run.task.toPromise();
@@ -1324,7 +1528,7 @@ describe('connectionsSaga', () => {
       const localExternal = { ...LOCAL, daemonVersion: '0.9.0', updateSupported: false };
       changed([localExternal], [LOCAL.id], '0.10.0', LOCAL.id);
       await settle();
-      expect(toast.warning).not.toHaveBeenCalled();
+      expect(notify.warning).not.toHaveBeenCalled();
 
       run.task.cancel();
       await run.task.toPromise();

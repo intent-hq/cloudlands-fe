@@ -21,6 +21,12 @@ import { createElectronChannel } from '$store/renderer/utils/ipc-channel';
 import { takeWithBackoff } from '$store/renderer/utils/take-with-backoff';
 import { selectDaemonConnectionGeneration } from '../daemon-health-selectors';
 import {
+  agentMemoryBreakdownClosed,
+  agentMemoryBreakdownOpened,
+  agentMemoryUsageFailed,
+  agentMemoryUsageRequested,
+  agentMemoryUsageSucceeded,
+  closeWindowRequested,
   connectionStatusChanged,
   fetchSidecarRunLogFailed,
   fetchSidecarRunLogRequested,
@@ -40,6 +46,7 @@ import {
   unslothStatusSuccess,
 } from '../daemon-health-slice';
 import type {
+  AgentMemoryUsageWirePayload,
   BackendTransportInfo,
   DaemonStatusCheckFailureKind,
   SidecarRunLog,
@@ -49,6 +56,7 @@ import type {
 
 const BACKEND = IPC_CHANNELS.BACKEND;
 const POLL_INTERVAL_MS = 10_000;
+const AGENT_MEMORY_REFRESH_INTERVAL_MS = 5_000;
 const INITIAL_DISCONNECTED_BACKOFF_MS = 1_000;
 const MAX_DISCONNECTED_BACKOFF_MS = 5_000;
 
@@ -60,6 +68,10 @@ interface BackendStatusPayload {
   reason?: string;
   /** Reconnect attempts since the last successful connect (#1750). */
   reconnectAttempts?: number;
+  /** The last connect attempt was refused by the host's guest connection cap (HTTP 503). */
+  connectionLimited?: boolean;
+  /** The wait main scheduled before its next attempt while `connectionLimited`. */
+  connectionLimitRetryAfterMs?: number | null;
   /**
    * Epoch ms of the first drop main observed while a user-requested daemon
    * update is outstanding for this backend.
@@ -88,6 +100,12 @@ async function invokeOpenLocalAndSpawn() {
     { ok: boolean; spawned: boolean; reason?: string; error?: { message?: string } } | undefined;
 }
 
+async function invokeCloseWindow() {
+  if (!window.electronAPI) throw new Error('electronAPI is not available');
+  return (await window.electronAPI.invoke(IPC_CHANNELS.WINDOW.CLOSE)) as
+    { success: boolean } | undefined;
+}
+
 async function invokeSidecarRunLog(): Promise<SidecarRunLog> {
   if (!window.electronAPI) throw new Error('electronAPI is not available');
   return (await window.electronAPI.invoke(BACKEND.GET_SIDECAR_RUN_LOG)) as SidecarRunLog;
@@ -95,11 +113,11 @@ async function invokeSidecarRunLog(): Promise<SidecarRunLog> {
 
 async function notifyVersionMismatch(transport: BackendTransportInfo): Promise<boolean> {
   try {
-    const { toast } = await import('$lib/components/ui/toast');
+    const { notify } = await import('$lib/components/patterns/notify');
     const daemonVersion = transport.daemonVersion
       ? ` (v${transport.daemonVersion.replace(/^v/, '')})`
       : '';
-    toast.warning(m.daemonStatus_versionMismatch_warning({ version: daemonVersion }), {
+    notify.warning(m.daemonStatus_versionMismatch_warning({ version: daemonVersion }), {
       duration: 15_000,
     });
     return true;
@@ -136,16 +154,16 @@ async function notifyOrphanedSidecar(
   notifyState: OrphanNotifyState,
 ): Promise<boolean> {
   try {
-    const { toast } = await import('$lib/components/ui/toast');
+    const { notify } = await import('$lib/components/patterns/notify');
     const daemonVersion = transport.daemonVersion
       ? ` (v${transport.daemonVersion.replace(/^v/, '')})`
       : '';
     const onRestartFailed = async () => {
       notifyState.notified = false;
-      const { toast: toastLib } = await import('$lib/components/ui/toast');
+      const { notify: toastLib } = await import('$lib/components/patterns/notify');
       toastLib.error(m.daemonStatus_orphanRestartFailed_error());
     };
-    toast.warning(m.daemonStatus_orphanedSidecar_warning({ version: daemonVersion }), {
+    notify.warning(m.daemonStatus_orphanedSidecar_warning({ version: daemonVersion }), {
       duration: 30_000,
       action: {
         label: m.daemonStatus_orphanedSidecar_restart_action(),
@@ -172,6 +190,8 @@ function statusAction(payload: BackendStatusPayload, snapshot: boolean) {
       ? (payload as BackendStatusSnapshot).sidecarStartupFailedReason
       : payload.reason,
     reconnectAttempts: payload.reconnectAttempts,
+    connectionLimited: payload.connectionLimited,
+    connectionLimitRetryAfterMs: payload.connectionLimitRetryAfterMs,
     daemonUpdateDisconnectedAt: payload.daemonUpdateDisconnectedAt,
   });
 }
@@ -424,6 +444,15 @@ function* openLocalAndSpawnSaga() {
   }
 }
 
+function* closeWindowSaga() {
+  try {
+    yield* call(invokeCloseWindow);
+  } catch {
+    // Main owns the close; a bridge failure leaves the window (and its
+    // overlay) as they are.
+  }
+}
+
 function* fetchSidecarRunLogSaga() {
   try {
     const log = yield* call(invokeSidecarRunLog);
@@ -433,9 +462,50 @@ function* fetchSidecarRunLogSaga() {
   }
 }
 
+function* fetchAgentMemoryUsageSaga() {
+  try {
+    const usage = yield* call(backendRequest<AgentMemoryUsageWirePayload>, 'agent.memoryUsage');
+    yield* put(agentMemoryUsageSucceeded(usage));
+  } catch {
+    yield* put(agentMemoryUsageFailed());
+  }
+}
+
+/**
+ * One open-dialog session: a single-flight request watcher plus the refresh
+ * cadence (request now, then on a fixed interval). The watcher is
+ * `takeLeading`, so a tick landing while a fetch is still in flight is dropped
+ * rather than fanned out. It is forked inside the session so that cancelling
+ * the session also cancels the watcher and any in-flight fetch — a request
+ * started in one session can never complete into the next.
+ */
+function* agentMemoryBreakdownSession() {
+  yield* takeLeading(agentMemoryUsageRequested, fetchAgentMemoryUsageSaga);
+  while (true) {
+    yield* put(agentMemoryUsageRequested());
+    yield* delay(AGENT_MEMORY_REFRESH_INTERVAL_MS);
+  }
+}
+
+/**
+ * A session runs only between an `agentMemoryBreakdownOpened` and the next
+ * `agentMemoryBreakdownClosed`; there is no background polling. Each open
+ * starts a fresh session with an immediate fetch.
+ */
+function* watchAgentMemoryBreakdown() {
+  while (true) {
+    yield* take(agentMemoryBreakdownOpened);
+    yield* race({
+      session: call(agentMemoryBreakdownSession),
+      closed: take(agentMemoryBreakdownClosed),
+    });
+  }
+}
+
 function* watchDaemonControls() {
   yield* takeEvery(spawnSidecarRequested, spawnSidecarSaga);
   yield* takeEvery(openLocalAndSpawnRequested, openLocalAndSpawnSaga);
+  yield* takeEvery(closeWindowRequested, closeWindowSaga);
   yield* takeEvery(fetchSidecarRunLogRequested, fetchSidecarRunLogSaga);
   yield* takeLeading(stopUnslothRequested, stopUnslothSaga);
 }
@@ -447,5 +517,6 @@ export function* daemonHealthSaga() {
   yield* fork(watchSystemStatusPolls);
   yield* fork(daemonStatusSaga);
   yield* fork(watchUnslothStatusPolls);
+  yield* fork(watchAgentMemoryBreakdown);
   yield* fork(watchDaemonControls);
 }

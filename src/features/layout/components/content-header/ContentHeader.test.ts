@@ -40,7 +40,7 @@ describe('ContentHeader title editing', () => {
       props: { title, editableTitle: true, onTitleChange: vi.fn() },
     });
     const titleButton = screen.getByRole('button', { name: title });
-    const decoration = titleButton.parentElement?.querySelector<HTMLElement>(
+    const decoration = titleButton.parentElement?.parentElement?.querySelector<HTMLElement>(
       ':scope > [aria-hidden="true"]',
     );
 

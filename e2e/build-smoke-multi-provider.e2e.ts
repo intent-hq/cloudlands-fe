@@ -29,6 +29,7 @@ import {
   findImplementorAgent,
   openAgentChat,
   waitForAssistantResponse,
+  exitPackagedApp,
 } from './build-smoke-helpers';
 import { join } from 'path';
 
@@ -132,27 +133,7 @@ test.describe('multi-provider smoke tests', () => {
     }
     console.log('==========================================\n');
 
-    if (app) {
-      try {
-        await app.evaluate(({ app: electronApp }) => electronApp.exit(0));
-      } catch {
-        // evaluate may fail if the app already crashed
-      }
-      await new Promise((r) => setTimeout(r, 2_000));
-      try {
-        const { execSync } = await import('child_process');
-        if (process.platform === 'win32') {
-          execSync('taskkill /F /IM "Intent.exe"', {
-            stdio: 'ignore',
-            windowsHide: true,
-          });
-        } else {
-          execSync('pkill -9 -f "Intent\\.app/Contents/MacOS/Intent"', { stdio: 'ignore' });
-        }
-      } catch {
-        // No matching processes
-      }
-    }
+    await exitPackagedApp(app);
 
     if (repoCleanup) {
       try {

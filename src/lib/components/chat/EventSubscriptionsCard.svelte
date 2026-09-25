@@ -1,6 +1,8 @@
 <script lang="ts">
+  import { CHAT_OPERATIONAL_ICON_CLASS } from './operational-disclosure-row';
   import type { Snippet } from 'svelte';
   import { tick, untrack } from 'svelte';
+  import { writable } from 'svelte/store';
   import { store as appStore } from '$store/renderer/store';
   import {
     prMonitorsSubscribeRequested,
@@ -8,7 +10,6 @@
   } from '$store/renderer/slices/pr-monitor/pr-monitor-slice';
   import AgentSubscriptions from './AgentSubscriptions.svelte';
   import BackgroundHooksRow from './BackgroundHooksRow.svelte';
-  import BrowserTabsRow from './BrowserTabsRow.svelte';
   import MonitoredPrsRow from './MonitoredPrsRow.svelte';
   import { m } from '$shared/paraglide/messages.js';
   import { formatInteger } from '$lib/i18n/format';
@@ -18,6 +19,8 @@
     type AgentAvatarStackItem,
   } from '$features/agent/components/agent-avatar/AgentAvatarStack.svelte';
   import {
+    SUBSCRIPTION_CARD_CONTAINMENT_CLASS,
+    SUBSCRIPTION_CARD_SURFACE_CLASS,
     SUBSCRIPTION_CHEVRON_CLASS,
     SUBSCRIPTION_CHEVRON_SIZE_CLASS,
     SUBSCRIPTION_DISCLOSURE_ROW_CLASS,
@@ -25,6 +28,7 @@
     SUBSCRIPTION_ICON_BUTTON_CLASS,
     SUBSCRIPTION_LEADING_COLUMN_CLASS,
     SUBSCRIPTION_LEADING_CONTENT_CLASS,
+    SUBSCRIPTION_TRAILING_CONTROLS_CLASS,
   } from './subscription-disclosure';
   import { Button } from '$lib/components/ui/button';
   import {
@@ -32,11 +36,19 @@
     setEventSubscriptionsExpanded,
   } from './agent-subscriptions-view-state';
   import { safeSubscriptionSlide } from './subscription-disclosure';
+  import { selectBackgroundHooks } from '$store/renderer/slices/background-hooks/background-hooks-selectors';
+  import { selectAgentPrMonitors } from '$store/renderer/slices/pr-monitor/pr-monitor-selectors';
+  import { selectAgentSubscriptionLane } from '$store/renderer/slices/agent-subscription-ui/agent-subscription-ui-selectors';
+  import { selectAgentSessionsById } from '$store/renderer/slices/agent-session/agent-session-selectors';
+  import { getAvatarStateForSession } from '$features/agent/components/agent-avatar/avatar-state';
+  import type { TaskProgressItem } from './workspace-task-fallback';
 
   interface Props {
     workspaceId: string;
     agentId: string;
     compact?: boolean;
+    /** The surrounding transcript/preview owns the complete gap before this card. */
+    suppressTopGap?: boolean;
     /** Whether the owning chat is active, independent of disclosure state. */
     isActive?: boolean;
     visible?: boolean;
@@ -45,7 +57,12 @@
       count: number;
       initiallyExpanded?: boolean;
       mode?: 'generic' | 'agents' | 'mixed';
-      agents?: Array<{ id: string; name: string; finished?: boolean }>;
+      agents?: Array<{
+        id: string;
+        name: string;
+        finished?: boolean;
+        taskProgress?: TaskProgressItem[];
+      }>;
     };
     previewContent?: Snippet;
   }
@@ -54,21 +71,17 @@
     workspaceId,
     agentId,
     compact = false,
+    suppressTopGap = false,
     isActive = true,
     visible = $bindable(false),
     isolatedPreview,
     previewContent,
   }: Props = $props();
-  let agentsVisible = $state(false);
   let hooksVisible = $state(false);
   let prsVisible = $state(false);
-  let browserTabsVisible = $state(false);
-  let agentCount = $state(0);
   let hookCount = $state(0);
   let prCount = $state(0);
-  let browserTabCount = $state(0);
-  let participantAgentIds = $state<string[]>([]);
-  let participantAvatarItems = $state<AgentAvatarStackItem[]>([]);
+  let previewParticipantAvatarItems = $state<AgentAvatarStackItem[]>([]);
   let isCollapsed = $state(false);
   let desiredCollapsed = $state(false);
   let bodyIsClosing = $state(false);
@@ -87,23 +100,73 @@
     return () => appStore.dispatch(prMonitorsUnsubscribeRequested(currentWorkspaceId));
   });
 
-  const hasEventSubscriptions = $derived(
-    isolatedPreview ? isolatedPreview.count > 0 : agentsVisible || hooksVisible || prsVisible,
+  const workspaceIdStore = writable('');
+  const agentIdStore = writable('');
+  $effect(() => {
+    workspaceIdStore.set(workspaceId);
+    agentIdStore.set(agentId);
+  });
+  const hooks$ = selectBackgroundHooks(workspaceIdStore);
+  const monitors$ = selectAgentPrMonitors(workspaceIdStore, agentIdStore);
+  const agentSubscriptionLane$ = selectAgentSubscriptionLane(workspaceIdStore, agentIdStore);
+  const agentSessionsById$ = selectAgentSessionsById();
+  const storedHookCount = $derived(
+    $hooks$.filter(
+      ({ agentId: ownerAgentId, state: hookState }) =>
+        ownerAgentId === agentId && (hookState === 'scheduled' || hookState === 'running'),
+    ).length,
   );
-  const hasSubscriptions = $derived(hasEventSubscriptions || browserTabsVisible);
+  const storedPrCount = $derived($monitors$.filter((monitor) => monitor.state === 'active').length);
+  const hasHooks = $derived(storedHookCount > 0 || (!isCollapsed && hooksVisible));
+  const hasPrs = $derived(storedPrCount > 0 || (!isCollapsed && prsVisible));
+  const effectiveHookCount = $derived(
+    storedHookCount > 0 ? storedHookCount : isCollapsed ? 0 : hookCount,
+  );
+  const effectivePrCount = $derived(storedPrCount > 0 ? storedPrCount : isCollapsed ? 0 : prCount);
+  const storedParticipantAvatarItems = $derived(
+    $agentSubscriptionLane$.participantAgentIds.map((participantAgentId): AgentAvatarStackItem => {
+      const session = $agentSessionsById$[participantAgentId];
+      return {
+        key: participantAgentId,
+        agentId: participantAgentId,
+        specialist: session?.metadata?.specialist ?? session?.agentMetadata?.specialist ?? null,
+        state: getAvatarStateForSession(session),
+      };
+    }),
+  );
+  const hasEventSubscriptions = $derived(
+    isolatedPreview
+      ? isolatedPreview.count > 0
+      : $agentSubscriptionLane$.visible || hasHooks || hasPrs,
+  );
+  const hasSubscriptions = $derived(hasEventSubscriptions);
   const totalCount = $derived(
-    isolatedPreview ? isolatedPreview.count : agentCount + hookCount + prCount,
+    isolatedPreview
+      ? isolatedPreview.count
+      : $agentSubscriptionLane$.count + effectiveHookCount + effectivePrCount,
+  );
+  const visibleSectionCount = $derived(
+    isolatedPreview
+      ? 1
+      : [$agentSubscriptionLane$.visible, hasHooks, hasPrs].filter(Boolean).length,
+  );
+  const isSingleEvent = $derived(
+    hasEventSubscriptions && visibleSectionCount === 1 && totalCount === 1,
   );
 
   // Agent-only cards show "Waiting for N agents"; mixed/non-agent cards show "Subscribed to N events"
   const isAgentOnly = $derived(
     isolatedPreview?.mode === 'agents' ||
-      (!isolatedPreview && agentsVisible && !hooksVisible && !prsVisible),
+      (!isolatedPreview && $agentSubscriptionLane$.visible && !hasHooks && !hasPrs),
   );
   const agentOnlyCount = $derived(
-    isolatedPreview?.mode === 'agents' ? (isolatedPreview.agents?.length ?? 0) : agentCount,
+    isolatedPreview?.mode === 'agents'
+      ? (isolatedPreview.agents?.length ?? 0)
+      : $agentSubscriptionLane$.count,
   );
-  const collapsedStackItems = $derived(participantAvatarItems);
+  const collapsedStackItems = $derived(
+    isolatedPreview ? previewParticipantAvatarItems : storedParticipantAvatarItems,
+  );
 
   const heading = $derived.by(() => {
     if (isolatedPreview && !isAgentOnly) {
@@ -129,14 +192,6 @@
         ? m.chat_eventSubscriptions_heading_one({ count: formatInteger(totalCount) })
         : m.chat_eventSubscriptions_heading_many({ count: formatInteger(totalCount) });
   });
-
-  // A tabs-only card has no event subscriptions, so labelling it "Subscribed
-  // to events" would be wrong — use the browser-tabs heading instead.
-  const cardAriaLabel = $derived(
-    hasEventSubscriptions || !browserTabsVisible
-      ? heading
-      : m.chat_browserTabs_heading({ count: formatInteger(browserTabCount) }),
-  );
 
   $effect(() => {
     visible = hasSubscriptions;
@@ -173,18 +228,18 @@
 </script>
 
 <div
-  class="w-full min-w-0 max-w-full {compact ? 'mt-6' : 'mt-8'}"
+  class="w-full min-w-0 max-w-full {suppressTopGap ? 'mt-0' : 'mt-6'}"
   class:hidden={!hasSubscriptions}
   data-testid="subscription-utility-area"
   data-has-subscriptions={hasSubscriptions}
 >
   <section
-    class="w-full min-w-0 max-w-full overflow-hidden rounded-lg border border-border bg-card/80 shadow-sm font-family-child"
+    class="{SUBSCRIPTION_CARD_CONTAINMENT_CLASS} {SUBSCRIPTION_CARD_SURFACE_CLASS}"
     data-conversation-layer="event-subscriptions"
     data-testid="event-subscriptions-card"
-    aria-label={cardAriaLabel}
+    aria-label={heading}
   >
-    {#if !isAgentOnly && hasEventSubscriptions}
+    {#if !isAgentOnly && hasEventSubscriptions && !isSingleEvent}
       <h2 data-testid="event-subscriptions-outer-header">
         <Button
           variant="plain"
@@ -196,7 +251,7 @@
           aria-controls={bodyId}
           onclick={toggleCollapsed}
         >
-          <span class="w-max shrink-0 {SUBSCRIPTION_LEADING_CONTENT_CLASS}">
+          <span class="min-w-0 shrink {SUBSCRIPTION_LEADING_CONTENT_CLASS}">
             <span
               class={SUBSCRIPTION_LEADING_COLUMN_CLASS}
               data-testid="event-subscriptions-leading-column"
@@ -204,12 +259,12 @@
             >
               <Fa
                 icon={faBell}
-                size={14}
-                class="h-3.5! w-3.5! shrink-0 {SUBSCRIPTION_ICON_CLASS}"
+                size={16}
+                class="{CHAT_OPERATIONAL_ICON_CLASS} {SUBSCRIPTION_ICON_CLASS}"
               />
             </span>
             <span
-              class="whitespace-nowrap text-muted-foreground"
+              class="min-w-0 truncate whitespace-nowrap text-muted-foreground"
               data-testid="event-subscriptions-summary-title"
             >
               {heading}
@@ -221,7 +276,7 @@
             <span class="min-w-0 flex-1" aria-hidden="true"></span>
           {/if}
           <span
-            class="inline-flex h-6 w-6 shrink-0 items-center justify-center"
+            class="h-6 w-6 justify-center {SUBSCRIPTION_TRAILING_CONTROLS_CLASS}"
             data-testid="event-subscriptions-chevron"
           >
             <Fa
@@ -235,19 +290,19 @@
         </Button>
       </h2>
     {/if}
-    {#if isAgentOnly || !isCollapsed}
+    {#if isSingleEvent || isAgentOnly || !isCollapsed}
       <div
         bind:this={bodyElement}
         id={bodyId}
         data-testid="event-subscriptions-body"
         data-subscription-motion="height-opacity-y"
-        inert={!isAgentOnly && bodyIsClosing}
-        aria-hidden={!isAgentOnly && bodyIsClosing}
+        inert={!isSingleEvent && !isAgentOnly && bodyIsClosing}
+        aria-hidden={!isSingleEvent && !isAgentOnly && bodyIsClosing}
         transition:safeSubscriptionSlide
       >
         {#if isolatedPreview?.mode === 'agents' || isolatedPreview?.mode === 'mixed'}
           <div
-            class={isAgentOnly ? '' : 'border-t border-border'}
+            class={isSingleEvent || isAgentOnly ? '' : 'border-t border-border'}
             data-testid="event-subscriptions-agents"
           >
             <AgentSubscriptions
@@ -255,13 +310,12 @@
               {agentId}
               {compact}
               embedded
-              forceWaitingHeader
+              forceWaitingHeader={!isSingleEvent}
               isolatedPreview={{
                 agents: isolatedPreview.agents ?? [],
                 initiallyExpanded: isolatedPreview.initiallyExpanded ?? true,
               }}
-              bind:participantAgentIds
-              bind:participantAvatarItems
+              bind:participantAvatarItems={previewParticipantAvatarItems}
             />
           </div>
           {#if isolatedPreview.mode === 'mixed'}
@@ -270,13 +324,16 @@
             </div>
           {/if}
         {:else if isolatedPreview}
-          <div class="border-t border-border" data-testid="event-subscriptions-preview">
+          <div
+            class={isSingleEvent ? '' : 'border-t border-border'}
+            data-testid="event-subscriptions-preview"
+          >
             {@render previewContent?.()}
           </div>
         {:else}
           <div
-            class={isAgentOnly ? '' : 'border-t border-border'}
-            class:hidden={!agentsVisible}
+            class={isSingleEvent || isAgentOnly ? '' : 'border-t border-border'}
+            class:hidden={!$agentSubscriptionLane$.visible}
             data-testid="event-subscriptions-agents"
           >
             <AgentSubscriptions
@@ -284,15 +341,15 @@
               {agentId}
               {compact}
               embedded
-              forceWaitingHeader
-              bind:visible={agentsVisible}
-              bind:count={agentCount}
-              bind:participantAgentIds
-              bind:participantAvatarItems
+              forceWaitingHeader={!isSingleEvent}
+              visible={$agentSubscriptionLane$.visible}
+              count={$agentSubscriptionLane$.count}
+              participantAgentIds={$agentSubscriptionLane$.participantAgentIds}
+              participantAvatarItems={storedParticipantAvatarItems}
             />
           </div>
           <div
-            class="border-t border-border"
+            class={isSingleEvent ? '' : 'border-t border-border'}
             class:hidden={!hooksVisible}
             data-testid="event-subscriptions-hooks"
           >
@@ -305,7 +362,7 @@
             />
           </div>
           <div
-            class="border-t border-border"
+            class={isSingleEvent ? '' : 'border-t border-border'}
             class:hidden={!prsVisible}
             data-testid="event-subscriptions-prs"
           >
@@ -318,23 +375,6 @@
             />
           </div>
         {/if}
-      </div>
-    {/if}
-    {#if !isolatedPreview}
-      <!-- Parallel "Browser tabs (N)" section: stays visible while the events
-           disclosure above is collapsed (it has its own expand state). -->
-      <div
-        class={hasEventSubscriptions ? 'border-t border-border' : ''}
-        class:hidden={!browserTabsVisible}
-        data-testid="event-subscriptions-browser-tabs"
-      >
-        <BrowserTabsRow
-          {workspaceId}
-          {agentId}
-          embedded
-          bind:visible={browserTabsVisible}
-          bind:count={browserTabCount}
-        />
       </div>
     {/if}
   </section>

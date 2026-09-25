@@ -22,7 +22,7 @@ function sourceFiles(directory: string): string[] {
     const path = join(directory, entry.name);
     if (entry.isDirectory()) return sourceFiles(path);
     return /\.(svelte|ts)$/.test(entry.name) &&
-      !/\.(test(?:-harness)?|fixtures|meta)\./.test(entry.name)
+      !/\.(test(?:-harness)?|spec|fixtures|meta)\./.test(entry.name)
       ? [path]
       : [];
   });
@@ -95,50 +95,38 @@ describe('B2 caller metadata regression', () => {
     const expected = {
       checkbox: [
         'src/lib/component-catalog/renderers/BasicCatalogPreview.svelte',
+        'src/lib/component-catalog/renderers/FieldPreviewCell.svelte',
         'src/lib/component-catalog/renderers/ProposalCatalogPreview.svelte',
+        'src/lib/components/chat/ChatChangesPanel.svelte',
         'src/lib/components/chat/input/ContextPickerButton.svelte',
         'src/lib/components/chat/proposals/BulkProposalItems.svelte',
-        'src/lib/components/layout/ConnectBackendModal.svelte',
+        'src/lib/components/modals/InterruptedAgentsModal.svelte',
         'src/lib/components/modals/TransferWorkspaceModal.svelte',
-        'src/lib/components/settings/HardwareConsoleSettings.svelte',
+        'src/lib/components/patterns/settings/custom-controls.ts',
         'src/lib/components/tiptap/TaskItemNodeView.svelte',
         'src/lib/components/workspace/initializer/BranchSelector.svelte',
         'src/lib/components/workspace/initializer/RepoAndBranchPicker.svelte',
       ],
       switch: [
-        'src/lib/component-catalog/CatalogControls.svelte',
         'src/lib/component-catalog/ChatPolishGeometryControls.svelte',
         'src/lib/component-catalog/renderers/BasicCatalogPreview.svelte',
+        'src/lib/component-catalog/renderers/FieldPreviewCell.svelte',
         'src/lib/components/debug/DebugPanel.svelte',
-        'src/lib/components/settings/AgentBackendSettings.svelte',
-        'src/lib/components/settings/BackendSyncSettings.svelte',
-        'src/lib/components/settings/DeviceRow.svelte',
-        'src/lib/components/settings/OpenInAppsSettings.svelte',
-        'src/lib/components/settings/mcp/McpServerCard.svelte',
+        'src/lib/components/patterns/settings/SettingsControl.svelte',
+        'src/lib/components/patterns/settings/custom-controls.ts',
+        'src/lib/components/patterns/settings/types.ts',
+        'src/lib/components/workspace/sidebar/FileChangesSection.svelte',
         'src/lib/components/workspace/sidebar/McpServersSection.svelte',
         'src/lib/components/workspace/sidebar/MergePanel.svelte',
         'src/routes/(app)/settings/+page.svelte',
       ],
-      toggle: [
-        'src/lib/component-catalog/renderers/BasicCatalogPreview.svelte',
-        'src/lib/components/settings/AgentFeaturesSettings.svelte',
-        'src/lib/components/settings/GitWorkspaceSettings.svelte',
-        'src/lib/components/settings/HardwareConsoleSettings.svelte',
-        'src/lib/components/settings/LegacyImportSettings.svelte',
-        'src/lib/components/settings/McpServersSettings.svelte',
-        'src/lib/components/settings/NotificationSettings.svelte',
-        'src/lib/components/settings/RtkSettings.svelte',
-        'src/lib/components/settings/WebSocketApiSettings.svelte',
-        'src/lib/components/settings/WorkspaceApiSettings.svelte',
-        'src/lib/components/workspace/sidebar/FileChangesSection.svelte',
-        'src/routes/(app)/settings/+page.svelte',
-      ],
+      toggle: ['src/lib/component-catalog/renderers/BasicCatalogPreview.svelte'],
       'toggle-group': [
-        'src/features/layout/tab-types/AgentViewSettingsDropdown.svelte',
-        'src/features/layout/tab-types/NoteViewSettingsDropdown.svelte',
         'src/lib/component-catalog/CatalogControls.svelte',
         'src/lib/component-catalog/renderers/BasicCatalogPreview.svelte',
-        'src/lib/components/settings/ColorThemeSettings.svelte',
+        'src/lib/components/patterns/settings/custom-controls.ts',
+        'src/lib/components/workspace/initializer/AddRemoteSetupModal.svelte',
+        'src/routes/(app)/settings/+page.svelte',
       ],
     };
 
@@ -158,26 +146,9 @@ describe('B2 caller metadata regression', () => {
   it('keeps compatibility usage counts, replacements, and removal gates verifiable', () => {
     const usages = discoverCompatibilityUsages();
     const expectedUsages = {
-      group: [
-        { path: 'src/lib/component-catalog/renderers/BasicCatalogPreview.svelte', count: 1 },
-        { path: 'src/routes/(app)/settings/+page.svelte', count: 3 },
-      ],
-      switch: [
-        { path: 'src/lib/component-catalog/renderers/BasicCatalogPreview.svelte', count: 1 },
-        { path: 'src/lib/components/workspace/sidebar/FileChangesSection.svelte', count: 1 },
-      ],
-      indicator: [
-        { path: 'src/lib/component-catalog/renderers/BasicCatalogPreview.svelte', count: 1 },
-        { path: 'src/lib/components/settings/AgentFeaturesSettings.svelte', count: 1 },
-        { path: 'src/lib/components/settings/GitWorkspaceSettings.svelte', count: 2 },
-        { path: 'src/lib/components/settings/HardwareConsoleSettings.svelte', count: 1 },
-        { path: 'src/lib/components/settings/LegacyImportSettings.svelte', count: 1 },
-        { path: 'src/lib/components/settings/McpServersSettings.svelte', count: 1 },
-        { path: 'src/lib/components/settings/NotificationSettings.svelte', count: 3 },
-        { path: 'src/lib/components/settings/RtkSettings.svelte', count: 1 },
-        { path: 'src/lib/components/settings/WebSocketApiSettings.svelte', count: 3 },
-        { path: 'src/lib/components/settings/WorkspaceApiSettings.svelte', count: 1 },
-      ],
+      group: [],
+      switch: [],
+      indicator: [],
     };
     const replacements = {
       group: '$lib/components/ui/toggle-group',

@@ -1,4 +1,12 @@
 <script lang="ts">
+  import {
+    Button,
+    Header,
+    Input,
+    IntentMarkLoader,
+    Skeleton,
+    Textarea,
+  } from '$lib/components/patterns/settings/custom-controls';
   import { logger } from '../../../shared/logger';
   import { onMount } from 'svelte';
   import type { McpServerConfig, McpServerWithStatus, McpServerFormState } from './mcp/types';
@@ -13,17 +21,18 @@
   import McpServerForm from './mcp/McpServerForm.svelte';
   import McpJsonImport from './mcp/McpJsonImport.svelte';
   import McpIcon from './mcp/McpIcon.svelte';
-  import Toggle from '$lib/components/ui/toggle/toggle.svelte';
-  import Button from '$lib/components/ui/button/button.svelte';
-  import Input from '$lib/components/ui/input/input.svelte';
-  import { Skeleton } from '$lib/components/ui/skeleton';
-  import { slide } from 'svelte/transition';
+  import { ListView } from '$lib/components/patterns/collection';
+  import {
+    SettingsForm,
+    defineSettings,
+    defineSettingsCustomControls,
+  } from '$lib/components/patterns/settings';
+  import { crispOut, springIn } from '$lib/motion';
   import { faCheck, faCopy, faPlus, faRotateRight } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
-  import { toast, withToastCountdown } from '$lib/components/ui/toast';
+  import { notify, withToastCountdown } from '$lib/components/patterns/notify';
   import { m } from '$shared/paraglide/messages.js';
   import { formatInteger } from '$lib/i18n/format';
-  import Header from '../ui/Header.svelte';
   import { handleLink } from '$features/navigation/link-handler';
   import { store as appStore } from '$store/renderer/store';
   import { getWorkspaceRouteContext } from '$lib/utils/workspace-route-context';
@@ -125,10 +134,10 @@
   async function handleCopyDiagnosticCommand() {
     try {
       await navigator.clipboard.writeText(diagnosticCommand);
-      toast.success(m.settings_mcpServers_diagnosticCopied());
+      notify.success(m.settings_mcpServers_diagnosticCopied());
     } catch (copyError) {
       logger.error('Failed to copy MCP diagnostic command:', copyError);
-      toast.error(m.settings_mcpServers_diagnosticCopyError());
+      notify.error(m.settings_mcpServers_diagnosticCopyError());
     }
   }
 
@@ -138,7 +147,7 @@
 
   function handleRestartServer(name: string) {
     appStore.dispatch(restartServer(name));
-    toast.info(m.settings_mcpServers_restartingToast({ name }), {
+    notify.info(m.settings_mcpServers_restartingToast({ name }), {
       description: m.settings_mcpServers_restartingDescription(),
       duration: 3000,
     });
@@ -174,7 +183,7 @@
     loadSettingsFile();
 
     // Show toast with undo action
-    toast.warning(
+    notify.warning(
       m.settings_mcpServers_deletedToast({ name }),
       withToastCountdown(
         {
@@ -331,85 +340,133 @@
   const editFormState = $derived<McpServerFormState | undefined>(
     editingServer ? serverToFormState(editingServer) : undefined,
   );
+
+  const enabledSchema = $derived.by(() =>
+    defineSettings({
+      sections: [
+        {
+          id: 'mcp-servers',
+          title: m.settings_mcpServers_title(),
+          entries: [
+            {
+              kind: 'switch',
+              id: 'mcp-servers-enabled',
+              label: m.settings_mcpServers_title(),
+              get: () => $enabled$,
+              set: handleToggleEnabled,
+            },
+          ],
+        },
+      ],
+    }),
+  );
+
+  const configuredSchema = $derived.by(() =>
+    defineSettings({
+      sections: [
+        {
+          id: 'mcp-configured',
+          title: m.settings_mcpServers_sectionTitle(),
+          entries: [
+            {
+              kind: 'custom',
+              id: 'mcp-configured-servers',
+              label: m.settings_mcpServers_sectionTitle(),
+              description:
+                $servers$.length === 1
+                  ? m.settings_mcpServers_serverCount_one()
+                  : m.settings_mcpServers_serverCount_many({
+                      count: formatInteger($servers$.length),
+                    }),
+            },
+          ],
+        },
+      ],
+    }),
+  );
 </script>
+
+{#snippet mcpDescription()}
+  <span class="block">{m.settings_mcpServers_description()}</span>
+  <span class="block">{m.settings_mcpServers_newAgentsOnlyNote()}</span>
+{/snippet}
+
+{#snippet configuredServersControl()}
+  {#if showAddPanel}
+    <Button variant="link" size="sm" onclick={() => (showAddPanel = false)}>
+      {m.settings_mcpServers_cancel()}
+    </Button>
+  {:else}
+    <Button variant="secondary" size="sm" onclick={() => (showAddPanel = true)}>
+      <Fa icon={faPlus} class="mr-1.5" size="xs" />
+      {m.settings_mcpServers_addNew()}
+    </Button>
+  {/if}
+{/snippet}
 
 <section class="bg-card rounded-xl divide-y divide-border overflow-hidden">
   <!-- Enable User MCP Servers Toggle -->
-  <div class="px-6 py-5">
-    <div class="flex items-center justify-between">
-      <div>
-        <p class="text-sm font-medium text-foreground">{m.settings_mcpServers_title()}</p>
-        <p class="text-xs text-subtle">{m.settings_mcpServers_description()}</p>
-        <p class="text-xs text-subtle">{m.settings_mcpServers_newAgentsOnlyNote()}</p>
-      </div>
-      <Toggle
-        pressed={$enabled$}
-        onclick={handleToggleEnabled}
-        variant="indicator"
-        size="xs"
-        class="mb-auto"
-        ariaLabel={m.settings_mcpServers_title()}
-      />
-    </div>
+  <div data-slot="settings-section-body" class="px-6 py-4">
+    <SettingsForm
+      schema={enabledSchema}
+      embedded
+      compact={false}
+      descriptions={{ 'mcp-servers-enabled': mcpDescription }}
+    />
   </div>
 
   {#if $enabled$}
-    <div transition:slide={{ duration: 200 }} class="px-6 py-5 space-y-6">
+    <div
+      in:springIn={{ tier: 'moderate', y: -4 }}
+      out:crispOut={{ tier: 'moderate' }}
+      data-slot="settings-section-body"
+      class="px-6 py-4 space-y-6"
+    >
       <!-- Combined MCP Servers Section -->
       <section>
         <!-- Header with Add button -->
-        <div class="flex items-center justify-between py-4">
-          <div>
-            <p class="text-sm font-medium text-foreground">
-              {m.settings_mcpServers_sectionTitle()}
-            </p>
-            <p class="text-xs text-subtle">
-              {$servers$.length === 1
-                ? m.settings_mcpServers_serverCount_one()
-                : m.settings_mcpServers_serverCount_many({
-                    count: formatInteger($servers$.length),
-                  })}
-            </p>
-          </div>
-          {#if showAddPanel}
-            <Button variant="ghost" size="sm" onclick={() => (showAddPanel = false)}>
-              {m.settings_mcpServers_cancel()}
-            </Button>
-          {:else}
-            <Button variant="outline" size="sm" onclick={() => (showAddPanel = true)}>
-              <Fa icon={faPlus} class="mr-1.5" size="xs" />
-              {m.settings_mcpServers_addNew()}
-            </Button>
-          {/if}
-        </div>
+        <SettingsForm
+          schema={configuredSchema}
+          embedded
+          compact={false}
+          custom={defineSettingsCustomControls({
+            'mcp-configured-servers': configuredServersControl,
+          })}
+        />
 
         <!-- Expandable Add Panel -->
         {#if showAddPanel}
-          <div transition:slide={{ duration: 200 }} class="border-b border-border">
+          <div
+            in:springIn={{ tier: 'moderate', y: -4 }}
+            out:crispOut={{ tier: 'moderate' }}
+            class="border-b border-border"
+          >
             <div class="py-4">
               <Header size={2} title={m.settings_mcpServers_addPanelTitle()} class="mb-3" />
               <!-- Mode Toggle -->
               <div class="flex gap-1 p-1 bg-muted rounded-lg w-fit mb-4">
-                <button
+                <Button
+                  variant="ghost"
                   type="button"
-                  class="px-3 py-1.5 text-sm rounded-md transition-colors cursor-pointer {addMode ===
+                  class="px-3 py-1.5 type-body rounded-md transition-colors cursor-pointer {addMode ===
                   'form'
                     ? 'bg-background text-foreground shadow-sm'
                     : 'text-muted-foreground hover:text-foreground'}"
                   onclick={() => (addMode = 'form')}
                 >
                   {m.settings_mcpServers_modeConfigure()}
-                </button>
-                <button
+                </Button>
+                <Button
+                  variant="ghost"
                   type="button"
-                  class="px-3 py-1.5 text-sm rounded-md transition-colors cursor-pointer {addMode ===
+                  class="px-3 py-1.5 type-body rounded-md transition-colors cursor-pointer {addMode ===
                   'import'
                     ? 'bg-background text-foreground shadow-sm'
                     : 'text-muted-foreground hover:text-foreground'}"
                   onclick={() => (addMode = 'import')}
                 >
                   {m.settings_mcpServers_modeImportJson()}
-                </button>
+                </Button>
               </div>
 
               {#if addMode === 'form'}
@@ -427,9 +484,13 @@
 
         <!-- Edit Panel (when editing a server) -->
         {#if editingServer && editFormState}
-          <div transition:slide={{ duration: 200 }} class="border-b border-border bg-muted/20">
+          <div
+            in:springIn={{ tier: 'moderate', y: -4 }}
+            out:crispOut={{ tier: 'moderate' }}
+            class="border-b border-border bg-muted/20"
+          >
             <div class="py-4">
-              <h3 class="text-sm font-medium mb-4">
+              <h3 class="type-body font-medium mb-4">
                 {m.settings_mcpServers_editServerTitle({ name: editingServer.name })}
               </h3>
               <McpServerForm
@@ -483,17 +544,18 @@
           {:else if $error$}
             <div class="mb-4 rounded-lg border border-danger/30 bg-danger-background/5 p-4">
               <div class="space-y-1">
-                <p class="text-sm font-medium text-foreground">
+                <p class="type-body font-medium text-foreground">
                   {m.settings_mcpServers_loadError()}
                 </p>
-                <p class="text-sm text-danger">{$error$}</p>
+                <p class="type-body text-danger">{$error$}</p>
               </div>
 
               <div class="mt-3 rounded-md border border-border bg-background/70 p-3">
-                <p class="text-xs text-muted-foreground">
+                <p class="type-body text-muted-foreground">
                   {m.settings_mcpServers_diagnosticCommand()}
                 </p>
-                <code class="mt-1 block break-all text-xs text-foreground">{diagnosticCommand}</code
+                <code class="mt-1 block break-all type-caption text-foreground"
+                  >{diagnosticCommand}</code
                 >
               </div>
 
@@ -509,30 +571,37 @@
                 </Button>
               </div>
 
-              <p class="mt-3 text-xs text-muted-foreground">
+              <p class="mt-3 type-body text-muted-foreground">
                 {m.settings_mcpServers_diagnosticHint()}
               </p>
             </div>
           {:else if $servers$.length === 0}
-            <div class="text-xs text-subtle mb-4">
+            <div class="type-caption text-subtle mb-4">
               <p>{m.settings_mcpServers_emptyTitle()}</p>
               <p class="mt-1">
                 {m.settings_mcpServers_emptyDescription()}
-                <button
+                <Button
+                  variant="ghost"
                   type="button"
-                  class="text-primary hover:underline cursor-pointer"
+                  class="text-primary-ink hover:underline cursor-pointer"
                   onclick={(e) => {
                     handleLink('https://docs.augmentcode.com/setup-augment/mcp', {
                       workspaceId,
                       event: e,
                     });
-                  }}>{m.settings_mcpServers_learnHow()}</button
+                  }}>{m.settings_mcpServers_learnHow()}</Button
                 >
               </p>
             </div>
           {:else}
-            <div class="mb-6">
-              {#each $servers$ as server (server.name)}
+            <ListView
+              items={$servers$}
+              getKey={(server) => server.name}
+              getText={(server) => server.name}
+              ariaLabel={m.settings_mcpServers_sectionTitle()}
+              class="mb-6"
+            >
+              {#snippet row({ item: server })}
                 <McpServerCard
                   {server}
                   onToggle={handleToggleServer}
@@ -541,14 +610,14 @@
                   onReauthenticate={handleReauthenticate}
                   onRestart={handleRestartServer}
                 />
-              {/each}
-            </div>
+              {/snippet}
+            </ListView>
           {/if}
 
           <!-- Easy MCP Installation (below configured servers) -->
           <div class="pt-4">
             <div class="flex items-center gap-2 mb-3">
-              <span class="text-sm font-medium text-foreground"
+              <span class="type-body font-medium text-foreground"
                 >{m.settings_mcpServers_quickInstall()}</span
               >
             </div>
@@ -566,29 +635,29 @@
                     <div class="py-3 px-1">
                       <div class="flex items-center gap-2 mb-3">
                         <McpIcon iconName={option.iconName} label={option.label} size={20} />
-                        <span class="font-medium text-sm">{option.label}</span>
+                        <span class="font-medium type-body">{option.label}</span>
                       </div>
 
                       {#each option.userInput || [] as input}
                         {@const inputKey =
                           input.envVarName || input.correspondingArg || input.label}
                         <div class="mb-2">
-                          <span class="block text-xs text-subtle mb-1">
+                          <span class="block type-caption text-subtle mb-1">
                             {input.label}
                           </span>
                           <Input
                             bind:value={userInputValues[inputKey]}
                             placeholder={input.placeholder}
-                            class="h-8 text-sm"
+                            class="h-8 type-body"
                           />
                           {#if input.description}
-                            <p class="text-xs text-subtle mt-0.5">{input.description}</p>
+                            <p class="type-body text-subtle mt-0.5">{input.description}</p>
                           {/if}
                         </div>
                       {/each}
 
                       {#if installError}
-                        <p class="text-xs text-danger mb-2">{installError}</p>
+                        <p class="type-body text-danger mb-2">{installError}</p>
                       {/if}
 
                       <div class="flex gap-2 mt-3">
@@ -607,7 +676,8 @@
                     <div
                       class="w-full flex items-center gap-3 py-2.5 px-1 rounded-md transition-colors"
                     >
-                      <button
+                      <Button
+                        variant="ghost"
                         type="button"
                         class="flex-1 flex items-center gap-3 min-w-0 cursor-pointer"
                         onclick={() => startInstall(option)}
@@ -617,44 +687,49 @@
 
                         <div class="flex-1 min-w-0 text-left">
                           <div class="flex items-center gap-2">
-                            <span class="text-sm font-medium truncate">{option.label}</span>
+                            <span class="type-body font-medium truncate">{option.label}</span>
                             {#if needsAuth}
-                              <span class="text-ui text-amber-700 dark:text-amber-400 font-medium">
+                              <span class="type-caption text-warning-ink font-medium">
                                 {m.settings_mcp_status_needsAuth()}
                               </span>
                             {:else if installed}
-                              <span class="text-ui text-green-600 font-medium">
+                              <span class="type-caption text-green-600 font-medium">
                                 {m.settings_mcpServers_installed()}
                               </span>
                             {/if}
                           </div>
-                          <p class="text-xs text-subtle truncate">{option.description}</p>
+                          <p class="type-body text-subtle truncate">{option.description}</p>
                         </div>
-                      </button>
+                      </Button>
 
                       <div class="shrink-0 flex items-center gap-2">
                         {#if installing}
-                          <div
-                            class="w-4 h-4 border-2 border-muted-foreground/30 border-t-muted-foreground rounded-full animate-spin"
-                          ></div>
+                          <IntentMarkLoader size={16} class="text-muted-foreground" />
                         {:else if needsAuth}
-                          <button
+                          <Button
+                            variant="ghost"
                             type="button"
-                            class="px-3 py-1 text-xs font-medium rounded-md border border-amber-500/50 text-amber-700 dark:text-amber-400 hover:bg-amber-500/10 transition-colors cursor-pointer"
+                            class="px-3 py-1 type-body font-medium rounded-md border border-warning/30 text-warning-ink hover:bg-warning/10 transition-colors cursor-pointer"
                             onclick={() => handleReauthenticate(normalizeServerName(option.label))}
                           >
                             {m.settings_mcp_authenticateButton()}
-                          </button>
+                          </Button>
                         {:else if installed}
                           <Fa icon={faCheck} size="sm" class="text-green-500" />
                         {:else}
-                          <button
+                          <Button
+                            variant="ghost"
+                            size="icon-compact"
+                            iconOnly
                             type="button"
-                            class="p-1 rounded-md hover:bg-muted transition-colors cursor-pointer"
+                            class="hover:bg-muted transition-colors cursor-pointer"
                             onclick={() => startInstall(option)}
+                            aria-label={m.settings_mcpServers_install_ariaLabel({
+                              name: option.label,
+                            })}
                           >
                             <Fa icon={faPlus} size="sm" class="text-subtle" />
-                          </button>
+                          </Button>
                         {/if}
                       </div>
                     </div>
@@ -668,56 +743,55 @@
 
       <!-- Advanced: Settings JSON Editor (daemon `mcp.servers` structured config) -->
       <section>
-        <button
+        <Button
+          variant="ghost"
           type="button"
-          class="w-full flex items-center justify-between py-4 hover:bg-muted/30 transition-colors cursor-pointer"
+          class="w-full justify-start text-left"
+          aria-expanded={showAdvanced}
           onclick={handleToggleAdvanced}
         >
-          <div class="text-left">
-            <p class="text-sm font-medium text-foreground">
-              {m.settings_mcpServers_advancedTitle()}
-            </p>
-            <p class="text-xs text-subtle">
-              {m.settings_mcpServers_advancedDescription_before()}
-              <!-- i18n-ignore (config key) -->
-              <code class="bg-muted px-1 py-0.5 rounded text-xs">mcp.servers</code>
-              {m.settings_mcpServers_advancedDescription_after()}
-            </p>
-          </div>
-          <span class="text-subtle text-xs transition-transform {showAdvanced ? 'rotate-90' : ''}"
-            >▶</span
-          >
-        </button>
+          {m.settings_mcpServers_advancedTitle()}
+          {#snippet trailingIcon()}
+            <span
+              aria-hidden="true"
+              class="text-subtle type-caption transition-transform duration-spring-fast ease-spring-fast motion-reduce:transition-none {showAdvanced
+                ? 'rotate-90'
+                : ''}">▶</span
+            >
+          {/snippet}
+        </Button>
 
         {#if showAdvanced}
           <div
-            transition:slide={{ duration: 200 }}
+            in:springIn={{ tier: 'moderate', y: -4 }}
+            out:crispOut={{ tier: 'moderate' }}
             class="pb-4 space-y-3 border-t border-border pt-4"
           >
-            <textarea
-              class="w-full h-64 px-3 py-2 bg-background border border-border rounded-md text-sm font-mono text-foreground resize-y focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/10"
+            <Textarea
+              class="w-full h-64 px-3 py-2 bg-background border border-border rounded-md type-body font-mono text-foreground resize-y focus:outline-none focus:border-primary-ink focus:ring-2 focus:ring-primary-ink/10"
               placeholder={mcpJsonPlaceholder}
               aria-label={m.settings_mcpServers_jsonEditorAriaLabel()}
-              bind:value={userMcpSettingsContent}></textarea>
+              bind:value={userMcpSettingsContent}
+            ></Textarea>
 
             <div class="flex items-center justify-between gap-4">
               <div class="flex items-center gap-2">
                 {#if $advancedSaveStatus$ === 'saved'}
-                  <span class="text-xs text-green-500"
+                  <span class="type-caption text-green-500"
                     >{m.settings_mcpServers_savedIndicator()}</span
                   >
                 {:else if $advancedSaveStatus$ === 'error'}
-                  <span class="text-xs text-danger"
+                  <span class="type-caption text-danger"
                     >✗ {$advancedSaveError$ || m.settings_mcpServers_saveFailed()}</span
                   >
                 {:else if $advancedSaveStatus$ === 'saving'}
-                  <span class="text-xs text-subtle">{m.settings_mcpServers_saving()}</span>
+                  <span class="type-caption text-subtle">{m.settings_mcpServers_saving()}</span>
                 {/if}
               </div>
               <div class="flex items-center gap-3">
                 <a
                   href="https://docs.augmentcode.com/cli/integrations#configure-mcp-via-settings-json"
-                  class="text-xs text-primary hover:underline"
+                  class="type-caption text-primary-ink hover:underline"
                   onclick={(e) => {
                     e.preventDefault();
                     handleLink(
@@ -748,8 +822,9 @@
 <!-- Import success toast -->
 {#if showImportSuccess}
   <div
-    class="fixed bottom-4 right-4 px-4 py-3 bg-green-600 text-white text-sm rounded-lg shadow-lg z-50"
-    transition:slide={{ duration: 150 }}
+    class="fixed bottom-4 right-4 px-4 py-3 bg-green-600 text-white type-body rounded-lg shadow-lg z-50"
+    in:springIn={{ tier: 'fast', y: 4 }}
+    out:crispOut={{ tier: 'fast' }}
   >
     {importedCount === 1
       ? m.settings_mcpServers_importSuccess_one()

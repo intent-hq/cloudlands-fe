@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/experimental-ct-svelte';
+import { expect, test } from '../../../../test/ct-test';
 import AssistantProseGeometryHost from './AssistantProseGeometryHost.svelte';
 
 function contrastRatio(foreground: string, background: string): number {
@@ -66,11 +66,7 @@ for (const theme of ['light', 'dark'] as const) {
               '[data-operational-icon-box], [data-tool-icon]',
             ) as HTMLElement;
             const icon = iconBox.querySelector('svg') as SVGElement;
-            const content = (
-              element.matches('button')
-                ? element.children[1]
-                : element.querySelector('button > :nth-child(2), [data-tool-sentence]')
-            ) as HTMLElement;
+            const content = element.querySelector('[data-operational-summary]') as HTMLElement;
             return {
               contentX: content.getBoundingClientRect().x + window.scrollX,
               height: element.getBoundingClientRect().height,
@@ -283,7 +279,6 @@ for (const theme of ['light', 'dark'] as const) {
 
         const assertCluster = async (testId: string, expectedRows: number) => {
           const fixture = component.locator(`[data-testid="${testId}"]`);
-          const stack = fixture.locator(':scope > *');
           const rows = fixture.locator('[data-chat-operational-row]');
           await expect(rows).toHaveCount(expectedRows);
           const rowLines = rows.locator('[data-operational-disclosure-row]');
@@ -326,23 +321,31 @@ for (const theme of ['light', 'dark'] as const) {
             );
           }
 
-          const firstBlock = fixture.locator('[data-message-content-block]').first();
-          const lastBlock = fixture.locator('[data-message-content-block]').last();
-          const firstRow = rows.first();
-          const lastRow = rows.last();
+          // Read related edges in one frame: expanded detail heights can still animate,
+          // so separate protocol calls can compare geometry from different frames.
+          const { stackBox, firstBlockBox, lastBlockBox, firstRowBox, lastRowBox } =
+            await fixture.evaluate((element) => {
+              const blocks = element.querySelectorAll('[data-message-content-block]');
+              const rows = element.querySelectorAll('[data-chat-operational-row]');
+              const box = (node: Element) => {
+                const { y, height } = node.getBoundingClientRect();
+                return { y, height };
+              };
+              return {
+                stackBox: box(element.firstElementChild!),
+                firstBlockBox: box(blocks[0]),
+                lastBlockBox: box(blocks[blocks.length - 1]),
+                firstRowBox: box(rows[0]),
+                lastRowBox: box(rows[rows.length - 1]),
+              };
+            });
           if (expectedRows === 1) {
-            const stackBox = (await stack.boundingBox())!;
-            const firstRowBox = (await firstRow.boundingBox())!;
             expect(firstRowBox.y - stackBox.y).toBeCloseTo(0, 1);
             expect(stackBox.y + stackBox.height - (firstRowBox.y + firstRowBox.height)).toBeCloseTo(
               0,
               1,
             );
           } else {
-            const firstBlockBox = (await firstBlock.boundingBox())!;
-            const lastBlockBox = (await lastBlock.boundingBox())!;
-            const firstRowBox = (await firstRow.boundingBox())!;
-            const lastRowBox = (await lastRow.boundingBox())!;
             expect(firstRowBox.y - (firstBlockBox.y + firstBlockBox.height)).toBeCloseTo(
               16 * zoom,
               1,
@@ -486,6 +489,31 @@ for (const theme of ['light', 'dark'] as const) {
   }
 }
 
+for (const theme of ['light', 'dark'] as const) {
+  test(`renders operational summaries and attribution headers at body-copy size in ${theme}`, async ({
+    mount,
+  }) => {
+    const component = await mount(AssistantProseGeometryHost, { props: { theme } });
+    const baseline = component.locator('[data-testid="baseline-geometry"]');
+    const proseFontSize = await baseline
+      .locator('[data-assistant-prose] > *')
+      .first()
+      .evaluate((element) => getComputedStyle(element).fontSize);
+    const summaryFontSizes = await baseline
+      .locator('[data-chat-operational-row] [data-operational-summary]')
+      .evaluateAll((elements) => elements.map((element) => getComputedStyle(element).fontSize));
+    const attributionFontSizes = await baseline
+      .locator(
+        '[data-testid="hook-wake-attribution"], [data-testid="pr-monitor-wake-attribution"], [data-testid="pr-monitor-wake-chip"]',
+      )
+      .evaluateAll((elements) => elements.map((element) => getComputedStyle(element).fontSize));
+
+    expect(proseFontSize).toBe('15px');
+    expect(summaryFontSizes).toEqual(Array(5).fill(proseFontSize));
+    expect(attributionFontSizes).toEqual(Array(3).fill(proseFontSize));
+  });
+}
+
 test('removes operational detail motion when reduced motion is preferred', async ({
   mount,
   page,
@@ -501,5 +529,6 @@ test('removes operational detail motion when reduced motion is preferred', async
   await disclosure.click();
   const details = component.locator(`[id="${controls}"]`);
   await expect(details).toBeVisible();
-  expect(await details.evaluate((element) => element.getAnimations().length)).toBe(0);
+  await expect(details).toContainText('Reasoning body');
+  await expect.poll(() => details.evaluate((element) => element.getAnimations().length)).toBe(0);
 });

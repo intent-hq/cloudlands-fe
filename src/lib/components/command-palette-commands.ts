@@ -5,6 +5,7 @@ import {
   faCommentDots,
   faFile,
   faFileAlt,
+  faFlask,
   faFolderOpen,
   faGlobe,
   faPaperclip,
@@ -43,6 +44,20 @@ export const COMMAND_PALETTE_COMMANDS = [
       return m.lib_commandPalette_agentChat_pill();
     },
     icon: faCommentDots,
+  },
+  {
+    id: 'enable-experimental-multiplayer',
+    get label() {
+      return m.lib_commandPalette_enableExperimentalMultiplayer_label();
+    },
+    icon: faFlask,
+  },
+  {
+    id: 'disable-experimental-multiplayer',
+    get label() {
+      return m.lib_commandPalette_disableExperimentalMultiplayer_label();
+    },
+    icon: faFlask,
   },
   {
     id: 'new-terminal',

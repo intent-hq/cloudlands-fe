@@ -1,5 +1,7 @@
 <script lang="ts">
   import * as Dialog from './index';
+  import { Button } from '$lib/components/ui/button';
+  import { Input } from '$lib/components/ui/input';
 
   let {
     closeDisabled = false,
@@ -16,8 +18,8 @@
       <Dialog.Title>Canonical dialog</Dialog.Title>
       <Dialog.Description>Dialog behavior fixture</Dialog.Description>
     </Dialog.Header>
-    <input aria-label="Dialog field" />
-    <button>Nested dialog action</button>
+    <Input aria-label="Dialog field" />
+    <Button variant="ghost">Nested dialog action</Button>
     {#if longContent}
       <div data-testid="dialog-long-content">
         {#each Array.from({ length: 24 }) as _, index (index)}
@@ -26,7 +28,7 @@
       </div>
     {/if}
     <Dialog.Footer>
-      <button class="text-danger" onclick={() => (destructiveCount += 1)}>Delete item</button>
+      <Button variant="destructive" onclick={() => (destructiveCount += 1)}>Delete item</Button>
     </Dialog.Footer>
     <output aria-label="Dialog destructive count">{destructiveCount}</output>
   </Dialog.Content>

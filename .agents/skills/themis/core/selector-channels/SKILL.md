@@ -1,11 +1,9 @@
 ---
 name: core/selector-channels
 description: >-
-  Concise agent rules for reacting to selector value changes from sagas. Use
-  takeLatestFromSelector, takeEveryFromSelector, or takeLeadingFromSelector for
-  continuous watchers; use createChannelFromSelector only for custom race,
-  conditional, or timeout flows and close it in finally. For conceptual examples,
-  link to @augmentcode/themis/docs/SAGAS.md.
+  Use when sagas react to selector changes via
+  takeLatest/Every/LeadingFromSelector, or need createChannelFromSelector for
+  custom race, condition, or timeout flows.
 type: sub-skill
 requires:
   - core

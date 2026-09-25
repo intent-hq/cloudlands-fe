@@ -11,12 +11,16 @@
 <NoteTabType {tab} {workspaceId} {isActive} {isPanelFocused} />
 
 {#if header.actions.current}
+  <div data-testid="header-primary">
+    {@render header.actions.current.primary?.()}
+  </div>
   <Menu.Root>
     <Menu.Trigger aria-label="Panel actions">Panel actions</Menu.Trigger>
     <Menu.Content portal={false} data-testid="header-actions">
       {@render header.actions.current.display?.()}
       <Menu.Separator />
       {@render header.actions.current.actions?.()}
+      {@render header.actions.current.destructive?.()}
     </Menu.Content>
   </Menu.Root>
 {/if}

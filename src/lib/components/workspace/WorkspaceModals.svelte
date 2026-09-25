@@ -90,7 +90,7 @@
                   <ol class="text-xs text-blue-200 space-y-2 ml-4 list-decimal">
                     <li>
                       {m.workspace_modals_openTerminalStep_label()}
-                      <Button onclick={onOpenSystemTerminal}
+                      <Button variant="ghost" onclick={onOpenSystemTerminal}
                         >{m.workspace_modals_openSystemTerminal_label()}</Button
                       >
                     </li>

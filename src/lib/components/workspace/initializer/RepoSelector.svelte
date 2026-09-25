@@ -7,7 +7,10 @@
   import Header from '$lib/components/ui/Header.svelte';
   import GitHubAvatar from '$lib/components/ui/GitHubAvatar.svelte';
   import Input from '$lib/components/ui/input/input.svelte';
-  import { Select } from '$lib/components/ui/select';
+  import * as Popover from '$lib/components/ui/popover';
+  import { useDialogPortalTarget } from '$lib/components/ui/dialog';
+  import * as Tabs from '$lib/components/ui/tabs';
+  import { IntentMarkLoader } from '$lib/components/ui/indicators';
   import { debugConfig } from '$lib/config/debug';
   import { m } from '$shared/paraglide/messages.js';
   import { createLogger } from '$lib/utils/client-logger';
@@ -15,6 +18,7 @@
   import { performanceMonitor } from '$lib/utils/performance';
   import { invoke } from '$lib/electron-bridge';
   import { pushEscapeLayer } from '$lib/utils/escapeLayers';
+  import { ActionRow, menuItem } from '$lib/components/ui/menu';
   import { getRecentRepos } from '$lib/utils/workspace-utils';
   import { WORKSPACE_CHANNELS } from '$shared/ipc/channels';
   import type { KnownRepo } from '$shared/types/known-repo';
@@ -33,13 +37,7 @@
   } from '$store/renderer/slices/workspace-initializer/workspace-initializer-selectors';
   import type { WorkspaceInitializerRemoteSetup } from '$store/renderer/slices/workspace-initializer/workspace-initializer-types';
   import { faGithub } from '@fortawesome/free-brands-svg-icons';
-  import {
-    faFolder,
-    faXmark,
-    faPlus,
-    faSpinner,
-    faChevronDown,
-  } from '@fortawesome/free-solid-svg-icons';
+  import { faFolder, faXmark, faPlus, faChevronDown } from '@fortawesome/free-solid-svg-icons';
   import { onMount } from 'svelte';
   import Fa from 'svelte-fa';
   import ServerIcon from '$lib/components/icons/ServerIcon.svelte';
@@ -84,6 +82,7 @@
   import { selectWorkspaceItems } from '$store/renderer/slices/workspace/workspace-selectors';
 
   const logger = createLogger('RepoSelector');
+  const dialogPortalTarget = useDialogPortalTarget();
 
   // Effective isolated-checkout mode (worktree vs CoW clone) for creation copy.
   // Re-resolves when workspace items hydrate (cowSupported is read off them).
@@ -190,9 +189,9 @@
   // svelte-ignore state_referenced_locally - intentional initial capture; prop only seeds the input
   let inputValue = $state(value);
   let searchTerm = $state(''); // Separate search term that starts empty
-  let inputElement: any;
+  let inputElement = $state<Input>();
   /** The GitHub tab's owner/repo input, so the window-level Enter interceptor
-   *  can target it exactly rather than matching any focused <input>. */
+   *  can target it exactly rather than matching any focused text field. */
   let githubInputElement = $state<HTMLInputElement | null>(null);
   let isOpen = $state(false); // Track dropdown open state
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -480,9 +479,15 @@
     handleConfirmGitHubPick();
   }
 
-  /** Arrow navigation over the suggestion list. Enter is handled by the
-   *  dropdown-wide capture listener (see the keydown $effect below). */
+  /** Keep suggestion navigation and acceptance owned by the focused input. */
   function handleGitHubInputKeydown(e: KeyboardEvent) {
+    if (e.isComposing) return;
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      e.stopPropagation();
+      confirmGitHubFromKeyboard();
+      return;
+    }
     if (e.key === 'ArrowDown') {
       if (!githubSuggestions.length) return;
       e.preventDefault();
@@ -583,8 +588,7 @@
     // Focus input - always autofocus for better UX
     // Use requestAnimationFrame for better timing
     requestAnimationFrame(() => {
-      logger.info('Focusing input', inputElement);
-      if (inputElement) {
+      if (isOpen && inputElement) {
         inputElement.focus();
         inputElement.select();
       }
@@ -604,34 +608,12 @@
     previousOpenState = currentlyOpen;
   });
 
-  // Prevent Enter key from bubbling up and submitting the form when dropdown is open
-  $effect(() => {
-    if (!isOpen) return;
-
-    function handleGlobalKeydown(e: KeyboardEvent) {
-      if (e.key === 'Enter') {
-        // Prevent form submission when dropdown is open
-        e.stopPropagation();
-        // This capture-phase listener also prevents the event from reaching
-        // the GitHub input, so the tab's Enter action is driven from here.
-        if (activeTab === 'github' && e.target === githubInputElement) {
-          e.preventDefault();
-          confirmGitHubFromKeyboard();
-        }
-      }
-    }
-
-    // Use capture phase to intercept before other handlers
-    window.addEventListener('keydown', handleGlobalKeydown, true);
-    return () => window.removeEventListener('keydown', handleGlobalKeydown, true);
-  });
-
   // Escape layer: while the dropdown is open it is the topmost overlay, so
   // Escape closes only the dropdown (not e.g. a modal hosting this selector)
   $effect(() => {
     if (!isOpen) return;
-    return pushEscapeLayer(() => {
-      isOpen = false;
+    return pushEscapeLayer((event) => {
+      if (!event.isComposing) isOpen = false;
     });
   });
 
@@ -1412,7 +1394,7 @@
 
   // Format display value
   function formatDisplayValue(): string {
-    if (!selectedValue) return 'Select a repository';
+    if (!selectedValue) return m.workspace_repoSelector_selectRepository_label();
 
     // For confirmed GitHub repos, use the confirmed URL to display owner/repo
     // This uses confirmedGithubUrl which is only set when user explicitly confirms
@@ -1438,6 +1420,8 @@
   }
 
   const triggerDisplayValue = $derived(displayValue ?? formatDisplayValue());
+  const pickerId = $props.id();
+  const suggestionsId = `${pickerId}-github-suggestions`;
   // Owner avatar next to the trigger label; GitHub picks only, never local repos
   const triggerAvatarOwner = $derived(
     getGitHubPickOwner({ selectedValue, selectedRepoType, confirmedGithubUrl }, parseGitHubUrl),
@@ -1445,49 +1429,68 @@
 </script>
 
 <div class="relative">
-  <Select.Root bind:value={selectedValue} bind:open={isOpen}>
-    <Select.Trigger {variant} class={`w-full ${triggerClass}`} aria-label={triggerAriaLabel}>
-      <div class={`flex w-full items-center truncate ${triggerContentClass}`}>
-        <!-- {#if isNewRepo}
+  <Popover.Root bind:open={isOpen}>
+    <Popover.Trigger>
+      {#snippet child({ props })}
+        <Button
+          {...props}
+          {variant}
+          class={`w-full ${triggerClass ?? ''}`}
+          aria-label={triggerAriaLabel ??
+            `${m.workspace_repoSelector_selectRepository_label()}: ${triggerDisplayValue}`}
+        >
+          <div class={`flex w-full items-center truncate ${triggerContentClass}`}>
+            <!-- {#if isNewRepo}
           <Fa icon={faPlus} size="sm" class="text-ghost" />
         {:else}
           <GitRepoIcon size={12} class="text-ghost -mb-0.25" />
         {/if} -->
-        {#if triggerIcon}
-          <Fa icon={triggerIcon} size="xs" />
-        {:else if showEmptyIcon && !selectedValue}
-          <GitRepoIcon size={12} class="text-ghost -mb-0.25 mr-1" />
-        {/if}
-        {#if !triggerIcon && triggerAvatarOwner}
-          <!-- Decorative: the adjacent label already names the owner. -->
-          <GitHubAvatar identity={triggerAvatarOwner} class="w-4 h-4 rounded-full shrink-0" />
-        {/if}
-        {#if !triggerIcon && (selectedValue || emptyLabel)}
-          <span class="flex-1 text-left truncate">
-            {#if selectedValue}
-              <span class={triggerValueClass}>{triggerDisplayValue}</span>
-              {#if isNewRepo && !displayValue}
-                <span class="text-sm text-subtle ml-1">{m.workspace_repoSelector_new_label()}</span>
-              {/if}
-            {:else}
-              <span class={triggerValueClass}>{emptyLabel}</span>
+            {#if triggerIcon}
+              <Fa icon={triggerIcon} size="xs" />
+            {:else if showEmptyIcon && !selectedValue}
+              <GitRepoIcon size={12} class="text-ghost -mb-0.25 mr-1" />
             {/if}
-            {#if triggerSuffix}
-              <span class="text-sm text-subtle ml-1">({triggerSuffix})</span>
+            {#if !triggerIcon && triggerAvatarOwner}
+              <!-- Decorative: the adjacent label already names the owner. -->
+              <GitHubAvatar identity={triggerAvatarOwner} class="w-4 h-4 rounded-full shrink-0" />
             {/if}
-          </span>
-        {/if}
-        {#if showTriggerChevron}
-          <Fa icon={faChevronDown} size={10} class={triggerChevronClass} />
-        {/if}
-      </div>
-    </Select.Trigger>
-    <Select.Content
-      class="max-w-[500px] min-w-[400px]! max-h-[600px] overflow-hidden flex flex-col"
+            {#if !triggerIcon && (selectedValue || emptyLabel)}
+              <span class="flex-1 text-left truncate">
+                {#if selectedValue}
+                  <span class={triggerValueClass}>{triggerDisplayValue}</span>
+                  {#if isNewRepo && !displayValue}
+                    <span class="text-sm text-subtle ml-1"
+                      >{m.workspace_repoSelector_new_label()}</span
+                    >
+                  {/if}
+                {:else}
+                  <span class={triggerValueClass}>{emptyLabel}</span>
+                {/if}
+                {#if triggerSuffix}
+                  <span class="text-sm text-subtle ml-1">({triggerSuffix})</span>
+                {/if}
+              </span>
+            {/if}
+            {#if showTriggerChevron}
+              <Fa icon={faChevronDown} size={10} class={triggerChevronClass} />
+            {/if}
+          </div>
+        </Button>
+      {/snippet}
+    </Popover.Trigger>
+    <Popover.Content
+      role="dialog"
+      aria-label={m.workspace_repoSelector_whichRepo_label()}
+      class="w-[400px] max-w-[calc(100vw-16px)] min-w-0 max-h-[min(600px,var(--bits-popover-content-available-height,100dvh))] overflow-y-auto flex flex-col"
+      onkeydown={(event) => {
+        if (event.key === 'Enter') event.stopPropagation();
+      }}
+      portalProps={{ to: dialogPortalTarget() }}
+      strategy={dialogPortalTarget() ? 'absolute' : 'fixed'}
       portal
     >
       <!-- Header -->
-      <div class="px-4 pt-2 pb-3">
+      <div class="shrink-0 px-4 pt-2 pb-3">
         <h2 class="text-base font-semibold text-foreground">
           {m.workspace_repoSelector_whichRepo_label()}
         </h2>
@@ -1497,372 +1500,407 @@
       </div>
 
       <!-- Tab bar -->
-      <div class="flex gap-0 mx-3 mb-3 bg-sidebar rounded-lg p-1">
-        {#each [{ id: 'github' as TabId, label: m.workspace_repoSelector_pickARepo_tab() }, { id: 'local' as TabId, label: m.workspace_repoSelector_copyLocalRepo_tab() }, { id: 'new' as TabId, label: m.workspace_repoSelector_newRepo_tab() }, ...($remoteWorkspacesEnabled$ ? [{ id: 'remote' as TabId, label: m.workspace_repoSelector_remoteServer_tab() }] : [])] as tab}
-          <button
-            type="button"
-            class="flex-1 px-3 py-1.5 text-sm whitespace-nowrap rounded-md cursor-pointer transition-all {activeTab ===
-            tab.id
-              ? 'bg-background font-medium text-foreground shadow-sm'
-              : 'text-muted-foreground hover:text-foreground'}"
-            onclick={() => (activeTab = tab.id)}
-          >
-            {tab.label}
-          </button>
-        {/each}
-      </div>
-
-      <!-- Input section - changes based on tab -->
-      <div class="px-3 mb-3">
-        {#if activeTab === 'local'}
-          <!-- Local repo: folder picker button -->
-          <button
-            type="button"
-            class="w-full flex items-center justify-between px-3 py-2.5 rounded-lg border-0 bg-sidebar text-left cursor-pointer"
-            onclick={handleSelectFolder}
-          >
-            <span
-              class="text-sm truncate {inputValue ? 'text-foreground' : 'text-muted-foreground'}"
+      <Tabs.Root
+        value={activeTab}
+        onValueChange={(value) => (activeTab = value as TabId)}
+        class="flex min-h-0 flex-col"
+      >
+        <Tabs.List
+          aria-label={m.workspace_repoSelector_whichRepo_label()}
+          class="flex shrink-0 gap-0 mx-3 mb-3 bg-sidebar rounded-lg p-1"
+        >
+          {#each [{ id: 'github' as TabId, label: m.workspace_repoSelector_pickARepo_tab() }, { id: 'local' as TabId, label: m.workspace_repoSelector_copyLocalRepo_tab() }, { id: 'new' as TabId, label: m.workspace_repoSelector_newRepo_tab() }, ...($remoteWorkspacesEnabled$ ? [{ id: 'remote' as TabId, label: m.workspace_repoSelector_remoteServer_tab() }] : [])] as tab}
+            <Tabs.Trigger
+              value={tab.id}
+              class="flex-1 min-w-0 h-auto min-h-(--control-height-medium) px-2 py-1.5 text-sm whitespace-normal rounded-md cursor-pointer transition-all {activeTab ===
+              tab.id
+                ? 'bg-background font-medium text-foreground shadow-sm'
+                : 'text-muted-foreground hover:text-foreground'}"
             >
-              {inputValue || m.workspace_repoSelector_selectAFolder_placeholder()}
-            </span>
-            <Fa icon={faFolder} class="text-ghost opacity-50" />
-          </button>
-        {:else if activeTab === 'github'}
-          <!-- GitHub: URL input with prefix (path-less pick — no clone destination) -->
-          <div
-            class="flex items-center rounded-lg bg-sidebar focus-within:ring-1 focus-within:ring-ring"
-          >
-            <Fa icon={faGithub} class="ml-3" />
-            <!-- i18n-ignore (domain prefix) -->
-            <span class="text-sm pl-1.5 shrink-0 select-none">github.com/</span>
-            <Input
-              placeholder={/* i18n-ignore (GitHub path format example placeholder) */ 'owner/repo'}
-              bind:this={inputElement}
-              bind:ref={githubInputElement}
-              type="text"
-              bind:value={githubUrlInput}
-              oninput={(e) => handleGitHubInputChange(e.currentTarget.value)}
-              onpaste={handleGitHubPaste}
-              onkeydown={handleGitHubInputKeydown}
-              class="bg-sidebar border-none px-1 py-2.5! h-auto"
-              noFocusStyle
-              role="combobox"
-              aria-autocomplete="list"
-              aria-controls="repo-selector-github-suggestions"
-              aria-expanded={githubSuggestions.length > 0}
-              aria-activedescendant={githubSuggestions[suggestionIndex]
-                ? `repo-selector-github-suggestion-${suggestionIndex}`
-                : undefined}
-            />
-          </div>
-          <!--
+              {tab.label}
+            </Tabs.Trigger>
+          {/each}
+        </Tabs.List>
+        <Tabs.Content value={activeTab} class="mt-0 min-h-0 flex flex-col">
+          <!-- Input section - changes based on tab -->
+          <div class="shrink-0 px-3 mb-3">
+            {#if activeTab === 'local'}
+              <!-- Local repo: folder picker button -->
+              <Button
+                type="button"
+                class="w-full flex items-center justify-between px-3 py-2.5 rounded-lg border-0 text-left cursor-pointer"
+                onclick={handleSelectFolder}
+              >
+                <span
+                  class="text-sm truncate {inputValue
+                    ? 'text-foreground'
+                    : 'text-muted-foreground'}"
+                >
+                  {inputValue || m.workspace_repoSelector_selectAFolder_placeholder()}
+                </span>
+                <Fa icon={faFolder} class="text-ghost opacity-50" />
+              </Button>
+            {:else if activeTab === 'github'}
+              <!-- GitHub: URL input with prefix (path-less pick — no clone destination) -->
+              <div
+                class="flex items-center rounded-lg bg-sidebar focus-within:ring-1 focus-within:ring-ring"
+              >
+                <Fa icon={faGithub} class="ml-3" />
+                <!-- i18n-ignore (domain prefix) -->
+                <span class="text-sm pl-1.5 shrink-0 select-none">github.com/</span>
+                <Input
+                  placeholder={/* i18n-ignore (GitHub path format example placeholder) */ 'owner/repo'}
+                  bind:this={inputElement}
+                  bind:ref={githubInputElement}
+                  type="text"
+                  bind:value={githubUrlInput}
+                  oninput={(e) => handleGitHubInputChange(e.currentTarget.value)}
+                  onpaste={handleGitHubPaste}
+                  onkeydown={handleGitHubInputKeydown}
+                  class="min-w-0 bg-sidebar border-none px-1 py-2.5! h-auto text-sm"
+                  noFocusStyle
+                  role="combobox"
+                  aria-label={m.workspace_repoSelector_githubSuggestions_ariaLabel()}
+                  aria-autocomplete="list"
+                  aria-controls={githubSuggestions.length > 0 ? suggestionsId : undefined}
+                  aria-expanded={githubSuggestions.length > 0}
+                  aria-activedescendant={githubSuggestions[suggestionIndex]
+                    ? `${suggestionsId}-${suggestionIndex}`
+                    : undefined}
+                />
+              </div>
+              <!--
             Autocomplete suggestions: the user's own repos filtered by the
             typed text, then deduped global search results. Signed-out users
             get a connect hint instead; manual owner/repo entry keeps working.
           -->
-          {#if !$isGithubAuthenticated$}
-            <GitHubAuthBanner
-              class="mt-2"
-              message={m.workspace_repoSelector_githubSignIn_description()}
-            />
-          {:else if $githubReposError$}
-            <div class="mt-2 px-1 text-sm text-subtle flex items-center gap-2">
-              <span>{m.workspace_repoSelector_suggestionsUnavailable_label()}</span>
-              <button
-                type="button"
-                class="underline underline-offset-2 cursor-pointer hover:no-underline"
-                onclick={retryGithubRepos}
-              >
-                {m.workspace_repoSelector_retrySuggestions_label()}
-              </button>
-            </div>
-          {:else if githubSuggestions.length > 0}
-            <div
-              id="repo-selector-github-suggestions"
-              role="listbox"
-              aria-label={m.workspace_repoSelector_githubSuggestions_ariaLabel()}
-              class="mt-2 max-h-56 overflow-y-auto"
-            >
-              {#each githubSuggestions as repo, index (repo.id)}
-                <button
-                  type="button"
-                  id="repo-selector-github-suggestion-{index}"
-                  role="option"
-                  aria-selected={index === suggestionIndex}
-                  class="w-full flex items-center gap-2 py-1.5 px-2 text-left rounded-md transition-colors cursor-pointer {index ===
-                  suggestionIndex
-                    ? 'bg-accent/20'
-                    : 'hover:bg-muted/50'}"
-                  onclick={() => handleSelectGithubSuggestion(repo)}
-                  onmousemove={() => (suggestionIndex = index)}
-                >
-                  <GitHubAvatar
-                    identity={repo.owner}
-                    alt={repo.owner}
-                    class="w-4 h-4 rounded-full shrink-0"
-                  />
-                  <span class="text-sm text-foreground truncate">
-                    <span class="text-subtle mr-1">{repo.owner} /</span>{repo.name}
-                  </span>
-                </button>
-              {/each}
-            </div>
-          {:else if githubQuery && $githubSearchLoading$}
-            <div class="mt-2 flex items-center gap-2 px-1 text-sm text-subtle">
-              <Fa icon={faSpinner} size="xs" class="animate-spin" />
-              <span>{m.workspace_repoSelector_searchingGithub_label({ query: githubQuery })}</span>
-            </div>
-          {/if}
-          <!-- Detected repo + select button (hidden when it would duplicate a
-               suggestion row; Enter-to-confirm still works via handleConfirmGitHubPick) -->
-          {#if detectedGitHub && !detectedGitHubIsDuplicate}
-            <div class="flex items-center justify-between gap-2 mt-2 px-1">
-              <span class="text-sm text-subtle truncate flex-1">
-                {detectedGitHub.owner}/{detectedGitHub.repo}
-              </span>
-              <Button size="sm" onclick={handleConfirmGitHubPick} class="shrink-0"
-                >{m.workspace_repoSelector_select_label()}</Button
-              >
-            </div>
-          {/if}
-        {:else if activeTab === 'new'}
-          <!-- New repo: parent folder + folder name -->
-          <button
-            type="button"
-            class="w-full flex items-center gap-3 mb-2 text-left cursor-pointer"
-            onclick={handleSelectNewRepoParent}
-          >
-            <span class="text-sm text-subtle shrink-0 w-24 pl-1"
-              >{m.workspace_repoSelector_parentFolder_label()}</span
-            >
-            <span
-              class="flex-1 text-sm px-3 py-2.5 bg-sidebar rounded-lg flex items-center justify-between {newRepoParentPath
-                ? 'text-foreground'
-                : 'text-subtle'} truncate"
-            >
-              <div class="truncate">
-                {newRepoParentPath || m.workspace_repoSelector_select_placeholder()}
-              </div>
-              <Fa icon={faFolder} class="text-ghost shrink-0 opacity-50" />
-            </span>
-          </button>
-          <div class="flex items-center gap-3">
-            <span class="text-sm text-subtle shrink-0 w-24 pl-1"
-              >{m.workspace_repoSelector_folderName_label()}</span
-            >
-            <Input
-              placeholder={/* i18n-ignore (example folder name placeholder) */ 'new-project'}
-              type="text"
-              bind:value={newRepoProjectName}
-              onkeydown={(e) => {
-                if (e.key === 'Enter') {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  handleConfirmNewRepo();
-                }
-              }}
-              class="bg-sidebar border-none focus-visible:ring-1 focus-visible:ring-ring"
-              noFocusStyle
-            />
-          </div>
-          <!-- Validation error for project name -->
-          {#if newRepoNameError}
-            <div class="mt-2 px-1">
-              <span class="text-sm text-danger">{newRepoNameError}</span>
-            </div>
-          {:else if newRepoFullPath}
-            <!-- Full path preview + status message + action button -->
-            <div class="mt-2 px-1">
-              <!-- Path preview -->
-              <div class="text-sm text-subtle truncate mb-2">
-                {newRepoFullPath}
-              </div>
-              <!-- Status message and action -->
-              {#if isCheckingNewRepoPath}
-                <div class="flex items-center gap-2 text-sm text-subtle">
-                  <Fa icon={faSpinner} class="animate-spin" size="sm" />
-                  <span>{m.workspace_repoSelector_checking_label()}</span>
+              {#if !$isGithubAuthenticated$}
+                <GitHubAuthBanner
+                  class="mt-2"
+                  message={m.workspace_repoSelector_githubSignIn_description()}
+                />
+              {:else if $githubReposError$}
+                <div class="mt-2 px-1 text-sm text-subtle flex items-center gap-2">
+                  <span>{m.workspace_repoSelector_suggestionsUnavailable_label()}</span>
+                  <Button
+                    variant="ghost"
+                    type="button"
+                    class="underline underline-offset-2 cursor-pointer hover:no-underline"
+                    onclick={retryGithubRepos}
+                  >
+                    {m.workspace_repoSelector_retrySuggestions_label()}
+                  </Button>
                 </div>
-              {:else if newRepoPathStatus?.exists && newRepoPathStatus?.isGitRepo}
-                <!-- Existing git repo - will create an isolated checkout -->
-                <div class="flex items-center justify-between gap-2">
-                  <span class="text-sm text-subtle">
-                    {m.workspace_repoSelector_repoExists_label({ isolationLabel })}
+              {:else if githubSuggestions.length > 0}
+                <div
+                  id={suggestionsId}
+                  role="listbox"
+                  aria-label={m.workspace_repoSelector_githubSuggestions_ariaLabel()}
+                  class="mt-2 max-h-56 overflow-y-auto"
+                >
+                  {#each githubSuggestions as repo, index (repo.id)}
+                    <Button
+                      variant="ghost"
+                      type="button"
+                      id={`${suggestionsId}-${index}`}
+                      role="option"
+                      tabindex={-1}
+                      aria-selected={index === suggestionIndex}
+                      class={`${menuItem()} gap-2 py-1.5 cursor-pointer ${
+                        index === suggestionIndex ? 'bg-accent/20' : 'hover:bg-muted/50'
+                      }`}
+                      onclick={() => handleSelectGithubSuggestion(repo)}
+                      onmousemove={() => (suggestionIndex = index)}
+                    >
+                      <GitHubAvatar
+                        identity={repo.owner}
+                        alt={repo.owner}
+                        class="w-4 h-4 rounded-full shrink-0"
+                      />
+                      <span class="text-sm text-foreground truncate">
+                        <span class="text-subtle mr-1">{repo.owner} /</span>{repo.name}
+                      </span>
+                    </Button>
+                  {/each}
+                </div>
+              {:else if githubQuery && $githubSearchLoading$}
+                <div class="mt-2 flex items-center gap-2 px-1 text-sm text-subtle">
+                  <IntentMarkLoader size={12} />
+                  <span
+                    >{m.workspace_repoSelector_searchingGithub_label({ query: githubQuery })}</span
+                  >
+                </div>
+              {/if}
+              <!-- Detected repo + select button (hidden when it would duplicate a
+               suggestion row; Enter-to-confirm still works via handleConfirmGitHubPick) -->
+              {#if detectedGitHub && !detectedGitHubIsDuplicate}
+                <div class="flex items-center justify-between gap-2 mt-2 px-1">
+                  <span class="text-sm text-subtle truncate flex-1">
+                    {detectedGitHub.owner}/{detectedGitHub.repo}
                   </span>
-                  <Button size="sm" onclick={handleConfirmNewRepo} class="shrink-0"
+                  <Button size="sm" onclick={handleConfirmGitHubPick} class="shrink-0"
                     >{m.workspace_repoSelector_select_label()}</Button
                   >
                 </div>
-              {:else if newRepoPathStatus?.exists && !newRepoPathStatus?.isGitRepo}
-                <!-- Existing folder but not a git repo -->
-                <div class="flex items-center justify-between gap-2">
-                  <span class="text-sm text-amber-500">
-                    {m.workspace_repoSelector_folderNotGitRepo_label()}
-                  </span>
-                  <Button size="sm" onclick={handleConfirmNewRepo} class="shrink-0" disabled
-                    >{m.workspace_repoSelector_create_label()}</Button
+              {/if}
+            {:else if activeTab === 'new'}
+              <!-- New repo: parent folder + folder name -->
+              <Button
+                type="button"
+                variant="plain"
+                wrapContent={false}
+                class="w-full flex items-center gap-3 mb-2 text-left cursor-pointer"
+                onclick={handleSelectNewRepoParent}
+              >
+                <span class="text-sm text-subtle shrink-0 w-24 pl-1"
+                  >{m.workspace_repoSelector_parentFolder_label()}</span
+                >
+                <span
+                  class="flex-1 min-w-0 text-sm h-(--control-height-medium) px-3 bg-sidebar rounded-(--radius-medium) flex items-center justify-between {newRepoParentPath
+                    ? 'text-foreground'
+                    : 'text-subtle'} truncate"
+                >
+                  <div class="truncate">
+                    {newRepoParentPath || m.workspace_repoSelector_select_placeholder()}
+                  </div>
+                  <Fa icon={faFolder} class="text-ghost shrink-0 opacity-50" />
+                </span>
+              </Button>
+              <div class="flex items-center gap-3">
+                <span class="text-sm text-subtle shrink-0 w-24 pl-1"
+                  >{m.workspace_repoSelector_folderName_label()}</span
+                >
+                <Input
+                  placeholder={/* i18n-ignore (example folder name placeholder) */ 'new-project'}
+                  type="text"
+                  bind:value={newRepoProjectName}
+                  onkeydown={(e) => {
+                    if (e.key === 'Enter' && !e.isComposing) {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      handleConfirmNewRepo();
+                    }
+                  }}
+                  class="bg-sidebar border-none focus-visible:ring-1 focus-visible:ring-ring"
+                  noFocusStyle
+                />
+              </div>
+              <!-- Validation error for project name -->
+              {#if newRepoNameError}
+                <div class="mt-2 px-1">
+                  <span class="text-sm text-danger">{newRepoNameError}</span>
+                </div>
+              {:else if newRepoFullPath}
+                <!-- Full path preview + status message + action button -->
+                <div class="mt-2 px-1">
+                  <!-- Path preview -->
+                  <div class="text-sm text-subtle truncate mb-2">
+                    {newRepoFullPath}
+                  </div>
+                  <!-- Status message and action -->
+                  {#if isCheckingNewRepoPath}
+                    <div class="flex items-center gap-2 text-sm text-subtle">
+                      <IntentMarkLoader size={14} />
+                      <span>{m.workspace_repoSelector_checking_label()}</span>
+                    </div>
+                  {:else if newRepoPathStatus?.exists && newRepoPathStatus?.isGitRepo}
+                    <!-- Existing git repo - will create an isolated checkout -->
+                    <div class="flex items-center justify-between gap-2">
+                      <span class="text-sm text-subtle">
+                        {m.workspace_repoSelector_repoExists_label({ isolationLabel })}
+                      </span>
+                      <Button size="sm" onclick={handleConfirmNewRepo} class="shrink-0"
+                        >{m.workspace_repoSelector_select_label()}</Button
+                      >
+                    </div>
+                  {:else if newRepoPathStatus?.exists && !newRepoPathStatus?.isGitRepo}
+                    <!-- Existing folder but not a git repo -->
+                    <div class="flex items-center justify-between gap-2">
+                      <span class="text-sm text-warning-ink">
+                        {m.workspace_repoSelector_folderNotGitRepo_label()}
+                      </span>
+                      <Button
+                        size="sm"
+                        variant="primary"
+                        onclick={handleConfirmNewRepo}
+                        class="shrink-0"
+                        disabled>{m.workspace_repoSelector_create_label()}</Button
+                      >
+                    </div>
+                  {:else}
+                    <!-- New folder - will create -->
+                    <div class="flex items-center justify-between gap-2">
+                      <span class="text-sm text-subtle"
+                        >{m.workspace_repoSelector_newRepoWillBeCreated_label()}</span
+                      >
+                      <Button
+                        size="sm"
+                        variant="primary"
+                        onclick={handleConfirmNewRepo}
+                        class="shrink-0">{m.workspace_repoSelector_create_label()}</Button
+                      >
+                    </div>
+                  {/if}
+                </div>
+              {/if}
+            {:else if activeTab === 'remote'}
+              <!-- Remote server: list saved setups -->
+              <div class="space-y-1">
+                {#each remoteSetups as setup (setup.id)}
+                  <div
+                    role="button"
+                    tabindex="0"
+                    class="w-full flex items-center gap-2 px-3 py-2 rounded-lg bg-sidebar text-left cursor-pointer hover:bg-muted/50 transition-colors"
+                    onclick={() => handleSelectRemoteSetup(setup)}
+                    onkeydown={(e) => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault();
+                        handleSelectRemoteSetup(setup);
+                      }
+                    }}
                   >
+                    <ServerIcon size={14} class="text-ghost shrink-0" />
+                    <div class="flex-1 min-w-0">
+                      <div class="text-sm">{setup.name}</div>
+                      <div class="text-xs text-subtle">
+                        {setup.transport === 'websocket'
+                          ? setup.wsUrl
+                          : `${setup.username}@${setup.host}:${setup.port}`}
+                      </div>
+                    </div>
+                    <Button
+                      variant="ghost"
+                      type="button"
+                      size="icon-compact"
+                      iconOnly
+                      onclick={(e) => {
+                        e.stopPropagation();
+                        e.preventDefault();
+                        handleRemoveRemoteSetup(setup.id);
+                      }}
+                      class="ml-1 rounded text-muted-foreground hover:text-danger hover:bg-danger-background/10"
+                      title={m.workspace_repoSelector_removeSetup_tooltip()}
+                    >
+                      <Fa icon={faXmark} size="xs" />
+                    </Button>
+                  </div>
+                {/each}
+                {#if remoteSetups.length === 0}
+                  <div class="text-sm text-subtle px-3 py-2">
+                    {m.workspace_repoSelector_noRemoteSetups_label()}
+                  </div>
+                {/if}
+                <Button
+                  variant="ghost"
+                  type="button"
+                  class="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-left cursor-pointer hover:bg-muted/50 transition-colors text-sm text-muted-foreground"
+                  onclick={handleAddRemoteSetup}
+                >
+                  <Fa icon={faPlus} size="sm" />
+                  {m.workspace_repoSelector_addRemoteSetup_label()}
+                </Button>
+              </div>
+            {/if}
+          </div>
+
+          <!-- Non-git folder prompt - shows when user selects a folder that isn't a git repo -->
+          {#if showNonGitFolderPrompt && nonGitFolderPath}
+            <div class="mx-3 mb-3 p-3 bg-sidebar rounded-lg">
+              <div class="flex items-start gap-3">
+                <Fa icon={faFolder} class="text-ghost shrink-0 mt-0.5" />
+                <div class="flex-1 min-w-0">
+                  <div class="text-sm font-medium truncate mb-1" title={nonGitFolderPath}>
+                    {nonGitFolderPath.split('/').pop() || nonGitFolderPath}
+                  </div>
+                  <div class="text-sm text-subtle mb-2">
+                    {m.workspace_repoSelector_notGitRepository_label()}
+                  </div>
+                  <div class="flex gap-2">
+                    <Button size="sm" variant="secondary" onclick={handleInitializeGitInFolder}
+                      >{m.workspace_repoSelector_initializeGit_label()}</Button
+                    >
+                    <Button size="sm" variant="secondary" onclick={handleChooseDifferentFolder}>
+                      {m.workspace_repoSelector_chooseDifferentFolder_label()}
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          {/if}
+
+          <!-- Recent repos section - only show for local and github tabs when there are repos -->
+          {#if activeTab !== 'new' && activeTab !== 'remote' && (isLoading || filteredRepos().length > 0)}
+            <div class="min-h-16 overflow-y-auto flex-1 px-4 pb-3 pt-2">
+              <Header size={5} class="mb-2">{m.workspace_repoSelector_recent_label()}</Header>
+              {#if isLoading && recentRepos.length === 0}
+                <div class="space-y-1">
+                  {#each [1, 2, 3] as { }}
+                    <div class="flex items-center gap-2 py-1.5">
+                      <div class="w-4 h-4 bg-muted rounded animate-pulse"></div>
+                      <div class="h-4 bg-muted rounded flex-1 animate-pulse"></div>
+                    </div>
+                  {/each}
                 </div>
               {:else}
-                <!-- New folder - will create -->
-                <div class="flex items-center justify-between gap-2">
-                  <span class="text-sm text-subtle"
-                    >{m.workspace_repoSelector_newRepoWillBeCreated_label()}</span
-                  >
-                  <Button size="sm" onclick={handleConfirmNewRepo} class="shrink-0"
-                    >{m.workspace_repoSelector_create_label()}</Button
-                  >
+                <div class="-mx-2" data-testid="recent-repositories">
+                  {#each filteredRepos() as repo, index (repo.path || repo.name)}
+                    {@const label = getRecentRepoLabel(repo)}
+                    {@const tooltip = getRecentRepoTooltip(repo)}
+                    {#snippet repoRow()}
+                      <ActionRow
+                        selected={index === highlightedIndex}
+                        class="cursor-pointer"
+                        onclick={() => handleSelectRepo(repo)}
+                      >
+                        {#snippet leading()}
+                          {#if label.ownerPrefix}
+                            <GitHubAvatar identity={label.ownerPrefix} class="size-4 rounded-full">
+                              {#snippet fallback()}
+                                <Fa icon={faGithub} class="text-subtle opacity-50" size={12} />
+                              {/snippet}
+                            </GitHubAvatar>
+                          {:else}
+                            <Fa
+                              icon={repo.type === 'github' ? faGithub : faFolder}
+                              class="text-subtle opacity-50"
+                              size={12}
+                            />
+                          {/if}
+                        {/snippet}
+                        {#snippet title()}
+                          <span class="block truncate">
+                            {#if label.ownerPrefix}
+                              <span class="text-subtle mr-1">{label.ownerPrefix} /</span>
+                            {/if}
+                            {label.primary}
+                            {#if label.suffix}
+                              <span class="text-subtle ml-1">({label.suffix})</span>
+                            {/if}
+                          </span>
+                        {/snippet}
+                      </ActionRow>
+                    {/snippet}
+                    {#if tooltip}
+                      <Tooltip
+                        content={tooltip}
+                        delayDuration={300}
+                        side="bottom"
+                        class="flex w-full"
+                      >
+                        {@render repoRow()}
+                      </Tooltip>
+                    {:else}
+                      {@render repoRow()}
+                    {/if}
+                  {/each}
                 </div>
               {/if}
             </div>
           {/if}
-        {:else if activeTab === 'remote'}
-          <!-- Remote server: list saved setups -->
-          <div class="space-y-1">
-            {#each remoteSetups as setup (setup.id)}
-              <div
-                role="button"
-                tabindex="0"
-                class="w-full flex items-center gap-2 px-3 py-2 rounded-lg bg-sidebar text-left cursor-pointer hover:bg-muted/50 transition-colors"
-                onclick={() => handleSelectRemoteSetup(setup)}
-                onkeydown={(e) => {
-                  if (e.key === 'Enter' || e.key === ' ') {
-                    e.preventDefault();
-                    handleSelectRemoteSetup(setup);
-                  }
-                }}
-              >
-                <ServerIcon size={14} class="text-ghost shrink-0" />
-                <div class="flex-1 min-w-0">
-                  <div class="text-sm">{setup.name}</div>
-                  <div class="text-xs text-subtle">
-                    {setup.transport === 'websocket'
-                      ? setup.wsUrl
-                      : `${setup.username}@${setup.host}:${setup.port}`}
-                  </div>
-                </div>
-                <button
-                  type="button"
-                  onclick={(e) => {
-                    e.stopPropagation();
-                    e.preventDefault();
-                    handleRemoveRemoteSetup(setup.id);
-                  }}
-                  class="ml-1 p-0.5 rounded text-muted-foreground hover:text-danger hover:bg-danger-background/10"
-                  title={m.workspace_repoSelector_removeSetup_tooltip()}
-                >
-                  <Fa icon={faXmark} size="xs" />
-                </button>
-              </div>
-            {/each}
-            {#if remoteSetups.length === 0}
-              <div class="text-sm text-subtle px-3 py-2">
-                {m.workspace_repoSelector_noRemoteSetups_label()}
-              </div>
-            {/if}
-            <button
-              type="button"
-              class="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-left cursor-pointer hover:bg-muted/50 transition-colors text-sm text-muted-foreground"
-              onclick={handleAddRemoteSetup}
-            >
-              <Fa icon={faPlus} size="sm" />
-              {m.workspace_repoSelector_addRemoteSetup_label()}
-            </button>
-          </div>
-        {/if}
-      </div>
-
-      <!-- Non-git folder prompt - shows when user selects a folder that isn't a git repo -->
-      {#if showNonGitFolderPrompt && nonGitFolderPath}
-        <div class="mx-3 mb-3 p-3 bg-sidebar rounded-lg">
-          <div class="flex items-start gap-3">
-            <Fa icon={faFolder} class="text-ghost shrink-0 mt-0.5" />
-            <div class="flex-1 min-w-0">
-              <div class="text-sm font-medium truncate mb-1" title={nonGitFolderPath}>
-                {nonGitFolderPath.split('/').pop() || nonGitFolderPath}
-              </div>
-              <div class="text-sm text-subtle mb-2">
-                {m.workspace_repoSelector_notGitRepository_label()}
-              </div>
-              <div class="flex gap-2">
-                <Button size="sm" variant="secondary" onclick={handleInitializeGitInFolder}
-                  >{m.workspace_repoSelector_initializeGit_label()}</Button
-                >
-                <Button size="sm" variant="secondary" onclick={handleChooseDifferentFolder}>
-                  {m.workspace_repoSelector_chooseDifferentFolder_label()}
-                </Button>
-              </div>
-            </div>
-          </div>
-        </div>
-      {/if}
-
-      <!-- Recent repos section - only show for local and github tabs when there are repos -->
-      {#if activeTab !== 'new' && activeTab !== 'remote' && (isLoading || filteredRepos().length > 0)}
-        <div class="overflow-y-auto flex-1 px-4 pb-3 pt-2">
-          <Header size={6} class="mb-1">{m.workspace_repoSelector_recent_label()}</Header>
-          {#if isLoading && recentRepos.length === 0}
-            <div class="space-y-1">
-              {#each [1, 2, 3] as { }}
-                <div class="flex items-center gap-2 py-1.5">
-                  <div class="w-4 h-4 bg-muted rounded animate-pulse"></div>
-                  <div class="h-4 bg-muted rounded flex-1 animate-pulse"></div>
-                </div>
-              {/each}
-            </div>
-          {:else}
-            <div class="">
-              {#each filteredRepos() as repo, index (repo.path || repo.name)}
-                {@const label = getRecentRepoLabel(repo)}
-                {@const tooltip = getRecentRepoTooltip(repo)}
-                {#snippet repoRow()}
-                  <button
-                    type="button"
-                    class="w-full flex items-center gap-2 py-1.5 text-left hover:bg-muted/50 rounded-md px-2 pl-3 -mx-2 transition-colors cursor-pointer {index ===
-                    highlightedIndex
-                      ? 'bg-accent/20'
-                      : ''}"
-                    onclick={() => handleSelectRepo(repo)}
-                  >
-                    {#if label.ownerPrefix}
-                      <GitHubAvatar
-                        identity={label.ownerPrefix}
-                        alt={label.ownerPrefix}
-                        class="w-4 h-4 rounded-full shrink-0"
-                      />
-                    {:else}
-                      <Fa
-                        icon={repo.type === 'github' ? faGithub : faFolder}
-                        class="text-subtle shrink-0 opacity-50"
-                        size={12}
-                      />
-                    {/if}
-                    <span class="text-sm text-foreground truncate">
-                      {#if label.ownerPrefix}
-                        <span class="text-subtle mr-1">{label.ownerPrefix} /</span>
-                      {/if}
-                      {label.primary}
-                      {#if label.suffix}
-                        <span class="text-subtle ml-1">({label.suffix})</span>
-                      {/if}
-                    </span>
-                  </button>
-                {/snippet}
-                {#if tooltip}
-                  <Tooltip content={tooltip} delayDuration={300} side="bottom" class="flex w-full">
-                    {@render repoRow()}
-                  </Tooltip>
-                {:else}
-                  {@render repoRow()}
-                {/if}
-              {/each}
-            </div>
-          {/if}
-        </div>
-      {/if}
-    </Select.Content>
-  </Select.Root>
+        </Tabs.Content>
+      </Tabs.Root>
+    </Popover.Content>
+  </Popover.Root>
 </div>
 
 {#if $remoteWorkspacesEnabled$}

@@ -1,4 +1,6 @@
 <script lang="ts" module>
+  import { Input } from '$lib/components/ui/input';
+  import { Button } from '$lib/components/ui/button';
   import type { LinearIssueResult } from '$features/linear-auth/renderer/linear-auth.client';
   import type { SentryIssueResult } from '$store/renderer/slices/sentry-auth/sentry-auth-types';
   import { createLogger } from '$lib/utils/client-logger';
@@ -276,10 +278,11 @@
 <script lang="ts">
   /* eslint-disable max-lines */
   import { onMount, onDestroy, tick, untrack } from 'svelte';
-  import { slide } from 'svelte/transition';
+  import { slide } from '$lib/motion';
   import Fa from 'svelte-fa';
-  import { faChevronDown, faPlus, faSearch, faSync } from '@fortawesome/free-solid-svg-icons';
+  import { faChevronDown, faPlus, faSearch } from '@fortawesome/free-solid-svg-icons';
   import { Skeleton } from '$lib/components/ui/skeleton';
+  import { IntentMarkLoader } from '$lib/components/ui/indicators';
   import { Select } from '$lib/components/ui/select';
   import { TooltipRich } from '$lib/components/ui/tooltip';
   import { linearAuthClient } from '$features/linear-auth/renderer/linear-auth.client';
@@ -1666,7 +1669,8 @@
 <div class="context-picker w-full">
   <!-- Trigger button (hidden when hideToggle is true) -->
   {#if !hideToggle}
-    <button
+    <Button
+      variant="ghost"
       type="button"
       onclick={togglePanel}
       class="inline-flex items-center gap-2.5 px-2 py-1 text-sm text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
@@ -1674,7 +1678,9 @@
       <Fa
         icon={faPlus}
         size={11}
-        class="transform transition-transform duration-200 {isOpen ? '-rotate-45' : ''}"
+        class="transform transition-transform duration-spring-moderate ease-spring-moderate motion-reduce:transition-none {isOpen
+          ? '-rotate-45'
+          : ''}"
       />
       <span>{m.workspace_issueSuggestions_addContext_label()}</span>
       <!-- Show all provider icons when collapsed -->
@@ -1686,35 +1692,36 @@
         {/each}
       </div>
       <!-- {/if} -->
-    </button>
+    </Button>
   {/if}
 
   <!-- Expandable panel -->
   {#if isOpen}
     <div
       class="{hideToggle ? '' : ''} rounded-lg border border-border bg-muted/20 overflow-hidden"
-      transition:slide={{ duration: 200 }}
+      transition:slide={{ tier: 'moderate' }}
     >
       <!-- Search + filter bar -->
       <div class="flex items-center gap-2 px-3 py-2 border-b border-border">
         <Fa icon={faSearch} class="w-3 h-3 text-ghost opacity-50" />
-        <input
-          bind:this={searchInputEl}
+        <Input
+          bind:ref={searchInputEl}
           type="text"
           bind:value={searchQuery}
           placeholder={getSearchPlaceholder(activeSource)}
-          class="flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground/50 focus:ring-0 focus:outline-none"
+          class="flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground focus:ring-0 focus:outline-none"
         />
         <!-- Refreshing indicator -->
         {#if isRefreshing}
-          <Fa icon={faSync} class="w-2.5 h-2.5 mr-1 text-ghost animate-spin" />
+          <IntentMarkLoader size={10} class="mr-1 text-ghost" />
         {/if}
         <!-- Source tabs with issue count (hidden when controlled externally) -->
         {#if !hideSourceTabs}
           <div class="flex items-center gap-1 ml-auto">
             {#each sources as source (source.id)}
               {@const count = getSourceCount(source.id)}
-              <button
+              <Button
+                variant="ghost"
                 type="button"
                 onclick={() => {
                   userSelectedTab = true;
@@ -1729,7 +1736,7 @@
                 {#if count > 0}
                   <span class="text-subtle">{count}</span>
                 {/if}
-              </button>
+              </Button>
             {/each}
           </div>
         {/if}
@@ -1747,7 +1754,8 @@
       <!-- Subtle filter bar - only show when there are multiple options -->
       {#if activeSource === 'sentry' && sentryProjects.length > 1}
         <div class="flex items-center gap-1 px-3 py-1.5 border-b border-border">
-          <button
+          <Button
+            variant="ghost"
             type="button"
             onclick={() => (selectedSentryProject = null)}
             class="px-2 py-0.5 text-xs rounded-full transition-colors cursor-pointer {selectedSentryProject ===
@@ -1756,9 +1764,10 @@
               : 'text-muted-foreground hover:text-foreground'}"
           >
             {m.workspace_issueSuggestions_all_label()}
-          </button>
+          </Button>
           {#each sentryProjects as project}
-            <button
+            <Button
+              variant="ghost"
               type="button"
               onclick={() => (selectedSentryProject = project.slug)}
               class="px-2 py-0.5 text-xs rounded-full transition-colors cursor-pointer whitespace-nowrap {selectedSentryProject ===
@@ -1767,7 +1776,7 @@
                 : 'text-muted-foreground hover:text-foreground'}"
             >
               {project.name}
-            </button>
+            </Button>
           {/each}
         </div>
       {/if}
@@ -1776,18 +1785,23 @@
         <div class="flex items-center gap-2 px-3 py-1.5 border-b border-border bg-muted/20">
           <span class="text-xs text-subtle">{m.workspace_issueSuggestions_team_label()}</span>
           <Select.Root
-            value={selectedLinearTeam ?? ''}
-            onchange={(value) => (selectedLinearTeam = value || null)}
+            value={selectedLinearTeam ?? '__all-teams__'}
+            onchange={(value) => (selectedLinearTeam = value === '__all-teams__' ? null : value)}
           >
             <Select.Trigger
               variant="ghost"
+              aria-label={m.workspace_issueSuggestions_team_label()}
               class="w-auto gap-1 px-1! py-0.5! text-xs! text-muted-foreground hover:text-foreground"
             >
               <span class="truncate">{selectedLinearTeamLabel}</span>
               <Fa icon={faChevronDown} size={8} class="opacity-50 shrink-0" />
             </Select.Trigger>
             <Select.Content portal class="max-h-[300px] min-w-[10rem]">
-              <Select.Item value="" class="text-xs! py-1.5!">
+              <Select.Item
+                value="__all-teams__"
+                label={m.workspace_issueSuggestions_all_label()}
+                class="text-xs! py-1.5!"
+              >
                 <span class="truncate"
                   >{m.workspace_issueSuggestions_allWithCount_label({
                     count: linearAssignedIssues.length + linearCreatedIssues.length,
@@ -1798,7 +1812,7 @@
                 {@const count = [...linearAssignedIssues, ...linearCreatedIssues].filter(
                   (i) => i.teamKey === team.key,
                 ).length}
-                <Select.Item value={team.key} class="text-xs! py-1.5!">
+                <Select.Item value={team.key} label={team.name} class="text-xs! py-1.5!">
                   <span class="truncate">{team.name} ({count})</span>
                 </Select.Item>
               {/each}
@@ -1810,7 +1824,8 @@
       <!-- GitHub PR filter: All / Assigned / Review Requested / Created / Involves -->
       {#if activeSource === 'github-prs' && isGitHubAuthenticated}
         <div class="flex items-center gap-1 px-3 py-1.5 border-b border-border flex-wrap">
-          <button
+          <Button
+            variant="ghost"
             type="button"
             onclick={() => {
               if (githubPRFilter !== 'all') {
@@ -1824,8 +1839,9 @@
               : 'text-muted-foreground hover:text-foreground'}"
           >
             {m.workspace_issueSuggestions_all_label()}
-          </button>
-          <button
+          </Button>
+          <Button
+            variant="ghost"
             type="button"
             onclick={() => {
               if (githubPRFilter !== 'review-requested') {
@@ -1839,8 +1855,9 @@
               : 'text-muted-foreground hover:text-foreground'}"
           >
             {m.workspace_issueSuggestions_reviewRequested_label()}
-          </button>
-          <button
+          </Button>
+          <Button
+            variant="ghost"
             type="button"
             onclick={() => {
               if (githubPRFilter !== 'assigned') {
@@ -1854,8 +1871,9 @@
               : 'text-muted-foreground hover:text-foreground'}"
           >
             {m.workspace_issueSuggestions_assigned_label()}
-          </button>
-          <button
+          </Button>
+          <Button
+            variant="ghost"
             type="button"
             onclick={() => {
               if (githubPRFilter !== 'created') {
@@ -1869,8 +1887,9 @@
               : 'text-muted-foreground hover:text-foreground'}"
           >
             {m.workspace_issueSuggestions_created_label()}
-          </button>
-          <button
+          </Button>
+          <Button
+            variant="ghost"
             type="button"
             onclick={() => {
               if (githubPRFilter !== 'involves') {
@@ -1884,7 +1903,7 @@
               : 'text-muted-foreground hover:text-foreground'}"
           >
             {m.workspace_issueSuggestions_involvesMe_label()}
-          </button>
+          </Button>
         </div>
       {/if}
 
@@ -1922,28 +1941,30 @@
               {m.workspace_issueSuggestions_noIssuesMatch_label({ query: searchQuery })}
             {:else if activeSource === 'github-issues'}
               {m.workspace_issueSuggestions_noIssuesFoundFor_before()}
-              <button
+              <Button
+                variant="ghost"
                 onclick={() => {
                   handleLink(`https://github.com/${repositoryOwner}/${repositoryName}/issues`, {
                     workspaceId: workspaceId as WorkspaceId | undefined,
                   });
                 }}
                 class="underline underline-offset-2 decoration-muted-foreground/20 cursor-pointer"
-                >{repositoryOwner}/{repositoryName}</button
+                >{repositoryOwner}/{repositoryName}</Button
               >
               {#if showRepoLabels}
                 {@render relatedReposBadge()}
               {/if}
             {:else if activeSource === 'github-prs'}
               {m.workspace_issueSuggestions_noPullRequestsFoundFor_before()}
-              <button
+              <Button
+                variant="ghost"
                 onclick={() => {
                   handleLink(`https://github.com/${repositoryOwner}/${repositoryName}/pulls`, {
                     workspaceId: workspaceId as WorkspaceId | undefined,
                   });
                 }}
                 class="underline underline-offset-2 decoration-muted-foreground/20 cursor-pointer"
-                >{repositoryOwner}/{repositoryName}</button
+                >{repositoryOwner}/{repositoryName}</Button
               >
               {#if showRepoLabels}
                 {@render relatedReposBadge()}
@@ -1973,7 +1994,8 @@
                     handleTooltipOpenChange(`linear-assigned-${issue.id}`, open)}
                 >
                   {#snippet trigger()}
-                    <button
+                    <Button
+                      variant="ghost"
                       type="button"
                       onclick={() => handleLinearIssueClick(issue)}
                       class="w-full flex items-center gap-2 px-3 py-1.5 text-left hover:bg-muted/40 transition-colors group cursor-pointer"
@@ -1991,7 +2013,7 @@
                           >{formatRelativeTime(issue.updatedAt || issue.createdAt)}</span
                         >
                       {/if}
-                    </button>
+                    </Button>
                   {/snippet}
                   {#snippet content()}
                     <div class="space-y-2">
@@ -2046,7 +2068,8 @@
                     handleTooltipOpenChange(`linear-created-${issue.id}`, open)}
                 >
                   {#snippet trigger()}
-                    <button
+                    <Button
+                      variant="ghost"
                       type="button"
                       onclick={() => handleLinearIssueClick(issue)}
                       class="w-full flex items-center gap-2 px-3 py-1.5 text-left hover:bg-muted/40 transition-colors group cursor-pointer"
@@ -2064,7 +2087,7 @@
                           >{formatRelativeTime(issue.updatedAt || issue.createdAt)}</span
                         >
                       {/if}
-                    </button>
+                    </Button>
                   {/snippet}
                   {#snippet content()}
                     <div class="space-y-2">
@@ -2114,7 +2137,8 @@
                 onOpenChange={(open) => handleTooltipOpenChange(`linear-search-${issue.id}`, open)}
               >
                 {#snippet trigger()}
-                  <button
+                  <Button
+                    variant="ghost"
                     type="button"
                     onclick={() => handleLinearIssueClick(issue)}
                     class="w-full flex items-center gap-2 px-3 py-1.5 text-left hover:bg-muted/40 transition-colors group cursor-pointer"
@@ -2130,7 +2154,7 @@
                         >{formatRelativeTime(issue.updatedAt || issue.createdAt)}</span
                       >
                     {/if}
-                  </button>
+                  </Button>
                 {/snippet}
                 {#snippet content()}
                   <div class="space-y-2">
@@ -2169,25 +2193,27 @@
 
           <!-- Sentry issues -->
           {#each visibleSentryIssues as issue (issue.id)}
-            <button
-              type="button"
-              onclick={() => handleSentryIssueClick(issue)}
-              class="w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-muted/40 transition-colors group cursor-pointer"
-              transition:slide={{ duration: 150 }}
-            >
-              <SentryIcon class="w-3.5 h-3.5 text-ghost shrink-0 opacity-50" />
-              <span class="text-sm truncate flex-1 text-foreground/80 group-hover:text-foreground"
-                >{issue.title}</span
+            <div transition:slide={{ tier: 'moderate' }}>
+              <Button
+                type="button"
+                variant="plain"
+                onclick={() => handleSentryIssueClick(issue)}
+                class="h-auto! w-full px-3! py-2! flex items-center gap-2 text-left hover:bg-muted/40 transition-colors group cursor-pointer"
               >
-              {#if sentryProjects.length > 1 && !selectedSentryProject}
-                <span class="text-xs text-subtle shrink-0">{issue.projectName}</span>
-              {/if}
-              {#if issue.lastSeen}
-                <span class="text-xs text-subtle shrink-0"
-                  >{formatRelativeTime(issue.lastSeen)}</span
+                <SentryIcon class="w-3.5 h-3.5 text-ghost shrink-0 opacity-50" />
+                <span class="text-sm truncate flex-1 text-foreground/80 group-hover:text-foreground"
+                  >{issue.title}</span
                 >
-              {/if}
-            </button>
+                {#if sentryProjects.length > 1 && !selectedSentryProject}
+                  <span class="text-xs text-subtle shrink-0">{issue.projectName}</span>
+                {/if}
+                {#if issue.lastSeen}
+                  <span class="text-xs text-subtle shrink-0"
+                    >{formatRelativeTime(issue.lastSeen)}</span
+                  >
+                {/if}
+              </Button>
+            </div>
           {/each}
 
           <!-- GitHub issues -->
@@ -2203,7 +2229,8 @@
               onOpenChange={(open) => handleTooltipOpenChange(`github-${issue.id}`, open)}
             >
               {#snippet trigger()}
-                <button
+                <Button
+                  variant="ghost"
                   type="button"
                   onclick={() => handleGitHubIssueClick(issue)}
                   class="w-full flex items-center gap-2 px-3 py-1.5 text-left hover:bg-muted/40 transition-colors group cursor-pointer"
@@ -2224,7 +2251,7 @@
                       >{formatRelativeTime(issue.updatedAt || issue.createdAt)}</span
                     >
                   {/if}
-                </button>
+                </Button>
               {/snippet}
               {#snippet content()}
                 <div class="space-y-2">
@@ -2278,7 +2305,8 @@
               onOpenChange={(open) => handleTooltipOpenChange(`github-pr-${pr.id}`, open)}
             >
               {#snippet trigger()}
-                <button
+                <Button
+                  variant="ghost"
                   type="button"
                   onclick={() => handleGitHubPRClick(pr)}
                   class="w-full flex items-center gap-2 px-3 py-1.5 text-left hover:bg-muted/40 transition-colors group cursor-pointer"
@@ -2301,7 +2329,7 @@
                       >{formatRelativeTime(pr.updatedAt || pr.createdAt)}</span
                     >
                   {/if}
-                </button>
+                </Button>
               {/snippet}
               {#snippet content()}
                 <div class="space-y-2">
@@ -2358,7 +2386,7 @@
           <!-- Infinite scroll: loading-more spinner + sentinel -->
           {#if activeIsLoadingMore}
             <div class="flex items-center justify-center gap-2 px-3 py-2 text-xs text-subtle">
-              <Fa icon={faSync} class="w-2.5 h-2.5 animate-spin" />
+              <IntentMarkLoader size={10} />
               <span>{m.workspace_issueSuggestions_loadingMore_label()}</span>
             </div>
           {/if}
@@ -2371,22 +2399,23 @@
         {#if activeSource === 'linear' && !isLoading && !isLinearAuthenticated}
           <div
             class="flex items-center justify-between px-3 py-2 text-sm border-t border-border"
-            transition:slide={{ duration: 150 }}
+            transition:slide={{ tier: 'moderate' }}
           >
             <div class="flex items-center gap-2">
               <LinearIcon class="w-3.5 h-3.5 text-ghost" />
               <span class="text-subtle">{m.workspace_issueSuggestions_connectLinear_label()}</span>
             </div>
-            <button
+            <Button
+              variant="ghost"
               type="button"
               disabled={$linearIsAuthenticating$}
               onclick={() => appStore.dispatch(startLinearAuth())}
-              class="text-primary hover:text-primary/80 transition-colors font-medium cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+              class="text-primary-ink hover:text-primary-ink/80 transition-colors font-medium cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {$linearIsAuthenticating$
                 ? m.workspace_issueSuggestions_connecting_label()
                 : m.workspace_issueSuggestions_connect_label()}
-            </button>
+            </Button>
           </div>
         {/if}
 
@@ -2394,7 +2423,7 @@
         {#if (activeSource === 'github-issues' || activeSource === 'github-prs') && !isLoading && !isGitHubAuthenticated}
           <div
             class="flex items-center justify-between px-3 py-2 text-sm border-t border-border"
-            transition:slide={{ duration: 150 }}
+            transition:slide={{ tier: 'moderate' }}
           >
             <div class="flex items-center gap-2">
               <GitHubIcon class="w-3.5 h-3.5 text-ghost" />
@@ -2404,16 +2433,17 @@
                   : m.workspace_issueSuggestions_connectGithubIssues_label()}</span
               >
             </div>
-            <button
+            <Button
+              variant="ghost"
               type="button"
               disabled={$githubAuthIsAuthenticating$}
               onclick={() => appStore.dispatch(startGitHubAuth())}
-              class="text-primary hover:text-primary/80 transition-colors font-medium cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+              class="text-primary-ink hover:text-primary-ink/80 transition-colors font-medium cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {$githubAuthIsAuthenticating$
                 ? m.workspace_issueSuggestions_connecting_label()
                 : m.workspace_issueSuggestions_connect_label()}
-            </button>
+            </Button>
           </div>
         {/if}
         <!-- Show repository hint when authenticated but no repo selected -->
@@ -2436,7 +2466,7 @@
 
         <!-- Sentry auth status - only show when not authenticated -->
         {#if activeSource === 'sentry' && !isLoading && !isSentryAuthenticated}
-          <div class="border-t border-border" transition:slide={{ duration: 150 }}>
+          <div class="border-t border-border" transition:slide={{ tier: 'moderate' }}>
             {#if !sentryShowForm}
               <div class="flex items-center justify-between px-3 py-2 text-sm">
                 <div class="flex items-center gap-2">
@@ -2445,24 +2475,25 @@
                     >{m.workspace_issueSuggestions_connectSentry_label()}</span
                   >
                 </div>
-                <button
+                <Button
+                  variant="ghost"
                   type="button"
                   onclick={() => (sentryShowForm = true)}
-                  class="text-primary hover:text-primary/80 transition-colors font-medium cursor-pointer"
+                  class="text-primary-ink hover:text-primary-ink/80 transition-colors font-medium cursor-pointer"
                 >
                   {m.workspace_issueSuggestions_connect_label()}
-                </button>
+                </Button>
               </div>
             {:else}
-              <div class="px-3 py-2 space-y-2" transition:slide={{ duration: 150 }}>
+              <div class="px-3 py-2 space-y-2" transition:slide={{ tier: 'moderate' }}>
                 <div class="flex items-center gap-2">
-                  <input
+                  <Input
                     type="text"
                     class="flex-1 min-w-0 bg-background/50 border border-border rounded px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-ring placeholder:opacity-40"
                     placeholder={m.workspace_issueSuggestions_organizationSlug_placeholder()}
                     bind:value={sentryOrg}
                   />
-                  <input
+                  <Input
                     type="password"
                     class="flex-1 min-w-0 bg-background/50 border border-border rounded px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-ring placeholder:opacity-40"
                     placeholder={m.workspace_issueSuggestions_apiToken_placeholder()}
@@ -2473,24 +2504,26 @@
                       }
                     }}
                   />
-                  <button
+                  <Button
+                    variant="ghost"
                     type="button"
                     disabled={$sentryIsConnecting$ || !sentryOrg.trim() || !sentryToken.trim()}
                     onclick={() =>
                       appStore.dispatch(connectSentry(sentryOrg.trim(), sentryToken.trim()))}
-                    class="shrink-0 text-xs text-primary hover:text-primary/80 font-medium cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                    class="shrink-0 text-xs text-primary-ink hover:text-primary-ink/80 font-medium cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     {$sentryIsConnecting$
                       ? m.workspace_issueSuggestions_connecting_label()
                       : m.workspace_issueSuggestions_connect_label()}
-                  </button>
+                  </Button>
                 </div>
                 {#if $sentryError$}
                   <p class="text-xs text-danger">{$sentryError$}</p>
                 {/if}
-                <p class="text-xs text-subtle opacity-50">
+                <p class="text-xs text-muted-foreground">
                   {m.workspace_issueSuggestions_createTokenAt_label()}
-                  <button
+                  <Button
+                    variant="ghost"
                     type="button"
                     onclick={() =>
                       handleLink('https://sentry.io/settings/account/api/auth-tokens/', {
@@ -2500,7 +2533,7 @@
                   >
                     <!-- i18n-ignore (domain name) -->
                     sentry.io
-                  </button>
+                  </Button>
                   {m.workspace_issueSuggestions_withScopes_label()}
                   <!-- i18n-ignore (API scope names) -->
                   <span class="font-mono">org:read, project:read, event:read</span>

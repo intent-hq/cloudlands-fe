@@ -6,6 +6,7 @@
  */
 
 import type { AgentSession, AgentMessage, ContentBlock, ToolCall } from '../types';
+import { MESSAGE_ROLES } from './agent-message';
 import { isContentBlock as isContentBlockImpl } from './content-block';
 
 // ============================================================================
@@ -47,7 +48,7 @@ export function isAgentMessage(obj: unknown): obj is AgentMessage {
   return (
     typeof msg.id === 'string' &&
     typeof msg.role === 'string' &&
-    ['user', 'assistant', 'system', 'error'].includes(msg.role) &&
+    MESSAGE_ROLES.includes(msg.role) &&
     (typeof msg.timestamp === 'string' || msg.timestamp instanceof Date)
   );
 }

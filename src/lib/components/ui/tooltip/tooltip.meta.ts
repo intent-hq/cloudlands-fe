@@ -32,17 +32,28 @@ export const tooltipMetadata = parseUiComponentMetadata({
     'showLinkTooltip',
     'tooltipMetadata',
   ],
+  // Minimal composition from the tooltip-interaction default fixture.
+  usage: `<script lang="ts">
+  import * as Tooltip from '$lib/components/ui/tooltip';
+</script>
+
+<Tooltip.Provider>
+  <Tooltip.Root>
+    <Tooltip.Trigger>Keyboard help</Tooltip.Trigger>
+    <Tooltip.Content>Press Command K to open navigation.</Tooltip.Content>
+  </Tooltip.Root>
+</Tooltip.Provider>`,
   category: 'pattern',
   owner: '012-F2',
   callers: [
     'src/features/layout/components/content-header/ContentHeader.svelte',
-    'src/features/log/components/EntityChip.svelte',
+    'src/features/notes/note-presence/NotePresenceAvatars.svelte',
     'src/features/onboarding/messages/ProviderCard.svelte',
     'src/features/onboarding/messages/WorkspaceSetupCard.svelte',
+    'src/features/presence/components/PresenceAvatarStack.svelte',
     'src/lib/component-catalog/renderers/NavigationHelpCatalogPreview.svelte',
-    'src/lib/components/chat/AgentInputArea.svelte',
+    'src/lib/component-catalog/renderers/PopoversCatalogPreview.svelte',
     'src/lib/components/chat/AgentSubscriptions.svelte',
-    'src/lib/components/chat/ChatHeader.svelte',
     'src/lib/components/chat/ContextEngineToolCall.svelte',
     'src/lib/components/chat/EventWakeupBanner.svelte',
     'src/lib/components/chat/InlineAgentAvatar.svelte',
@@ -50,10 +61,8 @@ export const tooltipMetadata = parseUiComponentMetadata({
     'src/lib/components/chat/SuggestedPrompts.svelte',
     'src/lib/components/chat/input/ContextPickerButton.svelte',
     'src/lib/components/chat/input/SimpleRichInput.svelte',
-    'src/lib/components/file-explorer/VSCodeFileExplorer.svelte',
     'src/lib/components/layout/DaemonStatusIndicator.svelte',
     'src/lib/components/layout/WindowTitleBar.svelte',
-    'src/lib/components/layout/panel-system/PanelLayoutHeader.svelte',
     'src/lib/components/layout/panel-system/PanelTabBar.svelte',
     'src/lib/components/layout/sidebar-nav/SidebarPanel.svelte',
     'src/lib/components/layout/sidebar-nav/cards/ChiefCard.svelte',
@@ -67,8 +76,7 @@ export const tooltipMetadata = parseUiComponentMetadata({
     'src/lib/components/tiptap/PasteChipNodeView.svelte',
     'src/lib/components/tiptap/TaskItemNodeView.svelte',
     'src/lib/components/ui/CopyButton.svelte',
-    'src/lib/components/ui/NavigationButtons.svelte',
-    'src/lib/components/ui/SaveIndicator.svelte',
+    'src/lib/components/ui/copy-input/copy-input.svelte',
     'src/lib/components/ui/button/button.svelte',
     'src/lib/components/ui/grouped-combobox/grouped-combobox.svelte',
     'src/lib/components/ui/indicators/AgentBadge.svelte',

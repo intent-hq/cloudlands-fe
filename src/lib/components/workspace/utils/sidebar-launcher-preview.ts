@@ -1,7 +1,9 @@
 import type { AgentSession, Note } from '$shared/types';
+import { agentDelegationParentOf } from '$shared/utils/agent-scope';
 import { getAgentPeekData } from '$lib/utils/agent-peek-utils';
 import { stripInternalDeliveryNotes } from '$lib/utils/user-message-presentation';
 import { stripMarkdownFormatting, stripUserMessagePrefixes } from '$lib/utils/text-utils';
+import { isRetiredAgentSession } from '../workspace-agents-list-utils';
 
 export interface AgentLauncherPreview {
   lastUserMessage: string;
@@ -59,7 +61,9 @@ export function deriveAgentLauncherItems(
   totalAgents: number;
   overflowCount: number;
 } {
-  const uniqueAgents = [...new Map(agents.map((agent) => [agent.id, agent])).values()];
+  const uniqueAgents = [...new Map(agents.map((agent) => [agent.id, agent])).values()].filter(
+    (agent) => !isRetiredAgentSession(agent),
+  );
   const agentStates = uniqueAgents.map((agent) => ({
     agent,
     isRunning: getIsRunning(agent),
@@ -120,19 +124,12 @@ function isMarkedInitialAgent(agent: AgentSession): boolean {
 }
 
 function isLegacyRootCoordinator(agent: AgentSession): boolean {
-  const legacyAgent = agent as AgentSession & {
-    parentAgentId?: string;
-    config?: { specialist?: string };
-  };
-  const parentAgentId =
-    agent.metadata?.createdByAgentId ??
-    agent.agentMetadata?.createdByAgentId ??
-    legacyAgent.parentAgentId;
+  const legacyAgent = agent as AgentSession & { config?: { specialist?: string } };
   const specialist =
     agent.metadata?.specialist ?? agent.agentMetadata?.specialist ?? legacyAgent.config?.specialist;
   const isCoordinator =
     specialist === 'spec-writer' || agent.name?.trim().toLowerCase() === 'coordinator';
-  return !parentAgentId && isCoordinator;
+  return agentDelegationParentOf(agent) === null && isCoordinator;
 }
 
 function findPrimaryAgent(agents: AgentSession[]): AgentSession | undefined {

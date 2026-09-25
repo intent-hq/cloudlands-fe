@@ -14,6 +14,24 @@
  * version always matches the CT transform version, then forwards all CLI
  * args to `playwright test -c playwright-ct.config.ts`.
  *
+ * Local CT bundle builds need the same 8 GB heap cap as CI's build step;
+ * Node's default heap can run out while Vite bundles the component registry.
+ * Apply the heap default unless the caller already chose a heap cap: an unset
+ * NODE_OPTIONS gets the flag, a pre-set one without a heap flag (e.g. a
+ * host-injected `--require` such as Datadog's dd-trace; see
+ * intent-hq/intent#4565) keeps its options with the flag appended, and one that
+ * already carries --max-old-space-size or --max-old-space-size-percentage (or
+ * their V8 underscore aliases) is left untouched.
+ * CI keeps its per-step limits: 8 GB for building, 4 GB for cached test runs,
+ * so the larger build allowance does not leak into its long-lived test phase.
+ * Playwright rebuilds in-process when sources change between dependency
+ * population and begin(), so concurrent edits during a cold build can exceed
+ * the cap; this is upstream behavior, not a launcher concern. When the child
+ * still dies with SIGABRT / exit 134 (V8's heap-exhaustion signature; stderr is
+ * inherited, so the OOM text itself cannot be matched) the launcher prints a
+ * one-shot hint naming the heap flag in effect and how to raise it, so the
+ * failure is not misread as a test regression.
+ *
  * It also owns the HTML-report policy (intent-hq/intent#4652): Playwright's
  * html reporter defaults to `open: 'on-failure'`, which keeps the process
  * alive serving the report on :9323 after a failing run, so chained
@@ -26,13 +44,21 @@
  * listening on its port, so an unlocked second run from another worktree
  * would test against that tree's component registry and then fail with
  * ECONNREFUSED when the first run exits.
+ *
+ * Before a test run it also provisions the gitignored Paraglide bundle
+ * (src/shared/paraglide) through the same stale-aware `ensureI18nFresh`
+ * step `verify:changed` and `test:unit` run: the bundle compiles only while it
+ * is missing or its recorded input hash no longer matches messages/*.json, so
+ * a fresh worktree's first CT run builds without a manual generate:i18n. The
+ * CI helpers and `--help` skip the preflight.
  */
 import { spawn, spawnSync } from 'node:child_process';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { ensureI18nFresh } from './check-deps-fresh.mjs';
 import { nonFontPackagesFromDryRun } from './playwright-os-deps-lib.mjs';
 import {
   acquireVerificationLock,
@@ -69,9 +95,11 @@ export function usage() {
     '  --help, -h        Show this help.',
     '',
     'Environment:',
-    '  CT_PORT           Component server port (default 3100). Test runs hold the host-wide',
-    '                    ct-<CT_PORT> lock verify:changed uses, so two worktrees never share',
-    '                    one component server; use a free port to run concurrently.',
+    '  CT_PORT           Component server port (default 3100). The port keys the component',
+    '                    server, the host-wide ct-<CT_PORT> lock verify:changed uses, and the',
+    '                    playwright/.cache-<CT_PORT> bundle cache (bare playwright/.cache when',
+    '                    unset or blank), so runs on distinct ports never share a server or a',
+    '                    bundle — even within one worktree; use a free port to run concurrently.',
     '  VERIFY_CHANGED_LOCK_TIMEOUT_MS',
     '                    How long to wait for that lock (default 240000, capped at 300000).',
     `  ${CT_HTML_REPORT_ENV}=open|always|on-failure|never`,
@@ -80,6 +108,8 @@ export function usage() {
     '                    written to playwright-report/ (view it with `pnpm exec playwright',
     '                    show-report`). Opt-in values only take effect on an interactive',
     '                    terminal; automated (non-TTY) runs never block on the report.',
+    '  CT_NODE_ARGS      Space-separated Node flags (default: empty; no shell quoting).',
+    '  CT_ALLOW_CORE=1   Allow CT runs with core dumps in the package root.',
     '  PLAYWRIGHT_HTML_OPEN',
     `                    When set, respected verbatim (overrides ${CT_HTML_REPORT_ENV}).`,
     '',
@@ -187,6 +217,29 @@ export function exitCodeFromChild(code, signal) {
 }
 
 /**
+ * Provision the Paraglide bundle for a test run (see the header). Resolves to
+ * true when the run may proceed; a stale bundle that could not be compiled or
+ * a thrown error is reported through `printError` and ends the run via
+ * `exit(1)`. `ensureI18n` / `exit` / `printError` are injectable for tests.
+ */
+export async function preflightI18n({
+  root = repoRoot,
+  ensureI18n = ensureI18nFresh,
+  exit = (code) => process.exit(code),
+  printError = console.error,
+} = {}) {
+  try {
+    const i18n = await ensureI18n(root);
+    if (i18n.ok) return true;
+    printError(`[run-ct-tests] ${i18n.reason}`);
+  } catch (error) {
+    printError(`[run-ct-tests] ${error instanceof Error ? error.message : error}`);
+  }
+  exit(1);
+  return false;
+}
+
+/**
  * Take the host-wide `ct-<CT_PORT>` lock for a test run and resolve to its
  * release function. When `verify:changed` already holds the lock for this port
  * it exports `HELD_LOCK_ENV`; the nested run then skips acquisition instead of
@@ -217,14 +270,57 @@ export function runPlaywright({
   env = process.env,
   spawnImpl = spawn,
   exit = (code) => process.exit(code),
+  printError = console.error,
 }) {
-  const child = spawnImpl(process.execPath, [cliPath, ...args], { cwd, stdio: 'inherit', env });
+  const flags = env.CT_NODE_ARGS?.trim().split(/\s+/).filter(Boolean) ?? [];
+  const child = spawnImpl(process.execPath, [...flags, cliPath, ...args], {
+    cwd,
+    stdio: 'inherit',
+    env,
+  });
   child.on('error', (error) => {
-    console.error(`[run-ct-tests] failed to spawn playwright: ${error.message}`);
+    printError(`[run-ct-tests] failed to spawn playwright: ${error.message}`);
     exit(1);
   });
-  child.on('exit', (code, signal) => exit(exitCodeFromChild(code, signal)));
+  child.on('exit', (code, signal) => {
+    if (code === null && signal) printError(`playwright died with ${signal}`);
+    const hint = heapExhaustionHint({ code, signal, env });
+    if (hint) printError(hint);
+    exit(exitCodeFromChild(code, signal));
+  });
   return child;
+}
+
+/**
+ * Heuristic hint for a child that exited with SIGABRT / 134. Names the heap
+ * flag actually in effect for the child — `--max-old-space-size-percentage`
+ * overrides `--max-old-space-size` wherever either is set, and within a kind a
+ * `CT_NODE_ARGS` flag overrides NODE_OPTIONS (CLI flags win), else the
+ * launcher default — printing only that token: hosts carry unrelated
+ * `--require` paths in NODE_OPTIONS that must not be echoed. Returns null for
+ * any other exit.
+ */
+export function heapExhaustionHint({ code, signal, env }) {
+  if (signal !== 'SIGABRT' && code !== 134) return null;
+  const effective = effectiveHeapFlag(env);
+  const source = effective?.source ?? 'launcher default';
+  const flag = effective?.token ?? CT_HEAP_FLAG;
+  const how = signal === 'SIGABRT' ? 'SIGABRT' : `exit code ${code}`;
+  // Raise the cap where it was set, with the flag kind that is in effect: a
+  // percentage retry always wins, and a CT_NODE_ARGS retry beats NODE_OPTIONS.
+  const raiseVia = source === 'CT_NODE_ARGS' ? 'CT_NODE_ARGS' : 'NODE_OPTIONS';
+  const raised =
+    effective?.kind === 'percentage'
+      ? `--max-old-space-size-percentage=${Math.min(100, 2 * Number(effective.value) || 50)}`
+      : '--max-old-space-size=16384';
+  return [
+    `[run-ct-tests] playwright exited with ${how}. This usually means V8 ran out of heap while`,
+    'Vite bundled the component registry; look for "Ineffective mark-compacts near heap limit"',
+    'or "JavaScript heap out of memory" above.',
+    `[run-ct-tests] heap flag in effect for the child: ${flag} (${source}). To raise it, run e.g.`,
+    `  ${raiseVia}=${raised} pnpm run test:ct -- <args>`,
+    '[run-ct-tests] this is a tooling/memory failure, not evidence of a test regression.',
+  ].join('\n');
 }
 
 /** How long a signalled Playwright child gets to tear down before SIGKILL. */
@@ -295,9 +391,66 @@ export function resolveCtAlignedPlaywrightCli() {
   return { cliPath, version: pkg.version };
 }
 
+/** Heap cap applied to the Playwright child unless the caller chose one. */
+const CT_HEAP_FLAG = '--max-old-space-size=8192';
+// Both heap caps accept the V8 underscore alias (`--max_old_space_size=`, as
+// scripts/vite-build.mjs also honours). The percentage flag is Node's own and
+// also takes its value as the next token; the absolute flag is a V8
+// pass-through that only accepts `=N`.
+const HEAP_FLAG_RE =
+  /^--max[-_]old[-_]space[-_]size(?<percentage>[-_]percentage)?(?:=(?<value>.*))?$/;
+
 /**
- * Build the child environment: project-local transform cache plus the
- * HTML-report policy from `resolveHtmlReportOpen`.
+ * Every heap-cap flag in a space-separated option string (NODE_OPTIONS or CLI
+ * args; double-quoted tokens are unwrapped), in order, as
+ * `{ kind: 'size' | 'percentage', token, value }` where `token` is the flag as
+ * written. The single recognizer for the launcher default and the hint.
+ */
+function parseHeapFlags(options) {
+  const tokens = (options?.trim().split(/\s+/) ?? [])
+    .map((token) => token.replaceAll('"', ''))
+    .filter(Boolean);
+  const flags = [];
+  for (let i = 0; i < tokens.length; i++) {
+    const match = HEAP_FLAG_RE.exec(tokens[i]);
+    if (!match) continue;
+    const kind = match.groups.percentage ? 'percentage' : 'size';
+    let { value } = match.groups;
+    let token = tokens[i];
+    if (value === undefined) {
+      if (kind !== 'percentage' || i + 1 >= tokens.length) continue;
+      value = tokens[++i];
+      token = `${token} ${value}`;
+    }
+    flags.push({ kind, token, value });
+  }
+  return flags;
+}
+
+/**
+ * The heap cap in effect for the child among the caller's settings, with its
+ * `source`, or null: a percentage flag overrides an absolute one wherever
+ * either is set, within a kind a CT_NODE_ARGS flag overrides NODE_OPTIONS (CLI
+ * flags win), and Node applies the last of repeated flags.
+ */
+function effectiveHeapFlag(env) {
+  const flags = [
+    ...parseHeapFlags(env.CT_NODE_ARGS).map((flag) => ({ ...flag, source: 'CT_NODE_ARGS' })),
+    ...parseHeapFlags(env.NODE_OPTIONS).map((flag) => ({ ...flag, source: 'NODE_OPTIONS' })),
+  ];
+  for (const kind of ['percentage', 'size']) {
+    for (const source of ['CT_NODE_ARGS', 'NODE_OPTIONS']) {
+      const flag = flags.filter((f) => f.kind === kind && f.source === source).at(-1);
+      if (flag) return flag;
+    }
+  }
+  return null;
+}
+
+/**
+ * Build the child environment: project-local transform cache, the heap
+ * default described in the header, plus the HTML-report policy from
+ * `resolveHtmlReportOpen`.
  */
 export function buildChildEnv({ env = process.env, isTTY, openReport = false, root = repoRoot }) {
   // Playwright's default transform cache is host-wide. Persistent CI runners
@@ -308,9 +461,31 @@ export function buildChildEnv({ env = process.env, isTTY, openReport = false, ro
     env.PWTEST_CACHE_DIR?.trim() ||
     path.join(root, 'node_modules', '.cache', 'playwright-transform');
   const childEnv = { ...env, PWTEST_CACHE_DIR: transformCacheDir };
+  const nodeOptions = env.NODE_OPTIONS?.trim();
+  if (!nodeOptions) childEnv.NODE_OPTIONS = CT_HEAP_FLAG;
+  else if (parseHeapFlags(nodeOptions).length === 0) {
+    childEnv.NODE_OPTIONS = `${env.NODE_OPTIONS} ${CT_HEAP_FLAG}`;
+  }
   const { open, notice } = resolveHtmlReportOpen({ env, isTTY, openReport });
   if (open) childEnv.PLAYWRIGHT_HTML_OPEN = open;
   return { env: childEnv, notice };
+}
+
+/** Refuse core dumps before the CT source scanner can read them. */
+export function assertNoCoreDumps({ root = repoRoot, env = process.env } = {}) {
+  if (env.CT_ALLOW_CORE === '1') return;
+  const dumps = readdirSync(root)
+    .filter((name) => /^core(?:\.[0-9]+)?$/.test(name))
+    .flatMap((name) => {
+      const stat = statSync(path.join(root, name));
+      return stat.isFile() ? [`${name} (${stat.size} bytes)`] : [];
+    });
+  if (dumps.length) {
+    throw new Error(
+      `Refusing CT run: core dumps in ${root}: ${dumps.join(', ')}. ` +
+        'Move or remove them before running CT, or set CT_ALLOW_CORE=1 to override.',
+    );
+  }
 }
 
 async function main(argv) {
@@ -318,6 +493,13 @@ async function main(argv) {
   if (help) {
     process.stdout.write(`${usage()}\n`);
     process.exit(0);
+  }
+
+  try {
+    assertNoCoreDumps();
+  } catch (error) {
+    console.error(`[run-ct-tests] ${error instanceof Error ? error.message : error}`);
+    process.exit(1);
   }
 
   let cli;
@@ -366,6 +548,7 @@ async function main(argv) {
 
   let releaseLock = () => {};
   if (args[0] === 'test') {
+    if (!(await preflightI18n())) return;
     try {
       releaseLock = await acquireCtPortLock();
     } catch (error) {

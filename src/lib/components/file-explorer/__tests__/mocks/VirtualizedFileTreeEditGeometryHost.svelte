@@ -26,7 +26,7 @@
     },
     {
       node: { name: 'nested.ts', path: '/project/src/nested.ts', type: 'file', children: [] },
-      depth: 1,
+      depth: 2,
       isExpanded: false,
       isLoading: false,
     },

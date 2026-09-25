@@ -1,40 +1,57 @@
 <script lang="ts">
-  import { Button } from '$lib/components/ui/button';
+  import type { Snippet } from 'svelte';
   import type { ButtonVariant } from '$lib/components/ui/button';
-  import * as Dialog from '$lib/components/ui/dialog';
+  import { DestructiveConfirm } from '$lib/components/patterns/confirm';
   import { m } from '$shared/paraglide/messages.js';
   import { formatInteger } from '$lib/i18n/format';
 
   interface Props {
     open?: boolean;
+    static?: boolean;
     title?: string;
     description?: string;
     confirmText?: string;
     variant?: ButtonVariant;
+    initialFocus?: 'confirm' | 'cancel';
+    body?: Snippet;
+    /** Picks the guest-removal note: archive adds the re-invite reminder. */
+    mode?: 'delete' | 'archive';
     /** Streaming agents across the targeted workspaces that the action would stop. */
     activeAgentCount?: number;
     /** Active background hooks across the targeted workspaces that the action would cancel. */
     activeHookCount?: number;
-    onConfirm?: () => void;
+    /** Open pull requests across the targeted workspaces. */
+    openPrCount?: number;
+    /** Whether active-work preflight has resolved for the current target snapshot. */
+    preflightReady?: boolean;
+    /** Collaborators + open invites across the targeted workspaces that the action would remove. */
+    guestCount?: number;
+    onConfirm?: () => void | Promise<void>;
     onCancel?: () => void;
   }
 
   let {
     open = $bindable(false),
+    static: staticPosition = false,
     title = m.modals_bulkActionConfirm_title(),
     description = '',
     confirmText = m.modals_bulkActionConfirm_confirm_label(),
     variant = 'default',
+    initialFocus = 'confirm',
+    body,
+    openPrCount = 0,
+    preflightReady = true,
+    mode = 'delete',
     activeAgentCount = 0,
     activeHookCount = 0,
+    guestCount = 0,
     onConfirm,
     onCancel,
   }: Props = $props();
 
-  const hasActiveWork = $derived(activeAgentCount > 0 || activeHookCount > 0);
-
-  let confirmButtonRef: HTMLButtonElement | null = $state(null);
-  let confirmHasFocus = $state(false);
+  const hasActiveWork = $derived(
+    activeAgentCount > 0 || activeHookCount > 0 || openPrCount > 0 || guestCount > 0,
+  );
 
   function close() {
     open = false;
@@ -42,36 +59,33 @@
   }
 
   async function handleConfirm() {
-    try {
-      await onConfirm?.();
-    } catch (error) {
-      console.error('Confirm action failed:', error);
-    }
+    await onConfirm?.();
     open = false;
-  }
-
-  function handleOpenAutoFocus(event: Event) {
-    event.preventDefault();
-    confirmButtonRef?.focus();
   }
 </script>
 
-<Dialog.Root {open} onOpenChange={(nextOpen) => !nextOpen && close()}>
-  <Dialog.Content
-    class="max-w-sm gap-0 overflow-hidden p-0"
-    closeLabel={m.modals_bulkActionConfirm_close_ariaLabel()}
-    onOpenAutoFocus={handleOpenAutoFocus}
-  >
-    <div class="space-y-4 p-5 pr-12">
-      <Dialog.Header class="gap-2 pr-0">
-        <Dialog.Title>{title}</Dialog.Title>
-        <Dialog.Description class="leading-5">{description}</Dialog.Description>
-      </Dialog.Header>
-
+<DestructiveConfirm
+  bind:open
+  static={staticPosition}
+  {title}
+  confirmLabel={confirmText}
+  submitBusy={!preflightReady}
+  canSubmit={preflightReady}
+  focusSubmit={preflightReady && initialFocus === 'confirm'}
+  focusCancel={!preflightReady || initialFocus === 'cancel'}
+  enterKey={initialFocus === 'cancel' ? 'ignore' : 'submit'}
+  modEnter={initialFocus === 'cancel' ? 'ignore' : 'submit'}
+  destructive={variant === 'destructive'}
+  onConfirm={handleConfirm}
+  onCancel={close}
+>
+  {#snippet details()}
+    <div class="space-y-4">
+      {#if description}<p class="type-body">{description}</p>{/if}
       {#if hasActiveWork}
-        <div class="space-y-1 rounded-md border border-border bg-muted/40 p-3">
+        <div class="space-y-2">
           {#if activeAgentCount > 0}
-            <p class="text-sm font-medium text-foreground">
+            <p class="type-body text-foreground font-medium">
               {activeAgentCount === 1
                 ? m.modals_deleteWarning_agentsStopped_one({
                     count: formatInteger(activeAgentCount),
@@ -82,7 +96,7 @@
             </p>
           {/if}
           {#if activeHookCount > 0}
-            <p class="text-sm font-medium text-foreground">
+            <p class="type-body text-foreground font-medium">
               {activeHookCount === 1
                 ? m.modals_deleteWarning_hooksCancelled_one({
                     count: formatInteger(activeHookCount),
@@ -92,24 +106,31 @@
                   })}
             </p>
           {/if}
+          {#if openPrCount > 0}
+            <p class="type-body text-muted-foreground font-normal">
+              {openPrCount === 1
+                ? m.modals_deleteWarning_openPrs_one({ count: formatInteger(openPrCount) })
+                : m.modals_deleteWarning_openPrs_many({ count: formatInteger(openPrCount) })}
+            </p>
+          {/if}
+          {#if guestCount > 0}
+            <p class="type-body text-muted-foreground font-normal">
+              {guestCount === 1
+                ? m.modals_bulkActionConfirm_guestsRemoved_one({
+                    count: formatInteger(guestCount),
+                  })
+                : m.modals_bulkActionConfirm_guestsRemoved_many({
+                    count: formatInteger(guestCount),
+                  })}
+              {#if mode === 'archive'}
+                {m.modals_bulkActionConfirm_guestsReinvite_description()}
+              {/if}
+            </p>
+          {/if}
         </div>
       {/if}
-    </div>
 
-    <Dialog.Footer class="mt-0 flex-row items-center justify-end border-0 px-5 pb-5 pt-0">
-      <Button variant="ghost-light" onclick={close}>
-        {m.modals_bulkActionConfirm_cancel_label()}
-      </Button>
-      <Button
-        {variant}
-        bind:ref={confirmButtonRef}
-        class={confirmHasFocus ? 'ring-ring/50 ring-[3px]' : undefined}
-        onfocus={() => (confirmHasFocus = true)}
-        onblur={() => (confirmHasFocus = false)}
-        onclick={handleConfirm}
-      >
-        {confirmText}
-      </Button>
-    </Dialog.Footer>
-  </Dialog.Content>
-</Dialog.Root>
+      {@render body?.()}
+    </div>
+  {/snippet}
+</DestructiveConfirm>

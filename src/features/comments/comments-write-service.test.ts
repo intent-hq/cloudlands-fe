@@ -26,13 +26,13 @@ vi.mock('$lib/client', () => ({
   },
 }));
 
-// FAKE the toast seam so failure surfacing is asserted without svelte-sonner.
-vi.mock('svelte-sonner', () => ({
-  toast: { warning: vi.fn(), success: vi.fn(), error: vi.fn(), message: vi.fn() },
+// FAKE the toast seam so failure surfacing is asserted without $lib/components/patterns/notify.
+vi.mock('$lib/components/patterns/notify', () => ({
+  notify: { warning: vi.fn(), success: vi.fn(), error: vi.fn(), message: vi.fn() },
 }));
 
 import { appClient } from '$lib/client';
-import { toast } from 'svelte-sonner';
+import { notify } from '$lib/components/patterns/notify';
 import { store as appStore } from '$store/renderer/store';
 import {
   clearCommentsAction,
@@ -127,7 +127,7 @@ describe('commentsWriteService (fake seam, real store)', () => {
 
     expect(ok).toBe(false);
     expect(selectCommentById.select(appStore.state, 'c-2')).toBeUndefined();
-    expect(toast.error).toHaveBeenCalledWith(
+    expect(notify.error).toHaveBeenCalledWith(
       'Failed to add comment',
       expect.objectContaining({ description: 'nope' }),
     );
@@ -146,7 +146,7 @@ describe('commentsWriteService (fake seam, real store)', () => {
     });
 
     expect(ok).toBe(false);
-    expect(toast.error).toHaveBeenCalledWith(
+    expect(notify.error).toHaveBeenCalledWith(
       'Failed to add comment',
       expect.objectContaining({
         description: 'Internal error: Could not find the search context in the document.',
@@ -296,8 +296,8 @@ describe('commentsWriteService (fake seam, real store)', () => {
       // the save carries 3 (the daemon three-way merges), not the stored 4
       // (an exact-rev save would replace the daemon's anchor rewrite).
       expect(notesApi.setContent).toHaveBeenCalledWith('note-rev', 'body with anchors', 3, WS);
-      expect(toast.warning).not.toHaveBeenCalled();
-      expect(toast.error).not.toHaveBeenCalled();
+      expect(notify.warning).not.toHaveBeenCalled();
+      expect(notify.error).not.toHaveBeenCalled();
       expect(selectNoteById.select(appStore.state, WS, 'note-rev')?.rev).toBe(5);
     } finally {
       vi.runOnlyPendingTimers();
@@ -348,8 +348,8 @@ describe('commentsWriteService (fake seam, real store)', () => {
       // The draft's baseline (3) is sent; the add's rev bump is the daemon's
       // own rewrite, which the merge reconciles with the identical anchors.
       expect(notesApi.setContent).toHaveBeenCalledWith('note-rev', 'body with anchors', 3, WS);
-      expect(toast.warning).not.toHaveBeenCalled();
-      expect(toast.error).not.toHaveBeenCalled();
+      expect(notify.warning).not.toHaveBeenCalled();
+      expect(notify.error).not.toHaveBeenCalled();
       expect(selectNoteById.select(appStore.state, WS, 'note-rev')?.rev).toBe(5);
     } finally {
       vi.runOnlyPendingTimers();
@@ -385,7 +385,7 @@ describe('commentsWriteService (fake seam, real store)', () => {
 
     expect(ok).toBe(false);
     expect(selectCommentById.select(appStore.state, 'r-2')).toBeUndefined();
-    expect(toast.error).toHaveBeenCalledWith(
+    expect(notify.error).toHaveBeenCalledWith(
       'Failed to reply',
       expect.objectContaining({ description: 'nope' }),
     );
@@ -411,7 +411,7 @@ describe('commentsWriteService (fake seam, real store)', () => {
     expect(existed).toBe(true);
     expect(success).toBe(false);
     expect(selectCommentById.select(appStore.state, 'c-4')?.content).toBe('keep');
-    expect(toast.error).toHaveBeenCalledWith(
+    expect(notify.error).toHaveBeenCalledWith(
       'Failed to delete comment',
       expect.objectContaining({ description: 'nope' }),
     );

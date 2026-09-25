@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { Input } from '$lib/components/ui/input';
+  import { Button } from '$lib/components/ui/button';
   import { logger } from '$lib/utils/client-logger';
 
   import type { Editor } from '@tiptap/core';
@@ -25,6 +27,8 @@
   // import { getAgentTypes } from '$features/agent/instruction-registry';
   import Portal from '$lib/components/ui/Portal.svelte';
   import { store as appStore } from '$store/renderer/store';
+  import { selectHidesAgentLifecycleActions } from '$store/renderer/slices/workspace/workspace-selectors';
+  import { writable } from 'svelte/store';
   import { m } from '$shared/paraglide/messages.js';
 
   interface Props {
@@ -51,6 +55,14 @@
   let bubbleMenuVisible = $state(false);
   let bubbleMenuPosition = $state({ x: 0, y: 0 });
   let menuRef: HTMLDivElement | null = $state(null);
+
+  const wsIdStore = writable<string>('');
+  $effect(() => {
+    wsIdStore.set(workspace?.id ?? '');
+  });
+  // "Send to Agent" creates an agent (`agent.create`), refused (-32003) for a
+  // collaborator connection: the affordance is withheld.
+  const hidesAgentLifecycleActions$ = selectHidesAgentLifecycleActions(wsIdStore);
 
   // Menu dimensions for edge detection (estimated, updated on mount)
   const MENU_HEIGHT = 40;
@@ -371,15 +383,19 @@
           side="top"
           delayDuration={200}
         >
-          <button
+          <Button
+            variant="ghost"
+            size="icon-compact"
+            iconOnly
             class="bubble-menu-btn"
             onclick={toggleBold}
             aria-label={m.tiptap_bubbleMenu_bold_label()}
             disabled={!editor.can().chain().focus().toggleBold().run()}
+            aria-pressed={editor.isActive('bold')}
             data-active={editor.isActive('bold')}
           >
             <Fa icon={faBold} size="xs" />
-          </button>
+          </Button>
         </TooltipShortcut>
 
         <TooltipShortcut
@@ -388,15 +404,19 @@
           side="top"
           delayDuration={200}
         >
-          <button
+          <Button
+            variant="ghost"
+            size="icon-compact"
+            iconOnly
             class="bubble-menu-btn"
             onclick={toggleItalic}
             aria-label={m.tiptap_bubbleMenu_italic_label()}
             disabled={!editor.can().chain().focus().toggleItalic().run()}
+            aria-pressed={editor.isActive('italic')}
             data-active={editor.isActive('italic')}
           >
             <Fa icon={faItalic} size="xs" />
-          </button>
+          </Button>
         </TooltipShortcut>
 
         <TooltipShortcut
@@ -405,15 +425,19 @@
           side="top"
           delayDuration={200}
         >
-          <button
+          <Button
+            variant="ghost"
+            size="icon-compact"
+            iconOnly
             class="bubble-menu-btn"
             onclick={toggleUnderline}
             aria-label={m.tiptap_bubbleMenu_underline_label()}
             disabled={!editor.can().chain().focus().toggleUnderline().run()}
+            aria-pressed={editor.isActive('underline')}
             data-active={editor.isActive('underline')}
           >
             <Fa icon={faUnderline} size="xs" />
-          </button>
+          </Button>
         </TooltipShortcut>
 
         <TooltipShortcut
@@ -422,15 +446,19 @@
           side="top"
           delayDuration={200}
         >
-          <button
+          <Button
+            variant="ghost"
+            size="icon-compact"
+            iconOnly
             class="bubble-menu-btn"
             onclick={toggleStrike}
             aria-label={m.tiptap_bubbleMenu_strikethrough_label()}
             disabled={!editor.can().chain().focus().toggleStrike().run()}
+            aria-pressed={editor.isActive('strike')}
             data-active={editor.isActive('strike')}
           >
             <Fa icon={faStrikethrough} size="xs" />
-          </button>
+          </Button>
         </TooltipShortcut>
 
         <TooltipShortcut
@@ -439,15 +467,19 @@
           side="top"
           delayDuration={200}
         >
-          <button
+          <Button
+            variant="ghost"
+            size="icon-compact"
+            iconOnly
             class="bubble-menu-btn"
             onclick={toggleCode}
             aria-label={m.tiptap_bubbleMenu_code_label()}
             disabled={!editor.can().chain().focus().toggleCode().run()}
+            aria-pressed={editor.isActive('code')}
             data-active={editor.isActive('code')}
           >
             <Fa icon={faCode} size="xs" />
-          </button>
+          </Button>
         </TooltipShortcut>
 
         <TooltipShortcut
@@ -456,14 +488,18 @@
           side="top"
           delayDuration={200}
         >
-          <button
+          <Button
+            variant="ghost"
+            size="icon-compact"
+            iconOnly
             class="bubble-menu-btn"
             onclick={handleLinkClick}
             aria-label={m.tiptap_bubbleMenu_addLink_label()}
+            aria-pressed={editor.isActive('link')}
             data-active={editor.isActive('link')}
           >
             <Fa icon={faLink} size="xs" />
-          </button>
+          </Button>
         </TooltipShortcut>
 
         {#if showNoteActions}
@@ -474,36 +510,44 @@
             side="top"
             delayDuration={200}
           >
-            <button
+            <Button
+              variant="ghost"
+              size="icon-compact"
+              iconOnly
               class="bubble-menu-btn"
               onclick={handleAddComment}
               aria-label={m.tiptap_bubbleMenu_addComment_label()}
             >
               <Fa icon={faCommentDots} size="xs" />
-            </button>
+            </Button>
           </TooltipShortcut>
 
-          <TooltipShortcut
-            label={m.tiptap_bubbleMenu_sendToAgent_label()}
-            side="top"
-            delayDuration={200}
-          >
-            <button
-              class="bubble-menu-btn"
-              onclick={handleLaunchAgentClick}
-              aria-label={m.tiptap_bubbleMenu_sendToAgent_label()}
+          {#if !$hidesAgentLifecycleActions$}
+            <TooltipShortcut
+              label={m.tiptap_bubbleMenu_sendToAgent_label()}
+              side="top"
+              delayDuration={200}
             >
-              <Fa icon={faPaperPlane} size="xs" />
-            </button>
-          </TooltipShortcut>
+              <Button
+                variant="ghost"
+                size="icon-compact"
+                iconOnly
+                class="bubble-menu-btn"
+                onclick={handleLaunchAgentClick}
+                aria-label={m.tiptap_bubbleMenu_sendToAgent_label()}
+              >
+                <Fa icon={faPaperPlane} size="xs" />
+              </Button>
+            </TooltipShortcut>
+          {/if}
         {/if}
       </div>
 
       <!-- Link Input (appears below the bubble menu) -->
       {#if showLinkInput}
         <div class="link-input-container">
-          <input
-            bind:this={linkInputElement}
+          <Input
+            bind:ref={linkInputElement}
             bind:value={linkInputValue}
             onkeydown={handleLinkInputKeydown}
             type="text"
@@ -511,20 +555,26 @@
             class="link-input"
           />
           <div class="link-input-actions">
-            <button
+            <Button
+              variant="ghost"
+              size="icon-compact"
+              iconOnly
               class="bubble-menu-btn small"
               onclick={handleSetLink}
               aria-label={m.tiptap_bubbleMenu_setLink_ariaLabel()}
             >
               <Fa icon={faCheck} size="xs" />
-            </button>
-            <button
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon-compact"
+              iconOnly
               class="bubble-menu-btn small"
               onclick={handleCancelLink}
               aria-label={m.tiptap_bubbleMenu_cancel_ariaLabel()}
             >
               <Fa icon={faTimes} size="xs" />
-            </button>
+            </Button>
           </div>
         </div>
       {/if}
@@ -564,36 +614,29 @@
     gap: 1px;
   }
 
-  .bubble-menu-btn {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 26px;
-    height: 26px;
-    border: none;
-    background: transparent;
+  /* Sizing comes from the Button `icon-compact` size (square, zero padding). */
+  :global(.bubble-menu-btn) {
     color: hsl(var(--muted-foreground));
     border-radius: 4px;
-    cursor: pointer;
     transition: all 0.1s ease;
   }
 
-  .bubble-menu-btn:hover:not(:disabled) {
+  :global(.bubble-menu-btn:hover:not(:disabled)) {
     background-color: hsl(var(--muted) / 0.5);
     color: hsl(var(--foreground));
   }
 
-  .bubble-menu-btn:disabled {
+  :global(.bubble-menu-btn:disabled) {
     opacity: 0.4;
     cursor: not-allowed;
   }
 
-  .bubble-menu-btn[data-active='true'] {
+  :global(.bubble-menu-btn[aria-pressed='true']) {
     background-color: hsl(var(--muted));
     color: hsl(var(--foreground));
   }
 
-  .bubble-menu-btn.small {
+  :global(.bubble-menu-btn.small) {
     width: 22px;
     height: 22px;
   }
@@ -625,7 +668,7 @@
     align-items: center;
   }
 
-  .link-input {
+  :global(.link-input) {
     flex: 1;
     min-width: 180px;
     padding: 4px 8px;
@@ -637,11 +680,11 @@
     outline: none;
   }
 
-  .link-input::placeholder {
+  :global(.link-input::placeholder) {
     color: hsl(var(--muted-foreground));
   }
 
-  .link-input:focus {
+  :global(.link-input:focus) {
     border-color: hsl(var(--border));
     box-shadow: 0 0 0 1px hsl(var(--border));
   }

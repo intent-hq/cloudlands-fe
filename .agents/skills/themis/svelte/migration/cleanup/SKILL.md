@@ -1,10 +1,9 @@
 ---
 name: svelte/migration/cleanup
 description: >-
-  Delete old .store.svelte.ts files, verify zero residual references remain,
-  and apply the rollback strategy if a migrated slice regresses. Final step
-  per slice; also owns the risk-minimization checklist (one store per PR,
-  tests, manual UI verification).
+  Use after migrating a Svelte store to remove old .store.svelte.ts files,
+  check residual references, verify the migrated slice, or roll back a
+  regression.
 type: sub-skill
 requires:
   - svelte/migration

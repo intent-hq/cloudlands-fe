@@ -13,6 +13,7 @@ export const listFixtures = [
       'metadata',
       'actions',
       'keyboard-focus',
+      'proximity-hover',
       'collapsed',
       'empty-message',
       'long-content',

@@ -1,7 +1,7 @@
 import { EventEmitter } from 'node:events';
 import type { Duplex } from 'node:stream';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { TUNNEL_RACE_HOST } from './backend-connection';
+import { ConnectionLimitError, TUNNEL_RACE_HOST } from './backend-connection';
 import { JsonRpcError, mapErrorCode } from './json-rpc-errors';
 import { JsonRpcClient, ReverseRpcHandlerError } from './json-rpc-client';
 
@@ -452,6 +452,48 @@ describe('JsonRpcClient reconnect + heartbeat', () => {
     client.dispose();
   });
 
+  it('keeps request bursts on the scheduled backoff after a failed startup dial', async () => {
+    vi.useFakeTimers();
+    const { client, sockets } = makeReconnectingClient();
+    client.start();
+    sockets[0].emit('error', new Error('connect ENOENT intentd.sock'));
+
+    const requests = Array.from({ length: 20 }, () => client.request('workspace.list', {}));
+    const outcomes = Promise.allSettled(requests);
+    client.start();
+    expect(sockets).toHaveLength(1);
+    await vi.advanceTimersByTimeAsync(99);
+    expect(sockets).toHaveLength(1);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(sockets).toHaveLength(2);
+    expect(client.getReconnectAttempts()).toBe(1);
+    client.dispose();
+    expect((await outcomes).every((result) => result.status === 'rejected')).toBe(true);
+  });
+
+  it('replays failed startup work on the first successful connection', async () => {
+    vi.useFakeTimers();
+    const { client, sockets } = makeReconnectingClient();
+    const recovered = vi.fn(() => client.request('workspace.list', {}));
+    client.on('reconnected', recovered);
+    const failed = client.request('workspace.list', {}).catch((error: Error) => error.message);
+    sockets[0].emit('error', new Error('connect ENOENT intentd.sock'));
+    expect(await failed).toContain('ENOENT');
+    await vi.advanceTimersByTimeAsync(100);
+    sockets[1].open();
+
+    expect(recovered).toHaveBeenCalledOnce();
+    expect(JSON.parse(sockets[1].writes[0])).toEqual({
+      jsonrpc: '2.0',
+      id: 1,
+      method: 'workspace.list',
+      params: {},
+    });
+    sockets[1].receive('{"jsonrpc":"2.0","id":1,"result":{"workspaces":[]}}\n');
+    await expect(recovered.mock.results[0].value).resolves.toEqual({ workspaces: [] });
+    client.dispose();
+  });
+
   // #439: a stopped daemon must be re-probed at least every 5s while
   // disconnected, indefinitely — the daemon-loss modal relies on the main
   // process noticing a returning daemon promptly and never giving up.
@@ -520,6 +562,115 @@ describe('JsonRpcClient reconnect + heartbeat', () => {
     sockets[2].emit('close');
     await vi.advanceTimersByTimeAsync(100);
     expect(client.getReconnectAttempts()).toBe(1);
+
+    client.dispose();
+  });
+
+  // Multiplayer guest caps (intent-hq/intentd#1917): a 503 upgrade refusal
+  // means the host's guest connection cap is spent. The client keeps
+  // retrying (a seat frees when another guest disconnects) but on a slow
+  // bounded cadence, and flags the posture for the daemon-loss overlay.
+  it('retries a connection-limit refusal slowly, flags it, and clears the flag on connect', async () => {
+    vi.useFakeTimers();
+    const { client, sockets } = makeReconnectingClient();
+    const statuses: Array<{ status: string; limited: boolean }> = [];
+    client.on('status', (status: string) =>
+      statuses.push({ status, limited: client.isConnectionLimited() }),
+    );
+    client.start();
+    expect(client.isConnectionLimited()).toBe(false);
+
+    sockets[0].emit('error', new ConnectionLimitError());
+    expect(client.isConnectionLimited()).toBe(true);
+    // The `disconnected` broadcast already carries the posture.
+    expect(statuses.at(-1)).toEqual({ status: 'disconnected', limited: true });
+
+    // Not re-presented on the ordinary 100ms/5s cadence…
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(sockets).toHaveLength(1);
+    // …but retried within the slow bound; the flag persists across the wait.
+    await vi.advanceTimersByTimeAsync(20_000);
+    expect(sockets).toHaveLength(2);
+    expect(client.isConnectionLimited()).toBe(true);
+    expect(client.getReconnectAttempts()).toBe(1);
+
+    // A seat freed: the connect clears the posture.
+    sockets[1].open();
+    expect(client.isConnectionLimited()).toBe(false);
+    expect(statuses.at(-1)).toEqual({ status: 'connected', limited: false });
+
+    // A later failure of another kind does not inherit the flag and is
+    // retried on the ordinary cadence again.
+    sockets[1].emit('close');
+    expect(client.isConnectionLimited()).toBe(false);
+    await vi.advanceTimersByTimeAsync(100);
+    expect(sockets).toHaveLength(3);
+
+    client.dispose();
+  });
+
+  it('retries on the Retry-After the refusal carries instead of the default cadence', async () => {
+    vi.useFakeTimers();
+    const { client, sockets } = makeReconnectingClient();
+    client.start();
+    expect(client.getConnectionLimitRetryAfterMs()).toBeNull();
+
+    // The daemon asked for 45 s: the default 30 s must NOT re-dial.
+    sockets[0].emit('error', new ConnectionLimitError(45_000));
+    expect(client.getConnectionLimitRetryAfterMs()).toBe(45_000);
+    await vi.advanceTimersByTimeAsync(30_000);
+    expect(sockets).toHaveLength(1);
+    await vi.advanceTimersByTimeAsync(15_000);
+    expect(sockets).toHaveLength(2);
+    // The on-demand fast-fail carries the same wait.
+    sockets[1].emit('error', new ConnectionLimitError(120_000));
+    await expect(client.request('system.status')).rejects.toMatchObject({
+      name: 'ConnectionLimitError',
+      retryAfterMs: 120_000,
+    });
+    await vi.advanceTimersByTimeAsync(119_000);
+    expect(sockets).toHaveLength(2);
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(sockets).toHaveLength(3);
+
+    // Connecting clears the wait along with the posture.
+    sockets[2].open();
+    expect(client.getConnectionLimitRetryAfterMs()).toBeNull();
+    // A failure of another kind never reports one.
+    sockets[2].emit('close');
+    expect(client.getConnectionLimitRetryAfterMs()).toBeNull();
+
+    client.dispose();
+  });
+
+  it('holds the connection-limit cadence against on-demand start() and request()', async () => {
+    vi.useFakeTimers();
+    const { client, sockets } = makeReconnectingClient();
+    client.start();
+    sockets[0].emit('error', new ConnectionLimitError());
+    expect(client.isConnectionLimited()).toBe(true);
+    expect(sockets).toHaveLength(1);
+
+    // Neither an explicit start nor a request re-presents the refused
+    // upgrade ahead of the slow retry; the request fails fast with the cap
+    // refusal instead of dialing or parking behind the timer.
+    client.start();
+    expect(sockets).toHaveLength(1);
+    await expect(client.request('system.status')).rejects.toBeInstanceOf(ConnectionLimitError);
+    expect(sockets).toHaveLength(1);
+    expect(client.getStatus()).toBe('disconnected');
+
+    await vi.advanceTimersByTimeAsync(30_000);
+    expect(sockets).toHaveLength(2);
+    // Once the retry itself is in flight, a request waits on it as usual.
+    const pending = client.request('system.status');
+    sockets[1].open();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(sockets[1].writes).toHaveLength(1);
+    const { id } = JSON.parse(sockets[1].writes[0]) as { id: number };
+    sockets[1].receive(`${JSON.stringify({ jsonrpc: '2.0', id, result: { ok: true } })}\n`);
+    await expect(pending).resolves.toEqual({ ok: true });
+    expect(client.isConnectionLimited()).toBe(false);
 
     client.dispose();
   });

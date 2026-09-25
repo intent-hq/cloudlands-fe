@@ -10,13 +10,18 @@ const mocks = vi.hoisted(() => ({
 vi.mock('$lib/client/live/backend-transport', () => ({
   backendRequest: mocks.backendRequest,
 }));
-vi.mock('$lib/components/ui/toast', () => ({
-  toast: { warning: mocks.toastWarning, error: mocks.toastError },
+vi.mock('$lib/components/patterns/notify', () => ({
+  notify: { warning: mocks.toastWarning, error: mocks.toastError },
 }));
 
 import { BackendError } from '$lib/client/live/backend-transport-types';
 import { IPC_CHANNELS } from '$shared/ipc-registry';
 import {
+  agentMemoryBreakdownClosed,
+  agentMemoryBreakdownOpened,
+  agentMemoryUsageFailed,
+  agentMemoryUsageSucceeded,
+  closeWindowRequested,
   connectionStatusChanged,
   daemonHealthReducer,
   fetchSidecarRunLogRequested,
@@ -34,6 +39,7 @@ import {
   systemStatusSuccess,
 } from '../daemon-health-slice';
 import type {
+  AgentMemoryUsageWirePayload,
   BackendTransportInfo,
   DaemonHealthState,
   SystemStatusWirePayload,
@@ -90,7 +96,7 @@ function startHealthSagaWithReducer() {
     return action;
   };
   const task = runSaga({ channel: input, dispatch, getState: () => state }, daemonHealthSaga);
-  return { task, getState: (): DaemonHealthState => state.daemonHealth };
+  return { task, dispatch, getState: (): DaemonHealthState => state.daemonHealth };
 }
 
 interface DeferredPoll {
@@ -493,6 +499,33 @@ describe('daemonHealthSaga', () => {
     await task.toPromise();
   });
 
+  it('passes connectionLimited from the status payload into the action extras', async () => {
+    const { dispatched, task } = startHealthSaga();
+    await settle();
+    statusHandler!({
+      status: 'disconnected',
+      transport: { mode: 'external-ws', target: 'wss:192.168.1.20:5181' },
+      reconnectAttempts: 1,
+      connectionLimited: true,
+      connectionLimitRetryAfterMs: 45_000,
+    });
+    await settle();
+
+    const actions = statusActions(dispatched) as Array<{
+      payload: [
+        string,
+        unknown,
+        { connectionLimited?: boolean; connectionLimitRetryAfterMs?: number | null } | undefined,
+      ];
+    }>;
+    const disconnected = actions.find(({ payload: [status] }) => status === 'disconnected');
+    expect(disconnected).toBeDefined();
+    expect(disconnected!.payload[2]?.connectionLimited).toBe(true);
+    expect(disconnected!.payload[2]?.connectionLimitRetryAfterMs).toBe(45_000);
+    task.cancel();
+    await task.toPromise();
+  });
+
   it('forwards daemonUpdateDisconnectedAt from the status payload into the action extras', async () => {
     const transport = { mode: 'external-uds' as const, target: '/tmp/intentd.sock' };
     const disconnectedAt = new Date('2026-09-04T10:00:00.000Z').getTime();
@@ -692,6 +725,178 @@ describe('daemonHealthSaga', () => {
     await task.toPromise();
   });
 
+  it('fetches agent.memoryUsage only while the breakdown is open, on a coalesced cadence', async () => {
+    const usage: AgentMemoryUsageWirePayload = {
+      sampledAt: '2026-09-20T06:00:00.000Z',
+      totalBytes: 1024,
+      agents: [],
+    };
+    const resolvers: Array<(value: unknown) => void> = [];
+    const memoryCalls = () =>
+      mocks.backendRequest.mock.calls.filter(([method]) => method === 'agent.memoryUsage');
+    mocks.backendRequest.mockImplementation((method: string) => {
+      if (method === 'system.status') return Promise.resolve(statusPayload);
+      if (method === 'unsloth.status') return Promise.resolve({ running: false });
+      if (method === 'agent.memoryUsage') {
+        return new Promise((resolve) => resolvers.push(resolve));
+      }
+      return Promise.reject(new Error('unexpected'));
+    });
+    const { input, dispatched, task } = startHealthSaga();
+    await settle();
+    // No background polling before the breakdown opens.
+    expect(memoryCalls()).toHaveLength(0);
+
+    input.put(agentMemoryBreakdownOpened());
+    await settle();
+    expect(mocks.backendRequest).toHaveBeenCalledWith('agent.memoryUsage');
+    expect(memoryCalls()).toHaveLength(1);
+
+    // A refresh tick landing while the first fetch is in flight is dropped.
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(memoryCalls()).toHaveLength(1);
+
+    resolvers[0](usage);
+    await settle();
+    expect(dispatched).toContainEqual(agentMemoryUsageSucceeded(usage));
+
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(memoryCalls()).toHaveLength(2);
+
+    // Closing stops the cadence and cancels the in-flight fetch: a late
+    // resolve reports nothing and no new request is issued.
+    const before = dispatched.length;
+    input.put(agentMemoryBreakdownClosed());
+    resolvers[1]({ ...usage, totalBytes: 2048 });
+    await vi.advanceTimersByTimeAsync(20_000);
+    expect(memoryCalls()).toHaveLength(2);
+    expect(dispatched.slice(before)).not.toContainEqual(
+      agentMemoryUsageSucceeded({ ...usage, totalBytes: 2048 }),
+    );
+
+    // Reopening restarts the cadence with an immediate fetch.
+    input.put(agentMemoryBreakdownOpened());
+    await settle();
+    expect(memoryCalls()).toHaveLength(3);
+    task.cancel();
+    await task.toPromise();
+  });
+
+  describe('agent memory breakdown close/reopen before the first fetch settles', () => {
+    interface DeferredMemory {
+      resolve: (value: AgentMemoryUsageWirePayload) => void;
+      reject: (error: unknown) => void;
+    }
+    const firstUsage: AgentMemoryUsageWirePayload = {
+      sampledAt: '2026-09-20T06:00:00.000Z',
+      totalBytes: 1024,
+      agents: [],
+    };
+    const secondUsage: AgentMemoryUsageWirePayload = {
+      sampledAt: '2026-09-20T06:00:05.000Z',
+      totalBytes: 4096,
+      agents: [],
+    };
+
+    async function openCloseReopenWithPendingFetch() {
+      const fetches: DeferredMemory[] = [];
+      mocks.backendRequest.mockImplementation((method: string) => {
+        if (method === 'system.status') return Promise.resolve(statusPayload);
+        if (method === 'unsloth.status') return Promise.resolve({ running: false });
+        if (method === 'agent.memoryUsage') {
+          return new Promise<AgentMemoryUsageWirePayload>((resolve, reject) => {
+            fetches.push({ resolve, reject });
+          });
+        }
+        return Promise.reject(new Error('unexpected'));
+      });
+      const harness = startHealthSagaWithReducer();
+      await settle();
+
+      harness.dispatch(agentMemoryBreakdownOpened());
+      await settle();
+      expect(fetches).toHaveLength(1);
+      expect(harness.getState().agentMemoryUsageFetching).toBe(true);
+
+      harness.dispatch(agentMemoryBreakdownClosed());
+      await settle();
+      expect(harness.getState().agentMemoryUsageFetching).toBe(false);
+
+      // The new session issues its own request instead of inheriting the
+      // pending one.
+      harness.dispatch(agentMemoryBreakdownOpened());
+      await settle();
+      expect(fetches).toHaveLength(2);
+      expect(harness.getState().agentMemoryUsageFetching).toBe(true);
+      expect(harness.getState().agentMemoryUsage).toBeNull();
+      return { ...harness, fetches };
+    }
+
+    it('rejects the old session success and installs only the new session result', async () => {
+      const { task, fetches, getState } = await openCloseReopenWithPendingFetch();
+
+      fetches[0].resolve(firstUsage);
+      await settle();
+      expect(getState().agentMemoryUsage).toBeNull();
+      expect(getState().agentMemoryUsageFetching).toBe(true);
+      expect(getState().agentMemoryUsageError).toBe(false);
+
+      fetches[1].resolve(secondUsage);
+      await settle();
+      expect(getState().agentMemoryUsage).toEqual(secondUsage);
+      expect(getState().agentMemoryUsageFetching).toBe(false);
+      task.cancel();
+      await task.toPromise();
+    });
+
+    it('rejects the old session failure and keeps the new session fetch in flight', async () => {
+      const { task, fetches, getState } = await openCloseReopenWithPendingFetch();
+
+      fetches[0].reject(new Error('sampler unavailable'));
+      await settle();
+      expect(getState().agentMemoryUsageError).toBe(false);
+      expect(getState().agentMemoryUsageFetching).toBe(true);
+
+      fetches[1].resolve(secondUsage);
+      await settle();
+      expect(getState().agentMemoryUsage).toEqual(secondUsage);
+      expect(getState().agentMemoryUsageError).toBe(false);
+      task.cancel();
+      await task.toPromise();
+    });
+
+    it('keeps single-flight semantics within the new session', async () => {
+      const { task, fetches } = await openCloseReopenWithPendingFetch();
+
+      await vi.advanceTimersByTimeAsync(5_000);
+      expect(fetches).toHaveLength(2);
+
+      fetches[1].resolve(secondUsage);
+      await settle();
+      await vi.advanceTimersByTimeAsync(5_000);
+      expect(fetches).toHaveLength(3);
+      task.cancel();
+      await task.toPromise();
+    });
+  });
+
+  it('reports a failed agent.memoryUsage fetch without leaking the error', async () => {
+    mocks.backendRequest.mockImplementation((method: string) => {
+      if (method === 'system.status') return Promise.resolve(statusPayload);
+      if (method === 'unsloth.status') return Promise.resolve({ running: false });
+      if (method === 'agent.memoryUsage') return Promise.reject(new Error('sampler unavailable'));
+      return Promise.reject(new Error('unexpected'));
+    });
+    const { input, dispatched, task } = startHealthSaga();
+    await settle();
+    input.put(agentMemoryBreakdownOpened());
+    await settle();
+    expect(dispatched).toContainEqual(agentMemoryUsageFailed());
+    expect(JSON.stringify(dispatched)).not.toContain('sampler unavailable');
+    task.cancel();
+    await task.toPromise();
+  });
+
   it('runs sidecar controls and cancels an in-flight log fetch without a late success', async () => {
     let spawnCount = 0;
     let resolveLateLog!: (value: unknown) => void;
@@ -751,6 +956,35 @@ describe('daemonHealthSaga', () => {
     // The initiating window keeps its own (dead) backend, so no 'connected'
     // status event ever clears the pending flag — the success action must.
     expect(dispatched).toContainEqual(openLocalAndSpawnSucceeded());
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it('asks main to close this window over window:close and keeps running when the bridge fails', async () => {
+    let closeCalls = 0;
+    invoke.mockImplementation(async (channel: string) => {
+      if (channel === BACKEND.GET_STATUS) return { status: 'connected' };
+      if (channel === IPC_CHANNELS.WINDOW.CLOSE) {
+        closeCalls += 1;
+        if (closeCalls === 1) throw new Error('bridge down');
+        return { success: true };
+      }
+      return undefined;
+    });
+    const { input, dispatched, task } = startHealthSaga();
+    await settle();
+    const dispatchedBefore = dispatched.length;
+
+    input.put(closeWindowRequested());
+    await settle();
+    input.put(closeWindowRequested());
+    await settle();
+
+    expect(invoke).toHaveBeenCalledWith(IPC_CHANNELS.WINDOW.CLOSE);
+    expect(closeCalls).toBe(2);
+    // Main owns the close: nothing to reflect in state, and a failed first
+    // attempt does not surface a spawn error or stop later requests.
+    expect(dispatched.slice(dispatchedBefore)).toEqual([]);
     task.cancel();
     await task.toPromise();
   });

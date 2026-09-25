@@ -1,6 +1,17 @@
 <script lang="ts">
   import { DropdownMenu as MenuPrimitive } from 'bits-ui';
+  import { getContext, tick } from 'svelte';
   import { cn } from '$lib/utils.js';
+  import ListHighlight from './menu-list-highlight.svelte';
+  import { menuOverlay } from './menu-recipes';
+  import { clampSurface, setSurface, useSurface } from '$lib/components/ui/surface-context';
+  import { OPTION_LIST_CONTAINER_CLASS } from '$lib/styles/option-list-row';
+  import { useStaticOverlay } from '../static-overlay-context.svelte';
+  import { OVERLAY_VIEWPORT_GUTTER } from '$lib/components/ui/overlay-positioning';
+  import { handleMenuPageKey, setMenuTabStop, syncMenuTabStopFromFocus } from './menu-roving-focus';
+  import { SUBMENU_CONTEXT, type SubmenuContext } from './submenu-context';
+  import { resolveSubmenuSide } from './submenu-placement';
+  import { createMenuLayout } from './menu-layout-context.svelte';
 
   const uid = $props.id();
 
@@ -10,52 +21,177 @@
     class: className,
     portal = true,
     portalProps,
+    staticPosition,
+    alignIconColumn,
+    side = 'right',
     sideOffset = 4,
+    align = 'start',
+    alignOffset,
+    avoidCollisions = true,
+    collisionPadding = OVERLAY_VIEWPORT_GUTTER,
+    onkeydown,
+    onfocusin,
+    children,
     ...restProps
   }: MenuPrimitive.SubContentProps & {
     portal?: boolean;
     portalProps?: MenuPrimitive.PortalProps;
+    staticPosition?: boolean;
+    /** Inherits column alignment, but computes its own visible icon reservation. */
+    alignIconColumn?: boolean;
   } = $props();
 
   // bits-ui 2.18.1: SubContent is the shared menu primitive, so its available-height
   // var uses the 'menu' prefix — unlike DropdownMenu.Content's 'dropdown-menu' prefix
   // in menu-content.svelte. The differing var names are intentional.
   const maxHeight = 'var(--bits-menu-content-available-height, calc(100dvh - 1rem))';
+  const rootStaticPosition = useStaticOverlay();
+  createMenuLayout(() => alignIconColumn);
+  const isStatic = $derived(staticPosition ?? rootStaticPosition());
+  const submenu = getContext<SubmenuContext | undefined>(SUBMENU_CONTEXT);
+  let verticalFallback = $state(false);
+  let leadingInset = $state(0);
+  const resolvedSide = $derived(verticalFallback ? 'bottom' : side);
+  const resolvedAlignOffset = $derived(
+    alignOffset ??
+      (align === 'start' && (resolvedSide === 'right' || resolvedSide === 'left')
+        ? -leadingInset
+        : 0),
+  );
 
+  $effect(() => {
+    const content = ref;
+    const trigger = submenu?.trigger;
+    if (!content || !trigger || isStatic) {
+      verticalFallback = false;
+      leadingInset = 0;
+      return;
+    }
+    const padding =
+      typeof collisionPadding === 'number'
+        ? { left: collisionPadding, right: collisionPadding }
+        : { left: collisionPadding.left ?? 0, right: collisionPadding.right ?? 0 };
+    const preferred = side;
+    const gap = sideOffset;
+    const collisionsEnabled = avoidCollisions;
+    function updatePlacement() {
+      // Align the first row, not the popup border, with the owning parent row.
+      const style = getComputedStyle(content!);
+      leadingInset = parseFloat(style.paddingTop) + parseFloat(style.borderTopWidth);
+      verticalFallback =
+        collisionsEnabled &&
+        resolveSubmenuSide(
+          preferred,
+          trigger!.getBoundingClientRect(),
+          content!.offsetWidth,
+          window.innerWidth,
+          gap,
+          padding,
+        ) !== preferred;
+    }
+    updatePlacement();
+    const observer =
+      typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(updatePlacement);
+    observer?.observe(content);
+    observer?.observe(trigger);
+    window.addEventListener('resize', updatePlacement);
+    window.addEventListener('scroll', updatePlacement, true);
+    return () => {
+      observer?.disconnect();
+      window.removeEventListener('resize', updatePlacement);
+      window.removeEventListener('scroll', updatePlacement, true);
+    };
+  });
+
+  const surface = clampSurface(useSurface() + 2);
+  setSurface(surface);
   const contentClass = $derived(
     cn(
-      'type-body z-(--layer-popover) min-w-40 overflow-y-auto overscroll-contain rounded-md border border-border bg-popover p-1 text-popover-foreground shadow-(--elevation-overlay) outline-none focus-visible:border-input focus-visible:ring-3 focus-visible:ring-ring/50',
-      'data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=open]:fade-in-0 data-[state=closed]:fade-out-0',
-      'duration-[var(--motion-fast)] motion-reduce:animate-none motion-reduce:transition-none',
+      menuOverlay(),
+      OPTION_LIST_CONTAINER_CLASS,
+      'min-w-40 overflow-y-auto overscroll-contain',
       className,
     ),
   );
 
   $effect(() => {
-    if (ref) ref.id = id;
+    const content = ref;
+    if (!content) return;
+    content.id = id;
+    void tick().then(() => {
+      if (ref === content) setMenuTabStop(content);
+    });
   });
+
+  function handleKeydown(event: KeyboardEvent & { currentTarget: HTMLDivElement }) {
+    onkeydown?.(event);
+    if (!event.defaultPrevented) handleMenuPageKey(event.currentTarget, event);
+  }
+
+  function handleFocusin(event: FocusEvent & { currentTarget: HTMLDivElement }) {
+    onfocusin?.(event);
+    syncMenuTabStopFromFocus(event.currentTarget, event.target);
+  }
 </script>
 
-{#if portal}
+{#if isStatic}
+  <MenuPrimitive.SubContentStatic
+    bind:ref
+    {id}
+    data-slot="menu-sub-content"
+    data-static-position
+    data-surface-level={surface}
+    class={contentClass}
+    style="max-height: {maxHeight}"
+    onkeydown={handleKeydown}
+    onfocusin={handleFocusin}
+    {...restProps as any}
+  >
+    <ListHighlight />
+    {@render children?.()}
+  </MenuPrimitive.SubContentStatic>
+{:else if portal}
   <MenuPrimitive.Portal {...portalProps}>
     <MenuPrimitive.SubContent
       bind:ref
       {id}
       data-slot="menu-sub-content"
+      data-surface-level={surface}
       class={contentClass}
+      side={resolvedSide}
       {sideOffset}
+      {align}
+      alignOffset={resolvedAlignOffset}
+      {avoidCollisions}
+      {collisionPadding}
       style="max-height: {maxHeight}"
+      onkeydown={handleKeydown}
+      onfocusin={handleFocusin}
       {...restProps}
-    />
+    >
+      <ListHighlight />
+      {@render children?.()}
+    </MenuPrimitive.SubContent>
   </MenuPrimitive.Portal>
 {:else}
   <MenuPrimitive.SubContent
     bind:ref
     {id}
     data-slot="menu-sub-content"
+    data-surface-level={surface}
     class={contentClass}
+    side={resolvedSide}
     {sideOffset}
+    {align}
+    alignOffset={resolvedAlignOffset}
+    {avoidCollisions}
+    {collisionPadding}
     style="max-height: {maxHeight}"
+    onkeydown={handleKeydown}
+    onfocusin={handleFocusin}
     {...restProps}
-  />
+  >
+    <ListHighlight />
+    {@render children?.()}
+  </MenuPrimitive.SubContent>
 {/if}

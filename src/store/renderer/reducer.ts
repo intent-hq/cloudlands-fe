@@ -14,6 +14,7 @@ import { noteReadTrackingReducer } from './slices/note-read-tracking/note-read-t
 import { multiPanelContextReducer } from './slices/multi-panel-context/multi-panel-context-slice';
 import { permissionReducer } from './slices/permission/permission-slice';
 import { pipReducer } from './slices/pip/pip-slice';
+import { powerReducer } from './slices/power/power-slice';
 import { featureCodesReducer } from './slices/feature-codes/feature-codes-slice';
 import { globalModalsReducer } from './slices/global-modals/global-modals-slice';
 import { knownReposReducer } from './slices/known-repos/known-repos-slice';
@@ -36,6 +37,7 @@ import { workspaceReducer } from './slices/workspace/workspace-slice';
 import { githubAuthReducer } from './slices/github-auth/github-auth-slice';
 import { githubReposReducer } from './slices/github-repos/github-repos-slice';
 import { githubRepoSearchReducer } from './slices/github-repo-search/github-repo-search-slice';
+import { githubUserSearchReducer } from './slices/github-user-search/github-user-search-slice';
 import { directoryPickerReducer } from './slices/directory-picker/directory-picker-slice';
 import { legacyImportReducer } from './slices/legacy-import/legacy-import-slice';
 import { linearAuthReducer } from './slices/linear-auth/linear-auth-slice';
@@ -90,11 +92,14 @@ import { proposalLifecycleReducer } from './slices/proposal-lifecycle/proposal-l
 import { prBranchLookupReducer } from './slices/pr-branch-lookup/pr-branch-lookup-slice';
 import { daemonHealthReducer } from './slices/daemon-health/daemon-health-slice';
 import { connectionsReducer } from './slices/connections/connections-slice';
+import { guestSessionsReducer } from './slices/guest-sessions/guest-sessions-slice';
+import { presenceReducer } from './slices/presence/presence-slice';
 import { hostRequirementsReducer } from './slices/host-requirements/host-requirements-slice';
 import { hudReducer } from './slices/hud/hud-slice';
 import { setupPromptReducer } from './slices/setup-prompt/setup-prompt-slice';
 import { workspaceTransferReducer } from './slices/workspace-transfer/workspace-transfer-slice';
 import { workspaceImportReducer } from './slices/workspace-import/workspace-import-slice';
+import { workspaceShareReducer } from './slices/workspace-share/workspace-share-slice';
 
 export const reducers = {
   providerSettings: providerSettingsReducer,
@@ -116,6 +121,7 @@ export const reducers = {
   deepLinks: deepLinksReducer,
   model: modelReducer,
   pip: pipReducer,
+  power: powerReducer,
   specialists: specialistsReducer,
   systemStatus: systemStatusReducer,
   transientUi: transientUiReducer,
@@ -135,6 +141,7 @@ export const reducers = {
   githubAuth: githubAuthReducer,
   githubRepos: githubReposReducer,
   githubRepoSearch: githubRepoSearchReducer,
+  githubUserSearch: githubUserSearchReducer,
   directoryPicker: directoryPickerReducer,
   legacyImport: legacyImportReducer,
   linearAuth: linearAuthReducer,
@@ -189,9 +196,12 @@ export const reducers = {
   prBranchLookup: prBranchLookupReducer,
   daemonHealth: daemonHealthReducer,
   connections: connectionsReducer,
+  guestSessions: guestSessionsReducer,
+  presence: presenceReducer,
   hostRequirements: hostRequirementsReducer,
   hud: hudReducer,
   setupPrompt: setupPromptReducer,
   workspaceTransfer: workspaceTransferReducer,
   workspaceImport: workspaceImportReducer,
+  workspaceShare: workspaceShareReducer,
 } as const;

@@ -101,7 +101,7 @@ describe('ChatMessage edit-and-regenerate confirm gate', () => {
     );
     // Confirming closes both the dialog and edit mode (the edit input exits
     // via a slide transition, so wait for its removal).
-    expect(screen.queryByRole('dialog')).toBeNull();
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
     await waitFor(() => expect(screen.queryByTestId('mock-rich-input')).toBeNull());
   });
 
@@ -153,7 +153,7 @@ describe('ChatMessage edit-and-regenerate confirm gate', () => {
     const onEditSubmit = vi.fn();
     await renderAndSave(onEditSubmit);
 
-    await fireEvent.click(screen.getByRole('button', { name: 'Close' }));
+    await fireEvent.click(screen.getByRole('button', { name: 'Close dialog' }));
 
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
     expect(onEditSubmit).not.toHaveBeenCalled();

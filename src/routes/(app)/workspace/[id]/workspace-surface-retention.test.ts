@@ -6,10 +6,10 @@ import {
   reconcileWorkspaceSurfaces,
 } from './workspace-surface-retention';
 
-const workspaceIds = ['workspace-a', 'workspace-b', 'workspace-c'];
+const workspaceIds = ['workspace-a', 'workspace-b', 'workspace-c', 'workspace-d', 'workspace-e'];
 
 describe('workspace surface retention', () => {
-  it('retains A through A → B → A while bounding the live surfaces to two', () => {
+  it('retains A through A → B → A without mounting unvisited workspaces', () => {
     let state = createWorkspaceSurfaceRetentionState();
     state = reconcileWorkspaceSurfaces(state, input('workspace-a'));
     const initialGeneration = generation(state, 'workspace-a');
@@ -25,21 +25,109 @@ describe('workspace surface retention', () => {
     expect(generation(state, 'workspace-a')).toBe(initialGeneration);
   });
 
-  it('evicts the least recently active surface and remounts it on a cold return', () => {
+  it('keeps only the two most recently activated workspaces warm', () => {
     let state = createWorkspaceSurfaceRetentionState();
     state = reconcileWorkspaceSurfaces(state, input('workspace-a'));
     const initialGeneration = generation(state, 'workspace-a');
     state = reconcileWorkspaceSurfaces(state, input('workspace-b'));
+    const evictedGeneration = generation(state, 'workspace-b');
+    state = reconcileWorkspaceSurfaces(state, input('workspace-a'));
+    expect(generation(state, 'workspace-a')).toBe(initialGeneration);
     state = reconcileWorkspaceSurfaces(state, input('workspace-c'));
-
     expect(state.surfaces.map(({ workspaceId }) => workspaceId)).toEqual([
-      'workspace-b',
+      'workspace-a',
       'workspace-c',
     ]);
 
-    state = reconcileWorkspaceSurfaces(state, input('workspace-a'));
+    state = reconcileWorkspaceSurfaces(state, input('workspace-b'));
     expect(state.surfaces).toHaveLength(2);
-    expect(generation(state, 'workspace-a')).not.toBe(initialGeneration);
+    expect(generation(state, 'workspace-b')).not.toBe(evictedGeneration);
+    expect(state.surfaces.some(({ workspaceId }) => workspaceId === 'workspace-a')).toBe(false);
+  });
+
+  it('preserves browser workspace DOM across the working-set limit and releases it when closed', async () => {
+    const browserWorkspaceIds = ['workspace-a', 'workspace-b', 'workspace-e'];
+    const props = (id: string) => ({ ...input(id), browserWorkspaceIds });
+    const view = render(RetentionHarness, { props: props('workspace-a') });
+    const retainedA = view.getByRole('button', { name: 'workspace-a' });
+    await view.rerender(props('workspace-b'));
+    const retainedB = view.getByRole('button', { name: 'workspace-b' });
+
+    for (const id of ['workspace-c', 'workspace-d', 'workspace-a', 'workspace-b']) {
+      await view.rerender(props(id));
+      expect(retainedA.isConnected).toBe(true);
+      expect(retainedB.isConnected).toBe(true);
+      expect(view.getAllByRole('button')).toHaveLength(1);
+      expect(view.container.querySelector('[data-workspace-content="workspace-e"]')).toBeNull();
+    }
+    expect(view.getByRole('button', { name: 'workspace-b' })).toBe(retainedB);
+
+    // Closing the last browser allows the old workspace to leave the warm set.
+    for (const id of ['workspace-c', 'workspace-d']) {
+      await view.rerender({ ...input(id), browserWorkspaceIds: ['workspace-b'] });
+    }
+    expect(retainedA.isConnected).toBe(false);
+    expect(retainedB.isConnected).toBe(true);
+
+    // Closing the workspace releases even a browser-pinned surface.
+    await view.rerender({ ...props('workspace-c'), openWorkspaceIds: ['workspace-c'] });
+    expect(retainedB.isConnected).toBe(false);
+  });
+
+  it('releases deleted browser workspaces despite their retention exemption', () => {
+    const props = (id: string) => ({ ...input(id), browserWorkspaceIds: ['workspace-a'] });
+    let state = reconcileWorkspaceSurfaces(
+      createWorkspaceSurfaceRetentionState(),
+      props('workspace-a'),
+    );
+    state = reconcileWorkspaceSurfaces(state, props('workspace-b'));
+    state = reconcileWorkspaceSurfaces(state, {
+      ...props('workspace-c'),
+      workspaceEntityIds: ['workspace-b', 'workspace-c'],
+    });
+    expect(state.surfaces.some((surface) => surface.workspaceId === 'workspace-a')).toBe(false);
+  });
+
+  it('does not churn state when the same workspace remains active', () => {
+    const state = reconcileWorkspaceSurfaces(
+      createWorkspaceSurfaceRetentionState(),
+      input('workspace-a'),
+    );
+    expect(reconcileWorkspaceSurfaces(state, input('workspace-a'))).toBe(state);
+  });
+
+  it('preserves warm DOM but remounts an evicted workspace without expanding retention', async () => {
+    const view = render(RetentionHarness, { props: input('workspace-a') });
+    const content = new Map<string, HTMLElement>();
+    for (const workspaceId of workspaceIds.slice(0, 2)) {
+      await view.rerender(input(workspaceId));
+      content.set(workspaceId, view.getByRole('button', { name: workspaceId }));
+    }
+
+    for (let cycle = 0; cycle < 3; cycle++) {
+      for (const workspaceId of workspaceIds.slice(0, 2)) {
+        await view.rerender(input(workspaceId));
+        expect(view.getByRole('button', { name: workspaceId })).toBe(content.get(workspaceId));
+        expect(view.getAllByRole('button')).toHaveLength(1);
+        expect(view.container.querySelectorAll('[data-retained-workspace-surface]')).toHaveLength(
+          2,
+        );
+      }
+    }
+
+    await view.rerender(input('workspace-c'));
+    expect(content.get('workspace-a')?.isConnected).toBe(false);
+    expect(content.get('workspace-b')?.isConnected).toBe(true);
+    expect(view.container.querySelectorAll('[data-retained-workspace-surface]')).toHaveLength(2);
+    await view.rerender(input('workspace-a'));
+    const remountedA = view.getByRole('button', { name: 'workspace-a' });
+    expect(remountedA).not.toBe(content.get('workspace-a'));
+    expect(content.get('workspace-b')?.isConnected).toBe(false);
+    expect(view.container.querySelectorAll('[data-retained-workspace-surface]')).toHaveLength(2);
+
+    await view.rerender({ ...input('workspace-a'), openWorkspaceIds: ['workspace-a'] });
+    expect(view.container.querySelectorAll('[data-retained-workspace-surface]')).toHaveLength(1);
+    expect(view.getByRole('button', { name: 'workspace-a' })).toBe(remountedA);
   });
 
   it('releases closed and deleted inactive surfaces and renews an evicted active surface', () => {
@@ -90,7 +178,7 @@ describe('workspace surface retention', () => {
     expect(generation(state, 'workspace-a')).toBe(retainedGeneration);
   });
 
-  it('hides and inerts inactive content, releases focus, and preserves the retained DOM', async () => {
+  it('isolates inactive content from accessibility and focus while preserving the retained DOM', async () => {
     const view = render(RetentionHarness, {
       props: input('workspace-a'),
     });
@@ -108,13 +196,14 @@ describe('workspace surface retention', () => {
       '[data-retained-workspace-surface="workspace-a"]',
     );
     expect(inactiveA?.contains(retainedA)).toBe(true);
-    expect(inactiveA?.hasAttribute('hidden')).toBe(true);
+    expect(view.queryByRole('button', { name: 'workspace-a' })).toBeNull();
     expect((inactiveA as HTMLElement & { inert: boolean }).inert).toBe(true);
     expect(inactiveA?.getAttribute('aria-hidden')).toBe('true');
     expect(document.activeElement).not.toBe(retainedA);
 
     await view.rerender(input('workspace-a'));
-    await waitFor(() => expect(inactiveA?.hasAttribute('hidden')).toBe(false));
+    await waitFor(() => expect(inactiveA?.getAttribute('aria-hidden')).toBe('false'));
+    expect((inactiveA as HTMLElement & { inert: boolean }).inert).toBe(false);
     expect(view.getByRole('button', { name: 'workspace-a' })).toBe(retainedA);
   });
 

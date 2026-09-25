@@ -3,6 +3,7 @@ import {
   createPreviewLoaderIndex,
   installPreviewBrowserApi,
   listPreviewIds,
+  loadPreview,
   loadPreviewFromLoader,
   registerPreviewLoader,
   setActivePreview,
@@ -32,10 +33,27 @@ describe('preview discovery', () => {
   it('finds colocated previews without a shared registry entry', () => {
     const ids = listPreviewIds();
     expect(ids).toEqual(
-      expect.arrayContaining(['button', 'mention-agent-avatar', 'workspace-hover-card']),
+      expect.arrayContaining([
+        'button',
+        'diagram-controls-host',
+        'diagram-workbench',
+        'mention-agent-avatar',
+        'workspace-hover-card',
+        'workspace-tab-strip-geometry',
+      ]),
     );
     expect(ids).toEqual([...ids].sort());
   });
+
+  it('loads a valid preview definition from every discovered file', async () => {
+    const ids = listPreviewIds();
+    const loadedIds: string[] = [];
+    for (const id of ids) {
+      loadedIds.push((await loadPreview(id))?.definition.id ?? '');
+    }
+
+    expect(loadedIds).toEqual(ids);
+  }, 60_000);
 
   it('rejects duplicate filenames instead of silently replacing a preview', () => {
     expect(() =>

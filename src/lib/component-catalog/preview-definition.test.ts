@@ -57,4 +57,28 @@ describe('preview definitions', () => {
       'Preview slug “other” does not match definition id “example”.',
     );
   });
+
+  it('preserves a valid readiness timeout', () => {
+    const withTimeout = definePreview({
+      ...definition,
+      captureReadiness: { selector: '[data-ready="true"]', readinessTimeoutMs: 24_000 },
+    });
+
+    expect(withTimeout.captureReadiness?.readinessTimeoutMs).toBe(24_000);
+  });
+
+  it.each([0, -1, Number.NaN, Number.POSITIVE_INFINITY, '24000'])(
+    'rejects invalid readiness timeout %s',
+    (readinessTimeoutMs) => {
+      expect(() =>
+        definePreview({
+          ...definition,
+          captureReadiness: {
+            selector: '[data-ready="true"]',
+            readinessTimeoutMs,
+          },
+        } as PreviewDefinition<{ label: string }>),
+      ).toThrow('Preview “example” readiness timeout must be a positive number.');
+    },
+  );
 });

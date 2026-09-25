@@ -4,14 +4,14 @@
  * list (open dispatch, current-backend check, no Switch/Forget), and the
  * add-backend entry.
  *
- * Uses the same mock-store pattern as DaemonStatusIndicator.test.ts so the
- * connections slice (including `windowBackendId`) can be seeded per test and
- * dispatches asserted.
+ * Uses a mock store so the connections slice (including `windowBackendId`)
+ * can be seeded per test and dispatches asserted.
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/svelte';
 import { createCollection } from '@augmentcode/themis/utils/collections/collection-utils';
 import type { StoreState } from '$store/renderer/types';
+import { initialState as initialConnectionsState } from '$store/renderer/slices/connections/connections-slice';
 
 let mockStoreState: Partial<StoreState> = {};
 let mockDispatch = vi.fn();
@@ -35,8 +35,7 @@ vi.mock('$store/renderer/store', async () => {
 });
 
 // Preload once at module scope so the import graph (ui/menu pulls the bits-ui
-// barrel) is cold-transformed during collection — same rationale as the
-// DaemonStatusIndicator suite.
+// barrel) is cold-transformed during collection.
 const HudBackendMenuPreloaded = (await import('./HudBackendMenu.svelte')).default;
 void HudBackendMenuPreloaded;
 
@@ -66,6 +65,7 @@ const remoteRecord = {
 
 function withConnections(windowBackendId: string) {
   return {
+    ...initialConnectionsState,
     connections: createCollection('id', [localRecord, remoteRecord]),
     activeId: 'local',
     windowBackendId,
@@ -104,7 +104,7 @@ describe('HudBackendMenu', () => {
     const trigger = screen.getByTestId('hud-footer-system');
     expect(trigger.tagName).toBe('BUTTON');
     expect(trigger.textContent).toContain('INTENTD');
-    expect(trigger.textContent).toContain('ONLINE');
+    expect(trigger.textContent).toContain('Online');
   });
 
   it('opens a menu listing all saved backends plus the add entry', async () => {
@@ -186,6 +186,31 @@ describe('HudBackendMenu', () => {
     );
     expect(screen.queryByTestId('hud-backend-menu-open-error')).toBeNull();
     expect(screen.queryByText('Connections')).toBeNull();
+  });
+
+  it('reopens with a retryable error on rejected open and clears it after retry', async () => {
+    let fail = true;
+    mockDispatch.mockImplementation(
+      (action: {
+        type: string;
+        failure?: (error: Error) => void;
+        success?: (r: unknown) => void;
+      }) => {
+        if (action.type === 'connections/openRequested') {
+          if (fail) action.failure?.(new Error('offline'));
+          else action.success?.({ status: 'opened', id: 'r1' });
+        }
+        return action;
+      },
+    );
+    await renderAndOpen();
+    await fireEvent.click(screen.getByText('desk:4180').closest('[role="menuitem"]')!);
+    expect((await screen.findByTestId('hud-backend-menu-open-error')).getAttribute('role')).toBe(
+      'alert',
+    );
+    fail = false;
+    await fireEvent.click(screen.getByText('desk:4180').closest('[role="menuitem"]')!);
+    await vi.waitFor(() => expect(screen.queryByTestId('hud-backend-menu-open-error')).toBeNull());
   });
 
   it('opens the add-backend modal from the add entry', async () => {

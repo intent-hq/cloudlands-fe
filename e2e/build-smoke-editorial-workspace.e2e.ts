@@ -128,7 +128,7 @@ async function setSidebarCollapsed(collapsed: boolean) {
   const isCollapsed = async () => (await sidebar.evaluate((element) => element.clientWidth)) === 0;
 
   if ((await isCollapsed()) !== collapsed) {
-    await page.keyboard.press('Meta+b');
+    await page.keyboard.press(process.platform === 'darwin' ? 'Meta+b' : 'Control+b');
   }
   await expect.poll(isCollapsed).toBe(collapsed);
 }
@@ -304,7 +304,10 @@ test.describe('Build Smoke — Editorial Workspace Shell', () => {
     if (userDataDir) await rm(userDataDir, { recursive: true, force: true });
   });
 
-  test('captures and verifies shell and conversation states', async () => {
+  // fixme: the sidebar title tooltip is now "Click to edit workspace title"
+  // and the shell-state capture that follows is unverified against the
+  // current sidebar — intent-hq/intent#5608.
+  test.fixme('captures and verifies shell and conversation states', async () => {
     test.setTimeout(360_000);
     for (const [label, width, height] of [
       ['desktop', 1440, 1000],

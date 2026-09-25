@@ -38,8 +38,11 @@ import {
   setGroupByRepo,
   setGithubLinkDefaultAction,
   setHasCompletedProviderSetup,
+  setLabsMultiplayerEnabled,
+  setLabsSettingsVisible,
   setLanguagePreference,
   setNoteFontStyle,
+  setReduceMotionOnBattery,
   setShowArchived,
   setShowReasoningBlocks,
   setShellTransparencyEnabled,
@@ -49,6 +52,9 @@ import {
   toggleGroupByRepo,
   toggleHasCompletedProviderSetup,
   toggleChatAurora,
+  toggleLabsMultiplayer,
+  toggleLabsSettingsVisibility,
+  toggleReduceMotionOnBattery,
   toggleShowArchived,
   toggleShowReasoningBlocks,
   toggleShellTransparency,
@@ -172,6 +178,9 @@ describe('userPreferencesPersistenceSaga', () => {
       'chat:showReasoningBlocks': true,
       'chat:auroraEnabled': false,
       'appearance:shellTransparencyEnabled': false,
+      'appearance:reduceMotionOnBattery': false,
+      'labs:settingsVisible': true,
+      'labs:multiplayerEnabled': true,
       'agent-font-settings': { fontStyle: 'monospace' },
       'note-font-settings': { fontStyle: 'sans' },
       'code-font-settings': { fontFamily: 'Monaco' },
@@ -195,6 +204,9 @@ describe('userPreferencesPersistenceSaga', () => {
       [setShowReasoningBlocks(true)],
       [setChatAuroraEnabled(false)],
       [setShellTransparencyEnabled(false)],
+      [setReduceMotionOnBattery(false)],
+      [setLabsSettingsVisible(true)],
+      [setLabsMultiplayerEnabled(true)],
       [setAgentFontStyle('monospace')],
       [setNoteFontStyle('sans')],
       [setCodeFontFamily('Monaco')],
@@ -203,6 +215,96 @@ describe('userPreferencesPersistenceSaga', () => {
       [setGithubLinkDefaultAction('copy-link')],
     ]);
     expect(mocks.applyLanguagePreference.mock.calls).toEqual([]);
+  });
+
+  it.each([true, false])(
+    'hydrates a persisted appearance:reduceMotionOnBattery = %s over the default',
+    async (stored) => {
+      mocks.getJSON.mockImplementation((key: string) =>
+        key === 'appearance:reduceMotionOnBattery' ? stored : undefined,
+      );
+      const dispatch = vi.fn();
+      await runSaga({ dispatch, getState: () => ({}) }, hydrateUserPreferencesWorker).toPromise();
+
+      expect(dispatch.mock.calls).toEqual([[setReduceMotionOnBattery(stored)]]);
+      const hydrated = dispatch.mock.calls.reduce(
+        (state, [action]) => userPreferencesReducer(state, action),
+        initialState,
+      );
+      expect(hydrated.reduceMotionOnBattery).toBe(stored);
+    },
+  );
+
+  it.each([true, false])(
+    'hydrates a persisted labs:multiplayerEnabled = %s over the default',
+    async (stored) => {
+      mocks.getJSON.mockImplementation((key: string) =>
+        key === 'labs:multiplayerEnabled' ? stored : undefined,
+      );
+      const dispatch = vi.fn();
+      await runSaga({ dispatch, getState: () => ({}) }, hydrateUserPreferencesWorker).toPromise();
+
+      expect(dispatch.mock.calls).toEqual([[setLabsMultiplayerEnabled(stored)]]);
+      const hydrated = dispatch.mock.calls.reduce(
+        (state, [action]) => userPreferencesReducer(state, action),
+        initialState,
+      );
+      expect(hydrated.labsMultiplayerEnabled).toBe(stored);
+    },
+  );
+
+  it.each([true, false])('hydrates Labs visibility saved as %s', async (visible) => {
+    mocks.getJSON.mockImplementation((key: string) =>
+      key === 'labs:settingsVisible' ? visible : undefined,
+    );
+    const store = startPreferenceStore();
+    await settle();
+    expect(store.getUserPreferences().labsSettingsVisible).toBe(visible);
+    await store.stop();
+  });
+
+  it.each([undefined, null, 'true', 'false', 1, [], {}])(
+    'keeps Labs hidden when saved visibility is missing or invalid: %j',
+    async (stored) => {
+      mocks.getJSON.mockImplementation((key: string) =>
+        key === 'labs:settingsVisible' ? stored : undefined,
+      );
+      const store = startPreferenceStore();
+      await settle();
+      expect(store.getUserPreferences().labsSettingsVisible).toBe(false);
+      await store.stop();
+    },
+  );
+
+  it('restores both visibility choices across launches without changing experiments', async () => {
+    const stored: Record<string, unknown> = { 'labs:multiplayerEnabled': true };
+    mocks.getJSON.mockImplementation((key: string) => stored[key]);
+    mocks.setJSON.mockImplementation((key: string, value: unknown) => {
+      stored[key] = value;
+    });
+
+    const first = startPreferenceStore();
+    await settle();
+    first.dispatch(setLabsSettingsVisible(true));
+    await settle();
+    expect(stored['labs:settingsVisible']).toBe(true);
+    await first.stop();
+
+    const second = startPreferenceStore();
+    await settle();
+    expect(second.getUserPreferences().labsSettingsVisible).toBe(true);
+    expect(second.getUserPreferences().labsMultiplayerEnabled).toBe(true);
+    second.dispatch(toggleLabsSettingsVisibility());
+    await settle();
+    expect(stored['labs:settingsVisible']).toBe(false);
+    await second.stop();
+
+    const third = startPreferenceStore();
+    await settle();
+    expect(third.getUserPreferences().labsSettingsVisible).toBe(false);
+    expect(third.getUserPreferences().labsMultiplayerEnabled).toBe(true);
+    expect(stored['labs:multiplayerEnabled']).toBe(true);
+    await third.stop();
   });
 
   it('persists an agent font action and restores it in a fresh store', async () => {
@@ -322,6 +424,8 @@ describe('userPreferencesPersistenceSaga', () => {
         showReasoningBlocks: true,
         chatAuroraEnabled: false,
         shellTransparencyEnabled: false,
+        reduceMotionOnBattery: false,
+        labsMultiplayerEnabled: true,
         agentFontStyle: 'monospace',
         noteFontStyle: 'sans',
         codeFontFamily: 'Monaco',
@@ -354,6 +458,10 @@ describe('userPreferencesPersistenceSaga', () => {
       toggleChatAurora(),
       setShellTransparencyEnabled(false),
       toggleShellTransparency(),
+      setReduceMotionOnBattery(false),
+      toggleReduceMotionOnBattery(),
+      setLabsMultiplayerEnabled(true),
+      toggleLabsMultiplayer(),
       setAgentFontStyle('monospace'),
       setNoteFontStyle('sans'),
       cycleNoteFontStyle(),
@@ -383,6 +491,10 @@ describe('userPreferencesPersistenceSaga', () => {
       ['chat:auroraEnabled', false],
       ['appearance:shellTransparencyEnabled', false],
       ['appearance:shellTransparencyEnabled', false],
+      ['appearance:reduceMotionOnBattery', false],
+      ['appearance:reduceMotionOnBattery', false],
+      ['labs:multiplayerEnabled', true],
+      ['labs:multiplayerEnabled', true],
       ['agent-font-settings', { fontStyle: 'monospace' }],
       ['note-font-settings', { fontStyle: 'sans' }],
       ['note-font-settings', { fontStyle: 'sans' }],
