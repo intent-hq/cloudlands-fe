@@ -52,6 +52,7 @@ const FEATURE_PATHS = [
 // into the definition itself (no nested `definition` key; that shape is settings.get's).
 function listResponse() {
   return {
+    revision: 0,
     settings: [
       ...FEATURE_PATHS.map((path) => ({
         path,
@@ -61,6 +62,7 @@ function listResponse() {
         type: 'boolean',
         defaultValue: true,
         value: true,
+        origin: 'default',
       })),
       {
         path: 'prMonitor.debounceSeconds',
@@ -74,8 +76,14 @@ function listResponse() {
       },
       {
         path: 'agents.maxTopLevelAgents',
+        label: 'Maximum top-level agents',
+        description: '',
+        category: 'agents',
+        type: 'number',
+        min: 1,
+        defaultValue: 20,
         value: 20,
-        definition: { path: 'agents.maxTopLevelAgents', type: 'number', scope: 'user' },
+        origin: 'default',
       },
     ],
   };
@@ -291,15 +299,52 @@ describe('AgentFeaturesSettings wire contract (PROTOCOL §5.12)', () => {
     expect(toggle.getAttribute('aria-checked')).toBe('true');
   });
 
-  it('renders peerAgents on when settings.list omits it and sends the exact toggle-off payload', async () => {
-    mocks.mockBackendRequest.mockImplementation(async (method: string) => {
-      if (method === 'settings.list') {
-        const response = listResponse();
-        return {
-          ...response,
-          settings: response.settings.filter((s) => s.path !== 'agentFeatures.peerAgents'),
-        };
+  it.each(['toggle', 'cap'])(
+    'does not send a peer %s update when an older daemon does not register peer agents',
+    async (control) => {
+      mocks.mockBackendRequest.mockImplementation(async (method: string) => {
+        if (method === 'settings.list') {
+          return {
+            settings: listResponse().settings.filter(
+              (s) => s.path !== 'agentFeatures.peerAgents' && s.path !== 'agents.maxTopLevelAgents',
+            ),
+          };
+        }
+        throw new Error(`Unsupported method: ${method}`);
+      });
+
+      render(AgentFeaturesSettings);
+
+      await waitFor(() => {
+        expect(
+          (screen.getByRole('switch', { name: 'Background hooks' }) as HTMLButtonElement).disabled,
+        ).toBe(false);
+      });
+      const toggle = screen.getByRole('switch', {
+        name: 'Top-level agent spawning & retirement',
+      });
+      const input = screen.getByRole('spinbutton', {
+        name: 'Maximum top-level agents per workspace',
+      });
+      if (control === 'toggle') {
+        await fireEvent.click(toggle);
+      } else {
+        await fireEvent.input(input, { target: { value: '5' } });
+        const save = screen.getByRole('button', { name: 'Save' });
+        await fireEvent.click(save);
+        expect.soft((save as HTMLButtonElement).disabled).toBe(true);
       }
+
+      expect.soft(mocks.mockBackendRequest.mock.calls).toEqual([['settings.list']]);
+      expect.soft(toggle.getAttribute('aria-checked')).toBe('false');
+      expect.soft((toggle as HTMLButtonElement).disabled).toBe(true);
+      expect.soft((input as HTMLInputElement).disabled).toBe(true);
+    },
+  );
+
+  it('renders the registered peerAgents default on and sends the exact toggle-off payload', async () => {
+    mocks.mockBackendRequest.mockImplementation(async (method: string) => {
+      if (method === 'settings.list') return listResponse();
       if (method === 'settings.update') {
         return { applied: [{ path: 'agentFeatures.peerAgents', value: false }], revision: 1 };
       }

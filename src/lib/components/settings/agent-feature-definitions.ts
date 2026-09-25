@@ -6,8 +6,9 @@
  * features modal (harness-feature-catalog.ts), so a new feature toggle
  * added here shows up in both surfaces automatically.
  *
- * `defaultValue` mirrors the daemon's own default for the path. An absent
- * settings.list entry uses that default; explicit boolean values win.
+ * `defaultValue` mirrors the daemon's own default for the path; explicit
+ * boolean values win. Peer-agent controls also require the daemon to register
+ * the setting in settings.list, including when its value comes from a default.
  */
 import { m } from '$shared/paraglide/messages.js';
 

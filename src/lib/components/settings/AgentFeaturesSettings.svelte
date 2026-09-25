@@ -5,9 +5,10 @@
    *
    * Reads/writes the daemon-owned `agentFeatures.*` settings via
    * settings.list / settings.update (PROTOCOL §5.12), following the
-   * WorkspaceApiSettings pattern. Thirteen booleans, each coerced to its own
-   * daemon default when absent (see agent-feature-definitions.ts): all
-   * default on, while explicit false values remain off.
+   * WorkspaceApiSettings pattern. Thirteen booleans with daemon defaults
+   * (see agent-feature-definitions.ts): all default on, while explicit false
+   * values remain off. Peer controls require a registered peerAgents entry;
+   * an older daemon that omits it keeps those controls unavailable.
    *
    * Toggles are captured at agent-session creation, so changes apply to
    * newly created sessions only — existing sessions keep the surface they
@@ -52,7 +53,7 @@
   const MIN_MAX_TOP_LEVEL_AGENTS = 1;
   const DEFAULT_MAX_TOP_LEVEL_AGENTS = 20;
 
-  // An absent settings.list entry coerces to the feature's daemon default.
+  // Coerce values to daemon defaults; peer-agent support is checked separately.
   function coerceValue(path: FeaturePath, value: unknown): boolean {
     return typeof value === 'boolean' ? value : FEATURE_DEFAULTS[path];
   }
@@ -60,6 +61,9 @@
   let loading = $state(true);
   // Seed from per-feature daemon defaults (PROTOCOL §5.12)
   let values = $state<Record<FeaturePath, boolean>>({ ...FEATURE_DEFAULTS });
+  // settings.list includes registered defaults even without a stored preference.
+  let peerAgentsSupported = $state(false);
+  let peerAgentsEnabled = $derived(peerAgentsSupported && values['agentFeatures.peerAgents']);
   // Daemon-provided approximate token cost per toggle (§5.12 `tokenImpact`);
   // absent on older daemons or unannotated entries → no line rendered.
   let tokenImpacts = $state<Partial<Record<FeaturePath, string>>>({});
@@ -84,6 +88,7 @@
       const settings = await appClient.settings.list();
       for (const path of FEATURE_PATHS) {
         const entry = settings.find((s: { path: string; value: unknown }) => s.path === path);
+        if (path === 'agentFeatures.peerAgents') peerAgentsSupported = entry !== undefined;
         values[path] = coerceValue(path, entry?.value);
         tokenImpacts[path] = typeof entry?.tokenImpact === 'string' ? entry.tokenImpact : undefined;
       }
@@ -113,6 +118,7 @@
   }
 
   async function handleToggle(path: FeaturePath, checked: boolean) {
+    if (path === 'agentFeatures.peerAgents' && !peerAgentsSupported) return;
     values[path] = checked;
     try {
       const result = await appClient.settings.update([{ path, value: checked }]);
@@ -186,6 +192,7 @@
   }
 
   async function handleMaxAgentsSave() {
+    if (!peerAgentsEnabled) return;
     const newValue = Number(editedMaxAgents);
     if (!Number.isInteger(newValue) || newValue < MIN_MAX_TOP_LEVEL_AGENTS) {
       return; // invalid input, do nothing
@@ -224,14 +231,15 @@
   const schema = $derived.by(() => {
     const entries: SettingEntry[] = [];
     for (const feature of FEATURES) {
-      const currentValue = values[feature.path];
+      const currentValue =
+        feature.path === 'agentFeatures.peerAgents' ? peerAgentsEnabled : values[feature.path];
       entries.push({
         kind: 'switch',
         id: feature.path,
         label: feature.label(),
         description: feature.description(),
         featureCode: feature.path,
-        disabled: loading,
+        disabled: loading || (feature.path === 'agentFeatures.peerAgents' && !peerAgentsSupported),
         // i18n-ignore (daemon-provided wire text, PROTOCOL §5.12 tokenImpact)
         status: tokenImpacts[feature.path],
         statusTone: 'subtle',
@@ -252,7 +260,7 @@
           kind: 'custom',
           id: 'max-top-level-agents',
           label: m.settings_agentFeatures_maxTopLevelAgents_label(),
-          disabled: loading || maxAgentsSaving || !values['agentFeatures.peerAgents'],
+          disabled: loading || maxAgentsSaving || !peerAgentsEnabled,
           busy: maxAgentsSaving,
         });
       }
@@ -313,7 +321,7 @@
         type="number"
         min={MIN_MAX_TOP_LEVEL_AGENTS}
         bind:value={editedMaxAgents}
-        disabled={loading || maxAgentsSaving || !values['agentFeatures.peerAgents']}
+        disabled={loading || maxAgentsSaving || !peerAgentsEnabled}
         aria-label={m.settings_agentFeatures_maxTopLevelAgents_ariaLabel()}
         class="w-24"
       />
@@ -322,7 +330,7 @@
           variant="secondary"
           size="xs"
           onclick={handleMaxAgentsSave}
-          disabled={maxAgentsSaving || !valid || !values['agentFeatures.peerAgents']}
+          disabled={maxAgentsSaving || !valid || !peerAgentsEnabled}
         >
           {maxAgentsSaving
             ? m.settings_agentFeatures_maxTopLevelAgents_saving()
