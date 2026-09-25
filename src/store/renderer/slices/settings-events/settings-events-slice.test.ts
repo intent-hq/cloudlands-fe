@@ -133,12 +133,21 @@ describe('settingsEventsReducer', () => {
   it('does not overwrite a newer committed value with a racing read', () => {
     let state = reduce(undefined, settingsFormOpened(identity, 'agent-backend'));
     state = reduce(state, settingsFormLoadRequested(read));
+    state = reduce(
+      state,
+      settingsFormRequestSettled(read, {
+        status: 'succeeded',
+        entries: [{ ...entry, value: 0 }],
+      }),
+    );
+    const refresh = { ...read, requestId: 'refresh' };
+    state = reduce(state, settingsFormLoadRequested(refresh));
     state = reduce(state, settingsFormSaveRequested(save, [entry]));
     state = reduce(state, settingsFormEntriesReceived(identity, [entry]));
     state = reduce(state, settingsFormRequestSettled(save, { status: 'succeeded' }));
     state = reduce(
       state,
-      settingsFormRequestSettled(read, {
+      settingsFormRequestSettled(refresh, {
         status: 'succeeded',
         entries: [{ ...entry, value: 0 }],
         values: { stale: true },
