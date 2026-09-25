@@ -126,9 +126,12 @@ function* readStatus(host?: string): SagaGenerator<ForgeAuthStatus | null> {
  */
 type IntentFence = {
   generation: number;
-  // Cleanup history only, not the selected slice host. Keep it after startup
-  // settles: earlier calls can still finish after the latest one is cancelled.
-  deviceIntents: Map<string, { activeGeneration: number | null; cancelledThrough: number }>;
+  // Cleanup history only, not the selected slice host. A settled newer owner
+  // still protects older calls; release the record once all starts finish.
+  deviceIntents: Map<
+    string,
+    { activeGeneration: number | null; cancelledThrough: number; pendingStarts: number }
+  >;
 };
 
 function bumpIntent(fence: IntentFence): number {
@@ -291,8 +294,10 @@ function* startDeviceAuth(
   const ownership = fence.deviceIntents.get(hostKey) ?? {
     activeGeneration: null,
     cancelledThrough: 0,
+    pendingStarts: 0,
   };
   ownership.activeGeneration = generation;
+  ownership.pendingStarts += 1;
   fence.deviceIntents.set(hostKey, ownership);
   let started = false;
   yield* put(setGitLabHost(host));
@@ -363,6 +368,8 @@ function* startDeviceAuth(
     if (!started && ownership.activeGeneration === generation) {
       ownership.activeGeneration = null;
     }
+    ownership.pendingStarts -= 1;
+    if (ownership.pendingStarts === 0) fence.deviceIntents.delete(hostKey);
   }
 }
 
