@@ -1,5 +1,6 @@
 import { safeSlide } from '$lib/utils/animations';
 import { prefersReducedMotion } from '$lib/utils/reduced-motion';
+import { extractStandaloneReasoningTitles } from './reasoning-heading';
 
 /** Shared presentation contract for quiet, collapsible operational chat rows. */
 export const OPERATIONAL_ROW_GEOMETRY_TOKENS_CLASS =
@@ -25,7 +26,7 @@ export const OPERATIONAL_GROUP_CHILD_CONTENT_CLASS = `${OPERATIONAL_ROW_GEOMETRY
 /** Nested operational rows shift right without overflowing the group. */
 export const OPERATIONAL_GROUP_CHILD_ROW_CLASS = `${OPERATIONAL_ROW_GEOMETRY_TOKENS_CLASS} operational-group-child-row ml-2 min-w-0 w-[calc(100%-0.5rem)] max-w-[calc(100%-0.5rem)]`;
 
-/** Match the existing 24px editorial seam before a new nested reasoning title. */
+/** Preserve 24px before a nested reasoning title that follows body content. */
 export const NESTED_REASONING_SECTION_SEAM_CLASS = 'pt-6';
 
 export const OPERATIONAL_PRIMARY_CLASS = 'text-muted-foreground';
@@ -57,6 +58,8 @@ export function safeOperationalDetailsTransition(node: Element) {
 
 interface OperationalClusterBlock {
   type: string;
+  text?: string;
+  content?: string;
 }
 
 export function isOperationalClusterBlock(block: OperationalClusterBlock): boolean {
@@ -99,7 +102,11 @@ export function getOperationalClusterSpacingClass<T extends OperationalClusterBl
 
   const previous = blocks[previousIndex];
   if (previous.type === 'thinking' && block.type === 'thinking') {
-    return compactConsecutiveThinking ? '' : 'pt-14';
+    if (compactConsecutiveThinking) return '';
+    const titlesOnly =
+      extractStandaloneReasoningTitles(previous.text ?? previous.content ?? '') !== null &&
+      extractStandaloneReasoningTitles(block.text ?? block.content ?? '') !== null;
+    return titlesOnly ? '' : 'pt-14';
   }
   const previousIsOperational = isOperationalClusterBlock(previous);
   const currentIsOperational = isOperationalClusterBlock(block);

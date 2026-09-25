@@ -1080,6 +1080,8 @@
   "ui_linkTooltip_gitHubActionsHint_tooltip": "クリックでアクションを表示 · {key} を押しながらクリックでアプリ内で開く",
   "ui_linkTooltip_copied_label": "コピーしました！",
   "ui_linkTooltip_gitHubLoading_ariaLabel": "GitHub の詳細を読み込み中…",
+  "ui_linkTooltip_gitHubRateLimited_description": "GitHub がリクエストを制限しています。しばらくしてから、もう一度リンクにカーソルを合わせて再試行してください。",
+  "ui_linkTooltip_gitHubUnavailable_description": "GitHub の詳細を取得できません。もう一度リンクにカーソルを合わせて再試行してください。",
   "ui_linkTooltip_gitHubStateOpen_label": "オープン",
   "ui_linkTooltip_gitHubStateClosed_label": "クローズ",
   "ui_linkTooltip_gitHubStateMerged_label": "マージ済み",

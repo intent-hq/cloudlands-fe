@@ -27,6 +27,7 @@
   let activeWorkspaceId = $state('A');
   let openWorkspaceIds = $state(workspaceIds);
   let workspaceEntityIds = $state(workspaceIds);
+  let maxWebviews = $state<number | undefined>(undefined);
   for (const id of workspaceIds) {
     store.dispatch(
       initializeLayout(id, {
@@ -65,6 +66,10 @@
       },
       async switchWorkspace(id: string) {
         activeWorkspaceId = id;
+        await tick();
+      },
+      async setOffscreenLimit(limit: number) {
+        maxWebviews = limit;
         await tick();
       },
       async switchPanelTab(id: string) {
@@ -125,7 +130,7 @@
     {/snippet}
   </RetainedWorkspaceSurfaces>
   <!-- Mirrors the routed-workspace exclusion in the production app layout. -->
-  <OffscreenWebviewHost excludedWorkspaceIds={new Set([activeWorkspaceId])} />
+  <OffscreenWebviewHost excludedWorkspaceIds={new Set([activeWorkspaceId])} {maxWebviews} />
 </Tooltip.Provider>
 
 <style>

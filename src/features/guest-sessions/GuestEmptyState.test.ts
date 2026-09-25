@@ -6,24 +6,23 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { GuestSessionRecord } from '$shared/types/guest-sessions';
 
 const mocks = vi.hoisted(() => ({
-  dispatch: vi.fn(),
   leave: vi.fn(),
   navigateToSettings: vi.fn(async () => {}),
 }));
 
-vi.mock('$store/renderer/store', () => ({
-  store: { dispatch: mocks.dispatch },
-}));
-
-vi.mock('$store/renderer/slices/guest-sessions/guest-sessions-slice', () => ({
-  leaveGuestSessionRequested: (id: string) => mocks.leave(id),
-}));
+vi.mock('$store/renderer/store', async () => {
+  const { createGuestWorkflowTestStore } = await import('../../test/guest-workflow-store');
+  return { store: createGuestWorkflowTestStore() };
+});
 
 vi.mock('$lib/utils/workspace-navigation', () => ({
   navigateToSettings: mocks.navigateToSettings,
 }));
 
 import GuestEmptyState from './GuestEmptyState.svelte';
+import { store as appStore } from '$store/renderer/store';
+import { guestSessionsSaga } from '$store/renderer/slices/guest-sessions/sagas/guest-sessions-saga';
+import { IPC_CHANNELS } from '$shared/ipc-registry';
 
 const session: GuestSessionRecord = {
   id: 'guest-1',
@@ -53,12 +52,31 @@ async function confirmLeave() {
 }
 
 describe('GuestEmptyState', () => {
+  let stop: () => void;
   beforeEach(() => {
     vi.clearAllMocks();
-    mocks.leave.mockImplementation(() => leaveAction(Promise.resolve({ id: session.id })));
+    mocks.leave.mockImplementation(() =>
+      leaveAction(Promise.resolve({ id: session.id, revoked: true })),
+    );
+    vi.stubGlobal('electronAPI', {
+      invoke: vi.fn((channel: string, params: { id: string }) => {
+        if (channel === IPC_CHANNELS.GUEST_SESSIONS.LIST)
+          return Promise.resolve({ sessions: [session], openIds: [], connectedIds: [] });
+        if (channel === IPC_CHANNELS.GUEST_SESSIONS.LEAVE) return mocks.leave(params.id).promise;
+        throw new Error(`Unexpected channel ${channel}`);
+      }),
+      on: vi.fn(),
+      offById: vi.fn(),
+    });
+    appStore.init();
+    stop = appStore.runSaga(guestSessionsSaga);
   });
 
-  afterEach(cleanup);
+  afterEach(() => {
+    cleanup();
+    stop();
+    vi.unstubAllGlobals();
+  });
 
   it('names the joined host and routes Manage to the Guest Sessions settings tab', async () => {
     render(GuestEmptyState, { props: { session } });
@@ -66,7 +84,7 @@ describe('GuestEmptyState', () => {
 
     await fireEvent.click(screen.getByRole('button', { name: 'Manage guest sessions' }));
     expect(mocks.navigateToSettings).toHaveBeenCalledWith({ tab: 'guest-sessions' });
-    expect(mocks.dispatch).not.toHaveBeenCalled();
+    expect(mocks.leave).not.toHaveBeenCalled();
   });
 
   it('leaves the host only after confirmation, through guestSessions/leaveRequested', async () => {
@@ -74,9 +92,9 @@ describe('GuestEmptyState', () => {
 
     await confirmLeave();
     expect(mocks.leave).toHaveBeenCalledWith('guest-1');
-    expect(mocks.dispatch).toHaveBeenCalledWith(
-      expect.objectContaining({ type: 'guestSessions/leaveRequested', payload: ['guest-1'] }),
-    );
+    expect(window.electronAPI.invoke).toHaveBeenCalledWith(IPC_CHANNELS.GUEST_SESSIONS.LEAVE, {
+      id: 'guest-1',
+    });
     await waitFor(() => expect(screen.queryByRole('alert')).toBeNull());
   });
 
@@ -85,7 +103,7 @@ describe('GuestEmptyState', () => {
     mocks.leave.mockImplementation(() =>
       leaveAction(
         new Promise((resolve) => {
-          release = () => resolve({ id: session.id });
+          release = () => resolve({ id: session.id, revoked: true });
         }),
       ),
     );
@@ -99,6 +117,33 @@ describe('GuestEmptyState', () => {
 
     release();
     await waitFor(() => expect(leave.disabled).toBe(false));
+  });
+
+  it('keeps an in-flight leave and its failure visible after the component remounts', async () => {
+    let reject!: (error: Error) => void;
+    mocks.leave.mockImplementationOnce(() =>
+      leaveAction(
+        new Promise((_resolve, fail) => {
+          reject = fail;
+        }),
+      ),
+    );
+    render(GuestEmptyState, { props: { session } });
+    await confirmLeave();
+    cleanup();
+
+    render(GuestEmptyState, { props: { session } });
+    const leave = screen.getByTestId('guest-empty-state-leave') as HTMLButtonElement;
+    expect(leave.disabled).toBe(true);
+    await fireEvent.click(leave);
+    expect(mocks.leave).toHaveBeenCalledTimes(1);
+
+    reject(new Error('ipc failed'));
+    await screen.findByRole('alert');
+    expect(leave.disabled).toBe(false);
+    expect(window.electronAPI.invoke).toHaveBeenCalledWith(IPC_CHANNELS.GUEST_SESSIONS.LEAVE, {
+      id: 'guest-1',
+    });
   });
 
   it('surfaces a failed leave as an alert naming the host and allows a retry', async () => {

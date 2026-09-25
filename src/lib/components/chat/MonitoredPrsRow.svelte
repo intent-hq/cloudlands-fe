@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { CHAT_OPERATIONAL_ICON_CLASS } from './operational-disclosure-row';
   import { IntentMarkLoader } from '$lib/components/ui/indicators';
   /**
    * MonitoredPrsRow Component
@@ -373,7 +374,7 @@
               data-testid="monitored-pr-icon"
               aria-hidden="true"
             >
-              <Fa icon={faCodePullRequest} size={14} class="h-3.5 w-3.5 shrink-0" />
+              <Fa icon={faCodePullRequest} size={16} class={CHAT_OPERATIONAL_ICON_CLASS} />
             </span>
             <span
               class="min-w-0 flex-1 truncate text-muted-foreground"
