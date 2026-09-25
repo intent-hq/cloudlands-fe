@@ -1615,7 +1615,7 @@ ${source}`;
       if (usesHtmlLabels) {
         config.flowchart = {
           ...config.flowchart,
-          curve: 'bundle',
+          curve: 'basis',
           nodeSpacing: 48,
           rankSpacing: 64,
         };
