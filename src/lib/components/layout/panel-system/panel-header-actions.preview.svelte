@@ -37,7 +37,7 @@
   import type { PanelTab } from '$store/renderer/slices/panel-layout/panel-layout-types';
   import { PREVIEW_FIXTURE_IDS } from '$lib/component-catalog/preview-fixtures';
   import * as Menu from '$lib/components/ui/menu';
-  import { faCopy, faArrowDown, faTrash, faRobot } from '$lib/icons/phosphor-icons';
+  import { faCopy, faArrowDown, faTrash, faRobot, faRightLeft } from '$lib/icons/phosphor-icons';
   import TaskProgressControl from '$lib/components/chat/TaskProgressControl.svelte';
   import BrowserTabsMenu from '$lib/components/chat/BrowserTabsMenu.svelte';
   import ChatMessageNavigator from '$lib/components/chat/ChatMessageNavigator.svelte';
@@ -47,45 +47,70 @@
   let { kind = 'agent', stacked = false, atLimit = false }: Props = $props();
   const workspaceId = PREVIEW_FIXTURE_IDS.workspace;
   const agentId = 'panel-header-general-ui';
+  const agents = [
+    { id: agentId, title: 'General UI', status: AgentStatus.Active },
+    { id: 'panel-header-backend', title: 'Backend', status: AgentStatus.Idle },
+    { id: 'panel-header-bug-killer', title: 'Bug Killer', status: AgentStatus.Active },
+    { id: 'panel-header-apis', title: 'APIs', status: AgentStatus.Idle },
+  ];
+  let reorderedTabs = $state<PanelTab[] | null>(null);
   const panelId = 'panel-header-actions-preview';
   const columnCount$ = selectPanelColumnCount(workspaceId);
   let lastAction = $state('');
   let selectedTab = $state('header-current');
   let atBottom = $state(false);
   const tabs = $derived<PanelTab[]>(
-    kind === 'empty'
-      ? []
-      : [
-          {
-            id: 'header-current',
-            type: kind,
-            title: kind === 'agent' ? 'General UI' : 'Implementation plan',
-            agentId: kind === 'agent' ? agentId : undefined,
-            browserUrl: kind === 'browser' ? 'https://example.com' : undefined,
-            closable: true,
-          },
-          ...(stacked
-            ? [{ id: 'header-other', type: 'note' as const, title: 'Review notes', closable: true }]
-            : []),
-        ],
+    reorderedTabs ??
+      (kind === 'empty'
+        ? []
+        : [
+            {
+              id: 'header-current',
+              type: kind,
+              title: kind === 'agent' ? 'General UI' : 'Implementation plan',
+              agentId: kind === 'agent' ? agentId : undefined,
+              browserUrl: kind === 'browser' ? 'https://example.com' : undefined,
+              closable: true,
+            },
+            ...(stacked
+              ? kind === 'agent'
+                ? agents
+                    .slice(1)
+                    .map((agent) => ({
+                      id: agent.id,
+                      agentId: agent.id,
+                      type: 'agent' as const,
+                      title: agent.title,
+                      closable: true,
+                    }))
+                : [
+                    {
+                      id: 'header-other',
+                      type: 'note' as const,
+                      title: 'Review notes',
+                      closable: true,
+                    },
+                  ]
+              : []),
+          ]),
   );
 
   onMount(() => {
     store.dispatch(
-      bulkUpsertSessions([
-        {
-          id: AgentId(agentId),
+      bulkUpsertSessions(
+        agents.map((agent) => ({
+          id: AgentId(agent.id),
           workspaceId: WorkspaceId(workspaceId),
           backendSessionId: null,
-          name: 'General UI',
-          status: AgentStatus.Active,
-          turnInFlight: true,
-          isResponding: true,
+          name: agent.title,
+          status: agent.status,
+          turnInFlight: agent.status === AgentStatus.Active,
+          isResponding: agent.status === AgentStatus.Active,
           messages: [],
           createdAt: '2026-09-25T00:00:00.000Z',
           updatedAt: '2026-09-25T00:00:00.000Z',
-        },
-      ]),
+        })),
+      ),
     );
     store.dispatch(
       initializeLayout(workspaceId, {
@@ -158,9 +183,13 @@
 {/snippet}
 
 {#snippet contentActions()}
-  {@render primaryActions()}
-  <Menu.CommandItem icon={faCopy} label="Copy content" onclick={() => (lastAction = 'copy')} />
-  <Menu.CommandItem icon={faTrash} label="Delete content" destructive disabled />
+  <Menu.CommandItem icon={faCopy} label="Copy conversation" onclick={() => (lastAction = 'copy')} />
+  <Menu.CommandItem
+    icon={faRightLeft}
+    label="Replace agent"
+    onclick={() => (lastAction = 'replace')}
+  />
+  <Menu.CommandItem icon={faTrash} label="Delete agent" destructive disabled />
 {/snippet}
 
 <section
@@ -178,12 +207,20 @@
     contentActions={{
       display: kind === 'agent' ? displayActions : undefined,
       actions: contentActions,
+      additional: primaryActions,
     }}
     onCreateAgent={() => (lastAction = 'new-agent')}
     onCreateNote={() => (lastAction = 'new-note')}
     onCreateTerminal={() => (lastAction = 'new-terminal')}
     onOpenBrowser={() => (lastAction = 'new-browser')}
     onTabRename={(_, name) => (lastAction = `rename:${name}`)}
+    onTabReorder={(from, to) => {
+      const next = [...tabs];
+      const [moved] = next.splice(from, 1);
+      next.splice(to, 0, moved);
+      reorderedTabs = next;
+      lastAction = `move:${from}:${to}`;
+    }}
     onTabClick={(id) => (selectedTab = id)}
     onZoomToggle={() => (lastAction = 'zoom')}
     onTabClose={() => (lastAction = 'close')}

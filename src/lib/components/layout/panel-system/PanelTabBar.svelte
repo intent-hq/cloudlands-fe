@@ -76,7 +76,6 @@
     selectSpecialists,
   } from '$store/renderer/slices/specialists/specialists-selectors';
   import { selectGitHubAuthIsAuthenticated } from '$store/renderer/slices/github-auth/github-auth-selectors';
-  import AgentAvatar from '$features/agent/components/agent-avatar/AgentAvatar.svelte';
   import PanelHeaderAgentAvatar from './PanelHeaderAgentAvatar.svelte';
   import BrowserFavicon from './BrowserFavicon.svelte';
   import { navigateToSettings } from '$lib/utils/workspace-navigation';
@@ -355,6 +354,36 @@
     tabs.filter((tab) => tab.id !== activeTabId && attentionPaneIds.has(tab.id)).length,
   );
   const activePaneIndex = $derived(tabs.findIndex((tab) => tab.id === activeTabId));
+  const paneMoveDirections = $derived([
+    {
+      direction: 'up',
+      icon: faArrowUp,
+      label: m.layout_panelTabBar_movePanelUp_label(),
+      enabled: !!onTabReorder && activePaneIndex > 0,
+      move: () => onTabReorder?.(activePaneIndex, activePaneIndex - 1),
+    },
+    {
+      direction: 'right',
+      icon: faArrowRight,
+      label: m.layout_panelTabBar_movePanelRight_label(),
+      enabled: !!onMovePaneRight,
+      move: () => onMovePaneRight?.(),
+    },
+    {
+      direction: 'down',
+      icon: faArrowDown,
+      label: m.layout_panelTabBar_movePanelDown_label(),
+      enabled: !!onTabReorder && activePaneIndex >= 0 && activePaneIndex < tabs.length - 1,
+      move: () => onTabReorder?.(activePaneIndex, activePaneIndex + 1),
+    },
+    {
+      direction: 'left',
+      icon: faArrowLeft,
+      label: m.layout_panelTabBar_movePanelLeft_label(),
+      enabled: !!onMovePaneLeft,
+      move: () => onMovePaneLeft?.(),
+    },
+  ]);
   const previousPane = $derived(activePaneIndex > 0 ? tabs[activePaneIndex - 1] : undefined);
   const nextPane = $derived(
     activePaneIndex >= 0 && activePaneIndex < tabs.length - 1
@@ -1286,11 +1315,10 @@
 
 {#snippet panelActionsDropdown(location: 'tabBar' | 'compact')}
   <DropdownMenu
-    alignIconColumn
     bind:open={panelActionsMenuOpen[location]}
     align="end"
     side="bottom"
-    contentClass="panel-actions-menu-content w-72 [&_[data-slot=menu-command-item]>kbd]:text-muted-foreground"
+    contentClass="panel-actions-menu-content [&_[data-slot=menu-command-item]>kbd]:text-muted-foreground"
   >
     <!-- i18n-ignore -->
     {#snippet trigger({ props }: { props: Record<string, unknown> })}
@@ -1304,21 +1332,18 @@
         tooltipDisabled={panelActionsMenuOpen[location]}
         tooltipSide="bottom"
         tooltipDelayDuration={300}
+        class="panel-header-action-button"
         data-testid="panel-actions-trigger"
       >
-        <KebabIcon class="pointer-events-none size-4!" />
+        <KebabIcon class="pointer-events-none size-7!" />
       </Button>
     {/snippet}
     {#snippet content({ close }: { close: () => void })}
-      {#if activeTab && isTabRenameable(activeTab) && onTabRename}
-        <Menu.CommandItem
-          icon={faPen}
-          label={m.ui_editableName_rename_tooltip()}
-          onclick={() => {
-            close();
-            if (activeTab) void startInlineRename(activeTab);
-          }}
-        />
+      {#if contentActions?.display}
+        <Menu.Group data-panel-actions-section="display">
+          {@render contentActions.display()}
+        </Menu.Group>
+        <Menu.Separator />
       {/if}
       {#if contentActions?.primary || contentActions?.actions}
         <Menu.Group data-panel-actions-section="actions">
@@ -1328,13 +1353,25 @@
         </Menu.Group>
         <Menu.Separator />
       {/if}
-      {#if contentActions?.display}
-        <Menu.Group data-panel-actions-section="display">
-          <Menu.Label>{m.layout_panelTabBar_appearanceSection_label()}</Menu.Label>
-          {@render contentActions.display()}
-        </Menu.Group>
-        <Menu.Separator />
-      {/if}
+      <Menu.Group data-panel-actions-section="move">
+        <Menu.Label>{m.layout_panelTabBar_movePanel_label()}</Menu.Label>
+        <div class="panel-move-pad">
+          {#each paneMoveDirections as direction (direction.direction)}
+            <Menu.Item
+              class="panel-move-direction panel-move-{direction.direction}"
+              aria-label={direction.label}
+              disabled={!direction.enabled}
+              onclick={() => {
+                direction.move();
+                close();
+              }}
+            >
+              <Fa icon={direction.icon} class="size-7!" />
+            </Menu.Item>
+          {/each}
+        </div>
+      </Menu.Group>
+      <Menu.Separator />
       <Menu.Group data-panel-actions-section="panel">
         <Menu.CommandItem
           icon={isZoomed ? faCompress : faExpand}
@@ -1350,80 +1387,6 @@
           }}
         />
       </Menu.Group>
-      <Menu.Separator />
-      <Menu.Group data-panel-actions-section="tab">
-        <Menu.Label>{m.layout_panelTabBar_tabSection_label()}</Menu.Label>
-        <Menu.CommandItem
-          icon={faArrowLeft}
-          label={m.layout_panelTabBar_moveTabLeft_label()}
-          iconWeight="regular"
-          disabled={!onMoveLeft}
-          onclick={() => {
-            onMoveLeft?.();
-            close();
-          }}
-        />
-        <Menu.CommandItem
-          icon={faArrowRight}
-          label={m.layout_panelTabBar_moveTabRight_label()}
-          iconWeight="regular"
-          disabled={!onMoveRight}
-          onclick={() => {
-            onMoveRight?.();
-            close();
-          }}
-        />
-      </Menu.Group>
-
-      <Menu.Separator />
-
-      <Menu.Group data-panel-actions-section="layout">
-        <Menu.Label>{m.layout_panelTabBar_panelSection_label()}</Menu.Label>
-        <Menu.CommandItem
-          icon={faPlus}
-          label={m.workspace_sidebarHeader_panelColumns_add_ariaLabel()}
-          disabled={$panelColumnCount$ === 4}
-          onclick={() => {
-            handleAddPanelColumn();
-            close();
-          }}
-          data-add-panel-column
-        />
-        <Menu.CommandItem
-          icon={faArrowLeft}
-          label={m.layout_panelTabBar_movePanelLeft_label()}
-          iconWeight="regular"
-          shortcut={movePaneLeftShortcutHint}
-          disabled={!onMovePaneLeft}
-          onclick={() => {
-            onMovePaneLeft?.();
-            close();
-          }}
-        />
-        <Menu.CommandItem
-          icon={faArrowRight}
-          label={m.layout_panelTabBar_movePanelRight_label()}
-          iconWeight="regular"
-          shortcut={movePaneRightShortcutHint}
-          disabled={!onMovePaneRight}
-          onclick={() => {
-            onMovePaneRight?.();
-            close();
-          }}
-        />
-        <Menu.CommandItem
-          icon={faTableColumns}
-          label={m.layout_panelTabBar_splitRight_label()}
-          iconWeight="regular"
-          shortcut={createColumnRightShortcutHint}
-          disabled={!onSplitHorizontal}
-          onclick={() => {
-            onSplitHorizontal?.();
-            close();
-          }}
-        />
-      </Menu.Group>
-
       {#if $isWorkspaceHostLocal$ || activeTab?.type === 'browser'}
         {#if activeTab}
           {@const externalTarget = getPanelExternalOpenTarget(
@@ -1472,6 +1435,69 @@
           </div>
         {/if}
       {/if}
+      {#if activeTab && isTabRenameable(activeTab) && onTabRename}
+        <Menu.CommandItem
+          icon={faPen}
+          label={m.ui_editableName_rename_tooltip()}
+          onclick={() => {
+            close();
+            if (activeTab) void startInlineRename(activeTab);
+          }}
+        />
+      {/if}
+      {@render contentActions?.additional?.()}
+      <Menu.Separator />
+      <Menu.Group data-panel-actions-section="tab">
+        <Menu.Label>{m.layout_panelTabBar_tabSection_label()}</Menu.Label>
+        <Menu.CommandItem
+          icon={faArrowLeft}
+          label={m.layout_panelTabBar_moveTabLeft_label()}
+          iconWeight="regular"
+          disabled={!onMoveLeft}
+          onclick={() => {
+            onMoveLeft?.();
+            close();
+          }}
+        />
+        <Menu.CommandItem
+          icon={faArrowRight}
+          label={m.layout_panelTabBar_moveTabRight_label()}
+          iconWeight="regular"
+          disabled={!onMoveRight}
+          onclick={() => {
+            onMoveRight?.();
+            close();
+          }}
+        />
+      </Menu.Group>
+
+      <Menu.Separator />
+
+      <Menu.Group data-panel-actions-section="layout">
+        <Menu.Label>{m.layout_panelTabBar_panelSection_label()}</Menu.Label>
+        <Menu.CommandItem
+          icon={faPlus}
+          label={m.workspace_sidebarHeader_panelColumns_add_ariaLabel()}
+          disabled={$panelColumnCount$ === 4}
+          onclick={() => {
+            handleAddPanelColumn();
+            close();
+          }}
+          data-add-panel-column
+        />
+        <Menu.CommandItem
+          icon={faTableColumns}
+          label={m.layout_panelTabBar_splitRight_label()}
+          iconWeight="regular"
+          shortcut={createColumnRightShortcutHint}
+          disabled={!onSplitHorizontal}
+          onclick={() => {
+            onSplitHorizontal?.();
+            close();
+          }}
+        />
+      </Menu.Group>
+
       {#if hasCreateActions}
         <Menu.Separator />
         <Menu.Sub>
@@ -1580,10 +1606,11 @@
         size="icon-sm"
         onclick={() => (tab ? onTabClose?.(tab.id) : onClosePanel?.())}
         aria-label={closeLabel}
+        class="panel-header-action-button"
         data-testid="panel-close-button"
         data-pane-close={tab?.id}
       >
-        <XIcon size={16} weight="regular" aria-hidden="true" class="size-4!" />
+        <XIcon size={28} weight="regular" aria-hidden="true" class="size-7!" />
       </Button>
     </Tooltip>
   {/if}
@@ -1613,7 +1640,7 @@
 
 {#snippet paneStackSelector()}
   <span
-    class="pane-stack-selector relative z-10 w-56 min-w-0 shrink self-center"
+    class="pane-stack-selector relative z-10 min-w-0 shrink self-center"
     data-panel-header-identity
   >
     <Menu.Root bind:open={paneStackMenuOpen}>
@@ -1641,7 +1668,7 @@
               variant="outline"
               size="lg"
               active={paneStackMenuOpen}
-              class="h-11 w-full min-w-0 max-w-full justify-start gap-3 rounded-xl border border-border bg-muted/40 py-1.5 pl-1.5 pr-3"
+              class="panel-selector-button w-full min-w-0 max-w-full justify-start"
               wrapContent={false}
               aria-label={selectorLabel}
               data-testid="pane-stack-selector-trigger"
@@ -1653,7 +1680,7 @@
             >
               {#if activeTab}
                 <span
-                  class="panel-header-leading-surface flex size-8 shrink-0 items-center justify-center"
+                  class="panel-header-leading-surface flex shrink-0 items-center justify-center"
                   data-panel-header-leading-surface
                 >
                   {#if activeTab.type === 'agent' && activeTab.agentId}
@@ -1665,7 +1692,7 @@
                   {/if}
                 </span>
                 <span
-                  class="min-w-0 flex-1 truncate text-left text-sm font-medium"
+                  class="panel-selector-title min-w-0 flex-1 truncate text-left"
                   data-panel-header-title
                 >
                   {getTabTitle(activeTab)}
@@ -1675,8 +1702,8 @@
                 class="flex shrink-0 flex-col items-center gap-0.5 text-muted-foreground"
                 aria-hidden="true"
               >
-                <CaretUpIcon size={12} weight="regular" class="size-3!" />
-                <CaretDownIcon size={12} weight="regular" class="size-3!" />
+                <CaretUpIcon size={20} weight="regular" class="size-5!" />
+                <CaretDownIcon size={20} weight="regular" class="size-5!" />
               </span>
               {#if inactiveAttentionCount > 0 || (activeTab && attentionPaneIds.has(activeTab.id))}
                 <span
@@ -1692,33 +1719,16 @@
         align="start"
         side="bottom"
         collisionPadding={8}
-        class="w-64 max-w-[calc(100vw-1rem)]"
-        maxHeight="min(28rem, calc(100dvh - 1rem))"
+        class="panel-selector-menu max-w-[calc(100vw-1rem)]"
+        maxHeight="var(--bits-dropdown-menu-content-available-height, calc(100dvh - 1rem))"
         aria-label={m.layout_panelTabBar_paneMenu_ariaLabel()}
         data-pane-stack-menu
       >
-        <Menu.CommandItem
-          icon={faArrowUp}
-          label={m.layout_panelTabBar_openPaneAbove_label()}
-          shortcut={previousPaneShortcutHint}
-          disabled={!previousPane}
-          onclick={() => previousPane && activatePane(previousPane.id)}
-          data-pane-stack-open-above
-        />
-        <Menu.CommandItem
-          icon={faArrowDown}
-          label={m.layout_panelTabBar_openPaneBelow_label()}
-          shortcut={nextPaneShortcutHint}
-          disabled={!nextPane}
-          onclick={() => nextPane && activatePane(nextPane.id)}
-          data-pane-stack-open-below
-        />
-        <Menu.Separator />
-        <div class="max-h-64 overflow-y-auto overscroll-contain" data-pane-stack-list>
+        <div class="overflow-y-auto overscroll-contain" data-pane-stack-list>
           {#each tabs as tab (tab.id)}
             {@const current = tab.id === activeTabId}
             <Menu.Item
-              class="min-h-8"
+              class="panel-selector-row"
               aria-current={current ? 'page' : undefined}
               aria-label={attentionPaneIds.has(tab.id)
                 ? m.layout_panelTabBar_paneMenuAttention_ariaLabel({ title: getTabTitle(tab) })
@@ -1729,11 +1739,11 @@
             >
               {#snippet leading()}
                 <span
-                  class="flex size-4 shrink-0 items-center justify-center"
+                  class="panel-selector-row-avatar flex shrink-0 items-center justify-center"
                   data-pane-stack-item-identity={tab.type}
                 >
                   {#if tab.type === 'agent' && tab.agentId}
-                    <AgentAvatar agentId={tab.agentId} variant="standard" />
+                    {#key tab.agentId}<PanelHeaderAgentAvatar agentId={tab.agentId} />{/key}
                   {:else}
                     {@render panelIdentity(tab, true)}
                   {/if}
@@ -1755,6 +1765,23 @@
             </Menu.Item>
           {/each}
         </div>
+        <Menu.CommandItem
+          icon={faArrowUp}
+          label={m.layout_panelTabBar_openPaneAbove_label()}
+          shortcut={previousPaneShortcutHint}
+          disabled={!previousPane}
+          onclick={() => previousPane && activatePane(previousPane.id)}
+          data-pane-stack-open-above
+        />
+        <Menu.CommandItem
+          icon={faArrowDown}
+          label={m.layout_panelTabBar_openPaneBelow_label()}
+          shortcut={nextPaneShortcutHint}
+          disabled={!nextPane}
+          onclick={() => nextPane && activatePane(nextPane.id)}
+          data-pane-stack-open-below
+        />
+        <Menu.Separator />
       </Menu.Content>
     </Menu.Root>
   </span>
@@ -2020,21 +2047,159 @@
 
 <style>
   :global(.panel-actions-menu-content) {
-    min-width: min(14rem, calc(100vw - 1rem));
+    width: 384px;
+    min-width: min(384px, calc(100vw - 1rem));
+    border: 2px solid hsl(var(--border));
+    border-radius: 14px;
+    padding: 12px;
     max-width: calc(100vw - 1rem);
   }
 
   /* CSS variables for panel tab bar heights */
   .panel-tab-wrapper {
-    --panel-header-height: 3.5rem;
+    --panel-header-height: 100px;
+    container-type: inline-size;
   }
 
   .panel-header {
-    padding-inline-start: var(--space-2);
+    padding-inline: 16px;
+    gap: 8px;
   }
 
   .panel-header-leading-surface {
-    --agent-avatar-emphasized-surface-size: 2rem;
-    --agent-avatar-emphasized-corner-radius: var(--radius-medium);
+    width: 52px;
+    height: 52px;
+    --agent-avatar-emphasized-surface-size: 52px;
+    --agent-avatar-emphasized-art-size: 36px;
+    --agent-avatar-emphasized-corner-radius: 10px;
+  }
+  .pane-stack-selector {
+    width: 388px;
+  }
+  :global(.panel-selector-button) {
+    height: 72px;
+    padding: 8px 22px 8px 8px;
+    gap: 16px;
+    border: 2px solid hsl(var(--border));
+    border-radius: 18px;
+    background: hsl(var(--muted));
+  }
+  .panel-selector-title {
+    font-size: 24px;
+    font-weight: 400;
+    line-height: 1.2;
+  }
+  :global(.panel-header-action-button) {
+    width: 52px;
+    height: 52px;
+  }
+  :global(.panel-selector-menu) {
+    width: var(--bits-dropdown-menu-anchor-width, 388px);
+    min-width: 0;
+    border: 2px solid hsl(var(--border));
+    border-radius: 18px;
+    padding: 10px;
+  }
+  :global(.panel-selector-row) {
+    height: 68px;
+    gap: 16px;
+    padding: 10px;
+    font-size: 24px;
+    font-weight: 400;
+  }
+  :global(.panel-selector-row > [data-slot='menu-item-leading']) {
+    width: 44px;
+    height: 44px;
+  }
+  .panel-selector-row-avatar {
+    width: 44px;
+    height: 44px;
+    --agent-avatar-emphasized-surface-size: 44px;
+    --agent-avatar-emphasized-art-size: 30px;
+    --agent-avatar-emphasized-corner-radius: 10px;
+  }
+  :global(.panel-actions-menu-content [data-menu-item]) {
+    min-height: 60px;
+    font-size: 28px;
+    line-height: 1.2;
+    font-weight: 400;
+    padding: 12px;
+    gap: 12px;
+  }
+  :global(.panel-actions-menu-content [data-slot='menu-label']) {
+    font-size: 26px;
+    line-height: 1.3;
+    font-weight: 400;
+    padding: 12px;
+    color: hsl(var(--muted-foreground));
+  }
+  :global(.panel-actions-menu-content [data-slot='menu-item-leading']) {
+    width: 28px;
+  }
+  :global(.panel-actions-menu-content [data-slot='menu-item-leading'] svg) {
+    width: 28px;
+    height: 28px;
+  }
+  :global(.panel-actions-menu-content [data-slot='menu-command-item'] > kbd) {
+    font-size: 12px;
+  }
+  .panel-move-pad {
+    position: relative;
+    width: 240px;
+    height: 240px;
+    margin: 12px auto 20px;
+  }
+  :global(.panel-actions-menu-content .panel-move-direction) {
+    position: absolute;
+    inset: 0;
+    min-height: 0;
+    padding: 0;
+    border-radius: 0;
+    background: hsl(var(--muted));
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  :global(.panel-actions-menu-content .panel-move-direction[data-highlighted]) {
+    background: hsl(var(--accent));
+  }
+  :global(.panel-move-up) {
+    clip-path: polygon(0 0, 100% 0, 55% 45%, 45% 45%);
+    padding-bottom: 160px !important;
+  }
+  :global(.panel-move-right) {
+    clip-path: polygon(100% 0, 100% 100%, 55% 55%, 55% 45%);
+    padding-left: 160px !important;
+  }
+  :global(.panel-move-down) {
+    clip-path: polygon(0 100%, 45% 55%, 55% 55%, 100% 100%);
+    padding-top: 160px !important;
+  }
+  :global(.panel-move-left) {
+    clip-path: polygon(0 0, 45% 45%, 45% 55%, 0 100%);
+    padding-right: 160px !important;
+  }
+  @container (max-width: 420px) {
+    .panel-header {
+      padding-inline: 8px;
+      gap: 4px;
+    }
+    :global(.panel-header-action-button) {
+      width: 32px;
+      height: 52px;
+    }
+    :global(.panel-selector-button) {
+      gap: 8px;
+      padding-inline: 6px;
+    }
+    .panel-header-leading-surface {
+      width: 32px;
+      height: 32px;
+      --agent-avatar-emphasized-surface-size: 32px;
+      --agent-avatar-emphasized-art-size: 24px;
+    }
+    .panel-selector-title {
+      font-size: 18px;
+    }
   }
 </style>

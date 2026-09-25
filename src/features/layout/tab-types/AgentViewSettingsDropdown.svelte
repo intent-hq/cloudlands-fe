@@ -1,6 +1,6 @@
 <script lang="ts">
   import Fa from 'svelte-fa';
-  import { faFont, faSliders } from '@fortawesome/free-solid-svg-icons';
+  import { faSliders } from '@fortawesome/free-solid-svg-icons';
   import { Button } from '$lib/components/ui/button';
   import * as Menu from '$lib/components/ui/menu';
   import { selectAgentFontStyle } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
@@ -33,17 +33,8 @@
 {/snippet}
 
 {#if embedded}
-  <Menu.Sub>
-    <Menu.SubTrigger icon={faFont}>
-      <span class="min-w-0 flex-1">{m.settings_section_fontStyle()}</span>
-      <span class="type-caption text-muted-foreground"
-        >{$fontStyle === 'sans' ? m.settings_fontStyle_sans() : m.settings_fontStyle_mono()}</span
-      >
-    </Menu.SubTrigger>
-    <Menu.SubContent aria-label={m.settings_section_fontStyle()}>
-      {@render fontItems()}
-    </Menu.SubContent>
-  </Menu.Sub>
+  <Menu.Label>{m.settings_section_fontStyle()}</Menu.Label>
+  <div class="panel-font-options">{@render fontItems()}</div>
 {:else}
   <Menu.Root bind:open>
     <Menu.Trigger>
@@ -67,3 +58,23 @@
     </Menu.Content>
   </Menu.Root>
 {/if}
+
+<style>
+  .panel-font-options :global([data-slot='menu-item-indicator']) {
+    order: -1;
+    width: 28px;
+  }
+  .panel-font-options :global([data-slot='menu-item-indicator'] svg) {
+    display: none;
+  }
+  .panel-font-options :global([data-state='checked']) {
+    background: hsl(var(--accent));
+  }
+  .panel-font-options :global([data-state='checked'] [data-slot='menu-item-indicator']::after) {
+    content: '';
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    background: hsl(var(--agent-avatar-surface-active));
+  }
+</style>

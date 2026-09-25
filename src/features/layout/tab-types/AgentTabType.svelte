@@ -269,6 +269,7 @@
       headerContext.registerActions({
         display: agentDisplayActions,
         actions: agentActions,
+        additional: agentAdditionalActions,
       });
       headerContext.registerState({ subtitle });
     });
@@ -280,6 +281,34 @@
 {/snippet}
 
 {#snippet agentActions()}
+  <Menu.CommandItem
+    icon={agentCopyFeedback ? faCheck : faCopy}
+    iconWeight="regular"
+    label={agentCopyFeedback || m.layout_agentTab_copyConversation_tooltip()}
+    onclick={handleCopyAgentConversation}
+    disabled={agentMessages.length === 0}
+  />
+  {#if canReplaceAgent}
+    <Menu.CommandItem
+      icon={faRightLeft}
+      iconWeight="regular"
+      label={m.layout_agentTab_replaceAgent_tooltip()}
+      onclick={() => (replaceAgentModalOpen = true)}
+    />
+  {/if}
+  {#if !$hidesAgentLifecycleActions$}
+    <Menu.CommandItem
+      icon={faTrash}
+      iconWeight="regular"
+      label={m.layout_agentTab_deleteAgent_tooltip()}
+      onclick={handleDeleteAgent}
+      disabled={isAgentDeleting}
+      destructive
+    />
+  {/if}
+{/snippet}
+
+{#snippet agentAdditionalActions()}
   {#each $presencePeople$ as person (person.principalId)}
     <Menu.CommandItem icon={faUserTie} label={presencePersonLabel(person)} disabled />
   {/each}
@@ -305,13 +334,6 @@
       onclick={(event) => handleGoToTaskNote(event)}
     />
   {/if}
-  <Menu.CommandItem
-    icon={agentCopyFeedback ? faCheck : faCopy}
-    iconWeight="regular"
-    label={agentCopyFeedback || m.layout_agentTab_copyConversation_tooltip()}
-    onclick={handleCopyAgentConversation}
-    disabled={agentMessages.length === 0}
-  />
   {#if $agent$}
     <Menu.CommandItem
       icon={isNotificationsMuted ? faBell : faBellSlash}
@@ -320,24 +342,6 @@
         ? m.chat_agentCard_menu_unmuteNotifications_label()
         : m.chat_agentCard_menu_muteNotifications_label()}
       onclick={handleToggleNotificationsMuted}
-    />
-  {/if}
-  {#if canReplaceAgent}
-    <Menu.CommandItem
-      icon={faRightLeft}
-      iconWeight="regular"
-      label={m.layout_agentTab_replaceAgent_tooltip()}
-      onclick={() => (replaceAgentModalOpen = true)}
-    />
-  {/if}
-  {#if !$hidesAgentLifecycleActions$}
-    <Menu.CommandItem
-      icon={faTrash}
-      iconWeight="regular"
-      label={m.layout_agentTab_deleteAgent_tooltip()}
-      onclick={handleDeleteAgent}
-      disabled={isAgentDeleting}
-      destructive
     />
   {/if}
   {#if agentSpecialistName || harnessVersion}

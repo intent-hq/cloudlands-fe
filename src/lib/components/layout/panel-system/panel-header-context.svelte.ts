@@ -37,6 +37,8 @@ export interface PanelHeaderActions {
   actions?: Snippet;
   /** Destructive content commands, separated from presentation and layout controls. */
   destructive?: Snippet;
+  /** Additional content commands following the main reference groups. */
+  additional?: Snippet;
 }
 
 export interface PanelHeaderContext {
