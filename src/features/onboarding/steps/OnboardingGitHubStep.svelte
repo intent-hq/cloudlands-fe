@@ -15,7 +15,6 @@
     initializeGitHubAuth,
     startGitHubAuth,
     cancelGitHubAuth,
-    checkGitHubAuthStatus,
   } from '$store/renderer/slices/github-auth/github-auth-slice';
   import {
     selectGitHubAuthIsAuthenticated,
@@ -51,22 +50,6 @@
     // stored device-flow token) renders as connected instead of forcing a
     // reconnect. Also resumes a still-pending device flow (§5.27).
     appStore.dispatch(initializeGitHubAuth());
-
-    // Check auth status immediately when window gains focus so the UI
-    // updates snappily when the user returns from the browser.
-    const handleFocus = () => {
-      const state = appStore.state;
-      const isAuthenticating = selectGitHubAuthIsAuthenticating.select(state);
-      const deviceFlow = selectGitHubAuthDeviceFlow.select(state);
-      if (isAuthenticating && deviceFlow) {
-        appStore.dispatch(checkGitHubAuthStatus());
-      }
-    };
-
-    window.addEventListener('focus', handleFocus);
-    return () => {
-      window.removeEventListener('focus', handleFocus);
-    };
   });
 
   function handleConnect() {
