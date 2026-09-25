@@ -67,6 +67,7 @@
   import {
     dedupeKeys,
     getResponseGroupBlockKeys,
+    getResponseGroupChildBoundary,
     isNestedReasoningSectionBoundary,
     isNestedReasoningSectionStart,
     normalizeResponseGroups,
@@ -935,6 +936,13 @@
   childIndex: number,
   nested: boolean = true,
 )}
+  {@const boundary = getResponseGroupChildBoundary(
+    groupedBlocks,
+    groupIndex,
+    childIndex,
+    isVisibleTopLevelBlock,
+    isVisibleGroupChild,
+  )}
   {@const reasoningSectionStart = isNestedReasoningSectionStart(group, childIndex)}
   {@const reasoningSectionBoundary = isNestedReasoningSectionBoundary(
     group,
@@ -945,9 +953,9 @@
     class="content-block content-block--{childBlock.type} {reasoningSectionBoundary
       ? NESTED_REASONING_SECTION_SEAM_CLASS
       : getOperationalClusterSpacingClass(
-          group.children,
-          childIndex,
-          isVisibleGroupChild,
+          boundary,
+          boundary.length - 1,
+          undefined,
           group.isReasoningPhase,
         )} {nested
       ? isOperationalClusterBlock(childBlock)
