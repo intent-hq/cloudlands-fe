@@ -1,9 +1,9 @@
 /**
- * Header presence avatar stack: mounted (and the note-presence lease taken)
- * only in a shared workspace (AC 6); renders the roster the session emits.
+ * Note presence menu: takes a presence lease when opened in a shared workspace
+ * (AC 6) and renders the roster emitted by the session.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 
 const mockState = vi.hoisted(() => {
   type Subscriber<T> = (value: T) => void;
@@ -145,7 +145,7 @@ describe('NoteTabType presence avatar stack', () => {
   it('does not mount or take a presence lease when the viewer is alone (AC 6)', async () => {
     mockState.workspace.set({ id: 'ws-1', path: '/tmp/ws-1', branchName: 'main', memberCount: 1 });
     render(NoteTabTypeHeaderHarness, { props: { tab } });
-    await screen.findByRole('button', { name: 'Panel actions' });
+    await fireEvent.click(await screen.findByRole('button', { name: 'Panel actions' }));
 
     expect(mockState.joinNotePresence).not.toHaveBeenCalled();
     expect(screen.queryByTestId('note-presence-avatar-stack')).toBeNull();
@@ -154,6 +154,7 @@ describe('NoteTabType presence avatar stack', () => {
   it('mounts in a shared workspace and renders the peers the session emits', async () => {
     mockState.workspace.set({ id: 'ws-1', path: '/tmp/ws-1', branchName: 'main', memberCount: 2 });
     const { unmount } = render(NoteTabTypeHeaderHarness, { props: { tab } });
+    await fireEvent.click(await screen.findByRole('button', { name: 'Panel actions' }));
     await waitFor(() => expect(mockState.joinNotePresence).toHaveBeenCalledWith('ws-1', 'note-1'));
     expect(screen.queryByTestId('note-presence-avatar-stack')).toBeNull();
 
@@ -177,20 +178,8 @@ describe('NoteTabType presence avatar stack', () => {
         },
       ]);
     }
-    const stack = await screen.findByRole('group', { name: /2/ });
-    expect(stack.querySelectorAll('[data-principal-id]')).toHaveLength(2);
-    expect(stack.querySelector('img')?.getAttribute('src')).toBe('https://x/cy.png');
-
-    // Every avatar trigger is keyboard reachable and named after its viewer,
-    // whether it renders an image or an initial.
-    const bea = within(stack).getByRole('button', { name: 'Bea' });
-    const cy = within(stack).getByRole('button', { name: 'cy' });
-    expect(bea.getAttribute('tabindex')).toBe('0');
-    expect(cy.getAttribute('tabindex')).toBe('0');
-    expect(within(stack).getAllByRole('button')).toHaveLength(2);
-    cy.focus();
-    await fireEvent.focus(cy);
-    expect(await screen.findByRole('tooltip', { name: 'cy', hidden: true })).not.toBeNull();
+    expect(await screen.findByRole('menuitem', { name: 'Bea', exact: true })).not.toBeNull();
+    expect(await screen.findByRole('menuitem', { name: 'cy', exact: true })).not.toBeNull();
 
     unmount();
     expect(mockState.release).toHaveBeenCalledTimes(1);

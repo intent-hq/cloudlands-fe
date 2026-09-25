@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, waitFor } from '@testing-library/svelte';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { closeTab } from '$store/renderer/slices/panel-layout/panel-layout-slice';
 import { openTerminalOverlay } from '$store/renderer/slices/terminals/terminals-slice';
@@ -20,7 +20,7 @@ vi.mock('$store/renderer/store', async () => {
 import TerminalTabTypeHeaderHarness from './mocks/TerminalTabTypeHeaderHarness.svelte';
 
 const action = (container: HTMLElement) =>
-  container.querySelector<HTMLButtonElement>('[data-move-to-bottom-bar]');
+  container.querySelector<HTMLElement>('[data-move-to-bottom-bar]');
 
 describe('TerminalTabType header action lifecycle', () => {
   beforeEach(() => dispatch.mockClear());
@@ -30,6 +30,7 @@ describe('TerminalTabType header action lifecycle', () => {
     const view = render(TerminalTabTypeHeaderHarness, {
       props: { activeTabId: 'terminal-tab-1' },
     });
+    await fireEvent.click(await screen.findByRole('button', { name: 'Panel actions' }));
     await waitFor(() => expect(action(view.container)).not.toBeNull());
 
     await view.rerender({ activeTabId: 'browser-tab' });
@@ -42,6 +43,7 @@ describe('TerminalTabType header action lifecycle', () => {
     ['terminal-tab-2', 'terminal-tab-1', 'terminal-session-1'],
   ])('reassigns the action from %s to %s', async (from, to, terminalId) => {
     const view = render(TerminalTabTypeHeaderHarness, { props: { activeTabId: from } });
+    await fireEvent.click(await screen.findByRole('button', { name: 'Panel actions' }));
     await waitFor(() => expect(action(view.container)).not.toBeNull());
 
     await view.rerender({ activeTabId: to });
@@ -61,6 +63,7 @@ describe('TerminalTabType header action lifecycle', () => {
     const view = render(TerminalTabTypeHeaderHarness, {
       props: { activeTabId: 'terminal-tab-1' },
     });
+    await fireEvent.click(await screen.findByRole('button', { name: 'Panel actions' }));
     await waitFor(() => expect(action(view.container)).not.toBeNull());
 
     await view.rerender({ activeTabId: 'terminal-tab-1', firstMounted: false });
