@@ -2,13 +2,15 @@ import { settleBackgroundSettings } from './settle-background-settings';
 import { settingsChangesReceived } from '../../settings-events/settings-events-slice';
 import { backgroundSettingsWriteLock } from './background-settings-write-lock';
 import { buffers } from 'redux-saga';
-import { actionChannel, call, put, take, takeEvery } from 'typed-redux-saga';
+import { actionChannel, all, call, put, take, takeEvery } from 'typed-redux-saga';
 
 import { m } from '$shared/paraglide/messages.js';
 import { appClient } from '$lib/client';
 import { createLogger } from '$lib/utils/client-logger';
 import { selectBgSettings } from '../background-agent-settings-selectors';
 import { backgroundSettingsChanges } from '../background-agent-settings-persistence';
+import { safeLocalStorage } from '$lib/utils/safe-storage';
+import { setLocalStorageItem } from '../../../utils/safe-local-storage-saga';
 import {
   clearTypeOverride,
   setDefaultReasoningEffort,
@@ -19,6 +21,10 @@ import {
   resetSettings,
   setDefaultModel,
   setTypeOverride,
+  hydrateSettings,
+  backgroundSettingsHydrationRequested,
+  backgroundSettingsMigrationRequested,
+  BG_MODEL_MIGRATION_MARKER_KEY,
 } from '../background-agent-settings-slice';
 
 const logger = createLogger('BackgroundAgentSettingsSaga');
@@ -78,9 +84,44 @@ async function showProviderSwitchBlocked(
   }
 }
 
-/** Unregistered until the S20 middleware cutover. */
-export function* backgroundAgentSettingsSaga() {
-  yield* takeEvery(backgroundProviderSwitchBlocked, showProviderSwitchBlocked);
+function* hydrateBackgroundSettings(
+  action: ReturnType<typeof backgroundSettingsHydrationRequested>,
+) {
+  const [settings] = action.payload;
+  const marker = yield* call(
+    [safeLocalStorage, safeLocalStorage.getItemWithStatus],
+    BG_MODEL_MIGRATION_MARKER_KEY,
+  );
+  const needsMigration = !marker.hadError && marker.value !== '1';
+  if (!needsMigration) {
+    yield* put(hydrateSettings(settings));
+    return;
+  }
+  const strip = (value: string) => (value === 'haiku4.5' ? '' : value);
+  const migrated = {
+    ...settings,
+    defaultModel: strip(settings.defaultModel),
+    typeOverrides: {
+      commit: strip(settings.typeOverrides.commit),
+      pr: strip(settings.typeOverrides.pr),
+      review: strip(settings.typeOverrides.review),
+      fast: strip(settings.typeOverrides.fast),
+    },
+  };
+  yield* put(hydrateSettings(migrated));
+  const changed =
+    migrated.defaultModel !== settings.defaultModel ||
+    Object.entries(migrated.typeOverrides).some(
+      ([type, value]) =>
+        value !== settings.typeOverrides[type as keyof typeof settings.typeOverrides],
+    );
+  // The existing ordered owner reads the live snapshot, not this potentially
+  // obsolete migration payload, once earlier writes finish.
+  if (changed) yield* put(backgroundSettingsMigrationRequested());
+  yield* call(setLocalStorageItem, BG_MODEL_MIGRATION_MARKER_KEY, '1');
+}
+
+function* persistLoop() {
   const channel = yield* actionChannel(
     [
       setDefaultModel,
@@ -91,6 +132,7 @@ export function* backgroundAgentSettingsSaga() {
       setTypeReasoningEffortOverride,
       setTypeReasoningEffortOverrides,
       resetTypeOverride,
+      backgroundSettingsMigrationRequested,
     ],
     buffers.sliding(1),
   );
@@ -102,4 +144,12 @@ export function* backgroundAgentSettingsSaga() {
   } finally {
     channel.close();
   }
+}
+
+export function* backgroundAgentSettingsSaga() {
+  yield* all([
+    call(persistLoop),
+    takeEvery(backgroundProviderSwitchBlocked, showProviderSwitchBlocked),
+    takeEvery(backgroundSettingsHydrationRequested, hydrateBackgroundSettings),
+  ]);
 }

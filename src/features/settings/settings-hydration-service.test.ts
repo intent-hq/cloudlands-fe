@@ -17,6 +17,9 @@ vi.mock('$lib/client/live/backend-transport', () => ({
 }));
 
 import { store as appStore } from '$store/renderer/store';
+import { backgroundAgentSettingsSaga } from '$store/renderer/slices/background-agent-settings/sagas/background-agent-settings-saga';
+import { settingsMigrationsSaga } from '$store/renderer/slices/settings-events/sagas/settings-migrations-saga';
+import { providerSettingsSaga } from '$store/renderer/slices/provider-settings/sagas/provider-settings-saga';
 
 const testStore = appStore as typeof appStore & {
   storeContext?: unknown;
@@ -40,8 +43,12 @@ import {
 
 describe('settings-hydration-service (boot read + applySettingsChanges)', () => {
   let dispose: (() => void) | undefined;
+  let stopBackground: () => void;
+  let stopMigrations: () => void;
   beforeEach(() => {
     dispose = appStore.init();
+    stopBackground = appStore.runSaga(backgroundAgentSettingsSaga);
+    stopMigrations = appStore.runSaga(settingsMigrationsSaga);
     updateSpy.mockReset();
     updateSpy.mockResolvedValue({ applied: [] });
     catalogSpy.mockReset();
@@ -50,6 +57,8 @@ describe('settings-hydration-service (boot read + applySettingsChanges)', () => 
   });
 
   afterEach(() => {
+    stopBackground();
+    stopMigrations();
     dispose?.();
     vi.clearAllMocks();
   });
@@ -287,6 +296,9 @@ describe('settings-hydration-service (boot read + applySettingsChanges)', () => 
             path: 'quickActions.typeOverrides',
             value: { commit: '', pr: 'pr-model', review: '', fast: '' },
           },
+          { path: 'quickActions.defaultReasoningEffort', value: '' },
+          { path: 'quickActions.typeReasoningEffortOverrides', value: {} },
+          { path: 'quickActions.providerSettings', value: {} },
         ],
       });
       expect(localStorage.getItem(BG_MODEL_MIGRATION_MARKER_KEY)).toBe('1');
@@ -309,13 +321,64 @@ describe('settings-hydration-service (boot read + applySettingsChanges)', () => 
       expect(localStorage.getItem(BG_MODEL_MIGRATION_MARKER_KEY)).toBe('1');
     });
 
-    it('does not re-run: a deliberate post-migration re-pick of haiku4.5 hydrates verbatim', () => {
+    it('preserves effort, provider snapshots, and revision metadata through the saga migration', async () => {
+      const overrides = { commit: '', pr: '', review: '', fast: '' };
+      const providerSettings = {
+        legacy: {
+          defaultModel: 'balanced',
+          typeOverrides: overrides,
+          defaultReasoningEffort: 'low',
+          typeReasoningEffortOverrides: { walkthrough: 'future-level' },
+        },
+      };
+      applySettingsChanges(
+        [
+          { path: 'model.defaultProvider', value: 'codex' },
+          { path: 'quickActions.defaultModel', value: 'haiku4.5' },
+          { path: 'quickActions.typeOverrides', value: overrides },
+          { path: 'quickActions.defaultReasoningEffort', value: 'high' },
+          { path: 'quickActions.typeReasoningEffortOverrides', value: { fast: 'medium' } },
+          { path: 'quickActions.providerSettings', value: providerSettings },
+        ],
+        7,
+      );
+      expect(updateSpy).toHaveBeenCalledExactlyOnceWith({
+        changes: [
+          { path: 'model.defaultProvider', value: 'codex' },
+          { path: 'quickActions.defaultModel', value: '' },
+          { path: 'quickActions.typeOverrides', value: overrides },
+          { path: 'quickActions.defaultReasoningEffort', value: 'high' },
+          { path: 'quickActions.typeReasoningEffortOverrides', value: { fast: 'medium' } },
+          { path: 'quickActions.providerSettings', value: providerSettings },
+        ],
+      });
+      expect(appStore.state.backgroundAgentSettings.authoritativeSettings).toMatchObject({
+        providerId: 'codex',
+        providerRevision: 7,
+        revisions: { defaultModel: 7, defaultReasoningEffort: 7, providerSettings: 7 },
+        values: { defaultModel: '', defaultReasoningEffort: 'high', providerSettings },
+      });
+      await vi.waitFor(() =>
+        expect(appStore.state.backgroundAgentSettings.persistencePending).toBe(false),
+      );
+      applySettingsChanges([{ path: 'quickActions.defaultReasoningEffort', value: null }], 8);
+      expect(appStore.state.backgroundAgentSettings.defaultReasoningEffort).toBe('');
+      expect(appStore.state.backgroundAgentSettings.typeReasoningEffortOverrides).toEqual({
+        fast: 'medium',
+      });
+      expect(appStore.state.backgroundAgentSettings.providerSettings).toEqual(providerSettings);
+    });
+
+    it('does not re-run: a deliberate post-migration re-pick of haiku4.5 hydrates verbatim', async () => {
       // First hydration runs (and completes) the migration.
       applySettingsChanges([
         { path: 'quickActions.defaultModel', value: 'haiku4.5' },
         { path: 'quickActions.typeOverrides', value: { commit: '', pr: '', review: '', fast: '' } },
       ]);
       expect((appStore.state as BgState).backgroundAgentSettings.defaultModel).toBe('');
+      await vi.waitFor(() =>
+        expect(appStore.state.backgroundAgentSettings.persistencePending).toBe(false),
+      );
       updateSpy.mockClear();
 
       // The user re-picks haiku4.5; the daemon echoes it back via settings:changed.
@@ -371,6 +434,11 @@ describe('settings-hydration-service (boot read + applySettingsChanges)', () => 
   });
 
   describe('default-provider enablement seeding (monorepo#1947)', () => {
+    let stopProviders: () => void;
+    beforeEach(() => {
+      stopProviders = appStore.runSaga(providerSettingsSaga);
+    });
+    afterEach(() => stopProviders());
     type ProviderState = {
       providerSettings: { enabledProviders: Record<string, boolean> };
     };

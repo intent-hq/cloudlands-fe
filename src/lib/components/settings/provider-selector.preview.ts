@@ -61,6 +61,7 @@ export function setupPreviewProviders() {
   const loading = selectProviderLoadingMap.select(appStore.state);
   const enabled = selectEnabledProviders.select(appStore.state);
   appStore.dispatch(providerCatalogLoaded({ providers: previewProviders }));
+  appStore.dispatch(hydrateDefaultProvider('codex'));
   appStore.dispatch(
     loadEnabledProvidersFromStorage({ codex: true, 'claude-code': true, opencode: false }),
   );

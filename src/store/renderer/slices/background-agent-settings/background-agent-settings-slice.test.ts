@@ -18,10 +18,52 @@ import {
   restoreProviderSettings,
   initialState,
   DEFAULT_BACKGROUND_MODEL,
+  backgroundSettingsSaveSettled,
   type BackgroundAgentSettingsState,
 } from './background-agent-settings-slice';
 
 describe('backgroundAgentSettingsReducer', () => {
+  it('keeps newer picks over stale hydration and old write failures until their acknowledgement', () => {
+    const older = {
+      defaultModel: 'old',
+      typeOverrides: { commit: '', pr: '', review: '', fast: '' },
+    };
+    let state = backgroundAgentSettingsReducer(initialState, setDefaultModel('new'));
+    state = backgroundAgentSettingsReducer(
+      state,
+      setTypeOverride({ type: 'commit', model: 'new-commit' }),
+    );
+    state = backgroundAgentSettingsReducer(state, hydrateSettings(older));
+    expect(state.defaultModel).toBe('new');
+    expect(state.typeOverrides.commit).toBe('new-commit');
+    state = backgroundAgentSettingsReducer(state, backgroundSettingsSaveSettled({ generation: 0 }));
+    state = backgroundAgentSettingsReducer(state, hydrateSettings(older));
+    expect(state.defaultModel).toBe('new');
+    expect(state.typeOverrides.commit).toBe('new-commit');
+    state = backgroundAgentSettingsReducer(
+      state,
+      hydrateSettings({
+        defaultModel: 'new',
+        typeOverrides: { ...older.typeOverrides, commit: 'new-commit' },
+      }),
+    );
+    expect(state.persistencePending).toBe(true);
+    state = backgroundAgentSettingsReducer(state, backgroundSettingsSaveSettled({ generation: 2 }));
+    expect(state.pendingFields).toEqual({});
+    expect(state.persistencePending).toBe(false);
+    state = backgroundAgentSettingsReducer(state, hydrateSettings(older));
+    expect(state.defaultModel).toBe('old');
+  });
+
+  it('allows later hydration after the current write is rejected', () => {
+    let state = backgroundAgentSettingsReducer(initialState, setDefaultModel('failed'));
+    state = backgroundAgentSettingsReducer(state, backgroundSettingsSaveSettled({ generation: 1 }));
+    state = backgroundAgentSettingsReducer(
+      state,
+      hydrateSettings({ defaultModel: 'daemon', typeOverrides: state.typeOverrides }),
+    );
+    expect(state.defaultModel).toBe('daemon');
+  });
   it('should return initial state', () => {
     const state = backgroundAgentSettingsReducer(undefined, { type: '@@INIT' });
     expect(state).toEqual(initialState);

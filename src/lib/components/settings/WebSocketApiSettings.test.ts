@@ -82,6 +82,7 @@ vi.mock('$store/renderer/store', async () => {
   const harness = createConnectionsHarness(
     () => ({ windowBackendId: connectionState.activeId }),
     (action) => connectionState.dispatched.push(action),
+    true,
   );
   connectionState.emit = () => harness.store.emitState();
   connectionState.start = harness.start;
