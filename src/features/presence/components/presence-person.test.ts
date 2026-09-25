@@ -7,9 +7,7 @@ import {
   type PresenceCircle,
 } from './presence-person';
 
-const circle = (
-  facts: Partial<Pick<PresenceCircle, 'owner' | 'online' | 'self' | 'login' | 'identity'>>,
-): PresenceCircle => ({
+const circle = (facts: Partial<PresenceCircle>): PresenceCircle => ({
   principalId: 'p-1',
   login: 'p-1',
   displayName: null,
@@ -38,15 +36,46 @@ describe('forge handle', () => {
     );
   });
 
-  it('appends the handle to the name, after the "(you)" mark, only when the row carries an identity', () => {
+  it('uses the forge handle without repeating the fallback login, preserving the self marker', () => {
     expect(presencePersonNameWithForge(circle({ login: 'ada', identity: gitlab }))).toBe(
-      'ada · @ada on gitlab.example.com',
+      '@ada on gitlab.example.com',
     );
     expect(presencePersonNameWithForge(circle({ login: 'ada' }))).toBe('ada');
     expect(presencePersonLabel(circle({ login: 'ada', self: true, identity: github }))).toBe(
-      'ada (you) · @ada on GitHub',
+      '@ada on GitHub (you)',
     );
     expect(presencePersonLabel(circle({ login: 'ada', self: true }))).toBe('ada (you)');
+  });
+
+  describe.each([
+    { identity: github, handle: '@ada on GitHub', forge: 'GitHub' },
+    {
+      identity: gitlab,
+      handle: '@ada on gitlab.example.com',
+      forge: 'GitLab (gitlab.example.com)',
+    },
+  ])('$identity.provider display names', ({ identity, handle, forge }) => {
+    it.each([undefined, null, '', '  ', 'ada', ' ada ', 'Ada', '@ada'])(
+      'omits the missing or handle-derived display name %j',
+      (displayName) => {
+        const person = circle({ login: 'ada', displayName, identity });
+        expect(presencePersonNameWithForge(person)).toBe(handle);
+        expect(presencePersonLabel(person)).toBe(handle);
+      },
+    );
+
+    it('keeps a distinct custom display name with the forge and self marker', () => {
+      const person = circle({ login: 'ada', displayName: ' Ada Lovelace ', identity, self: true });
+      expect(presencePersonNameWithForge(person)).toBe(`Ada Lovelace · ${handle}`);
+      expect(presencePersonLabel(person)).toBe(`Ada Lovelace · ${handle} (you)`);
+    });
+
+    it.each([null, '', '  '])('keeps the forge when the login is %j', (login) => {
+      expect(presencePersonNameWithForge(circle({ login, identity }))).toBe(forge);
+      expect(
+        presencePersonNameWithForge(circle({ login, displayName: 'Ada Lovelace', identity })),
+      ).toBe(`Ada Lovelace · ${forge}`);
+    });
   });
 });
 
