@@ -4,6 +4,15 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.184.2](https://github.com/intent-hq/cloudlands-fe/compare/v2.184.1...v2.184.2) (2026-09-25)
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.9.110 ([#2910](https://github.com/intent-hq/cloudlands-fe/issues/2910)) ([ee4448c](https://github.com/intent-hq/cloudlands-fe/commit/ee4448c616c6586dd73ee493794fd4fadc643122))
+* **chat:** preserve reasoning boundary before inline prose ([#2903](https://github.com/intent-hq/cloudlands-fe/issues/2903)) ([fd9a045](https://github.com/intent-hq/cloudlands-fe/commit/fd9a045b30fc702b336eeca429a11bcd43c1c73a))
+* correct Micro encoder effort direction and hint ([#2901](https://github.com/intent-hq/cloudlands-fe/issues/2901)) ([71ea9d8](https://github.com/intent-hq/cloudlands-fe/commit/71ea9d8525860df2e11ce6fe08d13948c8995774))
+
 ## [2.184.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.184.0...v2.184.1) (2026-09-25)
 
 
