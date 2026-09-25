@@ -687,6 +687,10 @@ ${source}`;
     let labels: SVGTextElement[] = [];
     for (const child of svg.children) {
       if (child.matches('text.messageText')) labels.push(child as SVGTextElement);
+      if (child.matches('path.messageLine0, path.messageLine1')) {
+        labels = [];
+        continue;
+      }
       if (!child.matches('line.messageLine0, line.messageLine1')) continue;
       groups.push({ labels, line: child as SVGLineElement });
       labels = [];
