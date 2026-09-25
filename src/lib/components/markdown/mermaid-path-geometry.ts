@@ -62,8 +62,35 @@ export function buildFlowchartDecisionBranchPoints(
   occupied: Bounds[],
   compact = false,
 ): Point[] {
-  const sourceSide = branch === 'upper' ? 'top' : 'right';
+  if ((!compact || branch === 'upper') && target.y >= source.y + source.height + 16) {
+    const start = boundsPort(source, 'bottom');
+    const end = boundsPort(target, 'top');
+    const laneY = (start.y + end.y) / 2;
+    const candidate = simplifyOrthogonalPoints([
+      start,
+      { x: start.x, y: laneY },
+      { x: end.x, y: laneY },
+      end,
+    ]);
+    const obstacles = occupied.filter(
+      (bounds) =>
+        ![source, target].some(
+          (endpoint) =>
+            Math.abs(bounds.x - endpoint.x) < 0.001 &&
+            Math.abs(bounds.y - endpoint.y) < 0.001 &&
+            Math.abs(bounds.width - endpoint.width) < 0.001 &&
+            Math.abs(bounds.height - endpoint.height) < 0.001,
+        ),
+    );
+    if (
+      segments(candidate).every(
+        (segment) => !obstacles.some((bounds) => segmentCrossesBounds(segment, bounds, 8)),
+      )
+    )
+      return candidate;
+  }
   const stackedTarget = branch === 'upper' && target.y >= source.y + source.height;
+  const sourceSide = branch === 'upper' && !stackedTarget ? 'top' : 'right';
   if (compact && stackedTarget) {
     const sourcePort = boundsPort(source, 'bottom');
     const targetTop = boundsPort(target, 'top');
@@ -98,22 +125,6 @@ export function buildFlowchartDecisionBranchPoints(
   const targetPort = boundsPort(target, targetSide);
   const clearance = compact ? 16 : 32;
   if (sourceSide === 'top') {
-    if (stackedTarget) {
-      const laneX =
-        Math.max(
-          source.x + source.width,
-          target.x + target.width,
-          ...occupied.map((bounds) => bounds.x + bounds.width),
-        ) + clearance;
-      const leadY = sourcePort.y - 12;
-      return simplifyOrthogonalPoints([
-        sourcePort,
-        { x: sourcePort.x, y: leadY },
-        { x: laneX, y: leadY },
-        { x: laneX, y: targetPort.y },
-        targetPort,
-      ]);
-    }
     const laneY = Math.min(...occupied.map((bounds) => bounds.y), target.y, source.y) - clearance;
     if (Math.abs(sourcePort.x - targetPort.x) < 0.001) {
       const laneX =
@@ -437,6 +448,58 @@ export function replacePathTerminal(pathData: string, terminal: Point): string |
   return Math.hypot(Number(prior[1]) - terminal.x, Number(prior[2]) - terminal.y) < 0.001
     ? replaced.slice(0, terminalLine.index).trimEnd()
     : replaced;
+}
+
+function trimPathTerminal(pathData: string, terminal: Point, direction: Point): string | null {
+  const tokens = pathData.match(/[a-zA-Z]|-?(?:\d*\.\d+|\d+\.?\d*)(?:e[-+]?\d+)?/gi);
+  if (!tokens) return null;
+  const sizes: Record<string, number> = { M: 2, L: 2, Q: 4, C: 6 };
+  const commands: { command: string; points: Point[]; start: Point }[] = [];
+  let start = { x: 0, y: 0 };
+  for (let index = 0; index < tokens.length;) {
+    const command = tokens[index++];
+    const size = sizes[command];
+    if (!size) return replacePathTerminal(pathData, terminal);
+    const values = tokens.slice(index, index + size).map(Number);
+    if (values.length !== size || !values.every(Number.isFinite)) return null;
+    index += size;
+    const points = Array.from({ length: size / 2 }, (_, i) => ({
+      x: values[i * 2],
+      y: values[i * 2 + 1],
+    }));
+    commands.push({ command, points, start });
+    start = points.at(-1)!;
+  }
+  const projection = (point: Point) =>
+    (point.x - terminal.x) * direction.x + (point.y - terminal.y) * direction.y;
+  let cut = commands.length - 1;
+  while (cut > 0 && projection(commands[cut].start) >= 0) cut -= 1;
+  const segment = commands[cut];
+  if (!segment || segment.command === 'M' || projection(segment.points.at(-1)!) < 0)
+    return replacePathTerminal(pathData, terminal);
+  const split = (ratio: number) => {
+    let level = [segment.start, ...segment.points];
+    const left = [level[0]];
+    while (level.length > 1) {
+      level = level.slice(1).map((point, i) => ({
+        x: level[i].x + (point.x - level[i].x) * ratio,
+        y: level[i].y + (point.y - level[i].y) * ratio,
+      }));
+      left.push(level[0]);
+    }
+    return left.slice(1);
+  };
+  let low = 0;
+  let high = 1;
+  for (let i = 0; i < 32; i++) {
+    const middle = (low + high) / 2;
+    if (projection(split(middle).at(-1)!) < 0) low = middle;
+    else high = middle;
+  }
+  const kept = [...commands.slice(0, cut), { ...segment, points: split((low + high) / 2) }];
+  return kept
+    .map(({ command, points }) => `${command} ${points.map((p) => `${p.x} ${p.y}`).join(' ')}`)
+    .join(' ');
 }
 
 function boundsInPathSpace(element: SVGGraphicsElement, path: SVGGraphicsElement): Bounds | null {
@@ -846,7 +909,11 @@ export function applyMermaidTerminalGaps(svg: SVGSVGElement, cssGap = 5) {
       tangentScreenPoint.x,
       tangentScreenPoint.y,
     ).matrixTransform(matrix.inverse());
-    const repaired = replacePathTerminal(path.getAttribute('d') ?? '', tangentTerminalPoint);
+    const repaired = trimPathTerminal(
+      path.getAttribute('d') ?? '',
+      tangentTerminalPoint,
+      localDirection,
+    );
     if (!repaired) continue;
     path.setAttribute('d', `${repaired} L ${terminalPoint.x} ${terminalPoint.y}`);
     path.dataset.terminalTarget = target.node.id;
@@ -967,9 +1034,8 @@ export function refineMermaidCylinderNodes(svg: SVGSVGElement) {
     );
     if (!shape || shape.dataset.diagramCylinder === 'true') continue;
     const bounds = shape.getBBox();
-    const label = node.querySelector<SVGGElement>(':scope > .label')?.getBBox();
-    const height = Math.max(bounds.height, 68);
-    const width = Math.max(bounds.width, height * 1.45, (label?.width ?? 0) + 32);
+    const height = bounds.height;
+    const width = bounds.width;
     const radiusX = width / 2;
     const radiusY = Math.min(8, height * 0.14);
     const top = -height / 2;
@@ -2589,6 +2655,7 @@ export function repairFlowchartRouteClearance(svg: SVGSVGElement) {
         ]
       : route.points;
     let points = chooseRoute(initialPoints);
+    if (!fixed && !ingress && points.length > 4) points = chooseRoute(points, true);
     if (!fixed && !ingress && !svg.querySelector('g.cluster'))
       points = separateFlowchartVerticalLane(
         points,
@@ -3088,8 +3155,13 @@ function attachCardinalPorts(
   const points = route.map((point) => ({ ...point }));
   if (source) {
     const next = points[1];
+    const previousStart = points[0];
     points[0] = source.point;
     const vertical = source.side === 'top' || source.side === 'bottom';
+    if (points.length > 2) {
+      if (vertical && Math.abs(previousStart.x - next.x) < 0.001) next.x = source.point.x;
+      else if (!vertical && Math.abs(previousStart.y - next.y) < 0.001) next.y = source.point.y;
+    }
     const aligned = vertical
       ? Math.abs(next.x - source.point.x) < 0.001
       : Math.abs(next.y - source.point.y) < 0.001;
@@ -3105,8 +3177,14 @@ function attachCardinalPorts(
   }
   if (target) {
     const previous = points[points.length - 2];
+    const previousEnd = points[points.length - 1];
     points[points.length - 1] = target.point;
     const vertical = target.side === 'top' || target.side === 'bottom';
+    if (points.length > 2) {
+      if (vertical && Math.abs(previousEnd.x - previous.x) < 0.001) previous.x = target.point.x;
+      else if (!vertical && Math.abs(previousEnd.y - previous.y) < 0.001)
+        previous.y = target.point.y;
+    }
     const aligned = vertical
       ? Math.abs(previous.x - target.point.x) < 0.001
       : Math.abs(previous.y - target.point.y) < 0.001;
@@ -3175,21 +3253,12 @@ function allocateDiamondAttachments(svg: SVGSVGElement, paths: SVGPathElement[])
       .filter((point) => point.length === 2 && point.every(Number.isFinite))
       .map(([x, y]) => ({ x, y }));
     if (!identity || points.length < 2) continue;
-    const labelText = flowchartLabelForPath(svg, path)?.textContent?.trim().toLocaleLowerCase();
     const sourceNode = flowchartNode(svg, identity.source);
     const sourceShape = sourceNode && shapeForNode(sourceNode);
     if (sourceShape && isDiamondShape(sourceShape)) {
       const bounds = boundsInPathSpace(sourceShape, path);
       if (bounds) {
-        const inferred = cardinalSideFromDirection(pointAt(bounds, 0.5, 0.5), points[1]);
-        const side: CardinalSide =
-          path.dataset.decisionBranch === 'upper' && path.dataset.compactFlowchart === 'true'
-            ? 'bottom'
-            : path.dataset.decisionBranch === 'upper' || labelText === 'yes'
-              ? 'top'
-              : path.dataset.decisionBranch === 'lower' || labelText === 'no'
-                ? 'right'
-                : inferred;
+        const side = cardinalSideFromDirection(pointAt(bounds, 0.5, 0.5), points[1]);
         uses.push({
           path,
           role: 'source',
@@ -4284,15 +4353,10 @@ function routeNestedDecisionHierarchy(svg: SVGSVGElement, edges: FlowchartRoute[
     const metadataTarget = diamondBoundaryPort(d, 'top', -8);
     const branchSource = diamondBoundaryPort(d, 'right', -8);
     const returnSource = diamondBoundaryPort(d, 'right', 8);
-    const returnTarget = pointAt(m, 0, 0.68);
-    const noY = Math.max(
-      Math.min(returnSource.y, returnTarget.y),
-      Math.min(s.y - 24, Math.max(returnSource.y, returnTarget.y)),
-    );
+    const returnTarget = { x: m.x, y: returnSource.y };
     const addSource = diamondBoundaryPort(d, 'bottom', -10);
     const retryTarget = diamondBoundaryPort(d, 'bottom', 10);
-    const branchTarget = pointAt(m, 0, 0.32);
-    const yesY = Math.min(branchSource.y, branchTarget.y) - 24;
+    const branchTarget = { x: m.x, y: branchSource.y };
     routes.push(
       {
         edge: primaryIngress,
@@ -4334,28 +4398,13 @@ function routeNestedDecisionHierarchy(svg: SVGSVGElement, edges: FlowchartRoute[
       {
         edge: primaryBranch,
         role: 'primary-branch',
-        points: [
-          branchSource,
-          { x: d.x + d.width + 24, y: branchSource.y },
-          { x: d.x + d.width + 24, y: yesY },
-          { x: m.x - 24, y: yesY },
-          { x: m.x - 24, y: branchTarget.y },
-          branchTarget,
-        ],
+        points: [branchSource, branchTarget],
         sourceSide: 'right',
       },
       {
         edge: returnBranch,
         role: 'decision-return',
-        points: [
-          returnSource,
-          { x: d.x + d.width + 40, y: returnSource.y },
-          { x: d.x + d.width + 40, y: noY },
-          { x: m.x - 12, y: noY },
-          { x: m.x - 12, y: returnTarget.y },
-          returnTarget,
-        ],
-        labelSegment: 2,
+        points: [returnSource, returnTarget],
         sourceSide: 'right',
       },
       {
@@ -6126,6 +6175,56 @@ export function rewriteStateRoutes(
   diagram?: StateDiagramRoutingData,
 ) {
   if (!svg.classList.contains('statediagram')) return;
+  for (const cluster of svg.querySelectorAll<SVGGElement>('g.statediagram-cluster')) {
+    const outer = cluster.querySelector<SVGRectElement>(':scope > g > rect.outer');
+    const inner = cluster.querySelector<SVGRectElement>(':scope > rect.inner');
+    const label = cluster.querySelector<SVGGElement>(':scope > .cluster-label');
+    if (!outer || !inner || !label) continue;
+    const bounds = boundsInPathSpace(label, cluster);
+    const matrix = label.transform.baseVal.consolidate()?.matrix;
+    if (!bounds || !matrix) continue;
+    const top = outer.y.baseVal.value + 6;
+    label.setAttribute('transform', `translate(${matrix.e},${matrix.f + top - bounds.y})`);
+    const bodyTop = Math.max(inner.y.baseVal.value, top + bounds.height + 6);
+    inner.setAttribute(
+      'height',
+      String(Math.max(0, inner.height.baseVal.value - (bodyTop - inner.y.baseVal.value))),
+    );
+    inner.setAttribute('y', String(bodyTop));
+    for (const path of svg.querySelectorAll<SVGPathElement>('path.transition[data-points]')) {
+      let points: Point[];
+      try {
+        points = JSON.parse(atob(path.dataset.points!));
+      } catch {
+        continue;
+      }
+      if (points.length < 4) continue;
+      const [start, bend, next] = points;
+      const frame = boundsInPathSpace(outer, path);
+      if (
+        !frame ||
+        Math.abs(start.y - frame.y) > 0.5 ||
+        start.x < frame.x ||
+        start.x > frame.x + frame.width
+      )
+        continue;
+      if (
+        start.x !== bend.x ||
+        bend.y !== next.y ||
+        Math.abs(bend.x - next.x) > 8 ||
+        next.x < frame.x + 8 ||
+        next.x > frame.x + frame.width - 8
+      )
+        continue;
+      points[0] = { x: next.x, y: start.y };
+      points.splice(1, 1);
+      points = simplifyOrthogonalPoints(points);
+      const data = buildRoundedOrthogonalPath(points);
+      path.setAttribute('d', data);
+      path.dataset.terminalGapBasePath = data;
+      path.dataset.manhattanPoints = points.map(({ x, y }) => `${x},${y}`).join(' ');
+    }
+  }
   let plan: ReturnType<typeof stateRoutePlan>;
   try {
     // Retain verified parser identity for repeat fits and SVG clones. Never

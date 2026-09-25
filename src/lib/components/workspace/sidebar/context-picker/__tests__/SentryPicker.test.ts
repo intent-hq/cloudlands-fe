@@ -33,6 +33,12 @@ vi.mock('$store/renderer/slices/sentry-auth/sentry-auth-selectors', () => {
   return {
     selectSentryIsAuthenticated: vi.fn(() => readable(() => sentryState.isAuthenticated)),
     selectSentryIsConnecting: vi.fn(() => readable(() => sentryState.isConnecting)),
+    selectSentryAuthConsumerOperation: Object.assign(
+      vi.fn(() => readable(() => null)),
+      {
+        select: vi.fn(() => null),
+      },
+    ),
   };
 });
 

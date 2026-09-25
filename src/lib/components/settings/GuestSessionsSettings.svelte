@@ -16,7 +16,7 @@
    * its retry (a cancelled confirmation sends nothing, ever). A confirmation
    * closes its dialog at once (the in-flight state shows on the row), so a
    * late settlement never closes a dialog opened for something else. The *Remove all
-   * guests* report lives here rather than in the roster row so a sweep whose
+   * guests* report lives in the slice rather than in the roster row so a sweep whose
    * membership delta drops the row from *Shared by me* mid-flight still
    * reports each failed step, with its retry, until dismissed by a retry.
    */
@@ -26,25 +26,32 @@
   import HostedWorkspaceRoster from './HostedWorkspaceRoster.svelte';
   import { formatGuestSessionAddress, formatGuestSessionLabel } from '$lib/utils/connection-label';
   import { m } from '$shared/paraglide/messages.js';
-  import type { Workspace } from '$shared/types';
   import type { GuestSessionRecord, GuestWorkspaceRef } from '$shared/types/guest-sessions';
-  import { openConnectionRequested } from '$store/renderer/slices/connections/connections-slice';
+  import { onDestroy } from 'svelte';
+  import {
+    connectionWorkflowRequested,
+    connectionWorkflowCleared,
+  } from '$store/renderer/slices/connections/connections-slice';
+  import { selectConnectionWorkflow } from '$store/renderer/slices/connections/connections-selectors';
   import {
     selectGuestSessions,
     selectGuestSessionsConnectedIds,
     selectGuestSessionsLoaded,
     selectGuestSessionsOpenIds,
     selectHostedWorkspaces,
+    selectGuestLeavingIds,
+    selectGuestLeavingWorkspaceKeys,
+    selectGuestFailedLeaves,
+    selectGuestFailedWorkspaceLeaves,
+    selectHostedSweepReports,
+    selectHostedClearingIds,
   } from '$store/renderer/slices/guest-sessions/guest-sessions-selectors';
   import {
     leaveGuestSessionRequested,
     leaveGuestWorkspaceRequested,
     removeAllHostedGuestsRequested,
   } from '$store/renderer/slices/guest-sessions/guest-sessions-slice';
-  import type {
-    RemoveAllHostedGuestsResult,
-    WorkspaceMember,
-  } from '$store/renderer/slices/guest-sessions/guest-sessions-types';
+  import type { HostedSweepReport } from '$store/renderer/slices/guest-sessions/guest-sessions-types';
   import { selectIsCollaboratorOnlyClient } from '$store/renderer/slices/workspace/workspace-selectors';
   import { store as appStore } from '$store/renderer/store';
 
@@ -54,6 +61,12 @@
   const loaded$ = selectGuestSessionsLoaded();
   const hosted$ = selectHostedWorkspaces();
   const isCollaboratorOnly$ = selectIsCollaboratorOnlyClient();
+  const leavingIds$ = selectGuestLeavingIds();
+  const leavingWorkspaceKeys$ = selectGuestLeavingWorkspaceKeys();
+  const failedLeaves$ = selectGuestFailedLeaves();
+  const failedLeaveWorkspaces$ = selectGuestFailedWorkspaceLeaves();
+  const removeAllReports$ = selectHostedSweepReports();
+  const sweepingWorkspaceIds$ = selectHostedClearingIds();
 
   /** The host projects an untitled workspace as `title: ""`; name it as the workspace cards do. */
   function workspaceLabel(workspace: Pick<GuestWorkspaceRef, 'title'>): string {
@@ -63,39 +76,31 @@
   /** What the *Leave host* confirm dialog shows — never what a retry acts on. */
   let leaveTarget = $state<GuestSessionRecord | null>(null);
   let leaveDialogOpen = $state(false);
-  let openError = $state<string | null>(null);
-  /**
-   * The confirmed leaves that failed, keyed by session id; each retry re-runs
-   * exactly its own. Leaves of different hosts are independent operations, so
-   * one in flight never blocks or drops another and each failure keeps its
-   * own retry.
-   */
-  let failedLeaves = $state<Record<string, GuestSessionRecord>>({});
-  let leavingIds = $state<string[]>([]);
-
+  const consumerId = $props.id();
+  const openWorkflow$ = selectConnectionWorkflow(consumerId);
+  const openTarget = $derived(
+    $sessions$.find((session) => session.id === $openWorkflow$?.targetId),
+  );
+  const openError = $derived(
+    openTarget && $openWorkflow$?.outcome?.kind === 'secretUnavailable'
+      ? m.settings_guestSessions_open_secretUnavailable_error({
+          name: formatGuestSessionLabel(openTarget),
+        })
+      : openTarget && $openWorkflow$?.outcome?.kind === 'error'
+        ? m.settings_guestSessions_open_error({ name: formatGuestSessionLabel(openTarget) })
+        : null,
+  );
+  onDestroy(() => appStore.dispatch(connectionWorkflowCleared(consumerId)));
   function requestLeave(session: GuestSessionRecord) {
     leaveTarget = session;
     leaveDialogOpen = true;
   }
 
-  function dropFailedLeave(id: string) {
-    const { [id]: _dropped, ...rest } = failedLeaves;
-    failedLeaves = rest;
-  }
-
-  async function leaveHost(session: GuestSessionRecord | null) {
-    if (!session || leavingIds.includes(session.id)) return;
-    leavingIds = [...leavingIds, session.id];
-    dropFailedLeave(session.id);
-    try {
-      const action = leaveGuestSessionRequested(session.id);
-      appStore.dispatch(action);
-      await action.promise;
-    } catch {
-      failedLeaves = { ...failedLeaves, [session.id]: session };
-    } finally {
-      leavingIds = leavingIds.filter((id) => id !== session.id);
-    }
+  function leaveHost(session: GuestSessionRecord | null) {
+    if (!session) return;
+    const action = leaveGuestSessionRequested(session.id);
+    action.promise.catch(() => {});
+    appStore.dispatch(action);
   }
 
   /**
@@ -104,20 +109,8 @@
    * where the only recovery — leave the host and rejoin from a new invite —
    * sits next to the row.
    */
-  async function openHost(session: GuestSessionRecord) {
-    openError = null;
-    try {
-      const action = openConnectionRequested(session.id);
-      appStore.dispatch(action);
-      const result = await action.promise;
-      if (result.status === 'secret-unavailable') {
-        openError = m.settings_guestSessions_open_secretUnavailable_error({
-          name: formatGuestSessionLabel(session),
-        });
-      }
-    } catch {
-      openError = m.settings_guestSessions_open_error({ name: formatGuestSessionLabel(session) });
-    }
+  function openHost(session: GuestSessionRecord) {
+    appStore.dispatch(connectionWorkflowRequested(consumerId, { kind: 'open', id: session.id }));
   }
 
   interface LeaveWorkspaceTarget {
@@ -128,15 +121,6 @@
   /** What the per-workspace *Leave* confirm dialog shows — never what a retry acts on. */
   let leaveWorkspaceTarget = $state<LeaveWorkspaceTarget | null>(null);
   let leaveWorkspaceDialogOpen = $state(false);
-  /**
-   * The confirmed per-workspace leaves that failed, keyed by
-   * `${sessionId}:${workspaceId}`; each retry re-runs exactly its own. As with
-   * hosts, leaves of different workspaces are independent: one in flight
-   * never blocks or drops another.
-   */
-  let failedLeaveWorkspaces = $state<Record<string, LeaveWorkspaceTarget>>({});
-  let leavingWorkspaceKeys = $state<string[]>([]);
-
   function workspaceKey(target: LeaveWorkspaceTarget): string {
     return `${target.session.id}:${target.workspace.id}`;
   }
@@ -146,98 +130,36 @@
     leaveWorkspaceDialogOpen = true;
   }
 
-  function dropFailedLeaveWorkspace(key: string) {
-    const { [key]: _dropped, ...rest } = failedLeaveWorkspaces;
-    failedLeaveWorkspaces = rest;
-  }
-
-  async function leaveWorkspace(target: LeaveWorkspaceTarget | null) {
+  function leaveWorkspace(target: LeaveWorkspaceTarget | null) {
     if (!target) return;
-    const key = workspaceKey(target);
-    if (leavingWorkspaceKeys.includes(key)) return;
-    leavingWorkspaceKeys = [...leavingWorkspaceKeys, key];
-    dropFailedLeaveWorkspace(key);
-    try {
-      const action = leaveGuestWorkspaceRequested(target.session.id, target.workspace.id);
-      appStore.dispatch(action);
-      await action.promise;
-    } catch {
-      failedLeaveWorkspaces = { ...failedLeaveWorkspaces, [key]: target };
-    } finally {
-      leavingWorkspaceKeys = leavingWorkspaceKeys.filter((k) => k !== key);
-    }
+    const action = leaveGuestWorkspaceRequested(target.session.id, target.workspace.id);
+    action.promise.catch(() => {});
+    appStore.dispatch(action);
   }
 
-  /**
-   * A *Remove all guests* sweep that did not fully succeed, keyed by
-   * workspace: the workspace as confirmed (its row may be gone by now), the
-   * roster as it was before the sweep (to name a member the sweep could not
-   * remove), and one line per failed step (none when the sweep could not run
-   * at all). Kept until its retry runs, independently of *Shared by me*.
-   */
-  interface RemoveAllReport {
-    workspace: Workspace;
-    membersBefore: WorkspaceMember[];
-    failures: string[];
-  }
-
-  let removeAllReports = $state<Record<string, RemoveAllReport>>({});
-  let sweepingWorkspaceIds = $state<string[]>([]);
-
-  function memberLabel(member: WorkspaceMember): string {
-    return member.displayName ?? member.login ?? member.principalId;
-  }
-
-  function removeAllFailureLines(
-    result: RemoveAllHostedGuestsResult,
-    membersBefore: WorkspaceMember[],
-  ): string[] {
-    const lines = result.failedMembers.map(({ principalId }) => {
-      const member = membersBefore.find((entry) => entry.principalId === principalId);
-      return m.settings_guestSessions_remove_error({
-        name: member ? memberLabel(member) : principalId,
-      });
-    });
-    for (const { pinLogin } of result.failedInvites) {
+  function removeAllFailureLines(report: HostedSweepReport): string[] {
+    const lines = report.failedMemberIds.map((principalId) =>
+      m.settings_guestSessions_remove_error({
+        name: report.memberLabels[principalId] ?? principalId,
+      }),
+    );
+    for (const pinLogin of report.failedInviteLabels) {
       lines.push(
         pinLogin
           ? m.settings_guestSessions_removeAll_pinnedInviteFailed({ login: `@${pinLogin}` })
           : m.settings_guestSessions_removeAll_inviteFailed(),
       );
     }
-    if (result.invitesUnavailable) {
+    if (report.invitesUnavailable) {
       lines.push(m.settings_guestSessions_removeAll_invitesUnavailable());
     }
     return lines;
   }
 
-  function dropRemoveAllReport(workspaceId: string) {
-    const { [workspaceId]: _dropped, ...rest } = removeAllReports;
-    removeAllReports = rest;
-  }
-
-  async function removeAllGuests(workspace: Workspace, membersBefore: WorkspaceMember[]) {
-    if (sweepingWorkspaceIds.includes(workspace.id)) return;
-    sweepingWorkspaceIds = [...sweepingWorkspaceIds, workspace.id];
-    dropRemoveAllReport(workspace.id);
-    let failures: string[] | null = null;
-    try {
-      const action = removeAllHostedGuestsRequested(workspace.id);
-      appStore.dispatch(action);
-      const result = await action.promise;
-      const lines = removeAllFailureLines(result, membersBefore);
-      if (lines.length > 0) failures = lines;
-    } catch {
-      failures = [];
-    } finally {
-      sweepingWorkspaceIds = sweepingWorkspaceIds.filter((id) => id !== workspace.id);
-    }
-    if (failures !== null) {
-      removeAllReports = {
-        ...removeAllReports,
-        [workspace.id]: { workspace, membersBefore, failures },
-      };
-    }
+  function removeAllGuests(workspaceId: string) {
+    const action = removeAllHostedGuestsRequested(workspaceId);
+    action.promise.catch(() => {});
+    appStore.dispatch(action);
   }
 </script>
 
@@ -259,10 +181,7 @@
       {#if $hosted$.length > 0}
         <div class="flex flex-col overflow-hidden rounded-xl bg-card divide-y divide-border">
           {#each $hosted$ as workspace (workspace.id)}
-            <HostedWorkspaceRoster
-              {workspace}
-              onRemoveAll={(membersBefore) => removeAllGuests(workspace, membersBefore)}
-            />
+            <HostedWorkspaceRoster {workspace} onRemoveAll={() => removeAllGuests(workspace.id)} />
           {/each}
         </div>
       {:else}
@@ -275,22 +194,23 @@
           </p>
         </div>
       {/if}
-      {#each Object.values(removeAllReports) as report (report.workspace.id)}
+      {#each $removeAllReports$ as report (report.workspaceId)}
+        {@const failures = removeAllFailureLines(report)}
         <div
           class="mt-3 flex items-center justify-between gap-3 rounded-md border border-danger/30 bg-danger-background/10 p-3"
           role="alert"
           data-testid="hosted-roster-remove-all-error"
-          data-workspace-id={report.workspace.id}
+          data-workspace-id={report.workspaceId}
         >
           <div class="min-w-0 type-body text-danger">
             <p>
               {m.settings_guestSessions_removeAll_error({
-                workspace: workspaceLabel(report.workspace),
+                workspace: workspaceLabel({ title: report.workspaceTitle }),
               })}
             </p>
-            {#if report.failures.length > 0}
+            {#if failures.length > 0}
               <ul class="mt-1 space-y-1">
-                {#each report.failures as line, index (index)}
+                {#each failures as line, index (index)}
                   <li>{line}</li>
                 {/each}
               </ul>
@@ -298,8 +218,8 @@
           </div>
           <Button
             variant="ghost"
-            disabled={sweepingWorkspaceIds.includes(report.workspace.id)}
-            onclick={() => removeAllGuests(report.workspace, report.membersBefore)}
+            disabled={$sweepingWorkspaceIds$.includes(report.workspaceId)}
+            onclick={() => removeAllGuests(report.workspaceId)}
           >
             {m.settings_guestSessions_retry_label()}
           </Button>
@@ -357,16 +277,22 @@
                 </p>
               </div>
               <div class="flex shrink-0 items-center gap-2">
-                <Button variant="ghost" size="sm" onclick={() => openHost(session)}>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  disabled={$openWorkflow$?.phase !== 'settled' &&
+                    $openWorkflow$?.targetId === session.id}
+                  onclick={() => openHost(session)}
+                >
                   {m.settings_guestSessions_open_label()}
                 </Button>
                 <Button
                   variant="ghost"
                   size="sm"
-                  disabled={leavingIds.includes(session.id)}
+                  disabled={$leavingIds$.includes(session.id)}
                   onclick={() => requestLeave(session)}
                 >
-                  {leavingIds.includes(session.id)
+                  {$leavingIds$.includes(session.id)
                     ? m.settings_guestSessions_leaving_label()
                     : m.settings_guestSessions_leave_label()}
                 </Button>
@@ -392,10 +318,10 @@
                     <Button
                       variant="ghost"
                       size="sm"
-                      disabled={leavingWorkspaceKeys.includes(key)}
+                      disabled={$leavingWorkspaceKeys$.includes(key)}
                       onclick={() => requestLeaveWorkspace(session, workspace)}
                     >
-                      {leavingWorkspaceKeys.includes(key)
+                      {$leavingWorkspaceKeys$.includes(key)
                         ? m.settings_guestSessions_leaving_label()
                         : m.settings_guestSessions_leaveWorkspace_label()}
                     </Button>
@@ -432,7 +358,7 @@
     </div>
   {/if}
 
-  {#each Object.values(failedLeaves) as failed (failed.id)}
+  {#each $failedLeaves$ as failed (failed.id)}
     <div
       class="flex items-center justify-between gap-3 rounded-md border border-danger/30 bg-danger-background/10 p-3"
       role="alert"
@@ -444,7 +370,7 @@
       </p>
       <Button
         variant="ghost"
-        disabled={leavingIds.includes(failed.id)}
+        disabled={$leavingIds$.includes(failed.id)}
         onclick={() => leaveHost(failed)}
       >
         {m.settings_guestSessions_retry_label()}
@@ -452,7 +378,8 @@
     </div>
   {/each}
 
-  {#each Object.entries(failedLeaveWorkspaces) as [key, failed] (key)}
+  {#each $failedLeaveWorkspaces$ as failed (workspaceKey(failed))}
+    {@const key = workspaceKey(failed)}
     <div
       class="flex items-center justify-between gap-3 rounded-md border border-danger/30 bg-danger-background/10 p-3"
       role="alert"
@@ -466,7 +393,7 @@
       </p>
       <Button
         variant="ghost"
-        disabled={leavingWorkspaceKeys.includes(key)}
+        disabled={$leavingWorkspaceKeys$.includes(key)}
         onclick={() => leaveWorkspace(failed)}
       >
         {m.settings_guestSessions_retry_label()}
