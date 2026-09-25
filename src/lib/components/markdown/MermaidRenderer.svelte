@@ -13,6 +13,7 @@
   /* eslint-disable max-lines -- Mermaid post-processing and presentation stay coordinated */
   import { onMount, tick, untrack } from 'svelte';
   import { createProgressiveRenderQueue } from './progressive-render-queue';
+  import { createMermaidRevealTracker, finishMermaidReveal } from './mermaid-reveal';
   import { createLogger } from '$lib/utils/client-logger';
   import { faCode, faExpand } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
@@ -27,7 +28,7 @@
     runSerializedMermaidRender,
   } from './mermaid-theme';
   import { splitSemanticLabel } from '$lib/components/diagrams/diagram-label-wrap';
-  import { prefersReducedMotion } from '$lib/utils/reduced-motion';
+  import { onReducedMotionChange, prefersReducedMotion } from '$lib/utils/reduced-motion';
   import type { SvgBounds } from './mermaid-state-layout';
   import {
     snapshotFlowchartClusterMembership,
@@ -103,6 +104,7 @@
   interface Props {
     code: string;
     isStreaming?: boolean;
+    revealNewContent?: boolean;
     className?: string;
     showExpandButton?: boolean;
     showSourceButton?: boolean;
@@ -114,6 +116,7 @@
   let {
     code,
     isStreaming = false,
+    revealNewContent = false,
     className = '',
     showExpandButton = true,
     showSourceButton = true,
@@ -141,6 +144,7 @@
   let fitGeneration = 0;
   let settledGeneration = $state(0);
   let decodedSource = $derived(decodeHtmlEntities(decodeBase64(code)));
+  const revealTracker = createMermaidRevealTracker();
   const MermaidActorIcon = getPhosphorIconComponent(faUser);
 
   function readMermaidThemeSignature(): string {
@@ -557,6 +561,9 @@ ${source}`;
         .querySelectorAll(':scope > line, :scope > circle')
         .forEach((element) => element.remove());
       const icon = template.cloneNode(true) as SVGSVGElement;
+      if (head.hasAttribute('data-mermaid-reveal')) {
+        icon.setAttribute('data-mermaid-reveal', 'shape');
+      }
       icon.classList.add('mermaid-actor-user-icon');
       icon.setAttribute('x', String(centerX - 15));
       icon.setAttribute('y', '1');
@@ -1675,15 +1682,26 @@ ${source}`;
         () => generation === renderGeneration && isCurrent(),
       );
       if (!renderResult || generation !== renderGeneration || !isCurrent()) return;
-      renderedSvg = renderResult.svg;
+      renderedSvg = revealNewContent
+        ? revealTracker.prepare(renderResult.svg, decodedCode, streaming && !prefersReducedMotion())
+        : renderResult.svg;
       error = null;
-      const fitCompleted = await fitRenderedSvg(
-        generation,
-        renderCode,
-        renderResult.clusterMembership,
-        renderResult.stateDiagram,
-      );
-      if (fitCompleted && generation === renderGeneration) settledGeneration = generation;
+      try {
+        const fitCompleted = await fitRenderedSvg(
+          generation,
+          renderCode,
+          renderResult.clusterMembership,
+          renderResult.stateDiagram,
+        );
+        if (fitCompleted && generation === renderGeneration) settledGeneration = generation;
+      } finally {
+        // Layout can decline unfamiliar SVGs; none may remain paused or hidden.
+        if (generation === renderGeneration) {
+          rendererElement
+            ?.querySelector('.mermaid-svg svg[data-mermaid-reveal-ready]')
+            ?.setAttribute('data-mermaid-reveal-ready', 'true');
+        }
+      }
     } catch (err) {
       if (generation !== renderGeneration || !isCurrent()) return;
       if (streaming) {
@@ -1713,8 +1731,10 @@ ${source}`;
       document.activeElement.blur();
     }
 
-    fullscreenSvg =
-      rendererElement?.querySelector<SVGSVGElement>('.mermaid-svg svg')?.outerHTML ?? renderedSvg;
+    const svg = rendererElement?.querySelector<SVGSVGElement>('.mermaid-svg svg');
+    const snapshot = svg?.cloneNode(true) as SVGSVGElement | undefined;
+    if (snapshot) finishMermaidReveal(snapshot);
+    fullscreenSvg = snapshot?.outerHTML ?? renderedSvg;
     isFullscreen = true;
   }
 
@@ -1746,6 +1766,9 @@ ${source}`;
 
   onMount(() => {
     mounted = true;
+    const stopWatchingMotion = onReducedMotionChange((reduced) => {
+      if (reduced && rendererElement) finishMermaidReveal(rendererElement);
+    });
     let observedWidth: number | undefined;
     const resizeObserver =
       typeof ResizeObserver === 'undefined'
@@ -1777,12 +1800,19 @@ ${source}`;
       attributeFilter: ['class', 'style'],
     });
     return () => {
+      stopWatchingMotion();
       observer.disconnect();
       resizeObserver?.disconnect();
       if (terminalGapFrame !== undefined) cancelAnimationFrame(terminalGapFrame);
       progressiveRender.dispose();
       renderGeneration += 1;
     };
+  });
+
+  $effect(() => {
+    if ((!isStreaming || !revealNewContent) && rendererElement) {
+      finishMermaidReveal(rendererElement);
+    }
   });
 
   // Re-render when code changes (after mount)
@@ -1815,6 +1845,7 @@ ${source}`;
 <div
   class="mermaid-renderer {className}"
   class:has-diagram={Boolean(renderedSvg)}
+  class:revealing={revealNewContent && isStreaming}
   data-render-generation={activeGeneration}
   data-render-settled-generation={settledGeneration}
   data-render-settled={activeGeneration > 0 && settledGeneration === activeGeneration}
@@ -1992,6 +2023,30 @@ ${source}`;
     max-width: 100%;
     min-width: var(--mermaid-readable-width, 0);
     height: auto;
+  }
+
+  .revealing .mermaid-svg :global([data-mermaid-reveal]) {
+    animation: mermaid-reveal var(--spring-moderate) var(--spring-moderate-ease) backwards;
+  }
+
+  .revealing .mermaid-svg :global([data-mermaid-reveal='label']) {
+    animation-delay: var(--spring-fast);
+  }
+
+  .revealing .mermaid-svg :global(svg[data-mermaid-reveal-ready='false'] [data-mermaid-reveal]) {
+    animation-play-state: paused;
+  }
+
+  @keyframes mermaid-reveal {
+    from {
+      opacity: 0;
+    }
+  }
+
+  @container style(--motion-reduced: 1) {
+    .revealing .mermaid-svg :global([data-mermaid-reveal]) {
+      animation: none;
+    }
   }
 
   .mermaid-actions {
