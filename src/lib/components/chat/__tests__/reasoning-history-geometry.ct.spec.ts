@@ -172,6 +172,79 @@ test('search reveal restores automatic state but preserves manual disclosure sta
 });
 
 for (const renderer of rendererIds) {
+  test(`preserves inline prose and paired results when a group closes in ${renderer}`, async ({
+    mount,
+    page,
+  }) => {
+    await page.emulateMedia({ reducedMotion: 'reduce' });
+    const titles = [
+      'Updating the watcher spec',
+      'Updating the PR notes',
+      'Preparing PR note updates',
+    ];
+    const paragraph = 'The test-fixture fix is pushed. The watcher can follow the new CI run.';
+    const result = 'The inspected source is unchanged.';
+    const content = [
+      {
+        type: 'tool_use' as const,
+        id: 'boundary:tool',
+        toolCallId: 'boundary:call',
+        name: 'view',
+        input: { path: 'src/example.ts' },
+      },
+      {
+        type: 'thinking' as const,
+        id: 'boundary:reasoning',
+        text: titles.map((t) => `**${t}**`).join('\n\n'),
+      },
+      { type: 'text' as const, id: 'boundary:open', text: '<group:Prepping>' },
+      {
+        type: 'tool_result' as const,
+        id: 'boundary:result',
+        tool_use_id: 'boundary:call',
+        output: result,
+      },
+      { type: 'text' as const, id: 'boundary:prose', text: paragraph },
+    ];
+    const props = { renderer, regressionContent: content, phase: 'live' as const };
+    let component = await mount(ReasoningHistoryGeometryHost, { props });
+    const verify = async () => {
+      const fixture = component.getByTestId('compact-reasoning-fixture');
+      await assertContentOnceInOrder(fixture, [...titles, paragraph]);
+      await expect(fixture.locator('[data-message-content-block="tool_result"]')).toHaveCount(0);
+      await expect(fixture.getByTestId('reasoning-disclosure')).toHaveCount(0);
+      const tool = fixture.getByTestId('tool-call-disclosure');
+      await tool.focus();
+      await page.keyboard.press('Enter');
+      await expect(tool).toHaveAttribute('aria-expanded', 'true');
+      await expect(fixture.getByText(result, { exact: true })).toBeVisible();
+      await page.keyboard.press('Space');
+      await expect(tool).toHaveAttribute('aria-expanded', 'false');
+      await expect(tool).toBeFocused();
+      await expect(fixture.getByText(result, { exact: true })).toHaveCount(0);
+    };
+    await openReasoning(component.getByTestId('compact-reasoning-fixture'));
+    await verify();
+    const closed = {
+      ...props,
+      regressionContent: [
+        ...content,
+        { type: 'text' as const, id: 'boundary:close', text: '</group:Prepping>' },
+      ],
+    };
+    await component.update({ props: closed });
+    await expect(component.getByTestId('response-group-disclosure')).toHaveCount(0);
+    await verify();
+    await component.update({ props: { ...closed, phase: 'completed' } });
+    await verify();
+    await component.unmount();
+    component = await mount(ReasoningHistoryGeometryHost, {
+      props: { ...props, phase: 'completed' },
+    });
+    await expect(component.getByTestId('response-group-disclosure')).toHaveCount(0);
+    await verify();
+  });
+
   test(`preserves titles and tools through group lifecycle in ${renderer}`, async ({
     mount,
     page,
