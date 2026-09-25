@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { CHAT_OPERATIONAL_ICON_CLASS } from './operational-disclosure-row';
   /**
    * AutomatedWakeCardHeader
    *
@@ -96,8 +97,8 @@
   <span class={SUBSCRIPTION_LEADING_COLUMN_CLASS} aria-hidden="true">
     <Fa
       icon={presentation.kind === 'hook' ? faBolt : faCodePullRequest}
-      size={14}
-      class="h-3.5! w-3.5! shrink-0 {SUBSCRIPTION_ICON_CLASS}"
+      size={16}
+      class="{CHAT_OPERATIONAL_ICON_CLASS} {SUBSCRIPTION_ICON_CLASS}"
     />
   </span>
   <span

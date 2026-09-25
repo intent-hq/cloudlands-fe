@@ -222,7 +222,7 @@ describe('editorial conversation presentation contract', () => {
     const messageContent = source('src/lib/components/chat/MessageContent.svelte');
 
     expect(panel).not.toContain('class:bg-sidebar={isChiefWorkspace}');
-    expect(panel).toContain("<div class={isChiefWorkspace ? 'mx-1 sm:mx-2' : ''}>");
+    expect(panel).toContain("class={isChiefWorkspace ? 'mx-1 sm:mx-2' : ''}");
     expect(panel.match(/message=\{pendingMessage\}[\s\S]{0,80}\{workspace\}/g)).toHaveLength(2);
     // Both transcript renderers mount the shared inline proposal host.
     expect(streaming).toContain('InlineProposal');

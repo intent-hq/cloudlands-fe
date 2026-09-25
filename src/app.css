@@ -52,6 +52,29 @@
    follows the same single source of truth as the hand-written component CSS. */
 @custom-variant motion-reduce (@container style(--motion-reduced: 1));
 
+/* Keep the 12px inset where the lane has room, without moving the tool column. */
+@utility subscription-card-outward-bleed {
+  --subscription-card-inline-bleed: min(
+    var(--subscription-card-max-bleed, 0.75rem),
+    max(0px, calc(0.75rem - var(--chat-operational-row-inline-padding, 0.5rem)))
+  );
+  --subscription-card-inline-inset: calc(
+    var(--chat-operational-row-inline-padding, 0.5rem) + var(--subscription-card-inline-bleed)
+  );
+  margin-inline: calc(-1 * var(--subscription-card-inline-bleed)) !important;
+  width: calc(100% + 2 * var(--subscription-card-inline-bleed)) !important;
+  max-width: none !important;
+}
+
+@utility subscription-card-row-inset {
+  padding-inline: var(--subscription-card-inline-inset, 0.75rem) !important;
+}
+
+@utility subscription-card-body-inset {
+  padding-inline-start: calc(var(--subscription-card-inline-inset, 0.75rem) + 1.75rem);
+  padding-inline-end: var(--subscription-card-inline-inset, 0.75rem);
+}
+
 :root {
   /* Canonical navigation-row geometry. Product rows select compact or regular density. */
   --row-height-compact: 1.75rem;

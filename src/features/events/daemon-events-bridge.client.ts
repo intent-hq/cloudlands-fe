@@ -237,6 +237,7 @@ import {
   removeAgentFailure,
 } from '$features/agent/agent-failure-registry';
 import {
+  dismissAgentAttentionToast,
   showAgentAttentionToast,
   showWorkspaceAccessRemovedToast,
   showWorkspaceAutoUnarchiveToast,
@@ -1471,6 +1472,11 @@ function handleAgentUpdatedEvent(event: WorkspaceEvent): void {
   if (!data) return;
   const agentId = data.agentId;
   if (typeof agentId !== 'string' || agentId.length === 0) return;
+  if ((event.type as string) === 'agent:updated' && data.attentionRequestCleared === true) {
+    // The daemon owns request clearing; consume it even for an unhydrated agent
+    // in another workspace, and invalidate any toast still loading its imports.
+    void dismissAgentAttentionToast(agentId);
+  }
   if (pendingQuestionMarkersFromWorkspaceEvent(event) !== null) {
     notePendingQuestionMarkerProjection(agentId);
   }

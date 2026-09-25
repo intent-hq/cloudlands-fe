@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { CHAT_OPERATIONAL_ICON_CLASS } from './operational-disclosure-row';
   /**
    * DelegationGroupSection Component
    *
@@ -106,7 +107,7 @@
       type="button"
       variant="plain"
       labelClass="type-body"
-      class="{SUBSCRIPTION_LEADING_CONTENT_CLASS} type-body flex-1 cursor-pointer rounded border-none bg-transparent p-0 text-left font-[inherit] text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+      class="{SUBSCRIPTION_LEADING_CONTENT_CLASS} type-body flex-1 cursor-pointer justify-start rounded border-none bg-transparent p-0 text-left font-[inherit] text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
       data-testid="group-summary-toggle"
       aria-expanded={!isCollapsed}
       aria-controls={agentListId}
@@ -115,14 +116,22 @@
     >
       {#if deliveryPending}
         <span class={SUBSCRIPTION_LEADING_COLUMN_CLASS}>
-          <Fa icon={faTriangleExclamation} size={14} class="h-3.5! w-3.5! text-warning" />
+          <Fa
+            icon={faTriangleExclamation}
+            size={16}
+            class="{CHAT_OPERATIONAL_ICON_CLASS} text-warning"
+          />
         </span>
         <span class="min-w-0 truncate whitespace-nowrap" data-testid="group-delivery-pending">
           {m.chat_agentSubscriptions_deliveryPending_label()}
         </span>
       {:else}
         <span class={SUBSCRIPTION_LEADING_COLUMN_CLASS}>
-          <Fa icon={faHourglass} size={14} class="h-3.5! w-3.5! {SUBSCRIPTION_ICON_CLASS}" />
+          <Fa
+            icon={faHourglass}
+            size={16}
+            class="{CHAT_OPERATIONAL_ICON_CLASS} {SUBSCRIPTION_ICON_CLASS}"
+          />
         </span>
         <span class="min-w-0 truncate whitespace-nowrap" data-testid="group-summary-title">
           {remainingCount === 0
