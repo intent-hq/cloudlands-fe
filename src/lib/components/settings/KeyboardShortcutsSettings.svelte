@@ -106,7 +106,7 @@
                 <dd class="relative min-w-0 mr-4">
                   <Input
                     id={`shortcut-${definition.id}`}
-                    class="h-7 w-28 bg-transparent px-2 type-body read-only:text-foreground read-only:hover:border-input focus-visible:ring-2 focus-visible:ring-ring/40 {isFixed
+                    class="h-7 w-28 bg-transparent px-2 type-body read-only:text-foreground read-only:hover:border-input focus-visible:outline focus-visible:outline-1 focus-visible:outline-focus-ring focus-visible:-outline-offset-2 {isFixed
                       ? 'read-only:bg-muted/20'
                       : 'read-only:bg-transparent'}"
                     type="text"
