@@ -6,10 +6,10 @@
 // that means the gate has gone blind to unused files (cloudlands-fe#2695 found three such
 // masks that passed silently for months). Otherwise the canary rows are dropped and the
 // remaining issues are reported with knip's own exit semantics (error-level rules only).
-// The canary directory is removed on every exit path, including SIGINT/SIGTERM, and is
-// excluded in tsconfig.json so a concurrent type-check never sees it (TS6053 otherwise).
-import { spawnSync } from 'node:child_process';
-import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+// A per-worktree lock owns the canaries from creation through scan completion and cleanup.
+// They are excluded in tsconfig.json so a concurrent type-check never sees them (TS6053).
+import { execFile } from 'node:child_process';
+import { mkdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -25,13 +25,19 @@ import {
   renderIssues,
   stripCanaryIssues,
 } from './check-dead-code-lib.mjs';
+import { acquireVerificationLock, defaultLockPath, lockTimeout } from './verification-lock.mjs';
 
 // CHECK_DEAD_CODE_ROOT is test-only: it lets the CLI regression tests run the real script
 // against a throwaway fixture root instead of the live checkout.
-const REPO_ROOT = process.env.CHECK_DEAD_CODE_ROOT
-  ? path.resolve(process.env.CHECK_DEAD_CODE_ROOT)
-  : path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const REPO_ROOT = realpathSync(
+  process.env.CHECK_DEAD_CODE_ROOT ??
+    path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..'),
+);
 const canaryDir = path.join(REPO_ROOT, CANARY_DIR);
+const lockKey = `dead-code:${REPO_ROOT}`;
+let releaseLock;
+let knipChild;
+let interruptedExitCode;
 
 // knip's exports map does not expose package.json; walk up from its main entry
 // (<pkg>/dist/index.js) to the package root and read `bin.knip` from there.
@@ -54,34 +60,67 @@ function writeCanary() {
   }
 }
 
+function cleanup() {
+  // A cancelled waiter has no ownership of the live scanner's canaries.
+  if (!releaseLock) return;
+  try {
+    removeCanary();
+  } finally {
+    releaseLock();
+    releaseLock = undefined;
+  }
+}
+
 for (const signal of ['SIGINT', 'SIGTERM', 'SIGHUP']) {
   process.on(signal, () => {
-    removeCanary();
-    process.exit(128 + (signal === 'SIGINT' ? 2 : signal === 'SIGTERM' ? 15 : 1));
+    interruptedExitCode = 128 + (signal === 'SIGINT' ? 2 : signal === 'SIGTERM' ? 15 : 1);
+    if (knipChild) {
+      // Keep ownership until the scanner has stopped using the files.
+      knipChild.kill(signal);
+    } else {
+      process.exit(interruptedExitCode);
+    }
   });
 }
+process.on('exit', cleanup);
 
 function runKnip() {
-  const result = spawnSync(process.execPath, [resolveKnipBin(), '--reporter', 'json'], {
-    cwd: REPO_ROOT,
-    encoding: 'utf8',
-    stdio: ['ignore', 'pipe', 'inherit'],
-    maxBuffer: 256 * 1024 * 1024,
+  return new Promise((resolve, reject) => {
+    knipChild = execFile(
+      process.execPath,
+      [resolveKnipBin(), '--reporter', 'json'],
+      {
+        cwd: REPO_ROOT,
+        encoding: 'utf8',
+        maxBuffer: 256 * 1024 * 1024,
+      },
+      (error, stdout) => {
+        knipChild = undefined;
+        if (error && typeof error.code !== 'number' && !error.signal) reject(error);
+        else resolve({ stdout, status: error?.code ?? 0, signal: error?.signal });
+      },
+    );
+    knipChild.stdin.end();
+    knipChild.stderr.pipe(process.stderr);
   });
-  if (result.error) throw result.error;
-  return result;
 }
 
-function main() {
+async function main() {
   const rules = parseKnipRules(readFileSync(path.join(REPO_ROOT, 'knip.jsonc'), 'utf8'));
+  releaseLock = await acquireVerificationLock({
+    lockPath: defaultLockPath(lockKey),
+    timeoutMs: lockTimeout(lockKey, process.env.VERIFY_CHANGED_LOCK_TIMEOUT_MS),
+    cwd: REPO_ROOT,
+  });
   let result;
   try {
     writeCanary();
-    result = runKnip();
+    result = await runKnip();
   } finally {
-    removeCanary();
+    cleanup();
   }
 
+  if (interruptedExitCode) return interruptedExitCode;
   if (result.signal) {
     console.error(`knip was killed by ${result.signal}`);
     return 1;
@@ -105,4 +144,4 @@ function main() {
   return decideExitCode(remaining, rules);
 }
 
-process.exitCode = main();
+process.exitCode = await main();
