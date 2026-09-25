@@ -353,7 +353,7 @@ function literalProperty(object, name) {
 }
 
 function vitestExclusions(root, configFile = 'vitest.config.ts') {
-  const unknown = { patterns: [], complete: false };
+  const unknown = { patterns: [], exclusionsKnown: false, complete: false };
   const configPath = resolve(root, configFile);
   if (!existsSync(configPath)) return unknown;
   const source = ts.createSourceFile(
@@ -417,7 +417,7 @@ function vitestExclusions(root, configFile = 'vitest.config.ts') {
   const exclude = literalProperty(test, 'exclude');
   if (exclude === null || (exclude && !ts.isArrayLiteralExpression(exclude))) return unknown;
   // Discovery and execution filters need a real config evaluator; keep the scan then.
-  let complete =
+  const complete =
     literalProperty(config, 'root') === undefined &&
     [
       'include',
@@ -437,6 +437,7 @@ function vitestExclusions(root, configFile = 'vitest.config.ts') {
       'mergeReports',
     ].every((name) => literalProperty(test, name) === undefined);
   const patterns = [];
+  let exclusionsKnown = true;
   for (const element of exclude?.elements ?? []) {
     if (ts.isStringLiteral(element)) {
       patterns.push(element.text);
@@ -466,13 +467,13 @@ function vitestExclusions(root, configFile = 'vitest.config.ts') {
       existsSync(resolve(root, '.gitignore'))
     ) {
       patterns.push(...gitignoreDirExcludes(resolve(root, '.gitignore')));
-    } else complete = false;
+    } else exclusionsKnown = false;
   }
-  return { patterns, complete };
+  return { patterns, exclusionsKnown, complete: complete && exclusionsKnown };
 }
 
-export function vitestExcludePatterns(root = REPO_ROOT, config = 'vitest.config.ts') {
-  return vitestExclusions(root, config).patterns;
+export function vitestExcludePatterns(root = REPO_ROOT) {
+  return vitestExclusions(root).patterns;
 }
 
 function snapshotOwner(file, root) {
@@ -489,12 +490,16 @@ function snapshotOwner(file, root) {
     return null;
   }
 
-  const exclude =
+  const exclusions =
     runner === 'vitest'
-      ? vitestExcludePatterns(root)
+      ? vitestExclusions(root)
       : runner === 'integration'
-        ? vitestExcludePatterns(root, 'tests/integration/vitest.integration.config.ts')
-        : ['**/node_modules/**'];
+        ? vitestExclusions(root, 'tests/integration/vitest.integration.config.ts')
+        : { patterns: ['**/node_modules/**'], exclusionsKnown: true };
+  // Unknown excludes must not look like an empty policy. Integration's supported
+  // root/include settings do not make its literal exclusion policy unknown.
+  if (!exclusions.exclusionsKnown) return null;
+  const exclude = exclusions.patterns;
   const gitignore = resolve(root, '.gitignore');
   // Only the unit config derives exclusions from .gitignore. The integration
   // config has its own excludes; both Playwright configs set an explicit testDir.
