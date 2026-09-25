@@ -1178,13 +1178,18 @@ jobs:
   # check_root_playwright accepts a pull_request skip only via that output
   # or fast_path. Before this job the suite had no automated path at all.
   test-playwright:
-    name: Playwright (root)
+    name: Playwright (root shard ${{ matrix.shard }}/2)
     needs: [route, release-fast-path]
     if: ${{ !cancelled() && (github.event_name == 'merge_group' || needs.release-fast-path.outputs.root_playwright_required == 'true') && needs.route.result == 'success' && needs.release-fast-path.outputs.fast_path != 'true' }}
     runs-on: ${{ fromJSON(needs.route.outputs.linux_labels) }}
-    # The single-worker suite exhausted a 30-minute job budget near completion.
-    # Allow setup and suite headroom within the 60-minute queue budget (intent#5843).
+    # Split the full suite across two single-worker jobs: the serial run
+    # exhausted even the 45-minute budget (intent#5843). Keep both results
+    # for diagnosis; CI Gate requires the complete matrix to succeed.
     timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2]
     permissions:
       contents: read
     env:
@@ -1283,14 +1288,14 @@ jobs:
         # logs; html feeds the failure artifact below and never auto-opens.
         env:
           PLAYWRIGHT_HTML_OPEN: never
-        run: pnpm run test:playwright --project=chromium --workers=1 --reporter=list,html
+        run: pnpm run test:playwright --project=chromium --workers=1 --shard=${{ matrix.shard }}/2 --reporter=list,html
       - name: Upload playwright report
         # Also on cancellation, so a timeout overrun still leaves the report
         # and traces behind for diagnosis (same as test-ct).
         if: failure() || cancelled()
         uses: actions/upload-artifact@v7
         with:
-          name: playwright-root-report
+          name: playwright-root-report-${{ matrix.shard }}-of-2
           path: |
             playwright-report/
             test-results/

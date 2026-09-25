@@ -65,6 +65,14 @@ function stepRunBlock(lines: string[], stepName: string): string {
   return body.join('\n');
 }
 
+function stepLines(lines: string[], stepName: string): string[] {
+  const start = lines.indexOf(`      - name: ${stepName}`);
+  if (start === -1) throw new Error(`step ${stepName} not found`);
+  const rest = lines.slice(start + 1);
+  const end = rest.findIndex((text) => text.startsWith('      - '));
+  return rest.slice(0, end === -1 ? rest.length : end);
+}
+
 const temporaryPaths: string[] = [];
 afterEach(() => {
   for (const path of temporaryPaths.splice(0)) rmSync(path, { recursive: true, force: true });
@@ -475,6 +483,56 @@ describe('test-playwright runs on pull_request when root_playwright_required is 
   });
 });
 
+describe('root Playwright shards retain complete coverage and failure reports', () => {
+  it('runs every native shard once with one worker and no test filters', () => {
+    const matrix = testPlaywright.find((text) => text.startsWith('        shard:'));
+    const shards: number[] = JSON.parse(matrix?.split('shard:')[1] ?? '[]');
+    expect(shards).toEqual([1, 2]);
+    const run = stepLines(testPlaywright, 'Root Playwright tests')
+      .find((text) => text.startsWith('        run: '))!
+      .slice('        run: '.length);
+
+    for (const shard of shards) {
+      const command = run.replaceAll('${{ matrix.shard }}', String(shard));
+      // Execute the workflow command with only the package-manager boundary
+      // replaced: extra filters or a missing shard must not silently drop tests.
+      const result = bash(`pnpm() { printf '%s\\n' "$@"; }\n${command}`, {}, tmpdir());
+      expect(result.status, result.stderr).toBe(0);
+      expect(result.stdout.trim().split('\n')).toEqual([
+        'run',
+        'test:playwright',
+        '--project=chromium',
+        '--workers=1',
+        `--shard=${shard}/2`,
+        '--reporter=list,html',
+      ]);
+    }
+  });
+
+  it('lets both shards finish and keeps failures mandatory within the existing budget', () => {
+    expect(testPlaywright).toContain('      fail-fast: false');
+    expect(testPlaywright.some((text) => /^\s*continue-on-error:/.test(text))).toBe(false);
+    expect(jobField(testPlaywright, 'timeout-minutes')).toBe('45');
+    expect(jobField(gate, 'if')).toBe('always()');
+  });
+
+  it('uploads distinct reports on failure or cancellation with unchanged retention', () => {
+    const report = stepLines(testPlaywright, 'Upload playwright report');
+    expect(report).toContain('        if: failure() || cancelled()');
+    expect(report).toContain('          retention-days: 7');
+    expect(report).toContain('            playwright-report/');
+    expect(report).toContain('            test-results/');
+    const name = report
+      .find((text) => text.startsWith('          name: '))!
+      .trim()
+      .slice(6);
+    expect([1, 2].map((shard) => name.replaceAll('${{ matrix.shard }}', String(shard)))).toEqual([
+      'playwright-root-report-1-of-2',
+      'playwright-root-report-2-of-2',
+    ]);
+  });
+});
+
 describe('CI Gate accepts a test-ct skip only through an output', () => {
   const script = stepRunBlock(gate, 'Check results')
     .replaceAll('${{ github.event_name }}', '"$EVENT_NAME"')
@@ -493,11 +551,12 @@ describe('CI Gate accepts a test-ct skip only through an output', () => {
     expect(env).toBe(`          CT_REQUIRED: \${{ ${CT_OUTPUT} }}`);
   });
 
-  it('depends on route', () => {
+  it('depends on route and the complete root Playwright matrix', () => {
     const start = gate.indexOf('    needs:');
     expect(start).toBeGreaterThan(-1);
     const end = gate.findIndex((text, index) => index > start && text.trim() === ']');
     expect(gate.slice(start, end).some((text) => text.trim() === 'route,')).toBe(true);
+    expect(gate.slice(start, end).some((text) => text.trim() === 'test-playwright,')).toBe(true);
   });
 
   // test-playwright (the root Playwright suite) mirrors test-ct's gating
@@ -528,6 +587,27 @@ describe('CI Gate accepts a test-ct skip only through an output', () => {
 
   const runGate = (env: Record<string, string>) =>
     bash(script, { ROOT_PLAYWRIGHT_REQUIRED: env.CT_REQUIRED ?? '', ...env }, tmpdir());
+
+  describe.each(['pull_request', 'merge_group'])('%s root matrix aggregate', (event) => {
+    it.each<[string, number]>([
+      ['success', 0],
+      ['failure', 1],
+      ['cancelled', 1],
+      ['', 1],
+    ])('result %j → exit %i', (aggregate, expected) => {
+      // GitHub supplies the matrix job conclusion through needs. Run the
+      // actual gate with all unrelated jobs green so only this result decides.
+      const result = runGate({
+        ...results('success', event),
+        RESULT_test_playwright: aggregate,
+        FAST_PATH: 'false',
+        CT_REQUIRED: 'true',
+        ROOT_PLAYWRIGHT_REQUIRED: 'true',
+      });
+      expect(result.status, result.stdout + result.stderr).toBe(expected);
+      if (expected !== 0) expect(result.stdout).toContain('test-playwright result');
+    });
+  });
 
   it.each<[string, Record<string, string>, number]>([
     [
