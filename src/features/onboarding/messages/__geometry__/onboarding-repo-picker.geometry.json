@@ -1,4 +1,7 @@
 {
+  "$meta": {
+    "generatedOn": "linux"
+  },
   "discovered": {
     "600": {
       "probes": {
@@ -16,34 +19,6 @@
           "x": 25,
           "y": 25
         },
-        "[data-message], h2, p, button, [role=\"combobox\"], [role=\"listbox\"], [role=\"status\"]#10": {
-          "fontSize": 15,
-          "fontWeight": 400,
-          "gap": 12,
-          "height": 45,
-          "lineHeight": 22,
-          "marginBottom": 0,
-          "marginTop": 0,
-          "paddingLeft": 12,
-          "paddingRight": 12,
-          "width": 550,
-          "x": 25,
-          "y": 340
-        },
-        "[data-message], h2, p, button, [role=\"combobox\"], [role=\"listbox\"], [role=\"status\"]#11": {
-          "fontSize": 15,
-          "fontWeight": 400,
-          "gap": 12,
-          "height": 44,
-          "lineHeight": 22,
-          "marginBottom": 0,
-          "marginTop": 0,
-          "paddingLeft": 12,
-          "paddingRight": 12,
-          "width": 550,
-          "x": 25,
-          "y": 385
-        },
         "[data-message], h2, p, button, [role=\"combobox\"], [role=\"listbox\"], [role=\"status\"]#2": {
           "fontSize": 16,
           "fontWeight": 300,
@@ -59,48 +34,6 @@
           "y": 77
         },
         "[data-message], h2, p, button, [role=\"combobox\"], [role=\"listbox\"], [role=\"status\"]#3": {
-          "fontSize": 14,
-          "fontWeight": 500,
-          "gap": 0,
-          "height": 40,
-          "lineHeight": 20,
-          "marginBottom": 0,
-          "marginTop": 0,
-          "paddingLeft": 12,
-          "paddingRight": 12,
-          "width": 180,
-          "x": 30,
-          "y": 128
-        },
-        "[data-message], h2, p, button, [role=\"combobox\"], [role=\"listbox\"], [role=\"status\"]#4": {
-          "fontSize": 14,
-          "fontWeight": 400,
-          "gap": 0,
-          "height": 40,
-          "lineHeight": 20,
-          "marginBottom": 0,
-          "marginTop": 0,
-          "paddingLeft": 12,
-          "paddingRight": 12,
-          "width": 180,
-          "x": 210,
-          "y": 128
-        },
-        "[data-message], h2, p, button, [role=\"combobox\"], [role=\"listbox\"], [role=\"status\"]#5": {
-          "fontSize": 14,
-          "fontWeight": 400,
-          "gap": 0,
-          "height": 40,
-          "lineHeight": 20,
-          "marginBottom": 0,
-          "marginTop": 0,
-          "paddingLeft": 12,
-          "paddingRight": 12,
-          "width": 180,
-          "x": 390,
-          "y": 128
-        },
-        "[data-message], h2, p, button, [role=\"combobox\"], [role=\"listbox\"], [role=\"status\"]#6": {
           "fontSize": 16,
           "fontWeight": 400,
           "gap": 0,
@@ -112,27 +45,13 @@
           "paddingRight": 0,
           "width": 550,
           "x": 25,
-          "y": 193
+          "y": 167
         },
-        "[data-message], h2, p, button, [role=\"combobox\"], [role=\"listbox\"], [role=\"status\"]#7": {
+        "[data-message], h2, p, button, [role=\"combobox\"], [role=\"listbox\"], [role=\"status\"]#4": {
           "fontSize": 15,
           "fontWeight": 400,
           "gap": 0,
-          "height": 25.13,
-          "lineHeight": 22,
-          "marginBottom": 0,
-          "marginTop": 0,
-          "paddingLeft": 6,
-          "paddingRight": 6,
-          "width": 25.13,
-          "x": 541.88,
-          "y": 249.44
-        },
-        "[data-message], h2, p, button, [role=\"combobox\"], [role=\"listbox\"], [role=\"status\"]#8": {
-          "fontSize": 15,
-          "fontWeight": 400,
-          "gap": 0,
-          "height": 134,
+          "height": 96,
           "lineHeight": 22,
           "marginBottom": 0,
           "marginTop": 0,
@@ -140,27 +59,13 @@
           "paddingRight": 4,
           "width": 558,
           "x": 21,
-          "y": 295
-        },
-        "[data-message], h2, p, button, [role=\"combobox\"], [role=\"listbox\"], [role=\"status\"]#9": {
-          "fontSize": 15,
-          "fontWeight": 400,
-          "gap": 12,
-          "height": 45,
-          "lineHeight": 22,
-          "marginBottom": 0,
-          "marginTop": 0,
-          "paddingLeft": 12,
-          "paddingRight": 12,
-          "width": 550,
-          "x": 25,
-          "y": 295
+          "y": 269
         },
         "data-message": {
           "fontSize": 15,
           "fontWeight": 400,
           "gap": 0,
-          "height": 404,
+          "height": 340,
           "lineHeight": 22,
           "marginBottom": 0,
           "marginTop": 0,
@@ -170,23 +75,121 @@
           "x": 25,
           "y": 25
         },
+        "data-size=default": {
+          "fontSize": 13,
+          "fontWeight": 400,
+          "gap": 6,
+          "height": 32,
+          "lineHeight": 18,
+          "marginBottom": 0,
+          "marginTop": 0,
+          "paddingLeft": 12,
+          "paddingRight": 12,
+          "width": 182,
+          "x": 25,
+          "y": 123
+        },
+        "data-size=default#2": {
+          "fontSize": 13,
+          "fontWeight": 400,
+          "gap": 6,
+          "height": 32,
+          "lineHeight": 18,
+          "marginBottom": 0,
+          "marginTop": 0,
+          "paddingLeft": 12,
+          "paddingRight": 12,
+          "width": 182,
+          "x": 209,
+          "y": 123
+        },
+        "data-size=default#3": {
+          "fontSize": 13,
+          "fontWeight": 400,
+          "gap": 6,
+          "height": 32,
+          "lineHeight": 18,
+          "marginBottom": 0,
+          "marginTop": 0,
+          "paddingLeft": 12,
+          "paddingRight": 12,
+          "width": 182,
+          "x": 393,
+          "y": 123
+        },
+        "data-slot=button": {
+          "fontSize": 13,
+          "fontWeight": 400,
+          "gap": 6,
+          "height": 28,
+          "lineHeight": 18,
+          "marginBottom": 0,
+          "marginTop": 0,
+          "paddingLeft": 0,
+          "paddingRight": 0,
+          "width": 28,
+          "x": 539,
+          "y": 222
+        },
+        "data-slot=button#2": {
+          "fontSize": 13,
+          "fontWeight": 400,
+          "gap": 12,
+          "height": 32,
+          "lineHeight": 18,
+          "marginBottom": 0,
+          "marginTop": 0,
+          "paddingLeft": 12,
+          "paddingRight": 12,
+          "width": 550,
+          "x": 25,
+          "y": 269
+        },
+        "data-slot=button#3": {
+          "fontSize": 13,
+          "fontWeight": 400,
+          "gap": 12,
+          "height": 32,
+          "lineHeight": 18,
+          "marginBottom": 0,
+          "marginTop": 0,
+          "paddingLeft": 12,
+          "paddingRight": 12,
+          "width": 550,
+          "x": 25,
+          "y": 301
+        },
+        "data-slot=button#4": {
+          "fontSize": 13,
+          "fontWeight": 400,
+          "gap": 12,
+          "height": 32,
+          "lineHeight": 18,
+          "marginBottom": 0,
+          "marginTop": 0,
+          "paddingLeft": 12,
+          "paddingRight": 12,
+          "width": 550,
+          "x": 25,
+          "y": 333
+        },
         "data-slot=input": {
-          "fontSize": 15,
+          "fontSize": 13,
           "fontWeight": 400,
           "gap": 0,
           "height": 42,
-          "lineHeight": 22,
+          "lineHeight": 18,
           "marginBottom": 0,
           "marginTop": 0,
           "paddingLeft": 12,
           "paddingRight": 44,
           "width": 550,
           "x": 25,
-          "y": 241
+          "y": 215
         }
       },
       "root": {
-        "height": 454,
+        "height": 390,
         "width": 600
       }
     }
@@ -223,48 +226,6 @@
           "y": 77
         },
         "[data-message], h2, p, button, [role=\"combobox\"], [role=\"listbox\"], [role=\"status\"]#3": {
-          "fontSize": 14,
-          "fontWeight": 500,
-          "gap": 0,
-          "height": 40,
-          "lineHeight": 20,
-          "marginBottom": 0,
-          "marginTop": 0,
-          "paddingLeft": 12,
-          "paddingRight": 12,
-          "width": 180,
-          "x": 30,
-          "y": 128
-        },
-        "[data-message], h2, p, button, [role=\"combobox\"], [role=\"listbox\"], [role=\"status\"]#4": {
-          "fontSize": 14,
-          "fontWeight": 400,
-          "gap": 0,
-          "height": 40,
-          "lineHeight": 20,
-          "marginBottom": 0,
-          "marginTop": 0,
-          "paddingLeft": 12,
-          "paddingRight": 12,
-          "width": 180,
-          "x": 210,
-          "y": 128
-        },
-        "[data-message], h2, p, button, [role=\"combobox\"], [role=\"listbox\"], [role=\"status\"]#5": {
-          "fontSize": 14,
-          "fontWeight": 400,
-          "gap": 0,
-          "height": 40,
-          "lineHeight": 20,
-          "marginBottom": 0,
-          "marginTop": 0,
-          "paddingLeft": 12,
-          "paddingRight": 12,
-          "width": 180,
-          "x": 390,
-          "y": 128
-        },
-        "[data-message], h2, p, button, [role=\"combobox\"], [role=\"listbox\"], [role=\"status\"]#6": {
           "fontSize": 16,
           "fontWeight": 400,
           "gap": 0,
@@ -276,23 +237,9 @@
           "paddingRight": 0,
           "width": 550,
           "x": 25,
-          "y": 193
+          "y": 167
         },
-        "[data-message], h2, p, button, [role=\"combobox\"], [role=\"listbox\"], [role=\"status\"]#7": {
-          "fontSize": 15,
-          "fontWeight": 400,
-          "gap": 0,
-          "height": 25.13,
-          "lineHeight": 22,
-          "marginBottom": 0,
-          "marginTop": 0,
-          "paddingLeft": 6,
-          "paddingRight": 6,
-          "width": 25.13,
-          "x": 541.88,
-          "y": 249.44
-        },
-        "[data-message], h2, p, button, [role=\"combobox\"], [role=\"listbox\"], [role=\"status\"]#8": {
+        "[data-message], h2, p, button, [role=\"combobox\"], [role=\"listbox\"], [role=\"status\"]#4": {
           "fontSize": 15,
           "fontWeight": 400,
           "gap": 0,
@@ -304,9 +251,9 @@
           "paddingRight": 4,
           "width": 558,
           "x": 21,
-          "y": 295
+          "y": 269
         },
-        "[data-message], h2, p, button, [role=\"combobox\"], [role=\"listbox\"], [role=\"status\"]#9": {
+        "[data-message], h2, p, button, [role=\"combobox\"], [role=\"listbox\"], [role=\"status\"]#5": {
           "fontSize": 14,
           "fontWeight": 400,
           "gap": 0,
@@ -318,13 +265,13 @@
           "paddingRight": 0,
           "width": 550,
           "x": 25,
-          "y": 307
+          "y": 281
         },
         "data-message": {
           "fontSize": 15,
           "fontWeight": 400,
           "gap": 0,
-          "height": 334,
+          "height": 308,
           "lineHeight": 22,
           "marginBottom": 0,
           "marginTop": 0,
@@ -334,23 +281,79 @@
           "x": 25,
           "y": 25
         },
+        "data-size=default": {
+          "fontSize": 13,
+          "fontWeight": 400,
+          "gap": 6,
+          "height": 32,
+          "lineHeight": 18,
+          "marginBottom": 0,
+          "marginTop": 0,
+          "paddingLeft": 12,
+          "paddingRight": 12,
+          "width": 182,
+          "x": 25,
+          "y": 123
+        },
+        "data-size=default#2": {
+          "fontSize": 13,
+          "fontWeight": 400,
+          "gap": 6,
+          "height": 32,
+          "lineHeight": 18,
+          "marginBottom": 0,
+          "marginTop": 0,
+          "paddingLeft": 12,
+          "paddingRight": 12,
+          "width": 182,
+          "x": 209,
+          "y": 123
+        },
+        "data-size=default#3": {
+          "fontSize": 13,
+          "fontWeight": 400,
+          "gap": 6,
+          "height": 32,
+          "lineHeight": 18,
+          "marginBottom": 0,
+          "marginTop": 0,
+          "paddingLeft": 12,
+          "paddingRight": 12,
+          "width": 182,
+          "x": 393,
+          "y": 123
+        },
+        "data-slot=button": {
+          "fontSize": 13,
+          "fontWeight": 400,
+          "gap": 6,
+          "height": 28,
+          "lineHeight": 18,
+          "marginBottom": 0,
+          "marginTop": 0,
+          "paddingLeft": 0,
+          "paddingRight": 0,
+          "width": 28,
+          "x": 539,
+          "y": 222
+        },
         "data-slot=input": {
-          "fontSize": 15,
+          "fontSize": 13,
           "fontWeight": 400,
           "gap": 0,
           "height": 42,
-          "lineHeight": 22,
+          "lineHeight": 18,
           "marginBottom": 0,
           "marginTop": 0,
           "paddingLeft": 12,
           "paddingRight": 44,
           "width": 550,
           "x": 25,
-          "y": 241
+          "y": 215
         }
       },
       "root": {
-        "height": 384,
+        "height": 358,
         "width": 600
       }
     }
@@ -387,48 +390,6 @@
           "y": 77
         },
         "[data-message], h2, p, button, [role=\"combobox\"], [role=\"listbox\"], [role=\"status\"]#3": {
-          "fontSize": 14,
-          "fontWeight": 500,
-          "gap": 0,
-          "height": 40,
-          "lineHeight": 20,
-          "marginBottom": 0,
-          "marginTop": 0,
-          "paddingLeft": 12,
-          "paddingRight": 12,
-          "width": 180,
-          "x": 30,
-          "y": 128
-        },
-        "[data-message], h2, p, button, [role=\"combobox\"], [role=\"listbox\"], [role=\"status\"]#4": {
-          "fontSize": 14,
-          "fontWeight": 400,
-          "gap": 0,
-          "height": 40,
-          "lineHeight": 20,
-          "marginBottom": 0,
-          "marginTop": 0,
-          "paddingLeft": 12,
-          "paddingRight": 12,
-          "width": 180,
-          "x": 210,
-          "y": 128
-        },
-        "[data-message], h2, p, button, [role=\"combobox\"], [role=\"listbox\"], [role=\"status\"]#5": {
-          "fontSize": 14,
-          "fontWeight": 400,
-          "gap": 0,
-          "height": 40,
-          "lineHeight": 20,
-          "marginBottom": 0,
-          "marginTop": 0,
-          "paddingLeft": 12,
-          "paddingRight": 12,
-          "width": 180,
-          "x": 390,
-          "y": 128
-        },
-        "[data-message], h2, p, button, [role=\"combobox\"], [role=\"listbox\"], [role=\"status\"]#6": {
           "fontSize": 16,
           "fontWeight": 400,
           "gap": 0,
@@ -440,23 +401,9 @@
           "paddingRight": 0,
           "width": 550,
           "x": 25,
-          "y": 193
+          "y": 167
         },
-        "[data-message], h2, p, button, [role=\"combobox\"], [role=\"listbox\"], [role=\"status\"]#7": {
-          "fontSize": 15,
-          "fontWeight": 400,
-          "gap": 0,
-          "height": 25.13,
-          "lineHeight": 22,
-          "marginBottom": 0,
-          "marginTop": 0,
-          "paddingLeft": 6,
-          "paddingRight": 6,
-          "width": 25.13,
-          "x": 541.88,
-          "y": 249.44
-        },
-        "[data-message], h2, p, button, [role=\"combobox\"], [role=\"listbox\"], [role=\"status\"]#8": {
+        "[data-message], h2, p, button, [role=\"combobox\"], [role=\"listbox\"], [role=\"status\"]#4": {
           "fontSize": 15,
           "fontWeight": 400,
           "gap": 0,
@@ -468,13 +415,13 @@
           "paddingRight": 4,
           "width": 558,
           "x": 21,
-          "y": 295
+          "y": 269
         },
         "data-message": {
           "fontSize": 15,
           "fontWeight": 400,
           "gap": 0,
-          "height": 322,
+          "height": 296,
           "lineHeight": 22,
           "marginBottom": 0,
           "marginTop": 0,
@@ -484,23 +431,79 @@
           "x": 25,
           "y": 25
         },
+        "data-size=default": {
+          "fontSize": 13,
+          "fontWeight": 400,
+          "gap": 6,
+          "height": 32,
+          "lineHeight": 18,
+          "marginBottom": 0,
+          "marginTop": 0,
+          "paddingLeft": 12,
+          "paddingRight": 12,
+          "width": 182,
+          "x": 25,
+          "y": 123
+        },
+        "data-size=default#2": {
+          "fontSize": 13,
+          "fontWeight": 400,
+          "gap": 6,
+          "height": 32,
+          "lineHeight": 18,
+          "marginBottom": 0,
+          "marginTop": 0,
+          "paddingLeft": 12,
+          "paddingRight": 12,
+          "width": 182,
+          "x": 209,
+          "y": 123
+        },
+        "data-size=default#3": {
+          "fontSize": 13,
+          "fontWeight": 400,
+          "gap": 6,
+          "height": 32,
+          "lineHeight": 18,
+          "marginBottom": 0,
+          "marginTop": 0,
+          "paddingLeft": 12,
+          "paddingRight": 12,
+          "width": 182,
+          "x": 393,
+          "y": 123
+        },
+        "data-slot=button": {
+          "fontSize": 13,
+          "fontWeight": 400,
+          "gap": 6,
+          "height": 28,
+          "lineHeight": 18,
+          "marginBottom": 0,
+          "marginTop": 0,
+          "paddingLeft": 0,
+          "paddingRight": 0,
+          "width": 28,
+          "x": 539,
+          "y": 222
+        },
         "data-slot=input": {
-          "fontSize": 15,
+          "fontSize": 13,
           "fontWeight": 400,
           "gap": 0,
           "height": 42,
-          "lineHeight": 22,
+          "lineHeight": 18,
           "marginBottom": 0,
           "marginTop": 0,
           "paddingLeft": 12,
           "paddingRight": 44,
           "width": 550,
           "x": 25,
-          "y": 241
+          "y": 215
         }
       },
       "root": {
-        "height": 372,
+        "height": 346,
         "width": 600
       }
     }
@@ -537,48 +540,6 @@
           "y": 77
         },
         "[data-message], h2, p, button, [role=\"combobox\"], [role=\"listbox\"], [role=\"status\"]#3": {
-          "fontSize": 14,
-          "fontWeight": 500,
-          "gap": 0,
-          "height": 40,
-          "lineHeight": 20,
-          "marginBottom": 0,
-          "marginTop": 0,
-          "paddingLeft": 12,
-          "paddingRight": 12,
-          "width": 180,
-          "x": 30,
-          "y": 128
-        },
-        "[data-message], h2, p, button, [role=\"combobox\"], [role=\"listbox\"], [role=\"status\"]#4": {
-          "fontSize": 14,
-          "fontWeight": 400,
-          "gap": 0,
-          "height": 40,
-          "lineHeight": 20,
-          "marginBottom": 0,
-          "marginTop": 0,
-          "paddingLeft": 12,
-          "paddingRight": 12,
-          "width": 180,
-          "x": 210,
-          "y": 128
-        },
-        "[data-message], h2, p, button, [role=\"combobox\"], [role=\"listbox\"], [role=\"status\"]#5": {
-          "fontSize": 14,
-          "fontWeight": 400,
-          "gap": 0,
-          "height": 40,
-          "lineHeight": 20,
-          "marginBottom": 0,
-          "marginTop": 0,
-          "paddingLeft": 12,
-          "paddingRight": 12,
-          "width": 180,
-          "x": 390,
-          "y": 128
-        },
-        "[data-message], h2, p, button, [role=\"combobox\"], [role=\"listbox\"], [role=\"status\"]#6": {
           "fontSize": 16,
           "fontWeight": 400,
           "gap": 0,
@@ -590,23 +551,9 @@
           "paddingRight": 0,
           "width": 550,
           "x": 25,
-          "y": 193
+          "y": 167
         },
-        "[data-message], h2, p, button, [role=\"combobox\"], [role=\"listbox\"], [role=\"status\"]#7": {
-          "fontSize": 15,
-          "fontWeight": 400,
-          "gap": 0,
-          "height": 25.13,
-          "lineHeight": 22,
-          "marginBottom": 0,
-          "marginTop": 0,
-          "paddingLeft": 6,
-          "paddingRight": 6,
-          "width": 25.13,
-          "x": 541.88,
-          "y": 249.44
-        },
-        "[data-message], h2, p, button, [role=\"combobox\"], [role=\"listbox\"], [role=\"status\"]#8": {
+        "[data-message], h2, p, button, [role=\"combobox\"], [role=\"listbox\"], [role=\"status\"]#4": {
           "fontSize": 15,
           "fontWeight": 400,
           "gap": 0,
@@ -618,9 +565,9 @@
           "paddingRight": 4,
           "width": 558,
           "x": 21,
-          "y": 295
+          "y": 269
         },
-        "[data-message], h2, p, button, [role=\"combobox\"], [role=\"listbox\"], [role=\"status\"]#9": {
+        "[data-message], h2, p, button, [role=\"combobox\"], [role=\"listbox\"], [role=\"status\"]#5": {
           "fontSize": 14,
           "fontWeight": 400,
           "gap": 0,
@@ -632,13 +579,13 @@
           "paddingRight": 0,
           "width": 550,
           "x": 25,
-          "y": 307
+          "y": 281
         },
         "data-message": {
           "fontSize": 15,
           "fontWeight": 400,
           "gap": 0,
-          "height": 334,
+          "height": 308,
           "lineHeight": 22,
           "marginBottom": 0,
           "marginTop": 0,
@@ -648,23 +595,79 @@
           "x": 25,
           "y": 25
         },
+        "data-size=default": {
+          "fontSize": 13,
+          "fontWeight": 400,
+          "gap": 6,
+          "height": 32,
+          "lineHeight": 18,
+          "marginBottom": 0,
+          "marginTop": 0,
+          "paddingLeft": 12,
+          "paddingRight": 12,
+          "width": 182,
+          "x": 25,
+          "y": 123
+        },
+        "data-size=default#2": {
+          "fontSize": 13,
+          "fontWeight": 400,
+          "gap": 6,
+          "height": 32,
+          "lineHeight": 18,
+          "marginBottom": 0,
+          "marginTop": 0,
+          "paddingLeft": 12,
+          "paddingRight": 12,
+          "width": 182,
+          "x": 209,
+          "y": 123
+        },
+        "data-size=default#3": {
+          "fontSize": 13,
+          "fontWeight": 400,
+          "gap": 6,
+          "height": 32,
+          "lineHeight": 18,
+          "marginBottom": 0,
+          "marginTop": 0,
+          "paddingLeft": 12,
+          "paddingRight": 12,
+          "width": 182,
+          "x": 393,
+          "y": 123
+        },
+        "data-slot=button": {
+          "fontSize": 13,
+          "fontWeight": 400,
+          "gap": 6,
+          "height": 28,
+          "lineHeight": 18,
+          "marginBottom": 0,
+          "marginTop": 0,
+          "paddingLeft": 0,
+          "paddingRight": 0,
+          "width": 28,
+          "x": 539,
+          "y": 222
+        },
         "data-slot=input": {
-          "fontSize": 15,
+          "fontSize": 13,
           "fontWeight": 400,
           "gap": 0,
           "height": 42,
-          "lineHeight": 22,
+          "lineHeight": 18,
           "marginBottom": 0,
           "marginTop": 0,
           "paddingLeft": 12,
           "paddingRight": 44,
           "width": 550,
           "x": 25,
-          "y": 241
+          "y": 215
         }
       },
       "root": {
-        "height": 384,
+        "height": 358,
         "width": 600
       }
     }
