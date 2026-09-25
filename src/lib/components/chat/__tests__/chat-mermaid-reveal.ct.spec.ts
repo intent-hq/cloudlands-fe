@@ -253,10 +253,107 @@ test('completed history and non-chat diagrams do not animate their contents', as
   ).toBe(0);
 });
 
+for (const compartments of [false, true]) {
+  test(`class boxes ${compartments ? 'with members and methods' : 'without compartments'} reveal visible geometry before labels without replay`, async ({
+    mount,
+    page,
+  }) => {
+    await captureReveals(page);
+    const source = 'classDiagram\n class Draft';
+    const appended = `${source}\n Draft --> Release${compartments ? '\n class Release {\n +String version\n +publish()\n }' : ''}`;
+    const component = await mount(StreamingMessageContent, {
+      props: { content: content(source), isStreaming: true },
+    });
+    const svg = component.locator('.mermaid-svg > svg');
+    await expect(svg).toHaveAttribute('data-test-reveal-captured', 'true');
+    await component.update({ props: { content: content(appended), isStreaming: true } });
+    const release = svg.locator('g.node').filter({ hasText: 'Release' });
+    await expect(release).toBeVisible();
+    await expect(svg).toHaveAttribute('data-test-reveal-captured', 'true');
+
+    // Layout replaces Mermaid's hidden outer paths. Inspect the geometry the user sees.
+    const shapes = release.locator(':scope > .class-box-outline, :scope > .class-box-divider');
+    await expect(shapes).toHaveCount(compartments ? 3 : 1);
+    const start = await shapes.evaluateAll((parts) =>
+      parts.map((part) => ({
+        displayed: getComputedStyle(part).display !== 'none',
+        width: part.getBoundingClientRect().width,
+        opacity: Number(getComputedStyle(part).opacity),
+        animations: part.getAnimations().length,
+      })),
+    );
+    for (const part of start) {
+      expect(part.displayed).toBe(true);
+      expect(part.width).toBeGreaterThan(0);
+      expect(part.opacity).toBe(0);
+      expect(part.animations).toBe(1);
+    }
+    const timing = await release.evaluate((node) => {
+      const geometry = [
+        ...node.querySelectorAll(':scope > .class-box-outline, :scope > .class-box-divider'),
+      ];
+      const labels = [...node.querySelectorAll('text')];
+      const labelDelay = Math.min(
+        ...labels.map((label) => label.getAnimations()[0].effect!.getTiming().delay),
+      );
+      const shapeDelays = geometry.map((part) => part.getAnimations()[0].effect!.getTiming().delay);
+      for (const part of [...geometry, ...labels]) {
+        part.getAnimations()[0].currentTime = labelDelay / 2;
+      }
+      return {
+        shapeDelays,
+        labelDelay,
+        shapes: geometry.map((part) => Number(getComputedStyle(part).opacity)),
+        labels: labels.map((part) => Number(getComputedStyle(part).opacity)),
+      };
+    });
+    expect(timing.labelDelay).toBeGreaterThan(0);
+    expect(timing.shapeDelays.every((delay) => delay === 0)).toBe(true);
+    expect(timing.shapes.every((opacity) => opacity > 0)).toBe(true);
+    expect(timing.labels.length).toBeGreaterThan(0);
+    expect(timing.labels.every((opacity) => opacity === 0)).toBe(true);
+
+    for (const existing of ['Draft', 'Release']) {
+      if (existing === 'Release') {
+        await component.update({
+          props: { content: content(`${appended}\n Release --> Published`), isStreaming: true },
+        });
+        await expect(svg.locator('g.node')).toHaveCount(3);
+        await expect(svg).toHaveAttribute('data-test-reveal-captured', 'true');
+      }
+      const node = svg.locator('g.node').filter({ hasText: existing });
+      expect(
+        await node.evaluate((element) => element.getAnimations({ subtree: true }).length),
+      ).toBe(0);
+      expect(
+        await node
+          .locator(':scope > .class-box-outline, :scope > .class-box-divider, text')
+          .evaluateAll((parts) =>
+            parts.every((part) => Number(getComputedStyle(part).opacity) === 1),
+          ),
+      ).toBe(true);
+    }
+    await component.update({
+      props: { content: content(`${appended}\n Release --> Published`, true), isStreaming: false },
+    });
+    await expect(component.locator('.mermaid-renderer')).toHaveAttribute(
+      'data-render-settled',
+      'true',
+    );
+    expect(await svg.evaluate((root) => root.getAnimations({ subtree: true }).length)).toBe(0);
+    expect(
+      await svg
+        .locator('.class-box-outline, .class-box-divider, text')
+        .evaluateAll((parts) =>
+          parts.every((part) => Number(getComputedStyle(part).opacity) === 1),
+        ),
+    ).toBe(true);
+  });
+}
+
 for (const diagram of [
   { name: 'sequence', source: 'sequenceDiagram\n A->>B: Draft', addition: '\n B->>C: Release' },
   { name: 'state', source: 'stateDiagram-v2\n [*] --> Draft', addition: '\n Draft --> Release' },
-  { name: 'class', source: 'classDiagram\n class Draft', addition: '\n Draft --> Release' },
   {
     name: 'entity',
     source: 'erDiagram\n DRAFT ||--o{ REVIEW : starts',

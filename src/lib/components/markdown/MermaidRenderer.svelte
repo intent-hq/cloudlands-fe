@@ -1120,6 +1120,12 @@ ${source}`;
         repaired.setAttribute('y', String(top));
         repaired.setAttribute('width', String(width));
         repaired.setAttribute('height', String(cursor - top));
+        // The visible replacements inherit the new class's shape reveal.
+        if (outer.querySelector('[data-mermaid-reveal="shape"]')) {
+          for (const part of [repaired, ...dividers]) {
+            part.setAttribute('data-mermaid-reveal', 'shape');
+          }
+        }
         element.insertBefore(repaired, outer);
         outer.style.display = 'none';
         const firstTextGroup = element.querySelector<SVGGElement>(
