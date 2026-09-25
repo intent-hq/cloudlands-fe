@@ -86,6 +86,18 @@ describe('buildHarnessFeatureRows', () => {
 });
 
 describe('HarnessFeaturesModal', () => {
+  it.each<{ features: Record<string, boolean>; enabled: string }>([
+    { features: { peerAgents: true }, enabled: 'true' },
+    { features: { peerAgents: false }, enabled: 'false' },
+    { features: {}, enabled: 'false' },
+  ])('renders peer agents from the session snapshot $features', async ({ features, enabled }) => {
+    renderModal({ version: '1.0', features });
+
+    const dialog = await screen.findByRole('dialog');
+    const state = getStates(dialog).find((el) => el.dataset.feature === 'peerAgents')!;
+    expect(state.dataset.enabled).toBe(enabled);
+  });
+
   it('shows the version in the title and settings-page labels with descriptions', async () => {
     renderModal({ version: '1.0', features: { structuredQuestions: true } });
 

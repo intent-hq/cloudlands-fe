@@ -26,7 +26,11 @@
  * This module retains the reusable joystick, parsing, and settings helpers;
  * saga orchestration owns hydration, persistence, and cancellation.
  */
-import { appClient } from '$lib/client';
+import {
+  HARDWARE_CONSOLE_SETTINGS_PATH,
+  readHardwareConsoleSettingsBag,
+  persistHardwareConsoleSettingsPatch,
+} from '../settings-bag';
 import { store as appStore } from '$store/renderer/store';
 import { createLogger } from '$lib/utils/client-logger';
 import { sendMessage } from '$store/renderer/slices/chat-state/chat-state-slice';
@@ -38,7 +42,6 @@ import {
 import type { HardwareConsoleManager } from '../device/device-manager';
 import { HardwareInputDecoder, DEFAULT_JOYSTICK_ENGAGE_DISTANCE } from '../input/input-decoder';
 import { radialCancelSector, radialSectorForAngle } from './radial-layout';
-import { HARDWARE_CONSOLE_SETTINGS_PATH } from '../assignment/key-pin-persistence-service';
 import {
   clampPromptPickerLimit,
   type PromptUsageEntry,
@@ -245,52 +248,25 @@ export function extractSubmittedPromptText(action: unknown): string | null {
   return typeof text === 'string' && text.trim().length > 0 ? text : null;
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
-
-async function readBag(): Promise<Record<string, unknown> | null> {
-  const setting = await appClient.settings.get(HARDWARE_CONSOLE_SETTINGS_PATH);
-  if (setting === null) return null;
-  return isRecord(setting.value) ? setting.value : {};
-}
-
-/** Read the bag for a read-modify-write, failing when the read failed so a persist can never wipe sibling fields. */
-async function readBagForPersist(): Promise<Record<string, unknown>> {
-  const bag = await readBag();
-  if (bag === null) {
-    throw new Error(
-      `settings.get(${HARDWARE_CONSOLE_SETTINGS_PATH}) returned null — daemon read failed; skipping persist to avoid wiping the bag`,
-    );
-  }
-  return bag;
-}
-
 /** Read-modify-write: replace only `promptUsage`, preserving sibling fields. */
 export async function persistHardwareConsolePromptUsage(
   promptUsage: PromptUsageEntry[],
 ): Promise<void> {
-  const bag = await readBagForPersist();
-  await appClient.settings.update([
-    { path: HARDWARE_CONSOLE_SETTINGS_PATH, value: { ...bag, promptUsage } },
-  ]);
+  await persistHardwareConsoleSettingsPatch({ promptUsage });
 }
 
 /** Read-modify-write: replace only `promptPickerLimit`, preserving sibling fields. */
 export async function persistHardwareConsolePromptPickerLimit(
   promptPickerLimit: number,
 ): Promise<void> {
-  const bag = await readBagForPersist();
-  await appClient.settings.update([
-    { path: HARDWARE_CONSOLE_SETTINGS_PATH, value: { ...bag, promptPickerLimit } },
-  ]);
+  await persistHardwareConsoleSettingsPatch({ promptPickerLimit });
 }
 
 export async function loadHardwareConsolePrompts(): Promise<{
   promptUsage: ReturnType<typeof parsePromptUsage>;
   promptPickerLimit: number;
 }> {
-  const bag = await readBag();
+  const bag = await readHardwareConsoleSettingsBag();
   if (bag === null) {
     throw new Error(
       `settings.get(${HARDWARE_CONSOLE_SETTINGS_PATH}) returned null — daemon read failed`,

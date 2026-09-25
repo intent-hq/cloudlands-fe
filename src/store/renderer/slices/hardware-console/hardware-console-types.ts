@@ -6,6 +6,22 @@ import type {
 import type { HardwareDeviceModel } from '$features/hardware-console/input/types';
 import type { PromptUsageEntry } from '$features/hardware-console/prompt-picker/curation';
 
+/** One left-encoder preference shared by Codex Micro and Creator Micro 2. */
+export type HardwareConsoleEncoderBehavior = 'agent-effort' | 'workspace-switch';
+
+/** Captured identity and catalog for an editable encoder target. */
+export interface EncoderEffortTarget {
+  key: string;
+  workspaceId: string;
+  agentId: string;
+  levels: string[];
+}
+
+export interface EncoderEffortFeedback {
+  target: EncoderEffortTarget;
+  effort: string | null;
+}
+
 /** Transient UI state of the joystick radial prompt picker overlay. */
 export interface RadialPromptPickerState {
   /** True while the joystick is deflected and the overlay is showing. */
@@ -38,6 +54,11 @@ export interface HardwareConsoleState {
   isConsoleOwner: boolean;
   /** True once the persisted enabled flag was read from the daemon settings bag. */
   enabledHydrated: boolean;
+  /** Left rotary encoder behavior, shared by both supported models. */
+  encoderBehavior: HardwareConsoleEncoderBehavior;
+  encoderBehaviorHydrated: boolean;
+  /** The latest choice could not be saved; the last confirmed choice is restored. */
+  encoderBehaviorSaveFailed: boolean;
   /**
    * 6-slot pin array (slot 0 = key "1" = agent key AG02; see
    * `AGENT_KEY_IDS`). `null` = unpinned (auto-fills by workspace activity);
@@ -66,6 +87,7 @@ export interface HardwareConsoleState {
   radialPrompt: RadialPromptPickerState;
   /** Workspace targeted by the encoder-rotate HUD; `null` = HUD hidden. */
   encoderHudWorkspaceId: string | null;
+  encoderEffortFeedback: EncoderEffortFeedback | null;
   /** Label of the last-fired cycle action key shown by the action HUD; `null` = HUD hidden. */
   actionHudLabel: string | null;
   /** True while a push-to-talk recording is in progress (transient, never persisted). */

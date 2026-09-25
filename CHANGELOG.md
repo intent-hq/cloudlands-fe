@@ -4,6 +4,26 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.184.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.183.0...v2.184.0) (2026-09-25)
+
+
+### 🚀 Features
+
+* adjust agent effort with the Micro encoder ([#2894](https://github.com/intent-hq/cloudlands-fe/issues/2894)) ([4256b5d](https://github.com/intent-hq/cloudlands-fe/commit/4256b5d8dfef51d797e961a6a169f46eed417d06))
+* enable peer agents by default ([#2890](https://github.com/intent-hq/cloudlands-fe/issues/2890)) ([673e523](https://github.com/intent-hq/cloudlands-fe/commit/673e523372671a4ffdd5b632882bcfcd5b27a5b7))
+
+
+### 🐛 Bug Fixes
+
+* **browser:** recover cap-evicted background tabs on navigation ([#4835](https://github.com/intent-hq/cloudlands-fe/issues/4835)) ([#2749](https://github.com/intent-hq/cloudlands-fe/issues/2749)) ([034665a](https://github.com/intent-hq/cloudlands-fe/commit/034665a1f1122ac2104de03606a55609d0f66662))
+* bump intentd sidecar to v0.9.108 ([#2895](https://github.com/intent-hq/cloudlands-fe/issues/2895)) ([a77ae15](https://github.com/intent-hq/cloudlands-fe/commit/a77ae15c675910b604b56a57346fa7b615652f02))
+* catch translation gate failures in affected verification ([#2892](https://github.com/intent-hq/cloudlands-fe/issues/2892)) ([d6bce57](https://github.com/intent-hq/cloudlands-fe/commit/d6bce577fcb78c9b20390df64ec4be662085158f))
+* **chat:** align subscription card columns with tool rows ([#2811](https://github.com/intent-hq/cloudlands-fe/issues/2811)) ([ee7e4b6](https://github.com/intent-hq/cloudlands-fe/commit/ee7e4b6dd47444c57a85496eac85c800043d0e62))
+* clarify Intent Node.js requirement warnings ([#2891](https://github.com/intent-hq/cloudlands-fe/issues/2891)) ([98ca8a4](https://github.com/intent-hq/cloudlands-fe/commit/98ca8a4ba4c149216d0bf77b9f543044506ce2b6))
+* dismiss cleared attention request toasts ([#2889](https://github.com/intent-hq/cloudlands-fe/issues/2889)) ([9ea3843](https://github.com/intent-hq/cloudlands-fe/commit/9ea38434a41dd6554f28ba3cdc04e6f615dd229b))
+* improve diagram routing and expand visual edge cases ([#2886](https://github.com/intent-hq/cloudlands-fe/issues/2886)) ([e497a01](https://github.com/intent-hq/cloudlands-fe/commit/e497a0170bb9d2c0f0dac1195ad8019b4fd75258))
+* serialize concurrent dead-code canary checks ([#2885](https://github.com/intent-hq/cloudlands-fe/issues/2885)) ([78bb716](https://github.com/intent-hq/cloudlands-fe/commit/78bb7164001adb6da0e02306c047595e8ff6d0a6))
+
 ## [2.183.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.182.1...v2.183.0) (2026-09-25)
 
 

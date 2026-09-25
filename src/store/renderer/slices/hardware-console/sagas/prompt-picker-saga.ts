@@ -1,3 +1,4 @@
+import { HARDWARE_CONSOLE_SETTINGS_PATH } from '$features/hardware-console/settings-bag';
 import { all, call, put, takeEvery, type SagaGenerator } from 'typed-redux-saga';
 
 import { sendMessage } from '../../chat-state/chat-state-slice';
@@ -13,7 +14,6 @@ import { DEFAULT_PROMPT_PICKER_LIMIT } from '$features/hardware-console/prompt-p
 import type { HardwareConsoleManager } from '$features/hardware-console/device/device-manager';
 import { getHardwareConsoleManager } from '$features/hardware-console/instance';
 import { createLogger } from '$lib/utils/client-logger';
-import { HARDWARE_CONSOLE_SETTINGS_PATH } from '$features/hardware-console/assignment/key-pin-persistence-service';
 import {
   hydrateHardwareConsolePrompts,
   promptUsageRecorded,
