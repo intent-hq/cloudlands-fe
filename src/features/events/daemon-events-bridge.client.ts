@@ -135,6 +135,11 @@
  * daemon-events-saga owns two subscriptions on the socket: the global
  * firehose plus the active-workspace-scoped `file:*` lease (monorepo#1853).
  */
+import { isHostMembershipChange } from '$shared/types/principal';
+import {
+  hostMembershipChanged,
+  principalIdentityChanged,
+} from '$store/renderer/slices/principal/principal-slice';
 import { m } from '$shared/paraglide/messages.js';
 import type {
   AgentSession,
@@ -3590,6 +3595,18 @@ export function routeDaemonEventsNotification(
     return;
   }
 
+  if (type === 'host:members-changed') {
+    const data = (event as { data?: unknown }).data;
+    if (isHostMembershipChange(data)) appStore.dispatch(hostMembershipChanged(data));
+    return;
+  }
+  if (type === 'principal:identity-changed') {
+    const data = (event as { data?: { principalId?: unknown } }).data;
+    if (typeof data?.principalId === 'string')
+      appStore.dispatch(principalIdentityChanged(data.principalId));
+    return;
+  }
+
   // `presence:changed` (§5.46) carries a self-sufficient `data.workspaceId`
   // and is transient by contract, so it is folded into the presence slice
   // and never recorded on the activity timeline.
@@ -4231,6 +4248,8 @@ export const DAEMON_EVENTS_SUBSCRIBE_TYPES = [
   // presence slice. Workspace-scoped on the daemon side, so the membership
   // gate narrows it like any other row.
   'presence:changed',
+  'host:members-changed',
+  'principal:identity-changed',
 ] as const;
 
 export async function refreshDaemonEventsAfterReconnect(

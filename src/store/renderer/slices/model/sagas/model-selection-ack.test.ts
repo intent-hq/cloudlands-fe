@@ -1,5 +1,6 @@
 import { afterEach, expect, it, vi } from 'vitest';
-import { runSaga, stdChannel, type Task } from 'redux-saga';
+import { runSaga, stdChannel } from 'redux-saga';
+import { admitLegacyPrincipal } from '../../../../../test/fixtures/principal-state';
 
 vi.mock('$lib/client/live/backend-transport', () => ({
   backendRequest: vi.fn(),
@@ -20,14 +21,11 @@ import { settingsHydrationSaga } from '../../settings-events/sagas/settings-hydr
 import { persistSelectedModelsWorker } from './model-selection-saga';
 
 const request = vi.mocked(backendRequest);
-const tasks: Task[] = [];
+const cancelSagas: (() => void)[] = [];
 let dispose: (() => void) | undefined;
 
-afterEach(async () => {
-  for (const task of tasks.splice(0)) {
-    task.cancel();
-    await task.toPromise();
-  }
+afterEach(() => {
+  for (const cancel of cancelSagas.splice(0)) cancel();
   dispose?.();
   vi.resetAllMocks();
 });
@@ -43,6 +41,7 @@ const selection = (provider = 'grok', model = 'grok4.5'): AppliedSettingChange[]
 
 function startHydration() {
   dispose = store.init();
+  admitLegacyPrincipal();
   const channel = stdChannel();
   const dispatch = (action: { type: string }) => {
     store.dispatch(action);
@@ -50,7 +49,7 @@ function startHydration() {
     return action;
   };
   const environment = { channel, dispatch, getState: () => store.state };
-  tasks.push(runSaga(environment, settingsHydrationSaga));
+  cancelSagas.push(store.runSaga(settingsHydrationSaga));
   return environment;
 }
 

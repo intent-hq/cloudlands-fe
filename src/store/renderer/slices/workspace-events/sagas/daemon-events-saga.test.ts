@@ -282,6 +282,8 @@ describe('daemonEventsSaga', () => {
       'app:ui-highlight',
       'app:workspace-open',
       'presence:changed',
+      'host:members-changed',
+      'principal:identity-changed',
     ]);
   });
 

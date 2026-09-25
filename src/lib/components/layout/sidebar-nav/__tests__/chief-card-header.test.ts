@@ -1,3 +1,4 @@
+import { admitLegacyPrincipal } from '../../../../../test/fixtures/principal-state';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { m } from '$shared/paraglide/messages.js';
@@ -46,6 +47,7 @@ function makeChiefSession(): AgentSession {
 describe('ChiefCard combined header', () => {
   beforeEach(() => {
     appStore.init();
+    admitLegacyPrincipal();
     // A settled owner window (no joined host), so the new-thread action is offered.
     appStore.dispatch(guestSessionsListReceived({ sessions: [], openIds: [], connectedIds: [] }));
     appStore.dispatch(setChiefCollapsed(true));

@@ -1,3 +1,5 @@
+import { initialState as principalInitialState } from '$store/renderer/slices/principal/principal-slice';
+import { withLegacyPrincipal } from '../../../../test/fixtures/principal-state';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
 import { tick } from 'svelte';
@@ -281,6 +283,12 @@ import { warmImport } from '../../../../test/warm-import';
 // billed to the first test's timeout (intent-hq/monorepo#1464).
 warmImport(() => import('../../ui/__tests__/mocks/Fa.svelte'));
 warmImport(() => import('../../ui/__tests__/mocks/button.svelte'));
+
+beforeEach(() => {
+  mockRoleState.current = withLegacyPrincipal(
+    mockRoleState.reset(),
+  ) as unknown as typeof mockRoleState.current;
+});
 
 afterEach(() => {
   availableProviderOverride$.set(null);
@@ -566,6 +574,7 @@ describe('ModelPicker guest / collaborator lock', () => {
 
   it('unsettled window identity: locks (fails closed)', () => {
     mockRoleState.current.guestSessions.hasReceivedList = false;
+    Object.assign(mockRoleState.current, { principal: principalInitialState });
     withWorkspaceRole('owner');
 
     renderAgentPicker();

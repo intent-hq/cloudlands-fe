@@ -636,6 +636,7 @@ describe('LiveWorkspacesClient.list (PROTOCOL §5.1, fake transport)', () => {
           status: 'Active',
           ownerPrincipalId: 'principal-owner',
           myRole: 'collaborator',
+          canManage: true,
           memberCount: 2,
           createdAt: '2026-09-01T00:00:00.000Z',
           updatedAt: '2026-09-01T00:00:00.000Z',
@@ -655,11 +656,13 @@ describe('LiveWorkspacesClient.list (PROTOCOL §5.1, fake transport)', () => {
     expect(workspaces[0]).toMatchObject({
       ownerPrincipalId: 'principal-owner',
       myRole: 'collaborator',
+      canManage: true,
       memberCount: 2,
     });
     expect(workspaces[1]?.myRole).toBeUndefined();
     expect(workspaces[1]?.memberCount).toBeUndefined();
     expect(workspaces[1]?.ownerPrincipalId).toBeUndefined();
+    expect(workspaces[1]?.canManage).toBeUndefined();
   });
 
   it('passes the BE-owned attention flag through normalization (PROTOCOL §5.1 / §9.9)', async () => {

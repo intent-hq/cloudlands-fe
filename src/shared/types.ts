@@ -365,6 +365,8 @@ export interface Workspace {
    *  on older daemons. */
   ownerPrincipalId?: string;
   myRole?: WorkspaceRole;
+  /** Caller-relative management capability (PROTOCOL §5.49); absent on older daemons. */
+  canManage?: boolean;
   memberCount?: number;
   openInviteCount?: number;
   createdAt: string;

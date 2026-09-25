@@ -1,3 +1,4 @@
+import { withLegacyPrincipal } from '../../../../test/fixtures/principal-state';
 import type { Workspace, WorkspaceId } from '$shared/types';
 import { WorkspaceStatusEnum } from '$shared/types';
 import { describe, expect, it } from 'vitest';
@@ -268,17 +269,22 @@ describe('selectEffectiveVoiceEngine (multiplayer w3 role gate)', () => {
       voiceSettingsReducer(initialState, setVoiceEngineValue('os')),
       setVoiceOsEngineAvailable(true),
     );
-    return {
-      workspace: workspaceReducer(listed, setWorkspaceHasLoaded(true)),
-      voiceSettings,
-      // The role gate also rules out a guest window (multiplayer w4): a
-      // settled owner identity (guest list in, no host joined).
-      connections: connectionsInitialState,
-      guestSessions: guestSessionsReducer(
-        guestSessionsInitialState,
-        guestSessionsListReceived({ sessions: [], openIds: [], connectedIds: [] }),
-      ),
-    } as StoreState;
+    return withLegacyPrincipal(
+      {
+        workspace: workspaceReducer(listed, setWorkspaceHasLoaded(true)),
+        voiceSettings,
+        // The role gate also rules out a guest window (multiplayer w4): a
+        // settled owner identity (guest list in, no host joined).
+        connections: connectionsInitialState,
+        guestSessions: guestSessionsReducer(
+          guestSessionsInitialState,
+          guestSessionsListReceived({ sessions: [], openIds: [], connectedIds: [] }),
+        ),
+      } as StoreState,
+      workspaces.length > 0 && workspaces.every((ws) => ws.myRole === 'collaborator')
+        ? 'guest'
+        : 'owner',
+    );
   }
 
   it('keeps the configured engine for an owner', () => {

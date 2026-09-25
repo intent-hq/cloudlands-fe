@@ -1,3 +1,4 @@
+import { withLegacyPrincipal } from '../../../../test/fixtures/principal-state';
 /**
  * @vitest-environment jsdom
  *
@@ -161,6 +162,11 @@ function seedState(workspace: Workspace, backendId: string | typeof PRE_BIND = '
       guestSessionsListReceived({ sessions: [GUEST_SESSION], openIds: [], connectedIds: [] }),
     ),
   } as StoreState;
+  if (backendId !== PRE_BIND)
+    mocks.storeState.current = withLegacyPrincipal(
+      mocks.storeState.current as object,
+      backendId === 'local' ? 'owner' : 'guest',
+    );
 }
 
 async function openContextMenu(
