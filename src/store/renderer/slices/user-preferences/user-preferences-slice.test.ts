@@ -3,6 +3,7 @@ import {
   cycleNoteFontStyle,
   deleteActivityLogPreset,
   hydrateActivityLogPresets,
+  hydrateNotificationVolume,
   hydrateShortcutOverrides,
   initialState,
   resetNotificationSettings,
@@ -78,6 +79,19 @@ describe('userPreferencesReducer', () => {
   it('should return initial state', () => {
     const state = userPreferencesReducer(undefined, { type: '@@INIT' });
     expect(state).toEqual(initialState);
+  });
+
+  it.each([
+    [0.75, 0.75],
+    [0.5, 0.5],
+    [-1, 0],
+    [2, 1],
+  ])('hydrates notification volume %s with the existing clamp', (value, expected) => {
+    const state = userPreferencesReducer(initialState, hydrateNotificationVolume(value));
+    expect(state.volume).toBe(expected);
+    expect(state.enabled).toBe(true);
+    expect(state.soundEnabled).toBe(true);
+    expect(state.soundOnlyWhenUnfocused).toBe(true);
   });
 
   describe('shortcut overrides', () => {

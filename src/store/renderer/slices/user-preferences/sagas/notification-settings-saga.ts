@@ -28,11 +28,12 @@ type SettingResponse = { value?: unknown };
 
 export function* hydrateNotificationSettingsWorker(suppressedActions?: WeakSet<object>) {
   try {
-    const [enabled, soundEnabled, soundOnlyWhenUnfocused, volume] = yield* all([
+    // Volume is hydrated by the revision-ordered settings snapshot/event saga.
+    // A separate settings.get here could complete after a newer live update.
+    const [enabled, soundEnabled, soundOnlyWhenUnfocused] = yield* all([
       call(readSetting, NOTIFICATION_PATHS.enabled),
       call(readSetting, NOTIFICATION_PATHS.soundEnabled),
       call(readSetting, NOTIFICATION_PATHS.soundOnlyWhenUnfocused),
-      call(readSetting, NOTIFICATION_PATHS.volume),
     ]);
     if (typeof (enabled as SettingResponse).value === 'boolean') {
       const action = setNotificationEnabled((enabled as { value: boolean }).value);
@@ -48,11 +49,6 @@ export function* hydrateNotificationSettingsWorker(suppressedActions?: WeakSet<o
       const action = setSoundOnlyWhenUnfocused(
         (soundOnlyWhenUnfocused as { value: boolean }).value,
       );
-      suppressedActions?.add(action);
-      yield* put(action);
-    }
-    if (typeof (volume as SettingResponse).value === 'number') {
-      const action = setVolume((volume as { value: number }).value);
       suppressedActions?.add(action);
       yield* put(action);
     }

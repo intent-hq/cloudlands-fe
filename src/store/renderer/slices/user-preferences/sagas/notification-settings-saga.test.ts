@@ -27,7 +27,6 @@ const paths = [
   'notifications.enabled',
   'notifications.soundEnabled',
   'notifications.soundOnlyWhenUnfocused',
-  'notifications.volume',
 ];
 
 const settle = async () => {
@@ -44,12 +43,11 @@ describe('notificationSettingsSaga', () => {
   });
   afterEach(() => vi.useRealTimers());
 
-  it('hydrates all four exact setting paths and dispatches valid values', async () => {
+  it('hydrates the boolean setting paths; ordered settings hydration owns volume', async () => {
     const values: Record<string, unknown> = {
       'notifications.enabled': false,
       'notifications.soundEnabled': true,
       'notifications.soundOnlyWhenUnfocused': false,
-      'notifications.volume': 0.7,
     };
     mocks.backendRequest.mockImplementation((_method: string, params: { path: string }) =>
       Promise.resolve({
@@ -76,7 +74,6 @@ describe('notificationSettingsSaga', () => {
       [setNotificationEnabled(false)],
       [setSoundEnabled(true)],
       [setSoundOnlyWhenUnfocused(false)],
-      [setVolume(0.7)],
     ]);
   });
 

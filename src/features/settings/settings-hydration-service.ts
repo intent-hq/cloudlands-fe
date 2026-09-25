@@ -45,6 +45,7 @@ import {
   loadProviderModelsFromStorage,
 } from '$store/renderer/slices/model/model-slice';
 import { setDefaultSpecialistId } from '$store/renderer/slices/specialists/specialists-slice';
+import { hydrateNotificationVolume } from '$store/renderer/slices/user-preferences/user-preferences-slice';
 
 const logger = createLogger('SettingsHydrationService');
 
@@ -52,6 +53,10 @@ const logger = createLogger('SettingsHydrationService');
 function applyOne(change: AppliedSettingChange): void {
   const { path, value } = change;
   switch (path) {
+    case 'notifications.volume': {
+      if (typeof value === 'number') appStore.dispatch(hydrateNotificationVolume(value));
+      return;
+    }
     case 'model.defaultProvider': {
       // The reducer's pending-local-intent guard keeps a newer local pick
       // over a stale snapshot/echo until the daemon confirms it.

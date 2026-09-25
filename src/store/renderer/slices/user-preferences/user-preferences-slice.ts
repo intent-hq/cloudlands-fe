@@ -168,6 +168,11 @@ export const setSoundOnlyWhenUnfocused = createAction<[value: boolean]>(
 
 export const setVolume = createAction<[value: number]>('notificationSettings/setVolume');
 
+/** Daemon snapshot/event hydration; never triggers notification persistence. */
+export const hydrateNotificationVolume = createAction<[value: number]>(
+  'notificationSettings/hydrateVolume',
+);
+
 export const resetNotificationSettings = createAction(
   'notificationSettings/resetNotificationSettings',
 );
@@ -359,6 +364,10 @@ userPreferencesReducer.with(setSoundOnlyWhenUnfocused, (state, { payload: [value
   soundOnlyWhenUnfocused: value,
 }));
 userPreferencesReducer.with(setVolume, (state, { payload: [value] }) => ({
+  ...state,
+  volume: Math.max(0, Math.min(1, value)),
+}));
+userPreferencesReducer.with(hydrateNotificationVolume, (state, { payload: [value] }) => ({
   ...state,
   volume: Math.max(0, Math.min(1, value)),
 }));
