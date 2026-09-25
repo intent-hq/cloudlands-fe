@@ -1,5 +1,5 @@
 import { buffers } from 'redux-saga';
-import { actionChannel, call, flush, put, take, type SagaGenerator } from 'typed-redux-saga';
+import { actionChannel, call, delay, flush, put, take, type SagaGenerator } from 'typed-redux-saga';
 import {
   loadHardwareConsoleEncoderBehavior,
   persistHardwareConsoleEncoderBehavior,
@@ -13,16 +13,27 @@ import {
 import type { HardwareConsoleEncoderBehavior } from '../hardware-console-types';
 
 const logger = createLogger('HardwareConsoleEncoderPreference');
+const HYDRATION_RETRY_DELAYS_MS = [1_000, 5_000, 15_000] as const;
 
 /** One shared preference, with the latest user choice winning over slow reads and saves. */
 export function* encoderPreferenceSaga(): SagaGenerator<void> {
   const changes = yield* actionChannel(setHardwareConsoleEncoderBehavior, buffers.sliding(1));
-  let saved: HardwareConsoleEncoderBehavior = 'agent-effort';
+  let saved: HardwareConsoleEncoderBehavior;
   try {
-    try {
-      saved = yield* call(loadHardwareConsoleEncoderBehavior);
-    } catch (error) {
-      logger.error('Encoder preference hydration failed; using effort adjustment', { error });
+    let attempt = 0;
+    while (true) {
+      try {
+        saved = yield* call(loadHardwareConsoleEncoderBehavior);
+        break;
+      } catch (error) {
+        logger.error('Encoder preference hydration failed; retrying', { error });
+      }
+      // A failed read does not establish an absent preference. Keep input gated
+      // until the saved opt-out is known, retaining explicit choices in the channel.
+      yield* delay(
+        HYDRATION_RETRY_DELAYS_MS[Math.min(attempt, HYDRATION_RETRY_DELAYS_MS.length - 1)],
+      );
+      attempt += 1;
     }
 
     let pending: ReturnType<typeof setHardwareConsoleEncoderBehavior> | undefined = (yield* flush(

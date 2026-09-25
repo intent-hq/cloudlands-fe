@@ -89,6 +89,7 @@ afterEach(async () => {
     task.cancel();
     await task.toPromise();
   }
+  vi.useRealTimers();
 });
 
 describe('encoder preference lifecycle and settings wire contract', () => {
@@ -165,14 +166,60 @@ describe('encoder preference lifecycle and settings wire contract', () => {
     });
   });
 
-  it('uses the default after a failed boot read and lets a later choice retry safely', async () => {
+  it('recovers a saved opt-out after a failed boot read without a new user choice', async () => {
+    vi.useFakeTimers();
+    bag.encoderBehavior = 'workspace-switch';
     request.mockRejectedValueOnce(new Error('daemon unavailable'));
     const harness = start();
-    await hydrated(harness);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(harness.getState().encoderBehaviorHydrated).toBe(false);
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(harness.getState().encoderBehaviorHydrated).toBe(true);
+    expect(harness.getState().encoderBehavior).toBe('workspace-switch');
+    expect(request.mock.calls.filter(([method]) => method === 'settings.get')).toHaveLength(2);
+    expect(request.mock.calls.filter(([method]) => method === 'settings.update')).toHaveLength(0);
+  });
+
+  it('keeps an explicit default chosen while waiting for a failed boot read to recover', async () => {
+    vi.useFakeTimers();
+    bag.encoderBehavior = 'workspace-switch';
+    request.mockRejectedValueOnce(new Error('daemon unavailable'));
+    const harness = start();
+    await vi.advanceTimersByTimeAsync(0);
+    harness.dispatch(setHardwareConsoleEncoderBehavior('agent-effort'));
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(harness.getState().encoderBehaviorHydrated).toBe(true);
     expect(harness.getState().encoderBehavior).toBe('agent-effort');
-    harness.dispatch(setHardwareConsoleEncoderBehavior('workspace-switch'));
-    await vi.waitFor(() => expect(bag.encoderBehavior).toBe('workspace-switch'));
+    expect(bag.encoderBehavior).toBe('agent-effort');
     expect(bag.keyPins).toEqual(['ws-1']);
+  });
+
+  it('backs off repeated failed reads and defaults only after a successful empty preference read', async () => {
+    vi.useFakeTimers();
+    request.mockRejectedValueOnce(new Error('daemon unavailable'));
+    request.mockRejectedValueOnce(new Error('daemon still unavailable'));
+    const harness = start();
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(harness.getState().encoderBehaviorHydrated).toBe(false);
+    expect(request).toHaveBeenCalledTimes(2);
+    await vi.advanceTimersByTimeAsync(4_999);
+    expect(request).toHaveBeenCalledTimes(2);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(harness.getState().encoderBehaviorHydrated).toBe(true);
+    expect(harness.getState().encoderBehavior).toBe('agent-effort');
+    expect(request).toHaveBeenCalledTimes(3);
+  });
+
+  it('stops retrying the boot read when the saga is cancelled', async () => {
+    vi.useFakeTimers();
+    request.mockRejectedValue(new Error('daemon unavailable'));
+    const harness = start();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(harness.getState().encoderBehaviorHydrated).toBe(false);
+    harness.task.cancel();
+    await harness.task.toPromise();
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(request).toHaveBeenCalledTimes(1);
   });
 
   it('rolls back a failed save and clears the error when the user retries', async () => {
