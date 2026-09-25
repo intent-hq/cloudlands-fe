@@ -45,7 +45,11 @@
   } from '$store/renderer/slices/sidebar-nav/sidebar-nav-selectors';
   import { tick } from 'svelte';
   import SidebarContextMenu from '$lib/components/ui/sidebar-context-menu/SidebarContextMenu.svelte';
-  import type { SidebarMenuEntry } from '$lib/components/ui/sidebar-context-menu/types';
+  import {
+    getSidebarContextPosition,
+    type SidebarContextPosition,
+    type SidebarMenuEntry,
+  } from '$lib/components/ui/sidebar-context-menu/types';
   import {
     getPanelLayoutManager,
     hasPanelLayoutManager,
@@ -99,7 +103,14 @@
   let editInputRef: HTMLInputElement | null = $state(null);
 
   // Context menu state
-  let contextMenu: { x: number; y: number; note: Note } | null = $state(null);
+  let contextMenu: (SidebarContextPosition & { noteId: string; workspaceId: string }) | null =
+    $state(null);
+  const contextNote = $derived(notes.find((note) => note.id === contextMenu?.noteId));
+
+  $effect(() => {
+    if (contextMenu && (!contextNote || contextMenu.workspaceId !== workspaceId))
+      contextMenu = null;
+  });
 
   // Start editing a note title
   async function startEditing(noteId: string, currentTitle: string) {
@@ -150,10 +161,19 @@
   }
 
   // Context menu handlers
-  function handleContextMenu(e: MouseEvent, note: Note) {
-    e.preventDefault();
-    e.stopPropagation();
-    contextMenu = { x: e.clientX, y: e.clientY, note };
+  function handleContextMenu(e: MouseEvent | KeyboardEvent, note: Note) {
+    const position = getSidebarContextPosition(e);
+    if (!position) return;
+    const row = e.currentTarget as HTMLElement;
+    contextMenu = {
+      ...position,
+      returnFocus:
+        e.target instanceof HTMLElement
+          ? (e.target.closest('button') ?? row.querySelector('button'))
+          : null,
+      noteId: note.id,
+      workspaceId,
+    };
   }
 
   function closeContextMenu() {
@@ -165,7 +185,7 @@
     const items: SidebarMenuEntry[] = [
       {
         id: 'open',
-        label: 'Open',
+        label: m.ui_fileActions_open_label(),
         icon: faArrowUpRightFromSquare,
         onClick: () => {
           onOpenNote?.(note.id);
@@ -178,7 +198,7 @@
     if (!isSpec) {
       items.push({
         id: 'rename',
-        label: 'Rename',
+        label: m.workspace_notes_rename_label(),
         icon: faPencil,
         onClick: () => {
           startEditing(note.id, getNoteTitle(note));
@@ -188,7 +208,7 @@
       items.push({ type: 'separator' });
       items.push({
         id: 'delete',
-        label: 'Delete',
+        label: m.workspace_notes_delete_label(),
         icon: faTrash,
         destructive: true,
         onClick: async () => {
@@ -480,6 +500,7 @@
             ondragend={handleDragEnd}
             ondblclick={(e) => handleDoubleClick(note, e)}
             oncontextmenu={(e) => handleContextMenu(e, note)}
+            onkeydown={(e) => handleContextMenu(e, note)}
             class={cn(
               'note-row relative w-full transition-[opacity,border-color,border-top-width] duration-spring-moderate ease-spring-moderate motion-reduce:transition-none flex items-center group/note min-w-0',
               isDragging && 'opacity-50',
@@ -783,11 +804,13 @@
   {/if}
 </div>
 
-{#if contextMenu}
+{#if contextMenu && contextNote}
   <SidebarContextMenu
-    x={contextMenu.x}
-    y={contextMenu.y}
-    items={getContextMenuItems(contextMenu.note)}
+    x={contextMenu?.x ?? 0}
+    y={contextMenu?.y ?? 0}
+    returnFocus={contextMenu?.returnFocus}
+    ariaLabel={contextNote ? getNoteTitle(contextNote) : undefined}
+    items={contextNote ? getContextMenuItems(contextNote) : []}
     onClickOutside={closeContextMenu}
   />
 {/if}

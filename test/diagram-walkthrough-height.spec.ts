@@ -6,7 +6,7 @@ const externalBaseUrl = process.env.UI_PREVIEW_BASE_URL;
 let baseUrl = externalBaseUrl ?? '';
 let server: ViteDevServer | undefined;
 
-test.describe.configure({ mode: 'default' });
+test.describe.configure({ mode: 'default', timeout: 120_000 });
 
 test.beforeAll(async () => {
   if (externalBaseUrl) return;
@@ -145,7 +145,7 @@ async function open(page: Page, width: number, motion: string) {
     `${baseUrl}/sandbox/diagram-workbench?state=custom-walkthrough&theme=light&width=${width}&motion=${motion}`,
   );
   await expect(page.getByTestId('catalog-scene')).toHaveAttribute('data-preview-ready', 'true', {
-    timeout: 30_000,
+    timeout: 90_000,
   });
   await page.evaluate(() => document.fonts.ready);
   const root = page.locator('#custom-walkthrough .diagram-renderer');

@@ -21,6 +21,7 @@ import {
   selectGroupByRepo,
   selectGithubLinkDefaultAction,
   selectHasCompletedProviderSetup,
+  selectLabsSettingsVisible,
   selectLabsMultiplayerEnabled,
   selectLanguagePreference,
   selectNoteFontStyle,
@@ -46,6 +47,7 @@ import {
   setGroupByRepo,
   setGithubLinkDefaultAction,
   setHasCompletedProviderSetup,
+  setLabsSettingsVisible,
   setLabsMultiplayerEnabled,
   setLanguagePreference,
   setNoteFontStyle,
@@ -59,6 +61,7 @@ import {
   toggleGroupByRepo,
   toggleHasCompletedProviderSetup,
   toggleChatAurora,
+  toggleLabsSettingsVisibility,
   toggleLabsMultiplayer,
   toggleReduceMotionOnBattery,
   toggleShowArchived,
@@ -78,6 +81,7 @@ const SHOW_REASONING_BLOCKS_STORAGE_KEY = 'chat:showReasoningBlocks';
 const CHAT_AURORA_STORAGE_KEY = 'chat:auroraEnabled';
 const SHELL_TRANSPARENCY_STORAGE_KEY = 'appearance:shellTransparencyEnabled';
 const REDUCE_MOTION_ON_BATTERY_STORAGE_KEY = 'appearance:reduceMotionOnBattery';
+const LABS_SETTINGS_VISIBLE_STORAGE_KEY = 'labs:settingsVisible';
 const LABS_MULTIPLAYER_STORAGE_KEY = 'labs:multiplayerEnabled';
 const AGENT_STORAGE_KEY = 'agent-font-settings';
 const NOTE_STORAGE_KEY = 'note-font-settings';
@@ -183,6 +187,13 @@ export function* hydrateUserPreferencesWorker() {
   );
   if (typeof reduceMotionOnBattery === 'boolean') {
     yield* put(setReduceMotionOnBattery(reduceMotionOnBattery));
+  }
+
+  const labsSettingsVisible = yield* getLocalStorageJSON<boolean>(
+    LABS_SETTINGS_VISIBLE_STORAGE_KEY,
+  );
+  if (typeof labsSettingsVisible === 'boolean') {
+    yield* put(setLabsSettingsVisible(labsSettingsVisible));
   }
 
   const labsMultiplayerEnabled = yield* getLocalStorageJSON<boolean>(LABS_MULTIPLAYER_STORAGE_KEY);
@@ -297,6 +308,13 @@ function* persistReduceMotionOnBatteryWorker() {
   );
 }
 
+function* persistLabsSettingsVisibilityWorker() {
+  yield* setLocalStorageJSON(
+    LABS_SETTINGS_VISIBLE_STORAGE_KEY,
+    yield* selectLabsSettingsVisible.effect(),
+  );
+}
+
 function* persistLabsMultiplayerWorker() {
   yield* setLocalStorageJSON(
     LABS_MULTIPLAYER_STORAGE_KEY,
@@ -380,6 +398,10 @@ function* watchUserPreferenceWrites() {
   yield* takeEvery(
     [setReduceMotionOnBattery, toggleReduceMotionOnBattery],
     persistReduceMotionOnBatteryWorker,
+  );
+  yield* takeEvery(
+    [setLabsSettingsVisible, toggleLabsSettingsVisibility],
+    persistLabsSettingsVisibilityWorker,
   );
   yield* takeEvery(
     [setLabsMultiplayerEnabled, toggleLabsMultiplayer],

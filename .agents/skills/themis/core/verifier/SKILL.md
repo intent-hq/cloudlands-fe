@@ -1,12 +1,9 @@
 ---
 name: core/verifier
 description: >-
-  Verifier quality gate for themis diffs. Hard-fails recurring
-  review failures: instruction drift from required skills/docs, unjustified
-  pass-through wrappers after refactors, duplicated utilities created without
-  reuse discovery, non-canonical Redux state, and duplicate action/selector/saga
-  owners. Use when reviewing or verifying changes to skills, docs, reducers,
-  utilities, refactors, or shared-state implementation.
+  Use when reviewing Themis skills, docs, reducers, utilities, refactors, or
+  shared-state changes for instruction compliance, reuse, canonical ownership,
+  and required verification.
 type: sub-skill
 requires:
   - core
@@ -56,135 +53,6 @@ Run these gates on every implementation or documentation diff before acceptance.
 
 If any gate fails, request changes. Do not accept “looks good” without evidence for all gates.
 
-## Examples
-
-### 1. Verifier handoff evidence object
-
-```ts
-type GateResult = { command: string; exitCode: number; keyOutput: string };
-type VerifierEvidence = {
-  instructionsRead: string[];
-  scopeFiles: string[];
-  gateResults: GateResult[];
-  blockers: string[];
-};
-
-export const evidence: VerifierEvidence = {
-  instructionsRead: ["task note", "./SKILL.md", "@augmentcode/themis/docs/ARCHITECTURE.md"],
-  scopeFiles: ["skills/core/state-integrity/SKILL.md"],
-  gateResults: [{ command: "git diff --check", exitCode: 0, keyOutput: "no whitespace errors" }],
-  blockers: [],
-};
-```
-
-### 2. Instruction citation checklist
-
-```ts
-type Citation = { source: string; rule: string; evidence: string };
-
-export const instructionCitations: Citation[] = [
-  { source: "task note", rule: "scope limited to three SKILL.md files", evidence: "git diff --name-only" },
-  { source: "@augmentcode/themis/docs/ARCHITECTURE.md", rule: "utility reuse discovery", evidence: "rg search terms listed" },
-  { source: "state-integrity/SKILL.md", rule: "canonical owners", evidence: "action/selector/saga owner search" },
-];
-
-export const instructionCompliancePresent = instructionCitations.every((citation) => citation.evidence.length > 0);
-```
-
-### 3. Utility reuse discovery evidence before approving a helper
-
-```ts
-type ReuseDiscovery = {
-  searched: string[];
-  terms: string[];
-  existingUtility: string | null;
-  decision: "reuse" | "extend" | "new";
-};
-
-export const reuseDiscovery: ReuseDiscovery = {
-  searched: ["src/utils", "src/slices", "docs", "skills"],
-  terms: ["debounce", "selector channel", "waitFor", "safe storage helper"],
-  existingUtility: "@augmentcode/themis/utils/sagas/debounce-saga",
-  decision: "reuse",
-};
-```
-
-### 4. ❌ Bad: shallow approval without runnable evidence
-
-```ts
-// BAD: approval is not traceable to instructions, commands, searches, or files.
-export const shallowApproval = {
-  verdict: "approved",
-  checked: ["looks fine"],
-  commands: [],
-  blockers: [],
-};
-```
-
-### 5. ❌ Bad: approving derived Redux state as if tests alone were enough
-
-```ts
-// BAD: derived fields can pass unit tests while still violating state ownership.
-type Todo = { id: string; completed: boolean };
-type TodosState = {
-  itemsById: Record<string, Todo>;
-  completedTodos: Todo[];
-  completedCount: number;
-};
-
-export const acceptedStateShape = { reason: "tests pass", stateFields: ["completedTodos", "completedCount"] };
-```
-
-### 6. Corrected state-integrity evidence pairs canonical state with selectors
-
-```ts
-import { getItems, type Collection } from "@augmentcode/themis/utils/collections/collection-utils";
-import { store } from "$lib/store";
-
-type Todo = { id: string; completed: boolean };
-type TodosState = { items: Collection<Todo, "id"> };
-
-export const selectCompletedTodos = store.createSelector((state) => {
-  return getItems((state.todos as TodosState).items).filter((todo) => todo.completed);
-});
-export const selectCompletedCount = store.createSelector((state) => selectCompletedTodos.select(state).length);
-```
-
-### 7. Canonical owner search result object
-
-```ts
-type OwnerSearch = { terms: string[]; paths: string[]; duplicateHits: string[]; canonicalOwner: string };
-
-export const ownerSearch: OwnerSearch = {
-  terms: ["todos/load", "loadTodos", "watchLoadTodos", "selectCompletedTodos"],
-  paths: ["src", "docs", "skills"],
-  duplicateHits: [],
-  canonicalOwner: "src/slices/todos/todos-slice.ts",
-};
-```
-
-### 8. Final verifier report payload template
-
-```ts
-type VerifierReport = {
-  verdict: "approved" | "changes-requested";
-  confidence: "low" | "medium" | "high";
-  evidence: VerifierEvidence;
-  semanticChecks: string[];
-};
-
-type GateResult = { command: string; exitCode: number; keyOutput: string };
-type VerifierEvidence = { instructionsRead: string[]; scopeFiles: string[]; gateResults: GateResult[]; blockers: string[] };
-declare const evidence: VerifierEvidence;
-
-export const report: VerifierReport = {
-  verdict: evidence.blockers.length === 0 ? "approved" : "changes-requested",
-  confidence: "high",
-  evidence,
-  semanticChecks: ["reviewed selector lifecycle intent", "confirmed tests cover no-op reducer references"],
-};
-```
-
 ### Automated gate selection rules
 
 Use this repository's maintainer `npm run ...` scripts when reviewing package repo diffs. When verifying a consuming app that has installed the package, run ESLint with the app's composed domain root config imported from `@augmentcode/themis/eslint-plugins`.
@@ -205,10 +73,6 @@ Missing or stale evidence rules:
 
 ## Gate 1 — instruction compliance
 
-Pass only when the completion report or task note names the instructions that governed the work and provides evidence that they were followed.
-
-Pass/fail checks:
-
 - **PASS** — lists the applicable task requirements, skills, or docs used for the touched files.
 - **PASS** — includes concrete evidence: searches run, validation commands, diff checks, or file-specific rationale.
 - **FAIL** — implementation contradicts a MUST/NEVER rule from the task, spec, skill, or referenced docs.
@@ -226,8 +90,6 @@ Hard-fail a moved, renamed, or split module when the old path remains only as a 
 export { featureReducer, loadFeature } from './features/feature-slice';
 ```
 
-Pass/fail checks:
-
 - **PASS** — old modules were removed and imports updated to the new path.
 - **PASS** — old behavior was intentionally inlined where the old path still owns real logic.
 - **PASS** — a remaining compatibility shim has an adjacent comment naming the compatibility reason and sunset/removal condition.
@@ -240,8 +102,6 @@ Verifier output must say either “no pass-through wrappers” or list the justi
 ## Gate 3 — utility reuse
 
 Hard-fail a new helper, wrapper, or shared utility when the diff lacks reuse discovery or duplicates an existing utility.
-
-Pass/fail checks:
 
 - **PASS** — report lists searched paths/terms, including relevant `src/utils/`, `src/slices/**`, `docs/`, `skills/`, and app-local utility folders.
 - **PASS** — report states one outcome: reused existing utility, extended existing utility, or justified new utility.
@@ -256,8 +116,6 @@ Verifier output must compare new helpers against existing utility modules and ei
 
 Hard-fail Redux state that stores derived values or duplicated entity data.
 
-Pass/fail checks:
-
 - **PASS** — entity records have one canonical owner, usually a `Collection<T, K>` for id-keyed records.
 - **PASS** — state stores ids/relationships, request status, errors, and other source facts only.
 - **PASS** — counts, filtered/sorted lists, joins, `has*` booleans, selected entity objects, and display values are implemented as selectors.
@@ -270,8 +128,6 @@ Verifier output must say either “canonical Redux state only” or list every d
 ## Gate 5 — canonical action/selector/saga owners
 
 Hard-fail duplicate action type strings, copied selector implementations, parallel saga watchers, or duplicate derived saga function names unless the handoff documents an intentional fan-out owner.
-
-Pass/fail checks:
 
 - **PASS** — implementor reported search terms/paths for state, actions, selectors, and sagas before adding new owners.
 - **PASS** — new action creators live in one owning slice and other files import them.
@@ -297,8 +153,6 @@ Wave 3 coverage summary:
 
 Noisy semantic questions, such as whether a migration is complete or whether a test suite is behaviorally sufficient, remain verifier-led. Review diffs, searches, and task context rather than requesting new blocking CI rules unless the user approved them.
 
-Pass/fail checks:
-
 - **PASS** — command evidence shows exit code 0 and `[architecture-validation] no architecture gate violations found`.
 - **PASS** — `npm run validate:release` evidence is present when release/package validation is part of the task; it runs the architecture gate first.
 - **PASS** — any `eslint-disable-next-line architecture/<rule-id>` or file-level `eslint-disable architecture/<rule-id>` comment names the relevant rule and includes a concrete migration, compatibility, or external-data reason.
@@ -318,8 +172,6 @@ Verifier output must cite the architecture gate result, inspect any ignore comme
 
 Some rules are intentionally manual because they need task context or behavioral judgment. Do not fail a diff only because CI lacks a broad semantic rule; instead record the searches, diff review, and reasoning that prove the outcome is safe.
 
-Pass/fail checks:
-
 - **PASS** — verifier reviewed migration completeness, lifecycle intent, or test adequacy with concrete evidence when those risks apply.
 - **PASS** — manual findings are classified as accepted, follow-up, or blocker with a reason tied to task scope.
 - **PASS** — manual checks supplement, but do not replace, required automated gate evidence.
@@ -331,7 +183,8 @@ Verifier output must state whether any semantic checks were required and, if so,
 
 ## Completion report requirement
 
-Every verifier completion report must include:
+State the verdict (`approved` or `changes-requested`), confidence, reviewed files,
+and blockers. Every verifier completion report must include:
 
 1. Instruction compliance result and evidence.
 2. Refactor cleanup result and evidence.
@@ -343,29 +196,3 @@ Every verifier completion report must include:
 8. Semantic/verifier-guided checks reviewed, including any intentionally manual findings and why they should not become blocking CI for this task.
 
 Acceptance is blocked if any result is missing, failed, or lacks evidence, unless the user explicitly approves the exception.
-
-## Examples retained/added
-
-| # | Example | Kind |
-| --- | --- | --- |
-| 1 | Verifier handoff evidence object | Evidence |
-| 2 | Instruction citation checklist | Evidence |
-| 3 | Utility reuse discovery evidence | Evidence |
-| 4 | Shallow approval without runnable evidence | Bad |
-| 5 | Approving derived Redux state because tests pass | Bad |
-| 6 | Corrected canonical state and selector evidence | Good |
-| 7 | Canonical owner search result object | Evidence |
-| 8 | Final verifier report payload template | Evidence |
-| 9 | Pass-through wrapper after refactor | Bad retained |
-
-## Cases covered
-
-| Case | Examples |
-| --- | --- |
-| Instruction compliance and citation evidence | 1, 2, 4 |
-| Required automated gate reporting | 1, 8 |
-| Utility reuse discovery | 3 |
-| State integrity and selector-owned derived values | 5, 6 |
-| Canonical action/selector/saga owners | 7 |
-| Refactor cleanup / pass-through wrappers | 9 |
-| Verifier-guided semantic evidence beyond syntax/type checks | 4, 5, 8 |

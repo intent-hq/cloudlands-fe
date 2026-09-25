@@ -49,10 +49,10 @@ describe('AgentViewSettingsDropdown', () => {
     render(AgentViewSettingsDropdown);
 
     await fireEvent.click(screen.getByRole('button', { name: 'View settings' }));
-    expect(screen.getByRole('radio', { name: /Sans-serif/ }).getAttribute('aria-checked')).toBe(
-      'true',
-    );
-    await fireEvent.click(screen.getByRole('radio', { name: /Mono/ }));
+    expect(
+      screen.getByRole('menuitemradio', { name: /Sans-serif/ }).getAttribute('aria-checked'),
+    ).toBe('true');
+    await fireEvent.click(screen.getByRole('menuitemradio', { name: /Mono/ }));
 
     expect(mockState.dispatch).toHaveBeenCalledWith({
       type: 'fontSettings/setAgentFontStyle',

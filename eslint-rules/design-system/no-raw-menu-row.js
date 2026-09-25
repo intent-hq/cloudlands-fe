@@ -1,38 +1,51 @@
-import { relativeFilename, svelteElementName } from './common.js';
+import { relativeFilename } from './common.js';
+import { attribute, menuContract } from './menu-contract.js';
 
-const rowElements = new Set(['Button', 'button', 'div']);
 const rowRoles = new Set(['menuitem', 'menuitemradio', 'menuitemcheckbox', 'option']);
-
-function staticAttributeValue(attribute) {
-  if (attribute?.type !== 'SvelteAttribute' || !Array.isArray(attribute.value)) return undefined;
-  if (attribute.value.length !== 1 || attribute.value[0].type !== 'SvelteLiteral') return undefined;
-  return attribute.value[0].value;
-}
-
-function findAttribute(node, name) {
-  return node.startTag.attributes.find(
-    (attribute) => attribute.type === 'SvelteAttribute' && attribute.key?.name === name,
-  );
-}
 
 export default {
   meta: {
     type: 'suggestion',
-    docs: { description: 'Require the shared menu row recipe for menu and listbox rows' },
+    docs: { description: 'Require semantic menu rows and a canonical row recipe binding' },
     schema: [],
-    messages: { rawMenuRow: 'Use `menuItem()` instead — /sandbox/menu' },
+    messages: {
+      rawMenuRow: 'Use `menuItem()` instead — /sandbox/menu',
+      semanticMenuRow:
+        'Use `Menu.Item, Menu.CheckboxItem or Menu.RadioItem` instead — /sandbox/menu',
+    },
   },
   create(context) {
     if (!relativeFilename(context)?.endsWith('.svelte')) return {};
-    const sourceCode = context.sourceCode ?? context.getSourceCode();
+    const contract = menuContract(context);
     return {
       SvelteElement(node) {
-        if (!rowElements.has(svelteElementName(node))) return;
-        const role = findAttribute(node, 'role');
-        if (!rowRoles.has(staticAttributeValue(role))) return;
-        const classAttribute = findAttribute(node, 'class');
-        if (classAttribute && /\bmenuItem\s*\(/.test(sourceCode.getText(classAttribute))) return;
-        context.report({ node: role, messageId: 'rawMenuRow' });
+        if (contract.canonical(node, 'row')) return;
+        const role = attribute(node, 'role');
+        const roles = contract.values(role).filter((value) => rowRoles.has(value));
+        // The canonical collection host delegates row presentation to CollectionRow.
+        // Its selectable list items are not compact picker options or menu commands.
+        if (
+          relativeFilename(context) === 'src/lib/components/patterns/collection/ListView.svelte' &&
+          roles.length === 1 &&
+          roles[0] === 'option' &&
+          contract.values(attribute(node, 'data-slot')).includes('list-view-item')
+        )
+          return;
+        if (!roles.length) {
+          if (contract.insideMenu(node) && contract.interactive(node)) {
+            context.report({ node, messageId: 'semanticMenuRow' });
+          }
+          return;
+        }
+        if (!contract.containsRecipe(attribute(node, 'class'), 'menuItem')) {
+          context.report({ node: role, messageId: 'rawMenuRow' });
+        }
+        if (
+          roles.some((value) => value === 'menuitemradio' || value === 'menuitemcheckbox') &&
+          !attribute(node, 'aria-checked')
+        ) {
+          context.report({ node: role, messageId: 'semanticMenuRow' });
+        }
       },
     };
   },

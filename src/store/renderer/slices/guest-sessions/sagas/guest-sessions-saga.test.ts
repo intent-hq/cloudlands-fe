@@ -279,6 +279,7 @@ describe('guestSessionsSaga', () => {
     expect(failure).toBeInstanceOf(GuestSessionOperationError);
     expect(failure.code).toBe('ipc');
     expect(run.getState().guestSessions.leavingIds).toEqual([]);
+    expect(run.getState().guestSessions.failedLeaveIds).toEqual([GUEST.id]);
 
     await stop(run.task);
   });
@@ -334,8 +335,87 @@ describe('guestSessionsSaga', () => {
     expect(failure.code).toBe('ipc');
     expect(failure.message).not.toContain('SENTINEL-transport');
     expect(run.getState().guestSessions.leavingWorkspaceKeys).toEqual([]);
+    expect(run.getState().guestSessions.failedLeaveWorkspaceKeys).toEqual([
+      guestWorkspaceKey(GUEST.id, 'ws-guest'),
+    ]);
 
     await stop(run.task);
+  });
+
+  it.each(['host', 'workspace'] as const)(
+    'coalesces duplicate %s leaves while unrelated hosts remain independent',
+    async (kind) => {
+      const run = start();
+      await settle();
+      let release!: (value: unknown) => void;
+      invoke.mockImplementation(
+        () =>
+          new Promise((resolve) => {
+            release = resolve;
+          }),
+      );
+      const request = (id: string) =>
+        kind === 'host'
+          ? leaveGuestSessionRequested(id)
+          : leaveGuestWorkspaceRequested(id, 'ws-guest');
+      const first = request(GUEST.id);
+      const second = request(GUEST.id);
+      run.dispatch(first);
+      run.dispatch(second);
+      const releaseFirst = release;
+      const other = request('guest-2');
+      run.dispatch(other);
+      const channel = kind === 'host' ? GUEST_SESSIONS.LEAVE : GUEST_SESSIONS.LEAVE_WORKSPACE;
+      expect(invoke.mock.calls.filter(([name]) => name === channel)).toEqual([
+        [channel, kind === 'host' ? { id: GUEST.id } : { id: GUEST.id, workspaceId: 'ws-guest' }],
+        [channel, kind === 'host' ? { id: 'guest-2' } : { id: 'guest-2', workspaceId: 'ws-guest' }],
+      ]);
+      const result =
+        kind === 'host'
+          ? { id: GUEST.id, revoked: true }
+          : { id: GUEST.id, workspaceId: 'ws-guest', left: true };
+      releaseFirst(result);
+      await expect(first.promise).resolves.toEqual(result);
+      await expect(second.promise).resolves.toEqual(result);
+      const cancelled = other.promise.catch((error: GuestSessionOperationError) => error.code);
+      await stop(run.task);
+      expect(await cancelled).toBe('cancelled');
+      release({ ...result, id: 'guest-2' });
+      await settle();
+      expect(run.getState().guestSessions.leavingIds).toEqual([]);
+      expect(run.getState().guestSessions.leavingWorkspaceKeys).toEqual([]);
+      expect(run.getState().guestSessions.failedLeaveIds).toEqual([]);
+      expect(run.getState().guestSessions.failedLeaveWorkspaceKeys).toEqual([]);
+    },
+  );
+
+  it('settles every duplicate leave on teardown without retaining a retry or applying late results', async () => {
+    const run = start();
+    await settle();
+    let release!: (value: unknown) => void;
+    invoke.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          release = resolve;
+        }),
+    );
+    const first = leaveGuestSessionRequested(GUEST.id);
+    const second = leaveGuestSessionRequested(GUEST.id);
+    const outcomes = Promise.all(
+      [first.promise, second.promise].map((promise) =>
+        promise.catch((error: GuestSessionOperationError) => error.code),
+      ),
+    );
+    run.dispatch(first);
+    run.dispatch(second);
+    await stop(run.task);
+    expect(await outcomes).toEqual(['cancelled', 'cancelled']);
+    release({ id: GUEST.id, revoked: true });
+    await settle();
+    expect(run.getState().guestSessions.failedLeaveIds).toEqual([]);
+    expect(
+      run.actions.filter((action) => action.type === leaveGuestSessionRequested.success.toString()),
+    ).toEqual([]);
   });
 
   describe('remove all guests', () => {
@@ -422,6 +502,15 @@ describe('guestSessionsSaga', () => {
       expect(JSON.stringify(result)).not.toContain('SENTINEL');
       expect(calls('workspace.invite.revoke')).toHaveLength(2);
       expect(run.getState().guestSessions.clearingWorkspaceIds).toEqual([]);
+      expect(getItems(run.getState().guestSessions.sweepReports)).toMatchObject([
+        {
+          workspaceId: 'ws-1',
+          workspaceTitle: 'ws-1',
+          failedMemberIds: [MEMBER.principalId],
+          failedInviteLabels: ['pinned'],
+          invitesUnavailable: false,
+        },
+      ]);
 
       await stop(run.task);
     });

@@ -157,6 +157,7 @@
     skills?: readonly SkillInfo[];
     skillsLoading?: boolean;
     skillsError?: string | null;
+    onSkillsRetry?: () => void;
     minHeight?: number;
     maxHeight?: number;
   }
@@ -188,6 +189,7 @@
     skills = [],
     skillsLoading = false,
     skillsError = null,
+    onSkillsRetry,
     minHeight = 80,
     maxHeight = 300,
   }: Props = $props();
@@ -1612,6 +1614,7 @@
           items={filteredSkills}
           loading={skillsLoading}
           error={skillsError}
+          onRetry={onSkillsRetry}
           onSelect={selectSlashSkill}
           onDismiss={dismissSlashMenu}
           onActiveOptionChange={(optionId) => (slashActiveOptionId = optionId)}

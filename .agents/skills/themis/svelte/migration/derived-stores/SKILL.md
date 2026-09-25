@@ -1,13 +1,13 @@
 ---
 name: svelte/migration/derived-stores
 description: >-
-  Convert derived() stores and $derived runes into store.createSelector when a
-  configured Store exists, composing with upstream selectors via .select(state).
-  Covers Svelte 4 derived() and Svelte 5 $derived / getter conversion.
+  Use when converting shared Svelte derived() stores, $derived runes, or
+  getters into selectors composed through a configured Themis Store.
 type: sub-skill
 requires:
   - svelte/selectors
   - svelte/migration
+  - core/collections
 triggers:
   - migrate derived
   - migrate $derived
@@ -18,8 +18,8 @@ triggers:
 
 > App-level `derived()` stores and shared `$derived` values become named
 > selectors created from the configured app `Store`. Compose selectors with
-> `.select(state)` inside selector bodies, call the readable form only during
-> component initialization, and use `.effect(...)` from sagas.
+> `.select(state)` inside selector bodies. Consumer call modes are owned by
+> `../../selector-lifecycle/SKILL.md` → **Call-mode map**.
 
 ## Examples
 
@@ -54,10 +54,10 @@ export const selectGreeting = store.createSelector((state) => {
 ```typescript
 // src/lib/store/slices/todos/todos-selectors.ts
 import { store } from "$lib/store/store";
+import { getItems } from "@augmentcode/themis/utils/collections/collection-utils";
 
-type Todo = { id: string; title: string; projectId: string; completed: boolean };
-
-export const selectTodos = store.createSelector((state) => state.todos.items as Todo[]);
+// state.todos.items is Collection<Todo, "id">; the array is derived output only.
+export const selectTodos = store.createSelector((state) => getItems(state.todos.items));
 export const selectTodosForProject = store.createSelector((state, projectId: string) => {
   return selectTodos.select(state).filter((todo) => todo.projectId === projectId);
 });
@@ -88,12 +88,11 @@ export const selectDisplayName = store.createSelector((state) => {
 ### 5. Components consume migrated selectors as readables at initialization
 
 ```typescript
-// src/lib/components/ProfileSummary.svelte.ts
+// Inside the <script> of src/lib/components/ProfileSummary.svelte
 import { selectDisplayName, selectProfile } from "$lib/store/slices/profile/profile-selectors";
 
-export const profile$ = selectProfile();
-export const displayName$ = selectDisplayName();
-export const profileTemplateBindings = { profile$, displayName$ };
+const profile$ = selectProfile();
+const displayName$ = selectDisplayName();
 ```
 
 ### 6. Sagas read migrated derived values with `.effect(...)`
@@ -114,11 +113,14 @@ export function* profileSaga() {
 }
 ```
 
-### 7. ❌ Bad: inline derivation duplicates ownership and can read stale state
+### 7. ❌ Bad: inline derivation duplicates ownership
 
 ```typescript
 // ❌ BAD: recomputes a migrated derived value in a handler instead of using the selector owner.
-type AppState = { todos: { items: Array<{ id: string; completed: boolean }> } };
+import { getItems, type Collection } from "@augmentcode/themis/utils/collections/collection-utils";
+
+type Todo = { id: string; completed: boolean };
+type AppState = { todos: { items: Collection<Todo, "id"> } };
 type AppStore = { state: AppState; dispatch(action: { type: string; payload?: unknown }): void };
 
 declare const store: AppStore;
@@ -126,7 +128,7 @@ declare const selectCompletedCount: { select(state: AppState): number };
 declare function saveCompletedCount(count: number): { type: string; payload: [number] };
 
 export function badSaveCompletedCount() {
-  const completed = store.state.todos.items.filter((todo) => todo.completed).length;
+  const completed = getItems(store.state.todos.items).filter((todo) => todo.completed).length;
   store.dispatch(saveCompletedCount(completed));
 }
 
@@ -145,12 +147,14 @@ export function goodSaveCompletedCount() {
 - For selectors parameterized by an id or key, put the arguments on
   `store.createSelector((state, arg) => ...)` instead of creating a new selector
   per call site.
-- For reading a migrated derived value from a saga, use
-  `yield* selectFoo.effect(args)`; for event handlers and tests, use
-  `selectFoo.select(store.state, args)`.
+- Derived arrays are valid selector outputs, not entity-array storage. Normalize
+  the slice using `../../../core/collections/SKILL.md` → **Shape and imports**.
+- When wiring migrated consumers, apply `../../selector-lifecycle/SKILL.md` →
+  **Call-mode map** for saga, handler, test, and component reads.
 
 ## Cross-References
 
-- `../../selectors/SKILL.md` — selector creation and call modes
+- `../../selectors/SKILL.md` — selector authoring, composition, and cache contracts
 - `../../selector-lifecycle/SKILL.md` — readable / direct / saga usage
 - `../component-migration/SKILL.md` — component consumption after selector migration
+

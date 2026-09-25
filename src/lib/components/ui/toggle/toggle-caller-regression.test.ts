@@ -22,7 +22,7 @@ function sourceFiles(directory: string): string[] {
     const path = join(directory, entry.name);
     if (entry.isDirectory()) return sourceFiles(path);
     return /\.(svelte|ts)$/.test(entry.name) &&
-      !/\.(test(?:-harness)?|fixtures|meta)\./.test(entry.name)
+      !/\.(test(?:-harness)?|spec|fixtures|meta)\./.test(entry.name)
       ? [path]
       : [];
   });
@@ -122,8 +122,6 @@ describe('B2 caller metadata regression', () => {
       ],
       toggle: ['src/lib/component-catalog/renderers/BasicCatalogPreview.svelte'],
       'toggle-group': [
-        'src/features/layout/tab-types/AgentViewSettingsDropdown.svelte',
-        'src/features/layout/tab-types/NoteViewSettingsDropdown.svelte',
         'src/lib/component-catalog/CatalogControls.svelte',
         'src/lib/component-catalog/renderers/BasicCatalogPreview.svelte',
         'src/lib/components/patterns/settings/custom-controls.ts',

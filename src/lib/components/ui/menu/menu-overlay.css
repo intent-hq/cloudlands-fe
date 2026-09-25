@@ -1,0 +1,11 @@
+@layer components {
+  .menu-overlay {
+    max-width: calc(100dvw - 1rem);
+  }
+
+  /* Keep compact trailing glyphs on the label's first line, not its description.
+     Indicator also serves value pickers; only menu rows opt into this contract. */
+  .menu-row > :is([data-slot='menu-item-indicator'], [data-slot='menu-sub-chevron']) {
+    margin-block-start: max(0px, calc((1lh - 1rem) / 2));
+  }
+}

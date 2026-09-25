@@ -711,9 +711,21 @@ jobs:
       # OOM lesson — monorepo#3352 — was a job-wide 8 GB cap, not this).
       NODE_OPTIONS: '--max-old-space-size=4096'
       LINT_BASELINE_BASE_REF: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha }}
+      TRANSFER_SELECTION_FIXTURE_ROOT: ${{ github.workspace }}/.cache/transfer-selection-contract/docs/protocol/fixtures/transfer-selection
     steps:
       - name: Checkout
         uses: actions/checkout@v7
+      - name: Checkout shared transfer-selection fixtures
+        uses: actions/checkout@v7
+        with:
+          repository: intent-hq/intent
+          ref: main
+          path: .cache/transfer-selection-contract
+          persist-credentials: false
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /docs/protocol/fixtures/transfer-selection/
+            /scripts/
       - name: Fetch baseline comparison commit
         run: |
           if [ -n "$LINT_BASELINE_BASE_REF" ]; then
@@ -734,6 +746,27 @@ jobs:
         with:
           node-version: '24'
           cache: ${{ needs.route.outputs.linux_burst == 'true' && 'pnpm' || '' }}
+      - name: Read backend Keychain fixture pin
+        id: backend-keychain-fixtures
+        run: node scripts/backend-keychain-fixtures.mjs | tee -a "$GITHUB_OUTPUT"
+      - name: Checkout pinned backend Keychain contract
+        uses: actions/checkout@v7
+        with:
+          repository: intent-hq/intent
+          ref: ${{ steps.backend-keychain-fixtures.outputs.sourceCommit }}
+          path: .cache/backend-keychain-contract
+          persist-credentials: false
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /docs/protocol/fixtures/backend-keychain/v1/
+            /scripts/backend-keychain-contract.mjs
+      - name: Verify backend Keychain fixture provenance
+        env:
+          SOURCE_COMMIT: ${{ steps.backend-keychain-fixtures.outputs.sourceCommit }}
+        run: >-
+          node .cache/backend-keychain-contract/scripts/backend-keychain-contract.mjs verify
+          --source-root .cache/backend-keychain-contract --source-commit "$SOURCE_COMMIT"
+          --component cloudlands-fe --component-root .
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
       - name: Generate IPC channels
@@ -743,7 +776,12 @@ jobs:
         # so a leg never depends on test internals to stay self-contained.
         run: pnpm run generate:ipc-channels
       - name: Unit tests
-        run: pnpm run test:unit --shard=${{ matrix.shard }}/2
+        run: |
+          contract_sha=$(git -C .cache/transfer-selection-contract rev-parse HEAD)
+          echo "Transfer selection contract: intent-hq/intent@$contract_sha"
+          echo "Transfer selection contract: intent-hq/intent@$contract_sha" >> "$GITHUB_STEP_SUMMARY"
+          node scripts/transfer-selection-fixtures.mjs
+          pnpm run test:unit --shard=${{ matrix.shard }}/2
 
   test-integration:
     # The integration suite from the pre-split Unit & Integration Tests job
@@ -1165,9 +1203,9 @@ jobs:
     needs: [route, release-fast-path]
     if: ${{ !cancelled() && (github.event_name == 'merge_group' || needs.release-fast-path.outputs.root_playwright_required == 'true') && needs.route.result == 'success' && needs.release-fast-path.outputs.fast_path != 'true' }}
     runs-on: ${{ fromJSON(needs.route.outputs.linux_labels) }}
-    # Single-worker run of ~25 specs, each booting its own Vite harness;
-    # 30 min is ~2x the expected wall time plus setup (install / browsers).
-    timeout-minutes: 30
+    # The single-worker suite exhausted a 30-minute job budget near completion.
+    # Allow setup and suite headroom within the 60-minute queue budget (intent#5843).
+    timeout-minutes: 45
     permissions:
       contents: read
     env:
@@ -1233,7 +1271,7 @@ jobs:
         # packages whose fetch blew test-ct's budget (intent#4723) — so
         # install the browser alone; a missing lib fails the first spec
         # loudly rather than silently. Step-level timeout so a download
-        # stall fails here in minutes, not at the 30-min job budget.
+        # stall fails here in minutes instead of exhausting the overall job budget.
         if: needs.route.outputs.linux_burst == 'true'
         timeout-minutes: 8
         run: pnpm exec playwright install chromium
@@ -1395,7 +1433,7 @@ jobs:
     if: github.event_name == 'merge_group' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository)
     permissions:
       contents: read
-    uses: intent-hq/intent/.github/workflows/consumer-checks.yml@main
+    uses: intent-hq/intent/.github/workflows/consumer-checks.yml@b0a3dc55179f7ff2b89fc22f6e576aa76d0cde14
     with:
       component: cloudlands-fe
       head-sha: ${{ github.event.pull_request.head.sha || github.sha }}

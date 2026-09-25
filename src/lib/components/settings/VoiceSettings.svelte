@@ -131,7 +131,7 @@
       : m.settings_voice_inputDevice_unnamed({ number: index + 1 });
   }
 
-  // Trigger text: selected device label, or "System default" when unset/gone.
+  // A disconnected selection remains explicit; only an unset ID means default.
   const selectedInputDevice = $derived(
     $inputDevices$.find((device) => device.deviceId === $inputDeviceId$),
   );
@@ -468,16 +468,27 @@
           >
             {selectedInputDevice
               ? inputDeviceLabel(selectedInputDevice, $inputDevices$.indexOf(selectedInputDevice))
-              : m.settings_voice_inputDevice_default()}
+              : $inputDeviceId$
+                ? m.settings_voice_inputDevice_unavailable({ id: $inputDeviceId$ })
+                : m.settings_voice_inputDevice_default()}
           </Select.Trigger>
           <Select.Content>
             <Select.Item value="">
               <span class="type-body">{m.settings_voice_inputDevice_default()}</span>
             </Select.Item>
+            {#if $inputDeviceId$ && !selectedInputDevice}
+              <Select.Item value={$inputDeviceId$} disabled>
+                {m.settings_voice_inputDevice_unavailable({ id: $inputDeviceId$ })}
+              </Select.Item>
+            {/if}
             {#each $inputDevices$ as device, index (device.deviceId)}
               <Select.Item value={device.deviceId}>
                 <span class="type-body">{inputDeviceLabel(device, index)}</span>
               </Select.Item>
+            {:else}
+              <p class="type-caption px-2 py-1.5 text-muted-foreground" role="status">
+                {m.settings_voice_inputDevice_empty()}
+              </p>
             {/each}
           </Select.Content>
         </Select.Root>

@@ -1,13 +1,17 @@
 <script lang="ts">
   import { DropdownMenu as MenuPrimitive } from 'bits-ui';
-  import { tick } from 'svelte';
+  import { getContext, tick } from 'svelte';
   import { cn } from '$lib/utils.js';
   import ListHighlight from './menu-list-highlight.svelte';
-  import { menuOverlay, menuSubmenuAlignOffset } from './menu-recipes';
+  import { menuOverlay } from './menu-recipes';
   import { clampSurface, setSurface, useSurface } from '$lib/components/ui/surface-context';
   import { OPTION_LIST_CONTAINER_CLASS } from '$lib/styles/option-list-row';
   import { useStaticOverlay } from '../static-overlay-context.svelte';
+  import { OVERLAY_VIEWPORT_GUTTER } from '$lib/components/ui/overlay-positioning';
   import { handleMenuPageKey, setMenuTabStop, syncMenuTabStopFromFocus } from './menu-roving-focus';
+  import { SUBMENU_CONTEXT, type SubmenuContext } from './submenu-context';
+  import { resolveSubmenuSide } from './submenu-placement';
+  import { createMenuLayout } from './menu-layout-context.svelte';
 
   const uid = $props.id();
 
@@ -18,9 +22,13 @@
     portal = true,
     portalProps,
     staticPosition,
+    alignIconColumn,
+    side = 'right',
     sideOffset = 4,
     align = 'start',
-    alignOffset = align === 'start' ? menuSubmenuAlignOffset : 0,
+    alignOffset,
+    avoidCollisions = true,
+    collisionPadding = OVERLAY_VIEWPORT_GUTTER,
     onkeydown,
     onfocusin,
     children,
@@ -29,6 +37,8 @@
     portal?: boolean;
     portalProps?: MenuPrimitive.PortalProps;
     staticPosition?: boolean;
+    /** Inherits column alignment, but computes its own visible icon reservation. */
+    alignIconColumn?: boolean;
   } = $props();
 
   // bits-ui 2.18.1: SubContent is the shared menu primitive, so its available-height
@@ -36,7 +46,62 @@
   // in menu-content.svelte. The differing var names are intentional.
   const maxHeight = 'var(--bits-menu-content-available-height, calc(100dvh - 1rem))';
   const rootStaticPosition = useStaticOverlay();
+  createMenuLayout(() => alignIconColumn);
   const isStatic = $derived(staticPosition ?? rootStaticPosition());
+  const submenu = getContext<SubmenuContext | undefined>(SUBMENU_CONTEXT);
+  let verticalFallback = $state(false);
+  let leadingInset = $state(0);
+  const resolvedSide = $derived(verticalFallback ? 'bottom' : side);
+  const resolvedAlignOffset = $derived(
+    alignOffset ??
+      (align === 'start' && (resolvedSide === 'right' || resolvedSide === 'left')
+        ? -leadingInset
+        : 0),
+  );
+
+  $effect(() => {
+    const content = ref;
+    const trigger = submenu?.trigger;
+    if (!content || !trigger || isStatic) {
+      verticalFallback = false;
+      leadingInset = 0;
+      return;
+    }
+    const padding =
+      typeof collisionPadding === 'number'
+        ? { left: collisionPadding, right: collisionPadding }
+        : { left: collisionPadding.left ?? 0, right: collisionPadding.right ?? 0 };
+    const preferred = side;
+    const gap = sideOffset;
+    const collisionsEnabled = avoidCollisions;
+    function updatePlacement() {
+      // Align the first row, not the popup border, with the owning parent row.
+      const style = getComputedStyle(content!);
+      leadingInset = parseFloat(style.paddingTop) + parseFloat(style.borderTopWidth);
+      verticalFallback =
+        collisionsEnabled &&
+        resolveSubmenuSide(
+          preferred,
+          trigger!.getBoundingClientRect(),
+          content!.offsetWidth,
+          window.innerWidth,
+          gap,
+          padding,
+        ) !== preferred;
+    }
+    updatePlacement();
+    const observer =
+      typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(updatePlacement);
+    observer?.observe(content);
+    observer?.observe(trigger);
+    window.addEventListener('resize', updatePlacement);
+    window.addEventListener('scroll', updatePlacement, true);
+    return () => {
+      observer?.disconnect();
+      window.removeEventListener('resize', updatePlacement);
+      window.removeEventListener('scroll', updatePlacement, true);
+    };
+  });
 
   const surface = clampSurface(useSurface() + 2);
   setSurface(surface);
@@ -93,9 +158,12 @@
       data-slot="menu-sub-content"
       data-surface-level={surface}
       class={contentClass}
+      side={resolvedSide}
       {sideOffset}
       {align}
-      {alignOffset}
+      alignOffset={resolvedAlignOffset}
+      {avoidCollisions}
+      {collisionPadding}
       style="max-height: {maxHeight}"
       onkeydown={handleKeydown}
       onfocusin={handleFocusin}
@@ -112,9 +180,12 @@
     data-slot="menu-sub-content"
     data-surface-level={surface}
     class={contentClass}
+    side={resolvedSide}
     {sideOffset}
     {align}
-    {alignOffset}
+    alignOffset={resolvedAlignOffset}
+    {avoidCollisions}
+    {collisionPadding}
     style="max-height: {maxHeight}"
     onkeydown={handleKeydown}
     onfocusin={handleFocusin}

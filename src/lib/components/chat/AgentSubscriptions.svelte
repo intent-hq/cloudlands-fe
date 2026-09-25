@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { CHAT_OPERATIONAL_ICON_CLASS } from './operational-disclosure-row';
   import { IntentMarkLoader } from '$lib/components/ui/indicators';
   /**
    * AgentSubscriptions Component
@@ -560,9 +561,7 @@
   async function stopWatchedAgent(watchedAgentId: string) {
     if (!workspaceId) return;
     try {
-      const action = stopAgentSessionRequested(workspaceId, watchedAgentId);
-      appStore.dispatch(action);
-      await action.promise;
+      await appStore.dispatch(stopAgentSessionRequested(workspaceId, watchedAgentId));
     } catch (error) {
       logger.error('Failed to stop watched agent', { watchedAgentId, error });
     }
@@ -588,9 +587,7 @@
       return;
     }
     try {
-      const action = cancelAgentSubscriptionsRequested(workspaceId, agentId, scope);
-      appStore.dispatch(action);
-      await action.promise;
+      await appStore.dispatch(cancelAgentSubscriptionsRequested(workspaceId, agentId, scope));
     } catch (error) {
       logger.error('Failed to cancel watch', { watchedAgentId: row.agentId, error });
     }
@@ -752,8 +749,8 @@
             <span class={SUBSCRIPTION_LEADING_COLUMN_CLASS}>
               <Fa
                 icon={faBolt}
-                size={14}
-                class="h-3.5! w-3.5! shrink-0 {SUBSCRIPTION_ICON_CLASS}"
+                size={16}
+                class="{CHAT_OPERATIONAL_ICON_CLASS} {SUBSCRIPTION_ICON_CLASS}"
               />
             </span>
             <span class="shrink-0 whitespace-nowrap"
@@ -819,8 +816,8 @@
           >
             <Fa
               icon={faCircleCheck}
-              size={14}
-              class="h-3.5! w-3.5! shrink-0 {SUBSCRIPTION_ICON_CLASS}"
+              size={16}
+              class="{CHAT_OPERATIONAL_ICON_CLASS} {SUBSCRIPTION_ICON_CLASS}"
             />
           </span>
           <span
@@ -840,8 +837,8 @@
             >
               <Fa
                 icon={faBolt}
-                size={14}
-                class="h-3.5! w-3.5! shrink-0 {SUBSCRIPTION_ICON_CLASS}"
+                size={16}
+                class="{CHAT_OPERATIONAL_ICON_CLASS} {SUBSCRIPTION_ICON_CLASS}"
               />
             </span>
           {/if}
@@ -857,8 +854,8 @@
                   {#if isCompleted}
                     <Fa
                       icon={faBolt}
-                      size={14}
-                      class="h-3.5! w-3.5! shrink-0 {SUBSCRIPTION_ICON_CLASS}"
+                      size={16}
+                      class="{CHAT_OPERATIONAL_ICON_CLASS} {SUBSCRIPTION_ICON_CLASS}"
                     />
                   {/if}
                   {m.chat_agentSubscriptions_wokenUp_label()}
@@ -915,14 +912,14 @@
                   {#if hasActiveAgentRows}
                     <Fa
                       icon={faHourglass}
-                      size={14}
-                      class="h-3.5! w-3.5! shrink-0 {SUBSCRIPTION_ICON_CLASS}"
+                      size={16}
+                      class="{CHAT_OPERATIONAL_ICON_CLASS} {SUBSCRIPTION_ICON_CLASS}"
                     />
                   {:else}
                     <Fa
                       icon={faCircleCheck}
-                      size={14}
-                      class="h-3.5! w-3.5! shrink-0 {SUBSCRIPTION_ICON_CLASS}"
+                      size={16}
+                      class="{CHAT_OPERATIONAL_ICON_CLASS} {SUBSCRIPTION_ICON_CLASS}"
                     />
                   {/if}
                 </span>
@@ -996,8 +993,8 @@
                   >
                     <Fa
                       icon={faCircleCheck}
-                      size={14}
-                      class="h-3.5! w-3.5! shrink-0 {SUBSCRIPTION_ICON_CLASS}"
+                      size={16}
+                      class="{CHAT_OPERATIONAL_ICON_CLASS} {SUBSCRIPTION_ICON_CLASS}"
                     />
                   </span>
                   <span

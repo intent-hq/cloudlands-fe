@@ -58,9 +58,7 @@
     menuOpen = false;
     openError = null;
     try {
-      const action = openConnectionRequested(id);
-      appStore.dispatch(action);
-      const result = await action.promise;
+      const result = await appStore.dispatch(openConnectionRequested(id));
       if (result.status === 'secret-unavailable') {
         openError = m.hud_backendMenu_secretUnavailable_error({
           label: connectionDisplayLabel(id),
@@ -68,15 +66,19 @@
         menuOpen = true;
       }
     } catch {
-      // Other failures are surfaced via the slice's op-status/error; nothing
-      // more to do here (the list/active refresh arrives via connections:changed).
+      openError = m.hud_backendMenu_openFailed_error({ label: connectionDisplayLabel(id) });
+      menuOpen = true;
     }
   }
 </script>
 
 <div class="hud-backend-menu">
   <Menu.Root bind:open={menuOpen}>
-    <Menu.Trigger class="hud-footer-system" data-testid="hud-footer-system">
+    <Menu.Trigger
+      class="hud-footer-system"
+      data-testid="hud-footer-system"
+      aria-label={m.layout_daemonStatus_connections_header()}
+    >
       <span class="hud-footer-dot" class:hud-footer-dot-online={online}></span>
       <!-- i18n-ignore (brand/daemon name) -->
       <span class="hud-footer-system-key">INTENTD</span>
@@ -97,7 +99,7 @@
       align="start"
       collisionPadding={8}
       preventScroll={false}
-      aria-label={m.ui_dropdownMenu_ariaLabel()}
+      aria-label={m.layout_daemonStatus_connections_header()}
     >
       <div class="min-w-52 w-max max-w-72 font-mono">
         <Menu.Item class="cursor-pointer text-xs" onSelect={openConnectModal}>
@@ -106,6 +108,7 @@
         </Menu.Item>
 
         {#if $connections$.length > 0}
+          <Menu.Separator />
           <Header class="px-2 pt-1.5 pb-0.5" size={6}
             >{m.layout_daemonStatus_connections_header()}</Header
           >
@@ -116,7 +119,7 @@
               class="cursor-pointer text-xs"
               onSelect={() => handleOpenConnection(conn.id)}
             >
-              <span class="min-w-0 flex-1 truncate">
+              <span class="min-w-0 flex-1 truncate" title={connectionDisplayLabel(conn.id)}>
                 {conn.isLocal
                   ? m.layout_daemonStatus_localConnection_label()
                   : formatConnectionLabel(conn)}

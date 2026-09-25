@@ -1,0 +1,57 @@
+{
+  "$meta": {
+    "generatedOn": "linux"
+  },
+  "high": {
+    "480": {
+      "probes": {
+        "[data-testid=\"encoder-effort-preview\"], [role=\"status\"], [data-testid=\"effort-picker-trigger\"]": {
+          "fontSize": 15,
+          "fontWeight": 400,
+          "gap": 0,
+          "height": 36,
+          "lineHeight": 22,
+          "marginBottom": 0,
+          "marginTop": 0,
+          "paddingLeft": 0,
+          "paddingRight": 0,
+          "width": 102.45,
+          "x": 188.77,
+          "y": 1132
+        },
+        "data-slot=button": {
+          "fontSize": 13,
+          "fontWeight": 400,
+          "gap": 4,
+          "height": 28,
+          "lineHeight": 18,
+          "marginBottom": 0,
+          "marginTop": 0,
+          "paddingLeft": 8,
+          "paddingRight": 8,
+          "width": 380,
+          "x": 50,
+          "y": 88
+        },
+        "data-testid=encoder-effort-preview": {
+          "fontSize": 15,
+          "fontWeight": 400,
+          "gap": 0,
+          "height": 192,
+          "lineHeight": 22,
+          "marginBottom": 0,
+          "marginTop": 0,
+          "paddingLeft": 24,
+          "paddingRight": 24,
+          "width": 430,
+          "x": 25,
+          "y": 25
+        }
+      },
+      "root": {
+        "height": 242,
+        "width": 480
+      }
+    }
+  }
+}

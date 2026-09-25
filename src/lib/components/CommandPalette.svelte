@@ -35,6 +35,8 @@
   import { isCmdClickModifier } from '$shared/utils/link-helpers';
 
   import { selectBrowserRecentUrls } from '$store/renderer/slices/browser/browser-selectors';
+  import { selectLabsMultiplayerEnabled } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
+  import { setLabsMultiplayerEnabled } from '$store/renderer/slices/user-preferences/user-preferences-slice';
   import { initBrowserWorkspace } from '$store/renderer/slices/browser/browser-slice';
   import {
     selectHidesAgentLifecycleActions,
@@ -127,6 +129,7 @@
 
   let searchQuery = $state('');
   const workspaceItems = selectWorkspaceItems();
+  const labsMultiplayerEnabled$ = selectLabsMultiplayerEnabled();
   // Collaborators (multiplayer w3) are refused on terminal + browser methods and
   // cannot create workspaces, so those commands and result groups are withheld.
   const isCollaborator$ = selectIsWorkspaceCollaborator(workspaceIdStore);
@@ -142,7 +145,9 @@
       (command) =>
         !($isCollaborator$ && WORKSPACE_OWNER_ONLY_COMMAND_IDS.has(command.id)) &&
         !($hidesAgentLifecycleActions$ && command.id === 'new-agent') &&
-        !($isCollaboratorOnlyClient$ && command.id === 'new-workspace'),
+        !($isCollaboratorOnlyClient$ && command.id === 'new-workspace') &&
+        !($labsMultiplayerEnabled$ && command.id === 'enable-experimental-multiplayer') &&
+        !(!$labsMultiplayerEnabled$ && command.id === 'disable-experimental-multiplayer'),
     ),
   );
   const currentChanges$ = selectCurrentChanges(workspaceIdStore);
@@ -799,6 +804,12 @@
         return true;
       case 'settings':
         navigateToSettings();
+        return true;
+      case 'enable-experimental-multiplayer':
+        appStore.dispatch(setLabsMultiplayerEnabled(true));
+        return true;
+      case 'disable-experimental-multiplayer':
+        appStore.dispatch(setLabsMultiplayerEnabled(false));
         return true;
       case 'new-agent':
         if (workspaceId && !$hidesAgentLifecycleActions$) {

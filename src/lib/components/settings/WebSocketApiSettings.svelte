@@ -46,16 +46,15 @@
   import ListenTargetSelector from './ListenTargetSelector.svelte';
   import type { ListenTargetSelection } from './ListenTargetSelector.svelte';
   import { m } from '$shared/paraglide/messages.js';
-  import { selectCurrentConnectionId } from '$store/renderer/slices/connections/connections-selectors';
-  import { loadKeychainSyncStateRequested } from '$store/renderer/slices/connections/connections-slice';
+  import {
+    selectCurrentConnectionId,
+    selectKeychainSyncState,
+    selectSelfPublication,
+    selectSelfPublicationBusy,
+  } from '$store/renderer/slices/connections/connections-selectors';
+  import { selfPublicationRequested } from '$store/renderer/slices/connections/connections-slice';
   import { store as appStore } from '$store/renderer/store';
-  import { IPC_CHANNELS } from '$shared/ipc-registry';
   import { LOCAL_CONNECTION_ID } from '$shared/types/connections';
-  import type {
-    PublishSelfResult,
-    SelfPublishedStateResult,
-    UnpublishSelfResult,
-  } from '$shared/types/connections';
 
   let {
     expanded = true,
@@ -66,8 +65,6 @@
     children?: Snippet;
     onEnabled?: () => void;
   } = $props();
-
-  const CONNECTIONS = IPC_CHANNELS.CONNECTIONS;
 
   const activeConnectionId$ = selectCurrentConnectionId();
   const isRemote = $derived($activeConnectionId$ !== LOCAL_CONNECTION_ID);
@@ -116,12 +113,15 @@
   // API auto-publishes this backend to iCloud Keychain). Loaded alongside the
   // WSS status; fail-soft — when it cannot be read, neither the auto-publish
   // nor the button fires.
-  let publishStateLoaded = $state(false);
-  let syncSupported = $state(false);
-  let syncEnabled = $state(false);
-  let selfPublished = $state(false);
-  let publishSuppressed = $state(false);
-  let publishBusy = $state(false);
+  const publication$ = selectSelfPublication();
+  const publicationBusy$ = selectSelfPublicationBusy();
+  const syncState$ = selectKeychainSyncState();
+  const publishStateLoaded = $derived($publication$ !== null);
+  const syncSupported = $derived($syncState$?.supported ?? false);
+  const syncEnabled = $derived($syncState$?.enabled ?? false);
+  const selfPublished = $derived($publication$?.published ?? false);
+  const publishSuppressed = $derived($publication$?.suppressed ?? false);
+  const publishBusy = $derived($publicationBusy$);
 
   // Gate against overlapping toggle transitions: the awaited auto-unpublish
   // (toggle-off) keeps the toggle interactive otherwise, so a rapid off→on
@@ -376,28 +376,10 @@
     }
   }
 
-  function getApi(): Window['electronAPI'] | undefined {
-    return typeof window !== 'undefined' ? window.electronAPI : undefined;
-  }
-
   /** Load keychain-sync + self-published state (gates the modal and button). */
-  async function refreshPublishState() {
-    const api = getApi();
-    if (!api) return;
-    try {
-      const [sync, self] = await Promise.all([
-        appStore.dispatch(loadKeychainSyncStateRequested()).promise,
-        api.invoke(CONNECTIONS.SELF_PUBLISHED_STATE) as Promise<SelfPublishedStateResult>,
-      ]);
-      syncSupported = sync.supported;
-      syncEnabled = sync.enabled;
-      selfPublished = self.published;
-      publishSuppressed = self.suppressed;
-      publishStateLoaded = true;
-    } catch {
-      // Fail-soft: without a readable state, offer neither modal nor button.
-      publishStateLoaded = false;
-    }
+  function refreshPublishState() {
+    // Status loading must continue even if publication state is unavailable.
+    return appStore.dispatch(selfPublicationRequested('load')).catch(() => {});
   }
 
   /**
@@ -409,9 +391,7 @@
    * rotation/port change itself already succeeded.
    */
   function refreshSelfEntry() {
-    const api = getApi();
-    if (!api) return;
-    void Promise.resolve(api.invoke(CONNECTIONS.REFRESH_SELF)).catch(() => {});
+    appStore.dispatch(selfPublicationRequested('refresh'));
   }
 
   /**
@@ -422,21 +402,8 @@
    * is button-only). Fail-soft: a publish failure surfaces a toast and never
    * rolls back the WSS toggle.
    */
-  async function maybeAutoPublish() {
-    if (!publishStateLoaded) return;
-    if (!syncSupported || !syncEnabled || selfPublished || publishSuppressed) return;
-    try {
-      publishBusy = true;
-      await publishSelf();
-    } catch (error) {
-      notify.error(
-        m.settings_wsApi_publishSelf_error({
-          error: error instanceof Error ? error.message : String(error),
-        }),
-      );
-    } finally {
-      publishBusy = false;
-    }
+  function maybeAutoPublish() {
+    return appStore.dispatch(selfPublicationRequested('autoPublish')).catch(() => {});
   }
 
   /**
@@ -449,51 +416,12 @@
    * auto-publishes again. Fail-soft: an unpublish failure surfaces a toast
    * and never rolls back the WSS toggle.
    */
-  async function maybeAutoUnpublish() {
-    if (!publishStateLoaded) return;
-    if (!syncSupported || !selfPublished) return;
-    const api = getApi();
-    if (!api) return;
-    try {
-      const result = await (api.invoke(CONNECTIONS.UNPUBLISH_SELF) as Promise<UnpublishSelfResult>);
-      // `removed: false` means main found no self entry to remove (the local
-      // `selfPublished` was stale) — nothing was unpublished, so no success
-      // toast; the state still converges to unpublished-side truth.
-      selfPublished = false;
-      if (result.removed) {
-        notify.success(m.settings_wsApi_unpublishSelf_success());
-      }
-    } catch (error) {
-      notify.error(
-        m.settings_wsApi_unpublishSelf_error({
-          error: error instanceof Error ? error.message : String(error),
-        }),
-      );
-    }
+  function maybeAutoUnpublish() {
+    return appStore.dispatch(selfPublicationRequested('autoUnpublish')).catch(() => {});
   }
 
-  async function publishSelf() {
-    const api = getApi();
-    if (!api) throw new Error('electronAPI is not available');
-    await (api.invoke(CONNECTIONS.PUBLISH_SELF) as Promise<PublishSelfResult>);
-    selfPublished = true;
-    publishSuppressed = false;
-    notify.success(m.settings_wsApi_publishSelf_success());
-  }
-
-  async function handlePublishButton() {
-    try {
-      publishBusy = true;
-      await publishSelf();
-    } catch (error) {
-      notify.error(
-        m.settings_wsApi_publishSelf_error({
-          error: error instanceof Error ? error.message : String(error),
-        }),
-      );
-    } finally {
-      publishBusy = false;
-    }
+  function handlePublishButton() {
+    appStore.dispatch(selfPublicationRequested('publish'));
   }
 
   async function handlePortSave() {

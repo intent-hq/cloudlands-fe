@@ -164,7 +164,7 @@ describe('hardwareConsoleDeviceSaga', () => {
     expect(mocks.installToasts).toHaveBeenCalledWith(mocks.manager, {
       isOwner: expect.any(Function),
     });
-    expect(getSubscriberCount()).toBe(2);
+    expect(getSubscriberCount()).toBe(3);
 
     task.cancel();
     await task.toPromise();

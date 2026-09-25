@@ -1,14 +1,9 @@
 ---
 name: svelte/selectors
 description: >-
-  store.createSelector((state, ...args) => value) is the public app-local
-  selector creation tied to a configured Store. Generic/shared selector helpers
-  should accept a configured Store rather than importing standalone creation utilities.
-  Use collection utilities such as getItem/getItems inside Store-bound selectors
-  for O(1) collection lookups; proxy tracking is internal to Store selectors.
-  Selectors are composed via .select(state) — never by calling selectFoo()
-  inside another selector. .select (one-shot) and .effect() (saga) are the
-  escape hatches from the default readable-store call mode.
+  Use when authoring or composing Svelte Store-bound selectors with
+  store.createSelector, including collection lookups, cache behavior, and
+  stable arguments. Call modes belong to svelte/selector-lifecycle.
 type: sub-skill
 requires:
   - svelte
@@ -21,13 +16,13 @@ triggers:
 ---
 # Selectors — `store.createSelector` / collection utility reads
 
-> Operational guidance for selector work. Full API reference and examples: `@augmentcode/themis/docs/SELECTORS.md`. Public facade: `store.createSelector(...)` from `@augmentcode/themis/svelte-store`; selector/cache internals are package-private implementation context; related guidance: `../SKILL.md` §3.
+> Operational guidance for selector authoring. Full API reference and examples: `@augmentcode/themis/docs/SELECTORS.md`. Public facade: `store.createSelector(...)` from `@augmentcode/themis/svelte-store`; selector/cache internals are package-private implementation context.
 
 ## Use when
 
 - Adding derived values, filtered/sorted views, counts, display labels, `has*` booleans, or entity lookups.
 - Replacing duplicated reducer state with computed state.
-- Reading selector values in components, sagas, tests, or other selectors.
+- Defining selector composition, cache contracts, and stable arguments.
 
 ## Choose the factory
 
@@ -38,30 +33,21 @@ triggers:
 - Use public collection utilities such as `getItem(collection, id)` and `getItems(collection)` inside `store.createSelector(...)` callbacks for O(1) item lookup and ordered materialization.
 - Do not import standalone selector creation utilities from package subpaths or inject selector behavior through Store constructors; selector creation is Store-bound public API.
 
-## Call mode cues
+## Call-site handoff
 
-| Context | Use | Avoid |
-| --- | --- | --- |
-| Component init | `selectFoo(args)` returns a Svelte readable | Calling inside handlers/callbacks |
-| Tests, handlers, callbacks | `selectFoo.select(state, args)` | Readable form without Svelte context |
-| Sagas | `yield* selectFoo.effect(args)` | Inline `select((state) => ...)` lambdas |
-| Selector composition | `otherSelector.select(state, args)` | Calling `otherSelector(args)` |
-| SSR/non-context readable | `selectFoo.withStore(store)(args)` | Global/context assumptions |
-
-All selector call modes for this Svelte Store family are documented in this
-subtree; keep shared helpers Store-bound through `store.createSelector(...)`.
-
-Selector-channel helpers can consume Svelte `Store` selectors through their
-`.select`/`.effect`-compatible read shape. Pass plain stable selector arguments
-as the helper args tuple in sagas; selector-channel effects read the Redux store
-from saga context and do not call or subscribe to direct readable selector outputs.
+After defining a selector, choose how to consume it using
+`../selector-lifecycle/SKILL.md` → **Call-mode map**, **Do**, and **Don't**.
+That owner covers component-init reads, handlers/async/tests, saga effects,
+composition call modes, explicit `.withStore` binding, and selector-channel
+compatibility. Channel helper choice and args tuples live in
+`../../core/selector-channels/SKILL.md` → **Choose the helper** and **Do**.
 
 ## Selector caching
 
 - Store-created selectors have internal selector-result caching/memoization.
-- Direct readable outputs are cached per Store instance + selector + arguments; repeated `selectFoo(args)` calls for the same store reuse the same Svelte readable.
+- Direct readable outputs are cached per Store instance + selector + arguments. Never-subscribed outputs and concurrent live consumers reuse the same Svelte readable. Removing one of several consumers retains it; removing the final subscriber evicts that output even if JavaScript references remain. The next identical call creates a new readable. Store disposal evicts all its outputs; cache counts are not active-subscriber counts.
 - Do not wrap selector callbacks or selector calls in extra `memoize`, `cache`, manual cache maps, debounce, or throttle layers solely for performance.
-- Prefer the same Store-bound selector + same arguments over props drilling when the receiving consumer can reasonably call the selector in valid Svelte init context; otherwise use `.select`, `.effect`, or `.withStore` as the context requires.
+- Prefer the same Store-bound selector + same arguments over props drilling when the consumer can use it directly; choose its call mode through `../selector-lifecycle/SKILL.md` → **Call-mode map**.
 
 ## Stable selector arguments
 
@@ -90,10 +76,10 @@ from saga context and do not call or subscribe to direct readable selector outpu
 
 ## Don't
 
-- Do not call the readable form inside another selector, saga, test, event handler, or async callback.
+- Do not call the readable form inside another selector; compose with `.select(state)` and follow `../selector-lifecycle/SKILL.md` → **Don't** for other call sites.
 - Do not duplicate selector bodies in multiple files.
 - Do not store selector outputs in reducer state.
-- Do not use inline saga selectors for values that should be named, cached, and testable.
+- Expose named selectors for saga consumers; saga call-site rules live in `../selector-lifecycle/SKILL.md` → **Do**.
 - Do not add manual memoization/cache/debounce/throttle wrappers inside selector callbacks or around selector calls just to improve selector performance.
 - Do not hide fresh selector object/array/function args behind helper functions;
   pass stable scalar args or a stable intentional reference instead.
@@ -124,7 +110,7 @@ Prefer scalar parameters like `activeTodoId`. Avoid inline object arguments such
 as `{ id: activeTodoId }` unless that object reference is stable and
 intentionally part of the selector contract.
 
-### 3. Compose selectors with .select(state), not readable calls
+### Compose selectors with .select(state), not readable calls
 
 ```ts
 export const selectVisibleTodos = store.createSelector((state) => {
@@ -149,24 +135,24 @@ export const selectTodos = store.createSelector((state) => getItems(selectTodosC
 ### 5. Pass a configured Store into shared selector helpers
 
 ```ts
-import type { Store } from "@augmentcode/themis/svelte-store";
+import type { store as appStore } from "$lib/store";
 
-export function createProjectSelectors(store: Store) {
+export function createProjectSelectors(store: typeof appStore) {
   const selectProjects = store.createSelector((state) => state.projects.items);
   const selectProject = store.createSelector((state, id: string) => selectProjects.select(state)[id]);
   return { selectProjects, selectProject };
 }
 ```
 
-### 6. Bind readables to an explicit Store with .withStore
+The configured app Store has a `projects` reducer whose `items` is a record
+keyed by project id. Its concrete type preserves that state shape; a bare
+`Store` defaults to an empty app state map and cannot type this helper.
 
-```ts
-import type { Store } from "@augmentcode/themis/svelte-store";
+### Explicit readable binding
 
-export function createTodoReadable(store: Store, todoId: string) {
-  return selectTodoById.withStore(store)(todoId);
-}
-```
+For SSR/services that already own an initialized Store, follow
+`../selector-lifecycle/SKILL.md` → **Bind explicitly with .withStore when no Svelte context is available**.
+This is a consumption choice, not a second selector factory or cache.
 
 ### 7. ❌ Bad: creating selectors in lifecycle code and storing derived state
 
@@ -189,13 +175,13 @@ export const selectVisibleTodosOnce = store.createSelector((state) => {
 
 - Selector tests use `.select(mockState, ...)` and cover composition if one selector depends on another.
 - Reducer tests do not assert stored derived fields for values that belong in selectors.
-- Manual overlap check confirms any retained selector examples live in docs; skills only keep call-mode and implementation cues.
+- Manual overlap check confirms call-mode procedures are owned by `../selector-lifecycle/SKILL.md` → **Call-mode map**; this skill retains authoring/composition/cache examples.
 
 ## See also
 
 - `@augmentcode/themis/docs/SELECTORS.md` — human reference and examples for all call forms.
-- `svelte/selector-lifecycle/SKILL.md` — lifecycle crash prevention.
-- `core/selector-channels/SKILL.md` — reacting to selector changes from sagas.
-- `core/collections/SKILL.md` — normalized state shape and collection utilities used by selectors.
-- `core/state-integrity/SKILL.md` — canonical derived-value ownership.
-- `core/testing/SKILL.md` — `.select(state)` testing rule.
+- `../selector-lifecycle/SKILL.md` — lifecycle crash prevention.
+- `../../core/selector-channels/SKILL.md` — reacting to selector changes from sagas.
+- `../../core/collections/SKILL.md` — normalized state shape and collection utilities used by selectors.
+- `../../core/state-integrity/SKILL.md` — canonical derived-value ownership.
+- `../../core/testing/SKILL.md` — `.select(state)` testing rule.

@@ -1,16 +1,8 @@
 ---
 name: core/actions
 description: >-
-  createAction<[Params]>(type) produces action creators with positional-tuple
-  payloads; an optional payloadModifier transforms args into any payload shape.
-  createAsyncAction<[Args], SuccessPayload>(asyncType, stagesType) produces a
-  request/success/failure triplet plus a promise on each request. Always
-  namespace action types as "sliceName/actionName". Action creators expose
-  .type and .toString, so they are passed directly to takeEvery/takeLatest —
-  never .type. Async creators expose static .success/.failure creators on the
-  creator itself, and per-instance success/failure/promise on each dispatched
-  action. Each action type has one canonical owner; search for existing action
-  creators before adding another.
+  Use when creating Themis actions with createAction or createAsyncAction,
+  including tuple payloads, async request promises, and action ownership.
 type: sub-skill
 requires:
   - core
@@ -23,7 +15,7 @@ triggers:
 ---
 # Actions — `createAction` / `createAsyncAction`
 
-> Operational guidance for action creator work. API details and longer examples live in `@augmentcode/themis/docs/REDUCERS.md` → Actions and Async Actions. Public API: `@augmentcode/themis/utils/store/create-action`; related family guidance: `../SKILL.md` §3.
+> Operational guidance for action creator work. API details and longer examples live in `@augmentcode/themis/docs/REDUCERS.md` → Actions and Async Actions. Public API: `@augmentcode/themis/utils/store/create-action`; related reducer guidance: [Do](../reducers/SKILL.md#do).
 
 ## Use when
 
@@ -43,21 +35,32 @@ triggers:
 
 - `createAsyncAction<[Args], Success>(asyncType, stagesType)` creates the request creator plus static `.success` and `.failure` creators.
 - A dispatched request action carries `payload`, `promise`, and per-instance `success`/`failure` creators.
+- Themis internally observes ignored async-action rejections, preventing unhandled-rejection events without changing the original promise; explicit awaiters still receive the original rejection.
+- Prefer `try/catch` around `await store.dispatch(asyncAction(...))` when handling a result or failure; dispatch returns the request's original, typed promise.
 - Reducers normally handle the request creator, `.success`, and `.failure` to update loading/data/error fields.
 - Sagas watch the request creator unless they are intentionally reacting to success/failure events.
+- Only the request instance's `action.success(result)` / `action.failure(error)` settles its promise; static stages merely create Redux actions. Dispatch the instance stage as well when reducers need the update.
+- Settlement is an application policy, not automatic: `takeLatest` cancellation enters `finally`, not `catch`. Reject cancelled requests explicitly as below. With `takeLeading`, an ignored request never reaches a worker: use ordinary `createAction` triggers when no response is guaranteed, or an explicit admission owner that rejects ignored requests. Do not await a promise-bearing request when its watcher is absent/stopped.
 
 ## Examples
 
 ### No-payload action for explicit events
 
 ```ts
-import { createAction } from "@augmentcode/themis/utils/store/create-action";
+import { createAction, createAsyncAction } from "@augmentcode/themis/utils/store/create-action";
 
 export const resetTodos = createAction("todos/reset");
 
 const resetAction = resetTodos();
-resetAction.payload satisfies undefined;
+// Current runtime payload is [], although the no-argument overload says undefined.
+// Handle the event by its type; do not branch on payload === undefined.
+const refreshTodos = createAsyncAction<void>("todos/refreshAsync", "todos/refresh");
+const refreshAction = refreshTodos(); // same [] runtime / undefined type discrepancy
+const resetTuple = createAction<[]>("todos/resetTuple")(); // typed and runtime []
+const resetUndefined = createAction("todos/resetUndefined", () => undefined)();
 ```
+
+The async example explicitly selects the response-type overload (`<void>`), which declares `undefined` payload; with no type arguments the current overload order can instead infer `any[]`. Both produce runtime `[]` without a modifier. If shape matters, choose an explicit contract: `createAction<[]>("todos/reset")` gives a typed empty tuple; `createAction("todos/reset", () => undefined)` intentionally produces runtime `undefined`. These are existing API limitations, not a reason to change the public API during a guidance fix.
 
 ### Tuple payload action consumed by reducers
 
@@ -103,13 +106,28 @@ const success = request.success({ id: "todo-1", title: "Ship docs" });
 success.payload.request.id satisfies string;
 ```
 
+### Await dispatch when the caller needs the result
+
+Using `loadTodo` above and an initialized Themis `store` whose saga settles the request:
+
+```ts
+try {
+  const todo = await store.dispatch(loadTodo("todo-1"));
+  todo satisfies Todo;
+} catch (error) {
+  console.error("Unable to load todo", error);
+}
+```
+
 ### Watch request creators directly in sagas
 
 ```ts
-import { takeLatest } from "typed-redux-saga";
+import { call, cancelled, put, takeLatest } from "typed-redux-saga";
 import { createAsyncAction } from "@augmentcode/themis/utils/store/create-action";
+import { fetchTodo } from "./todos-api";
 
-const loadTodo = createAsyncAction<[id: string], { id: string }>(
+type Todo = { id: string; title: string };
+const loadTodo = createAsyncAction<[id: string], { id: string }, Todo>(
   "todos/loadAsync",
   "todos/load",
   (id) => ({ id })
@@ -117,10 +135,21 @@ const loadTodo = createAsyncAction<[id: string], { id: string }>(
 
 function* watchTodos() {
   yield* takeLatest(loadTodo, function* loadTodoWorker(action) {
-    action.payload.id satisfies string;
+    try {
+      const todo = yield* call(fetchTodo, action.payload.id);
+      yield* put(action.success(todo));
+    } catch (error) {
+      yield* put(action.failure(error instanceof Error ? error : new Error(String(error))));
+    } finally {
+      if (yield* cancelled()) {
+        yield* put(action.failure(new Error("Todo request cancelled")));
+      }
+    }
   });
 }
 ```
+
+Policy here: supersession and owner teardown reject the cancelled request and emit its failure stage. Keep reducer updates correlated with `payload.request` if older cancellation/failure actions could overwrite newer results. Saga cancellation does not abort an arbitrary Promise/API operation; supply a source-specific abort policy when needed.
 
 ### ❌ Bad: duplicate owner plus tuple/object payload drift
 
@@ -140,8 +169,10 @@ const [{ id, title }] = renameTodoFromList({ id: "todo-1", title: "Ship docs" })
 
 - Do not create aliases with the same type string in another module.
 - Do not pass `.type` to saga watchers; pass the creator.
+- Do not assume cancellation, ignored requests, or static success/failure stages settle an instance promise.
 - Do not use object payload types for one-argument actions unless an existing public contract already requires that shape.
 - Do not place generated timestamps or IDs in reducers; generate them before dispatch.
+- Do not attach `action.promise.catch(...)` to Themis async actions, including defensive `action.promise.catch(() => undefined)`: it is redundant and reported by `redundant-async-action-catch` when the promise is statically proven to come from a Themis async action. Use the dispatch-await pattern above for caller-owned error handling.
 
 ## Verification cues
 

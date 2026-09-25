@@ -8,7 +8,7 @@ for (const { width, locked } of [
   test(`branch fields remain usable at ${width}px with ${locked ? 'locked' : 'selectable'} target`, async ({
     mount,
     page,
-  }) => {
+  }, testInfo) => {
     await page.setViewportSize({ width, height: 800 });
     await page.emulateMedia({ reducedMotion: 'reduce' });
     await mount(Preview, { props: { locked } });
@@ -34,6 +34,14 @@ for (const { width, locked } of [
         weight: getComputedStyle(node).fontWeight,
       }));
       return { x: box.x, width: box.width, controls, labels };
+    });
+    await testInfo.attach('branch-field-geometry', {
+      body: JSON.stringify(geometry, null, 2),
+      contentType: 'application/json',
+    });
+    await testInfo.attach('branch-fields', {
+      body: await summary.screenshot(),
+      contentType: 'image/png',
     });
     expect(geometry.controls).toHaveLength(2);
     for (const control of geometry.controls) {
@@ -64,13 +72,17 @@ for (const { width, locked } of [
       await expect(target.getByRole('textbox')).toHaveAttribute('readonly', '');
       await expect(target.getByRole('combobox')).toHaveCount(0);
     } else {
-      await target.getByRole('combobox').focus();
+      const trigger = target
+        .getByRole('button', { name: /Select a branch/ })
+        .and(target.locator('[aria-haspopup="dialog"]'));
+      await expect(trigger).toHaveAttribute('aria-haspopup', 'dialog');
+      await trigger.focus();
       await page.keyboard.press('Enter');
-      await expect(target.getByRole('combobox')).toHaveAttribute('aria-expanded', 'true');
-      await expect(page.locator('[data-slot="select-content"] input')).toBeFocused();
+      await expect(trigger).toHaveAttribute('aria-expanded', 'true');
+      await expect(page.getByRole('dialog').getByRole('combobox')).toBeFocused();
       await page.keyboard.press('Escape');
-      await expect(target.getByRole('combobox')).toHaveAttribute('aria-expanded', 'false');
-      await expect(target.getByRole('combobox')).toBeFocused();
+      await expect(trigger).toHaveAttribute('aria-expanded', 'false');
+      await expect(trigger).toBeFocused();
     }
     const header = page.locator('[data-sidebar-card-tab="changes"] h6');
     const refresh = header.getByRole('button', { name: 'Refresh git status' });

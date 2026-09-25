@@ -65,6 +65,10 @@
   import ContextChip from '../ContextChip.svelte';
   import ContextPickerButton from './ContextPickerButton.svelte';
   import * as Menu from '$lib/components/ui/menu';
+  import * as Popover from '$lib/components/ui/popover';
+  import { OVERLAY_VIEWPORT_GUTTER } from '$lib/components/ui/overlay-positioning';
+  import { ShortcutChip } from '$lib/components/ui/kbd';
+  import { pushEscapeLayer } from '$lib/utils/escapeLayers';
   import type { StackedMenuGroup } from '$lib/components/ui/menu';
   import { parseImageDataUrl } from './image-data-url';
   import {
@@ -72,6 +76,7 @@
     selectSkillsError,
     selectSkillsLoading,
   } from '$store/renderer/slices/skills/skills-selectors';
+  import { loadSkillsRequested } from '$store/renderer/slices/skills/skills-slice';
 
   import {
     togglePanel as togglePanelAction,
@@ -279,6 +284,14 @@
   } | null = $state(null);
   let contextPickerRef: { open: (anchor?: HTMLElement) => Promise<void> } | null = $state(null);
   let promptActionsOpen = $state(false);
+  let contextFlyoutOpen = $state(false);
+  let contextFlyoutTrigger = $state<HTMLDivElement | null>(null);
+  let contextFlyoutRef = $state<HTMLDivElement | null>(null);
+  let contextFlyoutSide = $state<'right' | 'bottom'>('right');
+  const contextFlyoutGap = 4;
+  let restoreContextTrigger = false;
+  let insertingContextMention = false;
+  const contextFlyoutId = $props.id();
   // svelte-ignore state_referenced_locally -- intentional initial snapshots for transition detection.
   let previousDisabled = $state(disabled);
   // svelte-ignore state_referenced_locally -- intentional initial snapshots for transition detection.
@@ -1393,15 +1406,48 @@
     }
   });
 
-  function withContextPickerContent(
-    groups: StackedMenuGroup[],
-    content: Snippet,
-  ): StackedMenuGroup[] {
-    return groups.map((group) => ({
-      ...group,
-      items: group.items.map((item) => (item.id === 'add-context' ? { ...item, content } : item)),
-    }));
+  function openContextFlyout() {
+    restoreContextTrigger = false;
+    contextFlyoutOpen = true;
   }
+
+  function closeContextFlyout() {
+    restoreContextTrigger = true;
+    contextFlyoutOpen = false;
+  }
+
+  $effect(() => {
+    if (!contextFlyoutOpen) return;
+    return pushEscapeLayer(closeContextFlyout);
+  });
+
+  $effect(() => {
+    // The embedded body is the direct child of the owning Popover surface.
+    const content = contextFlyoutRef?.parentElement;
+    const trigger = contextFlyoutTrigger;
+    if (!contextFlyoutOpen || !content || !trigger) return;
+    function updatePlacement() {
+      const anchor = trigger!.getBoundingClientRect();
+      const horizontalRoom = Math.max(anchor.left, window.innerWidth - anchor.right);
+      // Bits flips horizontally but cannot shift a side flyout across its anchor.
+      // When neither side fits, vertical placement preserves the shared gutters.
+      contextFlyoutSide =
+        horizontalRoom - OVERLAY_VIEWPORT_GUTTER - contextFlyoutGap < content!.offsetWidth
+          ? 'bottom'
+          : 'right';
+    }
+    updatePlacement();
+    const observer = new ResizeObserver(updatePlacement);
+    observer.observe(content);
+    observer.observe(trigger);
+    window.addEventListener('resize', updatePlacement);
+    window.addEventListener('scroll', updatePlacement, true);
+    return () => {
+      observer.disconnect();
+      window.removeEventListener('resize', updatePlacement);
+      window.removeEventListener('scroll', updatePlacement, true);
+    };
+  });
 
   const promptActionGroups = $derived.by((): StackedMenuGroup[] => {
     const groups: StackedMenuGroup[] = [
@@ -1630,6 +1676,9 @@
       skills={$skills$}
       skillsLoading={$skillsLoading$}
       skillsError={$skillsError$}
+      onSkillsRetry={() => {
+        if (workspace?.id) appStore.dispatch(loadSkillsRequested(workspace.id));
+      }}
       onUpdate={(text) => {
         handleCancelEnhance();
         if (
@@ -1750,22 +1799,13 @@
 
     <div class="flex min-w-0 shrink-0 items-center gap-1.5" data-chat-input-submit-actions>
       <div class="relative inline-block">
-        {#snippet contextPickerSubmenu()}
-          <ContextPickerButton
-            panels={availablePanels}
-            selections={availableSelections}
-            {workspace}
-            {disabled}
-            currentAgentId={agentId}
-            onToggle={handleTogglePanel}
-            onToggleSelection={handleToggleSelection}
-            onInsertMention={(mention) => tiptap?.insertMention(mention)}
-            onPick={() => (promptActionsOpen = false)}
-            renderTrigger={false}
-            embedded
-          />
-        {/snippet}
-        <Menu.Root bind:open={promptActionsOpen}>
+        <Menu.Root
+          bind:open={promptActionsOpen}
+          onOpenChange={(open) => {
+            if (open) insertingContextMention = false;
+            else contextFlyoutOpen = false;
+          }}
+        >
           <Menu.Trigger>
             {#snippet child({ props })}
               <Button
@@ -1780,13 +1820,117 @@
               </Button>
             {/snippet}
           </Menu.Trigger>
-          <Menu.StackedContent
-            groups={withContextPickerContent(promptActionGroups, contextPickerSubmenu)}
+          <Menu.Content
             align="end"
             side="top"
-            class="min-w-60"
-            submenuClass="p-0"
-          />
+            class="w-60"
+            onInteractOutside={(event) => {
+              if (event.target instanceof Node && contextFlyoutRef?.contains(event.target)) {
+                event.preventDefault();
+              }
+            }}
+            onCloseAutoFocus={(event) => {
+              if (insertingContextMention) event.preventDefault();
+            }}
+          >
+            {#each promptActionGroups as group, index (group.id)}
+              {#if index > 0}<Menu.Separator />{/if}
+              <Menu.Group>
+                {#each group.items as item (item.id)}
+                  {#if item.id === 'add-context'}
+                    <Popover.Root bind:open={contextFlyoutOpen}>
+                      <Menu.Item
+                        bind:ref={contextFlyoutTrigger}
+                        aria-haspopup="dialog"
+                        aria-expanded={contextFlyoutOpen}
+                        aria-controls={contextFlyoutOpen ? contextFlyoutId : undefined}
+                        onSelect={(event) => {
+                          event.preventDefault();
+                          openContextFlyout();
+                        }}
+                        onpointermove={(event) => {
+                          if (event.pointerType === 'mouse' && !contextFlyoutOpen) {
+                            openContextFlyout();
+                          }
+                        }}
+                        onkeydown={(event) => {
+                          if (event.key !== 'ArrowRight') return;
+                          event.preventDefault();
+                          openContextFlyout();
+                        }}
+                      >
+                        {#snippet leading()}
+                          <Fa icon={faAt} size={16} class="size-4 text-muted-foreground" />
+                        {/snippet}
+                        <span class="min-w-0 flex-1">{item.label}</span>
+                        <span class="ml-5 flex h-lh shrink-0 items-center" aria-hidden="true">
+                          <ShortcutChip>@</ShortcutChip>
+                        </span>
+                        <Menu.Indicator state="submenu" />
+                      </Menu.Item>
+                      <Popover.Content
+                        id={contextFlyoutId}
+                        customAnchor={contextFlyoutTrigger}
+                        role="dialog"
+                        aria-label={m.chat_contextPicker_selectPanels_ariaLabel()}
+                        aria-describedby={`${contextFlyoutId}-description`}
+                        side={contextFlyoutSide}
+                        sideOffset={contextFlyoutGap}
+                        align="start"
+                        class="flex w-80 max-h-(--bits-popover-content-available-height) flex-col p-0"
+                        onCloseAutoFocus={(event) => {
+                          event.preventDefault();
+                          if (restoreContextTrigger && promptActionsOpen) {
+                            contextFlyoutTrigger?.focus();
+                          }
+                        }}
+                        onkeydown={(event) => {
+                          // Text inputs keep Left for moving the caret.
+                          if (event.key !== 'ArrowLeft' || event.target instanceof HTMLInputElement)
+                            return;
+                          event.preventDefault();
+                          closeContextFlyout();
+                        }}
+                      >
+                        <ContextPickerButton
+                          bind:bodyRef={contextFlyoutRef}
+                          panels={availablePanels}
+                          selections={availableSelections}
+                          {workspace}
+                          {disabled}
+                          currentAgentId={agentId}
+                          onToggle={handleTogglePanel}
+                          onToggleSelection={handleToggleSelection}
+                          onInsertMention={async (mention) => {
+                            // The picker calls onPick synchronously; let both focus scopes
+                            // unmount before placing the mention and caret in the editor.
+                            await tick();
+                            tiptap?.insertMention(mention);
+                          }}
+                          onPick={() => {
+                            insertingContextMention = true;
+                            contextFlyoutOpen = false;
+                            promptActionsOpen = false;
+                          }}
+                          renderTrigger={false}
+                          descriptionId={`${contextFlyoutId}-description`}
+                          embedded
+                        />
+                      </Popover.Content>
+                    </Popover.Root>
+                  {:else}
+                    <Menu.CommandItem
+                      icon={item.icon}
+                      label={item.label}
+                      shortcut={item.shortcut}
+                      disabled={item.disabled}
+                      onSelect={item.onSelect}
+                    />
+                  {/if}
+                {/each}
+              </Menu.Group>
+            {/each}
+          </Menu.Content>
         </Menu.Root>
       </div>
 

@@ -15,6 +15,7 @@ const mocks = vi.hoisted(() => {
   const stageFiles = vi.fn();
   const unstageFiles = vi.fn();
   const discardFiles = vi.fn();
+  const confirm = vi.fn();
   const selector = <T>(getter: () => T) => {
     const fn = () => ({
       subscribe(run: (v: T) => void) {
@@ -33,6 +34,7 @@ const mocks = vi.hoisted(() => {
     stageFiles,
     unstageFiles,
     discardFiles,
+    confirm,
     selector,
     getAutoCommit: () => autoCommit,
     setAutoCommit: (v: boolean) => {
@@ -148,6 +150,8 @@ vi.mock('$features/git/git-write-service', () => ({
   commit: vi.fn(),
 }));
 
+vi.mock('$lib/components/patterns/confirm', () => ({ confirm: mocks.confirm }));
+
 vi.mock('$lib/components/patterns/notify', () => ({
   notify: {
     error: vi.fn(),
@@ -222,6 +226,7 @@ describe('FileChangesSection', () => {
     mocks.stageFiles.mockReset().mockResolvedValue({ success: true });
     mocks.unstageFiles.mockReset().mockResolvedValue({ success: true });
     mocks.discardFiles.mockReset().mockResolvedValue({ success: true });
+    mocks.confirm.mockReset().mockResolvedValue(true);
     mockExecute.mockReset().mockResolvedValue({ success: true });
     mocks.unstaged.splice(0, mocks.unstaged.length);
     mocks.staged.splice(0, mocks.staged.length);
@@ -348,6 +353,52 @@ describe('FileChangesSection', () => {
     const { getAllByTestId } = await renderSection();
     await fireEvent.click(getAllByTestId('revert-btn')[0]);
     expect(mocks.discardFiles).toHaveBeenCalledWith('ws-1', ['src/a.ts']);
+    expect(mocks.confirm).toHaveBeenCalledWith(
+      expect.objectContaining({
+        destructive: true,
+        description: 'src/a.ts',
+      }),
+    );
+  });
+
+  it('does not discard when confirmation is canceled', async () => {
+    mocks.confirm.mockResolvedValue(false);
+    mocks.unstaged.push(makeChange('src/a.ts'));
+    const { getAllByTestId } = await renderSection();
+    await fireEvent.click(getAllByTestId('revert-btn')[0]);
+    expect(mocks.discardFiles).not.toHaveBeenCalled();
+  });
+
+  it('does not retarget a pending discard after switching workspaces', async () => {
+    let accept!: (value: boolean) => void;
+    mocks.confirm.mockReturnValue(
+      new Promise<boolean>((resolve) => {
+        accept = resolve;
+      }),
+    );
+    mocks.unstaged.push(makeChange('src/a.ts'));
+    const { getAllByTestId, rerender } = await renderSection();
+    await fireEvent.click(getAllByTestId('revert-btn')[0]);
+    await rerender({ workspaceId: 'ws-other' });
+    accept(true);
+    await Promise.resolve();
+    expect(mocks.discardFiles).not.toHaveBeenCalled();
+  });
+
+  it('revalidates a file lock after confirmation', async () => {
+    let accept!: (value: boolean) => void;
+    mocks.confirm.mockReturnValue(
+      new Promise<boolean>((resolve) => {
+        accept = resolve;
+      }),
+    );
+    mocks.unstaged.push(makeChange('src/a.ts', { agentId: 'agent-1' }));
+    const { getAllByTestId } = await renderSection();
+    await fireEvent.click(getAllByTestId('revert-btn')[0]);
+    mocks.setLockedAgentIds({ 'agent-1': true });
+    accept(true);
+    await Promise.resolve();
+    expect(mocks.discardFiles).not.toHaveBeenCalled();
   });
 
   it('locked agent groups do not expose a stage action on FileRow', async () => {

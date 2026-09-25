@@ -47,11 +47,13 @@ describe('animatedHeight', () => {
 
   function runFrame() {
     now += 1000 / 60;
-    frames.shift()?.(now);
+    const pending = frames;
+    frames = [];
+    pending.forEach((callback) => callback(now));
     flushSync();
   }
 
-  it('retargets an in-flight slow spring without resetting the current height', () => {
+  it('retargets in-flight height easing without resetting the current height', () => {
     let contentHeight = 20;
     const wrapper = document.createElement('div');
     const content = document.createElement('div');
@@ -69,15 +71,19 @@ describe('animatedHeight', () => {
     expect(heightBeforeRetarget).toBeGreaterThan(20);
     expect(frames).toHaveLength(1);
 
-    contentHeight = 40;
+    contentHeight = 10;
     resize([], {} as ResizeObserver);
     expect(Number.parseFloat(wrapper.style.height)).toBe(heightBeforeRetarget);
-    expect(frames).toHaveLength(1);
-    runFrame();
-    expect(Number.parseFloat(wrapper.style.height)).not.toBe(20);
 
-    for (let frame = 0; frame < 30 && frames.length > 0; frame += 1) runFrame();
-    expect(Number.parseFloat(wrapper.style.height)).toBeCloseTo(40, 2);
+    let previousHeight = heightBeforeRetarget;
+    for (let frame = 0; frame < 30 && frames.length > 0; frame += 1) {
+      runFrame();
+      const currentHeight = Number.parseFloat(wrapper.style.height);
+      expect(currentHeight).toBeLessThanOrEqual(previousHeight);
+      expect(currentHeight).toBeGreaterThanOrEqual(10);
+      previousHeight = currentHeight;
+    }
+    expect(Number.parseFloat(wrapper.style.height)).toBeCloseTo(10, 2);
     action?.destroy?.();
   });
 

@@ -2,6 +2,7 @@
   import { Button } from '$lib/components/ui/button';
   import { ContentDialog } from '$lib/components/patterns/confirm';
   import DropdownMenu from '$lib/components/ui/dropdown-menu.svelte';
+  import * as Menu from '$lib/components/ui/menu';
   import { Tooltip } from '$lib/components/ui/tooltip';
   import Fa from 'svelte-fa';
   import {
@@ -255,14 +256,22 @@
   {#snippet footer()}
     <div class="flex w-full flex-col gap-4">
       {#if $installedEditors$.length > 0}<div class="grid grid-cols-2 gap-2 items-center">
-          <p class="type-caption text-muted-foreground font-normal select-none">
+          <p
+            id="pull-conflict-editor-label"
+            class="type-caption text-muted-foreground font-normal select-none"
+          >
             {m.modals_pullConflict_resolveInApp_label()}
           </p>
           <!-- Open in dropdown (combined IDEs and terminals) -->
           {#if $installedEditors$.length > 0}
             <DropdownMenu bind:open={dropdownOpen} align="start" portal={true}>
               {#snippet trigger({ props })}
-                <Button {...props} variant="outline" class="w-full justify-between gap-2">
+                <Button
+                  {...props}
+                  aria-labelledby="pull-conflict-editor-label"
+                  variant="outline"
+                  class="w-full justify-between gap-2"
+                >
                   <span class="flex items-center gap-2">
                     <Fa icon={faArrowUpRightFromSquare} size="sm" />
                     <span>{m.modals_pullConflict_openIn_label()}</span>
@@ -275,13 +284,9 @@
                 <div class="max-w-60 py-1">
                   {#each $installedEditors$ as editor (editor.id)}
                     {@const IconComponent = EDITOR_ICONS[editor.id]}
-                    <Button
-                      variant="ghost"
-                      type="button"
-                      truncateLabel={false}
-                      labelClass="items-start"
-                      class="flex h-auto w-full items-start gap-2 whitespace-normal px-3 py-1.5 text-sm hover:bg-muted transition-colors text-left cursor-pointer"
-                      onclick={() => {
+                    <Menu.Item
+                      class="items-start whitespace-normal"
+                      onSelect={() => {
                         openInEditor(editor);
                         dropdownOpen = false;
                       }}
@@ -290,7 +295,7 @@
                         {#if editor.iconBase64}
                           <img
                             src="data:image/png;base64,{editor.iconBase64}"
-                            alt={editor.name}
+                            alt=""
                             class="w-5 h-5"
                           />
                         {:else if IconComponent}
@@ -304,7 +309,7 @@
                         {/if}
                       </span>
                       <span data-editor-name class="min-w-0 flex-1 break-words">{editor.name}</span>
-                    </Button>
+                    </Menu.Item>
                   {/each}
                 </div>
               {/snippet}

@@ -222,7 +222,7 @@ describe('editorial conversation presentation contract', () => {
     const messageContent = source('src/lib/components/chat/MessageContent.svelte');
 
     expect(panel).not.toContain('class:bg-sidebar={isChiefWorkspace}');
-    expect(panel).toContain("<div class={isChiefWorkspace ? 'mx-1 sm:mx-2' : ''}>");
+    expect(panel).toContain("class={isChiefWorkspace ? 'mx-1 sm:mx-2' : ''}");
     expect(panel.match(/message=\{pendingMessage\}[\s\S]{0,80}\{workspace\}/g)).toHaveLength(2);
     // Both transcript renderers mount the shared inline proposal host.
     expect(streaming).toContain('InlineProposal');
@@ -261,8 +261,6 @@ describe('editorial conversation presentation contract', () => {
     // Render-aware turn-body decisions are covered by subscription-card-spacing.test.ts;
     // chat-panel-visible-card-seams.ct.spec.ts and chat-panel-pending-status-spacing.ct.spec.ts
     // measure the production transcript for hidden/visible bodies and pending-status transitions.
-    // Card/batch/attention seam precedence is covered by subscription-card-gap
-    // and attention-flow-spacing-geometry browser tests using measured gaps.
     expect(panel).not.toContain('data-testid="chat-scroll-to-bottom-button"');
     expect(panel).toContain('showAgentCards={!isDelegatedBackgroundTaskAgent}');
     expect(panel).not.toContain('agentEventsForCards');

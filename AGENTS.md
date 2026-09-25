@@ -561,11 +561,51 @@ drop wire rows carrying the additive `pendingDeleteAt` field.
 - For copy-only changes, do not update unit tests. Run `pnpm run generate:i18n`,
   `pnpm run lint:i18n-completeness`, and `pnpm run lint:i18n-strings` instead.
 
+#### Do not write decorative appearance tests
+
+These rules apply to unit tests and browser tests alike:
+
+- **Do not pin decorative choices:** exact colors, font families/sizes/weights, spacing,
+  border widths/radii, shadows, or icon alignment. A browser measurement does not make
+  a decorative assertion a behavioral contract.
+- **Do not use source text, markup order, or CSS-class strings to prove appearance.**
+  Those checks constrain implementation spelling without establishing browser behavior.
+- **Do not claim layout coverage from jsdom dimensions.** jsdom does not perform layout;
+  assigning a width or mocking a bounding box and checking it cannot prove containment.
+- **Do not build circular style oracles:** importing a production class constant and
+  checking for those same classes, or copying production spacing into a fixture and
+  measuring that fixture, does not independently verify the app.
+- **Do not multiply themes, widths, or zoom levels without a named behavioral reason
+  for each variation.** Use the smallest set that exercises distinct contracts.
+
+Keep real-browser checks for clipping or overlap that hides content or controls, scroll
+ownership/anchoring, focus and keyboard access, usable hit areas, accessibility contrast,
+and reduced-motion behavior. Name the user-visible failure the assertion prevents.
+Geometry and computed styles are valid evidence for those contracts; do not remove a
+behavioral assertion solely because it measures pixels or lives in a geometry-named file.
+
+| Do not write                                                                   | Write or retain instead                                                                         |
+| ------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------- |
+| Assert `rounded-lg`, an 8px radius, or an exact shadow.                        | Exercise opening, dismissal, and focus restoration of the actual dialog.                        |
+| Assert an icon is centered within 1px or text uses a particular font size.     | Verify long or zoomed content leaves the control readable and operable.                         |
+| Assert a warning equals an imported color token.                               | Check the warning appears for the relevant state and meets accessibility contrast requirements. |
+| Read a Svelte file and expect padding classes or their source order.           | Exercise the production component in a browser and check content is not clipped or obscured.    |
+| Set a jsdom container width and compare its `scrollWidth` to `clientWidth`.    | Mount the real component at a meaningful narrow viewport and check overflow and interaction.    |
+| Import a style constant and assert every token occurs in the rendered classes. | Dispatch an action or change a prop and assert the resulting state, content, or interaction.    |
+| Repeat an appearance assertion across every theme × width × zoom combination.  | Select named cases such as narrow keyboard access or zoomed control containment.                |
+
+**Explicit exception:** registered sandbox scenes retain the `defineGeometrySnapshotSuite`
+baselines required by [Visual verification](#visual-verification). Review intentional
+baseline changes under that workflow. This exception does not justify additional decorative
+unit tests or parallel appearance matrices. Manual preview and screenshot review remain
+part of visual verification.
+
 ### Component tests (Playwright CT) — when and how
 
 Playwright CT (`*.ct.spec.ts`, run by `pnpm run test:ct`) is for behavior that only a
-real browser can observe: layout/geometry, focus and keyboard handling, native browser
-APIs, CSS/motion. State, wire, validation, and routing logic belong in Vitest — a CT spec
+real browser can observe: functional layout/geometry, focus and keyboard handling, native
+browser APIs, and motion behavior under the rules above. State, wire, validation, and
+routing logic belong in Vitest — a CT spec
 is roughly 10× the cost of a jsdom test and the CT job is sharded and time-boxed on CI.
 
 - **Matrix cells must map to a named contract.** Loop over a width only when that width

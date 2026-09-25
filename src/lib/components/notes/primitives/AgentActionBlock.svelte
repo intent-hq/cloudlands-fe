@@ -106,9 +106,7 @@
           primitiveId: primitive.id,
         },
       });
-      appStore.dispatch(action);
-
-      const createdAgent = await action.promise;
+      const createdAgent = await appStore.dispatch(action);
       // The daemon assigns the agent id; adopt it from the created session.
       agentId = createdAgent.id;
       running = false;

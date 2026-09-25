@@ -1,8 +1,7 @@
 import { prefersReducedMotion, onReducedMotionChange } from '$lib/utils/reduced-motion';
 import './svelte-motion-match-media-fallback';
-import { Spring } from 'svelte/motion';
 import type { Action } from 'svelte/action';
-import { spring, type SpringTierName } from './springs';
+import { Spring, type SpringTierName } from './springs';
 
 interface AnimatedHeightOptions {
   open?: boolean;
@@ -37,7 +36,7 @@ function measuredHeight(node: HTMLElement): number {
   );
 }
 
-/** Animates a wrapper's real height while preserving velocity across retargets. */
+/** Eases a wrapper's real height from its current position without overshoot. */
 export const animatedHeight: Action<HTMLElement, AnimatedHeightParameter> = (
   node,
   parameter = true,
@@ -45,7 +44,7 @@ export const animatedHeight: Action<HTMLElement, AnimatedHeightParameter> = (
   let { open } = resolveOptions(parameter);
   const { tier } = resolveOptions(parameter);
   const initialHeight = measuredHeight(node);
-  const height = new Spring(open ? initialHeight : 0, spring[tier]);
+  const height = new Spring(open ? initialHeight : 0, tier);
   const previousOverflow = node.style.overflow;
   const previousHeight = node.style.height;
   node.style.overflow = 'clip';

@@ -475,13 +475,13 @@
     };
   }
 
-  function launcherGridReveal(_node: Element): TransitionConfig {
+  function launcherGridReveal(_node: Element, index = 0): TransitionConfig {
     if (prefersReducedMotion()) return { duration: 0 };
 
     return {
-      delay: spring.moderate.settleMs,
+      delay: spring.moderate.settleMs + (index * spring.slow.settleMs) / 10,
       duration: spring.fast.settleMs,
-      css: (t) => `opacity: ${t};`,
+      css: (t) => `opacity: ${t}; transform: translateY(${(1 - t) * 4}px);`,
     };
   }
 
@@ -1314,11 +1314,11 @@
           class="flex h-full min-h-0 items-end px-6 pt-4"
           data-testid="sidebar-launchers"
           data-launcher-layout="tiles"
-          in:launcherGridReveal|global
         >
           <div class="grid h-56 w-full auto-rows-fr grid-cols-2 gap-3" data-sidebar-launcher-grid>
-            {#each TAB_DEFINITIONS.filter((definition) => definition.id in LAUNCHER_GRID_POSITIONS) as tab (tab.id)}
+            {#each TAB_DEFINITIONS.filter((definition) => definition.id in LAUNCHER_GRID_POSITIONS) as tab, index (tab.id)}
               <div
+                in:launcherGridReveal|global={index}
                 class="group/launcher relative flex h-full min-h-0 w-full min-w-0 cursor-pointer overflow-hidden rounded-lg border border-border bg-sidebar p-2 text-foreground transition-colors"
                 data-sidebar-launcher={tab.id}
                 data-sidebar-card-surface
@@ -1500,18 +1500,22 @@
     {#if isLauncherOverview}
       {#if !isCollaborator}
         {#if !isNewWorkspaceSession}
-          <SidebarBrowserLauncher
-            {workspaceId}
-            {panelLayoutId}
-            onExpand={() => handleTabClick('browser')}
-            expanded={selectedTabs.has('browser')}
-          />
+          <div class="min-w-0" in:launcherGridReveal|global={4}>
+            <SidebarBrowserLauncher
+              {workspaceId}
+              {panelLayoutId}
+              onExpand={() => handleTabClick('browser')}
+              expanded={selectedTabs.has('browser')}
+            />
+          </div>
         {/if}
-        <WorkspaceTerminalDock
-          {workspaceId}
-          onExpand={() => handleTabClick('shell')}
-          expanded={selectedTabs.has('shell')}
-        />
+        <div class="min-w-0" in:launcherGridReveal|global={isNewWorkspaceSession ? 0 : 5}>
+          <WorkspaceTerminalDock
+            {workspaceId}
+            onExpand={() => handleTabClick('shell')}
+            expanded={selectedTabs.has('shell')}
+          />
+        </div>
       {/if}
     {:else}
       <SidebarExpandedTabStrip

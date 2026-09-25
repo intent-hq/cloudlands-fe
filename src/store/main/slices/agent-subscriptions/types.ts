@@ -10,7 +10,7 @@ import type { WorkspaceEvent } from '../../../../features/events/types';
 export type AgentStatus = 'idle' | 'responding' | 'waiting' | 'completed' | 'failed';
 
 /** Serializable version of DataMatcher — RegExp stored as { pattern, flags } */
-export interface SerializableDataMatcher {
+interface SerializableDataMatcher {
   field: string;
   operator: 'equals' | 'contains' | 'starts_with' | 'ends_with' | 'matches';
   value: string | number | boolean | { pattern: string; flags: string };
@@ -24,7 +24,7 @@ interface DelegationGroup {
 }
 
 /** Filter configuration for agent event subscriptions */
-export interface AgentEventFilter {
+interface AgentEventFilter {
   eventTypes?: string[];
   actorTypes?: ('user' | 'agent' | 'system' | 'external' | 'tool')[];
   actorIds?: string[];

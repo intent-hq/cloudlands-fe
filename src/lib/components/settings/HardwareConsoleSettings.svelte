@@ -1,5 +1,9 @@
 <script lang="ts">
-  import { SettingsFieldRow } from '$lib/components/patterns/settings';
+  import {
+    defineSettings,
+    SettingsFieldRow,
+    SettingsForm,
+  } from '$lib/components/patterns/settings';
   /**
    * Hardware / Creator Micro settings panel.
    *
@@ -29,12 +33,15 @@
     setActionKeyMapping,
     setCycleScope,
     setHardwareConsoleEnabled,
+    setHardwareConsoleEncoderBehavior,
     setPromptPickerLimit,
   } from '$store/renderer/slices/hardware-console/hardware-console-slice';
   import {
     selectHardwareConsoleActionMappingsByModel,
     selectHardwareConsoleCycleScopes,
     selectHardwareConsoleEnabled,
+    selectHardwareConsoleEncoderBehavior,
+    selectHardwareConsoleEncoderBehaviorSaveFailed,
     selectHardwareConsoleKeySlots,
     selectPromptPickerLimit,
   } from '$store/renderer/slices/hardware-console/hardware-console-selectors';
@@ -75,11 +82,50 @@
   import HardwareConsoleDeviceSvg, { codexCapLabel } from './HardwareConsoleDeviceSvg.svelte';
 
   const enabled$ = selectHardwareConsoleEnabled();
+  const encoderBehavior$ = selectHardwareConsoleEncoderBehavior();
+  const encoderSaveFailed$ = selectHardwareConsoleEncoderBehaviorSaveFailed();
   const promptPickerLimit$ = selectPromptPickerLimit();
   const actionMappingsByModel$ = selectHardwareConsoleActionMappingsByModel();
   const cycleScopes$ = selectHardwareConsoleCycleScopes();
   const keySlots$ = selectHardwareConsoleKeySlots();
   const workspaceItems$ = selectWorkspaceItems();
+
+  const encoderSettings = $derived(
+    defineSettings({
+      sections: [
+        {
+          id: 'hardware-encoder',
+          title: m.settings_hardware_encoderBehavior_label(),
+          entries: [
+            {
+              kind: 'select',
+              id: 'hardware-encoder-behavior',
+              label: m.settings_hardware_encoderBehavior_label(),
+              description: m.settings_hardware_encoderBehavior_description(),
+              get: () => $encoderBehavior$,
+              set: (value) => {
+                if (value === 'agent-effort' || value === 'workspace-switch') {
+                  appStore.dispatch(setHardwareConsoleEncoderBehavior(value));
+                }
+              },
+              error: () =>
+                $encoderSaveFailed$ ? m.settings_hardware_encoderBehavior_save_error() : undefined,
+              options: [
+                {
+                  value: 'agent-effort',
+                  label: m.settings_hardware_encoderBehavior_effort_label(),
+                },
+                {
+                  value: 'workspace-switch',
+                  label: m.settings_hardware_encoderBehavior_workspaces_label(),
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    }),
+  );
 
   // Cycle-scope checkbox rows: one per togglable family, labeled with the
   // family's action label from the registry (locale-reactive getter).
@@ -414,6 +460,7 @@
       <div class="flex flex-col sm:flex-row gap-6 items-start">
         <HardwareConsoleDeviceSvg
           model={deviceModel}
+          encoderBehavior={$encoderBehavior$}
           {selectedSlot}
           onSelectKey={(slot) => (selectedSlot = slot)}
           {actionSlots}
@@ -423,11 +470,11 @@
         />
         <div class="w-full sm:w-60 shrink-0">
           {#if selectedSlot !== null}
-            <p class="type-body font-medium text-muted-foreground mb-2">
+            <p id="hardware-selected-key" class="type-body font-medium text-muted-foreground mb-2">
               {selectedKeyLabel}
             </p>
             <Select.Root value={selectedActionId ?? 'none'} onchange={handleActionChange}>
-              <Select.Trigger>
+              <Select.Trigger aria-labelledby="hardware-selected-key">
                 <span class="truncate">{selectedActionLabel}</span>
               </Select.Trigger>
               <Select.Content portal class="max-h-75">
@@ -473,6 +520,10 @@
       </div>
     </section>
 
+    <section data-slot="settings-section-body" class="px-6 py-4">
+      <SettingsForm schema={encoderSettings} embedded compact={false} />
+    </section>
+
     <!-- Cycle scope: which cycle actions include sub-agents -->
     <section data-slot="settings-section-body" class="px-6 py-4">
       <p class="type-body font-medium text-foreground">
@@ -510,8 +561,12 @@
           </p>
         </div>
         <div class="w-22.5 flex-shrink-0">
-          <Select.Root value={String($promptPickerLimit$)} onchange={handleLimitChange}>
-            <Select.Trigger>
+          <Select.Root
+            value={String($promptPickerLimit$)}
+            invalid={!promptLimitOptions.includes($promptPickerLimit$)}
+            onchange={handleLimitChange}
+          >
+            <Select.Trigger aria-label={m.settings_hardware_promptLimit_label()}>
               <span>{$promptPickerLimit$}</span>
             </Select.Trigger>
             <Select.Content portal class="max-h-75 w-22.5">

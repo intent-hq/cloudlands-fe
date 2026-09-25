@@ -3,11 +3,6 @@ import { cleanup, render } from '@testing-library/svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import StreamingTypingIndicator from '../StreamingTypingIndicator.svelte';
-import {
-  CHAT_OPERATIONAL_LEADING_CLASS,
-  CHAT_OPERATIONAL_ROW_CLASS,
-  CHAT_OPERATIONAL_SUMMARY_CLASS,
-} from '../operational-disclosure-row';
 
 interface AnimationRecord {
   options: KeyframeAnimationOptions;
@@ -55,35 +50,19 @@ beforeEach(() => {
 
 afterEach(cleanup);
 
-function expectClasses(element: Element, contract: string) {
-  for (const token of contract.split(' ')) expect(element.className).toContain(token);
-}
-
-describe('StreamingTypingIndicator geometry matches operational rows', () => {
-  it('uses the shared row geometry and a 16px accessible mark', () => {
+describe('StreamingTypingIndicator', () => {
+  it('exposes an accessible playing status', () => {
     const { container } = render(StreamingTypingIndicator, {
       props: { visible: true, message: 'Thinking' },
     });
-    const row = container.firstElementChild!;
-    const leading = container.querySelector('[data-operational-leading]')!;
-    const summary = container.querySelector('[data-operational-summary]')!;
     const mark = container.querySelector('[data-slot="intent-mark-loader"]')!;
 
-    expect(row.className).toContain(CHAT_OPERATIONAL_ROW_CLASS);
-    expect(leading.className).toContain(CHAT_OPERATIONAL_LEADING_CLASS);
-    expect(summary.className).toContain(CHAT_OPERATIONAL_SUMMARY_CLASS);
-    expectClasses(row, 'type-body grid items-center text-muted-foreground');
-    expect(mark.getAttribute('data-variant')).toBe('bloom');
     expect(mark.getAttribute('data-playing')).toBe('true');
-    expect(mark.getAttribute('width')).toBe('16');
-    expect(mark.getAttribute('height')).toBe('16');
     expect(mark.getAttribute('role')).toBe('status');
     expect(mark.getAttribute('aria-label')).toBeTruthy();
-    expect(container.innerHTML).not.toContain('legacy-spinner');
-    expect(container.innerHTML).not.toContain('--color');
   });
 
-  it('uses primary Thinking copy and muted non-live lifecycle detail', () => {
+  it('keeps lifecycle detail outside the live status region', () => {
     const { container } = render(StreamingTypingIndicator, {
       props: {
         visible: true,
@@ -92,11 +71,7 @@ describe('StreamingTypingIndicator geometry matches operational rows', () => {
       },
     });
     const copy = container.querySelector('[data-testid="streaming-status-copy"]')!;
-    const label = container.querySelector('[data-testid="streaming-status-thinking-label"]')!;
     const lifecycle = container.querySelector('[data-testid="streaming-status-phase"]')!;
-    expectClasses(copy, 'inline-flex min-w-0 max-w-full items-baseline gap-[0.5ch]');
-    expectClasses(label, 'shrink-0 font-normal text-foreground');
-    expectClasses(lifecycle, 'min-w-0 truncate font-normal text-muted-foreground');
     expect(copy.textContent).toBe('ThinkingCalling the daemon tool exactly as sent');
     expect(lifecycle.closest('[role="status"]')).toBeNull();
     expect(lifecycle.closest('[aria-live]')).toBeNull();

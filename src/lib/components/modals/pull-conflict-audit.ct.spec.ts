@@ -28,12 +28,15 @@ test('pull recovery editor menu wraps long names and keeps icons on the first li
       },
     },
   });
-  await page.getByRole('button', { name: 'Open in...', exact: true }).click();
-  const editor = page.getByRole('button', {
+  const trigger = page.getByRole('button', { name: 'Resolve conflicts in another app' });
+  await trigger.focus();
+  await trigger.press('Enter');
+  const editor = page.getByRole('menuitem', {
     name: 'A development editor with an unusually long application name',
     exact: true,
   });
   await expect(editor).toBeVisible();
+  await expect(editor).toBeFocused();
   const geometry = await editor.evaluate((node) => {
     const label = node.querySelector('[data-editor-name]')!;
     const box = label.getBoundingClientRect();
@@ -54,6 +57,15 @@ test('pull recovery editor menu wraps long names and keeps icons on the first li
       path: join(process.env.MODAL_AUDIT_CAPTURE_DIR, 'pull-editor-menu-light-360.png'),
     });
   }
+  await editor.press('Escape');
+  await expect(page.getByRole('menu')).toHaveCount(0);
+  await expect(page.getByRole('dialog')).toBeVisible();
+  await expect(trigger).toBeFocused();
+  await trigger.press('Enter');
+  await expect(editor).toBeFocused();
+  await editor.press('Enter');
+  await expect(page.getByRole('menu')).toHaveCount(0);
+  await expect(page.getByRole('dialog')).toBeVisible();
 });
 
 for (const [errorType, error] of [

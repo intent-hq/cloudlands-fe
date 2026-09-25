@@ -1,12 +1,8 @@
 ---
 name: core/import-boundaries
 description: >-
-  Which store modules components may import (actions, selectors, types,
-  and the initialized Store instance for dispatch/one-shot reads) and which
-  are forbidden (saga files, operation modules, reducer internals, collection
-  utils). Component files must never import typed-redux-saga or redux-saga.
-  Services/non-component TS may import actions and selectors;
-  sagas may import anything inside the store directory.
+  Use when checking which store modules components, services, and sagas may
+  import, including dispatch access and forbidden saga/reducer internals.
 type: sub-skill
 requires:
   - core
@@ -19,7 +15,7 @@ triggers:
 ---
 # Import Boundaries
 
-> Source: `../SKILL.md` §2; `package.json` exports map; public `@augmentcode/themis/svelte-store`; hidden root-entry implementation context; `@augmentcode/themis/docs/ARCHITECTURE.md` maintainer validation.
+> Source: [Setup — the package export surface](#setup--the-package-export-surface); `package.json` exports map; public `@augmentcode/themis/svelte-store`; hidden root-entry implementation context; `@augmentcode/themis/docs/ARCHITECTURE.md` maintainer validation.
 
 ## Setup — the package export surface
 
@@ -51,7 +47,7 @@ Migration note: replace flat package-root examples, removed utilities-subpackage
 
 ### Components — forbidden
 
-- ❌ Saga files (`sagas/*.ts`) — never import saga source into a component
+- ❌ Saga files (`sagas/*.ts`) in ordinary components/handlers — dispatch the owning action instead. Only the explicit [bootstrap/lifetime owner](#bootstrap-and-lifetime-owner-exception) may import the saga it starts and stops.
 - ❌ Operation/utility modules that dispatch internally
 - ❌ Reducer internals or store init/setup modules
 - ❌ Collection utils directly (access collections through selectors)
@@ -59,7 +55,29 @@ Migration note: replace flat package-root examples, removed utilities-subpackage
 
 ### Services and non-component TS
 
-Services may import actions, selectors, and the app's existing initialized `Store` instance captured outside callbacks. They may **not** import sagas directly — call `store.dispatch(triggeringAction())` instead.
+Services may import actions, selectors, and the app's existing initialized `Store` instance captured outside callbacks. Ordinary service operations may **not** import or call sagas directly — call `store.dispatch(triggeringAction())` instead. A service that is the explicit lifetime owner has only the startup exception below.
+
+### Bootstrap and lifetime-owner exception
+
+The designated bootstrap, layout/component, or service lifetime owner may import the configured Store and the saga function it passes to `store.runSaga(saga)`. Initialize the Store before starting the saga, retain the matching stop handle, and stop it at that same boundary. This is lifecycle wiring, not permission to invoke/step the generator, use saga effects in components, or move business logic into handlers. Do not add a second hidden owner for an already-owned saga.
+
+For an owner that also owns Store initialization/disposal (adapt the boundary to the selected family):
+
+```ts
+import { store } from "$lib/store";
+import { jobsSaga } from "$lib/store/slices/jobs/sagas/jobs-saga";
+
+export function startJobsOwner() {
+  const disposeStore = store.init();
+  const stopJobs = store.runSaga(jobsSaga);
+  return () => {
+    stopJobs();
+    disposeStore();
+  };
+}
+```
+
+If a longer-lived parent already owns the initialized Store, retain/call only the saga stop handle; do not initialize or dispose the parent's Store. Ordinary UI events still import actions and use `store.dispatch(action())`. Follow the chosen family's lifecycle leaf and [Store saga lifecycle](../saga-manager/SKILL.md#store-saga-lifecycle).
 
 ### Sagas
 
@@ -69,18 +87,11 @@ Sagas may import anything within the store directory (actions, selectors, other 
 
 ### 1. Public package subpaths and utility leaf imports
 
-```ts
-import { Store } from "<selected Store family package>";
-import type { StoreState } from "@augmentcode/themis/types";
-import { createAction } from "@augmentcode/themis/utils/store/create-action";
-import { retryWithTimeout } from "@augmentcode/themis/saga";
-import type { Collection } from "@augmentcode/themis/utils/collections/collection-utils";
-
-type Todo = { id: string; title: string };
-export type PublicState = StoreState & { todos?: { items: Collection<Todo, "id"> } };
-export const loadTodos = createAction("todos/load");
-export const publicApi = { Store, retryWithTimeout, loadTodos };
-```
+Use the export list above, not a package-root or implementation import:
+`createAction` comes from `@augmentcode/themis/utils/store/create-action`,
+`retryWithTimeout` from `@augmentcode/themis/saga`, and `StoreState` from
+`@augmentcode/themis/types` via `import type`. Import the concrete Store class
+from the selected family's public subpackage.
 
 ### 2. Component imports actions, selectors, types, and the initialized Store instance
 
@@ -138,105 +149,35 @@ export function* jobsSaga() {
 
 ### ❌ Importing saga files from components
 
-Pulls saga side-effect code into the component bundle and invites direct saga invocation, which breaks the saga lifecycle.
+Outside the explicit bootstrap/lifetime-owner exception, importing saga source
+crosses the component boundary; invoking or stepping its generator bypasses
+`Store.runSaga` lifecycle. Import the triggering action from its owning slice and
+call `store.dispatch(fetchItems())` instead. The startup exception does not permit
+business-saga calls or effect imports in event handlers.
 
-```ts
-// BAD: component-adjacent code imports saga source and bypasses Store.runSaga lifecycle.
-import { fetchItemsSaga } from "./slices/items/sagas/items-saga";
-
-export function loadFromComponent() {
-  const task = fetchItemsSaga();
-  task.next();
-}
-```
-
-```ts
-import { store } from "$lib/store";
-import { fetchItems } from "./slices/items/items-slice";
-
-export function loadFromComponent() {
-  store.dispatch(fetchItems());
-}
-```
-
-Source: `../SKILL.md` §2 · **Priority: HIGH**
+Source: [Components — forbidden](#components--forbidden) · **Priority: HIGH**
 
 ### ❌ Hiding dispatch inside service helpers
 
 Components and services should dispatch through the configured app `Store` instance or receive a dispatch function explicitly. A helper that captures a hidden module-level dispatch creates an unreviewable second boundary even when all imports type-check.
 
-```ts
-// BAD: callers cannot see which Store instance owns this side effect.
-import { store } from "$lib/store";
-import { addItem } from "$lib/store/slices/items/items-slice";
+Keep the Store or dispatch parameter explicit at the call site rather than hiding
+ownership in an operation helper. This does not permit business timers or other
+domain effects outside sagas; `core/core-policy/SKILL.md` owns that rule.
 
-export function queueItemFromAnywhere(id: string) {
-  setTimeout(() => store.dispatch(addItem(id)), 0);
-}
-```
-
-```ts
-import type { Store } from "<selected Store family package>";
-import { addItem } from "$lib/store/slices/items/items-slice";
-
-export function queueItem(store: Store, id: string) {
-  setTimeout(() => store.dispatch(addItem(id)), 0);
-}
-```
-
-Source: `../SKILL.md` §2, §7 · **Priority: MEDIUM**
+Source: [Components and component-level modules — allowed](#components-and-component-level-modules--allowed), [Services and non-component TS](#services-and-non-component-ts) · **Priority: MEDIUM**
 
 ### ❌ Importing from `typed-redux-saga` in a component file
 
-`typed-redux-saga` effects (`call`, `put`, `select`, `takeEvery`, ...) only have meaning inside saga generators. Importing them in a component has no runtime benefit, bloats the client bundle, and in test environments drags the saga mock (`core/testing`) into non-saga files.
+Effects (`call`, `put`, `select`, `takeEvery`, ...) only run inside saga generators.
+Calling `put(triggerEffect())` in a handler just creates an unexecuted descriptor;
+call `store.dispatch(triggerEffect())` instead. Effect imports also bloat the
+client bundle and drag saga mocks (`core/testing`) into non-saga tests.
 
-```ts
-// BAD: component code creates an effect descriptor that no saga middleware will run.
-import { put } from "typed-redux-saga";
-import { triggerEffect } from "./slices/effects/effects-slice";
-
-export function handleClick() {
-  return put(triggerEffect());
-}
-```
-
-```ts
-import { store } from "$lib/store";
-import { triggerEffect } from "./slices/effects/effects-slice";
-
-export function handleClick() {
-  store.dispatch(triggerEffect());
-}
-```
-
-Source: `../SKILL.md` §2 (Components must never import saga files / redux-saga effects) · **Priority: HIGH**
-
-### Examples retained/added
-
-| # | Example | Kind |
-| ---: | --- | --- |
-| 1 | Public package subpaths and utility leaf imports | Good |
-| 2 | Component imports actions/selectors/types/Store instance | Good |
-| 3 | Service one-shot selector read plus dispatch | Good |
-| 4 | Saga-layer imports and typed-redux-saga usage | Good |
-| 5 | Component importing saga source and direct generator stepping | Bad |
-| 6 | Correct action dispatch replacement for saga import | Good |
-| 7 | Hidden module-level dispatch helper in service code | Bad |
-| 8 | Explicit Store-parameter dispatch helper | Good |
-| 9 | Component importing typed-redux-saga effect descriptors | Bad |
-| 10 | Correct component Store dispatch replacement | Good |
-
-### Cases covered
-
-| Case | Examples |
-| --- | --- |
-| Current public package API | 1 |
-| Component import allowlist and Store-first dispatch/read | 2, 6, 8, 10 |
-| Service/non-component one-shot access | 3, 7, 8 |
-| Saga-only imports/effects and public saga utilities | 4, 5, 9 |
-| Realistic boundary mistakes not limited to missing APIs | 5, 7, 9 |
+Source: [Components — forbidden](#components--forbidden) (No saga effects in components; saga-function imports only at the explicit lifetime owner) · **Priority: HIGH**
 
 ## See also
 
 - `core/core-policy/SKILL.md` — the policy these boundaries enforce
 - Selected Store family skill — Store dispatch + selector usage inside components
+

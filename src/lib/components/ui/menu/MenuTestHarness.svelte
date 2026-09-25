@@ -6,7 +6,11 @@
   import type { Snippet } from 'svelte';
   import type { IconWeight } from 'phosphor-svelte';
 
-  let { stacked = false, iconWeight }: { stacked?: boolean; iconWeight?: IconWeight } = $props();
+  let {
+    stacked = false,
+    iconWeight,
+    commandDisabledReason,
+  }: { stacked?: boolean; iconWeight?: IconWeight; commandDisabledReason?: string } = $props();
 
   let checked = $state(false);
   let density = $state('comfortable');
@@ -91,6 +95,7 @@
           {iconWeight}
           label={m.chat_richInput_attachFiles_label()}
           shortcut="⇧⌘A"
+          disabledReason={commandDisabledReason}
           onSelect={() => (selected = 'attach')}
         />
       </Menu.Group>

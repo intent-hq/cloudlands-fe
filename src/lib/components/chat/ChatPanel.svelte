@@ -1152,17 +1152,13 @@
   // reload) and clears the pending question set, so the sticky wizard stays
   // hidden across later turns. On failure the middleware rolls
   // the metadata back, so the wizard re-surfaces, and surfaces the error toast.
-  // Returns the action promise so the wizard clears its stored draft only
+  // Returns the dispatch promise so the wizard clears its stored draft only
   // after the dismissal is confirmed (a failure keeps the draft).
   async function handleQuestionWizardDismiss(): Promise<void> {
     if (!workspace || !pendingQuestions) return;
-    const action = agentSessionDismissQuestionsRequested(
-      agentId,
-      workspace.id,
-      pendingQuestions.messageId,
+    await appStore.dispatch(
+      agentSessionDismissQuestionsRequested(agentId, workspace.id, pendingQuestions.messageId),
     );
-    appStore.dispatch(action);
-    await action.promise;
   }
 
   // Completing the wizard flattens all answers into ONE plain-text user
@@ -3572,6 +3568,11 @@
       return;
     }
 
+    const retainedMessageId = untrack(() => offscreenPendingProposalMessageId);
+    if (retainedMessageId && !refs.some((ref) => ref.messageId === retainedMessageId)) {
+      offscreenPendingProposalMessageId = null;
+    }
+
     let disposed = false;
     let observer: IntersectionObserver | null = null;
     tick().then(() => {
@@ -3612,11 +3613,11 @@
             ?.messageId ?? null;
         return;
       }
-      offscreenPendingProposalMessageId =
-        refs.find((ref) => visibility.get(`${ref.messageId}\u0000${ref.proposalId}`) === false)
-          ?.messageId ?? null;
+      // Keep the last observation until the replacement observer samples;
+      // clearing it here resizes the transcript on every streamed update.
       observer = new IntersectionObserver(
         (entries) => {
+          if (disposed) return;
           for (const entry of entries) {
             for (const refKey of refKeysByTarget.get(entry.target) ?? []) {
               visibility.set(refKey, entry.isIntersecting);
@@ -4778,9 +4779,9 @@
   async function handleSendQueuedMessageNow(messageId: string) {
     if (!workspace) throw new Error(m.agent_chatSend_sendNowRejected_error());
     logger.info('Send queued message now triggered', { messageId, agentId });
-    const action = sendQueuedMessageNowRequested(agentId, workspace.id, messageId);
-    appStore.dispatch(action);
-    const outcome = await action.promise;
+    const outcome = await appStore.dispatch(
+      sendQueuedMessageNowRequested(agentId, workspace.id, messageId),
+    );
     if (outcome === 'delivered') {
       void performLocalSendCleanup({ clearInput: false, followBottom: true });
     }
@@ -5219,10 +5220,9 @@
       },
       specialistRollback: { metadata: session.metadata, model: session.model },
     });
-    appStore.dispatch(saveAction);
-    // The mutation saga owns rollback and the user-visible error; observe the
-    // rejection here so this component dispatch is not an unhandled promise.
-    void saveAction.promise.catch((error) => {
+    // The mutation saga owns rollback and the user-visible error; retain
+    // specialist-specific failure context in the log.
+    void appStore.dispatch(saveAction).catch((error) => {
       logger.error('Failed to persist agent specialist change', { agentId, error });
     });
     logger.info('Agent specialist change dispatched', {
@@ -5322,9 +5322,7 @@
       options,
     );
     appStore.dispatch(action);
-    // Failures are surfaced via toast by the edit-regenerate middleware;
-    // swallow the rejection here to avoid an unhandled-rejection warning.
-    action.promise.catch(() => {});
+    // Failures are surfaced via toast by the edit-regenerate saga.
     // No launch-bubble transition on this path (there is no composer origin);
     // just re-engage auto-follow and scroll so the regeneration is visible.
     void performLocalSendCleanup({ followBottom: true });
@@ -5340,9 +5338,7 @@
     );
     appStore.dispatch(action);
     // Failures are surfaced via toast by the regenerate saga (before it
-    // delegates) or by the edit-regenerate saga it delegates to; swallow the
-    // rejection here.
-    action.promise.catch(() => {});
+    // delegates) or by the edit-regenerate saga it delegates to.
   }
 
   // Handle selecting a suggested prompt - sends immediately
@@ -5674,9 +5670,13 @@
             ? 'px-0'
             : 'px-4 sm:px-6'}"
           class:regular-chat-content-inset={!isChiefWorkspace}
+          style:--subscription-card-max-bleed={isChiefWorkspace ? '0px' : undefined}
           data-testid="pinned-prompt-overlay-lane"
         >
-          <div class={isChiefWorkspace ? 'mx-1 sm:mx-2' : ''}>
+          <div
+            class={isChiefWorkspace ? 'mx-1 sm:mx-2' : ''}
+            style:--subscription-card-max-bleed={isChiefWorkspace ? '0.25rem' : undefined}
+          >
             <PinnedTurnPrompt
               message={pinnedPrompt.message}
               surface={pinnedPrompt.surface}
@@ -5719,6 +5719,7 @@
           ? 'px-0'
           : 'px-4 pt-8 sm:px-6'} {transcriptBottomInsetClass}"
         class:regular-chat-content-inset={!isChiefWorkspace}
+        style:--subscription-card-max-bleed={isChiefWorkspace ? '0px' : undefined}
         data-testid="chat-transcript-inner"
         data-structural-recompute-count={transcriptStructure.recomputeCount}
       >
@@ -6418,7 +6419,12 @@
                           estimatedHeight={USER_ROW_ESTIMATED_HEIGHT}
                         >
                           {#snippet children()}
-                            <div class={isChiefWorkspace ? 'mx-1 sm:mx-2' : ''}>
+                            <div
+                              class={isChiefWorkspace ? 'mx-1 sm:mx-2' : ''}
+                              style:--subscription-card-max-bleed={isChiefWorkspace
+                                ? '0.25rem'
+                                : undefined}
+                            >
                               <ChatMessage
                                 {agentId}
                                 messageId={message.id}
@@ -6941,6 +6947,7 @@
   }
 
   .regular-chat-content-inset {
+    --subscription-card-max-bleed: 1rem;
     padding-left: 1rem;
     padding-right: 1rem;
   }

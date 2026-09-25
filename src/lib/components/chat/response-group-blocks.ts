@@ -188,6 +188,32 @@ export function shouldRenderResponseGroupInline(
   return group.isReasoningPhase === true && !group.isStreaming && !group.name.trim();
 }
 
+/** Select the visible predecessor and child without changing group membership. */
+export function getResponseGroupChildBoundary(
+  blocks: readonly RenderContentBlock[],
+  groupIndex: number,
+  childIndex: number,
+  isVisibleTopLevel: (block: RenderContentBlock) => boolean,
+  isVisibleChild: (block: ContentBlock) => boolean,
+): RenderContentBlock[] {
+  const group = blocks[groupIndex];
+  if (group?.type !== 'content_group') return [];
+  const child = group.children[childIndex];
+  if (!child || !isVisibleChild(child)) return [];
+
+  for (let index = childIndex - 1; index >= 0; index -= 1) {
+    if (isVisibleChild(group.children[index])) return [group.children[index], child];
+  }
+  // Inline children share the top-level stack; their first visible child must
+  // retain the boundary that the removed group wrapper would otherwise own.
+  if (shouldRenderResponseGroupInline(group)) {
+    for (let index = groupIndex - 1; index >= 0; index -= 1) {
+      if (isVisibleTopLevel(blocks[index])) return [blocks[index], child];
+    }
+  }
+  return [child];
+}
+
 export function isNestedReasoningSectionStart(
   group: Pick<ContentBlockGroup, 'children' | 'isReasoningPhase'>,
   childIndex: number,
@@ -210,7 +236,15 @@ export function isNestedReasoningSectionBoundary(
 
   let previousIndex = childIndex - 1;
   while (previousIndex >= 0 && !isVisible(group.children[previousIndex])) previousIndex -= 1;
-  return previousIndex >= 0;
+  if (previousIndex < 0) return false;
+
+  const previous = group.children[previousIndex];
+  if (previous.type === 'tool_use') return false;
+  if (previous.type === 'thinking') {
+    const history = extractReasoningHistory(previous.text ?? previous.content ?? '');
+    return !!history.at(-1)?.body;
+  }
+  return true;
 }
 
 export function getResponseGroupBlockKey(block: ContentBlock, index: number): string {

@@ -1,10 +1,8 @@
 ---
 name: core/debugging
 description: >-
-  Inspect runtime state via window.svelteRedux.reduxContext after
-  Store.initDevTool() exposes an initialized Store instance. Multiple exposed
-  stores produce a reduxContext array and a console.error. Use reducer tests for
-  reference-equality diagnostics. Public Store API: @augmentcode/themis/svelte-store; devtools registration is package-internal implementation context.
+  Use when inspecting Store state through window.svelteRedux.reduxContext or
+  Store.initDevTool(), or diagnosing reducer reference equality.
 type: sub-skill
 library: themis
 requires:
@@ -53,8 +51,10 @@ window.svelteRedux.reduxContext.dispatch({ type: "my/action", payload: [...] });
 Devtools registration treats the first Store as the canonical one. If a second
 Store is exposed before cleaning up the previous devtools registration,
 `registerGlobalDevTools` reports `"Multiple Redux stores initialized:"` with the
-list. Seeing that error in the console means two Store instances are being
-exposed — fix by consolidating registrations onto one `Store`.
+list. Diagnose the exposed registrations and their lifetime owners; the warning
+is not an init-call counter. `init()` alone does not register devtools, and
+repeating `init()` on an already-initialized instance is a no-op. Remove stale
+registrations or consolidate accidental duplicate owners onto one `Store`.
 
 ## 2. Reference-equality diagnostics
 
@@ -90,14 +90,15 @@ window.svelteRedux.reduxContext.state;
 
 ### 4.2 Diagnose "multiple stores initialized"
 
-Check the log for `"Multiple Redux stores initialized:"`. Root cause is
-**always** two `store.init()` calls without disposing the first:
+Check the log for `"Multiple Redux stores initialized:"`, then inspect the
+registered `reduxContext` instances and where each calls `initDevTool()`.
+Typical causes are overlapping root lifetimes, hot-reload/test code retaining a
+registration, or intentionally exposing another Store before unregistering the
+first. The warning does not prove that repeated `init()` is the cause.
 
-- Two `store.init()` calls with different `Store` instances, or
-- A test that didn't call the disposer returned from `store.init()`.
-
-`Store.dispose()` runs Store-owned cleanup and clears the initialized runtime
-context for that Store instance.
+Retain and call the disposer returned by `initDevTool()` when inspection ends;
+`Store.dispose()` also cleans up that Store's registration and initialized
+runtime. Do not dispose a live Store owned elsewhere just to hide the warning.
 
 ### 4.3 Confirm state is serializable
 
@@ -131,19 +132,18 @@ expect(reducer(initialState, noOpAction)).toBe(initialState);
 
 ### Expecting `reduxContext` to always be an object
 
-**Mechanism:** when two stores initialize without disposing,
-`reduxContext` may be reassigned to an **array** of Store instances. Code that reads
-`reduxContext.state` without guarding then crashes. Always
-guard, or fix the duplicate-init root cause.
+**Mechanism:** overlapping devtools registrations can make `reduxContext` an
+**array** of Store instances. Reading an array's `.state` returns `undefined`;
+subsequent state access may then throw. Cleanup can leave an empty or one-element
+array, and no registration can mean no context at all. Inspect every remaining
+registration rather than silently picking the first one:
 
 ```js
-// ❌ WRONG
-const s = window.svelteRedux.reduxContext.state;
-
-// ✅ CORRECT (diagnostic)
-const ctx = window.svelteRedux.reduxContext;
-const s = Array.isArray(ctx) ? ctx[0].state : ctx.state;
-// then fix the duplicate init — don't keep the guard.
+// Console-only diagnostic, not application Store selection.
+const ctx = window.svelteRedux?.reduxContext;
+const stores = ctx ? (Array.isArray(ctx) ? ctx : [ctx]) : [];
+const states = stores.map((store) => store.state);
+// Inspect each owner; remove stale registrations at their owning boundary.
 ```
 
 *Source: Store-owned runtime context handling.*
@@ -168,12 +168,12 @@ window.svelteRedux.reduxContext.dispatch(action);
 
 ## 6. See also
 
-- Selected Store family lifecycle skill — `store.init()`, why
-  multiple root lifecycle entries calling `store.init()` is the usual
-  "multiple stores initialized" root cause.
+- Selected Store family lifecycle skill — initialization/disposal ownership and
+  overlapping lifetimes that can leave multiple devtools registrations.
 - `core/reducers` — the same-reference on no-op contract
   that reducer tests should enforce.
 - `core/state-serialization` — the serializability rule
   reducers and tests should preserve.
 - `core/testing` — assertions that mirror reducer and
   serialization contracts in unit tests.
+

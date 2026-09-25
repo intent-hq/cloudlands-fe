@@ -1785,18 +1785,23 @@
         <div class="flex items-center gap-2 px-3 py-1.5 border-b border-border bg-muted/20">
           <span class="text-xs text-subtle">{m.workspace_issueSuggestions_team_label()}</span>
           <Select.Root
-            value={selectedLinearTeam ?? ''}
-            onchange={(value) => (selectedLinearTeam = value || null)}
+            value={selectedLinearTeam ?? '__all-teams__'}
+            onchange={(value) => (selectedLinearTeam = value === '__all-teams__' ? null : value)}
           >
             <Select.Trigger
               variant="ghost"
+              aria-label={m.workspace_issueSuggestions_team_label()}
               class="w-auto gap-1 px-1! py-0.5! text-xs! text-muted-foreground hover:text-foreground"
             >
               <span class="truncate">{selectedLinearTeamLabel}</span>
               <Fa icon={faChevronDown} size={8} class="opacity-50 shrink-0" />
             </Select.Trigger>
             <Select.Content portal class="max-h-[300px] min-w-[10rem]">
-              <Select.Item value="" class="text-xs! py-1.5!">
+              <Select.Item
+                value="__all-teams__"
+                label={m.workspace_issueSuggestions_all_label()}
+                class="text-xs! py-1.5!"
+              >
                 <span class="truncate"
                   >{m.workspace_issueSuggestions_allWithCount_label({
                     count: linearAssignedIssues.length + linearCreatedIssues.length,
@@ -1807,7 +1812,7 @@
                 {@const count = [...linearAssignedIssues, ...linearCreatedIssues].filter(
                   (i) => i.teamKey === team.key,
                 ).length}
-                <Select.Item value={team.key} class="text-xs! py-1.5!">
+                <Select.Item value={team.key} label={team.name} class="text-xs! py-1.5!">
                   <span class="truncate">{team.name} ({count})</span>
                 </Select.Item>
               {/each}
@@ -2484,13 +2489,13 @@
                 <div class="flex items-center gap-2">
                   <Input
                     type="text"
-                    class="flex-1 min-w-0 bg-background/50 border border-border rounded px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-ring placeholder:opacity-40"
+                    class="flex-1 min-w-0 bg-background/50 border border-border rounded px-2 py-1 text-xs placeholder:opacity-40"
                     placeholder={m.workspace_issueSuggestions_organizationSlug_placeholder()}
                     bind:value={sentryOrg}
                   />
                   <Input
                     type="password"
-                    class="flex-1 min-w-0 bg-background/50 border border-border rounded px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-ring placeholder:opacity-40"
+                    class="flex-1 min-w-0 bg-background/50 border border-border rounded px-2 py-1 text-xs placeholder:opacity-40"
                     placeholder={m.workspace_issueSuggestions_apiToken_placeholder()}
                     bind:value={sentryToken}
                     onkeydown={(e) => {

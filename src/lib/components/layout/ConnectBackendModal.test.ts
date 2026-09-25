@@ -6,12 +6,14 @@
  * flow is observable without real IPC.
  */
 
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/svelte';
 import { warmImport } from '../../../test/warm-import';
 
 const mocks = vi.hoisted(() => ({
   dispatch: vi.fn(),
+  start: async () => {},
+  stop: async () => {},
   captureFingerprintRequested: vi.fn(),
   addConnectionRequested: vi.fn(),
   openConnectionRequested: vi.fn(),
@@ -29,23 +31,16 @@ vi.mock('svelte-fa', () => ({
   default: () => null,
 }));
 
-vi.mock('$store/renderer/store', () => ({
-  store: { dispatch: mocks.dispatch },
-}));
-
-vi.mock('$store/renderer/slices/connections/connections-slice', () => ({
-  captureFingerprintRequested: mocks.captureFingerprintRequested,
-  addConnectionRequested: mocks.addConnectionRequested,
-  openConnectionRequested: mocks.openConnectionRequested,
-  loadKeychainSyncStateRequested: mocks.loadKeychainSyncStateRequested,
-  setKeychainSyncEnabledRequested: mocks.setKeychainSyncEnabledRequested,
-}));
-
-vi.mock('$store/renderer/slices/connections/connections-selectors', async () => {
-  const { readable } = await import('svelte/store');
-  return {
-    selectKeychainSyncState: () => readable(mocks.syncState.value),
-  };
+vi.mock('$store/renderer/store', async () => {
+  const { createConnectionsHarness } =
+    await import('$store/renderer/slices/connections/test-harness');
+  const harness = createConnectionsHarness(
+    () => ({ keychainSync: mocks.syncState.value }),
+    mocks.dispatch,
+  );
+  mocks.start = harness.start;
+  mocks.stop = harness.stop;
+  return { store: harness.store };
 });
 
 vi.mock('$lib/utils/open-external', () => ({
@@ -66,7 +61,7 @@ async function fillDetails() {
 }
 
 describe('ConnectBackendModal', () => {
-  beforeEach(() => {
+  beforeEach(async () => {
     vi.clearAllMocks();
     mocks.syncState.value = null;
     mocks.captureFingerprintRequested.mockImplementation((params) => ({
@@ -99,12 +94,34 @@ describe('ConnectBackendModal', () => {
       payload: [id],
       promise: Promise.resolve({ status: 'opened', id }),
     }));
+    window.electronAPI = {
+      ...window.electronAPI,
+      on: vi.fn(() => 'listener'),
+      offById: vi.fn(),
+      invoke: vi.fn((channel: string, params?: any) => {
+        if (channel === 'connections:list')
+          return Promise.resolve({ connections: [], activeId: 'local', windowBackendId: 'local' });
+        if (channel === 'connections:capture-fingerprint')
+          return mocks.captureFingerprintRequested(params).promise;
+        if (channel === 'connections:add') return mocks.addConnectionRequested(params).promise;
+        if (channel === 'connections:open') return mocks.openConnectionRequested(params.id).promise;
+        if (channel === 'connections:sync-get-state')
+          return mocks.loadKeychainSyncStateRequested().promise;
+        if (channel === 'connections:sync-set-enabled')
+          return mocks.setKeychainSyncEnabledRequested(params.enabled).promise;
+        throw new Error(`Unexpected channel ${channel}`);
+      }),
+    } as Window['electronAPI'];
+    await mocks.start();
   });
+  afterEach(() => mocks.stop());
 
   it('captures the fingerprint on Continue and shows the confirm step', async () => {
     const ConnectBackendModal = (await import('./ConnectBackendModal.svelte')).default;
     render(ConnectBackendModal, { props: { open: true } });
 
+    const status = screen.getByRole('status');
+    const detailsStatus = status.textContent;
     await fillDetails();
     await fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
 
@@ -117,6 +134,8 @@ describe('ConnectBackendModal', () => {
     // Confirm step: the captured fingerprint is shown for the user to verify.
     expect(await screen.findByText('AA:BB:CC:DD')).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Confirm & connect' })).toBeTruthy();
+    expect(screen.getByRole('status')).toBe(status);
+    expect(status.textContent).not.toBe(detailsStatus);
   });
 
   it('stores and opens the connection on confirm', async () => {
@@ -187,8 +206,14 @@ describe('ConnectBackendModal', () => {
     await fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
     expect(detection.disabled).toBe(true);
     expect(cloud.disabled).toBe(true);
+    expect(screen.getByRole('status').closest('[aria-busy]')?.getAttribute('aria-busy')).toBe(
+      'true',
+    );
     finishCapture({ fingerprint: 'AA:BB:CC:DD', tokenValid: true });
     await screen.findByText('AA:BB:CC:DD');
+    expect(screen.getByRole('status').closest('[aria-busy]')?.getAttribute('aria-busy')).toBe(
+      'false',
+    );
     await fireEvent.click(screen.getByRole('button', { name: 'Back' }));
     for (const label of ['Detect all backend IPs', 'Save to iCloud']) {
       const toggle = screen.getByRole('switch', { name: label }) as HTMLButtonElement;
@@ -348,7 +373,7 @@ describe('ConnectBackendModal', () => {
     await fillDetails();
     await fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
 
-    expect(await screen.findByText('unreachable host')).toBeTruthy();
+    expect((await screen.findByRole('alert')).textContent).toBe('unreachable host');
     expect(mocks.addConnectionRequested).not.toHaveBeenCalled();
     // Still on details: the Host field is present.
     expect(screen.getByLabelText('Host')).toBeTruthy();
