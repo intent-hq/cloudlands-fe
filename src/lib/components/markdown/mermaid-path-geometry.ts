@@ -450,6 +450,58 @@ export function replacePathTerminal(pathData: string, terminal: Point): string |
     : replaced;
 }
 
+function trimPathTerminal(pathData: string, terminal: Point, direction: Point): string | null {
+  const tokens = pathData.match(/[a-zA-Z]|-?(?:\d*\.\d+|\d+\.?\d*)(?:e[-+]?\d+)?/gi);
+  if (!tokens) return null;
+  const sizes: Record<string, number> = { M: 2, L: 2, Q: 4, C: 6 };
+  const commands: { command: string; points: Point[]; start: Point }[] = [];
+  let start = { x: 0, y: 0 };
+  for (let index = 0; index < tokens.length;) {
+    const command = tokens[index++];
+    const size = sizes[command];
+    if (!size) return replacePathTerminal(pathData, terminal);
+    const values = tokens.slice(index, index + size).map(Number);
+    if (values.length !== size || !values.every(Number.isFinite)) return null;
+    index += size;
+    const points = Array.from({ length: size / 2 }, (_, i) => ({
+      x: values[i * 2],
+      y: values[i * 2 + 1],
+    }));
+    commands.push({ command, points, start });
+    start = points.at(-1)!;
+  }
+  const projection = (point: Point) =>
+    (point.x - terminal.x) * direction.x + (point.y - terminal.y) * direction.y;
+  let cut = commands.length - 1;
+  while (cut > 0 && projection(commands[cut].start) >= 0) cut -= 1;
+  const segment = commands[cut];
+  if (!segment || segment.command === 'M' || projection(segment.points.at(-1)!) < 0)
+    return replacePathTerminal(pathData, terminal);
+  const split = (ratio: number) => {
+    let level = [segment.start, ...segment.points];
+    const left = [level[0]];
+    while (level.length > 1) {
+      level = level.slice(1).map((point, i) => ({
+        x: level[i].x + (point.x - level[i].x) * ratio,
+        y: level[i].y + (point.y - level[i].y) * ratio,
+      }));
+      left.push(level[0]);
+    }
+    return left.slice(1);
+  };
+  let low = 0;
+  let high = 1;
+  for (let i = 0; i < 32; i++) {
+    const middle = (low + high) / 2;
+    if (projection(split(middle).at(-1)!) < 0) low = middle;
+    else high = middle;
+  }
+  const kept = [...commands.slice(0, cut), { ...segment, points: split((low + high) / 2) }];
+  return kept
+    .map(({ command, points }) => `${command} ${points.map((p) => `${p.x} ${p.y}`).join(' ')}`)
+    .join(' ');
+}
+
 function boundsInPathSpace(element: SVGGraphicsElement, path: SVGGraphicsElement): Bounds | null {
   const elementMatrix = element.getScreenCTM();
   const pathMatrix = path.getScreenCTM();
@@ -857,7 +909,11 @@ export function applyMermaidTerminalGaps(svg: SVGSVGElement, cssGap = 5) {
       tangentScreenPoint.x,
       tangentScreenPoint.y,
     ).matrixTransform(matrix.inverse());
-    const repaired = replacePathTerminal(path.getAttribute('d') ?? '', tangentTerminalPoint);
+    const repaired = trimPathTerminal(
+      path.getAttribute('d') ?? '',
+      tangentTerminalPoint,
+      localDirection,
+    );
     if (!repaired) continue;
     path.setAttribute('d', `${repaired} L ${terminalPoint.x} ${terminalPoint.y}`);
     path.dataset.terminalTarget = target.node.id;
