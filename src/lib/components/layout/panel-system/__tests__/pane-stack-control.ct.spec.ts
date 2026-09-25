@@ -147,3 +147,36 @@ test('switches agent panes with keyboard-accessible menu identity and current st
   await expect(component).toHaveAttribute('data-active-tab', 'browser-pane');
   await expect(menu).toHaveCount(0);
 });
+
+test('updates pane choices as panes are added and removed without losing the selected pane', async ({
+  mount,
+  page,
+}, testInfo) => {
+  const component = await mount(PaneStackControlHost, {
+    props: { paneTypes: ['note'], stackCount: 1, initialActiveTabId: 'note-pane' },
+  });
+  const trigger = component.getByTestId('pane-stack-selector-trigger');
+  await trigger.click();
+  const menu = page.getByRole('menu', { name: 'Panes in this stack' });
+  await expect(menu.locator('[data-pane-stack-item]')).toHaveCount(1);
+  await page.keyboard.press('Escape');
+  await component.update({ props: { paneTypes: ['note', 'browser'], stackCount: 2 } });
+  await trigger.press('Enter');
+  await expect(menu.locator('[data-pane-stack-item]')).toHaveCount(2);
+  await menu.getByRole('menuitem', { name: 'Preview browser', exact: true }).click();
+  await expect(component).toHaveAttribute('data-active-tab', 'browser-pane');
+  await component.update({ props: { paneTypes: ['browser'], stackCount: 1 } });
+  await trigger.press('Enter');
+  await expect(menu.locator('[data-pane-stack-item]')).toHaveCount(1);
+  await expect(menu.locator('[data-pane-stack-item="browser-pane"]')).toHaveAttribute(
+    'aria-current',
+    'page',
+  );
+  await page.keyboard.press('Escape');
+  await expect(trigger).toBeFocused();
+  await expect(component).toHaveAttribute('data-active-tab', 'browser-pane');
+  await testInfo.attach('remaining-selected-pane', {
+    body: await component.screenshot(),
+    contentType: 'image/png',
+  });
+});

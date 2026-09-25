@@ -43,6 +43,9 @@ test('agent submenus support keyboard entry, selection and dismissal', async ({
     await item.focus();
     await page.keyboard.press('ArrowRight');
     await expect(item).toHaveAttribute('aria-expanded', 'true');
+    if (id === 'task-progress-trigger') {
+      await expect(page.getByTestId('task-progress-list')).toContainText('Review the header');
+    }
     await page.keyboard.press('Escape');
     await expect(item).toHaveAttribute('aria-expanded', 'false');
     await expect(item).toBeFocused();
