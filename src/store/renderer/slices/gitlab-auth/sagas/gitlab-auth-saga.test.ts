@@ -1,6 +1,7 @@
 import { Store } from '@augmentcode/themis/svelte-store';
 import { runSaga, stdChannel } from 'redux-saga';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import type { ForgeConnectResult } from '$features/forge-auth/types';
 
 const mocks = vi.hoisted(() => ({
   getStatus: vi.fn(),
@@ -118,40 +119,238 @@ describe('gitlabAuthSaga', () => {
     }
   });
 
-  it('cancels a pending grant on disable, ignores a late result, and preserves saved credentials', async () => {
-    let finish!: (result: unknown) => void;
-    mocks.connect.mockImplementation(
-      () =>
+  it.each(['disable', 'skip'])(
+    'cancels the grant installed after %s during startup without revoking saved credentials',
+    async (cancel) => {
+      let finish!: (result: unknown) => void;
+      let daemonGrantPending = false;
+      mocks.connect.mockImplementation(() =>
         new Promise((resolve) => {
           finish = resolve;
+        }).then((result) => {
+          // The daemon installs its slot only after device authorization responds.
+          daemonGrantPending = true;
+          return result;
         }),
-    );
+      );
+      mocks.cancelAuth.mockImplementation(async () => {
+        daemonGrantPending = false;
+        return { success: true };
+      });
+      const saved = {
+        ...initialState,
+        host: HOST,
+        isConfigured: true,
+        user: WIRE_USER,
+        method: 'pat' as const,
+      };
+      const run = harness(saved, true);
+      try {
+        run.channel.put(startGitLabDeviceAuth(HOST));
+        await settle();
+        expect(run.state().isAuthenticating).toBe(true);
+        if (cancel === 'disable') run.dispatch(setLabsGitLabEnabled(false) as never);
+        else run.channel.put(cancelGitLabAuth());
+        await settle();
+        expect(mocks.cancelAuth.mock.calls).toEqual([['gitlab', HOST]]);
+        expect(daemonGrantPending).toBe(false);
+        finish({ success: true, deviceFlow: PENDING_FLOW });
+        await settle();
+        expect(daemonGrantPending).toBe(false);
+        expect(mocks.cancelAuth.mock.calls).toEqual([
+          ['gitlab', HOST],
+          ['gitlab', HOST],
+        ]);
+        expect(run.state()).toMatchObject({ ...saved, isAuthenticating: false, deviceFlow: null });
+        expect(mocks.revoke).not.toHaveBeenCalled();
+        expect(mocks.getStatus).not.toHaveBeenCalled();
+      } finally {
+        run.task.cancel();
+        await run.task.toPromise();
+      }
+    },
+  );
+
+  it.each(['rejection', 'unsupported'])(
+    'ignores late startup %s after cancellation without another cancellation or UI error',
+    async (outcome) => {
+      const pending = Promise.withResolvers<ForgeConnectResult>();
+      mocks.connect.mockReturnValue(pending.promise);
+      mocks.cancelAuth.mockResolvedValue({ success: true });
+      const saved = {
+        ...initialState,
+        host: HOST,
+        isConfigured: true,
+        user: WIRE_USER,
+        method: 'pat' as const,
+      };
+      const run = harness(saved, true);
+      try {
+        run.channel.put(startGitLabDeviceAuth(HOST));
+        await settle();
+        run.channel.put(cancelGitLabAuth());
+        await settle();
+        if (outcome === 'rejection') pending.reject(new Error('late authorization failure'));
+        else pending.resolve({ success: false, code: 'device-grant-unsupported' });
+        await settle();
+        expect(mocks.cancelAuth.mock.calls).toEqual([['gitlab', HOST]]);
+        expect(run.state()).toEqual(saved);
+        expect(mocks.revoke).not.toHaveBeenCalled();
+      } finally {
+        run.task.cancel();
+        await run.task.toPromise();
+      }
+    },
+  );
+
+  it.each([
+    { host: HOST, newerSettled: false, cleanup: false },
+    { host: HOST.toUpperCase(), newerSettled: false, cleanup: false },
+    { host: HOST, newerSettled: true, cleanup: false },
+    { host: OTHER_HOST, newerSettled: false, cleanup: true },
+    { host: OTHER_HOST, newerSettled: true, cleanup: true },
+  ])(
+    'late cancelled startup preserves the newer grant on $host (settled=$newerSettled)',
+    async ({ host, newerSettled, cleanup }) => {
+      const oldStart = Promise.withResolvers<ForgeConnectResult>();
+      const newStart = Promise.withResolvers<ForgeConnectResult>();
+      const newFlow = { ...PENDING_INFO, userCode: 'NEW-5678' };
+      mocks.connect
+        .mockReset()
+        .mockReturnValueOnce(oldStart.promise)
+        .mockReturnValueOnce(newStart.promise);
+      mocks.cancelAuth.mockResolvedValue({ success: true });
+      mocks.getStatus.mockResolvedValue({
+        ...UNCONFIGURED_STATUS,
+        host,
+        deviceFlow: { status: 'pending', ...newFlow },
+      });
+      const run = harness(initialState, true);
+      try {
+        run.channel.put(startGitLabDeviceAuth(HOST));
+        await settle();
+        run.channel.put(cancelGitLabAuth());
+        await settle();
+        run.channel.put(startGitLabDeviceAuth(host));
+        await settle();
+        if (newerSettled) {
+          newStart.resolve({ success: true, deviceFlow: newFlow });
+          await settle();
+        }
+        const beforeLateResult = run.state();
+        oldStart.resolve({ success: true, deviceFlow: PENDING_INFO });
+        await settle();
+        expect(mocks.cancelAuth.mock.calls).toEqual(
+          cleanup
+            ? [
+                ['gitlab', HOST],
+                ['gitlab', HOST],
+              ]
+            : [['gitlab', HOST]],
+        );
+        expect(run.state()).toEqual(beforeLateResult);
+        if (!newerSettled) {
+          newStart.resolve({ success: true, deviceFlow: newFlow });
+          await settle();
+        }
+        expect(run.state()).toMatchObject({ host, isAuthenticating: true, deviceFlow: newFlow });
+        expect(mocks.revoke).not.toHaveBeenCalled();
+      } finally {
+        run.task.cancel();
+        await run.task.toPromise();
+      }
+    },
+  );
+
+  it('late device cleanup preserves a newer PAT connection for the same host', async () => {
+    const oldStart = Promise.withResolvers<ForgeConnectResult>();
+    mocks.connect
+      .mockReset()
+      .mockReturnValueOnce(oldStart.promise)
+      .mockResolvedValueOnce({ success: true });
     mocks.cancelAuth.mockResolvedValue({ success: true });
-    const saved = {
-      ...initialState,
-      host: HOST,
-      isConfigured: true,
-      user: WIRE_USER,
-      method: 'pat' as const,
-    };
-    const run = harness(saved, true);
+    mocks.getStatus.mockResolvedValue(CONFIGURED_STATUS);
+    const run = harness(initialState, true);
     try {
       run.channel.put(startGitLabDeviceAuth(HOST));
       await settle();
-      expect(run.state().isAuthenticating).toBe(true);
-      run.dispatch(setLabsGitLabEnabled(false) as never);
+      run.channel.put(cancelGitLabAuth());
       await settle();
-      expect(mocks.cancelAuth.mock.calls).toEqual([['gitlab', HOST]]);
-      finish({ success: true, deviceFlow: PENDING_FLOW });
+      run.channel.put(connectGitLabWithToken(HOST, 'replacement-pat'));
       await settle();
-      expect(run.state()).toMatchObject({ ...saved, isAuthenticating: false, deviceFlow: null });
+      const connected = run.state();
+      expect(connected).toMatchObject({
+        host: HOST,
+        isConfigured: true,
+        user: WIRE_USER,
+        method: 'pat',
+      });
+      oldStart.resolve({ success: true, deviceFlow: PENDING_INFO });
+      await settle();
+      expect(mocks.cancelAuth.mock.calls).toEqual([
+        ['gitlab', HOST],
+        ['gitlab', HOST],
+      ]);
+      expect(run.state()).toEqual(connected);
       expect(mocks.revoke).not.toHaveBeenCalled();
-      expect(mocks.getStatus).not.toHaveBeenCalled();
     } finally {
       run.task.cancel();
       await run.task.toPromise();
     }
   });
+
+  it.each(['success', 'failure', 'rejection'])(
+    'a delayed cleanup %s leaves a newer startup untouched',
+    async (outcome) => {
+      const oldStart = Promise.withResolvers<ForgeConnectResult>();
+      const newStart = Promise.withResolvers<ForgeConnectResult>();
+      const cleanup = Promise.withResolvers<{ success: boolean; error?: string }>();
+      const newFlow = { ...PENDING_INFO, userCode: 'NEW-5678' };
+      mocks.connect
+        .mockReset()
+        .mockReturnValueOnce(oldStart.promise)
+        .mockReturnValueOnce(newStart.promise);
+      mocks.cancelAuth
+        .mockReset()
+        .mockResolvedValueOnce({ success: true })
+        .mockReturnValueOnce(cleanup.promise);
+      mocks.getStatus.mockResolvedValue({
+        ...UNCONFIGURED_STATUS,
+        deviceFlow: { status: 'pending', ...newFlow },
+      });
+      const run = harness(initialState, true);
+      try {
+        run.channel.put(startGitLabDeviceAuth(HOST));
+        await settle();
+        run.channel.put(cancelGitLabAuth());
+        await settle();
+        oldStart.resolve({ success: true, deviceFlow: PENDING_INFO });
+        await settle();
+        expect(mocks.cancelAuth).toHaveBeenCalledTimes(2);
+        run.channel.put(startGitLabDeviceAuth(HOST));
+        await settle();
+        const newerState = run.state();
+        expect(newerState.isAuthenticating).toBe(true);
+        if (outcome === 'rejection') cleanup.reject(new Error('late cleanup failure'));
+        else cleanup.resolve({ success: outcome === 'success', error: 'late cleanup failure' });
+        await settle();
+        expect(run.state()).toEqual(newerState);
+        newStart.resolve({ success: true, deviceFlow: newFlow });
+        await settle();
+        expect(run.state()).toMatchObject({
+          host: HOST,
+          isAuthenticating: true,
+          deviceFlow: newFlow,
+          error: null,
+        });
+        expect(mocks.cancelAuth).toHaveBeenCalledTimes(2);
+        expect(mocks.revoke).not.toHaveBeenCalled();
+      } finally {
+        run.task.cancel();
+        await run.task.toPromise();
+      }
+    },
+  );
 
   it('cancels a hydrated pending grant while off without dropping the saved connection', async () => {
     mocks.getStatus.mockResolvedValue({ ...CONFIGURED_STATUS, deviceFlow: PENDING_FLOW });

@@ -124,7 +124,11 @@ function* readStatus(host?: string): SagaGenerator<ForgeAuthStatus | null> {
  * complete on the slice's previous host, before the selection had been
  * published.
  */
-type IntentFence = { generation: number };
+type IntentFence = {
+  generation: number;
+  // Cleanup ownership for in-flight starts only, not the selected slice host.
+  pendingDeviceStarts: Map<string, { generation: number; cancelled: boolean }>;
+};
 
 function bumpIntent(fence: IntentFence): number {
   fence.generation += 1;
@@ -282,12 +286,37 @@ function* startDeviceAuth(
   fence: IntentFence,
   generation: number,
 ): SagaGenerator<void> {
+  const hostKey = host.trim().toLowerCase();
+  const pendingStart = { generation, cancelled: false };
+  fence.pendingDeviceStarts.set(hostKey, pendingStart);
   yield* put(setGitLabHost(host));
   yield* put(setGitLabAuthenticating(true));
   try {
     const params: ForgeConnectParams = { provider: PROVIDER, host, method: 'device' };
     const result = yield* call([forgeAuthClient, forgeAuthClient.connect], params);
-    if (superseded(fence, generation)) return;
+    if (superseded(fence, generation)) {
+      // An early cancel can precede the daemon installing its slot. Cancel
+      // again after successful startup, unless a newer start owns this host.
+      // cancelAuth never revokes an independently saved PAT or credential.
+      if (
+        result.success &&
+        pendingStart.cancelled &&
+        fence.pendingDeviceStarts.get(hostKey)?.generation === generation
+      ) {
+        try {
+          const cancelled = yield* call(
+            [forgeAuthClient, forgeAuthClient.cancelAuth],
+            PROVIDER,
+            host,
+          );
+          if (!cancelled.success)
+            logger.error('Failed to cancel late GitLab device grant', cancelled.error);
+        } catch (error) {
+          logger.error('Failed to cancel late GitLab device grant', error);
+        }
+      }
+      return;
+    }
     if (!result.success) {
       if (result.code === 'device-grant-unsupported') {
         yield* put(
@@ -322,6 +351,10 @@ function* startDeviceAuth(
     const message =
       error instanceof Error ? error.message : m.gitlabAuth_service_startFailed_error();
     yield* put(setGitLabAuthError(message));
+  } finally {
+    if (fence.pendingDeviceStarts.get(hostKey)?.generation === generation) {
+      fence.pendingDeviceStarts.delete(hostKey);
+    }
   }
 }
 
@@ -369,6 +402,8 @@ function* connectWithToken(
 function* cancelAuth(fence: IntentFence, generation: number): SagaGenerator<void> {
   try {
     const host = yield* selectGitLabAuthHost.effect();
+    const pendingStart = fence.pendingDeviceStarts.get(host.trim().toLowerCase());
+    if (pendingStart) pendingStart.cancelled = true;
     const result = yield* call([forgeAuthClient, forgeAuthClient.cancelAuth], PROVIDER, host);
     if (superseded(fence, generation)) return;
     if (result.success) yield* put(gitlabAuthCancelled());
@@ -515,7 +550,7 @@ function* gitlabLabChangedWorker(): SagaGenerator<void> {
 }
 
 export function* gitlabAuthSaga(): SagaGenerator<void> {
-  const fence: IntentFence = { generation: 0 };
+  const fence: IntentFence = { generation: 0, pendingDeviceStarts: new Map() };
   // Only the latest initialize may hydrate: an older read (mount-time default
   // host) that resolved after a newer one would otherwise overwrite it.
   yield* takeLatest(initializeGitLabAuth, initializeGitLabAuthWorker, fence);
