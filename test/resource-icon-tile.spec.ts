@@ -172,6 +172,7 @@ test('keeps resource tiles and compact header insets exact across the geometry m
 });
 
 test('keeps sidebar card paint and visible-surface label alignment exact', async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
   test.setTimeout(120_000);
   await page.setViewportSize({ width: 1800, height: 1400 });
   const scenarios = [
