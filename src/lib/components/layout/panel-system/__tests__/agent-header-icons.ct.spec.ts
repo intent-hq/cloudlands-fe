@@ -82,6 +82,10 @@ for (const { width, theme } of [
     await expect(menu).toBeVisible();
     const fontTrigger = menu.getByRole('menuitem', { name: /^Font Style/ });
     await expect(fontTrigger).toBeVisible();
+    // Workspace actions load lazily; placement alone does not prove their icons are ready.
+    await expect(
+      menu.getByRole('menuitem', { name: 'Copy Absolute Path', exact: true }),
+    ).toBeVisible();
     // Bits keeps the floating wrapper at translate(0, -200%) until floating-ui has placed
     // it, and autoUpdate may move it again while layout settles (intent-hq/intent#5279).
     // Wait for placement and a still rect, then sample the menu and its children in the

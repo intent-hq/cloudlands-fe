@@ -1395,6 +1395,7 @@ export const updateSession = createAction<
   [
     agentId: string,
     updates: Partial<AgentSession> & Pick<StoredAgentSession, 'liveTurnOpen' | 'liveTurnOpenedAt'>,
+    options?: { reasoningEffortSource: 'control' | 'encoder' },
   ]
 >('agentSessions/updateSession');
 

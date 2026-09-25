@@ -20,6 +20,8 @@ const mockState = {
     keyPins: [null, null, null, null, null, null] as (string | null)[],
     excludedWorkspaceIds: [] as string[],
     encoderHudWorkspaceId: null as string | null,
+    encoderBehavior: 'workspace-switch',
+    encoderBehaviorHydrated: true,
     actionMappingByModel: normalizeActionMappingsByModel(undefined),
     cycleScopeByFamily: normalizeCycleScopeByFamily(undefined),
     promptUsage: [] as unknown[],

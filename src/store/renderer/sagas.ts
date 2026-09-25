@@ -52,6 +52,7 @@ import { githubRepoSearchSaga } from './slices/github-repo-search/sagas/github-r
 import { githubUserSearchSaga } from './slices/github-user-search/sagas/github-user-search-saga';
 import { actionKeySaga } from './slices/hardware-console/sagas/action-key-saga';
 import { hardwareConsoleDeviceSaga } from './slices/hardware-console/sagas/hardware-console-device-saga';
+import { encoderPreferenceSaga } from './slices/hardware-console/sagas/encoder-preference-saga';
 import { keyPinPersistenceSaga } from './slices/hardware-console/sagas/key-pin-persistence-saga';
 import { promptPickerSaga } from './slices/hardware-console/sagas/prompt-picker-saga';
 import { voiceTranscriptionSaga } from './slices/hardware-console/sagas/voice-transcription-saga';
@@ -126,6 +127,7 @@ export type AppSagaCancel = ReturnType<Store<any, any>['runSaga']>;
 export function* hardwareConsoleSaga() {
   yield* all([
     call(hardwareConsoleDeviceSaga),
+    call(encoderPreferenceSaga),
     call(actionKeySaga),
     call(keyPinPersistenceSaga),
     call(promptPickerSaga),

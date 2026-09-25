@@ -71,7 +71,12 @@ vi.mock('$store/renderer/slices/model/model-selectors', () => ({
 vi.mock('$lib/components/patterns/notify', () => ({ notify: { error: mockToastError } }));
 
 import { updateSession } from '$store/renderer/slices/agent-session/agent-session-slice';
-import { applyReasoningEffort, reconcileAgentReasoningEffort } from './reasoning-effort';
+import {
+  applyReasoningEffort,
+  markReasoningEffortIntent,
+  reconcileAgentReasoningEffort,
+  releaseReasoningEffortIntent,
+} from './reasoning-effort';
 
 function setStoredEffort(agentId: string, effort: string | null) {
   storeState.agentSessions.byAgentId[agentId] = {
@@ -107,7 +112,7 @@ describe('applyReasoningEffort', () => {
     expect(applied).toBe(true);
     expect(mockDispatch).toHaveBeenCalledTimes(1);
     expect(mockDispatch).toHaveBeenCalledWith(
-      updateSession('agent-1', { reasoningEffort: 'high' }),
+      updateSession('agent-1', { reasoningEffort: 'high' }, { reasoningEffortSource: 'control' }),
     );
     expect(mockSetReasoningEffort).toHaveBeenCalledWith({
       agentId: 'agent-1',
@@ -224,7 +229,7 @@ describe('applyReasoningEffort', () => {
     expect(applied).toBe(false);
     expect(mockDispatch).toHaveBeenCalledTimes(1);
     expect(mockDispatch).toHaveBeenCalledWith(
-      updateSession('agent-1', { reasoningEffort: 'xhigh' }),
+      updateSession('agent-1', { reasoningEffort: 'xhigh' }, { reasoningEffortSource: 'control' }),
     );
     expect(mockToastError).not.toHaveBeenCalled();
   });
@@ -242,6 +247,96 @@ describe('applyReasoningEffort', () => {
     );
     expect(mockToastError).toHaveBeenCalledWith('unsupported');
   });
+
+  it('suppresses a late failure toast if the caller is disposed during rollback', async () => {
+    mockSetReasoningEffort.mockResolvedValue({ success: false, error: 'unsupported' });
+    let live = true;
+    mockDispatch.mockImplementation(
+      (action: { payload: [string, { reasoningEffort: string }] }) => {
+        const [agentId, patch] = action.payload;
+        setStoredEffort(agentId, patch.reasoningEffort);
+        if (patch.reasoningEffort === 'low') live = false;
+      },
+    );
+
+    const applied = await applyReasoningEffort('agent-1', 'ws-1', 'high', 'low', {
+      canMutate: () => live,
+    });
+
+    expect(applied).toBe(false);
+    expect(storeState.agentSessions.byAgentId['agent-1']?.reasoningEffort).toBe('low');
+    expect(mockToastError).not.toHaveBeenCalled();
+  });
+
+  it.each([false, true])(
+    'serializes overlapping choices and rolls back to the accepted baseline (first accepted: %s)',
+    async (accepted) => {
+      let settle!: (result: { success: boolean; error?: string }) => void;
+      mockSetReasoningEffort.mockImplementationOnce(
+        () => new Promise((resolve) => (settle = resolve)),
+      );
+      mockSetReasoningEffort.mockResolvedValueOnce({ success: false, error: 'latest failed' });
+      const first = applyReasoningEffort('agent-1', 'ws-1', 'low', null);
+      const latest = applyReasoningEffort('agent-1', 'ws-1', 'high', 'medium');
+      expect(mockSetReasoningEffort).toHaveBeenCalledTimes(1);
+      expect(storeState.agentSessions.byAgentId['agent-1'].reasoningEffort).toBe('high');
+      settle({ success: accepted, error: 'old failed' });
+      expect(await first).toBe(accepted);
+      expect(await latest).toBe(false);
+      expect(storeState.agentSessions.byAgentId['agent-1'].reasoningEffort).toBe(
+        accepted ? 'low' : null,
+      );
+      expect(mockToastError).toHaveBeenCalledExactlyOnceWith('latest failed');
+      expect(await applyReasoningEffort('agent-1', 'ws-1', 'medium', accepted ? 'low' : null)).toBe(
+        true,
+      );
+    },
+  );
+
+  it('does not roll back a newer coalescing choice with the same effort value', async () => {
+    let settle!: (result: { success: boolean; error?: string }) => void;
+    mockSetReasoningEffort.mockImplementationOnce(
+      () => new Promise((resolve) => (settle = resolve)),
+    );
+    const first = applyReasoningEffort('agent-1', 'ws-1', 'high', null);
+    const intent = markReasoningEffortIntent('agent-1', 'ws-1');
+    settle({ success: false, error: 'old failed' });
+    expect(await first).toBe(false);
+    expect(storeState.agentSessions.byAgentId['agent-1'].reasoningEffort).toBe('high');
+    expect(mockToastError).not.toHaveBeenCalled();
+    expect(
+      await applyReasoningEffort('agent-1', 'ws-1', 'high', null, { source: 'encoder', intent }),
+    ).toBe(true);
+  });
+
+  it.each([false, true])(
+    'reconciles a released issued success only when its caller permits it (%s)',
+    async (canReconcile) => {
+      let settle!: (result: { success: boolean }) => void;
+      mockSetReasoningEffort.mockImplementationOnce(
+        () => new Promise((resolve) => (settle = resolve)),
+      );
+      let live = true;
+      const intent = markReasoningEffortIntent('agent-1', 'ws-1');
+      const writing = applyReasoningEffort('agent-1', 'ws-1', 'low', null, {
+        source: 'encoder',
+        intent,
+        canSend: () => live,
+        canMutate: () => live,
+        canReconcileAccepted: () => canReconcile,
+      });
+      live = false;
+      releaseReasoningEffortIntent('agent-1', 'ws-1', intent);
+      setStoredEffort('agent-1', null);
+      settle({ success: true });
+      expect(await writing).toBe(true);
+      expect(storeState.agentSessions.byAgentId['agent-1'].reasoningEffort).toBe(
+        canReconcile ? 'low' : null,
+      );
+      expect(mockSetReasoningEffort).toHaveBeenCalledTimes(1);
+      expect(mockToastError).not.toHaveBeenCalled();
+    },
+  );
 });
 
 describe('reconcileAgentReasoningEffort', () => {
