@@ -344,6 +344,49 @@ describe('verification planning', () => {
       expect(translationChecks(plan)).toEqual([]);
     });
 
+    it.each([
+      ['surviving test directory', [], 'vitest-direct'],
+      ['full unit fallback', ['vitest.config.ts'], 'vitest-full'],
+    ])('keeps the scan when the inventory suite was deleted under %s', (_, extraFiles, checkId) => {
+      const root = fixtureRoot({
+        [source]: "export const label = 'Save your work';",
+        'scripts/remaining.test.ts': '',
+        'vitest.config.ts': '',
+      });
+      const plan = createVerificationPlan([source, inventorySuite, ...extraFiles], {
+        root,
+        ctTests: [],
+        declaredSuites: [],
+      });
+      expect(plan.checks.find((check) => check.id === checkId)).toBeDefined();
+      expect(translationChecks(plan)).toMatchObject([{ args: ['run', 'lint:i18n-strings'] }]);
+    });
+
+    it.each([
+      ['direct', inventorySuite, 'vitest-direct'],
+      ['declared', source, 'vitest-declared'],
+      ['surviving test directory', 'scripts/deleted.test.ts', 'vitest-direct'],
+      ['full unit fallback', 'vitest.config.ts', 'vitest-full'],
+    ])('keeps the scan when the inventory suite is excluded under %s', (kind, changed, checkId) => {
+      const root = fixtureRoot({
+        [source]: "export const label = 'Save your work';",
+        [inventorySuite]: "import { test } from 'vitest';\ntest('inventory', () => {});",
+        'scripts/remaining.test.ts': "import { test } from 'vitest';\ntest('kept', () => {});",
+        'vitest.config.ts':
+          "export default { test: { exclude: ['**/check-hardcoded-strings.test.ts'] } };",
+      });
+      if (kind === 'surviving test directory') {
+        expect(vitestList(root, 'scripts')).toEqual(['scripts/remaining.test.ts > kept']);
+      }
+      const plan = createVerificationPlan([source, changed], {
+        root,
+        ctTests: [],
+        declaredSuites: kind === 'declared' ? [{ path: inventorySuite, triggers: [source] }] : [],
+      });
+      expect(plan.checks.find((check) => check.id === checkId)).toBeDefined();
+      expect(translationChecks(plan)).toMatchObject([{ args: ['run', 'lint:i18n-strings'] }]);
+    });
+
     it('does not mistake unrelated declared or UI invariant suites for inventory coverage', () => {
       const root = fixtureRoot({ [source]: '', 'scripts/other.test.ts': '' });
       const plan = createVerificationPlan([source], {

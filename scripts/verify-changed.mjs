@@ -521,13 +521,19 @@ export function createVerificationPlan(files, options = {}) {
         'type-check:validate',
       ]),
     );
+  // Selected test coverage is only equivalent if the inventory suite can run.
   const translationCovered =
-    fullUnit ||
-    [...directUnit, ...declaredUnit].some(
-      (suite) =>
-        suite === TRANSLATION_INVENTORY_SUITE ||
-        TRANSLATION_INVENTORY_SUITE.startsWith(`${suite}/`),
-    );
+    (fullUnit ||
+      [...directUnit, ...declaredUnit].some(
+        (suite) =>
+          suite === TRANSLATION_INVENTORY_SUITE ||
+          TRANSLATION_INVENTORY_SUITE.startsWith(`${suite}/`),
+      )) &&
+    globSync(TRANSLATION_INVENTORY_SUITE, {
+      cwd: root,
+      ignore: vitestExcludePatterns(root),
+      nodir: true,
+    }).length > 0;
   if (files.some(isEnforcedFile) && !translationCovered)
     checks.push(
       command('i18n-strings', 'Translation strings (required inventory scan)', [
