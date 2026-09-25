@@ -47,6 +47,7 @@ describe('TerminalTabType header action lifecycle', () => {
     await waitFor(() => expect(action(view.container)).not.toBeNull());
 
     await view.rerender({ activeTabId: to });
+    await waitFor(() => expect(action(view.container)).not.toBeNull());
     dispatch.mockClear();
     await fireEvent.click(action(view.container)!);
 
