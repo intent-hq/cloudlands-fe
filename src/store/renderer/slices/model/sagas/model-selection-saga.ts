@@ -1,5 +1,5 @@
 import { buffers } from 'redux-saga';
-import { actionChannel, all, call, delay, put, race, take, takeEvery } from 'typed-redux-saga';
+import { actionChannel, call, put, take, takeEvery } from 'typed-redux-saga';
 
 import { appClient } from '$lib/client';
 import type { SettingsUpdateResult } from '$lib/client/app-client';
@@ -10,7 +10,10 @@ import {
   selectProviderCatalogEntry,
   selectProviderCatalogLoaded,
 } from '../../provider-catalog/provider-catalog-selectors';
-import { selectActiveProviderId } from '../../provider-settings/provider-settings-selectors';
+import {
+  selectActiveProviderId,
+  selectProviderWriteRevision,
+} from '../../provider-settings/provider-settings-selectors';
 import {
   activeProviderPersistRejected,
   setAtomicDefaultModel,
@@ -21,7 +24,6 @@ import {
   reloadModelsForProvider,
   selectModel,
   setDefaultReasoningEffort,
-  setSelectedModel,
 } from '../model-slice';
 import { settingsChangesReceived } from '../../settings-events/settings-events-slice';
 
@@ -92,6 +94,7 @@ type PersistenceResult = 'persisted' | 'rejected' | 'retry';
 export function* persistSelectedModelsWorker(
   sessionPicks: Record<string, string>,
   atomicProviderId?: string,
+  atomicRevision?: number,
 ) {
   const providerModels = yield* selectProviderModels.effect();
   // Store values and session picks are bare model ids keyed by provider —
@@ -130,60 +133,16 @@ export function* persistSelectedModelsWorker(
     if (isDaemonErrorResponse(error)) {
       logger.warn('Daemon rejected model.providerDefaults write', { error });
       yield* put(providerModelsPersistRejected({ ...sessionPicks }));
-      if (atomicProviderId) yield* put(activeProviderPersistRejected(atomicProviderId));
+      if (
+        atomicProviderId &&
+        (atomicRevision === undefined ||
+          atomicRevision === (yield* selectProviderWriteRevision.effect('default')))
+      )
+        yield* put(activeProviderPersistRejected(atomicProviderId));
       return 'rejected' satisfies PersistenceResult;
     }
     logger.error('Failed to persist model.providerDefaults', { error });
     return 'retry' satisfies PersistenceResult;
-  }
-}
-
-function* watchSelectedModelPersistence() {
-  const channel = yield* actionChannel(
-    [setAtomicDefaultModel, setSelectedModel],
-    buffers.sliding(1),
-  );
-  // Newest pick per provider made this session. Session-scoped on purpose:
-  // an entry only exists for a provider the user explicitly picked here, and
-  // re-overlaying it on every write keeps the user's in-session intent from
-  // being displaced by stale snapshot echoes (intent-hq/monorepo#1924).
-  const sessionPicks: Record<string, string> = {};
-  try {
-    let action = yield* take(channel);
-    let attempt = 0;
-    while (true) {
-      const { providerId, model } = action.payload[0];
-      sessionPicks[providerId] = model;
-      const result = yield* call(
-        persistSelectedModelsWorker,
-        sessionPicks,
-        action.type === setAtomicDefaultModel.type ? providerId : undefined,
-      );
-      if (result !== 'retry') {
-        if (result === 'rejected') {
-          for (const rejectedProviderId of Object.keys(sessionPicks)) {
-            delete sessionPicks[rejectedProviderId];
-          }
-        }
-        action = yield* take(channel);
-        attempt = 0;
-        continue;
-      }
-      // Failed write: back off and retry the SAME picks, unless a newer pick
-      // arrives first — it joins the overlay and supersedes the backoff.
-      const delayMs =
-        PROVIDER_DEFAULTS_RETRY_DELAYS_MS[
-          Math.min(attempt, PROVIDER_DEFAULTS_RETRY_DELAYS_MS.length - 1)
-        ];
-      attempt += 1;
-      const { next } = yield* race({ next: take(channel), retry: delay(delayMs) });
-      if (next) {
-        action = next;
-        attempt = 0;
-      }
-    }
-  } finally {
-    channel.close();
   }
 }
 
@@ -221,5 +180,6 @@ function* watchDefaultReasoningEffortPersistence() {
 
 export function* modelSelectionSaga() {
   yield* takeEvery(selectModel, handleSelectModel);
-  yield* all([call(watchSelectedModelPersistence), call(watchDefaultReasoningEffortPersistence)]);
+  // Atomic defaults share providerSettingsSaga's ordered default-provider queue.
+  yield* call(watchDefaultReasoningEffortPersistence);
 }

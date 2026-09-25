@@ -2,6 +2,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
 import { tick } from 'svelte';
 import { derived, get, readable, writable } from 'svelte/store';
+import { runSaga, stdChannel, type Task } from 'redux-saga';
+import type { ProviderModelsState } from '$store/renderer/slices/provider-models/provider-models-types';
 
 const mockModelState = vi.hoisted(() => ({
   selectedModel: 'gpt5.4',
@@ -15,7 +17,7 @@ const mockModelState = vi.hoisted(() => ({
 // Seedable session-lifetime provider-models cache (providerModels slice state)
 // exposed through the store mock, for the cache-hydration tests. Empty by
 // default so every existing test keeps the uncached first-boot path.
-const mockProviderModelsState = vi.hoisted(() => ({
+const mockProviderModelsState = vi.hoisted((): ProviderModelsState => ({
   byProviderId: {} as Record<
     string,
     {
@@ -26,6 +28,8 @@ const mockProviderModelsState = vi.hoisted(() => ({
     }
   >,
   clearEpoch: 0,
+  requests: { idField: 'providerId', ids: [], map: {}, refsCount: {} },
+  observers: { idField: 'id', ids: [], map: {}, refsCount: {} },
 }));
 
 // Caller-role slices read by the real `selectIsWorkspaceCollaborator` gate
@@ -105,21 +109,30 @@ vi.mock('$store/renderer/store', async () => {
     providerCatalogLoaded(MOCK_PROVIDER_CATALOG),
   );
 
-  return createAppStoreMockModule({
+  const module = createAppStoreMockModule({
     state: () => ({
       providerCatalog,
       // The effective default provider is settings-derived (never the first
       // catalog row) — mirror the mocked selectActiveProviderId default.
       providerSettings: { enabledProviders: {} },
       model: { defaultProviderId: 'auggie' },
-      providerModels: {
-        byProviderId: mockProviderModelsState.byProviderId,
-        clearEpoch: mockProviderModelsState.clearEpoch,
-      },
+      providerModels: mockProviderModelsState,
       ...mockRoleState.current,
     }),
     dispatch: mockSvelteDispatch,
   });
+  // Use the real catalog reducer/coordinator behind the component's mocked
+  // unrelated selectors. Saga selectors read the same state as the readables.
+  const { select } = await import('redux-saga/effects');
+  const createSelector = module.store.createSelector;
+  module.store.createSelector = (selectorFunc) => {
+    const selector = createSelector(selectorFunc);
+    selector.effect = function* (...args) {
+      return yield select(selectorFunc, ...args);
+    };
+    return selector;
+  };
+  return module;
 });
 
 const providerWarnings$ = writable<Record<string, string>>({});
@@ -130,6 +143,16 @@ const applyReasoningEffortMock = vi.hoisted(() => vi.fn(async () => true));
 const reconcileAgentReasoningEffortMock = vi.hoisted(() => vi.fn(async () => true));
 const mockSvelteDispatch = vi.hoisted(() =>
   vi.fn((action: { type?: string; payload?: unknown }) => {
+    if (action.type?.startsWith('providerModels/')) {
+      Object.assign(
+        mockProviderModelsState,
+        providerModelsReducer(
+          mockProviderModelsState,
+          action as Parameters<typeof providerModelsReducer>[1],
+        ),
+      );
+      (mockAppStore as unknown as { emitState: () => void }).emitState();
+    }
     if (action.type === 'model/setLoadingStateForProvider' && Array.isArray(action.payload)) {
       const [payload] = action.payload as [
         { providerId: string; status: string; warning?: string; stale?: boolean } & Record<
@@ -152,6 +175,7 @@ const mockSvelteDispatch = vi.hoisted(() =>
         return remaining;
       });
     }
+    catalogChannel?.put(action);
     return action;
   }),
 );
@@ -274,6 +298,12 @@ import {
 } from '$store/renderer/slices/model/model-utils';
 import { selectModel } from '$store/renderer/slices/model/model-slice';
 import { store as mockAppStore } from '$store/renderer/store';
+import {
+  providerModelsCacheCleared,
+  providerModelsReducer,
+  initialState as providerModelsInitialState,
+} from '$store/renderer/slices/provider-models/provider-models-slice';
+import { modelReloadSaga } from '$store/renderer/slices/model/sagas/model-reload-saga';
 import ModelPicker from './ModelPicker.svelte';
 import { warmImport } from '../../../../test/warm-import';
 
@@ -282,7 +312,21 @@ import { warmImport } from '../../../../test/warm-import';
 warmImport(() => import('../../ui/__tests__/mocks/Fa.svelte'));
 warmImport(() => import('../../ui/__tests__/mocks/button.svelte'));
 
+let catalogChannel: ReturnType<typeof stdChannel> | undefined;
+let catalogTask: Task;
+beforeEach(() => {
+  catalogChannel = stdChannel();
+  catalogTask = runSaga(
+    { channel: catalogChannel, dispatch: mockSvelteDispatch, getState: () => mockAppStore.state },
+    modelReloadSaga,
+  );
+});
+
 afterEach(() => {
+  cleanup();
+  catalogTask.cancel();
+  catalogChannel = undefined;
+  Object.assign(mockProviderModelsState, providerModelsInitialState);
   availableProviderOverride$.set(null);
   enabledProvidersMap$.set({});
   mockModelState.availableModelsProviderId = 'auggie';
@@ -4348,9 +4392,7 @@ describe('ModelPicker cache hydration (stale-while-revalidate)', () => {
     // the map goes empty (and the clear epoch bumps). The enabled-provider
     // ids are UNCHANGED, so the fetch-effect dedup key alone would skip —
     // the picker must still revalidate off the cache-clear signal.
-    mockProviderModelsState.byProviderId = {};
-    mockProviderModelsState.clearEpoch = 1;
-    (mockAppStore as unknown as { emitState: () => void }).emitState();
+    mockAppStore.dispatch(providerModelsCacheCleared());
 
     await waitFor(() => {
       expect(
@@ -4434,16 +4476,16 @@ describe('ModelPicker cache hydration (stale-while-revalidate)', () => {
 
     // Backend reconnect: the seeder dispatches providerModelsCacheCleared.
     // The map stays {} (empty→empty) — only the epoch moves.
-    mockProviderModelsState.clearEpoch = 1;
-    (mockAppStore as unknown as { emitState: () => void }).emitState();
-
-    // A replacement fetch starts despite unchanged provider ids + empty map.
-    await waitFor(() => expect(resolvers.length).toBeGreaterThan(1));
+    mockAppStore.dispatch(providerModelsCacheCleared());
+    // Refetches are single-flight: the trailing replacement waits for the old
+    // request to settle, rather than overlapping a second daemon probe.
+    expect(resolvers).toHaveLength(1);
 
     // The stale pre-reconnect response settles late — fully discarded.
     resolvers[0]({
       models: [{ value: 'stale-model', label: 'Stale Model', description: 'Pre-reconnect' }],
     });
+    await waitFor(() => expect(resolvers).toHaveLength(2));
     await new Promise((r) => setTimeout(r, 50));
     expect(
       mockSvelteDispatch.mock.calls.find(

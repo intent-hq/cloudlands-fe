@@ -21,6 +21,7 @@ vi.mock('$lib/utils/safe-storage', () => ({
 }));
 vi.mock('$lib/i18n/locale', () => ({
   applyLanguagePreference: mocks.applyLanguagePreference,
+  getActiveLocale: () => 'en',
   resolvePreferenceToLocale: vi.fn(),
 }));
 vi.mock('$lib/electron-bridge', () => ({ isElectron: mocks.isElectron }));
@@ -127,7 +128,10 @@ describe('userPreferencesPersistenceSaga', () => {
     const fonts = ['Helvetica Neue', 'JetBrains Mono', 'Cascadia Code'];
     vi.mocked(window.electronAPI.invoke).mockResolvedValue({ success: true, data: fonts });
     const dispatch = vi.fn();
-    const task = runSaga({ dispatch, getState: () => ({}) }, userPreferencesPersistenceSaga);
+    const task = runSaga(
+      { dispatch, getState: () => ({ userPreferences: initialState }) },
+      userPreferencesPersistenceSaga,
+    );
     await settle();
 
     expect(vi.mocked(window.electronAPI.invoke).mock.calls).toEqual([
@@ -511,6 +515,39 @@ describe('userPreferencesPersistenceSaga', () => {
     task.cancel();
     await task.toPromise();
   });
+  it('applies rapid locale changes immediately but serializes and coalesces main-process writes', async () => {
+    let release!: () => void;
+    const invoke = vi
+      .fn()
+      .mockImplementationOnce(
+        () =>
+          new Promise<void>((resolve) => {
+            release = resolve;
+          }),
+      )
+      .mockResolvedValue(undefined);
+    const { dispatch, stop } = startPreferenceStore();
+    window.electronAPI.invoke = invoke;
+    dispatch(setLanguagePreference('de'));
+    dispatch(setLanguagePreference('fr'));
+    dispatch(setLanguagePreference('ja'));
+    await settle();
+    expect(mocks.applyLanguagePreference.mock.calls).toEqual([['de'], ['fr'], ['ja']]);
+    expect(mocks.setJSON.mock.calls).toEqual([
+      ['language-preference', 'de'],
+      ['language-preference', 'fr'],
+      ['language-preference', 'ja'],
+    ]);
+    expect(invoke.mock.calls).toEqual([['app:set-language-preference', { preference: 'de' }]]);
+    release();
+    await settle();
+    expect(invoke.mock.calls).toEqual([
+      ['app:set-language-preference', { preference: 'de' }],
+      ['app:set-language-preference', { preference: 'ja' }],
+    ]);
+    await stop();
+  });
+
   it('skips main-process language IPC outside Electron', async () => {
     mocks.isElectron.mockReturnValue(false);
     await runSaga(
@@ -601,7 +638,10 @@ describe('userPreferencesPersistenceSaga', () => {
     let resolve!: (value: unknown) => void;
     mocks.getJSON.mockReturnValue(new Promise((done) => (resolve = done)));
     const dispatch = vi.fn();
-    const task = runSaga({ dispatch, getState: () => ({}) }, userPreferencesPersistenceSaga);
+    const task = runSaga(
+      { dispatch, getState: () => ({ userPreferences: initialState }) },
+      userPreferencesPersistenceSaga,
+    );
     task.cancel();
     resolve({ enabled: true });
     await task.toPromise();

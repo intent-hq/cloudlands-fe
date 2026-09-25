@@ -1,11 +1,22 @@
 <script module lang="ts">
   import { definePreview } from '$lib/component-catalog/preview-definition';
+  import { setupApiSettingsPreview } from '../../../test/api-rtk-settings-preview';
+  import { setupUnavailablePublicationPreview } from '../../../test/connection-publication-preview';
+
+  function setup() {
+    const stopPublication = setupUnavailablePublicationPreview();
+    const stopApi = setupApiSettingsPreview();
+    return () => {
+      stopApi();
+      stopPublication();
+    };
+  }
 
   export const preview = definePreview({
     id: 'mobile-pairing-qr',
     title: 'Mobile app pairing QR',
     defaultState: 'ready',
-    states: { ready: { props: {} } },
+    states: { ready: { props: {}, setup } },
   });
 </script>
 

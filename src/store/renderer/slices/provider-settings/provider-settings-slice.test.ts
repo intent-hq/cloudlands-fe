@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { getItem } from '@augmentcode/themis/utils/collections/collection-utils';
 import {
   enablementPersistRejected,
   ensureEnabledIfUnset,
@@ -7,6 +8,19 @@ import {
   providerSettingsReducer,
   setProviderEnabled,
   toggleProvider,
+  providerSettingsSessionOpened,
+  providerSettingsSessionClosed,
+  providerSettingsRequestSettled,
+  providerSettingsStopped,
+  providerPathSaveRequested,
+  providerPathSaved,
+  providerPathsRequested,
+  providerConfiguredPathsLoaded,
+  providerPathsLoaded,
+  providerPathsFailed,
+  piAdapterCheckRequested,
+  piAdapterCheckSettled,
+  piAdapterInstallRequested,
   type ProviderSettingsState,
 } from './provider-settings-slice';
 import { providerCatalogLoaded } from '../provider-catalog/provider-catalog-slice';
@@ -20,6 +34,85 @@ const initialState = providerSettingsReducer(
 );
 
 describe('providerSettingsReducer', () => {
+  it('rejects stale path reads after a save and permits a fresh read to settle', () => {
+    let state = providerSettingsReducer(initialState, providerPathsRequested());
+    const staleRevision = state.pathsRevision;
+    state = providerSettingsReducer(
+      state,
+      providerPathSaveRequested('codex', '/new', { id: 'save', sessionId: 'closed' }),
+    );
+    state = providerSettingsReducer(state, providerPathSaved('codex', '/new'));
+    const saved = state;
+    const oldPaths = { ...state.paths, configured: { codex: '/old' } };
+    expect(providerSettingsReducer(state, providerPathsLoaded(staleRevision, oldPaths))).toBe(
+      saved,
+    );
+    expect(providerSettingsReducer(state, providerPathsFailed(staleRevision))).toBe(saved);
+    expect(
+      providerSettingsReducer(
+        state,
+        providerConfiguredPathsLoaded(staleRevision, oldPaths.configured),
+      ),
+    ).toBe(saved);
+    expect(state.requests.ids).toEqual([]);
+    state = providerSettingsReducer(state, providerPathsRequested());
+    state = providerSettingsReducer(state, providerPathsLoaded(state.pathsRevision, saved.paths));
+    expect(state.pathsStatus).toBe('success');
+    state = providerSettingsReducer(state, providerPathsRequested());
+    state = providerSettingsReducer(state, providerPathsFailed(state.pathsRevision));
+    expect(state.pathsStatus).toBe('failure');
+  });
+
+  it('keeps a configured-path read visible without completing pending discovery', () => {
+    let state = providerSettingsReducer(initialState, providerPathsRequested());
+    state = providerSettingsReducer(
+      state,
+      providerConfiguredPathsLoaded(state.pathsRevision, { codex: '/configured' }),
+    );
+    expect(state.paths.configured).toEqual({ codex: '/configured' });
+    expect(state.pathsStatus).toBe('pending');
+    state = providerSettingsReducer(state, providerPathsFailed(state.pathsRevision));
+    expect(state.paths.configured).toEqual({ codex: '/configured' });
+    expect(state.pathsStatus).toBe('failure');
+  });
+
+  it('isolates panel sessions and settles pending outcomes on owner teardown', () => {
+    let state = providerSettingsReducer(initialState, providerSettingsSessionOpened('one'));
+    const opened = state;
+    expect(providerSettingsReducer(state, providerSettingsSessionOpened('one'))).toBe(opened);
+    state = providerSettingsReducer(state, providerSettingsSessionOpened('two'));
+    state = providerSettingsReducer(
+      state,
+      piAdapterInstallRequested({ id: 'install', sessionId: 'one' }),
+    );
+    state = providerSettingsReducer(
+      state,
+      providerPathSaveRequested('codex', '/new', { id: 'save', sessionId: 'two' }),
+    );
+    state = providerSettingsReducer(state, providerSettingsSessionClosed('one'));
+    expect(getItem(state.requests, 'install')).toBeUndefined();
+    expect(getItem(state.requests, 'save')?.status).toBe('pending');
+    state = providerSettingsReducer(state, piAdapterCheckRequested());
+    state = providerSettingsReducer(state, providerSettingsStopped());
+    expect(getItem(state.requests, 'save')?.status).toBe('cancelled');
+    expect(state.piAdapter.status).toBe('idle');
+    expect(providerSettingsReducer(state, providerSettingsRequestSettled('save', 'success'))).toBe(
+      state,
+    );
+    expect(
+      providerSettingsReducer(state, providerSettingsRequestSettled('install', 'failure')),
+    ).toBe(state);
+  });
+
+  it('records adapter presence and failed checks without claiming installation', () => {
+    let state = providerSettingsReducer(initialState, piAdapterCheckRequested());
+    expect(state.piAdapter.status).toBe('pending');
+    state = providerSettingsReducer(state, piAdapterCheckSettled(false));
+    expect(state.piAdapter).toEqual({ installed: false, status: 'success' });
+    state = providerSettingsReducer(state, piAdapterCheckSettled(null));
+    expect(state.piAdapter).toEqual({ installed: null, status: 'failure' });
+  });
+
   it('should return initial state', () => {
     const state = providerSettingsReducer(undefined, { type: '@@INIT' });
     expect(state).toEqual(bareInitialState);

@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount, onDestroy } from 'svelte';
+  import { onMount } from 'svelte';
   import Fa from 'svelte-fa';
   import {
     faRotateLeft,
@@ -12,8 +12,18 @@
     IntentMarkLoader,
     Textarea,
   } from '$lib/components/patterns/settings/custom-controls';
-  import { Logger } from '$lib/utils/logger';
-  import { appClient } from '$lib/client';
+  import { store as appStore } from '$store/renderer/store';
+  import {
+    agentRulesEditorOpened,
+    agentRulesEditorClosed,
+    agentRulesContentChanged,
+    saveAgentRules,
+    undoAgentRulesChanges,
+  } from '$store/renderer/slices/user-preferences/user-preferences-slice';
+  import {
+    selectAgentRulesEditor,
+    selectAgentRulesHaveChanges,
+  } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
   import { m } from '$shared/paraglide/messages.js';
   import { formatInteger, formatNumber } from '$lib/i18n/format';
 
@@ -23,30 +33,17 @@
 
   let { class: className = '' }: Props = $props();
 
-  const logger = new Logger({ category: 'AgentRulesEditor' });
-
-  const RULE_TYPE = 'base-system-prompt';
-  const DEBOUNCE_MS = 1000;
-
   // Character limit constants - similar to WorkspaceRulesEditor
   const MAX_RULES_LENGTH = 50000; // 50k characters
   const WARNING_THRESHOLD = 40000; // 80% of max
 
-  // State
-  let rulesContent = $state('');
-  let loading = $state(true);
-  let errorMessage = $state<string | null>(null);
-  let hasChanges = $state(false);
-  let originalContent = '';
-  let saveStatus = $state<'idle' | 'saving' | 'saved'>('idle');
-
-  // Single-flight save with trailing coalesce: never run two rules.update
-  // requests concurrently (they could resolve out of order and leave the
-  // backend with a stale payload), and re-save after completion if the text
-  // changed while the request was in flight.
-  let saveInFlight = false;
-  let trailingSaveNeeded = false;
-  let lastSavedContent = '';
+  const editor$ = selectAgentRulesEditor();
+  const hasChanges$ = selectAgentRulesHaveChanges();
+  let rulesContent = $derived($editor$.content);
+  let loading = $derived($editor$.loading);
+  let errorMessage = $derived($editor$.errorMessage);
+  let hasChanges = $derived($hasChanges$);
+  let saveStatus = $derived($editor$.saveStatus);
 
   // Derived character limit state
   let charCount = $derived(rulesContent.length);
@@ -57,181 +54,16 @@
   );
   let excessChars = $derived(isOverLimit ? charCount - MAX_RULES_LENGTH : 0);
 
-  // Timeout references for cleanup
-  let errorTimeout: ReturnType<typeof setTimeout> | null = null;
-  let debounceTimeout: ReturnType<typeof setTimeout> | null = null;
-  let savedStatusTimeout: ReturnType<typeof setTimeout> | null = null;
-
-  onMount(async () => {
-    await loadRules();
+  onMount(() => {
+    appStore.dispatch(agentRulesEditorOpened());
+    return () => appStore.dispatch(agentRulesEditorClosed());
   });
-
-  onDestroy(() => {
-    if (errorTimeout) clearTimeout(errorTimeout);
-    if (debounceTimeout) clearTimeout(debounceTimeout);
-    if (savedStatusTimeout) clearTimeout(savedStatusTimeout);
-  });
-
-  function showError(message: string) {
-    if (errorTimeout) clearTimeout(errorTimeout);
-    errorMessage = message;
-    errorTimeout = setTimeout(() => {
-      errorMessage = null;
-      errorTimeout = null;
-    }, 5000);
-  }
-
-  async function loadRules() {
-    try {
-      loading = true;
-      errorMessage = null;
-
-      // rules.get (§5.21): an absent override reads back as an empty default;
-      // null means the wire probe itself failed.
-      const rule = await appClient.settings.getUserRule(RULE_TYPE);
-      if (rule === null) {
-        showError(m.settings_agentRules_loadError());
-        return;
-      }
-      rulesContent = rule.content;
-      originalContent = rulesContent;
-      // Trimmed, like every payload saveRules persists: all drift
-      // comparisons are trimmed-vs-trimmed, so padding whitespace in a rule
-      // set outside this editor cannot register as unsaved drift.
-      lastSavedContent = rulesContent.trim();
-      hasChanges = false;
-    } catch (error) {
-      logger.error('Failed to load rules', error instanceof Error ? error : undefined);
-      showError(m.settings_agentRules_loadError());
-    } finally {
-      loading = false;
-    }
-  }
-
-  async function saveRules() {
-    if (saveInFlight) {
-      trailingSaveNeeded = true;
-      return;
-    }
-
-    const trimmedContent = rulesContent.trim();
-
-    // Gate on drift from the persisted value (lastSavedContent), not on
-    // hasChanges (which tracks the loaded original for "Undo changes"): a
-    // revert back to the original must still reconcile a persisted draft
-    // (intent-hq/intent#4094).
-    if (!hasChanges && trimmedContent === lastSavedContent) return;
-
-    // Block saving if over limit; never leave saveStatus stuck at 'saving'
-    // when a trailing save bails out here.
-    if (isOverLimit) {
-      saveStatus = 'idle';
-      showError(
-        m.settings_agentRules_overLimitError({
-          max: formatInteger(MAX_RULES_LENGTH),
-          excess: formatInteger(excessChars),
-        }),
-      );
-      return;
-    }
-
-    // The backend already holds this exact value: skip the redundant wire
-    // call and mark the clean/saved state directly.
-    if (trimmedContent === lastSavedContent) {
-      hasChanges = trimmedContent !== originalContent;
-      saveStatus = 'saved';
-      if (savedStatusTimeout) clearTimeout(savedStatusTimeout);
-      savedStatusTimeout = setTimeout(() => {
-        saveStatus = 'idle';
-      }, 2000);
-      return;
-    }
-
-    saveInFlight = true;
-    let saveSucceeded = false;
-    try {
-      saveStatus = 'saving';
-      errorMessage = null;
-
-      const result = await appClient.settings.updateUserRule(RULE_TYPE, trimmedContent);
-
-      if (result.success) {
-        saveSucceeded = true;
-        lastSavedContent = trimmedContent;
-        // Don't rewrite rulesContent with the trimmed value - reassigning it
-        // mid-edit clobbers the textarea and swallows leading/trailing
-        // newlines the user just typed
-        // Don't update originalContent - we want to keep track of what was loaded
-        // so "Undo changes" can revert to the initial state
-        hasChanges = rulesContent.trim() !== originalContent;
-
-        // Only show "saved" when the persisted value matches the live text;
-        // otherwise the trailing save below re-runs and reports instead.
-        if (rulesContent.trim() === lastSavedContent) {
-          saveStatus = 'saved';
-
-          // Clear saved status after 2 seconds
-          if (savedStatusTimeout) clearTimeout(savedStatusTimeout);
-          savedStatusTimeout = setTimeout(() => {
-            saveStatus = 'idle';
-          }, 2000);
-        }
-      } else {
-        saveStatus = 'idle';
-        showError(result.error || m.settings_agentRules_saveErrorShort());
-      }
-    } catch (error) {
-      logger.error('Failed to save rules', error instanceof Error ? error : undefined);
-      saveStatus = 'idle';
-      showError(m.settings_agentRules_saveError());
-    } finally {
-      saveInFlight = false;
-    }
-
-    // Trailing coalesce: if the text changed while the request was in flight
-    // (or another save was requested), save again immediately so the backend
-    // converges to the latest text.
-    const trailing = trailingSaveNeeded;
-    trailingSaveNeeded = false;
-    if (trailing || (saveSucceeded && rulesContent.trim() !== lastSavedContent)) {
-      void saveRules();
-    }
-  }
-
-  function handleContentChange() {
-    hasChanges = rulesContent !== originalContent;
-
-    // Debounced auto-save: schedule on drift from the persisted value too,
-    // so retyping the exact original after an auto-save still reconciles
-    // the backend.
-    if (debounceTimeout) clearTimeout(debounceTimeout);
-    if (hasChanges || rulesContent.trim() !== lastSavedContent) {
-      debounceTimeout = setTimeout(() => {
-        saveRules();
-      }, DEBOUNCE_MS);
-    }
-  }
-
-  function undoChanges() {
-    rulesContent = originalContent;
-    hasChanges = false;
-    saveStatus = 'idle';
-    if (debounceTimeout) clearTimeout(debounceTimeout);
-    // Undo persists the revert: when an auto-save already stored a draft,
-    // run the normal save flow so the backend converges to the original
-    // (intent-hq/intent#4094). A revert during an in-flight save is covered
-    // by the trailing coalesce in saveRules.
-    if (rulesContent.trim() !== lastSavedContent) {
-      void saveRules();
-    }
-  }
 
   function handleKeyDown(e: KeyboardEvent) {
     // Save immediately on Cmd/Ctrl + S
     if ((e.metaKey || e.ctrlKey) && e.key === 's') {
       e.preventDefault();
-      if (debounceTimeout) clearTimeout(debounceTimeout);
-      saveRules();
+      appStore.dispatch(saveAgentRules());
     }
   }
 </script>
@@ -244,7 +76,12 @@
       data-testid="agent-rules-header"
       class="flex min-w-0 shrink-0 flex-wrap items-center gap-2"
     >
-      <Button variant="ghost-light" size="xs" onclick={undoChanges} class="">
+      <Button
+        variant="ghost-light"
+        size="xs"
+        onclick={() => appStore.dispatch(undoAgentRulesChanges())}
+        class=""
+      >
         <Fa icon={faRotateLeft} class="w-3 h-3" />
         {m.settings_agentRules_undoChanges()}
       </Button>
@@ -298,8 +135,8 @@
   {:else}
     <div class="relative agent-rules-textarea grow flex flex-col min-h-0">
       <Textarea
-        bind:value={rulesContent}
-        oninput={handleContentChange}
+        value={rulesContent}
+        oninput={(event) => appStore.dispatch(agentRulesContentChanged(event.currentTarget.value))}
         noFocusStyle
         placeholder={m.settings_agentRules_placeholder()}
         class="type-body leading-relaxed grow {isOverLimit ? 'border-danger' : ''}"

@@ -20,28 +20,6 @@ const mocks = vi.hoisted(() => {
 });
 
 vi.mock('$app/navigation', () => ({ goto: vi.fn() }));
-vi.mock('$store/renderer/store', async () => {
-  const { createAppStoreMockModule } =
-    await import('$store/renderer/utils/test-helpers/store-mock');
-  const { initialState, providerCatalogLoaded, providerCatalogReducer } =
-    await import('$store/renderer/slices/provider-catalog/provider-catalog-slice');
-  const { MOCK_PROVIDER_CATALOG } =
-    await import('../../../../test/fixtures/provider-catalog.fixture');
-  const providerCatalog = providerCatalogReducer(
-    initialState,
-    providerCatalogLoaded(MOCK_PROVIDER_CATALOG),
-  );
-  return createAppStoreMockModule({
-    state: () => ({
-      providerCatalog,
-      providerSettings: { enabledProviders: { auggie: true } },
-      model: { defaultProviderId: 'auggie' },
-      providerModels: { byProviderId: {}, clearEpoch: 0 },
-      hardwareConsole: { pttRecording: false, voiceTranscribing: false },
-    }),
-    dispatch: mocks.dispatch,
-  });
-});
 
 vi.mock('$store/renderer/slices/workspace-initializer/workspace-initializer-selectors', () => ({
   selectWorkspaceInitializerHydrated: () => mocks.readable(true),
@@ -254,6 +232,12 @@ vi.mock('svelte-fa', async () => ({
 import NewSpaceModal from '../NewSpaceModal.svelte';
 import CompactWorkspaceInitializer from '../../workspace/CompactWorkspaceInitializer.svelte';
 import { setCompactWorkspaceInitializerFormState } from '$store/renderer/slices/workspace-initializer/workspace-initializer-slice';
+import { store as appStore } from '$store/renderer/store';
+import { providerCatalogLoaded } from '$store/renderer/slices/provider-catalog/provider-catalog-slice';
+import { hydrateDefaultProvider } from '$store/renderer/slices/model/model-slice';
+import { loadEnabledProvidersFromStorage } from '$store/renderer/slices/provider-settings/provider-settings-slice';
+import { modelReloadSaga } from '$store/renderer/slices/model/sagas/model-reload-saga';
+import { MOCK_PROVIDER_CATALOG } from '../../../../test/fixtures/provider-catalog.fixture';
 
 function persistedStates() {
   return mocks.dispatch.mock.calls
@@ -298,17 +282,32 @@ function stubGeometry(dialog: HTMLElement, trigger: HTMLButtonElement, triggerRe
   trigger.parentElement!.getBoundingClientRect = vi.fn(() => triggerRect);
 }
 
+let disposeStore: () => void;
+let cancelCatalog: () => void;
+
 describe('NewSpaceModal model-picker composition', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     sessionStorage.clear();
+    disposeStore = appStore.init();
+    appStore.dispatch(providerCatalogLoaded(MOCK_PROVIDER_CATALOG));
+    appStore.dispatch(hydrateDefaultProvider('auggie'));
+    appStore.dispatch(loadEnabledProvidersFromStorage({ auggie: true }));
+    const dispatch = appStore.dispatch.bind(appStore);
+    vi.spyOn(appStore, 'dispatch').mockImplementation((action) => {
+      mocks.dispatch(action);
+      return dispatch(action);
+    });
+    cancelCatalog = appStore.runSaga(modelReloadSaga);
   });
 
   afterEach(() => {
     cleanup();
+    cancelCatalog();
     sessionStorage.clear();
     vi.useRealTimers();
     vi.restoreAllMocks();
+    disposeStore();
   });
 
   it('does not let initializer timers override modal focus, while inline prompts still autofocus', async () => {

@@ -1,9 +1,10 @@
-import { call, put, takeLatest } from 'typed-redux-saga';
+import { call, fork, put, takeLatest } from 'typed-redux-saga';
 
 import { appClient } from '$lib/client';
 import { createLogger } from '$lib/utils/client-logger';
 import { m } from '$shared/paraglide/messages.js';
 import { selectActiveProviderId } from '../../provider-settings/provider-settings-selectors';
+import { providerModelsSaga } from '../../provider-models/sagas/provider-models-saga';
 import {
   reloadModelsForProvider,
   setAvailableModels,
@@ -51,5 +52,6 @@ export function* reloadModelsWorker() {
 }
 
 export function* modelReloadSaga() {
+  yield* fork(providerModelsSaga);
   yield* takeLatest(reloadModelsForProvider, reloadModelsWorker);
 }

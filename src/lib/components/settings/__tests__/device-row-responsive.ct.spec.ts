@@ -76,7 +76,7 @@ for (const width of [360, 1024]) {
     await expect(networks).toBeEnabled();
     await page.keyboard.press('Escape');
     await expect(networks).toHaveValue('127.0.0.1 (localhost)');
-    await networks.click();
+    await networks.press('ArrowDown');
     await page.getByRole('option', { name: '192.0.2.10', exact: true }).click();
     await expect(networks).toBeEnabled();
     await page.keyboard.press('Escape');

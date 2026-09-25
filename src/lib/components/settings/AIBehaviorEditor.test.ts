@@ -16,7 +16,8 @@ import {
   isInaccessible,
 } from '@testing-library/svelte';
 import { flushSync } from 'svelte';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { runSaga, stdChannel, type Task } from 'redux-saga';
 
 const mocks = vi.hoisted(() => {
   const readable = <T>(value: T) => ({
@@ -77,6 +78,9 @@ const mocks = vi.hoisted(() => {
     // Raw store state for the unmocked selectors (e.g. the default provider
     // read by selectEffectiveDefaultProviderId).
     storeState: { value: {} as Record<string, unknown> },
+    rulesState: undefined as unknown,
+    rulesDispatch: (_action: { type: string }) => {},
+    emitRulesState: () => {},
     dispatched: [] as { type: string; payload: unknown[] }[],
     getUserRule: vi.fn(async () => ({ content: 'Original instructions' })),
     updateUserRule: vi.fn(async () => ({ success: true })),
@@ -95,12 +99,24 @@ vi.mock('$lib/client', () => ({
 vi.mock('$store/renderer/store', async () => {
   const { createAppStoreMockModule } =
     await import('$store/renderer/utils/test-helpers/store-mock');
-  return createAppStoreMockModule({
-    state: () => mocks.storeState.value,
+  const { select } = await import('typed-redux-saga');
+  const module = createAppStoreMockModule({
+    state: () => ({ ...mocks.storeState.value, userPreferences: mocks.rulesState }),
     dispatch: (action: { type: string; payload: unknown[] }) => {
       mocks.dispatched.push(action);
+      mocks.rulesDispatch(action);
     },
   });
+  const createSelector = module.store.createSelector;
+  module.store.createSelector = (callback) => {
+    const selector = createSelector(callback);
+    selector.effect = function* (...args: unknown[]) {
+      return yield* select(callback, ...args);
+    };
+    return selector;
+  };
+  mocks.emitRulesState = module.store.emitState;
+  return module;
 });
 
 vi.mock('$store/renderer/slices/specialists/specialists-selectors', () => ({
@@ -248,6 +264,30 @@ import {
 import { setAtomicDefaultModel } from '$store/renderer/slices/provider-settings/provider-settings-slice';
 import AIBehaviorEditor from './AIBehaviorEditor.svelte';
 import DefaultAgentModelSettings from './DefaultAgentModelSettings.svelte';
+import { userPreferencesReducer } from '$store/renderer/slices/user-preferences/user-preferences-slice';
+import { agentRulesSaga } from '$store/renderer/slices/user-preferences/sagas/agent-rules-saga';
+
+let rulesTask: Task;
+beforeEach(() => {
+  let userPreferences = userPreferencesReducer(undefined, { type: '@@init' } as never);
+  mocks.rulesState = userPreferences;
+  const channel = stdChannel();
+  mocks.rulesDispatch = (action) => {
+    userPreferences = userPreferencesReducer(userPreferences, action as never);
+    mocks.rulesState = userPreferences;
+    mocks.emitRulesState();
+    channel.put(action);
+  };
+  rulesTask = runSaga(
+    { channel, dispatch: mocks.rulesDispatch, getState: () => ({ userPreferences }) },
+    agentRulesSaga,
+  );
+});
+afterEach(async () => {
+  cleanup();
+  rulesTask.cancel();
+  await rulesTask.toPromise();
+});
 
 describe('AIBehaviorEditor workspace ownership', () => {
   const projectSpecialist = {

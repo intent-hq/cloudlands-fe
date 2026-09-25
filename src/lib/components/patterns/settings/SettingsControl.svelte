@@ -39,8 +39,7 @@
     <Switch
       id={context.controlId}
       size={entry.size}
-      checked={Boolean(current)}
-      onCheckedChange={update}
+      bind:checked={() => Boolean(current), update}
       disabled={context.disabled}
       ariaLabelledby={context.labelId}
       ariaDescribedby={describedBy}

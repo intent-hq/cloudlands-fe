@@ -12,6 +12,7 @@ import { m } from '$shared/paraglide/messages.js';
  * (PROTOCOL §5.31/§5.32). There is intentionally no hardcoded model id here.
  */
 export const DEFAULT_BACKGROUND_MODEL = '';
+export const BG_MODEL_MIGRATION_MARKER_KEY = 'bg-model-haiku45-migrated';
 
 export type BackgroundAgentType = 'commit' | 'pr' | 'review' | 'fast';
 
@@ -69,6 +70,8 @@ export type BackgroundAgentSettingsState = {
   typeOverrides: Record<BackgroundAgentType, string>;
   /** Per-provider settings cache (provider ID → settings snapshot). Map→Record for serialization. */
   providerSettings: Record<string, ProviderBgSettings>;
+  /** Protect local picks until their corresponding daemon echo arrives. */
+  pending?: Partial<ProviderBgSettings>;
 };
 
 const DEFAULT_TYPE_OVERRIDES: Record<BackgroundAgentType, string> = {
@@ -107,6 +110,16 @@ export const hydrateSettings = createAction<
   [payload: { defaultModel: string; typeOverrides: Record<BackgroundAgentType, string> }]
 >('backgroundAgentSettings/hydrateSettings');
 
+export const backgroundSettingsHydrationRequested = createAction<[settings: ProviderBgSettings]>(
+  'backgroundAgentSettings/hydrationRequested',
+);
+export const backgroundSettingsMigrationRequested = createAction(
+  'backgroundAgentSettings/migrationRequested',
+);
+export const backgroundSettingsWriteRejected = createAction<[settings: ProviderBgSettings]>(
+  'backgroundAgentSettings/writeRejected',
+);
+
 /** Hydrate provider settings cache from localStorage */
 export const hydrateProviderSettings = createAction<
   [providerSettings: Record<string, ProviderBgSettings>]
@@ -132,32 +145,70 @@ export const backgroundAgentSettingsReducer =
 backgroundAgentSettingsReducer.with(setDefaultModel, (state, { payload: [model] }) => ({
   ...state,
   defaultModel: model,
+  pending: { ...state.pending, defaultModel: model },
 }));
 backgroundAgentSettingsReducer.with(setTypeOverride, (state, { payload: [{ type, model }] }) => ({
   ...state,
   typeOverrides: { ...state.typeOverrides, [type]: model },
+  pending: { ...state.pending, typeOverrides: { ...state.typeOverrides, [type]: model } },
 }));
 backgroundAgentSettingsReducer.with(clearTypeOverride, (state, { payload: [type] }) => ({
   ...state,
   typeOverrides: { ...state.typeOverrides, [type]: '' },
+  pending: { ...state.pending, typeOverrides: { ...state.typeOverrides, [type]: '' } },
 }));
 backgroundAgentSettingsReducer.with(resetSettings, () => ({
   ...initialState,
   typeOverrides: { ...initialState.typeOverrides },
   providerSettings: {},
+  pending: {
+    defaultModel: initialState.defaultModel,
+    typeOverrides: { ...initialState.typeOverrides },
+  },
 }));
 backgroundAgentSettingsReducer.with(
   hydrateSettings,
-  (state, { payload: [{ defaultModel, typeOverrides }] }) => ({
-    ...state,
-    defaultModel: defaultModel || DEFAULT_BACKGROUND_MODEL,
-    typeOverrides: {
-      commit: typeOverrides?.commit || '',
-      pr: typeOverrides?.pr || '',
-      review: typeOverrides?.review || '',
-      fast: typeOverrides?.fast || '',
-    },
-  }),
+  (state, { payload: [{ defaultModel, typeOverrides }] }) => {
+    const pending = { ...state.pending };
+    if (pending.defaultModel === defaultModel) delete pending.defaultModel;
+    if (
+      pending.typeOverrides &&
+      Object.keys(DEFAULT_TYPE_OVERRIDES).every(
+        (key) =>
+          pending.typeOverrides?.[key as BackgroundAgentType] ===
+          typeOverrides[key as BackgroundAgentType],
+      )
+    )
+      delete pending.typeOverrides;
+    return {
+      ...state,
+      pending,
+      defaultModel: pending.defaultModel ?? (defaultModel || DEFAULT_BACKGROUND_MODEL),
+      typeOverrides: pending.typeOverrides ?? {
+        commit: typeOverrides?.commit || '',
+        pr: typeOverrides?.pr || '',
+        review: typeOverrides?.review || '',
+        fast: typeOverrides?.fast || '',
+      },
+    };
+  },
+);
+backgroundAgentSettingsReducer.with(
+  backgroundSettingsWriteRejected,
+  (state, { payload: [attempted] }) => {
+    const pending = { ...state.pending };
+    if (pending.defaultModel === attempted.defaultModel) delete pending.defaultModel;
+    if (
+      pending.typeOverrides &&
+      Object.keys(DEFAULT_TYPE_OVERRIDES).every(
+        (key) =>
+          pending.typeOverrides?.[key as BackgroundAgentType] ===
+          attempted.typeOverrides[key as BackgroundAgentType],
+      )
+    )
+      delete pending.typeOverrides;
+    return { ...state, pending };
+  },
 );
 backgroundAgentSettingsReducer.with(
   hydrateProviderSettings,

@@ -15,6 +15,8 @@
     checkAllProvidersComplete,
   } from '$store/renderer/slices/agent-availability/agent-availability-slice';
   import { providerModelsLoaded } from '$store/renderer/slices/provider-models/provider-models-slice';
+  // eslint-disable-next-line themis/forbidden-component-import -- CT-only root harness starts the production owner; ModelPicker only dispatches intents
+  import { modelReloadSaga } from '$store/renderer/slices/model/sagas/model-reload-saga';
   import { registerMockIpcHandler, unregisterMockIpcHandler } from '$shared/ipc-mock-router';
 
   let {
@@ -57,7 +59,9 @@
     description: i === 0 ? 'A model with adjustable reasoning' : undefined,
     effortLevels: levels,
   }));
-  const disposeStore = startRootStoreLifecycle(store, { startSagas: () => [] });
+  const disposeStore = startRootStoreLifecycle(store, {
+    startSagas: () => [store.runSaga(modelReloadSaga)],
+  });
   store.dispatch(providerCatalogLoaded(MOCK_PROVIDER_CATALOG));
   store.dispatch(setActiveProvider('codex'));
   store.dispatch(setProviderEnabled({ providerId: 'codex', enabled: true }));

@@ -52,6 +52,10 @@ async function buildState(fileSpecialists: object[]) {
     await import('$store/renderer/slices/specialists/specialists-slice');
   const { initialState: modelInitialState } =
     await import('$store/renderer/slices/model/model-slice');
+  const { initialState: providerSettingsInitialState } =
+    await import('$store/renderer/slices/provider-settings/provider-settings-slice');
+  const { initialState: availabilityInitialState } =
+    await import('$store/renderer/slices/agent-availability/agent-availability-slice');
   const { createCollection } =
     await import('@augmentcode/themis/utils/collections/collection-utils');
   const {
@@ -67,6 +71,7 @@ async function buildState(fileSpecialists: object[]) {
       providerCatalogLoaded(MOCK_PROVIDER_CATALOG),
     ),
     providerSettings: {
+      ...providerSettingsInitialState,
       enabledProviders: { 'claude-code': true, codex: true },
       nonDisableableProviderIds: [],
     },
@@ -78,6 +83,7 @@ async function buildState(fileSpecialists: object[]) {
     featureCodes: { activeFeatures: [], initialized: true },
     githubAuth: { isAuthenticated: false },
     agentAvailability: {
+      ...availabilityInitialState,
       providerStatusMap: {
         auggie: { available: true, authenticated: true },
         'claude-code': { available: true, authenticated: true },
@@ -191,7 +197,10 @@ describe('ProviderSelector disable guard', () => {
     expect(mocks.dispatch).toHaveBeenCalledWith(
       expect.objectContaining({
         type: 'providerSettings/setProviderEnabled',
-        payload: [{ providerId: 'codex', enabled: false }],
+        payload: [
+          { providerId: 'codex', enabled: false },
+          { id: expect.any(String), sessionId: expect.any(String) },
+        ],
       }),
     );
   });
@@ -205,10 +214,20 @@ describe('ProviderSelector disable guard', () => {
     );
   });
 
-  it('dispatches ensureProvidersChecked on mount so availability is populated outside onboarding', async () => {
+  it('opens and closes a saga-owned availability panel session', async () => {
     await renderSelector();
     expect(mocks.dispatch).toHaveBeenCalledWith(
-      expect.objectContaining({ type: 'agentAvailability/ensureProvidersChecked' }),
+      expect.objectContaining({
+        type: 'agentAvailability/panelOpened',
+        payload: [expect.any(String)],
+      }),
+    );
+    const opened = mocks.dispatch.mock.calls.find(
+      ([action]) => action.type === 'agentAvailability/panelOpened',
+    )![0];
+    cleanup();
+    expect(mocks.dispatch).toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'agentAvailability/panelClosed', payload: opened.payload }),
     );
   });
 });

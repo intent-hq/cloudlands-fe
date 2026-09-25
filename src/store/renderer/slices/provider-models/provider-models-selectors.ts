@@ -8,7 +8,7 @@
  * before reading, mirroring how entries are written.
  */
 import { store } from '../../store';
-import type { ProviderModelsCacheEntry } from './provider-models-types';
+import type { ProviderModelsCacheEntry, ProviderModelsRequest } from './provider-models-types';
 
 /**
  * The full cache map keyed by normalized provider id. `{}` before any fetch
@@ -41,3 +41,15 @@ export const selectProviderModelsCacheEntry = store.createSelector(
 export const selectProviderModelsClearEpoch = store.createSelector(
   (state): number => state.providerModels?.clearEpoch ?? 0,
 );
+
+export const selectProviderModelsRequests = store.createSelector(
+  (state): Record<string, ProviderModelsRequest> => state.providerModels?.requests?.map ?? {},
+);
+
+export const selectObservedModelProviderIds = store.createSelector((state): string[] => [
+  ...new Set(
+    Object.values(state.providerModels?.observers?.map ?? {}).flatMap(
+      (observer) => observer.providerIds,
+    ),
+  ),
+]);

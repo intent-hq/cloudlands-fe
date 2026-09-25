@@ -1,32 +1,26 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen } from '@testing-library/svelte';
-import { afterEach, describe, expect, it, vi } from 'vitest';
-
-const mocks = vi.hoisted(() => ({
-  enabled: false,
-  dispatch: vi.fn(),
-}));
-
-vi.mock('$store/renderer/store', async () => {
-  const { createAppStoreMockModule } =
-    await import('$store/renderer/utils/test-helpers/store-mock');
-  return createAppStoreMockModule({
-    state: () => ({ userPreferences: { reduceMotionOnBattery: mocks.enabled } }),
-    dispatch: mocks.dispatch,
-  });
-});
-
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { store as appStore } from '$store/renderer/store';
+import { selectReduceMotionOnBattery } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
+import { setReduceMotionOnBattery } from '$store/renderer/slices/user-preferences/user-preferences-slice';
 import ReduceMotionOnBatterySettings from './ReduceMotionOnBatterySettings.svelte';
+
+let dispose: () => void;
+beforeEach(() => {
+  dispose = appStore.init();
+});
 
 afterEach(() => {
   cleanup();
-  mocks.dispatch.mockClear();
-  mocks.enabled = false;
+  vi.restoreAllMocks();
+  dispose();
 });
 
 describe('ReduceMotionOnBatterySettings', () => {
   it.each([false, true])('dispatches the opposite preference from %s', async (enabled) => {
-    mocks.enabled = enabled;
+    appStore.dispatch(setReduceMotionOnBattery(enabled));
+    const dispatch = vi.spyOn(appStore, 'dispatch');
     render(ReduceMotionOnBatterySettings);
     const toggle = screen.getByRole('switch');
     const label = document.getElementById(toggle.getAttribute('aria-labelledby')!);
@@ -34,10 +28,11 @@ describe('ReduceMotionOnBatterySettings', () => {
     expect(label?.textContent?.trim()).toBeTruthy();
     expect(description?.textContent?.trim()).toBeTruthy();
     await fireEvent.click(toggle);
-    expect(mocks.dispatch).toHaveBeenCalledExactlyOnceWith({
+    expect(dispatch).toHaveBeenCalledExactlyOnceWith({
       type: 'userPreferences/setReduceMotionOnBattery',
       payload: [!enabled],
     });
-    expect(toggle.getAttribute('aria-checked')).toBe(String(!enabled));
+    expect(selectReduceMotionOnBattery.select(appStore.state)).toBe(!enabled);
+    await waitFor(() => expect(toggle.getAttribute('aria-checked')).toBe(String(!enabled)));
   });
 });

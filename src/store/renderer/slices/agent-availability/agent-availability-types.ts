@@ -13,6 +13,12 @@ import type {
 export type ProviderStatus = SharedProviderStatus;
 
 export type AgentAvailabilityState = {
+  hiddenProviders: string[] | undefined;
+  discoveryRevision: number;
+  discoveryStatus: 'idle' | 'pending' | 'success' | 'failure';
+  discoveryError: string | null;
+  refreshModelsPending: boolean;
+  refreshModelsRevision: number;
   /** Per-provider status results (e.g. availability, auth details). */
   providerStatusMap: Record<string, ProviderStatus>;
   /** Per-provider in-flight availability-check flags. */
