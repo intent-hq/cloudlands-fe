@@ -19,24 +19,28 @@ import EncoderCycleHud from '../EncoderCycleHud.svelte';
 
 useEncoderEffortHarness();
 
-// Captured from models.list(providerId: codex) and the active agent's
+// Captured from models.list(providerId: codex) and the workspace coordinator's
 // effortLevels on 2026-09-25. This is ascending provider evidence, independent
 // of stepEncoderEffort and the harness's symbolic turn helper.
 const levels = ['low', 'medium', 'high', 'xhigh', 'max', 'ultra'];
 
 describe.each(['codex-micro', 'creator-micro-2'] as const)('%s raw encoder routing', (model) => {
+  // The user physically confirmed reversed effort rotation on Creator Micro 2
+  // (intent-hq/intent#5947). These opposite raw-to-effort expectations calibrate
+  // the shared path from that report, not a captured packet trace. Codex Micro
+  // uses the same correction but still needs physical confirmation.
   it.each([
     {
       key: 'ENC_CW',
-      expected: 'xhigh',
-      gauge: '3',
-      label: () => m.chat_effortPicker_level_xhigh(),
-    },
-    {
-      key: 'ENC_CC',
       expected: 'medium',
       gauge: '1',
       label: () => m.chat_effortPicker_level_medium(),
+    },
+    {
+      key: 'ENC_CC',
+      expected: 'xhigh',
+      gauge: '3',
+      label: () => m.chat_effortPicker_level_xhigh(),
     },
   ])(
     'routes $key to $expected through the real decoder, writer, feedback and gauge',
@@ -46,9 +50,8 @@ describe.each(['codex-micro', 'creator-micro-2'] as const)('%s raw encoder routi
       render(EncoderCycleHud);
       render(EffortPicker, { agentId: 'agent-1', workspaceId: 'ws-1' });
       const device = manager(model);
-      // Vendor channel-2 shape, not a predecoded direction. The protocol source
-      // calls ENC_CW clockwise and ENC_CC counter-clockwise; this simulation
-      // does not establish what an unobserved physical unit actually emits.
+      // Synthesized vendor channel-2 shape through the production decoder;
+      // independent of the harness's symbolic turn helper.
       device.emit({ m: 'v.oai.hid', p: { k: key, act: 2 } });
       await flush();
       expect(mutations()).toEqual([
@@ -67,8 +70,8 @@ describe.each(['codex-micro', 'creator-micro-2'] as const)('%s raw encoder routi
   );
 
   it.each([
-    { current: null, key: 'ENC_CC', reverse: 'ENC_CW', next: 'low' },
-    { current: 'ultra', key: 'ENC_CW', reverse: 'ENC_CC', next: 'max' },
+    { current: null, key: 'ENC_CW', reverse: 'ENC_CC', next: 'low' },
+    { current: 'ultra', key: 'ENC_CC', reverse: 'ENC_CW', next: 'max' },
   ])(
     'clamps $key at $current and accepts the reverse detent',
     async ({ current, key, reverse, next }) => {
