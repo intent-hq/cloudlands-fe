@@ -126,6 +126,17 @@ describe('reasoning render model', () => {
     expect(getResponseGroupCurrentChildIndex(titles)).toBe(-1);
   });
 
+  it.each([false, true])(
+    'keeps compact standalone titles outside headingless prose (live=%s)',
+    (live) => {
+      const titles = [thinking('## Earlier title'), thinking('## Latest title')];
+      const normalized = normalizeResponseGroups([...titles, group([text('Prose.')], live)], live);
+      expect(normalized.slice(0, 2)).toEqual(titles);
+      expect(normalized[2]).toMatchObject({ name: '', children: [text('Prose.')] });
+      expect(getResponseGroupCurrentChildIndex(normalized[2] as ContentBlockGroup)).toBe(0);
+    },
+  );
+
   it('classifies terminal groups by semantic trailing content', () => {
     const first = group([tool]);
     expect(
@@ -229,6 +240,32 @@ describe.each([
     requestSearchDisclosure(owner, false);
     await tick();
     expect(owner.getAttribute('data-chat-search-expanded')).toBe('true');
+  });
+
+  it('restores body search without absorbing inline prose across a hidden paired result', async () => {
+    const inline = [
+      tool,
+      thinking('Needle title\n\nNeedle body.'),
+      { type: 'tool_result', tool_use_id: 'call-1', output: 'Hidden output.' } as ContentBlock,
+      text('<group:Prepping>Inline prose.</group>'),
+    ];
+    const view = render(Component, { props: { content: inline, isStreaming: false } });
+    const matches = findChatSearchMatches([message(inline)], 'Needle', new Map());
+    expect(matches.map((match) => [match.blockPath, match.disclosurePath])).toEqual([
+      ['b:1:summary', []],
+      ['b:1:body', ['reasoning:b:1']],
+    ]);
+    const owner = view.container.querySelector('[data-chat-search-disclosure-id="reasoning:b:1"]')!;
+    requestSearchDisclosure(owner, true);
+    await tick();
+    expect(view.container.textContent).toContain('Needle body.');
+    requestSearchDisclosure(owner, false);
+    await tick();
+    expect(owner.getAttribute('data-chat-search-expanded')).toBe('false');
+    expect(view.container.textContent).not.toContain('Needle body.');
+    expect(view.container.textContent).not.toContain('Hidden output.');
+    expect(view.queryByTestId('response-group-disclosure')).toBeNull();
+    expect(view.container.textContent?.match(/Inline prose\./g)).toHaveLength(1);
   });
 
   it('targets every compact title without a body disclosure, including after remount', async () => {
