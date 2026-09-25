@@ -2924,7 +2924,14 @@ function computeOrthogonalEdgePaths(
       );
       let x = localLeft - NODE_CLEARANCE - labelClearance - TRACK_SPACING;
       const adjacentTracks = backwardEdges
-        .filter((other) => other.edge.from === info.edge.to || other.edge.to === info.edge.from)
+        .filter((other) => {
+          const otherTop = Math.min(other.fromNode.y, other.toNode.y);
+          const otherBottom = Math.max(
+            other.fromNode.y + other.fromNode.height,
+            other.toNode.y + other.toNode.height,
+          );
+          return otherTop <= bottom && otherBottom >= top;
+        })
         .flatMap((other) =>
           backwardLeftTracks.has(other.edge.id) ? [backwardLeftTracks.get(other.edge.id)!] : [],
         )
