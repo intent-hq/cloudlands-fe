@@ -1,6 +1,10 @@
 import { takeEveryFromSelector } from '@augmentcode/themis/saga';
 import { call, fork, put, take, takeEvery } from 'typed-redux-saga';
-import { applyReasoningEffort } from '$features/agent/reasoning-effort';
+import {
+  applyReasoningEffort,
+  markReasoningEffortIntent,
+  releaseReasoningEffortIntent,
+} from '$features/agent/reasoning-effort';
 import { stepEncoderEffort } from '$features/hardware-console/encoder/effort-step';
 import { store as appStore } from '../../../store';
 import { updateSession } from '../../agent-session/agent-session-slice';
@@ -18,6 +22,7 @@ import type { EncoderEffortFeedback } from '../hardware-console-types';
 
 type PendingEffort = EncoderEffortFeedback & {
   previous: string | null;
+  intent: number;
   /** Independent edits start a new sequence with their own rollback value. */
   generation: number;
   /** Earlier confirmed values whose delayed echoes may arrive during this save. */
@@ -53,6 +58,8 @@ export function* encoderEffortSaga() {
   function* discardPending() {
     const queued = pending;
     pending = null;
+    if (queued)
+      releaseReasoningEffortIntent(queued.target.agentId, queued.target.workspaceId, queued.intent);
     if (!queued || !sameAgentModel(queued) || currentEffort(queued) !== queued.effort) return;
     // Keep the already-sent value while its result is unresolved.
     const restore =
@@ -75,10 +82,6 @@ export function* encoderEffortSaga() {
         }
         pending = null;
         const { agentId, workspaceId } = request.target;
-        if (request.previous === request.effort) {
-          yield* put(updateSession(agentId, { reasoningEffort: request.effort }));
-          continue;
-        }
         const write = { ...request, valid: true };
         inFlight = write;
         const accepted = yield* call(
@@ -89,6 +92,17 @@ export function* encoderEffortSaga() {
           request.previous,
           {
             source: 'encoder' as const,
+            intent: request.intent,
+            canSend: () =>
+              live &&
+              write.valid &&
+              selectEncoderEffortTarget.select(appStore.state)?.key === request.target.key,
+            onConfirmedEffort: (effort: string | null) => {
+              request.previous = effort;
+              write.previous = effort;
+              request.echoes = [...new Set([...request.echoes, effort])];
+              write.echoes = request.echoes;
+            },
             // Even an ABA turn sequence supersedes a failure rollback.
             canMutate: () =>
               live &&
@@ -159,6 +173,7 @@ export function* encoderEffortSaga() {
     pending = {
       target,
       effort,
+      intent: markReasoningEffortIntent(target.agentId, target.workspaceId),
       previous: intent ? intent.previous : current,
       generation: intent?.generation ?? ++generation,
       echoes: intent?.echoes ?? [current],
@@ -173,6 +188,7 @@ export function* encoderEffortSaga() {
     const write = inFlight;
     if (write?.valid) {
       write.valid = false;
+      releaseReasoningEffortIntent(write.target.agentId, write.target.workspaceId, write.intent);
       // An issued RPC cannot be unsent; daemon events reconcile its result.
       // No unsent choice, feedback, or continuation survives device teardown.
       if (sameAgentModel(write) && recognizesEffort(write)) {

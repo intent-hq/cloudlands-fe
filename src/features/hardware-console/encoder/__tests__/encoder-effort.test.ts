@@ -514,14 +514,16 @@ describe('decoded Micro encoder effort and wire behavior', () => {
     expect(state.hardwareConsole.encoderEffortFeedback).toBeNull();
   });
 
-  it.each([
-    { picked: null, turnAgain: false },
-    { picked: null, turnAgain: true },
-    { picked: 'low', turnAgain: false },
-    { picked: 'low', turnAgain: true },
-  ])(
-    'honors an accepted explicit picker edit matching an older value ($picked, turn again: $turnAgain)',
-    async ({ picked, turnAgain }) => {
+  it.each(
+    [
+      { picked: null, turnAgain: false },
+      { picked: null, turnAgain: true },
+      { picked: 'low', turnAgain: false },
+      { picked: 'low', turnAgain: true },
+    ].flatMap((choice) => [false, true].map((oldAccepted) => ({ ...choice, oldAccepted }))),
+  )(
+    'honors an accepted explicit picker edit matching an older value ($picked, turn again: $turnAgain, old accepted: $oldAccepted)',
+    async ({ picked, turnAgain, oldAccepted }) => {
       ready();
       const first = deferred<unknown>();
       request.mockImplementationOnce(() => first.promise);
@@ -529,11 +531,13 @@ describe('decoded Micro encoder effort and wire behavior', () => {
       device.turn();
       device.turn();
       expect(effort()).toBe('medium');
-      expect(await applyReasoningEffort('agent-1', 'ws-1', picked, 'medium')).toBe(true);
+      const editing = applyReasoningEffort('agent-1', 'ws-1', picked, 'medium');
       expect(effort()).toBe(picked);
       expect(selectEncoderEffortFeedback.select(state as never)).toBeNull();
       if (turnAgain) device.turn();
-      first.reject(new Error('old encoder save rejected'));
+      if (oldAccepted) first.resolve(reply('low'));
+      else first.reject(new Error('old encoder save rejected'));
+      expect(await editing).toBe(true);
       await flush();
       const expected = turnAgain ? (picked === null ? 'low' : 'medium') : picked;
       expect(effort()).toBe(expected);
@@ -544,6 +548,61 @@ describe('decoded Micro encoder effort and wire behavior', () => {
         ),
       ).toEqual(turnAgain ? ['low', picked, expected] : ['low', picked]);
       expect(mocks.notify).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each(
+    (['modern', 'legacy'] as const).flatMap((protocol) =>
+      [false, true].flatMap((oldAccepted) =>
+        ['none', 'disconnect', 'cancel'].map((stop) => ({ protocol, oldAccepted, stop })),
+      ),
+    ),
+  )(
+    'never restores canceled unsent effort after picker failure ($protocol, old accepted: $oldAccepted, stop: $stop)',
+    async ({ protocol, oldAccepted, stop }) => {
+      ready();
+      render(EffortPicker, { agentId: 'agent-1', workspaceId: 'ws-1' });
+      const first = deferred<unknown>();
+      const legacy = vi
+        .fn()
+        .mockImplementationOnce(() => first.promise)
+        .mockResolvedValue({
+          success: true,
+          data: { success: false, error: 'picker save rejected' },
+        });
+      if (protocol === 'legacy') {
+        state.daemonHealth.stats.protocolVersion = '5.1';
+        publish();
+        registerMockIpcHandler(AGENT_CHANNELS.SET_MODEL, legacy);
+      } else {
+        request.mockImplementationOnce(() => first.promise);
+        request.mockRejectedValueOnce(new Error('picker save rejected'));
+      }
+      const device = manager(protocol === 'legacy' ? 'creator-micro-2' : 'codex-micro');
+      device.turn();
+      device.turn();
+      const editing = applyReasoningEffort('agent-1', 'ws-1', 'high', 'medium');
+      if (stop === 'disconnect') device.statusChanged('disconnected');
+      if (stop === 'cancel') tasks[0].cancel();
+      if (protocol === 'legacy') {
+        first.resolve({
+          success: true,
+          data: {
+            success: oldAccepted,
+            modelId: 'model-a/low',
+            error: 'old encoder save rejected',
+          },
+        });
+      } else if (oldAccepted) first.resolve(reply('low'));
+      else first.reject(new Error('old encoder save rejected'));
+      expect(await editing).toBe(false);
+      await flush();
+      expect(protocol === 'legacy' ? legacy.mock.calls : mutations()).toHaveLength(2);
+      expect(effort()).toBe(oldAccepted ? 'low' : null);
+      expect(selectEncoderEffortFeedback.select(state as never)).toBeNull();
+      if (oldAccepted)
+        expect(screen.getByTestId('effort-gauge').getAttribute('data-gauge-value')).toBe('0');
+      else expect(screen.queryByTestId('effort-gauge')).toBeNull();
     },
   );
 
@@ -561,6 +620,56 @@ describe('decoded Micro encoder effort and wire behavior', () => {
     expect(effort('agent-2')).toBe('high');
     expect(mutations()).toHaveLength(3);
   });
+
+  it.each([false, true])(
+    'keeps a later coalesced turn across a failed picker save (final accepted: %s)',
+    async (accepted) => {
+      ready();
+      const first = deferred<unknown>();
+      request.mockImplementationOnce(() => first.promise);
+      request.mockRejectedValueOnce(new Error('picker failed'));
+      if (!accepted) request.mockRejectedValueOnce(new Error('latest encoder failed'));
+      const device = manager();
+      device.turn();
+      device.turn();
+      const editing = applyReasoningEffort('agent-1', 'ws-1', 'high', 'medium');
+      device.turn('ccw');
+      device.turn();
+      first.resolve(reply('low'));
+      expect(await editing).toBe(false);
+      await flush();
+      expect(mutations()).toHaveLength(3);
+      expect(effort()).toBe(accepted ? 'high' : 'low');
+      expect(mocks.notify.mock.calls).toEqual(accepted ? [] : [['latest encoder failed']]);
+    },
+  );
+
+  it.each([false, true])(
+    'discards only device work queued behind a picker on teardown (picker accepted: %s)',
+    async (accepted) => {
+      ready();
+      const first = deferred<unknown>();
+      const picker = deferred<unknown>();
+      request.mockImplementationOnce(() => first.promise);
+      request.mockImplementationOnce(() => picker.promise);
+      const device = manager();
+      device.turn();
+      device.turn();
+      const editing = applyReasoningEffort('agent-1', 'ws-1', 'high', 'medium');
+      device.turn('ccw');
+      first.resolve(reply('low'));
+      await flush();
+      expect(mutations()).toHaveLength(2);
+      tasks[0].cancel();
+      if (accepted) picker.resolve(reply('high'));
+      else picker.reject(new Error('picker failed'));
+      expect(await editing).toBe(accepted);
+      await flush();
+      expect(mutations()).toHaveLength(2);
+      expect(effort()).toBe(accepted ? 'high' : 'low');
+      expect(selectEncoderEffortFeedback.select(state as never)).toBeNull();
+    },
+  );
 
   it('starts the next detent from an independent edit instead of discarded queued intent', async () => {
     ready();
