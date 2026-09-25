@@ -352,9 +352,9 @@ function literalProperty(object, name) {
   return matches[0]?.initializer;
 }
 
-function vitestExclusions(root) {
-  const unknown = { patterns: [], complete: false };
-  const configPath = resolve(root, 'vitest.config.ts');
+function vitestExclusions(root, configFile = 'vitest.config.ts') {
+  const unknown = { patterns: [], exclusionsKnown: false, complete: false };
+  const configPath = resolve(root, configFile);
   if (!existsSync(configPath)) return unknown;
   const source = ts.createSourceFile(
     configPath,
@@ -417,7 +417,7 @@ function vitestExclusions(root) {
   const exclude = literalProperty(test, 'exclude');
   if (exclude === null || (exclude && !ts.isArrayLiteralExpression(exclude))) return unknown;
   // Discovery and execution filters need a real config evaluator; keep the scan then.
-  let complete =
+  const complete =
     literalProperty(config, 'root') === undefined &&
     [
       'include',
@@ -437,6 +437,7 @@ function vitestExclusions(root) {
       'mergeReports',
     ].every((name) => literalProperty(test, name) === undefined);
   const patterns = [];
+  let exclusionsKnown = true;
   for (const element of exclude?.elements ?? []) {
     if (ts.isStringLiteral(element)) {
       patterns.push(element.text);
@@ -466,13 +467,53 @@ function vitestExclusions(root) {
       existsSync(resolve(root, '.gitignore'))
     ) {
       patterns.push(...gitignoreDirExcludes(resolve(root, '.gitignore')));
-    } else complete = false;
+    } else exclusionsKnown = false;
   }
-  return { patterns, complete };
+  return { patterns, exclusionsKnown, complete: complete && exclusionsKnown };
 }
 
 export function vitestExcludePatterns(root = REPO_ROOT) {
   return vitestExclusions(root).patterns;
+}
+
+function snapshotOwner(file, root) {
+  // Vitest's default external snapshot path preserves the complete test basename.
+  // Do not guess custom layouts or search for similarly named tests.
+  if (basename(dirname(file)) !== '__snapshots__') return null;
+  const owner = slash(join(dirname(dirname(file)), basename(file, '.snap')));
+  const runner = testRunner(owner);
+  if (!runner || runner === 'manual' || !CODE_EXTENSIONS.has(extname(owner))) return null;
+  try {
+    assertCanonicalPathInsideRoot(resolve(root, owner), root, owner);
+    if (!statSync(resolve(root, owner), { throwIfNoEntry: false })?.isFile()) return null;
+  } catch {
+    return null;
+  }
+
+  const exclusions =
+    runner === 'vitest'
+      ? vitestExclusions(root)
+      : runner === 'integration'
+        ? vitestExclusions(root, 'tests/integration/vitest.integration.config.ts')
+        : { patterns: ['**/node_modules/**'], exclusionsKnown: true };
+  // Unknown excludes must not look like an empty policy. Integration's supported
+  // root/include settings do not make its literal exclusion policy unknown.
+  if (!exclusions.exclusionsKnown) return null;
+  const exclude = exclusions.patterns;
+  const gitignore = resolve(root, '.gitignore');
+  // Only the unit config derives exclusions from .gitignore. The integration
+  // config has its own excludes; both Playwright configs set an explicit testDir.
+  if (runner === 'vitest' && existsSync(gitignore)) {
+    exclude.push(...gitignoreDirExcludes(gitignore));
+  }
+  const matches = globSync(escapeGlob(owner, { windowsPathsNoEscape: true }), {
+    cwd: root,
+    ignore: exclude,
+    nodir: true,
+    dot: true,
+    posix: true,
+  });
+  return matches.includes(owner) ? owner : null;
 }
 
 function hasRunnableUnitTests(directory, root, exclude) {
@@ -557,7 +598,13 @@ export function createVerificationPlan(files, options = {}) {
   const existing = files.filter((file) => isExisting(file, root));
   const formatFiles = existing.filter((file) => FORMAT_EXTENSIONS.has(extname(file)));
   const lintFiles = existing.filter(isLintable);
-  const directTests = (runner) => existing.filter((file) => testRunner(file) === runner);
+  const snapshots = new Map(
+    files
+      .filter((file) => extname(file) === '.snap')
+      .map((file) => [file, snapshotOwner(file, root)]),
+  );
+  const testFiles = [...new Set([...existing, ...[...snapshots.values()].filter(Boolean)])];
+  const directTests = (runner) => testFiles.filter((file) => testRunner(file) === runner);
   const directCt = directTests('ct');
   const directIntegration = directTests('integration');
   const directPlaywright = directTests('playwright');
@@ -596,6 +643,8 @@ export function createVerificationPlan(files, options = {}) {
   const fallbackReasons = [];
 
   for (const file of files) {
+    // A resolved snapshot selects its runner above; it did not change source or types.
+    if (snapshots.get(file)) continue;
     addBoundary(boundaries, file);
     if (file.endsWith('.svelte')) svelteCheck = true;
     if (file === 'tsconfig.json') boundaries.add('renderer');
@@ -614,7 +663,7 @@ export function createVerificationPlan(files, options = {}) {
       /^(?:eslint|playwright|postcss|prettier|svelte|tailwind|tsconfig|vite|vitest)[^/]*\./.test(
         file,
       );
-    if (FULL_RISK_FILES.has(file) || !known) {
+    if (snapshots.has(file) || FULL_RISK_FILES.has(file) || !known) {
       fallbackReasons.push(file);
       architecture = true;
       fullUnit = true;
@@ -696,18 +745,21 @@ export function createVerificationPlan(files, options = {}) {
         ]),
       );
     }
-    if (directIntegration.length) {
-      checks.push(
-        command('vitest-integration', 'Vitest integration (changed tests)', [
-          'exec',
-          'vitest',
-          'run',
-          '--config',
-          'tests/integration/vitest.integration.config.ts',
-          ...directIntegration,
-        ]),
-      );
-    }
+  }
+  // The unit fallback excludes integration tests, so it cannot replace this lane.
+  if (directIntegration.length) {
+    checks.push(
+      command('vitest-integration', 'Vitest integration (changed tests)', [
+        'exec',
+        'vitest',
+        'run',
+        '--config',
+        'tests/integration/vitest.integration.config.ts',
+        ...directIntegration,
+      ]),
+    );
+  }
+  if (!fullUnit) {
     if (relatedSources.length) {
       checks.push(
         command('vitest-related', 'Vitest (tests related to changed sources)', [
