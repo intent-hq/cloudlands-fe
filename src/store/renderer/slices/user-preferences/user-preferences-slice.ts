@@ -69,6 +69,9 @@ export type UserPreferencesState = {
   soundEnabled: boolean;
   soundOnlyWhenUnfocused: boolean;
   volume: number;
+  /** Renderer-only write identity; hydration must preserve an unsettled local edit. */
+  notificationVolumeEditId: number;
+  pendingNotificationVolumeEditId: number | null;
   activityLogPresets: ActivityLogPresetPreference[];
   /** BCP-47 locale tag of an available catalog, or "system" to follow the OS. */
   languagePreference: string;
@@ -115,6 +118,8 @@ export const initialState: UserPreferencesState = {
   labsMultiplayerEnabled: false,
   ...fontSettingsInitialState,
   ...notificationSettingsInitialState,
+  notificationVolumeEditId: 0,
+  pendingNotificationVolumeEditId: null,
   activityLogPresets: [],
   languagePreference: SYSTEM_LANGUAGE_PREFERENCE,
   githubLinkDefaultAction: 'show-choices',
@@ -171,6 +176,10 @@ export const setVolume = createAction<[value: number]>('notificationSettings/set
 /** Daemon snapshot/event hydration; never triggers notification persistence. */
 export const hydrateNotificationVolume = createAction<[value: number]>(
   'notificationSettings/hydrateVolume',
+);
+
+export const notificationVolumeWriteSettled = createAction<[editId: number]>(
+  'notificationSettings/volumeWriteSettled',
 );
 
 export const resetNotificationSettings = createAction(
@@ -366,14 +375,22 @@ userPreferencesReducer.with(setSoundOnlyWhenUnfocused, (state, { payload: [value
 userPreferencesReducer.with(setVolume, (state, { payload: [value] }) => ({
   ...state,
   volume: Math.max(0, Math.min(1, value)),
+  notificationVolumeEditId: state.notificationVolumeEditId + 1,
+  pendingNotificationVolumeEditId: state.notificationVolumeEditId + 1,
 }));
-userPreferencesReducer.with(hydrateNotificationVolume, (state, { payload: [value] }) => ({
-  ...state,
-  volume: Math.max(0, Math.min(1, value)),
-}));
+userPreferencesReducer.with(hydrateNotificationVolume, (state, { payload: [value] }) => {
+  if (state.pendingNotificationVolumeEditId !== null) return state;
+  return { ...state, volume: Math.max(0, Math.min(1, value)) };
+});
+userPreferencesReducer.with(notificationVolumeWriteSettled, (state, { payload: [editId] }) => {
+  if (state.pendingNotificationVolumeEditId !== editId) return state;
+  return { ...state, pendingNotificationVolumeEditId: null };
+});
 userPreferencesReducer.with(resetNotificationSettings, (state) => ({
   ...state,
   ...notificationSettingsInitialState,
+  notificationVolumeEditId: state.notificationVolumeEditId + 1,
+  pendingNotificationVolumeEditId: state.notificationVolumeEditId + 1,
 }));
 userPreferencesReducer.with(hydrateActivityLogPresets, (state, { payload: [presets] }) => ({
   ...state,

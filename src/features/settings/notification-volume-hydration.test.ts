@@ -27,6 +27,7 @@ import { settingsHydrationSaga } from '$store/renderer/slices/settings-events/sa
 import { daemonEventsSaga } from '$store/renderer/slices/workspace-events/sagas/daemon-events-saga';
 import { notificationSettingsSaga } from '$store/renderer/slices/user-preferences/sagas/notification-settings-saga';
 import { connectionsListReceived } from '$store/renderer/slices/connections/connections-slice';
+import { backendReconnected } from '$store/renderer/slices/workspace-lifecycle/workspace-lifecycle-slice';
 import {
   resetNotificationSettings,
   setNotificationEnabled,
@@ -84,6 +85,11 @@ function emitVolume(value: unknown, revision: number, subscriptionId = 'notifica
 
 const volume = () => selectNotificationVolume.select(appStore.state);
 const writes = () => mocks.request.mock.calls.filter(([method]) => method === 'settings.update');
+const savedVolumes = () =>
+  writes().map(
+    ([, { changes }]) =>
+      changes.find(({ path }: { path: string }) => path === 'notifications.volume').value,
+  );
 let stops: Array<() => void>;
 
 async function settle() {
@@ -92,9 +98,9 @@ async function settle() {
 }
 
 async function start() {
-  stops.push(appStore.runSaga(notificationSettingsSaga));
-  stops.push(appStore.runSaga(settingsHydrationSaga));
   stops.push(appStore.runSaga(daemonEventsSaga));
+  stops.push(appStore.runSaga(settingsHydrationSaga));
+  stops.push(appStore.runSaga(notificationSettingsSaga));
   await settle();
 }
 
@@ -265,5 +271,118 @@ describe('notification volume through daemon events and settings hydration', () 
     expect(writes()).toHaveLength(1);
     expect(writes()[0][1].changes).toContainEqual({ path: 'notifications.enabled', value: false });
     expect(writes()[0][1].changes).toContainEqual({ path: 'notifications.volume', value: 0.75 });
+  });
+
+  it.each(['success', 'failure'])(
+    'preserves a newer slider edit through an older save echo and %s',
+    async (outcome) => {
+      await start();
+      let finishFirstWrite!: () => void;
+      mocks.request.mockImplementation(async () => {
+        if (writes().length === 1)
+          return new Promise((resolve, reject) => {
+            finishFirstWrite = () =>
+              outcome === 'success'
+                ? resolve({ applied: [{ path: 'notifications.volume', value: 0.4 }], revision: 11 })
+                : reject(new Error('offline'));
+          });
+        return { applied: [{ path: 'notifications.volume', value: 0.9 }], revision: 12 };
+      });
+      appStore.dispatch(setVolume(0.4));
+      await vi.advanceTimersByTimeAsync(100);
+      expect(savedVolumes()).toEqual([0.4]);
+      appStore.dispatch(setVolume(0.9));
+      await vi.advanceTimersByTimeAsync(20);
+      emitVolume(0.4, 11);
+      finishFirstWrite();
+      await settle();
+      expect.soft(volume()).toBe(0.9);
+      await vi.advanceTimersByTimeAsync(80);
+      expect(savedVolumes()).toEqual([0.4, 0.9]);
+      emitVolume(0.75, 13);
+      await vi.advanceTimersByTimeAsync(150);
+      expect(volume()).toBe(0.75);
+      expect(savedVolumes()).toEqual([0.4, 0.9]);
+    },
+  );
+
+  it.each(['startup', 'reconnect'])(
+    'preserves a pending local volume edit through a delayed %s snapshot',
+    async (phase) => {
+      if (phase === 'reconnect') await start();
+      let finishSnapshot!: (result: ReturnType<typeof snapshot>) => void;
+      mocks.request.mockImplementation(async (method: string, params?: { path: string }) => {
+        if (method === 'settings.list')
+          return new Promise((resolve) => {
+            finishSnapshot = resolve;
+          });
+        if (method === 'settings.get') return getResponse(params!.path);
+        if (method === 'settings.update') return { applied: [], revision: 11 };
+        throw new Error(`Unexpected request: ${method}`);
+      });
+      if (phase === 'startup') await start();
+      else {
+        appStore.dispatch(backendReconnected());
+        await settle();
+      }
+      appStore.dispatch(setVolume(0.9));
+      await vi.advanceTimersByTimeAsync(20);
+      finishSnapshot(snapshot());
+      await settle();
+      expect.soft(volume()).toBe(0.9);
+      await vi.advanceTimersByTimeAsync(80);
+      expect(savedVolumes()).toEqual([0.9]);
+      emitVolume(0.75, 12);
+      await vi.advanceTimersByTimeAsync(150);
+      expect(volume()).toBe(0.75);
+      expect(savedVolumes()).toEqual([0.9]);
+    },
+  );
+
+  it('protects a pending local reset and accepts live changes after its save fails', async () => {
+    await start();
+    let rejectWrite!: (reason: Error) => void;
+    mocks.request.mockImplementation(
+      () =>
+        new Promise((_, reject) => {
+          rejectWrite = reject;
+        }),
+    );
+    appStore.dispatch(resetNotificationSettings());
+    await vi.advanceTimersByTimeAsync(20);
+    emitVolume(0.25, 11);
+    await settle();
+    expect.soft(volume()).toBe(0.5);
+    await vi.advanceTimersByTimeAsync(80);
+    expect(savedVolumes()).toEqual([0.5]);
+    rejectWrite(new Error('offline'));
+    await settle();
+    emitVolume(0.75, 12);
+    await vi.advanceTimersByTimeAsync(150);
+    expect(volume()).toBe(0.75);
+    expect(savedVolumes()).toEqual([0.5]);
+  });
+
+  it('keeps a pending volume save when delayed startup boolean reads hydrate', async () => {
+    const pending: Array<() => void> = [];
+    mocks.request.mockImplementation(async (method: string, params?: { path: string }) => {
+      if (method === 'settings.list') return snapshot();
+      if (method === 'settings.get')
+        return new Promise((resolve) => {
+          pending.push(() => resolve(getResponse(params!.path)));
+        });
+      if (method === 'settings.update') return { applied: [], revision: 12 };
+      throw new Error(`Unexpected request: ${method}`);
+    });
+    await start();
+    appStore.dispatch(setVolume(0.9));
+    await vi.advanceTimersByTimeAsync(20);
+    pending.forEach((resolve) => resolve());
+    await vi.advanceTimersByTimeAsync(80);
+    expect(savedVolumes()).toEqual([0.9]);
+    emitVolume(0.75, 13);
+    await vi.advanceTimersByTimeAsync(150);
+    expect(volume()).toBe(0.75);
+    expect(savedVolumes()).toEqual([0.9]);
   });
 });

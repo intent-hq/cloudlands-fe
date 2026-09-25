@@ -10,6 +10,7 @@ vi.mock('$lib/client/live/backend-transport', () => ({
 vi.mock('$lib/utils/client-logger', () => ({ createLogger: () => ({ warn: mocks.warn }) }));
 
 import {
+  notificationVolumeWriteSettled,
   resetNotificationSettings,
   setNotificationEnabled,
   setSoundEnabled,
@@ -114,12 +115,11 @@ describe('notificationSettingsSaga', () => {
         soundEnabled: true,
         soundOnlyWhenUnfocused: false,
         volume: 0.8,
+        pendingNotificationVolumeEditId: 3,
       },
     };
-    const task = runSaga(
-      { dispatch: vi.fn(), getState: () => state },
-      persistNotificationSettingsWorker,
-    );
+    const dispatch = vi.fn();
+    const task = runSaga({ dispatch, getState: () => state }, persistNotificationSettingsWorker);
     await vi.advanceTimersByTimeAsync(100);
     await task.toPromise();
 
@@ -136,19 +136,22 @@ describe('notificationSettingsSaga', () => {
         },
       ],
     ]);
+    expect(dispatch.mock.calls).toEqual([[notificationVolumeWriteSettled(3)]]);
   });
 
   it('swallows persistence failures', async () => {
     mocks.backendRequest.mockRejectedValue(new Error('denied'));
+    const dispatch = vi.fn();
     const task = runSaga(
       {
-        dispatch: vi.fn(),
+        dispatch,
         getState: () => ({
           userPreferences: {
             enabled: true,
             soundEnabled: true,
             soundOnlyWhenUnfocused: false,
             volume: 0.5,
+            pendingNotificationVolumeEditId: 4,
           },
         }),
       },
@@ -158,6 +161,7 @@ describe('notificationSettingsSaga', () => {
     await task.toPromise();
 
     expect(mocks.warn.mock.calls).toHaveLength(1);
+    expect(dispatch.mock.calls).toEqual([[notificationVolumeWriteSettled(4)]]);
   });
 
   it('debounces every notification trigger to the latest snapshot', async () => {

@@ -255,6 +255,8 @@ export const mockUserPreferences: UserPreferencesState = {
   soundEnabled: true,
   soundOnlyWhenUnfocused: true,
   volume: 0.5,
+  notificationVolumeEditId: 0,
+  pendingNotificationVolumeEditId: null,
   activityLogPresets: [],
   languagePreference: 'system',
   githubLinkDefaultAction: 'show-choices',

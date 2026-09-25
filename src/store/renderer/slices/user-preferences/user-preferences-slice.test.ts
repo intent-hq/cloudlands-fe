@@ -6,6 +6,7 @@ import {
   hydrateNotificationVolume,
   hydrateShortcutOverrides,
   initialState,
+  notificationVolumeWriteSettled,
   resetNotificationSettings,
   resetAllShortcutOverrides,
   resetShortcutOverride,
@@ -92,6 +93,33 @@ describe('userPreferencesReducer', () => {
     expect(state.enabled).toBe(true);
     expect(state.soundEnabled).toBe(true);
     expect(state.soundOnlyWhenUnfocused).toBe(true);
+  });
+
+  it('settles only the matching volume edit, including a repeated value', () => {
+    const first = userPreferencesReducer(initialState, setVolume(0.9));
+    const second = userPreferencesReducer(first, setVolume(0.4));
+    const latest = userPreferencesReducer(second, setVolume(0.9));
+    expect(userPreferencesReducer(latest, hydrateNotificationVolume(0.25))).toBe(latest);
+    expect(
+      userPreferencesReducer(
+        latest,
+        notificationVolumeWriteSettled(first.notificationVolumeEditId),
+      ),
+    ).toBe(latest);
+    const settled = userPreferencesReducer(
+      latest,
+      notificationVolumeWriteSettled(latest.notificationVolumeEditId),
+    );
+    expect(settled.pendingNotificationVolumeEditId).toBeNull();
+    expect(userPreferencesReducer(settled, hydrateNotificationVolume(0.75)).volume).toBe(0.75);
+  });
+
+  it('treats a local reset as a new pending volume edit', () => {
+    const edited = userPreferencesReducer(initialState, setVolume(0.9));
+    const reset = userPreferencesReducer(edited, resetNotificationSettings());
+    expect(reset.volume).toBe(0.5);
+    expect(reset.pendingNotificationVolumeEditId).toBe(edited.notificationVolumeEditId + 1);
+    expect(userPreferencesReducer(reset, hydrateNotificationVolume(0.9))).toBe(reset);
   });
 
   describe('shortcut overrides', () => {

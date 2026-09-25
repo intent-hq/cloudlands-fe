@@ -5,10 +5,12 @@ import { createLogger } from '$lib/utils/client-logger';
 import {
   selectNotificationEnabled,
   selectNotificationVolume,
+  selectPendingNotificationVolumeEditId,
   selectSoundEnabled,
   selectSoundOnlyWhenUnfocused,
 } from '../user-preferences-selectors';
 import {
+  notificationVolumeWriteSettled,
   resetNotificationSettings,
   setNotificationEnabled,
   setSoundEnabled,
@@ -57,27 +59,13 @@ export function* hydrateNotificationSettingsWorker(suppressedActions?: WeakSet<o
   }
 }
 
-type NotificationAction =
-  | ReturnType<typeof setNotificationEnabled>
-  | ReturnType<typeof setSoundEnabled>
-  | ReturnType<typeof setSoundOnlyWhenUnfocused>
-  | ReturnType<typeof setVolume>
-  | ReturnType<typeof resetNotificationSettings>;
-
-function* persistNotificationAction(
-  suppressedActions: WeakSet<object>,
-  action: NotificationAction,
-) {
-  if (suppressedActions.delete(action)) return;
-  yield* call(persistNotificationSettingsWorker);
-}
-
 export function* persistNotificationSettingsWorker() {
   yield* delay(100);
   const enabled = yield* selectNotificationEnabled.effect();
   const soundEnabled = yield* selectSoundEnabled.effect();
   const soundOnlyWhenUnfocused = yield* selectSoundOnlyWhenUnfocused.effect();
   const volume = yield* selectNotificationVolume.effect();
+  const editId = yield* selectPendingNotificationVolumeEditId.effect();
   try {
     yield* call(updateSettings, [
       { path: NOTIFICATION_PATHS.enabled, value: enabled ?? true },
@@ -91,21 +79,26 @@ export function* persistNotificationSettingsWorker() {
   } catch (error) {
     logger.warn('Failed to persist notification settings to daemon', { error });
   }
+  // A cancelled older save must not release a newer edit's hydration guard.
+  // Success and failure both settle the matching write; cancellation skips this put.
+  if (editId != null) yield* put(notificationVolumeWriteSettled(editId));
 }
 
 /** Unregistered until the S20 middleware cutover. */
 export function* notificationSettingsSaga() {
   const suppressedActions = new WeakSet<object>();
+  const triggers = [
+    setNotificationEnabled,
+    setSoundEnabled,
+    setSoundOnlyWhenUnfocused,
+    setVolume,
+    resetNotificationSettings,
+  ];
   yield* takeLatest(
-    [
-      setNotificationEnabled,
-      setSoundEnabled,
-      setSoundOnlyWhenUnfocused,
-      setVolume,
-      resetNotificationSettings,
-    ],
-    persistNotificationAction,
-    suppressedActions,
+    // Exclude startup hydration before takeLatest can cancel a pending user save.
+    (action: { type: string }) =>
+      triggers.some((trigger) => trigger.type === action.type) && !suppressedActions.delete(action),
+    persistNotificationSettingsWorker,
   );
   yield* call(hydrateNotificationSettingsWorker, suppressedActions);
 }
