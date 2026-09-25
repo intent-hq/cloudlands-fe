@@ -2,7 +2,7 @@
 // check-hardcoded-strings.mjs — i18n gate for hardcoded user-facing strings.
 //
 // Directories that have been migrated to Paraglide messages (`m.*()`) must not
-// re-introduce hardcoded user-facing strings. This dependency-free scanner
+// re-introduce hardcoded user-facing strings. This scanner
 // checks, inside the enforced directories only:
 //   - Svelte template text nodes containing words (after stripping `{...}`
 //     expressions and HTML entities) — `{m.some_message()}` passes, literal
@@ -15,7 +15,8 @@
 //   - TS / Svelte-script string literals that look like user-facing sentences
 //     (two or more words that start capitalized or end with sentence
 //     punctuation) — a heuristic that tolerates class lists, paths, and keys.
-//     Lines routed to console/logger/import/throw are skipped.
+//     Lines routed to console/logger/import/throw and direct logging message
+//     arguments (including multiline calls) are skipped.
 //
 // Suppress a deliberate literal by putting `i18n-ignore` in a comment on the
 // same line or the line above.
@@ -31,6 +32,7 @@
 import { readFileSync, writeFileSync } from 'node:fs';
 import { readdir, stat } from 'node:fs/promises';
 import { join, relative, resolve } from 'node:path';
+import ts from 'typescript';
 
 // Full migration inventory. Existing debt is recorded in the checked-in
 // baseline; every path remains scanned so new or changed violations fail.
@@ -269,6 +271,53 @@ function ignoredLines(src) {
 // Replace a span with spaces, preserving newlines so line numbers survive.
 function blankSpan(text) {
   return text.replace(/[^\n]/g, ' ');
+}
+
+function isLoggingArgument(node, parent) {
+  if (!parent || !ts.isCallExpression(parent) || !parent.arguments.includes(node)) return false;
+  const callee = parent.expression;
+  if (!ts.isPropertyAccessExpression(callee) || !ts.isIdentifier(callee.expression)) return false;
+  const receiver = callee.expression.text;
+  return (
+    receiver === 'console' ||
+    receiver === 'logger' ||
+    (receiver === 'log' && /^(?:debug|info|warn|error)$/.test(callee.name.text))
+  );
+}
+
+// Regex quotes, backticks, and comment-like text must never reach the string
+// or comment scanners. Use the existing TS parser to distinguish regex literals
+// from division (including after parentheses/blocks), preserving source offsets.
+// The same walk records direct logging literals so the existing non-display
+// exemption survives line breaks without suppressing nested calls or callbacks.
+function prepareTsSource(src) {
+  const parsed = ts.createSourceFile(
+    'source.ts',
+    src,
+    ts.ScriptTarget.Latest,
+    false,
+    ts.ScriptKind.TS,
+  );
+  const loggingLiteralStarts = new Set();
+  let out = '';
+  let lastIndex = 0;
+  function visit(node, parent) {
+    if (ts.isRegularExpressionLiteral(node)) {
+      const start = node.getStart(parsed);
+      out += src.slice(lastIndex, start) + blankSpan(src.slice(start, node.end));
+      lastIndex = node.end;
+      return;
+    }
+    if (
+      (ts.isStringLiteralLike(node) || ts.isTemplateExpression(node)) &&
+      isLoggingArgument(node, parent)
+    ) {
+      loggingLiteralStarts.add(node.getStart(parsed));
+    }
+    ts.forEachChild(node, (child) => visit(child, node));
+  }
+  visit(parsed);
+  return { text: out + src.slice(lastIndex), loggingLiteralStarts };
 }
 
 function stripTsComments(src) {
@@ -604,7 +653,8 @@ function looksLikeUserFacingSentence(text) {
 }
 
 function scanTsSource(src, tsText, baseIndex, violations) {
-  const stripped = stripTsComments(tsText);
+  const { text, loggingLiteralStarts } = prepareTsSource(tsText);
+  const stripped = stripTsComments(text);
   const lines = src.split('\n');
   let i = 0;
   while (i < stripped.length) {
@@ -642,7 +692,7 @@ function scanTsSource(src, tsText, baseIndex, violations) {
       i++;
     }
     i++;
-    if (!looksLikeUserFacingSentence(value)) continue;
+    if (loggingLiteralStarts.has(literalStart) || !looksLikeUserFacingSentence(value)) continue;
     const line = lineAt(src, baseIndex + literalStart);
     const lineText = lines[line - 1] ?? '';
     if (NON_UI_LINE_RE.test(lineText)) continue;
