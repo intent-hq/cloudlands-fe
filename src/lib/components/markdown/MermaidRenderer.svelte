@@ -1363,6 +1363,10 @@ ${source}`;
       svg.setAttribute('height', String(height));
       setReadableMermaidWidth(svg, width);
       applyMermaidTerminalGaps(svg);
+      if (!prefersReducedMotion(svg.ownerDocument)) {
+        await new Promise<void>((resolve) => setTimeout(resolve, 64));
+      }
+      if (generation !== renderGeneration || fit !== fitGeneration) return false;
       svg.dataset.layoutGeneration = String(generation);
       svg.dataset.layoutSettled = 'true';
       return true;
