@@ -1136,6 +1136,133 @@ describe('handleInviteDeepLink — sign-in required', () => {
     expect(localCalls('github.cancelAuth')).toEqual([]);
   });
 
+  describe('cancel during GitHub startup', () => {
+    beforeEach(() => {
+      challenge.mockResolvedValue(CURRENT_CHALLENGE);
+      onLocal('principal.me', () => ({
+        id: 'primary',
+        login: null,
+        displayName: null,
+        avatarUrl: null,
+        isAdministrator: true,
+        identity: null,
+      }));
+    });
+
+    it.each(['resolve', 'reject'])(
+      'ends promptly and ignores a late startup %s after leaving the forge prompt',
+      async (settlement) => {
+        const connect = connectFirst();
+        // If the regression reopens sign-in, close it so the failed test cannot leak a join.
+        showInviteConsent.mockReturnValue(fakeConsent('cancel').prompt);
+        let release!: (result: typeof CONNECT) => void;
+        let reject!: (error: unknown) => void;
+        onLocal(
+          'github.connect',
+          () =>
+            new Promise((resolve, refuse) => {
+              release = resolve;
+              reject = refuse;
+            }),
+        );
+
+        const joining = handleInviteDeepLink(LINK);
+        await vi.waitFor(() => expect(localCalls('github.connect')).toEqual([['github.connect']]));
+        // Cancel and the GitLab setup action both send cancel from this waiting state.
+        connect.cancelWaiting();
+        try {
+          await vi.waitFor(() => expect(close).toHaveBeenCalledOnce());
+          expect(connect.prompt.dismiss).toHaveBeenCalledExactlyOnceWith('cancelled');
+          expect(localCalls('github.cancelAuth')).toEqual([]);
+        } finally {
+          if (settlement === 'resolve') release(CONNECT);
+          else reject(localRefusal('rate-limited'));
+          await joining;
+          await new Promise<void>((resolve) => setImmediate(resolve));
+        }
+
+        expect(localCalls('github.cancelAuth')).toEqual(
+          settlement === 'resolve' ? [['github.cancelAuth']] : [],
+        );
+        expect(showInviteConsent).toHaveBeenCalledExactlyOnceWith({
+          requestId: expect.any(String),
+          mode: 'connect-forge',
+          workspaceTitle: CURRENT_CHALLENGE.workspaceTitle,
+          hostLabel: CURRENT_CHALLENGE.hostname,
+        });
+        expect(clipboardWriteText).not.toHaveBeenCalled();
+        expect(openExternal).not.toHaveBeenCalled();
+        expect(localCalls('github.authStatus')).toEqual([]);
+        expect(localCalls('github.identityProof.create')).toEqual([]);
+        expect(localCalls('sourceControl.identityProof.create')).toEqual([]);
+        expect(prove).not.toHaveBeenCalled();
+        expect(guestAdd).not.toHaveBeenCalled();
+        expect(openBackendWindow).not.toHaveBeenCalled();
+        expect(showInviteNotice).not.toHaveBeenCalled();
+        expect(showMessageBox).not.toHaveBeenCalled();
+        expect(logLines.join('\n')).not.toContain('Invite deep link handling failed');
+      },
+    );
+
+    it.each(['pending', 'showing code'])(
+      'late startup cleanup leaves a newer sign-in alone while it is %s',
+      async (newerState) => {
+        const first = connectFirst();
+        const second = fakeConsent('open');
+        const signIn = fakeConsent('pending');
+        showInviteConsent.mockReturnValueOnce(second.prompt).mockReturnValueOnce(signIn.prompt);
+        let releaseFirst!: (result: typeof CONNECT) => void;
+        let releaseSecond!: (result: typeof CONNECT) => void;
+        let starts = 0;
+        onLocal(
+          'github.connect',
+          () =>
+            new Promise((resolve) => {
+              if (++starts === 1) releaseFirst = resolve;
+              else releaseSecond = resolve;
+            }),
+        );
+
+        const joiningFirst = handleInviteDeepLink(LINK);
+        await vi.waitFor(() => expect(starts).toBe(1));
+        first.cancelWaiting();
+        await joiningFirst;
+        expect(close).toHaveBeenCalledOnce();
+
+        const joiningSecond = handleInviteDeepLink(LINK);
+        await vi.waitFor(() => expect(starts).toBe(2));
+        if (newerState === 'showing code') {
+          releaseSecond(CONNECT);
+          await vi.waitFor(() => expect(showInviteConsent).toHaveBeenCalledTimes(3));
+        }
+        releaseFirst(CONNECT);
+        await new Promise<void>((resolve) => setImmediate(resolve));
+        expect(localCalls('github.cancelAuth')).toEqual([]);
+        expect(close).toHaveBeenCalledOnce();
+        expect(clipboardWriteText).toHaveBeenCalledTimes(newerState === 'pending' ? 0 : 1);
+        expect(signIn.prompt.dismiss).not.toHaveBeenCalled();
+
+        releaseSecond(CONNECT);
+        await vi.waitFor(() => expect(showInviteConsent).toHaveBeenCalledTimes(3));
+        signIn.decide('cancel');
+        await joiningSecond;
+        expect(localCalls('github.connect')).toEqual([['github.connect'], ['github.connect']]);
+        expect(localCalls('github.cancelAuth')).toEqual([['github.cancelAuth']]);
+        expect(clipboardWriteText).toHaveBeenCalledExactlyOnceWith(CONNECT.userCode);
+        expect(first.prompt.dismiss).toHaveBeenCalledExactlyOnceWith('cancelled');
+        expect(second.prompt.dismiss).toHaveBeenCalledExactlyOnceWith('superseded');
+        expect(signIn.prompt.dismiss).toHaveBeenCalledExactlyOnceWith('cancelled');
+        expect(openExternal).not.toHaveBeenCalled();
+        expect(prove).not.toHaveBeenCalled();
+        expect(guestAdd).not.toHaveBeenCalled();
+        expect(openBackendWindow).not.toHaveBeenCalled();
+        expect(showInviteNotice).not.toHaveBeenCalled();
+        expect(showMessageBox).not.toHaveBeenCalled();
+        expect(close).toHaveBeenCalledTimes(2);
+      },
+    );
+  });
+
   it('the poll settles the wait when the event is missed', async () => {
     let flow = 'pending';
     let signedIn = false;
