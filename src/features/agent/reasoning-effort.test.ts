@@ -107,7 +107,7 @@ describe('applyReasoningEffort', () => {
     expect(applied).toBe(true);
     expect(mockDispatch).toHaveBeenCalledTimes(1);
     expect(mockDispatch).toHaveBeenCalledWith(
-      updateSession('agent-1', { reasoningEffort: 'high' }),
+      updateSession('agent-1', { reasoningEffort: 'high' }, { reasoningEffortSource: 'control' }),
     );
     expect(mockSetReasoningEffort).toHaveBeenCalledWith({
       agentId: 'agent-1',
@@ -224,7 +224,7 @@ describe('applyReasoningEffort', () => {
     expect(applied).toBe(false);
     expect(mockDispatch).toHaveBeenCalledTimes(1);
     expect(mockDispatch).toHaveBeenCalledWith(
-      updateSession('agent-1', { reasoningEffort: 'xhigh' }),
+      updateSession('agent-1', { reasoningEffort: 'xhigh' }, { reasoningEffortSource: 'control' }),
     );
     expect(mockToastError).not.toHaveBeenCalled();
   });

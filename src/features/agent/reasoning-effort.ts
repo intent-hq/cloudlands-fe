@@ -22,6 +22,8 @@ import { reconcileReasoningEffort } from './utils/reconcile-reasoning-effort';
 const logger = createLogger('ReasoningEffort');
 
 export type ReasoningEffortWriteOptions = {
+  /** Distinguish local control changes from encoder writes and daemon echoes. */
+  source?: 'control' | 'encoder';
   /**
    * Re-read after the awaited RPC settles, before the failure rollback and
    * toast: when it returns `false` the caller has lost the right to mutate
@@ -43,7 +45,13 @@ export async function applyReasoningEffort(
   previousEffort: string | null,
   options?: ReasoningEffortWriteOptions,
 ): Promise<boolean> {
-  appStore.dispatch(updateSession(agentId, { reasoningEffort: effort }));
+  appStore.dispatch(
+    updateSession(
+      agentId,
+      { reasoningEffort: effort },
+      { reasoningEffortSource: options?.source ?? 'control' },
+    ),
+  );
 
   const session = appStore.state?.agentSessions?.byAgentId?.[agentId];
   const providerId = selectAgentProvider.select(appStore.state, agentId);

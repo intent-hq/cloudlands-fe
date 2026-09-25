@@ -88,6 +88,7 @@ export function* encoderEffortSaga() {
           request.effort,
           request.previous,
           {
+            source: 'encoder' as const,
             // Even an ABA turn sequence supersedes a failure rollback.
             canMutate: () =>
               live &&
@@ -182,6 +183,16 @@ export function* encoderEffortSaga() {
   }
 
   try {
+    yield* takeEvery(updateSession, function* ({ payload: [agentId, , options] }) {
+      if (options?.reasoningEffortSource !== 'control') return;
+      // Explicit local edits supersede encoder intent even when they return to
+      // Auto or another historical value that an untagged daemon echo can carry.
+      if (pending?.target.agentId === agentId) pending = null;
+      if (inFlight?.target.agentId === agentId) inFlight.valid = false;
+      if (appStore.state.hardwareConsole.encoderEffortFeedback?.target.agentId === agentId) {
+        yield* put(encoderHudHidden());
+      }
+    });
     yield* takeEveryFromSelector(selectEncoderEffortTarget, function* ({ payload: target }) {
       if (pending && pending.target.key !== target?.key) yield* discardPending();
       const feedback = appStore.state.hardwareConsole.encoderEffortFeedback;

@@ -51,6 +51,7 @@ import { AGENT_CHANNELS } from '$shared/ipc/channels';
 import { CHIEF_WORKSPACE_ID } from '$shared/types/branded-ids';
 import { AgentStatus } from '$shared/types/agent.types';
 import { m } from '$shared/paraglide/messages.js';
+import { applyReasoningEffort } from '$features/agent/reasoning-effort';
 import {
   hardwareConsoleReducer,
   initialState as hardwareInitial,
@@ -511,6 +512,54 @@ describe('decoded Micro encoder effort and wire behavior', () => {
     expect(effort()).toBe('high');
     expect(mutations()).toHaveLength(1);
     expect(state.hardwareConsole.encoderEffortFeedback).toBeNull();
+  });
+
+  it.each([
+    { picked: null, turnAgain: false },
+    { picked: null, turnAgain: true },
+    { picked: 'low', turnAgain: false },
+    { picked: 'low', turnAgain: true },
+  ])(
+    'honors an accepted explicit picker edit matching an older value ($picked, turn again: $turnAgain)',
+    async ({ picked, turnAgain }) => {
+      ready();
+      const first = deferred<unknown>();
+      request.mockImplementationOnce(() => first.promise);
+      const device = manager();
+      device.turn();
+      device.turn();
+      expect(effort()).toBe('medium');
+      expect(await applyReasoningEffort('agent-1', 'ws-1', picked, 'medium')).toBe(true);
+      expect(effort()).toBe(picked);
+      expect(selectEncoderEffortFeedback.select(state as never)).toBeNull();
+      if (turnAgain) device.turn();
+      first.reject(new Error('old encoder save rejected'));
+      await flush();
+      const expected = turnAgain ? (picked === null ? 'low' : 'medium') : picked;
+      expect(effort()).toBe(expected);
+      expect(
+        mutations().map(
+          ([, params]) =>
+            (params as { changes: { reasoningEffort: string | null } }).changes.reasoningEffort,
+        ),
+      ).toEqual(turnAgain ? ['low', picked, expected] : ['low', picked]);
+      expect(mocks.notify).not.toHaveBeenCalled();
+    },
+  );
+
+  it('does not discard encoder work when a picker edits another agent', async () => {
+    ready();
+    const first = deferred<unknown>();
+    request.mockImplementationOnce(() => first.promise);
+    const device = manager();
+    device.turn();
+    device.turn();
+    expect(await applyReasoningEffort('agent-2', 'ws-1', 'high', null)).toBe(true);
+    first.resolve(reply('low'));
+    await flush();
+    expect(effort()).toBe('medium');
+    expect(effort('agent-2')).toBe('high');
+    expect(mutations()).toHaveLength(3);
   });
 
   it('starts the next detent from an independent edit instead of discarded queued intent', async () => {
