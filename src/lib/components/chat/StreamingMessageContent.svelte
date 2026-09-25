@@ -1,5 +1,6 @@
 <script lang="ts">
   import type { ContentBlock, ToolUseBlock, MessageRole } from '$shared/types';
+  import type { TextBlockMedia } from '$shared/types/content-block';
   import { dedupeAgentVideoContentBlocks, normalizeAgentVideoContentBlocks } from '$shared/types';
   import {
     classifyToolResults,
@@ -29,7 +30,8 @@
   import ChatVideoBlock from './ChatVideoBlock.svelte';
   import ChatReferenceBlock from './ChatReferenceBlock.svelte';
   import { PatchBlockContent } from '$features/file-tracking/components/diff';
-  import DiagramRenderer from '$lib/components/diagrams/DiagramRenderer.svelte';
+  import StreamingDiagramRenderer from '$lib/components/diagrams/StreamingDiagramRenderer.svelte';
+  import DiagramPresentation from '$lib/components/diagrams/DiagramPresentation.svelte';
   import MermaidRenderer from '$lib/components/markdown/MermaidRenderer.svelte';
   import ChatCliBlock from './ChatCliBlock.svelte';
   import ChatAgentActionBlock from './ChatAgentActionBlock.svelte';
@@ -52,6 +54,7 @@
     type RenderContentBlock,
   } from '$lib/utils/messageParser';
   import ResponseGroup from './ResponseGroup.svelte';
+  import { safeDisclosureTransition } from './disclosure-motion';
   import {
     getOperationalClusterSpacingClass,
     isAdjacentOperationalClusterRow,
@@ -153,6 +156,18 @@
    * recreates DOM elements due to reactive content updates.
    */
   const animatedKeys = new Set<string>();
+
+  // Existing rows must not replay their entrance when a live transcript mounts.
+  // svelte-ignore state_referenced_locally -- initial tool identities are an intentional snapshot.
+  const enteredToolKeys = new Set(
+    content.filter((block) => block.type === 'tool_use').map((block) => block.id),
+  );
+
+  function enterToolRow(node: Element, key: string) {
+    if (!isStreaming || enteredToolKeys.has(key)) return { duration: 0 };
+    enteredToolKeys.add(key);
+    return safeDisclosureTransition(node, { tier: 'moderate', y: 0 }, { direction: 'in' });
+  }
 
   /**
    * Svelte action that adds the slide-up animation class once per unique
@@ -416,7 +431,7 @@
   const MAX_CACHE_SIZE = 100;
 
   function parseTextBlock(text: string): ParsedTextResult {
-    const cacheKey = JSON.stringify([workspaceId ?? null, flatstr(text)]);
+    const cacheKey = JSON.stringify([workspaceId ?? null, isStreaming, flatstr(text)]);
     // Check cache first
     const cached = parsedTextCache.get(cacheKey);
     if (cached) {
@@ -428,7 +443,7 @@
     // Strip suggested prompts (they're rendered separately in ChatPanel)
     const { cleanedContent: contentWithoutSuggestions } = parseSuggestedPrompts(text);
     // Parse the content - this handles digests inline as 'digest' type blocks
-    const parsed = parseAgentMessage(contentWithoutSuggestions, workspaceId);
+    const parsed = parseAgentMessage(contentWithoutSuggestions, workspaceId, { isStreaming });
     // Group parsed blocks to wrap group_start/group_end markers into GroupedBlock objects
     const grouped = groupParsedBlocks(parsed);
     const result = { blocks: grouped, setupScript };
@@ -604,13 +619,14 @@
   parsedBlock: ParsedContent,
   isLastBlock: boolean,
   insetProse = false,
+  media: TextBlockMedia | undefined = undefined,
 )}
   {#if insetProse}
     <div class={OPERATIONAL_ASSISTANT_PROSE_INSET_CLASS}>
-      {@render renderParsedContentBlockBody(parsedBlock, isLastBlock, insetProse)}
+      {@render renderParsedContentBlockBody(parsedBlock, isLastBlock, insetProse, media)}
     </div>
   {:else}
-    {@render renderParsedContentBlockBody(parsedBlock, isLastBlock, insetProse)}
+    {@render renderParsedContentBlockBody(parsedBlock, isLastBlock, insetProse, media)}
   {/if}
 {/snippet}
 
@@ -618,6 +634,7 @@
   parsedBlock: ParsedContent,
   isLastBlock: boolean,
   insetProse: boolean,
+  media: TextBlockMedia | undefined,
 )}
   {#if parsedBlock.type === 'augment_code_snippet'}
     <AugmentCodeSnippet
@@ -640,18 +657,25 @@
         {parsedBlock.content}
       </div>
     </div>
-  {:else if parsedBlock.type === 'diagram' && parsedBlock.metadata?.diagramData}
-    <div class="diagram-block my-2">
-      <DiagramRenderer
-        diagram={parsedBlock.metadata.diagramData as DiagramPrimitive}
-        editable={false}
+  {:else if parsedBlock.type === 'diagram'}
+    <DiagramPresentation kind="custom">
+      <StreamingDiagramRenderer
+        diagram={(parsedBlock.metadata?.diagramData as DiagramPrimitive | null) ?? null}
+        isStreaming={parsedBlock.metadata?.isStreaming ?? false}
+        source={parsedBlock.metadata?.rawSource ?? parsedBlock.content}
+        sourceError={parsedBlock.metadata?.diagramError}
+        viewResetKey={String(parsedBlock.metadata?.fenceStart ?? '')}
         onBindingClick={handleDiagramBindingClick}
       />
-    </div>
+    </DiagramPresentation>
   {:else if parsedBlock.type === 'mermaid'}
-    <div class="mermaid-block my-8">
-      <MermaidRenderer code={parsedBlock.content || ''} />
-    </div>
+    <DiagramPresentation kind="mermaid" rendererOwnsActions>
+      <MermaidRenderer
+        code={parsedBlock.metadata?.rawSource ?? parsedBlock.content ?? ''}
+        isStreaming={parsedBlock.metadata?.isStreaming ?? false}
+        showExportButton
+      />
+    </DiagramPresentation>
   {:else if parsedBlock.type === 'patch' && parsedBlock.metadata?.patchData}
     {@const patchData = parsedBlock.metadata.patchData}
     <PatchBlockContent
@@ -694,6 +718,7 @@
         {workspaceId}
         taskBlockRenderMode="content"
         chatImageThumbnails
+        {media}
         onFileClick={(path, options) => handleOpenFile({ path, ...options })}
       />
     </div>
@@ -705,6 +730,7 @@
         {workspaceId}
         taskBlockRenderMode="content"
         chatImageThumbnails
+        {media}
         onFileClick={(path, options) => handleOpenFile({ path, ...options })}
       />
     </div>
@@ -751,6 +777,7 @@
             renderBlock as ParsedContent,
             isLastBlock && parsedBlockIndex === parsedResult.blocks.length - 1,
             !nested,
+            block.media,
           )}
         {/each}
       {:else}
@@ -768,6 +795,7 @@
               {workspaceId}
               taskBlockRenderMode="content"
               chatImageThumbnails
+              media={block.media}
               onFileClick={(path, options) => handleOpenFile({ path, ...options })}
             />
           </div>
@@ -778,7 +806,7 @@
     {@const toolBlock = block as ToolUseBlock}
     {@const toolResultBlock = findToolResult(toolResultsMap, toolBlock)}
     {@const resultContent = getToolResultPayload(toolResultBlock)}
-    <div class="relative w-full min-w-0">
+    <div class="relative w-full min-w-0" in:enterToolRow|global={toolBlock.id} data-tool-entry>
       <ToolCall
         toolUse={toolBlock}
         toolState={toolStates.get(toolBlock.id) || 'running'}
@@ -884,6 +912,8 @@
     <ChatImageBlock
       data={block.data}
       mimeType={block.mimeType}
+      width={block.width}
+      height={block.height}
       dataTruncated={block.dataTruncated === true}
       dataIsThumbnail={block.dataIsThumbnail === true}
       hydrationLoading={imageHydrationLoading(block.id)}
@@ -1014,7 +1044,10 @@
         data-chat-search-block-path={block.type === 'text'
           ? chatSearchBlockPath(blockIndex)
           : undefined}
-        use:animateIn={{ animate: isStreaming, key: blockKeys[blockIndex] }}
+        use:animateIn={{
+          animate: isStreaming && block.type !== 'tool_use',
+          key: blockKeys[blockIndex],
+        }}
       >
         {@render renderContentBlock(
           block as ContentBlock,

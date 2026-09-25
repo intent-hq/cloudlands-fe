@@ -13,7 +13,12 @@
   import { Input } from '$lib/components/ui/input';
   import { getPageTargetIndex } from '$lib/components/ui/menu';
   import ListHighlight from '../menu/menu-list-highlight.svelte';
-  import { menuItem, menuOverlay, menuOverlayTransition } from '../menu/menu-recipes';
+  import {
+    menuItem,
+    menuOverlay,
+    menuOverlayTransition,
+    menuSubmenuAlignOffset,
+  } from '../menu/menu-recipes';
   import { crispOut, slide, springIn } from '$lib/motion';
   import type {
     DropdownOption,
@@ -438,7 +443,7 @@
       // Position submenu to the right of the parent item
       const target = event.currentTarget as HTMLElement;
       const rect = target.getBoundingClientRect();
-      submenuStyle = `position: fixed; top: ${rect.top}px; left: ${rect.right + 4}px;`;
+      submenuStyle = `position: fixed; top: ${rect.top + menuSubmenuAlignOffset}px; left: ${rect.right + 4}px;`;
     }
   }
 
@@ -864,7 +869,9 @@
     {#if !hasResults}
       {#if searchValue && allOptions.length > 0}
         <!-- Search yielded no results but there are options available -->
-        <div class="type-caption flex flex-col items-center gap-1 py-1 px-2 text-muted-foreground">
+        <div
+          class="type-caption flex flex-col items-start gap-1 py-1 px-2 text-left text-muted-foreground"
+        >
           <span>{m.ui_dropdown_noResultsFor_label({ query: searchValue })}</span>
           <span class="type-caption text-muted-foreground"
             >{m.ui_dropdown_tryDifferentSearch_description()}</span
@@ -874,7 +881,7 @@
         {@render empty()}
       {:else}
         <div
-          class="type-caption min-h-(--control-height-small) px-2 py-1 text-center text-muted-foreground"
+          class="type-caption min-h-(--control-height-small) px-2 py-1 text-left text-muted-foreground"
         >
           {m.ui_dropdown_noResults_label()}
         </div>

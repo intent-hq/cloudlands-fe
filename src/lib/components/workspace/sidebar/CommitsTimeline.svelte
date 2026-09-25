@@ -49,7 +49,11 @@
   import { Button } from '$lib/components/ui/button';
   import { IntentMarkLoader } from '$lib/components/ui/indicators';
   import SidebarContextMenu from '$lib/components/ui/sidebar-context-menu/SidebarContextMenu.svelte';
-  import type { SidebarMenuEntry } from '$lib/components/ui/sidebar-context-menu/types';
+  import {
+    getSidebarContextPosition,
+    type SidebarContextPosition,
+    type SidebarMenuEntry,
+  } from '$lib/components/ui/sidebar-context-menu/types';
   import { notify } from '$lib/components/patterns/notify';
   import { m } from '$shared/paraglide/messages.js';
   import { formatInteger } from '$lib/i18n/format';
@@ -196,7 +200,21 @@
     undoing: false,
     undoingCommit: false,
   });
-  let commitContextMenu: { x: number; y: number; commitHash: string } | null = $state(null);
+  let commitContextMenu:
+    (SidebarContextPosition & { commitHash: string; workspaceId: string }) | null = $state(null);
+
+  $effect(() => {
+    if (
+      commitContextMenu &&
+      (!isOwner ||
+        commitContextMenu.workspaceId !== workspaceId ||
+        ![...allCommits, ...olderCommits].some(
+          (commit) => commit.hash === commitContextMenu?.commitHash,
+        ))
+    ) {
+      commitContextMenu = null;
+    }
+  });
 
   // Utility to persist workspace changes
   async function persistWorkspaceChanges(changes: Record<string, unknown>) {
@@ -220,11 +238,20 @@
   }
 
   // Context menu handlers
-  function handleCommitContextMenu(e: MouseEvent, commitHash: string) {
+  function handleCommitContextMenu(e: MouseEvent | KeyboardEvent, commitHash: string) {
     if (!isOwner) return;
-    e.preventDefault();
-    e.stopPropagation();
-    commitContextMenu = { x: e.clientX, y: e.clientY, commitHash };
+    const position = getSidebarContextPosition(e);
+    if (!position) return;
+    const row = e.currentTarget as HTMLElement;
+    commitContextMenu = {
+      ...position,
+      returnFocus:
+        e.target instanceof HTMLElement
+          ? (e.target.closest('button') ?? row.querySelector('button'))
+          : null,
+      commitHash,
+      workspaceId,
+    };
   }
 
   function closeCommitContextMenu() {
@@ -241,6 +268,9 @@
           : m.workspace_commitsTimeline_setBaseCommit_label(),
         icon: faFlag,
         disabled: isCurrentBase,
+        disabledReason: isCurrentBase
+          ? m.workspace_commitsTimeline_baseCommitCurrent_label()
+          : undefined,
         onClick: () => {
           handleSetBaseCommit(commitHash);
           closeCommitContextMenu();
@@ -748,8 +778,10 @@
         <div>
           <!-- Commit header -->
           <div
+            role="group"
             class="relative flex items-center gap-2 py-0.5 group w-full rounded px-1 -mx-1"
             oncontextmenu={(e) => handleCommitContextMenu(e, commit.hash)}
+            onkeydown={(e) => handleCommitContextMenu(e, commit.hash)}
           >
             <Button
               variant="ghost-light"
@@ -796,7 +828,8 @@
                   bind:value={commitEdit.value}
                   onblur={saveCommitEdit}
                   onkeydown={handleCommitEditKeydown}
-                  class="inline-edit-input relative z-10 min-w-0 flex-1 border-none bg-transparent text-ui text-subtle outline-none! ring-0! focus:outline-none! focus:ring-0! focus-visible:outline-none! focus-visible:ring-0!"
+                  noFocusStyle
+                  class="inline-edit-input relative z-10 min-w-0 flex-1 border-none bg-transparent hover:bg-transparent text-ui text-subtle outline-none! ring-0! focus:outline-none! focus:ring-0! focus-visible:outline-none! focus-visible:ring-0!"
                   onclick={(e) => e.stopPropagation()}
                 />
               {:else}
@@ -928,6 +961,7 @@
               <!-- Files list -->
               {#each files as file (file.path)}
                 <FileRow
+                  contextKey={`${workspaceId}:${commit.hash}`}
                   {file}
                   muted={true}
                   active={activeFilePath === file.path && activeFileStaged === null}
@@ -1004,8 +1038,10 @@
         })) as UIFileChange[]}
         <div>
           <div
+            role="group"
             class="relative flex items-center gap-2 py-0.5 group w-full rounded px-1 -mx-1"
             oncontextmenu={(e) => handleCommitContextMenu(e, commit.hash)}
+            onkeydown={(e) => handleCommitContextMenu(e, commit.hash)}
           >
             <Button
               variant="ghost-light"
@@ -1053,6 +1089,7 @@
             >
               {#each files as file (file.path)}
                 <FileRow
+                  contextKey={`${workspaceId}:${commit.hash}`}
                   {file}
                   muted={true}
                   active={activeFilePath === file.path && activeFileStaged === null}
@@ -1092,9 +1129,11 @@
 
 {#if commitContextMenu}
   <SidebarContextMenu
-    x={commitContextMenu.x}
-    y={commitContextMenu.y}
-    items={getCommitContextMenuItems(commitContextMenu.commitHash)}
+    x={commitContextMenu?.x ?? 0}
+    y={commitContextMenu?.y ?? 0}
+    returnFocus={commitContextMenu?.returnFocus}
+    ariaLabel={commitContextMenu?.commitHash.slice(0, 7)}
+    items={commitContextMenu ? getCommitContextMenuItems(commitContextMenu.commitHash) : []}
     onClickOutside={closeCommitContextMenu}
   />
 {/if}

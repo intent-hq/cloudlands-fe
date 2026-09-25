@@ -139,8 +139,8 @@
     protocolMismatchModalDismissed,
   } from '$store/renderer/slices/connections/connections-slice';
   import {
-    openConnectionRequested,
-    forgetConnectionRequested,
+    connectionWorkflowRequested,
+    connectionWorkflowCleared,
   } from '$store/renderer/slices/connections/connections-slice';
   import { LOCAL_CONNECTION_ID } from '$shared/types/connections';
   import {
@@ -154,7 +154,7 @@
   } from '$lib/utils/connection-accents';
   import { store as appStore } from '$store/renderer/store';
   import { navigateToSettings } from '$lib/utils/workspace-navigation';
-  import { toast } from '$lib/components/ui/toast';
+  import { onDestroy } from 'svelte';
   import type { DaemonHealth } from '$store/renderer/slices/daemon-health/daemon-health-types';
 
   const health$ = selectDaemonHealth();
@@ -452,11 +452,8 @@
 
   const hasSavedRemoteConnections = $derived($connections$.some((conn) => !conn.isLocal));
 
-  function connectionDisplayLabel(id: string): string {
-    const conn = $connections$.find((c) => c.id === id);
-    if (!conn || conn.isLocal) return m.layout_daemonStatus_localConnection_label();
-    return formatConnectionLabel(conn);
-  }
+  const recoveryConsumerId = $props.id();
+  onDestroy(() => appStore.dispatch(connectionWorkflowCleared(recoveryConsumerId)));
 
   /**
    * Dispatch a connection open. A `secret-unavailable` resolution (the stored
@@ -466,36 +463,15 @@
    * (leave the host and rejoin from a new invite), so it routes to Guest
    * Sessions settings instead.
    */
-  async function openConnectionOrRecover(id: string) {
-    try {
-      const action = openConnectionRequested(id);
-      appStore.dispatch(action);
-      const result = await action.promise;
-      if (result.status === 'secret-unavailable') {
-        const guest = $guestSessions$.find((session) => session.id === id);
-        if (guest) {
-          toast.error(
-            m.layout_daemonStatus_guestSecretUnavailable_error({
-              label: formatGuestSessionLabel(guest),
-            }),
-          );
-          void navigateToSettings({ tab: 'guest-sessions' });
-          return;
-        }
-        toast.error(
-          m.layout_daemonStatus_secretUnavailable_error({ label: connectionDisplayLabel(id) }),
-        );
-        void navigateToSettings({ tab: 'devices' });
-      }
-    } catch {
-      // Other failures are surfaced via the slice's op-status/error; nothing
-      // more to do here (the list/active refresh arrives via connections:changed).
-    }
+  function openConnectionOrRecover(id: string) {
+    appStore.dispatch(
+      connectionWorkflowRequested(recoveryConsumerId, { kind: 'open', id, recovery: 'settings' }),
+    );
   }
 
-  async function handleOpenConnection(id: string) {
+  function handleOpenConnection(id: string) {
     dropdownOpen = false;
-    await openConnectionOrRecover(id);
+    openConnectionOrRecover(id);
   }
 
   // --- Cert-mismatch modal actions ---------------------------------------
@@ -504,20 +480,14 @@
     appStore.dispatch(certMismatchCleared());
   }
 
-  async function openLocalFromCertMismatch() {
+  function openLocalFromCertMismatch() {
     dismissCertMismatch();
-    await openConnectionOrRecover(LOCAL_CONNECTION_ID);
+    openConnectionOrRecover(LOCAL_CONNECTION_ID);
   }
 
-  async function forgetMismatchedConnection(id: string) {
+  function forgetMismatchedConnection(id: string) {
     dismissCertMismatch();
-    try {
-      const action = forgetConnectionRequested(id);
-      appStore.dispatch(action);
-      await action.promise;
-    } catch {
-      // no-op; refresh via connections:changed.
-    }
+    appStore.dispatch(connectionWorkflowRequested(recoveryConsumerId, { kind: 'forget', id }));
   }
 
   // --- Protocol-mismatch modal actions (advisory, non-blocking) ----------
@@ -528,9 +498,9 @@
   }
 
   /** Open the local sidecar's window from the advisory modal. */
-  async function openLocalFromProtocolMismatch() {
+  function openLocalFromProtocolMismatch() {
     continueWithProtocolMismatch();
-    await openConnectionOrRecover(LOCAL_CONNECTION_ID);
+    openConnectionOrRecover(LOCAL_CONNECTION_ID);
   }
 </script>
 
@@ -566,378 +536,381 @@
 
   {#snippet content()}
     <!--
-      Intrinsic width: grow to fit the widest stat row (no value wrapping)
-      between the 224px floor and a 320px cap. At the cap the Connection
-      row's min-w-0 truncate takes over instead of widening the menu.
+      Intrinsic width: grow to fit the widest stat row between the 224px
+      floor and a 320px cap. At the cap the Connection value wraps onto
+      up to two right-aligned lines instead of widening the menu.
     -->
     <div bind:this={menuBody} class="min-w-56 w-max max-w-80">
       <Menu.Sub>
         <Menu.SubTrigger class="w-full cursor-pointer text-xs px-3 py-1.5">
           {detailsStatusLabel}
         </Menu.SubTrigger>
+        <!-- This details panel aligns to the whole menu, not the triggering row. -->
         <Menu.SubContent
           side="left"
           align="start"
+          alignOffset={0}
           customAnchor={menuAnchor}
           collisionPadding={8}
           class="min-w-56 w-max max-w-80 px-0"
         >
-          <Header class="px-3 pt-1.5 pb-1" size={6}>{m.layout_daemonStatus_header()}</Header>
+          <section aria-label={m.layout_daemonStatus_header()} aria-live="off">
+            <Header class="px-3 pt-1.5 pb-1" size={6}>{m.layout_daemonStatus_header()}</Header>
 
-          {#if $health$ === 'down'}
-            <!-- Down state: show placeholders -->
-            <div class="px-3 py-2 space-y-1.5">
-              <div class="flex justify-between gap-2 text-xs whitespace-nowrap">
-                <span class="text-subtle">{m.layout_daemonStatus_status_label()}</span>
-                <span class="text-danger font-medium"
-                  >{m.layout_daemonStatus_notRunning_label()}</span
-                >
-              </div>
-              <div class="h-px bg-border my-1"></div>
-              <div class="text-xs text-subtle text-center py-2">
-                {m.layout_daemonStatus_notConnected_description()}
-              </div>
-            </div>
-          {:else}
-            <!-- Healthy/Degraded state: show stats -->
-            <div class="px-3 py-2 space-y-1.5">
-              <div class="flex justify-between gap-2 text-xs whitespace-nowrap">
-                <span class="text-subtle">{m.layout_daemonStatus_status_label()}</span>
-                <span
-                  class={cn(
-                    'font-medium',
-                    $health$ === 'healthy' && !workspaceDiskLow
-                      ? 'text-green-500'
-                      : 'text-warning-ink',
-                  )}
-                >
-                  {$health$ === 'healthy'
-                    ? m.layout_daemonStatus_healthyState_label()
-                    : m.layout_daemonStatus_degradedState_label()}
-                </span>
-              </div>
-
-              {#if degradedReason}
-                <!-- Why degraded, and how fresh the details below are -->
-                <div role="note" class="text-xs text-subtle whitespace-normal space-y-0.5">
-                  <p>{degradedReason}</p>
-                  <p>{degradedFreshness}</p>
-                </div>
-              {/if}
-
-              {#if $stats$}
-                <div class="h-px bg-border my-1"></div>
-
-                <!-- Agent slots (administrator-only; omitted from the collaborator projection) -->
-                {#if $stats$.agents !== undefined}
-                  <div class="flex justify-between gap-2 text-xs whitespace-nowrap">
-                    <span class="text-subtle">{m.layout_daemonStatus_agentSlots_label()}</span>
-                    <span class="tabular-nums">
-                      {$stats$.agents}/{$stats$.maxAgents ?? '?'}
-                    </span>
-                  </div>
-                {/if}
-
-                <!-- Connected clients (administrator-only; omitted from the collaborator projection) -->
-                {#if $stats$.clients !== undefined}
-                  <div class="flex justify-between gap-2 text-xs whitespace-nowrap">
-                    <span class="text-subtle">{m.layout_daemonStatus_wssClients_label()}</span>
-                    <span class="tabular-nums">{$stats$.clients}</span>
-                  </div>
-                {/if}
-
-                <!-- Transport -->
+            {#if $health$ === 'down'}
+              <!-- Down state: show placeholders -->
+              <div class="px-3 py-2 space-y-1.5">
                 <div class="flex justify-between gap-2 text-xs whitespace-nowrap">
-                  <span class="text-subtle shrink-0">{m.layout_daemonStatus_transport_label()}</span
+                  <span class="text-subtle">{m.layout_daemonStatus_status_label()}</span>
+                  <span class="text-danger font-medium"
+                    >{m.layout_daemonStatus_notRunning_label()}</span
                   >
-                  <span class="text-xs min-w-0 truncate">
-                    {$stats$.listenMode}{$stats$.port ? `:${$stats$.port}` : ''}
+                </div>
+                <div class="h-px bg-border my-1"></div>
+                <div class="text-xs text-subtle text-center py-2">
+                  {m.layout_daemonStatus_notConnected_description()}
+                </div>
+              </div>
+            {:else}
+              <!-- Healthy/Degraded state: show stats -->
+              <div class="px-3 py-2 space-y-1.5">
+                <div class="flex justify-between gap-2 text-xs whitespace-nowrap">
+                  <span class="text-subtle">{m.layout_daemonStatus_status_label()}</span>
+                  <span
+                    class={cn(
+                      'font-medium',
+                      $health$ === 'healthy' && !workspaceDiskLow
+                        ? 'text-green-500'
+                        : 'text-warning-ink',
+                    )}
+                  >
+                    {$health$ === 'healthy'
+                      ? m.layout_daemonStatus_healthyState_label()
+                      : m.layout_daemonStatus_degradedState_label()}
                   </span>
                 </div>
 
-                <!-- Version -->
-                {#if $stats$.version}
-                  {#if versionMismatchTooltip}
-                    <Tooltip side="left" contentClass="z-[10001]" class="w-full">
-                      {#snippet content()}
-                        <span>{versionMismatchTooltip}</span>
-                      {/snippet}
-                      <div class="flex justify-between gap-2 text-xs w-full whitespace-nowrap">
-                        <span class="text-subtle shrink-0"
-                          >{m.layout_daemonStatus_version_label()}</span
-                        >
-                        <span class="flex items-center gap-1.5 min-w-0">
-                          <!--
+                {#if degradedReason}
+                  <!-- Why degraded, and how fresh the details below are -->
+                  <div role="note" class="text-xs text-subtle whitespace-normal space-y-0.5">
+                    <p>{degradedReason}</p>
+                    <p>{degradedFreshness}</p>
+                  </div>
+                {/if}
+
+                {#if $stats$}
+                  <div class="h-px bg-border my-1"></div>
+
+                  <!-- Agent slots (administrator-only; omitted from the collaborator projection) -->
+                  {#if $stats$.agents !== undefined}
+                    <div class="flex justify-between gap-2 text-xs whitespace-nowrap">
+                      <span class="text-subtle">{m.layout_daemonStatus_agentSlots_label()}</span>
+                      <span class="tabular-nums">
+                        {$stats$.agents}/{$stats$.maxAgents ?? '?'}
+                      </span>
+                    </div>
+                  {/if}
+
+                  <!-- Connected clients (administrator-only; omitted from the collaborator projection) -->
+                  {#if $stats$.clients !== undefined}
+                    <div class="flex justify-between gap-2 text-xs whitespace-nowrap">
+                      <span class="text-subtle">{m.layout_daemonStatus_wssClients_label()}</span>
+                      <span class="tabular-nums">{$stats$.clients}</span>
+                    </div>
+                  {/if}
+
+                  <!-- Transport -->
+                  <div class="flex justify-between gap-2 text-xs whitespace-nowrap">
+                    <span class="text-subtle shrink-0"
+                      >{m.layout_daemonStatus_transport_label()}</span
+                    >
+                    <span class="text-xs min-w-0 truncate">
+                      {$stats$.listenMode}{$stats$.port ? `:${$stats$.port}` : ''}
+                    </span>
+                  </div>
+
+                  <!-- Version -->
+                  {#if $stats$.version}
+                    {#if versionMismatchTooltip}
+                      <Tooltip side="left" contentClass="z-[10001]" class="w-full">
+                        {#snippet content()}
+                          <span>{versionMismatchTooltip}</span>
+                        {/snippet}
+                        <div class="flex justify-between gap-2 text-xs w-full whitespace-nowrap">
+                          <span class="text-subtle shrink-0"
+                            >{m.layout_daemonStatus_version_label()}</span
+                          >
+                          <span class="flex items-center gap-1.5 min-w-0">
+                            <!--
                         Keyboard focus inside the menu is menu-managed (bits-ui
                         closes on Tab; arrow keys visit only menu items), so the
                         tooltip cannot open from keyboard focus here. Expose the
                         full explanation as the icon's accessible name instead
                         (role="img" so the span's aria-label is reliably mapped).
                       -->
-                          <span
-                            class="text-warning-ink"
-                            role="img"
-                            aria-label={versionMismatchTooltip}
-                          >
-                            <Fa icon={faTriangleExclamation} />
+                            <span
+                              class="text-warning-ink"
+                              role="img"
+                              aria-label={versionMismatchTooltip}
+                            >
+                              <Fa icon={faTriangleExclamation} />
+                            </span>
+                            <span class="text-xs min-w-0 truncate" title={$stats$.version}
+                              >{$stats$.version}</span
+                            >
                           </span>
-                          <span class="text-xs min-w-0 truncate" title={$stats$.version}
-                            >{$stats$.version}</span
-                          >
-                        </span>
+                        </div>
+                      </Tooltip>
+                    {:else}
+                      <div class="flex justify-between gap-2 text-xs whitespace-nowrap">
+                        <span class="text-subtle shrink-0"
+                          >{m.layout_daemonStatus_version_label()}</span
+                        >
+                        <span class="text-xs min-w-0 truncate" title={$stats$.version}
+                          >{$stats$.version}</span
+                        >
                       </div>
-                    </Tooltip>
-                  {:else}
+                    {/if}
+                  {/if}
+
+                  <!-- Protocol version -->
+                  {#if $stats$.protocolVersion !== undefined}
                     <div class="flex justify-between gap-2 text-xs whitespace-nowrap">
-                      <span class="text-subtle shrink-0"
-                        >{m.layout_daemonStatus_version_label()}</span
-                      >
-                      <span class="text-xs min-w-0 truncate" title={$stats$.version}
-                        >{$stats$.version}</span
+                      <span class="text-subtle">{m.layout_daemonStatus_protocol_label()}</span>
+                      <span class="text-xs">{$stats$.protocolVersion}</span>
+                    </div>
+                  {/if}
+
+                  <!-- Uptime -->
+                  {#if liveUptimeSeconds !== undefined}
+                    <div class="flex justify-between gap-2 text-xs whitespace-nowrap">
+                      <span class="text-subtle">{m.layout_daemonStatus_uptime_label()}</span>
+                      <span class="tabular-nums text-xs" aria-live="off"
+                        >{formatUptime(liveUptimeSeconds)}</span
                       >
                     </div>
                   {/if}
-                {/if}
 
-                <!-- Protocol version -->
-                {#if $stats$.protocolVersion !== undefined}
-                  <div class="flex justify-between gap-2 text-xs whitespace-nowrap">
-                    <span class="text-subtle">{m.layout_daemonStatus_protocol_label()}</span>
-                    <span class="text-xs">{$stats$.protocolVersion}</span>
-                  </div>
-                {/if}
+                  <!-- CPU (only when the daemon reports it) -->
+                  {#if $stats$.cpuPercent !== undefined}
+                    <div class="flex justify-between gap-2 text-xs whitespace-nowrap">
+                      <span class="text-subtle">{m.layout_daemonStatus_cpu_label()}</span>
+                      <span class="tabular-nums text-xs" aria-live="off"
+                        >{formatCpu($stats$.cpuPercent)}</span
+                      >
+                    </div>
+                  {/if}
 
-                <!-- Uptime -->
-                {#if liveUptimeSeconds !== undefined}
-                  <div class="flex justify-between gap-2 text-xs whitespace-nowrap">
-                    <span class="text-subtle">{m.layout_daemonStatus_uptime_label()}</span>
-                    <span class="tabular-nums text-xs" aria-live="off"
-                      >{formatUptime(liveUptimeSeconds)}</span
-                    >
-                  </div>
-                {/if}
+                  <!-- Memory (only when the daemon reports it) -->
+                  {#if $stats$.memoryBytes !== undefined}
+                    <div class="flex justify-between gap-2 text-xs whitespace-nowrap">
+                      <span class="text-subtle">{m.layout_daemonStatus_memory_label()}</span>
+                      <span class="tabular-nums text-xs" aria-live="off"
+                        >{formatMemory($stats$.memoryBytes)}</span
+                      >
+                    </div>
+                  {/if}
 
-                <!-- CPU (only when the daemon reports it) -->
-                {#if $stats$.cpuPercent !== undefined}
-                  <div class="flex justify-between gap-2 text-xs whitespace-nowrap">
-                    <span class="text-subtle">{m.layout_daemonStatus_cpu_label()}</span>
-                    <span class="tabular-nums text-xs" aria-live="off"
-                      >{formatCpu($stats$.cpuPercent)}</span
-                    >
-                  </div>
-                {/if}
-
-                <!-- Memory (only when the daemon reports it) -->
-                {#if $stats$.memoryBytes !== undefined}
-                  <div class="flex justify-between gap-2 text-xs whitespace-nowrap">
-                    <span class="text-subtle">{m.layout_daemonStatus_memory_label()}</span>
-                    <span class="tabular-nums text-xs" aria-live="off"
-                      >{formatMemory($stats$.memoryBytes)}</span
-                    >
-                  </div>
-                {/if}
-
-                <!--
-                  Agent memory (only once the daemon has sampled it). Clickable:
-                  opens the per-agent breakdown dialog. Same in-menu Button
-                  pattern as the Stop server action below; the wrapping div
-                  gives the row a box for the parent's vertical rhythm, which
-                  the Button's own display:contents wrapper would otherwise skip.
-                -->
-                {#if agentMemoryBytes !== null}
-                  <div>
-                    <Button
-                      variant="ghost"
-                      wrapContent={false}
-                      class="w-full flex justify-between gap-2 text-xs whitespace-nowrap hover:bg-muted/50 rounded px-1 -mx-1 py-0 h-auto min-h-0 font-normal cursor-pointer"
-                      aria-label={m.layout_daemonStatus_agentMemory_ariaLabel({
-                        memory: formatMemory(agentMemoryBytes),
-                      })}
-                      onclick={openAgentMemoryBreakdown}
-                    >
-                      <span class="text-subtle">{m.layout_daemonStatus_agentMemory_label()}</span>
-                      <span class="flex items-center gap-1.5">
-                        <span class="tabular-nums text-xs" aria-live="off"
-                          >{formatMemory(agentMemoryBytes)}</span
-                        >
-                        <span class="text-subtle" aria-hidden="true">
-                          <Fa icon={faChevronRight} size="xs" />
-                        </span>
-                      </span>
-                    </Button>
-                  </div>
-                {/if}
-
-                <!-- Workspace disk (only when the daemon reports it) -->
-                {#if workspaceDiskValue !== null}
-                  {#if workspaceDiskLow}
-                    <Tooltip side="left" contentClass="z-[10001]" class="w-full">
-                      {#snippet content()}
-                        <span>{m.layout_daemonStatus_workspaceDiskLow_tooltip()}</span>
-                      {/snippet}
-                      <div class="flex justify-between gap-2 text-xs w-full whitespace-nowrap">
-                        <span class="text-subtle"
-                          >{m.layout_daemonStatus_workspaceDisk_label()}</span
-                        >
+                  <!-- Agent memory is a command opening the per-agent breakdown. -->
+                  {#if agentMemoryBytes !== null}
+                    <div>
+                      <Menu.Item
+                        class="w-full justify-between gap-2 text-xs"
+                        aria-label={m.layout_daemonStatus_agentMemory_ariaLabel({
+                          memory: formatMemory(agentMemoryBytes),
+                        })}
+                        onSelect={openAgentMemoryBreakdown}
+                      >
+                        <span class="text-subtle">{m.layout_daemonStatus_agentMemory_label()}</span>
                         <span class="flex items-center gap-1.5">
-                          <!--
+                          <span class="tabular-nums text-xs" aria-live="off"
+                            >{formatMemory(agentMemoryBytes)}</span
+                          >
+                          <span class="text-subtle" aria-hidden="true">
+                            <Fa icon={faChevronRight} size="xs" />
+                          </span>
+                        </span>
+                      </Menu.Item>
+                    </div>
+                  {/if}
+
+                  <!-- Workspace disk (only when the daemon reports it) -->
+                  {#if workspaceDiskValue !== null}
+                    {#if workspaceDiskLow}
+                      <Tooltip side="left" contentClass="z-[10001]" class="w-full">
+                        {#snippet content()}
+                          <span>{m.layout_daemonStatus_workspaceDiskLow_tooltip()}</span>
+                        {/snippet}
+                        <div class="flex justify-between gap-2 text-xs w-full whitespace-nowrap">
+                          <span class="text-subtle"
+                            >{m.layout_daemonStatus_workspaceDisk_label()}</span
+                          >
+                          <span class="flex items-center gap-1.5">
+                            <!--
                         Same pattern as the version-mismatch icon above: menu
                         focus management prevents keyboard-triggered tooltips,
                         so expose the warning as the icon's accessible name.
                       -->
-                          <span
-                            class="text-warning-ink"
-                            role="img"
-                            aria-label={m.layout_daemonStatus_workspaceDiskLow_tooltip()}
-                          >
-                            <Fa icon={faTriangleExclamation} />
+                            <span
+                              class="text-warning-ink"
+                              role="img"
+                              aria-label={m.layout_daemonStatus_workspaceDiskLow_tooltip()}
+                            >
+                              <Fa icon={faTriangleExclamation} />
+                            </span>
+                            <span class="tabular-nums text-xs" aria-live="off"
+                              >{workspaceDiskValue}</span
+                            >
                           </span>
-                          <span class="tabular-nums text-xs" aria-live="off"
-                            >{workspaceDiskValue}</span
-                          >
-                        </span>
+                        </div>
+                      </Tooltip>
+                    {:else}
+                      <div class="flex justify-between gap-2 text-xs whitespace-nowrap">
+                        <span class="text-subtle"
+                          >{m.layout_daemonStatus_workspaceDisk_label()}</span
+                        >
+                        <span class="tabular-nums text-xs" aria-live="off"
+                          >{workspaceDiskValue}</span
+                        >
                       </div>
-                    </Tooltip>
+                    {/if}
+                  {/if}
+
+                  <!-- Host OS/Arch -->
+                  <div class="flex justify-between gap-2 text-xs whitespace-nowrap">
+                    <span class="text-subtle shrink-0">{m.layout_daemonStatus_host_label()}</span>
+                    <span class="text-xs min-w-0 truncate">{$stats$.os}/{$stats$.arch}</span>
+                  </div>
+
+                  <!-- FE connection mode -->
+                  {#if $stats$.transport}
+                    {@const transportLabel = formatTransportLabel($stats$.transport)}
+                    <div class="flex justify-between gap-2 text-xs">
+                      <span class="text-subtle shrink-0"
+                        >{m.layout_daemonStatus_connection_label()}</span
+                      >
+                      <span
+                        class="text-xs min-w-0 line-clamp-2 break-words text-right"
+                        title={transportLabel}>{transportLabel}</span
+                      >
+                    </div>
                   {:else}
-                    <div class="flex justify-between gap-2 text-xs whitespace-nowrap">
-                      <span class="text-subtle">{m.layout_daemonStatus_workspaceDisk_label()}</span>
-                      <span class="tabular-nums text-xs" aria-live="off">{workspaceDiskValue}</span>
+                    <div class="flex justify-between gap-2 text-xs">
+                      <span class="text-subtle shrink-0"
+                        >{m.layout_daemonStatus_connection_label()}</span
+                      >
+                      <!-- i18n-ignore (transport mode identifier) -->
+                      <span class="text-xs text-subtle">unknown</span>
                     </div>
                   {/if}
-                {/if}
-
-                <!-- Host OS/Arch -->
-                <div class="flex justify-between gap-2 text-xs whitespace-nowrap">
-                  <span class="text-subtle shrink-0">{m.layout_daemonStatus_host_label()}</span>
-                  <span class="text-xs min-w-0 truncate">{$stats$.os}/{$stats$.arch}</span>
-                </div>
-
-                <!-- FE connection mode -->
-                {#if $stats$.transport}
-                  {@const transportLabel = formatTransportLabel($stats$.transport)}
-                  <div class="flex justify-between gap-2 text-xs">
-                    <span class="text-subtle shrink-0"
-                      >{m.layout_daemonStatus_connection_label()}</span
-                    >
-                    <span class="text-xs min-w-0 truncate" title={transportLabel}
-                      >{transportLabel}</span
-                    >
-                  </div>
                 {:else}
-                  <div class="flex justify-between gap-2 text-xs">
-                    <span class="text-subtle shrink-0"
-                      >{m.layout_daemonStatus_connection_label()}</span
-                    >
-                    <!-- i18n-ignore (transport mode identifier) -->
-                    <span class="text-xs text-subtle">unknown</span>
-                  </div>
-                {/if}
-              {:else}
-                <div class="h-px bg-border my-1"></div>
-                <div class="text-xs text-subtle text-center py-2">
-                  {m.layout_daemonStatus_noStats_label()}
-                </div>
-              {/if}
-
-              <!-- Managed Unsloth server (only when one is running) -->
-              {#if $unslothStatus$?.running}
-                <div class="h-px bg-border my-1"></div>
-
-                <Header class="pt-1 pb-0.5" size={6}
-                  >{m.layout_daemonStatus_unslothServer_header()}</Header
-                >
-
-                <!-- Model (HF repo id, shortened) -->
-                {#if $unslothStatus$.repoId}
-                  <div class="flex justify-between gap-2 text-xs whitespace-nowrap">
-                    <span class="text-subtle">{m.layout_daemonStatus_model_label()}</span>
-                    <Tooltip side="left" contentClass="z-[10001]">
-                      {#snippet content()}
-                        <span>{$unslothStatus$.repoId}</span>
-                      {/snippet}
-                      <span class="text-xs truncate max-w-32">{unslothModelLabel}</span>
-                    </Tooltip>
+                  <div class="h-px bg-border my-1"></div>
+                  <div class="text-xs text-subtle text-center py-2">
+                    {m.layout_daemonStatus_noStats_label()}
                   </div>
                 {/if}
 
-                <!-- Phase -->
-                {#if $unslothStatus$.phase}
-                  <div class="flex justify-between gap-2 text-xs whitespace-nowrap">
-                    <span class="text-subtle">{m.layout_daemonStatus_phase_label()}</span>
-                    <span
-                      class={cn(
-                        'text-xs',
-                        $unslothStatus$.phase === 'ready' ? 'text-green-500' : 'text-warning-ink',
-                      )}
-                    >
-                      {$unslothStatus$.phase}
-                    </span>
-                  </div>
-                {/if}
+                <!-- Managed Unsloth server (only when one is running) -->
+                {#if $unslothStatus$?.running}
+                  <div class="h-px bg-border my-1"></div>
 
-                <!-- Port -->
-                {#if $unslothStatus$.port !== undefined}
-                  <div class="flex justify-between gap-2 text-xs whitespace-nowrap">
-                    <span class="text-subtle">{m.layout_daemonStatus_port_label()}</span>
-                    <span class="tabular-nums text-xs">{$unslothStatus$.port}</span>
-                  </div>
-                {/if}
+                  <Header class="pt-1 pb-0.5" size={6}
+                    >{m.layout_daemonStatus_unslothServer_header()}</Header
+                  >
 
-                <!-- Uptime -->
-                {#if $unslothStatus$.uptimeSecs !== undefined}
-                  <div class="flex justify-between gap-2 text-xs whitespace-nowrap">
-                    <span class="text-subtle">{m.layout_daemonStatus_uptime_label()}</span>
-                    <span class="tabular-nums text-xs" aria-live="off"
-                      >{formatUptime($unslothStatus$.uptimeSecs)}</span
-                    >
-                  </div>
-                {/if}
+                  <!-- Model (HF repo id, shortened) -->
+                  {#if $unslothStatus$.repoId}
+                    <div class="flex justify-between gap-2 text-xs whitespace-nowrap">
+                      <span class="text-subtle">{m.layout_daemonStatus_model_label()}</span>
+                      <Tooltip side="left" contentClass="z-[10001]">
+                        {#snippet content()}
+                          <span>{$unslothStatus$.repoId}</span>
+                        {/snippet}
+                        <span class="text-xs truncate max-w-32">{unslothModelLabel}</span>
+                      </Tooltip>
+                    </div>
+                  {/if}
 
-                <!-- CPU (process tree) -->
-                {#if $unslothStatus$.cpuPercent !== undefined}
-                  <div class="flex justify-between gap-2 text-xs whitespace-nowrap">
-                    <span class="text-subtle">{m.layout_daemonStatus_cpu_label()}</span>
-                    <span class="tabular-nums text-xs" aria-live="off"
-                      >{formatCpu($unslothStatus$.cpuPercent)}</span
-                    >
-                  </div>
-                {/if}
+                  <!-- Phase -->
+                  {#if $unslothStatus$.phase}
+                    <div class="flex justify-between gap-2 text-xs whitespace-nowrap">
+                      <span class="text-subtle">{m.layout_daemonStatus_phase_label()}</span>
+                      <span
+                        class={cn(
+                          'text-xs',
+                          $unslothStatus$.phase === 'ready' ? 'text-green-500' : 'text-warning-ink',
+                        )}
+                      >
+                        {$unslothStatus$.phase}
+                      </span>
+                    </div>
+                  {/if}
 
-                <!-- Memory (process tree) -->
-                {#if $unslothStatus$.memoryBytes !== undefined}
-                  <div class="flex justify-between gap-2 text-xs whitespace-nowrap">
-                    <span class="text-subtle">{m.layout_daemonStatus_memory_label()}</span>
-                    <span class="tabular-nums text-xs" aria-live="off"
-                      >{formatMemory($unslothStatus$.memoryBytes)}</span
-                    >
-                  </div>
-                {/if}
+                  <!-- Port -->
+                  {#if $unslothStatus$.port !== undefined}
+                    <div class="flex justify-between gap-2 text-xs whitespace-nowrap">
+                      <span class="text-subtle">{m.layout_daemonStatus_port_label()}</span>
+                      <span class="tabular-nums text-xs">{$unslothStatus$.port}</span>
+                    </div>
+                  {/if}
 
-                <!-- Attached agents (omitted when the agent manager is not attached) -->
-                {#if $unslothStatus$.attachedAgentCount !== undefined}
-                  <div class="flex justify-between gap-2 text-xs whitespace-nowrap">
-                    <span class="text-subtle">{m.layout_daemonStatus_attachedAgents_label()}</span>
-                    <span class="tabular-nums text-xs">{$unslothStatus$.attachedAgentCount}</span>
-                  </div>
-                {/if}
+                  <!-- Uptime -->
+                  {#if $unslothStatus$.uptimeSecs !== undefined}
+                    <div class="flex justify-between gap-2 text-xs whitespace-nowrap">
+                      <span class="text-subtle">{m.layout_daemonStatus_uptime_label()}</span>
+                      <span class="tabular-nums text-xs" aria-live="off"
+                        >{formatUptime($unslothStatus$.uptimeSecs)}</span
+                      >
+                    </div>
+                  {/if}
 
-                <!-- Stop action -->
-                <Button
-                  variant="ghost-light"
-                  class="w-full text-left text-xs text-danger hover:bg-muted/50 rounded px-1 py-1 mt-0.5 transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-default"
-                  disabled={$unslothStopping$}
-                  onclick={() => {
-                    dropdownOpen = false;
-                    stopUnslothDialogOpen = true;
-                  }}
-                >
-                  {$unslothStopping$
-                    ? m.layout_daemonStatus_stopUnsloth_stopping_label()
-                    : m.layout_daemonStatus_stopUnsloth_action_label()}
-                </Button>
-              {/if}
-            </div>
-          {/if}
+                  <!-- CPU (process tree) -->
+                  {#if $unslothStatus$.cpuPercent !== undefined}
+                    <div class="flex justify-between gap-2 text-xs whitespace-nowrap">
+                      <span class="text-subtle">{m.layout_daemonStatus_cpu_label()}</span>
+                      <span class="tabular-nums text-xs" aria-live="off"
+                        >{formatCpu($unslothStatus$.cpuPercent)}</span
+                      >
+                    </div>
+                  {/if}
+
+                  <!-- Memory (process tree) -->
+                  {#if $unslothStatus$.memoryBytes !== undefined}
+                    <div class="flex justify-between gap-2 text-xs whitespace-nowrap">
+                      <span class="text-subtle">{m.layout_daemonStatus_memory_label()}</span>
+                      <span class="tabular-nums text-xs" aria-live="off"
+                        >{formatMemory($unslothStatus$.memoryBytes)}</span
+                      >
+                    </div>
+                  {/if}
+
+                  <!-- Attached agents (omitted when the agent manager is not attached) -->
+                  {#if $unslothStatus$.attachedAgentCount !== undefined}
+                    <div class="flex justify-between gap-2 text-xs whitespace-nowrap">
+                      <span class="text-subtle">{m.layout_daemonStatus_attachedAgents_label()}</span
+                      >
+                      <span class="tabular-nums text-xs">{$unslothStatus$.attachedAgentCount}</span>
+                    </div>
+                  {/if}
+
+                  <!-- Stop action -->
+                  <Menu.Separator />
+                  <Menu.Item
+                    destructive
+                    disabled={$unslothStopping$}
+                    onSelect={() => {
+                      dropdownOpen = false;
+                      stopUnslothDialogOpen = true;
+                    }}
+                  >
+                    {$unslothStopping$
+                      ? m.layout_daemonStatus_stopUnsloth_stopping_label()
+                      : m.layout_daemonStatus_stopUnsloth_action_label()}
+                  </Menu.Item>
+                {/if}
+              </div>
+            {/if}
+          </section>
         </Menu.SubContent>
       </Menu.Sub>
 
@@ -1142,11 +1115,9 @@
   remains after "continue anyway" dismisses this.
 -->
 {#if $protocolMismatchModal$}
-  <Portal target="body" zIndex={100}>
-    <ProtocolMismatchModal
-      event={$protocolMismatchModal$}
-      onOpenLocal={openLocalFromProtocolMismatch}
-      onContinue={continueWithProtocolMismatch}
-    />
-  </Portal>
+  <ProtocolMismatchModal
+    event={$protocolMismatchModal$}
+    onOpenLocal={openLocalFromProtocolMismatch}
+    onContinue={continueWithProtocolMismatch}
+  />
 {/if}

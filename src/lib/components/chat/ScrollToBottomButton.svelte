@@ -19,7 +19,6 @@
   data-testid="chat-scroll-to-bottom-button"
   {onclick}
   {disabled}
-  class="rounded-md text-muted-foreground shadow-none"
   data-icon-size={CHAT_ICON_SIZE.compact}
   aria-label={label}
   tooltip={label}

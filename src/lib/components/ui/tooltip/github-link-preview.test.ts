@@ -7,6 +7,7 @@ vi.mock('$lib/client', () => ({
 }));
 
 import {
+  classifyGitHubLinkPreviewError,
   clearGitHubLinkPreviewCache,
   createPreviewRequest,
   loadGitHubLinkPreview,
@@ -41,6 +42,23 @@ const ISSUE: GitHubIssueDetails = {
   updatedAt: '2026-01-02T10:00:00Z',
   url: ISSUE_URL,
 };
+
+describe('classifyGitHubLinkPreviewError', () => {
+  it('uses the structured rate-limit code without depending on error text', () => {
+    expect(classifyGitHubLinkPreviewError({ data: { code: 'rate-limited' } })).toBe('rate-limited');
+  });
+
+  it.each([
+    new Error('source control rate limited'),
+    { data: { code: 'not-found' } },
+    { data: 'rate-limited' },
+    { data: { code: 429 } },
+    null,
+    undefined,
+  ])('leaves unclassified failures unavailable: %j', (error) => {
+    expect(classifyGitHubLinkPreviewError(error)).toBe('unavailable');
+  });
+});
 
 function makeClient(): GitHubLinkPreviewClient & {
   githubPullRequest: ReturnType<typeof vi.fn>;

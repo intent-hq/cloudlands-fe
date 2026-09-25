@@ -2925,6 +2925,26 @@ describe('handleInviteDeepLink — progress dialog', () => {
     expect(liveFlowId).toBeNull();
   });
 
+  it('a late github.connect without flowId is left alone even without a newer invite', async () => {
+    signedOutDaemon();
+    const connecting = fakeProgress();
+    showInviteProgress.mockReturnValueOnce(connecting.handle);
+    const { flowId: _flowId, ...legacyConnect } = CONNECT;
+    const delayed = Promise.withResolvers<typeof legacyConnect>();
+    onLocal('github.connect', () => delayed.promise);
+
+    const pending = handleInviteDeepLink(LINK);
+    await vi.waitFor(() => expect(localCalls('github.connect')).toHaveLength(1));
+    connecting.cancel();
+    await pending;
+    delayed.resolve(legacyConnect);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(localCalls('github.cancelAuth')).toEqual([]);
+    expect(showInviteConsent).not.toHaveBeenCalled();
+    expect(close).toHaveBeenCalledTimes(1);
+  });
+
   it('a late github.connect without flowId (older daemon) is not cancelled unscoped: a later invite keeps its flow', async () => {
     signedOutDaemon();
     const connectingA = fakeProgress();
@@ -2965,7 +2985,55 @@ describe('handleInviteDeepLink — progress dialog', () => {
     expect(localCalls('github.cancelAuth')).toEqual([['github.cancelAuth', { flowId: 'flow-b' }]]);
   });
 
-  it('a device flow start cancelled during one invite does not abort the flow a later invite is showing', async () => {
+  it('a late connect response leaves the same resident flow adopted by a newer invite live', async () => {
+    signedOutDaemon();
+    const connectingA = fakeProgress();
+    showInviteProgress.mockReturnValueOnce(connectingA.handle);
+    const delayed = Promise.withResolvers<typeof CONNECT>();
+    const responses: (typeof CONNECT)[] = [];
+    onLocal('github.connect', () => {
+      // The flow is resident before A receives its response. B's connect
+      // adopts it using the same single-slot contract as the real daemon.
+      const response = connectDeviceFlow();
+      responses.push(response);
+      return responses.length === 1 ? delayed.promise : response;
+    });
+    const signIn = fakeConsent('pending');
+    const prove = fakeConsent('open');
+    showInviteConsent.mockReturnValueOnce(signIn.prompt).mockReturnValueOnce(prove.prompt);
+
+    const pendingA = handleInviteDeepLink(LINK);
+    await vi.waitFor(() => expect(localCalls('github.connect')).toHaveLength(1));
+    connectingA.cancel();
+    await pendingA;
+    expect(localCalls('github.cancelAuth')).toEqual([]);
+
+    const pendingB = handleInviteDeepLink(LINK);
+    try {
+      await vi.waitFor(() => expect(showInviteConsent).toHaveBeenCalledTimes(1));
+      expect(responses).toHaveLength(2);
+      expect(responses[1].flowId).toBe(responses[0].flowId);
+
+      delayed.resolve(responses[0]);
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(liveFlowId).toBe(responses[1].flowId);
+      expect(localCalls('github.cancelAuth')).toEqual([]);
+      expect(signIn.prompt.dismiss).not.toHaveBeenCalled();
+
+      signIn.decide('open');
+      await vi.waitFor(() => expect(openExternal).toHaveBeenCalledTimes(1));
+      emitAuthChanged('authorized');
+      await pendingB;
+      expect(prove.prompt.dismiss).toHaveBeenCalledExactlyOnceWith('joined');
+      expect(openBackendWindow).toHaveBeenCalledWith('guest-id');
+    } finally {
+      signIn.decide('cancel');
+      signIn.cancelWaiting();
+      await pendingB;
+    }
+  });
+
+  it('a late connect response leaves a different flow shown by a newer invite live', async () => {
     signedOutDaemon();
     const connectingA = fakeProgress();
     showInviteProgress.mockReturnValueOnce(connectingA.handle);
@@ -2999,14 +3067,11 @@ describe('handleInviteDeepLink — progress dialog', () => {
     expect(localCalls('github.connect')).toHaveLength(2);
     expect(showInviteConsent.mock.calls[0][0]).toMatchObject({ mode: 'sign-in-required' });
 
-    // A's start arrives late: its cancel names A's flow, not B's, so the
-    // daemon leaves B's live flow polling.
+    // A's start arrives late: the newer invite owns sign-in now, so even
+    // when the ids differ, A leaves cleanup to the current owner.
     releaseConnectA();
-    await vi.waitFor(() =>
-      expect(localCalls('github.cancelAuth')).toEqual([
-        ['github.cancelAuth', { flowId: 'flow-a' }],
-      ]),
-    );
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(localCalls('github.cancelAuth')).toEqual([]);
     expect(liveFlowId).toBe('flow-b');
     expect(signIn.prompt.dismiss).not.toHaveBeenCalled();
 
@@ -3020,7 +3085,7 @@ describe('handleInviteDeepLink — progress dialog', () => {
     expect(prove.prompt.dismiss).toHaveBeenCalledExactlyOnceWith('joined');
     expect(guestAdd).toHaveBeenCalledWith(expect.objectContaining({ token: TOKEN }));
     expect(openBackendWindow).toHaveBeenCalledWith('guest-id');
-    expect(localCalls('github.cancelAuth')).toHaveLength(1);
+    expect(localCalls('github.cancelAuth')).toEqual([]);
     expect(logLines.join('\n')).not.toContain('Invite deep link handling failed');
   });
 

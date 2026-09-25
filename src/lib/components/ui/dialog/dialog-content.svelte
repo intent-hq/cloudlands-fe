@@ -19,6 +19,7 @@
     useSurface,
   } from '$lib/components/ui/surface-context';
   import { useSize } from '$lib/components/ui/size-context';
+  import { provideDialogPortalTarget } from './dialog-portal-context';
 
   let {
     ref = $bindable(null),
@@ -41,7 +42,7 @@
   }: WithoutChildrenOrChild<DialogPrimitive.ContentProps> & {
     portalProps?: DialogPrimitive.PortalProps;
     container?: HTMLElement | null;
-    size?: 'sm' | 'default' | 'lg';
+    size?: 'sm' | 'default' | 'lg' | 'wide' | 'editor';
     showCloseButton?: boolean;
     closeDisabled?: boolean;
     closeLabel?: string;
@@ -56,6 +57,7 @@
   const density = useSize();
   const open = () => forceMount || rootOpen();
   const presence = createOverlayPresence(open);
+  provideDialogPortalTarget(() => ref);
 
   // Interactions inside a lightbox stacked above the dialog (see
   // ImageLightbox's data-image-lightbox-root) are not outside interactions:
@@ -65,6 +67,36 @@
       e.preventDefault();
     }
     onInteractOutside?.(e);
+  }
+
+  function handleOpenAutoFocus(event: Event) {
+    onOpenAutoFocus?.(event);
+    if (event.defaultPrevented || !ref) return;
+
+    const belongsToDialog = (element: HTMLElement) =>
+      element.closest('[data-slot="dialog-content"]') === ref;
+    const canFocus = (element: HTMLElement) =>
+      !element.matches(':disabled, [aria-disabled="true"], [inert]') &&
+      !element.closest('[inert]') &&
+      element.getClientRects().length > 0 &&
+      getComputedStyle(element).visibility === 'visible';
+    const actions = Array.from(
+      ref.querySelectorAll<HTMLElement>(
+        '[data-dialog-primary-action], [data-slot="dialog-footer"] button, [data-slot="dialog-footer"] a[href]',
+      ),
+    ).filter(belongsToDialog);
+    // Standard dialog footers put the primary action last. Non-footer actions
+    // (such as Create workspace) can declare themselves explicitly.
+    const primary =
+      actions.find((action) => action.hasAttribute('data-dialog-primary-action')) ?? actions.at(-1);
+    const field = Array.from(
+      ref.querySelectorAll<HTMLElement>(
+        'input:not([type="hidden"]), textarea, select, [contenteditable="true"]',
+      ),
+    ).find((element) => belongsToDialog(element) && canFocus(element));
+    const target = primary && canFocus(primary) ? primary : (field ?? ref);
+    event.preventDefault();
+    target.focus({ preventScroll: true });
   }
 
   function preventAutoFocus(
@@ -81,7 +113,7 @@
     forceMount
     {...restProps}
     onInteractOutside={handleInteractOutside}
-    onOpenAutoFocus={staticPosition() ? preventAutoFocus : onOpenAutoFocus}
+    onOpenAutoFocus={staticPosition() ? preventAutoFocus : handleOpenAutoFocus}
     onCloseAutoFocus={staticPosition() ? preventAutoFocus : onCloseAutoFocus}
     trapFocus={staticPosition() ? false : trapFocus}
     preventScroll={staticPosition() ? false : preventScroll}
@@ -102,6 +134,8 @@
             size === 'sm' && (density === 'compact' ? 'max-w-90' : 'max-w-100'),
             size === 'default' && 'max-w-110',
             size === 'lg' && (density === 'compact' ? 'max-w-120' : 'max-w-135'),
+            size === 'wide' && 'max-w-2xl',
+            size === 'editor' && 'max-w-6xl',
             surfaceClasses(surface),
             className,
           )}
@@ -121,7 +155,7 @@
                   variant="ghost"
                   size="icon-sm"
                   iconOnly
-                  class="absolute right-6 top-[calc(1.5rem+var(--text-title-line-height)/2)] -translate-y-1/2 text-muted-foreground"
+                  class="dialog-close-button absolute right-6 -translate-y-1/2 text-muted-foreground"
                 >
                   <svg aria-hidden="true" viewBox="0 0 16 16" fill="none">
                     <path d="M3 3l10 10M13 3L3 13" stroke="currentColor" stroke-width="1.5" />
@@ -149,9 +183,16 @@
 <style>
   :global(.dialog-editorial-content) {
     --dialog-content-min-width: 26.25rem;
+    anchor-scope: --dialog-title;
     width: min(100% - 2rem, 100vw - 2rem);
     min-width: min(var(--dialog-content-min-width), 100% - 2rem, 100vw - 2rem);
     max-height: calc(100dvh - 2rem);
+  }
+
+  :global(.dialog-close-button) {
+    top: calc(1.5rem + var(--text-title-line-height) / 2);
+    /* Follow the title's first line, not a padding assumption or a wrapped title's center. */
+    top: calc(anchor(--dialog-title top, 1.5rem) + var(--text-title-line-height) / 2);
   }
 
   :global(.dialog-editorial-content[data-size='sm']) {

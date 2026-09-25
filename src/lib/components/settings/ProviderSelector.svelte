@@ -6,6 +6,7 @@
    * Self-contained component with inline rendering
    * that can be independently tweaked for settings-specific needs.
    */
+  import KebabIcon from '$lib/components/icons/KebabIcon.svelte';
   import { onMount } from 'svelte';
   import { invoke, shell } from '$lib/electron-bridge';
   import { appClient } from '$lib/client';
@@ -45,7 +46,6 @@
     faBan,
     faCheck,
     faDownload,
-    faEllipsisVertical,
     faFolder,
     faStar,
     faTerminal,
@@ -57,7 +57,6 @@
   import {
     Button,
     CopyButton,
-    DropdownMenu,
     GrokLogo,
     IntentMarkLoader,
     Menu,
@@ -71,6 +70,7 @@
   import AntigravityConnect from '$features/antigravity/AntigravityConnect.svelte';
   import { selectAntigravitySetupPolicy } from '$store/renderer/slices/antigravity-setup/antigravity-setup-selectors';
   const antigravitySetupPolicy$ = selectAntigravitySetupPolicy();
+  let antigravityConnectOpen = $state(false);
 
   const logger = createLogger('ProviderSelector');
   const activeProviderId = selectActiveProviderId();
@@ -439,6 +439,8 @@
     shell.open(url);
   }
 
+  let pathAnchors = $state<Record<string, HTMLButtonElement | HTMLAnchorElement | null>>({});
+
   async function handleSelectProvider(providerId: string) {
     selectingProviderId = providerId;
     const previousProviderId = $activeProviderId;
@@ -610,6 +612,7 @@
                     {#if pathConfigOpen[provider.id]}
                       <div class="absolute right-0 top-0">
                         <ProviderPathConfig
+                          anchor={pathAnchors[provider.id]}
                           providerId={provider.id}
                           providerName={provider.name}
                           cliCommand={provider.id === 'unsloth' ? 'unsloth' : provider.command}
@@ -631,22 +634,48 @@
                       </div>
                     {/if}
 
-                    <DropdownMenu align="end" contentClass="p-0!">
-                      {#snippet trigger({ props })}
-                        <Button
-                          {...props}
-                          variant="ghost-light"
-                          size="icon-xs"
-                          aria-label={m.settings_providers_actionsFor_ariaLabel({
-                            name: provider.name,
-                          })}
-                        >
-                          <Fa icon={faEllipsisVertical} />
-                        </Button>
-                      {/snippet}
-
-                      {#snippet content({ close }: { close: () => void })}
-                        <div class={hasWarning || needsLogin ? 'w-64 py-1' : 'w-44 py-1'}>
+                    <Menu.Root>
+                      <Menu.Trigger>
+                        {#snippet child({ props })}
+                          <Button
+                            {...props}
+                            bind:ref={pathAnchors[provider.id]}
+                            variant="ghost-light"
+                            size="icon-xs"
+                            aria-label={m.settings_providers_actionsFor_ariaLabel({
+                              name: provider.name,
+                            })}
+                          >
+                            <KebabIcon class="size-3.5" />
+                          </Button>
+                        {/snippet}
+                      </Menu.Trigger>
+                      <Menu.Content
+                        align="end"
+                        aria-label={m.settings_providers_actionsFor_ariaLabel({
+                          name: provider.name,
+                        })}
+                        onCloseAutoFocus={(event) => {
+                          if (
+                            pathConfigOpen[provider.id] ||
+                            (provider.id === 'antigravity' && antigravityConnectOpen)
+                          ) {
+                            event.preventDefault();
+                          }
+                        }}
+                      >
+                        <div class={hasWarning || needsLogin ? 'w-64' : 'w-44'}>
+                          {#if provider.id === 'antigravity'}
+                            <Menu.Item
+                              class="cursor-pointer text-foreground"
+                              onSelect={() => {
+                                antigravityConnectOpen = true;
+                              }}
+                            >
+                              <span class="size-4 shrink-0" aria-hidden="true"></span>
+                              {m.antigravity_setup_connect_label()}
+                            </Menu.Item>
+                          {/if}
                           {#if hasWarning}
                             <div class="border-b border-border pb-1">
                               {#if hasPiAdapterWarning}
@@ -682,7 +711,6 @@
                                   class="cursor-pointer text-foreground"
                                   onSelect={() => {
                                     void shell.open('https://nodejs.org');
-                                    close();
                                   }}
                                 >
                                   <span class="size-4 shrink-0" aria-hidden="true"></span>
@@ -705,7 +733,6 @@
                                     class="cursor-pointer text-foreground"
                                     onSelect={() => {
                                       void shell.open('https://nodejs.org');
-                                      close();
                                     }}
                                   >
                                     <span class="size-4 shrink-0" aria-hidden="true"></span>
@@ -717,18 +744,20 @@
                           {/if}
 
                           {#if provider.available && provider.authenticated === true}
-                            <Menu.Item disabled class="text-subtle">
+                            <p
+                              role="status"
+                              class="flex items-center gap-2 px-2 py-1.5 type-caption text-subtle"
+                            >
                               <span class="flex size-4 shrink-0 items-center justify-center">
                                 <Fa icon={faCheck} class="size-3 text-green-500" />
                               </span>
                               {m.settings_providers_loggedInStatus()}
-                            </Menu.Item>
+                            </p>
                           {/if}
 
                           <Menu.Item
                             class="cursor-pointer text-foreground"
                             onSelect={() => {
-                              close();
                               pathConfigOpen = { [provider.id]: true };
                             }}
                           >
@@ -739,12 +768,12 @@
                           </Menu.Item>
 
                           {#if canSetDefault}
+                            <Menu.Separator />
                             <Menu.Item
                               class="cursor-pointer text-foreground"
                               disabled={selectingProviderId !== null}
                               onSelect={() => {
                                 void handleSelectProvider(provider.id);
-                                close();
                               }}
                             >
                               <span class="flex size-4 shrink-0 items-center justify-center">
@@ -757,13 +786,13 @@
                           {/if}
 
                           {#if canDisable}
+                            {#if !canSetDefault}<Menu.Separator />{/if}
                             <Menu.Item
                               class="cursor-pointer text-foreground"
                               disabled={!!inUseReason}
                               title={inUseReason ?? undefined}
                               onSelect={() => {
                                 handleToggleProvider(provider.id, false);
-                                close();
                               }}
                             >
                               <span class="flex size-4 shrink-0 items-center justify-center">
@@ -774,6 +803,7 @@
                           {/if}
 
                           {#if needsLogin}
+                            <Menu.Separator />
                             {#if provider.loginCommandHint}
                               <!-- Actionable login guidance: the catalog's login
                                    command with copy-to-clipboard; docs link stays
@@ -804,7 +834,6 @@
                               disabled={$providerLoadingMap$[provider.id]}
                               onSelect={() => {
                                 appStore.dispatch(checkSingleProviderRequested(provider.id));
-                                close();
                               }}
                             >
                               <span class="flex size-4 shrink-0 items-center justify-center">
@@ -826,7 +855,6 @@
                               class="cursor-pointer text-foreground"
                               onSelect={() => {
                                 openDocs(provider.loginDocsUrl!);
-                                close();
                               }}
                             >
                               <span class="size-4 shrink-0" aria-hidden="true"></span>
@@ -839,7 +867,6 @@
                               class="cursor-pointer text-foreground"
                               onSelect={() => {
                                 openDocs(provider.docsUrl);
-                                close();
                               }}
                             >
                               <span class="flex size-4 shrink-0 items-center justify-center">
@@ -849,13 +876,13 @@
                             </Menu.Item>
                           {/if}
                         </div>
-                      {/snippet}
-                    </DropdownMenu>
+                      </Menu.Content>
+                    </Menu.Root>
                   </div>
                 </div>
               </div>
               {#if provider.id === 'antigravity'}
-                <AntigravityConnect ready={isReady} />
+                <AntigravityConnect bind:open={antigravityConnectOpen} />
               {/if}
             </div>
           {/each}

@@ -143,12 +143,18 @@ vi.mock('$features/agent/chat-read-service', () => ({
 // Fake the attention-toast service so the bridge's `agent:attention-requested`
 // routing (monorepo#1709) and the `workspace:updated` auto-unarchive toast are
 // observable without a real Sonner/toast-component import chain.
-const { showAgentAttentionToastSpy, showWorkspaceAutoUnarchiveToastSpy } = vi.hoisted(() => ({
+const {
+  showAgentAttentionToastSpy,
+  dismissAgentAttentionToastSpy,
+  showWorkspaceAutoUnarchiveToastSpy,
+} = vi.hoisted(() => ({
   showAgentAttentionToastSpy: vi.fn(() => Promise.resolve()),
+  dismissAgentAttentionToastSpy: vi.fn(() => Promise.resolve()),
   showWorkspaceAutoUnarchiveToastSpy: vi.fn(() => Promise.resolve()),
 }));
 vi.mock('$features/agent/agent-attention-toast-service', () => ({
   showAgentAttentionToast: showAgentAttentionToastSpy,
+  dismissAgentAttentionToast: dismissAgentAttentionToastSpy,
   showWorkspaceAutoUnarchiveToast: showWorkspaceAutoUnarchiveToastSpy,
 }));
 
@@ -277,11 +283,13 @@ import { refreshWorkspaceSubscriptionEntriesRequested } from '$store/renderer/sl
 import {
   setAgents,
   setDelegatedCounts,
+  setOrphanedDelegatedAgentsLoaded,
   setRetiredCount,
   setScopeCounts,
 } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
 import {
   selectDelegatedCounts,
+  selectOrphanedDelegatedAgentIds,
   selectRetiredCount,
   selectScopeCounts,
 } from '$store/renderer/slices/workspace-agents/workspace-agents-selectors';
@@ -347,6 +355,8 @@ const AGENT = 'agent-bridge-1';
 /** The hydration read's wire params (§5.5 row scope: the top-level bin). */
 const TOP_LEVEL_LIST = { workspaceId: WS, scope: 'topLevel' };
 const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
+/** Lets a multi-read hydrate (top-level list + lazy-bin re-reads) settle. */
+const settle = () => new Promise((resolve) => setTimeout(resolve, 20));
 const stopRouterDependencies: Array<() => void> = [];
 
 function inheritedPropertyDescriptor(target: object, key: PropertyKey): PropertyDescriptor {
@@ -4989,11 +4999,72 @@ describe('daemonEventsBridge (agent:attention-requested → showAgentAttentionTo
     onBackendNotificationSpy.mockClear();
     backendRequestSpy.mockClear();
     showAgentAttentionToastSpy.mockClear();
+    dismissAgentAttentionToastSpy.mockClear();
     __resetDaemonEventsBridgeForTests();
     capturedHandlers.length = 0;
   });
 
   afterEach(() => vi.clearAllMocks());
+
+  it.each(['discussion', 'blocker'] as const)(
+    'dismisses only the cleared %s request in a non-viewed workspace without a local session',
+    async (kind) => {
+      const { openWorkspaceTab } = await import('$store/renderer/slices/tab-state/tab-state-slice');
+      appStore.dispatch(openWorkspaceTab('ws-viewed-elsewhere'));
+      appStore.dispatch(clearAllSessions());
+      await primeBridge();
+      const handler = capturedHandlers[0]!;
+      const otherAgentId = 'agent-other-attention';
+      for (const agentId of [AGENT, otherAgentId]) {
+        handler(
+          notification('agent:attention-requested', {
+            workspaceId: WS,
+            agentId,
+            agentName: 'Implementor',
+            kind,
+            reason: 'Need input',
+          }),
+        );
+      }
+      await flush();
+      expect(showAgentAttentionToastSpy).toHaveBeenCalledTimes(2);
+      expect(appStore.state.agentSessions.byAgentId[AGENT]).toBeUndefined();
+
+      handler(notification('agent:updated', { agentId: AGENT, attentionRequestCleared: true }));
+      await flush();
+
+      expect(dismissAgentAttentionToastSpy.mock.calls).toEqual([[AGENT]]);
+      expect(refreshAgentSessionAfterEventSpy).toHaveBeenCalledWith(AGENT);
+    },
+  );
+
+  it.each([
+    ['ordinary update', { agentId: AGENT, modelId: 'test-model' }],
+    ['false marker', { agentId: AGENT, attentionRequestCleared: false }],
+    ['null marker', { agentId: AGENT, attentionRequestCleared: null }],
+    ['string marker', { agentId: AGENT, attentionRequestCleared: 'true' }],
+    ['missing agentId', { attentionRequestCleared: true }],
+    ['empty agentId', { agentId: '', attentionRequestCleared: true }],
+    ['non-string agentId', { agentId: 42, attentionRequestCleared: true }],
+  ])('does not dismiss a pending toast for an %s', async (_label, data) => {
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+    handler(
+      notification('agent:attention-requested', {
+        workspaceId: WS,
+        agentId: AGENT,
+        agentName: 'Implementor',
+        kind: 'discussion',
+        reason: 'Still waiting',
+      }),
+    );
+
+    handler(notification('agent:updated', data));
+    await flush();
+
+    expect(showAgentAttentionToastSpy).toHaveBeenCalledTimes(1);
+    expect(dismissAgentAttentionToastSpy).not.toHaveBeenCalled();
+  });
 
   it('shows the attention toast on a valid discussion payload, preferring payload workspaceId/timestamp', async () => {
     await primeBridge();
@@ -6195,6 +6266,204 @@ describe('daemonEventsBridge (agent lifecycle → collapsed bin counts, §5.5 sc
       expect(scopeCountsOf()).toEqual(COUNTS);
       expect(delegatedCountsOf()).toEqual(DELEGATED);
       expect(sumByParent()).toBe(scopeCountsOf()?.delegated);
+    });
+
+    it('a delegated agent:created nudges byParent but leaves delegatedCounts.orphaned untouched (orphan-ness is a daemon-side lookup); deleting the row re-baselines the count from the daemon read', async () => {
+      const ORPHANED = { total: 1, running: 0 };
+      appStore.dispatch(setDelegatedCounts(WS, { ...DELEGATED, orphaned: ORPHANED }));
+      const handler = capturedHandlers[0]!;
+
+      // A child of a parent this workspace no longer holds is what the daemon
+      // will count as an orphan on the next read — the bridge does not guess.
+      ensureAgentSessionSpy.mockImplementationOnce(async () => {
+        seedSession({ id: 'agent-child' as never, parentAgentId: 'agent-gone' as never });
+      });
+      handler(notification('agent:created', { agentId: 'agent-child' }));
+      await flush();
+      expect(scopeCountsOf()).toEqual({ ...COUNTS, delegated: 4 });
+      expect(delegatedCountsOf()).toEqual({
+        ...DELEGATED,
+        byParent: { ...DELEGATED.byParent, 'agent-gone': { total: 1, running: 0 } },
+        orphaned: ORPHANED,
+      });
+      expect(backendRequestSpy).not.toHaveBeenCalledWith('agent.list', TOP_LEVEL_LIST);
+
+      // The deleted row may itself have been an orphan: the count is not
+      // guessed locally either — the hydrate re-baselines it from the daemon.
+      backendRequestSpy.mockImplementation((method: string) =>
+        method === 'agent.list'
+          ? Promise.resolve({
+              agents: [],
+              retiredCount: 0,
+              scopeCounts: COUNTS,
+              delegatedCounts: { ...DELEGATED, orphaned: ORPHANED },
+            })
+          : undefined,
+      );
+      handler(notification('agent:deleted', { agentId: 'agent-child' }));
+      await settle();
+      expect(backendRequestSpy).toHaveBeenCalledWith('agent.list', TOP_LEVEL_LIST);
+      expect(scopeCountsOf()).toEqual(COUNTS);
+      expect(delegatedCountsOf()).toEqual({ ...DELEGATED, orphaned: ORPHANED });
+    });
+  });
+
+  // §5.5 delegatedCounts.orphaned: a known row leaving (or re-entering) the
+  // live set changes which of its children the daemon counts as orphans. The
+  // bridge never infers that locally — when the daemon serves the count, the
+  // lifecycle event rides the single-flight hydrate so the count AND the
+  // Delegated bin's membership re-baseline from the daemon.
+  describe('orphaned delegated count + membership re-baseline on known-row liveness changes', () => {
+    const CHILD = 'agent-bridge-child';
+    const NO_ORPHANS = { total: 0, running: 0 };
+    const ONE_ORPHAN = { total: 1, running: 0 };
+    const DELEGATED = { running: 0, byParent: { [PARENT]: { total: 1, running: 0 } } };
+    const ORPHANED_ONLY_LIST = { workspaceId: WS, scope: 'delegated', orphanedOnly: true };
+    const delegatedCountsOf = () => selectDelegatedCounts.select(appStore.state, WS);
+    const orphanIdsOf = () => selectOrphanedDelegatedAgentIds.select(appStore.state, WS);
+    /** PROTOCOL §5.5-shaped `agent.list` row for the child (slim list projection). */
+    const CHILD_ROW = {
+      id: CHILD,
+      workspaceId: WS,
+      name: 'C',
+      status: 'pending',
+      parentAgentId: PARENT,
+      createdAt: '2026-01-01T00:00:00.000Z',
+      updatedAt: '2026-01-01T00:00:00.000Z',
+    };
+
+    /**
+     * The daemon's answer once the parent left the live set. By default the
+     * child is the one orphan (parent deleted, or child restored under a
+     * still-retired parent); a cascading retire takes the child along, so
+     * that read serves `orphaned: 0` and a retired count covering both rows.
+     */
+    function mockDaemonAfterParentLeft(
+      orphaned: { total: number; running: number } = ONE_ORPHAN,
+      retiredCount = 0,
+    ): void {
+      backendRequestSpy.mockImplementation((method: string, params: unknown) => {
+        if (method !== 'agent.list') return undefined;
+        const orphanedOnly = (params as { orphanedOnly?: boolean }).orphanedOnly === true;
+        return Promise.resolve({
+          agents: orphanedOnly && orphaned.total > 0 ? [CHILD_ROW] : [],
+          retiredCount,
+          scopeCounts: { ...COUNTS, topLevel: COUNTS.topLevel - 1 },
+          delegatedCounts: {
+            running: 0,
+            byParent: { [PARENT]: { total: 1, running: 0 } },
+            orphaned,
+          },
+        });
+      });
+    }
+
+    beforeEach(() => {
+      appStore.dispatch(setDelegatedCounts(WS, { ...DELEGATED, orphaned: NO_ORPHANS }));
+      appStore.dispatch(setOrphanedDelegatedAgentsLoaded(WS, false));
+      seedSession({ id: PARENT as never });
+      seedSession({ id: CHILD as never, parentAgentId: PARENT as never });
+      backendRequestSpy.mockClear();
+    });
+
+    it('agent:deleted on a known live parent re-baselines orphaned 0→1 and the bin membership from the daemon read (no local inference)', async () => {
+      // The Delegated bin was expanded earlier (orphan subset loaded), so the
+      // hydrate re-reads it and the membership follows the daemon.
+      appStore.dispatch(setOrphanedDelegatedAgentsLoaded(WS, true));
+      mockDaemonAfterParentLeft();
+      const handler = capturedHandlers[0]!;
+
+      handler(notification('agent:deleted', { agentId: PARENT }));
+      await settle();
+
+      expect(backendRequestSpy).toHaveBeenCalledWith('agent.list', TOP_LEVEL_LIST);
+      expect(backendRequestSpy).toHaveBeenCalledWith('agent.list', ORPHANED_ONLY_LIST);
+      expect(delegatedCountsOf()?.orphaned).toEqual(ONE_ORPHAN);
+      expect(orphanIdsOf()).toEqual({ [CHILD]: true });
+    });
+
+    it('agent:deleted on a known live parent re-baselines the collapsed bin count even before the orphan subset was ever loaded', async () => {
+      mockDaemonAfterParentLeft();
+      const handler = capturedHandlers[0]!;
+
+      handler(notification('agent:deleted', { agentId: PARENT }));
+      await settle();
+
+      expect(backendRequestSpy).toHaveBeenCalledWith('agent.list', TOP_LEVEL_LIST);
+      // A never-expanded bin loads its rows on demand; only the count moves.
+      expect(backendRequestSpy).not.toHaveBeenCalledWith('agent.list', ORPHANED_ONLY_LIST);
+      expect(delegatedCountsOf()?.orphaned).toEqual(ONE_ORPHAN);
+    });
+
+    it('agent:retired on a known parent and agent:restored on its (cascade-retired) child each re-baseline via the hydrate', async () => {
+      // Retiring the parent cascades to the child (daemon-side): neither row
+      // is live, so the daemon counts no orphan — but the bridge still
+      // re-baselines from the read rather than assuming that.
+      mockDaemonAfterParentLeft(NO_ORPHANS, 2);
+      const handler = capturedHandlers[0]!;
+
+      handler(notification('agent:retired', { agentId: PARENT }));
+      await settle();
+      expect(backendRequestSpy).toHaveBeenCalledWith('agent.list', TOP_LEVEL_LIST);
+      expect(delegatedCountsOf()?.orphaned).toEqual(NO_ORPHANS);
+      expect(selectRetiredCount.select(appStore.state, WS)).toBe(2);
+
+      // Restoring the child alone leaves it under a still-retired parent — an
+      // orphan the daemon counts, so the restore re-baselines too.
+      seedSession({
+        id: PARENT as never,
+        retiredAt: '2026-01-01T12:00:00.000Z',
+      });
+      seedSession({
+        id: CHILD as never,
+        parentAgentId: PARENT as never,
+        retiredAt: '2026-01-01T12:00:00.000Z',
+      });
+      appStore.dispatch(setDelegatedCounts(WS, { ...DELEGATED, orphaned: NO_ORPHANS }));
+      backendRequestSpy.mockClear();
+      mockDaemonAfterParentLeft(ONE_ORPHAN, 1);
+
+      handler(notification('agent:restored', { agentId: CHILD }));
+      await settle();
+      expect(backendRequestSpy).toHaveBeenCalledWith('agent.list', TOP_LEVEL_LIST);
+      expect(delegatedCountsOf()?.orphaned).toEqual(ONE_ORPHAN);
+      expect(selectRetiredCount.select(appStore.state, WS)).toBe(1);
+    });
+
+    it('a re-delivered agent:retired does not hydrate again (count-neutral transition)', async () => {
+      mockDaemonAfterParentLeft();
+      const handler = capturedHandlers[0]!;
+
+      handler(notification('agent:retired', { agentId: PARENT }));
+      await settle();
+      const hydrates = backendRequestSpy.mock.calls.filter(
+        ([method, params]) => method === 'agent.list' && params?.scope === 'topLevel',
+      ).length;
+
+      handler(notification('agent:retired', { agentId: PARENT }));
+      await settle();
+      expect(
+        backendRequestSpy.mock.calls.filter(
+          ([method, params]) => method === 'agent.list' && params?.scope === 'topLevel',
+        ),
+      ).toHaveLength(hydrates);
+    });
+
+    it('a known-row delete / retire / restore never refetches while the daemon does not serve delegatedCounts.orphaned (older daemon)', async () => {
+      appStore.dispatch(setDelegatedCounts(WS, DELEGATED));
+      const handler = capturedHandlers[0]!;
+
+      handler(notification('agent:retired', { agentId: PARENT }));
+      await settle();
+      seedSession({ id: PARENT as never, retiredAt: '2026-01-01T12:00:00.000Z' });
+      handler(notification('agent:restored', { agentId: PARENT }));
+      await settle();
+      handler(notification('agent:deleted', { agentId: PARENT }));
+      await settle();
+
+      expect(backendRequestSpy).not.toHaveBeenCalledWith('agent.list', TOP_LEVEL_LIST);
+      // The local bin nudges remain the whole story on that path.
+      expect(scopeCountsOf()).toEqual({ ...COUNTS, topLevel: COUNTS.topLevel - 1 });
     });
   });
 });

@@ -1,5 +1,5 @@
-// @verify-changed-triggers: src/lib/component-catalog/**, src/hooks.client.ts, eslint.config.js,
-//   src/routes/+layout.svelte, src/routes/(app)/+layout.svelte,
+// @verify-changed-triggers: src/lib/component-catalog/**, eslint.config.js,
+//   eslint-rules/internal-module-import-patterns.js,
 //   src/routes/sandbox/+layout.svelte, src/routes/sandbox/+page.svelte,
 //   src/routes/sandbox/[slug]/+page.svelte, src/routes/(app)/sandbox/**,
 //   src/routes/(app)/agent/[id]/+page.svelte, src/routes/(app)/settings/+page.svelte,
@@ -12,14 +12,70 @@
 //   src/routes/(app)/workspace/[id]/terminal-test/+page.svelte,
 //   src/routes/(app)/workspace/creating/+page.svelte
 
-import { existsSync, readFileSync, readdirSync } from 'node:fs';
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from 'node:fs';
+import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
+import ts from 'typescript';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
+import { ESLint } from 'eslint';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import CatalogShell from './CatalogShell.svelte';
+import {
+  parseCatalogUrlSettings,
+  readCatalogPreferences,
+  writeCatalogPreferences,
+} from './catalog-preferences';
 
 const root = process.cwd();
 const routesRoot = path.join(root, 'src/routes');
+const ROOT_LAYOUT = 'src/routes/+layout.svelte';
+const APP_LAYOUT = 'src/routes/(app)/+layout.svelte';
+// Host modules the shared root layout must not reach (the (app) layout owns them),
+// in every spelling `no-restricted-imports` has to cover (cloudlands-fe#2763).
+const hostImportSpellings = [
+  ["import { invoke } from '$lib/electron-bridge';", /Electron bridge/],
+  ["import { invoke } from '../lib/electron-bridge.ts';", /Electron bridge/],
+  ["import { LiveAppClient } from '$lib/client/live/live-app-client';", /live daemon client/],
+  ["import * as live from '../lib/client/live/live-app-client.js';", /live daemon client/],
+  ["import { seedMockStore } from '$store/renderer/mock-bootstrap';", /mock store/],
+  ["import { seedMockStore } from '../store/renderer/mock-bootstrap';", /mock store/],
+] as const;
+// The same modules reached through `import()`, which `no-restricted-imports`
+// does not see; the root layout bans them via `no-restricted-syntax`.
+const hostDynamicImportSpellings = [
+  ["void import('$lib/electron-bridge');", /Electron bridge.*import\(\)/],
+  ["void import('../lib/electron-bridge.ts');", /Electron bridge.*import\(\)/],
+  ["void import('../lib/client/live/live-app-client.js');", /live daemon client.*import\(\)/],
+  ["void import('$store/renderer/mock-bootstrap');", /mock store.*import\(\)/],
+  ['void import(`../lib/electron-bridge`);', /string-literal specifier/],
+] as const;
+const sharedLayoutImports = [
+  "import '../app.css';",
+  "import { startRootStoreLifecycle } from '$store/renderer/root-store-lifecycle';",
+  "void import('$lib/utils/platform-capabilities');",
+];
+
+const eslint = new ESLint({ cwd: root });
+
+async function restrictedImportMessages(filePath: string, imports: string[]) {
+  const source = `<script lang="ts">\n${imports.map((line) => `  ${line}`).join('\n')}\n</script>\n\n<div></div>\n`;
+  const [result] = await eslint.lintText(source, { filePath, warnIgnored: false });
+  return (result?.messages ?? [])
+    .filter(
+      (message) =>
+        message.ruleId === 'no-restricted-imports' || message.ruleId === 'no-restricted-syntax',
+    )
+    .map((message) => message.message);
+}
 const appRouteFiles = [
   ['(app)/agent/[id]/+page.svelte', '/agent/[id]'],
   ['(app)/settings/+page.svelte', '/settings'],
@@ -54,6 +110,185 @@ const movedAsyncDataBaselinePaths = [
   ['src/routes/workspace/[id]/+page.svelte', 'src/routes/(app)/workspace/[id]/+page.svelte'],
 ] as const;
 
+const srcRoot = path.join(root, 'src');
+const hostBoundSpecifier =
+  /^(?:\$store\/|\$features\/|\$lib\/client|\$lib\/electron-bridge|electron)/;
+const sharedSpecifier = /^\$(?:lib|shared)\//;
+const aliasDirectories: Record<string, string> = {
+  '$features/': 'features',
+  '$lib/': 'lib',
+  '$shared/': 'shared',
+};
+// Compiled from messages/*.json and gitignored; it imports nothing beyond its own output.
+const generatedSpecifierPrefixes = ['$shared/paraglide/'];
+
+// Presentational feature components may back catalog fixtures: the axe gate has to cover the exact
+// production DOM (tooltip trigger + sr-only label) and only the feature component renders it. Each
+// (file, specifier) pair below is exempt from the import guard solely because the closure test proves
+// the module — everything it imports at runtime inside its feature family, plus the $lib/$shared
+// modules those import directly — carries no store, host, or cross-feature dependency. Both guards
+// skip type-only imports: they are erased and pull nothing into the bundle.
+const presentationalFeatureImports: Record<string, readonly string[]> = {
+  'src/lib/component-catalog/renderers/PrincipalAvatarCatalogPreview.svelte': [
+    '$features/notes/note-presence/NotePresenceAvatars.svelte',
+    '$features/notes/note-presence/note-presence-service',
+    '$features/presence/components/PresenceAvatarStack.svelte',
+    '$features/presence/components/presence-person',
+  ],
+};
+
+interface ParsedImport {
+  specifier: string;
+  typeOnly: boolean;
+  line: number;
+}
+
+function scriptBlocks(source: string, file: string): { text: string; offset: number }[] {
+  if (!file.endsWith('.svelte')) return [{ text: source, offset: 0 }];
+  return [...source.matchAll(/<script\b[^>]*>([\s\S]*?)<\/script>/g)].map((match) => ({
+    text: match[1],
+    offset: match.index + match[0].length - '</script>'.length - match[1].length,
+  }));
+}
+
+// Parses real import/re-export declarations and dynamic import() calls only, so comments and string
+// literals that merely look like imports contribute nothing and cannot flip a following
+// declaration's type-only status.
+function parseImports(source: string, file: string): ParsedImport[] {
+  return scriptBlocks(source, file).flatMap(({ text, offset }) => {
+    const ast = ts.createSourceFile(file, text, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
+    const lineBase = source.slice(0, offset).split('\n').length - 1;
+    const entries: ParsedImport[] = [];
+    const record = (node: ts.Node, specifier: ts.Node | undefined, typeOnly: boolean) => {
+      if (!specifier || !ts.isStringLiteralLike(specifier)) return;
+      const line = ast.getLineAndCharacterOfPosition(node.getStart(ast)).line + 1;
+      entries.push({ specifier: specifier.text, typeOnly, line: lineBase + line });
+    };
+    const visit = (node: ts.Node) => {
+      if (ts.isImportDeclaration(node)) {
+        const clause = node.importClause;
+        const bindings = clause?.namedBindings;
+        record(
+          node,
+          node.moduleSpecifier,
+          clause?.phaseModifier === ts.SyntaxKind.TypeKeyword ||
+            (clause?.name === undefined &&
+              bindings !== undefined &&
+              ts.isNamedImports(bindings) &&
+              bindings.elements.length > 0 &&
+              bindings.elements.every((element) => element.isTypeOnly)),
+        );
+      } else if (ts.isExportDeclaration(node) && node.moduleSpecifier) {
+        const clause = node.exportClause;
+        record(
+          node,
+          node.moduleSpecifier,
+          node.isTypeOnly ||
+            (clause !== undefined &&
+              ts.isNamedExports(clause) &&
+              clause.elements.length > 0 &&
+              clause.elements.every((element) => element.isTypeOnly)),
+        );
+      } else if (
+        ts.isCallExpression(node) &&
+        node.expression.kind === ts.SyntaxKind.ImportKeyword
+      ) {
+        record(node, node.arguments[0], false);
+      }
+      ts.forEachChild(node, visit);
+    };
+    visit(ast);
+    return entries;
+  });
+}
+
+function resolveModule(
+  fromFile: string,
+  specifier: string,
+  sourceRoot: string,
+): string | undefined {
+  const alias = Object.keys(aliasDirectories).find((prefix) => specifier.startsWith(prefix));
+  const base = alias
+    ? path.join(sourceRoot, aliasDirectories[alias]!, specifier.slice(alias.length))
+    : specifier.startsWith('.')
+      ? path.resolve(path.dirname(fromFile), specifier)
+      : undefined;
+  if (!base) return undefined;
+  return [
+    base,
+    `${base}.ts`,
+    `${base}.svelte`,
+    `${base}.svelte.ts`,
+    path.join(base, 'index.ts'),
+  ].find((candidate) => existsSync(candidate) && statSync(candidate).isFile());
+}
+
+function boundaryViolations(
+  source: string,
+  relativeFile: string,
+  allowlisted: readonly string[],
+): string[] {
+  return parseImports(source, relativeFile).flatMap(({ specifier, typeOnly, line }) =>
+    !typeOnly && hostBoundSpecifier.test(specifier) && !allowlisted.includes(specifier)
+      ? [`${relativeFile}:${line}`]
+      : [],
+  );
+}
+
+// Walks the runtime imports of each allowlisted module: fully within the allowlisted feature
+// families, and one level into the $lib/$shared modules those families import directly.
+function runtimeHostViolations(
+  importingFile: string,
+  specifiers: readonly string[],
+  sourceRoot: string,
+): string[] {
+  const projectRoot = path.dirname(sourceRoot);
+  const violations: string[] = [];
+  const imports = parseImports(readFileSync(importingFile, 'utf8'), importingFile);
+  const families = specifiers.map((specifier) => `${path.posix.dirname(specifier)}/`);
+  const queue: { file: string; shared: boolean }[] = [];
+  for (const specifier of specifiers) {
+    const uses = imports.filter((entry) => entry.specifier === specifier);
+    if (uses.length === 0) {
+      violations.push(
+        `${path.relative(projectRoot, importingFile)} no longer imports ${specifier}`,
+      );
+      continue;
+    }
+    if (uses.every((entry) => entry.typeOnly)) continue;
+    const resolved = resolveModule(importingFile, specifier, sourceRoot);
+    if (resolved) queue.push({ file: resolved, shared: false });
+    else violations.push(`${specifier} unresolvable`);
+  }
+
+  const visited = new Set<string>();
+  while (queue.length > 0) {
+    const { file, shared } = queue.shift()!;
+    if (visited.has(file)) continue;
+    visited.add(file);
+    const moduleFile = path.relative(projectRoot, file);
+    for (const entry of parseImports(readFileSync(file, 'utf8'), file)) {
+      if (entry.typeOnly) continue;
+      const location = `${moduleFile}:${entry.line} (${entry.specifier})`;
+      const staysInFamily =
+        entry.specifier.startsWith('.') ||
+        families.some((family) => entry.specifier.startsWith(family));
+      if (!staysInFamily && hostBoundSpecifier.test(entry.specifier)) {
+        violations.push(location);
+        continue;
+      }
+      if (shared) continue;
+      const crossesToShared = sharedSpecifier.test(entry.specifier);
+      if (!staysInFamily && !crossesToShared) continue;
+      if (generatedSpecifierPrefixes.some((prefix) => entry.specifier.startsWith(prefix))) continue;
+      const next = resolveModule(file, entry.specifier, sourceRoot);
+      if (next) queue.push({ file: next, shared: crossesToShared });
+      else violations.push(`${location} unresolvable`);
+    }
+  }
+  return violations;
+}
+
 function publicRoute(relativeFile: string): string {
   const segments = relativeFile
     .replace(/\/\+page\.svelte$/, '')
@@ -82,15 +317,24 @@ describe('catalog route shell', () => {
     expect(existsSync(path.join(routesRoot, '(app)/sandbox'))).toBe(false);
   });
 
-  it('starts shared state at the root while keeping product host code inside the app shell', () => {
-    const rootLayout = readFileSync(path.join(routesRoot, '+layout.svelte'), 'utf8');
-    const appLayout = readFileSync(path.join(routesRoot, '(app)/+layout.svelte'), 'utf8');
-    expect(rootLayout).toContain("import '../app.css'");
-    expect(rootLayout).toContain('startRootStoreLifecycle');
-    expect(rootLayout).not.toMatch(/electron-bridge|LiveAppClient|seedMockStore/);
-    expect(appLayout).toContain('data-testid="app-ready"');
-    expect(appLayout).toContain('LiveAppClient');
-  });
+  it('lets the shared root layout start state and styles but bans product host imports there', async () => {
+    expect(await restrictedImportMessages(ROOT_LAYOUT, sharedLayoutImports)).toEqual([]);
+    for (const [importStatement, expected] of [
+      ...hostImportSpellings,
+      ...hostDynamicImportSpellings,
+    ]) {
+      const messages = await restrictedImportMessages(ROOT_LAYOUT, [importStatement]);
+      expect(messages, importStatement).toHaveLength(1);
+      expect(messages[0], importStatement).toMatch(expected);
+    }
+  }, 30_000);
+
+  it('lets the app-shell layout own the product host imports', async () => {
+    const hostImports = [...hostImportSpellings, ...hostDynamicImportSpellings].map(
+      ([importStatement]) => importStatement,
+    );
+    expect(await restrictedImportMessages(APP_LAYOUT, hostImports)).toEqual([]);
+  }, 30_000);
 
   it('moves async-data lint baseline paths without changing baseline membership', () => {
     const eslintConfig = readFileSync(path.join(root, 'eslint.config.js'), 'utf8');
@@ -115,8 +359,6 @@ describe('catalog route shell', () => {
       path.join(routesRoot, 'sandbox/[slug]/+page.svelte'),
       ...sourceFiles(path.join(root, 'src/lib/component-catalog')),
     ];
-    const forbidden =
-      /from ['"](?:\$store\/|\$features\/|\$lib\/client|\$lib\/electron-bridge|electron)|import ['"]\$store\//;
     const violations = files.flatMap((file) => {
       const relativeFile = path.relative(root, file);
       const isStoreSeededSubscriptionFixture =
@@ -124,17 +366,181 @@ describe('catalog route shell', () => {
           'src/lib/component-catalog/renderers/SubscriptionRowsCatalogPreview.svelte' ||
         relativeFile === 'src/lib/component-catalog/subscription-rows/subscription-row-fixtures.ts';
       if (isStoreSeededSubscriptionFixture) return [];
-      return readFileSync(file, 'utf8')
-        .split('\n')
-        .flatMap((line, index) => (forbidden.test(line) ? [`${relativeFile}:${index + 1}`] : []));
+      return boundaryViolations(
+        readFileSync(file, 'utf8'),
+        relativeFile,
+        presentationalFeatureImports[relativeFile] ?? [],
+      );
     });
     expect(violations).toEqual([]);
+  });
 
-    const clientHooks = readFileSync(path.join(root, 'src/hooks.client.ts'), 'utf8');
-    expect(clientHooks).toContain("window.location.pathname.startsWith('/sandbox')");
-    expect(clientHooks).toMatch(
-      /if \([\s\S]*!isCatalogRoute[\s\S]*VITE_ENABLE_BROWSER_MOCK[\s\S]*\) \{/,
+  it('keeps allowlisted presentational feature modules free of runtime host dependencies', () => {
+    const violations = Object.entries(presentationalFeatureImports).flatMap(
+      ([relativeFile, specifiers]) =>
+        runtimeHostViolations(path.join(root, relativeFile), specifiers, srcRoot),
     );
+    expect(violations).toEqual([]);
+  });
+
+  it('matches allowlist exemptions on the import specifier, not on line text', () => {
+    const allowlisted = ['$features/presence/components/presence-person'];
+    const source = [
+      '<script lang="ts">',
+      "  import { presencePersonLabel } from '$features/presence/components/presence-person';",
+      "  import PresenceTypingIndicator from '$features/presence/components/PresenceTypingIndicator.svelte'; // follows '$features/presence/components/presence-person'",
+      '</script>',
+    ].join('\n');
+    expect(boundaryViolations(source, 'renderer.svelte', allowlisted)).toEqual([
+      'renderer.svelte:3',
+    ]);
+  });
+
+  it('sees host dependencies one level into the $lib modules an allowlisted module imports', () => {
+    const tmp = mkdtempSync(path.join(tmpdir(), 'catalog-guard-'));
+    try {
+      const tmpSrc = path.join(tmp, 'src');
+      const write = (relativeFile: string, content: string) => {
+        const file = path.join(tmpSrc, relativeFile);
+        mkdirSync(path.dirname(file), { recursive: true });
+        writeFileSync(file, content);
+        return file;
+      };
+      const renderer = write(
+        'lib/component-catalog/renderers/Preview.svelte',
+        '<script lang="ts">\n  import Stack from \'$features/presence/components/Stack.svelte\';\n</script>',
+      );
+      write(
+        'features/presence/components/Stack.svelte',
+        '<script lang="ts">\n  import { remoteCursorColor } from \'$lib/components/tiptap/RemoteCursorDecorations\';\n</script>',
+      );
+      const decorations = 'lib/components/tiptap/RemoteCursorDecorations.ts';
+      const specifiers = ['$features/presence/components/Stack.svelte'];
+
+      write(
+        decorations,
+        "import { Plugin } from '@tiptap/pm/state';\nexport const remoteCursorColor = 1;\n",
+      );
+      expect(runtimeHostViolations(renderer, specifiers, tmpSrc)).toEqual([]);
+
+      write(
+        decorations,
+        "import { Plugin } from '@tiptap/pm/state';\nimport { x } from '$store/anything';\n",
+      );
+      expect(runtimeHostViolations(renderer, specifiers, tmpSrc)).toEqual([
+        'src/lib/components/tiptap/RemoteCursorDecorations.ts:2 ($store/anything)',
+      ]);
+    } finally {
+      rmSync(tmp, { recursive: true, force: true });
+    }
+  });
+
+  it('reads type-only status from the import declaration, not from surrounding comments', () => {
+    const tmp = mkdtempSync(path.join(tmpdir(), 'catalog-guard-'));
+    try {
+      const tmpSrc = path.join(tmp, 'src');
+      const write = (relativeFile: string, content: string) => {
+        const file = path.join(tmpSrc, relativeFile);
+        mkdirSync(path.dirname(file), { recursive: true });
+        writeFileSync(file, content);
+        return file;
+      };
+      const renderer = write(
+        'lib/component-catalog/renderers/Preview.svelte',
+        '<script lang="ts">\n  import { label } from \'$features/presence/components/presence-person\';\n</script>',
+      );
+      const person = 'features/presence/components/presence-person.ts';
+      const specifiers = ['$features/presence/components/presence-person'];
+      const header = [
+        '/**',
+        " * Sample: import { x } from '$store/anything';",
+        ' */',
+        "import type { Person } from './types';",
+        '// import type declarations are erased',
+      ];
+
+      write(person, [...header, 'export const label = (p: Person) => p.name;', ''].join('\n'));
+      expect(runtimeHostViolations(renderer, specifiers, tmpSrc)).toEqual([]);
+
+      const injected = [...header, "import { x } from '$store/anything';", ''].join('\n');
+      write(person, injected);
+      expect(runtimeHostViolations(renderer, specifiers, tmpSrc)).toEqual([
+        'src/features/presence/components/presence-person.ts:6 ($store/anything)',
+      ]);
+      expect(boundaryViolations(injected, 'presence-person.ts', [])).toEqual([
+        'presence-person.ts:6',
+      ]);
+    } finally {
+      rmSync(tmp, { recursive: true, force: true });
+    }
+  });
+
+  it('sees dynamic import() calls as runtime imports', () => {
+    const tmp = mkdtempSync(path.join(tmpdir(), 'catalog-guard-'));
+    try {
+      const tmpSrc = path.join(tmp, 'src');
+      const write = (relativeFile: string, content: string) => {
+        const file = path.join(tmpSrc, relativeFile);
+        mkdirSync(path.dirname(file), { recursive: true });
+        writeFileSync(file, content);
+        return file;
+      };
+      const renderer = write(
+        'lib/component-catalog/renderers/Preview.svelte',
+        '<script lang="ts">\n  import { label } from \'$features/presence/components/presence-person\';\n</script>',
+      );
+      const person = 'features/presence/components/presence-person.ts';
+      const specifiers = ['$features/presence/components/presence-person'];
+
+      write(person, 'export const label = (name: string) => name;\n');
+      expect(runtimeHostViolations(renderer, specifiers, tmpSrc)).toEqual([]);
+
+      const injected = [
+        'export const label = async (name: string) => {',
+        "  const { x } = await import('$store/anything');",
+        '  return `${name}${x}`;',
+        '};',
+        '',
+      ].join('\n');
+      write(person, injected);
+      expect(runtimeHostViolations(renderer, specifiers, tmpSrc)).toEqual([
+        'src/features/presence/components/presence-person.ts:2 ($store/anything)',
+      ]);
+      expect(boundaryViolations(injected, 'presence-person.ts', [])).toEqual([
+        'presence-person.ts:2',
+      ]);
+      expect(
+        boundaryViolations(
+          '<script lang="ts">\n  const load = () => import(\'$store/anything\');\n</script>',
+          'renderer.svelte',
+          [],
+        ),
+      ).toEqual(['renderer.svelte:2']);
+    } finally {
+      rmSync(tmp, { recursive: true, force: true });
+    }
+  });
+
+  it('lets renderers import types from host modules but not runtime values', () => {
+    const typeOnly = [
+      '<script lang="ts">',
+      "  import type { Thing } from '$store/anything';",
+      "  import { type Other, type More } from '$features/other/module';",
+      "  export type { Thing } from '$store/anything';",
+      '</script>',
+    ].join('\n');
+    expect(boundaryViolations(typeOnly, 'renderer.svelte', [])).toEqual([]);
+
+    const runtime = [
+      '<script lang="ts">',
+      "  import { thing } from '$store/anything';",
+      "  import { type Other, more } from '$features/other/module';",
+      '</script>',
+    ].join('\n');
+    expect(boundaryViolations(runtime, 'renderer.svelte', [])).toEqual([
+      'renderer.svelte:2',
+      'renderer.svelte:3',
+    ]);
   });
 
   it('uses canonical controls throughout the catalog workspace and previews', () => {
@@ -278,4 +684,129 @@ describe('CatalogShell root inline style ownership', () => {
     expect(rootStyle().getPropertyValue('--background')).toBe('red');
     expect(rootStyle().getPropertyPriority('--background')).toBe('important');
   });
+});
+
+describe('CatalogShell motion URL compatibility', () => {
+  beforeEach(() => {
+    const storage = new Map<string, string>();
+    vi.mocked(localStorage.getItem).mockImplementation((key) => storage.get(key) ?? null);
+    vi.mocked(localStorage.setItem).mockImplementation((key, value) => {
+      storage.set(key, String(value));
+    });
+    writeCatalogPreferences(localStorage, {
+      theme: 'dark',
+      colorTheme: 'default',
+      motion: 'system',
+    });
+    document.documentElement.removeAttribute('style');
+    document.documentElement.removeAttribute('class');
+    document.documentElement.removeAttribute('data-reduce-motion');
+  });
+
+  afterEach(() => {
+    cleanup();
+    window.history.replaceState(null, '', '/sandbox/button');
+    document.documentElement.removeAttribute('style');
+    document.documentElement.removeAttribute('class');
+    document.documentElement.removeAttribute('data-reduce-motion');
+  });
+
+  function motionOption(name: 'System' | 'Full' | 'Reduced') {
+    return within(screen.getByTestId('catalog-motion-control')).getByRole('radio', { name });
+  }
+
+  it.each([
+    ['true', 'Reduced'],
+    ['false', 'Full'],
+  ] as const)(
+    'keeps system mode after reloading a legacy reducedMotion=%s link',
+    async (legacy, initialLabel) => {
+      const historyState = { catalog: { entry: 'button', scroll: 42 } };
+      window.history.replaceState(
+        historyState,
+        '',
+        `/sandbox/button?state=loading&width=420&tag=one&tag=two&reducedMotion=${legacy}#preview`,
+      );
+      const first = render(CatalogShell, { props: { activeSlug: 'button' } });
+      await waitFor(() =>
+        expect(motionOption(initialLabel).getAttribute('aria-checked')).toBe('true'),
+      );
+
+      await fireEvent.click(motionOption('System'));
+      await waitFor(() => {
+        expect(motionOption('System').getAttribute('aria-checked')).toBe('true');
+        expect(readCatalogPreferences(localStorage).motion).toBe('system');
+        const params = new URLSearchParams(window.location.search);
+        expect(params.has('motion')).toBe(false);
+        expect(params.has('reducedMotion')).toBe(false);
+      });
+
+      const serialized = new URL(window.location.href);
+      expect(parseCatalogUrlSettings(serialized.searchParams).motion).toBeUndefined();
+      expect(serialized.pathname).toBe('/sandbox/button');
+      expect(serialized.hash).toBe('#preview');
+      expect(serialized.searchParams.get('state')).toBe('loading');
+      expect(serialized.searchParams.get('width')).toBe('420');
+      expect(serialized.searchParams.getAll('tag')).toEqual(['one', 'two']);
+      expect(serialized.searchParams.get('theme')).toBe('dark');
+      expect(window.history.state).toEqual(historyState);
+      expect(readCatalogPreferences(localStorage)).toEqual({
+        theme: 'dark',
+        colorTheme: 'default',
+        motion: 'system',
+      });
+
+      // Reload the shell from its serialized URL and saved preferences, not component state.
+      const writesBeforeReload = vi.mocked(localStorage.setItem).mock.calls.length;
+      first.unmount();
+      render(CatalogShell, { props: { activeSlug: 'button' } });
+      await waitFor(() => {
+        expect(vi.mocked(localStorage.setItem).mock.calls.length).toBeGreaterThan(
+          writesBeforeReload,
+        );
+        expect(motionOption('System').getAttribute('aria-checked')).toBe('true');
+      });
+      document.documentElement.setAttribute('data-reduce-motion', '');
+      await waitFor(() =>
+        expect(screen.getByTestId('catalog-shell').getAttribute('data-catalog-motion')).toBe(
+          'reduced',
+        ),
+      );
+      document.documentElement.removeAttribute('data-reduce-motion');
+      await waitFor(() =>
+        expect(screen.getByTestId('catalog-shell').getAttribute('data-catalog-motion')).toBe(
+          'full',
+        ),
+      );
+    },
+  );
+
+  it.each([
+    ['true', 'Reduced', 'Full', 'full'],
+    ['false', 'Full', 'Reduced', 'reduced'],
+  ] as const)(
+    'replaces legacy reducedMotion=%s when changing %s to %s',
+    async (legacy, initialLabel, nextLabel, nextMotion) => {
+      window.history.replaceState(null, '', `/sandbox/button?reducedMotion=${legacy}`);
+      const first = render(CatalogShell, { props: { activeSlug: 'button' } });
+      await waitFor(() =>
+        expect(motionOption(initialLabel).getAttribute('aria-checked')).toBe('true'),
+      );
+
+      await fireEvent.click(motionOption(nextLabel));
+      await waitFor(() => {
+        const params = new URLSearchParams(window.location.search);
+        expect(params.has('reducedMotion')).toBe(false);
+        expect(params.get('motion')).toBe(nextMotion);
+        expect(parseCatalogUrlSettings(params).motion).toBe(nextMotion);
+        expect(readCatalogPreferences(localStorage).motion).toBe(nextMotion);
+      });
+
+      first.unmount();
+      render(CatalogShell, { props: { activeSlug: 'button' } });
+      await waitFor(() =>
+        expect(motionOption(nextLabel).getAttribute('aria-checked')).toBe('true'),
+      );
+    },
+  );
 });

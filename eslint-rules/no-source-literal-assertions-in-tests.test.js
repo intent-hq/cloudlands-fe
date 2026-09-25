@@ -1,20 +1,24 @@
 // @vitest-environment node
 import fs from 'node:fs';
 import path from 'node:path';
-import { ESLint, RuleTester } from 'eslint';
-import typescriptParser from '@typescript-eslint/parser';
+import { RuleTester } from 'eslint';
 import { describe, expect, it } from 'vitest';
-import { findBaselineGrowth, readComparisonBaseline } from './design-system/baseline-ratchet.js';
+import {
+  baselineCounts,
+  findBaselineGrowth,
+  lintRuleFromRepoConfig,
+  loadBaseline,
+  readComparisonBaseline,
+} from './lib/baseline-ratchet.js';
 import rule from './no-source-literal-assertions-in-tests.js';
 
 const root = process.cwd();
-const baselineFile = 'eslint-rules/no-source-literal-assertions-in-tests.baseline.json';
-const baseline = JSON.parse(fs.readFileSync(path.join(root, baselineFile), 'utf8'));
-
-// The test-file roots `eslint .` lints (its global ignores drop scripts/, e2e/,
-// test/ and src/test/); the ratchet must see every file the real lint sees.
-const LINT_ROOTS = ['src', 'tests', 'eslint-rules', 'playwright'];
-const LINT_IGNORES = ['**/src/shared/generated/**', '**/src/shared/paraglide/**', '**/test/**'];
+const ruleName = 'no-source-literal-assertions-in-tests';
+// `eslint-rules/baselines/no-source-literal-assertions-in-tests/<test file>.json`, each
+// holding `{ "count": N }`; delete the file once its reads are fixed.
+const baselineTree = loadBaseline({ cwd: root, rules: [ruleName] });
+const baseline = baselineCounts(baselineTree[ruleName]) ?? {};
+const ruleId = `intent/${ruleName}`;
 
 const testFile = path.resolve('src/features/example/__tests__/example.test.ts');
 const otherTestFile = path.resolve('src/features/other/__tests__/other.test.ts');
@@ -41,57 +45,31 @@ describe('no-source-literal-assertions-in-tests guidance', () => {
 });
 
 describe('no-source-literal-assertions-in-tests baseline ratchet', () => {
-  it('maps sorted, existing package-relative test files to positive counts', () => {
-    const files = Object.keys(baseline);
-    expect(files).toEqual([...files].sort());
-    for (const [file, count] of Object.entries(baseline)) {
+  it('maps existing package-relative test files to counted entries only', () => {
+    for (const exception of baselineTree[ruleName] ?? []) {
+      expect(exception.files, 'every entry must carry a count').toBeUndefined();
+    }
+    for (const file of Object.keys(baseline)) {
       expect(file, `${file} should be package-relative with forward slashes`).toMatch(
-        new RegExp(`^(${LINT_ROOTS.join('|')})/[^\\\\]*\\.(test|spec)\\.(js|ts)$`),
+        /^[^/\\][^\\]*\.(test|spec)\.(js|ts)$/,
       );
       expect(fs.existsSync(path.join(root, file)), `${file} no longer exists`).toBe(true);
-      expect(Number.isInteger(count) && count >= 1, `${file} count must be >= 1`).toBe(true);
     }
   });
 
   it('never grows a count against the comparison revision', () => {
-    const comparison = readComparisonBaseline({ cwd: root, file: baselineFile });
-    if (!comparison) return;
-    const ruleName = 'no-source-literal-assertions-in-tests';
+    const comparison = readComparisonBaseline({ cwd: root, rules: [ruleName] });
     expect(
-      findBaselineGrowth(
-        { [ruleName]: [{ counts: comparison.baseline }] },
-        { [ruleName]: [{ counts: baseline }] },
-      ),
+      findBaselineGrowth(comparison.baseline, baselineTree),
       `per-file counts may only shrink relative to ${comparison.ref}`,
     ).toEqual({});
   });
 
-  // Full-source ESLint over every test file takes tens of seconds on the shared
-  // host; keep the budget local to the ratchet.
+  // Lints every test file the real `eslint.config.js` lints (same rule entry, same
+  // global ignores), so this ratchet and `pnpm lint` cannot disagree on scope. It takes
+  // over a minute on the shared host; keep the budget local to the ratchet.
   it('matches today’s offenders exactly: no stale count, no new violation', async () => {
-    const eslint = new ESLint({
-      cwd: root,
-      overrideConfigFile: true,
-      overrideConfig: [
-        { ignores: LINT_IGNORES },
-        { files: ['**/*.{ts,tsx}'], languageOptions: { parser: typescriptParser } },
-        {
-          files: ['**/*.{test,spec}.{js,ts}'],
-          plugins: { intent: { rules: { 'no-source-literal-assertions-in-tests': rule } } },
-          rules: { 'intent/no-source-literal-assertions-in-tests': ['error', { baseline: {} }] },
-        },
-      ],
-      cache: false,
-    });
-    const results = await eslint.lintFiles(LINT_ROOTS);
-    const current = {};
-    for (const result of results) {
-      const count = result.messages.filter(
-        (m) => m.ruleId === 'intent/no-source-literal-assertions-in-tests',
-      ).length;
-      if (count > 0)
-        current[path.relative(root, result.filePath).split(path.sep).join('/')] = count;
-    }
+    const { [ruleId]: current } = await lintRuleFromRepoConfig({ cwd: root, ruleIds: ruleId });
 
     const stale = Object.fromEntries(
       Object.entries(baseline)

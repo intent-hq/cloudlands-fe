@@ -4,6 +4,7 @@ import { splitLegacyCompoundId } from '$shared/utils/legacy-model-id';
 import {
   selectEffectiveDefaultProviderId,
   selectNormalizedProviderId,
+  selectProviderCatalogEntry,
 } from '$store/renderer/slices/provider-catalog/provider-catalog-selectors';
 import { store as appStore } from '$store/renderer/store';
 
@@ -233,6 +234,25 @@ export function isProviderEnabled(enabledProviderIds: string[], providerId: stri
   return enabledProviderIds.some(
     (pid) => selectNormalizedProviderId.select(appStore.state, pid) === normalizedId,
   );
+}
+
+/**
+ * Return true when `providerId` was explicitly disabled in Settings > Agents:
+ * `providers.enabled[id] === false` for a provider whose catalog row allows
+ * disabling (the daemon's `ensure_provider_enabled` gate). Unlike the
+ * available+enabled set this reads settings alone — an absent entry (map not
+ * hydrated yet) or an unavailable-but-enabled provider is NOT disabled — so
+ * the answer never waits on an availability probe or a daemon event.
+ */
+export function isProviderDisabledInSettings(
+  enabledProviders: Record<string, boolean>,
+  providerId: string,
+): boolean {
+  if (!providerId) return false;
+  const normalizedId = selectNormalizedProviderId.select(appStore.state, providerId);
+  const entry = selectProviderCatalogEntry.select(appStore.state, normalizedId);
+  if (entry?.canBeDisabled === false) return false;
+  return enabledProviders[normalizedId] === false;
 }
 
 /**

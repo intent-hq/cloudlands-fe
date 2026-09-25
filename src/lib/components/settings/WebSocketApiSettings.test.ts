@@ -16,9 +16,16 @@ const mocks = vi.hoisted(() => ({
   mockSettingsUpdate: vi.fn(),
   mockPairingInfo: vi.fn(),
   mockRotateToken: vi.fn(),
+  localSettingsList: vi.fn(),
+  localSettingsUpdate: vi.fn(),
+  localPairingInfo: vi.fn(),
 }));
 
 vi.mock('$lib/client', () => ({
+  localMachineClient: {
+    settings: { list: mocks.localSettingsList, update: mocks.localSettingsUpdate },
+    server: { pairingInfo: mocks.localPairingInfo, rotateToken: vi.fn() },
+  },
   appClient: {
     settings: {
       list: mocks.mockSettingsList,
@@ -59,6 +66,8 @@ vi.mock('qrcode', () => ({
 const connectionState = vi.hoisted(() => ({
   activeId: 'local',
   emit: () => {},
+  start: async () => {},
+  stop: async () => {},
   syncState: { supported: true, enabled: true, status: null } as {
     supported: boolean;
     enabled: boolean;
@@ -68,16 +77,16 @@ const connectionState = vi.hoisted(() => ({
 }));
 
 vi.mock('$store/renderer/store', async () => {
-  const { createAppStoreMock } = await import('$store/renderer/utils/test-helpers/store-mock');
-  const store = createAppStoreMock({
-    state: () => ({ connections: { windowBackendId: connectionState.activeId } }),
-    dispatch: (action: { type: string }) => {
-      connectionState.dispatched.push(action);
-      return { ...action, promise: Promise.resolve(connectionState.syncState) };
-    },
-  });
-  connectionState.emit = () => store.emitState();
-  return { store };
+  const { createConnectionsHarness } =
+    await import('$store/renderer/slices/connections/test-harness');
+  const harness = createConnectionsHarness(
+    () => ({ windowBackendId: connectionState.activeId }),
+    (action) => connectionState.dispatched.push(action),
+  );
+  connectionState.emit = () => harness.store.emitState();
+  connectionState.start = harness.start;
+  connectionState.stop = harness.stop;
+  return { store: harness.store };
 });
 
 // Publish-self IPC surface (renderer → main via window.electronAPI.invoke).
@@ -92,6 +101,9 @@ const ipcMocks = vi.hoisted(() => ({
 
 function installElectronApi() {
   ipcMocks.invoke.mockImplementation(async (channel: string) => {
+    if (channel === 'connections:list')
+      return { connections: [], activeId: 'local', windowBackendId: 'local' };
+    if (channel === 'connections:sync-get-state') return connectionState.syncState;
     if (channel === 'connections:self-published-state') return { ...ipcMocks.selfState };
     if (channel === 'connections:publish-self') {
       return { connection: { id: 'mock-self' } };
@@ -124,17 +136,19 @@ async function renderExpandedSettings() {
 }
 
 describe('WebSocketApiSettings', () => {
-  beforeEach(() => {
+  beforeEach(async () => {
     vi.clearAllMocks();
     connectionState.activeId = 'local';
     connectionState.syncState = { supported: true, enabled: true, status: null };
     connectionState.dispatched.length = 0;
     ipcMocks.selfState = { published: false, suppressed: false, selfConnectionId: null };
     installElectronApi();
+    await connectionState.start();
   });
 
-  afterEach(() => {
+  afterEach(async () => {
     cleanup();
+    await connectionState.stop();
     vi.useRealTimers();
     delete (window as unknown as { electronAPI?: unknown }).electronAPI;
   });
@@ -207,7 +221,16 @@ describe('WebSocketApiSettings', () => {
         expect(screen.getByRole('dialog')).toBeTruthy();
         await vi.advanceTimersByTimeAsync(10_000);
         if (method === 'button') {
-          await fireEvent.click(screen.getByRole('button', { name: m.settings_wsApi_close() }));
+          await fireEvent.click(screen.getByText(m.settings_wsApi_close(), { selector: 'span' }));
+        } else if (method === 'backdrop') {
+          await vi.advanceTimersByTimeAsync(20);
+          await fireEvent.pointerDown(document.querySelector('[data-slot="dialog-overlay"]')!, {
+            button: 0,
+            pointerType: 'mouse',
+            clientX: 1,
+            clientY: 1,
+          });
+          await vi.advanceTimersByTimeAsync(20);
         } else {
           await fireEvent.keyDown(screen.getByRole('dialog'), { key: 'Escape' });
         }
@@ -469,115 +492,74 @@ describe('WebSocketApiSettings', () => {
     });
   });
 
-  describe('remote connection (intent-hq/monorepo#1852)', () => {
-    it('renders info-only panel, never calls the daemon, and shows no error toast', async () => {
-      // Arrange: active connection is remote
+  describe('host settings from a remote window', () => {
+    beforeEach(() => {
       connectionState.activeId = 'remote-1';
-
-      await renderExpandedSettings();
-
-      // Assert: info-only panel is rendered
-      await waitFor(() => {
-        expect(screen.getByText(m.settings_wsApi_remoteInfo_description())).toBeTruthy();
-      });
-
-      // Assert: no interactive controls (toggle, port input)
-      expect(screen.queryByRole('switch')).toBeNull();
-      expect(screen.queryByText('Port')).toBeNull();
-
-      // Assert: no daemon calls at all — server.pairingInfo is local-only
-      expect(mocks.mockSettingsList).not.toHaveBeenCalled();
-      expect(mocks.mockPairingInfo).not.toHaveBeenCalled();
-
-      // Assert: no error toast
-      expect(mockToast.error).not.toHaveBeenCalled();
-    });
-
-    it('keeps local behavior unchanged: loads settings and pairing info when enabled', async () => {
-      // Arrange: local connection (default), WSS enabled
-      mocks.mockSettingsList.mockResolvedValue([
-        { path: 'server.wsApi.enabled', value: true },
-        { path: 'server.wsApi.port', value: 5181 },
-      ]);
-      mocks.mockPairingInfo.mockResolvedValue({
-        token: 'tok-1234567890',
-        port: 5181,
-        certFingerprint: 'AA:BB',
-        localIps: ['192.168.1.2'],
-        hostname: 'my-mac',
-      });
-
-      await renderExpandedSettings();
-
-      // Assert: toggle rendered and pairing info fetched
-      await waitFor(() => {
-        expect(screen.getByRole('switch')).toBeTruthy();
-        expect(mocks.mockPairingInfo).toHaveBeenCalled();
-      });
-
-      // Assert: no remote info panel, no error toast
-      expect(screen.queryByText(m.settings_wsApi_remoteInfo_description())).toBeNull();
-      expect(mockToast.error).not.toHaveBeenCalled();
-    });
-
-    it('remote→local switch while mounted triggers a fresh status load', async () => {
-      // Arrange: start remote — no daemon calls
-      connectionState.activeId = 'remote-1';
-      mocks.mockSettingsList.mockResolvedValue([
+      mocks.localSettingsList.mockResolvedValue([
         { path: 'server.wsApi.enabled', value: false },
         { path: 'server.wsApi.port', value: 5181 },
       ]);
+      mocks.localSettingsUpdate.mockImplementation(async (changes) => changes);
+    });
 
-      await renderExpandedSettings();
-
-      await waitFor(() => {
-        expect(screen.getByText(m.settings_wsApi_remoteInfo_description())).toBeTruthy();
-      });
+    it('loads no settings until Edit expands the panel', async () => {
+      const view = render(WebSocketApiSettings, { expanded: false });
+      expect(screen.queryByRole('switch')).toBeNull();
+      expect(mocks.localSettingsList).not.toHaveBeenCalled();
+      await view.rerender({ expanded: true });
+      await waitFor(() => expect(mocks.localSettingsList).toHaveBeenCalled());
+      expect(screen.getByRole('switch')).toBeTruthy();
       expect(mocks.mockSettingsList).not.toHaveBeenCalled();
-
-      // Act: switch to local while the component stays mounted
-      connectionState.activeId = 'local';
-      connectionState.emit();
-
-      // Assert: fresh status load ran and the controls rendered
-      await waitFor(() => {
-        expect(mocks.mockSettingsList).toHaveBeenCalled();
-        expect(screen.getByRole('switch')).toBeTruthy();
-      });
-      expect(mockToast.error).not.toHaveBeenCalled();
-    });
-
-    it('local→remote switch mid-loadStatus never calls pairingInfo and shows no toast', async () => {
-      // Arrange: local connection; settings.list resolves only when we say so
-      let resolveSettingsList!: (value: { path: string; value: unknown }[]) => void;
-      mocks.mockSettingsList.mockReturnValue(
-        new Promise<{ path: string; value: unknown }[]>((resolve) => {
-          resolveSettingsList = resolve;
-        }),
-      );
-
-      await renderExpandedSettings();
-
-      await waitFor(() => {
-        expect(mocks.mockSettingsList).toHaveBeenCalled();
-      });
-
-      // Act: switch to remote while settings.list is still in flight, then
-      // resolve it with wsApi enabled (which would normally fetch pairingInfo)
-      connectionState.activeId = 'remote-1';
-      connectionState.emit();
-      resolveSettingsList([
-        { path: 'server.wsApi.enabled', value: true },
-        { path: 'server.wsApi.port', value: 5181 },
-      ]);
-
-      // Assert: info-only panel rendered; the stale load was dropped
-      await waitFor(() => {
-        expect(screen.getByText(m.settings_wsApi_remoteInfo_description())).toBeTruthy();
-      });
       expect(mocks.mockPairingInfo).not.toHaveBeenCalled();
-      expect(mockToast.error).not.toHaveBeenCalled();
     });
+
+    it('saves host port changes using the local client', async () => {
+      await renderExpandedSettings();
+      await waitFor(() => expect(mocks.localSettingsList).toHaveBeenCalled());
+      await fireEvent.input(screen.getByRole('spinbutton', { name: 'Port' }), {
+        target: { value: '5182' },
+      });
+      await fireEvent.click(screen.getByRole('button', { name: m.settings_wsApi_port_save() }));
+      await waitFor(() =>
+        expect(mocks.localSettingsUpdate).toHaveBeenCalledWith([
+          { path: 'server.wsApi.port', value: 5182 },
+        ]),
+      );
+      expect(mocks.mockSettingsUpdate).not.toHaveBeenCalled();
+    });
+
+    it('hides host controls again when Edit closes', async () => {
+      const view = render(WebSocketApiSettings, { expanded: true });
+      await waitFor(() => expect(mocks.localSettingsList).toHaveBeenCalled());
+      await view.rerender({ expanded: false });
+      expect(screen.queryByRole('switch')).toBeNull();
+      expect(
+        screen.queryByRole('button', { name: m.settings_devices_advanced_label() }),
+      ).toBeNull();
+    });
+  });
+
+  it('copies the complete TLS fingerprint', async () => {
+    mocks.mockSettingsList.mockResolvedValue([
+      { path: 'server.wsApi.enabled', value: true },
+      { path: 'server.wsApi.port', value: 5181 },
+    ]);
+    const fingerprint = Array.from({ length: 32 }, () => 'AB').join(':');
+    mocks.mockPairingInfo.mockResolvedValue({
+      token: 'test-token',
+      certFingerprint: fingerprint,
+      port: 5181,
+      path: '/ws',
+      localIps: ['192.0.2.1'],
+      hostname: 'host',
+    });
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.assign(navigator, { clipboard: { writeText } });
+    await renderExpandedSettings();
+    await fireEvent.click(
+      await screen.findByRole('button', { name: m.settings_wsApi_copyFingerprint_label() }),
+    );
+    expect(writeText).toHaveBeenCalledWith(fingerprint);
   });
 
   describe('auto-publish on WSS toggle-on (opt-out sync, no modal)', () => {
@@ -675,6 +657,7 @@ describe('WebSocketApiSettings', () => {
 
     it('shows an error toast when the auto-publish fails; the toggle stays on', async () => {
       ipcMocks.invoke.mockImplementation(async (channel: string) => {
+        if (channel === 'connections:sync-get-state') return connectionState.syncState;
         if (channel === 'connections:publish-self') throw new Error('keychain write failed');
         return { ...ipcMocks.selfState };
       });
@@ -779,6 +762,7 @@ describe('WebSocketApiSettings', () => {
     it('shows an error toast when the unpublish fails; the toggle stays off', async () => {
       ipcMocks.selfState = { published: true, suppressed: false, selfConnectionId: 'self-1' };
       ipcMocks.invoke.mockImplementation(async (channel: string) => {
+        if (channel === 'connections:sync-get-state') return connectionState.syncState;
         if (channel === 'connections:self-published-state') return { ...ipcMocks.selfState };
         if (channel === 'connections:unpublish-self') throw new Error('keychain delete failed');
         return { refreshed: true };
@@ -799,6 +783,7 @@ describe('WebSocketApiSettings', () => {
     it('shows no success toast when unpublish reports removed: false (stale local state)', async () => {
       ipcMocks.selfState = { published: true, suppressed: false, selfConnectionId: 'self-1' };
       ipcMocks.invoke.mockImplementation(async (channel: string) => {
+        if (channel === 'connections:sync-get-state') return connectionState.syncState;
         if (channel === 'connections:self-published-state') return { ...ipcMocks.selfState };
         if (channel === 'connections:unpublish-self') return { removed: false };
         return { refreshed: true };

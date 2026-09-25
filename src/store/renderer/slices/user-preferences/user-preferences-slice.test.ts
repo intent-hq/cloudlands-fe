@@ -15,6 +15,7 @@ import {
   setGithubLinkDefaultAction,
   setHasCompletedProviderSetup,
   setLabsMultiplayerEnabled,
+  setLabsSettingsVisible,
   setNotificationEnabled,
   setNoteFontStyle,
   setLanguagePreference,
@@ -34,6 +35,7 @@ import {
   toggleHasCompletedProviderSetup,
   toggleChatAurora,
   toggleLabsMultiplayer,
+  toggleLabsSettingsVisibility,
   toggleReduceMotionOnBattery,
   toggleShowArchived,
   toggleShowReasoningBlocks,
@@ -58,6 +60,7 @@ import {
   selectIsAgentMonospace,
   selectIsNoteMonospace,
   selectLabsMultiplayerEnabled,
+  selectLabsSettingsVisible,
   selectLanguagePreference,
   selectNoteFontStyle,
   selectNoteFontStyleLabel,
@@ -376,6 +379,32 @@ describe('userPreferencesReducer', () => {
       const enabled = userPreferencesReducer(disabled, toggleShellTransparency());
       expect(disabled.shellTransparencyEnabled).toBe(false);
       expect(enabled.shellTransparencyEnabled).toBe(true);
+    });
+  });
+
+  describe('Labs Settings visibility', () => {
+    it('starts hidden and supports setting and toggling both directions', () => {
+      const fresh = userPreferencesReducer(undefined, { type: '@@INIT' });
+      expect(selectLabsSettingsVisible.select({ userPreferences: fresh } as any)).toBe(false);
+
+      const shown = userPreferencesReducer(fresh, setLabsSettingsVisible(true));
+      expect(selectLabsSettingsVisible.select({ userPreferences: shown } as any)).toBe(true);
+      const hidden = userPreferencesReducer(shown, setLabsSettingsVisible(false));
+      expect(hidden.labsSettingsVisible).toBe(false);
+      const toggled = userPreferencesReducer(hidden, toggleLabsSettingsVisibility());
+      expect(toggled.labsSettingsVisible).toBe(true);
+      expect(
+        userPreferencesReducer(toggled, toggleLabsSettingsVisibility()).labsSettingsVisible,
+      ).toBe(false);
+    });
+
+    it('preserves experiment values while showing and hiding Settings', () => {
+      const enabled = userPreferencesReducer(initialState, setLabsMultiplayerEnabled(true));
+      const shown = userPreferencesReducer(enabled, setLabsSettingsVisible(true));
+      const hidden = userPreferencesReducer(shown, toggleLabsSettingsVisibility());
+      expect(shown.labsMultiplayerEnabled).toBe(true);
+      expect(hidden.labsMultiplayerEnabled).toBe(true);
+      expect(hidden).toEqual(enabled);
     });
   });
 

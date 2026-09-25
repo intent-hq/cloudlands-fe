@@ -1,10 +1,8 @@
 ---
 name: setup
 description: >-
-  Canonical first-time themis setup entry. Start here for greenfield app
-  setup, choose exactly one concrete Store family before creating files, and adapt
-  imports, selector call modes, lifecycle, saga startup, and verification to that
-  family.
+  Start here for first-time or greenfield Themis setup in Svelte, React, or
+  Node apps. Choose one Store family before wiring state management and sagas.
 triggers:
   - init redux
   - setup store

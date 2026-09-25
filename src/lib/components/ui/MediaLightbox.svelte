@@ -1,3 +1,5 @@
+<!-- @catalog-exempt: portal-mounted full-screen dialog covered by __tests__/MediaLightbox.test.ts; no catalog fixtures yet -->
+
 <script lang="ts">
   import type { Snippet } from 'svelte';
   import { fade } from '$lib/motion';
@@ -17,6 +19,7 @@
     actions?: Snippet;
     caption?: string;
     onKeydown?: (event: KeyboardEvent) => void;
+    onCopy?: (event: ClipboardEvent) => void;
   }
 
   let {
@@ -29,6 +32,7 @@
     actions,
     caption,
     onKeydown,
+    onCopy,
   }: Props = $props();
 
   let dialogElement: HTMLDivElement | null = $state(null);
@@ -89,6 +93,7 @@
       style="pointer-events: auto;"
       onclick={handleBackdropClick}
       onkeydown={handleKeydown}
+      oncopy={onCopy}
       role="dialog"
       aria-modal="true"
       aria-label={ariaLabel}

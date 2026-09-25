@@ -19,6 +19,7 @@ const {
   paletteMruEntries,
   paletteFileMru,
   collaboratorState,
+  multiplayerState,
 } = vi.hoisted(() => {
   const createSelectorReadable = <TArg, TValue>(arg: TArg, resolver: (value: any) => TValue) => ({
     subscribe: (fn: (value: TValue) => void) => {
@@ -45,6 +46,7 @@ const {
     paletteMruEntries: { value: [] as any[] },
     paletteFileMru: { value: {} as Record<string, number> },
     collaboratorState: { workspace: false, client: false },
+    multiplayerState: { enabled: false },
   };
 });
 
@@ -131,6 +133,7 @@ vi.mock('$store/renderer/store', async () => {
     state: () => ({
       workspaceNotes: { byWorkspaceId: {} },
       workspaceAgents: { byWorkspaceId: {} },
+      userPreferences: { labsMultiplayerEnabled: multiplayerState.enabled },
     }),
     dispatch: reduxDispatchMock,
   });
@@ -216,6 +219,7 @@ vi.mock('@fortawesome/free-solid-svg-icons', () => ({
   faTerminal: { iconName: 'terminal' },
   faCommentDots: { iconName: 'comment-dots' },
   faFileAlt: { iconName: 'file-alt' },
+  faFlask: { iconName: 'flask' },
   faCodeBranch: { iconName: 'code-branch' },
   faPlus: { iconName: 'plus' },
   faGlobe: { iconName: 'globe' },
@@ -256,7 +260,38 @@ describe('CommandPalette new actions', () => {
     paletteFileMru.value = {};
     collaboratorState.workspace = false;
     collaboratorState.client = false;
+    multiplayerState.enabled = false;
   });
+
+  it.each([false, true])(
+    'changes experimental multiplayer from enabled=%s through command search without a workspace',
+    async (enabled) => {
+      multiplayerState.enabled = enabled;
+      const onClose = vi.fn();
+      render(CommandPalette, { props: { isOpen: true, onClose } });
+      const input = screen.getByRole('textbox');
+
+      await fireEvent.input(input, { target: { value: 'multiplayer' } });
+      const command = await screen.findByRole('button', {
+        name: enabled ? /Disable experimental multiplayer/i : /Enable experimental multiplayer/i,
+      });
+      expect(
+        screen.queryByRole('button', {
+          name: enabled ? /Enable experimental multiplayer/i : /Disable experimental multiplayer/i,
+        }),
+      ).toBeNull();
+
+      reduxDispatchMock.mockClear();
+      if (enabled) await fireEvent.click(command);
+      else await fireEvent.keyDown(input, { key: 'Enter' });
+
+      expect(reduxDispatchMock).toHaveBeenCalledWith({
+        type: 'userPreferences/setLabsMultiplayerEnabled',
+        payload: [!enabled],
+      });
+      expect(onClose).toHaveBeenCalledOnce();
+    },
+  );
 
   it('withholds agent-creation, terminal, browser, and workspace-creation commands and results for collaborators', async () => {
     collaboratorState.workspace = true;

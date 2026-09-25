@@ -5,8 +5,9 @@
   Appears on hover for both user and assistant messages.
 -->
 <script lang="ts">
+  import { onMount } from 'svelte';
   import { ActionBar, defineActions } from '$lib/components/patterns/action-menu';
-  import { formatFullDateTime, formatTime, type DateInput } from '$lib/i18n/format';
+  import { formatDateTime, formatFullDateTime, formatTime, type DateInput } from '$lib/i18n/format';
   import {
     faArrowRotateRight,
     faArrowUp,
@@ -68,9 +69,56 @@
     queueInfo,
   }: Props = $props();
 
+  let actionSurface: HTMLDivElement;
+  let containerWidth = $state(Number.POSITIVE_INFINITY);
+  onMount(() => {
+    const parent = actionSurface.parentElement;
+    if (!parent || typeof ResizeObserver === 'undefined') return;
+    const observer = new ResizeObserver(([entry]) => {
+      containerWidth = entry.contentRect.width;
+    });
+    observer.observe(parent);
+    return () => observer.disconnect();
+  });
+
+  let today = $state(new Date().toDateString());
+  onMount(() => {
+    let midnightTimer: ReturnType<typeof setTimeout>;
+    function refreshDay() {
+      clearTimeout(midnightTimer);
+      const now = new Date();
+      today = now.toDateString();
+      const midnight = new Date(now);
+      // Use the next local midnight, not 24 hours: DST days may be shorter or longer.
+      midnight.setHours(24, 0, 0, 0);
+      midnightTimer = setTimeout(refreshDay, midnight.getTime() - now.getTime());
+    }
+    refreshDay();
+    // Catch up immediately when a sleeping or backgrounded window returns.
+    window.addEventListener('focus', refreshDay);
+    document.addEventListener('visibilitychange', refreshDay);
+    return () => {
+      clearTimeout(midnightTimer);
+      window.removeEventListener('focus', refreshDay);
+      document.removeEventListener('visibilitychange', refreshDay);
+    };
+  });
+
   let actionDate = $derived(resolveMessageActionDate(timestamp, createdAt));
-  let compactTime = $derived(actionDate ? formatTime(actionDate) : '');
+  const showDate = $derived(actionDate !== null && actionDate.toDateString() !== today);
+  let compactTime = $derived(
+    actionDate ? (showDate ? formatDateTime(actionDate) : formatTime(actionDate)) : '',
+  );
   let fullTime = $derived(actionDate ? formatFullDateTime(actionDate) : '');
+  const interactiveClass = $derived(
+    showOnHover
+      ? 'group-hover:pointer-events-auto group-focus-within:pointer-events-auto'
+      : 'pointer-events-auto',
+  );
+  // Keep a full date beside the primary action; the existing menu keeps the rest reachable.
+  const visibleActionCount = $derived(
+    role === 'assistant' && showDate && containerWidth < 320 ? 1 : Number.POSITIVE_INFINITY,
+  );
   const actions = $derived(
     defineActions([
       {
@@ -94,6 +142,7 @@
       },
       {
         id: 'vote-up',
+        kind: 'checkbox',
         label: m.chat_messageActions_goodResponse_label(),
         icon: faThumbsUp,
         checked: currentVote === 'up',
@@ -101,6 +150,7 @@
       },
       {
         id: 'vote-down',
+        kind: 'checkbox',
         label: m.chat_messageActions_badResponse_label(),
         icon: faThumbsDown,
         checked: currentVote === 'down',
@@ -159,9 +209,10 @@
 </script>
 
 <div
+  bind:this={actionSurface}
   data-testid="message-actions"
   data-message-actions-role={role}
-  style:max-width={queueInfo ? 'calc(100% - 0.5rem)' : undefined}
+  style:max-width="calc(100% - 0.5rem)"
   class="{MESSAGE_ACTION_SURFACE_CLASS} {showOnHover
     ? MESSAGE_ACTION_REVEAL_CLASS
     : ''} {className}"
@@ -176,12 +227,15 @@
   {/if}
 
   {#if role === 'user' && queueInfo}
-    <QueuedMessageNoticeHeader {queueInfo} />
+    <div class="min-w-0 {interactiveClass}">
+      <QueuedMessageNoticeHeader {queueInfo} />
+    </div>
   {/if}
 
   <ActionBar
     {actions}
-    class="shrink-0"
+    visibleCount={visibleActionCount}
+    class="shrink-0 {interactiveClass}"
     overflowLabel={m.lib_commandPalette_quickActions_ariaLabel()}
     onAction={handleAction}
   />

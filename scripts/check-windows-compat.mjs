@@ -135,7 +135,7 @@ const RULES = [
         return { matched: line.trim() };
       }
       // Also catch unquoted /dev/null in template literals or assignments
-      if (/\/dev\/null/.test(stripped) && !/^\s*[\/*#]/.test(line)) {
+      if (/\/dev\/null/.test(stripped) && !/^\s*[/*#]/.test(line)) {
         return { matched: line.trim() };
       }
       return null;
@@ -369,7 +369,7 @@ const RULES = [
       // `const [a, ...b] = X.split('/')`. These store split results for later use,
       // typically in UI/display code processing paths from git/APIs.
       const assignSplitRe =
-        /(?:const|let|var)\s+(?:\w+|\[[\w\s,\.]+\])\s*=\s*.*\.split\s*\(\s*['"]\/['"]\s*\)/;
+        /(?:const|let|var)\s+(?:\w+|\[[\w\s,.]+\])\s*=\s*.*\.split\s*\(\s*['"]\/['"]\s*\)/;
       if (assignSplitRe.test(line)) {
         return { matched: line.trim(), displayOnly: true };
       }
@@ -840,7 +840,6 @@ function scanFile(filePath, rules) {
   // ─── Pre-scan: paired _BASH/_POWERSHELL constants (Pattern 4) ───
   // Find const SOMETHING_BASH = ... with a corresponding SOMETHING_POWERSHELL
   const bashConstSkipLines = new Set();
-  const bashConstRanges = []; // { name, startLine, endLine }
   for (let i = 0; i < lines.length; i++) {
     const m = lines[i].match(/\b(?:const|let|var)\s+(\w+_BASH)\s*=\s*/);
     if (!m) continue;
@@ -1076,8 +1075,6 @@ function scanFile(filePath, rules) {
         // Walk forward to find the structure
         let depth = 0;
         let inTL = false;
-        let foundColon = false;
-        let colonLine = -1;
         let endLine = -1;
         for (let j = i + 1; j < Math.min(lines.length, i + 100); j++) {
           for (const ch of lines[j]) {
@@ -1417,7 +1414,7 @@ function matchGlob(filePath, pattern) {
   // Simple glob: supports * and ** and ?
   // Convert glob to regex
   const normalized = filePath.replace(/\\/g, '/');
-  let regexStr = pattern
+  const regexStr = pattern
     .replace(/\\/g, '/')
     .replace(/[.+^${}()|[\]]/g, '\\$&') // escape regex chars except * and ?
     .replace(/\*\*/g, '{{GLOBSTAR}}')
@@ -1583,7 +1580,7 @@ function main() {
   }
 
   // Scan all files
-  let allFindings = [];
+  const allFindings = [];
   for (const file of files) {
     const findings = scanFile(file, activeRules);
     allFindings.push(...findings);

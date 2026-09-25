@@ -618,6 +618,13 @@ type SignInStatus = 'authorized' | 'denied' | 'expired' | 'error';
 type SignInResult = { kind: 'signed-in'; login: string } | { kind: 'cancelled' };
 
 /**
+ * A newer invite may adopt the resident flow with the same `flowId`. Only
+ * the latest sign-in may clean up a delayed connect response; scoping by id
+ * alone cannot protect a flow shared with a newer invite.
+ */
+let signInGeneration = 0;
+
+/**
  * Abort the device flow `github.connect` started, best effort. The cancel is
  * scoped to that flow's `flowId` (PROTOCOL §5.27) whenever the daemon returned
  * one; the unscoped call is the fallback for a daemon that did not, and only
@@ -634,9 +641,9 @@ function cancelDeviceFlow(client: JsonRpcClient, start: GithubConnectResult): vo
 
 /**
  * A `github.connect` that resolved after the `connecting` dialog was cancelled
- * is aborted on arrival — but only when it can be scoped: it may land after a
- * later invite already shows its own flow, and an unscoped cancel would abort
- * that newer flow instead. A late result without `flowId` is left alone (the
+ * is aborted on arrival only if no newer invite has started and it can be
+ * scoped. The generation guard at the call site protects adopted flows;
+ * the id protects a different flow. A late result without `flowId` is left alone (the
  * code expires on its own, or the next `github.connect` adopts it).
  */
 function cancelLateDeviceFlow(client: JsonRpcClient, late: GithubConnectResult): void {
@@ -654,9 +661,8 @@ function cancelLateDeviceFlow(client: JsonRpcClient, late: GithubConnectResult):
  * now signed in as. The `github.connect` start is raced against the
  * `connecting` dialog's Cancel while that dialog is still up (a device flow
  * that starts after the cancel is aborted on arrival when it carries a
- * `flowId`); once the dialog was
- * dismissed by the first prompt its Cancel never settles and the wait is a
- * plain await.
+ * `flowId` and no newer invite sign-in has started); once the dialog was
+ * dismissed by the first prompt its Cancel never settles and the wait is a plain await.
  */
 async function signInToGitHub(
   client: JsonRpcClient,
@@ -665,11 +671,13 @@ async function signInToGitHub(
   prompts: ConsentPrompts,
   connecting: ConnectingProgress,
 ): Promise<SignInResult> {
+  const generation = ++signInGeneration;
   let start: GithubConnectResult;
   try {
-    start = await connecting.wait(client.request<GithubConnectResult>('github.connect'), (late) =>
-      cancelLateDeviceFlow(client, late),
-    );
+    start = await connecting.wait(client.request<GithubConnectResult>('github.connect'), (late) => {
+      if (generation !== signInGeneration) return;
+      cancelLateDeviceFlow(client, late);
+    });
   } catch (error) {
     if (error instanceof InviteCancelledError) throw error;
     throw new InviteFlowError('sign-in-failed');

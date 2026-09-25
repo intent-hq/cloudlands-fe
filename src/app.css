@@ -52,6 +52,29 @@
    follows the same single source of truth as the hand-written component CSS. */
 @custom-variant motion-reduce (@container style(--motion-reduced: 1));
 
+/* Keep the 12px inset where the lane has room, without moving the tool column. */
+@utility subscription-card-outward-bleed {
+  --subscription-card-inline-bleed: min(
+    var(--subscription-card-max-bleed, 0.75rem),
+    max(0px, calc(0.75rem - var(--chat-operational-row-inline-padding, 0.5rem)))
+  );
+  --subscription-card-inline-inset: calc(
+    var(--chat-operational-row-inline-padding, 0.5rem) + var(--subscription-card-inline-bleed)
+  );
+  margin-inline: calc(-1 * var(--subscription-card-inline-bleed)) !important;
+  width: calc(100% + 2 * var(--subscription-card-inline-bleed)) !important;
+  max-width: none !important;
+}
+
+@utility subscription-card-row-inset {
+  padding-inline: var(--subscription-card-inline-inset, 0.75rem) !important;
+}
+
+@utility subscription-card-body-inset {
+  padding-inline-start: calc(var(--subscription-card-inline-inset, 0.75rem) + 1.75rem);
+  padding-inline-end: var(--subscription-card-inline-inset, 0.75rem);
+}
+
 :root {
   /* Canonical navigation-row geometry. Product rows select compact or regular density. */
   --row-height-compact: 1.75rem;
@@ -261,6 +284,19 @@ textarea::placeholder {
 @media (pointer: fine) {
   :where(:not(.native-scrollbars, .native-scrollbars *)) {
     scrollbar-width: thin;
+  }
+
+  /* `scrollbar-color` is inherited, so declare it once per theme scope. Declaring it on
+     every element made each restyle start a `scrollbar-color` transition per element
+     under the reduced-motion duration blanket. */
+  :where(:root, .light, .dark) {
+    scrollbar-color: hsl(var(--overlay) / 0.08) transparent;
+  }
+
+  /* A component that overrides `scrollbar-color` on itself (`.custom-scrollbar`, the
+     comment thread) must not restyle the scrollers it hosts: the editor mounted while
+     editing a comment keeps the canonical colour. */
+  :where(.custom-scrollbar .tiptap-container) {
     scrollbar-color: hsl(var(--overlay) / 0.08) transparent;
   }
 
@@ -838,4 +874,13 @@ body.panel-resizing webview {
 .app-drag-region [data-app-region-clip] [data-interactive],
 .app-drag-region [data-app-region-clip] [tabindex]:not([tabindex='-1']) {
   -webkit-app-region: initial;
+}
+/* Icon slots share the first text line's typography, not the whole row's height. */
+@utility first-line-icon {
+  display: inline-flex;
+  height: 1lh;
+  flex-shrink: 0;
+  align-self: flex-start;
+  align-items: center;
+  justify-content: center;
 }

@@ -1,24 +1,34 @@
 import { githubAuthClient } from '$features/github-auth/renderer/github-auth.client';
-import type { GitHubDeviceFlow, GitHubUser, StartAuthOptions } from '$features/github-auth/types';
+import type {
+  GitHubDeviceFlow,
+  GitHubUser,
+  StartAuthOptions,
+  StartAuthResult,
+} from '$features/github-auth/types';
 import { createLogger } from '$lib/utils/client-logger';
 import { m } from '$shared/paraglide/messages.js';
+import { buffers } from 'redux-saga';
 import {
+  actionChannel,
   call,
+  cancelled,
   delay,
   fork,
-  join,
   put,
   race,
   take,
-  takeEvery,
   takeLatest,
+  takeLeading,
   type SagaGenerator,
 } from 'typed-redux-saga';
 
 import {
+  selectGitHubAuthCallbacksCancelled,
   selectGitHubAuthDeviceFlow,
   selectGitHubAuthIsAuthenticating,
+  selectGitHubAuthMutationRequestId,
 } from '../github-auth-selectors';
+import { takeEveryFromWindowEvent } from '../../../utils/ipc-channel';
 import {
   authCancelled,
   authCompleted,
@@ -29,10 +39,12 @@ import {
   logoutCompleted,
   logoutGitHub,
   setAuthenticating,
+  setGitHubDisconnecting,
   setDeviceFlowInfo,
   setGitHubAuthError,
   setGitHubAuthState,
   setOAuthInfo,
+  settleGitHubAuthMutation,
   startGitHubAuth,
 } from '../github-auth-slice';
 
@@ -80,7 +92,7 @@ function* pollForCompletion(intervalMs: number): SagaGenerator<void> {
   const startedAt = Date.now();
   if (yield* call(checkAuthComplete)) return;
   while (true) {
-    yield* delay(intervalMs);
+    yield* race({ elapsed: delay(intervalMs), focused: take(checkGitHubAuthStatus) });
     if (Date.now() - startedAt > AUTH_POLL_TIMEOUT_MS) {
       yield* put(setGitHubAuthError(m.githubAuth_service_timedOut_error()));
       return;
@@ -94,7 +106,7 @@ function* pollDeviceFlowWorker(action: ReturnType<typeof setDeviceFlowInfo>): Sa
   if (flow === null) return;
   yield* race({
     completed: call(pollForCompletion, Math.max(flow.interval * 1_000, AUTH_POLL_INTERVAL_MS)),
-    cancelled: take([cancelGitHubAuth, logoutGitHub, githubAuthChanged]),
+    cancelled: take([startGitHubAuth, cancelGitHubAuth, logoutGitHub, githubAuthChanged]),
   });
 }
 
@@ -144,41 +156,23 @@ function* initialize(): SagaGenerator<void> {
   }
 }
 
-type StartAuthSettled =
-  { result: Awaited<ReturnType<typeof githubAuthClient.startAuth>> } | { error: unknown };
-
-/** `startAuth` as a joinable task whose failure settles instead of aborting the parent. */
-function* requestStartAuth(options?: StartAuthOptions): SagaGenerator<StartAuthSettled> {
-  try {
-    return { result: yield* call([githubAuthClient, githubAuthClient.startAuth], options) };
-  } catch (error) {
-    return { error };
-  }
+function* isCurrentMutation(requestId: string): SagaGenerator<boolean> {
+  return (yield* selectGitHubAuthMutationRequestId.effect()) === requestId;
 }
 
-function* start(options?: StartAuthOptions): SagaGenerator<void> {
+function* start(
+  requestId: string,
+  options?: StartAuthOptions,
+): SagaGenerator<StartAuthResult | null | undefined> {
   yield* put(setAuthenticating(true));
-  // A cancel while `github.connect` is still awaiting has no id to scope to,
-  // so it is recorded here and sent once the result names the flow.
-  let cancelRequested = false;
   try {
-    const pending = yield* fork(requestStartAuth, options);
-    const raced = yield* race({
-      settled: join(pending),
-      cancelRequested: take(cancelGitHubAuth),
-    });
-    cancelRequested = raced.cancelRequested !== undefined;
-    const settled = raced.settled ?? (yield* join(pending));
-    if ('error' in settled) throw settled.error;
-    const { result } = settled;
-    if (cancelRequested && result.success && !result.alreadyAuthenticated) {
-      yield* call(cancelFlow, result.flowId);
-      return;
-    }
-    if (cancelRequested && !result.success) {
-      yield* put(authCancelled());
-      return;
-    }
+    const result: Awaited<ReturnType<typeof githubAuthClient.startAuth>> = yield* call(
+      [githubAuthClient, githubAuthClient.startAuth],
+      options,
+    );
+    // Keep an obsolete response out of the UI, but retain its identity for
+    // a queued cancel: the daemon call has settled and can now be scoped.
+    if (!(yield* call(isCurrentMutation, requestId))) return result;
     if (!result.success) {
       yield* put(setGitHubAuthError(result.error || m.githubAuth_service_startFailed_error()));
       return;
@@ -209,10 +203,7 @@ function* start(options?: StartAuthOptions): SagaGenerator<void> {
       }),
     );
   } catch (error) {
-    if (cancelRequested) {
-      yield* put(authCancelled());
-      return;
-    }
+    if (!(yield* call(isCurrentMutation, requestId))) return null;
     const message = error instanceof Error ? error.message : m.githubAuth_service_unknown_error();
     yield* put(
       setGitHubAuthError(
@@ -242,15 +233,21 @@ function* cancelFlow(flowId: string | undefined): SagaGenerator<void> {
   }
 }
 
-function* cancelAuth(): SagaGenerator<void> {
+function* cancelAuth(interruptedStart?: StartAuthResult | null): SagaGenerator<void> {
+  if (interruptedStart !== undefined) {
+    if (interruptedStart?.success && !interruptedStart.alreadyAuthenticated) {
+      yield* call(cancelFlow, interruptedStart.flowId);
+    } else {
+      yield* put(authCancelled());
+    }
+    return;
+  }
   const deviceFlow = yield* selectGitHubAuthDeviceFlow.effect();
-  // Authenticating with no codes yet: `start` is awaiting `github.connect` and
-  // sends the cancel itself once the flow has an id.
-  if (deviceFlow === null && (yield* selectGitHubAuthIsAuthenticating.effect())) return;
   yield* call(cancelFlow, deviceFlow?.flowId);
 }
 
 function* logout(): SagaGenerator<void> {
+  yield* put(setGitHubDisconnecting(true));
   try {
     const result: Awaited<ReturnType<typeof githubAuthClient.logout>> = yield* call([
       githubAuthClient,
@@ -261,6 +258,8 @@ function* logout(): SagaGenerator<void> {
   } catch (error) {
     logger.error('Failed to log out of GitHub', error);
     yield* put(setGitHubAuthError(m.githubAuth_service_logoutFailed_error()));
+  } finally {
+    yield* put(setGitHubDisconnecting(false));
   }
 }
 
@@ -289,42 +288,98 @@ function* authChanged(
 function* initializeGitHubAuthWorker(
   _action: ReturnType<typeof initializeGitHubAuth>,
 ): SagaGenerator<void> {
-  yield* call(initialize);
-}
-
-function* startGitHubAuthWorker(action: ReturnType<typeof startGitHubAuth>): SagaGenerator<void> {
-  const [options] = action.payload ?? [];
-  yield* call(start, options);
+  if (yield* selectGitHubAuthMutationRequestId.effect()) return;
+  yield* race({
+    initialized: call(initialize),
+    invalidated: take([startGitHubAuth, cancelGitHubAuth, logoutGitHub, githubAuthChanged]),
+  });
 }
 
 function* checkGitHubAuthStatusWorker(
   _action: ReturnType<typeof checkGitHubAuthStatus>,
 ): SagaGenerator<void> {
-  yield* call(checkAuthComplete);
+  // The poll owns completion I/O while a device flow exists. Focus merely
+  // wakes that poll, so compatibility callers cannot start a second request.
+  if (yield* selectGitHubAuthMutationRequestId.effect()) return;
+  if (yield* selectGitHubAuthDeviceFlow.effect()) return;
+  if (yield* selectGitHubAuthCallbacksCancelled.effect()) return;
+  yield* race({
+    completed: call(checkAuthComplete),
+    cancelled: take([startGitHubAuth, cancelGitHubAuth, logoutGitHub]),
+  });
 }
 
-function* cancelGitHubAuthWorker(
-  _action: ReturnType<typeof cancelGitHubAuth>,
-): SagaGenerator<void> {
-  yield* call(cancelAuth);
+function* mutations(): SagaGenerator<void> {
+  // These RPCs cannot be aborted. Drain each write before starting the next;
+  // a new intent invalidates old start results, never a confirmed revocation.
+  const requests = yield* actionChannel(
+    [startGitHubAuth, cancelGitHubAuth, logoutGitHub],
+    buffers.expanding(),
+  );
+  let interruptedStart: StartAuthResult | null | undefined;
+  try {
+    while (true) {
+      const action:
+        | ReturnType<typeof startGitHubAuth>
+        | ReturnType<typeof cancelGitHubAuth>
+        | ReturnType<typeof logoutGitHub> = yield* take(requests);
+      const { requestId } = action.payload;
+      if (action.type === startGitHubAuth.type) {
+        if (!(yield* call(isCurrentMutation, requestId))) continue;
+        interruptedStart = yield* call(
+          start,
+          requestId,
+          (action as ReturnType<typeof startGitHubAuth>).payload.options,
+        );
+      } else if (action.type === cancelGitHubAuth.type) {
+        yield* call(cancelAuth, interruptedStart);
+        interruptedStart = undefined;
+      } else {
+        yield* call(logout);
+        interruptedStart = undefined;
+      }
+      yield* put(settleGitHubAuthMutation(requestId));
+    }
+  } finally {
+    requests.close();
+    if (yield* cancelled()) {
+      const requestId = yield* selectGitHubAuthMutationRequestId.effect();
+      if (requestId !== null) {
+        yield* put(settleGitHubAuthMutation(requestId));
+        yield* put(setAuthenticating(false));
+      }
+    }
+  }
 }
 
-function* logoutGitHubWorker(_action: ReturnType<typeof logoutGitHub>): SagaGenerator<void> {
-  yield* call(logout);
-}
-
-function* githubAuthChangedWorker(
+function* authNotificationWorker(
   action: ReturnType<typeof githubAuthChanged>,
 ): SagaGenerator<void> {
-  yield* call(authChanged, action.payload[0]);
+  // The daemon callback has no request ID. A local cancellation closes the
+  // current flow's callback window until a deliberate new start/hydration.
+  const [status] = action.payload;
+  if ((yield* selectGitHubAuthMutationRequestId.effect()) && status !== 'revoked') return;
+  if ((yield* selectGitHubAuthCallbacksCancelled.effect()) && status !== 'revoked') return;
+  yield* race({
+    changed: call(authChanged, status),
+    invalidated: take([startGitHubAuth, cancelGitHubAuth, logoutGitHub, initializeGitHubAuth]),
+  });
+}
+
+function* windowFocused(): SagaGenerator<void> {
+  if (
+    (yield* selectGitHubAuthIsAuthenticating.effect()) &&
+    (yield* selectGitHubAuthDeviceFlow.effect())
+  ) {
+    yield* put(checkGitHubAuthStatus());
+  }
 }
 
 export function* githubAuthSaga(): SagaGenerator<void> {
-  yield* takeEvery(initializeGitHubAuth, initializeGitHubAuthWorker);
-  yield* takeEvery(startGitHubAuth, startGitHubAuthWorker);
-  yield* takeEvery(checkGitHubAuthStatus, checkGitHubAuthStatusWorker);
-  yield* takeEvery(cancelGitHubAuth, cancelGitHubAuthWorker);
-  yield* takeEvery(logoutGitHub, logoutGitHubWorker);
-  yield* takeEvery(githubAuthChanged, githubAuthChangedWorker);
+  yield* fork(mutations);
+  yield* takeLatest(initializeGitHubAuth, initializeGitHubAuthWorker);
+  yield* takeLeading(checkGitHubAuthStatus, checkGitHubAuthStatusWorker);
+  yield* takeLatest(githubAuthChanged, authNotificationWorker);
+  yield* takeEveryFromWindowEvent('focus', windowFocused);
   yield* takeLatest(setDeviceFlowInfo, pollDeviceFlowWorker);
 }

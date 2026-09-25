@@ -22,8 +22,6 @@ export const dropdownMetadata = parseUiComponentMetadata({
     'src/lib/components/chat/input/ModelPickerGroupHeader.svelte',
     'src/lib/components/chat/input/model-picker-groups.ts',
     'src/lib/components/chat/input/model-picker-utils.ts',
-    'src/lib/components/layout/sidebar-nav/cards/ChiefCard.svelte',
-    'src/lib/components/patterns/settings/custom-controls.ts',
   ],
   replacement: 'ledger:src/lib/components/ui/dropdown/dropdown-caller-ledger.ts',
   characterizationTest: 'src/lib/components/ui/dropdown/Dropdown.test.ts',

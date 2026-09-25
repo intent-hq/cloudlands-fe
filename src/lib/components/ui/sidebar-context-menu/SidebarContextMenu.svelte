@@ -1,247 +1,37 @@
 <script lang="ts">
-  import { createProximityHover, proximityItem, type ProximityHover } from '$lib/interaction';
-  import { onMount, untrack } from 'svelte';
-  import type { Action } from 'svelte/action';
-  import Fa from 'svelte-fa';
-  import { faCheck, faChevronRight } from '@fortawesome/free-solid-svg-icons';
-  import {
-    isSeparator,
-    type SidebarMenuEntry,
-    type SidebarMenuItem,
-  } from '$lib/components/ui/sidebar-context-menu/types';
-  import Portal from '$lib/components/ui/Portal.svelte';
-  import { Button } from '$lib/components/ui/button';
-  import { pushEscapeLayer } from '$lib/utils/escapeLayers';
-  import { cn } from '$lib/utils';
-  import { menuItem } from '$lib/components/ui/menu';
+  import { ActionMenu } from '$lib/components/patterns/action-menu';
+  import * as m from '$shared/paraglide/messages.js';
+  import type { SidebarMenuEntry } from '$lib/components/ui/sidebar-context-menu/types';
+  import { toSidebarActions, findSidebarItem } from './actions';
 
   interface Props {
     x: number;
     y: number;
     items: SidebarMenuEntry[];
     onClickOutside?: () => void;
+    ariaLabel?: string;
+    returnFocus?: HTMLElement | null;
+    selection?: 'single';
   }
 
-  let { x, y, items, onClickOutside }: Props = $props();
-
-  let menuElement: HTMLElement | null = $state(null);
-  let submenuElement: HTMLElement | null = $state(null);
-  let menuHover: ProximityHover | null = $state.raw(null);
-  let submenuHover: ProximityHover | null = $state.raw(null);
-
-  function registerProximityItem(
-    getHover: () => ProximityHover | null,
-  ): Action<HTMLElement, number> {
-    return (node, index) => {
-      const dispose = $effect.root(() => {
-        $effect(() => {
-          const hover = getHover();
-          if (!hover) return;
-          // Registration depends on the helper identity, not the geometry it measures.
-          const registration = untrack(() => proximityItem(node, { hover, index }));
-          return () => registration?.destroy?.();
-        });
-      });
-      return { destroy: dispose };
-    };
-  }
-
-  const topLevelProximityItem = registerProximityItem(() => menuHover);
-  const submenuProximityItem = registerProximityItem(() => submenuHover);
-
-  $effect(() => {
-    if (!menuElement) return;
-    const instance = createProximityHover(menuElement);
-    menuHover = instance;
-    return () => {
-      instance.destroy();
-      if (menuHover === instance) menuHover = null;
-    };
-  });
-
-  $effect(() => {
-    if (!submenuElement) {
-      submenuHover = null;
-      return;
-    }
-    const instance = createProximityHover(submenuElement);
-    submenuHover = instance;
-    return () => {
-      instance.destroy();
-      if (submenuHover === instance) submenuHover = null;
-    };
-  });
-
-  // Adjust position if menu would go off screen. Initial capture is safe:
-  // the menu is unmounted/remounted per open (outside mousedown/contextmenu
-  // listeners close it first), and adjustPosition() re-reads x/y on mount.
-  // svelte-ignore state_referenced_locally
-  let adjustedX = $state(x);
-  // svelte-ignore state_referenced_locally
-  let adjustedY = $state(y);
-
-  function adjustPosition() {
-    if (!menuElement) return;
-
-    const rect = menuElement.getBoundingClientRect();
-    const viewportWidth = window.innerWidth;
-    const viewportHeight = window.innerHeight;
-
-    // Adjust horizontal position if needed
-    if (x + rect.width > viewportWidth - 10) {
-      adjustedX = viewportWidth - rect.width - 10;
-    } else {
-      adjustedX = x;
-    }
-
-    // Adjust vertical position if needed
-    if (y + rect.height > viewportHeight - 10) {
-      adjustedY = viewportHeight - rect.height - 10;
-    } else {
-      adjustedY = y;
-    }
-  }
-
-  function handleClickOutside(event: MouseEvent) {
-    if (menuElement && !menuElement.contains(event.target as Node)) {
-      onClickOutside?.();
-    }
-  }
-
-  function handleContextMenuOutside(event: MouseEvent) {
-    // Close when right-clicking outside the menu (allows new menu to open at new position)
-    if (menuElement && !menuElement.contains(event.target as Node)) {
-      onClickOutside?.();
-    }
-  }
-
-  function handleItemClick(item: SidebarMenuItem) {
-    if (item.disabled) return;
-    if (item.submenu) {
-      openSubmenuId = openSubmenuId === item.id ? null : item.id;
-      return;
-    }
-    item.onClick();
-    onClickOutside?.();
-  }
-
-  // Flyout submenu: opens on hover/click of the parent item, closes when the
-  // pointer moves to another top-level item.
-  let openSubmenuId: string | null = $state(null);
-
-  function handleItemMouseEnter(item: SidebarMenuItem) {
-    openSubmenuId = item.submenu && !item.disabled ? item.id : null;
-  }
-
-  function handleSubmenuItemClick(item: SidebarMenuItem) {
-    if (item.disabled) return;
-    item.onClick();
-    onClickOutside?.();
-  }
-
-  onMount(() => {
-    // Use requestAnimationFrame to measure after render
-    requestAnimationFrame(() => adjustPosition());
-
-    // Use mousedown instead of click to close before the new contextmenu event fires
-    document.addEventListener('mousedown', handleClickOutside);
-    document.addEventListener('contextmenu', handleContextMenuOutside);
-    // Escape layer: the menu only exists while open, and is the topmost overlay
-    const releaseEscapeLayer = pushEscapeLayer(() => {
-      onClickOutside?.();
-    });
-
-    return () => {
-      document.removeEventListener('mousedown', handleClickOutside);
-      document.removeEventListener('contextmenu', handleContextMenuOutside);
-      releaseEscapeLayer();
-    };
-  });
+  let {
+    x,
+    y,
+    items,
+    onClickOutside,
+    ariaLabel = m.ui_menu_actions_ariaLabel(),
+    returnFocus,
+    selection,
+  }: Props = $props();
+  const actions = $derived(toSidebarActions(items, selection, ariaLabel));
 </script>
 
-<Portal zIndex={100}>
-  <div
-    bind:this={menuElement}
-    class="fixed z-[100] bg-popover border border-border shadow-lg py-0.5 min-w-40"
-    style="left: {adjustedX}px; top: {adjustedY}px;"
-    role="menu"
-  >
-    {#each items as entry, i (i)}
-      {#if isSeparator(entry)}
-        <div class="h-px bg-border my-0.5"></div>
-      {:else}
-        <div
-          class="relative"
-          onmouseenter={() => handleItemMouseEnter(entry)}
-          role="presentation"
-          use:topLevelProximityItem={i}
-        >
-          <Button
-            variant="plain"
-            type="button"
-            data-proximity-active={menuHover?.activeIndex === i}
-            class={cn(
-              menuItem(),
-              'px-3 text-sm',
-              entry.disabled
-                ? 'text-muted-foreground cursor-not-allowed'
-                : 'text-foreground cursor-pointer',
-              menuHover?.activeIndex === i && 'bg-hover',
-              entry.destructive && !entry.disabled && 'text-danger',
-            )}
-            onclick={() => handleItemClick(entry)}
-            onfocus={() => menuHover?.setActiveIndex(i)}
-            onblur={() => menuHover?.setActiveIndex(null)}
-            disabled={entry.disabled}
-            role="menuitem"
-            aria-haspopup={entry.submenu ? 'menu' : undefined}
-            aria-expanded={entry.submenu ? openSubmenuId === entry.id : undefined}
-          >
-            {#if entry.icon}
-              <Fa icon={entry.icon} class="w-2.5 h-2.5 opacity-60" />
-            {/if}
-            <span class="flex-1">{entry.label}</span>
-            {#if entry.submenu}
-              <Fa icon={faChevronRight} class="w-2 h-2 opacity-60" />
-            {/if}
-          </Button>
-          {#if entry.submenu && openSubmenuId === entry.id}
-            <div
-              bind:this={submenuElement}
-              class="absolute left-full top-0 -mt-0.5 bg-popover border border-border shadow-lg py-0.5 min-w-32"
-              role="menu"
-            >
-              {#each entry.submenu as subitem, subindex (subitem.id)}
-                <div use:submenuProximityItem={subindex} role="presentation">
-                  <Button
-                    variant="plain"
-                    type="button"
-                    data-proximity-active={submenuHover?.activeIndex === subindex}
-                    class={cn(
-                      menuItem(),
-                      'px-3 text-sm',
-                      subitem.disabled
-                        ? 'text-muted-foreground cursor-not-allowed'
-                        : 'text-foreground cursor-pointer',
-                      submenuHover?.activeIndex === subindex && 'bg-hover',
-                    )}
-                    onclick={() => handleSubmenuItemClick(subitem)}
-                    onfocus={() => submenuHover?.setActiveIndex(subindex)}
-                    onblur={() => submenuHover?.setActiveIndex(null)}
-                    disabled={subitem.disabled}
-                    role="menuitem"
-                  >
-                    <span class="flex-1">{subitem.label}</span>
-                    {#if subitem.checked}
-                      <Fa icon={faCheck} class="w-2.5 h-2.5 opacity-60" />
-                    {/if}
-                  </Button>
-                </div>
-              {/each}
-            </div>
-          {/if}
-        </div>
-      {/if}
-    {/each}
-  </div>
-</Portal>
+<ActionMenu
+  {actions}
+  {ariaLabel}
+  contextMenu={{ x, y, returnFocus }}
+  onAction={(id) => findSidebarItem(items, id)?.onClick()}
+  onOpenChange={(open) => {
+    if (!open) onClickOutside?.();
+  }}
+/>

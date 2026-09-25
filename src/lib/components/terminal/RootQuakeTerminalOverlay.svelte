@@ -404,7 +404,8 @@
                 bind:value={headerEditValue}
                 onblur={finishEditingHeaderName}
                 onkeydown={handleHeaderEditKeydown}
-                class="inline-edit-input relative z-10 w-40 border-0 bg-transparent px-0 text-sm font-medium text-muted-foreground outline-none focus:outline-none! focus:ring-0!"
+                noFocusStyle
+                class="inline-edit-input relative z-10 w-40 border-0 bg-transparent hover:bg-transparent px-0 text-sm font-medium text-muted-foreground outline-none focus:outline-none! focus:ring-0!"
                 placeholder={m.terminal_quakeOverlay_terminalName_placeholder()}
               />
             {:else}
@@ -502,9 +503,10 @@
                     bind:value={editingValue}
                     onblur={finishEditing}
                     onkeydown={handleEditKeydown}
+                    noFocusStyle
                     onclick={(e) => e.stopPropagation()}
                     placeholder={m.terminal_quakeOverlay_name_placeholder()}
-                    class="inline-edit-input relative z-10 w-60 border-none bg-transparent p-0 font-inherit text-inherit outline-none focus:outline-none! focus:ring-0!"
+                    class="inline-edit-input relative z-10 w-60 border-none bg-transparent hover:bg-transparent p-0 font-inherit text-inherit outline-none focus:outline-none! focus:ring-0!"
                   />
                 {:else}
                   <span

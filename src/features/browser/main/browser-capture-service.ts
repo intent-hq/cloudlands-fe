@@ -419,6 +419,7 @@ class BrowserCaptureService {
       name: sessionName,
       domain,
       outputDir,
+      startTime: new Date().toISOString(),
       stepCount: 0,
       captureActive: false,
       activeTraces: new Map(),
@@ -713,7 +714,7 @@ class BrowserCaptureService {
       url: tab?.url || '',
       title: tab?.title || '',
       domain: session.domain,
-      startTime: new Date(parseInt(session.id.split('-')[1])).toISOString(),
+      startTime: session.startTime,
       endTime: new Date().toISOString(),
       stepCount: session.stepCount,
     };

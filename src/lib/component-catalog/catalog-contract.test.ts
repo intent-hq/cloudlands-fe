@@ -133,7 +133,7 @@ function normalizeValue(value: string): string {
   return value
     .replace(/\bsvelte-[a-z0-9]+\b/g, 'svelte-<scope>')
     .replace(/\bbits-[a-z0-9-]+/g, 'bits-<id>')
-    .replace(/\bc[0-9]+(?=-)/g, 'c<id>')
+    .replace(/\bc[0-9]+(?=[-\s"']|$)/g, 'c<id>')
     .replace(/\s+/g, ' ')
     .trim();
 }
@@ -231,19 +231,45 @@ async function verifyCatalogContract(testCase: ContractCase) {
   await tick();
   await waitForCaptureStability(document.body, { timeoutMs: 2_000 });
 
-  expect({
-    declaredStates: testCase.fixture.states,
-    dom: stableDom(document.body),
-  }).toMatchSnapshot();
+  // A stale snapshot must not prevent the independent accessibility check from running.
+  expect
+    .soft({
+      declaredStates: testCase.fixture.states,
+      dom: stableDom(document.body),
+    })
+    .toMatchSnapshot();
 
   rendered.container.setAttribute('role', 'main');
   const result = await axe.run(document.body, { rules: axeRules });
   const allowed = intentionalAxeAllowlist[testCase.key] ?? [];
   expect(allowed.every(({ reason }) => reason.trim().length > 0)).toBe(true);
-  expect(result.violations.map(({ id }) => id).sort()).toEqual(
+  const violations = result.violations.map(({ id, nodes }) => ({
+    id,
+    nodes: nodes.map(({ target, failureSummary }) => ({ target, failureSummary })),
+  }));
+  expect(violations.map(({ id }) => id).sort(), JSON.stringify(violations, null, 2)).toEqual(
     allowed.map(({ rule }) => rule).sort(),
   );
 }
+
+describe('catalog generated identity normalization', () => {
+  it.each([
+    ['c123', 'c<id>'],
+    ['c123 c124', 'c<id> c<id>'],
+    ['c123\tc124\nc125', 'c<id> c<id> c<id>'],
+    ['"c123"', '"c<id>"'],
+    ["'c123'", "'c<id>'"],
+    [
+      'id="c123" aria-labelledby="c123 c124-label"',
+      'id="c<id>" aria-labelledby="c<id> c<id>-label"',
+    ],
+    ['c123-trigger', 'c<id>-trigger'],
+    ['c123-group-0 c124-group-1', 'c<id>-group-0 c<id>-group-1'],
+    ['c123label', 'c123label'],
+  ])('normalizes %s without changing its semantic suffix', (value, expected) => {
+    expect(normalizeValue(value)).toBe(expected);
+  });
+});
 
 describe.sequential('catalog DOM, token, and accessibility contracts', () => {
   it.each(standardCases)('$key', verifyCatalogContract);

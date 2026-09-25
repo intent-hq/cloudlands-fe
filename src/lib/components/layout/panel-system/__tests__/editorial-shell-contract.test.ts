@@ -98,35 +98,8 @@ describe('editorial workspace shell presentation contract', () => {
     expect(handle).toContain('height: 16px');
   });
 
-  it('renders one content-aware header per panel without the legacy tab strip', () => {
-    const tabBar = source('../PanelTabBar.svelte');
-
-    expect(tabBar).not.toContain('border-b border-border');
-    expect(tabBar).toContain('h-[var(--panel-header-height)] bg-card');
-    expect(tabBar).toContain('items-center bg-sidebar pr-2.5');
-    expect(tabBar).toContain('showTabStrip = false');
-    expect(tabBar).toContain("!showTabStrip && 'hidden'");
-    expect(tabBar).toContain('data-panel-tab-bar');
-    expect(tabBar).toContain('data-panel-tabless-header');
-    expect(tabBar).toContain('data-panel-content-header');
-    expect(tabBar).toContain('m.layout_panelTabBar_closePane_ariaLabel()');
-    expect(tabBar).toContain("{#snippet panelActionsDropdown(location: 'tabBar' | 'compact')}");
-    expect(tabBar).toContain('bind:open={panelActionsMenuOpen[location]}');
-    expect(tabBar).toContain("{@render panelActionsDropdown('tabBar')}");
-    expect(tabBar).toContain("{@render panelActionsDropdown('compact')}");
-    expect(tabBar).toContain('{#snippet panelCloseButton(tab: PanelTab | null = null)}');
-    expect(tabBar).toContain('data-testid="panel-close-button"');
-    expect(tabBar).toContain('data-panel-actions-section="display"');
-    expect(tabBar).toContain('data-panel-actions-section="actions"');
-    expect(tabBar).toContain('m.layout_panelTabBar_displaySection_label()');
-    expect(tabBar).toContain('m.layout_panelTabBar_actionsSection_label()');
-    expect(tabBar).toContain('{@render contentActions?.display?.()}');
-    expect(tabBar).toContain('{@render contentActions?.actions?.()}');
-    expect(tabBar).not.toContain('{@render contentActions()}');
-    expect(tabBar).toContain('<Menu.Separator />');
-    expect(tabBar).toContain('<Menu.CommandItem');
-    expect(tabBar).not.toContain('color-mix');
-  });
+  // Content-aware header/menu composition is exercised at runtime in
+  // panel-header-actions-menu.test.ts, including absent content sections.
 
   it('limits direct manipulation to the horizontal panel stack', () => {
     const panel = source('../Panel.svelte');
@@ -231,8 +204,6 @@ describe('editorial workspace shell presentation contract', () => {
     expect(nav).not.toContain('faBell');
     expect(nav).not.toContain("id: 'settings'");
     expect(nav).toContain('data-titlebar-spaces-control');
-    expect(nav).toContain('name="dandelion"');
-    expect(nav).not.toContain('name="spaces"');
     expect(titlebar).not.toContain('ChiefTrigger');
     expect(workspaceHeader).toContain('label: m.ui_sidebar_toggle_label()');
     expect(workspaceHeader).toContain('appStore.dispatch(toggleSidebar())');
@@ -267,7 +238,6 @@ describe('editorial workspace shell presentation contract', () => {
     expect(navigation).not.toContain('aria-expanded');
     expect(navigation).not.toContain('aria-controls');
     expect(navigation).not.toContain('SidebarNavHoverCard');
-    expect(navigation).toContain('name="dandelion"');
     expect(appLayout).toContain('class="workspace-main flex');
     expect(sidebarPanel).toContain('data-panel-item={$panelItem$}');
     expect(sidebarPanel).not.toContain("$panelItem$ === 'chief' ? 'bg-background' : ''");

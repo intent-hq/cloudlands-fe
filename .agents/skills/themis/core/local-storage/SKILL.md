@@ -1,14 +1,8 @@
 ---
 name: core/local-storage
 description: >-
-  App-local safe localStorage access from sagas. getLocalStorageItem /
-  setLocalStorageItem / removeLocalStorageItem / getLocalStorageKeysWithPrefix
-  (plus getLocalStorageJSON / setLocalStorageJSON) wrap window.localStorage in
-  try/catch so quota and private-browsing errors cannot crash a saga. Covers the init-saga pattern
-  (load defaults on startup, merge with persisted JSON) and the persistence-
-  saga pattern (takeEvery on write actions → read selector → setLocalStorage-
-  Item). These helpers are example/app-local utilities, not package exports.
-  Never call window.localStorage directly from a saga or component.
+  Use when loading or persisting preferences with localStorage from sagas,
+  including startup defaults and error-safe app-local helpers.
 type: sub-skill
 requires:
   - core

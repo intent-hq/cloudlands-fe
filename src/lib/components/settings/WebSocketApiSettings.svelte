@@ -11,14 +11,8 @@
    * Handles error states (failed start rolls back setting, INTENTD_AUTH_TOKEN
    * blocks rotation).
    *
-   * Remote gating: `server.*` methods are local-only by design (the daemon
-   * rejects them with -32001 on non-local connections), and toggling
-   * `server.wsApi.enabled` remotely could sever the FE's own connection. So when
-   * the active connection is remote (activeId !== LOCAL_CONNECTION_ID) this
-   * component renders an info-only panel — no daemon calls, no controls. The
-   * gating is reactive to connection switches while mounted: remote→local
-   * triggers a fresh status load, and loadStatus() re-checks locality after
-   * awaits so a mid-flight local→remote switch never fires server.pairingInfo.
+   * Remote windows edit the host through localMachineClient so server methods
+   * and settings mutations stay on the local daemon.
    *
    * This component directly calls appClient methods per the restored pattern from
    * commit 27293564. The WebSocket API settings are transient UI state that do not
@@ -40,28 +34,27 @@
     faEyeSlash,
     faQrcode,
   } from '@fortawesome/free-solid-svg-icons';
+  import { ContentDialog } from '$lib/components/patterns/confirm';
   import { notify } from '$lib/components/patterns/notify';
-  import { FormDialog } from '$lib/components/patterns/confirm';
   import {
     SettingsDisclosure,
     SettingsFieldRow,
     SettingsForm,
     defineSettings,
   } from '$lib/components/patterns/settings';
-  import { appClient } from '$lib/client';
+  import { appClient, localMachineClient } from '$lib/client';
   import ListenTargetSelector from './ListenTargetSelector.svelte';
   import type { ListenTargetSelection } from './ListenTargetSelector.svelte';
   import { m } from '$shared/paraglide/messages.js';
-  import { selectCurrentConnectionId } from '$store/renderer/slices/connections/connections-selectors';
-  import { loadKeychainSyncStateRequested } from '$store/renderer/slices/connections/connections-slice';
+  import {
+    selectCurrentConnectionId,
+    selectKeychainSyncState,
+    selectSelfPublication,
+    selectSelfPublicationBusy,
+  } from '$store/renderer/slices/connections/connections-selectors';
+  import { selfPublicationRequested } from '$store/renderer/slices/connections/connections-slice';
   import { store as appStore } from '$store/renderer/store';
-  import { IPC_CHANNELS } from '$shared/ipc-registry';
   import { LOCAL_CONNECTION_ID } from '$shared/types/connections';
-  import type {
-    PublishSelfResult,
-    SelfPublishedStateResult,
-    UnpublishSelfResult,
-  } from '$shared/types/connections';
 
   let {
     expanded = true,
@@ -73,10 +66,9 @@
     onEnabled?: () => void;
   } = $props();
 
-  const CONNECTIONS = IPC_CHANNELS.CONNECTIONS;
-
   const activeConnectionId$ = selectCurrentConnectionId();
   const isRemote = $derived($activeConnectionId$ !== LOCAL_CONNECTION_ID);
+  const client = $derived(isRemote ? localMachineClient : appClient);
 
   let enabled = $state(false);
   let token = $state('');
@@ -121,12 +113,15 @@
   // API auto-publishes this backend to iCloud Keychain). Loaded alongside the
   // WSS status; fail-soft — when it cannot be read, neither the auto-publish
   // nor the button fires.
-  let publishStateLoaded = $state(false);
-  let syncSupported = $state(false);
-  let syncEnabled = $state(false);
-  let selfPublished = $state(false);
-  let publishSuppressed = $state(false);
-  let publishBusy = $state(false);
+  const publication$ = selectSelfPublication();
+  const publicationBusy$ = selectSelfPublicationBusy();
+  const syncState$ = selectKeychainSyncState();
+  const publishStateLoaded = $derived($publication$ !== null);
+  const syncSupported = $derived($syncState$?.supported ?? false);
+  const syncEnabled = $derived($syncState$?.enabled ?? false);
+  const selfPublished = $derived($publication$?.published ?? false);
+  const publishSuppressed = $derived($publication$?.suppressed ?? false);
+  const publishBusy = $derived($publicationBusy$);
 
   // Gate against overlapping toggle transitions: the awaited auto-unpublish
   // (toggle-off) keeps the toggle interactive otherwise, so a rapid off→on
@@ -139,11 +134,8 @@
     token ? '•'.repeat(Math.max(0, token.length - 8)) + token.slice(-8) : '',
   );
 
-  // Reacts to connection switches while mounted (and covers the initial
-  // mount): on remote, skip loadStatus() entirely — server.* methods are
-  // local-only; on local (including a remote→local switch) load fresh status.
   $effect(() => {
-    if (isRemote) {
+    if (isRemote && !expanded) {
       loading = false;
       return;
     }
@@ -153,12 +145,8 @@
   async function loadStatus() {
     try {
       loading = true;
-      const settings = await appClient.settings.list();
-      if (isRemote) {
-        // Connection switched to remote mid-flight — server.pairingInfo is
-        // local-only, so drop this stale load entirely.
-        return;
-      }
+      const settings = await client.settings.list();
+      if (isRemote && !expanded) return;
       const wsApiEnabled = settings.find(
         (s: { path: string; value: unknown }) => s.path === 'server.wsApi.enabled',
       );
@@ -194,7 +182,7 @@
       tunnelOnly = tunnelEnabled && tunnelOnlySetting?.value === true;
 
       if (enabled) {
-        const info = await appClient.server.pairingInfo();
+        const info = await client.server.pairingInfo();
         token = info.token;
         port = info.port; // bound port from pairing info
         certFingerprint = info.certFingerprint;
@@ -249,7 +237,7 @@
         changes.push({ path: 'server.tunnel.enabled', value: selection.tunnel });
         changes.push({ path: 'server.tunnel.only', value: false });
       }
-      await appClient.settings.update(changes);
+      await client.settings.update(changes);
       bindIps = selection.ips;
       tunnelEnabled = selection.tunnel;
       tunnelOnly = false;
@@ -319,7 +307,7 @@
     if (!bindAddressSupported || localNetworkEnabled || tunnelOnly || listenSaving) return;
     listenSaving = true;
     try {
-      await appClient.settings.update([{ path: 'server.bindAddress', value: [ALL_INTERFACES] }]);
+      await client.settings.update([{ path: 'server.bindAddress', value: [ALL_INTERFACES] }]);
       bindIps = [ALL_INTERFACES];
       refreshSelfEntry();
       // The bound listeners changed — refresh the pairing info (port/IPs).
@@ -349,7 +337,7 @@
     const previousValue = enabled;
     toggleBusy = true;
     try {
-      const result = await appClient.settings.update([
+      const result = await client.settings.update([
         { path: 'server.wsApi.enabled', value: checked },
       ]);
 
@@ -388,28 +376,9 @@
     }
   }
 
-  function getApi(): Window['electronAPI'] | undefined {
-    return typeof window !== 'undefined' ? window.electronAPI : undefined;
-  }
-
   /** Load keychain-sync + self-published state (gates the modal and button). */
-  async function refreshPublishState() {
-    const api = getApi();
-    if (!api) return;
-    try {
-      const [sync, self] = await Promise.all([
-        appStore.dispatch(loadKeychainSyncStateRequested()).promise,
-        api.invoke(CONNECTIONS.SELF_PUBLISHED_STATE) as Promise<SelfPublishedStateResult>,
-      ]);
-      syncSupported = sync.supported;
-      syncEnabled = sync.enabled;
-      selfPublished = self.published;
-      publishSuppressed = self.suppressed;
-      publishStateLoaded = true;
-    } catch {
-      // Fail-soft: without a readable state, offer neither modal nor button.
-      publishStateLoaded = false;
-    }
+  function refreshPublishState() {
+    return appStore.dispatch(selfPublicationRequested('load')).promise.catch(() => {});
   }
 
   /**
@@ -421,9 +390,7 @@
    * rotation/port change itself already succeeded.
    */
   function refreshSelfEntry() {
-    const api = getApi();
-    if (!api || isRemote) return;
-    void Promise.resolve(api.invoke(CONNECTIONS.REFRESH_SELF)).catch(() => {});
+    appStore.dispatch(selfPublicationRequested('refresh')).promise.catch(() => {});
   }
 
   /**
@@ -434,21 +401,8 @@
    * is button-only). Fail-soft: a publish failure surfaces a toast and never
    * rolls back the WSS toggle.
    */
-  async function maybeAutoPublish() {
-    if (isRemote || !publishStateLoaded) return;
-    if (!syncSupported || !syncEnabled || selfPublished || publishSuppressed) return;
-    try {
-      publishBusy = true;
-      await publishSelf();
-    } catch (error) {
-      notify.error(
-        m.settings_wsApi_publishSelf_error({
-          error: error instanceof Error ? error.message : String(error),
-        }),
-      );
-    } finally {
-      publishBusy = false;
-    }
+  function maybeAutoPublish() {
+    return appStore.dispatch(selfPublicationRequested('autoPublish')).promise.catch(() => {});
   }
 
   /**
@@ -461,51 +415,12 @@
    * auto-publishes again. Fail-soft: an unpublish failure surfaces a toast
    * and never rolls back the WSS toggle.
    */
-  async function maybeAutoUnpublish() {
-    if (isRemote || !publishStateLoaded) return;
-    if (!syncSupported || !selfPublished) return;
-    const api = getApi();
-    if (!api) return;
-    try {
-      const result = await (api.invoke(CONNECTIONS.UNPUBLISH_SELF) as Promise<UnpublishSelfResult>);
-      // `removed: false` means main found no self entry to remove (the local
-      // `selfPublished` was stale) — nothing was unpublished, so no success
-      // toast; the state still converges to unpublished-side truth.
-      selfPublished = false;
-      if (result.removed) {
-        notify.success(m.settings_wsApi_unpublishSelf_success());
-      }
-    } catch (error) {
-      notify.error(
-        m.settings_wsApi_unpublishSelf_error({
-          error: error instanceof Error ? error.message : String(error),
-        }),
-      );
-    }
+  function maybeAutoUnpublish() {
+    return appStore.dispatch(selfPublicationRequested('autoUnpublish')).promise.catch(() => {});
   }
 
-  async function publishSelf() {
-    const api = getApi();
-    if (!api) throw new Error('electronAPI is not available');
-    await (api.invoke(CONNECTIONS.PUBLISH_SELF) as Promise<PublishSelfResult>);
-    selfPublished = true;
-    publishSuppressed = false;
-    notify.success(m.settings_wsApi_publishSelf_success());
-  }
-
-  async function handlePublishButton() {
-    try {
-      publishBusy = true;
-      await publishSelf();
-    } catch (error) {
-      notify.error(
-        m.settings_wsApi_publishSelf_error({
-          error: error instanceof Error ? error.message : String(error),
-        }),
-      );
-    } finally {
-      publishBusy = false;
-    }
+  function handlePublishButton() {
+    appStore.dispatch(selfPublicationRequested('publish')).promise.catch(() => {});
   }
 
   async function handlePortSave() {
@@ -516,9 +431,7 @@
 
     try {
       portSaving = true;
-      const result = await appClient.settings.update([
-        { path: 'server.wsApi.port', value: newPort },
-      ]);
+      const result = await client.settings.update([{ path: 'server.wsApi.port', value: newPort }]);
 
       // Check if the daemon rolled back the setting on failure
       const applied = result.find(
@@ -538,7 +451,7 @@
       if (enabled) {
         // Refresh pairing info to show the new bound port (separate try/catch so only update failures are treated as save failures)
         try {
-          const info = await appClient.server.pairingInfo();
+          const info = await client.server.pairingInfo();
           port = info.port;
         } catch {
           // Pairing info refresh failed, but the setting was saved successfully
@@ -566,7 +479,7 @@
   async function handleRegenerate() {
     try {
       regenerating = true;
-      const result = await appClient.server.rotateToken();
+      const result = await client.server.rotateToken();
       token = result.token;
       // Propagate the rotated token to the published self entry (no-op in
       // main when unpublished/suppressed).
@@ -581,6 +494,15 @@
       }
     } finally {
       regenerating = false;
+    }
+  }
+
+  async function handleCopyFingerprint() {
+    try {
+      await navigator.clipboard.writeText(certFingerprint);
+      notify.success(m.settings_wsApi_fingerprintCopied_label());
+    } catch {
+      notify.error(m.ui_imageActionsMenu_copyFailed_error());
     }
   }
 
@@ -659,26 +581,17 @@
         {
           id: 'websocket-api',
           title: m.settings_wsApi_enable_label(),
-          entries: isRemote
-            ? [
-                {
-                  kind: 'custom',
-                  id: 'websocket-api-remote',
-                  label: m.settings_wsApi_enable_label(),
-                  description: m.settings_wsApi_remoteInfo_description(),
-                },
-              ]
-            : [
-                {
-                  kind: 'switch',
-                  id: 'websocket-api-enabled',
-                  label: m.settings_wsApi_enable_label(),
-                  description: m.settings_devices_remoteAccess_description(),
-                  get: () => enabled,
-                  set: handleToggle,
-                  disabled: () => loading || toggleBusy,
-                },
-              ],
+          entries: [
+            {
+              kind: 'switch',
+              id: 'websocket-api-enabled',
+              label: m.settings_wsApi_enable_label(),
+              description: m.settings_devices_remoteAccess_description(),
+              get: () => enabled,
+              set: handleToggle,
+              disabled: () => loading || toggleBusy,
+            },
+          ],
         },
       ],
     }),
@@ -686,9 +599,11 @@
 </script>
 
 <div class="flex min-w-0 flex-col gap-4" data-settings-websocket-api>
-  <SettingsForm schema={connectionSchema} embedded compact={false} />
+  {#if !isRemote || expanded}
+    <SettingsForm schema={connectionSchema} embedded compact={false} />
+  {/if}
 
-  {#if !isRemote && expanded}
+  {#if expanded}
     {#if enabled && tunnelSupported}
       <div transition:slide={{ tier: 'moderate' }} class="space-y-4">
         <!-- Tailcat tunnel toggle: drives server.tunnel.enabled. Absent on
@@ -777,190 +692,211 @@
         {/if}
       </div>
     {/if}
-    <SettingsDisclosure
-      label={m.settings_devices_advanced_label()}
-      flush
-      muted
-      class="pt-4 [&_[data-accordion-trigger]]:flex-none"
-    >
-      <div class="space-y-4">
-        {@render children?.()}
-        {#if enabled}
-          {#if bindAddressSupported}
-            <section transition:slide={{ tier: 'moderate' }}>
-              <ListenTargetSelector
-                availableIps={availableIps ?? localIps}
-                selectedIps={tunnelOnly ? [] : bindIps}
-                tunnelSelected={tunnelEnabled}
-                saving={toggleBusy || listenSaving}
-                onchange={handleListenTargetChange}
-              />
-            </section>
+    <div hidden={!expanded}>
+      <SettingsDisclosure
+        label={m.settings_devices_advanced_label()}
+        flush
+        muted
+        class="pt-4 [&_[data-accordion-trigger]]:flex-none"
+      >
+        <div class="space-y-4">
+          {@render children?.()}
+          {#if enabled}
+            {#if bindAddressSupported}
+              <section transition:slide={{ tier: 'moderate' }}>
+                <ListenTargetSelector
+                  availableIps={availableIps ?? localIps}
+                  selectedIps={tunnelOnly ? [] : bindIps}
+                  tunnelSelected={tunnelEnabled}
+                  saving={toggleBusy || listenSaving}
+                  onchange={handleListenTargetChange}
+                />
+              </section>
+            {/if}
           {/if}
 
-          <!-- Token -->
-          <section class="space-y-3">
-            <SettingsFieldRow id="websocket-token" label={m.settings_wsApi_apiToken_label()}>
-              {#snippet control()}
-                <div class="flex min-w-0 max-w-full items-center gap-2">
-                  <code
-                    class="type-caption font-mono text-foreground bg-muted px-2 py-1 rounded min-w-0 max-w-[280px] truncate select-all"
-                  >
-                    {showToken ? token : maskedToken}
-                  </code>
-                  <Button
-                    variant="ghost"
-                    size="icon-compact"
-                    iconOnly
-                    type="button"
-                    onclick={() => (showToken = !showToken)}
-                    class="text-muted-foreground hover:text-foreground hover:bg-muted transition-colors cursor-pointer"
-                    title={showToken ? m.settings_wsApi_hideToken() : m.settings_wsApi_showToken()}
-                  >
-                    <Fa icon={showToken ? faEyeSlash : faEye} size="sm" />
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="icon-compact"
-                    iconOnly
-                    type="button"
-                    onclick={handleCopy}
-                    class="text-muted-foreground hover:text-foreground hover:bg-muted transition-colors cursor-pointer"
-                    title={m.settings_wsApi_copyToken()}
-                  >
-                    <Fa icon={faCopy} size="sm" />
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="icon-compact"
-                    iconOnly
-                    type="button"
-                    onclick={handleRegenerate}
-                    disabled={regenerating}
-                    class="text-muted-foreground hover:text-foreground hover:bg-muted transition-colors cursor-pointer disabled:opacity-50"
-                    title={m.settings_wsApi_regenerateToken()}
-                  >
-                    {#if regenerating}
-                      <IntentMarkLoader size={14} />
-                    {:else}
-                      <Fa icon={faRotateRight} size="sm" />
-                    {/if}
-                  </Button>
+          <!-- Port remains configurable even while remote access is disabled. -->
+          <SettingsFieldRow
+            id="websocket-port"
+            label={m.settings_wsApi_port_label()}
+            error={portValid ? undefined : m.settings_wsApi_port_invalid()}
+            disabled={portSaving}
+          >
+            {#snippet control({ labelId, errorId })}
+              <div class="flex items-center gap-2">
+                <div class="shrink-0 w-32">
+                  <Input
+                    type="number"
+                    min="1024"
+                    max="65535"
+                    bind:value={editedPort}
+                    disabled={portSaving}
+                    aria-label={m.settings_wsApi_port_ariaLabel()}
+                    aria-labelledby={labelId}
+                    aria-describedby={errorId}
+                  />
                 </div>
-              {/snippet}
-            </SettingsFieldRow>
-            <p class="type-body text-warning-ink">
-              {m.settings_wsApi_tokenSecretWarning()}
-            </p>
-            <!-- This daemon's own tailcat tunnel address (copyable) — shown only
-                 while the tunnel is on and the daemon reports one. -->
-            {#if tunnelSupported && tunnelEnabled && tcAddress}
-              <section data-tunnel-address-row>
-                <div class="flex items-center justify-between gap-2">
-                  <span class="type-body text-muted-foreground">
-                    {m.settings_tunnel_tcAddress_label()}
-                  </span>
-                  <div class="flex items-center gap-2 shrink-0">
+                {#if Number(editedPort) !== persistedPort}
+                  <Button
+                    variant="link"
+                    size="sm"
+                    type="button"
+                    onclick={handlePortSave}
+                    disabled={portSaving || !portValid}
+                    class="h-auto px-0"
+                  >
+                    {portSaving ? m.settings_wsApi_port_saving() : m.settings_wsApi_port_save()}
+                  </Button>
+                {/if}
+              </div>
+            {/snippet}
+          </SettingsFieldRow>
+
+          {#if enabled}
+            <section
+              class="space-y-3 [&_[data-field-label]]:font-normal"
+              aria-labelledby="connection-details-heading"
+            >
+              <h3 id="connection-details-heading" class="type-body font-medium text-foreground">
+                {m.settings_wsApi_connectionDetails_label()}
+              </h3>
+              <SettingsFieldRow
+                id="websocket-token"
+                label={m.settings_wsApi_apiToken_label()}
+                class="md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] md:[&>[data-field-control]]:w-full"
+              >
+                {#snippet control()}
+                  <div class="flex min-w-0 w-full items-center gap-2">
                     <code
-                      class="type-caption font-mono text-foreground bg-muted px-2 py-0.5 rounded max-w-[280px] truncate"
-                      title={tcAddress}>{tcAddress}</code
+                      class="type-caption font-mono text-foreground bg-muted px-2 py-1 rounded min-w-0 flex-1 truncate select-all"
                     >
+                      {showToken ? token : maskedToken}
+                    </code>
                     <Button
                       variant="ghost"
                       size="icon-compact"
                       iconOnly
                       type="button"
-                      onclick={handleCopyTcAddress}
+                      onclick={() => (showToken = !showToken)}
                       class="text-muted-foreground hover:text-foreground hover:bg-muted transition-colors cursor-pointer"
-                      title={m.settings_tunnel_tcAddress_copy()}
+                      title={showToken
+                        ? m.settings_wsApi_hideToken()
+                        : m.settings_wsApi_showToken()}
+                    >
+                      <Fa icon={showToken ? faEyeSlash : faEye} size="sm" />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon-compact"
+                      iconOnly
+                      type="button"
+                      onclick={handleCopy}
+                      class="text-muted-foreground hover:text-foreground hover:bg-muted transition-colors cursor-pointer"
+                      title={m.settings_wsApi_copyToken()}
                     >
                       <Fa icon={faCopy} size="sm" />
                     </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon-compact"
+                      iconOnly
+                      type="button"
+                      onclick={handleRegenerate}
+                      disabled={regenerating}
+                      class="text-muted-foreground hover:text-foreground hover:bg-muted transition-colors cursor-pointer disabled:opacity-50"
+                      title={m.settings_wsApi_regenerateToken()}
+                    >
+                      {#if regenerating}
+                        <IntentMarkLoader size={14} />
+                      {:else}
+                        <Fa icon={faRotateRight} size="sm" />
+                      {/if}
+                    </Button>
                   </div>
-                </div>
-              </section>
-            {/if}
-          </section>
-        {/if}
-
-        <!-- Port remains configurable even while remote access is disabled. -->
-        <SettingsFieldRow
-          id="websocket-port"
-          label={m.settings_wsApi_port_label()}
-          error={portValid ? undefined : m.settings_wsApi_port_invalid()}
-          disabled={portSaving}
-        >
-          {#snippet control({ labelId, errorId })}
-            <div class="flex items-center gap-2">
-              <div class="shrink-0 w-32">
-                <Input
-                  type="number"
-                  min="1024"
-                  max="65535"
-                  bind:value={editedPort}
-                  disabled={portSaving}
-                  aria-label={m.settings_wsApi_port_ariaLabel()}
-                  aria-labelledby={labelId}
-                  aria-describedby={errorId}
-                />
-              </div>
-              {#if Number(editedPort) !== persistedPort}
-                <Button
-                  variant="link"
-                  size="sm"
-                  type="button"
-                  onclick={handlePortSave}
-                  disabled={portSaving || !portValid}
-                  class="h-auto px-0"
-                >
-                  {portSaving ? m.settings_wsApi_port_saving() : m.settings_wsApi_port_save()}
-                </Button>
+                {/snippet}
+              </SettingsFieldRow>
+              <!-- This daemon's own tailcat tunnel address (copyable) — shown only
+                 while the tunnel is on and the daemon reports one. -->
+              {#if tunnelSupported && tunnelEnabled && tcAddress}
+                <section data-tunnel-address-row>
+                  <SettingsFieldRow
+                    id="websocket-tailcat"
+                    label={m.settings_tunnel_tcAddress_label()}
+                    class="md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] md:[&>[data-field-control]]:w-full"
+                  >
+                    {#snippet control()}
+                      <div class="flex min-w-0 w-full items-center gap-2">
+                        <code
+                          class="type-caption font-mono text-foreground bg-muted px-2 py-1 rounded min-w-0 flex-1 truncate"
+                          title={tcAddress}>{tcAddress}</code
+                        >
+                        <Button
+                          variant="ghost"
+                          size="icon-compact"
+                          iconOnly
+                          type="button"
+                          onclick={handleCopyTcAddress}
+                          title={m.settings_tunnel_tcAddress_copy()}
+                        >
+                          <Fa icon={faCopy} size="sm" />
+                        </Button>
+                      </div>
+                    {/snippet}
+                  </SettingsFieldRow>
+                </section>
               {/if}
-            </div>
-          {/snippet}
-        </SettingsFieldRow>
-
-        {#if enabled}
-          <!-- TLS Certificate Fingerprint (truncated single line by user
-             preference — reverses cloudlands-fe#1979's full-width display;
-             the full value stays available via the title tooltip) -->
-          {#if certFingerprint}
-            <section>
-              <div class="flex flex-wrap items-center justify-between gap-2">
-                <span class="type-body text-muted-foreground"
-                  >{m.settings_wsApi_tlsFingerprint_label()}</span
+              {#if certFingerprint}
+                <SettingsFieldRow
+                  id="websocket-fingerprint"
+                  label={m.settings_wsApi_tlsFingerprint_label()}
+                  class="md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] md:[&>[data-field-control]]:w-full"
                 >
-                <code
-                  class="type-caption font-mono text-foreground bg-muted px-2 py-0.5 rounded max-w-[280px] truncate"
-                  title={certFingerprint}>{certFingerprint.slice(0, 23)}…</code
-                >
-              </div>
+                  {#snippet control()}
+                    <div class="flex min-w-0 w-full items-center gap-2">
+                      <code
+                        class="type-caption font-mono text-foreground bg-muted px-2 py-1 rounded min-w-0 flex-1 truncate"
+                        title={certFingerprint}>{certFingerprint.slice(0, 23)}…</code
+                      >
+                      <Button
+                        variant="ghost"
+                        size="icon-compact"
+                        iconOnly
+                        type="button"
+                        onclick={handleCopyFingerprint}
+                        title={m.settings_wsApi_copyFingerprint_label()}
+                      >
+                        <Fa icon={faCopy} size="sm" />
+                      </Button>
+                    </div>
+                  {/snippet}
+                </SettingsFieldRow>
+              {/if}
             </section>
           {/if}
-        {/if}
-      </div>
-    </SettingsDisclosure>
+        </div>
+      </SettingsDisclosure>
+    </div>
   {/if}
 </div>
 
-<FormDialog
-  bind:open={showQr}
-  title={m.settings_wsApi_mobilePairing_label()}
-  submitLabel={m.settings_wsApi_close()}
-  showCancel={false}
-  showCloseButton={false}
-  class="max-w-xs"
-  onSubmit={handleCloseQr}
-  onCancel={handleCloseQr}
->
-  {#if qrDataUrl}
-    <img
-      src={qrDataUrl}
-      alt={m.settings_wsApi_qrImageAlt()}
-      class="w-full h-auto rounded-lg"
-      width="544"
-      height="544"
-    />
-  {/if}
-  <p class="type-body text-subtle">{m.settings_wsApi_scanDescription()}</p>
-</FormDialog>
+{#if showQr}
+  <ContentDialog
+    open
+    title={m.settings_wsApi_mobilePairing_label()}
+    description={m.settings_wsApi_scanDescription()}
+    size="sm"
+    closeLabel={m.settings_wsApi_close()}
+    onClose={handleCloseQr}
+  >
+    {#if qrDataUrl}<img
+        src={qrDataUrl}
+        alt={m.settings_wsApi_qrImageAlt()}
+        class="h-auto w-full rounded-lg"
+        width="544"
+        height="544"
+      />{/if}
+    {#snippet footer()}<Button variant="ghost" onclick={handleCloseQr}
+        >{m.settings_wsApi_close()}</Button
+      >{/snippet}
+  </ContentDialog>
+{/if}

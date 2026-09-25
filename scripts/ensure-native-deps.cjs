@@ -38,7 +38,6 @@ const PLATFORM_PACKAGES = [];
 function main() {
   console.log('🔍 Ensuring cross-architecture native dependencies...\n');
 
-  const hostArch = process.arch; // e.g. 'arm64'
   const hostPlatform = process.platform; // e.g. 'darwin'
 
   let installed = 0;

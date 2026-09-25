@@ -394,6 +394,7 @@ import { setResolvedAppName } from './utils/resolve-app-title.js';
 import { isHudWindow, isTrackedHudWindow } from './hud-window.js';
 import { getBackendIdForWindow } from './window-backend.js';
 import { buildWindowMenuEntries } from './window-menu-entries.js';
+import { buildNativeEditMenu, buildNativeViewMenu } from './native-menu-model.js';
 import { buildAboutDialogOptions, formatThirdPartyCredits } from './about-dialog.js';
 import { getMainWindow } from './state';
 import {
@@ -1342,95 +1343,15 @@ const bootFlow = app.whenReady().then(async () => {
     // (per-platform structure included) with the roles kept for behavior.
     template.push(
       fileMenu,
-      {
-        label: m.menu_edit(),
-        submenu: [
-          { role: 'undo', label: m.menu_undo() },
-          { role: 'redo', label: m.menu_redo() },
-          { type: 'separator' },
-          { role: 'cut', label: m.menu_cut() },
-          { role: 'copy', label: m.menu_copy() },
-          { role: 'paste', label: m.menu_paste() },
-          ...(isMacOS
-            ? ([
-                { role: 'pasteAndMatchStyle', label: m.menu_paste_and_match_style() },
-                { role: 'delete', label: m.menu_delete() },
-                { role: 'selectAll', label: m.menu_select_all() },
-                { type: 'separator' },
-                {
-                  label: m.menu_substitutions(),
-                  submenu: [
-                    { role: 'showSubstitutions', label: m.menu_show_substitutions() },
-                    { type: 'separator' },
-                    { role: 'toggleSmartQuotes', label: m.menu_smart_quotes() },
-                    { role: 'toggleSmartDashes', label: m.menu_smart_dashes() },
-                    { role: 'toggleTextReplacement', label: m.menu_text_replacement() },
-                  ],
-                },
-                {
-                  label: m.menu_speech(),
-                  submenu: [
-                    { role: 'startSpeaking', label: m.menu_start_speaking() },
-                    { role: 'stopSpeaking', label: m.menu_stop_speaking() },
-                  ],
-                },
-              ] as Electron.MenuItemConstructorOptions[])
-            : ([
-                { role: 'delete', label: m.menu_delete() },
-                { type: 'separator' },
-                { role: 'selectAll', label: m.menu_select_all() },
-              ] as Electron.MenuItemConstructorOptions[])),
-        ],
-      },
-      {
-        label: m.menu_view(),
-        submenu: [
-          {
-            label: m.menu_reload(),
-            accelerator: 'CmdOrCtrl+R',
-            // Don't register the accelerator - let the renderer handle Cmd+R
-            // so browser panels can refresh instead of reloading the whole app
-            registerAccelerator: false,
-            click: () => {
-              const focusedWindow = BrowserWindow.getFocusedWindow();
-              if (focusedWindow && !focusedWindow.isDestroyed()) {
-                focusedWindow.webContents.reload();
-              }
-            },
-          },
-          { role: 'forceReload', label: m.menu_force_reload() },
-          { type: 'separator' },
-          {
-            label: m.menu_toggle_devtools(),
-            accelerator: isMacOS ? 'Alt+Command+I' : 'Ctrl+Shift+I',
-            // Don't use role: 'toggleDevTools' — it targets
-            // getFocusedWebContents(), which can be a hidden offscreen
-            // keep-alive <webview> guest (intent-hq/monorepo#2844). Always
-            // toggle DevTools for the focused window's own renderer.
-            click: () => {
-              toggleWindowDevTools(BrowserWindow.getFocusedWindow());
-            },
-          },
-          { type: 'separator' },
-          {
-            label: m.menu_actual_size(),
-            accelerator: 'CmdOrCtrl+0',
-            click: () => handleMenuZoom('menu:reset-zoom', sendWorkspaceCommand),
-          },
-          {
-            label: m.menu_zoom_in(),
-            accelerator: 'CmdOrCtrl+=',
-            click: () => handleMenuZoom('menu:zoom-in', sendWorkspaceCommand),
-          },
-          {
-            label: m.menu_zoom_out(),
-            accelerator: 'CmdOrCtrl+-',
-            click: () => handleMenuZoom('menu:zoom-out', sendWorkspaceCommand),
-          },
-          { type: 'separator' },
-          { role: 'togglefullscreen', label: m.menu_toggle_fullscreen() },
-        ],
-      },
+      buildNativeEditMenu(isMacOS),
+      buildNativeViewMenu(isMacOS, {
+        reload: () => {
+          const focusedWindow = BrowserWindow.getFocusedWindow();
+          if (focusedWindow && !focusedWindow.isDestroyed()) focusedWindow.webContents.reload();
+        },
+        toggleDevTools: () => toggleWindowDevTools(BrowserWindow.getFocusedWindow()),
+        zoom: (channel) => handleMenuZoom(channel, sendWorkspaceCommand),
+      }),
       {
         label: m.menu_window(),
         submenu: windowMenuItems,

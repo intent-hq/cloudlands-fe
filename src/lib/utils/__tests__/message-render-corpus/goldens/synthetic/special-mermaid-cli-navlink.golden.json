@@ -11,7 +11,12 @@
         },
         {
           "type": "mermaid",
-          "content": "flowchart LR\n  A --> B"
+          "content": "flowchart LR\n  A --> B",
+          "metadata": {
+            "rawSource": "flowchart LR\n  A --> B\n",
+            "fenceStart": 7,
+            "isStreaming": false
+          }
         },
         {
           "type": "text",

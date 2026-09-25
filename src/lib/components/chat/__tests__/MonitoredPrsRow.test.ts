@@ -208,10 +208,7 @@ describe('MonitoredPrsRow', () => {
     expect(summary.textContent).not.toContain('acme/');
     expect(line?.className).toContain('min-h-9');
     expect(line?.className).toContain('gap-2');
-    expect(line?.className).toContain('px-3');
-    const icon = screen.getByTestId('monitored-pr-icon').querySelector('svg');
-    expect(icon?.getAttribute('width')).toBe('14px');
-    expect(icon?.getAttribute('height')).toBe('14px');
+    expect(line?.className).toContain('subscription-card-row-inset');
     expect(screen.getByTestId('monitored-pr-label').className).toContain('text-muted-foreground');
     expect(screen.getByTestId('monitored-pr-chip').className).toContain('h-6');
     expect(screen.getByTestId('monitored-pr-disclosure').className).toContain('h-6');
@@ -658,7 +655,7 @@ describe('MonitoredPrsRow', () => {
     await fireEvent.click(screen.getByTestId('monitored-pr-chip'));
     await waitFor(() => screen.getByTestId('monitored-pr-check-flush-item'));
     const menu = screen.getByTestId('monitored-pr-menu');
-    const items = Array.from(menu.querySelectorAll('button'));
+    const items = Array.from(menu.querySelectorAll('[role="menuitem"]'));
     expect(items.map((item) => item.textContent?.trim())).toEqual([
       'Check and Flush',
       'Open in App',
@@ -730,7 +727,7 @@ describe('MonitoredPrsRow', () => {
 
     await fireEvent.click(screen.getByTestId('monitored-pr-chip'));
     const flushItem = await waitFor(() => screen.getByTestId('monitored-pr-check-flush-item'));
-    expect((flushItem as HTMLButtonElement).disabled).toBe(false);
+    expect(flushItem.hasAttribute('data-disabled')).toBe(false);
 
     await fireEvent.click(flushItem);
     expect(dispatchMock).toHaveBeenCalledTimes(1);

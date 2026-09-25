@@ -702,6 +702,27 @@ describe('ShareWorkspaceDialog — invite an existing GitHub user', () => {
     expect(onAddMember).toHaveBeenCalledTimes(1);
   });
 
+  it('keeps the invitation target through an in-flight refresh and gates submission until settled', async () => {
+    const onAddMember = vi.fn();
+    const { rerender } = renderDialog({ principals: [erin, frank], onAddMember });
+    await pick('@erin');
+    await rerender({ ...baseProps, principals: [], loading: true, onAddMember });
+    const invite = screen.getByTestId('share-existing-guest-invite') as HTMLButtonElement;
+    const trigger = screen.getByRole('combobox', {
+      name: /Invite an existing GitHub user/,
+    }) as HTMLButtonElement;
+    expect(trigger.disabled).toBe(true);
+    expect(trigger.getAttribute('aria-busy')).toBe('true');
+    expect(invite.disabled).toBe(true);
+    await fireEvent.click(invite);
+    expect(onAddMember).not.toHaveBeenCalled();
+    await rerender({ ...baseProps, principals: [frank, erin], loading: false, onAddMember });
+    expect(trigger.disabled).toBe(false);
+    expect(trigger.getAttribute('aria-busy')).toBe('false');
+    await fireEvent.click(screen.getByTestId('share-existing-guest-invite'));
+    expect(onAddMember).toHaveBeenCalledExactlyOnceWith('p-erin');
+  });
+
   // The host forwards `selectShareInvitablePrincipals`; after the daemon's
   // `workspace:updated` members event re-reads the roster with erin on it,
   // that selector drops her entry and the dialog clears its pick.
@@ -787,12 +808,13 @@ describe('ShareWorkspaceDialog — invite an existing GitHub user', () => {
 });
 
 describe('ShareWorkspaceDialog — dismissal', () => {
-  it('closes on Escape and on the close button', async () => {
+  it.each(['Escape', 'close button'])('closes once using %s', async (method) => {
     const onClose = vi.fn();
     renderDialog({ onClose });
 
-    await fireEvent.keyDown(screen.getByTestId('share-workspace-dialog'), { key: 'Escape' });
-    await fireEvent.click(screen.getByRole('button', { name: 'Close' }));
-    expect(onClose).toHaveBeenCalledTimes(2);
+    if (method === 'Escape')
+      await fireEvent.keyDown(screen.getByTestId('share-workspace-dialog'), { key: 'Escape' });
+    else await fireEvent.click(screen.getByRole('button', { name: 'Close' }));
+    expect(onClose).toHaveBeenCalledOnce();
   });
 });

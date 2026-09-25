@@ -8,7 +8,7 @@
  * `backend-transport-types.ts` for the transport interface.
  */
 import { resolveBackendTransport } from './backend-transport-factory';
-import type { BackendNotification } from './backend-transport-types';
+import type { BackendNotification, BackendRequestOptions } from './backend-transport-types';
 
 export type { BackendNotification } from './backend-transport-types';
 export { electronAPI } from './electron-ipc-transport';
@@ -24,7 +24,7 @@ export { electronAPI } from './electron-ipc-transport';
 export async function backendRequest<T = unknown>(
   method: string,
   params?: unknown,
-  options?: { timeoutMs?: number },
+  options?: BackendRequestOptions,
 ): Promise<T> {
   return resolveBackendTransport().request<T>(method, params, options);
 }

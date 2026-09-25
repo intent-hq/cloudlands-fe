@@ -3,7 +3,6 @@
   import { Button } from '$lib/components/patterns/settings/custom-controls';
   import { m } from '$shared/paraglide/messages.js';
   import DevicesIcon from 'phosphor-svelte/lib/DevicesIcon';
-  import FlaskIcon from 'phosphor-svelte/lib/FlaskIcon';
   import GearSixIcon from 'phosphor-svelte/lib/GearSixIcon';
   import GitBranchIcon from 'phosphor-svelte/lib/GitBranchIcon';
   import KeyboardIcon from 'phosphor-svelte/lib/KeyboardIcon';
@@ -97,13 +96,6 @@
         return m.settings_sidebar_advanced_label();
       },
     },
-    {
-      id: 'labs',
-      icon: FlaskIcon,
-      get label() {
-        return m.settings_sidebar_labs_label();
-      },
-    },
   ];
 
   const groups = [
@@ -159,7 +151,9 @@
                 ? 'bg-foreground/5 text-foreground'
                 : 'text-muted-foreground'}"
             >
-              <ListRow class="min-h-8 w-full gap-2 px-3 py-0">
+              <ListRow
+                class="min-h-8 w-full items-center gap-2 px-3 py-0 [&>[data-slot=list-row-leading]]:self-center"
+              >
                 {#snippet leading()}
                   <span
                     data-slot="settings-sidebar-icon"

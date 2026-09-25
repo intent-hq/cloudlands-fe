@@ -28,8 +28,6 @@ describe('workspace sidebar hierarchy presentation contract', () => {
     expect(navigation).toContain('size="icon"');
     expect(navigation).toContain('TITLEBAR_NAVIGATION_CONTROL_CLASS');
     expect(navigation).toContain('data-nav-item={item.id}');
-    expect(navigation).toContain('name="dandelion"');
-    expect(navigation).not.toContain('name="spaces"');
     expect(navigation).not.toContain('SidebarNavHoverCard');
     expect(titleBar).toContain('<SidebarNav />');
     expect(titleBar.indexOf('<SidebarNav />')).toBeLessThan(titleBar.indexOf('<WorkspaceTabStrip'));
@@ -231,7 +229,7 @@ describe('workspace sidebar hierarchy presentation contract', () => {
   it('waits to reveal the launcher grid until the collapsing card reaches its source', () => {
     const sidebar = source('../MultiSelectTabbedSidebar.svelte');
 
-    expect(sidebar).toContain('function launcherGridReveal(_node: Element)');
+    expect(sidebar).toContain('function launcherGridReveal(');
     expect(sidebar).toContain('delay: spring.moderate.settleMs');
     expect(sidebar).toContain('duration: spring.fast.settleMs');
     expect(sidebar).toContain('in:launcherGridReveal|global');

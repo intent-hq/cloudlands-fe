@@ -14,11 +14,7 @@
   import { m } from '$shared/paraglide/messages.js';
   import { notify } from '$lib/components/patterns/notify';
   import ChatPanel from '$lib/components/chat/ChatPanel.svelte';
-  import {
-    Dropdown,
-    type DropdownItemProps,
-    type DropdownOption,
-  } from '$lib/components/ui/dropdown';
+  import { Select } from '$lib/components/ui/select';
   import { store as appStore } from '$store/renderer/store';
   import {
     setChiefActiveAgentId,
@@ -77,11 +73,19 @@
     /** Rendered inside the combined Home panel: the panel owns the close
         button and height, so hide the close X and don't force a min height. */
     embedded?: boolean;
+    /** Mount chat on first activation, then retain drafts without claiming focus or read state. */
+    isActive?: boolean;
     collapsed?: boolean;
     ontoggle?: () => void;
   }
 
-  let { expanded = false, embedded = false, collapsed = false, ontoggle }: Props = $props();
+  let {
+    expanded = false,
+    embedded = false,
+    isActive = true,
+    collapsed = false,
+    ontoggle,
+  }: Props = $props();
 
   const CHIEF_WORKSPACE_TIMESTAMP = '2026-01-01T00:00:00.000Z';
   const chiefWorkspace: Workspace = {
@@ -101,6 +105,7 @@
   let isCreatingThread = $state(false);
   let hasAutoStartedRef = $state(false);
   let isWorkspaceRegistered = $state(false);
+  let hasActivatedChat = $state(false);
 
   const activeChiefThread = $derived(
     $chiefActiveAgentId$
@@ -122,14 +127,6 @@
   // ChatPanel prop/key expressions re-evaluate lazily, so they must never
   // dereference a possibly-null activeThread (it can empty while mounted).
   const activeAgentId = $derived(activeThread?.agentId ?? null);
-  const threadOptions = $derived<DropdownOption[]>(
-    $chiefThreads$.map((thread) => ({
-      value: thread.agentId,
-      label: thread.title,
-      data: { isActive: thread.isActive },
-      class: activeAgentId === thread.agentId ? 'bg-muted/70 text-foreground' : '',
-    })),
-  );
   const currentPreview = $derived(activeThread ?? $chiefPreview$);
   const title = $derived(currentPreview?.title ?? m.layout_chiefCard_startThread_label());
   const preview = $derived(currentPreview?.preview ?? m.layout_chiefCard_preview_description());
@@ -148,6 +145,12 @@
     ensureChiefWorkspaceRegistered();
   });
 
+  $effect.pre(() => {
+    // ChatPanel initializes its transcript on mount, even when inactive.
+    // Defer that first mount until selection, then keep the draft alive on tab changes.
+    if (expanded && isActive && activeAgentId) hasActivatedChat = true;
+  });
+
   $effect(() => {
     if (activeChiefThread && selectedAgentId !== activeChiefThread.agentId) {
       selectedAgentId = activeChiefThread.agentId;
@@ -161,6 +164,7 @@
   $effect(() => {
     if (
       !expanded ||
+      !isActive ||
       !isWorkspaceRegistered ||
       !$chiefAgentsLoaded$ ||
       isCreatingThread ||
@@ -343,63 +347,50 @@
             </span>
           </Button>
         {:else}
-          <Dropdown
-            value={selectedAgentId ?? undefined}
-            options={threadOptions}
-            onchange={handleThreadChange}
-            searchable={false}
-            portal={true}
-            variant="inline"
-            size="xs"
-            class="min-w-0 max-w-full"
-            triggerClass="h-7! max-w-full min-w-0 justify-start gap-1.5 px-1.5! text-foreground hover:bg-muted/50"
-            contentClass="min-w-48 max-w-[calc(100vw-32px)] sm:max-w-80"
-          >
-            {#snippet trigger()}
+          <Select.Root value={selectedAgentId ?? ''} onchange={handleThreadChange}>
+            <Select.Trigger
+              variant="ghost"
+              aria-label={m.layout_chiefCard_threadPicker_ariaLabel()}
+              class="h-7! max-w-full min-w-0 justify-start gap-1.5 px-1.5! text-foreground hover:bg-muted/50"
+            >
               <span class="text-ui min-w-0 flex-1 truncate text-left font-medium">
                 {activeThread?.title ?? m.layout_chiefCard_startThread_label()}
               </span>
-            {/snippet}
-
-            {#snippet item({ option, selected, highlighted }: DropdownItemProps)}
-              {@const thread = $chiefThreads$.find(
-                (candidate) => candidate.agentId === option.value,
-              )}
-              <div class="flex min-w-0 flex-1 items-center gap-1.5">
-                {#if thread?.isActive}
-                  <span
-                    class="h-1.5 w-1.5 shrink-0 rounded-full bg-blue-500"
-                    aria-label={m.layout_chiefCard_activeThread_ariaLabel()}
-                  ></span>
-                {:else}
-                  <span class="h-1.5 w-1.5 shrink-0"></span>
-                {/if}
-                <span class="truncate {selected ? 'font-medium text-foreground' : ''}"
-                  >{option.label}</span
-                >
-              </div>
-              {#if !$hidesAgentLifecycleActions$}
-                <span
-                  role="button"
-                  tabindex={-1}
-                  class="ml-1 flex h-5 w-5 shrink-0 cursor-pointer items-center justify-center rounded text-muted-foreground/70 transition-colors hover:text-danger {highlighted
-                    ? 'opacity-100'
-                    : 'opacity-0'}"
-                  onclick={(e) => handleDeleteThread(e, option.value, option.label)}
-                  aria-label={m.layout_chiefCard_deleteThread_ariaLabel({ title: option.label })}
-                  title={m.layout_chiefCard_deleteThread_tooltip()}
-                >
-                  <Fa icon={faTrash} size="xs" />
-                </span>
-              {/if}
-            {/snippet}
-
-            {#snippet empty()}
-              <div class="type-caption px-3 py-4 text-center text-subtle">
-                {m.layout_chiefCard_noThreads_label()}
-              </div>
-            {/snippet}
-          </Dropdown>
+            </Select.Trigger>
+            <Select.Content portal class="min-w-48 max-w-[calc(100vw-32px)] sm:max-w-80">
+              {#each $chiefThreads$ as thread (thread.agentId)}
+                <Select.Item value={thread.agentId} label={thread.title}>
+                  <span class="flex min-w-0 items-center gap-1.5">
+                    {#if thread.isActive}
+                      <span
+                        class="h-1.5 w-1.5 shrink-0 rounded-full bg-primary"
+                        aria-label={m.layout_chiefCard_activeThread_ariaLabel()}
+                      ></span>
+                    {/if}
+                    <span class="truncate">{thread.title}</span>
+                  </span>
+                </Select.Item>
+              {:else}
+                <div role="status" class="type-caption px-3 py-4 text-center text-subtle">
+                  {m.layout_chiefCard_noThreads_label()}
+                </div>
+              {/each}
+            </Select.Content>
+          </Select.Root>
+          {#if activeThread && !$hidesAgentLifecycleActions$}
+            <Button
+              variant="ghost"
+              size="icon-xs"
+              aria-label={m.layout_chiefCard_deleteThread_ariaLabel({ title: activeThread.title })}
+              title={m.layout_chiefCard_deleteThread_tooltip()}
+              onclick={(event) => {
+                if (activeThread)
+                  handleDeleteThread(event, activeThread.agentId, activeThread.title);
+              }}
+            >
+              <Fa icon={faTrash} size="xs" />
+            </Button>
+          {/if}
         {/if}
       </div>
       {#if !$hidesAgentLifecycleActions$}
@@ -461,15 +452,15 @@
       hidden={Boolean(ontoggle && collapsed)}
     >
       <section class="flex h-full min-h-0 flex-col">
-        {#if activeAgentId}
+        {#if hasActivatedChat && activeAgentId}
           {#key activeAgentId}
             <div class="min-h-0 flex-1">
               <ChatPanel
                 workspace={chiefWorkspace}
                 agentId={activeAgentId}
                 agentName={m.layout_chiefCard_title()}
-                isActive={true}
-                autoFocus={true}
+                isActive={isActive && !collapsed}
+                autoFocus={isActive && !collapsed && !embedded}
               />
             </div>
           {/key}

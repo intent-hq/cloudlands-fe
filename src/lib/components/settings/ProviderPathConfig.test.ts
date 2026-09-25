@@ -246,7 +246,7 @@ describe('ProviderPathConfig', () => {
     expect(onPathChange).toHaveBeenCalledExactlyOnceWith('/Users/me/src');
   });
 
-  it('keeps the menu and remote picker modal mounted while the picker is open', async () => {
+  it('keeps the form popover and remote picker mounted while the picker is open', async () => {
     // jsdom's zero-size layout makes Floating UI's hide middleware mark the
     // portaled content visibility:hidden, so "mounted vs dismissed" must be
     // asserted with visibility-insensitive queries ({ hidden: true }): a
@@ -254,7 +254,7 @@ describe('ProviderPathConfig', () => {
     // zero-size layout makes bits-ui's outside-pointer dismissal a no-op in
     // jsdom (isClickTrulyOutside needs real rects), so the restored-dismissal
     // step below uses Escape, which is layout-independent.
-    const queryMenu = () => screen.queryByRole('menu', { hidden: true });
+    const queryMenu = () => document.querySelector('[data-slot="popover-content"]');
 
     render(ProviderPathConfigHost, {
       props: {
@@ -266,6 +266,8 @@ describe('ProviderPathConfig', () => {
       },
     });
     expect(queryMenu()).toBeTruthy();
+    expect(queryMenu()?.getAttribute('role')).toBe('dialog');
+    expect(queryMenu()?.getAttribute('aria-label')).toContain('Claude Code');
 
     // The service mock routes to openModal (remote case).
     await fireEvent.click(screen.getByRole('button', { name: 'Choose file' }));
@@ -297,6 +299,42 @@ describe('ProviderPathConfig', () => {
     await fireEvent.keyDown(document.body, { key: 'Escape' });
     await waitFor(() => expect(queryMenu()).toBeNull());
   });
+
+  it.each(['escape', 'outside-focus'])(
+    'preserves the correct focus owner after %s dismissal',
+    async (dismissal) => {
+      const anchor = document.createElement('button');
+      const outside = document.createElement('button');
+      document.body.append(anchor, outside);
+      try {
+        render(ProviderPathConfigHost, {
+          props: {
+            providerId: 'claude-code',
+            providerName: 'Claude Code',
+            cliCommand: 'claude-agent-acp',
+            anchor,
+          },
+        });
+        await flush();
+        screen.getByPlaceholderText('Path to claude-agent-acp').focus();
+        await flush();
+        if (dismissal === 'escape') {
+          await fireEvent.keyDown(document.activeElement!, { key: 'Escape' });
+        } else {
+          outside.focus();
+        }
+        await waitFor(() =>
+          expect(document.querySelector('[data-slot="popover-content"]')).toBeNull(),
+        );
+        await waitFor(() =>
+          expect(document.activeElement).toBe(dismissal === 'escape' ? anchor : outside),
+        );
+      } finally {
+        anchor.remove();
+        outside.remove();
+      }
+    },
+  );
 
   it('clear read-merge-writes an empty override, restoring auto-detection', async () => {
     mocks.mockSettingsGet.mockResolvedValue({

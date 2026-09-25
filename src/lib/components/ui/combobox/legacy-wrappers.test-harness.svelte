@@ -11,7 +11,9 @@
     value?: string;
     selectSearch?: (query: string) => Promise<Option[]>;
     searchableSearch?: (query: string) => Promise<Option[]> | Option[];
-    groupedSearch?: (query: string) => OptionGroup[];
+    groupedSearch?: (query: string) => OptionGroup[] | Promise<OptionGroup[]>;
+    ariaLabel?: string;
+    onSearchError?: (error: unknown, query: string) => void;
     onChange?: (value: string) => void;
     onOpen?: () => void;
     onClose?: () => void;
@@ -19,6 +21,7 @@
     onDelete?: (option: Option) => void;
     defaultCollapsed?: boolean;
     includeOptionDescription?: boolean;
+    staticPosition?: boolean;
   }
 
   let {
@@ -27,6 +30,8 @@
     selectSearch,
     searchableSearch,
     groupedSearch,
+    ariaLabel,
+    onSearchError,
     onChange,
     onOpen,
     onClose,
@@ -34,6 +39,7 @@
     onDelete,
     defaultCollapsed = false,
     includeOptionDescription = true,
+    staticPosition = false,
   }: Props = $props();
 
   const options: Option[] = [
@@ -76,6 +82,8 @@
     {options}
     allowCustom
     onSearch={selectSearch}
+    {ariaLabel}
+    {onSearchError}
     {onChange}
     loading={false}
     searchPlaceholder="Find a person"
@@ -85,6 +93,8 @@
     bind:value
     {options}
     onSearch={searchableSearch}
+    {ariaLabel}
+    {onSearchError}
     {onChange}
     {onOpen}
     {onClose}
@@ -105,6 +115,8 @@
     bind:value
     {groups}
     onSearch={groupedSearch}
+    {ariaLabel}
+    {onSearchError}
     {onChange}
     {onOpen}
     {onClose}
@@ -118,6 +130,7 @@
     tooltip="Grouped tooltip"
     tooltipSide="left"
     {defaultCollapsed}
+    {staticPosition}
   />
 {/if}
 

@@ -1,21 +1,13 @@
 import { expect, test } from '../../../../test/ct-test';
-import InterruptedAgentsModal from '../../modals/InterruptedAgentsModal.svelte';
+import TakeoverScrollHarness from './TakeoverScrollHarness.svelte';
 
 test('a bounded takeover scrolls to its last row while its body height is animating', async ({
   mount,
   page,
 }) => {
   await page.emulateMedia({ reducedMotion: 'no-preference' });
-  const agents = Array.from({ length: 40 }, (_, index) => ({
-    agentId: `agent-${index}`,
-    agentName: `Agent ${index}`,
-    workspaceId: 'workspace',
-    workspaceName: 'Workspace',
-    prevStatus: 'running',
-    interruptedAt: '2026-09-15T12:00:00Z',
-  }));
-  const component = await mount(InterruptedAgentsModal, {
-    props: { open: true, inline: true, agents },
+  const component = await mount(TakeoverScrollHarness, {
+    props: { count: 40 },
   });
   const viewport = page.locator('[data-slot="takeover-screen-body"]');
   await expect
@@ -24,10 +16,10 @@ test('a bounded takeover scrolls to its last row while its body height is animat
 
   await viewport.hover();
   await page.mouse.wheel(0, 10000);
-  await expect(page.getByRole('option').last()).toBeInViewport();
+  await expect(page.locator('[data-scroll-row]').last()).toBeInViewport();
 
   // Removing rows retargets the real spring. Sample on animation frames, not a timed midpoint.
-  await component.update({ props: { open: true, inline: true, agents: agents.slice(0, 30) } });
+  await component.update({ props: { count: 30 } });
   const sample = await viewport.evaluate(async (node) => {
     for (let frame = 0; frame < 120; frame++) {
       const body = node.querySelector<HTMLElement>('[data-slot="screen-body"]')!;
@@ -52,5 +44,5 @@ test('a bounded takeover scrolls to its last row while its body height is animat
   expect(sample.scrollTop).toBeGreaterThan(0);
   await viewport.hover();
   await page.mouse.wheel(0, 10000);
-  await expect(page.getByRole('option').last()).toBeInViewport();
+  await expect(page.locator('[data-scroll-row]').last()).toBeInViewport();
 });

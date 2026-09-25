@@ -69,7 +69,7 @@ describe('AgentFeaturesSettings', () => {
     }
   });
 
-  it('defaults each feature to its daemon default when the daemon has no entry for its path', async () => {
+  it('keeps unregistered peer agents off while preserving other feature fallbacks', async () => {
     // Daemon predates agentFeatures.* — settings.list returns unrelated entries only
     mocks.mockSettingsList.mockResolvedValue([{ path: 'rtk.enabled', value: true }]);
 
@@ -77,15 +77,16 @@ describe('AgentFeaturesSettings', () => {
 
     await waitFor(() => {
       expect(screen.getAllByRole('switch')).toHaveLength(13);
+      expect((screen.getAllByRole('switch')[0] as HTMLButtonElement).disabled).toBe(false);
     });
-    const peerAgents = screen.getByRole('switch', {
-      name: 'Top-level agent spawning & retirement',
-    });
-    // peerAgents is the one opt-in feature — absent coerces to off
-    expect(peerAgents.getAttribute('aria-checked')).toBe('false');
     for (const toggle of screen.getAllByRole('switch')) {
-      if (toggle === peerAgents) continue;
-      expect(toggle.getAttribute('aria-checked')).toBe('true');
+      const peerAgents =
+        toggle ===
+        screen.getByRole('switch', {
+          name: 'Top-level agent spawning & retirement',
+        });
+      expect(toggle.getAttribute('aria-checked')).toBe(String(!peerAgents));
+      expect((toggle as HTMLButtonElement).disabled).toBe(peerAgents);
     }
   });
 
@@ -294,8 +295,50 @@ describe('AgentFeaturesSettings', () => {
     expect(toggle.getAttribute('aria-checked')).toBe('true');
   });
 
-  describe('peer agents (opt-in)', () => {
+  describe('peer agents', () => {
     const maxAgentsInputName = 'Maximum top-level agents per workspace';
+
+    it('keeps peer agents and the cap unavailable when an older daemon does not register them', async () => {
+      mocks.mockSettingsList.mockResolvedValue(
+        FEATURE_PATHS.filter((path) => path !== 'agentFeatures.peerAgents').map((path) => ({
+          path,
+          value: true,
+        })),
+      );
+
+      render(AgentFeaturesSettings);
+
+      await waitFor(() => {
+        expect(
+          (screen.getByRole('switch', { name: 'Background hooks' }) as HTMLButtonElement).disabled,
+        ).toBe(false);
+      });
+      const toggle = screen.getByRole('switch', {
+        name: 'Top-level agent spawning & retirement',
+      });
+      const input = screen.getByRole('spinbutton', { name: maxAgentsInputName });
+      expect(toggle.getAttribute('aria-checked')).toBe('false');
+      expect((toggle as HTMLButtonElement).disabled).toBe(true);
+      expect((input as HTMLInputElement).disabled).toBe(true);
+      expect(mocks.mockSettingsUpdate).not.toHaveBeenCalled();
+    });
+
+    it('enables peer agents and the cap for registered defaults without a stored preference', async () => {
+      mocks.mockSettingsList.mockResolvedValue([
+        { path: 'agentFeatures.peerAgents', value: true, defaultValue: true, origin: 'default' },
+        { path: 'agents.maxTopLevelAgents', value: 20, defaultValue: 20, origin: 'default' },
+      ]);
+
+      render(AgentFeaturesSettings);
+
+      const input = await screen.findByRole('spinbutton', { name: maxAgentsInputName });
+      await waitFor(() => expect((input as HTMLInputElement).disabled).toBe(false));
+      expect(
+        screen
+          .getByRole('switch', { name: 'Top-level agent spawning & retirement' })
+          .getAttribute('aria-checked'),
+      ).toBe('true');
+    });
 
     it('renders peer agents on when the daemon reports value true', async () => {
       render(AgentFeaturesSettings);
@@ -335,6 +378,55 @@ describe('AgentFeaturesSettings', () => {
         ]);
       });
       expect(mockToast.error).not.toHaveBeenCalled();
+      expect(toggle.getAttribute('aria-checked')).toBe('true');
+    });
+
+    it.each([false, true])(
+      'restores peer agents to %s when the daemon rolls back',
+      async (value) => {
+        mocks.mockSettingsList.mockResolvedValue([{ path: 'agentFeatures.peerAgents', value }]);
+        mocks.mockSettingsUpdate.mockResolvedValueOnce([
+          { path: 'agentFeatures.peerAgents', value },
+        ]);
+
+        render(AgentFeaturesSettings);
+
+        const toggle = await screen.findByRole('switch', {
+          name: 'Top-level agent spawning & retirement',
+        });
+        await waitFor(() => expect((toggle as HTMLButtonElement).disabled).toBe(false));
+        expect(toggle.getAttribute('aria-checked')).toBe(String(value));
+        await fireEvent.click(toggle);
+
+        await waitFor(() => expect(mockToast.error).toHaveBeenCalled());
+        expect(mocks.mockSettingsUpdate).toHaveBeenCalledWith([
+          { path: 'agentFeatures.peerAgents', value: !value },
+        ]);
+        expect(toggle.getAttribute('aria-checked')).toBe(String(value));
+      },
+    );
+
+    it('restores default-enabled peer agents when settings.update rejects', async () => {
+      mocks.mockSettingsList.mockResolvedValue([
+        { path: 'agentFeatures.peerAgents', value: true, defaultValue: true, origin: 'default' },
+      ]);
+
+      render(AgentFeaturesSettings);
+
+      const toggle = await screen.findByRole('switch', {
+        name: 'Top-level agent spawning & retirement',
+      });
+      await waitFor(() => expect((toggle as HTMLButtonElement).disabled).toBe(false));
+      expect(toggle.getAttribute('aria-checked')).toBe('true');
+      mocks.mockSettingsUpdate.mockRejectedValueOnce(new Error('daemon unavailable'));
+      await fireEvent.click(toggle);
+
+      await waitFor(() => {
+        expect(mockToast.error).toHaveBeenCalledWith(expect.stringContaining('daemon unavailable'));
+      });
+      expect(mocks.mockSettingsUpdate).toHaveBeenCalledWith([
+        { path: 'agentFeatures.peerAgents', value: false },
+      ]);
       expect(toggle.getAttribute('aria-checked')).toBe('true');
     });
 

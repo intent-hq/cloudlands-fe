@@ -72,9 +72,13 @@ test('catalog nested submenu closes by keyboard layer by layer and returns focus
   await expect(more).toBeFocused();
   await expect(page.getByRole('menu')).toHaveCount(1);
 
-  // Escape from inside the submenu dismisses every layer and restores trigger focus.
+  // Escape closes the innermost layer before its parent.
   await page.keyboard.press('ArrowRight');
   await expect(archive).toBeFocused();
+  await page.keyboard.press('Escape');
+  await expect(archive).toHaveCount(0);
+  await expect(more).toBeFocused();
+  await expect(page.getByRole('menu')).toHaveCount(1);
   await page.keyboard.press('Escape');
   await expect(page.getByRole('menu')).toHaveCount(0);
   await expect(trigger).toBeFocused();

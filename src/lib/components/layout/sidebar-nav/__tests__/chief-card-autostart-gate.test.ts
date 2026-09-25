@@ -92,6 +92,21 @@ describe('ChiefCard auto-start provider gate', () => {
     expect(appStore.state.sidebarNav.isChiefCollapsed).toBe(true);
   });
 
+  it('does not auto-start in an inactive tab and starts once when Intent becomes active', async () => {
+    appStore.dispatch(setActiveProvider('auggie'));
+    const { rerender } = render(ChiefCard, {
+      props: { expanded: true, embedded: true, isActive: false },
+    });
+    await tick();
+    expect(launchActions).toHaveLength(0);
+
+    await rerender({ expanded: true, embedded: true, isActive: true });
+    await waitFor(() => expect(launchActions).toHaveLength(1));
+    await rerender({ expanded: true, embedded: true, isActive: false });
+    await rerender({ expanded: true, embedded: true, isActive: true });
+    expect(launchActions).toHaveLength(1);
+  });
+
   it('skips the auto-start and withholds new/delete thread in a guest window', async () => {
     // A guest window: the window's backend is a joined host, so `agent.create`
     // / `agent.delete` are refused (-32003) and the affordances are withheld.

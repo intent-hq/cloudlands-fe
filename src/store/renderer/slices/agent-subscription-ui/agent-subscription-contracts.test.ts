@@ -68,7 +68,7 @@ const MAIN_EMITTED_EVENTS = [
   'agent:subscriptions-restored',
 ] as const;
 
-/** Events emitted directly by agent-subscription-ops.ts */
+/** Events emitted by the agent subscription flow. */
 const OPS_EMITTED_EVENTS = ['agent:unsubscribed', 'agent:status-changed'] as const;
 
 // --- FakeIPCBus ---

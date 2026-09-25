@@ -27,6 +27,7 @@
   import { Button } from '$lib/components/ui/button';
   import { Textarea } from '$lib/components/ui/textarea';
   import ImageLightbox from '$lib/components/ui/ImageLightbox.svelte';
+  import PrincipalAvatar from '$lib/components/ui/PrincipalAvatar.svelte';
   import { openWorkspaceAttachment } from '$store/renderer/slices/workspace-navigation/workspace-navigation-slice';
   import { evictAttachmentImageUrl, resolveAttachmentImageUrl } from './attachment-image-url';
   import { store as appStore } from '$store/renderer/store';
@@ -718,22 +719,14 @@
                           name: queuedAuthorLabel ?? m.chat_chatMessage_authorUnknown_label(),
                         })}
                       >
-                        {#if queuedAuthor.avatarUrl}
-                          <img
-                            src={queuedAuthor.avatarUrl}
-                            alt=""
-                            class="size-4 shrink-0 rounded-full"
-                            referrerpolicy="no-referrer"
-                            data-testid="queued-message-author-avatar"
-                          />
-                        {:else}
-                          <span
-                            aria-hidden="true"
-                            class="type-caption flex size-4 shrink-0 items-center justify-center rounded-full bg-muted font-medium leading-none text-muted-foreground"
-                            data-testid="queued-message-author-avatar-fallback"
-                            >{(queuedAuthorLabel ?? '?').slice(0, 1).toUpperCase()}</span
-                          >
-                        {/if}
+                        <PrincipalAvatar
+                          avatarUrl={queuedAuthor.avatarUrl}
+                          label={queuedAuthorLabel ?? ''}
+                          size={16}
+                          class="font-medium leading-none text-muted-foreground"
+                          referrerpolicy="no-referrer"
+                          testid="queued-message-author-avatar"
+                        />
                         <span class="truncate" data-testid="queued-message-author-name"
                           >{queuedAuthorLabel ?? m.chat_chatMessage_authorUnknown_label()}</span
                         >

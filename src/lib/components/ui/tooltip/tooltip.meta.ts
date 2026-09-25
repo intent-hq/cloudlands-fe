@@ -47,6 +47,7 @@ export const tooltipMetadata = parseUiComponentMetadata({
   owner: '012-F2',
   callers: [
     'src/features/layout/components/content-header/ContentHeader.svelte',
+    'src/features/notes/note-presence/NotePresenceAvatars.svelte',
     'src/features/onboarding/messages/ProviderCard.svelte',
     'src/features/onboarding/messages/WorkspaceSetupCard.svelte',
     'src/features/presence/components/PresenceAvatarStack.svelte',

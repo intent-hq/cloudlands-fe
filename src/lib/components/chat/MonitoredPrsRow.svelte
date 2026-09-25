@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { CHAT_OPERATIONAL_ICON_CLASS } from './operational-disclosure-row';
   import { IntentMarkLoader } from '$lib/components/ui/indicators';
   /**
    * MonitoredPrsRow Component
@@ -36,7 +37,7 @@
   } from '@fortawesome/free-solid-svg-icons';
   import { safeDisclosureTransition } from './disclosure-motion';
   import { writable } from 'svelte/store';
-  import DropdownMenu from '$lib/components/ui/dropdown-menu.svelte';
+  import * as Menu from '$lib/components/ui/menu';
   import { Button } from '$lib/components/ui/button';
   import { m } from '$shared/paraglide/messages.js';
   import { formatDateTime, formatInteger, formatRelativeTime, formatTime } from '$lib/i18n/format';
@@ -163,13 +164,11 @@
     });
   }
 
-  function handleCheckAndFlush(monitor: PrMonitorRow, close: () => void) {
-    close();
+  function handleCheckAndFlush(monitor: PrMonitorRow) {
     appStore.dispatch(flushPrMonitorRequested(monitor.workspaceId, monitor.monitorId, true));
   }
 
-  function handleCancel(monitor: PrMonitorRow, close: () => void) {
-    close();
+  function handleCancel(monitor: PrMonitorRow) {
     appStore.dispatch(cancelPrMonitorRequested(monitor.workspaceId, monitor.monitorId));
   }
 
@@ -178,14 +177,12 @@
     return monitor.url ?? `https://github.com/${monitor.repo}/pull/${monitor.prNumber}`;
   }
 
-  function handleOpenInApp(monitor: PrMonitorRow, close: () => void) {
-    close();
+  function handleOpenInApp(monitor: PrMonitorRow) {
     // Built-in fallback to the external browser when the panel cannot open.
     void openInBrowserPanel(prUrl(monitor), workspaceId as WorkspaceId);
   }
 
-  function handleOpenExternal(monitor: PrMonitorRow, close: () => void) {
-    close();
+  function handleOpenExternal(monitor: PrMonitorRow) {
     void handleLink(prUrl(monitor), {
       workspaceId: workspaceId as WorkspaceId,
       forceExternal: true,
@@ -377,7 +374,7 @@
               data-testid="monitored-pr-icon"
               aria-hidden="true"
             >
-              <Fa icon={faCodePullRequest} size={14} class="h-3.5 w-3.5 shrink-0" />
+              <Fa icon={faCodePullRequest} size={16} class={CHAT_OPERATIONAL_ICON_CLASS} />
             </span>
             <span
               class="min-w-0 flex-1 truncate text-muted-foreground"
@@ -388,94 +385,82 @@
             class={SUBSCRIPTION_TRAILING_CONTROLS_CLASS}
             data-testid="monitored-pr-trailing-controls"
           >
-            <DropdownMenu
-              side="top"
-              align="end"
-              collisionPadding={12}
-              contentClass="monitored-pr-menu-content p-0"
-            >
-              {#snippet trigger({ props })}
-                <Button
-                  {...props}
-                  variant="plain"
-                  size="icon-xs"
-                  type="button"
-                  onclick={(event) => {
-                    event.stopPropagation();
-                    (props.onclick as ((event: MouseEvent) => void) | undefined)?.(event);
-                  }}
-                  class="h-6 w-6 shrink-0 border-0 {SUBSCRIPTION_ICON_CLASS} {SUBSCRIPTION_ICON_BUTTON_CLASS} focus-visible:ring-1"
-                  data-testid="monitored-pr-chip"
-                  aria-label={m.chat_monitoredPrs_row_ariaLabel()}
-                >
-                  <KebabIcon class="h-3 w-3" />
-                </Button>
-              {/snippet}
-              {#snippet content({ close }: { close: () => void })}
+            <Menu.Root>
+              <Menu.Trigger>
+                {#snippet child({ props })}
+                  <Button
+                    {...props}
+                    variant="plain"
+                    size="icon-xs"
+                    type="button"
+                    onclick={(event) => {
+                      event.stopPropagation();
+                      (props.onclick as ((event: MouseEvent) => void) | undefined)?.(event);
+                    }}
+                    class="h-6 w-6 shrink-0 border-0 {SUBSCRIPTION_ICON_CLASS} {SUBSCRIPTION_ICON_BUTTON_CLASS} focus-visible:ring-1"
+                    data-testid="monitored-pr-chip"
+                    aria-label={m.chat_monitoredPrs_row_ariaLabel()}
+                  >
+                    <KebabIcon class="h-3 w-3" />
+                  </Button>
+                {/snippet}
+              </Menu.Trigger>
+              <Menu.Content
+                side="top"
+                align="end"
+                collisionPadding={12}
+                class="monitored-pr-menu-content p-0"
+                aria-label={m.chat_monitoredPrs_row_ariaLabel()}
+              >
                 <div
                   class="flex w-full min-w-0 flex-col p-1"
                   data-testid="monitored-pr-menu"
                   data-viewport-padding="12"
                 >
-                  <Button
-                    variant="ghost-light"
-                    size="xs"
-                    truncateLabel={false}
-                    labelClass="break-words whitespace-normal"
-                    class="h-auto min-h-7 w-full min-w-0 items-start justify-start whitespace-normal py-1.5 text-left min-[284px]:whitespace-nowrap"
+                  <Menu.Item
+                    class="h-auto w-full min-w-0 items-start whitespace-normal py-1.5 text-left"
                     data-testid="monitored-pr-check-flush-item"
-                    onclick={() => handleCheckAndFlush(monitor, close)}
+                    onSelect={() => handleCheckAndFlush(monitor)}
                   >
                     <Fa icon={faArrowsRotate} class="mt-0.5 h-2.5 w-2.5" />
                     <span class="min-w-0 break-words leading-4">
                       {m.chat_monitoredPrs_checkAndFlush_label()}
                     </span>
-                  </Button>
-                  <Button
-                    variant="ghost-light"
-                    size="xs"
-                    truncateLabel={false}
-                    labelClass="break-words whitespace-normal"
-                    class="h-auto min-h-7 w-full min-w-0 items-start justify-start whitespace-normal py-1.5 text-left min-[284px]:whitespace-nowrap"
+                  </Menu.Item>
+                  <Menu.Item
+                    class="h-auto w-full min-w-0 items-start whitespace-normal py-1.5 text-left"
                     data-testid="monitored-pr-open-in-app-item"
-                    onclick={() => handleOpenInApp(monitor, close)}
+                    onSelect={() => handleOpenInApp(monitor)}
                   >
                     <Fa icon={faWindowMaximize} class="mt-0.5 h-2.5 w-2.5" />
                     <span class="min-w-0 break-words leading-4">
                       {m.chat_monitoredPrs_openInApp_label()}
                     </span>
-                  </Button>
-                  <Button
-                    variant="ghost-light"
-                    size="xs"
-                    truncateLabel={false}
-                    labelClass="break-words whitespace-normal"
-                    class="h-auto min-h-7 w-full min-w-0 items-start justify-start whitespace-normal py-1.5 text-left min-[284px]:whitespace-nowrap"
+                  </Menu.Item>
+                  <Menu.Item
+                    class="h-auto w-full min-w-0 items-start whitespace-normal py-1.5 text-left"
                     data-testid="monitored-pr-open-external-item"
-                    onclick={() => handleOpenExternal(monitor, close)}
+                    onSelect={() => handleOpenExternal(monitor)}
                   >
                     <Fa icon={faArrowUpRightFromSquare} class="mt-0.5 h-2.5 w-2.5" />
                     <span class="min-w-0 break-words leading-4">
                       {m.chat_monitoredPrs_openInExternalBrowser_label()}
                     </span>
-                  </Button>
-                  <Button
-                    variant="ghost-light"
-                    size="xs"
-                    truncateLabel={false}
-                    labelClass="break-words whitespace-normal"
-                    class="h-auto min-h-7 w-full min-w-0 items-start justify-start whitespace-normal py-1.5 text-left min-[284px]:whitespace-nowrap"
+                  </Menu.Item>
+                  <Menu.Separator />
+                  <Menu.Item
+                    class="h-auto w-full min-w-0 items-start whitespace-normal py-1.5 text-left"
                     data-testid="monitored-pr-cancel-item"
-                    onclick={() => handleCancel(monitor, close)}
+                    onSelect={() => handleCancel(monitor)}
                   >
                     <Fa icon={faXmark} class="mt-0.5 h-2.5 w-2.5" />
                     <span class="min-w-0 break-words leading-4">
                       {m.chat_monitoredPrs_cancel_label()}
                     </span>
-                  </Button>
+                  </Menu.Item>
                 </div>
-              {/snippet}
-            </DropdownMenu>
+              </Menu.Content>
+            </Menu.Root>
             <Button
               variant="plain"
               size="icon-xs"

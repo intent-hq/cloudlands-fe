@@ -38,12 +38,13 @@
   import { Switch } from '$lib/components/ui/switch';
   import { Tooltip } from '$lib/components/ui/tooltip';
   import { notify } from '$lib/components/patterns/notify';
+  import { confirm } from '$lib/components/patterns/confirm';
   import { m } from '$shared/paraglide/messages.js';
   import { faNote } from '$lib/icons/faNote';
   import { logger } from '$lib/utils/client-logger';
   import type { WorkspaceId } from '$shared/types/branded-ids';
   import { faCodeCommit, faLock, faMinus, faPlus, faUser } from '@fortawesome/free-solid-svg-icons';
-  import { tick } from 'svelte';
+  import { onDestroy, tick } from 'svelte';
   import { writable } from 'svelte/store';
   import Fa from 'svelte-fa';
   import { flip } from 'svelte/animate';
@@ -464,7 +465,15 @@
     }
   }
 
+  let confirmingRevert = false;
+  let disposed = false;
+  onDestroy(() => {
+    disposed = true;
+  });
+
   async function handleRevertFile(path: string) {
+    if (confirmingRevert || !isOwner) return;
+    const targetWorkspaceId = workspaceId;
     const filesToRevert =
       isFileSelected(path, false) && selectedUnstagedFiles.length > 0
         ? selectedUnstagedFiles.filter((p) => !isFileLockedByAgent(p, false))
@@ -473,14 +482,40 @@
       logger.warn('Cannot revert file from locked agent', { path });
       return;
     }
-    // Revert through the AppClient seam (git.discard; DESTRUCTIVE).
-    const revertResult = await discardFilesViaSeam(workspaceId, filesToRevert);
-    if (!revertResult.success) {
-      notify.error(m.workspace_fileChanges_revertFailed_error(), {
-        description: revertResult.error || m.workspace_prSection_unknownError_label(),
+    if (!filesToRevert.length) return;
+    confirmingRevert = true;
+    try {
+      const accepted = await confirm({
+        title: m.fileTracking_changes_discardChanges_tooltip(),
+        description: filesToRevert.join('\n'),
+        confirmLabel: m.fileTracking_changes_discard_label(),
+        destructive: true,
       });
+      if (!accepted || disposed || workspaceId !== targetWorkspaceId || !isOwner) return;
+      // Never widen or retarget the confirmed set after a refresh or workspace switch.
+      const currentChanges = selectFtUnstagedChanges.select(appStore.state, targetWorkspaceId);
+      const currentLocks = selectLockedAgentIds.select(appStore.state, targetWorkspaceId);
+      if (
+        filesToRevert.some((filePath) => {
+          const change = currentChanges.find(
+            (change) => (change.relativePath || change.file) === filePath,
+          );
+          const agentId = change?.attribution?.agent?.agentId;
+          return !change || (agentId && agentId in currentLocks);
+        })
+      )
+        return;
+      // Revert through the AppClient seam (git.discard; DESTRUCTIVE).
+      const revertResult = await discardFilesViaSeam(targetWorkspaceId, filesToRevert);
+      if (!revertResult.success) {
+        notify.error(m.workspace_fileChanges_revertFailed_error(), {
+          description: revertResult.error || m.workspace_prSection_unknownError_label(),
+        });
+      }
+      if (!disposed && workspaceId === targetWorkspaceId) clearSelection();
+    } finally {
+      confirmingRevert = false;
     }
-    clearSelection();
   }
 
   async function handleStageGroup(group: AgentChangeGroup) {
@@ -823,6 +858,7 @@
                       out:send|global={{ key: file.path }}
                     >
                       <FileRow
+                        contextKey={workspaceId}
                         compact
                         {file}
                         showStageAction={isOwner && !isLocked}
@@ -862,6 +898,7 @@
               }}
             >
               <FileRow
+                contextKey={workspaceId}
                 compact
                 file={toUIFileChange(change, false)}
                 showStageAction={isOwner}
@@ -1053,6 +1090,7 @@
                       out:send|global={{ key: file.path }}
                     >
                       <FileRow
+                        contextKey={workspaceId}
                         compact
                         {file}
                         showStageAction={isOwner && !isLocked}
@@ -1087,6 +1125,7 @@
               out:send|global={{ key: change.relativePath }}
             >
               <FileRow
+                contextKey={workspaceId}
                 compact
                 file={toUIFileChange(change, true)}
                 showStageAction={isOwner}

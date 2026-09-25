@@ -2,6 +2,7 @@ import { mkdir } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { expect, test } from '../../../../test/ct-test';
 import ShareWorkspaceDialog from '../ShareWorkspaceDialog.svelte';
+import SharingPreview from '../sharing-audit.preview.svelte';
 
 const props = {
   open: true,
@@ -29,6 +30,27 @@ const props = {
     htmlUrl: null,
   })),
 };
+
+test('invite audience and creation field stay readable in a narrow dialog', async ({
+  mount,
+  page,
+}) => {
+  await page.setViewportSize({ width: 360, height: 800 });
+  await mount(SharingPreview, { props: { state: 'share-invites' } });
+  const input = page.getByRole('combobox');
+  expect((await input.boundingBox())?.width).toBeGreaterThan(240);
+  const audience = page.getByText('Only @designer', { exact: true });
+  await expect(audience).toBeVisible();
+  expect(
+    await audience.evaluate((node) => node.scrollWidth - node.clientWidth),
+  ).toBeLessThanOrEqual(1);
+  for (const button of await page.getByTestId('share-invite-row').getByRole('button').all()) {
+    await expect(button).toBeInViewport();
+  }
+  expect(
+    await page.getByRole('dialog').evaluate((node) => node.scrollWidth - node.clientWidth),
+  ).toBeLessThanOrEqual(1);
+});
 
 test('suggestions paint above the roster and remain reachable in a short window', async ({
   mount,

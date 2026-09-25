@@ -410,6 +410,7 @@
   }
 
   const sidebarToggleAction: MenuAction = {
+    id: 'toggle-sidebar',
     label: m.ui_sidebar_toggle_label(),
     iconSnippet: sidebarToggleIconSnippet,
     dividerBefore: true,
@@ -420,6 +421,7 @@
   };
 
   const sidebarSideAction: MenuAction = $derived({
+    id: 'move-sidebar',
     label:
       $sidebarSide$ === 'left'
         ? m.workspace_sidebarHeader_moveSidebarRight_label()
@@ -439,6 +441,7 @@
   const shareAction: MenuAction | null = $derived(
     $labsMultiplayerEnabled$ && $workspace?.myRole === 'owner' && !$hidesOwnerActions$
       ? {
+          id: 'share-workspace',
           label: m.workspace_share_menu_label(),
           icon: faUserPlus,
           dividerBefore: true,
@@ -503,6 +506,7 @@
   const transferAction: MenuAction | null = $derived(
     $workspace && !$hidesOwnerActions$
       ? {
+          id: 'transfer-workspace',
           label: m.workspace_card_transfer_label(),
           icon: faRightLeft,
           dividerBefore: !shareAction,
@@ -538,6 +542,7 @@
     const ownClientId = $drivingClient$.ownClientId;
     if (!drivingClientSwitch?.canSwitchHere || !ownClientId || !workspaceId) return null;
     return {
+      id: 'set-primary-client',
       label: m.workspace_drivingClient_setPrimary_label(),
       icon: faGlobe,
       dividerBefore: true,
@@ -912,7 +917,8 @@
             bind:value={editedTitle}
             onblur={saveTitle}
             onkeydown={handleTitleKeydown}
-            class="edit-input relative z-10 text-xl font-semibold text-foreground bg-transparent
+            noFocusStyle
+            class="edit-input relative z-10 text-xl font-semibold text-foreground bg-transparent hover:bg-transparent border-none
                py-0.5 rounded
                outline-none w-full leading-normal
                focus:ring-none! focus:outline-none!
@@ -975,6 +981,7 @@
               style="max-width: min(20rem, calc(var(--bits-dropdown-menu-content-available-width, 100vw) - 0.625rem))"
             >
               <WorkspaceActionsMenu
+                layout="editors-submenu"
                 filePath={$workspace?.worktreePath ||
                   $workspace?.repositoryPath ||
                   $workspace?.path ||
@@ -1241,10 +1248,11 @@
               onblur={saveStatusMessage}
               onkeydown={handleStatusMessageKeydown}
               disabled={isSavingStatusMessage}
+              noFocusStyle
               maxlength={WORKSPACE_STATUS_MESSAGE_MAX_LENGTH}
               rows={1}
               aria-label={m.workspace_sidebarHeader_status_ariaLabel()}
-              class="edit-input type-body relative z-10 min-h-0 max-h-32 w-full resize-none overflow-hidden whitespace-pre-wrap break-words rounded border-none bg-transparent py-0.5 text-foreground outline-none leading-snug
+              class="edit-input type-body relative z-10 min-h-0 max-h-32 w-full resize-none overflow-hidden whitespace-pre-wrap break-words rounded border-none bg-transparent hover:bg-transparent py-0.5 text-foreground outline-none leading-snug
                      focus:ring-none! focus:outline-none! transition-all duration-spring-moderate ease-spring-moderate motion-reduce:transition-none disabled:opacity-50"
               style="field-sizing: content;"
               placeholder={m.workspace_sidebarHeader_addStatus_placeholder()}

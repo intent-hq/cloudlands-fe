@@ -3,7 +3,8 @@
   import { definePreview } from '$lib/component-catalog/preview-definition';
   import { PREVIEW_FIXTURE_TIMESTAMPS } from '$lib/component-catalog/preview-fixtures';
   import type { PullRequestInfo } from '$shared/types';
-  import { PullRequestStatus } from '$shared/types';
+  import { PullRequestStatus, WorkspaceStatus } from '$shared/types';
+  import { WorkspaceId } from '$shared/types/branded-ids';
   import { constructPrUrl } from './sidebar-changes-utils';
   import {
     buildWorkspacePRPresentationModel,
@@ -328,8 +329,48 @@
   import SidebarPrList from './SidebarPrList.svelte';
   import { onDestroy } from 'svelte';
   import { overrideMockIpcHandler } from '$shared/ipc-mock-router';
+  import { store } from '$store/renderer/store';
+  import { selectWorkspaceById } from '$store/renderer/slices/workspace/workspace-selectors';
+  import {
+    removeWorkspaceEntity,
+    setWorkspaceEntity,
+  } from '$store/renderer/slices/workspace/workspace-slice';
 
   let { scenarios: items, live = false, onOpenExternal }: SidebarPrDropdownPreviewProps = $props();
+  $effect(() => {
+    if (!live) return;
+    const workspaceId = WorkspaceId('preview-workspace');
+    const previous = selectWorkspaceById.select(store.state, workspaceId);
+    const statuses = {
+      open: PullRequestStatus.Open,
+      closed: PullRequestStatus.Closed,
+      merged: PullRequestStatus.Merged,
+      draft: PullRequestStatus.Draft,
+    };
+    // A live dropdown refreshes its stored PR pool on open. Seed the complete pool
+    // so the preview represents loaded PRs rather than a missing-workspace error.
+    store.dispatch(
+      setWorkspaceEntity({
+        id: workspaceId,
+        title: 'Pull request preview',
+        branch: 'preview-sidebar-pr-dropdown',
+        changesets: [],
+        timeline: [],
+        conversationInfo: [],
+        path: '/preview/sidebar-pr-dropdown',
+        status: WorkspaceStatus.Active,
+        pullRequests: items.flatMap((item) =>
+          item.rows.map((row) =>
+            pr(row.number, { url: row.url, title: row.title, status: statuses[row.status] }),
+          ),
+        ),
+        ...PREVIEW_FIXTURE_TIMESTAMPS,
+      }),
+    );
+    return () => {
+      store.dispatch(previous ? setWorkspaceEntity(previous) : removeWorkspaceEntity(workspaceId));
+    };
+  });
   onDestroy(
     // eslint-disable-next-line intent/no-component-async-data-fetch -- Fixture-only mock registration, not a domain fetch; intercepts external navigation and restores on teardown.
     overrideMockIpcHandler('shell:openExternal', (payload) => {

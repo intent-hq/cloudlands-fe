@@ -10,6 +10,7 @@
   } from './initializer/initial-repo-utils';
   import { goto } from '$app/navigation';
   import { v4 as uuidv4 } from 'uuid';
+  import SetupScriptTrigger from './initializer/SetupScriptTrigger.svelte';
   import {
     SETUP_SCRIPT_TEMPLATES,
     getTemplateContent,
@@ -264,6 +265,8 @@
     isExpanded: boolean;
     initialRepo?: InitialRepoInfo;
     oncreate?: () => void;
+    /** Let a containing dialog own initial focus instead of focusing the prompt. */
+    autoFocus?: boolean;
     /** Show contextual hints for first-time users */
     showFirstTimeHints?: boolean;
   }
@@ -271,6 +274,7 @@
     isExpanded = $bindable(false),
     initialRepo,
     oncreate,
+    autoFocus = true,
     showFirstTimeHints = false,
   }: Props = $props();
 
@@ -432,7 +436,7 @@
         if (data.autoCreate === true || data.autoCreate === 'true') {
           logger.info('autoCreate is set, will auto-submit once form is valid');
           pendingAutoCreate = true;
-        } else {
+        } else if (autoFocus) {
           // Focus the prompt textarea so the user can immediately type what to do
           setTimeout(() => {
             richTextarea?.focus();
@@ -724,9 +728,14 @@
   // initial empty save cannot clear a not-yet-restored draft. Non-fatal.
   let draftRestored = $state(false);
   let draftRestoreFailed = false;
+  let draftRestoreCancelled = false;
+  onDestroy(() => {
+    draftRestoreCancelled = true;
+  });
   (async () => {
     try {
       const restore = await restoreNewWorkspaceDraft(appClient.drafts);
+      if (draftRestoreCancelled) return;
       draftRestoreFailed = restore.status === 'error';
       if (restore.status === 'restored') {
         if (restore.contextItems.length > 0 && contextItems.length === 0) {
@@ -735,7 +744,7 @@
         if (restore.text && !initialPrompt) {
           initialPrompt = restore.text;
           setTimeout(() => {
-            richTextarea?.setContent(restore.text);
+            if (!draftRestoreCancelled) richTextarea?.setContent(restore.text);
           }, 50);
         }
       }
@@ -1094,7 +1103,7 @@
           const selection = await resolveGitHubPrefillSelection(snapshot);
           if (isStale()) return;
           handleIssueSelect(`#${prefill.number}`, selection);
-          richTextarea?.focus();
+          if (autoFocus) richTextarea?.focus();
         } catch (err) {
           logger.error('Failed to apply GitHub prefill', err);
         }
@@ -1138,11 +1147,12 @@
   });
 
   $effect(() => {
-    if (!isExpanded) return;
+    if (!isExpanded || !autoFocus) return;
     // Focus the prompt input after the form expands
-    setTimeout(() => {
+    const focusTimer = setTimeout(() => {
       richTextarea?.focus();
     }, 100);
+    return () => clearTimeout(focusTimer);
   });
 
   // Listen for global enhance prompt shortcut (Cmd+/)
@@ -2266,8 +2276,6 @@
         );
       }
 
-      await goto(`/workspace/${workspace.id}`);
-
       // Save last submitted agent settings before clearing form.
       // This allows the form to restore these values after submission.
       appStore.dispatch(
@@ -2281,7 +2289,9 @@
         }),
       );
 
+      // Clear before navigation can unmount the form and flush its draft.
       clearForm();
+      await goto(`/workspace/${workspace.id}`);
       oncreate?.();
     } catch (err) {
       if (err instanceof Error && err.message.startsWith(UNKNOWN_SPECIALIST_ERROR_PREFIX)) {
@@ -2323,11 +2333,16 @@
       scope = '';
     }
     remoteSetup = null;
+    // A late drafts.get or its delayed editor update must not refill the form.
+    draftRestoreCancelled = true;
     initialPrompt = '';
     contextItems = []; // Clear attachment items
     richTextarea?.clear(); // Clear the TipTap editor content
+    // Cancel the queued save before clearing: an immediate close/unmount can
+    // flush the submitted prompt before the empty-state effect runs (#5569).
+    draftSaver.cancel();
     // Immediately clear the persisted daemon draft (drafts.clear under the
-    // sentinel keys, PROTOCOL §5.16) and the legacy sessionStorage key
+    // sentinel keys, PROTOCOL §5.16) and the legacy sessionStorage keys.
     clearNewWorkspaceDraft(appClient.drafts);
     // Note: NOT resetting selectedSpecialist, selectedModel, modelWasOverridden, isTeamMode
     // These are preserved so the user's last agent selection persists across workspace creations
@@ -2704,8 +2719,8 @@
     try {
       const sent = await placeAndSendFirstMessage();
       if (!sent) return;
-      await goto(`/workspace/${pending.workspaceId}`);
       clearForm();
+      await goto(`/workspace/${pending.workspaceId}`);
       oncreate?.();
     } finally {
       isCreating = false;
@@ -3275,6 +3290,7 @@
         {#snippet createButton(progressLabel?: Snippet)}
           <Button
             variant="primary"
+            data-dialog-primary-action
             onclick={handleSubmit}
             disabled={!isValid || isCreating || isEnhancing || isProcessingImages}
           >
@@ -3396,37 +3412,13 @@
           />
         </div>
         <!-- Setup script -->
-        <div class="space-y-2 border-t border-border pt-3">
-          <div class="flex items-center justify-between flex-wrap gap-2 w-full">
-            <!-- Left: setup script button -->
-            <Button
-              variant="ghost"
-              type="button"
-              wrapContent={false}
-              class="group flex h-auto min-h-9 w-full min-w-0 cursor-pointer flex-wrap items-center justify-start gap-1.5 rounded-md px-2.5 py-2 text-left text-sm whitespace-normal text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
-              onclick={() => (showSetupScript = !showSetupScript)}
-            >
-              <span>{m.workspace_compactInitializer_setupDevEnvWith_before()}</span>
-              <!-- The pill and trailing suffix render in both states (spinner
-                   inside the pill while loading) so the row keeps the same
-                   structure and height when the probe resolves. -->
-              <span
-                class="min-w-0 max-w-full rounded-md border border-border bg-background px-2 py-0.5 font-medium wrap-break-word text-foreground"
-              >
-                {#if isRepoConfigLoading}
-                  <IntentMarkLoader size={14} />
-                  <span class="sr-only"
-                    >{m.workspace_compactInitializer_detectingSetupScript_label()}</span
-                  >
-                {:else}
-                  {setupScriptDisplayName(setupScriptName, setupScriptNameSource)}
-                {/if}
-              </span>
-              <span class="text-sm text-subtle">
-                {m.workspace_compactInitializer_setupDevEnvWith_after()}
-              </span>
-            </Button>
-          </div>
+        <div class="space-y-2">
+          <SetupScriptTrigger
+            value={setupScriptDisplayName(setupScriptName, setupScriptNameSource)}
+            loading={isRepoConfigLoading}
+            expanded={showSetupScript}
+            onOpen={() => (showSetupScript = true)}
+          />
           <SetupScriptModal
             bind:open={showSetupScript}
             {repoPath}

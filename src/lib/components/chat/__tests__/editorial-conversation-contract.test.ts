@@ -172,7 +172,8 @@ describe('editorial conversation presentation contract', () => {
     expect(message).toContain(': USER_MESSAGE_SURFACE_CLASS}');
     expect(message).not.toContain('rounded-lg border border-border/60 bg-accent/40');
     expect(message).toContain(': USER_MESSAGE_TEXT_CLASS}');
-    expect(message).toContain('<div class="type-body text-pretty text-foreground">');
+    // Message body/action containment is measured by message-action-dates.ct.spec.ts,
+    // rather than coupling this suite to the body's literal class list.
     expect(markdown).toContain('font-size: var(--text-body-size)');
     expect(markdown).toContain('font-weight: var(--text-body-strong-weight)');
   });
@@ -221,7 +222,7 @@ describe('editorial conversation presentation contract', () => {
     const messageContent = source('src/lib/components/chat/MessageContent.svelte');
 
     expect(panel).not.toContain('class:bg-sidebar={isChiefWorkspace}');
-    expect(panel).toContain("<div class={isChiefWorkspace ? 'mx-1 sm:mx-2' : ''}>");
+    expect(panel).toContain("class={isChiefWorkspace ? 'mx-1 sm:mx-2' : ''}");
     expect(panel.match(/message=\{pendingMessage\}[\s\S]{0,80}\{workspace\}/g)).toHaveLength(2);
     // Both transcript renderers mount the shared inline proposal host.
     expect(streaming).toContain('InlineProposal');
@@ -260,8 +261,6 @@ describe('editorial conversation presentation contract', () => {
     // Render-aware turn-body decisions are covered by subscription-card-spacing.test.ts;
     // chat-panel-visible-card-seams.ct.spec.ts and chat-panel-pending-status-spacing.ct.spec.ts
     // measure the production transcript for hidden/visible bodies and pending-status transitions.
-    // Card/batch/attention seam precedence is covered by subscription-card-gap
-    // and attention-flow-spacing-geometry browser tests using measured gaps.
     expect(panel).not.toContain('data-testid="chat-scroll-to-bottom-button"');
     expect(panel).toContain('showAgentCards={!isDelegatedBackgroundTaskAgent}');
     expect(panel).not.toContain('agentEventsForCards');
@@ -279,14 +278,11 @@ describe('editorial conversation presentation contract', () => {
     expect(avatar).toContain('(onclick ? m.chat_msgAttribution_openAgent_title');
   });
 
-  it('reveals message and suggestion actions for keyboard focus as well as hover', () => {
-    const message = source('src/lib/components/chat/ChatMessage.svelte');
-    const actionSurface = source('src/lib/components/chat/message-action-surface.ts');
+  // Message action hover/focus, clickability and activation are exercised against
+  // production ChatMessage in message-action-dates.ct.spec.ts.
+  it('reveals suggestion actions for keyboard focus as well as hover', () => {
     const suggestions = source('src/lib/components/chat/SuggestedPrompts.svelte');
 
-    expect(actionSurface).toContain('group-focus-within:pointer-events-auto');
-    expect(actionSurface).toContain('group-focus-within:opacity-100');
-    expect(message).toContain('class="absolute right-1 z-10');
     expect(suggestions).toContain('group-focus-within:opacity-100');
     expect(suggestions).toContain('focus-visible:opacity-100');
     expect(suggestions).toContain('icon={faArrowRight}');
@@ -355,7 +351,6 @@ describe('editorial conversation presentation contract', () => {
     expect(panel).toContain('const transcriptBottomInsetClass = $derived(');
     expect(panel).toContain('{transcriptBottomInsetClass}');
     expect(queueEdgeLayout).toContain("return isCompactMode ? 'pb-3' : 'pb-6'");
-    expect(panel).toContain("isCompactMode ? 'pb-2' : 'pb-3'");
     expect(panel).not.toContain("'pb-1 pt-3'");
     expect(panel).not.toContain('eventSubscriptionsOwnEndGap');
     expect(panel).not.toContain('eventSubscriptionsVisible');

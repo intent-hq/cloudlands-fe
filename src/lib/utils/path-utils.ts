@@ -97,7 +97,7 @@ export function isAbsolutePathOutsideRoot(p: string, root: string): boolean {
  * Uses navigator.platform which is available in the renderer process.
  * @returns true if the current platform is Windows
  */
-export function isWindowsPlatform(): boolean {
+function isWindowsPlatform(): boolean {
   if (typeof navigator === 'undefined') return false;
   return navigator.platform?.startsWith('Win') ?? false;
 }

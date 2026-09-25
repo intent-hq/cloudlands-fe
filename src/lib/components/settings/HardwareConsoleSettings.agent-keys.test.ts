@@ -50,7 +50,10 @@ import HardwareConsoleSettings from './HardwareConsoleSettings.svelte';
 import { codexCapLabel } from './HardwareConsoleDeviceSvg.svelte';
 import { m } from '$shared/paraglide/messages.js';
 import { CODEX_MIC_LINKED_SLOT } from '$features/hardware-console/actions/action-mapping';
-import { initialState } from '$store/renderer/slices/hardware-console/hardware-console-slice';
+import {
+  initialState,
+  setPromptPickerLimit,
+} from '$store/renderer/slices/hardware-console/hardware-console-slice';
 import { createCollection } from '@augmentcode/themis/utils/collections/collection-utils';
 
 function workspace(id: string, title: string, lastActivity: string) {
@@ -140,6 +143,21 @@ describe('HardwareConsoleSettings agent keys', () => {
       }),
     ).toBeNull();
     expect(mocks.focusWorkspaceSlot).not.toHaveBeenCalled();
+  });
+
+  it('lets users correct an invalid prompt limit through a purpose-named choice', async () => {
+    const state = buildState();
+    state.hardwareConsole.promptPickerLimit = 99;
+    mocks.state.current = state;
+    const result = render(HardwareConsoleSettings);
+    const trigger = result.getByRole('combobox', { name: m.settings_hardware_promptLimit_label() });
+    expect(trigger.getAttribute('aria-invalid')).toBe('true');
+    trigger.focus();
+    await fireEvent.keyDown(trigger, { key: 'Enter' });
+    await fireEvent.pointerUp(result.getByRole('option', { name: '3', exact: true }), {
+      pointerType: 'mouse',
+    });
+    expect(mocks.dispatch).toHaveBeenCalledWith(setPromptPickerLimit(3));
   });
 
   it('shows the linked-key warning when the Codex second Mic switch is selected', async () => {
