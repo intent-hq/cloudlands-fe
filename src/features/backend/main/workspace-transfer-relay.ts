@@ -508,11 +508,12 @@ export function createWorkspaceTransferRelay(deps: TransferRelayDeps): Workspace
       // Source cleanup only applies after export starts; preflight failures
       // leave the source untouched and its agents running.
       if (current.exportId) await abortExport(source, current.exportId);
-      const cancelled = current.cancelled || errText(error) === 'cancelled';
+      const message = current.cancelled ? 'cancelled' : errText(error);
+      const cancelled = message === 'cancelled';
       if (!cancelled) {
         deps.logger.warn('workspace transfer failed', {
           workspaceId,
-          error: errText(error),
+          error: message,
         });
       }
       // An orphaned run released by a takeover must not clear its successor.
@@ -521,7 +522,7 @@ export function createWorkspaceTransferRelay(deps: TransferRelayDeps): Workspace
         ? { success: false, canceled: true }
         : {
             success: false,
-            error: errText(error),
+            error: message,
             failurePhase: current.sourceExportStarted ? 'post-export' : 'preflight',
           };
     } finally {

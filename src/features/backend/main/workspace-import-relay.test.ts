@@ -9,6 +9,7 @@
 import { createHash } from 'node:crypto';
 import { describe, expect, it, vi } from 'vitest';
 import { JsonRpcError } from './json-rpc-errors';
+import * as rpcErrors from './json-rpc-errors';
 import type { RelayRpcClient } from './workspace-transfer-relay';
 import {
   createWorkspaceImportRelay,
@@ -125,6 +126,24 @@ function makeRelay(deps: ImportRelayDeps) {
 }
 
 describe('workspace import relay', () => {
+  it('formats a failed import only once for its result and warning', async () => {
+    const format = vi.spyOn(rpcErrors, 'relayErrorMessage');
+    try {
+      const client = makeClient({ 'workspace.import.commit': () => new Error('commit refused') });
+      const file = makeFile();
+      const { deps } = makeDeps(client, file);
+      const result = await makeRelay(deps).start({}, client.client);
+      expect(result).toEqual({ success: false, error: 'commit refused' });
+      expect(deps.logger.warn).toHaveBeenCalledWith('workspace import failed', {
+        filePath: '/tmp/in.zip',
+        error: result.error,
+      });
+      expect(format).toHaveBeenCalledOnce();
+    } finally {
+      format.mockRestore();
+    }
+  });
+
   it.each(['string', 'object'])(
     'preserves the %s RPC cause in the result and log',
     async (shape) => {

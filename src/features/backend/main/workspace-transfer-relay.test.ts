@@ -9,6 +9,7 @@
 
 import { describe, expect, it, vi } from 'vitest';
 import { JsonRpcError } from './json-rpc-errors';
+import * as rpcErrors from './json-rpc-errors';
 import {
   createWorkspaceTransferRelay,
   type FileSink,
@@ -171,6 +172,29 @@ async function emitWhenStarted(
 }
 
 describe('workspace-transfer relay — server destination', () => {
+  it('formats a failed transfer only once for its result and warning', async () => {
+    const format = vi.spyOn(rpcErrors, 'relayErrorMessage');
+    try {
+      const source = makeSource();
+      const target = makeTarget({ 'workspace.import.commit': () => new Error('commit refused') });
+      const { deps } = makeDeps(source, target);
+      const pending = makeRelay(deps).start(
+        { workspaceId: 'ws-1', destination: { kind: 'server', connectionId: 'conn-1' } },
+        source.client,
+      );
+      await emitWhenStarted(source, 'workspace:transfer:ready', READY_DATA);
+      const result = await pending;
+      expect(result).toMatchObject({ success: false, error: 'commit refused' });
+      expect(deps.logger.warn).toHaveBeenCalledWith('workspace transfer failed', {
+        workspaceId: 'ws-1',
+        error: result.error,
+      });
+      expect(format).toHaveBeenCalledOnce();
+    } finally {
+      format.mockRestore();
+    }
+  });
+
   it.each(['string', 'object'])(
     'preserves the %s RPC cause in the result and log',
     async (shape) => {

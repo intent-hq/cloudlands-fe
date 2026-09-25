@@ -36,9 +36,23 @@ warmImport(() => import('../../../lib/components/modals/ImportWorkspaceModal.sve
 warmImport(() => import('../../../lib/components/modals/TransferWorkspaceModal.svelte'));
 
 describe('workspace import failure surfaces', () => {
-  it.each(['file', 'remote'] as const)(
-    'shows a safe commit cause after a %s import fails',
-    async (kind) => {
+  const credentials = [
+    'token="Bearer private-marker"',
+    "secret='two words private-marker'",
+    'Cookie: session=private-marker',
+    'Set-Cookie: session=private-marker; HttpOnly',
+    'Authorization: Digest username="demo", response="private-marker"',
+    'token="unterminated private-marker',
+  ];
+  it.each(
+    (['file', 'remote'] as const).flatMap((kind) =>
+      ['string', 'object'].flatMap((shape) =>
+        credentials.map((credential) => ({ kind, shape, credential })),
+      ),
+    ),
+  )(
+    'redacts $credential from the $kind dialog and log ($shape RPC data)',
+    async ({ kind, shape, credential }) => {
       const detail = 'UNIQUE constraint failed: interrupted_agent.agent_id';
       const logger = { info: vi.fn(), warn: vi.fn() };
       const request = vi.fn(async (method: string, params?: unknown) => {
@@ -46,7 +60,10 @@ describe('workspace import failure surfaces', () => {
           throw new JsonRpcError({
             code: -32603,
             message: 'Internal error',
-            data: `${detail}; Authorization: Bearer private-marker`,
+            data:
+              shape === 'string'
+                ? `${detail}; ${credential}`
+                : { detail: `${detail}; ${credential}` },
           });
         }
         if (method === 'workspace.import.begin')

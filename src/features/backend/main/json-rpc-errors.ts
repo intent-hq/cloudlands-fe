@@ -82,6 +82,51 @@ export class JsonRpcError extends Error {
   }
 }
 
+const MAX_RELAY_DIAGNOSTIC_LENGTH = 2048;
+
+/** Redact whole values before other scrubbers can remove their quote boundaries. */
+function scrubDiagnosticFields(text: string): string {
+  const fields = /["']?([\w%+-]+)["']?\s*[:=]\s*|(--[\w-]+)\s+/g;
+  let result = '';
+  let copiedThrough = 0;
+  let match: RegExpExecArray | null;
+  while ((match = fields.exec(text)) !== null) {
+    let key = match[1] ?? match[2];
+    try {
+      key = decodeURIComponent(key.replace(/\+/g, ' '));
+    } catch {
+      // Keep the raw spelling for malformed escapes, as the pairing scrubber does.
+    }
+    key = key.replace(/^--/, '');
+    if (/^(?:(?:proxy-)?authorization|(?:set-)?cookie)$/i.test(key)) {
+      // Headers can contain several credentials, quoted fields or folded lines.
+      // Keep the preceding cause, but fail closed on the entire header tail.
+      return `${result}${text.slice(copiedThrough, fields.lastIndex)}***`;
+    }
+    if (!/(key|token|secret|pass|credential|auth|pwd)/i.test(key) && !/^tc$/i.test(key)) {
+      continue;
+    }
+
+    const valueStart = fields.lastIndex;
+    let valueEnd = valueStart;
+    const quote = text[valueStart];
+    if (quote === '"' || quote === "'" || quote === '`') {
+      valueEnd++;
+      while (valueEnd < text.length) {
+        const character = text[valueEnd++];
+        if (character === '\\') valueEnd = Math.min(valueEnd + 1, text.length);
+        else if (character === quote) break;
+      }
+    } else {
+      while (valueEnd < text.length && !/[\s,;}&]/.test(text[valueEnd])) valueEnd++;
+    }
+    result += `${text.slice(copiedThrough, valueStart)}***`;
+    copiedThrough = valueEnd;
+    fields.lastIndex = valueEnd;
+  }
+  return result + text.slice(copiedThrough);
+}
+
 /**
  * A bounded diagnostic for the transfer/import dialogs and their logs. Match
  * the renderer's mutationErrorMessage convention for generic internal errors,
@@ -94,33 +139,36 @@ export function relayErrorMessage(error: unknown): string {
       : typeof error === 'string'
         ? error
         : m.workspace_transfer_unknown_error();
+  // Bound work BEFORE trimming, concatenating or running credential regexes.
+  // Omit oversized fields entirely: a clipped prefix can expose part of a secret.
+  if (message.length > MAX_RELAY_DIAGNOSTIC_LENGTH) return m.workspace_transfer_unknown_error();
   let text = message;
   // i18n-ignore (match the daemon's JSON-RPC wire message)
   if (message === 'Internal error' && error && typeof error === 'object' && 'data' in error) {
     const data = error.data;
     const detail = data && typeof data === 'object' && 'detail' in data ? data.detail : undefined;
-    if (typeof detail === 'string' && detail.trim() && detail.trim() !== message) {
-      text = `${message}: ${detail.trim()}`;
+    if (typeof detail === 'string') {
+      if (message.length + 2 + detail.length > MAX_RELAY_DIAGNOSTIC_LENGTH) return message;
+      const trimmed = detail.trim();
+      if (trimmed && trimmed !== message) text = `${message}: ${trimmed}`;
     }
   }
 
-  // Reuse command and pairing credential scrubbers; diagnostics can also
-  // contain bare auth headers, JSON fields and URLs with signed query params.
-  text = sanitizeCommandForDisplay(
-    scrubToken(
-      text.replace(
+  // Normalize controls before detecting credentials (including split key names).
+  // Private keys and quoted/header fields must be removed before shared scrubbers.
+  text = scrubDiagnosticFields(
+    text
+      .replace(/[\x00-\x1f\x7f]/g, '')
+      .replace(
         /-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?(?:-----END [A-Z ]*PRIVATE KEY-----|$)/g,
         '[REDACTED]',
       ),
-    ),
-  )
+  );
+  // Reuse the existing command, pairing and URL redaction conventions.
+  text = sanitizeCommandForDisplay(scrubToken(text))
     .replace(/[a-z][a-z\d+.-]*:\/\/[^\s"'<>]+/gi, (url) => describeUrlForLog(url))
-    .replace(/\b(Bearer|Basic)\s+[a-z\d._~+\/-]+=*/gi, '$1 ***')
-    .replace(
-      /(["']?[\w-]*(?:token|secret|password|passwd|pwd|credential|authorization|api[-_]?key)["']?\s*[:=]\s*)(?:"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|[^\s,;}&]+)/gi,
-      '$1***',
-    )
-    // Keep one log line; control characters must not forge diagnostic entries.
-    .replace(/[\x00-\x1f\x7f]/g, ' ');
-  return text.length > 2048 ? `${text.slice(0, 2047)}…` : text;
+    .replace(/\b(Bearer|Basic)\s+[a-z\d._~+\/-]+=*/gi, '$1 ***');
+  return text.length > MAX_RELAY_DIAGNOSTIC_LENGTH
+    ? `${text.slice(0, MAX_RELAY_DIAGNOSTIC_LENGTH - 1)}…`
+    : text;
 }

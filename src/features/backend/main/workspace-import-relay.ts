@@ -270,13 +270,12 @@ export function createWorkspaceImportRelay(deps: ImportRelayDeps): WorkspaceImpo
         throw error;
       }
     } catch (error) {
-      const cancelled = current.cancelled || errText(error) === 'cancelled';
+      const message = current.cancelled ? 'cancelled' : errText(error);
+      const cancelled = message === 'cancelled';
       if (!cancelled) {
-        deps.logger.warn('workspace import failed', { filePath, error: errText(error) });
+        deps.logger.warn('workspace import failed', { filePath, error: message });
       }
-      return cancelled
-        ? { success: false, canceled: true }
-        : { success: false, error: errText(error) };
+      return cancelled ? { success: false, canceled: true } : { success: false, error: message };
     } finally {
       await file?.close().catch(() => undefined);
       // An orphaned run released by a takeover must not clear its successor.
