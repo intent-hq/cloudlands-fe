@@ -280,9 +280,7 @@
   function handleLeaveHost() {
     const session = $guestSession$;
     if (!session) return;
-    const action = leaveGuestSessionRequested(session.id);
-    action.promise.catch(() => {});
-    appStore.dispatch(action);
+    appStore.dispatch(leaveGuestSessionRequested(session.id));
   }
 
   // The re-pair modal serves both the auth-rejected posture and the

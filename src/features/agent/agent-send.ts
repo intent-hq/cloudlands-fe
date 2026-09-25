@@ -148,9 +148,7 @@ export async function sendMessage(
       });
 
       // --- Session load/activate (runs once, outside retry boundary) ---
-      const restoreAction = restoreAgentSessionRequested(workspace.id, agentId);
-      dispatchRedux(restoreAction);
-      let session = await restoreAction.promise;
+      let session = await appStore.dispatch(restoreAgentSessionRequested(workspace.id, agentId));
       if (!session) {
         throw new Error(m.agent_streamLifecycle_sessionNotFound_error({ agentId }));
       }
@@ -180,9 +178,9 @@ export async function sendMessage(
               hasBackendSessionId: !!session.backendSessionId,
             });
             // Activate for real workspaces with paths
-            const activateAction = activateAgentRequested(workspace.id, agentId);
-            dispatchRedux(activateAction);
-            const activatedSession = await activateAction.promise;
+            const activatedSession = await appStore.dispatch(
+              activateAgentRequested(workspace.id, agentId),
+            );
             if (activatedSession) {
               session = activatedSession;
             }
@@ -285,11 +283,11 @@ export async function sendMessage(
           // This ensures the message persists even if the app crashes or refreshes
           // For edit/regenerate flows (resetHistory), allow truncation since messages
           // were intentionally removed before this save
-          const saveAction = saveAgentSessionRequested(workspace.id, agentId, true, {
-            allowTruncation: options.resetHistory,
-          });
-          dispatchRedux(saveAction);
-          await saveAction.promise;
+          await appStore.dispatch(
+            saveAgentSessionRequested(workspace.id, agentId, true, {
+              allowTruncation: options.resetHistory,
+            }),
+          );
 
           // Pre-assign the assistant message ID BEFORE the retry boundary
           // so that retries reuse the same ID instead of minting a new one.

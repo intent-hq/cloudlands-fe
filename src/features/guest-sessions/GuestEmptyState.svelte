@@ -37,9 +37,7 @@
   );
 
   function leaveHost() {
-    const action = leaveGuestSessionRequested(session.id);
-    action.promise.catch(() => {});
-    appStore.dispatch(action);
+    appStore.dispatch(leaveGuestSessionRequested(session.id));
   }
 </script>
 

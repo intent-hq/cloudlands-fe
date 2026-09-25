@@ -1,9 +1,9 @@
 ---
 name: themis
 description: >-
-  Route Themis setup and shared Redux/saga guidance. Choose Svelte or React
-  only with concrete UI evidence; default to Streaming for Node/no-UI paths
-  or absent UI evidence. Use one Store family per app; prune stores only on
+  Route first-time Themis setup and shared Redux/saga guidance. Choose Svelte
+  or React only with concrete UI evidence; default to Streaming for Node/no-UI
+  paths or absent UI evidence. Use one Store family per app; prune only on
   explicit request.
 type: core
 sources:
@@ -27,13 +27,15 @@ triggers:
   - Redux saga
   - Redux store pruning
   - selector lifecycle
+  - Store state lifecycle
+  - selector before init
   - Node store
 ---
 # themis skill router
 
 Use this repository root skill first when choosing package guidance. Its job is routing only: load `./setup/SKILL.md` for first-time app setup, load the family that matches the environment and touched code path, then load the leaf skills named by that family. Do not treat this file as a replacement index for `./setup/`, `./core/`, `./svelte/`, `./react/`, or `./streaming/`.
 
-> This package uses a CUSTOM Redux setup — not Redux Toolkit (RTK). Do not use `createSlice`, `configureStore`, `createAsyncThunk`, or any RTK API.
+For the package's custom Redux API and architecture constraints, read `./core/core-policy/SKILL.md` — **Setup — core rules**.
 
 ## App-level Store family rule
 
@@ -43,17 +45,19 @@ Use this repository root skill first when choosing package guidance. Its job is 
 
 ## Selector output cache routing
 
-- Cached direct selector outputs are not Svelte-only. Route Svelte readable cache guidance to `./svelte/selectors/SKILL.md` and `./svelte/selector-scheduling/SKILL.md`.
-- Route React `ReadonlySignal` cache guidance to `./react/selectors/SKILL.md` and `./react/selector-scheduling/SKILL.md`; direct signal calls are preferred where valid.
-- Route Streaming/Kefir `Observable` cache guidance to `./streaming/selectors/SKILL.md` and `./streaming/selector-lifecycle/SKILL.md`; prefer same selector+args over manual stream passing where valid.
+- After selecting the family, route Svelte readable cache guidance to `./svelte/selectors/SKILL.md` — **Selector caching** and `./svelte/selector-scheduling/SKILL.md`.
+- Route React `ReadonlySignal` cache guidance to `./react/selectors/SKILL.md` — **Selector caching** and `./react/selector-scheduling/SKILL.md`; preferred consumer call modes belong to `./react/selector-lifecycle/SKILL.md` — **Call-mode map**.
+- Route Streaming/Kefir `Observable` cache guidance to `./streaming/selectors/SKILL.md` — **Selector caching** and `./streaming/selector-lifecycle/SKILL.md` — **Lifecycle map**.
 
-## Universal architecture rule — effects live in sagas, not components
+## Universal architecture routing
 
-This rule applies to EVERY family below (Svelte, React, Streaming, Core). Components render and dispatch only. **Do NOT create new custom hooks, React `useEffect`, or Svelte `$effect` that contain business logic or side effects** — API calls, persistence/localStorage, timers, subscriptions, event listeners, IPC/websocket, or async workflows. Those belong in sagas. Dispatch an action from the component and handle the work in a saga.
+For every family, route Redux ownership and component-versus-saga side-effect decisions to `./core/core-policy/SKILL.md` — **Setup — core rules** and **When to use Redux vs component-local state**. That skill owns the policy, including the DOM-local exception; this router does not redefine it.
 
-The ONLY permitted component effects are DOM-local: focus, scroll, measurement, and third-party widget lifecycle that cannot live elsewhere. Anything else is a violation.
+For existing effects, classify them with that policy before loading the selected family's migration leaf: `./react/migration/side-effects/SKILL.md` or `./svelte/migration/side-effects/SKILL.md`. Do not load both for the same app.
 
-For the canonical statement of this rule and for migrating any existing effects into sagas, see `./core/core-policy/SKILL.md` §3, `./react/migration/side-effects/SKILL.md`, and `./svelte/migration/side-effects/SKILL.md`.
+## Generic lifecycle routing
+
+Unqualified requests such as `selector lifecycle`, `Store state lifecycle`, or `selector before init` enter here, not a concrete family leaf. First identify the target app/package/code path using **Routing decision order**. If the path itself is unknown, ask for it; once classified, absence of concrete UI evidence defaults to Streaming. Load only the selected family's Store and selector-lifecycle leaves through `./svelte/SKILL.md`, `./react/SKILL.md`, or `./streaming/SKILL.md`. A generic lifecycle phrase alone is not evidence for any UI family.
 
 ## Routing decision order
 
@@ -79,15 +83,15 @@ For the canonical statement of this rule and for migrating any existing effects 
 
 ## Consumer skill install routing
 
-When a consuming app asks how to install packaged AI skills, use the same evidence as the routing decision above and recommend the smallest matching bundle:
+When a consuming app asks for packaged AI skills, use the same evidence as **Routing decision order** to select the smallest matching bundle:
 
-- React evidence → `npx themis install-skills:react` (root router plus `setup`, `core`, and `react`).
-- Svelte/SvelteKit evidence → `npx themis install-skills:svelte` (root router plus `setup`, `core`, and `svelte`).
-- Streaming, Node/server/worker/CLI/test/no-UI, observable evidence, or no concrete UI evidence → `npx themis install-skills:streaming` (root router plus `setup`, `core`, and `streaming`).
-- Shared Redux/redux-saga guidance only → `npx themis install-skills:core` (root router plus `setup` and `core`).
-- Use `npx themis install-skills` or `npx themis install-skills:all` only when every package skill family is intentionally needed.
+- React evidence → React bundle.
+- Svelte/SvelteKit evidence → Svelte bundle.
+- Streaming/no-UI or observable evidence → Streaming bundle.
+- Shared Redux/redux-saga guidance only → Core bundle.
+- Choose all families only when every family is intentionally needed across separate apps or paths.
 
-Package installation itself never copies skills automatically. Explicit installs copy to `.agents/skills/themis/`, create or reuse `.claude/skills/themis` as its compatibility link, and preserve collisions with a warning. Repeating a command refreshes package-owned files from its manifest; `npx themis cleanup-skills` removes owned files and links before uninstall. Read the canonical workflow in [@augmentcode/themis/docs/INSTALLATION.md](@augmentcode/themis/docs/INSTALLATION.md) for destination, refresh, verification, cleanup, and maintainer details.
+Continue at `./setup/SKILL.md` — **Installation workflow**. The sole operational owner is `@augmentcode/themis/docs/INSTALLATION.md` — **Consumer CLI and bundle selection** and **Verify, refresh, cleanup, and uninstall**; it specifies commands, bundle contents, destinations, compatibility links, collision/refresh behavior, and cleanup ordering.
 
 ## Evidence to record in handoff
 

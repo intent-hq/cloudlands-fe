@@ -561,9 +561,7 @@
   async function stopWatchedAgent(watchedAgentId: string) {
     if (!workspaceId) return;
     try {
-      const action = stopAgentSessionRequested(workspaceId, watchedAgentId);
-      appStore.dispatch(action);
-      await action.promise;
+      await appStore.dispatch(stopAgentSessionRequested(workspaceId, watchedAgentId));
     } catch (error) {
       logger.error('Failed to stop watched agent', { watchedAgentId, error });
     }
@@ -589,9 +587,7 @@
       return;
     }
     try {
-      const action = cancelAgentSubscriptionsRequested(workspaceId, agentId, scope);
-      appStore.dispatch(action);
-      await action.promise;
+      await appStore.dispatch(cancelAgentSubscriptionsRequested(workspaceId, agentId, scope));
     } catch (error) {
       logger.error('Failed to cancel watch', { watchedAgentId: row.agentId, error });
     }

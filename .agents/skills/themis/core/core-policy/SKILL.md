@@ -26,7 +26,7 @@ Before editing code or docs under this skill:
 - **SHOULD** stop and ask when rules conflict or scope is unclear.
 - **NEVER** claim completion when a required skill/doc was skipped or the handoff lacks compliance evidence.
 
-> These rules are the load-bearing contract for every slice, saga, and component in the package. Quoted verbatim from `../SKILL.md` §1 and `@augmentcode/themis/docs/ARCHITECTURE.md` → Core Principles.
+> These rules are the load-bearing contract for every slice, saga, and component in the package. The canonical policy is [Setup — core rules](#setup--core-rules); architectural background lives in `@augmentcode/themis/docs/ARCHITECTURE.md` → Core Principles.
 
 ## Setup — core rules
 
@@ -68,7 +68,7 @@ Before adding any helper, wrapper, or shared utility:
 
 Before adding Redux state, actions, selectors, or sagas, load `core/state-integrity` and search for existing canonical owners. The handoff must list the searched paths/terms and say whether the change reused, extended, or created the canonical owner.
 
-### When to use Redux vs component-local state (monolith §8)
+### When to use Redux vs component-local state
 
 **Use Redux when:**
 
@@ -94,28 +94,10 @@ Before adding Redux state, actions, selectors, or sagas, load `core/state-integr
 
 ### Types live in `{slice-name}-types.ts`
 
-```typescript
-// my-slice-types.ts — safe to import from any process
-import type { Collection } from "@augmentcode/themis/utils/collections/collection-utils";
-
-export type Item = {
-  id: string;
-  name: string;
-  isActive: boolean;
-};
-
-export type MyState = {
-  items: Collection<Item, "id">;
-  isLoading: boolean;
-  error: string | null;
-};
-```
-
-```typescript
-// my-slice.ts
-import type { MyState } from "./my-slice-types";
-// reducer + action creators here
-```
+Put slice types/interfaces in the dedicated type module. In the slice, import them
+with `import type`. Cross-process consumers (for example, Electron preload) can
+then import types without pulling in reducers or action-creator factories.
+See [Setup — slice directory layout](../file-structure/SKILL.md#setup--slice-directory-layout).
 
 ## Common Mistakes
 
@@ -123,20 +105,8 @@ import type { MyState } from "./my-slice-types";
 
 Reducers become responsible for keeping copies in sync, which eventually creates stale UI and race-prone updates. Store canonical records and ids; derive views in selectors.
 
-```typescript
-// WRONG — duplicated records plus selector outputs in state
-type TodosState = { items: Todo[]; itemsById: Record<string, Todo>; activeCount: number };
-```
-
-```typescript
-// CORRECT — canonical collection; selector derives the count
-import { store } from "$lib/store/store";
-
-type TodosState = { items: Collection<Todo, 'id'> };
-export const selectActiveCount = store.createSelector((state) =>
-  getItems(state.todos.items).filter((todo) => todo.active).length,
-);
-```
+- **Wrong:** `items: Todo[]`, `itemsById`, and `activeCount` in the same state.
+- **Correct:** one `Collection<Todo, 'id'>`; a selector derives the active count.
 
 Source: `core/state-integrity/SKILL.md` · **Priority: CRITICAL**
 
@@ -144,66 +114,37 @@ Source: `core/state-integrity/SKILL.md` · **Priority: CRITICAL**
 
 State becomes invisible to Redux state inspection and unreachable from sagas or non-component code.
 
-```typescript
-// feature-local-store.ts — new family-local shared store file (WRONG)
-let items = $state<Item[]>([]);
-export const itemsStore = {
-  get items() { return items; },
-  add(i) { items = [...items, i]; }
-};
-```
+Replace shared module-level store data with canonical Redux state: dispatch the
+owning slice's action and update its collection in a pure reducer. Do not expand
+the legacy shared store during migration.
 
-```typescript
-// feature-slice.ts (CORRECT)
-export const addItem = createAction<[Item]>('feature/addItem');
-export const featureReducer = createReducer<FeatureState>(initialState)
-  .with(addItem, (state, { payload: [item] }) => ({
-    ...state, items: collectionAddItem(state.items, item)
-  }));
-```
+Source: [When to use Redux vs component-local state](#when-to-use-redux-vs-component-local-state), `@augmentcode/themis/README.md` · **Priority: CRITICAL**
 
-Source: `../SKILL.md` §1, `@augmentcode/themis/README.md` · **Priority: CRITICAL**
+### ❌ Using component effects for cross-component side effects
 
-### ❌ Using `$effect` for cross-component side effects
+Component-owned effects are the wrong owner for shared/domain work that must
+outlive that component. Keep DOM-local effects in the component; dispatch shared
+intent to the canonical saga owner instead.
 
-`$effect` runs only while the component is mounted; business logic dies with the component and cannot be inspected or tested like a saga.
+- **Wrong:** fetch shared items from a component-owned reactive effect and keep
+  the result in a parallel local store.
+- **Correct:** dispatch the existing load action and let its canonical saga
+  update Redux. For watcher/worker implementation, follow
+  [Do](../sagas/SKILL.md#do) and [Implementation cues](../sagas/SKILL.md#implementation-cues).
+  For selector-triggered work instead of action-triggered work, follow
+  [Choose the helper](../selector-channels/SKILL.md#choose-the-helper).
 
-```typescript
-// WRONG — effect dies on unmount, invisible to devtools/tests
-$effect(() => {
-  fetch(`/api/items/${$id$}`).then(r => r.json()).then(setItems);
-});
-```
+A saga does not inherently outlive a component. Choose its lifetime owner using
+[Application saga startup](../sagas/SKILL.md#application-saga-startup) and follow
+[Store saga lifecycle](../saga-manager/SKILL.md#store-saga-lifecycle) for cancellation;
+the selected Store family supplies component/runtime lifecycle wiring.
 
-```typescript
-// CORRECT — saga survives component lifetime and is observable
-yield* takeLatest(selectItemId, function* ({ payload }) {
-  const res = yield* call(fetch, `/api/items/${payload}`);
-  yield* put(itemsLoaded(yield* call([res, 'json'])));
-});
-```
-
-Source: `../SKILL.md` §1, §8 · **Priority: HIGH**
+Source: [When to use Redux vs component-local state](#when-to-use-redux-vs-component-local-state) · **Priority: HIGH**
 
 ### ❌ Defining slice types inline in `-slice.ts`
 
-Cross-process imports (e.g. Electron preload) pull in the reducer and action-creator factories just to get types; breaks bundling boundaries.
-
-```typescript
-// feature-slice.ts (WRONG)
-export type FeatureState = { items: Collection<Item, 'id'> };
-export const featureReducer = createReducer<FeatureState>(...);
-```
-
-```typescript
-// feature-types.ts (CORRECT — safe to import from any process)
-export type FeatureState = { items: Collection<Item, 'id'> };
-
-// feature-slice.ts
-import type { FeatureState } from './feature-types';
-```
-
-Source: `../SKILL.md` §1, §9 · **Priority: MEDIUM**
+This breaks cross-process bundling boundaries; follow
+[Types live in `{slice-name}-types.ts`](#types-live-in-slice-name-typests). **Priority: MEDIUM**
 
 ### ❌ Leaving a pass-through wrapper after a refactor
 

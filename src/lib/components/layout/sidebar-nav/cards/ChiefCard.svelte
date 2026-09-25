@@ -287,8 +287,7 @@
         { openAgent: false },
       );
 
-      appStore.dispatch(action);
-      return action.promise.then((session) => String(session.id));
+      return appStore.dispatch(action).then((session) => String(session.id));
     });
 
     try {

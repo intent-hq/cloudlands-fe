@@ -117,9 +117,7 @@
       host={$tabHost$}
       {isActive}
       onNavigate={(newUrl: string) => {
-        const action = navigateBrowserTabRequested(tab.id, newUrl);
-        appStore.dispatch(action);
-        return action.promise;
+        return appStore.dispatch(navigateBrowserTabRequested(tab.id, newUrl));
       }}
       onClose={({ force }) => {
         appStore.dispatch(closeBrowserTabRequested(tab.id, force));
