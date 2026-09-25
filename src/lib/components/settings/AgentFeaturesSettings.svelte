@@ -7,7 +7,7 @@
    * settings.list / settings.update (PROTOCOL §5.12), following the
    * WorkspaceApiSettings pattern. Thirteen booleans, each coerced to its own
    * daemon default when absent (see agent-feature-definitions.ts): all
-   * default on except `peerAgents`, the one opt-in toggle.
+   * default on, while explicit false values remain off.
    *
    * Toggles are captured at agent-session creation, so changes apply to
    * newly created sessions only — existing sessions keep the surface they

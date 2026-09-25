@@ -291,14 +291,17 @@ describe('AgentFeaturesSettings wire contract (PROTOCOL §5.12)', () => {
     expect(toggle.getAttribute('aria-checked')).toBe('true');
   });
 
-  it('renders peerAgents OFF when settings.list omits it (opt-in default)', async () => {
+  it('renders peerAgents on when settings.list omits it and sends the exact toggle-off payload', async () => {
     mocks.mockBackendRequest.mockImplementation(async (method: string) => {
       if (method === 'settings.list') {
-        // Older daemon: agentFeatures.peerAgents is not registered
         const response = listResponse();
         return {
+          ...response,
           settings: response.settings.filter((s) => s.path !== 'agentFeatures.peerAgents'),
         };
+      }
+      if (method === 'settings.update') {
+        return { applied: [{ path: 'agentFeatures.peerAgents', value: false }], revision: 1 };
       }
       throw new Error(`Unexpected method: ${method}`);
     });
@@ -309,7 +312,50 @@ describe('AgentFeaturesSettings wire contract (PROTOCOL §5.12)', () => {
       name: 'Top-level agent spawning & retirement',
     });
     await waitFor(() => {
-      expect(toggle.getAttribute('aria-checked')).toBe('false');
+      expect((toggle as HTMLButtonElement).disabled).toBe(false);
+    });
+    expect(toggle.getAttribute('aria-checked')).toBe('true');
+    await fireEvent.click(toggle);
+
+    await waitFor(() => {
+      expect(mocks.mockBackendRequest).toHaveBeenCalledWith('settings.update', {
+        changes: [{ path: 'agentFeatures.peerAgents', value: false }],
+      });
+    });
+    expect(toggle.getAttribute('aria-checked')).toBe('false');
+  });
+
+  it.each([false, true])('restores peerAgents to %s after a wire rollback', async (value) => {
+    mocks.mockBackendRequest.mockImplementation(async (method: string) => {
+      if (method === 'settings.list') {
+        const response = listResponse();
+        return {
+          ...response,
+          settings: response.settings.map((s) =>
+            s.path === 'agentFeatures.peerAgents' ? { ...s, value } : s,
+          ),
+        };
+      }
+      if (method === 'settings.update') {
+        return { applied: [{ path: 'agentFeatures.peerAgents', value }], revision: 0 };
+      }
+      throw new Error(`Unexpected method: ${method}`);
+    });
+
+    render(AgentFeaturesSettings);
+
+    const toggle = await screen.findByRole('switch', {
+      name: 'Top-level agent spawning & retirement',
+    });
+    await waitFor(() => expect((toggle as HTMLButtonElement).disabled).toBe(false));
+    expect(toggle.getAttribute('aria-checked')).toBe(String(value));
+    await fireEvent.click(toggle);
+
+    await waitFor(() => {
+      expect(mocks.mockBackendRequest).toHaveBeenCalledWith('settings.update', {
+        changes: [{ path: 'agentFeatures.peerAgents', value: !value }],
+      });
+      expect(toggle.getAttribute('aria-checked')).toBe(String(value));
     });
   });
 

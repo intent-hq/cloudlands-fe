@@ -6,9 +6,8 @@
  * features modal (harness-feature-catalog.ts), so a new feature toggle
  * added here shows up in both surfaces automatically.
  *
- * `defaultValue` mirrors the daemon's own default for the path: every
- * feature defaults on except `peerAgents` (the one opt-in toggle), so an
- * absent settings.list entry must coerce per feature, not blanket-true.
+ * `defaultValue` mirrors the daemon's own default for the path. An absent
+ * settings.list entry uses that default; explicit boolean values win.
  */
 import { m } from '$shared/paraglide/messages.js';
 
@@ -107,7 +106,7 @@ export const FEATURES: {
     path: 'agentFeatures.peerAgents',
     label: () => m.settings_agentFeatures_peerAgents_label(),
     description: () => m.settings_agentFeatures_peerAgents_description(),
-    defaultValue: false,
+    defaultValue: true,
   },
   {
     path: 'agentFeatures.mcpTools',
