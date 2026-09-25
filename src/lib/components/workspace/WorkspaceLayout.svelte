@@ -12,6 +12,10 @@
    */
 
   import type { Snippet } from 'svelte';
+  import { springIn, crispOut } from '$lib/motion';
+  import WorkspaceSidebarRail from './sidebar/WorkspaceSidebarRail.svelte';
+  import { store as appStore } from '$store/renderer/store';
+  import { toggleSidebar } from '$store/renderer/slices/ui-layout/ui-layout-slice';
 
   // Components
   import ResizablePanel from '$lib/components/layout/ResizablePanel.svelte';
@@ -90,8 +94,27 @@
       {/if}
 
       <!-- Sidebar -->
+      {#if !startCollapsed && active}
+        <div
+          class="relative z-20 h-full shrink-0 overflow-visible transition-[width] duration-spring-slow ease-spring-slow motion-reduce:transition-none"
+          style:width={$sidebarIsCollapsed ? '48px' : '0px'}
+          inert={!$sidebarIsCollapsed}
+          data-workspace-sidebar-rail-shell
+        >
+          {#if $sidebarIsCollapsed}
+            <div
+              class="h-full w-12"
+              in:springIn={{ tier: 'moderate', x: -12, y: 0, scale: 1 }}
+              out:crispOut={{ tier: 'fast', x: -12, y: 0, scale: 1 }}
+            >
+              <WorkspaceSidebarRail onExpand={() => appStore.dispatch(toggleSidebar())} />
+            </div>
+          {/if}
+        </div>
+      {/if}
       <ResizablePanel
         {active}
+        resizable={!$sidebarIsCollapsed}
         side={sidebarSide}
         minWidth={sidebarMinWidth}
         maxWidth={sidebarMaxWidth}
@@ -106,16 +129,22 @@
           ? 'mr-auto ml-0'
           : 'ml-auto mr-0'}"
       >
-        {@render sidebar()}
+        {#if !$sidebarIsCollapsed || startCollapsed}
+          <div
+            class="h-full"
+            style:min-width={`${sidebarMinWidth}px`}
+            inert={$sidebarIsCollapsed}
+            in:springIn={{ tier: 'moderate', x: 12, y: 0, scale: 1 }}
+            out:crispOut={{ tier: 'fast', x: 12, y: 0, scale: 1 }}
+          >
+            {@render sidebar()}
+          </div>
+        {/if}
       </ResizablePanel>
 
       {#if sidebarSide === 'left'}
         <!-- Main Content Area (Panel Layout) - rendered after when sidebar is on left -->
-        <div
-          class="main-content-area flex h-full min-w-0 z-10 bg-sidebar {$sidebarIsCollapsed
-            ? 'pl-2 sm:pl-3'
-            : ''}"
-        >
+        <div class="main-content-area flex h-full min-w-0 z-10 bg-sidebar">
           {@render content()}
         </div>
       {/if}
