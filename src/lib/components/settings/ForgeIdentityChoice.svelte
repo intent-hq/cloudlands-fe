@@ -1,6 +1,6 @@
 <script lang="ts">
   /**
-   * ForgeIdentityChoice — Settings → Connections: which connected forge is
+   * ForgeIdentityChoice — Settings → Guest Sessions: which connected forge is
    * this host's identity for shared workspaces (the daemon's
    * `identity.provider` setting). With both GitHub and GitLab connected the
    * user picks one; the pick is confirmation-gated because the daemon re-keys
@@ -20,6 +20,8 @@
   import { confirm } from '$lib/components/patterns/confirm';
   import { m } from '$shared/paraglide/messages.js';
   import { store as appStore } from '$store/renderer/store';
+  import { initializeGitHubAuth } from '$store/renderer/slices/github-auth/github-auth-slice';
+  import { initializeGitLabAuth } from '$store/renderer/slices/gitlab-auth/gitlab-auth-slice';
   import type { IdentityProvider } from '$features/workspace-sharing/types';
   import {
     initializeIdentity,
@@ -62,6 +64,10 @@
   const gitlabConnected$ = selectGitLabAuthIsConfigured();
 
   onMount(() => {
+    // Guest Sessions can be opened before Connections. Reuse the auth sagas
+    // that own hydration, pending flows and subsequent account changes.
+    appStore.dispatch(initializeGitHubAuth());
+    appStore.dispatch(initializeGitLabAuth());
     appStore.dispatch(initializeIdentity());
   });
 

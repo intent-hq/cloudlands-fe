@@ -60,20 +60,21 @@ export function presencePersonForgeHandle(person: PresenceIdentity): string | nu
     : m.workspace_share_pinProvider_github_label();
 }
 
-/** The name followed by the forge handle when the row carries an identity. */
+/** Include a distinct display name; the forge handle already names a fallback login. */
 export function presencePersonNameWithForge(person: PresenceIdentity): string {
-  const name = presencePersonName(person);
   const handle = presencePersonForgeHandle(person);
-  return handle ? m.presence_person_forge_label({ name, handle }) : name;
+  if (!handle) return presencePersonName(person);
+  const name = person.displayName?.trim();
+  const login = person.login?.trim();
+  return name && name.replace(/^@/, '').toLowerCase() !== login?.toLowerCase()
+    ? m.presence_person_forge_label({ name, handle })
+    : handle;
 }
 
 /** The name (with the forge handle when known), marked "(you)" for this window's own principal. */
 export function presencePersonLabel(person: PresenceCircle): string {
-  const name = person.self
-    ? m.presence_person_you_label({ name: presencePersonName(person) })
-    : presencePersonName(person);
-  const handle = presencePersonForgeHandle(person);
-  return handle ? m.presence_person_forge_label({ name, handle }) : name;
+  const name = presencePersonNameWithForge(person);
+  return person.self ? m.presence_person_you_label({ name }) : name;
 }
 
 /** Stable hue per principal so the same person keeps one color everywhere. */
