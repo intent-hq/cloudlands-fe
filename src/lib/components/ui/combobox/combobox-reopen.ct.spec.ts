@@ -10,8 +10,16 @@ for (const multiple of [false, true]) {
     const component = await mount(Harness, {
       props: { multiple, value: multiple ? [] : '' },
     });
+    await page.evaluate(() => {
+      const outside = document.createElement('button');
+      outside.type = 'button';
+      outside.textContent = 'Outside action';
+      Object.assign(outside.style, { position: 'fixed', right: '16px', bottom: '16px' });
+      document.body.append(outside);
+    });
     const input = page.getByRole('combobox', { name: 'Search people' });
     const listbox = page.getByRole('listbox');
+    const outside = page.getByRole('button', { name: 'Outside action' });
 
     await input.focus();
     await expect(listbox).toBeVisible();
@@ -48,7 +56,8 @@ for (const multiple of [false, true]) {
 
     await input.click();
     await expect(listbox).toBeVisible();
-    await page.mouse.click(1200, 700);
+    await outside.click();
+    await expect(outside).toBeFocused();
     await expect(listbox).toBeHidden();
 
     await component.update({ props: { multiple, value: multiple ? [] : '', disabled: true } });
