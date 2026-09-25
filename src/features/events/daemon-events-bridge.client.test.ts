@@ -143,12 +143,18 @@ vi.mock('$features/agent/chat-read-service', () => ({
 // Fake the attention-toast service so the bridge's `agent:attention-requested`
 // routing (monorepo#1709) and the `workspace:updated` auto-unarchive toast are
 // observable without a real Sonner/toast-component import chain.
-const { showAgentAttentionToastSpy, showWorkspaceAutoUnarchiveToastSpy } = vi.hoisted(() => ({
+const {
+  showAgentAttentionToastSpy,
+  dismissAgentAttentionToastSpy,
+  showWorkspaceAutoUnarchiveToastSpy,
+} = vi.hoisted(() => ({
   showAgentAttentionToastSpy: vi.fn(() => Promise.resolve()),
+  dismissAgentAttentionToastSpy: vi.fn(() => Promise.resolve()),
   showWorkspaceAutoUnarchiveToastSpy: vi.fn(() => Promise.resolve()),
 }));
 vi.mock('$features/agent/agent-attention-toast-service', () => ({
   showAgentAttentionToast: showAgentAttentionToastSpy,
+  dismissAgentAttentionToast: dismissAgentAttentionToastSpy,
   showWorkspaceAutoUnarchiveToast: showWorkspaceAutoUnarchiveToastSpy,
 }));
 
@@ -4993,11 +4999,72 @@ describe('daemonEventsBridge (agent:attention-requested → showAgentAttentionTo
     onBackendNotificationSpy.mockClear();
     backendRequestSpy.mockClear();
     showAgentAttentionToastSpy.mockClear();
+    dismissAgentAttentionToastSpy.mockClear();
     __resetDaemonEventsBridgeForTests();
     capturedHandlers.length = 0;
   });
 
   afterEach(() => vi.clearAllMocks());
+
+  it.each(['discussion', 'blocker'] as const)(
+    'dismisses only the cleared %s request in a non-viewed workspace without a local session',
+    async (kind) => {
+      const { openWorkspaceTab } = await import('$store/renderer/slices/tab-state/tab-state-slice');
+      appStore.dispatch(openWorkspaceTab('ws-viewed-elsewhere'));
+      appStore.dispatch(clearAllSessions());
+      await primeBridge();
+      const handler = capturedHandlers[0]!;
+      const otherAgentId = 'agent-other-attention';
+      for (const agentId of [AGENT, otherAgentId]) {
+        handler(
+          notification('agent:attention-requested', {
+            workspaceId: WS,
+            agentId,
+            agentName: 'Implementor',
+            kind,
+            reason: 'Need input',
+          }),
+        );
+      }
+      await flush();
+      expect(showAgentAttentionToastSpy).toHaveBeenCalledTimes(2);
+      expect(appStore.state.agentSessions.byAgentId[AGENT]).toBeUndefined();
+
+      handler(notification('agent:updated', { agentId: AGENT, attentionRequestCleared: true }));
+      await flush();
+
+      expect(dismissAgentAttentionToastSpy.mock.calls).toEqual([[AGENT]]);
+      expect(refreshAgentSessionAfterEventSpy).toHaveBeenCalledWith(AGENT);
+    },
+  );
+
+  it.each([
+    ['ordinary update', { agentId: AGENT, modelId: 'test-model' }],
+    ['false marker', { agentId: AGENT, attentionRequestCleared: false }],
+    ['null marker', { agentId: AGENT, attentionRequestCleared: null }],
+    ['string marker', { agentId: AGENT, attentionRequestCleared: 'true' }],
+    ['missing agentId', { attentionRequestCleared: true }],
+    ['empty agentId', { agentId: '', attentionRequestCleared: true }],
+    ['non-string agentId', { agentId: 42, attentionRequestCleared: true }],
+  ])('does not dismiss a pending toast for an %s', async (_label, data) => {
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+    handler(
+      notification('agent:attention-requested', {
+        workspaceId: WS,
+        agentId: AGENT,
+        agentName: 'Implementor',
+        kind: 'discussion',
+        reason: 'Still waiting',
+      }),
+    );
+
+    handler(notification('agent:updated', data));
+    await flush();
+
+    expect(showAgentAttentionToastSpy).toHaveBeenCalledTimes(1);
+    expect(dismissAgentAttentionToastSpy).not.toHaveBeenCalled();
+  });
 
   it('shows the attention toast on a valid discussion payload, preferring payload workspaceId/timestamp', async () => {
     await primeBridge();

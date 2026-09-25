@@ -66,10 +66,6 @@ vi.mock('../../src/features/backend/main/backend.ipc', () => ({
   getBackendClient: () => ({ request: backend.request }),
   onBackendReconnected: vi.fn(() => () => {}),
 }));
-vi.mock('../../src/store/main/redux-store-bridge', () => ({
-  mainDispatch: vi.fn((action: unknown) => action),
-}));
-
 function createWorkspace(): Workspace {
   return {
     id: 'ws-integration' as WorkspaceId,
