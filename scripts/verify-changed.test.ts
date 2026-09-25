@@ -14,7 +14,7 @@ import {
 import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   acquireVerificationLock,
   collectChangedFiles,
@@ -144,6 +144,7 @@ function runnerOptions(
 }
 
 afterEach(() => {
+  vi.unstubAllEnvs();
   for (const path of temporaryPaths.splice(0)) rmSync(path, { recursive: true, force: true });
 });
 
@@ -219,6 +220,176 @@ describe('verification planning', () => {
       'vitest-ui-invariants',
       'tsc-renderer',
     ]);
+  });
+
+  describe('required translation validation', () => {
+    const inventorySuite = 'scripts/check-hardcoded-strings.test.ts';
+    const source = 'src/lib/components/chat/reasoning-heading.ts';
+    const translationChecks = (plan: ReturnType<typeof createVerificationPlan>) =>
+      plan.checks.filter((check) => check.id === 'i18n-strings');
+
+    it('covers the historical 16-file compact reasoning change from intent#5855', () => {
+      // git diff --name-only d564268d7898ad35dbde206b8e94656c327184da...
+      // b55c5be7a6118dbe2025bdb0c540145a0e38c7a3 (the merge-base comparison).
+      const files = [
+        'src/lib/components/chat/ReasoningHistoryBlock.svelte',
+        'src/lib/components/chat/ThinkingBlock.svelte',
+        'src/lib/components/chat/__tests__/AssistantProseGeometryHost.svelte',
+        'src/lib/components/chat/__tests__/ReasoningHistoryGeometryHost.svelte',
+        'src/lib/components/chat/__tests__/ThinkingBlock.test.ts',
+        'src/lib/components/chat/__tests__/ThinkingSpacingGeometryHost.svelte',
+        'src/lib/components/chat/__tests__/assistant-prose-geometry.ct.spec.ts',
+        'src/lib/components/chat/__tests__/compact-reasoning-fixtures.ts',
+        'src/lib/components/chat/__tests__/compact-reasoning-geometry.ts',
+        'src/lib/components/chat/__tests__/reasoning-history-geometry.ct.spec.ts',
+        'src/lib/components/chat/__tests__/thinking-block-rendering.test.ts',
+        'src/lib/components/chat/__tests__/thinking-spacing-geometry.ct.spec.ts',
+        'src/lib/components/chat/operational-disclosure-row.ts',
+        'src/lib/components/chat/reasoning-heading.test.ts',
+        source,
+        'src/lib/components/chat/response-group-blocks.ts',
+      ];
+      const root = fixtureRoot(Object.fromEntries(files.map((file) => [file, ''])));
+      const plan = createVerificationPlan(files, { root, ctTests: [] });
+      expect(translationChecks(plan)).toMatchObject([
+        { args: ['run', 'lint:i18n-strings'], lockKind: null },
+      ]);
+      expect(plan.fallbackReasons).toEqual([]);
+      expect(plan.checks.map((check) => check.id)).toEqual(
+        expect.arrayContaining(['vitest-direct', 'vitest-related', 'ct-related', 'svelte-check']),
+      );
+      expect(plan.checks.map((check) => check.id)).not.toContain('vitest-full');
+    });
+
+    it.each([
+      source,
+      'src/lib/components/chat/ThinkingBlock.svelte',
+      'src/hooks.client.ts',
+      'src/routes/(app)/+layout.svelte',
+      'src/features/settings/labels.ts',
+      'src/features/agent/main/stream-manager.ts',
+      'src/shared/errors/messages.ts',
+      'src/store/renderer/seeders/provider-status-bridge-seeder.ts',
+      'src/lib/components/chat/streaming-status.preview-fixtures.svelte',
+    ])('selects the full scan for enforced source %s, including deletion', (file) => {
+      const root = fixtureRoot({ [file]: '' });
+      for (const deleted of [false, true]) {
+        if (deleted) rmSync(join(root, file));
+        const plan = createVerificationPlan([file], { root, ctTests: [] });
+        expect(translationChecks(plan)).toMatchObject([{ args: ['run', 'lint:i18n-strings'] }]);
+      }
+    });
+
+    it.each([
+      'src/lib/components/chat/__tests__/fixture.ts',
+      'src/lib/components/chat/__mocks__/fixture.svelte',
+      'src/lib/components/chat/node_modules/package/fixture.ts',
+      'src/lib/components/chat/dist/fixture.ts',
+      'src/lib/components/chat/build/fixture.ts',
+      'src/lib/components/chat/.svelte-kit/fixture.ts',
+      'src/lib/components/chat/.git/fixture.ts',
+      'src/lib/components/chat/reasoning-heading.test.ts',
+      'src/lib/components/chat/chat.spec.ts',
+      'src/lib/components/chat/types.d.ts',
+      'src/lib/components/chat/ChatHarness.svelte',
+      'src/lib/components/chat/chat.test-harness.svelte',
+      'src/lib/components/chat/chat.fixtures.ts',
+      'src/lib/components/chat/chat.preview.ts',
+      'src/lib/components/chat/chat.preview.svelte',
+      'src/lib/components/chat/chat.preview-fixtures.ts',
+      'src/lib/components/chat/chat.meta.ts',
+      'src/lib/components/chat/chat.playwright.config.ts',
+      'src/lib/components/chat/helper.js',
+      'src/lib/components-extra/helper.ts',
+      'src/hooks.client.ts-extra.ts',
+      'src/features/agent/testing/prompt.ts',
+      'src/features/agent/agent-launch-core/prompt.ts',
+      'src/features/acp-official/main/server/prompt.ts',
+      'src/features/cortex/cortex-acp/prompt.ts',
+      'src/shared/errors/recovery.ts',
+      'src/main/index.ts',
+      'src/lib/utils/helper.ts',
+      'messages/en.json',
+      'docs/guide.md',
+    ])('preserves the scanner enforcement boundary for %s', (file) => {
+      const root = fixtureRoot({ [file]: '' });
+      const plan = createVerificationPlan([file], { root, ctTests: [] });
+      expect(translationChecks(plan)).toEqual([]);
+    });
+
+    it.each([
+      ['direct', inventorySuite, 'vitest-direct'],
+      ['declared', source, 'vitest-declared'],
+      ['full suite', 'vitest.config.ts', 'vitest-full'],
+      ['fallback', 'package.json', 'vitest-full'],
+      ['surviving test directory', 'scripts/deleted.test.ts', 'vitest-direct'],
+    ])('reuses %s inventory coverage without an additional scan', (kind, changed, checkId) => {
+      const root = fixtureRoot({
+        [source]: '',
+        [inventorySuite]: '',
+        'vitest.config.ts': '',
+        'package.json': '{}',
+      });
+      const plan = createVerificationPlan([source, changed], {
+        root,
+        ctTests: [],
+        declaredSuites: kind === 'declared' ? [{ path: inventorySuite, triggers: [source] }] : [],
+      });
+      const coverage = plan.checks.find((check) => check.id === checkId);
+      expect(coverage).toBeDefined();
+      if (kind === 'direct' || kind === 'declared') {
+        expect(coverage?.args).toContain(inventorySuite);
+      }
+      if (kind === 'surviving test directory') expect(coverage?.args).toContain('scripts');
+      expect(translationChecks(plan)).toEqual([]);
+    });
+
+    it('does not mistake unrelated declared or UI invariant suites for inventory coverage', () => {
+      const root = fixtureRoot({ [source]: '', 'scripts/other.test.ts': '' });
+      const plan = createVerificationPlan([source], {
+        root,
+        ctTests: [],
+        declaredSuites: [{ path: 'scripts/other.test.ts', triggers: [source] }],
+      });
+      expect(plan.checks.map((check) => check.id)).toEqual(
+        expect.arrayContaining(['architecture', 'vitest-declared', 'vitest-ui-invariants']),
+      );
+      expect(translationChecks(plan)).toHaveLength(1);
+    });
+
+    it.each([
+      ['src/lib/components/label.ts', "export const label = 'Save your work';"],
+      ['src/lib/components/Label.svelte', '<button>Save your work</button>'],
+    ])('fails affected execution on actual translation violations in %s', async (file, content) => {
+      const root = fixtureRoot({
+        [file]: content,
+        'package.json': JSON.stringify({
+          scripts: {
+            'lint:i18n-strings': 'node scripts/check-hardcoded-strings.mjs src/lib/components',
+          },
+        }),
+      });
+      mkdirSync(join(root, 'scripts'));
+      symlinkSync(
+        join(process.cwd(), 'scripts/check-hardcoded-strings.mjs'),
+        join(root, 'scripts/check-hardcoded-strings.mjs'),
+      );
+      // pnpm enables Node's compile cache; keep it inside this fixture's cleanup.
+      vi.stubEnv('NODE_COMPILE_CACHE', join(root, 'node-compile-cache'));
+      const options = {
+        log() {},
+        checkNode: () => ({ ok: true }),
+        checkDeps: () => ({ ok: true }),
+        ensureI18n: async () => ({ ok: true }),
+        // Isolate this gate from unrelated checks, but execute the selected
+        // package command and real scanner through the production runner.
+        runPlan: (plan: ReturnType<typeof createVerificationPlan>, cwd: string) =>
+          runVerificationPlan({ ...plan, checks: translationChecks(plan) }, cwd),
+      };
+      await expect(runCli([file], root, options)).rejects.toThrow(/failed with exit code 1/);
+      writeFileSync(join(root, file), '');
+      await expect(runCli([file], root, options)).resolves.toBe(0);
+    });
   });
 
   it('runs the architecture gates for any code change under src/', () => {

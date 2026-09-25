@@ -1,3 +1,5 @@
+// @verify-changed-triggers: scripts/check-hardcoded-strings.mjs, scripts/hardcoded-strings-scope.mjs, scripts/hardcoded-strings-baseline.json
+
 import { execFileSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';

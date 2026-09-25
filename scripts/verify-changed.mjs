@@ -13,6 +13,7 @@ import {
 import { isIgnoredRootSpec, isRootSpec, ROOT_TEST_DIR } from '../playwright/root-spec-pattern.mjs';
 import { checkDepsFresh, checkNodeSupport, ensureI18nFresh } from './check-deps-fresh.mjs';
 import { isCtContractPath } from './ct-contract-paths.mjs';
+import { isEnforcedFile } from './hardcoded-strings-scope.mjs';
 import { pnpmInvocation } from './pnpm-launcher.mjs';
 import {
   acquireVerificationLock,
@@ -61,6 +62,8 @@ const FORMAT_EXTENSIONS = new Set([
   '.yml',
 ]);
 const UNIT_TEST_RE = /\.(?:test|spec)\.[cm]?[jt]sx?$/;
+// This suite executes the full required scan with the checked-in baseline.
+const TRANSLATION_INVENTORY_SUITE = 'scripts/check-hardcoded-strings.test.ts';
 // Mirrors the runner-owned excludes in vitest.config.ts /
 // tests/integration/vitest.integration.config.ts. Neither Playwright pattern is
 // mirrored: `isCtSpec` and playwright-ct.config.ts both read
@@ -516,6 +519,20 @@ export function createVerificationPlan(files, options = {}) {
       command('type-check-validate', 'Type check (validate wrapper)', [
         'run',
         'type-check:validate',
+      ]),
+    );
+  const translationCovered =
+    fullUnit ||
+    [...directUnit, ...declaredUnit].some(
+      (suite) =>
+        suite === TRANSLATION_INVENTORY_SUITE ||
+        TRANSLATION_INVENTORY_SUITE.startsWith(`${suite}/`),
+    );
+  if (files.some(isEnforcedFile) && !translationCovered)
+    checks.push(
+      command('i18n-strings', 'Translation strings (required inventory scan)', [
+        'run',
+        'lint:i18n-strings',
       ]),
     );
   if (deadCode)
