@@ -10,7 +10,7 @@
 
   import type { PanelTab } from '$features/layout/panel-layout-adapter';
   import { cn } from '$lib/utils';
-  import KebabIcon from '$lib/components/icons/KebabIcon.svelte';
+  import DotsThreeVerticalIcon from 'phosphor-svelte/lib/DotsThreeVerticalIcon';
   import CaretUpIcon from 'phosphor-svelte/lib/CaretUpIcon';
   import CaretDownIcon from 'phosphor-svelte/lib/CaretDownIcon';
   import XIcon from 'phosphor-svelte/lib/XIcon';
@@ -1326,6 +1326,7 @@
         {...props}
         variant="ghost-light"
         size="icon-sm"
+        wrapContent={false}
         active={panelActionsMenuOpen[location]}
         aria-label={m.ui_breadcrumb_more_label()}
         tooltip={m.ui_breadcrumb_more_label()}
@@ -1335,7 +1336,7 @@
         class="panel-header-action-button"
         data-testid="panel-actions-trigger"
       >
-        <KebabIcon class="pointer-events-none size-4!" />
+        <DotsThreeVerticalIcon size={16} weight="regular" aria-hidden="true" class="size-4!" />
       </Button>
     {/snippet}
     {#snippet content({ close }: { close: () => void })}
@@ -1604,13 +1605,14 @@
       <Button
         variant="ghost-light"
         size="icon-sm"
+        wrapContent={false}
         onclick={() => (tab ? onTabClose?.(tab.id) : onClosePanel?.())}
         aria-label={closeLabel}
         class="panel-header-action-button"
         data-testid="panel-close-button"
         data-pane-close={tab?.id}
       >
-        <XIcon size={28} weight="regular" aria-hidden="true" class="size-4!" />
+        <XIcon size={16} weight="regular" aria-hidden="true" class="size-4!" />
       </Button>
     </Tooltip>
   {/if}
@@ -1699,11 +1701,11 @@
                 </span>
               {/if}
               <span
-                class="flex shrink-0 flex-col items-center gap-0.5 text-muted-foreground"
+                class="flex shrink-0 flex-col items-center text-muted-foreground"
                 aria-hidden="true"
               >
-                <CaretUpIcon size={20} weight="regular" class="size-3!" />
-                <CaretDownIcon size={20} weight="regular" class="size-3!" />
+                <CaretUpIcon size={10} weight="regular" class="size-2.5!" />
+                <CaretDownIcon size={10} weight="regular" class="size-2.5!" />
               </span>
               {#if inactiveAttentionCount > 0 || (activeTab && attentionPaneIds.has(activeTab.id))}
                 <span
@@ -1796,7 +1798,7 @@
   <div
     bind:this={tabBarRef}
     class={cn(
-      'panel-tab-bar group/tabbar relative flex items-center h-[var(--panel-header-height)] bg-card',
+      'panel-tab-bar group/tabbar relative flex items-center h-[var(--panel-header-height)] bg-sidebar',
       !showTabStrip && 'hidden',
     )}
     data-panel-tab-bar
@@ -1974,7 +1976,7 @@
     <!-- svelte-ignore a11y_no_static_element_interactions -->
     <div
       class={cn(
-        'panel-header group/header relative flex h-[var(--panel-header-height)] cursor-grab items-center bg-card pr-2.5 active:cursor-grabbing',
+        'panel-header group/header relative flex h-[var(--panel-header-height)] cursor-grab items-center bg-sidebar pr-2.5 active:cursor-grabbing',
         activeTab.type === 'agent' && 'panel-agent-header',
         isFocused && 'focused',
       )}
@@ -2053,12 +2055,6 @@
     --panel-menu-pad: hsl(var(--surface-5));
     background: var(--panel-menu-surface);
   }
-  :global(.dark .panel-actions-menu-content),
-  :global(.dark .panel-selector-menu) {
-    --panel-menu-surface: #252524;
-    --panel-menu-selected: #343433;
-    --panel-menu-pad: #343433;
-  }
   :global(.panel-actions-menu-content [data-proximity-highlight='selected']),
   :global(.panel-selector-menu [data-proximity-highlight='selected']),
   :global(.panel-selector-row[aria-current='page']) {
@@ -2107,10 +2103,6 @@
     font-size: 14px;
     font-weight: 400;
     line-height: 1.2;
-  }
-  :global(.panel-header-action-button) {
-    width: 26px;
-    height: 26px;
   }
   :global(.panel-selector-menu) {
     width: var(--bits-dropdown-menu-anchor-width, 194px);
@@ -2220,10 +2212,6 @@
     .panel-header {
       padding-inline: 8px;
       gap: 4px;
-    }
-    :global(.panel-header-action-button) {
-      width: 32px;
-      height: 32px;
     }
     :global(.panel-selector-button) {
       gap: 8px;
