@@ -410,15 +410,20 @@ describe('check-dead-code concurrent processes', () => {
       String.raw`
       import fs from 'node:fs';
       import net from 'node:net';
+      import { spawn } from 'node:child_process';
+      if (process.env.PIPE_HOLDER) {
+        spawn(process.execPath, ['-e', process.env.PIPE_HOLDER], { stdio: 'inherit' });
+      }
       const paths = ${JSON.stringify(CANARY_PATHS)};
       const present = () => paths.filter(file => fs.existsSync(file));
       const socket = net.connect(${address.port}, '127.0.0.1');
       socket.on('connect', () => socket.write(JSON.stringify({
         id: process.env.RUN_ID, phase: 'scan', files: present(), pid: process.pid
       }) + '\n'));
+      let signals = 0;
       if (process.env.HOLD_SIGNAL) {
         process.on(process.env.HOLD_SIGNAL, () => socket.write(JSON.stringify({
-          id: process.env.RUN_ID, phase: 'signalled'
+          id: process.env.RUN_ID, phase: ++signals === 1 ? 'signalled' : 'repeated'
         }) + '\n'));
       }
       socket.once('data', () => {
@@ -522,7 +527,14 @@ describe('check-dead-code concurrent processes', () => {
       await new Promise<void>((resolve) => server.close(() => resolve()));
       rmSync(dir, { recursive: true, force: true });
     });
-    return { dir, root, start, wait, release: (id: string) => sockets.get(id)!.write('scan\n') };
+    return {
+      dir,
+      root,
+      port: address.port,
+      start,
+      wait,
+      release: (id: string) => sockets.get(id)!.write('scan\n'),
+    };
   }
 
   it('both overlapping gates retain their canaries until each scan finishes', async () => {
@@ -587,6 +599,63 @@ describe('check-dead-code concurrent processes', () => {
       expect(existsSync(path.join(h.root, CANARY_DIR))).toBe(false);
     },
   );
+
+  it('a repeated cancellation kills an unresponsive scanner and releases the lock', async () => {
+    const h = await harness();
+    const owner = h.start('owner', h.root, { HOLD_SIGNAL: 'SIGTERM' });
+    await h.wait('owner', ['scan']);
+    owner.child.kill('SIGTERM');
+    await h.wait('owner', ['signalled']);
+    owner.child.kill('SIGTERM');
+    const outcome = await Promise.race([
+      owner.done.then((result) => ({ phase: 'exited', code: result.code })),
+      h.wait('owner', ['repeated']).then((event) => ({ phase: event.phase, code: null })),
+    ]);
+    expect(outcome).toEqual({ phase: 'exited', code: 143 });
+    expect(existsSync(path.join(h.root, CANARY_DIR))).toBe(false);
+    const next = h.start('next');
+    await h.wait('next', ['scan']);
+    h.release('next');
+    expect((await next.done).code).toBe(0);
+  });
+
+  it('a single cancellation eventually kills an unresponsive scanner', async () => {
+    const h = await harness();
+    const owner = h.start('owner', h.root, { HOLD_SIGNAL: 'SIGTERM' });
+    await h.wait('owner', ['scan']);
+    owner.child.kill('SIGTERM');
+    await h.wait('owner', ['signalled']);
+    // Await the actual shutdown deadline, not a sleep used to guess process order.
+    expect((await owner.done).code).toBe(143);
+    expect(existsSync(path.join(h.root, CANARY_DIR))).toBe(false);
+    const next = h.start('next');
+    await h.wait('next', ['scan']);
+    h.release('next');
+    expect((await next.done).code).toBe(0);
+  }, 20_000);
+
+  it('cancellation does not wait for pipes inherited by scanner descendants', async () => {
+    const h = await harness();
+    const owner = h.start('owner', h.root, {
+      PIPE_HOLDER: `
+      const net = require('node:net');
+      const socket = net.connect(${h.port}, '127.0.0.1');
+      socket.on('connect', () => socket.write(JSON.stringify({ id: 'holder', phase: 'scan' }) + '\\n'));
+      socket.on('data', () => socket.end());
+      socket.on('end', () => process.exit());
+    `,
+    });
+    await h.wait('owner', ['scan']);
+    await h.wait('holder', ['scan']);
+    owner.child.kill('SIGTERM');
+    expect((await owner.done).code).toBe(143);
+    expect(existsSync(path.join(h.root, CANARY_DIR))).toBe(false);
+    h.release('holder');
+    const next = h.start('next');
+    await h.wait('next', ['scan']);
+    h.release('next');
+    expect((await next.done).code).toBe(0);
+  });
 
   it('a timed-out waiter leaves the live owner and canaries alone', async () => {
     const h = await harness();

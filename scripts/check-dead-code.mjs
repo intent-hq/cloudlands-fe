@@ -38,6 +38,7 @@ const lockKey = `dead-code:${REPO_ROOT}`;
 let releaseLock;
 let knipChild;
 let interruptedExitCode;
+let shutdownTimer;
 
 // knip's exports map does not expose package.json; walk up from its main entry
 // (<pkg>/dist/index.js) to the package root and read `bin.knip` from there.
@@ -71,12 +72,27 @@ function cleanup() {
   }
 }
 
+function closeCancelledOutput() {
+  if (!knipChild || !interruptedExitCode) return;
+  if (knipChild.exitCode === null && knipChild.signalCode === null) return;
+  // A descendant can inherit these pipes. Once the cancelled scanner has exited,
+  // its output is irrelevant; inherited handles must not keep execFile waiting.
+  knipChild.stdout.destroy();
+  knipChild.stderr.destroy();
+}
+
 for (const signal of ['SIGINT', 'SIGTERM', 'SIGHUP']) {
   process.on(signal, () => {
-    interruptedExitCode = 128 + (signal === 'SIGINT' ? 2 : signal === 'SIGTERM' ? 15 : 1);
+    const repeated = Boolean(interruptedExitCode);
+    interruptedExitCode ??= 128 + (signal === 'SIGINT' ? 2 : signal === 'SIGTERM' ? 15 : 1);
     if (knipChild) {
       // Keep ownership until the scanner has stopped using the files.
-      knipChild.kill(signal);
+      knipChild.kill(repeated ? 'SIGKILL' : signal);
+      closeCancelledOutput();
+      if (!repeated) {
+        shutdownTimer = setTimeout(() => knipChild?.kill('SIGKILL'), 10_000);
+        shutdownTimer.unref();
+      }
     } else {
       process.exit(interruptedExitCode);
     }
@@ -95,11 +111,13 @@ function runKnip() {
         maxBuffer: 256 * 1024 * 1024,
       },
       (error, stdout) => {
+        clearTimeout(shutdownTimer);
         knipChild = undefined;
         if (error && typeof error.code !== 'number' && !error.signal) reject(error);
         else resolve({ stdout, status: error?.code ?? 0, signal: error?.signal });
       },
     );
+    knipChild.once('exit', closeCancelledOutput);
     knipChild.stdin.end();
     knipChild.stderr.pipe(process.stderr);
   });
