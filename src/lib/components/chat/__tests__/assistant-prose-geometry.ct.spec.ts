@@ -529,5 +529,6 @@ test('removes operational detail motion when reduced motion is preferred', async
   await disclosure.click();
   const details = component.locator(`[id="${controls}"]`);
   await expect(details).toBeVisible();
+  await expect(details).toContainText('Reasoning body');
   await expect.poll(() => details.evaluate((element) => element.getAnimations().length)).toBe(0);
 });

@@ -17,7 +17,6 @@
     initializeGitHubAuth,
     startGitHubAuth,
     cancelGitHubAuth,
-    checkGitHubAuthStatus,
   } from '$store/renderer/slices/github-auth/github-auth-slice';
   import {
     selectGitHubAuthIsAuthenticated,
@@ -96,23 +95,6 @@
     // grant is resumed.
     appStore.dispatch(initializeGitHubAuth());
     appStore.dispatch(initializeGitLabAuth());
-
-    // Check GitHub auth status immediately when the window gains focus so the
-    // UI updates snappily when the user returns from the browser (the GitLab
-    // form owns its own focus check).
-    const handleFocus = () => {
-      const state = appStore.state;
-      const isAuthenticating = selectGitHubAuthIsAuthenticating.select(state);
-      const deviceFlow = selectGitHubAuthDeviceFlow.select(state);
-      if (isAuthenticating && deviceFlow) {
-        appStore.dispatch(checkGitHubAuthStatus());
-      }
-    };
-
-    window.addEventListener('focus', handleFocus);
-    return () => {
-      window.removeEventListener('focus', handleFocus);
-    };
   });
 
   function handleChooseGitHub() {

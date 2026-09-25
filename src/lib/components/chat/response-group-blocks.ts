@@ -210,7 +210,15 @@ export function isNestedReasoningSectionBoundary(
 
   let previousIndex = childIndex - 1;
   while (previousIndex >= 0 && !isVisible(group.children[previousIndex])) previousIndex -= 1;
-  return previousIndex >= 0;
+  if (previousIndex < 0) return false;
+
+  const previous = group.children[previousIndex];
+  if (previous.type === 'tool_use') return false;
+  if (previous.type === 'thinking') {
+    const history = extractReasoningHistory(previous.text ?? previous.content ?? '');
+    return !!history.at(-1)?.body;
+  }
+  return true;
 }
 
 export function getResponseGroupBlockKey(block: ContentBlock, index: number): string {
