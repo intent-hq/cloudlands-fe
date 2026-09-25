@@ -6151,7 +6151,7 @@
   "settings_hardware_knob_ariaLabel": "Rueda giratoria — ver qué hace",
   "settings_hardware_knobExplainer_label": "Rueda giratoria",
   "settings_hardware_knobExplainer_effort_description": "Gira para ajustar el esfuerzo del agente actual: en sentido horario aumenta y en sentido antihorario disminuye, sin superar los límites admitidos.",
-  "settings_hardware_knobExplainer_configurable_description": "Cambia el comportamiento de giro con el ajuste {setting} de arriba.",
+  "settings_hardware_knobExplainer_configurable_description": "Cambia el comportamiento de giro con el ajuste {setting}.",
   "settings_hardware_knobExplainer_rotate_description": "Gira para recorrer los espacios de trabajo: en sentido horario hacia los más recientes, en sentido antihorario hacia los menos recientes; se detiene en los extremos de la lista.",
   "settings_hardware_knobExplainer_click_description": "Haz clic para abrir la barra lateral de todos los espacios de trabajo; más clics alternan las vistas Recientes, Repo y Estado.",
   "settings_hardware_joystick_ariaLabel": "Joystick — ver qué hace",

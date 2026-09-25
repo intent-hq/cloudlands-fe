@@ -6151,7 +6151,7 @@
   "settings_hardware_knob_ariaLabel": "Molette rotative — voir son rôle",
   "settings_hardware_knobExplainer_label": "Molette rotative",
   "settings_hardware_knobExplainer_effort_description": "Tournez pour ajuster l’effort de l’agent actuel : le sens horaire l’augmente et le sens antihoraire le diminue, sans dépasser les limites disponibles.",
-  "settings_hardware_knobExplainer_configurable_description": "Modifiez le comportement de rotation avec le réglage {setting} ci-dessus.",
+  "settings_hardware_knobExplainer_configurable_description": "Modifiez le comportement de rotation avec le réglage {setting}.",
   "settings_hardware_knobExplainer_rotate_description": "Tournez pour parcourir les espaces de travail : dans le sens horaire vers les plus récemment actifs, antihoraire vers les moins récents ; s'arrête aux extrémités de la liste.",
   "settings_hardware_knobExplainer_click_description": "Cliquez pour ouvrir la barre latérale de tous les espaces de travail ; les clics suivants alternent les vues Récents, Repo et Statut.",
   "settings_hardware_joystick_ariaLabel": "Joystick — voir son rôle",
