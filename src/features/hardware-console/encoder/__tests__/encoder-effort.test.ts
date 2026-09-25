@@ -513,6 +513,21 @@ describe('decoded Micro encoder effort and wire behavior', () => {
     expect(state.hardwareConsole.encoderEffortFeedback).toBeNull();
   });
 
+  it('starts the next detent from an independent edit instead of discarded queued intent', async () => {
+    ready();
+    const first = deferred<unknown>();
+    request.mockImplementationOnce(() => first.promise);
+    const device = manager();
+    device.turn();
+    device.turn();
+    mocks.dispatch(updateSession('agent-1', { reasoningEffort: 'high' }));
+    device.turn();
+    first.resolve(reply('low'));
+    await flush();
+    expect(effort()).toBe('high');
+    expect(mutations()).toHaveLength(1);
+  });
+
   it('keeps trailing intent across the daemon echo of the leading save', async () => {
     ready();
     const device = manager();
@@ -526,6 +541,142 @@ describe('decoded Micro encoder effort and wire behavior', () => {
     await flush();
     expect(effort()).toBe('high');
     expect(mutations()).toHaveLength(2);
+  });
+
+  it.each([1, 2])(
+    'restores confirmed state after role loss and rejection (%s turns)',
+    async (turns) => {
+      ready();
+      render(EffortPicker, { agentId: 'agent-1', workspaceId: 'ws-1' });
+      const first = deferred<unknown>();
+      request.mockImplementationOnce(() => first.promise);
+      const device = manager();
+      for (let n = 0; n < turns; n++) device.turn();
+      state.workspace.workspaces = updateItem(state.workspace.workspaces, {
+        ...getItem(state.workspace.workspaces, 'ws-1')!,
+        myRole: 'collaborator',
+      });
+      publish();
+      first.reject(new Error('permission changed'));
+      await flush();
+      expect(mutations()).toHaveLength(1);
+      expect(selectEncoderEffortFeedback.select(state as never)).toBeNull();
+      expect(effort()).toBeNull();
+      expect(screen.getByTestId('effort-picker-trigger').getAttribute('aria-label')).toBe(
+        m.chat_effortPicker_trigger_ariaLabel({ level: m.chat_effortPicker_level_auto() }),
+      );
+      expect(screen.queryByTestId('effort-gauge')).toBeNull();
+    },
+  );
+
+  it.each(['cw', 'ccw', 'none'] as const)(
+    'keeps latest intent across a leading echo during the trailing save (%s)',
+    async (direction) => {
+      ready();
+      const first = deferred<unknown>();
+      const second = deferred<unknown>();
+      request.mockImplementationOnce(() => first.promise);
+      request.mockImplementationOnce(() => second.promise);
+      const device = manager();
+      device.turn();
+      device.turn();
+      device.turn();
+      first.resolve(reply('low'));
+      await flush();
+      expect(mutations()).toHaveLength(2);
+      mocks.dispatch(updateSession('agent-1', { reasoningEffort: 'low' }));
+      if (direction !== 'none') device.turn(direction);
+      second.resolve(reply('high'));
+      await flush();
+      expect(effort()).toBe(direction === 'ccw' ? 'medium' : 'high');
+      expect(mutations()).toHaveLength(direction === 'ccw' ? 3 : 2);
+    },
+  );
+
+  it('preserves independent effort edits during a trailing save', async () => {
+    ready();
+    const first = deferred<unknown>();
+    const second = deferred<unknown>();
+    request.mockImplementationOnce(() => first.promise);
+    request.mockImplementationOnce(() => second.promise);
+    const device = manager();
+    device.turn();
+    device.turn();
+    device.turn();
+    first.resolve(reply('low'));
+    await flush();
+    mocks.dispatch(updateSession('agent-1', { reasoningEffort: 'medium' }));
+    second.resolve(reply('high'));
+    await flush();
+    expect(effort()).toBe('medium');
+    expect(mutations()).toHaveLength(2);
+    expect(selectEncoderEffortFeedback.select(state as never)).toBeNull();
+  });
+
+  it('restores the last accepted value after an older echo and trailing failure', async () => {
+    ready();
+    const first = deferred<unknown>();
+    const second = deferred<unknown>();
+    request.mockImplementationOnce(() => first.promise);
+    request.mockImplementationOnce(() => second.promise);
+    const device = manager();
+    device.turn();
+    device.turn();
+    device.turn();
+    first.resolve(reply('low'));
+    await flush();
+    mocks.dispatch(updateSession('agent-1', { reasoningEffort: null }));
+    second.reject(new Error('trailing save rejected'));
+    await flush();
+    expect(effort()).toBe('low');
+    expect(mutations()).toHaveLength(2);
+    expect(selectEncoderEffortFeedback.select(state as never)).toBeNull();
+  });
+
+  it('recognizes an echo older than the immediately previous accepted save', async () => {
+    ready();
+    const first = deferred<unknown>();
+    const second = deferred<unknown>();
+    const third = deferred<unknown>();
+    request.mockImplementationOnce(() => first.promise);
+    request.mockImplementationOnce(() => second.promise);
+    request.mockImplementationOnce(() => third.promise);
+    const device = manager();
+    device.turn();
+    device.turn();
+    first.resolve(reply('low'));
+    await flush();
+    device.turn();
+    second.resolve(reply('medium'));
+    await flush();
+    mocks.dispatch(updateSession('agent-1', { reasoningEffort: 'low' }));
+    device.turn();
+    third.resolve(reply('high'));
+    await flush();
+    expect(effort()).toBe('high');
+    expect(mutations()).toHaveLength(3);
+  });
+
+  it('restores confirmed state on teardown after an old echo during a trailing save', async () => {
+    ready();
+    const first = deferred<unknown>();
+    const second = deferred<unknown>();
+    request.mockImplementationOnce(() => first.promise);
+    request.mockImplementationOnce(() => second.promise);
+    const device = manager();
+    device.turn();
+    device.turn();
+    device.turn();
+    first.resolve(reply('low'));
+    await flush();
+    mocks.dispatch(updateSession('agent-1', { reasoningEffort: null }));
+    device.statusChanged('disconnected');
+    expect(effort()).toBe('low');
+    second.reject(new Error('late rejection'));
+    await flush();
+    expect(effort()).toBe('low');
+    expect(mutations()).toHaveLength(2);
+    expect(mocks.notify).not.toHaveBeenCalled();
   });
 
   it('captures the new selected agent while an old-agent save is pending', async () => {

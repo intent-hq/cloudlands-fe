@@ -5,7 +5,7 @@ import { stepEncoderEffort } from '$features/hardware-console/encoder/effort-ste
 import { store as appStore } from '../../../store';
 import { updateSession } from '../../agent-session/agent-session-slice';
 import {
-  selectEditableEncoderAgent,
+  selectEncoderAgentIdentity,
   selectEncoderEffortTarget,
 } from '../hardware-console-selectors';
 import {
@@ -16,7 +16,11 @@ import {
 } from '../hardware-console-slice';
 import type { EncoderEffortFeedback } from '../hardware-console-types';
 
-type PendingEffort = EncoderEffortFeedback & { previous: string | null };
+type PendingEffort = EncoderEffortFeedback & {
+  previous: string | null;
+  /** Earlier confirmed values whose delayed echoes may arrive during this save. */
+  echoes: (string | null)[];
+};
 
 /**
  * Update the session/gauge immediately, but serialize wire writes. Turns during
@@ -33,15 +37,20 @@ export function* encoderEffortSaga() {
   const currentEffort = ({ target }: EncoderEffortFeedback) =>
     appStore.state.agentSessions.byAgentId[target.agentId]?.reasoningEffort ?? null;
 
-  function editable(request: EncoderEffortFeedback): boolean {
+  function sameAgentModel(request: EncoderEffortFeedback): boolean {
     const { workspaceId, agentId, key } = request.target;
-    return selectEditableEncoderAgent.select(appStore.state, workspaceId, agentId)?.key === key;
+    return selectEncoderAgentIdentity.select(appStore.state, workspaceId, agentId)?.key === key;
+  }
+
+  function recognizesEffort(request: PendingEffort): boolean {
+    const current = currentEffort(request);
+    return current === request.effort || request.echoes.includes(current);
   }
 
   function* discardPending() {
     const queued = pending;
     pending = null;
-    if (!queued || !editable(queued) || currentEffort(queued) !== queued.effort) return;
+    if (!queued || !sameAgentModel(queued) || currentEffort(queued) !== queued.effort) return;
     // Keep the already-sent value while its result is unresolved.
     const restore = inFlight?.target.key === queued.target.key ? inFlight.effort : queued.previous;
     yield* put(updateSession(queued.target.agentId, { reasoningEffort: restore }));
@@ -75,7 +84,7 @@ export function* encoderEffortSaga() {
             canMutate: () =>
               live &&
               write.valid &&
-              editable(request) &&
+              sameAgentModel(request) &&
               readPending()?.target.key !== request.target.key,
           },
         );
@@ -83,14 +92,28 @@ export function* encoderEffortSaga() {
         const queued = readPending();
         if (queued?.target.key === request.target.key) {
           queued.previous = accepted ? request.effort : request.previous;
+          queued.echoes = accepted
+            ? [...new Set([...request.echoes, request.effort])]
+            : request.echoes;
           // A daemon echo of the leading save is expected; unrelated edits win.
-          if (currentEffort(queued) !== queued.effort && currentEffort(queued) !== request.effort) {
+          if (currentEffort(queued) !== queued.effort && !recognizesEffort(request)) {
             pending = null;
             yield* put(encoderHudHidden());
           }
-        } else if (!accepted && write.valid) {
-          const feedback = appStore.state.hardwareConsole.encoderEffortFeedback;
-          if (feedback?.target.key === request.target.key) yield* put(encoderHudHidden());
+        } else if (write.valid && sameAgentModel(request)) {
+          // The response settles our write even if a prior echo replaced its
+          // optimistic field. Permission loss forbids new RPCs, not local cleanup.
+          if (recognizesEffort(request)) {
+            yield* put(
+              updateSession(agentId, {
+                reasoningEffort: accepted ? request.effort : request.previous,
+              }),
+            );
+          }
+          if (!accepted) {
+            const feedback = appStore.state.hardwareConsole.encoderEffortFeedback;
+            if (feedback?.target.key === request.target.key) yield* put(encoderHudHidden());
+          }
         }
       }
     } finally {
@@ -101,18 +124,32 @@ export function* encoderEffortSaga() {
   function* rotate({ payload: [direction, workspaceId] }: ReturnType<typeof encoderEffortRotated>) {
     const target = selectEncoderEffortTarget.select(appStore.state);
     if (!target || target.workspaceId !== workspaceId) return;
-    const queued = pending?.target.key === target.key ? pending : null;
-    const current = queued
-      ? queued.effort
+    let queued = pending?.target.key === target.key ? pending : null;
+    const writing = inFlight?.valid && inFlight.target.key === target.key ? inFlight : null;
+    if (queued && !recognizesEffort(queued) && !(writing && recognizesEffort(writing))) {
+      // A separate control changed the field; its value becomes the wheel cursor.
+      pending = null;
+      queued = null;
+      yield* put(encoderHudHidden());
+    }
+    const intent = queued ?? (writing && recognizesEffort(writing) ? writing : null);
+    const current = intent
+      ? intent.effort
       : (appStore.state.agentSessions.byAgentId[target.agentId]?.reasoningEffort ?? null);
     const effort = stepEncoderEffort(current, target.levels, direction);
-    if (effort === undefined) return;
+    if (effort === undefined) {
+      // A detent at the end still rejects an older echo; it needs no extra RPC.
+      if (intent && currentEffort(intent) !== current) {
+        yield* put(updateSession(target.agentId, { reasoningEffort: current }));
+      }
+      return;
+    }
     const previous = queued
       ? queued.previous
       : inFlight?.target.key === target.key
         ? inFlight.previous
         : current;
-    pending = { target, effort, previous };
+    pending = { target, effort, previous, echoes: intent?.echoes ?? [current] };
     yield* put(updateSession(target.agentId, { reasoningEffort: effort }));
     yield* put(encoderEffortHudShown({ target, effort }));
     if (!busy) yield* fork(drain);
@@ -125,7 +162,7 @@ export function* encoderEffortSaga() {
       write.valid = false;
       // An issued RPC cannot be unsent; daemon events reconcile its result.
       // No unsent choice, feedback, or continuation survives device teardown.
-      if (editable(write) && currentEffort(write) === write.effort) {
+      if (sameAgentModel(write) && recognizesEffort(write)) {
         yield* put(updateSession(write.target.agentId, { reasoningEffort: write.previous }));
       }
     }

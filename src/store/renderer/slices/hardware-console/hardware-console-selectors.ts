@@ -144,12 +144,11 @@ export const selectHardwareLedSnapshot = store.createSelector((state) =>
   buildHardwareLedSnapshot(state),
 );
 
-/** Also used after an await to guard rollback against a changed model or role. */
-export const selectEditableEncoderAgent = store.createSelector(
+/** Identity for local reconciliation, independent of permission to send new writes. */
+export const selectEncoderAgentIdentity = store.createSelector(
   (state, workspaceId: string, agentId: string): EncoderEffortTarget | null => {
     const session = state.agentSessions.byAgentId[agentId];
     if (!session || session.workspaceId !== workspaceId) return null;
-    if (selectIsWorkspaceCollaborator.select(state, workspaceId)) return null;
     const levels = selectAgentModelEffortLevels.select(state, agentId);
     if (!levels?.length) return null;
     const provider = selectAgentProvider.select(state, agentId);
@@ -182,8 +181,9 @@ export const selectEncoderEffortTarget = store.createSelector(
       return null;
     const workspaceId = selectCurrentWorkspaceTabId.select(state);
     if (!workspaceId || workspaceId === CHIEF_WORKSPACE_ID) return null;
+    if (selectIsWorkspaceCollaborator.select(state, workspaceId)) return null;
     const agentId = selectActiveAgentId.select(state, workspaceId);
-    return agentId ? selectEditableEncoderAgent.select(state, workspaceId, agentId) : null;
+    return agentId ? selectEncoderAgentIdentity.select(state, workspaceId, agentId) : null;
   },
 );
 
