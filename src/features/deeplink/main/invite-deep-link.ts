@@ -826,11 +826,10 @@ let signInGeneration = 0;
  * on any device, so "Open GitHub" only launches the URL here. Cancel (before
  * or after "Open GitHub") aborts the flow locally (`github.cancelAuth`, best
  * effort). Resolves with the revalidated identity the daemon is signed in as. The
- * `github.connect` start is raced against the `connecting` dialog's Cancel
- * while that dialog is still up (a device flow that starts after the cancel
- * is aborted on arrival — unless a later sign-in owns the live flow by then);
- * once the dialog was dismissed by the first prompt its Cancel never settles
- * and the wait is a plain await.
+ * `github.connect` start is raced against the active forge-choice prompt's
+ * Cancel, or the `connecting` dialog's Cancel when no choice was shown. A
+ * device flow that starts after cancellation is aborted on arrival, unless
+ * a later sign-in owns the live flow by then.
  *
  * With no forge connected at all (`not-connected`) the neutral
  * `connect-forge` prompt comes first, before anything is asked of GitHub:
@@ -848,8 +847,9 @@ async function signInToGitHub(
   connecting: ConnectingProgress,
   challenge: InviteChallenge,
 ): Promise<SignInResult> {
+  let choice: InviteConsentPrompt | null = null;
   if (reason === 'not-connected' && challenge.pinIdentity == null) {
-    const choice = prompts.show({ requestId: randomUUID(), mode: 'connect-forge', ...labels });
+    choice = prompts.show({ requestId: randomUUID(), mode: 'connect-forge', ...labels });
     if ((await choice.decision) === 'cancel') {
       choice.dismiss('cancelled');
       logger.info('User left the invite to connect a forge first');
@@ -857,12 +857,26 @@ async function signInToGitHub(
     }
   }
   const generation = ++signInGeneration;
+  const cancelLateSignIn = (): void => {
+    if (generation !== signInGeneration) return;
+    void client.request('github.cancelAuth').catch(() => {});
+  };
   let start: GithubConnectResult;
   try {
-    start = await connecting.wait(client.request<GithubConnectResult>('github.connect'), () => {
-      if (generation !== signInGeneration) return;
-      void client.request('github.cancelAuth').catch(() => {});
-    });
+    const request = client.request<GithubConnectResult>('github.connect');
+    const cancelled = Symbol();
+    const result = choice
+      ? await Promise.race([
+          choice.cancelledWhileWaiting.then<typeof cancelled>(() => cancelled),
+          request,
+        ])
+      : await connecting.wait(request, cancelLateSignIn);
+    if (result === cancelled) {
+      choice?.dismiss('cancelled');
+      void request.then(cancelLateSignIn, () => {});
+      return { kind: 'cancelled' };
+    }
+    start = result;
   } catch (error) {
     if (error instanceof InviteCancelledError) throw error;
     throw new InviteFlowError('sign-in-failed');
