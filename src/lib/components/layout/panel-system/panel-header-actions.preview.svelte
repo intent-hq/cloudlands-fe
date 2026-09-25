@@ -25,6 +25,7 @@
 
 <script lang="ts">
   import { onMount } from 'svelte';
+  import { overrideMockIpcHandler } from '$shared/ipc-mock-router';
   import { store } from '$store/renderer/store';
   import { bulkUpsertSessions } from '$store/renderer/slices/agent-session/agent-session-slice';
   import { AgentStatus } from '$shared/types/agent.types';
@@ -94,6 +95,12 @@
   );
 
   onMount(() => {
+    const restoreWorkspaceLookup = overrideMockIpcHandler('workspace:get', (payload) => {
+      const id = (payload as { id?: string } | undefined)?.id;
+      return id === workspaceId
+        ? { success: true, data: { id: workspaceId, path: '/workspace/preview', status: 'active' } }
+        : { success: false, error: 'Workspace not found in panel header preview' };
+    });
     store.dispatch(
       bulkUpsertSessions(
         agents.map((agent) => ({
@@ -119,6 +126,7 @@
       }),
     );
     return () => {
+      restoreWorkspaceLookup();
       store.dispatch(clearPanelLayout(workspaceId));
     };
   });
