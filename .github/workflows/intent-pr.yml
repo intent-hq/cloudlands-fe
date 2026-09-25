@@ -746,6 +746,27 @@ jobs:
         with:
           node-version: '24'
           cache: ${{ needs.route.outputs.linux_burst == 'true' && 'pnpm' || '' }}
+      - name: Read backend Keychain fixture pin
+        id: backend-keychain-fixtures
+        run: node scripts/backend-keychain-fixtures.mjs | tee -a "$GITHUB_OUTPUT"
+      - name: Checkout pinned backend Keychain contract
+        uses: actions/checkout@v7
+        with:
+          repository: intent-hq/intent
+          ref: ${{ steps.backend-keychain-fixtures.outputs.sourceCommit }}
+          path: .cache/backend-keychain-contract
+          persist-credentials: false
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /docs/protocol/fixtures/backend-keychain/v1/
+            /scripts/backend-keychain-contract.mjs
+      - name: Verify backend Keychain fixture provenance
+        env:
+          SOURCE_COMMIT: ${{ steps.backend-keychain-fixtures.outputs.sourceCommit }}
+        run: >-
+          node .cache/backend-keychain-contract/scripts/backend-keychain-contract.mjs verify
+          --source-root .cache/backend-keychain-contract --source-commit "$SOURCE_COMMIT"
+          --component cloudlands-fe --component-root .
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
       - name: Generate IPC channels
