@@ -52,7 +52,9 @@ beforeAll(async () => {
     logLevel: 'warn',
     plugins: config.plugins.filter((plugin) => plugin.name === 'use-production-paraglide-bundle'),
     build: {
+      ...config.build,
       write: false,
+      sourcemap: false,
       minify: 'esbuild',
       lib: { entry, formats: ['iife'], name: 'Consumer' },
     },
