@@ -6,10 +6,10 @@ for (const { width, theme } of [
   { width: 620, theme: 'light' },
   { width: 320, theme: 'dark' },
 ]) {
-  test(`panel header ink and keyboard targets at ${width}px in ${theme}`, async ({
+  test(`keeps panel actions reachable by keyboard at ${width}px in ${theme}`, async ({
     mount,
     page,
-  }) => {
+  }, testInfo) => {
     await page.setViewportSize({ width, height: 650 });
     await page.emulateMedia({ reducedMotion: 'reduce' });
     await page.evaluate(
@@ -27,11 +27,21 @@ for (const { width, theme } of [
     ]);
     const bounds = (await header.boundingBox())!;
     for (const icon of geometry) {
-      expect(icon.target.width).toBeGreaterThanOrEqual(32);
-      expect(icon.target.height).toBe(52);
+      // WCAG 2.2 minimum target size, independent of the chosen visual density.
+      expect(icon.target.width).toBeGreaterThanOrEqual(24);
+      expect(icon.target.height).toBeGreaterThanOrEqual(24);
       expect(icon.target.x).toBeGreaterThanOrEqual(bounds.x);
       expect(icon.target.x + icon.target.width).toBeLessThanOrEqual(bounds.x + bounds.width);
+      expect(icon.target.y).toBeGreaterThanOrEqual(bounds.y);
+      expect(icon.target.y + icon.target.height).toBeLessThanOrEqual(bounds.y + bounds.height);
     }
+    expect(geometry[0].target.x + geometry[0].target.width).toBeLessThanOrEqual(
+      geometry[1].target.x,
+    );
+    await testInfo.attach('panel-header-targets', {
+      body: await header.screenshot(),
+      contentType: 'image/png',
+    });
     await actions.getByTestId('panel-actions-trigger').focus();
     await expect(actions.getByTestId('panel-actions-trigger')).toBeFocused();
     await page.keyboard.press('Enter');
