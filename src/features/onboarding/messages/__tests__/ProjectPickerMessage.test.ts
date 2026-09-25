@@ -245,12 +245,12 @@ describe('ProjectPickerMessage — GitHub tab picked-repo selection', () => {
           exact: true,
         });
         await fireEvent.focus(localTab);
-        expect(localTab).toHaveAttribute('aria-selected', 'false');
+        expect(localTab.getAttribute('aria-selected')).toBe('false');
         expect(backendRequestMock).not.toHaveBeenCalledWith('repo.list', {});
         if (activation === 'click') await fireEvent.click(localTab);
         else await fireEvent.keyDown(localTab, { key: activation });
         await waitFor(() => expect(selections.at(-1)?.type).toBe('local'));
-        expect(localTab).toHaveAttribute('aria-selected', 'true');
+        expect(localTab.getAttribute('aria-selected')).toBe('true');
         await waitFor(() =>
           expect(backendRequestMock).toHaveBeenCalledWith('workspace.findRepositories', {
             directory: '/home/dev',
@@ -309,7 +309,7 @@ describe('ProjectPickerMessage — GitHub tab picked-repo selection', () => {
             name: m.onboarding_projectPicker_localFolder_label(),
             exact: true,
           });
-          expect(localTab).toHaveAttribute('aria-selected', 'true');
+          expect(localTab.getAttribute('aria-selected')).toBe('true');
           await fireEvent.focus(localTab);
           expect(backendRequestMock).not.toHaveBeenCalledWith('repo.list', {});
           if (source === 'click') await fireEvent.click(localTab);
