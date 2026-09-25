@@ -1,4 +1,4 @@
-// @verify-changed-triggers: vitest.config.ts, playwright.config.ts, test/actions-status-visual.spec.ts
+// @verify-changed-triggers: vitest.config.ts, .gitignore, playwright.config.ts, test/actions-status-visual.spec.ts
 
 import { execFileSync, spawnSync } from 'node:child_process';
 import {
@@ -327,7 +327,7 @@ describe('verification planning', () => {
       const root = fixtureRoot({
         [source]: '',
         [inventorySuite]: '',
-        'vitest.config.ts': '',
+        'vitest.config.ts': 'export default { test: { exclude: [] } };',
         'package.json': '{}',
       });
       const plan = createVerificationPlan([source, changed], {
@@ -385,6 +385,267 @@ describe('verification planning', () => {
       });
       expect(plan.checks.find((check) => check.id === checkId)).toBeDefined();
       expect(translationChecks(plan)).toMatchObject([{ args: ['run', 'lint:i18n-strings'] }]);
+    });
+
+    describe('Vitest exclusion parsing', () => {
+      const test = "import { test } from 'vitest';\ntest('kept', () => {});";
+      const selections = [
+        ['direct', inventorySuite],
+        ['declared', source],
+        ['directory', 'scripts/deleted.test.ts'],
+        ['full', 'vitest.config.ts'],
+      ];
+
+      function inventoryRoot(config: string) {
+        return fixtureRoot({
+          [source]: "export const label = 'Save your work';",
+          [inventorySuite]: test,
+          'scripts/remaining.spec.ts': test,
+          'vitest.config.ts': config,
+        });
+      }
+
+      it.each([
+        "['**/node_modules/**', '**/*.test.[tj]s']",
+        '["**/node_modules/**", "**/*.test.[tj]s"]',
+        '["**/node_modules/**", "scripts/check-hardcoded-strings.test.ts"]',
+        `[
+          '**/node_modules/**',
+          /* ] 'ignore-this-comment' */ "**/*.test.[tj]s", // ] 'also-a-comment'
+        ]`,
+      ])('retains translation validation for excluded inventory: %s', (exclude) => {
+        const root = inventoryRoot(`export default { test: { exclude: ${exclude} } };`);
+        expect(vitestList(root, 'scripts')).toEqual(['scripts/remaining.spec.ts > kept']);
+        for (const [kind, changed] of selections) {
+          const plan = createVerificationPlan([source, changed], {
+            root,
+            ctTests: [],
+            declaredSuites:
+              kind === 'declared' ? [{ path: inventorySuite, triggers: [source] }] : [],
+          });
+          expect(translationChecks(plan), kind).toHaveLength(1);
+        }
+      });
+
+      it('reads only the real test exclusions and preserves quoted glob contents', () => {
+        const root = inventoryRoot(`
+          // exclude: ['scripts/check-hardcoded-strings.test.ts']
+          const example = "exclude: ['scripts/check-hardcoded-strings.test.ts']";
+          export default {
+            cacheDir: '.cache/vitest',
+            test: { exclude: [
+              '**/node_modules/**',
+              '**/url//fixture.test.ts',
+              "**/owner's/[tj]est.ts",
+              '**/escaped\\u002dname.test.ts',
+            ] },
+          };
+        `);
+        expect(vitestExcludePatterns(root)).toEqual([
+          '**/node_modules/**',
+          '**/url//fixture.test.ts',
+          "**/owner's/[tj]est.ts",
+          '**/escaped-name.test.ts',
+        ]);
+        expect(vitestList(root, 'scripts').sort()).toEqual([
+          `${inventorySuite} > kept`,
+          'scripts/remaining.spec.ts > kept',
+        ]);
+        const plan = createVerificationPlan([source, 'vitest.config.ts'], { root, ctTests: [] });
+        expect(translationChecks(plan)).toEqual([]);
+      });
+
+      it.each([
+        "const excluded = ['**/*.test.ts']; export default { test: { exclude: excluded } };",
+        "const excluded = ['**/*.test.ts']; export default { test: { exclude: [...excluded] } };",
+        "export default { test: { exclude: [process.env.EXCLUDED_TEST || '**/*.test.ts'] } };",
+        "const settings = { exclude: ['**/*.test.ts'] }; export default { test: { exclude: [], ...settings } };",
+        "export default { test: { ['exclude']: ['**/*.test.ts'] } };",
+        "const config = { test: { exclude: ['**/*.test.ts'] } }; export default config;",
+        'export default () => ({ test: { exclude: [] } });',
+        "export default { test: { exclude: [], include: ['**/*.spec.ts'] } };",
+        "export default { test: { exclude: [], testNamePattern: 'surviving' } };",
+        'export default { test: { exclude: [',
+      ])('keeps the scan when exclusion coverage cannot be established: %s', (config) => {
+        const root = inventoryRoot(config);
+        for (const [kind, changed] of selections) {
+          const plan = createVerificationPlan([source, changed], {
+            root,
+            ctTests: [],
+            declaredSuites:
+              kind === 'declared' ? [{ path: inventorySuite, triggers: [source] }] : [],
+          });
+          expect(translationChecks(plan), kind).toHaveLength(1);
+        }
+      });
+
+      it.each([
+        'typecheck: { enabled: true, only: true }, passWithNoTests: true',
+        "related: ['scripts/remaining.spec.ts']",
+        "shard: '2/2'",
+        "tagsFilter: ['smoke']",
+        "cliExclude: ['**/check-hardcoded-strings.test.ts']",
+        'listTags: true',
+        'changed: true',
+        'clearCache: true',
+        "mergeReports: './reports'",
+      ])('keeps translation validation for built-in execution mode %s', (mode) => {
+        const root = inventoryRoot(`export default { test: { exclude: [], ${mode} } };`);
+        for (const [kind, changed] of selections) {
+          const plan = createVerificationPlan([source, changed], {
+            root,
+            ctTests: [],
+            declaredSuites:
+              kind === 'declared' ? [{ path: inventorySuite, triggers: [source] }] : [],
+          });
+          expect(translationChecks(plan), kind).toHaveLength(1);
+        }
+      });
+
+      it('reuses the repository exclusion policy without adding a duplicate inventory scan', () => {
+        const plan = createVerificationPlan([source, inventorySuite], {
+          root: process.cwd(),
+          ctTests: [],
+          declaredSuites: [],
+        });
+        expect(translationChecks(plan)).toEqual([]);
+      });
+
+      it.each([
+        "const __dirname = '/different/config';",
+        "const path = { join: () => '/different/.gitignore' };",
+        "const gitignoreDirExcludes = () => ['**/*.test.ts'];",
+      ])('does not trust a shadowed helper binding: %s', (binding) => {
+        const root = inventoryRoot(`
+          import { defineConfig } from 'vitest/config';
+          import path from 'node:path';
+          import { gitignoreDirExcludes } from './scripts/gitignore-dir-excludes.mjs';
+          export default defineConfig(() => {
+            ${binding}
+            return { test: { exclude: [
+              ...gitignoreDirExcludes(path.join(__dirname, '.gitignore')),
+            ] } };
+          });
+        `);
+        writeFileSync(join(root, '.gitignore'), 'node_modules/');
+        const plan = createVerificationPlan([source, 'vitest.config.ts'], { root, ctTests: [] });
+        expect(translationChecks(plan)).toHaveLength(1);
+      });
+
+      it('resolves only the known gitignore helper spread and respects its exclusions', () => {
+        const root = inventoryRoot(`
+          import path from 'node:path';
+          import { gitignoreDirExcludes } from './scripts/gitignore-dir-excludes.mjs';
+          export default { test: { exclude: [
+            ...gitignoreDirExcludes(path.join(__dirname, '.gitignore')),
+          ] } };
+        `);
+        symlinkSync(
+          join(process.cwd(), 'scripts/gitignore-dir-excludes.mjs'),
+          join(root, 'scripts/gitignore-dir-excludes.mjs'),
+        );
+        for (const [ignored, covered] of [
+          ['node_modules/', true],
+          ['node_modules/\nscripts/', false],
+        ] as const) {
+          writeFileSync(join(root, '.gitignore'), ignored);
+          expect(vitestList(root, 'scripts').sort()).toEqual(
+            covered ? [`${inventorySuite} > kept`, 'scripts/remaining.spec.ts > kept'] : [],
+          );
+          const plan = createVerificationPlan([source, 'vitest.config.ts'], { root, ctTests: [] });
+          expect(translationChecks(plan)).toHaveLength(covered ? 0 : 1);
+        }
+      });
+
+      it.each([
+        ['a bracket glob', "exclude: ['**/node_modules/**', '**/*.test.[tj]s']"],
+        ['testNamePattern', "testNamePattern: 'kept'"],
+        ['typecheck.only', 'typecheck: { enabled: true, only: true }, passWithNoTests: true'],
+        ['related', "related: ['scripts/remaining.spec.ts']"],
+        ['shard', "shard: '2/2'"],
+        ['tagsFilter', "tagsFilter: ['smoke']"],
+        ['cliExclude', "cliExclude: ['**/check-hardcoded-strings.test.ts']"],
+        ['listTags', 'listTags: true'],
+      ])(
+        'propagates a real scan failure when %s filters inventory from the full suite',
+        async (mode, filtering) => {
+          const root = inventoryRoot(`export default {
+          cacheDir: '.cache/vitest',
+          test: {
+            ${mode === 'a bracket glob' ? '' : "exclude: ['**/node_modules/**'],"}
+            tags: [{ name: 'smoke' }], ${filtering}
+          },
+        };`);
+          writeFileSync(
+            join(root, inventorySuite),
+            `
+          import { test } from 'vitest';
+          import { execFileSync } from 'node:child_process';
+          test('inventory', () => {
+            execFileSync(process.execPath, [${JSON.stringify(join(process.cwd(), 'scripts/check-hardcoded-strings.mjs'))}, 'src/lib/components']);
+          });
+        `,
+          );
+          writeFileSync(
+            join(root, 'scripts/remaining.spec.ts'),
+            `
+            import { test } from 'vitest';
+            test('kept', { tags: ['smoke'] }, () => {});
+          `,
+          );
+          if (mode === 'a bracket glob' || mode === 'testNamePattern')
+            expect(vitestList(root, 'scripts')).toEqual(['scripts/remaining.spec.ts > kept']);
+          writeFileSync(
+            join(root, 'package.json'),
+            JSON.stringify({
+              scripts: {
+                'lint:i18n-strings': 'node scripts/check-hardcoded-strings.mjs src/lib/components',
+              },
+            }),
+          );
+          symlinkSync(join(process.cwd(), 'node_modules'), join(root, 'node_modules'), 'dir');
+          symlinkSync(
+            join(process.cwd(), 'scripts/check-hardcoded-strings.mjs'),
+            join(root, 'scripts/check-hardcoded-strings.mjs'),
+          );
+          vi.stubEnv('NODE_COMPILE_CACHE', join(root, 'node-compile-cache'));
+          const options = {
+            log() {},
+            checkNode: () => ({ ok: true }),
+            checkDeps: () => ({ ok: true }),
+            ensureI18n: async () => ({ ok: true }),
+            // Execute both actual selected gates, omitting only unrelated tooling.
+            runPlan: (plan: ReturnType<typeof createVerificationPlan>, cwd: string) =>
+              runVerificationPlan(
+                {
+                  ...plan,
+                  checks: plan.checks.filter((check) =>
+                    ['i18n-strings', 'vitest-full'].includes(check.id),
+                  ),
+                },
+                cwd,
+              ),
+          };
+          const plan = createVerificationPlan([source, 'vitest.config.ts'], {
+            root,
+            ctTests: [],
+            declaredSuites: [],
+          });
+          // Prove the actual configured suite can pass without running inventory.
+          await runVerificationPlan(
+            {
+              ...plan,
+              checks: plan.checks.filter((check) => check.id === 'vitest-full'),
+            },
+            root,
+          );
+          await expect(runCli([source, 'vitest.config.ts'], root, options)).rejects.toThrow(
+            /failed with exit code 1/,
+          );
+          writeFileSync(join(root, source), '');
+          await expect(runCli([source, 'vitest.config.ts'], root, options)).resolves.toBe(0);
+        },
+      );
     });
 
     it('does not mistake unrelated declared or UI invariant suites for inventory coverage', () => {
