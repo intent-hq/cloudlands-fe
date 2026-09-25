@@ -436,12 +436,17 @@ describe('InitialAgentPicker stale model override clearing', () => {
   );
 
   it.each([
-    { defaultModel: 'fable-5' },
-    { reasoningEffort: 'low' },
-    { modelOptions: [{ provider: 'auggie', model: 'fable-5', reasoningEffort: 'low' }] },
+    { specialistSettings: { defaultModel: 'fable-5' }, expected: '' },
+    { specialistSettings: { reasoningEffort: 'low' }, expected: 'low' },
+    {
+      specialistSettings: {
+        modelOptions: [{ provider: 'auggie', model: 'fable-5', reasoningEffort: 'low' }],
+      },
+      expected: 'low',
+    },
   ])(
     'does not override a specialist-specific default with Settings (%j)',
-    async (specialistSettings) => {
+    async ({ specialistSettings, expected }) => {
       mocks.selectedModel$.set('fable-5');
       mocks.configuredModels$.set({ auggie: 'fable-5' });
       mocks.defaultReasoningEffort$.set('high');
@@ -457,9 +462,191 @@ describe('InitialAgentPicker stale model override clearing', () => {
       mocks.specialistsList.mockImplementation(() => new Promise(() => {}));
       render(InitialAgentPicker, { props: { selectedSpecialist: 'custom' } });
       await flush();
-      expect(screen.getAllByTestId('picker-reasoning')[SINGLE_PICKER].textContent).toBe('');
+      expect(screen.getAllByTestId('picker-reasoning')[SINGLE_PICKER].textContent).toBe(expected);
     },
   );
+
+  it.each([
+    { name: 'frontmatter effort', reasoningEffort: 'high', modelOptions: [], expected: 'high' },
+    {
+      name: 'matching model option ahead of frontmatter',
+      reasoningEffort: 'high',
+      modelOptions: [{ model: 'picked-model', provider: 'codex', reasoningEffort: 'low' }],
+      expected: 'low',
+    },
+    {
+      name: 'foreign-provider option falls back to frontmatter',
+      reasoningEffort: 'high',
+      modelOptions: [{ model: 'picked-model', provider: 'auggie', reasoningEffort: 'low' }],
+      expected: 'high',
+    },
+    {
+      name: 'other-model option falls back to frontmatter',
+      reasoningEffort: 'high',
+      modelOptions: [{ model: 'other-model', provider: 'codex', reasoningEffort: 'low' }],
+      expected: 'high',
+    },
+    {
+      name: 'providerless option matches any provider',
+      reasoningEffort: 'high',
+      modelOptions: [{ model: 'picked-model', reasoningEffort: 'low' }],
+      expected: 'low',
+    },
+    {
+      name: 'first matching option has no effort',
+      reasoningEffort: 'high',
+      modelOptions: [
+        { model: 'picked-model', provider: 'codex' },
+        { model: 'picked-model', provider: 'codex', reasoningEffort: 'low' },
+      ],
+      expected: 'high',
+    },
+    {
+      name: 'explicit model without specialist effort excludes Settings',
+      reasoningEffort: undefined,
+      modelOptions: [{ model: 'other-model', provider: 'codex', reasoningEffort: 'low' }],
+      expected: '',
+    },
+  ])('previews specialist effort for an explicit model: $name', async (testCase) => {
+    mocks.defaultProviderId = 'codex';
+    mocks.configuredModels$.set({ codex: 'picked-model' });
+    mocks.defaultReasoningEffort$.set('high');
+    mocks.availableModelsProviderId = 'codex';
+    mocks.availableModels$.set([{ value: 'picked-model' }]);
+    mocks.effortLevelsByModel = { 'picked-model': ['low', 'high'] };
+    mocks.specialists$.set([{ id: 'custom', name: 'Custom', description: '' }]);
+    mocks.backendRequest.mockResolvedValue({
+      specialists: [
+        {
+          id: 'custom',
+          name: 'Custom',
+          description: '',
+          source: 'user',
+          codingAgent: 'auggie',
+          model: 'default-model',
+          modelOptions: [
+            { model: 'default-model', provider: 'codex', reasoningEffort: 'medium' },
+            ...testCase.modelOptions,
+          ],
+          reasoningEffort: testCase.reasoningEffort,
+          resolvedProvider: 'codex',
+          resolvedModel: 'default-model',
+          // The default-model preview is not evidence for the explicit model.
+          resolvedReasoningEffort: 'medium',
+        },
+      ],
+    });
+    const client = new LiveSpecialistsClient();
+    mocks.specialistsList.mockImplementation((provider) => client.list(provider));
+    render(InitialAgentPicker, {
+      props: {
+        selectedSpecialist: 'custom',
+        selectedProvider: 'codex',
+        selectedModel: 'picked-model',
+        modelWasOverridden: true,
+      },
+    });
+    await waitFor(() =>
+      expect(mocks.backendRequest).toHaveBeenCalledWith('specialist.list', { provider: 'codex' }),
+    );
+    await flush();
+    expect(screen.getAllByTestId('picker-reasoning')[SINGLE_PICKER].textContent).toBe(
+      testCase.expected,
+    );
+  });
+
+  it.each([
+    {
+      name: 'foreign specialist pin falls through to Settings',
+      defaultProvider: 'codex',
+      model: 'claude-only',
+      expected: 'high',
+    },
+    {
+      name: 'non-default provider has its own configured model',
+      defaultProvider: 'auggie',
+      model: undefined,
+      expected: 'high',
+    },
+    {
+      name: 'configured default provider control',
+      defaultProvider: 'codex',
+      model: undefined,
+      expected: 'high',
+    },
+    {
+      name: 'genuine specialist model pin suppresses Settings',
+      defaultProvider: 'codex',
+      model: 'gpt-fixture',
+      expected: '',
+    },
+    {
+      name: 'rejected legacy compound pin does not suppress Settings',
+      defaultProvider: 'codex',
+      model: 'codex:gpt-fixture',
+      expected: 'high',
+    },
+  ])('previews the resolved provider Settings effort: $name', async (testCase) => {
+    mocks.defaultProviderId = testCase.defaultProvider;
+    mocks.configuredModels$.set({ codex: 'gpt-fixture' });
+    mocks.defaultReasoningEffort$.set('high');
+    mocks.availableModelsProviderId = 'codex';
+    mocks.availableModels$.set([{ value: 'gpt-fixture' }]);
+    mocks.effortLevelsByModel = { 'gpt-fixture': ['low', 'high'] };
+    mocks.specialists$.set([
+      {
+        id: 'custom',
+        name: 'Custom',
+        description: '',
+        defaultModel: testCase.model,
+        resolvedModel: 'gpt-fixture',
+      },
+    ]);
+    mocks.backendRequest.mockResolvedValue({
+      specialists: [
+        {
+          id: 'custom',
+          name: 'Custom',
+          description: '',
+          source: 'user',
+          model: testCase.model,
+          resolvedProvider: 'codex',
+          resolvedModel: 'gpt-fixture',
+        },
+      ],
+    });
+    const client = new LiveSpecialistsClient();
+    mocks.specialistsList.mockImplementation((provider) => client.list(provider));
+    render(InitialAgentPicker, {
+      props: { selectedSpecialist: 'custom', selectedProvider: 'codex' },
+    });
+    await waitFor(() =>
+      expect(mocks.backendRequest).toHaveBeenCalledWith('specialist.list', { provider: 'codex' }),
+    );
+    await flush();
+    expect(screen.getAllByTestId('picker-reasoning')[SINGLE_PICKER].textContent).toBe(
+      testCase.expected,
+    );
+  });
+
+  it('uses the selected provider Settings model for General, independently of the active provider', async () => {
+    mocks.defaultProviderId = 'auggie';
+    mocks.selectedModel$.set('fable-5');
+    mocks.configuredModels$.set({ auggie: 'fable-5', codex: 'gpt-fixture' });
+    mocks.defaultReasoningEffort$.set('high');
+    mocks.providerModelsByProviderId = {
+      codex: {
+        models: [{ value: 'gpt-fixture', effortLevels: ['low', 'high'] }],
+        fetchedAt: '2026-09-25T00:00:00Z',
+      },
+    };
+    render(InitialAgentPicker, {
+      props: { selectedSpecialist: null, selectedProvider: 'codex' },
+    });
+    await flush();
+    expect(screen.getAllByTestId('picker-default')[SINGLE_PICKER].textContent).toBe('gpt-fixture');
+    expect(screen.getAllByTestId('picker-reasoning')[SINGLE_PICKER].textContent).toBe('high');
+  });
 
   it('still previews Settings when specialist model options do not supply the chosen effort', async () => {
     mocks.selectedModel$.set('fable-5');

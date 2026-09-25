@@ -364,7 +364,10 @@
   // daemon would pin. Absent resolvedModel means "Provider default". The
   // store's specialist view carries the daemon-default-provider context, so
   // it serves as the fallback until the per-provider fetch lands.
-  type ResolvedSpecialist = Pick<SpecialistDef, 'resolvedModel' | 'resolvedReasoningEffort'>;
+  type ResolvedSpecialist = Pick<
+    SpecialistDef,
+    'model' | 'modelOptions' | 'reasoningEffort' | 'resolvedModel' | 'resolvedReasoningEffort'
+  >;
   let resolvedDefaultsByProvider = $state<Record<string, Record<string, ResolvedSpecialist>>>({});
 
   // Bumped on every store specialist-view refresh; in-flight fetches from an
@@ -401,11 +404,15 @@
   // Helper to resolve the displayed default model for a given specialist:
   // the daemon-computed `resolvedModel` preview in the form's provider
   // context (undefined ⇒ provider CLI default, rendered "Provider default").
-  // With no specialist (General), show the global store selection — it
-  // mirrors the daemon's `model.providerDefaults`/`model.default` settings
-  // that the resolver applies for a specialist-less create.
+  // With no specialist (General), prefer this provider's configured model;
+  // the global selection can belong to a different active provider.
   function resolveEffectiveModel(specialist: string | null): string | undefined {
-    if (!specialist) return $selectedModel$;
+    if (!specialist) {
+      return (
+        $configuredModels$[selectedProvider] ||
+        (selectedProvider === $activeProviderId$ ? $selectedModel$ : undefined)
+      );
+    }
     const providerView = resolvedDefaultsByProvider[selectedProvider];
     if (providerView) return providerView[specialist]?.resolvedModel;
     return $specialists$.find((s) => s.id === specialist)?.resolvedModel;
@@ -430,40 +437,44 @@
   // have their own precedence and must not be relabelled as the Settings default.
   const displayedReasoningEffort = $derived.by(() => {
     if (selectedReasoningEffort !== undefined) return selectedReasoningEffort || null;
-    if (modelWasOverridden) return null;
     const model = activeModelForReasoning;
     const levels = modelEffortLevels(model);
-    const specialistEffort = selectedSpecialist
-      ? resolvedDefaultsByProvider[selectedProvider]?.[
-          selectedSpecialist
-        ]?.resolvedReasoningEffort?.trim()
+    const resolvedSpecialist = selectedSpecialist
+      ? resolvedDefaultsByProvider[selectedProvider]?.[selectedSpecialist]
       : undefined;
+    const storedSpecialist = $specialists$.find((row) => row.id === selectedSpecialist);
+    const specialist = resolvedSpecialist ?? storedSpecialist;
+    const split = model ? splitLegacyCompoundId(model) : undefined;
+    // The daemon inherits the first matching option, then frontmatter, even
+    // for an explicit model. An option without a provider matches any provider.
+    // The resolved effort preview describes only the default model, so an
+    // explicit pick must use its matching option/frontmatter instead.
+    const option = specialist?.modelOptions?.find(
+      (option) =>
+        option.model === split?.modelId &&
+        (option.provider === undefined || option.provider === selectedProvider),
+    );
+    const specialistEffort =
+      (!modelWasOverridden ? resolvedSpecialist?.resolvedReasoningEffort : undefined) ||
+      option?.reasoningEffort ||
+      specialist?.reasoningEffort;
     if (specialistEffort) {
-      return levels === undefined || levels.includes(specialistEffort) ? specialistEffort : null;
+      const effort = specialistEffort.trim();
+      return effort && (levels === undefined || levels.includes(effort)) ? effort : null;
     }
-    if (selectedProvider !== $defaultProviderId$) return null;
-    const specialist = $specialists$.find((row) => row.id === selectedSpecialist);
-    if (specialist?.defaultModel || specialist?.reasoningEffort) return null;
+    if (modelWasOverridden) return null;
+    // A foreign (or legacy compound) specialist pin may have been ignored by
+    // the daemon. It suppresses Settings only when it is the resolved model.
+    const specialistModel = resolvedSpecialist
+      ? resolvedSpecialist.model
+      : storedSpecialist?.defaultModel;
+    if (specialistModel && specialistModel === model) return null;
     // selectSelectedModel also falls back to a catalog default. Only the
     // persisted Settings selection makes the default effort apply at creation.
     const configuredModel = $configuredModels$[selectedProvider];
-    if (!model || !configuredModel) return null;
-    const split = splitLegacyCompoundId(model);
+    if (!split || !configuredModel) return null;
     if (split.providerId && split.providerId !== selectedProvider) return null;
-    if (split.modelId !== splitLegacyCompoundId(configuredModel).modelId) return null;
-    // Only a matching option with an effort outranks Settings. Merely listing
-    // alternate models must not hide the inherited default on a fresh form.
-    const optionEffort = specialist?.modelOptions?.some((option) => {
-      const optionModel = splitLegacyCompoundId(option.model);
-      const provider =
-        option.provider ?? optionModel.providerId ?? specialist.codingAgent ?? selectedProvider;
-      return (
-        option.reasoningEffort?.trim() &&
-        provider === selectedProvider &&
-        optionModel.modelId === split.modelId
-      );
-    });
-    if (optionEffort) return null;
+    if (split.modelId !== configuredModel) return null;
     const effort = $defaultReasoningEffort$.trim();
     return effort && (levels === undefined || levels.includes(effort)) ? effort : null;
   });
