@@ -13,6 +13,7 @@ import {
 import { isIgnoredRootSpec, isRootSpec, ROOT_TEST_DIR } from '../playwright/root-spec-pattern.mjs';
 import { checkDepsFresh, checkNodeSupport, ensureI18nFresh } from './check-deps-fresh.mjs';
 import { isCtContractPath } from './ct-contract-paths.mjs';
+import { gitignoreDirExcludes } from './gitignore-dir-excludes.mjs';
 import { pnpmInvocation } from './pnpm-launcher.mjs';
 import {
   acquireVerificationLock,
@@ -331,8 +332,8 @@ export function testRunner(file) {
 // Vitest's default `test.include`; vitest.config.ts does not override it.
 const VITEST_INCLUDE_GLOB = '**/*.{test,spec}.?(c|m)[jt]s?(x)';
 
-export function vitestExcludePatterns(root = REPO_ROOT) {
-  const configPath = resolve(root, 'vitest.config.ts');
+export function vitestExcludePatterns(root = REPO_ROOT, config = 'vitest.config.ts') {
+  const configPath = resolve(root, config);
   if (!existsSync(configPath)) return [];
   const block = /\bexclude:\s*\[([\s\S]*?)\]/.exec(readFileSync(configPath, 'utf8'))?.[1] ?? '';
   const code = block
@@ -340,6 +341,38 @@ export function vitestExcludePatterns(root = REPO_ROOT) {
     .map((line) => line.replace(/\/\/.*$/, ''))
     .join('\n');
   return [...code.matchAll(/'([^']+)'/g)].map((match) => match[1]);
+}
+
+function snapshotOwner(file, root) {
+  // Vitest's default external snapshot path preserves the complete test basename.
+  // Do not guess custom layouts or search for similarly named tests.
+  if (basename(dirname(file)) !== '__snapshots__') return null;
+  const owner = slash(join(dirname(dirname(file)), basename(file, '.snap')));
+  const runner = testRunner(owner);
+  if (!runner || runner === 'manual' || !CODE_EXTENSIONS.has(extname(owner))) return null;
+  try {
+    assertCanonicalPathInsideRoot(resolve(root, owner), root, owner);
+    if (!statSync(resolve(root, owner), { throwIfNoEntry: false })?.isFile()) return null;
+  } catch {
+    return null;
+  }
+
+  const exclude =
+    runner === 'vitest'
+      ? vitestExcludePatterns(root)
+      : runner === 'integration'
+        ? vitestExcludePatterns(root, 'tests/integration/vitest.integration.config.ts')
+        : ['**/node_modules/**'];
+  const gitignore = resolve(root, '.gitignore');
+  if (existsSync(gitignore)) exclude.push(...gitignoreDirExcludes(gitignore));
+  const matches = globSync(escapeGlob(owner, { windowsPathsNoEscape: true }), {
+    cwd: root,
+    ignore: exclude,
+    nodir: true,
+    dot: true,
+    posix: true,
+  });
+  return matches.includes(owner) ? owner : null;
 }
 
 function hasRunnableUnitTests(directory, root, exclude) {
@@ -424,7 +457,13 @@ export function createVerificationPlan(files, options = {}) {
   const existing = files.filter((file) => isExisting(file, root));
   const formatFiles = existing.filter((file) => FORMAT_EXTENSIONS.has(extname(file)));
   const lintFiles = existing.filter(isLintable);
-  const directTests = (runner) => existing.filter((file) => testRunner(file) === runner);
+  const snapshots = new Map(
+    files
+      .filter((file) => extname(file) === '.snap')
+      .map((file) => [file, snapshotOwner(file, root)]),
+  );
+  const testFiles = [...new Set([...existing, ...[...snapshots.values()].filter(Boolean)])];
+  const directTests = (runner) => testFiles.filter((file) => testRunner(file) === runner);
   const directCt = directTests('ct');
   const directIntegration = directTests('integration');
   const directPlaywright = directTests('playwright');
@@ -463,6 +502,8 @@ export function createVerificationPlan(files, options = {}) {
   const fallbackReasons = [];
 
   for (const file of files) {
+    // A resolved snapshot selects its runner above; it did not change source or types.
+    if (snapshots.get(file)) continue;
     addBoundary(boundaries, file);
     if (file.endsWith('.svelte')) svelteCheck = true;
     if (file === 'tsconfig.json') boundaries.add('renderer');
@@ -481,7 +522,7 @@ export function createVerificationPlan(files, options = {}) {
       /^(?:eslint|playwright|postcss|prettier|svelte|tailwind|tsconfig|vite|vitest)[^/]*\./.test(
         file,
       );
-    if (FULL_RISK_FILES.has(file) || !known) {
+    if (snapshots.has(file) || FULL_RISK_FILES.has(file) || !known) {
       fallbackReasons.push(file);
       architecture = true;
       fullUnit = true;
