@@ -10,6 +10,7 @@ import {
   extractReasoningHeading,
   extractReasoningHistory,
   extractStandaloneReasoningTitle,
+  extractStandaloneReasoningTitles,
 } from './reasoning-heading';
 import { getProposalFromBlock } from '$shared/types/proposal-resource';
 
@@ -79,6 +80,17 @@ function pairAdjacentReasoningGroup(
     ? extractStandaloneReasoningTitle(precedingReasoning.body)
     : null;
   const normalizedGroup = normalizeResponseGroup(group);
+  // Compact title-only rows do not name an otherwise headingless group.
+  // Keep its prose inline on completion, unless the existing explicit
+  // external-title handoff supplies the group title.
+  if (
+    !externalTitle &&
+    !normalizedGroup.name &&
+    nonempty.length > 0 &&
+    nonempty.every((child) => extractStandaloneReasoningTitles(child.text ?? child.content ?? ''))
+  ) {
+    return null;
+  }
   // A title supplied by the preceding phase must not consume a different
   // heading from the group's own history.
   const children = externalTitle
