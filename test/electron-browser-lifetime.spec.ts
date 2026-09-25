@@ -55,6 +55,7 @@ test.beforeAll(async () => {
           if (id === '../../system/main/system.ipc') return '\0fixture-window-routing';
           if (id === './browser-capture-service') return '\0fixture-capture';
           if (id === '../../backend/main/backend.ipc') return '\0fixture-backend';
+          if (id === '../../backend/main/tunnel-manager') return '\0fixture-tunnel';
         },
         load(id) {
           if (id === '\0fixture-logger')
@@ -74,6 +75,8 @@ test.beforeAll(async () => {
           if (id === '\0fixture-capture') return 'export const browserCapture = {};';
           if (id === '\0fixture-backend')
             return 'export function getBackendClient() { throw new Error("No daemon in isolated fixture"); }';
+          if (id === '\0fixture-tunnel')
+            return 'export class TunnelForbiddenError extends Error {}';
         },
       },
     ],
@@ -422,6 +425,43 @@ async function teardown(
     }
   }
 }
+
+test('explicit navigation mounts a cap-evicted background tab without focus changes', async ({}, testInfo) => {
+  test.setTimeout(120_000);
+  const { app, page, profile } = await launch(false);
+  const observations: any[] = [];
+  try {
+    await readyPanel(app, page, 'A-1');
+    await ready(app, 'B-1');
+    await ready(app, 'B-2');
+    await page.evaluate(() => (window as any).lifetimeFixture.setOffscreenLimit(1));
+    await expect
+      .poll(() => app.evaluate(() => (globalThis as any).lifetimeCdp.isTabMounted('B-2')))
+      .toBe(false);
+    observations.push(await record(app, page, 'after cap eviction'));
+    const initial = await page.evaluate(() => (window as any).lifetimeFixture.records());
+    const url = `${guestUrl}/after-eviction?tab=B-2`;
+    const result = await app.evaluate(
+      (_electron, url) => (globalThis as any).lifetimeNavigate('B-2', url),
+      url,
+    );
+    expect(result).toMatchObject({
+      success: true,
+      results: [{ action: 'navigate', success: true, result: { tabId: 'B-2', url } }],
+    });
+    await expect
+      .poll(() => page.evaluate(() => (window as any).lifetimeFixture.urls()['B-2']))
+      .toBe(url);
+    await expect
+      .poll(async () => (await guestSnapshot(app)).live.some((guest) => guest.url === url))
+      .toBe(true);
+    expect(await page.evaluate(() => (window as any).lifetimeFixture.records())).toEqual(initial);
+    expect(await page.locator('[data-offscreen-webview-tab]').count()).toBe(1);
+    observations.push(await record(app, page, 'after explicit navigation'));
+  } finally {
+    await teardown(app, page, profile, observations, testInfo);
+  }
+});
 
 for (const hidden of [false, true]) {
   test(`explicit navigation recovers a self-closed offscreen ${hidden ? 'hidden' : 'background'} guest without focus changes`, async ({}, testInfo) => {

@@ -54,8 +54,6 @@ vi.mock('$features/workspace/main/workspace-path.service', () => ({
   getWorkspacePath: vi.fn(async () => null),
 }));
 
-vi.mock('../../../../store/main/redux-store-bridge', () => ({}));
-
 const WS = 'amber-forest';
 const CWD = os.tmpdir();
 
