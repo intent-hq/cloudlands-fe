@@ -998,6 +998,164 @@ describe('decoded Micro encoder effort and wire behavior', () => {
     expect(mutations()).toHaveLength(0);
   });
 
+  it.each(['modern', 'legacy'].flatMap((protocol) => [1, 2].map((turns) => ({ protocol, turns }))))(
+    'keeps the accepted baseline across reconnect and a failed later turn ($protocol, $turns turns)',
+    async ({ protocol, turns }) => {
+      ready();
+      const first = deferred<unknown>();
+      const legacy = vi
+        .fn()
+        .mockImplementationOnce(() => first.promise)
+        .mockResolvedValue({ success: true, data: { success: false, error: 'new save rejected' } });
+      if (protocol === 'legacy') {
+        state.daemonHealth.stats.protocolVersion = '5.1';
+        publish();
+        registerMockIpcHandler(AGENT_CHANNELS.SET_MODEL, legacy);
+      } else {
+        request.mockImplementationOnce(() => first.promise);
+        request.mockRejectedValueOnce(new Error('new save rejected'));
+      }
+      render(EffortPicker, { agentId: 'agent-1', workspaceId: 'ws-1' });
+      const device = manager(protocol === 'legacy' ? 'creator-micro-2' : 'codex-micro');
+      device.turn();
+      mocks.dispatch(
+        updateSession('agent-1', {
+          reasoningEffort: 'low',
+          ...(protocol === 'legacy' ? { model: 'model-a/low' } : {}),
+        }),
+      );
+      device.statusChanged('disconnected');
+      device.statusChanged('connected');
+      for (let n = 0; n < turns; n++) device.turn();
+      expect(effort()).toBe(turns === 1 ? 'low' : 'medium');
+      first.resolve(
+        protocol === 'legacy'
+          ? { success: true, data: { success: true, modelId: 'model-a/low' } }
+          : reply('low'),
+      );
+      await flush();
+      expect(effort()).toBe('low');
+      expect(screen.getByTestId('effort-gauge').getAttribute('data-gauge-value')).toBe('0');
+      expect(protocol === 'legacy' ? legacy.mock.calls : mutations()).toHaveLength(turns);
+      if (turns === 2) {
+        expect(state.hardwareConsole.encoderEffortFeedback).toBeNull();
+        expect(mocks.notify).toHaveBeenCalledExactlyOnceWith('new save rejected');
+      } else expect(mocks.notify).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each(['disconnect', 'cancel'])(
+    'discards reconnected unsent work on %s and releases the completed baseline',
+    async (stop) => {
+      ready();
+      const first = deferred<unknown>();
+      request.mockImplementationOnce(() => first.promise);
+      const device = manager();
+      device.turn();
+      mocks.dispatch(updateSession('agent-1', { reasoningEffort: 'low' }));
+      device.statusChanged('disconnected');
+      device.statusChanged('connected');
+      device.turn();
+      device.turn();
+      if (stop === 'disconnect') device.statusChanged('disconnected');
+      else {
+        device.dispose();
+        for (const task of tasks) task.cancel();
+      }
+      first.resolve(reply('low'));
+      await flush();
+      expect(effort()).toBe('low');
+      expect(mutations()).toHaveLength(1);
+      expect(state.hardwareConsole.encoderEffortFeedback).toBeNull();
+      expect(device.raw.size).toBe(0);
+      if (stop === 'cancel') expect(listeners.size).toBe(0);
+      expect(mocks.notify).not.toHaveBeenCalled();
+
+      // A later sequence must use its own accepted field, not a retained queue.
+      mocks.dispatch(updateSession('agent-1', { reasoningEffort: 'high' }));
+      request.mockRejectedValueOnce(new Error('later picker rejected'));
+      expect(await applyReasoningEffort('agent-1', 'ws-1', 'medium', 'high')).toBe(false);
+      expect(effort()).toBe('high');
+      expect(mutations()).toHaveLength(2);
+    },
+  );
+
+  it.each(
+    ['modern', 'legacy'].flatMap((protocol) =>
+      [false, true].map((accepted) => ({ protocol, accepted })),
+    ),
+  )(
+    'settles reconnected intent after the first write fails ($protocol, latest accepted: $accepted)',
+    async ({ protocol, accepted }) => {
+      ready();
+      const first = deferred<unknown>();
+      const legacy = vi
+        .fn()
+        .mockImplementationOnce(() => first.promise)
+        .mockResolvedValue({
+          success: true,
+          data: { success: accepted, modelId: 'model-a/medium', error: 'new save rejected' },
+        });
+      if (protocol === 'legacy') {
+        state.daemonHealth.stats.protocolVersion = '5.1';
+        publish();
+        registerMockIpcHandler(AGENT_CHANNELS.SET_MODEL, legacy);
+      } else {
+        request.mockImplementationOnce(() => first.promise);
+        if (!accepted) request.mockRejectedValueOnce(new Error('new save rejected'));
+      }
+      const device = manager(protocol === 'legacy' ? 'creator-micro-2' : 'codex-micro');
+      device.turn();
+      device.statusChanged('disconnected');
+      device.statusChanged('connected');
+      device.turn();
+      device.turn();
+      if (protocol === 'legacy')
+        first.resolve({ success: true, data: { success: false, error: 'old save rejected' } });
+      else first.reject(new Error('old save rejected'));
+      await flush();
+      expect(effort()).toBe(accepted ? 'medium' : null);
+      expect(protocol === 'legacy' ? legacy.mock.calls : mutations()).toHaveLength(2);
+      expect(mocks.notify.mock.calls).toEqual(accepted ? [] : [['new save rejected']]);
+      if (!accepted) expect(state.hardwareConsole.encoderEffortFeedback).toBeNull();
+    },
+  );
+
+  it.each(['picker', 'independent', 'model', 'other-agent'])(
+    'preserves a newer %s choice after reconnect while the old response is pending',
+    async (edit) => {
+      ready();
+      const first = deferred<unknown>();
+      request.mockImplementationOnce(() => first.promise);
+      const device = manager();
+      device.turn();
+      mocks.dispatch(updateSession('agent-1', { reasoningEffort: 'low' }));
+      device.statusChanged('disconnected');
+      device.statusChanged('connected');
+      device.turn();
+      device.turn();
+      let editing: Promise<boolean> | undefined;
+      if (edit === 'picker') editing = applyReasoningEffort('agent-1', 'ws-1', 'high', 'medium');
+      else if (edit === 'independent') {
+        mocks.dispatch(updateSession('agent-1', { reasoningEffort: 'high' }));
+        request.mockRejectedValueOnce(new Error('new save rejected'));
+        device.turn('ccw');
+      } else if (edit === 'model')
+        mocks.dispatch(updateSession('agent-1', { model: 'model-b', reasoningEffort: 'minimal' }));
+      else {
+        state.workspaceAgents.byWorkspaceId['ws-1'].activeAgentId = 'agent-2';
+        publish();
+        device.turn();
+      }
+      first.resolve(reply('low'));
+      if (editing) expect(await editing).toBe(true);
+      await flush();
+      expect(effort()).toBe(edit === 'other-agent' ? 'low' : edit === 'model' ? 'minimal' : 'high');
+      expect(effort('agent-2')).toBe(edit === 'other-agent' ? 'low' : null);
+      expect(mutations()).toHaveLength(edit === 'model' ? 1 : 2);
+    },
+  );
+
   it.each(
     ['modern', 'legacy'].flatMap((protocol) =>
       ['disconnect', 'cancel'].flatMap((stop) =>

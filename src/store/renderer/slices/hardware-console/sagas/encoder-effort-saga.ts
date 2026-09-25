@@ -149,6 +149,9 @@ export function* encoderEffortSaga() {
   function* rotate({ payload: [direction, workspaceId] }: ReturnType<typeof encoderEffortRotated>) {
     const target = selectEncoderEffortTarget.select(appStore.state);
     if (!target || target.workspaceId !== workspaceId) return;
+    // Selection notifications can trail a detent; discard the old target's
+    // unsent choice before replacing it with this target's pending intent.
+    if (pending && pending.target.key !== target.key) yield* discardPending();
     let queued = pending?.target.key === target.key ? pending : null;
     const writing = inFlight?.valid && inFlight.target.key === target.key ? inFlight : null;
     if (queued && !recognizesEffort(queued) && !(writing && recognizesEffort(writing))) {
@@ -158,6 +161,13 @@ export function* encoderEffortSaga() {
       yield* put(encoderHudHidden());
     }
     const intent = queued ?? (writing && recognizesEffort(writing) ? writing : null);
+    // Reconnecting changes the cursor to the displayed value, but an issued
+    // save still owns this sequence's accepted baseline until it settles.
+    const baseline =
+      intent ??
+      (inFlight?.stopped && inFlight.target.key === target.key && recognizesEffort(inFlight)
+        ? inFlight
+        : null);
     // A separate edit owns the new baseline, even if later turns revisit an
     // older requested value. Replies from that earlier sequence cannot settle it.
     if (!intent && writing) writing.valid = false;
@@ -176,9 +186,9 @@ export function* encoderEffortSaga() {
       target,
       effort,
       intent: markReasoningEffortIntent(target.agentId, target.workspaceId),
-      previous: intent ? intent.previous : current,
-      generation: intent?.generation ?? ++generation,
-      echoes: intent?.echoes ?? [current],
+      previous: baseline ? baseline.previous : current,
+      generation: baseline?.generation ?? ++generation,
+      echoes: baseline?.echoes ?? [current],
     };
     yield* put(updateSession(target.agentId, { reasoningEffort: effort }));
     yield* put(encoderEffortHudShown({ target, effort }));
@@ -207,7 +217,10 @@ export function* encoderEffortSaga() {
       // Explicit local edits supersede encoder intent even when they return to
       // Auto or another historical value that an untagged daemon echo can carry.
       if (pending?.target.agentId === agentId) pending = null;
-      if (inFlight?.target.agentId === agentId) inFlight.valid = false;
+      if (inFlight?.target.agentId === agentId) {
+        inFlight.valid = false;
+        inFlight.stopped = false;
+      }
       if (appStore.state.hardwareConsole.encoderEffortFeedback?.target.agentId === agentId) {
         yield* put(encoderHudHidden());
       }
