@@ -170,7 +170,28 @@ for (const preference of ['os', 'battery']) {
       'data-render-settled',
       'true',
     );
-    expect(await svg.evaluate((root) => root.getAnimations({ subtree: true }).length)).toBe(0);
+    // Layout settlement can precede the global reduced-motion transitions' final frame.
+    // Capture visibility now and wait only for those short transitions, never a reveal.
+    const motion = await svg.evaluate(async (root) => {
+      const animations = root.getAnimations({ subtree: true });
+      const immediate = {
+        reveals: root.querySelectorAll('[data-mermaid-reveal]').length,
+        visible: [...root.querySelectorAll('g.node rect, g.node foreignObject')].every(
+          (part) => Number(getComputedStyle(part).opacity) === 1,
+        ),
+        unexpectedAnimations: animations.filter(
+          (animation) =>
+            !(animation instanceof CSSTransition) ||
+            animation.effect!.getTiming().duration !== 0.01 ||
+            animation.effect!.getTiming().delay !== 0,
+        ).length,
+      };
+      if (immediate.unexpectedAnimations === 0) {
+        await Promise.all(animations.map((animation) => animation.finished));
+      }
+      return { ...immediate, animations: root.getAnimations({ subtree: true }).length };
+    });
+    expect(motion).toEqual({ reveals: 0, visible: true, unexpectedAnimations: 0, animations: 0 });
     await page.emulateMedia({ reducedMotion: 'no-preference' });
     await page.evaluate(() => document.documentElement.removeAttribute('data-reduce-motion'));
     expect(await svg.evaluate((root) => root.getAnimations({ subtree: true }).length)).toBe(0);

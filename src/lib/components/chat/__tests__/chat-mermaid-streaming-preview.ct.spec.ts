@@ -36,7 +36,28 @@ test('stepping the production chat preview retains incomplete paint and replay r
   await next.click();
   await expect(next).toBeDisabled();
   await expect(renderer).toHaveAttribute('data-render-settled', 'true');
-  expect(await svg.evaluate((el) => el.getAnimations({ subtree: true }).length)).toBe(0);
+  // Layout settlement can precede the global reduced-motion transitions' final frame.
+  // Capture visibility now and wait only for those short transitions, never a reveal.
+  const motion = await svg.evaluate(async (root) => {
+    const animations = root.getAnimations({ subtree: true });
+    const immediate = {
+      reveals: root.querySelectorAll('[data-mermaid-reveal]').length,
+      visible: [...root.querySelectorAll('g.node rect, g.node foreignObject')].every(
+        (part) => Number(getComputedStyle(part).opacity) === 1,
+      ),
+      unexpectedAnimations: animations.filter(
+        (animation) =>
+          !(animation instanceof CSSTransition) ||
+          animation.effect!.getTiming().duration !== 0.01 ||
+          animation.effect!.getTiming().delay !== 0,
+      ).length,
+    };
+    if (immediate.unexpectedAnimations === 0) {
+      await Promise.all(animations.map((animation) => animation.finished));
+    }
+    return { ...immediate, animations: root.getAnimations({ subtree: true }).length };
+  });
+  expect(motion).toEqual({ reveals: 0, visible: true, unexpectedAnimations: 0, animations: 0 });
 
   await component.getByRole('button', { name: 'Replay' }).click();
   await component.getByRole('button', { name: 'Pause' }).click();
