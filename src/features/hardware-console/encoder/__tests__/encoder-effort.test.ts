@@ -268,7 +268,7 @@ beforeEach(() => {
     channel.put(action);
     return action;
   });
-  request.mockImplementation(async (method, params) => {
+  request.mockReset().mockImplementation(async (method, params) => {
     if (method === 'settings.get') return setting();
     if (method === 'settings.update') {
       bag = (params as { changes: { value: Record<string, unknown> }[] }).changes[0].value;
@@ -526,6 +526,50 @@ describe('decoded Micro encoder effort and wire behavior', () => {
     await flush();
     expect(effort()).toBe('high');
     expect(mutations()).toHaveLength(1);
+  });
+
+  it.each([
+    { acceptsOld: false, turns: 1 },
+    { acceptsOld: true, turns: 1 },
+    { acceptsOld: false, turns: 2 },
+    { acceptsOld: true, turns: 2 },
+  ])(
+    'keeps an independent edit as the new rollback baseline (old accepted: $acceptsOld, turns: $turns)',
+    async ({ acceptsOld, turns }) => {
+      ready();
+      const first = deferred<unknown>();
+      request.mockImplementationOnce(() => first.promise);
+      request.mockRejectedValueOnce(new Error('new save rejected'));
+      const device = manager();
+      device.turn();
+      device.turn();
+      mocks.dispatch(updateSession('agent-1', { reasoningEffort: 'high' }));
+      for (let n = 0; n < turns; n++) device.turn('ccw');
+      if (acceptsOld) first.resolve(reply('low'));
+      else first.reject(new Error('old save rejected'));
+      await flush();
+      expect(mutations()).toHaveLength(2);
+      expect(effort()).toBe('high');
+      expect(selectEncoderEffortFeedback.select(state as never)).toBeNull();
+      expect(mocks.notify).toHaveBeenCalledExactlyOnceWith('new save rejected');
+    },
+  );
+
+  it('keeps an independent rollback baseline when a new sequence is torn down', async () => {
+    ready();
+    const first = deferred<unknown>();
+    request.mockImplementationOnce(() => first.promise);
+    const device = manager();
+    device.turn();
+    device.turn();
+    mocks.dispatch(updateSession('agent-1', { reasoningEffort: 'high' }));
+    device.turn('ccw');
+    device.statusChanged('disconnected');
+    first.reject(new Error('old save rejected'));
+    await flush();
+    expect(effort()).toBe('high');
+    expect(mutations()).toHaveLength(1);
+    expect(mocks.notify).not.toHaveBeenCalled();
   });
 
   it('keeps trailing intent across the daemon echo of the leading save', async () => {

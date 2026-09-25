@@ -18,6 +18,8 @@ import type { EncoderEffortFeedback } from '../hardware-console-types';
 
 type PendingEffort = EncoderEffortFeedback & {
   previous: string | null;
+  /** Independent edits start a new sequence with their own rollback value. */
+  generation: number;
   /** Earlier confirmed values whose delayed echoes may arrive during this save. */
   echoes: (string | null)[];
 };
@@ -32,6 +34,7 @@ export function* encoderEffortSaga() {
   let pending: PendingEffort | null = null;
   let busy = false;
   let live = true;
+  let generation = 0;
   let inFlight: (PendingEffort & { valid: boolean }) | null = null;
   const readPending = (): PendingEffort | null => pending;
   const currentEffort = ({ target }: EncoderEffortFeedback) =>
@@ -52,7 +55,12 @@ export function* encoderEffortSaga() {
     pending = null;
     if (!queued || !sameAgentModel(queued) || currentEffort(queued) !== queued.effort) return;
     // Keep the already-sent value while its result is unresolved.
-    const restore = inFlight?.target.key === queued.target.key ? inFlight.effort : queued.previous;
+    const restore =
+      inFlight?.valid &&
+      inFlight.target.key === queued.target.key &&
+      inFlight.generation === queued.generation
+        ? inFlight.effort
+        : queued.previous;
     yield* put(updateSession(queued.target.agentId, { reasoningEffort: restore }));
   }
 
@@ -90,7 +98,7 @@ export function* encoderEffortSaga() {
         );
         inFlight = null;
         const queued = readPending();
-        if (queued?.target.key === request.target.key) {
+        if (queued?.target.key === request.target.key && queued.generation === request.generation) {
           queued.previous = accepted ? request.effort : request.previous;
           queued.echoes = accepted
             ? [...new Set([...request.echoes, request.effort])]
@@ -133,6 +141,9 @@ export function* encoderEffortSaga() {
       yield* put(encoderHudHidden());
     }
     const intent = queued ?? (writing && recognizesEffort(writing) ? writing : null);
+    // A separate edit owns the new baseline, even if later turns revisit an
+    // older requested value. Replies from that earlier sequence cannot settle it.
+    if (!intent && writing) writing.valid = false;
     const current = intent
       ? intent.effort
       : (appStore.state.agentSessions.byAgentId[target.agentId]?.reasoningEffort ?? null);
@@ -144,12 +155,13 @@ export function* encoderEffortSaga() {
       }
       return;
     }
-    const previous = queued
-      ? queued.previous
-      : inFlight?.target.key === target.key
-        ? inFlight.previous
-        : current;
-    pending = { target, effort, previous, echoes: intent?.echoes ?? [current] };
+    pending = {
+      target,
+      effort,
+      previous: intent ? intent.previous : current,
+      generation: intent?.generation ?? ++generation,
+      echoes: intent?.echoes ?? [current],
+    };
     yield* put(updateSession(target.agentId, { reasoningEffort: effort }));
     yield* put(encoderEffortHudShown({ target, effort }));
     if (!busy) yield* fork(drain);
@@ -158,7 +170,7 @@ export function* encoderEffortSaga() {
   function* stopInput() {
     yield* discardPending();
     const write = inFlight;
-    if (write) {
+    if (write?.valid) {
       write.valid = false;
       // An issued RPC cannot be unsent; daemon events reconcile its result.
       // No unsent choice, feedback, or continuation survives device teardown.
