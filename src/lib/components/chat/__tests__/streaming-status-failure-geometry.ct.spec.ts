@@ -19,7 +19,7 @@ test('keeps failed-response controls aligned and contained across the production
     });
   });
   const component = await mount(StreamingStatusFailureGeometryHost);
-  const geometryHost = component.getByTestId('failed-response-geometry-host');
+  const geometryHost = page.getByTestId('failed-response-geometry-host');
   let resetKey = 0;
 
   for (const theme of ['light', 'dark'] as const) {
