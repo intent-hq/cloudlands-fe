@@ -1746,10 +1746,13 @@ ${source}`;
 
   onMount(() => {
     mounted = true;
+    let observedWidth: number | undefined;
     const resizeObserver =
       typeof ResizeObserver === 'undefined'
         ? undefined
         : new ResizeObserver(([entry]) => {
+            if (entry.contentRect.width === observedWidth) return;
+            observedWidth = entry.contentRect.width;
             compactLayout = entry.contentRect.width <= 620;
             narrowLayout = narrowLayout
               ? entry.contentRect.width < 440
