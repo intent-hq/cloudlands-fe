@@ -62,7 +62,7 @@ export function buildFlowchartDecisionBranchPoints(
   occupied: Bounds[],
   compact = false,
 ): Point[] {
-  if (target.y >= source.y + source.height + 16) {
+  if ((!compact || branch === 'upper') && target.y >= source.y + source.height + 16) {
     const start = boundsPort(source, 'bottom');
     const end = boundsPort(target, 'top');
     const laneY = (start.y + end.y) / 2;

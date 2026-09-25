@@ -5,7 +5,7 @@ import type {
   DiagramPrimitive,
   DiagramState,
 } from '$shared/types/notes-primitives';
-import { EXTRA_DIAGRAM_LAYOUT_CASES } from './diagram-layout-edge-cases';
+import { EXTRA_DIAGRAM_LAYOUT_CASES } from './diagram-layout-edge-cases.fixtures';
 
 export type DiagramWorkbenchCase =
   | {
