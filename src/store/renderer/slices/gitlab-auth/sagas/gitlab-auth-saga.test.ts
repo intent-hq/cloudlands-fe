@@ -171,6 +171,147 @@ describe('gitlabAuthSaga', () => {
     },
   );
 
+  it.each([
+    { cancel: 'disable', first: 0 },
+    { cancel: 'disable', first: 1 },
+    { cancel: 'skip', first: 0 },
+    { cancel: 'skip', first: 1 },
+  ])(
+    'cleans every abandoned grant after repeated $cancel (first response=$first)',
+    async ({ cancel, first }) => {
+      const starts = [
+        Promise.withResolvers<ForgeConnectResult>(),
+        Promise.withResolvers<ForgeConnectResult>(),
+      ];
+      let daemonGrantPending = false;
+      mocks.connect.mockReset();
+      for (const start of starts) {
+        mocks.connect.mockReturnValueOnce(
+          start.promise.then((result) => {
+            daemonGrantPending = true;
+            return result;
+          }),
+        );
+      }
+      mocks.cancelAuth.mockImplementation(async () => {
+        daemonGrantPending = false;
+        return { success: true };
+      });
+      const saved = { ...initialState, host: HOST, isConfigured: true, user: WIRE_USER };
+      const run = harness(saved, true);
+      try {
+        for (let attempt = 0; attempt < 2; attempt += 1) {
+          if (cancel === 'disable') run.dispatch(setLabsGitLabEnabled(true) as never);
+          run.channel.put(startGitLabDeviceAuth(HOST));
+          await settle();
+          if (cancel === 'disable') run.dispatch(setLabsGitLabEnabled(false) as never);
+          else run.channel.put(cancelGitLabAuth());
+          await settle();
+        }
+        expect(mocks.cancelAuth).toHaveBeenCalledTimes(2);
+        for (const index of [first, 1 - first]) {
+          starts[index].resolve({ success: true, deviceFlow: PENDING_INFO });
+          await settle();
+          // Once all attempts are cancelled, each response can install a new slot.
+          expect(daemonGrantPending).toBe(false);
+          expect(run.state()).toEqual(saved);
+        }
+        expect(mocks.cancelAuth.mock.calls).toEqual(Array(4).fill(['gitlab', HOST]));
+        expect(mocks.revoke).not.toHaveBeenCalled();
+      } finally {
+        run.task.cancel();
+        await run.task.toPromise();
+      }
+    },
+  );
+
+  it.each(['disable', 'skip'])(
+    'cleans the older late grant after a newer code is shown and then cancelled by %s',
+    async (cancel) => {
+      const oldStart = Promise.withResolvers<ForgeConnectResult>();
+      const newStart = Promise.withResolvers<ForgeConnectResult>();
+      const newFlow = { ...PENDING_INFO, userCode: 'NEW-5678' };
+      let daemonGrantPending = false;
+      mocks.connect.mockReset();
+      for (const start of [oldStart, newStart]) {
+        mocks.connect.mockReturnValueOnce(
+          start.promise.then((result) => {
+            daemonGrantPending = true;
+            return result;
+          }),
+        );
+      }
+      mocks.cancelAuth.mockImplementation(async () => {
+        daemonGrantPending = false;
+        return { success: true };
+      });
+      mocks.getStatus.mockResolvedValue({
+        ...UNCONFIGURED_STATUS,
+        deviceFlow: { status: 'pending', ...newFlow },
+      });
+      const run = harness({ ...initialState, host: HOST }, true);
+      try {
+        run.channel.put(startGitLabDeviceAuth(HOST));
+        await settle();
+        run.channel.put(cancelGitLabAuth());
+        await settle();
+        run.channel.put(startGitLabDeviceAuth(HOST));
+        newStart.resolve({ success: true, deviceFlow: newFlow });
+        await settle();
+        expect(run.state().deviceFlow).toEqual(newFlow);
+        expect(daemonGrantPending).toBe(true);
+        if (cancel === 'disable') run.dispatch(setLabsGitLabEnabled(false) as never);
+        else run.channel.put(cancelGitLabAuth());
+        await settle();
+        expect(daemonGrantPending).toBe(false);
+        const cancelledState = run.state();
+        oldStart.resolve({ success: true, deviceFlow: PENDING_INFO });
+        await settle();
+        expect(daemonGrantPending).toBe(false);
+        expect(run.state()).toEqual(cancelledState);
+        expect(mocks.cancelAuth.mock.calls).toEqual(Array(3).fill(['gitlab', HOST]));
+        expect(mocks.revoke).not.toHaveBeenCalled();
+      } finally {
+        run.task.cancel();
+        await run.task.toPromise();
+      }
+    },
+  );
+
+  it.each(['failure', 'rejection'])(
+    'cleans the older cancelled startup after the newer startup ends in %s',
+    async (outcome) => {
+      const oldStart = Promise.withResolvers<ForgeConnectResult>();
+      const newStart = Promise.withResolvers<ForgeConnectResult>();
+      mocks.connect
+        .mockReset()
+        .mockReturnValueOnce(oldStart.promise)
+        .mockReturnValueOnce(newStart.promise);
+      mocks.cancelAuth.mockResolvedValue({ success: true });
+      const run = harness({ ...initialState, host: HOST }, true);
+      try {
+        run.channel.put(startGitLabDeviceAuth(HOST));
+        await settle();
+        run.channel.put(cancelGitLabAuth());
+        await settle();
+        run.channel.put(startGitLabDeviceAuth(HOST));
+        if (outcome === 'rejection') newStart.reject(new Error('new startup failed'));
+        else newStart.resolve({ success: false, error: 'new startup failed' });
+        await settle();
+        const failedState = run.state();
+        expect(failedState.error).toBe('new startup failed');
+        oldStart.resolve({ success: true, deviceFlow: PENDING_INFO });
+        await settle();
+        expect(mocks.cancelAuth.mock.calls).toEqual(Array(2).fill(['gitlab', HOST]));
+        expect(run.state()).toEqual(failedState);
+        expect(mocks.revoke).not.toHaveBeenCalled();
+      } finally {
+        run.task.cancel();
+        await run.task.toPromise();
+      }
+    },
+  );
+
   it.each(['rejection', 'unsupported'])(
     'ignores late startup %s after cancellation without another cancellation or UI error',
     async (outcome) => {

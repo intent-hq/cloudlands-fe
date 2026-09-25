@@ -126,8 +126,9 @@ function* readStatus(host?: string): SagaGenerator<ForgeAuthStatus | null> {
  */
 type IntentFence = {
   generation: number;
-  // Cleanup ownership for in-flight starts only, not the selected slice host.
-  pendingDeviceStarts: Map<string, { generation: number; cancelled: boolean }>;
+  // Cleanup history only, not the selected slice host. Keep it after startup
+  // settles: earlier calls can still finish after the latest one is cancelled.
+  deviceIntents: Map<string, { activeGeneration: number | null; cancelledThrough: number }>;
 };
 
 function bumpIntent(fence: IntentFence): number {
@@ -287,21 +288,28 @@ function* startDeviceAuth(
   generation: number,
 ): SagaGenerator<void> {
   const hostKey = host.trim().toLowerCase();
-  const pendingStart = { generation, cancelled: false };
-  fence.pendingDeviceStarts.set(hostKey, pendingStart);
+  const ownership = fence.deviceIntents.get(hostKey) ?? {
+    activeGeneration: null,
+    cancelledThrough: 0,
+  };
+  ownership.activeGeneration = generation;
+  fence.deviceIntents.set(hostKey, ownership);
+  let started = false;
   yield* put(setGitLabHost(host));
   yield* put(setGitLabAuthenticating(true));
   try {
     const params: ForgeConnectParams = { provider: PROVIDER, host, method: 'device' };
     const result = yield* call([forgeAuthClient, forgeAuthClient.connect], params);
+    started = result.success;
     if (superseded(fence, generation)) {
       // An early cancel can precede the daemon installing its slot. Cancel
-      // again after successful startup, unless a newer start owns this host.
+      // each abandoned late startup once no active attempt owns this host.
+      // Successful startup retains ownership until that attempt is cancelled.
       // cancelAuth never revokes an independently saved PAT or credential.
       if (
         result.success &&
-        pendingStart.cancelled &&
-        fence.pendingDeviceStarts.get(hostKey)?.generation === generation
+        generation <= ownership.cancelledThrough &&
+        ownership.activeGeneration === null
       ) {
         try {
           const cancelled = yield* call(
@@ -352,8 +360,8 @@ function* startDeviceAuth(
       error instanceof Error ? error.message : m.gitlabAuth_service_startFailed_error();
     yield* put(setGitLabAuthError(message));
   } finally {
-    if (fence.pendingDeviceStarts.get(hostKey)?.generation === generation) {
-      fence.pendingDeviceStarts.delete(hostKey);
+    if (!started && ownership.activeGeneration === generation) {
+      ownership.activeGeneration = null;
     }
   }
 }
@@ -402,8 +410,11 @@ function* connectWithToken(
 function* cancelAuth(fence: IntentFence, generation: number): SagaGenerator<void> {
   try {
     const host = yield* selectGitLabAuthHost.effect();
-    const pendingStart = fence.pendingDeviceStarts.get(host.trim().toLowerCase());
-    if (pendingStart) pendingStart.cancelled = true;
+    const ownership = fence.deviceIntents.get(host.trim().toLowerCase());
+    if (ownership) {
+      ownership.cancelledThrough = generation;
+      ownership.activeGeneration = null;
+    }
     const result = yield* call([forgeAuthClient, forgeAuthClient.cancelAuth], PROVIDER, host);
     if (superseded(fence, generation)) return;
     if (result.success) yield* put(gitlabAuthCancelled());
@@ -550,7 +561,7 @@ function* gitlabLabChangedWorker(): SagaGenerator<void> {
 }
 
 export function* gitlabAuthSaga(): SagaGenerator<void> {
-  const fence: IntentFence = { generation: 0, pendingDeviceStarts: new Map() };
+  const fence: IntentFence = { generation: 0, deviceIntents: new Map() };
   // Only the latest initialize may hydrate: an older read (mount-time default
   // host) that resolved after a newer one would otherwise overwrite it.
   yield* takeLatest(initializeGitLabAuth, initializeGitLabAuthWorker, fence);
