@@ -36,7 +36,9 @@
  * `protocolVersion` is ≥ {@link CREDIT_MIN_PROTOCOL} (a pre-credit daemon
  * rejects the unknown opcode with 1002); otherwise the client behaves exactly
  * as before — bytes are still tracked, nothing is sent. The version is
- * re-read on every tunnel (re)connect. The client → daemon direction is
+ * re-read before granting credit; unknown compatibility retains flushed bytes
+ * until hello arrives, including streams already at their window limit.
+ * The client → daemon direction is
  * bounded daemon-side.
  *
  * Lifecycle: `ensureTunnel()` lazily opens the single `/tunnel` socket,
@@ -106,6 +108,8 @@ export const HEADER_LEN = 5;
  * backlog sends whatever is pending regardless of size.
  */
 const CREDIT_COALESCE_BYTES = 64 * 1024;
+/** Retry a late backend hello even when the daemon has exhausted its window. */
+const CREDIT_NEGOTIATION_RETRY_MS = 100;
 /** First daemon protocol version whose `/tunnel` decoder accepts `CREDIT`. */
 const CREDIT_MIN_PROTOCOL = { major: 10, minor: 4 } as const;
 
@@ -261,9 +265,9 @@ export interface TunnelManagerOptions {
   getConfig: () => BackendConnectionConfig | null;
   /**
    * The connected daemon's `client.hello` `protocolVersion` (`null` when
-   * unknown). Read on every tunnel (re)connect; `CREDIT` is sent only when it
-   * advertises CREDIT support, so a backend switch or daemon upgrade is picked
-   * up lazily.
+   * unknown). Read before granting credit; pending flushed bytes are retried
+   * while hello is unknown so an independently reconnecting tunnel cannot
+   * permanently disable CREDIT by opening before the backend handshake.
    */
   getProtocolVersion: () => string | null;
   /** Socket factory seam for tests; defaults to [[createTunnelSocket]]. */
@@ -503,8 +507,7 @@ export class TunnelManager {
   private heartbeatSentAtMs: number | null = null;
   private lastPongAtMs: number | null = null;
   private tunnelGeneration = 0;
-  /** Whether the daemon behind the current tunnel socket accepts `CREDIT`. */
-  private creditEnabled = false;
+  private creditRetryTimer: NodeJS.Timeout | null = null;
   private nextStreamId = 1;
   private disposed = false;
   /** Latched by a 403 upgrade rejection; see {@link TunnelForbiddenError}. */
@@ -636,7 +639,7 @@ export class TunnelManager {
           this.ws = ws;
           this.tunnelGeneration += 1;
           const protocolVersion = this.getProtocolVersion();
-          this.creditEnabled = protocolVersionAtLeast(
+          const creditEnabled = protocolVersionAtLeast(
             protocolVersion,
             CREDIT_MIN_PROTOCOL.major,
             CREDIT_MIN_PROTOCOL.minor,
@@ -647,7 +650,7 @@ export class TunnelManager {
             candidates: candidates.length,
             reconnect: this.tunnelGeneration > 1,
             protocolVersion,
-            creditEnabled: this.creditEnabled,
+            creditEnabled,
           });
           resolve();
         });
@@ -1186,11 +1189,31 @@ export class TunnelManager {
     if (error || this.streams.get(stream.streamId) !== stream) return;
     stream.unflushedBytes -= length;
     stream.ungrantedBytes += length;
+    this.grantFlushedCredit(stream);
+  }
+
+  private grantFlushedCredit(stream: StreamState): void {
     if (stream.ungrantedBytes === 0) return;
     if (stream.ungrantedBytes < CREDIT_COALESCE_BYTES && stream.unflushedBytes > 0) return;
+    const protocolVersion = this.getProtocolVersion();
+    if (protocolVersion === null) {
+      // The RPC hello and tunnel reconnect independently. Keep these bytes:
+      // waiting for another DATA frame cannot recover an exhausted window.
+      if (!this.creditRetryTimer) {
+        this.creditRetryTimer = setTimeout(() => {
+          this.creditRetryTimer = null;
+          for (const pending of this.streams.values()) this.grantFlushedCredit(pending);
+        }, CREDIT_NEGOTIATION_RETRY_MS);
+        this.creditRetryTimer.unref?.();
+      }
+      return;
+    }
     const credit = stream.ungrantedBytes;
     stream.ungrantedBytes = 0;
-    if (!this.creditEnabled) return;
+    if (
+      !protocolVersionAtLeast(protocolVersion, CREDIT_MIN_PROTOCOL.major, CREDIT_MIN_PROTOCOL.minor)
+    )
+      return;
     this.sendFrame({ type: 'credit', streamId: stream.streamId, credit });
   }
 
@@ -1369,6 +1392,8 @@ export class TunnelManager {
       streams: this.streams.size,
     });
     this.stopHeartbeat();
+    if (this.creditRetryTimer) clearTimeout(this.creditRetryTimer);
+    this.creditRetryTimer = null;
     if (this.admissionPoll) clearInterval(this.admissionPoll);
     this.admissionPoll = null;
     this.ws = null;
@@ -1382,6 +1407,8 @@ export class TunnelManager {
 
   private teardownForwards(): void {
     this.stopHeartbeat();
+    if (this.creditRetryTimer) clearTimeout(this.creditRetryTimer);
+    this.creditRetryTimer = null;
     if (this.admissionPoll) clearInterval(this.admissionPoll);
     this.admissionPoll = null;
     this.pendingStreams.clear();

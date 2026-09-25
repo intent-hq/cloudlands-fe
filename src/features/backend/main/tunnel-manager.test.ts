@@ -1504,6 +1504,162 @@ describe('TunnelManager', () => {
     });
   });
 
+  describe('late hello credit recovery over real WebSocket and TCP (#5972)', () => {
+    const windowBytes = 1024 * 1024;
+    const payload = Buffer.alloc(3 * windowBytes, 0x5a);
+
+    async function startCreditPeer(initialVersion: string | null) {
+      let version = initialVersion;
+      const grants: Array<{ generation: number; streamId: number; bytes: number }> = [];
+      const peers: import('ws').WebSocket[] = [];
+      const server = http.createServer();
+      const wss = new WebSocketServer({ server });
+      onCleanup(async () => {
+        for (const peer of peers) peer.terminate();
+        await new Promise<void>((resolve) => wss.close(() => resolve()));
+        await new Promise<void>((resolve) => server.close(() => resolve()));
+      });
+      wss.on('connection', (peer) => {
+        const generation = peers.push(peer);
+        const streams = new Map<number, { offset: number; available: number }>();
+        const pump = (streamId: number) => {
+          const state = streams.get(streamId)!;
+          while (state.available > 0 && state.offset < payload.length) {
+            const length = Math.min(64 * 1024, state.available, payload.length - state.offset);
+            peer.send(
+              encodeFrame({
+                type: 'data',
+                streamId,
+                payload: payload.subarray(state.offset, state.offset + length),
+              }),
+            );
+            state.offset += length;
+            state.available -= length;
+          }
+        };
+        peer.on('message', (raw) => {
+          const frame = decodeFrame(rawDataToBuffer(raw));
+          if (frame.type === 'open') {
+            streams.set(frame.streamId, { offset: 0, available: windowBytes });
+            peer.send(encodeFrame({ type: 'openOk', streamId: frame.streamId }));
+            pump(frame.streamId);
+          } else if (frame.type === 'credit') {
+            grants.push({ generation, streamId: frame.streamId, bytes: frame.credit });
+            const state = streams.get(frame.streamId);
+            if (state) {
+              state.available += frame.credit;
+              pump(frame.streamId);
+            }
+          } else if (frame.type === 'close') streams.delete(frame.streamId);
+        });
+      });
+      await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+      const manager = new TunnelManager({
+        getConfig: () => ({
+          transport: 'ws',
+          wsUrl: `ws://127.0.0.1:${(server.address() as AddressInfo).port}`,
+        }),
+        getProtocolVersion: () => version,
+        heartbeatIntervalMs: 0,
+      });
+      onCleanup(() => manager.dispose());
+      const port = await manager.forwardPort(10001);
+      const connect = async () => {
+        const client = await connectClient(port);
+        onCleanup(() => client.destroy());
+        const chunks: Buffer[] = [];
+        let received = 0;
+        client.on('data', (chunk: Buffer) => {
+          chunks.push(chunk);
+          received += chunk.length;
+        });
+        return { client, bytes: () => received, data: () => Buffer.concat(chunks) };
+      };
+      return {
+        manager,
+        grants,
+        peers,
+        connect,
+        setVersion: (next: string | null) => {
+          version = next;
+        },
+      };
+    }
+
+    it.each([null, '10.8'])(
+      'delivers 3 MiB with initial hello %s, including recovery after an exhausted window',
+      async (initialVersion) => {
+        const peer = await startCreditPeer(initialVersion);
+        const client = await peer.connect();
+        if (initialVersion === null) {
+          await waitFor(() => client.bytes() === windowBytes);
+          expect(peer.grants).toEqual([]);
+          // No more DATA can arrive until retained credit is sent after hello.
+          peer.setVersion('10.8');
+        }
+        await waitFor(() => client.bytes() === payload.length);
+        await waitFor(
+          () => peer.grants.reduce((sum, grant) => sum + grant.bytes, 0) === payload.length,
+        );
+        expect(client.data()).toEqual(payload);
+        expect(peer.peers).toHaveLength(1);
+      },
+    );
+
+    it.each([null, '10.3', 'unknown'])(
+      'sends no CREDIT when a late hello remains %s',
+      async (version) => {
+        const peer = await startCreditPeer(null);
+        const client = await peer.connect();
+        await waitFor(() => client.bytes() === windowBytes);
+        peer.setVersion(version);
+        await delay(250);
+        expect(peer.grants).toEqual([]);
+        expect(client.bytes()).toBe(windowBytes);
+      },
+    );
+
+    it('drops old pending credit and rechecks compatibility after reconnect', async () => {
+      const peer = await startCreditPeer('10.8');
+      const first = await peer.connect();
+      await waitFor(() => first.bytes() === payload.length);
+      await waitFor(
+        () => peer.grants.reduce((sum, grant) => sum + grant.bytes, 0) === payload.length,
+      );
+      peer.setVersion(null);
+      peer.peers[0].terminate();
+      await waitFor(() => peer.manager.getDiagnostics().state === 'disconnected');
+      const second = await peer.connect();
+      await waitFor(() => second.bytes() === windowBytes);
+      peer.peers[1].terminate();
+      await waitFor(() => peer.manager.getDiagnostics().state === 'disconnected');
+      peer.setVersion('10.3');
+      const third = await peer.connect();
+      await waitFor(() => third.bytes() === windowBytes);
+      await delay(250);
+      expect(peer.grants.filter((grant) => grant.generation > 1)).toEqual([]);
+      peer.setVersion(null);
+      peer.peers[2].terminate();
+      await waitFor(() => peer.manager.getDiagnostics().state === 'disconnected');
+      const fourth = await peer.connect();
+      await waitFor(() => fourth.bytes() === windowBytes);
+      peer.setVersion('10.8');
+      await waitFor(() => fourth.bytes() === payload.length);
+      await waitFor(
+        () =>
+          peer.grants
+            .filter((grant) => grant.generation === 4)
+            .reduce((sum, grant) => sum + grant.bytes, 0) === payload.length,
+      );
+      expect(fourth.data()).toEqual(payload);
+      expect(
+        peer.grants
+          .filter((grant) => grant.generation === 4)
+          .every((grant) => grant.streamId === peer.manager.getDiagnostics().streams[0].streamId),
+      ).toBe(true);
+    });
+  });
+
   it('shares one in-flight connect across concurrent forwardPort calls', async () => {
     const { server, port } = await startEchoServer();
     const second = await startEchoServer();
