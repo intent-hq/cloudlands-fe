@@ -181,6 +181,32 @@ describe('OffscreenWebviewHost', () => {
     expect(recoveryStore.get()).toEqual({});
   });
 
+  it('admits an evicted tab on explicit recovery without exceeding the unowned cap', async () => {
+    const layout = browserLayout([{ id: 'tab-first' }, { id: 'tab-evicted' }]);
+    layoutsStore.set({ 'ws-bg': layout });
+    const { container } = render(OffscreenWebviewHost, {
+      excludedWorkspaceIds: new Set(),
+      maxWebviews: 1,
+    });
+    await waitFor(() => expect(mountedTabIds(container)).toEqual(['tab-first']));
+    recoveryStore.set({ 'tab-evicted': 'explicit-navigation' });
+    await waitFor(() => expect(mountedTabIds(container)).toEqual(['tab-evicted']));
+    await waitFor(() => expect(recoveryStore.get()).toEqual({}));
+    const admitted = container.querySelector('webview')!;
+    Object.assign(admitted, {
+      getWebContentsId: () => 14,
+      getURL: () => 'https://example.test/tab-evicted',
+    });
+    await fireEvent(admitted, new Event('dom-ready'));
+    expect(invokeMock).toHaveBeenCalledWith('browser:register-tab', {
+      tabId: 'tab-evicted',
+      webContentsId: 14,
+    });
+    layoutsStore.set({ 'ws-bg': { ...layout } });
+    await waitFor(() => expect(mountedTabIds(container)).toEqual(['tab-evicted']));
+    expect(container.querySelector('webview')).toBe(admitted);
+  });
+
   it('does not replace a live or still-attaching guest on a recovery request', async () => {
     layoutsStore.set({ 'ws-bg': browserLayout([{ id: 'tab-bg' }]) });
     const { container } = render(OffscreenWebviewHost, { excludedWorkspaceIds: new Set() });
