@@ -139,8 +139,8 @@
     protocolMismatchModalDismissed,
   } from '$store/renderer/slices/connections/connections-slice';
   import {
-    openConnectionRequested,
-    forgetConnectionRequested,
+    connectionWorkflowRequested,
+    connectionWorkflowCleared,
   } from '$store/renderer/slices/connections/connections-slice';
   import { LOCAL_CONNECTION_ID } from '$shared/types/connections';
   import {
@@ -154,7 +154,7 @@
   } from '$lib/utils/connection-accents';
   import { store as appStore } from '$store/renderer/store';
   import { navigateToSettings } from '$lib/utils/workspace-navigation';
-  import { toast } from '$lib/components/ui/toast';
+  import { onDestroy } from 'svelte';
   import type { DaemonHealth } from '$store/renderer/slices/daemon-health/daemon-health-types';
 
   const health$ = selectDaemonHealth();
@@ -452,11 +452,8 @@
 
   const hasSavedRemoteConnections = $derived($connections$.some((conn) => !conn.isLocal));
 
-  function connectionDisplayLabel(id: string): string {
-    const conn = $connections$.find((c) => c.id === id);
-    if (!conn || conn.isLocal) return m.layout_daemonStatus_localConnection_label();
-    return formatConnectionLabel(conn);
-  }
+  const recoveryConsumerId = $props.id();
+  onDestroy(() => appStore.dispatch(connectionWorkflowCleared(recoveryConsumerId)));
 
   /**
    * Dispatch a connection open. A `secret-unavailable` resolution (the stored
@@ -466,36 +463,15 @@
    * (leave the host and rejoin from a new invite), so it routes to Guest
    * Sessions settings instead.
    */
-  async function openConnectionOrRecover(id: string) {
-    try {
-      const action = openConnectionRequested(id);
-      appStore.dispatch(action);
-      const result = await action.promise;
-      if (result.status === 'secret-unavailable') {
-        const guest = $guestSessions$.find((session) => session.id === id);
-        if (guest) {
-          toast.error(
-            m.layout_daemonStatus_guestSecretUnavailable_error({
-              label: formatGuestSessionLabel(guest),
-            }),
-          );
-          void navigateToSettings({ tab: 'guest-sessions' });
-          return;
-        }
-        toast.error(
-          m.layout_daemonStatus_secretUnavailable_error({ label: connectionDisplayLabel(id) }),
-        );
-        void navigateToSettings({ tab: 'devices' });
-      }
-    } catch {
-      // Other failures are surfaced via the slice's op-status/error; nothing
-      // more to do here (the list/active refresh arrives via connections:changed).
-    }
+  function openConnectionOrRecover(id: string) {
+    appStore.dispatch(
+      connectionWorkflowRequested(recoveryConsumerId, { kind: 'open', id, recovery: 'settings' }),
+    );
   }
 
-  async function handleOpenConnection(id: string) {
+  function handleOpenConnection(id: string) {
     dropdownOpen = false;
-    await openConnectionOrRecover(id);
+    openConnectionOrRecover(id);
   }
 
   // --- Cert-mismatch modal actions ---------------------------------------
@@ -504,20 +480,14 @@
     appStore.dispatch(certMismatchCleared());
   }
 
-  async function openLocalFromCertMismatch() {
+  function openLocalFromCertMismatch() {
     dismissCertMismatch();
-    await openConnectionOrRecover(LOCAL_CONNECTION_ID);
+    openConnectionOrRecover(LOCAL_CONNECTION_ID);
   }
 
-  async function forgetMismatchedConnection(id: string) {
+  function forgetMismatchedConnection(id: string) {
     dismissCertMismatch();
-    try {
-      const action = forgetConnectionRequested(id);
-      appStore.dispatch(action);
-      await action.promise;
-    } catch {
-      // no-op; refresh via connections:changed.
-    }
+    appStore.dispatch(connectionWorkflowRequested(recoveryConsumerId, { kind: 'forget', id }));
   }
 
   // --- Protocol-mismatch modal actions (advisory, non-blocking) ----------
@@ -528,9 +498,9 @@
   }
 
   /** Open the local sidecar's window from the advisory modal. */
-  async function openLocalFromProtocolMismatch() {
+  function openLocalFromProtocolMismatch() {
     continueWithProtocolMismatch();
-    await openConnectionOrRecover(LOCAL_CONNECTION_ID);
+    openConnectionOrRecover(LOCAL_CONNECTION_ID);
   }
 </script>
 
@@ -566,9 +536,9 @@
 
   {#snippet content()}
     <!--
-      Intrinsic width: grow to fit the widest stat row (no value wrapping)
-      between the 224px floor and a 320px cap. At the cap the Connection
-      row's min-w-0 truncate takes over instead of widening the menu.
+      Intrinsic width: grow to fit the widest stat row between the 224px
+      floor and a 320px cap. At the cap the Connection value wraps onto
+      up to two right-aligned lines instead of widening the menu.
     -->
     <div bind:this={menuBody} class="min-w-56 w-max max-w-80">
       <Menu.Sub>
@@ -819,8 +789,9 @@
                       <span class="text-subtle shrink-0"
                         >{m.layout_daemonStatus_connection_label()}</span
                       >
-                      <span class="text-xs min-w-0 truncate" title={transportLabel}
-                        >{transportLabel}</span
+                      <span
+                        class="text-xs min-w-0 line-clamp-2 break-words text-right"
+                        title={transportLabel}>{transportLabel}</span
                       >
                     </div>
                   {:else}

@@ -9,6 +9,8 @@ const notify = vi.hoisted(() => ({
   dismiss: vi.fn(),
 }));
 vi.mock('$lib/components/patterns/notify', () => ({ notify }));
+const navigation = vi.hoisted(() => ({ navigateToSettings: vi.fn().mockResolvedValue(undefined) }));
+vi.mock('$lib/utils/workspace-navigation', () => navigation);
 
 import {
   CONNECTION_CHANNELS,
@@ -34,7 +36,10 @@ import {
   testConnectionRequested,
   updateConnectionRequested,
   updateBackendRequested,
+  connectionWorkflowRequested,
+  connectionWorkflowCleared,
 } from '../connections-slice';
+import { initialState as initialGuestState } from '../../guest-sessions/guest-sessions-slice';
 import { selectIsConnecting, selectIsOpeningConnection } from '../connections-selectors';
 import type { StoreState } from '../../../types';
 import { connectionsSaga } from './connections-saga';
@@ -71,19 +76,20 @@ let offById: ReturnType<typeof vi.fn>;
 function start() {
   const channel = stdChannel();
   const dispatched: any[] = [];
-  let state = { connections: initialState };
+  let state = { connections: initialState, guestSessions: initialGuestState };
   const dispatch = (action: any) => {
     dispatched.push(action);
-    state = { connections: connectionsReducer(state.connections, action) };
+    state = { ...state, connections: connectionsReducer(state.connections, action) };
     channel.put(action);
     return action;
   };
   const task = runSaga({ channel, dispatch, getState: () => state }, connectionsSaga);
-  return { channel, dispatched, getState: () => state, task };
+  return { channel, dispatch, dispatched, getState: () => state, task };
 }
 
 describe('connectionsSaga', () => {
   beforeEach(() => {
+    navigation.navigateToSettings.mockClear();
     callbacks = {};
     notify.success.mockClear();
     notify.error.mockClear();
@@ -122,6 +128,198 @@ describe('connectionsSaga', () => {
   });
 
   afterEach(() => vi.unstubAllGlobals());
+
+  it('uses latest reads per consumer and ignores late capture results after clear', async () => {
+    const releases: Array<(value: { fingerprint: string; tokenValid: boolean }) => void> = [];
+    const original = invoke.getMockImplementation()!;
+    invoke.mockImplementation((channel: string, params?: unknown) =>
+      channel === CONNECTION_CHANNELS.CAPTURE_FINGERPRINT
+        ? new Promise((resolve) => releases.push(resolve))
+        : original(channel, params),
+    );
+    const run = start();
+    const request = () =>
+      connectionWorkflowRequested('modal', {
+        kind: 'capture',
+        params: { host: 'example.invalid', port: 5181 },
+      });
+    run.dispatch(request());
+    run.dispatch(request());
+    expect(releases).toHaveLength(2);
+    releases[1]({ fingerprint: 'new', tokenValid: true });
+    await vi.waitFor(() =>
+      expect(getItems(run.getState().connections.workflows)[0].outcome).toEqual({
+        kind: 'captured',
+        fingerprint: 'new',
+      }),
+    );
+    releases[0]({ fingerprint: 'old', tokenValid: true });
+    await settle();
+    expect(getItems(run.getState().connections.workflows)[0].outcome).toEqual({
+      kind: 'captured',
+      fingerprint: 'new',
+    });
+    run.dispatch(request());
+    run.dispatch(connectionWorkflowCleared('modal'));
+    releases[2]({ fingerprint: 'closed', tokenValid: true });
+    await settle();
+    expect(getItems(run.getState().connections.workflows)).toEqual([]);
+    expect(invoke).toHaveBeenCalledWith(CONNECTION_CHANNELS.CAPTURE_FINGERPRINT, {
+      host: 'example.invalid',
+      port: 5181,
+    });
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('stops follow-up connect effects when its consumer closes during add', async () => {
+    let release!: (value: { connection: ConnectionRecord; switched: boolean }) => void;
+    const original = invoke.getMockImplementation()!;
+    invoke.mockImplementation((channel: string, params?: unknown) =>
+      channel === CONNECTION_CHANNELS.ADD
+        ? new Promise((resolve) => {
+            release = resolve;
+          })
+        : original(channel, params),
+    );
+    const run = start();
+    run.dispatch(
+      connectionWorkflowRequested('modal', {
+        kind: 'connect',
+        enableSync: true,
+        params: {
+          label: 'Host',
+          host: 'example.invalid',
+          port: 5181,
+          fingerprint: 'AA',
+          token: 'fixture-only',
+        },
+      }),
+    );
+    run.dispatch(connectionWorkflowCleared('modal'));
+    release({ connection: REMOTE, switched: false });
+    await settle();
+    expect(invoke).not.toHaveBeenCalledWith(CONNECTION_CHANNELS.OPEN, { id: REMOTE.id });
+    expect(invoke).not.toHaveBeenCalledWith(CONNECTION_CHANNELS.SYNC_SET_ENABLED, {
+      enabled: true,
+    });
+    expect(getItems(run.getState().connections.workflows)).toEqual([]);
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('preserves shared add and open busy state throughout the connect workflow', async () => {
+    let releaseAdd!: (value: { connection: ConnectionRecord; switched: boolean }) => void;
+    let releaseOpen!: (value: { status: 'opened'; id: string }) => void;
+    const original = invoke.getMockImplementation()!;
+    invoke.mockImplementation((channel: string, params?: unknown) => {
+      if (channel === CONNECTION_CHANNELS.ADD)
+        return new Promise((resolve) => {
+          releaseAdd = resolve;
+        });
+      if (channel === CONNECTION_CHANNELS.OPEN)
+        return new Promise((resolve) => {
+          releaseOpen = resolve;
+        });
+      return original(channel, params);
+    });
+    const run = start();
+    const params = {
+      label: 'Host',
+      host: 'example.invalid',
+      port: 5181,
+      fingerprint: 'AA',
+      token: 'fixture-only',
+    };
+    run.dispatch(
+      connectionWorkflowRequested('modal', { kind: 'connect', enableSync: false, params }),
+    );
+    expect(run.getState().connections.status).toBe('connecting');
+    expect(invoke).toHaveBeenCalledWith(CONNECTION_CHANNELS.ADD, params);
+    releaseAdd({ connection: REMOTE, switched: false });
+    await vi.waitFor(() => expect(run.getState().connections.openingIds).toEqual([REMOTE.id]));
+    expect(run.getState().connections.status).toBe('connecting');
+    expect(invoke).toHaveBeenCalledWith(CONNECTION_CHANNELS.OPEN, { id: REMOTE.id });
+    releaseOpen({ status: 'opened', id: REMOTE.id });
+    await vi.waitFor(() =>
+      expect(getItems(run.getState().connections.workflows)[0].outcome).toEqual({ kind: 'done' }),
+    );
+    expect(run.getState().connections.openingIds).toEqual([]);
+    expect(run.getState().connections.status).toBe('idle');
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('serializes unlike writes to one device without blocking another device', async () => {
+    let release!: (value: unknown) => void;
+    const original = invoke.getMockImplementation()!;
+    invoke.mockImplementation((channel: string, params?: unknown) =>
+      channel === CONNECTION_CHANNELS.UPDATE
+        ? new Promise((resolve) => {
+            release = resolve;
+          })
+        : original(channel, params),
+    );
+    const run = start();
+    run.dispatch(
+      connectionWorkflowRequested('edit', {
+        kind: 'save',
+        enableSync: false,
+        params: { id: REMOTE.id, label: 'Renamed' },
+      }),
+    );
+    run.dispatch(connectionWorkflowRequested('remove', { kind: 'forget', id: REMOTE.id }));
+    run.dispatch(connectionWorkflowRequested('other', { kind: 'forget', id: 'remote-2' }));
+    await vi.waitFor(() =>
+      expect(invoke).toHaveBeenCalledWith(CONNECTION_CHANNELS.FORGET, { id: 'remote-2' }),
+    );
+    expect(invoke).not.toHaveBeenCalledWith(CONNECTION_CHANNELS.FORGET, { id: REMOTE.id });
+    release({ status: 'updated', connection: { ...REMOTE, label: 'Renamed' } });
+    await vi.waitFor(() =>
+      expect(invoke).toHaveBeenCalledWith(CONNECTION_CHANNELS.FORGET, { id: REMOTE.id }),
+    );
+    await vi.waitFor(() =>
+      expect(
+        getItems(run.getState().connections.workflows).every((entry) => entry.phase === 'settled'),
+      ).toBe(true),
+    );
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('routes a current secret-unavailable recovery but never one cleared during open', async () => {
+    const original = invoke.getMockImplementation()!;
+    let release!: (value: { status: 'secret-unavailable' }) => void;
+    invoke.mockImplementation((channel: string, params?: unknown) =>
+      channel === CONNECTION_CHANNELS.OPEN
+        ? new Promise((resolve) => {
+            release = resolve;
+          })
+        : original(channel, params),
+    );
+    const run = start();
+    const request = () =>
+      connectionWorkflowRequested('indicator', {
+        kind: 'open',
+        id: REMOTE.id,
+        recovery: 'settings',
+      });
+    run.dispatch(request());
+    run.dispatch(connectionWorkflowCleared('indicator'));
+    release({ status: 'secret-unavailable' });
+    await settle();
+    expect(navigation.navigateToSettings).not.toHaveBeenCalled();
+    expect(notify.error).not.toHaveBeenCalled();
+    run.dispatch(request());
+    await settle();
+    release({ status: 'secret-unavailable' });
+    await vi.waitFor(() =>
+      expect(navigation.navigateToSettings).toHaveBeenCalledWith({ tab: 'devices' }),
+    );
+    expect(notify.error).toHaveBeenCalledTimes(1);
+    run.task.cancel();
+    await run.task.toPromise();
+  });
 
   it('hydrates the initial list, replays sticky mismatch, and preserves the exact list request', async () => {
     const mismatch = {
@@ -436,7 +634,7 @@ describe('connectionsSaga', () => {
     await run.task.toPromise();
   });
 
-  it('keeps a repeat same-id open in flight until its own RPC settles', async () => {
+  it('serializes repeat same-id opens and settles every promise', async () => {
     const deferred: Array<(value: { status: 'opened'; id: string }) => void> = [];
     invoke.mockImplementation(async (channel: string) => {
       if (channel === CONNECTION_CHANNELS.LIST)
@@ -454,13 +652,14 @@ describe('connectionsSaga', () => {
     const second = openConnectionRequested('remote-1');
     run.channel.put(first);
     run.channel.put(second);
-    await vi.waitFor(() => expect(deferred).toHaveLength(2));
-    expect(run.getState().connections.openingIds).toEqual(['remote-1', 'remote-1']);
+    await vi.waitFor(() => expect(deferred).toHaveLength(1));
+    expect(run.getState().connections.openingIds).toEqual(['remote-1']);
 
     // Only the first RPC settles: the second open is still outstanding, so the
     // id stays tracked and the global status stays busy.
     deferred[0]({ status: 'opened', id: 'remote-1' });
     await expect(first.promise).resolves.toEqual({ status: 'opened', id: 'remote-1' });
+    await vi.waitFor(() => expect(deferred).toHaveLength(2));
     expect(run.getState().connections.openingIds).toEqual(['remote-1']);
     expect(run.getState().connections.status).toBe('connecting');
 
@@ -496,7 +695,7 @@ describe('connectionsSaga', () => {
     const second = openConnectionRequested('remote-1');
     run.channel.put(first);
     run.channel.put(second);
-    await vi.waitFor(() => expect(deferred).toHaveLength(2));
+    await vi.waitFor(() => expect(deferred).toHaveLength(1));
     let secondSettled = false;
     second.promise.then(
       () => (secondSettled = true),
@@ -508,10 +707,10 @@ describe('connectionsSaga', () => {
     // busy selectors true.
     deferred[0].reject(new Error('boom'));
     await expect(first.promise).rejects.toThrow('boom');
-    await settle();
+    await vi.waitFor(() => expect(deferred).toHaveLength(2));
     expect(secondSettled).toBe(false);
     expect(run.getState().connections.openingIds).toEqual(['remote-1']);
-    expect(run.getState().connections.error).toBe('boom');
+    expect(run.getState().connections.error).toBeNull();
     expect(selectIsOpeningConnection.select(storeState(), 'remote-1')).toBe(true);
     expect(selectIsConnecting.select(storeState())).toBe(true);
 
@@ -541,14 +740,12 @@ describe('connectionsSaga', () => {
     const second = openConnectionRequested('remote-1');
     run.channel.put(first);
     run.channel.put(second);
-    await vi.waitFor(() =>
-      expect(run.getState().connections.openingIds).toEqual(['remote-1', 'remote-1']),
-    );
+    await vi.waitFor(() => expect(run.getState().connections.openingIds).toEqual(['remote-1']));
 
     run.task.cancel();
     await run.task.toPromise();
     await expect(first.promise).rejects.toThrow('Connection open was cancelled');
-    await expect(second.promise).rejects.toThrow('Connection open was cancelled');
+    await expect(second.promise).rejects.toThrow('Connection request was cancelled');
     expect(run.getState().connections.openingIds).toEqual([]);
     expect(selectIsConnecting.select(run.getState() as unknown as StoreState)).toBe(false);
   });
@@ -664,7 +861,7 @@ describe('connectionsSaga', () => {
     await run.task.toPromise();
   });
 
-  it('takes only the leading same-action request while other action owners remain independent', async () => {
+  it('queues same-target adds while other action owners remain independent', async () => {
     let resolveAdd: ((value: { connection: ConnectionRecord }) => void) | undefined;
     invoke.mockImplementation(async (channel: string) => {
       if (channel === CONNECTION_CHANNELS.LIST)
@@ -686,8 +883,8 @@ describe('connectionsSaga', () => {
       fingerprint: REMOTE.fingerprint!,
       token: 'secret',
     });
-    const ignored = addConnectionRequested({
-      label: 'ignored',
+    const second = addConnectionRequested({
+      label: 'second',
       host: REMOTE.host!,
       port: REMOTE.port!,
       fingerprint: REMOTE.fingerprint!,
@@ -695,7 +892,7 @@ describe('connectionsSaga', () => {
     });
     run.channel.put(first);
     await settle();
-    run.channel.put(ignored);
+    run.channel.put(second);
 
     const capture = captureFingerprintRequested({ host: REMOTE.host!, port: REMOTE.port! });
     run.channel.put(capture);
@@ -706,6 +903,13 @@ describe('connectionsSaga', () => {
 
     resolveAdd?.({ connection: REMOTE });
     await expect(first.promise).resolves.toEqual({ connection: REMOTE });
+    await vi.waitFor(() =>
+      expect(
+        invoke.mock.calls.filter(([channel]) => channel === CONNECTION_CHANNELS.ADD),
+      ).toHaveLength(2),
+    );
+    resolveAdd?.({ connection: REMOTE });
+    await expect(second.promise).resolves.toEqual({ connection: REMOTE });
     run.task.cancel();
     await run.task.toPromise();
   });

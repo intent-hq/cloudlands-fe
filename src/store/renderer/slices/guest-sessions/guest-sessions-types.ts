@@ -167,6 +167,12 @@ export interface GuestSessionsState {
   leavingIds: string[];
   /** `${sessionId}:${workspaceId}` keys with a per-workspace *Leave* in flight. */
   leavingWorkspaceKeys: string[];
+  /** Retryable failures of confirmed operations; confirmation dialogs never retarget these. */
+  failedLeaveIds: string[];
+  failedLeaveWorkspaceKeys: string[];
+  failedMemberKeys: string[];
+  /** Historical reports survive a membership delta removing a row from the hosting list. */
+  sweepReports: Collection<HostedSweepReport, 'workspaceId'>;
   /**
    * Owner-side rosters of the current window's shared workspaces, keyed by
    * workspace id — a read-through view of `workspace.members.list`, refetched
@@ -177,6 +183,16 @@ export interface GuestSessionsState {
   removingMemberKeys: string[];
   /** Hosted workspace ids with a *Remove all guests* sweep in flight. */
   clearingWorkspaceIds: string[];
+}
+
+export interface HostedSweepReport {
+  workspaceId: string;
+  workspaceTitle: string;
+  /** Labels captured before mutation, not a second copy of workspace/member entities. */
+  memberLabels: Record<string, string>;
+  failedMemberIds: string[];
+  failedInviteLabels: string[];
+  invitesUnavailable: boolean;
 }
 
 export function hostedMemberKey(workspaceId: string, principalId: string): string {
