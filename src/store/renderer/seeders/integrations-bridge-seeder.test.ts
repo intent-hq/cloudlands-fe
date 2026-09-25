@@ -31,6 +31,7 @@ vi.mock('$lib/client/live/backend-transport', () => ({
 }));
 
 import { backendRequest } from '$lib/client/live/backend-transport';
+import { BackendError } from '$lib/client/live/backend-transport-types';
 import {
   __resetGitHubAuthStatusForTests,
   GITHUB_AUTH_STATUS_TTL_MS,
@@ -998,6 +999,115 @@ describe('integrations-bridge-seeder', () => {
         success: false,
         error: 'device grant unsupported',
         code: 'device-grant-unsupported',
+      });
+    });
+
+    it.each([
+      { shape: 'raw string data', data: 'Device authorization was denied by GitLab.' },
+      {
+        shape: 'normalized data.detail',
+        data: {
+          code: 'INTERNAL_ERROR',
+          detail: 'Device authorization was denied by GitLab.',
+          token: 'must-not-be-echoed',
+        },
+      },
+    ])('connect surfaces the daemon cause from $shape', async ({ data }) => {
+      mockedRequest.mockRejectedValueOnce(
+        new BackendError({
+          code: 'INTERNAL_ERROR',
+          rpcCode: -32603,
+          message: 'Internal error',
+          data,
+        }),
+      );
+
+      const result = await mockInvoke(FORGE_AUTH_CHANNELS.CONNECT, {
+        provider: 'gitlab',
+        host: HOST,
+        method: 'device',
+      });
+
+      expect(mockedRequest).toHaveBeenCalledWith('sourceControl.connect', {
+        provider: 'gitlab',
+        host: HOST,
+        method: 'device',
+      });
+      expect(result).toEqual({
+        success: false,
+        error: 'Internal error: Device authorization was denied by GitLab.',
+        code: undefined,
+      });
+    });
+
+    it.each([
+      { shape: 'absent data', data: undefined },
+      { shape: 'null data', data: null },
+      { shape: 'empty string data', data: '' },
+      { shape: 'absent detail', data: { code: 'INTERNAL_ERROR', token: 'must-not-be-echoed' } },
+      { shape: 'empty detail', data: { detail: '' } },
+      { shape: 'non-string detail', data: { detail: { token: 'must-not-be-echoed' } } },
+    ])('connect keeps the generic fallback for $shape', async ({ data }) => {
+      mockedRequest.mockRejectedValueOnce(
+        new BackendError({
+          code: 'INTERNAL_ERROR',
+          rpcCode: -32603,
+          message: 'Internal error',
+          data,
+        }),
+      );
+
+      await expect(
+        mockInvoke(FORGE_AUTH_CHANNELS.CONNECT, {
+          provider: 'gitlab',
+          host: HOST,
+          method: 'device',
+        }),
+      ).resolves.toEqual({ success: false, error: 'Internal error', code: undefined });
+    });
+
+    it.each([
+      { code: 'device-grant-unsupported', message: 'Device grant unsupported', method: 'device' },
+      { code: 'source-control-unauthorized', message: 'Invalid token', method: 'pat' },
+    ])('connect preserves the $code error and message', async ({ code, message, method }) => {
+      mockedRequest.mockRejectedValueOnce(
+        new BackendError({ code, message, data: { code, detail: 'must-not-replace-the-message' } }),
+      );
+      const params = {
+        provider: 'gitlab',
+        host: HOST,
+        method,
+        ...(method === 'pat' ? { token: 'glpat-test-only' } : {}),
+      };
+
+      await expect(mockInvoke(FORGE_AUTH_CHANNELS.CONNECT, params)).resolves.toEqual({
+        success: false,
+        error: message,
+        code,
+      });
+      expect(mockedRequest).toHaveBeenCalledWith('sourceControl.connect', params);
+    });
+
+    it('connect still returns the device flow from a successful grant', async () => {
+      const deviceFlow = {
+        userCode: 'ABCD-EFGH',
+        verificationUri: 'https://gitlab.example.com/oauth/device',
+        expiresIn: 300,
+        interval: 5,
+      };
+      mockedRequest.mockResolvedValueOnce({ ok: true, method: 'device', ...deviceFlow });
+
+      await expect(
+        mockInvoke(FORGE_AUTH_CHANNELS.CONNECT, {
+          provider: 'gitlab',
+          host: HOST,
+          method: 'device',
+        }),
+      ).resolves.toEqual({ success: true, deviceFlow });
+      expect(mockedRequest).toHaveBeenCalledWith('sourceControl.connect', {
+        provider: 'gitlab',
+        host: HOST,
+        method: 'device',
       });
     });
 
