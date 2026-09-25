@@ -27,10 +27,6 @@ vi.mock('electron', () => ({
   },
 }));
 
-vi.mock('../../../agent/main/agent-process-registry', () => ({
-  notifyPendingWorkClearedForAgent: vi.fn(),
-}));
-
 import { EVENTS_CHANNELS } from '../../../../shared/ipc/channels';
 import { cleanupEventsIPC, setupEventsIPC } from '../events.ipc';
 import {
@@ -41,8 +37,11 @@ import {
   windowCloseListeners,
 } from '../renderer-subscription-registry';
 import type { WorkspaceEvent } from '../../types';
-import { agentSubscribe, updateAgentStatus } from '../agent-subscription-ops';
-import { resetAgentSubscriptionState } from '../agent-subscription-state.service';
+import {
+  agentSubscriptionState,
+  resetAgentSubscriptionState,
+} from '../agent-subscription-state.service';
+import type { AgentSubscriptionRecord } from '../../../../store/main/slices/agent-subscriptions/types';
 
 function makeWindow(closedListeners: Array<() => void> = []) {
   return {
@@ -139,16 +138,36 @@ describe('events IPC renderer subscription cleanup', () => {
   });
 
   it('reads agent subscriptions from the same canonical state written by production operations', async () => {
-    const subscriptionId = agentSubscribe('ws-agent-subscriptions', 'agent-parent', 'Parent', {
-      eventTypes: ['agent:idle'],
-      actorIds: ['agent-child'],
-      delegationGroup: {
-        groupId: 'group-1',
-        awaitMode: 'all',
-        expectedAgentIds: ['agent-child'],
+    const subscriptionId = 'subscription-1';
+    agentSubscriptionState.add('ws-agent-subscriptions', {
+      id: subscriptionId,
+      agentId: 'agent-parent',
+      agentName: 'Parent',
+      workspaceId: 'ws-agent-subscriptions',
+      filter: {
+        eventTypes: ['agent:idle'],
+        actorIds: ['agent-child'],
+        delegationGroup: {
+          groupId: 'group-1',
+          awaitMode: 'all',
+          expectedAgentIds: ['agent-child'],
+        },
       },
+      createdAt: new Date().toISOString(),
+    } satisfies AgentSubscriptionRecord);
+    agentSubscriptionState.setDelegationGroup('ws-agent-subscriptions', {
+      groupId: 'group-1',
+      parentAgentId: 'agent-parent',
+      parentAgentName: 'Parent',
+      awaitMode: 'all',
+      expectedAgentIds: ['agent-child'],
+      completedAgentIds: [],
+      deletedAgentIds: [],
+      events: [],
+      subscriptionId,
+      delivered: false,
     });
-    updateAgentStatus('ws-agent-subscriptions', 'agent-child', 'responding');
+    agentSubscriptionState.setStatus('ws-agent-subscriptions', 'agent-child', 'responding');
     setupEventsIPC();
 
     const readSubscriptions = electronMocks.handlers.get(EVENTS_CHANNELS.GET_AGENT_SUBSCRIPTIONS);
