@@ -1,4 +1,4 @@
-import type { Locator, Page } from '@playwright/experimental-ct-svelte';
+import type { Locator, Page } from '@playwright/test';
 import { expect, test } from '../../../../test/ct-test';
 import TaskProgressControl from '../TaskProgressControl.svelte';
 import TaskProgressControlHost from './TaskProgressControlHost.svelte';
