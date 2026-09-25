@@ -34,13 +34,13 @@ import { lockOwner } from './verification-lock.mjs';
 
 const requireFromTest = createRequire(import.meta.url);
 
-function vitestList(root: string, filter: string) {
+function vitestList(root: string, filter: string, config = 'vitest.config.ts') {
   const bin = join(requireFromTest.resolve('vitest/package.json'), '..', 'vitest.mjs');
-  return execFileSync(
-    process.execPath,
-    [bin, 'list', '--root', root, '--config', 'vitest.config.ts', filter],
-    { cwd: process.cwd(), encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] },
-  )
+  return execFileSync(process.execPath, [bin, 'list', '--root', root, '--config', config, filter], {
+    cwd: process.cwd(),
+    encoding: 'utf8',
+    stdio: ['ignore', 'pipe', 'pipe'],
+  })
     .split('\n')
     .filter(Boolean);
 }
@@ -326,6 +326,25 @@ describe('verification planning', () => {
       ]);
     });
 
+    it.each([
+      ['tests/integration/example.test.ts', 'scripts/custom.snap'],
+      ['tests/integration/__snapshots__/example.test.ts.snap', 'native/tool.bin'],
+    ])('retains integration coverage for %s alongside fallback for %s', (changed, fallback) => {
+      const integrationTest = 'tests/integration/example.test.ts';
+      const root = fixtureRoot({ [integrationTest]: '', [changed]: '', [fallback]: '' });
+      const plan = planFor([changed, fallback], root);
+      expect(plan.fallbackReasons).toEqual([fallback]);
+      expect(plan.checks.map((check) => check.id)).toContain('vitest-full');
+      expect(plan.checks.find((check) => check.id === 'vitest-integration')?.args).toEqual([
+        'exec',
+        'vitest',
+        'run',
+        '--config',
+        'tests/integration/vitest.integration.config.ts',
+        integrationTest,
+      ]);
+    });
+
     it.each(['missing', 'deleted'])(
       'falls back for a %s owner even with surviving sibling tests',
       (state) => {
@@ -385,7 +404,9 @@ describe('verification planning', () => {
 
     it.each([
       ['src/lib/Widget.ct.spec.ts', 'ct-related', ['run', 'test:ct', '--']],
+      ['src/.dev/Widget.ct.spec.ts', 'ct-related', ['run', 'test:ct', '--']],
       ['test/browser.spec.ts', 'playwright-direct', ['exec', 'playwright', 'test']],
+      ['test/.dev/browser.spec.ts', 'playwright-direct', ['exec', 'playwright', 'test']],
       [
         'tests/integration/example.test.ts',
         'vitest-integration',
@@ -393,7 +414,7 @@ describe('verification planning', () => {
       ],
     ])('routes the snapshot of %s through its owning runner', (test, checkId, args) => {
       const path = test.replace(/([^/]+)$/, '__snapshots__/$1.snap');
-      const root = fixtureRoot({ [test]: '', [path]: '' });
+      const root = fixtureRoot({ '.gitignore': '.dev/\n', [test]: '', [path]: '' });
       const plan = planFor([path], root);
       expect(plan.fallbackReasons).toEqual([]);
       expect(plan.checks.map((check) => check.id)).toEqual([checkId]);
@@ -434,6 +455,34 @@ describe('verification planning', () => {
       const plan = planFor([path], root);
       expect(plan.fallbackReasons).toEqual([path]);
       expect(plan.checks.map((check) => check.id)).toContain('vitest-full');
+    });
+
+    it.each([
+      ['.dev', true],
+      ['build', false],
+    ])('uses integration exclusions for snapshot owners under %s', (directory, runnable) => {
+      const test = `tests/integration/${directory}/example.test.ts`;
+      const path = `tests/integration/${directory}/__snapshots__/example.test.ts.snap`;
+      const config = 'tests/integration/vitest.integration.config.ts';
+      const root = fixtureRoot({
+        '.gitignore': '.dev/\n',
+        [config]: `export default { test: {
+          include: ['tests/integration/**/*.test.ts'],
+          exclude: ['**/node_modules/**', '**/dist/**', '**/build/**'],
+        } };`,
+        [test]: "import { test } from 'vitest'; test('kept', () => {});",
+        [path]: '',
+      });
+      expect(vitestList(root, test, config)).toEqual(runnable ? [`${test} > kept`] : []);
+      const plan = planFor([path], root);
+      if (runnable) {
+        expect(plan.fallbackReasons).toEqual([]);
+        expect(plan.checks.map((check) => check.id)).toEqual(['vitest-integration']);
+        expect(plan.checks[0].args).toContain(test);
+      } else {
+        expect(plan.fallbackReasons).toEqual([path]);
+        expect(plan.checks.map((check) => check.id)).toContain('vitest-full');
+      }
     });
 
     it('treats glob characters in the owner path literally', () => {

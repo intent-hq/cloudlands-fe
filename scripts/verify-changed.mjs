@@ -364,7 +364,11 @@ function snapshotOwner(file, root) {
         ? vitestExcludePatterns(root, 'tests/integration/vitest.integration.config.ts')
         : ['**/node_modules/**'];
   const gitignore = resolve(root, '.gitignore');
-  if (existsSync(gitignore)) exclude.push(...gitignoreDirExcludes(gitignore));
+  // Only the unit config derives exclusions from .gitignore. The integration
+  // config has its own excludes; both Playwright configs set an explicit testDir.
+  if (runner === 'vitest' && existsSync(gitignore)) {
+    exclude.push(...gitignoreDirExcludes(gitignore));
+  }
   const matches = globSync(escapeGlob(owner, { windowsPathsNoEscape: true }), {
     cwd: root,
     ignore: exclude,
@@ -583,18 +587,21 @@ export function createVerificationPlan(files, options = {}) {
         ]),
       );
     }
-    if (directIntegration.length) {
-      checks.push(
-        command('vitest-integration', 'Vitest integration (changed tests)', [
-          'exec',
-          'vitest',
-          'run',
-          '--config',
-          'tests/integration/vitest.integration.config.ts',
-          ...directIntegration,
-        ]),
-      );
-    }
+  }
+  // The unit fallback excludes integration tests, so it cannot replace this lane.
+  if (directIntegration.length) {
+    checks.push(
+      command('vitest-integration', 'Vitest integration (changed tests)', [
+        'exec',
+        'vitest',
+        'run',
+        '--config',
+        'tests/integration/vitest.integration.config.ts',
+        ...directIntegration,
+      ]),
+    );
+  }
+  if (!fullUnit) {
     if (relatedSources.length) {
       checks.push(
         command('vitest-related', 'Vitest (tests related to changed sources)', [
