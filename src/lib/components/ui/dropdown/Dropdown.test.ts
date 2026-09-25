@@ -422,10 +422,25 @@ describe('Dropdown compatibility modes', () => {
     await fireEvent.mouseDown(option);
     expect(trigger.getAttribute('aria-expanded')).toBe('true');
 
+    // Canonical Select puts aria-controls on the inner listbox, while its
+    // portalled surface also owns the border and padding around that listbox.
+    const surface = document.createElement('div');
+    surface.setAttribute('data-slot', 'select-content');
+    popup.replaceWith(surface);
+    surface.appendChild(popup);
+    await fireEvent.mouseDown(surface);
+    expect(trigger.getAttribute('aria-expanded')).toBe('true');
+
     const unrelatedPopup = document.createElement('div');
     unrelatedPopup.setAttribute('role', 'listbox');
+    unrelatedPopup.setAttribute('data-slot', 'select-content');
     document.body.appendChild(unrelatedPopup);
     await fireEvent.mouseDown(unrelatedPopup);
+    expect(trigger.getAttribute('aria-expanded')).toBe('false');
+
+    await fireEvent.click(trigger);
+    expect(trigger.getAttribute('aria-expanded')).toBe('true');
+    await fireEvent.mouseDown(document.body);
     expect(trigger.getAttribute('aria-expanded')).toBe('false');
   });
 
