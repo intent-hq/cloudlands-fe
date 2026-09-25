@@ -74,15 +74,13 @@
             },
             ...(stacked
               ? kind === 'agent'
-                ? agents
-                    .slice(1)
-                    .map((agent) => ({
-                      id: agent.id,
-                      agentId: agent.id,
-                      type: 'agent' as const,
-                      title: agent.title,
-                      closable: true,
-                    }))
+                ? agents.slice(1).map((agent) => ({
+                    id: agent.id,
+                    agentId: agent.id,
+                    type: 'agent' as const,
+                    title: agent.title,
+                    closable: true,
+                  }))
                 : [
                     {
                       id: 'header-other',
@@ -189,7 +187,12 @@
     label="Replace agent"
     onclick={() => (lastAction = 'replace')}
   />
-  <Menu.CommandItem icon={faTrash} label="Delete agent" destructive disabled />
+  <Menu.CommandItem
+    icon={faTrash}
+    label="Delete agent"
+    destructive
+    onclick={() => (lastAction = 'delete')}
+  />
 {/snippet}
 
 <section

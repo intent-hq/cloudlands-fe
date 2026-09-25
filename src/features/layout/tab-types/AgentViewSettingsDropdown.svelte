@@ -60,21 +60,28 @@
 {/if}
 
 <style>
+  .panel-font-options :global([data-slot='menu-radio-item']) {
+    justify-content: flex-start;
+    align-items: center;
+  }
+
   .panel-font-options :global([data-slot='menu-item-indicator']) {
     order: -1;
     width: 28px;
+    height: 28px;
+    margin-inline: 0;
   }
   .panel-font-options :global([data-slot='menu-item-indicator'] svg) {
     display: none;
   }
   .panel-font-options :global([data-state='checked']) {
-    background: hsl(var(--accent));
+    background: var(--panel-menu-selected, hsl(var(--accent)));
   }
   .panel-font-options :global([data-state='checked'] [data-slot='menu-item-indicator']::after) {
     content: '';
-    width: 12px;
-    height: 12px;
+    width: 24px;
+    height: 24px;
     border-radius: 50%;
-    background: hsl(var(--agent-avatar-surface-active));
+    background: hsl(var(--success));
   }
 </style>
