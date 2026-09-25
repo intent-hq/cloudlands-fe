@@ -2489,13 +2489,13 @@
                 <div class="flex items-center gap-2">
                   <Input
                     type="text"
-                    class="flex-1 min-w-0 bg-background/50 border border-border rounded px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-ring placeholder:opacity-40"
+                    class="flex-1 min-w-0 bg-background/50 border border-border rounded px-2 py-1 text-xs placeholder:opacity-40"
                     placeholder={m.workspace_issueSuggestions_organizationSlug_placeholder()}
                     bind:value={sentryOrg}
                   />
                   <Input
                     type="password"
-                    class="flex-1 min-w-0 bg-background/50 border border-border rounded px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-ring placeholder:opacity-40"
+                    class="flex-1 min-w-0 bg-background/50 border border-border rounded px-2 py-1 text-xs placeholder:opacity-40"
                     placeholder={m.workspace_issueSuggestions_apiToken_placeholder()}
                     bind:value={sentryToken}
                     onkeydown={(e) => {
