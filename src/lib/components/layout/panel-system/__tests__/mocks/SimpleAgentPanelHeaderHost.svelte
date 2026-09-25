@@ -119,42 +119,43 @@
 </script>
 
 {#snippet primaryActions()}
-  <div class="flex min-w-0 items-center gap-0.5">
-    <TaskProgressControl
-      tasks={[{ id: 'review', status: 'review_required', title: 'Review the header' }]}
-      presentation="checklist"
-    />
-    <BrowserTabsMenu
-      {workspaceId}
-      agentId={rootAgentId}
-      entries={[
-        {
-          tab: {
-            id: 'header-browser',
-            type: 'browser',
-            title: 'Header preview',
-            ownerAgentId: rootAgentId,
-            closable: true,
-          },
-          panelId,
-          active: true,
-          hidden: false,
+  <TaskProgressControl
+    embedded
+    tasks={[{ id: 'review', status: 'review_required', title: 'Review the header' }]}
+    presentation="checklist"
+  />
+  <BrowserTabsMenu
+    embedded
+    {workspaceId}
+    agentId={rootAgentId}
+    entries={[
+      {
+        tab: {
+          id: 'header-browser',
+          type: 'browser',
+          title: 'Header preview',
+          ownerAgentId: rootAgentId,
+          closable: true,
         },
-      ]}
-    />
-    <ChatMessageNavigator
-      messages={[
-        { id: 'first', text: 'Review header layout' },
-        { id: 'last', text: 'Keep actions usable' },
-      ]}
-      isAtBottom={atBottom}
-      onSelectMessage={(id) => {
-        selectedMessage = id;
-        return true;
-      }}
-      onScrollToBottom={() => (atBottom = true)}
-    />
-  </div>
+        panelId,
+        active: true,
+        hidden: false,
+      },
+    ]}
+  />
+  <ChatMessageNavigator
+    embedded
+    messages={[
+      { id: 'first', text: 'Review header layout' },
+      { id: 'last', text: 'Keep actions usable' },
+    ]}
+    isAtBottom={atBottom}
+    onSelectMessage={(id) => {
+      selectedMessage = id;
+      return true;
+    }}
+    onScrollToBottom={() => (atBottom = true)}
+  />
 {/snippet}
 
 <section
@@ -178,7 +179,7 @@
     {workspaceId}
     isFocused
     onTabRename={(tab, name) => renameAgent(tab.id, name)}
-    contentActions={fullActions ? { primary: primaryActions } : undefined}
+    contentActions={fullActions ? { actions: primaryActions } : undefined}
     onTabClick={(id) => (activeAgent = id === 'root-tab' ? 'root' : 'delegated')}
     onZoomToggle={() => (zoomCount += 1)}
     onTabClose={() => (closeCount += 1)}

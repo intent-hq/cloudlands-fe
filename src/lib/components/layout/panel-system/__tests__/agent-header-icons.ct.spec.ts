@@ -25,7 +25,6 @@ for (const { width, theme } of [
     const geometry = await actions.evaluate(probeHeaderIcons);
     expect(geometry.map((icon) => icon.id)).toEqual([
       'panel-actions-trigger',
-      'add-panel-column',
       'panel-close-button',
     ]);
     const bounds = (await header.boundingBox())!;
@@ -51,8 +50,8 @@ for (const { width, theme } of [
     await expect(menu.getByRole('menuitem', { name: 'Zoom Panel' })).toBeDisabled();
     await page.keyboard.press('Escape');
     await expect(actions.getByTestId('panel-actions-trigger')).toBeFocused();
-    await actions.locator('[data-add-panel-column]').focus();
-    await page.keyboard.press('Enter');
+    await actions.getByTestId('panel-actions-trigger').click();
+    await page.getByRole('menuitem', { name: 'Add column', exact: true }).click();
     await expect(fixture).toHaveAttribute('data-column-count', '2');
     await actions.getByTestId('panel-close-button').focus();
     await page.keyboard.press('Space');
@@ -112,6 +111,7 @@ for (const { width, theme } of [
       'copy',
       'expand',
       'font',
+      'plus',
       'table-columns',
       'trash',
     ]);
@@ -119,7 +119,7 @@ for (const { width, theme } of [
       expect(icon.svg).toEqual({ width: 16, height: 16, transform: 'none' });
       expect(icon.strokeWidth).toBeCloseTo(1, 1);
       expect(icon.strokeWidth).toBeCloseTo(
-        headerInk.find((entry) => entry.id === 'add-panel-column')!.strokeWidth!,
+        headerInk.find((entry) => entry.id === 'panel-close-button')!.strokeWidth!,
         1,
       );
       // Disabled explanations can wrap; preserve the minimum target size.

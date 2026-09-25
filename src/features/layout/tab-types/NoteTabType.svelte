@@ -269,19 +269,12 @@
   $effect(() => {
     if (!headerContext || !isActive) return;
     headerContext.registerActions({
-      primary: showPresenceStack ? notePrimaryActions : undefined,
       display: noteDisplayActions,
       actions: noteActions,
       destructive: tab.noteId && !isSpecNote(tab.noteId) ? noteDestructiveActions : undefined,
     });
   });
 </script>
-
-{#snippet notePrimaryActions()}
-  {#if tab.noteId}
-    <NotePresenceAvatarStack {workspaceId} noteId={tab.noteId} />
-  {/if}
-{/snippet}
 
 {#snippet noteDisplayActions()}
   {#if tab.noteId}
@@ -290,6 +283,9 @@
 {/snippet}
 
 {#snippet noteActions()}
+  {#if showPresenceStack && tab.noteId}
+    <NotePresenceAvatarStack {workspaceId} noteId={tab.noteId} embedded />
+  {/if}
   <Menu.CommandItem
     icon={noteCopyFeedback ? faCheck : faCopy}
     label={noteCopyFeedback || m.layout_noteTab_copyFullNote_tooltip()}

@@ -14,7 +14,7 @@
   import { useAgentSession } from '$lib/hooks/useAgentSession.svelte';
   import { selectInitialAgentId } from '$store/renderer/slices/workspace-agents/workspace-agents-selectors';
   import { selectAgentPresencePeople } from '$store/renderer/slices/presence/presence-selectors';
-  import PresenceAvatarStack from '$features/presence/components/PresenceAvatarStack.svelte';
+  import { presencePersonLabel } from '$features/presence/components/presence-person';
 
   import {
     selectHidesAgentLifecycleActions,
@@ -30,8 +30,6 @@
   import TaskProgressControl from '$lib/components/chat/TaskProgressControl.svelte';
   import type { TaskProgressItem } from '$lib/components/chat/workspace-task-fallback';
   import * as Menu from '$lib/components/ui/menu';
-  import { Tooltip } from '$lib/components/ui/tooltip';
-  import Fa from 'svelte-fa';
   import AgentViewSettingsDropdown from './AgentViewSettingsDropdown.svelte';
 
   import { selectSelectedModel } from '$store/renderer/slices/model/model-selectors';
@@ -269,7 +267,6 @@
     const subtitle = subtitleParts.length > 0 ? subtitleParts.join(' · ') : undefined;
     untrack(() => {
       headerContext.registerActions({
-        primary: agentPrimaryActions,
         display: agentDisplayActions,
         actions: agentActions,
       });
@@ -278,41 +275,28 @@
   });
 </script>
 
-{#snippet agentPrimaryActions()}
-  <div class="flex min-w-0 items-center gap-0.5">
-    <PresenceAvatarStack people={$presencePeople$} size={18} class="mr-1" />
-    {#if isNotificationsMuted}
-      <Tooltip content={m.chat_agentCard_notificationsMuted_tooltip()} side="bottom">
-        <span
-          class="inline-flex shrink-0 items-center text-subtle"
-          role="img"
-          aria-label={m.chat_agentCard_notificationsMuted_tooltip()}
-          data-testid="agent-tab-muted-indicator"
-        >
-          <Fa icon={faBellSlash} class="h-3! w-3!" />
-        </span>
-      </Tooltip>
-    {/if}
-    <TaskProgressControl tasks={taskProgressItems} presentation="checklist" />
-    {#if tab.agentId}
-      <BrowserTabsMenu {workspaceId} agentId={tab.agentId} />
-    {/if}
-    <ChatMessageNavigator
-      messages={chatNavigationState.userMessages}
-      isAtBottom={chatNavigationState.isAtBottom}
-      isLoadingIndex={chatNavigationState.isLoadingUserMessageIndex}
-      onSelectMessage={(messageId) => chatPanelRef?.navigateToUserMessage(messageId) ?? false}
-      onScrollToBottom={() => chatPanelRef?.scrollToBottom()}
-      onOpen={() => chatPanelRef?.refreshUserMessageIndex()}
-    />
-  </div>
-{/snippet}
-
 {#snippet agentDisplayActions()}
   <AgentViewSettingsDropdown embedded />
 {/snippet}
 
 {#snippet agentActions()}
+  {#each $presencePeople$ as person (person.principalId)}
+    <Menu.CommandItem icon={faUserTie} label={presencePersonLabel(person)} disabled />
+  {/each}
+  <TaskProgressControl tasks={taskProgressItems} embedded />
+  {#if tab.agentId}
+    <BrowserTabsMenu {workspaceId} agentId={tab.agentId} embedded />
+  {/if}
+  <ChatMessageNavigator
+    embedded
+    messages={chatNavigationState.userMessages}
+    isAtBottom={chatNavigationState.isAtBottom}
+    isLoadingIndex={chatNavigationState.isLoadingUserMessageIndex}
+    onSelectMessage={(messageId) => chatPanelRef?.navigateToUserMessage(messageId) ?? false}
+    onScrollToBottom={() => chatPanelRef?.scrollToBottom()}
+    onOpen={() => chatPanelRef?.refreshUserMessageIndex()}
+  />
+
   {#if agentTaskNoteId}
     <Menu.CommandItem
       icon={faNote}

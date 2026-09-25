@@ -1,6 +1,5 @@
 import { expect, test } from '../../../../../test/ct-test';
 import type { Locator } from '@playwright/test';
-import { formatShortcut } from '$lib/utils/shortcuts';
 import PanelRightmostColumnSelectorHarness from './mocks/PanelRightmostColumnSelectorHarness.svelte';
 
 async function panelIds(component: Locator) {
@@ -10,25 +9,22 @@ async function panelIds(component: Locator) {
 
 async function addButtonOwners(component: Locator) {
   return component
-    .locator('[data-add-panel-column]')
+    .locator('[data-panel-tabless-header] [data-testid="panel-actions-trigger"]')
     .evaluateAll((buttons) =>
       buttons.map((button) => button.closest('[data-panel-id]')?.getAttribute('data-panel-id')),
     );
 }
 
-test('keeps Add column in every populated and empty panel header', async ({ mount, page }) => {
+test('keeps Add column in every populated and empty panel menu', async ({ mount, page }) => {
   const component = await mount(PanelRightmostColumnSelectorHarness);
-  const addButtons = component.locator('[data-add-panel-column]');
+  const addButtons = component.locator(
+    '[data-panel-tabless-header] [data-testid="panel-actions-trigger"]',
+  );
   const layoutState = component.getByTestId('panel-layout-state');
 
   await expect(component.locator('[data-panel-column-count-trigger]')).toHaveCount(0);
   await expect(component.locator('[data-panel-column-count-popover]')).toHaveCount(0);
   await expect(addButtons).toHaveCount(1);
-  await expect(addButtons.first()).toHaveAccessibleName('Add column');
-  await addButtons.last().hover();
-  await expect(page.getByRole('tooltip')).toContainText(
-    `Add an empty column on the right. ${formatShortcut('mod')}+click a link to open in a new column.`,
-  );
   expect(await addButtonOwners(component)).toEqual(['initial-panel']);
   const singlePanel = component.locator('[data-panel-id="initial-panel"]');
   await expect(singlePanel).toHaveAttribute('data-focus-border-visible', 'false');
@@ -39,6 +35,7 @@ test('keeps Add column in every populated and empty panel header', async ({ moun
   expect(singlePanelStyle).toEqual({ color: 'rgba(0, 0, 0, 0)', width: '1px' });
 
   await addButtons.first().click();
+  await page.getByRole('menuitem', { name: 'Add column', exact: true }).click();
   await expect(layoutState).toHaveAttribute('data-column-count', '2');
   const idsAtTwo = await panelIds(component);
   expect(idsAtTwo).toHaveLength(2);
@@ -49,6 +46,7 @@ test('keeps Add column in every populated and empty panel header', async ({ moun
   await expect(emptyAtTwo.locator('[data-empty-panel-header]')).toHaveCount(1);
 
   await addButtons.first().click();
+  await page.getByRole('menuitem', { name: 'Add column', exact: true }).click();
   await expect(layoutState).toHaveAttribute('data-column-count', '3');
   const idsAtThree = await panelIds(component);
   expect(idsAtThree).toHaveLength(3);
@@ -136,6 +134,7 @@ test('keeps Add column in every populated and empty panel header', async ({ moun
   await expect(emptyHeader).toHaveCount(1);
 
   await addButtons.first().click();
+  await page.getByRole('menuitem', { name: 'Add column', exact: true }).click();
   await expect(layoutState).toHaveAttribute('data-column-count', '4');
   const idsAtFour = await panelIds(component);
   expect(idsAtFour).toHaveLength(4);
@@ -155,8 +154,12 @@ test('keeps Add column in every populated and empty panel header', async ({ moun
   await expect(addButtons).toHaveCount(4);
   for (const button of await addButtons.all()) {
     await expect(button).toBeVisible();
-    await expect(button).toHaveAttribute('aria-disabled', 'true');
-    await expect(button).toHaveAccessibleName('Add column unavailable: maximum of 4 columns');
+    await button.click();
+    await expect(page.getByRole('menuitem', { name: 'Add column', exact: true })).toHaveAttribute(
+      'aria-disabled',
+      'true',
+    );
+    await page.keyboard.press('Escape');
   }
 });
 
@@ -165,12 +168,14 @@ test('adds and focuses empty rightmost columns until the four-column limit', asy
   page,
 }) => {
   const component = await mount(PanelRightmostColumnSelectorHarness);
-  const addButtons = component.locator('[data-add-panel-column]');
+  const addButtons = component.locator(
+    '[data-panel-tabless-header] [data-testid="panel-actions-trigger"]',
+  );
   const layoutState = component.getByTestId('panel-layout-state');
 
-  await expect(addButtons.first()).toHaveAccessibleName('Add column');
   for (const count of [2, 3, 4]) {
     await addButtons.first().click();
+    await page.getByRole('menuitem', { name: 'Add column', exact: true }).click();
     await expect(layoutState).toHaveAttribute('data-column-count', String(count));
     const ids = await panelIds(component);
     const rightmostPanelId = ids.at(-1)!;
@@ -184,15 +189,12 @@ test('adds and focuses empty rightmost columns until the four-column limit', asy
   }
 
   await expect(addButtons).toHaveCount(4);
-  await expect(addButtons.first()).toHaveAttribute('aria-disabled', 'true');
-  await expect(addButtons.first()).toHaveAccessibleName(
-    'Add column unavailable: maximum of 4 columns',
+  await addButtons.first().click();
+  await expect(page.getByRole('menuitem', { name: 'Add column', exact: true })).toHaveAttribute(
+    'aria-disabled',
+    'true',
   );
-  await addButtons.last().hover();
-  await expect(page.getByRole('tooltip')).toContainText(
-    'Column limit reached. You can use up to 4 columns.',
-  );
-  await addButtons.first().evaluate((button: HTMLButtonElement) => button.click());
+  await page.keyboard.press('Escape');
   await expect(layoutState).toHaveAttribute('data-column-count', '4');
   expect(await panelIds(component)).toHaveLength(4);
 });

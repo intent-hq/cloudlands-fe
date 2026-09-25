@@ -21,9 +21,7 @@ const panelTypes = [
   'task',
 ] as const;
 
-test('shows one selector for every stacked active pane type and none for one pane', async ({
-  mount,
-}) => {
+test('keeps the title selector available for single and stacked panes', async ({ mount }) => {
   const component = await mount(PaneStackControlHost, {
     props: { paneTypes: ['agent'], stackCount: 1, initialActiveTabId: 'agent-pane' },
   });
@@ -31,7 +29,7 @@ test('shows one selector for every stacked active pane type and none for one pan
   for (const type of panelTypes) {
     const fallback = type === 'note' ? 'browser' : 'note';
     await component.update({ props: { paneTypes: [type], stackCount: 1 } });
-    await expect(component.getByTestId('pane-stack-selector-trigger')).toHaveCount(0);
+    await expect(component.getByTestId('pane-stack-selector-trigger')).toHaveCount(1);
     await component.update({ props: { paneTypes: [type, fallback], stackCount: 2 } });
     await expect(component.getByTestId('pane-stack-selector-trigger')).toHaveCount(1);
     await expect(component.locator('[data-panel-content-header]')).toHaveAttribute(
@@ -42,7 +40,7 @@ test('shows one selector for every stacked active pane type and none for one pan
 });
 
 for (const zoom of [1, 2]) {
-  test(`keeps glyph geometry, action spacing, attention, and motion safe at ${zoom * 100}%`, async ({
+  test(`keeps the selector and actions reachable with attention at ${zoom * 100}%`, async ({
     mount,
     page,
   }, testInfo) => {
@@ -61,22 +59,17 @@ for (const zoom of [1, 2]) {
     const trigger = component.getByTestId('pane-stack-selector-trigger');
     await expect(trigger).toHaveAttribute('data-attention', '');
     const geometry = await component.locator('[data-panel-content-header]').evaluate((header) => {
-      const identity = header.querySelector<HTMLElement>('[data-pane-stack-active]')!;
+      const identity = header.querySelector<HTMLElement>('[data-panel-header-identity]')!;
       const actions = header.querySelector<HTMLElement>('[data-panel-header-actions]')!;
-      const glyph = header.querySelector<SVGElement>('[data-pane-stack-glyph]')!;
       const headerRect = header.getBoundingClientRect();
-      const scale = headerRect.width / (header as HTMLElement).offsetWidth;
       const identityRect = identity.getBoundingClientRect();
       const actionsRect = actions.getBoundingClientRect();
-      const glyphRect = glyph.getBoundingClientRect();
       return {
         rectangles: {
           header: headerRect.toJSON(),
           identity: identityRect.toJSON(),
           actions: actionsRect.toJSON(),
         },
-        glyphWidth: glyphRect.width / scale,
-        glyphHeight: glyphRect.height / scale,
         // Skinny agent headers intentionally wrap; shared x ranges alone are not a collision.
         noCollision:
           identityRect.right <= actionsRect.left ||
@@ -92,7 +85,6 @@ for (const zoom of [1, 2]) {
             rect.top >= headerRect.top &&
             rect.bottom <= headerRect.bottom,
         ),
-        lineCount: glyph.querySelectorAll('[data-pane-stack-line]').length,
       };
     });
 
@@ -105,11 +97,8 @@ for (const zoom of [1, 2]) {
       contentType: 'image/png',
     });
     expect(geometry).toMatchObject({
-      glyphWidth: 14,
-      glyphHeight: 14,
       noCollision: true,
       contained: true,
-      lineCount: 2,
     });
 
     await component.update({
@@ -119,11 +108,11 @@ for (const zoom of [1, 2]) {
         attentionTabIds: [],
       },
     });
-    await expect(component.locator('[data-pane-stack-glyph]')).toHaveAttribute(
-      'data-pane-stack-visible-lines',
-      '6',
-    );
-    await expect(component.locator('[data-pane-stack-line]')).toHaveCount(6);
+    await trigger.click();
+    const menu = page.getByRole('menu', { name: 'Panes in this stack' });
+    await expect(menu.locator('[data-pane-stack-item]')).toHaveCount(7);
+    await menu.locator('[data-pane-stack-item]').last().click();
+    await expect(component).toHaveAttribute('data-active-tab', 'changes-pane');
   });
 }
 

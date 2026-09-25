@@ -6,7 +6,12 @@ async function addColumn(component: Locator, count: number) {
   await component.getByTestId('panel-workspace-inset').evaluate((inset) => {
     inset.scrollLeft = inset.scrollWidth;
   });
-  await component.locator('[data-add-panel-column]').first().click();
+  await component
+    .locator('[data-panel-tabless-header]')
+    .getByTestId('panel-actions-trigger')
+    .first()
+    .click();
+  await component.page().getByRole('menuitem', { name: 'Add column', exact: true }).click();
   await expect(component.locator('[data-panel-id]')).toHaveCount(count);
 }
 

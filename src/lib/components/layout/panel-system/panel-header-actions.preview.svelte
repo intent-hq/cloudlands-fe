@@ -26,6 +26,9 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { store } from '$store/renderer/store';
+  import { bulkUpsertSessions } from '$store/renderer/slices/agent-session/agent-session-slice';
+  import { AgentStatus } from '$shared/types/agent.types';
+  import { AgentId, WorkspaceId } from '$shared/types/branded-ids';
   import {
     clearPanelLayout,
     initializeLayout,
@@ -33,20 +36,17 @@
   import { selectPanelColumnCount } from '$store/renderer/slices/panel-layout/panel-layout-selectors';
   import type { PanelTab } from '$store/renderer/slices/panel-layout/panel-layout-types';
   import { PREVIEW_FIXTURE_IDS } from '$lib/component-catalog/preview-fixtures';
-  import { Button } from '$lib/components/ui/button';
   import * as Menu from '$lib/components/ui/menu';
-  import { faCopy, faArrowDown, faTrash } from '$lib/icons/phosphor-icons';
-  import Fa from 'svelte-fa';
+  import { faCopy, faArrowDown, faTrash, faRobot } from '$lib/icons/phosphor-icons';
   import TaskProgressControl from '$lib/components/chat/TaskProgressControl.svelte';
   import BrowserTabsMenu from '$lib/components/chat/BrowserTabsMenu.svelte';
-  import InlineAgentAvatar from '$lib/components/chat/InlineAgentAvatar.svelte';
   import ChatMessageNavigator from '$lib/components/chat/ChatMessageNavigator.svelte';
   import AgentViewSettingsDropdown from '$features/layout/tab-types/AgentViewSettingsDropdown.svelte';
   import PanelTabBar from './PanelTabBar.svelte';
 
   let { kind = 'agent', stacked = false, atLimit = false }: Props = $props();
   const workspaceId = PREVIEW_FIXTURE_IDS.workspace;
-  const agentId = PREVIEW_FIXTURE_IDS.agent;
+  const agentId = 'panel-header-general-ui';
   const panelId = 'panel-header-actions-preview';
   const columnCount$ = selectPanelColumnCount(workspaceId);
   let lastAction = $state('');
@@ -59,7 +59,7 @@
           {
             id: 'header-current',
             type: kind,
-            title: 'Implementation plan with a deliberately long title',
+            title: kind === 'agent' ? 'General UI' : 'Implementation plan',
             agentId: kind === 'agent' ? agentId : undefined,
             browserUrl: kind === 'browser' ? 'https://example.com' : undefined,
             closable: true,
@@ -71,6 +71,22 @@
   );
 
   onMount(() => {
+    store.dispatch(
+      bulkUpsertSessions([
+        {
+          id: AgentId(agentId),
+          workspaceId: WorkspaceId(workspaceId),
+          backendSessionId: null,
+          name: 'General UI',
+          status: AgentStatus.Active,
+          turnInFlight: true,
+          isResponding: true,
+          messages: [],
+          createdAt: '2026-09-25T00:00:00.000Z',
+          updatedAt: '2026-09-25T00:00:00.000Z',
+        },
+      ]),
+    );
     store.dispatch(
       initializeLayout(workspaceId, {
         root: { type: 'panel', panelId },
@@ -87,57 +103,53 @@
 
 {#snippet primaryActions()}
   {#if kind === 'agent'}
-    <div class="flex min-w-0 items-center gap-0.5">
-      <TaskProgressControl
-        presentation="checklist"
-        tasks={[
-          { id: 'plan', title: 'Plan the header changes', status: 'completed' },
-          { id: 'review', title: 'Review keyboard and pointer interactions', status: 'running' },
-          { id: 'capture', title: 'Capture the final layout', status: 'pending' },
-        ]}
-      />
-      <BrowserTabsMenu
-        {workspaceId}
-        {agentId}
-        entries={[
-          {
-            tab: { id: 'browser', type: 'browser', title: 'Preview documentation', closable: true },
-            panelId,
-            active: true,
-            hidden: false,
-          },
-        ]}
-      />
-      <ChatMessageNavigator
-        messages={[
-          { id: 'first', text: 'Make the panel actions consistent' },
-          { id: 'last', text: 'Review the narrow layout and keyboard focus' },
-        ]}
-        isAtBottom={atBottom}
-        onSelectMessage={(id) => {
-          lastAction = id;
-          return true;
-        }}
-        onScrollToBottom={() => (atBottom = true)}
-      />
-    </div>
-  {:else if kind === 'browser'}
-    <InlineAgentAvatar
+    <TaskProgressControl
+      embedded
+      presentation="checklist"
+      tasks={[
+        { id: 'plan', title: 'Plan the header changes', status: 'completed' },
+        { id: 'review', title: 'Review keyboard and pointer interactions', status: 'running' },
+        { id: 'capture', title: 'Capture the final layout', status: 'pending' },
+      ]}
+    />
+    <BrowserTabsMenu
+      embedded
+      {workspaceId}
       {agentId}
-      presentation="header"
-      agentName="Preview owner"
+      entries={[
+        {
+          tab: { id: 'browser', type: 'browser', title: 'Preview documentation', closable: true },
+          panelId,
+          active: true,
+          hidden: false,
+        },
+      ]}
+    />
+    <ChatMessageNavigator
+      embedded
+      messages={[
+        { id: 'first', text: 'Make the panel actions consistent' },
+        { id: 'last', text: 'Review the narrow layout and keyboard focus' },
+      ]}
+      isAtBottom={atBottom}
+      onSelectMessage={(id) => {
+        lastAction = id;
+        return true;
+      }}
+      onScrollToBottom={() => (atBottom = true)}
+    />
+  {:else if kind === 'browser'}
+    <Menu.CommandItem
+      icon={faRobot}
+      label="Open owning agent Preview owner"
       onclick={() => (lastAction = 'open-owner')}
     />
   {:else if kind === 'terminal'}
-    <Button
-      variant="ghost-light"
-      size="icon-sm"
-      tooltip="Show in bottom bar"
-      tooltipSide="bottom"
+    <Menu.CommandItem
+      icon={faArrowDown}
+      label="Show in bottom bar"
       onclick={() => (lastAction = 'bottom-bar')}
-    >
-      <Fa icon={faArrowDown} />
-    </Button>
+    />
   {/if}
 {/snippet}
 
@@ -146,6 +158,7 @@
 {/snippet}
 
 {#snippet contentActions()}
+  {@render primaryActions()}
   <Menu.CommandItem icon={faCopy} label="Copy content" onclick={() => (lastAction = 'copy')} />
   <Menu.CommandItem icon={faTrash} label="Delete content" destructive disabled />
 {/snippet}
@@ -163,10 +176,14 @@
     {panelId}
     {workspaceId}
     contentActions={{
-      primary: ['agent', 'browser', 'terminal'].includes(kind) ? primaryActions : undefined,
-      display: displayActions,
+      display: kind === 'agent' ? displayActions : undefined,
       actions: contentActions,
     }}
+    onCreateAgent={() => (lastAction = 'new-agent')}
+    onCreateNote={() => (lastAction = 'new-note')}
+    onCreateTerminal={() => (lastAction = 'new-terminal')}
+    onOpenBrowser={() => (lastAction = 'new-browser')}
+    onTabRename={(_, name) => (lastAction = `rename:${name}`)}
     onTabClick={(id) => (selectedTab = id)}
     onZoomToggle={() => (lastAction = 'zoom')}
     onTabClose={() => (lastAction = 'close')}

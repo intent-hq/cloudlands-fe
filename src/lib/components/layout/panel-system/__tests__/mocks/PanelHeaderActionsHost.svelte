@@ -128,18 +128,8 @@
   {/if}
 {/snippet}
 
-{#snippet contentNavigationAction()}
-  <button
-    type="button"
-    class="size-7 shrink-0"
-    aria-label="Content navigation"
-    onclick={() => (navigationCount += 1)}
-  >
-    <span aria-hidden="true">N</span>
-  </button>
-{/snippet}
-
 {#snippet contentCommandAction()}
+  <Menu.CommandItem label="Content navigation" onclick={() => (navigationCount += 1)} />
   <Menu.CommandItem label="Content command action" onclick={() => (contentCount += 1)} />
 {/snippet}
 
@@ -167,7 +157,6 @@
     {isRightmostPanel}
     {showTabStrip}
     contentActions={{
-      primary: contentNavigationAction,
       display: contentDisplayAction,
       actions: contentCommandAction,
     }}

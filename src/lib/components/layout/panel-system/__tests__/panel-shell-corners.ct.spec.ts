@@ -146,7 +146,7 @@ for (const theme of ['light', 'dark'] as const) {
       await component.locator('.panel-split-handle').focus();
       const before = await bounds();
       await page.keyboard.press('Tab');
-      await expect(panels.nth(1).locator('[data-add-panel-column]')).toBeFocused();
+      await expect(panels.nth(1).getByTestId('panel-actions-trigger')).toBeFocused();
       await expect(panels.nth(1)).toHaveAttribute('data-focused', 'true');
       expect(await bounds()).toEqual(before);
       for (const [index, panel] of (await panels.all()).entries()) {

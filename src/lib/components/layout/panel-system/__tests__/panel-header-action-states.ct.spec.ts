@@ -26,105 +26,71 @@ function surfaceColor(trigger: Locator) {
   });
 }
 
-for (const theme of ['light', 'dark'] as const) {
-  test(`header menus share hover and persistent open surfaces in ${theme} mode`, async ({
-    mount,
-    page,
-  }) => {
-    await page.emulateMedia({ reducedMotion: 'reduce' });
-    const component = await mount(SimpleAgentPanelHeaderHost, {
-      props: { fullActions: true, stackCount: 2, width: 560, theme },
-      hooksConfig,
-    });
-    const header = component.locator('[data-panel-tabless-header]');
-    let hoverColor: string | undefined;
-    let openColor: string | undefined;
-    for (const id of [
-      'browser-tabs-trigger',
-      'chat-message-navigator-trigger',
-      'panel-actions-trigger',
-      'pane-stack-selector-trigger',
-    ]) {
-      const trigger = header.getByTestId(id);
-      await page.mouse.move(800, 600);
-      const restingColor = await surfaceColor(trigger);
-      await trigger.hover();
-      await expect.poll(() => surfaceColor(trigger)).not.toBe(restingColor);
-      const hovered = await surfaceColor(trigger);
-      if (hoverColor) expect(hovered).toBe(hoverColor);
-      hoverColor = hovered;
-
-      await trigger.press('Enter');
-      await expect(trigger).toHaveAttribute('aria-expanded', 'true');
-      await page.mouse.move(800, 600);
-      await expect.poll(() => surfaceColor(trigger)).not.toBe(restingColor);
-      const opened = await surfaceColor(trigger);
-      if (openColor) expect(opened).toBe(openColor);
-      openColor = opened;
-      await expect(page.getByRole('tooltip')).toHaveCount(0);
-      await page.keyboard.press('Escape');
-      await expect(trigger).toHaveAttribute('aria-expanded', 'false');
-      await expect(trigger).toBeFocused();
-      await expect.poll(() => surfaceColor(trigger)).toBe(restingColor);
-      const focus = await trigger.evaluate((node) => {
-        const style = getComputedStyle(node);
-        return { visible: node.matches(':focus-visible'), outline: style.outlineStyle };
-      });
-      expect(focus.visible).toBe(true);
-      expect(focus.outline).toBe('solid');
-    }
-  });
-}
-
-test('narrow header keeps spaced targets usable through menu, scroll and disabled-column actions', async ({
+test('agent submenus support keyboard entry, selection and dismissal', async ({
   mount,
   page,
-}) => {
+}, testInfo) => {
   const component = await mount(SimpleAgentPanelHeaderHost, {
     props: { fullActions: true, stackCount: 2, width: 280 },
     hooksConfig,
   });
   const header = component.locator('[data-panel-tabless-header]');
-  const actions = header.locator('[data-panel-header-actions]');
-  const rects = await actions.locator('button').evaluateAll((buttons) =>
-    buttons.map((button) => {
-      const { x, y, width, height, right } = button.getBoundingClientRect();
-      return { x, y, width, height, right };
-    }),
-  );
-  for (const [index, rect] of rects.entries()) {
-    expect(rect.width).toBe(28);
-    expect(rect.height).toBe(28);
-    if (index > 0) {
-      expect(rect.y).toBe(rects[0].y);
-      expect(rect.x - rects[index - 1].right).toBeGreaterThanOrEqual(2);
-    }
+  const trigger = header.getByTestId('panel-actions-trigger');
+  await trigger.press('Enter');
+  const root = page.locator('[data-slot="menu-content"]');
+  for (const id of ['task-progress-trigger', 'browser-tabs-trigger']) {
+    const item = root.getByTestId(id);
+    await item.focus();
+    await page.keyboard.press('ArrowRight');
+    await expect(item).toHaveAttribute('aria-expanded', 'true');
+    await page.keyboard.press('Escape');
+    await expect(item).toHaveAttribute('aria-expanded', 'false');
+    await expect(item).toBeFocused();
   }
-  expect(await header.evaluate((node) => node.scrollWidth <= node.clientWidth)).toBe(true);
+  const navigation = root.getByTestId('chat-message-navigator-trigger');
+  await navigation.focus();
+  await page.keyboard.press('ArrowRight');
+  const search = page.getByTestId('chat-message-navigator-search');
+  await search.fill('Review header');
+  await search.press('Enter');
+  await expect(component).toHaveAttribute('data-selected-message', 'first');
+  await root.getByTestId('chat-scroll-to-bottom-button').click();
+  await trigger.click();
+  await expect(root.getByTestId('chat-scroll-to-bottom-button')).toHaveAttribute(
+    'aria-disabled',
+    'true',
+  );
+  await testInfo.attach('agent-actions', {
+    body: await page.screenshot(),
+    contentType: 'image/png',
+  });
+  await page.keyboard.press('Escape');
+  await expect(trigger).toBeFocused();
+});
 
-  const browser = header.getByTestId('browser-tabs-trigger');
-  await browser.click();
-  await expect(browser).toHaveAttribute('aria-expanded', 'true');
-  const outside = await component.getByTestId('header-adjacent-content').boundingBox();
-  await page.mouse.click(outside!.x + 10, outside!.y + outside!.height - 10);
-  await expect(browser).toHaveAttribute('aria-expanded', 'false');
-
-  const scroll = header.getByTestId('chat-scroll-to-bottom-button');
-  await scroll.click();
-  await expect(scroll).toBeDisabled();
-  await header.getByTestId('chat-message-navigator-trigger').focus();
-  await page.keyboard.press('Tab');
-  await expect(header.getByTestId('panel-actions-trigger')).toBeFocused();
-
-  const add = header.locator('[data-add-panel-column]');
-  await add.click();
-  await add.click();
-  await add.click();
-  await expect(component).toHaveAttribute('data-column-count', '4');
-  await expect(add).toHaveAttribute('aria-disabled', 'true');
-  await add.press('Enter');
-  await expect(component).toHaveAttribute('data-column-count', '4');
-  await header.getByTestId('panel-close-button').press('Enter');
+test('column creation remains reachable and stops at the column limit', async ({ mount, page }) => {
+  const component = await mount(SimpleAgentPanelHeaderHost, {
+    props: { fullActions: true, stackCount: 2, width: 280 },
+    hooksConfig,
+  });
+  const trigger = component
+    .locator('[data-panel-tabless-header]')
+    .getByTestId('panel-actions-trigger');
+  for (let count = 2; count <= 4; count += 1) {
+    await trigger.click();
+    await page.getByRole('menuitem', { name: 'Add column', exact: true }).click();
+    await expect(component).toHaveAttribute('data-column-count', String(count));
+  }
+  await trigger.click();
+  await expect(page.getByRole('menuitem', { name: 'Add column', exact: true })).toHaveAttribute(
+    'aria-disabled',
+    'true',
+  );
+  await page.keyboard.press('Escape');
+  await component
+    .locator('[data-panel-tabless-header]')
+    .getByTestId('panel-close-button')
+    .press('Enter');
   await expect(component).toHaveAttribute('data-close-count', '1');
 });
 
