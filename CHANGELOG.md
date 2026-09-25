@@ -4,6 +4,26 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.183.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.182.1...v2.183.0) (2026-09-25)
+
+
+### 🚀 Features
+
+* add a compact sidebar expand rail ([#2879](https://github.com/intent-hq/cloudlands-fe/issues/2879)) ([5759852](https://github.com/intent-hq/cloudlands-fe/commit/5759852244ee634e1e02ec50b584b41f1d647bd2))
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.9.107 ([#2888](https://github.com/intent-hq/cloudlands-fe/issues/2888)) ([72018dd](https://github.com/intent-hq/cloudlands-fe/commit/72018ddfc1940b218aa020df87a7e51ba8be737d))
+* **chat:** compact title-only reasoning activity rows ([#2872](https://github.com/intent-hq/cloudlands-fe/issues/2872)) ([942be02](https://github.com/intent-hq/cloudlands-fe/commit/942be02ce1821e341612253cf3c6fdf884e129c6))
+* **lint:** compare pre-migration baseline debt ([#5773](https://github.com/intent-hq/cloudlands-fe/issues/5773)) ([#2860](https://github.com/intent-hq/cloudlands-fe/issues/2860)) ([19c6e6a](https://github.com/intent-hq/cloudlands-fe/commit/19c6e6a1127b2439a8e545a45accdd59c2fe03f6))
+* normalize bare generated IDs in catalog snapshots ([#2867](https://github.com/intent-hq/cloudlands-fe/issues/2867)) ([6abbb7d](https://github.com/intent-hq/cloudlands-fe/commit/6abbb7d403fbf3dbbd744c62347c8bcb4cbf75e3))
+* reject missing exports in production builds ([#2883](https://github.com/intent-hq/cloudlands-fe/issues/2883)) ([0cdf7e5](https://github.com/intent-hq/cloudlands-fe/commit/0cdf7e58c3c5505659ecbf0784bda18dd2d7759c))
+* report completed CT failures while other shards are pending ([#2866](https://github.com/intent-hq/cloudlands-fe/issues/2866)) ([84f9fb2](https://github.com/intent-hq/cloudlands-fe/commit/84f9fb2abfbc35ebaf96987a195b4508d96ba76b))
+* retain GitHub hover cards when previews fail ([#2873](https://github.com/intent-hq/cloudlands-fe/issues/2873)) ([5b12f1b](https://github.com/intent-hq/cloudlands-fe/commit/5b12f1b90900b3c7398ab1ab3fc3424b0b4631fa))
+* settle markdown and layout work before test teardown ([#2864](https://github.com/intent-hq/cloudlands-fe/issues/2864)) ([2ff3e1f](https://github.com/intent-hq/cloudlands-fe/commit/2ff3e1fd2bc8b86bb2e74aa0ad4a01359561951d))
+* wrap daemon connection details across two lines ([#2887](https://github.com/intent-hq/cloudlands-fe/issues/2887)) ([533be57](https://github.com/intent-hq/cloudlands-fe/commit/533be5797f8783e66c6e2fb23bd482564e29dc03))
+
 ## [2.182.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.182.0...v2.182.1) (2026-09-24)
 
 
