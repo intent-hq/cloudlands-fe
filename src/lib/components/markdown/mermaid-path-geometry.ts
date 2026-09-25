@@ -6175,6 +6175,56 @@ export function rewriteStateRoutes(
   diagram?: StateDiagramRoutingData,
 ) {
   if (!svg.classList.contains('statediagram')) return;
+  for (const cluster of svg.querySelectorAll<SVGGElement>('g.statediagram-cluster')) {
+    const outer = cluster.querySelector<SVGRectElement>(':scope > g > rect.outer');
+    const inner = cluster.querySelector<SVGRectElement>(':scope > rect.inner');
+    const label = cluster.querySelector<SVGGElement>(':scope > .cluster-label');
+    if (!outer || !inner || !label) continue;
+    const bounds = boundsInPathSpace(label, cluster);
+    const matrix = label.transform.baseVal.consolidate()?.matrix;
+    if (!bounds || !matrix) continue;
+    const top = outer.y.baseVal.value + 6;
+    label.setAttribute('transform', `translate(${matrix.e},${matrix.f + top - bounds.y})`);
+    const bodyTop = Math.max(inner.y.baseVal.value, top + bounds.height + 6);
+    inner.setAttribute(
+      'height',
+      String(Math.max(0, inner.height.baseVal.value - (bodyTop - inner.y.baseVal.value))),
+    );
+    inner.setAttribute('y', String(bodyTop));
+    for (const path of svg.querySelectorAll<SVGPathElement>('path.transition[data-points]')) {
+      let points: Point[];
+      try {
+        points = JSON.parse(atob(path.dataset.points!));
+      } catch {
+        continue;
+      }
+      if (points.length < 4) continue;
+      const [start, bend, next] = points;
+      const frame = boundsInPathSpace(outer, path);
+      if (
+        !frame ||
+        Math.abs(start.y - frame.y) > 0.5 ||
+        start.x < frame.x ||
+        start.x > frame.x + frame.width
+      )
+        continue;
+      if (
+        start.x !== bend.x ||
+        bend.y !== next.y ||
+        Math.abs(bend.x - next.x) > 8 ||
+        next.x < frame.x + 8 ||
+        next.x > frame.x + frame.width - 8
+      )
+        continue;
+      points[0] = { x: next.x, y: start.y };
+      points.splice(1, 1);
+      points = simplifyOrthogonalPoints(points);
+      const data = buildRoundedOrthogonalPath(points);
+      path.setAttribute('d', data);
+      path.dataset.terminalGapBasePath = data;
+      path.dataset.manhattanPoints = points.map(({ x, y }) => `${x},${y}`).join(' ');
+    }
+  }
   let plan: ReturnType<typeof stateRoutePlan>;
   try {
     // Retain verified parser identity for repeat fits and SVG clones. Never
