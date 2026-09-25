@@ -105,6 +105,8 @@
     code: string;
     isStreaming?: boolean;
     revealNewContent?: boolean;
+    /** Blend the inline canvas into chat without changing node/label or fullscreen surfaces. */
+    presentation?: 'default' | 'chat';
     className?: string;
     showExpandButton?: boolean;
     showSourceButton?: boolean;
@@ -117,6 +119,7 @@
     code,
     isStreaming = false,
     revealNewContent = false,
+    presentation = 'default',
     className = '',
     showExpandButton = true,
     showSourceButton = true,
@@ -1846,6 +1849,7 @@ ${source}`;
   class="mermaid-renderer {className}"
   class:has-diagram={Boolean(renderedSvg)}
   class:revealing={revealNewContent && isStreaming}
+  class:chat-presentation={presentation === 'chat'}
   data-render-generation={activeGeneration}
   data-render-settled-generation={settledGeneration}
   data-render-settled={activeGeneration > 0 && settledGeneration === activeGeneration}
@@ -2099,6 +2103,11 @@ ${source}`;
     font-size: var(--text-caption-size) !important;
     background: var(--diagram-canvas) !important;
     overflow: visible;
+  }
+
+  .chat-presentation .mermaid-svg :global(svg) {
+    /* Keep the opaque label knockouts and node surfaces; only remove canvas paint. */
+    background: transparent !important;
   }
 
   /* Layout reads must see the new transforms synchronously. The global reduced-motion
