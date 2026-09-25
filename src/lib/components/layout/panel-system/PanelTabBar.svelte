@@ -1335,7 +1335,7 @@
         class="panel-header-action-button"
         data-testid="panel-actions-trigger"
       >
-        <KebabIcon class="pointer-events-none size-7!" />
+        <KebabIcon class="pointer-events-none size-4!" />
       </Button>
     {/snippet}
     {#snippet content({ close }: { close: () => void })}
@@ -1366,7 +1366,7 @@
                 close();
               }}
             >
-              <Fa icon={direction.icon} class="size-7!" />
+              <Fa icon={direction.icon} class="size-4!" />
             </Menu.Item>
           {/each}
         </div>
@@ -1610,7 +1610,7 @@
         data-testid="panel-close-button"
         data-pane-close={tab?.id}
       >
-        <XIcon size={28} weight="regular" aria-hidden="true" class="size-7!" />
+        <XIcon size={28} weight="regular" aria-hidden="true" class="size-4!" />
       </Button>
     </Tooltip>
   {/if}
@@ -1702,8 +1702,8 @@
                 class="flex shrink-0 flex-col items-center gap-0.5 text-muted-foreground"
                 aria-hidden="true"
               >
-                <CaretUpIcon size={20} weight="regular" class="size-5!" />
-                <CaretDownIcon size={20} weight="regular" class="size-5!" />
+                <CaretUpIcon size={20} weight="regular" class="size-3!" />
+                <CaretDownIcon size={20} weight="regular" class="size-3!" />
               </span>
               {#if inactiveAttentionCount > 0 || (activeTab && attentionPaneIds.has(activeTab.id))}
                 <span
@@ -2066,117 +2066,117 @@
   }
 
   :global(.panel-actions-menu-content) {
-    width: 384px;
-    min-width: min(384px, calc(100vw - 1rem));
-    border: 2px solid hsl(var(--border));
-    border-radius: 14px;
-    padding: 12px;
+    width: 240px;
+    min-width: min(240px, calc(100vw - 1rem));
+    border: 1px solid hsl(var(--border));
+    border-radius: 7px;
+    padding: 6px;
     max-width: calc(100vw - 1rem);
   }
 
   /* CSS variables for panel tab bar heights */
   .panel-tab-wrapper {
-    --panel-header-height: 100px;
+    --panel-header-height: 52px;
     container-type: inline-size;
   }
 
   .panel-header {
-    padding-inline: 16px;
-    gap: 8px;
+    padding-inline: 8px;
+    gap: 4px;
   }
 
   .panel-header-leading-surface {
-    width: 52px;
-    height: 52px;
-    --agent-avatar-emphasized-surface-size: 52px;
-    --agent-avatar-emphasized-art-size: 36px;
-    --agent-avatar-emphasized-corner-radius: 10px;
+    width: 26px;
+    height: 26px;
+    --agent-avatar-emphasized-surface-size: 26px;
+    --agent-avatar-emphasized-art-size: 18px;
+    --agent-avatar-emphasized-corner-radius: 5px;
   }
   .pane-stack-selector {
-    width: 388px;
+    width: 194px;
   }
   :global(.panel-selector-button) {
-    height: 72px;
-    padding: 8px 22px 8px 8px;
-    gap: 16px;
-    border: 2px solid hsl(var(--border));
-    border-radius: 18px;
+    height: 36px;
+    padding: 4px 11px 4px 4px;
+    gap: 8px;
+    border: 1px solid hsl(var(--border));
+    border-radius: 9px;
     background: hsl(var(--muted));
   }
   .panel-selector-title {
-    font-size: 24px;
+    font-size: 14px;
     font-weight: 400;
     line-height: 1.2;
   }
   :global(.panel-header-action-button) {
-    width: 52px;
-    height: 52px;
+    width: 26px;
+    height: 26px;
   }
   :global(.panel-selector-menu) {
-    width: var(--bits-dropdown-menu-anchor-width, 388px);
+    width: var(--bits-dropdown-menu-anchor-width, 194px);
     min-width: 0;
-    border: 2px solid hsl(var(--border));
-    border-radius: 18px;
-    padding: 10px;
+    border: 1px solid hsl(var(--border));
+    border-radius: 9px;
+    padding: 5px;
   }
   :global(.panel-selector-row) {
     align-items: center;
-    height: 68px;
-    gap: 16px;
-    padding: 10px;
-    font-size: 24px;
+    height: 34px;
+    gap: 8px;
+    padding: 5px;
+    font-size: 12px;
     font-weight: 400;
   }
   :global(.panel-selector-row > [data-slot='menu-item-leading']) {
-    width: 44px;
-    height: 44px;
+    width: 22px;
+    height: 22px;
   }
   .panel-selector-row-avatar {
-    width: 44px;
-    height: 44px;
-    --agent-avatar-emphasized-surface-size: 44px;
-    --agent-avatar-emphasized-art-size: 30px;
-    --agent-avatar-emphasized-corner-radius: 10px;
+    width: 22px;
+    height: 22px;
+    --agent-avatar-emphasized-surface-size: 22px;
+    --agent-avatar-emphasized-art-size: 15px;
+    --agent-avatar-emphasized-corner-radius: 5px;
   }
   :global(.panel-actions-menu-content [data-menu-item]) {
-    min-height: 60px;
-    font-size: 28px;
+    min-height: 30px;
+    font-size: 14px;
     line-height: 1.2;
     font-weight: 400;
-    padding: 12px;
-    gap: 12px;
+    padding: 6px;
+    gap: 6px;
   }
   :global(.panel-actions-menu-content [data-slot='menu-label']) {
-    font-size: 26px;
+    font-size: 13px;
     line-height: 1.3;
     font-weight: 400;
-    padding: 12px;
+    padding: 6px;
     color: hsl(var(--muted-foreground));
   }
   :global(.panel-actions-menu-content [data-slot='menu-item-leading']) {
-    width: 28px;
+    width: 14px;
   }
   :global(.panel-actions-menu-content [data-slot='menu-item-leading'] svg) {
-    width: 28px;
-    height: 28px;
+    width: 14px;
+    height: 14px;
   }
   :global(.panel-actions-menu-content [data-slot='menu-command-item'] > kbd) {
-    font-size: 12px;
+    font-size: 11px;
   }
   .panel-move-pad {
     position: relative;
-    width: 240px;
-    height: 240px;
-    margin: 12px auto 20px;
+    width: 120px;
+    height: 120px;
+    margin: 6px auto 10px;
     clip-path: polygon(
-      12px 0,
-      calc(100% - 12px) 0,
-      100% 12px,
-      100% calc(100% - 12px),
-      calc(100% - 12px) 100%,
-      12px 100%,
-      0 calc(100% - 12px),
-      0 12px
+      6px 0,
+      calc(100% - 6px) 0,
+      100% 6px,
+      100% calc(100% - 6px),
+      calc(100% - 6px) 100%,
+      6px 100%,
+      0 calc(100% - 6px),
+      0 6px
     );
   }
   :global(.panel-actions-menu-content .panel-move-direction) {
@@ -2201,20 +2201,20 @@
     background: hsl(var(--accent));
   }
   :global(.panel-move-up) {
-    clip-path: polygon(4px 0, calc(100% - 4px) 0, 54% 44%, 46% 44%);
-    padding-bottom: 160px !important;
+    clip-path: polygon(2px 0, calc(100% - 2px) 0, 54% 44%, 46% 44%);
+    padding-bottom: 80px !important;
   }
   :global(.panel-move-right) {
-    clip-path: polygon(100% 4px, 100% calc(100% - 4px), 56% 54%, 56% 46%);
-    padding-left: 160px !important;
+    clip-path: polygon(100% 2px, 100% calc(100% - 2px), 56% 54%, 56% 46%);
+    padding-left: 80px !important;
   }
   :global(.panel-move-down) {
-    clip-path: polygon(4px 100%, 46% 56%, 54% 56%, calc(100% - 4px) 100%);
-    padding-top: 160px !important;
+    clip-path: polygon(2px 100%, 46% 56%, 54% 56%, calc(100% - 2px) 100%);
+    padding-top: 80px !important;
   }
   :global(.panel-move-left) {
-    clip-path: polygon(0 4px, 44% 46%, 44% 54%, 0 calc(100% - 4px));
-    padding-right: 160px !important;
+    clip-path: polygon(0 2px, 44% 46%, 44% 54%, 0 calc(100% - 2px));
+    padding-right: 80px !important;
   }
   @container (max-width: 420px) {
     .panel-header {
@@ -2223,20 +2223,20 @@
     }
     :global(.panel-header-action-button) {
       width: 32px;
-      height: 52px;
+      height: 32px;
     }
     :global(.panel-selector-button) {
       gap: 8px;
       padding-inline: 6px;
     }
     .panel-header-leading-surface {
-      width: 32px;
-      height: 32px;
-      --agent-avatar-emphasized-surface-size: 32px;
-      --agent-avatar-emphasized-art-size: 24px;
+      width: 26px;
+      height: 26px;
+      --agent-avatar-emphasized-surface-size: 26px;
+      --agent-avatar-emphasized-art-size: 18px;
     }
     .panel-selector-title {
-      font-size: 18px;
+      font-size: 14px;
     }
   }
 </style>

@@ -67,8 +67,8 @@
 
   .panel-font-options :global([data-slot='menu-item-indicator']) {
     order: -1;
-    width: 28px;
-    height: 28px;
+    width: 14px;
+    height: 14px;
     margin-inline: 0;
   }
   .panel-font-options :global([data-slot='menu-item-indicator'] svg) {
@@ -79,8 +79,8 @@
   }
   .panel-font-options :global([data-state='checked'] [data-slot='menu-item-indicator']::after) {
     content: '';
-    width: 24px;
-    height: 24px;
+    width: 12px;
+    height: 12px;
     border-radius: 50%;
     background: hsl(var(--success));
   }
