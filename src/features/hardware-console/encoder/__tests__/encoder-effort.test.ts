@@ -77,7 +77,7 @@ describe('decoded Micro encoder effort and wire behavior', () => {
     expect(mutations()).toHaveLength(0);
     expect(device.navigate).not.toHaveBeenCalled();
     await vi.advanceTimersByTimeAsync(1000);
-    device.turn();
+    device.emit({ m: 'v.oai.hid', p: { k: 'ENC_CW', act: 2 } });
     expect(state.hardwareConsole.encoderBehavior).toBe('workspace-switch');
     expect(device.navigate).toHaveBeenCalledExactlyOnceWith('/workspace/ws-2');
     expect(mutations()).toHaveLength(0);
@@ -731,10 +731,10 @@ describe('decoded Micro encoder effort and wire behavior', () => {
     device.emit({ m: 'v.oai.hid', p: { k: 'ENC_CLK', act: 1 } });
     expect(state.sidebarNav.allSpacesViewMode).toBe('repo');
     mocks.dispatch(hydrateHardwareConsoleEncoderBehavior('workspace-switch'));
-    device.turn();
-    device.turn();
+    device.emit({ m: 'v.oai.hid', p: { k: 'ENC_CW', act: 2 } });
+    device.emit({ m: 'v.oai.hid', p: { k: 'ENC_CW', act: 2 } });
     expect(device.navigate).toHaveBeenCalledTimes(1);
-    device.turn('ccw');
+    device.emit({ m: 'v.oai.hid', p: { k: 'ENC_CC', act: 2 } });
     expect(device.navigate).toHaveBeenLastCalledWith('/workspace/ws-1');
     expect(mutations()).toHaveLength(0);
   });

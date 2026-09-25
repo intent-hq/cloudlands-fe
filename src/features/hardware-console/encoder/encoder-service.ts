@@ -148,7 +148,11 @@ export function installHardwareConsoleEncoder(
       if (!encoderBehaviorHydrated) return;
       if (encoderBehavior === 'workspace-switch') handleEncoderRotate(direction, deps);
       else {
-        dispatch(encoderEffortRotated(direction, resolveDeps(deps).getCurrentWorkspaceId()));
+        // Calibrate effort rotation to the physical Creator Micro 2 report
+        // (intent-hq/intent#5947), shared with Codex Micro. Keep workspace
+        // navigation's existing wire direction and catalog effort order intact.
+        const effortDirection = direction === 'cw' ? 'ccw' : 'cw';
+        dispatch(encoderEffortRotated(effortDirection, resolveDeps(deps).getCurrentWorkspaceId()));
       }
     });
     const offKeydown = decoder.on('keydown', ({ key }) => {
