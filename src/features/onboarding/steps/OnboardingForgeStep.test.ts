@@ -65,6 +65,9 @@ vi.mock('$features/navigation/link-handler', () => ({
 import OnboardingForgeStep from './OnboardingForgeStep.svelte';
 
 const idleGitHub = (): GitHubAuthState => ({
+  mutationRequestId: null,
+  callbacksCancelled: false,
+  isDisconnecting: false,
   isAuthenticated: false,
   requiresDaemonAuth: false,
   user: null,
