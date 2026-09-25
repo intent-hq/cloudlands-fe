@@ -10,6 +10,12 @@
    *   - reveals Message 3
    */
   import { onMount } from 'svelte';
+  import { store as appStore } from '$store/renderer/store';
+  import {
+    discoverLocalReposRequested,
+    onboardingPickerOpened,
+    onboardingPickerClosed,
+  } from '$store/renderer/slices/known-repos/known-repos-slice';
   import { m } from '$shared/paraglide/messages.js';
   import { createLogger } from '$lib/utils/client-logger';
   import { invoke } from '$shared/generated/ipc-client';
@@ -290,8 +296,20 @@
   }
 
   // Notify parent once on mount with pre-filled persisted values (if any)
+  let pickerMounted = $state(false);
   onMount(() => {
     notifyParent();
+    appStore.dispatch(onboardingPickerOpened(false));
+    pickerMounted = true;
+    return () => appStore.dispatch(onboardingPickerClosed());
+  });
+
+  // The initial Local tab is provisional until saved preferences have resolved.
+  // Explicit Local activation below can still request discovery before hydration.
+  $effect(() => {
+    if (pickerMounted && (didApplyPrefill || didApplyPersistedRepo) && activeTab === 'local') {
+      appStore.dispatch(discoverLocalReposRequested());
+    }
   });
 
   const tabs: { id: TabId; label: string }[] = [
@@ -338,7 +356,19 @@
   >
     <Tabs.List class="w-full" aria-label={m.onboarding_projectPicker_chooseProject_title()}>
       {#each tabs as tab (tab.id)}
-        <Tabs.Trigger value={tab.id} class="flex-1">
+        <!-- Request on activation, even when Local is already selected before hydration. -->
+        <Tabs.Trigger
+          value={tab.id}
+          class="flex-1"
+          onclick={() => {
+            if (tab.id === 'local') appStore.dispatch(discoverLocalReposRequested());
+          }}
+          onkeydown={(event) => {
+            if (tab.id === 'local' && (event.key === 'Enter' || event.key === ' ')) {
+              appStore.dispatch(discoverLocalReposRequested());
+            }
+          }}
+        >
           {tab.label}
         </Tabs.Trigger>
       {/each}
