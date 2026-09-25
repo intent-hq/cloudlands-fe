@@ -40,7 +40,7 @@ export function* encoderEffortSaga() {
   let busy = false;
   let live = true;
   let generation = 0;
-  let inFlight: (PendingEffort & { valid: boolean }) | null = null;
+  let inFlight: (PendingEffort & { valid: boolean; stopped: boolean }) | null = null;
   const readPending = (): PendingEffort | null => pending;
   const currentEffort = ({ target }: EncoderEffortFeedback) =>
     appStore.state.agentSessions.byAgentId[target.agentId]?.reasoningEffort ?? null;
@@ -82,7 +82,7 @@ export function* encoderEffortSaga() {
         }
         pending = null;
         const { agentId, workspaceId } = request.target;
-        const write = { ...request, valid: true };
+        const write = { ...request, valid: true, stopped: false };
         inFlight = write;
         const accepted = yield* call(
           applyReasoningEffort,
@@ -103,6 +103,8 @@ export function* encoderEffortSaga() {
               request.echoes = [...new Set([...request.echoes, effort])];
               write.echoes = request.echoes;
             },
+            canReconcileAccepted: () =>
+              write.stopped && sameAgentModel(write) && recognizesEffort(write),
             // Even an ABA turn sequence supersedes a failure rollback.
             canMutate: () =>
               live &&
@@ -187,10 +189,11 @@ export function* encoderEffortSaga() {
     yield* discardPending();
     const write = inFlight;
     if (write?.valid) {
+      write.stopped = true;
       write.valid = false;
       releaseReasoningEffortIntent(write.target.agentId, write.target.workspaceId, write.intent);
-      // An issued RPC cannot be unsent; daemon events reconcile its result.
-      // No unsent choice, feedback, or continuation survives device teardown.
+      // Remove optimistic device work now. An issued success still reconciles
+      // through the shared writer, even when its only echo preceded teardown.
       if (sameAgentModel(write) && recognizesEffort(write)) {
         yield* put(updateSession(write.target.agentId, { reasoningEffort: write.previous }));
       }

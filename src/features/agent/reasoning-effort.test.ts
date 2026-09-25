@@ -75,6 +75,7 @@ import {
   applyReasoningEffort,
   markReasoningEffortIntent,
   reconcileAgentReasoningEffort,
+  releaseReasoningEffortIntent,
 } from './reasoning-effort';
 
 function setStoredEffort(agentId: string, effort: string | null) {
@@ -307,6 +308,35 @@ describe('applyReasoningEffort', () => {
       await applyReasoningEffort('agent-1', 'ws-1', 'high', null, { source: 'encoder', intent }),
     ).toBe(true);
   });
+
+  it.each([false, true])(
+    'reconciles a released issued success only when its caller permits it (%s)',
+    async (canReconcile) => {
+      let settle!: (result: { success: boolean }) => void;
+      mockSetReasoningEffort.mockImplementationOnce(
+        () => new Promise((resolve) => (settle = resolve)),
+      );
+      let live = true;
+      const intent = markReasoningEffortIntent('agent-1', 'ws-1');
+      const writing = applyReasoningEffort('agent-1', 'ws-1', 'low', null, {
+        source: 'encoder',
+        intent,
+        canSend: () => live,
+        canMutate: () => live,
+        canReconcileAccepted: () => canReconcile,
+      });
+      live = false;
+      releaseReasoningEffortIntent('agent-1', 'ws-1', intent);
+      setStoredEffort('agent-1', null);
+      settle({ success: true });
+      expect(await writing).toBe(true);
+      expect(storeState.agentSessions.byAgentId['agent-1'].reasoningEffort).toBe(
+        canReconcile ? 'low' : null,
+      );
+      expect(mockSetReasoningEffort).toHaveBeenCalledTimes(1);
+      expect(mockToastError).not.toHaveBeenCalled();
+    },
+  );
 });
 
 describe('reconcileAgentReasoningEffort', () => {

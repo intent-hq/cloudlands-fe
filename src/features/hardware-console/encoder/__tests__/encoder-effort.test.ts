@@ -998,6 +998,110 @@ describe('decoded Micro encoder effort and wire behavior', () => {
     expect(mutations()).toHaveLength(0);
   });
 
+  it.each(
+    ['modern', 'legacy'].flatMap((protocol) =>
+      ['disconnect', 'cancel'].flatMap((stop) =>
+        [1, 2].map((turns) => ({ protocol, stop, turns })),
+      ),
+    ),
+  )(
+    'reconciles an accepted issued write after its echo and $stop ($protocol, $turns turns)',
+    async ({ protocol, stop, turns }) => {
+      ready();
+      const first = deferred<unknown>();
+      const legacy = vi.fn(() => first.promise);
+      if (protocol === 'legacy') {
+        state.daemonHealth.stats.protocolVersion = '5.1';
+        publish();
+        registerMockIpcHandler(AGENT_CHANNELS.SET_MODEL, legacy);
+      } else request.mockImplementationOnce(() => first.promise);
+      render(EffortPicker, { agentId: 'agent-1', workspaceId: 'ws-1' });
+      const device = manager(protocol === 'legacy' ? 'creator-micro-2' : 'codex-micro');
+      for (let n = 0; n < turns; n++) device.turn();
+      // The authoritative echo can precede the RPC response, with no later echo.
+      mocks.dispatch(
+        updateSession('agent-1', {
+          reasoningEffort: 'low',
+          ...(protocol === 'legacy' ? { model: 'model-a/low' } : {}),
+        }),
+      );
+      if (stop === 'disconnect') device.statusChanged('disconnected');
+      else {
+        device.dispose();
+        for (const task of tasks) task.cancel();
+      }
+      first.resolve(
+        protocol === 'legacy'
+          ? { success: true, data: { success: true, modelId: 'model-a/low' } }
+          : reply('low'),
+      );
+      await flush();
+      expect(effort()).toBe('low');
+      expect(screen.getByTestId('effort-gauge').getAttribute('data-gauge-value')).toBe('0');
+      expect(protocol === 'legacy' ? legacy.mock.calls : mutations()).toHaveLength(1);
+      expect(state.hardwareConsole.encoderEffortFeedback).toBeNull();
+      expect(mocks.notify).not.toHaveBeenCalled();
+      expect(device.raw.size).toBe(0);
+      if (stop === 'cancel') expect(listeners.size).toBe(0);
+    },
+  );
+
+  it.each(
+    ['disconnect', 'cancel'].flatMap((stop) =>
+      ['picker', 'model', 'independent', 'other-agent'].map((edit) => ({ stop, edit })),
+    ),
+  )(
+    'scopes accepted teardown reconciliation around a later $edit edit ($stop)',
+    async ({ stop, edit }) => {
+      ready();
+      const first = deferred<unknown>();
+      const picked = deferred<unknown>();
+      request.mockImplementationOnce(() => first.promise);
+      const device = manager();
+      device.turn();
+      mocks.dispatch(updateSession('agent-1', { reasoningEffort: 'low' }));
+      if (stop === 'disconnect') device.statusChanged('disconnected');
+      else {
+        device.dispose();
+        for (const task of tasks) task.cancel();
+      }
+      let editing: Promise<boolean> | undefined;
+      if (edit === 'picker') {
+        request.mockImplementationOnce(() => picked.promise);
+        editing = applyReasoningEffort('agent-1', 'ws-1', null, effort());
+      } else if (edit === 'model') {
+        mocks.dispatch(updateSession('agent-1', { model: 'model-b', reasoningEffort: 'minimal' }));
+      } else if (edit === 'independent') {
+        mocks.dispatch(updateSession('agent-1', { reasoningEffort: 'high' }));
+      } else {
+        state.workspaceAgents.byWorkspaceId['ws-1'].activeAgentId = 'agent-2';
+        publish();
+        expect(await applyReasoningEffort('agent-2', 'ws-1', 'high', null)).toBe(true);
+      }
+      first.resolve(reply('low'));
+      await flush();
+      const expected =
+        edit === 'picker'
+          ? null
+          : edit === 'model'
+            ? 'minimal'
+            : edit === 'independent'
+              ? 'high'
+              : 'low';
+      expect(effort()).toBe(expected);
+      if (editing) {
+        picked.resolve(reply(null));
+        expect(await editing).toBe(true);
+        await flush();
+        expect(effort()).toBeNull();
+      }
+      expect(effort('agent-2')).toBe(edit === 'other-agent' ? 'high' : null);
+      expect(mutations()).toHaveLength(edit === 'picker' || edit === 'other-agent' ? 2 : 1);
+      expect(state.hardwareConsole.encoderEffortFeedback).toBeNull();
+      expect(mocks.notify).not.toHaveBeenCalled();
+    },
+  );
+
   it.each(['disconnect', 'cancel'])(
     'cleans up pending work, feedback and subscriptions on %s',
     async (how) => {

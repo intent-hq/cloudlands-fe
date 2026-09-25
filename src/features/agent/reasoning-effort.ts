@@ -30,6 +30,8 @@ export type ReasoningEffortWriteOptions = {
   canSend?: () => boolean;
   /** Report the accepted baseline after preceding writes have settled. */
   onConfirmedEffort?: (effort: string | null) => void;
+  /** Reconcile an issued success after teardown without reviving input or feedback. */
+  canReconcileAccepted?: () => boolean;
   /**
    * Re-read after the awaited RPC settles, before the failure rollback and
    * toast: when it returns `false` the caller has lost the right to mutate
@@ -45,7 +47,7 @@ type EffortWriteQueue = {
   identity: string;
   latestIntent: number;
   pending: number;
-  active: { intent: number; canSend?: () => boolean }[];
+  active: { intent: number; issued: boolean; canSend?: () => boolean }[];
   tail?: Promise<void>;
 };
 
@@ -62,7 +64,7 @@ export function markReasoningEffortIntent(agentId: string, workspaceId: string):
   return intent;
 }
 
-/** Relinquish only the discarded device choice, preserving any control write. */
+/** Discard unsent choices; issued writes can still settle their accepted value. */
 export function releaseReasoningEffortIntent(
   agentId: string,
   workspaceId: string,
@@ -73,7 +75,7 @@ export function releaseReasoningEffortIntent(
   queue.latestIntent = Math.max(
     queue.confirmedIntent,
     ...queue.active
-      .filter((write) => write.intent !== intent && write.canSend?.() !== false)
+      .filter((write) => write.issued || (write.intent !== intent && write.canSend?.() !== false))
       .map((write) => write.intent),
   );
 }
@@ -122,7 +124,7 @@ export async function applyReasoningEffort(
   const intent = options?.intent ?? markReasoningEffortIntent(agentId, workspaceId);
   writes.latestIntent = Math.max(writes.latestIntent, intent);
   writes.pending++;
-  const active = { intent, canSend: options?.canSend };
+  const active = { intent, issued: false, canSend: options?.canSend };
   writes.active.push(active);
   const preceding = writes.tail;
   appStore.dispatch(
@@ -161,6 +163,7 @@ export async function applyReasoningEffort(
         if (!legacyModelId) {
           result = { success: false, error: m.chat_effortPicker_updateFailed_error() };
         } else {
+          active.issued = true;
           const legacyResult = await agentClient.setModel(
             agentId,
             legacyModelId,
@@ -172,6 +175,7 @@ export async function applyReasoningEffort(
             : { success: false, error: legacyResult.error };
         }
       } else {
+        active.issued = true;
         result = await appClient.agents.setReasoningEffort({
           agentId,
           workspaceId,
@@ -184,7 +188,12 @@ export async function applyReasoningEffort(
         writes.confirmedIntent = intent;
       }
       options?.onConfirmedEffort?.(writes.confirmed);
-      if (result.success) return true;
+      if (result.success) {
+        if (writes.latestIntent === intent && sameModel() && options?.canReconcileAccepted?.()) {
+          appStore.dispatch(updateSession(agentId, { reasoningEffort: effort }));
+        }
+        return true;
+      }
 
       logger.error('Failed to set reasoning effort', { agentId, error: result.error });
       if (!ownsIntent()) return false;
