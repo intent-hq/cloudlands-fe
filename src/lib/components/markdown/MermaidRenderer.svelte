@@ -1339,7 +1339,8 @@ ${source}`;
     padMermaidEdgeLabels(svg);
     addMermaidLabelKnockouts(svg);
     addMermaidLabelFeathers(svg);
-    reserveFlowchartClusterHeaderBands(svg, clusterMembership);
+    if (svg.getAttribute('aria-roledescription') !== 'flowchart-v2')
+      reserveFlowchartClusterHeaderBands(svg, clusterMembership);
     repairEntityDividers(svg);
     refineMermaidCylinderNodes(svg);
     repairFlowchartNodeOutlines(svg);
@@ -1348,7 +1349,7 @@ ${source}`;
       svg.dataset.flowchartDirection =
         source.match(/^\s*(?:flowchart|graph)\s+(\w+)\b/m)?.[1] ?? '';
     // Keep native ranks and routes together; source-order stacking separates branches from joins.
-    if (flowchart && !svg.querySelector('g.cluster')) {
+    if (flowchart) {
       const bounds = svg.getBBox();
       const padding = 16;
       const width = Math.ceil(bounds.width + padding * 2);
@@ -1605,17 +1606,21 @@ ${source}`;
       // Our own final-error UI owns failures; Mermaid must not paint an error into the document.
       config.suppressErrorRendering = true;
       const usesStateDiagram = /^\s*stateDiagram(?:-v2)?\b/m.test(renderCode);
-      const usesUngroupedFlowchart = usesHtmlLabels && !/\bsubgraph\b/.test(renderCode);
       config.layout = usesStateDiagram ? 'elk' : 'dagre';
-      if (usesUngroupedFlowchart) {
-        config.flowchart = { ...config.flowchart, curve: 'basis' };
+      if (usesHtmlLabels) {
+        config.flowchart = {
+          ...config.flowchart,
+          curve: 'basis',
+          nodeSpacing: 48,
+          rankSpacing: 64,
+        };
       }
       if (compactLayout) {
         config.flowchart = {
           ...config.flowchart,
-          nodeSpacing: usesUngroupedFlowchart ? 24 : 4,
+          nodeSpacing: 48,
           padding: 9,
-          rankSpacing: 24,
+          rankSpacing: 48,
           wrappingWidth: narrowLayout && /\bsubgraph\b/.test(renderCode) ? 80 : 120,
         };
         if (narrowLayout) {

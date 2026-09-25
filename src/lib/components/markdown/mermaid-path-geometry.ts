@@ -1034,9 +1034,8 @@ export function refineMermaidCylinderNodes(svg: SVGSVGElement) {
     );
     if (!shape || shape.dataset.diagramCylinder === 'true') continue;
     const bounds = shape.getBBox();
-    const label = node.querySelector<SVGGElement>(':scope > .label')?.getBBox();
-    const height = Math.max(bounds.height, 68);
-    const width = Math.max(bounds.width, height * 1.45, (label?.width ?? 0) + 32);
+    const height = bounds.height;
+    const width = bounds.width;
     const radiusX = width / 2;
     const radiusY = Math.min(8, height * 0.14);
     const top = -height / 2;
