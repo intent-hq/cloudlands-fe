@@ -2912,11 +2912,17 @@ function computeOrthogonalEdgePaths(
         groups?.length ? 0 : 32,
         info.edge.label ? estimateEdgeLabelWidth(info.edge.label) / 2 + 4 : 0,
       );
-      let x =
-        minX -
-        NODE_CLEARANCE -
-        labelClearance -
-        ((backwardTrackMap.get(info.edge.id) ?? 0) + 1) * TRACK_SPACING;
+      const top = Math.min(info.fromNode.y, info.toNode.y);
+      const bottom = Math.max(
+        info.fromNode.y + info.fromNode.height,
+        info.toNode.y + info.toNode.height,
+      );
+      const localLeft = Math.min(
+        ...[...nodes, ...(groups ?? [])]
+          .filter((node) => node.y < bottom && node.y + node.height > top)
+          .map((node) => node.x),
+      );
+      let x = localLeft - NODE_CLEARANCE - labelClearance - TRACK_SPACING;
       const adjacentTracks = backwardEdges
         .filter((other) => other.edge.from === info.edge.to || other.edge.to === info.edge.from)
         .flatMap((other) =>

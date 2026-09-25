@@ -1610,7 +1610,8 @@ ${source}`;
       // Our own final-error UI owns failures; Mermaid must not paint an error into the document.
       config.suppressErrorRendering = true;
       const usesStateDiagram = /^\s*stateDiagram(?:-v2)?\b/m.test(renderCode);
-      config.layout = usesStateDiagram ? 'elk' : 'dagre';
+      const usesEntityDiagram = /^\s*erDiagram\b/m.test(renderCode);
+      config.layout = usesStateDiagram || usesEntityDiagram ? 'elk' : 'dagre';
       if (usesHtmlLabels) {
         config.flowchart = {
           ...config.flowchart,
