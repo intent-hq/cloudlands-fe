@@ -6150,6 +6150,8 @@
   "settings_hardware_pttHint_doubleHold_description": "ダブルプレス長押し: 押している間録音し、離すと送信します。",
   "settings_hardware_knob_ariaLabel": "回転ノブ — 機能を表示",
   "settings_hardware_knobExplainer_label": "回転ノブ",
+  "settings_hardware_knobExplainer_effort_description": "回すと現在のエージェントの推論の深さを調整します。時計回りで上がり、反時計回りで下がり、対応する上限・下限で止まります。",
+  "settings_hardware_knobExplainer_configurable_description": "回転時の動作は、上の「{setting}」設定で変更できます。",
   "settings_hardware_knobExplainer_rotate_description": "回すとワークスペースを順に切り替えます。時計回りで最近アクティブな方へ、反時計回りで古い方へ移動し、リストの端で止まります。",
   "settings_hardware_knobExplainer_click_description": "クリックすると「すべてのワークスペース」サイドバーが開き、さらにクリックすると「最近」「リポジトリ」「ステータス」ビューが切り替わります。",
   "settings_hardware_joystick_ariaLabel": "ジョイスティック — 機能を表示",

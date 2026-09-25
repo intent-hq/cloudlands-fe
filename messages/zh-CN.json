@@ -6150,6 +6150,8 @@
   "settings_hardware_pttHint_doubleHold_description": "双击并按住：按住期间录音，松开后发送。",
   "settings_hardware_knob_ariaLabel": "旋钮 — 查看功能",
   "settings_hardware_knobExplainer_label": "旋钮",
+  "settings_hardware_knobExplainer_effort_description": "旋转可调整当前智能体的推理强度：顺时针提高，逆时针降低，并在支持的上限和下限处停止。",
+  "settings_hardware_knobExplainer_configurable_description": "可通过上方的“{setting}”设置更改旋转行为。",
   "settings_hardware_knobExplainer_rotate_description": "旋转可循环切换工作区：顺时针切换到最近活跃的工作区，逆时针切换到较早的工作区，到列表两端即停止。",
   "settings_hardware_knobExplainer_click_description": "点击打开“所有工作区”侧边栏；继续点击可在“最近”、“仓库”和“状态”视图间切换。",
   "settings_hardware_joystick_ariaLabel": "摇杆 — 查看功能",
