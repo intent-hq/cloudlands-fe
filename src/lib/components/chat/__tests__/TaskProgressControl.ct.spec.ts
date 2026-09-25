@@ -19,6 +19,11 @@ const overflowTasks = Array.from({ length: 20 }, (_, index) => ({
   status: 'pending' as const,
 }));
 
+function expectNoTaskDiskOutline(style: { outlineStyle: string }) {
+  // Chromium versions serialize the unused width differently when style is none.
+  expect(style.outlineStyle, 'Task disks must not paint an outline').toBe('none');
+}
+
 async function pressScrollKey(page: Page, region: Locator, key: string) {
   // Native keyboard scrolls are not WAAPI animations. Await their end before
   // sending the next key, rather than observing an intermediate scroll offset.
@@ -410,6 +415,7 @@ for (const theme of ['light', 'dark'] as const) {
             style.borderLeftWidth,
           ],
           outlineWidth: style.outlineWidth,
+          outlineStyle: style.outlineStyle,
           boxShadow: style.boxShadow,
           opacity: style.opacity,
           width: rect.width,
@@ -418,13 +424,13 @@ for (const theme of ['light', 'dark'] as const) {
       });
     });
     expect(styles.length).toBeGreaterThan(tasks.length);
+    for (const style of styles) expectNoTaskDiskOutline(style);
     expect(
       styles.every(
         (style) =>
           style.background === style.tokenBackground &&
           style.backgroundAlpha === 1 &&
           style.borderWidths.every((width) => width === '0px') &&
-          style.outlineWidth === '0px' &&
           style.boxShadow === 'none' &&
           style.opacity === '1' &&
           style.width === 14 &&
@@ -464,6 +470,20 @@ for (const theme of ['light', 'dark'] as const) {
     await expect(page.getByTestId('task-progress-row')).toHaveCount(tasks.length);
   });
 }
+
+test('the task disk outline contract rejects a visible outline', async ({ mount, page }) => {
+  await mount(TaskProgressControl, { props: { tasks: [...tasks] } });
+  const disk = page.getByTestId('task-progress-status-icon').first();
+  await expect(disk).toBeVisible();
+  const outlined = await disk.evaluate((node) => {
+    (node as HTMLElement).style.outline = '3px solid currentColor';
+    const style = getComputedStyle(node);
+    return { outlineStyle: style.outlineStyle, outlineWidth: style.outlineWidth };
+  });
+  expect(outlined.outlineStyle).toBe('solid');
+  expect(parseFloat(outlined.outlineWidth)).toBeGreaterThan(0);
+  expect(() => expectNoTaskDiskOutline(outlined)).toThrow();
+});
 
 test('exposes one atomic live status and keeps the full task list non-live in the accessibility tree', async ({
   mount,
