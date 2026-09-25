@@ -47,6 +47,7 @@ import type {
 } from '$features/sentry-auth/types';
 import { backendRequest } from '$lib/client/live/backend-transport';
 import { LiveIntegrationsClient } from '$lib/client/live/live-integrations-client';
+import { mutationErrorMessage } from '$lib/client/live/live-support';
 import { createLogger } from '$lib/utils/client-logger';
 import {
   invalidateGitHubAuthStatus,
@@ -344,7 +345,7 @@ registerMockIpcHandler(FORGE_AUTH_CHANNELS.CONNECT, async (arg): Promise<ForgeCo
     });
     return { success: false, error: 'The device authorization could not be started.' };
   } catch (error) {
-    return { success: false, error: errorMessage(error), code: forgeErrorCode(error) };
+    return { success: false, error: mutationErrorMessage(error), code: forgeErrorCode(error) };
   }
 });
 
