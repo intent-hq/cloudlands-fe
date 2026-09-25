@@ -19,6 +19,7 @@ test('keeps failed-response controls aligned and contained across the production
     });
   });
   const component = await mount(StreamingStatusFailureGeometryHost);
+  const geometryHost = component.getByTestId('failed-response-geometry-host');
   let resetKey = 0;
 
   for (const theme of ['light', 'dark'] as const) {
@@ -38,6 +39,16 @@ test('keeps failed-response controls aligned and contained across the production
                 resetKey: ++resetKey,
               },
             });
+            // Reduced motion still permits a short zoom transition. Wait for
+            // the requested scale before measuring the unchanged geometry contract.
+            await expect
+              .poll(() =>
+                geometryHost.evaluate((node) => ({
+                  zoom: Number(getComputedStyle(node).zoom),
+                  width: node.getBoundingClientRect().width,
+                })),
+              )
+              .toEqual({ zoom, width: width * zoom });
             const alert = component.getByRole('alert');
             const message = component.getByTestId('error-message');
             await expect(alert).toHaveCount(1);
