@@ -43,6 +43,7 @@ const mocks = vi.hoisted(() => {
     update: vi.fn(),
     hydrated$: writable(false),
     selectedModel$: writable(''),
+    configuredModels$: writable<Record<string, string>>({}),
     defaultReasoningEffort$: writable(''),
     compactFormState$: writable<unknown>(null),
     lastSubmittedAgent$: writable<unknown>(null),
@@ -104,6 +105,7 @@ vi.mock('$store/renderer/slices/model/model-selectors', () => ({
   selectAvailableModels: () => mocks.readable([]),
   selectAvailableModelsProviderId: () => mocks.readable(''),
   selectSelectedModel: () => mocks.selectedModel$,
+  selectProviderModels: () => mocks.configuredModels$,
   selectDefaultReasoningEffort: () => mocks.defaultReasoningEffort$,
   selectModelEffortLevels: { select: () => undefined },
 }));
@@ -334,6 +336,7 @@ describe('initializer model-override persistence (monorepo#2678)', () => {
     sessionStorage.clear();
     mocks.hydrated$.set(false);
     mocks.selectedModel$.set('');
+    mocks.configuredModels$.set({});
     mocks.defaultReasoningEffort$.set('');
     mocks.compactFormState$.set(null);
     mocks.lastSubmittedAgent$.set(null);
@@ -452,6 +455,7 @@ describe('initializer model-override persistence (monorepo#2678)', () => {
     mocks.hydrated$.set(true);
     const { component } = render(CompactWorkspaceInitializer, { props: { isExpanded: true } });
     mocks.selectedModel$.set('fable-5');
+    mocks.configuredModels$.set({ auggie: 'fable-5' });
     mocks.defaultReasoningEffort$.set('high');
     await waitFor(() =>
       expect(screen.getAllByTestId('picker-reasoning')[0].textContent).toBe('high'),

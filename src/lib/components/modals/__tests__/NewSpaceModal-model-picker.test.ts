@@ -66,6 +66,7 @@ vi.mock('$store/renderer/slices/provider-settings/provider-settings-selectors', 
 vi.mock('$store/renderer/slices/model/model-selectors', () => ({
   selectSelectedModel: () => mocks.readable(undefined),
   selectDefaultReasoningEffort: () => mocks.readable(''),
+  selectProviderModels: () => mocks.readable({}),
   selectAvailableModels: () => mocks.readable(mocks.models),
   selectAvailableModelsProviderId: () => mocks.readable('auggie'),
   selectModelFallbackInfo: () => mocks.readable(null),

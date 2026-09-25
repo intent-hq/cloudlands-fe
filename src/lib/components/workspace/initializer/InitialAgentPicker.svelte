@@ -18,6 +18,7 @@
     selectAvailableModelsProviderId,
     selectModelEffortLevels,
     selectSelectedModel,
+    selectProviderModels,
     selectDefaultReasoningEffort,
   } from '$store/renderer/slices/model/model-selectors';
   import { selectWorkspaceInitializerHydrated } from '$store/renderer/slices/workspace-initializer/workspace-initializer-selectors';
@@ -62,6 +63,7 @@
   const initializerHydrated$ = selectWorkspaceInitializerHydrated();
   const activeProviderId$ = selectActiveProviderId();
   const selectedModel$ = selectSelectedModel();
+  const configuredModels$ = selectProviderModels();
   const defaultReasoningEffort$ = selectDefaultReasoningEffort();
   const availableModels$ = selectAvailableModels();
   const availableModelsProviderId$ = selectAvailableModelsProviderId();
@@ -442,10 +444,13 @@
     if (selectedProvider !== $defaultProviderId$) return null;
     const specialist = $specialists$.find((row) => row.id === selectedSpecialist);
     if (specialist?.defaultModel || specialist?.reasoningEffort) return null;
-    if (!model || !$selectedModel$) return null;
+    // selectSelectedModel also falls back to a catalog default. Only the
+    // persisted Settings selection makes the default effort apply at creation.
+    const configuredModel = $configuredModels$[selectedProvider];
+    if (!model || !configuredModel) return null;
     const split = splitLegacyCompoundId(model);
     if (split.providerId && split.providerId !== selectedProvider) return null;
-    if (split.modelId !== splitLegacyCompoundId($selectedModel$).modelId) return null;
+    if (split.modelId !== splitLegacyCompoundId(configuredModel).modelId) return null;
     // Only a matching option with an effort outranks Settings. Merely listing
     // alternate models must not hide the inherited default on a fresh form.
     const optionEffort = specialist?.modelOptions?.some((option) => {
