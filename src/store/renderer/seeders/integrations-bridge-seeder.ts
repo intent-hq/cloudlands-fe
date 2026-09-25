@@ -118,9 +118,10 @@ registerMockIpcHandler(
 // re-authorized for new scopes (intent#5206). The daemon swaps the stored
 // token on authorize, so the old one keeps working until then.
 
-/** `github.connect` success payload (§5.27) — user-facing codes only. */
+/** `github.connect` success payload (§5.27) — user-facing codes plus the flow's id. */
 interface GitHubConnectWire {
   ok?: boolean;
+  flowId?: string;
   userCode?: string;
   verificationUri?: string;
   expiresIn?: number;
@@ -149,6 +150,7 @@ registerMockIpcHandler(GITHUB_AUTH_CHANNELS.START_AUTH, async (arg): Promise<Sta
       invalidateGitHubAuthStatus();
       return {
         success: true,
+        ...(typeof result.flowId === 'string' ? { flowId: result.flowId } : {}),
         oauthUrl: result.verificationUri,
         userCode: result.userCode,
         verificationUri: result.verificationUri,
@@ -181,12 +183,18 @@ registerMockIpcHandler(GITHUB_AUTH_CHANNELS.POLL_FOR_TOKEN, async () => {
 });
 
 // `github.cancelAuth` (§5.27) — cancels the pending flow; the daemon's poll
-// task exits cooperatively. The contract shape is `{ ok: true, cancelled }`
-// (failures arrive as JSON-RPC errors), so only a confirmed `ok: true` maps
-// to a successful envelope — anything else is treated as a failed cancel.
-registerMockIpcHandler(GITHUB_AUTH_CHANNELS.CANCEL_AUTH, async () => {
+// task exits cooperatively. A `flowId` (from `github.connect`) scopes the
+// cancel to that flow: any other pending flow is left alone (`cancelled:
+// false`). The contract shape is `{ ok: true, cancelled }` (failures arrive
+// as JSON-RPC errors), so only a confirmed `ok: true` maps to a successful
+// envelope — anything else is treated as a failed cancel.
+registerMockIpcHandler(GITHUB_AUTH_CHANNELS.CANCEL_AUTH, async (arg) => {
+  const flowId = asRecord(arg).flowId;
   try {
-    const result = await backendRequest<{ ok?: boolean }>('github.cancelAuth');
+    const result =
+      typeof flowId === 'string'
+        ? await backendRequest<{ ok?: boolean }>('github.cancelAuth', { flowId })
+        : await backendRequest<{ ok?: boolean }>('github.cancelAuth');
     if (result?.ok !== true) {
       return { success: false, error: 'The daemon did not confirm the cancel.' };
     }
