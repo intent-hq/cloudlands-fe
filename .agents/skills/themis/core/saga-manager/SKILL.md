@@ -1,14 +1,13 @@
 ---
 name: core/saga-manager
 description: >-
-  Use for Store saga start/stop/restart behavior, crash reports,
-  addCrash/clearCrashes, and retry backoff. Package saga-manager internals are
-  not app imports.
+  Use for Store saga init/run/cancel/dispose and restart behavior, crash reports,
+  and retry backoff. Saga-manager internals, including addCrash/clearCrashes,
+  are not app imports.
 type: sub-skill
 library: themis
 requires:
   - core
-  - core/sagas
   - core/import-boundaries
   - core/state-serialization
 sources:
@@ -38,13 +37,19 @@ Use this skill when an agent must explain, verify, or minimally adjust saga mana
 - **SHOULD** run targeted saga-manager tests when behavior claims change.
 - **NEVER** document `addCrash`, `clearCrashes`, reducer state paths, or `@internal_sagaManager` as public app APIs unless a separate public export task approves it.
 
-## Setup — where the manager fits
+## Store saga lifecycle
 
-- `Store.init()` starts the package-owned saga manager internally.
-- App sagas are started explicitly with `store.runSaga(sagaFn)`; Store derives a manager name from the saga function.
+This section owns the shared Store saga lifecycle contract. For where app startup
+belongs, follow [Application saga startup](../sagas/SKILL.md#application-saga-startup);
+the selected Store family supplies framework-specific wiring.
+
+- Initialize the Store before starting app sagas. `Store.init()` wires the Redux store and middleware, creates the selected Store variant's selector resources, and starts the package-owned saga manager internally; it does not auto-start app sagas.
+- App sagas are started explicitly with `store.runSaga(sagaFn)` after initialization; Store derives a manager name from the saga function.
 - `store.runSaga(sagaFn)` dispatches `startSaga(name, sagaFn)` and returns a cancel function that dispatches `stopSaga(name)`; the manager listens for those lifecycle actions.
+- Retain each returned cancel function and invoke it when that lifetime owner ends. Shared-task reference counting is defined in [Start, stop, restart, and backoff mechanics](#start-stop-restart-and-backoff-mechanics).
 - `Store.dispose()` and the disposer returned by `Store.init()` tear down the initialized Store runtime and stop Store-owned saga tasks, including running app sagas forked by the manager.
-- The reserved manager name is `@internal_sagaManager`; do not register, run, or expose it as an app saga.
+- Whole-Store teardown belongs only to the owner ending the entire Store context; it is not a substitute for an individual saga owner's cancel function.
+- The reserved manager name is `@internal_sagaManager`; do not register, run, or expose it as an app saga. App code must not import package-internal actions such as `addCrash` or `clearCrashes`.
 
 ## Core Patterns
 
@@ -66,11 +71,11 @@ Use this skill when an agent must explain, verify, or minimally adjust saga mana
 - Clearing one saga does not clear reports for other saga names.
 - Treat `clearCrashes` as package-internal until a public export/API is intentionally added.
 
-### 4. Start, stop, restart, and backoff mechanics
+### Start, stop, restart, and backoff mechanics
 
 - Multiple overlapping `store.runSaga(sagaFn)` calls for the same derived saga name and function share one running task and increment a reference counter.
 - The saga stops only after every returned cancel function has been invoked.
-- Full Store disposal is a separate lifecycle boundary: use `store.dispose()` only when ending the whole Store context, not as a replacement for normal per-mount `store.runSaga(sagaFn)` cancels.
+- Full Store disposal is a separate lifecycle boundary: follow [Store saga lifecycle](#store-saga-lifecycle), not disposal as a replacement for per-owner cancels.
 - If the managed saga throws an unhandled error, `autoRestart` records the crash, logs it, waits, and restarts the saga automatically.
 - `getBackOffDelay(restarts)` is `min(1000 * 2^restarts, 10 minutes)`: first restart waits 1s, then 2s, 4s, and so on up to the cap.
 - Restart pressure decays after stable runtime: before incrementing, the manager subtracts one restart count per full minute since the last start, bounded at zero.
@@ -163,6 +168,6 @@ function closeDetailsPanelSafely(cancelSyncTodos: () => void) {
 ## See also
 
 - `@augmentcode/themis/docs/SAGAS.md#saga-manager` — canonical human-facing explanation.
-- `core/sagas` — general typed-redux-saga implementation rules.
+- [Do](../sagas/SKILL.md#do) and [Application saga startup](../sagas/SKILL.md#application-saga-startup) — typed-redux-saga implementation rules and framework-neutral startup ownership.
 - `core/import-boundaries` — public package exports and forbidden deep imports.
 - `core/testing` — saga/reducer verification patterns.

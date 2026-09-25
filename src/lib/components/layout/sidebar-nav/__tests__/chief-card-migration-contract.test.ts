@@ -67,7 +67,7 @@ describe('Chief card migration contract', () => {
       if (action?.type === LAUNCH_TYPE) {
         launchActions.push(action);
         action.success({ id: 'agent-chief-created' } as unknown as AgentSession);
-        return action;
+        return action.promise;
       }
       return originalDispatch(action);
     });
