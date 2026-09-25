@@ -29,6 +29,7 @@ import type {
   TransferStartParams,
   TransferStartResult,
 } from '../../../shared/types/workspace-transfer';
+import { relayErrorMessage as errText } from './json-rpc-errors';
 
 /** Structured rejection when another window owns the active session. */
 const NOT_OWNER = {
@@ -139,10 +140,6 @@ const TRANSFER_EVENT_TYPES = [
   'workspace:transfer:ready',
   'workspace:transfer:failed',
 ];
-
-function errText(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
-}
 
 export function createWorkspaceTransferRelay(deps: TransferRelayDeps): WorkspaceTransferRelay {
   let session: RelaySession | null = null;

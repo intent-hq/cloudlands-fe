@@ -8,6 +8,7 @@
 
 import { createHash } from 'node:crypto';
 import { describe, expect, it, vi } from 'vitest';
+import { JsonRpcError } from './json-rpc-errors';
 import type { RelayRpcClient } from './workspace-transfer-relay';
 import {
   createWorkspaceImportRelay,
@@ -124,6 +125,56 @@ function makeRelay(deps: ImportRelayDeps) {
 }
 
 describe('workspace import relay', () => {
+  it.each(['string', 'object'])(
+    'preserves the %s RPC cause in the result and log',
+    async (shape) => {
+      const detail = 'UNIQUE constraint failed: interrupted_agent.agent_id';
+      const client = makeClient({
+        'workspace.import.commit': () =>
+          new JsonRpcError({
+            code: -32603,
+            message: 'Internal error',
+            data: shape === 'string' ? detail : { detail, token: 'private-payload' },
+          }),
+      });
+      const file = makeFile();
+      const { deps } = makeDeps(client, file);
+
+      const result = await makeRelay(deps).start({}, client.client);
+
+      expect(result).toEqual({ success: false, error: `Internal error: ${detail}` });
+      expect(deps.logger.warn).toHaveBeenCalledWith('workspace import failed', {
+        filePath: '/tmp/in.zip',
+        error: `Internal error: ${detail}`,
+      });
+      expect(client.calls).toContainEqual({
+        method: 'workspace.import.commit',
+        params: { importId: 'import-1' },
+      });
+      expect(client.calls.at(-1)).toEqual({
+        method: 'workspace.import.abort',
+        params: { importId: 'import-1' },
+      });
+      expect(file.close).toHaveBeenCalledOnce();
+    },
+  );
+
+  it('keeps a cancelled commit quiet even when its RPC failure has detail', async () => {
+    const client = makeClient({
+      'workspace.import.commit': async () => {
+        await relay.cancel();
+        throw new JsonRpcError({ code: -32603, message: 'Internal error', data: 'commit refused' });
+      },
+    });
+    const file = makeFile();
+    const { deps } = makeDeps(client, file);
+    const relay = makeRelay(deps);
+
+    expect(await relay.start({}, client.client)).toEqual({ success: false, canceled: true });
+    expect(deps.logger.warn).not.toHaveBeenCalled();
+    expect(file.close).toHaveBeenCalledOnce();
+  });
+
   it('runs begin → chunk → commit with sha/size from the file', async () => {
     const client = makeClient();
     const file = makeFile();

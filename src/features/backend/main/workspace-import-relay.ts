@@ -24,6 +24,7 @@ import type {
 } from '../../../shared/types/workspace-transfer';
 import type { RelayRpcClient } from './workspace-transfer-relay';
 import { readZipManifest, type ZipByteSource } from './zip-manifest';
+import { relayErrorMessage as errText } from './json-rpc-errors';
 
 /** Random-access handle over the picked archive (injectable for tests). */
 export interface ImportFileSource extends ZipByteSource {
@@ -73,10 +74,6 @@ export interface WorkspaceImportRelay {
     ownerId: number,
   ): Promise<ImportStartResult>;
   cancel(ownerId: number): Promise<ImportCancelResult>;
-}
-
-function errText(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
 }
 
 /** Structured rejection when another window owns the active session. */

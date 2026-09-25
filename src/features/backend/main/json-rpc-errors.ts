@@ -8,6 +8,13 @@
  * `data.code` from the daemon when one is present).
  */
 
+import { m } from '../../../shared/paraglide/messages.js';
+import {
+  describeUrlForLog,
+  sanitizeCommandForDisplay,
+} from '../../../shared/utils/sanitize-credentials';
+import { scrubToken } from '../../deeplink/utils/scrub-token';
+
 /** Raw JSON-RPC error object as received from the daemon. */
 export interface JsonRpcErrorShape {
   code: number;
@@ -73,4 +80,47 @@ export class JsonRpcError extends Error {
   toErrorPayload(): { code: string; message: string; data: unknown; rpcCode: number } {
     return { code: this.code, message: this.message, data: this.data, rpcCode: this.rpcCode };
   }
+}
+
+/**
+ * A bounded diagnostic for the transfer/import dialogs and their logs. Match
+ * the renderer's mutationErrorMessage convention for generic internal errors,
+ * without serializing arbitrary data or changing the transport's error shape.
+ */
+export function relayErrorMessage(error: unknown): string {
+  const message =
+    error instanceof Error
+      ? error.message
+      : typeof error === 'string'
+        ? error
+        : m.workspace_transfer_unknown_error();
+  let text = message;
+  // i18n-ignore (match the daemon's JSON-RPC wire message)
+  if (message === 'Internal error' && error && typeof error === 'object' && 'data' in error) {
+    const data = error.data;
+    const detail = data && typeof data === 'object' && 'detail' in data ? data.detail : undefined;
+    if (typeof detail === 'string' && detail.trim() && detail.trim() !== message) {
+      text = `${message}: ${detail.trim()}`;
+    }
+  }
+
+  // Reuse command and pairing credential scrubbers; diagnostics can also
+  // contain bare auth headers, JSON fields and URLs with signed query params.
+  text = sanitizeCommandForDisplay(
+    scrubToken(
+      text.replace(
+        /-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?(?:-----END [A-Z ]*PRIVATE KEY-----|$)/g,
+        '[REDACTED]',
+      ),
+    ),
+  )
+    .replace(/[a-z][a-z\d+.-]*:\/\/[^\s"'<>]+/gi, (url) => describeUrlForLog(url))
+    .replace(/\b(Bearer|Basic)\s+[a-z\d._~+\/-]+=*/gi, '$1 ***')
+    .replace(
+      /(["']?[\w-]*(?:token|secret|password|passwd|pwd|credential|authorization|api[-_]?key)["']?\s*[:=]\s*)(?:"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|[^\s,;}&]+)/gi,
+      '$1***',
+    )
+    // Keep one log line; control characters must not forge diagnostic entries.
+    .replace(/[\x00-\x1f\x7f]/g, ' ');
+  return text.length > 2048 ? `${text.slice(0, 2047)}…` : text;
 }
