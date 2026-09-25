@@ -273,6 +273,10 @@ try {
       await observer.detach();
     },
   );
+} catch (error) {
+  report.error = String(error);
+  process.exitCode = 1;
+  throw error;
 } finally {
   await bounded(browser.close(), 'browser cleanup');
   report.finishedAt = new Date().toISOString();
