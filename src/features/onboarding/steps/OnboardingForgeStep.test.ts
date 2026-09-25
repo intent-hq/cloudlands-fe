@@ -547,26 +547,31 @@ describe('OnboardingForgeStep', () => {
     expect(props.onSkip).toHaveBeenCalledOnce();
   });
 
-  it('skipping while a GitLab grant is pending cancels it before advancing', async () => {
-    mocks.userPreferences.value = { ...preferenceDefaults, labsGitLabEnabled: true };
-    mocks.gitlabAuth.value = {
-      ...idleGitLab(),
-      isAuthenticating: true,
-      deviceFlow: {
-        userCode: 'WXYZ-5678',
-        verificationUri: 'https://gitlab.com/oauth/device',
-        expiresIn: 300,
-        interval: 5,
-      },
-    };
-    const props = baseProps();
-    const { container } = render(OnboardingForgeStep, { props });
+  it.each([false, true])(
+    'skipping during GitLab setup cancels before advancing (code received=%s)',
+    async (codeReceived) => {
+      mocks.userPreferences.value = { ...preferenceDefaults, labsGitLabEnabled: true };
+      mocks.gitlabAuth.value = {
+        ...idleGitLab(),
+        isAuthenticating: true,
+        deviceFlow: codeReceived
+          ? {
+              userCode: 'WXYZ-5678',
+              verificationUri: 'https://gitlab.com/oauth/device',
+              expiresIn: 300,
+              interval: 5,
+            }
+          : null,
+      };
+      const props = baseProps();
+      const { container } = render(OnboardingForgeStep, { props });
 
-    await fireEvent.click(findButton(container, 'Skip for now')!);
-    expect(dispatched('gitlabAuth/cancelAuth')).toHaveLength(1);
-    expect(dispatched('githubAuth/cancelAuth')).toHaveLength(0);
-    expect(props.onSkip).toHaveBeenCalledOnce();
-  });
+      await fireEvent.click(findButton(container, 'Skip for now')!);
+      expect(dispatched('gitlabAuth/cancelAuth')).toHaveLength(1);
+      expect(dispatched('githubAuth/cancelAuth')).toHaveLength(0);
+      expect(props.onSkip).toHaveBeenCalledOnce();
+    },
+  );
 
   it('skipping when idle does not dispatch any cancelAuth', async () => {
     const props = baseProps();

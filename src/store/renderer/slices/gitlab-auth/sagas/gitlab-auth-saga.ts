@@ -124,7 +124,20 @@ function* readStatus(host?: string): SagaGenerator<ForgeAuthStatus | null> {
  * complete on the slice's previous host, before the selection had been
  * published.
  */
-type IntentFence = { generation: number };
+type IntentFence = {
+  generation: number;
+  // Cleanup history only, not the selected slice host. A settled newer owner
+  // still protects older calls; release the record once all starts finish.
+  deviceIntents: Map<
+    string,
+    {
+      activeGeneration: number | null;
+      cancelledThrough: number;
+      pendingStarts: number;
+      needsCleanup: boolean;
+    }
+  >;
+};
 
 function bumpIntent(fence: IntentFence): number {
   fence.generation += 1;
@@ -282,12 +295,31 @@ function* startDeviceAuth(
   fence: IntentFence,
   generation: number,
 ): SagaGenerator<void> {
+  const hostKey = host.trim().toLowerCase();
+  const ownership = fence.deviceIntents.get(hostKey) ?? {
+    activeGeneration: null,
+    cancelledThrough: 0,
+    pendingStarts: 0,
+    needsCleanup: false,
+  };
+  ownership.activeGeneration = generation;
+  ownership.pendingStarts += 1;
+  fence.deviceIntents.set(hostKey, ownership);
+  let started = false;
   yield* put(setGitLabHost(host));
   yield* put(setGitLabAuthenticating(true));
   try {
     const params: ForgeConnectParams = { provider: PROVIDER, host, method: 'device' };
     const result = yield* call([forgeAuthClient, forgeAuthClient.connect], params);
-    if (superseded(fence, generation)) return;
+    started = result.success;
+    if (superseded(fence, generation)) {
+      // Remember an abandoned installed grant even while a newer start owns
+      // the host: that owner may fail later, leaving this grant to clean up.
+      if (result.success && generation <= ownership.cancelledThrough) {
+        ownership.needsCleanup = true;
+      }
+      return;
+    }
     if (!result.success) {
       if (result.code === 'device-grant-unsupported') {
         yield* put(
@@ -322,6 +354,28 @@ function* startDeviceAuth(
     const message =
       error instanceof Error ? error.message : m.gitlabAuth_service_startFailed_error();
     yield* put(setGitLabAuthError(message));
+  } finally {
+    if (!started && ownership.activeGeneration === generation) {
+      ownership.activeGeneration = null;
+    }
+    if (ownership.needsCleanup && ownership.activeGeneration === null) {
+      // Clear before awaiting so another late start can request its own cleanup.
+      // cancelAuth only removes the pending slot, never a saved PAT/credential.
+      ownership.needsCleanup = false;
+      try {
+        const cancelled = yield* call(
+          [forgeAuthClient, forgeAuthClient.cancelAuth],
+          PROVIDER,
+          host,
+        );
+        if (!cancelled.success)
+          logger.error('Failed to cancel late GitLab device grant', cancelled.error);
+      } catch (error) {
+        logger.error('Failed to cancel late GitLab device grant', error);
+      }
+    }
+    ownership.pendingStarts -= 1;
+    if (ownership.pendingStarts === 0) fence.deviceIntents.delete(hostKey);
   }
 }
 
@@ -369,6 +423,11 @@ function* connectWithToken(
 function* cancelAuth(fence: IntentFence, generation: number): SagaGenerator<void> {
   try {
     const host = yield* selectGitLabAuthHost.effect();
+    const ownership = fence.deviceIntents.get(host.trim().toLowerCase());
+    if (ownership) {
+      ownership.cancelledThrough = generation;
+      ownership.activeGeneration = null;
+    }
     const result = yield* call([forgeAuthClient, forgeAuthClient.cancelAuth], PROVIDER, host);
     if (superseded(fence, generation)) return;
     if (result.success) yield* put(gitlabAuthCancelled());
@@ -515,7 +574,7 @@ function* gitlabLabChangedWorker(): SagaGenerator<void> {
 }
 
 export function* gitlabAuthSaga(): SagaGenerator<void> {
-  const fence: IntentFence = { generation: 0 };
+  const fence: IntentFence = { generation: 0, deviceIntents: new Map() };
   // Only the latest initialize may hydrate: an older read (mount-time default
   // host) that resolved after a newer one would otherwise overwrite it.
   yield* takeLatest(initializeGitLabAuth, initializeGitLabAuthWorker, fence);
