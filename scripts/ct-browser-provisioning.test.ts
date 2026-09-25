@@ -24,7 +24,7 @@ function runBlock(name: string) {
 }
 
 describe('CT launcher provisioning', () => {
-  it('executes the CI identity step against the runner cache and feeds the cache action and marker', () => {
+  it.runIf(process.platform === 'linux')('runs the Linux CI cache and provisioning steps', () => {
     const dir = mkdtempSync(join(os.tmpdir(), 'ct-ci-plan-'));
     dirs.push(dir);
     const output = join(dir, 'output');
