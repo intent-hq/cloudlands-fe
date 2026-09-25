@@ -146,7 +146,7 @@ test('switches agent panes with keyboard-accessible menu identity and current st
   await menu.getByRole('menuitem', { name: 'Preview browser. Needs attention.' }).click();
   await expect(component).toHaveAttribute('data-active-tab', 'browser-pane');
   await expect(menu).toHaveCount(0);
-  await component.getByTestId('panel-actions-trigger').click();
+  await component.locator('[data-panel-tabless-header]').getByTestId('panel-actions-trigger').click();
   const actions = page.locator('.panel-actions-menu-content');
   await actions.getByRole('menuitem', { name: 'Move panel up', exact: true }).press('Enter');
   await expect(component).toHaveAttribute('data-active-tab', 'browser-pane');
@@ -156,7 +156,7 @@ test('switches agent panes with keyboard-accessible menu identity and current st
     'browser-pane',
   );
   await page.keyboard.press('Escape');
-  await component.getByTestId('panel-actions-trigger').click();
+  await component.locator('[data-panel-tabless-header]').getByTestId('panel-actions-trigger').click();
   await expect(
     actions.getByRole('menuitem', { name: 'Move panel up', exact: true }),
   ).toBeDisabled();
