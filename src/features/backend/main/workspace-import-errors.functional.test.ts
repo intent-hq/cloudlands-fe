@@ -43,6 +43,20 @@ describe('workspace import failure surfaces', () => {
     'Set-Cookie: session=private-marker; HttpOnly',
     'Authorization: Digest username="demo", response="private-marker"',
     'token="unterminated private-marker',
+    'request failed%\n%43oo\nkie: session=private-marker',
+    'request failed%\r\nSet-%43oo\r\nkie: session=private-marker',
+    ...['\n', '\r\n'].flatMap((separator) =>
+      [
+        'Cookie: session=private-marker',
+        'Set-Cookie: session="two words private-marker"; HttpOnly',
+        'Authorization: Digest username="demo", response="private-marker"',
+        'Proxy-Authorization: Custom private-marker more-private-marker',
+        '%43ookie: session=private-marker',
+        'Set-%43oo\r\nkie: session="two words private-marker"',
+        'Autho\trization: Digest response="private-marker"',
+        'Proxy-Authori\nzation: Custom private-marker more-private-marker',
+      ].map((header) => `token="Bearer private-marker"; request failed${separator}${header}`),
+    ),
   ];
   it.each(
     (['file', 'remote'] as const).flatMap((kind) =>
@@ -77,12 +91,14 @@ describe('workspace import failure surfaces', () => {
       });
       const client: RelayRpcClient = { request, on: vi.fn(), off: vi.fn() };
       const bytes = Buffer.from('archive fixture');
+      const closeFile = vi.fn(async () => undefined);
+      const disposeTarget = vi.fn();
       const fileRelay = createWorkspaceImportRelay({
         showOpenDialog: async () => '/tmp/workspace.zip',
         openFile: async () => ({
           size: async () => bytes.length,
           read: async (offset, length) => bytes.subarray(offset, offset + length),
-          close: vi.fn(async () => undefined),
+          close: closeFile,
         }),
         broadcastProgress: vi.fn(),
         isOwnerGone: () => false,
@@ -111,7 +127,7 @@ describe('workspace import failure surfaces', () => {
         off: (_event, listener) => listeners.delete(listener),
       };
       const remoteRelay = createWorkspaceTransferRelay({
-        createTargetClient: async () => ({ client, dispose: vi.fn() }),
+        createTargetClient: async () => ({ client, dispose: disposeTarget }),
         showSaveDialog: vi.fn(),
         openFileSink: vi.fn(),
         broadcastProgress: vi.fn(),
@@ -209,11 +225,25 @@ describe('workspace import failure surfaces', () => {
         );
         expect(reason.textContent).toContain(detail);
         expect(reason.textContent).not.toContain('private-marker');
+        const runError = kind === 'file' ? importState.runError : transferState.runError;
+        expect(runError).toContain(detail);
+        expect(runError).not.toContain('private-marker');
+        expect(runError!.length).toBeLessThanOrEqual(2048);
         expect(logger.warn).toHaveBeenCalledWith(
           kind === 'file' ? 'workspace import failed' : 'workspace transfer failed',
-          expect.objectContaining({ error: expect.stringContaining(detail) }),
+          expect.objectContaining({ error: runError }),
         );
         expect(JSON.stringify(logger.warn.mock.calls)).not.toContain('private-marker');
+        expect(request).toHaveBeenCalledWith('workspace.import.abort', { importId: 'import-1' });
+        if (kind === 'file') {
+          expect(closeFile).toHaveBeenCalledOnce();
+        } else {
+          expect(disposeTarget).toHaveBeenCalledOnce();
+          expect(sourceRequest).toHaveBeenCalledWith('workspace.export.abort', {
+            exportId: 'export-1',
+          });
+          expect(listeners.size).toBe(0);
+        }
         await fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
         expect(onRetry).toHaveBeenCalledOnce();
       } finally {

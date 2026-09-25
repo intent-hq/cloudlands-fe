@@ -95,11 +95,17 @@ function scrubDiagnosticFields(text: string): string {
     try {
       key = decodeURIComponent(key.replace(/\+/g, ' '));
     } catch {
-      // Keep the raw spelling for malformed escapes, as the pairing scrubber does.
+      // A malformed escape in a joined diagnostic prefix must not hide an
+      // encoded ASCII header/credential suffix. Leave other bytes unchanged.
+      key = key.replace(/%([0-7][a-f\d])/gi, (_escape, hex: string) =>
+        String.fromCharCode(Number.parseInt(hex, 16)),
+      );
     }
     key = key.replace(/^--/, '');
-    if (/^(?:(?:proxy-)?authorization|(?:set-)?cookie)$/i.test(key)) {
+    if (/(?:authorization|cookie)$/i.test(key)) {
       // Headers can contain several credentials, quoted fields or folded lines.
+      // Match suffixes too: removing controls can join a preceding word to a
+      // split/encoded header name. Such ambiguous keys must still fail closed.
       // Keep the preceding cause, but fail closed on the entire header tail.
       return `${result}${text.slice(copiedThrough, fields.lastIndex)}***`;
     }
@@ -154,8 +160,9 @@ export function relayErrorMessage(error: unknown): string {
     }
   }
 
-  // Normalize controls before detecting credentials (including split key names).
-  // Private keys and quoted/header fields must be removed before shared scrubbers.
+  // Redact while line boundaries still exist, then rescan without controls for
+  // split key names. Both interpretations must be safe before shared scrubbers.
+  text = scrubDiagnosticFields(text);
   text = scrubDiagnosticFields(
     text
       .replace(/[\x00-\x1f\x7f]/g, '')

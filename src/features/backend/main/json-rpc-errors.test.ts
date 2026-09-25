@@ -86,12 +86,17 @@ describe('relayErrorMessage', () => {
     'token="escaped \\"quote\\" private-marker"',
     'token="unterminated private-marker',
     '--password "unterminated private-marker',
+    'to\nken="Bearer private-marker"',
+    '%74o\r\nken="Bearer private-marker"',
+    'sec\tret="two words private-marker"',
+    'Cookie: session="two words private-marker"',
     'Cookie: session=private-marker; another=private-marker',
     'Set-Cookie: session=private-marker; HttpOnly',
     'Authorization: Digest username="demo", response="private-marker"',
     'Proxy-Authorization: Custom private-marker more-private-marker',
     '{"Authorization":"Digest username=\\"demo\\", response=\\"private-marker\\""}',
     '-----BEGIN PRIVATE KEY-----\nprivate-marker\n-----END PRIVATE KEY-----',
+    '-----BEG\nIN PRIVATE KEY-----\nprivate-marker\n-----END PRIVATE KEY-----',
   ])('redacts credentials from messages and RPC details: %s', (text) => {
     const errors = [
       new Error(`${detail}; ${text}`),
@@ -100,6 +105,45 @@ describe('relayErrorMessage', () => {
     for (const error of errors) {
       expect(relayErrorMessage(error)).toContain(detail);
       expect(relayErrorMessage(error)).not.toContain('private-marker');
+    }
+  });
+
+  it.each(
+    ['\n', '\r\n'].flatMap((separator) =>
+      [
+        'Cookie: session=private-marker',
+        'Set-Cookie: session="two words private-marker"; HttpOnly',
+        'Authorization: Digest username="demo", response="private-marker"',
+        'Proxy-Authorization: Custom private-marker more-private-marker',
+        '%43ookie: session=private-marker',
+        'Set-%43oo\r\nkie: session="two words private-marker"',
+        'Autho\trization: Digest response="private-marker"',
+        'Proxy-Authori\nzation: Custom private-marker more-private-marker',
+      ].map((header) => ({ separator, header })),
+    ),
+  )('redacts multiline headers after a cause: %j', ({ separator, header }) => {
+    const cause = `${detail}${separator}${header}`;
+    for (const text of [
+      cause,
+      `${detail}; token="Bearer private-marker"; request failed${separator}${header}`,
+      `${detail}; request failed%${separator}${header}`,
+    ]) {
+      const errors = [
+        new Error(text),
+        ...[text, { detail: text }].map(
+          (data) => new JsonRpcError({ code: -32603, message: 'Internal error', data }),
+        ),
+      ];
+      for (const error of errors) {
+        const original =
+          error instanceof JsonRpcError ? structuredClone(error.toErrorPayload()) : undefined;
+        const formatted = relayErrorMessage(error);
+        expect(formatted).toContain(detail);
+        expect(formatted).not.toContain('private-marker');
+        expect(formatted).not.toMatch(/[\r\n\t]/);
+        expect(formatted.length).toBeLessThanOrEqual(2048);
+        if (error instanceof JsonRpcError) expect(error.toErrorPayload()).toEqual(original);
+      }
     }
   });
 
