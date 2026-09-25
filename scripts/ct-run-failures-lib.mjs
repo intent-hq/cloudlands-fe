@@ -50,6 +50,7 @@ export function parseCtJobs(jobs) {
       jobId: job.id,
       shard: Number(match[1]),
       shardCount: Number(match[2]),
+      status: job.status,
       conclusion: job.conclusion ?? null,
       name: job.name,
     });
@@ -196,10 +197,11 @@ function sortCases(cases) {
  *
  * `shards` is `parseCtJobs` output enriched per shard with `source`
  * (`'json'` | `'log'` | `null` when neither was available), `cases` (from
- * `casesFromJsonReport` / `casesFromListLog`), and optionally `note` to
- * replace the default source annotation. A shard is red when its
- * `conclusion` is not `success`; annotations and cases print only for red
- * shards. Returns `{ text, json }` — `json` is the `--json` output shape.
+ * `casesFromJsonReport` / `casesFromListLog`), optionally `note` to replace
+ * the default source annotation, and `pending: true` for unfinished jobs.
+ * Pending shards are listed without a source annotation or red-shard count.
+ * A finished shard is red when its `conclusion` is not `success`.
+ * Returns `{ text, json }` — `json` is the `--json` output shape.
  */
 export function formatReport({ runId, repo, attempt, shards }) {
   const lines = [];
@@ -211,9 +213,10 @@ export function formatReport({ runId, repo, attempt, shards }) {
   const jsonShards = [];
   for (const shard of shards) {
     const cases = sortCases(shard.cases ?? []);
-    const red = shard.conclusion !== 'success';
+    const red = !shard.pending && shard.conclusion !== 'success';
     const source = shard.source ?? null;
-    let line = `shard ${shard.shard}/${shard.shardCount}  ${shard.conclusion ?? 'unknown'}`;
+    const label = shard.pending ? 'pending' : (shard.conclusion ?? 'unknown');
+    let line = `shard ${shard.shard}/${shard.shardCount}  ${label}`;
     if (red) {
       const note =
         shard.note ??
@@ -239,6 +242,7 @@ export function formatReport({ runId, repo, attempt, shards }) {
       jobId: shard.jobId,
       jobUrl: jobUrl(repo, runId, shard.jobId),
       conclusion: shard.conclusion ?? null,
+      ...(shard.pending ? { pending: true } : {}),
       source,
       cases,
     });
