@@ -1,4 +1,5 @@
 import { providerSettingsReducer } from './slices/provider-settings/provider-settings-slice';
+import { settingsEventsReducer } from './slices/settings-events/settings-events-slice';
 import { antigravitySetupReducer } from './slices/antigravity-setup/antigravity-setup-slice';
 import { providerCatalogReducer } from './slices/provider-catalog/provider-catalog-slice';
 import { providerModelsReducer } from './slices/provider-models/provider-models-slice';
@@ -103,6 +104,7 @@ import { workspaceShareReducer } from './slices/workspace-share/workspace-share-
 
 export const reducers = {
   providerSettings: providerSettingsReducer,
+  settingsEvents: settingsEventsReducer,
   antigravitySetup: antigravitySetupReducer,
   providerCatalog: providerCatalogReducer,
   providerModels: providerModelsReducer,

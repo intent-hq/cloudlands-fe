@@ -16,6 +16,8 @@ import {
   checkSingleProviderRequested,
   ensureProvidersChecked,
   initialState,
+  providerAvailabilityPanelOpened,
+  providerAvailabilityPanelClosed,
 } from '../agent-availability-slice';
 import {
   checkAllProvidersWorker,
@@ -47,6 +49,56 @@ describe('providerAvailabilitySaga', () => {
     window.electronAPI = originalElectronApi;
   });
 
+  it.each([
+    { outcome: 'failure-envelope', silent: false },
+    { outcome: 'rejection', silent: false },
+    { outcome: 'failure-envelope', silent: true },
+    { outcome: 'rejection', silent: true },
+  ])(
+    'preserves discovery detail from $outcome unless silent=$silent',
+    async ({ outcome, silent }) => {
+      const detail = 'provider discovery could not access the configured executable directory';
+      mocks.invoke.mockImplementation((method) => {
+        if (method !== 'providers:get-availability')
+          return Promise.resolve({ success: true, data: { available: true } });
+        return outcome === 'rejection'
+          ? Promise.reject(new Error(detail))
+          : Promise.resolve({ success: false, error: detail });
+      });
+      let state = initialState;
+      const channel = stdChannel();
+      const send = (action: Parameters<typeof agentAvailabilityReducer>[1]) => {
+        state = agentAvailabilityReducer(state, action);
+        channel.put(action);
+      };
+      const task = runSaga(
+        { channel, dispatch: send, getState: () => ({ agentAvailability: state }) },
+        providerAvailabilitySaga,
+      );
+      try {
+        send(checkAllProvidersRequested(false, silent));
+        await vi.waitFor(() => expect(state.discoveryStatus).toBe('failure'));
+        expect(mocks.invoke).toHaveBeenCalledWith('providers:get-availability');
+        expect(state.discoveryError).toBe(silent ? null : detail);
+        mocks.invoke.mockImplementation((method) =>
+          Promise.resolve({
+            success: true,
+            data:
+              method === 'providers:get-availability'
+                ? { hiddenProviders: [], providers: {}, hasAnyProvider: true }
+                : { available: true },
+          }),
+        );
+        send(checkAllProvidersRequested());
+        await vi.waitFor(() => expect(state.discoveryStatus).toBe('success'));
+        expect(state.discoveryError).toBeNull();
+      } finally {
+        task.cancel();
+        await task.toPromise();
+      }
+    },
+  );
+
   it('handles login before catalog hydration finishes and selects the returned drawer terminal', async () => {
     mocks.catalog.mockImplementation(() => new Promise(() => {}));
     mocks.invoke.mockResolvedValue({ ok: true, terminalId: 'claude-login-terminal' });
@@ -70,6 +122,104 @@ describe('providerAvailabilitySaga', () => {
         type: 'terminals/open',
         payload: ['__root__', 'claude-login-terminal'],
       });
+    } finally {
+      task.cancel();
+      await task.toPromise();
+    }
+  });
+
+  it('coalesces panel focus refreshes and removes listeners on close and teardown', async () => {
+    mocks.catalog.mockImplementation(() => new Promise(() => {}));
+    const releases: Array<(value: unknown) => void> = [];
+    mocks.invoke.mockImplementation((method) =>
+      method === 'providers:get-availability'
+        ? new Promise((resolve) => releases.push(resolve))
+        : Promise.resolve({ success: true, data: { available: true } }),
+    );
+    let state = initialState;
+    const channel = stdChannel();
+    const send = (action: Parameters<typeof agentAvailabilityReducer>[1]) => {
+      state = agentAvailabilityReducer(state, action);
+      channel.put(action);
+    };
+    const task = runSaga(
+      { channel, dispatch: send, getState: () => ({ agentAvailability: state }) },
+      providerAvailabilitySaga,
+    );
+    try {
+      send(providerAvailabilityPanelOpened('panel'));
+      for (let i = 0; i < 8; i++) window.dispatchEvent(new Event('focus'));
+      await settle();
+      expect(releases).toHaveLength(1);
+      releases[0]({
+        success: true,
+        data: { hiddenProviders: [], providers: {}, hasAnyProvider: true },
+      });
+      await vi.waitFor(() => expect(releases).toHaveLength(2));
+      releases[1]({
+        success: true,
+        data: { hiddenProviders: [], providers: {}, hasAnyProvider: true },
+      });
+      await vi.waitFor(() => expect(state.discoveryStatus).toBe('success'));
+      send(providerAvailabilityPanelClosed('panel'));
+      window.dispatchEvent(new Event('focus'));
+      await settle();
+      expect(releases).toHaveLength(2);
+      send(providerAvailabilityPanelOpened('panel'));
+      expect(releases).toHaveLength(3);
+      task.cancel();
+      await task.toPromise();
+      window.dispatchEvent(new Event('focus'));
+      expect(releases).toHaveLength(3);
+      expect(Object.values(state.providerLoadingMap).some(Boolean)).toBe(false);
+      expect(state.discoveryStatus).not.toBe('pending');
+    } finally {
+      task.cancel();
+      await task.toPromise();
+    }
+  });
+
+  it('refreshes models only after the latest requested availability sweep fully settles', async () => {
+    mocks.catalog.mockImplementation(() => new Promise(() => {}));
+    const releases: Array<(value: unknown) => void> = [];
+    mocks.invoke.mockImplementation((method, providerId) =>
+      method === 'providers:check-single' && providerId === 'codex'
+        ? new Promise((resolve) => releases.push(resolve))
+        : Promise.resolve({
+            success: true,
+            data:
+              method === 'providers:get-availability'
+                ? { hiddenProviders: [], providers: {}, hasAnyProvider: true }
+                : { available: true },
+          }),
+    );
+    let state = initialState;
+    const channel = stdChannel();
+    const send = vi.fn((action: Parameters<typeof agentAvailabilityReducer>[1]) => {
+      state = agentAvailabilityReducer(state, action);
+      channel.put(action);
+    });
+    const task = runSaga(
+      { channel, dispatch: send, getState: () => ({ agentAvailability: state }) },
+      providerAvailabilitySaga,
+    );
+    const refreshes = () =>
+      send.mock.calls.filter(([action]) => action.type === 'model/reloadModelsForProvider');
+    try {
+      send(checkAllProvidersRequested(true));
+      await settle();
+      expect(refreshes()).toHaveLength(0);
+      send(checkAllProvidersRequested(true));
+      releases[0]({ success: true, data: { available: true } });
+      await vi.waitFor(() => expect(releases).toHaveLength(2));
+      expect(refreshes()).toHaveLength(0);
+      releases[1]({ success: true, data: { available: true } });
+      await vi.waitFor(() => expect(refreshes()).toHaveLength(1));
+      expect(send).toHaveBeenCalledWith({
+        type: 'providerModels/providerModelsCacheCleared',
+        payload: [],
+      });
+      expect(state.refreshModelsPending).toBe(false);
     } finally {
       task.cancel();
       await task.toPromise();
@@ -227,16 +377,18 @@ describe('providerAvailabilitySaga', () => {
     );
     await settle();
 
-    expect(dispatch.mock.calls.map(([action]) => action)).toEqual([
-      {
-        type: 'agentAvailability/setAllProvidersLoading',
-        payload: [Object.fromEntries(ids.map((id) => [id, true]))],
-      },
-      {
-        type: 'agentAvailability/setNpxStatus',
-        payload: [{ resolvedPath: '/usr/bin/npx', version: '10.0.0', versionOk: true }],
-      },
-    ]);
+    expect(dispatch.mock.calls.map(([action]) => action)).toEqual(
+      expect.arrayContaining([
+        {
+          type: 'agentAvailability/setAllProvidersLoading',
+          payload: [Object.fromEntries(ids.map((id) => [id, true]))],
+        },
+        {
+          type: 'agentAvailability/setNpxStatus',
+          payload: [{ resolvedPath: '/usr/bin/npx', version: '10.0.0', versionOk: true }],
+        },
+      ]),
+    );
     resolvers.get('codex')!({ success: true, data: { available: true } });
     await settle();
     expect(dispatch.mock.calls.at(-1)?.[0]).toEqual({
@@ -254,10 +406,13 @@ describe('providerAvailabilitySaga', () => {
     }
     await task.toPromise();
 
-    expect(mocks.invoke.mock.calls).toEqual([
-      ['providers:get-availability'],
-      ...ids.map((id) => ['providers:check-single', id]),
-    ]);
+    expect(mocks.invoke.mock.calls).toEqual(
+      expect.arrayContaining([
+        ['providers:get-availability'],
+        ...ids.map((id) => ['providers:check-single', id]),
+      ]),
+    );
+    expect(mocks.invoke).toHaveBeenCalledTimes(ids.length + 1);
     expect(dispatch.mock.calls.at(-1)?.[0]).toEqual({
       type: 'agentAvailability/checkAllProvidersComplete',
       payload: [],
@@ -331,7 +486,7 @@ describe('providerAvailabilitySaga', () => {
         channel,
         dispatch,
         getState: () => ({
-          agentAvailability: { hasCheckedOnce: false, providerCheckEpochMap: {} },
+          agentAvailability: initialState,
         }),
       },
       providerAvailabilitySaga,
@@ -342,7 +497,9 @@ describe('providerAvailabilitySaga', () => {
     channel.put(ensureProvidersChecked());
     await settle();
 
-    expect(mocks.invoke.mock.calls).toEqual([['providers:get-availability']]);
+    expect(
+      mocks.invoke.mock.calls.filter(([channel]) => channel === 'providers:get-availability'),
+    ).toEqual([['providers:get-availability']]);
     task.cancel();
     await task.toPromise();
     expect(
@@ -384,7 +541,7 @@ describe('providerAvailabilitySaga', () => {
         channel,
         dispatch,
         getState: () => ({
-          agentAvailability: { hasCheckedOnce: false, providerCheckEpochMap: {} },
+          agentAvailability: initialState,
         }),
       },
       providerAvailabilitySaga,
@@ -516,7 +673,9 @@ describe('providerAvailabilitySaga', () => {
     resolveCatalog(catalog);
     await task.toPromise();
 
-    expect(dispatch).not.toHaveBeenCalled();
+    expect(dispatch.mock.calls.map(([action]) => action.type)).toEqual([
+      'agentAvailability/stopped',
+    ]);
     expect(on).not.toHaveBeenCalled();
   });
 

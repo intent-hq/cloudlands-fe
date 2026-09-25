@@ -26,6 +26,7 @@ import { providerModelsLoaded } from '../../provider-models/provider-models-slic
 import { selectModel } from '../model-slice';
 import { selectSelectedModel } from '../model-selectors';
 import { modelSelectionSaga } from './model-selection-saga';
+import { providerSettingsSaga } from '../../provider-settings/sagas/provider-settings-saga';
 import { modelReloadSaga } from './model-reload-saga';
 import { settingsHydrationSaga } from '../../settings-events/sagas/settings-hydration-saga';
 import { settingsChangesReceived } from '../../settings-events/settings-events-slice';
@@ -146,6 +147,7 @@ for (const legacyEmptyKey of [true, false]) {
       );
       await Promise.resolve();
       tasks.push(runSaga({ channel, dispatch, getState: () => store.state }, modelSelectionSaga));
+      tasks.push(runSaga({ channel, dispatch, getState: () => store.state }, providerSettingsSaga));
       tasks.push(runSaga({ channel, dispatch, getState: () => store.state }, modelReloadSaga));
       // The action emitted by the Settings ModelPicker's updateGlobalDefault path.
       dispatch(selectModel('grok4.5', 'grok'));
@@ -277,7 +279,11 @@ it('keeps a Grok choice made through the real Settings dropdown after the reload
   });
   cancelSagas.push(store.runSaga(settingsHydrationSaga));
   await Promise.resolve();
-  cancelSagas.push(store.runSaga(modelSelectionSaga), store.runSaga(modelReloadSaga));
+  cancelSagas.push(
+    store.runSaga(modelSelectionSaga),
+    store.runSaga(providerSettingsSaga),
+    store.runSaga(modelReloadSaga),
+  );
   try {
     const view = render(DefaultAgentModelSettings, {
       context: new Map([['redux-store-context', { store }]]),

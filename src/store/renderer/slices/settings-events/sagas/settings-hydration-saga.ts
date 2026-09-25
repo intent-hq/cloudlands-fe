@@ -1,5 +1,9 @@
 import { buffers } from 'redux-saga';
-import { actionChannel, call, delay, race, take } from 'typed-redux-saga';
+import { actionChannel, all, call, delay, race, take } from 'typed-redux-saga';
+import { settingsFormSaga } from './settings-form-saga';
+import { settingsMigrationsSaga } from './settings-migrations-saga';
+import { websocketApiSaga } from '../../websocket-api/sagas/websocket-api-saga';
+import { rtkSettingsSaga } from '../../rtk-settings/sagas/rtk-settings-saga';
 
 import { appClient } from '$lib/client';
 import type { AppliedSettingChange } from '$lib/client/app-client';
@@ -98,7 +102,7 @@ export function* hydrateSettingsOnceSaga() {
   if (snapshot) yield* call(applySettingsChanges, snapshot.changes);
 }
 
-export function* settingsHydrationSaga() {
+function* settingsSnapshotLoop() {
   const channel = yield* actionChannel(settingsChangesReceived, buffers.expanding());
   const lifecycleChannel = yield* actionChannel<LifecycleAction>(
     [connectionsListReceived, backendReconnected],
@@ -160,4 +164,14 @@ export function* settingsHydrationSaga() {
     channel.close();
     lifecycleChannel.close();
   }
+}
+
+export function* settingsHydrationSaga() {
+  yield* all([
+    call(settingsMigrationsSaga),
+    call(settingsSnapshotLoop),
+    call(settingsFormSaga),
+    call(websocketApiSaga),
+    call(rtkSettingsSaga),
+  ]);
 }

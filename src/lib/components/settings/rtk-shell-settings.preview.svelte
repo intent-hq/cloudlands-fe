@@ -1,5 +1,6 @@
 <script module lang="ts">
   import { definePreview } from '$lib/component-catalog/preview-definition';
+  import { setupRtkSettingsPreview } from '../../../test/api-rtk-settings-preview';
 
   type Scenario = 'ready' | 'loading-settings' | 'loading-probe' | 'unavailable' | 'load-error';
   export const preview = definePreview<{ scenario?: Scenario }>({
@@ -7,11 +8,14 @@
     title: 'RTK and Shell settings',
     defaultState: 'ready',
     states: {
-      ready: { props: { scenario: 'ready' } },
-      'loading-settings': { props: { scenario: 'loading-settings' } },
-      'loading-probe': { props: { scenario: 'loading-probe' } },
-      unavailable: { props: { scenario: 'unavailable' } },
-      'load-error': { props: { scenario: 'load-error' } },
+      ready: { props: { scenario: 'ready' }, setup: setupRtkSettingsPreview },
+      'loading-settings': {
+        props: { scenario: 'loading-settings' },
+        setup: setupRtkSettingsPreview,
+      },
+      'loading-probe': { props: { scenario: 'loading-probe' }, setup: setupRtkSettingsPreview },
+      unavailable: { props: { scenario: 'unavailable' }, setup: setupRtkSettingsPreview },
+      'load-error': { props: { scenario: 'load-error' }, setup: setupRtkSettingsPreview },
     },
   });
 </script>

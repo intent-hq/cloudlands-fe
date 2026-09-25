@@ -6,6 +6,7 @@
   import { selectConnections } from '$store/renderer/slices/connections/connections-selectors';
   import type { ConnectionsListResult } from '$shared/types/connections';
   import { setupUnavailablePublicationPreview } from '../../../test/connection-publication-preview';
+  import { setupApiSettingsPreview } from '../../../test/api-rtk-settings-preview';
 
   function setup(remote = false) {
     const state = appStore.state.connections;
@@ -74,7 +75,9 @@
       }),
     );
     const stopPublication = setupUnavailablePublicationPreview();
+    const stopApi = setupApiSettingsPreview();
     return () => {
+      stopApi();
       stopPublication();
       appStore.dispatch(connectionsListReceived(previous));
     };

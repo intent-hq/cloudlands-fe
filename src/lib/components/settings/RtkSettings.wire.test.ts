@@ -31,26 +31,25 @@ vi.mock('$shared/generated/ipc-client', () => ({
   invoke: mocks.mockInvoke,
 }));
 
-// Mock store
-vi.mock('$store/renderer/store', () => ({
-  store: {
-    dispatch: vi.fn(),
-    createSelector: vi.fn((fn) => fn),
-    state: {},
-  },
-}));
+import { store } from '$store/renderer/store';
+import { rtkSettingsSaga } from '$store/renderer/slices/rtk-settings/sagas/rtk-settings-saga';
 
 import RtkSettings from './RtkSettings.svelte';
 import { __resetSettingsReadCacheForTests } from '$lib/client/live/live-settings-client';
 
 describe('RtkSettings wire contract (PROTOCOL §5.12)', () => {
+  let stop: () => void;
   beforeEach(() => {
     vi.clearAllMocks();
+    store.init();
+    stop = store.runSaga(rtkSettingsSaga);
   });
 
   afterEach(() => {
     __resetSettingsReadCacheForTests();
     cleanup();
+    stop();
+    store.dispose();
   });
 
   it('issues settings.get with PROTOCOL-shaped { path: "rtk.enabled" } on mount', async () => {

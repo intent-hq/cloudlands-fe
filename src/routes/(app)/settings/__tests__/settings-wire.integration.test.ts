@@ -1,6 +1,7 @@
 /** @vitest-environment jsdom */
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { getItems } from '@augmentcode/themis/utils/collections/collection-utils';
 import { LiveAppClient } from '$lib/client';
 import { __resetSettingsReadCacheForTests } from '$lib/client/live/live-settings-client';
 import { mockInvoke, registerMockIpcHandler, resetMockIpcRouter } from '$shared/ipc-mock-router';
@@ -8,6 +9,10 @@ import { IPC_CHANNELS } from '$shared/ipc-registry';
 import { m } from '$shared/paraglide/messages.js';
 import type { ReduxStoreContext } from '$store/renderer/types';
 import { initAppStore, store as appStore } from '$store/renderer/store';
+import { settingsFormSaga } from '$store/renderer/slices/settings-events/sagas/settings-form-saga';
+import { selectSettingsFormOperation } from '$store/renderer/slices/settings-events/settings-events-selectors';
+import { websocketApiSaga } from '$store/renderer/slices/websocket-api/sagas/websocket-api-saga';
+import { connectionsSaga } from '$store/renderer/slices/connections/sagas/connections-saga';
 import {
   SETTINGS_PROTOCOL_FIXTURES,
   SHIPPED_WEBSOCKET_SETTING_FIXTURES,
@@ -30,20 +35,46 @@ describe('Settings deterministic mock-BE contracts', () => {
   const originalInvoke = window.electronAPI!.invoke;
   const client = new LiveAppClient();
   let storeContext: ReduxStoreContext | undefined;
+  let stopOwners: Array<() => void>;
 
-  beforeEach(() => {
+  beforeEach(async () => {
     __resetSettingsReadCacheForTests();
     storeContext = initAppStore(appStore);
     resetMockIpcRouter();
     window.electronAPI!.invoke = vi.fn((channel: string, payload?: unknown) =>
       mockInvoke(channel, payload),
     );
+    registerMockIpcHandler(IPC_CHANNELS.CONNECTIONS.LIST, () => ({
+      connections: [],
+      activeId: 'local',
+      windowBackendId: 'local',
+    }));
+    registerMockIpcHandler(IPC_CHANNELS.CONNECTIONS.SYNC_GET_STATE, () => ({
+      supported: false,
+      enabled: false,
+      status: null,
+    }));
+    registerMockIpcHandler(IPC_CHANNELS.CONNECTIONS.SELF_PUBLISHED_STATE, () => ({
+      published: false,
+      suppressed: false,
+      selfConnectionId: null,
+    }));
+    registerMockIpcHandler(IPC_CHANNELS.CONNECTIONS.REFRESH_SELF, () => ({ refreshed: false }));
+    // Run the production panel owners without the unrelated boot settings.list.
+    stopOwners = [
+      appStore.runSaga(settingsFormSaga),
+      appStore.runSaga(websocketApiSaga),
+      appStore.runSaga(connectionsSaga),
+    ];
+    await waitFor(() => expect(appStore.state.connections.hasReceivedList).toBe(true));
+    vi.mocked(window.electronAPI!.invoke).mockClear();
   });
 
   afterEach(() => {
+    cleanup();
+    stopOwners.forEach((stop) => stop());
     storeContext?.dispose();
     storeContext = undefined;
-    cleanup();
     window.electronAPI!.invoke = originalInvoke;
     resetMockIpcRouter();
   });
@@ -235,7 +266,10 @@ describe('Settings deterministic mock-BE contracts', () => {
     const input = (await screen.findByRole('spinbutton', {
       name: m.settings_wsApi_port_label(),
     })) as HTMLInputElement;
-    await waitFor(() => expect(input.value).toBe('5181'));
+    await waitFor(() => {
+      expect(input.disabled).toBe(false);
+      expect(input.value).toBe('5181');
+    });
     await fireEvent.input(input, { target: { value: '6123' } });
     await waitFor(() => expect(input.value).toBe('6123'));
     await fireEvent.click(await screen.findByRole('button', { name: 'Save' }));
@@ -251,6 +285,11 @@ describe('Settings deterministic mock-BE contracts', () => {
       IPC_CHANNELS.BACKEND.REQUEST,
       update.request,
     );
+    await waitFor(() => {
+      expect(input.disabled).toBe(false);
+      expect(input.value).toBe('6123');
+      expect(screen.queryByRole('button', { name: 'Save' })).toBeNull();
+    });
   });
 
   it('persists multiselect networks through settings.update and renders the refreshed daemon selection', async () => {
@@ -297,8 +336,9 @@ describe('Settings deterministic mock-BE contracts', () => {
     );
     const input = await screen.findByRole('combobox', { name: m.settings_listenTargets_label() });
     await waitFor(() => expect((input as HTMLInputElement).disabled).toBe(false));
-    await fireEvent.focus(input);
-    await fireEvent.pointerUp(screen.getByRole('option', { name: '198.51.100.7' }), {
+    const identity = getItems(appStore.state.settingsEvents.forms)[0];
+    input.focus();
+    await fireEvent.pointerUp(await screen.findByRole('option', { name: '198.51.100.7' }), {
       button: 0,
       pointerType: 'mouse',
     });
@@ -308,6 +348,22 @@ describe('Settings deterministic mock-BE contracts', () => {
         params: { changes: expectedChanges },
       }),
     );
+    await waitFor(() => {
+      expect(selectSettingsFormOperation.select(appStore.state, identity, 'save')?.status).toBe(
+        'succeeded',
+      );
+      expect((input as HTMLInputElement).disabled).toBe(false);
+    });
+    // Saving disables the combobox; reopen after its terminal state is published.
+    await fireEvent.keyDown(input, { key: 'Escape' });
+    await waitFor(() => expect(screen.queryByRole('listbox', { hidden: true })).toBeNull());
+    await waitFor(() =>
+      expect((input as HTMLInputElement).value).toBe(
+        '192.0.2.10, 127.0.0.1 (localhost), 198.51.100.7',
+      ),
+    );
+    input.focus();
+    await fireEvent.keyDown(input, { key: 'ArrowDown' });
     await waitFor(() =>
       expect(
         screen.getByRole('option', { name: '198.51.100.7' }).getAttribute('aria-selected'),

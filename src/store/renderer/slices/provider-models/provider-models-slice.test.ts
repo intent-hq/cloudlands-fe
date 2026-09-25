@@ -14,12 +14,18 @@ import {
   selectProviderModelsCacheEntry,
   selectProviderModelsCacheMap,
   selectProviderModelsClearEpoch,
+  selectProviderModelsRequests,
+  selectObservedModelProviderIds,
 } from './provider-models-selectors';
 import {
   initialState,
   providerModelsCacheCleared,
   providerModelsLoaded,
   providerModelsReducer,
+  providerModelsObserved,
+  providerModelsReleased,
+  providerModelsRequestStarted,
+  providerModelsRequestSettled,
 } from './provider-models-slice';
 import type { ProviderModelsFetchResult, ProviderModelsState } from './provider-models-types';
 
@@ -41,6 +47,73 @@ function storeWith(providerModels: ProviderModelsState): StoreState {
 }
 
 describe('providerModelsReducer', () => {
+  it('tracks observer lifetime without duplicating model data', () => {
+    const observed = providerModelsReducer(
+      initialState,
+      providerModelsObserved('picker-1', ['codex']),
+    );
+    expect(selectObservedModelProviderIds.select(storeWith(observed))).toEqual(['codex']);
+    expect(providerModelsReducer(observed, providerModelsObserved('picker-1', ['codex']))).toBe(
+      observed,
+    );
+    const changed = providerModelsReducer(observed, providerModelsObserved('picker-1', ['auggie']));
+    const joined = providerModelsReducer(
+      changed,
+      providerModelsObserved('picker-2', ['auggie', 'codex']),
+    );
+    expect(selectObservedModelProviderIds.select(storeWith(joined))).toEqual(['auggie', 'codex']);
+    const released = providerModelsReducer(joined, providerModelsReleased('picker-2'));
+    expect(selectObservedModelProviderIds.select(storeWith(released))).toEqual(['auggie']);
+    expect(providerModelsReducer(released, providerModelsReleased('missing'))).toBe(released);
+    expect(JSON.parse(JSON.stringify(released))).toEqual(released);
+  });
+
+  it('ignores stale request and reconnect settlements, including failures and cancellation', () => {
+    const first = {
+      providerId: 'codex',
+      requestId: 'old',
+      epoch: 0,
+      mode: 'background',
+      status: 'loading',
+    } as const;
+    const second = { ...first, requestId: 'new', mode: 'refresh' } as const;
+    const pending = providerModelsReducer(
+      providerModelsReducer(initialState, providerModelsRequestStarted(first)),
+      providerModelsRequestStarted(second),
+    );
+    for (const status of ['success', 'error', 'cancelled'] as const) {
+      expect(
+        providerModelsReducer(pending, providerModelsRequestSettled({ ...first, status })),
+      ).toBe(pending);
+    }
+    const failed = providerModelsReducer(
+      pending,
+      providerModelsRequestSettled({ ...second, status: 'error', error: 'unavailable' }),
+    );
+    expect(selectProviderModelsRequests.select(storeWith(failed)).codex).toMatchObject({
+      status: 'error',
+      error: 'unavailable',
+    });
+    const retry = providerModelsReducer(
+      failed,
+      providerModelsRequestStarted({ ...second, requestId: 'retry' }),
+    );
+    expect(selectProviderModelsRequests.select(storeWith(retry)).codex.error).toBeUndefined();
+    const cleared = providerModelsReducer(retry, providerModelsCacheCleared());
+    expect(providerModelsReducer(cleared, providerModelsRequestStarted(second))).toBe(cleared);
+    expect(
+      providerModelsReducer(
+        cleared,
+        providerModelsRequestSettled({ ...second, status: 'success' }),
+      ),
+    ).toBe(cleared);
+    const settled = providerModelsReducer(
+      pending,
+      providerModelsRequestSettled({ ...second, status: 'cancelled' }),
+    );
+    expect(selectProviderModelsRequests.select(storeWith(settled)).codex.status).toBe('cancelled');
+  });
+
   it('starts empty', () => {
     const state = providerModelsReducer(undefined, { type: '@@INIT' });
     expect(state.byProviderId).toEqual({});

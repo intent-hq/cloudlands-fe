@@ -1,5 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { runSaga, stdChannel } from 'redux-saga';
+import { all, call } from 'typed-redux-saga';
+import { providerSettingsSaga } from '../../provider-settings/sagas/provider-settings-saga';
 import { createCollection } from '@augmentcode/themis/utils/collections/collection-utils';
 
 const mocks = vi.hoisted(() => ({ update: vi.fn(), updateSnapshot: undefined as any }));
@@ -28,12 +30,16 @@ import {
   setSelectedModel,
 } from '../model-slice';
 import {
-  modelSelectionSaga,
+  modelSelectionSaga as selectionOwner,
   persistDefaultReasoningEffortWorker,
   persistSelectedModelsWorker,
   handleSelectModel,
   PROVIDER_DEFAULTS_RETRY_DELAYS_MS,
 } from './model-selection-saga';
+
+function* modelSelectionSaga() {
+  yield* all([call(selectionOwner), call(providerSettingsSaga)]);
+}
 
 const settle = async () => {
   await Promise.resolve();

@@ -17,6 +17,9 @@ vi.mock('$lib/client/live/backend-transport', () => ({
 }));
 
 import { store as appStore } from '$store/renderer/store';
+import { backgroundAgentSettingsSaga } from '$store/renderer/slices/background-agent-settings/sagas/background-agent-settings-saga';
+import { settingsMigrationsSaga } from '$store/renderer/slices/settings-events/sagas/settings-migrations-saga';
+import { providerSettingsSaga } from '$store/renderer/slices/provider-settings/sagas/provider-settings-saga';
 
 const testStore = appStore as typeof appStore & {
   storeContext?: unknown;
@@ -39,11 +42,15 @@ import {
 } from '$store/renderer/slices/model/model-slice';
 
 describe('settings-hydration-service (boot read + applySettingsChanges)', () => {
+  let stopBackground: () => void;
+  let stopMigrations: () => void;
   beforeAll(() => {
     appStore.init();
   });
 
   beforeEach(() => {
+    stopBackground = appStore.runSaga(backgroundAgentSettingsSaga);
+    stopMigrations = appStore.runSaga(settingsMigrationsSaga);
     updateSpy.mockReset();
     updateSpy.mockResolvedValue({ applied: [] });
     catalogSpy.mockReset();
@@ -51,7 +58,11 @@ describe('settings-hydration-service (boot read + applySettingsChanges)', () => 
     localStorage.removeItem(BG_MODEL_MIGRATION_MARKER_KEY);
   });
 
-  afterEach(() => vi.clearAllMocks());
+  afterEach(() => {
+    stopBackground();
+    stopMigrations();
+    vi.clearAllMocks();
+  });
 
   it('hydrates the default provider and enablement map from model.defaultProvider / providers.enabled', async () => {
     applySettingsChanges([
@@ -370,6 +381,11 @@ describe('settings-hydration-service (boot read + applySettingsChanges)', () => 
   });
 
   describe('default-provider enablement seeding (monorepo#1947)', () => {
+    let stopProviders: () => void;
+    beforeEach(() => {
+      stopProviders = appStore.runSaga(providerSettingsSaga);
+    });
+    afterEach(() => stopProviders());
     type ProviderState = {
       providerSettings: { enabledProviders: Record<string, boolean> };
     };

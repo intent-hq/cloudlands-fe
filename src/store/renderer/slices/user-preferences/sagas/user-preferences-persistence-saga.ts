@@ -1,4 +1,6 @@
-import { call, fork, put, takeEvery } from 'typed-redux-saga';
+import { buffers, channel } from 'redux-saga';
+import { call, fork, put, take, takeEvery } from 'typed-redux-saga';
+import { agentRulesSaga } from './agent-rules-saga';
 
 import { isElectron } from '$lib/electron-bridge';
 import { applyLanguagePreference } from '$lib/i18n/locale';
@@ -356,12 +358,31 @@ async function syncLanguagePreference(preference: string): Promise<void> {
   }
 }
 
-export function* persistLanguagePreferenceWorker(action: ReturnType<typeof setLanguagePreference>) {
+function* persistLocalLanguagePreference(action: ReturnType<typeof setLanguagePreference>) {
   const [preference] = action.payload;
   yield* call(applyLanguagePreference, preference);
   const storedPreference = yield* selectLanguagePreference.effect();
   yield* setLocalStorageJSON(LANGUAGE_PREFERENCE_STORAGE_KEY, storedPreference);
+  return storedPreference;
+}
+
+export function* persistLanguagePreferenceWorker(action: ReturnType<typeof setLanguagePreference>) {
+  const storedPreference = yield* call(persistLocalLanguagePreference, action);
   yield* call(syncLanguagePreference, storedPreference);
+}
+
+function* watchLanguagePreferenceWrites() {
+  const queue = channel<string>(buffers.sliding(1));
+  try {
+    yield* takeEvery(setLanguagePreference, function* (action) {
+      // Apply the renderer locale immediately, even while main's previous IPC is pending.
+      const preference = yield* call(persistLocalLanguagePreference, action);
+      yield* put(queue, preference);
+    });
+    while (true) yield* call(syncLanguagePreference, yield* take(queue));
+  } finally {
+    queue.close();
+  }
 }
 
 function* persistGithubLinkDefaultActionWorker() {
@@ -414,7 +435,7 @@ function* watchUserPreferenceWrites() {
     [saveActivityLogPreset, deleteActivityLogPreset],
     persistActivityLogPresetsWorker,
   );
-  yield* takeEvery(setLanguagePreference, persistLanguagePreferenceWorker);
+  yield* fork(watchLanguagePreferenceWrites);
   yield* takeEvery(setGithubLinkDefaultAction, persistGithubLinkDefaultActionWorker);
   yield* takeEvery(
     [setShortcutOverride, resetShortcutOverride, resetAllShortcutOverrides],
@@ -422,8 +443,9 @@ function* watchUserPreferenceWrites() {
   );
 }
 
-/** Unregistered until the S20 middleware cutover. */
+/** Canonical root-owned preference persistence and rules-editor orchestration. */
 export function* userPreferencesPersistenceSaga() {
+  yield* fork(agentRulesSaga);
   yield* fork(watchUserPreferenceWrites);
   yield* fork(hydrateUserPreferencesWorker);
   yield* fork(watchBackendForProviderSetup);

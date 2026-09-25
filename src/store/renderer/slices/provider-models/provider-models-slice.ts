@@ -11,16 +11,40 @@
  */
 import { createAction } from '@augmentcode/themis/utils/store/create-action';
 import { createReducer } from '@augmentcode/themis/utils/store/create-reducer';
+import {
+  upsertItem,
+  createCollection,
+  getItem,
+  removeItem,
+} from '@augmentcode/themis/utils/collections/collection-utils';
 import type {
   ProviderModelsCacheEntry,
   ProviderModelsFetchResult,
+  ProviderModelsRequest,
+  ProviderModelsRequestMode,
+  ProviderModelsObserver,
   ProviderModelsState,
 } from './provider-models-types';
 
 export const initialState: ProviderModelsState = {
   byProviderId: {},
   clearEpoch: 0,
+  requests: createCollection<ProviderModelsRequest, 'providerId'>('providerId'),
+  observers: createCollection<ProviderModelsObserver, 'id'>('id'),
 };
+
+export const providerModelsObserved =
+  createAction<[id: string, providerIds: string[]]>('providerModels/observed');
+export const providerModelsReleased = createAction<[id: string]>('providerModels/released');
+export const providerModelsRequested = createAction<
+  [providerId: string, mode: ProviderModelsRequestMode]
+>('providerModels/requested');
+export const providerModelsRequestStarted = createAction<[request: ProviderModelsRequest]>(
+  'providerModels/requestStarted',
+);
+export const providerModelsRequestSettled = createAction<[request: ProviderModelsRequest]>(
+  'providerModels/requestSettled',
+);
 
 /**
  * A provider's catalog fetch succeeded — cache the dropdown-ready result
@@ -66,6 +90,31 @@ providerModelsReducer.with(
         },
 );
 providerModelsReducer.with(providerModelsCacheCleared, (state) => ({
+  ...state,
   byProviderId: {},
+  requests: createCollection<ProviderModelsRequest, 'providerId'>('providerId'),
   clearEpoch: state.clearEpoch + 1,
 }));
+
+providerModelsReducer.with(providerModelsObserved, (state, { payload: [id, providerIds] }) => {
+  const previous = getItem(state.observers, id);
+  if (previous?.providerIds.join('\0') === providerIds.join('\0')) return state;
+  return { ...state, observers: upsertItem(state.observers, { id, providerIds }) };
+});
+providerModelsReducer.with(providerModelsReleased, (state, { payload: [id] }) => {
+  if (!getItem(state.observers, id)) return state;
+  return { ...state, observers: removeItem(state.observers, id) };
+});
+providerModelsReducer.with(providerModelsRequestStarted, (state, { payload: [request] }) =>
+  request.epoch !== state.clearEpoch
+    ? state
+    : {
+        ...state,
+        requests: upsertItem(state.requests, { ...request, error: undefined }),
+      },
+);
+providerModelsReducer.with(providerModelsRequestSettled, (state, { payload: [request] }) => {
+  const current = getItem(state.requests, request.providerId);
+  if (request.epoch !== state.clearEpoch || current?.requestId !== request.requestId) return state;
+  return { ...state, requests: upsertItem(state.requests, request) };
+});

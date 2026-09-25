@@ -14,6 +14,23 @@
  * different adapters/catalogs.
  */
 import type { AuggieModel } from '$features/auggie/auggie-models.client';
+import type { Collection } from '@augmentcode/themis/utils/collections/collection-utils';
+
+export type ProviderModelsRequestMode = 'background' | 'refresh' | 'retry' | 'silentRetry';
+
+export interface ProviderModelsRequest {
+  providerId: string;
+  requestId: string;
+  epoch: number;
+  mode: ProviderModelsRequestMode;
+  status: 'loading' | 'success' | 'error' | 'cancelled';
+  error?: string;
+}
+
+export interface ProviderModelsObserver {
+  id: string;
+  providerIds: string[];
+}
 
 /** Successful `getModelsForProviderForLoadingState`-shaped fetch result. */
 export interface ProviderModelsFetchResult {
@@ -34,6 +51,8 @@ export interface ProviderModelsCacheEntry extends ProviderModelsFetchResult {
 export interface ProviderModelsState {
   /** Cached entries keyed by normalized provider id. */
   byProviderId: Record<string, ProviderModelsCacheEntry>;
+  requests: Collection<ProviderModelsRequest, 'providerId'>;
+  observers: Collection<ProviderModelsObserver, 'id'>;
   /**
    * Monotonic clear counter, bumped by `providerModelsCacheCleared`. Writers
    * capture it (via `selectProviderModelsClearEpoch`) when their fetch STARTS

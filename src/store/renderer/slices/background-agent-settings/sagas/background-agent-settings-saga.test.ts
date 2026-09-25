@@ -8,6 +8,10 @@ import {
   hydrateSettings,
   setDefaultModel,
   setTypeOverride,
+  backgroundSettingsHydrationRequested,
+  backgroundAgentSettingsReducer,
+  initialState,
+  BG_MODEL_MIGRATION_MARKER_KEY,
 } from '../background-agent-settings-slice';
 import { backgroundAgentSettingsSaga } from './background-agent-settings-saga';
 
@@ -28,6 +32,49 @@ function state() {
 
 describe('backgroundAgentSettingsSaga', () => {
   beforeEach(() => vi.clearAllMocks());
+
+  it('orders migration behind an active user write without replacing a newer queued pick', async () => {
+    let release!: () => void;
+    let state = { backgroundAgentSettings: initialState };
+    const channel = stdChannel();
+    const dispatch = (action: { type: string }) => {
+      state = {
+        backgroundAgentSettings: backgroundAgentSettingsReducer(
+          state.backgroundAgentSettings,
+          action as never,
+        ),
+      };
+      channel.put(action);
+    };
+    vi.mocked(localStorage.getItem).mockReturnValue(null);
+    mocks.update
+      .mockReturnValueOnce(
+        new Promise<void>((resolve) => {
+          release = resolve;
+        }),
+      )
+      .mockResolvedValue([]);
+    const task = runSaga({ channel, dispatch, getState: () => state }, backgroundAgentSettingsSaga);
+    dispatch(setDefaultModel('first'));
+    dispatch(setDefaultModel('newest'));
+    dispatch(
+      backgroundSettingsHydrationRequested({
+        defaultModel: 'haiku4.5',
+        typeOverrides: { commit: '', pr: '', review: '', fast: '' },
+      }),
+    );
+    expect(state.backgroundAgentSettings.defaultModel).toBe('newest');
+    expect(mocks.update).toHaveBeenCalledTimes(1);
+    expect(localStorage.setItem).toHaveBeenCalledWith(BG_MODEL_MIGRATION_MARKER_KEY, '1');
+    release();
+    await settle();
+    expect(mocks.update.mock.calls.map(([changes]) => changes[0])).toEqual([
+      { path: 'quickActions.defaultModel', value: 'first' },
+      { path: 'quickActions.defaultModel', value: 'newest' },
+    ]);
+    task.cancel();
+    await task.toPromise();
+  });
 
   it('atomically serializes current snapshots and retains only the latest queued write', async () => {
     let release!: () => void;

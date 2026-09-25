@@ -8,27 +8,35 @@
    */
   import KebabIcon from '$lib/components/icons/KebabIcon.svelte';
   import { onMount } from 'svelte';
-  import { invoke, shell } from '$lib/electron-bridge';
-  import { appClient } from '$lib/client';
+  import { shell } from '$lib/electron-bridge';
   import {
     selectActiveProviderId,
     selectEnabledProviders,
+    selectProviderPaths,
+    selectProviderSettingsSessionRequests,
+    selectPiAdapter,
   } from '$store/renderer/slices/provider-settings/provider-settings-selectors';
   import { selectProviderInUseReasons } from '$store/renderer/slices/provider-settings/provider-in-use-selectors';
   import {
     setActiveProvider,
     setProviderEnabled,
+    providerSettingsSessionOpened,
+    providerSettingsSessionClosed,
+    providerPathsRequested,
+    piAdapterInstallRequested,
   } from '$store/renderer/slices/provider-settings/provider-settings-slice';
-  import { reloadModelsForProvider } from '$store/renderer/slices/model/model-slice';
   import {
     checkAllProvidersRequested,
     checkSingleProviderRequested,
-    ensureProvidersChecked,
+    providerAvailabilityPanelOpened,
+    providerAvailabilityPanelClosed,
   } from '$store/renderer/slices/agent-availability/agent-availability-slice';
   import {
     selectNpxStatus,
     selectProviderLoadingMap,
     selectProviderStatusMap,
+    selectProviderHiddenIds,
+    selectProviderDiscoveryError,
   } from '$store/renderer/slices/agent-availability/agent-availability-selectors';
 
   import {
@@ -36,11 +44,8 @@
     selectProviderDisplayName,
   } from '$store/renderer/slices/provider-catalog/provider-catalog-selectors';
   import { selectIsProviderEnabled } from '$store/renderer/slices/provider-settings/provider-settings-selectors';
-  import { PROVIDERS_CHANNELS } from '$shared/ipc/channels';
   import { CLAUDE_CODE_NPX_MISSING_WARNING } from '$shared/constants/claude-code';
-  import { createLogger } from '$lib/utils/client-logger';
   import { groupProviderEntries, orderProviderEntries } from '$lib/utils/provider-list-order';
-  import type { ProviderAvailabilityResult } from '$shared/types/provider-availability';
   import {
     faArrowsRotate,
     faBan,
@@ -65,14 +70,18 @@
   import ProviderPathConfig from './ProviderPathConfig.svelte';
   import AgentProviderIcon from '$features/agent/components/AgentProviderIcon.svelte';
   import { isProviderAuthenticationReady } from '$shared/types/provider-availability';
-  import { checkPiMcpAdapterInstalled, installPiMcpAdapter } from '$features/pi/pi-models.client';
   import { store as appStore } from '$store/renderer/store';
   import AntigravityConnect from '$features/antigravity/AntigravityConnect.svelte';
   import { selectAntigravitySetupPolicy } from '$store/renderer/slices/antigravity-setup/antigravity-setup-selectors';
   const antigravitySetupPolicy$ = selectAntigravitySetupPolicy();
   let antigravityConnectOpen = $state(false);
 
-  const logger = createLogger('ProviderSelector');
+  const sessionId = crypto.randomUUID();
+  const requests$ = selectProviderSettingsSessionRequests(sessionId);
+  const paths$ = selectProviderPaths();
+  const piAdapter$ = selectPiAdapter();
+  const hiddenProviders$ = selectProviderHiddenIds();
+  const discoveryError$ = selectProviderDiscoveryError();
   const activeProviderId = selectActiveProviderId();
   const enabledProviders$ = selectEnabledProviders();
   const providerInUseReasons$ = selectProviderInUseReasons();
@@ -83,32 +92,25 @@
   const providerLoadingMap$ = selectProviderLoadingMap();
   const npxStatus$ = selectNpxStatus();
 
-  // Aggregated availability — read only for the daemon's hidden-provider
-  // verdict; per-provider status comes from the slice above.
-  let providerAvailability: ProviderAvailabilityResult | null = $state(null);
-  let checkError: string | null = $state(null);
-
-  // MCP state
-  let setupInProgress = $state<Record<string, boolean>>({});
-  let piMcpAdapterInstalled: boolean | null = $state(null);
-  let piMcpAdapterLoading = $state(false);
-  let piMcpAdapterChecked = $state(false);
-
-  // Track if we're waiting to check provider availability on focus
-
-  // Loading state for "Start using" / select buttons
-  let selectingProviderId = $state<string | null>(null);
-
-  // Provider path configuration state
-  // Configured paths (user-set overrides)
-  let providerPaths = $state<Record<string, string>>({});
-  // Resolved paths (daemon auto-detected)
-  let resolvedPaths = $state<Record<string, string>>({});
-  // Secondary-binary resolved paths for dual-binary providers (unsloth CLI)
-  let secondaryResolvedPaths = $state<Record<string, string>>({});
-  // Pinned npx package spec for npx-only providers (claude-code, pi), whose
-  // resolved path is the npx binary rather than the adapter itself.
-  let npxPackages = $state<Record<string, string>>({});
+  const checkError = $derived($discoveryError$);
+  const setupInProgress = $derived({
+    pi: $requests$.some(
+      (request) => request.resource === 'pi-adapter' && request.status === 'pending',
+    ),
+  });
+  const piMcpAdapterInstalled = $derived($piAdapter$.installed);
+  let selectingRequest = $state<{ id: string; providerId: string } | null>(null);
+  const selectingProviderId = $derived(
+    $requests$.some(
+      (request) => request.id === selectingRequest?.id && request.status === 'pending',
+    )
+      ? selectingRequest?.providerId
+      : null,
+  );
+  const providerPaths = $derived($paths$.configured);
+  const resolvedPaths = $derived($paths$.resolved);
+  const secondaryResolvedPaths = $derived($paths$.secondary);
+  const npxPackages = $derived($paths$.npxPackages);
   // Path dropdowns are controlled from each provider's overflow menu.
   let pathConfigOpen = $state<Record<string, boolean>>({});
 
@@ -161,7 +163,7 @@
   // Rendered immediately from the catalog; the daemon's hiddenProviders
   // verdict refines the catalog's own `visible` flag once it arrives.
   const orderedCatalogEntries = $derived.by(() =>
-    orderProviderEntries($catalogEntries$, providerAvailability?.hiddenProviders),
+    orderProviderEntries($catalogEntries$, $hiddenProviders$),
   );
 
   // Provider options for display - dynamically generated from the catalog
@@ -190,7 +192,7 @@
     groupProviderEntries(providerOptions, {
       isProviderEnabled,
       availabilityByProviderId: $providerStatusMap$,
-      hiddenProviderIds: providerAvailability?.hiddenProviders,
+      hiddenProviderIds: $hiddenProviders$,
       activeProviderId: $activeProviderId,
     }),
   );
@@ -200,21 +202,6 @@
     { id: 'discovered', providers: groupedProviderOptions.discovered },
     { id: 'supported', providers: groupedProviderOptions.supported },
   ]);
-
-  const piProviderAvailable = $derived.by(() => {
-    return providerOptions.find((provider) => provider.id === 'pi')?.available ?? false;
-  });
-
-  $effect(() => {
-    if (!piProviderAvailable) {
-      piMcpAdapterInstalled = null;
-      piMcpAdapterChecked = false;
-      return;
-    }
-
-    if (piMcpAdapterChecked || piMcpAdapterLoading) return;
-    void loadPiMcpAdapterStatus();
-  });
 
   function isProviderReadyForUse(providerId: string): boolean {
     if (!getProviderAvailable(providerId)) return false;
@@ -251,188 +238,23 @@
         return;
       }
     }
-    appStore.dispatch(setProviderEnabled({ providerId, enabled }));
+    appStore.dispatch(
+      setProviderEnabled({ providerId, enabled }, { id: crypto.randomUUID(), sessionId }),
+    );
   }
 
   onMount(() => {
-    // Populate the shared availability status map (agent-availability slice)
-    // for consumers gated on it (e.g. ModelPicker) even when onboarding's
-    // AgentGrid never mounted. Ensure-once + middleware coalescing make this
-    // a no-op when a check already ran or is in flight; the local
-    // checkProviderAvailability below feeds this component's own card UI.
-    appStore.dispatch(ensureProvidersChecked());
-    checkProviderAvailability();
-    loadProviderPaths();
-
-    // Focus/visibility listener to silently recheck provider availability
-    // when the app returns to focus — the user may have finished the manual
-    // install/login in their terminal.
-    const handleFocus = () => {
-      silentRefreshProviderAvailability();
-    };
-
-    const handleVisibilityChange = () => {
-      if (document.visibilityState !== 'visible') return;
-      silentRefreshProviderAvailability();
-    };
-
-    window.addEventListener('focus', handleFocus);
-    document.addEventListener('visibilitychange', handleVisibilityChange);
-
+    appStore.dispatch(providerSettingsSessionOpened(sessionId));
+    appStore.dispatch(providerAvailabilityPanelOpened(sessionId));
+    appStore.dispatch(providerPathsRequested());
     return () => {
-      window.removeEventListener('focus', handleFocus);
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      appStore.dispatch(providerAvailabilityPanelClosed(sessionId));
+      appStore.dispatch(providerSettingsSessionClosed(sessionId));
     };
   });
 
-  /** Load configured and resolved paths for all providers */
-  async function loadProviderPaths() {
-    try {
-      // Load configured path overrides from the daemon settings catalog
-      // (providers.paths, PROTOCOL §5.12) — the same seam ProviderPathConfig
-      // writes to. The legacy settings:getAll bulk read is not bridged.
-      const entry = await appClient.settings.get('providers.paths');
-      const configured =
-        entry?.value && typeof entry.value === 'object' && !Array.isArray(entry.value)
-          ? (entry.value as Record<string, unknown>)
-          : {};
-      const configuredPaths: Record<string, string> = {};
-      for (const [providerId, value] of Object.entries(configured)) {
-        if (typeof value === 'string') {
-          configuredPaths[providerId] = value;
-        }
-      }
-      providerPaths = configuredPaths;
-
-      // Load daemon-resolved paths for all providers (host.providerDiscovery)
-      const pathsResult = await invoke<{
-        success: boolean;
-        data?: {
-          paths: Record<string, string | null>;
-          secondaryPaths: Record<string, string | null>;
-          npxPackages?: Record<string, string>;
-        };
-      }>(PROVIDERS_CHANNELS.GET_PATHS);
-      if (pathsResult?.success && pathsResult.data) {
-        const resolved: Record<string, string> = {};
-        for (const [providerId, path] of Object.entries(pathsResult.data.paths)) {
-          if (path) resolved[providerId] = path;
-        }
-        resolvedPaths = resolved;
-        const secondary: Record<string, string> = {};
-        for (const [providerId, path] of Object.entries(pathsResult.data.secondaryPaths ?? {})) {
-          if (path) secondary[providerId] = path;
-        }
-        secondaryResolvedPaths = secondary;
-        npxPackages = pathsResult.data.npxPackages ?? {};
-      }
-    } catch (err) {
-      logger.error('Failed to load provider paths', { error: err });
-    }
-  }
-
-  /** Handle path change from ProviderPathConfig */
-  function handlePathChange(providerId: string, newPath: string) {
-    providerPaths = { ...providerPaths, [providerId]: newPath };
-    // Refresh provider availability after path change
-    checkProviderAvailability(true, true);
-  }
-
-  /**
-   * Kick off the loading tracks concurrently.
-   * Each track updates its own state slice and unblocks its own UI section.
-   * `rerunProbes` re-fans-out the per-provider checks (explicit refresh:
-   * path change, retry); on mount `ensureProvidersChecked` already covers it.
-   */
-  async function checkProviderAvailability(refreshModels = false, rerunProbes = false) {
-    checkError = null;
-    if (rerunProbes) {
-      appStore.dispatch(checkAllProvidersRequested());
-    }
-    await loadProviderAvailability(refreshModels);
-  }
-
-  /** Silent recheck — updates data without showing loading spinners */
-  async function silentRefreshProviderAvailability() {
-    // Re-run the per-provider fan-out; rows keep their last status while the
-    // fresh probes land, so no per-row pending indicator reappears.
-    appStore.dispatch(checkAllProvidersRequested());
-    try {
-      const providerResult = await invoke<{
-        success: boolean;
-        data?: ProviderAvailabilityResult;
-        error?: string;
-      }>(PROVIDERS_CHANNELS.GET_AVAILABILITY);
-
-      if (providerResult.success && providerResult.data) {
-        providerAvailability = providerResult.data;
-      }
-    } catch (err) {
-      logger.error('Silent provider refresh failed', { error: err });
-    }
-  }
-
-  /**
-   * The aggregated call, kept only for the daemon's hidden-provider verdict
-   * (and the model refresh). Rows no longer wait on it — they render from the
-   * catalog and fill in from the shared per-provider slice.
-   */
-  async function loadProviderAvailability(refreshModels = false) {
-    try {
-      const providerResult = await invoke<{
-        success: boolean;
-        data?: ProviderAvailabilityResult;
-        error?: string;
-      }>(PROVIDERS_CHANNELS.GET_AVAILABILITY);
-
-      if (!providerResult.success) {
-        checkError = providerResult.error || m.settings_providers_checkError();
-        return;
-      }
-      providerAvailability = providerResult.data || null;
-
-      if (refreshModels) {
-        appStore.dispatch(reloadModelsForProvider());
-      }
-    } catch (err) {
-      logger.error('Failed to check provider availability', { error: err });
-      checkError = err instanceof Error ? err.message : m.settings_providers_unknownError();
-    }
-  }
-
-  async function loadPiMcpAdapterStatus() {
-    piMcpAdapterLoading = true;
-    try {
-      piMcpAdapterInstalled = await checkPiMcpAdapterInstalled();
-    } catch (err) {
-      logger.warn('Failed to check Pi MCP adapter status', { error: err });
-      piMcpAdapterInstalled = null;
-    } finally {
-      piMcpAdapterChecked = true;
-      piMcpAdapterLoading = false;
-    }
-  }
-
-  async function handleInstallPiMcpAdapter() {
-    setupInProgress = { ...setupInProgress, pi: true };
-    try {
-      const result = await installPiMcpAdapter();
-      if (result?.success) {
-        await loadPiMcpAdapterStatus();
-        notify.success(m.settings_providers_piAdapterInstalled());
-      } else {
-        notify.error(m.settings_providers_piAdapterInstallFailed(), {
-          description: result?.error || m.settings_providers_unknownError(),
-        });
-      }
-    } catch (err) {
-      logger.error('Failed to install pi-mcp-adapter', err);
-      notify.error(m.settings_providers_piAdapterInstallFailed(), {
-        description: err instanceof Error ? err.message : m.settings_providers_unknownError(),
-      });
-    } finally {
-      setupInProgress = { ...setupInProgress, pi: false };
-    }
+  function handleInstallPiMcpAdapter() {
+    appStore.dispatch(piAdapterInstallRequested({ id: crypto.randomUUID(), sessionId }));
   }
 
   function openDocs(url: string) {
@@ -441,24 +263,10 @@
 
   let pathAnchors = $state<Record<string, HTMLButtonElement | HTMLAnchorElement | null>>({});
 
-  async function handleSelectProvider(providerId: string) {
-    selectingProviderId = providerId;
-    const previousProviderId = $activeProviderId;
-    try {
-      logger.info('Selecting provider:', {
-        from: previousProviderId,
-        to: providerId,
-      });
-      appStore.dispatch(setActiveProvider(providerId));
-      appStore.dispatch(reloadModelsForProvider());
-      notify.success(
-        m.settings_providers_switchedTo({
-          name: selectProviderDisplayName.select(appStore.state, providerId),
-        }),
-      );
-    } finally {
-      selectingProviderId = null;
-    }
+  function handleSelectProvider(providerId: string) {
+    const id = crypto.randomUUID();
+    selectingRequest = { id, providerId };
+    appStore.dispatch(setActiveProvider(providerId, { id, sessionId }));
   }
 </script>
 
@@ -473,7 +281,7 @@
         variant="ghost"
         type="button"
         class="text-primary-ink hover:text-primary-ink/80 cursor-pointer transition-colors type-body font-medium"
-        onclick={() => checkProviderAvailability(true, true)}
+        onclick={() => appStore.dispatch(checkAllProvidersRequested(true))}
       >
         {m.settings_providers_tryAgain()}
       </Button>
@@ -618,17 +426,16 @@
                           cliCommand={provider.id === 'unsloth' ? 'unsloth' : provider.command}
                           configuredPath={providerPaths[provider.id]}
                           resolvedPath={provider.id === 'unsloth'
-                            ? secondaryResolvedPaths[provider.id]
-                            : resolvedPaths[provider.id]}
+                            ? (secondaryResolvedPaths[provider.id] ?? undefined)
+                            : (resolvedPaths[provider.id] ?? undefined)}
                           runtimeCliCommand={provider.id === 'unsloth'
                             ? provider.command
                             : undefined}
                           runtimeResolvedPath={provider.id === 'unsloth'
-                            ? resolvedPaths[provider.id]
+                            ? (resolvedPaths[provider.id] ?? undefined)
                             : undefined}
                           npxPackage={npxPackages[provider.id]}
                           isInstalled={provider.available}
-                          onPathChange={(path) => handlePathChange(provider.id, path)}
                           bind:open={pathConfigOpen[provider.id]}
                         />
                       </div>

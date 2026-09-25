@@ -11,6 +11,22 @@ import {
   selectProviderCatalogEntry,
 } from '../provider-catalog/provider-catalog-selectors';
 
+export const selectProviderSettingsSessionRequests = store.createSelector(
+  (state, sessionId: string) =>
+    getItems(state.providerSettings.requests).filter((request) => request.sessionId === sessionId),
+);
+export const selectProviderSettingsSessionActive = store.createSelector(
+  (state, sessionId: string) => state.providerSettings.sessions.includes(sessionId),
+);
+export const selectProviderWriteRevision = store.createSelector(
+  (state, resource: string) => state.providerSettings.writeRevisions?.[resource] ?? 0,
+);
+export const selectProviderPaths = store.createSelector((state) => state.providerSettings.paths);
+export const selectProviderPathsRevision = store.createSelector(
+  (state) => state.providerSettings.pathsRevision,
+);
+export const selectPiAdapter = store.createSelector((state) => state.providerSettings.piAdapter);
+
 /**
  * Default provider id — the provider leg of the default model triple
  * (`model.defaultProvider`). The standalone `providers.active` concept is

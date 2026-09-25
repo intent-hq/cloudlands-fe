@@ -1,10 +1,25 @@
 /**
  * @vitest-environment jsdom
  */
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
+import {
+  cleanup,
+  fireEvent,
+  render as renderComponent,
+  screen,
+  waitFor,
+  within,
+} from '@testing-library/svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import type { ComponentProps } from 'svelte';
 import { m } from '$shared/paraglide/messages.js';
 import type { ConnectionRecord, KeychainSyncStateResult } from '$shared/types/connections';
+import { store } from '$store/renderer/store';
+import { connectionsSaga } from '$store/renderer/slices/connections/sagas/connections-saga';
+import { settingsHydrationSaga } from '$store/renderer/slices/settings-events/sagas/settings-hydration-saga';
+import {
+  connectionsListReceived,
+  keychainSyncStateReceived,
+} from '$store/renderer/slices/connections/connections-slice';
 
 const mocks = vi.hoisted(() => ({
   loaded: true,
@@ -20,9 +35,6 @@ const mocks = vi.hoisted(() => ({
     (typeof import('$lib/utils/device-update-eligibility'))['isDaemonBehindPin'] | null,
   canRequestDeviceUpdate: null as
     (typeof import('$lib/utils/device-update-eligibility'))['canRequestDeviceUpdate'] | null,
-  dispatch: vi.fn(),
-  start: async () => {},
-  stop: async () => {},
   update: vi.fn(),
   test: vi.fn(),
   rotate: vi.fn(),
@@ -34,12 +46,6 @@ const mocks = vi.hoisted(() => ({
   settingsList: vi.fn(),
   settingsUpdate: vi.fn(),
   pairingInfo: vi.fn(),
-  readable: <T>(get: () => T) => ({
-    subscribe(run: (value: T) => void) {
-      run(get());
-      return () => {};
-    },
-  }),
 }));
 
 vi.mock('$lib/client', () => ({
@@ -53,26 +59,7 @@ vi.mock('$lib/client', () => ({
   },
 }));
 
-vi.mock('$store/renderer/store', async () => {
-  const { createConnectionsHarness } =
-    await import('$store/renderer/slices/connections/test-harness');
-  const { createCollection } =
-    await import('@augmentcode/themis/utils/collections/collection-utils');
-  const harness = createConnectionsHarness(
-    () => ({
-      windowBackendId: mocks.currentConnectionId,
-      connections: createCollection('id', mocks.connections),
-      hasReceivedList: mocks.loaded,
-      keychainSync: mocks.keychainSync,
-      pinnedVersion: mocks.pinnedVersion,
-      connectedIds: mocks.connectedIds,
-    }),
-    mocks.dispatch,
-  );
-  mocks.start = harness.start;
-  mocks.stop = harness.stop;
-  return { store: harness.store };
-});
+vi.mock('$features/settings/settings-hydration-service', () => ({ applySettingsChanges: vi.fn() }));
 
 vi.mock('$lib/utils/device-update-eligibility', async (importOriginal) => {
   const actual = await importOriginal<typeof import('$lib/utils/device-update-eligibility')>();
@@ -98,6 +85,29 @@ vi.mock('$lib/components/ui/toast', () => ({
 }));
 
 import DevicesSettings from './DevicesSettings.svelte';
+
+let stopSettings: (() => void) | undefined;
+let stopConnections: (() => void) | undefined;
+let dispatchSpy: ReturnType<typeof vi.spyOn<typeof store, 'dispatch'>>;
+
+function connectionsSnapshot() {
+  return {
+    connections: mocks.connections,
+    activeId: mocks.currentConnectionId,
+    windowBackendId: mocks.currentConnectionId,
+    pinnedVersion: mocks.pinnedVersion,
+    connectedIds: mocks.connectedIds,
+  };
+}
+
+function render(component: typeof DevicesSettings, props?: ComponentProps<typeof DevicesSettings>) {
+  // Keep fixture setup at the public action boundary; run both production owners.
+  stopConnections ??= store.runSaga(connectionsSaga);
+  stopSettings ??= store.runSaga(settingsHydrationSaga);
+  if (mocks.loaded) store.dispatch(connectionsListReceived(connectionsSnapshot()));
+  if (mocks.keychainSync) store.dispatch(keychainSyncStateReceived(mocks.keychainSync));
+  return renderComponent(component, props);
+}
 
 const local: ConnectionRecord = {
   id: 'local',
@@ -192,12 +202,7 @@ describe('DevicesSettings', () => {
       on: vi.fn(() => 'listener'),
       offById: vi.fn(),
       invoke: vi.fn((channel: string, params?: any) => {
-        if (channel === 'connections:list')
-          return Promise.resolve({
-            connections: mocks.connections,
-            activeId: 'local',
-            windowBackendId: 'local',
-          });
+        if (channel === 'connections:list') return Promise.resolve(connectionsSnapshot());
         if (channel === 'connections:update') return mocks.update(params).promise;
         if (channel === 'connections:test') return mocks.test(params).promise;
         if (channel === 'connections:rotate-secret') return mocks.rotate(params).promise;
@@ -216,13 +221,18 @@ describe('DevicesSettings', () => {
         throw new Error(`Unexpected channel ${channel}`);
       }),
     } as Window['electronAPI'];
-    await mocks.start();
-    mocks.dispatch.mockClear();
+    store.init();
+    dispatchSpy = vi.spyOn(store, 'dispatch');
   });
 
   afterEach(async () => {
     cleanup();
-    await mocks.stop();
+    stopSettings?.();
+    stopConnections?.();
+    stopSettings = undefined;
+    stopConnections = undefined;
+    dispatchSpy.mockRestore();
+    store.dispose();
   });
 
   it('shows named remotes without duplicating their address or visible status text', () => {
@@ -652,7 +662,7 @@ describe('DevicesSettings', () => {
       host: 'render.local',
       port: 5190,
     });
-    expect(mocks.dispatch).not.toHaveBeenCalledWith(
+    expect(dispatchSpy).not.toHaveBeenCalledWith(
       expect.objectContaining({ type: expect.stringMatching(/theme/i) }),
     );
     expect(mocks.rotate).not.toHaveBeenCalled();
@@ -681,7 +691,7 @@ describe('DevicesSettings', () => {
     mocks.connections = [local];
     render(DevicesSettings);
     const toggle = screen.getByRole('switch', { name: m.settings_wsApi_enable_label() });
-    await waitFor(() => expect(toggle.getAttribute('aria-disabled')).not.toBe('true'));
+    await waitFor(() => expect((toggle as HTMLButtonElement).disabled).toBe(false));
     await fireEvent.click(toggle);
     await waitFor(() =>
       expect(mocks.settingsUpdate).toHaveBeenCalledWith([
@@ -701,7 +711,7 @@ describe('DevicesSettings', () => {
     await waitFor(() => expect((toggle as HTMLButtonElement).disabled).toBe(false));
     await fireEvent.click(toggle);
     await waitFor(() => expect(mocks.toastError).toHaveBeenCalled());
-    expect(toggle.getAttribute('aria-checked')).toBe('false');
+    await waitFor(() => expect(toggle.getAttribute('aria-checked')).toBe('false'));
     expect(screen.queryByRole('button', { name: m.settings_devices_advanced_label() })).toBeNull();
   });
 
@@ -1125,7 +1135,7 @@ describe('DevicesSettings', () => {
       host: 'preview.local',
       port: 6200,
     });
-    expect(testButton.getAttribute('aria-busy')).toBe('true');
+    await waitFor(() => expect(testButton.getAttribute('aria-busy')).toBe('true'));
     expect(within(form).getByRole('status')).toBeTruthy();
     resolveTest({ status: 'success', fingerprint: remote.fingerprint! });
     await waitFor(() => expect(testButton.getAttribute('aria-busy')).toBeNull());

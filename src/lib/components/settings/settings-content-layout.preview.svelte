@@ -1,13 +1,14 @@
 <script module lang="ts">
   import { definePreview } from '$lib/component-catalog/preview-definition';
+  import { setupSettingsFormPreview } from '../../../test/api-rtk-settings-preview';
 
   export const preview = definePreview<{ narrowPane?: boolean }>({
     id: 'settings-content-layout',
     title: 'Settings content layout',
     defaultState: 'default',
     states: {
-      default: { props: {} },
-      'narrow-pane': { props: { narrowPane: true } },
+      default: { props: {}, setup: setupSettingsFormPreview },
+      'narrow-pane': { props: { narrowPane: true }, setup: setupSettingsFormPreview },
     },
   });
 </script>

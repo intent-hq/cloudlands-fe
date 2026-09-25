@@ -6,7 +6,7 @@
  * (`$features/providers/provider-models.client`).
  */
 
-export interface AuggieModelBadge {
+interface AuggieModelBadge {
   color: string;
   label: string;
   variant?: string;
