@@ -1084,6 +1084,8 @@
   "ui_linkTooltip_gitHubActionsHint_tooltip": "Click for actions · Hold {key} to open in app",
   "ui_linkTooltip_copied_label": "Copied!",
   "ui_linkTooltip_gitHubLoading_ariaLabel": "Loading GitHub details…",
+  "ui_linkTooltip_gitHubRateLimited_description": "GitHub is limiting requests. Hover again later to retry.",
+  "ui_linkTooltip_gitHubUnavailable_description": "GitHub details are unavailable. Hover again to retry.",
   "ui_linkTooltip_gitHubStateOpen_label": "Open",
   "ui_linkTooltip_gitHubStateClosed_label": "Closed",
   "ui_linkTooltip_gitHubStateMerged_label": "Merged",

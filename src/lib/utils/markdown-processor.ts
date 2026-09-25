@@ -81,7 +81,6 @@ function getMarkdownWorker(): Worker {
       const { id, html, error } = event.data;
       const callback = workerCallbacks.get(id);
       if (callback) {
-        workerCallbacks.delete(id);
         if (error) {
           callback.reject(new Error(error));
         } else {
@@ -131,39 +130,42 @@ function parseMarkdownInWorker(
   pipeline?: { preserveAnchors: boolean; renderMath: boolean },
 ): Promise<string> {
   return new Promise((resolve, reject) => {
-    try {
-      const id = workerRequestId++;
-      let settled = false;
+    const id = workerRequestId++;
+    let settled = false;
 
-      const timeoutHandle = setTimeout(() => {
-        if (settled) return;
-        settled = true;
-        workerCallbacks.delete(id);
-        logger.warn('[markdown-worker] Worker timed out, falling back to main thread', {
-          id,
-          markdownLength: markdown.length,
-          timeoutMs: WORKER_TIMEOUT_MS,
-        });
-        // Fall back to main-thread parsing with full pipeline
-        parseMarkdownMainThread(markdown, pipeline).then(resolve, reject);
-      }, WORKER_TIMEOUT_MS);
+    const retireRequest = () => {
+      if (settled) return false;
+      settled = true;
+      clearTimeout(timeoutHandle);
+      workerCallbacks.delete(id);
+      return true;
+    };
 
-      workerCallbacks.set(id, {
-        resolve: (html) => {
-          if (settled) return;
-          settled = true;
-          clearTimeout(timeoutHandle);
-          resolve(html);
-        },
-        reject: (err) => {
-          if (settled) return;
-          settled = true;
-          clearTimeout(timeoutHandle);
-          reject(err);
-        },
+    const timeoutHandle = setTimeout(() => {
+      if (!retireRequest()) return;
+      logger.warn('[markdown-worker] Worker timed out, falling back to main thread', {
+        id,
+        markdownLength: markdown.length,
+        timeoutMs: WORKER_TIMEOUT_MS,
       });
+      // Fall back to main-thread parsing with full pipeline
+      parseMarkdownMainThread(markdown, pipeline).then(resolve, reject);
+    }, WORKER_TIMEOUT_MS);
+
+    workerCallbacks.set(id, {
+      resolve: (html) => {
+        if (!retireRequest()) return;
+        resolve(html);
+      },
+      reject: (err) => {
+        if (!retireRequest()) return;
+        reject(err);
+      },
+    });
+    try {
       getMarkdownWorker().postMessage({ id, markdown, pipeline });
     } catch (err) {
+      if (!retireRequest()) return;
       // Worker failed to create — fall back to main thread with full pipeline
       logger.warn('[markdown-worker] Failed to post to worker, falling back to main thread', err);
       parseMarkdownMainThread(markdown, pipeline).then(resolve, reject);
