@@ -1,7 +1,9 @@
-import type { Locator, Page } from '@playwright/test';
 import { expect, test } from '../../../../test/ct-test';
 import TaskProgressControl from '../TaskProgressControl.svelte';
 import TaskProgressControlHost from './TaskProgressControlHost.svelte';
+
+type Page = Parameters<Parameters<typeof test.beforeEach>[1]>[0]['page'];
+type Locator = ReturnType<Page['locator']>;
 
 const tasks = [
   { id: 'pending', title: 'Inspect the panel', status: 'pending' },
