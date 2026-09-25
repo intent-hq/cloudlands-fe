@@ -1,3 +1,4 @@
+import { readHardwareConsoleSettingsBag } from '$features/hardware-console/settings-bag';
 import { takeLatestFromSelector, type SelectorChannelPayload } from '@augmentcode/themis/saga';
 import { buffers, eventChannel, type EventChannel } from 'redux-saga';
 import { call, cancelled, delay, fork, join, put, take, takeLatest } from 'typed-redux-saga';
@@ -16,7 +17,6 @@ import {
 import {
   parseEnabled,
   persistHardwareConsoleEnabled,
-  readHardwareConsoleSettingsBag,
 } from '$features/hardware-console/integration-toggle-service';
 import { getHardwareConsoleManager } from '$features/hardware-console/instance';
 import { installHardwareConsoleConnectionToasts } from '$features/hardware-console/connection-toast-service';

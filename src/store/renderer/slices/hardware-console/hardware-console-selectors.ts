@@ -11,6 +11,15 @@ export const selectHardwareConsoleEnabled = store.createSelector<[], boolean>(
   (state) => state.hardwareConsole.enabled,
 );
 
+/** Shared left-encoder behavior, read on each input so a choice applies immediately. */
+export const selectHardwareConsoleEncoderBehavior = store.createSelector(
+  (state) => state.hardwareConsole.encoderBehavior,
+);
+
+export const selectHardwareConsoleEncoderBehaviorSaveFailed = store.createSelector(
+  (state) => state.hardwareConsole.encoderBehaviorSaveFailed,
+);
+
 /**
  * Whether this window owns the hardware console (last-focused non-HUD
  * window, intent-hq/monorepo#1928). Only the owner acts on decoded input.
