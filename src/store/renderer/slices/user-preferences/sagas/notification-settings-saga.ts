@@ -5,7 +5,7 @@ import { createLogger } from '$lib/utils/client-logger';
 import {
   selectNotificationEnabled,
   selectNotificationVolume,
-  selectPendingNotificationVolumeEditId,
+  selectNotificationVolumeWrite,
   selectSoundEnabled,
   selectSoundOnlyWhenUnfocused,
 } from '../user-preferences-selectors';
@@ -65,9 +65,10 @@ export function* persistNotificationSettingsWorker() {
   const soundEnabled = yield* selectSoundEnabled.effect();
   const soundOnlyWhenUnfocused = yield* selectSoundOnlyWhenUnfocused.effect();
   const volume = yield* selectNotificationVolume.effect();
-  const editId = yield* selectPendingNotificationVolumeEditId.effect();
+  const { editId, hydrationEpoch } = yield* selectNotificationVolumeWrite.effect();
+  let revision: number | undefined;
   try {
-    yield* call(updateSettings, [
+    const result = yield* call(updateSettings, [
       { path: NOTIFICATION_PATHS.enabled, value: enabled ?? true },
       { path: NOTIFICATION_PATHS.soundEnabled, value: soundEnabled ?? true },
       {
@@ -76,12 +77,13 @@ export function* persistNotificationSettingsWorker() {
       },
       { path: NOTIFICATION_PATHS.volume, value: volume ?? 0.5 },
     ]);
+    revision = result.revision;
   } catch (error) {
     logger.warn('Failed to persist notification settings to daemon', { error });
   }
   // A cancelled older save must not release a newer edit's hydration guard.
   // Success and failure both settle the matching write; cancellation skips this put.
-  if (editId != null) yield* put(notificationVolumeWriteSettled(editId));
+  if (editId != null) yield* put(notificationVolumeWriteSettled(editId, hydrationEpoch, revision));
 }
 
 /** Unregistered until the S20 middleware cutover. */
@@ -94,11 +96,10 @@ export function* notificationSettingsSaga() {
     setVolume,
     resetNotificationSettings,
   ];
-  yield* takeLatest(
-    // Exclude startup hydration before takeLatest can cancel a pending user save.
-    (action: { type: string }) =>
-      triggers.some((trigger) => trigger.type === action.type) && !suppressedActions.delete(action),
-    persistNotificationSettingsWorker,
-  );
+  type NotificationAction = ReturnType<(typeof triggers)[number]>;
+  // Exclude startup hydration before takeLatest can cancel a pending user save.
+  const isUserEdit = (action: { type: string }): action is NotificationAction =>
+    triggers.some((trigger) => trigger.type === action.type) && !suppressedActions.delete(action);
+  yield* takeLatest(isUserEdit, persistNotificationSettingsWorker);
   yield* call(hydrateNotificationSettingsWorker, suppressedActions);
 }

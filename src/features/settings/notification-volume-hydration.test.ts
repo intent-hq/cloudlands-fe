@@ -306,9 +306,14 @@ describe('notification volume through daemon events and settings hydration', () 
     },
   );
 
-  it.each(['startup', 'reconnect'])(
-    'preserves a pending local volume edit through a delayed %s snapshot',
-    async (phase) => {
+  it.each([
+    ['startup', 20],
+    ['reconnect', 20],
+    ['startup', 120],
+    ['reconnect', 120],
+  ] as const)(
+    'preserves a local volume edit through a delayed %s snapshot at %sms',
+    async (phase, readDelay) => {
       if (phase === 'reconnect') await start();
       let finishSnapshot!: (result: ReturnType<typeof snapshot>) => void;
       mocks.request.mockImplementation(async (method: string, params?: { path: string }) => {
@@ -326,11 +331,11 @@ describe('notification volume through daemon events and settings hydration', () 
         await settle();
       }
       appStore.dispatch(setVolume(0.9));
-      await vi.advanceTimersByTimeAsync(20);
+      await vi.advanceTimersByTimeAsync(readDelay);
       finishSnapshot(snapshot());
       await settle();
       expect.soft(volume()).toBe(0.9);
-      await vi.advanceTimersByTimeAsync(80);
+      await vi.advanceTimersByTimeAsync(Math.max(0, 100 - readDelay));
       expect(savedVolumes()).toEqual([0.9]);
       emitVolume(0.75, 12);
       await vi.advanceTimersByTimeAsync(150);
@@ -385,4 +390,66 @@ describe('notification volume through daemon events and settings hydration', () 
     expect(volume()).toBe(0.75);
     expect(savedVolumes()).toEqual([0.9]);
   });
+
+  it.each(['success', 'failure'])(
+    'retains a newer external change received before save %s',
+    async (outcome) => {
+      await start();
+      let finishWrite!: () => void;
+      mocks.request.mockImplementation(async () => {
+        if (writes().length === 1)
+          return new Promise((resolve, reject) => {
+            finishWrite = () =>
+              outcome === 'success'
+                ? resolve({ applied: [{ path: 'notifications.volume', value: 0.9 }], revision: 11 })
+                : reject(new Error('offline'));
+          });
+        return { applied: [], revision: 13 };
+      });
+      appStore.dispatch(setVolume(0.9));
+      await vi.advanceTimersByTimeAsync(100);
+      if (outcome === 'success') emitVolume(0.9, 11);
+      emitVolume(0.75, 12);
+      await settle();
+      finishWrite();
+      await settle();
+      expect.soft(volume()).toBe(0.75);
+      appStore.dispatch(setNotificationEnabled(false));
+      await vi.advanceTimersByTimeAsync(100);
+      expect(savedVolumes()).toEqual([0.9, 0.75]);
+    },
+  );
+
+  it.each(['before', 'after'])(
+    'accepts restarted daemon revisions when a save settles %s reconnect',
+    async (timing) => {
+      await start();
+      let finishWrite!: (result: unknown) => void;
+      mocks.request.mockImplementation(async (method: string) => {
+        if (method === 'settings.update')
+          return new Promise((resolve) => {
+            finishWrite = resolve;
+          });
+        if (method === 'settings.list') return snapshot(0.6, 0);
+        throw new Error(`Unexpected request: ${method}`);
+      });
+      appStore.dispatch(setVolume(0.9));
+      await vi.advanceTimersByTimeAsync(100);
+      if (timing === 'before') {
+        finishWrite({ applied: [], revision: 20 });
+        await settle();
+      }
+      appStore.dispatch(backendReconnected());
+      await settle();
+      if (timing === 'after') {
+        finishWrite({ applied: [], revision: 20 });
+        await settle();
+      }
+      expect(volume()).toBe(0.6);
+      emitVolume(0.8, 1);
+      await vi.advanceTimersByTimeAsync(150);
+      expect(volume()).toBe(0.8);
+      expect(savedVolumes()).toEqual([0.9]);
+    },
+  );
 });

@@ -108,7 +108,7 @@ describe('notificationSettingsSaga', () => {
   });
 
   it('writes the exact post-reducer snapshot after 100ms', async () => {
-    mocks.backendRequest.mockResolvedValue({});
+    mocks.backendRequest.mockResolvedValue({ applied: [], revision: 11 });
     const state = {
       userPreferences: {
         enabled: false,
@@ -116,6 +116,7 @@ describe('notificationSettingsSaga', () => {
         soundOnlyWhenUnfocused: false,
         volume: 0.8,
         pendingNotificationVolumeEditId: 3,
+        notificationVolumeHydrationEpoch: 2,
       },
     };
     const dispatch = vi.fn();
@@ -136,7 +137,7 @@ describe('notificationSettingsSaga', () => {
         },
       ],
     ]);
-    expect(dispatch.mock.calls).toEqual([[notificationVolumeWriteSettled(3)]]);
+    expect(dispatch.mock.calls).toEqual([[notificationVolumeWriteSettled(3, 2, 11)]]);
   });
 
   it('swallows persistence failures', async () => {
@@ -152,6 +153,7 @@ describe('notificationSettingsSaga', () => {
             soundOnlyWhenUnfocused: false,
             volume: 0.5,
             pendingNotificationVolumeEditId: 4,
+            notificationVolumeHydrationEpoch: 2,
           },
         }),
       },
@@ -161,7 +163,7 @@ describe('notificationSettingsSaga', () => {
     await task.toPromise();
 
     expect(mocks.warn.mock.calls).toHaveLength(1);
-    expect(dispatch.mock.calls).toEqual([[notificationVolumeWriteSettled(4)]]);
+    expect(dispatch.mock.calls).toEqual([[notificationVolumeWriteSettled(4, 2, undefined)]]);
   });
 
   it('debounces every notification trigger to the latest snapshot', async () => {
