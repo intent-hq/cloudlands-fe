@@ -5679,9 +5679,13 @@
             ? 'px-0'
             : 'px-4 sm:px-6'}"
           class:regular-chat-content-inset={!isChiefWorkspace}
+          style:--subscription-card-max-bleed={isChiefWorkspace ? '0px' : undefined}
           data-testid="pinned-prompt-overlay-lane"
         >
-          <div class={isChiefWorkspace ? 'mx-1 sm:mx-2' : ''}>
+          <div
+            class={isChiefWorkspace ? 'mx-1 sm:mx-2' : ''}
+            style:--subscription-card-max-bleed={isChiefWorkspace ? '0.25rem' : undefined}
+          >
             <PinnedTurnPrompt
               message={pinnedPrompt.message}
               surface={pinnedPrompt.surface}
@@ -5724,6 +5728,7 @@
           ? 'px-0'
           : 'px-4 pt-8 sm:px-6'} {transcriptBottomInsetClass}"
         class:regular-chat-content-inset={!isChiefWorkspace}
+        style:--subscription-card-max-bleed={isChiefWorkspace ? '0px' : undefined}
         data-testid="chat-transcript-inner"
         data-structural-recompute-count={transcriptStructure.recomputeCount}
       >
@@ -6423,7 +6428,12 @@
                           estimatedHeight={USER_ROW_ESTIMATED_HEIGHT}
                         >
                           {#snippet children()}
-                            <div class={isChiefWorkspace ? 'mx-1 sm:mx-2' : ''}>
+                            <div
+                              class={isChiefWorkspace ? 'mx-1 sm:mx-2' : ''}
+                              style:--subscription-card-max-bleed={isChiefWorkspace
+                                ? '0.25rem'
+                                : undefined}
+                            >
                               <ChatMessage
                                 {agentId}
                                 messageId={message.id}
@@ -6946,6 +6956,7 @@
   }
 
   .regular-chat-content-inset {
+    --subscription-card-max-bleed: 1rem;
     padding-left: 1rem;
     padding-right: 1rem;
   }
