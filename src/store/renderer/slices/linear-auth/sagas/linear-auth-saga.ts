@@ -59,14 +59,12 @@ function* connect(apiKey: string, requestId: string): SagaGenerator<boolean> {
       [appClient.settings, appClient.settings.update],
       [{ path: LINEAR_TOKEN_SETTING_PATH, value: key }],
     );
-    if (!(yield* call(isCurrent, requestId))) return false;
     const state: Awaited<ReturnType<typeof linearAuthClient.getAuthState>> = yield* call(
       [linearAuthClient, linearAuthClient.getAuthState],
       true,
     );
-    if (!(yield* call(isCurrent, requestId))) return false;
     yield* put(setLinearAuthState(state.isAuthenticated, false, null));
-    if (!state.isAuthenticated)
+    if (!state.isAuthenticated && (yield* call(isCurrent, requestId)))
       yield* put(setLinearError(m.linearAuth_service_keyRejected_error()));
     return state.isAuthenticated;
   } catch (error) {
@@ -94,19 +92,17 @@ function* logout(requestId: string): SagaGenerator<boolean> {
     logger.error('Failed to clear Linear auth', error);
     return false;
   }
-  if (!(yield* call(isCurrent, requestId))) return false;
   try {
     const state: Awaited<ReturnType<typeof linearAuthClient.getAuthState>> = yield* call(
       [linearAuthClient, linearAuthClient.getAuthState],
       true,
     );
-    if (!(yield* call(isCurrent, requestId))) return false;
     yield* put(setLinearAuthState(state.isAuthenticated, state.requiresDaemonAuth, null));
-    if (state.isAuthenticated)
+    if (state.isAuthenticated && (yield* call(isCurrent, requestId)))
       yield* put(setLinearError(m.linearAuth_service_envKeyStillActive_error()));
     return !state.isAuthenticated;
   } catch {
-    if (yield* call(isCurrent, requestId)) yield* put(setLinearAuthState(false, false, null));
+    yield* put(setLinearAuthState(false, false, null));
     return true;
   }
 }
@@ -116,13 +112,22 @@ function* probeWorker(): SagaGenerator<void> {
   if (operation?.status === 'pending') return;
   yield* race({
     probe: call(probe),
-    invalidated: take([connectLinear, logoutLinear, cancelLinearAuth, consumeLinearAuth]),
+    // Consumption can allow another probe while the physical write still runs.
+    // Its settlement invalidates that read even when no consumer remains.
+    invalidated: take([
+      connectLinear,
+      logoutLinear,
+      cancelLinearAuth,
+      consumeLinearAuth,
+      settleLinearAuth,
+    ]),
   });
 }
 
 function* mutations(): SagaGenerator<void> {
   // Credential writes cannot be aborted on the wire. Drain each write before
-  // starting its successor, but publish only for the still-current request.
+  // starting its successor and reconcile shared auth even if its consumer left.
+  // Only errors and operation outcomes belong to the still-current request.
   const requests = yield* actionChannel([connectLinear, logoutLinear], buffers.expanding());
   try {
     while (true) {

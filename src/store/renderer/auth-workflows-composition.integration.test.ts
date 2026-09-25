@@ -228,7 +228,7 @@ describe('authentication workflow production composition', () => {
       }),
     );
     expect(selectLinearAuthConsumerOperation.select(appStore.state, 'settings-a')).toBeNull();
-    expect(linearAuthClient.getAuthState).toHaveBeenCalledOnce();
+    expect(linearAuthClient.getAuthState).toHaveBeenCalledTimes(2);
     expect(appClient.settings.update).toHaveBeenCalledTimes(2);
     appStore.dispatch(consumeLinearAuth('first'));
     expect(appStore.state.linearAuth.operation?.requestId).toBe('second');

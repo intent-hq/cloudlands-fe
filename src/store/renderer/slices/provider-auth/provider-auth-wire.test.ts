@@ -15,7 +15,13 @@ vi.mock('$lib/client', async () => {
 
 import { backendRequest } from '$lib/client/live/backend-transport';
 import { __resetGitHubAuthStatusForTests } from '$features/github-auth/renderer/github-auth-status.client';
-import { connectLinear, linearAuthReducer, logoutLinear } from '../linear-auth/linear-auth-slice';
+import {
+  connectLinear,
+  consumeLinearAuth,
+  linearAuthReducer,
+  logoutLinear,
+  setLinearAuthState,
+} from '../linear-auth/linear-auth-slice';
 import { linearAuthSaga } from '../linear-auth/sagas/linear-auth-saga';
 import {
   connectSentry,
@@ -99,6 +105,48 @@ describe('provider saga wire contracts through production clients and IPC adapte
     ]);
     expect(run.state().linearAuth.isAuthenticated).toBe(false);
   });
+
+  it.each(['connect', 'logout'] as const)(
+    'reconciles the Linear %s wire write after Settings dismisses the request',
+    async (kind) => {
+      const saved = Promise.withResolvers<
+        | { applied: { path: string; value: string }[]; revision: number }
+        | { path: string; value: null; revision: number }
+      >();
+      request
+        .mockReturnValueOnce(saved.promise)
+        .mockResolvedValueOnce({ authenticated: kind === 'connect', scopes: [] });
+      const run = harness(linearAuthSaga);
+      run.dispatch(setLinearAuthState(kind === 'logout', false, null));
+      const consumer = { requestId: 'write', consumerId: 'settings' };
+      run.dispatch(
+        kind === 'connect' ? connectLinear(' fixture-key ', consumer) : logoutLinear(consumer),
+      );
+      await vi.waitFor(() => expect(request).toHaveBeenCalledOnce());
+      run.dispatch(consumeLinearAuth('write'));
+      saved.resolve(
+        kind === 'connect'
+          ? { applied: [{ path: 'linear.token', value: '********' }], revision: 1 }
+          : { path: 'linear.token', value: null, revision: 1 },
+      );
+      await vi.waitFor(() =>
+        expect(run.state().linearAuth.isAuthenticated).toBe(kind === 'connect'),
+      );
+      expect(request.mock.calls).toEqual([
+        kind === 'connect'
+          ? ['settings.update', { changes: [{ path: 'linear.token', value: 'fixture-key' }] }]
+          : ['settings.reset', { path: 'linear.token' }],
+        ['linear.authStatus'],
+      ]);
+      expect(run.state().linearAuth).toMatchObject({
+        requiresDaemonAuth: false,
+        isAuthenticating: false,
+        operation: null,
+        error: null,
+      });
+      expect(JSON.stringify(run.state())).not.toContain('fixture-key');
+    },
+  );
 
   it('validates Sentry configuration and loads projects before settling the consumer', async () => {
     const project = { id: 'web', slug: 'web', name: 'Web', platform: 'javascript', isMember: true };
