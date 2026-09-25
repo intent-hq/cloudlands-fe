@@ -36,7 +36,8 @@ import {
   selectCollaborationCapabilities,
   selectHostRole,
 } from '../principal-selectors';
-import { principalSaga } from './principal-saga';
+import { PRINCIPAL_RETRY_DELAYS_MS, principalSaga } from './principal-saga';
+import { BackendError } from '$lib/client/live/backend-transport-types';
 
 const hello = {
   server: {
@@ -123,6 +124,149 @@ describe('connected principal hydration', () => {
       ['principal.me', {}],
     ]);
     expect(selectHostRole.select(store.state)).toBe('member');
+  });
+
+  it.each(['client.hello', 'principal.me'])(
+    'recovers after a transient %s timeout on the same connection',
+    async (failedMethod) => {
+      let failed = false;
+      wire.request.mockImplementation(async (method) => {
+        if (method === failedMethod && !failed) {
+          failed = true;
+          throw new BackendError({ code: 'TIMEOUT', message: 'Request timed out' });
+        }
+        return method === 'client.hello' ? hello : principal('owner');
+      });
+      start();
+      await settle();
+      expect(selectHostRole.select(store.state)).toBeNull();
+      await vi.advanceTimersByTimeAsync(1_000);
+      expect(selectHostRole.select(store.state)).toBe('owner');
+      expect(wire.request).toHaveBeenCalledTimes(4);
+    },
+  );
+
+  it('bounds transient retry attempts while keeping authority unresolved', async () => {
+    wire.request.mockRejectedValue(new BackendError({ code: 'TIMEOUT', message: 'timed out' }));
+    start();
+    await settle();
+    expect(wire.request).toHaveBeenCalledTimes(2);
+    for (const [index, backoff] of PRINCIPAL_RETRY_DELAYS_MS.entries()) {
+      await vi.advanceTimersByTimeAsync(backoff - 1);
+      expect(wire.request).toHaveBeenCalledTimes(2 * (index + 1));
+      await vi.advanceTimersByTimeAsync(1);
+      expect(wire.request).toHaveBeenCalledTimes(2 * (index + 2));
+    }
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(wire.request).toHaveBeenCalledTimes(8);
+    expect(selectHostRole.select(store.state)).toBeNull();
+  });
+
+  it.each([
+    { code: 'FORBIDDEN', rpcCode: -32003 },
+    { code: 'UNAUTHORIZED', rpcCode: -32001 },
+    { code: 'INVALID_PARAMS', rpcCode: -32602 },
+    { code: 'METHOD_NOT_FOUND', rpcCode: -32601 },
+    { code: 'AUTH_REJECTED' },
+    { code: 'FORBIDDEN' },
+  ])('does not retry a $code refusal, including when hello also times out', async (error) => {
+    wire.request.mockRejectedValueOnce(new BackendError({ code: 'TIMEOUT', message: 'timed out' }));
+    wire.request.mockRejectedValue(new BackendError({ ...error, message: 'Request rejected' }));
+    start();
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(wire.request).toHaveBeenCalledTimes(2);
+    expect(selectHostRole.select(store.state)).toBeNull();
+  });
+
+  it('does not retry an incompatible advertised principal', async () => {
+    wire.request.mockImplementation(async (method) =>
+      method === 'client.hello' ? hello : { ...principal(), hostRole: undefined },
+    );
+    start();
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(wire.request).toHaveBeenCalledTimes(2);
+    expect(store.state.principal.error).toBe('incompatible-response');
+  });
+
+  it.each(['backend', 'disconnect', 'auth rejection'] as const)(
+    'cancels a pending retry on %s',
+    async (transition) => {
+      wire.request.mockRejectedValue(new BackendError({ code: 'TIMEOUT', message: 'timed out' }));
+      start();
+      await vi.advanceTimersByTimeAsync(500);
+      if (transition === 'backend') {
+        wire.request.mockImplementation(async (method) =>
+          method === 'client.hello' ? hello : principal('guest'),
+        );
+        bind('other-backend');
+      } else if (transition === 'disconnect')
+        store.dispatch(connectionStatusChanged('disconnected'));
+      else store.dispatch(authRejectedReceived({ id: 'local', statusCode: 401 }));
+      await vi.advanceTimersByTimeAsync(60_000);
+      expect(wire.request).toHaveBeenCalledTimes(transition === 'backend' ? 4 : 2);
+      expect(selectHostRole.select(store.state)).toBe(transition === 'backend' ? 'guest' : null);
+    },
+  );
+
+  it('cancels a pending retry after confirmed membership revocation', async () => {
+    start();
+    await settle();
+    wire.request.mockRejectedValue(new BackendError({ code: 'TIMEOUT', message: 'timed out' }));
+    store.dispatch(
+      hostMembershipChanged({
+        revision: 4,
+        principalId: 'other-person',
+        action: 'added',
+        hostRole: 'member',
+      }),
+    );
+    await vi.advanceTimersByTimeAsync(500);
+    store.dispatch(
+      hostMembershipChanged({
+        revision: 5,
+        principalId: 'person',
+        action: 'removed',
+        hostRole: 'guest',
+      }),
+    );
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(wire.request).toHaveBeenCalledTimes(4);
+    expect(store.state.principal.status).toBe('revoked');
+  });
+
+  it('replaces the retry timer with a fresh invalidated read and fences its pending response', async () => {
+    wire.request.mockRejectedValue(new BackendError({ code: 'TIMEOUT', message: 'timed out' }));
+    start();
+    await vi.advanceTimersByTimeAsync(500);
+    const pending = defer();
+    store.dispatch(
+      hostMembershipChanged({
+        revision: 4,
+        principalId: 'other-person',
+        action: 'added',
+        hostRole: 'member',
+      }),
+    );
+    expect(pending.count()).toBe(1);
+    store.dispatch(
+      hostMembershipChanged({
+        revision: 5,
+        principalId: 'other-person',
+        action: 'added',
+        hostRole: 'member',
+      }),
+    );
+    await vi.advanceTimersByTimeAsync(30_000);
+    expect(pending.count()).toBe(1);
+    pending.reply(0, 'owner', 4);
+    await settle();
+    expect(selectHostRole.select(store.state)).toBeNull();
+    expect(pending.count()).toBe(2);
+    pending.reply(1, 'member', 5);
+    await settle();
+    expect(selectHostRole.select(store.state)).toBe('member');
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(pending.count()).toBe(2);
   });
 
   it.each(['local', 'remote'])(

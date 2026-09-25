@@ -21,6 +21,9 @@ import {
 
 import { canRequestDeviceUpdate } from '$lib/utils/device-update-eligibility';
 import { formatConnectionLabel, formatGuestSessionLabel } from '$lib/utils/connection-label';
+import { resolveBackendTransport } from '$lib/client/live/backend-transport-factory';
+import { getWebDaemonStatusSource } from '$lib/client/live/web-daemon-status';
+import { expectsElectronPreloadBridge, isElectronPlatform } from '$lib/utils/platform-capabilities';
 import { takeEveryByContextFIFO, takeLatestInContext } from '../../../utils/context-saga-effects';
 import {
   selectConnectionWorkflow,
@@ -172,6 +175,17 @@ function createConnectionsEventChannel(): EventChannel<ConnectionsEvent> {
 }
 
 async function invokeConnectionsList(): Promise<ConnectionsListResult> {
+  // Browser windows have one actual WebSocket backend and no Electron registry.
+  // Resolve the selected transport before binding; an absent/late Electron preload
+  // must still wait for its real per-window connections:list response.
+  if (!expectsElectronPreloadBridge() && !isElectronPlatform()) {
+    resolveBackendTransport();
+    const browserBackend = getWebDaemonStatusSource();
+    if (browserBackend) {
+      const id = 'browser-websocket';
+      return { connections: [], activeId: id, windowBackendId: id };
+    }
+  }
   const api = getApi();
   if (!api) throw new Error('electronAPI is not available');
   return (await api.invoke(CONNECTIONS.LIST)) as ConnectionsListResult;

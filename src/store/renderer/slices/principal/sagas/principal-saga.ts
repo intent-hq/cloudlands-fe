@@ -1,8 +1,9 @@
 import { buffers } from 'redux-saga';
-import { actionChannel, call, flush, put, take } from 'typed-redux-saga';
+import { actionChannel, call, delay, put, race, take } from 'typed-redux-saga';
 import { takeLatestFromSelector, type SelectorChannelPayload } from '@augmentcode/themis/saga';
 import {
   IncompatiblePrincipalResponse,
+  isRetryablePrincipalError,
   readConnectedPrincipal,
 } from '$lib/client/live/live-principal-client';
 import {
@@ -21,6 +22,8 @@ import {
 import { selectPrincipalConnectionContext, selectPrincipalState } from '../principal-selectors';
 import type { PrincipalRead } from '../principal-types';
 
+export const PRINCIPAL_RETRY_DELAYS_MS = [1_000, 5_000, 15_000] as const;
+
 /** One flight per connection; bursts invalidate immediately and produce one trailing read. */
 function* hydrateConnection({ payload: context }: SelectorChannelPayload<string | null>) {
   yield* put(principalContextChanged(context));
@@ -35,39 +38,52 @@ function* hydrateConnection({ payload: context }: SelectorChannelPayload<string 
     buffers.sliding(1),
   );
   try {
-    let previous: PrincipalRead | null = null;
+    let retries = 0;
     while (true) {
       const { invalidation, presentationVersion, status } = yield* selectPrincipalState.effect();
-      const read = { context, invalidation, presentationVersion };
-      if (
-        status !== 'revoked' &&
-        (!previous ||
-          previous.invalidation !== invalidation ||
-          previous.presentationVersion !== presentationVersion)
-      ) {
-        previous = read;
-        yield* put(principalReadStarted());
-        try {
-          const snapshot = yield* call(readConnectedPrincipal);
-          yield* put(principalReceived(read, snapshot));
-          const accepted = (yield* selectPrincipalState.effect()).snapshot === snapshot;
-          if (accepted && invalidation > 0) {
-            yield* put(loadWorkspacesRequested());
-          }
-        } catch (error) {
-          yield* put(
-            principalReadFailed(
-              read,
-              error instanceof IncompatiblePrincipalResponse
-                ? 'incompatible-response'
-                : 'unavailable',
-            ),
-          );
-        }
-        const pending = yield* flush(triggers);
-        if (pending.length) continue;
+      if (status === 'revoked') {
+        yield* take(triggers);
+        continue;
       }
-      yield* take(triggers);
+      const read: PrincipalRead = { context, invalidation, presentationVersion };
+      let retryDelay: number | undefined;
+      yield* put(principalReadStarted());
+      try {
+        const snapshot = yield* call(readConnectedPrincipal);
+        yield* put(principalReceived(read, snapshot));
+        retries = 0;
+        const accepted = (yield* selectPrincipalState.effect()).snapshot === snapshot;
+        if (accepted && invalidation > 0) yield* put(loadWorkspacesRequested());
+      } catch (error) {
+        yield* put(
+          principalReadFailed(
+            read,
+            error instanceof IncompatiblePrincipalResponse
+              ? 'incompatible-response'
+              : 'unavailable',
+          ),
+        );
+        if (isRetryablePrincipalError(error)) retryDelay = PRINCIPAL_RETRY_DELAYS_MS[retries++];
+      }
+      // Buffered invalidations cause one immediate trailing read. Unrelated
+      // events do not create flights; transient failures get a bounded backoff.
+      // Cancelling this connection worker also cancels its retry timer.
+      while (true) {
+        const current = yield* selectPrincipalState.effect();
+        if (
+          current.status === 'revoked' ||
+          current.invalidation !== invalidation ||
+          current.presentationVersion !== presentationVersion
+        ) {
+          retries = 0;
+          break;
+        }
+        if (retryDelay === undefined) yield* take(triggers);
+        else {
+          const { elapsed } = yield* race({ elapsed: delay(retryDelay), trigger: take(triggers) });
+          if (elapsed) break;
+        }
+      }
     }
   } finally {
     triggers.close();
