@@ -140,6 +140,27 @@ describe('settingsFormSaga with production reducer', () => {
     expect(selectSettingsForm.select(appStore.state, identity)).toBeUndefined();
   });
 
+  it('preserves a post-load save when an older refresh completes later', async () => {
+    open();
+    await settle();
+    const refresh = deferred<{ path: string; value: boolean }[]>();
+    mocks.list.mockReturnValueOnce(refresh.promise);
+    appStore.dispatch(
+      settingsFormLoadRequested({ ...identity, resource: 'load', requestId: 'refresh' }),
+    );
+    save('during-refresh', false);
+    await settle();
+    expect(mocks.update).toHaveBeenCalledExactlyOnceWith([{ path, value: false }]);
+    expect(operation()?.status).toBe('succeeded');
+
+    refresh.resolve([{ path, value: true }]);
+    await settle();
+    expect(selectSettingsFormOperation.select(appStore.state, identity, 'load')?.status).toBe(
+      'succeeded',
+    );
+    expect(selectSettingsFormEntry.select(appStore.state, identity, path)?.value).toBe(false);
+  });
+
   it('orders same-resource writes, preserves newer intent, and suppresses obsolete failure', async () => {
     open();
     await settle();

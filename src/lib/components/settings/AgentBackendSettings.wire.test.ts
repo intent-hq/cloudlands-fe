@@ -142,6 +142,60 @@ async function enter(label: string, value: string) {
 }
 
 describe('AgentBackendSettings through configured Store and hydration owner', () => {
+  it('hydrates the initial catalog after a rejected pre-load blur', async () => {
+    const initialRead = deferred<void>();
+    const request = mocks.request.getMockImplementation()!;
+    mocks.request.mockImplementation(async (method, params) => {
+      if (method === 'settings.get') await initialRead.promise;
+      return request(method, params);
+    });
+    render(AgentBackendSettings);
+    await waitFor(() => expect(mocks.request).toHaveBeenCalledWith('settings.get', { path: CAP }));
+    const identity = getItems(store.state.settingsEvents.forms)[0];
+    const input = screen.getByLabelText('Max concurrent agents') as HTMLInputElement;
+    await fireEvent.input(input, { target: { value: '18' } });
+    await fireEvent.blur(input);
+    await waitFor(() =>
+      expect(selectSettingsFormOperation.select(store.state, identity, CAP)?.status).toBe('failed'),
+    );
+    expect(selectSettingsForm.select(store.state, identity)?.loaded).toBe(false);
+    expect(selectSettingsFormOperation.select(store.state, identity, 'load')?.status).toBe(
+      'pending',
+    );
+    expect(mocks.request.mock.calls.filter(([method]) => method === 'settings.update')).toEqual([]);
+
+    initialRead.resolve();
+    await waitFor(() => {
+      expect(input.value).toBe('12');
+      expect((screen.getByLabelText('Agent memory budget') as HTMLInputElement).value).toBe('100');
+      expect((screen.getByLabelText('Idle reap minutes') as HTMLInputElement).value).toBe('30');
+      expect((screen.getByLabelText('ACP Node heap limit (MB)') as HTMLInputElement).value).toBe(
+        '8192',
+      );
+    });
+    expect(selectSettingsForm.select(store.state, identity)?.loaded).toBe(true);
+    expect(mocks.request.mock.calls.filter(([method]) => method === 'settings.get')).toEqual([
+      ['settings.get', { path: CAP }],
+      ['settings.get', { path: FLUSH }],
+      ['settings.get', { path: BUDGET }],
+      ['settings.get', { path: IDLE }],
+      ['settings.get', { path: HEAP }],
+    ]);
+    expect(mocks.update).not.toHaveBeenCalled();
+
+    await enter('Max concurrent agents', '24');
+    await waitFor(() =>
+      expect(selectSettingsFormOperation.select(store.state, identity, CAP)?.status).toBe(
+        'succeeded',
+      ),
+    );
+    expect(mocks.request).toHaveBeenLastCalledWith('settings.update', {
+      changes: [{ path: CAP, value: 24 }],
+    });
+    expect(mocks.update).toHaveBeenCalledTimes(1);
+    expect(selectSettingsFormEntry.select(store.state, identity, CAP)?.value).toBe(24);
+  });
+
   it('reads all catalog definitions with exact settings.get params while boot hydration is pending', async () => {
     const { identity } = await mounted();
     expect(mocks.request).toHaveBeenCalledWith('settings.list');

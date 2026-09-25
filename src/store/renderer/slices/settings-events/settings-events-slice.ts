@@ -105,6 +105,7 @@ function startRequest(
   state: SettingsEventsState,
   request: SettingsFormRequest,
   changes: SettingsFormChange[] = [],
+  requiresLoaded = false,
 ) {
   const form = getItem(state.forms, request.formId);
   if (form?.sessionId !== request.sessionId) return state;
@@ -123,8 +124,9 @@ function startRequest(
       ...form,
       ...(request.resource === 'load'
         ? { readVersion: form.mutationVersion }
-        : form.kind === 'websocket-api' &&
-            (request.resource === 'copy' || request.resource === 'qr')
+        : (requiresLoaded && !form.loaded) ||
+            (form.kind === 'websocket-api' &&
+              (request.resource === 'copy' || request.resource === 'qr'))
           ? {}
           : { mutationVersion: form.mutationVersion + 1 }),
       operations: upsertItem(form.operations, {
@@ -150,8 +152,9 @@ settingsEventsReducer.with(settingsFormRequestStarted, (state, { payload: [reque
 settingsEventsReducer.with(settingsFormLoadRequested, (state, { payload: [request] }) =>
   startRequest(state, request),
 );
+// saveForm rejects unloaded saves. Track their outcome without invalidating the initial read.
 settingsEventsReducer.with(settingsFormSaveRequested, (state, { payload: [request, changes] }) =>
-  startRequest(state, request, changes),
+  startRequest(state, request, changes, true),
 );
 
 settingsEventsReducer.with(
