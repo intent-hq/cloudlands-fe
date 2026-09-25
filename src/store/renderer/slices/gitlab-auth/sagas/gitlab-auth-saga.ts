@@ -130,7 +130,12 @@ type IntentFence = {
   // still protects older calls; release the record once all starts finish.
   deviceIntents: Map<
     string,
-    { activeGeneration: number | null; cancelledThrough: number; pendingStarts: number }
+    {
+      activeGeneration: number | null;
+      cancelledThrough: number;
+      pendingStarts: number;
+      needsCleanup: boolean;
+    }
   >;
 };
 
@@ -295,6 +300,7 @@ function* startDeviceAuth(
     activeGeneration: null,
     cancelledThrough: 0,
     pendingStarts: 0,
+    needsCleanup: false,
   };
   ownership.activeGeneration = generation;
   ownership.pendingStarts += 1;
@@ -307,26 +313,10 @@ function* startDeviceAuth(
     const result = yield* call([forgeAuthClient, forgeAuthClient.connect], params);
     started = result.success;
     if (superseded(fence, generation)) {
-      // An early cancel can precede the daemon installing its slot. Cancel
-      // each abandoned late startup once no active attempt owns this host.
-      // Successful startup retains ownership until that attempt is cancelled.
-      // cancelAuth never revokes an independently saved PAT or credential.
-      if (
-        result.success &&
-        generation <= ownership.cancelledThrough &&
-        ownership.activeGeneration === null
-      ) {
-        try {
-          const cancelled = yield* call(
-            [forgeAuthClient, forgeAuthClient.cancelAuth],
-            PROVIDER,
-            host,
-          );
-          if (!cancelled.success)
-            logger.error('Failed to cancel late GitLab device grant', cancelled.error);
-        } catch (error) {
-          logger.error('Failed to cancel late GitLab device grant', error);
-        }
+      // Remember an abandoned installed grant even while a newer start owns
+      // the host: that owner may fail later, leaving this grant to clean up.
+      if (result.success && generation <= ownership.cancelledThrough) {
+        ownership.needsCleanup = true;
       }
       return;
     }
@@ -367,6 +357,22 @@ function* startDeviceAuth(
   } finally {
     if (!started && ownership.activeGeneration === generation) {
       ownership.activeGeneration = null;
+    }
+    if (ownership.needsCleanup && ownership.activeGeneration === null) {
+      // Clear before awaiting so another late start can request its own cleanup.
+      // cancelAuth only removes the pending slot, never a saved PAT/credential.
+      ownership.needsCleanup = false;
+      try {
+        const cancelled = yield* call(
+          [forgeAuthClient, forgeAuthClient.cancelAuth],
+          PROVIDER,
+          host,
+        );
+        if (!cancelled.success)
+          logger.error('Failed to cancel late GitLab device grant', cancelled.error);
+      } catch (error) {
+        logger.error('Failed to cancel late GitLab device grant', error);
+      }
     }
     ownership.pendingStarts -= 1;
     if (ownership.pendingStarts === 0) fence.deviceIntents.delete(hostKey);

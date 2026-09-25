@@ -278,16 +278,30 @@ describe('gitlabAuthSaga', () => {
     },
   );
 
-  it.each(['failure', 'rejection'])(
-    'cleans the older cancelled startup after the newer startup ends in %s',
-    async (outcome) => {
+  it.each([
+    { outcome: 'failure', newerFailsFirst: true },
+    { outcome: 'rejection', newerFailsFirst: true },
+    { outcome: 'failure', newerFailsFirst: false },
+    { outcome: 'rejection', newerFailsFirst: false },
+  ])(
+    'cleans the abandoned grant after newer $outcome (newer fails first=$newerFailsFirst)',
+    async ({ outcome, newerFailsFirst }) => {
       const oldStart = Promise.withResolvers<ForgeConnectResult>();
       const newStart = Promise.withResolvers<ForgeConnectResult>();
+      let daemonGrantPending = false;
       mocks.connect
         .mockReset()
-        .mockReturnValueOnce(oldStart.promise)
+        .mockReturnValueOnce(
+          oldStart.promise.then((result) => {
+            daemonGrantPending = true;
+            return result;
+          }),
+        )
         .mockReturnValueOnce(newStart.promise);
-      mocks.cancelAuth.mockResolvedValue({ success: true });
+      mocks.cancelAuth.mockImplementation(async () => {
+        daemonGrantPending = false;
+        return { success: true };
+      });
       const run = harness({ ...initialState, host: HOST }, true);
       try {
         run.channel.put(startGitLabDeviceAuth(HOST));
@@ -295,19 +309,98 @@ describe('gitlabAuthSaga', () => {
         run.channel.put(cancelGitLabAuth());
         await settle();
         run.channel.put(startGitLabDeviceAuth(HOST));
+        if (!newerFailsFirst) {
+          oldStart.resolve({ success: true, deviceFlow: PENDING_INFO });
+          await settle();
+          expect(daemonGrantPending).toBe(true);
+          expect(mocks.cancelAuth).toHaveBeenCalledTimes(1);
+          expect(run.state().isAuthenticating).toBe(true);
+        }
         if (outcome === 'rejection') newStart.reject(new Error('new startup failed'));
         else newStart.resolve({ success: false, error: 'new startup failed' });
         await settle();
         const failedState = run.state();
         expect(failedState.error).toBe('new startup failed');
-        oldStart.resolve({ success: true, deviceFlow: PENDING_INFO });
+        if (newerFailsFirst) oldStart.resolve({ success: true, deviceFlow: PENDING_INFO });
         await settle();
+        expect(daemonGrantPending).toBe(false);
         expect(mocks.cancelAuth.mock.calls).toEqual(Array(2).fill(['gitlab', HOST]));
         expect(run.state()).toEqual(failedState);
         expect(mocks.revoke).not.toHaveBeenCalled();
       } finally {
         run.task.cancel();
         await run.task.toPromise();
+      }
+    },
+  );
+
+  it.each([
+    { outcome: 'failure', thirdSettled: false },
+    { outcome: 'rejection', thirdSettled: false },
+    { outcome: 'failure', thirdSettled: true },
+    { outcome: 'rejection', thirdSettled: true },
+  ])(
+    'deferred cleanup after $outcome preserves a third owner (settled=$thirdSettled)',
+    async ({ outcome, thirdSettled }) => {
+      const oldStart = Promise.withResolvers<ForgeConnectResult>();
+      const failedStart = Promise.withResolvers<ForgeConnectResult>();
+      const thirdStart = Promise.withResolvers<ForgeConnectResult>();
+      const cleanup = Promise.withResolvers<{ success: boolean }>();
+      const thirdFlow = { ...PENDING_INFO, userCode: 'THIRD-1234' };
+      mocks.connect
+        .mockReset()
+        .mockReturnValueOnce(oldStart.promise)
+        .mockReturnValueOnce(failedStart.promise)
+        .mockReturnValueOnce(thirdStart.promise);
+      mocks.cancelAuth
+        .mockReset()
+        .mockResolvedValueOnce({ success: true })
+        .mockReturnValueOnce(cleanup.promise);
+      mocks.getStatus.mockResolvedValue({
+        ...UNCONFIGURED_STATUS,
+        deviceFlow: { status: 'pending', ...thirdFlow },
+      });
+      const run = harness({ ...initialState, host: HOST }, true);
+      try {
+        run.channel.put(startGitLabDeviceAuth(HOST));
+        await settle();
+        run.channel.put(cancelGitLabAuth());
+        await settle();
+        run.channel.put(startGitLabDeviceAuth(HOST));
+        oldStart.resolve({ success: true, deviceFlow: PENDING_INFO });
+        await settle();
+        expect(mocks.cancelAuth).toHaveBeenCalledTimes(1);
+        if (outcome === 'rejection') failedStart.reject(new Error('new startup failed'));
+        else failedStart.resolve({ success: false, error: 'new startup failed' });
+        await settle();
+        expect(mocks.cancelAuth).toHaveBeenCalledTimes(2);
+        run.channel.put(startGitLabDeviceAuth(HOST));
+        await settle();
+        if (thirdSettled) {
+          thirdStart.resolve({ success: true, deviceFlow: thirdFlow });
+          await settle();
+        }
+        const thirdState = run.state();
+        cleanup.resolve({ success: true });
+        await settle();
+        expect(run.state()).toEqual(thirdState);
+        if (!thirdSettled) {
+          thirdStart.resolve({ success: true, deviceFlow: thirdFlow });
+          await settle();
+        }
+        expect(run.state()).toMatchObject({
+          host: HOST,
+          isAuthenticating: true,
+          deviceFlow: thirdFlow,
+          error: null,
+        });
+        expect(mocks.cancelAuth.mock.calls).toEqual(Array(2).fill(['gitlab', HOST]));
+        expect(mocks.revoke).not.toHaveBeenCalled();
+      } finally {
+        run.task.cancel();
+        await run.task.toPromise();
+        mocks.connect.mockReset();
+        mocks.cancelAuth.mockReset();
       }
     },
   );
