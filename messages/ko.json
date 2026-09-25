@@ -6062,6 +6062,7 @@
   "hardwareConsole_radialPromptPicker_releaseToInsert_label": "놓으면 삽입",
   "hardwareConsole_radialPromptPicker_releaseToCancel_label": "놓으면 취소",
   "hardwareConsole_radialPromptPicker_cancel_label": "취소",
+  "hardwareConsole_encoderEffort_tooltip": "추론 강도: {level}",
   "hardwareConsole_encoderHud_ariaLabel": "작업 공간 전환",
   "hardwareConsole_encoderHud_untitled_label": "제목 없음",
   "hardwareConsole_actionKey_cycleWorkspaceAgents_label": "모든 에이전트 전환",

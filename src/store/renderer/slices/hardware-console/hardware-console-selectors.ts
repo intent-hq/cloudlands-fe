@@ -1,10 +1,22 @@
+import { CHIEF_WORKSPACE_ID } from '$shared/types/branded-ids';
+import { buildLegacyReasoningEffortModelId } from '$features/agent/utils/legacy-reasoning-effort';
+import { supportsReasoningEffortProtocol } from '$features/agent/utils/reasoning-effort-protocol';
+import { selectCurrentWorkspaceTabId } from '../tab-state/tab-state-selectors';
+import { selectActiveAgentId } from '../workspace-agents/workspace-agents-selectors';
+import { selectAgentProvider } from '../agent-session/agent-session-selectors';
+import { selectAgentModelEffortLevels, selectSelectedModel } from '../model/model-selectors';
+import type { EncoderEffortTarget } from './hardware-console-types';
+
 import { store } from '../../store';
 import { buildHardwareLedSnapshot } from '$features/hardware-console/led/snapshot';
 import {
   isKeyAssignableWorkspace,
   resolveKeySlots,
 } from '$features/hardware-console/assignment/key-assignment';
-import { selectWorkspaceItems } from '../workspace/workspace-selectors';
+import {
+  selectIsWorkspaceCollaborator,
+  selectWorkspaceItems,
+} from '../workspace/workspace-selectors';
 
 /** Whether the hardware-console integration is enabled (device panel toggle). */
 export const selectHardwareConsoleEnabled = store.createSelector<[], boolean>(
@@ -131,3 +143,55 @@ export const selectVoiceTranscribing = store.createSelector(
 export const selectHardwareLedSnapshot = store.createSelector((state) =>
   buildHardwareLedSnapshot(state),
 );
+
+/** Also used after an await to guard rollback against a changed model or role. */
+export const selectEditableEncoderAgent = store.createSelector(
+  (state, workspaceId: string, agentId: string): EncoderEffortTarget | null => {
+    const session = state.agentSessions.byAgentId[agentId];
+    if (!session || session.workspaceId !== workspaceId) return null;
+    if (selectIsWorkspaceCollaborator.select(state, workspaceId)) return null;
+    const levels = selectAgentModelEffortLevels.select(state, agentId);
+    if (!levels?.length) return null;
+    const provider = selectAgentProvider.select(state, agentId);
+    const model = session.model ?? selectSelectedModel.select(state, provider);
+    const protocolVersion = state.daemonHealth.stats?.protocolVersion;
+    // Legacy effort echoes change the suffix, not the selected base model.
+    const modelIdentity =
+      protocolVersion && !supportsReasoningEffortProtocol(protocolVersion)
+        ? buildLegacyReasoningEffortModelId(model, null, levels)
+        : model;
+    return {
+      key: JSON.stringify([workspaceId, agentId, provider, modelIdentity, levels]),
+      workspaceId,
+      agentId,
+      levels,
+    };
+  },
+);
+
+/** Same selected workspace/agent convention as the hardware action keys. */
+export const selectEncoderEffortTarget = store.createSelector(
+  (state): EncoderEffortTarget | null => {
+    const hardware = state.hardwareConsole;
+    if (
+      !hardware.enabled ||
+      !hardware.isConsoleOwner ||
+      !hardware.encoderBehaviorHydrated ||
+      hardware.encoderBehavior !== 'agent-effort'
+    )
+      return null;
+    const workspaceId = selectCurrentWorkspaceTabId.select(state);
+    if (!workspaceId || workspaceId === CHIEF_WORKSPACE_ID) return null;
+    const agentId = selectActiveAgentId.select(state, workspaceId);
+    return agentId ? selectEditableEncoderAgent.select(state, workspaceId, agentId) : null;
+  },
+);
+
+/** Never announce a failed write, another agent, or a replaced model's value. */
+export const selectEncoderEffortFeedback = store.createSelector((state) => {
+  const feedback = state.hardwareConsole.encoderEffortFeedback;
+  if (!feedback || selectEncoderEffortTarget.select(state)?.key !== feedback.target.key)
+    return null;
+  const effort = state.agentSessions.byAgentId[feedback.target.agentId]?.reasoningEffort ?? null;
+  return effort === feedback.effort ? feedback : null;
+});

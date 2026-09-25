@@ -242,6 +242,26 @@ describe('applyReasoningEffort', () => {
     );
     expect(mockToastError).toHaveBeenCalledWith('unsupported');
   });
+
+  it('suppresses a late failure toast if the caller is disposed during rollback', async () => {
+    mockSetReasoningEffort.mockResolvedValue({ success: false, error: 'unsupported' });
+    let live = true;
+    mockDispatch.mockImplementation(
+      (action: { payload: [string, { reasoningEffort: string }] }) => {
+        const [agentId, patch] = action.payload;
+        setStoredEffort(agentId, patch.reasoningEffort);
+        if (patch.reasoningEffort === 'low') live = false;
+      },
+    );
+
+    const applied = await applyReasoningEffort('agent-1', 'ws-1', 'high', 'low', {
+      canMutate: () => live,
+    });
+
+    expect(applied).toBe(false);
+    expect(storeState.agentSessions.byAgentId['agent-1']?.reasoningEffort).toBe('low');
+    expect(mockToastError).not.toHaveBeenCalled();
+  });
 });
 
 describe('reconcileAgentReasoningEffort', () => {

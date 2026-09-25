@@ -21,6 +21,7 @@
   import { Select } from '$lib/components/ui/select';
   import EffortGauge from './EffortGauge.svelte';
   import { m } from '$shared/paraglide/messages.js';
+  import { reasoningEffortLabel as levelLabel } from '$features/agent/utils/reasoning-effort-label';
   import { applyReasoningEffort } from '$features/agent/reasoning-effort';
   import { store as appStore } from '$store/renderer/store';
   import { selectAgentReasoningEffort } from '$store/renderer/slices/agent-session/agent-session-selectors';
@@ -68,21 +69,6 @@
       ? selectAgentReasoningEffort.withStore(appStore)
       : selectAgentReasoningEffort
   )(agentIdStore);
-
-  /** Provider-level ids get a translated label; unknown levels render verbatim. */
-  const LEVEL_LABELS: Record<string, () => string> = {
-    none: () => m.chat_shared_valueOff_label(),
-    minimal: () => m.chat_effortPicker_level_minimal(),
-    low: () => m.chat_effortPicker_level_low(),
-    medium: () => m.chat_effortPicker_level_medium(),
-    high: () => m.chat_effortPicker_level_high(),
-    xhigh: () => m.chat_effortPicker_level_xhigh(),
-    max: () => m.chat_effortPicker_level_max(),
-  };
-
-  function levelLabel(level: string): string {
-    return LEVEL_LABELS[level]?.() ?? level;
-  }
 
   type EffortOption = {
     value: string;

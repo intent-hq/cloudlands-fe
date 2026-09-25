@@ -6062,6 +6062,7 @@
   "hardwareConsole_radialPromptPicker_releaseToInsert_label": "Release to insert",
   "hardwareConsole_radialPromptPicker_releaseToCancel_label": "Release to cancel",
   "hardwareConsole_radialPromptPicker_cancel_label": "Cancel",
+  "hardwareConsole_encoderEffort_tooltip": "Effort: {level}",
   "hardwareConsole_encoderHud_ariaLabel": "Workspace cycling",
   "hardwareConsole_encoderHud_untitled_label": "Untitled",
   "hardwareConsole_actionKey_cycleWorkspaceAgents_label": "Cycle all agents",

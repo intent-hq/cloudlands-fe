@@ -23,9 +23,10 @@ import {
   type CycleScope,
   type CycleScopeFamilyId,
 } from '$features/hardware-console/actions/cycle-scope';
-import type { HardwareDeviceModel } from '$features/hardware-console/input/types';
+import type { EncoderDirection, HardwareDeviceModel } from '$features/hardware-console/input/types';
 import type { PttRecordingFinishedPayload } from '$features/hardware-console/voice/ptt-controller';
 import type {
+  EncoderEffortFeedback,
   HardwareConsoleEncoderBehavior,
   HardwareConsoleState,
   RadialPromptPickerState,
@@ -48,6 +49,7 @@ export const initialState: HardwareConsoleState = {
   promptsHydrated: false,
   radialPrompt: closedRadialPrompt,
   encoderHudWorkspaceId: null,
+  encoderEffortFeedback: null,
   actionHudLabel: null,
   pttRecording: false,
   voiceTranscribing: false,
@@ -139,6 +141,15 @@ export const radialPromptPickerClosed = createAction('hardwareConsole/radialProm
 /** Encoder rotation targeted a workspace: show the small cycling HUD. */
 export const encoderHudShown = createAction<[workspaceId: string]>(
   'hardwareConsole/encoderHudShown',
+);
+/** Decoded detent, with the workspace captured at input time. */
+export const encoderEffortRotated = createAction<
+  [direction: EncoderDirection, workspaceId: string | null]
+>('hardwareConsole/encoderEffortRotated');
+/** Drop queued effort writes when the decoder disconnects or is disposed. */
+export const encoderInputStopped = createAction('hardwareConsole/encoderInputStopped');
+export const encoderEffortHudShown = createAction<[feedback: EncoderEffortFeedback]>(
+  'hardwareConsole/encoderEffortHudShown',
 );
 /** Cycling HUD timed out (or device disconnected): hide it. */
 export const encoderHudHidden = createAction('hardwareConsole/encoderHudHidden');
@@ -302,11 +313,16 @@ hardwareConsoleReducer.with(radialPromptPickerClosed, (state) => {
 });
 hardwareConsoleReducer.with(encoderHudShown, (state, { payload: [workspaceId] }) => {
   if (!workspaceId || state.encoderHudWorkspaceId === workspaceId) return state;
-  return { ...state, encoderHudWorkspaceId: workspaceId };
+  return { ...state, encoderHudWorkspaceId: workspaceId, encoderEffortFeedback: null };
 });
+hardwareConsoleReducer.with(encoderEffortHudShown, (state, { payload: [feedback] }) => ({
+  ...state,
+  encoderHudWorkspaceId: null,
+  encoderEffortFeedback: feedback,
+}));
 hardwareConsoleReducer.with(encoderHudHidden, (state) => {
-  if (state.encoderHudWorkspaceId === null) return state;
-  return { ...state, encoderHudWorkspaceId: null };
+  if (state.encoderHudWorkspaceId === null && state.encoderEffortFeedback === null) return state;
+  return { ...state, encoderHudWorkspaceId: null, encoderEffortFeedback: null };
 });
 hardwareConsoleReducer.with(actionHudShown, (state, { payload: [label] }) => {
   if (!label || state.actionHudLabel === label) return state;

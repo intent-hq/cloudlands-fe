@@ -4,6 +4,7 @@ import {
   actionHudHidden,
   actionHudShown,
   consoleOwnerChanged,
+  encoderEffortHudShown,
   encoderHudHidden,
   encoderHudShown,
   hardwareConsoleReducer,
@@ -282,6 +283,31 @@ describe('hardwareConsoleReducer', () => {
 
     const hidden = hardwareConsoleReducer(retargeted, encoderHudHidden());
     expect(hidden.encoderHudWorkspaceId).toBeNull();
+  });
+
+  it('keeps workspace and effort feedback mutually exclusive and clears either on dismissal', () => {
+    const target = {
+      key: 'agent-target',
+      agentId: 'agent-1',
+      workspaceId: 'ws-1',
+      levels: ['low', 'high'],
+    };
+    const workspace = hardwareConsoleReducer(initialState, encoderHudShown('ws-1'));
+    const effort = hardwareConsoleReducer(
+      workspace,
+      encoderEffortHudShown({ target, effort: 'low' }),
+    );
+    expect(effort.encoderHudWorkspaceId).toBeNull();
+    expect(effort.encoderEffortFeedback?.effort).toBe('low');
+    const changed = hardwareConsoleReducer(
+      effort,
+      encoderEffortHudShown({ target, effort: 'high' }),
+    );
+    expect(changed.encoderEffortFeedback?.effort).toBe('high');
+    expect(hardwareConsoleReducer(changed, encoderHudHidden()).encoderEffortFeedback).toBeNull();
+    expect(
+      hardwareConsoleReducer(changed, encoderHudShown('ws-2')).encoderEffortFeedback,
+    ).toBeNull();
   });
 
   it('returns the same state for redundant HUD updates', () => {

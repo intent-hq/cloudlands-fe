@@ -85,6 +85,8 @@ export async function applyReasoningEffort(
     appStore.dispatch(updateSession(agentId, { reasoningEffort: previousEffort }));
   }
   const { notify } = await import('$lib/components/patterns/notify');
+  // A device/picker can be disposed while the notification module loads.
+  if (options?.canMutate && !options.canMutate()) return false;
   notify.error(result.error ?? m.chat_effortPicker_updateFailed_error());
   return false;
 }

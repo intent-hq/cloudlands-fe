@@ -6062,6 +6062,7 @@
   "hardwareConsole_radialPromptPicker_releaseToInsert_label": "Relâchez pour insérer",
   "hardwareConsole_radialPromptPicker_releaseToCancel_label": "Relâchez pour annuler",
   "hardwareConsole_radialPromptPicker_cancel_label": "Annuler",
+  "hardwareConsole_encoderEffort_tooltip": "Effort de réflexion : {level}",
   "hardwareConsole_encoderHud_ariaLabel": "Changement d'espace de travail",
   "hardwareConsole_encoderHud_untitled_label": "Sans titre",
   "hardwareConsole_actionKey_cycleWorkspaceAgents_label": "Parcourir tous les agents",

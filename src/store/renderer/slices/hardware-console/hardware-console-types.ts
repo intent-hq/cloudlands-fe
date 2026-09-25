@@ -9,6 +9,19 @@ import type { PromptUsageEntry } from '$features/hardware-console/prompt-picker/
 /** One left-encoder preference shared by Codex Micro and Creator Micro 2. */
 export type HardwareConsoleEncoderBehavior = 'agent-effort' | 'workspace-switch';
 
+/** Captured identity and catalog for an editable encoder target. */
+export interface EncoderEffortTarget {
+  key: string;
+  workspaceId: string;
+  agentId: string;
+  levels: string[];
+}
+
+export interface EncoderEffortFeedback {
+  target: EncoderEffortTarget;
+  effort: string | null;
+}
+
 /** Transient UI state of the joystick radial prompt picker overlay. */
 export interface RadialPromptPickerState {
   /** True while the joystick is deflected and the overlay is showing. */
@@ -74,6 +87,7 @@ export interface HardwareConsoleState {
   radialPrompt: RadialPromptPickerState;
   /** Workspace targeted by the encoder-rotate HUD; `null` = HUD hidden. */
   encoderHudWorkspaceId: string | null;
+  encoderEffortFeedback: EncoderEffortFeedback | null;
   /** Label of the last-fired cycle action key shown by the action HUD; `null` = HUD hidden. */
   actionHudLabel: string | null;
   /** True while a push-to-talk recording is in progress (transient, never persisted). */

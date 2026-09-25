@@ -6062,6 +6062,7 @@
   "hardwareConsole_radialPromptPicker_releaseToInsert_label": "Loslassen zum Einfügen",
   "hardwareConsole_radialPromptPicker_releaseToCancel_label": "Loslassen zum Abbrechen",
   "hardwareConsole_radialPromptPicker_cancel_label": "Abbrechen",
+  "hardwareConsole_encoderEffort_tooltip": "Denkaufwand: {level}",
   "hardwareConsole_encoderHud_ariaLabel": "Arbeitsbereichswechsel",
   "hardwareConsole_encoderHud_untitled_label": "Ohne Titel",
   "hardwareConsole_actionKey_cycleWorkspaceAgents_label": "Alle Agenten durchschalten",

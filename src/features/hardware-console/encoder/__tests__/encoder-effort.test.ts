@@ -1,0 +1,742 @@
+/** @vitest-environment jsdom */
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { cleanup, render, screen } from '@testing-library/svelte';
+import { tick } from 'svelte';
+import { runSaga, stdChannel, type Task } from 'redux-saga';
+import {
+  createCollection,
+  getItem,
+  updateItem,
+} from '@augmentcode/themis/utils/collections/collection-utils';
+import type { HardwareConsoleManager, HardwareConsoleStatus } from '../../device/device-manager';
+import type { HardwareDeviceModel } from '../../input/types';
+import type { StoredAgentSession } from '$store/renderer/slices/agent-session/agent-session-types';
+
+const mocks = vi.hoisted(() => ({
+  state: { current: {} as unknown },
+  emit: () => {},
+  dispatch: vi.fn(),
+  notify: vi.fn(),
+}));
+vi.mock('$store/renderer/store', async () => {
+  const { createAppStoreMockModule } =
+    await import('$store/renderer/utils/test-helpers/store-mock');
+  const module = createAppStoreMockModule({
+    state: () => mocks.state.current,
+    dispatch: mocks.dispatch,
+  });
+  mocks.emit = module.store.emitState;
+  return module;
+});
+vi.mock('$lib/utils/navigation.client', () => ({
+  navigateToRoute: vi.fn(),
+  isHudWindowRenderer: () => false,
+}));
+vi.mock('$lib/components/patterns/notify', () => ({ notify: { error: mocks.notify } }));
+vi.mock('$lib/client/live/backend-transport', () => ({
+  backendRequest: vi.fn(),
+  onBackendNotification: vi.fn(() => () => {}),
+  onBackendReconnected: vi.fn(() => () => {}),
+}));
+vi.mock('$lib/client', async () => {
+  const { LiveAgentsClient } = await import('$lib/client/live/live-agents-client');
+  const { LiveSettingsClient } = await import('$lib/client/live/live-settings-client');
+  return { appClient: { agents: new LiveAgentsClient(), settings: new LiveSettingsClient() } };
+});
+
+import { backendRequest } from '$lib/client/live/backend-transport';
+import { __resetSettingsReadCacheForTests } from '$lib/client/live/live-settings-client';
+import { registerMockIpcHandler, unregisterMockIpcHandler } from '$shared/ipc-mock-router';
+import { AGENT_CHANNELS } from '$shared/ipc/channels';
+import { CHIEF_WORKSPACE_ID } from '$shared/types/branded-ids';
+import { AgentStatus } from '$shared/types/agent.types';
+import { m } from '$shared/paraglide/messages.js';
+import {
+  hardwareConsoleReducer,
+  initialState as hardwareInitial,
+  hydrateHardwareConsoleEncoderBehavior,
+  setHardwareConsoleEncoderBehavior,
+  consoleOwnerChanged,
+} from '$store/renderer/slices/hardware-console/hardware-console-slice';
+import {
+  agentSessionReducer,
+  updateSession,
+} from '$store/renderer/slices/agent-session/agent-session-slice';
+import { sidebarNavReducer } from '$store/renderer/slices/sidebar-nav/sidebar-nav-slice';
+import { encoderEffortSaga } from '$store/renderer/slices/hardware-console/sagas/encoder-effort-saga';
+import { encoderPreferenceSaga } from '$store/renderer/slices/hardware-console/sagas/encoder-preference-saga';
+import { watchHardwareConsoleEncoderHud } from '$store/renderer/slices/hardware-console/sagas/hardware-console-device-saga';
+import { selectEncoderEffortFeedback } from '$store/renderer/slices/hardware-console/hardware-console-selectors';
+import { ENCODER_HUD_HIDE_MS, installHardwareConsoleEncoder } from '../encoder-service';
+import EncoderCycleHud from '../EncoderCycleHud.svelte';
+import EffortPicker from '$lib/components/chat/input/EffortPicker.svelte';
+
+const request = vi.mocked(backendRequest);
+const tasks: Task[] = [];
+const disposers: (() => void)[] = [];
+const listeners = new Set<() => void>();
+let state: ReturnType<typeof makeState>;
+let channel: ReturnType<typeof stdChannel>;
+let bag: Record<string, unknown>;
+
+function session(id: string, workspaceId = 'ws-1'): StoredAgentSession {
+  return {
+    id,
+    workspaceId,
+    name: id,
+    model: 'model-a',
+    provider: 'codex',
+    reasoningEffort: null,
+    status: AgentStatus.Active,
+    createdAt: '2026-09-01T00:00:00Z',
+    updatedAt: '2026-09-01T00:00:00Z',
+    messages: [],
+  } as StoredAgentSession;
+}
+function makeState() {
+  return {
+    hardwareConsole: { ...hardwareInitial },
+    tabState: { currentTabId: 'ws-1' as string | null },
+    agentSessions: {
+      byAgentId: {
+        'agent-1': session('agent-1'),
+        'agent-2': session('agent-2'),
+        'agent-3': session('agent-3', 'ws-2'),
+      } as Record<string, StoredAgentSession>,
+      agentIdsByWorkspace: {},
+    },
+    workspaceAgents: {
+      byWorkspaceId: {
+        'ws-1': { activeAgentId: 'agent-1' as string | null },
+        'ws-2': { activeAgentId: 'agent-3' as string | null },
+      },
+    },
+    workspace: {
+      workspaces: createCollection('id', [
+        {
+          id: 'ws-1',
+          title: 'First',
+          status: 'Active',
+          myRole: 'owner',
+          lastActivity: '2026-09-01T00:00:00Z',
+        },
+        {
+          id: 'ws-2',
+          title: 'Second',
+          status: 'Active',
+          myRole: 'owner',
+          lastActivity: '2026-09-02T00:00:00Z',
+        },
+      ]),
+    },
+    model: {
+      availableModels: createCollection('value', [
+        { value: 'model-a', label: 'Model A', effortLevels: ['low', 'medium', 'high'] },
+        { value: 'model-b', label: 'Model B', effortLevels: ['minimal', 'ultra'] },
+      ]),
+      defaultProviderId: 'codex',
+    },
+    guestSessions: { sessions: createCollection('id', []), hasReceivedList: true },
+    connections: { windowBackendId: 'local', hasReceivedList: true },
+    sidebarNav: sidebarNavReducer(undefined, { type: 'init' }),
+    daemonHealth: { stats: { protocolVersion: '6.1' } },
+  };
+}
+function setting() {
+  return {
+    path: 'hardwareConsole.state',
+    value: { ...bag },
+    revision: 1,
+    definition: {
+      path: 'hardwareConsole.state',
+      type: 'object',
+      label: 'Hardware',
+      description: 'Preferences',
+      category: 'hardwareConsole',
+      defaultValue: {},
+    },
+  };
+}
+function publish() {
+  // Redux publishes a fresh root for selector-channel caches, even for fixture transitions.
+  state = { ...state };
+  mocks.state.current = state;
+  for (const listener of listeners) listener();
+  mocks.emit();
+}
+function start(saga: () => Generator) {
+  const reduxStore = {
+    getState: () => state,
+    subscribe: (listener: () => void) => {
+      listeners.add(listener);
+      return () => listeners.delete(listener);
+    },
+  };
+  const task = runSaga(
+    { channel, dispatch: mocks.dispatch, getState: reduxStore.getState, context: { reduxStore } },
+    saga,
+  );
+  tasks.push(task);
+  return task;
+}
+function manager(model: HardwareDeviceModel = 'codex-micro') {
+  const raw = new Set<(message: unknown) => void>();
+  const statuses = new Set<(status: HardwareConsoleStatus) => void>();
+  const fake = {
+    status: 'connected' as HardwareConsoleStatus,
+    connectedDevice: { model },
+    onRawMessage: (listener: (message: unknown) => void) => {
+      raw.add(listener);
+      return () => raw.delete(listener);
+    },
+    onStatusChange: (listener: (status: HardwareConsoleStatus) => void) => {
+      statuses.add(listener);
+      return () => statuses.delete(listener);
+    },
+    emit(message: unknown) {
+      for (const listener of raw) listener(message);
+    },
+    turn(direction: 'cw' | 'ccw' = 'cw') {
+      fake.emit({ m: 'v.oai.hid', p: { k: direction === 'cw' ? 'ENC_CW' : 'ENC_CC', act: 2 } });
+    },
+    statusChanged(status: HardwareConsoleStatus) {
+      fake.status = status;
+      for (const listener of statuses) listener(status);
+    },
+    raw,
+    statuses,
+  };
+  const navigate = vi.fn(async () => {});
+  const dispose = installHardwareConsoleEncoder(fake as unknown as HardwareConsoleManager, {
+    navigate,
+  });
+  disposers.push(dispose);
+  return { ...fake, navigate, dispose };
+}
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (reason: Error) => void;
+  const promise = new Promise<T>((yes, no) => {
+    resolve = yes;
+    reject = no;
+  });
+  return { promise, resolve, reject };
+}
+async function flush() {
+  await vi.advanceTimersByTimeAsync(0);
+  await tick();
+}
+function effort(agentId = 'agent-1') {
+  return state.agentSessions.byAgentId[agentId]?.reasoningEffort ?? null;
+}
+function mutations() {
+  return request.mock.calls.filter(([method]) => method === 'agent.update');
+}
+function reply(level: string | null = 'low') {
+  return {
+    success: true,
+    agent: {
+      id: 'agent-1',
+      workspaceId: 'ws-1',
+      name: 'First agent',
+      status: 'idle',
+      createdAt: '2026-09-01T00:00:00Z',
+      updatedAt: '2026-09-01T00:00:00Z',
+      model: 'model-a',
+      provider: 'codex',
+      reasoningEffort: level,
+    },
+  };
+}
+
+beforeEach(() => {
+  vi.useFakeTimers();
+  vi.clearAllMocks();
+  __resetSettingsReadCacheForTests();
+  state = makeState();
+  mocks.state.current = state;
+  channel = stdChannel();
+  bag = {};
+  mocks.dispatch.mockImplementation((action) => {
+    state = {
+      ...state,
+      hardwareConsole: hardwareConsoleReducer(state.hardwareConsole, action),
+      agentSessions: agentSessionReducer(state.agentSessions, action),
+      sidebarNav: sidebarNavReducer(state.sidebarNav, action),
+    };
+    publish();
+    channel.put(action);
+    return action;
+  });
+  request.mockImplementation(async (method, params) => {
+    if (method === 'settings.get') return setting();
+    if (method === 'settings.update') {
+      bag = (params as { changes: { value: Record<string, unknown> }[] }).changes[0].value;
+      return { applied: (params as { changes: unknown[] }).changes, revision: 2 };
+    }
+    if (method === 'agent.update')
+      return reply(
+        (params as { changes: { reasoningEffort: string | null } }).changes.reasoningEffort,
+      );
+    throw new Error(`Unexpected method ${method}`);
+  });
+  start(encoderEffortSaga);
+  start(watchHardwareConsoleEncoderHud);
+});
+afterEach(async () => {
+  disposers.splice(0).forEach((dispose) => dispose());
+  for (const task of tasks.splice(0)) {
+    task.cancel();
+    await task.toPromise();
+  }
+  cleanup();
+  unregisterMockIpcHandler(AGENT_CHANNELS.SET_MODEL);
+  listeners.clear();
+  vi.useRealTimers();
+});
+
+function ready() {
+  mocks.dispatch(hydrateHardwareConsoleEncoderBehavior('agent-effort'));
+}
+
+describe('decoded Micro encoder effort and wire behavior', () => {
+  it.each<HardwareDeviceModel>(['codex-micro', 'creator-micro-2'])(
+    'defaults %s to effort after successful missing-preference hydration',
+    async (model) => {
+      const device = manager(model);
+      start(encoderPreferenceSaga);
+      device.turn();
+      expect(mutations()).toHaveLength(0);
+      expect(device.navigate).not.toHaveBeenCalled();
+      await flush();
+      device.turn();
+      await flush();
+      expect(mutations()).toEqual([
+        [
+          'agent.update',
+          { agentId: 'agent-1', workspaceId: 'ws-1', changes: { reasoningEffort: 'low' } },
+        ],
+      ]);
+      expect(effort()).toBe('low');
+      expect(effort('agent-2')).toBeNull();
+      expect(effort('agent-3')).toBeNull();
+      expect(device.navigate).not.toHaveBeenCalled();
+    },
+  );
+
+  it('suppresses rotation through a failed startup read and resumes the recovered opt-out', async () => {
+    bag.encoderBehavior = 'workspace-switch';
+    request.mockRejectedValueOnce(new Error('daemon unavailable'));
+    const device = manager();
+    start(encoderPreferenceSaga);
+    await flush();
+    device.turn();
+    expect(state.hardwareConsole.encoderBehaviorHydrated).toBe(false);
+    expect(mutations()).toHaveLength(0);
+    expect(device.navigate).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(1000);
+    device.turn();
+    expect(state.hardwareConsole.encoderBehavior).toBe('workspace-switch');
+    expect(device.navigate).toHaveBeenCalledExactlyOnceWith('/workspace/ws-2');
+    expect(mutations()).toHaveLength(0);
+    mocks.dispatch(setHardwareConsoleEncoderBehavior('agent-effort'));
+    device.turn();
+    await flush();
+    expect(effort()).toBe('low');
+  });
+
+  it('follows advertised order and clamps both endpoints, including explicit Auto null', async () => {
+    ready();
+    const device = manager();
+    device.turn('ccw');
+    await flush();
+    expect(mutations()).toHaveLength(0);
+    for (let n = 0; n < 5; n++) {
+      device.turn();
+      await flush();
+    }
+    expect(mutations().map(([, params]) => (params as { changes: unknown }).changes)).toEqual([
+      { reasoningEffort: 'low' },
+      { reasoningEffort: 'medium' },
+      { reasoningEffort: 'high' },
+    ]);
+    for (let n = 0; n < 5; n++) {
+      device.turn('ccw');
+      await flush();
+    }
+    expect(effort()).toBeNull();
+    expect(mutations()).toHaveLength(6);
+    expect(mutations().at(-1)).toEqual([
+      'agent.update',
+      { agentId: 'agent-1', workspaceId: 'ws-1', changes: { reasoningEffort: null } },
+    ]);
+  });
+
+  it('uses session-discovered levels, not a hardcoded effort vocabulary', async () => {
+    ready();
+    mocks.dispatch(updateSession('agent-1', { effortLevels: ['off', 'turbo'] }));
+    const device = manager();
+    device.turn();
+    await flush();
+    device.turn();
+    await flush();
+    expect(effort()).toBe('turbo');
+  });
+
+  it.each([false, true])(
+    'coalesces rapid turns without concurrent or stale saves (leading failure: %s)',
+    async (fails) => {
+      ready();
+      const device = manager();
+      const first = deferred<unknown>();
+      request.mockImplementationOnce(() => first.promise);
+      device.turn();
+      device.turn();
+      device.turn();
+      device.turn('ccw');
+      device.turn();
+      expect(mutations()).toHaveLength(1);
+      expect(effort()).toBe('high');
+      if (fails) first.reject(new Error('offline'));
+      else first.resolve(reply());
+      await flush();
+      expect(mutations()).toHaveLength(2);
+      expect(mutations().at(-1)).toEqual([
+        'agent.update',
+        { agentId: 'agent-1', workspaceId: 'ws-1', changes: { reasoningEffort: 'high' } },
+      ]);
+      expect(effort()).toBe('high');
+    },
+  );
+
+  it('restores the last accepted effort and removes feedback if the final save fails', async () => {
+    ready();
+    const device = manager();
+    const first = deferred<unknown>();
+    request.mockImplementationOnce(() => first.promise);
+    request.mockRejectedValueOnce(new Error('final save rejected'));
+    device.turn();
+    device.turn();
+    device.turn();
+    first.resolve(reply());
+    await flush();
+    expect(effort()).toBe('low');
+    expect(selectEncoderEffortFeedback.select(state as never)).toBeNull();
+    expect(mocks.notify).toHaveBeenCalledWith('final save rejected');
+    device.turn();
+    await flush();
+    expect(effort()).toBe('medium');
+  });
+
+  it.each(['agent', 'workspace', 'model', 'owner', 'role', 'mode'])(
+    'discards queued intent when %s changes mid-save',
+    async (change) => {
+      ready();
+      const device = manager();
+      const first = deferred<unknown>();
+      request.mockImplementationOnce(() => first.promise);
+      device.turn();
+      device.turn();
+      if (change === 'agent') state.workspaceAgents.byWorkspaceId['ws-1'].activeAgentId = 'agent-2';
+      if (change === 'workspace') state.tabState.currentTabId = 'ws-2';
+      if (change === 'model')
+        mocks.dispatch(updateSession('agent-1', { model: 'model-b', reasoningEffort: 'ultra' }));
+      if (change === 'owner') mocks.dispatch(consoleOwnerChanged(false));
+      if (change === 'role')
+        state.workspace.workspaces = updateItem(state.workspace.workspaces, {
+          ...getItem(state.workspace.workspaces, 'ws-1')!,
+          myRole: 'collaborator',
+        });
+      if (change === 'mode') mocks.dispatch(setHardwareConsoleEncoderBehavior('workspace-switch'));
+      publish();
+      first.resolve(reply());
+      await flush();
+      expect(mutations()).toHaveLength(1);
+      expect(selectEncoderEffortFeedback.select(state as never)).toBeNull();
+      if (change === 'model') expect(effort()).toBe('ultra');
+      expect(effort('agent-2')).toBeNull();
+      expect(effort('agent-3')).toBeNull();
+    },
+  );
+
+  it.each([false, true])(
+    'handles reversals back to Auto while a save is pending (failure: %s)',
+    async (fails) => {
+      ready();
+      const device = manager();
+      const first = deferred<unknown>();
+      request.mockImplementationOnce(() => first.promise);
+      device.turn();
+      device.turn('ccw');
+      expect(effort()).toBeNull();
+      if (fails) first.reject(new Error('offline'));
+      else first.resolve(reply());
+      await flush();
+      expect(effort()).toBeNull();
+      expect(mutations()).toHaveLength(fails ? 1 : 2);
+      if (!fails)
+        expect(mutations().at(-1)).toEqual([
+          'agent.update',
+          { agentId: 'agent-1', workspaceId: 'ws-1', changes: { reasoningEffort: null } },
+        ]);
+    },
+  );
+
+  it('does not let an older failed save roll back an ABA sequence', async () => {
+    ready();
+    const device = manager();
+    const first = deferred<unknown>();
+    request.mockImplementationOnce(() => first.promise);
+    device.turn();
+    device.turn();
+    device.turn('ccw');
+    expect(effort()).toBe('low');
+    first.reject(new Error('old save failed'));
+    await flush();
+    expect(effort()).toBe('low');
+    expect(mutations()).toHaveLength(2);
+    expect(mocks.notify).not.toHaveBeenCalled();
+  });
+
+  it('drops pending effort when another control changes the session during the save', async () => {
+    ready();
+    const device = manager();
+    const first = deferred<unknown>();
+    request.mockImplementationOnce(() => first.promise);
+    device.turn();
+    device.turn();
+    mocks.dispatch(updateSession('agent-1', { reasoningEffort: 'high' }));
+    first.resolve(reply());
+    await flush();
+    expect(effort()).toBe('high');
+    expect(mutations()).toHaveLength(1);
+    expect(state.hardwareConsole.encoderEffortFeedback).toBeNull();
+  });
+
+  it('keeps trailing intent across the daemon echo of the leading save', async () => {
+    ready();
+    const device = manager();
+    const first = deferred<unknown>();
+    request.mockImplementationOnce(() => first.promise);
+    device.turn();
+    device.turn();
+    device.turn();
+    mocks.dispatch(updateSession('agent-1', { reasoningEffort: 'low' }));
+    first.resolve(reply());
+    await flush();
+    expect(effort()).toBe('high');
+    expect(mutations()).toHaveLength(2);
+  });
+
+  it('captures the new selected agent while an old-agent save is pending', async () => {
+    ready();
+    const device = manager();
+    const first = deferred<unknown>();
+    request.mockImplementationOnce(() => first.promise);
+    device.turn();
+    state.workspaceAgents.byWorkspaceId['ws-1'].activeAgentId = 'agent-2';
+    publish();
+    device.turn();
+    first.resolve(reply());
+    await flush();
+    expect(mutations().at(-1)).toEqual([
+      'agent.update',
+      { agentId: 'agent-2', workspaceId: 'ws-1', changes: { reasoningEffort: 'low' } },
+    ]);
+    expect(effort()).toBe('low');
+    expect(effort('agent-2')).toBe('low');
+  });
+
+  it.each([
+    'no-workspace',
+    'chief',
+    'no-agent',
+    'missing-session',
+    'other-workspace',
+    'unsupported',
+    'guest-boot',
+    'collaborator',
+    'non-owner',
+  ])('does nothing for %s', async (context) => {
+    ready();
+    const device = manager();
+    if (context === 'no-workspace') state.tabState.currentTabId = null;
+    if (context === 'chief') state.tabState.currentTabId = CHIEF_WORKSPACE_ID;
+    if (context === 'no-agent') state.workspaceAgents.byWorkspaceId['ws-1'].activeAgentId = null;
+    if (context === 'missing-session') delete state.agentSessions.byAgentId['agent-1'];
+    if (context === 'other-workspace')
+      state.agentSessions.byAgentId['agent-1'].workspaceId = 'ws-2';
+    if (context === 'unsupported') state.agentSessions.byAgentId['agent-1'].model = 'no-effort';
+    if (context === 'guest-boot') state.guestSessions.hasReceivedList = false;
+    if (context === 'collaborator')
+      state.workspace.workspaces = updateItem(state.workspace.workspaces, {
+        ...getItem(state.workspace.workspaces, 'ws-1')!,
+        myRole: 'collaborator',
+      });
+    if (context === 'non-owner') mocks.dispatch(consoleOwnerChanged(false));
+    publish();
+    device.turn();
+    await flush();
+    expect(mutations()).toHaveLength(0);
+    expect(device.navigate).not.toHaveBeenCalled();
+  });
+
+  it('preserves legacy model-variant request and response handling', async () => {
+    ready();
+    state.daemonHealth.stats.protocolVersion = '5.1';
+    publish();
+    const legacy = vi.fn(async () => ({
+      success: true,
+      data: { success: true, modelId: 'model-a/low' },
+    }));
+    registerMockIpcHandler(AGENT_CHANNELS.SET_MODEL, legacy);
+    const device = manager('creator-micro-2');
+    device.turn();
+    await flush();
+    expect(legacy).toHaveBeenCalledExactlyOnceWith({
+      agentId: 'agent-1',
+      modelId: 'model-a/low',
+      workspaceId: 'ws-1',
+      providerId: 'codex',
+    });
+    expect(mutations()).toHaveLength(0);
+    expect(effort()).toBe('low');
+  });
+
+  it('keeps rapid legacy turns across the leading model-variant echo', async () => {
+    ready();
+    state.daemonHealth.stats.protocolVersion = '5.1';
+    publish();
+    const first = deferred<unknown>();
+    const legacy = vi
+      .fn()
+      .mockImplementationOnce(() => first.promise)
+      .mockResolvedValue({ success: true, data: { success: true, modelId: 'model-a/high' } });
+    registerMockIpcHandler(AGENT_CHANNELS.SET_MODEL, legacy);
+    const device = manager('creator-micro-2');
+    device.turn();
+    device.turn();
+    device.turn();
+    mocks.dispatch(updateSession('agent-1', { model: 'model-a/low', reasoningEffort: 'low' }));
+    first.resolve({ success: true, data: { success: true, modelId: 'model-a/low' } });
+    await flush();
+    expect(legacy).toHaveBeenCalledTimes(2);
+    expect(legacy).toHaveBeenLastCalledWith({
+      agentId: 'agent-1',
+      modelId: 'model-a/high',
+      workspaceId: 'ws-1',
+      providerId: 'codex',
+    });
+    expect(effort()).toBe('high');
+  });
+
+  it('preserves workspace cycling and pressing without waiting for effort hydration', async () => {
+    const device = manager();
+    device.emit({ m: 'v.oai.hid', p: { k: 'ENC_CLK', act: 1 } });
+    expect(state.sidebarNav.panelItem).toBe('all-workspaces');
+    device.emit({ m: 'v.oai.hid', p: { k: 'ENC_CLK', act: 1 } });
+    expect(state.sidebarNav.allSpacesViewMode).toBe('repo');
+    mocks.dispatch(hydrateHardwareConsoleEncoderBehavior('workspace-switch'));
+    device.turn();
+    device.turn();
+    expect(device.navigate).toHaveBeenCalledTimes(1);
+    device.turn('ccw');
+    expect(device.navigate).toHaveBeenLastCalledWith('/workspace/ws-1');
+    expect(mutations()).toHaveLength(0);
+  });
+
+  it.each(['disconnect', 'cancel'])(
+    'cleans up pending work, feedback and subscriptions on %s',
+    async (how) => {
+      ready();
+      const device = manager();
+      const first = deferred<unknown>();
+      request.mockImplementationOnce(() => first.promise);
+      device.turn();
+      device.turn();
+      if (how === 'disconnect') device.statusChanged('disconnected');
+      else {
+        device.dispose();
+        for (const task of tasks) task.cancel();
+      }
+      first.reject(new Error('late failure'));
+      await flush();
+      await vi.advanceTimersByTimeAsync(5000);
+      device.turn();
+      expect(mutations()).toHaveLength(1);
+      expect(effort()).toBeNull();
+      expect(state.hardwareConsole.encoderEffortFeedback).toBeNull();
+      expect(mocks.notify).not.toHaveBeenCalled();
+      expect(device.raw.size).toBe(0);
+      if (how === 'cancel') {
+        expect(listeners.size).toBe(0);
+        expect(device.statuses.size).toBe(0);
+      }
+    },
+  );
+});
+
+describe('encoder feedback and existing gauge', () => {
+  it('updates one live status in place with the session gauge and dismisses after inactivity', async () => {
+    ready();
+    render(EncoderCycleHud);
+    render(EffortPicker, { agentId: 'agent-1', workspaceId: 'ws-1' });
+    const device = manager();
+    device.turn();
+    await flush();
+    const status = screen.getByRole('status', { name: m.chat_effortPicker_title_label() });
+    expect(status.textContent).toContain(m.chat_effortPicker_level_low());
+    expect(screen.getByTestId('effort-gauge').getAttribute('data-gauge-value')).toBe('0');
+    await vi.advanceTimersByTimeAsync(700);
+    device.turn();
+    await flush();
+    expect(screen.getByRole('status', { name: m.chat_effortPicker_title_label() })).toBe(status);
+    expect(status.textContent).toContain(m.chat_effortPicker_level_medium());
+    expect(screen.getByTestId('effort-gauge').getAttribute('data-gauge-value')).toBe('1');
+    await vi.advanceTimersByTimeAsync(ENCODER_HUD_HIDE_MS - 1);
+    await tick();
+    expect(state.hardwareConsole.encoderEffortFeedback).not.toBeNull();
+    await vi.advanceTimersByTimeAsync(1);
+    await flush();
+    expect(state.hardwareConsole.encoderEffortFeedback).toBeNull();
+    await vi.advanceTimersByTimeAsync(1000);
+    await tick();
+    expect(screen.queryByRole('status')).toBeNull();
+    expect(screen.getByTestId('effort-gauge').getAttribute('data-gauge-value')).toBe('1');
+  });
+
+  it('updates the tooltip and gauge on every rapid turn while the first save is delayed', async () => {
+    ready();
+    render(EncoderCycleHud);
+    render(EffortPicker, { agentId: 'agent-1', workspaceId: 'ws-1' });
+    const first = deferred<unknown>();
+    request.mockImplementationOnce(() => first.promise);
+    const device = manager();
+    device.turn();
+    await flush();
+    const status = screen.getByRole('status');
+    device.turn();
+    device.turn();
+    await flush();
+    expect(screen.getByRole('status')).toBe(status);
+    expect(status.textContent).toContain(m.chat_effortPicker_level_high());
+    expect(screen.getByTestId('effort-gauge').getAttribute('data-gauge-value')).toBe('2');
+    expect(mutations()).toHaveLength(1);
+    first.resolve(reply());
+    await flush();
+    expect(effort()).toBe('high');
+    expect(mutations()).toHaveLength(2);
+  });
+
+  it('rolls the gauge back and removes an unsuccessful tooltip', async () => {
+    ready();
+    mocks.dispatch(updateSession('agent-1', { reasoningEffort: 'low' }));
+    render(EncoderCycleHud);
+    render(EffortPicker, { agentId: 'agent-1', workspaceId: 'ws-1' });
+    request.mockRejectedValueOnce(new Error('write refused'));
+    manager().turn();
+    await flush();
+    expect(screen.getByTestId('effort-gauge').getAttribute('data-gauge-value')).toBe('0');
+    expect(screen.queryByRole('status')).toBeNull();
+  });
+});

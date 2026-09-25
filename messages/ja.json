@@ -6062,6 +6062,7 @@
   "hardwareConsole_radialPromptPicker_releaseToInsert_label": "離すと挿入",
   "hardwareConsole_radialPromptPicker_releaseToCancel_label": "離すとキャンセル",
   "hardwareConsole_radialPromptPicker_cancel_label": "キャンセル",
+  "hardwareConsole_encoderEffort_tooltip": "思考の深さ: {level}",
   "hardwareConsole_encoderHud_ariaLabel": "ワークスペース切り替え",
   "hardwareConsole_encoderHud_untitled_label": "無題",
   "hardwareConsole_actionKey_cycleWorkspaceAgents_label": "すべてのエージェントを切り替え",

@@ -6062,6 +6062,7 @@
   "hardwareConsole_radialPromptPicker_releaseToInsert_label": "松开以插入",
   "hardwareConsole_radialPromptPicker_releaseToCancel_label": "松开以取消",
   "hardwareConsole_radialPromptPicker_cancel_label": "取消",
+  "hardwareConsole_encoderEffort_tooltip": "思考强度：{level}",
   "hardwareConsole_encoderHud_ariaLabel": "工作区切换",
   "hardwareConsole_encoderHud_untitled_label": "未命名",
   "hardwareConsole_actionKey_cycleWorkspaceAgents_label": "循环切换所有智能体",
