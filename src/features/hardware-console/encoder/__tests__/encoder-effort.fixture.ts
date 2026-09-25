@@ -45,6 +45,7 @@ import { backendRequest } from '$lib/client/live/backend-transport';
 import { __resetSettingsReadCacheForTests } from '$lib/client/live/live-settings-client';
 import { unregisterMockIpcHandler } from '$shared/ipc-mock-router';
 import { AGENT_CHANNELS } from '$shared/ipc/channels';
+import { AgentId, WorkspaceId } from '$shared/types/branded-ids';
 import { AgentStatus } from '$shared/types/agent.types';
 import {
   hardwareConsoleReducer,
@@ -68,8 +69,9 @@ export let bag: Record<string, unknown>;
 
 function session(id: string, workspaceId = 'ws-1'): StoredAgentSession {
   return {
-    id,
-    workspaceId,
+    id: AgentId(id),
+    workspaceId: WorkspaceId(workspaceId),
+    backendSessionId: null,
     name: id,
     model: 'model-a',
     provider: 'codex',
@@ -78,7 +80,7 @@ function session(id: string, workspaceId = 'ws-1'): StoredAgentSession {
     createdAt: '2026-09-01T00:00:00Z',
     updatedAt: '2026-09-01T00:00:00Z',
     messages: [],
-  } as StoredAgentSession;
+  };
 }
 function makeState() {
   return {
