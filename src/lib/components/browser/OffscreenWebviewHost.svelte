@@ -60,6 +60,8 @@
   }
 
   function isKeepAliveUrl(url: string): boolean {
+    // Navigation needs a mounted guest before it can leave the neutral document.
+    if (url === 'about:blank') return true;
     try {
       return BROWSER_PROTOCOLS.NAVIGATION_ALLOWED.includes(new URL(url).protocol);
     } catch {

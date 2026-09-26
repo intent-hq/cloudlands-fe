@@ -135,6 +135,110 @@ describe('OffscreenWebviewHost', () => {
     expect(webview?.getAttribute('src')).toBe('https://example.test/tab-bg');
   });
 
+  it.each([true, false])(
+    'registers a hidden owned blank tab without revealing it (workspace displayed: %s)',
+    async (displayed) => {
+      const tab = {
+        id: 'tab-blank',
+        type: 'browser',
+        browserUrl: 'about:blank',
+        ownerAgentId: 'agent-1',
+        hostClientId: 'cli-own',
+      };
+      layoutsStore.set({
+        'ws-blank': {
+          panels: {},
+          hiddenTabs: { ids: [tab.id], map: { [tab.id]: tab } },
+        },
+      });
+      const { container } = render(OffscreenWebviewHost, {
+        excludedWorkspaceIds: new Set(displayed ? ['ws-blank'] : []),
+        maxWebviews: 0,
+      });
+      await waitFor(() => expect(mountedTabIds(container)).toEqual(['tab-blank']));
+      const webview = container.querySelector('webview')!;
+      Object.assign(webview, { getWebContentsId: () => 91, getURL: () => 'about:blank' });
+      await fireEvent(webview, new Event('dom-ready'));
+      expect(invokeMock).toHaveBeenCalledExactlyOnceWith('browser:register-tab', {
+        tabId: 'tab-blank',
+        webContentsId: 91,
+      });
+      expect(dispatchMock).not.toHaveBeenCalled();
+      recoveryStore.set({ 'tab-blank': 'explicit-navigation' });
+      await waitFor(() => expect(recoveryStore.get()).toEqual({}));
+      expect(container.querySelector('webview')).toBe(webview);
+    },
+  );
+
+  it('keeps foreign-host blank tabs excluded and unowned blank tabs within the cache cap', async () => {
+    const foreign = {
+      id: 'tab-foreign',
+      type: 'browser',
+      browserUrl: 'about:blank',
+      ownerAgentId: 'agent-1',
+      hostClientId: 'cli-other',
+    };
+    layoutsStore.set({
+      'ws-bg': browserLayout([
+        { id: 'tab-blank', url: 'about:blank', hostClientId: 'cli-own' },
+        { id: 'tab-capped', url: 'about:blank', hostClientId: 'cli-own' },
+        { id: 'tab-mirror', url: 'about:blank', hostClientId: 'cli-other' },
+      ]),
+      'ws-shown': {
+        panels: {},
+        hiddenTabs: { ids: [foreign.id], map: { [foreign.id]: foreign } },
+      },
+    });
+    const { container } = render(OffscreenWebviewHost, {
+      excludedWorkspaceIds: new Set(['ws-shown']),
+      maxWebviews: 1,
+    });
+    await waitFor(() => expect(mountedTabIds(container)).toEqual(['tab-blank']));
+    recoveryStore.set({
+      'tab-foreign': 'explicit-navigation',
+      'tab-mirror': 'explicit-navigation',
+    });
+    await waitFor(() => expect(recoveryStore.get()).toEqual({}));
+    expect(mountedTabIds(container)).toEqual(['tab-blank']);
+  });
+
+  it('rejects other about URLs and blocked protocols for hidden and background tabs', async () => {
+    const blocked = [
+      'about:config',
+      'about:srcdoc',
+      'about:blank#fragment',
+      'about:blank?query',
+      'javascript:alert(1)',
+      'data:text/html,hello',
+      'chrome://settings',
+      'not a url',
+    ].map((url, index) => ({ id: `blocked-${index}`, url }));
+    const hidden = blocked.map(({ id, url }) => ({
+      id: `hidden-${id}`,
+      type: 'browser',
+      browserUrl: url,
+      ownerAgentId: 'agent-1',
+      hostClientId: 'cli-own',
+    }));
+    layoutsStore.set({
+      'ws-bg': browserLayout([{ id: 'allowed' }, ...blocked]),
+      'ws-shown': {
+        panels: {},
+        hiddenTabs: {
+          ids: hidden.map((tab) => tab.id),
+          map: Object.fromEntries(hidden.map((tab) => [tab.id, tab])),
+        },
+      },
+    });
+    const { container } = render(OffscreenWebviewHost, {
+      excludedWorkspaceIds: new Set(['ws-shown']),
+    });
+    await waitFor(() => expect(mountedTabIds(container)).toEqual(['allowed']));
+    recoveryStore.set(Object.fromEntries(hidden.map((tab) => [tab.id, 'explicit-navigation'])));
+    await waitFor(() => expect(recoveryStore.get()).toEqual({}));
+    expect(mountedTabIds(container)).toEqual(['allowed']);
+  });
+
   it('replaces a dead guest only on request, registers the replacement and ignores its neutral URL', async () => {
     layoutsStore.set({ 'ws-bg': browserLayout([{ id: 'tab-bg' }]) });
     const { container } = render(OffscreenWebviewHost, { excludedWorkspaceIds: new Set() });

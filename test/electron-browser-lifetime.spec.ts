@@ -70,7 +70,9 @@ test.beforeAll(async () => {
                 for (const window of windows) window.webContents.send(channel, payload);
                 return { windowCount: windows.length, browserClientsNotified: false, delivered: windows.length > 0 };
               }
-              export function getWindowIdForWorkspace() { return undefined; }
+              export function getWindowIdForWorkspace(workspaceId) {
+                return workspaceId === globalThis.lifetimeActiveWorkspaceId ? BrowserWindow.getAllWindows()[0]?.id : undefined;
+              }
               export function getWindowIdsForWorkspace() { return BrowserWindow.getAllWindows().map(w => w.id); }`;
           if (id === '\0fixture-capture') return 'export const browserCapture = {};';
           if (id === '\0fixture-backend')
@@ -167,7 +169,7 @@ test.afterAll(async () => {
   }
 });
 
-async function launch(owned: boolean) {
+async function launch(owned: boolean, blank?: { tabId: string; hidden: boolean }) {
   const env = Object.fromEntries(
     ['PATH', 'TMPDIR', 'DISPLAY', 'XAUTHORITY', 'SYSTEMROOT'].flatMap((key) =>
       process.env[key] ? [[key, process.env[key]!]] : [],
@@ -181,10 +183,11 @@ async function launch(owned: boolean) {
       args: [
         join(fixture, 'main.cjs'),
         profile,
-        `${baseUrl}test/fixtures/browser-lifetime/index.html?owned=${owned}&guest=${encodeURIComponent(guestUrl)}`,
+        `${baseUrl}test/fixtures/browser-lifetime/index.html?owned=${owned}&guest=${encodeURIComponent(guestUrl)}${blank ? `&blankTab=${blank.tabId}&hiddenBlank=${blank.hidden}` : ''}`,
         cdpBundle,
       ],
-      env,
+      // Host-injected tracing wraps BrowserWindow and breaks native window lookup.
+      env: { ...env, DD_TRACE_ENABLED: 'false' },
     });
     const page = await app.firstWindow();
     page.on('pageerror', (error) => console.error('Fixture renderer:', error.message));
@@ -424,6 +427,105 @@ async function teardown(
       await rm(profile, { recursive: true, force: true });
     }
   }
+}
+
+for (const { tabId, hidden, context } of [
+  { tabId: 'A-1', hidden: true, context: 'foreground hidden' },
+  { tabId: 'B-1', hidden: true, context: 'background hidden' },
+  { tabId: 'A-1', hidden: false, context: 'visible panel control' },
+]) {
+  test(`explicit navigation recovers an owned blank tab: ${context}`, async ({}, testInfo) => {
+    test.setTimeout(120_000);
+    const { app, page, profile } = await launch(true, { tabId, hidden });
+    const observations: any[] = [];
+    try {
+      await ready(app, 'B-2');
+      expect(await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().length)).toBe(
+        1,
+      );
+      await page.evaluate(() => {
+        document.body.tabIndex = -1;
+        document.body.focus();
+      });
+      const initial = await record(app, page, 'before blank navigation');
+      observations.push(initial);
+      expect(initial.urls[tabId]).toBe('about:blank');
+      expect(initial.records[tabId[0]].hidden.includes(tabId)).toBe(hidden);
+      const focus = await app.evaluate(({ BrowserWindow, webContents }) => ({
+        window: BrowserWindow.getFocusedWindow()?.id,
+        contents: webContents.getFocusedWebContents()?.id,
+      }));
+      const url = `${guestUrl}/recovered-blank?tab=${tabId}`;
+      const result = await app.evaluate(
+        (_electron, { tabId, url }) =>
+          (globalThis as any).lifetimeNavigate(tabId, url, 'fixture-agent'),
+        { tabId, url },
+      );
+      observations.push({ label: 'production navigation result', result });
+      expect(result).toMatchObject({
+        success: true,
+        results: [{ action: 'navigate', success: true, result: { tabId, url } }],
+      });
+      await expect
+        .poll(() =>
+          app.evaluate(
+            (_electron, tabId) =>
+              (globalThis as any).lifetimeExecute(
+                {
+                  actions: [
+                    {
+                      action: 'evaluate',
+                      tabId,
+                      expression:
+                        '({ url: location.href, marker: window.documentMarker, count: window.inMemoryCount })',
+                    },
+                  ],
+                },
+                undefined,
+                'fixture-agent',
+                tabId[0],
+              ),
+            tabId,
+          ),
+        )
+        .toMatchObject({
+          success: true,
+          results: [
+            {
+              action: 'evaluate',
+              success: true,
+              result: { url, marker: expect.any(String), count: 0 },
+            },
+          ],
+        });
+      await expect
+        .poll(() => page.evaluate((tabId) => (window as any).lifetimeFixture.urls()[tabId], tabId))
+        .toBe(url);
+      const recovered = await record(app, page, 'after blank navigation');
+      observations.push(recovered);
+      expect(recovered.records).toEqual(initial.records);
+      expect(recovered.records[tabId[0]].owners[tabId]).toBe('fixture-agent');
+      expect(recovered.records[tabId[0]].hosts[tabId]).toBe('fixture-client');
+      const registrations = recovered.registrations.filter((entry: any) => entry.tabId === tabId);
+      expect(registrations).toHaveLength(1);
+      expect(
+        recovered.live.filter((guest: any) => guest.url === url).map((guest: any) => guest.id),
+      ).toEqual([registrations[0].webContentsId]);
+      expect(await page.evaluate(() => document.activeElement === document.body)).toBe(true);
+      expect(
+        await app.evaluate(({ BrowserWindow, webContents }) => ({
+          window: BrowserWindow.getFocusedWindow()?.id,
+          contents: webContents.getFocusedWebContents()?.id,
+        })),
+      ).toEqual(focus);
+      expect(await page.locator(`[data-offscreen-webview-tab="${tabId}"]`).count()).toBe(
+        hidden ? 1 : 0,
+      );
+      expect(await page.evaluate(() => (window as any).lifetimeFixture.errors())).toEqual([]);
+    } finally {
+      await teardown(app, page, profile, observations, testInfo);
+    }
+  });
 }
 
 test('explicit navigation mounts a cap-evicted background tab without focus changes', async ({}, testInfo) => {
