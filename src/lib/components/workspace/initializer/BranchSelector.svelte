@@ -1,5 +1,10 @@
 <script lang="ts">
   /* eslint-disable max-lines */
+  import { selectIsHostMember } from '$store/renderer/slices/host-execution/host-execution-selectors';
+  import { selectPrincipalConnectionContext } from '$store/renderer/slices/principal/principal-selectors';
+  const hostMember$ = selectIsHostMember();
+  const connection$ = selectPrincipalConnectionContext();
+  let previousConnection: string | null = null;
   import { isElectronPlatform } from '$lib/utils/platform-capabilities';
   import GitBranchIcon from '$lib/components/icons/GitBranchIcon.svelte';
   import Button from '$lib/components/ui/button/button.svelte';
@@ -379,6 +384,10 @@
   // Fetch branches when repo changes
   $effect(() => {
     // Capture current values (read these first to establish dependencies)
+    const currentConnection = $connection$;
+    const connectionChanged = currentConnection !== previousConnection;
+    previousConnection = currentConnection;
+    if (connectionChanged) branchCache.clear();
     const currentRepoPath = repoPath;
     const currentRepoType = repoType;
     const currentGithubUrl = githubUrl;
@@ -389,7 +398,8 @@
     const urlChanged = currentGithubUrl !== previousGithubUrl;
 
     // Check if anything actually changed
-    const needsRefetch = repoChanged || (currentRepoPath && (typeChanged || urlChanged));
+    const needsRefetch =
+      connectionChanged || repoChanged || (currentRepoPath && (typeChanged || urlChanged));
 
     // Update previous values BEFORE any async operations
     previousRepoPath = currentRepoPath;
@@ -696,6 +706,8 @@
           });
         } catch (githubError) {
           freshListingSettled = true;
+          // Members use daemon-classified recovery; repository errors never offer account replacement.
+          if ($hostMember$) throw githubError;
           const message = githubError instanceof Error ? githubError.message : String(githubError);
           // The daemon reports a missing/failed GitHub token as
           // "GitHub is not configured." (§5.27 error conventions).
@@ -1112,6 +1124,7 @@
    * Handle connecting to GitHub for private repo access
    */
   async function handleConnectGitHub() {
+    if ($hostMember$) return;
     isConnectingGitHub = true;
     error = null;
 
@@ -1642,7 +1655,7 @@
         </div>
 
         <div class="min-h-16 overflow-y-auto flex-1" data-testid="branch-results">
-          {#if githubAuthNeeded === 'not-authenticated' && !isConnectingGitHub}
+          {#if !$hostMember$ && githubAuthNeeded === 'not-authenticated' && !isConnectingGitHub}
             <!-- Connect with GitHub prompt for private repos -->
             <Button
               variant="ghost"

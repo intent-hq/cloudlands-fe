@@ -5,6 +5,7 @@ import {
 } from '$store/renderer/slices/provider-catalog/provider-catalog-selectors';
 import { store as appStore } from '$store/renderer/store';
 import { m } from '$shared/paraglide/messages.js';
+import { selectIsHostMember } from '$store/renderer/slices/host-execution/host-execution-selectors';
 
 export type ProviderLoadError = {
   providerId: string;
@@ -37,6 +38,8 @@ function stripProviderPrefix(message: string, providerId: string, providerName: 
 
 function getProviderErrorHint(providerId: string, message: string): string | undefined {
   const state = appStore.state;
+  // Member recovery comes from safe daemon diagnostics, never local login/install commands.
+  if (selectIsHostMember.select(state)) return undefined;
   const entry = selectProviderCatalogEntryOrDefault.select(state, providerId);
   const lowerMessage = message.toLowerCase();
 

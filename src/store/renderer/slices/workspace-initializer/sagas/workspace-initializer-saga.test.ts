@@ -1,3 +1,4 @@
+import { withLegacyPrincipal } from '../../../../../test/fixtures/principal-state';
 import { runSaga, stdChannel } from 'redux-saga';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createCollection } from '@augmentcode/themis/utils/collections/collection-utils';
@@ -48,6 +49,10 @@ import {
   persistWorkspaceInitializerWorker,
   workspaceInitializerSaga,
 } from './workspace-initializer-saga';
+
+const ownerContext = {
+  reduxStore: { getState: () => withLegacyPrincipal({}), subscribe: () => () => {} },
+};
 
 const settle = async () => {
   await Promise.resolve();
@@ -127,7 +132,7 @@ describe('workspaceInitializerSaga', () => {
     });
     const dispatch = vi.fn();
     const result = await runSaga(
-      { dispatch, getState: () => ({}) },
+      { dispatch, getState: () => withLegacyPrincipal({}) },
       hydrateWorkspaceInitializerWorker,
     ).toPromise();
 
@@ -164,7 +169,7 @@ describe('workspaceInitializerSaga', () => {
     mocks.getItem.mockReturnValue('/parent');
     const dispatch = vi.fn();
     await runSaga(
-      { dispatch, getState: () => ({}) },
+      { dispatch, getState: () => withLegacyPrincipal({}) },
       hydrateWorkspaceInitializerWorker,
     ).toPromise();
     const migrated: WorkspaceInitializerHydrationState = {
@@ -188,7 +193,7 @@ describe('workspaceInitializerSaga', () => {
     mocks.get.mockResolvedValue(null);
     const dispatch = vi.fn();
     const result = await runSaga(
-      { dispatch, getState: () => ({}) },
+      { dispatch, getState: () => withLegacyPrincipal({}) },
       hydrateWorkspaceInitializerWorker,
     ).toPromise();
 
@@ -209,7 +214,7 @@ describe('workspaceInitializerSaga', () => {
     const state = populatedState();
     mocks.update.mockRejectedValue(new Error('offline'));
     await runSaga(
-      { dispatch: vi.fn(), getState: () => state },
+      { dispatch: vi.fn(), getState: () => withLegacyPrincipal(state) },
       persistWorkspaceInitializerWorker,
     ).toPromise();
 
@@ -254,7 +259,7 @@ describe('workspaceInitializerSaga', () => {
     });
     const state = populatedState();
     await runSaga(
-      { dispatch: vi.fn(), getState: () => state },
+      { dispatch: vi.fn(), getState: () => withLegacyPrincipal(state) },
       persistWorkspaceInitializerWorker,
     ).toPromise();
     cloneSpy.mockRestore();
@@ -310,7 +315,7 @@ describe('workspaceInitializerSaga', () => {
     const state = populatedState();
     state.workspaceInitializer.branchByRepo = circular as Record<string, string>;
     await runSaga(
-      { dispatch: vi.fn(), getState: () => state },
+      { dispatch: vi.fn(), getState: () => withLegacyPrincipal(state) },
       persistWorkspaceInitializerWorker,
     ).toPromise();
     cloneSpy.mockRestore();
@@ -339,13 +344,19 @@ describe('workspaceInitializerSaga', () => {
           lastSubmittedAgent: agent,
         },
       };
-      await runSaga({ getState: () => state }, persistWorkspaceInitializerWorker).toPromise();
+      await runSaga(
+        { getState: () => withLegacyPrincipal(state) },
+        persistWorkspaceInitializerWorker,
+      ).toPromise();
       const bag = mocks.update.mock.calls[0][0][0].value;
       expect(bag.compactFormState).toEqual(agent);
       expect(bag.lastSubmittedAgent).toEqual(agent);
       mocks.get.mockResolvedValue({ value: JSON.parse(JSON.stringify(bag)) });
       const dispatch = vi.fn();
-      await runSaga({ dispatch }, hydrateWorkspaceInitializerWorker).toPromise();
+      await runSaga(
+        { dispatch, getState: () => withLegacyPrincipal({}) },
+        hydrateWorkspaceInitializerWorker,
+      ).toPromise();
       const hydrated = workspaceInitializerReducer(initialState, dispatch.mock.calls[0][0]);
       expect(hydrated.compactFormState).toEqual(agent);
       expect(hydrated.lastSubmittedAgent).toEqual(agent);
@@ -363,7 +374,12 @@ describe('workspaceInitializerSaga', () => {
       return action;
     });
     const task = runSaga(
-      { channel, dispatch, getState: () => ({ workspaceInitializer: slice }) },
+      {
+        channel,
+        dispatch,
+        context: ownerContext,
+        getState: () => withLegacyPrincipal({ workspaceInitializer: slice }),
+      },
       workspaceInitializerSaga,
     );
     slice = workspaceInitializerReducer(slice, setWorkspaceInitializerRecentRepos([]));
@@ -412,7 +428,12 @@ describe('workspaceInitializerSaga', () => {
     mocks.get.mockReturnValue(new Promise((_resolve, fail) => (reject = fail)));
     const channel = stdChannel();
     const task = runSaga(
-      { channel, dispatch: vi.fn(), getState: () => populatedState() },
+      {
+        channel,
+        dispatch: vi.fn(),
+        context: ownerContext,
+        getState: () => withLegacyPrincipal(populatedState()),
+      },
       workspaceInitializerSaga,
     );
     channel.put(setCompactWorkspaceInitializerFormState({ repoPath: '/queued' }));
@@ -434,7 +455,12 @@ describe('workspaceInitializerSaga', () => {
       return action;
     });
     const task = runSaga(
-      { channel, dispatch, getState: () => ({ workspaceInitializer: slice }) },
+      {
+        channel,
+        dispatch,
+        context: ownerContext,
+        getState: () => withLegacyPrincipal({ workspaceInitializer: slice }),
+      },
       workspaceInitializerSaga,
     );
     await settle();
@@ -505,7 +531,12 @@ describe('workspaceInitializerSaga', () => {
       return action;
     });
     const task = runSaga(
-      { channel, dispatch, getState: () => ({ workspaceInitializer: slice }) },
+      {
+        channel,
+        dispatch,
+        context: ownerContext,
+        getState: () => withLegacyPrincipal({ workspaceInitializer: slice }),
+      },
       workspaceInitializerSaga,
     );
     await settle();

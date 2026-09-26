@@ -1,3 +1,5 @@
+import { hostExecutionAuthorizationMessage } from '$features/providers/host-execution-errors';
+import { hostExecutionInvalidated } from '$store/renderer/slices/host-execution/host-execution-slice';
 /**
  * Daemon events → renderer Redux bridge.
  *
@@ -1228,7 +1230,7 @@ function handleStreamEndEvent(event: WorkspaceEvent, workspaceId: string): void 
 function handleAgentFailedStream(event: WorkspaceEvent, workspaceId: string): void {
   const data = (event as { data?: Record<string, unknown> }).data;
   const agentId = data?.agentId;
-  const error = data?.error;
+  const error = hostExecutionAuthorizationMessage(data?.executionAuthorization) ?? data?.error;
   if (typeof agentId !== 'string') return;
 
   const state = streamsByAgent.get(agentId);
@@ -3595,6 +3597,10 @@ export function routeDaemonEventsNotification(
     return;
   }
 
+  if (type === 'host:execution-context-changed') {
+    appStore.dispatch(hostExecutionInvalidated());
+    return;
+  }
   if (type === 'host:members-changed') {
     const data = (event as { data?: unknown }).data;
     if (isHostMembershipChange(data)) appStore.dispatch(hostMembershipChanged(data));
@@ -4249,6 +4255,7 @@ export const DAEMON_EVENTS_SUBSCRIBE_TYPES = [
   // gate narrows it like any other row.
   'presence:changed',
   'host:members-changed',
+  'host:execution-context-changed',
   'principal:identity-changed',
 ] as const;
 

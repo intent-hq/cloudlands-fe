@@ -6687,5 +6687,11 @@
   "workspace_transfer_export_title": "匯出工作區",
   "workspace_transfer_export_description": "將「{title}」儲存為可在其他裝置上匯入的檔案。",
   "workspace_transfer_connectDevice_label": "若要直接傳輸，請連接其他裝置",
-  "workspace_transfer_reviewExport_label": "檢視匯出內容"
+  "workspace_transfer_reviewExport_label": "檢視匯出內容",
+  "hostExecution_missingAuthorization_description": "連線的主機需要 {resource} 授權。請讓其擁有者設定後重試。",
+  "hostExecution_rejectedAuthorization_description": "連線主機的 {resource} 授權遭拒。請讓其擁有者更新或檢查後重試。",
+  "hostExecution_insufficientScope_description": "連線主機的 {resource} 授權缺少所需存取權限。請讓其擁有者檢查權限範圍後重試。",
+  "hostExecution_disabledHelper_description": "此主機的擁有者透過 {setting} 停用了 Intent 管理的 GitHub 憑證輔助程式。請讓擁有者檢查該設定或主機的其他 Git 授權。其他輔助程式和 SSH 可能仍可使用。",
+  "hostExecution_providerSetup_description": "請讓連線主機的擁有者設定或修復其 AI 提供者後重試。",
+  "hostExecution_repositorySetup_description": "此主機未設定儲存庫連線。請讓擁有者為需要連線的操作進行設定。本機和公開儲存庫操作可能仍可使用。"
 }

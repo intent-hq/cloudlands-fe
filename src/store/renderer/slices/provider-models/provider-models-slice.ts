@@ -1,3 +1,7 @@
+import {
+  hostExecutionConnectionChanged,
+  hostExecutionInvalidated,
+} from '../host-execution/host-execution-slice';
 /**
  * Provider Models Cache Slice
  *
@@ -69,3 +73,10 @@ providerModelsReducer.with(providerModelsCacheCleared, (state) => ({
   byProviderId: {},
   clearEpoch: state.clearEpoch + 1,
 }));
+
+for (const action of [hostExecutionConnectionChanged, hostExecutionInvalidated]) {
+  providerModelsReducer.with(action, (state) => ({
+    byProviderId: {},
+    clearEpoch: state.clearEpoch + 1,
+  }));
+}

@@ -1,3 +1,7 @@
+import {
+  selectHostExecutionContext,
+  selectIsHostMember,
+} from '../host-execution/host-execution-selectors';
 import { store } from '../../store';
 import {
   getItem,
@@ -37,7 +41,12 @@ export const selectSelectedModel = store.createSelector((state, providerId?: str
     state.model.availableModelsProviderId === effectiveProviderId
       ? getItems<AuggieModel, 'value'>(state.model.availableModels)
       : [];
-  const persisted = state.model.providerModels[effectiveProviderId];
+  const context = selectHostExecutionContext.select(state);
+  const persisted = selectIsHostMember.select(state)
+    ? context?.defaultProviderId === effectiveProviderId
+      ? context.defaultModelId
+      : null
+    : state.model.providerModels[effectiveProviderId];
   // Catalogs can be cold, stale, or partial. They supply defaults only when
   // the user has no persisted choice; absence is not a new model selection.
   if (persisted) return persisted;

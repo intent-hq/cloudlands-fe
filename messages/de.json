@@ -6687,5 +6687,11 @@
   "workspace_transfer_export_title": "Arbeitsbereich exportieren",
   "workspace_transfer_export_description": "Speichere „{title}“ als Datei, die du auf einem anderen Gerät importieren kannst.",
   "workspace_transfer_connectDevice_label": "Für eine direkte Übertragung ein anderes Gerät verbinden",
-  "workspace_transfer_reviewExport_label": "Export prüfen"
+  "workspace_transfer_reviewExport_label": "Export prüfen",
+  "hostExecution_missingAuthorization_description": "Der verbundene Host benötigt eine {resource}-Autorisierung. Bitte seinen Eigentümer, sie einzurichten, und versuche es erneut.",
+  "hostExecution_rejectedAuthorization_description": "Die {resource}-Autorisierung des verbundenen Hosts wurde abgelehnt. Bitte seinen Eigentümer, sie zu erneuern oder zu prüfen, und versuche es erneut.",
+  "hostExecution_insufficientScope_description": "Der {resource}-Autorisierung des verbundenen Hosts fehlen die nötigen Rechte. Bitte seinen Eigentümer, die Berechtigungen zu prüfen, und versuche es erneut.",
+  "hostExecution_disabledHelper_description": "Der Eigentümer dieses Hosts hat Intents verwaltete GitHub-Anmeldehilfe mit {setting} deaktiviert. Bitte ihn, diese Einstellung oder die andere Git-Autorisierung des Hosts zu prüfen. Andere Helfer und SSH können weiterhin funktionieren.",
+  "hostExecution_providerSetup_description": "Bitte den Eigentümer des verbundenen Hosts, seine KI-Anbieter einzurichten oder zu reparieren, und versuche es erneut.",
+  "hostExecution_repositorySetup_description": "Dieser Host hat keine konfigurierte Repository-Verbindung. Bitte seinen Eigentümer, sie für Vorgänge einzurichten, die sie benötigen. Lokale und öffentliche Repositories können weiterhin nutzbar sein."
 }

@@ -6687,5 +6687,11 @@
   "workspace_transfer_export_title": "Exportar espacio de trabajo",
   "workspace_transfer_export_description": "Guarda «{title}» en un archivo que puedas importar en otro dispositivo.",
   "workspace_transfer_connectDevice_label": "Para transferir directamente, conecta otro dispositivo",
-  "workspace_transfer_reviewExport_label": "Revisar exportación"
+  "workspace_transfer_reviewExport_label": "Revisar exportación",
+  "hostExecution_missingAuthorization_description": "El host conectado necesita autorización de {resource}. Pide a su propietario que la configure y vuelve a intentarlo.",
+  "hostExecution_rejectedAuthorization_description": "Se rechazó la autorización de {resource} del host conectado. Pide a su propietario que la renueve o revise y vuelve a intentarlo.",
+  "hostExecution_insufficientScope_description": "La autorización de {resource} del host conectado no tiene el acceso necesario. Pide a su propietario que revise los permisos y vuelve a intentarlo.",
+  "hostExecution_disabledHelper_description": "El propietario de este host desactivó el asistente de credenciales de GitHub gestionado por Intent mediante {setting}. Pídele que revise esa opción o la otra autorización de Git del host. Otros asistentes y SSH pueden seguir funcionando.",
+  "hostExecution_providerSetup_description": "Pide al propietario del host conectado que configure o repare sus proveedores de IA y vuelve a intentarlo.",
+  "hostExecution_repositorySetup_description": "Este host no tiene una conexión de repositorio configurada. Pide a su propietario que configure una para las operaciones que la necesiten. El trabajo con repositorios locales y públicos puede seguir disponible."
 }

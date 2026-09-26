@@ -7,7 +7,6 @@ vi.mock('$lib/client', () => ({ appClient: { providers: { catalog: mocks.catalog
 
 import { PROVIDER_AVAILABILITY_KEY_TO_ID } from '$shared/types/provider-availability';
 import type { ProviderCatalogResult } from '$shared/provider-catalog';
-import { providerCatalogLoaded } from '../../provider-catalog/provider-catalog-slice';
 import {
   agentAvailabilityReducer,
   checkAllProvidersRequested,
@@ -312,13 +311,11 @@ describe('providerAvailabilitySaga', () => {
     expect(sliceState.providerLoadingMap['claude-code']).toBe(false);
   });
 
-  it('coalesces connected/manual bulk requests and cleans up on cancellation', async () => {
-    let emit!: (payload: { status: string }) => void;
+  it('coalesces host-refresh/manual bulk requests and cleans up on cancellation', async () => {
     const offById = vi.fn();
     window.electronAPI = {
       ...originalElectronApi,
-      on: vi.fn((_channel, handler) => {
-        emit = handler;
+      on: vi.fn(() => {
         return 'provider-listener';
       }),
       offById,
@@ -337,7 +334,7 @@ describe('providerAvailabilitySaga', () => {
       providerAvailabilitySaga,
     );
     await settle();
-    emit({ status: 'connected' });
+    channel.put(checkAllProvidersRequested());
     channel.put(checkAllProvidersRequested());
     channel.put(ensureProvidersChecked());
     await settle();
@@ -350,15 +347,13 @@ describe('providerAvailabilitySaga', () => {
         .map(([action]) => action)
         .filter((action) => action.type === 'agentAvailability/checkAllProvidersComplete'),
     ).toEqual([]);
-    expect(offById.mock.calls).toEqual([['backend:status', 'provider-listener']]);
+    expect(offById).not.toHaveBeenCalled();
   });
 
   it('runs one trailing bulk check after repeated triggers arrive in flight', async () => {
-    let emit!: (payload: { status: string }) => void;
     window.electronAPI = {
       ...originalElectronApi,
-      on: vi.fn((_channel, handler) => {
-        emit = handler;
+      on: vi.fn(() => {
         return 'provider-listener';
       }),
       offById: vi.fn(),
@@ -394,7 +389,7 @@ describe('providerAvailabilitySaga', () => {
     channel.put(checkAllProvidersRequested());
     await settle();
     expect(availabilityCalls).toBe(1);
-    emit({ status: 'connected' });
+    channel.put(checkAllProvidersRequested());
     channel.put(checkAllProvidersRequested());
     channel.put(checkAllProvidersRequested());
     channel.put(ensureProvidersChecked());
@@ -413,111 +408,6 @@ describe('providerAvailabilitySaga', () => {
 
     task.cancel();
     await task.toPromise();
-  });
-
-  it('owns exact catalog hydration at startup and after a connected status', async () => {
-    let emit!: (payload: { status: string }) => void;
-    window.electronAPI = {
-      ...originalElectronApi,
-      on: vi.fn((_channel, handler) => {
-        emit = handler;
-        return 'provider-listener';
-      }),
-      offById: vi.fn(),
-    };
-    mocks.invoke.mockImplementation(() => new Promise(() => {}));
-    const channel = stdChannel();
-    const dispatch = vi.fn((action) => channel.put(action));
-    const task = runSaga(
-      {
-        channel,
-        dispatch,
-        getState: () => ({
-          agentAvailability: { hasCheckedOnce: false, providerCheckEpochMap: {} },
-        }),
-      },
-      providerAvailabilitySaga,
-    );
-    await settle();
-
-    expect(mocks.catalog).toHaveBeenCalledTimes(1);
-    expect(mocks.catalog).toHaveBeenCalledWith();
-    expect(dispatch).toHaveBeenCalledWith(providerCatalogLoaded(catalog));
-
-    emit({ status: 'connected' });
-    await settle();
-    expect(mocks.catalog).toHaveBeenCalledTimes(2);
-    expect(
-      dispatch.mock.calls.filter(([action]) => action.type === providerCatalogLoaded.type),
-    ).toHaveLength(2);
-    expect(
-      dispatch.mock.calls.filter(([action]) => action.type === checkAllProvidersRequested.type),
-    ).toHaveLength(1);
-
-    task.cancel();
-    await task.toPromise();
-  });
-
-  it('recovers catalog hydration on reconnect after an initial request failure', async () => {
-    let emit!: (payload: { status: string }) => void;
-    window.electronAPI = {
-      ...originalElectronApi,
-      on: vi.fn((_channel, handler) => {
-        emit = handler;
-        return 'provider-listener';
-      }),
-      offById: vi.fn(),
-    };
-    mocks.catalog.mockRejectedValueOnce(new Error('daemon unavailable')).mockResolvedValue(catalog);
-    mocks.invoke.mockImplementation(() => new Promise(() => {}));
-    const channel = stdChannel();
-    const dispatch = vi.fn((action) => channel.put(action));
-    const task = runSaga(
-      {
-        channel,
-        dispatch,
-        getState: () => ({
-          agentAvailability: { hasCheckedOnce: false, providerCheckEpochMap: {} },
-        }),
-      },
-      providerAvailabilitySaga,
-    );
-    await settle();
-
-    expect(
-      dispatch.mock.calls.filter(([action]) => action.type === providerCatalogLoaded.type),
-    ).toEqual([]);
-    emit({ status: 'connected' });
-    await settle();
-    expect(mocks.catalog).toHaveBeenCalledTimes(2);
-    expect(
-      dispatch.mock.calls.filter(([action]) => action.type === providerCatalogLoaded.type),
-    ).toEqual([[providerCatalogLoaded(catalog)]]);
-
-    task.cancel();
-    await task.toPromise();
-  });
-
-  it('does not dispatch or install reconnect ownership after startup hydration is cancelled', async () => {
-    let resolveCatalog!: (value: ProviderCatalogResult) => void;
-    mocks.catalog.mockReturnValue(
-      new Promise<ProviderCatalogResult>((resolve) => {
-        resolveCatalog = resolve;
-      }),
-    );
-    const on = vi.fn(() => 'provider-listener');
-    window.electronAPI = { ...originalElectronApi, on, offById: vi.fn() };
-    const dispatch = vi.fn();
-    const task = runSaga({ dispatch }, providerAvailabilitySaga);
-    await settle();
-
-    expect(mocks.catalog).toHaveBeenCalledTimes(1);
-    task.cancel();
-    resolveCatalog(catalog);
-    await task.toPromise();
-
-    expect(dispatch).not.toHaveBeenCalled();
-    expect(on).not.toHaveBeenCalled();
   });
 
   it('skips ensure after hydration but manual single checks still bypass it', async () => {

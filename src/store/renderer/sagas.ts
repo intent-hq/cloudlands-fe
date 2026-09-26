@@ -1,3 +1,4 @@
+import { hostExecutionSaga } from './slices/host-execution/sagas/host-execution-saga';
 /**
  * Root app saga registry.
  *
@@ -142,6 +143,7 @@ export const sagas = [
   guestSessionsSaga,
   presenceSaga,
   principalSaga,
+  hostExecutionSaga,
   settingsHydrationSaga,
   activeStreamsSaga,
   agentReadSaga,

@@ -1,3 +1,7 @@
+import {
+  selectHostExecutionContext,
+  selectIsHostMember,
+} from '../host-execution/host-execution-selectors';
 /**
  * Provider Catalog Selectors
  *
@@ -46,7 +50,9 @@ export const selectAllCatalogProviderIds = store.createSelector(
  * store are always bare and never consulted here.
  */
 export const selectEffectiveDefaultProviderId = store.createSelector((state): string => {
-  return state.model?.defaultProviderId ?? '';
+  return selectIsHostMember.select(state)
+    ? (selectHostExecutionContext.select(state)?.defaultProviderId ?? '')
+    : (state.model?.defaultProviderId ?? '');
 });
 
 /** One registry row by id; `undefined` when unknown or not yet hydrated. */
@@ -151,7 +157,7 @@ export const selectProviderAuthFailureGuidance = store.createSelector(
     model: string | null | undefined,
     errorMessage: string | null | undefined,
   ): ProviderAuthFailureGuidance | null => {
-    if (!errorMessage) return null;
+    if (!errorMessage || selectIsHostMember.select(state)) return null;
     // 'acp' is the protocol name, not a provider id (see getAgentProvider) —
     // treat it as unset so resolution falls through to the model prefix.
     let rawId = provider && provider !== 'acp' ? provider : '';

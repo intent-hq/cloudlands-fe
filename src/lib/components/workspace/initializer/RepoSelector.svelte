@@ -1,5 +1,14 @@
 <script lang="ts">
   /* eslint-disable max-lines */
+  import { selectIsHostMember } from '$store/renderer/slices/host-execution/host-execution-selectors';
+  import {
+    selectCanAdministerHost,
+    selectPrincipalConnectionContext,
+  } from '$store/renderer/slices/principal/principal-selectors';
+  import HostExecutionNotice from '$features/providers/HostExecutionNotice.svelte';
+  const hostMember$ = selectIsHostMember();
+  const canAdministerHost$ = selectCanAdministerHost();
+  const connection$ = selectPrincipalConnectionContext();
   import { workspaceClient } from '$store/renderer/slices/workspace/utils/workspace.client';
   import { isElectronPlatform } from '$lib/utils/platform-capabilities';
   import GitRepoIcon from '$lib/components/icons/GitRepoIcon.svelte';
@@ -38,7 +47,7 @@
   import type { WorkspaceInitializerRemoteSetup } from '$store/renderer/slices/workspace-initializer/workspace-initializer-types';
   import { faGithub } from '@fortawesome/free-brands-svg-icons';
   import { faFolder, faXmark, faPlus, faChevronDown } from '@fortawesome/free-solid-svg-icons';
-  import { onMount } from 'svelte';
+  import { untrack } from 'svelte';
   import Fa from 'svelte-fa';
   import ServerIcon from '$lib/components/icons/ServerIcon.svelte';
   import AddRemoteSetupModal from './AddRemoteSetupModal.svelte';
@@ -101,6 +110,9 @@
   // GitHub autocomplete sources for the "Pick a repo" tab: the user's own
   // repos (client-side filtered) plus a debounced global search.
   const isGithubAuthenticated$ = selectGitHubAuthIsAuthenticated();
+  const canBrowseGithub = $derived(
+    $hostMember$ || ($canAdministerHost$ && $isGithubAuthenticated$),
+  );
   const githubRepos$ = selectGithubRepos();
   const githubReposLoading$ = selectGithubReposLoading();
   const githubReposLoaded$ = selectGithubReposLoaded();
@@ -419,7 +431,7 @@
 
   /** Single combined suggestion list rendered under the GitHub input. */
   const githubSuggestions = $derived.by<GithubRepoItem[]>(() =>
-    activeTab === 'github' && $isGithubAuthenticated$
+    activeTab === 'github' && canBrowseGithub
       ? [...ownedGithubSuggestions, ...discoverGithubSuggestions]
       : [],
   );
@@ -452,7 +464,7 @@
   $effect(() => {
     if (
       activeTab === 'github' &&
-      $isGithubAuthenticated$ &&
+      canBrowseGithub &&
       !$githubReposLoaded$ &&
       !$githubReposLoading$ &&
       !$githubReposError$
@@ -665,12 +677,11 @@
   // That logic lives in the parent flow to avoid side effects when this component
   // mounts/unmounts (e.g., during reset). This component should
   // be "controlled" - it receives `value` as a prop and only fires `onchange` on user actions.
-  onMount(async () => {
+  async function loadRecentRepos(connection: string | null) {
     performanceMonitor.start('loadRecentRepos');
 
     // Refresh the GitHub auth snapshot so the "Pick a repo" tab knows whether
     // it can offer autocomplete suggestions.
-    appStore.dispatch(initializeGitHubAuth());
 
     try {
       // Simulate network delay if enabled
@@ -686,6 +697,7 @@
           {},
         ).catch(() => null),
       ]);
+      if (connection !== selectPrincipalConnectionContext.select(appStore.state)) return;
 
       const workspaces = workspaceListResult.ok ? workspaceListResult.data : [];
       if (workspaceListResult.ok) {
@@ -819,9 +831,19 @@
       const appError = handleError(err, { component: 'RepoSelector', action: 'loadRecentRepos' });
       logger.error('Failed to load recent repositories', appError);
     } finally {
-      isLoading = false;
+      if (connection === selectPrincipalConnectionContext.select(appStore.state)) isLoading = false;
       performanceMonitor.end('loadRecentRepos');
     }
+  }
+
+  $effect(() => {
+    if ($canAdministerHost$) appStore.dispatch(initializeGitHubAuth());
+  });
+  $effect(() => {
+    const connection = $connection$;
+    recentRepos = [];
+    isLoading = true;
+    if (connection) void untrack(() => loadRecentRepos(connection));
   });
 
   // Parse GitHub URL using the URL API for robust parsing
@@ -972,7 +994,7 @@
    * Signed-out users get no dispatch at all.
    */
   function dispatchGithubSearch(query: string) {
-    if (!$isGithubAuthenticated$) return;
+    if (!canBrowseGithub) return;
     appStore.dispatch(searchGithubRepos(query.trim()));
   }
 
@@ -1541,6 +1563,8 @@
                 <Fa icon={faFolder} class="text-ghost opacity-50" />
               </Button>
             {:else if activeTab === 'github'}
+              <HostExecutionNotice kind="repository" />
+              <HostExecutionNotice />
               <!-- GitHub: URL input with prefix (path-less pick — no clone destination) -->
               <div
                 class="flex items-center rounded-lg bg-sidebar focus-within:ring-1 focus-within:ring-ring"
@@ -1574,14 +1598,18 @@
             typed text, then deduped global search results. Signed-out users
             get a connect hint instead; manual owner/repo entry keeps working.
           -->
-              {#if !$isGithubAuthenticated$}
+              {#if !canBrowseGithub && $canAdministerHost$}
                 <GitHubAuthBanner
                   class="mt-2"
                   message={m.workspace_repoSelector_githubSignIn_description()}
                 />
               {:else if $githubReposError$}
                 <div class="mt-2 px-1 text-sm text-subtle flex items-center gap-2">
-                  <span>{m.workspace_repoSelector_suggestionsUnavailable_label()}</span>
+                  <span
+                    >{$hostMember$
+                      ? $githubReposError$
+                      : m.workspace_repoSelector_suggestionsUnavailable_label()}</span
+                  >
                   <Button
                     variant="ghost"
                     type="button"

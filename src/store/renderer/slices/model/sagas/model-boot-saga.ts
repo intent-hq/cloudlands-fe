@@ -1,3 +1,7 @@
+import {
+  selectCanAdministerHost,
+  selectPrincipalConnectionContext,
+} from '../../principal/principal-selectors';
 import { END, buffers, eventChannel, type EventChannel } from 'redux-saga';
 import { call, put, take } from 'typed-redux-saga';
 
@@ -28,14 +32,17 @@ const logger = createLogger('ModelBootSaga');
  * still help.
  */
 export function* loadModelsOnBootWorker() {
+  const connection = yield* selectPrincipalConnectionContext.effect();
   try {
     let providerId = yield* selectActiveProviderId.effect();
     if (!providerId) {
+      if (!(yield* selectCanAdministerHost.effect())) return false;
       const providerSettings: Awaited<ReturnType<typeof appClient.settings.getProviderSettings>> =
         yield* call([appClient.settings, appClient.settings.getProviderSettings]);
       providerId = providerSettings?.activeProviderId ?? '';
     }
-    if (!providerId) return false;
+    if (!providerId || connection !== (yield* selectPrincipalConnectionContext.effect()))
+      return false;
 
     const models: Awaited<ReturnType<typeof appClient.models.list>> = yield* call(
       [appClient.models, appClient.models.list],
@@ -45,7 +52,11 @@ export function* loadModelsOnBootWorker() {
     // Provider mismatch guard: if the active provider changed while the list
     // was in flight, the reload saga owns that provider's load — drop ours.
     const activeProviderId = yield* selectActiveProviderId.effect();
-    if (activeProviderId && activeProviderId !== providerId) return true;
+    if (
+      (activeProviderId && activeProviderId !== providerId) ||
+      connection !== (yield* selectPrincipalConnectionContext.effect())
+    )
+      return true;
     if (models.length === 0) return false;
 
     yield* put(setAvailableModels(models, providerId));

@@ -1,3 +1,4 @@
+import { hostExecutionConnectionChanged } from '../host-execution/host-execution-slice';
 import type { KnownRepo } from '$shared/types/known-repo';
 import { createAction } from '@augmentcode/themis/utils/store/create-action';
 import { createReducer } from '@augmentcode/themis/utils/store/create-reducer';
@@ -40,3 +41,5 @@ knownReposReducer.with(removeRepo, (state, { payload: [repoPath] }) => {
     repos,
   };
 });
+
+knownReposReducer.with(hostExecutionConnectionChanged, () => initialState);

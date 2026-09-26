@@ -6687,5 +6687,11 @@
   "workspace_transfer_export_title": "ワークスペースをエクスポート",
   "workspace_transfer_export_description": "「{title}」を別のデバイスでインポートできるファイルに保存します。",
   "workspace_transfer_connectDevice_label": "直接転送するには、別のデバイスを接続してください",
-  "workspace_transfer_reviewExport_label": "エクスポート内容を確認"
+  "workspace_transfer_reviewExport_label": "エクスポート内容を確認",
+  "hostExecution_missingAuthorization_description": "接続先ホストには {resource} の認証が必要です。所有者に設定を依頼してから再試行してください。",
+  "hostExecution_rejectedAuthorization_description": "接続先ホストの {resource} 認証が拒否されました。所有者に更新または確認を依頼してから再試行してください。",
+  "hostExecution_insufficientScope_description": "接続先ホストの {resource} 認証には必要なアクセス権がありません。所有者に権限の確認を依頼してから再試行してください。",
+  "hostExecution_disabledHelper_description": "このホストの所有者は {setting} で Intent 管理の GitHub 認証ヘルパーを無効にしています。この設定またはホストの別の Git 認証を確認するよう依頼してください。他のヘルパーや SSH は利用できる場合があります。",
+  "hostExecution_providerSetup_description": "接続先ホストの所有者に AI プロバイダーの設定または修復を依頼してから再試行してください。",
+  "hostExecution_repositorySetup_description": "このホストにはリポジトリ接続が設定されていません。必要な操作のために所有者に設定を依頼してください。ローカルや公開リポジトリの作業は引き続き利用できる場合があります。"
 }

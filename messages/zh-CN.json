@@ -6687,5 +6687,11 @@
   "workspace_transfer_export_title": "导出工作区",
   "workspace_transfer_export_description": "将“{title}”保存为可在其他设备上导入的文件。",
   "workspace_transfer_connectDevice_label": "要直接传输，请连接其他设备",
-  "workspace_transfer_reviewExport_label": "查看导出内容"
+  "workspace_transfer_reviewExport_label": "查看导出内容",
+  "hostExecution_missingAuthorization_description": "连接的主机需要 {resource} 授权。请让其所有者配置后重试。",
+  "hostExecution_rejectedAuthorization_description": "连接的主机的 {resource} 授权被拒绝。请让其所有者续期或检查后重试。",
+  "hostExecution_insufficientScope_description": "连接的主机的 {resource} 授权缺少所需访问权限。请让其所有者检查权限范围后重试。",
+  "hostExecution_disabledHelper_description": "此主机的所有者通过 {setting} 禁用了 Intent 托管的 GitHub 凭据助手。请让所有者检查该设置或主机的其他 Git 授权。其他助手和 SSH 可能仍可使用。",
+  "hostExecution_providerSetup_description": "请让连接主机的所有者配置或修复其 AI 提供商后重试。",
+  "hostExecution_repositorySetup_description": "此主机未配置仓库连接。请让所有者为需要连接的操作进行配置。本地和公开仓库操作可能仍可使用。"
 }

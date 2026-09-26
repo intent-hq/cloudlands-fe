@@ -1,3 +1,4 @@
+import { hostExecutionReducer } from './slices/host-execution/host-execution-slice';
 import { providerSettingsReducer } from './slices/provider-settings/provider-settings-slice';
 import { antigravitySetupReducer } from './slices/antigravity-setup/antigravity-setup-slice';
 import { providerCatalogReducer } from './slices/provider-catalog/provider-catalog-slice';
@@ -200,6 +201,7 @@ export const reducers = {
   guestSessions: guestSessionsReducer,
   presence: presenceReducer,
   principal: principalReducer,
+  hostExecution: hostExecutionReducer,
   hostRequirements: hostRequirementsReducer,
   hud: hudReducer,
   setupPrompt: setupPromptReducer,

@@ -6687,5 +6687,11 @@
   "workspace_transfer_export_title": "Export workspace",
   "workspace_transfer_export_description": "Save “{title}” to a file you can import on another device.",
   "workspace_transfer_connectDevice_label": "To transfer directly, connect another device",
-  "workspace_transfer_reviewExport_label": "Review export"
+  "workspace_transfer_reviewExport_label": "Review export",
+  "hostExecution_missingAuthorization_description": "The connected host needs {resource} authorization. Ask its owner to configure it, then retry.",
+  "hostExecution_rejectedAuthorization_description": "The connected host's {resource} authorization was rejected. Ask its owner to renew or check it, then retry.",
+  "hostExecution_insufficientScope_description": "The connected host's {resource} authorization lacks the required access. Ask its owner to check the scopes, then retry.",
+  "hostExecution_disabledHelper_description": "This host's owner disabled Intent's managed GitHub credential helper with {setting}. Ask the owner to review that setting or the host's other Git authorization. Other helpers and SSH may still work.",
+  "hostExecution_providerSetup_description": "Ask the connected host's owner to configure or repair its AI providers, then retry.",
+  "hostExecution_repositorySetup_description": "This host has no configured repository connection. Ask its owner to set one up for operations that need it. Local and public repository work can still be available."
 }

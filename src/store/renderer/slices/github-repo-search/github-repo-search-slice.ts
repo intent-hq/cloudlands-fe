@@ -1,3 +1,4 @@
+import { hostExecutionConnectionChanged } from '../host-execution/host-execution-slice';
 /**
  * github-repo-search slice — caches the results of a debounced, global
  * GitHub repository search (`/search/repositories`).
@@ -86,3 +87,5 @@ githubRepoSearchReducer.with(setGithubRepoSearchError, (state, { payload: [query
   lastQuery: query,
 }));
 githubRepoSearchReducer.with(clearGithubRepoSearch, () => initialState);
+
+githubRepoSearchReducer.with(hostExecutionConnectionChanged, () => initialState);

@@ -6687,5 +6687,11 @@
   "workspace_transfer_export_title": "Exporter l’espace de travail",
   "workspace_transfer_export_description": "Enregistrez « {title} » dans un fichier à importer sur un autre appareil.",
   "workspace_transfer_connectDevice_label": "Pour un transfert direct, connectez un autre appareil",
-  "workspace_transfer_reviewExport_label": "Vérifier l’exportation"
+  "workspace_transfer_reviewExport_label": "Vérifier l’exportation",
+  "hostExecution_missingAuthorization_description": "L’hôte connecté a besoin d’une autorisation {resource}. Demandez à son propriétaire de la configurer, puis réessayez.",
+  "hostExecution_rejectedAuthorization_description": "L’autorisation {resource} de l’hôte connecté a été refusée. Demandez à son propriétaire de la renouveler ou de la vérifier, puis réessayez.",
+  "hostExecution_insufficientScope_description": "L’autorisation {resource} de l’hôte connecté n’a pas les accès nécessaires. Demandez à son propriétaire de vérifier les permissions, puis réessayez.",
+  "hostExecution_disabledHelper_description": "Le propriétaire de cet hôte a désactivé l’assistant d’identifiants GitHub géré par Intent avec {setting}. Demandez-lui de vérifier ce réglage ou l’autre autorisation Git de l’hôte. Les autres assistants et SSH peuvent toujours fonctionner.",
+  "hostExecution_providerSetup_description": "Demandez au propriétaire de l’hôte connecté de configurer ou de réparer ses fournisseurs d’IA, puis réessayez.",
+  "hostExecution_repositorySetup_description": "Cet hôte n’a aucune connexion de dépôt configurée. Demandez à son propriétaire d’en configurer une pour les opérations qui en ont besoin. Les dépôts locaux et publics peuvent rester utilisables."
 }
