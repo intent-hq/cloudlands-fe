@@ -192,14 +192,16 @@ export function parseReport(report, entry) {
 function jobName(entry) {
   if (entry.suite === 'manifest') return 'Expected browser reports';
   if (entry.suite === 'ct' || entry.suite === 'quarantine')
-    return `Component Tests (shard ${entry.suite === 'quarantine' ? 1 : entry.shard}/4)`;
+    return `test-ct / Component Tests (shard ${entry.suite === 'quarantine' ? 1 : entry.shard}/4)`;
   return entry.suite === 'root'
-    ? `Playwright (root ${entry.shard}/2)`
-    : 'Electron Browser Lifetime';
+    ? `test-playwright / Playwright (root ${entry.shard}/2)`
+    : 'test-electron / Electron Browser Lifetime';
 }
 function latestJob(jobs, entry, run) {
   const name = jobName(entry);
-  const matching = jobs.filter((job) => job.name === name || job.name?.endsWith(` / ${name}`));
+  // Each reusable-workflow call also emits skipped jobs for its other suites.
+  // Bind to the owning call before checking attempts, uniqueness or conclusions.
+  const matching = jobs.filter((job) => job.name === name);
   for (const job of matching)
     requireValue(
       Number.isSafeInteger(job.run_attempt) &&

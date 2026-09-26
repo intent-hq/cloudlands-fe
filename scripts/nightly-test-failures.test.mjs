@@ -140,13 +140,16 @@ describe('gh-only reporter functional workflow', () => {
     expect(f.readState().issues[0].body).toContain('attempt 1');
     expect(f.readState().issues[0].body).toContain('Latest seen: 2026-09-26T02:45:00Z');
   });
-  it('collects eight real ZIP reports, creates a Bug through fake gh, and replays without duplicate writes', () => {
+  it('collects eight ZIP reports with skipped workflow placeholders and replays one Bug without duplicate writes', () => {
     const data = fixture();
     data.documents['playwright-root-report-2'].report = report('flaky');
+    data.documents['playwright-ct-report-quarantine'].report.suites = [];
+    data.documents['playwright-ct-report-quarantine'].outcome.testCount = 0;
     const f = functional(data);
     expect(f.call('collect', ['--run', '1234']).status).toBe(0);
     const plan = JSON.parse(readFileSync(join(f.out, 'plan.json'), 'utf8'));
     expect(plan.lanes).toHaveLength(8);
+    expect(plan.incidents).toEqual([]);
     expect(plan.items).toHaveLength(1);
     expect(plan.items[0].suite).toBe('root');
     expect(f.call('publish', ['--write']).status).toBe(0);

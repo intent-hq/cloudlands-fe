@@ -9,6 +9,106 @@ import {
 } from './nightly-test-report.mjs';
 import { entries, fixture, report, testRecord } from './test-fixtures/nightly-browser.mjs';
 
+describe.each([
+  ['ct', 'test-ct / Component Tests (shard 2/4)', 'playwright-ct-report-2-of-4'],
+  ['root', 'test-playwright / Playwright (root 2/2)', 'playwright-root-report-2'],
+  ['electron', 'test-electron / Electron Browser Lifetime', 'playwright-electron-lifetime-report'],
+])('%s owning workflow history', (suite, name, artifact) => {
+  it.each(['success', 'skipped'])(
+    'ignores a newer same-leaf %s job from another call',
+    (conclusion) => {
+      const data = fixture();
+      const job = data.jobs.find((j) => j.name === name);
+      data.run.run_attempt = 2;
+      data.jobs.unshift({
+        ...job,
+        id: 99,
+        name: `other-call / ${name.split(' / ')[1]}`,
+        run_attempt: 2,
+        conclusion,
+      });
+      const result = analyzeReports(data);
+      expect(result.incidents).toEqual([]);
+      expect(result.lanes).toHaveLength(8);
+      expect(result.lanes.every((lane) => lane.attempt === 1)).toBe(true);
+      expect(result.lanes.find((lane) => lane.artifact === artifact).job).toBe(job.id);
+    },
+  );
+  it.each(['skipped', 'failure', 'cancelled'])(
+    'rejects an owned %s job despite a successful same-leaf job in another call',
+    (conclusion) => {
+      const data = fixture();
+      const job = data.jobs.find((j) => j.name === name);
+      data.jobs.push({ ...job, id: 99, name: `other-call / ${name.split(' / ')[1]}` });
+      job.conclusion = conclusion;
+      const result = analyzeReports(data);
+      expect(result.incidents).toHaveLength(1);
+      expect(result.incidents[0]).toContain(artifact);
+      expect(result.lanes).toHaveLength(7);
+      expect(result.items.map((item) => item.suite)).toEqual(['infrastructure']);
+    },
+  );
+  it.each(['success', 'failure', 'skipped', 'cancelled'])(
+    'rejects old artifacts when the latest owned attempt ended %s',
+    (conclusion) => {
+      const data = fixture();
+      const job = data.jobs.find((j) => j.name === name);
+      data.run.run_attempt = 2;
+      data.jobs.unshift({ ...job, id: 99, run_attempt: 2, conclusion });
+      const result = analyzeReports(data);
+      expect(result.incidents).toHaveLength(1);
+      expect(result.incidents[0]).toContain(`${artifact}: Stale or mismatched artifact context`);
+      expect(result.lanes).toHaveLength(7);
+      expect(result.items.map((item) => item.suite)).toEqual(['infrastructure']);
+    },
+  );
+  it.each(['other caller', 'unqualified', 'nested caller'])(
+    'rejects a missing owning job when only an %s name matches',
+    (replacement) => {
+      const data = fixture();
+      const job = data.jobs.find((j) => j.name === name);
+      const leaf = name.split(' / ')[1];
+      job.name =
+        replacement === 'unqualified'
+          ? leaf
+          : replacement === 'nested caller'
+            ? `outer / ${name}`
+            : `other-call / ${leaf}`;
+      const result = analyzeReports(data);
+      expect(result.incidents).toHaveLength(1);
+      expect(result.incidents[0]).toContain(`${artifact}: Missing or ambiguous job history`);
+      expect(result.lanes).toHaveLength(7);
+    },
+  );
+  it('keeps ambiguity when the latest owning call has successful and skipped records', () => {
+    const data = fixture();
+    const job = data.jobs.find((j) => j.name === name);
+    data.jobs.push({ ...job, id: 99, conclusion: 'skipped', steps: [] });
+    const result = analyzeReports(data);
+    expect(result.incidents).toHaveLength(1);
+    expect(result.incidents[0]).toContain(`${artifact}: Missing or ambiguous job history`);
+    expect(result.lanes).toHaveLength(7);
+  });
+  it('keeps the owning failed test occurrence despite another call succeeding', () => {
+    const data = fixture();
+    const job = data.jobs.find((j) => j.name === name);
+    data.jobs.unshift({ ...job, id: 99, name: `other-call / ${name.split(' / ')[1]}` });
+    job.conclusion = 'failure';
+    data.documents[artifact].report = report('unexpected');
+    data.documents[artifact].outcome.testOutcome = 'failure';
+    data.documents[artifact].outcome.jobStatus = 'failure';
+    const result = analyzeReports(data);
+    expect(result.incidents).toEqual([]);
+    expect(result.lanes).toHaveLength(8);
+    expect(result.items).toHaveLength(1);
+    expect(result.items[0]).toMatchObject({
+      suite,
+      status: 'unexpected',
+      occurrences: [{ job: job.id, attempt: 1, observedAt: job.completed_at }],
+    });
+  });
+});
+
 describe('complete browser evidence', () => {
   it.each(['./', 'test/../', '.\\', 'test\\..\\'])(
     'reports empty path %j as infrastructure rather than a test failure',
@@ -23,12 +123,32 @@ describe('complete browser evidence', () => {
       expect(result.items.map((item) => item.suite)).toEqual(['infrastructure']);
     },
   );
-  it('accepts all four CT shards, both root shards, Electron and quarantine on a successful run', () => {
-    const result = analyzeReports(fixture());
-    expect(result.lanes).toHaveLength(8);
-    expect(result.incidents).toEqual([]);
-    expect(result.items).toEqual([]);
-  });
+  it.each(['original', 'reversed', 'placeholders first'])(
+    'validates each owning workflow despite skipped same-leaf placeholders (%s order)',
+    (order) => {
+      const data = fixture();
+      data.documents['playwright-ct-report-quarantine'].report.suites = [];
+      data.documents['playwright-ct-report-quarantine'].outcome.testCount = 0;
+      if (order === 'reversed') data.jobs.reverse();
+      if (order === 'placeholders first')
+        data.jobs.sort(
+          (a, b) => Number(b.conclusion === 'skipped') - Number(a.conclusion === 'skipped'),
+        );
+      const result = analyzeReports(data);
+      expect(result.incidents).toEqual([]);
+      expect(result.items).toEqual([]);
+      expect(result.lanes).toEqual([
+        { artifact: 'playwright-ct-report-1-of-4', attempt: 1, job: 11, tests: 1 },
+        { artifact: 'playwright-ct-report-2-of-4', attempt: 1, job: 12, tests: 1 },
+        { artifact: 'playwright-ct-report-3-of-4', attempt: 1, job: 13, tests: 1 },
+        { artifact: 'playwright-ct-report-4-of-4', attempt: 1, job: 14, tests: 1 },
+        { artifact: 'playwright-root-report-1', attempt: 1, job: 15, tests: 1 },
+        { artifact: 'playwright-root-report-2', attempt: 1, job: 16, tests: 1 },
+        { artifact: 'playwright-electron-lifetime-report', attempt: 1, job: 17, tests: 1 },
+        { artifact: 'playwright-ct-report-quarantine', attempt: 1, job: 11, tests: 0 },
+      ]);
+    },
+  );
   it('accepts untouched successful shards and manifest in a failed-jobs-only rerun', () => {
     const data = fixture();
     data.run.run_attempt = 2;
