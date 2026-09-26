@@ -4,6 +4,27 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.185.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.184.6...v2.185.0) (2026-09-26)
+
+
+### 🚀 Features
+
+* add opt-in experimental GitLab connections ([#2699](https://github.com/intent-hq/cloudlands-fe/issues/2699)) ([903d5d0](https://github.com/intent-hq/cloudlands-fe/commit/903d5d09cb4dc9d9e5434612dbf479e04512f400))
+* mention workspace members by GitHub or GitLab handle ([#2928](https://github.com/intent-hq/cloudlands-fe/issues/2928)) ([14dbaf1](https://github.com/intent-hq/cloudlands-fe/commit/14dbaf1adbc2a0a9a697ae949c0f8e0eee9903d7))
+* **multiplayer:** add experimental GitLab guest joins ([#2716](https://github.com/intent-hq/cloudlands-fe/issues/2716)) ([14ce301](https://github.com/intent-hq/cloudlands-fe/commit/14ce30107aeec456779f5d8ff783c9a04c33e63e))
+* render effort changes as inline chat notices ([#2932](https://github.com/intent-hq/cloudlands-fe/issues/2932)) ([7e81023](https://github.com/intent-hq/cloudlands-fe/commit/7e8102376466e6c68fad2b27552c8aeb4af7cb68))
+
+
+### 🐛 Bug Fixes
+
+* bind nightly reports to owning workflow jobs ([#2930](https://github.com/intent-hq/cloudlands-fe/issues/2930)) ([80218ab](https://github.com/intent-hq/cloudlands-fe/commit/80218ab282b4f329103c4f703c8295acd650e5e4))
+* **browser:** recover hidden tabs without duplicate navigation ([#2923](https://github.com/intent-hq/cloudlands-fe/issues/2923)) ([7eb46b4](https://github.com/intent-hq/cloudlands-fe/commit/7eb46b4a692779c18a4a4285548f307d1c2fbf71))
+* center device menu accent dots ([#2924](https://github.com/intent-hq/cloudlands-fe/issues/2924)) ([f1c94ef](https://github.com/intent-hq/cloudlands-fe/commit/f1c94ef641b209e5c78677fec66198206159ace5))
+* complete browser hello before publishing presence ([#2900](https://github.com/intent-hq/cloudlands-fe/issues/2900)) ([285d913](https://github.com/intent-hq/cloudlands-fe/commit/285d91348df708afdb436150f95dae7ed4fe3cf9))
+* hydrate live notification volume without writeback ([#2899](https://github.com/intent-hq/cloudlands-fe/issues/2899)) ([fef2ccc](https://github.com/intent-hq/cloudlands-fe/commit/fef2ccced8f61c593b6a72bf656a2f4c4642d455))
+* mitigate component-test promise collection failures ([#2906](https://github.com/intent-hq/cloudlands-fe/issues/2906)) ([58c3437](https://github.com/intent-hq/cloudlands-fe/commit/58c3437d71125fac00dfd9ca142444daf87770c8))
+* **release:** allow confirmed intentd no-op alpha cuts ([#2931](https://github.com/intent-hq/cloudlands-fe/issues/2931)) ([9a41f84](https://github.com/intent-hq/cloudlands-fe/commit/9a41f84408bb4579e202c98f07ca5584a3968932))
+
 ## [2.184.6](https://github.com/intent-hq/cloudlands-fe/compare/v2.184.5...v2.184.6) (2026-09-26)
 
 
