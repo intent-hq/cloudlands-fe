@@ -6796,5 +6796,11 @@
   "collaborationAuth_rateLimited_error": "El proveedor está limitando las solicitudes. Espera y actualiza la cuenta.",
   "collaborationAuth_identityInUse_error": "Esta identidad pertenece a otra persona local. Elige otra cuenta.",
   "collaborationAuth_failed_error": "No se pudo completar el inicio de sesión. Comprueba la cuenta y la instancia e inténtalo de nuevo.",
-  "collaborationAuth_requestChanged_error": "Esta invitación cambió. Ábrela de nuevo para continuar con el requisito de cuenta actual."
+  "collaborationAuth_requestChanged_error": "Esta invitación cambió. Ábrela de nuevo para continuar con el requisito de cuenta actual.",
+  "inviteConsent_host_title": "¿Unirte a {hostLabel}?",
+  "inviteConsent_host_permissions": "Como miembro tendrás acceso a todos los espacios de trabajo actuales y futuros de este host, incluida la ejecución de comandos y agentes. Podrás crear espacios de trabajo y gestionar o eliminar los que crees. La administración del host seguirá a cargo del propietario.",
+  "inviteConsent_account_unknown": "Cuenta guardada",
+  "inviteConsent_account_choose_title": "Elige una cuenta",
+  "inviteConsent_account_choose_description": "Elige la cuenta guardada que usarás para esta invitación.",
+  "inviteConsent_returning_description": "Intent usará la credencial personal guardada para este host. No hace falta iniciar sesión ni demostrar tu identidad de nuevo en el proveedor de Git."
 }

@@ -6796,5 +6796,11 @@
   "collaborationAuth_rateLimited_error": "服務商正在限制請求。請稍候再重新整理帳號。",
   "collaborationAuth_identityInUse_error": "此身分屬於另一位本機使用者。請選擇其他帳號。",
   "collaborationAuth_failed_error": "無法完成登入。請檢查帳號與執行個體後重試。",
-  "collaborationAuth_requestChanged_error": "此邀請已變更。請重新開啟，以目前要求的帳戶繼續。"
+  "collaborationAuth_requestChanged_error": "此邀請已變更。請重新開啟，以目前要求的帳戶繼續。",
+  "inviteConsent_host_title": "加入 {hostLabel}？",
+  "inviteConsent_host_permissions": "成員可以存取此主機目前及未來的所有工作區，並執行命令和代理程式。你可以建立工作區，並管理或刪除自己建立的工作區。主機管理權限仍屬於擁有者。",
+  "inviteConsent_account_unknown": "已儲存的帳號",
+  "inviteConsent_account_choose_title": "選擇帳號",
+  "inviteConsent_account_choose_description": "選擇用於此邀請的已儲存帳號。",
+  "inviteConsent_returning_description": "Intent 將使用此主機已儲存的個人憑證，無需重新登入 Git 託管服務或再次驗證身分。"
 }

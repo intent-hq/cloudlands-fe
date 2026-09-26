@@ -6796,5 +6796,11 @@
   "collaborationAuth_rateLimited_error": "Der Anbieter begrenzt Anfragen. Warte und aktualisiere das Konto.",
   "collaborationAuth_identityInUse_error": "Diese Identität gehört einer anderen lokalen Person. Wähle ein anderes Konto.",
   "collaborationAuth_failed_error": "Die Anmeldung konnte nicht abgeschlossen werden. Prüfe Konto und Instanz und versuche es erneut.",
-  "collaborationAuth_requestChanged_error": "Diese Einladung hat sich geändert. Öffne sie erneut, um mit der aktuellen Kontoanforderung fortzufahren."
+  "collaborationAuth_requestChanged_error": "Diese Einladung hat sich geändert. Öffne sie erneut, um mit der aktuellen Kontoanforderung fortzufahren.",
+  "inviteConsent_host_title": "{hostLabel} beitreten?",
+  "inviteConsent_host_permissions": "Als Mitglied erhalten Sie Zugriff auf alle aktuellen und künftigen Arbeitsbereiche dieses Hosts und können Befehle und Agenten ausführen. Sie können Arbeitsbereiche erstellen und eigene Arbeitsbereiche verwalten oder löschen. Die Host-Verwaltung bleibt beim Eigentümer.",
+  "inviteConsent_account_unknown": "Gespeichertes Konto",
+  "inviteConsent_account_choose_title": "Konto auswählen",
+  "inviteConsent_account_choose_description": "Wählen Sie das gespeicherte Konto für diese Einladung.",
+  "inviteConsent_returning_description": "Intent verwendet den gespeicherten persönlichen Zugang für diesen Host. Eine erneute Anmeldung oder ein neuer Identitätsnachweis beim Git-Anbieter ist nicht erforderlich."
 }

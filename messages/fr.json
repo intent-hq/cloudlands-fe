@@ -6796,5 +6796,11 @@
   "collaborationAuth_rateLimited_error": "Le fournisseur limite les requêtes. Patientez, puis actualisez le compte.",
   "collaborationAuth_identityInUse_error": "Cette identité appartient à une autre personne locale. Choisissez un autre compte.",
   "collaborationAuth_failed_error": "La connexion n’a pas abouti. Vérifiez le compte et l’instance, puis réessayez.",
-  "collaborationAuth_requestChanged_error": "Cette invitation a changé. Rouvrez-la pour continuer avec le compte actuellement requis."
+  "collaborationAuth_requestChanged_error": "Cette invitation a changé. Rouvrez-la pour continuer avec le compte actuellement requis.",
+  "inviteConsent_host_title": "Rejoindre {hostLabel} ?",
+  "inviteConsent_host_permissions": "En tant que membre, vous accédez à tous les espaces actuels et futurs de cet hôte, et pouvez y exécuter des commandes et des agents. Vous pouvez créer des espaces et gérer ou supprimer ceux que vous créez. Le propriétaire conserve l’administration de l’hôte.",
+  "inviteConsent_account_unknown": "Compte enregistré",
+  "inviteConsent_account_choose_title": "Choisir un compte",
+  "inviteConsent_account_choose_description": "Choisissez le compte enregistré à utiliser pour cette invitation.",
+  "inviteConsent_returning_description": "Intent utilisera les identifiants personnels enregistrés pour cet hôte. Aucune nouvelle connexion ni preuve d’identité auprès de la forge n’est nécessaire."
 }

@@ -37,7 +37,7 @@ import { spawn } from 'child_process';
 import { promises as fs } from 'fs';
 import * as path from 'path';
 import { app } from 'electron';
-import { Logger } from '../../../shared/logger';
+import { Logger } from '../../../../../shared/logger';
 import {
   DEFAULT_CONNECTION_ACCENT,
   isConnectionAccent,
@@ -46,7 +46,7 @@ import {
   type ConnectionAccent,
   type DetectedDeviceKind,
   type DeviceIconChoice,
-} from '../../../shared/types/connections';
+} from '../../../../../shared/types/connections';
 
 const logger = new Logger('KeychainSync');
 
@@ -276,11 +276,6 @@ type KeychainClientResult<T> =
 export interface KeychainClient {
   list(): Promise<KeychainClientResult<{ items: KeychainItem[]; sharedGroup?: string }>>;
   upsert(account: string, payload: string): Promise<KeychainClientResult<object>>;
-  /** Create only, atomically in the helper. A duplicate returns the original bytes unchanged. */
-  insert?(
-    account: string,
-    payload: string,
-  ): Promise<KeychainClientResult<{ inserted: boolean; payload: string }>>;
   delete(account: string, group?: string): Promise<KeychainClientResult<object>>;
 }
 
@@ -478,19 +473,6 @@ export function createHelperKeychainClient(options: HelperClientOptions = {}): K
       const result = await invoke(['list']);
       if (!result.ok) return result;
       const rows = (result as unknown as { items?: unknown }).items;
-      if (
-        options.service === KEYCHAIN_SERVICE_GUEST_SESSIONS &&
-        (!Array.isArray(rows) ||
-          rows.some(
-            (row) =>
-              !row ||
-              typeof row !== 'object' ||
-              typeof row.account !== 'string' ||
-              typeof row.payload !== 'string',
-          ))
-      ) {
-        return { ok: false, code: 'helper-failed', message: 'Incomplete invited-service listing' };
-      }
       const items: KeychainItem[] = Array.isArray(rows)
         ? rows.filter(
             (row): row is KeychainItem =>
@@ -507,15 +489,6 @@ export function createHelperKeychainClient(options: HelperClientOptions = {}): K
     },
     upsert(account, payload) {
       return invoke(['upsert', account], JSON.stringify({ payload }));
-    },
-    async insert(account, payload) {
-      const result = await invoke(['insert', account], JSON.stringify({ payload }));
-      if (!result.ok) return result;
-      const value = result as { ok: true; inserted?: unknown; payload?: unknown };
-      if (typeof value.inserted !== 'boolean' || typeof value.payload !== 'string') {
-        return { ok: false, code: 'helper-failed', message: 'Invalid create-only result' };
-      }
-      return { ok: true, inserted: value.inserted, payload: value.payload };
     },
     delete(account, group) {
       // The group is an entitlement identifier (not secret) — argv is fine.

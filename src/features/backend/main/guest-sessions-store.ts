@@ -1,45 +1,14 @@
 /**
- * Guest sessions registry (main process).
+ * Invited principals live in guest-sessions.json, separate from the owner registry.
+ * A canonical pinned host certificate plus opaque remote principal identifies each
+ * person. Guest-to-member upgrades keep that person's window id and workspaces.
+ * Every new bearer or opaque imported payload requires Electron safeStorage;
+ * recoverable legacy plaintext remains readable but is never a fallback for writes.
  *
- * Persists the daemons this app joined as a GUEST — a credential minted by
- * `invite.prove` for the user's own principal — to `guest-sessions.json`
- * under `app.getPath('userData')`, deliberately separate from the paired
- * (owner) registry in `backend-connections.json`: a guest credential must
- * never be listed, forgotten, or keychain-synced as an owner backend, and
- * the two files evolve independently.
- *
- * Each record carries the daemon's dial envelope (hosts, port, pinned cert
- * fingerprint, optional tc address), a display label, and the principal
- * identity the credential belongs to. The bearer token is encrypted at rest
- * with Electron's `safeStorage` when available; otherwise it is stored in
- * plaintext with an explicit `encrypted: false` marker that the token-free
- * record exposes as `tokenEncrypted: false` so callers can surface it. A
- * record that already holds ciphertext is never downgraded: a re-join or a
- * remote sync arriving while encryption is unavailable fails closed
- * ({@link GuestEncryptionUnavailableError}) and leaves the record as is.
- *
- * Identity: one session per daemon, the cert fingerprint being canonical
- * (a re-join after an address change upserts in place) with normalized
- * `host:port` as the fingerprint-less fallback. A second invite redeemed on
- * the same daemon replaces the credential — the daemon upserts the principal
- * and mints a fresh token, so the newest one is the valid one — and
- * {@link onGuestCredentialReplaced} tells the connection pool to drop the
- * client built on the superseded credential.
- *
- * Keychain sync: {@link listSyncRecords} / {@link applyRemoteSyncRecord}
- * back a `LocalSyncAdapter` reconciled against the
- * `com.cloudlands.intent.guest-sessions` service (keychain-sync.ts), with
- * the same tombstone model as the owner registry — per service, so guest
- * tombstones never touch owner records.
- *
- * Durability: writes are serialized behind a promise chain and each one
- * lands as a temp file renamed over the registry, so a concurrent reader
- * sees either the old or the new file, never a truncated or torn one. A
- * registry that fails to parse, or that is not exactly the persisted shape
- * (any row failing validation), is treated as corrupt: reads report only the
- * rows that validate (none for an unparseable file), but every mutation fails
- * closed ({@link GuestStoreCorruptError}) instead of overwriting the file the
- * user may still recover.
+ * The same atomic, serialized file stores encrypted pending imports, deliberate
+ * pairing intents, permanent removal observations and the publication outbox.
+ * Invited v2 reconciliation never enters the owner service's v1 codec. A malformed
+ * registry disables mutations so recovery bytes cannot be silently discarded.
  */
 
 import { promises as fs } from 'fs';
@@ -49,8 +18,25 @@ import { app, safeStorage } from 'electron';
 import { Logger } from '../../../shared/logger';
 import { isLoopbackHost } from '../../../shared/loopback-host';
 import type { GuestSessionRecord, GuestWorkspaceRef } from '../../../shared/types/guest-sessions';
-import { normalizeFingerprint } from './backend-connection';
-import { TOMBSTONE_TTL_MS, accountKeyFor, type KeychainSyncRecord } from './keychain-sync';
+import { accountKeyFor, serializeRecord, type KeychainItem } from './keychain-sync';
+import {
+  canonicalFingerprint,
+  invitedPersonKey,
+  invitedRemovalKey,
+  sortedStrings,
+} from './invited-session-key';
+import {
+  isClock,
+  isPersonAccount,
+  mergeInvitedPerson,
+  parseInvitedPayload,
+  type InvitedSession,
+  type InvitedRemoval,
+} from './invited-session-payload';
+import type { InvitedPayload } from './invited-session-payload';
+import type { InvitedSyncAdapter } from './invited-session-sync';
+import type { AddConnectionParams } from '../../../shared/types/connections';
+import type { PrincipalIdentity } from '../../workspace-sharing/types';
 
 const logger = new Logger('GuestSessionsStore');
 
@@ -63,7 +49,18 @@ interface EncryptedToken {
 }
 
 /** A guest session as persisted on disk (token included). */
-interface StoredGuestSession {
+type InvitedPreferences = Pick<
+  AddConnectionParams,
+  'accent' | 'detectedDeviceKind' | 'deviceIcon' | 'detectHosts' | 'syncExcluded'
+>;
+const preferenceKeys = [
+  'accent',
+  'detectedDeviceKind',
+  'deviceIcon',
+  'detectHosts',
+  'syncExcluded',
+] as const;
+interface StoredGuestSession extends InvitedPreferences {
   id: string;
   label: string;
   host: string;
@@ -74,7 +71,15 @@ interface StoredGuestSession {
   tcAddress?: string | null;
   hostname?: string | null;
   principalId: string;
-  login: string;
+  login: string | null;
+  /** Display hints only; every live connection revalidates remote authority. */
+  identity?: PrincipalIdentity;
+  hostRole?: 'guest' | 'member';
+  pairedAt?: number;
+  removedThrough?: number;
+  tcUpdatedAt?: number | null;
+  legacyAccounts?: string[];
+  pendingPairing?: number;
   encToken: EncryptedToken;
   /**
    * Workspaces joined on this daemon (join order). Local only — the keychain
@@ -93,13 +98,13 @@ interface StoredGuestTombstone {
   fingerprint: string;
   hostname?: string | null;
   principalId?: string;
-  login?: string;
+  login?: string | null;
   updatedAt: number;
   deletedAt: number;
 }
 
 /** Fields required to register (or refresh) a guest session. */
-export interface NewGuestSession {
+export interface NewGuestSession extends InvitedPreferences {
   label: string;
   host: string;
   /** Extra candidate hosts from the invite envelope; the primary is implied. */
@@ -108,15 +113,24 @@ export interface NewGuestSession {
   fingerprint: string;
   tcAddress?: string | null;
   principalId: string;
-  login: string;
+  login: string | null;
+  identity?: PrincipalIdentity;
+  hostRole?: 'guest' | 'member';
+  /** Returning invite.accept must retain the original pairing clock and bearer. */
+  retainPairing?: boolean;
   token: string;
   /** The workspace the invite admitted to; merged into the record's list by id. */
   workspace?: GuestWorkspaceRef;
 }
 
 interface PersistedState {
+  [key: string]: unknown;
   sessions: StoredGuestSession[];
   tombstones: StoredGuestTombstone[];
+  /** Encrypted pending imports plus durable token-free removals/retirement facts in this same registry. */
+  invitedProvenance?: Record<string, { fingerprint: string; principalId: string }[]>;
+  excludedInvitedPeople?: string[];
+  invitedSync?: { account: string; group?: string; encPayload: EncryptedToken }[];
 }
 
 /** The registry file exists but cannot be read as a guest-sessions registry. */
@@ -179,6 +193,10 @@ function toRecord(stored: StoredGuestSession): GuestSessionRecord {
     hostname: stored.hostname ?? null,
     principalId: stored.principalId,
     login: stored.login,
+    identity: stored.identity,
+    hostRole: stored.hostRole,
+    pairedAt: stored.pairedAt ?? stored.updatedAt,
+    detectHosts: stored.detectHosts,
     tokenEncrypted: stored.encToken.encrypted,
     workspaces: (stored.workspaces ?? []).map((w) => ({ id: w.id, title: w.title })),
     updatedAt: stored.updatedAt,
@@ -233,9 +251,17 @@ function isStoredGuestSession(value: unknown): value is StoredGuestSession {
     isOptionalNullableString(c.tcAddress) &&
     isOptionalNullableString(c.hostname) &&
     typeof c.principalId === 'string' &&
-    typeof c.login === 'string' &&
+    (c.login === null || typeof c.login === 'string') &&
     (c.workspaces === undefined || isWorkspaceRefArray(c.workspaces)) &&
-    typeof c.updatedAt === 'number' &&
+    isClock(c.updatedAt) &&
+    ['pairedAt', 'removedThrough', 'pendingPairing'].every(
+      (key) => c[key] === undefined || isClock(c[key]),
+    ) &&
+    (c.tcUpdatedAt === undefined || c.tcUpdatedAt === null || isClock(c.tcUpdatedAt)) &&
+    (c.legacyAccounts === undefined || isStringArray(c.legacyAccounts)) &&
+    (c.hostRole === undefined || c.hostRole === 'member' || c.hostRole === 'guest') &&
+    (c.detectHosts === undefined || typeof c.detectHosts === 'boolean') &&
+    (c.syncExcluded === undefined || typeof c.syncExcluded === 'boolean') &&
     !!tok &&
     typeof tok === 'object' &&
     typeof tok.encrypted === 'boolean' &&
@@ -254,7 +280,7 @@ function isStoredGuestTombstone(value: unknown): value is StoredGuestTombstone {
     typeof t.fingerprint === 'string' &&
     isOptionalNullableString(t.hostname) &&
     (t.principalId === undefined || typeof t.principalId === 'string') &&
-    (t.login === undefined || typeof t.login === 'string') &&
+    (t.login === undefined || t.login === null || typeof t.login === 'string') &&
     typeof t.updatedAt === 'number' &&
     typeof t.deletedAt === 'number'
   );
@@ -318,7 +344,44 @@ async function loadState(): Promise<LoadedState | null> {
       droppedTombstones: rawTombstones.length - tombstones.length,
     });
   }
-  return { state: { sessions, tombstones }, intact };
+  const syncIntact =
+    obj.invitedSync === undefined ||
+    (Array.isArray(obj.invitedSync) &&
+      obj.invitedSync.every(
+        (row) =>
+          row &&
+          typeof row.account === 'string' &&
+          (row.group === undefined || typeof row.group === 'string') &&
+          typeof row.encPayload?.encrypted === 'boolean' &&
+          typeof row.encPayload?.value === 'string',
+      ));
+  const exclusionsIntact =
+    obj.excludedInvitedPeople === undefined ||
+    (isStringArray(obj.excludedInvitedPeople) && obj.excludedInvitedPeople.every(isPersonAccount));
+  const provenanceIntact =
+    obj.invitedProvenance === undefined ||
+    (!!obj.invitedProvenance &&
+      typeof obj.invitedProvenance === 'object' &&
+      !Array.isArray(obj.invitedProvenance) &&
+      Object.values(obj.invitedProvenance).every(
+        (people) =>
+          Array.isArray(people) &&
+          people.every((person) => {
+            try {
+              return (
+                typeof person?.fingerprint === 'string' &&
+                typeof person?.principalId === 'string' &&
+                !!invitedPersonKey(person)
+              );
+            } catch {
+              return false;
+            }
+          }),
+      ));
+  return {
+    state: { ...obj, sessions, tombstones } as PersistedState,
+    intact: intact && syncIntact && exclusionsIntact && provenanceIntact,
+  };
 }
 
 /**
@@ -365,18 +428,12 @@ function mutate<T>(fn: (state: PersistedState) => T | Promise<T>): Promise<T> {
   return run;
 }
 
-/**
- * Encrypt a token for storage. When encryption is unavailable the token is
- * stored in plaintext (flagged), unless `previous` holds ciphertext: a
- * downgrade from encrypted to plaintext never happens silently — the write
- * fails closed and the stored record is left untouched.
- */
-function encryptToken(token: string, previous?: EncryptedToken): EncryptedToken {
+/** New credential writes always require OS encryption; existing bytes survive failures. */
+function encryptToken(token: string): EncryptedToken {
   if (safeStorage.isEncryptionAvailable()) {
     return { encrypted: true, value: safeStorage.encryptString(token).toString('base64') };
   }
-  if (previous?.encrypted) throw new GuestEncryptionUnavailableError();
-  return { encrypted: false, value: token };
+  throw new GuestEncryptionUnavailableError();
 }
 
 class GuestSecretUnavailableError extends Error {
@@ -403,7 +460,7 @@ function decryptToken(encToken: EncryptedToken): string {
 /**
  * Listeners notified after every LOCAL mutation that persisted a change
  * (add / forget / setHostname / leaveWorkspace). Remote applications via
- * {@link applyRemoteSyncRecord} do NOT notify — a pull must not loop back
+ * {@link createInvitedSyncAdapter} do NOT notify — a pull must not loop back
  * into a push.
  */
 const mutationListeners = new Set<() => void>();
@@ -455,7 +512,7 @@ function notifyCredentialReplaced(id: string): void {
 
 /**
  * Listeners notified with the session id when a keychain-sync tombstone
- * ({@link applyRemoteSyncRecord}) DELETED a live session — the guest was
+ * ({@link createInvitedSyncAdapter}) DELETED a live session — the guest was
  * forgotten on another device. The connection pool drops the client built on
  * the now-deleted credential so it cannot keep serving a forgotten guest
  * until restart. A local {@link forget} does NOT notify: its caller owns the
@@ -481,31 +538,30 @@ function notifyRemovedBySync(id: string): void {
   }
 }
 
-type Identity = Pick<StoredGuestSession, 'host' | 'port' | 'fingerprint'>;
+type Identity = { fingerprint: string; principalId?: string };
 
 function fingerprintKey(fingerprint: string | undefined | null): string | null {
-  const key = normalizeFingerprint(fingerprint ?? '');
-  return key === '' ? null : key;
+  try {
+    return canonicalFingerprint(fingerprint ?? '');
+  } catch {
+    return null;
+  }
 }
 
-function sameTarget(a: Identity, b: Identity): boolean {
-  return accountKeyFor(a.host, a.port) === accountKeyFor(b.host, b.port);
-}
-
-/** Live dedupe identity: fingerprint canonical, host:port fallback (mirrors the owner registry). */
+/** Only the canonical certificate pin identifies an invited host. */
 function sameDaemon(a: Identity, b: Identity): boolean {
   const fa = fingerprintKey(a.fingerprint);
   const fb = fingerprintKey(b.fingerprint);
-  if (fa !== null && fb !== null && fa === fb) return true;
-  return sameTarget(a, b);
+  return fa !== null && fb !== null && fa === fb;
+}
+
+function samePerson(a: Identity, b: Identity): boolean {
+  return !!a.principalId && a.principalId === b.principalId && sameDaemon(a, b);
 }
 
 /** Strict tombstone identity: fingerprints decide when both sides carry one. */
 function tombstoneMatches(a: Identity, b: Identity): boolean {
-  const fa = fingerprintKey(a.fingerprint);
-  const fb = fingerprintKey(b.fingerprint);
-  if (fa !== null && fb !== null) return fa === fb;
-  return sameTarget(a, b);
+  return samePerson(a, b);
 }
 
 function clearTombstone(state: PersistedState, target: Identity): void {
@@ -530,9 +586,7 @@ export async function findById(id: string): Promise<GuestSessionRecord | null> {
 }
 
 /**
- * Find the session for a daemon identity from an invite envelope: fingerprint
- * canonical, normalized `host:port` fallback, each candidate host tried
- * against the stored primary. Returns the token-free record or null.
+ * Return the sole person pinned to the invite's host, or null if selection is ambiguous.
  */
 export async function findMatching(identity: {
   hosts: string[];
@@ -540,32 +594,37 @@ export async function findMatching(identity: {
   fingerprint: string | null;
 }): Promise<GuestSessionRecord | null> {
   const state = await readState();
-  const probe = { port: identity.port, fingerprint: identity.fingerprint ?? '' };
-  const match = state.sessions.find((s) =>
-    identity.hosts.some((host) => sameDaemon(s, { ...probe, host })),
-  );
-  return match ? toRecord(match) : null;
+  const probe = { fingerprint: identity.fingerprint ?? '' };
+  const matches = state.sessions.filter((s) => sameDaemon(s, probe));
+  return matches.length === 1 ? toRecord(matches[0]) : null;
+}
+
+/** All people pinned to this host; route matches alone never select an identity. */
+export async function findAllMatching(fingerprint: string): Promise<GuestSessionRecord[]> {
+  const key = canonicalFingerprint(fingerprint);
+  return (await list()).filter((s) => fingerprintKey(s.fingerprint) === key);
 }
 
 /**
- * Register a guest session, upserting by daemon identity: a re-join of a
- * known daemon replaces its credential, label, address, and principal
- * identity in place (the record keeps its `id`, so open windows stay
- * attached; {@link onGuestCredentialReplaced} fires so the pooled client is
- * rebuilt on the new credential) and stamps the clock strictly past any
- * superseded tombstone AND past the replaced session's own clock, so neither
- * a forget written elsewhere nor a clock-ahead record pulled from another
- * device can out-clock the fresh join in the next LWW reconcile (which would
- * hand the old remote credential the win over the freshly redeemed one).
- * The token is encrypted before it hits disk; a re-join that
- * would downgrade stored ciphertext to plaintext fails closed
- * ({@link GuestEncryptionUnavailableError}). Returns the token-free record.
+ * Upsert one verified person at one pinned host, keeping their local record id.
+ * Returning credentials retain their pairing clock; deliberate joins wait for
+ * a complete sync snapshot before publication. Other people on the same host
+ * remain separate. Every new credential write requires encryption.
  */
 export async function add(input: NewGuestSession): Promise<GuestSessionRecord> {
+  input = { ...input, fingerprint: canonicalFingerprint(input.fingerprint) };
+  invitedPersonKey(input);
   const extras = dedupeHosts(input.hosts ?? []).filter((h) => h !== input.host.trim());
   const { stored, replaced } = await mutate(async (state) => {
-    const duplicates = state.sessions.filter((s) => sameDaemon(s, input));
-    const encToken = encryptToken(input.token, duplicates[0]?.encToken);
+    const duplicates = state.sessions.filter((s) => samePerson(s, input));
+    if (
+      input.retainPairing &&
+      duplicates.length > 0 &&
+      decryptToken(duplicates[0].encToken) !== input.token
+    ) {
+      throw new Error('Returning invited credential changed');
+    }
+    const encToken = encryptToken(input.token);
     const superseded = state.tombstones.find((t) => tombstoneMatches(t, input));
     const stamp = Math.max(
       Date.now(),
@@ -573,16 +632,39 @@ export async function add(input: NewGuestSession): Promise<GuestSessionRecord> {
       ...duplicates.map((s) => s.updatedAt + 1),
     );
     clearTombstone(state, input);
+    const personKey = invitedPersonKey(input);
+    if (input.syncExcluded === true)
+      state.excludedInvitedPeople = [
+        ...new Set([...(state.excludedInvitedPeople ?? []), personKey]),
+      ];
+    else if (input.syncExcluded === false)
+      state.excludedInvitedPeople = state.excludedInvitedPeople?.filter((key) => key !== personKey);
+    const preferences = Object.fromEntries(
+      preferenceKeys.filter((key) => input[key] !== undefined).map((key) => [key, input[key]]),
+    );
     if (duplicates.length > 0) {
       const survivor = duplicates[0];
+      if (survivor.pairedAt === undefined)
+        survivor.legacyAccounts = [accountKeyFor(survivor.host, survivor.port)];
+      Object.assign(survivor, preferences);
       survivor.label = input.label;
       survivor.host = input.host;
       survivor.hosts = extras;
       survivor.port = input.port;
       survivor.fingerprint = input.fingerprint;
-      if (input.tcAddress !== undefined) survivor.tcAddress = input.tcAddress;
+      // A missing tunnel in an invitation is unknown, not an observed clear.
+      if (input.tcAddress != null && input.tcAddress !== survivor.tcAddress) {
+        survivor.tcAddress = input.tcAddress;
+        survivor.tcUpdatedAt = stamp;
+      }
       survivor.principalId = input.principalId;
       survivor.login = input.login;
+      survivor.identity = input.identity ?? survivor.identity;
+      survivor.hostRole = input.hostRole ?? survivor.hostRole;
+      if (!input.retainPairing) {
+        survivor.pairedAt = stamp;
+        survivor.pendingPairing = stamp;
+      } else survivor.pairedAt ??= survivor.updatedAt;
       survivor.encToken = encToken;
       survivor.hostname ??= duplicates.find((s) => s.hostname != null)?.hostname ?? null;
       survivor.workspaces = mergeWorkspace(
@@ -595,6 +677,7 @@ export async function add(input: NewGuestSession): Promise<GuestSessionRecord> {
       return { stored: survivor, replaced: true };
     }
     const record: StoredGuestSession = {
+      ...preferences,
       id: randomUUID(),
       label: input.label,
       host: input.host,
@@ -605,6 +688,13 @@ export async function add(input: NewGuestSession): Promise<GuestSessionRecord> {
       hostname: null,
       principalId: input.principalId,
       login: input.login,
+      identity: input.identity,
+      hostRole: input.hostRole ?? 'guest',
+      pairedAt: stamp,
+      pendingPairing: stamp,
+      removedThrough: 0,
+      tcUpdatedAt: input.tcAddress != null ? stamp : null,
+      legacyAccounts: [],
       encToken,
       workspaces: mergeWorkspace([], input.workspace),
       updatedAt: stamp,
@@ -622,12 +712,73 @@ export async function add(input: NewGuestSession): Promise<GuestSessionRecord> {
  * Persist the daemon's hostname for a session (display label upgrade).
  * Returns whether anything changed. No-op for unknown ids.
  */
-export async function setHostname(id: string, hostname: string): Promise<boolean> {
+export interface InvitedCredentialLease {
+  principalId: string;
+  token: string;
+  pairedAt: number;
+}
+export type InvitedCommitGuard = (() => boolean) & { credential?: InvitedCredentialLease };
+function matchesCredential(
+  session: StoredGuestSession,
+  expected?: InvitedCredentialLease,
+): boolean {
+  return (
+    !expected ||
+    (session.principalId === expected.principalId &&
+      (session.pairedAt ?? session.updatedAt) === expected.pairedAt &&
+      decryptToken(session.encToken) === expected.token)
+  );
+}
+function canCommit(
+  session: StoredGuestSession | undefined,
+  guard?: InvitedCommitGuard,
+): session is StoredGuestSession {
+  return !!session && (!guard || (guard() && matchesCredential(session, guard.credential)));
+}
+
+/** Safe display hints only; authority is always refreshed by principal.me in the renderer. */
+export async function setPrincipal(
+  id: string,
+  principal: {
+    login: string | null;
+    identity?: StoredGuestSession['identity'];
+    hostRole: 'member' | 'guest';
+  },
+  guard: InvitedCommitGuard,
+): Promise<boolean> {
+  return mutate(async (state) => {
+    const session = state.sessions.find((s) => s.id === id);
+    if (!canCommit(session, guard)) return false;
+    if (
+      session.login === principal.login &&
+      session.hostRole === principal.hostRole &&
+      JSON.stringify(session.identity) === JSON.stringify(principal.identity)
+    )
+      return true;
+    session.login = principal.login;
+    session.hostRole = principal.hostRole;
+    session.identity = principal.identity;
+    await writeState(state);
+    return true;
+  });
+}
+
+export async function setHostname(
+  id: string,
+  hostname: string,
+  guard?: InvitedCommitGuard,
+): Promise<boolean> {
   const trimmed = hostname.trim();
   if (trimmed === '') return false;
   const changed = await mutate(async (state) => {
     const session = state.sessions.find((s) => s.id === id);
-    if (!session || session.hostname === trimmed) return false;
+    if (!canCommit(session, guard) || session.hostname === trimmed) return false;
+    if (session.pairedAt === undefined)
+      session.legacyAccounts = sortedStrings([
+        ...(session.legacyAccounts ?? []),
+        accountKeyFor(session.host, session.port),
+      ]);
+    session.pairedAt ??= session.updatedAt;
     session.hostname = trimmed;
     session.updatedAt = Math.max(Date.now(), session.updatedAt + 1);
     await writeState(state);
@@ -645,13 +796,29 @@ export async function setHostname(id: string, hostname: string): Promise<boolean
  * the record's own clock (as `setHostname` does) so the refreshed route wins
  * reconciliation. Returns whether anything changed. No-op for unknown ids.
  */
-export async function setTcAddress(id: string, tcAddress: string | null): Promise<boolean> {
-  const normalized = tcAddress?.trim() || null;
+export async function setTcAddress(
+  id: string,
+  tcAddress: string | null,
+  guard?: InvitedCommitGuard,
+): Promise<boolean> {
+  if (tcAddress === '') return false;
+  const normalized = tcAddress;
   const changed = await mutate(async (state) => {
     const session = state.sessions.find((s) => s.id === id);
-    if (!session || (session.tcAddress ?? null) === normalized) return false;
+    if (
+      !canCommit(session, guard) ||
+      ((session.tcAddress ?? null) === normalized && session.tcUpdatedAt != null)
+    )
+      return false;
+    if (session.pairedAt === undefined)
+      session.legacyAccounts = sortedStrings([
+        ...(session.legacyAccounts ?? []),
+        accountKeyFor(session.host, session.port),
+      ]);
+    session.pairedAt ??= session.updatedAt;
     session.tcAddress = normalized;
     session.updatedAt = Math.max(Date.now(), session.updatedAt + 1);
+    session.tcUpdatedAt = session.updatedAt;
     await writeState(state);
     return true;
   });
@@ -667,12 +834,22 @@ export async function setTcAddress(id: string, tcAddress: string | null): Promis
  * clock bump); a change stamps strictly past the record's own clock. Returns
  * whether anything changed. No-op for unknown ids.
  */
-export async function setHosts(id: string, hosts: string[]): Promise<boolean> {
+export async function setHosts(
+  id: string,
+  hosts: string[],
+  guard?: InvitedCommitGuard,
+): Promise<boolean> {
   const changed = await mutate(async (state) => {
     const session = state.sessions.find((s) => s.id === id);
-    if (!session) return false;
+    if (!canCommit(session, guard)) return false;
     const extras = dedupeHosts([session.host, ...hosts]).filter((h) => h !== session.host.trim());
     if (JSON.stringify(extras) === JSON.stringify(session.hosts ?? [])) return false;
+    if (session.pairedAt === undefined)
+      session.legacyAccounts = sortedStrings([
+        ...(session.legacyAccounts ?? []),
+        accountKeyFor(session.host, session.port),
+      ]);
+    session.pairedAt ??= session.updatedAt;
     session.hosts = extras;
     session.updatedAt = Math.max(Date.now(), session.updatedAt + 1);
     await writeState(state);
@@ -688,7 +865,7 @@ export async function setHosts(id: string, hosts: string[]): Promise<boolean> {
  * even with zero workspaces, until *Leave host*. Returns whether anything
  * changed; no-op for an unknown session or workspace. Like
  * {@link setWorkspaces}, this edits only the local-only workspace cache
- * (omitted from {@link listSyncRecords}), so the record's `updatedAt` — the
+ * (omitted from {@link createInvitedSyncAdapter}), so the record's `updatedAt` — the
  * keychain LWW clock — is left alone: advancing it would republish this
  * device's possibly stale credential as the newer copy and roll back a
  * re-join another device just made. Listeners still fire so the renderer
@@ -728,12 +905,12 @@ export async function leaveWorkspace(id: string, workspaceId: string): Promise<b
 export async function setWorkspaces(
   id: string,
   workspaces: readonly GuestWorkspaceRef[],
-  stillValid: () => boolean = () => true,
+  stillValid: InvitedCommitGuard = () => true,
 ): Promise<boolean> {
   return mutate(async (state) => {
     if (!stillValid()) return false;
     const session = state.sessions.find((s) => s.id === id);
-    if (!session) return false;
+    if (!canCommit(session, stillValid)) return false;
     const byId = new Map(workspaces.map((w) => [w.id, w.title] as const));
     const kept = (session.workspaces ?? [])
       .filter((w) => byId.has(w.id))
@@ -757,12 +934,53 @@ export async function setWorkspaces(
 }
 
 /** Forget a guest session, leaving a tombstone so keychain sync propagates the delete. */
-export async function forget(id: string): Promise<boolean> {
+export async function forget(id: string, expected?: InvitedCredentialLease): Promise<boolean> {
   const changed = await mutate(async (state) => {
     const removed = state.sessions.find((s) => s.id === id);
     if (!removed) return false;
+    if (!matchesCredential(removed, expected)) return false;
     state.sessions = state.sessions.filter((s) => s.id !== id);
+    try {
+      invitedPersonKey(removed);
+    } catch {
+      // Explicit local recovery for old unqualified records. A route cannot
+      // supply the trusted person identity needed to publish a removal.
+      await writeState(state);
+      return true;
+    }
     const now = Date.now();
+    const facts = syncPayloads(state).filter(
+      (r): r is InvitedRemoval => r.kind === 'removal' && samePerson(r, removed),
+    );
+    const floor = Math.max(
+      now,
+      removed.updatedAt + 1,
+      (removed.pairedAt ?? 0) + 1,
+      (removed.removedThrough ?? 0) + 1,
+      ...facts.map((r) => r.removedThrough + 1),
+    );
+    const removal: InvitedRemoval = {
+      v: 2,
+      kind: 'removal',
+      fingerprint: canonicalFingerprint(removed.fingerprint),
+      principalId: removed.principalId,
+      removalId: randomUUID(),
+      removedThrough: floor,
+      legacyAccounts: sortedStrings([
+        ...(removed.legacyAccounts ?? []),
+        ...facts.flatMap((r) => r.legacyAccounts),
+      ]),
+    };
+    saveSyncItem(state, { account: invitedRemovalKey(removal), payload: JSON.stringify(removal) });
+    const deleted = {
+      ...sessionPayload(removed, {}, true),
+      token: '',
+      deleted: true,
+      deletedAt: now,
+      updatedAt: floor,
+      removedThrough: floor,
+    };
+    saveSyncItem(state, { account: invitedPersonKey(removal), payload: JSON.stringify(deleted) });
     clearTombstone(state, removed);
     state.tombstones.push({
       label: removed.label,
@@ -773,7 +991,7 @@ export async function forget(id: string): Promise<boolean> {
       hostname: removed.hostname ?? null,
       principalId: removed.principalId,
       login: removed.login,
-      updatedAt: now,
+      updatedAt: floor,
       deletedAt: now,
     });
     await writeState(state);
@@ -781,6 +999,14 @@ export async function forget(id: string): Promise<boolean> {
   });
   if (changed) notifyMutated();
   return changed;
+}
+
+/** A pinned authentication refusal tears down only the exact rejected saved credential. */
+export async function rejectStoredCredential(
+  id: string,
+  expected: InvitedCredentialLease,
+): Promise<void> {
+  if (await forget(id, expected)) notifyRemovedBySync(id);
 }
 
 /**
@@ -799,173 +1025,403 @@ export async function getDecryptedToken(id: string): Promise<string | null> {
 // ============================================================================
 
 /**
- * Snapshot of every syncable guest session plus every live tombstone, as
- * `KeychainSyncRecord`s for the guest-sessions keychain service. Expired
- * tombstones are pruned on the way out. Sessions whose token cannot be
- * decrypted are skipped (never synced as an empty credential).
- */
-export async function listSyncRecords(): Promise<KeychainSyncRecord[]> {
-  const now = Date.now();
-  const state = await readState();
-  if (state.tombstones.some((t) => t.deletedAt + TOMBSTONE_TTL_MS <= now)) {
-    await mutate((s) => {
-      s.tombstones = s.tombstones.filter((t) => t.deletedAt + TOMBSTONE_TTL_MS > now);
-      return writeState(s);
-    });
-  }
-  const records: KeychainSyncRecord[] = [];
-  for (const session of state.sessions) {
-    let token: string;
-    try {
-      token = decryptToken(session.encToken);
-    } catch (error) {
-      logger.warn('skipping undecryptable guest session in sync listing', {
-        id: session.id,
-        error: error instanceof Error ? error.message : String(error),
-      });
-      continue;
-    }
-    records.push({
-      label: session.label,
-      host: session.host,
-      hosts: candidateHosts(session),
-      port: session.port,
-      fingerprint: session.fingerprint,
-      hostname: session.hostname ?? null,
-      tcAddress: session.tcAddress ?? null,
-      detectHosts: false,
-      token,
-      principalId: session.principalId,
-      login: session.login,
-      updatedAt: session.updatedAt,
-    });
-  }
-  for (const t of state.tombstones) {
-    if (t.deletedAt + TOMBSTONE_TTL_MS <= now) continue;
-    records.push({
-      label: t.label,
-      host: t.host,
-      hosts: candidateHosts(t),
-      port: t.port,
-      fingerprint: t.fingerprint,
-      hostname: t.hostname ?? null,
-      tcAddress: null,
-      detectHosts: false,
-      token: '',
-      ...(t.principalId !== undefined ? { principalId: t.principalId } : {}),
-      ...(t.login !== undefined ? { login: t.login } : {}),
-      updatedAt: t.updatedAt,
-      deleted: true,
-      deletedAt: t.deletedAt,
-    });
-  }
-  return records;
-}
-
-/**
- * Apply a remote-won sync record (LWW loser side of a reconcile). A live
- * record upserts by daemon identity; a tombstone deletes the matching
- * session and is remembered so it keeps propagating. Records without the
- * guest principal identity are rejected — they cannot be guest sessions.
- * A remote win that replaces a live session's credential fires
- * {@link onGuestCredentialReplaced} exactly like a local re-join, so a
- * pooled client never keeps serving the superseded credential; a tombstone
- * that deletes a live session fires {@link onGuestSessionRemovedBySync} per
- * deleted id so the pool drops that client too. Returns whether the local
- * store changed.
- */
-export async function applyRemoteSyncRecord(record: KeychainSyncRecord): Promise<boolean> {
-  const { changed, replacedId, removedIds } = await mutate(async (state) => {
-    const extras = record.hosts.filter((h) => h.trim() !== record.host.trim());
-    if (record.deleted === true) {
-      const existing = state.sessions.filter((s) => tombstoneMatches(s, record));
-      state.sessions = state.sessions.filter((s) => !existing.includes(s));
-      clearTombstone(state, record);
-      state.tombstones.push({
-        label: record.label,
-        host: record.host,
-        hosts: extras,
-        port: record.port,
-        fingerprint: record.fingerprint,
-        hostname: record.hostname,
-        ...(record.principalId !== undefined ? { principalId: record.principalId } : {}),
-        ...(record.login !== undefined ? { login: record.login } : {}),
-        updatedAt: record.updatedAt,
-        deletedAt: record.deletedAt ?? record.updatedAt,
-      });
-      await writeState(state);
-      return {
-        changed: existing.length > 0,
-        replacedId: null,
-        removedIds: existing.map((s) => s.id),
-      };
-    }
-
-    if (!record.principalId || !record.login) {
-      logger.warn('ignoring remote guest record without principal identity', {
-        account: accountKeyFor(record.host, record.port),
-      });
-      return { changed: false, replacedId: null, removedIds: [] };
-    }
-    clearTombstone(state, record);
-    const duplicates = state.sessions.filter((s) => sameDaemon(s, record));
-    let encToken: EncryptedToken;
-    try {
-      encToken = encryptToken(record.token, duplicates[0]?.encToken);
-    } catch (error) {
-      if (!(error instanceof GuestEncryptionUnavailableError)) throw error;
-      // Fail closed: the encrypted local record stays; the remote win is not
-      // applied rather than persisted as plaintext.
-      logger.warn('ignoring remote guest record: would downgrade an encrypted credential', {
-        account: accountKeyFor(record.host, record.port),
-      });
-      return { changed: false, replacedId: null, removedIds: [] };
-    }
-    let replacedId: string | null = null;
-    if (duplicates.length > 0) {
-      const survivor = duplicates[0];
-      replacedId = survivor.id;
-      survivor.label = record.label;
-      survivor.host = record.host;
-      survivor.hosts = extras;
-      survivor.port = record.port;
-      survivor.fingerprint = record.fingerprint;
-      survivor.hostname = record.hostname;
-      survivor.tcAddress = record.tcAddress;
-      survivor.principalId = record.principalId;
-      survivor.login = record.login;
-      survivor.encToken = encToken;
-      survivor.updatedAt = record.updatedAt;
-      state.sessions = state.sessions.filter((s) => s === survivor || !duplicates.includes(s));
-    } else {
-      state.sessions.push({
-        id: randomUUID(),
-        label: record.label,
-        host: record.host,
-        hosts: extras,
-        port: record.port,
-        fingerprint: record.fingerprint,
-        hostname: record.hostname,
-        tcAddress: record.tcAddress,
-        principalId: record.principalId,
-        login: record.login,
-        encToken,
-        updatedAt: record.updatedAt,
-      });
-    }
-    await writeState(state);
-    return { changed: true, replacedId, removedIds: [] };
-  });
-  if (replacedId !== null) notifyCredentialReplaced(replacedId);
-  for (const id of removedIds) notifyRemovedBySync(id);
-  return changed;
-}
-
-/**
  * Test-only: await any in-flight writes, then reset the chain.
  * @internal
  */
 export async function __drainWriteChainForTesting(): Promise<void> {
   await writeChain;
   writeChain = Promise.resolve();
+}
+
+function sessionPayload(
+  session: StoredGuestSession,
+  extensions: Record<string, unknown> = {},
+  omitToken = false,
+): InvitedSession {
+  return {
+    ...extensions,
+    v: 2,
+    kind: 'session',
+    fingerprint: canonicalFingerprint(session.fingerprint),
+    principalId: session.principalId,
+    label: session.label,
+    login: session.login,
+    host: session.host,
+    hosts: candidateHosts(session),
+    port: session.port,
+    hostname: session.hostname ?? null,
+    detectHosts: session.detectHosts ?? false,
+    tcAddress: session.tcAddress ?? null,
+    ...Object.fromEntries(
+      ['accent', 'detectedDeviceKind', 'deviceIcon']
+        .filter((key) => session[key as keyof StoredGuestSession] !== undefined)
+        .map((key) => [key, session[key as keyof StoredGuestSession]]),
+    ),
+    tcUpdatedAt: session.tcUpdatedAt ?? (session.tcAddress ? session.updatedAt : null),
+    token: omitToken ? '' : decryptToken(session.encToken),
+    updatedAt: session.updatedAt,
+    pairedAt: session.pairedAt ?? session.updatedAt,
+    removedThrough: session.removedThrough ?? 0,
+    deleted: false,
+    deletedAt: null,
+    legacyAccounts: session.legacyAccounts ?? [],
+  };
+}
+
+function syncItems(state: PersistedState): KeychainItem[] {
+  return (state.invitedSync ?? []).map((r) => ({
+    account: r.account,
+    group: r.group,
+    payload: decryptToken(r.encPayload),
+  }));
+}
+
+function syncPayloads(state: PersistedState): InvitedPayload[] {
+  // Removal facts are always token-free, so forgetting is possible even with a locked keyring.
+  return (state.invitedSync ?? [])
+    .filter((r) => !r.encPayload.encrypted)
+    .flatMap((r) => {
+      const parsed = parseInvitedPayload(r.account, r.encPayload.value);
+      return parsed ? [parsed] : [];
+    });
+}
+
+/** All opaque/possibly credential-bearing imported bytes are encrypted, including unknown versions. */
+function saveSyncItem(state: PersistedState, item: KeychainItem): void {
+  const rows = (state.invitedSync ??= []);
+  const existing = rows.find((r) => r.account === item.account && r.group === item.group);
+  let previous: string | undefined;
+  try {
+    previous = existing ? decryptToken(existing.encPayload) : undefined;
+  } catch (error) {
+    const incoming = parseInvitedPayload(item.account, item.payload);
+    // The independent removal remains durable while locked credential bytes stay recoverable.
+    if (incoming?.kind === 'removed' || (incoming?.kind === 'session' && incoming.deleted)) return;
+    throw error;
+  }
+  if (previous === item.payload) return;
+  let record = parseInvitedPayload(item.account, item.payload);
+  const old = previous === undefined ? null : parseInvitedPayload(item.account, previous);
+  // Never overwrite future/malformed canonical data with a understood downgrade.
+  if (previous !== undefined && item.account.startsWith('invited-v2-') && old === null) return;
+  if (old?.kind === 'removal') return; // Immutable forever, including unknown extensions.
+  if (old?.kind === 'legacy-alias' && record?.kind !== 'legacy-alias') return;
+  if (
+    old &&
+    (old.kind === 'session' || old.kind === 'removed') &&
+    record &&
+    (record.kind === 'session' || record.kind === 'removed')
+  ) {
+    record = mergeInvitedPerson([old, record], [])!;
+    item = { ...item, payload: JSON.stringify(record) };
+  }
+  if (old?.kind === 'legacy-alias' && record?.kind === 'legacy-alias') {
+    item = {
+      ...item,
+      payload: JSON.stringify({
+        ...old,
+        ...record,
+        personKeys: sortedStrings([...old.personKeys, ...record.personKeys]),
+      }),
+    };
+  }
+  const safe =
+    record?.kind === 'removal' ||
+    record?.kind === 'legacy-alias' ||
+    record?.kind === 'removed' ||
+    (record?.kind === 'session' && record.deleted);
+  const encPayload = safe ? { encrypted: false, value: item.payload } : encryptToken(item.payload);
+  if (existing) existing.encPayload = encPayload;
+  else rows.push({ account: item.account, group: item.group, encPayload });
+}
+
+/** The existing registry is the sole durable invited store, including pending imports and the outbox. */
+export function createInvitedSyncAdapter(
+  authenticate: InvitedSyncAdapter['authenticate'],
+): InvitedSyncAdapter {
+  return {
+    authenticate,
+    async rejectCredential(record) {
+      let removedId: string | undefined;
+      const changed = await mutate(async (state) => {
+        const active = state.sessions.find((s) => samePerson(s, record));
+        if (active && !matchesCredential(active, record)) return false;
+        const account = invitedPersonKey(record);
+        const candidates = syncItems(state).flatMap((item) => {
+          const r = item.account === account ? parseInvitedPayload(account, item.payload) : null;
+          return r?.kind === 'session' || r?.kind === 'removed' ? [r] : [];
+        });
+        if (active) candidates.push(sessionPayload(active));
+        const facts = syncPayloads(state).filter(
+          (r): r is InvitedRemoval => r.kind === 'removal' && samePerson(r, record),
+        );
+        const selected = mergeInvitedPerson(candidates, facts);
+        if (
+          selected?.kind !== 'session' ||
+          selected.deleted ||
+          selected.token !== record.token ||
+          selected.pairedAt !== record.pairedAt
+        )
+          return false;
+        const floor = Math.max(
+          Date.now(),
+          selected.updatedAt + 1,
+          selected.pairedAt + 1,
+          selected.removedThrough + 1,
+        );
+        if (!Number.isSafeInteger(floor)) throw new GuestStoreCorruptError();
+        const removal: InvitedRemoval = {
+          v: 2,
+          kind: 'removal',
+          fingerprint: selected.fingerprint,
+          principalId: selected.principalId,
+          removalId: randomUUID(),
+          removedThrough: floor,
+          legacyAccounts: selected.legacyAccounts,
+        };
+        saveSyncItem(state, {
+          account: invitedRemovalKey(removal),
+          payload: JSON.stringify(removal),
+        });
+        saveSyncItem(state, {
+          account,
+          payload: JSON.stringify({
+            ...selected,
+            token: '',
+            deleted: true,
+            deletedAt: Date.now(),
+            updatedAt: floor,
+            removedThrough: floor,
+          }),
+        });
+        if (active) {
+          state.sessions = state.sessions.filter((s) => s !== active);
+          removedId = active.id;
+        }
+        await writeState(state);
+        return true;
+      });
+      if (removedId) notifyRemovedBySync(removedId);
+      if (changed) notifyMutated();
+    },
+    async read() {
+      await writeChain;
+      const loaded = await loadState();
+      if (!loaded?.intact) throw new GuestStoreCorruptError();
+      const state = loaded.state;
+      const items = syncItems(state);
+      const pendingPairings: string[] = [];
+      for (const s of state.sessions) {
+        let personKey: string;
+        try {
+          personKey = invitedPersonKey(s);
+        } catch {
+          continue;
+        } // Unpinned legacy rows stay local and recoverable, never guessed from a route.
+        if (state.excludedInvitedPeople?.includes(personKey)) continue;
+        // Legacy rows keep their provenance and clock; the engine authenticates before migration.
+        if (s.pairedAt === undefined) {
+          items.push({
+            account: accountKeyFor(s.host, s.port),
+            payload: serializeRecord({
+              label: s.label,
+              host: s.host,
+              hosts: candidateHosts(s),
+              port: s.port,
+              fingerprint: s.fingerprint,
+              hostname: s.hostname ?? null,
+              detectHosts: false,
+              tcAddress: s.tcAddress ?? null,
+              principalId: s.principalId,
+              ...(s.login !== null ? { login: s.login } : {}),
+              token: decryptToken(s.encToken),
+              updatedAt: s.updatedAt,
+            }),
+          });
+        } else {
+          const key = invitedPersonKey(s);
+          const known = items
+            .flatMap((r) => (r.account === key ? [parseInvitedPayload(key, r.payload)] : []))
+            .find((r) => r?.kind === 'session');
+          items.push({ account: key, payload: JSON.stringify(sessionPayload(s, known ?? {})) });
+          if (s.pendingPairing !== undefined) pendingPairings.push(key);
+        }
+      }
+      for (const t of state.tombstones) {
+        try {
+          if (
+            t.principalId &&
+            items.some(
+              (r) =>
+                r.account ===
+                invitedPersonKey({ fingerprint: t.fingerprint, principalId: t.principalId! }),
+            )
+          )
+            continue;
+        } catch {
+          /* An unpinned legacy deletion remains pending for explicit recovery. */
+        }
+        // Already-v2 removals fence these v1 caches regardless of clock. Old entries still migrate.
+        items.push({
+          account: accountKeyFor(t.host, t.port),
+          payload: serializeRecord({
+            label: t.label,
+            host: t.host,
+            hosts: candidateHosts(t),
+            port: t.port,
+            fingerprint: t.fingerprint,
+            hostname: t.hostname ?? null,
+            detectHosts: false,
+            tcAddress: null,
+            token: '',
+            principalId: t.principalId,
+            ...(t.login != null ? { login: t.login } : {}),
+            updatedAt: t.updatedAt,
+            deleted: true,
+            deletedAt: t.deletedAt,
+          }),
+        });
+      }
+      return {
+        items,
+        pendingPairings,
+        excludedPeople: state.excludedInvitedPeople,
+        provenance: state.invitedProvenance,
+      };
+    },
+    async remember(items) {
+      if (!items.length) return;
+      const removed: string[] = [];
+      await mutate(async (state) => {
+        for (const item of items) {
+          // Provenance only comes from a locally authenticated active credential. A remote row is not proof.
+          const payload = parseInvitedPayload(item.account, item.payload);
+          if (
+            payload?.kind === 'session' &&
+            !payload.deleted &&
+            state.sessions.some(
+              (s) => samePerson(s, payload) && decryptToken(s.encToken) === payload.token,
+            )
+          ) {
+            const provenance = (state.invitedProvenance ??= {});
+            for (const alias of payload.legacyAccounts) {
+              const people = (provenance[alias] ??= []);
+              if (!people.some((person) => samePerson(person, payload)))
+                people.push({ fingerprint: payload.fingerprint, principalId: payload.principalId });
+            }
+          }
+          saveSyncItem(state, item);
+          const fact = parseInvitedPayload(item.account, item.payload);
+          if (
+            fact?.kind !== 'removal' ||
+            state.excludedInvitedPeople?.includes(invitedPersonKey(fact))
+          )
+            continue;
+          state.sessions = state.sessions.filter((session) => {
+            if (
+              !samePerson(session, fact) ||
+              session.pendingPairing !== undefined ||
+              (session.pairedAt ?? session.updatedAt) > fact.removedThrough
+            )
+              return true;
+            removed.push(session.id);
+            return false;
+          });
+        }
+        await writeState(state);
+      });
+      for (const id of removed) notifyRemovedBySync(id);
+    },
+    async admitPairing(account, floor, observedClock, expected) {
+      let changedId: string | undefined;
+      const result = await mutate(async (state) => {
+        const session = state.sessions.find((s) => {
+          try {
+            return invitedPersonKey(s) === account;
+          } catch {
+            return false;
+          }
+        });
+        if (!session || session.pendingPairing === undefined) return null;
+        if (
+          decryptToken(session.encToken) !== expected.token ||
+          session.pairedAt !== expected.pairedAt
+        )
+          return null;
+        const stamp = Math.max(session.pendingPairing, floor + 1, observedClock + 1);
+        if (!Number.isSafeInteger(stamp)) throw new GuestStoreCorruptError();
+        if (session.pairedAt !== stamp) changedId = session.id;
+        session.pairedAt = stamp;
+        session.updatedAt = Math.max(session.updatedAt, stamp);
+        session.removedThrough = Math.max(session.removedThrough ?? 0, floor);
+        delete session.pendingPairing;
+        const record = sessionPayload(session);
+        saveSyncItem(state, { account, payload: JSON.stringify(record) });
+        await writeState(state);
+        return record;
+      });
+      if (changedId) notifyCredentialReplaced(changedId);
+      return result;
+    },
+    async apply(account, incoming) {
+      let replaced: string | null = null;
+      const removed: string[] = [];
+      await mutate(async (state) => {
+        const existing = state.sessions.find((s) => samePerson(s, incoming));
+        const facts = syncPayloads(state).filter(
+          (r): r is InvitedRemoval => r.kind === 'removal' && samePerson(r, incoming),
+        );
+        const records = [incoming];
+        if (existing) records.unshift(sessionPayload(existing));
+        const merged = mergeInvitedPerson(records, facts)!;
+        if (merged.kind === 'removed' || merged.deleted) {
+          // A new deliberate join racing this pass stays pending until a fresh complete read.
+          if (existing?.pendingPairing !== undefined) return;
+          if (existing) {
+            state.sessions = state.sessions.filter((s) => s !== existing);
+            removed.push(existing.id);
+          }
+          saveSyncItem(state, { account, payload: JSON.stringify(merged) });
+        } else {
+          const encrypted = encryptToken(merged.token);
+          const row: StoredGuestSession = {
+            ...existing,
+            id: existing?.id ?? randomUUID(),
+            label: merged.label,
+            host: merged.host,
+            hosts: merged.hosts,
+            port: merged.port,
+            fingerprint: merged.fingerprint,
+            tcAddress: merged.tcAddress,
+            hostname: merged.hostname,
+            principalId: merged.principalId,
+            login: merged.login,
+            ...Object.fromEntries(
+              preferenceKeys
+                .filter((key) => merged[key] !== undefined)
+                .map((key) => [key, merged[key]]),
+            ),
+            encToken: encrypted,
+            updatedAt: merged.updatedAt,
+            pairedAt: merged.pairedAt,
+            removedThrough: merged.removedThrough,
+            tcUpdatedAt: merged.tcUpdatedAt,
+            legacyAccounts: merged.legacyAccounts,
+          };
+          if (existing) {
+            if (
+              decryptToken(existing.encToken) !== merged.token ||
+              (existing.pairedAt ?? existing.updatedAt) !== merged.pairedAt
+            )
+              replaced = existing.id;
+            state.sessions[state.sessions.indexOf(existing)] = row;
+          } else state.sessions.push(row);
+          saveSyncItem(state, { account, payload: JSON.stringify(merged) });
+        }
+        await writeState(state);
+      });
+      if (replaced) notifyCredentialReplaced(replaced);
+      for (const id of removed) notifyRemovedBySync(id);
+    },
+  };
 }

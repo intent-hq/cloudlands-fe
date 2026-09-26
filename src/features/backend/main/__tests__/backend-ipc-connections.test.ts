@@ -32,6 +32,13 @@ const lifecycle = vi.hoisted(() => ({ events: [] as Array<{ type: string; seq: n
 /** Steerable per-method RPC responder for the fake client (tests override). */
 const rpc = vi.hoisted(() => ({
   handler: (async () => ({})) as (method: string) => Promise<unknown>,
+  principal: (async () => ({
+    id: 'prn_7',
+    login: 'octocat',
+    displayName: null,
+    avatarUrl: null,
+    isAdministrator: false,
+  })) as () => Promise<unknown>,
   calls: [] as string[],
   payloads: [] as Array<[string, unknown]>,
   /** Per-call `params` argument, parallel to `calls`. */
@@ -81,7 +88,7 @@ vi.mock('../json-rpc-client', () => {
       rpc.payloads.push([method, params]);
       rpc.params.push(params);
       rpc.options.push(options);
-      return rpc.handler(method);
+      return method === 'principal.me' ? rpc.principal() : rpc.handler(method);
     });
     registerMethod(): () => void {
       return () => {};
@@ -147,6 +154,11 @@ vi.mock('../backend-connection', async (importActual) => {
   return { ...actual, captureFingerprint: mockCaptureFingerprint };
 });
 
+const importedPrincipal = vi.hoisted(() => ({ inspect: vi.fn() }));
+vi.mock('../invited-principal', async (actual) => ({
+  ...(await actual<typeof import('../invited-principal')>()),
+  inspectPersonalCredential: importedPrincipal.inspect,
+}));
 // Connections store: in-test doubles for the CRUD + active-id surface.
 const store = vi.hoisted(() => ({
   list: vi.fn(),
@@ -191,10 +203,12 @@ vi.mock('../connections-store', () => ({
 // simulated against the pool.
 const guestStore = vi.hoisted(() => ({
   list: vi.fn(),
+  add: vi.fn(),
   findById: vi.fn(),
   forget: vi.fn(),
   leaveWorkspace: vi.fn(),
   setWorkspaces: vi.fn(),
+  setPrincipal: vi.fn(async () => true),
   getDecryptedToken: vi.fn(),
   setTcAddress: vi.fn(),
   setHosts: vi.fn(),
@@ -203,10 +217,13 @@ const guestStore = vi.hoisted(() => ({
 }));
 vi.mock('../guest-sessions-store', () => ({
   list: guestStore.list,
+  add: guestStore.add,
   findById: guestStore.findById,
   forget: guestStore.forget,
   leaveWorkspace: guestStore.leaveWorkspace,
   setWorkspaces: guestStore.setWorkspaces,
+  setPrincipal: guestStore.setPrincipal,
+  createInvitedSyncAdapter: vi.fn(() => ({})),
   getDecryptedToken: guestStore.getDecryptedToken,
   setHostname: vi.fn(async () => false),
   setTcAddress: guestStore.setTcAddress,
@@ -297,7 +314,7 @@ const GUEST = {
   host: '10.0.0.9',
   hosts: ['10.0.0.9'],
   port: 8443,
-  fingerprint: 'EE:FF:00:11',
+  fingerprint: 'ef'.repeat(32),
   tcAddress: null,
   hostname: null,
   principalId: 'prn_7',
@@ -382,7 +399,24 @@ beforeEach(() => {
   vi.resetModules();
   vi.clearAllMocks();
   lifecycle.events = [];
+  importedPrincipal.inspect.mockResolvedValue({
+    principal: {
+      id: 'owner',
+      login: null,
+      displayName: null,
+      avatarUrl: null,
+      isAdministrator: true,
+    },
+    capabilities: { hostMembership: false },
+  });
   rpc.handler = async () => ({});
+  rpc.principal = async () => ({
+    id: GUEST.principalId,
+    login: GUEST.login,
+    displayName: null,
+    avatarUrl: null,
+    isAdministrator: false,
+  });
   rpc.calls = [];
   rpc.payloads = [];
   rpc.params = [];
@@ -400,6 +434,7 @@ beforeEach(() => {
   guestStore.findById.mockResolvedValue(null);
   guestStore.forget.mockResolvedValue(true);
   guestStore.leaveWorkspace.mockResolvedValue(true);
+  guestStore.setPrincipal.mockResolvedValue(true);
   guestStore.setWorkspaces.mockResolvedValue(false);
   guestStore.getDecryptedToken.mockResolvedValue(null);
   guestStore.setTcAddress.mockResolvedValue(false);
@@ -446,6 +481,40 @@ describe('openBackendWindow connect-before-open', () => {
     // The open never flips the persisted whole-app selection.
     expect(store.setActiveId).not.toHaveBeenCalled();
     expect(openOrFocus).toHaveBeenCalledWith('remote-1');
+  });
+
+  it('rechecks an invitation lifetime after its queued open is released', async () => {
+    guestStore.list.mockResolvedValue([GUEST]);
+    guestStore.findById.mockImplementation(async (id: string) => (id === GUEST.id ? GUEST : null));
+    guestStore.getDecryptedToken.mockResolvedValue('guest-token');
+    const { mod, openOrFocus } = await loadModule();
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    openOrFocus.mockImplementationOnce(async () => gate);
+    const first = mod.openBackendWindow('remote-1');
+    await vi.waitFor(() => expect(openOrFocus).toHaveBeenCalledTimes(1));
+    let current = true;
+    const next = mod.openBackendWindow(GUEST.id, { mayOpen: () => current });
+    const rejected = expect(next).rejects.toThrow(/no longer current/);
+    current = false;
+    release();
+    await first;
+    await rejected;
+    expect(openOrFocus).toHaveBeenCalledTimes(1);
+  });
+
+  it('cancelling a second open preserves the client serving an existing window', async () => {
+    const { mod, openOrFocus } = await loadModule();
+    await mod.openBackendWindow('remote-1');
+    const original = mod.getBackendClientForConnection('remote-1');
+    let checks = 0;
+    await expect(
+      mod.openBackendWindow('remote-1', { mayOpen: () => ++checks === 1 }),
+    ).rejects.toThrow(/no longer current/);
+    expect(openOrFocus).toHaveBeenCalledTimes(1);
+    expect(mod.getBackendClientForConnection('remote-1')).toBe(original);
   });
 
   it('opens a remote window immediately while its host.status never answers (black-holed host)', async () => {
@@ -771,9 +840,17 @@ describe('openBackendWindow connect-before-open', () => {
     client.hello({ server: { version: '6.8.0' } });
 
     await vi.waitFor(() => {
-      expect(guestStore.setTcAddress).toHaveBeenCalledWith(GUEST.id, 'tc7f2a91.tailcat.net');
+      expect(guestStore.setTcAddress).toHaveBeenCalledWith(
+        GUEST.id,
+        'tc7f2a91.tailcat.net',
+        expect.any(Function),
+      );
       // Loopback never becomes a dial candidate.
-      expect(guestStore.setHosts).toHaveBeenCalledWith(GUEST.id, ['10.0.0.9', '10.0.0.42']);
+      expect(guestStore.setHosts).toHaveBeenCalledWith(
+        GUEST.id,
+        ['10.0.0.9', '10.0.0.42'],
+        expect.any(Function),
+      );
     });
     // The owner registry is never asked to persist a guest's routes (an
     // unknown id there would silently drop them).
@@ -3934,7 +4011,7 @@ describe('forget/add decisions inside the connection-operation queue (monorepo#2
     label: 'Laptop',
     host: '10.0.0.6',
     port: 8443,
-    fingerprint: 'EE:FF:00:11',
+    fingerprint: 'ef'.repeat(32),
     isLocal: false,
   };
 
@@ -4524,6 +4601,102 @@ describe('guest-sessions:* IPC handlers', () => {
     type HelloClient = { hello(result: unknown): void };
     const hello = { server: { version: '6.8.0', buildCommit: 'abc123' } };
 
+    it('refreshes the remote role and empty-host list after host membership events (controlled advertised fixture)', async () => {
+      installGuest();
+      let role = 'member';
+      rpc.principal = async () => ({
+        id: GUEST.principalId,
+        login: null,
+        displayName: null,
+        avatarUrl: null,
+        isAdministrator: false,
+        hostRole: role,
+        hostMembershipRevision: 1,
+      });
+      rpc.handler = async (method) =>
+        method === 'events.subscribe'
+          ? { subscriptionId: 'host-events' }
+          : method === 'workspace.list'
+            ? { workspaces: [] }
+            : {};
+      const { mod } = await loadModule();
+      const guest = (await mod.connectBackendClient(GUEST.id)) as unknown as HelloClient & {
+        emit(event: string, value: unknown): void;
+      };
+      guest.hello({ server: { ...hello.server, capabilities: { hostMembership: 1 } } });
+      await vi.waitFor(() => expect(rpc.calls).toContain('events.subscribe'));
+      expect(rpc.payloads.find(([method]) => method === 'events.subscribe')?.[1]).toMatchObject({
+        eventTypes: expect.arrayContaining(['workspace:created', 'host:members-changed']),
+      });
+      role = 'guest';
+      guest.emit('notification', {
+        method: 'events.event',
+        params: {
+          subscriptionId: 'host-events',
+          event: {
+            type: 'host:members-changed',
+            data: {
+              principalId: GUEST.principalId,
+              hostRole: 'guest',
+              action: 'removed',
+              revision: 2,
+            },
+          },
+        },
+      });
+      await vi.waitFor(() =>
+        expect(guestStore.setPrincipal).toHaveBeenLastCalledWith(
+          GUEST.id,
+          expect.objectContaining({ hostRole: 'guest' }),
+          expect.any(Function),
+        ),
+      );
+      expect(rpc.calls.filter((method) => method === 'principal.me')).toHaveLength(2);
+      expect(guestStore.forget).not.toHaveBeenCalled();
+    });
+
+    it('does not hydrate or refresh routes before the exact remote invited principal is known', async () => {
+      installGuest();
+      rpc.principal = async () => ({
+        id: 'another-person',
+        login: null,
+        displayName: null,
+        avatarUrl: null,
+        isAdministrator: false,
+      });
+      const { mod } = await loadModule();
+      const guest = (await mod.connectBackendClient(GUEST.id)) as unknown as HelloClient;
+      guest.hello(hello);
+      await vi.waitFor(() => expect(rpc.calls).toContain('principal.me'));
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(rpc.calls).not.toContain('workspace.list');
+      expect(rpc.calls).not.toContain('system.status');
+      expect(guestStore.setWorkspaces).not.toHaveBeenCalled();
+      expect(guestStore.forget).not.toHaveBeenCalled();
+    });
+
+    it('a disconnect fences an outstanding cache and route read on the same client', async () => {
+      installGuest();
+      let finish!: (value: unknown) => void;
+      const pending = new Promise((resolve) => {
+        finish = resolve;
+      });
+      rpc.handler = async (method) =>
+        method === 'workspace.list' || method === 'system.status' ? pending : {};
+      const { mod } = await loadModule();
+      const guest = (await mod.connectBackendClient(GUEST.id)) as unknown as HelloClient & {
+        emit(event: string, value: unknown): void;
+      };
+      guest.hello(hello);
+      await vi.waitFor(() => expect(rpc.calls).toContain('workspace.list'));
+      guest.emit('status', 'disconnected');
+      finish({ workspaces: [], tcAddress: 'late-route', localIps: ['10.0.0.77'] });
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(guestStore.setWorkspaces).not.toHaveBeenCalled();
+      expect(guestStore.setTcAddress).not.toHaveBeenCalled();
+      expect(guestStore.setHosts).not.toHaveBeenCalled();
+    });
+
     it('reconciles the cached list from workspace.list through the guest connection and re-broadcasts', async () => {
       installGuest();
       guestStore.setWorkspaces.mockResolvedValue(true);
@@ -4914,7 +5087,7 @@ describe('guest-sessions:* IPC handlers', () => {
           guest.hello(hello);
           guest.hello(hello);
           await vi.waitFor(() =>
-            expect(rpc.calls.filter((m) => m === 'workspace.list').length).toBe(3),
+            expect(rpc.calls.filter((m) => m === 'workspace.list').length).toBe(2),
           );
           expect(releases).toHaveLength(1);
 
@@ -4962,7 +5135,7 @@ describe('guest-sessions:* IPC handlers', () => {
           // hello reuses that lease.
           guest.hello(hello);
           guest.hello(hello);
-          await vi.waitFor(() => expect(reads()).toBe(before + 2));
+          await vi.waitFor(() => expect(reads()).toBe(before + 1));
           await new Promise((resolve) => setTimeout(resolve, 0));
           expect(subscribes()).toBe(2);
           guest.emit('status', 'connected');
@@ -4974,7 +5147,7 @@ describe('guest-sessions:* IPC handlers', () => {
               changes: { title: 'Fresh' },
             }),
           );
-          await vi.waitFor(() => expect(reads()).toBe(before + 3));
+          await vi.waitFor(() => expect(reads()).toBe(before + 2));
         });
 
         it('a registry read crossing a reconnect never sends a stale subscribe on the new socket', async () => {
@@ -5240,10 +5413,11 @@ describe('guest-sessions:* IPC handlers', () => {
         }));
         vi.mocked(app.getPath).mockReturnValue(directory);
         real = await vi.importActual<RealStore>('../guest-sessions-store');
-        await real.applyRemoteSyncRecord({ ...GUEST, detectHosts: false, token: 'fixture-token' });
+        await real.add({ ...GUEST, detectHosts: false, token: 'fixture-token' });
         sessionId = (await real.list())[0].id;
         guestStore.list.mockImplementation(real.list);
         guestStore.findById.mockImplementation(real.findById);
+        guestStore.setPrincipal.mockImplementation(real.setPrincipal);
         guestStore.setWorkspaces.mockImplementation(real.setWorkspaces);
         guestStore.leaveWorkspace.mockImplementation(real.leaveWorkspace);
         guestStore.getDecryptedToken.mockImplementation(real.getDecryptedToken);
@@ -5261,6 +5435,7 @@ describe('guest-sessions:* IPC handlers', () => {
         for (const fn of [
           guestStore.list,
           guestStore.findById,
+          guestStore.setPrincipal,
           guestStore.setWorkspaces,
           guestStore.leaveWorkspace,
           guestStore.getDecryptedToken,
@@ -5634,5 +5809,26 @@ describe('guest-sessions:* IPC handlers', () => {
     expect(closeForBackend).not.toHaveBeenCalledWith(REMOTE.id);
     expect(mod.getBackendClientForConnection(REMOTE.id)).toBeDefined();
     expect(store.forget).not.toHaveBeenCalled();
+  });
+});
+
+describe('personal credential import classification', () => {
+  it('an invited credential cannot rotate an owner connection secret', async () => {
+    importedPrincipal.inspect.mockResolvedValue({
+      principal: { id: 'member', isAdministrator: false, hostRole: 'member' },
+      capabilities: { hostMembership: true },
+    });
+    mockCaptureFingerprint.mockResolvedValue({
+      ok: true,
+      fingerprint: REMOTE.fingerprint,
+      tokenValid: true,
+      connected: true,
+    });
+    const { mod } = await loadModule();
+    mod.registerBackendHandlers();
+    await expect(
+      findHandler('connections:rotate-secret')!({}, { id: REMOTE.id, token: 'member-token' }),
+    ).rejects.toThrow();
+    expect(store.replaceSecret).not.toHaveBeenCalled();
   });
 });

@@ -6796,5 +6796,11 @@
   "collaborationAuth_rateLimited_error": "服务商正在限制请求。请稍候再刷新账户。",
   "collaborationAuth_identityInUse_error": "此身份属于另一位本地用户。请选择其他账户。",
   "collaborationAuth_failed_error": "无法完成登录。请检查账户和实例后重试。",
-  "collaborationAuth_requestChanged_error": "此邀请已更改。请重新打开，以当前要求的账户继续。"
+  "collaborationAuth_requestChanged_error": "此邀请已更改。请重新打开，以当前要求的账户继续。",
+  "inviteConsent_host_title": "加入 {hostLabel}？",
+  "inviteConsent_host_permissions": "成员可以访问此主机当前和未来的所有工作区，并运行命令和代理。你可以创建工作区，并管理或删除自己创建的工作区。主机管理权限仍归所有者。",
+  "inviteConsent_account_unknown": "已保存的账户",
+  "inviteConsent_account_choose_title": "选择账户",
+  "inviteConsent_account_choose_description": "选择用于此邀请的已保存账户。",
+  "inviteConsent_returning_description": "Intent 将使用此主机已保存的个人凭据，无需重新登录 Git 托管服务或再次验证身份。"
 }

@@ -1,5 +1,5 @@
 /**
- * Workspace invitation acceptance. The host challenge fixes the required provider,
+ * Workspace and host invitation acceptance. The host challenge fixes the required provider,
  * instance and stable account; collaboration-capable local daemons prepare that
  * identity through explicit account consent. Legacy local daemons can reuse a
  * suitable existing repository credential, but cannot start identity-only auth.
@@ -8,6 +8,8 @@
  * sessions and final redemption remain in the existing guest-session flow.
  */
 import { app, dialog, type MessageBoxOptions } from 'electron';
+import { captureInviteAttempt, type InviteAttempt } from './invite-attempt';
+import { inspectPersonalCredential, invitedRole } from '../../backend/main/invited-principal';
 import { randomUUID } from 'node:crypto';
 
 import type {
@@ -29,17 +31,18 @@ import { showInviteProgress, type InviteProgressHandle } from '../../../main/inv
 import { getMainWindow } from '../../../main/state';
 import * as guestSessionsStore from '../../backend/main/guest-sessions-store';
 import {
-  getBackendClient,
   getConnectedDaemonProtocolVersion,
-  captureLocalIdentityConnection,
   openBackendWindow,
 } from '../../backend/main/backend.ipc';
-import { PinMismatchError, normalizeFingerprint } from '../../backend/main/backend-connection';
+import { AuthRejectedError, PinMismatchError } from '../../backend/main/backend-connection';
 import { protocolVersionAtLeast } from '../../backend/main/protocol-compat';
 import {
   InviteRpcError,
   InviteTransportError,
   openInviteConnection,
+  validateInviteInspection,
+  validateInviteCredential,
+  type InviteCredential,
   type InviteChallenge,
   type InviteConnection,
   type InviteInspection,
@@ -51,7 +54,6 @@ import type { PrincipalIdentity } from '../../workspace-sharing/types';
 import { prepareCollaborationIdentity } from '../../collaboration-auth/main/collaboration-auth.ipc';
 import {
   CollaborationIdentityClient,
-  type CollaborationAttempt,
   type PreparedCollaborationIdentity,
 } from '../../collaboration-auth/main/collaboration-auth-flow';
 import { identitiesEqual, isCollaborationIdentity } from '../../collaboration-auth/identity';
@@ -60,6 +62,7 @@ const logger = new Logger('InviteDeepLink');
 
 /** The parsed link fields the join paths need. */
 interface InviteEnvelope {
+  scope: 'workspace' | 'host';
   hosts: string[];
   port: number;
   fingerprint: string;
@@ -70,6 +73,7 @@ interface InviteEnvelope {
 
 /** Display labels of the consent prompts, derived once per join. */
 interface PromptLabels {
+  scope: 'workspace' | 'host';
   workspaceTitle: string;
   hostLabel: string;
 }
@@ -217,9 +221,9 @@ interface ConnectingProgress {
   dismiss(): void;
 }
 
-function showConnectingProgress(): ConnectingProgress {
+function showConnectingProgress(attempt: InviteAttempt): ConnectingProgress {
   const handle = showInviteProgress({ requestId: randomUUID(), phase: 'connecting' });
-  const cancelled: Promise<never> = handle.cancelled.then(() => {
+  const cancelled: Promise<never> = Promise.race([handle.cancelled, attempt.cancelled]).then(() => {
     throw new InviteCancelledError();
   });
   cancelled.catch(() => {});
@@ -251,17 +255,20 @@ interface ConsentPrompts {
   current(): InviteConsentPrompt | null;
 }
 
-function createConsentPrompts(connecting: ConnectingProgress): ConsentPrompts {
+function createConsentPrompts(
+  connecting: ConnectingProgress,
+  attempt: InviteAttempt,
+): ConsentPrompts {
   let current: InviteConsentPrompt | null = null;
   return {
     show(payload) {
       connecting.dismiss();
-      const prompt = showInviteConsent(payload);
+      const prompt = showInviteConsent(payload, { getParentWindow: () => attempt.parent });
       const previous = current;
       let ended = false;
       const handle: InviteConsentPrompt = {
-        decision: prompt.decision,
-        cancelledWhileWaiting: prompt.cancelledWhileWaiting,
+        decision: Promise.race([prompt.decision, attempt.cancelled.then(() => 'cancel' as const)]),
+        cancelledWhileWaiting: Promise.race([prompt.cancelledWhileWaiting, attempt.cancelled]),
         dismiss(outcome) {
           if (ended) return;
           ended = true;
@@ -281,7 +288,7 @@ function createConsentPrompts(connecting: ConnectingProgress): ConsentPrompts {
  * In-flight guard (same rationale as the pair flow): a second invite link
  * while one is being redeemed is dropped instead of stacking dialogs.
  */
-let inviteLinkInFlight = false;
+let activeInviteAttempt: InviteAttempt | null = null;
 
 /**
  * Handle an `intent://invite?...` deep link end to end. Resolves once the
@@ -289,17 +296,9 @@ let inviteLinkInFlight = false;
  * rejects — failures are logged (scrubbed) and surfaced in a notice dialog.
  */
 export async function handleInviteDeepLink(url: string): Promise<void> {
-  if (inviteLinkInFlight) {
-    logger.info('Ignoring invite link while another is being handled');
-    return;
-  }
-  inviteLinkInFlight = true;
-  let attemptActive = true;
-  const attempt: CollaborationAttempt = {
-    id: randomUUID(),
-    metadataRevision: 0,
-    current: () => attemptActive,
-  };
+  activeInviteAttempt?.release();
+  const attempt = captureInviteAttempt();
+  activeInviteAttempt = attempt;
   let connection: InviteConnection | null = null;
   let connecting: ConnectingProgress | null = null;
   let prompts: ConsentPrompts | null = null;
@@ -311,7 +310,7 @@ export async function handleInviteDeepLink(url: string): Promise<void> {
       logger.warn('Ignoring deep link that is not an invite URI');
       return;
     }
-    const { hosts, port, fingerprint, inviteId, secret, tcAddress } = parsed;
+    const { scope, hosts, port, fingerprint, inviteId, secret, tcAddress } = parsed;
     // The daemon's default (loopback-bound) invite carries no direct host at
     // all — `host=` empty, `tc=` set — so a tunnel address satisfies the
     // "somewhere to dial" requirement on its own.
@@ -329,22 +328,52 @@ export async function handleInviteDeepLink(url: string): Promise<void> {
       return;
     }
 
-    const envelope: InviteEnvelope = { hosts, port, fingerprint, tcAddress, inviteId, secret };
-    connecting = showConnectingProgress();
-    prompts = createConsentPrompts(connecting);
+    if (!attempt.current()) return;
+    const envelope: InviteEnvelope = {
+      scope,
+      hosts,
+      port,
+      fingerprint,
+      tcAddress,
+      inviteId,
+      secret,
+    };
+    connecting = showConnectingProgress(attempt);
+    prompts = createConsentPrompts(connecting, attempt);
     // A dial that completes after the user cancelled is closed on arrival.
     connection = await connecting.wait(
-      openInviteConnection({ hosts, port, fingerprint, tcAddress }),
+      openInviteConnection({ hosts, port, fingerprint, tcAddress, scope }),
       (late) => late.close(),
     );
     labels.hostLabel = connection.host;
     connecting.connected(connection.host);
-    const returning = await joinAsReturningGuest(connection, envelope, prompts, connecting, labels);
+    if (!attempt.current()) throw new InviteCancelledError();
+    const inspection =
+      scope === 'host' ? await connecting.wait(connection.inspect(inviteId, secret)) : undefined;
+    if (inspection) validateInviteInspection(inspection, scope);
+    if (!attempt.current()) throw new InviteCancelledError();
+    const returning = await joinAsReturningGuest(
+      connection,
+      envelope,
+      prompts,
+      connecting,
+      labels,
+      attempt,
+      inspection,
+    );
     if (returning.kind === 'handled') return;
     logger.info('No usable stored credential for this host; proving identity through a forge', {
       reason: returning.reason,
     });
-    await joinWithIdentityProof(connection, envelope, prompts, connecting, labels, attempt);
+    await joinWithIdentityProof(
+      connection,
+      envelope,
+      prompts,
+      connecting,
+      labels,
+      attempt,
+      inspection,
+    );
   } catch (error) {
     connecting?.dismiss();
     if (error instanceof InviteCancelledError) {
@@ -352,6 +381,7 @@ export async function handleInviteDeepLink(url: string): Promise<void> {
       return;
     }
     logger.warn('Invite deep link handling failed', describeErrorForLog(error));
+    if (!attempt.current()) return;
     // The handoff dismiss is a no-op once the modal was dismissed `joined`;
     // the failure notice still shows.
     await showFailure(
@@ -368,8 +398,8 @@ export async function handleInviteDeepLink(url: string): Promise<void> {
   } finally {
     connecting?.dismiss();
     connection?.close();
-    attemptActive = false;
-    inviteLinkInFlight = false;
+    attempt.release();
+    if (activeInviteAttempt === attempt) activeInviteAttempt = null;
   }
 }
 
@@ -401,19 +431,31 @@ async function joinWithIdentityProof(
   prompts: ConsentPrompts,
   connecting: ConnectingProgress,
   noticeLabels: NoticeLabels,
-  attempt: CollaborationAttempt,
+  attempt: InviteAttempt,
+  inspection: InviteInspection | undefined,
 ): Promise<void> {
   const { inviteId, secret } = envelope;
-  const client = getBackendClient();
+  if (!attempt.current() || !attempt.local.current()) throw new InviteCancelledError();
+  const client: Pick<JsonRpcClient, 'request'> = {
+    request: (method, params) => attempt.local.request(method, params ?? {}),
+  };
   let challenge = await connecting.wait(connection.challenge(inviteId, secret));
+  validateInviteInspection(challenge, envelope.scope);
+  if (inspection) requireSameInvitation(inspection, challenge);
+  inspection ??= challenge;
+  if (!attempt.current() || !attempt.local.current()) throw new InviteCancelledError();
   const labels: PromptLabels = {
+    scope: envelope.scope,
     hostLabel: hostLabelFor(connection, challenge),
-    workspaceTitle: nonBlank(challenge.workspaceTitle) ?? m.workspace_links_untitled_label(),
+    workspaceTitle:
+      envelope.scope === 'host'
+        ? ''
+        : (nonBlank(challenge.workspaceTitle) ?? m.workspace_links_untitled_label()),
   };
   Object.assign(noticeLabels, labels);
 
   let identity: LocalIdentity | null;
-  if (captureLocalIdentityConnection().supported) {
+  if (attempt.local.supported) {
     const prepared = await signInForCollaboration(labels, connecting, challenge, attempt);
     if (prepared.kind === 'cancelled') return;
     identity = prepared.identity;
@@ -426,6 +468,7 @@ async function joinWithIdentityProof(
   let retried = false;
   let consent: InviteConsentPrompt | null = null;
   for (;;) {
+    if (!attempt.current() || !attempt.local.current()) throw new InviteCancelledError();
     if (signInReason !== null) {
       if (signedIn) {
         throw new IdentityProofError(
@@ -465,7 +508,7 @@ async function joinWithIdentityProof(
         return;
       }
       // No renderer to show the modal (cold start / no ack): native box.
-      if (decision === null && !(await showConfirmProve(current.login, labels.workspaceTitle))) {
+      if (decision === null && !(await showConfirmProve(current.login, labels, attempt.parent))) {
         logger.info('User cancelled the invite before proving identity');
         return;
       }
@@ -479,6 +522,7 @@ async function joinWithIdentityProof(
       labels,
       current,
       consent,
+      attempt,
     );
     switch (outcome.kind) {
       case 'joined':
@@ -505,6 +549,9 @@ async function joinWithIdentityProof(
         }
         retried = true;
         const refreshed = await connection.challenge(inviteId, secret);
+        validateInviteInspection(refreshed, envelope.scope);
+        requireSameInvitation(inspection, refreshed);
+        if (!attempt.current() || !attempt.local.current()) throw new InviteCancelledError();
         if (Object.hasOwn(challenge, 'pinIdentity') && !Object.hasOwn(refreshed, 'pinIdentity')) {
           throw new InviteIdentityError(
             challenge.pinIdentity ? 'pin-mismatch' : 'identity-unavailable',
@@ -533,14 +580,21 @@ async function joinWithIdentityProof(
  */
 async function proveIdentity(
   connection: InviteConnection,
-  client: JsonRpcClient,
+  client: Pick<JsonRpcClient, 'request'>,
   envelope: InviteEnvelope,
   challenge: InviteChallenge,
   labels: PromptLabels,
   identity: LocalIdentity,
   consent: InviteConsentPrompt | null,
+  attempt: InviteAttempt,
 ): Promise<ProveOutcome> {
   let cancelled = false;
+  const current = () =>
+    attempt.current() &&
+    attempt.local.current() &&
+    attempt.allowed(identity.provider) &&
+    (!identity.collaboration || identity.collaboration.allowed());
+  if (!current()) return { kind: 'cancelled' };
   void consent?.cancelledWhileWaiting.then(() => {
     cancelled = true;
   });
@@ -556,7 +610,7 @@ async function proveIdentity(
   // required forge, before publishing anything, and bind consent to its ID.
   if (identity.collaboration || hasIdentityRequirement(challenge)) {
     const latest = await readCurrent();
-    if (latest === 'cancelled' || cancelled) {
+    if (latest === 'cancelled' || cancelled || !current()) {
       consent?.dismiss('cancelled');
       return { kind: 'cancelled' };
     }
@@ -586,7 +640,7 @@ async function proveIdentity(
     }
     throw refusal;
   }
-  if (cancelled) {
+  if (cancelled || !current()) {
     void deleteProof(client, proof);
     consent?.dismiss('cancelled');
     logger.info('User cancelled the invite while the identity proof was being made');
@@ -607,7 +661,7 @@ async function proveIdentity(
           identity.provider,
         );
       const latest = await readCurrent();
-      if (latest === 'cancelled' || cancelled) {
+      if (latest === 'cancelled' || cancelled || !current()) {
         void deleteProof(client, proof);
         consent?.dismiss('cancelled');
         return { kind: 'cancelled' };
@@ -638,6 +692,10 @@ async function proveIdentity(
     return { kind: 'account-changed', identity: { ...identity, login: proof.login } };
   }
 
+  if (cancelled || !current()) {
+    void deleteProof(client, proof);
+    return { kind: 'cancelled' };
+  }
   let credential: Awaited<ReturnType<InviteConnection['prove']>>;
   try {
     credential = await connection.prove(
@@ -658,6 +716,24 @@ async function proveIdentity(
   // Point of no return: the host has minted the credential and consumed a
   // seat. Close the modal now — before the asynchronous store write — so
   // Cancel is neither offered nor honoured while the credential persists.
+  try {
+    validateInviteCredential(credential, envelope.scope);
+    if (envelope.scope === 'workspace' && credential.workspaceId !== challenge.workspaceId)
+      throw new InviteCancelledError();
+    if (
+      credential.identity &&
+      (!identity.externalUserId ||
+        !identitiesEqual(credential.identity, {
+          provider: identity.provider,
+          host: identity.host,
+          externalUserId: identity.externalUserId,
+        }))
+    )
+      throw new InviteIdentityError('pin-mismatch', identity.provider);
+  } catch (error) {
+    void deleteProof(client, proof);
+    throw error;
+  }
   consent?.dismiss('joined');
   await storeCredentialAndOpen(
     connection,
@@ -666,6 +742,7 @@ async function proveIdentity(
     challenge.workspaceTitle,
     labels,
     () => deleteProof(client, proof),
+    () => !cancelled && current(),
   );
   return { kind: 'joined' };
 }
@@ -688,7 +765,7 @@ type PublishedProof = { collaboration?: PreparedCollaborationIdentity } & (
 );
 
 async function createProof(
-  client: JsonRpcClient,
+  client: Pick<JsonRpcClient, 'request'>,
   identity: LocalIdentity,
   nonce: string,
   hostLabel: string,
@@ -770,18 +847,17 @@ async function signInForCollaboration(
   labels: PromptLabels,
   connecting: ConnectingProgress,
   challenge: InviteChallenge,
-  attempt: CollaborationAttempt,
+  attempt: InviteAttempt,
 ): Promise<{ kind: 'signed-in'; identity: LocalIdentity } | { kind: 'cancelled' }> {
-  if (!captureLocalIdentityConnection().supported)
-    throw new InviteFlowError('collaboration-upgrade-required');
+  if (!attempt.current() || !attempt.local.current()) return { kind: 'cancelled' };
+  if (!attempt.local.supported) throw new InviteFlowError('collaboration-upgrade-required');
   connecting.dismiss();
   const result = await prepareCollaborationIdentity(
     {
-      scope: 'workspace',
       ...(Object.hasOwn(challenge, 'pinIdentity') ? { pinIdentity: challenge.pinIdentity } : {}),
       ...labels,
     },
-    { attempt },
+    { attempt, parent: attempt.parent },
   );
   if (result.kind === 'cancelled') return result;
   if (result.kind === 'error') throw new InviteFlowError('sign-in-failed');
@@ -790,6 +866,7 @@ async function signInForCollaboration(
     prepared.attempt.id !== attempt.id ||
     prepared.attempt.metadataRevision !== attempt.metadataRevision ||
     !attempt.current() ||
+    !attempt.local.current() ||
     !prepared.attempt.current() ||
     !prepared.local.current() ||
     !prepared.local.supported ||
@@ -815,7 +892,7 @@ async function signInForCollaboration(
  * in, and a sign-in prompt would not help — it throws so the join fails with
  * that reason instead. Any other error reads as not signed in.
  */
-async function readLocalLogin(client: JsonRpcClient): Promise<string | null> {
+async function readLocalLogin(client: Pick<JsonRpcClient, 'request'>): Promise<string | null> {
   try {
     const result = await client.request<{ user?: { login?: unknown } | null }>('github.getUser');
     return nonBlank(result?.user?.login) ?? null;
@@ -904,7 +981,7 @@ function hasIdentityRequirement(inspection: InviteInspection): boolean {
  * always enforced, even on an old sidecar, and is never treated as unpinned.
  */
 async function readInviteIdentity(
-  client: JsonRpcClient,
+  client: Pick<JsonRpcClient, 'request'>,
   inspection: InviteInspection,
   prepared?: PreparedCollaborationIdentity,
 ): Promise<LocalIdentity | null> {
@@ -992,7 +1069,9 @@ async function readInviteIdentity(
  * signed in nor not: it throws so the join fails with that reason instead of
  * a connect prompt that cannot help.
  */
-async function readLocalIdentity(client: JsonRpcClient): Promise<LocalIdentity | null> {
+async function readLocalIdentity(
+  client: Pick<JsonRpcClient, 'request'>,
+): Promise<LocalIdentity | null> {
   const githubLogin = await readLocalLogin(client);
   if (githubLogin !== null) return { provider: 'github', host: GITHUB_HOST, login: githubLogin };
   if (!identitySeamSupported()) return null;
@@ -1016,7 +1095,10 @@ async function readLocalIdentity(client: JsonRpcClient): Promise<LocalIdentity |
  * ended). Best effort: a failure is logged by bounded code and never fails
  * the join.
  */
-async function deleteProof(client: JsonRpcClient, proof: PublishedProof): Promise<void> {
+async function deleteProof(
+  client: Pick<JsonRpcClient, 'request'>,
+  proof: PublishedProof,
+): Promise<void> {
   try {
     if (proof.collaboration) {
       await new CollaborationIdentityClient(proof.collaboration.local).deleteProof(
@@ -1069,106 +1151,181 @@ async function joinAsReturningGuest(
   prompts: ConsentPrompts,
   connecting: ConnectingProgress,
   noticeLabels: NoticeLabels,
+  attempt: InviteAttempt,
+  inspection: InviteInspection | undefined,
 ): Promise<ReturningOutcome> {
-  const { hosts, port, fingerprint, inviteId, secret } = envelope;
-  // The winning candidate (a direct host, or the tc address standing in as
-  // the host) is what the store keyed a tunnel-only session on.
-  const session = await connecting.wait(
-    guestSessionsStore.findMatching({
-      hosts: [...new Set([connection.host, ...hosts])],
-      port,
-      fingerprint,
-    }),
-  );
-  if (!session) return { kind: 'fallback', reason: 'no-session' };
-  // Fail closed: the store's host:port fallback can match a record pinned to
-  // a different cert at the same address. Only a session pinned to the exact
-  // daemon this link is pinned to may have its credential reused.
-  if (normalizeFingerprint(session.fingerprint) !== normalizeFingerprint(fingerprint)) {
-    return { kind: 'fallback', reason: 'fingerprint-mismatch' };
-  }
-  let token: string | null;
-  try {
-    token = await connecting.wait(guestSessionsStore.getDecryptedToken(session.id));
-  } catch (error) {
-    if (error instanceof InviteCancelledError) throw error;
-    // Keyring changed: the ciphertext is unreadable. A fresh proof re-mints
-    // the credential; the store's upsert then replaces it.
-    return { kind: 'fallback', reason: 'token-unavailable' };
-  }
-  if (token === null) return { kind: 'fallback', reason: 'no-token' };
-
-  const inspection = await connecting.wait(connection.inspect(inviteId, secret));
-  if (session.workspaces.some((w) => w.id === inspection.workspaceId)) {
-    logger.info('Already a member of the invited workspace on this host; opening the window', {
-      id: session.id,
-      workspaceId: inspection.workspaceId,
-      via: connection.via,
+  const { fingerprint, inviteId, secret } = envelope;
+  const candidates = await connecting.wait(guestSessionsStore.findAllMatching(fingerprint));
+  if (!attempt.current()) throw new InviteCancelledError();
+  if (!candidates.length) return { kind: 'fallback', reason: 'no-session' };
+  let fallbackReason: 'no-token' | 'token-unavailable' | 'no-session' = 'no-token';
+  const verified: {
+    session: (typeof candidates)[number];
+    token: string;
+    login: string;
+    identity?: PrincipalIdentity;
+  }[] = [];
+  for (const session of candidates) {
+    let token: string | null;
+    try {
+      token = await connecting.wait(guestSessionsStore.getDecryptedToken(session.id));
+    } catch (error) {
+      if (error instanceof InviteCancelledError) throw error;
+      fallbackReason = 'token-unavailable';
+      continue;
+    }
+    if (!token) continue;
+    if (!attempt.current()) throw new InviteCancelledError();
+    inspection ??= await connecting.wait(connection.inspect(inviteId, secret));
+    validateInviteInspection(inspection, envelope.scope);
+    let remote;
+    try {
+      remote = await connecting.wait(
+        inspectPersonalCredential({
+          host: connection.host,
+          hosts: envelope.hosts,
+          port: envelope.port,
+          fingerprint: envelope.fingerprint,
+          tcAddress: envelope.tcAddress,
+          token,
+          principalId: session.principalId,
+        }),
+      );
+    } catch (error) {
+      if (error instanceof AuthRejectedError && error.statusCode === 401) {
+        await guestSessionsStore.rejectStoredCredential(session.id, {
+          principalId: session.principalId,
+          token,
+          pairedAt: session.pairedAt ?? session.updatedAt,
+        });
+        continue;
+      }
+      throw error;
+    }
+    if (!attempt.current()) throw new InviteCancelledError();
+    if (!invitedRole(remote) || remote.principal.id !== session.principalId) continue;
+    const identity = remote.principal.identity;
+    if (inspection.pinIdentity && (!identity || !identitiesEqual(identity, inspection.pinIdentity)))
+      continue;
+    if (!attempt.allowed(identity?.provider)) throw new InviteCancelledError();
+    verified.push({
+      session,
+      token,
+      login: remote.principal.login ?? m.inviteConsent_account_unknown(),
+      identity,
     });
-    connecting.dismiss();
-    await openBackendWindow(session.id);
-    return { kind: 'handled' };
   }
-
-  const hostLabel = hostLabelFor(connection, inspection);
-  const workspaceTitle = nonBlank(inspection.workspaceTitle) ?? m.workspace_links_untitled_label();
-  Object.assign(noticeLabels, { hostLabel, workspaceTitle });
+  if (!verified.length || !inspection) return { kind: 'fallback', reason: fallbackReason };
+  let selected = verified[0];
+  if (verified.length > 1) {
+    connecting.dismiss();
+    const choice = await showDialog(
+      {
+        type: 'question',
+        title: m.inviteConsent_account_choose_title(),
+        message: m.inviteConsent_account_choose_description(),
+        buttons: [
+          ...verified.map((v) => (v.identity ? `${v.login} (${v.identity.host})` : v.login)),
+          m.deeplink_pairDialog_cancel_button(),
+        ],
+        defaultId: verified.length,
+        cancelId: verified.length,
+      },
+      attempt.parent,
+    );
+    if (!attempt.current() || choice >= verified.length || choice < 0) return { kind: 'handled' };
+    selected = verified[choice];
+  }
+  const labels: PromptLabels = {
+    scope: envelope.scope,
+    hostLabel: hostLabelFor(connection, inspection),
+    workspaceTitle: inspection.workspaceTitle ?? '',
+  };
+  Object.assign(noticeLabels, labels);
   const consent = prompts.show({
     requestId: randomUUID(),
     mode: 'confirm',
-    login: session.login,
-    workspaceTitle,
-    hostLabel,
+    login: selected.login,
+    identity: selected.identity,
+    ...labels,
   });
   const decision = await consent.decision;
-  if (decision === 'cancel') {
+  if (decision === 'cancel' || !attempt.current()) {
     consent.dismiss('cancelled');
-    logger.info('User cancelled the returning-guest join');
     return { kind: 'handled' };
   }
-  // No renderer to show the modal (cold start / no ack): native box.
-  if (decision === null && !(await showConfirmJoin(session.login, workspaceTitle))) {
-    logger.info('User cancelled the returning-guest join');
+  if (decision === null && !(await showConfirmJoin(selected.login, labels, attempt.parent)))
     return { kind: 'handled' };
-  }
-
-  // As in the device flow, a Cancel from the waiting state aborts the join
-  // until the host has answered: whichever of cancel and accept settles first
-  // decides, and a cancel that lands first stores nothing.
-  const accepted = connection.accept(inviteId, secret, token).then(
-    (credential) => ({ credential }),
-    (error: unknown) => {
-      if (error instanceof InviteRpcError && error.inviteCode === 'credential-invalid') {
-        return { credential: null };
-      }
-      throw error;
-    },
-  );
-  accepted.catch(() => {});
-  const outcome = await Promise.race([
-    consent.cancelledWhileWaiting.then(() => 'cancelled' as const),
-    accepted,
-  ]);
-  if (outcome === 'cancelled') {
+  if (!attempt.current() || !attempt.allowed(selected.identity?.provider))
+    return { kind: 'handled' };
+  let cancelled = false;
+  void consent.cancelledWhileWaiting.then(() => {
+    cancelled = true;
     consent.dismiss('cancelled');
-    logger.info('User cancelled the returning-guest join while waiting for the host');
-    return { kind: 'handled' };
-  }
-  const { credential } = outcome;
-  if (credential === null) {
-    // The host no longer recognizes the stored credential (revoked, or the
-    // guest was removed): the identity proof re-establishes identity.
-    consent.dismiss('failed');
-    return { kind: 'fallback', reason: 'credential-invalid' };
-  }
-  // Point of no return, as for the proof: the host has committed the join.
-  // Close the modal before the store write.
-  consent.dismiss('joined');
-  await storeCredentialAndOpen(connection, envelope, credential, inspection.workspaceTitle, {
-    hostLabel,
-    workspaceTitle,
   });
+  // Once sent, await the bounded grant response even if UI lifetime ends. A committed grant is saved;
+  // cancellation can suppress the later window, never undo membership or discard its bearer.
+  let credential: InviteCredential;
+  try {
+    credential = await connection.accept(inviteId, secret, selected.token);
+  } catch (error) {
+    if (error instanceof InviteRpcError && error.inviteCode === 'credential-invalid') {
+      await guestSessionsStore.rejectStoredCredential(selected.session.id, {
+        principalId: selected.session.principalId,
+        token: selected.token,
+        pairedAt: selected.session.pairedAt ?? selected.session.updatedAt,
+      });
+      consent.dismiss('failed');
+      return !cancelled && attempt.current()
+        ? { kind: 'fallback', reason: 'credential-invalid' }
+        : { kind: 'handled' };
+    }
+    throw error;
+  }
+  validateInviteCredential(credential, envelope.scope);
+  if (envelope.scope === 'workspace' && credential.workspaceId !== inspection.workspaceId)
+    throw new InviteCancelledError();
+  if (
+    credential.token !== selected.token ||
+    credential.principalId !== selected.session.principalId ||
+    (credential.identity &&
+      (!selected.identity || !identitiesEqual(credential.identity, selected.identity)))
+  )
+    throw new InviteIdentityError('pin-mismatch', selected.identity?.provider);
+  consent.dismiss('joined');
+  await storeCredentialAndOpen(
+    connection,
+    envelope,
+    credential,
+    inspection.workspaceTitle,
+    labels,
+    undefined,
+    () => !cancelled && attempt.current() && attempt.allowed(selected.identity?.provider),
+    true,
+  );
   return { kind: 'handled' };
+}
+
+/** Only nonce/expiry may change on a retry; scope, target, labels and required person are original consent. */
+function requireSameInvitation(original: InviteInspection, next: InviteInspection): void {
+  if (
+    Object.hasOwn(original, 'pinIdentity') !== Object.hasOwn(next, 'pinIdentity') ||
+    (original.pinIdentity === null) !== (next.pinIdentity === null) ||
+    (original.pinIdentity &&
+      (!next.pinIdentity || !identitiesEqual(original.pinIdentity, next.pinIdentity)))
+  )
+    throw new InviteCancelledError();
+  for (const field of [
+    'scope',
+    'role',
+    'workspaceId',
+    'workspaceTitle',
+    'hostname',
+    'prettyHostname',
+  ] as const) {
+    if (JSON.stringify(original[field]) !== JSON.stringify(next[field]))
+      throw new InviteCancelledError();
+  }
 }
 
 /**
@@ -1179,18 +1336,20 @@ async function joinAsReturningGuest(
  * never as a cancellation; a Cancel on the dialog closes it at once and only
  * skips opening the window — the credential is stored, the membership stands,
  * and a window whose open was already requested still appears. `labels` are
- * the display labels the dialog and the plaintext notice show; `afterStore`
+ * the display labels the dialog shows; `afterStore`
  * runs once the write settled either way (the proof gist's cleanup: it must
  * not delay or fail the join, and the gist outliving a failed write by a
  * moment is harmless — the nonce is spent).
  */
 async function storeCredentialAndOpen(
   connection: InviteConnection,
-  envelope: Pick<InviteEnvelope, 'hosts' | 'port' | 'fingerprint' | 'tcAddress'>,
-  credential: { token: string; principalId: string; login: string; workspaceId: string },
-  workspaceTitle: string,
+  envelope: Pick<InviteEnvelope, 'scope' | 'hosts' | 'port' | 'fingerprint' | 'tcAddress'>,
+  credential: InviteCredential,
+  workspaceTitle: string | undefined,
   labels: PromptLabels,
   afterStore?: () => Promise<void>,
+  mayOpen: () => boolean = () => true,
+  retainPairing = false,
 ): Promise<void> {
   const opening: InviteProgressHandle = showInviteProgress({
     requestId: randomUUID(),
@@ -1215,29 +1374,32 @@ async function storeCredentialAndOpen(
         principalId: credential.principalId,
         login: credential.login,
         token: credential.token,
-        workspace: { id: credential.workspaceId, title: workspaceTitle },
+        identity: credential.identity,
+        hostRole: credential.hostRole,
+        retainPairing,
+        ...(envelope.scope === 'workspace' && credential.workspaceId
+          ? {
+              workspace: {
+                id: credential.workspaceId,
+                title: workspaceTitle ?? m.workspace_links_untitled_label(),
+              },
+            }
+          : {}),
       });
     } finally {
       void afterStore?.();
     }
-    logger.info('Joined workspace as a guest; opening the window', {
+    logger.info('Joined invited session; opening the window', {
       id: record.id,
       workspaceId: credential.workspaceId,
       via: connection.via,
       tokenEncrypted: record.tokenEncrypted,
     });
-    if (!record.tokenEncrypted) {
-      // Flagged plaintext fallback (spec ruling): the join stands, but the
-      // user learns the credential is not protected by OS encryption —
-      // acknowledged before the window opens. The consent modal is already
-      // dismissed `joined`, so there is no modal to hand off from.
-      await showPlaintextWarning({ kind: 'plaintext', ...labels });
-    }
-    if (cancelled) {
+    if (cancelled || !mayOpen()) {
       logger.info('User closed the join progress dialog; window not opened', { id: record.id });
       return;
     }
-    await openBackendWindow(record.id);
+    await openBackendWindow(record.id, { mayOpen: () => !cancelled && mayOpen() });
   } finally {
     opening.dismiss();
   }
@@ -1295,8 +1457,7 @@ function nonBlank(value: unknown): string | undefined {
   return trimmed ? trimmed : undefined;
 }
 
-async function showDialog(options: MessageBoxOptions): Promise<number> {
-  const parent = getMainWindow();
+async function showDialog(options: MessageBoxOptions, parent = getMainWindow()): Promise<number> {
   const result = parent
     ? await dialog.showMessageBox(parent, options)
     : await dialog.showMessageBox(options);
@@ -1304,30 +1465,62 @@ async function showDialog(options: MessageBoxOptions): Promise<number> {
 }
 
 /** Confirm-only prompt for a returning guest (no device code). True when the user chose "Join". */
-async function showConfirmJoin(login: string, workspaceTitle: string): Promise<boolean> {
-  const response = await showDialog({
-    type: 'question',
-    title: m.deeplink_inviteConfirm_title(),
-    message: m.deeplink_inviteConfirm_message({ login: `@${login}`, workspace: workspaceTitle }),
-    detail: m.deeplink_inviteConfirm_detail(),
-    buttons: [m.deeplink_inviteConfirm_join_button(), m.deeplink_pairDialog_cancel_button()],
-    defaultId: 0,
-    cancelId: 1,
-  });
+async function showConfirmJoin(
+  login: string,
+  labels: PromptLabels,
+  parent = getMainWindow(),
+): Promise<boolean> {
+  const response = await showDialog(
+    {
+      type: 'question',
+      title: m.deeplink_inviteConfirm_title(),
+      message:
+        labels.scope === 'host'
+          ? m.inviteConsent_host_title({ hostLabel: labels.hostLabel })
+          : m.deeplink_inviteConfirm_message({
+              login: `@${login}`,
+              workspace: labels.workspaceTitle,
+            }),
+      detail:
+        labels.scope === 'host'
+          ? `${login}\n\n${m.inviteConsent_host_permissions()}\n\n${m.inviteConsent_returning_description()}`
+          : m.deeplink_inviteConfirm_detail(),
+      buttons: [m.deeplink_inviteConfirm_join_button(), m.deeplink_pairDialog_cancel_button()],
+      defaultId: 0,
+      cancelId: 1,
+    },
+    parent,
+  );
   return response === 0;
 }
 
 /** First-join prompt: prove the signed-in GitHub account to the host. True when the user chose "Join". */
-async function showConfirmProve(login: string, workspaceTitle: string): Promise<boolean> {
-  const response = await showDialog({
-    type: 'question',
-    title: m.deeplink_inviteConfirm_title(),
-    message: m.deeplink_inviteConfirm_message({ login: `@${login}`, workspace: workspaceTitle }),
-    detail: m.deeplink_inviteProve_detail(),
-    buttons: [m.deeplink_inviteConfirm_join_button(), m.deeplink_pairDialog_cancel_button()],
-    defaultId: 0,
-    cancelId: 1,
-  });
+async function showConfirmProve(
+  login: string,
+  labels: PromptLabels,
+  parent = getMainWindow(),
+): Promise<boolean> {
+  const response = await showDialog(
+    {
+      type: 'question',
+      title: m.deeplink_inviteConfirm_title(),
+      message:
+        labels.scope === 'host'
+          ? m.inviteConsent_host_title({ hostLabel: labels.hostLabel })
+          : m.deeplink_inviteConfirm_message({
+              login: `@${login}`,
+              workspace: labels.workspaceTitle,
+            }),
+      detail:
+        labels.scope === 'host'
+          ? `${login}\n\n${m.inviteConsent_host_permissions()}`
+          : m.deeplink_inviteProve_detail(),
+      buttons: [m.deeplink_inviteConfirm_join_button(), m.deeplink_pairDialog_cancel_button()],
+      defaultId: 0,
+      cancelId: 1,
+    },
+    parent,
+  );
   return response === 0;
 }
 
@@ -1370,23 +1563,6 @@ async function showNotice(
   handoff?.consent?.dismiss(handoff.outcome);
   if (await acknowledged) return;
   await showDialog(nativeOptions);
-}
-
-/**
- * Warn that the credential was stored in plaintext because OS encryption is
- * unavailable on this machine (flagged fallback); the join itself stands. The
- * consent modal was already dismissed `joined` at the grant, so no handoff.
- */
-async function showPlaintextWarning(
-  payload: Omit<InviteNoticeShowPayload, 'requestId'>,
-): Promise<void> {
-  await showNotice(payload, null, {
-    type: 'warning',
-    title: m.deeplink_invitePlaintext_title(),
-    message: m.deeplink_invitePlaintext_message(),
-    buttons: [m.deeplink_inviteFailed_ok_button()],
-    defaultId: 0,
-  });
 }
 
 /**

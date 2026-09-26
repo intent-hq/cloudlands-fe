@@ -42,6 +42,29 @@ let sequence = 0;
 let releaseAttempt: (() => void) | undefined;
 let registered = false;
 const policies = new Map<number, CollaborationPolicy>();
+const policyRevisions = new Map<number, number>();
+const policyListeners = new Map<number, Set<() => void>>();
+export function onCollaborationPolicyChanged(contentsId: number, listener: () => void): () => void {
+  const listeners = policyListeners.get(contentsId) ?? new Set<() => void>();
+  listeners.add(listener);
+  policyListeners.set(contentsId, listeners);
+  return () => {
+    listeners.delete(listener);
+    if (!listeners.size) policyListeners.delete(contentsId);
+  };
+}
+
+/** A joined-host action is bound to the requesting renderer's original feature-policy lifetime. */
+export function captureCollaborationPolicy(
+  contentsId: number | null,
+): (provider?: 'github' | 'gitlab') => boolean {
+  const revision = contentsId === null ? undefined : policyRevisions.get(contentsId);
+  return (provider) => {
+    if (contentsId === null || revision !== policyRevisions.get(contentsId)) return false;
+    const policy = policies.get(contentsId);
+    return policy?.multiplayer === true && (provider !== 'gitlab' || policy.gitlab === true);
+  };
+}
 
 /** Narrow continuation consumed by invitation joining; no redemption or session storage here. */
 export function prepareCollaborationIdentity(
@@ -140,7 +163,15 @@ export function registerCollaborationAuthHandlers(): void {
       .strict()
       .safeParse(input);
     if (!parsed.success) return { ok: false };
+    const previous = policies.get(event.sender.id);
+    const changed =
+      !previous ||
+      previous.multiplayer !== parsed.data.multiplayer ||
+      previous.gitlab !== parsed.data.gitlab;
+    if (changed)
+      policyRevisions.set(event.sender.id, (policyRevisions.get(event.sender.id) ?? 0) + 1);
     policies.set(event.sender.id, parsed.data);
+    if (changed) for (const listener of policyListeners.get(event.sender.id) ?? []) listener();
     if (active?.contentsId === event.sender.id)
       await active.flow.action({ type: 'policy', policy: parsed.data });
     return { ok: true };

@@ -53,6 +53,7 @@ vi.mock('electron', () => ({
 const guestAdd = vi.fn();
 const guestFindMatching = vi.fn();
 const guestGetDecryptedToken = vi.fn();
+const guestRejectStoredCredential = vi.fn(async (..._args: unknown[]) => {});
 vi.mock('../../../backend/main/guest-sessions-store', async () => {
   const actual = await vi.importActual<typeof import('../../../backend/main/guest-sessions-store')>(
     '../../../backend/main/guest-sessions-store',
@@ -66,9 +67,18 @@ vi.mock('../../../backend/main/guest-sessions-store', async () => {
     get findMatching() {
       return guestFindMatching;
     },
+    findAllMatching: async (fingerprint: string) => {
+      const row = await guestFindMatching({ fingerprint });
+      return row &&
+        row.fingerprint.replaceAll(':', '').toLowerCase() ===
+          fingerprint.replaceAll(':', '').toLowerCase()
+        ? [row]
+        : [];
+    },
     get getDecryptedToken() {
       return guestGetDecryptedToken;
     },
+    rejectStoredCredential: (...args: unknown[]) => guestRejectStoredCredential(...args),
   };
 });
 
@@ -100,6 +110,35 @@ const localProtocolVersion = vi.fn<() => string | null>(() => '10.8'); // protoc
 const openBackendWindow = vi.fn();
 const captureIdentity = vi.fn(() => ({ supported: false }));
 const prepareIdentity = vi.fn();
+let lifetimeCurrent = true;
+vi.mock('../invite-attempt', () => ({
+  captureInviteAttempt: () => {
+    let live = true;
+    let cancel!: () => void;
+    const cancelled = new Promise<void>((resolve) => {
+      cancel = resolve;
+    });
+    return {
+      id: 'controlled-invite-attempt',
+      metadataRevision: 0,
+      parent: null,
+      current: () => live && lifetimeCurrent,
+      allowed: () => live && lifetimeCurrent,
+      release: () => {
+        live = false;
+        cancel();
+      },
+      cancelled,
+      local: { ...captureIdentity(), current: () => lifetimeCurrent, request: localRequest },
+    };
+  },
+}));
+const remoteIdentity = vi.fn();
+vi.mock('../../../backend/main/invited-principal', () => ({
+  inspectPersonalCredential: (...args: unknown[]) => remoteIdentity(...args),
+  invitedRole: (snapshot: { principal: { isAdministrator: boolean; hostRole?: string } }) =>
+    snapshot.principal.isAdministrator ? null : (snapshot.principal.hostRole ?? 'guest'),
+}));
 vi.mock('../../../collaboration-auth/main/collaboration-auth.ipc', () => ({
   prepareCollaborationIdentity: (...args: unknown[]) => prepareIdentity(...args),
 }));
@@ -118,6 +157,7 @@ vi.mock('../../../backend/main/backend-connection', async () => {
     '../../../backend/main/backend-connection',
   );
   return {
+    ...actual,
     PinMismatchError: class PinMismatchError extends Error {},
     normalizeFingerprint: actual.normalizeFingerprint,
   };
@@ -134,6 +174,7 @@ vi.mock('../../../backend/main/invite-connection', async () => {
     '../../../backend/main/invite-connection',
   );
   return {
+    ...actual,
     InviteRpcError: actual.InviteRpcError,
     InviteTransportError: actual.InviteTransportError,
     get openInviteConnection() {
@@ -274,6 +315,7 @@ const CURRENT_CHALLENGE = {
   pinIdentity: null,
 };
 const CREDENTIAL = {
+  status: 'authorized',
   token: TOKEN,
   principalId: 'gh:42',
   login: 'octocat',
@@ -326,6 +368,16 @@ function signedOutDaemon(): void {
 }
 
 beforeEach(() => {
+  lifetimeCurrent = true;
+  remoteIdentity.mockImplementation(async (candidate) => ({
+    principal: {
+      id: candidate.principalId,
+      login: candidate.login ?? 'octocat',
+      isAdministrator: false,
+      identity: { provider: 'github', host: 'github.com', externalUserId: '42' },
+    },
+    capabilities: { hostMembership: false },
+  }));
   vi.clearAllMocks();
   captureIdentity.mockReturnValue({ supported: false });
   prepareIdentity.mockReset();
@@ -337,6 +389,8 @@ beforeEach(() => {
   openInviteConnection.mockResolvedValue(fakeConnection());
   challenge.mockResolvedValue(CHALLENGE);
   prove.mockResolvedValue(CREDENTIAL);
+  inspect.mockResolvedValue(CHALLENGE);
+  accept.mockResolvedValue({ ...CREDENTIAL, token: 'stored-guest-token-value' });
   // Default: a first join on this host — no stored session.
   guestFindMatching.mockResolvedValue(null);
   guestGetDecryptedToken.mockResolvedValue(null);
@@ -352,6 +406,7 @@ describe('handleInviteDeepLink', () => {
     await handleInviteDeepLink(`${LINK}&tc=ts.example:443`);
 
     expect(openInviteConnection).toHaveBeenCalledWith({
+      scope: 'workspace',
       hosts: ['192.168.1.10'],
       port: 8443,
       fingerprint: 'AA:BB:CC',
@@ -383,6 +438,9 @@ describe('handleInviteDeepLink', () => {
     expect((showMessageBox.mock.calls[0][0] as { message: string }).message).toContain('@octocat');
 
     expect(guestAdd).toHaveBeenCalledWith({
+      identity: undefined,
+      hostRole: undefined,
+      retainPairing: false,
       label: '192.168.1.10',
       host: '192.168.1.10',
       hosts: ['192.168.1.10'],
@@ -394,7 +452,7 @@ describe('handleInviteDeepLink', () => {
       token: TOKEN,
       workspace: { id: 'ws-1', title: 'Shared workspace' },
     });
-    expect(openBackendWindow).toHaveBeenCalledWith('guest-id');
+    expect(openBackendWindow).toHaveBeenCalledWith('guest-id', { mayOpen: expect.any(Function) });
     expect(close).toHaveBeenCalledTimes(1);
   });
 
@@ -457,6 +515,7 @@ describe('handleInviteDeepLink', () => {
       `intent://invite?v=1&host=&port=8443&fp=AA:BB:CC&inviteId=inv-1&secret=${SECRET}&tc=tc-key-abc`,
     );
     expect(openInviteConnection).toHaveBeenCalledWith({
+      scope: 'workspace',
       hosts: [],
       port: 8443,
       fingerprint: 'AA:BB:CC',
@@ -470,7 +529,7 @@ describe('handleInviteDeepLink', () => {
         token: TOKEN,
       }),
     );
-    expect(openBackendWindow).toHaveBeenCalledWith('guest-id');
+    expect(openBackendWindow).toHaveBeenCalledWith('guest-id', { mayOpen: expect.any(Function) });
   });
 
   // The daemon's tunnel-only invite omits `host` entirely (no empty `host=`):
@@ -481,6 +540,7 @@ describe('handleInviteDeepLink', () => {
       `intent://invite?v=1&port=8443&fp=AA:BB:CC&inviteId=inv-1&secret=${SECRET}&tc=tc-key-abc`,
     );
     expect(openInviteConnection).toHaveBeenCalledWith({
+      scope: 'workspace',
       hosts: [],
       port: 8443,
       fingerprint: 'AA:BB:CC',
@@ -494,18 +554,16 @@ describe('handleInviteDeepLink', () => {
         token: TOKEN,
       }),
     );
-    expect(openBackendWindow).toHaveBeenCalledWith('guest-id');
+    expect(openBackendWindow).toHaveBeenCalledWith('guest-id', { mayOpen: expect.any(Function) });
   });
 
-  it('warns when the credential had to be stored in plaintext, then still opens the window', async () => {
-    guestAdd.mockResolvedValue({ id: 'guest-id', tokenEncrypted: false });
+  it('refuses a first write when OS encryption is unavailable', async () => {
+    guestAdd.mockRejectedValue(new GuestEncryptionUnavailableError());
     await handleInviteDeepLink(LINK);
-    // Prove box + plaintext warning.
-    expect(showMessageBox).toHaveBeenCalledTimes(2);
-    expect(showMessageBox.mock.calls[1][0]).toMatchObject({ type: 'warning' });
-    expect(openBackendWindow).toHaveBeenCalledWith('guest-id');
+    expect(openBackendWindow).not.toHaveBeenCalled();
+    expect(showMessageBox.mock.calls.at(-1)?.[0]).toMatchObject({ type: 'error' });
+    expect(localCalls('github.identityProof.delete')).toHaveLength(1);
   });
-
   it.each([
     ['encryption unavailable (would downgrade)', new GuestEncryptionUnavailableError()],
     ['corrupt registry', new GuestStoreCorruptError()],
@@ -663,7 +721,7 @@ describe('handleInviteDeepLink', () => {
     });
     await handleInviteDeepLink(LINK);
     expect(guestAdd).toHaveBeenCalledTimes(1);
-    expect(openBackendWindow).toHaveBeenCalledWith('guest-id');
+    expect(openBackendWindow).toHaveBeenCalledWith('guest-id', { mayOpen: expect.any(Function) });
     expect(showMessageBox).toHaveBeenCalledTimes(1);
     await vi.waitFor(() =>
       expect(logLines.join('\n')).toContain('Could not delete the identity proof'),
@@ -740,20 +798,19 @@ describe('handleInviteDeepLink', () => {
     expect(allLogs).toContain('Invite deep link handling failed');
   });
 
-  it('drops a concurrent invite link while one is in flight (single dialog)', async () => {
+  it('supersedes invitation A when B arrives even on the same local daemon', async () => {
     let resolveDialog!: (v: { response: number }) => void;
     showMessageBox.mockReturnValueOnce(new Promise((resolve) => (resolveDialog = resolve)));
     const first = handleInviteDeepLink(LINK);
-    const second = handleInviteDeepLink(LINK);
-    await second;
     await vi.waitFor(() => expect(showMessageBox).toHaveBeenCalledTimes(1));
-    expect(openInviteConnection).toHaveBeenCalledTimes(1);
+    await handleInviteDeepLink(LINK.replace('inv-1', 'inv-2'));
     resolveDialog({ response: 0 });
     await first;
+    expect(openInviteConnection).toHaveBeenCalledTimes(2);
+    expect(prove).toHaveBeenCalledExactlyOnceWith('inv-2', SECRET, expect.any(Object));
     expect(guestAdd).toHaveBeenCalledTimes(1);
     expect(openBackendWindow).toHaveBeenCalledTimes(1);
   });
-
   it('handles a subsequent link after the previous one settles', async () => {
     await handleInviteDeepLink(LINK);
     await handleInviteDeepLink(LINK);
@@ -772,6 +829,7 @@ describe('handleInviteDeepLink — renderer consent modal (prove)', () => {
     const payload = showInviteConsent.mock.calls[0][0];
     expect(payload).toEqual({
       requestId: expect.any(String),
+      scope: 'workspace',
       mode: 'prove',
       login: 'octocat',
       identity: { provider: 'github', host: 'github.com' },
@@ -789,7 +847,7 @@ describe('handleInviteDeepLink — renderer consent modal (prove)', () => {
     });
     expect(guestAdd).toHaveBeenCalledWith(expect.objectContaining({ token: TOKEN }));
     expect(prompt.dismiss).toHaveBeenCalledExactlyOnceWith('joined');
-    expect(openBackendWindow).toHaveBeenCalledWith('guest-id');
+    expect(openBackendWindow).toHaveBeenCalledWith('guest-id', { mayOpen: expect.any(Function) });
     expect(showMessageBox).not.toHaveBeenCalled();
     expect(close).toHaveBeenCalledTimes(1);
   });
@@ -842,7 +900,7 @@ describe('handleInviteDeepLink — renderer consent modal (prove)', () => {
     expect(close).toHaveBeenCalledTimes(1);
   });
 
-  it('dismisses joined before the store write, the plaintext warning and the window open', async () => {
+  it('dismisses joined before the encrypted store write and the window open', async () => {
     const { prompt } = fakeConsent('open');
     showInviteConsent.mockReturnValue(prompt);
     const order: string[] = [];
@@ -860,7 +918,7 @@ describe('handleInviteDeepLink — renderer consent modal (prove)', () => {
       return { id: 'guest-id' };
     });
     await handleInviteDeepLink(LINK);
-    expect(order).toEqual(['dismiss:joined', 'store', 'warning', 'window']);
+    expect(order).toEqual(['dismiss:joined', 'store', 'window']);
   });
 
   it('cancel before join: dismiss cancelled, no gist, nothing stored, connection closed', async () => {
@@ -905,7 +963,7 @@ describe('handleInviteDeepLink — renderer consent modal (prove)', () => {
     expect(close).toHaveBeenCalledTimes(1);
   });
 
-  it('a cancel that lands while invite.prove is in flight is ignored: the prove answer is the point of no return', async () => {
+  it('a cancel that lands while invite.prove is in flight preserves the grant and skips opening', async () => {
     const { prompt, cancelWaiting } = fakeConsent('open');
     showInviteConsent.mockReturnValue(prompt);
     let releaseProve!: () => void;
@@ -919,7 +977,7 @@ describe('handleInviteDeepLink — renderer consent modal (prove)', () => {
     await pending;
 
     expect(guestAdd).toHaveBeenCalledTimes(1);
-    expect(openBackendWindow).toHaveBeenCalledWith('guest-id');
+    expect(openBackendWindow).not.toHaveBeenCalled();
     expect(prompt.dismiss).toHaveBeenCalledExactlyOnceWith('joined');
   });
 
@@ -936,7 +994,7 @@ describe('handleInviteDeepLink — renderer consent modal (prove)', () => {
     expect(box.message).toContain(CHALLENGE.workspaceTitle);
     expect(box.message).not.toContain(CONNECT.userCode);
     expect(openExternal).not.toHaveBeenCalled();
-    expect(openBackendWindow).toHaveBeenCalledWith('guest-id');
+    expect(openBackendWindow).toHaveBeenCalledWith('guest-id', { mayOpen: expect.any(Function) });
   });
 
   it('prove refusal after join: dismiss failed before the failure box, gist deleted', async () => {
@@ -991,7 +1049,7 @@ describe('handleInviteDeepLink — renderer consent modal (prove)', () => {
       // Both gists are deleted: the refused one and the accepted one.
       expect(localCalls('github.identityProof.delete')).toHaveLength(2);
       expect(guestAdd).toHaveBeenCalledTimes(1);
-      expect(openBackendWindow).toHaveBeenCalledWith('guest-id');
+      expect(openBackendWindow).toHaveBeenCalledWith('guest-id', { mayOpen: expect.any(Function) });
     },
   );
 
@@ -1205,7 +1263,7 @@ describe('handleInviteDeepLink — cancel after the grant is a no-op', () => {
     releaseStore();
     await pending;
 
-    expect(openBackendWindow).toHaveBeenCalledWith('guest-id');
+    expect(openBackendWindow).toHaveBeenCalledWith('guest-id', { mayOpen: expect.any(Function) });
     expect(dismissesSent()).toEqual([{ requestId, outcome: 'joined' }]);
     expect(showMessageBox).not.toHaveBeenCalled();
     expect(close).toHaveBeenCalledTimes(1);
@@ -1251,7 +1309,7 @@ describe('handleInviteDeepLink — cancel after the grant is a no-op', () => {
     await pending;
 
     expect(guestAdd).toHaveBeenCalledTimes(1);
-    expect(openBackendWindow).toHaveBeenCalledWith('guest-id');
+    expect(openBackendWindow).toHaveBeenCalledWith('guest-id', { mayOpen: expect.any(Function) });
     expect(dismissesSent()).toEqual([{ requestId, outcome: 'joined' }]);
     expect(showMessageBox).not.toHaveBeenCalled();
     expect(logLines.join('\n')).toContain('cancel-after-grant');
@@ -1288,7 +1346,7 @@ describe('handleInviteDeepLink — returning guest', () => {
     hostname: 'studio.local',
     prettyHostname: 'Studio',
   };
-  const ACCEPTED = { ...CREDENTIAL, token: 'fresh-guest-token-value' };
+  const ACCEPTED = { ...CREDENTIAL, token: STORED_TOKEN };
 
   beforeEach(() => {
     guestFindMatching.mockResolvedValue(SESSION);
@@ -1312,8 +1370,6 @@ describe('handleInviteDeepLink — returning guest', () => {
     await handleInviteDeepLink(`${LINK}&tc=ts.example:443`);
 
     expect(guestFindMatching).toHaveBeenCalledWith({
-      hosts: ['192.168.1.10'],
-      port: 8443,
       fingerprint: 'AA:BB:CC',
     });
     expect(guestGetDecryptedToken).toHaveBeenCalledWith('guest-id');
@@ -1323,6 +1379,8 @@ describe('handleInviteDeepLink — returning guest', () => {
     expect(payload).toEqual({
       requestId: expect.any(String),
       mode: 'confirm',
+      identity: { provider: 'github', host: 'github.com', externalUserId: '42' },
+      scope: 'workspace',
       login: 'octocat',
       workspaceTitle: 'Shared workspace',
       hostLabel: 'Studio',
@@ -1336,6 +1394,9 @@ describe('handleInviteDeepLink — returning guest', () => {
     expect(showMessageBox).not.toHaveBeenCalled();
     // The store's same-daemon upsert takes the fresh token and appends the workspace.
     expect(guestAdd).toHaveBeenCalledWith({
+      identity: undefined,
+      hostRole: undefined,
+      retainPairing: true,
       label: '192.168.1.10',
       host: '192.168.1.10',
       hosts: ['192.168.1.10'],
@@ -1344,11 +1405,11 @@ describe('handleInviteDeepLink — returning guest', () => {
       tcAddress: 'ts.example:443',
       principalId: 'gh:42',
       login: 'octocat',
-      token: 'fresh-guest-token-value',
+      token: 'stored-guest-token-value',
       workspace: { id: 'ws-1', title: 'Shared workspace' },
     });
     expect(prompt.dismiss).toHaveBeenCalledExactlyOnceWith('joined');
-    expect(openBackendWindow).toHaveBeenCalledWith('guest-id');
+    expect(openBackendWindow).toHaveBeenCalledWith('guest-id', { mayOpen: expect.any(Function) });
     expect(close).toHaveBeenCalledTimes(1);
   });
 
@@ -1362,8 +1423,6 @@ describe('handleInviteDeepLink — returning guest', () => {
     await handleInviteDeepLink(LINK);
 
     expect(guestFindMatching).toHaveBeenCalledWith({
-      hosts: ['192.168.1.10'],
-      port: 8443,
       fingerprint: 'AA:BB:CC',
     });
     expect(guestGetDecryptedToken).not.toHaveBeenCalled();
@@ -1373,7 +1432,7 @@ describe('handleInviteDeepLink — returning guest', () => {
     expect(showInviteConsent).toHaveBeenCalledTimes(1);
     expect(showInviteConsent.mock.calls[0][0]).toMatchObject({ mode: 'prove' });
     expect(guestAdd).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ token: TOKEN }));
-    expect(logLines.join('\n')).toContain('"reason":"fingerprint-mismatch"');
+    expect(logLines.join('\n')).toContain('"reason":"no-session"');
     expect(logLines.join('\n')).not.toContain(STORED_TOKEN);
   });
 
@@ -1386,7 +1445,7 @@ describe('handleInviteDeepLink — returning guest', () => {
     expect(guestGetDecryptedToken).not.toHaveBeenCalled();
     expect(accept).not.toHaveBeenCalled();
     expect(challenge).toHaveBeenCalledWith('inv-1', SECRET);
-    expect(logLines.join('\n')).toContain('"reason":"fingerprint-mismatch"');
+    expect(logLines.join('\n')).toContain('"reason":"no-session"');
   });
 
   it('same fingerprint at a new address (spelled differently): still the confirm-only path', async () => {
@@ -1406,7 +1465,7 @@ describe('handleInviteDeepLink — returning guest', () => {
     expect(showInviteConsent.mock.calls[0][0]).toMatchObject({ mode: 'confirm', login: 'octocat' });
     expect(accept).toHaveBeenCalledWith('inv-1', SECRET, STORED_TOKEN);
     expectNoProof();
-    expect(openBackendWindow).toHaveBeenCalledWith('guest-id');
+    expect(openBackendWindow).toHaveBeenCalledWith('guest-id', { mayOpen: expect.any(Function) });
   });
 
   it('a tunnel-only link matches the session keyed on the tc address', async () => {
@@ -1418,29 +1477,25 @@ describe('handleInviteDeepLink — returning guest', () => {
     );
 
     expect(guestFindMatching).toHaveBeenCalledWith({
-      hosts: ['tc-key-abc'],
-      port: 8443,
       fingerprint: 'AA:BB:CC',
     });
     expect(accept).toHaveBeenCalledWith('inv-1', SECRET, STORED_TOKEN);
     expectNoProof();
   });
 
-  it('already a member of the invited workspace: no prompt, no accept, the window opens', async () => {
+  it('rechecks consent and redeems a cached workspace because the cache is not membership authority', async () => {
     inspect.mockResolvedValue({ ...INSPECTION, workspaceId: 'ws-0' });
-
+    accept.mockResolvedValue({ ...ACCEPTED, workspaceId: 'ws-0' });
     await handleInviteDeepLink(LINK);
-
     expect(inspect).toHaveBeenCalledWith('inv-1', SECRET);
-    expect(showInviteConsent).not.toHaveBeenCalled();
-    expect(showMessageBox).not.toHaveBeenCalled();
-    expect(accept).not.toHaveBeenCalled();
+    expect(showInviteConsent).toHaveBeenCalledTimes(1);
+    expect(accept).toHaveBeenCalledWith('inv-1', SECRET, STORED_TOKEN);
     expectNoProof();
-    expect(guestAdd).not.toHaveBeenCalled();
-    expect(openBackendWindow).toHaveBeenCalledWith('guest-id');
-    expect(close).toHaveBeenCalledTimes(1);
+    expect(guestAdd).toHaveBeenCalledWith(
+      expect.objectContaining({ token: STORED_TOKEN, retainPairing: true }),
+    );
+    expect(openBackendWindow).toHaveBeenCalledWith('guest-id', { mayOpen: expect.any(Function) });
   });
-
   it('cancel on the confirm prompt: dismiss cancelled, nothing accepted, stored, or opened', async () => {
     const { prompt } = fakeConsent('cancel');
     showInviteConsent.mockReturnValue(prompt);
@@ -1456,7 +1511,7 @@ describe('handleInviteDeepLink — returning guest', () => {
     expect(close).toHaveBeenCalledTimes(1);
   });
 
-  it('cancel while the accept is pending: dismiss cancelled, nothing stored or opened', async () => {
+  it('cancel while accept is pending: preserve the committed grant without opening a window', async () => {
     const { prompt, cancelWaiting } = fakeConsent('open');
     showInviteConsent.mockReturnValue(prompt);
     let settleAccept!: (value: typeof ACCEPTED) => void;
@@ -1465,12 +1520,15 @@ describe('handleInviteDeepLink — returning guest', () => {
     const pending = handleInviteDeepLink(LINK);
     await vi.waitFor(() => expect(accept).toHaveBeenCalledTimes(1));
     cancelWaiting();
-    await pending;
+    await vi.waitFor(() => expect(prompt.dismiss).toHaveBeenCalledWith('cancelled'));
     settleAccept(ACCEPTED);
+    await pending;
     await new Promise((resolve) => setTimeout(resolve, 0));
 
     expect(prompt.dismiss).toHaveBeenCalledExactlyOnceWith('cancelled');
-    expect(guestAdd).not.toHaveBeenCalled();
+    expect(guestAdd).toHaveBeenCalledWith(
+      expect.objectContaining({ token: STORED_TOKEN, retainPairing: true }),
+    );
     expect(openBackendWindow).not.toHaveBeenCalled();
     expect(challenge).not.toHaveBeenCalled();
     expectNoProof();
@@ -1509,7 +1567,7 @@ describe('handleInviteDeepLink — returning guest', () => {
     expect(box.message).not.toContain(CONNECT.userCode);
     expect(accept).toHaveBeenCalledWith('inv-1', SECRET, STORED_TOKEN);
     expectNoProof();
-    expect(openBackendWindow).toHaveBeenCalledWith('guest-id');
+    expect(openBackendWindow).toHaveBeenCalledWith('guest-id', { mayOpen: expect.any(Function) });
   });
 
   it('cancelling the native confirm box aborts without accepting', async () => {
@@ -1533,6 +1591,11 @@ describe('handleInviteDeepLink — returning guest', () => {
     await handleInviteDeepLink(LINK);
 
     expect(accept).toHaveBeenCalledTimes(1);
+    expect(guestRejectStoredCredential).toHaveBeenCalledWith('guest-id', {
+      principalId: SESSION.principalId,
+      token: STORED_TOKEN,
+      pairedAt: SESSION.updatedAt,
+    });
     expect(confirmPrompt.dismiss).toHaveBeenCalledExactlyOnceWith('failed');
     expect(challenge).toHaveBeenCalledWith('inv-1', SECRET);
     expect(showInviteConsent).toHaveBeenCalledTimes(2);
@@ -1541,7 +1604,7 @@ describe('handleInviteDeepLink — returning guest', () => {
     expect(prove).toHaveBeenCalledTimes(1);
     expect(guestAdd).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ token: TOKEN }));
     expect(provePrompt.dismiss).toHaveBeenCalledExactlyOnceWith('joined');
-    expect(openBackendWindow).toHaveBeenCalledWith('guest-id');
+    expect(openBackendWindow).toHaveBeenCalledWith('guest-id', { mayOpen: expect.any(Function) });
     expect(logLines.join('\n')).toContain('"reason":"credential-invalid"');
   });
 
@@ -1592,7 +1655,7 @@ describe('handleInviteDeepLink — returning guest', () => {
       expect(showInviteConsent).toHaveBeenCalledTimes(1);
       expect(showInviteConsent.mock.calls[0][0]).toMatchObject({ mode: 'prove' });
       expect(guestAdd).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ token: TOKEN }));
-      expect(openBackendWindow).toHaveBeenCalledWith('guest-id');
+      expect(openBackendWindow).toHaveBeenCalledWith('guest-id', { mayOpen: expect.any(Function) });
       expect(logLines.join('\n')).toContain(`"reason":"${reason}"`);
     },
   );
@@ -1700,6 +1763,7 @@ describe('handleInviteDeepLink — renderer notice modal', () => {
     expect(order).toEqual(['notice', 'dismiss:failed']);
     expect(noticePayload()).toEqual({
       requestId: expect.any(String),
+      scope: 'workspace',
       kind: 'failed',
       reason: 'workspace-full',
       workspaceTitle: CHALLENGE.workspaceTitle,
@@ -1712,40 +1776,18 @@ describe('handleInviteDeepLink — renderer notice modal', () => {
     expect(guestAdd).not.toHaveBeenCalled();
   });
 
-  it('plaintext warning after the proof: shown after the joined dismiss, acknowledged before the window opens', async () => {
+  it('encryption refusal after the proof shows a bounded failure and never opens', async () => {
     const { prompt } = fakeConsent('open');
     showInviteConsent.mockReturnValue(prompt);
-    guestAdd.mockResolvedValue({ id: 'guest-id', tokenEncrypted: false });
-    const order: string[] = [];
-    prompt.dismiss.mockImplementation((outcome: string) => order.push(`dismiss:${outcome}`));
-    let acknowledge!: (value: boolean) => void;
-    showInviteNotice.mockImplementation(() => {
-      order.push('notice');
-      return new Promise<boolean>((resolve) => (acknowledge = resolve));
-    });
-    openBackendWindow.mockImplementation(async () => {
-      order.push('window');
-      return { id: 'guest-id' };
-    });
-
-    const pending = handleInviteDeepLink(LINK);
-    await vi.waitFor(() => expect(showInviteNotice).toHaveBeenCalledTimes(1));
+    guestAdd.mockRejectedValue(new GuestEncryptionUnavailableError());
+    showInviteNotice.mockResolvedValue(true);
+    await handleInviteDeepLink(LINK);
+    expect(prompt.dismiss).toHaveBeenCalledExactlyOnceWith('joined');
+    expect(noticePayload()).toMatchObject({ kind: 'failed', reason: 'encryption-unavailable' });
     expect(openBackendWindow).not.toHaveBeenCalled();
-    acknowledge(true);
-    await pending;
-
-    expect(order).toEqual(['dismiss:joined', 'notice', 'window']);
-    expect(prompt.dismiss).toHaveBeenCalledTimes(1);
-    expect(noticePayload()).toEqual({
-      requestId: expect.any(String),
-      kind: 'plaintext',
-      workspaceTitle: CHALLENGE.workspaceTitle,
-      hostLabel: '192.168.1.10',
-    });
-    expect(showMessageBox).not.toHaveBeenCalled();
+    expect(localCalls('github.identityProof.delete')).toHaveLength(1);
   });
-
-  it('plaintext warning on the returning-guest path: names the host as the confirm prompt did', async () => {
+  it('encryption refusal on a returning join reports the consented host', async () => {
     guestFindMatching.mockResolvedValue({
       id: 'guest-id',
       label: '192.168.1.10',
@@ -1768,8 +1810,8 @@ describe('handleInviteDeepLink — renderer notice modal', () => {
       hostname: 'studio.local',
       prettyHostname: 'Studio',
     });
-    accept.mockResolvedValue({ ...CREDENTIAL, token: 'fresh-guest-token-value' });
-    guestAdd.mockResolvedValue({ id: 'guest-id', tokenEncrypted: false });
+    accept.mockResolvedValue({ ...CREDENTIAL, token: 'stored-guest-token-value' });
+    guestAdd.mockRejectedValue(new GuestEncryptionUnavailableError());
     const { prompt } = fakeConsent('open');
     showInviteConsent.mockReturnValue(prompt);
     showInviteNotice.mockResolvedValue(true);
@@ -1780,12 +1822,15 @@ describe('handleInviteDeepLink — renderer notice modal', () => {
     expect(prompt.dismiss).toHaveBeenCalledExactlyOnceWith('joined');
     expect(noticePayload()).toEqual({
       requestId: expect.any(String),
-      kind: 'plaintext',
+      scope: 'workspace',
+      kind: 'failed',
+      reason: 'encryption-unavailable',
+      scope: 'workspace',
       workspaceTitle: 'Shared workspace',
       hostLabel: 'Studio',
     });
     expect(showMessageBox).not.toHaveBeenCalled();
-    expect(openBackendWindow).toHaveBeenCalledWith('guest-id');
+    expect(openBackendWindow).not.toHaveBeenCalled();
   });
 
   it('an encrypted store sends no notice at all', async () => {
@@ -2008,6 +2053,7 @@ describe('handleInviteDeepLink — GitLab identity', () => {
 
     expect(showInviteConsent.mock.calls[0][0]).toEqual({
       requestId: expect.any(String),
+      scope: 'workspace',
       mode: 'prove',
       login: 'gl-user',
       identity: { provider: 'gitlab', host: GITLAB_HOST },
@@ -2044,7 +2090,7 @@ describe('handleInviteDeepLink — GitLab identity', () => {
       expect.objectContaining({ principalId: 'gl:4711', login: 'gl-user', token: TOKEN }),
     );
     expect(prompt.dismiss).toHaveBeenCalledExactlyOnceWith('joined');
-    expect(openBackendWindow).toHaveBeenCalledWith('guest-id');
+    expect(openBackendWindow).toHaveBeenCalledWith('guest-id', { mayOpen: expect.any(Function) });
   });
 
   it('legacy missing pin metadata keeps GitHub first when both forges are connected', async () => {
@@ -2651,22 +2697,16 @@ describe('handleInviteDeepLink — invitation identity requirements', () => {
     expect(guestAdd).not.toHaveBeenCalled();
   });
 
-  it('a refreshed pin selecting another connected forge needs fresh consent', async () => {
+  it('a refreshed pin selecting another connected forge cancels the original attempt', async () => {
     prove.mockRejectedValueOnce(new InviteRpcError(-32602, { code: 'proof-invalid' }));
     challenge
       .mockResolvedValueOnce({ ...CURRENT_CHALLENGE, pinIdentity: GITLAB_PIN })
       .mockResolvedValueOnce({ ...CURRENT_CHALLENGE, nonce: 'nonce-2', pinIdentity: GITHUB_PIN });
     await handleInviteDeepLink(LINK);
-    expect(showInviteConsent.mock.calls.map(([p]) => p.identity.provider)).toEqual([
-      'gitlab',
-      'github',
-    ]);
-    expect(prove).toHaveBeenLastCalledWith('inv-1', SECRET, {
-      nonce: 'nonce-2',
-      gistId: PROOF.gistId,
-      login: PROOF.login,
-    });
-    expect(guestAdd).toHaveBeenCalledOnce();
+    expect(showInviteConsent.mock.calls.map(([p]) => p.identity.provider)).toEqual(['gitlab']);
+    expect(prove).toHaveBeenCalledTimes(1);
+    expect(guestAdd).not.toHaveBeenCalled();
+    expect(openBackendWindow).not.toHaveBeenCalled();
   });
 
   it('a pinned relevant probe rate limit stays a rate limit with no fallback', async () => {
@@ -2815,7 +2855,7 @@ describe('handleInviteDeepLink — progress dialog', () => {
     expect(payload).toEqual({ requestId: expect.any(String), phase: 'connecting' });
     expect(JSON.stringify(payload)).not.toContain(SECRET);
     expect(connecting.handle.update).toHaveBeenCalledTimes(1);
-    expect(openBackendWindow).toHaveBeenCalledWith('guest-id');
+    expect(openBackendWindow).toHaveBeenCalledWith('guest-id', { mayOpen: expect.any(Function) });
   });
 
   it('connecting is dismissed before the native prove box when no renderer shows the consent', async () => {
@@ -2831,7 +2871,7 @@ describe('handleInviteDeepLink — progress dialog', () => {
     await handleInviteDeepLink(LINK);
 
     expect(order.slice(0, 2)).toEqual(['dismiss:connecting', 'native-box']);
-    expect(openBackendWindow).toHaveBeenCalledWith('guest-id');
+    expect(openBackendWindow).toHaveBeenCalledWith('guest-id', { mayOpen: expect.any(Function) });
   });
 
   it('connecting is dismissed before the failure notice when the dial fails', async () => {
@@ -2881,7 +2921,7 @@ describe('handleInviteDeepLink — progress dialog', () => {
 
     // The in-flight guard was released.
     await handleInviteDeepLink(LINK);
-    expect(openBackendWindow).toHaveBeenCalledWith('guest-id');
+    expect(openBackendWindow).toHaveBeenCalledWith('guest-id', { mayOpen: expect.any(Function) });
   });
 
   it('cancel while the challenge is in flight: connection closed, nothing proven, no notice', async () => {
@@ -2959,7 +2999,7 @@ describe('handleInviteDeepLink — progress dialog', () => {
     // The in-flight guard was released.
     signedInDaemon();
     await handleInviteDeepLink(LINK);
-    expect(openBackendWindow).toHaveBeenCalledWith('guest-id');
+    expect(openBackendWindow).toHaveBeenCalledWith('guest-id', { mayOpen: expect.any(Function) });
   });
 
   it('cancel while the stored session is looked up: nothing inspected or proven, connection closed', async () => {
@@ -3036,6 +3076,7 @@ describe('handleInviteDeepLink — progress dialog', () => {
     ]);
     expect(showInviteProgress.mock.calls[1][0]).toEqual({
       requestId: expect.any(String),
+      scope: 'workspace',
       phase: 'opening',
       hostLabel: '192.168.1.10',
       workspaceTitle: CHALLENGE.workspaceTitle,
@@ -3047,7 +3088,7 @@ describe('handleInviteDeepLink — progress dialog', () => {
     guestFindMatching.mockResolvedValue(RETURNING_SESSION);
     guestGetDecryptedToken.mockResolvedValue('stored-guest-token-value');
     inspect.mockResolvedValue(INSPECTION);
-    accept.mockResolvedValue(CREDENTIAL);
+    accept.mockResolvedValue({ ...CREDENTIAL, token: 'stored-guest-token-value' });
     const { prompt } = fakeConsent('open');
     showInviteConsent.mockReturnValue(prompt);
     const order: string[] = [];
@@ -3105,7 +3146,7 @@ describe('handleInviteDeepLink — progress dialog', () => {
     expect(openBackendWindow).not.toHaveBeenCalled();
   });
 
-  it('cancel while opening: the credential is stored, the plaintext warning still shows, the window is not opened', async () => {
+  it('cancel while opening: the credential is stored, the window is not opened', async () => {
     showInviteConsent.mockReturnValue(fakeConsent('open').prompt);
     const opening = fakeProgress();
     showInviteProgress.mockImplementation((payload: { phase: string }) =>
@@ -3114,7 +3155,7 @@ describe('handleInviteDeepLink — progress dialog', () => {
     let releaseStore!: () => void;
     guestAdd.mockReturnValueOnce(
       new Promise((resolve) => {
-        releaseStore = () => resolve({ id: 'guest-id', tokenEncrypted: false });
+        releaseStore = () => resolve({ id: 'guest-id', tokenEncrypted: true });
       }),
     );
 
@@ -3126,9 +3167,7 @@ describe('handleInviteDeepLink — progress dialog', () => {
     await pending;
 
     expect(guestAdd).toHaveBeenCalledWith(expect.objectContaining({ token: TOKEN }));
-    // Plaintext warning (native fallback) still shown; no failure notice.
-    expect(showMessageBox).toHaveBeenCalledTimes(1);
-    expect(showMessageBox.mock.calls[0][0]).toMatchObject({ type: 'warning' });
+    expect(showMessageBox).not.toHaveBeenCalled();
     expect(openBackendWindow).not.toHaveBeenCalled();
     expect(opening.handle.dismiss).toHaveBeenCalled();
     expect(logLines.join('\n')).toContain(
@@ -3150,7 +3189,7 @@ describe('handleInviteDeepLink — progress dialog', () => {
     opening.cancel();
     await new Promise((resolve) => setTimeout(resolve, 0));
 
-    expect(openBackendWindow).toHaveBeenCalledWith('guest-id');
+    expect(openBackendWindow).toHaveBeenCalledWith('guest-id', { mayOpen: expect.any(Function) });
     expect(openBackendWindow).toHaveBeenCalledTimes(1);
     expect(guestAdd).toHaveBeenCalledTimes(1);
     expect(logLines.join('\n')).not.toContain('window not opened');
@@ -3170,7 +3209,9 @@ describe('handleInviteDeepLink — progress dialog', () => {
     );
 
     const pending = handleInviteDeepLink(LINK);
-    await vi.waitFor(() => expect(openBackendWindow).toHaveBeenCalledWith('guest-id'));
+    await vi.waitFor(() =>
+      expect(openBackendWindow).toHaveBeenCalledWith('guest-id', { mayOpen: expect.any(Function) }),
+    );
     expect(opening.handle.dismiss).not.toHaveBeenCalled();
     opening.cancel();
     await vi.waitFor(() => expect(opening.handle.dismiss).toHaveBeenCalled());
@@ -3184,7 +3225,7 @@ describe('handleInviteDeepLink — progress dialog', () => {
     expect(logLines.join('\n')).not.toContain('Invite deep link handling failed');
   });
 
-  it('already a member: connecting is dismissed before the window opens, no opening phase', async () => {
+  it('cached membership still redeems and shows opening progress', async () => {
     guestFindMatching.mockResolvedValue({
       ...RETURNING_SESSION,
       workspaces: [{ id: 'ws-1', title: 'Shared workspace' }],
@@ -3202,9 +3243,9 @@ describe('handleInviteDeepLink — progress dialog', () => {
 
     await handleInviteDeepLink(LINK);
 
-    expect(order.slice(0, 2)).toEqual(['dismiss:connecting', 'window']);
-    expect(progressPhases()).toEqual(['connecting']);
-    expect(guestAdd).not.toHaveBeenCalled();
+    expect(order.indexOf('dismiss:connecting')).toBeLessThan(order.indexOf('window'));
+    expect(progressPhases()).toEqual(['connecting', 'opening']);
+    expect(guestAdd).toHaveBeenCalledTimes(1);
   });
 
   it('the inert no-window handle leaves the flow unchanged: joined and opened, nothing awaited on Cancel', async () => {
@@ -3216,7 +3257,7 @@ describe('handleInviteDeepLink — progress dialog', () => {
     await handleInviteDeepLink(LINK);
     expect(progressPhases()).toEqual(['connecting', 'opening']);
     expect(guestAdd).toHaveBeenCalledTimes(1);
-    expect(openBackendWindow).toHaveBeenCalledWith('guest-id');
+    expect(openBackendWindow).toHaveBeenCalledWith('guest-id', { mayOpen: expect.any(Function) });
   });
 });
 
@@ -3224,7 +3265,7 @@ describe('routeInviteLinkFromOs', () => {
   it('handles the link when the app is ready even with no window', async () => {
     const park = vi.fn();
     await routeInviteLinkFromOs(LINK, park);
-    expect(openBackendWindow).toHaveBeenCalledWith('guest-id');
+    expect(openBackendWindow).toHaveBeenCalledWith('guest-id', { mayOpen: expect.any(Function) });
     expect(park).not.toHaveBeenCalled();
   });
 
@@ -3289,7 +3330,10 @@ describe('handleInviteDeepLink — collaboration-only continuation', () => {
           hostLabel: '192.168.1.10',
           workspaceTitle: CHALLENGE.workspaceTitle,
         },
-        { attempt: expect.objectContaining({ id: expect.any(String), metadataRevision: 0 }) },
+        {
+          parent: null,
+          attempt: expect.objectContaining({ id: expect.any(String), metadataRevision: 0 }),
+        },
       );
       expect(localCalls('sourceControl.identityProof.create')).toEqual([
         [
@@ -3370,5 +3414,134 @@ describe('handleInviteDeepLink — collaboration-only continuation', () => {
     await handleInviteDeepLink(LINK);
     expect(prove).not.toHaveBeenCalled();
     expect(localCalls('sourceControl.identityProof.delete')).toHaveLength(1);
+  });
+});
+
+describe('host-scoped invitations (controlled FE protocol fixtures)', () => {
+  const pin = { provider: 'github' as const, host: 'github.com', externalUserId: '42' };
+  const preview = {
+    scope: 'host' as const,
+    role: 'member' as const,
+    pinIdentity: pin,
+    hostname: 'studio',
+    prettyHostname: 'Studio',
+  };
+  const granted = {
+    status: 'authorized',
+    scope: 'host',
+    hostRole: 'member',
+    identity: pin,
+    token: TOKEN,
+    principalId: 'remote-member-42',
+    login: 'octocat',
+  };
+  beforeEach(() => {
+    inspect.mockResolvedValue(preview);
+    challenge.mockResolvedValue({
+      ...preview,
+      nonce: CHALLENGE.nonce,
+      nonceExpiresAt: CHALLENGE.nonceExpiresAt,
+    });
+    prove.mockResolvedValue(granted);
+    showInviteConsent.mockImplementation(() => fakeConsent('open').prompt);
+  });
+  it('inspects before consent/proof, saves the remote principal and opens an empty host with no invented workspace', async () => {
+    await handleInviteDeepLink(`${LINK}&scope=host`);
+    expect(inspect.mock.invocationCallOrder[0]).toBeLessThan(challenge.mock.invocationCallOrder[0]);
+    expect(showInviteConsent.mock.calls[0][0]).toMatchObject({
+      scope: 'host',
+      hostLabel: 'Studio',
+      mode: 'prove',
+      login: 'octocat',
+    });
+    expect(guestAdd).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({
+        principalId: 'remote-member-42',
+        hostRole: 'member',
+        identity: pin,
+        token: TOKEN,
+      }),
+    );
+    expect(guestAdd.mock.calls[0][0]).not.toHaveProperty('workspace');
+    expect(openBackendWindow).toHaveBeenCalledWith('guest-id', { mayOpen: expect.any(Function) });
+  });
+  it.each([
+    { ...preview, scope: undefined },
+    { ...preview, scope: 'workspace' },
+    { ...preview, pinIdentity: null },
+    { ...preview, workspaceId: 'invented' },
+    { ...preview, role: 'collaborator' },
+  ])(
+    'requires an explicit compatible host preview before any local proof: %j',
+    async (response) => {
+      inspect.mockResolvedValue(response);
+      await handleInviteDeepLink(`${LINK}&scope=host`);
+      expect(challenge).not.toHaveBeenCalled();
+      expect(localRequest).not.toHaveBeenCalled();
+      expect(guestAdd).not.toHaveBeenCalled();
+      expect(showInviteConsent).not.toHaveBeenCalled();
+    },
+  );
+  it('returning host join uses the remote principal and stable bearer without any local identity RPC', async () => {
+    guestFindMatching.mockResolvedValue({
+      id: 'guest-id',
+      fingerprint: 'AA:BB:CC',
+      principalId: granted.principalId,
+      login: 'old-login',
+      host: 'old.example',
+      hosts: [],
+      port: 443,
+      tcAddress: null,
+    });
+    guestGetDecryptedToken.mockResolvedValue(TOKEN);
+    remoteIdentity.mockResolvedValue({
+      principal: {
+        id: granted.principalId,
+        login: 'octocat',
+        isAdministrator: false,
+        identity: pin,
+        hostRole: 'guest',
+      },
+      capabilities: { hostMembership: true },
+    });
+    accept.mockResolvedValue(granted);
+    await handleInviteDeepLink(`${LINK}&scope=host`);
+    expect(localRequest).not.toHaveBeenCalled();
+    expect(prepareIdentity).not.toHaveBeenCalled();
+    expect(challenge).not.toHaveBeenCalled();
+    expect(remoteIdentity).toHaveBeenCalledWith(
+      expect.objectContaining({
+        host: '192.168.1.10',
+        fingerprint: 'AA:BB:CC',
+        principalId: granted.principalId,
+      }),
+    );
+    expect(guestAdd).toHaveBeenCalledWith(
+      expect.objectContaining({ retainPairing: true, token: TOKEN, hostRole: 'member' }),
+    );
+    expect(guestAdd.mock.calls[0][0]).not.toHaveProperty('workspace');
+  });
+  it('a malformed granted scope stores nothing and cleans the already-created proof', async () => {
+    prove.mockResolvedValue({ ...granted, scope: 'workspace', workspaceId: 'different' });
+    await handleInviteDeepLink(`${LINK}&scope=host`);
+    expect(guestAdd).not.toHaveBeenCalled();
+    expect(openBackendWindow).not.toHaveBeenCalled();
+    expect(localCalls('github.identityProof.delete')).toHaveLength(1);
+  });
+  it('a different remote person cannot consume a returning credential even with the same login', async () => {
+    guestFindMatching.mockResolvedValue({
+      id: 'guest-id',
+      fingerprint: 'AA:BB:CC',
+      principalId: 'B',
+      login: 'octocat',
+    });
+    guestGetDecryptedToken.mockResolvedValue(TOKEN);
+    remoteIdentity.mockResolvedValue({
+      principal: { id: 'C', login: 'octocat', isAdministrator: false, identity: pin },
+      capabilities: { hostMembership: false },
+    });
+    await handleInviteDeepLink(`${LINK}&scope=host`);
+    expect(accept).not.toHaveBeenCalled();
+    expect(challenge).toHaveBeenCalledTimes(1);
   });
 });

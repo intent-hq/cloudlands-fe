@@ -46,12 +46,27 @@ vi.mock('electron', () => ({
   dialog: { showMessageBox: mocks.dialog },
 }));
 vi.mock('../../../../main/state', () => ({ getMainWindow: () => null }));
+// Controlled enabled-policy/local-lease fixture exercises the native dialog/log boundary.
+// Real parentless launch is fail-closed and covered by invite-attempt.test.ts; this is not native acceptance.
+vi.mock('../invite-attempt', () => ({
+  captureInviteAttempt: () => ({
+    id: 'security-fixture',
+    metadataRevision: 0,
+    parent: null,
+    current: () => true,
+    allowed: () => true,
+    release: () => {},
+    cancelled: new Promise(() => {}),
+    local: { supported: false, current: () => true, request: mocks.local },
+  }),
+}));
 vi.mock('../../../protocol/main/protocol-adapter', () => ({ protocolAdapter: {} }));
 vi.mock('../../../backend/main/guest-sessions-store', () => ({
   add: mocks.add,
   // First join on this machine: no stored session, so the returning-guest
   // shortcut is skipped and the identity proof under review runs.
   findMatching: vi.fn(async () => null),
+  findAllMatching: vi.fn(async () => []),
   getDecryptedToken: vi.fn(async () => null),
   GuestStoreCorruptError: class extends Error {},
   GuestEncryptionUnavailableError: class extends Error {},
@@ -69,9 +84,8 @@ vi.mock('../../../backend/main/backend-connection', () => ({
   PinMismatchError: class extends Error {},
   normalizeFingerprint: (fp: string) => fp,
 }));
-vi.mock('../../../backend/main/invite-connection', () => ({
-  InviteRpcError: class extends Error {},
-  InviteTransportError: class extends Error {},
+vi.mock('../../../backend/main/invite-connection', async () => ({
+  ...(await vi.importActual('../../../backend/main/invite-connection')),
   openInviteConnection: vi.fn(async () => ({
     host: '127.0.0.1',
     via: 'direct',
@@ -122,6 +136,7 @@ beforeEach(() => {
     }
   });
   mocks.prove.mockResolvedValue({
+    status: 'authorized',
     token,
     principalId: 'review',
     login: 'review',
