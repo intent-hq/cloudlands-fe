@@ -1,3 +1,4 @@
+import { admitLegacyPrincipal } from '../../../../../test/fixtures/principal-state';
 /**
  * Behavioral test for the Chief auto-start provider gate.
  *
@@ -33,6 +34,7 @@ describe('ChiefCard auto-start provider gate', () => {
 
   beforeEach(() => {
     appStore.init();
+    admitLegacyPrincipal();
     // A settled owner window: the guest session list hydrated with no joined
     // host. The guest-window case below replaces it with a joined host.
     appStore.dispatch(guestSessionsListReceived({ sessions: [], openIds: [], connectedIds: [] }));

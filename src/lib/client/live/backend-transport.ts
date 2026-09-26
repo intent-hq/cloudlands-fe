@@ -1,3 +1,5 @@
+import { hostExecutionAuthorizationMessage } from '$features/providers/host-execution-errors';
+import { BackendError } from './backend-transport-types';
 /**
  * Renderer-side entry point for the live backend transport.
  *
@@ -26,7 +28,23 @@ export async function backendRequest<T = unknown>(
   params?: unknown,
   options?: BackendRequestOptions,
 ): Promise<T> {
-  return resolveBackendTransport().request<T>(method, params, options);
+  try {
+    return await resolveBackendTransport().request<T>(method, params, options);
+  } catch (error) {
+    if (error instanceof BackendError) {
+      const message = hostExecutionAuthorizationMessage(
+        (error.data as { executionAuthorization?: unknown } | undefined)?.executionAuthorization,
+      );
+      if (message)
+        throw new BackendError({
+          code: error.code,
+          rpcCode: error.rpcCode,
+          data: error.data,
+          message,
+        });
+    }
+    throw error;
+  }
 }
 
 /** Subscribe to daemon events (`events.subscribe`). Returns its raw result. */

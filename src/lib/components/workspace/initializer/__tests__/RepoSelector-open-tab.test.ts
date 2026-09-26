@@ -7,7 +7,7 @@
  * `selectedRepoType` defaulted to 'local' and the value-prop sync never
  * re-derived it, so the popup wrongly opened on "Copy local repo".
  */
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 
 const mocks = vi.hoisted(() => {
@@ -30,13 +30,13 @@ const mocks = vi.hoisted(() => {
       owner?: string;
     }>,
   };
-  return { selector, state, dispatch: vi.fn() };
+  return { selector, state, appState: {} as Record<string, unknown>, dispatch: vi.fn() };
 });
 
 vi.mock('$store/renderer/store', async () => {
   const { createAppStoreMockModule } =
     await import('$store/renderer/utils/test-helpers/store-mock');
-  return createAppStoreMockModule({ state: () => ({}), dispatch: mocks.dispatch });
+  return createAppStoreMockModule({ state: () => mocks.appState, dispatch: mocks.dispatch });
 });
 
 vi.mock('$store/renderer/slices/github-auth/github-auth-slice', () => ({
@@ -120,6 +120,11 @@ vi.mock('$lib/components/workspace/initializer/AddRemoteSetupModal.svelte', asyn
 }));
 
 import RepoSelector from '../RepoSelector.svelte';
+import { withLegacyPrincipal } from '../../../../../test/fixtures/principal-state';
+
+beforeEach(() => {
+  mocks.appState = withLegacyPrincipal({});
+});
 import { warmImport } from '../../../../../test/warm-import';
 import { invoke } from '$lib/electron-bridge';
 import { workspaceClient } from '$store/renderer/slices/workspace/utils/workspace.client';

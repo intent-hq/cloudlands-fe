@@ -22,6 +22,7 @@ vi.mock('$lib/client/live/backend-transport', () => ({
 vi.mock('$lib/utils/notification-sound', () => ({ playNotificationSound: mocks.playSound }));
 
 import { store as appStore } from '$store/renderer/store';
+import { admitLegacyPrincipal } from '../../test/fixtures/principal-state';
 import { __resetSettingsReadCacheForTests } from '$lib/client/live/live-settings-client';
 import { settingsHydrationSaga } from '$store/renderer/slices/settings-events/sagas/settings-hydration-saga';
 import { daemonEventsSaga } from '$store/renderer/slices/workspace-events/sagas/daemon-events-saga';
@@ -101,6 +102,8 @@ async function start() {
   stops.push(appStore.runSaga(daemonEventsSaga));
   stops.push(appStore.runSaga(settingsHydrationSaga));
   stops.push(appStore.runSaga(notificationSettingsSaga));
+  await settle();
+  admitLegacyPrincipal();
   await settle();
 }
 
@@ -244,6 +247,7 @@ describe('notification volume through daemon events and settings hydration', () 
     appStore.dispatch(
       connectionsListReceived({ connections: [], activeId: 'remote', windowBackendId: 'remote' }),
     );
+    admitLegacyPrincipal();
     await vi.advanceTimersByTimeAsync(150);
     expect(volume()).toBe(0.75);
     emitVolume(0.5, 2);
@@ -328,6 +332,8 @@ describe('notification volume through daemon events and settings hydration', () 
       if (phase === 'startup') await start();
       else {
         appStore.dispatch(backendReconnected());
+        await settle();
+        admitLegacyPrincipal();
         await settle();
       }
       appStore.dispatch(setVolume(0.9));
@@ -440,6 +446,8 @@ describe('notification volume through daemon events and settings hydration', () 
         await settle();
       }
       appStore.dispatch(backendReconnected());
+      await settle();
+      admitLegacyPrincipal();
       await settle();
       if (timing === 'after') {
         finishWrite({ applied: [], revision: 20 });

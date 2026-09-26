@@ -11290,6 +11290,31 @@ describe('daemonEventsBridge (RESUB-1 — daemon-restart replay + coarse-state r
   });
 
   describe('agent:failed → chatSendFailed', () => {
+    it.each(['missing', 'rejected', 'insufficient-scope'])(
+      'shows host-owner recovery for a classified %s AI failure without raw provider text',
+      async (reason) => {
+        const agentId = 'agent-host-auth';
+        appStore.dispatch(upsertSession({ id: agentId, name: 'Host Agent', workspaceId: WS }));
+        await primeBridge();
+        capturedHandlers[0]!(
+          notification('agent:failed', {
+            agentId,
+            error: 'raw provider body secret=hidden',
+            status: 'error',
+            executionAuthorization: {
+              resource: 'ai',
+              reason,
+              providerId: 'claude-code',
+              host: null,
+              recovery: { actor: 'host-owner', action: 'check-ai-authorization' },
+            },
+          }),
+        );
+        expect(appStore.state.chatState.byAgentId[agentId].error).toContain('owner');
+        expect(appStore.state.chatState.byAgentId[agentId].error).not.toContain('secret=hidden');
+      },
+    );
+
     it('dispatches chatSendFailed when agent:failed carries an error message', async () => {
       const agentId = 'agent-failed-1';
       const messageId = 'msg-failed-1';

@@ -1,4 +1,7 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { connectionsListReceived } from '$store/renderer/slices/connections/connections-slice';
+import { admitLegacyPrincipal } from '../../test/fixtures/principal-state';
+import { store } from '$store/renderer/store';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ProviderAvailabilityResult } from './provider-availability.client';
 import { getAvailableProviderIds, getProviderAvailability } from './provider-availability.client';
 
@@ -39,8 +42,31 @@ function mockAvailability(data: ProviderAvailabilityResult): void {
 }
 
 describe('provider availability client', () => {
+  let dispose: () => void;
+  afterEach(() => dispose());
   beforeEach(() => {
     vi.clearAllMocks();
+    dispose = store.init();
+  });
+
+  it('does not join a local in-flight probe after the window changes hosts', async () => {
+    admitLegacyPrincipal();
+    let finish!: (value: unknown) => void;
+    mocks.invoke.mockReturnValueOnce(
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+    );
+    const local = getProviderAvailability();
+    store.dispatch(
+      connectionsListReceived({ connections: [], activeId: 'local', windowBackendId: 'remote' }),
+    );
+    const remoteResult = createAvailabilityResult({ claudeCode: true });
+    mocks.invoke.mockResolvedValueOnce({ success: true, data: remoteResult });
+    expect(await getProviderAvailability()).toEqual(remoteResult);
+    expect(mocks.invoke).toHaveBeenCalledTimes(2);
+    finish({ success: true, data: createAvailabilityResult({ auggie: true }) });
+    await local;
   });
 
   it('resolves the fetched availability data', async () => {

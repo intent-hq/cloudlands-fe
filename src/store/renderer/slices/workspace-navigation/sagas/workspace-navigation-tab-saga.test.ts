@@ -1,3 +1,4 @@
+import { withLegacyPrincipal } from '../../../../../test/fixtures/principal-state';
 import { runSaga, stdChannel } from 'redux-saga';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { createCollection } from '@augmentcode/themis/utils/collections/collection-utils';
@@ -14,11 +15,11 @@ import { initialState as guestSessionsInitialState } from '../../guest-sessions/
 import { LOCAL_CONNECTION_ID } from '$shared/types/connections';
 
 /** The window-identity slices `selectIsWorkspaceCollaborator` reads: an owner window on the local backend. */
-const ownerWindowSlices = {
+const ownerWindowSlices = withLegacyPrincipal({
   connections: { activeId: LOCAL_CONNECTION_ID, windowBackendId: LOCAL_CONNECTION_ID },
   // Settled owner window: guest list received, no host joined.
   guestSessions: { ...guestSessionsInitialState, hasReceivedList: true },
-};
+});
 import type { PanelLayoutSliceState } from '../../panel-layout/panel-layout-types';
 import {
   openWorkspaceActivityChanges,

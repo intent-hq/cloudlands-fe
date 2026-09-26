@@ -1,3 +1,4 @@
+import { hostExecutionConnectionChanged } from '../host-execution/host-execution-slice';
 import { createAction } from '@augmentcode/themis/utils/store/create-action';
 import { createReducer } from '@augmentcode/themis/utils/store/create-reducer';
 import { createCollection } from '@augmentcode/themis/utils/collections/collection-utils';
@@ -324,3 +325,5 @@ modelReducer.with(clearModelFallbackInfo, (state, { payload: [agentId] }) => {
   delete fallbackInfoByAgentId[agentId];
   return { ...state, fallbackInfoByAgentId };
 });
+
+modelReducer.with(hostExecutionConnectionChanged, () => initialState);

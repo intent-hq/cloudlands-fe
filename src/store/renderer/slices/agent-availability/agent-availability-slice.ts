@@ -1,3 +1,4 @@
+import { hostExecutionConnectionChanged } from '../host-execution/host-execution-slice';
 /**
  * Agent Availability Slice
  *
@@ -236,4 +237,11 @@ agentAvailabilityReducer.with(removeWatchedTerminal, (state, { payload: [termina
 agentAvailabilityReducer.with(setNpxStatus, (state, { payload: [npxStatus] }) => ({
   ...state,
   npxStatus,
+}));
+
+agentAvailabilityReducer.with(hostExecutionConnectionChanged, (state) => ({
+  ...initialState,
+  providerCheckEpochMap: Object.fromEntries(
+    Object.entries(state.providerCheckEpochMap).map(([id, epoch]) => [id, epoch + 1]),
+  ),
 }));

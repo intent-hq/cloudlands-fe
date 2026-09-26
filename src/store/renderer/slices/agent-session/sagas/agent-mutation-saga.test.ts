@@ -1,3 +1,4 @@
+import { withLegacyPrincipal } from '../../../../../test/fixtures/principal-state';
 import { runSaga, stdChannel, type Task } from 'redux-saga';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -149,27 +150,30 @@ const GUEST_SESSION: GuestSessionRecord = {
  * backend id is a joined host).
  */
 function windowIdentity(guest = false) {
-  return {
-    workspace: { ...workspaceInitialState, hasLoaded: true },
-    connections: guest
-      ? connectionsReducer(
-          connectionsInitialState,
-          connectionsListReceived({
-            connections: [],
-            activeId: GUEST_SESSION.id,
-            windowBackendId: GUEST_SESSION.id,
-          }),
-        )
-      : connectionsInitialState,
-    guestSessions: guestSessionsReducer(
-      guestSessionsInitialState,
-      guestSessionsListReceived({
-        sessions: guest ? [GUEST_SESSION] : [],
-        openIds: [],
-        connectedIds: [],
-      }),
-    ),
-  };
+  return withLegacyPrincipal(
+    {
+      workspace: { ...workspaceInitialState, hasLoaded: true },
+      connections: guest
+        ? connectionsReducer(
+            connectionsInitialState,
+            connectionsListReceived({
+              connections: [],
+              activeId: GUEST_SESSION.id,
+              windowBackendId: GUEST_SESSION.id,
+            }),
+          )
+        : connectionsInitialState,
+      guestSessions: guestSessionsReducer(
+        guestSessionsInitialState,
+        guestSessionsListReceived({
+          sessions: guest ? [GUEST_SESSION] : [],
+          openIds: [],
+          connectedIds: [],
+        }),
+      ),
+    },
+    guest ? 'guest' : 'owner',
+  );
 }
 
 function start(

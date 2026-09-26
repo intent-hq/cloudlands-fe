@@ -1,3 +1,5 @@
+import { selectPrincipalConnectionContext } from '$store/renderer/slices/principal/principal-selectors';
+import { store } from '$store/renderer/store';
 import {
   backendRequest,
   onBackendNotification,
@@ -23,7 +25,8 @@ const pending = new Map<string, Pending>();
 const trailing = new Map<string, Trailing>();
 let generation = 0;
 
-const keyFor = (options: ProviderAuthStatusParams): string => options.providerId ?? '*';
+const keyFor = (options: ProviderAuthStatusParams): string =>
+  JSON.stringify([selectPrincipalConnectionContext.select(store.state), options.providerId ?? '*']);
 
 function eventType(notification: { method: string; params?: unknown }): string | undefined {
   if (notification.method !== 'events.event' || !notification.params) return undefined;
@@ -36,14 +39,19 @@ function eventType(notification: { method: string; params?: unknown }): string |
 export function invalidateProviderAuthStatus(providerId?: string): void {
   generation += 1;
   if (providerId) {
-    cache.delete(providerId);
-    cache.delete('*');
+    cache.delete(keyFor({ providerId }));
+    cache.delete(keyFor({}));
   } else cache.clear();
 }
 
 if (typeof onBackendNotification === 'function') {
   onBackendNotification((notification) => {
-    if (eventType(notification) === 'provider:auth-changed') invalidateProviderAuthStatus();
+    if (
+      ['provider:auth-changed', 'host:execution-context-changed'].includes(
+        eventType(notification) ?? '',
+      )
+    )
+      invalidateProviderAuthStatus();
   });
 }
 if (typeof onBackendReconnected === 'function') {

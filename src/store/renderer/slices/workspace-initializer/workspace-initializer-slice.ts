@@ -1,3 +1,4 @@
+import { hostExecutionConnectionChanged } from '../host-execution/host-execution-slice';
 import { createAction } from '@augmentcode/themis/utils/store/create-action';
 import { createReducer } from '@augmentcode/themis/utils/store/create-reducer';
 import {
@@ -209,3 +210,5 @@ workspaceInitializerReducer.with(clearWorkspaceInitializerPendingGitHubPrefill, 
   ...state,
   pendingGitHubPrefill: null,
 }));
+
+workspaceInitializerReducer.with(hostExecutionConnectionChanged, () => initialState);

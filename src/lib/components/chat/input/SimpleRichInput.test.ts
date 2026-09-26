@@ -1,3 +1,4 @@
+import { withLegacyPrincipal } from '../../../../test/fixtures/principal-state';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   configuredVisualStates,
@@ -300,6 +301,15 @@ vi.mock('$store/renderer/slices/agent-session/agent-session-selectors', () => ({
   },
 }));
 import SimpleRichInput from './SimpleRichInput.svelte';
+beforeEach(() => {
+  const admitted = withLegacyPrincipal(mockReduxState);
+  Object.assign(mockReduxState, {
+    principal: admitted.principal,
+    connections: admitted.connections,
+    daemonHealth: admitted.daemonHealth,
+    workspaceEvents: admitted.workspaceEvents,
+  });
+});
 import { warmImport } from '../../../../test/warm-import';
 
 function createSession(overrides: Record<string, unknown> = {}) {
@@ -1950,6 +1960,9 @@ describe('SimpleRichInput mic-button visibility (effective voice engine)', () =>
       hasLoaded: true,
       workspaces: createCollection('id', [{ id: 'ws-1', myRole: 'collaborator' }]),
     };
+    Object.assign(mockReduxState, {
+      principal: withLegacyPrincipal(mockReduxState, 'guest').principal,
+    });
     render(SimpleRichInput, { props: baseProps() });
     expect(micButton()).toBeNull();
     mockReduxState.workspace = { hasLoaded: false, workspaces: null };

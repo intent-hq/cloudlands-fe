@@ -1,3 +1,4 @@
+import { principalReceived, hostMembershipChanged } from '../../principal/principal-slice';
 import {
   call,
   cancelled,
@@ -47,6 +48,7 @@ import {
 import { setAgents, setInitialAgentId } from '../../workspace-agents/workspace-agents-slice';
 import {
   selectIsWorkspaceCollaborator,
+  selectWorkspaceManagementDenied,
   selectWorkspaceById,
   selectWorkspaceDetailHydrated,
   selectWorkspaceListLoadedForBackend,
@@ -666,7 +668,7 @@ const OWNER_ONLY_TAB_TYPES: readonly PanelTabType[] = ['terminal', 'browser'];
  * for `reopenClosedTab` / `restoreHiddenTab` to bring back.
  */
 function* stripOwnerOnlyTabsForCollaborator(wsId: string): SagaGenerator<void> {
-  if (!(yield* selectIsWorkspaceCollaborator.effect(wsId))) return;
+  if (!(yield* selectWorkspaceManagementDenied.effect(wsId))) return;
   for (const tabType of OWNER_ONLY_TAB_TYPES) {
     yield* put(destroyTabsByType(wsId, tabType));
   }
@@ -1089,9 +1091,9 @@ function* reconcileAgentsFromSnapshot(action: ReturnType<typeof setAgents>): Sag
 // fully-guarded reconcile so the deferred seed eventually resolves.
 //
 // The same race covers the role: a restore that wins against `workspace.list`
-// reads the not-yet-hydrated workspace as owner-equivalent and mounts its
-// persisted terminal / browser tabs, so the owner-only strip re-runs here once
-// the record lands. Both strips are no-ops on a layout with nothing to strip.
+// preserves its persisted terminal / browser tabs while authority is unknown,
+// so the owner-only strip re-runs when the workspace and principal arrive.
+// Both strips are no-ops on a layout with nothing to strip.
 function* reconcileWorkspaceEntityArrived(
   action: ReturnType<typeof setWorkspaceEntity>,
 ): SagaGenerator<void> {
@@ -1283,7 +1285,10 @@ export function* panelLayoutSaga(options?: {
     yield* takeEvery(bootstrapNewWorkspaceLayout, handleNewWorkspaceBootstrap);
     yield* takeEvery(setAgents, reconcileAgentsFromSnapshot);
     yield* takeEvery(setWorkspaceEntity, reconcileWorkspaceEntityArrived);
-    yield* takeEvery(setWorkspaceHasLoaded, reconcileWorkspaceListLoaded);
+    yield* takeEvery(
+      [setWorkspaceHasLoaded, principalReceived, hostMembershipChanged],
+      reconcileWorkspaceListLoaded,
+    );
     yield* takeEvery(
       [applyNoteCreated, applyNoteUpdated, loadWorkspaceNotesSucceeded],
       reconcileSpecFromNoteAction,

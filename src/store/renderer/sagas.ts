@@ -1,3 +1,4 @@
+import { hostExecutionSaga } from './slices/host-execution/sagas/host-execution-saga';
 /**
  * Root app saga registry.
  *
@@ -33,6 +34,7 @@ import { chatSubscribeSaga } from './slices/chat-state/sagas/chat-subscribe-saga
 import { switchTimingSaga } from './slices/chat-state/sagas/switch-timing-saga';
 import { connectionsSaga } from './slices/connections/sagas/connections-saga';
 import { guestSessionsSaga } from './slices/guest-sessions/sagas/guest-sessions-saga';
+import { principalSaga } from './slices/principal/sagas/principal-saga';
 import { presenceSaga } from './slices/presence/sagas/presence-saga';
 import { contextSaga } from './slices/context/sagas/context-saga';
 import { daemonHealthSaga } from './slices/daemon-health/sagas/daemon-health-saga';
@@ -59,6 +61,7 @@ import { voiceTranscriptionSaga } from './slices/hardware-console/sagas/voice-tr
 import { hostRequirementsSaga } from './slices/host-requirements/sagas/host-requirements-saga';
 import { legacyImportSaga } from './slices/legacy-import/sagas/legacy-import-saga';
 import { linearAuthSaga } from './slices/linear-auth/sagas/linear-auth-saga';
+import { collaborationAuthSaga } from '$features/collaboration-auth/renderer/collaboration-auth-saga';
 import { identitySaga } from './slices/identity/sagas/identity-saga';
 import { mcpSettingsSaga } from './slices/mcp-settings/sagas/mcp-settings-saga';
 import { modelBootSaga } from './slices/model/sagas/model-boot-saga';
@@ -142,6 +145,8 @@ export const sagas = [
   connectionsSaga,
   guestSessionsSaga,
   presenceSaga,
+  principalSaga,
+  hostExecutionSaga,
   settingsHydrationSaga,
   activeStreamsSaga,
   agentReadSaga,
@@ -206,6 +211,7 @@ export const sagas = [
   sentryAuthSaga,
   linearAuthSaga,
   identitySaga,
+  collaborationAuthSaga,
   mcpSettingsSaga,
   directoryPickerSaga,
   legacyImportSaga,

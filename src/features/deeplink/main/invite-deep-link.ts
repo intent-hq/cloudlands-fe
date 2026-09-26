@@ -1,91 +1,13 @@
 /**
- * Main-process handler for `intent://invite?...` deep links (multiplayer,
- * intentd #1872 / #1967) — the guest side of a workspace invite. Modelled on
- * `pair-deep-link.ts`, with a gist identity proof in the middle:
- *
- * 0. Returning guest (spec "Returning guest: per-host reuse"): when the
- *    guest-sessions store already holds a credential for this daemon
- *    (fingerprint canonical, host:port fallback) AND that record's pinned
- *    fingerprint equals the invite's, the invite is previewed with
- *    `invite.inspect` — no proof made. A workspace the session already lists
- *    just opens; otherwise a confirm-only consent prompt ("Signed in on this
- *    host as @login" → Join) leads to `invite.accept { inviteId, secret,
- *    credential }`, and the fresh credential is stored over the old one
- *    (same record, workspace appended). No session, a fingerprint mismatch
- *    (a different daemon at a known address — the stored token is never
- *    decrypted, let alone sent to it), an undecryptable token, or a
- *    `credential-invalid` refusal fall through to the proof below without an
- *    extra prompt.
- * 1. Parse the link and dial the daemon's unauthenticated `/invite`
- *    endpoint with the pin enforced at the TLS handshake, then
- *    `invite.challenge { inviteId, secret }` for the invite's preview and a
- *    short-lived single-use nonce. No fingerprint confirmation is asked of
- *    the user — the pin is checked mechanically at the handshake, not by eye.
- * 2. Select the required account from `pinIdentity` (provider, canonical
- *    instance and stable account ID). An explicit unpinned response follows
- *    `principal.me`, matching the identity chosen in Settings. Only that forge
- *    is probed; an unrelated rate limit cannot block the join. Old hosts that
- *    omit the field keep the GitHub-first fallback, as does explicit null on
- *    a pre-seam sidecar. An explicit pin never falls back. No setting or
- *    connection changes are made here. A missing GitHub connection or gist
- *    scope can lead to the existing, user-consented GitHub sign-in flow;
- *    afterwards the account is checked again against the same requirement.
- * 3. Consent proper: the modal's `prove` state ("Join <title> on <host> as
- *    @login", "what the host learns", Join). It renders in the renderer
- *    (`main/invite-consent.ts`, `invite-consent:*` channels) and stays up in
- *    a "joining" state while the proof runs; with no window or no ack it
- *    falls back to the native message box so a cold start from a link never
- *    hangs.
- * 4. The proof: `github.identityProof.create { nonce, hostLabel }` publishes
- *    the nonce in a private gist on the guest's account, `invite.prove
- *    { inviteId, secret, nonce, gistId, login }` has the host read it, and
- *    `github.identityProof.delete { gistId }` removes it afterwards (best
- *    effort, after the store write — a delete failure never fails the join).
- *    A GitLab identity runs the same three steps through
- *    `sourceControl.identityProof.create / .delete { provider: "gitlab",
- *    host, … }` (a public snippet on the instance) and `invite.prove { …,
- *    provider: "gitlab", host, proofId, login }`; a host that can read the
- *    snippet neither anonymously nor with a connection of its own refuses
- *    with `identity-unverifiable`, shown as "cannot verify identity on
- *    <host>".
- *    A `proof-expired` or `proof-invalid` refusal offers one retry with a
- *    fresh challenge: a nonce purged by a later challenge surfaces as
- *    `proof-invalid`, so both mean "restart the challenge".
- * 5. The prove answer is the point of no return: the host has minted the
- *    credential and consumed a seat, so the modal is dismissed (`joined`) the
- *    moment it resolves and a Cancel from then on is ignored. Store the
- *    minted credential as a GUEST session — never in the paired backend
- *    registry — and open the daemon's window; a store failure after the
- *    grant surfaces as a failure, never as a cancellation.
- *
- * The two one-button notices — the failure at any step and the plaintext
- * credential warning — render the same way (`main/invite-notice.ts`,
- * `invite-notice:*` channels) with the native box as the no-window/no-ack
- * fallback; the renderer only ever receives a bounded reason code.
- *
- * The two silent phases show a progress dialog with Cancel
- * (`main/invite-progress.ts`, `invite-progress:*` channels; no native
- * fallback — without a window the flow simply runs without it): `connecting`
- * from the parsed link up to the first consent prompt (every await in between
- * — the dial, the stored-session lookups, `inspect`, `challenge`,
- * `github.getUser`, the initial `github.connect` — is raced against Cancel,
- * which aborts the join, closes the connection, and shows no notice), and
- * `opening` from the point of no return up to the window (Cancel closes the
- * dialog and only skips opening the window; the credential is stored and the
- * membership stands).
- *
- * Security posture mirrors the pair flow: the invite secret and the minted
- * token are never logged — failures are logged as bounded error kinds and
- * codes, never as free-form message text (a server or encryption error
- * string could echo a credential) — a link that pins a certificate the host
- * does not present is refused before a byte of the secret leaves this
- * process, the daemon-supplied verification URL is opened only when it is
- * an `https://github.com` URL (anything else fails the flow — the daemon
- * never sends another origin, and a compromised one must not be able to
- * launch arbitrary URLs), and everything fails soft — a bad link logs a
- * warning and returns; the app never crashes on it.
+ * Workspace invitation acceptance. The host challenge fixes the required provider,
+ * instance and stable account; collaboration-capable local daemons prepare that
+ * identity through explicit account consent. Legacy local daemons can reuse a
+ * suitable existing repository credential, but cannot start identity-only auth.
+ * Proof creation and cleanup always use the guest's local connection. Only proof
+ * references reach the invited host; account credentials never do. Returning
+ * sessions and final redemption remain in the existing guest-session flow.
  */
-import { app, clipboard, dialog, shell, type MessageBoxOptions } from 'electron';
+import { app, dialog, type MessageBoxOptions } from 'electron';
 import { randomUUID } from 'node:crypto';
 
 import type {
@@ -109,7 +31,7 @@ import * as guestSessionsStore from '../../backend/main/guest-sessions-store';
 import {
   getBackendClient,
   getConnectedDaemonProtocolVersion,
-  onBackendNotification,
+  captureLocalIdentityConnection,
   openBackendWindow,
 } from '../../backend/main/backend.ipc';
 import { PinMismatchError, normalizeFingerprint } from '../../backend/main/backend-connection';
@@ -126,15 +48,15 @@ import {
 import type { JsonRpcClient } from '../../backend/main/json-rpc-client';
 import { JsonRpcError } from '../../backend/main/json-rpc-errors';
 import type { PrincipalIdentity } from '../../workspace-sharing/types';
-import { isAllowedVerificationUri } from '../utils/verification-uri';
+import { prepareCollaborationIdentity } from '../../collaboration-auth/main/collaboration-auth.ipc';
+import {
+  CollaborationIdentityClient,
+  type CollaborationAttempt,
+  type PreparedCollaborationIdentity,
+} from '../../collaboration-auth/main/collaboration-auth-flow';
+import { identitiesEqual, isCollaborationIdentity } from '../../collaboration-auth/identity';
 
 const logger = new Logger('InviteDeepLink');
-
-/** Local bound on the sign-in wait beyond the daemon's own `expiresIn`. */
-const WAIT_MARGIN_MS = 60_000;
-
-/** Floor on the `github.authStatus` poll that backs the `github:auth-changed` event. */
-const SIGN_IN_POLL_FLOOR_MS = 5_000;
 
 /** The parsed link fields the join paths need. */
 interface InviteEnvelope {
@@ -166,6 +88,7 @@ interface LocalIdentity extends InviteIdentityProvider {
   login: string;
   /** Absent only on the legacy login-only path. */
   externalUserId?: string;
+  collaboration?: PreparedCollaborationIdentity;
 }
 
 const GITHUB_HOST = 'github.com';
@@ -198,16 +121,15 @@ type ReturningOutcome = { kind: 'handled' } | { kind: 'fallback'; reason: Return
 /**
  * A flow failure decided locally, identified by a bounded code so logs and
  * the failure dialog route on it without any free-form text. The `sign-in-*`
- * codes are the guest's own `github.connect` device flow ending without a
- * token (GitHub denied it, the code expired, the daemon reported an error or
- * could not start / finish the flow at all).
+ * codes describe the guest's local collaboration authentication result.
  */
 type InviteFlowCode =
   | 'invalid-verification-uri'
   | 'verification-launch-failed'
   | 'sign-in-denied'
   | 'sign-in-expired'
-  | 'sign-in-failed';
+  | 'sign-in-failed'
+  | 'collaboration-upgrade-required';
 
 class InviteFlowError extends Error {
   constructor(readonly flowCode: InviteFlowCode) {
@@ -372,6 +294,12 @@ export async function handleInviteDeepLink(url: string): Promise<void> {
     return;
   }
   inviteLinkInFlight = true;
+  let attemptActive = true;
+  const attempt: CollaborationAttempt = {
+    id: randomUUID(),
+    metadataRevision: 0,
+    current: () => attemptActive,
+  };
   let connection: InviteConnection | null = null;
   let connecting: ConnectingProgress | null = null;
   let prompts: ConsentPrompts | null = null;
@@ -416,7 +344,7 @@ export async function handleInviteDeepLink(url: string): Promise<void> {
     logger.info('No usable stored credential for this host; proving identity through a forge', {
       reason: returning.reason,
     });
-    await joinWithIdentityProof(connection, envelope, prompts, connecting, labels);
+    await joinWithIdentityProof(connection, envelope, prompts, connecting, labels, attempt);
   } catch (error) {
     connecting?.dismiss();
     if (error instanceof InviteCancelledError) {
@@ -440,6 +368,7 @@ export async function handleInviteDeepLink(url: string): Promise<void> {
   } finally {
     connecting?.dismiss();
     connection?.close();
+    attemptActive = false;
     inviteLinkInFlight = false;
   }
 }
@@ -472,6 +401,7 @@ async function joinWithIdentityProof(
   prompts: ConsentPrompts,
   connecting: ConnectingProgress,
   noticeLabels: NoticeLabels,
+  attempt: CollaborationAttempt,
 ): Promise<void> {
   const { inviteId, secret } = envelope;
   const client = getBackendClient();
@@ -482,7 +412,14 @@ async function joinWithIdentityProof(
   };
   Object.assign(noticeLabels, labels);
 
-  let identity = await connecting.wait(readInviteIdentity(client, challenge));
+  let identity: LocalIdentity | null;
+  if (captureLocalIdentityConnection().supported) {
+    const prepared = await signInForCollaboration(labels, connecting, challenge, attempt);
+    if (prepared.kind === 'cancelled') return;
+    identity = prepared.identity;
+  } else {
+    identity = await connecting.wait(readInviteIdentity(client, challenge));
+  }
   let signInReason: InviteSignInReason | null = identity === null ? 'not-connected' : null;
   let signedIn = false;
   let consented = false;
@@ -492,17 +429,17 @@ async function joinWithIdentityProof(
     if (signInReason !== null) {
       if (signedIn) {
         throw new IdentityProofError(
-          signInReason === 'scope-missing' ? 'github-scope-missing' : 'github-not-connected',
+          signInReason === 'scope-missing'
+            ? identity?.provider === 'gitlab'
+              ? 'gitlab-scope-missing'
+              : 'github-scope-missing'
+            : identity?.provider === 'gitlab'
+              ? 'gitlab-not-connected'
+              : 'github-not-connected',
+          identity?.provider,
         );
       }
-      const signIn = await signInToGitHub(
-        client,
-        signInReason,
-        labels,
-        prompts,
-        connecting,
-        challenge,
-      );
+      const signIn = await signInForCollaboration(labels, connecting, challenge, attempt);
       if (signIn.kind === 'cancelled') return;
       signedIn = true;
       identity = signIn.identity;
@@ -575,7 +512,7 @@ async function joinWithIdentityProof(
           );
         }
         challenge = refreshed;
-        identity = await readInviteIdentity(client, challenge);
+        identity = await readInviteIdentity(client, challenge, current.collaboration);
         if (!sameIdentity(current, identity)) consented = false;
         signInReason = identity === null ? 'not-connected' : null;
         break;
@@ -609,15 +546,15 @@ async function proveIdentity(
   });
   const readCurrent = () =>
     consent === null
-      ? readInviteIdentity(client, challenge)
+      ? readInviteIdentity(client, challenge, identity.collaboration)
       : Promise.race([
-          readInviteIdentity(client, challenge),
+          readInviteIdentity(client, challenge, identity.collaboration),
           consent.cancelledWhileWaiting.then(() => 'cancelled' as const),
         ]);
 
   // The account may have changed while consent was open. Probe only the
   // required forge, before publishing anything, and bind consent to its ID.
-  if (hasIdentityRequirement(challenge)) {
+  if (identity.collaboration || hasIdentityRequirement(challenge)) {
     const latest = await readCurrent();
     if (latest === 'cancelled' || cancelled) {
       consent?.dismiss('cancelled');
@@ -635,10 +572,16 @@ async function proveIdentity(
     proof = await createProof(client, identity, challenge.nonce, labels.hostLabel);
   } catch (error) {
     const refusal = IdentityProofError.from(error, identity.provider);
-    if (refusal.proofCode === 'github-scope-missing') {
+    if (
+      refusal.proofCode === 'github-scope-missing' ||
+      (identity.collaboration && refusal.proofCode === 'gitlab-scope-missing')
+    ) {
       return { kind: 'sign-in-required', reason: 'scope-missing' };
     }
-    if (refusal.proofCode === 'github-not-connected') {
+    if (
+      refusal.proofCode === 'github-not-connected' ||
+      (identity.collaboration && refusal.proofCode === 'gitlab-not-connected')
+    ) {
       return { kind: 'sign-in-required', reason: 'not-connected' };
     }
     throw refusal;
@@ -649,7 +592,7 @@ async function proveIdentity(
     logger.info('User cancelled the invite while the identity proof was being made');
     return { kind: 'cancelled' };
   }
-  if (hasIdentityRequirement(challenge)) {
+  if (identity.collaboration || hasIdentityRequirement(challenge)) {
     try {
       // GitLab returns the actual snippet author's stable ID. The GitHub
       // alias has no ID field, so recheck GET /user as well as proof.login.
@@ -733,7 +676,7 @@ async function proveIdentity(
  * snippet on `host` (`sourceControl.identityProof.create`). `login` is the
  * account the daemon actually published under.
  */
-type PublishedProof =
+type PublishedProof = { collaboration?: PreparedCollaborationIdentity } & (
   | { provider: 'github'; gistId: string; login: string }
   | {
       provider: 'gitlab';
@@ -741,7 +684,8 @@ type PublishedProof =
       proofId: string;
       login: string;
       account: PrincipalIdentity | null;
-    };
+    }
+);
 
 async function createProof(
   client: JsonRpcClient,
@@ -749,6 +693,38 @@ async function createProof(
   nonce: string,
   hostLabel: string,
 ): Promise<PublishedProof> {
+  if (identity.collaboration) {
+    const prepared = identity.collaboration;
+    const proof = await new CollaborationIdentityClient(prepared.local).createProof(
+      prepared,
+      nonce,
+      hostLabel,
+    );
+    if (
+      !isCollaborationIdentity(proof) ||
+      !identitiesEqual(proof, prepared.identity) ||
+      typeof proof.proofId !== 'string' ||
+      !proof.proofId ||
+      typeof proof.login !== 'string' ||
+      !proof.login
+    ) {
+      if (typeof proof.proofId === 'string')
+        await new CollaborationIdentityClient(prepared.local)
+          .deleteProof(prepared.identity, proof.proofId)
+          .catch(() => {});
+      throw new InviteIdentityError('pin-mismatch', identity.provider);
+    }
+    return identity.provider === 'github'
+      ? { provider: 'github', gistId: proof.proofId, login: proof.login, collaboration: prepared }
+      : {
+          provider: 'gitlab',
+          host: proof.host,
+          proofId: proof.proofId,
+          login: proof.login,
+          account: proof,
+          collaboration: prepared,
+        };
+  }
   if (identity.provider === 'github') {
     const result = await client.request<{ gistId: string; login: string }>(
       'github.identityProof.create',
@@ -789,322 +765,48 @@ function proofParamsFor(proof: PublishedProof, nonce: string): InviteProof {
   };
 }
 
-/** Wire shape of `github.connect` (PROTOCOL §5.27): the guest's own device flow. */
-interface GithubConnectResult {
-  /** Identifies the started flow; scopes `github.cancelAuth` to it. */
-  flowId?: string;
-  userCode: string;
-  verificationUri: string;
-  expiresIn: number;
-  interval: number;
-}
-
-/** The `github.authStatus` fields the sign-in wait reads (PROTOCOL §5.27). */
-interface GithubAuthStatusResult {
-  isConfigured?: boolean;
-  deviceFlow?: { status?: string } | null;
-}
-
-/** Terminal states of the guest's own device flow, as `github:auth-changed` names them. */
-type SignInStatus = 'authorized' | 'denied' | 'expired' | 'error';
-
-type SignInResult = { kind: 'signed-in'; identity: LocalIdentity } | { kind: 'cancelled' };
-
-/**
- * A newer invite may adopt the resident flow with the same `flowId`. Only
- * the latest sign-in may clean up a delayed connect response; scoping by id
- * alone cannot protect a flow shared with a newer invite.
- */
-let signInGeneration = 0;
-
-/**
- * Abort the device flow `github.connect` started, best effort. The cancel is
- * scoped to that flow's `flowId` (PROTOCOL §5.27) whenever the daemon returned
- * one; the unscoped call is the fallback for a daemon that did not, and only
- * on the user's direct Cancel of the flow being shown (`cancelSignIn`).
- */
-function cancelDeviceFlow(client: JsonRpcClient, start: GithubConnectResult): void {
-  const { flowId } = start;
-  const cancel =
-    typeof flowId === 'string'
-      ? client.request('github.cancelAuth', { flowId })
-      : client.request('github.cancelAuth');
-  void cancel.catch(() => {});
-}
-
-/**
- * A `github.connect` that resolved after its invite prompt was cancelled
- * is aborted on arrival only if no newer invite has started and it can be
- * scoped. The generation guard at the call site protects adopted flows;
- * the id protects a different flow. A late result without `flowId` is left alone (the
- * code expires on its own, or the next `github.connect` adopts it).
- */
-function cancelLateDeviceFlow(client: JsonRpcClient, late: GithubConnectResult): void {
-  if (typeof late.flowId === 'string') cancelDeviceFlow(client, late);
-}
-
-/**
- * Sign the guest's own daemon in to GitHub from the consent modal's
- * `sign-in-required` state: `github.connect` starts the device flow, the
- * modal shows the code + URL (code copied to the clipboard) and the flow's
- * terminal transition is awaited from that moment — the code may be entered
- * on any device, so "Open GitHub" only launches the URL here. Cancel (before
- * or after "Open GitHub") aborts the flow locally (`github.cancelAuth` scoped
- * to the flow's `flowId`, best effort). Resolves with the revalidated identity
- * the daemon is signed in as. The
- * `github.connect` start is raced against the active forge-choice prompt's
- * Cancel, or the `connecting` dialog's Cancel when no choice was shown. A
- * device flow that starts after cancellation is aborted on arrival only when
- * it carries a `flowId` and no later sign-in owns the live flow by then.
- *
- * With no forge connected at all (`not-connected`) the neutral
- * `connect-forge` prompt comes first, before anything is asked of GitHub:
- * it offers GitLab through Settings → Connections (a cancel of the join) and
- * "Sign in to GitHub" (`open`), which is what starts the device flow — so a
- * GitHub the daemon cannot reach never hides the GitLab path. Without a
- * renderer the prompt is skipped for the native device-code box as before.
- * That prompt is the first one, so it ends the `connecting` dialog.
- */
-async function signInToGitHub(
-  client: JsonRpcClient,
-  reason: InviteSignInReason,
+/** The continuation stops before invitation redemption and never performs repository setup. */
+async function signInForCollaboration(
   labels: PromptLabels,
-  prompts: ConsentPrompts,
   connecting: ConnectingProgress,
   challenge: InviteChallenge,
-): Promise<SignInResult> {
-  let choice: InviteConsentPrompt | null = null;
-  if (reason === 'not-connected' && challenge.pinIdentity == null) {
-    choice = prompts.show({ requestId: randomUUID(), mode: 'connect-forge', ...labels });
-    if ((await choice.decision) === 'cancel') {
-      choice.dismiss('cancelled');
-      logger.info('User left the invite to connect a forge first');
-      return { kind: 'cancelled' };
-    }
-  }
-  const generation = ++signInGeneration;
-  const cancelLateSignIn = (late: GithubConnectResult): void => {
-    if (generation !== signInGeneration) return;
-    cancelLateDeviceFlow(client, late);
-  };
-  let start: GithubConnectResult;
-  try {
-    const request = client.request<GithubConnectResult>('github.connect');
-    const cancelled = Symbol();
-    const result = choice
-      ? await Promise.race([
-          choice.cancelledWhileWaiting.then<typeof cancelled>(() => cancelled),
-          request,
-        ])
-      : await connecting.wait(request, cancelLateSignIn);
-    if (result === cancelled) {
-      choice?.dismiss('cancelled');
-      void request.then(cancelLateSignIn, () => {});
-      return { kind: 'cancelled' };
-    }
-    start = result;
-  } catch (error) {
-    if (error instanceof InviteCancelledError) throw error;
-    throw new InviteFlowError('sign-in-failed');
-  }
-  if (
-    typeof start?.userCode !== 'string' ||
-    typeof start.verificationUri !== 'string' ||
-    typeof start.expiresIn !== 'number'
-  ) {
-    throw new InviteFlowError('sign-in-failed');
-  }
-  // Refuse before the URL is shown or opened: the dialog would otherwise
-  // display (and "Open GitHub" launch) whatever the daemon sent.
-  if (!isAllowedVerificationUri(start.verificationUri)) {
-    throw new InviteFlowError('invalid-verification-uri');
-  }
-  const cancelSignIn = (): void => cancelDeviceFlow(client, start);
-
-  await clipboard.writeText(start.userCode);
-  const consent = prompts.show({
-    requestId: randomUUID(),
-    mode: 'sign-in-required',
-    reason,
-    userCode: start.userCode,
-    verificationUri: start.verificationUri,
-    expiresInMs: start.expiresIn * 1000,
-    ...labels,
-  });
-  // The flow is awaited from the moment the code is shown: the user may enter
-  // it on another device and never click "Open GitHub". Its end is raced
-  // against the user's first decision, then against a cancel while waiting.
-  // The wait's listener and timers are released on every exit, including a
-  // rejected dialog, so nothing polls the daemon after this returns.
-  const wait = waitForSignIn(
-    client,
-    start.expiresIn * 1000 + WAIT_MARGIN_MS,
-    Math.max((start.interval ?? 0) * 1000, SIGN_IN_POLL_FLOOR_MS),
+  attempt: CollaborationAttempt,
+): Promise<{ kind: 'signed-in'; identity: LocalIdentity } | { kind: 'cancelled' }> {
+  if (!captureLocalIdentityConnection().supported)
+    throw new InviteFlowError('collaboration-upgrade-required');
+  connecting.dismiss();
+  const result = await prepareCollaborationIdentity(
+    {
+      scope: 'workspace',
+      ...(Object.hasOwn(challenge, 'pinIdentity') ? { pinIdentity: challenge.pinIdentity } : {}),
+      ...labels,
+    },
+    { attempt },
   );
-  try {
-    const settled = wait.status.then((status) => ({ status }));
-    const cancelSignal = consent.cancelledWhileWaiting.then(() => 'cancelled' as const);
-    let outcome: { status: SignInStatus | 'timeout' } | 'cancelled' | 'launch-failed';
-    let decision = await Promise.race([settled, consent.decision]);
-    // No renderer to show the modal (cold start / no ack): native box, closed
-    // through its signal when the flow ends first (on macOS a parentless box
-    // ignores the signal — it then waits for the click, as before).
-    if (decision === null) {
-      const closeBox = new AbortController();
-      void wait.status.then(() => closeBox.abort());
-      const box = showDeviceCode(
-        start.userCode,
-        start.verificationUri,
-        labels.workspaceTitle,
-        closeBox.signal,
-      ).then((open) => (open ? ('open' as const) : ('cancel' as const)));
-      decision = await Promise.race([settled, box]);
-      if (decision === 'cancel' && closeBox.signal.aborted) decision = await settled;
-    }
-    if (decision === 'cancel') {
-      consent.dismiss('cancelled');
-      cancelSignIn();
-      logger.info('User cancelled the GitHub sign-in the invite needs');
-      return { kind: 'cancelled' };
-    }
-    if (decision === 'open') {
-      // From here the modal stays up in its waiting state. Cancel and the
-      // flow's end are raced from the browser launch onwards — whichever
-      // settles first decides — so a cancel still aborts even if the launch
-      // never settles. The OS error text is dropped (bounded code only): it
-      // may echo the URL.
-      const launch = (async () => {
-        try {
-          await shell.openExternal(start.verificationUri);
-          return 'launched' as const;
-        } catch {
-          return 'launch-failed' as const;
-        }
-      })();
-      const first = await Promise.race([cancelSignal, settled, launch]);
-      outcome = first === 'launched' ? await Promise.race([cancelSignal, settled]) : first;
-    } else {
-      outcome = decision;
-    }
-    if (outcome === 'cancelled') {
-      consent.dismiss('cancelled');
-      cancelSignIn();
-      logger.info('User cancelled the invite while waiting for the GitHub sign-in');
-      return { kind: 'cancelled' };
-    }
-    if (outcome === 'launch-failed') {
-      cancelSignIn();
-      throw new InviteFlowError('verification-launch-failed');
-    }
-    switch (outcome.status) {
-      case 'denied':
-        throw new InviteFlowError('sign-in-denied');
-      case 'expired':
-      case 'timeout':
-        cancelSignIn();
-        throw new InviteFlowError('sign-in-expired');
-      case 'error':
-        throw new InviteFlowError('sign-in-failed');
-      case 'authorized':
-        break;
-    }
-  } finally {
-    wait.stop();
-  }
-  // Authorization can finish before the user clicks Open GitHub. Both the
-  // first Cancel and a Cancel from the waiting state must keep working while
-  // the sign-in prompt remains visible during the account reads below.
-  const cancelled = Symbol();
-  const cancelSignal = Promise.race([
-    consent.cancelledWhileWaiting.then<typeof cancelled>(() => cancelled),
-    consent.decision.then<typeof cancelled>((decision) =>
-      decision === 'cancel' ? cancelled : new Promise<never>(() => {}),
-    ),
-  ]);
-  const login = await Promise.race([cancelSignal, readLocalLogin(client)]);
-  if (login === cancelled) {
-    consent.dismiss('cancelled');
+  if (result.kind === 'cancelled') return result;
+  if (result.kind === 'error') throw new InviteFlowError('sign-in-failed');
+  const prepared = result.prepared;
+  if (
+    prepared.attempt.id !== attempt.id ||
+    prepared.attempt.metadataRevision !== attempt.metadataRevision ||
+    !attempt.current() ||
+    !prepared.attempt.current() ||
+    !prepared.local.current() ||
+    !prepared.local.supported ||
+    !prepared.allowed()
+  )
     return { kind: 'cancelled' };
-  }
-  if (login === null) throw new InviteFlowError('sign-in-failed');
-  const identity = hasIdentityRequirement(challenge)
-    ? await Promise.race([cancelSignal, readInviteIdentity(client, challenge)])
-    : { provider: 'github' as const, host: GITHUB_HOST, login };
-  if (identity === cancelled) {
-    consent.dismiss('cancelled');
-    return { kind: 'cancelled' };
-  }
-  if (identity === null) throw new InviteIdentityError('identity-unavailable', 'github');
-  logger.info('Guest daemon signed in to GitHub for the invite', { reason });
-  // The consent for the join itself follows as its own prompt (it names the
-  // account just signed in); this one is superseded by it.
-  return { kind: 'signed-in', identity };
-}
-
-/**
- * Wait for the guest daemon's device flow to end: the `github:auth-changed`
- * event names the terminal status, and `github.authStatus` is polled at the
- * daemon's `interval` (floored) as a fallback for a missed event or a flow
- * that ended before the listener was attached. `timeoutMs` bounds the wait
- * locally beyond the code's own lifetime; `stop()` releases the listener and
- * timers when the caller gives up first (`status` then never settles).
- */
-function waitForSignIn(
-  client: JsonRpcClient,
-  timeoutMs: number,
-  pollMs: number,
-): { status: Promise<SignInStatus | 'timeout'>; stop(): void } {
-  let settled = false;
-  let pollTimer: ReturnType<typeof setTimeout> | undefined;
-  let deadline: ReturnType<typeof setTimeout> | undefined;
-  let off: (() => void) | undefined;
-  let resolveStatus!: (status: SignInStatus | 'timeout') => void;
-  const status = new Promise<SignInStatus | 'timeout'>((resolve) => {
-    resolveStatus = resolve;
-  });
-  const stop = (): void => {
-    if (settled) return;
-    settled = true;
-    clearTimeout(deadline);
-    clearTimeout(pollTimer);
-    off?.();
+  const pin = challenge.pinIdentity;
+  if (pin != null && (!isCollaborationIdentity(pin) || !identitiesEqual(pin, prepared.identity)))
+    throw new InviteIdentityError('pin-mismatch', prepared.identity.provider);
+  return {
+    kind: 'signed-in',
+    identity: {
+      ...result.prepared.identity,
+      login: result.prepared.login,
+      collaboration: result.prepared,
+    },
   };
-  const finish = (outcome: SignInStatus | 'timeout'): void => {
-    if (settled) return;
-    stop();
-    resolveStatus(outcome);
-  };
-  deadline = setTimeout(() => finish('timeout'), timeoutMs);
-  off = onBackendNotification((notification) => {
-    if (notification.method !== 'events.event' || !notification.params) return;
-    const params = notification.params as { event?: unknown };
-    const event = (params.event ?? params) as { type?: unknown; data?: { status?: unknown } };
-    if (event.type !== 'github:auth-changed') return;
-    const outcome = event.data?.status;
-    if (
-      outcome === 'authorized' ||
-      outcome === 'denied' ||
-      outcome === 'expired' ||
-      outcome === 'error'
-    ) {
-      finish(outcome);
-    }
-  });
-  const poll = async (): Promise<void> => {
-    if (settled) return;
-    try {
-      const result = await client.request<GithubAuthStatusResult>('github.authStatus');
-      if (settled) return;
-      const flow = result?.deviceFlow?.status;
-      if (flow === 'denied' || flow === 'expired' || flow === 'error') return finish(flow);
-      if (flow !== 'pending' && result?.isConfigured === true) return finish('authorized');
-    } catch {
-      // The daemon may be briefly unreachable; the next poll or the event decides.
-    }
-    if (!settled) pollTimer = setTimeout(() => void poll(), pollMs);
-  };
-  pollTimer = setTimeout(() => void poll(), pollMs);
-  return { status, stop };
 }
 
 /**
@@ -1204,7 +906,22 @@ function hasIdentityRequirement(inspection: InviteInspection): boolean {
 async function readInviteIdentity(
   client: JsonRpcClient,
   inspection: InviteInspection,
+  prepared?: PreparedCollaborationIdentity,
 ): Promise<LocalIdentity | null> {
+  if (prepared) {
+    const pin = inspection.pinIdentity;
+    if (pin != null && (!isCollaborationIdentity(pin) || !identitiesEqual(pin, prepared.identity)))
+      throw new InviteIdentityError('pin-mismatch', prepared.identity.provider);
+    if (!prepared.allowed() || !prepared.attempt.current())
+      throw new InviteIdentityError('identity-unavailable', prepared.identity.provider);
+    const { user } = await new CollaborationIdentityClient(prepared.local).user(prepared.identity);
+    if (!prepared.allowed() || !prepared.attempt.current())
+      throw new InviteIdentityError('identity-unavailable', prepared.identity.provider);
+    if (!user) return null;
+    if (user.id !== prepared.identity.externalUserId || user.login !== prepared.login)
+      throw new InviteIdentityError('identity-unavailable', prepared.identity.provider);
+    return { ...prepared.identity, login: user.login, collaboration: prepared };
+  }
   if (!hasIdentityRequirement(inspection)) return readLocalIdentity(client);
   const pin = inspection.pinIdentity;
   const failure = new InviteIdentityError(pin === null ? 'identity-unavailable' : 'pin-mismatch');
@@ -1301,7 +1018,12 @@ async function readLocalIdentity(client: JsonRpcClient): Promise<LocalIdentity |
  */
 async function deleteProof(client: JsonRpcClient, proof: PublishedProof): Promise<void> {
   try {
-    if (proof.provider === 'github') {
+    if (proof.collaboration) {
+      await new CollaborationIdentityClient(proof.collaboration.local).deleteProof(
+        proof.collaboration.identity,
+        proof.provider === 'github' ? proof.gistId : proof.proofId,
+      );
+    } else if (proof.provider === 'github') {
       await client.request('github.identityProof.delete', { gistId: proof.gistId });
     } else {
       await client.request('sourceControl.identityProof.delete', {
@@ -1581,33 +1303,6 @@ async function showDialog(options: MessageBoxOptions): Promise<number> {
   return result.response;
 }
 
-/**
- * Sign-in prompt: user code + verification URL. True when the user chose
- * "Open GitHub"; `signal` closes the box as a cancel when the flow ends first.
- */
-async function showDeviceCode(
-  userCode: string,
-  verificationUri: string,
-  workspaceTitle: string,
-  signal: AbortSignal,
-): Promise<boolean> {
-  const response = await showDialog({
-    signal,
-    type: 'info',
-    title: m.deeplink_inviteCode_title(),
-    message: m.deeplink_inviteCode_message({
-      code: userCode,
-      url: verificationUri,
-      workspace: workspaceTitle,
-    }),
-    detail: m.deeplink_inviteCode_detail(),
-    buttons: [m.deeplink_inviteCode_open_button(), m.deeplink_pairDialog_cancel_button()],
-    defaultId: 0,
-    cancelId: 1,
-  });
-  return response === 0;
-}
-
 /** Confirm-only prompt for a returning guest (no device code). True when the user chose "Join". */
 async function showConfirmJoin(login: string, workspaceTitle: string): Promise<boolean> {
   const response = await showDialog({
@@ -1741,6 +1436,8 @@ function classifyInviteFailure(error: unknown): InviteFailureReason {
 /** One reason per local flow code — how the guest's own sign-in step ended. */
 function classifyFlowFailure(error: InviteFlowError): InviteFailureReason {
   switch (error.flowCode) {
+    case 'collaboration-upgrade-required':
+      return 'collaboration-upgrade-required';
     case 'verification-launch-failed':
       return 'launch-failed';
     case 'sign-in-denied':

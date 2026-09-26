@@ -1,3 +1,4 @@
+import { withLegacyPrincipal } from '../../../../../test/fixtures/principal-state';
 import { runSaga, stdChannel } from 'redux-saga';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
@@ -60,6 +61,15 @@ vi.mock('../../../utils/safe-local-storage-saga', () => ({
 }));
 
 import { fork } from 'typed-redux-saga';
+import {
+  initialState as principalInitialState,
+  principalContextChanged,
+  principalReceived,
+  hostMembershipChanged,
+  principalReducer,
+} from '../../principal/principal-slice';
+import { selectPrincipalConnectionContext } from '../../principal/principal-selectors';
+import { backendReconnected } from '../../workspace-lifecycle/workspace-lifecycle-slice';
 import { LOCAL_CONNECTION_ID } from '$shared/types/connections';
 import type { AgentSession, ContextLink, Note, Workspace } from '$shared/types';
 import type { BrowserTabListing } from '$shared/types/browser-clients';
@@ -155,6 +165,7 @@ import { panelLayoutReducer as rawPanelLayoutReducer } from '../panel-layout-sli
 import { withPanelLayoutInvariants } from '../panel-layout-invariants.test-helpers';
 import {
   initialState as userPreferencesInitialState,
+  setLabsMultiplayerEnabled,
   userPreferencesReducer,
 } from '../../user-preferences/user-preferences-slice';
 import { setAgents } from '../../workspace-agents/workspace-agents-slice';
@@ -223,7 +234,7 @@ function storeState(
   activeWorkspaceId: string | null = null,
   activeBackendId: string = LOCAL_CONNECTION_ID,
 ) {
-  return {
+  return withLegacyPrincipal({
     panelLayout: {
       byWorkspaceId: {
         [WS_1]: workspaceState(),
@@ -237,7 +248,7 @@ function storeState(
     guestSessions: { ...guestSessionsInitialState, hasReceivedList: true },
     workspaceAgents: { byWorkspaceId: {} },
     workspace: { workspaces: createCollection('id'), detailHydrated: {} },
-  };
+  });
 }
 
 async function settle() {
@@ -372,14 +383,15 @@ function startRestoreSaga(
   });
   // The loaded-list stamp follows the active backend: a real backend switch
   // reloads the workspace list for the incoming backend.
-  const getState = () => ({
-    ...state,
-    connections: { ...state.connections, activeId: backendId, windowBackendId: backendId },
-    workspace: {
-      ...state.workspace,
-      loadedBackendId: state.workspace.hasLoaded ? backendId : null,
-    },
-  });
+  const getState = () =>
+    withLegacyPrincipal({
+      ...state,
+      connections: { ...state.connections, activeId: backendId, windowBackendId: backendId },
+      workspace: {
+        ...state.workspace,
+        loadedBackendId: state.workspace.hasLoaded ? backendId : null,
+      },
+    });
   const task = runSaga({ channel, dispatch, getState }, panelLayoutSaga, {
     activeWorkspaceId: WS_1,
   });
@@ -1496,6 +1508,120 @@ describe('panelLayoutSaga', () => {
       expect(ownerOnlyTabs(reopened)).toEqual([]);
       expect(getItems(reopened.hiddenTabs)).toEqual([]);
     });
+
+    it('preserves saved tabs while authority is unresolved and removes them after confirmed denial', async () => {
+      mocks.getJSON.mockReturnValue(mixedLayout);
+      const state = storeState(WS_1);
+      const guest = withLegacyPrincipal(state, 'guest');
+      state.principal = principalInitialState;
+      const { dispatch, task, channel } = startSaga(state);
+      await settle();
+      expect(ownerOnlyTabs(reduceDispatched(dispatch).byWorkspaceId[WS_1])).toHaveLength(3);
+      state.principal = guest.principal;
+      channel.put(
+        principalReceived(
+          { context: guest.principal.context!, invalidation: 0, presentationVersion: 0 },
+          guest.principal.snapshot!,
+        ),
+      );
+      await settle();
+      expect(ownerOnlyTabs(reduceDispatched(dispatch).byWorkspaceId[WS_1])).toEqual([]);
+      await cancelSaga(task);
+    });
+
+    it('preserves member tabs with Multiplayer off, then removes them on membership revocation', async () => {
+      mocks.getJSON.mockReturnValue(mixedLayout);
+      const state = storeState(WS_1);
+      state.userPreferences = { ...userPreferencesInitialState, labsMultiplayerEnabled: false };
+      state.workspace = {
+        ...state.workspace,
+        hasLoaded: true,
+        loadedBackendId: LOCAL_CONNECTION_ID,
+        workspaces: createCollection('id', [
+          { id: WS_1, myRole: 'collaborator', canManage: true } as never,
+        ]),
+      };
+      state.principal = {
+        ...state.principal,
+        snapshot: {
+          ...state.principal.snapshot!,
+          capabilities: { ...state.principal.snapshot!.capabilities, hostMembership: true },
+          principal: {
+            ...state.principal.snapshot!.principal,
+            isAdministrator: false,
+            hostRole: 'member',
+            hostMembershipRevision: 1,
+          },
+        },
+        minimumRevision: 1,
+      };
+      const { dispatch, task, channel } = startSaga(state);
+      await settle();
+      expect(ownerOnlyTabs(reduceDispatched(dispatch).byWorkspaceId[WS_1])).toHaveLength(3);
+      const revoked = hostMembershipChanged({
+        revision: 2,
+        principalId: state.principal.boundPrincipalId!,
+        hostRole: 'guest',
+        action: 'removed',
+      });
+      state.principal = principalReducer(state.principal, revoked);
+      channel.put(revoked);
+      await settle();
+      expect(ownerOnlyTabs(reduceDispatched(dispatch).byWorkspaceId[WS_1])).toEqual([]);
+      await cancelSaga(task);
+    });
+
+    it.each(['reconnect', 'backend change'])(
+      'does not delete saved tabs on a stale denial after %s',
+      async (transition) => {
+        mocks.getJSON.mockReturnValue(mixedLayout);
+        const state = storeState(WS_1);
+        const oldGuest = withLegacyPrincipal(state, 'guest').principal;
+        const { dispatch, task, channel } = startSaga(state);
+        await settle();
+        if (transition === 'reconnect') {
+          state.principal = principalReducer(state.principal, backendReconnected());
+        } else {
+          state.connections = { ...state.connections, windowBackendId: REMOTE_ID };
+          state.principal = principalReducer(
+            state.principal,
+            principalContextChanged(selectPrincipalConnectionContext.select(state)),
+          );
+        }
+        const stale = principalReceived(
+          { context: oldGuest.context!, invalidation: 0, presentationVersion: 0 },
+          oldGuest.snapshot!,
+        );
+        state.principal = principalReducer(state.principal, stale);
+        channel.put(stale);
+        await settle();
+        expect(ownerOnlyTabs(reduceDispatched(dispatch).byWorkspaceId[WS_1])).toHaveLength(3);
+
+        const current = withLegacyPrincipal(state).principal;
+        const admitted = principalReceived(
+          {
+            context: state.principal.context!,
+            invalidation: state.principal.invalidation,
+            presentationVersion: state.principal.presentationVersion,
+          },
+          current.snapshot!,
+        );
+        state.principal = principalReducer(state.principal, admitted);
+        channel.put(admitted);
+        for (const enabled of [false, true, false]) {
+          const preference = setLabsMultiplayerEnabled(enabled);
+          state.userPreferences = userPreferencesReducer(state.userPreferences, preference);
+          state.principal = principalReducer(state.principal, preference);
+          channel.put(preference);
+          await settle();
+          expect(ownerOnlyTabs(reduceDispatched(dispatch).byWorkspaceId[WS_1])).toHaveLength(3);
+        }
+        expect(dispatch.mock.calls.some(([action]) => action.type === destroyTabsByType.type)).toBe(
+          false,
+        );
+        await cancelSaga(task);
+      },
+    );
 
     it('leaves an owner restore free of role-driven tab destroys', async () => {
       const dispatch = await restoreAs('owner');

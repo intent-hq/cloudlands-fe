@@ -631,6 +631,9 @@ test('clears tooltip suppression after pointer cancellation and task-trigger rem
 
   await trigger.click();
   await expect(popover).toBeVisible();
+  // dispatchEvent does not move the mouse; cancellation must start outside so
+  // the later hover is a fresh pointer entry after the trigger click (intent#6033).
+  await outside.hover();
   await outside.dispatchEvent('pointerdown', {
     pointerType: 'mouse',
     pointerId: 17,

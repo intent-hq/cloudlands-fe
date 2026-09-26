@@ -160,6 +160,7 @@
     installInviteConsentService,
     respondToInviteConsent,
   } from '$features/invite-consent/invite-consent-service';
+  import CollaborationSignInHost from '$features/collaboration-auth/renderer/CollaborationSignInHost.svelte';
   import InviteConsentModal from '$lib/components/modals/InviteConsentModal.svelte';
   import type { InviteConsentShowPayload } from '$shared/ipc/invite-consent';
   import InviteNoticeHost from '$features/invite-notice/InviteNoticeHost.svelte';
@@ -1157,6 +1158,7 @@
   />
 
   <!-- Invite Consent Modal (shown when main runs an intent://invite GitHub identity check) -->
+  <CollaborationSignInHost />
   <InviteConsentModal
     bind:open={showInviteConsentModal}
     payload={inviteConsentPayload}

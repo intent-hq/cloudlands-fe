@@ -1,3 +1,4 @@
+import { selectPrincipalConnectionContext } from '../../principal/principal-selectors';
 import { call, put, takeLatest } from 'typed-redux-saga';
 
 import { appClient } from '$lib/client';
@@ -13,6 +14,7 @@ import {
 const logger = createLogger('ModelReloadSaga');
 
 export function* reloadModelsWorker() {
+  const connection = yield* selectPrincipalConnectionContext.effect();
   const providerId = yield* selectActiveProviderId.effect();
   if (!providerId) return;
 
@@ -25,7 +27,11 @@ export function* reloadModelsWorker() {
       providerId,
     );
     const activeProviderId = yield* selectActiveProviderId.effect();
-    if (activeProviderId !== providerId) return;
+    if (
+      activeProviderId !== providerId ||
+      connection !== (yield* selectPrincipalConnectionContext.effect())
+    )
+      return;
 
     if (models.length === 0) {
       yield* put(
@@ -42,7 +48,11 @@ export function* reloadModelsWorker() {
     yield* put(setLoadingStateForProvider({ providerId, status: 'success', retryAttempt: 0 }));
   } catch (error) {
     const activeProviderId = yield* selectActiveProviderId.effect();
-    if (activeProviderId !== providerId) return;
+    if (
+      activeProviderId !== providerId ||
+      connection !== (yield* selectPrincipalConnectionContext.effect())
+    )
+      return;
     const message =
       error instanceof Error && error.message ? error.message : m.settings_models_loadError();
     logger.error('reloadModelsForProvider failed', { providerId, error });

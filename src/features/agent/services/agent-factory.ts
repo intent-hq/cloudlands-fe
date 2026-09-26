@@ -317,7 +317,7 @@ export class UnifiedAgentFactory {
       // Step 6.5: Determine provider early (needed for model resolution)
       // Determine provider: use explicit config.provider, or get from Redux active-provider slice
       let provider = config.provider;
-      if (!provider && !isBackend) {
+      if (!provider && !isBackend && !normalized.metadata?.specialist) {
         const activeId = await getActiveProviderId();
         if (activeId) {
           // D1(B): never silently spawn on an unavailable provider — this is
@@ -455,6 +455,10 @@ export class UnifiedAgentFactory {
           };
         }
         agent.id = createAgentId(backendResult.agentId);
+        // The host resolves specialist/default models. Keep its provider/model
+        // pair together so later picker mutations address the actual session.
+        agent.provider = backendResult.provider ?? agent.provider;
+        agent.model = backendResult.model ?? agent.model;
       }
 
       logger.debug('Backend agent created', {
@@ -719,7 +723,14 @@ export class UnifiedAgentFactory {
     provider?: string,
     _skipInitialPrompt?: boolean,
     nameExplicitlySet?: boolean,
-  ): Promise<{ success: boolean; agentId?: string; error?: string; cause?: unknown }> {
+  ): Promise<{
+    success: boolean;
+    agentId?: string;
+    provider?: string | null;
+    model?: string | null;
+    error?: string;
+    cause?: unknown;
+  }> {
     try {
       const request = {
         workspaceId: String(agent.workspaceId),
@@ -757,7 +768,12 @@ export class UnifiedAgentFactory {
 
       const created = await appClient.agents.create(request);
 
-      return { success: true, agentId: created.id ? String(created.id) : undefined };
+      return {
+        success: true,
+        agentId: created.id ? String(created.id) : undefined,
+        provider: created.provider,
+        model: created.model,
+      };
     } catch (error) {
       logger.error('Daemon agent.create failed', error);
       // Keep the thrown error alongside the flattened message: a daemon

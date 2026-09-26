@@ -1,3 +1,4 @@
+import { hostExecutionReducer } from './slices/host-execution/host-execution-slice';
 import { providerSettingsReducer } from './slices/provider-settings/provider-settings-slice';
 import { antigravitySetupReducer } from './slices/antigravity-setup/antigravity-setup-slice';
 import { providerCatalogReducer } from './slices/provider-catalog/provider-catalog-slice';
@@ -95,6 +96,7 @@ import { prBranchLookupReducer } from './slices/pr-branch-lookup/pr-branch-looku
 import { daemonHealthReducer } from './slices/daemon-health/daemon-health-slice';
 import { connectionsReducer } from './slices/connections/connections-slice';
 import { guestSessionsReducer } from './slices/guest-sessions/guest-sessions-slice';
+import { principalReducer } from './slices/principal/principal-slice';
 import { presenceReducer } from './slices/presence/presence-slice';
 import { hostRequirementsReducer } from './slices/host-requirements/host-requirements-slice';
 import { hudReducer } from './slices/hud/hud-slice';
@@ -202,6 +204,8 @@ export const reducers = {
   connections: connectionsReducer,
   guestSessions: guestSessionsReducer,
   presence: presenceReducer,
+  principal: principalReducer,
+  hostExecution: hostExecutionReducer,
   hostRequirements: hostRequirementsReducer,
   hud: hudReducer,
   setupPrompt: setupPromptReducer,

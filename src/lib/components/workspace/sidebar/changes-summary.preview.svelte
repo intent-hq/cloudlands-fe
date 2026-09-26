@@ -3,6 +3,7 @@
 
   interface Props {
     locked?: boolean;
+    admittedOwner?: boolean;
   }
   export const preview = definePreview<Props>({
     id: 'changes-summary',
@@ -13,7 +14,7 @@
 </script>
 
 <script lang="ts">
-  import { onDestroy } from 'svelte';
+  import { onDestroy, untrack } from 'svelte';
   import MultiSelectTabbedSidebar from '../MultiSelectTabbedSidebar.svelte';
   import { startRootStoreLifecycle } from '$store/renderer/root-store-lifecycle';
   import { store } from '$store/renderer/store';
@@ -32,18 +33,21 @@
   import { installChangesSummaryMocks } from './changes-summary.preview-fixtures';
   import { ChangeStage } from '$features/file-tracking/types';
 
-  let { locked = false }: Props = $props();
+  let { locked = false, admittedOwner = true }: Props = $props();
   const workspaceId = 'changes-summary-preview';
   const timestamp = '2026-09-01T00:00:00Z';
   const branch = 'feature/a-long-working-branch-for-sidebar-layout';
   const dispose = startRootStoreLifecycle(store, { startSagas: () => [] });
-  const restoreMocks = installChangesSummaryMocks(workspaceId, branch);
+  const restoreMocks = untrack(() =>
+    installChangesSummaryMocks(workspaceId, branch, admittedOwner),
+  );
   store.dispatch(
     setWorkspaceEntity({
       id: workspaceId,
       title: 'Changes summary',
       path: '/preview/workspace',
       repositoryPath: '/preview/repo',
+      myRole: 'owner',
       branch,
       baseRef: 'main',
       status: 'active',

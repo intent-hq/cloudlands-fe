@@ -22,6 +22,7 @@ vi.mock('$store/renderer/store', async () => {
 });
 vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
   selectIsWorkspaceOwner: { select: () => true },
+  selectCanShareWorkspace: { select: () => true },
 }));
 vi.mock('$lib/utils/workspace-navigation', () => ({ navigateToSettings: mocks.navigate }));
 vi.mock('svelte-fa', async () => ({

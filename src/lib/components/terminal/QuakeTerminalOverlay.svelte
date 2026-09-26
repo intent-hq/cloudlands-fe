@@ -1,4 +1,5 @@
 <script lang="ts">
+  import HostExecutionNotice from '$features/providers/HostExecutionNotice.svelte';
   import { Input } from '$lib/components/ui/input';
   /* eslint-disable max-lines */
   /**
@@ -1251,6 +1252,7 @@
           {/if}
         </div>
 
+        <HostExecutionNotice />
         <!-- Terminal Content with Sidebar -->
         <div class="flex-1 flex min-h-0 relative overflow-hidden">
           <!-- Terminal Content + Setup Script Editor -->

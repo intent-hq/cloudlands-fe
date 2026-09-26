@@ -1,3 +1,5 @@
+import { initialState as principalInitialState } from '$store/renderer/slices/principal/principal-slice';
+import { withLegacyPrincipal } from '../../../../test/fixtures/principal-state';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
 import { tick } from 'svelte';
@@ -281,6 +283,12 @@ import { warmImport } from '../../../../test/warm-import';
 // billed to the first test's timeout (intent-hq/monorepo#1464).
 warmImport(() => import('../../ui/__tests__/mocks/Fa.svelte'));
 warmImport(() => import('../../ui/__tests__/mocks/button.svelte'));
+
+beforeEach(() => {
+  mockRoleState.current = withLegacyPrincipal(
+    mockRoleState.reset(),
+  ) as unknown as typeof mockRoleState.current;
+});
 
 afterEach(() => {
   availableProviderOverride$.set(null);
@@ -566,11 +574,51 @@ describe('ModelPicker guest / collaborator lock', () => {
 
   it('unsettled window identity: locks (fails closed)', () => {
     mockRoleState.current.guestSessions.hasReceivedList = false;
+    Object.assign(mockRoleState.current, { principal: principalInitialState });
     withWorkspaceRole('owner');
 
     renderAgentPicker();
 
     expect(screen.getByRole('button').hasAttribute('disabled')).toBe(true);
+  });
+
+  it('member with canManage can pick its specialist provider while host administration remains unavailable', async () => {
+    withWorkspaceRole('collaborator');
+    const state = withLegacyPrincipal(mockRoleState.current);
+    state.principal.snapshot!.capabilities.hostMembership = true;
+    state.principal.snapshot!.principal.hostRole = 'member';
+    state.principal.snapshot!.principal.isAdministrator = false;
+    state.workspace.workspaces.map['ws-1'].canManage = true;
+    state.workspace.loadedBackendId = state.connections.windowBackendId;
+    Object.assign(mockRoleState.current, state);
+    mockAgentSession$.set({ id: 'agent-1', workspaceId: 'ws-1', provider: 'codex' });
+    activeProviderId$.set('claude-code');
+    enabledProviderIds$.set(['claude-code', 'codex']);
+    availableProviderOverride$.set(['claude-code', 'codex']);
+    vi.mocked(getModelsForProviderForLoadingState).mockImplementation(async (providerId) => ({
+      models: [
+        {
+          value: providerId === 'codex' ? 'review-model' : 'host-default-model',
+          label: providerId === 'codex' ? 'Host reviewer' : 'Host default',
+        },
+      ],
+    }));
+    const { agentClient } = await import('$features/agent/agent.client');
+    renderAgentPicker('review-model');
+    const button = screen.getByRole('button');
+    expect(button.hasAttribute('disabled')).toBe(false);
+    await fireEvent.click(button);
+    await fireEvent.click(await screen.findByRole('option', { name: /Host reviewer/ }));
+    await waitFor(() =>
+      expect(vi.mocked(agentClient.setModel)).toHaveBeenCalledWith(
+        'agent-1',
+        'review-model',
+        'ws-1',
+        'codex',
+      ),
+    );
+    expect(dispatchedTypes()).not.toContain('model/selectModel');
+    expect(screen.queryByText('Open provider settings')).toBeNull();
   });
 
   it('owner window: the picker stays interactive', async () => {
@@ -3814,7 +3862,7 @@ describe('ModelPicker global-default vs per-agent dispatch gating', () => {
     await waitFor(() => {
       expect(vi.mocked(agentClient.setModel)).toHaveBeenCalledWith(
         'agent-1',
-        'codex:gpt-5-codex',
+        'gpt-5-codex',
         'ws-1',
         'codex',
       );

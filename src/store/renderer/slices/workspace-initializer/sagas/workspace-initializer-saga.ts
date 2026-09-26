@@ -1,3 +1,8 @@
+import {
+  selectCanAdministerHost,
+  selectHostAdministrationContext,
+} from '../../principal/principal-selectors';
+import { takeLatestFromSelector, type SelectorChannelPayload } from '@augmentcode/themis/saga';
 import { buffers } from 'redux-saga';
 import {
   actionChannel,
@@ -156,6 +161,7 @@ function* buildWorkspaceInitializerBag() {
 }
 
 export function* persistWorkspaceInitializerWorker() {
+  if (!(yield* selectCanAdministerHost.effect())) return;
   const bag = cloneableBag(yield* call(buildWorkspaceInitializerBag));
   if (bag === null) return;
   try {
@@ -206,6 +212,7 @@ function* readLegacyBag() {
 }
 
 export function* hydrateWorkspaceInitializerWorker() {
+  if (!(yield* selectCanAdministerHost.effect())) return false;
   try {
     const setting = yield* call([appClient.settings, appClient.settings.get], SETTINGS_PATH);
     if (setting === null) throw new Error(`settings.get(${SETTINGS_PATH}) returned null`);
@@ -331,11 +338,10 @@ function* watchWorkspaceInitializerPersistence(gate: HydrationGate) {
 }
 
 /** Unregistered until the S20 middleware cutover. */
-export function* workspaceInitializerSaga() {
+function* hydrateOwnerInitializer({ payload: context }: SelectorChannelPayload<string | null>) {
+  if (!context) return;
   const gate: HydrationGate = { settled: false, queued: false };
   const persistenceTask = yield* fork(watchWorkspaceInitializerPersistence, gate);
-  yield* fork(watchDebouncedOnboardingForm);
-  yield* fork(watchOnboardingReset);
 
   const hydrated = yield* call(hydrateWorkspaceInitializerWorker);
   gate.settled = true;
@@ -343,4 +349,10 @@ export function* workspaceInitializerSaga() {
   gate.queued = false;
 
   yield* join(persistenceTask);
+}
+
+export function* workspaceInitializerSaga() {
+  yield* fork(watchDebouncedOnboardingForm);
+  yield* fork(watchOnboardingReset);
+  yield* takeLatestFromSelector(selectHostAdministrationContext, hydrateOwnerInitializer);
 }

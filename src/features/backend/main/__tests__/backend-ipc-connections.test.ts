@@ -4235,6 +4235,55 @@ describe('per-window backend IPC routing', () => {
     });
   });
 
+  it.each([
+    ['host.executionContext', {}],
+    ['providers.catalog', {}],
+    ['models.list', { providerId: 'claude-code' }],
+    ['agent.getModels', { agentId: 'agent-reviewer', workspaceId: 'host-workspace' }],
+    [
+      'agent.setModel',
+      {
+        agentId: 'agent-reviewer',
+        workspaceId: 'host-workspace',
+        providerId: 'codex',
+        modelId: 'host-review-model',
+      },
+    ],
+    ['agent.create', { workspaceId: 'host-workspace', specialistId: 'verifier' }],
+    [
+      'agent.delegate',
+      { workspaceId: 'host-workspace', taskNoteId: 'task', specialist: 'verifier' },
+    ],
+    ['repo.list', {}],
+    ['github.repos.list', {}],
+    ['github.repos.search', { query: 'host-project' }],
+    [
+      'workspace.create',
+      {
+        title: 'Host checkout',
+        githubUrl: 'https://github.com/team/project',
+        initialAgent: { provider: 'claude-code', model: 'host-sonnet' },
+      },
+    ],
+    ['git.pull', { repoPath: '/host/github-project', branchName: 'main' }],
+    ['git.status', { workspaceId: 'gitlab-origin-workspace' }],
+    ['pr.status', { workspaceId: 'github-workspace' }],
+  ])(
+    'routes shared execution %s through the member window instead of the local default',
+    async (method, params) => {
+      const { mod } = await loadModule();
+      const localClient = mod.getBackendClient();
+      const remoteClient = await mod.connectBackendClient('remote-1');
+      const { remoteSender } = installBackendWindows();
+      mod.registerBackendHandlers();
+      vi.mocked(localClient.request).mockClear();
+      vi.mocked(remoteClient.request).mockClear();
+      await findHandler('backend:request')!({ sender: remoteSender }, { method, params });
+      expect(remoteClient.request).toHaveBeenCalledWith(method, params, { timeoutMs: undefined });
+      expect(localClient.request).not.toHaveBeenCalled();
+    },
+  );
+
   it('routes explicit host settings requests from a remote window to the local client', async () => {
     const { mod } = await loadModule();
     const localClient = mod.getBackendClient();

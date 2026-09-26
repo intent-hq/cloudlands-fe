@@ -1,3 +1,4 @@
+import { withLegacyPrincipal } from '../../../../../test/fixtures/principal-state';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { runSaga, stdChannel } from 'redux-saga';
 
@@ -33,7 +34,16 @@ import type { Workspace, WorkspaceId } from '$shared/types';
 import { WorkspaceStatusEnum } from '$shared/types';
 
 import type { StoreState } from '../../../types';
-import { initialState as connectionsInitialState } from '../../connections/connections-slice';
+import {
+  connectionsReducer,
+  initialState as connectionsInitialState,
+} from '../../connections/connections-slice';
+import {
+  principalReducer,
+  hostMembershipChanged,
+  principalReadFailed,
+} from '../../principal/principal-slice';
+import { selectPrincipalConnectionContext } from '../../principal/principal-selectors';
 import {
   guestSessionsListReceived,
   guestSessionsReducer,
@@ -83,27 +93,69 @@ function settledState(roles: Array<Workspace['myRole']>): StoreState {
         myRole,
       }) as Workspace,
   );
-  return {
-    workspace: workspaceReducer(
-      workspaceReducer(workspaceInitialState, replaceWorkspaceList(workspaces)),
-      setWorkspaceHasLoaded(true),
-    ),
-    connections: connectionsInitialState,
-    guestSessions: guestSessionsReducer(
-      guestSessionsInitialState,
-      guestSessionsListReceived({ sessions: [], openIds: [], connectedIds: [] }),
-    ),
-  } as StoreState;
+  return withLegacyPrincipal(
+    {
+      workspace: workspaceReducer(
+        workspaceReducer(workspaceInitialState, replaceWorkspaceList(workspaces)),
+        setWorkspaceHasLoaded(true),
+      ),
+      connections: connectionsInitialState,
+      guestSessions: guestSessionsReducer(
+        guestSessionsInitialState,
+        guestSessionsListReceived({ sessions: [], openIds: [], connectedIds: [] }),
+      ),
+    } as StoreState,
+    roles.length > 0 && roles.every((role) => role === 'collaborator') ? 'guest' : 'owner',
+  );
 }
 
 let storeState: StoreState = BOOT_STATE;
-const sagaIO = { dispatch: vi.fn(), getState: () => storeState };
+const listeners = new Set<() => void>();
+const sagaIO = {
+  dispatch: vi.fn(),
+  getState: () => storeState,
+  context: {
+    reduxStore: {
+      getState: () => storeState,
+      subscribe: (listener: () => void) => {
+        listeners.add(listener);
+        return () => listeners.delete(listener);
+      },
+    },
+  },
+};
+function changeState(next: StoreState) {
+  storeState = next;
+  listeners.forEach((listener) => listener());
+}
+function send(input: ReturnType<typeof stdChannel>, action: { type: string; payload?: unknown }) {
+  changeState({
+    ...storeState,
+    connections: connectionsReducer(storeState.connections, action),
+    principal: principalReducer(storeState.principal, action),
+  });
+  input.put(action);
+}
+function confirmOwner() {
+  changeState(withLegacyPrincipal(storeState));
+}
 
 describe('settingsHydrationSaga', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.listSnapshot = undefined;
+    storeState = settledState([]);
+  });
+
+  it('withholds the owner-only catalog until connected authority is confirmed', async () => {
     storeState = BOOT_STATE;
+    mocks.list.mockResolvedValue([{ path: 'secret', value: true }]);
+    const task = runSaga(sagaIO, settingsHydrationSaga);
+    await settle();
+    task.cancel();
+    await task.toPromise();
+    expect(mocks.list).not.toHaveBeenCalled();
+    expect(mocks.apply).not.toHaveBeenCalled();
   });
 
   it('hydrates once in source order without issuing a persistence write', async () => {
@@ -202,16 +254,16 @@ describe('settingsHydrationSaga', () => {
     expect(mocks.error).toHaveBeenCalled();
   });
 
-  it('treats an empty snapshot as final on a known collaborator-only client (multiplayer w3)', async () => {
+  it('never requests the administrator catalog on a known legacy guest', async () => {
     vi.useFakeTimers();
     try {
       storeState = settledState(['collaborator', 'collaborator']);
       mocks.list.mockResolvedValue([]);
       const task = runSaga(sagaIO, hydrateSettingsOnceSaga);
       await vi.advanceTimersByTimeAsync(0);
-      expect(mocks.list).toHaveBeenCalledTimes(1);
+      expect(mocks.list).not.toHaveBeenCalled();
       await vi.advanceTimersByTimeAsync(SETTINGS_HYDRATION_RETRY_DELAYS_MS.at(-1)! * 2);
-      expect(mocks.list).toHaveBeenCalledTimes(1);
+      expect(mocks.list).not.toHaveBeenCalled();
       expect(mocks.apply).not.toHaveBeenCalled();
       expect(mocks.error).not.toHaveBeenCalled();
       await task.toPromise();
@@ -237,24 +289,73 @@ describe('settingsHydrationSaga', () => {
     }
   });
 
-  it('keeps retrying an empty snapshot until the client is known to be collaborator-only', async () => {
-    vi.useFakeTimers();
-    try {
-      mocks.list.mockResolvedValue([]);
-      const task = runSaga(sagaIO, hydrateSettingsOnceSaga);
-      // Boot: identity unsettled reads as collaborator-only, but is not an answer yet.
-      await vi.advanceTimersByTimeAsync(SETTINGS_HYDRATION_RETRY_DELAYS_MS[0]);
-      expect(mocks.list).toHaveBeenCalledTimes(2);
-      storeState = settledState(['collaborator']);
-      await vi.advanceTimersByTimeAsync(SETTINGS_HYDRATION_RETRY_DELAYS_MS[1]);
-      expect(mocks.list).toHaveBeenCalledTimes(3);
-      await vi.advanceTimersByTimeAsync(SETTINGS_HYDRATION_RETRY_DELAYS_MS.at(-1)! * 2);
-      expect(mocks.list).toHaveBeenCalledTimes(3);
-      expect(mocks.apply).not.toHaveBeenCalled();
-      await task.toPromise();
-    } finally {
-      vi.useRealTimers();
-    }
+  it('starts hydration only when an unresolved caller becomes a confirmed owner', async () => {
+    storeState = BOOT_STATE;
+    mocks.list.mockResolvedValue([{ path: 'boot', value: 1 }]);
+    const task = runSaga(sagaIO, settingsHydrationSaga);
+    await settle();
+    expect(mocks.list).not.toHaveBeenCalled();
+    confirmOwner();
+    await settle();
+    expect(mocks.list).toHaveBeenCalledTimes(1);
+    expect(mocks.apply).toHaveBeenCalledExactlyOnceWith([{ path: 'boot', value: 1 }], 0);
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it('never reads settings for an authoritative member or an invalid authority response', async () => {
+    const member = withLegacyPrincipal(storeState, 'guest');
+    member.principal.snapshot!.capabilities.hostMembership = true;
+    member.principal.snapshot!.principal.hostRole = 'member';
+    member.principal.snapshot!.principal.hostMembershipRevision = 1;
+    storeState = member;
+    mocks.list.mockResolvedValue([{ path: 'secret', value: true }]);
+    const input = stdChannel();
+    const task = runSaga({ ...sagaIO, channel: input }, settingsHydrationSaga);
+    await settle();
+    send(
+      input,
+      principalReadFailed(
+        {
+          context: selectPrincipalConnectionContext.select(storeState)!,
+          invalidation: 0,
+          presentationVersion: 0,
+        },
+        'incompatible-response',
+      ),
+    );
+    await settle();
+    expect(mocks.list).not.toHaveBeenCalled();
+    expect(mocks.apply).not.toHaveBeenCalled();
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it('drops a late settings reply after membership invalidation or confirmed revocation', async () => {
+    let reply!: (settings: unknown[]) => void;
+    mocks.list.mockReturnValue(
+      new Promise((resolve) => {
+        reply = resolve;
+      }),
+    );
+    const input = stdChannel();
+    const task = runSaga({ ...sagaIO, channel: input }, settingsHydrationSaga);
+    await settle();
+    send(
+      input,
+      hostMembershipChanged({
+        revision: 1,
+        principalId: 'principal',
+        action: 'removed',
+        hostRole: 'guest',
+      }),
+    );
+    reply([{ path: 'secret', value: true }]);
+    input.put(settingsChangesReceived([{ path: 'secret', value: false }], 2));
+    await settle();
+    expect(mocks.apply).not.toHaveBeenCalled();
+    task.cancel();
+    await task.toPromise();
   });
 
   it('does not apply a boot read that settles after cancellation', async () => {
@@ -286,10 +387,13 @@ describe('settingsHydrationSaga', () => {
     const task = runSaga({ ...sagaIO, channel: input }, settingsHydrationSaga);
     await settle();
 
-    input.put({
+    send(input, {
       type: 'connections/listReceived',
       payload: [{ connections: [], activeId: 'new', windowBackendId: 'new' }],
     });
+    await settle();
+    expect(mocks.listSnapshot).toHaveBeenCalledTimes(1);
+    confirmOwner();
     await settle();
 
     expect(mocks.listSnapshot).toHaveBeenCalledTimes(2);
@@ -357,10 +461,11 @@ describe('settingsHydrationSaga', () => {
       [[{ path: 'newer', value: 6 }], 6],
     ]);
 
-    input.put({
+    send(input, {
       type: 'connections/listReceived',
       payload: [{ connections: [], activeId: 'remote', windowBackendId: 'remote' }],
     });
+    confirmOwner();
     await settle();
     expect(mocks.apply).toHaveBeenLastCalledWith([{ path: 'remote', value: 1 }], 1);
 
@@ -379,7 +484,10 @@ describe('settingsHydrationSaga', () => {
 
     input.put(settingsChangesReceived([{ path: 'before-restart', value: 11 }], 11));
     await settle();
-    input.put(backendReconnected());
+    send(input, backendReconnected());
+    await settle();
+    expect(mocks.listSnapshot).toHaveBeenCalledTimes(1);
+    confirmOwner();
     await settle();
     input.put(settingsChangesReceived([{ path: 'after-restart', value: 1 }], 1));
     await settle();
@@ -404,7 +512,10 @@ describe('settingsHydrationSaga', () => {
     const task = runSaga({ ...sagaIO, channel: input }, settingsHydrationSaga);
     await settle();
 
-    input.put(backendReconnected());
+    send(input, backendReconnected());
+    await settle();
+    expect(mocks.listSnapshot).toHaveBeenCalledTimes(1);
+    confirmOwner();
     await settle();
     input.put(settingsChangesReceived([{ path: 'stale', value: 6 }], 6));
     input.put(settingsChangesReceived([{ path: 'newer', value: 8 }], 8));

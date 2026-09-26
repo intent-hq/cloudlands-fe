@@ -1,3 +1,5 @@
+import { principalContextChanged } from '$store/renderer/slices/principal/principal-slice';
+import { admitLegacyPrincipal } from '../../../../../test/fixtures/principal-state';
 /**
  * SidebarPanel withholds the Chief from a collaborator-only client
  * (multiplayer w3): the daemon answers its `__chief__` calls with not-found,
@@ -61,6 +63,7 @@ function makeWorkspace(id: string, myRole: Workspace['myRole']): Workspace {
 
 /** Load the workspace list with the given roles (the harness settles an owner window). */
 function loadWorkspaces(...roles: Array<Workspace['myRole']>) {
+  admitLegacyPrincipal(roles.includes('owner') ? 'owner' : 'guest');
   appStore.dispatch(replaceWorkspaceList(roles.map((role, i) => makeWorkspace(`ws-${i}`, role))));
   appStore.dispatch(setWorkspaceHasLoaded(true));
 }
@@ -268,7 +271,7 @@ describe('SidebarPanel workspace-list title in a guest window (multiplayer w4)',
   // Runs first in this block: `connections.hasReceivedList` has no reset action,
   // so identity is only unsettled before any test here binds the window. The
   // precondition assertion below fails loudly if that ever stops holding.
-  it('keeps "All workspaces" in an owner window whose identity has not settled yet', async () => {
+  it('keeps "All workspaces" while the connected principal is unresolved', async () => {
     const { container } = render(SidebarPanelHarness, {
       props: {
         setup: () => {
@@ -279,6 +282,7 @@ describe('SidebarPanel workspace-list title in a guest window (multiplayer w4)',
             guestSessionsListReceived({ sessions: [GUEST], openIds: [], connectedIds: [] }),
           );
           loadWorkspaces('owner');
+          appStore.dispatch(principalContextChanged(null));
           appStore.dispatch(openPanel('chief'));
         },
       },

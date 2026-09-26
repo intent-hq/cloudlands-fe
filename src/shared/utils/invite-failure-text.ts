@@ -50,6 +50,8 @@ export function describeInviteFailureReason(
       return m.deeplink_inviteError_denied();
     case 'flow-expired':
       return m.deeplink_inviteError_flowExpired();
+    case 'collaboration-upgrade-required':
+      return m.collaborationAuth_upgrade_error();
     case 'sign-in-failed':
       return m.deeplink_inviteError_signInFailed();
     case 'launch-failed':

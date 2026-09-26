@@ -35,10 +35,7 @@ export interface WorkspaceMember {
   avatarUrl: string | null;
   role: WorkspaceRole;
   addedAt: string;
-  /**
-   * The provider-neutral identity triple (`Principal.identity`); absent from
-   * a daemon that predates the identity seam or for an unlinked principal.
-   */
+  /** Provider-neutral account identity from `workspace.members.list`; omitted while unlinked. */
   identity?: PrincipalIdentity;
 }
 

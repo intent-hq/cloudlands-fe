@@ -1,5 +1,8 @@
 <script lang="ts">
+  import { selectPrincipalConnectionContext } from '$store/renderer/slices/principal/principal-selectors';
   /* eslint-disable max-lines */
+  import { selectIsHostMember } from '$store/renderer/slices/host-execution/host-execution-selectors';
+  const hostMember$ = selectIsHostMember();
   import { onMount, tick, untrack } from 'svelte';
   import { writable } from 'svelte/store';
 
@@ -616,6 +619,10 @@
     if (epoch === lastSeenClearEpoch) return;
     lastSeenClearEpoch = epoch;
     untrack(() => {
+      pendingModelUpdate = null;
+      agentProviderModels = null;
+      agentProviderError = null;
+      allProviderModels = {};
       lastFetchedProviderIds = '';
       void fetchAllProviderModels($availableEnabledProviderIds$);
       if (usesAgentProviderFetch) {
@@ -823,8 +830,13 @@
         // group's provider (legacy compound prefix wins). Without it the
         // daemon resolves a bare id against the session's current provider,
         // rejecting cross-provider picks.
-        const pickedProviderId = resolvePickedTriple(model).providerId || undefined;
-        const result = await mutate.setModel(agentId, model, workspaceId, pickedProviderId);
+        const pick = resolvePickedTriple(model);
+        const result = await mutate.setModel(
+          agentId,
+          pick.modelId,
+          workspaceId,
+          pick.providerId || undefined,
+        );
         // A locked skip is not an RPC failure: nothing to toast or warn about.
         if (isSkippedMutation(result)) return;
         if (result.ok && result.data.success) {
@@ -891,9 +903,12 @@
     const { providerId: pickedProviderId, modelId: pickedModelId } = resolvePickedTriple(model);
     onModelChange?.(model, { providerId: pickedProviderId, modelId: pickedModelId });
 
+    const connection = selectPrincipalConnectionContext.select(appStore.state);
     await tick();
+    if (connection !== selectPrincipalConnectionContext.select(appStore.state)) return;
 
-    if (updateGlobalDefault) appStore.dispatch(selectModel(pickedModelId, pickedProviderId));
+    if (updateGlobalDefault && !$hostMember$)
+      appStore.dispatch(selectModel(pickedModelId, pickedProviderId));
     if (!updateGlobalStore) return;
 
     if (agentId && workspaceId) {
@@ -1221,6 +1236,7 @@
   let noProviderToastShown = false;
 
   function openProviderSettings() {
+    if ($hostMember$) return;
     dropdownOpen = false;
     void navigateToSettings({ tab: 'accounts', hash: 'providers' }).catch((error: unknown) => {
       logger.error('Failed to open provider settings from model picker', error);
@@ -1231,14 +1247,21 @@
     if (hasNoAvailableProvider) {
       if (!noProviderToastShown) {
         noProviderToastShown = true;
-        notify.error(m.chat_modelPicker_noProviderAvailable_toast(), {
-          id: 'no-provider-available',
-          duration: 6000,
-          action: {
-            label: m.chat_modelPicker_noProviderAvailable_openSettings_label(),
-            onClick: openProviderSettings,
+        notify.error(
+          $hostMember$
+            ? m.hostExecution_providerSetup_description()
+            : m.chat_modelPicker_noProviderAvailable_toast(),
+          {
+            id: 'no-provider-available',
+            duration: 6000,
+            action: $hostMember$
+              ? undefined
+              : {
+                  label: m.chat_modelPicker_noProviderAvailable_openSettings_label(),
+                  onClick: openProviderSettings,
+                },
           },
-        });
+        );
       }
     } else {
       noProviderToastShown = false;
@@ -1951,6 +1974,7 @@
 
   async function handleModelChange(value: string | string[], event?: MouseEvent) {
     if (effectiveLocked) return;
+    const connection = selectPrincipalConnectionContext.select(appStore.state);
     const modelValue = value as string;
     // Gate user-picked changes to a *different* model behind the optional
     // confirmation callback (mid-conversation switch warning). Re-selecting
@@ -1975,7 +1999,7 @@
               : (getModelLabel(modelValue) ?? parseCompoundModelId(modelValue).modelId),
         },
       );
-      if (!confirmed) {
+      if (!confirmed || connection !== selectPrincipalConnectionContext.select(appStore.state)) {
         // Revert the dropdown's internal selection back to the current model.
         dropdownValue = localModel ?? USE_DEFAULT_VALUE;
         return;
@@ -2243,7 +2267,7 @@
             </Button>
           {/each}
         </div>
-        {#if !hasNoAvailableProvider}
+        {#if !hasNoAvailableProvider && !$hostMember$}
           <Button
             variant="ghost"
             size="icon-sm"
@@ -2360,6 +2384,7 @@
         {isLoadingModels}
         {blockingLoadError}
         {hasNoAvailableProvider}
+        hostManaged={$hostMember$}
         onOpenProviderSettings={openProviderSettings}
         onRetry={handleRetry}
       />
