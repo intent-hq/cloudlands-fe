@@ -672,6 +672,8 @@
   {:else if parsedBlock.type === 'mermaid'}
     <DiagramPresentation kind="mermaid" rendererOwnsActions>
       <MermaidRenderer
+        revealNewContent
+        presentation="chat"
         code={parsedBlock.metadata?.rawSource ?? parsedBlock.content ?? ''}
         isStreaming={parsedBlock.metadata?.isStreaming ?? false}
         showExportButton

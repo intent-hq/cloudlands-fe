@@ -1,4 +1,5 @@
 import { writeTextToClipboard } from '$lib/utils/clipboard';
+import { finishMermaidReveal, readSettledMermaidOpacity } from '../markdown/mermaid-reveal';
 
 const SVG_NAMESPACE = 'http://www.w3.org/2000/svg';
 const XHTML_NAMESPACE = 'http://www.w3.org/1999/xhtml';
@@ -60,8 +61,12 @@ const EXPORT_STYLE_PROPERTIES = [
 
 function inlineComputedStyles(source: Element, target: Element) {
   const computed = getComputedStyle(source);
+  const settledOpacity = readSettledMermaidOpacity(source);
   for (const property of EXPORT_STYLE_PROPERTIES) {
-    const value = computed.getPropertyValue(property);
+    const value =
+      property === 'opacity' && settledOpacity !== undefined
+        ? settledOpacity
+        : computed.getPropertyValue(property);
     if (value && (target instanceof SVGElement || target instanceof HTMLElement)) {
       // Freeze resolved theme values, including overrides from outside the SVG.
       target.style.setProperty(property, value, 'important');
@@ -157,6 +162,7 @@ function findSvg(container: HTMLElement): SVGSVGElement {
 
 export function prepareDiagramSvgForExport(svg: SVGSVGElement): SVGSVGElement {
   const clone = svg.cloneNode(true) as SVGSVGElement;
+  finishMermaidReveal(clone);
   clone.setAttribute('xmlns', SVG_NAMESPACE);
   clone.setAttribute('xmlns:xlink', 'http://www.w3.org/1999/xlink');
 
