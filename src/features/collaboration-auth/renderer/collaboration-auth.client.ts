@@ -30,12 +30,13 @@ export function openCollaborationSignIn(): void {
     ?.invoke(COLLABORATION_AUTH.OPEN)
     .catch(() => {});
 }
-export function syncCollaborationPolicy(): void {
+export async function syncCollaborationPolicy(): Promise<boolean> {
   const policy = collaborationPolicy();
   if (!policy.multiplayer) hide?.();
-  void electronAPI()
+  const result = await electronAPI()
     ?.invoke(COLLABORATION_AUTH.POLICY, policy)
-    .catch(() => {});
+    .catch(() => undefined);
+  return (result as { ok?: boolean } | undefined)?.ok === true;
 }
 export function installCollaborationAuth(handlers: {
   show(view: CollaborationView): void;

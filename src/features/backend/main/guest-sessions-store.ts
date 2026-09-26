@@ -131,6 +131,19 @@ interface PersistedState {
   invitedProvenance?: Record<string, { fingerprint: string; principalId: string }[]>;
   excludedInvitedPeople?: string[];
   invitedSync?: { account: string; group?: string; encPayload: EncryptedToken }[];
+  /** Token-free maxima retained before authentication, also readable with the keyring locked. */
+  invitedObservedClocks?: Record<string, number>;
+}
+
+function observedPersonClock(
+  state: PersistedState,
+  person: { fingerprint: string; principalId: string },
+): number {
+  try {
+    return state.invitedObservedClocks?.[invitedPersonKey(person)] ?? 0;
+  } catch {
+    return 0;
+  } // Unqualified legacy records cannot inherit a trusted person's clock.
 }
 
 /** The registry file exists but cannot be read as a guest-sessions registry. */
@@ -358,6 +371,14 @@ async function loadState(): Promise<LoadedState | null> {
   const exclusionsIntact =
     obj.excludedInvitedPeople === undefined ||
     (isStringArray(obj.excludedInvitedPeople) && obj.excludedInvitedPeople.every(isPersonAccount));
+  const clocksIntact =
+    obj.invitedObservedClocks === undefined ||
+    (!!obj.invitedObservedClocks &&
+      typeof obj.invitedObservedClocks === 'object' &&
+      !Array.isArray(obj.invitedObservedClocks) &&
+      Object.entries(obj.invitedObservedClocks).every(
+        ([account, clock]) => isPersonAccount(account) && isClock(clock),
+      ));
   const provenanceIntact =
     obj.invitedProvenance === undefined ||
     (!!obj.invitedProvenance &&
@@ -380,7 +401,7 @@ async function loadState(): Promise<LoadedState | null> {
       ));
   return {
     state: { ...obj, sessions, tombstones } as PersistedState,
-    intact: intact && syncIntact && exclusionsIntact && provenanceIntact,
+    intact: intact && syncIntact && exclusionsIntact && provenanceIntact && clocksIntact,
   };
 }
 
@@ -629,8 +650,10 @@ export async function add(input: NewGuestSession): Promise<GuestSessionRecord> {
     const stamp = Math.max(
       Date.now(),
       (superseded?.updatedAt ?? 0) + 1,
+      observedPersonClock(state, input) + 1,
       ...duplicates.map((s) => s.updatedAt + 1),
     );
+    if (!Number.isSafeInteger(stamp)) throw new GuestStoreCorruptError();
     clearTombstone(state, input);
     const personKey = invitedPersonKey(input);
     if (input.syncExcluded === true)
@@ -780,7 +803,12 @@ export async function setHostname(
       ]);
     session.pairedAt ??= session.updatedAt;
     session.hostname = trimmed;
-    session.updatedAt = Math.max(Date.now(), session.updatedAt + 1);
+    session.updatedAt = Math.max(
+      Date.now(),
+      session.updatedAt + 1,
+      observedPersonClock(state, session) + 1,
+    );
+    if (!Number.isSafeInteger(session.updatedAt)) throw new GuestStoreCorruptError();
     await writeState(state);
     return true;
   });
@@ -817,7 +845,12 @@ export async function setTcAddress(
       ]);
     session.pairedAt ??= session.updatedAt;
     session.tcAddress = normalized;
-    session.updatedAt = Math.max(Date.now(), session.updatedAt + 1);
+    session.updatedAt = Math.max(
+      Date.now(),
+      session.updatedAt + 1,
+      observedPersonClock(state, session) + 1,
+    );
+    if (!Number.isSafeInteger(session.updatedAt)) throw new GuestStoreCorruptError();
     session.tcUpdatedAt = session.updatedAt;
     await writeState(state);
     return true;
@@ -851,7 +884,12 @@ export async function setHosts(
       ]);
     session.pairedAt ??= session.updatedAt;
     session.hosts = extras;
-    session.updatedAt = Math.max(Date.now(), session.updatedAt + 1);
+    session.updatedAt = Math.max(
+      Date.now(),
+      session.updatedAt + 1,
+      observedPersonClock(state, session) + 1,
+    );
+    if (!Number.isSafeInteger(session.updatedAt)) throw new GuestStoreCorruptError();
     await writeState(state);
     return true;
   });
@@ -957,8 +995,11 @@ export async function forget(id: string, expected?: InvitedCredentialLease): Pro
       removed.updatedAt + 1,
       (removed.pairedAt ?? 0) + 1,
       (removed.removedThrough ?? 0) + 1,
+      (removed.tcUpdatedAt ?? 0) + 1,
+      observedPersonClock(state, removed) + 1,
       ...facts.map((r) => r.removedThrough + 1),
     );
+    if (!Number.isSafeInteger(floor)) throw new GuestStoreCorruptError();
     const removal: InvitedRemoval = {
       v: 2,
       kind: 'removal',
@@ -1088,20 +1129,22 @@ function syncPayloads(state: PersistedState): InvitedPayload[] {
 
 /** All opaque/possibly credential-bearing imported bytes are encrypted, including unknown versions. */
 function saveSyncItem(state: PersistedState, item: KeychainItem): void {
+  const incoming = parseInvitedPayload(item.account, item.payload);
+  rememberClock(state, incoming);
   const rows = (state.invitedSync ??= []);
   const existing = rows.find((r) => r.account === item.account && r.group === item.group);
   let previous: string | undefined;
   try {
     previous = existing ? decryptToken(existing.encPayload) : undefined;
   } catch (error) {
-    const incoming = parseInvitedPayload(item.account, item.payload);
     // The independent removal remains durable while locked credential bytes stay recoverable.
     if (incoming?.kind === 'removed' || (incoming?.kind === 'session' && incoming.deleted)) return;
     throw error;
   }
   if (previous === item.payload) return;
-  let record = parseInvitedPayload(item.account, item.payload);
+  let record = incoming;
   const old = previous === undefined ? null : parseInvitedPayload(item.account, previous);
+  rememberClock(state, old);
   // Never overwrite future/malformed canonical data with a understood downgrade.
   if (previous !== undefined && item.account.startsWith('invited-v2-') && old === null) return;
   if (old?.kind === 'removal') return; // Immutable forever, including unknown extensions.
@@ -1133,6 +1176,20 @@ function saveSyncItem(state: PersistedState, item: KeychainItem): void {
   const encPayload = safe ? { encrypted: false, value: item.payload } : encryptToken(item.payload);
   if (existing) existing.encPayload = encPayload;
   else rows.push({ account: item.account, group: item.group, encPayload });
+}
+
+function rememberClock(state: PersistedState, record: InvitedPayload | null): void {
+  if (!record || record.kind === 'legacy-alias') return;
+  const account = invitedPersonKey(record);
+  const clocks = (state.invitedObservedClocks ??= {});
+  clocks[account] = Math.max(
+    clocks[account] ?? 0,
+    record.removedThrough,
+    record.kind === 'removal' ? 0 : record.updatedAt,
+    record.kind === 'session'
+      ? Math.max(record.pairedAt, record.tcUpdatedAt ?? 0, record.deletedAt ?? 0)
+      : 0,
+  );
 }
 
 /** The existing registry is the sole durable invited store, including pending imports and the outbox. */
@@ -1168,6 +1225,7 @@ export function createInvitedSyncAdapter(
           selected.updatedAt + 1,
           selected.pairedAt + 1,
           selected.removedThrough + 1,
+          (state.invitedObservedClocks?.[account] ?? 0) + 1,
         );
         if (!Number.isSafeInteger(floor)) throw new GuestStoreCorruptError();
         const removal: InvitedRemoval = {
@@ -1348,7 +1406,12 @@ export function createInvitedSyncAdapter(
           session.pairedAt !== expected.pairedAt
         )
           return null;
-        const stamp = Math.max(session.pendingPairing, floor + 1, observedClock + 1);
+        const stamp = Math.max(
+          session.pendingPairing,
+          floor + 1,
+          observedClock + 1,
+          (state.invitedObservedClocks?.[account] ?? 0) + 1,
+        );
         if (!Number.isSafeInteger(stamp)) throw new GuestStoreCorruptError();
         if (session.pairedAt !== stamp) changedId = session.id;
         session.pairedAt = stamp;

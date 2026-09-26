@@ -1,6 +1,7 @@
 import { EventEmitter } from 'node:events';
 import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest';
 import { COLLABORATION_AUTH } from '../types';
+import { captureInviteAttempt } from '../../deeplink/main/invite-attempt';
 
 const state = vi.hoisted(() => ({
   handlers: new Map<string, (event: any, input?: any) => any>(),
@@ -37,7 +38,10 @@ import {
 } from './collaboration-auth.ipc';
 
 function invoke(channel: string, input?: unknown, contentsId = 41) {
-  return state.handlers.get(channel)!({ sender: { id: contentsId } }, input);
+  return state.handlers.get(channel)!(
+    { sender: contentsId === 41 ? state.parent.webContents : { id: contentsId } },
+    input,
+  );
 }
 const pin = { provider: 'github' as const, host: 'github.com', externalUserId: '19' };
 beforeEach(() => {
@@ -64,13 +68,71 @@ beforeEach(() => {
       };
     if (method === 'identity.getUser') return { user: { id: '19', login: 'local-B-person' } };
     if (method === 'identity.select') return { principal: { identity: pin } };
+    if (method === 'principal.me') return { identity: pin };
     throw new Error('unexpected method');
   });
   registerCollaborationAuthHandlers();
 });
-afterEach(() => vi.useRealTimers());
+afterEach(() => {
+  state.parent.webContents.emit('destroyed');
+  vi.useRealTimers();
+});
 
 describe('collaboration main IPC local routing', () => {
+  it.each(['destroyed', 'render-process-gone', 'did-navigate', 'did-navigate-in-page', 'flag'])(
+    'ends the real captured attempt on %s and never revives it',
+    async (event) => {
+      await invoke(COLLABORATION_AUTH.POLICY, { multiplayer: true, gitlab: false });
+      const attempt = captureInviteAttempt();
+      if (event === 'flag')
+        await invoke(COLLABORATION_AUTH.POLICY, { multiplayer: false, gitlab: false });
+      else state.parent.webContents.emit(event);
+      await attempt.cancelled;
+      await invoke(COLLABORATION_AUTH.POLICY, { multiplayer: true, gitlab: false });
+      expect(attempt.current()).toBe(false);
+      expect(attempt.admit()).toBe(false);
+    },
+  );
+  it.each([
+    ['settings', 'confirm'],
+    ['settings', 'cancel'],
+    ['workspace', 'confirm'],
+    ['workspace', 'cancel'],
+  ] as const)(
+    'retains an unchanged window policy after %s %s before a second invitation',
+    async (scope, action) => {
+      const first = prepareCollaborationIdentity({ scope, pinIdentity: pin });
+      const firstView = state.parent.webContents.send.mock.calls.at(-1)![1];
+      await invoke(COLLABORATION_AUTH.POLICY, { multiplayer: true, gitlab: false });
+      await invoke(COLLABORATION_AUTH.ACTION, {
+        requestId: firstView.requestId,
+        action: { type: action },
+      });
+      expect((await first).kind).toBe(action === 'confirm' ? 'ready' : 'cancelled');
+      const attempt = captureInviteAttempt();
+      const second = prepareCollaborationIdentity({ scope: 'host', pinIdentity: pin }, { attempt });
+      const secondView = state.parent.webContents.send.mock.calls.at(-1)![1];
+      await invoke(COLLABORATION_AUTH.POLICY, { multiplayer: true, gitlab: false });
+      try {
+        expect(attempt.current()).toBe(true);
+        await invoke(COLLABORATION_AUTH.ACTION, {
+          requestId: secondView.requestId,
+          action: { type: 'confirm' },
+        });
+        expect(await second).toMatchObject({
+          kind: 'ready',
+          prepared: { attempt: { id: attempt.id } },
+        });
+      } finally {
+        await invoke(COLLABORATION_AUTH.ACTION, {
+          requestId: secondView.requestId,
+          action: { type: 'cancel' },
+        });
+        attempt.release();
+      }
+    },
+  );
+
   it('a remote-A window authenticates only local B, with no account or token payload to A', async () => {
     const done = prepareCollaborationIdentity({ scope: 'workspace', pinIdentity: pin });
     const view = state.parent.webContents.send.mock.calls[0][1];

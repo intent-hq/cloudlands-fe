@@ -51,7 +51,10 @@ import {
 import type { JsonRpcClient } from '../../backend/main/json-rpc-client';
 import { JsonRpcError } from '../../backend/main/json-rpc-errors';
 import type { PrincipalIdentity } from '../../workspace-sharing/types';
-import { prepareCollaborationIdentity } from '../../collaboration-auth/main/collaboration-auth.ipc';
+import {
+  onCollaborationPolicyPublished,
+  prepareCollaborationIdentity,
+} from '../../collaboration-auth/main/collaboration-auth.ipc';
 import {
   CollaborationIdentityClient,
   type PreparedCollaborationIdentity,
@@ -222,7 +225,10 @@ interface ConnectingProgress {
 }
 
 function showConnectingProgress(attempt: InviteAttempt): ConnectingProgress {
-  const handle = showInviteProgress({ requestId: randomUUID(), phase: 'connecting' });
+  const handle = showInviteProgress(
+    { requestId: randomUUID(), phase: 'connecting' },
+    { getParentWindow: () => attempt.parent },
+  );
   const cancelled: Promise<never> = Promise.race([handle.cancelled, attempt.cancelled]).then(() => {
     throw new InviteCancelledError();
   });
@@ -238,7 +244,9 @@ function showConnectingProgress(attempt: InviteAttempt): ConnectingProgress {
         throw error;
       }
     },
-    connected: (hostLabel) => handle.update('connecting', { hostLabel }),
+    connected: (hostLabel) => {
+      if (attempt.current()) handle.update('connecting', { hostLabel });
+    },
     dismiss: () => handle.dismiss(),
   };
 }
@@ -262,6 +270,7 @@ function createConsentPrompts(
   let current: InviteConsentPrompt | null = null;
   return {
     show(payload) {
+      if (!attempt.current()) throw new InviteCancelledError();
       connecting.dismiss();
       const prompt = showInviteConsent(payload, { getParentWindow: () => attempt.parent });
       const previous = current;
@@ -285,10 +294,47 @@ function createConsentPrompts(
 }
 
 /**
- * In-flight guard (same rationale as the pair flow): a second invite link
- * while one is being redeemed is dropped instead of stacking dialogs.
+ * A new invitation replaces the prior attempt. Already-sent grants still persist,
+ * while all UI and window work stays bound to the current original attempt.
  */
 let activeInviteAttempt: InviteAttempt | null = null;
+
+/** Keep the URL exclusively in main while the original window offers explicit recovery. */
+async function admitInvite(attempt: InviteAttempt): Promise<boolean> {
+  if (attempt.current()) return true;
+  if (!attempt.alive() || !attempt.parent) return false;
+  let settle!: (accepted: boolean) => void;
+  const decision = new Promise<boolean>((resolve) => {
+    settle = resolve;
+  });
+  const requestId = randomUUID();
+  let recovery: InviteProgressHandle | undefined;
+  const show = () => {
+    if (!attempt.alive()) return;
+    recovery?.dismiss();
+    recovery = showInviteProgress(
+      { requestId, phase: 'admission' },
+      {
+        getParentWindow: () => attempt.parent,
+        onRetry: () => {
+          if (attempt.admit()) settle(true);
+        },
+      },
+    );
+    void recovery.cancelled.then(() => settle(false));
+  };
+  // First policy publication also retries presentation after renderer startup. It never admits.
+  const offPolicy = onCollaborationPolicyPublished(attempt.parent.webContents.id, show);
+  const timer = setTimeout(() => settle(false), 5 * 60_000);
+  show();
+  try {
+    return await Promise.race([decision, attempt.cancelled.then(() => false)]);
+  } finally {
+    clearTimeout(timer);
+    offPolicy();
+    recovery?.dismiss();
+  }
+}
 
 /**
  * Handle an `intent://invite?...` deep link end to end. Resolves once the
@@ -328,6 +374,7 @@ export async function handleInviteDeepLink(url: string): Promise<void> {
       return;
     }
 
+    if (!attempt.current() && !(await admitInvite(attempt))) return;
     if (!attempt.current()) return;
     const envelope: InviteEnvelope = {
       scope,
@@ -394,6 +441,7 @@ export async function handleInviteDeepLink(url: string): Promise<void> {
           : {}),
       },
       { consent: prompts?.current() ?? null, outcome: 'failed' },
+      attempt,
     );
   } finally {
     connecting?.dismiss();
@@ -541,7 +589,8 @@ async function joinWithIdentityProof(
         consent?.dismiss('failed');
         consent = null;
         if (retried) throw new InviteRpcError(-32602, { code: outcome.code });
-        if (!(await showProofRefusedRetry(outcome.code))) {
+        if (!attempt.current()) throw new InviteCancelledError();
+        if (!(await showProofRefusedRetry(outcome.code, attempt.parent))) {
           logger.info('User declined to retry the refused identity proof', {
             code: outcome.code,
           });
@@ -741,6 +790,7 @@ async function proveIdentity(
     credential,
     challenge.workspaceTitle,
     labels,
+    attempt,
     () => deleteProof(client, proof),
     () => !cancelled && current(),
   );
@@ -1299,6 +1349,7 @@ async function joinAsReturningGuest(
     credential,
     inspection.workspaceTitle,
     labels,
+    attempt,
     undefined,
     () => !cancelled && attempt.current() && attempt.allowed(selected.identity?.provider),
     true,
@@ -1347,20 +1398,34 @@ async function storeCredentialAndOpen(
   credential: InviteCredential,
   workspaceTitle: string | undefined,
   labels: PromptLabels,
+  attempt: InviteAttempt,
   afterStore?: () => Promise<void>,
   mayOpen: () => boolean = () => true,
   retainPairing = false,
 ): Promise<void> {
-  const opening: InviteProgressHandle = showInviteProgress({
-    requestId: randomUUID(),
-    phase: 'opening',
-    ...labels,
-  });
+  const opening = mayOpen()
+    ? showInviteProgress(
+        {
+          requestId: randomUUID(),
+          phase: 'opening',
+          ...labels,
+        },
+        { getParentWindow: () => attempt.parent },
+      )
+    : null;
   let cancelled = false;
-  void opening.cancelled.then(() => {
+  let openingEnded = false;
+  const dismissOpening = () => {
+    if (openingEnded) return;
+    openingEnded = true;
+    opening?.dismiss();
+  };
+  void opening?.cancelled.then(() => {
+    if (openingEnded) return;
     cancelled = true;
-    opening.dismiss();
+    dismissOpening();
   });
+  void attempt.cancelled.then(dismissOpening);
   try {
     let record: Awaited<ReturnType<typeof guestSessionsStore.add>>;
     try {
@@ -1401,14 +1466,14 @@ async function storeCredentialAndOpen(
     }
     await openBackendWindow(record.id, { mayOpen: () => !cancelled && mayOpen() });
   } finally {
-    opening.dismiss();
+    dismissOpening();
   }
 }
 
 /**
  * Route an invite link arriving from the OS (macOS `open-url`): handled
- * whenever the app is ready (no window needed — dialogs show parentless and
- * `openBackendWindow` creates its own window); parked before ready.
+ * once the app is ready; admission belongs to the captured originating window.
+ * Links arriving before app readiness stay parked for the existing startup router.
  */
 export async function routeInviteLinkFromOs(
   url: string,
@@ -1525,18 +1590,27 @@ async function showConfirmProve(
 }
 
 /** The host refused the proof as expired or invalid. True when the user chose "Retry". */
-async function showProofRefusedRetry(code: ProofRefusalCode): Promise<boolean> {
-  const response = await showDialog({
-    type: 'question',
-    title: m.deeplink_inviteFailed_title(),
-    message:
-      code === 'proof-expired'
-        ? m.deeplink_inviteProofExpired_message()
-        : m.deeplink_inviteProofInvalid_message(),
-    buttons: [m.deeplink_inviteProofExpired_retry_button(), m.deeplink_pairDialog_cancel_button()],
-    defaultId: 0,
-    cancelId: 1,
-  });
+async function showProofRefusedRetry(
+  code: ProofRefusalCode,
+  parent: InviteAttempt['parent'],
+): Promise<boolean> {
+  const response = await showDialog(
+    {
+      type: 'question',
+      title: m.deeplink_inviteFailed_title(),
+      message:
+        code === 'proof-expired'
+          ? m.deeplink_inviteProofExpired_message()
+          : m.deeplink_inviteProofInvalid_message(),
+      buttons: [
+        m.deeplink_inviteProofExpired_retry_button(),
+        m.deeplink_pairDialog_cancel_button(),
+      ],
+      defaultId: 0,
+      cancelId: 1,
+    },
+    parent,
+  );
   return response === 0;
 }
 
@@ -1558,11 +1632,16 @@ async function showNotice(
   payload: Omit<InviteNoticeShowPayload, 'requestId'>,
   handoff: ConsentHandoff | null,
   nativeOptions: MessageBoxOptions,
+  attempt: InviteAttempt,
 ): Promise<void> {
-  const acknowledged = showInviteNotice({ requestId: randomUUID(), ...payload });
+  if (!attempt.current()) return;
+  const acknowledged = showInviteNotice(
+    { requestId: randomUUID(), ...payload },
+    { getParentWindow: () => attempt.parent },
+  );
   handoff?.consent?.dismiss(handoff.outcome);
   if (await acknowledged) return;
-  await showDialog(nativeOptions);
+  if (attempt.current()) await showDialog(nativeOptions, attempt.parent);
 }
 
 /**
@@ -1651,15 +1730,23 @@ function classifyProofFailure(error: IdentityProofError): InviteFailureReason {
 async function showFailure(
   payload: Omit<InviteNoticeShowPayload, 'requestId'> & { reason: InviteFailureReason },
   handoff: ConsentHandoff,
+  attempt: InviteAttempt,
 ): Promise<void> {
   try {
-    await showNotice(payload, handoff, {
-      type: 'error',
-      title: m.deeplink_inviteFailed_title(),
-      message: describeInviteFailureReason(payload.reason, { identityHost: payload.identityHost }),
-      buttons: [m.deeplink_inviteFailed_ok_button()],
-      defaultId: 0,
-    });
+    await showNotice(
+      payload,
+      handoff,
+      {
+        type: 'error',
+        title: m.deeplink_inviteFailed_title(),
+        message: describeInviteFailureReason(payload.reason, {
+          identityHost: payload.identityHost,
+        }),
+        buttons: [m.deeplink_inviteFailed_ok_button()],
+        defaultId: 0,
+      },
+      attempt,
+    );
   } catch (dialogError) {
     handoff.consent?.dismiss(handoff.outcome);
     logger.warn('Could not show invite failure dialog', describeErrorForLog(dialogError));

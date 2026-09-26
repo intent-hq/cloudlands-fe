@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { BrowserWindow, ipcMain, shell } from 'electron';
+import { BrowserWindow, ipcMain, shell, type WebContents } from 'electron';
 import { z } from 'zod';
 import { getMainWindow } from '../../../main/state';
 import { captureLocalIdentityConnection, onBackendStatus } from '../../backend/main/backend.ipc';
@@ -44,6 +44,34 @@ let registered = false;
 const policies = new Map<number, CollaborationPolicy>();
 const policyRevisions = new Map<number, number>();
 const policyListeners = new Map<number, Set<() => void>>();
+const policyPublications = new Map<number, Set<() => void>>();
+const policyWindows = new Set<WebContents>();
+function onWindowEnd(contents: WebContents, listener: () => void): () => void {
+  contents.once('destroyed', listener);
+  contents.once('render-process-gone', listener);
+  contents.once('did-navigate', listener);
+  contents.once('did-navigate-in-page', listener);
+  return () => {
+    contents.removeListener('destroyed', listener);
+    contents.removeListener('render-process-gone', listener);
+    contents.removeListener('did-navigate', listener);
+    contents.removeListener('did-navigate-in-page', listener);
+  };
+}
+
+/** Policy belongs to the renderer lifetime, not to any individual sign-in dialog. */
+function observePolicyWindow(contents: WebContents): void {
+  if (policyWindows.has(contents)) return;
+  policyWindows.add(contents);
+  const gone = () => {
+    policyWindows.delete(contents);
+    offWindow();
+    policies.delete(contents.id);
+    policyRevisions.set(contents.id, (policyRevisions.get(contents.id) ?? 0) + 1);
+    for (const listener of policyListeners.get(contents.id) ?? []) listener();
+  };
+  const offWindow = onWindowEnd(contents, gone);
+}
 export function onCollaborationPolicyChanged(contentsId: number, listener: () => void): () => void {
   const listeners = policyListeners.get(contentsId) ?? new Set<() => void>();
   listeners.add(listener);
@@ -51,6 +79,20 @@ export function onCollaborationPolicyChanged(contentsId: number, listener: () =>
   return () => {
     listeners.delete(listener);
     if (!listeners.size) policyListeners.delete(contentsId);
+  };
+}
+
+/** Readiness may arrive after an unchanged policy was published during renderer startup. */
+export function onCollaborationPolicyPublished(
+  contentsId: number,
+  listener: () => void,
+): () => void {
+  const listeners = policyPublications.get(contentsId) ?? new Set<() => void>();
+  listeners.add(listener);
+  policyPublications.set(contentsId, listeners);
+  return () => {
+    listeners.delete(listener);
+    if (!listeners.size) policyPublications.delete(contentsId);
   };
 }
 
@@ -110,10 +152,7 @@ export function prepareCollaborationIdentity(
     }, 3000);
     const gone = () => {
       windowAlive = false;
-      policies.delete(contents.id);
-      contents.removeListener('destroyed', gone);
-      contents.removeListener('render-process-gone', gone);
-      contents.removeListener('did-navigate', gone);
+      offWindow();
       flow.cancel();
     };
     releaseAttempt = gone;
@@ -138,18 +177,14 @@ export function prepareCollaborationIdentity(
       finish: (outcome) => {
         cleanup();
         if (outcome.kind !== 'ready') {
-          contents.removeListener('destroyed', gone);
-          contents.removeListener('render-process-gone', gone);
-          contents.removeListener('did-navigate', gone);
+          offWindow();
         }
         send(COLLABORATION_AUTH.DISMISS, { requestId });
         resolve(outcome);
       },
     });
     active = { flow, contentsId: contents.id, requestId };
-    contents.once('destroyed', gone);
-    contents.once('render-process-gone', gone);
-    contents.once('did-navigate', gone);
+    const offWindow = onWindowEnd(contents, gone);
     if (!send(COLLABORATION_AUTH.SHOW, flow.snapshot())) flow.cancel();
   });
 }
@@ -163,6 +198,7 @@ export function registerCollaborationAuthHandlers(): void {
       .strict()
       .safeParse(input);
     if (!parsed.success) return { ok: false };
+    observePolicyWindow(event.sender);
     const previous = policies.get(event.sender.id);
     const changed =
       !previous ||
@@ -172,6 +208,7 @@ export function registerCollaborationAuthHandlers(): void {
       policyRevisions.set(event.sender.id, (policyRevisions.get(event.sender.id) ?? 0) + 1);
     policies.set(event.sender.id, parsed.data);
     if (changed) for (const listener of policyListeners.get(event.sender.id) ?? []) listener();
+    for (const listener of policyPublications.get(event.sender.id) ?? []) listener();
     if (active?.contentsId === event.sender.id)
       await active.flow.action({ type: 'policy', policy: parsed.data });
     return { ok: true };

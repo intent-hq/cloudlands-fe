@@ -123,6 +123,8 @@ vi.mock('../invite-attempt', () => ({
       metadataRevision: 0,
       parent: null,
       current: () => live && lifetimeCurrent,
+      alive: () => live && lifetimeCurrent,
+      admit: () => live && lifetimeCurrent,
       allowed: () => live && lifetimeCurrent,
       release: () => {
         live = false;
@@ -1109,6 +1111,7 @@ describe('handleInviteDeepLink — older local daemon recovery', () => {
     await handleInviteDeepLink(LINK);
     expect(showInviteNotice).toHaveBeenCalledWith(
       expect.objectContaining({ reason: 'collaboration-upgrade-required' }),
+      { getParentWindow: expect.any(Function) },
     );
     expect(localCalls('github.connect')).toEqual([]);
     expect(localCalls('sourceControl.connect')).toEqual([]);
@@ -1122,6 +1125,7 @@ describe('handleInviteDeepLink — older local daemon recovery', () => {
     await handleInviteDeepLink(LINK);
     expect(showInviteNotice).toHaveBeenCalledWith(
       expect.objectContaining({ reason: 'collaboration-upgrade-required' }),
+      { getParentWindow: expect.any(Function) },
     );
     expect(localCalls('github.connect')).toEqual([]);
     expect(guestAdd).not.toHaveBeenCalled();
@@ -2041,6 +2045,7 @@ describe('handleInviteDeepLink — GitLab identity', () => {
     expect(localCalls('github.connect')).toEqual([]);
     expect(showInviteNotice).toHaveBeenCalledWith(
       expect.objectContaining({ reason: 'collaboration-upgrade-required' }),
+      { getParentWindow: expect.any(Function) },
     );
     expect(prove).not.toHaveBeenCalled();
   });
@@ -2175,6 +2180,7 @@ describe('handleInviteDeepLink — GitLab identity', () => {
     expect(localCalls('github.connect')).toEqual([]);
     expect(showInviteNotice).toHaveBeenCalledWith(
       expect.objectContaining({ reason: 'collaboration-upgrade-required' }),
+      { getParentWindow: expect.any(Function) },
     );
     expect(localCalls('sourceControl.identityProof.create')).toEqual([]);
     expect(prove).not.toHaveBeenCalled();
@@ -2463,6 +2469,7 @@ describe('handleInviteDeepLink — invitation identity requirements', () => {
           reason: pinned ? 'pin-mismatch' : 'identity-unavailable',
           accountProvider: identity.provider,
         }),
+        { getParentWindow: expect.any(Function) },
       );
       expect(localCalls('settings.set')).toEqual([]);
       expect(localCalls('sourceControl.revoke')).toEqual([]);
@@ -2490,6 +2497,7 @@ describe('handleInviteDeepLink — invitation identity requirements', () => {
     expect(showInviteConsent).not.toHaveBeenCalled();
     expect(showInviteNotice).toHaveBeenCalledWith(
       expect.objectContaining({ reason: 'pin-mismatch' }),
+      { getParentWindow: expect.any(Function) },
     );
   });
 
@@ -2517,6 +2525,7 @@ describe('handleInviteDeepLink — invitation identity requirements', () => {
     expect(localRequest).not.toHaveBeenCalled();
     expect(showInviteNotice).toHaveBeenCalledWith(
       expect.objectContaining({ reason: 'pin-mismatch' }),
+      { getParentWindow: expect.any(Function) },
     );
     expect(showInviteNotice.mock.calls.at(-1)?.[0].accountProvider).toBeUndefined();
   });
@@ -2570,6 +2579,7 @@ describe('handleInviteDeepLink — invitation identity requirements', () => {
     expect(localCalls('github.getUser')).toEqual([]);
     expect(showInviteNotice).toHaveBeenCalledWith(
       expect.objectContaining({ reason: 'identity-unavailable' }),
+      { getParentWindow: expect.any(Function) },
     );
   });
 
@@ -2582,6 +2592,7 @@ describe('handleInviteDeepLink — invitation identity requirements', () => {
     expect(localCalls('github.getUser')).toEqual([]);
     expect(showInviteNotice).toHaveBeenCalledWith(
       expect.objectContaining({ reason: 'identity-unavailable' }),
+      { getParentWindow: expect.any(Function) },
     );
   });
 
@@ -2718,6 +2729,7 @@ describe('handleInviteDeepLink — invitation identity requirements', () => {
     expect(localCalls('github.getUser')).toEqual([]);
     expect(showInviteNotice).toHaveBeenCalledWith(
       expect.objectContaining({ reason: 'gitlab-rate-limited' }),
+      { getParentWindow: expect.any(Function) },
     );
   });
 

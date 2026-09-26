@@ -27,6 +27,7 @@ import { AuthRejectedError } from '../backend-connection';
 
 let tmpDir: string;
 let encryptionAvailable = true;
+let decryptionAvailable = true;
 
 function mockElectron() {
   vi.doMock('electron', () => ({
@@ -34,7 +35,10 @@ function mockElectron() {
     safeStorage: {
       isEncryptionAvailable: () => encryptionAvailable,
       encryptString: (s: string) => Buffer.from(`enc:${s}`, 'utf8'),
-      decryptString: (b: Buffer) => b.toString('utf8').replace(/^enc:/, ''),
+      decryptString: (b: Buffer) => {
+        if (!decryptionAvailable) throw new Error('locked test keyring');
+        return b.toString('utf8').replace(/^enc:/, '');
+      },
     },
   }));
   vi.doMock('../../../shared/logger', () => ({
@@ -50,6 +54,7 @@ function mockElectron() {
 beforeEach(async () => {
   tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'guest-sessions-'));
   encryptionAvailable = true;
+  decryptionAvailable = true;
   vi.resetModules();
   mockElectron();
 });
@@ -117,6 +122,105 @@ async function importRecord(
   return result.pulled.length > 0;
 }
 describe('invited v2 registry durability', () => {
+  it('does not transfer another person’s future observations into a removal floor', async () => {
+    const store = await import('../guest-sessions-store');
+    const b = await store.add(sample);
+    await store.add({ ...sample, principalId: 'C', token: 'c-secret' });
+    await reconcileInvitedSessions(store.createInvitedSyncAdapter(authenticate), {
+      client: keychain(),
+    });
+    const c = (await syncRecords(store)).find((r) => r.principalId === 'C')!;
+    const future = { ...c, updatedAt: Date.now() + 10_000_000 };
+    await reconcileInvitedSessions(store.createInvitedSyncAdapter(authenticate), {
+      client: keychain([{ account: invitedPersonKey(future), payload: JSON.stringify(future) }]),
+    });
+    await store.forget(b.id);
+    const records = (await store.createInvitedSyncAdapter(authenticate).read()).items.map((r) =>
+      parseInvitedPayload(r.account, r.payload),
+    );
+    const removal = records.find(
+      (r) => r?.kind === 'removal' && r.principalId === sample.principalId,
+    )!;
+    expect(removal.removedThrough).toBeLessThan(future.updatedAt);
+    expect((await store.list()).map((r) => r.principalId)).toEqual(['C']);
+  });
+
+  it('preserves bytes and refuses Forget when the durable clock index is malformed', async () => {
+    const store = await import('../guest-sessions-store');
+    const joined = await store.add(sample);
+    const raw = await readFile();
+    raw.invitedObservedClocks = { [invitedPersonKey(sample)]: -1 };
+    const original = JSON.stringify(raw);
+    const file = path.join(tmpDir, 'guest-sessions.json');
+    await fs.writeFile(file, original);
+    await expect(store.forget(joined.id)).rejects.toBeInstanceOf(store.GuestStoreCorruptError);
+    expect(await fs.readFile(file, 'utf8')).toBe(original);
+  });
+  it.each(
+    [false, true].flatMap((locked) =>
+      ['pairedAt', 'updatedAt', 'tcUpdatedAt'].map((clock) => ({ locked, clock })),
+    ),
+  )(
+    'Forget covers encrypted future $clock before late auth and restart (locked=$locked)',
+    async ({ locked, clock }) => {
+      const store = await import('../guest-sessions-store');
+      const first = await store.add(sample);
+      const unrelated = await store.add({ ...sample, principalId: 'C', token: 'c-secret' });
+      const client = keychain();
+      await reconcileInvitedSessions(store.createInvitedSyncAdapter(authenticate), { client });
+      const current = (await syncRecords(store)).find((r) => r.principalId === sample.principalId)!;
+      const future = {
+        ...current,
+        token: 'future-secret',
+        updatedAt: Date.now() + 1_000_000,
+        pairedAt: Date.now() + 2_000_000,
+        [clock]: Date.now() + 3_000_000,
+      };
+      const futureItem = { account: invitedPersonKey(future), payload: JSON.stringify(future) };
+      const entered = Promise.withResolvers<void>();
+      const release = Promise.withResolvers<void>();
+      const pending = reconcileInvitedSessions(
+        store.createInvitedSyncAdapter(async (candidate) => {
+          if (candidate.token === future.token) {
+            entered.resolve();
+            await release.promise;
+          }
+          return authenticate(candidate);
+        }),
+        { client: keychain([futureItem]) },
+      );
+      await entered.promise;
+      // The production reconciler has durably remembered the candidate but has not admitted it.
+      expect(JSON.stringify(await readFile())).not.toContain(future.token);
+      encryptionAvailable = !locked;
+      decryptionAvailable = !locked;
+      vi.resetModules();
+      const afterRestart = await import('../guest-sessions-store');
+      await afterRestart.forget(first.id);
+      encryptionAvailable = true;
+      decryptionAvailable = true;
+      release.resolve();
+      await pending;
+      expect(await store.findById(first.id)).toBeNull();
+      expect((await store.list()).map((r) => r.principalId)).toEqual(['C']);
+      expect(await store.getDecryptedToken(unrelated.id)).toBe('c-secret');
+      vi.resetModules();
+      const restarted = await import('../guest-sessions-store');
+      await reconcileInvitedSessions(restarted.createInvitedSyncAdapter(authenticate), {
+        client: keychain([futureItem]),
+      });
+      expect((await restarted.list()).map((r) => r.principalId)).toEqual(['C']);
+      const fresh = await restarted.add({ ...sample, token: 'deliberate-later-join' });
+      await reconcileInvitedSessions(restarted.createInvitedSyncAdapter(authenticate), {
+        client: keychain([futureItem]),
+      });
+      expect(await restarted.getDecryptedToken(fresh.id)).toBe('deliberate-later-join');
+      expect((await restarted.findById(fresh.id))?.pairedAt).toBeGreaterThan(
+        Math.max(future.pairedAt, future.updatedAt, future.tcUpdatedAt ?? 0),
+      );
+    },
+  );
+
   it('explicitly forgets an unqualified legacy row locally without inventing a synced person', async () => {
     const store = await import('../guest-sessions-store');
     const record = await store.add(sample);
