@@ -690,6 +690,15 @@ describe('browser-mock daemon health with BrowserWebSocketTransport (dev:web)', 
     (window as any).electronAPI = originalElectronAPI;
   });
 
+  async function completeHello(socket: FakeWebSocket) {
+    const hello = JSON.parse(socket.sent[socket.sent.length - 1]);
+    expect(hello.method).toBe('client.hello');
+    expect((await api.invoke('backend:get-status')).status).toBe('connecting');
+    socket.receive({ jsonrpc: '2.0', id: hello.id, result: { clientId: 'browser-health' } });
+    await Promise.resolve();
+    await Promise.resolve();
+  }
+
   /** Resolve the (WS) transport via the factory and drive it to connected. */
   async function connectTransport() {
     const { resolveBackendTransport } = await import('./client/live/backend-transport-factory');
@@ -700,6 +709,7 @@ describe('browser-mock daemon health with BrowserWebSocketTransport (dev:web)', 
     socket.open();
     await Promise.resolve();
     await Promise.resolve();
+    await completeHello(socket);
     const frame = JSON.parse(socket.sent[socket.sent.length - 1]) as { id: number };
     socket.receive({ jsonrpc: '2.0', id: frame.id, result: { running: true } });
     await pending;
@@ -741,6 +751,7 @@ describe('browser-mock daemon health with BrowserWebSocketTransport (dev:web)', 
     const reconnectSocket = FakeWebSocket.instances[FakeWebSocket.instances.length - 1];
     expect(reconnectSocket).not.toBe(socket);
     reconnectSocket.open();
+    await completeHello(reconnectSocket);
     expect(events).toContainEqual({
       status: 'connected',
       transport: { mode: 'external-ws', target: 'ws://127.0.0.1:5181/rpc' },

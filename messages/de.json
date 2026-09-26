@@ -6177,6 +6177,8 @@
   "settings_hardware_pttHint_doubleHold_description": "Doppelt drücken & halten: nimmt auf, solange gehalten, sendet beim Loslassen.",
   "settings_hardware_knob_ariaLabel": "Drehknopf — Funktion anzeigen",
   "settings_hardware_knobExplainer_label": "Drehknopf",
+  "settings_hardware_knobExplainer_effort_description": "Drehen passt den Denkaufwand des aktuellen Agenten an — im Uhrzeigersinn wird er erhöht, gegen den Uhrzeigersinn verringert, jeweils bis zur unterstützten Grenze.",
+  "settings_hardware_knobExplainer_configurable_description": "Das Drehverhalten lässt sich mit der Einstellung {setting} ändern.",
   "settings_hardware_knobExplainer_rotate_description": "Drehen wechselt zwischen Workspaces — im Uhrzeigersinn zu zuletzt aktiven, gegen den Uhrzeigersinn zu weniger aktuellen; stoppt an den Listenenden.",
   "settings_hardware_knobExplainer_click_description": "Klicken öffnet die Seitenleiste „Alle Workspaces“; weitere Klicks wechseln zwischen den Ansichten „Zuletzt“, „Repo“ und „Status“.",
   "settings_hardware_joystick_ariaLabel": "Joystick — Funktion anzeigen",

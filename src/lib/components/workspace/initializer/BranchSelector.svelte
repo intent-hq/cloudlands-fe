@@ -5,6 +5,7 @@
   import Button from '$lib/components/ui/button/button.svelte';
   import Checkbox from '$lib/components/ui/checkbox/checkbox.svelte';
   import * as Popover from '$lib/components/ui/popover';
+  import { useDialogPortalTarget } from '$lib/components/ui/dialog';
   import { Combobox, type ComboboxGroup } from '$lib/components/ui/combobox';
   import { Tooltip } from '$lib/components/ui/tooltip';
   import { toast } from '$lib/components/ui/toast';
@@ -37,6 +38,7 @@
   import { store as appStore } from '$store/renderer/store';
 
   const logger = createLogger('BranchSelector');
+  const dialogPortalTarget = useDialogPortalTarget();
   const branchByRepo$ = selectWorkspaceInitializerBranchByRepo();
 
   /** Status of the branch relative to its upstream */
@@ -1542,6 +1544,8 @@
         aria-label={m.workspace_branchSelector_whichBranch_label()}
         class="w-[400px] max-w-[calc(100vw-16px)] min-w-0 max-h-[min(600px,var(--bits-popover-content-available-height,100dvh))] overflow-y-auto flex flex-col"
         side={dropUp ? 'top' : 'bottom'}
+        portalProps={{ to: dialogPortalTarget() }}
+        strategy={dialogPortalTarget() ? 'absolute' : 'fixed'}
         onOpenAutoFocus={(event) => {
           event.preventDefault();
           void tick().then(() => {

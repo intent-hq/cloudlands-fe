@@ -200,6 +200,9 @@ beforeEach(() => {
   state.cardError = null;
   subscriptions.clear();
   vi.clearAllMocks();
+  actionMocks.dispatch.mockImplementation(
+    (action: { promise?: Promise<unknown> }) => action.promise ?? action,
+  );
 });
 
 afterEach(() => {
@@ -226,6 +229,25 @@ describe('InlineProposal', () => {
       proposalId: 'tool-pending',
       outcome: 'dismissed',
     });
+  });
+
+  it('keeps the draft on a rejected dismissal and lets a subsequent dismissal retry', async () => {
+    const proposalId = 'tool-dismiss-retry';
+    state.pendingProposals = [{ proposalId, messageId: 'message-inline' }];
+    actionMocks.dispatch.mockRejectedValueOnce(new Error('resolution failed'));
+    renderProposal(makeBulkProposal(proposalId));
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Not now' }));
+    await fireEvent.click(await screen.findByRole('button', { name: 'Dismiss proposal' }));
+    expect(actionMocks.resolve).toHaveBeenCalledOnce();
+    expect(actionMocks.clearDraft).not.toHaveBeenCalled();
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Not now' }));
+    await fireEvent.click(await screen.findByRole('button', { name: 'Dismiss proposal' }));
+    expect(actionMocks.resolve).toHaveBeenCalledTimes(2);
+    await vi.waitFor(() =>
+      expect(actionMocks.clearDraft).toHaveBeenCalledWith(AGENT_ID, proposalId),
+    );
   });
 
   it('renders an applied workspace outcome with a link to the created workspace', async () => {

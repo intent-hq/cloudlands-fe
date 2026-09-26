@@ -1152,17 +1152,13 @@
   // reload) and clears the pending question set, so the sticky wizard stays
   // hidden across later turns. On failure the middleware rolls
   // the metadata back, so the wizard re-surfaces, and surfaces the error toast.
-  // Returns the action promise so the wizard clears its stored draft only
+  // Returns the dispatch promise so the wizard clears its stored draft only
   // after the dismissal is confirmed (a failure keeps the draft).
   async function handleQuestionWizardDismiss(): Promise<void> {
     if (!workspace || !pendingQuestions) return;
-    const action = agentSessionDismissQuestionsRequested(
-      agentId,
-      workspace.id,
-      pendingQuestions.messageId,
+    await appStore.dispatch(
+      agentSessionDismissQuestionsRequested(agentId, workspace.id, pendingQuestions.messageId),
     );
-    appStore.dispatch(action);
-    await action.promise;
   }
 
   // Completing the wizard flattens all answers into ONE plain-text user
@@ -4783,9 +4779,9 @@
   async function handleSendQueuedMessageNow(messageId: string) {
     if (!workspace) throw new Error(m.agent_chatSend_sendNowRejected_error());
     logger.info('Send queued message now triggered', { messageId, agentId });
-    const action = sendQueuedMessageNowRequested(agentId, workspace.id, messageId);
-    appStore.dispatch(action);
-    const outcome = await action.promise;
+    const outcome = await appStore.dispatch(
+      sendQueuedMessageNowRequested(agentId, workspace.id, messageId),
+    );
     if (outcome === 'delivered') {
       void performLocalSendCleanup({ clearInput: false, followBottom: true });
     }
@@ -5224,10 +5220,9 @@
       },
       specialistRollback: { metadata: session.metadata, model: session.model },
     });
-    appStore.dispatch(saveAction);
-    // The mutation saga owns rollback and the user-visible error; observe the
-    // rejection here so this component dispatch is not an unhandled promise.
-    void saveAction.promise.catch((error) => {
+    // The mutation saga owns rollback and the user-visible error; retain
+    // specialist-specific failure context in the log.
+    void appStore.dispatch(saveAction).catch((error) => {
       logger.error('Failed to persist agent specialist change', { agentId, error });
     });
     logger.info('Agent specialist change dispatched', {
@@ -5327,9 +5322,7 @@
       options,
     );
     appStore.dispatch(action);
-    // Failures are surfaced via toast by the edit-regenerate middleware;
-    // swallow the rejection here to avoid an unhandled-rejection warning.
-    action.promise.catch(() => {});
+    // Failures are surfaced via toast by the edit-regenerate saga.
     // No launch-bubble transition on this path (there is no composer origin);
     // just re-engage auto-follow and scroll so the regeneration is visible.
     void performLocalSendCleanup({ followBottom: true });
@@ -5345,9 +5338,7 @@
     );
     appStore.dispatch(action);
     // Failures are surfaced via toast by the regenerate saga (before it
-    // delegates) or by the edit-regenerate saga it delegates to; swallow the
-    // rejection here.
-    action.promise.catch(() => {});
+    // delegates) or by the edit-regenerate saga it delegates to.
   }
 
   // Handle selecting a suggested prompt - sends immediately

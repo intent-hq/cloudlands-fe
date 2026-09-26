@@ -1,46 +1,41 @@
 ---
 name: svelte/migration/setup
 description: >-
-  Use when preparing a Svelte store migration: install Themis and peers, wire
-  Store in +layout.svelte, and register reducers and sagas before migrating
-  slices.
+  Use when preparing an existing Svelte app for incremental migration with an
+  empty reducer map. Route installation/imports/lifecycle to canonical owners;
+  add registrations as slices migrate.
 type: sub-skill
 requires:
   - svelte
+  - svelte/store
   - svelte/component-integration
   - svelte/migration
+  - core/import-boundaries
 triggers:
-  - install peer deps
-  - bootstrap layout
-  - reducer registry
-  - saga registry
+  - Svelte migration bootstrap
+  - Svelte migration reducer registration
+  - Svelte migration saga registration
 ---
 # Migration — Setup (Pre-Migration Bootstrap)
 
-> Steps 1–4 of the ten-step checklist. Complete this once, before migrating any individual slice.
+> Complete this once, before migrating an individual slice in `../SKILL.md` → **Recommended Order**.
 
 ## Step 1 — Install Dependencies
 
-Install the `@augmentcode/themis` package and its peer dependencies with your package manager: `@augmentcode/themis`, `redux`, `redux-saga`, `typed-redux-saga`, and `fast-equals`. Add `redux-saga-test-plan` as a dev dependency when saga tests follow this repository's examples.
-
-`svelte@^5` is also required as a peer dependency and is usually already present in the app being migrated. Package installation does not copy AI skills automatically. Explicitly install the Svelte bundle from the consumer project:
-
-```bash
-npx themis install-skills:svelte
-npx themis help
-```
-
-The equivalent npm exec form is `npm exec -- themis install-skills:svelte`. Repeating the command refreshes package-owned files in `.agents/skills/themis/`; cleanup preserves unrelated skills and the owned Claude compatibility link is removed only by `npx themis cleanup-skills`. For the canonical installation, collision, verification, cleanup, and maintainer workflow, read [@augmentcode/themis/docs/INSTALLATION.md](@augmentcode/themis/docs/INSTALLATION.md).
-
-On rollback, run `npx themis cleanup-skills` before uninstalling `@augmentcode/themis`; remove peer dependencies only if the app no longer uses them.
-
-See `@augmentcode/themis/docs/INSTALLATION.md` for the complete consumer install/uninstall flow and the separate maintainer `pnpm install --frozen-lockfile` validation flow.
+Use `../../../setup/SKILL.md` → **Installation workflow** for package/peer
+installation and explicit skill installation. Select the Svelte bundle for this
+existing app; do not repeat greenfield first-slice creation during migration.
+That canonical setup owner links the installation, refresh/collision, cleanup,
+rollback/uninstall ordering, and maintainer workflow in
+`@augmentcode/themis/docs/INSTALLATION.md`.
 
 ## Step 2 — Import the Package Runtime
 
-Use the npm package directly. Do not copy `themis` source files into your app. Import runtime APIs from the public subpackages: `@augmentcode/themis/svelte-store`, `@augmentcode/themis/saga`, and `@augmentcode/themis/types`. If direct utility access is required, use only the documented leaf subpaths under `@augmentcode/themis/utils/collections/collection-utils`, `@augmentcode/themis/utils/store/*`, or the approved saga utility leaves (`debounce-saga`, `retry-with-timeout`, `wrap-async-generator`, and `selector-channel-effects`).
-
-Migration note: replace old flat package-root imports, removed utilities-subpackage imports, and source-shaped deep imports with one of the public subpackages or approved utility leaf subpaths above. The package does not publish a root runtime API or `@augmentcode/themis/utils` barrel.
+Use the npm package directly; do not copy package sources into the app. Replace
+flat package-root, removed utilities-barrel, and source-shaped deep imports using
+`../../../core/import-boundaries/SKILL.md` → **Setup — the package export surface**.
+Utility exports are explicit leaf subpaths, not wildcard domains. For Svelte
+Store imports use `../../store/SKILL.md` → **Correct import and class choice**.
 
 The package publishes compiled ESM files and TypeScript declarations from `dist/`, so application code should keep only app-specific store setup and slice files under `src/lib/store/`.
 
@@ -60,136 +55,66 @@ export const store = new Store({
 export type AppState = StoreState<typeof store>;
 ```
 
-Use `StoreState<typeof store>` for the migrated app state type after adding migrated reducers to the constructor map. Constructor reducer maps preserve state inference without an explicit `: Store` annotation. Do not copy or register package-owned internals. `Store` provides internal reducers by default under reserved `@internal_` domains such as `@internal_storeUtility`. The internal saga manager starts during Store initialization; migrated app slices should use normal app domain names and start app-owned sagas only with `store.runSaga(sagaFn)`.
-
-Call `store.init()` in the root layout so the store is created at layout
-init and disposed when the layout unmounts. As each slice is migrated and
-its saga is available, start the saga explicitly with `store.runSaga(sagaFn)`
-from `onMount` — `store.init()` does not auto-start app sagas:
-
-The root `+layout.svelte` script calls `store.init()` during component initialization, registers the returned disposer with `onDestroy`, and starts each app saga from `onMount` as it is migrated.
-
-For non-component code use `const cancel = store.runSaga(sagaFn)` instead —
-it returns a cancel function that stops the saga. For
-whole-store teardown in tests or non-component owners, call `store.dispose()`
-or the disposer returned by `store.init()` to stop saga tasks owned by the
-initialized Store context.
-
-See `../../component-integration/SKILL.md` for the
-full component-integration rules (why `store.init()` must run at init,
-how to dispose on unmount, etc.).
+For state inference, reserved internals, initialization, and disposal, follow
+`../../store/SKILL.md` → **Lifecycle rules**. Apply
+`../../component-integration/SKILL.md` → **Root layout wiring** to this configured
+Store. App sagas start explicitly, not automatically on `init()`; component
+mount/remount and imperative cancellation rules live in `../../store/SKILL.md` →
+**App saga lifetime**. Do not copy a second lifecycle implementation here.
 
 ## Step 4 — Start With Empty Registrations
 
-`src/lib/store/store.ts` starts out with an empty app-owned reducer map and no app sagas started —
-the app has not migrated any of its own slices yet, while package internal reducers are still installed automatically under `@internal_` domains. The internal saga manager starts during `Store` initialization. You'll add one reducer-map entry per slice and a matching `store.runSaga(sagaFn)` startup call as you migrate; never start a manual `@internal_sagaManager` saga.
+Start with an empty app-owned reducer map and no app sagas. Add one reducer-map
+entry per migrated slice, plus explicit startup if it has a saga. Package-owned
+internals remain managed by Store; see `../../store/SKILL.md` → **Lifecycle rules**.
 
 ## After Setup
 
-The project now runs with an empty Redux store. Proceed slice-by-slice:
-
-1. Pick the **simplest, most isolated** store first
-2. Run `svelte/migration/writable-stores` for `writable()` / `$state`
-3. Run `svelte/migration/derived-stores` for `derived()` / `$derived`
-4. Run `svelte/migration/side-effects` for `$effect` / `fetch` / timers
-5. Run `svelte/migration/component-migration` to swap consumers
-6. Run `svelte/migration/cleanup` to delete the old store file
-
-Per slice, create `src/lib/store/slices/{name}/{name}-slice.ts`, `src/lib/store/slices/{name}/{name}-selectors.ts`, and `src/lib/store/slices/{name}/sagas/{name}-saga.ts`. Then add its app-owned reducer to the `Store` constructor map and add a matching `onMount(() => store.runSaga(sagaFn))` call in the root layout so the saga actually runs.
-
-## Examples in This Skill
-
-- Retained: empty Store bootstrap with `StoreState<typeof store>` inference in Step 3.
-- Added: explicit empty bootstrap; app reducer constructor maps; root layout lifecycle script; imperative saga cancel function; bad runSaga-before-init/internal saga examples.
+Return to `../SKILL.md` → **Recommended Order** for the per-slice sequence, starting
+with the simplest isolated shared/domain store. Create slice/selectors/types and
+any needed saga using `../../../core/file-structure/SKILL.md` → **Setup — slice directory layout**;
+then add the reducer and explicitly start its saga under the selected lifetime.
 
 ## Setup Examples
 
-### 1. Start with an explicit empty app-owned reducer map
-
-```typescript
-import { Store } from "@augmentcode/themis/svelte-store";
-import type { StoreState } from "@augmentcode/themis/types";
-
-export const store = new Store({});
-export type AppState = StoreState<typeof store>;
-```
-
-### 2. Add each migrated slice through the reducer map
+### Add each migrated slice through the reducer map
 
 ```typescript
 import { Store } from "@augmentcode/themis/svelte-store";
 import type { StoreState } from "@augmentcode/themis/types";
 import { counterReducer } from "$lib/store/slices/counter/counter-slice";
-import { counterSaga } from "$lib/store/slices/counter/sagas/counter-saga";
 
 export const store = new Store({ counter: counterReducer });
 
 export type AppState = StoreState<typeof store>;
 ```
 
-### 3. Initialize Store lifetime from the root layout script
+Layout startup/cleanup examples are in `../../component-integration/SKILL.md` →
+**Root layout wiring**; cancellation for services/tests receiving an already
+component-initialized Store is in `../../store/SKILL.md` → **App saga lifetime**.
+Fresh standalone Svelte `Store.init()` is not supported. Keep init-before-run and reserved-name
+checks in that owner rather than duplicating lifecycle examples in the migration adapter.
 
-```typescript
-import { onDestroy, onMount } from "svelte";
-import { store } from "$lib/store/store";
-import { counterSaga } from "$lib/store/slices/counter/sagas/counter-saga";
-
-const disposeStore = store.init();
-
-onDestroy(disposeStore);
-onMount(() => store.runSaga(counterSaga));
-```
-
-### 4. Start and cancel a saga from non-component code after init
-
-```typescript
-import { store } from "$lib/store/store";
-import { counterSaga } from "$lib/store/slices/counter/sagas/counter-saga";
-
-const disposeStore = store.init();
-const cancelCounterSaga = store.runSaga(counterSaga);
-
-cancelCounterSaga();
-disposeStore();
-```
-
-### 5. Prove empty bootstrap has app reducers only
+### 5. Prove empty bootstrap has no app-owned registrations
 
 ```typescript
 import { Store } from "@augmentcode/themis/svelte-store";
 
 const store = new Store({});
-const appReducers = store.getReducers();
+const composedReducers = store.getReducers();
 
 export const emptyBootstrapEvidence = {
-  reducerDomainsVisibleToApp: Object.keys(appReducers),
+  reducerDomainsVisibleToApp: Object.keys(composedReducers).filter((key) => !key.startsWith("@internal_")),
 };
 ```
 
-### 6. ❌ Bad: start sagas before init or start internals manually
+`getReducers()` includes package-owned internal reducers even for `new Store({})`.
+Only the constructor input is app-owned; never register reserved keys manually.
 
-```typescript
-// ❌ BAD: runSaga before init throws, and @internal_sagaManager is package-owned.
-import { Store } from "@augmentcode/themis/svelte-store";
+## Verification cues
 
-function* counterSaga() {}
-function* fakeInternalSagaManager() {}
-Object.defineProperty(fakeInternalSagaManager, "name", { value: "@internal_sagaManager" });
+- Empty-bootstrap evidence lists no app reducers until a slice is migrated.
+- Each migrated reducer/saga has one registration owner; follow
+  `../../store/SKILL.md` → **Verification cues** for lifecycle checks and
+  `../cleanup/SKILL.md` → **Final Checklist Per Slice** before deleting legacy state.
 
-const store = new Store();
-
-store.runSaga(counterSaga);
-store.init();
-store.runSaga(fakeInternalSagaManager);
-```
-
-## Cases Covered
-
-| Case | Example |
-| --- | --- |
-| Empty pre-migration bootstrap | Step 3 bootstrap and Start with an explicit empty app-owned reducer map |
-| Reducer/saga startup | Add each migrated slice through the reducer map and `store.runSaga(sagaFn)` |
-| Root layout lifecycle | Initialize Store lifetime from the root layout script |
-| Non-component lifecycle owner | Start and cancel a saga from non-component code after init |
-| Empty bootstrap evidence | Prove empty bootstrap has app reducers only |
-| Incorrect setup ordering/internal startup | Bad: start sagas before init or start internals manually |

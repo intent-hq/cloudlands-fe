@@ -791,6 +791,8 @@ function proofParamsFor(proof: PublishedProof, nonce: string): InviteProof {
 
 /** Wire shape of `github.connect` (PROTOCOL §5.27): the guest's own device flow. */
 interface GithubConnectResult {
+  /** Identifies the started flow; scopes `github.cancelAuth` to it. */
+  flowId?: string;
   userCode: string;
   verificationUri: string;
   expiresIn: number;
@@ -809,14 +811,37 @@ type SignInStatus = 'authorized' | 'denied' | 'expired' | 'error';
 type SignInResult = { kind: 'signed-in'; identity: LocalIdentity } | { kind: 'cancelled' };
 
 /**
- * Generation of the latest sign-in started by an invite. A `github.connect`
- * cancelled while pending may resolve after the next invite already started
- * (and shows) its own device flow — the in-flight guard is released before
- * the late result arrives, and the daemon hands the resident live flow to a
- * concurrent connect — so the late cleanup aborts the flow only while no newer
- * sign-in has started since; otherwise it would cancel the newer invite's flow.
+ * A newer invite may adopt the resident flow with the same `flowId`. Only
+ * the latest sign-in may clean up a delayed connect response; scoping by id
+ * alone cannot protect a flow shared with a newer invite.
  */
 let signInGeneration = 0;
+
+/**
+ * Abort the device flow `github.connect` started, best effort. The cancel is
+ * scoped to that flow's `flowId` (PROTOCOL §5.27) whenever the daemon returned
+ * one; the unscoped call is the fallback for a daemon that did not, and only
+ * on the user's direct Cancel of the flow being shown (`cancelSignIn`).
+ */
+function cancelDeviceFlow(client: JsonRpcClient, start: GithubConnectResult): void {
+  const { flowId } = start;
+  const cancel =
+    typeof flowId === 'string'
+      ? client.request('github.cancelAuth', { flowId })
+      : client.request('github.cancelAuth');
+  void cancel.catch(() => {});
+}
+
+/**
+ * A `github.connect` that resolved after its invite prompt was cancelled
+ * is aborted on arrival only if no newer invite has started and it can be
+ * scoped. The generation guard at the call site protects adopted flows;
+ * the id protects a different flow. A late result without `flowId` is left alone (the
+ * code expires on its own, or the next `github.connect` adopts it).
+ */
+function cancelLateDeviceFlow(client: JsonRpcClient, late: GithubConnectResult): void {
+  if (typeof late.flowId === 'string') cancelDeviceFlow(client, late);
+}
 
 /**
  * Sign the guest's own daemon in to GitHub from the consent modal's
@@ -824,12 +849,13 @@ let signInGeneration = 0;
  * modal shows the code + URL (code copied to the clipboard) and the flow's
  * terminal transition is awaited from that moment — the code may be entered
  * on any device, so "Open GitHub" only launches the URL here. Cancel (before
- * or after "Open GitHub") aborts the flow locally (`github.cancelAuth`, best
- * effort). Resolves with the revalidated identity the daemon is signed in as. The
+ * or after "Open GitHub") aborts the flow locally (`github.cancelAuth` scoped
+ * to the flow's `flowId`, best effort). Resolves with the revalidated identity
+ * the daemon is signed in as. The
  * `github.connect` start is raced against the active forge-choice prompt's
  * Cancel, or the `connecting` dialog's Cancel when no choice was shown. A
- * device flow that starts after cancellation is aborted on arrival, unless
- * a later sign-in owns the live flow by then.
+ * device flow that starts after cancellation is aborted on arrival only when
+ * it carries a `flowId` and no later sign-in owns the live flow by then.
  *
  * With no forge connected at all (`not-connected`) the neutral
  * `connect-forge` prompt comes first, before anything is asked of GitHub:
@@ -857,9 +883,9 @@ async function signInToGitHub(
     }
   }
   const generation = ++signInGeneration;
-  const cancelLateSignIn = (): void => {
+  const cancelLateSignIn = (late: GithubConnectResult): void => {
     if (generation !== signInGeneration) return;
-    void client.request('github.cancelAuth').catch(() => {});
+    cancelLateDeviceFlow(client, late);
   };
   let start: GithubConnectResult;
   try {
@@ -893,9 +919,7 @@ async function signInToGitHub(
   if (!isAllowedVerificationUri(start.verificationUri)) {
     throw new InviteFlowError('invalid-verification-uri');
   }
-  const cancelSignIn = (): void => {
-    void client.request('github.cancelAuth').catch(() => {});
-  };
+  const cancelSignIn = (): void => cancelDeviceFlow(client, start);
 
   await clipboard.writeText(start.userCode);
   const consent = prompts.show({

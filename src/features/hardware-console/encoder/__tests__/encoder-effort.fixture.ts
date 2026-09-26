@@ -186,7 +186,10 @@ export function manager(model: HardwareDeviceModel = 'codex-micro') {
       for (const listener of raw) listener(message);
     },
     turn(direction: 'cw' | 'ccw' = 'cw') {
-      fake.emit({ m: 'v.oai.hid', p: { k: direction === 'cw' ? 'ENC_CW' : 'ENC_CC', act: 2 } });
+      // Simulate physical effort turns, calibrated from the CM2 user report
+      // in intent-hq/intent#5947. Raw routing is asserted independently in
+      // encoder-direction.test.ts; workspace tests emit explicit wire events.
+      fake.emit({ m: 'v.oai.hid', p: { k: direction === 'cw' ? 'ENC_CC' : 'ENC_CW', act: 2 } });
     },
     statusChanged(status: HardwareConsoleStatus) {
       fake.status = status;

@@ -254,9 +254,7 @@
             nameExplicitlySet: true,
           } as any),
         );
-        const action = renameAgentSessionRequested(wsId, agentId, nextName);
-        appStore.dispatch(action);
-        action.promise.catch(() => {
+        appStore.dispatch(renameAgentSessionRequested(wsId, agentId, nextName)).catch(() => {
           // Revert the optimistic dispatch so Redux matches disk, then notify.
           appStore.dispatch(
             updateAgentSessionFields(agentId, {
@@ -395,11 +393,8 @@
               : undefined;
           closeContextMenu();
           if (!wsId) return;
-          const action = setAgentNotificationsMutedRequested(wsId, agentId, !muted);
-          appStore.dispatch(action);
-          // The saga surfaces the failure toast and rolls back; swallow here so
-          // a daemon rejection never becomes an unhandled rejection.
-          await action.promise.catch(() => {});
+          // The saga owns the failure toast and rollback.
+          appStore.dispatch(setAgentNotificationsMutedRequested(wsId, agentId, !muted));
         },
       });
     }
@@ -456,9 +451,7 @@
           // become an unhandled rejection that skips closing the menu.
           try {
             if (wsId) {
-              const action = stopAgentSessionRequested(wsId, agentId);
-              appStore.dispatch(action);
-              await action.promise;
+              await appStore.dispatch(stopAgentSessionRequested(wsId, agentId));
             }
           } catch (error) {
             logger.error('Failed to stop agent', { agentId, error });
@@ -508,13 +501,9 @@
           closeContextMenu();
 
           if (deleteWorkspaceId) {
-            const action = deleteAgentWithUndoRequested(
-              deleteWorkspaceId,
-              agentId,
-              agentName || undefined,
+            await appStore.dispatch(
+              deleteAgentWithUndoRequested(deleteWorkspaceId, agentId, agentName || undefined),
             );
-            appStore.dispatch(action);
-            await action.promise;
           }
         },
       });

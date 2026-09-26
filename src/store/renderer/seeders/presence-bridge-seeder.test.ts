@@ -13,6 +13,10 @@ vi.mock('$lib/client/live/backend-transport', () => ({
 }));
 
 import { backendRequest } from '$lib/client/live/backend-transport';
+import {
+  BrowserWebSocketTransport,
+  type BrowserWebSocketLike,
+} from '$lib/client/live/browser-websocket-transport';
 import { mockInvoke } from '$shared/ipc-mock-router';
 import { IPC_CHANNELS } from '$shared/ipc-registry';
 import type { PresenceReportParams, PresenceReportResult } from '$shared/types/presence';
@@ -74,5 +78,121 @@ describe('presence-bridge-seeder', () => {
 
     await expect(report(focusA)).rejects.toThrow('boom');
     await expect(report(focusB)).resolves.toEqual({ typingSource: 'ts-3' });
+  });
+});
+
+/** Exercise the existing serialized bridge with the real browser transport underneath. */
+describe('presence bridge connection readiness', () => {
+  let transport: BrowserWebSocketTransport;
+  let sockets: Array<
+    BrowserWebSocketLike & { frames: Array<{ id: number; method: string; params?: unknown }> }
+  >;
+  const clear: PresenceReportParams = { focus: [], typing: null };
+
+  async function flush() {
+    // Each bridge report joins its predecessor before entering the transport.
+    for (let i = 0; i < 10; i++) await Promise.resolve();
+  }
+
+  function setup() {
+    sockets = [];
+    transport = new BrowserWebSocketTransport({
+      url: 'ws://127.0.0.1:9100/rpc',
+      webSocketFactory: () => {
+        const frames: Array<{ id: number; method: string; params?: unknown }> = [];
+        const socket = {
+          frames,
+          onopen: null,
+          onmessage: null,
+          onerror: null,
+          onclose: null,
+          send: (data: string) => frames.push(JSON.parse(data)),
+          close: () => undefined,
+        };
+        sockets.push(socket);
+        return socket;
+      },
+    });
+    mockedRequest.mockImplementation(transport.request.bind(transport));
+  }
+
+  function reply(result: unknown, error?: { code: number; message: string }) {
+    const socket = sockets[sockets.length - 1];
+    socket.onmessage?.({
+      data: JSON.stringify({ jsonrpc: '2.0', id: socket.frames.at(-1)!.id, result, error }),
+    });
+  }
+
+  afterEach(() => {
+    transport?.dispose();
+    mockedRequest.mockReset();
+    vi.useRealTimers();
+  });
+
+  it('keeps queued focus, switches and clears serialized behind the cold hello', async () => {
+    setup();
+    const a = report(focusA);
+    const b = report(focusB);
+    const cleared = report(clear);
+    await flush();
+    sockets[0].onopen?.();
+    await flush();
+    expect(sockets[0].frames.map((f) => f.method)).toEqual(['client.hello']);
+    reply({ clientId: 'browser-queue', server: { capabilities: {} } });
+    await flush();
+    expect(sockets[0].frames.map((f) => f.method)).toEqual(['client.hello', 'presence.update']);
+    expect(sockets[0].frames.at(-1)?.params).toEqual(focusA);
+    reply({ typingSource: 'ts-queue' });
+    await a;
+    await flush();
+    expect(sockets[0].frames.at(-1)?.params).toEqual(focusB);
+    reply({ typingSource: 'ts-queue' });
+    await b;
+    await flush();
+    expect(sockets[0].frames.at(-1)?.params).toEqual(clear);
+    reply({ typingSource: 'ts-queue' });
+    await expect(cleared).resolves.toEqual({ typingSource: 'ts-queue' });
+    expect(
+      sockets[0].frames.filter((f) => f.method === 'presence.update').map((f) => f.params),
+    ).toEqual([focusA, focusB, clear]);
+  });
+
+  it('drops an interrupted report and sends its newer clear only after the replacement hello', async () => {
+    vi.useFakeTimers();
+    setup();
+    const first = report(focusA);
+    const rejected = expect(first).rejects.toMatchObject({ code: 'TRANSPORT_ERROR' });
+    const cleared = report(clear);
+    await flush();
+    sockets[0].onopen?.();
+    const staleMessage = sockets[0].onmessage!;
+    const staleId = sockets[0].frames[0].id;
+    sockets[0].onclose?.();
+    await rejected;
+    await flush();
+    await vi.advanceTimersByTimeAsync(1_000);
+    sockets[1].onopen?.();
+    staleMessage({
+      data: JSON.stringify({ jsonrpc: '2.0', id: staleId, result: { clientId: 'obsolete' } }),
+    });
+    await flush();
+    expect(sockets[1].frames.map((f) => f.method)).toEqual(['client.hello']);
+    reply({ clientId: 'replacement', server: { capabilities: {} } });
+    await flush();
+    expect(sockets[1].frames.at(-1)).toMatchObject({ method: 'presence.update', params: clear });
+    reply({ typingSource: 'ts-clear' });
+    await expect(cleared).resolves.toEqual({ typingSource: 'ts-clear' });
+    expect(sockets[0].frames.map((f) => f.method)).toEqual(['client.hello']);
+  });
+
+  it('keeps method-not-found compatibility when hello itself is unsupported', async () => {
+    setup();
+    const first = report(focusA);
+    await flush();
+    sockets[0].onopen?.();
+    reply(undefined, { code: -32601, message: 'Method not found' });
+    await expect(first).resolves.toEqual({ typingSource: null });
+    await expect(report(clear)).resolves.toEqual({ typingSource: null });
+    expect(sockets[0].frames.map((f) => f.method)).toEqual(['client.hello']);
   });
 });

@@ -653,6 +653,7 @@ describe('integrations-bridge-seeder', () => {
         })
         .mockResolvedValueOnce({
           ok: true,
+          flowId: 'flow-7',
           userCode: 'ABCD-1234',
           verificationUri: 'https://github.com/login/device',
           expiresIn: 899,
@@ -664,12 +665,30 @@ describe('integrations-bridge-seeder', () => {
       expect(mockedRequest).toHaveBeenCalledWith('github.connect');
       expect(result).toEqual({
         success: true,
+        flowId: 'flow-7',
         oauthUrl: 'https://github.com/login/device',
         userCode: 'ABCD-1234',
         verificationUri: 'https://github.com/login/device',
         expiresIn: 899,
         interval: 5,
       });
+    });
+
+    it('start omits flowId when an older daemon returns none from github.connect', async () => {
+      mockedRequest
+        .mockRejectedValueOnce(new Error('GitHub is not configured.'))
+        .mockResolvedValueOnce({
+          ok: true,
+          userCode: 'ABCD-1234',
+          verificationUri: 'https://github.com/login/device',
+          expiresIn: 899,
+          interval: 5,
+        });
+
+      const result = await mockInvoke<Record<string, unknown>>(GITHUB_AUTH_CHANNELS.START_AUTH);
+
+      expect(result.success).toBe(true);
+      expect(result).not.toHaveProperty('flowId');
     });
 
     it('start folds a github.connect failure to the error envelope', async () => {
@@ -865,6 +884,21 @@ describe('integrations-bridge-seeder', () => {
       mockedRequest.mockResolvedValueOnce({ ok: true, cancelled: true });
       expect(await mockInvoke(GITHUB_AUTH_CHANNELS.CANCEL_AUTH)).toEqual({ success: true });
       expect(mockedRequest).toHaveBeenCalledWith('github.cancelAuth');
+    });
+
+    it('cancel scopes github.cancelAuth to the flowId the caller started (§5.27)', async () => {
+      mockedRequest.mockResolvedValueOnce({ ok: true, cancelled: true });
+      expect(await mockInvoke(GITHUB_AUTH_CHANNELS.CANCEL_AUTH, { flowId: 'flow-7' })).toEqual({
+        success: true,
+      });
+      expect(mockedRequest).toHaveBeenCalledWith('github.cancelAuth', { flowId: 'flow-7' });
+    });
+
+    it('cancel treats a scoped no-op (cancelled: false) as a confirmed cancel', async () => {
+      mockedRequest.mockResolvedValueOnce({ ok: true, cancelled: false });
+      expect(await mockInvoke(GITHUB_AUTH_CHANNELS.CANCEL_AUTH, { flowId: 'stale' })).toEqual({
+        success: true,
+      });
     });
 
     it('cancel maps a non-ok github.cancelAuth result to a failed envelope', async () => {

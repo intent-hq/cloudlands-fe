@@ -18,6 +18,8 @@
     selectAvailableModelsProviderId,
     selectModelEffortLevels,
     selectSelectedModel,
+    selectProviderModels,
+    selectDefaultReasoningEffort,
   } from '$store/renderer/slices/model/model-selectors';
   import { selectWorkspaceInitializerHydrated } from '$store/renderer/slices/workspace-initializer/workspace-initializer-selectors';
   import { navigateToSettings } from '$lib/utils/workspace-navigation';
@@ -34,12 +36,10 @@
     selectNormalizedProviderId,
     selectProviderCatalogEntries,
   } from '$store/renderer/slices/provider-catalog/provider-catalog-selectors';
-  import {
-    selectProviderModelsCacheEntry,
-    selectProviderModelsCacheMap,
-  } from '$store/renderer/slices/provider-models/provider-models-selectors';
+  import { selectProviderModelsCacheMap } from '$store/renderer/slices/provider-models/provider-models-selectors';
   import { selectActiveProviderId } from '$store/renderer/slices/provider-settings/provider-settings-selectors';
   import { appClient } from '$lib/client';
+  import type { SpecialistDef } from '$lib/client/app-client';
   import { createLogger } from '$lib/utils/client-logger';
   import DropdownMenu from '$lib/components/ui/dropdown-menu.svelte';
   import { selectGitHubAuthIsAuthenticated } from '$store/renderer/slices/github-auth/github-auth-selectors';
@@ -63,6 +63,8 @@
   const initializerHydrated$ = selectWorkspaceInitializerHydrated();
   const activeProviderId$ = selectActiveProviderId();
   const selectedModel$ = selectSelectedModel();
+  const configuredModels$ = selectProviderModels();
+  const defaultReasoningEffort$ = selectDefaultReasoningEffort();
   const availableModels$ = selectAvailableModels();
   const availableModelsProviderId$ = selectAvailableModelsProviderId();
   const providerModelsCacheMap$ = selectProviderModelsCacheMap();
@@ -120,31 +122,36 @@
     onReasoningEffortChange?.(effort);
   }
 
-  function reconcileReasoningEffort(model: string | undefined) {
-    void $availableModels$;
-    if (!selectedReasoningEffort || !model) return;
-    let levels = selectModelEffortLevels.select(appStore.state, model);
-    if (levels === undefined) {
-      // Bare ids (explicit picks and daemon resolvedModel previews) belong to
-      // the form's selected provider; only a legacy compound id carries its own.
-      const split = splitLegacyCompoundId(model);
-      const providerId = split.providerId ?? (selectedProvider || $defaultProviderId$);
-      const modelId = split.modelId;
-      const normalizedProviderId = selectNormalizedProviderId.select(appStore.state, providerId);
-      const cachedModels = selectProviderModelsCacheEntry.select(
-        appStore.state,
-        normalizedProviderId,
-      )?.models;
-      levels = cachedModels?.find(
-        (row) => row.value === model || row.value === modelId,
-      )?.effortLevels;
+  function modelEffortLevels(model: string | undefined): string[] | undefined {
+    if (!model) return undefined;
+    const split = splitLegacyCompoundId(model);
+    const providerId = split.providerId ?? (selectedProvider || $defaultProviderId$);
+    const normalizedProviderId = selectNormalizedProviderId.select(appStore.state, providerId);
+    // A bare model name from another provider is not capability evidence.
+    if (normalizedProviderId === $availableModelsProviderId$) {
+      void $availableModels$;
+      const levels = selectModelEffortLevels.select(appStore.state, model);
+      if (levels !== undefined) return levels.length > 0 ? levels : undefined;
     }
-    if (levels === undefined) return;
-    if (!levels.includes(selectedReasoningEffort)) updateReasoningEffort(undefined);
+    const row = knownModelsForProvider(providerId)?.find(
+      (row) => row.value === model || row.value === split.modelId,
+    );
+    // Like the daemon, only a nonempty list is validation evidence. Missing
+    // or empty levels can describe a provider whose capabilities are unknown.
+    return row?.effortLevels?.length ? row.effortLevels : undefined;
+  }
+
+  function reconcileReasoningEffort(model: string | undefined) {
+    if (!selectedReasoningEffort || !model) return;
+    const levels = modelEffortLevels(model);
+    if (levels !== undefined && !levels.includes(selectedReasoningEffort)) {
+      updateReasoningEffort(undefined);
+    }
   }
 
   function handleReasoningChange(effort: string | null) {
-    updateReasoningEffort(effort ?? undefined);
+    // A blank value is the wire's explicit clear. Undefined remains inheritance.
+    updateReasoningEffort(effort ?? '');
     return true;
   }
 
@@ -357,7 +364,11 @@
   // daemon would pin. Absent resolvedModel means "Provider default". The
   // store's specialist view carries the daemon-default-provider context, so
   // it serves as the fallback until the per-provider fetch lands.
-  let resolvedModelsByProvider = $state<Record<string, Record<string, string | undefined>>>({});
+  type ResolvedSpecialist = Pick<
+    SpecialistDef,
+    'model' | 'modelOptions' | 'reasoningEffort' | 'resolvedModel' | 'resolvedReasoningEffort'
+  >;
+  let resolvedDefaultsByProvider = $state<Record<string, Record<string, ResolvedSpecialist>>>({});
 
   // Bumped on every store specialist-view refresh; in-flight fetches from an
   // older generation are dropped so they can't overwrite fresher previews.
@@ -370,20 +381,20 @@
   $effect(() => {
     void $specialists$;
     previewsGeneration += 1;
-    resolvedModelsByProvider = {};
+    resolvedDefaultsByProvider = {};
   });
 
   $effect(() => {
     const provider = selectedProvider;
-    if (!provider || provider in resolvedModelsByProvider) return;
+    if (!provider || provider in resolvedDefaultsByProvider) return;
     const generation = previewsGeneration;
     void (async () => {
       try {
         const defs = await appClient.specialists.list(provider);
         if (generation !== previewsGeneration || defs.length === 0) return;
-        const byId: Record<string, string | undefined> = {};
-        for (const def of defs) byId[def.id] = def.resolvedModel;
-        resolvedModelsByProvider = { ...resolvedModelsByProvider, [provider]: byId };
+        const byId: Record<string, ResolvedSpecialist> = {};
+        for (const def of defs) byId[def.id] = def;
+        resolvedDefaultsByProvider = { ...resolvedDefaultsByProvider, [provider]: byId };
       } catch (error) {
         logger.debug('Failed to fetch resolved-model previews:', { provider, error });
       }
@@ -393,13 +404,17 @@
   // Helper to resolve the displayed default model for a given specialist:
   // the daemon-computed `resolvedModel` preview in the form's provider
   // context (undefined ⇒ provider CLI default, rendered "Provider default").
-  // With no specialist (General), show the global store selection — it
-  // mirrors the daemon's `model.providerDefaults`/`model.default` settings
-  // that the resolver applies for a specialist-less create.
+  // With no specialist (General), prefer this provider's configured model;
+  // the global selection can belong to a different active provider.
   function resolveEffectiveModel(specialist: string | null): string | undefined {
-    if (!specialist) return $selectedModel$;
-    const providerView = resolvedModelsByProvider[selectedProvider];
-    if (providerView) return providerView[specialist];
+    if (!specialist) {
+      return (
+        $configuredModels$[selectedProvider] ||
+        (selectedProvider === $activeProviderId$ ? $selectedModel$ : undefined)
+      );
+    }
+    const providerView = resolvedDefaultsByProvider[selectedProvider];
+    if (providerView) return providerView[specialist]?.resolvedModel;
     return $specialists$.find((s) => s.id === specialist)?.resolvedModel;
   }
 
@@ -417,6 +432,53 @@
         : singleAgentModel,
   );
 
+  // Settings fallback is a reactive preview, never a remembered override.
+  // Leave creation-time inheritance to the daemon. Specialist pins/options
+  // have their own precedence and must not be relabelled as the Settings default.
+  const displayedReasoningEffort = $derived.by(() => {
+    if (selectedReasoningEffort !== undefined) return selectedReasoningEffort || null;
+    const model = activeModelForReasoning;
+    const levels = modelEffortLevels(model);
+    const resolvedSpecialist = selectedSpecialist
+      ? resolvedDefaultsByProvider[selectedProvider]?.[selectedSpecialist]
+      : undefined;
+    const storedSpecialist = $specialists$.find((row) => row.id === selectedSpecialist);
+    const specialist = resolvedSpecialist ?? storedSpecialist;
+    const split = model ? splitLegacyCompoundId(model) : undefined;
+    // The daemon inherits the first matching option, then frontmatter, even
+    // for an explicit model. An option without a provider matches any provider.
+    // The resolved effort preview describes only the default model, so an
+    // explicit pick must use its matching option/frontmatter instead.
+    const option = specialist?.modelOptions?.find(
+      (option) =>
+        option.model === split?.modelId &&
+        (option.provider === undefined || option.provider === selectedProvider),
+    );
+    const specialistEffort =
+      (!modelWasOverridden ? resolvedSpecialist?.resolvedReasoningEffort : undefined) ||
+      option?.reasoningEffort ||
+      specialist?.reasoningEffort;
+    if (specialistEffort) {
+      const effort = specialistEffort.trim();
+      return effort && (levels === undefined || levels.includes(effort)) ? effort : null;
+    }
+    if (modelWasOverridden) return null;
+    // A foreign (or legacy compound) specialist pin may have been ignored by
+    // the daemon. It suppresses Settings only when it is the resolved model.
+    const specialistModel = resolvedSpecialist
+      ? resolvedSpecialist.model
+      : storedSpecialist?.defaultModel;
+    if (specialistModel && specialistModel === model) return null;
+    // selectSelectedModel also falls back to a catalog default. Only the
+    // persisted Settings selection makes the default effort apply at creation.
+    const configuredModel = $configuredModels$[selectedProvider];
+    if (!split || !configuredModel) return null;
+    if (split.providerId && split.providerId !== selectedProvider) return null;
+    if (split.modelId !== configuredModel) return null;
+    const effort = $defaultReasoningEffort$.trim();
+    return effort && (levels === undefined || levels.includes(effort)) ? effort : null;
+  });
+
   // Keep the parent-owned effort valid as async default-model previews settle.
   // For a non-default provider, wait for that provider's specialist preview so
   // the fallback store view cannot clear a level the new default supports.
@@ -427,7 +489,7 @@
       modelWasOverridden ||
       !selectedSpecialist ||
       selectedProvider === $defaultProviderId$ ||
-      selectedProvider in resolvedModelsByProvider;
+      selectedProvider in resolvedDefaultsByProvider;
     if (defaultPreviewReady) reconcileReasoningEffort(activeModelForReasoning);
   });
 
@@ -439,7 +501,9 @@
   // catalog has been loaded for the provider yet (no evidence). Reads the
   // reactive cache-map readable so the clearing $effect re-runs when a
   // catalog lands after its last run.
-  function knownModelsForProvider(providerId: string): Array<{ value: string }> | undefined {
+  function knownModelsForProvider(
+    providerId: string,
+  ): Array<{ value: string; effortLevels?: string[] }> | undefined {
     const normalizedProviderId = selectNormalizedProviderId.select(appStore.state, providerId);
     const cachedModels = $providerModelsCacheMap$[normalizedProviderId]?.models;
     if (cachedModels) return cachedModels;
@@ -501,6 +565,7 @@
     model: string | undefined;
     provider: string;
     modelOverridden: boolean;
+    reasoningEffort: string | undefined;
     specialist: string | null; // only used by single-agent mode, but keep it uniform
   }
 
@@ -512,6 +577,7 @@
     model: undefined,
     provider: defaultProvider,
     modelOverridden: false,
+    reasoningEffort: untrack(() => selectedReasoningEffort),
     specialist: null,
   });
 
@@ -521,6 +587,7 @@
     model: undefined,
     provider: defaultProvider,
     modelOverridden: false,
+    reasoningEffort: untrack(() => selectedReasoningEffort),
     specialist: untrack(() => (isTeamMode ? null : selectedSpecialist)),
   });
 
@@ -554,6 +621,7 @@
       model: selectedModel,
       provider: selectedProvider,
       modelOverridden: modelWasOverridden,
+      reasoningEffort: selectedReasoningEffort,
       specialist: selectedSpecialist,
     };
 
@@ -570,6 +638,7 @@
       onModelChange?.(selectedModel);
       onProviderChange?.(selectedProvider);
     }
+    updateReasoningEffort(lastTeamMode.reasoningEffort ?? selectedReasoningEffort);
     reconcileReasoningEffort(selectedModel ?? teamModeModel);
   }
 
@@ -580,6 +649,7 @@
         model: selectedModel,
         provider: selectedProvider,
         modelOverridden: modelWasOverridden,
+        reasoningEffort: selectedReasoningEffort,
         specialist: orchestratorId,
       };
 
@@ -596,6 +666,7 @@
         onModelChange?.(selectedModel);
         onProviderChange?.(selectedProvider);
       }
+      updateReasoningEffort(lastSingleAgent.reasoningEffort ?? selectedReasoningEffort);
       reconcileReasoningEffort(selectedModel ?? singleAgentModel);
     }
     // If already in single-agent mode, do nothing (specialist dropdown handles changes)
@@ -765,7 +836,7 @@
           variant="ghost-light"
           size="xs"
           showReasoning
-          reasoningEffort={selectedReasoningEffort ?? null}
+          reasoningEffort={displayedReasoningEffort}
           onReasoningChange={handleReasoningChange}
           showManageLink={true}
           defaultModelId={singleAgentModel}
@@ -840,7 +911,7 @@
             variant="ghost-light"
             size="xs"
             showReasoning
-            reasoningEffort={selectedReasoningEffort ?? null}
+            reasoningEffort={displayedReasoningEffort}
             onReasoningChange={handleReasoningChange}
             showManageLink={true}
             defaultModelId={teamModeModel}

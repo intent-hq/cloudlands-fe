@@ -1,5 +1,10 @@
 import { githubAuthClient } from '$features/github-auth/renderer/github-auth.client';
-import type { GitHubDeviceFlow, GitHubUser, StartAuthOptions } from '$features/github-auth/types';
+import type {
+  GitHubDeviceFlow,
+  GitHubUser,
+  StartAuthOptions,
+  StartAuthResult,
+} from '$features/github-auth/types';
 import { createLogger } from '$lib/utils/client-logger';
 import { m } from '$shared/paraglide/messages.js';
 import { buffers } from 'redux-saga';
@@ -124,9 +129,15 @@ function* initialize(): SagaGenerator<void> {
     // reconnect (intent#5206) keeps the old token valid while the user
     // authorizes, and a settings remount must not drop the in-flight code.
     if (validPendingFlow(state.deviceFlow)) {
+      // `authStatus.deviceFlow` carries no `flowId`; keep the one a local
+      // `github.connect` returned for the same code so the cancel stays scoped
+      // across a remount.
+      const local = yield* selectGitHubAuthDeviceFlow.effect();
+      const flowId = local?.userCode === state.deviceFlow.userCode ? local.flowId : undefined;
       yield* put(setAuthenticating(true));
       yield* put(
         setDeviceFlowInfo({
+          ...(typeof flowId === 'string' ? { flowId } : {}),
           userCode: state.deviceFlow.userCode,
           verificationUri: state.deviceFlow.verificationUri,
           expiresIn: state.deviceFlow.expiresIn,
@@ -149,14 +160,19 @@ function* isCurrentMutation(requestId: string): SagaGenerator<boolean> {
   return (yield* selectGitHubAuthMutationRequestId.effect()) === requestId;
 }
 
-function* start(requestId: string, options?: StartAuthOptions): SagaGenerator<void> {
+function* start(
+  requestId: string,
+  options?: StartAuthOptions,
+): SagaGenerator<StartAuthResult | null | undefined> {
   yield* put(setAuthenticating(true));
   try {
     const result: Awaited<ReturnType<typeof githubAuthClient.startAuth>> = yield* call(
       [githubAuthClient, githubAuthClient.startAuth],
       options,
     );
-    if (!(yield* call(isCurrentMutation, requestId))) return;
+    // Keep an obsolete response out of the UI, but retain its identity for
+    // a queued cancel: the daemon call has settled and can now be scoped.
+    if (!(yield* call(isCurrentMutation, requestId))) return result;
     if (!result.success) {
       yield* put(setGitHubAuthError(result.error || m.githubAuth_service_startFailed_error()));
       return;
@@ -166,7 +182,7 @@ function* start(requestId: string, options?: StartAuthOptions): SagaGenerator<vo
       yield* put(authCompleted(null));
       return;
     }
-    const { userCode, verificationUri, expiresIn, interval } = result;
+    const { flowId, userCode, verificationUri, expiresIn, interval } = result;
     if (
       !userCode ||
       !verificationUri ||
@@ -177,9 +193,17 @@ function* start(requestId: string, options?: StartAuthOptions): SagaGenerator<vo
       return;
     }
     yield* put(setOAuthInfo(result.oauthUrl ?? null, result.needsScopeUpdate ?? false));
-    yield* put(setDeviceFlowInfo({ userCode, verificationUri, expiresIn, interval }));
+    yield* put(
+      setDeviceFlowInfo({
+        ...(typeof flowId === 'string' ? { flowId } : {}),
+        userCode,
+        verificationUri,
+        expiresIn,
+        interval,
+      }),
+    );
   } catch (error) {
-    if (!(yield* call(isCurrentMutation, requestId))) return;
+    if (!(yield* call(isCurrentMutation, requestId))) return null;
     const message = error instanceof Error ? error.message : m.githubAuth_service_unknown_error();
     yield* put(
       setGitHubAuthError(
@@ -191,18 +215,35 @@ function* start(requestId: string, options?: StartAuthOptions): SagaGenerator<vo
   }
 }
 
-function* cancelAuth(): SagaGenerator<void> {
+/**
+ * Send `github.cancelAuth`, scoped to `flowId` when `github.connect` returned
+ * one (§5.27). The unscoped call is only the older-daemon fallback.
+ */
+function* cancelFlow(flowId: string | undefined): SagaGenerator<void> {
   try {
-    const result: Awaited<ReturnType<typeof githubAuthClient.cancelAuth>> = yield* call([
-      githubAuthClient,
-      githubAuthClient.cancelAuth,
-    ]);
+    const result: Awaited<ReturnType<typeof githubAuthClient.cancelAuth>> =
+      typeof flowId === 'string'
+        ? yield* call([githubAuthClient, githubAuthClient.cancelAuth], { flowId })
+        : yield* call([githubAuthClient, githubAuthClient.cancelAuth]);
     if (result.success) yield* put(authCancelled());
     else yield* put(setGitHubAuthError(result.error || m.githubAuth_service_cancelFailed_error()));
   } catch (error) {
     logger.error('Failed to cancel GitHub auth', error);
     yield* put(setGitHubAuthError(m.githubAuth_service_cancelFailed_error()));
   }
+}
+
+function* cancelAuth(interruptedStart?: StartAuthResult | null): SagaGenerator<void> {
+  if (interruptedStart !== undefined) {
+    if (interruptedStart?.success && !interruptedStart.alreadyAuthenticated) {
+      yield* call(cancelFlow, interruptedStart.flowId);
+    } else {
+      yield* put(authCancelled());
+    }
+    return;
+  }
+  const deviceFlow = yield* selectGitHubAuthDeviceFlow.effect();
+  yield* call(cancelFlow, deviceFlow?.flowId);
 }
 
 function* logout(): SagaGenerator<void> {
@@ -275,6 +316,7 @@ function* mutations(): SagaGenerator<void> {
     [startGitHubAuth, cancelGitHubAuth, logoutGitHub],
     buffers.expanding(),
   );
+  let interruptedStart: StartAuthResult | null | undefined;
   try {
     while (true) {
       const action:
@@ -284,15 +326,17 @@ function* mutations(): SagaGenerator<void> {
       const { requestId } = action.payload;
       if (action.type === startGitHubAuth.type) {
         if (!(yield* call(isCurrentMutation, requestId))) continue;
-        yield* call(
+        interruptedStart = yield* call(
           start,
           requestId,
           (action as ReturnType<typeof startGitHubAuth>).payload.options,
         );
       } else if (action.type === cancelGitHubAuth.type) {
-        yield* call(cancelAuth);
+        yield* call(cancelAuth, interruptedStart);
+        interruptedStart = undefined;
       } else {
         yield* call(logout);
+        interruptedStart = undefined;
       }
       yield* put(settleGitHubAuthMutation(requestId));
     }

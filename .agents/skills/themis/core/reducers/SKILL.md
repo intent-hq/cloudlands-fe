@@ -16,7 +16,7 @@ triggers:
 ---
 # Reducers — `createReducer`
 
-> Operational guidance for reducer implementation. Full API walkthrough and examples: `@augmentcode/themis/docs/REDUCERS.md` → Creating Reducers. Public API: `@augmentcode/themis/utils/store/create-reducer`; related guidance: `../SKILL.md` §3, §14.
+> Operational guidance for reducer implementation. Full API walkthrough and examples: `@augmentcode/themis/docs/REDUCERS.md` → Creating Reducers. Public API: `@augmentcode/themis/utils/store/create-reducer`; related guidance: [Actions — Do](../actions/SKILL.md#do) and [Testing — Layer rules](../testing/SKILL.md#layer-rules).
 
 ## Use when
 

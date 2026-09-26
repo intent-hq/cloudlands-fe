@@ -1,6 +1,7 @@
 import { invoke } from '$lib/electron-bridge';
 import { GITHUB_AUTH_CHANNELS } from '../constants';
 import type {
+  CancelAuthOptions,
   GitHubAuthState,
   GitHubAuthStatus,
   GithubRepo,
@@ -56,11 +57,14 @@ export const githubAuthClient = {
   },
 
   /**
-   * Cancel ongoing authentication (daemon-side `github.cancelAuth`).
+   * Cancel ongoing authentication (daemon-side `github.cancelAuth`), scoped
+   * to the flow `startAuth` returned when `options.flowId` is known.
    * Returns the seam envelope so callers only clear UI state on success.
    */
-  async cancelAuth(): Promise<{ success: boolean; error?: string }> {
-    return invoke(GITHUB_AUTH_CHANNELS.CANCEL_AUTH);
+  async cancelAuth(options?: CancelAuthOptions): Promise<{ success: boolean; error?: string }> {
+    return options
+      ? invoke(GITHUB_AUTH_CHANNELS.CANCEL_AUTH, options)
+      : invoke(GITHUB_AUTH_CHANNELS.CANCEL_AUTH);
   },
 
   /**

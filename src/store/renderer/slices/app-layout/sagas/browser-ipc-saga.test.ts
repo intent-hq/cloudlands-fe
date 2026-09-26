@@ -214,6 +214,10 @@ describe('browserIpcSaga', () => {
         },
       },
       {
+        type: 'tabState/requestBrowserTabNavigation',
+        payload: ['browser-1', 'https://replace.test'],
+      },
+      {
         type: 'panelLayout/updateTabBrowserUrl',
         payload: ['ws-1', 'browser-1', 'https://replace.test', null],
       },
@@ -269,6 +273,10 @@ describe('browserIpcSaga', () => {
     });
 
     expect(actions).toMatchObject([
+      {
+        type: 'tabState/requestBrowserTabNavigation',
+        payload: ['browser-checked', 'https://bound.test'],
+      },
       {
         type: 'panelLayout/updateTabBrowserUrl',
         payload: ['ws-1', 'browser-checked', 'https://bound.test', null],
@@ -364,6 +372,7 @@ describe('browserIpcSaga', () => {
         });
 
         expect(actions.map((a: any) => a.type)).toEqual([
+          'tabState/requestBrowserTabNavigation',
           'panelLayout/updateTabBrowserUrl',
           'panelLayout/setTabOwnerAgent',
           'panelLayout/activateVisibleTab',
@@ -419,6 +428,7 @@ describe('browserIpcSaga', () => {
       });
 
       expect(actions.map((a: any) => a.type)).toEqual([
+        'tabState/requestBrowserTabNavigation',
         'panelLayout/updateTabBrowserUrl',
         'panelLayout/setActiveTab',
       ]);
@@ -460,6 +470,10 @@ describe('browserIpcSaga', () => {
     // Navigate + ownership only — no setActiveTab/openTab: the tab stays
     // hidden (the user's close is respected).
     expect(actions).toMatchObject([
+      {
+        type: 'tabState/requestBrowserTabNavigation',
+        payload: ['browser-hidden', 'https://hidden.test'],
+      },
       {
         type: 'panelLayout/updateTabBrowserUrl',
         payload: ['ws-1', 'browser-hidden', 'https://hidden.test', null],
@@ -681,6 +695,10 @@ describe('browserIpcSaga', () => {
         },
       },
       {
+        type: 'tabState/requestBrowserTabNavigation',
+        payload: ['browser-1', 'http://127.0.0.1:52345/'],
+      },
+      {
         type: 'panelLayout/updateTabBrowserUrl',
         payload: ['ws-1', 'browser-1', 'http://127.0.0.1:52345/', 'http://daemon.localhost:3000/'],
       },
@@ -718,7 +736,7 @@ describe('browserIpcSaga', () => {
     await task.toPromise();
   });
 
-  it('persists a main-driven navigation with its requested URL via browser:tab-navigated (monorepo#2789)', async () => {
+  it('marks main navigation as already initiated before persisting its URL and requested URL', async () => {
     const actions: unknown[] = [];
     const task = start((action) => actions.push(action));
     state = {
@@ -747,6 +765,10 @@ describe('browserIpcSaga', () => {
 
     expect(actions).toEqual([
       {
+        type: 'tabState/observeBrowserTabNavigation',
+        payload: ['browser-1', 'http://127.0.0.1:52345/page'],
+      },
+      {
         type: 'panelLayout/updateTabBrowserUrl',
         payload: [
           'ws-1',
@@ -754,6 +776,10 @@ describe('browserIpcSaga', () => {
           'http://127.0.0.1:52345/page',
           'http://daemon.localhost:3000/page',
         ],
+      },
+      {
+        type: 'tabState/observeBrowserTabNavigation',
+        payload: ['browser-1', 'https://example.test/'],
       },
       {
         type: 'panelLayout/updateTabBrowserUrl',
@@ -1085,12 +1111,16 @@ describe('browserIpcSaga', () => {
 
     expect(actions).toMatchObject([
       {
+        type: 'tabState/requestBrowserTabNavigation',
+        payload: ['browser-1', 'https://adopt.test'],
+      },
+      {
         type: 'panelLayout/updateTabBrowserUrl',
         payload: ['ws-1', 'browser-1', 'https://adopt.test', null],
       },
       { type: 'panelLayout/setTabOwnerAgent', payload: ['ws-1', 'browser-1', 'agent-1'] },
     ]);
-    expect(actions).toHaveLength(2);
+    expect(actions).toHaveLength(3);
     task.cancel();
     await task.toPromise();
   });

@@ -1,4 +1,5 @@
-import { expect, test, type Locator } from '@playwright/test';
+import { readFile } from 'node:fs/promises';
+import { expect, test, type Locator, type TestInfo } from '@playwright/test';
 import { createServer, type ViteDevServer } from 'vite';
 import { expectDrawingReachable } from './diagram-scroll-reachability';
 import { viteHarnessCacheDir } from './vite-harness-cache.mjs';
@@ -149,6 +150,71 @@ async function sampleStep(root: Locator, index: number) {
   );
 }
 
+async function captureScene(root: Locator, info: TestInfo, name: string) {
+  // A whole diagram can exceed the viewport. Chromium's oversized element capture
+  // emits resize events that relayout responsive diagrams (intent-hq/intent#5956).
+  // Capture every region separately without resizing the viewport under test.
+  for (const [region, selector] of [
+    ['actions', '.diagram-actions'],
+    ['drawing', '.diagram-scroll-container'],
+    ['controls', '.diagram-footer'],
+  ]) {
+    await root.locator(selector).screenshot({ path: info.outputPath(`${name}-${region}.png`) });
+  }
+}
+
+test('capturing a tall scene preserves the viewport and every diagram region', async ({
+  page,
+}, testInfo) => {
+  await page.setViewportSize({ width: 1280, height: 1000 });
+  await page.setContent(`
+    <style>
+      body { margin: 0; }
+      .diagram-renderer { width: 360px; margin: 50px; }
+      .diagram-actions { height: 35px; }
+      .diagram-scroll-container { height: 90vh; }
+      .diagram-footer { height: 100px; }
+    </style>
+    <div class="diagram-renderer">
+      <div class="diagram-actions">Fit diagram</div>
+      <div class="diagram-scroll-container">Active scene</div>
+      <div class="diagram-footer">Previous / Next</div>
+    </div>
+  `);
+  await page.evaluate(async () => {
+    await new Promise<void>((resolve) =>
+      requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+    );
+    document.documentElement.dataset.captureResizes = '0';
+    window.addEventListener('resize', () => {
+      document.documentElement.dataset.captureResizes = String(
+        Number(document.documentElement.dataset.captureResizes) + 1,
+      );
+    });
+  });
+
+  await captureScene(page.locator('.diagram-renderer'), testInfo, 'tall-scene');
+  await page.evaluate(
+    () =>
+      new Promise<void>((resolve) =>
+        requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+      ),
+  );
+  await expect(page.locator('html')).toHaveAttribute('data-capture-resizes', '0');
+  for (const [region, height] of [
+    ['actions', 35],
+    ['drawing', 900],
+    ['controls', 100],
+  ] as const) {
+    const png = await readFile(testInfo.outputPath(`tall-scene-${region}.png`));
+    expect(png.subarray(1, 4).toString()).toBe('PNG');
+    expect({ width: png.readUInt32BE(16), height: png.readUInt32BE(20) }).toEqual({
+      width: 360,
+      height,
+    });
+  }
+});
+
 for (const fixture of fixtures) {
   for (const width of [960, 420]) {
     for (const motion of ['reduced', 'full']) {
@@ -178,9 +244,7 @@ for (const fixture of fixtures) {
           transitions.push(samples);
           scenes.push(samples.at(-1)!);
           await expectDrawingReachable(root);
-          await root.screenshot({
-            path: testInfo.outputPath(`step-${scenes.length}-${index}.png`),
-          });
+          await captureScene(root, testInfo, `step-${scenes.length}-${index}`);
         }
         await testInfo.attach('active-scenes', {
           body: JSON.stringify(scenes, null, 2),

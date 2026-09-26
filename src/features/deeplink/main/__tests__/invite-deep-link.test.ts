@@ -304,11 +304,35 @@ const CREDENTIAL = {
 /** `github.connect` result (PROTOCOL §5.27): the guest's own device flow. */
 const CONNECT = {
   ok: true,
+  flowId: 'flow-1',
   userCode: 'ABCD-1234',
   verificationUri: 'https://github.com/login/device',
   expiresIn: 900,
   interval: 5,
 };
+/**
+ * The guest daemon's single device-flow slot (PROTOCOL §5.27): `github.connect`
+ * hands a still-pending flow back with the same `flowId`, and a
+ * `github.cancelAuth { flowId }` naming any other flow is a no-op
+ * (`cancelled: false`) that leaves the pending flow polling.
+ */
+let liveFlowId: string | null = null;
+let startedFlows = 0;
+function startDeviceFlow(flowId = `flow-${++startedFlows}`): typeof CONNECT {
+  liveFlowId = flowId;
+  return { ...CONNECT, flowId };
+}
+/** `github.connect` on the modelled slot: a new flow, or the pending one again. */
+function connectDeviceFlow(): typeof CONNECT {
+  return liveFlowId === null ? startDeviceFlow() : { ...CONNECT, flowId: liveFlowId };
+}
+function cancelDeviceFlow(params: unknown): { ok: true; cancelled: boolean } {
+  const flowId = (params as { flowId?: unknown } | undefined)?.flowId;
+  if (flowId !== undefined && flowId !== liveFlowId) return { ok: true, cancelled: false };
+  const cancelled = liveFlowId !== null;
+  liveFlowId = null;
+  return { ok: true, cancelled };
+}
 const PROOF = { gistId: 'gist0123abc', login: 'octocat' };
 
 /** A local daemon refusal with a bounded `error.data.code` (PROTOCOL §9). */
@@ -336,8 +360,10 @@ function signedInDaemon(): void {
   onLocal('github.getUser', () => ({ user: { login: 'octocat' } }));
   onLocal('github.identityProof.create', () => PROOF);
   onLocal('github.identityProof.delete', () => ({ ok: true }));
-  onLocal('github.connect', () => CONNECT);
-  onLocal('github.cancelAuth', () => ({ ok: true, cancelled: true }));
+  liveFlowId = null;
+  startedFlows = 0;
+  onLocal('github.connect', connectDeviceFlow);
+  onLocal('github.cancelAuth', cancelDeviceFlow);
   onLocal('github.authStatus', () => ({ isConfigured: false, deviceFlow: { status: 'pending' } }));
 }
 
@@ -353,7 +379,6 @@ function signedOutDaemon(): void {
     if (!signedIn) throw localRefusal('github-not-connected');
     return PROOF;
   });
-  onLocal('github.connect', () => CONNECT);
   notificationListeners.clear();
   const listener: NotificationHandler = (n) => {
     const event = (n.params as { event?: { type?: string; data?: { status?: string } } }).event;
@@ -1149,13 +1174,28 @@ describe('handleInviteDeepLink — sign-in required', () => {
       }));
     });
 
-    it.each(['resolve', 'reject'])(
-      'ends promptly and ignores a late startup %s after leaving the forge prompt',
-      async (settlement) => {
-        const connect = connectFirst();
+    it.each(
+      ['forge choice', 'pinned GitHub'].flatMap((entry) =>
+        ['scoped', 'legacy'].flatMap((flow) =>
+          ['resolve', 'reject'].map((settlement) => ({ entry, flow, settlement })),
+        ),
+      ),
+    )(
+      '$entry: ends promptly and ignores a late $flow startup $settlement',
+      async ({ entry, flow, settlement }) => {
+        const pinned = entry === 'pinned GitHub';
+        if (pinned) {
+          challenge.mockResolvedValue({
+            ...CURRENT_CHALLENGE,
+            pinIdentity: { provider: 'github', host: 'github.com', externalUserId: '42' },
+          });
+        }
+        const connecting = fakeProgress();
+        showInviteProgress.mockReturnValueOnce(connecting.handle);
+        const connect = pinned ? null : connectFirst();
         // If the regression reopens sign-in, close it so the failed test cannot leak a join.
         showInviteConsent.mockReturnValue(fakeConsent('cancel').prompt);
-        let release!: (result: typeof CONNECT) => void;
+        let release!: (result: Omit<typeof CONNECT, 'flowId'> & { flowId?: string }) => void;
         let reject!: (error: unknown) => void;
         onLocal(
           'github.connect',
@@ -1169,27 +1209,38 @@ describe('handleInviteDeepLink — sign-in required', () => {
         const joining = handleInviteDeepLink(LINK);
         await vi.waitFor(() => expect(localCalls('github.connect')).toEqual([['github.connect']]));
         // Cancel and the GitLab setup action both send cancel from this waiting state.
-        connect.cancelWaiting();
+        if (connect) connect.cancelWaiting();
+        else connecting.cancel();
         try {
           await vi.waitFor(() => expect(close).toHaveBeenCalledOnce());
-          expect(connect.prompt.dismiss).toHaveBeenCalledExactlyOnceWith('cancelled');
+          if (connect) expect(connect.prompt.dismiss).toHaveBeenCalledExactlyOnceWith('cancelled');
+          expect(connecting.handle.dismiss).toHaveBeenCalled();
           expect(localCalls('github.cancelAuth')).toEqual([]);
         } finally {
-          if (settlement === 'resolve') release(CONNECT);
-          else reject(localRefusal('rate-limited'));
+          if (settlement === 'resolve') {
+            const response = startDeviceFlow('flow-late');
+            const { flowId: _flowId, ...legacyConnect } = response;
+            release(flow === 'scoped' ? response : legacyConnect);
+          } else reject(localRefusal('rate-limited'));
           await joining;
           await new Promise<void>((resolve) => setImmediate(resolve));
         }
 
         expect(localCalls('github.cancelAuth')).toEqual(
-          settlement === 'resolve' ? [['github.cancelAuth']] : [],
+          settlement === 'resolve' && flow === 'scoped'
+            ? [['github.cancelAuth', { flowId: 'flow-late' }]]
+            : [],
         );
-        expect(showInviteConsent).toHaveBeenCalledExactlyOnceWith({
-          requestId: expect.any(String),
-          mode: 'connect-forge',
-          workspaceTitle: CURRENT_CHALLENGE.workspaceTitle,
-          hostLabel: CURRENT_CHALLENGE.hostname,
-        });
+        expect(liveFlowId).toBe(settlement === 'resolve' && flow === 'legacy' ? 'flow-late' : null);
+        if (pinned) expect(showInviteConsent).not.toHaveBeenCalled();
+        else {
+          expect(showInviteConsent).toHaveBeenCalledExactlyOnceWith({
+            requestId: expect.any(String),
+            mode: 'connect-forge',
+            workspaceTitle: CURRENT_CHALLENGE.workspaceTitle,
+            hostLabel: CURRENT_CHALLENGE.hostname,
+          });
+        }
         expect(clipboardWriteText).not.toHaveBeenCalled();
         expect(openExternal).not.toHaveBeenCalled();
         expect(localCalls('github.authStatus')).toEqual([]);
@@ -1247,7 +1298,9 @@ describe('handleInviteDeepLink — sign-in required', () => {
         signIn.decide('cancel');
         await joiningSecond;
         expect(localCalls('github.connect')).toEqual([['github.connect'], ['github.connect']]);
-        expect(localCalls('github.cancelAuth')).toEqual([['github.cancelAuth']]);
+        expect(localCalls('github.cancelAuth')).toEqual([
+          ['github.cancelAuth', { flowId: CONNECT.flowId }],
+        ]);
         expect(clipboardWriteText).toHaveBeenCalledExactlyOnceWith(CONNECT.userCode);
         expect(first.prompt.dismiss).toHaveBeenCalledExactlyOnceWith('cancelled');
         expect(second.prompt.dismiss).toHaveBeenCalledExactlyOnceWith('superseded');
@@ -1379,11 +1432,27 @@ describe('handleInviteDeepLink — sign-in required', () => {
     await handleInviteDeepLink(LINK);
 
     expect(signIn.prompt.dismiss).toHaveBeenCalledExactlyOnceWith('cancelled');
-    expect(localCalls('github.cancelAuth')).toHaveLength(1);
+    // The cancel is scoped to the flow `github.connect` started (§5.27).
+    expect(localCalls('github.cancelAuth')).toEqual([['github.cancelAuth', { flowId: 'flow-1' }]]);
+    expect(liveFlowId).toBeNull();
     expect(openExternal).not.toHaveBeenCalled();
     expect(showInviteConsent).toHaveBeenCalledTimes(2);
     expect(guestAdd).not.toHaveBeenCalled();
     expect(showMessageBox).not.toHaveBeenCalled();
+    expect(close).toHaveBeenCalledTimes(1);
+  });
+
+  it('cancel against a daemon whose github.connect carries no flowId: the unscoped call', async () => {
+    connectFirst();
+    const { flowId: _flowId, ...legacyConnect } = CONNECT;
+    onLocal('github.connect', () => legacyConnect);
+    const signIn = fakeConsent('cancel');
+    showInviteConsent.mockReturnValue(signIn.prompt);
+
+    await handleInviteDeepLink(LINK);
+
+    expect(signIn.prompt.dismiss).toHaveBeenCalledExactlyOnceWith('cancelled');
+    expect(localCalls('github.cancelAuth')).toEqual([['github.cancelAuth']]);
     expect(close).toHaveBeenCalledTimes(1);
   });
 
@@ -4084,6 +4153,150 @@ describe('handleInviteDeepLink — progress dialog', () => {
     releaseGetUser();
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(localCalls('github.cancelAuth')).toEqual([]);
+    expect(signIn.prompt.dismiss).not.toHaveBeenCalled();
+
+    // B completes normally.
+    signIn.decide('open');
+    await vi.waitFor(() => expect(openExternal).toHaveBeenCalledTimes(1));
+    emitAuthChanged('authorized');
+    await pendingB;
+
+    expect(signIn.prompt.dismiss).toHaveBeenCalledExactlyOnceWith('superseded');
+    expect(prove.prompt.dismiss).toHaveBeenCalledExactlyOnceWith('joined');
+    expect(guestAdd).toHaveBeenCalledWith(expect.objectContaining({ token: TOKEN }));
+    expect(openBackendWindow).toHaveBeenCalledWith('guest-id');
+    expect(localCalls('github.cancelAuth')).toEqual([]);
+    expect(logLines.join('\n')).not.toContain('Invite deep link handling failed');
+  });
+
+  it('a late github.connect without flowId (older daemon) is not cancelled unscoped: a later invite keeps its flow', async () => {
+    signedOutDaemon();
+    const connectingA = connectFirst();
+    let releaseConnectA!: () => void;
+    let connects = 0;
+    const { flowId: _flowId, ...legacyConnect } = CONNECT;
+    onLocal('github.connect', () => {
+      connects += 1;
+      if (connects === 1) {
+        return new Promise((resolve) => (releaseConnectA = () => resolve(legacyConnect)));
+      }
+      return startDeviceFlow('flow-b');
+    });
+    const signIn = fakeConsent('pending');
+
+    const pendingA = handleInviteDeepLink(LINK);
+    await vi.waitFor(() => expect(localCalls('github.connect')).toHaveLength(1));
+    connectingA.cancelWaiting();
+    await pendingA;
+    expect(localCalls('github.cancelAuth')).toEqual([]);
+
+    connectFirst();
+    showInviteConsent.mockReturnValueOnce(signIn.prompt);
+    const pendingB = handleInviteDeepLink(LINK);
+    await vi.waitFor(() => expect(showInviteConsent).toHaveBeenCalledTimes(3));
+    expect(localCalls('github.connect')).toHaveLength(2);
+
+    // A's late result cannot be scoped, so no cancel is sent at all: an
+    // unscoped one would abort B's live flow.
+    releaseConnectA();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(localCalls('github.cancelAuth')).toEqual([]);
+    expect(liveFlowId).toBe('flow-b');
+    expect(signIn.prompt.dismiss).not.toHaveBeenCalled();
+
+    signIn.decide('cancel');
+    await pendingB;
+    expect(localCalls('github.cancelAuth')).toEqual([['github.cancelAuth', { flowId: 'flow-b' }]]);
+  });
+
+  it('a late connect response leaves the same resident flow adopted by a newer invite live', async () => {
+    signedOutDaemon();
+    const connectingA = connectFirst();
+    const delayed = Promise.withResolvers<typeof CONNECT>();
+    const responses: (typeof CONNECT)[] = [];
+    onLocal('github.connect', () => {
+      // The flow is resident before A receives its response. B's connect
+      // adopts it using the same single-slot contract as the real daemon.
+      const response = connectDeviceFlow();
+      responses.push(response);
+      return responses.length === 1 ? delayed.promise : response;
+    });
+    const signIn = fakeConsent('pending');
+    const prove = fakeConsent('open');
+
+    const pendingA = handleInviteDeepLink(LINK);
+    await vi.waitFor(() => expect(localCalls('github.connect')).toHaveLength(1));
+    connectingA.cancelWaiting();
+    await pendingA;
+    expect(localCalls('github.cancelAuth')).toEqual([]);
+
+    connectFirst();
+    showInviteConsent.mockReturnValueOnce(signIn.prompt).mockReturnValueOnce(prove.prompt);
+    const pendingB = handleInviteDeepLink(LINK);
+    try {
+      await vi.waitFor(() => expect(showInviteConsent).toHaveBeenCalledTimes(3));
+      expect(responses).toHaveLength(2);
+      expect(responses[1].flowId).toBe(responses[0].flowId);
+
+      delayed.resolve(responses[0]);
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(liveFlowId).toBe(responses[1].flowId);
+      expect(localCalls('github.cancelAuth')).toEqual([]);
+      expect(signIn.prompt.dismiss).not.toHaveBeenCalled();
+
+      signIn.decide('open');
+      await vi.waitFor(() => expect(openExternal).toHaveBeenCalledTimes(1));
+      emitAuthChanged('authorized');
+      await pendingB;
+      expect(prove.prompt.dismiss).toHaveBeenCalledExactlyOnceWith('joined');
+      expect(openBackendWindow).toHaveBeenCalledWith('guest-id');
+    } finally {
+      signIn.decide('cancel');
+      signIn.cancelWaiting();
+      await pendingB;
+    }
+  });
+
+  it('a late connect response leaves a different flow shown by a newer invite live', async () => {
+    signedOutDaemon();
+    const connectingA = connectFirst();
+    let releaseConnectA!: () => void;
+    let connects = 0;
+    // A's flow is superseded before its start resolves: the daemon hands B
+    // its own live flow, and A's late result names a flow that is no longer
+    // the pending one.
+    const flowA = { ...CONNECT, flowId: 'flow-a' };
+    onLocal('github.connect', () => {
+      connects += 1;
+      if (connects === 1) {
+        return new Promise((resolve) => (releaseConnectA = () => resolve(flowA)));
+      }
+      return startDeviceFlow('flow-b');
+    });
+    const signIn = fakeConsent('pending');
+    const prove = fakeConsent('open');
+
+    // Invite A is cancelled while its device-flow start is still pending.
+    const pendingA = handleInviteDeepLink(LINK);
+    await vi.waitFor(() => expect(localCalls('github.connect')).toHaveLength(1));
+    connectingA.cancelWaiting();
+    await pendingA;
+    expect(localCalls('github.cancelAuth')).toEqual([]);
+
+    // Invite B starts its own flow and reaches the sign-in prompt.
+    connectFirst();
+    showInviteConsent.mockReturnValueOnce(signIn.prompt).mockReturnValueOnce(prove.prompt);
+    const pendingB = handleInviteDeepLink(LINK);
+    await vi.waitFor(() => expect(showInviteConsent).toHaveBeenCalledTimes(3));
+    expect(localCalls('github.connect')).toHaveLength(2);
+    expect(showInviteConsent.mock.calls[2][0]).toMatchObject({ mode: 'sign-in-required' });
+
+    // A's start arrives late: the newer invite owns sign-in now, so even
+    // when the ids differ, A leaves cleanup to the current owner.
+    releaseConnectA();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(localCalls('github.cancelAuth')).toEqual([]);
+    expect(liveFlowId).toBe('flow-b');
     expect(signIn.prompt.dismiss).not.toHaveBeenCalled();
 
     // B completes normally.

@@ -3,8 +3,11 @@ import {
   cycleNoteFontStyle,
   deleteActivityLogPreset,
   hydrateActivityLogPresets,
+  hydrateNotificationVolume,
   hydrateShortcutOverrides,
   initialState,
+  notificationVolumeHydrationStarted,
+  notificationVolumeWriteSettled,
   resetNotificationSettings,
   resetAllShortcutOverrides,
   resetShortcutOverride,
@@ -81,6 +84,80 @@ describe('userPreferencesReducer', () => {
   it('should return initial state', () => {
     const state = userPreferencesReducer(undefined, { type: '@@INIT' });
     expect(state).toEqual(initialState);
+  });
+
+  it.each([
+    [0.75, 0.75],
+    [0.5, 0.5],
+    [-1, 0],
+    [2, 1],
+  ])('hydrates notification volume %s with the existing clamp', (value, expected) => {
+    const state = userPreferencesReducer(initialState, hydrateNotificationVolume(value));
+    expect(state.volume).toBe(expected);
+    expect(state.enabled).toBe(true);
+    expect(state.soundEnabled).toBe(true);
+    expect(state.soundOnlyWhenUnfocused).toBe(true);
+  });
+
+  it('settles only the matching volume edit, including a repeated value', () => {
+    const first = userPreferencesReducer(initialState, setVolume(0.9));
+    const second = userPreferencesReducer(first, setVolume(0.4));
+    const latest = userPreferencesReducer(second, setVolume(0.9));
+    expect(userPreferencesReducer(latest, hydrateNotificationVolume(0.25)).volume).toBe(0.9);
+    expect(
+      userPreferencesReducer(
+        latest,
+        notificationVolumeWriteSettled(first.notificationVolumeEditId, 0, 11),
+      ),
+    ).toBe(latest);
+    const settled = userPreferencesReducer(
+      latest,
+      notificationVolumeWriteSettled(latest.notificationVolumeEditId, 0, 12),
+    );
+    expect(settled.pendingNotificationVolumeEditId).toBeNull();
+    expect(userPreferencesReducer(settled, hydrateNotificationVolume(0.75)).volume).toBe(0.75);
+  });
+
+  it('treats a local reset as a new pending volume edit', () => {
+    const edited = userPreferencesReducer(initialState, setVolume(0.9));
+    const reset = userPreferencesReducer(edited, resetNotificationSettings());
+    expect(reset.volume).toBe(0.5);
+    expect(reset.pendingNotificationVolumeEditId).toBe(edited.notificationVolumeEditId + 1);
+    expect(userPreferencesReducer(reset, hydrateNotificationVolume(0.9)).volume).toBe(0.5);
+  });
+
+  it.each([
+    [10, 11, 0.9],
+    [12, 11, 0.75],
+    [12, undefined, 0.75],
+    [undefined, 0, 0.75],
+  ])(
+    'reconciles deferred revision %s when a write settles at %s',
+    (incomingRevision, writeRevision, expected) => {
+      const edited = userPreferencesReducer(initialState, setVolume(0.9));
+      const hydrated = userPreferencesReducer(
+        edited,
+        hydrateNotificationVolume(0.75, incomingRevision),
+      );
+      expect(hydrated.volume).toBe(0.9);
+      expect(hydrated.deferredNotificationVolume?.value).toBe(0.75);
+      const settled = userPreferencesReducer(
+        hydrated,
+        notificationVolumeWriteSettled(1, 0, writeRevision),
+      );
+      expect(settled.volume).toBe(expected);
+      expect(settled.pendingNotificationVolumeEditId).toBeNull();
+      expect(settled.deferredNotificationVolume).toBeNull();
+    },
+  );
+
+  it('rejects snapshots older than a confirmed write, then resets revisions for a new stream', () => {
+    const edited = userPreferencesReducer(initialState, setVolume(0.9));
+    const settled = userPreferencesReducer(edited, notificationVolumeWriteSettled(1, 0, 11));
+    expect(userPreferencesReducer(settled, hydrateNotificationVolume(0.25, 10))).toBe(settled);
+    const reconnected = userPreferencesReducer(settled, notificationVolumeHydrationStarted());
+    expect(reconnected.notificationVolumeHydrationEpoch).toBe(1);
+    expect(userPreferencesReducer(reconnected, hydrateNotificationVolume(0.5, 0)).volume).toBe(0.5);
   });
 
   describe('shortcut overrides', () => {
