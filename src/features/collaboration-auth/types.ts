@@ -59,7 +59,7 @@ export type CollaborationAction =
   | { type: 'cancel' };
 
 /** Recovery hint only; an account ID here is not fresh proof or account consent. */
-export interface CollaborationSelection {
+interface CollaborationSelection {
   target: IdentityTarget;
   displayedAccountId?: string;
 }
