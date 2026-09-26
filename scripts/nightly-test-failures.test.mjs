@@ -301,6 +301,22 @@ describe('GitHub API validation', () => {
 describe('trusted workflow execution policy', () => {
   const expression = / {4}if: >-\n((?: {6}.*\n)+)/.exec(workflow)[1].trim();
   const evaluate = new Function('github', `return (${expression})`);
+  it('serializes all source runs and retries without cancelling pending reports', () => {
+    const concurrency = /^concurrency:\n((?: {2}.+\n)+)/m.exec(workflow)[1];
+    const policy = Object.fromEntries(
+      concurrency
+        .trim()
+        .split('\n')
+        .map((line) => line.trim().split(/: */)),
+    );
+    // A literal group shares the writer across nightly/manual runs and attempts.
+    // GitHub's default single pending slot drops reports even when cancellation is false.
+    expect(policy).toEqual({
+      group: 'nightly-browser-issue-writer',
+      queue: 'max',
+      'cancel-in-progress': 'false',
+    });
+  });
   it.each(['success', 'failure', 'cancelled'])(
     'processes %s conclusions for trusted nightly and manual runs',
     (conclusion) => {
