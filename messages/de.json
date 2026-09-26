@@ -2090,6 +2090,8 @@
   "chat_editRegenerate_confirm_button": "Bearbeiten & neu generieren",
   "chat_editRegenerate_confirm_description": "Alle späteren Nachrichten in dieser Konversation werden dauerhaft entfernt und können nicht wiederhergestellt werden. Der Agent generiert seine Antwort ab dieser Nachricht neu.",
   "chat_editRegenerate_confirm_title": "Nachricht bearbeiten und von hier neu starten?",
+  "chat_effortChangeNotice_changed_label": "Aufwand von {from} auf {to} geändert",
+  "chat_effortChangeNotice_fallback_label": "Aufwand geändert",
   "chat_effortPicker_level_auto": "Automatisch",
   "chat_effortPicker_level_high": "Hoch",
   "chat_effortPicker_level_low": "Niedrig",

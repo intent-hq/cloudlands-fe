@@ -1,0 +1,29 @@
+{
+  "$meta": {
+    "generatedOn": "linux"
+  },
+  "transcript": {
+    "420": {
+      "probes": {
+        "data-testid=effort-transcript": {
+          "fontSize": 15,
+          "fontWeight": 400,
+          "gap": 0,
+          "height": 412,
+          "lineHeight": 22,
+          "marginBottom": 0,
+          "marginTop": 0,
+          "paddingLeft": 0,
+          "paddingRight": 0,
+          "width": 370,
+          "x": 25,
+          "y": 25
+        }
+      },
+      "root": {
+        "height": 462,
+        "width": 420
+      }
+    }
+  }
+}

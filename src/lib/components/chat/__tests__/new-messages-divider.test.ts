@@ -504,6 +504,18 @@ describe('turn-boundary divider placement (rendered ChatPanel)', () => {
       anchorId: 'notice-1',
     },
     {
+      site: 'effort-change notice',
+      messages: [
+        message('user-1', 'user'),
+        message('notice-1', 'system', {
+          metadata: { type: 'effort_changed', from: 'medium', to: 'high' },
+        }),
+        message('user-2', 'user'),
+        message('assistant-2', 'assistant'),
+      ],
+      anchorId: 'notice-1',
+    },
+    {
       site: 'provider re-home notice',
       messages: [
         message('user-1', 'user'),
@@ -544,6 +556,33 @@ describe('turn-boundary divider placement (rendered ChatPanel)', () => {
       expect(dividers[0].previousElementSibling).toBe(gaps[0]);
     },
   );
+
+  it('places an effort notice between the user and assistant without duplicating it', async () => {
+    const { container, turns } = await renderTranscript(
+      [
+        message('user-1', 'user'),
+        message('effort-1', 'system', {
+          text: 'Daemon effort fallback',
+          metadata: { type: 'effort_changed', from: 'medium', to: 'high' },
+        }),
+        message('assistant-1', 'assistant'),
+      ],
+      null,
+    );
+    expect(turns).toHaveLength(1);
+    const rows = container.querySelectorAll('[data-message-id="effort-1"]');
+    expect(rows).toHaveLength(1);
+    const notice = rows[0].querySelector('[role="status"]');
+    expect(notice?.textContent).toContain('Medium');
+    expect(notice?.textContent).toContain('High');
+    expect(container.textContent).not.toContain('Daemon effort fallback');
+    const user = container.querySelector('[data-message-id="user-1"]')!;
+    const assistant = container.querySelector('[data-message-id="assistant-1"]')!;
+    expect(user.compareDocumentPosition(rows[0]) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(
+      rows[0].compareDocumentPosition(assistant) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+  });
 
   it('renders the daemon provider re-home notice once in the transcript (intent#5737)', async () => {
     const daemonText =

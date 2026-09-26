@@ -1372,6 +1372,71 @@ describe('LiveChatClient.subscribe (standing §7.1 subscription)', () => {
     off();
   });
 
+  it('preserves an effort notice through live delivery, repeated deltas, and history reload', async () => {
+    mockChatSubscribe();
+    const client = new LiveChatClient();
+    const seen: Array<import('../app-client').ChatTranscript> = [];
+    let off = client.subscribe('agent-1', (transcript) => seen.push(transcript));
+    await flush();
+    expect(mockedRequest).toHaveBeenCalledWith('chat.subscribe', {
+      agentId: 'agent-1',
+      deltaEncoding: 'incremental',
+      projection: 'slim',
+    });
+    snapshotPush('sub-1', 0, SEEDED_SNAPSHOT);
+
+    // PROTOCOL §5.5 effort_changed row, projected to the §7.1 block delta.
+    const metadata = { type: 'effort_changed', from: null, to: 'none' };
+    const block = { type: 'text', id: 'effort:0', text: 'Effort changed from auto to none.' };
+    const entity = {
+      agentId: 'agent-1',
+      messageId: 'effort',
+      role: 'system',
+      messageSeq: 1,
+      timestamp: '2026-09-26T12:00:00Z',
+      streamingComplete: true,
+      metadata,
+      block,
+    };
+    deltaPush('sub-1', 1, { added: [entity], updated: [], removedIds: [] });
+    deltaPush('sub-1', 2, { added: [], updated: [entity], removedIds: [] });
+    const live = seen.at(-1)!;
+    expect(live.messages.map(({ id }) => id)).toEqual(['0190a1b2-user', 'effort']);
+    expect(live.messages[1]).toMatchObject({
+      id: 'effort',
+      role: 'system',
+      metadata,
+      contentBlocks: [block],
+      isStreaming: false,
+    });
+    expect(live.isStreaming).toBe(false);
+    off();
+
+    off = client.subscribe('agent-1', (transcript) => seen.push(transcript));
+    await flush();
+    snapshotPush('sub-2', 0, {
+      ...SEEDED_SNAPSHOT,
+      messages: [
+        ...SEEDED_SNAPSHOT.messages,
+        {
+          id: 'effort',
+          agentId: 'agent-1',
+          seq: 1,
+          role: 'system',
+          timestamp: entity.timestamp,
+          metadata,
+          contentBlocks: [block],
+        },
+      ],
+      totalMessages: 2,
+    });
+    const reloaded = seen.at(-1)!;
+    expect(reloaded.messages.map(({ id }) => id)).toEqual(['0190a1b2-user', 'effort']);
+    expect(reloaded.messages[1].metadata).toEqual(live.messages[1].metadata);
+    expect(reloaded.messages[1].contentBlocks).toEqual(live.messages[1].contentBlocks);
+    off();
+  });
+
   it("carries the user-row entity's metadata onto the materialized message (sender chip live)", async () => {
     // A child→coordinator row is persisted with
     // `metadata: { type: "agent_message", fromAgentId, fromAgentName }` and
