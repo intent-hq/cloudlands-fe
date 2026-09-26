@@ -193,18 +193,22 @@ export class CollaborationAuthFlow {
   private publish() {
     if (!this.ended) this.deps.show(this.snapshot());
   }
-  private guard() {
+  private guardAttempt() {
     if (!this.deps.attempt.current()) throw new CollaborationAuthFailure('request-changed');
     if (this.ended || !this.deps.local.current())
       throw new CollaborationAuthFailure('local-connection-changed');
     if (!this.policy.multiplayer) throw new CollaborationAuthFailure('multiplayer-disabled');
-    if (
-      !this.deps.local.supported ||
-      (this.view.target.provider === 'gitlab' && !this.deps.local.gitlabSupported)
-    )
+    if (!this.deps.local.supported) throw new CollaborationAuthFailure('upgrade-required');
+  }
+  private guardProvider(target: IdentityTarget) {
+    if (target.provider === 'gitlab' && !this.deps.local.gitlabSupported)
       throw new CollaborationAuthFailure('upgrade-required');
-    if (this.view.target.provider === 'gitlab' && !this.policy.gitlab)
+    if (target.provider === 'gitlab' && !this.policy.gitlab)
       throw new CollaborationAuthFailure('gitlab-disabled');
+  }
+  private guard() {
+    this.guardAttempt();
+    this.guardProvider(this.view.target);
   }
   private valid(revision: number) {
     if (!this.deps.attempt.current()) {
@@ -278,7 +282,8 @@ export class CollaborationAuthFlow {
     }
     let revision = this.revision;
     try {
-      this.guard();
+      this.guardAttempt();
+      if (action.type !== 'choose') this.guardProvider(this.view.target);
       if (action.type === 'open-browser') {
         if (this.view.device) await this.deps.openBrowser(this.view.device.verificationUri);
         return;
@@ -320,6 +325,8 @@ export class CollaborationAuthFlow {
         const pin = this.view.request.pinIdentity;
         if (pin && (pin.provider !== action.target.provider || pin.host !== action.target.host))
           throw new CollaborationAuthFailure('identity-mismatch');
+        // A provider choice must be admitted against its requested target, not the saved one.
+        this.guardProvider(action.target);
         await this.stopFlow();
         if (!this.valid(revision)) return;
         this.view.target = action.target;
