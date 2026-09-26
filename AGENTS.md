@@ -651,6 +651,27 @@ is roughly 10× the cost of a jsdom test and the CT job is sharded and time-boxe
   `pnpm ct:failures <run-id>` lists failed/flaky CT cases from PR or nightly artifacts.
   All browser lanes retain JSON, HTML and traces for seven days; the nightly
   manifest and per-lane outcomes distinguish missing reports from successful runs.
+  `nightly-browser-report.yml` processes every nightly/main manual completion,
+  including green runs with retries or quarantine failures. Its isolated writer
+  uses main's code and `MONOREPO_ISSUES_TOKEN` (central-tracker Issues write, with
+  permission to set Bug Type, labels and assignees). New issues go to
+  `intent-hq/intent`, owned by @panghy; matched issues retain their owners and human
+  text. Exact markers and complete open/closed issue/comment listings deduplicate
+  occurrences; fixed regressions reopen, duplicates follow their canonical issue,
+  and not-planned closures stay closed with recurrence evidence. No green run
+  automatically closes an issue. Quarantine failures reuse an existing strong
+  match or an `issue`/`quarantine` annotation containing its tracking issue URL.
+  Missing reports or stale rerun evidence produce a separate CI incident.
+  For read-only diagnosis, run
+  `node scripts/nightly-test-failures.mjs collect --run <id> --out /tmp/nightly-report`
+  (add `--historical` for older/non-nightly artifacts).
+  `publish --out /tmp/nightly-report` previews issue actions; writes
+  require the trusted completion workflow. Its saved plan, receipts, summary and
+  original archives survive reporting errors; rerun that workflow after correcting
+  auth/API failures. Python 3 reads bounded ZIP members without extracting files.
+  Writers use GitHub's `concurrency.queue: max` to retain pending completions;
+  actionlint 1.7.12 needs only its unknown-`queue` syntax diagnostic ignored until
+  it supports this [documented key](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/control-workflow-concurrency).
   Quarantined CT tests still run as an advisory step on shard 1 and must carry an
   open tracking issue and an owner. Remove the tag in the PR that fixes the flake.
 - Motion specs that sample animation progress mid-flight are the historical flake source;
