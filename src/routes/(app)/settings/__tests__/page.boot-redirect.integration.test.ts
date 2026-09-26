@@ -6,7 +6,7 @@
  * the boot-time default, so `/settings?tab=providers` lands on Providers for
  * an administrator once daemon state loads.
  */
-import { cleanup, render, waitFor } from '@testing-library/svelte';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Workspace, WorkspaceId } from '$shared/types';
 import { WorkspaceStatusEnum } from '$shared/types';
@@ -18,6 +18,7 @@ import {
   guestSessionsListUnavailable,
 } from '$store/renderer/slices/guest-sessions/guest-sessions-slice';
 import type { GuestSessionRecord } from '$store/renderer/slices/guest-sessions/guest-sessions-types';
+import { setLabsMultiplayerEnabled } from '$store/renderer/slices/user-preferences/user-preferences-slice';
 import {
   replaceWorkspaceList,
   setWorkspaceHasLoaded,
@@ -47,6 +48,7 @@ async function slotOnly() {
 
 vi.mock('$lib/components/settings/ProviderSelector.svelte', slotOnly);
 vi.mock('$lib/components/settings/ConnectionsSettings.svelte', slotOnly);
+vi.mock('$lib/components/settings/GuestSessionsSettings.svelte', slotOnly);
 vi.mock('$lib/components/settings/GitWorkspaceSettings.svelte', slotOnly);
 vi.mock('$lib/components/settings/OpenInAppsSettings.svelte', slotOnly);
 vi.mock('$lib/components/settings/McpServersSettings.svelte', slotOnly);
@@ -195,5 +197,51 @@ describe('settings deep link through the boot window (intent-hq/intent#5514)', (
     expect(urlTab()).toBe('display');
     expect(document.querySelector('[data-settings-tab="providers"]')).toBeNull();
     expect(document.querySelector('[data-settings-tab="connections"]')).toBeNull();
+  });
+});
+
+describe('Guest Sessions experimental multiplayer gate', () => {
+  it.each(['guest-sessions', 'display#guest-sessions', 'display#sharing'])(
+    'hides and redirects ?tab=%s when multiplayer is disabled, even before identity settles',
+    async (tab) => {
+      appStore.dispatch(setLabsMultiplayerEnabled(false));
+      renderSettings(tab);
+
+      expect(screen.queryByRole('button', { name: 'Guest Sessions' })).toBeNull();
+      expect(document.getElementById('guest-sessions')).toBeNull();
+      await waitFor(() => expect(currentTab()).toBe('display'));
+      expect(urlTab()).toBe('display');
+      expect(window.location.hash).toBe('');
+    },
+  );
+
+  it.each(['guest-sessions', 'display#guest-sessions', 'display#sharing'])(
+    'opens Guest Sessions through ?tab=%s when multiplayer is enabled',
+    async (tab) => {
+      appStore.dispatch(setLabsMultiplayerEnabled(true));
+      renderSettings(tab);
+
+      await waitFor(() => expect(currentTab()).toBe('guest-sessions'));
+      expect(screen.getByRole('button', { name: 'Guest Sessions' })).not.toBeNull();
+      expect(document.getElementById('guest-sessions')).not.toBeNull();
+    },
+  );
+
+  it('shows the tab when enabled and leaves the open page when disabled', async () => {
+    appStore.dispatch(setLabsMultiplayerEnabled(false));
+    renderSettings('display');
+
+    expect(screen.queryByRole('button', { name: 'Guest Sessions' })).toBeNull();
+    appStore.dispatch(setLabsMultiplayerEnabled(true));
+    await fireEvent.click(await screen.findByRole('button', { name: 'Guest Sessions' }));
+    await waitFor(() => expect(currentTab()).toBe('guest-sessions'));
+    expect(document.getElementById('guest-sessions')).not.toBeNull();
+
+    appStore.dispatch(setLabsMultiplayerEnabled(false));
+
+    await waitFor(() => expect(currentTab()).toBe('display'));
+    expect(urlTab()).toBe('display');
+    expect(screen.queryByRole('button', { name: 'Guest Sessions' })).toBeNull();
+    expect(document.getElementById('guest-sessions')).toBeNull();
   });
 });
