@@ -25,6 +25,7 @@
   import { getMentionSystem, type SearchContext } from '$lib/services/mentions';
   import type { Workspace } from '$shared/types';
   import { toPromptToken } from '$lib/services/mentions/format';
+  import { memberMentionLabel } from '$lib/utils/member-mention-token';
   import { noteUrl } from '$shared/constants/intent-links';
   import { createIntentLink } from '$lib/utils/tiptap-link-extension';
   import { Slice, Fragment } from '@tiptap/pm/model';
@@ -797,7 +798,7 @@
                   class: 'mention-chip',
                   tabindex: '0',
                 },
-                label, // Display without @ prefix for cleaner appearance
+                node.attrs.type === 'member' ? memberMentionLabel(label) : label,
               ];
             },
             // Ensure mentions serialize to canonical @-tokens when extracting text
@@ -1291,6 +1292,7 @@
           personality: '🎭',
           command: '⌘',
           terminal: '💻',
+          member: '👤',
         };
 
         hoverPreview = mount(MentionHoverPreview, {
@@ -1371,6 +1373,8 @@
     if (!target.hasAttribute('data-mention')) return;
 
     const type = target.getAttribute('data-type');
+    // A person is an inline reference, not a file or a navigable context attachment.
+    if (type === 'member') return;
     const id = target.getAttribute('data-id');
     const uri = target.getAttribute('data-uri');
     const meta = JSON.parse(target.getAttribute('data-meta') || '{}');

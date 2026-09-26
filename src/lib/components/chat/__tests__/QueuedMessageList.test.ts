@@ -43,6 +43,28 @@ function buttonTooltips(container: HTMLElement): string[] {
 }
 
 describe('QueuedMessageList', () => {
+  it('presents a queued member as a handle while sending the original queued message', async () => {
+    const payload = btoa(
+      JSON.stringify({
+        label: 'alice.dev',
+        principalId: 'person',
+        workspaceId: 'workspace',
+        identity: { provider: 'gitlab', host: 'gitlab.com', externalUserId: '42' },
+      }),
+    );
+    const onsendnow = vi.fn();
+    const message = queued({ content: `Ask @member[${payload}] please` });
+    render(QueuedMessageList, { props: { messages: [message], onsendnow } });
+    const row = screen.getByTestId('queued-message-content');
+    expect(row.getAttribute('aria-label')).toBe('Ask @alice.dev please');
+    expect(screen.getByTestId('queued-message-text').textContent?.trim()).toBe(
+      'Ask @alice.dev please',
+    );
+    await fireEvent.keyDown(row, { key: 'Enter', metaKey: true });
+    expect(onsendnow).toHaveBeenCalledWith('q-1');
+    expect(message.content).toBe(`Ask @member[${payload}] please`);
+  });
+
   it('renders a regular queued message as raw text with the reference remove affordance', () => {
     const { container } = render(QueuedMessageList, {
       props: { messages: [queued({ content: 'run the tests' })] },

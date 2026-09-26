@@ -1,5 +1,6 @@
 <script lang="ts">
   import { COMPOSER_INSET_CLASS } from './composer-inset';
+  import { memberMentionsToText } from '$lib/utils/member-mention-token';
   /**
    * QueuedMessageList Component
    *
@@ -706,7 +707,7 @@
                     class="min-w-0 flex-1 cursor-default justify-start text-left font-normal!"
                     data-testid="queued-message-content"
                     data-mode="display"
-                    aria-label={message.content}
+                    aria-label={memberMentionsToText(message.content)}
                     ondblclick={() => startEdit(message)}
                     onkeydown={(event) => handleDisplayKeydown(event, message)}
                   >
@@ -735,7 +736,7 @@
                     <span class="block truncate" data-testid="queued-message-text">
                       {message.requeuedAfterFailure
                         ? m.chat_queuedMessages_failedWillRetryPrefix_label() + ' '
-                        : ''}{message.content}
+                        : ''}{memberMentionsToText(message.content)}
                     </span>
                   </Button>
                   {#if !disabled}
