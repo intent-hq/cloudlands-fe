@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-export const gitCredentialPolicySchema = z.object({
+const gitCredentialPolicySchema = z.object({
   provider: z.literal('github'),
   protocol: z.literal('https'),
   host: z.literal('github.com'),
