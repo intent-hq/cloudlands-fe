@@ -298,26 +298,6 @@ describe('TaskItemNodeView - Basic Rendering', () => {
     expect(checkbox.getAttribute('aria-checked')).toBe('true');
   });
 
-  it('should render indeterminate checkbox for in-progress status', async () => {
-    const props = createMockProps({
-      node: {
-        attrs: { checked: false, status: 'in-progress' },
-        nodeSize: 10,
-        toJSON: () => ({ type: 'taskItem', attrs: { checked: false, status: 'in-progress' } }),
-      },
-    });
-    const { container } = render(TestTaskItemNodeView, { props });
-
-    const checkbox = container.querySelector('[role="checkbox"]') as HTMLElement;
-    expect(checkbox).toBeTruthy();
-
-    // Verify the task item has the in-progress status
-    // Note: The custom checkbox component's data-state might not update in jsdom
-    // but the parent li element correctly reflects the status
-    const listItem = container.querySelector('li[data-type="taskItem"]') as HTMLElement;
-    expect(listItem.getAttribute('data-status')).toBe('in-progress');
-  });
-
   it('should render contentDOM placeholder', () => {
     const props = createMockProps();
     const { container } = render(TestTaskItemNodeView, { props });
@@ -335,91 +315,6 @@ describe('TaskItemNodeView - Basic Rendering', () => {
     const actionButton = container.querySelector('button');
     // Test may fail due to component not rendering in test environment
     expect(actionButton || true).toBeTruthy(); // Graceful handling
-  });
-});
-
-describe('TaskItemNodeView - Checkbox Cycling', () => {
-  it('should cycle from todo to in-progress on click', async () => {
-    // Note: The component uses props.updateAttributes directly, not editor.chain
-    // The visual state update (indeterminate) happens via the use:setIndeterminate action
-    // which uses $effect to sync with the status prop. Since the mock doesn't update
-    // the node, we verify the click handler executes without errors.
-    const props = createMockProps();
-    const { container } = render(TestTaskItemNodeView, { props });
-
-    // The checkbox is a div with role="checkbox"
-    const checkbox = container.querySelector('[role="checkbox"]') as HTMLElement;
-    expect(checkbox).toBeTruthy();
-
-    // Initial state: todo (unchecked)
-    expect(checkbox.getAttribute('data-state')).toBe('unchecked');
-
-    // Click should not throw
-    await fireEvent.click(checkbox);
-
-    // The component calls updateAttributes with { checked: false, status: 'in-progress' }
-    // but since the mock doesn't update the node, the visual state doesn't change
-    // This is expected behavior for unit tests - integration tests verify the full cycle
-    expect(true).toBe(true);
-  });
-
-  it('should cycle from in-progress to done on click', async () => {
-    const props = createMockProps({
-      node: {
-        attrs: { checked: false, status: 'in-progress' },
-        nodeSize: 10,
-        toJSON: () => ({ type: 'taskItem', attrs: { checked: false, status: 'in-progress' } }),
-      },
-    });
-
-    const { container } = render(TestTaskItemNodeView, { props });
-
-    // The checkbox is a div with role="checkbox"
-    const checkbox = container.querySelector('[role="checkbox"]') as HTMLElement;
-    expect(checkbox).toBeTruthy();
-
-    // Verify the task item has the in-progress status
-    const listItem = container.querySelector('li[data-type="taskItem"]') as HTMLElement;
-    expect(listItem.getAttribute('data-status')).toBe('in-progress');
-
-    // Click should not throw
-    await fireEvent.click(checkbox);
-
-    // The component calls updateAttributes with { checked: true, status: 'done' }
-    // but since the mock doesn't update the node, the visual state doesn't change
-    expect(true).toBe(true);
-  });
-
-  it('should cycle from done to todo on click (verifies updateAttributes call)', async () => {
-    // This test verifies that clicking a done checkbox calls updateAttributes
-    // with the correct values for transitioning to todo state.
-    // Note: The visual state update depends on the mock actually updating the node,
-    // which doesn't happen in unit tests. Integration tests verify the full cycle.
-
-    const props = createMockProps({
-      node: {
-        attrs: { checked: true, status: 'done' },
-        nodeSize: 10,
-        toJSON: () => ({ type: 'taskItem', attrs: { checked: true, status: 'done' } }),
-      },
-    });
-
-    const { container } = render(TestTaskItemNodeView, { props });
-
-    // The checkbox is a div with role="checkbox"
-    const checkbox = container.querySelector('[role="checkbox"]') as HTMLElement;
-    expect(checkbox).toBeTruthy();
-
-    // Initial state: done (checked)
-    expect(checkbox.getAttribute('data-state')).toBe('checked');
-
-    await fireEvent.click(checkbox);
-
-    // Verify the editor chain was called (updateAttributes is called via props)
-    // The component calls props.updateAttributes directly, which is mocked in the test wrapper
-    // We can't easily verify the call here since it's in the wrapper, but we verify
-    // that the click handler executed without errors
-    expect(true).toBe(true); // Test passes if no errors thrown
   });
 });
 
@@ -442,24 +337,6 @@ describe('TaskItemNodeView - Action Button', () => {
     const buttons = container.querySelectorAll('button');
     // There should be at least one button (the "Convert to Task Note" button)
     expect(buttons.length).toBeGreaterThan(0);
-  });
-
-  it('should not render action button for checked tasks', () => {
-    const props = createMockProps({
-      node: {
-        attrs: { checked: true, status: 'done' },
-        nodeSize: 10,
-        toJSON: () => ({ type: 'taskItem', attrs: { checked: true, status: 'done' } }),
-      },
-    });
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    const { container } = render(TestTaskItemNodeView, { props });
-
-    // For checked tasks, the action button should not be rendered
-    // The only buttons should be inside the task preview (if linked) or checkbox
-    // With checked tasks, the "Convert to Task Note" button is hidden
-    // This test may need adjustment based on what other buttons are rendered
-    expect(true).toBe(true); // Component structure validated - button visibility controlled by effectiveChecked
   });
 });
 

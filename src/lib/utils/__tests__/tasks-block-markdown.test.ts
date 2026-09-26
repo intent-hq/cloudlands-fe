@@ -157,10 +157,15 @@ Content three.
 
       const html = await processMarkdownToHTML(markdown);
 
-      // All @@@task blocks should render as skeleton loaders
-      expect(html).toContain('data-type="task-block"');
-      expect(html).toContain('task-block-pending');
-      expect(html).toContain('task-block-checkbox');
+      const container = document.createElement('div');
+      container.innerHTML = html;
+      const blocks = container.querySelectorAll('[data-type="task-block"]');
+      expect(blocks).toHaveLength(3);
+      for (const block of blocks) {
+        const checkboxes = block.querySelectorAll<HTMLInputElement>('input[type="checkbox"]');
+        expect(checkboxes).toHaveLength(1);
+        expect(checkboxes[0].disabled).toBe(true);
+      }
     });
 
     it('should render mixed legacy and new task block syntax correctly', async () => {

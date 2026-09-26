@@ -293,26 +293,12 @@ describe('CommandProvider', () => {
     const context: SearchContext = { workspaceId: 'test-workspace' };
     const results = await provider.search('', context);
 
-    expect(results.length).toBeGreaterThan(0);
-    expect(results[0]).toMatchObject({
-      type: 'command',
-    });
-  });
-
-  it('should include default context command', async () => {
-    const context: SearchContext = { workspaceId: 'test-workspace' };
-    const results = await provider.search('', context);
-
-    const hasDefaultContext = results.some((r) => r.id === 'use-default-context');
-    expect(hasDefaultContext).toBe(true);
-  });
-
-  it('should include clear context command', async () => {
-    const context: SearchContext = { workspaceId: 'test-workspace' };
-    const results = await provider.search('', context);
-
-    const hasClearContext = results.some((r) => r.id === 'clear-context');
-    expect(hasClearContext).toBe(true);
+    expect(
+      results.map(({ id, type }) => ({ id, type })).sort((a, b) => a.id.localeCompare(b.id)),
+    ).toEqual([
+      { id: 'clear-context', type: 'command' },
+      { id: 'use-default-context', type: 'command' },
+    ]);
   });
 
   it('should filter commands by query', async () => {

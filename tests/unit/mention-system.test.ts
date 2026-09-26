@@ -6,12 +6,19 @@
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { MentionSystem } from '../../src/lib/services/mentions/mention-system';
-import type { SearchContext } from '../../src/lib/services/mentions/types';
+import { providerRegistry } from '../../src/lib/services/mentions/providers';
+import type {
+  MentionCandidate,
+  Provider,
+  SearchContext,
+} from '../../src/lib/services/mentions/types';
+
+const { searchMock } = vi.hoisted(() => ({ searchMock: vi.fn() }));
 
 // Mock the search service
 vi.mock('../../src/lib/services/mentions/search-service', () => ({
   DebouncedSearchService: class MockSearchService {
-    search = vi.fn().mockResolvedValue([]);
+    search = searchMock;
     isLoading = vi.fn().mockReturnValue(false);
   },
 }));
@@ -31,6 +38,7 @@ describe('MentionSystem', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    searchMock.mockReset().mockResolvedValue([]);
     mentionSystem = new MentionSystem({
       debounceMs: 300,
       maxResults: 10,
@@ -73,9 +81,15 @@ describe('MentionSystem', () => {
     });
 
     it('should sanitize query by trimming whitespace', async () => {
+      const provider: Provider = {
+        id: 'test-provider',
+        triggers: [],
+        search: vi.fn().mockResolvedValue([]),
+      };
+      vi.mocked(providerRegistry.getDefault).mockReturnValueOnce([provider]);
       await mentionSystem.search('  test  ', mockContext);
-      // Should not throw
-      expect(true).toBe(true);
+      expect(searchMock).toHaveBeenCalledExactlyOnceWith('test', [provider], mockContext);
+      expect(searchMock.mock.calls[0][2]).toBe(mockContext);
     });
 
     it('should return empty array when no providers available', async () => {
@@ -84,12 +98,16 @@ describe('MentionSystem', () => {
     });
 
     it('should handle search errors gracefully', async () => {
-      const { DebouncedSearchService } =
-        await import('../../src/lib/services/mentions/search-service');
-      const mockSearchService = new DebouncedSearchService() as any;
-      mockSearchService.search = vi.fn().mockRejectedValue(new Error('Search error'));
+      const provider: Provider = {
+        id: 'test-provider',
+        triggers: [],
+        search: vi.fn(),
+      };
+      vi.mocked(providerRegistry.getDefault).mockReturnValueOnce([provider]);
+      searchMock.mockRejectedValueOnce(new Error('Search error'));
 
       const results = await mentionSystem.search('test', mockContext);
+      expect(searchMock).toHaveBeenCalledExactlyOnceWith('test', [provider], mockContext);
       expect(results).toEqual([]);
     });
   });
@@ -129,17 +147,50 @@ describe('MentionSystem', () => {
   });
 
   describe('cache management', () => {
-    it('should handle cache cleanup', () => {
-      // This tests that the system doesn't crash with cache operations
+    it('evicts least recently used results while retaining recent cache hits', async () => {
       const mockContext: SearchContext = { workspaceId: 'test' };
+      const provider: Provider = { id: 'test-provider', triggers: [], search: vi.fn() };
+      const clock = vi.spyOn(Date, 'now').mockReturnValue(1000);
+      vi.mocked(providerRegistry.getDefault).mockReturnValue([provider]);
+      searchMock.mockImplementation(async (query: string): Promise<MentionCandidate[]> => [
+        { id: query, label: query, type: 'file', uri: `file:${query}` },
+      ]);
+      try {
+        for (let i = 0; i < 100; i++) {
+          mentionSystem.searchSync(`query-${i}`, mockContext);
+        }
+        await new Promise<void>((resolve) => setImmediate(resolve));
+        expect(searchMock).toHaveBeenCalledTimes(100);
+        searchMock.mockClear();
 
-      // Perform multiple searches to potentially trigger cache cleanup
-      for (let i = 0; i < 150; i++) {
-        mentionSystem.searchSync(`query-${i}`, mockContext);
+        expect(mentionSystem.searchSync('query-0', mockContext)).toEqual([
+          { id: 'query-0', label: 'query-0', type: 'file', uri: 'file:query-0' },
+        ]);
+        expect(searchMock).not.toHaveBeenCalled();
+
+        mentionSystem.searchSync('query-100', mockContext);
+        await new Promise<void>((resolve) => setImmediate(resolve));
+        expect(searchMock).toHaveBeenCalledExactlyOnceWith('query-100', [provider], mockContext);
+        searchMock.mockClear();
+
+        expect(mentionSystem.searchSync('query-0', mockContext).map(({ id }) => id)).toEqual([
+          'query-0',
+        ]);
+        expect(mentionSystem.searchSync('query-100', mockContext).map(({ id }) => id)).toEqual([
+          'query-100',
+        ]);
+        expect(searchMock).not.toHaveBeenCalled();
+        expect(mentionSystem.searchSync('query-1', mockContext)).toEqual([]);
+        expect(searchMock).toHaveBeenCalledExactlyOnceWith('query-1', [provider], mockContext);
+        await new Promise<void>((resolve) => setImmediate(resolve));
+        expect(mentionSystem.searchSync('query-1', mockContext).map(({ id }) => id)).toEqual([
+          'query-1',
+        ]);
+        expect(searchMock).toHaveBeenCalledTimes(1);
+      } finally {
+        clock.mockRestore();
+        vi.mocked(providerRegistry.getDefault).mockReturnValue([]);
       }
-
-      // Should not throw
-      expect(true).toBe(true);
     });
   });
 

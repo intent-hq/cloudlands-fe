@@ -1,6 +1,6 @@
 import { m } from '$shared/paraglide/messages.js';
 import { describe, it, expect, beforeEach, vi, type Mock } from 'vitest';
-import { render, fireEvent, waitFor } from '@testing-library/svelte';
+import { render, fireEvent, waitFor, within } from '@testing-library/svelte';
 import type { TrackedChange, CommitInfo } from '$features/file-tracking/types';
 import { ChangeStage } from '$features/file-tracking/types';
 import { warmImport } from '../../../../../test/warm-import';
@@ -30,10 +30,25 @@ const { mockFileTrackingStore, createMockFtSelector, flushFtSelectors } = vi.hoi
     };
   }
 
-  function _createMockFtSelector<T>(getter: () => T) {
-    const fn = (..._args: any[]) => _makeReadable(getter);
+  function _createMockFtSelector<T>(getter: (workspaceId?: string) => T) {
+    const fn = (arg?: any) => ({
+      subscribe(run: (value: T) => void) {
+        if (arg && typeof arg.subscribe === 'function') {
+          let stopValues = () => {};
+          const stopArgument = arg.subscribe((workspaceId: string) => {
+            stopValues();
+            stopValues = _makeReadable(() => getter(workspaceId)).subscribe(run);
+          });
+          return () => {
+            stopArgument();
+            stopValues();
+          };
+        }
+        return _makeReadable(() => getter(arg)).subscribe(run);
+      },
+    });
 
-    fn.select = (_state: any, ..._args: any[]) => getter();
+    fn.select = (_state: any, workspaceId?: string) => getter(workspaceId);
 
     fn.effect = (..._args: any[]) => {};
     fn.withStore = () => fn;
@@ -53,6 +68,10 @@ const { mockFileTrackingStore, createMockFtSelector, flushFtSelectors } = vi.hoi
       currentWorkspaceId: 'ws-1' as string | null,
       stagedChanges: [] as any[],
       unstagedChanges: [] as any[],
+      changesByWorkspace: null as Record<
+        string,
+        { staged: TrackedChange[]; unstaged: TrackedChange[] }
+      > | null,
       commits: [] as any[],
       boundarySha: null as string | null,
       olderCommits: [] as any[],
@@ -66,8 +85,16 @@ const { mockFileTrackingStore, createMockFtSelector, flushFtSelectors } = vi.hoi
 });
 
 vi.mock('$store/renderer/slices/changes/changes-selectors', () => ({
-  selectStagedWorkingChanges: createMockFtSelector(() => mockFileTrackingStore.stagedChanges),
-  selectUnstagedWorkingChanges: createMockFtSelector(() => mockFileTrackingStore.unstagedChanges),
+  selectStagedWorkingChanges: createMockFtSelector((workspaceId) =>
+    mockFileTrackingStore.changesByWorkspace
+      ? (mockFileTrackingStore.changesByWorkspace[workspaceId ?? '']?.staged ?? [])
+      : mockFileTrackingStore.stagedChanges,
+  ),
+  selectUnstagedWorkingChanges: createMockFtSelector((workspaceId) =>
+    mockFileTrackingStore.changesByWorkspace
+      ? (mockFileTrackingStore.changesByWorkspace[workspaceId ?? '']?.unstaged ?? [])
+      : mockFileTrackingStore.unstagedChanges,
+  ),
   selectFileTrackingCommits: createMockFtSelector(() => mockFileTrackingStore.commits),
   selectFileTrackingBoundarySha: createMockFtSelector(() => mockFileTrackingStore.boundarySha),
   selectFileTrackingOlderCommits: createMockFtSelector(() => mockFileTrackingStore.olderCommits),
@@ -651,6 +678,7 @@ async function resetMocks() {
   mockFileTrackingStore.currentWorkspaceId = 'ws-1';
   mockFileTrackingStore.stagedChanges = [];
   mockFileTrackingStore.unstagedChanges = [];
+  mockFileTrackingStore.changesByWorkspace = null;
   mockFileTrackingStore.commits = [];
   mockFileTrackingStore.boundarySha = null;
   mockFileTrackingStore.olderCommits = [];
@@ -877,14 +905,26 @@ describe('SidebarChangesPanel', () => {
 
     it('uses explicit workspace identity even when another workspace is globally active', async () => {
       mockFileTrackingStore.currentWorkspaceId = 'ws-2';
-      mockFileTrackingStore.unstagedChanges = [makeChange({ relativePath: 'src/scoped.ts' })];
+      mockFileTrackingStore.changesByWorkspace = {
+        'ws-1': {
+          unstaged: [makeChange({ relativePath: 'src/scoped.ts' })],
+          staged: [makeChange({ relativePath: 'src/scoped-staged.ts', stage: ChangeStage.Staged })],
+        },
+        'ws-2': {
+          unstaged: [makeChange({ relativePath: 'src/other.ts' })],
+          staged: [makeChange({ relativePath: 'src/other-staged.ts', stage: ChangeStage.Staged })],
+        },
+      };
       mockWorkspaceStore.findById.mockReturnValue(makeWorkspace());
 
       const { container } = await renderPanel();
 
       await waitFor(() => {
-        expect(container.querySelector('.sidebar-changes-container')).toBeTruthy();
-        expect(container.querySelectorAll('[data-testid="file-row"]')).toHaveLength(1);
+        const rows = within(container).getAllByTestId('file-row');
+        expect(rows.map((row) => row.getAttribute('data-file-path')).sort()).toEqual([
+          'src/scoped-staged.ts',
+          'src/scoped.ts',
+        ]);
       });
     });
 
@@ -913,11 +953,14 @@ describe('SidebarChangesPanel', () => {
       const { container } = await renderPanel();
 
       await waitFor(() => {
-        const text = container.textContent;
-        expect(text).toContain('feat: add feature');
-        expect(text).toContain('fix: bug fix');
-        // Should show "Pushed to remote" divider
-        expect(text).toContain('Pushed to remote');
+        const unpushedRow = within(container).getByRole('button', { name: 'feat: add feature' })
+          .parentElement!.parentElement!.parentElement!;
+        const pushedRow = within(container).getByRole('button', { name: 'fix: bug fix' })
+          .parentElement!.parentElement!.parentElement!;
+        expect(within(unpushedRow).getByTestId('commit-push-button')).toBeTruthy();
+        expect(within(unpushedRow).queryByTestId('commit-undo-push-button')).toBeNull();
+        expect(within(pushedRow).getByTestId('commit-undo-push-button')).toBeTruthy();
+        expect(within(pushedRow).queryByTestId('commit-push-button')).toBeNull();
       });
     });
 
@@ -983,7 +1026,7 @@ describe('SidebarChangesPanel', () => {
         pullRequests: [
           {
             number: 42,
-            title: 'Merged PR',
+            title: 'Improve navigation',
             url: 'https://github.com/testorg/testrepo/pull/42',
             status: 'Merged',
             createdAt: new Date().toISOString(),
@@ -996,8 +1039,8 @@ describe('SidebarChangesPanel', () => {
       const { container } = await renderPanel();
 
       await waitFor(() => {
-        const text = container.textContent;
-        expect(text).toContain('Merged PR');
+        const row = within(container).getByTitle(m.workspace_prSection_merged_label());
+        expect(within(row).getByRole('button', { name: /Improve navigation/ })).toBeTruthy();
       });
     });
 
@@ -1040,7 +1083,7 @@ describe('SidebarChangesPanel', () => {
         pullRequests: [
           {
             number: 42,
-            title: 'Draft PR',
+            title: 'Improve navigation',
             url: 'https://github.com/testorg/testrepo/pull/42',
             status: 'Draft',
             createdAt: new Date().toISOString(),
@@ -1053,8 +1096,8 @@ describe('SidebarChangesPanel', () => {
       const { container } = await renderPanel();
 
       await waitFor(() => {
-        const text = container.textContent;
-        expect(text).toContain('Draft PR');
+        const row = within(container).getByTitle(m.workspace_prSection_statusDraft_label());
+        expect(within(row).getByRole('button', { name: /Improve navigation/ })).toBeTruthy();
       });
     });
 
@@ -1759,9 +1802,18 @@ describe('SidebarChangesPanel', () => {
       const { container } = await renderPanel();
 
       await waitFor(() => {
-        const text = container.textContent || '';
-        expect(text).toContain('Unstaged');
-        expect(text).toContain('Staged');
+        const unstagedRow = container.querySelector(
+          '[data-file-path="src/unstaged.ts"]',
+        ) as HTMLElement;
+        const stagedRow = container.querySelector(
+          '[data-file-path="src/staged.ts"]',
+        ) as HTMLElement;
+        expect(unstagedRow).toBeTruthy();
+        expect(stagedRow).toBeTruthy();
+        expect(within(unstagedRow).getByTestId('stage-btn')).toBeTruthy();
+        expect(within(unstagedRow).queryByTestId('unstage-btn')).toBeNull();
+        expect(within(stagedRow).getByTestId('unstage-btn')).toBeTruthy();
+        expect(within(stagedRow).queryByTestId('stage-btn')).toBeNull();
       });
     });
 

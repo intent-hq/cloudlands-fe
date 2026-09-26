@@ -10,19 +10,6 @@ describe('Choice Block - Markdown Processing', () => {
   // The markdown processor treats ```choice blocks as regular code blocks with language-choice class.
   // Choice blocks are converted to structured HTML only when TipTap parses them.
   describe.skip('Parsing (Markdown → HTML) - V2 Structure', () => {
-    it('should recognize choice block and convert to HTML div', async () => {
-      const markdown = `\`\`\`choice
-Which one?
-( ) Option A
-(x) Option B
-\`\`\``;
-
-      const html = await processMarkdownToHTML(markdown);
-
-      // Should create a div with data-type="choice-block"
-      expect(html).toContain('data-type="choice-block"');
-    });
-
     it('should create nested choice-question div with paragraph', async () => {
       const markdown = `\`\`\`choice
 Which one?

@@ -134,16 +134,6 @@ describe('CustomTaskItem', () => {
       expect(id2.length).toBeGreaterThan(5);
     });
 
-    it('should create proper CSS anchor names', () => {
-      // Test the naming convention used in the implementation
-      const anchorId = 'abc123def';
-      const anchorName = `task-menu-anchor-${anchorId}`;
-      const cssAnchorName = `--${anchorName}`;
-
-      expect(anchorName).toBe('task-menu-anchor-abc123def');
-      expect(cssAnchorName).toBe('--task-menu-anchor-abc123def');
-    });
-
     it('should create proper popover IDs', () => {
       // Test the popover ID generation logic
       const popoverId = 'xyz789abc';

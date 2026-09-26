@@ -291,7 +291,8 @@ describe('Text Node Walking Helpers', () => {
       const span1 = document.createElement('span');
       span1.textContent = 'Hello';
       const span2 = document.createElement('span');
-      span2.textContent = '';
+      const empty = document.createTextNode('');
+      span2.appendChild(empty);
       const span3 = document.createElement('span');
       span3.textContent = 'World';
       div.appendChild(span1);
@@ -301,8 +302,14 @@ describe('Text Node Walking Helpers', () => {
       const textNodes = getAllTextNodes(div);
       const offsetMap = buildTextOffsetMap(textNodes);
 
-      // Should skip empty text nodes or handle them gracefully
-      expect(offsetMap.length).toBeGreaterThan(0);
+      expect(offsetMap).toEqual([
+        { node: span1.firstChild, start: 0, end: 5 },
+        { node: empty, start: 5, end: 5 },
+        { node: span3.firstChild, start: 5, end: 10 },
+      ]);
+      expect(offsetMap[0].node).toBe(span1.firstChild);
+      expect(offsetMap[1].node).toBe(empty);
+      expect(offsetMap[2].node).toBe(span3.firstChild);
     });
   });
 

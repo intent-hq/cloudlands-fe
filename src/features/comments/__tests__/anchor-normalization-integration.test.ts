@@ -8,30 +8,14 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { Editor } from '@tiptap/core';
 import StarterKit from '@tiptap/starter-kit';
+import TaskList from '@tiptap/extension-task-list';
+import TaskItem from '@tiptap/extension-task-item';
 import { CommentAnchor, findCommentAnchors } from '$lib/components/tiptap/CommentAnchor';
 import { processMarkdownToHTML } from '$lib/utils/markdown-processor';
 import { normalizeAnchorPositions } from '$lib/utils/anchor-normalization';
 
 describe('Anchor Normalization Integration', () => {
   let editor: Editor;
-
-  // Helper function to fix missing data-anchor-id attributes in HTML
-  // This is a workaround for an issue where the conversion doesn't add data-anchor-id
-  function fixAnchorAttributes(html: string): string {
-    return html
-      .replace(
-        /data-anchor-type="start" data-comment-id="([^"]+)"/g,
-        'data-anchor-id="$1:start" data-anchor-type="start" data-comment-id="$1"',
-      )
-      .replace(
-        /data-anchor-type="end" data-comment-id="([^"]+)"/g,
-        'data-anchor-id="$1:end" data-anchor-type="end" data-comment-id="$1"',
-      )
-      .replace(
-        /data-anchor-type="point" data-comment-id="([^"]+)"/g,
-        'data-anchor-id="$1:point" data-anchor-type="point" data-comment-id="$1"',
-      );
-  }
 
   beforeEach(() => {
     editor = new Editor({
@@ -40,6 +24,8 @@ describe('Anchor Normalization Integration', () => {
           heading: { levels: [1, 2, 3, 4, 5, 6] },
         }),
         CommentAnchor,
+        TaskList,
+        TaskItem,
       ],
       content: '',
     });
@@ -63,9 +49,7 @@ describe('Anchor Normalization Integration', () => {
       // Convert to HTML
       const html = await processMarkdownToHTML(normalizedMarkdown, { preserveAnchors: true });
 
-      // Fix missing data-anchor-id attributes and load into editor
-      const fixedHtml = fixAnchorAttributes(html);
-      editor.commands.setContent(fixedHtml);
+      editor.commands.setContent(html);
 
       // Check document structure
       console.log('Document JSON:', JSON.stringify(editor.getJSON(), null, 2));
@@ -107,9 +91,7 @@ describe('Anchor Normalization Integration', () => {
         '## <!--anchor:outer:start--><!--anchor:inner:start-->Title<!--anchor:inner:end--><!--anchor:outer:end-->';
       const html = await processMarkdownToHTML(markdown, { preserveAnchors: true });
 
-      // Fix missing data-anchor-id attributes and load into editor
-      const fixedHtml = fixAnchorAttributes(html);
-      editor.commands.setContent(fixedHtml);
+      editor.commands.setContent(html);
 
       const outerAnchors = findCommentAnchors(editor.state.doc, 'outer');
       const innerAnchors = findCommentAnchors(editor.state.doc, 'inner');
@@ -126,13 +108,29 @@ describe('Anchor Normalization Integration', () => {
       const markdown = '- <!--anchor:list-test:start-->List item<!--anchor:list-test:end-->';
       const html = await processMarkdownToHTML(markdown, { preserveAnchors: true });
 
-      // Fix missing data-anchor-id attributes and load into editor
-      const fixedHtml = fixAnchorAttributes(html);
-      editor.commands.setContent(fixedHtml);
+      editor.commands.setContent(html);
 
-      const anchors = findCommentAnchors(editor.state.doc, 'list-test');
+      const doc = editor.state.doc;
+      const anchors = findCommentAnchors(doc, 'list-test');
       expect(anchors.start).toBeDefined();
       expect(anchors.end).toBeDefined();
+      expect(anchors.start).toBeLessThan(anchors.end!);
+      expect(doc.firstChild?.type.name).toBe('bulletList');
+      const item = doc.firstChild!.firstChild!;
+      expect(item.type.name).toBe('listItem');
+      expect(doc.resolve(anchors.start!).node(2)).toBe(item);
+      expect(doc.resolve(anchors.end!).node(2)).toBe(item);
+      expect(doc.nodeAt(anchors.start!)?.attrs).toMatchObject({
+        id: 'list-test:start',
+        type: 'start',
+        commentId: 'list-test',
+      });
+      expect(doc.nodeAt(anchors.end!)?.attrs).toMatchObject({
+        id: 'list-test:end',
+        type: 'end',
+        commentId: 'list-test',
+      });
+      expect(doc.textBetween(anchors.start!, anchors.end!)).toBe('List item');
     });
 
     it('should find anchors in ordered list item', async () => {
@@ -140,9 +138,7 @@ describe('Anchor Normalization Integration', () => {
         '1. <!--anchor:ordered-test:start-->First item<!--anchor:ordered-test:end-->';
       const html = await processMarkdownToHTML(markdown, { preserveAnchors: true });
 
-      // Fix missing data-anchor-id attributes and load into editor
-      const fixedHtml = fixAnchorAttributes(html);
-      editor.commands.setContent(fixedHtml);
+      editor.commands.setContent(html);
 
       const anchors = findCommentAnchors(editor.state.doc, 'ordered-test');
       expect(anchors.start).toBeDefined();
@@ -153,13 +149,30 @@ describe('Anchor Normalization Integration', () => {
       const markdown = '- [ ] <!--anchor:task-test:start-->Task item<!--anchor:task-test:end-->';
       const html = await processMarkdownToHTML(markdown, { preserveAnchors: true });
 
-      // Fix missing data-anchor-id attributes and load into editor
-      const fixedHtml = fixAnchorAttributes(html);
-      editor.commands.setContent(fixedHtml);
+      editor.commands.setContent(html);
 
-      const anchors = findCommentAnchors(editor.state.doc, 'task-test');
+      const doc = editor.state.doc;
+      const anchors = findCommentAnchors(doc, 'task-test');
       expect(anchors.start).toBeDefined();
       expect(anchors.end).toBeDefined();
+      expect(anchors.start).toBeLessThan(anchors.end!);
+      expect(doc.firstChild?.type.name).toBe('taskList');
+      const item = doc.firstChild!.firstChild!;
+      expect(item.type.name).toBe('taskItem');
+      expect(doc.resolve(anchors.start!).node(2)).toBe(item);
+      expect(doc.resolve(anchors.end!).node(2)).toBe(item);
+      expect(doc.nodeAt(anchors.start!)?.attrs).toMatchObject({
+        id: 'task-test:start',
+        type: 'start',
+        commentId: 'task-test',
+      });
+      expect(doc.nodeAt(anchors.end!)?.attrs).toMatchObject({
+        id: 'task-test:end',
+        type: 'end',
+        commentId: 'task-test',
+      });
+      expect(doc.textBetween(anchors.start!, anchors.end!)).toBe('Task item');
+      expect(item.attrs.checked).toBe(false);
     });
   });
 
@@ -211,9 +224,7 @@ describe('Anchor Normalization Integration', () => {
       const markdown = '## <!--anchor:pos-test:start-->Goals<!--anchor:pos-test:end-->';
       const html = await processMarkdownToHTML(markdown, { preserveAnchors: true });
 
-      // Fix missing data-anchor-id attributes and load into editor
-      const fixedHtml = fixAnchorAttributes(html);
-      editor.commands.setContent(fixedHtml);
+      editor.commands.setContent(html);
 
       const anchors = findCommentAnchors(editor.state.doc, 'pos-test');
 
