@@ -48,6 +48,7 @@ import type {
   WorkspaceInviteRow,
   WorkspaceMembersList,
 } from '$features/workspace-sharing/types';
+import { initializeIdentity } from '../../identity/identity-slice';
 import { isForbiddenErrorResponse } from '$lib/client/live/backend-transport-types';
 import { createLogger } from '$lib/utils/client-logger';
 import { m } from '$shared/paraglide/messages.js';
@@ -260,10 +261,11 @@ function* createInvite(action: ReturnType<typeof shareInviteCreateRequested>): S
   const target = yield* manageableTarget();
   if (!target) return;
   const request = yield* selectShareCreateRequest.effect();
-  const [{ pinLogin }] = action.payload;
+  const [{ pinLogin, pin }] = action.payload;
   const requestedPin = pinLogin.trim();
   const outcome = yield* call(workspaceSharingClient.createInvite, target.workspaceId, {
     pinLogin: requestedPin,
+    pin,
   });
   if (!(yield* stillTargets(target))) return;
   if (!outcome.success) {
@@ -287,7 +289,11 @@ function* createInvite(action: ReturnType<typeof shareInviteCreateRequested>): S
     shareInviteCreated({
       target,
       request,
-      link: { inviteId, pinLogin: outcome.result.invite.pinLogin },
+      link: {
+        inviteId,
+        pinLogin: outcome.result.invite.pinLogin,
+        pinIdentity: outcome.result.invite.pinIdentity,
+      },
     }),
   );
   yield* put(shareDataRequested());
@@ -381,6 +387,8 @@ function* addMember(action: ReturnType<typeof shareMemberAddRequested>): SagaGen
 function* requestDataOnOpen(): SagaGenerator<void> {
   yield* call(clearInviteLinks);
   yield* put(shareDataRequested());
+  // The pin's default forge follows the host's `identity.provider` setting.
+  yield* put(initializeIdentity());
 }
 
 function* clearLinksOnClose(): SagaGenerator<void> {

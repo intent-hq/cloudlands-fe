@@ -280,6 +280,8 @@ import {
 import { mapDaemonMcpState } from '$store/renderer/slices/mcp-settings/mcp-settings-normalization';
 import { githubAuthChanged } from '$store/renderer/slices/github-auth/github-auth-slice';
 import { gitlabAuthChanged } from '$store/renderer/slices/gitlab-auth/gitlab-auth-slice';
+import { identityChanged } from '$store/renderer/slices/identity/identity-slice';
+import type { PrincipalIdentity } from '$features/workspace-sharing/types';
 import { shareMembershipChanged } from '$store/renderer/slices/workspace-share/workspace-share-slice';
 import {
   browserTabClosed,
@@ -3265,6 +3267,32 @@ function handleSourceControlAuthChangedEvent(event: WorkspaceEvent): void {
 }
 
 /**
+ * `principal:identity-changed` carries `data = { principalId, identity | null }`
+ * when the host's primary principal is re-keyed onto another forge (an
+ * explicit `identity.provider` change) or unlinked. Global; the identity slice
+ * follows the new triple's provider.
+ */
+function handlePrincipalIdentityChangedEvent(event: WorkspaceEvent): void {
+  const data = (event as { data?: Record<string, unknown> }).data;
+  const identity = data?.identity;
+  if (identity === null) {
+    appStore.dispatch(identityChanged(null));
+    return;
+  }
+  if (!identity || typeof identity !== 'object') return;
+  const { provider, host, externalUserId } = identity as Record<string, unknown>;
+  if (
+    (provider !== 'github' && provider !== 'gitlab') ||
+    typeof host !== 'string' ||
+    typeof externalUserId !== 'string'
+  ) {
+    return;
+  }
+  const triple: PrincipalIdentity = { provider, host, externalUserId };
+  appStore.dispatch(identityChanged(triple));
+}
+
+/**
  * `client:connected` / `client:disconnected` (REV-2, §5.17) are global — the
  * daemon publishes `data = { clientId, name?, capabilities }` when a logical
  * client gains its first / loses its last live connection. The payload is a
@@ -3608,6 +3636,10 @@ export function routeDaemonEventsNotification(
   }
   if (type === 'sourceControl:auth-changed') {
     handleSourceControlAuthChangedEvent(event);
+    return;
+  }
+  if (type === 'principal:identity-changed') {
+    handlePrincipalIdentityChangedEvent(event);
     return;
   }
 
@@ -4240,6 +4272,9 @@ export const DAEMON_EVENTS_SUBSCRIBE_TYPES = [
   // `sourceControl:auth-changed` — provider-generic forge-auth transitions
   // (`{ provider, host, status }`); routes the GitLab connect UX.
   'sourceControl:auth-changed',
+  // `principal:identity-changed` — the host's identity forge was re-keyed
+  // (`{ principalId, identity | null }`); global, folded into the identity slice.
+  'principal:identity-changed',
   // REV-2 browser-client routing (§5.17): global logical-client transitions
   // (re-read `client.list`) and the workspace-scoped daemon tab-registry
   // change events (`{ tab, changes? }`, patched into the browser-clients

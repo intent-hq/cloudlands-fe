@@ -23,6 +23,8 @@ import { createAction } from '@augmentcode/themis/utils/store/create-action';
 import { createReducer } from '@augmentcode/themis/utils/store/create-reducer';
 import type {
   HostPrincipal,
+  InvitePin,
+  PrincipalIdentity,
   WorkspaceInvite,
   WorkspaceMember,
 } from '$features/workspace-sharing/types';
@@ -49,6 +51,8 @@ export interface WorkspaceShareTarget {
 export interface WorkspaceShareCreatedLink {
   inviteId: string;
   pinLogin?: string;
+  /** The pinned account's forge, as the daemon resolved it. */
+  pinIdentity?: PrincipalIdentity;
 }
 
 /** Hover-card roster of one workspace (see `WorkspaceShareState.byWorkspaceId`). */
@@ -211,10 +215,13 @@ export const shareAccessWithheld = createAction<[payload: { target: WorkspaceSha
   'workspaceShare/accessWithheld',
 );
 
-/** Mint an invite link; `pinLogin` (trimmed, may be empty) restricts redemption. */
-export const shareInviteCreateRequested = createAction<[payload: { pinLogin: string }]>(
-  'workspaceShare/inviteCreateRequested',
-);
+/**
+ * Mint an invite link; `pinLogin` (trimmed, may be empty) restricts redemption
+ * and `pin` names the forge it lives on (absent: the host's identity forge).
+ */
+export const shareInviteCreateRequested = createAction<
+  [payload: { pinLogin: string; pin?: InvitePin }]
+>('workspaceShare/inviteCreateRequested');
 
 /** Saga: the invite for `target` / `request` was created; the link is shown once. */
 export const shareInviteCreated = createAction<

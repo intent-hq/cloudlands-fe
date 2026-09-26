@@ -70,6 +70,7 @@ const toPerson = (
   login: identity.login,
   displayName: identity.displayName,
   avatarUrl: identity.avatarUrl,
+  ...(identity.identity ? { identity: identity.identity } : {}),
   ...facts,
 });
 

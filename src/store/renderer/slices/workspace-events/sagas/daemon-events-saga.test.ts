@@ -274,6 +274,7 @@ describe('daemonEventsSaga', () => {
       'mcp.servers:status-changed',
       'github:auth-changed',
       'sourceControl:auth-changed',
+      'principal:identity-changed',
       'client:connected',
       'client:disconnected',
       'browser:tab-opened',

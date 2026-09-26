@@ -262,6 +262,41 @@ describe('WorkspaceProgressCard presence row', () => {
     expect(greyscaleTile(avatar)!.classList.contains('grayscale')).toBe(false);
   };
 
+  it('badges each member with their identity forge and names it on hover; a row without one stays neutral', async () => {
+    await renderProgressCard({
+      presence: presenceState(
+        presenceMembersReceived('ws-1', [
+          accepted('me', 'owner'),
+          {
+            ...accepted('ada', 'collaborator'),
+            identity: { provider: 'gitlab', host: 'gitlab.example.com', externalUserId: '7' },
+          },
+          {
+            ...accepted('bob', 'collaborator'),
+            identity: { provider: 'github', host: 'github.com', externalUserId: '42' },
+          },
+          accepted('cy', 'collaborator'),
+        ]),
+        roster,
+        presenceOwnPrincipalReceived('me'),
+      ),
+    });
+    const badge = (principalId: string) =>
+      presenceRow()!.querySelector<HTMLElement>(
+        `[data-presence-avatar="${principalId}"] [data-presence-identity-provider]`,
+      );
+    expect(badge('ada')?.getAttribute('data-presence-identity-provider')).toBe('gitlab');
+    expect(badge('ada')?.getAttribute('data-presence-identity-host')).toBe('gitlab.example.com');
+    expect(badge('ada')?.querySelector('[data-icon]')?.getAttribute('data-icon')).toBe('gitlab');
+    expect(badge('bob')?.getAttribute('data-presence-identity-provider')).toBe('github');
+    expect(badge('bob')?.querySelector('[data-icon]')?.getAttribute('data-icon')).toBe('github');
+    expect(badge('cy')).toBeNull();
+
+    expect(personButton('ada').getAttribute('aria-label')).toContain('@ada on gitlab.example.com');
+    expect(personButton('bob').getAttribute('aria-label')).toContain('@bob on GitHub');
+    expect(personButton('cy').getAttribute('aria-label')).not.toMatch(/GitHub|gitlab/);
+  });
+
   it('still shows every other member, each greyscale with a grey ring, while nobody else is online', async () => {
     await renderProgressCard({
       presence: presenceState(membership, presenceOwnPrincipalReceived('me')),
@@ -284,6 +319,37 @@ describe('WorkspaceProgressCard presence row', () => {
     expect(group.getAttribute('aria-label')).not.toMatch(/here$/);
     expect(group.getAttribute('aria-label')).toMatch(/not here|none here/i);
   });
+
+  it.each([
+    { provider: 'github', host: 'github.com', platform: 'GitHub' },
+    { provider: 'gitlab', host: 'gitlab.example.com', platform: 'gitlab.example.com' },
+  ] as const)(
+    'does not repeat fallback handles in $provider offline tooltips',
+    async ({ provider, host, platform }) => {
+      await renderProgressCard({
+        presence: presenceState(
+          presenceMembersReceived('ws-1', [
+            accepted('me', 'owner'),
+            ...[null, 'ada', 'Ada Lovelace'].map((displayName, index) => ({
+              ...accepted(`person-${index}`, 'collaborator'),
+              login: 'ada',
+              displayName,
+              identity: { provider, host, externalUserId: String(index) },
+            })),
+          ]),
+          presenceOwnPrincipalReceived('me'),
+        ),
+      });
+      for (const index of [0, 1]) {
+        expect(personButton(`person-${index}`).getAttribute('aria-label')).toBe(
+          `@ada on ${platform} · offline`,
+        );
+      }
+      expect(personButton('person-2').getAttribute('aria-label')).toBe(
+        `Ada Lovelace · @ada on ${platform} · offline`,
+      );
+    },
+  );
 
   it('names the group by the people present, leaving the listed offline members out of the count', async () => {
     await renderProgressCard({

@@ -24,6 +24,7 @@
   import { Button } from '$lib/components/patterns/settings/custom-controls';
   import BulkActionConfirmDialog from '$lib/components/modals/BulkActionConfirmDialog.svelte';
   import HostedWorkspaceRoster from './HostedWorkspaceRoster.svelte';
+  import ForgeIdentityChoice from './ForgeIdentityChoice.svelte';
   import { formatGuestSessionAddress, formatGuestSessionLabel } from '$lib/utils/connection-label';
   import { m } from '$shared/paraglide/messages.js';
   import type { GuestSessionRecord, GuestWorkspaceRef } from '$shared/types/guest-sessions';
@@ -168,6 +169,8 @@
   </div>
 
   {#if !$isCollaboratorOnly$}
+    <ForgeIdentityChoice />
+
     <div data-testid="guest-sessions-hosting">
       <h3 class="type-title mb-3 text-foreground">
         {m.settings_guestSessions_hosting_title()}

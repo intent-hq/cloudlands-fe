@@ -55,6 +55,7 @@ import {
   type WorkspaceShareState,
 } from '../workspace-share-slice';
 import { selectShareInvitablePrincipals } from '../workspace-share-selectors';
+import { initializeIdentity } from '../../identity/identity-slice';
 import { workspaceShareSaga } from './workspace-share-saga';
 
 /** Rides inside every mocked invite url (the capability); must never reach a sink. */
@@ -243,6 +244,8 @@ describe('workspaceShareSaga', () => {
     expect(mocks.request).toHaveBeenCalledWith('workspace.invite.list', { workspaceId: 'ws-1' });
     expect(mocks.request).toHaveBeenCalledWith('principal.list', {});
     expect(mocks.request).toHaveBeenCalledTimes(3);
+    // The pin's default forge follows `identity.provider`: the identity slice is asked to read it.
+    expect(h.dispatched).toContainEqual(initializeIdentity());
     expect(h.state().loadStatus).toBe('loaded');
     expect(getItems(h.state().members)).toEqual([owner]);
     expect(getItems(h.state().principals)).toEqual([guest]);

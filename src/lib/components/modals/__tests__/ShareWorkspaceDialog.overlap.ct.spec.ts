@@ -142,14 +142,14 @@ test('opening the other picker dismisses suggestions, and Escape closes one laye
   const input = page.getByRole('combobox', { name: /Restrict to a GitHub user/ });
   await input.fill('wat');
   await expect(page.getByTestId('share-pin-suggestions')).toBeVisible();
-  await page.getByRole('combobox', { name: /Invite an existing GitHub user/ }).click();
+  await page.getByRole('combobox', { name: /Invite an existing user/ }).click();
   await expect(page.getByTestId('share-pin-suggestions')).toBeHidden();
   const guestOption = page.getByRole('dialog').getByRole('option', { name: '@guest', exact: true });
   await expect(guestOption).toBeVisible();
   await page.keyboard.press('Escape');
   await expect(guestOption).toBeHidden();
   expect(closes).toBe(0);
-  await page.getByRole('combobox', { name: /Invite an existing GitHub user/ }).click();
+  await page.getByRole('combobox', { name: /Invite an existing user/ }).click();
   await guestOption.click();
   await expect(page.getByTestId('share-existing-guest-invite')).toBeEnabled();
   await input.fill('wa');
@@ -160,5 +160,69 @@ test('opening the other picker dismisses suggestions, and Escape closes one laye
   await expect(input).toBeFocused();
   expect(closes).toBe(0);
   await input.press('Escape');
+  await expect.poll(() => closes).toBe(1);
+});
+
+test('the pin-provider picker stays inside the modal, and Escape closes it before the dialog', async ({
+  mount,
+  page,
+}) => {
+  let closes = 0;
+  await page.setViewportSize({ width: 900, height: 500 });
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await mount(ShareWorkspaceDialog, {
+    props: {
+      ...props,
+      gitlabConnected: true,
+      gitlabEnabled: true,
+      gitlabHost: 'gitlab.example.com',
+      identitySeamSupported: true,
+      identityProvider: 'github' as const,
+      onClose: () => closes++,
+    },
+  });
+  const dialog = page.getByRole('dialog');
+  await page.getByRole('combobox', { name: /Forge of the user/ }).click();
+  const options = dialog.getByRole('option');
+  await expect(options).toHaveCount(2);
+  await page.evaluate(() => document.fonts.ready);
+
+  const dialogBounds = await dialog.boundingBox();
+  expect(dialogBounds).not.toBeNull();
+  for (const option of await options.all()) {
+    await expect(option).toBeVisible();
+    await expect
+      .poll(async () => {
+        const bounds = await option.boundingBox();
+        return (
+          bounds !== null &&
+          dialogBounds !== null &&
+          bounds.x >= dialogBounds.x &&
+          bounds.y >= dialogBounds.y &&
+          bounds.x + bounds.width <= dialogBounds.x + dialogBounds.width &&
+          bounds.y + bounds.height <= dialogBounds.y + dialogBounds.height
+        );
+      })
+      .toBe(true);
+    await expect
+      .poll(() =>
+        option.evaluate((element) => {
+          const rect = element.getBoundingClientRect();
+          const hit = document.elementFromPoint(rect.x + rect.width / 2, rect.y + rect.height / 2);
+          return hit !== null && element.contains(hit);
+        }),
+      )
+      .toBe(true);
+  }
+
+  await page.keyboard.press('Escape');
+  await expect(options).toHaveCount(0);
+  await expect(dialog).toBeVisible();
+  expect(closes).toBe(0);
+
+  await page.getByRole('combobox', { name: /Forge of the user/ }).click();
+  await dialog.getByRole('option', { name: /gitlab\.example\.com/ }).click();
+  await expect(page.getByRole('combobox', { name: /Restrict to a GitLab user/ })).toBeVisible();
+  await page.keyboard.press('Escape');
   await expect.poll(() => closes).toBe(1);
 });
