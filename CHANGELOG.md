@@ -4,6 +4,13 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.184.6](https://github.com/intent-hq/cloudlands-fe/compare/v2.184.5...v2.184.6) (2026-09-26)
+
+
+### 🐛 Bug Fixes
+
+* hide guest sessions when experimental multiplayer is disabled ([#2919](https://github.com/intent-hq/cloudlands-fe/issues/2919)) ([1e082ab](https://github.com/intent-hq/cloudlands-fe/commit/1e082abee10f4c45b4078976732c0a7a2a448099))
+
 ## [2.184.5](https://github.com/intent-hq/cloudlands-fe/compare/v2.184.4...v2.184.5) (2026-09-26)
 
 
