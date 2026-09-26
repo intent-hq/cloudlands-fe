@@ -28,6 +28,20 @@ function rerun(data, artifact, jobIndex, completedAt) {
 }
 
 describe('issue synchronization', () => {
+  it('reuses the same CT issue and occurrence for relative and absolute report locations', () => {
+    const data = fixture();
+    const raw = report('flaky');
+    raw.suites[0].file = 'test/ct-browser.ct.spec.ts';
+    data.documents['playwright-ct-report-1-of-4'].report = raw;
+    const client = issueStore();
+    synchronizeIssues(analyzeReports(data), client, { write: true });
+    raw.suites[0].file = `${raw.config.rootDir}/test/ct-browser.ct.spec.ts`;
+    const results = synchronizeIssues(analyzeReports(data), client, { write: true });
+    expect(client.writes).toEqual([{ create: 1 }]);
+    expect(client.issues).toHaveLength(1);
+    expect(client.issues[0].body).toContain('src/test/ct-browser.ct.spec.ts');
+    expect(results[0].action).toBe('already-recorded');
+  });
   it('does not count a retained root flake again when only an unrelated CT job reruns', () => {
     const data = fixture();
     data.documents['playwright-root-report-1'].report = report('flaky');

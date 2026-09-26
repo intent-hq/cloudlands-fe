@@ -278,6 +278,67 @@ describe('complete browser evidence', () => {
 });
 
 describe('Playwright identities and expected outcomes', () => {
+  it.each([
+    ['ct', 'src', 'test/ct-browser.ct.spec.ts', 'src/test/ct-browser.ct.spec.ts'],
+    ['ct', 'src', 'src/nested.ct.spec.ts', 'src/src/nested.ct.spec.ts'],
+    ['ct', 'src', 'tests/nested.ct.spec.ts', 'src/tests/nested.ct.spec.ts'],
+    ['ct', 'src', 'e2e/nested.ct.spec.ts', 'src/e2e/nested.ct.spec.ts'],
+    [
+      'ct',
+      'src',
+      'features/test/tests/e2e/src/nested.ct.spec.ts',
+      'src/features/test/tests/e2e/src/nested.ct.spec.ts',
+    ],
+    ['ct', 'src/features', 'test/nested.ct.spec.ts', 'src/features/test/nested.ct.spec.ts'],
+    ['root', 'test', 'browser.spec.ts', 'test/browser.spec.ts'],
+    ['root', 'test', 'src/tests/browser.spec.ts', 'test/src/tests/browser.spec.ts'],
+    ['root', '', 'test/browser.spec.ts', 'test/browser.spec.ts'],
+    [
+      'electron',
+      'test',
+      'electron-browser-lifetime.spec.ts',
+      'test/electron-browser-lifetime.spec.ts',
+    ],
+    ['electron', 'test', 'e2e/src/browser.spec.ts', 'test/e2e/src/browser.spec.ts'],
+  ])('resolves %s locations from report root %s: %s', (suite, root, file, expected) => {
+    const raw = report('unexpected');
+    const entry = entries.find((candidate) => candidate.suite === suite);
+    const location = (rootDir, specFile) => {
+      raw.config.rootDir = rootDir;
+      raw.suites[0].file = specFile;
+      const item = parseReport(raw, entry).failures[0];
+      return { file: item.file, key: item.key };
+    };
+    const rootDir = `/home/runner/work/cloudlands-fe/cloudlands-fe${root ? `/${root}` : ''}`;
+    const absolute = location(rootDir, `${rootDir}/${file}`);
+    expect(absolute.file).toBe(expected);
+    expect(location(rootDir, file)).toEqual(absolute);
+    expect(location(`${rootDir}/`, `./${file}`)).toEqual(absolute);
+    const windowsRoot = `C:/work/cloudlands-fe${root ? `/${root}` : ''}`.replaceAll('/', '\\');
+    expect(location(windowsRoot, file.replaceAll('/', '\\'))).toEqual(absolute);
+    expect(location(windowsRoot, `${windowsRoot}\\${file.replaceAll('/', '\\')}`)).toEqual(
+      absolute,
+    );
+  });
+  it.each([
+    undefined,
+    null,
+    42,
+    '',
+    '.',
+    'test/..',
+    'test/bad\0.spec.ts',
+    '../../outside.spec.ts',
+    '../test/outside.spec.ts',
+    'test/../../outside.spec.ts',
+    '..\\..\\outside.spec.ts',
+    '/tmp/outside.spec.ts',
+    '/checkout/src/../../outside.spec.ts',
+  ])('rejects invalid or escaping report locations %j', (file) => {
+    const raw = report('unexpected');
+    raw.suites[0].file = file;
+    expect(() => parseReport(raw, entries[0])).toThrow();
+  });
   it('keeps complete nested titles and each project, using spec paths instead of generator locations', () => {
     const raw = report('unexpected');
     const spec = raw.suites[0].suites[0].specs[0];

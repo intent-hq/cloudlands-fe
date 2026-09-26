@@ -54,20 +54,34 @@ export const occurrenceMarker = (run, key, attempt = run.run_attempt) =>
   `<!-- nightly-browser-seen:${run.id}:${attempt}:${key} -->`;
 
 function specPath(file, rootDir = '') {
-  requireValue(typeof file === 'string' && file.length > 0, 'Missing spec path');
+  requireValue(
+    typeof file === 'string' && file.length > 0 && !file.includes('\0'),
+    'Missing or invalid spec path',
+  );
   let path = file.replaceAll('\\', '/');
   const root = rootDir.replaceAll('\\', '/');
+  const absolute = /^(?:\/|[A-Za-z]:\/)/;
+  // Playwright suite locations are relative to config.rootDir, even when an
+  // inner directory is also named src/test/tests/e2e (for example src/test/).
+  if (!absolute.test(path)) {
+    path = posix.normalize(path);
+    requireValue(
+      path !== '.' && path !== '..' && !path.startsWith('../'),
+      'Spec path is empty or escapes report root',
+    );
+    path = posix.join(root, path);
+  }
   const directory = /(?:^|\/)(src|test|tests|e2e)(?:\/|$)/;
-  if (/^(?:\/|[A-Za-z]:\/)/.test(path)) {
+  if (absolute.test(path)) {
     const match = directory.exec(path);
     requireValue(match, 'Spec path is outside a known test directory');
     path = path.slice(match.index + (match[0].startsWith('/') ? 1 : 0));
-  } else if (!directory.test(path)) {
-    const match = directory.exec(root);
-    if (match) path = `${root.slice(match.index + (match[0].startsWith('/') ? 1 : 0))}/${path}`;
   }
   path = posix.normalize(path);
-  requireValue(!path.startsWith('../') && path !== '..', 'Spec path escapes repository');
+  requireValue(
+    path !== '.' && path !== '..' && !path.startsWith('../'),
+    'Spec path is empty or escapes repository',
+  );
   return path;
 }
 
