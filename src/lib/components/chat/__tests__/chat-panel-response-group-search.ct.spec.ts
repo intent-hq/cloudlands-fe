@@ -32,7 +32,7 @@ test('search reveals a completed response group and restores only search-owned s
   await expect(group).toHaveAttribute('data-chat-search-expanded', 'true');
 });
 
-test('search treats headingless reasoning as inline content and preserves titled disclosure state', async ({
+test('search reveals only the reasoning body owner and preserves manual disclosure state', async ({
   mount,
   page,
 }) => {
@@ -45,38 +45,54 @@ test('search treats headingless reasoning as inline content and preserves titled
   const titledGroup = titledMessage.getByTestId('response-group');
   const titledDisclosure = titledGroup.getByTestId('response-group-disclosure');
 
-  await expect(
-    inlineMessage.getByText('Inline headingless search target remains visible'),
-  ).toBeVisible();
-  await expect(inlineMessage.getByRole('button', { name: 'Reasoning' })).toHaveCount(0);
-  await expect(inlineMessage.locator('[aria-expanded][aria-label="Reasoning"]')).toHaveCount(0);
-  await expect(inlineMessage.locator('[aria-controls][aria-label="Reasoning"]')).toHaveCount(0);
+  const inlineBody = inlineMessage.locator(
+    '[data-chat-search-disclosure-id="reasoning:b:0:c:1:phase:0"]',
+  );
+  await expect(inlineBody).toHaveAttribute('data-chat-search-expanded', 'false');
+  await expect(inlineMessage.getByRole('button', { name: 'Reasoning' })).toHaveCount(2);
   await expect(inlineMessage.locator('[data-chat-search-disclosure-id^="group:"]')).toHaveCount(0);
   await expect(inlineMessage.locator('[data-operational-expanded-content]')).toHaveCount(0);
-  expect(await inlineMessage.ariaSnapshot()).not.toContain('button "Reasoning"');
   await expect(titledDisclosure).toHaveAttribute('aria-expanded', 'false');
 
-  await inlineMessage.getByText('Inline headingless search target remains visible').focus();
+  await inlineMessage.getByRole('button', { name: 'Reasoning' }).first().focus();
   await page.keyboard.press('ControlOrMeta+f');
   const findBar = component.getByRole('search', { name: 'Find in panel' });
   const input = findBar.getByRole('textbox');
   await input.fill('Inline headingless search target');
+  await expect(inlineBody).toHaveAttribute('data-chat-search-expanded', 'true');
+  await expect(
+    inlineMessage.getByText(
+      'Inline headingless search target remains visible without opening anything.',
+    ),
+  ).toBeVisible();
+  await expect(
+    inlineMessage.getByText('Later inline reasoning stays visible in source order.'),
+  ).toHaveCount(0);
   await expect(titledDisclosure).toHaveAttribute('aria-expanded', 'false');
   await input.press('Escape');
+  await expect(inlineBody).toHaveAttribute('data-chat-search-expanded', 'false');
   await expect(titledDisclosure).toHaveAttribute('aria-expanded', 'false');
 
   await page.keyboard.press('ControlOrMeta+f');
   await findBar.getByRole('textbox').fill('Hidden titled reasoning search target');
   await expect(titledDisclosure).toHaveAttribute('aria-expanded', 'true');
+  const titledBody = titledGroup.locator(
+    '[data-chat-search-disclosure-id="reasoning:b:0:c:1:phase:0"]',
+  );
+  await expect(titledBody).toHaveAttribute('data-chat-search-expanded', 'true');
+  await expect(titledGroup.getByText('Hidden titled reasoning search target.')).toBeVisible();
   await findBar.getByRole('textbox').press('Escape');
   await expect(titledDisclosure).toHaveAttribute('aria-expanded', 'false');
 
   await titledDisclosure.click();
   await expect(titledDisclosure).toHaveAttribute('aria-expanded', 'true');
+  await expect(titledBody).toHaveAttribute('data-chat-search-expanded', 'false');
+  await titledBody.getByRole('button').click();
   await titledDisclosure.press('ControlOrMeta+f');
   await findBar.getByRole('textbox').fill('Hidden titled reasoning search target');
   await findBar.getByRole('textbox').press('Escape');
   await expect(titledDisclosure).toHaveAttribute('aria-expanded', 'true');
+  await expect(titledBody).toHaveAttribute('data-chat-search-expanded', 'true');
 });
 
 test('search reveals a grouped orphan result and restores manual disclosure state', async ({

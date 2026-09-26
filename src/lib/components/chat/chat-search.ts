@@ -1,6 +1,5 @@
 import type { AgentMessage } from '$shared/types';
 import { extractAllContent } from '$shared/types';
-import { getContentBlockText } from '$shared/utils/content-block-helpers';
 import {
   groupContentBlocks,
   parseSuggestedPrompts,
@@ -14,7 +13,16 @@ interface ChatSearchBlock {
   disclosurePath: string[];
   text: string;
 }
-import { normalizeResponseGroups, shouldRenderResponseGroupInline } from './response-group-blocks';
+import {
+  getResponseGroupCurrentChildIndex,
+  normalizeResponseGroups,
+  shouldRenderResponseGroupInline,
+} from './response-group-blocks';
+import {
+  extractReasoningHeading,
+  extractReasoningHistory,
+  extractStandaloneReasoningTitles,
+} from './reasoning-heading';
 import {
   classifyToolResults,
   getStandaloneToolResultPresentation,
@@ -71,6 +79,24 @@ function buildMessageSearchBlocks(
     if (!cleaned.trim()) return;
     output.push({ messageId: message.id, turnKey, blockPath, disclosurePath, text: cleaned });
   };
+  const addReasoning = (text: string, path: string, parents: string[], history: boolean) => {
+    if (history) {
+      extractReasoningHistory(text).forEach((phase, index) => {
+        const phasePath = `${path}:phase:${index}`;
+        if (phase.title) addText(phase.title, `${phasePath}:summary`, parents);
+        addText(phase.body, `${phasePath}:body`, [...parents, `reasoning:${phasePath}`]);
+      });
+    } else {
+      const titles = extractStandaloneReasoningTitles(text);
+      if (titles) {
+        titles.forEach((title, index) => addText(title, `${path}:title:${index}:summary`, parents));
+        return;
+      }
+      const reasoning = extractReasoningHeading(text, { preserveInlineText: true });
+      if (reasoning.heading) addText(reasoning.heading, `${path}:summary`, parents);
+      addText(reasoning.body, `${path}:body`, [...parents, `reasoning:${path}`]);
+    }
+  };
 
   grouped.forEach((block, blockIndex) => {
     const path = chatSearchBlockPath(blockIndex);
@@ -78,65 +104,41 @@ function buildMessageSearchBlocks(
       addText(block.text || block.content || '', path, []);
       return;
     }
+    if (block.type === 'thinking') {
+      addReasoning(block.text ?? block.content ?? '', path, [], false);
+      return;
+    }
     if (block.type === 'tool_result' && isStandaloneToolResult(toolResultClassification, block)) {
       addText(getStandaloneToolResultPresentation(block).searchableText, path, []);
       return;
     }
     if (block.type !== 'content_group') return;
-    if (block.isStreaming) {
-      block.children.forEach((child, childIndex) => {
-        if (
-          child.type === 'tool_result' &&
-          isStandaloneToolResult(toolResultClassification, child)
-        ) {
-          addText(
-            getStandaloneToolResultPresentation(child).searchableText,
-            chatSearchBlockPath(blockIndex, childIndex),
-            [`group:${path}`],
-          );
-          return;
-        }
-        if (child.type === 'text' || (child.type === 'thinking' && !block.isReasoningPhase)) {
-          addText(
-            child.text || child.content || '',
-            chatSearchBlockPath(blockIndex, childIndex),
-            [],
-          );
-        }
-      });
-      return;
-    }
-    if (block.isReasoningPhase) {
-      const rendersInline = shouldRenderResponseGroupInline(block);
-      const disclosurePath = rendersInline ? [] : [`group:${path}`];
-      block.children.forEach((child, childIndex) => {
-        const childPath = chatSearchBlockPath(blockIndex, childIndex);
-        if (child.type === 'tool_result') {
-          if (isStandaloneToolResult(toolResultClassification, child)) {
-            addText(
-              getStandaloneToolResultPresentation(child).searchableText,
-              childPath,
-              disclosurePath,
-            );
-          }
-          return;
-        }
-        if (!rendersInline && block.name.trim().toLowerCase() === 'reasoning') return;
-        addText(getContentBlockText(child), childPath, disclosurePath);
-      });
-      return;
-    }
+    const parents = shouldRenderResponseGroupInline(block) ? [] : [`group:${path}`];
+    if (parents.length) addText(block.name, `${path}:summary`, []);
+    const currentIndex = getResponseGroupCurrentChildIndex(block);
     block.children.forEach((child, childIndex) => {
+      if (
+        block.isStreaming &&
+        currentIndex >= 0 &&
+        childIndex !== currentIndex &&
+        child.type !== 'tool_result'
+      )
+        return;
       const childPath = chatSearchBlockPath(blockIndex, childIndex);
       if (child.type === 'text') {
-        addText(child.text || child.content || '', childPath, [`group:${path}`]);
+        addText(child.text || child.content || '', childPath, parents);
+      } else if (child.type === 'thinking') {
+        addReasoning(
+          child.text ?? child.content ?? '',
+          childPath,
+          parents,
+          !!block.isReasoningPhase,
+        );
       } else if (
         child.type === 'tool_result' &&
         isStandaloneToolResult(toolResultClassification, child)
       ) {
-        addText(getStandaloneToolResultPresentation(child).searchableText, childPath, [
-          `group:${path}`,
-        ]);
+        addText(getStandaloneToolResultPresentation(child).searchableText, childPath, parents);
       }
     });
   });

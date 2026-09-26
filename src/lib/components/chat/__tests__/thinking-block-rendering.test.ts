@@ -115,10 +115,11 @@ describe('thinking blocks — StreamingMessageContent', () => {
           const openDetails = async () => {
             const group = screen.queryByTestId('response-group-disclosure');
             if (group?.getAttribute('aria-expanded') === 'false') await fireEvent.click(group);
-            if (layout === 'standalone') {
-              for (const toggle of screen.queryAllByTestId('reasoning-disclosure')) {
-                if (toggle.getAttribute('aria-expanded') === 'false') await fireEvent.click(toggle);
-              }
+            const toggles = view.container.querySelectorAll(
+              '[data-testid="reasoning-disclosure"], [data-testid="reasoning-history-row"] button',
+            );
+            for (const toggle of toggles) {
+              if (toggle.getAttribute('aria-expanded') === 'false') await fireEvent.click(toggle);
             }
           };
           const assertContent = (withBody: boolean, withFollowing: boolean) => {
@@ -162,6 +163,7 @@ describe('thinking blocks — StreamingMessageContent', () => {
           expect(disclosure.getAttribute('aria-expanded')).toBe('false');
           expect(view.container.textContent).not.toContain(growthBody.split('\n\n')[0]);
           await fireEvent.click(disclosure);
+          await openDetails();
           assertContent(true, true);
           view.unmount();
           view = await renderer(completed, false);
@@ -263,11 +265,12 @@ describe('thinking blocks — StreamingMessageContent', () => {
           ),
       ).toBe(true);
 
-      // Standalone thinking is disclosure-only content and stays out of the
-      // chat search index (the pre-#1574 behavior); prose stays searchable.
+      // Search can reveal standalone reasoning without treating it as prose.
       expect(
         findChatSearchMatches([persistedStandaloneMessage], 'saved theme preference', new Map()),
-      ).toEqual([]);
+      ).toEqual([
+        expect.objectContaining({ blockPath: 'b:0:body', disclosurePath: ['reasoning:b:0'] }),
+      ]);
       expect(
         findChatSearchMatches([persistedStandaloneMessage], 'Theme storage', new Map()),
       ).toEqual([
@@ -356,7 +359,7 @@ describe('thinking blocks — StreamingMessageContent', () => {
     ['MessageContent', renderMessage],
     ['StreamingMessageContent', renderStreaming],
   ])(
-    'shows all live-group children in the preview and expanded history in %s',
+    'shows the current live child in the preview and all expanded history in %s',
     async (_renderer, renderMessageContent) => {
       const content = [
         { type: 'text', id: 'msg_1:0', text: '<group:Working>' },
@@ -372,7 +375,7 @@ describe('thinking blocks — StreamingMessageContent', () => {
 
       expect(groupDisclosure.getAttribute('aria-expanded')).toBe('false');
       expect(screen.getByTestId('response-group-name').textContent).toBe('Working');
-      expect(visibleChildTypes()).toEqual(['text', 'thinking']);
+      expect(visibleChildTypes()).toEqual(['thinking']);
       expect(screen.getAllByTestId('reasoning-disclosure')).toHaveLength(1);
 
       await view.rerender({
@@ -382,7 +385,7 @@ describe('thinking blocks — StreamingMessageContent', () => {
         ],
         isStreaming: true,
       });
-      expect(visibleChildTypes()).toEqual(['text', 'thinking', 'tool_result']);
+      expect(visibleChildTypes()).toEqual(['thinking']);
 
       const tool = {
         type: 'tool_use',
@@ -392,7 +395,7 @@ describe('thinking blocks — StreamingMessageContent', () => {
         toolCallId: 'tool-1',
       } as ContentBlock;
       await view.rerender({ content: [...content, tool], isStreaming: true });
-      expect(visibleChildTypes()).toEqual(['text', 'thinking', 'tool_use']);
+      expect(visibleChildTypes()).toEqual(['tool_use']);
 
       const withAnswer = [
         ...content,
@@ -401,9 +404,9 @@ describe('thinking blocks — StreamingMessageContent', () => {
         { type: 'text', id: 'msg_1:6', text: 'Current answer' },
       ] as ContentBlock[];
       await view.rerender({ content: withAnswer, isStreaming: true });
-      expect(visibleChildTypes()).toEqual(['text', 'thinking', 'tool_use', 'text']);
+      expect(visibleChildTypes()).toEqual(['text']);
       expect(document.body.textContent).toContain('Current answer');
-      expect(document.body.textContent).toContain('Earlier answer');
+      expect(document.body.textContent).not.toContain('Earlier answer');
 
       await fireEvent.click(groupDisclosure);
       expect(groupDisclosure.getAttribute('aria-expanded')).toBe('true');
@@ -424,7 +427,7 @@ describe('thinking blocks — StreamingMessageContent', () => {
 
       await fireEvent.click(groupDisclosure);
       expect(groupDisclosure.getAttribute('aria-expanded')).toBe('false');
-      expect(visibleChildTypes()).toEqual(['text', 'thinking', 'tool_use', 'text', 'thinking']);
+      expect(visibleChildTypes()).toEqual(['thinking']);
 
       await view.rerender({ content: [...withAnswer, latestThought], isStreaming: false });
       expect(visibleChildTypes()).toEqual([]);
@@ -473,17 +476,24 @@ describe('thinking blocks — StreamingMessageContent', () => {
           occurrenceInBlock: 0,
           turnKey: 'assistant-adjacent-preview',
           blockPath: 'b:0:c:0',
-          disclosurePath: [],
+          disclosurePath: ['group:b:0'],
         },
       ]);
-      expect(findChatSearchMatches([message], 'Assessing delegation', new Map())).toEqual([]);
+      expect(findChatSearchMatches([message], 'Assessing delegation', new Map())).toEqual([
+        expect.objectContaining({
+          blockPath: 'b:0:c:1:phase:0:summary',
+          disclosurePath: ['group:b:0'],
+        }),
+      ]);
 
+      await fireEvent.click(disclosure);
+      expect(disclosure.getAttribute('aria-expanded')).toBe('false');
       await fireEvent.click(disclosure);
       expect(
         document.body.textContent?.match(/Assessing delegation and tool availability/g),
       ).toHaveLength(1);
       expect(document.body.textContent?.match(/I’ll first title the workspace/g)).toHaveLength(1);
-      expect(findChatSearchMatches([message], 'Assessing delegation', new Map())).toEqual([]);
+      expect(findChatSearchMatches([message], 'Assessing delegation', new Map())).toHaveLength(1);
       const historyRow = screen.getByTestId('reasoning-history-row');
       expect(historyRow.textContent?.trim()).toBe('Assessing delegation and tool availability');
       expect(historyRow.querySelector('button, [aria-expanded]')).toBeNull();
@@ -636,7 +646,7 @@ describe('thinking blocks — StreamingMessageContent', () => {
     expect(groupDisclosure.getAttribute('aria-expanded')).toBe('true');
     expect(screen.getByTestId('response-group-name').textContent).toBe('Thinking...');
     expect(document.body.textContent).not.toContain('Prepping');
-    expect(visibleChildTypes()).toEqual([]);
+    expect(visibleChildTypes()).toEqual(['thinking']);
 
     const groupContent = [
       ...leadingContent,
@@ -670,12 +680,19 @@ describe('thinking blocks — StreamingMessageContent', () => {
 
     expect(groupDisclosure.getAttribute('aria-expanded')).toBe('false');
     expect(screen.getByTestId('response-group-name').textContent).toBe('Reasoning');
-    expect(visibleChildTypes()).toEqual(['text', 'thinking', 'tool_use', 'thinking', 'tool_use']);
-    expect(document.body.textContent).toContain('Then I will read the current spec');
+    expect(visibleChildTypes()).toEqual(['tool_use']);
+    expect(document.body.textContent).not.toContain('Then I will read the current spec');
 
     await fireEvent.click(groupDisclosure);
     expect(groupDisclosure.getAttribute('aria-expanded')).toBe('true');
-    expect(visibleChildTypes()).toEqual(['text', 'thinking', 'tool_use', 'thinking', 'tool_use']);
+    expect(visibleChildTypes()).toEqual([
+      'text',
+      'thinking',
+      'thinking',
+      'tool_use',
+      'thinking',
+      'tool_use',
+    ]);
     const responseGroup = screen.getByTestId('response-group');
     expect(responseGroup.querySelectorAll('[data-testid="reasoning-disclosure"]')).toHaveLength(0);
     expect(responseGroup.textContent?.match(/Reasoning/g)).toHaveLength(1);
@@ -684,22 +701,28 @@ describe('thinking blocks — StreamingMessageContent', () => {
       (child) => child.textContent?.trim(),
     );
     expect(history[0]).toContain('I will set the workspace title');
-    expect(history[1]).toContain('Invoking workspace API to set title');
-    expect(history[2]).toContain('Set workspace title and read the current spec');
-    expect(history[3]).toContain('Planning clarification questions on formatting issues');
-    expect(history[4]).toContain('Ask for the expected agent chat layout');
+    expect(history[1]).toContain('Searching workspace API for title setting');
+    expect(history[2]).toContain('Invoking workspace API to set title');
+    expect(history[3]).toContain('Set workspace title and read the current spec');
+    expect(history[4]).toContain('Planning clarification questions on formatting issues');
+    expect(history[5]).toContain('Ask for the expected agent chat layout');
     const historyTitles = [
       ...responseGroup.querySelectorAll('[data-testid="reasoning-history-title"]'),
     ].map((title) => title.textContent?.trim());
     expect(historyTitles).toEqual([
+      'Searching workspace API for title setting',
       'Invoking workspace API to set title',
       'Planning clarification questions on formatting issues',
       'Planning code inspection and question sequencing',
     ]);
     const historyRows = responseGroup.querySelectorAll('[data-testid="reasoning-history-row"]');
-    expect(historyRows).toHaveLength(3);
-    expect([...historyRows].every((row) => !row.querySelector('button, [aria-expanded]'))).toBe(
-      true,
+    expect(historyRows).toHaveLength(4);
+    expect(
+      [...historyRows].slice(0, 3).every((row) => !row.querySelector('button, [aria-expanded]')),
+    ).toBe(true);
+    expect(responseGroup.querySelectorAll('[data-reasoning-history-body]')).toHaveLength(0);
+    await fireEvent.click(
+      screen.getByRole('button', { name: 'Planning code inspection and question sequencing' }),
     );
     const historyBodies = responseGroup.querySelectorAll('[data-reasoning-history-body]');
     expect(historyBodies).toHaveLength(1);
@@ -718,8 +741,8 @@ describe('thinking blocks — StreamingMessageContent', () => {
     expect(document.body.textContent).toContain('Workspace ready');
     await fireEvent.click(groupDisclosure);
     expect(groupDisclosure.getAttribute('aria-expanded')).toBe('false');
-    expect(visibleChildTypes()).toEqual(['text', 'thinking', 'tool_use', 'thinking', 'tool_use']);
-    expect(document.body.textContent).toContain('Then I will read the current spec');
+    expect(visibleChildTypes()).toEqual(['tool_use']);
+    expect(document.body.textContent).not.toContain('Then I will read the current spec');
 
     const completedContent = [
       ...groupContent,
@@ -736,7 +759,14 @@ describe('thinking blocks — StreamingMessageContent', () => {
 
     await fireEvent.click(groupDisclosure);
     expect(groupDisclosure.getAttribute('aria-expanded')).toBe('true');
-    expect(visibleChildTypes()).toEqual(['text', 'thinking', 'tool_use', 'thinking', 'tool_use']);
+    expect(visibleChildTypes()).toEqual([
+      'text',
+      'thinking',
+      'thinking',
+      'tool_use',
+      'thinking',
+      'tool_use',
+    ]);
     expect(responseGroup.textContent?.match(/Reasoning/g)).toHaveLength(1);
     expect(responseGroup.textContent?.match(/Then I will read the current spec/g)).toHaveLength(1);
   });
@@ -782,18 +812,20 @@ describe('thinking blocks — StreamingMessageContent', () => {
     ['MessageContent', renderStatic],
     ['StreamingMessageContent', (content: ContentBlock[]) => renderStreaming(content, false)],
   ])(
-    'renders persisted headingless phases inline once and in order in %s',
+    'renders persisted headingless phases without an outer group and reveals each body in order in %s',
     async (_, renderMessage) => {
       await renderMessage(persistedHeadinglessPhases);
 
       expect(screen.queryByTestId('response-group-disclosure')).toBeNull();
       expect(screen.queryByTestId('reasoning-disclosure')).toBeNull();
       expect(document.querySelector('[data-message-content-block="content_group"]')).toBeNull();
-      expect(screen.queryByRole('button', { name: 'Reasoning' })).toBeNull();
-      expect(document.querySelector('[aria-expanded][aria-label="Reasoning"]')).toBeNull();
-      expect(document.querySelector('[aria-controls][aria-label="Reasoning"]')).toBeNull();
       expect(document.querySelector('[data-chat-search-disclosure-id^="group:"]')).toBeNull();
-      expect(document.body.textContent).not.toContain('Reasoning');
+      const disclosures = screen.getAllByRole('button', { name: 'Reasoning' });
+      expect(disclosures).toHaveLength(4);
+      expect(disclosures.every((button) => button.getAttribute('aria-expanded') === 'false')).toBe(
+        true,
+      );
+      for (const disclosure of disclosures) await fireEvent.click(disclosure);
 
       const orderedText = [
         'I am locating the theme preference',
@@ -849,7 +881,9 @@ describe('thinking blocks — StreamingMessageContent', () => {
 
       expect(screen.queryByTestId('response-group-disclosure')).toBeNull();
       expect(screen.queryByTestId('reasoning-disclosure')).toBeNull();
-      expect(document.body.textContent).not.toContain('Reasoning');
+      const disclosures = screen.getAllByRole('button', { name: 'Reasoning' });
+      expect(disclosures).toHaveLength(2);
+      for (const disclosure of disclosures) await fireEvent.click(disclosure);
       expect(
         document.body.textContent?.match(/I am checking the active theme path\./g),
       ).toHaveLength(1);
@@ -880,12 +914,14 @@ describe('thinking blocks — StreamingMessageContent', () => {
         title.textContent?.trim(),
       ),
     ).toEqual(['Title-only operation', 'Earlier operation', 'Current operation']);
+    expect(responseGroup.querySelectorAll('[data-reasoning-history-body]')).toHaveLength(0);
+    await fireEvent.click(screen.getByRole('button', { name: 'Current operation' }));
     expect(responseGroup.querySelectorAll('[data-reasoning-history-body]')).toHaveLength(1);
     expect(responseGroup.textContent?.match(/Subordinate body\./g)).toHaveLength(1);
     expect(responseGroup.textContent?.match(/Group description prose\./g)).toHaveLength(1);
     expect(
       responseGroup.querySelectorAll('[data-testid="reasoning-history-row"] button'),
-    ).toHaveLength(0);
+    ).toHaveLength(1);
   });
 
   it('renders every consecutive screenshot title as a compact row without Markdown leakage', async () => {
@@ -921,7 +957,8 @@ describe('thinking blocks — StreamingMessageContent', () => {
     expect(responseGroup.querySelectorAll('[data-testid="reasoning-history-row"]')).toHaveLength(4);
     expect(
       responseGroup.querySelectorAll('[data-testid="reasoning-history-row"] button'),
-    ).toHaveLength(0);
+    ).toHaveLength(1);
+    await fireEvent.click(screen.getByRole('button', { name: titles[3] }));
     expect(responseGroup.querySelector('[data-reasoning-history-body]')?.textContent?.trim()).toBe(
       'History body after every title.',
     );
@@ -952,6 +989,10 @@ describe('thinking blocks — StreamingMessageContent', () => {
     ]);
 
     await fireEvent.click(screen.getByTestId('response-group-disclosure'));
+    await fireEvent.click(
+      screen.getByRole('button', { name: 'Evaluating user feedback mechanisms' }),
+    );
+    await fireEvent.click(screen.getByRole('button', { name: 'Specifying task requirements' }));
     const group = screen.getByTestId('response-group');
     const sections = [...group.querySelectorAll('[data-reasoning-section]')];
     expect(sections).toHaveLength(2);

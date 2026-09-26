@@ -247,6 +247,7 @@
   import { createScrollBottomButtonVisibility } from './scroll-bottom-button-visibility';
   import { createLogger } from '$lib/utils/client-logger';
   import { isFocusInEditableElement, isFocusInTerminal } from '$lib/utils/keyboardShortcuts';
+  import { getPanelFindOwner } from '$lib/utils/panel-find-owner';
   import Fa from 'svelte-fa';
   import { faLock, faPaperclip, faSquareCheck } from '@fortawesome/free-solid-svg-icons';
   import { crispOut, spring, springIn } from '$lib/motion';
@@ -5542,7 +5543,7 @@
     if (!e.defaultPrevented && matchesShortcut(e, 'mod+f', isMac)) {
       // Only open search if this panel is focused and active, and focus is not in terminal
       if (
-        isPanelFocused &&
+        getPanelFindOwner(e) === panelElement &&
         isActive &&
         !isFocusInTerminal(document.activeElement as HTMLElement | null)
       ) {
@@ -5588,6 +5589,8 @@
   role="region"
   aria-label={agentName}
   data-agent-model={agentModel}
+  data-panel-find-shortcut-owner={isActive ? 'true' : undefined}
+  data-panel-find-focused={isPanelFocused ? 'true' : undefined}
   onfocusin={() => {
     isInternallyFocused = true;
   }}
