@@ -28,12 +28,18 @@ export type {
  */
 export interface WorkspaceMember {
   principalId: string;
-  /** GitHub login; null for a principal without a resolved identity. */
+  /** Forge handle; null for a principal without a resolved identity. */
   login: string | null;
   displayName: string | null;
   avatarUrl: string | null;
   role: WorkspaceRole;
   addedAt: string;
+  /** Provider-neutral account identity from `workspace.members.list`; omitted while unlinked. */
+  identity?: {
+    provider: 'github' | 'gitlab';
+    host: string;
+    externalUserId: string;
+  };
 }
 
 /** `workspace.members.list` result. */
