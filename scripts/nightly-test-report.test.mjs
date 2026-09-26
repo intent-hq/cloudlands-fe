@@ -10,6 +10,19 @@ import {
 import { entries, fixture, report, testRecord } from './test-fixtures/nightly-browser.mjs';
 
 describe('complete browser evidence', () => {
+  it.each(['./', 'test/../', '.\\', 'test\\..\\'])(
+    'reports empty path %j as infrastructure rather than a test failure',
+    (file) => {
+      const data = fixture();
+      const raw = report('flaky');
+      raw.suites[0].file = file;
+      data.documents['playwright-ct-report-1-of-4'].report = raw;
+      const result = analyzeReports(data);
+      expect(result.incidents).toHaveLength(1);
+      expect(result.incidents[0]).toContain('Spec path is empty');
+      expect(result.items.map((item) => item.suite)).toEqual(['infrastructure']);
+    },
+  );
   it('accepts all four CT shards, both root shards, Electron and quarantine on a successful run', () => {
     const result = analyzeReports(fixture());
     expect(result.lanes).toHaveLength(8);
@@ -316,6 +329,7 @@ describe('Playwright identities and expected outcomes', () => {
     expect(location(`${rootDir}/`, `./${file}`)).toEqual(absolute);
     const windowsRoot = `C:/work/cloudlands-fe${root ? `/${root}` : ''}`.replaceAll('/', '\\');
     expect(location(windowsRoot, file.replaceAll('/', '\\'))).toEqual(absolute);
+    expect(location(windowsRoot, `.\\${file.replaceAll('/', '\\')}`)).toEqual(absolute);
     expect(location(windowsRoot, `${windowsRoot}\\${file.replaceAll('/', '\\')}`)).toEqual(
       absolute,
     );
@@ -326,7 +340,11 @@ describe('Playwright identities and expected outcomes', () => {
     42,
     '',
     '.',
+    './',
+    '.\\',
     'test/..',
+    'test/../',
+    'test\\..\\',
     'test/bad\0.spec.ts',
     '../../outside.spec.ts',
     '../test/outside.spec.ts',

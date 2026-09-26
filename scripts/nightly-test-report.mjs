@@ -66,7 +66,7 @@ function specPath(file, rootDir = '') {
   if (!absolute.test(path)) {
     path = posix.normalize(path);
     requireValue(
-      path !== '.' && path !== '..' && !path.startsWith('../'),
+      path !== '.' && path !== './' && path !== '..' && !path.startsWith('../'),
       'Spec path is empty or escapes report root',
     );
     path = posix.join(root, path);
@@ -79,7 +79,7 @@ function specPath(file, rootDir = '') {
   }
   path = posix.normalize(path);
   requireValue(
-    path !== '.' && path !== '..' && !path.startsWith('../'),
+    path !== '.' && path !== './' && path !== '..' && !path.startsWith('../'),
     'Spec path is empty or escapes repository',
   );
   return path;
