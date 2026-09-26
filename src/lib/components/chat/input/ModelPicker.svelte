@@ -144,8 +144,14 @@
   // Antigravity sign-in is a guest-local fact; a guest-locked picker reads the
   // host catalog regardless (`isGuestLocked` is declared with the props below
   // and only read once the picker is rendering).
-  function canUseProviderModels(providerId: string): boolean {
-    if (!hasResolvedProvider(providerId)) return false;
+  function canUseProviderModels(providerId: string, allowLoadedCatalog = false): boolean {
+    // An existing models.list response has its own provider provenance. Keep
+    // its labels during registry hydration; writes still require a registry row.
+    if (
+      !hasResolvedProvider(providerId) &&
+      !(allowLoadedCatalog && providerId && providerId === $availableModelsProviderId$)
+    )
+      return false;
     return (
       normalizeProviderId(providerId) !== 'antigravity' ||
       $antigravityModelsAllowed$ ||
@@ -659,6 +665,7 @@
   const availableModels = $derived(
     !canUseProviderModels(
       agentProviderModels ? effectiveProviderId : $availableModelsProviderId$,
+      true,
     ) || agentProviderLoading
       ? []
       : (agentProviderModels ?? (agentProviderError ? [] : $availableModels$)),
