@@ -7,7 +7,16 @@
 import type { InviteFailureReason } from '../ipc/invite-notice';
 import { m } from '../paraglide/messages.js';
 
-export function describeInviteFailureReason(reason: InviteFailureReason): string {
+/** Labels some reasons interpolate; every one is optional and has a neutral fallback. */
+export interface InviteFailureLabels {
+  /** `identity-unverifiable`: the forge instance the host could not read the proof on. */
+  identityHost?: string;
+}
+
+export function describeInviteFailureReason(
+  reason: InviteFailureReason,
+  labels: InviteFailureLabels = {},
+): string {
   switch (reason) {
     case 'expired':
       return m.deeplink_inviteError_expired();
@@ -16,13 +25,23 @@ export function describeInviteFailureReason(reason: InviteFailureReason): string
     case 'redeemed':
       return m.deeplink_inviteError_redeemed();
     case 'pin-mismatch':
-      return m.deeplink_inviteError_pinMismatch();
+      return m.deeplink_inviteError_pinMismatch({
+        enableGitlabCommand: m.lib_commandPalette_enableExperimentalGitlab_label(),
+      });
+    case 'identity-unavailable':
+      return m.deeplink_inviteError_identityUnavailable({
+        enableGitlabCommand: m.lib_commandPalette_enableExperimentalGitlab_label(),
+      });
     case 'proof-invalid':
       return m.deeplink_inviteError_proofInvalid();
     case 'proof-expired':
       return m.deeplink_inviteError_proofExpired();
     case 'host-github-unreachable':
       return m.deeplink_inviteError_hostGithubUnreachable();
+    case 'identity-unverifiable':
+      return m.deeplink_inviteError_identityUnverifiable({
+        host: labels.identityHost ?? m.deeplink_inviteError_identityUnverifiable_unknownHost(),
+      });
     case 'workspace-full':
       return m.deeplink_inviteError_workspaceFull();
     case 'owner-self-join':
@@ -41,10 +60,22 @@ export function describeInviteFailureReason(reason: InviteFailureReason): string
       return m.deeplink_inviteError_proofScopeMissing();
     case 'proof-github-unreachable':
       return m.deeplink_inviteError_proofGithubUnreachable();
+    case 'proof-gitlab-not-connected':
+      return m.deeplink_inviteError_proofGitlabNotConnected({
+        enableGitlabCommand: m.lib_commandPalette_enableExperimentalGitlab_label(),
+      });
+    case 'proof-gitlab-scope-missing':
+      return m.deeplink_inviteError_proofGitlabScopeMissing({
+        enableGitlabCommand: m.lib_commandPalette_enableExperimentalGitlab_label(),
+      });
+    case 'proof-gitlab-unreachable':
+      return m.deeplink_inviteError_proofGitlabUnreachable();
     case 'proof-failed':
       return m.deeplink_inviteError_proofFailed();
     case 'github-rate-limited':
       return m.deeplink_inviteError_githubRateLimited();
+    case 'gitlab-rate-limited':
+      return m.deeplink_inviteError_gitlabRateLimited();
     case 'cert-mismatch':
       return m.deeplink_inviteError_certMismatch();
     case 'tailcat-unavailable':

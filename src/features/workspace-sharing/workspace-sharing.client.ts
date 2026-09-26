@@ -13,6 +13,7 @@ import {
   INVITE_ERROR_CODES,
   type HostPrincipal,
   type InviteErrorCode,
+  type InvitePin,
   type WorkspaceInviteCreateResult,
   type WorkspaceInviteRow,
   type WorkspaceMember,
@@ -161,17 +162,29 @@ export const workspaceSharingClient = {
 
   /**
    * `workspace.invite.create` — owner only. `pinLogin` restricts redemption to
-   * one GitHub account; the daemon resolves it to a user id and echoes the
-   * canonical login on `invite.pinLogin`. The raw `secret` comes back once;
-   * the `url` is also listed on the open invite row afterwards.
+   * one forge account; the daemon resolves it on `pin.provider` / `pin.host`
+   * (its own identity forge when `pin` is absent) and echoes the canonical
+   * login on `invite.pinLogin`. The raw `secret` comes back once; the `url`
+   * is also listed on the open invite row afterwards.
    */
   async createInvite(
     workspaceId: string,
-    options: { pinLogin?: string } = {},
+    options: { pinLogin?: string; pin?: InvitePin } = {},
   ): Promise<InviteCreateOutcome> {
     const pinLogin = options.pinLogin?.trim();
-    const params: { workspaceId: string; pinLogin?: string } = { workspaceId };
-    if (pinLogin) params.pinLogin = pinLogin;
+    const params: {
+      workspaceId: string;
+      pinLogin?: string;
+      pinProvider?: InvitePin['provider'];
+      pinHost?: string;
+    } = { workspaceId };
+    if (pinLogin) {
+      params.pinLogin = pinLogin;
+      if (options.pin) {
+        params.pinProvider = options.pin.provider;
+        if (options.pin.host) params.pinHost = options.pin.host;
+      }
+    }
     try {
       const result = await backendRequest<WorkspaceInviteCreateResult>(
         'workspace.invite.create',

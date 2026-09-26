@@ -7,11 +7,15 @@
    * tile (image or coloured initials) is drawn greyscale whatever their ring,
    * and this window's own principal is marked. The ring is a box-shadow on the
    * outer element and a CSS filter greys everything its element paints, so the
-   * filter lives on an inner tile and the ring keeps its colour. The group's
-   * accessible name counts only the people present (never offline members).
-   * With `action` every visible avatar is a button. Renders nothing when
-   * nobody is there.
+   * filter lives on an inner tile and the ring keeps its colour. A person whose
+   * row carries an identity (a membership row from a daemon serving the
+   * identity seam) wears their forge as a small badge on the avatar; the
+   * roster-only people of a chat stay unbadged. The group's accessible name
+   * counts only the people present (never offline members). With `action`
+   * every visible avatar is a button. Renders nothing when nobody is there.
    */
+  import Fa from 'svelte-fa';
+  import { faGithub, faGitlab } from '@fortawesome/free-brands-svg-icons';
   import { Button } from '$lib/components/ui/button';
   import PrincipalAvatar from '$lib/components/ui/PrincipalAvatar.svelte';
   import { Tooltip } from '$lib/components/ui/tooltip';
@@ -74,6 +78,8 @@
             : m.presence_avatarStack_offline_many({ count: formatInteger(offlineOthers) }),
   );
   const fontSize = $derived(`${Math.max(8, Math.round(size * 0.55))}px`);
+  /** The forge badge: about half the avatar, never below a legible glyph. */
+  const badgeSize = $derived(Math.max(9, Math.round(size * 0.5)));
 
   const RING_CLASS: Record<PresenceRing, string> = {
     owner: 'ring-2 ring-info',
@@ -86,7 +92,7 @@
   {@const ring = presencePersonRing(person)}
   {@const offline = person.online === false}
   <span
-    class="inline-flex shrink-0 rounded-full border border-background {ring
+    class="relative inline-flex shrink-0 rounded-full border border-background {ring
       ? RING_CLASS[ring]
       : ''}"
     style:width="{size}px"
@@ -106,6 +112,19 @@
     >
       <PrincipalAvatar fill avatarUrl={person.avatarUrl} label={presencePersonName(person)} />
     </span>
+    {#if person.identity}
+      <span
+        class="absolute -right-0.5 -bottom-0.5 inline-flex items-center justify-center rounded-full bg-background text-foreground"
+        style:width="{badgeSize}px"
+        style:height="{badgeSize}px"
+        style:font-size="{Math.round(badgeSize * 0.8)}px"
+        aria-hidden="true"
+        data-presence-identity-provider={person.identity.provider}
+        data-presence-identity-host={person.identity.host}
+      >
+        <Fa icon={person.identity.provider === 'gitlab' ? faGitlab : faGithub} />
+      </span>
+    {/if}
   </span>
 {/snippet}
 

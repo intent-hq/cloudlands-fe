@@ -41,9 +41,39 @@ export function presencePersonName(person: PresenceIdentity): string {
   return person.displayName?.trim() || person.login?.trim() || m.presence_person_unknown_label();
 }
 
-/** The name, marked "(you)" for this window's own principal. */
+/**
+ * The person's handle on their identity forge — "@login on GitHub", "@login
+ * on <gitlab host>", the bare forge without a login — or `null` for a person
+ * whose row carries no identity (a roster-only person, an older daemon).
+ */
+export function presencePersonForgeHandle(person: PresenceIdentity): string | null {
+  const identity = person.identity;
+  if (!identity) return null;
+  const login = person.login?.trim();
+  if (identity.provider === 'gitlab') {
+    return login
+      ? m.presence_person_gitlabHandle_label({ login: `@${login}`, host: identity.host })
+      : m.workspace_share_pinProvider_gitlab_label({ host: identity.host });
+  }
+  return login
+    ? m.presence_person_githubHandle_label({ login: `@${login}` })
+    : m.workspace_share_pinProvider_github_label();
+}
+
+/** Include a distinct display name; the forge handle already names a fallback login. */
+export function presencePersonNameWithForge(person: PresenceIdentity): string {
+  const handle = presencePersonForgeHandle(person);
+  if (!handle) return presencePersonName(person);
+  const name = person.displayName?.trim();
+  const login = person.login?.trim();
+  return name && name.replace(/^@/, '').toLowerCase() !== login?.toLowerCase()
+    ? m.presence_person_forge_label({ name, handle })
+    : handle;
+}
+
+/** The name (with the forge handle when known), marked "(you)" for this window's own principal. */
 export function presencePersonLabel(person: PresenceCircle): string {
-  const name = presencePersonName(person);
+  const name = presencePersonNameWithForge(person);
   return person.self ? m.presence_person_you_label({ name }) : name;
 }
 
