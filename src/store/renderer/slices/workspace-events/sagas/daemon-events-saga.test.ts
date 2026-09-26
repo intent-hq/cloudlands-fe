@@ -283,6 +283,7 @@ describe('daemonEventsSaga', () => {
       'app:workspace-open',
       'presence:changed',
       'host:members-changed',
+      'host:execution-context-changed',
       'principal:identity-changed',
     ]);
   });
