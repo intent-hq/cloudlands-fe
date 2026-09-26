@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { runSaga } from 'redux-saga';
+import { withLegacyPrincipal } from '../../../../../test/fixtures/principal-state';
 
 const mocks = vi.hoisted(() => ({
   catalog: vi.fn(),
@@ -24,7 +25,10 @@ describe('hydrateProviderCatalog', () => {
 
   it('requests providers.catalog with no parameters and dispatches the wire response verbatim', async () => {
     const dispatch = vi.fn();
-    await runSaga({ dispatch }, hydrateProviderCatalog).toPromise();
+    await runSaga(
+      { dispatch, getState: () => withLegacyPrincipal({}) },
+      hydrateProviderCatalog,
+    ).toPromise();
 
     expect(mocks.catalog).toHaveBeenCalledTimes(1);
     expect(mocks.catalog).toHaveBeenCalledWith();
@@ -34,7 +38,10 @@ describe('hydrateProviderCatalog', () => {
   it('keeps the previous catalog when hydration fails', async () => {
     mocks.catalog.mockRejectedValue(new Error('uds boom'));
     const dispatch = vi.fn();
-    await runSaga({ dispatch }, hydrateProviderCatalog).toPromise();
+    await runSaga(
+      { dispatch, getState: () => withLegacyPrincipal({}) },
+      hydrateProviderCatalog,
+    ).toPromise();
 
     expect(dispatch).not.toHaveBeenCalled();
   });
