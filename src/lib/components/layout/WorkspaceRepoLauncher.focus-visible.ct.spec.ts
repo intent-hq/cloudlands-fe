@@ -1,6 +1,6 @@
 import type { Page } from '@playwright/experimental-ct-svelte';
 import { expect, test } from '../../../test/ct-test';
-import WorkspaceRepoLauncher from './WorkspaceRepoLauncher.svelte';
+import WorkspaceRepoLauncherFocusHarness from './__tests__/WorkspaceRepoLauncherFocusHarness.svelte';
 
 /**
  * The title-bar launcher keeps keyboard focus contained inside its 32px
@@ -37,7 +37,7 @@ test('contains keyboard focus with a foreground border and muted fill instead of
   mount,
   page,
 }) => {
-  const component = await mount(WorkspaceRepoLauncher);
+  const component = await mount(WorkspaceRepoLauncherFocusHarness);
   const button = component.getByRole('button', { name: 'New Workspace' });
 
   await page.keyboard.press('Tab');
@@ -63,7 +63,7 @@ test('contains keyboard focus with a foreground border and muted fill instead of
 
 test('keeps the focus border visible under forced colors', async ({ mount, page }) => {
   await page.emulateMedia({ forcedColors: 'active' });
-  const component = await mount(WorkspaceRepoLauncher);
+  const component = await mount(WorkspaceRepoLauncherFocusHarness);
   const button = component.getByRole('button', { name: 'New Workspace' });
 
   await page.keyboard.press('Tab');
@@ -71,4 +71,11 @@ test('keeps the focus border visible under forced colors', async ({ mount, page 
 
   await expect(button).toHaveCSS('border-top-color', await systemColor(page, 'ButtonText'));
   await expect(button).toHaveCSS('outline-width', '0px');
+});
+
+test('withholds workspace creation until the caller is admitted', async ({ mount }) => {
+  const component = await mount(WorkspaceRepoLauncherFocusHarness, {
+    props: { admittedOwner: false },
+  });
+  await expect(component.getByRole('button', { name: 'New Workspace' })).toHaveCount(0);
 });

@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onDestroy } from 'svelte';
+  import { onDestroy, untrack } from 'svelte';
   import { store } from '$store/renderer/store';
   import { loadWorkspaceNotesSucceeded } from '$store/renderer/slices/workspace-notes/workspace-notes-slice';
   import { bulkUpsertSessions } from '$store/renderer/slices/agent-session/agent-session-slice';
@@ -8,12 +8,23 @@
   import { AgentId, NoteId, WorkspaceId } from '$shared/types/branded-ids';
   import TestTaskItemNodeView from './TestTaskItemNodeView.test.svelte';
   import WorkspaceRouteContextProvider from '$lib/components/workspace/WorkspaceRouteContextProvider.svelte';
+  import { admitLegacyPrincipal } from '../../../../test/fixtures/principal-state';
+  import {
+    principalContextChanged,
+    principalReceived,
+  } from '$store/renderer/slices/principal/principal-slice';
 
   let {
     width = 420,
     theme = 'light',
     zoom = 1,
-  }: { width?: number; theme?: 'light' | 'dark'; zoom?: number } = $props();
+    admittedOwner = true,
+  }: {
+    width?: number;
+    theme?: 'light' | 'dark';
+    zoom?: number;
+    admittedOwner?: boolean;
+  } = $props();
 
   const workspaceId = WorkspaceId('workspace-one-row-task');
   const note = (
@@ -69,9 +80,13 @@
       updatedAt: timestamp,
     }) as AgentSession;
   const dispose = store.init();
-  // Settle the window identity as an owner window (no guest list outside
-  // Electron); until it settles the assign affordance is withheld as for a
-  // collaborator (multiplayer w3/w4).
+  // These owner controls require an admitted caller, independently of the guest list.
+  const previousPrincipal = untrack(() => {
+    const previous = store.state.principal;
+    if (admittedOwner) admitLegacyPrincipal();
+    else store.dispatch(principalContextChanged(null));
+    return previous;
+  });
   store.dispatch(guestSessionsListUnavailable());
   store.dispatch(loadWorkspaceNotesSucceeded([workspaceId], { [workspaceId]: notes }));
   store.dispatch(
@@ -109,7 +124,17 @@
   } as any;
   const editor = { state: { doc: { nodeAt: () => null } }, on: () => {}, off: () => {} } as any;
 
-  onDestroy(dispose);
+  onDestroy(() => {
+    dispose();
+    store.dispatch(principalContextChanged(previousPrincipal.context));
+    if (previousPrincipal.context && previousPrincipal.snapshot)
+      store.dispatch(
+        principalReceived(
+          { context: previousPrincipal.context, invalidation: 0, presentationVersion: 0 },
+          previousPrincipal.snapshot,
+        ),
+      );
+  });
 </script>
 
 <WorkspaceRouteContextProvider {workspaceId}>

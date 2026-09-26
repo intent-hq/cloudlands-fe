@@ -6,6 +6,7 @@
   interface Props {
     initialTab?: 'all-workspaces' | 'chief';
     width?: number;
+    admittedOwner?: boolean;
   }
 
   const workspaces: Workspace[] = [
@@ -39,7 +40,7 @@
 </script>
 
 <script lang="ts">
-  import { onDestroy } from 'svelte';
+  import { onDestroy, untrack } from 'svelte';
   import SidebarPanel from './SidebarPanel.svelte';
   import { store as appStore } from '$store/renderer/store';
   import {
@@ -58,11 +59,22 @@
   import { setActiveProvider } from '$store/renderer/slices/provider-settings/provider-settings-slice';
   import { guestSessionsListUnavailable } from '$store/renderer/slices/guest-sessions/guest-sessions-slice';
   import { activeStreamsTracker } from '$features/agent/services/active-streams-tracker';
+  import { admitLegacyPrincipal } from '../../../../test/fixtures/principal-state';
+  import {
+    principalContextChanged,
+    principalReceived,
+  } from '$store/renderer/slices/principal/principal-slice';
 
-  let { initialTab = 'all-workspaces', width = 288 }: Props = $props();
+  let { initialTab = 'all-workspaces', width = 288, admittedOwner = true }: Props = $props();
 
   // Both the named sandbox and CT bootstrap the store without production sagas.
   // A provider-less, loaded empty Intent workspace cannot auto-launch an agent.
+  const previousPrincipal = untrack(() => {
+    const previous = appStore.state.principal;
+    if (admittedOwner) admitLegacyPrincipal();
+    else appStore.dispatch(principalContextChanged(null));
+    return previous;
+  });
   appStore.dispatch(guestSessionsListUnavailable());
   appStore.dispatch(setActiveProvider(''));
   appStore.dispatch(setAgentsLoaded(CHIEF_WORKSPACE_ID, true));
@@ -78,7 +90,17 @@
     appStore.dispatch(openPanel(initialTab));
   });
 
-  onDestroy(() => activeStreamsTracker.stopPolling());
+  onDestroy(() => {
+    activeStreamsTracker.stopPolling();
+    appStore.dispatch(principalContextChanged(previousPrincipal.context));
+    if (previousPrincipal.context && previousPrincipal.snapshot)
+      appStore.dispatch(
+        principalReceived(
+          { context: previousPrincipal.context, invalidation: 0, presentationVersion: 0 },
+          previousPrincipal.snapshot,
+        ),
+      );
+  });
 </script>
 
 <div
