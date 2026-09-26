@@ -4,6 +4,7 @@
   import StreamingMessageContent from './StreamingMessageContent.svelte';
   import InterruptionNotice from './InterruptionNotice.svelte';
   import ModelChangeNotice from './ModelChangeNotice.svelte';
+  import EffortChangeNotice from './EffortChangeNotice.svelte';
   import DiscussionRequestNotice from './DiscussionRequestNotice.svelte';
   import BlockerReportNotice from './BlockerReportNotice.svelte';
   import TurnFailureNotice from './TurnFailureNotice.svelte';
@@ -11,6 +12,7 @@
   import AutoUnarchivedNotice from './AutoUnarchivedNotice.svelte';
   import ProviderRehomedNotice from './ProviderRehomedNotice.svelte';
   import { getModelChangeNotice } from './model-change-notice';
+  import { getEffortChangeNotice } from './effort-change-notice';
   import { getAttentionNotice } from './attention-notice';
   import { getQuestionsDismissedNotice } from './questions-dismissed-notice';
   import { getAutoUnarchivedNotice } from './auto-unarchived-notice';
@@ -115,6 +117,7 @@
 <div class="message-list">
   {#each filteredMessages as message, index (message.id)}
     {@const modelChangeNotice = getModelChangeNotice(message)}
+    {@const effortChangeNotice = getEffortChangeNotice(message)}
     {@const questionsDismissedNotice = getQuestionsDismissedNotice(message)}
     {@const autoUnarchivedNotice = getAutoUnarchivedNotice(message)}
     {@const providerRehomedNotice = getProviderRehomedNotice(message)}
@@ -137,6 +140,11 @@
              regardless of the exact role the daemon persists. -->
         <ModelChangeNotice
           notice={modelChangeNotice}
+          fallbackText={extractAllContent(message) || undefined}
+        />
+      {:else if effortChangeNotice}
+        <EffortChangeNotice
+          notice={effortChangeNotice}
           fallbackText={extractAllContent(message) || undefined}
         />
       {:else if questionsDismissedNotice}

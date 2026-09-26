@@ -22,6 +22,48 @@ vi.mock('$store/renderer/slices/workspace-notes/workspace-notes-selectors', () =
 }));
 
 describe('AgentMessageList - System Messages', () => {
+  it('renders an arriving effort notice once and preserves it on history reload', async () => {
+    const notice: AgentMessage = {
+      id: 'effort-notice',
+      role: 'system',
+      timestamp: '2026-09-26T12:00:00Z',
+      contentBlocks: [{ type: 'text', text: 'Effort changed from auto to none.' }],
+      metadata: { type: 'effort_changed', from: null, to: 'none' },
+    };
+    const { rerender } = render(AgentMessageList, {
+      props: { messages: [], enableTransitions: false },
+    });
+    expect(screen.queryByRole('status')).toBeNull();
+
+    await rerender({ messages: [notice] });
+    const liveText = screen.getByRole('status').textContent;
+    expect(liveText).toContain('Auto');
+    expect(liveText).toContain('Off');
+    expect(screen.queryByRole('alert')).toBeNull();
+
+    await rerender({ messages: JSON.parse(JSON.stringify([notice])) });
+    expect(screen.getAllByRole('status')).toHaveLength(1);
+    expect(screen.getByRole('status').textContent).toBe(liveText);
+  });
+
+  it('keeps an incomplete effort notice informational and uses the saved fallback', () => {
+    render(AgentMessageList, {
+      props: {
+        messages: [
+          {
+            id: 'effort-fallback',
+            role: 'system',
+            timestamp: '2026-09-26T12:00:00Z',
+            contentBlocks: [{ type: 'text', text: 'Saved effort explanation' }],
+            metadata: { type: 'effort_changed', to: 'high' },
+          },
+        ],
+      },
+    });
+    expect(screen.getByRole('status').textContent).toContain('Saved effort explanation');
+    expect(screen.queryByRole('alert')).toBeNull();
+  });
+
   it('renders system message as interruption notice', () => {
     const messages: AgentMessage[] = [
       {

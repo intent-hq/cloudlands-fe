@@ -25,10 +25,12 @@
   import RulesInspector from './RulesInspector.svelte';
   import InterruptionNotice from './InterruptionNotice.svelte';
   import ModelChangeNotice from './ModelChangeNotice.svelte';
+  import EffortChangeNotice from './EffortChangeNotice.svelte';
   import DiscussionRequestNotice from './DiscussionRequestNotice.svelte';
   import BlockerReportNotice from './BlockerReportNotice.svelte';
   import TurnFailureNotice from './TurnFailureNotice.svelte';
   import { getModelChangeNotice } from './model-change-notice';
+  import { getEffortChangeNotice } from './effort-change-notice';
   import { getAttentionNotice } from './attention-notice';
   import { parseStoredMessage } from '$lib/utils/parseStoredMessage';
   import { safeDisclosureTransition } from './disclosure-motion';
@@ -332,6 +334,7 @@
   );
   // Daemon-persisted model-change transcript row (metadata type "model_changed")
   let modelChangeNotice = $derived(getModelChangeNotice(message));
+  let effortChangeNotice = $derived(getEffortChangeNotice(message));
 
   let questionsDismissedNotice = $derived(getQuestionsDismissedNotice(message));
 
@@ -1454,6 +1457,11 @@
   <!-- Daemon-persisted model-change notice row - centered inline divider -->
   <ModelChangeNotice
     notice={modelChangeNotice}
+    fallbackText={extractAllContent(message) || undefined}
+  />
+{:else if effortChangeNotice}
+  <EffortChangeNotice
+    notice={effortChangeNotice}
     fallbackText={extractAllContent(message) || undefined}
   />
 {:else if questionsDismissedNotice}

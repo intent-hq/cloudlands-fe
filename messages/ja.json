@@ -2090,6 +2090,8 @@
   "chat_editRegenerate_confirm_button": "編集して再生成",
   "chat_editRegenerate_confirm_description": "この会話の以降のメッセージはすべて完全に削除され、復元できません。エージェントはこのメッセージから応答を再生成します。",
   "chat_editRegenerate_confirm_title": "メッセージを編集してここからやり直しますか？",
+  "chat_effortChangeNotice_changed_label": "推論の労力が{from}から{to}に変更されました",
+  "chat_effortChangeNotice_fallback_label": "推論の労力が変更されました",
   "chat_effortPicker_level_auto": "自動",
   "chat_effortPicker_level_high": "高",
   "chat_effortPicker_level_low": "低",
