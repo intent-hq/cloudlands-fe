@@ -397,7 +397,7 @@ describe('NewSpaceModal model-picker composition', () => {
       });
     });
 
-    await fireEvent.click(pickerTrigger(team));
+    expect(pickerTrigger(team).getAttribute('aria-expanded')).toBe('true');
     const reasoningTrigger = await within(dialog).findByTestId('effort-picker-trigger');
     await fireEvent.click(reasoningTrigger);
     const reasoningListbox = document.getElementById(
@@ -518,7 +518,7 @@ describe('NewSpaceModal model-picker composition', () => {
         });
       }
 
-      await fireEvent.click(pickerTrigger(team));
+      if (!explicitModel) await fireEvent.click(pickerTrigger(team));
       const reasoningTrigger = await screen.findByTestId('effort-picker-trigger');
       await fireEvent.click(reasoningTrigger);
       const reasoningListbox = document.getElementById(
@@ -584,7 +584,7 @@ describe('NewSpaceModal model-picker composition', () => {
     await waitFor(() => expect(trigger.textContent).toContain('GPT 5.6'));
     expect(team.getAttribute('aria-pressed')).toBe('true');
 
-    await fireEvent.click(trigger);
+    expect(trigger.getAttribute('aria-expanded')).toBe('true');
     expect(await within(dialog).findByRole('listbox')).toBeTruthy();
     await fireEvent.mouseDown(document.body);
     await waitFor(() => expect(screen.queryByRole('listbox')).toBeNull());
@@ -612,7 +612,7 @@ describe('NewSpaceModal model-picker composition', () => {
     );
     await waitFor(() => expect(modelTrigger.textContent).toContain('GPT 5.6'));
 
-    await fireEvent.click(modelTrigger);
+    expect(modelTrigger.getAttribute('aria-expanded')).toBe('true');
     const reasoningTrigger = await within(dialog).findByTestId('effort-picker-trigger');
     reasoningTrigger.focus();
     await fireEvent.keyDown(reasoningTrigger, { key: 'Enter' });
