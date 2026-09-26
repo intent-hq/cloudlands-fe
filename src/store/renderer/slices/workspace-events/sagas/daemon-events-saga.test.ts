@@ -273,6 +273,7 @@ describe('daemonEventsSaga', () => {
       'pr:*',
       'mcp.servers:status-changed',
       'github:auth-changed',
+      'sourceControl:auth-changed',
       'client:connected',
       'client:disconnected',
       'browser:tab-opened',

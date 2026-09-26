@@ -23,6 +23,7 @@ export const inputMetadata = parseUiComponentMetadata({
     'src/lib/component-catalog/renderers/PopoversCatalogPreview.svelte',
     'src/lib/component-catalog/renderers/ProposalCatalogPreview.svelte',
     'src/lib/components/CommandPalette.svelte',
+    'src/lib/components/GitLabConnectForm.svelte',
     'src/lib/components/browser/BrowserViewerTabHeader.svelte',
     'src/lib/components/browser/BrowserViewportDialog.svelte',
     'src/lib/components/browser/EmbeddedBrowser.svelte',
