@@ -881,7 +881,7 @@
             bind:value={newPrompt}
             placeholder={m.settings_aiBehavior_newPrompt_placeholder()}
             class="min-h-72 w-full grow resize-none rounded-lg border border-border bg-background p-3 type-body
-              focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 xl:min-h-0
+              xl:min-h-0
               {newPromptIsOverLimit ? 'border-danger' : ''}"
           ></Textarea>
           {#if newPromptIsApproachingLimit || newPromptIsOverLimit}

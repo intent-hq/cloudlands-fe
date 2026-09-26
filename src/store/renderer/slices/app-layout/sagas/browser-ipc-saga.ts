@@ -44,7 +44,11 @@ import {
 } from '../../panel-layout/panel-layout-slice';
 import type { PanelTab } from '../../panel-layout/panel-layout-types';
 import { selectWorkspaceTabOrder } from '../../tab-state/tab-state-selectors';
-import { requestBrowserTabRecovery } from '../../tab-state/tab-state-slice';
+import {
+  observeBrowserTabNavigation,
+  requestBrowserTabNavigation,
+  requestBrowserTabRecovery,
+} from '../../tab-state/tab-state-slice';
 import { focusBrowserTabRequested } from '../app-layout-slice';
 
 let running = false;
@@ -237,6 +241,7 @@ function* openBrowser(data: BrowserOpenTabPayload | null): SagaGenerator<void> {
       const hiddenTabs = yield* selectHiddenTabs.effect(workspaceId);
       const hidden = hiddenTabs.find((tab) => tab.type === 'browser' && tab.id === replaceTabId);
       if (hidden) {
+        yield* put(requestBrowserTabNavigation(hidden.id, data.url));
         yield* put(updateTabBrowserUrl(workspaceId, hidden.id, data.url, requestedUrl ?? null));
         yield* put(
           tabOwnerAction(workspaceId, hidden.id, ownerAgentId, emulatedSize, ownerAgentName),
@@ -250,6 +255,7 @@ function* openBrowser(data: BrowserOpenTabPayload | null): SagaGenerator<void> {
         ? undefined
         : tabs.find((tab) => tab.type === 'browser');
     if (existing) {
+      yield* put(requestBrowserTabNavigation(existing.id, data.url));
       yield* put(updateTabBrowserUrl(workspaceId, existing.id, data.url, requestedUrl ?? null));
       // An agent replace adopts the existing tab — record its new owner
       // (main enforced ownership before sending this open, monorepo#2857).
@@ -472,6 +478,10 @@ function* tabNavigated(data: BrowserTabNavigatedPayload | null): SagaGenerator<v
   // (the tab no longer shows rewritten content) — mirroring the executor's
   // lease-identity semantics (monorepo#2789).
   const requestedUrl = typeof data.requestedUrl === 'string' ? data.requestedUrl : null;
+  // This notification follows main's location assignment, potentially before
+  // commit. Mark its URL update as an observation so offscreen DOM sync cannot
+  // mistake it for a second navigation command (intent#6009).
+  yield* put(observeBrowserTabNavigation(data.tabId, data.url));
   yield* put(updateTabBrowserUrl(workspaceId, data.tabId, data.url, requestedUrl));
 }
 

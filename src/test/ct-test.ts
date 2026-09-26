@@ -1,4 +1,5 @@
-import { test as baseTest, expect } from '@playwright/experimental-ct-svelte';
+import { expect } from '@playwright/experimental-ct-svelte';
+import { browserTest as baseTest } from '../../playwright/ct-browser-fixtures';
 import {
   resolveCtContextReuseMode,
   type CtContextReuseMode,

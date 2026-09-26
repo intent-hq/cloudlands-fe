@@ -323,6 +323,35 @@ describe('workspaceInitializerSaga', () => {
     ]);
   });
 
+  it.each(['high', ''])(
+    'persists and rehydrates effort %j alongside the selected provider/model',
+    async (effort) => {
+      const agent = {
+        selectedModel: 'gpt-fixture',
+        selectedProvider: 'codex',
+        selectedReasoningEffort: effort,
+      };
+      const state = {
+        workspaceInitializer: {
+          ...initialState,
+          hydrated: true,
+          compactFormState: agent,
+          lastSubmittedAgent: agent,
+        },
+      };
+      await runSaga({ getState: () => state }, persistWorkspaceInitializerWorker).toPromise();
+      const bag = mocks.update.mock.calls[0][0][0].value;
+      expect(bag.compactFormState).toEqual(agent);
+      expect(bag.lastSubmittedAgent).toEqual(agent);
+      mocks.get.mockResolvedValue({ value: JSON.parse(JSON.stringify(bag)) });
+      const dispatch = vi.fn();
+      await runSaga({ dispatch }, hydrateWorkspaceInitializerWorker).toPromise();
+      const hydrated = workspaceInitializerReducer(initialState, dispatch.mock.calls[0][0]);
+      expect(hydrated.compactFormState).toEqual(agent);
+      expect(hydrated.lastSubmittedAgent).toEqual(agent);
+    },
+  );
+
   it('coalesces pre-hydration mutations and flushes the hydrated bag once', async () => {
     let resolve!: (value: unknown) => void;
     mocks.get.mockReturnValue(new Promise((done) => (resolve = done)));

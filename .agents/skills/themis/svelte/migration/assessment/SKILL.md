@@ -8,6 +8,7 @@ type: sub-skill
 requires:
   - svelte
   - svelte/migration
+  - core/core-policy
 triggers:
   - audit stores
   - classify store
@@ -32,26 +33,18 @@ For each store file, determine:
 4. **Who consumes it?** Which components import and use this store?
 5. **Is it shared or local?** Used by multiple components, or just one?
 
-## 3. Decision Framework
+## Decision Framework
 
-### Move to Redux (shared state)
+Apply `../../../core/core-policy/SKILL.md` → **Setup — core rules** to each
+field/effect, not just the file's syntax. Redux owns shared/domain state, including
+persisted or externally synchronized business state. Purely visual, ephemeral,
+instance-local fields stay local. A timer or `await` alone does not make UI state
+domain-owned; DOM-local focus, scroll, measurement, and widget lifecycle stay in
+the component. Record the owner, consumers, persistence needs, and cancellation
+lifetime before choosing a migration leaf. If that evidence is unclear, resolve
+the ownership question rather than defaulting every local field/effect to Redux.
 
-- State read or written by **multiple components**
-- State that **persists** across navigation or page changes
-- State involved in **async operations** (API calls, timers, debouncing)
-- State that **drives business logic** or cross-feature coordination
-- State **synced** with external sources (localStorage, server, IPC)
-
-### Keep as Component-Local State
-
-- **Ephemeral UI state**: hover, focus, open/closed toggles, scroll position
-- State that only matters while **one component is mounted**
-- State that is **not shared, persisted, or part of business logic**
-- Form field values used only within a single form component
-
-**When in doubt → move to Redux.**
-
-## 4. Output of the Assessment
+## Output of the Assessment
 
 Produce a per-store table so you can order the migration (simplest / most isolated slice first — see `../SKILL.md` for the recommended order and `../setup/SKILL.md` for the bootstrap that must be done before the first slice):
 
@@ -62,11 +55,11 @@ Produce a per-store table so you can order the migration (simplest / most isolat
 
 Downstream skills consume this table:
 
-- `svelte/migration/writable-stores` — for every `writable` / `$state` field
-- `svelte/migration/derived-stores` — for every `derived` / `$derived`
-- `svelte/migration/side-effects` — for every side effect in the table
-- `svelte/migration/component-migration` — for the consumers column
-- `svelte/migration/cleanup` — to confirm deletion order
+- `../writable-stores/SKILL.md` — for shared/domain `writable` / `$state` fields
+- `../derived-stores/SKILL.md` — for shared/domain `derived` / `$derived` values
+- `../side-effects/SKILL.md` → **Effect ownership boundary** — for domain effects, not DOM-local lifecycle
+- `../component-migration/SKILL.md` — for the migrated consumers column
+- `../cleanup/SKILL.md` — to confirm deletion order only after a replacement owner is verified
 
 ## Examples in This Skill
 
@@ -104,28 +97,17 @@ const cartInventory: StoreInventoryRecord = {
 };
 ```
 
-### 2. Classify shared writable state as Redux-owned
+### Classify shared writable state as Redux-owned
 
 ```typescript
-type AssessmentInput = {
-  consumers: string[];
-  persists: boolean;
-  asyncDriven: boolean;
-  businessLogic: boolean;
-};
-
-function classifyState(input: AssessmentInput): "redux" | "local" {
-  return input.consumers.length > 1 || input.persists || input.asyncDriven || input.businessLogic
-    ? "redux"
-    : "local";
-}
-
-export const cartVerdict = classifyState({
+// Evidence for a verdict made using core policy, not a replacement classifier.
+export const cartVerdict = {
   consumers: ["Cart.svelte", "Header.svelte"],
   persists: true,
-  asyncDriven: false,
   businessLogic: true,
-});
+  verdict: "redux",
+  reason: "Shared checkout domain state persisted across navigation",
+};
 ```
 
 ### 3. Keep ephemeral component state local

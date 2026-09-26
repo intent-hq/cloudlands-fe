@@ -19,51 +19,38 @@ triggers:
 ---
 # Domain-Scoped State — `createDomainScopedHelpers`
 
-> State keyed by a domain id (e.g. workspace id, project id, tenant id). All three returned helpers are immutable: reads fall through to `emptyState`, writes produce a new state when the domain value changes, and `clearDomainState` returns the same reference when the id was already absent.
+Use for state partitioned by workspace, project, tenant, or session id.
+The helpers preserve immutable updates and no-op identity; they do not schedule
+cleanup automatically. Call `clearDomainState` when a domain is removed.
 
-## 1. Shape
+## Shape
 
-From `@augmentcode/themis/utils/store/domain-scoped`:
+Import `createDomainScopedHelpers` from
+`@augmentcode/themis/utils/store/domain-scoped`. Its state constraint is:
 
 ```typescript
 type DomainScopedState<T> = {
   byDomainId: Record<string, T>;
 };
-
-export function createDomainScopedHelpers<T>(emptyState: T) {
-  const getDomainState = <S extends DomainScopedState<T>>(
-    state: S,
-    domainId: string
-  ): T => state.byDomainId[domainId] ?? emptyState;
-
-  const setDomainState = <S extends DomainScopedState<T>>(
-    state: S,
-    domainId: string,
-    domainState: T
-  ): S => ({
-    ...state,
-    byDomainId: { ...state.byDomainId, [domainId]: domainState },
-  });
-
-  const clearDomainState = <S extends DomainScopedState<T>>(
-    state: S,
-    domainId: string
-  ): S => {
-    if (!(domainId in state.byDomainId)) return state;
-    const { [domainId]: _removed, ...byDomainId } = state.byDomainId;
-    return { ...state, byDomainId };
-  };
-
-  return { getDomainState, setDomainState, clearDomainState };
-}
 ```
 
 Key guarantees:
 
-- `getDomainState` returns `emptyState` (not `undefined`) for unknown ids.
-- `setDomainState` returns the same `state` when the existing domain value is shallow-equal; otherwise it produces a new `state` and a new `byDomainId`.
-- `clearDomainState` returns the **same** `state` reference when the id was absent, so selectors do not re-emit on no-op clears.
-- The state type is constrained so `state.byDomainId` is typed as `Record<string, T>`.
+- `getDomainState(state, id)` returns the stored value or the shared `emptyState`
+  fallback for a missing/nullish value; do not mutate that fallback.
+- `setDomainState(state, id, value)` compares the actual stored value, not the
+  fallback, using shallow equality. An equal replacement returns the original
+  state, map, and domain references. Changed nested references count as changes,
+  even if their contents are equal.
+- A changed set creates a new state and `byDomainId`, stores the supplied value,
+  and preserves unrelated domains/fields. Setting a missing id to a non-null
+  empty-state object still creates the entry.
+- `clearDomainState(state, id)` preserves state identity for an absent id;
+  otherwise it removes that entry immutably.
+
+These guarantees come from the helper itself, not `createReducer` normalization.
+Implementation evidence: `src/utils/store/domain-scoped.ts`; executable contract:
+`src/utils/store/create-reducer.test.ts` (`createDomainScopedHelpers` cases).
 
 ## 2. Setup — minimum working slice
 
@@ -167,60 +154,19 @@ Because `clearDomainState` returns the same reference if the id was absent, sele
 
 ## 4. Common Mistakes
 
-### Hand-rolling domain-keyed state with nested setters
-
-**Mechanism:** custom nested updates forget the `emptyState` fallback; reading an unknown domain id returns `undefined` instead of the empty state and downstream code crashes on property access.
-
-```typescript
-// ❌ WRONG
-.with(setItems, (state, { payload: [id, items] }) => ({
-  ...state,
-  byId: { ...state.byId, [id]: { ...state.byId[id], items } },
-}))
-
-// ✅ CORRECT
-.with(setItems, (state, { payload: [id, items] }) =>
-  setDomainState(state, id, { ...getDomainState(state, id), items })
-)
-```
-
-Source: `../SKILL.md §10`.
-
-### Storing a non-serializable `emptyState`
-
-**Mechanism:** `emptyState` is read for every new domain id; any `Date`, `Map`, `Set`, or class instance inside will break the serializable state contract once it's written back into the state tree.
-
-```typescript
-// ❌ WRONG
-const emptyState = { items: new Map(), createdAt: new Date() };
-
-// ✅ CORRECT
-const emptyState = {
-  items: createCollection<Item, "id">("id"),
-  createdAt: 0,
-};
-```
-
-*Source: `../SKILL.md §10, §12`. See also `core/state-serialization`.*
-
-### Using a different key than `byDomainId`
-
-**Mechanism:** the helpers are typed against `DomainScopedState<T>`, i.e. `{ byDomainId: Record<string, T> }`. Renaming to `byId` or `byWorkspaceId` type-errors on the helpers and forces consumers back to hand-rolled setters.
-
-```typescript
-// ❌ WRONG
-type State = { byWorkspaceId: Record<string, WorkspaceItemsState> };
-
-// ✅ CORRECT
-type State = { byDomainId: Record<string, WorkspaceItemsState> };
-```
-
-*Public API: `@augmentcode/themis/utils/store/domain-scoped` (`DomainScopedState<T>` shape).*
+- Do not hand-roll nested setters that omit the safe read fallback or no-op
+  checks; use the guarantees in [Shape](#shape).
+- Keep `emptyState` serializable: use collections and numeric timestamps, not
+  `Date`, `Map`, `Set`, or class instances. See
+  [State Serialization — Do](../state-serialization/SKILL.md#do) and
+  [Don't](../state-serialization/SKILL.md#dont).
+- Keep the key named `byDomainId`; `byId`/`byWorkspaceId` do not satisfy the
+  helper's state constraint.
 
 ## 5. When to use
 
 - State must be partitioned by a stable id (workspace / project / tenant / session).
-- You want automatic cleanup on domain removal (`clearDomainState`).
+- You need explicit cleanup on domain removal (`clearDomainState`).
 - You want reads to gracefully fall back to a known empty shape.
 
 If every consumer shares a single domain (no multi-tenant / multi-workspace concept), a plain slice is simpler — reach for `createDomainScopedHelpers` only when the domain id is part of the key.

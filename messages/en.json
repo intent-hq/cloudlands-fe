@@ -6179,6 +6179,8 @@
   "settings_hardware_pttHint_doubleHold_description": "Double press & hold: records while held, sends on release.",
   "settings_hardware_knob_ariaLabel": "Rotary knob — show what it does",
   "settings_hardware_knobExplainer_label": "Rotary knob",
+  "settings_hardware_knobExplainer_effort_description": "Rotate to adjust the current agent’s effort — clockwise increases it, counter-clockwise decreases it, stopping at the supported limits.",
+  "settings_hardware_knobExplainer_configurable_description": "Change rotation behavior in the {setting} setting.",
   "settings_hardware_knobExplainer_rotate_description": "Rotate to cycle workspaces — clockwise toward more recently active, counter-clockwise toward less recent, stopping at the ends of the list.",
   "settings_hardware_knobExplainer_click_description": "Click to open the All-workspaces sidebar; further clicks cycle the Recent, Repo, and Status views.",
   "settings_hardware_joystick_ariaLabel": "Joystick — show what it does",

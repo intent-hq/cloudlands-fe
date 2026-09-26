@@ -2,8 +2,8 @@
 name: svelte/migration/component-migration
 description: >-
   Use when replacing Svelte store imports and template subscriptions with
-  Themis selector readables and dispatch, including callback lifecycle
-  pitfalls.
+  Themis selector readables and dispatch. Apply call-mode policy from
+  svelte/selector-lifecycle.
 type: sub-skill
 requires:
   - svelte/component-integration
@@ -19,6 +19,10 @@ triggers:
 > Replace Svelte store imports with `selectFoo()` readables and dispatch through
 > the configured app `Store` instance. Templates stay reactive by
 > reading the returned readable with `$selectorResult$`.
+
+Apply `../../selector-lifecycle/SKILL.md` → **Call-mode map** when replacing
+reads. This leaf owns the legacy-to-new consumer conversion, not a second
+selector lifecycle policy.
 
 ## Examples
 
@@ -39,15 +43,15 @@ export function incrementLegacyCount() {
 ### 2. After: create selector readables once at component initialization
 
 ```typescript
-// src/lib/components/CounterPanel.svelte.ts
+// Inside the <script> of src/lib/components/CounterPanel.svelte
 import { store } from "$lib/store/store";
 import { increment } from "$lib/store/slices/counter/counter-slice";
 import { selectCount, selectDoubled } from "$lib/store/slices/counter/counter-selectors";
 
-export const count$ = selectCount();
-export const doubled$ = selectDoubled();
+const count$ = selectCount();
+const doubled$ = selectDoubled();
 
-export function handleIncrement() {
+function handleIncrement() {
   store.dispatch(increment());
 }
 ```
@@ -97,28 +101,13 @@ export function handleLogout() {
 }
 ```
 
-### 6. ❌ Bad: readable selector call inside a callback violates lifecycle timing
+### Callback lifecycle handoff
 
-```typescript
-// ❌ BAD: selectDraft() creates a readable and requires component initialization.
-type AppState = { draft: { value: string } };
-type Readable<T> = { subscribe(run: (value: T) => void): () => void };
-type DraftSelector = (() => Readable<string>) & { select(state: AppState): string };
-
-declare const selectDraft: DraftSelector;
-declare const store: { state: AppState; dispatch(action: { type: string; payload?: unknown }): void };
-declare function submitDraft(value: string): { type: string; payload: [string] };
-
-export function badSubmitFromClick() {
-  const draft$ = selectDraft();
-  draft$.subscribe((value) => store.dispatch(submitDraft(value)));
-}
-
-export function goodSubmitFromClick() {
-  const draft = selectDraft.select(store.state);
-  store.dispatch(submitDraft(draft));
-}
-```
+Do not move the readable call into a callback while converting a consumer.
+Use `../../selector-lifecycle/SKILL.md` → **Call-mode map** and **Pitfalls** for
+the one-shot replacement and subscription-ownership policy. Store-bound direct
+selectors do not call `getContext()`; context helpers and `Store.init()` have
+separate component-initialization requirements.
 
 ### 7. ❌ Bad: duplicate old-store ownership after Redux dispatch
 
@@ -154,11 +143,14 @@ export function goodSingleOwnerWrite() {
 5. Inside event handlers or async work that needs a one-shot read, use an
    existing initialized `Store` instance imported/captured outside the handler:
    `selectFoo.select(store.state)`.
-6. Re-run the component's existing tests before committing.
+6. Re-run the component's existing tests before handoff; VCS policy comes from
+   the active task/repository instructions, per `../cleanup/SKILL.md` → **Workflow ownership**.
 
 ## Cross-References
 
-- `../../component-integration/SKILL.md` — Store init,
-  Store dispatch, `$selectorResult$` template rules
+- `../../component-integration/SKILL.md` → **Template and handler wiring** —
+  Store dispatch and `$selectorResult$` templates
+- `../../store/SKILL.md` → **Lifecycle rules** — Store initialization/disposal
 - `../../selector-lifecycle/SKILL.md` — three call modes
-  and the init-time rule that causes the crash above
+  and component-init placement versus actual context-helper restrictions
+

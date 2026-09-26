@@ -337,9 +337,7 @@
       // Refresh the keychain sync state so the iCloud switch gate is current
       // even when settings never loaded it. A failed load leaves the state
       // null → the platform fallback determines whether the switch is visible.
-      const loadAction = loadKeychainSyncStateRequested();
-      appStore.dispatch(loadAction);
-      loadAction.promise.catch(() => {});
+      appStore.dispatch(loadKeychainSyncStateRequested());
     }
   });
 </script>

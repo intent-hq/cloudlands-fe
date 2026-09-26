@@ -1,12 +1,14 @@
 ---
 name: svelte/migration/writable-stores
 description: >-
-  Use when converting Svelte writable() stores or shared $state runes,
+  Use when converting shared Svelte writable() stores or $state runes,
   including set/update calls, into Themis Redux actions and reducers.
 type: sub-skill
 requires:
   - core/actions
   - core/reducers
+  - core/collections
+  - core/state-serialization
   - svelte/migration
 triggers:
   - migrate writable
@@ -22,6 +24,11 @@ triggers:
 > `../derived-stores/SKILL.md`.
 
 ## State: `writable` / `$state` → Initial State
+
+Apply this only to fields classified as shared/domain state by
+`../assessment/SKILL.md` → **Decision Framework**. The examples abbreviate types;
+put application slice types in dedicated type modules per
+`../../../core/core-policy/SKILL.md` → **Setup — core rules**.
 
 ```typescript
 // BEFORE: Svelte store
@@ -52,8 +59,8 @@ export const setCount = createAction<[value: number]>("counter/setCount");
 export const setUsername = createAction<[value: string]>("counter/setUsername");
 
 export const counterReducer = createReducer<CounterState>(initialState)
-  .with(setCount, (state, { payload: [value] }) => ({ ...state, count: value }))
-  .with(setUsername, (state, { payload: [value] }) => ({ ...state, username: value }));
+  .with(setCount, (state, { payload: [value] }) => state.count === value ? state : { ...state, count: value })
+  .with(setUsername, (state, { payload: [value] }) => state.username === value ? state : { ...state, username: value });
 ```
 
 ## State Updates: `store.set` / `store.update` → `dispatch(action())`
@@ -81,13 +88,13 @@ export const setCount = createAction<[value: number]>("counter/setCount");
 export const increment = createAction("counter/increment");
 
 export const counterReducer = createReducer<CounterState>(initialState)
-  .with(setCount, (state, { payload: [value] }) => ({ ...state, count: value }))
+  .with(setCount, (state, { payload: [value] }) => state.count === value ? state : { ...state, count: value })
   .with(increment, (state) => ({ ...state, count: state.count + 1 }));
 
-// In the component:
-declare const dispatch: (action: ReturnType<typeof setCount> | ReturnType<typeof increment>) => void;
-dispatch(setCount(42));
-dispatch(increment());
+// In the component, through the configured Store:
+import { store } from "$lib/store/store";
+store.dispatch(setCount(42));
+store.dispatch(increment());
 ```
 
 ## Additional Migration Examples
@@ -116,11 +123,15 @@ export const setTheme = createAction<[theme: PreferencesState["theme"]]>("prefer
 export const setSidebarOpen = createAction<[open: boolean]>("preferences/setSidebarOpen");
 
 export const preferencesReducer = createReducer<PreferencesState>(initialState)
-  .with(setTheme, (state, { payload: [theme] }) => ({ ...state, theme }))
-  .with(setSidebarOpen, (state, { payload: [sidebarOpen] }) => ({ ...state, sidebarOpen }));
+  .with(setTheme, (state, { payload: [theme] }) => state.theme === theme ? state : { ...state, theme })
+  .with(setSidebarOpen, (state, { payload: [sidebarOpen] }) => state.sidebarOpen === sidebarOpen ? state : { ...state, sidebarOpen });
 ```
 
-### Array writable → `Collection` when lookup by id becomes important
+### Entity-array writable → `Collection`
+
+Identified object entities use `Collection<T, K>` regardless of collection size
+or lookup frequency. Arrays in Redux state hold primitive facts/ids only; see
+`../../../core/collections/SKILL.md` → **Shape and imports** and **Do**.
 
 ```typescript
 // src/lib/store/slices/todos/todos-slice.ts
@@ -136,116 +147,30 @@ export const todoReceived = createAction<[todo: Todo]>("todos/todoReceived");
 
 export const todosReducer = createReducer<TodosState>(initialState).with(
   todoReceived,
-  (state, { payload: [todo] }) => ({ ...state, items: upsertItem(state.items, todo) })
+  (state, { payload: [todo] }) => {
+    const items = upsertItem(state.items, todo);
+    return items === state.items ? state : { ...state, items };
+  }
 );
-```
-
-### ❌ Bad: non-serializable state copied from a Svelte store
-
-```typescript
-// ❌ BAD: Date and Map make persistence/hydration and equality checks unreliable.
-type BadState = {
-  lastSyncedAt: Date;
-  selectedById: Map<string, boolean>;
-};
-
-type GoodState = {
-  lastSyncedAtMs: number | null;
-  selectedById: Record<string, boolean>;
-};
-
-export const badInitialState: BadState = {
-  lastSyncedAt: new Date(),
-  selectedById: new Map<string, boolean>(),
-};
-
-export const goodInitialState: GoodState = {
-  lastSyncedAtMs: null,
-  selectedById: {},
-};
-```
-
-### ❌ Bad: no-op update returns a fresh object and invalidates selectors
-
-```typescript
-// ❌ BAD: unchanged values should preserve the incoming state reference.
-type CounterState = { count: number };
-type CountAction = { payload: [number] };
-
-export function badSetCount(state: CounterState, { payload: [count] }: CountAction) {
-  return { ...state, count };
-}
-
-export function goodSetCount(state: CounterState, { payload: [count] }: CountAction) {
-  if (state.count === count) return state;
-  return { ...state, count };
-}
 ```
 
 ## Common Pitfalls
 
-### ❌ Don't store non-serializable values
-
-Redux state must be JSON-serializable:
-
-| ❌ Don't Store | ✅ Store Instead |
-| --- | --- |
-| Date | number (timestamp) or ISO string |
-| Map<K,V> | Record<string, V> |
-| Set<T> | T[] or Record<string, true> |
-| RegExp | string (pattern) |
-| Class instances | Plain objects { ... } |
-| Functions | Action type strings |
-| Promises | Handle in sagas |
-
-### ❌ Don't mutate state in reducers
-
-Always return new objects:
-
-```typescript
-// ❌ BAD: mutates the existing array and returns the same object.
-type Item = { id: string; label: string };
-type ItemsState = { items: Item[] };
-type AddItemAction = { payload: [Item] };
-
-export function badAddItem(state: ItemsState, { payload: [item] }: AddItemAction) {
-  state.items.push(item);
-  return state;
-}
-
-export function goodAddItem(state: ItemsState, { payload: [item] }: AddItemAction) {
-  return {
-    ...state,
-    items: [...state.items, item],
-  };
-}
-```
-
-### ❌ Don't put side effects in reducers
-
-Reducers must be pure functions. No `fetch`, no `localStorage`, no `console.log`, no `Date.now()`:
-
-```typescript
-// ❌ BAD: reducer persistence makes replay/cancellation behavior nondeterministic.
-type Settings = { theme: "light" | "dark" };
-type SettingsState = { settings: Settings };
-type SaveSettingsAction = { payload: [Settings] };
-
-export function badSaveSettings(state: SettingsState, { payload: [settings] }: SaveSettingsAction) {
-  localStorage.setItem("settings", JSON.stringify(settings));
-  return { ...state, settings };
-}
-
-export function goodSaveSettings(state: SettingsState, { payload: [settings] }: SaveSettingsAction) {
-  return { ...state, settings };
-}
-```
-
-Move the effect into a saga — see
-`../side-effects/SKILL.md`.
+- Do not copy non-serializable legacy values into the new slice. Use
+  `../../../core/state-serialization/SKILL.md` → **Do**, **Don't**, and **Examples**
+  for timestamps, records/collections, patterns, plain objects, functions, and promises.
+- Preserve no-op identity and return new state only for actual changes. Follow
+  `../../../core/reducers/SKILL.md` → **Do** and **Immutable collection update with parent no-op guard**.
+- An immutable spread does not make an entity array valid Redux state. Use
+  `../../../core/collections/SKILL.md` → **Add, update, upsert, and remove in reducers**;
+  keep the normalized owner required by `../../../core/state-integrity/SKILL.md` → **MUST / NEVER rules**.
+- Do not move persistence, fetches, logging, or clock reads into reducers.
+  `../../../core/reducers/SKILL.md` → **Don't** owns purity; migrate domain effects
+  using `../side-effects/SKILL.md` → **Effect ownership boundary** and **Examples**.
 
 ## Cross-References
 
 - `../../../core/actions/SKILL.md` — full `createAction` surface
 - `../../../core/reducers/SKILL.md` — full `createReducer` surface (no-op reference-equality)
 - `../../../core/state-serialization/SKILL.md` — serializable state rules
+

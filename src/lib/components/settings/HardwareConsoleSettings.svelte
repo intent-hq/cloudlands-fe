@@ -460,6 +460,7 @@
       <div class="flex flex-col sm:flex-row gap-6 items-start">
         <HardwareConsoleDeviceSvg
           model={deviceModel}
+          encoderBehavior={$encoderBehavior$}
           {selectedSlot}
           onSelectKey={(slot) => (selectedSlot = slot)}
           {actionSlots}

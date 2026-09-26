@@ -936,7 +936,7 @@
                   ? m.layout_daemonStatus_localConnection_label()
                   : formatConnectionLabel(conn)}
               </span>
-              <span class="flex items-center gap-1.5 shrink-0">
+              <span class="flex h-lh items-center gap-1.5 shrink-0">
                 {#if !conn.isLocal && accent !== null}
                   <span
                     class={cn('size-2 shrink-0 rounded-full', CONNECTION_ACCENT_CLASSES[accent])}

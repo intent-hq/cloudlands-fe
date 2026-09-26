@@ -1,9 +1,9 @@
 ---
 name: core/selector-channels
 description: >-
-  Use when sagas react to selector changes via
-  takeLatest/Every/LeadingFromSelector, or need createChannelFromSelector for
-  custom race, condition, or timeout flows.
+  Use takeLatestFromSelector, takeEveryFromSelector, or takeLeadingFromSelector
+  for saga reactions to selector changes. Reserve createChannelFromSelector
+  for custom race/condition/timeout flows; close raw channels in finally.
 type: sub-skill
 requires:
   - core

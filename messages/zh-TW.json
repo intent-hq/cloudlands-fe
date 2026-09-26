@@ -6179,6 +6179,8 @@
   "settings_hardware_pttHint_doubleHold_description": "按兩下並按住：按住期間錄音，放開後傳送。",
   "settings_hardware_knob_ariaLabel": "旋鈕 — 查看功能",
   "settings_hardware_knobExplainer_label": "旋鈕",
+  "settings_hardware_knobExplainer_effort_description": "旋轉可調整目前代理程式的推理強度：順時針提高，逆時針降低，並在支援的上限和下限處停止。",
+  "settings_hardware_knobExplainer_configurable_description": "可透過「{setting}」設定變更旋轉行為。",
   "settings_hardware_knobExplainer_rotate_description": "旋轉可循環切換工作區：順時針切換到最近活躍的工作區，逆時針切換到較早的工作區，到清單兩端即停止。",
   "settings_hardware_knobExplainer_click_description": "點擊開啟「所有工作區」側邊欄；繼續點擊可在「最近」、「儲存庫」和「狀態」檢視間切換。",
   "settings_hardware_joystick_ariaLabel": "搖桿 — 查看功能",

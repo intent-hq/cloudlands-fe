@@ -8,6 +8,7 @@
   import { store } from '$store/renderer/store';
   import { startRootStoreLifecycle } from '$store/renderer/root-store-lifecycle';
   import { browserIpcSaga } from '$store/renderer/slices/app-layout/sagas/browser-ipc-saga';
+  import { ownClientIdReceived } from '$store/renderer/slices/browser-clients/browser-clients-slice';
   import { selectPanelLayoutWorkspaces } from '$store/renderer/slices/panel-layout/panel-layout-selectors';
   import {
     initializeLayout,
@@ -15,6 +16,7 @@
     closeTab,
     clearPanelLayout,
     destroyOwnedTabsForWorkspace,
+    updateTabBrowserUrl,
   } from '$store/renderer/slices/panel-layout/panel-layout-slice';
 
   const dispose = startRootStoreLifecycle(store, {
@@ -23,6 +25,8 @@
   onDestroy(dispose);
   const ownerAgentId =
     new URLSearchParams(location.search).get('owned') === 'true' ? 'fixture-agent' : undefined;
+  const blankTab = new URLSearchParams(location.search).get('blankTab');
+  store.dispatch(ownClientIdReceived('fixture-client'));
   const workspaceIds = ['A', 'B'];
   let activeWorkspaceId = $state('A');
   let openWorkspaceIds = $state(workspaceIds);
@@ -42,18 +46,42 @@
               title: `${id}-${n}`,
               type: 'browser' as const,
               closable: true,
-              browserUrl: `${new URLSearchParams(location.search).get('guest')}/lifetime-qa?tab=${id}-${n}`,
+              browserUrl:
+                blankTab === `${id}-${n}`
+                  ? 'about:blank'
+                  : `${new URLSearchParams(location.search).get('guest')}/lifetime-qa?tab=${id}-${n}`,
               ownerAgentId,
+              hostClientId: 'fixture-client',
             })),
           },
         },
       }),
     );
   }
+  if (blankTab && new URLSearchParams(location.search).get('hiddenBlank') === 'true') {
+    store.dispatch(closeTab(blankTab[0], blankTab, blankTab[0]));
+  }
   const layouts = selectPanelLayoutWorkspaces();
+  const observedLoads: string[] = [];
   Object.assign(window, {
     lifetimeFixture: {
       errors: () => errorHandler.errors,
+      flush: () => tick(),
+      loads: () => [...observedLoads],
+      async setUrl(tabId: string, url: string) {
+        store.dispatch(updateTabBrowserUrl(tabId[0], tabId, url));
+        await tick();
+      },
+      monitorLoads(tabId: string) {
+        const webview = document.querySelector(`[data-offscreen-webview-tab="${tabId}"]`) as
+          (HTMLElement & { loadURL(url: string): Promise<void> }) | null;
+        if (!webview) throw new Error(`Missing offscreen guest ${tabId}`);
+        const load = webview.loadURL.bind(webview);
+        webview.loadURL = (url) => {
+          observedLoads.push(url);
+          return load(url);
+        };
+      },
       urls() {
         return Object.fromEntries(
           Object.values(store.state.panelLayout.byWorkspaceId).flatMap((layout) =>
@@ -67,6 +95,7 @@
       async switchWorkspace(id: string) {
         activeWorkspaceId = id;
         await tick();
+        await window.electronAPI?.invoke('fixture:active-workspace', id);
       },
       async setOffscreenLimit(limit: number) {
         maxWebviews = limit;
@@ -102,6 +131,12 @@
                     ...Object.values(layout.panels).flatMap((panel) => panel.tabs),
                     ...layout.hiddenTabs.ids.map((id) => layout.hiddenTabs.map[id]),
                   ].map((tab) => [tab.id, tab.ownerAgentId]),
+                ),
+                hosts: Object.fromEntries(
+                  [
+                    ...Object.values(layout.panels).flatMap((panel) => panel.tabs),
+                    ...layout.hiddenTabs.ids.map((id) => layout.hiddenTabs.map[id]),
+                  ].map((tab) => [tab.id, tab.hostClientId]),
                 ),
                 visible: Object.values(layout.panels).flatMap((panel) =>
                   panel.tabs.map((tab) => tab.id),

@@ -58,9 +58,7 @@
     menuOpen = false;
     openError = null;
     try {
-      const action = openConnectionRequested(id);
-      appStore.dispatch(action);
-      const result = await action.promise;
+      const result = await appStore.dispatch(openConnectionRequested(id));
       if (result.status === 'secret-unavailable') {
         openError = m.hud_backendMenu_secretUnavailable_error({
           label: connectionDisplayLabel(id),

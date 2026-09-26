@@ -49,6 +49,7 @@ vi.mock('$store/renderer/store', async () => {
 import {
   hardwareConsoleReducer,
   hardwareConsoleEncoderBehaviorSaveFailed,
+  hydrateHardwareConsoleEncoderBehavior,
   initialState,
 } from '$store/renderer/slices/hardware-console/hardware-console-slice';
 import { m } from '$shared/paraglide/messages.js';
@@ -77,6 +78,65 @@ beforeEach(() => {
 afterEach(cleanup);
 
 describe('shared Micro encoder preference control', () => {
+  it.each(
+    (['codex-micro', 'creator-micro-2'] as const).flatMap((model) =>
+      (['agent-effort', 'workspace-switch'] as const).map((behavior) => ({ model, behavior })),
+    ),
+  )(
+    'keeps the open $model knob hint in sync with $behavior and keyboard changes',
+    async ({ model, behavior }) => {
+      connect(model);
+      mocks.dispatch(hydrateHardwareConsoleEncoderBehavior(behavior));
+      const HardwareConsoleSettings = (await import('./HardwareConsoleSettings.svelte')).default;
+      render(HardwareConsoleSettings);
+      const knob = screen.getByRole('button', { name: m.settings_hardware_knob_ariaLabel() });
+      await fireEvent.keyDown(knob, { key: 'Enter' });
+      const dialog = screen.getByRole('dialog', {
+        name: m.settings_hardware_knobExplainer_label(),
+      });
+      const effortHint = m.settings_hardware_knobExplainer_effort_description();
+      const workspaceHint = m.settings_hardware_knobExplainer_rotate_description();
+      const initialHint = behavior === 'agent-effort' ? effortHint : workspaceHint;
+      const changedHint = behavior === 'agent-effort' ? workspaceHint : effortHint;
+      expect(dialog.textContent).toContain(initialHint);
+      expect(dialog.textContent).not.toContain(changedHint);
+      expect(dialog.textContent).toContain(m.settings_hardware_knobExplainer_click_description());
+      expect(dialog.textContent).toContain(
+        m.settings_hardware_knobExplainer_configurable_description({
+          setting: m.settings_hardware_encoderBehavior_label(),
+        }),
+      );
+      expect(dialog.textContent).not.toContain(m.settings_hardware_explainer_fixed_description());
+
+      const trigger = screen.getByRole('combobox', {
+        name: m.settings_hardware_encoderBehavior_label(),
+      });
+      trigger.focus();
+      await fireEvent.keyDown(trigger, { key: 'Enter' });
+      await fireEvent.keyDown(trigger, {
+        key: behavior === 'agent-effort' ? 'ArrowDown' : 'ArrowUp',
+      });
+      await fireEvent.keyDown(trigger, { key: 'Enter' });
+      await waitFor(() => expect(dialog.textContent).toContain(changedHint));
+      expect(dialog.textContent).not.toContain(initialHint);
+      expect(screen.getByRole('dialog', { name: m.settings_hardware_knobExplainer_label() })).toBe(
+        dialog,
+      );
+      await fireEvent.keyDown(window, { key: 'Escape' });
+      expect(screen.queryByRole('dialog')).toBeNull();
+      expect(knob.getAttribute('aria-expanded')).toBe('false');
+
+      await fireEvent.click(
+        screen.getByRole('button', { name: m.settings_hardware_joystick_ariaLabel() }),
+      );
+      const joystick = screen.getByRole('dialog', {
+        name: m.settings_hardware_joystickExplainer_label(),
+      });
+      expect(joystick.textContent).toContain(m.settings_hardware_explainer_fixed_description());
+      expect(joystick.textContent).not.toContain(changedHint);
+    },
+  );
+
   it.each<HardwareDeviceModel>(['codex-micro', 'creator-micro-2'])(
     'changes the shared choice from %s and keeps it when the other model connects',
     async (model) => {

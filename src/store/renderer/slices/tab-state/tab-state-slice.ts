@@ -1,5 +1,6 @@
 import { createAction } from '@augmentcode/themis/utils/store/create-action';
 import { createReducer } from '@augmentcode/themis/utils/store/create-reducer';
+import type { BrowserTabNavigation } from './tab-state-types';
 import { omitKey } from '../../utils/utils';
 
 type HandleDropZoneType = 'row-above' | 'row-below' | 'column-left' | 'column-right';
@@ -62,6 +63,8 @@ export type TabState = {
   mountedBrowserTabLeases: Record<string, Record<string, true>>;
   /** One-shot renderer DOM recovery requests, keyed by tab; never persisted. */
   browserTabRecoveryRequests: Record<string, string>;
+  /** Distinguish already-started navigations from renderer commands; never persisted. */
+  browserTabNavigations: Record<string, BrowserTabNavigation>;
 };
 
 const MAX_RECENTLY_CLOSED_TABS = 10;
@@ -194,6 +197,7 @@ const initialState: TabState = {
   hydratedBackendId: null,
   mountedBrowserTabLeases: {},
   browserTabRecoveryRequests: {},
+  browserTabNavigations: {},
 };
 
 const pruneClosedTabAt = (
@@ -271,6 +275,15 @@ export const requestBrowserTabRecovery = createAction<[tabId: string, requestId:
 export const consumeBrowserTabRecovery = createAction<[tabId: string, requestId: string]>(
   'tabState/consumeBrowserTabRecovery',
 );
+export const observeBrowserTabNavigation = createAction<[tabId: string, url: string]>(
+  'tabState/observeBrowserTabNavigation',
+);
+export const requestBrowserTabNavigation = createAction<[tabId: string, url: string]>(
+  'tabState/requestBrowserTabNavigation',
+);
+export const consumeBrowserTabNavigation = createAction<
+  [tabId: string, navigation: BrowserTabNavigation]
+>('tabState/consumeBrowserTabNavigation');
 
 /** Actions whose reducer handlers may change the canonical current workspace tab. */
 export const CURRENT_WORKSPACE_TAB_SELECTION_ACTIONS = [
@@ -284,6 +297,19 @@ export const CURRENT_WORKSPACE_TAB_SELECTION_ACTIONS = [
 ];
 
 export const tabStateReducer = createReducer<TabState>(initialState);
+tabStateReducer.with(observeBrowserTabNavigation, (state, { payload: [tabId, url] }) => ({
+  ...state,
+  browserTabNavigations: { ...state.browserTabNavigations, [tabId]: { url, kind: 'observed' } },
+}));
+tabStateReducer.with(requestBrowserTabNavigation, (state, { payload: [tabId, url] }) => ({
+  ...state,
+  browserTabNavigations: { ...state.browserTabNavigations, [tabId]: { url, kind: 'requested' } },
+}));
+tabStateReducer.with(consumeBrowserTabNavigation, (state, { payload: [tabId, navigation] }) => {
+  // An older action must not consume a newer command, even for the same URL.
+  if (state.browserTabNavigations[tabId] !== navigation) return state;
+  return { ...state, browserTabNavigations: omitKey(state.browserTabNavigations, tabId) };
+});
 tabStateReducer.with(requestBrowserTabRecovery, (state, { payload: [tabId, requestId] }) => {
   if (state.browserTabRecoveryRequests[tabId] === requestId) return state;
   return {

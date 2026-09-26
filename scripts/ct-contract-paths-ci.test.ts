@@ -65,14 +65,6 @@ function stepRunBlock(lines: string[], stepName: string): string {
   return body.join('\n');
 }
 
-function stepLines(lines: string[], stepName: string): string[] {
-  const start = lines.indexOf(`      - name: ${stepName}`);
-  if (start === -1) throw new Error(`step ${stepName} not found`);
-  const rest = lines.slice(start + 1);
-  const end = rest.findIndex((text) => text.startsWith('      - '));
-  return rest.slice(0, end === -1 ? rest.length : end);
-}
-
 const temporaryPaths: string[] = [];
 afterEach(() => {
   for (const path of temporaryPaths.splice(0)) rmSync(path, { recursive: true, force: true });
@@ -351,6 +343,9 @@ type Context = {
   rootPlaywrightRequired: string;
   fastPath: string;
   route: string;
+  linuxBurst?: string;
+  cancelled?: boolean;
+  failed?: boolean;
 };
 
 // Evaluates a workflow `if:` expression built from `!cancelled()`, context
@@ -363,14 +358,17 @@ function evaluateCondition(expression: string, context: Context): boolean {
     [ROOT_PLAYWRIGHT_OUTPUT]: context.rootPlaywrightRequired,
     [FAST_PATH_OUTPUT]: context.fastPath,
     'needs.route.result': context.route,
+    'needs.route.outputs.linux_burst': context.linuxBurst ?? 'false',
   };
   let source = expression.replace(/^\$\{\{\s*/, '').replace(/\s*\}\}$/, '');
-  source = source.replaceAll('!cancelled()', 'true');
+  source = source
+    .replaceAll('cancelled()', String(context.cancelled ?? false))
+    .replaceAll('failure()', String(context.failed ?? false));
   for (const [name, value] of Object.entries(lookups)) {
     source = source.replaceAll(name, JSON.stringify(value));
   }
   source = source.replaceAll('!=', ' NE ').replaceAll('==', '===').replaceAll(' NE ', '!==');
-  const residue = source.replace(/"[^"]*"|'[^']*'|true|===|!==|&&|\|\||[()\s]/g, '');
+  const residue = source.replace(/"[^"]*"|'[^']*'|true|false|===|!==|&&|\|\||[!()\s]/g, '');
   if (residue !== '') throw new Error(`unsupported token(s) in if: expression: ${residue}`);
   return Boolean(new Function(`return (${source});`)());
 }
@@ -397,6 +395,7 @@ describe('test-ct runs on pull_request when ct_required is true', () => {
     ['release-shaped PR touching package.json', { fastPath: 'true' }, false],
     ['PR whose relevance output is empty (fork / failed job)', { ctRequired: '' }, false],
     ['PR whose route failed', { route: 'failure' }, false],
+    ['cancelled PR', { cancelled: true }, false],
     [
       'merge_group with empty outputs',
       { event: 'merge_group', ctRequired: '', fastPath: '' },
@@ -458,6 +457,8 @@ describe('test-playwright runs on pull_request when root_playwright_required is 
       false,
     ],
     ['PR whose route failed', { route: 'failure' }, false],
+    ['fork PR whose route is skipped', { route: 'skipped' }, false],
+    ['cancelled PR', { cancelled: true }, false],
     [
       'merge_group with empty outputs',
       { event: 'merge_group', rootPlaywrightRequired: '', fastPath: '' },
@@ -483,53 +484,126 @@ describe('test-playwright runs on pull_request when root_playwright_required is 
   });
 });
 
-describe('root Playwright shards retain complete coverage and failure reports', () => {
-  it('runs every native shard once with one worker and no test filters', () => {
-    const matrix = testPlaywright.find((text) => text.startsWith('        shard:'));
-    const shards: number[] = JSON.parse(matrix?.split('shard:')[1] ?? '[]');
-    expect(shards).toEqual([1, 2]);
-    const run = stepLines(testPlaywright, 'Root Playwright tests')
-      .find((text) => text.startsWith('        run: '))!
-      .slice('        run: '.length);
+describe('root Playwright hosted shards', () => {
+  function step(name: string): string[] {
+    const start = testPlaywright.indexOf(`      - name: ${name}`);
+    if (start === -1) throw new Error(`root step ${name} not found`);
+    const rest = testPlaywright.slice(start + 1);
+    const end = rest.findIndex((line) => line.startsWith('      - '));
+    return rest.slice(0, end === -1 ? rest.length : end);
+  }
 
-    for (const shard of shards) {
-      const command = run.replaceAll('${{ matrix.shard }}', String(shard));
-      // Execute the workflow command with only the package-manager boundary
-      // replaced: extra filters or a missing shard must not silently drop tests.
-      const result = bash(`pnpm() { printf '%s\\n' "$@"; }\n${command}`, {}, tmpdir());
-      expect(result.status, result.stderr).toBe(0);
-      expect(result.stdout.trim().split('\n')).toEqual([
-        'run',
-        'test:playwright',
-        '--project=chromium',
-        '--workers=1',
-        `--shard=${shard}/2`,
-        '--reporter=list,html',
-      ]);
-    }
-  });
-
-  it('lets both shards finish and keeps failures mandatory within the existing budget', () => {
-    expect(testPlaywright).toContain('      fail-fast: false');
-    expect(testPlaywright.some((text) => /^\s*continue-on-error:/.test(text))).toBe(false);
-    expect(jobField(testPlaywright, 'timeout-minutes')).toBe('45');
-    expect(jobField(gate, 'if')).toBe('always()');
-  });
-
-  it('uploads distinct reports on failure or cancellation with unchanged retention', () => {
-    const report = stepLines(testPlaywright, 'Upload playwright report');
-    expect(report).toContain('        if: failure() || cancelled()');
-    expect(report).toContain('          retention-days: 7');
-    expect(report).toContain('            playwright-report/');
-    expect(report).toContain('            test-results/');
-    const name = report
-      .find((text) => text.startsWith('          name: '))!
+  function field(lines: string[], key: string): string {
+    const line = lines.find((value) => value.trimStart().startsWith(`${key}:`));
+    if (!line) throw new Error(`root field ${key} not found`);
+    return line
       .trim()
-      .slice(6);
-    expect([1, 2].map((shard) => name.replaceAll('${{ matrix.shard }}', String(shard)))).toEqual([
-      'playwright-root-report-1-of-2',
-      'playwright-root-report-2-of-2',
+      .slice(key.length + 1)
+      .trim();
+  }
+
+  const expandShard = (value: string, shard: number) =>
+    value.replaceAll('${{ matrix.shard }}', String(shard));
+  const ok: Context = {
+    event: 'pull_request',
+    ctRequired: 'false',
+    rootPlaywrightRequired: 'true',
+    fastPath: 'false',
+    route: 'success',
+  };
+
+  it('schedules both shards independently within the existing worker and memory budgets', () => {
+    const shards: number[] = JSON.parse(field(testPlaywright, 'shard'));
+    expect(shards).toEqual([1, 2]);
+    expect(field(testPlaywright, 'fail-fast')).toBe('false');
+    expect(
+      new Set(shards.map((shard) => expandShard(jobField(testPlaywright, 'name'), shard))).size,
+    ).toBe(shards.length);
+    expect(jobField(testPlaywright, 'timeout-minutes')).toBe('45');
+    expect(field(testPlaywright, 'NODE_OPTIONS').replaceAll("'", '')).toBe(
+      '--max-old-space-size=4096',
+    );
+    expect(testPlaywright.some((line) => line.trimStart().startsWith('continue-on-error:'))).toBe(
+      false,
+    );
+  });
+
+  it.each([
+    ['pull_request', 'false'],
+    ['pull_request', 'true'],
+    ['merge_group', 'false'],
+    ['merge_group', 'true'],
+  ])('provisions hosted runners on %s with linux_burst=%s', (event, linuxBurst) => {
+    const context = { ...ok, event, linuxBurst };
+    expect(evaluateCondition(jobField(testPlaywright, 'if'), context)).toBe(true);
+    expect(jobField(testPlaywright, 'runs-on')).toBe('gh-linux-8x');
+    expect(field(step('Setup Node.js'), 'cache').replaceAll("'", '')).toBe('pnpm');
+    for (const name of ['Cache Playwright browsers', 'Install Playwright browsers']) {
+      const condition = step(name).find((line) => line.trimStart().startsWith('if:'));
+      expect(evaluateCondition(condition?.trim().slice(3).trim() ?? 'true', context)).toBe(true);
+    }
+    expect(field(step('Install Playwright browsers'), 'timeout-minutes')).toBe('8');
+    expect(
+      testPlaywright.some((line) => line.startsWith('      - name:') && line.includes('(tinybox)')),
+    ).toBe(false);
+  });
+
+  it.each([1, 2])(
+    'passes the complete selection for shard %i and preserves a failed exit',
+    (shard) => {
+      const root = temporaryDirectory('root-playwright-shard-');
+      writeFileSync(join(root, 'pnpm'), '#!/bin/sh\nprintf "%s\\n" "$@"\nexit "$TEST_EXIT"\n', {
+        mode: 0o755,
+      });
+      const command = expandShard(field(step('Root Playwright tests'), 'run'), shard);
+      for (const status of [0, 7]) {
+        const result = bash(
+          command,
+          { PATH: `${root}:${process.env.PATH}`, TEST_EXIT: String(status) },
+          root,
+        );
+        expect(result.status, result.stderr).toBe(status);
+        expect(result.stdout.trim().split('\n')).toEqual([
+          'run',
+          'test:playwright',
+          '--project=chromium',
+          '--workers=1',
+          `--shard=${shard}/2`,
+          '--reporter=list,html',
+        ]);
+      }
+      const install = bash(
+        field(step('Install Playwright browsers'), 'run'),
+        {
+          PATH: `${root}:${process.env.PATH}`,
+          TEST_EXIT: '7',
+        },
+        root,
+      );
+      expect(install.status).toBe(7);
+      expect(install.stdout.trim().split('\n')).toEqual([
+        'exec',
+        'playwright',
+        'install',
+        'chromium',
+      ]);
+    },
+  );
+
+  it('retains separate reports for either failed or cancelled shards', () => {
+    const upload = step('Upload playwright report');
+    const name = field(upload, 'name');
+    expect(new Set([expandShard(name, 1), expandShard(name, 2)]).size).toBe(2);
+    expect(field(upload, 'retention-days')).toBe('7');
+    expect(upload.filter((line) => /^ {12}\S/.test(line)).map((line) => line.trim())).toEqual([
+      'playwright-report/',
+      'test-results/',
     ]);
+    for (const context of [{ failed: true }, { cancelled: true }, {}]) {
+      expect(evaluateCondition(field(upload, 'if'), { ...ok, ...context })).toBe(
+        'failed' in context || 'cancelled' in context,
+      );
+    }
   });
 });
 
@@ -551,12 +625,11 @@ describe('CI Gate accepts a test-ct skip only through an output', () => {
     expect(env).toBe(`          CT_REQUIRED: \${{ ${CT_OUTPUT} }}`);
   });
 
-  it('depends on route and the complete root Playwright matrix', () => {
+  it('depends on route', () => {
     const start = gate.indexOf('    needs:');
     expect(start).toBeGreaterThan(-1);
     const end = gate.findIndex((text, index) => index > start && text.trim() === ']');
     expect(gate.slice(start, end).some((text) => text.trim() === 'route,')).toBe(true);
-    expect(gate.slice(start, end).some((text) => text.trim() === 'test-playwright,')).toBe(true);
   });
 
   // test-playwright (the root Playwright suite) mirrors test-ct's gating
@@ -588,15 +661,23 @@ describe('CI Gate accepts a test-ct skip only through an output', () => {
   const runGate = (env: Record<string, string>) =>
     bash(script, { ROOT_PLAYWRIGHT_REQUIRED: env.CT_REQUIRED ?? '', ...env }, tmpdir());
 
-  describe.each(['pull_request', 'merge_group'])('%s root matrix aggregate', (event) => {
-    it.each<[string, number]>([
+  it('waits for the root matrix and runs even when a shard fails or is cancelled', () => {
+    const start = gate.indexOf('    needs:');
+    const end = gate.findIndex((line, index) => index > start && line.trim() === ']');
+    expect(gate.slice(start, end).some((line) => line.trim() === 'test-playwright,')).toBe(true);
+    expect(jobField(gate, 'if')).toBe('always()');
+  });
+
+  it.each(['pull_request', 'merge_group'])('requires a successful root matrix on %s', (event) => {
+    // GitHub supplies one aggregate result for a matrix in needs. With no
+    // continue-on-error, any failed/cancelled leg must keep this gate red.
+    for (const [aggregate, expected] of [
       ['success', 0],
       ['failure', 1],
       ['cancelled', 1],
+      ['skipped', 1],
       ['', 1],
-    ])('result %j → exit %i', (aggregate, expected) => {
-      // GitHub supplies the matrix job conclusion through needs. Run the
-      // actual gate with all unrelated jobs green so only this result decides.
+    ] as const) {
       const result = runGate({
         ...results('success', event),
         RESULT_test_playwright: aggregate,
@@ -604,9 +685,8 @@ describe('CI Gate accepts a test-ct skip only through an output', () => {
         CT_REQUIRED: 'true',
         ROOT_PLAYWRIGHT_REQUIRED: 'true',
       });
-      expect(result.status, result.stdout + result.stderr).toBe(expected);
-      if (expected !== 0) expect(result.stdout).toContain('test-playwright result');
-    });
+      expect(result.status, `${aggregate}: ${result.stdout}${result.stderr}`).toBe(expected);
+    }
   });
 
   it.each<[string, Record<string, string>, number]>([

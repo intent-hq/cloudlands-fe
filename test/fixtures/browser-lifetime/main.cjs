@@ -9,12 +9,14 @@ app.setPath('userData', profile);
 app.setPath('sessionData', profile);
 app.commandLine.appendSwitch('disable-background-timer-throttling');
 globalThis.lifetimeEvidence = { registrations: [], guests: [], tabListRequests: [] };
+globalThis.lifetimeActiveWorkspaceId = 'A';
 globalThis.lifetimeCdp = require(cdpBundle).embeddedBrowserCdp;
-globalThis.lifetimeNavigate = (tabId, url) =>
+globalThis.lifetimeExecute = require(cdpBundle).executeActions;
+globalThis.lifetimeNavigate = (tabId, url, agentId) =>
   require(cdpBundle).executeActions(
     { actions: [{ action: 'navigate', tabId, url }] },
     undefined,
-    undefined,
+    agentId,
     tabId[0],
   );
 if (new URL(url).searchParams.get('owned') === 'true') {
@@ -32,6 +34,7 @@ app.on('web-contents-created', (_event, contents) => {
   });
 });
 ipcMain.handle('fixture:invoke', (_event, channel, payload) => {
+  if (channel === 'fixture:active-workspace') globalThis.lifetimeActiveWorkspaceId = payload;
   if (channel === 'browser:register-tab') {
     globalThis.lifetimeEvidence.registrations.push(payload);
     globalThis.lifetimeCdp.registerTab(payload.tabId, payload.webContentsId);

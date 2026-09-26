@@ -1,6 +1,6 @@
 {
   "name": "intent",
-  "version": "2.184.0",
+  "version": "2.184.6",
   "description": "Intent",
   "type": "module",
   "main": "dist/main/index.js",
@@ -220,7 +220,7 @@
     "@internationalized/date": "^3.12.3",
     "@mermaid-js/layout-elk": "^0.2.3",
     "@pierre/diffs": "^1.4.1",
-    "@playwright/experimental-ct-svelte": "^1.56.1",
+    "@playwright/experimental-ct-svelte": "1.58.2",
     "@playwright/test": "^1.62.1",
     "@redux-saga/types": "1.4.1",
     "@sveltejs/adapter-static": "^3.0.10",
@@ -294,6 +294,7 @@
     "node-gyp": "^13.0.2",
     "phosphor-svelte": "^3.1.0",
     "playwright": "^1.62.1",
+    "ct-browser": "npm:playwright-core@1.63.0",
     "postcss": "^8.5.26",
     "prettier": "^3.9.6",
     "prettier-plugin-svelte": "^4.1.1",
@@ -318,7 +319,7 @@
     "wait-on": "^9.1.0"
   },
   "dependencies": {
-    "@augmentcode/themis": "0.2.9",
+    "@augmentcode/themis": "0.3.2",
     "body-parser": "^2.3.0",
     "chrome-remote-interface": "^0.34.0",
     "date-fns": "^4.4.0",
@@ -363,6 +364,7 @@
       "ssh2"
     ],
     "patchedDependencies": {
+      "playwright-core@1.58.2": "patches/playwright-core@1.58.2.patch",
       "bits-ui@2.18.1": "patches/bits-ui@2.18.1.patch",
       "brace-expansion@5.0.8": "patches/brace-expansion@5.0.8.patch"
     }
