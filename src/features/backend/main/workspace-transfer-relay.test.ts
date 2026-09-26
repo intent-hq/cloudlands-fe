@@ -8,6 +8,8 @@
  */
 
 import { describe, expect, it, vi } from 'vitest';
+import { JsonRpcError } from './json-rpc-errors';
+import * as rpcErrors from './json-rpc-errors';
 import {
   createWorkspaceTransferRelay,
   type FileSink,
@@ -170,6 +172,98 @@ async function emitWhenStarted(
 }
 
 describe('workspace-transfer relay — server destination', () => {
+  it('formats a failed transfer only once for its result and warning', async () => {
+    const format = vi.spyOn(rpcErrors, 'relayErrorMessage');
+    try {
+      const source = makeSource();
+      const target = makeTarget({ 'workspace.import.commit': () => new Error('commit refused') });
+      const { deps } = makeDeps(source, target);
+      const pending = makeRelay(deps).start(
+        { workspaceId: 'ws-1', destination: { kind: 'server', connectionId: 'conn-1' } },
+        source.client,
+      );
+      await emitWhenStarted(source, 'workspace:transfer:ready', READY_DATA);
+      const result = await pending;
+      expect(result).toMatchObject({ success: false, error: 'commit refused' });
+      expect(deps.logger.warn).toHaveBeenCalledWith('workspace transfer failed', {
+        workspaceId: 'ws-1',
+        error: result.error,
+      });
+      expect(format).toHaveBeenCalledOnce();
+    } finally {
+      format.mockRestore();
+    }
+  });
+
+  it.each(['string', 'object'])(
+    'preserves the %s RPC cause in the result and log',
+    async (shape) => {
+      const detail = 'UNIQUE constraint failed: interrupted_agent.agent_id';
+      const source = makeSource();
+      const target = makeTarget({
+        'workspace.import.commit': () =>
+          new JsonRpcError({
+            code: -32603,
+            message: 'Internal error',
+            data: shape === 'string' ? detail : { detail, token: 'private-payload' },
+          }),
+      });
+      const { deps } = makeDeps(source, target);
+      const relay = makeRelay(deps);
+
+      const pending = relay.start(
+        { workspaceId: 'ws-1', destination: { kind: 'server', connectionId: 'conn-1' } },
+        source.client,
+      );
+      await emitWhenStarted(source, 'workspace:transfer:ready', READY_DATA);
+
+      expect(await pending).toEqual({
+        success: false,
+        error: `Internal error: ${detail}`,
+        failurePhase: 'post-export',
+      });
+      expect(deps.logger.warn).toHaveBeenCalledWith('workspace transfer failed', {
+        workspaceId: 'ws-1',
+        error: `Internal error: ${detail}`,
+      });
+      expect(target.calls).toContainEqual({
+        method: 'workspace.import.commit',
+        params: { importId: 'import-1' },
+        options: { timeoutMs: 600_000 },
+      });
+      expect(target.calls.at(-1)).toMatchObject({
+        method: 'workspace.import.abort',
+        params: { importId: 'import-1' },
+      });
+      expect(source.calls.at(-1)).toEqual({
+        method: 'workspace.export.abort',
+        params: { exportId: 'export-1' },
+      });
+      expect(target.dispose).toHaveBeenCalledOnce();
+    },
+  );
+
+  it('keeps a cancelled commit quiet even when its RPC failure has detail', async () => {
+    const source = makeSource();
+    const target = makeTarget({
+      'workspace.import.commit': async () => {
+        await relay.cancel();
+        throw new JsonRpcError({ code: -32603, message: 'Internal error', data: 'commit refused' });
+      },
+    });
+    const { deps } = makeDeps(source, target);
+    const relay = makeRelay(deps);
+    const pending = relay.start(
+      { workspaceId: 'ws-1', destination: { kind: 'server', connectionId: 'conn-1' } },
+      source.client,
+    );
+    await emitWhenStarted(source, 'workspace:transfer:ready', READY_DATA);
+
+    expect(await pending).toEqual({ success: false, canceled: true });
+    expect(deps.logger.warn).not.toHaveBeenCalled();
+    expect(target.dispose).toHaveBeenCalledOnce();
+  });
+
   it('relays start → ready → chunks → commit and reports counters', async () => {
     const order: string[] = [];
     const source = makeSource({}, order);
