@@ -126,7 +126,7 @@ test('model labels stay normal weight through pointer and keyboard selection', a
   await expect(nextLabel).toHaveCSS('font-weight', '400');
   await next.click();
   await expect(page.getByTestId('selection')).toContainText('"model":"model-2"');
-  await trigger.press('Enter');
+  await expect(trigger).toHaveAttribute('aria-expanded', 'true');
   await expect(next).toHaveAttribute('aria-selected', 'true');
   await expect(current).toHaveAttribute('aria-selected', 'false');
   await expect(currentLabel).toHaveCSS('font-weight', '400');
@@ -134,6 +134,8 @@ test('model labels stay normal weight through pointer and keyboard selection', a
   await page.getByRole('searchbox').fill('Reasoning');
   await page.keyboard.press('Enter');
   await expect(page.getByTestId('selection')).toContainText('"model":"reasoning-model"');
+  await expect(page.getByRole('searchbox')).toBeFocused();
+  await page.keyboard.press('Escape');
   await expect(trigger).toBeFocused();
 });
 
@@ -243,11 +245,11 @@ test('provider rail, immediately visible search and bottom-footer effort remain 
   await search.fill('Model 20');
   await page.keyboard.press('Enter');
   await expect(page.getByTestId('selection')).toContainText('"model":"model-20"');
-  await trigger.press('Enter');
+  await expect(trigger).toHaveAttribute('aria-expanded', 'true');
   await claude.press('Enter');
   await list.getByRole('option', { name: 'Other provider model' }).click();
   await expect(page.getByTestId('selection')).toContainText('"model":"other-model"');
-  await trigger.press('Enter');
+  await expect(trigger).toHaveAttribute('aria-expanded', 'true');
   await expect(effort).toHaveCount(0);
 });
 

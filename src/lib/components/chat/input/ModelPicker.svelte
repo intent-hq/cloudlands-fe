@@ -829,9 +829,7 @@
         if (isSkippedMutation(result)) return;
         if (result.ok && result.data.success) {
           logger.info('Updated agent model via IPC:', { agentId, model });
-          const targetOption = flatModelOptions.find(
-            (option) => normalizeModelIdForMatch(option.value) === normalizeModelIdForMatch(model),
-          );
+          const targetOption = findCatalogOption(model, pickedProviderId);
           const supportedEfforts = targetOption?.data?.effortLevels as string[] | undefined;
           const currentEffort = selectAgentReasoningEffort.select(appStore.state, agentId);
           await mutate.reconcileEffort(agentId, workspaceId, currentEffort, supportedEfforts);
@@ -1141,6 +1139,38 @@
       : toDropdownOptions(availableModels)),
   ]);
 
+  function findCatalogOption(
+    modelId: string,
+    bareProviderId = effectiveProviderId,
+  ): DropdownOption | undefined {
+    const lookup = (id: string) => {
+      const target = normalizeModelIdForMatch(id, bareProviderId);
+      for (const providerId of selectableProviderIds) {
+        const rowProviderId = normalizeProviderId(providerId);
+        const found = allProviderModels[rowProviderId]?.find(
+          (option) => normalizeModelIdForMatch(option.value, rowProviderId) === target,
+        );
+        if (found) return found;
+      }
+      if (
+        !isEffectiveProviderAvailable &&
+        !isEffectiveProviderDisabled &&
+        fallbackModelsMatchEffectiveProvider
+      ) {
+        return toDropdownOptions(availableModels).find(
+          (option) => normalizeModelIdForMatch(option.value, availableModelsProviderId) === target,
+        );
+      }
+      return undefined;
+    };
+    // Persisted effort-suffixed pins refer to today's base catalog row. An
+    // exact match wins so provider model IDs containing slashes stay intact.
+    return (
+      lookup(modelId) ??
+      lookup(modelId.replace(/\/(?:none|minimal|low|medium|high|xhigh|max|ultra)$/i, ''))
+    );
+  }
+
   const selectedCatalogOption = $derived.by(() => {
     const selectedId = hasExplicitModel ? localModel : defaultModelId;
     if (!selectedId) return catalogDefaultFallbackOption;
@@ -1148,9 +1178,7 @@
     // resolve to the hidden pseudo-row when an older daemon still serves one.
     const mappedOption = hasExplicitModel ? legacyDefaultMappedOption : defaultModelIdMappedOption;
     if (mappedOption) return mappedOption;
-    return flatModelOptions.find(
-      (option) => normalizeModelIdForMatch(option.value) === normalizeModelIdForMatch(selectedId),
-    );
+    return findCatalogOption(selectedId);
   });
 
   const hasLoadedModelOptions = $derived(
@@ -1417,10 +1445,7 @@
     // not missing, it renders as that model.
     if (legacyDefaultMappedOption) return false;
 
-    const values = new Set(
-      flatModelOptions.map((opt) => normalizeModelIdForMatch(opt.value, effectiveProviderId)),
-    );
-    return !values.has(normalizeModelIdForMatch(localModel, effectiveProviderId));
+    return !selectedCatalogOption;
   });
 
   // Follow the daemon's re-home (intent#5737): while the agent's provider is
@@ -1981,9 +2006,9 @@
         return;
       }
     }
-    // Keyboard selection removes the focused search/listbox. Return to its
-    // trigger instead of leaving focus on body; pointer callers keep their policy.
-    if (modalAware || !event) {
+    // Combined model/effort pickers keep the panel for the next choice. When
+    // closing a model-only picker, restore keyboard/modal focus to its trigger.
+    if (!showReasoning && (modalAware || !event)) {
       queueMicrotask(() => {
         dropdownOpen = false;
         dropdownRef?.focusTrigger();
@@ -2138,6 +2163,7 @@
     bind:open={dropdownOpen}
     groups={displayGroups}
     onchange={handleModelChange}
+    closeOnSelect={!showReasoning}
     variant={variant === 'outline' ? 'outline' : variant === 'default' ? 'default' : 'ghost'}
     size={size === 'xs' ? 'xs' : 'sm'}
     searchable={!hasNoAvailableProvider}
