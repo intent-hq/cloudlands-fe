@@ -3,7 +3,7 @@
   import type { MentionCandidate } from '$lib/services/mentions/types';
 
   interface Props {
-    state?: 'mixed' | 'many' | 'loading' | 'empty' | 'composer';
+    state?: 'mixed' | 'many' | 'loading' | 'empty' | 'composer' | 'members';
     composerTop?: number;
   }
 
@@ -17,6 +17,7 @@
       loading: { props: { state: 'loading' } },
       empty: { props: { state: 'empty' } },
       composer: { props: { state: 'composer' } },
+      members: { props: { state: 'members' } },
     },
   });
 
@@ -71,6 +72,7 @@
   import TipTapEditor from './TipTapEditor.svelte';
   import { getMentionSystem } from '$lib/services/mentions';
   import { Input } from '$lib/components/ui/input';
+  import MemberMentionsHost from './__tests__/MemberMentionsHost.svelte';
 
   let { state: scenario = 'mixed', composerTop = 320 }: Props = $props();
   let query = $state('');
@@ -112,7 +114,9 @@
 
 <!-- i18n-ignore (isolated fixture controls and synthetic demo data) -->
 <div class="mention-preview" data-testid="mention-preview">
-  {#if scenario === 'composer'}
+  {#if scenario === 'members'}
+    <MemberMentionsHost />
+  {:else if scenario === 'composer'}
     <div class="rich-input-container" style:margin-top={`${composerTop}px`}>
       <TipTapEditor ariaLabel="Mention composer" repoPath="/fixture/mention-results" />
     </div>

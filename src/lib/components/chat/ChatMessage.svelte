@@ -7,8 +7,14 @@
     faClipboard,
     faSquare,
     faCircleExclamation,
+    faUser,
   } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
+  import {
+    memberMentionLabel,
+    memberMentionSubtitle,
+    parseMemberMention,
+  } from '$lib/utils/member-mention-token';
   import { Button } from '$lib/components/ui/button';
   import { onDestroy } from 'svelte';
   import StreamingMessageContent from './StreamingMessageContent.svelte';
@@ -174,6 +180,7 @@
     | {
         type: 'mention';
         mentionType: string;
+        description?: string;
         label: string;
         id: string;
         identifier?: string;
@@ -612,7 +619,21 @@
       const fullMatch = match.fullMatch; // e.g., "@context[linear|AU-123|Title]" or "@note/spec"
       const captured = match.captured; // e.g., "context[linear|AU-123|Title]" or "note/spec"
 
-      if (captured.startsWith('context[')) {
+      if (captured.startsWith('member[')) {
+        const member = parseMemberMention(fullMatch);
+        if (member) {
+          segments.push({
+            type: 'mention',
+            mentionType: 'member',
+            label: memberMentionLabel(member.label),
+            description: memberMentionSubtitle(member),
+            id: member.id,
+            icon: faUser,
+          });
+        } else {
+          segments.push({ type: 'text', content: fullMatch });
+        }
+      } else if (captured.startsWith('context[')) {
         // Context mention: @context[provider|identifier|title] or @context[base64JSON]
         const inner = captured.slice(8, -1); // Remove "context[" and "]"
 
@@ -1687,7 +1708,8 @@
                       type="button"
                       variant="plain"
                       class="type-caption mx-0.5 inline-flex items-center gap-1 whitespace-nowrap rounded-md bg-muted/60 px-1.5 py-1 align-middle font-medium text-foreground/80 transition-colors hover:bg-muted hover:text-foreground"
-                      title={segment.path ||
+                      title={segment.description ||
+                        segment.path ||
                         segment.noteId ||
                         (segment.identifier
                           ? `${segment.identifier}: ${segment.label}`

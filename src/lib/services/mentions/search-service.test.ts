@@ -26,9 +26,37 @@ describe('DebouncedSearchService cancellation', () => {
     const firstOutcome = service.search('a', [provider], context).catch((error) => error);
     const secondSearch = service.search('ab', [provider], context);
 
-    await expect(firstOutcome).resolves.toMatchObject({ message: 'Search cancelled' });
+    await expect(firstOutcome).resolves.toMatchObject({
+      name: 'AbortError',
+      message: 'Search cancelled',
+    });
     await vi.advanceTimersByTimeAsync(100);
     await expect(secondSearch).resolves.toEqual([result]);
     expect(service.isLoading()).toBe(false);
+  });
+
+  it('does not reuse another provider selection’s cached results', async () => {
+    const service = new DebouncedSearchService();
+    const file: Provider = { id: 'file', search: async () => [result] };
+    const note: Provider = {
+      id: 'note',
+      search: async () => [{ id: 'spec', label: 'Spec', type: 'note', uri: 'note:spec' }],
+    };
+    expect(await service.search('', [file], context)).toEqual([result]);
+    expect(await service.search('', [note], context)).toMatchObject([{ type: 'note', id: 'spec' }]);
+    service.destroy();
+  });
+
+  it('continues caching unchanged provider context', async () => {
+    const service = new DebouncedSearchService();
+    const provider: Provider = {
+      id: 'file',
+      search: vi.fn(async () => [result]),
+      getCacheKey: () => 'same-context',
+    };
+    await service.search('', [provider], context);
+    expect(await service.search('', [provider], context)).toEqual([result]);
+    expect(provider.search).toHaveBeenCalledTimes(1);
+    service.destroy();
   });
 });

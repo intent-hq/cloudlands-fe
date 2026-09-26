@@ -208,6 +208,16 @@ function listReporterLog(): string {
 // --- Tests --------------------------------------------------------------------
 
 describe('parseCtJobs', () => {
+  it('finds shard jobs inside reusable workflows on PR and nightly runs', () => {
+    for (const prefix of ['test-ct / ', 'Browser suites / ']) {
+      const name = `${prefix}Component Tests (shard 2/4)`;
+      expect(parseCtJobs([{ id: 22, name, status: 'completed', conclusion: 'failure' }])).toEqual([
+        { jobId: 22, name, shard: 2, shardCount: 4, status: 'completed', conclusion: 'failure' },
+      ]);
+    }
+    expect(parseCtJobs([{ name: 'Not Component Tests (shard 2/4)' }])).toEqual([]);
+  });
+
   it('selects the CT shard jobs sorted by shard, ignoring other jobs', () => {
     expect(parseCtJobs(JOBS_PAYLOAD)).toEqual([
       {

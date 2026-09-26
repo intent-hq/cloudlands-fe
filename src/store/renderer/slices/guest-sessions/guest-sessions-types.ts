@@ -29,7 +29,7 @@ export type {
  */
 export interface WorkspaceMember {
   principalId: string;
-  /** Forge login; null for a principal without a resolved identity. */
+  /** Forge handle; null for a principal without a resolved identity. */
   login: string | null;
   displayName: string | null;
   avatarUrl: string | null;
