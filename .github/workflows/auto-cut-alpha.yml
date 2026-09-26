@@ -74,11 +74,12 @@
 #   build (the intentd-first rule orders merges, not releases) — defer
 #   with a notice; the next intentd alpha advances the pin and its
 #   pin-bump push chains into a cut that re-evaluates. While intentd
-#   cannot publish (failed build, or main ahead only by commits release-plz
-#   will never release) the deferral persists — deliberately: unlike the
-#   in-flight guard's 90-minute bound (which wards off a merely POSSIBLE
-#   imminent pin), this guard defers on confirmed unpublished dependencies,
-#   and the workflow_dispatch bypass is the operator override. Automation
+#   cannot publish (failed build) the deferral persists. An explicit no-op
+#   from the latest release-plz main-push run exempts only the exact
+#   assessed main SHA. That run must have succeeded, with no open release
+#   PR and its baseline tag and commit already pinned by fe main.
+#   Missing/stale/unreadable proof never exempts skew; workflow_dispatch
+#   remains the operator override. Automation
 #   commits (the sidecar pin bump itself, chore(release) squash merges)
 #   are exempt from the freshness test, and the check fails OPEN on any
 #   lookup error (unreadable pin/tags/comparison) so an unreadable intentd
@@ -146,7 +147,7 @@ jobs:
   # merge.
   auto-merge-release-pr:
     name: Auto-merge green Release PR
-    # API-only job (seconds on cron/dispatch runs; up to ~15 min of polling
+    # API-driven job (seconds on cron/dispatch runs; up to ~15 min of polling
     # on push-triggered runs): ubuntu-latest so a self-hosted slot is not
     # wasted on it.
     runs-on: ubuntu-latest
@@ -333,6 +334,20 @@ jobs:
           else
             echo "intentd $tag is ${age_min} min old with no published alpha (its build likely failed); proceeding with the cut."
           fi
+      - name: Checkout release readiness helper
+        if: >-
+          steps.token.outputs.enabled == 'true' &&
+          steps.throttle.outputs.defer != 'true' &&
+          steps.inflight.outputs.defer != 'true' &&
+          github.event_name != 'workflow_dispatch'
+        uses: actions/checkout@v7
+        # Missing helper means no exemption; retain the original guard even
+        # if checkout is unavailable. No package install/build is needed.
+        continue-on-error: true
+        with:
+          persist-credentials: false
+          sparse-checkout-cone-mode: false
+          sparse-checkout: /scripts/intentd-release-readiness.mjs
       - name: Merge the Release PR when green
         if: >-
           steps.token.outputs.enabled == 'true' &&
@@ -410,7 +425,7 @@ jobs:
           # above).
           be_skew_msg=""
           be_dependency_skew() {
-            local pin cmp ahead tag_date tag_epoch fe_tag fresh
+            local pin cmp ahead tag_date tag_epoch fe_tag fresh baseline_sha
 
             # The pin this cut would ship: intentd.version at main HEAD
             # (the squash merge cuts the tag on main's tree).
@@ -482,6 +497,16 @@ jobs:
             fi
             if (( fresh == 0 )); then
               echo "intentd main is ahead of the pinned v$pin but no fe commit this cut ships postdates that tag (automation commits exempt); no BE-dependency skew."
+              return 1
+            fi
+
+            # A positive release-plz assessment can prove that the extra
+            # commits need no new sidecar. This new lookup is fail-CLOSED
+            # only for the exemption: errors retain the skew established
+            # above, without changing any original fail-open lookup.
+            baseline_sha=$(jq -r '.base_commit.sha // empty' <<<"$cmp")
+            if node scripts/intentd-release-readiness.mjs "$pin" "$baseline_sha" "$GITHUB_REPOSITORY"; then
+              echo "release-plz confirmed no release needed for current intentd main against pinned v$pin@$baseline_sha; no BE-dependency skew."
               return 1
             fi
 
@@ -664,8 +689,8 @@ jobs:
             # above): normally the deferral is bounded by the intentd alpha
             # cadence — the next alpha advances the pin, and the pin-bump
             # merge push chains straight into a fresh cut run. When intentd
-            # cannot publish (failed build, or ahead only by never-released
-            # commits) the deferral persists; workflow_dispatch bypasses
+            # cannot publish (failed build) or no confirmed current no-op
+            # exists, the deferral persists; workflow_dispatch bypasses
             # this guard (manual means urgent — same convention as the
             # throttle) so an operator can always force the cut. Push runs
             # with poll budget left retry first, so a pin that advances
