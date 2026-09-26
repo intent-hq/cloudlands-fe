@@ -6,13 +6,20 @@
  * `workspace:tokenUsage-changed` push event.
  */
 
+import type { Collection } from '@augmentcode/themis/utils/collections/collection-utils';
 import type {
+  TokenUsageCrossFilterRow,
   TokenUsageByModel,
   TokenUsageTotals,
 } from '../../../../features/token-usage/token-usage-types';
 import { createEmptyTotals } from '../../../../features/token-usage/utils/token-usage-utils';
 
-/** Per-workspace token usage as mirrored in the renderer (wire shape + staleness). */
+type TokenUsageCrossFilterEntry = {
+  id: string;
+  row: TokenUsageCrossFilterRow;
+};
+
+/** Per-workspace token usage as mirrored in the renderer (collections + staleness). */
 export type WorkspaceTokenUsageState = {
   /** Per-agent totals keyed by agentId (`agent-{uuid}`). */
   byAgentId: Record<string, TokenUsageTotals>;
@@ -20,6 +27,8 @@ export type WorkspaceTokenUsageState = {
   totals: TokenUsageTotals;
   /** Workspace-wide per-model totals keyed by effective model name. */
   byModel: TokenUsageByModel;
+  /** Presence-detected sparse agent × model projection from the daemon. */
+  byAgentModel?: Collection<TokenUsageCrossFilterEntry, 'id'>;
   /** RFC-3339 timestamp of the daemon's last internal scan; null before the first. */
   lastScanAt: string | null;
   /** True until a rollup is received, or after a fetch failure. */

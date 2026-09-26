@@ -1,6 +1,7 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AgentStatus } from '$shared/types/agent.types';
 import type { AgentMessage, AgentSession, Note } from '$shared/types';
+import { selectWorkspaceTokenUsageCrossFilterRows } from '$store/renderer/slices/token-usage/token-usage-selectors';
 
 const { reportStreamLifecycleSpy } = vi.hoisted(() => ({ reportStreamLifecycleSpy: vi.fn() }));
 
@@ -4104,6 +4105,20 @@ describe('daemonEventsBridge (usage wire contract — workspace:tokenUsage-chang
           cacheCreationTokens: 1200,
         },
       },
+      byAgentModel: [
+        {
+          agentId: 'agent-123',
+          model: 'opus-4.8',
+          totals: {
+            inputTokens: 12000,
+            outputTokens: 3400,
+            cacheReadTokens: 8000,
+            cacheCreationTokens: 1200,
+          },
+          humanMessages: 3,
+          agentMessages: 4,
+        },
+      ],
       totals: {
         inputTokens: 12000,
         outputTokens: 3400,
@@ -4117,10 +4132,41 @@ describe('daemonEventsBridge (usage wire contract — workspace:tokenUsage-chang
     const state = appStore.state as {
       tokenUsage: { byWorkspaceId: Record<string, unknown> };
     };
-    expect(state.tokenUsage.byWorkspaceId[WS]).toEqual({
-      ...tokenUsage,
-      isStale: false,
-    });
+    const { byAgentModel, ...rollup } = tokenUsage;
+    expect(state.tokenUsage.byWorkspaceId[WS]).toMatchObject({ ...rollup, isStale: false });
+    expect(selectWorkspaceTokenUsageCrossFilterRows.select(appStore.state, WS)).toEqual(
+      byAgentModel,
+    );
+  });
+
+  it('preserves presence and UTF-8 producer order through pushes, rejecting invalid replacements', async () => {
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+    const workspaceId = 'ws-token-matrix-boundary';
+    const totals = { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheCreationTokens: 0 };
+    const base = { byAgentId: {}, totals, byModel: {}, lastScanAt: null };
+    const rows = ['\uE000', '\u{10000}'].map((model) => ({
+      agentId: 'agent-a',
+      model,
+      totals,
+      humanMessages: 0,
+      agentMessages: 1,
+    }));
+    const push = (tokenUsage: unknown) =>
+      handler(notification('workspace:tokenUsage-changed', { workspaceId, tokenUsage }));
+    const read = () => selectWorkspaceTokenUsageCrossFilterRows.select(appStore.state, workspaceId);
+    push({ ...base, byAgentModel: rows });
+    expect(read()).toEqual(rows);
+    const accepted = appStore.state.tokenUsage.byWorkspaceId[workspaceId];
+    push({ ...base, byAgentModel: [...rows].reverse() });
+    expect(appStore.state.tokenUsage.byWorkspaceId[workspaceId]).toBe(accepted);
+    push({ ...base, byAgentModel: [rows[0], rows[0]] });
+    expect(appStore.state.tokenUsage.byWorkspaceId[workspaceId]).toBe(accepted);
+    push({ ...base, byAgentModel: [] });
+    expect(read()).toEqual([]);
+    push(base);
+    expect(read()).toBeUndefined();
+    expect(appStore.state.tokenUsage.byWorkspaceId[workspaceId]).not.toHaveProperty('byAgentModel');
   });
 
   it('ignores a push without a tokenUsage object', async () => {
@@ -4133,6 +4179,23 @@ describe('daemonEventsBridge (usage wire contract — workspace:tokenUsage-chang
       tokenUsage: { byWorkspaceId: Record<string, unknown> };
     };
     expect(state.tokenUsage.byWorkspaceId['ws-token-empty']).toBeUndefined();
+  });
+
+  it('ignores a pushed tokenUsage object that fails the wire schema', async () => {
+    await primeBridge();
+    const handler = capturedHandlers[0];
+
+    handler!(
+      notification('workspace:tokenUsage-changed', {
+        workspaceId: 'ws-token-invalid',
+        tokenUsage: { byAgentId: {}, totals: {}, byModel: {}, lastScanAt: null },
+      }),
+    );
+
+    const state = appStore.state as {
+      tokenUsage: { byWorkspaceId: Record<string, unknown> };
+    };
+    expect(state.tokenUsage.byWorkspaceId['ws-token-invalid']).toBeUndefined();
   });
 });
 

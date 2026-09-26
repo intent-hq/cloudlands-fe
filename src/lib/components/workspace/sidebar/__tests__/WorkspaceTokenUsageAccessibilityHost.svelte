@@ -1,0 +1,397 @@
+<script lang="ts">
+  import { onDestroy } from 'svelte';
+  import WorkspaceTokenUsage from '../WorkspaceTokenUsage.svelte';
+  import { startRootStoreLifecycle } from '$store/renderer/root-store-lifecycle';
+  import { store } from '$store/renderer/store';
+  import { tokenUsageReceived } from '$store/renderer/slices/token-usage/token-usage-slice';
+  import { applyLanguagePreference, type AppLocale } from '$lib/i18n/locale';
+  import { Button } from '$lib/components/ui/button';
+  import { costOnlyUsage } from './token-usage-cost-fixture';
+
+  interface Props {
+    theme?: 'light' | 'dark';
+    width?: number;
+    placement?: 'top' | 'bottom';
+    side?: 'left' | 'right';
+    locale?: AppLocale;
+    crossFilter?: boolean;
+    navigators?: boolean;
+    messageOnly?: boolean;
+    selectionMatrix?: boolean;
+    scopedCosts?: boolean;
+    costOnly?: 'all' | 'mixed';
+    costAmount?: number;
+    surroundingControls?: boolean;
+  }
+
+  let {
+    theme = 'light',
+    width = 304,
+    placement = 'top',
+    side = 'left',
+    locale = 'en',
+    crossFilter = true,
+    navigators = true,
+    messageOnly = false,
+    selectionMatrix = false,
+    scopedCosts = true,
+    costOnly,
+    costAmount = 2.5,
+    surroundingControls = false,
+  }: Props = $props();
+  // svelte-ignore state_referenced_locally -- a mounted test host keeps one locale
+  applyLanguagePreference(locale);
+  const workspaceId = 'token-usage-accessibility-ct';
+  const disposeStore = startRootStoreLifecycle(store, { startSagas: () => [] });
+  const reportedCost = (amount: number) =>
+    scopedCosts ? { cost: { amount, currency: 'USD' } } : {};
+
+  // svelte-ignore state_referenced_locally -- scenario flags seed one mounted fixture
+  store.dispatch(
+    tokenUsageReceived(workspaceId, {
+      byAgentId: {
+        'alpha-01': {
+          inputTokens: 50,
+          outputTokens: 150,
+          cacheReadTokens: 500,
+          cacheCreationTokens: 50,
+        },
+        'beta-02': {
+          inputTokens: 30,
+          outputTokens: 70,
+          cacheReadTokens: 40,
+          cacheCreationTokens: 10,
+        },
+        'gamma-03': {
+          inputTokens: 15,
+          outputTokens: 35,
+          cacheReadTokens: 20,
+          cacheCreationTokens: 5,
+        },
+        'production-final': {
+          inputTokens: 5,
+          outputTokens: 5,
+          cacheReadTokens: 10,
+          cacheCreationTokens: 5,
+        },
+      },
+      totals: {
+        inputTokens: 100,
+        outputTokens: 260,
+        cacheReadTokens: 570,
+        cacheCreationTokens: 70,
+        cost: { amount: 0.8, currency: 'USD' },
+      },
+      byModel: {
+        'provider/this-is-an-extraordinarily-long-model-name-for-truncation': {
+          inputTokens: 50,
+          outputTokens: 150,
+          cacheReadTokens: 360,
+          cacheCreationTokens: 40,
+        },
+        'model-beta': {
+          inputTokens: 30,
+          outputTokens: 60,
+          cacheReadTokens: 140,
+          cacheCreationTokens: 20,
+        },
+        'model-gamma': {
+          inputTokens: 15,
+          outputTokens: 35,
+          cacheReadTokens: 45,
+          cacheCreationTokens: 5,
+        },
+        'model-production-final': {
+          inputTokens: 5,
+          outputTokens: 15,
+          cacheReadTokens: 25,
+          cacheCreationTokens: 5,
+        },
+      },
+      byAgentModel: [
+        {
+          agentId: 'alpha-01',
+          model: 'model-beta',
+          totals: {
+            inputTokens: 0,
+            outputTokens: 0,
+            cacheReadTokens: 140,
+            cacheCreationTokens: 10,
+            ...reportedCost(0.21),
+          },
+          humanMessages: 1,
+          agentMessages: 3,
+        },
+        {
+          agentId: 'alpha-01',
+          model: 'provider/this-is-an-extraordinarily-long-model-name-for-truncation',
+          totals: {
+            inputTokens: 50,
+            outputTokens: 150,
+            cacheReadTokens: 360,
+            cacheCreationTokens: 40,
+            ...reportedCost(0.12),
+          },
+          humanMessages: 3,
+          agentMessages: 5,
+        },
+        {
+          agentId: 'beta-02',
+          model: 'model-beta',
+          totals: {
+            inputTokens: 30,
+            outputTokens: 60,
+            cacheReadTokens: 0,
+            cacheCreationTokens: 10,
+            ...reportedCost(0.34),
+          },
+          humanMessages: 2,
+          agentMessages: 4,
+        },
+        {
+          agentId: 'beta-02',
+          model: 'model-gamma',
+          totals: {
+            inputTokens: 0,
+            outputTokens: 0,
+            cacheReadTokens: 40,
+            cacheCreationTokens: 0,
+            ...reportedCost(0.45),
+          },
+          humanMessages: 2,
+          agentMessages: 1,
+        },
+        {
+          agentId: 'beta-02',
+          model: 'model-production-final',
+          totals: {
+            inputTokens: 0,
+            outputTokens: 10,
+            cacheReadTokens: 0,
+            cacheCreationTokens: 0,
+            ...reportedCost(0.56),
+          },
+          humanMessages: 0,
+          agentMessages: 1,
+        },
+        {
+          agentId: 'gamma-03',
+          model: 'model-gamma',
+          totals: {
+            inputTokens: 15,
+            outputTokens: 35,
+            cacheReadTokens: 5,
+            cacheCreationTokens: 5,
+            ...reportedCost(0.67),
+          },
+          humanMessages: 1,
+          agentMessages: 0,
+        },
+        {
+          agentId: 'gamma-03',
+          model: 'model-production-final',
+          totals: {
+            inputTokens: 0,
+            outputTokens: 0,
+            cacheReadTokens: 15,
+            cacheCreationTokens: 0,
+            ...reportedCost(0.78),
+          },
+          humanMessages: 0,
+          agentMessages: 1,
+        },
+        {
+          agentId: 'production-final',
+          model: 'model-production-final',
+          totals: {
+            inputTokens: 5,
+            outputTokens: 5,
+            cacheReadTokens: 10,
+            cacheCreationTokens: 5,
+            ...reportedCost(0.89),
+          },
+          humanMessages: 1,
+          agentMessages: 1,
+        },
+        ...(messageOnly
+          ? [
+              {
+                agentId: 'messages-only',
+                model: 'model-message-only',
+                totals: {
+                  inputTokens: 0,
+                  outputTokens: 0,
+                  cacheReadTokens: 0,
+                  cacheCreationTokens: 0,
+                  ...reportedCost(0),
+                },
+                humanMessages: 9,
+                agentMessages: 1,
+              },
+            ]
+          : []),
+      ],
+      ...(crossFilter ? {} : { byAgentModel: undefined }),
+      ...(navigators ? {} : { byAgentId: {}, byModel: {} }),
+      lastScanAt: '2026-08-22T00:00:00Z',
+    }),
+  );
+
+  // svelte-ignore state_referenced_locally -- scenario flags seed one mounted fixture
+  if (selectionMatrix) {
+    const totals = (inputTokens: number) => ({
+      inputTokens,
+      outputTokens: 0,
+      cacheReadTokens: 0,
+      cacheCreationTokens: 0,
+    });
+    // svelte-ignore state_referenced_locally -- scenario flags seed one mounted fixture
+    store.dispatch(
+      tokenUsageReceived(workspaceId, {
+        totals: totals(900),
+        byAgentId: { alpha: totals(750), beta: totals(150) },
+        byModel: { 'model-a': totals(700), 'model-b': totals(200) },
+        byAgentModel: [
+          {
+            agentId: 'alpha',
+            model: 'model-a',
+            totals: totals(600),
+            humanMessages: 6,
+            agentMessages: 1,
+          },
+          {
+            agentId: 'alpha',
+            model: 'model-b',
+            totals: totals(150),
+            humanMessages: 1,
+            agentMessages: 5,
+          },
+          {
+            agentId: 'beta',
+            model: 'model-a',
+            totals: totals(100),
+            humanMessages: 2,
+            agentMessages: 1,
+          },
+          {
+            agentId: 'beta',
+            model: 'model-b',
+            totals: totals(50),
+            humanMessages: 4,
+            agentMessages: 3,
+          },
+          ...(messageOnly
+            ? [
+                {
+                  agentId: 'messages-only',
+                  model: 'model-message-only',
+                  totals: totals(0),
+                  humanMessages: 9,
+                  agentMessages: 1,
+                },
+              ]
+            : []),
+        ],
+        lastScanAt: '2026-08-22T00:00:00Z',
+      }),
+    );
+  }
+
+  // svelte-ignore state_referenced_locally -- scenario flags seed one mounted fixture
+  if (costOnly) {
+    // svelte-ignore state_referenced_locally -- scenario flags seed one mounted fixture
+    store.dispatch(
+      tokenUsageReceived(workspaceId, costOnlyUsage(costAmount, costOnly === 'mixed')),
+    );
+  }
+
+  $effect(() => {
+    const root = document.documentElement;
+    root.classList.toggle('light', theme === 'light');
+    root.classList.toggle('dark', theme === 'dark');
+  });
+
+  onDestroy(() => {
+    disposeStore();
+    applyLanguagePreference('en');
+    document.documentElement.classList.remove('light', 'dark');
+  });
+</script>
+
+<section
+  class="workspace-page relative flex h-screen w-screen flex-col overflow-hidden bg-sidebar text-foreground"
+  data-theme={theme}
+>
+  <div
+    class="upper-area relative flex min-h-0 flex-1 overflow-hidden"
+    class:flex-row-reverse={side === 'right'}
+  >
+    <aside
+      class="workspace-sidebar-panel relative h-full shrink-0 overflow-hidden bg-sidebar"
+      style:width={`${width + 48}px`}
+      style:max-width="100vw"
+      style:transform="translateZ(0)"
+      data-testid="workspace-sidebar"
+    >
+      <div
+        class="workspace-sidebar-content relative flex h-full flex-col overflow-y-auto bg-transparent"
+        data-testid="workspace-sidebar-scroll"
+      >
+        {#if placement === 'bottom'}
+          <div class="sidebar-placement-spacer shrink-0" aria-hidden="true"></div>
+        {/if}
+        <div class="mt-auto shrink-0 px-6 pb-4 pt-5">
+          {#if surroundingControls}
+            <Button data-testid="preceding-workspace-control">Previous workspace action</Button>
+          {/if}
+          <div
+            class="relative flex h-24 flex-col justify-end overflow-hidden rounded-lg border border-border bg-sidebar p-2"
+            data-testid="token-usage-test-width"
+            style:width={`${width}px`}
+            style:max-width="100%"
+            style:transform="translateZ(0)"
+          >
+            <div class="flex h-7 min-w-0 items-center gap-2 pl-2" data-sidebar-label-row>
+              <span class="min-w-0 flex-1 truncate text-sm font-semibold">Agents</span>
+              <WorkspaceTokenUsage {workspaceId} />
+            </div>
+          </div>
+        </div>
+        <div class="sidebar-content-spacer shrink-0" aria-hidden="true"></div>
+      </div>
+    </aside>
+    <main
+      class="main-content-area relative z-10 h-full min-w-0 flex-1 overflow-hidden bg-sidebar"
+      data-testid="workspace-content"
+    >
+      <div
+        class="absolute inset-3 rounded-xl border border-border bg-card"
+        aria-hidden="true"
+      ></div>
+      {#if surroundingControls}
+        <div class="relative m-8 flex gap-2">
+          <Button data-testid="following-workspace-control">Next workspace action</Button>
+          <Button data-testid="last-workspace-control">Last workspace action</Button>
+        </div>
+      {/if}
+    </main>
+  </div>
+</section>
+
+<style>
+  .workspace-sidebar-content {
+    scrollbar-width: none;
+  }
+
+  .workspace-sidebar-content::-webkit-scrollbar {
+    display: none;
+  }
+
+  .sidebar-placement-spacer {
+    min-height: calc(100vh - 132px);
+  }
+
+  .sidebar-content-spacer {
+    height: 480px;
+  }
+</style>

@@ -847,6 +847,40 @@ describe('LiveWorkspacesClient update/archive/unarchive (PROTOCOL §5.1, fake tr
 describe('LiveWorkspacesClient.getTokenUsage (PROTOCOL §5.23, fake transport)', () => {
   afterEach(() => vi.clearAllMocks());
 
+  const totals = { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheCreationTokens: 0 };
+  const base = { byAgentId: {}, totals, byModel: {}, lastScanAt: null };
+  const rows = ['\uE000', '\u{10000}'].map((model) => ({
+    agentId: 'agent-a',
+    model,
+    totals,
+    humanMessages: 0,
+    agentMessages: 1,
+  }));
+
+  it.each([{}, { byAgentModel: [] }, { byAgentModel: rows }])(
+    'preserves optional matrix presence and producer order: %j',
+    async (matrix) => {
+      const tokenUsage = { ...base, ...matrix };
+      mockedRequest.mockResolvedValueOnce({ tokenUsage });
+      const result = await new LiveWorkspacesClient().getTokenUsage('ws-abc');
+      expect(result).toEqual(tokenUsage);
+      expect(Object.hasOwn(result!, 'byAgentModel')).toBe(Object.hasOwn(matrix, 'byAgentModel'));
+      expect(mockedRequest).toHaveBeenCalledExactlyOnceWith('workspace.getTokenUsage', {
+        workspaceId: 'ws-abc',
+      });
+    },
+  );
+
+  it.each([[...rows].reverse(), [rows[0], rows[0]]])(
+    'rejects unsorted and duplicate wire matrices without repairing them: %j',
+    async (...byAgentModel) => {
+      const original = structuredClone(byAgentModel);
+      mockedRequest.mockResolvedValueOnce({ tokenUsage: { ...base, byAgentModel } });
+      await expect(new LiveWorkspacesClient().getTokenUsage('ws-abc')).rejects.toThrow();
+      expect(byAgentModel).toEqual(original);
+    },
+  );
+
   it('sends workspace.getTokenUsage with the workspaceId and unwraps the tokenUsage envelope', async () => {
     // PROTOCOL §5.23 response shape, verbatim.
     const tokenUsage = {
@@ -866,6 +900,20 @@ describe('LiveWorkspacesClient.getTokenUsage (PROTOCOL §5.23, fake transport)',
           cacheCreationTokens: 1200,
         },
       },
+      byAgentModel: [
+        {
+          agentId: 'agent-123',
+          model: 'opus-4.8',
+          totals: {
+            inputTokens: 12000,
+            outputTokens: 3400,
+            cacheReadTokens: 8000,
+            cacheCreationTokens: 1200,
+          },
+          humanMessages: 3,
+          agentMessages: 4,
+        },
+      ],
       totals: {
         inputTokens: 12000,
         outputTokens: 3400,
@@ -888,6 +936,33 @@ describe('LiveWorkspacesClient.getTokenUsage (PROTOCOL §5.23, fake transport)',
     const client = new LiveWorkspacesClient();
 
     expect(await client.getTokenUsage('ws-abc')).toBeNull();
+  });
+
+  it('rejects a malformed token usage matrix at the wire boundary', async () => {
+    mockedRequest.mockResolvedValueOnce({
+      tokenUsage: {
+        byAgentId: {},
+        totals: { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheCreationTokens: 0 },
+        byModel: {},
+        byAgentModel: [
+          {
+            agentId: 'agent-a',
+            model: 'model-a',
+            totals: {
+              inputTokens: 0,
+              outputTokens: 0,
+              cacheReadTokens: 0,
+              cacheCreationTokens: 0,
+            },
+            humanMessages: -1,
+            agentMessages: 0,
+          },
+        ],
+        lastScanAt: null,
+      },
+    });
+
+    await expect(new LiveWorkspacesClient().getTokenUsage('ws-abc')).rejects.toThrow();
   });
 
   it('passes provider cost through unchanged when the daemon reports it', async () => {

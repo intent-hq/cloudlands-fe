@@ -10,6 +10,7 @@
 
 import { createAction } from '@augmentcode/themis/utils/store/create-action';
 import { createReducer } from '@augmentcode/themis/utils/store/create-reducer';
+import { createCollection } from '@augmentcode/themis/utils/collections/collection-utils';
 import { createWorkspaceScopedHelpers } from '../../utils/workspace-scoped';
 import type { TokenUsage } from '../../../../features/token-usage/token-usage-types';
 import type { TokenUsageState } from './token-usage-types';
@@ -60,6 +61,18 @@ tokenUsageReducer.with(tokenUsageReceived, (state, { payload: [wsId, usage] }) =
     byAgentId: usage.byAgentId,
     totals: usage.totals,
     byModel: usage.byModel,
+    ...(usage.byAgentModel === undefined
+      ? {}
+      : {
+          byAgentModel: createCollection(
+            'id',
+            usage.byAgentModel.map((row) => ({
+              // JSON tuple keys cannot collide when either field contains a separator.
+              id: JSON.stringify([row.agentId, row.model]),
+              row,
+            })),
+          ),
+        }),
     lastScanAt: usage.lastScanAt,
     isStale: false,
   }),
