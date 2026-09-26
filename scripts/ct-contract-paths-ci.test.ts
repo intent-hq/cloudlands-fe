@@ -528,9 +528,18 @@ describe('authored browser tests require their complete PR suites', () => {
       'electron_required',
       'test/fixtures/browser-lifetime/Harness.svelte',
     ],
+    ...['café', 'a"quote', 'a\\backslash', 'a\ttab', 'a\nnewline'].flatMap((name) => [
+      ['Evaluate root Playwright relevance', 'root_playwright_required', `test/${name}.spec.ts`],
+      [
+        'Evaluate Electron relevance',
+        'electron_required',
+        `test/fixtures/browser-lifetime/${name}.svelte`,
+      ],
+    ]),
   ])('classifies additions, edits and moves: %s / %s / %s', (step, outputKey, file) => {
     const script = stepRunBlock(releaseFastPath, step);
     const { root, base: originalBase } = checkoutWith(file);
+    git(root, 'config', 'core.quotePath', 'true');
     let base = originalBase;
     for (const change of ['add', 'edit', 'rename']) {
       if (change === 'edit') {
@@ -548,6 +557,21 @@ describe('authored browser tests require their complete PR suites', () => {
       expect(result.status, `${change}: ${result.stderr}`).toBe(0);
       expect(readFileSync(output, 'utf8').trim(), change).toBe(`${outputKey}=true`);
     }
+  });
+
+  it.each([
+    ['Evaluate root Playwright relevance', 'root_playwright_required'],
+    ['Evaluate Electron relevance', 'electron_required'],
+  ])('does not split a newline in an irrelevant filename: %s', (step, outputKey) => {
+    const { root, base } = checkoutWith('src/irrelevant\ntest/electron-browser-lifetime.spec.ts');
+    const output = join(root, 'github-output');
+    const result = bash(
+      stepRunBlock(releaseFastPath, step),
+      { BASE_SHA: base, GITHUB_OUTPUT: output },
+      root,
+    );
+    expect(result.status, result.stderr).toBe(0);
+    expect(readFileSync(output, 'utf8').trim()).toBe(`${outputKey}=false`);
   });
 
   it.each([

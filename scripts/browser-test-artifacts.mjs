@@ -36,18 +36,48 @@ function runContext(env) {
   };
 }
 
+function isRecord(value) {
+  return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
+function isTestRecord(test) {
+  const statuses = ['passed', 'failed', 'timedOut', 'skipped', 'interrupted'];
+  return (
+    isRecord(test) &&
+    ['expected', 'unexpected', 'flaky', 'skipped'].includes(test.status) &&
+    statuses.includes(test.expectedStatus) &&
+    typeof test.projectId === 'string' &&
+    typeof test.projectName === 'string' &&
+    Array.isArray(test.results) &&
+    (test.status === 'skipped' || test.results.length > 0) &&
+    test.results.every((result) => isRecord(result) && statuses.includes(result.status))
+  );
+}
+
+function countTests(suites) {
+  if (!Array.isArray(suites)) throw new Error('Malformed Playwright suites');
+  let total = 0;
+  for (const suite of suites) {
+    if (!isRecord(suite) || !Array.isArray(suite.specs)) {
+      throw new Error('Malformed Playwright suite');
+    }
+    for (const spec of suite.specs) {
+      if (!isRecord(spec) || !Array.isArray(spec.tests) || !spec.tests.every(isTestRecord)) {
+        throw new Error('Malformed Playwright tests');
+      }
+      total += spec.tests.length;
+    }
+    // Only an absent optional child collection is empty; null or another shape
+    // must invalidate the report, even if a sibling contains valid tests.
+    if (suite.suites !== undefined) total += countTests(suite.suites);
+  }
+  return total;
+}
+
 function reportTestCount(path) {
   try {
     const report = JSON.parse(readFileSync(path, 'utf8'));
-    const count = (suites) =>
-      suites.reduce(
-        (total, suite) =>
-          total +
-          (suite.specs ?? []).reduce((sum, spec) => sum + spec.tests.length, 0) +
-          count(suite.suites ?? []),
-        0,
-      );
-    const total = count(report.suites);
+    const total = countTests(report.suites);
     return Number.isSafeInteger(total) && total >= 0 ? total : null;
   } catch {
     return null;
