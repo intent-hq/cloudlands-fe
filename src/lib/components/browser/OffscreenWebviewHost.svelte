@@ -27,9 +27,13 @@
   import { selectOwnClientId } from '$store/renderer/slices/browser-clients/browser-clients-selectors';
   import {
     selectBrowserTabRecoveryRequests,
+    selectBrowserTabNavigations,
     selectMountedBrowserTabLeases,
   } from '$store/renderer/slices/tab-state/tab-state-selectors';
-  import { consumeBrowserTabRecovery } from '$store/renderer/slices/tab-state/tab-state-slice';
+  import {
+    consumeBrowserTabRecovery,
+    consumeBrowserTabNavigation,
+  } from '$store/renderer/slices/tab-state/tab-state-slice';
   import { store as appStore } from '$store/renderer/store';
   import { selectPanelLayoutWorkspaces } from '$store/renderer/slices/panel-layout/panel-layout-selectors';
   import type { PanelTab } from '$store/renderer/slices/panel-layout/panel-layout-types';
@@ -53,6 +57,7 @@
   const ownClientId$ = selectOwnClientId();
   const mountedBrowserTabLeases$ = selectMountedBrowserTabLeases();
   const recoveryRequests$ = selectBrowserTabRecoveryRequests();
+  const navigations$ = selectBrowserTabNavigations();
   let recoveryKeys = $state<Record<string, string>>({});
 
   function recoverGuest(tabId: string, requestId: string) {
@@ -178,6 +183,7 @@
               recoveryRequestId: $recoveryRequests$[tabId],
               recoverGuest,
               desiredUrl: liveUrlByTabId.get(tabId),
+              navigation: $navigations$[tabId],
             },
           ]
         : [];
@@ -187,6 +193,11 @@
   $effect(() => {
     const eligible = new Set(candidates.map((candidate) => candidate.tabId));
     const mounted = cache;
+    for (const [tabId, navigation] of Object.entries($navigations$)) {
+      if (!eligible.has(tabId) || !mounted.has(tabId)) {
+        untrack(() => appStore.dispatch(consumeBrowserTabNavigation(tabId, navigation)));
+      }
+    }
     for (const [tabId, requestId] of Object.entries($recoveryRequests$)) {
       if (!eligible.has(tabId) || !mounted.has(tabId)) {
         untrack(() => appStore.dispatch(consumeBrowserTabRecovery(tabId, requestId)));

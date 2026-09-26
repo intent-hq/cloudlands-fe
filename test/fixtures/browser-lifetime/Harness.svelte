@@ -16,6 +16,7 @@
     closeTab,
     clearPanelLayout,
     destroyOwnedTabsForWorkspace,
+    updateTabBrowserUrl,
   } from '$store/renderer/slices/panel-layout/panel-layout-slice';
 
   const dispose = startRootStoreLifecycle(store, {
@@ -61,9 +62,26 @@
     store.dispatch(closeTab(blankTab[0], blankTab, blankTab[0]));
   }
   const layouts = selectPanelLayoutWorkspaces();
+  const observedLoads: string[] = [];
   Object.assign(window, {
     lifetimeFixture: {
       errors: () => errorHandler.errors,
+      flush: () => tick(),
+      loads: () => [...observedLoads],
+      async setUrl(tabId: string, url: string) {
+        store.dispatch(updateTabBrowserUrl(tabId[0], tabId, url));
+        await tick();
+      },
+      monitorLoads(tabId: string) {
+        const webview = document.querySelector(`[data-offscreen-webview-tab="${tabId}"]`) as
+          (HTMLElement & { loadURL(url: string): Promise<void> }) | null;
+        if (!webview) throw new Error(`Missing offscreen guest ${tabId}`);
+        const load = webview.loadURL.bind(webview);
+        webview.loadURL = (url) => {
+          observedLoads.push(url);
+          return load(url);
+        };
+      },
       urls() {
         return Object.fromEntries(
           Object.values(store.state.panelLayout.byWorkspaceId).flatMap((layout) =>
