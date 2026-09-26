@@ -1,5 +1,5 @@
 import { buffers } from 'redux-saga';
-import { actionChannel, call, delay, take } from 'typed-redux-saga';
+import { actionChannel, call, delay, put, take } from 'typed-redux-saga';
 import { takeLatestFromSelector, type SelectorChannelPayload } from '@augmentcode/themis/saga';
 
 import { appClient } from '$lib/client';
@@ -12,6 +12,7 @@ import {
   selectCanAdministerHost,
   selectHostAdministrationContext,
 } from '../../principal/principal-selectors';
+import { notificationVolumeHydrationStarted } from '../../user-preferences/user-preferences-slice';
 
 const logger = createLogger('SettingsHydrationSaga');
 
@@ -74,8 +75,9 @@ function* readSettingsSnapshotSaga() {
 }
 
 export function* hydrateSettingsOnceSaga() {
+  yield* put(notificationVolumeHydrationStarted());
   const snapshot = yield* call(readSettingsSnapshotSaga);
-  if (snapshot) yield* call(applySettingsChanges, snapshot.changes);
+  if (snapshot) yield* call(applySettingsChanges, snapshot.changes, snapshot.revision);
 }
 
 function* hydrateAuthorizedSettings({ payload: context }: SelectorChannelPayload<string | null>) {
@@ -84,16 +86,17 @@ function* hydrateAuthorizedSettings({ payload: context }: SelectorChannelPayload
   // A new authority context creates a fresh channel and revision watermark.
   const channel = yield* actionChannel(settingsChangesReceived, buffers.expanding());
   try {
+    yield* put(notificationVolumeHydrationStarted());
     const snapshot = yield* call(readSettingsSnapshotSaga);
     let revision = snapshot?.revision ?? -1;
-    if (snapshot) yield* call(applySettingsChanges, snapshot.changes);
+    if (snapshot) yield* call(applySettingsChanges, snapshot.changes, snapshot.revision);
     while (true) {
       const settings = yield* take(channel);
       const incomingRevision = settings.payload[1];
       // Older daemons omit revisions. Accept those only until this backend has
       // demonstrated revision support, preserving additive compatibility.
       if (incomingRevision === undefined ? revision > 0 : incomingRevision < revision) continue;
-      yield* call(applySettingsChanges, settings.payload[0]);
+      yield* call(applySettingsChanges, settings.payload[0], incomingRevision);
       if (incomingRevision !== undefined) revision = incomingRevision;
     }
   } finally {

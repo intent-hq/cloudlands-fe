@@ -74,9 +74,11 @@ providerModelsReducer.with(providerModelsCacheCleared, (state) => ({
   clearEpoch: state.clearEpoch + 1,
 }));
 
-for (const action of [hostExecutionConnectionChanged, hostExecutionInvalidated]) {
-  providerModelsReducer.with(action, (state) => ({
-    byProviderId: {},
-    clearEpoch: state.clearEpoch + 1,
-  }));
-}
+providerModelsReducer.with(hostExecutionConnectionChanged, (state) => ({
+  byProviderId: {},
+  clearEpoch: state.clearEpoch + 1,
+}));
+providerModelsReducer.with(hostExecutionInvalidated, (state) => ({
+  byProviderId: {},
+  clearEpoch: state.clearEpoch + 1,
+}));
