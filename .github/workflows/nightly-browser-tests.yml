@@ -1,0 +1,52 @@
+name: Nightly Browser Tests
+
+on:
+  schedule:
+    - cron: '17 2 * * *'
+  # Always rerun the complete suites; no test/shard filters.
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# A manual run should not cancel a nightly run and discard its evidence.
+concurrency:
+  group: nightly-browser-tests-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  manifest:
+    name: Expected browser reports
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+      - name: Record expected artifacts
+        run: node scripts/browser-test-artifacts.mjs manifest
+      - name: Upload expected artifacts
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: browser-test-manifest
+          path: browser-test-manifest.json
+          if-no-files-found: error
+          overwrite: true
+          retention-days: 7
+
+  test-ct:
+    uses: ./.github/workflows/browser-tests.yml
+    with:
+      suite: ct
+
+  test-playwright:
+    uses: ./.github/workflows/browser-tests.yml
+    with:
+      suite: root
+
+  test-electron:
+    uses: ./.github/workflows/browser-tests.yml
+    with:
+      suite: electron

@@ -11,6 +11,7 @@ import {
   workspaceFileMediaUrlToIntentFileUrl,
 } from './workspace-file-image';
 import { toPromptToken } from '$lib/services/mentions/format';
+import { memberMentionLabel, parseMemberMention } from '$lib/utils/member-mention-token';
 import { NotesPrimitivesSerializer } from './notes-primitives-serializer';
 import type { MarkdownWorkerResponse } from './markdown-worker';
 import { decodeDiffContent } from './diff-patch-utils';
@@ -865,7 +866,7 @@ function injectMentionSpans(html: string): string {
     if (attrs.uri) span.setAttribute('data-uri', attrs.uri);
     span.setAttribute('data-meta', JSON.stringify(attrs.meta || {}));
     span.className = 'mention-chip';
-    span.textContent = attrs.label;
+    span.textContent = attrs.type === 'member' ? memberMentionLabel(attrs.label) : attrs.label;
     return span;
   };
 
@@ -932,6 +933,8 @@ function injectMentionSpans(html: string): string {
         groups?: string[];
         kind: string;
       }> = [];
+      const member = find(/@member\[[^\]\s]*\]/g);
+      if (member) cands.push({ ...member, kind: 'member' });
       const n = find(noteRe);
       if (n) cands.push({ ...n, kind: 'note' });
       const r = find(rulesRe);
@@ -967,7 +970,10 @@ function injectMentionSpans(html: string): string {
       pushText(m.start);
 
       // Create mention span
-      if (m.type === 'note') {
+      if (m.type === 'member') {
+        const member = parseMemberMention(m.value);
+        frag.appendChild(member ? createMentionSpan(member) : document.createTextNode(m.value));
+      } else if (m.type === 'note') {
         const id = m.groups?.[0] || '';
         frag.appendChild(createMentionSpan({ type: 'note', id, label: id }));
       } else if (m.type === 'rule') {

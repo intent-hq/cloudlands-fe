@@ -3,42 +3,10 @@ name: Intent PR Checks
 on:
   pull_request:
     branches: ['main', 'feat/up-clean-3-shared-controls']
-  # Merge-queue runs (intent-hq/monorepo#2893): the queue tests the actual
-  # merged tree before it lands on main. The heavy jobs are tiered by event:
-  # checks / build-web / test run on BOTH pull_request and merge_group (fast
-  # PR signal, re-validated on the merged tree); test-integration is
-  # merge-queue-only — it skips on pull_request (the gate accepts that
-  # skip) and runs only on merge_group, where the gate requires its
-  # success. test-ct always runs on merge_group and ALSO on pull_request
-  # when the PR diff is CT-relevant: a CT-contract path (the token/stylesheet
-  # contract, the CT harness, the dependency manifests — the one list in
-  # scripts/ct-contract-paths.mjs) or a CT spec / geometry golden, both
-  # classified by that module and evaluated by release-fast-path as
-  # ct_required; otherwise it skips on pull_request and the gate accepts
-  # that skip only because ct_required says so (cloudlands-fe#2441 rewrote
-  # tokens.css with green PR CI and was ejected from the queue with 40 CT
-  # failures; cloudlands-fe#2533 changed 22 specs and 1 golden with CT
-  # skipped on the PR and was ejected three times). test-playwright (the
-  # root `test/*.spec.ts` suite via playwright.config.ts) follows the same
-  # shape: always on merge_group, and on pull_request only when the diff
-  # touches test/**, playwright.config.ts, or the playwright/*-spec-pattern.mjs
-  # modules it reads (release-fast-path's
-  # root_playwright_required output, computed from the same base..head
-  # diff); otherwise it skips on pull_request and the gate accepts that skip
-  # only because root_playwright_required says so. Merge groups are created
-  # by the repo's own ruleset from already-filed PRs, so they need no
-  # same-repo fork guard.
-  # pr-title / conflict-markers are PR-metadata checks that stay
-  # pull_request-only — the gate accepts their skip on merge_group.
-  # release-fast-path runs on BOTH events: a queue entry's diff
-  # (merge_group.base_sha..head_sha) is exactly the PR's own change, so a
-  # release-shaped entry skips the heavy jobs in the queue too (the gate
-  # accepts those skips only via the fast_path output). Safe under the
-  # queue's ALLGREEN grouping: the entry's tree is the previous entry's
-  # (or main's) tree plus the version flip, and that tree was already
-  # validated by the previous entry's own run (release PR fe#2549 was
-  # ejected three times by unrelated CT flakes while the fast path was
-  # pull_request-only; intent-hq/intent#5279).
+  # Type/lint, build, unit and consumer checks run on PRs and the merged tree.
+  # Integration runs only in the queue. Browser suites run on relevant PR diffs
+  # and nightly/manual runs, never in merge_group. Release-shaped diffs retain
+  # the existing fast path; CI Gate rejects all other unexpected skips.
   merge_group:
 
 # Cancel in progress workflows on pull_requests.
@@ -59,27 +27,8 @@ env:
   LINUX_BURST_THRESHOLD: 8
 
 jobs:
-  # Fork-PR hardening: external (fork) PRs are not accepted (contribution
-  # policy: issues on intent-hq/intent) and get NO CI — in particular,
-  # nothing from a fork may ever reach the self-hosted tinybox runner. Every
-  # job in this workflow carries the same-repo guard, either directly via an
-  # `if:` on `github.event.pull_request.head.repo.full_name ==
-  # github.repository` or transitively through `needs` on a guarded job
-  # (checks / build-web / test / test-integration / test-ct /
-  # test-playwright skip when the guarded route job skips, via their
-  # existing `needs.route.result == 'success'` condition; test-integration
-  # additionally never runs on pull_request at all, and test-ct /
-  # test-playwright run on pull_request only when release-fast-path's
-  # ct_required / root_playwright_required output is 'true' — the diff
-  # touches a CT-contract path / test/** or the root Playwright config and
-  # its spec-pattern modules — and
-  # always on merge_group; see their job comments)
-  # — EXCEPT the
-  # gate, which deliberately still runs on fork PRs so the required "CI
-  # Gate" context fails red there (a skipped job would SATISFY a required
-  # check; see the gate job's comment). Fork PRs are auto-closed by
-  # close-fork-prs.yml.
-
+  # Fork PRs skip every checkout/routed job. CI Gate alone still runs without
+  # checkout or permissions and fails red for the guarded skips.
   # Decides where the heavy jobs (checks / build-web / test /
   # test-integration) run:
   # the local tinybox runner normally, or GH-hosted larger runners when the
@@ -390,14 +339,8 @@ jobs:
   # is exactly the entry's own change — the same shape as the pull_request
   # merge ref, so the script needs no event-specific handling (its
   # merge-base fallback covers the shallow checkout either way). ct_required
-  # is computed in the queue too but is informational there: test-ct's `if:`
-  # runs it on every merge_group entry regardless, unless fast_path is 'true'.
-  # root_playwright_required is the same idea for the root Playwright suite
-  # (test-playwright): 'true' when the diff touches test/**,
-  # playwright.config.ts, or the playwright/*-spec-pattern.mjs modules it
-  # reads, computed inline from the same base..head diff with
-  # the same fail-safe (a git failure requires the suite), and likewise
-  # informational in the queue.
+  # is computed in the queue too, but browser suites deliberately skip there.
+  # Root and Electron relevance use the same diff and fail-safe behavior.
   release-fast-path:
     name: Release PR Fast Path
     # Seconds-long job: pinned to ubuntu-latest (see pr-title).
@@ -412,6 +355,7 @@ jobs:
       fast_path: ${{ steps.decide.outputs.fast_path }}
       ct_required: ${{ steps.ct.outputs.ct_required }}
       root_playwright_required: ${{ steps.root-playwright.outputs.root_playwright_required }}
+      electron_required: ${{ steps.electron.outputs.electron_required }}
     steps:
       - uses: actions/checkout@v7
       - name: Fetch diff base commit
@@ -465,18 +409,40 @@ jobs:
           # scripts/verify-changed.mjs selects `playwright-full` for). Same
           # base..head diff and flags as ct-contract-paths.mjs. Fail-safe: a
           # git failure requires the suite, never skips it.
-          if ! changed=$(git diff --name-only --no-renames --diff-filter=ACMD "$BASE_SHA" HEAD); then
+          # Keep NUL-delimited paths in a file, never a Bash scalar: otherwise
+          # Git quoting or embedded newlines can hide a relevant filename.
+          changed_paths=$(mktemp)
+          trap 'rm -f "$changed_paths"' EXIT
+          if ! git diff --name-only -z --no-renames --diff-filter=ACMD "$BASE_SHA" HEAD > "$changed_paths"; then
             echo "git diff failed — requiring the root Playwright suite (fail-safe)"
             echo "root_playwright_required=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
-          # grep must drain its whole input: with `-q` it exits on the first
-          # match, printf takes SIGPIPE on a diff larger than the pipe buffer,
-          # and pipefail turns a matched diff into the false branch.
-          if printf '%s\n' "$changed" | grep -E '^(test/|playwright\.config\.ts$|playwright/(root|ct)-spec-pattern\.mjs$)' >/dev/null; then
+          if grep -z -E '^(test/|playwright\.config\.ts$|playwright/(app-stubs/|(root|ct)-spec-pattern\.mjs$)|svelte\.config\.js$|package\.json$|pnpm-lock\.yaml$)' "$changed_paths" >/dev/null; then
             echo "root_playwright_required=true" | tee -a "$GITHUB_OUTPUT"
           else
             echo "root_playwright_required=false" | tee -a "$GITHUB_OUTPUT"
+          fi
+
+      - name: Evaluate Electron relevance
+        id: electron
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha }}
+        run: |
+          set -euo pipefail
+          # Include the lifetime fixture, shared harness/config and dependency
+          # inputs. --no-renames exposes both sides of a moved test or fixture.
+          changed_paths=$(mktemp)
+          trap 'rm -f "$changed_paths"' EXIT
+          if ! git diff --name-only -z --no-renames --diff-filter=ACMD "$BASE_SHA" HEAD > "$changed_paths"; then
+            echo "git diff failed — requiring Electron lifetime tests (fail-safe)"
+            echo "electron_required=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if grep -z -E '^(test/(electron-browser-lifetime[^/]*|fixtures/browser-lifetime/|vite-harness-cache\.)|playwright(\.manual)?\.config\.ts$|playwright/(app-stubs/|(root|ct)-spec-pattern\.mjs$)|svelte\.config\.js$|package\.json$|pnpm-lock\.yaml$)' "$changed_paths" >/dev/null; then
+            echo "electron_required=true" | tee -a "$GITHUB_OUTPUT"
+          else
+            echo "electron_required=false" | tee -a "$GITHUB_OUTPUT"
           fi
 
   # Consolidated typecheck + lint job. Previously four separate ubuntu-latest
@@ -836,483 +802,34 @@ jobs:
       - name: Integration tests
         run: pnpm run test:integration
 
-  # Playwright component tests (*.ct.spec.ts via playwright-ct.config.ts;
-  # monorepo#2091).
-  # Required CT uses gh-linux-8x (8 cores / 32 GB) on both PR and queue
-  # events, independently of the shared runner route. Queue shards exhausted
-  # their 30-minute budgets (intent#2887); use the hosted path that has
-  # completed full runs. Four shards bound per-leg work and memory accretion
-  # (monorepo#3352), with workers: 1 on CI. Browsers are installed via the
-  # run-ct-tests.mjs launcher using its pinned supplier, and the binary cache
-  # is keyed on the exact runner, supplier, browser version and revision.
-  # MERGE-QUEUE ALWAYS, PLUS CT-RELEVANT PRs (see the trigger comment): the
-  # ~20 min of shard wall time stays off ordinary PR pushes — the suite runs
-  # once per queue entry against the merged tree, where the gate requires
-  # it — but a PR whose diff touches a CT-contract path or a CT spec /
-  # geometry golden (release-fast-path's ct_required output, computed from
-  # scripts/ct-contract-paths.mjs) runs the full matrix on pull_request too,
-  # so a token/stylesheet/harness/spec/golden change gets CT signal before it
-  # can be ejected from the queue (cloudlands-fe#2441, cloudlands-fe#2533).
-  # On every other pull_request the whole matrix reports 'skipped' and the
-  # gate accepts that skip only when ct_required is exactly 'false'.
-  # Release-shaped diffs (fast_path == 'true') skip the matrix on both
-  # events; the gate accepts that skip via the fast_path output.
+  # Browser suites run selectively on PRs; nightly-browser-tests.yml runs all.
+  # Keep route as a direct guard so failed routing and fork PRs stay fail-safe.
   test-ct:
-    name: Component Tests (shard ${{ matrix.shard }}/4)
-    # The event term runs this matrix on every merge_group; the ct_required
-    # term adds CT-relevant pull_requests (in the queue the event term
-    # already holds, so ct_required is not consulted there). The
-    # route.result guard is kept for the same reasons as
-    # test-integration: it subsumes the old explicit same-repo `if:` guard
-    # (fork-PR hardening note — fork PRs skip the guarded route job, and
-    # release-fast-path too, so ct_required is empty on them), and a route
-    # failure skips this matrix and fails the gate (fail-safe). The
-    # fast_path term keeps release-shaped diffs skipping CT on both events
-    # even though they touch package.json (the gate accepts that skip via
-    # fast_path).
     needs: [route, release-fast-path]
-    if: ${{ !cancelled() && (github.event_name == 'merge_group' || needs.release-fast-path.outputs.ct_required == 'true') && needs.route.result == 'success' && needs.release-fast-path.outputs.fast_path != 'true' }}
-    runs-on: gh-linux-8x
-    strategy:
-      # Let the sibling shards finish so one flaky leg doesn't hide the
-      # other legs' results.
-      fail-fast: false
-      matrix:
-        shard: [1, 2, 3, 4]
-    # Per-shard budget: a healthy leg runs ~5-7 min of tests (a quarter of
-    # the ~18-26 min serial suite) plus a few minutes of fixed setup
-    # (install / browsers / CT bundle build), so 30 min leaves >2x headroom
-    # for retry bursts and slow runners.
-    timeout-minutes: 30
+    if: ${{ !cancelled() && github.event_name == 'pull_request' && needs.release-fast-path.outputs.ct_required == 'true' && needs.route.result == 'success' && needs.release-fast-path.outputs.fast_path != 'true' }}
     permissions:
       contents: read
-    env:
-      GIT_TERMINAL_PROMPT: '0'
-      # NODE_OPTIONS is deliberately NOT set at job level: a job-wide 8 GB
-      # --max-old-space-size (needed only for the CT Vite build) also let
-      # the long-lived Playwright runner balloon through the test phase
-      # before V8 GC engaged, exhausting the 16 GB VM until the runner was
-      # killed mid-run (monorepo#3352). Heap caps are scoped per step below.
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v7
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v6
-        with:
-          version: 10.30.3
-          run_install: false
-          # Per-runner-instance dest (see checks).
-          dest: ~/setup-pnpm-${{ runner.name }}
-      - name: Setup Node.js
-        # This job always uses the ephemeral hosted runner and its cache.
-        uses: actions/setup-node@v7
-        with:
-          node-version: '24'
-          cache: pnpm
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
-      - name: Generate i18n messages
-        # The CT bundle imports paraglide messages; the compiled output is
-        # gitignored. (build-config / ipc-channels are main-process-only and
-        # not needed by the CT vite build.)
-        run: pnpm run generate:i18n
-      - name: Resolve CT browser identity and paths
-        id: ct-browser
-        run: |
-          node scripts/run-ct-tests.mjs --print-browser-plan > "$RUNNER_TEMP/ct-browser-plan.json"
-          node --input-type=module -e '
-          import { readFileSync } from "node:fs";
-          const plan = JSON.parse(readFileSync(process.argv[1], "utf8"));
-          console.log(`cache-key=${plan.cacheKey}`);
-          console.log(`cache-dir=${plan.cacheDir}`);
-          console.log(`readiness-marker=${plan.readinessMarker}`);
-          ' "$RUNNER_TEMP/ct-browser-plan.json" >> "$GITHUB_OUTPUT"
-      - name: Cache Playwright browsers
-        uses: actions/cache@v6
-        id: playwright-cache
-        with:
-          path: ${{ steps.ct-browser.outputs.cache-dir }}
-          key: playwright-browsers-${{ runner.os }}-${{ runner.arch }}-${{ steps.ct-browser.outputs.cache-key }}
-      - name: Harden apt against mirror stalls
-        # The runner image prefers the azure.archive.ubuntu.com mirror, which
-        # has stalled mid-transfer until the 30-min job budget expired —
-        # twice, before any test ran (monorepo#2832). The image routes apt
-        # through mirror+file indirection (/etc/apt/sources.list.d/*.sources
-        # says mirror+file:/etc/apt/apt-mirrors.txt; the azure hostname lives
-        # ONLY in that mirror list), so drop the azure entry from the list —
-        # the canonical archive.ubuntu.com + security.ubuntu.com fallbacks
-        # remain. The plain-hostname rewrite over the sources files is kept
-        # as a fail-safe in case a future image drops the indirection. Also
-        # bound every fetch: without an explicit Acquire timeout a
-        # dead-but-open connection can hang apt indefinitely — and the second
-        # recorded hang was on archive.ubuntu.com itself, so the timeout (not
-        # the mirror swap) is the load-bearing bound. Belt-and-braces with
-        # the step timeout below.
-        run: |
-          set -euo pipefail
-          if [ -f /etc/apt/apt-mirrors.txt ]; then
-            sudo sed -i '/azure\.archive\.ubuntu\.com/d' /etc/apt/apt-mirrors.txt
-            echo "apt-mirrors.txt now:" && cat /etc/apt/apt-mirrors.txt
-          fi
-          for f in /etc/apt/sources.list /etc/apt/sources.list.d/*.sources /etc/apt/sources.list.d/*.list; do
-            [ -e "$f" ] || continue
-            sudo sed -i 's/azure\.archive\.ubuntu\.com/archive.ubuntu.com/g' "$f"
-          done
-          if grep -Rq 'azure\.archive\.ubuntu\.com' /etc/apt; then
-            echo "::warning::azure.archive.ubuntu.com still referenced under /etc/apt — mirror swap ineffective (Acquire bounds still apply)"
-          fi
-          printf '%s\n' \
-            'Acquire::Retries "3";' \
-            'Acquire::http::Timeout "30";' \
-            'Acquire::https::Timeout "30";' \
-            | sudo tee /etc/apt/apt.conf.d/99-bounded-acquire >/dev/null
-      - name: Install Playwright browsers
-        # The browser download self-skips when already present. OS deps are
-        # NOT installed with --with-deps: it re-runs apt on every run, and on
-        # the gh-linux-8x image every Chromium shared library is already
-        # present — the only NEW packages were ~21 MB of fonts-*/xfonts-*,
-        # fetched from archive.ubuntu.com at ~100 KB/s, which alone blew this
-        # step's budget and ejected PRs from the merge queue (intent#4723).
-        # The CT harness uses the repo-bundled Inter Variable font and waits
-        # on document.fonts.ready, so no suite depends on those system fonts.
-        # Instead: take the package list from the pinned browser supplier's own
-        # `install-deps --dry-run` missing-package report (strictly parsed by the
-        # launcher's --print-os-deps helper; see playwright-os-deps-lib.mjs),
-        # and call apt only for packages dpkg reports missing — zero network
-        # on a warm image, and a missing non-font lib still gets installed (or
-        # fails loudly, naming it). Step-level timeout so an apt/download
-        # stall the Acquire bounds somehow miss fails here in minutes — with
-        # logs attributing the failure to this step — instead of eating the
-        # 30-min job budget (monorepo#2832). Normal runs take ~1-2 min.
-        timeout-minutes: 8
-        run: |
-          set -euo pipefail
-          node scripts/run-ct-tests.mjs --install-browsers chromium
-          if ! pkgs="$(node scripts/run-ct-tests.mjs --print-os-deps chromium)"; then
-            echo "::error::Could not derive the non-font Chromium OS dependency list from install-deps --dry-run"
-            exit 1
-          fi
-          echo "Non-font Chromium OS deps: $pkgs"
-          missing=""
-          for p in $pkgs; do
-            status="$(dpkg-query -W -f='${Status}' "$p" 2>/dev/null || true)"
-            case "$status" in
-              *"install ok installed"*) ;;
-              *) missing="$missing $p" ;;
-            esac
-          done
-          if [ -z "$missing" ]; then
-            echo "All non-font Chromium OS deps already installed; skipping apt."
-            exit 0
-          fi
-          echo "Missing Chromium OS deps:$missing"
-          for i in 1 2; do
-            if sudo apt-get update && sudo apt-get install -y --no-install-recommends $missing; then
-              exit 0
-            fi
-            [ "$i" -eq 2 ] || sleep 15
-          done
-          echo "::error::Failed to install missing Chromium OS deps:$missing"
-          exit 1
-      - name: Build CT bundle
-        id: ct-build
-        # The full CT Vite bundle transforms more than 7,400 modules and
-        # needs an 8 GB heap while Rollup renders chunks — but ONLY here.
-        # Playwright CT has no standalone build command, so this uses
-        # --only-changed=HEAD: dependency population runs the Vite build
-        # (and caches the bundle under playwright/.cache, shared with the
-        # test step below on the same runner) during test
-        # loading, before the changed-file filter applies; on a fresh CI
-        # checkout `git diff HEAD` is empty, so zero tests are selected and
-        # --pass-with-no-tests exits green without running any. Caveat:
-        # --only-changed also scans UNTRACKED non-ignored files, so every
-        # generated input (e.g. the paraglide output, which self-ignores)
-        # must stay gitignored — a non-ignored generated file imported by
-        # CT specs would silently make this step run those tests. The test
-        # step below reuses the cached bundle (validated by source mtimes,
-        # which don't change between steps) under a much smaller heap.
-        env:
-          NODE_OPTIONS: '--max-old-space-size=8192'
-        run: pnpm run test:ct --only-changed=HEAD --pass-with-no-tests --reporter=list
-      - name: Component tests
-        # list for readable logs; html feeds the failure artifact below (it
-        # never auto-opens when CI is set); json writes
-        # playwright-report/results.json into that same artifact so
-        # `pnpm ct:failures <run-id>` can list failed/flaky cases per shard
-        # with their spec file and status instead of scraping the log.
-        # The 4 GB heap cap covers the runner + accumulated per-test state
-        # for a quarter-shard; the memory-hungry Vite build already ran
-        # above. The sampler streams `free -m` + top-RSS processes into
-        # this step's live log every 15s — logs stream to GitHub as they
-        # are written, so the evidence survives even a runner-VM OOM kill
-        # that prevents post-steps/artifact uploads from running
-        # (monorepo#3352).
-        env:
-          NODE_OPTIONS: '--max-old-space-size=4096'
-          PLAYWRIGHT_JSON_OUTPUT_FILE: playwright-report/results.json
-        run: |
-          set -euo pipefail
-          (
-            # Shed the inherited errexit/pipefail: a transient free/ps
-            # failure or a SIGPIPE from head must not silently kill the
-            # sampler for the rest of the run.
-            set +e +o pipefail
-            while true; do
-              echo "[mem] $(date -u +%H:%M:%S) $(free -m | awk '/^Mem:/{printf "used=%sMiB free=%sMiB avail=%sMiB", $3, $4, $7}')"
-              ps -eo rss,comm --sort=-rss | head -4 | tail -3 | awk '{printf "[mem]   top-rss: %s %dMiB\n", $2, $1/1024}'
-              sleep 15
-            done
-          ) &
-          SAMPLER_PID=$!
-          trap 'kill "$SAMPLER_PID" 2>/dev/null || true' EXIT
-          # Required lane: everything NOT tagged @quarantine. Retries stay
-          # on (retries: 2 in playwright-ct.config.ts). The original failing
-          # attempt retains its trace even when a retry passes, and
-          # --fail-on-flaky-tests turns a pass-on-retry into a red shard
-          # instead of silent 3x runtime. This job is merge-queue-only, so
-          # a red shard ejects the queue entry: a flaky test must be fixed
-          # or explicitly parked under the @quarantine tag below.
-          pnpm run test:ct --shard=${{ matrix.shard }}/4 --grep-invert '@quarantine\b' --fail-on-flaky-tests --reporter=list,html,json
-      - name: Upload playwright report
-        # Also on cancellation, so a timeout overrun still leaves the report
-        # and traces behind for diagnosis (monorepo#2887).
-        if: failure() || cancelled()
-        uses: actions/upload-artifact@v7
-        with:
-          name: playwright-ct-report-${{ matrix.shard }}-of-4
-          path: |
-            playwright-report/
-            test-results/
-          retention-days: 7
-      - name: Quarantined component tests (advisory)
-        # Advisory lane for tests tagged @quarantine (a known-flaky test
-        # that has an owner and a tracking issue — see AGENTS.md → Component
-        # tests). Runs unsharded on shard 1 only (so once per merge-queue
-        # entry, like the rest of this job), after the required lane,
-        # reusing the CT bundle that is already built and cached in this
-        # job — no fifth setup/build leg. continue-on-error keeps the job
-        # (and the CI Gate) green while the failure stays visible in the
-        # step log and the artifact below. Separate output directories so
-        # a quarantine failure cannot overwrite the required lane's report.
-        # !cancelled() replaces the implicit success() guard so the lane
-        # still runs when the required step on this shard is red; gating on
-        # the build step's outcome keeps it from re-running the 8 GB Vite
-        # build under the 4 GB cap when setup itself already failed.
-        # The tag regex is word-anchored so a future '@quarantine-*' tag or
-        # a title that merely mentions the word does not match.
-        if: ${{ !cancelled() && matrix.shard == 1 && steps.ct-build.outcome == 'success' }}
-        id: quarantine
-        continue-on-error: true
-        env:
-          NODE_OPTIONS: '--max-old-space-size=4096'
-          PLAYWRIGHT_HTML_OUTPUT_DIR: playwright-report-quarantine
-        run: pnpm run test:ct --grep '@quarantine\b' --pass-with-no-tests --reporter=list,html --output=test-results-quarantine
-      - name: Upload quarantine report
-        if: ${{ !cancelled() && matrix.shard == 1 && steps.ct-build.outcome == 'success' && steps.quarantine.outcome == 'failure' }}
-        uses: actions/upload-artifact@v7
-        with:
-          name: playwright-ct-report-quarantine
-          path: |
-            playwright-report-quarantine/
-            test-results-quarantine/
-          retention-days: 7
+    uses: ./.github/workflows/browser-tests.yml
+    with:
+      suite: ct
 
-  # Root Playwright suite (test/**/*.spec.ts via playwright.config.ts, run
-  # by `pnpm run test:playwright`): browser-level specs that each start
-  # their own Vite harness (test/vite-harness-cache.mjs) — no CT bundle.
-  # Two hosted shards keep one browser worker each while giving the suite
-  # separate capacity after repeated 45-minute overruns (intent#5843).
-  # Native sharding preserves default-mode groups, including the heavy
-  # diagram-state-motion file, so equal declaration counts do not imply
-  # equal duration. Uses the repo's TOP-LEVEL @playwright/test, not the
-  # CT-aligned runner: its distinct browser cache key uses the version from
-  # `pnpm exec playwright --version` so the Chromium builds never alias.
-  # Event gating mirrors test-ct: every merge_group, plus pull_requests
-  # whose diff touches test/**, playwright.config.ts, or the
-  # playwright/*-spec-pattern.mjs modules it reads
-  # (root_playwright_required from release-fast-path); the gate's
-  # check_root_playwright accepts a pull_request skip only via that output
-  # or fast_path. Before this job the suite had no automated path at all.
   test-playwright:
-    name: Playwright (root ${{ matrix.shard }}/2)
     needs: [route, release-fast-path]
-    if: ${{ !cancelled() && (github.event_name == 'merge_group' || needs.release-fast-path.outputs.root_playwright_required == 'true') && needs.route.result == 'success' && needs.release-fast-path.outputs.fast_path != 'true' }}
-    runs-on: gh-linux-8x
-    timeout-minutes: 45
-    strategy:
-      fail-fast: false
-      matrix:
-        shard: [1, 2]
+    if: ${{ !cancelled() && github.event_name == 'pull_request' && needs.release-fast-path.outputs.root_playwright_required == 'true' && needs.route.result == 'success' && needs.release-fast-path.outputs.fast_path != 'true' }}
     permissions:
       contents: read
-    env:
-      GIT_TERMINAL_PROMPT: '0'
-      NODE_OPTIONS: '--max-old-space-size=4096'
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v7
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v6
-        with:
-          version: 10.30.3
-          run_install: false
-          # Per-runner-instance dest (see checks).
-          dest: ~/setup-pnpm-${{ runner.name }}
-      - name: Setup Node.js
-        uses: actions/setup-node@v7
-        with:
-          node-version: '24'
-          cache: 'pnpm'
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
-      - name: Generate i18n messages
-        # The spec harnesses import renderer modules that pull in paraglide
-        # messages; the compiled output is gitignored.
-        run: pnpm run generate:i18n
-      - name: Generate IPC channels
-        # src/preload/index.ts is generated and untracked; harnesses that
-        # load the preload surface (or its types) need it present.
-        run: pnpm run generate:ipc-channels
-      - name: Resolve root playwright version
-        id: root-playwright
-        # Strict semver extraction so incidental stdout noise cannot leak
-        # into the cache key or the marker file name.
-        run: |
-          set -euo pipefail
-          version="$(pnpm exec playwright --version | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -n1)"
-          if [ -z "$version" ]; then
-            echo "::error::Could not resolve the top-level @playwright/test version"
-            exit 1
-          fi
-          echo "version=$version" >> "$GITHUB_OUTPUT"
-      - name: Cache Playwright browsers
-        # Distinct key prefix from test-ct's so the versions never alias.
-        uses: actions/cache@v6
-        with:
-          path: ~/.cache/ms-playwright
-          key: playwright-root-browsers-${{ runner.os }}-${{ steps.root-playwright.outputs.version }}
-      - name: Install Playwright browsers
-        # The gh-linux-8x image already ships every Chromium
-        # shared library, and --with-deps only adds the fonts-*/xfonts-*
-        # packages whose fetch blew test-ct's budget (intent#4723) — so
-        # install the browser alone; a missing lib fails the first spec
-        # loudly rather than silently. Step-level timeout so a download
-        # stall fails here in minutes instead of exhausting the overall job budget.
-        timeout-minutes: 8
-        run: pnpm exec playwright install chromium
-      - name: Root Playwright tests
-        # --workers=1: playwright.config.ts already pins CI to one worker;
-        # explicit here because every spec boots its own Vite harness and
-        # concurrent cold compiles must stay bounded. list for readable
-        # logs; html feeds the failure artifact below and never auto-opens.
-        env:
-          PLAYWRIGHT_HTML_OPEN: never
-        run: pnpm run test:playwright --project=chromium --workers=1 --shard=${{ matrix.shard }}/2 --reporter=list,html
-      - name: Upload playwright report
-        # Also on cancellation, so a timeout overrun still leaves the report
-        # and traces behind for diagnosis (same as test-ct).
-        if: failure() || cancelled()
-        uses: actions/upload-artifact@v7
-        with:
-          name: playwright-root-report-${{ matrix.shard }}
-          path: |
-            playwright-report/
-            test-results/
-          retention-days: 7
+    uses: ./.github/workflows/browser-tests.yml
+    with:
+      suite: root
 
-  # Real-Electron browser-lifetime harness
-  # (test/electron-browser-lifetime.spec.ts via playwright.manual.config.ts,
-  # cloudlands-fe#2537): launches the fixture Electron app from
-  # node_modules/electron under Xvfb and asserts retained guest identity
-  # across workspace / panel switches. It is NOT part of the default
-  # `test:playwright` config (testIgnore) because it needs a display and
-  # ~2 min of wall time per run, so this job is its only automated path.
-  # MERGE-QUEUE-ONLY, same guards as test-integration / test-ct.
-  # ADVISORY: the test step is continue-on-error, the job is NOT in the
-  # gate's needs list, and its result never affects the queue. Promotion
-  # criterion: add `test-electron` to the gate's needs + check_queue_only
-  # (and drop continue-on-error) only once the lane has been green on at
-  # least 10 consecutive merge-queue entries — the explicit-close poll was
-  # still intermittent in the single-worker manual runs (7/8, passes in
-  # isolation) that motivated this lane.
   test-electron:
-    name: Electron Browser Lifetime (advisory)
     needs: [route, release-fast-path]
-    if: ${{ !cancelled() && github.event_name == 'merge_group' && needs.route.result == 'success' && needs.release-fast-path.outputs.fast_path != 'true' }}
-    runs-on: ${{ fromJSON(needs.route.outputs.linux_labels) }}
-    # 8 tests × ≤120 s test timeout is the theoretical ceiling; a healthy
-    # single-worker run takes ~2-3 min plus setup.
-    timeout-minutes: 30
+    if: ${{ !cancelled() && github.event_name == 'pull_request' && needs.release-fast-path.outputs.electron_required == 'true' && needs.route.result == 'success' && needs.release-fast-path.outputs.fast_path != 'true' }}
     permissions:
       contents: read
-    env:
-      GIT_TERMINAL_PROMPT: '0'
-      NODE_OPTIONS: '--max-old-space-size=4096'
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v7
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v6
-        with:
-          version: 10.30.3
-          run_install: false
-          # Per-runner-instance dest (see checks).
-          dest: ~/setup-pnpm-${{ runner.name }}
-      - name: Setup Node.js
-        # cache: 'pnpm' only on the burst path (see checks).
-        uses: actions/setup-node@v7
-        with:
-          node-version: '24'
-          cache: ${{ needs.route.outputs.linux_burst == 'true' && 'pnpm' || '' }}
-      - name: Install dependencies
-        # Also downloads the Electron binary (electron is in
-        # pnpm.onlyBuiltDependencies) that the harness launches.
-        run: pnpm install --frozen-lockfile
-      - name: Generate i18n messages
-        # The fixture renderer imports paraglide messages through the
-        # production browser panel; the compiled output is gitignored.
-        run: pnpm run generate:i18n
-      - name: Ensure Xvfb
-        # Electron needs a display even with show:false windows. xvfb is
-        # preinstalled on the GH-hosted image; on tinybox it persists once
-        # installed, so this is a no-op on warm slots. Retried for the
-        # co-tenant apt lock race (monorepo#1515).
-        timeout-minutes: 5
-        run: |
-          set -euo pipefail
-          if command -v xvfb-run >/dev/null 2>&1; then
-            echo "xvfb-run present; skipping apt."
-            exit 0
-          fi
-          for i in 1 2 3; do
-            if sudo apt-get update && sudo apt-get install -y --no-install-recommends xvfb; then
-              exit 0
-            fi
-            if [ "$i" -eq 3 ]; then exit 1; fi
-            sleep $((i * 15))
-          done
-      - name: Electron browser lifetime tests (advisory)
-        id: lifetime
-        # continue-on-error keeps the job green while the failure stays
-        # visible in the step log and the artifact below (see the
-        # promotion criterion in the job comment). --workers=1: each test
-        # launches its own Electron + Vite dev server, and the two-worker
-        # manual runs raced on Electron startup.
-        continue-on-error: true
-        env:
-          PLAYWRIGHT_HTML_OPEN: never
-        run: xvfb-run -a pnpm run test:playwright:manual:browser-lifetime --workers=1 --reporter=list,html
-      - name: Upload electron lifetime report
-        # The evidence JSON (electron-lifetime-evidence.json per test) and
-        # capture PNGs are Playwright attachments under test-results/.
-        if: ${{ !cancelled() && steps.lifetime.outcome == 'failure' }}
-        uses: actions/upload-artifact@v7
-        with:
-          name: playwright-electron-lifetime-report
-          path: |
-            playwright-report/
-            test-results/
-          retention-days: 7
+    uses: ./.github/workflows/browser-tests.yml
+    with:
+      suite: electron
 
   # Monorepo consumer checks (intent-hq/intent#4558, #5479, #5489, #5497):
   # the monorepo's docs-check job compares the pinned submodules against
@@ -1343,7 +860,7 @@ jobs:
 
   # Single required status check for branch protection: fans in pr-title,
   # conflict-markers, the heavy jobs (checks / build-web / test /
-  # test-integration / test-ct / test-playwright), and
+  # test-integration / test-ct / test-playwright / test-electron), and
   # monorepo-consumer-checks. pr-title /
   # conflict-markers must succeed outright on every PR;
   # on merge_group they are job-skipped (PR-metadata checks, already
@@ -1362,28 +879,10 @@ jobs:
   # fails); on merge_group it must succeed outright, except that a skip is
   # accepted via fast_path == 'true' (release-shaped queue entry) — any
   # other skip in the queue can only mean a route failure and fails.
-  # test-ct has its own check: on merge_group it must succeed outright like
-  # test-integration, with the same fast_path skip acceptance; on
-  # pull_request its skip is accepted only via an OUTPUT, never the skipped
-  # status itself — either fast_path == 'true' (release-shaped PR) or
-  # ct_required == 'false' (the diff touches no CT-contract path, CT spec,
-  # or geometry golden). ct_required == 'true' means the matrix had to run
-  # and must have succeeded, and an EMPTY ct_required (a failed
-  # release-fast-path job, a fork PR) rejects the skip too — fail-safe,
-  # symmetric with check_heavy. test-playwright (the root Playwright suite)
-  # has the identical check shape keyed on root_playwright_required
-  # instead: on pull_request its skip is accepted only via fast_path ==
-  # 'true' or root_playwright_required == 'false' (the diff touches neither
-  # test/** nor the root Playwright config and its spec-pattern modules);
-  # 'true' or EMPTY rejects the skip.
-  # Fork PRs stay red regardless: checks /
-  # build-web / test skip on them with fast_path empty, which check_heavy
-  # rejects.
-  # test and test-ct are shard matrices: their needs.result aggregates the
-  # legs (success only when every shard passes; a job-level skip reports
-  # 'skipped' for the whole matrix, same as before). test-electron is
-  # deliberately absent from needs: it is advisory until it meets the
-  # promotion criterion in its job comment.
+  # Browser suites skip by design in merge_group. On PRs each suite requires
+  # a valid relevance output, and skips only for an explicitly irrelevant diff
+  # or the release fast path. Required runs must succeed, including Electron.
+  # Each reusable workflow result aggregates all of its shards.
   # monorepo-consumer-checks must succeed outright on BOTH events: it is
   # not fast-path-gated (minutes-long, and a release-shaped diff still has
   # to satisfy the monorepo consumers), so its only skip cause is the
@@ -1424,6 +923,7 @@ jobs:
         test-integration,
         test-ct,
         test-playwright,
+        test-electron,
         monorepo-consumer-checks,
       ]
     steps:
@@ -1432,6 +932,7 @@ jobs:
           FAST_PATH: ${{ needs.release-fast-path.outputs.fast_path }}
           CT_REQUIRED: ${{ needs.release-fast-path.outputs.ct_required }}
           ROOT_PLAYWRIGHT_REQUIRED: ${{ needs.release-fast-path.outputs.root_playwright_required }}
+          ELECTRON_REQUIRED: ${{ needs.release-fast-path.outputs.electron_required }}
         run: |
           # route must have succeeded on every run (see the gate comment): a
           # route failure skips the heavy jobs, and a fast-path skip
@@ -1439,6 +940,10 @@ jobs:
           # fail here — still red, as required.
           if [ "${{ needs.route.result }}" != "success" ]; then
             echo "route result '${{ needs.route.result }}' not acceptable — the heavy jobs cannot have run (fast_path='$FAST_PATH')"
+            exit 1
+          fi
+          if [ "${{ needs.release-fast-path.result }}" != "success" ]; then
+            echo "release-fast-path must succeed so skips are backed by a classified diff"
             exit 1
           fi
           # pr-title / conflict-markers are PR-metadata checks that only run
@@ -1506,80 +1011,28 @@ jobs:
             }
           fi
           check_queue_only "test-integration" "${{ needs.test-integration.result }}"
-          # test-ct: must succeed on merge_group, or be skipped ONLY via the
-          # release-PR fast path; on pull_request a skip is accepted only via
-          # an output — fast_path == 'true' (release-shaped PR) or
-          # ct_required == 'false' (no CT-contract path, CT spec, or geometry
-          # golden in the diff).
-          # ct_required == 'true' or EMPTY (failed release-fast-path job, fork
-          # PR) rejects the skip: fail-safe, never fail-open.
-          if [ "${{ github.event_name }}" = "merge_group" ]; then
-            check_ct() {
-              if [ "$2" = "success" ]; then
+          # Every browser suite skips intentionally in the queue. On PRs,
+          # missing classifier output is an error even if another job succeeded.
+          check_browser() {
+            if [ "${{ github.event_name }}" = "merge_group" ]; then
+              if [ "$2" = "success" ] || [ "$2" = "skipped" ]; then return 0; fi
+            else
+              if [ "$3" != "true" ] && [ "$3" != "false" ]; then
+                echo "$1 relevance output '$3' is missing or invalid"
+                exit 1
+              fi
+              if [ "$2" = "success" ]; then return 0; fi
+              if [ "$2" = "skipped" ] && { [ "$FAST_PATH" = "true" ] || [ "$3" = "false" ]; }; then
+                echo "$1 skipped via release fast path or irrelevant diff — accepted"
                 return 0
               fi
-              if [ "$2" = "skipped" ] && [ "$FAST_PATH" = "true" ]; then
-                echo "$1 skipped on merge_group via release-PR fast path — accepted"
-                return 0
-              fi
-              echo "$1 result '$2' not acceptable on merge_group (component tests must run and pass in the queue; fast_path='$FAST_PATH')"
-              exit 1
-            }
-          else
-            check_ct() {
-              if [ "$2" = "success" ]; then
-                return 0
-              fi
-              if [ "$2" = "skipped" ] && [ "$FAST_PATH" = "true" ]; then
-                echo "$1 skipped via release-PR fast path — accepted"
-                return 0
-              fi
-              if [ "$2" = "skipped" ] && [ "$CT_REQUIRED" = "false" ]; then
-                echo "$1 skipped — the diff touches no CT-contract path, CT spec, or geometry golden (ct_required=false), accepted"
-                return 0
-              fi
-              echo "$1 result '$2' not acceptable (ct_required='$CT_REQUIRED', fast_path='$FAST_PATH')"
-              exit 1
-            }
-          fi
-          check_ct "test-ct" "${{ needs.test-ct.result }}"
-          # test-playwright: same shape as check_ct, keyed on
-          # root_playwright_required — on merge_group it must succeed, or be
-          # skipped ONLY via the release-PR fast path; on pull_request a skip
-          # is accepted only via fast_path == 'true' or
-          # root_playwright_required == 'false' (neither test/** nor the
-          # root Playwright config and its spec-pattern modules in the diff).
-          # 'true' or EMPTY rejects the skip: fail-safe, never fail-open.
-          if [ "${{ github.event_name }}" = "merge_group" ]; then
-            check_root_playwright() {
-              if [ "$2" = "success" ]; then
-                return 0
-              fi
-              if [ "$2" = "skipped" ] && [ "$FAST_PATH" = "true" ]; then
-                echo "$1 skipped on merge_group via release-PR fast path — accepted"
-                return 0
-              fi
-              echo "$1 result '$2' not acceptable on merge_group (root Playwright suite must run and pass in the queue; fast_path='$FAST_PATH')"
-              exit 1
-            }
-          else
-            check_root_playwright() {
-              if [ "$2" = "success" ]; then
-                return 0
-              fi
-              if [ "$2" = "skipped" ] && [ "$FAST_PATH" = "true" ]; then
-                echo "$1 skipped via release-PR fast path — accepted"
-                return 0
-              fi
-              if [ "$2" = "skipped" ] && [ "$ROOT_PLAYWRIGHT_REQUIRED" = "false" ]; then
-                echo "$1 skipped — the diff touches neither test/** nor the root Playwright config and its spec-pattern modules (root_playwright_required=false), accepted"
-                return 0
-              fi
-              echo "$1 result '$2' not acceptable (root_playwright_required='$ROOT_PLAYWRIGHT_REQUIRED', fast_path='$FAST_PATH')"
-              exit 1
-            }
-          fi
-          check_root_playwright "test-playwright" "${{ needs.test-playwright.result }}"
+            fi
+            echo "$1 result '$2' not acceptable (required='$3', fast_path='$FAST_PATH')"
+            exit 1
+          }
+          check_browser "test-ct" "${{ needs.test-ct.result }}" "$CT_REQUIRED"
+          check_browser "test-playwright" "${{ needs.test-playwright.result }}" "$ROOT_PLAYWRIGHT_REQUIRED"
+          check_browser "test-electron" "${{ needs.test-electron.result }}" "$ELECTRON_REQUIRED"
           # monorepo-consumer-checks: success outright on both events (see
           # the gate comment) — no fast-path or event-based skip acceptance.
           if [ "${{ needs.monorepo-consumer-checks.result }}" != "success" ]; then

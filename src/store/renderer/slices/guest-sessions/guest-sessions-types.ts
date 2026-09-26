@@ -29,16 +29,13 @@ export type {
  */
 export interface WorkspaceMember {
   principalId: string;
-  /** Forge login; null for a principal without a resolved identity. */
+  /** Forge handle; null for a principal without a resolved identity. */
   login: string | null;
   displayName: string | null;
   avatarUrl: string | null;
   role: WorkspaceRole;
   addedAt: string;
-  /**
-   * The provider-neutral identity triple (`Principal.identity`); absent from
-   * a daemon that predates the identity seam or for an unlinked principal.
-   */
+  /** Provider-neutral account identity from `workspace.members.list`; omitted while unlinked. */
   identity?: PrincipalIdentity;
 }
 

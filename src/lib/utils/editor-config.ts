@@ -38,6 +38,7 @@ import {
 import { createMentionSuggestionRenderer } from '$lib/components/chat/input/mention-suggestion-renderer';
 import { getMentionSystem, type SearchContext } from '$lib/services/mentions';
 import { toPromptToken } from '$lib/services/mentions/format';
+import { memberMentionLabel } from '$lib/utils/member-mention-token';
 import { m } from '$shared/paraglide/messages.js';
 
 // Import note primitives extensions
@@ -503,7 +504,7 @@ export function createEditorConfig(options: EditorConfigOptions): EditorOptions 
                       class: 'mention-chip',
                       tabindex: '0',
                     },
-                    label, // Display without @ prefix for cleaner appearance
+                    node.attrs.type === 'member' ? memberMentionLabel(label) : label,
                   ];
                 },
                 renderText: mentionRenderText,
@@ -922,7 +923,7 @@ export function createEditorConfig(options: EditorConfigOptions): EditorOptions 
                       class: 'mention-chip',
                       tabindex: '0',
                     },
-                    label, // Display without @ prefix for cleaner appearance
+                    node.attrs.type === 'member' ? memberMentionLabel(label) : label,
                   ];
                 },
                 renderText: mentionRenderText,
