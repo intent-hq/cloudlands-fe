@@ -106,7 +106,9 @@ workspaceInitializerReducer.with(
   (state, { payload: [hydration] }) => ({
     ...state,
     hydrated: true,
-    compactFormState: hydration.compactFormState ?? state.compactFormState,
+    // A form edit made during the read belongs to this session, even if it
+    // only changes effort (or explicitly clears it). Keep the paired model.
+    compactFormState: state.compactFormState ?? hydration.compactFormState ?? null,
     onboardingFormState: hydration.onboardingFormState ?? state.onboardingFormState,
     lastSelectedRepo: hydration.lastSelectedRepo ?? state.lastSelectedRepo,
     branchByRepo: hydration.branchByRepo ?? state.branchByRepo,
