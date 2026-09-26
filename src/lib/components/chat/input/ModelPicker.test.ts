@@ -4,6 +4,7 @@ import { tick } from 'svelte';
 import { derived, get, readable, writable } from 'svelte/store';
 
 const mockModelState = vi.hoisted(() => ({
+  defaultProviderId: 'auggie',
   selectedModel: 'gpt5.4',
   availableModels: [{ value: 'gpt5.4', label: 'GPT 5.4', description: 'Smart model' }],
   // Provenance of the global catalog (model.availableModelsProviderId).
@@ -111,7 +112,7 @@ vi.mock('$store/renderer/store', async () => {
       // The effective default provider is settings-derived (never the first
       // catalog row) — mirror the mocked selectActiveProviderId default.
       providerSettings: { enabledProviders: {} },
-      model: { defaultProviderId: 'auggie' },
+      model: { defaultProviderId: mockModelState.defaultProviderId },
       providerModels: {
         byProviderId: mockProviderModelsState.byProviderId,
         clearEpoch: mockProviderModelsState.clearEpoch,
@@ -286,6 +287,7 @@ afterEach(() => {
   availableProviderOverride$.set(null);
   enabledProvidersMap$.set({});
   mockModelState.availableModelsProviderId = 'auggie';
+  mockModelState.defaultProviderId = 'auggie';
   daemonHealth$.set('healthy');
   providerStaleFlags$.set({});
   mockProviderModelsState.byProviderId = {};
@@ -1004,6 +1006,100 @@ describe('ModelPicker combined reasoning mode', () => {
     },
   );
 
+  it.each([
+    ['codex', 'claude-code', 'explicit'],
+    ['claude-code', 'codex', 'explicit'],
+    ['codex', 'claude-code', 'inherited'],
+    ['claude-code', 'codex', 'inherited'],
+    ['codex', 'claude-code', 'legacy'],
+  ])('resolves %s reasoning with global %s for a %s selection', async (provider, global, mode) => {
+    // Real models.list rows have bare IDs, including IDs shared by providers.
+    const { wireModelsToProviderModels } = await import('$shared/models/wire-model-info');
+    const levels = provider === 'codex' ? ['low', 'xhigh'] : ['low', 'high'];
+    mockModelState.defaultProviderId = global;
+    enabledProviderIds$.set([global, provider]);
+    activeProviderId$.set(global);
+    vi.mocked(getModelsForProviderForLoadingState).mockImplementation(async (providerId) => ({
+      models: wireModelsToProviderModels({
+        providerId,
+        models: [
+          {
+            id: 'shared-model',
+            name: `${providerId} model`,
+            effortLevels: providerId === provider ? levels : ['medium'],
+          },
+        ],
+      }),
+    }));
+    const onReasoningChange = vi.fn(() => true);
+    const selected = `${provider}:shared-model${mode === 'legacy' ? '/xhigh' : ''}`;
+    render(ModelPicker, {
+      props: {
+        selectedModel: mode === 'inherited' ? undefined : selected,
+        defaultModelId: mode === 'inherited' ? selected : undefined,
+        showDefaultOption: true,
+        showReasoning: true,
+        onReasoningChange,
+        portal: false,
+      },
+    });
+    await fireEvent.click(screen.getByRole('button'));
+    await fireEvent.click(
+      await screen.findByRole('tab', { name: provider === 'codex' ? /Codex/ : /Claude Code/ }),
+    );
+    await screen.findByRole('option', { name: new RegExp(`${provider} model`) });
+    const effort = await screen.findByTestId('effort-picker-trigger');
+    expect((effort as HTMLButtonElement).disabled).toBe(false);
+    const listbox = await openEffortSelect();
+    expect(within(listbox).queryByRole('option', { name: 'Medium', exact: true })).toBeNull();
+    await selectEffort(listbox, provider === 'codex' ? 'Extra high' : 'High');
+    await waitFor(() => expect(onReasoningChange).toHaveBeenCalledWith(levels[1]));
+  });
+
+  it.each(['pointer', 'keyboard', 'modal'])(
+    'keeps reasoning usable after a %s model pick',
+    async (interaction) => {
+      const models = [
+        { value: 'codex:first', label: 'First model', effortLevels: ['low', 'high'] },
+        { value: 'codex:second', label: 'Second model', effortLevels: ['medium', 'max'] },
+      ];
+      vi.mocked(getModelsForProviderForLoadingState).mockResolvedValue({ models });
+      const onModelChange = vi.fn();
+      const onReasoningChange = vi.fn(() => true);
+      render(ModelPicker, {
+        props: {
+          selectedModel: 'codex:first',
+          showReasoning: true,
+          onModelChange,
+          onReasoningChange,
+          portal: false,
+          modalAware: interaction === 'modal',
+        },
+      });
+      const trigger = screen.getByRole('button');
+      await fireEvent.click(trigger);
+      const option = await screen.findByRole('option', { name: 'Second model' });
+      if (interaction === 'keyboard') {
+        const search = screen.getByRole('searchbox');
+        await fireEvent.input(search, { target: { value: 'Second' } });
+        await fireEvent.keyDown(search, { key: 'Enter' });
+      } else {
+        await fireEvent.click(option);
+      }
+      await waitFor(() =>
+        expect(onModelChange).toHaveBeenCalledWith('codex:second', {
+          providerId: 'codex',
+          modelId: 'second',
+        }),
+      );
+      expect(trigger.getAttribute('aria-expanded')).toBe('true');
+      await selectEffort(await openEffortSelect(), 'Max');
+      await waitFor(() => expect(onReasoningChange).toHaveBeenCalledWith('max'));
+      await fireEvent.keyDown(effortTrigger(), { key: 'Escape' });
+      await waitFor(() => expect(screen.queryByRole('listbox')).toBeNull());
+    },
+  );
+
   it('hides the reasoning footer when the selected model has no effort levels', async () => {
     const models = [{ value: 'no-effort', label: 'No effort model' }];
     mockModelState.availableModels = models;
@@ -1304,7 +1400,7 @@ describe('ModelPicker combined reasoning mode', () => {
       }),
     );
     expect(screen.queryByTestId('model-reasoning-effort-gauge')).toBeNull();
-    await fireEvent.click(trigger);
+    expect(trigger.getAttribute('aria-expanded')).toBe('true');
     expect(screen.queryByTestId('model-reasoning-section')).toBeNull();
     await fireEvent.click(screen.getByRole('option', { name: /GPT-5\.6-Sol/ }));
     await waitFor(() =>

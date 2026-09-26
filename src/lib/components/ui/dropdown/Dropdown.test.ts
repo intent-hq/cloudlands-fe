@@ -440,6 +440,43 @@ describe('Dropdown compatibility modes', () => {
     expect(document.activeElement).toBe(trigger);
   });
 
+  it.each(['pointer', 'keyboard'])(
+    'opts into staying open after %s selection',
+    async (interaction) => {
+      const onchange = vi.fn();
+      const onopenchange = vi.fn();
+      render(Dropdown, {
+        props: {
+          options: [
+            { value: 'a', label: 'Alpha' },
+            { value: 'b', label: 'Beta' },
+          ],
+          closeOnSelect: false,
+          onchange,
+          onopenchange,
+        },
+      });
+      const trigger = screen.getByRole('button');
+      await fireEvent.click(trigger);
+      const search = screen.getByRole('searchbox');
+      if (interaction === 'pointer')
+        await fireEvent.click(screen.getByRole('option', { name: 'Beta' }));
+      else {
+        await fireEvent.input(search, { target: { value: 'Beta' } });
+        await fireEvent.keyDown(search, { key: 'Enter' });
+      }
+      expect(onchange).toHaveBeenCalledWith(
+        'b',
+        interaction === 'pointer' ? expect.any(MouseEvent) : undefined,
+      );
+      expect(trigger.getAttribute('aria-expanded')).toBe('true');
+      expect(onopenchange.mock.calls).toEqual([[true]]);
+      await fireEvent.keyDown(search, { key: 'Escape' });
+      expect(trigger.getAttribute('aria-expanded')).toBe('false');
+      expect(document.activeElement).toBe(trigger);
+    },
+  );
+
   it('preserves searchable keyboard selection and open-state callbacks', async () => {
     const onchange = vi.fn();
     const onopenchange = vi.fn();
