@@ -27,6 +27,7 @@
   import { getMessageAuthorLabel, getQueuedMessageAuthor } from '$lib/utils/message-authorship';
   import { Button } from '$lib/components/ui/button';
   import { Textarea } from '$lib/components/ui/textarea';
+  import TipTapEditor from './input/TipTapEditor.svelte';
   import ImageLightbox from '$lib/components/ui/ImageLightbox.svelte';
   import PrincipalAvatar from '$lib/components/ui/PrincipalAvatar.svelte';
   import { openWorkspaceAttachment } from '$store/renderer/slices/workspace-navigation/workspace-navigation-slice';
@@ -90,8 +91,13 @@
   let editOriginalContent = $state('');
   let editStartedProgrammatically = $state(false);
   let editTextarea = $state<HTMLTextAreaElement>();
+  let editRichEditor = $state<TipTapEditor>();
+  let editRichContainer = $state<HTMLDivElement>();
+  const editHasMembers = $derived(
+    memberMentionsToText(editOriginalContent) !== editOriginalContent,
+  );
   let activeEditOperation: { messageId: string } | null = null;
-  let pendingFocusRestore: { messageId: string; textarea: HTMLTextAreaElement } | null = null;
+  let pendingFocusRestore: { messageId: string; element: HTMLElement } | null = null;
   let expanded = $state(true);
   let previousMessageCount = $state(0);
   const contentId = $derived(`queued-messages-content-${messages[0]?.id ?? 'empty'}`);
@@ -224,27 +230,33 @@
     messages;
     const messageId = editingId;
     const textarea = editTextarea;
-    const mutationNode = textarea ?? rowElements.values().next().value;
+    const richEditor = editRichEditor;
+    const input = textarea ?? editRichContainer?.querySelector<HTMLElement>('[role="textbox"]');
+    const mutationNode = input ?? rowElements.values().next().value;
     const bottomMutation = mutationNode ? beforeFollowBottomMutation(mutationNode) : null;
     const settleBottom = () => {
       bottomMutation?.request();
       bottomMutation?.settle();
     };
-    if (!messageId || !textarea || document.activeElement !== textarea) {
+    if (!messageId || !input || document.activeElement !== input) {
       void tick().then(settleBottom);
       return;
     }
-    const selectionStart = textarea.selectionStart;
-    const selectionEnd = textarea.selectionEnd;
-    const restore = { messageId, textarea };
+    const selectionStart = textarea?.selectionStart;
+    const selectionEnd = textarea?.selectionEnd;
+    const restore = { messageId, element: input };
     pendingFocusRestore = restore;
     void tick().then(() => {
       settleBottom();
       if (pendingFocusRestore !== restore) return;
       pendingFocusRestore = null;
-      if (editingId !== messageId || editTextarea !== textarea) return;
-      if (document.activeElement !== textarea) textarea.focus({ preventScroll: true });
-      textarea.setSelectionRange(selectionStart, selectionEnd);
+      if (editingId !== messageId || !input.isConnected) return;
+      if (textarea && editTextarea === textarea) {
+        if (document.activeElement !== textarea) textarea.focus({ preventScroll: true });
+        textarea.setSelectionRange(selectionStart!, selectionEnd!);
+      } else if (richEditor === editRichEditor && document.activeElement !== input) {
+        richEditor?.focus();
+      }
     });
   });
 
@@ -368,6 +380,13 @@
     };
   });
 
+  $effect(() => {
+    const richEditor = editRichEditor;
+    if (!richEditor) return;
+    const frame = requestAnimationFrame(() => richEditor.focusEnd());
+    return () => cancelAnimationFrame(frame);
+  });
+
   async function startEdit(message: QueuedMessage, programmatic = false) {
     if (disabled || isSending(message.id) || activeEditOperation || editingId === message.id)
       return;
@@ -470,12 +489,13 @@
   }
 
   function handleEditBlur(event: FocusEvent) {
-    const textarea = event.currentTarget as HTMLTextAreaElement;
+    const input = event.target as HTMLElement;
+    if (editRichContainer?.contains(event.relatedTarget as Node | null)) return;
     const restore = pendingFocusRestore;
     const isOwnedReorderBlur =
-      restore?.textarea === textarea && restore.messageId === editingId && !event.relatedTarget;
+      restore?.element === input && restore.messageId === editingId && !event.relatedTarget;
     if (isOwnedReorderBlur) return;
-    if (restore?.textarea === textarea) pendingFocusRestore = null;
+    if (restore?.element === input) pendingFocusRestore = null;
     void saveEdit();
   }
 
@@ -648,18 +668,38 @@
                   class="col-span-full row-span-full min-w-0 flex flex-1 gap-2 py-1"
                   data-testid="queued-message-edit-mode"
                 >
-                  <Textarea
-                    bind:ref={editTextarea}
-                    bind:value={editContent}
-                    onkeydown={handleKeydown}
-                    onblur={handleEditBlur}
-                    rows={1}
-                    noFocusStyle
-                    class="type-caption min-h-0 min-w-0 flex-1 resize-none overflow-hidden border-0 bg-transparent p-0 font-normal! text-foreground shadow-none hover:bg-transparent focus:outline-none focus:ring-0 focus-visible:outline-none"
-                    autocorrect="off"
-                    autocapitalize="off"
-                    spellcheck="false"
-                  />
+                  {#if editHasMembers}
+                    <div
+                      bind:this={editRichContainer}
+                      class="min-w-0 flex-1 text-foreground"
+                      role="group"
+                      onfocusout={handleEditBlur}
+                    >
+                      <TipTapEditor
+                        bind:this={editRichEditor}
+                        value={editContent}
+                        onUpdate={(content) => (editContent = content)}
+                        onSubmit={saveEdit}
+                        onForceSubmit={saveEdit}
+                        onEscape={cancelEdit}
+                        minHeight={0}
+                        editorClassName="type-caption! p-0! font-normal!"
+                      />
+                    </div>
+                  {:else}
+                    <Textarea
+                      bind:ref={editTextarea}
+                      bind:value={editContent}
+                      onkeydown={handleKeydown}
+                      onblur={handleEditBlur}
+                      rows={1}
+                      noFocusStyle
+                      class="type-caption min-h-0 min-w-0 flex-1 resize-none overflow-hidden border-0 bg-transparent p-0 font-normal! text-foreground shadow-none hover:bg-transparent focus:outline-none focus:ring-0 focus-visible:outline-none"
+                      autocorrect="off"
+                      autocapitalize="off"
+                      spellcheck="false"
+                    />
+                  {/if}
                   <Button
                     variant="ghost-light"
                     size="icon-xs"

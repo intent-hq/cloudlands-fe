@@ -43,6 +43,33 @@ function buttonTooltips(container: HTMLElement): string[] {
 }
 
 describe('QueuedMessageList', () => {
+  it('keeps a member readable while editing and releases its original identity on cancel', async () => {
+    const payload = {
+      label: 'alice.dev_ops-team',
+      principalId: 'gitlab-person',
+      workspaceId: 'workspace',
+      identity: { provider: 'gitlab', host: 'code.example', externalUserId: '42' },
+    };
+    const content = `Ask @member[${btoa(JSON.stringify(payload))}] please`;
+    const onedit = vi.fn().mockResolvedValue({ success: true });
+    render(QueuedMessageList, { props: { messages: [queued({ content })], onedit } });
+    await fireEvent.dblClick(screen.getByTestId('queued-message-content'));
+    const editor = await screen.findByRole('textbox');
+    expect(editor instanceof HTMLTextAreaElement ? editor.value : editor.textContent).toBe(
+      'Ask @alice.dev_ops-team please',
+    );
+    const chip = editor.querySelector('[data-type="member"]');
+    expect(JSON.parse(chip!.getAttribute('data-meta')!)).toEqual({
+      principalId: payload.principalId,
+      workspaceId: payload.workspaceId,
+      identity: payload.identity,
+    });
+    await waitFor(() => expect(onedit).toHaveBeenCalledWith('q-1', content, true));
+    await fireEvent.keyDown(editor, { key: 'Escape' });
+    await waitFor(() => expect(onedit).toHaveBeenLastCalledWith('q-1', content, false));
+    await waitFor(() => expect(screen.queryByRole('textbox')).toBeNull());
+  });
+
   it('presents a queued member as a handle while sending the original queued message', async () => {
     const payload = btoa(
       JSON.stringify({
