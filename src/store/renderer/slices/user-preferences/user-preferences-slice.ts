@@ -69,6 +69,12 @@ export type UserPreferencesState = {
   soundEnabled: boolean;
   soundOnlyWhenUnfocused: boolean;
   volume: number;
+  /** Renderer-only write identity; hydration must preserve an unsettled local edit. */
+  notificationVolumeEditId: number;
+  pendingNotificationVolumeEditId: number | null;
+  notificationVolumeHydrationEpoch: number;
+  notificationVolumeConfirmedRevision: number;
+  deferredNotificationVolume: { value: number; revision?: number } | null;
   activityLogPresets: ActivityLogPresetPreference[];
   /** BCP-47 locale tag of an available catalog, or "system" to follow the OS. */
   languagePreference: string;
@@ -115,6 +121,11 @@ export const initialState: UserPreferencesState = {
   labsMultiplayerEnabled: false,
   ...fontSettingsInitialState,
   ...notificationSettingsInitialState,
+  notificationVolumeEditId: 0,
+  pendingNotificationVolumeEditId: null,
+  notificationVolumeHydrationEpoch: 0,
+  notificationVolumeConfirmedRevision: -1,
+  deferredNotificationVolume: null,
   activityLogPresets: [],
   languagePreference: SYSTEM_LANGUAGE_PREFERENCE,
   githubLinkDefaultAction: 'show-choices',
@@ -167,6 +178,19 @@ export const setSoundOnlyWhenUnfocused = createAction<[value: boolean]>(
 );
 
 export const setVolume = createAction<[value: number]>('notificationSettings/setVolume');
+
+/** Daemon snapshot/event hydration; never triggers notification persistence. */
+export const hydrateNotificationVolume = createAction<[value: number, revision?: number]>(
+  'notificationSettings/hydrateVolume',
+);
+
+export const notificationVolumeHydrationStarted = createAction(
+  'notificationSettings/volumeHydrationStarted',
+);
+
+export const notificationVolumeWriteSettled = createAction<
+  [editId: number, hydrationEpoch: number, revision?: number]
+>('notificationSettings/volumeWriteSettled');
 
 export const resetNotificationSettings = createAction(
   'notificationSettings/resetNotificationSettings',
@@ -361,10 +385,58 @@ userPreferencesReducer.with(setSoundOnlyWhenUnfocused, (state, { payload: [value
 userPreferencesReducer.with(setVolume, (state, { payload: [value] }) => ({
   ...state,
   volume: Math.max(0, Math.min(1, value)),
+  notificationVolumeEditId: state.notificationVolumeEditId + 1,
+  pendingNotificationVolumeEditId: state.notificationVolumeEditId + 1,
+  deferredNotificationVolume: null,
 }));
+userPreferencesReducer.with(notificationVolumeHydrationStarted, (state) => ({
+  ...state,
+  // Revisions restart with the backend; a late write from the prior connection
+  // must not set a revision floor for the new snapshot/event stream.
+  notificationVolumeHydrationEpoch: state.notificationVolumeHydrationEpoch + 1,
+  notificationVolumeConfirmedRevision: -1,
+  deferredNotificationVolume: null,
+}));
+userPreferencesReducer.with(hydrateNotificationVolume, (state, { payload: [value, revision] }) => {
+  if (revision !== undefined && revision < state.notificationVolumeConfirmedRevision) return state;
+  const volume = Math.max(0, Math.min(1, value));
+  if (state.pendingNotificationVolumeEditId !== null) {
+    return { ...state, deferredNotificationVolume: { value: volume, revision } };
+  }
+  return { ...state, volume };
+});
+userPreferencesReducer.with(
+  notificationVolumeWriteSettled,
+  (state, { payload: [editId, hydrationEpoch, revision] }) => {
+    if (state.pendingNotificationVolumeEditId !== editId) return state;
+    const sameEpoch = hydrationEpoch === state.notificationVolumeHydrationEpoch;
+    const deferred = state.deferredNotificationVolume;
+    // Failure leaves the daemon value authoritative. On success only a newer
+    // daemon revision can supersede the edit; legacy daemons use arrival order.
+    const acceptDeferred =
+      deferred &&
+      (!sameEpoch ||
+        revision === undefined ||
+        revision === 0 ||
+        (deferred.revision !== undefined && deferred.revision > revision));
+    return {
+      ...state,
+      volume: acceptDeferred ? deferred.value : state.volume,
+      pendingNotificationVolumeEditId: null,
+      deferredNotificationVolume: null,
+      notificationVolumeConfirmedRevision:
+        sameEpoch && revision !== undefined
+          ? Math.max(state.notificationVolumeConfirmedRevision, revision)
+          : state.notificationVolumeConfirmedRevision,
+    };
+  },
+);
 userPreferencesReducer.with(resetNotificationSettings, (state) => ({
   ...state,
   ...notificationSettingsInitialState,
+  notificationVolumeEditId: state.notificationVolumeEditId + 1,
+  pendingNotificationVolumeEditId: state.notificationVolumeEditId + 1,
+  deferredNotificationVolume: null,
 }));
 userPreferencesReducer.with(hydrateActivityLogPresets, (state, { payload: [presets] }) => ({
   ...state,

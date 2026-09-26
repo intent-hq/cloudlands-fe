@@ -128,11 +128,14 @@ describe('settingsHydrationSaga', () => {
 
     expect(mocks.list).toHaveBeenCalledTimes(1);
     expect(mocks.list).toHaveBeenCalledWith();
-    expect(mocks.apply).toHaveBeenCalledWith([
-      { path: 'model.defaultProvider', value: 'auggie', origin: 'file' },
-      { path: 'quickActions.defaultModel', value: 'fast' },
-      { path: 'quickActions.typeOverrides', value: { commit: 'model' } },
-    ]);
+    expect(mocks.apply).toHaveBeenCalledWith(
+      [
+        { path: 'model.defaultProvider', value: 'auggie', origin: 'file' },
+        { path: 'quickActions.defaultModel', value: 'fast' },
+        { path: 'quickActions.typeOverrides', value: { commit: 'model' } },
+      ],
+      0,
+    );
     expect(mocks.update).not.toHaveBeenCalled();
   });
 
@@ -150,9 +153,10 @@ describe('settingsHydrationSaga', () => {
       expect(mocks.apply).not.toHaveBeenCalled();
       await vi.advanceTimersByTimeAsync(SETTINGS_HYDRATION_RETRY_DELAYS_MS[0]);
       expect(mocks.list).toHaveBeenCalledTimes(2);
-      expect(mocks.apply).toHaveBeenCalledWith([
-        { path: 'providers.enabled', value: { 'claude-code': true } },
-      ]);
+      expect(mocks.apply).toHaveBeenCalledWith(
+        [{ path: 'providers.enabled', value: { 'claude-code': true } }],
+        0,
+      );
       await task.toPromise();
     } finally {
       vi.useRealTimers();
@@ -177,9 +181,10 @@ describe('settingsHydrationSaga', () => {
       expect(mocks.apply).not.toHaveBeenCalled();
       await vi.advanceTimersByTimeAsync(SETTINGS_HYDRATION_RETRY_DELAYS_MS[1]);
       expect(mocks.list).toHaveBeenCalledTimes(3);
-      expect(mocks.apply).toHaveBeenCalledWith([
-        { path: 'providers.enabled', value: { 'claude-code': true } },
-      ]);
+      expect(mocks.apply).toHaveBeenCalledWith(
+        [{ path: 'providers.enabled', value: { 'claude-code': true } }],
+        0,
+      );
       await task.toPromise();
     } finally {
       vi.useRealTimers();
@@ -225,7 +230,7 @@ describe('settingsHydrationSaga', () => {
       const task = runSaga(sagaIO, hydrateSettingsOnceSaga);
       await vi.advanceTimersByTimeAsync(SETTINGS_HYDRATION_RETRY_DELAYS_MS[0]);
       expect(mocks.list).toHaveBeenCalledTimes(2);
-      expect(mocks.apply).toHaveBeenCalledWith([{ path: 'boot', value: 1 }]);
+      expect(mocks.apply).toHaveBeenCalledWith([{ path: 'boot', value: 1 }], 0);
       await task.toPromise();
     } finally {
       vi.useRealTimers();
@@ -288,11 +293,11 @@ describe('settingsHydrationSaga', () => {
     await settle();
 
     expect(mocks.listSnapshot).toHaveBeenCalledTimes(2);
-    expect(mocks.apply).toHaveBeenCalledExactlyOnceWith([{ path: 'backend', value: 'new' }]);
+    expect(mocks.apply).toHaveBeenCalledExactlyOnceWith([{ path: 'backend', value: 'new' }], 1);
 
     resolveOldSnapshot({ settings: [{ path: 'backend', value: 'old' }], revision: 99 });
     await settle();
-    expect(mocks.apply).toHaveBeenCalledExactlyOnceWith([{ path: 'backend', value: 'new' }]);
+    expect(mocks.apply).toHaveBeenCalledExactlyOnceWith([{ path: 'backend', value: 'new' }], 1);
 
     task.cancel();
     await task.toPromise();
@@ -318,13 +323,14 @@ describe('settingsHydrationSaga', () => {
     await settle();
 
     expect(mocks.apply.mock.calls).toEqual([
-      [[{ path: 'boot', value: 0 }]],
-      [[{ path: 'first', value: 1 }]],
+      [[{ path: 'boot', value: 0 }], 0],
+      [[{ path: 'first', value: 1 }], undefined],
       [
         [
           { path: 'second.a', value: 2 },
           { path: 'second.b', value: 3 },
         ],
+        undefined,
       ],
     ]);
     task.cancel();
@@ -347,8 +353,8 @@ describe('settingsHydrationSaga', () => {
     input.put(settingsChangesReceived([{ path: 'newer', value: 6 }], 6));
     await settle();
     expect(mocks.apply.mock.calls).toEqual([
-      [[{ path: 'boot', value: 5 }]],
-      [[{ path: 'newer', value: 6 }]],
+      [[{ path: 'boot', value: 5 }], 5],
+      [[{ path: 'newer', value: 6 }], 6],
     ]);
 
     input.put({
@@ -356,7 +362,7 @@ describe('settingsHydrationSaga', () => {
       payload: [{ connections: [], activeId: 'remote', windowBackendId: 'remote' }],
     });
     await settle();
-    expect(mocks.apply).toHaveBeenLastCalledWith([{ path: 'remote', value: 1 }]);
+    expect(mocks.apply).toHaveBeenLastCalledWith([{ path: 'remote', value: 1 }], 1);
 
     task.cancel();
     await task.toPromise();
@@ -379,10 +385,10 @@ describe('settingsHydrationSaga', () => {
     await settle();
 
     expect(mocks.apply.mock.calls).toEqual([
-      [[{ path: 'boot', value: 10 }]],
-      [[{ path: 'before-restart', value: 11 }]],
-      [[{ path: 'restarted', value: 0 }]],
-      [[{ path: 'after-restart', value: 1 }]],
+      [[{ path: 'boot', value: 10 }], 10],
+      [[{ path: 'before-restart', value: 11 }], 11],
+      [[{ path: 'restarted', value: 0 }], 0],
+      [[{ path: 'after-restart', value: 1 }], 1],
     ]);
 
     task.cancel();
@@ -405,9 +411,9 @@ describe('settingsHydrationSaga', () => {
     await settle();
 
     expect(mocks.apply.mock.calls).toEqual([
-      [[{ path: 'boot', value: 5 }]],
-      [[{ path: 'reconnected', value: 7 }]],
-      [[{ path: 'newer', value: 8 }]],
+      [[{ path: 'boot', value: 5 }], 5],
+      [[{ path: 'reconnected', value: 7 }], 7],
+      [[{ path: 'newer', value: 8 }], 8],
     ]);
 
     task.cancel();
