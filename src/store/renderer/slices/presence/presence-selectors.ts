@@ -20,6 +20,7 @@ import { getItem, getItems } from '@augmentcode/themis/utils/collections/collect
 import type { Workspace } from '$shared/types';
 import { WorkspaceId } from '$shared/types/branded-ids';
 import type { PresenceFocusItem, PresenceMember } from '$shared/types/presence';
+import type { WorkspaceMember } from '../guest-sessions/guest-sessions-types';
 import { store } from '../../store';
 import type { StoreState } from '../../types';
 import type {
@@ -31,6 +32,8 @@ import type {
 
 const NO_MEMBERS: PresenceMember[] = [];
 const NO_PEOPLE: PresencePerson[] = [];
+type MentionMember = WorkspaceMember & { login: string };
+const NO_MENTION_MEMBERS: MentionMember[] = [];
 const NO_TARGETS: Record<string, PresenceFocusTarget> = {};
 
 const rosterMembers = (presence: PresenceState, workspaceId: string): PresenceMember[] => {
@@ -43,6 +46,21 @@ const sharedWorkspace = (state: StoreState, workspaceId: string): Workspace | un
   const workspace = getItem(state.workspace.workspaces, WorkspaceId(workspaceId));
   return workspace && (workspace.memberCount ?? 1) > 1 ? workspace : undefined;
 };
+
+/** Accepted members with handles, independent of online presence; fail closed until self is known. */
+export const selectWorkspaceMentionMembers = store.createSelector<
+  [workspaceId: string],
+  MentionMember[]
+>((state, workspaceId) => {
+  const ownPrincipalId = state.presence.ownPrincipalId;
+  if (ownPrincipalId === null || !sharedWorkspace(state, workspaceId)) return NO_MENTION_MEMBERS;
+  const members = state.presence.members[workspaceId];
+  if (!members) return NO_MENTION_MEMBERS;
+  return getItems(members).filter(
+    (member): member is MentionMember =>
+      member.principalId !== ownPrincipalId && Boolean(member.login?.trim()),
+  );
+});
 
 const toPerson = (
   identity: PresenceIdentity,

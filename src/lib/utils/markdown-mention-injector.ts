@@ -8,6 +8,8 @@
  * a Web Worker as well as on the main thread.
  */
 
+import { memberMentionLabel, parseMemberMention } from '$lib/utils/member-mention-token';
+
 // --- Regex patterns ---
 const noteRe = /@note\/([A-Za-z0-9\-_]+)/g;
 const rulesRe = /@\.augment\/rules\/[^\s<>()'\"]+/g;
@@ -25,6 +27,7 @@ const intentUrlRe = /intent:\/\/[^\s<>()'\"]+/g;
 const contextMentionRe = /@context\[([A-Za-z0-9+/=]+|[^\[\]]*(?:\[[^\]]*\][^\[\]]*)*)\]/g;
 
 const allPatterns: Array<{ re: RegExp; kind: string }> = [
+  { re: /@member\[[^\]\s]*\]/g, kind: 'member' },
   { re: noteRe, kind: 'note' },
   { re: rulesRe, kind: 'rule' },
   { re: fileRe, kind: 'file' },
@@ -55,7 +58,8 @@ function mentionSpanHtml(attrs: {
   s += ` data-label="${escAttr(attrs.label)}"`;
   if (attrs.uri) s += ` data-uri="${escAttr(attrs.uri)}"`;
   s += ` data-meta="${escAttr(JSON.stringify(attrs.meta || {}))}"`;
-  s += ` class="mention-chip">${escAttr(attrs.label)}</span>`;
+  const displayLabel = attrs.type === 'member' ? memberMentionLabel(attrs.label) : attrs.label;
+  s += ` class="mention-chip">${escAttr(displayLabel)}</span>`;
   return s;
 }
 
@@ -84,7 +88,10 @@ function contextSpanHtml(attrs: {
 
 // --- Convert a match to its replacement HTML ---
 function matchToHtml(kind: string, value: string, groups: string[]): string {
-  if (kind === 'note') {
+  if (kind === 'member') {
+    const member = parseMemberMention(value);
+    return member ? mentionSpanHtml(member) : value;
+  } else if (kind === 'note') {
     const id = groups[0] || '';
     return mentionSpanHtml({ type: 'note', id, label: id });
   } else if (kind === 'rule') {

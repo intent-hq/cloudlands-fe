@@ -357,7 +357,8 @@ vi.mock('../message-send-transition', () => ({
   MESSAGE_SEND_MATCH_TIMEOUT_MS: 3000,
   MESSAGE_SEND_TRANSITION_MAX_SETTLE_MS: 600,
 }));
-vi.mock('$lib/utils/client-logger', () => ({
+vi.mock('$lib/utils/client-logger', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('$lib/utils/client-logger')>()),
   createLogger: () => ({ debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() }),
 }));
 vi.mock('$lib/electron-bridge', () => ({
