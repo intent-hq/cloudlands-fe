@@ -93,6 +93,53 @@ function functional(data = fixture()) {
 }
 
 describe('gh-only reporter functional workflow', () => {
+  it('never substitutes a later green source run for the failed triggering attempt', () => {
+    const data = fixture();
+    const event = { action: 'completed', workflow_run: { ...data.run, conclusion: 'failure' } };
+    data.run.run_attempt = 2;
+    data.run.updated_at = '2026-09-26T04:00:00Z';
+    for (const job of data.jobs) {
+      job.run_attempt = 2;
+      job.completed_at = data.run.updated_at;
+    }
+    for (const doc of Object.values(data.documents)) (doc.outcome ?? doc.manifest).runAttempt = '2';
+    const f = functional(data);
+    writeFileSync(f.env.GITHUB_EVENT_PATH, JSON.stringify(event));
+    expect(f.call('collect', ['--run', '1234']).status).toBe(1);
+    expect(readFileSync(join(f.out, 'summary.md'), 'utf8')).toMatch(/attempt.*1.*2/);
+    expect(
+      JSON.parse(readFileSync(join(f.out, 'source-event.json'), 'utf8')).workflow_run.conclusion,
+    ).toBe('failure');
+    expect(existsSync(join(f.out, 'evidence-gap.json'))).toBe(true);
+    expect(existsSync(join(f.out, 'plan.json'))).toBe(false);
+    expect(f.call('publish', ['--write']).status).toBe(1);
+    expect(f.readState().calls.every((c) => c.method === 'GET')).toBe(true);
+  });
+  it('refuses to publish a collected attempt for a different triggering completion attempt', () => {
+    const data = fixture();
+    const f = functional(data);
+    expect(f.call('collect', ['--run', '1234']).status).toBe(0);
+    const event = { action: 'completed', workflow_run: { ...data.run, run_attempt: 2 } };
+    writeFileSync(f.env.GITHUB_EVENT_PATH, JSON.stringify(event));
+    expect(f.call('publish', ['--write']).status).toBe(1);
+    expect(readFileSync(join(f.out, 'summary.md'), 'utf8')).toMatch(/attempt/);
+    expect(existsSync(join(f.out, 'plan.json'))).toBe(true);
+    expect(existsSync(join(f.out, '101.zip'))).toBe(true);
+    expect(f.readState().calls.every((c) => c.method === 'GET')).toBe(true);
+  });
+  it('accepts a matching completion for a partial rerun with an untouched earlier flake', () => {
+    const data = fixture();
+    data.documents['playwright-root-report-1'].report = report('flaky');
+    data.run.run_attempt = 2;
+    data.run.updated_at = '2026-09-26T04:00:00Z';
+    data.jobs.push({ ...data.jobs[2], id: 99, run_attempt: 2, completed_at: data.run.updated_at });
+    data.documents['playwright-ct-report-2-of-4'].outcome.runAttempt = '2';
+    const f = functional(data);
+    expect(f.call('collect', ['--run', '1234']).status).toBe(0);
+    expect(f.call('publish', ['--write']).status).toBe(0);
+    expect(f.readState().issues[0].body).toContain('attempt 1');
+    expect(f.readState().issues[0].body).toContain('Latest seen: 2026-09-26T02:45:00Z');
+  });
   it('collects eight real ZIP reports, creates a Bug through fake gh, and replays without duplicate writes', () => {
     const data = fixture();
     data.documents['playwright-root-report-2'].report = report('flaky');
@@ -173,8 +220,12 @@ describe('gh-only reporter functional workflow', () => {
   });
   it('refuses evidence collected across a newly started source attempt', () => {
     const data = fixture();
+    data.run.conclusion = 'failure';
+    data.documents['playwright-root-report-1'].report = report('unexpected');
     let calls = 0;
     const out = temporary();
+    const eventPath = join(out, 'event.json');
+    writeFileSync(eventPath, JSON.stringify({ action: 'completed', workflow_run: data.run }));
     const client = {
       run: () => ({ ...data.run, run_attempt: ++calls === 1 ? 1 : 2 }),
       jobs: () => data.jobs,
@@ -182,10 +233,33 @@ describe('gh-only reporter functional workflow', () => {
       archive: (artifact) => data.documents[artifact.name],
     };
     expect(
-      main(['collect', '--run', '1234', '--out', out], { createClient: () => client, env: {} }),
+      main(['collect', '--run', '1234', '--out', out], {
+        createClient: () => client,
+        env: {
+          GITHUB_EVENT_NAME: 'workflow_run',
+          GITHUB_EVENT_PATH: eventPath,
+        },
+      }),
     ).toBe(1);
     expect(existsSync(join(out, 'documents.json'))).toBe(true);
     expect(existsSync(join(out, 'plan.json'))).toBe(false);
+    const gap = JSON.parse(readFileSync(join(out, 'evidence-gap.json'), 'utf8'));
+    expect(gap.expected).toMatchObject({ run_attempt: 1, conclusion: 'failure' });
+    expect(gap.observed.run_attempt).toBe(2);
+    const preserved = JSON.parse(readFileSync(join(out, 'documents.json'), 'utf8'));
+    expect(preserved['playwright-root-report-1'].report).toEqual(
+      data.documents['playwright-root-report-1'].report,
+    );
+  });
+  it('binds an explicit diagnostic attempt even outside a workflow completion', () => {
+    const out = temporary();
+    expect(
+      main(['collect', '--run', '1234', '--attempt', '2', '--out', out], {
+        env: {},
+        createClient: () => ({ run: () => fixture().run }),
+      }),
+    ).toBe(1);
+    expect(existsSync(join(out, 'evidence-gap.json'))).toBe(true);
   });
   it('preserves corrupt ZIP evidence and reports an infrastructure incident', () => {
     const f = functional();
@@ -229,6 +303,51 @@ describe('gh-only reporter functional workflow', () => {
 });
 
 describe('GitHub API validation', () => {
+  it.each([
+    ['no history', [], { state: 'none', number: null }],
+    [
+      'explicit undo',
+      [
+        ['MarkedAsDuplicateEvent', 20],
+        ['UnmarkedAsDuplicateEvent', 20],
+      ],
+      { state: 'unmarked', number: null },
+    ],
+    [
+      'unrelated undo',
+      [
+        ['MarkedAsDuplicateEvent', 20],
+        ['UnmarkedAsDuplicateEvent', 50],
+      ],
+      { state: 'marked', number: 30 },
+    ],
+    ['unrelated history', [['UnmarkedAsDuplicateEvent', 50]], { state: 'none', number: null }],
+  ])('retains authoritative duplicate history state for %s', (_name, events, expected) => {
+    const client = githubClient({
+      directory: temporary(),
+      run: (_args, options) => {
+        const { query } = JSON.parse(options.input);
+        expect(query).toMatch(/\.\.\. on UnmarkedAsDuplicateEvent/);
+        return JSON.stringify({
+          data: {
+            repository: {
+              issue: {
+                timelineItems: {
+                  nodes: events.map(([__typename, number]) => ({
+                    __typename,
+                    duplicate: { number, repository: { nameWithOwner: 'intent-hq/intent' } },
+                    canonical: { number: 30, repository: { nameWithOwner: 'intent-hq/intent' } },
+                  })),
+                  pageInfo: { hasNextPage: false, endCursor: null },
+                },
+              },
+            },
+          },
+        });
+      },
+    });
+    expect(client.canonical(20)).toEqual(expected);
+  });
   it('rejects missing issue bodies and incomplete comments instead of creating duplicates', () => {
     const client = githubClient({
       directory: temporary(),
@@ -293,7 +412,7 @@ describe('GitHub API validation', () => {
         });
       },
     });
-    expect(client.canonical(20)).toBe(30);
+    expect(client.canonical(20)).toEqual({ state: 'marked', number: 30 });
     expect(calls.map((c) => c.variables.cursor)).toEqual([null, 'page2']);
   });
 });
@@ -301,6 +420,10 @@ describe('GitHub API validation', () => {
 describe('trusted workflow execution policy', () => {
   const expression = / {4}if: >-\n((?: {6}.*\n)+)/.exec(workflow)[1].trim();
   const evaluate = new Function('github', `return (${expression})`);
+  it('passes the triggering attempt to collection independently of the latest run', () => {
+    expect(workflow).toContain('SOURCE_RUN_ATTEMPT: ${{ github.event.workflow_run.run_attempt }}');
+    expect(workflow).toContain('collect --run "$SOURCE_RUN_ID" --attempt "$SOURCE_RUN_ATTEMPT"');
+  });
   it('serializes all source runs and retries without cancelling pending reports', () => {
     const concurrency = /^concurrency:\n((?: {2}.+\n)+)/m.exec(workflow)[1];
     const policy = Object.fromEntries(

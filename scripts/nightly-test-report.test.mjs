@@ -171,6 +171,18 @@ describe('complete browser evidence', () => {
       },
     ],
     [
+      'missing job observation time',
+      (d) => {
+        delete d.jobs[1].completed_at;
+      },
+    ],
+    [
+      'invalid job observation time',
+      (d) => {
+        d.jobs[1].completed_at = 'not-a-time';
+      },
+    ],
+    [
       'duplicate latest job',
       (d) => {
         d.jobs.push(d.jobs[1]);

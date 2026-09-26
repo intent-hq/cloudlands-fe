@@ -16,6 +16,27 @@ const fold = (s) =>
     .replace(/\s+/g, ' ');
 const issueUrl = (n) => `https://github.com/${ISSUE_REPO}/issues/${n}`;
 
+function legacyDuplicates(bodies) {
+  const references = new Set();
+  for (const body of bodies) {
+    // Require the entire human text to be affirmative declarations. A matching
+    // line surrounded by historical discussion, Markdown or HTML is ambiguous.
+    const lines = (body ?? '')
+      .split(/\r?\n/)
+      .filter(
+        (line) => line.trim() && !/^<!-- nightly-browser-failure:v1:[a-f0-9]{64} -->$/.test(line),
+      );
+    const declarations = lines.map((line) =>
+      /^ {0,3}duplicate(?: of|:)\s+(?:https:\/\/github\.com\/intent-hq\/intent\/issues\/|intent-hq\/intent#|#)([1-9]\d*)[.!]?[ \t]*$/i.exec(
+        line,
+      ),
+    );
+    if (declarations.every(Boolean))
+      for (const match of declarations) references.add(Number(match[1]));
+  }
+  return [...references];
+}
+
 function matchingIssues(item, inventory) {
   const marked = new Set(
     inventory.comments
@@ -47,26 +68,33 @@ function matchingIssues(item, inventory) {
   return { candidates: strong, exact: false };
 }
 
-function evidenceBody(
-  item,
-  run,
-  firstSeen,
-  candidates = [],
-  note = '',
-  latestSeen = run.updated_at,
-) {
-  const runUrl = `https://github.com/${SOURCE_REPO}/actions/runs/${run.id}/attempts/${run.run_attempt}`;
-  const artifactLinks = item.artifacts
-    .map((name) => `[${safeText(name)}](${runUrl}#artifacts)`)
-    .join(', ');
+function evidenceBody(item, run, occurrences, firstSeen, latestSeen, candidates = [], note = '') {
+  const attempts = [...new Set(occurrences.map((o) => o.attempt))].sort((a, b) => a - b);
+  const runUrl = (attempt) =>
+    `https://github.com/${SOURCE_REPO}/actions/runs/${run.id}/attempts/${attempt}`;
+  const artifactLinks = [
+    ...new Set(
+      occurrences.flatMap((o) =>
+        o.artifacts.map(
+          (name) => `[${safeText(name)} (attempt ${o.attempt})](${runUrl(o.attempt)}#artifacts)`,
+        ),
+      ),
+    ),
+  ].join(', ');
+  const evidence = occurrences
+    .map(
+      (o) =>
+        `${o.artifacts.join(', ')} (attempt ${o.attempt}, observed ${o.observedAt}):\n${o.evidence}`,
+    )
+    .join('\n\n');
   return (
-    `${marker(item.key)}\n${occurrenceMarker(run, item.key)}\n` +
-    `Nightly browser ${item.quarantine ? 'quarantine ' : ''}recurrence${item.status === 'flaky' ? ' (passed on retry)' : ''}.\n\n` +
+    `${marker(item.key)}\n${attempts.map((attempt) => occurrenceMarker(run, item.key, attempt)).join('\n')}\n` +
+    `Nightly browser ${item.quarantine ? 'quarantine ' : ''}recurrence${occurrences.some((o) => o.status === 'flaky') ? ' (passed on retry)' : ''}.\n\n` +
     `First seen: ${firstSeen}. Latest seen: ${latestSeen}.\n` +
-    `Commit: [${run.head_sha}](https://github.com/${SOURCE_REPO}/commit/${run.head_sha}). [Run ${run.id}, attempt ${run.run_attempt}](${runUrl}).\n\n` +
+    `Commit: [${run.head_sha}](https://github.com/${SOURCE_REPO}/commit/${run.head_sha}). ${attempts.map((attempt) => `[Run ${run.id}, attempt ${attempt}](${runUrl(attempt)})`).join(', ')}.\n\n` +
     `Suite/project: ${safeText(item.suite)} / ${safeText(item.project)}\n\nSpec: ${safeText(item.file)}\n\nTest: ${safeText(item.title)}\n\nCategory: ${safeText(item.category)}\n\n` +
-    `Reports and traces: ${artifactLinks || `[run artifacts](${runUrl}#artifacts)`}.\n\n` +
-    `Evidence:\n<pre>${safeText(item.evidence).slice(0, 8000)}</pre>\n\n` +
+    `Reports and traces: ${artifactLinks || `[run artifacts](${runUrl(attempts.at(-1))}#artifacts)`}.\n\n` +
+    `Evidence:\n<pre>${safeText(evidence).slice(0, 8000)}</pre>\n\n` +
     (candidates.length
       ? `Possible existing issues need human triage: ${candidates.map((i) => `[${i.number}](${issueUrl(i.number)})`).join(', ')}. No automatic adoption because the match is ambiguous.\n\n`
       : '') +
@@ -112,18 +140,15 @@ export function synchronizeIssues(
     while (issue.state === 'closed') {
       if (seen.has(issue.number)) throw new Error('Duplicate issue cycle');
       seen.add(issue.number);
-      let canonical = client.canonical(issue.number);
-      if (!canonical) {
-        const text = [issue.body, ...client.comments(issue.number).map((c) => c.body)].join('\n');
-        const refs = [
-          ...new Set(
-            [
-              ...text.matchAll(
-                /\bduplicate (?:of|:)\s*(?:https:\/\/github\.com\/intent-hq\/intent\/issues\/|intent-hq\/intent#|#)(\d+)\b/gi,
-              ),
-            ].map((m) => Number(m[1])),
-          ),
-        ];
+      const history = client.canonical(issue.number);
+      if (!['marked', 'unmarked', 'none'].includes(history?.state))
+        throw new Error('Unreadable duplicate decision');
+      let canonical = history.number;
+      if (history.state === 'none') {
+        const refs = legacyDuplicates([
+          issue.body,
+          ...client.comments(issue.number).map((c) => c.body),
+        ]);
         if (refs.length > 1)
           throw new Error(`Ambiguous duplicate reference on issue ${issue.number}`);
         canonical = refs[0];
@@ -135,6 +160,21 @@ export function synchronizeIssues(
   };
   for (const item of plan.items) {
     if (item.key !== failureKey(item)) throw new Error('Invalid failure identity');
+    if (
+      !Array.isArray(item.occurrences) ||
+      item.occurrences.length === 0 ||
+      !item.occurrences.every(
+        (o) =>
+          Number.isSafeInteger(o.attempt) &&
+          o.attempt >= 1 &&
+          o.attempt <= plan.run.run_attempt &&
+          typeof o.observedAt === 'string' &&
+          Number.isFinite(Date.parse(o.observedAt)) &&
+          Array.isArray(o.artifacts) &&
+          typeof o.evidence === 'string',
+      )
+    )
+      throw new Error('Missing or invalid occurrence provenance; collect the report again');
     refresh(); // Serial writer + authoritative recheck immediately before every create.
     const match = matchingIssues(item, inventory);
     let candidates = match.candidates.map((i) => resolveCanonical(client.issue(i.number)));
@@ -160,11 +200,20 @@ export function synchronizeIssues(
       issue: issue?.number ?? null,
       candidates: candidates.map((i) => i.number),
       url: issue ? issueUrl(issue.number) : null,
+      occurrences: item.occurrences.map(({ attempt, observedAt, job, artifacts }) => ({
+        attempt,
+        observedAt,
+        job,
+        artifacts,
+      })),
     };
     results.push(result);
     checkpoint(results);
+    const observed = item.occurrences
+      .map((o) => o.observedAt)
+      .sort((a, b) => Date.parse(a) - Date.parse(b));
     if (!issue) {
-      const body = `${CREATED}\n${evidenceBody(item, plan.run, plan.run.updated_at, candidates)}\nNew-failure triage owner: @${OWNER}.`;
+      const body = `${CREATED}\n${evidenceBody(item, plan.run, item.occurrences, observed[0], observed.at(-1), candidates)}\nNew-failure triage owner: @${OWNER}.`;
       if (!write) continue;
       issue = client.create(
         `[nightly ${item.suite}] ${item.title}`.replace(/\s+/g, ' ').slice(0, 240),
@@ -179,17 +228,19 @@ export function synchronizeIssues(
     }
     verifyCreated(issue);
     const comments = client.comments(issue.number);
-    const seen = occurrenceMarker(plan.run, item.key);
-    if ([issue.body, ...comments.map((c) => c.body)].some((s) => s?.includes(seen))) {
+    const bodies = [issue.body, ...comments.map((c) => c.body)];
+    const pending = item.occurrences.filter(
+      (o) =>
+        !bodies.some((body) => body?.includes(occurrenceMarker(plan.run, item.key, o.attempt))),
+    );
+    if (pending.length === 0) {
       result.action = 'already-recorded';
       checkpoint(results);
       continue;
     }
-    const previous = [issue.body, ...comments.map((c) => c.body)].filter((s) =>
-      s?.includes(marker(item.key)),
-    );
+    const previous = bodies.filter((s) => s?.includes(marker(item.key)));
     const sightings = [
-      plan.run.updated_at,
+      ...observed,
       ...previous.flatMap((body) =>
         [...body.matchAll(/(?:First|Latest) seen: ([0-9T:.+-]+Z)\./g)].map((match) => match[1]),
       ),
@@ -199,7 +250,8 @@ export function synchronizeIssues(
     const firstSeen = sightings[0];
     const latestSeen = sightings.at(-1);
     const predatesClosure =
-      issue.state === 'closed' && Date.parse(plan.run.updated_at) <= Date.parse(issue.closed_at);
+      issue.state === 'closed' &&
+      pending.every((o) => Date.parse(o.observedAt) <= Date.parse(issue.closed_at));
     const notPlanned = issue.state === 'closed' && issue.state_reason !== 'completed';
     const owners = (issue.assignees ?? []).map((a) => a.login).filter((s) => /^[\w-]+$/.test(s));
     const note = predatesClosure
@@ -214,7 +266,10 @@ export function synchronizeIssues(
     if (notPlanned) result.action = 'closed-recurrence';
     if (predatesClosure) result.action = 'historical-evidence';
     if (write)
-      client.comment(issue.number, evidenceBody(item, plan.run, firstSeen, [], note, latestSeen));
+      client.comment(
+        issue.number,
+        evidenceBody(item, plan.run, pending, firstSeen, latestSeen, [], note),
+      );
     checkpoint(results);
   }
   return results;

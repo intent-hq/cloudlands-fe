@@ -50,8 +50,8 @@ export function failureKey(item) {
   return `v1:${createHash('sha256').update(JSON.stringify(identity)).digest('hex')}`;
 }
 export const marker = (key) => `<!-- nightly-browser-failure:${key} -->`;
-export const occurrenceMarker = (run, key) =>
-  `<!-- nightly-browser-seen:${run.id}:${run.run_attempt}:${key} -->`;
+export const occurrenceMarker = (run, key, attempt = run.run_attempt) =>
+  `<!-- nightly-browser-seen:${run.id}:${attempt}:${key} -->`;
 
 function specPath(file, rootDir = '') {
   requireValue(typeof file === 'string' && file.length > 0, 'Missing spec path');
@@ -200,7 +200,13 @@ function latestJob(jobs, entry, run) {
   requireValue(candidates.length === 1, `Missing or ambiguous job history for ${name}`);
   const job = candidates[0];
   requireValue(
-    job.status === 'completed' && typeof job.conclusion === 'string' && Array.isArray(job.steps),
+    job.status === 'completed' &&
+      Number.isSafeInteger(job.id) &&
+      job.id > 0 &&
+      typeof job.completed_at === 'string' &&
+      Number.isFinite(Date.parse(job.completed_at)) &&
+      typeof job.conclusion === 'string' &&
+      Array.isArray(job.steps),
     `Incomplete job history for ${name}`,
   );
   return job;
@@ -338,7 +344,20 @@ export function analyzeReports({ run, jobs, artifacts, documents }) {
         job: job.id,
         tests: parsed.testCount,
       });
-      if (validManifest) failures.push(...parsed.failures);
+      if (validManifest)
+        failures.push(
+          ...parsed.failures.map((failure) => ({
+            ...failure,
+            occurrence: {
+              attempt: job.run_attempt,
+              observedAt: job.completed_at,
+              job: job.id,
+              artifacts: [entry.artifactName],
+              status: failure.status,
+              evidence: failure.evidence,
+            },
+          })),
+        );
     } catch (error) {
       incidents.push(`${entry.artifactName}: ${error.message}`);
     }
@@ -350,7 +369,15 @@ export function analyzeReports({ run, jobs, artifacts, documents }) {
       existing.artifacts = [...new Set([...existing.artifacts, failure.artifact])];
       existing.tracking = [...new Set([...existing.tracking, ...failure.tracking])];
       existing.quarantine ||= failure.quarantine;
-    } else unique.set(failure.key, { ...failure, artifacts: [failure.artifact] });
+      existing.occurrences.push(failure.occurrence);
+    } else {
+      const { occurrence, ...item } = failure;
+      unique.set(failure.key, {
+        ...item,
+        artifacts: [failure.artifact],
+        occurrences: [occurrence],
+      });
+    }
   }
   const items = [...unique.values()];
   if (incidents.length) {
@@ -365,7 +392,20 @@ export function analyzeReports({ run, jobs, artifacts, documents }) {
       tracking: [],
       quarantine: false,
     };
-    items.unshift({ ...incident, key: failureKey(incident) });
+    items.unshift({
+      ...incident,
+      key: failureKey(incident),
+      occurrences: [
+        {
+          // Incompleteness is an observation about this reporting attempt, whereas
+          // test failures above belong to the jobs which actually executed them.
+          attempt: run.run_attempt,
+          observedAt: run.updated_at,
+          artifacts: incident.artifacts,
+          evidence: incident.evidence,
+        },
+      ],
+    });
   }
   return { schemaVersion: 1, run, lanes, incidents, items };
 }

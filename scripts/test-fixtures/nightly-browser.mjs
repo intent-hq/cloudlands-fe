@@ -132,6 +132,7 @@ export function fixture() {
       head_sha: run.head_sha,
       status: 'completed',
       conclusion: 'success',
+      completed_at: run.updated_at,
       steps: [],
     },
   ];
@@ -159,6 +160,7 @@ export function fixture() {
         head_sha: run.head_sha,
         status: 'completed',
         conclusion: 'success',
+        completed_at: run.updated_at,
         steps: [
           {
             name:
@@ -200,7 +202,7 @@ export function issueStore(initial = []) {
     issues,
     writes,
     storedComments: comments,
-    canonical: () => null,
+    canonical: () => ({ state: 'none', number: null }),
     inventory: () => {
       refreshes += 1;
       return structuredClone({ issues, comments });

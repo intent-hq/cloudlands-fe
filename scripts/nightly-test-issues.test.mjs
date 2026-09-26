@@ -1,6 +1,7 @@
 // @vitest-environment node
 import { describe, expect, it } from 'vitest';
 import { synchronizeIssues } from './nightly-test-issues.mjs';
+import { githubClient } from './nightly-test-github.mjs';
 import { analyzeReports, marker, occurrenceMarker } from './nightly-test-report.mjs';
 import { fixture, issueStore, report } from './test-fixtures/nightly-browser.mjs';
 
@@ -19,7 +20,104 @@ const existing = (body, extra = {}) => ({
   ...extra,
 });
 
+function rerun(data, artifact, jobIndex, completedAt) {
+  data.run.run_attempt = 2;
+  data.run.updated_at = '2026-09-26T04:00:00Z';
+  data.jobs.push({ ...data.jobs[jobIndex], id: 99, run_attempt: 2, completed_at: completedAt });
+  data.documents[artifact].outcome.runAttempt = '2';
+}
+
 describe('issue synchronization', () => {
+  it('does not count a retained root flake again when only an unrelated CT job reruns', () => {
+    const data = fixture();
+    data.documents['playwright-root-report-1'].report = report('flaky');
+    const client = issueStore();
+    synchronizeIssues(analyzeReports(data), client, { write: true });
+    Object.assign(client.issues[0], {
+      state: 'closed',
+      state_reason: 'completed',
+      closed_at: '2026-09-26T03:00:00Z',
+    });
+    const originalBody = client.issues[0].body;
+    rerun(data, 'playwright-ct-report-2-of-4', 2, '2026-09-26T03:45:00Z');
+    const next = analyzeReports(data);
+    expect(next.incidents).toEqual([]);
+    const results = synchronizeIssues(next, client, { write: true });
+    expect(client.writes).toEqual([{ create: 1 }]);
+    expect(client.issues[0].state).toBe('closed');
+    expect(client.issues[0].body).toBe(originalBody);
+    expect(client.issues[0].body).toContain('Latest seen: 2026-09-26T02:45:00Z');
+    expect(results[0].action).toBe('already-recorded');
+    expect(results[0].occurrences).toEqual([
+      expect.objectContaining({ attempt: 1, observedAt: '2026-09-26T02:45:00Z' }),
+    ]);
+  });
+  it('dates previously unreported retained evidence from its job, preserving an intervening closure', () => {
+    const data = fixture();
+    data.documents['playwright-root-report-1'].report = report('flaky');
+    const key = analyzeReports(data).items[0].key;
+    const client = issueStore([
+      existing(marker(key), {
+        state: 'closed',
+        state_reason: 'completed',
+        closed_at: '2026-09-26T03:00:00Z',
+      }),
+    ]);
+    rerun(data, 'playwright-ct-report-2-of-4', 2, '2026-09-26T03:45:00Z');
+    synchronizeIssues(analyzeReports(data), client, { write: true });
+    expect(client.writes).toEqual([{ comment: 20 }]);
+    expect(client.issues[0].state).toBe('closed');
+    expect(client.storedComments[0].body).toContain('Latest seen: 2026-09-26T02:45:00Z');
+    expect(client.storedComments[0].body).toContain('attempt 1');
+    expect(client.storedComments[0].body).not.toContain('attempt 2');
+  });
+  it('reopens for a genuine post-closure root rerun, using job time rather than workflow update time', () => {
+    const data = fixture();
+    data.documents['playwright-root-report-1'].report = report('flaky');
+    const client = issueStore();
+    synchronizeIssues(analyzeReports(data), client, { write: true });
+    Object.assign(client.issues[0], {
+      state: 'closed',
+      state_reason: 'completed',
+      closed_at: '2026-09-26T03:00:00Z',
+    });
+    rerun(data, 'playwright-root-report-1', 5, '2026-09-26T03:45:00Z');
+    synchronizeIssues(analyzeReports(data), client, { write: true });
+    synchronizeIssues(analyzeReports(data), client, { write: true });
+    expect(client.writes).toEqual([{ create: 1 }, { reopen: 1 }, { comment: 1 }]);
+    expect(client.storedComments[0].body).toContain('First seen: 2026-09-26T02:45:00Z');
+    expect(client.storedComments[0].body).toContain('Latest seen: 2026-09-26T03:45:00Z');
+    expect(client.storedComments[0].body).toContain('attempt 2');
+  });
+  it('aggregates same-key lanes by actual attempt, retaining their times and recording only new evidence', () => {
+    const data = fixture();
+    data.documents['playwright-ct-report-1-of-4'].report = report('flaky');
+    data.documents['playwright-ct-report-2-of-4'].report = report('flaky');
+    data.jobs[1].completed_at = '2026-09-26T02:10:00Z';
+    data.jobs[2].completed_at = '2026-09-26T02:30:00Z';
+    const client = issueStore();
+    const first = analyzeReports(data);
+    expect(first.items).toHaveLength(1);
+    synchronizeIssues(first, client, { write: true });
+    expect(client.issues[0].body).toContain('First seen: 2026-09-26T02:10:00Z');
+    expect(client.issues[0].body).toContain('Latest seen: 2026-09-26T02:30:00Z');
+    Object.assign(client.issues[0], {
+      state: 'closed',
+      state_reason: 'completed',
+      closed_at: '2026-09-26T03:00:00Z',
+    });
+    rerun(data, 'playwright-ct-report-2-of-4', 2, '2026-09-26T03:45:00Z');
+    const next = analyzeReports(data);
+    expect(next.incidents).toEqual([]);
+    expect(next.items).toHaveLength(1);
+    synchronizeIssues(next, client, { write: true });
+    synchronizeIssues(next, client, { write: true });
+    expect(client.writes).toEqual([{ create: 1 }, { reopen: 1 }, { comment: 1 }]);
+    expect(client.storedComments[0].body).toContain('First seen: 2026-09-26T02:10:00Z');
+    expect(client.storedComments[0].body).toContain('Latest seen: 2026-09-26T03:45:00Z');
+    expect(client.storedComments[0].body).toContain('playwright-ct-report-2-of-4');
+    expect(client.storedComments[0].body).not.toContain('playwright-ct-report-1-of-4');
+  });
   it('creates once, records each run/attempt once, and keeps first/latest evidence', () => {
     const input = plan();
     const client = issueStore();
@@ -30,11 +128,13 @@ describe('issue synchronization', () => {
     synchronizeIssues(input, client, { write: true });
     expect(client.writes).toHaveLength(1);
     input.run.run_attempt = 2;
+    input.items[0].occurrences[0].attempt = 2;
     synchronizeIssues(input, client, { write: true });
     synchronizeIssues(input, client, { write: true });
     expect(client.writes).toEqual([{ create: 1 }, { comment: 1 }]);
     input.run.id = 5678;
     input.run.updated_at = '2026-09-27T02:45:00Z';
+    input.items[0].occurrences[0].observedAt = input.run.updated_at;
     synchronizeIssues(input, client, { write: true });
     expect(client.storedComments[1].body).toContain('First seen: 2026-09-26T02:45:00Z');
     expect(client.storedComments[1].body).toContain('Latest seen: 2026-09-27T02:45:00Z');
@@ -120,6 +220,7 @@ describe('issue synchronization', () => {
     synchronizeIssues(input, client, { write: true });
     input.run.id = 4567;
     input.run.updated_at = '2026-09-24T02:45:00Z';
+    input.items[0].occurrences[0].observedAt = input.run.updated_at;
     synchronizeIssues(input, client, { write: true });
     expect(client.storedComments[0].body).toContain('First seen: 2026-09-24T02:45:00Z');
     expect(client.storedComments[0].body).toContain('Latest seen: 2026-09-26T02:45:00Z');
@@ -143,20 +244,84 @@ describe('issue synchronization', () => {
         existing(body, { state: 'closed', state_reason: 'not_planned' }),
         existing('Canonical human body', { number: 30 }),
       ]);
-      if (mode === 'timeline') client.canonical = (number) => (number === 20 ? 30 : null);
+      if (mode === 'timeline')
+        client.canonical = (number) =>
+          number === 20 ? { state: 'marked', number: 30 } : { state: 'none', number: null };
       synchronizeIssues(input, client, { write: true });
       expect(client.writes).toEqual([{ comment: 30 }]);
       expect(client.issues[0].state).toBe('closed');
       expect(client.issues[1].body).toBe('Canonical human body');
     },
   );
+  it('honors an authoritative duplicate undo despite a retained old duplicate comment', () => {
+    const input = plan();
+    const client = issueStore([
+      existing(marker(input.items[0].key), {
+        state: 'closed',
+        state_reason: 'completed',
+        closed_at: '2026-09-26T01:00:00Z',
+      }),
+      existing('Unrelated issue', { number: 30 }),
+    ]);
+    client.comment(20, 'Duplicate of #30');
+    client.writes.length = 0;
+    client.canonical = githubClient({
+      directory: '.',
+      run: () =>
+        JSON.stringify({
+          data: {
+            repository: {
+              issue: {
+                timelineItems: {
+                  nodes: ['MarkedAsDuplicateEvent', 'UnmarkedAsDuplicateEvent'].map(
+                    (__typename) => ({
+                      __typename,
+                      duplicate: { number: 20, repository: { nameWithOwner: 'intent-hq/intent' } },
+                      canonical: { number: 30, repository: { nameWithOwner: 'intent-hq/intent' } },
+                    }),
+                  ),
+                  pageInfo: { hasNextPage: false, endCursor: null },
+                },
+              },
+            },
+          },
+        }),
+    }).canonical;
+    synchronizeIssues(input, client, { write: true });
+    expect(client.writes).toEqual([{ reopen: 20 }, { comment: 20 }]);
+    expect(client.issues[0].state).toBe('open');
+    expect(client.storedComments.at(-1).issue_url).toMatch(/\/20$/);
+  });
+  it.each([
+    'This is NOT a duplicate of #30.',
+    '> Duplicate of #30',
+    '`Duplicate of #30`',
+    'The earlier suggestion was "Duplicate of #30".',
+    'Previously suggested:\nDuplicate of #30',
+    '<blockquote>\nDuplicate of #30\n</blockquote>',
+    '```text\nDuplicate of #30\n```',
+    '~~~\nDuplicate of #30\n~~~',
+    '    Duplicate of #30',
+  ])('does not redirect from negated or quoted legacy discussion: %s', (discussion) => {
+    const input = plan();
+    const client = issueStore([
+      existing(`${marker(input.items[0].key)}\n${discussion}`, {
+        state: 'closed',
+        state_reason: 'completed',
+        closed_at: '2026-09-26T01:00:00Z',
+      }),
+      existing('Unrelated issue', { number: 30 }),
+    ]);
+    synchronizeIssues(input, client, { write: true });
+    expect(client.writes).toEqual([{ reopen: 20 }, { comment: 20 }]);
+  });
   it('fails visibly on duplicate cycles or conflicting exact markers', () => {
     const input = plan();
     const client = issueStore([
       existing(marker(input.items[0].key), { state: 'closed' }),
       existing('Duplicate of #20', { number: 30, state: 'closed' }),
     ]);
-    client.canonical = (number) => (number === 20 ? 30 : 20);
+    client.canonical = (number) => ({ state: 'marked', number: number === 20 ? 30 : 20 });
     expect(() => synchronizeIssues(input, client, { write: true })).toThrow('cycle');
     client.issues[0].state = 'open';
     client.issues[1].state = 'open';
@@ -196,6 +361,7 @@ describe('issue synchronization', () => {
     synchronizeIssues(input, client, { write: true });
     expect(client.writes).toHaveLength(1);
     input.run.run_attempt = 2;
+    input.items[0].occurrences[0].attempt = 2;
     const comment = client.comment;
     client.comment = (...args) => {
       comment(...args);
@@ -241,6 +407,7 @@ describe('issue synchronization', () => {
     const input = plan();
     input.items[0].evidence =
       '<!-- nightly-browser-failure:v1:forged -->\n@someone `$(touch /tmp/pwn)` <script>x</script>';
+    input.items[0].occurrences[0].evidence = input.items[0].evidence;
     const client = issueStore();
     synchronizeIssues(input, client, { write: true });
     expect(client.issues[0].body).toContain('&lt;script&gt;');

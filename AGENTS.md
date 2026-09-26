@@ -657,14 +657,18 @@ is roughly 10× the cost of a jsdom test and the CT job is sharded and time-boxe
   permission to set Bug Type, labels and assignees). New issues go to
   `intent-hq/intent`, owned by @panghy; matched issues retain their owners and human
   text. Exact markers and complete open/closed issue/comment listings deduplicate
-  occurrences; fixed regressions reopen, duplicates follow their canonical issue,
-  and not-planned closures stay closed with recurrence evidence. No green run
+  occurrences using each job's own attempt and completion time; retained shards
+  do not count again. Fixed regressions reopen, current duplicates follow their
+  canonical issue, and an explicit duplicate undo overrides old comments.
+  Not-planned closures stay closed with recurrence evidence. No green run
   automatically closes an issue. Quarantine failures reuse an existing strong
   match or an `issue`/`quarantine` annotation containing its tracking issue URL.
   Missing reports or stale rerun evidence produce a separate CI incident.
+  Collection and publication bind the triggering attempt; a later source attempt
+  fails reporting with saved event/evidence-gap metadata instead of replacing it.
   For read-only diagnosis, run
   `node scripts/nightly-test-failures.mjs collect --run <id> --out /tmp/nightly-report`
-  (add `--historical` for older/non-nightly artifacts).
+  (add `--attempt <n>` to pin the source attempt, or `--historical` for older/non-nightly artifacts).
   `publish --out /tmp/nightly-report` previews issue actions; writes
   require the trusted completion workflow. Its saved plan, receipts, summary and
   original archives survive reporting errors; rerun that workflow after correcting

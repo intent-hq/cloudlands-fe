@@ -38,7 +38,8 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           SOURCE_RUN_ID: ${{ github.event.workflow_run.id }}
-        run: node scripts/nightly-test-failures.mjs collect --run "$SOURCE_RUN_ID" --out "$RUNNER_TEMP/nightly-report"
+          SOURCE_RUN_ATTEMPT: ${{ github.event.workflow_run.run_attempt }}
+        run: node scripts/nightly-test-failures.mjs collect --run "$SOURCE_RUN_ID" --attempt "$SOURCE_RUN_ATTEMPT" --out "$RUNNER_TEMP/nightly-report"
       - name: File or update central tracker issues
         env:
           GH_TOKEN: ${{ secrets.MONOREPO_ISSUES_TOKEN }}

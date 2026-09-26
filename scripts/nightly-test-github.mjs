@@ -146,13 +146,16 @@ export function githubClient({ run = gh, directory }) {
     comments: (number) => pages(`repos/${ISSUE_REPO}/issues/${number}/comments`).map(validComment),
     canonical: (number) => {
       let cursor = null;
-      let canonical = null;
+      let history = { state: 'none', number: null };
       do {
         const response = api('graphql', {
           query: `query($number:Int!,$cursor:String) {
           repository(owner:"intent-hq",name:"intent") { issue(number:$number) {
             timelineItems(first:100,after:$cursor,itemTypes:[MARKED_AS_DUPLICATE_EVENT,UNMARKED_AS_DUPLICATE_EVENT]) {
               nodes { __typename ... on MarkedAsDuplicateEvent {
+                canonical { ... on Issue { number repository { nameWithOwner } } }
+                duplicate { ... on Issue { number repository { nameWithOwner } } }
+              } ... on UnmarkedAsDuplicateEvent {
                 canonical { ... on Issue { number repository { nameWithOwner } } }
                 duplicate { ... on Issue { number repository { nameWithOwner } } }
               } }
@@ -166,22 +169,31 @@ export function githubClient({ run = gh, directory }) {
         if (!Array.isArray(timeline?.nodes) || typeof timeline?.pageInfo?.hasNextPage !== 'boolean')
           throw new Error('Unreadable duplicate history');
         for (const event of timeline.nodes) {
-          if (event.__typename === 'UnmarkedAsDuplicateEvent') canonical = null;
           if (
-            event.__typename === 'MarkedAsDuplicateEvent' &&
             event.duplicate?.number === number &&
             event.duplicate?.repository?.nameWithOwner === ISSUE_REPO
           ) {
-            if (event.canonical?.repository?.nameWithOwner !== ISSUE_REPO)
-              throw new Error('Duplicate canonical issue is outside the central tracker');
-            canonical = event.canonical.number;
+            if (event.__typename === 'UnmarkedAsDuplicateEvent')
+              history = { state: 'unmarked', number: null };
+            else if (event.__typename === 'MarkedAsDuplicateEvent')
+              history = {
+                state: 'marked',
+                number: event.canonical?.number,
+                repository: event.canonical?.repository?.nameWithOwner,
+              };
           }
         }
         cursor = timeline.pageInfo.hasNextPage ? timeline.pageInfo.endCursor : null;
         if (timeline.pageInfo.hasNextPage && !cursor)
           throw new Error('Truncated duplicate history');
       } while (cursor);
-      return canonical;
+      if (history.state === 'marked') {
+        if (history.repository !== ISSUE_REPO)
+          throw new Error('Duplicate canonical issue is outside the central tracker');
+        if (!Number.isSafeInteger(history.number) || history.number < 1)
+          throw new Error('Unreadable duplicate canonical issue');
+      }
+      return { state: history.state, number: history.number };
     },
     create: (title, body) =>
       validIssue(

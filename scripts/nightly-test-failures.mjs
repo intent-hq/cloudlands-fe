@@ -20,7 +20,28 @@ function summary(directory, text, env) {
   writeFileSync(join(directory, 'summary.md'), `${text}\n`);
   if (env.GITHUB_STEP_SUMMARY) appendFileSync(env.GITHUB_STEP_SUMMARY, `${text}\n`);
 }
-function writeScope(plan, env) {
+function evidenceGap(directory, expected, observed, reason) {
+  const message = `${reason}: requested attempt ${expected.run_attempt}, observed attempt ${observed.run_attempt}. The requested completion cannot be established from the available evidence`;
+  save(directory, 'evidence-gap.json', { reason: message, expected, observed });
+  throw new Error(message);
+}
+function validateCompletion(run, env, directory) {
+  const event = readJson(env.GITHUB_EVENT_PATH);
+  save(directory, 'source-event.json', event);
+  if (
+    event.action !== 'completed' ||
+    !trustedRun(event.workflow_run) ||
+    event.workflow_run.status !== 'completed' ||
+    !Number.isSafeInteger(event.workflow_run.run_attempt) ||
+    event.workflow_run.run_attempt < 1 ||
+    event.workflow_run.id !== run.id ||
+    event.workflow_run.head_sha !== run.head_sha
+  )
+    throw new Error('Completion event does not match the report');
+  if (event.workflow_run.run_attempt !== run.run_attempt)
+    evidenceGap(directory, event.workflow_run, run, 'Completion event attempt mismatch');
+}
+function writeScope(plan, env, directory) {
   if (
     env.GITHUB_EVENT_NAME !== 'workflow_run' ||
     env.GITHUB_REPOSITORY !== SOURCE_REPO ||
@@ -32,15 +53,7 @@ function writeScope(plan, env) {
       'Issue writes require the trusted main workflow_run job and MONOREPO_ISSUES_TOKEN',
     );
   }
-  const event = readJson(env.GITHUB_EVENT_PATH);
-  if (
-    event.action !== 'completed' ||
-    !trustedRun(event.workflow_run) ||
-    event.workflow_run.id !== plan.run.id ||
-    event.workflow_run.head_sha !== plan.run.head_sha
-  ) {
-    throw new Error('Completion event does not match the report');
-  }
+  validateCompletion(plan.run, env, directory);
 }
 
 export function main(argv, { env = process.env, createClient = githubClient } = {}) {
@@ -48,11 +61,14 @@ export function main(argv, { env = process.env, createClient = githubClient } = 
   try {
     const [command, ...args] = argv;
     let runId;
+    let runAttempt;
     let write = false;
     let historical = false;
     for (let i = 0; i < args.length; i += 1) {
       if (args[i] === '--out' && args[i + 1]) directory = resolve(args[++i]);
       else if (args[i] === '--run' && /^\d+$/.test(args[i + 1] ?? '')) runId = args[++i];
+      else if (args[i] === '--attempt' && /^[1-9]\d*$/.test(args[i + 1] ?? ''))
+        runAttempt = Number(args[++i]);
       else if (args[i] === '--write') write = true;
       else if (args[i] === '--historical') historical = true;
       else throw new Error(`Unknown or incomplete option: ${args[i]}`);
@@ -60,10 +76,11 @@ export function main(argv, { env = process.env, createClient = githubClient } = 
     if (
       !directory ||
       !['collect', 'publish'].includes(command) ||
-      (command === 'collect' && (!runId || write))
+      (command === 'collect' && (!runId || write)) ||
+      (runAttempt !== undefined && (command !== 'collect' || !Number.isSafeInteger(runAttempt)))
     ) {
       throw new Error(
-        'Usage: nightly-test-failures.mjs collect --run ID --out DIR [--historical] | publish --out DIR [--write]',
+        'Usage: nightly-test-failures.mjs collect --run ID [--attempt N] --out DIR [--historical] | publish --out DIR [--write]',
       );
     }
     mkdirSync(directory, { recursive: true });
@@ -83,6 +100,15 @@ export function main(argv, { env = process.env, createClient = githubClient } = 
         throw new Error('Run is incomplete or has invalid metadata');
       if (!trustedRun(run) && !historical)
         throw new Error('Run is outside trusted nightly/main manual scope');
+      if (!historical && env.GITHUB_EVENT_NAME === 'workflow_run')
+        validateCompletion(run, env, directory);
+      if (runAttempt !== undefined && run.run_attempt !== runAttempt)
+        evidenceGap(
+          directory,
+          { id: run.id, run_attempt: runAttempt },
+          run,
+          'Requested source attempt mismatch',
+        );
       const jobs = client.jobs(runId); // Fail closed on unreadable history, never use artifact age alone.
       save(directory, 'jobs.json', jobs);
       const artifacts = client.artifacts(runId);
@@ -104,12 +130,13 @@ export function main(argv, { env = process.env, createClient = githubClient } = 
       }
       save(directory, 'documents.json', documents);
       const latest = client.run(runId);
+      save(directory, 'latest-run.json', latest);
       if (
         latest.run_attempt !== run.run_attempt ||
         latest.status !== 'completed' ||
         latest.head_sha !== run.head_sha
       )
-        throw new Error('Source run changed during collection; retry after completion');
+        evidenceGap(directory, run, latest, 'Source run changed during collection');
       const plan = analyzeReports({ run, jobs, artifacts, documents });
       plan.historical = historical;
       if (historical) {
@@ -135,7 +162,7 @@ export function main(argv, { env = process.env, createClient = githubClient } = 
     const plan = readJson(join(directory, 'plan.json'));
     if (write) {
       if (plan.historical) throw new Error('Historical diagnostics cannot write issues');
-      writeScope(plan, env);
+      writeScope(plan, env, directory);
     }
     const results = synchronizeIssues(plan, client, {
       write,
