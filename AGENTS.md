@@ -602,6 +602,27 @@ part of visual verification.
 
 ### Component tests (Playwright CT) — when and how
 
+CT keeps compiler/runner 1.58.2 and explicitly launches Chromium 153.0.8010.12
+(revision 1243), supplied by the exact `ct-browser` alias for Playwright core 1.63.0.
+`scripts/ct-browser.mjs` owns the checked identity, OS-specific executable resolution,
+cache key and dependency marker. Install with
+`node scripts/run-ct-tests.mjs --install-browsers chromium` (add `--with-deps` when
+needed); `--print-browser-plan` reports the resolved plan. Use the same
+`PLAYWRIGHT_BROWSERS_PATH` for installation and tests, including per-runner caches.
+The shared fixture rejects missing installs and wrong `Browser.getVersion` results;
+each attempt attaches `ct-runtime.json` with runner/browser versions and source hashes.
+The two-line `playwright-core@1.58.2` patch backports error classification from
+[Playwright PR 41868](https://github.com/microsoft/playwright/pull/41868), without
+retaining or intercepting promises. This browser is an integration experiment for
+intent-hq/intent#5481: the opt-in weak-inner-promise diagnostic still fails completion.
+
+Traces use `retain-on-first-failure`: the original failed attempt survives a passing
+retry. The opt-in `playwright-ct-evidence.config.ts` control requires a fresh
+`CT_EVIDENCE_OUTPUT` directory and is expected to fail the strict flaky gate with
+`--retries=1 --fail-on-flaky-tests`. The separate lifetime diagnostic config requires
+`CT_LIFETIME_EXECUTABLE`, `CT_LIFETIME_VERSION` and `CT_LIFETIME_OUTPUT`; these
+diagnostics are outside default discovery and do not change the ordinary pin.
+
 Playwright CT (`*.ct.spec.ts`, run by `pnpm run test:ct`) is for behavior that only a
 real browser can observe: functional layout/geometry, focus and keyboard handling, native
 browser APIs, and motion behavior under the rules above. State, wire, validation, and

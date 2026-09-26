@@ -71,6 +71,9 @@ describe('isCtContractPath', () => {
     'playwright/index.ts',
     'playwright/app-stubs/stores.ts',
     'scripts/run-ct-tests.mjs',
+    'scripts/ct-browser.mjs',
+    'scripts/playwright-os-deps-lib.mjs',
+    'patches/playwright-core@1.58.2.patch',
     'src/test/ct-test.ts',
     'src/lib/component-catalog/capture-stability.ts',
     'src/lib/component-catalog/geometry-probe.ts',
@@ -103,12 +106,15 @@ describe('isCtContractPath', () => {
     expect(isCtContractPath(file)).toBe(false);
   });
 
-  it('exports exactly the eleven paths the CT harness depends on', () => {
+  it('exports the CT harness dependency paths', () => {
     expect([...CT_CONTRACT_PATHS].sort()).toEqual([
       'package.json',
+      'patches/playwright-core@1.58.2.patch',
       'playwright-ct.config.ts',
       'playwright/**',
       'pnpm-lock.yaml',
+      'scripts/ct-browser.mjs',
+      'scripts/playwright-os-deps-lib.mjs',
       'scripts/run-ct-tests.mjs',
       'src/app.css',
       'src/lib/component-catalog/capture-stability.ts',
