@@ -31,6 +31,7 @@ const mocks = vi.hoisted(() => ({
   removingIds: {} as Record<string, string[]>,
   clearingIds: [] as string[],
   collaboratorOnly: false,
+  signIn: vi.fn(),
   dispatch: vi.fn(),
   leave: vi.fn(),
   leaveWorkspace: vi.fn(),
@@ -60,9 +61,8 @@ vi.mock('$store/renderer/store', async () => {
   return { store: createGuestWorkflowTestStore() };
 });
 
-// Identity hydration and switching through this pane run in ForgeIdentityChoice.test.ts.
-vi.mock('./ForgeIdentityChoice.svelte', async () => ({
-  default: (await import('$lib/components/chat/__tests__/mocks/SlotOnly.svelte')).default,
+vi.mock('$features/collaboration-auth/renderer/collaboration-auth.client', () => ({
+  openCollaborationSignIn: mocks.signIn,
 }));
 
 vi.mock('$store/renderer/slices/workspace/workspace-selectors', async (importOriginal) => ({
@@ -1284,5 +1284,30 @@ describe('GuestSessionsSettings', () => {
       expect(report.textContent).toContain('Untitled');
       expect(mocks.removeAll).toHaveBeenCalledWith('ws-1');
     });
+  });
+});
+
+describe('local collaboration sign-in entry', () => {
+  beforeEach(() => mocks.signIn.mockClear());
+  it.each([false, true])('requires Multiplayer even when GitLab is enabled=%s', async (gitlab) => {
+    const { setLabsGitLabEnabled, setLabsMultiplayerEnabled } =
+      await import('$store/renderer/slices/user-preferences/user-preferences-slice');
+    appStore.dispatch(setLabsGitLabEnabled(gitlab));
+    appStore.dispatch(setLabsMultiplayerEnabled(false));
+    render(GuestSessionsSettings);
+    expect(screen.queryByRole('button', { name: 'Sign in for collaboration' })).toBeNull();
+    appStore.dispatch(setLabsMultiplayerEnabled(true));
+    await fireEvent.click(await screen.findByRole('button', { name: 'Sign in for collaboration' }));
+    expect(mocks.signIn).toHaveBeenCalledOnce();
+  });
+  it('keeps local sign-in available in a member window without exposing host account controls', async () => {
+    mocks.collaboratorOnly = true;
+    const { setLabsMultiplayerEnabled } =
+      await import('$store/renderer/slices/user-preferences/user-preferences-slice');
+    appStore.dispatch(setLabsMultiplayerEnabled(true));
+    render(GuestSessionsSettings);
+    expect(screen.queryByTestId('guest-sessions-hosting')).toBeNull();
+    await fireEvent.click(screen.getByRole('button', { name: 'Sign in for collaboration' }));
+    expect(mocks.signIn).toHaveBeenCalledOnce();
   });
 });

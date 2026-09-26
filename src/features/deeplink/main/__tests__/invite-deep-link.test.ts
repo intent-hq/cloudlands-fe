@@ -6,9 +6,8 @@ import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
  * (no fingerprint confirmation) → `invite.challenge` → consent → the guest's
  * own daemon publishes the nonce as a gist (`github.identityProof.create`) →
  * `invite.prove` → credential stored as a GUEST session (never a paired
- * backend) → gist deleted → window opened. A guest that is not signed in to
- * GitHub (or whose token lacks the `gist` scope) signs in through its own
- * `github.connect` device flow first. Malformed links are rejected fail-soft,
+ * backend) → gist deleted → window opened. New sign-in uses the local
+ * collaboration-only identity continuation; old daemons need an upgrade. Malformed links are rejected fail-soft,
  * the secret and the minted token never reach a log line, and every refusal
  * maps onto a failure dialog instead of a crash.
  */
@@ -91,18 +90,6 @@ function onLocal(method: string, handler: LocalHandler): void {
 function localCalls(method: string): unknown[][] {
   return localRequest.mock.calls.filter(([m]) => m === method);
 }
-/** `github:auth-changed` listeners attached through `onBackendNotification`. */
-type NotificationHandler = (notification: { method: string; params?: unknown }) => void;
-const notificationListeners = new Set<NotificationHandler>();
-function emitAuthChanged(status: string): void {
-  for (const listener of notificationListeners) {
-    listener({
-      method: 'events.event',
-      params: { event: { type: 'github:auth-changed', data: { status } } },
-    });
-  }
-}
-
 /**
  * The local sidecar's `client.hello` protocolVersion, read through
  * `getConnectedDaemonProtocolVersion('local')`. Defaults to a daemon that
@@ -111,17 +98,19 @@ function emitAuthChanged(status: string): void {
 const localProtocolVersion = vi.fn<() => string | null>(() => '10.8'); // protocol-version-ok: fixture hello
 
 const openBackendWindow = vi.fn();
+const captureIdentity = vi.fn(() => ({ supported: false }));
+const prepareIdentity = vi.fn();
+vi.mock('../../../collaboration-auth/main/collaboration-auth.ipc', () => ({
+  prepareCollaborationIdentity: (...args: unknown[]) => prepareIdentity(...args),
+}));
 vi.mock('../../../backend/main/backend.ipc', () => ({
   get openBackendWindow() {
     return openBackendWindow;
   },
   getBackendClient: () => ({ request: localRequest }),
+  captureLocalIdentityConnection: () => captureIdentity(),
   getConnectedDaemonProtocolVersion: (connectionId: string) =>
     connectionId === 'local' ? localProtocolVersion() : null,
-  onBackendNotification: (handler: NotificationHandler) => {
-    notificationListeners.add(handler);
-    return () => notificationListeners.delete(handler);
-  },
 }));
 
 vi.mock('../../../backend/main/backend-connection', async () => {
@@ -190,17 +179,6 @@ function fakeConsent(decision: 'open' | 'cancel' | 'pending' | null) {
     dismiss: vi.fn(),
   };
   return { prompt, cancelWaiting, decide };
-}
-
-/**
- * The neutral `connect-forge` prompt a guest with no forge connected sees
- * before anything is asked of GitHub: queue its decision as the NEXT consent
- * prompt (`open` = "Sign in to GitHub", `cancel` = left for Settings).
- */
-function connectFirst(decision: 'open' | 'cancel' = 'open') {
-  const connect = fakeConsent(decision);
-  showInviteConsent.mockReturnValueOnce(connect.prompt);
-  return connect;
 }
 
 /**
@@ -310,29 +288,6 @@ const CONNECT = {
   expiresIn: 900,
   interval: 5,
 };
-/**
- * The guest daemon's single device-flow slot (PROTOCOL §5.27): `github.connect`
- * hands a still-pending flow back with the same `flowId`, and a
- * `github.cancelAuth { flowId }` naming any other flow is a no-op
- * (`cancelled: false`) that leaves the pending flow polling.
- */
-let liveFlowId: string | null = null;
-let startedFlows = 0;
-function startDeviceFlow(flowId = `flow-${++startedFlows}`): typeof CONNECT {
-  liveFlowId = flowId;
-  return { ...CONNECT, flowId };
-}
-/** `github.connect` on the modelled slot: a new flow, or the pending one again. */
-function connectDeviceFlow(): typeof CONNECT {
-  return liveFlowId === null ? startDeviceFlow() : { ...CONNECT, flowId: liveFlowId };
-}
-function cancelDeviceFlow(params: unknown): { ok: true; cancelled: boolean } {
-  const flowId = (params as { flowId?: unknown } | undefined)?.flowId;
-  if (flowId !== undefined && flowId !== liveFlowId) return { ok: true, cancelled: false };
-  const cancelled = liveFlowId !== null;
-  liveFlowId = null;
-  return { ok: true, cancelled };
-}
 const PROOF = { gistId: 'gist0123abc', login: 'octocat' };
 
 /** A local daemon refusal with a bounded `error.data.code` (PROTOCOL §9). */
@@ -360,39 +315,21 @@ function signedInDaemon(): void {
   onLocal('github.getUser', () => ({ user: { id: 42, login: 'octocat' } }));
   onLocal('github.identityProof.create', () => PROOF);
   onLocal('github.identityProof.delete', () => ({ ok: true }));
-  liveFlowId = null;
-  startedFlows = 0;
-  onLocal('github.connect', connectDeviceFlow);
-  onLocal('github.cancelAuth', cancelDeviceFlow);
-  onLocal('github.authStatus', () => ({ isConfigured: false, deviceFlow: { status: 'pending' } }));
 }
 
-/**
- * A guest daemon that is NOT signed in until `github:auth-changed`
- * (`authorized`) — or the poll — reports the device flow's end.
- */
 function signedOutDaemon(): void {
   signedInDaemon();
-  let signedIn = false;
-  onLocal('github.getUser', () => ({ user: signedIn ? { id: 42, login: 'octocat' } : null }));
+  onLocal('github.getUser', () => ({ user: null }));
   onLocal('github.identityProof.create', () => {
-    if (!signedIn) throw localRefusal('github-not-connected');
-    return PROOF;
+    throw localRefusal('github-not-connected');
   });
-  notificationListeners.clear();
-  const listener: NotificationHandler = (n) => {
-    const event = (n.params as { event?: { type?: string; data?: { status?: string } } }).event;
-    if (event?.type === 'github:auth-changed' && event.data?.status === 'authorized')
-      signedIn = true;
-  };
-  // Runs before the flow's own listener (Set iteration order is insertion order).
-  notificationListeners.add(listener);
 }
 
 beforeEach(() => {
   vi.clearAllMocks();
+  captureIdentity.mockReturnValue({ supported: false });
+  prepareIdentity.mockReset();
   logLines.length = 0;
-  notificationListeners.clear();
   signedInDaemon();
   appIsReady.mockReturnValue(true);
   showMessageBox.mockResolvedValue({ response: 0 });
@@ -1107,816 +1044,32 @@ describe('handleInviteDeepLink — renderer consent modal (prove)', () => {
   });
 });
 
-// The guest's own sign-in (intentd #1967): when the guest daemon is not
-// connected to GitHub — or its token lacks the `gist` scope — the modal's
-// `sign-in-required` state runs the guest's OWN `github.connect` device flow;
-// the join's `prove` prompt follows once the daemon is signed in.
-describe('handleInviteDeepLink — sign-in required', () => {
-  beforeEach(() => {
+describe('handleInviteDeepLink — older local daemon recovery', () => {
+  it('missing credentials offers an upgrade and never starts repository authorization', async () => {
     signedOutDaemon();
-  });
-
-  it('not connected: connect-first prompt → Sign in to GitHub → connect → sign-in modal → open → authorized → prove modal (supersedes) → join', async () => {
-    const connect = connectFirst();
-    const signIn = fakeConsent('open');
-    const prove2 = fakeConsent('open');
-    showInviteConsent.mockReturnValueOnce(signIn.prompt).mockReturnValueOnce(prove2.prompt);
-
-    const pending = handleInviteDeepLink(LINK);
-    await vi.waitFor(() => expect(openExternal).toHaveBeenCalledTimes(1));
-    expect(localCalls('github.identityProof.create')).toEqual([]);
-    emitAuthChanged('authorized');
-    await pending;
-
-    expect(localCalls('github.connect')).toHaveLength(1);
-    expect(showInviteConsent).toHaveBeenCalledTimes(3);
-    expect(showInviteConsent.mock.calls[0][0]).toEqual({
-      requestId: expect.any(String),
-      mode: 'connect-forge',
-      workspaceTitle: CHALLENGE.workspaceTitle,
-      hostLabel: '192.168.1.10',
-    });
-    expect(connect.prompt.dismiss).toHaveBeenCalledExactlyOnceWith('superseded');
-    expect(showInviteConsent.mock.calls[1][0]).toEqual({
-      requestId: expect.any(String),
-      mode: 'sign-in-required',
-      reason: 'not-connected',
-      userCode: CONNECT.userCode,
-      verificationUri: CONNECT.verificationUri,
-      expiresInMs: CONNECT.expiresIn * 1000,
-      workspaceTitle: CHALLENGE.workspaceTitle,
-      hostLabel: '192.168.1.10',
-    });
-    expect(JSON.stringify(showInviteConsent.mock.calls[1][0])).not.toContain(SECRET);
-    expect(clipboardWriteText).toHaveBeenCalledWith(CONNECT.userCode);
-    expect(openExternal).toHaveBeenCalledWith(CONNECT.verificationUri);
-    expect(showInviteConsent.mock.calls[2][0]).toMatchObject({ mode: 'prove', login: 'octocat' });
-    // The sign-in prompt is ended as superseded once the prove prompt is up.
-    expect(signIn.prompt.dismiss).toHaveBeenCalledExactlyOnceWith('superseded');
-    expect(prove2.prompt.dismiss).toHaveBeenCalledExactlyOnceWith('joined');
-    expect(prove).toHaveBeenCalledTimes(1);
-    expect(guestAdd).toHaveBeenCalledWith(expect.objectContaining({ token: TOKEN }));
-    expect(openBackendWindow).toHaveBeenCalledWith('guest-id');
-    expect(showMessageBox).not.toHaveBeenCalled();
-    expect(localCalls('github.cancelAuth')).toEqual([]);
-  });
-
-  describe('cancel during GitHub startup', () => {
-    beforeEach(() => {
-      challenge.mockResolvedValue(CURRENT_CHALLENGE);
-      onLocal('principal.me', () => ({
-        id: 'primary',
-        login: null,
-        displayName: null,
-        avatarUrl: null,
-        isAdministrator: true,
-        identity: null,
-      }));
-    });
-
-    it.each(['resolve', 'reject'])(
-      'ends promptly and ignores a late startup %s after leaving the forge prompt',
-      async (settlement) => {
-        const connect = connectFirst();
-        // If the regression reopens sign-in, close it so the failed test cannot leak a join.
-        showInviteConsent.mockReturnValue(fakeConsent('cancel').prompt);
-        let release!: (result: typeof CONNECT) => void;
-        let reject!: (error: unknown) => void;
-        onLocal(
-          'github.connect',
-          () =>
-            new Promise((resolve, refuse) => {
-              release = resolve;
-              reject = refuse;
-            }),
-        );
-
-        const joining = handleInviteDeepLink(LINK);
-        await vi.waitFor(() => expect(localCalls('github.connect')).toEqual([['github.connect']]));
-        // Cancel and the GitLab setup action both send cancel from this waiting state.
-        connect.cancelWaiting();
-        try {
-          await vi.waitFor(() => expect(close).toHaveBeenCalledOnce());
-          expect(connect.prompt.dismiss).toHaveBeenCalledExactlyOnceWith('cancelled');
-          expect(localCalls('github.cancelAuth')).toEqual([]);
-        } finally {
-          if (settlement === 'resolve') release(CONNECT);
-          else reject(localRefusal('rate-limited'));
-          await joining;
-          await new Promise<void>((resolve) => setImmediate(resolve));
-        }
-
-        expect(localCalls('github.cancelAuth')).toEqual(
-          settlement === 'resolve' ? [['github.cancelAuth']] : [],
-        );
-        expect(showInviteConsent).toHaveBeenCalledExactlyOnceWith({
-          requestId: expect.any(String),
-          mode: 'connect-forge',
-          workspaceTitle: CURRENT_CHALLENGE.workspaceTitle,
-          hostLabel: CURRENT_CHALLENGE.hostname,
-        });
-        expect(clipboardWriteText).not.toHaveBeenCalled();
-        expect(openExternal).not.toHaveBeenCalled();
-        expect(localCalls('github.authStatus')).toEqual([]);
-        expect(localCalls('github.identityProof.create')).toEqual([]);
-        expect(localCalls('sourceControl.identityProof.create')).toEqual([]);
-        expect(prove).not.toHaveBeenCalled();
-        expect(guestAdd).not.toHaveBeenCalled();
-        expect(openBackendWindow).not.toHaveBeenCalled();
-        expect(showInviteNotice).not.toHaveBeenCalled();
-        expect(showMessageBox).not.toHaveBeenCalled();
-        expect(logLines.join('\n')).not.toContain('Invite deep link handling failed');
-      },
+    showInviteNotice.mockResolvedValue(true);
+    await handleInviteDeepLink(LINK);
+    expect(showInviteNotice).toHaveBeenCalledWith(
+      expect.objectContaining({ reason: 'collaboration-upgrade-required' }),
     );
-
-    it.each(['pending', 'showing code'])(
-      'late startup cleanup leaves a newer sign-in alone while it is %s',
-      async (newerState) => {
-        const first = connectFirst();
-        const second = fakeConsent('open');
-        const signIn = fakeConsent('pending');
-        showInviteConsent.mockReturnValueOnce(second.prompt).mockReturnValueOnce(signIn.prompt);
-        let releaseFirst!: (result: typeof CONNECT) => void;
-        let releaseSecond!: (result: typeof CONNECT) => void;
-        let starts = 0;
-        onLocal(
-          'github.connect',
-          () =>
-            new Promise((resolve) => {
-              if (++starts === 1) releaseFirst = resolve;
-              else releaseSecond = resolve;
-            }),
-        );
-
-        const joiningFirst = handleInviteDeepLink(LINK);
-        await vi.waitFor(() => expect(starts).toBe(1));
-        first.cancelWaiting();
-        await joiningFirst;
-        expect(close).toHaveBeenCalledOnce();
-
-        const joiningSecond = handleInviteDeepLink(LINK);
-        await vi.waitFor(() => expect(starts).toBe(2));
-        if (newerState === 'showing code') {
-          releaseSecond(CONNECT);
-          await vi.waitFor(() => expect(showInviteConsent).toHaveBeenCalledTimes(3));
-        }
-        releaseFirst(CONNECT);
-        await new Promise<void>((resolve) => setImmediate(resolve));
-        expect(localCalls('github.cancelAuth')).toEqual([]);
-        expect(close).toHaveBeenCalledOnce();
-        expect(clipboardWriteText).toHaveBeenCalledTimes(newerState === 'pending' ? 0 : 1);
-        expect(signIn.prompt.dismiss).not.toHaveBeenCalled();
-
-        releaseSecond(CONNECT);
-        await vi.waitFor(() => expect(showInviteConsent).toHaveBeenCalledTimes(3));
-        signIn.decide('cancel');
-        await joiningSecond;
-        expect(localCalls('github.connect')).toEqual([['github.connect'], ['github.connect']]);
-        expect(localCalls('github.cancelAuth')).toEqual([['github.cancelAuth']]);
-        expect(clipboardWriteText).toHaveBeenCalledExactlyOnceWith(CONNECT.userCode);
-        expect(first.prompt.dismiss).toHaveBeenCalledExactlyOnceWith('cancelled');
-        expect(second.prompt.dismiss).toHaveBeenCalledExactlyOnceWith('superseded');
-        expect(signIn.prompt.dismiss).toHaveBeenCalledExactlyOnceWith('cancelled');
-        expect(openExternal).not.toHaveBeenCalled();
-        expect(prove).not.toHaveBeenCalled();
-        expect(guestAdd).not.toHaveBeenCalled();
-        expect(openBackendWindow).not.toHaveBeenCalled();
-        expect(showInviteNotice).not.toHaveBeenCalled();
-        expect(showMessageBox).not.toHaveBeenCalled();
-        expect(close).toHaveBeenCalledTimes(2);
-      },
-    );
-  });
-
-  it('the poll settles the wait when the event is missed', async () => {
-    let flow = 'pending';
-    let signedIn = false;
-    onLocal('github.authStatus', () => ({ isConfigured: signedIn, deviceFlow: { status: flow } }));
-    onLocal('github.getUser', () => ({ user: signedIn ? { id: 42, login: 'octocat' } : null }));
-    onLocal('github.identityProof.create', () => {
-      if (!signedIn) throw localRefusal('github-not-connected');
-      return PROOF;
-    });
-    showInviteConsent.mockImplementation(() => fakeConsent('open').prompt);
-
-    const pending = handleInviteDeepLink(LINK);
-    await vi.waitFor(() => expect(openExternal).toHaveBeenCalledTimes(1));
-    signedIn = true;
-    flow = 'authorized';
-    await pending;
-
-    expect(localCalls('github.authStatus').length).toBeGreaterThanOrEqual(1);
-    expect(guestAdd).toHaveBeenCalledWith(expect.objectContaining({ token: TOKEN }));
-    expect(openBackendWindow).toHaveBeenCalledWith('guest-id');
-  }, 15_000);
-
-  it('scope missing: a signed-in guest whose token lacks gist → sign-in modal names the reason → re-prove after', async () => {
-    signedInDaemon();
-    let scoped = false;
-    onLocal('github.identityProof.create', () => {
-      if (!scoped) throw localRefusal('github-scope-missing');
-      return PROOF;
-    });
-    notificationListeners.add((n) => {
-      const event = (n.params as { event?: { data?: { status?: string } } }).event;
-      if (event?.data?.status === 'authorized') scoped = true;
-    });
-    const prove1 = fakeConsent('open');
-    const signIn = fakeConsent('open');
-    const prove2 = fakeConsent('open');
-    showInviteConsent
-      .mockReturnValueOnce(prove1.prompt)
-      .mockReturnValueOnce(signIn.prompt)
-      .mockReturnValueOnce(prove2.prompt);
-
-    const pending = handleInviteDeepLink(LINK);
-    await vi.waitFor(() => expect(openExternal).toHaveBeenCalledTimes(1));
-    emitAuthChanged('authorized');
-    await pending;
-
-    expect(showInviteConsent).toHaveBeenCalledTimes(3);
-    expect(showInviteConsent.mock.calls[0][0]).toMatchObject({ mode: 'prove' });
-    expect(showInviteConsent.mock.calls[1][0]).toMatchObject({
-      mode: 'sign-in-required',
-      reason: 'scope-missing',
-    });
-    expect(showInviteConsent.mock.calls[2][0]).toMatchObject({ mode: 'prove', login: 'octocat' });
-    expect(prove1.prompt.dismiss).toHaveBeenCalledExactlyOnceWith('superseded');
-    expect(signIn.prompt.dismiss).toHaveBeenCalledExactlyOnceWith('superseded');
-    expect(prove2.prompt.dismiss).toHaveBeenCalledExactlyOnceWith('joined');
-    expect(localCalls('github.identityProof.create')).toHaveLength(2);
-    expect(prove).toHaveBeenCalledTimes(1);
-    expect(openBackendWindow).toHaveBeenCalledWith('guest-id');
-  });
-
-  it.each([
-    ['denied', 'sign-in-denied', 0],
-    ['expired', 'sign-in-expired', 1],
-    ['error', 'sign-in-failed', 0],
-  ] as const)(
-    'device flow ends %s: dismiss failed, failure box, no gist, nothing stored',
-    async (status, flowCode, cancelAuthCalls) => {
-      connectFirst();
-      const signIn = fakeConsent('open');
-      showInviteConsent.mockReturnValue(signIn.prompt);
-
-      const pending = handleInviteDeepLink(LINK);
-      await vi.waitFor(() => expect(openExternal).toHaveBeenCalledTimes(1));
-      emitAuthChanged(status);
-      await pending;
-
-      expect(signIn.prompt.dismiss).toHaveBeenCalledExactlyOnceWith('failed');
-      expect(showMessageBox).toHaveBeenCalledTimes(1);
-      expect(showMessageBox.mock.calls[0][0]).toMatchObject({ type: 'error' });
-      expect(localCalls('github.identityProof.create')).toEqual([]);
-      expect(prove).not.toHaveBeenCalled();
-      expect(guestAdd).not.toHaveBeenCalled();
-      expect(localCalls('github.cancelAuth')).toHaveLength(cancelAuthCalls);
-      expect(logLines.join('\n')).toContain(`"flowCode":"${flowCode}"`);
-      expect(close).toHaveBeenCalledTimes(1);
-    },
-  );
-
-  it('every sign-in failure gets a distinct sentence, none of them the generic one', async () => {
-    const messages = new Map<string, string>();
-    for (const status of ['denied', 'expired', 'error'] as const) {
-      showInviteConsent.mockReturnValue(fakeConsent('open').prompt);
-      const pending = handleInviteDeepLink(LINK);
-      await vi.waitFor(() => expect(openExternal).toHaveBeenCalled());
-      openExternal.mockClear();
-      emitAuthChanged(status);
-      await pending;
-      messages.set(status, (showMessageBox.mock.calls.at(-1)?.[0] as { message: string }).message);
-    }
-    signedInDaemon();
-    challenge.mockRejectedValue(new InviteRpcError(-32602, { code: 'some-unknown-code' }));
-    await handleInviteDeepLink(LINK);
-    const generic = (showMessageBox.mock.calls.at(-1)?.[0] as { message: string }).message;
-    expect(new Set(messages.values()).size).toBe(3);
-    for (const message of messages.values()) expect(message).not.toBe(generic);
-  });
-
-  it('cancel before "Open GitHub": dismiss cancelled, the device flow is cancelled, nothing opened', async () => {
-    connectFirst();
-    const signIn = fakeConsent('cancel');
-    showInviteConsent.mockReturnValue(signIn.prompt);
-
-    await handleInviteDeepLink(LINK);
-
-    expect(signIn.prompt.dismiss).toHaveBeenCalledExactlyOnceWith('cancelled');
-    // The cancel is scoped to the flow `github.connect` started (§5.27).
-    expect(localCalls('github.cancelAuth')).toEqual([['github.cancelAuth', { flowId: 'flow-1' }]]);
-    expect(liveFlowId).toBeNull();
-    expect(openExternal).not.toHaveBeenCalled();
-    expect(showInviteConsent).toHaveBeenCalledTimes(2);
-    expect(guestAdd).not.toHaveBeenCalled();
-    expect(showMessageBox).not.toHaveBeenCalled();
-    expect(close).toHaveBeenCalledTimes(1);
-  });
-
-  it('cancel against a daemon whose github.connect carries no flowId: the unscoped call', async () => {
-    const { flowId: _flowId, ...legacyConnect } = CONNECT;
-    onLocal('github.connect', () => legacyConnect);
-    const signIn = fakeConsent('cancel');
-    showInviteConsent.mockReturnValue(signIn.prompt);
-
-    await handleInviteDeepLink(LINK);
-
-    expect(signIn.prompt.dismiss).toHaveBeenCalledExactlyOnceWith('cancelled');
-    expect(localCalls('github.cancelAuth')).toEqual([['github.cancelAuth']]);
-    expect(close).toHaveBeenCalledTimes(1);
-  });
-
-  it('cancel while waiting for GitHub: aborts, cancels the device flow, a late authorized is dropped', async () => {
-    connectFirst();
-    const signIn = fakeConsent('open');
-    showInviteConsent.mockReturnValue(signIn.prompt);
-
-    const pending = handleInviteDeepLink(LINK);
-    await vi.waitFor(() => expect(openExternal).toHaveBeenCalledTimes(1));
-    expect(close).not.toHaveBeenCalled();
-    signIn.cancelWaiting();
-    await pending;
-    emitAuthChanged('authorized');
-    await new Promise((resolve) => setTimeout(resolve, 0));
-
-    expect(signIn.prompt.dismiss).toHaveBeenCalledExactlyOnceWith('cancelled');
-    expect(localCalls('github.cancelAuth')).toHaveLength(1);
-    expect(showInviteConsent).toHaveBeenCalledTimes(2);
-    expect(localCalls('github.identityProof.create')).toEqual([]);
-    expect(guestAdd).not.toHaveBeenCalled();
-    expect(openBackendWindow).not.toHaveBeenCalled();
-    expect(showMessageBox).not.toHaveBeenCalled();
-    expect(close).toHaveBeenCalledTimes(1);
-  });
-
-  it('cancel while the browser launch never settles: aborts and closes the connection', async () => {
-    connectFirst();
-    const signIn = fakeConsent('open');
-    showInviteConsent.mockReturnValue(signIn.prompt);
-    openExternal.mockReturnValue(new Promise<void>(() => {}));
-
-    const pending = handleInviteDeepLink(LINK);
-    await vi.waitFor(() => expect(openExternal).toHaveBeenCalledTimes(1));
-    signIn.cancelWaiting();
-    await pending;
-
-    expect(signIn.prompt.dismiss).toHaveBeenCalledWith('cancelled');
-    expect(guestAdd).not.toHaveBeenCalled();
-    expect(close).toHaveBeenCalledTimes(1);
-  });
-
-  it('launch failure after open: dismiss failed, the failure box, the device flow cancelled', async () => {
-    connectFirst();
-    const signIn = fakeConsent('open');
-    showInviteConsent.mockReturnValue(signIn.prompt);
-    openExternal.mockRejectedValue(new Error('no browser'));
-
-    await handleInviteDeepLink(LINK);
-
-    expect(signIn.prompt.dismiss).toHaveBeenCalledExactlyOnceWith('failed');
-    expect(showMessageBox).toHaveBeenCalledTimes(1);
-    expect(showMessageBox.mock.calls[0][0]).toMatchObject({ type: 'error' });
-    expect(localCalls('github.cancelAuth')).toHaveLength(1);
-    expect(guestAdd).not.toHaveBeenCalled();
-    expect(logLines.join('\n')).toContain('verification-launch-failed');
-  });
-
-  it('no renderer: the native device-code box, then the native prove box, and the join completes', async () => {
-    showInviteConsent.mockImplementation(() => fakeConsent(null).prompt);
-
-    const pending = handleInviteDeepLink(LINK);
-    await vi.waitFor(() => expect(openExternal).toHaveBeenCalledTimes(1));
-    emitAuthChanged('authorized');
-    await pending;
-
-    expect(showMessageBox).toHaveBeenCalledTimes(2);
-    expect(showMessageBox.mock.calls[0][0]).toMatchObject({
-      type: 'info',
-      message: expect.stringContaining(CONNECT.userCode),
-    });
-    expect(showMessageBox.mock.calls[1][0]).toMatchObject({
-      type: 'question',
-      message: expect.stringContaining('@octocat'),
-    });
-    expect(openBackendWindow).toHaveBeenCalledWith('guest-id');
-  });
-
-  it('cancelling the native device-code box cancels the device flow and aborts', async () => {
-    showInviteConsent.mockImplementation(() => fakeConsent(null).prompt);
-    showMessageBox.mockResolvedValueOnce({ response: 1 });
-
-    await handleInviteDeepLink(LINK);
-
-    expect(openExternal).not.toHaveBeenCalled();
-    expect(localCalls('github.cancelAuth')).toHaveLength(1);
-    expect(showMessageBox).toHaveBeenCalledTimes(1);
-    expect(guestAdd).not.toHaveBeenCalled();
-  });
-
-  // The device flow is awaited from the moment the code is shown, not from
-  // "Open GitHub": a user who types the code on another device never has to
-  // click the button — the flow's end settles the prompt on its own.
-  describe('the wait starts when the code is shown', () => {
-    it('modal: authorized (event) while no button was clicked → prove prompt, browser never opened', async () => {
-      connectFirst();
-      const signIn = fakeConsent('pending');
-      const prove2 = fakeConsent('open');
-      showInviteConsent.mockReturnValueOnce(signIn.prompt).mockReturnValueOnce(prove2.prompt);
-
-      const pending = handleInviteDeepLink(LINK);
-      await vi.waitFor(() => expect(showInviteConsent).toHaveBeenCalledTimes(2));
-      expect(clipboardWriteText).toHaveBeenCalledWith(CONNECT.userCode);
-      emitAuthChanged('authorized');
-      await pending;
-
-      expect(openExternal).not.toHaveBeenCalled();
-      expect(showInviteConsent).toHaveBeenCalledTimes(3);
-      expect(showInviteConsent.mock.calls[0][0]).toMatchObject({ mode: 'connect-forge' });
-      expect(showInviteConsent.mock.calls[1][0]).toMatchObject({ mode: 'sign-in-required' });
-      expect(showInviteConsent.mock.calls[2][0]).toMatchObject({ mode: 'prove', login: 'octocat' });
-      expect(signIn.prompt.dismiss).toHaveBeenCalledExactlyOnceWith('superseded');
-      expect(prove2.prompt.dismiss).toHaveBeenCalledExactlyOnceWith('joined');
-      expect(guestAdd).toHaveBeenCalledWith(expect.objectContaining({ token: TOKEN }));
-      expect(openBackendWindow).toHaveBeenCalledWith('guest-id');
-      expect(localCalls('github.cancelAuth')).toEqual([]);
-      expect(showMessageBox).not.toHaveBeenCalled();
-    });
-
-    it('modal: authorized via the poll (no event) while no button was clicked → same result', async () => {
-      // The daemon reports the flow's end only to the poll — no event is emitted.
-      let signedIn = false;
-      onLocal('github.authStatus', () => {
-        signedIn = true;
-        return { isConfigured: true, deviceFlow: { status: 'authorized' } };
-      });
-      onLocal('github.getUser', () => ({ user: signedIn ? { id: 42, login: 'octocat' } : null }));
-      onLocal('github.identityProof.create', () => {
-        if (!signedIn) throw localRefusal('github-not-connected');
-        return PROOF;
-      });
-      connectFirst();
-      const signIn = fakeConsent('pending');
-      const prove2 = fakeConsent('open');
-      showInviteConsent.mockReturnValueOnce(signIn.prompt).mockReturnValueOnce(prove2.prompt);
-
-      await handleInviteDeepLink(LINK);
-
-      expect(localCalls('github.authStatus').length).toBeGreaterThanOrEqual(1);
-      expect(openExternal).not.toHaveBeenCalled();
-      expect(signIn.prompt.dismiss).toHaveBeenCalledExactlyOnceWith('superseded');
-      expect(prove2.prompt.dismiss).toHaveBeenCalledExactlyOnceWith('joined');
-      expect(guestAdd).toHaveBeenCalledWith(expect.objectContaining({ token: TOKEN }));
-      expect(openBackendWindow).toHaveBeenCalledWith('guest-id');
-    }, 15_000);
-
-    it('modal: denied while no button was clicked → sign-in-denied failure, browser never opened', async () => {
-      connectFirst();
-      const signIn = fakeConsent('pending');
-      showInviteConsent.mockReturnValue(signIn.prompt);
-
-      const pending = handleInviteDeepLink(LINK);
-      await vi.waitFor(() => expect(showInviteConsent).toHaveBeenCalledTimes(2));
-      emitAuthChanged('denied');
-      await pending;
-
-      expect(openExternal).not.toHaveBeenCalled();
-      expect(signIn.prompt.dismiss).toHaveBeenCalledExactlyOnceWith('failed');
-      expect(showMessageBox).toHaveBeenCalledTimes(1);
-      expect(showMessageBox.mock.calls[0][0]).toMatchObject({ type: 'error' });
-      expect(localCalls('github.identityProof.create')).toEqual([]);
-      expect(guestAdd).not.toHaveBeenCalled();
-      expect(logLines.join('\n')).toContain('"flowCode":"sign-in-denied"');
-      expect(close).toHaveBeenCalledTimes(1);
-    });
-
-    it('modal: cancel while no button was clicked → the device flow is cancelled and the listener and poll stop', async () => {
-      vi.useFakeTimers();
-      try {
-        const baselineListeners = notificationListeners.size;
-        connectFirst();
-        const signIn = fakeConsent('pending');
-        let shown!: () => void;
-        const consentShown = new Promise<void>((resolve) => {
-          shown = resolve;
-        });
-        showInviteConsent.mockImplementation(() => {
-          shown();
-          return signIn.prompt;
-        });
-
-        const pending = handleInviteDeepLink(LINK);
-        await consentShown;
-        // The flow's own `github:auth-changed` listener is attached at show time.
-        expect(notificationListeners.size).toBe(baselineListeners + 1);
-
-        signIn.decide('cancel');
-        await pending;
-
-        expect(signIn.prompt.dismiss).toHaveBeenCalledExactlyOnceWith('cancelled');
-        expect(localCalls('github.cancelAuth')).toHaveLength(1);
-        expect(notificationListeners.size).toBe(baselineListeners);
-        expect(openExternal).not.toHaveBeenCalled();
-
-        // Neither a late event nor the poll revives the flow.
-        emitAuthChanged('authorized');
-        await vi.advanceTimersByTimeAsync(30_000);
-        expect(localCalls('github.authStatus')).toEqual([]);
-        expect(localCalls('github.identityProof.create')).toEqual([]);
-        expect(guestAdd).not.toHaveBeenCalled();
-        expect(showMessageBox).not.toHaveBeenCalled();
-        expect(close).toHaveBeenCalledTimes(1);
-      } finally {
-        vi.useRealTimers();
-      }
-    });
-
-    it('native box: authorized while the box is open closes it through its abort signal and the join proceeds', async () => {
-      showInviteConsent.mockImplementation(() => fakeConsent(null).prompt);
-      // The mock box resolves only through its abort signal. A missing
-      // abort-driven close would not hang the flow (`settled` still wins the
-      // race); the `order` assertion below is what proves the box was closed
-      // before the prove prompt and `guest.add`.
-      const order: string[] = [];
-      showMessageBox.mockImplementationOnce(
-        (options: { cancelId: number; signal?: AbortSignal }) =>
-          new Promise<{ response: number }>((resolve) => {
-            options.signal?.addEventListener('abort', () => {
-              order.push('device-code-box-closed');
-              resolve({ response: options.cancelId });
-            });
-          }),
-      );
-      showMessageBox.mockImplementationOnce(async () => {
-        order.push('prove-box');
-        return { response: 0 };
-      });
-      guestAdd.mockImplementation(async () => {
-        order.push('guest.add');
-        return { id: 'guest-id', tokenEncrypted: true };
-      });
-
-      const pending = handleInviteDeepLink(LINK);
-      await vi.waitFor(() => expect(showMessageBox).toHaveBeenCalledTimes(1));
-      expect(showMessageBox.mock.calls[0][0]).toMatchObject({
-        type: 'info',
-        message: expect.stringContaining(CONNECT.userCode),
-      });
-      expect(order).toEqual([]);
-      emitAuthChanged('authorized');
-      await pending;
-
-      expect(order).toEqual(['device-code-box-closed', 'prove-box', 'guest.add']);
-      expect(openExternal).not.toHaveBeenCalled();
-      expect(showMessageBox).toHaveBeenCalledTimes(2);
-      expect(showMessageBox.mock.calls[1][0]).toMatchObject({
-        type: 'question',
-        message: expect.stringContaining('@octocat'),
-      });
-      expect(localCalls('github.cancelAuth')).toEqual([]);
-      expect(guestAdd).toHaveBeenCalledWith(expect.objectContaining({ token: TOKEN }));
-      expect(openBackendWindow).toHaveBeenCalledWith('guest-id');
-    });
-
-    it('native box: a rejected box before the flow ends releases the listener and poll, and a failure is shown', async () => {
-      vi.useFakeTimers();
-      try {
-        const baselineListeners = notificationListeners.size;
-        showInviteConsent.mockImplementation(() => fakeConsent(null).prompt);
-        showMessageBox.mockImplementationOnce(() => Promise.reject(new Error('dialog closed')));
-
-        await handleInviteDeepLink(LINK);
-
-        expect(notificationListeners.size).toBe(baselineListeners);
-        expect(openExternal).not.toHaveBeenCalled();
-        expect(showMessageBox).toHaveBeenCalledTimes(2);
-        expect(showMessageBox.mock.calls[0][0]).toMatchObject({
-          type: 'info',
-          message: expect.stringContaining(CONNECT.userCode),
-        });
-        expect(showMessageBox.mock.calls[1][0]).toMatchObject({ type: 'error' });
-
-        // Neither a late event nor the poll revives the flow.
-        emitAuthChanged('authorized');
-        await vi.advanceTimersByTimeAsync(30_000);
-        expect(localCalls('github.authStatus')).toEqual([]);
-        expect(localCalls('github.identityProof.create')).toEqual([]);
-        expect(guestAdd).not.toHaveBeenCalled();
-        expect(close).toHaveBeenCalledTimes(1);
-      } finally {
-        vi.useRealTimers();
-      }
-    });
-  });
-
-  it('a refused verification URL never reaches the modal or the browser', async () => {
-    const connect = connectFirst();
-    onLocal('github.connect', () => ({
-      ...CONNECT,
-      verificationUri: 'http://github.com/login/device',
-    }));
-    await handleInviteDeepLink(LINK);
-    expect(showInviteConsent.mock.calls.map(([p]) => p.mode)).toEqual(['connect-forge']);
-    expect(connect.prompt.dismiss).toHaveBeenCalledExactlyOnceWith('failed');
-    expect(clipboardWriteText).not.toHaveBeenCalled();
-    expect(openExternal).not.toHaveBeenCalled();
-    expect(showMessageBox.mock.calls[0][0]).toMatchObject({ type: 'error' });
-    expect(logLines.join('\n')).toContain('invalid-verification-uri');
-  });
-
-  it('github.connect refused by the guest daemon after GitHub was chosen: sign-in-failed, its text never logged', async () => {
-    const connect = connectFirst();
-    onLocal('github.connect', () => {
-      throw localRefusal('github-unreachable');
-    });
-    await handleInviteDeepLink(LINK);
-    expect(showInviteConsent.mock.calls.map(([p]) => p.mode)).toEqual(['connect-forge']);
-    expect(connect.prompt.dismiss).toHaveBeenCalledExactlyOnceWith('failed');
-    expect(showMessageBox.mock.calls[0][0]).toMatchObject({ type: 'error' });
-    const allLogs = logLines.join('\n');
-    expect(allLogs).toContain('"flowCode":"sign-in-failed"');
-    expect(allLogs).not.toContain(SECRET);
-  });
-
-  // The connect-first path is neutral: with no forge connected the guest is
-  // offered Settings → Connections (GitLab) BEFORE GitHub is asked for a
-  // device code, so a GitHub the daemon cannot reach never hides that path.
-  it('no forge and github.connect refused: the Connections prompt is still offered, GitHub is never asked, no proof is posted', async () => {
-    const connect = connectFirst('cancel');
-    onLocal('github.connect', () => {
-      throw localRefusal('github-unreachable');
-    });
-
-    await handleInviteDeepLink(LINK);
-
-    expect(showInviteConsent.mock.calls.map(([p]) => p.mode)).toEqual(['connect-forge']);
-    expect(connect.prompt.dismiss).toHaveBeenCalledExactlyOnceWith('cancelled');
     expect(localCalls('github.connect')).toEqual([]);
-    expect(localCalls('github.cancelAuth')).toEqual([]);
-    expect(localCalls('github.identityProof.create')).toEqual([]);
-    expect(localCalls('sourceControl.identityProof.create')).toEqual([]);
-    expect(prove).not.toHaveBeenCalled();
+    expect(localCalls('sourceControl.connect')).toEqual([]);
     expect(guestAdd).not.toHaveBeenCalled();
-    expect(showMessageBox).not.toHaveBeenCalled();
-    expect(clipboardWriteText).not.toHaveBeenCalled();
-    expect(close).toHaveBeenCalledTimes(1);
-    expect(logLines.join('\n')).not.toContain('sign-in-failed');
   });
-
-  it('scope missing skips the connect-first prompt: GitHub is already the connected forge', async () => {
-    signedInDaemon();
+  it('insufficient proof scope offers the same upgrade without changing repository credentials', async () => {
     onLocal('github.identityProof.create', () => {
       throw localRefusal('github-scope-missing');
     });
-    showInviteConsent
-      .mockReturnValueOnce(fakeConsent('open').prompt)
-      .mockReturnValue(fakeConsent('cancel').prompt);
-
+    showInviteNotice.mockResolvedValue(true);
     await handleInviteDeepLink(LINK);
-
-    expect(showInviteConsent.mock.calls.map(([p]) => p.mode)).toEqual([
-      'prove',
-      'sign-in-required',
-    ]);
-    expect(localCalls('github.connect')).toHaveLength(1);
-  });
-
-  it('still refused after a completed sign-in: failure with the bounded proof code, no second sign-in prompt', async () => {
-    onLocal('github.identityProof.create', () => {
-      throw localRefusal('github-not-connected');
-    });
-    connectFirst();
-    const signIn = fakeConsent('open');
-    const prove2 = fakeConsent('open');
-    showInviteConsent.mockReturnValueOnce(signIn.prompt).mockReturnValueOnce(prove2.prompt);
-
-    const pending = handleInviteDeepLink(LINK);
-    await vi.waitFor(() => expect(openExternal).toHaveBeenCalledTimes(1));
-    emitAuthChanged('authorized');
-    await pending;
-
-    expect(showInviteConsent).toHaveBeenCalledTimes(3);
-    expect(localCalls('github.connect')).toHaveLength(1);
-    expect(prove2.prompt.dismiss).toHaveBeenCalledExactlyOnceWith('failed');
-    expect(showMessageBox).toHaveBeenCalledTimes(1);
-    expect(showMessageBox.mock.calls[0][0]).toMatchObject({ type: 'error' });
-    expect(prove).not.toHaveBeenCalled();
-    expect(logLines.join('\n')).toContain('"proofCode":"github-not-connected"');
-  });
-
-  // A GitHub rate limit is not "not signed in": signing in again cannot help,
-  // so the join fails with its own reason and no prompt is ever shown
-  // (intent-hq/intent#5627).
-  it('a rate-limited github.getUser probe: the rate-limit failure, no consent or sign-in prompt, no device flow', async () => {
-    showInviteNotice.mockResolvedValue(true);
-    onLocal('github.getUser', () => {
-      throw localRefusal('rate-limited');
-    });
-    await handleInviteDeepLink(LINK);
-    expect(showInviteConsent).not.toHaveBeenCalled();
-    expect(showMessageBox).not.toHaveBeenCalled();
-    expect(localCalls('github.connect')).toHaveLength(0);
-    expect(localCalls('github.identityProof.create')).toHaveLength(0);
-    expect(prove).not.toHaveBeenCalled();
-    expect(showInviteNotice).toHaveBeenCalledTimes(1);
-    expect(showInviteNotice.mock.calls[0][0]).toMatchObject({
-      kind: 'failed',
-      reason: 'github-rate-limited',
-    });
-    expect(close).toHaveBeenCalled();
-    const allLogs = logLines.join('\n');
-    expect(allLogs).toContain('"proofCode":"rate-limited"');
-    expect(allLogs).not.toContain(SECRET);
-  });
-
-  it('a rate-limited proof after a completed sign-in: the rate-limit failure, not "not signed in", no second sign-in prompt', async () => {
-    showInviteNotice.mockResolvedValue(true);
-    signedOutDaemon();
-    onLocal('github.identityProof.create', () => {
-      throw localRefusal('rate-limited');
-    });
-    connectFirst();
-    const signIn = fakeConsent('open');
-    const prove2 = fakeConsent('open');
-    showInviteConsent.mockReturnValueOnce(signIn.prompt).mockReturnValueOnce(prove2.prompt);
-
-    const pending = handleInviteDeepLink(LINK);
-    await vi.waitFor(() => expect(openExternal).toHaveBeenCalledTimes(1));
-    emitAuthChanged('authorized');
-    await pending;
-
-    expect(showInviteConsent).toHaveBeenCalledTimes(3);
-    expect(localCalls('github.connect')).toHaveLength(1);
-    expect(prove2.prompt.dismiss).toHaveBeenCalledExactlyOnceWith('failed');
-    expect(prove).not.toHaveBeenCalled();
-    expect(showInviteNotice.mock.calls[0][0]).toMatchObject({
-      kind: 'failed',
-      reason: 'github-rate-limited',
-    });
-  });
-
-  it('a rate-limited github.getUser probe after the sign-in completed: the rate-limit failure, not sign-in-failed', async () => {
-    showInviteNotice.mockResolvedValue(true);
-    signedOutDaemon();
-    let probes = 0;
-    onLocal('github.getUser', () => {
-      if (probes++ === 0) return { user: null };
-      throw localRefusal('rate-limited');
-    });
-    showInviteConsent.mockImplementation(() => fakeConsent('open').prompt);
-
-    const pending = handleInviteDeepLink(LINK);
-    await vi.waitFor(() => expect(openExternal).toHaveBeenCalledTimes(1));
-    emitAuthChanged('authorized');
-    await pending;
-
-    expect(showInviteConsent.mock.calls.map(([p]) => p.mode)).toEqual([
-      'connect-forge',
-      'sign-in-required',
-    ]);
-    expect(localCalls('github.identityProof.create')).toHaveLength(0);
-    expect(prove).not.toHaveBeenCalled();
-    expect(showInviteNotice.mock.calls[0][0]).toMatchObject({
-      kind: 'failed',
-      reason: 'github-rate-limited',
-    });
-    expect(logLines.join('\n')).not.toContain('"flowCode":"sign-in-failed"');
-  });
-
-  it('any other github.getUser failure still reads as not signed in: the sign-in prompt is shown', async () => {
-    signedOutDaemon();
-    let signedIn = false;
-    onLocal('github.getUser', () => {
-      if (!signedIn) throw localRefusal('github-not-connected');
-      return { user: { id: 42, login: 'octocat' } };
-    });
-    notificationListeners.add((n) => {
-      const event = (n.params as { event?: { type?: string; data?: { status?: string } } }).event;
-      if (event?.type === 'github:auth-changed' && event.data?.status === 'authorized')
-        signedIn = true;
-    });
-    showInviteConsent.mockImplementation(() => fakeConsent('open').prompt);
-
-    const pending = handleInviteDeepLink(LINK);
-    await vi.waitFor(() => expect(openExternal).toHaveBeenCalledTimes(1));
-    emitAuthChanged('authorized');
-    await pending;
-
-    expect(showInviteConsent.mock.calls[0][0]).toMatchObject({ mode: 'connect-forge' });
-    expect(showInviteConsent.mock.calls[1][0]).toMatchObject({
-      mode: 'sign-in-required',
-      reason: 'not-connected',
-    });
-    expect(prove).toHaveBeenCalledTimes(1);
-    expect(guestAdd).toHaveBeenCalledTimes(1);
+    expect(showInviteNotice).toHaveBeenCalledWith(
+      expect.objectContaining({ reason: 'collaboration-upgrade-required' }),
+    );
+    expect(localCalls('github.connect')).toEqual([]);
+    expect(guestAdd).not.toHaveBeenCalled();
   });
 });
 
-// The prompt reads `Join “<title>” on <host>`: the host is the daemon's pretty
-// name when the challenge carries one (an older daemon omits both name fields
-// → the dialed address), and a blank title reads "Untitled" — while the
-// stored guest session keeps the raw title (its settings row applies the same
-// fallback). The same label is the gist's `hostLabel`.
 describe('handleInviteDeepLink — consent prompt labels', () => {
   it('names the host by its pretty name when the challenge carries one, in the modal and the gist', async () => {
     showInviteConsent.mockReturnValue(fakeConsent('open').prompt);
@@ -2102,59 +1255,6 @@ describe('handleInviteDeepLink — cancel after the grant is a no-op', () => {
     expect(dismissesSent()).toEqual([{ requestId, outcome: 'joined' }]);
     expect(showMessageBox).not.toHaveBeenCalled();
     expect(logLines.join('\n')).toContain('cancel-after-grant');
-  });
-
-  it('connect-first, sign-in then prove: each request is dismissed superseded only after the next one is shown', async () => {
-    signedOutDaemon();
-
-    const pending = handleInviteDeepLink(LINK);
-    const { requestId: connectId, response } = await showAndAck();
-    expect(send.mock.calls[0][1]).toMatchObject({ mode: 'connect-forge' });
-    expect(localCalls('github.connect')).toEqual([]);
-    await response({}, { requestId: connectId, action: 'open' });
-    await vi.waitFor(() =>
-      expect(send.mock.calls.filter(([c]) => c === 'invite-consent:show')).toHaveLength(2),
-    );
-    const signInShow = send.mock.calls.filter(([c]) => c === 'invite-consent:show')[1][1] as {
-      requestId: string;
-    };
-    expect(signInShow).toMatchObject({ mode: 'sign-in-required', reason: 'not-connected' });
-    const signInId = signInShow.requestId;
-    expect(
-      send.mock.calls.findIndex(
-        ([c, p]) =>
-          c === 'invite-consent:dismiss' && (p as { requestId: string }).requestId === connectId,
-      ),
-    ).toBeGreaterThan(send.mock.calls.findIndex(([, p]) => p === signInShow));
-    await registeredIpcHandlers.get('invite-consent:ack')!({}, { requestId: signInId });
-    await response({}, { requestId: signInId, action: 'open' });
-    await vi.waitFor(() => expect(openExternal).toHaveBeenCalledTimes(1));
-    emitAuthChanged('authorized');
-    await vi.waitFor(() =>
-      expect(send.mock.calls.filter(([c]) => c === 'invite-consent:show')).toHaveLength(3),
-    );
-    const shows = send.mock.calls.filter(([c]) => c === 'invite-consent:show');
-    const { requestId: proveId } = shows[2][1] as { requestId: string };
-    expect(shows[2][1]).toMatchObject({ mode: 'prove', login: 'octocat' });
-    const showIndex = send.mock.calls.findIndex(
-      ([c, p]) => c === 'invite-consent:show' && p === shows[2][1],
-    );
-    const supersededIndex = send.mock.calls.findIndex(
-      ([c, p]) =>
-        c === 'invite-consent:dismiss' && (p as { requestId: string }).requestId === signInId,
-    );
-    expect(supersededIndex).toBeGreaterThan(showIndex);
-    expect(send.mock.calls[supersededIndex][1]).toEqual({
-      requestId: signInId,
-      outcome: 'superseded',
-    });
-
-    await registeredIpcHandlers.get('invite-consent:ack')!({}, { requestId: proveId });
-    await response({}, { requestId: proveId, action: 'open' });
-    await pending;
-
-    expect(openBackendWindow).toHaveBeenCalledWith('guest-id');
-    expect(dismissesSent().at(-1)).toEqual({ requestId: proveId, outcome: 'joined' });
   });
 });
 
@@ -2612,34 +1712,6 @@ describe('handleInviteDeepLink — renderer notice modal', () => {
     expect(guestAdd).not.toHaveBeenCalled();
   });
 
-  it('sign-in denied while the sign-in modal waits: notice before dismiss, the device flow is not left running', async () => {
-    signedOutDaemon();
-    connectFirst();
-    const signIn = fakeConsent('open');
-    showInviteConsent.mockReturnValue(signIn.prompt);
-    const order: string[] = [];
-    signIn.prompt.dismiss.mockImplementation((outcome: string) => order.push(`dismiss:${outcome}`));
-    showInviteNotice.mockImplementation(async () => {
-      order.push('notice');
-      return true;
-    });
-
-    const pending = handleInviteDeepLink(LINK);
-    await vi.waitFor(() => expect(openExternal).toHaveBeenCalledTimes(1));
-    emitAuthChanged('denied');
-    await pending;
-
-    expect(order).toEqual(['notice', 'dismiss:failed']);
-    expect(noticePayload()).toMatchObject({
-      kind: 'failed',
-      reason: 'denied',
-      workspaceTitle: CHALLENGE.workspaceTitle,
-      hostLabel: '192.168.1.10',
-    });
-    expect(showMessageBox).not.toHaveBeenCalled();
-    expect(localCalls('github.identityProof.create')).toEqual([]);
-  });
-
   it('plaintext warning after the proof: shown after the joined dismiss, acknowledged before the window opens', async () => {
     const { prompt } = fakeConsent('open');
     showInviteConsent.mockReturnValue(prompt);
@@ -2793,32 +1865,6 @@ describe('handleInviteDeepLink — renderer notice modal', () => {
       'store-corrupt',
     ],
     [
-      'browser launch failed during the sign-in',
-      () => {
-        signedOutDaemon();
-        openExternal.mockRejectedValue(new Error('no browser'));
-      },
-      'launch-failed',
-    ],
-    [
-      'github.connect refused by the guest daemon',
-      () => {
-        signedOutDaemon();
-        onLocal('github.connect', () => {
-          throw localRefusal('some-daemon-code');
-        });
-      },
-      'sign-in-failed',
-    ],
-    [
-      'a refused verification URL',
-      () => {
-        signedOutDaemon();
-        onLocal('github.connect', () => ({ ...CONNECT, verificationUri: 'https://evil.example/' }));
-      },
-      'sign-in-failed',
-    ],
-    [
       'the guest daemon cannot reach GitHub for the proof',
       () =>
         onLocal('github.identityProof.create', () => {
@@ -2888,23 +1934,6 @@ describe('handleInviteDeepLink — renderer notice modal', () => {
     expect(showInviteNotice).toHaveBeenCalledTimes(1);
     expect(noticePayload()).toMatchObject({ kind: 'failed', reason });
   });
-
-  it('the sign-in failure sentences and the proof failure sentences are distinct from the generic one', async () => {
-    showInviteNotice.mockResolvedValue(true);
-    const reasons: string[] = [];
-    for (const status of ['denied', 'expired', 'error'] as const) {
-      signedOutDaemon();
-      showInviteConsent.mockReturnValue(fakeConsent('open').prompt);
-      const pending = handleInviteDeepLink(LINK);
-      await vi.waitFor(() => expect(openExternal).toHaveBeenCalled());
-      openExternal.mockClear();
-      emitAuthChanged(status);
-      await pending;
-      reasons.push(noticePayload(reasons.length).reason as string);
-    }
-    expect(reasons).toEqual(['denied', 'flow-expired', 'sign-in-failed']);
-    expect(showMessageBox).not.toHaveBeenCalled();
-  });
 });
 
 /**
@@ -2952,11 +1981,10 @@ describe('handleInviteDeepLink — GitLab identity', () => {
     prove.mockResolvedValue({ ...CREDENTIAL, principalId: 'gl:4711', login: 'gl-user' });
   });
 
-  it('never probes GitLab on a local daemon that predates the identity seam: connect-first, then sign-in-required, no snippet', async () => {
+  it('an old local daemon offers upgrade without probing GitLab or starting repository auth', async () => {
     localProtocolVersion.mockReturnValue('10.7'); // protocol-version-ok: pre-seam fixture hello
     onLocal('github.connect', () => CONNECT);
     onLocal('github.cancelAuth', () => ({ ok: true }));
-    connectFirst();
     const { prompt } = fakeConsent('cancel');
     showInviteConsent.mockReturnValue(prompt);
 
@@ -2964,11 +1992,11 @@ describe('handleInviteDeepLink — GitLab identity', () => {
 
     expect(localCalls('sourceControl.authStatus')).toEqual([]);
     expect(localCalls('sourceControl.identityProof.create')).toEqual([]);
-    expect(showInviteConsent.mock.calls.map(([p]) => p.mode)).toEqual([
-      'connect-forge',
-      'sign-in-required',
-    ]);
-    expect(showInviteConsent.mock.calls[1][0]).toMatchObject({ reason: 'not-connected' });
+    expect(showInviteConsent).not.toHaveBeenCalled();
+    expect(localCalls('github.connect')).toEqual([]);
+    expect(showInviteNotice).toHaveBeenCalledWith(
+      expect.objectContaining({ reason: 'collaboration-upgrade-required' }),
+    );
     expect(prove).not.toHaveBeenCalled();
   });
 
@@ -3094,15 +2122,14 @@ describe('handleInviteDeepLink — GitLab identity', () => {
     }));
     onLocal('github.connect', () => CONNECT);
     onLocal('github.cancelAuth', () => ({ ok: true }));
-    connectFirst();
     const { prompt } = fakeConsent('cancel');
     showInviteConsent.mockReturnValue(prompt);
     await handleInviteDeepLink(LINK);
-    expect(showInviteConsent.mock.calls.map(([p]) => p.mode)).toEqual([
-      'connect-forge',
-      'sign-in-required',
-    ]);
-    expect(showInviteConsent.mock.calls[1][0]).toMatchObject({ reason: 'not-connected' });
+    expect(showInviteConsent).not.toHaveBeenCalled();
+    expect(localCalls('github.connect')).toEqual([]);
+    expect(showInviteNotice).toHaveBeenCalledWith(
+      expect.objectContaining({ reason: 'collaboration-upgrade-required' }),
+    );
     expect(localCalls('sourceControl.identityProof.create')).toEqual([]);
     expect(prove).not.toHaveBeenCalled();
   });
@@ -3642,81 +2669,6 @@ describe('handleInviteDeepLink — invitation identity requirements', () => {
     expect(guestAdd).toHaveBeenCalledOnce();
   });
 
-  it.each([42, 9000])('GitHub pin revalidates stable ID %s after sign-in', async (id) => {
-    challenge.mockResolvedValue({ ...CURRENT_CHALLENGE, pinIdentity: GITHUB_PIN });
-    onLocal('github.getUser', () => ({ user: null }));
-    const signingIn = fakeConsent('pending');
-    showInviteConsent.mockReturnValueOnce(signingIn.prompt);
-    const join = handleInviteDeepLink(LINK);
-    await vi.waitFor(() => expect(showInviteConsent).toHaveBeenCalledOnce());
-    expect(showInviteConsent.mock.calls[0][0].mode).toBe('sign-in-required');
-    onLocal('github.getUser', () => ({ user: { id, login: 'octocat' } }));
-    emitAuthChanged('authorized');
-    await join;
-    if (id === 42) expect(guestAdd).toHaveBeenCalledOnce();
-    else expectNoProof();
-    expect(localCalls('sourceControl.authStatus')).toEqual([]);
-  });
-
-  it.each(
-    ['pinned', 'explicit-null'].flatMap((selection) =>
-      (['open', 'pending'] as const).flatMap((decision) =>
-        ['resolve', 'reject'].map((settlement) => ({ selection, decision, settlement })),
-      ),
-    ),
-  )(
-    '$selection: cancel during post-sign-in identity validation ($decision, late $settlement)',
-    async ({ selection, decision, settlement }) => {
-      const pinned = selection === 'pinned';
-      challenge.mockResolvedValue({
-        ...CURRENT_CHALLENGE,
-        pinIdentity: pinned ? GITHUB_PIN : null,
-      });
-      setPrincipal(GITHUB_PIN);
-      onLocal('github.getUser', () => ({ user: null }));
-      if (!pinned) connectFirst();
-      const signIn = fakeConsent(decision);
-      showInviteConsent.mockReturnValueOnce(signIn.prompt);
-      const joining = handleInviteDeepLink(LINK);
-      const promptCount = pinned ? 1 : 2;
-      await vi.waitFor(() => expect(showInviteConsent).toHaveBeenCalledTimes(promptCount));
-      expect(showInviteConsent.mock.calls.at(-1)?.[0].mode).toBe('sign-in-required');
-
-      let probes = 0;
-      let release!: (result: unknown) => void;
-      let reject!: (error: unknown) => void;
-      onLocal('github.getUser', () => {
-        // Allow the existing login read, then block the pinned/chosen identity check.
-        if (++probes === 2)
-          return new Promise((resolve, refuse) => {
-            release = resolve;
-            reject = refuse;
-          });
-        return { user: { id: 42, login: 'octocat' } };
-      });
-      emitAuthChanged('authorized');
-      await vi.waitFor(() => expect(probes).toBe(2));
-      if (decision === 'pending') signIn.decide('cancel');
-      else signIn.cancelWaiting();
-      try {
-        // Cancellation ends the join even if the account RPC never settles.
-        await vi.waitFor(() => expect(close).toHaveBeenCalledOnce());
-      } finally {
-        if (settlement === 'resolve') release({ user: { id: 42, login: 'octocat' } });
-        else reject(localRefusal('rate-limited'));
-        await joining;
-        await new Promise<void>((resolve) => setImmediate(resolve));
-      }
-      expect(showInviteConsent).toHaveBeenCalledTimes(promptCount);
-      expect(signIn.prompt.dismiss).toHaveBeenCalledExactlyOnceWith('cancelled');
-      expectNoProof();
-      expect(showInviteNotice).not.toHaveBeenCalled();
-      expect(showMessageBox).not.toHaveBeenCalled();
-      expect(openBackendWindow).not.toHaveBeenCalled();
-      expect(logLines.join('\n')).not.toContain('Invite deep link handling failed');
-    },
-  );
-
   it('a pinned relevant probe rate limit stays a rate limit with no fallback', async () => {
     onLocal('sourceControl.authStatus', () => {
       throw localRefusal('rate-limited');
@@ -3882,33 +2834,6 @@ describe('handleInviteDeepLink — progress dialog', () => {
     expect(openBackendWindow).toHaveBeenCalledWith('guest-id');
   });
 
-  it('connecting is dismissed before the connect-forge prompt of a signed-out guest, ahead of the sign-in prompt', async () => {
-    signedOutDaemon();
-    const connecting = fakeProgress();
-    showInviteProgress.mockReturnValueOnce(connecting.handle);
-    const order: string[] = [];
-    // Production dismiss is idempotent; only the first one ends the dialog.
-    connecting.handle.dismiss.mockImplementation(() => {
-      if (!order.includes('dismiss:connecting')) order.push('dismiss:connecting');
-    });
-    showInviteConsent.mockImplementation((payload: { mode: string }) => {
-      order.push(`consent:${payload.mode}`);
-      return fakeConsent('open').prompt;
-    });
-
-    const pending = handleInviteDeepLink(LINK);
-    await vi.waitFor(() => expect(openExternal).toHaveBeenCalledTimes(1));
-    emitAuthChanged('authorized');
-    await pending;
-
-    expect(order.slice(0, 3)).toEqual([
-      'dismiss:connecting',
-      'consent:connect-forge',
-      'consent:sign-in-required',
-    ]);
-    expect(openBackendWindow).toHaveBeenCalledWith('guest-id');
-  });
-
   it('connecting is dismissed before the failure notice when the dial fails', async () => {
     const connecting = fakeProgress();
     showInviteProgress.mockReturnValueOnce(connecting.handle);
@@ -4035,317 +2960,6 @@ describe('handleInviteDeepLink — progress dialog', () => {
     signedInDaemon();
     await handleInviteDeepLink(LINK);
     expect(openBackendWindow).toHaveBeenCalledWith('guest-id');
-  });
-
-  it('the device flow (github.connect) starts only after the connect-forge prompt ended the connecting dialog', async () => {
-    signedOutDaemon();
-    const connecting = fakeProgress();
-    showInviteProgress.mockReturnValueOnce(connecting.handle);
-    const order: string[] = [];
-    connecting.handle.dismiss.mockImplementation(() => {
-      if (!order.includes('dismiss:connecting')) order.push('dismiss:connecting');
-    });
-    onLocal('github.connect', () => {
-      order.push('github.connect');
-      return CONNECT;
-    });
-    const connect = fakeConsent('pending');
-    const signIn = fakeConsent('pending');
-    showInviteConsent
-      .mockImplementationOnce((payload: { mode: string }) => {
-        order.push(`consent:${payload.mode}`);
-        return connect.prompt;
-      })
-      .mockImplementationOnce((payload: { mode: string }) => {
-        order.push(`consent:${payload.mode}`);
-        return signIn.prompt;
-      });
-
-    const pending = handleInviteDeepLink(LINK);
-    await vi.waitFor(() => expect(showInviteConsent).toHaveBeenCalledTimes(1));
-    // The connecting dialog is gone while the connect-forge prompt is up;
-    // nothing was asked of GitHub yet.
-    expect(order).toEqual(['dismiss:connecting', 'consent:connect-forge']);
-    expect(localCalls('github.connect')).toEqual([]);
-
-    connect.decide('open');
-    await vi.waitFor(() => expect(showInviteConsent).toHaveBeenCalledTimes(2));
-    expect(order).toEqual([
-      'dismiss:connecting',
-      'consent:connect-forge',
-      'github.connect',
-      'consent:sign-in-required',
-    ]);
-    expect(localCalls('github.cancelAuth')).toEqual([]);
-
-    signIn.decide('cancel');
-    await pending;
-    expect(localCalls('github.cancelAuth')).toHaveLength(1);
-    expect(close).toHaveBeenCalledTimes(1);
-    expect(showInviteNotice).not.toHaveBeenCalled();
-    expect(guestAdd).not.toHaveBeenCalled();
-    expect(logLines.join('\n')).not.toContain('Invite deep link handling failed');
-  });
-
-  it('an invite cancelled while connecting starts no device flow, so a later invite\u2019s sign-in is never aborted', async () => {
-    signedOutDaemon();
-    const connectingA = fakeProgress();
-    showInviteProgress.mockReturnValueOnce(connectingA.handle);
-    const getUser = localMethods.get('github.getUser')!;
-    let releaseGetUser!: () => void;
-    let getUsers = 0;
-    onLocal('github.getUser', (params) => {
-      getUsers += 1;
-      if (getUsers === 1) {
-        return new Promise((resolve) => (releaseGetUser = () => resolve({ user: null })));
-      }
-      return getUser(params);
-    });
-    const signIn = fakeConsent('pending');
-    const prove = fakeConsent('open');
-    connectFirst();
-    showInviteConsent.mockReturnValueOnce(signIn.prompt).mockReturnValueOnce(prove.prompt);
-
-    // Invite A is cancelled while its local identity read is still pending.
-    const pendingA = handleInviteDeepLink(LINK);
-    await vi.waitFor(() => expect(localCalls('github.getUser')).toHaveLength(1));
-    connectingA.cancel();
-    await pendingA;
-    expect(localCalls('github.connect')).toEqual([]);
-    expect(showInviteConsent).not.toHaveBeenCalled();
-
-    // Invite B starts its own flow and reaches the sign-in prompt.
-    const pendingB = handleInviteDeepLink(LINK);
-    await vi.waitFor(() => expect(showInviteConsent).toHaveBeenCalledTimes(2));
-    expect(localCalls('github.connect')).toHaveLength(1);
-    expect(showInviteConsent.mock.calls[1][0]).toMatchObject({ mode: 'sign-in-required' });
-
-    // A's identity read arrives late: B's flow is untouched.
-    releaseGetUser();
-    await new Promise((resolve) => setTimeout(resolve, 0));
-    expect(localCalls('github.cancelAuth')).toEqual([]);
-    expect(liveFlowId).toBe('flow-1');
-    expect(signIn.prompt.dismiss).not.toHaveBeenCalled();
-
-    // B completes normally.
-    signIn.decide('open');
-    await vi.waitFor(() => expect(openExternal).toHaveBeenCalledTimes(1));
-    emitAuthChanged('authorized');
-    await pendingB;
-
-    expect(signIn.prompt.dismiss).toHaveBeenCalledExactlyOnceWith('superseded');
-    expect(prove.prompt.dismiss).toHaveBeenCalledExactlyOnceWith('joined');
-    expect(guestAdd).toHaveBeenCalledWith(expect.objectContaining({ token: TOKEN }));
-    expect(openBackendWindow).toHaveBeenCalledWith('guest-id');
-    expect(localCalls('github.cancelAuth')).toEqual([]);
-    expect(logLines.join('\n')).not.toContain('Invite deep link handling failed');
-  });
-
-  it('cancel while the device flow starts (github.connect): no sign-in prompt, the late flow is cancelled, connection closed', async () => {
-    signedOutDaemon();
-    challenge.mockResolvedValue({ ...CHALLENGE, pinIdentity: { provider: 'github', host: 'github.com', externalUserId: '42' } });
-    const connecting = fakeProgress();
-    showInviteProgress.mockReturnValueOnce(connecting.handle);
-    let releaseConnect!: () => void;
-    onLocal(
-      'github.connect',
-      () =>
-        new Promise((resolve) => (releaseConnect = () => resolve(startDeviceFlow('flow-late')))),
-    );
-
-    const pending = handleInviteDeepLink(LINK);
-    await vi.waitFor(() => expect(localCalls('github.connect')).toHaveLength(1));
-    connecting.cancel();
-    await pending;
-
-    expect(close).toHaveBeenCalledTimes(1);
-    expect(localCalls('github.cancelAuth')).toEqual([]);
-    expect(showInviteConsent).not.toHaveBeenCalled();
-    expect(showInviteNotice).not.toHaveBeenCalled();
-    expect(showMessageBox).not.toHaveBeenCalled();
-    expect(openExternal).not.toHaveBeenCalled();
-    expect(guestAdd).not.toHaveBeenCalled();
-    expect(openBackendWindow).not.toHaveBeenCalled();
-    expect(logLines.join('\n')).toContain('User cancelled the invite while connecting');
-    expect(logLines.join('\n')).not.toContain('Invite deep link handling failed');
-
-    // A device flow that starts after the cancel is aborted on arrival — the
-    // cancel scoped to that flow's `flowId` (§5.27).
-    releaseConnect();
-    await vi.waitFor(() =>
-      expect(localCalls('github.cancelAuth')).toEqual([
-        ['github.cancelAuth', { flowId: 'flow-late' }],
-      ]),
-    );
-    expect(liveFlowId).toBeNull();
-  });
-
-  it('a late github.connect without flowId is left alone even without a newer invite', async () => {
-    signedOutDaemon();
-    challenge.mockResolvedValue({ ...CHALLENGE, pinIdentity: { provider: 'github', host: 'github.com', externalUserId: '42' } });
-    const connecting = fakeProgress();
-    showInviteProgress.mockReturnValueOnce(connecting.handle);
-    const { flowId: _flowId, ...legacyConnect } = CONNECT;
-    const delayed = Promise.withResolvers<typeof legacyConnect>();
-    onLocal('github.connect', () => delayed.promise);
-
-    const pending = handleInviteDeepLink(LINK);
-    await vi.waitFor(() => expect(localCalls('github.connect')).toHaveLength(1));
-    connecting.cancel();
-    await pending;
-    delayed.resolve(legacyConnect);
-    await new Promise((resolve) => setTimeout(resolve, 0));
-
-    expect(localCalls('github.cancelAuth')).toEqual([]);
-    expect(showInviteConsent).not.toHaveBeenCalled();
-    expect(close).toHaveBeenCalledTimes(1);
-  });
-
-  it('a late github.connect without flowId (older daemon) is not cancelled unscoped: a later invite keeps its flow', async () => {
-    signedOutDaemon();
-    challenge.mockResolvedValue({ ...CHALLENGE, pinIdentity: { provider: 'github', host: 'github.com', externalUserId: '42' } });
-    const connectingA = fakeProgress();
-    showInviteProgress.mockReturnValueOnce(connectingA.handle);
-    let releaseConnectA!: () => void;
-    let connects = 0;
-    const { flowId: _flowId, ...legacyConnect } = CONNECT;
-    onLocal('github.connect', () => {
-      connects += 1;
-      if (connects === 1) {
-        return new Promise((resolve) => (releaseConnectA = () => resolve(legacyConnect)));
-      }
-      return startDeviceFlow('flow-b');
-    });
-    const signIn = fakeConsent('pending');
-    showInviteConsent.mockReturnValueOnce(signIn.prompt);
-
-    const pendingA = handleInviteDeepLink(LINK);
-    await vi.waitFor(() => expect(localCalls('github.connect')).toHaveLength(1));
-    connectingA.cancel();
-    await pendingA;
-    expect(localCalls('github.cancelAuth')).toEqual([]);
-
-    const pendingB = handleInviteDeepLink(LINK);
-    await vi.waitFor(() => expect(showInviteConsent).toHaveBeenCalledTimes(1));
-    expect(localCalls('github.connect')).toHaveLength(2);
-
-    // A's late result cannot be scoped, so no cancel is sent at all: an
-    // unscoped one would abort B's live flow.
-    releaseConnectA();
-    await new Promise((resolve) => setTimeout(resolve, 0));
-    expect(localCalls('github.cancelAuth')).toEqual([]);
-    expect(liveFlowId).toBe('flow-b');
-    expect(signIn.prompt.dismiss).not.toHaveBeenCalled();
-
-    signIn.decide('cancel');
-    await pendingB;
-    expect(localCalls('github.cancelAuth')).toEqual([['github.cancelAuth', { flowId: 'flow-b' }]]);
-  });
-
-  it('a late connect response leaves the same resident flow adopted by a newer invite live', async () => {
-    signedOutDaemon();
-    challenge.mockResolvedValue({ ...CHALLENGE, pinIdentity: { provider: 'github', host: 'github.com', externalUserId: '42' } });
-    const connectingA = fakeProgress();
-    showInviteProgress.mockReturnValueOnce(connectingA.handle);
-    const delayed = Promise.withResolvers<typeof CONNECT>();
-    const responses: (typeof CONNECT)[] = [];
-    onLocal('github.connect', () => {
-      // The flow is resident before A receives its response. B's connect
-      // adopts it using the same single-slot contract as the real daemon.
-      const response = connectDeviceFlow();
-      responses.push(response);
-      return responses.length === 1 ? delayed.promise : response;
-    });
-    const signIn = fakeConsent('pending');
-    const prove = fakeConsent('open');
-    showInviteConsent.mockReturnValueOnce(signIn.prompt).mockReturnValueOnce(prove.prompt);
-
-    const pendingA = handleInviteDeepLink(LINK);
-    await vi.waitFor(() => expect(localCalls('github.connect')).toHaveLength(1));
-    connectingA.cancel();
-    await pendingA;
-    expect(localCalls('github.cancelAuth')).toEqual([]);
-
-    const pendingB = handleInviteDeepLink(LINK);
-    try {
-      await vi.waitFor(() => expect(showInviteConsent).toHaveBeenCalledTimes(1));
-      expect(responses).toHaveLength(2);
-      expect(responses[1].flowId).toBe(responses[0].flowId);
-
-      delayed.resolve(responses[0]);
-      await new Promise((resolve) => setTimeout(resolve, 0));
-      expect(liveFlowId).toBe(responses[1].flowId);
-      expect(localCalls('github.cancelAuth')).toEqual([]);
-      expect(signIn.prompt.dismiss).not.toHaveBeenCalled();
-
-      signIn.decide('open');
-      await vi.waitFor(() => expect(openExternal).toHaveBeenCalledTimes(1));
-      emitAuthChanged('authorized');
-      await pendingB;
-      expect(prove.prompt.dismiss).toHaveBeenCalledExactlyOnceWith('joined');
-      expect(openBackendWindow).toHaveBeenCalledWith('guest-id');
-    } finally {
-      signIn.decide('cancel');
-      signIn.cancelWaiting();
-      await pendingB;
-    }
-  });
-
-  it('a late connect response leaves a different flow shown by a newer invite live', async () => {
-    signedOutDaemon();
-    challenge.mockResolvedValue({ ...CHALLENGE, pinIdentity: { provider: 'github', host: 'github.com', externalUserId: '42' } });
-    const connectingA = fakeProgress();
-    showInviteProgress.mockReturnValueOnce(connectingA.handle);
-    let releaseConnectA!: () => void;
-    let connects = 0;
-    // A's flow is superseded before its start resolves: the daemon hands B
-    // its own live flow, and A's late result names a flow that is no longer
-    // the pending one.
-    const flowA = { ...CONNECT, flowId: 'flow-a' };
-    onLocal('github.connect', () => {
-      connects += 1;
-      if (connects === 1) {
-        return new Promise((resolve) => (releaseConnectA = () => resolve(flowA)));
-      }
-      return startDeviceFlow('flow-b');
-    });
-    const signIn = fakeConsent('pending');
-    const prove = fakeConsent('open');
-    showInviteConsent.mockReturnValueOnce(signIn.prompt).mockReturnValueOnce(prove.prompt);
-
-    // Invite A is cancelled while its device-flow start is still pending.
-    const pendingA = handleInviteDeepLink(LINK);
-    await vi.waitFor(() => expect(localCalls('github.connect')).toHaveLength(1));
-    connectingA.cancel();
-    await pendingA;
-    expect(localCalls('github.cancelAuth')).toEqual([]);
-
-    // Invite B starts its own flow and reaches the sign-in prompt.
-    const pendingB = handleInviteDeepLink(LINK);
-    await vi.waitFor(() => expect(showInviteConsent).toHaveBeenCalledTimes(1));
-    expect(localCalls('github.connect')).toHaveLength(2);
-    expect(showInviteConsent.mock.calls[0][0]).toMatchObject({ mode: 'sign-in-required' });
-
-    // A's start arrives late: the newer invite owns sign-in now, so even
-    // when the ids differ, A leaves cleanup to the current owner.
-    releaseConnectA();
-    await new Promise((resolve) => setTimeout(resolve, 0));
-    expect(localCalls('github.cancelAuth')).toEqual([]);
-    expect(liveFlowId).toBe('flow-b');
-    expect(signIn.prompt.dismiss).not.toHaveBeenCalled();
-
-    // B completes normally.
-    signIn.decide('open');
-    await vi.waitFor(() => expect(openExternal).toHaveBeenCalledTimes(1));
-    emitAuthChanged('authorized');
-    await pendingB;
-
-    expect(signIn.prompt.dismiss).toHaveBeenCalledExactlyOnceWith('superseded');
-    expect(prove.prompt.dismiss).toHaveBeenCalledExactlyOnceWith('joined');
-    expect(guestAdd).toHaveBeenCalledWith(expect.objectContaining({ token: TOKEN }));
-    expect(openBackendWindow).toHaveBeenCalledWith('guest-id');
-    expect(localCalls('github.cancelAuth')).toEqual([]);
-    expect(logLines.join('\n')).not.toContain('Invite deep link handling failed');
   });
 
   it('cancel while the stored session is looked up: nothing inspected or proven, connection closed', async () => {
@@ -4620,5 +3234,141 @@ describe('routeInviteLinkFromOs', () => {
     await routeInviteLinkFromOs(LINK, park);
     expect(park).toHaveBeenCalledWith(LINK);
     expect(openInviteConnection).not.toHaveBeenCalled();
+  });
+});
+
+describe('handleInviteDeepLink — collaboration-only continuation', () => {
+  const identity = { provider: 'github' as const, host: 'github.com', externalUserId: '42' };
+  let allowed = true;
+  let current = true;
+  let prepared: import('../../../collaboration-auth/main/collaboration-auth-flow').PreparedCollaborationIdentity;
+  beforeEach(() => {
+    allowed = true;
+    current = true;
+    captureIdentity.mockReturnValue({ supported: true });
+    localMethods.clear();
+    onLocal('identity.getUser', () => ({ user: { id: '42', login: 'octocat' } }));
+    onLocal('sourceControl.identityProof.create', () => ({
+      ...identity,
+      proofId: PROOF.gistId,
+      login: 'octocat',
+    }));
+    onLocal('sourceControl.identityProof.delete', () => ({ ok: true }));
+    prepared = {
+      attempt: { id: 'fixture', metadataRevision: 0, current: () => true },
+      identity,
+      login: 'octocat',
+      invitation: { scope: 'workspace', pinIdentity: identity },
+      local: {
+        supported: true,
+        gitlabSupported: true,
+        current: () => current,
+        request: localRequest as never,
+      },
+      allowed: () => allowed,
+    };
+    prepareIdentity.mockImplementation(async (_request, { attempt }) => ({
+      kind: 'ready',
+      prepared: { ...prepared, attempt },
+    }));
+    challenge.mockResolvedValue({ ...CURRENT_CHALLENGE, pinIdentity: identity });
+    showInviteConsent.mockImplementation(() => fakeConsent('open').prompt);
+  });
+  it.each([undefined, null, identity])(
+    'passes pin metadata %j unchanged and resumes using only local collaboration proof',
+    async (pinIdentity) => {
+      challenge.mockResolvedValue({
+        ...CHALLENGE,
+        ...(pinIdentity === undefined ? {} : { pinIdentity }),
+      });
+      await handleInviteDeepLink(LINK);
+      expect(prepareIdentity).toHaveBeenCalledExactlyOnceWith(
+        {
+          scope: 'workspace',
+          ...(pinIdentity === undefined ? {} : { pinIdentity }),
+          hostLabel: '192.168.1.10',
+          workspaceTitle: CHALLENGE.workspaceTitle,
+        },
+        { attempt: expect.objectContaining({ id: expect.any(String), metadataRevision: 0 }) },
+      );
+      expect(localCalls('sourceControl.identityProof.create')).toEqual([
+        [
+          'sourceControl.identityProof.create',
+          {
+            provider: 'github',
+            purpose: 'collaboration',
+            expectedIdentity: identity,
+            nonce: CHALLENGE.nonce,
+            hostLabel: '192.168.1.10',
+          },
+        ],
+      ]);
+      expect(prove).toHaveBeenCalledExactlyOnceWith('inv-1', SECRET, {
+        nonce: CHALLENGE.nonce,
+        gistId: PROOF.gistId,
+        login: 'octocat',
+      });
+      expect(localCalls('sourceControl.identityProof.delete')).toEqual([
+        [
+          'sourceControl.identityProof.delete',
+          { provider: 'github', purpose: 'collaboration', proofId: PROOF.gistId },
+        ],
+      ]);
+      expect(
+        localRequest.mock.calls.every(
+          ([method]) =>
+            method === 'identity.getUser' || method.startsWith('sourceControl.identityProof.'),
+        ),
+      ).toBe(true);
+      expect(guestAdd).toHaveBeenCalledOnce();
+    },
+  );
+  it('cancel keeps the invitation and never creates proof or redeems it', async () => {
+    prepareIdentity.mockResolvedValue({ kind: 'cancelled', request: prepared.invitation });
+    await handleInviteDeepLink(LINK);
+    expect(localRequest).not.toHaveBeenCalled();
+    expect(prove).not.toHaveBeenCalled();
+    expect(guestAdd).not.toHaveBeenCalled();
+    expect(showInviteNotice).not.toHaveBeenCalled();
+  });
+  it('refuses a different pin on challenge retry instead of reusing account consent', async () => {
+    prove.mockRejectedValueOnce(new InviteRpcError(-32602, { code: 'proof-expired' }));
+    challenge
+      .mockResolvedValueOnce({ ...CURRENT_CHALLENGE, pinIdentity: identity })
+      .mockResolvedValueOnce({
+        ...CURRENT_CHALLENGE,
+        nonce: 'new-nonce',
+        pinIdentity: { ...identity, externalUserId: '99' },
+      });
+    await handleInviteDeepLink(LINK);
+    expect(prove).toHaveBeenCalledOnce();
+    expect(localCalls('sourceControl.identityProof.create')).toHaveLength(1);
+    expect(guestAdd).not.toHaveBeenCalled();
+  });
+  it.each(['flag', 'connection'] as const)(
+    'a %s change while proof is pending prevents redemption and cleans up when possible',
+    async (change) => {
+      onLocal('sourceControl.identityProof.create', () => {
+        if (change === 'flag') allowed = false;
+        else current = false;
+        return { ...identity, proofId: PROOF.gistId, login: 'octocat' };
+      });
+      await handleInviteDeepLink(LINK);
+      expect(prove).not.toHaveBeenCalled();
+      expect(guestAdd).not.toHaveBeenCalled();
+      expect(localCalls('sourceControl.identityProof.delete')).toHaveLength(
+        change === 'flag' ? 1 : 0,
+      );
+    },
+  );
+  it('a flag change during final account validation cannot send the proof to the host', async () => {
+    let reads = 0;
+    onLocal('identity.getUser', () => {
+      if (++reads === 2) allowed = false;
+      return { user: { id: '42', login: 'octocat' } };
+    });
+    await handleInviteDeepLink(LINK);
+    expect(prove).not.toHaveBeenCalled();
+    expect(localCalls('sourceControl.identityProof.delete')).toHaveLength(1);
   });
 });

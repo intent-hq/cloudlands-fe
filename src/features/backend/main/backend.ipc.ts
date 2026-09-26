@@ -128,7 +128,7 @@ import type {
   UpdateConnectionResult,
   UpdateBackendResult,
 } from '../../../shared/types/connections';
-import { compareProtocolMajor } from './protocol-compat';
+import { compareProtocolMajor, protocolVersionAtLeast } from './protocol-compat';
 import {
   ConnectionsAddSchema,
   ConnectionsCaptureFingerprintSchema,
@@ -176,6 +176,27 @@ const connectedProtocolVersions = new Map<string, string>();
 // until then the sidecar's startup probe may seed the local version, after
 // that the hello result is the only source (a null/absent hello stays null).
 let localHelloObserved = false;
+let localIdentityGeneration = 0;
+let localCollaborationIdentitySupported = false;
+
+/** Identity auth is local even while the requesting renderer uses a shared host. */
+export function captureLocalIdentityConnection() {
+  const client = getLocalBackendClient();
+  const generation = localIdentityGeneration;
+  return {
+    supported: localCollaborationIdentitySupported,
+    gitlabSupported: protocolVersionAtLeast(
+      getConnectedDaemonProtocolVersion(LOCAL_CONNECTION_ID),
+      10,
+      8,
+    ),
+    current: () =>
+      generation === localIdentityGeneration &&
+      backendClients.get(LOCAL_CONNECTION_ID) === client &&
+      client.getStatus() === 'connected',
+    request: <T>(method: string, params: object) => client.request<T>(method, params),
+  };
+}
 
 /**
  * The `client.hello` `protocolVersion` of the daemon currently connected
@@ -898,6 +919,10 @@ export function disconnectBackendClient(id: string): void {
   const instance = backendClients.get(id);
   if (!instance) return;
   backendClients.delete(id);
+  if (id === LOCAL_CONNECTION_ID) {
+    localIdentityGeneration++;
+    localCollaborationIdentitySupported = false;
+  }
   connectedDaemonVersions.delete(id);
   connectedProtocolVersions.delete(id);
   // A user-driven dispose ends any update-caused outage as far as the UI is
@@ -1074,7 +1099,16 @@ function createAdditionalBackendClient(id: string, config: BackendConnectionConf
         typeof obj?.protocolVersion === 'string' ? obj.protocolVersion : null;
       if (helloProtocolVersion) connectedProtocolVersions.set(id, helloProtocolVersion);
       else connectedProtocolVersions.delete(id);
-      if (id === LOCAL_CONNECTION_ID) localHelloObserved = true;
+      if (id === LOCAL_CONNECTION_ID) {
+        localHelloObserved = true;
+        // Re-negotiation invalidates any prepared collaboration continuation.
+        localIdentityGeneration++;
+        const hello = result as {
+          server?: { capabilities?: { collaborationIdentity?: unknown } };
+        } | null;
+        localCollaborationIdentitySupported =
+          hello?.server?.capabilities?.collaborationIdentity === 1;
+      }
       handleHelloProtocolVersion(helloProtocolVersion, meta);
       // #3649: log each connected daemon's build identity once at INFO, keyed
       // by connection id so multi-backend setups record every daemon build.
@@ -1162,6 +1196,10 @@ function createAdditionalBackendClient(id: string, config: BackendConnectionConf
   });
   instance.on('status', (status: ConnectionStatus) => {
     if (status !== 'connected') {
+      if (id === LOCAL_CONNECTION_ID) {
+        localIdentityGeneration++;
+        localCollaborationIdentitySupported = false;
+      }
       connectedDaemonVersions.delete(id);
       connectedProtocolVersions.delete(id);
       guestWorkspaceEvents.generation += 1;
@@ -3908,6 +3946,10 @@ async function getSelfPublishedState(): Promise<SelfPublishedStateResult> {
 export function disposeAllBackendClients(): void {
   for (const [id, instance] of backendClients) {
     backendClients.delete(id);
+    if (id === LOCAL_CONNECTION_ID) {
+      localIdentityGeneration++;
+      localCollaborationIdentitySupported = false;
+    }
     connectedProtocolVersions.delete(id);
     clearBackendFailureState(id);
     disposeTransferConnectionsForBackend(id);

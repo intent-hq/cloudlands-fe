@@ -61,6 +61,7 @@ import { voiceTranscriptionSaga } from './slices/hardware-console/sagas/voice-tr
 import { hostRequirementsSaga } from './slices/host-requirements/sagas/host-requirements-saga';
 import { legacyImportSaga } from './slices/legacy-import/sagas/legacy-import-saga';
 import { linearAuthSaga } from './slices/linear-auth/sagas/linear-auth-saga';
+import { collaborationAuthSaga } from '$features/collaboration-auth/renderer/collaboration-auth-saga';
 import { identitySaga } from './slices/identity/sagas/identity-saga';
 import { mcpSettingsSaga } from './slices/mcp-settings/sagas/mcp-settings-saga';
 import { modelBootSaga } from './slices/model/sagas/model-boot-saga';
@@ -210,6 +211,7 @@ export const sagas = [
   sentryAuthSaga,
   linearAuthSaga,
   identitySaga,
+  collaborationAuthSaga,
   mcpSettingsSaga,
   directoryPickerSaga,
   legacyImportSaga,

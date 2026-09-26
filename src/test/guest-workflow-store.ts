@@ -1,3 +1,7 @@
+import {
+  userPreferencesReducer,
+  initialState as userPreferences,
+} from '$store/renderer/slices/user-preferences/user-preferences-slice';
 import { runSaga, stdChannel } from 'redux-saga';
 import {
   guestSessionsReducer,
@@ -14,7 +18,7 @@ import {
 
 /** Component tests exercise production reducers and root-owned workflow sagas. */
 export function createGuestWorkflowTestStore() {
-  const freshState = () => ({ guestSessions, connections, workspace });
+  const freshState = () => ({ guestSessions, connections, workspace, userPreferences });
   let state = freshState();
   const channel = stdChannel();
   const listeners = new Set<() => void>();
@@ -28,6 +32,7 @@ export function createGuestWorkflowTestStore() {
     },
     dispatch(action: { type: string }) {
       state = {
+        userPreferences: userPreferencesReducer(state.userPreferences, action as never),
         guestSessions: guestSessionsReducer(state.guestSessions, action as never),
         connections: connectionsReducer(state.connections, action as never),
         workspace: workspaceReducer(state.workspace, action as never),
