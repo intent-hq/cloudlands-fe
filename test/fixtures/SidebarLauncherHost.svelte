@@ -151,7 +151,6 @@
   store.dispatch(setMultiSelectSidebarSelectedTabs(workspaceId, [selectedTab]));
   $effect(() => store.dispatch(setThemeName(theme)));
   onDestroy(() => {
-    disposeStore();
     store.dispatch(principalContextChanged(previousPrincipal.context));
     if (previousPrincipal.context && previousPrincipal.snapshot)
       store.dispatch(
@@ -160,6 +159,7 @@
           previousPrincipal.snapshot,
         ),
       );
+    disposeStore();
   });
 </script>
 

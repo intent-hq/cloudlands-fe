@@ -343,3 +343,19 @@ test('modeled owner Chief surface remains withheld for unknown and guest callers
     await expect(chief).toHaveCount(0);
   }
 });
+
+import { checkFixturePrincipalLifecycle } from './fixture-principal-lifecycle';
+
+for (const borrowed of [true, false]) {
+  test(`principal lifecycle restores ${borrowed ? 'a borrowed guest' : 'a fresh store'}`, async ({
+    page,
+  }, info) => {
+    await checkFixturePrincipalLifecycle(
+      page,
+      info,
+      baseUrl,
+      'SidebarShellBackgroundHost',
+      borrowed,
+    );
+  });
+}

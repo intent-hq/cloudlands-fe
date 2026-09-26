@@ -867,3 +867,13 @@ test('modeled owner launchers remain withheld for unknown and guest callers', as
     await expect(cards).toHaveCount(0);
   }
 });
+
+import { checkFixturePrincipalLifecycle } from './fixture-principal-lifecycle';
+
+for (const borrowed of [true, false]) {
+  test(`principal lifecycle restores ${borrowed ? 'a borrowed guest' : 'a fresh store'}`, async ({
+    page,
+  }, info) => {
+    await checkFixturePrincipalLifecycle(page, info, baseUrl, 'SidebarLauncherHost', borrowed);
+  });
+}

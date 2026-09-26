@@ -279,3 +279,19 @@ test('modeled owner workspace creation remains withheld for unknown and guest ca
     await expect(launcher).toHaveCount(0);
   }
 });
+
+import { checkFixturePrincipalLifecycle } from './fixture-principal-lifecycle';
+
+for (const borrowed of [true, false]) {
+  test(`principal lifecycle restores ${borrowed ? 'a borrowed guest' : 'a fresh store'}`, async ({
+    page,
+  }, info) => {
+    await checkFixturePrincipalLifecycle(
+      page,
+      info,
+      baseUrl,
+      'TitlebarWorkspaceControlsHarness',
+      borrowed,
+    );
+  });
+}

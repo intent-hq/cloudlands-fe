@@ -21,7 +21,6 @@
   store.dispatch(guestSessionsListUnavailable());
   store.dispatch(openWorkspaceTab('titlebar-test'));
   onDestroy(() => {
-    dispose();
     store.dispatch(principalContextChanged(previousPrincipal.context));
     if (previousPrincipal.context && previousPrincipal.snapshot)
       store.dispatch(
@@ -30,6 +29,7 @@
           previousPrincipal.snapshot,
         ),
       );
+    dispose();
   });
 </script>
 
