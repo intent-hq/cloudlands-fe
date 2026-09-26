@@ -3368,7 +3368,7 @@ describe('ChatPanel mounted lifecycle', () => {
     expect(screen.queryByTestId('pending-proposal-chip')).toBeNull();
   });
 
-  it('keeps the pending-proposal chip during streaming observer refreshes', async () => {
+  it('keeps the pending-proposal chip and observer during streaming updates', async () => {
     mocks.draftGet.mockResolvedValue(null);
     MockChatIntersectionObserver.instances = [];
     vi.stubGlobal('IntersectionObserver', MockChatIntersectionObserver);
@@ -3409,26 +3409,26 @@ describe('ChatPanel mounted lifecycle', () => {
       MockChatIntersectionObserver.instances.findLast(
         (candidate) => candidate.options?.threshold === 0.01 && candidate.observed.has(shell),
       )!;
-    let observer = currentObserver();
+    const observer = currentObserver();
     expect(observer).toBeDefined();
+    const observe = vi.spyOn(observer, 'observe');
+    const disconnect = vi.spyOn(observer, 'disconnect');
     observer.fire([{ target: shell, isIntersecting: false }]);
     await tick();
     const chip = screen.getByTestId('pending-proposal-chip');
 
     for (let chunk = 1; chunk <= 3; chunk += 1) {
-      const previousObserver = observer;
       mocks.agentMessages.set([
         proposalMessage,
         { ...liveMessage, content: `${liveMessage.content} ${chunk}` },
       ]);
+      mocks.agentSession.set({ ...session, metadata: { ...session.metadata } });
       await tick();
       await tick();
       expect(screen.queryByTestId('pending-proposal-chip')).toBe(chip);
-      observer = currentObserver();
-      expect(observer).not.toBe(previousObserver);
-      previousObserver.fire([{ target: shell, isIntersecting: true }]);
-      await tick();
-      expect(screen.queryByTestId('pending-proposal-chip')).toBe(chip);
+      expect(currentObserver()).toBe(observer);
+      expect(observe).not.toHaveBeenCalled();
+      expect(disconnect).not.toHaveBeenCalled();
       observer.fire([{ target: shell, isIntersecting: false }]);
       await tick();
       expect(screen.queryByTestId('pending-proposal-chip')).toBe(chip);
@@ -3442,6 +3442,7 @@ describe('ChatPanel mounted lifecycle', () => {
     expect(screen.queryByTestId('pending-proposal-chip')).not.toBeNull();
     mocks.agentSession.set({ ...session, metadata: { pendingProposals: [] } });
     await tick();
+    expect(disconnect).toHaveBeenCalledOnce();
     observer.fire([{ target: shell, isIntersecting: false }]);
     await tick();
     expect(screen.queryByTestId('pending-proposal-chip')).toBeNull();
@@ -3489,7 +3490,7 @@ describe('ChatPanel mounted lifecycle', () => {
     await tick();
     expect(screen.queryByTestId('pending-proposal-chip')).toBe(chip);
     const previousObserver = currentObserver(shellA);
-    expect(previousObserver).not.toBe(initialObserver);
+    expect(previousObserver).toBe(initialObserver);
 
     mocks.agentSession.set({ ...session, metadata: { pendingProposals: [proposalB] } });
     await tick();
@@ -3500,7 +3501,8 @@ describe('ChatPanel mounted lifecycle', () => {
     expect(screen.queryByTestId('pending-proposal-chip')).toBeNull();
 
     const replacementObserver = currentObserver(shellB);
-    expect(replacementObserver).not.toBe(previousObserver);
+    expect(replacementObserver).toBe(previousObserver);
+    expect(replacementObserver.observed.has(shellA)).toBe(false);
     replacementObserver.fire([{ target: shellB, isIntersecting: false }]);
     await tick();
     const replacementBounds = vi.spyOn(messageB, 'getBoundingClientRect');
