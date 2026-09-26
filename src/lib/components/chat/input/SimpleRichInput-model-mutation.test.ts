@@ -419,6 +419,44 @@ describe('real composer model mutation ownership', () => {
     expect(fixture.setEffort).not.toHaveBeenCalled();
   });
 
+  it('restores authoritative Auto when a pending local pick fails', async () => {
+    let finish!: (value: unknown) => void;
+    fixture.setModel.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        }),
+    );
+    mount();
+    await pick('codex', 'codex only');
+    await confirm();
+    await waitFor(() => expect(fixture.setModel).toHaveBeenCalledTimes(1));
+    fixture.dispatch(
+      updateSession('agent-1', {
+        provider: 'codex',
+        metadata: { provider: 'codex' },
+        model: undefined,
+        reasoningEffort: null,
+      }),
+    );
+    finish({ success: false, error: 'Local model rejected' });
+    const { notify } = await import('$lib/components/patterns/notify');
+    await waitFor(() => expect(notify.error).toHaveBeenCalled());
+    const trigger = document.querySelector(
+      '[data-chat-input-primary-actions] [data-slot="dropdown-root"] button',
+    )!;
+    await waitFor(() => expect(trigger.textContent).toContain('Default model'));
+    expect(session()).toMatchObject({ provider: 'codex', reasoningEffort: null });
+    expect(session().model).toBeUndefined();
+    await pick('auggie', 'auggie shared');
+    const dialog = await screen.findByRole('dialog');
+    expect(dialog.textContent).toContain('OpenAI Codex');
+    expect(dialog.textContent).toContain('Augment Auggie');
+    await fireEvent.click(within(dialog).getByRole('button', { name: 'Cancel', exact: true }));
+    expect(fixture.setModel).toHaveBeenCalledExactlyOnceWith(modelRequest('codex', 'codex-only'));
+    expect(fixture.setEffort).not.toHaveBeenCalled();
+  });
+
   it('replaces deferred picks and sends only the last complete provider/model pair', async () => {
     const view = mount({ isStreaming: true, requiresModelSwitchConfirmation: false });
     await pick('codex', 'codex only');

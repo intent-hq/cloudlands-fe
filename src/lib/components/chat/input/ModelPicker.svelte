@@ -804,9 +804,10 @@
 
   function currentSessionSelection(): ModelChange['previous'] | undefined {
     const session = $agentSession$;
-    if (!agentId || !workspaceId || session?.model === undefined) return undefined;
+    if (!agentId || !workspaceId || !session) return undefined;
     const provider = getAgentProvider(session, $defaultProviderId$);
     if (!provider) return undefined;
+    // An omitted model on a present session is authoritative Auto, not missing data.
     return { model: session.model, providerId: normalizeProviderId(provider) };
   }
 
