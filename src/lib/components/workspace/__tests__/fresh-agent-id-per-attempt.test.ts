@@ -601,7 +601,7 @@ describe('CompactWorkspaceInitializer omits client agent ID on create', () => {
     expect(openIndex).toBeGreaterThan(hydrateIndex);
   });
 
-  it('applies a picked reasoning effort to the daemon-created initial agent', async () => {
+  it('sends picked effort atomically before the initial prompt can start', async () => {
     mocks.compactFormState$.set({ selectedReasoningEffort: 'high' });
     mocks.create.mockResolvedValue({
       ok: true,
@@ -624,14 +624,12 @@ describe('CompactWorkspaceInitializer omits client agent ID on create', () => {
     });
     await component.applyPrefill();
 
-    await waitFor(() =>
-      expect(mocks.setReasoningEffort).toHaveBeenCalledWith({
-        agentId: 'agent-created',
-        workspaceId: 'ws-created',
-        reasoningEffort: 'high',
-      }),
-    );
-    expect(mocks.create.mock.calls[0][0].initialAgent).not.toHaveProperty('reasoningEffort');
+    await waitFor(() => expect(mocks.goto).toHaveBeenCalledWith('/workspace/ws-created'));
+    expect(mocks.create.mock.calls[0][0].initialAgent).toMatchObject({
+      reasoningEffort: 'high',
+      prompt: 'Build the thing',
+    });
+    expect(mocks.setReasoningEffort).not.toHaveBeenCalled();
   });
 
   it('drops hydrated effort when the saved model belongs to another provider', async () => {

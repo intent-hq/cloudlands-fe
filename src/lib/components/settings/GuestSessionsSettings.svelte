@@ -98,9 +98,7 @@
 
   function leaveHost(session: GuestSessionRecord | null) {
     if (!session) return;
-    const action = leaveGuestSessionRequested(session.id);
-    action.promise.catch(() => {});
-    appStore.dispatch(action);
+    appStore.dispatch(leaveGuestSessionRequested(session.id));
   }
 
   /**
@@ -132,9 +130,7 @@
 
   function leaveWorkspace(target: LeaveWorkspaceTarget | null) {
     if (!target) return;
-    const action = leaveGuestWorkspaceRequested(target.session.id, target.workspace.id);
-    action.promise.catch(() => {});
-    appStore.dispatch(action);
+    appStore.dispatch(leaveGuestWorkspaceRequested(target.session.id, target.workspace.id));
   }
 
   function removeAllFailureLines(report: HostedSweepReport): string[] {
@@ -157,9 +153,7 @@
   }
 
   function removeAllGuests(workspaceId: string) {
-    const action = removeAllHostedGuestsRequested(workspaceId);
-    action.promise.catch(() => {});
-    appStore.dispatch(action);
+    appStore.dispatch(removeAllHostedGuestsRequested(workspaceId));
   }
 </script>
 

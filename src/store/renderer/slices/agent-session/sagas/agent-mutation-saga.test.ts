@@ -1172,7 +1172,6 @@ describe('agentMutationSaga', () => {
         mocks.deleteAgent.mockReturnValue(new Promise(() => {}));
         const { channel, dispatched, task } = start({ [A1]: storedSession() });
         const action = deleteAgentSessionRequested(WS, A1);
-        action.promise.catch(() => {});
         channel.put(action);
         await settle();
         expect(membershipAfter(dispatched).agentIds).toEqual([]);

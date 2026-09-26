@@ -1,7 +1,7 @@
 package: "@augmentcode/themis"
-version: "0.2.7"
+version: "0.3.2"
 target: "svelte"
-installedAt: "2026-09-09T00:59:49.699Z"
+installedAt: "2026-09-25T17:24:44.439Z"
 files:
   - "SKILL.md"
   - "core/SKILL.md"

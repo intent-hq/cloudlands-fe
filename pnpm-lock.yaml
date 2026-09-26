@@ -28,8 +28,8 @@ importers:
   .:
     dependencies:
       '@augmentcode/themis':
-        specifier: 0.2.9
-        version: 0.2.9(react@19.2.6)(svelte@5.56.10(@typescript-eslint/types@8.68.0))
+        specifier: 0.3.2
+        version: 0.3.2(react@19.2.6)(svelte@5.56.10(@typescript-eslint/types@8.68.0))
       body-parser:
         specifier: ^2.3.0
         version: 2.3.0
@@ -436,8 +436,8 @@ packages:
     resolution: {integrity: sha512-93Z1N+BQNXysodoicpOIyNh2drHfz/CTf9nnT0FEx72GJcIiwgydD7tGAr78j41LsYn3hlRn+LdGPuBLn1Bl8Q==}
     engines: {node: ^22.13.0 || >=24.0.0}
 
-  '@augmentcode/themis@0.2.9':
-    resolution: {integrity: sha512-7f54j2jkba7+n3DdBiMctwYmo1Cp1Ad/GIejVYlm8/4HykW1d0713B0yFbX8TAf60AXP+vaon14FHPwHQPKdiA==}
+  '@augmentcode/themis@0.3.2':
+    resolution: {integrity: sha512-sagTptHn3mFxEIrM5lV8+uSNoB2LdzUX3r10nDu4FLLTXjKV4WqdDL0+6hAs5/beGGZlp8NcEXvsilPFB5qHpQ==}
     hasBin: true
     peerDependencies:
       '@preact/signals-react': ^3.10.1
@@ -5637,7 +5637,7 @@ snapshots:
       is-potential-custom-element-name: 1.0.1
       lru-cache: 11.5.2
 
-  '@augmentcode/themis@0.2.9(react@19.2.6)(svelte@5.56.10(@typescript-eslint/types@8.68.0))':
+  '@augmentcode/themis@0.3.2(react@19.2.6)(svelte@5.56.10(@typescript-eslint/types@8.68.0))':
     dependencies:
       fast-equals: 6.0.2
       kefir: 3.8.8

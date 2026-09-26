@@ -4,6 +4,35 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.184.6](https://github.com/intent-hq/cloudlands-fe/compare/v2.184.5...v2.184.6) (2026-09-26)
+
+
+### 🐛 Bug Fixes
+
+* hide guest sessions when experimental multiplayer is disabled ([#2919](https://github.com/intent-hq/cloudlands-fe/issues/2919)) ([1e082ab](https://github.com/intent-hq/cloudlands-fe/commit/1e082abee10f4c45b4078976732c0a7a2a448099))
+
+## [2.184.5](https://github.com/intent-hq/cloudlands-fe/compare/v2.184.4...v2.184.5) (2026-09-26)
+
+
+### 🐛 Bug Fixes
+
+* keep new workspace branch picker above its dialog ([#5980](https://github.com/intent-hq/cloudlands-fe/issues/5980)) ([#2917](https://github.com/intent-hq/cloudlands-fe/issues/2917)) ([c144971](https://github.com/intent-hq/cloudlands-fe/commit/c144971e05d609cb2b51b5e7d7335756140ba327))
+
+## [2.184.4](https://github.com/intent-hq/cloudlands-fe/compare/v2.184.3...v2.184.4) (2026-09-26)
+
+
+### 🐛 Bug Fixes
+
+* preserve new workspace reasoning effort ([#2904](https://github.com/intent-hq/cloudlands-fe/issues/2904)) ([ceed15d](https://github.com/intent-hq/cloudlands-fe/commit/ceed15d426defbde8e91282b1702711bcee8bdfc))
+
+## [2.184.3](https://github.com/intent-hq/cloudlands-fe/compare/v2.184.2...v2.184.3) (2026-09-25)
+
+
+### 🐛 Bug Fixes
+
+* **github-auth:** preserve adopted flows during scoped cancellation ([#2802](https://github.com/intent-hq/cloudlands-fe/issues/2802)) ([506b40a](https://github.com/intent-hq/cloudlands-fe/commit/506b40a2a1bcbc5d303f8c0828810dfcbcfbdefc))
+* preserve raw Markdown note edits ([#5967](https://github.com/intent-hq/cloudlands-fe/issues/5967)) ([#2912](https://github.com/intent-hq/cloudlands-fe/issues/2912)) ([b795ffb](https://github.com/intent-hq/cloudlands-fe/commit/b795ffb6bf4908e68e70f9e367140aa1e2524127))
+
 ## [2.184.2](https://github.com/intent-hq/cloudlands-fe/compare/v2.184.1...v2.184.2) (2026-09-25)
 
 

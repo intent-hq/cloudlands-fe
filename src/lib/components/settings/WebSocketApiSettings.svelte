@@ -378,7 +378,8 @@
 
   /** Load keychain-sync + self-published state (gates the modal and button). */
   function refreshPublishState() {
-    return appStore.dispatch(selfPublicationRequested('load')).promise.catch(() => {});
+    // Status loading must continue even if publication state is unavailable.
+    return appStore.dispatch(selfPublicationRequested('load')).catch(() => {});
   }
 
   /**
@@ -390,7 +391,7 @@
    * rotation/port change itself already succeeded.
    */
   function refreshSelfEntry() {
-    appStore.dispatch(selfPublicationRequested('refresh')).promise.catch(() => {});
+    appStore.dispatch(selfPublicationRequested('refresh'));
   }
 
   /**
@@ -402,7 +403,7 @@
    * rolls back the WSS toggle.
    */
   function maybeAutoPublish() {
-    return appStore.dispatch(selfPublicationRequested('autoPublish')).promise.catch(() => {});
+    return appStore.dispatch(selfPublicationRequested('autoPublish')).catch(() => {});
   }
 
   /**
@@ -416,11 +417,11 @@
    * and never rolls back the WSS toggle.
    */
   function maybeAutoUnpublish() {
-    return appStore.dispatch(selfPublicationRequested('autoUnpublish')).promise.catch(() => {});
+    return appStore.dispatch(selfPublicationRequested('autoUnpublish')).catch(() => {});
   }
 
   function handlePublishButton() {
-    appStore.dispatch(selfPublicationRequested('publish')).promise.catch(() => {});
+    appStore.dispatch(selfPublicationRequested('publish'));
   }
 
   async function handlePortSave() {

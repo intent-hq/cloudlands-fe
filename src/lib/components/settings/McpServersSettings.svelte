@@ -768,7 +768,7 @@
             class="pb-4 space-y-3 border-t border-border pt-4"
           >
             <Textarea
-              class="w-full h-64 px-3 py-2 bg-background border border-border rounded-md type-body font-mono text-foreground resize-y focus:outline-none focus:border-primary-ink focus:ring-2 focus:ring-primary-ink/10"
+              class="w-full h-64 px-3 py-2 bg-background border border-border rounded-md type-body font-mono text-foreground resize-y"
               placeholder={mcpJsonPlaceholder}
               aria-label={m.settings_mcpServers_jsonEditorAriaLabel()}
               bind:value={userMcpSettingsContent}

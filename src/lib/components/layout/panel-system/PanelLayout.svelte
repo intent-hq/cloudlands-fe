@@ -1155,9 +1155,7 @@
           // Persist the rename via the mutation middleware (`agent.rename`,
           // PROTOCOL §5.5) so other windows pick it up immediately.
           try {
-            const action = renameAgentSessionRequested(workspaceId, agentId, newName);
-            appStore.dispatch(action);
-            await action.promise;
+            await appStore.dispatch(renameAgentSessionRequested(workspaceId, agentId, newName));
           } catch (err) {
             // Revert optimistic UI so tab title and Redux match disk, then
             // rethrow so ReversibleActionManager surfaces the error toast
@@ -1183,9 +1181,7 @@
           );
           layoutManager.updateTabTitle(tab.id, oldName);
           try {
-            const action = renameAgentSessionRequested(workspaceId, agentId, oldName);
-            appStore.dispatch(action);
-            await action.promise;
+            await appStore.dispatch(renameAgentSessionRequested(workspaceId, agentId, oldName));
           } catch (err) {
             // Revert the revert: undo failed, so restore the new name in the UI
             // and rethrow so the user sees the error.

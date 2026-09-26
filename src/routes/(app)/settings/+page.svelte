@@ -63,6 +63,7 @@
     selectCodeFontFamilyCSS,
     selectCodeFontOptions,
     selectIsNoteMonospace,
+    selectLabsMultiplayerEnabled,
     selectNoteFontStyle,
     selectShellTransparencyEnabled,
     selectUpdateChannel,
@@ -98,6 +99,7 @@
   const daemonTransport$ = selectDaemonTransport();
   const isCollaboratorOnlyClient$ = selectIsCollaboratorOnlyClient();
   const hostAdministrationDenied$ = selectHostAdministrationDenied();
+  const labsMultiplayerEnabled$ = selectLabsMultiplayerEnabled();
 
   // UDS socket path of the connected intentd; null hides the Connection section
   // (external-ws, unknown transport, or missing target).
@@ -244,11 +246,18 @@
   // collaborator-only default is a safe placeholder, not an answer, and
   // redirecting on it would drop a `?tab=providers` deep link for an
   // administrator (intent-hq/intent#5514).
-  const hiddenTabs = $derived<readonly SettingsTab[]>(
-    $isCollaboratorOnlyClient$ ? ['providers', 'connections'] : [],
-  );
+  const hiddenTabs = $derived.by(() => {
+    const tabs: SettingsTab[] = $isCollaboratorOnlyClient$ ? ['providers', 'connections'] : [];
+    if (!$labsMultiplayerEnabled$) tabs.push('guest-sessions');
+    return tabs;
+  });
   $effect(() => {
-    if ($hostAdministrationDenied$ && hiddenTabs.includes(activeTab)) setActiveTab('display');
+    if (
+      hiddenTabs.includes(activeTab) &&
+      (activeTab === 'guest-sessions' || $hostAdministrationDenied$)
+    ) {
+      setActiveTab('display');
+    }
   });
 
   // Keep the rendered pane in sync when SvelteKit navigates within the mounted settings page.
@@ -589,7 +598,7 @@
         {/if}
 
         <!-- Guest sessions (multiplayer w4: hosting roster + joined hosts) -->
-        {#if activeTab === 'guest-sessions'}
+        {#if activeTab === 'guest-sessions' && $labsMultiplayerEnabled$}
           <div id="guest-sessions" class="scroll-mt-20">
             <GuestSessionsSettings />
           </div>

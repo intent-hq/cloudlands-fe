@@ -1655,6 +1655,8 @@ export interface CreateWorkspaceRequest {
     agentId?: string;
     name?: string;
     model?: string;
+    /** Persisted before the first turn. Omit to inherit defaults; blank explicitly clears. */
+    reasoningEffort?: string;
     prompt?: string;
     rules?: string;
     agentType?: string;

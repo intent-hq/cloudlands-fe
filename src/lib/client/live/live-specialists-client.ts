@@ -48,14 +48,19 @@ export class LiveSpecialistsClient implements SpecialistsClient {
    * transient failure keeps the last known-good view instead of wiping the
    * store (#610).
    */
-  private async fetchList(): Promise<SpecialistDef[]> {
-    const result = await backendRequest<{ specialists?: unknown[] }>('specialist.list');
+  private async fetchList(provider?: string): Promise<SpecialistDef[]> {
+    // Preview context belongs to this request; global subscriptions keep
+    // using the daemon's default context rather than the last picker choice.
+    const result =
+      provider === undefined
+        ? await backendRequest<{ specialists?: unknown[] }>('specialist.list')
+        : await backendRequest<{ specialists?: unknown[] }>('specialist.list', { provider });
     return Array.isArray(result?.specialists) ? (result.specialists as SpecialistDef[]) : [];
   }
 
-  async list(): Promise<SpecialistDef[]> {
+  async list(provider?: string): Promise<SpecialistDef[]> {
     try {
-      return await this.fetchList();
+      return await this.fetchList(provider);
     } catch {
       return [];
     }

@@ -1,22 +1,23 @@
 ---
 name: svelte/component-integration
 description: >-
-  Use when wiring Themis Store into Svelte 5 components or root layouts,
-  including initialization, dispatch, selector readables, template
-  subscriptions, and saga startup.
+  Use when wiring a configured Store into Svelte root layouts, templates, and
+  handlers. Apply svelte/store lifecycle and svelte/selector-lifecycle call
+  modes; this leaf owns wiring, not API policy.
 type: sub-skill
 library: themis
 requires:
   - svelte
+  - svelte/store
   - svelte/selector-lifecycle
 sources:
   - "@augmentcode/themis/svelte-store"
-  - ../SKILL.md
+  - ../store/SKILL.md
+  - ../selector-lifecycle/SKILL.md
 triggers:
-  - store init layout
-  - Store dispatch
-  - component wiring
-  - $selector$ template
+  - Svelte layout wiring
+  - Svelte component wiring
+  - Svelte $selector$ template
 ---
 # Component Integration — Store-first setup and dispatch
 
@@ -25,54 +26,15 @@ triggers:
 This is Svelte Store family guidance for Svelte component initialization,
 readable selector binding, and Store dispatch.
 
-## 1. `Store` class
+## Store contract handoff
 
-From `@augmentcode/themis/svelte-store`:
+Before wiring a layout, read `../store/SKILL.md` → **Correct import and class choice**,
+**Lifecycle rules**, **App saga lifetime**, and **Svelte component lifecycle helpers**.
+That owner covers constructor maps, state inference, middleware ordering, internal
+domains, init/dispose, devtools registration, and saga cancellation. Selector
+factory contracts live in `../selectors/SKILL.md` → **Choose the factory**.
 
-```typescript
-export class Store<
-  TStateMap extends StoreStateMap = {},
-  TReducers extends StoreReducersInput<TStateMap> = StoreReducersInput<TStateMap>,
-> {
-  constructor(reducersMap?: TReducers, middleware?: StoreMiddleware | StoreMiddleware[]);
-  addMiddleware(middleware: StoreMiddleware | StoreMiddleware[]): void;
-  getReducers(): StoreReducersMap<TReducers>;
-  get state(): StoreState<this>;
-  get dispatch(): Store["dispatch"];
-  createSelector<ARGS extends any[] = [], R = unknown>(
-    selectorFunc: StoreSelectorCallback<R, ARGS, StoreState<this>>
-  ): StoreSelector<R, ARGS, StoreState<this>>;
-
-  // Initialize Store-owned Redux/readable state, bind the saga manager orchestrator,
-  // and return a disposer equivalent to store.dispose(). Does NOT start app sagas.
-  // If a store context already exists, returns a noop.
-  init(initialState?: PreloadedStoreState): () => void;
-
-  // Explicitly register the initialized Store on the devtools hook.
-  initDevTool(): () => void;
-
-  // Tear down the initialized Store runtime and stop Store-owned saga tasks.
-  // Safe to call before init(); equivalent to the init() returned disposer.
-  dispose(): void;
-
-  // Start a saga function. Returns a cancel function that stops it.
-  // Throws if init() has not been called or the derived name is reserved.
-  runSaga(saga: Saga): () => void;
-}
-```
-
-Key rules:
-
-- Pass app-owned reducers in the constructor map and start app-owned sagas with `store.runSaga(sagaFn)` after `store.init()`.
-- Use `Store` from `@augmentcode/themis/svelte-store` for this app.
-- For typed state, infer `StoreState<typeof store>` from the configured Store instance. Constructor reducer maps preserve reducer-state inference without an explicit `: Store` annotation.
-- Use `store.createSelector(...)` for app-local selectors that should infer that configured store's `StoreState<typeof store>`; generic/shared selector helpers should accept a configured Store instead of importing standalone selector creation utilities.
-- Register only app-owned reducers in constructor maps. `Store` manages package-owned internals under reserved `@internal_` names: reducers such as `@internal_storeUtility` are package-managed, and the internal saga manager starts during `Store` initialization. Internal reducer domains can appear in `StoreState<typeof store>`. Consumers should not add `@internal_` reducers/sagas or depend on internal state paths directly.
-- Custom middlewares are **prepended** before the base store middleware chain.
-- `init()` builds the Redux store/readable state and starts the package-owned manager. App sagas are **not** started automatically — start each one explicitly via `store.runSaga(sagaFn)`, usually from `onMount` in a component/layout. It derives the manager name from the saga function and rejects direct `@internal_sagaManager` usage.
-- `initDevTool()` is a separate, explicit devtools registration step after `init()` when inspection hooks are needed; `dispose()` cleans up that registration along with Store-owned tasks.
-
-## 2. Setup — root layout bootstrap
+## Root layout wiring
 
 Create a single `Store` instance with app-owned reducers at module scope:
 
@@ -91,53 +53,34 @@ Bootstrap in `+layout.svelte` by initializing the configured Store instance and 
 ```svelte
 <!-- src/routes/+layout.svelte -->
 <script lang="ts">
-  import { onDestroy } from "svelte";
+  import { onDestroy, onMount } from "svelte";
   import { store } from "$lib/store/store";
+  import { counterSaga } from "$lib/store/slices/counter/sagas/counter-saga";
 
+  let { children } = $props();
   const dispose = store.init();
   onDestroy(dispose);
+  onMount(() => store.runSaga(counterSaga));
 </script>
 
 {@render children()}
 ```
 
-Pass `store.init(initialState)` when the app needs preloaded state. `store.init()` should run during root component initialization so the Store-owned runtime is ready before children use selectors or dispatch through the Store; `onDestroy(dispose)` handles teardown. The returned disposer calls `store.dispose()`, so the existing `const dispose = store.init(); onDestroy(dispose);` pattern remains valid and preferred in Svelte roots. Use direct `store.dispose()` only when non-component code or tests own the whole Store lifetime.
+Initialize before children render, pass preloaded state to `init(initialState)` if
+needed, and keep teardown next to initialization. The saga above is mount-scoped,
+not once-per-Store: see `../store/SKILL.md` → **App saga lifetime** for remount,
+imperative cancellation, and whole-Store teardown semantics.
 
-## 3. Starting app sagas — `store.runSaga`
+This explicit bootstrap/lifetime owner may import the saga it starts and cancels;
+ordinary component handlers still dispatch actions. Follow the narrow
+[bootstrap/lifetime-owner exception](../../core/import-boundaries/SKILL.md#bootstrap-and-lifetime-owner-exception).
+`init()` must run during
+component initialization and does not install the Svelte context that
+`useRunSaga` expects. Do not replace the explicit mount callback with that helper
+under ordinary setup. SSR initializes and disposes the Store but does not run
+`onMount`; browser mount/remount behavior needs component integration testing.
 
-`store.init()` starts the package-owned saga manager but does **not** auto-start app sagas. Every app saga must be started explicitly by function. Consumers should not start `@internal_sagaManager` directly. `store.runSaga(sagaFn)` derives a manager name from the saga function.
-
-### Mount-scoped — `onMount(() => store.runSaga(sagaFn))`
-
-Call from `onMount` to tie the saga's lifetime to that mount (most app-wide sagas run in the root layout, next to `store.init()`):
-
-```svelte
-<script lang="ts">
-  import { onMount } from "svelte";
-  import { store } from "$lib/store/store";
-  import { editorSaga } from "$lib/store/slices/editor/sagas/editor-saga";
-
-  onMount(() => store.runSaga(editorSaga));
-</script>
-```
-
-Svelte calls the returned cancel function when the component unmounts.
-
-### Imperative — `store.runSaga(sagaFn)`
-
-For non-component code (services, tests, IPC handlers), start a saga directly and keep the returned cancel function:
-
-```ts
-const cancel = store.runSaga(editorSaga);
-// later:
-cancel();
-```
-
-`store.runSaga(sagaFn)` throws if `init()` has not been called or the derived saga name is reserved for package internals.
-
-Full Store teardown is separate from per-saga cancellation: `store.dispose()` and the disposer returned by `store.init()` tear down the initialized Store runtime and stop saga tasks owned by that Store. Continue to use the cancel function returned by `store.runSaga(sagaFn)` for normal mount-scoped or operation-scoped saga cleanup.
-
-## 4. Using state in components
+## Template and handler wiring
 
 At the top of a component script block (component init), create selector readables and import the configured Store for event-handler dispatch/state reads:
 
@@ -147,7 +90,7 @@ At the top of a component script block (component init), create selector readabl
   import { selectItems, selectIsLoading } from "./slices/my-slice/my-slice-selectors";
   import { fetchItems, removeItem } from "./slices/my-slice/my-slice-slice";
 
-  // ✅ At component init — selector readable calls use getContext() internally.
+  // ✅ At component init — capture Store-bound readables for template ownership.
   const items$     = selectItems();
   const isLoading$ = selectIsLoading();
 
@@ -169,46 +112,19 @@ At the top of a component script block (component init), create selector readabl
 {/if}
 ```
 
-**Component rules:**
+Capture readables in the script and render `$selectorResult$` in the template;
+handlers dispatch through the configured Store. For the complete component,
+callback/async, test, saga, composition, and explicit-binding matrix, use
+`../selector-lifecycle/SKILL.md` → **Call-mode map** and **Don't**. That owner also
+covers one-shot service reads and the prohibition on standalone dispatch helpers.
 
-- ✅ `selectFoo()` at top-level script (component init)
-- ✅ `store.dispatch(action)` in handlers through the imported initialized Store instance
-- ✅ Use `$selectorResult$` in templates for reactive updates
-- ✅ Use `selectFoo.select(store.state)` in handlers with an existing initialized `Store` instance imported/captured outside the handler
-- ❌ NEVER call `selectFoo()` inside handlers / callbacks / async functions — it uses `getContext()` which is only valid at init
-- ❌ NEVER create wrapper hooks around `dispatch` — dispatch action creators directly so tests and action traces stay explicit
+## Wiring pitfalls
 
-For non-component code that already imports the initialized app `Store` instance, use its getters directly:
+### Missing cleanup or duplicate initialization
 
-```ts
-import { store } from "$lib/store";
-
-export function submitFromShortcut(id: string) {
-  const item = selectItem.select(store.state, id);
-  if (item) store.dispatch(submitItem(id));
-}
-```
-
-Do not import removed standalone dispatch helpers. The configured `Store` instance is the public per-store dispatch entry point.
-
-The three selector call modes (`selectFoo()`, `.select(state)`, `yield* selectFoo.effect()`) are covered in detail in `svelte/selector-lifecycle/SKILL.md`.
-
-## 5. Common Mistakes
-
-### Calling `store.init()` without cleanup
-
-**Mechanism:** `store.init()` returns a disposer backed by `store.dispose()`; skipping `onDestroy(dispose)` leaks Store-owned saga tasks and runtime subscriptions on hot reload and in tests.
-
-```typescript
-// ❌ WRONG
-store.init();
-
-// ✅ CORRECT
-const dispose = store.init();
-onDestroy(dispose);
-```
-
-*Source: `../SKILL.md §7`.*
+Keep one root owner and its cleanup together. Missing cleanup leaks runtime
+subscriptions/tasks; adding child initialization is not a fix for missing state.
+Use `../store/SKILL.md` → **Lifecycle rules** for disposal and noop-init behavior.
 
 ### Creating a wrapper hook around `dispatch`
 
@@ -225,58 +141,20 @@ export function useAddItem() {
 store.dispatch(addItem(i));
 ```
 
-*Source: `../SKILL.md §7, §17`.*
+*Canonical import/dispatch boundaries: `../../core/import-boundaries/SKILL.md` → **Core Patterns**.*
 
 ### Reading state with `selector()` in a template
 
-**Mechanism:** templates bind Svelte readables via `$readable$` syntax. Calling `selectFoo()` in the template body creates a fresh readable every render and loses memoization (and throws outside init).
+This violates the component-init placement policy, not a `getContext()` check
+or a guaranteed cache miss. Direct selectors bind to their creating Store;
+identical Store + selector + arguments reuse the retained readable; see
+`../selectors/SKILL.md` → **Selector caching** and
+`../selector-lifecycle/SKILL.md` → **Pitfalls**. Render the captured `$count$`,
+not `selectCount()` in markup.
 
-```svelte
-<!-- ❌ WRONG -->
-<p>{selectCount()}</p>
+## See also
 
-<!-- ✅ CORRECT -->
-<script>
-  const count$ = selectCount();
-</script>
-<p>{$count$}</p>
-```
-
-*Source: `../SKILL.md §7`.*
-
-### Importing standalone package dispatch helpers
-
-**Mechanism:** per-store dispatch belongs to the configured `Store` instance. Do not import package-level dispatch helpers from public entrypoints.
-
-```svelte
-<!-- ✅ CORRECT -->
-<script>
-  import { store } from "$lib/store";
-  function onClick() { store.dispatch(addItem(i)); }
-</script>
-```
-
-*Source: `../SKILL.md §2, §7`.*
-
-### Double-initializing the store
-
-**Mechanism:** `store.init()` returns a noop disposer when an initialized Store runtime already exists — so calling it a second time does nothing. Agents sometimes "fix" missing state by adding a second `store.init()` call in a child layout; the fix is silent and the child layout's middlewares/sagas never register.
-
-```svelte
-<!-- ❌ WRONG — duplicate bootstrap -->
-<!-- +layout.svelte -->
-<script>const dispose = store.init();</script>
-<!-- admin/+layout.svelte -->
-<script>const dispose = store.init();</script>  <!-- noop, duplicate init -->
-
-<!-- ✅ CORRECT — register reducers/sagas on the single shared store -->
-<script>const dispose = store.init();</script>
-```
-
-*Public API: `@augmentcode/themis/svelte-store` (`Store.init` early-return on existing context).*
-
-## 6. See also
-
-- `svelte/selector-lifecycle` — the three selector call modes (`selectFoo()` / `.select(state)` / `.effect()`).
-- `core/file-structure` — slice layout and registration order.
+- `../store/SKILL.md` — Store API and lifecycle contracts.
+- `../selector-lifecycle/SKILL.md` — selector call-site rules.
+- `../../core/file-structure/SKILL.md` — slice layout and registration order.
 - `../../setup/SKILL.md` — first-time greenfield setup.
