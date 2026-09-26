@@ -449,7 +449,7 @@
   }
 
   async function fetchAllProviderModels(enabledIds: string[]) {
-    enabledIds = enabledIds.filter(canUseProviderModels);
+    enabledIds = enabledIds.filter((id) => canUseProviderModels(id));
     const key = enabledIds.slice().sort().join(',');
     if (key === lastFetchedProviderIds && allProvidersLoaded) return;
     lastFetchedProviderIds = key;
