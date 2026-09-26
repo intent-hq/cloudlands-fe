@@ -1,5 +1,6 @@
 /** Invited-service v2 reconciliation (§5.49). Owner v1 never enters this engine. */
 import { randomUUID } from 'node:crypto';
+import { m } from '../../../shared/paraglide/messages.js';
 import { AuthRejectedError } from './backend-connection';
 import {
   KEYCHAIN_SERVICE_GUEST_SESSIONS,
@@ -73,7 +74,7 @@ const itemFor = (account: string, record: InvitedPayload): KeychainItem => ({
   payload: JSON.stringify(record),
 });
 const failed = (reason: 'unavailable' | 'helper-failed'): ReconcileResult => ({
-  status: { state: 'unavailable', reason, message: 'Invited sync is pending' },
+  status: { state: 'unavailable', reason, message: m.settings_backendSync_invitedPending() },
   pulled: [],
   pushed: [],
   deletedLocally: [],
@@ -157,7 +158,11 @@ export async function reconcileInvitedSessions(
   if (!remote.ok)
     return {
       ...failed('unavailable'),
-      status: { state: 'unavailable', reason: remote.code, message: 'Invited sync is pending' },
+      status: {
+        state: 'unavailable',
+        reason: remote.code,
+        message: m.settings_backendSync_invitedPending(),
+      },
     };
   if (await aborted()) return failed('unavailable');
   // Permanent remote observations must survive a locked local credential vault too.

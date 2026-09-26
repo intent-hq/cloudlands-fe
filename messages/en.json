@@ -6802,5 +6802,6 @@
   "inviteConsent_account_unknown": "Saved account",
   "inviteConsent_account_choose_title": "Choose an account",
   "inviteConsent_account_choose_description": "Choose the saved account to use for this invitation.",
-  "inviteConsent_returning_description": "Intent will use the saved personal credential for this host. No new forge sign-in or identity proof is needed."
+  "inviteConsent_returning_description": "Intent will use the saved personal credential for this host. No new forge sign-in or identity proof is needed.",
+  "settings_backendSync_invitedPending": "Invited session sync is pending. Intent will try again."
 }

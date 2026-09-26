@@ -6,14 +6,12 @@
  * the helper spawn wrapper, and the two-way reconciliation between the synced
  * keychain registry and the local connections store.
  *
- * Model: ONE keychain item per backend under a fixed service — the paired
- * (owner) backends live under `com.cloudlands.intent.backends`, guest
- * sessions redeemed from an invite under
- * `com.cloudlands.intent.guest-sessions` — keyed by the normalized
- * `host:port` account (mirrors the local store's dedupe identity). Each
- * service is reconciled independently against its own store, so tombstones
- * are per service: forgetting a guest session never touches an owner
- * record for the same daemon (and vice versa). Conflicts resolve
+ * Owner v1 model: ONE keychain item per backend under
+ * `com.cloudlands.intent.backends`, keyed by normalized `host:port`.
+ * Invited v2 sessions use the separate person-keyed reconciler in
+ * invited-session-sync.ts under `com.cloudlands.intent.guest-sessions`.
+ * This module supplies its helper transport and legacy v1 parser only.
+ * In the owner v1 reconciler, conflicts resolve
  * last-writer-wins by the payload's `updatedAt`. Deletes are TOMBSTONES
  * (`deleted: true`, token scrubbed) rather than raw item deletion, so "item
  * missing" is never ambiguous with "keychain unreadable"; tombstones are
@@ -38,6 +36,7 @@ import { promises as fs } from 'fs';
 import * as path from 'path';
 import { app } from 'electron';
 import { Logger } from '../../../shared/logger';
+import { m } from '../../../shared/paraglide/messages.js';
 import {
   DEFAULT_CONNECTION_ACCENT,
   isConnectionAccent,
@@ -489,7 +488,11 @@ export function createHelperKeychainClient(options: HelperClientOptions = {}): K
               typeof row.payload !== 'string',
           ))
       ) {
-        return { ok: false, code: 'helper-failed', message: 'Incomplete invited-service listing' };
+        return {
+          ok: false,
+          code: 'helper-failed',
+          message: m.settings_backendSync_invitedPending(),
+        };
       }
       const items: KeychainItem[] = Array.isArray(rows)
         ? rows.filter(
@@ -513,7 +516,11 @@ export function createHelperKeychainClient(options: HelperClientOptions = {}): K
       if (!result.ok) return result;
       const value = result as { ok: true; inserted?: unknown; payload?: unknown };
       if (typeof value.inserted !== 'boolean' || typeof value.payload !== 'string') {
-        return { ok: false, code: 'helper-failed', message: 'Invalid create-only result' };
+        return {
+          ok: false,
+          code: 'helper-failed',
+          message: m.settings_backendSync_invitedPending(),
+        };
       }
       return { ok: true, inserted: value.inserted, payload: value.payload };
     },

@@ -6802,5 +6802,6 @@
   "inviteConsent_account_unknown": "Compte enregistré",
   "inviteConsent_account_choose_title": "Choisir un compte",
   "inviteConsent_account_choose_description": "Choisissez le compte enregistré à utiliser pour cette invitation.",
-  "inviteConsent_returning_description": "Intent utilisera les identifiants personnels enregistrés pour cet hôte. Aucune nouvelle connexion ni preuve d’identité auprès de la forge n’est nécessaire."
+  "inviteConsent_returning_description": "Intent utilisera les identifiants personnels enregistrés pour cet hôte. Aucune nouvelle connexion ni preuve d’identité auprès de la forge n’est nécessaire.",
+  "settings_backendSync_invitedPending": "La synchronisation des sessions invitées est en attente. Intent réessaiera."
 }

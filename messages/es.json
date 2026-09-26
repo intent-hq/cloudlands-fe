@@ -6802,5 +6802,6 @@
   "inviteConsent_account_unknown": "Cuenta guardada",
   "inviteConsent_account_choose_title": "Elige una cuenta",
   "inviteConsent_account_choose_description": "Elige la cuenta guardada que usarás para esta invitación.",
-  "inviteConsent_returning_description": "Intent usará la credencial personal guardada para este host. No hace falta iniciar sesión ni demostrar tu identidad de nuevo en el proveedor de Git."
+  "inviteConsent_returning_description": "Intent usará la credencial personal guardada para este host. No hace falta iniciar sesión ni demostrar tu identidad de nuevo en el proveedor de Git.",
+  "settings_backendSync_invitedPending": "La sincronización de sesiones invitadas está pendiente. Intent lo volverá a intentar."
 }

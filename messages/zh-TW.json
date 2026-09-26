@@ -6802,5 +6802,6 @@
   "inviteConsent_account_unknown": "已儲存的帳號",
   "inviteConsent_account_choose_title": "選擇帳號",
   "inviteConsent_account_choose_description": "選擇用於此邀請的已儲存帳號。",
-  "inviteConsent_returning_description": "Intent 將使用此主機已儲存的個人憑證，無需重新登入 Git 託管服務或再次驗證身分。"
+  "inviteConsent_returning_description": "Intent 將使用此主機已儲存的個人憑證，無需重新登入 Git 託管服務或再次驗證身分。",
+  "settings_backendSync_invitedPending": "受邀工作階段同步待處理。Intent 將重試。"
 }

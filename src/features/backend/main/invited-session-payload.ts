@@ -36,7 +36,7 @@ export interface InvitedSession extends InvitedPerson, Extensible {
   deletedAt: number | null;
   legacyAccounts: string[];
 }
-export interface RemovedInvitedSession extends InvitedPerson, Extensible {
+interface RemovedInvitedSession extends InvitedPerson, Extensible {
   v: 2;
   kind: 'removed';
   token: '';
@@ -51,7 +51,7 @@ export interface InvitedRemoval extends InvitedPerson, Extensible {
   removedThrough: number;
   legacyAccounts: string[];
 }
-export interface InvitedLegacyAlias extends Extensible {
+interface InvitedLegacyAlias extends Extensible {
   v: 2;
   kind: 'legacy-alias';
   personKeys: string[];
@@ -199,7 +199,7 @@ export function compactInvited(record: InvitedMutable, now: number): InvitedMuta
   return next as unknown as RemovedInvitedSession;
 }
 
-export function removedSession(
+function removedSession(
   person: InvitedPerson,
   floor: number,
   aliases: string[],

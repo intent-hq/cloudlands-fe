@@ -6802,5 +6802,6 @@
   "inviteConsent_account_unknown": "已保存的账户",
   "inviteConsent_account_choose_title": "选择账户",
   "inviteConsent_account_choose_description": "选择用于此邀请的已保存账户。",
-  "inviteConsent_returning_description": "Intent 将使用此主机已保存的个人凭据，无需重新登录 Git 托管服务或再次验证身份。"
+  "inviteConsent_returning_description": "Intent 将使用此主机已保存的个人凭据，无需重新登录 Git 托管服务或再次验证身份。",
+  "settings_backendSync_invitedPending": "受邀会话同步待处理。Intent 将重试。"
 }

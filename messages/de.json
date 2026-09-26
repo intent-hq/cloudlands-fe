@@ -6802,5 +6802,6 @@
   "inviteConsent_account_unknown": "Gespeichertes Konto",
   "inviteConsent_account_choose_title": "Konto auswählen",
   "inviteConsent_account_choose_description": "Wählen Sie das gespeicherte Konto für diese Einladung.",
-  "inviteConsent_returning_description": "Intent verwendet den gespeicherten persönlichen Zugang für diesen Host. Eine erneute Anmeldung oder ein neuer Identitätsnachweis beim Git-Anbieter ist nicht erforderlich."
+  "inviteConsent_returning_description": "Intent verwendet den gespeicherten persönlichen Zugang für diesen Host. Eine erneute Anmeldung oder ein neuer Identitätsnachweis beim Git-Anbieter ist nicht erforderlich.",
+  "settings_backendSync_invitedPending": "Die Synchronisierung eingeladener Sitzungen steht aus. Intent versucht es erneut."
 }
