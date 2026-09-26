@@ -46,7 +46,7 @@
   }
 </script>
 
-<svelte:boundary onerror={(error) => onError?.(error)}>
+<svelte:boundary onerror={(error: unknown) => onError?.(error)}>
   <div class="window-title-bar">
     <WorkspaceTabStrip
       {activeWorkspaceId}

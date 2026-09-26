@@ -339,6 +339,7 @@ export function runSvelteCheck({
 async function main() {
   await syncSvelteKitTypes();
   const args = [
+    '--tsgo',
     '--tsconfig',
     './tsconfig.json',
     '--output',
