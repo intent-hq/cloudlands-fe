@@ -169,7 +169,7 @@ describe('handlePairDeepLink', () => {
     await expect(handlePairDeepLink(LINK)).resolves.toBeUndefined();
     const allLogs = logLines.join('\n');
     expect(allLogs).not.toContain(TOKEN);
-    expect(allLogs).toContain('Error');
+    expect(allLogs).toContain('pairing-failed');
     expect(allLogs).not.toContain('connect failed');
   });
 
