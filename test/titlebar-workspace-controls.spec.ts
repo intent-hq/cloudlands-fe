@@ -259,3 +259,23 @@ test('mounts accepted control geometry and shortcut tooltips', async ({ page }, 
     }
   }
 });
+
+test('modeled owner workspace creation remains withheld for unknown and guest callers', async ({
+  page,
+}) => {
+  await mountControls(page, 'light', 1);
+  const launcher = page.locator('[data-workspace-repo-launcher] button');
+  await expect(launcher).toBeVisible();
+  for (const role of ['unknown', 'guest'] as const) {
+    await page.evaluate(async (role) => {
+      const [{ store }, { principalContextChanged }, { admitLegacyPrincipal }] = await Promise.all([
+        import('/src/store/renderer/store.ts'),
+        import('/src/store/renderer/slices/principal/principal-slice.ts'),
+        import('/src/test/fixtures/principal-state.ts'),
+      ]);
+      if (role === 'unknown') store.dispatch(principalContextChanged(null));
+      else admitLegacyPrincipal('guest');
+    }, role);
+    await expect(launcher).toHaveCount(0);
+  }
+});

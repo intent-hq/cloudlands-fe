@@ -849,3 +849,21 @@ test('expanded cards stay bottom-aligned and use the smaller of the stage height
   expect(transitionGeometry.every(({ height }) => Math.abs(height - 600) <= 0.5)).toBe(true);
   expect(transitionGeometry.every(({ bottomGap }) => Math.abs(bottomGap - 4) <= 0.5)).toBe(true);
 });
+
+test('modeled owner launchers remain withheld for unknown and guest callers', async ({ page }) => {
+  await mountSidebar(page, { width: 320, zoom: 1, selectedTab: 'overview', reducedMotion: true });
+  const cards = page.locator('[data-sidebar-compact-bottom-row] > *');
+  await expect(cards).toHaveCount(2);
+  for (const role of ['unknown', 'guest'] as const) {
+    await page.evaluate(async (role) => {
+      const [{ store }, { principalContextChanged }, { admitLegacyPrincipal }] = await Promise.all([
+        import('/src/store/renderer/store.ts'),
+        import('/src/store/renderer/slices/principal/principal-slice.ts'),
+        import('/src/test/fixtures/principal-state.ts'),
+      ]);
+      if (role === 'unknown') store.dispatch(principalContextChanged(null));
+      else admitLegacyPrincipal('guest');
+    }, role);
+    await expect(cards).toHaveCount(0);
+  }
+});

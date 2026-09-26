@@ -323,3 +323,23 @@ test('clips mounted current-workspace decoration at the collapsed boundary', asy
     await expect(panel).toHaveAttribute('data-mount-probe', 'mounted');
   }
 });
+
+test('modeled owner Chief surface remains withheld for unknown and guest callers', async ({
+  page,
+}) => {
+  await mountShell(page, { theme: 'dark', width: 320, zoom: 1 });
+  const chief = page.locator('[data-chief-card-surface]');
+  await expect(chief).toHaveCount(1);
+  for (const role of ['unknown', 'guest'] as const) {
+    await page.evaluate(async (role) => {
+      const [{ store }, { principalContextChanged }, { admitLegacyPrincipal }] = await Promise.all([
+        import('/src/store/renderer/store.ts'),
+        import('/src/store/renderer/slices/principal/principal-slice.ts'),
+        import('/src/test/fixtures/principal-state.ts'),
+      ]);
+      if (role === 'unknown') store.dispatch(principalContextChanged(null));
+      else admitLegacyPrincipal('guest');
+    }, role);
+    await expect(chief).toHaveCount(0);
+  }
+});

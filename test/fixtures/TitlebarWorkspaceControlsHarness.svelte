@@ -6,15 +6,31 @@
   import { startRootStoreLifecycle } from '$store/renderer/root-store-lifecycle';
   import { openWorkspaceTab } from '$store/renderer/slices/tab-state/tab-state-slice';
   import { guestSessionsListUnavailable } from '$store/renderer/slices/guest-sessions/guest-sessions-slice';
+  import { admitLegacyPrincipal } from '../../src/test/fixtures/principal-state';
+  import {
+    principalContextChanged,
+    principalReceived,
+  } from '$store/renderer/slices/principal/principal-slice';
 
   const TooltipProvider = TooltipPrimitive.Provider;
   const dispose = startRootStoreLifecycle(store, { startSagas: () => [] });
-  // No sagas run here, so settle the window's guest/owner identity the way
-  // guestSessionsSaga does outside Electron; otherwise the boot-time
-  // collaborator-only default hides WorkspaceRepoLauncher.
+  // No principal hydration saga runs here. Model the admitted legacy owner
+  // whose workspace launcher is measured, without relaxing production guards.
+  const previousPrincipal = store.state.principal;
+  admitLegacyPrincipal();
   store.dispatch(guestSessionsListUnavailable());
   store.dispatch(openWorkspaceTab('titlebar-test'));
-  onDestroy(dispose);
+  onDestroy(() => {
+    dispose();
+    store.dispatch(principalContextChanged(previousPrincipal.context));
+    if (previousPrincipal.context && previousPrincipal.snapshot)
+      store.dispatch(
+        principalReceived(
+          { context: previousPrincipal.context, invalidation: 0, presentationVersion: 0 },
+          previousPrincipal.snapshot,
+        ),
+      );
+  });
 </script>
 
 <TooltipProvider>
