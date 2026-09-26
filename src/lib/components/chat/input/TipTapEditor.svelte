@@ -866,6 +866,16 @@
             });
           }
         },
+        onTransaction: ({ transaction }) => {
+          // Removing a chip does not emit mouseout. Include silent content updates
+          // so its preview cannot survive a clear or describe a replacement chip.
+          if (transaction.docChanged && hoverPreview && hoverPreviewContainer) {
+            unmount(hoverPreview);
+            hoverPreviewContainer.remove();
+            hoverPreview = null;
+            hoverPreviewContainer = null;
+          }
+        },
         onUpdate: ({ editor, transaction }) => {
           // Don't call onUpdate if this is an external update (from $effect) or if we're clearing
           if (transaction.getMeta('external-update') || isClearing) {

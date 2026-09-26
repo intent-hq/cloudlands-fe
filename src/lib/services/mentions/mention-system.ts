@@ -182,7 +182,9 @@ export class MentionSystem {
     try {
       return await this.searchService.search(sanitizedQuery, providers, context);
     } catch (error) {
-      logger.error('[MentionSystem] Search failed:', error);
+      if (!(error instanceof DOMException && error.name === 'AbortError')) {
+        logger.error('[MentionSystem] Search failed:', error);
+      }
       return [];
     }
   }

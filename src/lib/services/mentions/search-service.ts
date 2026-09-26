@@ -78,14 +78,16 @@ export class DebouncedSearchService {
         finish();
         reject(error);
       };
-      const handleAbort = () => rejectSearch(new Error('Search cancelled'));
+      // i18n-ignore (internal cancellation signal, not displayed)
+      const handleAbort = () => rejectSearch(new DOMException('Search cancelled', 'AbortError'));
       signal.addEventListener('abort', handleAbort, { once: true });
 
       const executeSearch = async () => {
         try {
           // Check if cancelled
           if (signal.aborted) {
-            rejectSearch(new Error('Search cancelled'));
+            // i18n-ignore (internal cancellation signal, not displayed)
+            rejectSearch(new DOMException('Search cancelled', 'AbortError'));
             return;
           }
 
@@ -130,8 +132,9 @@ export class DebouncedSearchService {
           logger.debug(`[SearchService] Found ${limited.length} results`);
           resolveSearch(limited);
         } catch (error) {
-          if (signal.aborted || (error as Error).name === 'AbortError') {
-            rejectSearch(new Error('Search cancelled'));
+          if (signal.aborted) {
+            // i18n-ignore (internal cancellation signal, not displayed)
+            rejectSearch(new DOMException('Search cancelled', 'AbortError'));
           } else {
             logger.error('[SearchService] Search error:', error);
             rejectSearch(error instanceof Error ? error : new Error(String(error)));
@@ -172,7 +175,9 @@ export class DebouncedSearchService {
 
       return results;
     } catch (error) {
-      logger.error(`[SearchService] Provider ${provider.id} search failed:`, error);
+      if (!signal.aborted) {
+        logger.error(`[SearchService] Provider ${provider.id} search failed:`, error);
+      }
       return [];
     }
   }

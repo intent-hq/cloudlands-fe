@@ -26,7 +26,10 @@ describe('DebouncedSearchService cancellation', () => {
     const firstOutcome = service.search('a', [provider], context).catch((error) => error);
     const secondSearch = service.search('ab', [provider], context);
 
-    await expect(firstOutcome).resolves.toMatchObject({ message: 'Search cancelled' });
+    await expect(firstOutcome).resolves.toMatchObject({
+      name: 'AbortError',
+      message: 'Search cancelled',
+    });
     await vi.advanceTimersByTimeAsync(100);
     await expect(secondSearch).resolves.toEqual([result]);
     expect(service.isLoading()).toBe(false);

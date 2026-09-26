@@ -29,18 +29,66 @@ test('equal handles stay distinct when keyboard and mouse choose different forge
   const chip = editor.locator('[data-type="member"]');
   await expect(chip).toHaveAttribute('data-id', 'member-gitlab-alex');
   await expect(chip).toHaveText('@alex');
+  expect(JSON.parse((await chip.getAttribute('data-meta')) ?? '{}')).toEqual({
+    principalId: 'gitlab-alex',
+    workspaceId: 'member-mentions-workspace',
+    identity: { provider: 'gitlab', host: 'code.example:8443', externalUserId: '42' },
+  });
   await expect(page.getByRole('listbox')).toHaveCount(0);
   await expect(editor).toBeFocused();
   await chip.hover();
   await expect(page.getByRole('tooltip')).toContainText('GitLab · code.example:8443');
   await chip.click();
   await expect(chip).toHaveAttribute('data-type', 'member');
-  await editor.fill('@alex');
+  // Chip clicks restore editor focus on the next frame. Select through the editor's
+  // keyboard handling so that restore cannot overwrite fill()'s temporary DOM range.
+  await expect(editor).toBeFocused();
+  await expect(page.getByRole('tooltip')).toContainText('GitLab · code.example:8443');
+  await editor.press('ControlOrMeta+a');
+  await editor.press('Backspace');
+  await expect(chip).toHaveCount(0);
+  await expect(page.getByRole('tooltip')).toHaveCount(0);
+  await editor.pressSequentially('@alex');
+  await expect(editor).toHaveText('@alex');
   await github.click();
+  await expect(chip).toHaveCount(1);
   await expect(chip).toHaveAttribute('data-id', 'member-github-alex');
+  expect(JSON.parse((await chip.getAttribute('data-meta')) ?? '{}')).toEqual({
+    principalId: 'github-alex',
+    workspaceId: 'member-mentions-workspace',
+    identity: { provider: 'github', host: 'github.com', externalUserId: '42' },
+  });
   await expect(editor).toBeFocused();
   await expect(page.getByRole('listbox')).toHaveCount(0);
+  await chip.hover();
+  await expect(page.getByRole('tooltip')).toContainText('GitHub · github.com');
+  await expect(page.getByRole('tooltip')).not.toContainText('GitLab');
   await page.screenshot({ path: testInfo.outputPath('github-selected.png') });
+});
+
+test('incremental member searches settle quietly and keep the latest query', async ({ page }) => {
+  const editor = page.getByTestId('composer').getByRole('textbox');
+  await editor.focus();
+  await editor.pressSequentially('@ali');
+  const alice = page.getByRole('option', { name: /@alice\.dev_ops-team/ });
+  const github = page.getByRole('option', { name: '@alex · GitHub · github.com', exact: true });
+  const gitlab = page.getByRole('option', {
+    name: '@alex · GitLab · code.example:8443',
+    exact: true,
+  });
+  await expect(alice).toBeVisible();
+  await expect(github).toHaveCount(0);
+  await editor.press('Backspace');
+  await editor.pressSequentially('ex');
+  await expect(github).toBeVisible();
+  await expect(gitlab).toBeVisible();
+  await expect(alice).toHaveCount(0);
+  await editor.press('Enter');
+  await expect(editor.locator('[data-type="member"]')).toHaveAttribute(
+    'data-id',
+    'member-github-alex',
+  );
+  await expect(page.getByRole('listbox')).toHaveCount(0);
 });
 
 test('dotted GitLab mention survives draft, submit, chat edit and comment edit without file context', async ({
