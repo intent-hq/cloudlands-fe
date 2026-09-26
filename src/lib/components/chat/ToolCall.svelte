@@ -27,6 +27,11 @@
   import { resolveBrowserScreenshotSource } from './browser-screenshot-source';
   import { Button } from '$lib/components/ui/button';
   import { cn } from '$lib/utils';
+  import { toStore } from 'svelte/store';
+  import { selectWorkspaceById } from '$store/renderer/slices/workspace/workspace-selectors';
+  import { createWorkspaceFileVersion } from '$lib/utils/workspace-file-image';
+  import { resolveLocalToolImageSource } from './local-tool-image-source';
+  import ChatImageBlock from './ChatImageBlock.svelte';
 
   interface Props {
     toolUse: ToolUseBlock;
@@ -52,6 +57,26 @@
     agentId,
     messageId,
   }: Props = $props();
+
+  const toolWorkspace = selectWorkspaceById(toStore(() => workspaceId ?? ''));
+  const imageVersion = createWorkspaceFileVersion();
+  const localImageSource = $derived.by(() => {
+    if (
+      toolState !== 'completed' ||
+      toolDisplay.category !== 'file-read' ||
+      !workspaceId ||
+      !toolDisplay.filePath ||
+      !/\.(?:png|jpe?g|gif|webp)$/i.test(toolDisplay.filePath)
+    ) {
+      return null;
+    }
+    const source = resolveLocalToolImageSource(
+      toolDisplay.filePath,
+      workspaceId,
+      $toolWorkspace?.worktreePath || $toolWorkspace?.repositoryPath,
+    );
+    return source ? `${source}?v=${imageVersion}` : null;
+  });
 
   // Lazy full-block hydration (§5.5 slim projection →
   // agent.getMessageBlock): rows served slim carry `inputTruncated` /
@@ -355,6 +380,16 @@
     toolCallId={toolUse.toolCallId || undefined}
     conversationLayer="tool-activity"
   />
+
+  {#if localImageSource}
+    {#key localImageSource}
+      <ChatImageBlock
+        src={localImageSource}
+        mimeType="image/png"
+        alt={toolDisplay.filePath?.split('/').pop()}
+      />
+    {/key}
+  {/if}
 
   <!-- Inline image preview for Figma screenshots (always visible, not just when expanded) -->
   {#if !expanded && parsedResult?.type === 'figma' && parsedResult.figmaScreenshot && toolState === 'completed'}

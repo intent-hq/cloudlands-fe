@@ -10,6 +10,8 @@
   import { supportsImageActions } from '$lib/utils/image-actions';
 
   interface Props {
+    /** Resolved workspace media URL for a local image read. */
+    src?: string;
     /** Base64 image data — the §5.5 slim thumbnail or nothing when truncated. */
     data?: string;
     mimeType: string;
@@ -33,6 +35,7 @@
   }
 
   let {
+    src,
     data,
     mimeType,
     alt = m.chat_imageBlock_fromAgent_alt(),
@@ -49,7 +52,7 @@
   let openerElement: HTMLButtonElement | null = $state(null);
   let failedImageUrl = $state<string | null>(null);
 
-  const imageUrl = $derived(data ? `data:${mimeType};base64,${data}` : null);
+  const imageUrl = $derived(src || (data ? `data:${mimeType};base64,${data}` : null));
   const imageUnavailable = $derived(imageUrl !== null && failedImageUrl === imageUrl);
   // A truncated block renders its thumbnail (or placeholder); clicking asks
   // for the original first — the lightbox opens once hydration swaps the
