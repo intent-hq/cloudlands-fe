@@ -1176,6 +1176,9 @@ export interface AgentMetadata {
   source?: 'workspace-initializer' | 'contextual-menu' | 'chat-panel' | 'api' | string; // Source of agent creation
   agentType?: string; // Type of agent (e.g., "investigate", "implement", "verify")
   specialist?: string; // Specialist type (e.g., "spec-writer", "implementor", "verifier")
+  // Creation-time prompt identity, persisted and served by AgentLite (§5.5).
+  // Omitted on legacy sessions; creation dates never imply a version.
+  chiefPromptVersion?: number;
   isInitialAgent?: boolean; // Whether this is the initial agent for a workspace
   isInitialWorkspaceAgent?: boolean; // Alias for isInitialAgent
   originalAgentId?: string; // Original agent ID if this is a restored/migrated agent

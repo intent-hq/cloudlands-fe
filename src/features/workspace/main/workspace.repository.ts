@@ -28,7 +28,7 @@ export function getChiefWorkspace(): Workspace {
   return {
     id: CHIEF_WORKSPACE_ID,
     // i18n-ignore (sentinel title compared against daemon-stored value)
-    title: 'Chief of Staff',
+    title: 'Assistant',
     branch: '',
     changesets: [],
     timeline: [],

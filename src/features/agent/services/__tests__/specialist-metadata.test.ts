@@ -9,6 +9,8 @@
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 
+const dispatchMock = vi.hoisted(() => vi.fn());
+
 // FAKE transport only: creation routes factory → appClient.agents.create →
 // LiveAgentsClient → backend-transport, so mocking the transport lets these
 // tests assert the exact `agent.create` JSON-RPC params on the wire.
@@ -33,7 +35,7 @@ vi.mock('$store/renderer/store', async () => {
 
   return createAppStoreMockModule({
     state: () => ({ workspaceAgents: { byWorkspaceId: {} } }),
-    dispatch: vi.fn(),
+    dispatch: dispatchMock,
   });
 });
 
@@ -62,6 +64,7 @@ describe('Specialist Metadata', () => {
     // serves it back on `metadata.specialist` — mirror that here.
     backend.onRequest('agent.create', (params) => {
       const p = params as Record<string, unknown>;
+      const metadata = p.metadata as Record<string, unknown> | undefined;
       return {
         agent: {
           id: `agent-daemon-${++created}`,
@@ -70,7 +73,12 @@ describe('Specialist Metadata', () => {
           model: p.model,
           provider: p.provider,
           status: 'pending',
-          metadata: typeof p.specialistId === 'string' ? { specialist: p.specialistId } : {},
+          metadata: {
+            ...(typeof p.specialistId === 'string' ? { specialist: p.specialistId } : {}),
+            ...(typeof metadata?.chiefPromptVersion === 'number'
+              ? { chiefPromptVersion: metadata.chiefPromptVersion }
+              : {}),
+          },
           createdAt: '2026-07-22T00:00:00.000Z',
           updatedAt: '2026-07-22T00:00:00.000Z',
         },
@@ -146,11 +154,13 @@ describe('Specialist Metadata', () => {
     const workspace = createMockWorkspace('__chief__');
     const behaviorPrompt = buildChiefBehaviorPrompt('Configured Chief instructions.');
 
-    await factory.createAgent(workspace, {
-      name: 'New chat with Intent',
+    const result = await factory.createAgent(workspace, {
+      name: 'Generated chat',
       nameExplicitlySet: false,
       workspaceId: workspace.id,
       agentType: createAgentTypeId('workspace'),
+      provider: 'auggie',
+      source: 'chief-card',
       behaviorPrompt,
       metadata: {
         chiefWorkspace: true,
@@ -159,20 +169,67 @@ describe('Specialist Metadata', () => {
       },
     });
 
-    expect(lastCreateParams()).toEqual(
-      expect.objectContaining({
-        workspaceId: '__chief__',
-        specialistId: CHIEF_SPECIALIST_ID,
+    expect(result.success).toBe(true);
+    expect(lastCreateParams()).toEqual({
+      workspaceId: '__chief__',
+      workspacePath: '/tmp/test-workspace-__chief__',
+      name: 'Generated chat',
+      nameExplicitlySet: false,
+      provider: 'auggie',
+      idempotencyKey: expect.any(String),
+      specialistId: 'chief-of-staff',
+      agentType: 'workspace',
+      behaviorPrompt,
+      metadata: {
         agentType: 'workspace',
-        behaviorPrompt,
-        metadata: expect.objectContaining({
-          chiefWorkspace: true,
-          chiefPromptVersion: CHIEF_PROMPT_VERSION,
-          specialist: CHIEF_SPECIALIST_ID,
-        }),
-      }),
-    );
+        chiefWorkspace: true,
+        chiefPromptVersion: 3,
+        specialist: 'chief-of-staff',
+        source: 'chief-card',
+      },
+    });
+    expect(result.agent?.metadata?.chiefPromptVersion).toBe(3);
   });
+
+  it.each([undefined, 2, '3', null])(
+    'adopts authoritative create marker %s instead of the requested current version',
+    async (version) => {
+      backend.onRequest('agent.create', () => ({
+        agent: {
+          id: 'agent-chief-authoritative',
+          workspaceId: '__chief__',
+          name: 'Generated chat',
+          status: 'idle',
+          messageCount: 0,
+          createdAt: '2099-01-01T00:00:00Z',
+          updatedAt: '2099-01-01T00:00:00Z',
+          metadata: {
+            specialist: 'chief-of-staff',
+            ...(version !== undefined ? { chiefPromptVersion: version } : {}),
+          },
+        },
+      }));
+      const result = await factory.createAgent(createMockWorkspace('__chief__'), {
+        name: 'Generated chat',
+        provider: 'auggie',
+        metadata: { specialist: CHIEF_SPECIALIST_ID, chiefPromptVersion: CHIEF_PROMPT_VERSION },
+      });
+
+      expect(result.success).toBe(true);
+      expect(result.agent?.metadata?.chiefPromptVersion).toBe(version);
+      expect(dispatchMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: 'agentSessions/upsertSession',
+          payload: [
+            expect.objectContaining({
+              id: 'agent-chief-authoritative',
+              metadata: expect.objectContaining({ chiefPromptVersion: version }),
+            }),
+          ],
+        }),
+      );
+    },
+  );
 
   it('should handle verifier specialist', async () => {
     const workspace = createMockWorkspace('specialist-2');

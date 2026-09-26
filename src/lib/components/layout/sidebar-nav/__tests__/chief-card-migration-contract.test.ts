@@ -3,7 +3,7 @@
  * chat layout, rendered against the real store with ChatPanel mocked.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, render, screen, waitFor } from '@testing-library/svelte';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { tick } from 'svelte';
 import { AgentStatus, type AgentSession } from '$shared/types';
 import { AgentId, CHIEF_WORKSPACE_ID } from '$shared/types/branded-ids';
@@ -15,6 +15,8 @@ import {
 } from '$store/renderer/slices/agent-session/agent-session-slice';
 import { setActiveProvider } from '$store/renderer/slices/provider-settings/provider-settings-slice';
 import { setAgentsLoaded } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
+import { setChiefActiveAgentId } from '$store/renderer/slices/sidebar-nav/sidebar-nav-slice';
+import { m } from '$shared/paraglide/messages.js';
 import { guestSessionsListReceived } from '$store/renderer/slices/guest-sessions/guest-sessions-slice';
 import ChiefCard from '../cards/ChiefCard.svelte';
 
@@ -28,7 +30,7 @@ const STALE_THREAD_ID = 'agent-chief-stale';
 
 function makeChiefSession(
   id: string,
-  overrides: { createdAt: string; chiefPromptVersion?: string },
+  overrides: { createdAt: string; chiefPromptVersion?: number },
 ): AgentSession {
   return {
     id: AgentId(id),
@@ -60,6 +62,7 @@ describe('Chief card migration contract', () => {
     appStore.init();
     appStore.dispatch(guestSessionsListReceived({ sessions: [], openIds: [], connectedIds: [] }));
     appStore.dispatch(setActiveProvider('auggie'));
+    appStore.dispatch(setChiefActiveAgentId(null));
 
     launchActions = [];
     const originalDispatch = appStore.dispatch.bind(appStore);
@@ -115,7 +118,7 @@ describe('Chief card migration contract', () => {
   it('creates a new thread when only stale-identity threads exist', async () => {
     appStore.dispatch(
       bulkUpsertSessions([
-        makeChiefSession(STALE_THREAD_ID, { createdAt: '2020-01-01T00:00:00.000Z' }),
+        makeChiefSession(STALE_THREAD_ID, { createdAt: '2099-01-01T00:00:00.000Z' }),
       ]),
     );
     appStore.dispatch(setAgentsLoaded(CHIEF_WORKSPACE_ID, true));
@@ -124,6 +127,104 @@ describe('Chief card migration contract', () => {
     await waitFor(() => expect(launchActions).toHaveLength(1));
     await settle();
     expect(launchActions).toHaveLength(1);
+  });
+
+  it.each([undefined, 2])(
+    'preserves a legacy selection with marker %s, but New chat creates instead of reusing it',
+    async (chiefPromptVersion) => {
+      const legacy = makeChiefSession(STALE_THREAD_ID, {
+        createdAt: '2099-01-01T00:00:00.000Z',
+        chiefPromptVersion,
+      });
+      legacy.name = 'My saved plan';
+      legacy.nameExplicitlySet = true;
+      appStore.dispatch(bulkUpsertSessions([legacy]));
+      // The same requested-agent state is used for manual selection and deep links.
+      appStore.dispatch(setChiefActiveAgentId(STALE_THREAD_ID));
+      appStore.dispatch(setAgentsLoaded(CHIEF_WORKSPACE_ID, true));
+      render(ChiefCard, { props: { expanded: true } });
+
+      await settle();
+      expect(launchActions).toHaveLength(0);
+      expect(screen.getByTestId('mock-chat-panel').textContent).toBe(STALE_THREAD_ID);
+      const saved = appStore.state.agentSessions.byAgentId[STALE_THREAD_ID];
+
+      await fireEvent.click(
+        screen.getByRole('button', { name: m.layout_chiefCard_newThread_tooltip() }),
+      );
+      await waitFor(() => expect(launchActions).toHaveLength(1));
+      expect(launchActions[0]).toMatchObject({
+        payload: [
+          CHIEF_WORKSPACE_ID,
+          {
+            agentType: 'workspace',
+            metadata: { chiefPromptVersion: 3, specialist: 'chief-of-staff' },
+          },
+          { openAgent: false },
+        ],
+      });
+      expect(appStore.state.agentSessions.byAgentId[STALE_THREAD_ID]).toBe(saved);
+      expect(appStore.state.sidebarNav.chiefActiveAgentId).toBe('agent-chief-created');
+    },
+  );
+
+  it('keeps legacy history and deep-link selection when a current blank thread exists', async () => {
+    const legacy = makeChiefSession(STALE_THREAD_ID, { createdAt: '2099-01-01T00:00:00.000Z' });
+    legacy.name = 'My saved plan';
+    legacy.nameExplicitlySet = true;
+    legacy.systemPrompt = 'Saved legacy instructions';
+    legacy.messages = [
+      {
+        id: 'saved-message',
+        role: 'user',
+        contentBlocks: [{ type: 'text', text: 'Keep my history' }],
+        timestamp: '2099-01-01T00:00:00.000Z',
+      },
+    ];
+    appStore.dispatch(
+      bulkUpsertSessions([
+        legacy,
+        makeChiefSession(CURRENT_THREAD_ID, {
+          createdAt: '2026-09-24T00:00:00.000Z',
+          chiefPromptVersion: 3,
+        }),
+      ]),
+    );
+    appStore.dispatch(setChiefActiveAgentId(STALE_THREAD_ID));
+    appStore.dispatch(setAgentsLoaded(CHIEF_WORKSPACE_ID, true));
+    render(ChiefCard, { props: { expanded: true } });
+    await waitFor(() =>
+      expect(screen.getByTestId('mock-chat-panel').textContent).toBe(STALE_THREAD_ID),
+    );
+    const saved = appStore.state.agentSessions.byAgentId[STALE_THREAD_ID];
+    await fireEvent.click(
+      screen.getByRole('button', { name: m.layout_chiefCard_newThread_tooltip() }),
+    );
+    await waitFor(() => {
+      expect(appStore.state.sidebarNav.chiefActiveAgentId).toBe(CURRENT_THREAD_ID);
+      expect(screen.getByTestId('mock-chat-panel').textContent).toBe(CURRENT_THREAD_ID);
+    });
+    expect(launchActions).toHaveLength(0);
+    expect(appStore.state.agentSessions.byAgentId[STALE_THREAD_ID]).toBe(saved);
+  });
+
+  it('creates on New chat rather than reusing a current nonempty thread', async () => {
+    const current = makeChiefSession(CURRENT_THREAD_ID, {
+      createdAt: '2026-09-24T00:00:00.000Z',
+      chiefPromptVersion: 3,
+    });
+    current.messageCount = 1;
+    appStore.dispatch(bulkUpsertSessions([current]));
+    appStore.dispatch(setAgentsLoaded(CHIEF_WORKSPACE_ID, true));
+    render(ChiefCard, { props: { expanded: true } });
+    await settle();
+    expect(launchActions).toHaveLength(0);
+
+    await fireEvent.click(
+      screen.getByRole('button', { name: m.layout_chiefCard_newThread_tooltip() }),
+    );
+    await waitFor(() => expect(launchActions).toHaveLength(1));
+    expect(appStore.state.sidebarNav.chiefActiveAgentId).toBe('agent-chief-created');
   });
 
   it('docks the embedded Chief chat to the bottom without an extra wrapper inset', () => {
