@@ -1252,6 +1252,7 @@ describe('ModelPicker combined reasoning mode', () => {
     await waitFor(() => {
       expect(applyReasoningEffortMock).toHaveBeenCalledWith('agent-1', 'ws-1', 'high', 'medium', {
         canMutate: expect.any(Function),
+        canSend: expect.any(Function),
       });
     });
   });
@@ -1866,6 +1867,7 @@ describe('ModelPicker combined reasoning mode', () => {
     await waitFor(() => {
       expect(applyReasoningEffortMock).toHaveBeenCalledWith('agent-1', 'ws-1', null, 'none', {
         canMutate: expect.any(Function),
+        canSend: expect.any(Function),
       });
     });
   });
@@ -3733,7 +3735,7 @@ describe('ModelPicker global-default vs per-agent dispatch gating', () => {
         'ws-1',
         'xhigh',
         ['low', 'high'],
-        { canMutate: expect.any(Function) },
+        { canMutate: expect.any(Function), canSend: expect.any(Function) },
       );
     });
   });
