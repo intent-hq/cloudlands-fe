@@ -6802,7 +6802,7 @@
   "collaborationAuth_failed_error": "無法完成登入。請檢查帳號與執行個體後重試。",
   "collaborationAuth_requestChanged_error": "此邀請已變更。請重新開啟，以目前要求的帳戶繼續。",
   "inviteConsent_host_title": "加入 {hostLabel}？",
-  "inviteConsent_host_permissions": "成員可以存取此主機目前及未來的所有工作區，並執行命令和代理程式。你可以建立工作區，並管理或刪除自己建立的工作區。主機管理權限仍屬於擁有者。",
+  "inviteConsent_host_permissions": "身為成員，你可以建立工作區，並完整管理此主機目前及未來的所有工作區，包括刪除它們。你可以使用此主機可用的儲存庫和 AI 設定來執行命令和代理程式。主機管理權限仍僅屬於擁有者。",
   "inviteConsent_account_unknown": "已儲存的帳號",
   "inviteConsent_account_choose_title": "選擇帳號",
   "inviteConsent_account_choose_description": "選擇用於此邀請的已儲存帳號。",

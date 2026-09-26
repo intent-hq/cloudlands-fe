@@ -6802,7 +6802,7 @@
   "collaborationAuth_failed_error": "サインインを完了できませんでした。アカウントとインスタンスを確認して再試行してください。",
   "collaborationAuth_requestChanged_error": "招待が変更されました。もう一度開いて、現在必要なアカウントで続行してください。",
   "inviteConsent_host_title": "{hostLabel} に参加しますか？",
-  "inviteConsent_host_permissions": "メンバーは、このホストの現在および今後のすべてのワークスペースにアクセスし、コマンドやエージェントを実行できます。ワークスペースを作成し、自分で作成したものを管理・削除できます。ホストの管理権限は所有者に残ります。",
+  "inviteConsent_host_permissions": "メンバーはワークスペースを作成し、このホストの現在および今後のすべてのワークスペースを、削除を含めて全面的に管理できます。このホストで利用可能なリポジトリとAIの設定を使って、コマンドやエージェントを実行できます。ホスト自体を管理できるのは所有者のみです。",
   "inviteConsent_account_unknown": "保存済みアカウント",
   "inviteConsent_account_choose_title": "アカウントを選択",
   "inviteConsent_account_choose_description": "この招待で使用する保存済みアカウントを選択してください。",

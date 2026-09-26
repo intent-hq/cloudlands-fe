@@ -6802,7 +6802,7 @@
   "collaborationAuth_failed_error": "Sign-in could not finish. Check the account and instance, then retry.",
   "collaborationAuth_requestChanged_error": "This invitation changed. Reopen it to continue with the current account requirement.",
   "inviteConsent_host_title": "Join {hostLabel}?",
-  "inviteConsent_host_permissions": "Joining as a member gives you access to all current and future workspaces on this host, including running commands and agents. You can create workspaces and manage or delete workspaces you create. Host administration stays with the owner.",
+  "inviteConsent_host_permissions": "As a member, you can create and fully manage all current and future workspaces on this host, including deleting them. You can run commands and agents using this host's available repository and AI setup. Host administration stays with the owner.",
   "inviteConsent_account_unknown": "Saved account",
   "inviteConsent_account_choose_title": "Choose an account",
   "inviteConsent_account_choose_description": "Choose the saved account to use for this invitation.",

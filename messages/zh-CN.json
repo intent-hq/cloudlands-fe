@@ -6802,7 +6802,7 @@
   "collaborationAuth_failed_error": "无法完成登录。请检查账户和实例后重试。",
   "collaborationAuth_requestChanged_error": "此邀请已更改。请重新打开，以当前要求的账户继续。",
   "inviteConsent_host_title": "加入 {hostLabel}？",
-  "inviteConsent_host_permissions": "成员可以访问此主机当前和未来的所有工作区，并运行命令和代理。你可以创建工作区，并管理或删除自己创建的工作区。主机管理权限仍归所有者。",
+  "inviteConsent_host_permissions": "作为成员，你可以创建工作区，并全面管理此主机当前和未来的所有工作区，包括删除它们。你可以使用此主机可用的代码仓库和 AI 配置来运行命令和代理。主机管理权限仍仅属于所有者。",
   "inviteConsent_account_unknown": "已保存的账户",
   "inviteConsent_account_choose_title": "选择账户",
   "inviteConsent_account_choose_description": "选择用于此邀请的已保存账户。",

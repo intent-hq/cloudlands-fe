@@ -6802,7 +6802,7 @@
   "collaborationAuth_failed_error": "No se pudo completar el inicio de sesión. Comprueba la cuenta y la instancia e inténtalo de nuevo.",
   "collaborationAuth_requestChanged_error": "Esta invitación cambió. Ábrela de nuevo para continuar con el requisito de cuenta actual.",
   "inviteConsent_host_title": "¿Unirte a {hostLabel}?",
-  "inviteConsent_host_permissions": "Como miembro tendrás acceso a todos los espacios de trabajo actuales y futuros de este host, incluida la ejecución de comandos y agentes. Podrás crear espacios de trabajo y gestionar o eliminar los que crees. La administración del host seguirá a cargo del propietario.",
+  "inviteConsent_host_permissions": "Como miembro, puedes crear espacios de trabajo y gestionar por completo todos los espacios actuales y futuros de este host, incluida su eliminación. Puedes ejecutar comandos y agentes con la configuración de repositorios e IA disponible en este host. La administración del host sigue siendo exclusiva del propietario.",
   "inviteConsent_account_unknown": "Cuenta guardada",
   "inviteConsent_account_choose_title": "Elige una cuenta",
   "inviteConsent_account_choose_description": "Elige la cuenta guardada que usarás para esta invitación.",
