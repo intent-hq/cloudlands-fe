@@ -62,6 +62,7 @@ import { store } from '$store/renderer/store';
 import {
   initialState as sessionInitial,
   agentSessionReducer,
+  updateSession,
 } from '$store/renderer/slices/agent-session/agent-session-slice';
 import {
   initialState as modelInitial,
@@ -264,6 +265,158 @@ describe('real composer model mutation ownership', () => {
       workspaceId: 'model-tests',
       reasoningEffort: 'medium',
     });
+  });
+
+  it('follows an authoritative provider-only update after an accepted same-ID pick', async () => {
+    mount();
+    await pick('codex', 'codex shared');
+    await confirm();
+    await waitFor(() => expect(session().reasoningEffort).toBe('medium'));
+    fixture.dispatch(
+      updateSession('agent-1', {
+        provider: 'auggie',
+        metadata: { provider: 'auggie' },
+        reasoningEffort: 'high',
+      }),
+    );
+    const trigger = document.querySelector(
+      '[data-chat-input-primary-actions] [data-slot="dropdown-root"] button',
+    )!;
+    await waitFor(() => expect(trigger.textContent).toContain('auggie shared'));
+    if (trigger.getAttribute('aria-expanded') !== 'true') await fireEvent.click(trigger);
+    expect((await screen.findByTestId('effort-picker-trigger')).textContent).toContain('High');
+    expect(fixture.setModel).toHaveBeenCalledExactlyOnceWith(modelRequest('codex', 'shared-model'));
+    expect(fixture.setEffort).toHaveBeenCalledTimes(1);
+  });
+
+  it('confirms a same-ID provider switch again after an authoritative provider-only update', async () => {
+    mount();
+    await pick('codex', 'codex shared');
+    await confirm();
+    await waitFor(() => expect(session().reasoningEffort).toBe('medium'));
+    fixture.dispatch(
+      updateSession('agent-1', {
+        provider: 'auggie',
+        metadata: { provider: 'auggie' },
+        reasoningEffort: 'high',
+      }),
+    );
+    await pick('codex', 'codex shared');
+    const dialog = await screen.findByRole('dialog');
+    expect(dialog.textContent).toContain('Augment Auggie');
+    expect(dialog.textContent).toContain('OpenAI Codex');
+    await fireEvent.click(within(dialog).getByRole('button', { name: 'Cancel', exact: true }));
+    expect(fixture.setModel).toHaveBeenCalledTimes(1);
+    expect(session()).toMatchObject({ provider: 'auggie', model: 'shared-model' });
+    await pick('codex', 'codex shared');
+    await confirm();
+    await waitFor(() => expect(session().reasoningEffort).toBe('medium'));
+    expect(fixture.setModel.mock.calls).toEqual([
+      [modelRequest('codex', 'shared-model')],
+      [modelRequest('codex', 'shared-model')],
+    ]);
+  });
+
+  it.each(['deferred', 'in-flight'])(
+    'retains a %s same-ID provider pick until the authoritative pair acknowledges it',
+    async (phase) => {
+      let finish!: (value: unknown) => void;
+      if (phase === 'in-flight') {
+        fixture.setModel.mockImplementationOnce(
+          () =>
+            new Promise((resolve) => {
+              finish = resolve;
+            }),
+        );
+      }
+      const view = mount({
+        isStreaming: phase === 'deferred',
+        requiresModelSwitchConfirmation: false,
+      });
+      await pick('codex', 'codex shared');
+      fixture.dispatch(
+        updateSession('agent-1', {
+          provider: 'auggie',
+          metadata: { provider: 'auggie' },
+          reasoningEffort: 'high',
+        }),
+      );
+      const trigger = document.querySelector(
+        '[data-chat-input-primary-actions] [data-slot="dropdown-root"] button',
+      )!;
+      await waitFor(() => expect(trigger.textContent).toContain('codex shared'));
+      expect(session().provider).toBe('auggie');
+      expect(fixture.setEffort).not.toHaveBeenCalled();
+      if (phase === 'deferred') {
+        expect(fixture.setModel).not.toHaveBeenCalled();
+        await view.rerender({ isStreaming: false });
+      } else {
+        expect(fixture.setModel).toHaveBeenCalledTimes(1);
+        finish({ success: true, data: { success: true } });
+      }
+      await waitFor(() =>
+        expect(session()).toMatchObject({ provider: 'codex', reasoningEffort: 'medium' }),
+      );
+      expect(fixture.setModel).toHaveBeenCalledExactlyOnceWith(
+        modelRequest('codex', 'shared-model'),
+      );
+    },
+  );
+
+  it('follows an authoritative provider-only update after a failed local pick rolls back', async () => {
+    fixture.setModel.mockResolvedValueOnce({ success: false, error: 'Model rejected' });
+    mount({ requiresModelSwitchConfirmation: false });
+    await pick('codex', 'codex shared');
+    const { notify } = await import('$lib/components/patterns/notify');
+    await waitFor(() => expect(notify.error).toHaveBeenCalled());
+    expect(session().provider).toBe('auggie');
+    fixture.dispatch(
+      updateSession('agent-1', {
+        provider: 'codex',
+        metadata: { provider: 'codex' },
+        reasoningEffort: 'medium',
+      }),
+    );
+    const trigger = document.querySelector(
+      '[data-chat-input-primary-actions] [data-slot="dropdown-root"] button',
+    )!;
+    await waitFor(() => expect(trigger.textContent).toContain('codex shared'));
+    expect(fixture.setModel).toHaveBeenCalledTimes(1);
+    expect(fixture.setEffort).not.toHaveBeenCalled();
+  });
+
+  it('keeps a newer authoritative provider-only selection when a pending local pick fails', async () => {
+    let finish!: (value: unknown) => void;
+    fixture.setModel.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        }),
+    );
+    mount({ requiresModelSwitchConfirmation: false });
+    await pick('codex', 'codex only');
+    await waitFor(() => expect(fixture.setModel).toHaveBeenCalledTimes(1));
+    fixture.dispatch(
+      updateSession('agent-1', {
+        provider: 'codex',
+        metadata: { provider: 'codex' },
+        reasoningEffort: 'medium',
+      }),
+    );
+    finish({ success: false, error: 'Local model rejected' });
+    const { notify } = await import('$lib/components/patterns/notify');
+    await waitFor(() => expect(notify.error).toHaveBeenCalled());
+    const trigger = document.querySelector(
+      '[data-chat-input-primary-actions] [data-slot="dropdown-root"] button',
+    )!;
+    await waitFor(() => expect(trigger.textContent).toContain('codex shared'));
+    expect(session()).toMatchObject({
+      provider: 'codex',
+      model: 'shared-model',
+      reasoningEffort: 'medium',
+    });
+    expect(fixture.setModel).toHaveBeenCalledExactlyOnceWith(modelRequest('codex', 'codex-only'));
+    expect(fixture.setEffort).not.toHaveBeenCalled();
   });
 
   it('replaces deferred picks and sends only the last complete provider/model pair', async () => {

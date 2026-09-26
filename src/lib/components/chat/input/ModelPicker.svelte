@@ -802,6 +802,31 @@
     propModelAtLocalChange = undefined;
   });
 
+  function currentSessionSelection(): ModelChange['previous'] | undefined {
+    const session = $agentSession$;
+    if (!agentId || !workspaceId || session?.model === undefined) return undefined;
+    const provider = getAgentProvider(session, $defaultProviderId$);
+    if (!provider) return undefined;
+    return { model: session.model, providerId: normalizeProviderId(provider) };
+  }
+
+  // The parent mirrors optimistic picks, so only the session can acknowledge
+  // an agent selection. Once acknowledged, follow later provider-only updates.
+  $effect(() => {
+    if (!localPickedProviderId || pendingModelUpdate) return;
+    const selection = currentSessionSelection();
+    if (
+      selection?.providerId === localPickedProviderId &&
+      (selection.model === localModel ||
+        (selection.model &&
+          localModel &&
+          splitLegacyCompoundId(selection.model).modelId ===
+            splitLegacyCompoundId(localModel).modelId))
+    ) {
+      localPickedProviderId = null;
+    }
+  });
+
   // A live owner → collaborator role change must not let a deferred update
   // queued during streaming reach the backend once streaming ends.
   $effect(() => {
@@ -841,8 +866,11 @@
 
   function restoreLocalSelection(change: ModelChange) {
     if (!isCurrentModelChange(change)) return;
-    localModel = change.previous.model;
-    localPickedProviderId = change.previous.providerId;
+    // A rejected request must not restore an old snapshot over a newer
+    // authoritative selection received while the request was in flight.
+    const selection = currentSessionSelection() ?? change.previous;
+    localModel = selection.model;
+    localPickedProviderId = selection.providerId;
     propModelAtLocalChange = selectedModel;
     userChangedModel = true;
     dropdownValue = currentDropdownValue();
@@ -850,7 +878,7 @@
       localModel ?? '',
       localModel
         ? {
-            providerId: change.previous.providerId,
+            providerId: selection.providerId,
             modelId: splitLegacyCompoundId(localModel).modelId,
           }
         : undefined,
