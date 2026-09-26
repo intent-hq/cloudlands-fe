@@ -81,7 +81,7 @@ jobs:
   # close-fork-prs.yml.
 
   # Decides where the heavy jobs (checks / build-web / test /
-  # test-integration / test-playwright) run:
+  # test-integration) run:
   # the local tinybox runner normally, or GH-hosted larger runners when the
   # tinybox queue is backed up or the fleet is unavailable (ported from
   # intentd's ci.yml route job). Runs on a small GH-hosted runner so the burst
@@ -95,7 +95,8 @@ jobs:
   # outage, timeout), the routed jobs are skipped and need a re-run — a
   # deliberate trade-off. The seconds-long jobs (pr-title / conflict-markers
   # / gate) are not routed — they pin directly to ubuntu-latest. Required
-  # test-ct also has a fixed hosted runner, but keeps route's fail-safe guard.
+  # test-ct and test-playwright also have fixed hosted runners, but keep
+  # route's fail-safe guard.
   route:
     runs-on: ubuntu-latest
     # Same-repo PRs only (see fork-PR hardening note above); a skip here also
@@ -1080,13 +1081,14 @@ jobs:
 
   # Root Playwright suite (test/**/*.spec.ts via playwright.config.ts, run
   # by `pnpm run test:playwright`): browser-level specs that each start
-  # their own Vite harness (test/vite-harness-cache.mjs) — no CT bundle, no
-  # shard matrix. Uses the repo's TOP-LEVEL @playwright/test, not the
-  # CT-aligned runner test-ct provisions, so its browsers dir, cache key and
-  # --with-deps marker are keyed on `pnpm exec playwright --version`
-  # instead of run-ct-tests.mjs's version: the two Playwright versions
-  # install different Chromium builds and must never clobber each other in
-  # a shared tinybox $HOME (see this job's per-slot paths step).
+  # their own Vite harness (test/vite-harness-cache.mjs) — no CT bundle.
+  # Two hosted shards keep one browser worker each while giving the suite
+  # separate capacity after repeated 45-minute overruns (intent#5843).
+  # Native sharding preserves default-mode groups, including the heavy
+  # diagram-state-motion file, so equal declaration counts do not imply
+  # equal duration. Uses the repo's TOP-LEVEL @playwright/test, not the
+  # CT-aligned runner: its distinct browser cache key uses the version from
+  # `pnpm exec playwright --version` so the Chromium builds never alias.
   # Event gating mirrors test-ct: every merge_group, plus pull_requests
   # whose diff touches test/**, playwright.config.ts, or the
   # playwright/*-spec-pattern.mjs modules it reads
@@ -1094,13 +1096,15 @@ jobs:
   # check_root_playwright accepts a pull_request skip only via that output
   # or fast_path. Before this job the suite had no automated path at all.
   test-playwright:
-    name: Playwright (root)
+    name: Playwright (root ${{ matrix.shard }}/2)
     needs: [route, release-fast-path]
     if: ${{ !cancelled() && (github.event_name == 'merge_group' || needs.release-fast-path.outputs.root_playwright_required == 'true') && needs.route.result == 'success' && needs.release-fast-path.outputs.fast_path != 'true' }}
-    runs-on: ${{ fromJSON(needs.route.outputs.linux_labels) }}
-    # The single-worker suite exhausted a 30-minute job budget near completion.
-    # Allow setup and suite headroom within the 60-minute queue budget (intent#5843).
+    runs-on: gh-linux-8x
     timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2]
     permissions:
       contents: read
     env:
@@ -1117,11 +1121,10 @@ jobs:
           # Per-runner-instance dest (see checks).
           dest: ~/setup-pnpm-${{ runner.name }}
       - name: Setup Node.js
-        # cache: 'pnpm' only on the burst path (see checks).
         uses: actions/setup-node@v7
         with:
           node-version: '24'
-          cache: ${{ needs.route.outputs.linux_burst == 'true' && 'pnpm' || '' }}
+          cache: 'pnpm'
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
       - name: Generate i18n messages
@@ -1144,54 +1147,21 @@ jobs:
             exit 1
           fi
           echo "version=$version" >> "$GITHUB_OUTPUT"
-      - name: Point Playwright at per-slot paths (tinybox)
-        # Tinybox slots share $HOME: use a per-slot browsers dir and a
-        # $RUNNER_TEMP transform cache so concurrent jobs and persistent
-        # cross-version caches never clobber this job's state (monorepo#4214).
-        if: needs.route.outputs.linux_burst != 'true'
-        run: |
-          echo "PLAYWRIGHT_BROWSERS_PATH=$HOME/.cache/ms-playwright-$RUNNER_NAME" >> "$GITHUB_ENV"
-          echo "PWTEST_CACHE_DIR=$RUNNER_TEMP/playwright-transform-cache" >> "$GITHUB_ENV"
       - name: Cache Playwright browsers
-        # Burst path only. Distinct key prefix from test-ct's
-        # so the two versions' tarballs never alias.
-        if: needs.route.outputs.linux_burst == 'true'
+        # Distinct key prefix from test-ct's so the versions never alias.
         uses: actions/cache@v6
         with:
           path: ~/.cache/ms-playwright
           key: playwright-root-browsers-${{ runner.os }}-${{ steps.root-playwright.outputs.version }}
       - name: Install Playwright browsers
-        # Burst path: the gh-linux-8x image already ships every Chromium
+        # The gh-linux-8x image already ships every Chromium
         # shared library, and --with-deps only adds the fonts-*/xfonts-*
         # packages whose fetch blew test-ct's budget (intent#4723) — so
         # install the browser alone; a missing lib fails the first spec
         # loudly rather than silently. Step-level timeout so a download
         # stall fails here in minutes instead of exhausting the overall job budget.
-        if: needs.route.outputs.linux_burst == 'true'
         timeout-minutes: 8
         run: pnpm exec playwright install chromium
-      - name: Install Playwright browsers (tinybox)
-        # The --with-deps readiness marker is keyed on the top-level
-        # version: OS deps persist on the host once installed, so warm runs
-        # skip apt entirely; the co-tenant apt lock race (monorepo#1515) is
-        # covered by retrying the whole (idempotent) install.
-        if: needs.route.outputs.linux_burst != 'true'
-        timeout-minutes: 8
-        run: |
-          set -euo pipefail
-          marker="$PLAYWRIGHT_BROWSERS_PATH/.with-deps-${{ steps.root-playwright.outputs.version }}"
-          if [ -f "$marker" ]; then
-            pnpm exec playwright install chromium
-          else
-            for i in 1 2 3; do
-              if pnpm exec playwright install --with-deps chromium; then
-                touch "$marker"
-                break
-              fi
-              if [ "$i" -eq 3 ]; then exit 1; fi
-              sleep $((i * 15))
-            done
-          fi
       - name: Root Playwright tests
         # --workers=1: playwright.config.ts already pins CI to one worker;
         # explicit here because every spec boots its own Vite harness and
@@ -1199,14 +1169,14 @@ jobs:
         # logs; html feeds the failure artifact below and never auto-opens.
         env:
           PLAYWRIGHT_HTML_OPEN: never
-        run: pnpm run test:playwright --project=chromium --workers=1 --reporter=list,html
+        run: pnpm run test:playwright --project=chromium --workers=1 --shard=${{ matrix.shard }}/2 --reporter=list,html
       - name: Upload playwright report
         # Also on cancellation, so a timeout overrun still leaves the report
         # and traces behind for diagnosis (same as test-ct).
         if: failure() || cancelled()
         uses: actions/upload-artifact@v7
         with:
-          name: playwright-root-report
+          name: playwright-root-report-${{ matrix.shard }}
           path: |
             playwright-report/
             test-results/
