@@ -1,5 +1,6 @@
 // @verify-changed-triggers: .github/workflows/intent-pr.yml, scripts/ct-contract-paths.mjs,
-//   playwright/ct-spec-pattern.mjs
+//   playwright/ct-spec-pattern.mjs, .github/workflows/browser-tests.yml,
+//   .github/workflows/nightly-browser-tests.yml, scripts/browser-test-artifacts.mjs
 // @vitest-environment node
 
 /**
@@ -19,8 +20,10 @@
 import { execFileSync, spawnSync } from 'node:child_process';
 import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
+import { createRequire } from 'node:module';
 import { dirname, join, resolve } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
+import { BROWSER_ARTIFACTS } from './browser-test-artifacts.mjs';
 
 const WORKFLOW_PATH = '.github/workflows/intent-pr.yml';
 const MODULE_PATH = 'scripts/ct-contract-paths.mjs';
@@ -30,6 +33,7 @@ const CLI_INVOCATION = `${MODULE_PATH} --diff`;
 const CT_OUTPUT = 'needs.release-fast-path.outputs.ct_required';
 const ROOT_PLAYWRIGHT_OUTPUT = 'needs.release-fast-path.outputs.root_playwright_required';
 const FAST_PATH_OUTPUT = 'needs.release-fast-path.outputs.fast_path';
+const ELECTRON_OUTPUT = 'needs.release-fast-path.outputs.electron_required';
 
 const workflow = readFileSync(resolve(WORKFLOW_PATH), 'utf-8');
 const workflowLines = workflow.split('\n');
@@ -37,10 +41,10 @@ const workflowLines = workflow.split('\n');
 const isComment = (text: string) => text.trim().startsWith('#');
 
 // Top-level job blocks live at a two-space indent under `jobs:`.
-function jobLines(name: string): string[] {
-  const start = workflowLines.indexOf(`  ${name}:`);
+function jobLines(name: string, lines = workflowLines): string[] {
+  const start = lines.indexOf(`  ${name}:`);
   if (start === -1) throw new Error(`job ${name} not found in ${WORKFLOW_PATH}`);
-  const rest = workflowLines.slice(start + 1);
+  const rest = lines.slice(start + 1);
   const end = rest.findIndex((text) => /^ {2}[\w-]+:/.test(text));
   return rest.slice(0, end === -1 ? rest.length : end);
 }
@@ -164,7 +168,15 @@ function jobOutputs(lines: string[]): string[] {
 const releaseFastPath = jobLines('release-fast-path');
 const testCt = jobLines('test-ct');
 const testPlaywright = jobLines('test-playwright');
+const testElectron = jobLines('test-electron');
 const gate = jobLines('gate');
+const browserWorkflow = readFileSync(resolve('.github/workflows/browser-tests.yml'), 'utf8').split(
+  '\n',
+);
+const nightlyWorkflow = readFileSync(
+  resolve('.github/workflows/nightly-browser-tests.yml'),
+  'utf8',
+).split('\n');
 
 describe(`${WORKFLOW_PATH} consumes ${MODULE_PATH}`, () => {
   const invocations = workflowLines
@@ -346,6 +358,11 @@ type Context = {
   linuxBurst?: string;
   cancelled?: boolean;
   failed?: boolean;
+  electronRequired?: string;
+  suite?: string;
+  fork?: boolean;
+  shard?: number;
+  buildOutcome?: string;
 };
 
 // Evaluates a workflow `if:` expression built from `!cancelled()`, context
@@ -359,16 +376,25 @@ function evaluateCondition(expression: string, context: Context): boolean {
     [FAST_PATH_OUTPUT]: context.fastPath,
     'needs.route.result': context.route,
     'needs.route.outputs.linux_burst': context.linuxBurst ?? 'false',
+    [ELECTRON_OUTPUT]: context.electronRequired ?? 'false',
+    'inputs.suite': context.suite ?? '',
+    'github.event.pull_request.head.repo.full_name': context.fork
+      ? 'someone/fork'
+      : 'intent-hq/cloudlands-fe',
+    'github.repository': 'intent-hq/cloudlands-fe',
+    'steps.ct-build.outcome': context.buildOutcome ?? 'success',
   };
   let source = expression.replace(/^\$\{\{\s*/, '').replace(/\s*\}\}$/, '');
   source = source
     .replaceAll('cancelled()', String(context.cancelled ?? false))
-    .replaceAll('failure()', String(context.failed ?? false));
+    .replaceAll('failure()', String(context.failed ?? false))
+    .replaceAll('always()', 'true')
+    .replaceAll('matrix.shard', String(context.shard ?? 1));
   for (const [name, value] of Object.entries(lookups)) {
     source = source.replaceAll(name, JSON.stringify(value));
   }
   source = source.replaceAll('!=', ' NE ').replaceAll('==', '===').replaceAll(' NE ', '!==');
-  const residue = source.replace(/"[^"]*"|'[^']*'|true|false|===|!==|&&|\|\||[!()\s]/g, '');
+  const residue = source.replace(/"[^"]*"|'[^']*'|true|false|===|!==|&&|\|\||[!()\d\s]/g, '');
   if (residue !== '') throw new Error(`unsupported token(s) in if: expression: ${residue}`);
   return Boolean(new Function(`return (${source});`)());
 }
@@ -399,7 +425,7 @@ describe('test-ct runs on pull_request when ct_required is true', () => {
     [
       'merge_group with empty outputs',
       { event: 'merge_group', ctRequired: '', fastPath: '' },
-      true,
+      false,
     ],
     [
       'merge_group whose route failed',
@@ -414,8 +440,9 @@ describe('test-ct runs on pull_request when ct_required is true', () => {
     [
       'non-release merge_group entry with computed outputs',
       { event: 'merge_group', ctRequired: 'false', fastPath: 'false' },
-      true,
+      false,
     ],
+    ['CT-relevant merge_group', { event: 'merge_group', ctRequired: 'true' }, false],
   ])('%s → runs=%s', (_name, overrides, expected) => {
     expect(evaluateCondition(condition, { ...ok, ...overrides })).toBe(expected);
   });
@@ -462,7 +489,7 @@ describe('test-playwright runs on pull_request when root_playwright_required is 
     [
       'merge_group with empty outputs',
       { event: 'merge_group', rootPlaywrightRequired: '', fastPath: '' },
-      true,
+      false,
     ],
     [
       'merge_group whose route failed',
@@ -477,14 +504,408 @@ describe('test-playwright runs on pull_request when root_playwright_required is 
     [
       'non-release merge_group entry with computed outputs',
       { event: 'merge_group', rootPlaywrightRequired: 'false', fastPath: 'false' },
-      true,
+      false,
     ],
+    ['root-relevant merge_group', { event: 'merge_group', rootPlaywrightRequired: 'true' }, false],
   ])('%s → runs=%s', (_name, overrides, expected) => {
     expect(evaluateCondition(condition, { ...ok, ...overrides })).toBe(expected);
   });
 });
 
+describe('authored browser tests require their complete PR suites', () => {
+  it.each([
+    ['Evaluate CT relevance', 'ct_required', 'src/components/example.ct.spec.ts'],
+    ['Evaluate CT relevance', 'ct_required', 'src/components/__geometry__/example.geometry.json'],
+    ['Evaluate root Playwright relevance', 'root_playwright_required', 'test/example.spec.ts'],
+    [
+      'Evaluate root Playwright relevance',
+      'root_playwright_required',
+      'test/example.spec.ts-snapshots/result.png',
+    ],
+    ['Evaluate Electron relevance', 'electron_required', 'test/electron-browser-lifetime.spec.ts'],
+    [
+      'Evaluate Electron relevance',
+      'electron_required',
+      'test/fixtures/browser-lifetime/Harness.svelte',
+    ],
+  ])('classifies additions, edits and moves: %s / %s / %s', (step, outputKey, file) => {
+    const script = stepRunBlock(releaseFastPath, step);
+    const { root, base: originalBase } = checkoutWith(file);
+    let base = originalBase;
+    for (const change of ['add', 'edit', 'rename']) {
+      if (change === 'edit') {
+        base = git(root, 'rev-parse', 'HEAD');
+        commitFile(root, file, '// edited browser test');
+      } else if (change === 'rename') {
+        base = git(root, 'rev-parse', 'HEAD');
+        // Renaming out of a watched directory must still require the suite.
+        git(root, 'mv', file, 'renamed-test.txt');
+        git(root, 'commit', '-q', '-m', 'move browser test');
+      }
+      const output = join(root, 'github-output');
+      writeFileSync(output, '');
+      const result = bash(script, { BASE_SHA: base, GITHUB_OUTPUT: output }, root);
+      expect(result.status, `${change}: ${result.stderr}`).toBe(0);
+      expect(readFileSync(output, 'utf8').trim(), change).toBe(`${outputKey}=true`);
+    }
+  });
+
+  it.each([
+    ['playwright.manual.config.ts', true],
+    ['playwright.config.ts', true],
+    ['playwright/root-spec-pattern.mjs', true],
+    ['playwright/ct-spec-pattern.mjs', true],
+    ['playwright/app-stubs/navigation.ts', true],
+    ['test/vite-harness-cache.mjs', true],
+    ['test/fixtures/browser-lifetime/main.cjs', true],
+    ['package.json', true],
+    ['pnpm-lock.yaml', true],
+    ['svelte.config.js', true],
+    ['test/unrelated.spec.ts', false],
+    ['src/features/browser/view.svelte', false],
+    ['playwright-ct.config.ts', false],
+    ['test/fixtures/browser-lifetime-other/main.cjs', false],
+  ])('classifies Electron setup path %s as required=%s', (file, required) => {
+    const { root, base } = checkoutWith(file);
+    const output = join(root, 'github-output');
+    const result = bash(
+      stepRunBlock(releaseFastPath, 'Evaluate Electron relevance'),
+      { BASE_SHA: base, GITHUB_OUTPUT: output },
+      root,
+    );
+    expect(result.status, result.stderr).toBe(0);
+    expect(readFileSync(output, 'utf8').trim()).toBe(`electron_required=${required}`);
+  });
+
+  it('requires Electron if the relevance diff cannot be read', () => {
+    const root = temporaryDirectory('electron-relevance-');
+    const output = join(root, 'github-output');
+    const result = bash(
+      stepRunBlock(releaseFastPath, 'Evaluate Electron relevance'),
+      { BASE_SHA: 'missing', GITHUB_OUTPUT: output },
+      root,
+    );
+    expect(result.status).toBe(0);
+    expect(readFileSync(output, 'utf8').trim()).toBe('electron_required=true');
+  });
+
+  it.each([
+    'package.json',
+    'pnpm-lock.yaml',
+    'svelte.config.js',
+    'playwright/app-stubs/navigation.ts',
+  ])('requires the root suite for shared setup %s', (file) => {
+    const { root, base } = checkoutWith(file);
+    const output = join(root, 'github-output');
+    const result = bash(
+      stepRunBlock(releaseFastPath, 'Evaluate root Playwright relevance'),
+      { BASE_SHA: base, GITHUB_OUTPUT: output },
+      root,
+    );
+    expect(result.status, result.stderr).toBe(0);
+    expect(readFileSync(output, 'utf8').trim()).toBe('root_playwright_required=true');
+  });
+});
+
+describe('selective Electron PR routing', () => {
+  const ok: Context = {
+    event: 'pull_request',
+    ctRequired: 'false',
+    rootPlaywrightRequired: 'false',
+    electronRequired: 'true',
+    fastPath: 'false',
+    route: 'success',
+  };
+  it.each<[string, Partial<Context>, boolean]>([
+    ['lifetime tests changed', {}, true],
+    ['ordinary PR', { electronRequired: 'false' }, false],
+    ['missing relevance output', { electronRequired: '' }, false],
+    ['release-shaped PR', { fastPath: 'true' }, false],
+    ['route failed', { route: 'failure' }, false],
+    ['cancelled PR', { cancelled: true }, false],
+    ['queue with relevant changes', { event: 'merge_group' }, false],
+    ['queue with empty outputs', { event: 'merge_group', electronRequired: '' }, false],
+  ])('%s → runs=%s', (_name, context, expected) => {
+    expect(evaluateCondition(jobField(testElectron, 'if'), { ...ok, ...context })).toBe(expected);
+  });
+});
+
+describe('shared browser jobs and nightly routing', () => {
+  const suites = [
+    ['test-ct', 'ct'],
+    ['test-playwright', 'root'],
+    ['test-electron', 'electron'],
+  ];
+  const context: Context = {
+    event: 'pull_request',
+    ctRequired: 'true',
+    rootPlaywrightRequired: 'true',
+    electronRequired: 'true',
+    fastPath: 'false',
+    route: 'success',
+  };
+
+  it('schedules complete nightly and manual runs without filter inputs', () => {
+    const triggers = nightlyWorkflow.slice(
+      nightlyWorkflow.indexOf('on:') + 1,
+      nightlyWorkflow.indexOf('permissions:'),
+    );
+    expect(triggers.filter((line) => /^ {2}\w+:/.test(line)).map((line) => line.trim())).toEqual([
+      'schedule:',
+      'workflow_dispatch:',
+    ]);
+    expect(triggers.filter((line) => line.includes('cron:')).map((line) => line.trim())).toEqual([
+      "- cron: '17 2 * * *'",
+    ]);
+    expect(triggers.some((line) => line.trimStart().startsWith('inputs:'))).toBe(false);
+    for (const [job, suite] of suites) {
+      const nightly = jobLines(job, nightlyWorkflow);
+      expect(jobField(nightly, 'uses')).toBe('./.github/workflows/browser-tests.yml');
+      expect(nightly).toContain(`      suite: ${suite}`);
+      expect(nightly.some((line) => /^    (if|needs):/.test(line))).toBe(false);
+      expect(jobField(jobLines(job), 'uses')).toBe(jobField(nightly, 'uses'));
+      expect(jobLines(job)).toContain(`      suite: ${suite}`);
+    }
+  });
+
+  it.each(suites)(
+    '%s only executes on authorized PR, scheduled and manual events',
+    (job, suite) => {
+      const lines = jobLines(job, browserWorkflow);
+      for (const event of [
+        'pull_request',
+        'schedule',
+        'workflow_dispatch',
+        'merge_group',
+        'push',
+      ]) {
+        for (const fork of [false, true]) {
+          const value = { ...context, suite, event, fork };
+          expect(evaluateCondition(jobField(lines, 'if'), value)).toBe(
+            ['schedule', 'workflow_dispatch'].includes(event) ||
+              (event === 'pull_request' && !fork),
+          );
+          expect(evaluateCondition(jobField(lines, 'if'), { ...value, cancelled: true })).toBe(
+            false,
+          );
+          expect(evaluateCondition(jobField(lines, 'if'), { ...value, suite: 'unknown' })).toBe(
+            false,
+          );
+        }
+      }
+      expect(jobField(lines, 'runs-on')).toBe('gh-linux-8x');
+    },
+  );
+
+  it('prevents forks from reaching the routed self-hosted jobs', () => {
+    for (const name of ['route', 'release-fast-path']) {
+      expect(evaluateCondition(jobField(jobLines(name), 'if'), { ...context, fork: true })).toBe(
+        false,
+      );
+      expect(evaluateCondition(jobField(jobLines(name), 'if'), context)).toBe(true);
+    }
+  });
+
+  function step(lines: string[], name: string) {
+    const start = lines.indexOf(`      - name: ${name}`);
+    if (start < 0) throw new Error(`Missing step: ${name}`);
+    const rest = lines.slice(start + 1);
+    const end = rest.findIndex((line) => line.startsWith('      - '));
+    return rest.slice(0, end < 0 ? rest.length : end);
+  }
+  function field(lines: string[], name: string) {
+    const line = lines.find((value) => value.trimStart().startsWith(`${name}:`));
+    if (!line) throw new Error(`Missing field: ${name}`);
+    return line
+      .trim()
+      .slice(name.length + 1)
+      .trim();
+  }
+
+  it('retains all four independent CT shards and their build/test memory budgets', () => {
+    const ct = jobLines('test-ct', browserWorkflow);
+    expect(JSON.parse(field(ct, 'shard'))).toEqual([1, 2, 3, 4]);
+    expect(field(ct, 'fail-fast')).toBe('false');
+    expect(jobField(ct, 'timeout-minutes')).toBe('30');
+    expect(field(step(ct, 'Build CT bundle'), 'NODE_OPTIONS').replaceAll("'", '')).toBe(
+      '--max-old-space-size=8192',
+    );
+    expect(field(step(ct, 'Component tests'), 'NODE_OPTIONS').replaceAll("'", '')).toBe(
+      '--max-old-space-size=4096',
+    );
+  });
+
+  it('keeps quarantine advisory and limited to shard one after a successful bundle build', () => {
+    const ct = jobLines('test-ct', browserWorkflow);
+    const quarantine = step(ct, 'Quarantined component tests (advisory)');
+    expect(field(quarantine, 'continue-on-error')).toBe('true');
+    for (const shard of [1, 2, 3, 4]) {
+      for (const failed of [false, true]) {
+        expect(evaluateCondition(field(quarantine, 'if'), { ...context, shard, failed })).toBe(
+          shard === 1,
+        );
+        expect(
+          evaluateCondition(field(quarantine, 'if'), {
+            ...context,
+            shard,
+            failed,
+            buildOutcome: 'failure',
+          }),
+        ).toBe(false);
+      }
+    }
+    expect(field(quarantine, 'PLAYWRIGHT_JSON_OUTPUT_FILE')).toBe(
+      'playwright-report-quarantine/results.json',
+    );
+  });
+
+  it.each(BROWSER_ARTIFACTS)(
+    'uploads complete $artifactName evidence on success, failure or cancellation',
+    (artifact) => {
+      const job =
+        artifact.suite === 'ct' || artifact.suite === 'quarantine'
+          ? 'test-ct'
+          : artifact.suite === 'root'
+            ? 'test-playwright'
+            : 'test-electron';
+      const lines = jobLines(job, browserWorkflow);
+      const name =
+        artifact.suite === 'quarantine'
+          ? 'Upload quarantine report'
+          : artifact.suite === 'electron'
+            ? 'Upload electron lifetime report'
+            : 'Upload playwright report';
+      const upload = step(lines, name);
+      expect(field(upload, 'name').replaceAll('${{ matrix.shard }}', String(artifact.shard))).toBe(
+        artifact.artifactName,
+      );
+      const paths = upload.filter((line) => /^ {12}\S/.test(line)).map((line) => line.trim());
+      expect(paths).toContain(artifact.outcomePath);
+      expect(paths).toContain(`${dirname(artifact.reportPath)}/`);
+      expect(paths).toContain(artifact.advisory ? 'test-results-quarantine/' : 'test-results/');
+      expect(field(upload, 'overwrite')).toBe('true');
+      expect(field(upload, 'if-no-files-found')).toBe('error');
+      expect(field(upload, 'retention-days')).toBe('7');
+      for (const status of [{}, { failed: true }, { cancelled: true }]) {
+        expect(
+          evaluateCondition(field(upload, 'if'), { ...context, shard: artifact.shard, ...status }),
+        ).toBe(true);
+      }
+      const record = step(
+        lines,
+        artifact.advisory ? 'Record quarantine outcome' : 'Record browser outcome',
+      );
+      for (const status of [{}, { failed: true }, { cancelled: true }]) {
+        expect(
+          evaluateCondition(field(record, 'if'), { ...context, shard: artifact.shard, ...status }),
+        ).toBe(true);
+      }
+      expect(field(record, 'BROWSER_TEST_OUTCOME')).toBe(
+        `\${{ steps.${artifact.advisory ? 'quarantine' : 'tests'}.outcome }}`,
+      );
+      expect(field(record, 'run').replaceAll('${{ matrix.shard }}', String(artifact.shard))).toBe(
+        `node scripts/browser-test-artifacts.mjs record ${artifact.suite} ${artifact.shard}`,
+      );
+    },
+  );
+
+  it.each([
+    ['test-ct', 'Component tests'],
+    ['test-playwright', 'Root Playwright tests'],
+    ['test-electron', 'Electron browser lifetime tests'],
+  ])(
+    '%s preserves failed exits and forbids zero-test success in its required lane',
+    (job, stepName) => {
+      const lines = jobLines(job, browserWorkflow);
+      const testStep = step(lines, stepName);
+      expect(testStep.some((line) => line.trimStart().startsWith('continue-on-error:'))).toBe(
+        false,
+      );
+      const run = field(testStep, 'run');
+      const command = (run === '|' ? stepRunBlock(lines, stepName) : run).replaceAll(
+        '${{ matrix.shard }}',
+        '1',
+      );
+      const root = temporaryDirectory('browser-required-command-');
+      writeFileSync(join(root, 'pnpm'), '#!/bin/sh\nprintf "%s\\n" "$@" > "$ARGS"\nexit 7\n', {
+        mode: 0o755,
+      });
+      writeFileSync(join(root, 'xvfb-run'), '#!/bin/sh\nshift\nexec "$@"\n', { mode: 0o755 });
+      const argsFile = join(root, 'args');
+      const result = bash(command, { PATH: `${root}:${process.env.PATH}`, ARGS: argsFile }, root);
+      expect(result.status, result.stderr).toBe(7);
+      const args = readFileSync(argsFile, 'utf8').trim().split('\n');
+      expect(args).not.toContain('--pass-with-no-tests');
+      expect(args).not.toContain('--only-changed=HEAD');
+      expect(args).toContain('--reporter=list,html,json');
+      expect(field(testStep, 'PLAYWRIGHT_JSON_OUTPUT_FILE')).toBe('playwright-report/results.json');
+      if (job === 'test-ct') {
+        expect(args).toContain('--shard=1/4');
+        expect(args).toContain('--fail-on-flaky-tests');
+      } else if (job === 'test-playwright') expect(args).toContain('--shard=1/2');
+      // Exercise Playwright's real discovery/exit policy without starting a browser.
+      // Reuse the required lane's flags with an isolated empty test directory.
+      const config = join(root, 'empty.config.cjs');
+      writeFileSync(
+        config,
+        "module.exports = { testDir: '.', testMatch: 'nothing.spec.ts', projects: [{ name: 'chromium' }] };\n",
+      );
+      const discovery = spawnSync(
+        process.execPath,
+        [
+          createRequire(import.meta.url).resolve('@playwright/test/cli'),
+          'test',
+          '--config',
+          config,
+          ...args.slice(2),
+        ],
+        {
+          cwd: root,
+          encoding: 'utf8',
+          env: {
+            PATH: process.env.PATH,
+            CI: 'true',
+            PLAYWRIGHT_HTML_OPEN: 'never',
+            PLAYWRIGHT_JSON_OUTPUT_FILE: join(root, 'playwright-report/results.json'),
+          },
+        },
+      );
+      // Empty shards return zero in Playwright; the outcome recorder must turn
+      // those into a failed required job while preserving the empty report.
+      const recorded = spawnSync(
+        process.execPath,
+        [
+          resolve('scripts/browser-test-artifacts.mjs'),
+          'record',
+          job === 'test-ct' ? 'ct' : job === 'test-playwright' ? 'root' : 'electron',
+          '1',
+        ],
+        {
+          cwd: root,
+          encoding: 'utf8',
+          env: {
+            BROWSER_TEST_OUTCOME: discovery.status === 0 ? 'success' : 'failure',
+            BROWSER_JOB_STATUS: discovery.status === 0 ? 'success' : 'failure',
+          },
+        },
+      );
+      expect(
+        discovery.status === 0 ? recorded.status : discovery.status,
+        discovery.stdout + discovery.stderr + recorded.stderr,
+      ).toBe(1);
+      expect(JSON.parse(readFileSync(join(root, 'browser-outcome.json'), 'utf8'))).toMatchObject({
+        reportPresent: true,
+        testCount: 0,
+      });
+    },
+  );
+});
+
 describe('root Playwright hosted shards', () => {
+  const testPlaywright = jobLines(
+    'test-playwright',
+    readFileSync(resolve('.github/workflows/browser-tests.yml'), 'utf8').split('\n'),
+  );
   function step(name: string): string[] {
     const start = testPlaywright.indexOf(`      - name: ${name}`);
     if (start === -1) throw new Error(`root step ${name} not found`);
@@ -531,11 +952,10 @@ describe('root Playwright hosted shards', () => {
   it.each([
     ['pull_request', 'false'],
     ['pull_request', 'true'],
-    ['merge_group', 'false'],
-    ['merge_group', 'true'],
+    ['schedule', 'false'],
+    ['workflow_dispatch', 'true'],
   ])('provisions hosted runners on %s with linux_burst=%s', (event, linuxBurst) => {
     const context = { ...ok, event, linuxBurst };
-    expect(evaluateCondition(jobField(testPlaywright, 'if'), context)).toBe(true);
     expect(jobField(testPlaywright, 'runs-on')).toBe('gh-linux-8x');
     expect(field(step('Setup Node.js'), 'cache').replaceAll("'", '')).toBe('pnpm');
     for (const name of ['Cache Playwright browsers', 'Install Playwright browsers']) {
@@ -569,7 +989,7 @@ describe('root Playwright hosted shards', () => {
           '--project=chromium',
           '--workers=1',
           `--shard=${shard}/2`,
-          '--reporter=list,html',
+          '--reporter=list,html,json',
         ]);
       }
       const install = bash(
@@ -598,16 +1018,15 @@ describe('root Playwright hosted shards', () => {
     expect(upload.filter((line) => /^ {12}\S/.test(line)).map((line) => line.trim())).toEqual([
       'playwright-report/',
       'test-results/',
+      'browser-outcome.json',
     ]);
     for (const context of [{ failed: true }, { cancelled: true }, {}]) {
-      expect(evaluateCondition(field(upload, 'if'), { ...ok, ...context })).toBe(
-        'failed' in context || 'cancelled' in context,
-      );
+      expect(evaluateCondition(field(upload, 'if'), { ...ok, ...context })).toBe(true);
     }
   });
 });
 
-describe('CI Gate accepts a test-ct skip only through an output', () => {
+describe('CI Gate accepts browser skips only by event or explicit relevance output', () => {
   const script = stepRunBlock(gate, 'Check results')
     .replaceAll('${{ github.event_name }}', '"$EVENT_NAME"')
     .replace(
@@ -638,6 +1057,8 @@ describe('CI Gate accepts a test-ct skip only through an output', () => {
   const results = (ct: string, event = 'pull_request') => ({
     EVENT_NAME: event,
     RESULT_route: 'success',
+    RESULT_release_fast_path: 'success',
+    RESULT_test_electron: 'skipped',
     RESULT_pr_title: event === 'merge_group' ? 'skipped' : 'success',
     RESULT_conflict_markers: event === 'merge_group' ? 'skipped' : 'success',
     RESULT_checks: 'success',
@@ -659,7 +1080,11 @@ describe('CI Gate accepts a test-ct skip only through an output', () => {
   };
 
   const runGate = (env: Record<string, string>) =>
-    bash(script, { ROOT_PLAYWRIGHT_REQUIRED: env.CT_REQUIRED ?? '', ...env }, tmpdir());
+    bash(
+      script,
+      { ROOT_PLAYWRIGHT_REQUIRED: env.CT_REQUIRED ?? '', ELECTRON_REQUIRED: 'false', ...env },
+      tmpdir(),
+    );
 
   it('waits for the root matrix and runs even when a shard fails or is cancelled', () => {
     const start = gate.indexOf('    needs:');
@@ -668,26 +1093,29 @@ describe('CI Gate accepts a test-ct skip only through an output', () => {
     expect(jobField(gate, 'if')).toBe('always()');
   });
 
-  it.each(['pull_request', 'merge_group'])('requires a successful root matrix on %s', (event) => {
-    // GitHub supplies one aggregate result for a matrix in needs. With no
-    // continue-on-error, any failed/cancelled leg must keep this gate red.
-    for (const [aggregate, expected] of [
-      ['success', 0],
-      ['failure', 1],
-      ['cancelled', 1],
-      ['skipped', 1],
-      ['', 1],
-    ] as const) {
-      const result = runGate({
-        ...results('success', event),
-        RESULT_test_playwright: aggregate,
-        FAST_PATH: 'false',
-        CT_REQUIRED: 'true',
-        ROOT_PLAYWRIGHT_REQUIRED: 'true',
-      });
-      expect(result.status, `${aggregate}: ${result.stdout}${result.stderr}`).toBe(expected);
-    }
-  });
+  it.each(['pull_request', 'merge_group'])(
+    'requires root success or a deliberate queue skip on %s',
+    (event) => {
+      // GitHub supplies one aggregate result for a matrix in needs. With no
+      // continue-on-error, any failed/cancelled leg must keep this gate red.
+      for (const [aggregate, expected] of [
+        ['success', 0],
+        ['failure', 1],
+        ['cancelled', 1],
+        ['skipped', event === 'merge_group' ? 0 : 1],
+        ['', 1],
+      ] as const) {
+        const result = runGate({
+          ...results('success', event),
+          RESULT_test_playwright: aggregate,
+          FAST_PATH: 'false',
+          CT_REQUIRED: 'true',
+          ROOT_PLAYWRIGHT_REQUIRED: 'true',
+        });
+        expect(result.status, `${aggregate}: ${result.stdout}${result.stderr}`).toBe(expected);
+      }
+    },
+  );
 
   it.each<[string, Record<string, string>, number]>([
     [
@@ -759,7 +1187,7 @@ describe('CI Gate accepts a test-ct skip only through an output', () => {
     [
       'merge_group, CT skipped',
       { ...results('skipped', 'merge_group'), FAST_PATH: '', CT_REQUIRED: '' },
-      1,
+      0,
     ],
     [
       'merge_group, CT failed',
@@ -782,7 +1210,7 @@ describe('CI Gate accepts a test-ct skip only through an output', () => {
     [
       'merge_group, fast path false, CT skipped',
       { ...results('skipped', 'merge_group'), FAST_PATH: 'false', CT_REQUIRED: 'false' },
-      1,
+      0,
     ],
     [
       'merge_group, fast path false, integration skipped',
@@ -883,11 +1311,63 @@ describe('CI Gate accepts a test-ct skip only through an output', () => {
         CT_REQUIRED: 'true',
         ROOT_PLAYWRIGHT_REQUIRED: 'false',
       },
-      1,
+      0,
     ],
   ])('%s → exit %i', (_name, env, expected) => {
     const result = runGate(env);
     expect(result.status, result.stdout + result.stderr).toBe(expected);
+  });
+
+  it.each(['test_ct', 'test_playwright', 'test_electron'])(
+    'requires a relevant %s PR run to succeed',
+    (job) => {
+      for (const outcome of ['failure', 'cancelled', 'skipped', '']) {
+        const result = runGate({
+          ...results('success'),
+          FAST_PATH: 'false',
+          CT_REQUIRED: 'true',
+          ROOT_PLAYWRIGHT_REQUIRED: 'true',
+          ELECTRON_REQUIRED: 'true',
+          RESULT_test_electron: 'success',
+          [`RESULT_${job}`]: outcome,
+        });
+        expect(result.status, result.stdout + result.stderr).toBe(1);
+      }
+    },
+  );
+
+  it.each(['CT_REQUIRED', 'ROOT_PLAYWRIGHT_REQUIRED', 'ELECTRON_REQUIRED'])(
+    'rejects missing %s even when all jobs report success',
+    (output) => {
+      const result = runGate({
+        ...results('success'),
+        FAST_PATH: 'false',
+        CT_REQUIRED: 'true',
+        ROOT_PLAYWRIGHT_REQUIRED: 'true',
+        ELECTRON_REQUIRED: 'true',
+        RESULT_test_electron: 'success',
+        [output]: '',
+      });
+      expect(result.status, result.stdout + result.stderr).toBe(1);
+    },
+  );
+
+  it.each([
+    'checks',
+    'build_web',
+    'test',
+    'test_integration',
+    'monorepo_consumer_checks',
+    'release_fast_path',
+  ])('still requires %s in the queue when every browser suite skips', (job) => {
+    for (const outcome of ['failure', 'cancelled', 'skipped']) {
+      const result = runGate({
+        ...results('skipped', 'merge_group'),
+        FAST_PATH: 'false',
+        [`RESULT_${job}`]: outcome,
+      });
+      expect(result.status, result.stdout + result.stderr).toBe(1);
+    }
   });
 
   it.each(['pull_request', 'merge_group'])(

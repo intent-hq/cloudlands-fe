@@ -65,7 +65,7 @@ in a monorepo checkout, where this repo mounts at `packages/cloudlands-fe/`.
 | alignment / text-rebase perf claims                                     | `pnpm perf:text-rebase --base <ref>` — paired head/base runs of `src/lib/notes/text-rebase-bench.runner.ts` in fresh processes, interleaved with the pair order alternating per run so drift hits both sides (`--head <ref>`, `--runs`, `--repeats`, `--shapes`, `--json`); cite its table in the PR. Bare packages resolve from the current `node_modules` for both trees; the header labels each tree's mapper mode and warns when a pre-#2740 base (`legacy-two-mapper`) is not comparable like-for-like  |
 | debugging                                                               | ../../docs/fe/TROUBLESHOOTING_GUIDE.md, ../../docs/fe/IPC_DEBUG_GUIDE.md                                                                                                                                                                                                                                                                                                                                                                                                                                     |
 | prod stack traces                                                       | `pnpm resolve-stack <tag> < stack.txt` — rebuilds the tag with sourcemaps, maps frames                                                                                                                                                                                                                                                                                                                                                                                                                       |
-| CT run failures (queue ejection triage)                                 | `pnpm ct:failures <run-id \| run-url>` — every failed/flaky CT case of an `Intent PR Checks` run, per shard, from the shard's JSON report artifact (list-log summary fallback); `--attempt N`, `--json`                                                                                                                                                                                                                                                                                                      |
+| CT run failures (PR or nightly triage)                                  | `pnpm ct:failures <run-id \| run-url>` — every failed/flaky CT case of an `Intent PR Checks` or `Nightly Browser Tests` run, per shard, from the shard's JSON report artifact (list-log summary fallback); `--attempt N`, `--json`                                                                                                                                                                                                                                                                           |
 | error handling                                                          | ../../docs/fe/ERROR_HANDLING_SYSTEM.md                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
 | TypeScript/types                                                        | ../../docs/fe/TYPE_SYSTEM_GUIDE.md                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
 | events/IPC                                                              | ../../docs/fe/EVENT_SYSTEM.md                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
@@ -640,15 +640,19 @@ is roughly 10× the cost of a jsdom test and the CT job is sharded and time-boxe
   share ordered state.
 - **A pass-on-retry fails the required CT lane** (`--fail-on-flaky-tests`). Fix the flake
   or, if it needs more time, tag the individual test
-  `{ tag: '@quarantine' }` — never a whole file. The CT job runs on every merge-queue
-  entry, and on `pull_request` only when the diff touches a CT-contract path, a CT spec,
-  or a geometry golden (classified by `scripts/ct-contract-paths.mjs`, shared with
-  `verify:changed`), so on other PRs a pass-on-retry ejects the PR from the queue rather
-  than reddening a PR check. To see which cases ejected a run without opening four shard
-  logs, run `pnpm ct:failures <run-id>` (see Where to look).
-  Quarantined tests still run on every queue entry as an advisory (non-blocking) step on
-  shard 1 and must carry an open tracking issue and an owner; quarantine is temporary,
-  not a parking lot — remove the tag in the PR that fixes the flake.
+  `{ tag: '@quarantine' }` — never a whole file. The full four-shard CT suite
+  runs nightly at 02:17 UTC and on manual dispatch (`nightly-browser-tests.yml`).
+  PRs that touch CT-contract paths, specs or geometry goldens also require it
+  (classified by `scripts/ct-contract-paths.mjs`, shared with `verify:changed`).
+  Root Playwright test/config/fixture changes require its two shards on the PR;
+  Electron lifetime test/harness/config changes require its Electron suite.
+  Both also run nightly/manual. Browser suites never run in the merge queue;
+  ordinary application changes can therefore reveal browser regressions after merge.
+  `pnpm ct:failures <run-id>` lists failed/flaky CT cases from PR or nightly artifacts.
+  All browser lanes retain JSON, HTML and traces for seven days; the nightly
+  manifest and per-lane outcomes distinguish missing reports from successful runs.
+  Quarantined CT tests still run as an advisory step on shard 1 and must carry an
+  open tracking issue and an owner. Remove the tag in the PR that fixes the flake.
 - Motion specs that sample animation progress mid-flight are the historical flake source;
   prefer asserting start/end states and `getAnimations()` counts over timed midpoints.
 - **Every CT spec imports `test` / `expect` from `src/test/ct-test.ts`** — lint-enforced
