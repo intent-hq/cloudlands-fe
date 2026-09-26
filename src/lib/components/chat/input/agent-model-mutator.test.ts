@@ -95,7 +95,7 @@ describe('createAgentModelMutator — unlocked', () => {
       WORKSPACE,
       'high',
       ['low', 'high'],
-      { canMutate: expect.any(Function) },
+      { canMutate: expect.any(Function), canSend: expect.any(Function) },
     );
   });
 
@@ -103,6 +103,7 @@ describe('createAgentModelMutator — unlocked', () => {
     await expect(mutator.applyEffort(AGENT, WORKSPACE, null, 'high')).resolves.toBe(true);
     expect(mocks.applyReasoningEffort).toHaveBeenCalledWith(AGENT, WORKSPACE, null, 'high', {
       canMutate: expect.any(Function),
+      canSend: expect.any(Function),
     });
   });
 });
@@ -180,6 +181,7 @@ describe('createAgentModelMutator — call-time lock evaluation', () => {
     await expect(mutator.applyEffort(AGENT, WORKSPACE, 'low', 'high')).resolves.toBe(true);
     expect(mocks.applyReasoningEffort).toHaveBeenCalledWith(AGENT, WORKSPACE, 'low', 'high', {
       canMutate: expect.any(Function),
+      canSend: expect.any(Function),
     });
   });
 });

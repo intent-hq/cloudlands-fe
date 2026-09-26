@@ -15,6 +15,7 @@ export const MOCK_PROVIDER_CATALOG: ProviderCatalogResult = {
   providers: [
     {
       id: 'auggie',
+      legacyAliases: ['default', 'acp', 'augment'],
       displayName: 'Augment Auggie',
       shortName: 'Auggie',
       command: 'auggie',

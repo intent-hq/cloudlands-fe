@@ -55,6 +55,17 @@ export const selectProviderCatalogEntry = store.createSelector(
     state.providerCatalog ? getItem(state.providerCatalog.providers, providerId) : undefined,
 );
 
+/** Canonical ID first, then only aliases explicitly advertised by the daemon. */
+export const selectResolvedProviderCatalogEntry = store.createSelector(
+  (state, providerId: string): ProviderCatalogEntry | undefined => {
+    const exact = selectProviderCatalogEntry.select(state, providerId);
+    if (exact || !providerId) return exact;
+    return selectProviderCatalogEntries
+      .select(state)
+      .find((entry) => entry.legacyAliases?.includes(providerId));
+  },
+);
+
 /**
  * `getProviderConfig`-equivalent: the row for `providerId`, falling back to
  * the effective default provider's row when the id is unknown. `undefined`
@@ -83,15 +94,12 @@ export const selectProviderEnabledFromCatalog = store.createSelector(
 );
 
 /**
- * Canonical provider id for a raw/aliased id: the row's own `id` when known,
- * the effective default for unknown ids (mirroring the old
- * `getProviderConfig(id).id` alias healing for `acp` / `default` /
- * `augment`), and the raw id verbatim before hydration or while the
- * effective default is unresolved.
+ * Preserve unresolved identity on older daemons and before catalog hydration.
+ * Settings defaults, row order and availability never determine alias identity.
  */
 export const selectNormalizedProviderId = store.createSelector(
   (state, providerId: string): string =>
-    selectProviderCatalogEntryOrDefault.select(state, providerId)?.id ?? providerId,
+    selectResolvedProviderCatalogEntry.select(state, providerId)?.id ?? providerId,
 );
 
 /**
@@ -100,7 +108,7 @@ export const selectNormalizedProviderId = store.createSelector(
  */
 export const selectProviderDisplayName = store.createSelector(
   (state, providerId: string): string =>
-    selectProviderCatalogEntryOrDefault.select(state, providerId)?.displayName ?? providerId,
+    selectResolvedProviderCatalogEntry.select(state, providerId)?.displayName ?? providerId,
 );
 
 /**
@@ -109,19 +117,21 @@ export const selectProviderDisplayName = store.createSelector(
  */
 export const selectIsModelValidForProvider = store.createSelector(
   (state, model: string, targetProviderId: string): boolean =>
-    (splitLegacyCompoundId(model).providerId ?? selectEffectiveDefaultProviderId.select(state)) ===
-    targetProviderId,
+    selectNormalizedProviderId.select(
+      state,
+      splitLegacyCompoundId(model).providerId ?? selectEffectiveDefaultProviderId.select(state),
+    ) === selectNormalizedProviderId.select(state, targetProviderId),
 );
 
 /**
  * `isProviderAuthenticationError`-equivalent: match an error message against
- * the provider's catalog `authErrorPatterns`. Unknown ids fall back to the
- * default provider's row, mirroring the legacy lookup.
+ * the provider's catalog `authErrorPatterns`. Unresolved explicit IDs do not
+ * inherit authentication guidance from a different provider.
  */
 export const selectIsProviderAuthenticationError = store.createSelector(
   (state, providerId: string, errorMessage: string): boolean =>
     isProviderAuthenticationErrorForEntry(
-      selectProviderCatalogEntryOrDefault.select(state, providerId),
+      selectResolvedProviderCatalogEntry.select(state, providerId),
       errorMessage,
     ),
 );
@@ -141,7 +151,7 @@ export interface ProviderAuthFailureGuidance {
  * provider's catalog `authErrorPatterns`, return the actionable login
  * command (and the claude-code desktop-app caveat). The provider resolves
  * from the session's explicit provider id, else the compound model prefix,
- * else the effective default (via the EntryOrDefault fallback). `null` when
+ * else the effective default. Unresolved explicit identity stays unresolved. `null` when
  * there is no error or it is not an authentication failure.
  */
 export const selectProviderAuthFailureGuidance = store.createSelector(
@@ -152,13 +162,14 @@ export const selectProviderAuthFailureGuidance = store.createSelector(
     errorMessage: string | null | undefined,
   ): ProviderAuthFailureGuidance | null => {
     if (!errorMessage) return null;
-    // 'acp' is the protocol name, not a provider id (see getAgentProvider) —
-    // treat it as unset so resolution falls through to the model prefix.
-    let rawId = provider && provider !== 'acp' ? provider : '';
+    let rawId = provider || '';
     if (!rawId && model?.includes(':')) {
       rawId = splitLegacyCompoundId(model).providerId || '';
     }
-    const entry = selectProviderCatalogEntryOrDefault.select(state, rawId);
+    const entry = selectResolvedProviderCatalogEntry.select(
+      state,
+      rawId || selectEffectiveDefaultProviderId.select(state),
+    );
     if (!isProviderAuthenticationErrorForEntry(entry, errorMessage)) return null;
     const providerId = entry?.id ?? rawId;
     return {

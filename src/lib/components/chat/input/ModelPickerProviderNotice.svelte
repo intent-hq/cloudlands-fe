@@ -1,5 +1,5 @@
 <script module lang="ts">
-  import { selectProviderCatalogEntryOrDefault } from '$store/renderer/slices/provider-catalog/provider-catalog-selectors';
+  import { selectResolvedProviderCatalogEntry } from '$store/renderer/slices/provider-catalog/provider-catalog-selectors';
   import { store as appStore } from '$store/renderer/store';
 
   export type ProviderWarningNotice = {
@@ -14,7 +14,7 @@
     warning: string | undefined,
   ): ProviderWarningNotice | null {
     if (!warning) return null;
-    const provider = selectProviderCatalogEntryOrDefault.select(appStore.state, providerId);
+    const provider = selectResolvedProviderCatalogEntry.select(appStore.state, providerId);
     return {
       providerId: provider?.id ?? providerId,
       providerName: provider?.displayName ?? providerId,

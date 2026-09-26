@@ -1,7 +1,7 @@
 <script lang="ts">
-  import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-session-selectors';
+  import { selectAgentProvider } from '$store/renderer/slices/agent-session/agent-session-selectors';
   /* eslint-disable max-lines */
-  import { onMount, tick, type Snippet } from 'svelte';
+  import { onDestroy, onMount, tick, type Snippet } from 'svelte';
   import { writable } from 'svelte/store';
   import { notify } from '$lib/components/patterns/notify';
   import { withToastCountdown } from '$lib/components/patterns/notify';
@@ -11,6 +11,7 @@
   import { splitLegacyCompoundId } from '$shared/utils/legacy-model-id';
   import {
     selectEffectiveDefaultProviderId,
+    selectProviderCatalogEntries,
     selectNormalizedProviderId,
     selectProviderDisplayName,
   } from '$store/renderer/slices/provider-catalog/provider-catalog-selectors';
@@ -24,13 +25,6 @@
   import { surfaceClasses } from '$lib/components/ui/surface-context';
   import ArrowUpIcon from 'phosphor-svelte/lib/ArrowUpIcon';
 
-  import { updateSession as updateAgentSessionFields } from '$store/renderer/slices/agent-session/agent-session-slice';
-
-  import { agentClient } from '$features/agent/agent.client';
-  import { reconcileAgentReasoningEffort } from '$features/agent/reasoning-effort';
-  import { selectModelEffortLevels } from '$store/renderer/slices/model/model-selectors';
-
-  import { getAgentProvider } from '$shared/types/agent-session';
   import Fa from '$lib/components/shared/icons/FaWrapper.svelte';
   import {
     faMicrophone,
@@ -93,6 +87,7 @@
   const logger = createLogger('SimpleRichInput');
 
   const defaultProviderId$ = selectEffectiveDefaultProviderId();
+  const providerCatalogEntries$ = selectProviderCatalogEntries();
   const pttRecording$ = selectPttRecording();
   const voiceTranscribing$ = selectVoiceTranscribing();
   const effectiveVoiceEngine$ = selectEffectiveVoiceEngine();
@@ -101,9 +96,11 @@
 
   // Catalog-backed local shims for the legacy provider-config helpers.
   function normalizeProviderId(providerId: string): string {
+    void $providerCatalogEntries$;
     return selectNormalizedProviderId.select(appStore.state, providerId);
   }
   function providerDisplayName(providerId: string): string {
+    void $providerCatalogEntries$;
     return selectProviderDisplayName.select(appStore.state, providerId);
   }
   function parseCompoundModelId(compoundModelId: string): {
@@ -280,7 +277,6 @@
   let modelPickerRef: {
     open: () => void;
     clearFallbackWarning: () => void;
-    clearPendingUpdate: () => void;
   } | null = $state(null);
   let contextPickerRef: { open: (anchor?: HTMLElement) => Promise<void> } | null = $state(null);
   let promptActionsOpen = $state(false);
@@ -656,6 +652,12 @@
     }
   });
 
+  const providerAgentIdStore = writable(agentId ?? '');
+  const agentProvider$ = selectAgentProvider(providerAgentIdStore);
+  $effect(() => {
+    providerAgentIdStore.set(agentId ?? '');
+  });
+
   const hydratedPropProviderId = $derived.by(() => {
     if (propProviderId) {
       return normalizeProviderId(propProviderId);
@@ -665,9 +667,7 @@
       return $defaultProviderId$;
     }
 
-    const session = workspace?.id ? selectAgentSession.select(appStore.state, agentId) : undefined;
-    const provider = session ? getAgentProvider(session, $defaultProviderId$) : undefined;
-    return provider ? normalizeProviderId(provider) : undefined;
+    return $agentProvider$;
   });
   let localProviderId = $state<string | undefined>(undefined);
 
@@ -680,8 +680,6 @@
   const selectedProviderId = $derived.by(() => {
     return localProviderId || hydratedPropProviderId;
   });
-
-  let isChangingProvider = $state(false);
 
   // Mid-conversation switch confirmation dialog state. The pending resolver
   // settles the promise returned to ModelPicker's confirmModelChange gate.
@@ -724,7 +722,7 @@
   function confirmModelSwitch(
     from: string | null | undefined,
     to: string | null,
-    labels?: { from: string; to: string },
+    labels?: { from: string; to: string; fromProviderId?: string; toProviderId?: string },
   ): boolean | Promise<boolean> {
     if (!requiresModelSwitchConfirmation) return true;
 
@@ -732,6 +730,14 @@
     modelSwitchDialog?.resolve(false);
     const fromInfo = describeModelForDialog(from);
     const toInfo = describeModelForDialog(to);
+    if (labels?.fromProviderId) {
+      fromInfo.providerId = labels.fromProviderId;
+      fromInfo.providerName = providerDisplayName(labels.fromProviderId);
+    }
+    if (labels?.toProviderId) {
+      toInfo.providerId = labels.toProviderId;
+      toInfo.providerName = providerDisplayName(labels.toProviderId);
+    }
     return new Promise<boolean>((resolve) => {
       modelSwitchDialog = {
         // Compare normalized provider ids, not display names — unknown ids
@@ -754,86 +760,7 @@
     modelSwitchDialog = null;
   }
 
-  async function handleProviderChangeFromModel(newProvider: string, newModel: string) {
-    if (!agentId || !workspace?.id) return;
-    if (isChangingProvider) return; // prevent re-entry during in-flight switch
-
-    const previousSession =
-      agentId && workspace?.id ? selectAgentSession.select(appStore.state, agentId) : undefined;
-    const previousProvider = selectedProviderId;
-    const previousModel = selectedModel;
-
-    isChangingProvider = true;
-    localProviderId = newProvider;
-    userChangedModel = true;
-    selectedModel = newModel;
-    lastNotifiedModel = newModel;
-
-    appStore.dispatch(
-      updateAgentSessionFields(agentId, {
-        provider: newProvider,
-        model: newModel,
-        metadata: {
-          ...(previousSession?.metadata || {}),
-          provider: newProvider,
-        },
-      }),
-    );
-
-    try {
-      // Pass the target provider explicitly so the daemon resolves a bare
-      // modelId against it instead of the session's current provider.
-      const result = await agentClient.setModel(agentId, newModel, workspace.id, newProvider);
-      if (!result.ok || !result.data.success) {
-        throw new Error(result.ok ? result.data.error : result.error);
-      }
-      const supportedEfforts = selectModelEffortLevels.select(appStore.state, newModel);
-      await reconcileAgentReasoningEffort(
-        agentId,
-        workspace.id,
-        previousSession?.reasoningEffort,
-        supportedEfforts,
-      );
-      onmodelChange?.(newModel);
-    } catch (error) {
-      logger.error('Failed to switch agent provider via model change', {
-        error,
-        agentId,
-        newProvider,
-      });
-      localProviderId = previousProvider === hydratedPropProviderId ? undefined : previousProvider;
-      selectedModel = previousModel;
-      lastNotifiedModel = previousModel;
-      userChangedModel = false;
-      const rollbackProvider =
-        previousProvider ??
-        previousSession?.provider ??
-        (previousSession?.metadata?.provider as string | undefined);
-      const rollbackModel = previousModel ?? previousSession?.model;
-      if (rollbackProvider && rollbackModel) {
-        appStore.dispatch(
-          updateAgentSessionFields(agentId, {
-            provider: rollbackProvider,
-            model: rollbackModel,
-            metadata: {
-              ...(previousSession?.metadata || {}),
-              provider: rollbackProvider,
-            },
-          }),
-        );
-      }
-      notify.error(
-        error instanceof Error
-          ? error.message
-          : m.chat_richInput_switchFailed_error({
-              provider: providerDisplayName(newProvider),
-            }),
-      );
-    } finally {
-      modelPickerRef?.clearPendingUpdate();
-      isChangingProvider = false;
-    }
-  }
+  onDestroy(() => settleModelSwitchDialog(false));
 
   /**
    * In-flight placement cancellers keyed by context-item id. Removing an
@@ -1749,6 +1676,7 @@
       <ModelPicker
         bind:this={modelPickerRef}
         {selectedModel}
+        providerId={selectedProviderId}
         variant="ghost-light"
         size="xs"
         triggerClass="relative -left-2 font-medium text-muted-foreground hover:bg-hover hover:text-foreground [&_svg]:size-4"
@@ -1762,23 +1690,13 @@
         showReasoning
         reasoningDisabled={disabled}
         onModelChange={(newModel, pick) => {
-          if (!newModel) return;
-
-          // Check if the model is from a different provider. The picker
-          // resolves the pick's owning provider (catalog rows are bare for
-          // every provider); parsing the id is only a legacy fallback.
-          const rawProvider = pick?.providerId ?? parseCompoundModelId(newModel).providerId;
-          const newProvider = normalizeProviderId(rawProvider);
-          if (agentId && newProvider !== selectedProviderId) {
-            // Provider is changing — run the full provider switch flow
-            void handleProviderChangeFromModel(newProvider, newModel);
-          } else {
-            // Same provider — just update the model
-            userChangedModel = true;
-            lastNotifiedModel = newModel;
-            selectedModel = newModel;
-            onmodelChange?.(newModel);
-          }
+          // The picker and its guarded mutator own the session operation.
+          // This callback only mirrors its local selection (including rollback).
+          localProviderId = pick?.providerId ? normalizeProviderId(pick.providerId) : undefined;
+          userChangedModel = true;
+          lastNotifiedModel = newModel;
+          selectedModel = newModel;
+          onmodelChange?.(newModel);
         }}
       />
 
