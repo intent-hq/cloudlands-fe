@@ -409,6 +409,7 @@ describe('selectAgentModelEffortLevels', () => {
   it('resolves effort levels from the agent session model', () => {
     const base = mockState({
       defaultProviderId,
+      availableModelsProviderId: 'codex',
       availableModels: createCollection<AuggieModel, 'value'>('value', [
         { value: 'gpt-5.3-codex', label: 'GPT-5.3 Codex', effortLevels: ['low', 'high'] },
       ]),
@@ -434,6 +435,7 @@ describe('selectAgentModelEffortLevels', () => {
     const base = mockState({
       defaultProviderId,
       providerModels: { auggie: 'gpt5.6-sol' },
+      availableModelsProviderId: 'auggie',
       availableModels: createCollection<AuggieModel, 'value'>('value', [
         {
           value: 'gpt5.6-sol',
@@ -465,6 +467,7 @@ describe('selectAgentModelEffortLevels', () => {
     // row carries its own (possibly stale) static effortLevels.
     const base = mockState({
       defaultProviderId,
+      availableModelsProviderId: 'codex',
       availableModels: createCollection<AuggieModel, 'value'>('value', [
         { value: 'codex:gpt-5.3-codex', label: 'GPT-5.3 Codex', effortLevels: ['low', 'high'] },
       ]),
@@ -498,6 +501,7 @@ describe('selectAgentModelEffortLevels', () => {
     // on what the session discovered at open.
     const base = mockState({
       defaultProviderId,
+      availableModelsProviderId: 'codex',
       availableModels: createCollection<AuggieModel, 'value'>('value', [
         { value: 'claude-code:opus', label: 'Claude Opus' },
       ]),
@@ -528,6 +532,7 @@ describe('selectAgentModelEffortLevels', () => {
   it('falls back to the catalog when the session effortLevels are absent or empty', () => {
     const base = mockState({
       defaultProviderId,
+      availableModelsProviderId: 'codex',
       availableModels: createCollection<AuggieModel, 'value'>('value', [
         { value: 'gpt-5.3-codex', label: 'GPT-5.3 Codex', effortLevels: ['low', 'high'] },
       ]),

@@ -13,7 +13,10 @@ import {
 } from '../provider-settings/provider-settings-selectors';
 import { resolveDefaultModel } from './model-selection-utils';
 import type { ModelLoadingState } from './model-types';
-import { selectEffectiveDefaultProviderId } from '../provider-catalog/provider-catalog-selectors';
+import {
+  selectEffectiveDefaultProviderId,
+  selectNormalizedProviderId,
+} from '../provider-catalog/provider-catalog-selectors';
 
 function getEffectiveProviderId(state: any, providerId?: string): string {
   return providerId ?? selectActiveProviderId.select(state);
@@ -264,8 +267,11 @@ export const selectAgentModelEffortLevels = store.createSelector(
     if (Array.isArray(session.effortLevels) && session.effortLevels.length > 0) {
       return session.effortLevels;
     }
-    const providerId = getAgentProvider(session, selectEffectiveDefaultProviderId.select(state));
+    const rawProviderId = getAgentProvider(session, selectEffectiveDefaultProviderId.select(state));
+    const providerId = rawProviderId
+      ? selectNormalizedProviderId.select(state, rawProviderId)
+      : selectEffectiveDefaultProviderId.select(state);
     const model = session.model ?? selectSelectedModel.select(state, providerId);
-    return selectModelEffortLevels.select(state, model);
+    return selectProviderModelEffortLevels.select(state, providerId, model);
   },
 );

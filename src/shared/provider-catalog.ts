@@ -31,6 +31,8 @@ const ProviderCatalogEntrySchema = z
     shortName: z.string(),
     command: z.string(),
     canBeDisabled: z.boolean(),
+    // Daemon-authoritative historical identities. Absence provides no alias mapping.
+    legacyAliases: z.array(z.string().min(1)).optional(),
     loginCommandHint: z.string().optional(),
     loginDocsUrl: z.string().optional(),
     authErrorPatterns: z.array(z.string()).optional(),
