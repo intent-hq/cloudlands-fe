@@ -3058,6 +3058,39 @@ describe('LiveChatClient.subscribe resume (sinceMessageId, §7.1)', () => {
     off();
   });
 
+  it.each([undefined, '0190a1b2-user'])(
+    'forwards a mid-stream reset after initial hydration (anchor %s)',
+    async (sinceMessageId) => {
+      mockChatSubscribe();
+      const client = new LiveChatClient();
+      const seen: Array<{ resumed?: boolean; messages: unknown[] }> = [];
+      const off = client.subscribe('agent-1', (t) => seen.push(t), undefined, {
+        sinceMessageId,
+      });
+      await flush();
+      expect(mockedRequest).toHaveBeenCalledWith('chat.subscribe', {
+        agentId: 'agent-1',
+        deltaEncoding: 'incremental',
+        projection: 'slim',
+        ...(sinceMessageId === undefined ? {} : { sinceMessageId }),
+      });
+      snapshotPush('sub-1', 0, {
+        ...SEEDED_SNAPSHOT,
+        ...(sinceMessageId === undefined ? {} : { resumed: true }),
+      });
+      snapshotPush('sub-1', 1, {
+        ...SEEDED_SNAPSHOT,
+        messages: [],
+        totalMessages: 0,
+        resumed: false,
+      });
+      expect(seen).toHaveLength(2);
+      expect(seen[1].resumed).toBe(false);
+      expect(seen[1].messages).toEqual([]);
+      off();
+    },
+  );
+
   it('omits sinceMessageId entirely when no resume is requested', async () => {
     mockChatSubscribe();
     const client = new LiveChatClient();
