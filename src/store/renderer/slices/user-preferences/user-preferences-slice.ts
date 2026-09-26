@@ -61,6 +61,8 @@ export type UserPreferencesState = {
   labsSettingsVisible: boolean;
   /** Whether the Multiplayer lab (experimental) is enabled. */
   labsMultiplayerEnabled: boolean;
+  /** Whether new GitLab setup is offered in Labs. Existing connections are preserved. */
+  labsGitLabEnabled: boolean;
   agentFontStyle: AgentFontStyle;
   noteFontStyle: NoteFontStyle;
   codeFontFamily: string;
@@ -119,6 +121,7 @@ export const initialState: UserPreferencesState = {
   reduceMotionOnBattery: false,
   labsSettingsVisible: false,
   labsMultiplayerEnabled: false,
+  labsGitLabEnabled: false,
   ...fontSettingsInitialState,
   ...notificationSettingsInitialState,
   notificationVolumeEditId: 0,
@@ -329,6 +332,17 @@ export const setLabsMultiplayerEnabled = labsMultiplayerPreference.setAction;
 
 export const toggleLabsMultiplayer = labsMultiplayerPreference.toggleAction;
 
+const labsGitLabPreference = createBooleanPreference<UserPreferencesState>({
+  sliceName: 'userPreferences',
+  field: 'labsGitLabEnabled',
+  setActionName: 'setLabsGitLabEnabled',
+  toggleActionName: 'toggleLabsGitLab',
+});
+
+export const setLabsGitLabEnabled = labsGitLabPreference.setAction;
+
+export const toggleLabsGitLab = labsGitLabPreference.toggleAction;
+
 export const userPreferencesReducer = createReducer<UserPreferencesState>(initialState);
 spellcheckPreference.register(userPreferencesReducer);
 showArchivedPreference.register(userPreferencesReducer);
@@ -340,6 +354,7 @@ shellTransparencyPreference.register(userPreferencesReducer);
 reduceMotionOnBatteryPreference.register(userPreferencesReducer);
 labsSettingsVisibilityPreference.register(userPreferencesReducer);
 labsMultiplayerPreference.register(userPreferencesReducer);
+labsGitLabPreference.register(userPreferencesReducer);
 userPreferencesReducer.with(setUpdateChannel, (state, { payload: [channel] }) => ({
   ...state,
   updateChannel: channel,

@@ -21,6 +21,8 @@ import {
   selectSidecarRunLogError,
   selectDaemonVersionComparison,
   selectDaemonStatusCheckFailure,
+  selectDaemonSupportsSourceControlAuth,
+  supportsSourceControlAuthProtocol,
 } from './daemon-health-selectors';
 import { initialState } from './daemon-health-slice';
 
@@ -194,5 +196,66 @@ describe('selectDaemonVersionComparison', () => {
       daemonVersion: 'dev-build',
       pinnedVersion: '0.9.3',
     });
+  });
+});
+
+describe('supportsSourceControlAuthProtocol / selectDaemonSupportsSourceControlAuth', () => {
+  function protocolState(protocolVersion?: string): StoreState {
+    return {
+      daemonHealth: {
+        ...initialState,
+        stats: {
+          clients: 0,
+          agents: 0,
+          listenMode: 'uds',
+          os: 'linux',
+          arch: 'x64',
+          ...(protocolVersion === undefined ? {} : { protocolVersion }),
+        },
+      },
+    } as unknown as StoreState;
+  }
+
+  it('accepts the first version carrying sourceControl.* auth and every later one', () => {
+    expect(supportsSourceControlAuthProtocol('10.5')).toBe(true);
+    expect(supportsSourceControlAuthProtocol('10.5.2')).toBe(true);
+    expect(supportsSourceControlAuthProtocol('10.12')).toBe(true);
+    expect(supportsSourceControlAuthProtocol('11.0')).toBe(true);
+    expect(supportsSourceControlAuthProtocol(' 10.5 ')).toBe(true);
+  });
+
+  it('rejects every earlier version, comparing minor numerically rather than lexically', () => {
+    expect(supportsSourceControlAuthProtocol('10.4')).toBe(false);
+    expect(supportsSourceControlAuthProtocol('10.4.9')).toBe(false);
+    expect(supportsSourceControlAuthProtocol('9.14')).toBe(false);
+    expect(supportsSourceControlAuthProtocol('10')).toBe(false);
+  });
+
+  it('treats a missing or unparsable version as unsupported', () => {
+    expect(supportsSourceControlAuthProtocol(undefined)).toBe(false);
+    expect(supportsSourceControlAuthProtocol(null)).toBe(false);
+    expect(supportsSourceControlAuthProtocol('')).toBe(false);
+    expect(supportsSourceControlAuthProtocol('dev-build')).toBe(false);
+  });
+
+  it('rejects a malformed version even when it starts with a supporting numeric prefix', () => {
+    expect(supportsSourceControlAuthProtocol('10.5garbage')).toBe(false);
+    expect(supportsSourceControlAuthProtocol('10.5.2broken')).toBe(false);
+    expect(supportsSourceControlAuthProtocol('11x')).toBe(false);
+    expect(supportsSourceControlAuthProtocol('10.')).toBe(false);
+    expect(supportsSourceControlAuthProtocol('10.5.')).toBe(false);
+    expect(supportsSourceControlAuthProtocol('v10.5')).toBe(false); // protocol-version-ok: malformed-shape fixture under test
+    expect(supportsSourceControlAuthProtocol('10.5-rc1')).toBe(false);
+  });
+
+  it('reads stats.protocolVersion from the last system.status poll', () => {
+    expect(selectDaemonSupportsSourceControlAuth.select(protocolState('10.5'))).toBe(true);
+    expect(selectDaemonSupportsSourceControlAuth.select(protocolState('10.4'))).toBe(false);
+  });
+
+  it('is unsupported before the first poll or when the poll omits the version', () => {
+    const empty = { daemonHealth: { ...initialState } } as unknown as StoreState;
+    expect(selectDaemonSupportsSourceControlAuth.select(empty)).toBe(false);
+    expect(selectDaemonSupportsSourceControlAuth.select(protocolState(undefined))).toBe(false);
   });
 });

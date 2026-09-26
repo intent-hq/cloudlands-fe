@@ -18,6 +18,7 @@ import {
   setGithubLinkDefaultAction,
   setHasCompletedProviderSetup,
   setLabsMultiplayerEnabled,
+  setLabsGitLabEnabled,
   setLabsSettingsVisible,
   setNotificationEnabled,
   setNoteFontStyle,
@@ -38,6 +39,7 @@ import {
   toggleHasCompletedProviderSetup,
   toggleChatAurora,
   toggleLabsMultiplayer,
+  toggleLabsGitLab,
   toggleLabsSettingsVisibility,
   toggleReduceMotionOnBattery,
   toggleShowArchived,
@@ -63,6 +65,7 @@ import {
   selectIsAgentMonospace,
   selectIsNoteMonospace,
   selectLabsMultiplayerEnabled,
+  selectLabsGitLabEnabled,
   selectLabsSettingsVisible,
   selectLanguagePreference,
   selectNoteFontStyle,
@@ -466,6 +469,7 @@ describe('userPreferencesReducer', () => {
 
       const shown = userPreferencesReducer(fresh, setLabsSettingsVisible(true));
       expect(selectLabsSettingsVisible.select({ userPreferences: shown } as any)).toBe(true);
+      expect(shown.labsGitLabEnabled).toBe(false);
       const hidden = userPreferencesReducer(shown, setLabsSettingsVisible(false));
       expect(hidden.labsSettingsVisible).toBe(false);
       const toggled = userPreferencesReducer(hidden, toggleLabsSettingsVisibility());
@@ -476,11 +480,14 @@ describe('userPreferencesReducer', () => {
     });
 
     it('preserves experiment values while showing and hiding Settings', () => {
-      const enabled = userPreferencesReducer(initialState, setLabsMultiplayerEnabled(true));
+      const multiplayer = userPreferencesReducer(initialState, setLabsMultiplayerEnabled(true));
+      const enabled = userPreferencesReducer(multiplayer, setLabsGitLabEnabled(true));
       const shown = userPreferencesReducer(enabled, setLabsSettingsVisible(true));
       const hidden = userPreferencesReducer(shown, toggleLabsSettingsVisibility());
       expect(shown.labsMultiplayerEnabled).toBe(true);
       expect(hidden.labsMultiplayerEnabled).toBe(true);
+      expect(shown.labsGitLabEnabled).toBe(true);
+      expect(hidden.labsGitLabEnabled).toBe(true);
       expect(hidden).toEqual(enabled);
     });
   });
@@ -495,6 +502,19 @@ describe('userPreferencesReducer', () => {
       const disabled = userPreferencesReducer(enabled, toggleLabsMultiplayer());
       expect(enabled.labsMultiplayerEnabled).toBe(true);
       expect(disabled.labsMultiplayerEnabled).toBe(false);
+    });
+  });
+
+  describe('labs preference actions', () => {
+    it('defaults the GitLab lab to disabled', () => {
+      expect(initialState.labsGitLabEnabled).toBe(false);
+    });
+
+    it('sets and toggles labsGitLabEnabled', () => {
+      const enabled = userPreferencesReducer(initialState, setLabsGitLabEnabled(true));
+      const disabled = userPreferencesReducer(enabled, toggleLabsGitLab());
+      expect(enabled.labsGitLabEnabled).toBe(true);
+      expect(disabled.labsGitLabEnabled).toBe(false);
     });
   });
 
@@ -591,6 +611,15 @@ describe('userPreferencesReducer', () => {
         } as any),
       ).toBe(true);
       expect(selectLabsMultiplayerEnabled.select({} as any)).toBe(false);
+    });
+    it('selects labsGitLabEnabled (default false, missing slice safe)', () => {
+      expect(selectLabsGitLabEnabled.select(state)).toBe(false);
+      expect(
+        selectLabsGitLabEnabled.select({
+          userPreferences: { ...initialState, labsGitLabEnabled: true },
+        } as any),
+      ).toBe(true);
+      expect(selectLabsGitLabEnabled.select({} as any)).toBe(false);
     });
 
     it('selects font settings from userPreferences', () => {

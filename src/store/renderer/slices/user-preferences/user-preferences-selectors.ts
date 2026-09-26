@@ -70,6 +70,10 @@ export const selectLabsMultiplayerEnabled = store.createSelector((state) => {
   return state.userPreferences?.labsMultiplayerEnabled ?? false;
 });
 
+export const selectLabsGitLabEnabled = store.createSelector((state) => {
+  return state.userPreferences?.labsGitLabEnabled === true;
+});
+
 export const selectCounterScale = store.createSelector((state) => {
   return 1 / state.userPreferences.zoomFactor;
 });
