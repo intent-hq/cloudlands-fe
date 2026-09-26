@@ -246,6 +246,8 @@ test('provider rail, immediately visible search and bottom-footer effort remain 
   await page.keyboard.press('Enter');
   await expect(page.getByTestId('selection')).toContainText('"model":"model-20"');
   await expect(trigger).toHaveAttribute('aria-expanded', 'true');
+  await expect(search).toHaveValue('Model 20');
+  await outer.getByRole('button', { name: 'Clear search' }).click();
   await claude.press('Enter');
   await list.getByRole('option', { name: 'Other provider model' }).click();
   await expect(page.getByTestId('selection')).toContainText('"model":"other-model"');
@@ -578,7 +580,11 @@ for (const placement of ['settings', 'composer', 'modal'] as const) {
       await expectHitTarget(lastModel);
       await lastModel.click();
       await expect(page.getByTestId('selection')).toContainText('"model":"model-20"');
+      await expect(outer).toBeVisible();
+      await expect(effortTrigger).toHaveAccessibleName(/Max|last-effort/);
+      await page.keyboard.press('Escape');
       await expect(outer).toHaveCount(0);
+      await expect(trigger).toBeFocused();
     });
   }
 }
