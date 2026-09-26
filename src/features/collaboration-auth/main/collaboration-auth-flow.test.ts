@@ -214,6 +214,21 @@ describe('local collaboration sign-in', () => {
       else expect(h.flow.snapshot().phase).toBe('account');
     },
   );
+  it('cancels its flow and redacts errors when the OS refuses the verification URL', async () => {
+    const h = harness();
+    await h.flow.action(enabled);
+    await h.flow.action({ type: 'connect' });
+    h.openBrowser.mockRejectedValueOnce(new Error('sensitive-launch-token'));
+    await h.flow.action({ type: 'open-browser' });
+    expect(h.flow.snapshot().error).toBe('sign-in-failed');
+    expect(h.ledger).toHaveBeenCalledWith('identity.cancelAuth', {
+      provider: 'github',
+      flowId: 'flow-1',
+    });
+    expect(h.finish).not.toHaveBeenCalled();
+    expect(h.ledger).not.toHaveBeenCalledWith('identity.select', expect.anything());
+    expect(JSON.stringify(h.views)).not.toContain('sensitive-launch-token');
+  });
   it.each([
     [false, false],
     [false, true],

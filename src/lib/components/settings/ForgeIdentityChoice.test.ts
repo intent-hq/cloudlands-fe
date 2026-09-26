@@ -85,7 +85,7 @@ beforeEach(() => {
   };
 });
 
-describe('identity choice in Guest Sessions', () => {
+describe('legacy repository identity choice', () => {
   it.each([false, true])(
     'loads both accounts on a direct visit and honors switch confirmation %s',
     async (confirmed) => {
@@ -94,7 +94,7 @@ describe('identity choice in Guest Sessions', () => {
       mocks.state.gitlabAuth = gitlabDefaults;
       mocks.state.identity = identityDefaults;
       await enableGitLab(true);
-      render(GuestSessionsSettings);
+      render(ForgeIdentityChoice);
 
       for (const action of [initializeGitHubAuth(), initializeGitLabAuth(), initializeIdentity()]) {
         expect(mocks.dispatch.mock.calls.filter(([sent]) => sent.type === action.type)).toEqual([
@@ -150,7 +150,7 @@ describe('GitLab Labs identity choices', () => {
       currentLogin: 'mara',
     };
     const saved = structuredClone(mocks.state);
-    render(GuestSessionsSettings);
+    render(ForgeIdentityChoice);
     expect(screen.getByTestId('forge-identity-current').getAttribute('data-provider')).toBe(
       'gitlab',
     );
