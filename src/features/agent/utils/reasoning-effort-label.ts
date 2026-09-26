@@ -1,10 +1,9 @@
 import { m } from '$shared/paraglide/messages.js';
 
-/** Provider labels are translated; newly advertised levels remain readable. */
+/** Known levels match case-insensitively; unknown provider values retain their spelling. */
 export function reasoningEffortLabel(effort: string | null): string {
-  switch (effort) {
-    case null:
-      return m.chat_effortPicker_level_auto();
+  if (effort === null) return m.chat_effortPicker_level_auto();
+  switch (effort.toLowerCase()) {
     case 'none':
       return m.chat_shared_valueOff_label();
     case 'minimal':

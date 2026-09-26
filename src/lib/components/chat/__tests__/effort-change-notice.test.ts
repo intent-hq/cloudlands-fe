@@ -13,6 +13,8 @@ describe('daemon effort-change notices', () => {
 
   it.each([
     ['medium', 'high', 'Medium', 'High'],
+    ['MeDiUm', 'HIGH', 'Medium', 'High'],
+    ['NONE', 'xHIGH', 'Off', 'Extra high'],
     [null, 'none', 'Auto', 'Off'],
     ['none', null, 'Off', 'Auto'],
     ['minimal', 'xhigh', 'Minimal', 'Extra high'],
