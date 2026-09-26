@@ -19,6 +19,7 @@
     CHAT_OPERATIONAL_ICON_CLASS,
     COMPACT_TOOL_TRAILING_CLASS,
     OPERATIONAL_INLINE_DETAILS_CLASS,
+    OPERATIONAL_ASSISTANT_PROSE_INSET_CLASS,
   } from './operational-disclosure-row';
   import { buildToolDisplayModel } from './tool-display-model';
   import ToolStatusIcon from './ToolStatusIcon.svelte';
@@ -383,11 +384,14 @@
 
   {#if localImageSource}
     {#key localImageSource}
-      <ChatImageBlock
-        src={localImageSource}
-        mimeType="image/png"
-        alt={toolDisplay.filePath?.split('/').pop()}
-      />
+      <div class={OPERATIONAL_ASSISTANT_PROSE_INSET_CLASS}>
+        <ChatImageBlock
+          variant="file"
+          src={localImageSource}
+          mimeType={`image/${toolDisplay.filePath?.split('.').pop()?.toLowerCase().replace('jpg', 'jpeg')}`}
+          alt={toolDisplay.filePath?.split('/').pop()}
+        />
+      </div>
     {/key}
   {/if}
 

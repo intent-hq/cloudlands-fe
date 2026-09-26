@@ -84,6 +84,15 @@ test('image-read tool row preview', async ({ mount, page }, testInfo) => {
     'data-workspace-source',
     /workspace-file:\/\/image-read-preview\/desktop.png\?v=/,
   );
+  await expect(component.getByTestId('image-file-metadata')).toContainText('desktop.png');
+  await expect(component.getByTestId('image-file-metadata')).toContainText('640 × 360 px');
+  await expect(component.getByTestId('image-file-metadata')).toContainText('PNG');
+  const card = component.locator('[data-chat-image]');
+  const summaryBox = await component.getByTestId('tool-call-summary').boundingBox();
+  const cardBox = await card.boundingBox();
+  expect(Math.abs(cardBox!.x - summaryBox!.x)).toBeLessThanOrEqual(1);
+  const imageBox = await image.boundingBox();
+  expect(imageBox!.width / imageBox!.height).toBeCloseTo(640 / 360, 1);
   await component.getByTestId('tool-call-disclosure').click();
   await expect(component.getByTestId('tool-call-disclosure')).toHaveAttribute(
     'aria-expanded',
@@ -102,4 +111,8 @@ test('image-read tool row preview', async ({ mount, page }, testInfo) => {
   });
   await component.getByRole('button', { name: 'View desktop.png full size' }).click();
   await expect(page.getByRole('dialog')).toBeVisible();
+  await page.keyboard.press('Escape');
+  await component.update({ props: { width: 320 } });
+  await expect(component.getByTestId('image-file-metadata')).toContainText('640 × 360 px');
+  expect(await card.evaluate((node) => node.scrollWidth <= node.clientWidth)).toBe(true);
 });

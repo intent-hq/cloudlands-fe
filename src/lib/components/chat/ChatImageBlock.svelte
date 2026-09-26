@@ -8,8 +8,11 @@
   import { faImage } from '@fortawesome/free-solid-svg-icons';
   import { m } from '$shared/paraglide/messages.js';
   import { supportsImageActions } from '$lib/utils/image-actions';
+  import { formatInteger } from '$lib/i18n/format';
 
   interface Props {
+    /** Tool image reads show the whole image with a compact file caption. */
+    variant?: 'default' | 'file';
     /** Resolved workspace media URL for a local image read. */
     src?: string;
     /** Base64 image data — the §5.5 slim thumbnail or nothing when truncated. */
@@ -35,6 +38,7 @@
   }
 
   let {
+    variant = 'default',
     src,
     data,
     mimeType,
@@ -68,6 +72,8 @@
   // (thumbnail → original, same intrinsic aspect) must not flash the
   // placeholder over the thumbnail already on screen.
   let hasLoaded = $state(false);
+  let decodedDimensions = $state<{ width: number; height: number } | null>(null);
+  const fileCard = $derived(variant === 'file');
   const showPlaceholder = $derived(sized && !hasLoaded);
 
   function handleClick() {
@@ -90,10 +96,14 @@
   }
 </script>
 
-<div class="my-2 min-w-0 max-w-2xl" data-chat-image>
+<div class="my-2 min-w-0 {fileCard ? 'max-w-sm' : 'max-w-2xl'}" data-chat-image>
   {#if imageUrl && !imageUnavailable}
     <div
-      class="group relative {sized ? 'max-w-full' : 'size-40'}"
+      class="group relative {fileCard
+        ? 'overflow-hidden rounded-lg border border-border bg-muted/30'
+        : sized
+          ? 'max-w-full'
+          : 'size-40'}"
       style:aspect-ratio={sized ? `${width} / ${height}` : undefined}
       style:width={sized ? `min(${width}px, 100%)` : undefined}
       data-image-sized={sized || undefined}
@@ -106,9 +116,9 @@
         wrapContent={false}
         bind:ref={openerElement}
         type="button"
-        class="block {sized
-          ? 'absolute inset-0 size-full'
-          : 'size-40'} cursor-zoom-in overflow-hidden rounded-lg border border-border bg-muted/30 p-0 shadow-(--elevation-raised) transition-opacity hover:opacity-90 focus-visible:border-ring focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 {showPlaceholder
+        class="block {fileCard
+          ? 'h-auto w-full rounded-none border-0 bg-transparent'
+          : `${sized ? 'absolute inset-0 size-full' : 'size-40'} rounded-lg border border-border bg-muted/30 shadow-(--elevation-raised)`} cursor-zoom-in overflow-hidden p-0 transition-opacity hover:opacity-90 focus-visible:border-ring focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 {showPlaceholder
           ? 'border-dashed'
           : ''} {hydrationLoading ? 'animate-pulse' : ''}"
         onclick={handleClick}
@@ -128,13 +138,40 @@
           {alt}
           loading="lazy"
           decoding="async"
-          class="block size-full {sized ? 'object-contain' : 'object-cover'} {showPlaceholder
+          class="block {fileCard
+            ? 'h-auto max-h-80 w-full object-contain'
+            : `size-full ${sized ? 'object-contain' : 'object-cover'}`} {showPlaceholder
             ? 'opacity-0'
             : ''}"
-          onload={() => (hasLoaded = true)}
+          onload={(event) => {
+            hasLoaded = true;
+            const image = event.currentTarget;
+            if (image instanceof HTMLImageElement) {
+              decodedDimensions = { width: image.naturalWidth, height: image.naturalHeight };
+            }
+          }}
           onerror={() => (failedImageUrl = imageUrl)}
         />
       </Button>
+      {#if fileCard}
+        <div
+          class="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 border-t border-border px-3 py-2 type-caption"
+          data-testid="image-file-metadata"
+        >
+          <span class="min-w-0 flex-1 truncate text-foreground" title={alt}>{alt}</span>
+          <span class="flex shrink-0 items-center gap-2 text-muted-foreground">
+            {#if decodedDimensions}
+              <span
+                >{m.ui_imageActionsMenu_dimensions_label({
+                  width: formatInteger(decodedDimensions.width),
+                  height: formatInteger(decodedDimensions.height),
+                })}</span
+              >
+            {/if}
+            <span class="font-medium">{mimeType.split('/')[1]?.toUpperCase()}</span>
+          </span>
+        </div>
+      {/if}
       {#if showPlaceholder}
         <span class="pointer-events-none absolute inset-0 flex items-center justify-center p-2">
           <MediaLoadingPlaceholder name={alt} />

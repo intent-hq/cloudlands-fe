@@ -6,6 +6,8 @@
   import { setWorkspaceEntity } from '$store/renderer/slices/workspace/workspace-slice';
   import ToolCall from '../ToolCall.svelte';
 
+  let { width = 640 }: { width?: number } = $props();
+
   const disposeStore = startRootStoreLifecycle(store, { startSagas: () => [] });
   onDestroy(disposeStore);
   const workspaceId = 'image-read-preview';
@@ -26,7 +28,8 @@
 
 <section
   class="bg-background p-6 text-foreground"
-  style="width: 640px; min-height: 300px"
+  style:width="{width}px"
+  style:min-height="300px"
   data-testid="image-read-example"
 >
   <ToolCall {toolUse} {workspaceId} toolState="completed" result="Image displayed." />
