@@ -1,4 +1,9 @@
 import { store as appStore } from '$store/renderer/store';
+import { admitLegacyPrincipal } from '../../../test/fixtures/principal-state';
+import {
+  principalContextChanged,
+  principalReceived,
+} from '$store/renderer/slices/principal/principal-slice';
 import { AgentStatus } from '$shared/types/agent.types';
 import { AgentId, WorkspaceId } from '$shared/types/branded-ids';
 import {
@@ -25,6 +30,7 @@ export function setupEncoderEffortPreview() {
   const workspaceId = WorkspaceId('encoder-preview-workspace');
   const agentId = AgentId('encoder-preview-agent');
   const previous = {
+    principal: appStore.state.principal,
     tabs: serializeWorkspaceTabsState(appStore.state.tabState),
     behavior: appStore.state.hardwareConsole.encoderBehavior,
     guests: {
@@ -33,6 +39,7 @@ export function setupEncoderEffortPreview() {
       connectedIds: appStore.state.guestSessions.connectedIds,
     },
   };
+  admitLegacyPrincipal();
   appStore.dispatch(guestSessionsListReceived({ sessions: [], openIds: [], connectedIds: [] }));
   appStore.dispatch(hydrateHardwareConsoleEncoderBehavior('agent-effort'));
   appStore.dispatch(openWorkspaceTab(workspaceId));
@@ -59,6 +66,14 @@ export function setupEncoderEffortPreview() {
   if (target) appStore.dispatch(encoderEffortHudShown({ target, effort: 'high' }));
   return () => {
     appStore.dispatch(encoderHudHidden());
+    appStore.dispatch(principalContextChanged(previous.principal.context));
+    if (previous.principal.context && previous.principal.snapshot)
+      appStore.dispatch(
+        principalReceived(
+          { context: previous.principal.context, invalidation: 0, presentationVersion: 0 },
+          previous.principal.snapshot,
+        ),
+      );
     appStore.dispatch(removeSession(agentId));
     appStore.dispatch(setActiveAgentId(workspaceId, null));
     appStore.dispatch(loadWorkspaceTabsState(previous.tabs));
