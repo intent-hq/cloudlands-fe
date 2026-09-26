@@ -1670,7 +1670,7 @@
               variant="outline"
               size="lg"
               active={paneStackMenuOpen}
-              class="panel-selector-button w-full min-w-0 max-w-full justify-start"
+              class="panel-selector-button w-full min-w-0 max-w-full justify-start bg-sidebar"
               wrapContent={false}
               aria-label={selectorLabel}
               data-testid="pane-stack-selector-trigger"
@@ -2097,7 +2097,6 @@
     gap: 8px;
     border: 1px solid hsl(var(--border));
     border-radius: 9px;
-    background: hsl(var(--muted));
   }
   .panel-selector-title {
     font-size: 14px;
