@@ -190,6 +190,29 @@ export function fixture() {
       report: report(),
     };
   }
+  // Skipped reusable-workflow jobs from the real REST layout in source run
+  // https://github.com/intent-hq/cloudlands-fe/actions/runs/36239161367
+  // Matrix placeholders keep their expression; the Electron leaf repeats exactly.
+  for (const [index, name] of [
+    'test-playwright / Electron Browser Lifetime',
+    'test-ct / Playwright (root ${{ matrix.shard }}/2)',
+    'test-playwright / Component Tests (shard ${{ matrix.shard }}/4)',
+    'test-ct / Electron Browser Lifetime',
+    'test-electron / Playwright (root ${{ matrix.shard }}/2)',
+    'test-electron / Component Tests (shard ${{ matrix.shard }}/4)',
+  ].entries()) {
+    jobs.push({
+      id: 30 + index,
+      name,
+      run_id: run.id,
+      run_attempt: 1,
+      head_sha: run.head_sha,
+      status: 'completed',
+      conclusion: 'skipped',
+      completed_at: '2026-09-26T02:17:01Z',
+      steps: [],
+    });
+  }
   return { run, jobs, artifacts, documents };
 }
 
