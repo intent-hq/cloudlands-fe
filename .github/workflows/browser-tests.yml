@@ -1,0 +1,467 @@
+# One suite definition for selective PR checks and complete nightly/manual runs.
+# No caller can start a browser lane for merge_group or a fork pull_request.
+name: Browser Tests
+
+on:
+  workflow_call:
+    inputs:
+      suite:
+        description: 'Full suite to run: ct, root, or electron'
+        type: string
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  test-ct:
+    name: Component Tests (shard ${{ matrix.shard }}/4)
+    if: ${{ !cancelled() && inputs.suite == 'ct' && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository)) }}
+    runs-on: gh-linux-8x
+    # Four hosted shards, one worker each; preserve the pinned CT browser.
+    strategy:
+      # Let the sibling shards finish so one flaky leg doesn't hide the
+      # other legs' results.
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4]
+    # Per-shard budget: a healthy leg runs ~5-7 min of tests (a quarter of
+    # the ~18-26 min serial suite) plus a few minutes of fixed setup
+    # (install / browsers / CT bundle build), so 30 min leaves >2x headroom
+    # for retry bursts and slow runners.
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    env:
+      GIT_TERMINAL_PROMPT: '0'
+      # NODE_OPTIONS is deliberately NOT set at job level: a job-wide 8 GB
+      # --max-old-space-size (needed only for the CT Vite build) also let
+      # the long-lived Playwright runner balloon through the test phase
+      # before V8 GC engaged, exhausting the 16 GB VM until the runner was
+      # killed mid-run (monorepo#3352). Heap caps are scoped per step below.
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          version: 10.30.3
+          run_install: false
+          # Keep concurrent runner installations isolated.
+          dest: ~/setup-pnpm-${{ runner.name }}
+      - name: Setup Node.js
+        # This job always uses the ephemeral hosted runner and its cache.
+        uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+          cache: pnpm
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Generate i18n messages
+        # The CT bundle imports paraglide messages; the compiled output is
+        # gitignored. (build-config / ipc-channels are main-process-only and
+        # not needed by the CT vite build.)
+        run: pnpm run generate:i18n
+      - name: Resolve CT browser identity and paths
+        id: ct-browser
+        run: |
+          node scripts/run-ct-tests.mjs --print-browser-plan > "$RUNNER_TEMP/ct-browser-plan.json"
+          # JavaScript template strings must reach Node without shell expansion.
+          # shellcheck disable=SC2016
+          node --input-type=module -e '
+          import { readFileSync } from "node:fs";
+          const plan = JSON.parse(readFileSync(process.argv[1], "utf8"));
+          console.log(`cache-key=${plan.cacheKey}`);
+          console.log(`cache-dir=${plan.cacheDir}`);
+          console.log(`readiness-marker=${plan.readinessMarker}`);
+          ' "$RUNNER_TEMP/ct-browser-plan.json" >> "$GITHUB_OUTPUT"
+      - name: Cache Playwright browsers
+        uses: actions/cache@v6
+        id: playwright-cache
+        with:
+          path: ${{ steps.ct-browser.outputs.cache-dir }}
+          key: playwright-browsers-${{ runner.os }}-${{ runner.arch }}-${{ steps.ct-browser.outputs.cache-key }}
+      - name: Harden apt against mirror stalls
+        # The runner image prefers the azure.archive.ubuntu.com mirror, which
+        # has stalled mid-transfer until the 30-min job budget expired —
+        # twice, before any test ran (monorepo#2832). The image routes apt
+        # through mirror+file indirection (/etc/apt/sources.list.d/*.sources
+        # says mirror+file:/etc/apt/apt-mirrors.txt; the azure hostname lives
+        # ONLY in that mirror list), so drop the azure entry from the list —
+        # the canonical archive.ubuntu.com + security.ubuntu.com fallbacks
+        # remain. The plain-hostname rewrite over the sources files is kept
+        # as a fail-safe in case a future image drops the indirection. Also
+        # bound every fetch: without an explicit Acquire timeout a
+        # dead-but-open connection can hang apt indefinitely — and the second
+        # recorded hang was on archive.ubuntu.com itself, so the timeout (not
+        # the mirror swap) is the load-bearing bound. Belt-and-braces with
+        # the step timeout below.
+        run: |
+          set -euo pipefail
+          if [ -f /etc/apt/apt-mirrors.txt ]; then
+            sudo sed -i '/azure\.archive\.ubuntu\.com/d' /etc/apt/apt-mirrors.txt
+            echo "apt-mirrors.txt now:" && cat /etc/apt/apt-mirrors.txt
+          fi
+          for f in /etc/apt/sources.list /etc/apt/sources.list.d/*.sources /etc/apt/sources.list.d/*.list; do
+            [ -e "$f" ] || continue
+            sudo sed -i 's/azure\.archive\.ubuntu\.com/archive.ubuntu.com/g' "$f"
+          done
+          if grep -Rq 'azure\.archive\.ubuntu\.com' /etc/apt; then
+            echo "::warning::azure.archive.ubuntu.com still referenced under /etc/apt — mirror swap ineffective (Acquire bounds still apply)"
+          fi
+          printf '%s\n' \
+            'Acquire::Retries "3";' \
+            'Acquire::http::Timeout "30";' \
+            'Acquire::https::Timeout "30";' \
+            | sudo tee /etc/apt/apt.conf.d/99-bounded-acquire >/dev/null
+      - name: Install Playwright browsers
+        # The browser download self-skips when already present. OS deps are
+        # NOT installed with --with-deps: it re-runs apt on every run, and on
+        # the gh-linux-8x image every Chromium shared library is already
+        # present — the only NEW packages were ~21 MB of fonts-*/xfonts-*,
+        # fetched from archive.ubuntu.com at ~100 KB/s, which alone blew this
+        # step's budget and ejected PRs from the merge queue (intent#4723).
+        # The CT harness uses the repo-bundled Inter Variable font and waits
+        # on document.fonts.ready, so no suite depends on those system fonts.
+        # Instead: take the package list from the pinned browser supplier's own
+        # `install-deps --dry-run` missing-package report (strictly parsed by the
+        # launcher's --print-os-deps helper; see playwright-os-deps-lib.mjs),
+        # and call apt only for packages dpkg reports missing — zero network
+        # on a warm image, and a missing non-font lib still gets installed (or
+        # fails loudly, naming it). Step-level timeout so an apt/download
+        # stall the Acquire bounds somehow miss fails here in minutes — with
+        # logs attributing the failure to this step — instead of eating the
+        # 30-min job budget (monorepo#2832). Normal runs take ~1-2 min.
+        timeout-minutes: 8
+        run: |
+          set -euo pipefail
+          node scripts/run-ct-tests.mjs --install-browsers chromium
+          if ! pkgs="$(node scripts/run-ct-tests.mjs --print-os-deps chromium)"; then
+            echo "::error::Could not derive the non-font Chromium OS dependency list from install-deps --dry-run"
+            exit 1
+          fi
+          echo "Non-font Chromium OS deps: $pkgs"
+          missing=""
+          for p in $pkgs; do
+            status="$(dpkg-query -W -f='${Status}' "$p" 2>/dev/null || true)"
+            case "$status" in
+              *"install ok installed"*) ;;
+              *) missing="$missing $p" ;;
+            esac
+          done
+          if [ -z "$missing" ]; then
+            echo "All non-font Chromium OS deps already installed; skipping apt."
+            exit 0
+          fi
+          echo "Missing Chromium OS deps:$missing"
+          for i in 1 2; do
+            # The validated package list intentionally supplies separate apt arguments.
+            # shellcheck disable=SC2086
+            if sudo apt-get update && sudo apt-get install -y --no-install-recommends $missing; then
+              exit 0
+            fi
+            [ "$i" -eq 2 ] || sleep 15
+          done
+          echo "::error::Failed to install missing Chromium OS deps:$missing"
+          exit 1
+      - name: Build CT bundle
+        id: ct-build
+        # The full CT Vite bundle transforms more than 7,400 modules and
+        # needs an 8 GB heap while Rollup renders chunks — but ONLY here.
+        # Playwright CT has no standalone build command, so this uses
+        # --only-changed=HEAD: dependency population runs the Vite build
+        # (and caches the bundle under playwright/.cache, shared with the
+        # test step below on the same runner) during test
+        # loading, before the changed-file filter applies; on a fresh CI
+        # checkout `git diff HEAD` is empty, so zero tests are selected and
+        # --pass-with-no-tests exits green without running any. Caveat:
+        # --only-changed also scans UNTRACKED non-ignored files, so every
+        # generated input (e.g. the paraglide output, which self-ignores)
+        # must stay gitignored — a non-ignored generated file imported by
+        # CT specs would silently make this step run those tests. The test
+        # step below reuses the cached bundle (validated by source mtimes,
+        # which don't change between steps) under a much smaller heap.
+        env:
+          NODE_OPTIONS: '--max-old-space-size=8192'
+        run: pnpm run test:ct --only-changed=HEAD --pass-with-no-tests --reporter=list
+      - name: Component tests
+        id: tests
+        # list for readable logs; html feeds the failure artifact below (it
+        # never auto-opens when CI is set); json writes
+        # playwright-report/results.json into that same artifact so
+        # `pnpm ct:failures <run-id>` can list failed/flaky cases per shard
+        # with their spec file and status instead of scraping the log.
+        # The 4 GB heap cap covers the runner + accumulated per-test state
+        # for a quarter-shard; the memory-hungry Vite build already ran
+        # above. The sampler streams `free -m` + top-RSS processes into
+        # this step's live log every 15s — logs stream to GitHub as they
+        # are written, so the evidence survives even a runner-VM OOM kill
+        # that prevents post-steps/artifact uploads from running
+        # (monorepo#3352).
+        env:
+          NODE_OPTIONS: '--max-old-space-size=4096'
+          PLAYWRIGHT_JSON_OUTPUT_FILE: playwright-report/results.json
+        run: |
+          set -euo pipefail
+          (
+            # Shed the inherited errexit/pipefail: a transient free/ps
+            # failure or a SIGPIPE from head must not silently kill the
+            # sampler for the rest of the run.
+            set +e +o pipefail
+            while true; do
+              echo "[mem] $(date -u +%H:%M:%S) $(free -m | awk '/^Mem:/{printf "used=%sMiB free=%sMiB avail=%sMiB", $3, $4, $7}')"
+              ps -eo rss,comm --sort=-rss | head -4 | tail -3 | awk '{printf "[mem]   top-rss: %s %dMiB\n", $2, $1/1024}'
+              sleep 15
+            done
+          ) &
+          SAMPLER_PID=$!
+          trap 'kill "$SAMPLER_PID" 2>/dev/null || true' EXIT
+          # Required lane: everything NOT tagged @quarantine. Retries stay
+          # on (retries: 2 in playwright-ct.config.ts). The original failing
+          # attempt retains its trace even when a retry passes, and
+          # --fail-on-flaky-tests turns a pass-on-retry into a red shard
+          # instead of silent 3x runtime. A flaky required test must be fixed
+          # or explicitly parked under the @quarantine tag below.
+          pnpm run test:ct --shard=${{ matrix.shard }}/4 --grep-invert '@quarantine\b' --fail-on-flaky-tests --reporter=list,html,json
+      - name: Record browser outcome
+        if: always()
+        env:
+          BROWSER_TEST_OUTCOME: ${{ steps.tests.outcome }}
+          BROWSER_JOB_STATUS: ${{ job.status }}
+        run: node scripts/browser-test-artifacts.mjs record ct ${{ matrix.shard }}
+      - name: Upload playwright report
+        # Also on cancellation, so a timeout overrun still leaves the report
+        # and traces behind for diagnosis (monorepo#2887).
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: playwright-ct-report-${{ matrix.shard }}-of-4
+          path: |
+            playwright-report/
+            test-results/
+            browser-outcome.json
+          retention-days: 7
+          if-no-files-found: error
+          overwrite: true
+      - name: Quarantined component tests (advisory)
+        # Advisory lane for tests tagged @quarantine (a known-flaky test
+        # that has an owner and a tracking issue — see AGENTS.md → Component
+        # tests). Runs unsharded on shard 1 only (so once per suite
+        # run), after the required lane,
+        # reusing the CT bundle that is already built and cached in this
+        # job — no fifth setup/build leg. continue-on-error keeps the job
+        # (and the CI Gate) green while the failure stays visible in the
+        # step log and the artifact below. Separate output directories so
+        # a quarantine failure cannot overwrite the required lane's report.
+        # !cancelled() replaces the implicit success() guard so the lane
+        # still runs when the required step on this shard is red; gating on
+        # the build step's outcome keeps it from re-running the 8 GB Vite
+        # build under the 4 GB cap when setup itself already failed.
+        # The tag regex is word-anchored so a future '@quarantine-*' tag or
+        # a title that merely mentions the word does not match.
+        if: ${{ !cancelled() && matrix.shard == 1 && steps.ct-build.outcome == 'success' }}
+        id: quarantine
+        continue-on-error: true
+        env:
+          NODE_OPTIONS: '--max-old-space-size=4096'
+          PLAYWRIGHT_HTML_OUTPUT_DIR: playwright-report-quarantine
+          PLAYWRIGHT_JSON_OUTPUT_FILE: playwright-report-quarantine/results.json
+        run: pnpm run test:ct --grep '@quarantine\b' --pass-with-no-tests --reporter=list,html,json --output=test-results-quarantine
+      - name: Record quarantine outcome
+        if: ${{ always() && matrix.shard == 1 }}
+        env:
+          BROWSER_TEST_OUTCOME: ${{ steps.quarantine.outcome }}
+          BROWSER_JOB_STATUS: ${{ job.status }}
+        run: node scripts/browser-test-artifacts.mjs record quarantine 1
+      - name: Upload quarantine report
+        if: ${{ always() && matrix.shard == 1 }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: playwright-ct-report-quarantine
+          path: |
+            playwright-report-quarantine/
+            test-results-quarantine/
+            browser-quarantine-outcome.json
+          retention-days: 7
+          if-no-files-found: error
+          overwrite: true
+
+  # The top-level Playwright runner has a distinct browser cache from CT.
+  # Two hosted shards retain one worker each and the existing 45-minute budget.
+  test-playwright:
+    name: Playwright (root ${{ matrix.shard }}/2)
+    if: ${{ !cancelled() && inputs.suite == 'root' && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository)) }}
+    runs-on: gh-linux-8x
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2]
+    permissions:
+      contents: read
+    env:
+      GIT_TERMINAL_PROMPT: '0'
+      NODE_OPTIONS: '--max-old-space-size=4096'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          version: 10.30.3
+          run_install: false
+          # Keep concurrent runner installations isolated.
+          dest: ~/setup-pnpm-${{ runner.name }}
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+          cache: 'pnpm'
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Generate i18n messages
+        # The spec harnesses import renderer modules that pull in paraglide
+        # messages; the compiled output is gitignored.
+        run: pnpm run generate:i18n
+      - name: Generate IPC channels
+        # src/preload/index.ts is generated and untracked; harnesses that
+        # load the preload surface (or its types) need it present.
+        run: pnpm run generate:ipc-channels
+      - name: Resolve root playwright version
+        id: root-playwright
+        # Strict semver extraction so incidental stdout noise cannot leak
+        # into the cache key or the marker file name.
+        run: |
+          set -euo pipefail
+          version="$(pnpm exec playwright --version | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -n1)"
+          if [ -z "$version" ]; then
+            echo "::error::Could not resolve the top-level @playwright/test version"
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+      - name: Cache Playwright browsers
+        # Distinct key prefix from test-ct's so the versions never alias.
+        uses: actions/cache@v6
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-root-browsers-${{ runner.os }}-${{ steps.root-playwright.outputs.version }}
+      - name: Install Playwright browsers
+        # The gh-linux-8x image already ships every Chromium
+        # shared library, and --with-deps only adds the fonts-*/xfonts-*
+        # packages whose fetch blew test-ct's budget (intent#4723) — so
+        # install the browser alone; a missing lib fails the first spec
+        # loudly rather than silently. Step-level timeout so a download
+        # stall fails here in minutes instead of exhausting the overall job budget.
+        timeout-minutes: 8
+        run: pnpm exec playwright install chromium
+      - name: Root Playwright tests
+        id: tests
+        # --workers=1: playwright.config.ts already pins CI to one worker;
+        # explicit here because every spec boots its own Vite harness and
+        # concurrent cold compiles must stay bounded. list for readable
+        # logs; html feeds the failure artifact below and never auto-opens.
+        env:
+          PLAYWRIGHT_HTML_OPEN: never
+          PLAYWRIGHT_JSON_OUTPUT_FILE: playwright-report/results.json
+        run: pnpm run test:playwright --project=chromium --workers=1 --shard=${{ matrix.shard }}/2 --reporter=list,html,json
+      - name: Record browser outcome
+        if: always()
+        env:
+          BROWSER_TEST_OUTCOME: ${{ steps.tests.outcome }}
+          BROWSER_JOB_STATUS: ${{ job.status }}
+        run: node scripts/browser-test-artifacts.mjs record root ${{ matrix.shard }}
+      - name: Upload playwright report
+        # Also on cancellation, so a timeout overrun still leaves the report
+        # and traces behind for diagnosis (same as test-ct).
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: playwright-root-report-${{ matrix.shard }}
+          path: |
+            playwright-report/
+            test-results/
+            browser-outcome.json
+          retention-days: 7
+          if-no-files-found: error
+          overwrite: true
+
+  test-electron:
+    name: Electron Browser Lifetime
+    if: ${{ !cancelled() && inputs.suite == 'electron' && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository)) }}
+    runs-on: gh-linux-8x
+    # 8 tests × ≤120 s test timeout is the theoretical ceiling; a healthy
+    # single-worker run takes ~2-3 min plus setup.
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    env:
+      GIT_TERMINAL_PROMPT: '0'
+      NODE_OPTIONS: '--max-old-space-size=4096'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          version: 10.30.3
+          run_install: false
+          # Keep concurrent runner installations isolated.
+          dest: ~/setup-pnpm-${{ runner.name }}
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+          cache: pnpm
+      - name: Install dependencies
+        # Also downloads the Electron binary (electron is in
+        # pnpm.onlyBuiltDependencies) that the harness launches.
+        run: pnpm install --frozen-lockfile
+      - name: Generate i18n messages
+        # The fixture renderer imports paraglide messages through the
+        # production browser panel; the compiled output is gitignored.
+        run: pnpm run generate:i18n
+      - name: Ensure Xvfb
+        # Electron needs a display even with show:false windows. xvfb is
+        # preinstalled on the GH-hosted image; retry the fallback install
+        # if apt is temporarily locked (monorepo#1515).
+        timeout-minutes: 5
+        run: |
+          set -euo pipefail
+          if command -v xvfb-run >/dev/null 2>&1; then
+            echo "xvfb-run present; skipping apt."
+            exit 0
+          fi
+          for i in 1 2 3; do
+            if sudo apt-get update && sudo apt-get install -y --no-install-recommends xvfb; then
+              exit 0
+            fi
+            if [ "$i" -eq 3 ]; then exit 1; fi
+            sleep $((i * 15))
+          done
+      - name: Electron browser lifetime tests
+        id: tests
+        # One worker bounds Electron startup and Vite compilation.
+        env:
+          PLAYWRIGHT_HTML_OPEN: never
+          PLAYWRIGHT_JSON_OUTPUT_FILE: playwright-report/results.json
+        run: xvfb-run -a pnpm run test:playwright:manual:browser-lifetime --workers=1 --reporter=list,html,json
+      - name: Record browser outcome
+        if: always()
+        env:
+          BROWSER_TEST_OUTCOME: ${{ steps.tests.outcome }}
+          BROWSER_JOB_STATUS: ${{ job.status }}
+        run: node scripts/browser-test-artifacts.mjs record electron 1
+      - name: Upload electron lifetime report
+        # The evidence JSON (electron-lifetime-evidence.json per test) and
+        # capture PNGs are Playwright attachments under test-results/.
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: playwright-electron-lifetime-report
+          path: |
+            playwright-report/
+            test-results/
+            browser-outcome.json
+          retention-days: 7
+          if-no-files-found: error
+          overwrite: true

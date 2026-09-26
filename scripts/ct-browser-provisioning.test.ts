@@ -1,5 +1,5 @@
 // @vitest-environment node
-// @verify-changed-triggers: .github/workflows/intent-pr.yml, scripts/run-ct-tests.mjs, scripts/ct-browser.mjs
+// @verify-changed-triggers: .github/workflows/browser-tests.yml, scripts/run-ct-tests.mjs, scripts/ct-browser.mjs
 import { execFileSync, spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
@@ -10,7 +10,7 @@ import { nonFontPackagesFromDryRun } from './playwright-os-deps-lib.mjs';
 const root = resolve(__dirname, '..');
 const dirs: string[] = [];
 afterEach(() => dirs.splice(0).forEach((dir) => rmSync(dir, { recursive: true, force: true })));
-const workflow = readFileSync(join(root, '.github/workflows/intent-pr.yml'), 'utf8');
+const workflow = readFileSync(join(root, '.github/workflows/browser-tests.yml'), 'utf8');
 const ctJob = workflow.split('\n  test-ct:')[1].split(/\n  [\w-]+:/)[0];
 function step(name: string) {
   return ctJob.split(`      - name: ${name}\n`)[1].split('\n      - name:')[0];
@@ -44,11 +44,14 @@ describe('required CT hosted routing', () => {
   it.each([
     ['pull_request', 'false'],
     ['pull_request', 'true'],
-    ['merge_group', 'false'],
-    ['merge_group', 'true'],
+    ['schedule', 'false'],
+    ['workflow_dispatch', 'true'],
   ])('uses hosted provisioning on %s with global linux_burst=%s', (event, burst) => {
     const context = {
       'github.event_name': event,
+      'github.event.pull_request.head.repo.full_name': 'intent-hq/cloudlands-fe',
+      'github.repository': 'intent-hq/cloudlands-fe',
+      'inputs.suite': 'ct',
       'needs.route.result': 'success',
       'needs.route.outputs.linux_burst': burst,
       'needs.route.outputs.linux_labels': JSON.stringify(
