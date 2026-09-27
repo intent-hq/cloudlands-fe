@@ -24,9 +24,11 @@
   }: Props = $props();
 
   let scrollContainer: HTMLElement | undefined = $state();
+  let scrollContent: HTMLElement | undefined = $state();
   let isFollowingBottom = $state(true);
   let isUserScrolling = $state(false);
   let isScrolledFromTop = $state(false);
+  let followPending = false;
   let scrollEndTimeout: ReturnType<typeof setTimeout> | null = null;
 
   const BOTTOM_THRESHOLD = 5;
@@ -38,7 +40,15 @@
   }
 
   function scrollToBottom() {
-    if (!scrollContainer || !isFollowingBottom || isUserScrolling) return;
+    if (!scrollContainer || !isFollowingBottom) {
+      followPending = false;
+      return;
+    }
+    if (isUserScrolling) {
+      followPending = true;
+      return;
+    }
+    followPending = false;
     scrollContainer.scrollTop = scrollContainer.scrollHeight;
     // Update scroll state
     isScrolledFromTop = scrollContainer.scrollTop > 2;
@@ -73,7 +83,10 @@
     if (scrollEndTimeout) clearTimeout(scrollEndTimeout);
     scrollEndTimeout = setTimeout(() => {
       isUserScrolling = false;
+      if (followPending) scrollToBottom();
     }, 150);
+
+    if (checkIfAtBottom()) isFollowingBottom = true;
 
     // Track if scrolled from top for gradient visibility
     if (scrollContainer) {
@@ -81,24 +94,18 @@
     }
   }
 
-  let mutationObs: MutationObserver | null = null;
-
   onMount(() => {
-    if (scrollContainer) {
-      mutationObs = new MutationObserver((mutations) => {
-        // Only scroll for new nodes, not text changes on existing nodes
-        const hasNewNodes = mutations.some(
-          (m) => m.type === 'childList' && m.addedNodes.length > 0,
-        );
-        if (hasNewNodes) {
-          scrollToBottom();
-        }
-      });
-      mutationObs.observe(scrollContainer, { childList: true, subtree: true });
-      scrollToBottom();
+    // The viewport stops growing at max-height. Observe the content as well so
+    // wrapped text, tool content and panel reflow still follow the newest line.
+    let observer: ResizeObserver | undefined;
+    if (scrollContainer && scrollContent && typeof ResizeObserver !== 'undefined') {
+      observer = new ResizeObserver(scrollToBottom);
+      observer.observe(scrollContent);
+      observer.observe(scrollContainer);
     }
+    scrollToBottom();
     return () => {
-      mutationObs?.disconnect();
+      observer?.disconnect();
       if (scrollEndTimeout) clearTimeout(scrollEndTimeout);
     };
   });
@@ -156,7 +163,9 @@
   ontouchmove={handleTouchMove}
   ontouchend={handleTouchEnd}
 >
-  {@render children()}
+  <div class="flow-root" bind:this={scrollContent}>
+    {@render children()}
+  </div>
 </div>
 
 <style>

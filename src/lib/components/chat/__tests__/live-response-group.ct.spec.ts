@@ -2,6 +2,116 @@ import { expect, test } from '../../../../test/ct-test';
 import LiveResponseGroupHost from './LiveResponseGroupHost.svelte';
 import StreamingResponseGroupLifecycleHost from './StreamingResponseGroupLifecycleHost.svelte';
 
+type Page = Parameters<Parameters<typeof test.beforeEach>[1]>[0]['page'];
+type Locator = ReturnType<Page['locator']>;
+
+async function readDrum(scroller: Locator) {
+  return scroller.evaluate((node) => {
+    const line = node.querySelectorAll('[data-testid="live-stream-line"]');
+    const range = document.createRange();
+    range.selectNodeContents(line[line.length - 1]);
+    const fragments = Array.from(range.getClientRects());
+    const last = fragments[fragments.length - 1];
+    let clipTop = node.getBoundingClientRect().top;
+    let clipBottom = node.getBoundingClientRect().bottom;
+    for (let parent = node.parentElement; parent; parent = parent.parentElement) {
+      if (/(auto|scroll|hidden|clip)/.test(getComputedStyle(parent).overflowY)) {
+        const bounds = parent.getBoundingClientRect();
+        clipTop = Math.max(clipTop, bounds.top);
+        clipBottom = Math.min(clipBottom, bounds.bottom);
+      }
+    }
+    return {
+      scrollTop: node.scrollTop,
+      bottomGap: node.scrollHeight - node.clientHeight - node.scrollTop,
+      lastLineTop: last.top,
+      lastLineBottom: last.bottom,
+      clipTop,
+      clipBottom,
+      lastLineVisible: last.top >= clipTop && last.bottom <= clipBottom + 1,
+    };
+  });
+}
+
+async function expectFollowing(scroller: Locator) {
+  await expect.poll(() => readDrum(scroller)).toMatchObject({ lastLineVisible: true });
+  await expect.poll(async () => (await readDrum(scroller)).bottomGap).toBeLessThanOrEqual(1);
+}
+
+test('keeps the final wrapped line readable when existing live text grows', async ({
+  mount,
+  page,
+}, testInfo) => {
+  await page.setViewportSize({ width: 360, height: 480 });
+  const component = await mount(LiveResponseGroupHost, { props: { chunk: 'Inspecting output.' } });
+  const scroller = component.locator('.cylinder-scroller');
+  await expectFollowing(scroller);
+  await component.update({
+    props: {
+      chunk:
+        'Inspecting output. The existing paragraph grows as live words arrive and wrap onto new lines. The newest sentence must remain readable at the bottom of the active group. Final words are visible.',
+    },
+  });
+  try {
+    await expectFollowing(scroller);
+  } finally {
+    await testInfo.attach('wrapped-drum-layout', {
+      body: JSON.stringify(await readDrum(scroller), null, 2),
+      contentType: 'application/json',
+    });
+    await testInfo.attach('wrapped-drum', {
+      body: await component.screenshot({ path: testInfo.outputPath('wrapped-drum.png') }),
+      contentType: 'image/png',
+    });
+  }
+});
+
+test('follows the final update in a burst without needing another update', async ({ mount }) => {
+  const component = await mount(LiveResponseGroupHost);
+  const scroller = component.locator('.cylinder-scroller');
+  await expectFollowing(scroller);
+  // The host appends on consecutive browser frames, including while an earlier
+  // append is scrolling. There is no later mutation to rescue a dropped update.
+  await component.update({ props: { burstLineCounts: [12, 14, 16, 18, 20, 22, 24, 26] } });
+  await expect(component.getByTestId('live-stream-line')).toHaveCount(26);
+  await expectFollowing(scroller);
+});
+
+test('follows reflow, preserves manual scrollback, and resumes at the bottom', async ({
+  mount,
+  page,
+}) => {
+  await page.setViewportSize({ width: 640, height: 480 });
+  const component = await mount(LiveResponseGroupHost, {
+    props: {
+      chunk: 'Live output with enough words to wrap when the chat panel becomes narrower.',
+      lineCount: 12,
+    },
+  });
+  const scroller = component.locator('.cylinder-scroller');
+  await expectFollowing(scroller);
+  await page.setViewportSize({ width: 320, height: 480 });
+  await expectFollowing(scroller);
+
+  const followedTop = (await readDrum(scroller)).scrollTop;
+  await scroller.hover();
+  await page.mouse.wheel(0, -80);
+  await expect.poll(async () => (await readDrum(scroller)).scrollTop).toBeLessThan(followedTop);
+  const scrollbackTop = (await readDrum(scroller)).scrollTop;
+  await component.update({ props: { lineCount: 14 } });
+  await expect(component.getByTestId('live-stream-line')).toHaveCount(14);
+  // Observe the quiet period too: a deferred follow must not pull the reader
+  // back down after the wheel gesture has finished.
+  await page.waitForTimeout(400);
+  expect((await readDrum(scroller)).scrollTop).toBeCloseTo(scrollbackTop, 0);
+  expect((await readDrum(scroller)).lastLineVisible).toBe(false);
+
+  await page.mouse.wheel(0, 10000);
+  await expectFollowing(scroller);
+  await component.update({ props: { lineCount: 15 } });
+  await expectFollowing(scroller);
+});
+
 test('preserves the header seam and alignment through live disclosure changes', async ({
   mount,
   page,
