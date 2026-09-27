@@ -182,6 +182,59 @@ test('keeps following when a child input handles navigation keys', async ({ moun
   await expectFollowing(scroller);
 });
 
+test('preserves native PageUp scrollback from a focused child input', async ({
+  mount,
+  page,
+}, testInfo) => {
+  await page.setViewportSize({ width: 360, height: 480 });
+  const component = await mount(LiveResponseGroupHost, {
+    props: { chunk: 'Inspecting output.', editable: true },
+  });
+  const scroller = component.locator('.cylinder-scroller');
+  const input = component.getByRole('textbox', { name: 'Live child input' });
+  await input.fill('reading');
+  const chunk =
+    'Inspecting the live output while earlier lines remain available for reading. '.repeat(9);
+  await component.update({ props: { chunk } });
+  await expectFollowing(scroller);
+  await page.waitForTimeout(400);
+  const followed = await readDrum(scroller);
+
+  // Keep focus in the input: PageUp can scroll its ancestor without moving focus.
+  await expect(input).toBeFocused();
+  await page.keyboard.press('PageUp');
+  await page.waitForTimeout(400);
+  const scrollback = await readDrum(scroller);
+  expect(scrollback.scrollTop).toBeLessThan(followed.scrollTop);
+  expect(scrollback.lastLineVisible).toBe(false);
+  await expect(input).toBeFocused();
+
+  const grownChunk =
+    chunk + 'New streamed text arrives after the user has deliberately scrolled upward. '.repeat(4);
+  await component.update({ props: { chunk: grownChunk } });
+  await page.waitForTimeout(600);
+  const afterGrowth = await readDrum(scroller);
+  await testInfo.attach('child-keyboard-layout', {
+    body: JSON.stringify({ followed, scrollback, afterGrowth }, null, 2),
+    contentType: 'application/json',
+  });
+  await testInfo.attach('child-keyboard-growth', {
+    body: await page.screenshot({ path: testInfo.outputPath('child-keyboard-growth.png') }),
+    contentType: 'image/png',
+  });
+  expect(afterGrowth.scrollTop).toBeCloseTo(scrollback.scrollTop, 0);
+  expect(afterGrowth.lastLineVisible).toBe(false);
+  await expect(input).toBeFocused();
+
+  await scroller.focus();
+  await page.keyboard.press('End');
+  await expectFollowing(scroller);
+  await component.update({
+    props: { chunk: grownChunk + 'Following resumes with the next output. '.repeat(4) },
+  });
+  await expectFollowing(scroller);
+});
+
 test('preserves the header seam and alignment through live disclosure changes', async ({
   mount,
   page,

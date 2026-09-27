@@ -29,6 +29,7 @@
   let isUserScrolling = $state(false);
   let isScrolledFromTop = $state(false);
   let followPending = false;
+  let keyboardScrollPending = false;
   let lastScrollTop = 0;
   let scrollEndTimeout: ReturnType<typeof setTimeout> | null = null;
 
@@ -66,10 +67,13 @@
   }
 
   function handleKeyDown(e: KeyboardEvent) {
-    // Child controls own their navigation keys; only the focused drum scrolls here.
-    if (e.defaultPrevented || e.target !== scrollContainer) return;
+    if (e.defaultPrevented) return;
     if (['ArrowUp', 'PageUp', 'Home'].includes(e.key) || (e.key === ' ' && e.shiftKey)) {
-      isFollowingBottom = false;
+      // A child control may edit or natively scroll this drum. Wait for the
+      // browser's default action before deciding whether to pause following.
+      keyboardScrollPending = true;
+      lastScrollTop = scrollContainer?.scrollTop ?? 0;
+      markScrollActivity();
     }
   }
 
@@ -87,16 +91,27 @@
     });
   }
 
-  function handleScroll() {
+  function markScrollActivity() {
     isUserScrolling = true;
     if (scrollEndTimeout) clearTimeout(scrollEndTimeout);
     scrollEndTimeout = setTimeout(() => {
       isUserScrolling = false;
+      keyboardScrollPending = false;
       if (followPending) scrollToBottom();
     }, 150);
+  }
 
+  function handleScroll() {
+    markScrollActivity();
     if (scrollContainer) {
-      const { scrollTop } = scrollContainer;
+      const { scrollTop, scrollHeight, clientHeight } = scrollContainer;
+      if (
+        keyboardScrollPending &&
+        scrollTop < lastScrollTop &&
+        scrollTop + clientHeight < scrollHeight
+      ) {
+        isFollowingBottom = false;
+      }
       // The first upward keyboard frame may still be within the bottom threshold.
       // Resume only when the reader moves down to the bottom again.
       if (scrollTop > lastScrollTop && checkIfAtBottom()) isFollowingBottom = true;
