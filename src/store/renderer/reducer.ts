@@ -102,8 +102,10 @@ import { setupPromptReducer } from './slices/setup-prompt/setup-prompt-slice';
 import { workspaceTransferReducer } from './slices/workspace-transfer/workspace-transfer-slice';
 import { workspaceImportReducer } from './slices/workspace-import/workspace-import-slice';
 import { workspaceShareReducer } from './slices/workspace-share/workspace-share-slice';
+import { repositoryContextReducer } from './slices/repository-context/repository-context-slice';
 
 export const reducers = {
+  repositoryContext: repositoryContextReducer,
   providerSettings: providerSettingsReducer,
   antigravitySetup: antigravitySetupReducer,
   providerCatalog: providerCatalogReducer,
