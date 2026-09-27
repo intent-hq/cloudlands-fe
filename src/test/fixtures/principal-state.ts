@@ -1,4 +1,5 @@
 import { getItems } from '@augmentcode/themis/utils/collections/collection-utils';
+import { createAction } from '@augmentcode/themis/utils/store/create-action';
 import { store } from '$store/renderer/store';
 import { connectionsListReceived } from '$store/renderer/slices/connections/connections-slice';
 import { connectionStatusChanged } from '$store/renderer/slices/daemon-health/daemon-health-slice';
@@ -15,6 +16,21 @@ import {
   principalReducer,
 } from '$store/renderer/slices/principal/principal-slice';
 import { selectPrincipalConnectionContext } from '$store/renderer/slices/principal/principal-selectors';
+import type { PrincipalState } from '$store/renderer/slices/principal/principal-types';
+
+// This restoration action exists only when the preview fixture module is loaded.
+// Presentation changes do not replace the fixture's admission; parent reads do.
+const previewPrincipalRestored = createAction<
+  [installed: PrincipalState, previous: PrincipalState]
+>('test/previewPrincipalRestored');
+principalReducer.with(previewPrincipalRestored, (state, { payload: [installed, previous] }) =>
+  Object.entries(installed).every(
+    ([key, value]) =>
+      key === 'presentationVersion' || state[key as keyof PrincipalState] === value,
+  )
+    ? { ...previous, presentationVersion: state.presentationVersion }
+    : state,
+);
 
 /** An admitted legacy caller for consumer tests that previously assumed a saved window was authority. */
 export function withLegacyPrincipal(input: object, role: 'owner' | 'guest' = 'owner'): StoreState {
@@ -115,9 +131,7 @@ export function installPreviewPrincipal(): () => void {
   }
   const installed = store.state.principal;
   return () => {
-    // Never replace an admission changed by the parent while the preview was mounted.
-    if (store.state.principal !== installed) return;
-    if (read && previous.snapshot) store.dispatch(principalReceived(read, previous.snapshot));
-    else store.dispatch(principalContextChanged(previous.context));
+    if (installed.context !== selectPrincipalConnectionContext.select(store.state)) return;
+    store.dispatch(previewPrincipalRestored(installed, previous));
   };
 }

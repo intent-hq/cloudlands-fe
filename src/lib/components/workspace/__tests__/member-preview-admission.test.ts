@@ -82,6 +82,64 @@ describe('member preview admission ownership', () => {
   });
 
   for (const fixture of ['files', 'list-labels'] as const) {
+    it.each(['guest', 'unknown'] as const)(
+      `removes only fixture authority after a borrowed %s toggles Multiplayer in ${fixture}`,
+      (role) => {
+        disposeRoot = initAppStore(store).dispose;
+        if (role === 'guest') admitLegacyPrincipal('guest');
+        const previous = structuredClone(store.state.principal);
+        cleanupFixture =
+          fixture === 'files'
+            ? setupFilesMenuFixture(vi.fn(), 'web', 16)
+            : setupListLabelsPreview(false);
+        expect(selectCanAdministerHost.select(store.state)).toBe(true);
+        store.dispatch(setLabsMultiplayerEnabled(false));
+        const presentationVersion = store.state.principal.presentationVersion;
+        cleanupFixture();
+        cleanupFixture = undefined;
+        expect(store.state.principal).toEqual({ ...previous, presentationVersion });
+        expect(store.state.userPreferences.labsMultiplayerEnabled).toBe(false);
+        expect(selectCanAdministerHost.select(store.state)).toBe(false);
+      },
+    );
+
+    it.each(['guest', 'owner'] as const)(
+      `preserves a replacement parent %s admission after a lab toggle in ${fixture}`,
+      (role) => {
+        disposeRoot = initAppStore(store).dispose;
+        admitLegacyPrincipal('guest');
+        cleanupFixture =
+          fixture === 'files'
+            ? setupFilesMenuFixture(vi.fn(), 'web', 16)
+            : setupListLabelsPreview(false);
+        store.dispatch(setLabsMultiplayerEnabled(false));
+        const current = store.state.principal;
+        store.dispatch(
+          principalReceived(
+            {
+              context: current.context!,
+              invalidation: current.invalidation,
+              presentationVersion: current.presentationVersion,
+            },
+            {
+              ...current.snapshot!,
+              principal: {
+                ...current.snapshot!.principal,
+                hostRole: role,
+                isAdministrator: role === 'owner',
+              },
+            },
+          ),
+        );
+        const replacement = store.state.principal;
+        cleanupFixture();
+        cleanupFixture = undefined;
+        expect(store.state.principal).toBe(replacement);
+        expect(store.state.userPreferences.labsMultiplayerEnabled).toBe(false);
+        expect(selectCanAdministerHost.select(store.state)).toBe(role === 'owner');
+      },
+    );
+
     it.each(['reconnecting', 'revoked', 'stale-presentation'] as const)(
       `keeps a borrowed %s caller unchanged in ${fixture}`,
       (state) => {
