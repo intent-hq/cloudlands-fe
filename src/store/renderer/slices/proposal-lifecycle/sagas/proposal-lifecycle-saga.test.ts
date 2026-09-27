@@ -52,6 +52,7 @@ import {
   recordSpecialistApplied,
 } from '../../specialist-proposal-history/specialist-proposal-history-slice';
 import type { ProposalActionDetail } from '$shared/types/proposal';
+import type { ProposalLifecycleState } from '../proposal-lifecycle-types';
 import type { SpecialistReverseAction } from '../../specialist-proposal-history/specialist-proposal-history-types';
 import {
   handleApplyProposal,
@@ -364,6 +365,63 @@ describe('persistence', () => {
     });
   });
 
+  it.each(['transferring', 'imported'] as const)(
+    'keeps unfinished %s checkpoints across history eviction, expiry, and reload',
+    async (phase) => {
+      const now = Date.now();
+      const transfer = {
+        workspaceId: 'ws-1',
+        sourceWorkspacePath: '/repo/ws-1',
+        sourceConnectionId: 'source',
+        destinationConnectionId: 'target',
+        phase,
+      };
+      const state = emptyState();
+      state.proposalLifecycle = Object.fromEntries(
+        Array.from({ length: 301 }, (_, i) => [
+          `completed-${i}`,
+          { status: 'applied', completedAt: now - i, lastAction: 'apply', result: { transfer } },
+        ]),
+      );
+      state.proposalLifecycle['first-attempt'] = {
+        status: 'applying',
+        startedAt: now,
+        lastAction: 'apply',
+        result: { transfer },
+      };
+      state.proposalLifecycle['old-unresolved'] = {
+        status: 'failed',
+        completedAt: now - 31 * 24 * 60 * 60 * 1000,
+        lastAction: 'apply',
+        result: { transfer },
+      };
+      state.proposalLifecycle['old-completed'] = {
+        status: 'applied',
+        completedAt: now - 31 * 24 * 60 * 60 * 1000,
+        lastAction: 'apply',
+        result: { transfer },
+      };
+      await run(persistProposalLifecycleSaga, undefined, state);
+      const stored = mocks.setJSON.mock.calls.at(-1)![1];
+      expect(Object.keys(stored.entries)).toHaveLength(302);
+      expect(stored.entries['completed-299']).toBeDefined();
+      expect(stored.entries['completed-300']).toBeUndefined();
+      expect(stored.entries['old-completed']).toBeUndefined();
+      mocks.getJSON.mockReturnValue(stored);
+      const dispatched = await run(hydrateProposalLifecycleSaga, undefined, emptyState());
+      const restored = (dispatched[0] as ReturnType<typeof hydrateProposalLifecycle>).payload[0];
+      expect(restored['first-attempt']).toMatchObject({
+        status: 'failed',
+        lastAction: 'apply',
+        result: { transfer },
+      });
+      expect(restored['old-unresolved']).toMatchObject({
+        status: 'failed',
+        result: { transfer },
+      });
+    },
+  );
+
   it('persists a dismissal when resolution reconciliation completes', async () => {
     vi.useFakeTimers();
     mocks.getJSON.mockReturnValue(undefined);
@@ -416,11 +474,11 @@ describe('workspace transfer proposals', () => {
   };
   const action = () =>
     applyProposalRequested({ proposalId: 'transfer-p', kind: 'workspace-transfer', detail });
-  async function harness() {
+  async function harness(initialLifecycle: ProposalLifecycleState = {}) {
     const { createCollection } =
       await import('@augmentcode/themis/utils/collections/collection-utils');
     const { proposalLifecycleReducer } = await import('../proposal-lifecycle-slice');
-    let lifecycle: import('../proposal-lifecycle-types').ProposalLifecycleState = {};
+    let lifecycle = initialLifecycle;
     const state = () => ({
       ...emptyState(),
       proposalLifecycle: lifecycle,
@@ -492,6 +550,47 @@ describe('workspace transfer proposals', () => {
       vi.stubGlobal('window', previousWindow);
     }
   });
+  it('retries only finalize after restoring the first import checkpoint alongside a full history', async () => {
+    let importedSnapshot: unknown;
+    const invoke = vi
+      .fn()
+      .mockResolvedValueOnce({ success: true })
+      .mockImplementationOnce(() => {
+        importedSnapshot = mocks.setJSON.mock.calls.at(-1)![1];
+        return { success: false, error: 'offline' };
+      })
+      .mockResolvedValueOnce({ success: true });
+    const previousWindow = globalThis.window;
+    vi.stubGlobal('window', { electronAPI: { invoke } });
+    try {
+      const history: ProposalLifecycleState = Object.fromEntries(
+        Array.from({ length: 301 }, (_, i) => [
+          `completed-${i}`,
+          { status: 'applied', completedAt: Date.now() - i, lastAction: 'apply' },
+        ]),
+      );
+      const first = await harness(history);
+      await first.run();
+      mocks.getJSON.mockReturnValue(importedSnapshot);
+      const dispatched = await run(hydrateProposalLifecycleSaga, undefined, emptyState());
+      const restored = (dispatched[0] as ReturnType<typeof hydrateProposalLifecycle>).payload[0];
+      const reloaded = await harness(restored);
+      expect(reloaded.entry).toMatchObject({
+        status: 'failed',
+        result: { transfer: { phase: 'imported', destinationConnectionId: 'target' } },
+      });
+      await reloaded.run();
+      expect(reloaded.entry.status).toBe('applied');
+      expect(invoke.mock.calls.map(([channel]) => channel)).toEqual([
+        'transfer:start',
+        'transfer:finalize',
+        'transfer:finalize',
+      ]);
+    } finally {
+      vi.stubGlobal('window', previousWindow);
+    }
+  });
+
   it('ignores simultaneous approvals while the relay is running', async () => {
     let finish!: (value: { success: boolean }) => void;
     const invoke = vi

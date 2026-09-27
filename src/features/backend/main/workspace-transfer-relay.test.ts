@@ -1055,6 +1055,149 @@ describe('workspace-transfer relay — per-window session affinity (monorepo#351
 });
 
 describe('inline approval retry ownership', () => {
+  const proposalParams: TransferStartParams = {
+    workspaceId: 'ws-1',
+    sourceWorkspacePath: '/repo/ws-1',
+    destination: { kind: 'server', connectionId: 'target' },
+    proposalId: 'proposal-1',
+  };
+  const finalizeParams: TransferFinalizeParams = {
+    proposalId: 'proposal-1',
+    archiveSource: true,
+    restartAgents: false,
+  };
+  const archivedWorkspace = {
+    id: 'ws-1',
+    worktreePath: '/repo/ws-1',
+    status: 'Archived',
+  };
+
+  it('recovers a lost daemon finalize reply on retry and releases the relay without reimport', async () => {
+    let archived = false;
+    let reads = 0;
+    const source = makeSource({
+      'workspace.export.finalize': () => {
+        if (archived) return new Error('not found: no export in progress: export-1');
+        archived = true;
+        return new Error('connection lost after archive');
+      },
+      'workspace.get': () => {
+        if (++reads === 1) return new Error('source still disconnected');
+        return { workspace: archivedWorkspace };
+      },
+      'workspace.export.abort': () => ({ aborted: false }),
+    });
+    const target = makeTarget();
+    const { deps } = makeDeps(source, target);
+    const relay = makeRelay(deps);
+    const run = relay.start(proposalParams, source.client);
+    await emitWhenStarted(source, 'workspace:transfer:ready', READY_DATA);
+    expect(await run).toMatchObject({ success: true });
+
+    expect(await relay.finalize(finalizeParams)).toMatchObject({ success: false });
+    expect(await relay.cancel()).toMatchObject({ success: false });
+    expect(await relay.finalize(finalizeParams)).toEqual({ success: true });
+    const callsAfterRecovery = source.calls.length;
+    expect(await relay.finalize(finalizeParams)).toEqual({ success: true });
+    expect(await relay.start(proposalParams, source.client)).toEqual({ success: true });
+    expect(source.calls).toHaveLength(callsAfterRecovery);
+    expect(target.calls.filter((c) => c.method === 'workspace.import.commit')).toHaveLength(1);
+    expect(source.calls.filter((c) => c.method === 'workspace.export.start')).toHaveLength(1);
+    expect(source.calls.filter((c) => c.method === 'workspace.get')).toEqual([
+      { method: 'workspace.get', params: { workspaceId: 'ws-1' } },
+      { method: 'workspace.get', params: { workspaceId: 'ws-1' } },
+    ]);
+    expect(source.calls.filter((c) => c.method === 'workspace.export.abort')).toEqual([
+      { method: 'workspace.export.abort', params: { exportId: 'export-1' } },
+    ]);
+
+    const nextSource = makeSource();
+    const next = relay.start(
+      { ...proposalParams, proposalId: 'next-proposal', workspaceId: 'ws-2' },
+      nextSource.client,
+    );
+    await emitWhenStarted(nextSource, 'workspace:transfer:ready', {
+      ...READY_DATA,
+      workspaceId: 'ws-2',
+    });
+    expect(await next).toMatchObject({ success: true });
+    expect(await relay.finalize({ ...finalizeParams, proposalId: 'next-proposal' })).toEqual({
+      success: true,
+    });
+  });
+
+  it.each([{ worktreePath: '/repo/ws-1' }, { repositoryPath: '/repo/ws-1' }])(
+    'settles export cleanup after confirming an already archived source at $worktreePath$repositoryPath',
+    async (path) => {
+      const source = makeSource({
+        'workspace.export.finalize': () => new Error('reply lost'),
+        'workspace.get': () => ({ workspace: { id: 'ws-1', status: 'Archived', ...path } }),
+      });
+      const { deps } = makeDeps(source, makeTarget());
+      const relay = makeRelay(deps);
+      const run = relay.start(proposalParams, source.client);
+      await emitWhenStarted(source, 'workspace:transfer:ready', READY_DATA);
+      await run;
+      expect(await relay.finalize(finalizeParams)).toEqual({ success: true });
+      expect(source.calls.at(-1)).toEqual({
+        method: 'workspace.export.abort',
+        params: { exportId: 'export-1' },
+      });
+    },
+  );
+
+  it.each([
+    ['active source', { workspace: { ...archivedWorkspace, status: 'Active' } }],
+    ['deleted source', { workspace: { ...archivedWorkspace, status: 'Deleted' } }],
+    ['another workspace', { workspace: { ...archivedWorkspace, id: 'ws-other' } }],
+    ['moved worktree', { workspace: { ...archivedWorkspace, worktreePath: '/other' } }],
+    ['pending deletion', { workspace: { ...archivedWorkspace, pendingDeleteAt: '2026-09-28' } }],
+    ['missing workspace', {}],
+    ['failed read', new Error('offline')],
+  ])('keeps an unconfirmed %s outcome locked and retryable', async (_label, workspaceResult) => {
+    const source = makeSource({
+      'workspace.export.finalize': () => new Error('finalize reply lost'),
+      'workspace.get': () => workspaceResult,
+    });
+    const target = makeTarget();
+    const { deps } = makeDeps(source, target);
+    const relay = makeRelay(deps);
+    const run = relay.start(proposalParams, source.client);
+    await emitWhenStarted(source, 'workspace:transfer:ready', READY_DATA);
+    await run;
+    expect(await relay.finalize(finalizeParams)).toMatchObject({
+      success: false,
+      error: 'finalize reply lost',
+    });
+    expect(await relay.cancel()).toMatchObject({ success: false });
+    expect(
+      await relay.start({ ...proposalParams, proposalId: 'new' }, source.client),
+    ).toMatchObject({
+      success: false,
+    });
+    expect(await relay.finalize(finalizeParams)).toMatchObject({ success: false });
+    expect(source.calls.some((c) => c.method === 'workspace.export.abort')).toBe(false);
+    expect(target.calls.filter((c) => c.method === 'workspace.import.commit')).toHaveLength(1);
+  });
+
+  it.each([new Error('cleanup offline'), {}, { exportId: 'different-export', aborted: true }])(
+    'does not resolve an archive with unconfirmed export cleanup: %j',
+    async (cleanup) => {
+      const source = makeSource({
+        'workspace.export.finalize': () => new Error('reply lost'),
+        'workspace.get': () => ({ workspace: archivedWorkspace }),
+        'workspace.export.abort': () => cleanup,
+      });
+      const { deps } = makeDeps(source, makeTarget());
+      const relay = makeRelay(deps);
+      const run = relay.start(proposalParams, source.client);
+      await emitWhenStarted(source, 'workspace:transfer:ready', READY_DATA);
+      await run;
+      expect(await relay.finalize(finalizeParams)).toMatchObject({ success: false });
+      expect(await relay.cancel()).toMatchObject({ success: false });
+    },
+  );
+
   it('reuses a committed import, rejects replacement, and retries finalize without importing again', async () => {
     let finalizeAttempts = 0;
     const source = makeSource({

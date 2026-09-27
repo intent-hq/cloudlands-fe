@@ -107,6 +107,7 @@ interface RelaySession {
    * from other windows are rejected while this window is alive. */
   ownerId: number;
   proposalId?: string;
+  sourceWorkspacePath?: string;
   /** The SOURCE daemon's client, pinned at start() time — a backend switch
    * rebinds windows to other clients, and finalize/cancel must keep talking
    * to the daemon that owns this exportId. */
@@ -439,6 +440,7 @@ export function createWorkspaceTransferRelay(deps: TransferRelayDeps): Workspace
       workspaceId,
       ownerId,
       proposalId: params.proposalId,
+      sourceWorkspacePath: params.sourceWorkspacePath,
       source,
       exportId: '',
       sourceExportStarted: false,
@@ -568,6 +570,58 @@ export function createWorkspaceTransferRelay(deps: TransferRelayDeps): Workspace
     }
   }
 
+  /** The daemon may archive and retire its export before a finalize reply is
+   * lost. Confirm the requested end state, then settle any remaining staging
+   * with the idempotent abort operation. Never infer success from error text. */
+  async function reconcileArchivedProposal(
+    current: RelaySession,
+    params: TransferFinalizeParams,
+  ): Promise<boolean> {
+    if (
+      !current.proposalId ||
+      !current.sourceWorkspacePath ||
+      !params.archiveSource ||
+      params.restartAgents ||
+      params.finalStatusMessage
+    ) {
+      return false;
+    }
+    try {
+      const { workspace } = await current.source.request<{
+        workspace?: {
+          id?: string;
+          worktreePath?: string;
+          repositoryPath?: string;
+          status?: string;
+          pendingDeleteAt?: string;
+        };
+      }>('workspace.get', { workspaceId: current.workspaceId });
+      if (
+        workspace?.id !== current.workspaceId ||
+        (workspace.worktreePath ?? workspace.repositoryPath) !== current.sourceWorkspacePath ||
+        workspace.status !== 'Archived' ||
+        workspace.pendingDeleteAt
+      ) {
+        return false;
+      }
+      const cleanup = await current.source.request<{ exportId?: string; aborted?: boolean }>(
+        'workspace.export.abort',
+        { exportId: current.exportId },
+      );
+      // Unknown exports return { aborted: false } without an exportId.
+      return (
+        (cleanup.aborted === false && cleanup.exportId === undefined) ||
+        (cleanup.exportId === current.exportId && typeof cleanup.aborted === 'boolean')
+      );
+    } catch (error) {
+      deps.logger.warn('Could not confirm source archive after transfer finalize failed', {
+        workspaceId: current.workspaceId,
+        error: errText(error),
+      });
+      return false;
+    }
+  }
+
   async function finalize(
     params: TransferFinalizeParams,
     ownerId: number,
@@ -627,7 +681,9 @@ export function createWorkspaceTransferRelay(deps: TransferRelayDeps): Workspace
         ...(params.finalStatusMessage ? { finalStatusMessage: params.finalStatusMessage } : {}),
       });
     } catch (error) {
-      return { success: false, error: errText(error), resumeFailed };
+      if (!(await reconcileArchivedProposal(current, params))) {
+        return { success: false, error: errText(error), resumeFailed };
+      }
     }
     // An owner-gone takeover may have replaced the session mid-await; only
     // clear the session this finalize actually acted on.

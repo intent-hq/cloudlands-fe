@@ -256,10 +256,14 @@ export function* hydrateProposalLifecycleSaga(): SagaGenerator<void> {
 export function* persistProposalLifecycleSaga(): SagaGenerator<void> {
   const entries = yield* selectProposalLifecycleMap.effect();
   const prunedEntries = pruneAppliedProposalLifecycleEntries(entries, Date.now());
+  let completedCount = 0;
   const cappedEntries = Object.fromEntries(
     Object.entries(prunedEntries)
       .sort(([, a], [, b]) => (b.completedAt ?? 0) - (a.completedAt ?? 0))
-      .slice(0, PROPOSAL_LIFECYCLE_MAX_PERSISTED_ENTRIES),
+      .filter(([, entry]) => {
+        if (entry.status !== 'applied' && entry.status !== 'dismissed') return true;
+        return completedCount++ < PROPOSAL_LIFECYCLE_MAX_PERSISTED_ENTRIES;
+      }),
   );
   yield* call(setLocalStorageJSON, PROPOSAL_LIFECYCLE_STORAGE_KEY, { entries: cappedEntries });
 }

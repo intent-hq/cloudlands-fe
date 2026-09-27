@@ -95,11 +95,14 @@ export function pruneAppliedProposalLifecycleEntries(
 ): ProposalLifecycleState {
   const cutoff = now - PROPOSAL_LIFECYCLE_RETENTION_MS;
   return Object.fromEntries(
-    Object.entries(entries).filter(
-      ([, entry]) =>
-        (entry.status === 'applied' || entry.status === 'dismissed' || !!entry.result?.transfer) &&
-        (entry.completedAt ?? entry.startedAt ?? 0) >= cutoff,
-    ),
+    Object.entries(entries).filter(([, entry]) => {
+      if (entry.status === 'applied' || entry.status === 'dismissed') {
+        return (entry.completedAt ?? entry.startedAt ?? 0) >= cutoff;
+      }
+      // Unresolved checkpoints prevent repeated imports. They are recovery
+      // state, not completed history, and must not expire while still needed.
+      return !!entry.result?.transfer && (entry.status === 'applying' || entry.status === 'failed');
+    }),
   );
 }
 
