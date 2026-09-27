@@ -8,7 +8,10 @@ import { hostExecutionSaga } from './slices/host-execution/sagas/host-execution-
  */
 
 import type { Store } from '@augmentcode/themis/svelte-store';
-import { all, call } from 'typed-redux-saga';
+import { all, call, put } from 'typed-redux-saga';
+import { takeLatestFromSelector, type SelectorChannelPayload } from '@augmentcode/themis/saga';
+import { selectHostAdministrationContext } from './slices/principal/principal-selectors';
+import { initializeGitHubAuth, logoutCompleted } from './slices/github-auth/github-auth-slice';
 
 import { backgroundExecutorSaga } from '../../features/agent/background-executor-service';
 import { providerAvailabilitySaga } from './slices/agent-availability/sagas/provider-availability-saga';
@@ -59,6 +62,7 @@ import { keyPinPersistenceSaga } from './slices/hardware-console/sagas/key-pin-p
 import { promptPickerSaga } from './slices/hardware-console/sagas/prompt-picker-saga';
 import { voiceTranscriptionSaga } from './slices/hardware-console/sagas/voice-transcription-saga';
 import { hostRequirementsSaga } from './slices/host-requirements/sagas/host-requirements-saga';
+import { hostRequirementsReset } from './slices/host-requirements/host-requirements-slice';
 import { legacyImportSaga } from './slices/legacy-import/sagas/legacy-import-saga';
 import { linearAuthSaga } from './slices/linear-auth/sagas/linear-auth-saga';
 import { collaborationAuthSaga } from '$features/collaboration-auth/renderer/collaboration-auth-saga';
@@ -138,6 +142,26 @@ export function* hardwareConsoleSaga() {
   ]);
 }
 
+/** Host account/settings readers start only after this window is admitted as owner. */
+export function* hostOwnerServicesSaga() {
+  yield* takeLatestFromSelector(
+    selectHostAdministrationContext,
+    function* ({ payload }: SelectorChannelPayload<string | null>) {
+      yield* put(logoutCompleted());
+      yield* put(hostRequirementsReset());
+      if (!payload) return;
+      yield* all([
+        call(hostRequirementsSaga),
+        call(hardwareConsoleSaga),
+        call(voiceSettingsSaga),
+        call(notificationSettingsSaga),
+        call(githubAuthSaga),
+        put(initializeGitHubAuth()),
+      ]);
+    },
+  );
+}
+
 /** App-owned sagas in audited startup order. Each production owner appears once. */
 export const sagas = [
   daemonEventsSaga,
@@ -193,10 +217,8 @@ export const sagas = [
   modelReloadSaga,
   providerAvailabilitySaga,
   setupPromptSaga,
-  hostRequirementsSaga,
   backgroundHooksSaga,
-  hardwareConsoleSaga,
-  voiceSettingsSaga,
+  hostOwnerServicesSaga,
   themeSaga,
   powerSaga,
   autoUpdateSaga,
@@ -204,7 +226,6 @@ export const sagas = [
   proposalLifecycleSaga,
   settingsProposalHistorySaga,
   specialistProposalHistorySaga,
-  githubAuthSaga,
   gitlabAuthSaga,
   githubRepoSearchSaga,
   githubUserSearchSaga,
@@ -236,7 +257,6 @@ export const sagas = [
   externalEditorsPersistenceSaga,
   workspaceSettingsSaga,
   updateChannelSaga,
-  notificationSettingsSaga,
   userPreferencesPersistenceSaga,
   workspaceInitializerSaga,
   zoomIpcSaga,

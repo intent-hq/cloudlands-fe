@@ -13,6 +13,7 @@
   import { faArrowLeft } from '@fortawesome/free-solid-svg-icons';
   import { invoke } from '$shared/generated/ipc-client';
   import { appClient } from '$lib/client';
+  import { selectHostRole } from '$store/renderer/slices/principal/principal-selectors';
   import {
     clearNewWorkspaceDraft,
     createNewWorkspaceDraftSaver,
@@ -194,6 +195,7 @@
   const workspaceInitializerHydrated$ = selectWorkspaceInitializerHydrated();
   const allRequirementsMet$ = selectAllRequirementsMet();
   const requirementsCheckedOnce$ = selectHostRequirementsHasCheckedOnce();
+  const hostRole$ = selectHostRole();
   const providerCatalogEntries$ = selectProviderCatalogEntries();
 
   let projectSelection = $state<ProjectSelection | null>(null);
@@ -769,15 +771,23 @@
   const showStartWorking = $derived(
     onboardingStepIndex >= ONBOARDING_STEP_ORDER.indexOf('configuring'),
   );
-  const onboardingVisibleStep = $derived(
-    isConfiguringStep ? 4 : isProjectStep ? 3 : isForgeStep ? 2 : 1,
-  );
   // The 'requirements' gate is not counted in the visible step indicator, and
   // 'configuring' and 'ready' share one visible step, so the count is the
   // visible order minus the terminal 'ready' entry. Back navigation maps
   // visible step N-1 to the visible order so it never lands on the gate.
-  const VISIBLE_STEP_ORDER = ONBOARDING_STEP_ORDER.filter((step) => step !== 'requirements');
-  const ONBOARDING_TOTAL_STEPS = VISIBLE_STEP_ORDER.length - 1;
+  const VISIBLE_STEP_ORDER = $derived(
+    ONBOARDING_STEP_ORDER.filter(
+      (step) =>
+        step !== 'requirements' &&
+        ($hostRole$ !== 'member' || (step !== 'welcome' && step !== 'forge')),
+    ),
+  );
+  const ONBOARDING_TOTAL_STEPS = $derived(VISIBLE_STEP_ORDER.length - 1);
+  const onboardingVisibleStep = $derived(
+    isConfiguringStep
+      ? ONBOARDING_TOTAL_STEPS
+      : Math.max(1, VISIBLE_STEP_ORDER.indexOf($onboardingStep$) + 1),
+  );
 
   // ============================================================================
   // Mount: Reset onboarding state
@@ -796,6 +806,7 @@
   $effect(() => {
     if (!isOnboarding || $onboardingStep$ !== 'requirements') return;
     const step = determineOnboardingInitialStep({
+      hostRole: $hostRole$,
       requirementsCheckedOnce: $requirementsCheckedOnce$,
       allRequirementsMet: $allRequirementsMet$,
     });
@@ -1749,7 +1760,9 @@
                     <div class="py-8 space-y-6" in:fly={{ tier: 'slow', distance: 15 }}>
                       {#if isRequirementsStep}
                         <div class="max-w-5xl mx-auto" data-testid="onboarding-requirements-step">
-                          <OnboardingRequirementsStep />
+                          {#if $hostRole$ === 'owner'}
+                            <OnboardingRequirementsStep />
+                          {/if}
                         </div>
                       {:else if isWelcomeStep}
                         <div class="py-6 overflow-x-auto scrollbar-none -mx-6">

@@ -29,6 +29,7 @@ import {
   selectAvailableEnabledProviderIds,
 } from '$store/renderer/slices/provider-settings/provider-settings-selectors';
 import { selectHasCheckedOnce } from '$store/renderer/slices/agent-availability/agent-availability-selectors';
+import { selectIsHostMember } from '$store/renderer/slices/host-execution/host-execution-selectors';
 
 import { store as appStore } from '$store/renderer/store';
 import { m } from '$shared/paraglide/messages.js';
@@ -344,7 +345,9 @@ export class UnifiedAgentFactory {
             });
             return {
               success: false,
-              error: m.agent_factory_activeProviderUnavailable_error({ provider: activeId }),
+              error: selectIsHostMember.select(appStore.state)
+                ? m.hostExecution_providerSetup_description()
+                : m.agent_factory_activeProviderUnavailable_error({ provider: activeId }),
             };
           }
           provider = activeId;

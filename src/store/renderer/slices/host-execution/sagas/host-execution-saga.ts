@@ -6,7 +6,11 @@ import { isDaemonErrorResponse } from '$lib/client/live/backend-transport-types'
 import { hostExecutionContextSchema } from '$shared/types/host-execution';
 import { invalidateProviderAuthStatus } from '$features/providers/provider-auth-status.client';
 import { resetSettingsConnectionCache } from '$lib/client/live/live-settings-client';
-import { selectPrincipalConnectionContext } from '../../principal/principal-selectors';
+import {
+  selectHostRole,
+  selectPrincipalConnectionContext,
+} from '../../principal/principal-selectors';
+import type { HostRole } from '$shared/types/principal';
 import {
   selectHostExecutionReadContext,
   selectHostExecutionGeneration,
@@ -60,5 +64,13 @@ export function* hostExecutionSaga() {
   yield* all([
     call(takeLatestFromSelector, selectPrincipalConnectionContext, bindConnection),
     call(takeLatestFromSelector, selectHostExecutionReadContext, hydrate),
+    call(
+      takeLatestFromSelector,
+      selectHostRole,
+      function* ({ payload }: SelectorChannelPayload<HostRole | null>) {
+        // Connection binding can precede admission; retry discovery once the role is known.
+        if (payload === 'owner' || payload === 'member') yield* put(checkAllProvidersRequested());
+      },
+    ),
   ]);
 }

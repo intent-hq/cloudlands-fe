@@ -80,6 +80,7 @@ export const selectEnabledProviderIds = store.createSelector((state): string[] =
  */
 function isProviderHidden(state: any, providerId: string): boolean {
   const entry = selectProviderCatalogEntry.select(state, providerId);
+  if (selectIsHostMember.select(state)) return entry?.visible !== true;
   return Boolean(entry?.requiresEnvVar || entry?.requiresFeatureCode);
 }
 
