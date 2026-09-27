@@ -29,6 +29,7 @@
   let isUserScrolling = $state(false);
   let isScrolledFromTop = $state(false);
   let followPending = false;
+  let lastScrollTop = 0;
   let scrollEndTimeout: ReturnType<typeof setTimeout> | null = null;
 
   const BOTTOM_THRESHOLD = 5;
@@ -64,6 +65,14 @@
     }
   }
 
+  function handleKeyDown(e: KeyboardEvent) {
+    // Child controls own their navigation keys; only the focused drum scrolls here.
+    if (e.defaultPrevented || e.target !== scrollContainer) return;
+    if (['ArrowUp', 'PageUp', 'Home'].includes(e.key) || (e.key === ' ' && e.shiftKey)) {
+      isFollowingBottom = false;
+    }
+  }
+
   let touchStartY = 0;
   function handleTouchStart(e: TouchEvent) {
     touchStartY = e.touches[0]?.clientY ?? 0;
@@ -86,11 +95,13 @@
       if (followPending) scrollToBottom();
     }, 150);
 
-    if (checkIfAtBottom()) isFollowingBottom = true;
-
-    // Track if scrolled from top for gradient visibility
     if (scrollContainer) {
-      isScrolledFromTop = scrollContainer.scrollTop > 2;
+      const { scrollTop } = scrollContainer;
+      // The first upward keyboard frame may still be within the bottom threshold.
+      // Resume only when the reader moves down to the bottom again.
+      if (scrollTop > lastScrollTop && checkIfAtBottom()) isFollowingBottom = true;
+      lastScrollTop = scrollTop;
+      isScrolledFromTop = scrollTop > 2;
     }
   }
 
@@ -152,13 +163,16 @@
   });
 </script>
 
+<!-- svelte-ignore a11y_no_noninteractive_tabindex, a11y_no_noninteractive_element_interactions (the constrained scroll region needs focus and native scroll keys) -->
 <div
   role="group"
+  tabindex={constrained ? 0 : undefined}
   class="cylinder-scroller"
   style={containerStyle}
   bind:this={scrollContainer}
   onscroll={handleScroll}
   onwheel={handleWheel}
+  onkeydown={handleKeyDown}
   ontouchstart={handleTouchStart}
   ontouchmove={handleTouchMove}
   ontouchend={handleTouchEnd}

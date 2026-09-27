@@ -112,6 +112,76 @@ test('follows reflow, preserves manual scrollback, and resumes at the bottom', a
   await expectFollowing(scroller);
 });
 
+test('preserves native keyboard scrollback through text growth and resumes at the bottom', async ({
+  mount,
+  page,
+}, testInfo) => {
+  await page.setViewportSize({ width: 360, height: 480 });
+  const chunk =
+    'Inspecting the live output while earlier lines remain available for reading. '.repeat(9);
+  const component = await mount(LiveResponseGroupHost, { props: { chunk } });
+  const scroller = component.locator('.cylinder-scroller');
+  await expectFollowing(scroller);
+  const followed = await readDrum(scroller);
+  // Start after the initial programmatic follow has settled.
+  await page.waitForTimeout(400);
+
+  await scroller.click({ position: { x: 120, y: 75 } });
+  await page.keyboard.press('PageUp');
+  await expect
+    .poll(async () => (await readDrum(scroller)).scrollTop)
+    .toBeLessThan(followed.scrollTop);
+  // Let native keyboard scrolling settle before recording the reader's position.
+  await page.waitForTimeout(400);
+  const scrollback = await readDrum(scroller);
+  expect(scrollback.scrollTop).toBeLessThan(followed.scrollTop);
+  expect(scrollback.lastLineVisible).toBe(false);
+  await testInfo.attach('keyboard-scrollback', {
+    body: await component.screenshot({ path: testInfo.outputPath('keyboard-scrollback.png') }),
+    contentType: 'image/png',
+  });
+
+  const grownChunk =
+    chunk + 'New streamed text arrives after the user has deliberately scrolled upward. '.repeat(4);
+  await component.update({ props: { chunk: grownChunk } });
+  // A deferred follow must also leave the native PageUp position alone.
+  await page.waitForTimeout(600);
+  const afterGrowth = await readDrum(scroller);
+  await testInfo.attach('keyboard-drum-layout', {
+    body: JSON.stringify({ followed, scrollback, afterGrowth }, null, 2),
+    contentType: 'application/json',
+  });
+  await testInfo.attach('keyboard-growth', {
+    body: await component.screenshot({ path: testInfo.outputPath('keyboard-growth.png') }),
+    contentType: 'image/png',
+  });
+  expect(afterGrowth.scrollTop).toBeCloseTo(scrollback.scrollTop, 0);
+  expect(afterGrowth.lastLineVisible).toBe(false);
+
+  await page.keyboard.press('End');
+  await expectFollowing(scroller);
+  await component.update({
+    props: { chunk: grownChunk + 'Following resumes with the next output. '.repeat(4) },
+  });
+  await expectFollowing(scroller);
+});
+
+test('keeps following when a child input handles navigation keys', async ({ mount, page }) => {
+  await page.setViewportSize({ width: 360, height: 480 });
+  const component = await mount(LiveResponseGroupHost, {
+    props: { chunk: 'Inspecting output.', editable: true },
+  });
+  const scroller = component.locator('.cylinder-scroller');
+  const input = component.getByRole('textbox', { name: 'Live child input' });
+  await expectFollowing(scroller);
+  await input.fill('reading');
+  await input.press('Home');
+  await input.press('x');
+  await expect(input).toHaveValue('xreading');
+  await component.update({ props: { chunk: 'More text wraps into the live drum. '.repeat(12) } });
+  await expectFollowing(scroller);
+});
+
 test('preserves the header seam and alignment through live disclosure changes', async ({
   mount,
   page,

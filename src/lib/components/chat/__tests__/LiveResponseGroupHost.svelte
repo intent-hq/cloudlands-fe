@@ -1,5 +1,6 @@
 <script lang="ts">
   import type { ContentBlock } from '$shared/types';
+  import { Input } from '$lib/components/ui/input';
   import ResponseGroup from '../ResponseGroup.svelte';
   import { OPERATIONAL_GROUP_CHILD_CONTENT_CLASS } from '../operational-disclosure-row';
 
@@ -8,11 +9,13 @@
     isStreaming = true,
     lineCount = 1,
     burstLineCounts = [],
+    editable = false,
   }: {
     chunk?: string;
     isStreaming?: boolean;
     lineCount?: number;
     burstLineCounts?: number[];
+    editable?: boolean;
   } = $props();
 
   let burstLineCount = $state<number>();
@@ -50,6 +53,9 @@
       data-response-group-child
     >
       <div data-testid="live-current-child">
+        {#if editable}
+          <Input aria-label="Live child input" />
+        {/if}
         {#each Array.from({ length: visibleLineCount }) as _, index}
           <div data-testid="live-stream-line">
             {chunk}{visibleLineCount > 1 ? ` ${index + 1}` : ''}
