@@ -1,3 +1,4 @@
+const operationAuthority = vi.hoisted(() => ({ context: 'owner-admission' as string | null }));
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { render, fireEvent, waitFor } from '@testing-library/svelte';
 import { warmImport } from '../../../../../test/warm-import';
@@ -91,6 +92,7 @@ vi.mock('$store/renderer/slices/changes/changes-slice', () => ({
 }));
 
 vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
+  selectWorkspaceHostOperationContext: mocks.selector(() => operationAuthority.context),
   selectWorkspaceById: Object.assign(
     () => ({
       subscribe(run: (v: unknown) => void) {
@@ -316,6 +318,7 @@ warmImport(() => import('../PRSection.svelte'));
 
 describe('PRSection', () => {
   beforeEach(() => {
+    operationAuthority.context = 'owner-admission';
     mocks.dispatch.mockClear();
     mockCreatePR.mockClear();
     mockCreatePR.mockResolvedValue({ success: true });
@@ -582,6 +585,39 @@ describe('PRSection', () => {
     });
   });
 
+  it.each(['revoked', 'replacement'] as const)(
+    'drops PR refresh continuation after held fetch and %s authority',
+    async (change) => {
+      const { gitClient } = await import('$features/git/git.client');
+      let resolve!: (value: { ok: boolean }) => void;
+      vi.mocked(gitClient.fetch).mockReturnValueOnce(
+        new Promise((done) => {
+          resolve = done;
+        }),
+      );
+      const { container } = await renderPR({ hasPRs: true, pullRequests: [testPR] });
+      const button = await waitFor(() => {
+        const button = container.querySelector('button[title="Refresh PR status"]');
+        expect(button).toBeTruthy();
+        return button!;
+      });
+      await fireEvent.click(button);
+      await waitFor(() => expect(resolve).toBeTypeOf('function'));
+      mocks.dispatch.mockClear();
+      operationAuthority.context = change === 'revoked' ? null : 'new-admission';
+      resolve({ ok: true });
+      await new Promise((done) => setTimeout(done, 0));
+      expect(
+        mocks.dispatch.mock.calls
+          .map(([action]) => action)
+          .filter(
+            (action) =>
+              action.type === 'git/loadStatus' || action.type === 'prStatus/refreshRequested',
+          ),
+      ).toEqual([]);
+    },
+  );
+
   it('suppresses the PR refresh action in listOnly mode (read-only secondary-root browsing)', async () => {
     // Baseline: the refresh action renders in the normal (primary) mode.
     const primary = await renderPR({ hasPRs: true, pullRequests: [testPR] });
@@ -679,3 +715,8 @@ describe('PRSection', () => {
     expect(rowHeader?.getAttribute('title')).toContain('Approvals: 0 of 1');
   });
 });
+
+vi.mock('$store/renderer/slices/principal/principal-selectors', async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
+  selectCanAdministerHost: mocks.selector(() => operationAuthority.context !== null),
+}));

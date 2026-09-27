@@ -90,6 +90,7 @@ import {
 } from '../../workspace-events/workspace-events-slice';
 import { selectPrincipalAdmissionContext } from '../../principal/principal-selectors';
 import { selectWorkspaceManagementContext } from '../../workspace/workspace-selectors';
+import { workspaceDeleted } from '../../workspace-lifecycle/workspace-lifecycle-slice';
 
 const settle = async () => {
   await Promise.resolve();
@@ -1282,6 +1283,94 @@ describe('workspaceOperationsSaga', () => {
 });
 
 describe('workspace management authority', () => {
+  it.each(['archive', 'unarchive', 'delete', 'bulk-archive', 'bulk-delete'] as const)(
+    'refuses guest-owned workspace lifecycle RPCs: %s',
+    async (operation) => {
+      vi.resetAllMocks();
+      mocks.getActiveWorkNames.mockResolvedValue(noActiveWork);
+      mocks.navigate.mockResolvedValue(undefined);
+      mocks.archive.mockResolvedValue({ ok: false, error: 'GuestForbidden' });
+      mocks.unarchive.mockResolvedValue({ ok: false, error: 'GuestForbidden' });
+      mocks.deleteWorkspace.mockResolvedValue({ ok: false, error: 'GuestForbidden' });
+      const owned = { ...workspace('ws-1'), myRole: 'owner' as const, canManage: true };
+      const run = harness([owned]);
+      const authority = run.authority();
+      authority.principal.snapshot!.capabilities.hostMembership = true;
+      authority.principal.snapshot!.principal.hostRole = 'guest';
+      authority.principal.snapshot!.principal.isAdministrator = false;
+      run.send(
+        setWorkspaceHasLoaded(true, 'local', selectPrincipalAdmissionContext.select(authority)),
+      );
+      try {
+        expect(
+          selectWorkspaceManagementContext.select(
+            { ...authority, workspace: run.state().workspace },
+            owned.id,
+          ),
+        ).not.toBeNull();
+        if (operation === 'archive') run.send(requestArchiveWorkspace(owned.id));
+        if (operation === 'unarchive') run.send(requestUnarchiveWorkspace(owned.id));
+        if (operation === 'delete') run.send(requestDeleteWorkspace(owned.id));
+        if (operation === 'bulk-archive') {
+          run.send(openBulkArchiveConfirm({ workspaceIds: [owned.id] }));
+          await settle();
+          run.send(confirmBulkArchive());
+        }
+        if (operation === 'bulk-delete') {
+          run.send(openBulkDeleteConfirm({ workspaceIds: [owned.id] }));
+          await settle();
+          run.send(confirmBulkDelete());
+        }
+        await settle();
+        expect(mocks.archive).not.toHaveBeenCalled();
+        expect(mocks.unarchive).not.toHaveBeenCalled();
+        expect(mocks.deleteWorkspace).not.toHaveBeenCalled();
+        expect(mocks.cancelDelete).not.toHaveBeenCalled();
+        expect(getItem(run.state().workspace.workspaces, owned.id)).toEqual(owned);
+      } finally {
+        run.task.cancel();
+        await run.task.toPromise();
+      }
+    },
+  );
+
+  it.each(['failed-result', 'thrown-error'] as const)(
+    'never restores a live-deleted workspace after a pending delete %s',
+    async (outcome) => {
+      vi.resetAllMocks();
+      mocks.getActiveWorkNames.mockResolvedValue(noActiveWork);
+      mocks.navigate.mockResolvedValue(undefined);
+      let resolve!: (value: unknown) => void;
+      let reject!: (reason: Error) => void;
+      mocks.deleteWorkspace.mockReturnValue(
+        new Promise((done, fail) => {
+          resolve = done;
+          reject = fail;
+        }),
+      );
+      const run = harness([workspace('ws-1')]);
+      try {
+        run.send(requestDeleteWorkspace('ws-1'));
+        await settle();
+        expect(mocks.deleteWorkspace).toHaveBeenCalledTimes(1);
+        expect(getItem(run.state().workspace.workspaces, 'ws-1')).toBeUndefined();
+        expect(run.state().workspace.pendingDeletions['ws-1']).toBe(true);
+        run.send(workspaceDeleted('ws-1', []));
+        if (outcome === 'failed-result') resolve({ ok: false, error: 'late failure' });
+        else reject(new Error('response lost'));
+        await settle();
+        expect(getItem(run.state().workspace.workspaces, 'ws-1')).toBeUndefined();
+        expect(run.state().workspace.pendingDeletions).toEqual({});
+        expect(run.dispatch.mock.calls.flat()).toContainEqual(
+          expect.objectContaining({ type: 'workspace/loadWorkspacesRequested' }),
+        );
+      } finally {
+        run.task.cancel();
+        await run.task.toPromise();
+      }
+    },
+  );
+
   it.each(['new-admission', 'new-list', 'new-detail'] as const)(
     'clears a failed deletion without restoring an older workspace grant: %s',
     async (change) => {
@@ -1294,7 +1383,7 @@ describe('workspace management authority', () => {
       const run = harness([owned]);
       const authority = run.authority();
       authority.principal.snapshot!.capabilities.hostMembership = true;
-      authority.principal.snapshot!.principal.hostRole = 'guest';
+      authority.principal.snapshot!.principal.hostRole = 'member';
       authority.principal.snapshot!.principal.isAdministrator = false;
       run.send(
         setWorkspaceHasLoaded(true, 'local', selectPrincipalAdmissionContext.select(authority)),
@@ -1493,7 +1582,7 @@ describe('workspace management authority', () => {
     }
   });
 
-  it('lets a guest owner archive only the granted workspace while refusing creation', async () => {
+  it('refuses direct archive and creation for a guest even with an owned workspace grant', async () => {
     vi.resetAllMocks();
     mocks.getActiveWorkNames.mockResolvedValue(noActiveWork);
     mocks.archive.mockResolvedValue({ ok: true });
@@ -1523,8 +1612,8 @@ describe('workspace management authority', () => {
       run.send(requestArchiveWorkspace('ungranted'));
       run.send(applyWorkspaceProposal({ proposal: createProposal('guest-create') }));
       await settle();
-      expect(mocks.archive.mock.calls).toEqual([['owned']]);
-      expect(getItem(run.state().workspace.workspaces, 'owned')?.archived).toBe(true);
+      expect(mocks.archive).not.toHaveBeenCalled();
+      expect(getItem(run.state().workspace.workspaces, 'owned')?.archived).toBe(false);
       expect(mocks.create).not.toHaveBeenCalled();
     } finally {
       run.task.cancel();

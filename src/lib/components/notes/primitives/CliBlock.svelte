@@ -21,7 +21,7 @@
 
   import { openAgentTabRequested } from '$store/renderer/slices/app-layout/app-layout-slice';
   import { openTab } from '$store/renderer/slices/panel-layout/panel-layout-slice';
-  import { selectIsWorkspaceCollaborator } from '$store/renderer/slices/workspace/workspace-selectors';
+  import { selectWorkspaceExecutionContext } from '$store/renderer/slices/workspace/workspace-selectors';
   import { store as appStore } from '$store/renderer/store';
   import { getNavigationContext } from '$lib/components/layout/panel-system/panel-context';
   import { m } from '$shared/paraglide/messages.js';
@@ -48,7 +48,7 @@
   $effect(() => {
     workspaceIdStore.set(workspaceId ?? '');
   });
-  const isCollaborator$ = selectIsWorkspaceCollaborator(workspaceIdStore);
+  const executionContext$ = selectWorkspaceExecutionContext(workspaceIdStore);
 
   // Cleanup on destroy
   onDestroy(() => {
@@ -91,6 +91,12 @@
       notify.error(m.notes_cliBlock_noWorkspace_error());
       return;
     }
+    const targetWorkspaceId = workspaceId;
+    const context = selectWorkspaceExecutionContext.select(appStore.state, targetWorkspaceId);
+    if (!context || context !== $executionContext$) return;
+    const isCurrent = () =>
+      workspaceId === targetWorkspaceId &&
+      selectWorkspaceExecutionContext.select(appStore.state, targetWorkspaceId) === context;
 
     running = true;
     unsubscribeExit?.();
@@ -102,13 +108,17 @@
         terminalId?: string;
         error?: string;
       }>('terminal:createWithCommand', {
-        workspaceId,
+        workspaceId: targetWorkspaceId,
         command: primitive.command,
         cwd: primitive.cwd,
         title:
           primitive.description ||
           m.notes_cliBlock_commandTitle_label({ command: primitive.command.substring(0, 30) }),
       });
+      if (!isCurrent()) {
+        running = false;
+        return;
+      }
 
       if (result.ok && result.terminalId) {
         terminalId = result.terminalId;
@@ -120,6 +130,7 @@
             running = false;
             unsubscribeExit?.();
             unsubscribeExit = null;
+            if (!isCurrent()) return;
 
             // Update primitive with result
             if (updateAttributes && primitive) {
@@ -159,6 +170,10 @@
         throw new Error(result.error || m.notes_cliBlock_createTerminalFailed_error());
       }
     } catch (err) {
+      if (!isCurrent()) {
+        running = false;
+        return;
+      }
       logger.error('[runCommand] Error running command', {
         error: err,
         command: primitive?.command,
@@ -175,6 +190,7 @@
     const tid = terminalId || primitive?.terminalId;
     if (!tid) return;
     if (!workspaceId) return;
+    if (!selectWorkspaceExecutionContext.select(appStore.state, workspaceId)) return;
 
     appStore.dispatch(
       openTab(workspaceId, {
@@ -219,7 +235,7 @@
       <code class="type-code min-w-0 flex-1 truncate bg-transparent p-0 text-foreground">
         {primitive.command}
       </code>
-      {#if !$isCollaborator$}
+      {#if $executionContext$}
         <Button
           variant="ghost-light"
           size="sm"

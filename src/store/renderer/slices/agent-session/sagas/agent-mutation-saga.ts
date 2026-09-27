@@ -650,6 +650,11 @@ function* undoDeletion(action: ReturnType<typeof undoAgentDeletionRequested>): S
       settled = true;
       return;
     }
+    if (yield* selectHidesAgentLifecycleActions.effect(pending.wsId)) {
+      yield* put(action.success(false));
+      settled = true;
+      return;
+    }
     let cancel;
     try {
       cancel = yield* call(
@@ -690,6 +695,10 @@ function* deleteImmediately(
   action: ReturnType<typeof deleteAgentSessionRequested>,
 ): SagaGenerator<void> {
   const [wsId, agentId] = action.payload;
+  if (yield* selectHidesAgentLifecycleActions.effect(wsId)) {
+    yield* put(action.failure(new Error(m.agent_mutation_deleteNotPermitted_error())));
+    return;
+  }
   const snapshot = yield* selectAgentSession.effect(agentId);
   const entry: PendingAgentDeletion = { wsId, agentId, snapshot };
   let settled = false;

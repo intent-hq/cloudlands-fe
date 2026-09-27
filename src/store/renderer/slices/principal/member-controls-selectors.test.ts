@@ -23,6 +23,8 @@ import {
   selectWorkspaceManagementDenied,
   selectWorkspaceExecutionContext,
   selectWorkspaceExecutionDenied,
+  selectHidesOwnerWorkspaceActions,
+  selectHidesAgentLifecycleActions,
 } from '../workspace/workspace-selectors';
 
 function admitted(role: HostRole, multiplayer: boolean | undefined = true) {
@@ -109,7 +111,9 @@ describe('member workspace controls', () => {
     expect(selectWorkspaceManagementDenied.select(state, 'owned')).toBe(false);
     expect(selectWorkspaceExecutionContext.select(state, 'owned')).toBeNull();
     expect(selectWorkspaceExecutionDenied.select(state, 'owned')).toBe(true);
-    expect(selectCanShareWorkspace.select(state, 'owned')).toBe(true);
+    expect(selectCanShareWorkspace.select(state, 'owned')).toBe(false);
+    expect(selectHidesOwnerWorkspaceActions.select(state, 'owned')).toBe(true);
+    expect(selectHidesAgentLifecycleActions.select(state, 'owned')).toBe(true);
     for (const id of ['shared', 'ungranted', '__chief__']) {
       expect(selectCanManageWorkspace.select(state, id)).toBe(false);
       expect(selectWorkspaceManagementContext.select(state, id)).toBeNull();

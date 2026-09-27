@@ -50,6 +50,7 @@ import {
   selectTransferWorkspaceId,
 } from '../workspace-transfer-selectors';
 import type { TransferPlanWireResult } from '../workspace-transfer-types';
+import { selectWorkspaceHostOperationContext } from '../../workspace/workspace-selectors';
 
 const logger = createLogger('WorkspaceTransferSaga');
 const TRANSFER = IPC_CHANNELS.TRANSFER;
@@ -73,12 +74,16 @@ async function invokeTransfer<T>(channel: string, params?: unknown): Promise<T> 
 function* fetchTransferPlan(): SagaGenerator<void> {
   const workspaceId = yield* selectTransferWorkspaceId.effect();
   if (!workspaceId) return;
+  const context = yield* selectWorkspaceHostOperationContext.effect(workspaceId);
+  if (!context) return;
   try {
     const result = yield* call(backendRequest<TransferPlanWireResult>, 'workspace.transfer.plan', {
       workspaceId,
     });
+    if ((yield* selectWorkspaceHostOperationContext.effect(workspaceId)) !== context) return;
     yield* put(transferPlanLoaded(result.plan));
   } catch (error) {
+    if ((yield* selectWorkspaceHostOperationContext.effect(workspaceId)) !== context) return;
     logger.error('workspace.transfer.plan failed', { workspaceId, error });
     yield* put(transferPlanFailed(toMessage(error)));
   }
@@ -89,11 +94,14 @@ function* runTransfer(): SagaGenerator<void> {
   const workspaceId = yield* selectTransferWorkspaceId.effect();
   const destination = yield* selectTransferDestinationValue.effect();
   if (!workspaceId || !destination) return;
+  const context = yield* selectWorkspaceHostOperationContext.effect(workspaceId);
+  if (!context) return;
   try {
     const result = yield* call(invokeTransfer<TransferStartResult>, TRANSFER.START, {
       workspaceId,
       destination,
     });
+    if ((yield* selectWorkspaceHostOperationContext.effect(workspaceId)) !== context) return;
     if (result.success) {
       yield* put(
         transferRunSucceeded({
@@ -112,6 +120,7 @@ function* runTransfer(): SagaGenerator<void> {
       );
     }
   } catch (error) {
+    if ((yield* selectWorkspaceHostOperationContext.effect(workspaceId)) !== context) return;
     logger.error('transfer:start failed', { workspaceId, error });
     yield* put(transferRunFailed({ error: toMessage(error), failurePhase: null }));
   }
@@ -168,6 +177,10 @@ function* resolveDestinationLabel(): SagaGenerator<string> {
 function* finalizeTransfer(
   action: ReturnType<typeof transferFinalizeRequested>,
 ): SagaGenerator<void> {
+  const workspaceId = yield* selectTransferWorkspaceId.effect();
+  if (!workspaceId) return;
+  const context = yield* selectWorkspaceHostOperationContext.effect(workspaceId);
+  if (!context) return;
   const [{ openTarget }] = action.payload;
   const destination = yield* selectTransferDestinationValue.effect();
   const archiveSource = yield* selectTransferArchiveSource.effect();
@@ -188,6 +201,7 @@ function* finalizeTransfer(
       restartAgents: destination?.kind === 'server' ? restartAgents : false,
       ...(finalStatusMessage ? { finalStatusMessage } : {}),
     });
+    if ((yield* selectWorkspaceHostOperationContext.effect(workspaceId)) !== context) return;
     if (!result.success) {
       yield* put(transferFinalizeFailed(failureMessage(result)));
       return;
@@ -200,11 +214,13 @@ function* finalizeTransfer(
     if (resumeFailed.length > 0) {
       yield* call(showResumeFailedToast, resumeFailed.length);
     }
+    if ((yield* selectWorkspaceHostOperationContext.effect(workspaceId)) !== context) return;
     yield* put(closeTransferModal());
     if (openTarget && destination?.kind === 'server') {
       yield* put(openConnectionRequested(destination.connectionId));
     }
   } catch (error) {
+    if ((yield* selectWorkspaceHostOperationContext.effect(workspaceId)) !== context) return;
     logger.error('transfer:finalize failed', { error });
     yield* put(transferFinalizeFailed(toMessage(error)));
   }

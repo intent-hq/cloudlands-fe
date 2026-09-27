@@ -5,6 +5,9 @@ import { createLogger } from '$lib/utils/client-logger';
 import type { WorkspaceId } from '$shared/types/branded-ids';
 import { takeSingleFlightInContext } from '../../../utils/context-saga-effects';
 import { refreshAcceptChangesStatus } from '../../changes/changes-slice';
+import { principalReceived } from '../../principal/principal-slice';
+import { setWorkspaceHasLoaded } from '../../workspace/workspace-slice';
+import { selectWorkspaceHostOperationContext } from '../../workspace/workspace-selectors';
 import { selectCurrentWorkspaceTabId } from '../../tab-state/tab-state-selectors';
 import { CURRENT_WORKSPACE_TAB_SELECTION_ACTIONS } from '../../tab-state/tab-state-slice';
 import {
@@ -23,13 +26,13 @@ import { selectAcceptChangesStatus, selectPostMergeState } from '../git-selector
 
 const logger = createLogger('AcceptChangesStatusSaga');
 
-type Entry = { consumers: number; dirty: boolean; generation: number };
+type Entry = { consumers: number; dirty: boolean; generation: number; authority: string | null };
 type Coordinator = Map<string, Entry>;
 
 function entryFor(coordinator: Coordinator, workspaceId: string): Entry {
   const existing = coordinator.get(workspaceId);
   if (existing) return existing;
-  const entry = { consumers: 0, dirty: false, generation: 0 };
+  const entry: Entry = { consumers: 0, dirty: false, generation: 0, authority: null };
   coordinator.set(workspaceId, entry);
   return entry;
 }
@@ -59,6 +62,9 @@ function* refreshStatus(coordinator: Coordinator, action: RefreshAction): SagaGe
   const [workspaceId] = action.payload;
   const entry = entryFor(coordinator, workspaceId);
   const generation = entry.generation;
+  const authority = yield* selectWorkspaceHostOperationContext.effect(workspaceId);
+  entry.authority = authority;
+  if (!authority) return;
   entry.dirty = false;
   yield* put(setAcceptChangesStatusLoading(workspaceId, true));
   try {
@@ -67,7 +73,13 @@ function* refreshStatus(coordinator: Coordinator, action: RefreshAction): SagaGe
       workspaceId as WorkspaceId,
     );
     const visible = yield* isVisible(entry, workspaceId);
-    if (visible && entry.generation === generation && !entry.dirty) {
+    const currentAuthority = yield* selectWorkspaceHostOperationContext.effect(workspaceId);
+    if (
+      visible &&
+      currentAuthority === authority &&
+      entry.generation === generation &&
+      !entry.dirty
+    ) {
       const current = yield* selectPostMergeState.effect(workspaceId);
       yield* put(setAcceptChangesStatus(workspaceId, status));
       yield* put(
@@ -80,7 +92,7 @@ function* refreshStatus(coordinator: Coordinator, action: RefreshAction): SagaGe
           isContentMergedToTrunk: status.isContentMergedToTrunk ?? false,
         }),
       );
-    } else if (!visible) {
+    } else if (!visible || currentAuthority !== authority) {
       entry.dirty = true;
     }
   } catch (error) {
@@ -151,6 +163,13 @@ function* reconnected(coordinator: Coordinator): SagaGenerator<void> {
   }
 }
 
+function* authorityRefreshed(coordinator: Coordinator): SagaGenerator<void> {
+  for (const [workspaceId, entry] of coordinator) {
+    const authority = yield* selectWorkspaceHostOperationContext.effect(workspaceId);
+    if (authority !== entry.authority) yield* invalidate(coordinator, workspaceId);
+  }
+}
+
 export function* acceptChangesStatusSaga(): SagaGenerator<void> {
   const coordinator: Coordinator = new Map();
   yield* all([
@@ -165,5 +184,6 @@ export function* acceptChangesStatusSaga(): SagaGenerator<void> {
     takeEvery(acceptChangesStatusInvalidated, invalidated, coordinator),
     takeEvery(CURRENT_WORKSPACE_TAB_SELECTION_ACTIONS, activeWorkspaceChanged, coordinator),
     takeEvery(backendReconnected, reconnected, coordinator),
+    takeEvery([principalReceived, setWorkspaceHasLoaded], authorityRefreshed, coordinator),
   ]);
 }

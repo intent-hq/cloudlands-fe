@@ -711,6 +711,7 @@ workspaceReducer.with(removeWorkspaceEntity, (state, { payload: [wsId] }) => {
 workspaceReducer.with(workspaceDeleted, (state, { payload: [wsId] }) => {
   const existsInCollection = !!getWorkspaceById(state.workspaces, wsId);
   const hasPendingState =
+    state.pendingDeletions[wsId] ||
     state.pendingArchives[wsId] ||
     state.pendingCreations[wsId] ||
     state.pendingTitleMutations[wsId] ||
@@ -729,6 +730,9 @@ workspaceReducer.with(workspaceDeleted, (state, { payload: [wsId] }) => {
   const { [wsId]: _removedRecency, ...nextLastViewedAt } = state.recency.lastViewedAt;
   return {
     ...state,
+    // A live removal invalidates cached rollback even when optimistic deletion
+    // already hid the row. Keep its token/tombstone until the operation settles.
+    projectionVersion: state.projectionVersion + 1,
     workspaces: existsInCollection
       ? removeItem(state.workspaces, wsId as Workspace['id'])
       : state.workspaces,

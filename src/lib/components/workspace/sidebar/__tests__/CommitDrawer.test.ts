@@ -1,3 +1,4 @@
+const operationAuthority = vi.hoisted(() => ({ context: 'owner-admission' as string | null }));
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { render, fireEvent, waitFor } from '@testing-library/svelte';
 import type { TrackedChange } from '$features/file-tracking/types';
@@ -121,7 +122,19 @@ warmImport(() => import('./mocks/Fa.svelte'));
 warmImport(() => import('../CommitDrawer.svelte'));
 
 describe('CommitDrawer', () => {
+  it('preserves manual commit while withholding guest agent autofill', async () => {
+    operationAuthority.context = null;
+    const { container, onCommit } = await renderDrawer();
+    expect(container.textContent).not.toContain('Auto-fill');
+    const commit = findSubmitCommitBtn(container)!;
+    await fireEvent.click(commit);
+    expect(onCommit).toHaveBeenCalled();
+    expect(mocks.dispatch).not.toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'backgroundAgentExecutor/execute' }),
+    );
+  });
   beforeEach(() => {
+    operationAuthority.context = 'owner-admission';
     mocks.dispatch.mockClear();
     mocks.sidebarChanges.commitWhenReady = false;
     mocks.executorState.status = 'idle';
@@ -167,3 +180,8 @@ describe('CommitDrawer', () => {
     );
   });
 });
+
+vi.mock('$store/renderer/slices/workspace/workspace-selectors', async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
+  selectWorkspaceHostOperationContext: mocks.selector(() => operationAuthority.context),
+}));

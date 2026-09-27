@@ -1,3 +1,4 @@
+const operationAuthority = vi.hoisted(() => ({ context: 'owner-admission' as string | null }));
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { render, fireEvent, waitFor } from '@testing-library/svelte';
 import { ChangeStage, type TrackedChange } from '$features/file-tracking/types';
@@ -220,6 +221,7 @@ async function renderSection(overrides: Partial<Record<string, unknown>> = {}) {
 
 describe('FileChangesSection', () => {
   beforeEach(() => {
+    operationAuthority.context = 'owner-admission';
     mocks.dispatch.mockClear();
     mocks.reduxDispatch.mockClear();
     mocks.openTab.mockClear();
@@ -446,3 +448,8 @@ describe('FileChangesSection', () => {
     expect(mocks.openTab).not.toHaveBeenCalled();
   });
 });
+
+vi.mock('$store/renderer/slices/workspace/workspace-selectors', async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
+  selectWorkspaceHostOperationContext: mocks.selector(() => operationAuthority.context),
+}));

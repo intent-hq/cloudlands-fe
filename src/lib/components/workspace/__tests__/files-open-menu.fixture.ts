@@ -16,6 +16,7 @@ import {
   setWorkspaceEntity,
 } from '$store/renderer/slices/workspace/workspace-slice';
 import { setMultiSelectSidebarSelectedTabs } from '$store/renderer/slices/sidebar-nav/sidebar-nav-slice';
+import { admitLegacyPrincipal } from '../../../../test/fixtures/principal-state';
 
 export const FILES_MENU_WORKSPACE = 'preview-files-menu';
 export const FILES_MENU_PATH = '/tmp/intent-demo/worktrees/sample-project';
@@ -30,6 +31,7 @@ export function setupFilesMenuFixture(
   fontSize: number,
   collapsed = false,
 ) {
+  admitLegacyPrincipal();
   const previous = {
     editors: selectInstalledEditors.select(store.state),
     editorState: store.state.externalEditors,

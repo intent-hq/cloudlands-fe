@@ -80,6 +80,7 @@ vi.mock('$lib/utils/workspace-navigation', async (importOriginal) => ({
 }));
 
 vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
+  selectWorkspaceHostOperationContext: mocks.selector(() => 'owner-admission'),
   selectCanShareWorkspace: mocks.selector(
     () =>
       mocks.workspaceEntity.myRole === 'owner' &&

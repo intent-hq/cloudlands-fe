@@ -23,6 +23,9 @@ import { openConnectionRequested } from '../../connections/connections-slice';
 import type { ConnectionRecord, ConnectionsState } from '../../connections/connections-types';
 import type { TransferPlan, WorkspaceTransferState } from '../workspace-transfer-types';
 import { workspaceTransferSaga } from './workspace-transfer-saga';
+import { withLegacyPrincipal } from '../../../../../test/fixtures/principal-state';
+import { initialState as workspaceInitialState } from '../../workspace/workspace-slice';
+import { selectPrincipalAdmissionContext } from '../../principal/principal-selectors';
 
 const plan: TransferPlan = {
   manifest: {
@@ -72,6 +75,10 @@ function connectionsState(): ConnectionsState {
 function harness(seed: WorkspaceTransferState = initialState) {
   const channel = stdChannel();
   let state = seed;
+  const authority = withLegacyPrincipal({
+    workspace: { ...workspaceInitialState },
+    connections: connectionsState(),
+  });
   const dispatch = vi.fn((action) => {
     state = workspaceTransferReducer(state, action);
     channel.put(action);
@@ -80,11 +87,11 @@ function harness(seed: WorkspaceTransferState = initialState) {
     {
       channel,
       dispatch,
-      getState: () => ({ workspaceTransfer: state, connections: connectionsState() }),
+      getState: () => ({ ...authority, workspaceTransfer: state }),
     },
     workspaceTransferSaga,
   );
-  return { channel, dispatch, task, state: () => state };
+  return { channel, dispatch, task, state: () => state, authority };
 }
 
 function openedForPlan(): WorkspaceTransferState {
@@ -97,8 +104,72 @@ function openedForPlan(): WorkspaceTransferState {
 }
 
 describe('workspaceTransferSaga', () => {
+  it.each(['plan', 'start', 'finalize'] as const)(
+    'refuses a stale guest-owned transfer dialog: %s',
+    async (step) => {
+      mocks.invoke.mockClear();
+      vi.stubGlobal('window', {
+        electronAPI: { invoke: mocks.invoke, on: vi.fn(() => 'listener-1'), offById: vi.fn() },
+      });
+      const h = harness(openedForPlan());
+      h.authority.principal.snapshot!.capabilities.hostMembership = true;
+      h.authority.principal.snapshot!.principal.hostRole = 'guest';
+      h.authority.principal.snapshot!.principal.isAdministrator = false;
+      Object.assign(h.authority.workspace, {
+        hasLoaded: true,
+        loadedBackendId: 'local',
+        loadedPrincipalContext: selectPrincipalAdmissionContext.select(h.authority),
+        workspaces: {
+          ids: ['ws-1'],
+          map: { 'ws-1': { id: 'ws-1', myRole: 'owner', canManage: true } },
+        },
+      });
+      mocks.request.mockResolvedValue({ plan });
+      mocks.invoke.mockResolvedValue({ success: true });
+      try {
+        h.channel.put(
+          step === 'plan'
+            ? transferPlanRequested()
+            : step === 'start'
+              ? transferStartRequested()
+              : transferFinalizeRequested({ openTarget: false }),
+        );
+        await settle();
+        expect(mocks.request).not.toHaveBeenCalled();
+        expect(mocks.invoke).not.toHaveBeenCalled();
+      } finally {
+        h.task.cancel();
+        await h.task.toPromise();
+        vi.unstubAllGlobals();
+      }
+    },
+  );
   afterEach(() => {
     mocks.request.mockReset();
+  });
+
+  it('drops a held plan when a different workspace dialog replaces it', async () => {
+    let resolve!: (value: { plan: typeof plan }) => void;
+    mocks.request.mockReturnValue(
+      new Promise((done) => {
+        resolve = done;
+      }),
+    );
+    const h = harness(openedForPlan());
+    try {
+      h.channel.put(transferPlanRequested());
+      expect(mocks.request).toHaveBeenCalledWith('workspace.transfer.plan', {
+        workspaceId: 'ws-1',
+      });
+      h.dispatch(openTransferModal({ workspaceId: 'ws-2', workspaceTitle: 'Other' }));
+      resolve({ plan });
+      await settle();
+      expect(h.state().workspaceId).toBe('ws-2');
+      expect(h.state().plan).toBeNull();
+    } finally {
+      h.task.cancel();
+      await h.task.toPromise();
+    }
   });
 
   it('sends workspace.transfer.plan with the pending workspaceId and stores the plan', async () => {

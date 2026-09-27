@@ -75,6 +75,7 @@
   } from '$store/renderer/slices/workspace/workspace-slice';
   import {
     selectHidesOwnerWorkspaceActions,
+    selectWorkspaceHostOperationContext,
     selectCanShareWorkspace,
     selectWorkspaceById,
     selectWorkspaceProgressActions,
@@ -285,10 +286,15 @@
 
   async function handleUnarchive() {
     if (!$workspace) return;
+    const target = $workspace;
+    const context = selectWorkspaceHostOperationContext.select(appStore.state, target.id);
+    if (!context) return;
     const { notify } = await import('$lib/components/patterns/notify');
     const workspaceTitle = $workspace.title || m.workspace_multiSelectSidebar_space_label();
 
-    const result = await workspaceClient.unarchive($workspace.id);
+    if (selectWorkspaceHostOperationContext.select(appStore.state, target.id) !== context) return;
+    const result = await workspaceClient.unarchive(target.id);
+    if (selectWorkspaceHostOperationContext.select(appStore.state, target.id) !== context) return;
     if (result.ok) {
       appStore.dispatch(loadWorkspacesRequested());
       notify.success(m.workspace_progressCard_unarchivedSpace_toast({ title: workspaceTitle }));
@@ -508,6 +514,7 @@
           dividerBefore: !shareAction,
           onClick: () => {
             if (!$workspace) return;
+            if (selectHidesOwnerWorkspaceActions.select(appStore.state, $workspace.id)) return;
             appStore.dispatch(
               openTransferModal({
                 workspaceId: $workspace.id,

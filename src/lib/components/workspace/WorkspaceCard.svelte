@@ -721,6 +721,7 @@
       label: m.workspace_card_transfer_label(),
       icon: faRightLeft,
       onClick: () => {
+        if (selectHidesOwnerWorkspaceActions.select(appStore.state, workspace.id)) return;
         appStore.dispatch(
           openTransferModal({ workspaceId: workspace.id, workspaceTitle: workspace.title }),
         );

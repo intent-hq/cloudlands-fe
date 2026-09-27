@@ -794,6 +794,31 @@ describe('agentCreationSaga', () => {
   describe('collaborator connection (guest window)', () => {
     const guestState = () => state('', [], 'augment', { augment: 'sonnet' }, guestWindowIdentity());
 
+    it('refuses new-agent creation for an admitted guest with an explicit workspace owner grant', async () => {
+      const current = withLegacyPrincipal(guestState(), 'guest');
+      current.principal.snapshot!.capabilities.hostMembership = true;
+      current.principal.snapshot!.principal.hostRole = 'guest';
+      const { selectPrincipalAdmissionContext } =
+        await import('../../principal/principal-selectors');
+      Object.assign(current.workspace, {
+        hasLoaded: true,
+        loadedBackendId: current.connections.windowBackendId,
+        loadedPrincipalContext: selectPrincipalAdmissionContext.select(current),
+      });
+      Object.assign(current.workspace.workspaces.map[WS], { myRole: 'owner', canManage: true });
+      mocks.createAgent.mockResolvedValue({ success: true, agent: session(), agentId: AGENT });
+      const { channel, task } = start(() => current);
+      try {
+        channel.put(createAgentRequested(WS));
+        await settle();
+        expect(mocks.createAgent).not.toHaveBeenCalled();
+        expect(mocks.backendRequest).not.toHaveBeenCalled();
+      } finally {
+        task.cancel();
+        await task.toPromise();
+      }
+    });
+
     it.each([
       ['createAgentRequested', () => createAgentRequested(WS)],
       ['createAgentWithSpecialistRequested', () => createAgentWithSpecialistRequested(WS, null)],

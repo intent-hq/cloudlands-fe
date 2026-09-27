@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { selectWorkspaceHostOperationContext } from '$store/renderer/slices/workspace/workspace-selectors';
   import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-session-selectors';
   /**
    * FileChangesSection - Unstaged/Staged file changes with agent grouping
@@ -127,6 +128,8 @@
 
   // Redux selectors
   const workspaceIdStore = writable('');
+  const hostOperationContext$ = selectWorkspaceHostOperationContext(workspaceIdStore);
+  const canHostOperations = $derived(isOwner && $hostOperationContext$ !== null);
   $effect(() => {
     workspaceIdStore.set(workspaceId);
   });
@@ -550,6 +553,12 @@
 
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   async function handleCommitGroup(group: AgentChangeGroup) {
+    const targetWorkspaceId = workspaceId;
+    const context = selectWorkspaceHostOperationContext.select(appStore.state, targetWorkspaceId);
+    if (!context) return;
+    const isCurrent = () =>
+      workspaceId === targetWorkspaceId &&
+      selectWorkspaceHostOperationContext.select(appStore.state, targetWorkspaceId) === context;
     if (group.agentId && group.agentId in $lockedAgentIds$) {
       logger.warn('Cannot commit locked agent group', { agentId: group.agentId });
       return;
@@ -561,15 +570,17 @@
       if (!stageResult.success) {
         throw new Error(stageResult.error || 'Stage failed');
       }
+      if (!isCurrent()) return;
       const result = await AcceptChangesClient.execute(workspaceId as WorkspaceId, 'commit', {
         commitMessage,
       });
       if (result.success) {
         try {
-          await Promise.all([
-            Promise.resolve(appStore.dispatch(loadGitStatus(workspaceId, true))),
-            appStore.dispatch(refreshRequested(workspaceId, true)),
-          ]);
+          if (isCurrent())
+            await Promise.all([
+              Promise.resolve(appStore.dispatch(loadGitStatus(workspaceId, true))),
+              appStore.dispatch(refreshRequested(workspaceId, true)),
+            ]);
         } catch (e) {
           console.warn('Failed to refresh stores after group commit:', e);
         }
@@ -589,6 +600,7 @@
 
   // --- Group commit queue ---
   function enqueueGroupCommit(group: AgentChangeGroup, section: 'unstaged' | 'staged') {
+    if (!selectWorkspaceHostOperationContext.select(appStore.state, workspaceId)) return;
     const key = getGroupKey(group, section);
     if (groupCommit.active === key || groupCommit.queue.some((e) => e.groupKey === key)) return;
     if (group.agentId && group.agentId in $lockedAgentIds$) return;
@@ -626,6 +638,12 @@
   // IPC/AcceptChangesClient path; the temporary unstage/re-stage around it
   // routes through the git-write-service seam (git.unstage / git.stage).
   async function commitSingleGroup(group: AgentChangeGroup, section: 'unstaged' | 'staged') {
+    const targetWorkspaceId = workspaceId;
+    const context = selectWorkspaceHostOperationContext.select(appStore.state, targetWorkspaceId);
+    if (!context) return;
+    const isCurrent = () =>
+      workspaceId === targetWorkspaceId &&
+      selectWorkspaceHostOperationContext.select(appStore.state, targetWorkspaceId) === context;
     const paths = group.files.map((f) => f.path);
     const pathSet = new Set(paths);
     const message = group.agentId
@@ -643,12 +661,14 @@
           throw new Error(unstageResult.error || 'Unstage failed');
         }
       }
+      if (!isCurrent()) return;
       if (section === 'unstaged') {
         const stageResult = await stageFilesViaSeam(workspaceId, paths);
         if (!stageResult.success) {
           throw new Error(stageResult.error || 'Stage failed');
         }
       }
+      if (!isCurrent()) return;
       const result = await AcceptChangesClient.execute(workspaceId as WorkspaceId, 'commit', {
         commitMessage: message,
       });
@@ -656,16 +676,17 @@
         throw new Error(result.error || 'Commit failed');
       }
     } finally {
-      if (otherStagedPaths.length > 0) {
+      if (isCurrent() && otherStagedPaths.length > 0) {
         const restageResult = await stageFilesViaSeam(workspaceId, otherStagedPaths);
         if (!restageResult.success) {
           logger.error('Failed to re-stage files after group commit', restageResult.error);
         }
       }
-      await Promise.all([
-        Promise.resolve(appStore.dispatch(loadGitStatus(workspaceId, true))),
-        appStore.dispatch(refreshRequested(workspaceId, true)),
-      ]).catch(() => {});
+      if (isCurrent())
+        await Promise.all([
+          Promise.resolve(appStore.dispatch(loadGitStatus(workspaceId, true))),
+          appStore.dispatch(refreshRequested(workspaceId, true)),
+        ]).catch(() => {});
     }
   }
 </script>
@@ -682,7 +703,7 @@
   >
     {#snippet action()}
       <!-- Auto-commit toggle (workspace.setAutoCommit is owner-only) -->
-      {#if isOwner}
+      {#if canHostOperations}
         <div
           class="-my-0.5 ml-auto flex min-w-0 items-center justify-end gap-2"
           data-testid="auto-commit-toggle"
@@ -706,7 +727,7 @@
               class="shrink-0"
               ariaLabel={m.workspace_commitDrawer_autoCommit_label()}
               onCheckedChange={() => {
-                if (workspaceId) {
+                if (selectWorkspaceHostOperationContext.select(appStore.state, workspaceId)) {
                   appStore.dispatch(
                     setAutoCommitEnabled(workspaceId as string, !$autoCommitEnabled),
                   );
@@ -808,41 +829,43 @@
                     >
                       <Fa icon={faPlus} class="h-2.5! w-2.5!" />
                     </Button>
-                    {#if commitState === 'active'}
-                      <Tooltip content="Committing..." side="top">
-                        <span class="h-5 w-5 flex items-center justify-center">
-                          <IntentMarkLoader size={10} class="text-primary-ink" />
-                        </span>
-                      </Tooltip>
-                    {:else if commitState === 'queued'}
-                      <Button
-                        variant="ghost-light"
-                        size="icon-xs"
-                        class="h-5 w-5 relative"
-                        tooltip={m.workspace_fileChanges_queuedClickToCancel_tooltip()}
-                        onclick={(e: MouseEvent) => {
-                          e.stopPropagation();
-                          cancelGroupCommit(group, 'unstaged');
-                        }}
-                      >
-                        <span class="text-ui font-semibold text-primary-ink leading-none"
-                          >{queuePos}</span
+                    {#if canHostOperations}
+                      {#if commitState === 'active'}
+                        <Tooltip content="Committing..." side="top">
+                          <span class="h-5 w-5 flex items-center justify-center">
+                            <IntentMarkLoader size={10} class="text-primary-ink" />
+                          </span>
+                        </Tooltip>
+                      {:else if commitState === 'queued'}
+                        <Button
+                          variant="ghost-light"
+                          size="icon-xs"
+                          class="h-5 w-5 relative"
+                          tooltip={m.workspace_fileChanges_queuedClickToCancel_tooltip()}
+                          onclick={(e: MouseEvent) => {
+                            e.stopPropagation();
+                            cancelGroupCommit(group, 'unstaged');
+                          }}
                         >
-                      </Button>
-                    {:else}
-                      <Button
-                        variant="ghost-light"
-                        size="icon-xs"
-                        class="h-5 w-5"
-                        data-testid="group-commit-button"
-                        tooltip={m.workspace_fileChanges_stageAndCommit_tooltip()}
-                        onclick={(e: MouseEvent) => {
-                          e.stopPropagation();
-                          enqueueGroupCommit(group, 'unstaged');
-                        }}
-                      >
-                        <Fa icon={faCodeCommit} class="h-2.5! w-2.5!" />
-                      </Button>
+                          <span class="text-ui font-semibold text-primary-ink leading-none"
+                            >{queuePos}</span
+                          >
+                        </Button>
+                      {:else}
+                        <Button
+                          variant="ghost-light"
+                          size="icon-xs"
+                          class="h-5 w-5"
+                          data-testid="group-commit-button"
+                          tooltip={m.workspace_fileChanges_stageAndCommit_tooltip()}
+                          onclick={(e: MouseEvent) => {
+                            e.stopPropagation();
+                            enqueueGroupCommit(group, 'unstaged');
+                          }}
+                        >
+                          <Fa icon={faCodeCommit} class="h-2.5! w-2.5!" />
+                        </Button>
+                      {/if}
                     {/if}
                   {/if}
                 </div>
@@ -1040,41 +1063,43 @@
                     >
                       <Fa icon={faMinus} class="h-2.5! w-2.5!" />
                     </Button>
-                    {#if commitState === 'active'}
-                      <Tooltip content="Committing..." side="top">
-                        <span class="h-5 w-5 flex items-center justify-center">
-                          <IntentMarkLoader size={10} class="text-primary-ink" />
-                        </span>
-                      </Tooltip>
-                    {:else if commitState === 'queued'}
-                      <Button
-                        variant="ghost-light"
-                        size="icon-xs"
-                        class="h-5 w-5 relative"
-                        tooltip={m.workspace_fileChanges_queuedClickToCancel_tooltip()}
-                        onclick={(e: MouseEvent) => {
-                          e.stopPropagation();
-                          cancelGroupCommit(group, 'staged');
-                        }}
-                      >
-                        <span class="text-ui font-semibold text-primary-ink leading-none"
-                          >{queuePos}</span
+                    {#if canHostOperations}
+                      {#if commitState === 'active'}
+                        <Tooltip content="Committing..." side="top">
+                          <span class="h-5 w-5 flex items-center justify-center">
+                            <IntentMarkLoader size={10} class="text-primary-ink" />
+                          </span>
+                        </Tooltip>
+                      {:else if commitState === 'queued'}
+                        <Button
+                          variant="ghost-light"
+                          size="icon-xs"
+                          class="h-5 w-5 relative"
+                          tooltip={m.workspace_fileChanges_queuedClickToCancel_tooltip()}
+                          onclick={(e: MouseEvent) => {
+                            e.stopPropagation();
+                            cancelGroupCommit(group, 'staged');
+                          }}
                         >
-                      </Button>
-                    {:else}
-                      <Button
-                        variant="ghost-light"
-                        size="icon-xs"
-                        class="h-5 w-5"
-                        data-testid="group-commit-button"
-                        tooltip={m.workspace_commitDrawer_commit_label()}
-                        onclick={(e: MouseEvent) => {
-                          e.stopPropagation();
-                          enqueueGroupCommit(group, 'staged');
-                        }}
-                      >
-                        <Fa icon={faCodeCommit} class="h-2.5! w-2.5!" />
-                      </Button>
+                          <span class="text-ui font-semibold text-primary-ink leading-none"
+                            >{queuePos}</span
+                          >
+                        </Button>
+                      {:else}
+                        <Button
+                          variant="ghost-light"
+                          size="icon-xs"
+                          class="h-5 w-5"
+                          data-testid="group-commit-button"
+                          tooltip={m.workspace_commitDrawer_commit_label()}
+                          onclick={(e: MouseEvent) => {
+                            e.stopPropagation();
+                            enqueueGroupCommit(group, 'staged');
+                          }}
+                        >
+                          <Fa icon={faCodeCommit} class="h-2.5! w-2.5!" />
+                        </Button>
+                      {/if}
                     {/if}
                   {/if}
                 </div>

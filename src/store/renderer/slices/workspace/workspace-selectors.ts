@@ -242,15 +242,19 @@ export const selectWorkspaceManagementContext = store.createSelector<[wsId: stri
       : null,
 );
 
-/** Shell, script and browser RPCs require host admission in addition to workspace management. */
-export const selectWorkspaceExecutionContext = store.createSelector<[wsId: string], string | null>(
-  (state, wsId) => {
-    const role = selectHostRole.select(state);
-    return role === 'owner' || role === 'member'
-      ? selectWorkspaceManagementContext.select(state, wsId)
-      : null;
-  },
-);
+/** Member-only RPCs require host admission as well as the workspace's service grant. */
+export const selectWorkspaceHostOperationContext = store.createSelector<
+  [wsId: string],
+  string | null
+>((state, wsId) => {
+  const role = selectHostRole.select(state);
+  return role === 'owner' || role === 'member'
+    ? selectWorkspaceManagementContext.select(state, wsId)
+    : null;
+});
+
+/** Shell, script and browser RPCs have the same owner/member transport boundary. */
+export const selectWorkspaceExecutionContext = selectWorkspaceHostOperationContext;
 
 export const selectHidesWorkspaceExecutionActions = store.createSelector<[wsId: string], boolean>(
   (state, wsId) => selectWorkspaceExecutionContext.select(state, wsId) === null,
@@ -268,7 +272,7 @@ export const selectIsWorkspaceCollaborator = store.createSelector<[wsId: string]
 );
 
 export const selectHidesOwnerWorkspaceActions = store.createSelector<[wsId: string], boolean>(
-  (state, wsId) => !selectWorkspaceManagementVisible.select(state, wsId),
+  (state, wsId) => selectWorkspaceHostOperationContext.select(state, wsId) === null,
 );
 
 /** Actual ownership stays distinct from management; members remain collaborators. */
@@ -281,13 +285,13 @@ export const selectIsWorkspaceOwner = store.createSelector<[wsId: string], boole
 export const selectCanShareWorkspace = store.createSelector<[wsId: string], boolean>(
   (state, wsId) =>
     selectCollaborationReady.select(state) &&
-    selectCanManageWorkspace.select(state, wsId) &&
+    selectWorkspaceHostOperationContext.select(state, wsId) !== null &&
     (selectPrincipalSnapshot.select(state)?.capabilities.hostMembership === true ||
       selectIsWorkspaceOwner.select(state, wsId)),
 );
 
 export const selectHidesAgentLifecycleActions = store.createSelector<[wsId: string], boolean>(
-  (state, wsId) => !selectWorkspaceManagementVisible.select(state, wsId),
+  (state, wsId) => selectWorkspaceHostOperationContext.select(state, wsId) === null,
 );
 
 /** Existing host-administration gate. Workspace creation uses selectCanCreateWorkspace. */

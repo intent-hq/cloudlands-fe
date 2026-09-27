@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { selectWorkspaceHostOperationContext } from '$store/renderer/slices/workspace/workspace-selectors';
+  import { selectCanAdministerHost } from '$store/renderer/slices/principal/principal-selectors';
   import { Input } from '$lib/components/ui/input';
   /**
    * CommitsTimeline - Commits section of the sidebar changes panel
@@ -111,6 +113,10 @@
 
   // Redux selectors at component init
   const workspaceIdStore = writable('');
+  const hostOperationContext$ = selectWorkspaceHostOperationContext(workspaceIdStore);
+  const canHostOperations = $derived(isOwner && $hostOperationContext$ !== null);
+  const canAdministerHost$ = selectCanAdministerHost();
+  const canAmendMessages = $derived(canHostOperations && $canAdministerHost$);
   $effect(() => {
     workspaceIdStore.set(workspaceId);
   });
@@ -342,6 +348,14 @@
   }
 
   async function saveCommitEdit() {
+    const targetWorkspaceId = workspaceId;
+    const context = selectWorkspaceHostOperationContext.select(appStore.state, targetWorkspaceId);
+    // Amendment currently uses owner-only host.exec, unlike ordinary git writes.
+    if (!context || !selectCanAdministerHost.select(appStore.state)) return;
+    const isCurrent = () =>
+      workspaceId === targetWorkspaceId &&
+      selectCanAdministerHost.select(appStore.state) &&
+      selectWorkspaceHostOperationContext.select(appStore.state, targetWorkspaceId) === context;
     const gitPath = $workspace?.worktreePath || $workspace?.repositoryPath;
     if (commitEdit.hash && commitEdit.value.trim() && workspaceId && gitPath) {
       const trimmed = commitEdit.value.trim();
@@ -359,10 +373,12 @@
             workspaceId,
           })) as { success: boolean; error?: string };
 
+          if (!isCurrent()) return;
           if (!result.success) {
             throw new Error(result.error || 'Failed to amend commit');
           }
 
+          if (!isCurrent()) return;
           if (wasPushed) {
             let pushResult = (await invoke(SYSTEM_CHANNELS.EXECUTE_COMMAND, {
               command: 'git push --force-with-lease',
@@ -370,6 +386,7 @@
               workspaceId,
             })) as { success: boolean; error?: string; data?: { stderr?: string } };
 
+            if (!isCurrent()) return;
             if (
               !pushResult.success &&
               pushResult.data?.stderr?.includes('has no upstream branch')
@@ -380,6 +397,7 @@
                 workspaceId,
               })) as { success: boolean; data?: { stdout?: string } };
 
+              if (!isCurrent()) return;
               if (branchResult.success && branchResult.data?.stdout) {
                 const branchName = branchResult.data.stdout.trim();
                 pushResult = (await invoke(SYSTEM_CHANNELS.EXECUTE_COMMAND, {
@@ -390,6 +408,7 @@
               }
             }
 
+            if (!isCurrent()) return;
             if (!pushResult.success) {
               throw new Error(pushResult.error || 'Failed to push amended commit');
             }
@@ -406,6 +425,7 @@
               : m.workspace_commitsTimeline_messageUpdated_label(),
           );
         } catch (error) {
+          if (!isCurrent()) return;
           logger.error('[saveCommitEdit] Failed to amend commit message', { error });
           notify.error(m.workspace_commitsTimeline_messageUpdateFailed_error());
         }
@@ -434,7 +454,11 @@
     commit: { hash: string; message: string },
     index: number,
   ) {
-    if (isOwner && canAmendCommit(index)) {
+    if (
+      canAmendMessages &&
+      selectCanAdministerHost.select(appStore.state) &&
+      canAmendCommit(index)
+    ) {
       e.stopPropagation();
       e.preventDefault();
       startEditingCommit(commit);
@@ -547,6 +571,12 @@
   }
 
   async function openPullTerminal() {
+    const targetWorkspaceId = workspaceId;
+    const context = selectWorkspaceHostOperationContext.select(appStore.state, targetWorkspaceId);
+    if (!context) return;
+    const isCurrent = () =>
+      workspaceId === targetWorkspaceId &&
+      selectWorkspaceHostOperationContext.select(appStore.state, targetWorkspaceId) === context;
     if (!workspaceId) return;
     const worktreePath = $workspace?.worktreePath || $workspace?.repositoryPath;
     if (!worktreePath) {
@@ -565,6 +595,7 @@
         cwd: worktreePath,
         title: terminalTitle,
       });
+      if (!isCurrent()) return;
       if (result.ok && result.terminalId) {
         appStore.dispatch(addTerminal(workspaceId, result.terminalId, terminalTitle));
         appStore.dispatch(openTerminalOverlay(workspaceId, result.terminalId));
@@ -593,15 +624,23 @@
   }
 
   async function handlePushCommits(commitIndex: number) {
+    const targetWorkspaceId = workspaceId;
+    const context = selectWorkspaceHostOperationContext.select(appStore.state, targetWorkspaceId);
+    if (!context) return;
+    const isCurrent = () =>
+      workspaceId === targetWorkspaceId &&
+      selectWorkspaceHostOperationContext.select(appStore.state, targetWorkspaceId) === context;
     if (!workspaceId) return;
     const commit = allCommits[commitIndex];
     undoState.commitHash = commit.hash;
     appStore.dispatch(setGitOperationFlag(workspaceId, 'isPushing', true));
     try {
+      if (!isCurrent()) return;
       const result = await AcceptChangesClient.execute(workspaceId as WorkspaceId, 'push', {
         targetBranch: $workspace?.branch,
         upToCommitHash: commit.hash,
       });
+      if (!isCurrent()) return;
       if (result.success) {
         gitCache.invalidate(`git-status-${workspaceId}`);
         try {
@@ -637,6 +676,12 @@
   }
 
   async function handleUndoPush(commitIndex: number) {
+    const targetWorkspaceId = workspaceId;
+    const context = selectWorkspaceHostOperationContext.select(appStore.state, targetWorkspaceId);
+    if (!context) return;
+    const isCurrent = () =>
+      workspaceId === targetWorkspaceId &&
+      selectWorkspaceHostOperationContext.select(appStore.state, targetWorkspaceId) === context;
     if (!workspaceId) return;
     const commit = allCommits[commitIndex];
     const commitCount = getCommitsToUndoCount_(commitIndex);
@@ -655,9 +700,11 @@
     undoState.commitHash = commit.hash;
     undoState.undoing = true;
     try {
+      if (!isCurrent()) return;
       const result = await AcceptChangesClient.execute(workspaceId as WorkspaceId, 'undo-push', {
         upToCommitHash: resetToHash,
       });
+      if (!isCurrent()) return;
       if (result.success) {
         notify.warning(
           commitCount === 1
@@ -683,6 +730,12 @@
   }
 
   async function handleUndoCommit(commitIndex: number) {
+    const targetWorkspaceId = workspaceId;
+    const context = selectWorkspaceHostOperationContext.select(appStore.state, targetWorkspaceId);
+    if (!context) return;
+    const isCurrent = () =>
+      workspaceId === targetWorkspaceId &&
+      selectWorkspaceHostOperationContext.select(appStore.state, targetWorkspaceId) === context;
     if (!workspaceId) return;
     const commit = allCommits[commitIndex];
     const commitCount = getLocalCommitsToUndoCount_(commitIndex);
@@ -718,10 +771,12 @@
       })),
     );
     try {
+      if (!isCurrent()) return;
       const result = await AcceptChangesClient.execute(workspaceId as WorkspaceId, 'undo-commit', {
         upToCommitHash: resetToHash,
         undoCommitsMetadata,
       });
+      if (!isCurrent()) return;
       if (result.success) {
         notify.warning(
           commitCount === 1
@@ -887,7 +942,7 @@
                 </Button>
                 <!-- Undo push button - absolutely positioned to overlap cloud icon
                      (accept-changes.execute, owner-only) -->
-                {#if isOwner}
+                {#if canHostOperations}
                   <div
                     class="{!isOperatingOnThis &&
                       'opacity-0'} group-hover:opacity-100 transition-opacity"
@@ -909,7 +964,7 @@
                     </Button>
                   </div>
                 {/if}
-              {:else if isOwner}
+              {:else if canHostOperations}
                 <!-- Undo commit button for unpushed commits (accept-changes.execute, owner-only) -->
                 <Button
                   variant="ghost-light"

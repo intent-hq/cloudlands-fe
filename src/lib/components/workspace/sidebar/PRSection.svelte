@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { selectCanAdministerHost } from '$store/renderer/slices/principal/principal-selectors';
+  import { selectWorkspaceHostOperationContext } from '$store/renderer/slices/workspace/workspace-selectors';
   import { Input } from '$lib/components/ui/input';
   /* eslint-disable max-lines */
   /**
@@ -189,6 +191,9 @@
 
   // Redux selectors
   const workspaceIdStore = writable('');
+  const canAdministerHost$ = selectCanAdministerHost();
+  const hostOperationContext$ = selectWorkspaceHostOperationContext(workspaceIdStore);
+  const canHostOperations = $derived(isOwner && $hostOperationContext$ !== null);
   $effect(() => {
     workspaceIdStore.set(workspaceId);
   });
@@ -375,10 +380,22 @@
 
   // --- PR Handlers ---
   async function handleRefreshPRStatus() {
+    const operationWorkspaceId = workspaceId;
+    const operationBackendId = appStore.state.connections?.windowBackendId;
+    const operationContext = selectWorkspaceHostOperationContext.select(
+      appStore.state,
+      operationWorkspaceId,
+    );
+    if (!operationContext) return;
+    const isCurrentOperation = () =>
+      workspaceId === operationWorkspaceId &&
+      selectWorkspaceHostOperationContext.select(appStore.state, operationWorkspaceId) ===
+        operationContext;
     if (isRefreshingPR) return;
     appStore.dispatch(setGitOperationFlag(workspaceId, 'isRefreshingPR', true));
-    await tick();
     try {
+      await tick();
+      if (!isCurrentOperation()) return;
       if (!$githubAuthIsAuthenticated$) {
         appStore.dispatch(initializeGitHubAuth());
       }
@@ -388,6 +405,7 @@
         return;
       }
       try {
+        if (!isCurrentOperation()) return;
         const fetchResult = await gitClient.fetch(workspaceId as WorkspaceId);
         if (!fetchResult.ok) {
           logger.warn('[PRSection] Git fetch failed:', { error: fetchResult.error });
@@ -395,12 +413,15 @@
       } catch (error) {
         logger.warn('[PRSection] Git fetch error:', error);
       }
+      if (!isCurrentOperation()) return;
       gitCache.invalidate(`git-status-${workspaceId}`);
       appStore.dispatch(loadGitStatus(workspaceId, true));
+      if (!isCurrentOperation()) return;
       appStore.dispatch(refreshPRStatusRequested(workspaceId, true, true));
     } finally {
       await new Promise((resolve) => setTimeout(resolve, 300));
-      appStore.dispatch(setGitOperationFlag(workspaceId, 'isRefreshingPR', false));
+      if (appStore.state.connections?.windowBackendId === operationBackendId)
+        appStore.dispatch(setGitOperationFlag(operationWorkspaceId, 'isRefreshingPR', false));
     }
   }
 
@@ -410,10 +431,21 @@
     prTitle?: string;
     prDescription?: string;
   }) {
+    const operationWorkspaceId = opts?.workspaceId ?? workspaceId;
+    const operationContext = selectWorkspaceHostOperationContext.select(
+      appStore.state,
+      operationWorkspaceId,
+    );
+    if (!operationContext) return;
+    const isCurrentOperation = () =>
+      workspaceId === operationWorkspaceId &&
+      selectWorkspaceHostOperationContext.select(appStore.state, operationWorkspaceId) ===
+        operationContext;
     const titleToUse = (opts?.prTitle ?? prTitle).trim();
     const descriptionToUse = (opts?.prDescription ?? prDescription).trim();
     if (!titleToUse) return;
     const wsId = opts?.workspaceId ?? workspaceId;
+    if (!selectWorkspaceHostOperationContext.select(appStore.state, wsId)) return;
     if (!$githubAuthIsAuthenticated$) {
       appStore.dispatch(initializeGitHubAuth());
     }
@@ -432,6 +464,7 @@
         targetBranch: opts?.targetBranch ?? targetBranch,
         hasStaged,
       });
+      if (!isCurrentOperation()) return;
       if (result.success) {
         prTitle = '';
         prDescription = '';
@@ -461,6 +494,7 @@
   }
 
   async function handleAutoFillPR() {
+    if (!selectWorkspaceHostOperationContext.select(appStore.state, workspaceId)) return;
     if (isGeneratingPR) {
       appStore.dispatch(cancelExecution(workspaceId, 'pr'));
     } else {
@@ -502,14 +536,26 @@
   }
 
   async function handlePushAllUnpushed() {
+    const operationWorkspaceId = workspaceId;
+    const operationContext = selectWorkspaceHostOperationContext.select(
+      appStore.state,
+      operationWorkspaceId,
+    );
+    if (!operationContext) return;
+    const isCurrentOperation = () =>
+      workspaceId === operationWorkspaceId &&
+      selectWorkspaceHostOperationContext.select(appStore.state, operationWorkspaceId) ===
+        operationContext;
     if (!workspaceId || commits.length === 0) return;
     const newestUnpushedHash = commits[0].hash;
     appStore.dispatch(setGitOperationFlag(workspaceId, 'isPushing', true));
     try {
+      if (!isCurrentOperation()) return;
       const result = await AcceptChangesClient.execute(workspaceId as WorkspaceId, 'push', {
         targetBranch: $workspace$?.branch,
         upToCommitHash: newestUnpushedHash,
       });
+      if (!isCurrentOperation()) return;
       if (result.success) {
         gitCache.invalidate(`git-status-${workspaceId}`);
         try {
@@ -554,24 +600,38 @@
   }
 
   async function handleRebaseOntoTrunk() {
+    const operationWorkspaceId = workspaceId;
+    const operationContext = selectWorkspaceHostOperationContext.select(
+      appStore.state,
+      operationWorkspaceId,
+    );
+    if (!operationContext) return;
+    const isCurrentOperation = () =>
+      workspaceId === operationWorkspaceId &&
+      selectWorkspaceHostOperationContext.select(appStore.state, operationWorkspaceId) ===
+        operationContext;
     if (!workspaceId) return;
     const capturedWsId = workspaceId;
     appStore.dispatch(setGitOperationFlag(capturedWsId, 'isRebasing', true));
     try {
+      if (!isCurrentOperation()) return;
       const result = await AcceptChangesClient.execute(
         capturedWsId as WorkspaceId,
         'rebase-onto-trunk',
       );
       if (workspaceId !== capturedWsId) return;
+      if (!isCurrentOperation()) return;
       if (result.success) {
         appStore.dispatch(ftClearOlderCommits(workspaceId));
         if (result.result?.newBaseSha) {
           try {
+            if (!isCurrentOperation()) return;
             await persistWorkspaceChanges({ baseCommitSha: result.result.newBaseSha });
           } catch {
             console.error('Failed to update baseCommitSha after rebase onto trunk');
           }
         }
+        if (!isCurrentOperation()) return;
         gitCache.invalidate(`git-status-${capturedWsId}`);
         await Promise.all([
           Promise.resolve(appStore.dispatch(loadGitStatus(capturedWsId, true))),
@@ -722,7 +782,7 @@
      the primary workspace has a remote, and never in listOnly mode) -->
 {#if hasRemote && !listOnly}
   <TimelineDivider>
-    {#if isOwner && hasOpenPR && hasUnpushedCommits && unpushedCount > 0 && !isDiverged && !isBehind}
+    {#if canHostOperations && hasOpenPR && hasUnpushedCommits && unpushedCount > 0 && !isDiverged && !isBehind}
       <!-- Show Push Commits button when open PR exists (accept-changes.execute, owner-only) -->
       <DividerButton
         onclick={handlePushAllUnpushed}
@@ -734,7 +794,7 @@
           ? m.workspace_prSection_pushCommit_one()
           : m.workspace_prSection_pushCommit_many({ count: formatInteger(unpushedCount) })}
       </DividerButton>
-    {:else if isOwner && ((!hasOpenPR && !(isMergedToTrunk || (areAllPRsMerged && !hasResetToTrunk) || isContentMergedToTrunk)) || (!hasOpenPR && hasNewWorkAfterMerge))}
+    {:else if canHostOperations && ((!hasOpenPR && !(isMergedToTrunk || (areAllPRsMerged && !hasResetToTrunk) || isContentMergedToTrunk)) || (!hasOpenPR && hasNewWorkAfterMerge))}
       <!-- Show Create PR + Merge buttons when no open PR and not post-merge
            (accept-changes.execute / accept-changes.mergePR / github.*, owner-only) -->
       <div class="w-full flex gap-1">
@@ -769,7 +829,7 @@
       </div>
       <DividerPanel open={prDrawerOpen}>
         {#if !$githubAuthIsAuthenticated$}
-          <GitHubAuthBanner onSuccess={() => {}} />
+          {#if $canAdministerHost$}<GitHubAuthBanner onSuccess={() => {}} />{/if}
         {:else}
           {@const stagedDescription = hasStaged
             ? stagedChanges.length === 1
@@ -957,7 +1017,7 @@
     {/if}
 
     <!-- Rebase onto trunk (accept-changes.execute, owner-only) -->
-    {#if isOwner && behindTrunk > 0 && !hasConflicts && aheadOfTrunk !== null}
+    {#if canHostOperations && behindTrunk > 0 && !hasConflicts && aheadOfTrunk !== null}
       <DividerButton
         data-testid="pr-rebase-button"
         onclick={handleRebaseOntoTrunk}
@@ -1049,7 +1109,7 @@
                (secondary-root browsing) mode (monorepo#2053). Its
                unauthenticated path starts `github.connect`, which only the
                owner may call. -->
-        {#if !listOnly && isOwner && (hasAnyPRs || $githubAuthIsAuthenticated$)}
+        {#if !listOnly && canHostOperations && (hasAnyPRs || $githubAuthIsAuthenticated$)}
           <Button
             variant="ghost"
             type="button"
@@ -1075,7 +1135,7 @@
         {/if}
       {/snippet}
       {#snippet children()}
-        {#if isOwner && !$githubAuthIsAuthenticated$}
+        {#if canHostOperations && $canAdministerHost$ && !$githubAuthIsAuthenticated$}
           {#key authBannerKey}
             <GitHubAuthBanner
               message={m.workspace_prSection_connectToGithub_label()}
@@ -1246,7 +1306,7 @@
 
 <!-- Divider with Merge button - hide when PR is already merged, when merge is in upper section, or post-merge -->
 <!-- Merge / connect-remote dividers (accept-changes.*, owner-only) -->
-{#if !listOnly && isOwner && !isPRMerged && (!hasRemote || hasOpenPR) && (!(isMergedToTrunk || (areAllPRsMerged && !hasResetToTrunk) || isContentMergedToTrunk) || hasNewWorkAfterMerge)}
+{#if !listOnly && canHostOperations && !isPRMerged && (!hasRemote || hasOpenPR) && (!(isMergedToTrunk || (areAllPRsMerged && !hasResetToTrunk) || isContentMergedToTrunk) || hasNewWorkAfterMerge)}
   <TimelineDivider>
     {#if !hasRemote}
       <div class="w-full flex gap-1">

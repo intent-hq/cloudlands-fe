@@ -47,7 +47,7 @@ import {
 import {
   selectWorkspaceById,
   selectWorkspaceItems,
-  selectWorkspaceManagementContext,
+  selectWorkspaceHostOperationContext,
   selectWorkspaceDeletionToken,
   selectWorkspaceProjectionVersion,
 } from '../../workspace/workspace-selectors';
@@ -243,7 +243,7 @@ function* restoreWorkspace(workspace: Workspace, owner: DeletionOwner): SagaGene
  * without resurrecting it.
  */
 function* deleteWithUndo(workspace: Workspace): SagaGenerator<void> {
-  const context = yield* selectWorkspaceManagementContext.effect(workspace.id);
+  const context = yield* selectWorkspaceHostOperationContext.effect(workspace.id);
   if (!context) return;
   const owner = yield* deletionOwner();
   const undo = createUndoChannel();
@@ -332,18 +332,18 @@ function* deleteWithUndo(workspace: Workspace): SagaGenerator<void> {
 
 function* requestDelete(action: ReturnType<typeof requestDeleteWorkspace>): SagaGenerator<void> {
   const [workspaceId] = action.payload;
-  const context = yield* selectWorkspaceManagementContext.effect(workspaceId);
+  const context = yield* selectWorkspaceHostOperationContext.effect(workspaceId);
   if (!context) return;
   const workspace = yield* selectWorkspaceById.effect(workspaceId);
   if (!workspace) return;
   const activeWork = yield* call(getSingleWorkspaceActiveWork, workspaceId);
-  if ((yield* selectWorkspaceManagementContext.effect(workspaceId)) !== context) return;
+  if ((yield* selectWorkspaceHostOperationContext.effect(workspaceId)) !== context) return;
   if (hasActiveWork(activeWork)) {
     yield* put(openDeleteWarning({ workspaceId, ...activeWork }));
     return;
   }
   yield* call(navigateAwayIfViewing, workspaceId);
-  if ((yield* selectWorkspaceManagementContext.effect(workspaceId)) !== context) return;
+  if ((yield* selectWorkspaceHostOperationContext.effect(workspaceId)) !== context) return;
   const current = yield* selectWorkspaceById.effect(workspaceId);
   if (current) yield* call(deleteWithUndo, current);
 }
@@ -352,12 +352,12 @@ function* confirmDelete(): SagaGenerator<void> {
   const workspaceId = yield* selectPendingDeleteWorkspaceId.effect();
   yield* put(closeDeleteWarning());
   if (!workspaceId) return;
-  const context = yield* selectWorkspaceManagementContext.effect(workspaceId);
+  const context = yield* selectWorkspaceHostOperationContext.effect(workspaceId);
   if (!context) return;
   const workspace = yield* selectWorkspaceById.effect(workspaceId);
   if (!workspace) return;
   yield* call(navigateAwayIfViewing, workspaceId);
-  if ((yield* selectWorkspaceManagementContext.effect(workspaceId)) !== context) return;
+  if ((yield* selectWorkspaceHostOperationContext.effect(workspaceId)) !== context) return;
   const current = yield* selectWorkspaceById.effect(workspaceId);
   if (current) yield* call(deleteWithUndo, current);
 }
@@ -380,9 +380,9 @@ function* watchArchiveUndo(
       timeout: delay(WORKSPACE_OPERATION_UNDO_DURATION_MS),
     });
     if (!outcome.undo) return;
-    if ((yield* selectWorkspaceManagementContext.effect(workspaceId)) !== context) return;
+    if ((yield* selectWorkspaceHostOperationContext.effect(workspaceId)) !== context) return;
     const result = yield* call([workspaceClient, workspaceClient.unarchive], workspaceId);
-    if ((yield* selectWorkspaceManagementContext.effect(workspaceId)) !== context) return;
+    if ((yield* selectWorkspaceHostOperationContext.effect(workspaceId)) !== context) return;
     if (result.ok) {
       yield* applyWorkspaceChanges(workspaceId, {
         status: WorkspaceStatusEnum.Active,
@@ -404,12 +404,12 @@ function* watchArchiveUndo(
 
 function* archive(action: ReturnType<typeof requestArchiveWorkspace>): SagaGenerator<void> {
   const [workspaceId] = action.payload;
-  const context = yield* selectWorkspaceManagementContext.effect(workspaceId);
+  const context = yield* selectWorkspaceHostOperationContext.effect(workspaceId);
   if (!context) return;
   const workspace = yield* selectWorkspaceById.effect(workspaceId);
   if (!workspace) return;
   const activeWork = yield* call(getSingleWorkspaceActiveWork, workspaceId);
-  if ((yield* selectWorkspaceManagementContext.effect(workspaceId)) !== context) return;
+  if ((yield* selectWorkspaceHostOperationContext.effect(workspaceId)) !== context) return;
   if (hasActiveWork(activeWork)) {
     yield* put(openArchiveWarning({ workspaceId, ...activeWork }));
     return;
@@ -418,17 +418,17 @@ function* archive(action: ReturnType<typeof requestArchiveWorkspace>): SagaGener
 }
 
 function* archiveWorkspaceById(workspaceId: string): SagaGenerator<void> {
-  const context = yield* selectWorkspaceManagementContext.effect(workspaceId);
+  const context = yield* selectWorkspaceHostOperationContext.effect(workspaceId);
   if (!context) return;
   const notify = yield* call(getToast);
-  if ((yield* selectWorkspaceManagementContext.effect(workspaceId)) !== context) return;
+  if ((yield* selectWorkspaceHostOperationContext.effect(workspaceId)) !== context) return;
   const workspace = yield* selectWorkspaceById.effect(workspaceId);
   try {
     const result = yield* call(
       [workspaceClient, workspaceClient.archive],
       workspaceId as WorkspaceId,
     );
-    if ((yield* selectWorkspaceManagementContext.effect(workspaceId)) !== context) return;
+    if ((yield* selectWorkspaceHostOperationContext.effect(workspaceId)) !== context) return;
     if (!result.ok) {
       notify.error(m.workspace_ops_archiveFailed_error());
       return;
@@ -452,7 +452,7 @@ function* archiveWorkspaceById(workspaceId: string): SagaGenerator<void> {
       ),
     );
   } catch (error) {
-    if ((yield* selectWorkspaceManagementContext.effect(workspaceId)) !== context) return;
+    if ((yield* selectWorkspaceHostOperationContext.effect(workspaceId)) !== context) return;
     logger.error('workspace.archive failed', { workspaceId, error });
     notify.error(m.workspace_ops_archiveFailed_error());
   }
@@ -460,17 +460,17 @@ function* archiveWorkspaceById(workspaceId: string): SagaGenerator<void> {
 
 function* unarchive(action: ReturnType<typeof requestUnarchiveWorkspace>): SagaGenerator<void> {
   const [workspaceId] = action.payload;
-  const context = yield* selectWorkspaceManagementContext.effect(workspaceId);
+  const context = yield* selectWorkspaceHostOperationContext.effect(workspaceId);
   if (!context) return;
   const notify = yield* call(getToast);
-  if ((yield* selectWorkspaceManagementContext.effect(workspaceId)) !== context) return;
+  if ((yield* selectWorkspaceHostOperationContext.effect(workspaceId)) !== context) return;
   const workspace = yield* selectWorkspaceById.effect(workspaceId);
   try {
     const result = yield* call(
       [workspaceClient, workspaceClient.unarchive],
       workspaceId as WorkspaceId,
     );
-    if ((yield* selectWorkspaceManagementContext.effect(workspaceId)) !== context) return;
+    if ((yield* selectWorkspaceHostOperationContext.effect(workspaceId)) !== context) return;
     if (!result.ok) {
       notify.error(m.workspace_ops_unarchiveFailed_error());
       return;
@@ -485,7 +485,7 @@ function* unarchive(action: ReturnType<typeof requestUnarchiveWorkspace>): SagaG
       }),
     );
   } catch (error) {
-    if ((yield* selectWorkspaceManagementContext.effect(workspaceId)) !== context) return;
+    if ((yield* selectWorkspaceHostOperationContext.effect(workspaceId)) !== context) return;
     logger.error('workspace.unarchive failed', { workspaceId, error });
     notify.error(m.workspace_ops_unarchiveFailed_error());
   }
@@ -503,7 +503,7 @@ function* watchBulkArchiveUndo(
     });
     if (!outcome.undo) return;
     for (const id of ids) {
-      if ((yield* selectWorkspaceManagementContext.effect(id)) !== context) return;
+      if ((yield* selectWorkspaceHostOperationContext.effect(id)) !== context) return;
       const result = yield* call([workspaceClient, workspaceClient.unarchive], id);
       if ((yield* selectWorkspaceAccessContext.effect()) !== context) return;
       if (result.ok) {
@@ -627,7 +627,7 @@ function* performBulkDelete(
   let timeoutCount = 0;
   let failCount = 0;
   for (const workspace of targets) {
-    if ((yield* selectWorkspaceManagementContext.effect(workspace.id)) !== context) return;
+    if ((yield* selectWorkspaceHostOperationContext.effect(workspace.id)) !== context) return;
     try {
       progress.inFlight = workspace.id;
       const result = yield* call([workspaceClient, workspaceClient.delete], workspace.id);
@@ -846,7 +846,7 @@ function* applyBulkProposal(payload: WorkspaceProposalApplyPayload): SagaGenerat
   let timedOut = 0;
   let failed = 0;
   for (const id of ids) {
-    if ((yield* selectWorkspaceManagementContext.effect(id)) !== context) return;
+    if ((yield* selectWorkspaceHostOperationContext.effect(id)) !== context) return;
     try {
       const result = yield* call([workspaceClient, workspaceClient.delete], id as WorkspaceId);
       if ((yield* selectWorkspaceAccessContext.effect()) !== context) return;
@@ -921,7 +921,7 @@ function* clearPendingConfirmations(): SagaGenerator<void> {
 
 function* canManageAll(ids: string[], context: string): SagaGenerator<boolean> {
   for (const id of ids) {
-    if ((yield* selectWorkspaceManagementContext.effect(id)) !== context) return false;
+    if ((yield* selectWorkspaceHostOperationContext.effect(id)) !== context) return false;
   }
   return true;
 }

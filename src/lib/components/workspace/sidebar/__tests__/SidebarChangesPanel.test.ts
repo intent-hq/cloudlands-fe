@@ -274,8 +274,9 @@ vi.mock('$store/renderer/slices/workspace/utils/workspace.client', () => ({
 const mockDispatch = vi.fn();
 // Mutable mock store state — the real git-roots selectors read the gitRoots
 // slice off this (they tolerate a partial state via optional chaining).
-const { mockStoreState } = vi.hoisted(() => ({
+const { mockStoreState, mockHostRole } = vi.hoisted(() => ({
   mockStoreState: { value: {} as Record<string, any> },
+  mockHostRole: { value: 'owner' as 'owner' | 'guest' },
 }));
 vi.mock('$store/renderer/store', async () => {
   const { createAppStoreMockModule } =
@@ -288,6 +289,34 @@ vi.mock('$store/renderer/store', async () => {
 });
 
 vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
+  selectWorkspaceHostOperationContext: Object.assign(
+    (workspaceId: string) =>
+      createSelectorReadable(workspaceId, (id) =>
+        mockHostRole.value === 'owner' && mockWorkspaceStore.findById(id)?.myRole !== 'collaborator'
+          ? 'current'
+          : null,
+      ),
+    {
+      select: (_state: unknown, id: string) =>
+        mockHostRole.value === 'owner' && mockWorkspaceStore.findById(id)?.myRole !== 'collaborator'
+          ? 'current'
+          : null,
+    },
+  ),
+  selectWorkspaceExecutionContext: Object.assign(
+    (workspaceId: string) =>
+      createSelectorReadable(workspaceId, (id) =>
+        mockHostRole.value === 'owner' && mockWorkspaceStore.findById(id)?.myRole !== 'collaborator'
+          ? 'current'
+          : null,
+      ),
+    {
+      select: (_state: unknown, id: string) =>
+        mockHostRole.value === 'owner' && mockWorkspaceStore.findById(id)?.myRole !== 'collaborator'
+          ? 'current'
+          : null,
+    },
+  ),
   selectWorkspaceById: Object.assign(
     (workspaceId: string) =>
       createSelectorReadable(workspaceId, (resolvedWorkspaceId) =>
@@ -2718,6 +2747,38 @@ describe('SidebarChangesPanel', () => {
 
     afterEach(() => {
       mockGitHubAuthIsAuthenticated.value = false;
+      mockHostRole.value = 'owner';
+    });
+
+    it('preserves guest-owned git stage and read actions while withholding denied host operations', async () => {
+      await seedBusyWorkspace('owner');
+      mockHostRole.value = 'guest';
+      const { container } = await renderPanel();
+      await waitFor(() => expect(container.textContent).toContain('Shared PR'));
+      for (const id of [
+        'auto-commit-toggle',
+        'group-commit-button',
+        'commit-push-button',
+        'commit-undo-button',
+        'commit-undo-push-button',
+        'pr-push-commits-button',
+        'pr-rebase-button',
+        'pr-refresh-button',
+      ]) {
+        expect(container.querySelector(`[data-testid="${id}"]`), id).toBeNull();
+      }
+      for (const id of [
+        'stage-all-button',
+        'unstage-all-button',
+        'stage-btn',
+        'unstage-btn',
+        'revert-btn',
+      ]) {
+        expect(container.querySelector(`[data-testid="${id}"]`), id).not.toBeNull();
+      }
+      await fireEvent.click(container.querySelector('[data-testid="stage-all-button"]')!);
+      expect(mockStageFiles).toHaveBeenCalled();
+      expect(container.querySelectorAll('[data-testid="file-row"]').length).toBe(2);
     });
 
     it('offers every owner-only control to the owner', async () => {
@@ -2934,3 +2995,8 @@ describe('SidebarChangesPanel', () => {
     });
   });
 });
+
+vi.mock('$store/renderer/slices/principal/principal-selectors', async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
+  selectCanAdministerHost: createMockFtSelector(() => mockHostRole.value === 'owner'),
+}));

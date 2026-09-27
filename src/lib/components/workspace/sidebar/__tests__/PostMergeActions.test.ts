@@ -1,3 +1,4 @@
+const operationAuthority = vi.hoisted(() => ({ context: 'owner-admission' as string | null }));
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { render, fireEvent, waitFor } from '@testing-library/svelte';
 import { warmImport } from '../../../../../test/warm-import';
@@ -41,6 +42,7 @@ vi.mock('$store/renderer/store', async () => {
 });
 
 vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
+  selectWorkspaceHostOperationContext: mocks.selector(() => operationAuthority.context),
   selectWorkspaceById: mocks.selector(() => mocks.workspaceEntity),
 }));
 
@@ -146,7 +148,29 @@ warmImport(() => import('./mocks/Fa.svelte'));
 warmImport(() => import('../PostMergeActions.svelte'));
 
 describe('PostMergeActions', () => {
+  it('drops an archive continuation after its admission changes', async () => {
+    let resolve!: (value: unknown) => void;
+    mockArchive.mockReturnValueOnce(
+      new Promise((done) => {
+        resolve = done;
+      }),
+    );
+    const { container } = await renderPostMerge();
+    const button = Array.from(container.querySelectorAll('button')).find((b) =>
+      b.textContent?.includes('Archive and start new'),
+    )!;
+    await fireEvent.click(button);
+    expect(mockArchive).toHaveBeenCalledTimes(1);
+    operationAuthority.context = 'replacement-admission';
+    resolve({ ok: true });
+    await new Promise((done) => setTimeout(done, 0));
+    expect(sessionStorage.getItem('workspace-prefill')).toBeNull();
+    expect(mocks.dispatch).not.toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'sidebarNav/setShowCreateModal' }),
+    );
+  });
   beforeEach(() => {
+    operationAuthority.context = 'owner-admission';
     mocks.dispatch.mockClear();
     reduxDispatch.mockClear();
     mockResetToTrunk.mockReset();
@@ -254,6 +278,36 @@ describe('PostMergeActions', () => {
       }),
     );
   });
+
+  it.each(['revoked', 'replacement'] as const)(
+    'drops reset continuation after held workspace update and %s authority',
+    async (change) => {
+      mocks.workspaceEntity.archived = true;
+      mockResetToTrunk.mockResolvedValue({ success: true, result: { newHeadSha: 'new-sha' } });
+      let resolve!: (value: unknown) => void;
+      mockWorkspaceUpdate.mockReturnValueOnce(
+        new Promise((done) => {
+          resolve = done;
+        }),
+      );
+      const { container } = await renderPostMerge();
+      const button = Array.from(container.querySelectorAll('button')).find((b) =>
+        b.textContent?.includes('Reset and continue'),
+      )!;
+      await fireEvent.click(button);
+      await waitFor(() => expect(mockWorkspaceUpdate).toHaveBeenCalledTimes(1));
+      mocks.dispatch.mockClear();
+      operationAuthority.context = change === 'revoked' ? null : 'new-admission';
+      resolve({ ok: true, data: mocks.workspaceEntity });
+      await new Promise((done) => setTimeout(done, 0));
+      expect(
+        mocks.dispatch.mock.calls
+          .map(([action]) => action)
+          .filter((action) => action.type !== 'git/setGitOperationFlag'),
+      ).toEqual([]);
+      expect(mockUnarchive).not.toHaveBeenCalled();
+    },
+  );
 
   it('reset failure path: shows toast error and does not update post-merge', async () => {
     mockResetToTrunk.mockResolvedValue({ success: false, error: 'boom' });

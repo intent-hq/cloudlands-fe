@@ -6,6 +6,7 @@ import {
 } from '$store/renderer/slices/panel-layout/panel-layout-slice';
 import { removeScript, setScriptsData } from '$store/renderer/slices/scripts/scripts-slice';
 import { addTerminal, removeTerminal } from '$store/renderer/slices/terminals/terminals-slice';
+import { admitLegacyPrincipal } from '../../../test/fixtures/principal-state';
 
 export const LIST_LABELS_WORKSPACE = 'list-labels-preview';
 
@@ -14,6 +15,7 @@ export function setupListLabelsPreview(initializeStore = true) {
   const dispose = initializeStore
     ? startRootStoreLifecycle(store, { startSagas: () => [] })
     : () => {};
+  admitLegacyPrincipal();
   store.dispatch(
     initializeLayout(LIST_LABELS_WORKSPACE, {
       root: { type: 'panel', panelId: 'labels-panel' },
