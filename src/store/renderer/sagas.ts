@@ -1,3 +1,4 @@
+import { hostOwnerServicesSaga } from './slices/principal/sagas/host-owner-services-saga';
 import { hostExecutionSaga } from './slices/host-execution/sagas/host-execution-saga';
 /**
  * Root app saga registry.
@@ -8,10 +9,6 @@ import { hostExecutionSaga } from './slices/host-execution/sagas/host-execution-
  */
 
 import type { Store } from '@augmentcode/themis/svelte-store';
-import { all, call, put } from 'typed-redux-saga';
-import { takeLatestFromSelector, type SelectorChannelPayload } from '@augmentcode/themis/saga';
-import { selectHostAdministrationContext } from './slices/principal/principal-selectors';
-import { initializeGitHubAuth, logoutCompleted } from './slices/github-auth/github-auth-slice';
 
 import { backgroundExecutorSaga } from '../../features/agent/background-executor-service';
 import { providerAvailabilitySaga } from './slices/agent-availability/sagas/provider-availability-saga';
@@ -51,18 +48,9 @@ import { gitEventsIpcSaga } from './slices/git-events/sagas/git-events-ipc-saga'
 import { gitReadSaga } from './slices/git/sagas/git-read-saga';
 import { acceptChangesStatusSaga } from './slices/git/sagas/accept-changes-status-saga';
 import { gitRootsSaga } from './slices/git-roots/sagas/git-roots-saga';
-import { githubAuthSaga } from './slices/github-auth/sagas/github-auth-saga';
 import { gitlabAuthSaga } from './slices/gitlab-auth/sagas/gitlab-auth-saga';
 import { githubRepoSearchSaga } from './slices/github-repo-search/sagas/github-repo-search-saga';
 import { githubUserSearchSaga } from './slices/github-user-search/sagas/github-user-search-saga';
-import { actionKeySaga } from './slices/hardware-console/sagas/action-key-saga';
-import { hardwareConsoleDeviceSaga } from './slices/hardware-console/sagas/hardware-console-device-saga';
-import { encoderPreferenceSaga } from './slices/hardware-console/sagas/encoder-preference-saga';
-import { keyPinPersistenceSaga } from './slices/hardware-console/sagas/key-pin-persistence-saga';
-import { promptPickerSaga } from './slices/hardware-console/sagas/prompt-picker-saga';
-import { voiceTranscriptionSaga } from './slices/hardware-console/sagas/voice-transcription-saga';
-import { hostRequirementsSaga } from './slices/host-requirements/sagas/host-requirements-saga';
-import { hostRequirementsReset } from './slices/host-requirements/host-requirements-slice';
 import { legacyImportSaga } from './slices/legacy-import/sagas/legacy-import-saga';
 import { linearAuthSaga } from './slices/linear-auth/sagas/linear-auth-saga';
 import { collaborationAuthSaga } from '$features/collaboration-auth/renderer/collaboration-auth-saga';
@@ -107,10 +95,8 @@ import { themeSaga } from './slices/theme/sagas/theme-saga';
 import { uiLayoutPersistenceSaga } from './slices/ui-layout/sagas/ui-layout-persistence-saga';
 import { unreadTrackingSaga } from './slices/unread-tracking/sagas/unread-tracking-saga';
 import { updateChannelSaga } from './slices/user-preferences/sagas/update-channel-saga';
-import { notificationSettingsSaga } from './slices/user-preferences/sagas/notification-settings-saga';
 import { userPreferencesPersistenceSaga } from './slices/user-preferences/sagas/user-preferences-persistence-saga';
 import { zoomIpcSaga } from './slices/user-preferences/sagas/zoom-ipc-saga';
-import { voiceSettingsSaga } from './slices/voice-settings/sagas/voice-settings-saga';
 import { activeStreamsSaga } from './slices/workspace-agents/sagas/active-streams-saga';
 import { agentCreationSaga } from './slices/workspace-agents/sagas/agent-creation-saga';
 import { agentReadSaga } from './slices/workspace-agents/sagas/agent-read-saga';
@@ -129,38 +115,6 @@ import { workspaceImportSaga } from './slices/workspace-import/sagas/workspace-i
 
 export type AppSaga = Parameters<Store<any, any>['runSaga']>[0];
 export type AppSagaCancel = ReturnType<Store<any, any>['runSaga']>;
-
-/** Owns all hardware-console listeners and side effects under one root lifetime. */
-export function* hardwareConsoleSaga() {
-  yield* all([
-    call(hardwareConsoleDeviceSaga),
-    call(encoderPreferenceSaga),
-    call(actionKeySaga),
-    call(keyPinPersistenceSaga),
-    call(promptPickerSaga),
-    call(voiceTranscriptionSaga),
-  ]);
-}
-
-/** Host account/settings readers start only after this window is admitted as owner. */
-export function* hostOwnerServicesSaga() {
-  yield* takeLatestFromSelector(
-    selectHostAdministrationContext,
-    function* ({ payload }: SelectorChannelPayload<string | null>) {
-      yield* put(logoutCompleted());
-      yield* put(hostRequirementsReset());
-      if (!payload) return;
-      yield* all([
-        call(hostRequirementsSaga),
-        call(hardwareConsoleSaga),
-        call(voiceSettingsSaga),
-        call(notificationSettingsSaga),
-        call(githubAuthSaga),
-        put(initializeGitHubAuth()),
-      ]);
-    },
-  );
-}
 
 /** App-owned sagas in audited startup order. Each production owner appears once. */
 export const sagas = [

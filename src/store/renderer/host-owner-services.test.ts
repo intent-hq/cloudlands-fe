@@ -84,7 +84,7 @@ vi.mock('./slices/github-auth/sagas/github-auth-saga', async () => {
 });
 
 import { withLegacyPrincipal } from '../../test/fixtures/principal-state';
-import { hostOwnerServicesSaga } from './sagas';
+import { hostOwnerServicesSaga } from './slices/principal/sagas/host-owner-services-saga';
 import { initializeGitHubAuth } from './slices/github-auth/github-auth-slice';
 import { hostRequirementsReset } from './slices/host-requirements/host-requirements-slice';
 
