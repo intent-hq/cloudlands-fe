@@ -185,6 +185,8 @@
 
   // Group commit queue
   type GroupCommitQueueEntry = {
+    workspaceId: string;
+    context: string;
     groupKey: string;
     section: 'unstaged' | 'staged';
     group: AgentChangeGroup;
@@ -600,11 +602,15 @@
 
   // --- Group commit queue ---
   function enqueueGroupCommit(group: AgentChangeGroup, section: 'unstaged' | 'staged') {
-    if (!selectWorkspaceHostOperationContext.select(appStore.state, workspaceId)) return;
+    const context = selectWorkspaceHostOperationContext.select(appStore.state, workspaceId);
+    if (disposed || !context) return;
     const key = getGroupKey(group, section);
     if (groupCommit.active === key || groupCommit.queue.some((e) => e.groupKey === key)) return;
     if (group.agentId && group.agentId in $lockedAgentIds$) return;
-    groupCommit.queue = [...groupCommit.queue, { groupKey: key, section, group }];
+    groupCommit.queue = [
+      ...groupCommit.queue,
+      { workspaceId, context, groupKey: key, section, group },
+    ];
     if (!groupCommit.active) {
       processGroupCommitQueue();
     }
@@ -622,7 +628,7 @@
       groupCommit.active = next.groupKey;
       groupCommit.queue = groupCommit.queue.slice(1);
       try {
-        await commitSingleGroup(next.group, next.section);
+        await commitSingleGroup(next);
       } catch (error) {
         logger.error('Group commit failed', error as Error);
         notify.error(m.workspace_fileChanges_commitFailed_error(), {
@@ -637,13 +643,13 @@
   // Per-group commit executes the commit itself over the legacy
   // IPC/AcceptChangesClient path; the temporary unstage/re-stage around it
   // routes through the git-write-service seam (git.unstage / git.stage).
-  async function commitSingleGroup(group: AgentChangeGroup, section: 'unstaged' | 'staged') {
-    const targetWorkspaceId = workspaceId;
-    const context = selectWorkspaceHostOperationContext.select(appStore.state, targetWorkspaceId);
-    if (!context) return;
+  async function commitSingleGroup(entry: GroupCommitQueueEntry) {
+    const { group, section, workspaceId: targetWorkspaceId, context } = entry;
     const isCurrent = () =>
+      !disposed &&
       workspaceId === targetWorkspaceId &&
       selectWorkspaceHostOperationContext.select(appStore.state, targetWorkspaceId) === context;
+    if (!isCurrent()) return;
     const paths = group.files.map((f) => f.path);
     const pathSet = new Set(paths);
     const message = group.agentId
@@ -656,20 +662,20 @@
       .map((c) => c.relativePath);
     try {
       if (otherStagedPaths.length > 0) {
-        const unstageResult = await unstageFilesViaSeam(workspaceId, otherStagedPaths);
+        const unstageResult = await unstageFilesViaSeam(targetWorkspaceId, otherStagedPaths);
         if (!unstageResult.success) {
           throw new Error(unstageResult.error || 'Unstage failed');
         }
       }
       if (!isCurrent()) return;
       if (section === 'unstaged') {
-        const stageResult = await stageFilesViaSeam(workspaceId, paths);
+        const stageResult = await stageFilesViaSeam(targetWorkspaceId, paths);
         if (!stageResult.success) {
           throw new Error(stageResult.error || 'Stage failed');
         }
       }
       if (!isCurrent()) return;
-      const result = await AcceptChangesClient.execute(workspaceId as WorkspaceId, 'commit', {
+      const result = await AcceptChangesClient.execute(targetWorkspaceId as WorkspaceId, 'commit', {
         commitMessage: message,
       });
       if (!result.success) {
@@ -677,15 +683,15 @@
       }
     } finally {
       if (isCurrent() && otherStagedPaths.length > 0) {
-        const restageResult = await stageFilesViaSeam(workspaceId, otherStagedPaths);
+        const restageResult = await stageFilesViaSeam(targetWorkspaceId, otherStagedPaths);
         if (!restageResult.success) {
           logger.error('Failed to re-stage files after group commit', restageResult.error);
         }
       }
       if (isCurrent())
         await Promise.all([
-          Promise.resolve(appStore.dispatch(loadGitStatus(workspaceId, true))),
-          appStore.dispatch(refreshRequested(workspaceId, true)),
+          Promise.resolve(appStore.dispatch(loadGitStatus(targetWorkspaceId, true))),
+          appStore.dispatch(refreshRequested(targetWorkspaceId, true)),
         ]).catch(() => {});
     }
   }

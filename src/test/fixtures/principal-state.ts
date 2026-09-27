@@ -78,3 +78,46 @@ export function admitLegacyPrincipal(role: 'owner' | 'guest' = 'owner'): void {
     ),
   );
 }
+
+/** Borrow an isolated preview's admission without resetting the caller's lifetime counters. */
+export function installPreviewPrincipal(): () => void {
+  const previous = store.state.principal;
+  const read =
+    previous.context !== null && previous.refreshedPresentationVersion !== null
+      ? {
+          context: previous.context,
+          invalidation: previous.invalidation,
+          presentationVersion: previous.refreshedPresentationVersion,
+        }
+      : null;
+  if (
+    previous.status === 'ready' &&
+    previous.snapshot &&
+    read &&
+    previous.refreshedPresentationVersion === previous.presentationVersion &&
+    previous.context === selectPrincipalConnectionContext.select(store.state)
+  ) {
+    store.dispatch(
+      principalReceived(read, {
+        ...previous.snapshot,
+        principal: { ...previous.snapshot.principal, hostRole: 'owner', isAdministrator: true },
+      }),
+    );
+  } else if (
+    Object.entries(initialState).every(
+      ([key, value]) => previous[key as keyof typeof previous] === value,
+    )
+  ) {
+    admitLegacyPrincipal();
+  } else {
+    // A pending, stale or revoked caller must not gain fixture authority.
+    return () => {};
+  }
+  const installed = store.state.principal;
+  return () => {
+    // Never replace an admission changed by the parent while the preview was mounted.
+    if (store.state.principal !== installed) return;
+    if (read && previous.snapshot) store.dispatch(principalReceived(read, previous.snapshot));
+    else store.dispatch(principalContextChanged(previous.context));
+  };
+}

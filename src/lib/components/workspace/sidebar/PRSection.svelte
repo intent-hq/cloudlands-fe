@@ -396,10 +396,10 @@
     try {
       await tick();
       if (!isCurrentOperation()) return;
-      if (!$githubAuthIsAuthenticated$) {
+      if (selectCanAdministerHost.select(appStore.state) && !$githubAuthIsAuthenticated$) {
         appStore.dispatch(initializeGitHubAuth());
       }
-      if (!$githubAuthIsAuthenticated$) {
+      if (selectCanAdministerHost.select(appStore.state) && !$githubAuthIsAuthenticated$) {
         pendingActionAfterAuth = 'refresh-pr';
         notify.info(m.workspace_prSection_connectGithub_label());
         return;
@@ -446,10 +446,10 @@
     if (!titleToUse) return;
     const wsId = opts?.workspaceId ?? workspaceId;
     if (!selectWorkspaceHostOperationContext.select(appStore.state, wsId)) return;
-    if (!$githubAuthIsAuthenticated$) {
+    if (selectCanAdministerHost.select(appStore.state) && !$githubAuthIsAuthenticated$) {
       appStore.dispatch(initializeGitHubAuth());
     }
-    if (!$githubAuthIsAuthenticated$) {
+    if (selectCanAdministerHost.select(appStore.state) && !$githubAuthIsAuthenticated$) {
       pendingActionAfterAuth = 'create-pr';
       pendingPRWorkspaceId = wsId;
       notify.info(m.workspace_prSection_connectGithub_label());
@@ -470,9 +470,14 @@
         prDescription = '';
         prDrawerOpen = false;
       } else if (result.needsAuth) {
-        pendingActionAfterAuth = 'create-pr';
-        pendingPRWorkspaceId = wsId;
-        notify.info(m.workspace_prSection_connectGithub_label());
+        if (selectCanAdministerHost.select(appStore.state)) {
+          pendingActionAfterAuth = 'create-pr';
+          pendingPRWorkspaceId = wsId;
+          notify.info(m.workspace_prSection_connectGithub_label());
+        } else {
+          // i18n-ignore (product name)
+          notify.info(m.hostExecution_missingAuthorization_description({ resource: 'GitHub' }));
+        }
       } else {
         notify.error(result.error || m.workspace_prCreator_createFailed_error());
       }
@@ -828,8 +833,8 @@
         </DividerButton>
       </div>
       <DividerPanel open={prDrawerOpen}>
-        {#if !$githubAuthIsAuthenticated$}
-          {#if $canAdministerHost$}<GitHubAuthBanner onSuccess={() => {}} />{/if}
+        {#if $canAdministerHost$ && !$githubAuthIsAuthenticated$}
+          <GitHubAuthBanner onSuccess={() => {}} />
         {:else}
           {@const stagedDescription = hasStaged
             ? stagedChanges.length === 1
@@ -1118,7 +1123,7 @@
             data-testid="pr-refresh-button"
             class="rounded hover:bg-muted transition-colors text-muted-foreground hover:text-foreground disabled:opacity-50 cursor-pointer"
             onclick={() => {
-              if (!$githubAuthIsAuthenticated$) {
+              if (selectCanAdministerHost.select(appStore.state) && !$githubAuthIsAuthenticated$) {
                 pendingActionAfterAuth = 'refresh-pr';
                 authBannerKey++;
               } else {
@@ -1126,7 +1131,7 @@
               }
             }}
             disabled={isRefreshingPR}
-            title={$githubAuthIsAuthenticated$
+            title={!$canAdministerHost$ || $githubAuthIsAuthenticated$
               ? m.workspace_prSection_refreshPrStatus_tooltip()
               : m.workspace_prSection_connectToGithub_label()}
           >

@@ -2,6 +2,13 @@ const operationAuthority = vi.hoisted(() => ({ context: 'owner-admission' as str
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { render, fireEvent, waitFor } from '@testing-library/svelte';
 import { warmImport } from '../../../../../test/warm-import';
+import { withLegacyPrincipal } from '../../../../../test/fixtures/principal-state';
+import type { StoreState } from '$store/renderer/types';
+import { initialState as workspaceInitialState } from '$store/renderer/slices/workspace/workspace-slice';
+import { selectPrincipalAdmissionContext } from '$store/renderer/slices/principal/principal-selectors';
+import { notify } from '$lib/components/patterns/notify';
+import { gitClient } from '$features/git/git.client';
+import { m } from '$shared/paraglide/messages.js';
 import {
   configuredVisualStates,
   exerciseVisualStates,
@@ -16,6 +23,7 @@ const mocks = vi.hoisted(() => {
     repositoryPath: '/repo',
   } as Record<string, unknown>;
   const state = {
+    authorityState: null as StoreState | null,
     githubAuthed: true,
     sidebarChanges: {
       commitWhenReady: false,
@@ -52,7 +60,7 @@ vi.mock('$store/renderer/store', async () => {
     await import('$store/renderer/utils/test-helpers/store-mock');
 
   return createAppStoreMockModule({
-    state: () => ({}),
+    state: () => mocks.state.authorityState ?? {},
     dispatch: mocks.dispatch,
   });
 });
@@ -91,18 +99,26 @@ vi.mock('$store/renderer/slices/changes/changes-slice', () => ({
   })),
 }));
 
-vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
-  selectWorkspaceHostOperationContext: mocks.selector(() => operationAuthority.context),
-  selectWorkspaceById: Object.assign(
-    () => ({
-      subscribe(run: (v: unknown) => void) {
-        run(mocks.workspaceEntity);
-        return () => {};
-      },
-    }),
-    { select: () => mocks.workspaceEntity },
-  ),
-}));
+vi.mock('$store/renderer/slices/workspace/workspace-selectors', async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import('$store/renderer/slices/workspace/workspace-selectors')>();
+  return {
+    selectWorkspaceHostOperationContext: mocks.selector(() =>
+      mocks.state.authorityState
+        ? actual.selectWorkspaceHostOperationContext.select(mocks.state.authorityState, 'ws-1')
+        : operationAuthority.context,
+    ),
+    selectWorkspaceById: Object.assign(
+      () => ({
+        subscribe(run: (v: unknown) => void) {
+          run(mocks.workspaceEntity);
+          return () => {};
+        },
+      }),
+      { select: () => mocks.workspaceEntity },
+    ),
+  };
+});
 
 vi.mock(
   '$store/renderer/slices/background-agent-executor/background-agent-executor-selectors',
@@ -318,6 +334,7 @@ warmImport(() => import('../PRSection.svelte'));
 
 describe('PRSection', () => {
   beforeEach(() => {
+    mocks.state.authorityState = null;
     operationAuthority.context = 'owner-admission';
     mocks.dispatch.mockClear();
     mockCreatePR.mockClear();
@@ -327,6 +344,94 @@ describe('PRSection', () => {
     mocks.state.githubAuthed = true;
     mocks.state.acceptChanges.prTitle = '';
     mocks.state.acceptChanges.prDescription = '';
+    vi.mocked(notify.info).mockClear();
+    vi.mocked(notify.error).mockClear();
+    vi.mocked(gitClient.fetch).mockClear();
+  });
+
+  function admitHostRole(role: 'member' | 'guest') {
+    const state = withLegacyPrincipal({ workspace: structuredClone(workspaceInitialState) });
+    state.principal.snapshot!.capabilities.hostMembership = true;
+    Object.assign(state.principal.snapshot!.principal, {
+      hostRole: role,
+      hostMembershipRevision: 1,
+      isAdministrator: false,
+    });
+    Object.assign(state.workspace, {
+      hasLoaded: true,
+      loadedBackendId: 'local',
+      loadedPrincipalContext: selectPrincipalAdmissionContext.select(state),
+      workspaces: {
+        ids: ['ws-1'],
+        map: { 'ws-1': { ...mocks.workspaceEntity, canManage: true, myRole: 'owner' } },
+      },
+    });
+    mocks.state.authorityState = state;
+    mocks.state.githubAuthed = false;
+  }
+
+  it('renders and submits the member PR drawer with a cold owner account slice', async () => {
+    admitHostRole('member');
+    const view = await renderPR();
+    await fireEvent.click(view.getByTestId('pr-create-button'));
+    const title = view.getByPlaceholderText(m.workspace_prSection_prTitle_placeholder());
+    const description = view.getByPlaceholderText(
+      m.workspace_prSection_describeChanges_placeholder(),
+    );
+    await fireEvent.input(title, { target: { value: 'Member work' } });
+    await fireEvent.input(description, { target: { value: 'Host-backed PR' } });
+    await fireEvent.click(view.getByTestId('create-pr-button'));
+    await waitFor(() =>
+      expect(mockCreatePR).toHaveBeenCalledWith(
+        expect.objectContaining({
+          workspaceId: 'ws-1',
+          prTitle: 'Member work',
+          prDescription: 'Host-backed PR',
+        }),
+      ),
+    );
+    expect(mocks.dispatch.mock.calls.some(([a]) => a.type === 'githubAuth/initialize')).toBe(false);
+    expect(mocks.state.githubAuthed).toBe(false);
+  });
+
+  it('refreshes member PRs without initializing owner GitHub authentication', async () => {
+    admitHostRole('member');
+    const view = await renderPR({ hasPRs: true, pullRequests: [testPR] });
+    await fireEvent.click(view.getByTestId('pr-refresh-button'));
+    await waitFor(() =>
+      expect(mocks.dispatch).toHaveBeenCalledWith({
+        type: 'prStatus/refreshRequested',
+        payload: ['ws-1', true, true],
+      }),
+    );
+    expect(gitClient.fetch).toHaveBeenCalledWith('ws-1');
+    expect(mocks.dispatch.mock.calls.some(([a]) => a.type === 'githubAuth/initialize')).toBe(false);
+  });
+
+  it('reports missing host PR authorization to members without starting owner account setup', async () => {
+    admitHostRole('member');
+    mockCreatePR.mockResolvedValue({ success: false, needsAuth: true });
+    const view = await renderPR();
+    (
+      view.component as unknown as { triggerCreatePR: (o: { prTitle: string }) => void }
+    ).triggerCreatePR({ prTitle: 'Needs host setup' });
+    await waitFor(() => expect(mockCreatePR).toHaveBeenCalled());
+    expect(notify.info).toHaveBeenCalledWith(
+      m.hostExecution_missingAuthorization_description({ resource: 'GitHub' }),
+    );
+    expect(mocks.dispatch.mock.calls.some(([a]) => a.type === 'githubAuth/initialize')).toBe(false);
+  });
+
+  it('keeps a scoped guest owner out of host PR creation despite a loaded account slice', async () => {
+    admitHostRole('guest');
+    mocks.state.githubAuthed = true;
+    const view = await renderPR();
+    (
+      view.component as unknown as { triggerCreatePR: (o: { prTitle: string }) => void }
+    ).triggerCreatePR({ prTitle: 'Not admitted' });
+    expect(view.queryByTestId('pr-create-button')).toBeNull();
+    expect(mockCreatePR).not.toHaveBeenCalled();
+    expect(mocks.dispatch.mock.calls.some(([a]) => a.type === 'githubAuth/initialize')).toBe(false);
   });
 
   it('affirms the linked PR action in every required visual state', async () => {
@@ -716,7 +821,15 @@ describe('PRSection', () => {
   });
 });
 
-vi.mock('$store/renderer/slices/principal/principal-selectors', async (importOriginal) => ({
-  ...(await importOriginal<Record<string, unknown>>()),
-  selectCanAdministerHost: mocks.selector(() => operationAuthority.context !== null),
-}));
+vi.mock('$store/renderer/slices/principal/principal-selectors', async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import('$store/renderer/slices/principal/principal-selectors')>();
+  return {
+    ...actual,
+    selectCanAdministerHost: mocks.selector(() =>
+      mocks.state.authorityState
+        ? actual.selectCanAdministerHost.select(mocks.state.authorityState)
+        : operationAuthority.context !== null,
+    ),
+  };
+});
