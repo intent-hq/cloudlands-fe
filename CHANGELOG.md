@@ -4,6 +4,16 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.185.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.185.0...v2.185.1) (2026-09-27)
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.9.112 ([#2938](https://github.com/intent-hq/cloudlands-fe/issues/2938)) ([887f10b](https://github.com/intent-hq/cloudlands-fe/commit/887f10b84b6be7bcacfb9fef4bf67e65d5290bf7))
+* preserve model provider identity and single mutation ownership ([#2929](https://github.com/intent-hq/cloudlands-fe/issues/2929)) ([f23422b](https://github.com/intent-hq/cloudlands-fe/commit/f23422bdaff488cb7d425b6940ba9ab5c038988b))
+* test saved device fallback routes ([#6088](https://github.com/intent-hq/cloudlands-fe/issues/6088)) ([#2937](https://github.com/intent-hq/cloudlands-fe/issues/2937)) ([baa9c95](https://github.com/intent-hq/cloudlands-fe/commit/baa9c95161986fd352ccb42bae3b5ad68a633cdf))
+* **ui:** keep provider-scoped reasoning controls usable ([#2925](https://github.com/intent-hq/cloudlands-fe/issues/2925)) ([6a4f3a5](https://github.com/intent-hq/cloudlands-fe/commit/6a4f3a5763a3bf9302c5fe4e5d2f201bc169ffa5))
+
 ## [2.185.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.184.6...v2.185.0) (2026-09-26)
 
 
