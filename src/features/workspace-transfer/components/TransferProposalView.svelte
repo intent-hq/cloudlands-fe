@@ -85,10 +85,10 @@
     {#each proposal.preview.warnings ?? [] as warning}<p class="type-caption text-muted-foreground">
         {warning}
       </p>{/each}
-    {#if !desktop}<p class="type-body text-destructive" role="alert">
+    {#if !desktop}<p class="type-body text-danger" role="alert">
         {m.chat_transfer_desktop_error()}
       </p>{/if}
-    {#if entry?.error}<p class="type-body break-words text-destructive" role="alert">
+    {#if entry?.error}<p class="type-body break-words text-danger" role="alert">
         {entry.error}
       </p>{/if}
     <div aria-live="polite" class="type-body text-muted-foreground">
