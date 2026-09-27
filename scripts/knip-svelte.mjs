@@ -18,6 +18,7 @@ export function svelteImports(source, filename) {
       // Preserve Knip's existing opaque module reference for inline import types.
       // Narrowing export reachability is separate from repairing import extraction.
       imports.push(`import(${source.slice(node.argument.start, node.argument.end)})`);
+      visit(node.typeArguments);
       return;
     }
     if (

@@ -37,6 +37,16 @@ describe('Svelte import extraction', () => {
     ).toEqual([]);
   });
 
+  it('preserves import queries nested in generic type arguments', () => {
+    const extracted = svelteImports(
+      `<script lang="ts">
+        type Boxed = import('./box').Box<import('./item').Item>;
+      </script>`,
+      'Example.svelte',
+    );
+    expect(extracted).toBe("import('./box');\nimport('./item')");
+  });
+
   it('ignores import lookalikes in script strings, comments and markup', () => {
     expect(
       svelteImports(
@@ -99,6 +109,7 @@ describe('Svelte imports in the real dead-code gate', () => {
           import './module-side-effect';
           const moduleDynamic = () => import('./module-dynamic');
           const moduleTyped: ModuleType = moduleValue;
+          type Boxed = import('./box').Box<import('./item').Item>;
         </script>
         <script lang="ts">
           const assets = import.meta.glob('./assets/*.ts', { import: 'default' });
@@ -118,6 +129,8 @@ describe('Svelte imports in the real dead-code gate', () => {
         write('src/Child.svelte', '<span>Child</span>');
         write('src/module-value.ts', 'export const moduleValue = 1;');
         write('src/module-type.ts', 'export type ModuleType = number;');
+        write('src/box.ts', 'export type Box<T> = { value: T };');
+        write('src/item.ts', 'export interface Item { label: string }');
         write('src/module-side-effect.ts', 'console.log("module");');
         write('src/module-dynamic.ts', 'export const loaded = true;');
         write(
