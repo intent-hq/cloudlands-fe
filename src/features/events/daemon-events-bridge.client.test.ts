@@ -1,3 +1,4 @@
+import { admitLegacyPrincipal } from '../../test/fixtures/principal-state';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AgentStatus } from '$shared/types/agent.types';
 import type { AgentMessage, AgentSession, Note } from '$shared/types';
@@ -8932,6 +8933,7 @@ describe('daemonEventsBridge (workspace:updated → workspace slice)', () => {
     }): Promise<void> {
       daemonRow = { ...row };
       await seedWorkspace();
+      admitLegacyPrincipal();
       const { bulkUpdateWorkspaceEntities, updateWorkspaceEntity } =
         await import('$store/renderer/slices/workspace/workspace-slice');
       appStore.dispatch(bulkUpdateWorkspaceEntities([updateWorkspaceEntity(WS_UPD, row)]));

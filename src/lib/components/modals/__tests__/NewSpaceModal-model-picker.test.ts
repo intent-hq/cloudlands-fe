@@ -1,4 +1,5 @@
 /** @vitest-environment jsdom */
+import { withLegacyPrincipal } from '../../../../test/fixtures/principal-state';
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { tick } from 'svelte';
@@ -54,14 +55,15 @@ vi.mock('$store/renderer/store', async () => {
     providerCatalogLoaded(MOCK_PROVIDER_CATALOG),
   );
   return createAppStoreMockModule({
-    state: () => ({
-      providerCatalog,
-      providerSettings: { enabledProviders: { auggie: true } },
-      model: { defaultProviderId: mocks.defaultProviderId },
-      providerModels: { byProviderId: {}, clearEpoch: 0 },
-      hardwareConsole: { pttRecording: false, voiceTranscribing: false },
-      workspaceCreateProgress: { byProgressId: {} },
-    }),
+    state: () =>
+      withLegacyPrincipal({
+        providerCatalog,
+        providerSettings: { enabledProviders: { auggie: true } },
+        model: { defaultProviderId: mocks.defaultProviderId },
+        providerModels: { byProviderId: {}, clearEpoch: 0 },
+        hardwareConsole: { pttRecording: false, voiceTranscribing: false },
+        workspaceCreateProgress: { byProgressId: {} },
+      }),
     dispatch: mocks.dispatch,
   });
 });

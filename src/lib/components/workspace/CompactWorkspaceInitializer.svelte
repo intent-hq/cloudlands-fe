@@ -1725,6 +1725,7 @@
       // path the destination won't exist until after cloning
       if (repoType === 'github' && githubUrl) {
         const repoValidation = await validateRepoPath(githubUrl, false);
+        if (selectWorkspaceControlContext.select(appStore.state) !== controlContext) return;
         if (!repoValidation.valid) throw new Error(repoValidation.error);
         // Note: We don't validate the parent directory here because:
         // 1. The backend will create it if it doesn't exist (using mkdir with recursive: true)
@@ -1733,6 +1734,7 @@
         // Skip local path validation for remote repos - the path is on the remote server,
         // not the local machine. The connection test already verified the repo exists.
         const repoValidation = await validateRepoPath(repoPath, isNewRepo);
+        if (selectWorkspaceControlContext.select(appStore.state) !== controlContext) return;
         if (!repoValidation.valid) throw new Error(repoValidation.error);
       }
 
@@ -1762,6 +1764,7 @@
             typeof window !== 'undefined' && window.electronAPI
               ? await appClient.git.pull(repoPath, branch)
               : undefined;
+          if (selectWorkspaceControlContext.select(appStore.state) !== controlContext) return;
           if (!pullResult?.success) {
             pullError = pullResult?.error || m.workspace_compactInitializer_pullFailed_error();
             showPullConflictDialog = true;
@@ -1775,6 +1778,7 @@
             branch,
           });
         } catch (err) {
+          if (selectWorkspaceControlContext.select(appStore.state) !== controlContext) return;
           pullError =
             err instanceof Error ? err.message : m.workspace_compactInitializer_pullFailed_error();
           showPullConflictDialog = true;
@@ -1926,8 +1930,10 @@
         if (mention.type === 'terminal') {
           try {
             const { terminalManager } = await import('$features/terminal/terminal-manager.svelte');
+            if (selectWorkspaceControlContext.select(appStore.state) !== controlContext) return;
             const wsId = (mention.meta?.workspaceId as string) || '';
             const bufferContent = await terminalManager.getBufferContent(mention.id, wsId);
+            if (selectWorkspaceControlContext.select(appStore.state) !== controlContext) return;
             if (bufferContent) {
               const contextRef: Record<string, any> = {
                 type: 'terminal',
@@ -1948,6 +1954,7 @@
             const { selectScriptOutput, selectScriptById, selectScriptRuntime } =
               await import('$store/renderer/slices/scripts/scripts-selectors');
             const { scriptOutputToLines } = await import('$lib/utils/script-output-text');
+            if (selectWorkspaceControlContext.select(appStore.state) !== controlContext) return;
             const scriptId = mention.id;
             const wsId = (mention.meta?.workspaceId as string) || null;
             const state = appStore.state;
@@ -2089,6 +2096,7 @@
 
       // Save branch per repo for persistence - ensures branch is remembered even if user
       // didn't explicitly click a branch in the dropdown (accepting the auto-selected default)
+      if (selectWorkspaceControlContext.select(appStore.state) !== controlContext) return;
       if (debugConfig.get('enableFormPersistence') && repoPath && baseBranch && !isNewRepo) {
         appStore.dispatch(setWorkspaceInitializerBranchForRepo(repoPath, baseBranch));
         logger.debug('Saved branch per repo', { repoPath, branch: baseBranch });
@@ -2283,8 +2291,10 @@
       // Clear before navigation can unmount the form and flush its draft.
       clearForm();
       await goto(`/workspace/${workspace.id}`);
+      if (selectWorkspaceControlContext.select(appStore.state) !== controlContext) return;
       oncreate?.();
     } catch (err) {
+      if (selectWorkspaceControlContext.select(appStore.state) !== controlContext) return;
       if (err instanceof Error && err.message.startsWith(UNKNOWN_SPECIALIST_ERROR_PREFIX)) {
         appStore.dispatch(refetchSpecialistsRequested());
         resetUnavailableSpecialist();
@@ -2297,6 +2307,7 @@
       }
     } finally {
       isCreating = false;
+      isPulling = false;
       // The create settled (success, failure, or early return) — drop the
       // transient progress entry so the slice never accumulates stale ids.
       activeCreateProgressId = null;

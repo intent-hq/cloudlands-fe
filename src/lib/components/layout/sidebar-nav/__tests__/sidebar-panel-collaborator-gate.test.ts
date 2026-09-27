@@ -226,6 +226,7 @@ describe('SidebarPanel workspace-list title in a guest window (multiplayer w4)',
     appStore.dispatch(
       guestSessionsListReceived({ sessions: [GUEST], openIds: [], connectedIds: [] }),
     );
+    admitLegacyPrincipal('guest');
   }
 
   /** Rebind the window to the local backend with no host joined (an owner window). */

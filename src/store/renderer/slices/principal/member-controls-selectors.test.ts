@@ -10,6 +10,7 @@ import {
   selectCanCreateWorkspace,
   selectHostAdministrationDenied,
   selectIsWorkspaceGuest,
+  selectPrincipalAdmissionContext,
   selectWorkspaceControlContext,
   selectWorkspaceCreationVisible,
 } from './principal-selectors';
@@ -46,6 +47,75 @@ function admitted(role: HostRole, multiplayer: boolean | undefined = true) {
 }
 
 describe('member workspace controls', () => {
+  it.each(['unknown', 'revoked', 'reconnect', 'other-host', 'new-admission', 'lab-off'] as const)(
+    'withholds a guest owner grant after %s without treating uncertainty as denial',
+    (change) => {
+      const state = admitted('guest');
+      state.workspace.workspaces = createCollection('id', [
+        { id: WorkspaceId('owned'), myRole: 'owner', canManage: true } as Workspace,
+      ]);
+      state.workspace.loadedPrincipalContext = selectPrincipalAdmissionContext.select(state);
+      expect(selectWorkspaceManagementContext.select(state, 'owned')).not.toBeNull();
+      if (change === 'unknown') state.principal.status = 'unknown';
+      if (change === 'revoked') state.principal.status = 'revoked';
+      if (change === 'reconnect') state.daemonHealth.connectionGeneration += 1;
+      if (change === 'other-host') state.connections.windowBackendId = 'host-b';
+      if (change === 'new-admission') state.principal.invalidation += 1;
+      if (change === 'lab-off') state.userPreferences.labsMultiplayerEnabled = false;
+      expect(selectWorkspaceManagementContext.select(state, 'owned')).toBeNull();
+      expect(selectWorkspaceManagementDenied.select(state, 'owned')).toBe(change === 'revoked');
+    },
+  );
+
+  it('does not turn a cached inherited member row into a guest owner grant', () => {
+    const state = admitted('member');
+    state.workspace.loadedPrincipalContext = selectPrincipalAdmissionContext.select(state);
+    state.principal.snapshot!.principal.hostRole = 'guest';
+    state.principal.invalidation += 1;
+    expect(selectWorkspaceManagementContext.select(state, 'ws')).toBeNull();
+    state.workspace.loadedPrincipalContext = selectPrincipalAdmissionContext.select(state);
+    expect(selectWorkspaceManagementContext.select(state, 'ws')).toBeNull();
+  });
+
+  it('keeps the explicit owner grant on a legacy guest workspace scoped', () => {
+    const state = admitted('guest');
+    state.principal.snapshot!.capabilities.hostMembership = false;
+    state.workspace.workspaces = createCollection('id', [
+      { id: WorkspaceId('owned'), myRole: 'owner' } as Workspace,
+    ]);
+    state.workspace.loadedPrincipalContext = selectPrincipalAdmissionContext.select(state);
+    expect(selectWorkspaceManagementContext.select(state, 'owned')).not.toBeNull();
+    expect(selectWorkspaceManagementContext.select(state, 'other')).toBeNull();
+    expect(selectWorkspaceCreationVisible.select(state)).toBe(false);
+  });
+
+  it('preserves an admitted guest workspace owner without granting host-wide rights', () => {
+    const state = admitted('guest');
+    state.workspace.workspaces = createCollection('id', [
+      { id: WorkspaceId('owned'), myRole: 'owner', canManage: true } as Workspace,
+      { id: WorkspaceId('shared'), myRole: 'collaborator', canManage: false } as Workspace,
+    ]);
+    Object.assign(state.workspace, {
+      loadedPrincipalContext: JSON.stringify([
+        state.principal.context,
+        state.principal.invalidation,
+        state.principal.snapshot!.principal.id,
+      ]),
+    });
+    expect(selectCanManageWorkspace.select(state, 'owned')).toBe(true);
+    expect(selectWorkspaceManagementContext.select(state, 'owned')).not.toBeNull();
+    expect(selectWorkspaceManagementDenied.select(state, 'owned')).toBe(false);
+    expect(selectCanShareWorkspace.select(state, 'owned')).toBe(true);
+    for (const id of ['shared', 'ungranted', '__chief__']) {
+      expect(selectCanManageWorkspace.select(state, id)).toBe(false);
+      expect(selectWorkspaceManagementContext.select(state, id)).toBeNull();
+    }
+    expect(selectCanCreateWorkspace.select(state)).toBe(false);
+    expect(selectWorkspaceControlContext.select(state)).toBeNull();
+    expect(selectCanAdministerHost.select(state)).toBe(false);
+    expect(selectIsCollaboratorOnlyClient.select(state)).toBe(true);
+  });
+
   it.each(['owner', 'member', 'guest'] as const)(
     'separates %s management from ownership and host administration',
     (role) => {

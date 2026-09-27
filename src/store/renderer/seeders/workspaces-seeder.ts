@@ -2,6 +2,7 @@ import { store as appStore } from '../store';
 import {
   selectCanAdministerHost,
   selectPrincipalConnectionContext,
+  selectPrincipalAdmissionContext,
 } from '../slices/principal/principal-selectors';
 /**
  * Workspaces & layout seeder.
@@ -267,6 +268,11 @@ registerMockIpcHandler(WORKSPACE_CHANNELS.UPDATE_SETTINGS, async (arg) => {
 });
 
 registerMockSeeder('workspaces', async ({ store, client, workspaceId, getWorkspaceId }) => {
+  const backendId = getActiveBackendId(store.state);
+  const admission = selectPrincipalAdmissionContext.select(store.state);
+  const current = () =>
+    getActiveBackendId(store.state) === backendId &&
+    selectPrincipalAdmissionContext.select(store.state) === admission;
   let workspaces: Workspace[] = [];
   let recentViews: Record<string, number> = {};
 
@@ -278,15 +284,17 @@ registerMockSeeder('workspaces', async ({ store, client, workspaceId, getWorkspa
     if (!result.ok) throw new Error(result.error);
     workspaces = result.data;
   } catch (error) {
+    if (!current()) return;
     console.error('Workspaces seeder: client.workspaces.list() failed:', error);
     // Clear any stale workspaces from a previous seeding attempt (dev/HMR/tests)
     store.dispatch(replaceWorkspaceList([]));
-    store.dispatch(setWorkspaceHasLoaded(true, getActiveBackendId(store.state)));
+    store.dispatch(setWorkspaceHasLoaded(true, backendId, null));
     return;
   }
 
+  if (!current()) return;
   store.dispatch(replaceWorkspaceList(workspaces));
-  store.dispatch(setWorkspaceHasLoaded(true, getActiveBackendId(store.state)));
+  store.dispatch(setWorkspaceHasLoaded(true, backendId, admission));
 
   try {
     recentViews = await client.workspaces.recentViews();
@@ -296,6 +304,7 @@ registerMockSeeder('workspaces', async ({ store, client, workspaceId, getWorkspa
     recentViews = {};
   }
 
+  if (!current()) return;
   store.dispatch(loadRecencyData({ lastViewedAt: recentViews }));
 
   // Auto-select the first non-archived workspace (skip archived since they're hidden by default).

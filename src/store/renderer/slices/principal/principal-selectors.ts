@@ -29,6 +29,14 @@ export const selectPrincipalSnapshot = store.createSelector((state) => {
     : null;
 });
 
+/** Bind workspace grants to the actor and admission that produced the read. */
+export const selectPrincipalAdmissionContext = store.createSelector((state): string | null => {
+  const snapshot = selectPrincipalSnapshot.select(state);
+  return snapshot
+    ? JSON.stringify([state.principal.context, state.principal.invalidation, snapshot.principal.id])
+    : null;
+});
+
 /** Truth about the connected host, independent of saved sessions, profiles, repos and labs. */
 export const selectHostRole = store.createSelector((state): HostRole | null => {
   const snapshot = selectPrincipalSnapshot.select(state);
@@ -88,8 +96,9 @@ export const selectWorkspaceCreationVisible = store.createSelector(
 );
 
 /** Fence asynchronous UI work to the same admission and presentation lifetime. */
-export const selectWorkspaceControlContext = store.createSelector((state): string | null => {
-  if (!selectWorkspaceCreationVisible.select(state)) return null;
+export const selectWorkspaceAccessContext = store.createSelector((state): string | null => {
+  if (!selectCanAdministerHost.select(state) && !selectCollaborationReady.select(state))
+    return null;
   const { context, invalidation, presentationVersion } = state.principal;
   return JSON.stringify([
     context,
@@ -97,6 +106,11 @@ export const selectWorkspaceControlContext = store.createSelector((state): strin
     selectCanAdministerHost.select(state) ? null : presentationVersion,
   ]);
 });
+
+/** Creation requires host-wide eligibility; scoped workspace rights use their own grant. */
+export const selectWorkspaceControlContext = store.createSelector((state): string | null =>
+  selectWorkspaceCreationVisible.select(state) ? selectWorkspaceAccessContext.select(state) : null,
+);
 
 export const selectCollaborationCapabilities = store.createSelector((state) => {
   const ready = selectCollaborationReady.select(state);

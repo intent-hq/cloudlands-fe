@@ -1,3 +1,6 @@
+import { withLegacyPrincipal } from '../../../../../test/fixtures/principal-state';
+import { selectPrincipalAdmissionContext } from '../../principal/principal-selectors';
+import { refreshWorkspaces } from './lifecycle-read-saga';
 import { createCollection, getItem } from '@augmentcode/themis/utils/collections/collection-utils';
 import { runSaga, stdChannel } from 'redux-saga';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -251,7 +254,7 @@ describe('lifecycleReadSaga', () => {
     expect(mocks.workspaces.recentViews.mock.calls).toEqual([[]]);
     expect(run.actions).toEqual([
       { type: 'workspace/replaceWorkspaceList', payload: [[workspace]] },
-      { type: 'workspace/setWorkspaceHasLoaded', payload: [true, 'local'] },
+      { type: 'workspace/setWorkspaceHasLoaded', payload: [true, 'local', null] },
       { type: 'workspace/loadRecencyData', payload: [{ lastViewedAt: { [WS]: 42 } }] },
     ]);
     await stop(run.task);
@@ -440,7 +443,7 @@ describe('lifecycleReadSaga', () => {
         { type: 'workspace/replaceWorkspaceList', payload: [[workspace]] },
       ]);
       expect(listActions(run.actions, 'workspace/setWorkspaceHasLoaded')).toEqual([
-        { type: 'workspace/setWorkspaceHasLoaded', payload: [true, 'local'] },
+        { type: 'workspace/setWorkspaceHasLoaded', payload: [true, 'local', null] },
       ]);
       expect(run.getWorkspaceState().hasLoaded).toBe(true);
 
@@ -3901,4 +3904,40 @@ describe('lifecycleReadSaga', () => {
     expect(run.actions).toEqual([]);
     await stop(run.task);
   });
+});
+
+describe('workspace list admission binding', () => {
+  it.each(['unchanged', 'other-host', 'reconnect', 'new-admission', 'revoked'] as const)(
+    'applies only the current list after %s',
+    async (change) => {
+      vi.clearAllMocks();
+      const state = withLegacyPrincipal({});
+      let resolve!: (value: unknown) => void;
+      mocks.workspaceServiceList.mockReturnValue(
+        new Promise((done) => {
+          resolve = done;
+        }),
+      );
+      mocks.workspaces.recentViews.mockResolvedValue({});
+      const dispatch = vi.fn();
+      const task = runSaga({ getState: () => state, dispatch }, refreshWorkspaces);
+      const admission = selectPrincipalAdmissionContext.select(state);
+      if (change === 'other-host') state.connections.windowBackendId = 'other';
+      if (change === 'reconnect') state.daemonHealth.connectionGeneration += 1;
+      if (change === 'new-admission') state.principal.invalidation += 1;
+      if (change === 'revoked') state.principal.status = 'revoked';
+      resolve({ ok: true, data: [{ id: 'owned', myRole: 'owner', canManage: true }] });
+      await task.toPromise();
+      if (change === 'unchanged') {
+        expect(dispatch).toHaveBeenCalledWith({
+          type: 'workspace/setWorkspaceHasLoaded',
+          payload: [true, 'local', admission],
+        });
+        expect(mocks.workspaces.recentViews).toHaveBeenCalledTimes(1);
+      } else {
+        expect(dispatch).not.toHaveBeenCalled();
+        expect(mocks.workspaces.recentViews).not.toHaveBeenCalled();
+      }
+    },
+  );
 });

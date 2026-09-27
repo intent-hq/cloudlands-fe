@@ -3,8 +3,8 @@ import { runSaga } from 'redux-saga';
 import { getItems, createCollection } from '@augmentcode/themis/utils/collections/collection-utils';
 import { withLegacyPrincipal } from '../../../../../test/fixtures/principal-state';
 import { initialState as workspace } from '../../workspace/workspace-slice';
-import { selectWorkspaceControlContext } from '../../principal/principal-selectors';
-import { selectPermissionRequests } from '../permission-selectors';
+import { selectPrincipalAdmissionContext } from '../../principal/principal-selectors';
+import { selectPermissionReadContext, selectPermissionRequests } from '../permission-selectors';
 import {
   initialState,
   permissionReducer,
@@ -54,13 +54,32 @@ function harness() {
     dispatch,
     run: () =>
       runSaga({ getState: () => state, dispatch }, hydratePermissions, {
-        payload: selectWorkspaceControlContext.select(state),
+        payload: selectPermissionReadContext.select(state),
       }),
   };
 }
 
 describe('pending permission recovery', () => {
   afterEach(() => vi.clearAllMocks());
+
+  it('recovers only owned workspace prompts for an explicitly granted guest owner', async () => {
+    const h = harness();
+    const state = h.getState();
+    state.principal.snapshot!.principal.hostRole = 'guest';
+    state.workspace.workspaces = createCollection('id', [
+      { id: WorkspaceId('ws'), myRole: 'owner', canManage: true } as Workspace,
+    ]);
+    state.workspace.loadedPrincipalContext = selectPrincipalAdmissionContext.select(state);
+    mocks.request.mockResolvedValue({ requests: [request('owned'), request('unmapped', 'other')] });
+    await h.run().toPromise();
+    expect(mocks.request).toHaveBeenCalledWith('agent.pendingPermissions', {});
+    expect(selectPermissionRequests.select(state)).toEqual([]);
+    expect(selectPermissionRequests.select(h.getState()).map((r) => r.requestId)).toEqual([
+      'owned',
+    ]);
+    h.getState().workspace.loadedPrincipalContext = null;
+    expect(selectPermissionRequests.select(h.getState())).toEqual([]);
+  });
 
   it('recovers a member prompt and exposes only manageable known workspace agents', async () => {
     mocks.request.mockResolvedValue({ requests: [request('mine'), request('unmapped', 'other')] });

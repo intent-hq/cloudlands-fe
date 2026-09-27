@@ -5,6 +5,7 @@
  * against regressions re-introducing the counter strip, plus the macOS-only
  * traffic-light spacer strip above the header row.
  */
+import { admitLegacyPrincipal } from '../../../test/fixtures/principal-state';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { flushSync } from 'svelte';
@@ -527,6 +528,7 @@ describe('HudHeader repo filter "all" label in a guest window (multiplayer w4)',
     appStore.dispatch(
       guestSessionsListReceived({ sessions: [GUEST], openIds: [], connectedIds: [] }),
     );
+    admitLegacyPrincipal('guest');
   }
 
   function bindWindowToLocal() {
@@ -538,6 +540,7 @@ describe('HudHeader repo filter "all" label in a guest window (multiplayer w4)',
       }),
     );
     appStore.dispatch(guestSessionsListReceived({ sessions: [], openIds: [], connectedIds: [] }));
+    admitLegacyPrincipal('owner');
   }
 
   function repoTriggerLabel(container: HTMLElement) {

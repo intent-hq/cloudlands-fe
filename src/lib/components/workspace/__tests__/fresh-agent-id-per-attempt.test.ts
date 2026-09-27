@@ -7,6 +7,7 @@
  * (STAB-143): with no client id on the wire, a failed create can no longer
  * poison retries with a duplicate agent_session.id.
  */
+import { withLegacyPrincipal } from '../../../../test/fixtures/principal-state';
 import { cleanup, render, screen, waitFor } from '@testing-library/svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -44,11 +45,16 @@ const mocks = vi.hoisted(() => {
   const developer = { id: 'developer', name: 'Developer', description: '' };
   return {
     readable,
+    admission: 'owner' as 'owner' | 'member' | 'unknown',
+    backendId: 'local',
+    multiplayer: true,
     dispatch: vi.fn(),
     goto: vi.fn(),
     create: vi.fn(),
     update: vi.fn(),
     pull: vi.fn(async () => ({ success: true })),
+    validateRepoPath: vi.fn(async () => ({ valid: true })),
+    formPersistence: false,
     setReasoningEffort: vi.fn(),
     hydrated$: writable(false),
     compactFormState$: writable<{
@@ -75,13 +81,28 @@ const mocks = vi.hoisted(() => {
   };
 });
 
+function admittedFormState(input: object) {
+  const state = withLegacyPrincipal({
+    ...input,
+    connections: { windowBackendId: mocks.backendId },
+    userPreferences: { labsMultiplayerEnabled: mocks.multiplayer },
+  });
+  if (mocks.admission === 'unknown') state.principal.status = 'unknown';
+  if (mocks.admission === 'member') {
+    state.principal.snapshot!.capabilities.hostMembership = true;
+    state.principal.snapshot!.principal.hostRole = 'member';
+    state.principal.snapshot!.principal.isAdministrator = false;
+  }
+  return state;
+}
+
 vi.mock('$app/navigation', () => ({ goto: mocks.goto }));
 
 vi.mock('$store/renderer/store', async () => {
   const { createAppStoreMockModule } =
     await import('$store/renderer/utils/test-helpers/store-mock');
   return createAppStoreMockModule({
-    state: () => ({ workspaceCreateProgress: { byProgressId: {} } }),
+    state: () => admittedFormState({ workspaceCreateProgress: { byProgressId: {} } }),
     dispatch: mocks.dispatch,
   });
 });
@@ -148,7 +169,9 @@ vi.mock('$features/setup-scripts', async (importOriginal) => ({
 }));
 
 vi.mock('$lib/config/debug', () => ({
-  debugConfig: { get: vi.fn(() => false) },
+  debugConfig: {
+    get: vi.fn((key: string) => key === 'enableFormPersistence' && mocks.formPersistence),
+  },
 }));
 
 vi.mock('$lib/client', () => ({
@@ -173,7 +196,7 @@ vi.mock('$lib/utils/workspace-validation', () => ({
   parseGitHubUrl: vi.fn(() => null),
   validateBranchName: vi.fn(() => ({ valid: true })),
   validateInitialPrompt: vi.fn(() => ({ valid: true })),
-  validateRepoPath: vi.fn(async () => ({ valid: true })),
+  validateRepoPath: mocks.validateRepoPath,
 }));
 
 vi.mock('$store/renderer/slices/workspace/utils/workspace.client', () => ({
@@ -254,6 +277,11 @@ warmImport(() => import('../initializer/__tests__/mocks/MockComponent.svelte'));
 describe('CompactWorkspaceInitializer omits client agent ID on create', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mocks.admission = 'owner';
+    mocks.backendId = 'local';
+    mocks.multiplayer = true;
+    mocks.formPersistence = false;
+    mocks.validateRepoPath.mockResolvedValue({ valid: true });
     sessionStorage.clear();
     mocks.hydrated$.set(false);
     mocks.compactFormState$.set(null);
@@ -540,6 +568,61 @@ describe('CompactWorkspaceInitializer omits client agent ID on create', () => {
       mocks.create.mock.invocationCallOrder[0],
     );
   });
+
+  it.each(['unchanged', 'lab-off', 'unknown', 'other-host'] as const)(
+    'fences pull and branch persistence after held validation: %s',
+    async (change) => {
+      mocks.admission = 'member';
+      let resolve!: (value: { valid: boolean }) => void;
+      mocks.validateRepoPath.mockReturnValue(
+        new Promise((done) => {
+          resolve = done;
+        }),
+      );
+      mocks.create.mockResolvedValue({ ok: false, error: 'stop after payload capture' });
+      seedAutoCreatePrefill();
+      const { component } = render(CompactWorkspaceInitializer, { props: { isExpanded: true } });
+      const picker = await waitFor(
+        () =>
+          (
+            window as unknown as {
+              __mockRepoAndBranchPicker: {
+                onBranchStatusChange: (status: Record<string, unknown>) => void;
+                onSkipIsolationChange: (value: boolean) => void;
+              };
+            }
+          ).__mockRepoAndBranchPicker,
+      );
+      picker.onSkipIsolationChange(true);
+      picker.onBranchStatusChange({
+        behind: 2,
+        hasUncommittedChanges: false,
+        currentBranch: 'main',
+        isCurrentBranch: true,
+        isLoading: false,
+      });
+      const attempt = component.applyPrefill();
+      await waitFor(() => expect(mocks.validateRepoPath).toHaveBeenCalled());
+      mocks.formPersistence = true;
+      if (change === 'lab-off') mocks.multiplayer = false;
+      if (change === 'unknown') mocks.admission = 'unknown';
+      if (change === 'other-host') mocks.backendId = 'host-b';
+      const before = mocks.dispatch.mock.calls.length;
+      resolve({ valid: true });
+      await attempt;
+      await waitFor(() =>
+        expect(
+          mocks.dispatch.mock.calls.some(([a]) => a.type === 'workspaceCreateProgress/clear'),
+        ).toBe(true),
+      );
+      expect(mocks.pull).toHaveBeenCalledTimes(change === 'unchanged' ? 1 : 0);
+      expect(mocks.create).toHaveBeenCalledTimes(change === 'unchanged' ? 1 : 0);
+      const persisted = mocks.dispatch.mock.calls
+        .slice(before)
+        .filter(([a]) => a.type === 'workspaceInitializer/setBranchForRepo');
+      expect(persisted).toHaveLength(change === 'unchanged' ? 1 : 0);
+    },
+  );
 
   it('hydrates the daemon-created agent before opening and navigating to the workspace', async () => {
     // Remembered orchestration choice — the coordinator layout is bootstrapped.

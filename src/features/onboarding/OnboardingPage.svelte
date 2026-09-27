@@ -1227,6 +1227,7 @@
           ? { model: onboardingSelectedModel, provider: onboardingSelectedProvider }
           : undefined,
       );
+      if (selectWorkspaceControlContext.select(appStore.state) !== controlContext) return;
       setupSpecialistId = specialistId ?? undefined;
       setupSpecialistName = specialistName;
       // General (null specialist) uses the modal's generic agent name.
@@ -1254,6 +1255,7 @@
       const contextMentionRefs = parseContextMentions(contextMentions);
       const fileMentionRefs = parseFileMentions(richTextareaMentions);
       const runtimeMentionRefs = await parseRuntimeMentions(richTextareaMentions, logger);
+      if (selectWorkspaceControlContext.select(appStore.state) !== controlContext) return;
       // Staged folder pills (dropped folders, local daemon only) ride as
       // path context references on the initial message — never placed via
       // file.placeAttachment (the daemon rejects directories). Same shape a
@@ -1294,6 +1296,7 @@
             typeof window !== 'undefined' && window.electronAPI
               ? await appClient.git.pull(projectSelection.repoPath, projectSelection.branch)
               : undefined;
+          if (selectWorkspaceControlContext.select(appStore.state) !== controlContext) return;
           if (!pullResult?.success) {
             onboardingPullError = pullResult?.error || m.onboarding_page_pullFailed_error();
             onboardingShowPullConflictDialog = true;
@@ -1305,6 +1308,7 @@
             branch: projectSelection.branch,
           });
         } catch (err) {
+          if (selectWorkspaceControlContext.select(appStore.state) !== controlContext) return;
           onboardingPullError =
             err instanceof Error ? err.message : m.onboarding_page_pullFailed_error();
           onboardingShowPullConflictDialog = true;
@@ -1566,10 +1570,12 @@
 
       if (setupScriptStatus) {
         await new Promise((r) => setTimeout(r, 300));
+        if (selectWorkspaceControlContext.select(appStore.state) !== controlContext) return;
         setupScriptStatus = 'done';
       }
       setupAgentStatus = 'active';
       await new Promise((r) => setTimeout(r, 300));
+      if (selectWorkspaceControlContext.select(appStore.state) !== controlContext) return;
       setupAgentStatus = 'done';
 
       // The prompt was submitted — cancel any armed debounced save (its
@@ -1598,11 +1604,15 @@
 
       await goto(`/workspace/${workspace.id}`, { replaceState: true });
     } catch (err) {
+      if (selectWorkspaceControlContext.select(appStore.state) !== controlContext) return;
       logger.error('Workspace creation failed', err as Error);
       onboardingCreationError =
         err instanceof Error ? err.message : m.onboarding_page_unexpected_error();
       isOnboardingCreating = false;
     } finally {
+      if (selectWorkspaceControlContext.select(appStore.state) !== controlContext) {
+        isOnboardingCreating = false;
+      }
       // The create settled (success or failure) — drop the transient progress
       // entry so the slice never accumulates stale ids. The local
       // onboardingCreateProgressId is kept: the card stays mounted on success

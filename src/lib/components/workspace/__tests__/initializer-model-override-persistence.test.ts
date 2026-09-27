@@ -7,6 +7,7 @@
  * `initialAgent.model`; an in-session pick survives late hydration
  * (the applyAgentSettings re-application must not overwrite it).
  */
+import { withLegacyPrincipal } from '../../../../test/fixtures/principal-state';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -67,26 +68,27 @@ vi.mock('$store/renderer/store', async () => {
     providerCatalogLoaded(MOCK_PROVIDER_CATALOG),
   );
   return createAppStoreMockModule({
-    state: () => ({
-      providerCatalog,
-      providerSettings: { enabledProviders: {} },
-      model: { defaultProviderId: 'auggie' },
-      // The auggie catalog KNOWS opus4.6 — the restored override is valid.
-      providerModels: {
-        byProviderId: {
-          auggie: {
-            models: ['fable-5', 'opus4.6', 'user-picked-model'].map((value) => ({
-              value,
-              effortLevels: ['low', 'high'],
-            })),
-            fetchedAt: '2026-08-15T00:00:00.000Z',
+    state: () =>
+      withLegacyPrincipal({
+        providerCatalog,
+        providerSettings: { enabledProviders: {} },
+        model: { defaultProviderId: 'auggie' },
+        // The auggie catalog KNOWS opus4.6 — the restored override is valid.
+        providerModels: {
+          byProviderId: {
+            auggie: {
+              models: ['fable-5', 'opus4.6', 'user-picked-model'].map((value) => ({
+                value,
+                effortLevels: ['low', 'high'],
+              })),
+              fetchedAt: '2026-08-15T00:00:00.000Z',
+            },
           },
+          clearEpoch: 0,
         },
-        clearEpoch: 0,
-      },
-      hardwareConsole: { pttRecording: false, voiceTranscribing: false },
-      workspaceCreateProgress: { byProgressId: {} },
-    }),
+        hardwareConsole: { pttRecording: false, voiceTranscribing: false },
+        workspaceCreateProgress: { byProgressId: {} },
+      }),
     dispatch: mocks.dispatch,
   });
 });

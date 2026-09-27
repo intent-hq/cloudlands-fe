@@ -49,6 +49,7 @@ import {
   selectWorkspaceManagementContext,
 } from '../../workspace/workspace-selectors';
 import {
+  selectWorkspaceAccessContext,
   selectWorkspaceControlContext,
   selectPrincipalConnectionContext,
 } from '../../principal/principal-selectors';
@@ -182,8 +183,11 @@ function createUndoChannel(): Channel<true> {
   return channel<true>(buffers.sliding(1));
 }
 
-function* clearTombstoneAfterGrace(workspaceId: string): SagaGenerator<void> {
-  const connection = yield* selectPrincipalConnectionContext.effect();
+function* clearTombstoneAfterGrace(
+  workspaceId: string,
+  originalConnection?: string | null,
+): SagaGenerator<void> {
+  const connection = originalConnection ?? (yield* selectPrincipalConnectionContext.effect());
   yield* delay(WORKSPACE_DELETION_TOMBSTONE_TTL_MS);
   if ((yield* selectPrincipalConnectionContext.effect()) !== connection) return;
   yield* put(clearWorkspacePendingDeletion(workspaceId));
@@ -206,33 +210,40 @@ function* restoreWorkspace(workspace: Workspace): SagaGenerator<void> {
 function* deleteWithUndo(workspace: Workspace): SagaGenerator<void> {
   const context = yield* selectWorkspaceManagementContext.effect(workspace.id);
   if (!context) return;
+  const connection = yield* selectPrincipalConnectionContext.effect();
   const undo = createUndoChannel();
   let settled = false;
+  let sent = false;
   try {
     yield* put(removeWorkspaceEntity(workspace.id));
     yield* put(markWorkspacePendingDeletion(workspace.id));
 
     const notify = yield* call(getToast);
-    if ((yield* selectWorkspaceControlContext.effect()) !== context) return;
+    if ((yield* selectWorkspaceAccessContext.effect()) !== context) return;
     try {
+      sent = true;
       const result = yield* call([workspaceClient, workspaceClient.delete], workspace.id, {
         undoDelayMs: WORKSPACE_OPERATION_UNDO_DURATION_MS,
       });
-      if ((yield* selectWorkspaceControlContext.effect()) !== context) return;
+      if ((yield* selectPrincipalConnectionContext.effect()) !== connection) return;
       if (!result.ok) {
         settled = true;
         yield* restoreWorkspace(workspace);
-        notify.error(m.workspace_ops_deleteFailed_error());
+        if ((yield* selectWorkspaceAccessContext.effect()) === context)
+          notify.error(m.workspace_ops_deleteFailed_error());
         return;
       }
     } catch (error) {
-      if ((yield* selectWorkspaceControlContext.effect()) !== context) return;
+      if ((yield* selectPrincipalConnectionContext.effect()) !== connection) return;
       logger.error('workspace.delete failed', { workspaceId: workspace.id, error });
       settled = true;
       yield* restoreWorkspace(workspace);
-      notify.error(m.workspace_ops_deleteFailed_error());
+      if ((yield* selectWorkspaceAccessContext.effect()) === context)
+        notify.error(m.workspace_ops_deleteFailed_error());
       return;
     }
+
+    if ((yield* selectWorkspaceAccessContext.effect()) !== context) return;
 
     notify.warning(
       m.workspace_ops_deleted_toast({ title: workspace.title || m.workspace_ops_space_fallback() }),
@@ -249,17 +260,18 @@ function* deleteWithUndo(workspace: Workspace): SagaGenerator<void> {
       timeout: delay(WORKSPACE_OPERATION_UNDO_DURATION_MS),
     });
     if (outcome.undo) {
-      if ((yield* selectWorkspaceControlContext.effect()) !== context) return;
+      if ((yield* selectWorkspaceAccessContext.effect()) !== context) return;
       try {
         const cancel = yield* call([workspaceClient, workspaceClient.cancelDelete], workspace.id);
-        if ((yield* selectWorkspaceControlContext.effect()) !== context) return;
+        if ((yield* selectPrincipalConnectionContext.effect()) !== connection) return;
         if (cancel.ok && cancel.data.cancelled) {
           settled = true;
           yield* restoreWorkspace(workspace);
           return;
         }
+        if ((yield* selectWorkspaceAccessContext.effect()) !== context) return;
       } catch (error) {
-        if ((yield* selectWorkspaceControlContext.effect()) !== context) return;
+        if ((yield* selectWorkspaceAccessContext.effect()) !== context) return;
         logger.error('workspace.cancelDelete failed', { workspaceId: workspace.id, error });
       }
       // Race-safe non-error: the daemon already committed (or the cancel RPC
@@ -270,13 +282,15 @@ function* deleteWithUndo(workspace: Workspace): SagaGenerator<void> {
     // The daemon commits at the deadline. Keep the tombstone for a grace
     // window so stale refetch responses cannot resurrect the deleted
     // workspace. Detached so it survives task teardown.
-    yield* spawn(clearTombstoneAfterGrace, workspace.id);
+    yield* spawn(clearTombstoneAfterGrace, workspace.id, connection);
   } finally {
     undo.close();
-    // Teardown mid-window: the daemon still owns the commit; just make sure
-    // the tombstone is eventually lifted.
-    if (!settled && (yield* selectWorkspaceControlContext.effect()) === context) {
-      yield* spawn(clearTombstoneAfterGrace, workspace.id);
+    // Cleanup belongs to the original store connection, independent of the
+    // authority needed to start another mutation. Unsent work is safe to undo;
+    // a sent request may still commit even if this UI continuation is cancelled.
+    if (!settled && (yield* selectPrincipalConnectionContext.effect()) === connection) {
+      if (!sent) yield* restoreWorkspace(workspace);
+      else yield* spawn(clearTombstoneAfterGrace, workspace.id, connection);
     }
   }
 }
@@ -456,7 +470,7 @@ function* watchBulkArchiveUndo(
     for (const id of ids) {
       if ((yield* selectWorkspaceManagementContext.effect(id)) !== context) return;
       const result = yield* call([workspaceClient, workspaceClient.unarchive], id);
-      if ((yield* selectWorkspaceControlContext.effect()) !== context) return;
+      if ((yield* selectWorkspaceAccessContext.effect()) !== context) return;
       if (result.ok) {
         yield* applyWorkspaceChanges(id, { status: WorkspaceStatusEnum.Active, archived: false });
       }
@@ -471,7 +485,7 @@ function* bulkArchive(): SagaGenerator<void> {
   const operationInFlight = yield* selectBulkOperationInFlight.effect();
   if (!preflightReady || operationInFlight) return;
   const workspaceIds = yield* selectPendingBulkWorkspaceIds.effect();
-  const context = yield* selectWorkspaceControlContext.effect();
+  const context = yield* selectWorkspaceAccessContext.effect();
   if (!context || !(yield* canManageAll(workspaceIds, context))) return;
   const workspaces = yield* selectWorkspaceItems.effect();
   const targets = workspacesForIds(workspaceIds, workspaces).filter(
@@ -495,7 +509,7 @@ function* bulkArchive(): SagaGenerator<void> {
         ),
       ),
     );
-    if ((yield* selectWorkspaceControlContext.effect()) !== context) return;
+    if ((yield* selectWorkspaceAccessContext.effect()) !== context) return;
     const archivedIds: WorkspaceId[] = [];
     let failCount = 0;
     for (const result of results) {
@@ -544,7 +558,7 @@ function* computeBulkActiveWork(
   const token = yield* selectBulkComputeToken.effect();
   const workspaces = yield* selectWorkspaceItems.effect();
   const targets = workspacesForIds(workspaceIds, workspaces);
-  const context = yield* selectWorkspaceControlContext.effect();
+  const context = yield* selectWorkspaceAccessContext.effect();
   if (!context || !(yield* canManageAll(workspaceIds, context))) return;
   const counts = countActiveWork(yield* collectActiveWork(targets));
   if (!(yield* canManageAll(workspaceIds, context))) return;
@@ -563,32 +577,39 @@ function* computeBulkDeleteActiveWork(
   yield* computeBulkActiveWork('delete', action.payload[0].workspaceIds);
 }
 
-function* performBulkDelete(targets: Workspace[], context: string): SagaGenerator<string[]> {
+function* performBulkDelete(
+  targets: Workspace[],
+  context: string,
+  connection: string | null,
+  progress: { deletedIds: string[]; inFlight: string | null },
+): SagaGenerator<void> {
   const notify = yield* call(getToast);
   if (targets.length === 0) {
     notify.info(m.workspace_ops_noWorkspacesToDelete_message());
-    return [];
+    return;
   }
-  const deletedIds: string[] = [];
   let deleteCount = 0;
   let timeoutCount = 0;
   let failCount = 0;
   for (const workspace of targets) {
-    if ((yield* selectWorkspaceManagementContext.effect(workspace.id)) !== context)
-      return deletedIds;
+    if ((yield* selectWorkspaceManagementContext.effect(workspace.id)) !== context) return;
     try {
+      progress.inFlight = workspace.id;
       const result = yield* call([workspaceClient, workspaceClient.delete], workspace.id);
-      if ((yield* selectWorkspaceControlContext.effect()) !== context) return deletedIds;
+      if ((yield* selectPrincipalConnectionContext.effect()) !== connection) return;
+      progress.inFlight = null;
       if (result.ok) {
         deleteCount++;
-        deletedIds.push(workspace.id);
+        progress.deletedIds.push(workspace.id);
         yield* put(removeWorkspaceEntity(workspace.id));
-        yield* spawn(clearTombstoneAfterGrace, workspace.id);
+        yield* spawn(clearTombstoneAfterGrace, workspace.id, connection);
       } else if (result.error?.includes('timed out')) timeoutCount++;
       else failCount++;
     } catch {
+      progress.inFlight = null;
       failCount++;
     }
+    if ((yield* selectWorkspaceAccessContext.effect()) !== context) return;
   }
   if (deleteCount > 0) {
     notify.success(
@@ -611,7 +632,6 @@ function* performBulkDelete(targets: Workspace[], context: string): SagaGenerato
         : m.workspace_ops_deleteFailedCount_many({ count: failCount }),
     );
   }
-  return deletedIds;
 }
 
 function* bulkDelete(): SagaGenerator<void> {
@@ -619,14 +639,15 @@ function* bulkDelete(): SagaGenerator<void> {
   const operationInFlight = yield* selectBulkOperationInFlight.effect();
   if (!preflightReady || operationInFlight) return;
   const workspaceIds = yield* selectPendingBulkWorkspaceIds.effect();
-  const context = yield* selectWorkspaceControlContext.effect();
+  const context = yield* selectWorkspaceAccessContext.effect();
   if (!context || !(yield* canManageAll(workspaceIds, context))) return;
+  const connection = yield* selectPrincipalConnectionContext.effect();
   const workspaces = yield* selectWorkspaceItems.effect();
   const targets = workspacesForIds(workspaceIds, workspaces);
   const reservedIds = targets.map(({ id }) => id);
   yield* put(bulkOperationStarted({ kind: 'delete', workspaceIds: reservedIds }));
   yield* put(closeBulkDeleteConfirm());
-  let deletedIds: string[] = [];
+  const progress = { deletedIds: [] as string[], inFlight: null as string | null };
   try {
     for (const workspaceId of reservedIds) {
       yield* put(markWorkspacePendingDeletion(workspaceId));
@@ -635,12 +656,15 @@ function* bulkDelete(): SagaGenerator<void> {
       if (!(yield* canManageAll(workspaceIds, context))) return;
       yield* call(navigateAwayIfViewing, workspace.id);
     }
-    deletedIds = yield* performBulkDelete(targets, context);
+    yield* performBulkDelete(targets, context, connection, progress);
   } finally {
-    if ((yield* selectWorkspaceControlContext.effect()) === context) {
-      const deletedIdSet = new Set(deletedIds);
+    if ((yield* selectPrincipalConnectionContext.effect()) === connection) {
+      const deletedIdSet = new Set(progress.deletedIds);
       for (const workspaceId of reservedIds) {
-        if (!deletedIdSet.has(workspaceId)) yield* put(clearWorkspacePendingDeletion(workspaceId));
+        if (progress.inFlight === workspaceId)
+          yield* spawn(clearTombstoneAfterGrace, workspaceId, connection);
+        else if (!deletedIdSet.has(workspaceId))
+          yield* put(clearWorkspacePendingDeletion(workspaceId));
       }
       yield* put(bulkOperationFinished());
     }
@@ -732,7 +756,7 @@ function* applyBulkProposal(payload: WorkspaceProposalApplyPayload): SagaGenerat
   if (lifecycle?.status === 'applying' || lifecycle?.status === 'applied') return;
   const isDelete = proposal.payload.operation === 'workspace.bulkDelete';
   const ids = selectedBulkItemIds ?? proposal.payload.ids;
-  const context = yield* selectWorkspaceControlContext.effect();
+  const context = yield* selectWorkspaceAccessContext.effect();
   if (!context || !(yield* canManageAll(ids, context))) return;
   if (ids.length === 0) {
     yield* failProposal(
@@ -754,7 +778,7 @@ function* applyBulkProposal(payload: WorkspaceProposalApplyPayload): SagaGenerat
         ),
       ),
     );
-    if ((yield* selectWorkspaceControlContext.effect()) !== context) return;
+    if ((yield* selectWorkspaceAccessContext.effect()) !== context) return;
     let count = 0;
     for (const result of results) {
       if (result.status === 'fulfilled' && result.value.result.ok) {
@@ -790,7 +814,7 @@ function* applyBulkProposal(payload: WorkspaceProposalApplyPayload): SagaGenerat
     if ((yield* selectWorkspaceManagementContext.effect(id)) !== context) return;
     try {
       const result = yield* call([workspaceClient, workspaceClient.delete], id as WorkspaceId);
-      if ((yield* selectWorkspaceControlContext.effect()) !== context) return;
+      if ((yield* selectWorkspaceAccessContext.effect()) !== context) return;
       if (result.ok) {
         deleted++;
         yield* put(removeWorkspaceEntity(id as WorkspaceId));
@@ -867,7 +891,7 @@ function* canManageAll(ids: string[], context: string): SagaGenerator<boolean> {
 }
 
 function* watchAuthorityChanges(): SagaGenerator<void> {
-  let context = yield* selectWorkspaceControlContext.effect();
+  let context = yield* selectWorkspaceAccessContext.effect();
   while (true) {
     yield* take([
       principalContextChanged,
@@ -879,7 +903,7 @@ function* watchAuthorityChanges(): SagaGenerator<void> {
       setLabsMultiplayerEnabled,
       toggleLabsMultiplayer,
     ]);
-    const next = yield* selectWorkspaceControlContext.effect();
+    const next = yield* selectWorkspaceAccessContext.effect();
     if (context !== next) {
       yield* clearPendingConfirmations();
       yield* put(bulkOperationFinished());

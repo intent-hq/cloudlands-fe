@@ -51,6 +51,7 @@ import {
   initialState as workspaceInitialState,
   removeWorkspaceEntity,
   replaceWorkspaceList,
+  resetWorkspaceState,
   setWorkspaceEntity,
   setWorkspaceHasLoaded,
   workspaceReducer,
@@ -161,10 +162,12 @@ function harness(seed: Workspace[], bundledSpecialists: Specialist[] = []) {
   let operations = operationsInitialState;
   let proposalLifecycle = proposalLifecycleInitialState;
   const specialists = { ...specialistsInitialState, bundledSpecialists };
+  let observe: ((action: { type: string }) => void) | undefined;
   const dispatch = vi.fn((action) => {
     workspaceState = workspaceReducer(workspaceState, action);
     operations = workspaceOperationsReducer(operations, action);
     proposalLifecycle = proposalLifecycleReducer(proposalLifecycle, action);
+    observe?.(action);
     return action;
   });
   const task = runSaga(
@@ -194,6 +197,9 @@ function harness(seed: Workspace[], bundledSpecialists: Specialist[] = []) {
     authority: () => authority,
     setAuthority: (next: typeof authority) => {
       authority = next;
+    },
+    observe: (callback: typeof observe) => {
+      observe = callback;
     },
     state: () => ({
       workspace: workspaceState,
@@ -1265,6 +1271,120 @@ describe('workspaceOperationsSaga', () => {
 });
 
 describe('workspace management authority', () => {
+  it.each([
+    'single-failed',
+    'single-before-send',
+    'single-cancel',
+    'bulk-failed',
+    'bulk-before-send',
+    'bulk-cancel',
+    'other-host',
+  ] as const)('cleans owned deletion state after an authority change: %s', async (mode) => {
+    vi.resetAllMocks();
+    vi.useFakeTimers();
+    mocks.getActiveWorkNames.mockResolvedValue(noActiveWork);
+    mocks.navigate.mockResolvedValue(undefined);
+    let resolve!: (value: unknown) => void;
+    mocks.deleteWorkspace.mockReturnValue(
+      new Promise((done) => {
+        resolve = done;
+      }),
+    );
+    const row = { ...workspace('ws-1'), myRole: 'collaborator' as const, canManage: true };
+    const run = harness([row]);
+    const authority = run.authority();
+    authority.principal.snapshot!.capabilities.hostMembership = true;
+    authority.principal.snapshot!.principal.hostRole = 'member';
+    authority.principal.snapshot!.principal.isAdministrator = false;
+    run.send(setWorkspaceHasLoaded(true, 'local'));
+    const beforeSend = mode.endsWith('before-send');
+    if (beforeSend)
+      run.observe((action) => {
+        if (action.type === 'workspace/markWorkspacePendingDeletion') {
+          authority.userPreferences.labsMultiplayerEnabled = false;
+        }
+      });
+    try {
+      if (mode.startsWith('bulk')) {
+        run.send(openBulkDeleteConfirm({ workspaceIds: ['ws-1'], groupLabel: 'Owned group' }));
+        await vi.advanceTimersByTimeAsync(50);
+        run.send(confirmBulkDelete());
+      } else run.send(requestDeleteWorkspace('ws-1'));
+      await vi.advanceTimersByTimeAsync(50);
+      expect(mocks.deleteWorkspace).toHaveBeenCalledTimes(beforeSend ? 0 : 1);
+      authority.userPreferences.labsMultiplayerEnabled = false;
+      if (mode === 'other-host') {
+        authority.connections.windowBackendId = 'host-b';
+        run.send(resetWorkspaceState());
+        run.send(setWorkspaceEntity({ ...row, title: 'Current host row' }));
+      }
+      if (mode.endsWith('cancel')) {
+        run.task.cancel();
+        await run.task.toPromise();
+      }
+      if (!beforeSend) resolve({ ok: false, error: 'refused' });
+      await vi.advanceTimersByTimeAsync(50);
+      authority.userPreferences.labsMultiplayerEnabled = true;
+      await vi.advanceTimersByTimeAsync(
+        WORKSPACE_DELETION_TOMBSTONE_TTL_MS + WORKSPACE_OPERATION_UNDO_DURATION_MS,
+      );
+      if (mode === 'other-host') {
+        expect(getItem(run.state().workspace.workspaces, 'ws-1')?.title).toBe('Current host row');
+      } else {
+        run.send(replaceWorkspaceList([row]));
+        expect(run.state().workspace.pendingDeletions).toEqual({});
+        expect(getItem(run.state().workspace.workspaces, 'ws-1')).toBeDefined();
+        expect(run.state().workspaceOperations.bulkOperationInFlight).toBe(false);
+      }
+    } finally {
+      run.task.cancel();
+      await run.task.toPromise();
+      await vi.advanceTimersByTimeAsync(
+        WORKSPACE_DELETION_TOMBSTONE_TTL_MS + WORKSPACE_OPERATION_UNDO_DURATION_MS,
+      );
+      vi.useRealTimers();
+    }
+  });
+
+  it('lets a guest owner archive only the granted workspace while refusing creation', async () => {
+    vi.resetAllMocks();
+    mocks.getActiveWorkNames.mockResolvedValue(noActiveWork);
+    mocks.archive.mockResolvedValue({ ok: true });
+    const run = harness([
+      { ...workspace('owned'), myRole: 'owner', canManage: true },
+      { ...workspace('shared'), myRole: 'collaborator', canManage: false },
+    ]);
+    const state = run.authority();
+    state.principal.snapshot!.capabilities.hostMembership = true;
+    state.principal.snapshot!.principal.hostRole = 'guest';
+    state.principal.snapshot!.principal.isAdministrator = false;
+    run.send(
+      setWorkspaceHasLoaded(
+        true,
+        'local',
+        JSON.stringify([
+          state.principal.context,
+          state.principal.invalidation,
+          state.principal.snapshot!.principal.id,
+        ]),
+      ),
+    );
+    try {
+      run.send(requestArchiveWorkspace('owned'));
+      await settle();
+      run.send(requestArchiveWorkspace('shared'));
+      run.send(requestArchiveWorkspace('ungranted'));
+      run.send(applyWorkspaceProposal({ proposal: createProposal('guest-create') }));
+      await settle();
+      expect(mocks.archive.mock.calls).toEqual([['owned']]);
+      expect(getItem(run.state().workspace.workspaces, 'owned')?.archived).toBe(true);
+      expect(mocks.create).not.toHaveBeenCalled();
+    } finally {
+      run.task.cancel();
+      await run.task.toPromise();
+    }
+  });
+
   it('allows a member to archive an inherited workspace without treating the member as owner', async () => {
     vi.resetAllMocks();
     mocks.getActiveWorkNames.mockResolvedValue(noActiveWork);

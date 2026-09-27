@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { runSaga, stdChannel } from 'redux-saga';
-import { getItem } from '@augmentcode/themis/utils/collections/collection-utils';
+import { createCollection, getItem } from '@augmentcode/themis/utils/collections/collection-utils';
 
 const mocks = vi.hoisted(() => ({ respondPermission: vi.fn() }));
 vi.mock('$lib/client', () => ({
@@ -22,6 +22,7 @@ import { withLegacyPrincipal } from '../../../../../test/fixtures/principal-stat
 import { initialState as workspace } from '../../workspace/workspace-slice';
 import { selectWorkspaceControlContext } from '../../principal/principal-selectors';
 import { WorkspaceId } from '$shared/types/branded-ids';
+import type { Workspace } from '$shared/types';
 
 const settle = async () => {
   await Promise.resolve();
@@ -46,15 +47,44 @@ function request(
   };
 }
 
-function harness(requests: PermissionRequest[] = [request('request-1')]) {
+function harness(requests: PermissionRequest[] = [request('request-1')], guestOwner = false) {
   const channel = stdChannel();
   let authority = withLegacyPrincipal({
     workspace,
     agentSessions: { byAgentId: { 'agent-1': { workspaceId: WorkspaceId('ws-1') } } },
   });
+  if (guestOwner) {
+    authority.principal.snapshot!.capabilities.hostMembership = true;
+    authority.principal.snapshot!.principal.hostRole = 'guest';
+    authority.principal.snapshot!.principal.isAdministrator = false;
+    authority.workspace = {
+      ...workspace,
+      hasLoaded: true,
+      loadedBackendId: 'local',
+      workspaces: createCollection('id', [
+        { id: WorkspaceId('ws-1'), myRole: 'owner', canManage: true } as Workspace,
+      ]),
+    };
+    Object.assign(authority.workspace, {
+      loadedPrincipalContext: JSON.stringify([
+        authority.principal.context,
+        authority.principal.invalidation,
+        authority.principal.snapshot!.principal.id,
+      ]),
+    });
+  }
   let permission = requests.reduce(
     (state, item) => permissionReducer(state, permissionRequestReceived(item)),
-    { ...initialState, context: selectWorkspaceControlContext.select(authority) },
+    {
+      ...initialState,
+      context: guestOwner
+        ? JSON.stringify([
+            authority.principal.context,
+            authority.principal.invalidation,
+            authority.principal.presentationVersion,
+          ])
+        : selectWorkspaceControlContext.select(authority),
+    },
   );
   const dispatch = vi.fn((action) => {
     permission = permissionReducer(permission, action);
@@ -216,6 +246,29 @@ describe('permissionResponseSaga', () => {
 });
 
 describe('permission response authority changes', () => {
+  it('allows a current guest owner to answer only its owned workspace prompt', async () => {
+    mocks.respondPermission.mockResolvedValue({ success: true });
+    const other = { ...request('other-workspace'), sessionId: 'agent-2' };
+    const run = harness([request('request-1'), other], true);
+    run.state().agentSessions.byAgentId['agent-2'] = {
+      ...run.state().agentSessions.byAgentId['agent-1'],
+      workspaceId: WorkspaceId('other'),
+    };
+    try {
+      run.channel.put(approvePermission('request-1'));
+      run.channel.put(approvePermission('other-workspace'));
+      await settle();
+      expect(mocks.respondPermission.mock.calls).toEqual([
+        ['request-1', { outcome: 'selected', optionId: 'allow-custom' }],
+      ]);
+      expect(run.hasRequest('request-1')).toBe(false);
+      expect(run.hasRequest('other-workspace')).toBe(true);
+    } finally {
+      run.task.cancel();
+      await run.task.toPromise();
+    }
+  });
+
   it.each([approvePermission, denyPermission, cancelPermission])(
     'blocks answers from a stale prompt after reconnect',
     async (answer) => {

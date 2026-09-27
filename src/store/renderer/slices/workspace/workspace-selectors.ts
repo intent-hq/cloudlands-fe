@@ -22,7 +22,8 @@ import {
   selectHostRole,
   selectPrincipalSnapshot,
   selectPrincipalRevoked,
-  selectWorkspaceControlContext,
+  selectWorkspaceAccessContext,
+  selectPrincipalAdmissionContext,
 } from '../principal/principal-selectors';
 import type {
   WorkflowStage,
@@ -171,18 +172,26 @@ export const selectCanManageWorkspace = store.createSelector<[wsId: string], boo
   (state, wsId) => {
     const snapshot = selectPrincipalSnapshot.select(state);
     const role = selectHostRole.select(state);
-    if (!snapshot || (role !== 'owner' && role !== 'member')) return false;
+    if (!snapshot || !role) return false;
     // Virtual host administration never inherits member workspace rights.
     if (wsId === CHIEF_WORKSPACE_ID) return role === 'owner';
     const workspace = selectWorkspaceById.select(state, wsId);
+    // Guests can retain an explicit workspace owner grant. An inherited member
+    // row or a cached grant from a previous actor/admission is never sufficient.
+    if (
+      role === 'guest' &&
+      (workspace?.myRole !== 'owner' ||
+        !selectWorkspaceListLoadedForBackend.select(state, state.connections.windowBackendId) ||
+        state.workspace.loadedPrincipalContext !== selectPrincipalAdmissionContext.select(state))
+    )
+      return false;
     if (snapshot.capabilities.hostMembership) {
       return (
         selectWorkspaceListLoadedForBackend.select(state, state.connections.windowBackendId) &&
         workspace?.canManage === true
       );
     }
-    // Explicit legacy owner behavior only; a legacy guest never acquires member rights.
-    return role === 'owner' && workspace?.myRole !== 'collaborator';
+    return role === 'owner' ? workspace?.myRole !== 'collaborator' : workspace?.myRole === 'owner';
   },
 );
 
@@ -192,9 +201,14 @@ export const selectWorkspaceManagementDenied = store.createSelector<[wsId: strin
     if (selectPrincipalRevoked.select(state)) return true;
     const role = selectHostRole.select(state);
     if (role === null) return false;
-    if (role === 'guest') return true;
     if (wsId === CHIEF_WORKSPACE_ID) return role !== 'owner';
     const workspace = selectWorkspaceById.select(state, wsId);
+    if (
+      role === 'guest' &&
+      (!selectWorkspaceListLoadedForBackend.select(state, state.connections.windowBackendId) ||
+        state.workspace.loadedPrincipalContext !== selectPrincipalAdmissionContext.select(state))
+    )
+      return false;
     if (selectPrincipalSnapshot.select(state)?.capabilities.hostMembership) {
       return (
         selectWorkspaceListLoadedForBackend.select(state, state.connections.windowBackendId) &&
@@ -215,7 +229,7 @@ const selectWorkspaceManagementVisible = store.createSelector<[wsId: string], bo
 export const selectWorkspaceManagementContext = store.createSelector<[wsId: string], string | null>(
   (state, wsId) =>
     selectWorkspaceManagementVisible.select(state, wsId)
-      ? selectWorkspaceControlContext.select(state)
+      ? selectWorkspaceAccessContext.select(state)
       : null,
 );
 

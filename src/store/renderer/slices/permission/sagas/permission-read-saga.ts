@@ -1,8 +1,7 @@
 import { takeLatestFromSelector, type SelectorChannelPayload } from '@augmentcode/themis/saga';
 import { call, put, type SagaGenerator } from 'typed-redux-saga';
 import { backendRequest } from '$lib/client/live/backend-transport';
-import { selectWorkspaceControlContext } from '../../principal/principal-selectors';
-import { selectPermissionState } from '../permission-selectors';
+import { selectPermissionReadContext, selectPermissionState } from '../permission-selectors';
 import {
   pendingPermissionsReceived,
   permissionContextChanged,
@@ -15,7 +14,7 @@ export function* hydratePermissions({
 }: SelectorChannelPayload<string | null>): SagaGenerator<void> {
   yield* put(permissionContextChanged(context));
   if (!context) return;
-  while ((yield* selectWorkspaceControlContext.effect()) === context) {
+  while ((yield* selectPermissionReadContext.effect()) === context) {
     const { revision } = yield* selectPermissionState.effect();
     try {
       const result = yield* call(
@@ -23,7 +22,7 @@ export function* hydratePermissions({
         'agent.pendingPermissions',
         {},
       );
-      if ((yield* selectWorkspaceControlContext.effect()) !== context) return;
+      if ((yield* selectPermissionReadContext.effect()) !== context) return;
       if ((yield* selectPermissionState.effect()).revision !== revision) continue;
       yield* put(pendingPermissionsReceived(context, revision, result.requests));
     } catch {
@@ -34,5 +33,5 @@ export function* hydratePermissions({
 }
 
 export function* permissionReadSaga(): SagaGenerator<void> {
-  yield* takeLatestFromSelector(selectWorkspaceControlContext, hydratePermissions);
+  yield* takeLatestFromSelector(selectPermissionReadContext, hydratePermissions);
 }
