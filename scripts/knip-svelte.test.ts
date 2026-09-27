@@ -28,7 +28,7 @@ describe('Svelte import extraction', () => {
       'Example.svelte',
     );
     expect(extracted).toContain("import type { Value } from './value'");
-    expect(extracted).toContain("import('./nested').Value");
+    expect(extracted).toContain("import('./nested');");
     expect(extracted).toContain("import('./dynamic', { with: { type: 'json' } })");
     expect(extracted).toContain("import('./Template.svelte')");
     const parsed = ts.createSourceFile('extracted.ts', extracted, ts.ScriptTarget.Latest);
