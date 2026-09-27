@@ -3,7 +3,11 @@ import { runSaga, stdChannel } from 'redux-saga';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { withLegacyPrincipal } from '../../../../../test/fixtures/principal-state';
-import { initialState as workspaceInitialState } from '../../workspace/workspace-slice';
+import {
+  initialState as workspaceInitialState,
+  workspaceReducer,
+  setWorkspaceHasLoaded,
+} from '../../workspace/workspace-slice';
 import { selectPrincipalAdmissionContext } from '../../principal/principal-selectors';
 import { principalReceived, principalReducer } from '../../principal/principal-slice';
 import type { WorkspaceGitStatus } from '$features/accept-changes/types';
@@ -75,6 +79,7 @@ function harness(activeWorkspaceId = WS_A, cached: Record<string, WorkspaceGitSt
     state = {
       ...state,
       principal: principalReducer(state.principal, action),
+      workspace: workspaceReducer(state.workspace, action),
       git: gitReducer(state.git, action),
       tabState: tabStateReducer(state.tabState, action),
     };
@@ -256,6 +261,11 @@ describe('acceptChangesStatusSaga', () => {
         },
         snapshot,
       ),
+    );
+    await settle();
+    expect(mocks.getStatus).not.toHaveBeenCalled();
+    run.dispatch(
+      setWorkspaceHasLoaded(true, 'local', selectPrincipalAdmissionContext.select(run.state())),
     );
     await settle();
 

@@ -5,7 +5,6 @@ import { createLogger } from '$lib/utils/client-logger';
 import type { WorkspaceId } from '$shared/types/branded-ids';
 import { takeSingleFlightInContext } from '../../../utils/context-saga-effects';
 import { refreshAcceptChangesStatus } from '../../changes/changes-slice';
-import { principalReceived } from '../../principal/principal-slice';
 import { setWorkspaceHasLoaded } from '../../workspace/workspace-slice';
 import { selectWorkspaceHostOperationContext } from '../../workspace/workspace-selectors';
 import { selectCurrentWorkspaceTabId } from '../../tab-state/tab-state-selectors';
@@ -184,6 +183,8 @@ export function* acceptChangesStatusSaga(): SagaGenerator<void> {
     takeEvery(acceptChangesStatusInvalidated, invalidated, coordinator),
     takeEvery(CURRENT_WORKSPACE_TAB_SELECTION_ACTIONS, activeWorkspaceChanged, coordinator),
     takeEvery(backendReconnected, reconnected, coordinator),
-    takeEvery([principalReceived, setWorkspaceHasLoaded], authorityRefreshed, coordinator),
+    // Accepted principal reads reload the workspace list; observe its completed
+    // projection instead of adding a second principalReceived action owner.
+    takeEvery(setWorkspaceHasLoaded, authorityRefreshed, coordinator),
   ]);
 }
