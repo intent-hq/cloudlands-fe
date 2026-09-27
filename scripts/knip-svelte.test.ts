@@ -76,6 +76,38 @@ describe('Svelte import extraction', () => {
     );
   });
 
+  it.each(['module', 'context="module"'])(
+    'preserves imports after two leading byte order marks with %s scripts',
+    (moduleAttribute) => {
+      const extracted = svelteImports(
+        `\uFEFF\uFEFF<script ${moduleAttribute} lang="ts">
+          import { moduleValue } from './module-value';
+          import type { ModuleType } from './module-type';
+          type Boxed = import('./box').Box<import('./item').Item>;
+        </script>
+        <script lang="ts">
+          import Child from './Child.svelte';
+          const assets = import.meta.glob<{ default: string }>('./assets/*.ts', { import: 'default' });
+          const load = () => import('./dynamic', { with: { type: 'json' } });
+        </script>
+        {#await import('./Template.svelte') then component}<component.default />{/await}`,
+        'Example.svelte',
+      );
+      expect(extracted).toBe(
+        [
+          "import { moduleValue } from './module-value';",
+          "import type { ModuleType } from './module-type';",
+          "import('./box')",
+          "import('./item')",
+          "import Child from './Child.svelte';",
+          "import.meta.glob<{ default: string }>('./assets/*.ts', { import: 'default' })",
+          "import('./dynamic', { with: { type: 'json' } })",
+          "import('./Template.svelte')",
+        ].join(';\n'),
+      );
+    },
+  );
+
   it.each([false, true])(
     'preserves embedded byte order marks with leading BOM=%s',
     (leadingBom) => {
@@ -116,13 +148,15 @@ describe('Svelte import extraction', () => {
 
 describe('Svelte imports in the real dead-code gate', () => {
   it.each([
-    { moduleAttribute: 'module', leadingBom: false },
-    { moduleAttribute: 'context="module"', leadingBom: false },
-    { moduleAttribute: 'module', leadingBom: true },
-    { moduleAttribute: 'context="module"', leadingBom: true },
+    { moduleAttribute: 'module', leadingBomCount: 0 },
+    { moduleAttribute: 'context="module"', leadingBomCount: 0 },
+    { moduleAttribute: 'module', leadingBomCount: 1 },
+    { moduleAttribute: 'context="module"', leadingBomCount: 1 },
+    { moduleAttribute: 'module', leadingBomCount: 2 },
+    { moduleAttribute: 'context="module"', leadingBomCount: 2 },
   ])(
-    'preserves both scripts with $moduleAttribute syntax and leading BOM=$leadingBom',
-    ({ moduleAttribute, leadingBom }) => {
+    'preserves both scripts with $moduleAttribute syntax and leading BOM count=$leadingBomCount',
+    ({ moduleAttribute, leadingBomCount }) => {
       const root = mkdtempSync(path.join(tmpdir(), 'knip-svelte-'));
       const write = (file: string, source: string) => {
         mkdirSync(path.dirname(path.join(root, file)), { recursive: true });
@@ -146,7 +180,7 @@ describe('Svelte imports in the real dead-code gate', () => {
         write('src/main.ts', "import App from './App.svelte'; console.log(App);");
         write(
           'src/App.svelte',
-          `${leadingBom ? '\uFEFF' : ''}
+          `${'\uFEFF'.repeat(leadingBomCount)}
         <script ${moduleAttribute} lang="ts">
           const previews = import.meta.glob<{ default: string }>('./recordings/*.ts', {
             eager: true,
