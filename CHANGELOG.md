@@ -4,6 +4,13 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.185.3](https://github.com/intent-hq/cloudlands-fe/compare/v2.185.2...v2.185.3) (2026-09-27)
+
+
+### 🐛 Bug Fixes
+
+* keep live chat drum content in view ([#2940](https://github.com/intent-hq/cloudlands-fe/issues/2940)) ([1a722d2](https://github.com/intent-hq/cloudlands-fe/commit/1a722d28479df3725e6fea192c13a33cd3fa92d2))
+
 ## [2.185.2](https://github.com/intent-hq/cloudlands-fe/compare/v2.185.1...v2.185.2) (2026-09-27)
 
 
