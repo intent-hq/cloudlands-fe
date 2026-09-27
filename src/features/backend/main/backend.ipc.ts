@@ -46,6 +46,7 @@ import {
   shouldUseTransferConnection,
 } from './transfer-connections';
 import { JsonRpcError } from './json-rpc-errors';
+import { registerRepositoryRouteHandlers } from './repository-route-lifecycle';
 import {
   buildMainClientHelloParams,
   getOrCreateClientId,
@@ -372,6 +373,7 @@ const backendClientConnects = new Map<string, Promise<JsonRpcClient>>();
  */
 const backendCredentialGenerations = new Map<string, number>();
 let handlersRegistered = false;
+let repositoryRoutes: ReturnType<typeof registerRepositoryRouteHandlers> | undefined;
 
 /** Main-process lifecycle signal for services caching state by pooled client. */
 export const BACKEND_CLIENT_DISCONNECTED_EVENT = 'backend-client-disconnected';
@@ -926,6 +928,7 @@ export function connectBackendClient(id: string, tokenOverride?: string): Promis
 export function disconnectBackendClient(id: string): void {
   const instance = backendClients.get(id);
   if (!instance) return;
+  repositoryRoutes?.retireBackend(id);
   backendClients.delete(id);
   invitedConnectionGuards.delete(id);
   if (id === LOCAL_CONNECTION_ID) {
@@ -3207,6 +3210,15 @@ export function registerBackendHandlers(): void {
   if (handlersRegistered) return;
   handlersRegistered = true;
 
+  repositoryRoutes = registerRepositoryRouteHandlers(ipcMain, {
+    // Explicit pool lookup only: do not instantiate local or follow focus.
+    readBackend: (id) => backendClients.get(id),
+    // The R/P repository/account/authority lifetime producer is not registered
+    // yet. A successful hello or configured host row cannot substitute for it.
+    resolveLifetime: () => null,
+    errorPayload: toErrorPayload,
+  });
+
   ipcMain.handle(
     BACKEND.REQUEST,
     async (
@@ -4156,6 +4168,7 @@ async function getSelfPublishedState(): Promise<SelfPublishedStateResult> {
 
 /** Dispose every pooled backend client (app shutdown). */
 export function disposeAllBackendClients(): void {
+  repositoryRoutes?.dispose();
   for (const [id, instance] of backendClients) {
     backendClients.delete(id);
     if (id === LOCAL_CONNECTION_ID) {

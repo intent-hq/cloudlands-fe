@@ -11,6 +11,21 @@ import { BackendError } from './backend-transport-types';
  */
 import { resolveBackendTransport } from './backend-transport-factory';
 import type { BackendNotification, BackendRequestOptions } from './backend-transport-types';
+import type { RepositoryRootIdentity } from '$shared/types/repository-context';
+
+/** Capture once before enqueue; a missing bound path never uses ordinary routing. */
+export function captureBackendRepositoryRoute(root: RepositoryRootIdentity) {
+  const transport = resolveBackendTransport();
+  if (!transport.captureRepositoryRoute) {
+    return Promise.reject(
+      new BackendError({
+        code: 'REPOSITORY_ROUTE_UNAVAILABLE',
+        message: 'Repository route unavailable',
+      }),
+    );
+  }
+  return transport.captureRepositoryRoute(root);
+}
 
 export type { BackendNotification } from './backend-transport-types';
 export { electronAPI } from './electron-ipc-transport';

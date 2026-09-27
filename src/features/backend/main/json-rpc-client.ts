@@ -133,6 +133,9 @@ export class JsonRpcClient extends EventEmitter {
   private readonly onHelloResult?: (result: unknown) => void;
 
   private socket: Duplex | null = null;
+  private socketIncarnation: object | null = null;
+  private repositoryConnection: Readonly<{ incarnation: object; identity: object }> | null = null;
+  private helloAttempt: object | null = null;
   // How the current connection's winning candidate reached the daemon
   // (multi-host race only; null for a single-host dial and whenever no socket
   // is connected).
@@ -188,6 +191,53 @@ export class JsonRpcClient extends EventEmitter {
   /** Current connection status. */
   getStatus(): ConnectionStatus {
     return this.status;
+  }
+
+  /** Main-private current socket AND positively acknowledged hello lifetime. */
+  getRepositoryConnection(): Readonly<{ incarnation: object; identity: object }> | null {
+    return !this.disposed && this.status === 'connected' && this.socket && !this.socket.destroyed
+      ? this.repositoryConnection
+      : null;
+  }
+
+  /** Send now on exactly the captured connection; never reconnect, queue or rebind. */
+  requestOnCapturedConnection<T = unknown>(
+    connection: object,
+    method: string,
+    params?: unknown,
+    options?: { timeoutMs?: number },
+  ): Promise<T> {
+    if (!connection || connection !== this.getRepositoryConnection() || method === HELLO_METHOD) {
+      return Promise.reject(new Error('Captured repository connection is unavailable'));
+    }
+    const override = options?.timeoutMs;
+    const timeout =
+      typeof override === 'number' && Number.isFinite(override) && override > 0
+        ? override
+        : this.requestTimeoutMs;
+    return this.sendNow<T>(method, params, timeout);
+  }
+
+  private beginHello(): object {
+    this.repositoryConnection = null;
+    this.helloAttempt = Object.freeze({});
+    return this.helloAttempt;
+  }
+
+  private confirmHello(attempt: object, result: unknown): void {
+    if (this.helloAttempt !== attempt || !this.socketIncarnation || this.disposed) return;
+    if (
+      !result ||
+      typeof result !== 'object' ||
+      !('clientId' in result) ||
+      typeof result.clientId !== 'string' ||
+      result.clientId.length === 0
+    )
+      return;
+    this.repositoryConnection = Object.freeze({
+      incarnation: this.socketIncarnation,
+      identity: Object.freeze({}),
+    });
   }
 
   /**
@@ -358,10 +408,17 @@ export class JsonRpcClient extends EventEmitter {
 
   /** Caller-issued `client.hello`: merge in the persisted identity and observe the result. */
   private async requestHello(params: unknown, timeoutMs: number): Promise<unknown> {
+    this.beginHello();
     const merged = await this.mergedHelloParams(params);
     if (this.status !== 'connected') await this.ensureConnected();
+    // ensureConnected may itself have completed a handshake while this caller
+    // waited. Retire that identity too, immediately before this renegotiation.
+    const attempt = this.beginHello();
+    const incarnation = this.socketIncarnation;
     const result = await this.sendNow(HELLO_METHOD, merged, timeoutMs);
+    if (this.socketIncarnation !== incarnation || this.disposed) return result;
     this.onHelloResult?.(result);
+    this.confirmHello(attempt, result);
     return result;
   }
 
@@ -401,6 +458,8 @@ export class JsonRpcClient extends EventEmitter {
       return;
     }
     this.socket = socket;
+    this.socketIncarnation = Object.freeze({});
+    this.repositoryConnection = null;
     const onConnect = (info?: RaceConnectInfo) => this.onConnected(info);
     socket.once('connect', onConnect);
     socket.once('secureConnect', onConnect);
@@ -431,6 +490,7 @@ export class JsonRpcClient extends EventEmitter {
   }
 
   private async performHelloHandshake(socket: Duplex | null): Promise<void> {
+    const attempt = this.beginHello();
     try {
       const params = await this.mergedHelloParams();
       if (this.disposed || this.socket !== socket) return;
@@ -441,6 +501,7 @@ export class JsonRpcClient extends EventEmitter {
       );
       if (this.disposed || this.socket !== socket) return;
       this.onHelloResult?.(result);
+      this.confirmHello(attempt, result);
     } catch (error) {
       // The socket died mid-handshake: onConnectionFailure already tore it
       // down and scheduled a reconnect — do not report this socket connected.
@@ -477,6 +538,9 @@ export class JsonRpcClient extends EventEmitter {
 
   private onConnectionFailure(error: Error): void {
     if (this.disposed) return;
+    this.repositoryConnection = null;
+    this.socketIncarnation = null;
+    this.helloAttempt = null;
     this.hasConnectionFailed = true;
     this.emitError(error);
     this.stopHeartbeat();
@@ -689,6 +753,10 @@ export class JsonRpcClient extends EventEmitter {
   }
 
   private teardownSocket(): void {
+    // Retire BEFORE any teardown callback can attempt another dispatch.
+    this.socketIncarnation = null;
+    this.repositoryConnection = null;
+    this.helloAttempt = null;
     if (!this.socket) return;
     const socket = this.socket;
     this.socket = null;

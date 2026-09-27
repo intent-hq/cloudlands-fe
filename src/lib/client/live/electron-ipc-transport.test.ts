@@ -23,7 +23,7 @@ function createFakeApi() {
   const listeners = new Map<string, Map<string, (payload: unknown) => void>>();
   let counter = 0;
   return {
-    invoke: vi.fn(async () => ({ ok: true, result: undefined })),
+    invoke: vi.fn(async (_channel: string, _payload: unknown) => ({ ok: true, result: undefined })),
     on(channel: string, callback: (payload: unknown) => void): string {
       const id = `l${++counter}`;
       let channelListeners = listeners.get(channel);
@@ -476,5 +476,124 @@ describe('electron-ipc-transport param serialization (structured clone)', () => 
     await transport.subscribe(proxied({ events: proxied(['task:*']) }));
 
     expect(received).toEqual([{ events: ['task:*'] }]);
+  });
+});
+
+describe('captured repository transport', () => {
+  const root = { workspaceId: 'same', kind: 'primary' as const };
+  it('holds the original bridge and root across queue waits and never uses ordinary request', async () => {
+    const api = installFakeApi();
+    const payload = { root: { ...root } };
+    api.invoke.mockResolvedValueOnce({ ok: true, result: { id: 'opaque' } } as never);
+    const route = await createElectronIpcBackendTransport().captureRepositoryRoute!(payload.root);
+    payload.root.workspaceId = 'changed';
+    api.invoke.mockResolvedValueOnce({
+      ok: true,
+      result: {
+        operationId: 'operation',
+        current: true,
+        settlement: { status: 'fulfilled', value: { branch: 'main' } },
+      },
+    } as never);
+    expect(await route.request('git.status', { workspaceId: 'same' })).toMatchObject({
+      current: true,
+      settlement: { value: { branch: 'main' } },
+    });
+    expect(api.invoke.mock.calls).toEqual([
+      [IPC_CHANNELS.BACKEND.REPOSITORY.CAPTURE, { root }],
+      [
+        IPC_CHANNELS.BACKEND.REPOSITORY.REQUEST,
+        { id: 'opaque', root, method: 'git.status', params: { workspaceId: 'same' } },
+      ],
+    ]);
+    installFakeApi();
+    await expect(route.request('git.status', { workspaceId: 'same' })).rejects.toMatchObject({
+      code: 'REPOSITORY_ROUTE_UNAVAILABLE',
+    });
+    await route.release();
+    expect(api.invoke).toHaveBeenLastCalledWith(IPC_CHANNELS.BACKEND.REPOSITORY.RELEASE, {
+      id: 'opaque',
+      root,
+    });
+  });
+  it('retains an old fulfilled/failed operation while suppressing current application after bridge replacement', async () => {
+    const api = installFakeApi();
+    api.invoke.mockResolvedValueOnce({ ok: true, result: { id: 'opaque' } } as never);
+    const route = await createElectronIpcBackendTransport().captureRepositoryRoute!(root);
+    let finish!: (result: any) => void;
+    api.invoke.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        }),
+    );
+    const pending = route.request('git.status', { workspaceId: 'same' });
+    installFakeApi();
+    const value = {
+      success: false,
+      steps: [{ step: 'commit', success: true }],
+      error: 'push failed',
+    };
+    finish({
+      ok: true,
+      result: { operationId: 'old', current: true, settlement: { status: 'fulfilled', value } },
+    });
+    expect(await pending).toEqual({
+      operationId: 'old',
+      current: false,
+      settlement: { status: 'fulfilled', value },
+    });
+    await route.release();
+  });
+  it('rejects overrides/released handles and passes uncertain settlement without success fallback', async () => {
+    const api = installFakeApi();
+    api.invoke.mockResolvedValueOnce({ ok: true, result: { id: 'opaque' } } as never);
+    const route = await createElectronIpcBackendTransport().captureRepositoryRoute!(root);
+    await expect(
+      route.request('git.status', { workspaceId: 'same' }, { localMachine: true } as never),
+    ).rejects.toMatchObject({ code: 'REPOSITORY_ROUTE_UNAVAILABLE' });
+    const uncertain = {
+      operationId: 'old',
+      current: false,
+      settlement: {
+        status: 'rejected',
+        error: { code: 'TRANSPORT_ERROR', message: 'Lost socket' },
+      },
+    };
+    api.invoke.mockResolvedValueOnce({ ok: true, result: uncertain } as never);
+    expect(await route.request('git.status', { workspaceId: 'same' })).toEqual(uncertain);
+    await route.release();
+    await route.release();
+    await expect(route.request('git.status', { workspaceId: 'same' })).rejects.toThrow();
+    expect(api.invoke).toHaveBeenCalledTimes(3);
+  });
+  it('does not fall back when the authoritative feed is unavailable', async () => {
+    const api = installFakeApi();
+    api.invoke.mockResolvedValueOnce({
+      ok: false,
+      error: { code: 'REPOSITORY_ROUTE_UNAVAILABLE', message: 'Unavailable' },
+    } as never);
+    await expect(
+      createElectronIpcBackendTransport().captureRepositoryRoute!(root),
+    ).rejects.toMatchObject({ code: 'REPOSITORY_ROUTE_UNAVAILABLE' });
+    expect(api.invoke).toHaveBeenCalledTimes(1);
+  });
+  it('releases the old main capture if the bridge changes while capture awaits', async () => {
+    const api = installFakeApi();
+    let finish!: (value: any) => void;
+    api.invoke.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        }),
+    );
+    const pending = createElectronIpcBackendTransport().captureRepositoryRoute!(root);
+    installFakeApi();
+    finish({ ok: true, result: { id: 'old' } });
+    await expect(pending).rejects.toMatchObject({ code: 'REPOSITORY_ROUTE_UNAVAILABLE' });
+    expect(api.invoke).toHaveBeenLastCalledWith(IPC_CHANNELS.BACKEND.REPOSITORY.RELEASE, {
+      id: 'old',
+      root,
+    });
   });
 });

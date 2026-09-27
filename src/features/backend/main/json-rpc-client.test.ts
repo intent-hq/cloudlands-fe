@@ -1021,6 +1021,7 @@ describe('JsonRpcClient client.hello identity handshake (§5.17)', () => {
     await flush();
 
     expect(client.getStatus()).toBe('connected');
+    expect(client.getRepositoryConnection()).toBeNull();
     expect(onHelloResult).not.toHaveBeenCalled();
     client.dispose();
   });
@@ -1132,5 +1133,125 @@ describe('mapErrorCode', () => {
       },
       rpcCode: -32603,
     });
+  });
+});
+
+describe('captured repository socket dispatch', () => {
+  const clients: JsonRpcClient[] = [];
+  afterEach(() => {
+    clients.splice(0).forEach((client) => client.dispose());
+    vi.useRealTimers();
+  });
+  async function connected(hello: unknown = { clientId: 'confirmed-client' }) {
+    const sockets: FakeSocket[] = [];
+    const factory = vi.fn(() => {
+      const socket = new FakeSocket();
+      sockets.push(socket);
+      return socket as unknown as Duplex;
+    });
+    const client = new JsonRpcClient({
+      socketFactory: factory,
+      helloParams: () => ({ clientId: 'persisted' }),
+      reconnectDelayMs: 10,
+    });
+    clients.push(client);
+    client.start();
+    sockets[0].open();
+    await vi.waitFor(() => expect(sockets[0].writes).toHaveLength(1));
+    sockets[0].receive(JSON.stringify({ id: 1, result: hello }) + '\n');
+    await vi.waitFor(() => expect(client.getStatus()).toBe('connected'));
+    return { client, sockets, factory };
+  }
+  it('requires a positive current hello and sends synchronously on the first connection', async () => {
+    const { client, sockets } = await connected();
+    const connection = client.getRepositoryConnection();
+    expect(connection).not.toBeNull();
+    const request = client.requestOnCapturedConnection(connection!, 'git.status', {
+      workspaceId: 'same',
+    });
+    expect(JSON.parse(sockets[0].writes[1])).toMatchObject({
+      method: 'git.status',
+      params: { workspaceId: 'same' },
+    });
+    sockets[0].receive('{"id":2,"result":{"branch":"main"}}\n');
+    await expect(request).resolves.toEqual({ branch: 'main' });
+  });
+  it.each([{}, null, { clientId: '' }])(
+    'does not infer identity from connected with malformed hello %j',
+    async (hello) => {
+      const { client, sockets } = await connected(hello);
+      expect(client.getRepositoryConnection()).toBeNull();
+      await expect(client.requestOnCapturedConnection({}, 'git.status')).rejects.toThrow();
+      expect(sockets[0].writes).toHaveLength(1);
+    },
+  );
+  it('rejects captured work across reconnect on the same client object without another dial', async () => {
+    const { client, sockets, factory } = await connected();
+    const original = client.getRepositoryConnection()!;
+    sockets[0].emit('close');
+    expect(client.getRepositoryConnection()).toBeNull();
+    await vi.waitFor(() => expect(sockets).toHaveLength(2));
+    sockets[1].open();
+    await vi.waitFor(() => expect(sockets[1].writes).toHaveLength(1));
+    const hello = JSON.parse(sockets[1].writes[0]);
+    sockets[1].receive(
+      JSON.stringify({ id: hello.id, result: { clientId: 'confirmed-client' } }) + '\n',
+    );
+    await vi.waitFor(() => expect(client.getStatus()).toBe('connected'));
+    expect(client.getRepositoryConnection()?.incarnation).not.toBe(original.incarnation);
+    await expect(client.requestOnCapturedConnection(original, 'git.status')).rejects.toThrow();
+    expect(factory).toHaveBeenCalledTimes(2);
+    expect(sockets[1].writes).toHaveLength(1);
+  });
+  it('retires the confirmed lifetime before a caller hello awaits identity and on hello rejection', async () => {
+    const { client, sockets } = await connected();
+    const original = client.getRepositoryConnection()!;
+    const hello = client.request('client.hello');
+    expect(client.getRepositoryConnection()).toBeNull();
+    await expect(client.requestOnCapturedConnection(original, 'git.status')).rejects.toThrow();
+    await vi.waitFor(() => expect(sockets[0].writes).toHaveLength(2));
+    sockets[0].receive('{"id":2,"error":{"code":-32601,"message":"unavailable"}}\n');
+    await expect(hello).rejects.toThrow();
+    expect(client.getStatus()).toBe('connected');
+    expect(client.getRepositoryConnection()).toBeNull();
+    const ordinary = client.request('git.status');
+    sockets[0].receive('{"id":3,"result":{}}\n');
+    await expect(ordinary).resolves.toEqual({});
+  });
+  it('retires before teardown callbacks and does not reconnect after disposal', async () => {
+    const { client, sockets, factory } = await connected();
+    const connection = client.getRepositoryConnection()!;
+    const observed: unknown[] = [];
+    sockets[0].destroy = () => {
+      observed.push(client.getRepositoryConnection());
+    };
+    client.dispose();
+    expect(observed).toEqual([null]);
+    await expect(client.requestOnCapturedConnection(connection, 'git.status')).rejects.toThrow();
+    expect(factory).toHaveBeenCalledOnce();
+  });
+});
+
+describe('queued hello repository eligibility', () => {
+  it('does not borrow the initial handshake identity while a queued caller hello runs', async () => {
+    const socket = new FakeSocket();
+    const client = new JsonRpcClient({
+      socketFactory: () => socket as unknown as Duplex,
+      helloParams: () => ({ clientId: 'desktop' }),
+    });
+    try {
+      const callerHello = client.request('client.hello');
+      await vi.waitFor(() => expect(client.getStatus()).toBe('connecting'));
+      socket.open();
+      await vi.waitFor(() => expect(socket.writes).toHaveLength(1));
+      socket.receive('{"id":1,"result":{"clientId":"first"}}\n');
+      await vi.waitFor(() => expect(socket.writes).toHaveLength(2));
+      expect(client.getRepositoryConnection()).toBeNull();
+      socket.receive('{"id":2,"result":{"clientId":"current"}}\n');
+      await callerHello;
+      expect(client.getRepositoryConnection()).not.toBeNull();
+    } finally {
+      client.dispose();
+    }
   });
 });

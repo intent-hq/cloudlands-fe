@@ -918,6 +918,11 @@ export const IPC_CHANNELS = {
   // notifications on the BACKEND.NOTIFICATION event channel.
   BACKEND: {
     REQUEST: 'backend:request',
+    REPOSITORY: {
+      CAPTURE: 'backend:repository:capture',
+      REQUEST: 'backend:repository:request',
+      RELEASE: 'backend:repository:release',
+    },
     SUBSCRIBE: 'backend:subscribe',
     UNSUBSCRIBE: 'backend:unsubscribe',
     GET_STATUS: 'backend:get-status',

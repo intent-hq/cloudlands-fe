@@ -11,11 +11,17 @@
  */
 import { IPC_CHANNELS } from '$shared/ipc-registry';
 import {
+  RepositoryRootIdentitySchema,
+  type RepositoryRootIdentity,
+} from '$shared/types/repository-context';
+import {
   BackendError,
   type BackendErrorPayload,
   type BackendNotification,
   type BackendRequestOptions,
   type BackendTransport,
+  type BoundRepositoryResult,
+  type BoundRepositoryRoute,
 } from './backend-transport-types';
 
 const BACKEND = IPC_CHANNELS.BACKEND;
@@ -163,6 +169,57 @@ export function createElectronIpcBackendTransport(): BackendTransport {
   );
 
   return {
+    async captureRepositoryRoute(root: RepositoryRootIdentity): Promise<BoundRepositoryRoute> {
+      const api = electronAPI();
+      const unavailable = () =>
+        new BackendError({
+          code: 'REPOSITORY_ROUTE_UNAVAILABLE',
+          message: 'Repository route unavailable',
+        });
+      if (!api) throw unavailable();
+      const capturedRoot = Object.freeze(RepositoryRootIdentitySchema.parse(root));
+      const { id } = unwrap<{ id: string }>(
+        await api.invoke(BACKEND.REPOSITORY.CAPTURE, { root: capturedRoot }),
+      );
+      if (typeof id !== 'string' || !id) throw unavailable();
+      let released = false;
+      const release = async () => {
+        if (released) return;
+        released = true;
+        // Always address the original bridge, including cleanup after replacement.
+        try {
+          await api.invoke(BACKEND.REPOSITORY.RELEASE, { id, root: capturedRoot });
+        } catch {
+          // Main also retires on document teardown and bounds every handle's lifetime.
+        }
+      };
+      if (electronAPI() !== api) {
+        await release();
+        throw unavailable();
+      }
+      return {
+        async request<T>(
+          method: string,
+          params: Record<string, unknown>,
+          options?: { timeoutMs?: number },
+        ) {
+          if (released || electronAPI() !== api || (options && 'localMachine' in options))
+            throw unavailable();
+          const result = unwrap<BoundRepositoryResult<T>>(
+            await api.invoke(BACKEND.REPOSITORY.REQUEST, {
+              id,
+              root: capturedRoot,
+              method,
+              params: toPlainJson(params),
+              ...(options?.timeoutMs === undefined ? {} : { timeoutMs: options.timeoutMs }),
+            }),
+          );
+          return { ...result, current: result.current && !released && electronAPI() === api };
+        },
+        release,
+      };
+    },
+
     isAvailable(): boolean {
       return !!electronAPI();
     },
