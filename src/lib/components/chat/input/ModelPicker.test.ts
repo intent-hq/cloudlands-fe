@@ -136,6 +136,9 @@ vi.mock('$store/renderer/store', async () => {
       ...mockRoleState.current,
     }),
     dispatch: mockSvelteDispatch,
+    // Match the production selector stream: observer actions must not emit an
+    // unchanged provider catalog and recursively trigger the observation effect.
+    dedupeEmits: true,
   });
   // Use the real catalog reducer/coordinator behind the component's mocked
   // unrelated selectors. Saga selectors read the same state as the readables.
