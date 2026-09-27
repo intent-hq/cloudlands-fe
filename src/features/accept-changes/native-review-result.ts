@@ -5,7 +5,7 @@ import type {
 } from '$shared/types/native-review';
 import type { AcceptChangesResult } from './types';
 
-type ReviewResponse = AcceptChangesResult & NativeReviewExecuteExtension;
+type ReviewResponse = AcceptChangesResult & Pick<NativeReviewExecuteExtension, 'reviewExecution'>;
 
 interface ResultHistory {
   response: ReviewResponse;

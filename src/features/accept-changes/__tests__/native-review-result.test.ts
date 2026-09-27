@@ -257,7 +257,7 @@ describe('native result evidence boundaries', () => {
 
   it('does not reuse a prior native outcome after a transport failure lacks an extension', () => {
     const commit = commitResponse();
-    const lost: Response = { success: false, steps: [], error: 'Response lost' };
+    const lost: AcceptChangesResult = { success: false, steps: [], error: 'Response lost' };
 
     const view = projectNativeReviewResult(lost, [commit]);
 
