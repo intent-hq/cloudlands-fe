@@ -636,6 +636,8 @@ describe('ModelPicker guest / collaborator lock', () => {
       expect(confirmModelChange).toHaveBeenCalledWith('auggie:sonnet4.6', 'auggie:opus4.7', {
         from: 'Sonnet 4.6',
         to: 'Opus 4.7',
+        fromProviderId: 'auggie',
+        toProviderId: 'auggie',
       });
     });
 
@@ -667,8 +669,8 @@ describe('ModelPicker guest / collaborator lock', () => {
     await fireEvent.click(screen.getByRole('button'));
     await fireEvent.click(await screen.findByRole('option', { name: /Opus 4\.7/ }));
     await new Promise((r) => setTimeout(r, 0));
-    // The local session updated but the backend call is deferred while streaming.
-    expect(dispatchedTypes()).toContain('agentSession/updateSession');
+    // Deferred choices stay local until the backend accepts them.
+    expect(dispatchedTypes()).not.toContain('agentSession/updateSession');
     expect(vi.mocked(agentClient.setModel)).not.toHaveBeenCalled();
 
     await flipToCollaborator();
@@ -1250,6 +1252,7 @@ describe('ModelPicker combined reasoning mode', () => {
     await waitFor(() => {
       expect(applyReasoningEffortMock).toHaveBeenCalledWith('agent-1', 'ws-1', 'high', 'medium', {
         canMutate: expect.any(Function),
+        canSend: expect.any(Function),
       });
     });
   });
@@ -1864,6 +1867,7 @@ describe('ModelPicker combined reasoning mode', () => {
     await waitFor(() => {
       expect(applyReasoningEffortMock).toHaveBeenCalledWith('agent-1', 'ws-1', null, 'none', {
         canMutate: expect.any(Function),
+        canSend: expect.any(Function),
       });
     });
   });
@@ -3731,7 +3735,7 @@ describe('ModelPicker global-default vs per-agent dispatch gating', () => {
         'ws-1',
         'xhigh',
         ['low', 'high'],
-        { canMutate: expect.any(Function) },
+        { canMutate: expect.any(Function), canSend: expect.any(Function) },
       );
     });
   });
@@ -3910,7 +3914,7 @@ describe('ModelPicker global-default vs per-agent dispatch gating', () => {
     await waitFor(() => {
       expect(vi.mocked(agentClient.setModel)).toHaveBeenCalledWith(
         'agent-1',
-        'codex:gpt-5-codex',
+        'gpt-5-codex',
         'ws-1',
         'codex',
       );
@@ -4019,6 +4023,8 @@ describe('ModelPicker confirmModelChange gate', () => {
     expect(confirmModelChange).toHaveBeenCalledWith('model-1', 'model-2', {
       from: 'Model 1',
       to: 'Model 2',
+      fromProviderId: 'auggie',
+      toProviderId: 'auggie',
     });
   });
 
@@ -4037,6 +4043,8 @@ describe('ModelPicker confirmModelChange gate', () => {
       expect(confirmModelChange).toHaveBeenCalledWith('model-1', 'model-2', {
         from: 'Model 1',
         to: 'Model 2',
+        fromProviderId: 'auggie',
+        toProviderId: 'auggie',
       });
     });
     await new Promise((r) => setTimeout(r, 0));
@@ -4070,6 +4078,8 @@ describe('ModelPicker confirmModelChange gate', () => {
       expect(confirmModelChange).toHaveBeenCalledWith('model-1', null, {
         from: 'Model 1',
         to: 'Default model',
+        fromProviderId: 'auggie',
+        toProviderId: 'auggie',
       });
     });
     // Confirming applies the pick: the trigger now shows "Default model".
@@ -4104,6 +4114,8 @@ describe('ModelPicker confirmModelChange gate', () => {
       expect(confirmModelChange).toHaveBeenCalledWith('model-1', null, {
         from: 'Model 1',
         to: 'Default model',
+        fromProviderId: 'auggie',
+        toProviderId: 'auggie',
       });
     });
     await new Promise((r) => setTimeout(r, 0));

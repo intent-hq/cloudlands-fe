@@ -5,7 +5,7 @@ import {
 } from '$lib/components/__tests__/helpers/visual-state-characterization';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { createCollection } from '@augmentcode/themis/utils/collections/collection-utils';
-import { readable } from 'svelte/store';
+import { derived, readable } from 'svelte/store';
 
 vi.mock('$lib/components/shared/icons/FaWrapper.svelte', async () => {
   const MockFa = (await import('../../ui/__tests__/mocks/Fa.svelte')).default;
@@ -288,6 +288,14 @@ vi.mock('$store/renderer/slices/workspace-agents/workspace-agents-selectors', ()
   },
 }));
 vi.mock('$store/renderer/slices/agent-session/agent-session-selectors', () => ({
+  selectAgentProvider: (agentId$: import('svelte/store').Readable<string>) =>
+    derived(agentId$, (id) => {
+      for (const ws of Object.values(mockReduxState.workspaceAgents.byWorkspaceId) as any[]) {
+        const agent = ws?.agents?.map?.[id];
+        if (agent) return agent.provider || agent.metadata?.provider;
+      }
+      return undefined;
+    }),
   selectAgentReasoningEffort: () => readable(undefined),
   selectAgentSession: {
     select: (_state: any, agentId: string) => {
@@ -649,7 +657,7 @@ describe('SimpleRichInput provider switch sync', () => {
       },
     });
 
-    expect(screen.getByTestId('model-picker-provider').textContent).toBe('');
+    expect(screen.getByTestId('model-picker-provider').textContent).toBe('codex');
     expect(screen.getByTestId('model-picker-model').textContent).toBe('');
     expect(onmodelChange).not.toHaveBeenCalled();
     expect(setModelMock).not.toHaveBeenCalled();
@@ -666,7 +674,7 @@ describe('SimpleRichInput provider switch sync', () => {
     });
 
     await waitFor(() => {
-      expect(screen.getByTestId('model-picker-provider').textContent).toBe('');
+      expect(screen.getByTestId('model-picker-provider').textContent).toBe('codex');
       expect(screen.getByTestId('model-picker-model').textContent).toBe('codex:gpt-5-codex');
     });
 
@@ -674,7 +682,7 @@ describe('SimpleRichInput provider switch sync', () => {
     expect(setModelMock).not.toHaveBeenCalled();
   });
 
-  it('hydrates the persisted model without passing the session provider as a filter', async () => {
+  it('hydrates the persisted provider and model as one selection', async () => {
     removeMockSession('ws-1', 'agent-1');
     addMockSession(
       'ws-1',
@@ -704,7 +712,7 @@ describe('SimpleRichInput provider switch sync', () => {
     });
 
     await waitFor(() => {
-      expect(screen.getByTestId('model-picker-provider').textContent).toBe('');
+      expect(screen.getByTestId('model-picker-provider').textContent).toBe('codex');
       expect(screen.getByTestId('model-picker-model').textContent).toBe('codex:gpt-5-codex');
     });
 
@@ -790,7 +798,7 @@ describe('SimpleRichInput provider switch sync', () => {
     await fireEvent.click(confirmButton!);
 
     await waitFor(() => {
-      expect(setModelMock).toHaveBeenCalledWith('agent-1', 'codex:gpt-5-codex', 'ws-1', 'codex');
+      expect(onmodelChange).toHaveBeenCalledWith('codex:gpt-5-codex');
     });
     expect(onmodelChange).toHaveBeenCalledWith('codex:gpt-5-codex');
   });
@@ -928,7 +936,7 @@ describe('SimpleRichInput provider switch sync', () => {
     });
   });
 
-  it('calls agentClient.setModel exactly once during a cross-provider model switch', async () => {
+  it('mirrors a provider pick without becoming a second mutation owner', async () => {
     const onmodelChange = vi.fn();
     const workspace = {
       id: 'ws-1',
@@ -960,18 +968,10 @@ describe('SimpleRichInput provider switch sync', () => {
     fireEvent.input(triggerInput, { target: { value: 'codex:gpt-5-codex' } });
     await fireEvent.click(triggerButton);
 
-    // Wait for the async handleProviderChangeFromModel to complete
-    await waitFor(() => {
-      expect(setModelMock).toHaveBeenCalledTimes(1);
-    });
-
-    // The explicit target provider rides along as the 4th wire arg so the
-    // daemon validates the model against it, not the session's provider.
-    expect(setModelMock).toHaveBeenCalledWith('agent-1', 'codex:gpt-5-codex', 'ws-1', 'codex');
-    expect(reconcileAgentReasoningEffortMock).toHaveBeenCalledWith('agent-1', 'ws-1', 'xhigh', [
-      'low',
-      'high',
-    ]);
+    // The real picker owns the guarded operation; the parent only mirrors
+    // the selection. The real-parent suite asserts the actual wire count.
+    expect(setModelMock).not.toHaveBeenCalled();
+    expect(reconcileAgentReasoningEffortMock).not.toHaveBeenCalled();
     expect(onmodelChange).toHaveBeenCalledWith('codex:gpt-5-codex');
   });
 

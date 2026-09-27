@@ -119,6 +119,7 @@ function makeState() {
       ]),
     },
     model: {
+      availableModelsProviderId: 'codex',
       availableModels: createCollection('value', [
         { value: 'model-a', label: 'Model A', effortLevels: ['low', 'medium', 'high'] },
         { value: 'model-b', label: 'Model B', effortLevels: ['minimal', 'ultra'] },
