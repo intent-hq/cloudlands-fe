@@ -4,7 +4,7 @@
  * The 'requirements' gate precedes 'welcome', and the GitHub device-token
  * step sits between agent-CLI selection ('welcome') and project selection
  * ('project'); `nextStep` must walk the full order and `goToStep` must
- * accept every step including 'github'.
+ * accept every step including 'forge'.
  */
 import { describe, expect, it } from 'vitest';
 
@@ -19,11 +19,11 @@ import {
 import { STEP_ORDER, type OnboardingStep } from './onboarding-types';
 
 describe('onboarding step ordering', () => {
-  it('places requirements before welcome and github between welcome and project', () => {
+  it('places requirements before welcome and forge between welcome and project', () => {
     expect(STEP_ORDER).toEqual([
       'requirements',
       'welcome',
-      'github',
+      'forge',
       'project',
       'configuring',
       'ready',
@@ -53,21 +53,21 @@ describe('onboarding step ordering', () => {
     expect(state.step).toBe('welcome');
   });
 
-  it('goToStep jumps directly to the github step', () => {
-    const state = onboardingReducer(initialState, goToStep('github'));
-    expect(state.step).toBe('github');
+  it('goToStep jumps directly to the forge step', () => {
+    const state = onboardingReducer(initialState, goToStep('forge'));
+    expect(state.step).toBe('forge');
   });
 
-  it('goToStep supports skipping github (welcome → github → project)', () => {
-    // "Skip for now" advances from github straight to project.
-    const onGitHub = onboardingReducer(initialState, goToStep('github'));
-    const skipped = onboardingReducer(onGitHub, goToStep('project'));
+  it('goToStep supports skipping forge (welcome → forge → project)', () => {
+    // "Skip for now" advances from forge straight to project.
+    const onForge = onboardingReducer(initialState, goToStep('forge'));
+    const skipped = onboardingReducer(onForge, goToStep('project'));
     expect(skipped.step).toBe('project');
   });
 
   it('resetOnboarding returns to requirements', () => {
-    const onGitHub = onboardingReducer(initialState, goToStep('github'));
-    expect(onboardingReducer(onGitHub, resetOnboarding()).step).toBe('requirements');
+    const onForge = onboardingReducer(initialState, goToStep('forge'));
+    expect(onboardingReducer(onForge, resetOnboarding()).step).toBe('requirements');
   });
 });
 

@@ -56,6 +56,7 @@ const makeTabState = (currentTabId: string | null = 'ws-1'): TabState => ({
   hydratedBackendId: null,
   mountedBrowserTabLeases: {},
   browserTabRecoveryRequests: {},
+  browserTabNavigations: {},
 });
 
 function makeStore(

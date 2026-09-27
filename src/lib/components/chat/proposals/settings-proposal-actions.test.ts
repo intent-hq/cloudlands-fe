@@ -10,6 +10,7 @@ import {
   setChatAuroraEnabled,
   setGithubLinkDefaultAction,
   setLabsMultiplayerEnabled,
+  setLabsGitLabEnabled,
   setShellTransparencyEnabled,
   setVolume,
 } from '$store/renderer/slices/user-preferences/user-preferences-slice';
@@ -261,6 +262,24 @@ describe('settings-proposal-actions', () => {
     await undoSettingsProposalWork(result.reverseChanges);
 
     expect(mocks.dispatch).toHaveBeenCalledWith(setLabsMultiplayerEnabled(false));
+  });
+
+  it('applies and reverses the GitLab lab preference', async () => {
+    const result = await applySettingsProposalWork(makeDetail(makeProposal('labs.gitlab', true)));
+
+    expect(mocks.dispatch).toHaveBeenCalledWith(setLabsGitLabEnabled(true));
+    expect(result.reverseChanges).toEqual([
+      {
+        path: 'labs.gitlab',
+        value: false,
+        apply: { kind: 'redux-action', action: 'userPreferences/setLabsGitLabEnabled' },
+      },
+    ]);
+
+    mocks.dispatch.mockClear();
+    await undoSettingsProposalWork(result.reverseChanges);
+
+    expect(mocks.dispatch).toHaveBeenCalledWith(setLabsGitLabEnabled(false));
   });
 
   it('falls back to the proposal value when a numeric edit is invalid', async () => {

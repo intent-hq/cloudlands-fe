@@ -59,6 +59,9 @@ vi.mock('../../../backend/main/guest-sessions-store', () => ({
 vi.mock('../../../backend/main/backend.ipc', () => ({
   openBackendWindow: mocks.open,
   getBackendClient: () => ({ request: mocks.local }),
+  // A local sidecar that serves the identity seam, so the GitLab probe runs
+  // when GitHub is not connected (the review covers the GitHub proof path).
+  getConnectedDaemonProtocolVersion: () => '10.8', // protocol-version-ok: fixture hello
   onBackendNotification: () => () => {},
 }));
 vi.mock('../../../backend/main/backend-connection', () => ({

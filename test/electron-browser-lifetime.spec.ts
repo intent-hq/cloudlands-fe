@@ -23,6 +23,7 @@ let guestUrl: string;
 let baseUrl: string;
 let cdpBundle: string;
 let bundleDir: string;
+let heldNavigationResponses: Array<() => void> | undefined;
 const fixture = resolve('test/fixtures/browser-lifetime');
 /**
  * Budget for the explicit-close / archive polls. Each guestSnapshot round bounds
@@ -70,7 +71,9 @@ test.beforeAll(async () => {
                 for (const window of windows) window.webContents.send(channel, payload);
                 return { windowCount: windows.length, browserClientsNotified: false, delivered: windows.length > 0 };
               }
-              export function getWindowIdForWorkspace() { return undefined; }
+              export function getWindowIdForWorkspace(workspaceId) {
+                return workspaceId === globalThis.lifetimeActiveWorkspaceId ? BrowserWindow.getAllWindows()[0]?.id : undefined;
+              }
               export function getWindowIdsForWorkspace() { return BrowserWindow.getAllWindows().map(w => w.id); }`;
           if (id === '\0fixture-capture') return 'export const browserCapture = {};';
           if (id === '\0fixture-backend')
@@ -92,12 +95,22 @@ test.beforeAll(async () => {
       },
     },
   });
-  guestServer = createHttpServer((_req, res) => {
-    res.setHeader('Content-Type', 'text/html');
-    res.setHeader('Cache-Control', 'no-store');
-    res.end(
-      '<!doctype html><title>QA fixture</title><input id="draft"><button id="increment">Increment</button><script>window.documentMarker = crypto.randomUUID(); window.inMemoryCount = 0; document.querySelector("#increment").onclick = () => window.inMemoryCount++;</script>',
-    );
+  guestServer = createHttpServer((req, res) => {
+    const respond = () => {
+      res.setHeader('Content-Type', 'text/html');
+      res.setHeader('Cache-Control', 'no-store');
+      res.end(
+        '<!doctype html><title>QA fixture</title><input id="draft"><button id="increment">Increment</button><script>window.documentMarker = crypto.randomUUID(); window.inMemoryCount = 0; document.querySelector("#increment").onclick = () => window.inMemoryCount++;</script>',
+      );
+    };
+    if (
+      heldNavigationResponses &&
+      (req.url?.startsWith('/second?') || req.url?.startsWith('/cancelled?'))
+    ) {
+      heldNavigationResponses.push(respond);
+    } else {
+      respond();
+    }
   });
   await new Promise<void>((done) => guestServer.listen(0, '127.0.0.1', done));
   const address = guestServer.address();
@@ -167,7 +180,7 @@ test.afterAll(async () => {
   }
 });
 
-async function launch(owned: boolean) {
+async function launch(owned: boolean, blank?: { tabId: string; hidden: boolean }) {
   const env = Object.fromEntries(
     ['PATH', 'TMPDIR', 'DISPLAY', 'XAUTHORITY', 'SYSTEMROOT'].flatMap((key) =>
       process.env[key] ? [[key, process.env[key]!]] : [],
@@ -181,10 +194,11 @@ async function launch(owned: boolean) {
       args: [
         join(fixture, 'main.cjs'),
         profile,
-        `${baseUrl}test/fixtures/browser-lifetime/index.html?owned=${owned}&guest=${encodeURIComponent(guestUrl)}`,
+        `${baseUrl}test/fixtures/browser-lifetime/index.html?owned=${owned}&guest=${encodeURIComponent(guestUrl)}${blank ? `&blankTab=${blank.tabId}&hiddenBlank=${blank.hidden}` : ''}`,
         cdpBundle,
       ],
-      env,
+      // Host-injected tracing wraps BrowserWindow and breaks native window lookup.
+      env: { ...env, DD_TRACE_ENABLED: 'false' },
     });
     const page = await app.firstWindow();
     page.on('pageerror', (error) => console.error('Fixture renderer:', error.message));
@@ -426,6 +440,105 @@ async function teardown(
   }
 }
 
+for (const { tabId, hidden, context } of [
+  { tabId: 'A-1', hidden: true, context: 'foreground hidden' },
+  { tabId: 'B-1', hidden: true, context: 'background hidden' },
+  { tabId: 'A-1', hidden: false, context: 'visible panel control' },
+]) {
+  test(`explicit navigation recovers an owned blank tab: ${context}`, async ({}, testInfo) => {
+    test.setTimeout(120_000);
+    const { app, page, profile } = await launch(true, { tabId, hidden });
+    const observations: any[] = [];
+    try {
+      await ready(app, 'B-2');
+      expect(await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().length)).toBe(
+        1,
+      );
+      await page.evaluate(() => {
+        document.body.tabIndex = -1;
+        document.body.focus();
+      });
+      const initial = await record(app, page, 'before blank navigation');
+      observations.push(initial);
+      expect(initial.urls[tabId]).toBe('about:blank');
+      expect(initial.records[tabId[0]].hidden.includes(tabId)).toBe(hidden);
+      const focus = await app.evaluate(({ BrowserWindow, webContents }) => ({
+        window: BrowserWindow.getFocusedWindow()?.id,
+        contents: webContents.getFocusedWebContents()?.id,
+      }));
+      const url = `${guestUrl}/recovered-blank?tab=${tabId}`;
+      const result = await app.evaluate(
+        (_electron, { tabId, url }) =>
+          (globalThis as any).lifetimeNavigate(tabId, url, 'fixture-agent'),
+        { tabId, url },
+      );
+      observations.push({ label: 'production navigation result', result });
+      expect(result).toMatchObject({
+        success: true,
+        results: [{ action: 'navigate', success: true, result: { tabId, url } }],
+      });
+      await expect
+        .poll(() =>
+          app.evaluate(
+            (_electron, tabId) =>
+              (globalThis as any).lifetimeExecute(
+                {
+                  actions: [
+                    {
+                      action: 'evaluate',
+                      tabId,
+                      expression:
+                        '({ url: location.href, marker: window.documentMarker, count: window.inMemoryCount })',
+                    },
+                  ],
+                },
+                undefined,
+                'fixture-agent',
+                tabId[0],
+              ),
+            tabId,
+          ),
+        )
+        .toMatchObject({
+          success: true,
+          results: [
+            {
+              action: 'evaluate',
+              success: true,
+              result: { url, marker: expect.any(String), count: 0 },
+            },
+          ],
+        });
+      await expect
+        .poll(() => page.evaluate((tabId) => (window as any).lifetimeFixture.urls()[tabId], tabId))
+        .toBe(url);
+      const recovered = await record(app, page, 'after blank navigation');
+      observations.push(recovered);
+      expect(recovered.records).toEqual(initial.records);
+      expect(recovered.records[tabId[0]].owners[tabId]).toBe('fixture-agent');
+      expect(recovered.records[tabId[0]].hosts[tabId]).toBe('fixture-client');
+      const registrations = recovered.registrations.filter((entry: any) => entry.tabId === tabId);
+      expect(registrations).toHaveLength(1);
+      expect(
+        recovered.live.filter((guest: any) => guest.url === url).map((guest: any) => guest.id),
+      ).toEqual([registrations[0].webContentsId]);
+      expect(await page.evaluate(() => document.activeElement === document.body)).toBe(true);
+      expect(
+        await app.evaluate(({ BrowserWindow, webContents }) => ({
+          window: BrowserWindow.getFocusedWindow()?.id,
+          contents: webContents.getFocusedWebContents()?.id,
+        })),
+      ).toEqual(focus);
+      expect(await page.locator(`[data-offscreen-webview-tab="${tabId}"]`).count()).toBe(
+        hidden ? 1 : 0,
+      );
+      expect(await page.evaluate(() => (window as any).lifetimeFixture.errors())).toEqual([]);
+    } finally {
+      await teardown(app, page, profile, observations, testInfo);
+    }
+  });
+}
+
 test('explicit navigation mounts a cap-evicted background tab without focus changes', async ({}, testInfo) => {
   test.setTimeout(120_000);
   const { app, page, profile } = await launch(false);
@@ -538,11 +651,29 @@ for (const hidden of [false, true]) {
       const original = observations[0].live.find((guest: any) => guest.url.endsWith('tab=B-1'));
       expect(recovered.id).not.toBe(original.id);
       const nextUrl = `${guestUrl}/second?tab=B-1`;
-      const nextResult = await app.evaluate(
-        (_electron, url) => (globalThis as any).lifetimeNavigate('B-1', url),
-        nextUrl,
-      );
-      expect(nextResult.success).toBe(true);
+      // Hold the response so the persisted-URL notification arrives while
+      // getURL still reports the recovered document. It must not initiate a
+      // second renderer load, regardless of when native commit events arrive.
+      const responses: Array<() => void> = [];
+      heldNavigationResponses = responses;
+      await page.evaluate(() => (window as any).lifetimeFixture.monitorLoads('B-1'));
+      try {
+        const nextResult = await app.evaluate(
+          (_electron, url) => (globalThis as any).lifetimeNavigate('B-1', url),
+          nextUrl,
+        );
+        expect(nextResult.success).toBe(true);
+        await expect
+          .poll(() => page.evaluate(() => (window as any).lifetimeFixture.urls()['B-1']))
+          .toBe(nextUrl);
+        await page.evaluate(() => (window as any).lifetimeFixture.flush());
+        const loads = await page.evaluate(() => (window as any).lifetimeFixture.loads());
+        observations.push({ label: 'renderer loads before second navigation commits', loads });
+        expect(loads).toEqual([]);
+      } finally {
+        heldNavigationResponses = undefined;
+        for (const respond of responses) respond();
+      }
       await expect
         .poll(async () => (await guestSnapshot(app)).live.some((guest) => guest.url === nextUrl))
         .toBe(true);
@@ -565,6 +696,115 @@ for (const hidden of [false, true]) {
           .find((guest: any) => guest.id === recovered.id)
           .navigations.filter((url: string) => url !== 'about:blank'),
       ).toEqual([url, nextUrl]);
+
+      // A deliberate navigation to the current URL is still a real reload.
+      const marker = settled.live.find((guest: any) => guest.id === recovered.id)?.state.marker;
+      const reload = await app.evaluate(
+        (_electron, url) => (globalThis as any).lifetimeNavigate('B-1', url),
+        nextUrl,
+      );
+      expect(reload.success).toBe(true);
+      await expect
+        .poll(async () => {
+          const state = (await guestSnapshot(app)).live.find(
+            (guest) => guest.id === recovered.id,
+          )?.state;
+          return Boolean(state?.marker && state.marker !== marker);
+        })
+        .toBe(true);
+      observations.push(await record(app, page, 'after deliberate same-URL navigation'));
+      expect(
+        observations
+          .at(-1)
+          .guests.find((guest: any) => guest.id === recovered.id)
+          .navigations.filter((target: string) => target !== 'about:blank'),
+      ).toEqual([url, nextUrl, nextUrl]);
+
+      // Abort an in-flight main navigation, then explicitly retry the same
+      // persisted URL. Consuming the earlier echo must not prevent recovery.
+      const expectedLoads: string[] = [];
+      for (const retryKind of ['navigate', 'replace'] as const) {
+        const retryUrl = `${guestUrl}/cancelled?tab=B-1&via=${retryKind}`;
+        const cancelledResponses: Array<() => void> = [];
+        heldNavigationResponses = cancelledResponses;
+        try {
+          const attempt = await app.evaluate(
+            (_electron, url) => (globalThis as any).lifetimeNavigate('B-1', url),
+            retryUrl,
+          );
+          expect(attempt.success).toBe(true);
+          await expect.poll(() => cancelledResponses.length).toBeGreaterThan(0);
+          await expect
+            .poll(() => page.evaluate(() => (window as any).lifetimeFixture.urls()['B-1']))
+            .toBe(retryUrl);
+          await app.evaluate(({ webContents }, id) => webContents.fromId(id)?.stop(), recovered.id);
+          await expect
+            .poll(() =>
+              app.evaluate(
+                ({ webContents }, id) => webContents.fromId(id)?.isLoading(),
+                recovered.id,
+              ),
+            )
+            .toBe(false);
+          observations.push(await record(app, page, 'after cancelled navigation'));
+        } finally {
+          heldNavigationResponses = undefined;
+          for (const respond of cancelledResponses) respond();
+        }
+        if (retryKind === 'navigate') {
+          const retry = await app.evaluate(
+            (_electron, url) => (globalThis as any).lifetimeNavigate('B-1', url),
+            retryUrl,
+          );
+          expect(retry.success).toBe(true);
+        } else {
+          // Exercise the real renderer replacement command after main's URL
+          // observation was consumed, with the same persisted URL still pending.
+          await app.evaluate(({ BrowserWindow }, url) => {
+            BrowserWindow.getAllWindows()[0].webContents.send('browser:open-tab', {
+              workspaceId: 'B',
+              url,
+              position: 'replace',
+              replaceTabId: 'B-1',
+              ownerAgentId: 'fixture-agent',
+              visible: false,
+            });
+          }, retryUrl);
+          observations.push(await record(app, page, 'after same-URL replacement command'));
+          expectedLoads.push(retryUrl);
+          await expect
+            .poll(() => page.evaluate(() => (window as any).lifetimeFixture.loads()))
+            .toEqual(expectedLoads);
+        }
+        await expect
+          .poll(
+            async () =>
+              (await guestSnapshot(app)).live.find((guest) => guest.id === recovered.id)?.url,
+          )
+          .toBe(retryUrl);
+        expect(await page.evaluate(() => (window as any).lifetimeFixture.loads())).toEqual(
+          expectedLoads,
+        );
+      }
+
+      // A store-driven external URL change is still an actual renderer command.
+      const externalUrl = `${guestUrl}/external?tab=B-1`;
+      await page.evaluate((url) => (window as any).lifetimeFixture.setUrl('B-1', url), externalUrl);
+      await expect
+        .poll(
+          async () =>
+            (await guestSnapshot(app)).live.find((guest) => guest.id === recovered.id)?.url,
+        )
+        .toBe(externalUrl);
+      expect(await page.evaluate(() => (window as any).lifetimeFixture.loads())).toEqual([
+        ...expectedLoads,
+        externalUrl,
+      ]);
+      expect(await page.evaluate(() => (window as any).lifetimeFixture.records())).toEqual(initial);
+      expect(await app.evaluate(() => (globalThis as any).lifetimeEvidence.guests.length)).toBe(
+        closedGuests + 1,
+      );
+      observations.push(await record(app, page, 'after retry and external navigation'));
       await page.evaluate(() => (window as any).lifetimeFixture.close('B-1', true));
       await expect
         .poll(() => app.evaluate(() => (globalThis as any).lifetimeCdp.isTabMounted('B-1')))

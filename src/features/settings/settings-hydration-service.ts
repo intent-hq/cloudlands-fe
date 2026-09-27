@@ -45,13 +45,18 @@ import {
   loadProviderModelsFromStorage,
 } from '$store/renderer/slices/model/model-slice';
 import { setDefaultSpecialistId } from '$store/renderer/slices/specialists/specialists-slice';
+import { hydrateNotificationVolume } from '$store/renderer/slices/user-preferences/user-preferences-slice';
 
 const logger = createLogger('SettingsHydrationService');
 
 /** Apply a single applied-change to the slice that owns its dotted path. */
-function applyOne(change: AppliedSettingChange): void {
+function applyOne(change: AppliedSettingChange, revision?: number): void {
   const { path, value } = change;
   switch (path) {
+    case 'notifications.volume': {
+      if (typeof value === 'number') appStore.dispatch(hydrateNotificationVolume(value, revision));
+      return;
+    }
     case 'model.defaultProvider': {
       // The reducer's pending-local-intent guard keeps a newer local pick
       // over a stale snapshot/echo until the daemon confirms it.
@@ -351,13 +356,16 @@ function applyBackgroundAgentBundle(byPath: Map<string, unknown>): void {
  * panels with bespoke wiring can react. Unknown paths are silently skipped
  * (the FE intentionally tolerates BE-side schema additions).
  */
-export function applySettingsChanges(changes: readonly AppliedSettingChange[]): void {
+export function applySettingsChanges(
+  changes: readonly AppliedSettingChange[],
+  revision?: number,
+): void {
   if (changes.length === 0) return;
   const bundle = new Map<string, unknown>();
   let hasBackgroundAgentPaths = false;
   let hasEnabledProvidersPath = false;
   for (const change of changes) {
-    applyOne(change);
+    applyOne(change, revision);
     bundle.set(change.path, change.value);
     if (change.path.startsWith('quickActions.')) {
       hasBackgroundAgentPaths = true;

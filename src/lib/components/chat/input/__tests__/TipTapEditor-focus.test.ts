@@ -1,6 +1,6 @@
 /** @vitest-environment jsdom */
 import { flushSync } from 'svelte';
-import { cleanup, render, screen, waitFor } from '@testing-library/svelte';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { afterEach, describe, expect, it } from 'vitest';
 import TipTapEditor from '../TipTapEditor.svelte';
 import TipTapEditorDeactivateHarness from './TipTapEditorDeactivateHarness.svelte';
@@ -9,6 +9,29 @@ import { processHTMLToMarkdown, processMarkdownToHTML } from '$lib/utils/markdow
 afterEach(() => cleanup());
 
 describe('TipTapEditor programmatic content updates', () => {
+  it.each(['setContent', 'clear'] as const)(
+    'dismisses a removed file mention hover on %s',
+    async (command) => {
+      const view = render(TipTapEditor, { value: '@README.md' });
+      const chip = await waitFor(() => {
+        const element = view.container.querySelector('[data-mention]');
+        expect(element).toBeTruthy();
+        return element!;
+      });
+      await fireEvent.mouseOver(chip);
+      const preview = await screen.findByRole('tooltip');
+      expect(preview.textContent).toContain('README.md');
+      await fireEvent.mouseOut(chip, { relatedTarget: preview });
+      expect(screen.getByRole('tooltip')).toBe(preview);
+
+      if (command === 'setContent') await view.component.setContent('replacement');
+      else view.component.clear();
+
+      await waitFor(() => expect(view.container.querySelector('[data-mention]')).toBeNull());
+      await waitFor(() => expect(screen.queryByRole('tooltip')).toBeNull());
+    },
+  );
+
   it('preserves a workspace video through the comment edit path', async () => {
     const markdown = '![clip](intent://local/file/x.mp4)';
     const html = await processMarkdownToHTML(markdown, { workspaceId: 'workspace-1' });

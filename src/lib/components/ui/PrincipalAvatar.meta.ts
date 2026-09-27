@@ -14,6 +14,7 @@ export const principalAvatarMetadata = parseUiComponentMetadata({
     'src/features/presence/components/PresenceAvatarStack.svelte',
     'src/lib/component-catalog/renderers/PrincipalAvatarCatalogPreview.svelte',
     'src/lib/components/chat/ChatMessage.svelte',
+    'src/lib/components/chat/input/EnhancedMentionList.svelte',
     'src/lib/components/chat/QueuedMessageList.svelte',
     'src/lib/components/modals/ShareWorkspaceDialog.svelte',
     'src/lib/components/patterns/settings/custom-controls.ts',

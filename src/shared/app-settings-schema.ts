@@ -225,6 +225,17 @@ const APP_SETTING_DEFINITIONS: readonly AppSettingDefinition[] = [
     apply: { kind: 'redux-action', action: 'userPreferences/setLabsMultiplayerEnabled' },
   },
   {
+    path: 'labs.gitlab',
+    label: 'GitLab (Labs)',
+    description: 'Whether the experimental GitLab lab is enabled.',
+    category: 'labs',
+    type: 'boolean',
+    source: 'local-storage',
+    storageKey: 'labs:gitlabEnabled',
+    defaultValue: false,
+    apply: { kind: 'redux-action', action: 'userPreferences/setLabsGitLabEnabled' },
+  },
+  {
     path: 'theme.activePresetId',
     label: 'Theme preset',
     description: `Active built-in color theme preset ID. Available presets: ${THEME_PRESET_OPTIONS_DESCRIPTION}.`,

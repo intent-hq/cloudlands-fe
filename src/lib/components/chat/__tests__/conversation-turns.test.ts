@@ -20,6 +20,41 @@ const systemNotice = (id: string, kind: string): AgentMessage => ({
 });
 
 describe('conversation turn indexing', () => {
+  it('indexes effort notices with model/provider notices without counting them as assistant output', () => {
+    const effort = {
+      ...message('effort', 'system'),
+      metadata: { type: 'effort_changed', from: 'medium', to: 'high' },
+      contentBlocks: [{ type: 'text' as const, text: 'Effort changed from medium to high.' }],
+    };
+    const indexed = indexConversationTurns([
+      {
+        messages: [
+          message('user', 'user'),
+          message('model', 'system', 'model_changed'),
+          effort,
+          message('rehome', 'system', 'provider_rehomed'),
+          message('reply', 'assistant'),
+        ],
+      },
+    ]);
+    const [turn] = indexed.groups[0].turns;
+    expect(turn.noticeMessages.map(({ id }) => id)).toEqual(['model', 'effort', 'rehome']);
+    expect(turn.bodyMessages.map(({ id }) => id)).toEqual(['reply']);
+    expect(turn.assistantMessages.map(({ id }) => id)).toEqual(['reply']);
+    expect(indexed.turnKeyByMessageId.get('effort')).toBe('user');
+  });
+
+  it('keeps an orphan effort notice addressable when a history page begins with it', () => {
+    const indexed = indexConversationTurns([
+      { groupKey: 'older', messages: [message('effort', 'system', 'effort_changed')] },
+      { groupKey: 'tail', messages: [message('user', 'user')] },
+    ]);
+    expect(indexed.groups[0].turns[0].noticeMessages.map(({ id }) => id)).toEqual(['effort']);
+    expect(indexed.groups[0].turns[0].assistantMessages).toEqual([]);
+    expect(indexed.turnKeyByMessageId.get('effort')).toBe('group-older-turn-0');
+    expect(indexed.globalIndexByTurnKey.get('user')).toBe(1);
+  });
+
   it.each(['blocker-report', 'discussion-request', 'turn-failure', 'interruption'])(
     'keeps %s in transcript order without counting it as assistant output',
     (kind) => {

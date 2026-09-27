@@ -371,7 +371,9 @@
   import { CHIEF_WORKSPACE_ID } from '$shared/types/branded-ids';
   import { canChangeAgentProvider as resolveCanChangeAgentProvider } from './provider-lock';
   import ModelChangeNotice from './ModelChangeNotice.svelte';
+  import EffortChangeNotice from './EffortChangeNotice.svelte';
   import { getModelChangeNotice } from './model-change-notice';
+  import { getEffortChangeNotice } from './effort-change-notice';
   import ProviderRehomedNotice from './ProviderRehomedNotice.svelte';
   import { getProviderRehomedNotice } from './rehome-notice';
   import {
@@ -3484,7 +3486,11 @@
 
   // A turn notice the transcript renders (mirrors the notice rows below).
   function isRenderedTurnNotice(notice: AgentMessage): boolean {
-    return Boolean(getModelChangeNotice(notice) || getProviderRehomedNotice(notice));
+    return Boolean(
+      getModelChangeNotice(notice) ||
+      getEffortChangeNotice(notice) ||
+      getProviderRehomedNotice(notice),
+    );
   }
 
   // Compute the turn structure and both virtualization/search indexes in one
@@ -6451,14 +6457,23 @@
                       {@render newMessagesDividerAfter(message.id, dividerAtTurnBoundary)}
                     {/if}
 
-                    <!-- Model-change and provider re-home notices (daemon-persisted, after the user row, before assistant output) -->
+                    <!-- Model, effort, and provider re-home notices (daemon-persisted, after the user row, before assistant output) -->
                     {#each turn.noticeMessages as noticeMessage (noticeMessage.id)}
                       {@const notice = getModelChangeNotice(noticeMessage)}
+                      {@const effortNotice = getEffortChangeNotice(noticeMessage)}
                       {@const rehomeNotice = getProviderRehomedNotice(noticeMessage)}
                       {#if notice}
                         <div data-message-id={noticeMessage.id} class="px-2">
                           <ModelChangeNotice
                             {notice}
+                            fallbackText={extractAllContent(noticeMessage) || undefined}
+                          />
+                        </div>
+                        {@render newMessagesDividerAfter(noticeMessage.id, dividerAtTurnBoundary)}
+                      {:else if effortNotice}
+                        <div data-message-id={noticeMessage.id} class="px-2">
+                          <EffortChangeNotice
+                            notice={effortNotice}
                             fallbackText={extractAllContent(noticeMessage) || undefined}
                           />
                         </div>

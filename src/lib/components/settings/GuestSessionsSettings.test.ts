@@ -60,6 +60,11 @@ vi.mock('$store/renderer/store', async () => {
   return { store: createGuestWorkflowTestStore() };
 });
 
+// Identity hydration and switching through this pane run in ForgeIdentityChoice.test.ts.
+vi.mock('./ForgeIdentityChoice.svelte', async () => ({
+  default: (await import('$lib/components/chat/__tests__/mocks/SlotOnly.svelte')).default,
+}));
+
 vi.mock('$store/renderer/slices/workspace/workspace-selectors', async (importOriginal) => ({
   ...(await importOriginal<
     typeof import('$store/renderer/slices/workspace/workspace-selectors')

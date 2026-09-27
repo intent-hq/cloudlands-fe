@@ -31,6 +31,7 @@ const needsProcessingPatterns = [
   // @-mentions and bare file paths that injectMentionSpans converts to mention chips
   /@note\//, // @note/... mentions
   /@context\[/, // @context[...] mentions
+  /@member\[/, // Persisted workspace member mentions
   /@\//, // @/absolute/path mentions
   /@[A-Za-z0-9._-]+\/[^\s]*\.[A-Za-z0-9]+/, // @relative/path/file.ext mentions
   /@[A-Za-z0-9._-]+\.[A-Za-z0-9]+/, // @file.ext mentions
