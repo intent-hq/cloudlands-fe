@@ -5,6 +5,7 @@ import {
   type NativeReviewExecuteExtension,
   type NativeReviewExecution,
   type NativeReviewOutcome,
+  type NativeReviewPreparation,
   type NativeReviewPublication,
 } from '$shared/types/native-review';
 import type { AcceptChangesResult } from '../types';
@@ -154,6 +155,7 @@ describe.each(['github', 'gitlab'] as const)('native %s result presentation', (p
         { stage: 'commit', commitHash: 'local-B' },
       ]);
       expect(view.history[1]).toBe(create);
+      expect(view.compatibleHistory).toEqual([commit, create]);
       expect(view.execution.requestId).toBe('request-create');
       expect(view.execution.gitReceipts).toEqual([]);
       expect(history).toHaveLength(1);
@@ -218,12 +220,19 @@ describe('native result evidence boundaries', () => {
     expect(view.response.steps[0]?.error).toBe('Push refused');
   });
 
-  it('retains the form if the envelope failed even when actual review details were returned', () => {
-    const view = projectNativeReviewResult(response(execution(), false));
+  it.each<Partial<AcceptChangesResult>>([
+    { success: false },
+    { error: 'A later local step failed' },
+    { steps: [{ id: 'refresh', name: 'Refresh', status: 'failed', error: 'Refresh failed' }] },
+  ])('retains contradictory failure evidence beside actual review details: %j', (failure) => {
+    const wire = { ...response(), ...failure };
+    const view = projectNativeReviewResult(wire);
 
     if (view.kind !== 'native') throw new Error('Expected native presentation');
     expect(view.review?.title).toBe('Existing provider title');
     expect(view.formDisposition).toBe('retain');
+    expect(view.response).toMatchObject(failure);
+    expect(view.execution.outcome.status).toBe('reused');
   });
 
   it('leaves an old-daemon result on the legacy path without manufacturing native evidence', () => {
@@ -267,5 +276,139 @@ describe('native result evidence boundaries', () => {
     expect(view.history[1]).toBe(lost);
     expect(view).not.toHaveProperty('execution');
     expect(view).not.toHaveProperty('formDisposition');
+  });
+});
+
+describe('captured request correlation for presentation', () => {
+  it.each<{ name: string; change: (value: NativeReviewPreparation) => void }>([
+    {
+      name: 'workspace',
+      change: (p) => {
+        p.root.workspaceId = 'another-workspace';
+      },
+    },
+    {
+      name: 'registered root',
+      change: (p) => {
+        p.root = { workspaceId: p.root.workspaceId, kind: 'registered', gitRootId: 'other-root' };
+      },
+    },
+    {
+      name: 'worktree',
+      change: (p) => {
+        p.worktreeId = 'another-worktree';
+      },
+    },
+    {
+      name: 'source instance prefix',
+      change: (p) => {
+        p.source.repository.instanceBaseUrl = 'https://git.example:8443/another';
+      },
+    },
+    {
+      name: 'source project',
+      change: (p) => {
+        p.source.repository.projectPath = 'team/other';
+      },
+    },
+    {
+      name: 'source branch',
+      change: (p) => {
+        p.source.branch = 'another-branch';
+      },
+    },
+    {
+      name: 'source project ID',
+      change: (p) => {
+        p.source.providerProjectId = '18446744073709551614';
+      },
+    },
+    {
+      name: 'unknown source project ID',
+      change: (p) => {
+        p.source.providerProjectId = null;
+      },
+    },
+    {
+      name: 'source account',
+      change: (p) => {
+        p.source.connection!.accountId = 'another-account';
+      },
+    },
+    {
+      name: 'source connection revision',
+      change: (p) => {
+        p.source.connection!.connectionGeneration = '18446744073709551614';
+      },
+    },
+    {
+      name: 'unknown source connection',
+      change: (p) => {
+        p.source.connection = null;
+      },
+    },
+    {
+      name: 'authority',
+      change: (p) => {
+        p.scope.authorityGeneration = '9007199254740996';
+      },
+    },
+    {
+      name: 'context epoch',
+      change: (p) => {
+        p.contextRevision.epoch = 'new-daemon-boot';
+      },
+    },
+    {
+      name: 'context revision',
+      change: (p) => {
+        p.contextRevision.sequence = '9007199254740994';
+      },
+    },
+    {
+      name: 'target branch',
+      change: (p) => {
+        p.target.branch = 'release';
+      },
+    },
+  ])('does not correlate a prior receipt from a different $name', ({ change }) => {
+    const previous = commitResponse();
+    const current = response();
+    change(current.reviewExecution!.preparation);
+
+    const view = projectNativeReviewResult(current, [previous]);
+
+    if (view.kind !== 'native') throw new Error('Expected native presentation');
+    expect(view.compatibleHistory).toEqual([current]);
+    expect(view.history).toEqual([previous, current]);
+    expect(view.history[0]?.reviewExecution?.gitReceipts).toEqual([
+      { stage: 'commit', commitHash: 'local-B' },
+    ]);
+    expect(view.execution).toBe(current.reviewExecution);
+  });
+
+  it('does not treat two unknown connection bindings as a confirmed match', () => {
+    const previous = commitResponse();
+    const current = response();
+    previous.reviewExecution!.preparation.source.connection = null;
+    current.reviewExecution!.preparation.source.connection = null;
+
+    const view = projectNativeReviewResult(current, [previous]);
+
+    if (view.kind !== 'native') throw new Error('Expected native presentation');
+    expect(view.compatibleHistory).toEqual([current]);
+    expect(view.history).toEqual([previous, current]);
+  });
+
+  it('preserves an older receipt without inferring its captured identity', () => {
+    const legacy: AcceptChangesResult = { success: true, steps: [], result: { commitHash: 'B' } };
+    const current = response();
+
+    const view = projectNativeReviewResult(current, [legacy]);
+
+    if (view.kind !== 'native') throw new Error('Expected native presentation');
+    expect(view.compatibleHistory).toEqual([current]);
+    expect(view.history[0]).toBe(legacy);
+    expect(view.history[0]?.result?.commitHash).toBe('B');
   });
 });
