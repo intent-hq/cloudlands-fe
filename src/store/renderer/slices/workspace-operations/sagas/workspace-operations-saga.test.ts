@@ -1,4 +1,5 @@
 import { runSaga, stdChannel } from 'redux-saga';
+import { withLegacyPrincipal } from '../../../../../test/fixtures/principal-state';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { getItem } from '@augmentcode/themis/utils/collections/collection-utils';
 
@@ -51,6 +52,7 @@ import {
   removeWorkspaceEntity,
   replaceWorkspaceList,
   setWorkspaceEntity,
+  setWorkspaceHasLoaded,
   workspaceReducer,
 } from '../../workspace/workspace-slice';
 import {
@@ -75,6 +77,7 @@ import {
   WORKSPACE_OPERATION_UNDO_DURATION_MS,
   workspaceOperationsSaga,
 } from './workspace-operations-saga';
+import { principalContextChanged } from '../../principal/principal-slice';
 
 const settle = async () => {
   await Promise.resolve();
@@ -151,6 +154,7 @@ function latestUndo(): (() => void) | undefined {
 
 function harness(seed: Workspace[], bundledSpecialists: Specialist[] = []) {
   const channel = stdChannel();
+  let authority = withLegacyPrincipal({});
   let workspaceState = workspaceInitialState;
   for (const item of seed)
     workspaceState = workspaceReducer(workspaceState, setWorkspaceEntity(item));
@@ -168,6 +172,7 @@ function harness(seed: Workspace[], bundledSpecialists: Specialist[] = []) {
       channel,
       dispatch,
       getState: () => ({
+        ...authority,
         workspace: workspaceState,
         workspaceOperations: operations,
         proposalLifecycle,
@@ -186,6 +191,10 @@ function harness(seed: Workspace[], bundledSpecialists: Specialist[] = []) {
     dispatch,
     send,
     task,
+    authority: () => authority,
+    setAuthority: (next: typeof authority) => {
+      authority = next;
+    },
     state: () => ({
       workspace: workspaceState,
       workspaceOperations: operations,
@@ -1250,6 +1259,90 @@ describe('workspaceOperationsSaga', () => {
     expect(mocks.notify.error).toHaveBeenCalledTimes(1);
     await vi.advanceTimersByTimeAsync(WORKSPACE_DELETION_TOMBSTONE_TTL_MS);
     expect(run.state().workspace.pendingDeletions).toEqual({});
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+});
+
+describe('workspace management authority', () => {
+  it('allows a member to archive an inherited workspace without treating the member as owner', async () => {
+    vi.resetAllMocks();
+    mocks.getActiveWorkNames.mockResolvedValue(noActiveWork);
+    mocks.archive.mockResolvedValue({ ok: true });
+    const run = harness([{ ...workspace('ws-1'), myRole: 'collaborator', canManage: true }]);
+    const state = run.authority();
+    state.principal.snapshot!.capabilities.hostMembership = true;
+    state.principal.snapshot!.principal.hostRole = 'member';
+    state.principal.snapshot!.principal.isAdministrator = false;
+    run.send(setWorkspaceHasLoaded(true, state.connections.windowBackendId));
+    run.send(requestArchiveWorkspace('ws-1'));
+    await settle();
+    expect(mocks.archive).toHaveBeenCalledWith('ws-1');
+    expect(getItem(run.state().workspace.workspaces, 'ws-1')?.archived).toBe(true);
+    expect(state.principal.snapshot!.principal.isAdministrator).toBe(false);
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('dismisses a stale warning on reconnect and blocks its old confirm action', async () => {
+    vi.resetAllMocks();
+    mocks.getActiveWorkNames.mockResolvedValue({ ...noActiveWork, agentNames: ['Busy agent'] });
+    const run = harness([workspace('ws-1')]);
+    run.send(requestArchiveWorkspace('ws-1'));
+    await settle();
+    expect(run.state().workspaceOperations.pendingArchiveWorkspaceId).toBe('ws-1');
+    run.setAuthority({
+      ...run.authority(),
+      principal: { ...run.authority().principal, status: 'unknown' },
+    });
+    run.send(principalContextChanged(null));
+    await settle();
+    expect(run.state().workspaceOperations.pendingArchiveWorkspaceId).toBeNull();
+    run.send(confirmArchiveWorkspace());
+    await settle();
+    expect(mocks.archive).not.toHaveBeenCalled();
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it.each([requestDeleteWorkspace, requestArchiveWorkspace, requestUnarchiveWorkspace])(
+    'drops a stale menu action after the role becomes unknown',
+    async (action) => {
+      vi.clearAllMocks();
+      const run = harness([workspace('ws-1')]);
+      run.setAuthority({
+        ...run.authority(),
+        principal: { ...run.authority().principal, status: 'unknown' },
+      });
+      run.send(action('ws-1'));
+      await settle();
+      expect(mocks.deleteWorkspace).not.toHaveBeenCalled();
+      expect(mocks.archive).not.toHaveBeenCalled();
+      expect(mocks.unarchive).not.toHaveBeenCalled();
+      expect(mocks.getActiveWorkNames).not.toHaveBeenCalled();
+      run.task.cancel();
+      await run.task.toPromise();
+    },
+  );
+
+  it('does not archive a different host when its warning preflight resolves late', async () => {
+    vi.clearAllMocks();
+    let resolve!: (value: typeof noActiveWork) => void;
+    mocks.getActiveWorkNames.mockReturnValue(
+      new Promise((done) => {
+        resolve = done;
+      }),
+    );
+    const run = harness([workspace('ws-1')]);
+    run.send(requestArchiveWorkspace('ws-1'));
+    await settle();
+    run.setAuthority({
+      ...run.authority(),
+      connections: { ...run.authority().connections, windowBackendId: 'other-host' },
+    });
+    resolve(noActiveWork);
+    await settle();
+    expect(mocks.archive).not.toHaveBeenCalled();
     run.task.cancel();
     await run.task.toPromise();
   });

@@ -7,7 +7,7 @@
    */
   import { m } from '$shared/paraglide/messages.js';
   import { store as appStore } from '$store/renderer/store';
-  import { selectIsGuestWindow } from '$store/renderer/slices/guest-sessions/guest-sessions-selectors';
+  import { selectIsWorkspaceGuest } from '$store/renderer/slices/principal/principal-selectors';
   import {
     selectHudGridFilter,
     selectHudWorkspaceCards,
@@ -26,7 +26,7 @@
   const filter$ = selectHudGridFilter();
   // A guest window (bound to a joined host, multiplayer w4) lists only the
   // workspaces shared with it, so its "all" option is labelled accordingly.
-  const isGuestWindow$ = selectIsGuestWindow();
+  const isGuestWindow$ = selectIsWorkspaceGuest();
 
   let repoMenuOpen = $state(false);
   let stateMenuOpen = $state(false);

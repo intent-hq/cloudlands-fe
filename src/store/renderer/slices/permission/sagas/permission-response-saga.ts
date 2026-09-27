@@ -10,17 +10,23 @@ import {
   removePermissionRequest,
   selectPermissionOption,
 } from '../permission-slice';
-import { selectPermissionRequestsCollection } from '../permission-selectors';
+import {
+  selectPermissionRequestContext,
+  selectPermissionRequestsCollection,
+} from '../permission-selectors';
 
 const logger = createLogger('PermissionResponseSaga');
 
 function* respond(requestId: string, outcome: PermissionOutcome): SagaGenerator<void> {
+  const context = yield* selectPermissionRequestContext.effect(requestId);
+  if (!context) return;
   try {
     const result = yield* call(
       [appClient.agents, appClient.agents.respondPermission],
       requestId,
       outcome,
     );
+    if ((yield* selectPermissionRequestContext.effect(requestId)) !== context) return;
     if (result.success) yield* put(removePermissionRequest(requestId));
     else logger.error('Permission response failed', { requestId, outcome, error: result.error });
   } catch (error) {

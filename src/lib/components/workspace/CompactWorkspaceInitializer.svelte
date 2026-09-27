@@ -1,5 +1,6 @@
 <script lang="ts">
   /* eslint-disable max-lines */
+  import { selectWorkspaceControlContext } from '$store/renderer/slices/principal/principal-selectors';
   import { untrack, onMount, onDestroy, type Snippet } from 'svelte';
   import {
     type InitialRepoInfo,
@@ -1685,6 +1686,8 @@
   }
 
   async function handleSubmit() {
+    const controlContext = selectWorkspaceControlContext.select(appStore.state);
+    if (!controlContext) return;
     if (!isValid || isCreating || isEnhancing || isProcessingImages) return;
     // Attachments still placing or failed block the create: a failed pill
     // must be retried or removed first (no silent drop, no base64 fallback).
@@ -2116,6 +2119,7 @@
 
       const requestContextLinks = buildContextLinks(contextMentions);
 
+      if (selectWorkspaceControlContext.select(appStore.state) !== controlContext) return;
       const result = await workspaceClient.create({
         title: prefillTitle || '', // Use deep-link title if provided, otherwise agent will set it
         repositoryPath: isGithubPick
@@ -2137,6 +2141,7 @@
         progressId: createProgressId, // Echoed on git:clone:progress/done frames (PROTOCOL §5.1)
       });
 
+      if (selectWorkspaceControlContext.select(appStore.state) !== controlContext) return;
       if (!result.ok) throw new Error(result.error || 'Failed to create workspace');
 
       const workspace = result.data.workspace;
@@ -2149,6 +2154,7 @@
       // navigation stays an empty shell so drawer migration cannot compete.
       try {
         const { getPanelLayoutManager } = await import('$features/layout/panel-layout-adapter');
+        if (selectWorkspaceControlContext.select(appStore.state) !== controlContext) return;
         getPanelLayoutManager(workspace.id).clearLayout();
       } catch (error) {
         logger.debug('Could not clear panel layout', { error });
@@ -2156,6 +2162,7 @@
       try {
         const { workspaceStorageManager } =
           await import('$store/renderer/slices/workspace/utils/workspace-storage-manager');
+        if (selectWorkspaceControlContext.select(appStore.state) !== controlContext) return;
         workspaceStorageManager.clearState(workspace.id);
       } catch (error) {
         logger.debug('Could not clear workspace storage state', { error });
@@ -2195,6 +2202,7 @@
       // this flow — the created workspace itself is never rolled back.
       if (hasStagedFiles) {
         pendingFirstMessage = {
+          controlContext,
           workspaceId: workspace.id,
           agentId: initialAgentId,
           content: initialPrompt.trim(),
@@ -2202,6 +2210,7 @@
           contextReferences,
         };
         const sent = await placeAndSendFirstMessage();
+        if (selectWorkspaceControlContext.select(appStore.state) !== controlContext) return;
         if (!sent) {
           isCreating = false;
           return;
@@ -2643,7 +2652,7 @@
   // the first-message send) failed: the workspace exists, the modal stays
   // open with failed pills, and the create button resumes this flow instead
   // of creating a second workspace.
-  let pendingFirstMessage = $state<HeldFirstMessage | null>(null);
+  let pendingFirstMessage = $state<(HeldFirstMessage & { controlContext: string }) | null>(null);
 
   /**
    * Place all staged attachments into the created workspace (sourcePath-only,
@@ -2656,8 +2665,12 @@
   async function placeAndSendFirstMessage(): Promise<boolean> {
     const pending = pendingFirstMessage;
     if (!pending) return true;
+    if (selectWorkspaceControlContext.select(appStore.state) !== pending.controlContext)
+      return false;
 
     const redemption = await redeemStagedAttachments(pending.workspaceId, contextItems);
+    if (selectWorkspaceControlContext.select(appStore.state) !== pending.controlContext)
+      return false;
     contextItems = redemption.items;
     if (redemption.failedCount > 0) {
       error = m.workspace_compactInitializer_attachmentPlacementFailed_error();
@@ -2670,6 +2683,8 @@
     // verbatim made every staged-attachment first send fail before reaching
     // the daemon (monorepo#2576).
     const sendResult = await sendHeldFirstMessage($state.snapshot(pending), redemption.fileBlocks);
+    if (selectWorkspaceControlContext.select(appStore.state) !== pending.controlContext)
+      return false;
     if (!sendResult.sent) {
       logger.error('First-message send failed after attachment placement', {
         error: sendResult.errorDetail,

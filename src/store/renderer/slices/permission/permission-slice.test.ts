@@ -38,6 +38,7 @@ describe('permissionReducer', () => {
 
     it('should append to existing requests', () => {
       const prev: PermissionState = {
+        ...initialState,
         requests: createCollection<PermissionRequest, 'requestId'>('requestId', [
           makeRequest({ requestId: 'req-1' }),
         ]),
@@ -54,6 +55,7 @@ describe('permissionReducer', () => {
     it('should add pending requests avoiding duplicates', () => {
       const existing = makeRequest({ requestId: 'req-1' });
       const prev: PermissionState = {
+        ...initialState,
         requests: createCollection<PermissionRequest, 'requestId'>('requestId', [existing]),
       };
       const incoming = [
@@ -68,6 +70,7 @@ describe('permissionReducer', () => {
     it('should return same state if no new requests', () => {
       const existing = makeRequest({ requestId: 'req-1' });
       const prev: PermissionState = {
+        ...initialState,
         requests: createCollection<PermissionRequest, 'requestId'>('requestId', [existing]),
       };
       const state = permissionReducer(prev, setPendingRequests([existing]));
@@ -84,6 +87,7 @@ describe('permissionReducer', () => {
   describe('removePermissionRequest', () => {
     it('should remove a request by ID', () => {
       const prev: PermissionState = {
+        ...initialState,
         requests: createCollection<PermissionRequest, 'requestId'>('requestId', [
           makeRequest({ requestId: 'req-1' }),
           makeRequest({ requestId: 'req-2' }),
@@ -94,9 +98,10 @@ describe('permissionReducer', () => {
       expect(getItems(state.requests)[0].requestId).toBe('req-2');
     });
 
-    it('should return same state if request not found', () => {
+    it('invalidates a recovery read even if the resolved request was not seen yet', () => {
       const state = permissionReducer(initialState, removePermissionRequest('nonexistent'));
-      expect(state).toBe(initialState);
+      expect(state.requests).toBe(initialState.requests);
+      expect(state.revision).toBe(initialState.revision + 1);
     });
   });
 });

@@ -18,6 +18,10 @@ import {
   type PermissionRequest,
 } from '../permission-slice';
 import { permissionResponseSaga } from './permission-response-saga';
+import { withLegacyPrincipal } from '../../../../../test/fixtures/principal-state';
+import { initialState as workspace } from '../../workspace/workspace-slice';
+import { selectWorkspaceControlContext } from '../../principal/principal-selectors';
+import { WorkspaceId } from '$shared/types/branded-ids';
 
 const settle = async () => {
   await Promise.resolve();
@@ -44,21 +48,29 @@ function request(
 
 function harness(requests: PermissionRequest[] = [request('request-1')]) {
   const channel = stdChannel();
+  let authority = withLegacyPrincipal({
+    workspace,
+    agentSessions: { byAgentId: { 'agent-1': { workspaceId: WorkspaceId('ws-1') } } },
+  });
   let permission = requests.reduce(
     (state, item) => permissionReducer(state, permissionRequestReceived(item)),
-    initialState,
+    { ...initialState, context: selectWorkspaceControlContext.select(authority) },
   );
   const dispatch = vi.fn((action) => {
     permission = permissionReducer(permission, action);
   });
   const task = runSaga(
-    { channel, dispatch, getState: () => ({ permission }) },
+    { channel, dispatch, getState: () => ({ ...authority, permission }) },
     permissionResponseSaga,
   );
   return {
     channel,
     dispatch,
     task,
+    state: () => authority,
+    setState: (next: typeof authority) => {
+      authority = next;
+    },
     hasRequest: (requestId: string) => getItem(permission.requests, requestId) !== undefined,
   };
 }
@@ -200,5 +212,44 @@ describe('permissionResponseSaga', () => {
         ([action]) => action.type === 'permission/removePermissionRequest',
       ),
     ).toHaveLength(0);
+  });
+});
+
+describe('permission response authority changes', () => {
+  it.each([approvePermission, denyPermission, cancelPermission])(
+    'blocks answers from a stale prompt after reconnect',
+    async (answer) => {
+      vi.clearAllMocks();
+      const run = harness();
+      run.setState({ ...run.state(), principal: { ...run.state().principal, status: 'unknown' } });
+      run.channel.put(answer('request-1'));
+      run.channel.put(selectPermissionOption('request-1', 'allow-custom'));
+      await settle();
+      expect(mocks.respondPermission).not.toHaveBeenCalled();
+      expect(run.hasRequest('request-1')).toBe(true);
+      run.task.cancel();
+      await run.task.toPromise();
+    },
+  );
+
+  it('does not remove a current host prompt when an old host answer returns', async () => {
+    let resolve!: (result: { success: boolean }) => void;
+    mocks.respondPermission.mockReturnValue(
+      new Promise((done) => {
+        resolve = done;
+      }),
+    );
+    const run = harness();
+    run.channel.put(approvePermission('request-1'));
+    await settle();
+    run.setState({
+      ...run.state(),
+      connections: { ...run.state().connections, windowBackendId: 'host-b' },
+    });
+    resolve({ success: true });
+    await settle();
+    expect(run.hasRequest('request-1')).toBe(true);
+    run.task.cancel();
+    await run.task.toPromise();
   });
 });

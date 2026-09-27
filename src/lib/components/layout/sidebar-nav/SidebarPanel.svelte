@@ -33,7 +33,10 @@
     type AllSpacesViewMode,
     type SidebarNavItem,
   } from '$store/renderer/slices/sidebar-nav/sidebar-nav-types';
-  import { selectIsGuestWindow } from '$store/renderer/slices/guest-sessions/guest-sessions-selectors';
+  import {
+    selectIsWorkspaceGuest,
+    selectWorkspaceCreationVisible,
+  } from '$store/renderer/slices/principal/principal-selectors';
   import { selectIsCollaboratorOnlyClient } from '$store/renderer/slices/workspace/workspace-selectors';
   import { store as appStore } from '$store/renderer/store';
 
@@ -48,11 +51,13 @@
   // flipping true after mount unmounts the card, whose destroy releases the
   // Chief workspace (`workspaceUnmounted`).
   const isCollaboratorOnlyClient$ = selectIsCollaboratorOnlyClient();
-  // A guest window (bound to a joined host, multiplayer w4) lists only the
-  // workspaces shared with it, so its list is titled accordingly. Keyed off
-  // the guest-window identity rather than the fail-closed collaborator-only
-  // flag, which reads true on every owner window until identity settles.
-  const isGuestWindow$ = selectIsGuestWindow();
+  const isGuestWindow$ = selectIsWorkspaceGuest();
+  const canCreateWorkspace$ = selectWorkspaceCreationVisible();
+
+  function openNewWorkspace() {
+    if (selectWorkspaceCreationVisible.select(appStore.state))
+      appStore.dispatch(setShowCreateModal(true));
+  }
 
   const allSpacesViewModes = [
     { value: 'recent', label: m.layout_allCard_recent_label() },
@@ -314,23 +319,25 @@
                 </h2>
               </div>
               <div class="flex items-center gap-0.5 shrink-0">
-                <Tooltip
-                  content={m.layout_sidebarNav_newWorkspace_title()}
-                  side="bottom"
-                  sideOffset={4}
-                >
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    type="button"
-                    class="flex h-8 w-8 cursor-pointer items-center justify-center rounded-md text-muted-foreground outline-none transition-colors hover:bg-muted/50 hover:text-foreground focus-visible:bg-muted/50 focus-visible:text-foreground"
-                    onclick={() => appStore.dispatch(setShowCreateModal(true))}
-                    aria-label={m.layout_sidebarNav_newWorkspace_title()}
-                    data-spaces-create
+                {#if $canCreateWorkspace$}
+                  <Tooltip
+                    content={m.layout_sidebarNav_newWorkspace_title()}
+                    side="bottom"
+                    sideOffset={4}
                   >
-                    <Fa icon={faPlus} size="xs" />
-                  </Button>
-                </Tooltip>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      type="button"
+                      class="flex h-8 w-8 cursor-pointer items-center justify-center rounded-md text-muted-foreground outline-none transition-colors hover:bg-muted/50 hover:text-foreground focus-visible:bg-muted/50 focus-visible:text-foreground"
+                      onclick={openNewWorkspace}
+                      aria-label={m.layout_sidebarNav_newWorkspace_title()}
+                      data-spaces-create
+                    >
+                      <Fa icon={faPlus} size="xs" />
+                    </Button>
+                  </Tooltip>
+                {/if}
                 <Menu.Root bind:open={spacesOptionsOpen}>
                   <Menu.Trigger>
                     {#snippet child({ props })}

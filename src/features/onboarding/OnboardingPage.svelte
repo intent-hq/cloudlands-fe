@@ -13,7 +13,10 @@
   import { faArrowLeft } from '@fortawesome/free-solid-svg-icons';
   import { invoke } from '$shared/generated/ipc-client';
   import { appClient } from '$lib/client';
-  import { selectHostRole } from '$store/renderer/slices/principal/principal-selectors';
+  import {
+    selectHostRole,
+    selectWorkspaceControlContext,
+  } from '$store/renderer/slices/principal/principal-selectors';
   import {
     clearNewWorkspaceDraft,
     createNewWorkspaceDraftSaver,
@@ -382,6 +385,7 @@
   // the held first-message send) failed: submit resumes this flow instead of
   // creating a second workspace. The created workspace is never rolled back.
   let onboardingPendingSend = $state<{
+    controlContext: string;
     workspaceId: string;
     agentId?: string;
     prompt: string;
@@ -1075,10 +1079,12 @@
   async function resumeOnboardingPendingSend() {
     const pending = onboardingPendingSend;
     if (!pending) return;
+    if (selectWorkspaceControlContext.select(appStore.state) !== pending.controlContext) return;
     isOnboardingCreating = true;
     onboardingCreationError = null;
     try {
       const redemption = await redeemStagedAttachments(pending.workspaceId, onboardingStagedItems);
+      if (selectWorkspaceControlContext.select(appStore.state) !== pending.controlContext) return;
       onboardingStagedItems = redemption.items;
       if (redemption.failedCount > 0) {
         onboardingCreationError = m.onboarding_page_attachmentPlacementFailed_error();
@@ -1105,6 +1111,7 @@
         },
         redemption.fileBlocks,
       );
+      if (selectWorkspaceControlContext.select(appStore.state) !== pending.controlContext) return;
       if (!sendResult.sent) {
         onboardingImageItems = retainImagePlacementIdentity(
           onboardingImageItems,
@@ -1140,6 +1147,8 @@
   }
 
   async function handleOnboardingSubmit() {
+    const controlContext = selectWorkspaceControlContext.select(appStore.state);
+    if (!controlContext) return;
     const prompt = onboardingInputValue.trim();
     if (!prompt || isOnboardingCreating || !projectSelection?.isValid) return;
     // Failed staged-attachment pills block create (retry or remove first —
@@ -1338,6 +1347,7 @@
 
       const requestContextLinks = buildContextLinks(contextMentions);
 
+      if (selectWorkspaceControlContext.select(appStore.state) !== controlContext) return;
       const result = await workspaceClient.create({
         title: '',
         repositoryPath: isGithubPick ? undefined : projectSelection.repoPath,
@@ -1370,6 +1380,7 @@
         progressId: createProgressId, // Echoed on git:clone:progress/done frames (PROTOCOL §5.1)
       });
 
+      if (selectWorkspaceControlContext.select(appStore.state) !== controlContext) return;
       if (!result.ok) {
         // Keep the daemon's machine-readable code (clone failure taxonomy,
         // PROTOCOL §9.1) alongside the human message so the error block can
@@ -1395,6 +1406,7 @@
       try {
         const { workspaceStorageManager: wsm } =
           await import('$store/renderer/slices/workspace/utils/workspace-storage-manager');
+        if (selectWorkspaceControlContext.select(appStore.state) !== controlContext) return;
         wsm.clearState(workspace.id);
       } catch {
         /* ignore */
@@ -1450,12 +1462,14 @@
       // the created workspace is never rolled back or duplicated.
       if (hasStagedFiles) {
         onboardingPendingSend = {
+          controlContext,
           workspaceId: workspace.id,
           agentId,
           prompt,
           contextReferences,
         };
         const redemption = await redeemStagedAttachments(workspace.id, onboardingStagedItems);
+        if (selectWorkspaceControlContext.select(appStore.state) !== controlContext) return;
         onboardingStagedItems = redemption.items;
         if (redemption.failedCount > 0) {
           onboardingCreationErrorCode = null;
@@ -1475,6 +1489,7 @@
           },
           redemption.fileBlocks,
         );
+        if (selectWorkspaceControlContext.select(appStore.state) !== controlContext) return;
         if (!sendResult.sent) {
           onboardingCreationErrorCode = null;
           // Retain the failed attempt's image placement identity on the

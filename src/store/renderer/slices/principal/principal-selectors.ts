@@ -67,6 +67,11 @@ export const selectCanCreateWorkspace = store.createSelector((state) => {
   return role === 'owner' || role === 'member';
 });
 
+/** Guest presentation follows the current admission, never the saved connection category. */
+export const selectIsWorkspaceGuest = store.createSelector(
+  (state) => selectHostRole.select(state) === 'guest',
+);
+
 /** Visibility only. Re-enabling Multiplayer requires a fresh read, without changing the person's role. */
 export const selectCollaborationReady = store.createSelector(
   (state) =>
@@ -74,6 +79,24 @@ export const selectCollaborationReady = store.createSelector(
     !!selectPrincipalSnapshot.select(state) &&
     state.principal.refreshedPresentationVersion === state.principal.presentationVersion,
 );
+
+/** Ordinary owner creation remains available when experimental collaboration is hidden. */
+export const selectWorkspaceCreationVisible = store.createSelector(
+  (state) =>
+    selectCanCreateWorkspace.select(state) &&
+    (selectCanAdministerHost.select(state) || selectCollaborationReady.select(state)),
+);
+
+/** Fence asynchronous UI work to the same admission and presentation lifetime. */
+export const selectWorkspaceControlContext = store.createSelector((state): string | null => {
+  if (!selectWorkspaceCreationVisible.select(state)) return null;
+  const { context, invalidation, presentationVersion } = state.principal;
+  return JSON.stringify([
+    context,
+    invalidation,
+    selectCanAdministerHost.select(state) ? null : presentationVersion,
+  ]);
+});
 
 export const selectCollaborationCapabilities = store.createSelector((state) => {
   const ready = selectCollaborationReady.select(state);

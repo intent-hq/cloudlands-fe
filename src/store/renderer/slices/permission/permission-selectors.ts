@@ -1,6 +1,23 @@
 import { store } from '../../store';
-import { getItems, type Collection } from '@augmentcode/themis/utils/collections/collection-utils';
+import {
+  getItem,
+  getItems,
+  type Collection,
+} from '@augmentcode/themis/utils/collections/collection-utils';
 import type { PermissionRequest } from './permission-slice';
+import { selectWorkspaceControlContext } from '../principal/principal-selectors';
+import { selectAgentSessionWorkspaceId } from '../agent-session/agent-session-selectors';
+import { selectWorkspaceManagementContext } from '../workspace/workspace-selectors';
+
+export const selectPermissionState = store.createSelector((state) => state.permission);
+
+export const selectPermissionRequestContext = store.createSelector((state, requestId: string) => {
+  const context = selectWorkspaceControlContext.select(state);
+  if (!context || state.permission.context !== context) return null;
+  const request = getItem(state.permission.requests, requestId);
+  const workspaceId = request && selectAgentSessionWorkspaceId.select(state, request.sessionId);
+  return workspaceId ? selectWorkspaceManagementContext.select(state, workspaceId) : null;
+});
 
 export const selectPermissionRequestsCollection = store.createSelector(
   (state): Collection<PermissionRequest, 'requestId'> => {
@@ -10,7 +27,9 @@ export const selectPermissionRequestsCollection = store.createSelector(
 
 /** Select all permission requests */
 export const selectPermissionRequests = store.createSelector((state) => {
-  return getItems(selectPermissionRequestsCollection.select(state));
+  return getItems(selectPermissionRequestsCollection.select(state)).filter(
+    (request) => selectPermissionRequestContext.select(state, request.requestId) !== null,
+  );
 });
 
 /** Select permission requests for a specific session/agent */

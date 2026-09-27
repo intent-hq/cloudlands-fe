@@ -73,6 +73,11 @@
   // Guest empty state (multiplayer w4): replaces onboarding in a guest window
   import GuestEmptyState from '$features/guest-sessions/GuestEmptyState.svelte';
   import { selectWindowGuestSession } from '$store/renderer/slices/guest-sessions/guest-sessions-selectors';
+  import {
+    selectIsWorkspaceGuest,
+    selectCanAdministerHost,
+    selectWorkspaceCreationVisible,
+  } from '$store/renderer/slices/principal/principal-selectors';
 
   // Utils
   import { createLogger } from '$lib/utils/client-logger';
@@ -190,10 +195,12 @@
   // connection; the sidebar and panel creation affordances are withheld by
   // passing no handler, exactly as the terminal / browser ones are.
   const hidesAgentLifecycleActions$ = selectHidesAgentLifecycleActions(workspaceIdStore);
-  // Guest window (multiplayer w4): `/workspace/new` shows the guest empty
-  // state instead of the (administrator-only) workspace onboarding, and the
-  // nav bar stays visible so Settings → Guest Sessions remains reachable.
+  // Current guests get the scoped empty state; confirmed members can create
+  // on an empty host while keeping their normal navigation visible.
   const windowGuestSession$ = selectWindowGuestSession();
+  const isWorkspaceGuest$ = selectIsWorkspaceGuest();
+  const canAdministerHost$ = selectCanAdministerHost();
+  const canCreateWorkspace$ = selectWorkspaceCreationVisible();
 
   $effect(() => {
     const currentWorkspaceId = workspaceId;
@@ -269,7 +276,7 @@
   // (never for the guest empty state, which keeps the nav reachable).
   $effect(() => {
     if (!active) return;
-    appStore.dispatch(setOnboardingActive(showOnboarding && !$windowGuestSession$));
+    appStore.dispatch(setOnboardingActive(showOnboarding && $canAdministerHost$));
     return () => appStore.dispatch(setOnboardingActive(false));
   });
 
@@ -800,9 +807,9 @@
 <!-- Main Content Snippet -->
 {#snippet mainContent()}
   <div class="h-full w-full relative">
-    {#if showOnboarding && $windowGuestSession$}
+    {#if showOnboarding && $isWorkspaceGuest$ && $windowGuestSession$}
       <GuestEmptyState session={$windowGuestSession$} />
-    {:else if showOnboarding}
+    {:else if showOnboarding && $canCreateWorkspace$}
       <OnboardingPage
         {isOnboarding}
         fadingOut={onboardingFadingOut}

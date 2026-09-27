@@ -22,6 +22,7 @@ import {
   selectHostRole,
   selectPrincipalSnapshot,
   selectPrincipalRevoked,
+  selectWorkspaceControlContext,
 } from '../principal/principal-selectors';
 import type {
   WorkflowStage,
@@ -209,6 +210,13 @@ const selectWorkspaceManagementVisible = store.createSelector<[wsId: string], bo
   (state, wsId) =>
     selectCanManageWorkspace.select(state, wsId) &&
     (selectCanAdministerHost.select(state) || selectCollaborationReady.select(state)),
+);
+
+export const selectWorkspaceManagementContext = store.createSelector<[wsId: string], string | null>(
+  (state, wsId) =>
+    selectWorkspaceManagementVisible.select(state, wsId)
+      ? selectWorkspaceControlContext.select(state)
+      : null,
 );
 
 /** Compatibility name for existing workspace-management consumers. */

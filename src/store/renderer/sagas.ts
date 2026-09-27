@@ -67,6 +67,7 @@ import {
 import { browserTabRegistrySaga } from './slices/panel-layout/sagas/browser-tab-registry-saga';
 import { panelLayoutSaga } from './slices/panel-layout/sagas/panel-layout-saga';
 import { permissionResponseSaga } from './slices/permission/sagas/permission-response-saga';
+import { permissionReadSaga } from './slices/permission/sagas/permission-read-saga';
 import { powerSaga } from './slices/power/sagas/power-saga';
 import { proposalLifecycleSaga } from './slices/proposal-lifecycle/sagas/proposal-lifecycle-saga';
 import { providerSettingsSaga } from './slices/provider-settings/sagas/provider-settings-saga';
@@ -135,6 +136,7 @@ export const sagas = [
   chatScrollbackSaga,
   switchTimingSaga,
   permissionResponseSaga,
+  permissionReadSaga,
   agentStreamSaga,
   agentCreationSaga,
   backgroundExecutorSaga,

@@ -156,6 +156,7 @@
   import { navigateToSettings } from '$lib/utils/workspace-navigation';
   import { onDestroy } from 'svelte';
   import type { DaemonHealth } from '$store/renderer/slices/daemon-health/daemon-health-types';
+  import { selectCollaborationReady } from '$store/renderer/slices/principal/principal-selectors';
 
   const health$ = selectDaemonHealth();
   const stats$ = selectDaemonHealthStats();
@@ -442,10 +443,12 @@
   // client is live, so the row carries "connected" / "not connected" and
   // nothing else (no health, no version, no owner-only controls).
   const guestSessions$ = selectGuestSessions();
+  const collaborationReady$ = selectCollaborationReady();
   const guestOpenIds$ = selectGuestSessionsOpenIds();
   const guestConnectedIds$ = selectGuestSessionsConnectedIds();
 
   function openGuestSessionsSettings() {
+    if (!selectCollaborationReady.select(appStore.state)) return;
     dropdownOpen = false;
     void navigateToSettings({ tab: 'guest-sessions' });
   }
@@ -470,6 +473,11 @@
   }
 
   function handleOpenConnection(id: string) {
+    if (
+      selectGuestSessions.select(appStore.state).some((session) => session.id === id) &&
+      !selectCollaborationReady.select(appStore.state)
+    )
+      return;
     dropdownOpen = false;
     openConnectionOrRecover(id);
   }
@@ -1016,7 +1024,7 @@
       </div>
 
       <!-- Guest sessions (hosts joined through an invite) — shown only once joined -->
-      {#if $guestSessions$.length > 0}
+      {#if $collaborationReady$ && $guestSessions$.length > 0}
         <div class="h-px bg-border my-1"></div>
         <div class="px-1 pb-1" data-testid="daemon-status-guest-sessions">
           <Header class="px-2 pt-1.5 pb-0.5" size={6}

@@ -46,10 +46,10 @@
   import { initBrowserWorkspace } from '$store/renderer/slices/browser/browser-slice';
   import {
     selectHidesAgentLifecycleActions,
-    selectIsCollaboratorOnlyClient,
     selectIsWorkspaceCollaborator,
     selectWorkspaceItems,
   } from '$store/renderer/slices/workspace/workspace-selectors';
+  import { selectWorkspaceCreationVisible } from '$store/renderer/slices/principal/principal-selectors';
   import { createAgentRequested } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
   import { createTerminalRequested } from '$store/renderer/slices/terminals/terminals-slice';
   import { createNoteRequested } from '$store/renderer/slices/note-read-tracking/note-read-tracking-slice';
@@ -140,7 +140,7 @@
   // Collaborators (multiplayer w3) are refused on terminal + browser methods and
   // cannot create workspaces, so those commands and result groups are withheld.
   const isCollaborator$ = selectIsWorkspaceCollaborator(workspaceIdStore);
-  const isCollaboratorOnlyClient$ = selectIsCollaboratorOnlyClient();
+  const canCreateWorkspace$ = selectWorkspaceCreationVisible();
   // Agent create is likewise refused (-32003) for a collaborator connection.
   const hidesAgentLifecycleActions$ = selectHidesAgentLifecycleActions(workspaceIdStore);
   const WORKSPACE_OWNER_ONLY_COMMAND_IDS: ReadonlySet<string> = new Set([
@@ -152,7 +152,10 @@
       (command) =>
         !($isCollaborator$ && WORKSPACE_OWNER_ONLY_COMMAND_IDS.has(command.id)) &&
         !($hidesAgentLifecycleActions$ && command.id === 'new-agent') &&
-        !($isCollaboratorOnlyClient$ && command.id === 'new-workspace') &&
+        !(
+          !$canCreateWorkspace$ &&
+          (command.id === 'new-workspace' || command.id === 'show-onboarding')
+        ) &&
         !($labsMultiplayerEnabled$ && command.id === 'enable-experimental-multiplayer') &&
         !(!$labsMultiplayerEnabled$ && command.id === 'disable-experimental-multiplayer') &&
         !($labsGitLabEnabled$ && command.id === 'enable-experimental-gitlab') &&
@@ -768,7 +771,7 @@
           }
           break;
         case 'terminal':
-          if (workspaceId) {
+          if (workspaceId && !selectIsWorkspaceCollaborator.select(appStore.state, workspaceId)) {
             appStore.dispatch(
               openTab(workspaceId, {
                 type: 'terminal',
@@ -780,7 +783,11 @@
           }
           break;
         case 'browser':
-          if (item.url && workspaceId) {
+          if (
+            item.url &&
+            workspaceId &&
+            !selectIsWorkspaceCollaborator.select(appStore.state, workspaceId)
+          ) {
             appStore.dispatch(openWorkspaceBrowser(workspaceId, item.url));
           }
           break;
@@ -807,7 +814,7 @@
   function handleCommand(commandId: string): boolean {
     switch (commandId) {
       case 'new-workspace':
-        if (!$isCollaboratorOnlyClient$) {
+        if (selectWorkspaceCreationVisible.select(appStore.state)) {
           appStore.dispatch(setShowCreateModal(true));
         }
         return true;
@@ -827,12 +834,12 @@
         appStore.dispatch(setLabsGitLabEnabled(false));
         return true;
       case 'new-agent':
-        if (workspaceId && !$hidesAgentLifecycleActions$) {
+        if (workspaceId && !selectHidesAgentLifecycleActions.select(appStore.state, workspaceId)) {
           appStore.dispatch(createAgentRequested(workspaceId));
         }
         return true;
       case 'new-terminal':
-        if (workspaceId && !$isCollaborator$) {
+        if (workspaceId && !selectIsWorkspaceCollaborator.select(appStore.state, workspaceId)) {
           appStore.dispatch(createTerminalRequested(workspaceId));
         }
         return true;
@@ -848,11 +855,12 @@
         return true;
       case 'open-url':
         // Open a browser panel with default URL
-        if (workspaceId && !$isCollaborator$) {
+        if (workspaceId && !selectIsWorkspaceCollaborator.select(appStore.state, workspaceId)) {
           appStore.dispatch(openWorkspaceBrowser(workspaceId, 'about:blank'));
         }
         return true;
       case 'show-onboarding':
+        if (!selectWorkspaceCreationVisible.select(appStore.state)) return true;
         // Explicit restart: request the full flow so OnboardingPage's
         // initial-step decision never skips ahead on setup state.
         appStore.dispatch(setOnboardingFullFlowRequested(true));
