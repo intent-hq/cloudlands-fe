@@ -46,6 +46,7 @@ function expectNoUnderlyingCalls() {
 beforeEach(() => {
   vi.clearAllMocks();
   mocks.state.connections.windowBackendId = 'host-a';
+  mocks.state.daemonHealth.connectionGeneration = 1;
   mocks.setModel.mockResolvedValue(SET_MODEL_OK);
   mocks.reconcileAgentReasoningEffort.mockResolvedValue(true);
   mocks.applyReasoningEffort.mockResolvedValue(true);
@@ -101,7 +102,7 @@ describe('createAgentModelMutator — unlocked', () => {
       WORKSPACE,
       'high',
       ['low', 'high'],
-      { canMutate: expect.any(Function) },
+      { canMutate: expect.any(Function), canSend: expect.any(Function) },
     );
   });
 
@@ -109,6 +110,7 @@ describe('createAgentModelMutator — unlocked', () => {
     await expect(mutator.applyEffort(AGENT, WORKSPACE, null, 'high')).resolves.toBe(true);
     expect(mocks.applyReasoningEffort).toHaveBeenCalledWith(AGENT, WORKSPACE, null, 'high', {
       canMutate: expect.any(Function),
+      canSend: expect.any(Function),
     });
   });
 });
@@ -186,6 +188,7 @@ describe('createAgentModelMutator — call-time lock evaluation', () => {
     await expect(mutator.applyEffort(AGENT, WORKSPACE, 'low', 'high')).resolves.toBe(true);
     expect(mocks.applyReasoningEffort).toHaveBeenCalledWith(AGENT, WORKSPACE, 'low', 'high', {
       canMutate: expect.any(Function),
+      canSend: expect.any(Function),
     });
   });
 });
@@ -204,3 +207,20 @@ it('skips an old setModel result after the window switches hosts', async () => {
   await expect(pending).resolves.toBe(SKIPPED_MUTATION);
   expect(mocks.setModel).toHaveBeenCalledWith(AGENT, 'host-a-model', WORKSPACE, 'claude-code');
 });
+
+it.each(['reconnect', 'different-host', 'superseded-pick'] as const)(
+  'fences both queued effort send and rollback after %s',
+  async (change) => {
+    let current = true;
+    const mutator = createAgentModelMutator({ isLocked: () => false });
+    await mutator.reconcileEffort(AGENT, WORKSPACE, 'high', ['low'], () => current);
+    const options = mocks.reconcileAgentReasoningEffort.mock.calls.at(-1)!.at(-1);
+    expect(options.canSend()).toBe(true);
+    expect(options.canMutate()).toBe(true);
+    if (change === 'reconnect') mocks.state.daemonHealth.connectionGeneration++;
+    if (change === 'different-host') mocks.state.connections.windowBackendId = 'host-b';
+    if (change === 'superseded-pick') current = false;
+    expect(options.canSend()).toBe(false);
+    expect(options.canMutate()).toBe(false);
+  },
+);

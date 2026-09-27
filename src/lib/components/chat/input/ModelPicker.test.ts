@@ -6,6 +6,7 @@ import { tick } from 'svelte';
 import { derived, get, readable, writable } from 'svelte/store';
 
 const mockModelState = vi.hoisted(() => ({
+  defaultProviderId: 'auggie',
   selectedModel: 'gpt5.4',
   availableModels: [{ value: 'gpt5.4', label: 'GPT 5.4', description: 'Smart model' }],
   // Provenance of the global catalog (model.availableModelsProviderId).
@@ -113,7 +114,7 @@ vi.mock('$store/renderer/store', async () => {
       // The effective default provider is settings-derived (never the first
       // catalog row) — mirror the mocked selectActiveProviderId default.
       providerSettings: { enabledProviders: {} },
-      model: { defaultProviderId: 'auggie' },
+      model: { defaultProviderId: mockModelState.defaultProviderId },
       providerModels: {
         byProviderId: mockProviderModelsState.byProviderId,
         clearEpoch: mockProviderModelsState.clearEpoch,
@@ -294,6 +295,7 @@ afterEach(() => {
   availableProviderOverride$.set(null);
   enabledProvidersMap$.set({});
   mockModelState.availableModelsProviderId = 'auggie';
+  mockModelState.defaultProviderId = 'auggie';
   daemonHealth$.set('healthy');
   providerStaleFlags$.set({});
   mockProviderModelsState.byProviderId = {};
@@ -682,6 +684,8 @@ describe('ModelPicker guest / collaborator lock', () => {
       expect(confirmModelChange).toHaveBeenCalledWith('auggie:sonnet4.6', 'auggie:opus4.7', {
         from: 'Sonnet 4.6',
         to: 'Opus 4.7',
+        fromProviderId: 'auggie',
+        toProviderId: 'auggie',
       });
     });
 
@@ -695,6 +699,73 @@ describe('ModelPicker guest / collaborator lock', () => {
     expect(vi.mocked(agentClient.setModel)).not.toHaveBeenCalled();
     expect(screen.getByRole('button').textContent).toContain('Sonnet 4.6');
   });
+
+  for (const boundary of ['confirmation', 'deferred', 'response'] as const) {
+    it.each(['reconnect', 'different-host'] as const)(
+      `drops a model pick across %s while awaiting ${boundary}, even when the new owner is admitted`,
+      async (replacement) => {
+        const { agentClient } = await import('$features/agent/agent.client');
+        withWorkspaceRole('owner');
+        twoModelCatalog();
+        let confirm!: (value: boolean) => void;
+        let respond!: (value: { ok: true; data: { success: true } }) => void;
+        const onModelChange = vi.fn();
+        const confirmModelChange =
+          boundary === 'confirmation'
+            ? vi.fn(
+                () =>
+                  new Promise<boolean>((resolve) => {
+                    confirm = resolve;
+                  }),
+              )
+            : undefined;
+        if (boundary === 'response')
+          vi.mocked(agentClient.setModel).mockImplementationOnce(
+            () =>
+              new Promise((resolve) => {
+                respond = resolve;
+              }),
+          );
+        const props = {
+          selectedModel: 'auggie:sonnet4.6',
+          agentId: 'agent-1',
+          workspaceId: 'ws-1',
+          updateGlobalStore: true,
+          deferUpdate: boundary === 'deferred',
+          confirmModelChange,
+          onModelChange,
+          portal: false,
+        };
+        const { rerender } = render(ModelPicker, { props });
+        await fireEvent.click(screen.getByRole('button'));
+        await fireEvent.click(await screen.findByRole('option', { name: /Opus 4\.7/ }));
+        if (boundary === 'confirmation')
+          await waitFor(() => expect(confirmModelChange).toHaveBeenCalled());
+        else if (boundary === 'response')
+          await waitFor(() => expect(agentClient.setModel).toHaveBeenCalledTimes(1));
+        else await waitFor(() => expect(onModelChange).toHaveBeenCalled());
+
+        const state = withLegacyPrincipal(mockRoleState.current);
+        if (replacement === 'reconnect') state.daemonHealth.connectionGeneration++;
+        else state.connections.windowBackendId = 'host-b';
+        state.workspace.loadedBackendId = state.connections.windowBackendId;
+        Object.assign(mockRoleState.current, withLegacyPrincipal(state));
+        (mockAppStore as unknown as { emitState: () => void }).emitState();
+        await tick();
+        expect(screen.getByRole('button').hasAttribute('disabled')).toBe(false);
+
+        if (boundary === 'confirmation') confirm(true);
+        else if (boundary === 'response') respond({ ok: true, data: { success: true } });
+        else await rerender({ ...props, deferUpdate: false });
+        await tick();
+        await tick();
+        expect(agentClient.setModel).toHaveBeenCalledTimes(boundary === 'response' ? 1 : 0);
+        expect(dispatchedTypes()).not.toContain('agentSession/updateSession');
+        expect(reconcileAgentReasoningEffortMock).not.toHaveBeenCalled();
+        if (boundary === 'confirmation') expect(onModelChange).not.toHaveBeenCalled();
+      },
+    );
+  }
 
   it('role flips to collaborator while a deferred update is queued: streaming end does not flush it', async () => {
     const { agentClient } = await import('$features/agent/agent.client');
@@ -713,8 +784,8 @@ describe('ModelPicker guest / collaborator lock', () => {
     await fireEvent.click(screen.getByRole('button'));
     await fireEvent.click(await screen.findByRole('option', { name: /Opus 4\.7/ }));
     await new Promise((r) => setTimeout(r, 0));
-    // The local session updated but the backend call is deferred while streaming.
-    expect(dispatchedTypes()).toContain('agentSession/updateSession');
+    // Deferred choices stay local until the backend accepts them.
+    expect(dispatchedTypes()).not.toContain('agentSession/updateSession');
     expect(vi.mocked(agentClient.setModel)).not.toHaveBeenCalled();
 
     await flipToCollaborator();
@@ -1052,6 +1123,100 @@ describe('ModelPicker combined reasoning mode', () => {
     },
   );
 
+  it.each([
+    ['codex', 'claude-code', 'explicit'],
+    ['claude-code', 'codex', 'explicit'],
+    ['codex', 'claude-code', 'inherited'],
+    ['claude-code', 'codex', 'inherited'],
+    ['codex', 'claude-code', 'legacy'],
+  ])('resolves %s reasoning with global %s for a %s selection', async (provider, global, mode) => {
+    // Real models.list rows have bare IDs, including IDs shared by providers.
+    const { wireModelsToProviderModels } = await import('$shared/models/wire-model-info');
+    const levels = provider === 'codex' ? ['low', 'xhigh'] : ['low', 'high'];
+    mockModelState.defaultProviderId = global;
+    enabledProviderIds$.set([global, provider]);
+    activeProviderId$.set(global);
+    vi.mocked(getModelsForProviderForLoadingState).mockImplementation(async (providerId) => ({
+      models: wireModelsToProviderModels({
+        providerId,
+        models: [
+          {
+            id: 'shared-model',
+            name: `${providerId} model`,
+            effortLevels: providerId === provider ? levels : ['medium'],
+          },
+        ],
+      }),
+    }));
+    const onReasoningChange = vi.fn(() => true);
+    const selected = `${provider}:shared-model${mode === 'legacy' ? '/xhigh' : ''}`;
+    render(ModelPicker, {
+      props: {
+        selectedModel: mode === 'inherited' ? undefined : selected,
+        defaultModelId: mode === 'inherited' ? selected : undefined,
+        showDefaultOption: true,
+        showReasoning: true,
+        onReasoningChange,
+        portal: false,
+      },
+    });
+    await fireEvent.click(screen.getByRole('button'));
+    await fireEvent.click(
+      await screen.findByRole('tab', { name: provider === 'codex' ? /Codex/ : /Claude Code/ }),
+    );
+    await screen.findByRole('option', { name: new RegExp(`${provider} model`) });
+    const effort = await screen.findByTestId('effort-picker-trigger');
+    expect((effort as HTMLButtonElement).disabled).toBe(false);
+    const listbox = await openEffortSelect();
+    expect(within(listbox).queryByRole('option', { name: 'Medium', exact: true })).toBeNull();
+    await selectEffort(listbox, provider === 'codex' ? 'Extra high' : 'High');
+    await waitFor(() => expect(onReasoningChange).toHaveBeenCalledWith(levels[1]));
+  });
+
+  it.each(['pointer', 'keyboard', 'modal'])(
+    'keeps reasoning usable after a %s model pick',
+    async (interaction) => {
+      const models = [
+        { value: 'codex:first', label: 'First model', effortLevels: ['low', 'high'] },
+        { value: 'codex:second', label: 'Second model', effortLevels: ['medium', 'max'] },
+      ];
+      vi.mocked(getModelsForProviderForLoadingState).mockResolvedValue({ models });
+      const onModelChange = vi.fn();
+      const onReasoningChange = vi.fn(() => true);
+      render(ModelPicker, {
+        props: {
+          selectedModel: 'codex:first',
+          showReasoning: true,
+          onModelChange,
+          onReasoningChange,
+          portal: false,
+          modalAware: interaction === 'modal',
+        },
+      });
+      const trigger = screen.getByRole('button');
+      await fireEvent.click(trigger);
+      const option = await screen.findByRole('option', { name: 'Second model' });
+      if (interaction === 'keyboard') {
+        const search = screen.getByRole('searchbox');
+        await fireEvent.input(search, { target: { value: 'Second' } });
+        await fireEvent.keyDown(search, { key: 'Enter' });
+      } else {
+        await fireEvent.click(option);
+      }
+      await waitFor(() =>
+        expect(onModelChange).toHaveBeenCalledWith('codex:second', {
+          providerId: 'codex',
+          modelId: 'second',
+        }),
+      );
+      expect(trigger.getAttribute('aria-expanded')).toBe('true');
+      await selectEffort(await openEffortSelect(), 'Max');
+      await waitFor(() => expect(onReasoningChange).toHaveBeenCalledWith('max'));
+      await fireEvent.keyDown(effortTrigger(), { key: 'Escape' });
+      await waitFor(() => expect(screen.queryByRole('listbox')).toBeNull());
+    },
+  );
+
   it('hides the reasoning footer when the selected model has no effort levels', async () => {
     const models = [{ value: 'no-effort', label: 'No effort model' }];
     mockModelState.availableModels = models;
@@ -1202,6 +1367,7 @@ describe('ModelPicker combined reasoning mode', () => {
     await waitFor(() => {
       expect(applyReasoningEffortMock).toHaveBeenCalledWith('agent-1', 'ws-1', 'high', 'medium', {
         canMutate: expect.any(Function),
+        canSend: expect.any(Function),
       });
     });
   });
@@ -1352,7 +1518,7 @@ describe('ModelPicker combined reasoning mode', () => {
       }),
     );
     expect(screen.queryByTestId('model-reasoning-effort-gauge')).toBeNull();
-    await fireEvent.click(trigger);
+    expect(trigger.getAttribute('aria-expanded')).toBe('true');
     expect(screen.queryByTestId('model-reasoning-section')).toBeNull();
     await fireEvent.click(screen.getByRole('option', { name: /GPT-5\.6-Sol/ }));
     await waitFor(() =>
@@ -1816,6 +1982,7 @@ describe('ModelPicker combined reasoning mode', () => {
     await waitFor(() => {
       expect(applyReasoningEffortMock).toHaveBeenCalledWith('agent-1', 'ws-1', null, 'none', {
         canMutate: expect.any(Function),
+        canSend: expect.any(Function),
       });
     });
   });
@@ -3683,7 +3850,7 @@ describe('ModelPicker global-default vs per-agent dispatch gating', () => {
         'ws-1',
         'xhigh',
         ['low', 'high'],
-        { canMutate: expect.any(Function) },
+        { canMutate: expect.any(Function), canSend: expect.any(Function) },
       );
     });
   });
@@ -3971,6 +4138,8 @@ describe('ModelPicker confirmModelChange gate', () => {
     expect(confirmModelChange).toHaveBeenCalledWith('model-1', 'model-2', {
       from: 'Model 1',
       to: 'Model 2',
+      fromProviderId: 'auggie',
+      toProviderId: 'auggie',
     });
   });
 
@@ -3989,6 +4158,8 @@ describe('ModelPicker confirmModelChange gate', () => {
       expect(confirmModelChange).toHaveBeenCalledWith('model-1', 'model-2', {
         from: 'Model 1',
         to: 'Model 2',
+        fromProviderId: 'auggie',
+        toProviderId: 'auggie',
       });
     });
     await new Promise((r) => setTimeout(r, 0));
@@ -4022,6 +4193,8 @@ describe('ModelPicker confirmModelChange gate', () => {
       expect(confirmModelChange).toHaveBeenCalledWith('model-1', null, {
         from: 'Model 1',
         to: 'Default model',
+        fromProviderId: 'auggie',
+        toProviderId: 'auggie',
       });
     });
     // Confirming applies the pick: the trigger now shows "Default model".
@@ -4056,6 +4229,8 @@ describe('ModelPicker confirmModelChange gate', () => {
       expect(confirmModelChange).toHaveBeenCalledWith('model-1', null, {
         from: 'Model 1',
         to: 'Default model',
+        fromProviderId: 'auggie',
+        toProviderId: 'auggie',
       });
     });
     await new Promise((r) => setTimeout(r, 0));

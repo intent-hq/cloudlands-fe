@@ -25,8 +25,7 @@ const previewPrincipalRestored = createAction<
 >('test/previewPrincipalRestored');
 principalReducer.with(previewPrincipalRestored, (state, { payload: [installed, previous] }) =>
   Object.entries(installed).every(
-    ([key, value]) =>
-      key === 'presentationVersion' || state[key as keyof PrincipalState] === value,
+    ([key, value]) => key === 'presentationVersion' || state[key as keyof PrincipalState] === value,
   )
     ? { ...previous, presentationVersion: state.presentationVersion }
     : state,

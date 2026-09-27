@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { hasAgentHandledFirstPrompt } from '../types/agent-session';
+import { getAgentProvider, hasAgentHandledFirstPrompt } from '../types/agent-session';
 
 function createSession(overrides: Record<string, unknown> = {}) {
   return {
@@ -44,5 +44,34 @@ describe('hasAgentHandledFirstPrompt', () => {
     expect(
       hasAgentHandledFirstPrompt(createSession({ messages: [{ role: 'user', content: 'hello' }] })),
     ).toBe(true);
+  });
+});
+
+describe('getAgentProvider preserves explicit identity', () => {
+  it.each(['acp', 'augment', 'default', 'future-provider'])(
+    'preserves %s for every persisted source independently of settings',
+    (provider) => {
+      for (const fields of [
+        { provider, model: 'codex:shared-model' },
+        { provider: undefined, metadata: { provider }, model: 'shared-model' },
+        { provider: undefined, config: { provider }, model: 'shared-model' },
+        { provider: undefined, model: `${provider}:shared-model` },
+        { provider, model: null },
+      ]) {
+        expect(getAgentProvider(createSession(fields), 'codex')).toBe(provider);
+      }
+    },
+  );
+
+  it('retains absent Auto identity and uses settings only for an unowned bare model', () => {
+    expect(
+      getAgentProvider(createSession({ provider: undefined, model: null }), 'codex'),
+    ).toBeUndefined();
+    expect(getAgentProvider(createSession({ provider: '', model: 'shared-model' }), 'codex')).toBe(
+      'codex',
+    );
+    expect(
+      getAgentProvider(createSession({ provider: undefined, model: 'shared-model' }), ''),
+    ).toBeUndefined();
   });
 });

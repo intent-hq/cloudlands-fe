@@ -370,6 +370,28 @@ describe('ChatMessage attachment-reference thumbnails', () => {
 });
 
 describe('ChatMessage model-change notice row', () => {
+  it('updates effort notices without allowing edit or regeneration', async () => {
+    const onEditSubmit = vi.fn();
+    const message: AgentMessage = {
+      id: 'effort',
+      role: 'system',
+      timestamp: '2026-09-26T12:00:00Z',
+      contentBlocks: [{ type: 'text', text: 'Saved effort explanation' }],
+      metadata: { type: 'effort_changed', from: 'medium', to: 'high' },
+    };
+    const { rerender } = render(ChatMessage, { props: { message, onEditSubmit } });
+    expect(screen.getByRole('status').textContent).toContain('Medium');
+    expect(screen.getByRole('status').textContent).toContain('High');
+    await fireEvent.click(screen.getByRole('status'));
+    await fireEvent.dblClick(screen.getByRole('status'));
+    expect(screen.queryByTestId('mock-rich-input')).toBeNull();
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(onEditSubmit).not.toHaveBeenCalled();
+
+    await rerender({ message: { ...message, metadata: { type: 'effort_changed' } } });
+    expect(screen.getByRole('status').textContent).toContain('Saved effort explanation');
+  });
+
   function modelChangedMessage(): AgentMessage {
     // Daemon-persisted notice row shape (PROTOCOL.md §5.5, agent.setModel).
     return {
