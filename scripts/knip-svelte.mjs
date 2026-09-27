@@ -5,6 +5,8 @@ import { parse } from 'svelte/compiler';
 // Use Svelte's parser to retain imports from both scripts and template expressions.
 // Keep TypeScript source intact: compiling to JS would erase type-only imports.
 export function svelteImports(source, filename) {
+  // Svelte strips the leading BOM before assigning offsets; slice that same text.
+  if (source.charCodeAt(0) === 0xfeff) source = source.slice(1);
   const ast = parse(source, { filename, modern: true });
   const imports = [];
 
