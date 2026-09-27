@@ -1,10 +1,12 @@
 import { store } from '../../store';
+import type { AppSelector } from '../../types';
 import {
   AgentStatus,
   type AgentSession,
   type AgentMessage,
   type QueuedMessage,
   type ToolUseBlock,
+  type WorkspaceId,
 } from '$shared/types';
 import { AgentActivationState, getAgentProvider } from '$shared/types/agent-session';
 import { getContentBlockText } from '$shared/utils/content-block-helpers';
@@ -146,12 +148,11 @@ function isActiveAgentThread(stored: StoredAgentSession): boolean {
 // ============================================================================
 
 /** Select a single agent session by agentId (stored shape: wire fields + FE-owned fields) */
-export const selectAgentSession = store.createSelector(
-  (state, agentId?: string): StoredAgentSession | undefined => {
+export const selectAgentSession: AppSelector<StoredAgentSession | undefined, [agentId?: string]> =
+  store.createSelector((state, agentId?: string): StoredAgentSession | undefined => {
     if (!agentId) return undefined;
     return materializeSession(state.agentSessions?.byAgentId[agentId]);
-  },
-);
+  });
 
 /**
  * True once `agentId`'s detail projection (`agent.get` / `agent.getSession`)
@@ -159,9 +160,10 @@ export const selectAgentSession = store.createSelector(
  * a stored row seeded from the `agent.list` projection (PROTOCOL §5.5) has
  * ambiguous detail-only fields: absent may mean "not loaded yet".
  */
-export const selectAgentDetailHydrated = store.createSelector((state, agentId?: string): boolean =>
-  Boolean(agentId && state.agentSessions?.detailHydrated?.[agentId]),
-);
+export const selectAgentDetailHydrated: AppSelector<boolean, [agentId?: string]> =
+  store.createSelector((state, agentId?: string): boolean =>
+    Boolean(agentId && state.agentSessions?.detailHydrated?.[agentId]),
+  );
 
 /**
  * FE-owned `tailCapPruned` latch (see StoredAgentSession): true once the
@@ -169,57 +171,55 @@ export const selectAgentDetailHydrated = store.createSelector((state, agentId?: 
  * triggers OR it into their `tailTruncated` input because the chat-init
  * snapshot meta goes stale as the conversation grows past the cap.
  */
-export const selectAgentTailCapPruned = store.createSelector((state, agentId?: string): boolean => {
-  if (!agentId) return false;
-  return state.agentSessions?.byAgentId[agentId]?.tailCapPruned === true;
-});
+export const selectAgentTailCapPruned: AppSelector<boolean, [agentId?: string]> =
+  store.createSelector((state, agentId?: string): boolean => {
+    if (!agentId) return false;
+    return state.agentSessions?.byAgentId[agentId]?.tailCapPruned === true;
+  });
 
 /** Select the resolved provider for a given agent without materializing messages. */
-export const selectAgentProvider = store.createSelector(
-  (state, agentId?: string): string | undefined => {
+export const selectAgentProvider: AppSelector<string | undefined, [agentId?: string]> =
+  store.createSelector((state, agentId?: string): string | undefined => {
     if (!agentId) return undefined;
     const stored = state.agentSessions?.byAgentId[agentId];
     const raw = stored
       ? getAgentProvider(stored, selectEffectiveDefaultProviderId.select(state))
       : undefined;
     return raw ? selectNormalizedProviderId.select(state, raw) : undefined;
-  },
-);
+  });
 
 /** Select specific agent sessions by agent IDs. */
-export const selectAgentSessionsByIds = store.createSelector(
-  (state, agentIds: string[]): AgentSession[] => {
+export const selectAgentSessionsByIds: AppSelector<AgentSession[], [agentIds: string[]]> =
+  store.createSelector((state, agentIds: string[]): AgentSession[] => {
     const result: AgentSession[] = [];
     for (const id of agentIds) {
       const materialized = materializeSession(state.agentSessions?.byAgentId[id]);
       if (materialized) result.push(materialized);
     }
     return result;
-  },
-);
+  });
 
 /** Select the canonical session map for dynamic component-owned ID sets. */
-export const selectAgentSessionsById = store.createSelector(
-  (state): Readonly<Record<string, AgentSession>> => state.agentSessions?.byAgentId ?? {},
-);
+export const selectAgentSessionsById: AppSelector<Readonly<Record<string, AgentSession>>> =
+  store.createSelector(
+    (state): Readonly<Record<string, AgentSession>> => state.agentSessions?.byAgentId ?? {},
+  );
 
 /** Select messages for a given agent (ordered array) */
-export const selectAgentMessages = store.createSelector(
-  (state, agentId: string): AgentMessage[] => {
+export const selectAgentMessages: AppSelector<AgentMessage[], [agentId: string]> =
+  store.createSelector((state, agentId: string): AgentMessage[] => {
     const stored = state.agentSessions?.byAgentId[agentId];
     return stored ? stored.messages : [];
-  },
-);
+  });
 
 const EMPTY_HISTORY_MESSAGES: AgentMessage[] = [];
 
 /** Select the hydrated scrollback history segment rows for a given agent (ordered array). */
-export const selectAgentHistoryMessages = store.createSelector(
-  (state, agentId: string): AgentMessage[] => {
+export const selectAgentHistoryMessages: AppSelector<AgentMessage[], [agentId: string]> =
+  store.createSelector((state, agentId: string): AgentMessage[] => {
     const segment = state.agentSessions?.historySegmentsByAgentId?.[agentId];
     return segment ? segment.messages : EMPTY_HISTORY_MESSAGES;
-  },
-);
+  });
 
 /**
  * True when a scrollback history segment RECORD exists for the agent — even
@@ -227,10 +227,11 @@ export const selectAgentHistoryMessages = store.createSelector(
  * an empty segment but keeps the record). Segment-clearing paths remove the
  * record entirely.
  */
-export const selectHasHistorySegment = store.createSelector(
-  (state, agentId: string): boolean =>
-    state.agentSessions?.historySegmentsByAgentId?.[agentId] !== undefined,
-);
+export const selectHasHistorySegment: AppSelector<boolean, [agentId: string]> =
+  store.createSelector(
+    (state, agentId: string): boolean =>
+      state.agentSessions?.historySegmentsByAgentId?.[agentId] !== undefined,
+  );
 
 export interface HistorySegmentMeta {
   /** true when a hole is open between history and the tail. */
@@ -255,8 +256,8 @@ export interface HistorySegmentMeta {
 }
 
 /** Select scrollback history segment metadata (gap flag, oldestReached, counts). */
-export const selectHistorySegmentMeta = store.createSelector(
-  (state, agentId: string): HistorySegmentMeta => {
+export const selectHistorySegmentMeta: AppSelector<HistorySegmentMeta, [agentId: string]> =
+  store.createSelector((state, agentId: string): HistorySegmentMeta => {
     const segment = state.agentSessions?.historySegmentsByAgentId?.[agentId];
     const tailCount = state.agentSessions?.byAgentId[agentId]?.messages.length ?? 0;
     return {
@@ -267,8 +268,7 @@ export const selectHistorySegmentMeta = store.createSelector(
       startOrdinalEstimate: segment?.startOrdinalEstimate ?? null,
       holeRowsEstimate: segment?.holeRowsEstimate ?? null,
     };
-  },
-);
+  });
 
 /**
  * Select a single message by id within an agent session.
@@ -281,32 +281,35 @@ export const selectHistorySegmentMeta = store.createSelector(
  * live in `historySegmentsByAgentId`, not the tail — without the fallback
  * every history row renders as the "Loading..." placeholder).
  */
-export const selectAgentMessageById = store.createSelector(
-  (state, agentId: string, messageId: string): AgentMessage | undefined => {
-    if (!agentId || !messageId) return undefined;
-    const stored = state.agentSessions?.byAgentId[agentId];
-    if (!stored) return undefined;
-    const tailMatch = stored.messages.find((message) => message.id === messageId);
-    if (tailMatch) return tailMatch;
-    const segment = state.agentSessions?.historySegmentsByAgentId?.[agentId];
-    return segment?.messages.find((message) => message.id === messageId);
-  },
-);
+export const selectAgentMessageById: AppSelector<
+  AgentMessage | undefined,
+  [agentId: string, messageId: string]
+> = store.createSelector((state, agentId: string, messageId: string): AgentMessage | undefined => {
+  if (!agentId || !messageId) return undefined;
+  const stored = state.agentSessions?.byAgentId[agentId];
+  if (!stored) return undefined;
+  const tailMatch = stored.messages.find((message) => message.id === messageId);
+  if (tailMatch) return tailMatch;
+  const segment = state.agentSessions?.historySegmentsByAgentId?.[agentId];
+  return segment?.messages.find((message) => message.id === messageId);
+});
 
 /**
  * Canonical selector for the raw session processing flag. This intentionally
  * preserves processing semantics separately from responding/waiting state.
  */
-export const selectAgentSessionIsProcessing = store.createSelector(
-  (state, agentId: string): boolean =>
-    state.agentSessions?.byAgentId[agentId]?.isProcessing === true,
-);
+export const selectAgentSessionIsProcessing: AppSelector<boolean, [agentId: string]> =
+  store.createSelector(
+    (state, agentId: string): boolean =>
+      state.agentSessions?.byAgentId[agentId]?.isProcessing === true,
+  );
 
 /** Select the raw session streaming flag. */
-export const selectAgentSessionIsStreaming = store.createSelector(
-  (state, agentId: string): boolean =>
-    state.agentSessions?.byAgentId[agentId]?.isStreaming === true,
-);
+export const selectAgentSessionIsStreaming: AppSelector<boolean, [agentId: string]> =
+  store.createSelector(
+    (state, agentId: string): boolean =>
+      state.agentSessions?.byAgentId[agentId]?.isStreaming === true,
+  );
 
 /**
  * Select the currently visible streaming assistant text from canonical
@@ -314,13 +317,12 @@ export const selectAgentSessionIsStreaming = store.createSelector(
  * segment, so tool-use boundaries clear the transient visible streaming text
  * without removing persisted content blocks from the assistant message.
  */
-export const selectAgentSessionStreamingContent = store.createSelector(
-  (state, agentId: string): string => {
+export const selectAgentSessionStreamingContent: AppSelector<string, [agentId: string]> =
+  store.createSelector((state, agentId: string): string => {
     const stored = state.agentSessions?.byAgentId[agentId];
     if (!stored) return '';
     return getCurrentStreamingText(getCurrentStreamingAssistantMessage(stored));
-  },
-);
+  });
 
 /**
  * Select whether the transcript's actual TAIL entry is a stream-owned
@@ -333,16 +335,18 @@ export const selectAgentSessionStreamingContent = store.createSelector(
  * user never actually saw. This selector only answers true when the
  * streaming assistant message is genuinely the last thing in the transcript.
  */
-export const selectAgentSessionHasStreamingTailMessage = store.createSelector(
-  (state, agentId: string): boolean => {
+export const selectAgentSessionHasStreamingTailMessage: AppSelector<boolean, [agentId: string]> =
+  store.createSelector((state, agentId: string): boolean => {
     const messages = state.agentSessions?.byAgentId[agentId]?.messages ?? [];
     const lastMessage = messages[messages.length - 1];
     return lastMessage?.role === 'assistant' && isStreamingMessage(lastMessage);
-  },
-);
+  });
 
 /** Select the workspace ID for a given agent session. */
-export const selectAgentSessionWorkspaceId = store.createSelector(
+export const selectAgentSessionWorkspaceId: AppSelector<
+  WorkspaceId | undefined,
+  [agentId: string]
+> = store.createSelector(
   (state, agentId: string): AgentSession['workspaceId'] | undefined =>
     state.agentSessions?.byAgentId[agentId]?.workspaceId,
 );
@@ -363,8 +367,8 @@ export const selectAgentSessionWorkspaceId = store.createSelector(
 const LEGACY_CODEX_EFFORTS = new Set(['low', 'medium', 'high', 'xhigh']);
 const LEGACY_CODEX_EFFORT_MODELS = new Set(['gpt-5.3-codex', 'gpt-5.2-codex', 'gpt-5.1-codex-max']);
 
-export const selectAgentReasoningEffort = store.createSelector(
-  (state, agentId: string): string | undefined => {
+export const selectAgentReasoningEffort: AppSelector<string | undefined, [agentId: string]> =
+  store.createSelector((state, agentId: string): string | undefined => {
     const stored = state.agentSessions?.byAgentId[agentId];
     if (!stored) return undefined;
     if (typeof stored.reasoningEffort === 'string' && stored.reasoningEffort.length > 0) {
@@ -383,13 +387,13 @@ export const selectAgentReasoningEffort = store.createSelector(
       base.startsWith('codex:') ||
       LEGACY_CODEX_EFFORT_MODELS.has(base);
     return isCodex ? suffix : undefined;
-  },
-);
+  });
 
 /** Select whether a session exists for a given agent. */
-export const selectAgentSessionExists = store.createSelector(
-  (state, agentId: string): boolean => state.agentSessions?.byAgentId[agentId] !== undefined,
-);
+export const selectAgentSessionExists: AppSelector<boolean, [agentId: string]> =
+  store.createSelector(
+    (state, agentId: string): boolean => state.agentSessions?.byAgentId[agentId] !== undefined,
+  );
 
 /**
  * Select whether first-send activation has reached a terminal store state.
@@ -400,8 +404,8 @@ export const selectAgentSessionExists = store.createSelector(
  * guards activation inline in `agent-send.ts` (`needsActivation`).
  * The selector is kept correct for future first-send waiters.
  */
-export const selectAgentActivationWaitComplete = store.createSelector(
-  (state, agentId: string): boolean => {
+export const selectAgentActivationWaitComplete: AppSelector<boolean, [agentId: string]> =
+  store.createSelector((state, agentId: string): boolean => {
     const session = state.agentSessions?.byAgentId[agentId];
     if (!session) return false;
     if (session.activationState === AgentActivationState.ERROR) return true;
@@ -409,44 +413,47 @@ export const selectAgentActivationWaitComplete = store.createSelector(
     // re-waiting here would strand the first send (upstream #709 guard).
     if (session.activationState === AgentActivationState.ACTIVE) return true;
     return session.status !== AgentStatus.Pending && !!session.backendSessionId;
-  },
-);
+  });
 
 /**
  * Canonical selector for agent responding state. Preserves the established active
  * thread semantics from session flags/statuses and streaming assistant messages.
  */
-export const selectAgentIsResponding = store.createSelector((state, agentId: string): boolean => {
-  const stored = state.agentSessions?.byAgentId[agentId];
-  if (!stored) return false;
-  return isActiveAgentThread(stored);
-});
+export const selectAgentIsResponding: AppSelector<boolean, [agentId: string]> =
+  store.createSelector((state, agentId: string): boolean => {
+    const stored = state.agentSessions?.byAgentId[agentId];
+    if (!stored) return false;
+    return isActiveAgentThread(stored);
+  });
 
 /** @deprecated Renderer-visible queues live in agentQueue. Use selectAgentQueueMessages directly. */
-export const selectAgentQueuedMessages = store.createSelector(
-  (state, agentId: string): QueuedMessage[] => selectAgentQueueMessages.select(state, agentId),
-);
+export const selectAgentQueuedMessages: AppSelector<QueuedMessage[], [agentId: string]> =
+  store.createSelector((state, agentId: string): QueuedMessage[] =>
+    selectAgentQueueMessages.select(state, agentId),
+  );
 
 /** Select all agents with live work that should retain workspace interest. */
-export const selectAllRetainedAgentSessions = store.createSelector((state): AgentSession[] => {
-  const byAgentId = state.agentSessions?.byAgentId ?? {};
-  const result: AgentSession[] = [];
-  for (const id of Object.keys(byAgentId)) {
-    const stored = byAgentId[id];
-    if (stored && (isActiveAgentThread(stored) || isAgentBlockedWaiting(stored))) {
-      const materialized = materializeSession(stored);
-      if (materialized) result.push(materialized);
+export const selectAllRetainedAgentSessions: AppSelector<AgentSession[]> = store.createSelector(
+  (state): AgentSession[] => {
+    const byAgentId = state.agentSessions?.byAgentId ?? {};
+    const result: AgentSession[] = [];
+    for (const id of Object.keys(byAgentId)) {
+      const stored = byAgentId[id];
+      if (stored && (isActiveAgentThread(stored) || isAgentBlockedWaiting(stored))) {
+        const materialized = materializeSession(stored);
+        if (materialized) result.push(materialized);
+      }
     }
-  }
-  return result;
-});
+    return result;
+  },
+);
 
 /**
  * Canonical selector for active agent thread state that drives the Agent Overview
  * `Thinking...` label and specialist avatar animation.
  */
-export const selectAgentIsThinking = store.createSelector((state, agentId: string): boolean =>
-  selectAgentIsResponding.select(state, agentId),
+export const selectAgentIsThinking: AppSelector<boolean, [agentId: string]> = store.createSelector(
+  (state, agentId: string): boolean => selectAgentIsResponding.select(state, agentId),
 );
 
 /**
@@ -454,13 +461,12 @@ export const selectAgentIsThinking = store.createSelector((state, agentId: strin
  * the daemon's `isWaitingForOtherAgents` flag verbatim (PROTOCOL.md §5.5) and
  * never re-derives it from relationship metadata.
  */
-export const selectAgentIsWaitingForOtherAgents = store.createSelector(
-  (state, agentId: string): boolean => {
+export const selectAgentIsWaitingForOtherAgents: AppSelector<boolean, [agentId: string]> =
+  store.createSelector((state, agentId: string): boolean => {
     const stored = state.agentSessions?.byAgentId[agentId];
     if (!stored) return false;
     return isAgentWaitingForOtherAgents(stored);
-  },
-);
+  });
 
 /**
  * Canonical selector for agent waiting state. Driven by BE-owned signals:
@@ -468,11 +474,13 @@ export const selectAgentIsWaitingForOtherAgents = store.createSelector(
  * the `isWaitingForOtherAgents` flag. This raw reason selector is not the
  * avatar color; `selectAgentIsBlockedWaiting` applies active-turn precedence.
  */
-export const selectAgentIsWaiting = store.createSelector((state, agentId: string): boolean => {
-  const stored = state.agentSessions?.byAgentId[agentId];
-  if (!stored) return false;
-  return isAgentWaiting(stored) || selectAgentIsWaitingForOtherAgents.select(state, agentId);
-});
+export const selectAgentIsWaiting: AppSelector<boolean, [agentId: string]> = store.createSelector(
+  (state, agentId: string): boolean => {
+    const stored = state.agentSessions?.byAgentId[agentId];
+    if (!stored) return false;
+    return isAgentWaiting(stored) || selectAgentIsWaitingForOtherAgents.select(state, agentId);
+  },
+);
 
 /**
  * Status-indicator variant of `selectAgentIsWaiting`: true only for waits that
@@ -480,13 +488,12 @@ export const selectAgentIsWaiting = store.createSelector((state, agentId: string
  * active evidence, and a live orchestration turn wins over a concurrent
  * peer-wait flag. Purple appears only after the turn ends.
  */
-export const selectAgentIsBlockedWaiting = store.createSelector(
-  (state, agentId: string): boolean => {
+export const selectAgentIsBlockedWaiting: AppSelector<boolean, [agentId: string]> =
+  store.createSelector((state, agentId: string): boolean => {
     const stored = state.agentSessions?.byAgentId[agentId];
     if (!stored) return false;
     return isAgentBlockedWaiting(stored);
-  },
-);
+  });
 
 /**
  * Pending attention request (discussion/blocker) for an agent, rendered
@@ -497,13 +504,14 @@ export const selectAgentIsBlockedWaiting = store.createSelector(
  * drained user-origin queue entry — emitting `agent:updated` with
  * `attentionRequestCleared: true`; automatic deliveries leave it pending).
  */
-export const selectAgentAttentionRequest = store.createSelector(
-  (state, agentId: string): AgentAttentionRequest | null => {
-    const stored = state.agentSessions?.byAgentId[agentId];
-    if (!stored) return null;
-    return getAgentAttentionRequest(stored);
-  },
-);
+export const selectAgentAttentionRequest: AppSelector<
+  AgentAttentionRequest | null,
+  [agentId: string]
+> = store.createSelector((state, agentId: string): AgentAttentionRequest | null => {
+  const stored = state.agentSessions?.byAgentId[agentId];
+  if (!stored) return null;
+  return getAgentAttentionRequest(stored);
+});
 
 /**
  * THE canonical "is the agent currently running" selector.
@@ -521,11 +529,13 @@ export const selectAgentAttentionRequest = store.createSelector(
  * active-thread and waiting-for-other-agents semantics so it stays consistent
  * with `selectAgentIsResponding` and `selectAgentIsWaiting`.
  */
-export const selectAgentIsRunning = store.createSelector((state, agentId: string): boolean => {
-  const stored = state.agentSessions?.byAgentId[agentId];
-  if (!stored) return false;
-  return isActiveAgentThread(stored);
-});
+export const selectAgentIsRunning: AppSelector<boolean, [agentId: string]> = store.createSelector(
+  (state, agentId: string): boolean => {
+    const stored = state.agentSessions?.byAgentId[agentId];
+    if (!stored) return false;
+    return isActiveAgentThread(stored);
+  },
+);
 
 /**
  * The selected canonical preview: the AgentCardPreview union plus the
@@ -558,7 +568,10 @@ export type AgentPreview = AgentCardPreview & { isLive: boolean };
  * the report arm when fallback args are provided, else null), mirroring
  * AgentCard's behavior before the session lands in state.
  */
-export const selectAgentPreview = store.createSelector(
+export const selectAgentPreview: AppSelector<
+  AgentPreview | null,
+  [agentId: string, completionReportFallback?: string, lastResponseSummaryFallback?: string]
+> = store.createSelector(
   (
     state,
     agentId: string,

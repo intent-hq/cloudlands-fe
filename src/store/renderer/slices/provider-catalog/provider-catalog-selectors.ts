@@ -19,20 +19,22 @@ import { getItem, getItems } from '@augmentcode/themis/utils/collections/collect
 import { isProviderAuthenticationErrorForEntry } from '$shared/provider-catalog';
 import { splitLegacyCompoundId } from '$shared/utils/legacy-model-id';
 import { store } from '../../store';
+import type { AppSelector } from '../../types';
 import type { ProviderCatalogEntry } from './provider-catalog-types';
 
 /** True once the first `providers.catalog` hydration landed. */
-export const selectProviderCatalogLoaded = store.createSelector(
+export const selectProviderCatalogLoaded: AppSelector<boolean> = store.createSelector(
   (state): boolean => state.providerCatalog?.loaded ?? false,
 );
 
 /** All rows in the daemon's registry order (gated-off rows included). */
-export const selectProviderCatalogEntries = store.createSelector((state): ProviderCatalogEntry[] =>
-  state.providerCatalog ? getItems(state.providerCatalog.providers) : [],
-);
+export const selectProviderCatalogEntries: AppSelector<ProviderCatalogEntry[]> =
+  store.createSelector((state): ProviderCatalogEntry[] =>
+    state.providerCatalog ? getItems(state.providerCatalog.providers) : [],
+  );
 
 /** All provider ids in registry order. */
-export const selectAllCatalogProviderIds = store.createSelector(
+export const selectAllCatalogProviderIds: AppSelector<string[]> = store.createSelector(
   (state): string[] => state.providerCatalog?.providers.ids ?? [],
 );
 
@@ -49,28 +51,33 @@ export const selectAllCatalogProviderIds = store.createSelector(
  * Provider provenance lives in the triple's provider leg — model ids in the
  * store are always bare and never consulted here.
  */
-export const selectEffectiveDefaultProviderId = store.createSelector((state): string => {
-  return selectIsHostMember.select(state)
-    ? (selectHostExecutionContext.select(state)?.defaultProviderId ?? '')
-    : (state.model?.defaultProviderId ?? '');
-});
+export const selectEffectiveDefaultProviderId: AppSelector<string> = store.createSelector(
+  (state): string => {
+    return selectIsHostMember.select(state)
+      ? (selectHostExecutionContext.select(state)?.defaultProviderId ?? '')
+      : (state.model?.defaultProviderId ?? '');
+  },
+);
 
 /** One registry row by id; `undefined` when unknown or not yet hydrated. */
-export const selectProviderCatalogEntry = store.createSelector(
-  (state, providerId: string): ProviderCatalogEntry | undefined =>
-    state.providerCatalog ? getItem(state.providerCatalog.providers, providerId) : undefined,
+export const selectProviderCatalogEntry: AppSelector<
+  ProviderCatalogEntry | undefined,
+  [providerId: string]
+> = store.createSelector((state, providerId: string): ProviderCatalogEntry | undefined =>
+  state.providerCatalog ? getItem(state.providerCatalog.providers, providerId) : undefined,
 );
 
 /** Canonical ID first, then only aliases explicitly advertised by the daemon. */
-export const selectResolvedProviderCatalogEntry = store.createSelector(
-  (state, providerId: string): ProviderCatalogEntry | undefined => {
-    const exact = selectProviderCatalogEntry.select(state, providerId);
-    if (exact || !providerId) return exact;
-    return selectProviderCatalogEntries
-      .select(state)
-      .find((entry) => entry.legacyAliases?.includes(providerId));
-  },
-);
+export const selectResolvedProviderCatalogEntry: AppSelector<
+  ProviderCatalogEntry | undefined,
+  [providerId: string]
+> = store.createSelector((state, providerId: string): ProviderCatalogEntry | undefined => {
+  const exact = selectProviderCatalogEntry.select(state, providerId);
+  if (exact || !providerId) return exact;
+  return selectProviderCatalogEntries
+    .select(state)
+    .find((entry) => entry.legacyAliases?.includes(providerId));
+});
 
 /**
  * `getProviderConfig`-equivalent: the row for `providerId`, falling back to
@@ -78,7 +85,10 @@ export const selectResolvedProviderCatalogEntry = store.createSelector(
  * before the first hydration, or for an unknown id while the effective
  * default is unresolved ('').
  */
-export const selectProviderCatalogEntryOrDefault = store.createSelector(
+export const selectProviderCatalogEntryOrDefault: AppSelector<
+  ProviderCatalogEntry | undefined,
+  [providerId: string]
+> = store.createSelector(
   (state, providerId: string): ProviderCatalogEntry | undefined =>
     selectProviderCatalogEntry.select(state, providerId) ??
     selectProviderCatalogEntry.select(state, selectEffectiveDefaultProviderId.select(state)),
@@ -91,37 +101,41 @@ export const selectProviderCatalogEntryOrDefault = store.createSelector(
  * slice. The `canBeDisabled` check uses the EXACT row (no default fallback)
  * so an unknown id cannot inherit another row's canBeDisabled:false.
  */
-export const selectProviderEnabledFromCatalog = store.createSelector(
-  (state, providerId: string): boolean => {
+export const selectProviderEnabledFromCatalog: AppSelector<boolean, [providerId: string]> =
+  store.createSelector((state, providerId: string): boolean => {
     const entry = selectProviderCatalogEntry.select(state, providerId);
     if (entry?.canBeDisabled === false) return true;
     return state.providerSettings.enabledProviders[providerId] ?? false;
-  },
-);
+  });
 
 /**
  * Preserve unresolved identity on older daemons and before catalog hydration.
  * Settings defaults, row order and availability never determine alias identity.
  */
-export const selectNormalizedProviderId = store.createSelector(
-  (state, providerId: string): string =>
-    selectResolvedProviderCatalogEntry.select(state, providerId)?.id ?? providerId,
-);
+export const selectNormalizedProviderId: AppSelector<string, [providerId: string]> =
+  store.createSelector(
+    (state, providerId: string): string =>
+      selectResolvedProviderCatalogEntry.select(state, providerId)?.id ?? providerId,
+  );
 
 /**
  * Display name for a provider id, falling back to the raw id when the row
  * (or the catalog) is missing — safe for labels before hydration.
  */
-export const selectProviderDisplayName = store.createSelector(
-  (state, providerId: string): string =>
-    selectResolvedProviderCatalogEntry.select(state, providerId)?.displayName ?? providerId,
-);
+export const selectProviderDisplayName: AppSelector<string, [providerId: string]> =
+  store.createSelector(
+    (state, providerId: string): string =>
+      selectResolvedProviderCatalogEntry.select(state, providerId)?.displayName ?? providerId,
+  );
 
 /**
  * Whether a (legacy compound or bare) model id belongs to
  * `targetProviderId`; bare ids attribute to the effective default provider.
  */
-export const selectIsModelValidForProvider = store.createSelector(
+export const selectIsModelValidForProvider: AppSelector<
+  boolean,
+  [model: string, targetProviderId: string]
+> = store.createSelector(
   (state, model: string, targetProviderId: string): boolean =>
     selectNormalizedProviderId.select(
       state,
@@ -134,12 +148,14 @@ export const selectIsModelValidForProvider = store.createSelector(
  * the provider's catalog `authErrorPatterns`. Unresolved explicit IDs do not
  * inherit authentication guidance from a different provider.
  */
-export const selectIsProviderAuthenticationError = store.createSelector(
-  (state, providerId: string, errorMessage: string): boolean =>
-    isProviderAuthenticationErrorForEntry(
-      selectResolvedProviderCatalogEntry.select(state, providerId),
-      errorMessage,
-    ),
+export const selectIsProviderAuthenticationError: AppSelector<
+  boolean,
+  [providerId: string, errorMessage: string]
+> = store.createSelector((state, providerId: string, errorMessage: string): boolean =>
+  isProviderAuthenticationErrorForEntry(
+    selectResolvedProviderCatalogEntry.select(state, providerId),
+    errorMessage,
+  ),
 );
 
 /** Login guidance for a provider authentication failure. */
@@ -160,7 +176,14 @@ export interface ProviderAuthFailureGuidance {
  * else the effective default. Unresolved explicit identity stays unresolved. `null` when
  * there is no error or it is not an authentication failure.
  */
-export const selectProviderAuthFailureGuidance = store.createSelector(
+export const selectProviderAuthFailureGuidance: AppSelector<
+  ProviderAuthFailureGuidance | null,
+  [
+    provider: string | null | undefined,
+    model: string | null | undefined,
+    errorMessage: string | null | undefined,
+  ]
+> = store.createSelector(
   (
     state,
     provider: string | null | undefined,
