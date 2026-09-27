@@ -1318,7 +1318,8 @@
     bind:open={panelActionsMenuOpen[location]}
     align="end"
     side="bottom"
-    contentClass="panel-actions-menu-content [&_[data-slot=menu-command-item]>kbd]:text-muted-foreground"
+    contentClass="panel-header-menu panel-actions-menu-content"
+    subContentClass="panel-header-menu panel-header-submenu"
   >
     <!-- i18n-ignore -->
     {#snippet trigger({ props }: { props: Record<string, unknown> })}
@@ -1721,7 +1722,7 @@
         align="start"
         side="bottom"
         collisionPadding={8}
-        class="panel-selector-menu max-w-[calc(100vw-1rem)]"
+        class="panel-header-menu panel-selector-menu"
         maxHeight="var(--bits-dropdown-menu-content-available-height, calc(100dvh - 1rem))"
         aria-label={m.layout_panelTabBar_paneMenu_ariaLabel()}
         data-pane-stack-menu
@@ -1761,12 +1762,13 @@
                   aria-hidden="true"
                   data-pane-stack-current-check
                 >
-                  <Fa icon={faCheck} size="xs" class="text-primary-ink" />
+                  <Fa icon={faCheck} size="xs" class="text-muted-foreground" />
                 </span>
               {/if}
             </Menu.Item>
           {/each}
         </div>
+        <Menu.Separator />
         <Menu.CommandItem
           icon={faArrowUp}
           label={m.layout_panelTabBar_openPaneAbove_label()}
@@ -1783,7 +1785,6 @@
           onclick={() => nextPane && activatePane(nextPane.id)}
           data-pane-stack-open-below
         />
-        <Menu.Separator />
       </Menu.Content>
     </Menu.Root>
   </span>
@@ -2048,26 +2049,28 @@
 {/if}
 
 <style>
-  :global(.panel-actions-menu-content),
-  :global(.panel-selector-menu) {
-    --panel-menu-surface: hsl(var(--surface-3));
-    --panel-menu-selected: hsl(var(--surface-5));
-    --panel-menu-pad: hsl(var(--surface-5));
-    background: var(--panel-menu-surface);
+  :global(.panel-header-menu) {
+    background: hsl(var(--surface-3));
+    border: 1px solid hsl(var(--border));
+    border-radius: 9px;
+    padding: 6px;
+    max-width: calc(100vw - 1rem);
   }
-  :global(.panel-actions-menu-content [data-proximity-highlight='selected']),
-  :global(.panel-selector-menu [data-proximity-highlight='selected']),
-  :global(.panel-selector-row[aria-current='page']) {
-    background: var(--panel-menu-selected);
+  :global(.panel-header-menu [data-proximity-highlight='selected']),
+  :global(.panel-header-menu [data-slot='menu-radio-item'][data-state='checked']) {
+    background: hsl(var(--selected));
+  }
+  :global(.panel-header-menu [data-slot='menu-separator']) {
+    margin-inline: -6px;
+    margin-block: 6px;
+  }
+  :global(.panel-header-submenu) {
+    min-width: min(224px, calc(100vw - 1rem));
   }
 
   :global(.panel-actions-menu-content) {
     width: 240px;
     min-width: min(240px, calc(100vw - 1rem));
-    border: 1px solid hsl(var(--border));
-    border-radius: 7px;
-    padding: 6px;
-    max-width: calc(100vw - 1rem);
   }
 
   /* CSS variables for panel tab bar heights */
@@ -2106,19 +2109,22 @@
   :global(.panel-selector-menu) {
     width: var(--bits-dropdown-menu-anchor-width, 194px);
     min-width: 0;
-    border: 1px solid hsl(var(--border));
-    border-radius: 9px;
-    padding: 5px;
   }
-  :global(.panel-selector-row) {
+  :global(.panel-selector-menu [data-menu-item]) {
     align-items: center;
-    height: 34px;
+    min-height: 34px;
     gap: 8px;
     padding: 5px;
     font-size: 12px;
     font-weight: 400;
   }
-  :global(.panel-selector-row > [data-slot='menu-item-leading']) {
+  :global(.panel-selector-menu [data-slot='menu-command-item'] span.truncate) {
+    white-space: normal;
+  }
+  :global(.panel-header-menu [data-slot='menu-command-item'] > span:last-child:has(kbd)) {
+    margin-left: 6px;
+  }
+  :global(.panel-selector-menu [data-slot='menu-item-leading']) {
     width: 22px;
     height: 22px;
   }
@@ -2129,7 +2135,7 @@
     --agent-avatar-emphasized-art-size: 15px;
     --agent-avatar-emphasized-corner-radius: 5px;
   }
-  :global(.panel-actions-menu-content [data-menu-item]) {
+  :global(.panel-header-menu:not(.panel-selector-menu) [data-menu-item]) {
     min-height: 30px;
     font-size: 14px;
     line-height: 1.2;
@@ -2137,22 +2143,50 @@
     padding: 6px;
     gap: 6px;
   }
-  :global(.panel-actions-menu-content [data-slot='menu-label']) {
+  :global(.panel-header-menu [data-slot='menu-label']) {
     font-size: 13px;
     line-height: 1.3;
     font-weight: 400;
     padding: 6px;
     color: hsl(var(--muted-foreground));
   }
-  :global(.panel-actions-menu-content [data-slot='menu-item-leading']) {
+  :global(.panel-header-menu:not(.panel-selector-menu) [data-slot='menu-item-leading']) {
     width: 14px;
   }
-  :global(.panel-actions-menu-content [data-slot='menu-item-leading'] svg) {
+  :global(.panel-header-menu:not(.panel-selector-menu) [data-slot='menu-item-leading'] svg),
+  :global(.panel-header-menu [data-slot='menu-sub-chevron'] svg) {
     width: 14px;
     height: 14px;
   }
-  :global(.panel-actions-menu-content [data-slot='menu-command-item'] > kbd) {
+  :global(.panel-header-menu [data-slot='menu-command-item'] kbd) {
     font-size: 11px;
+    color: hsl(var(--muted-foreground));
+  }
+  :global(.panel-header-menu [data-slot='menu-radio-item']) {
+    align-items: center;
+  }
+  :global(.panel-header-menu [data-slot='menu-radio-item'] > [data-slot='menu-item-leading']) {
+    display: none;
+  }
+  :global(.panel-header-menu [data-slot='menu-radio-item'] > [data-slot='menu-item-indicator']) {
+    order: -1;
+    width: 14px;
+    height: 14px;
+    margin: 0;
+  }
+  :global(.panel-header-menu [data-slot='menu-radio-item'] [data-slot='menu-item-indicator'] svg) {
+    display: none;
+  }
+  :global(
+    .panel-header-menu
+      [data-slot='menu-radio-item'][data-state='checked']
+      [data-slot='menu-item-indicator']::after
+  ) {
+    content: '';
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    background: hsl(var(--success));
   }
   .panel-move-pad {
     position: relative;
@@ -2176,7 +2210,7 @@
     min-height: 0;
     padding: 0;
     border-radius: 0;
-    background: var(--panel-menu-pad);
+    background: hsl(var(--selected));
     display: flex;
     align-items: center;
     justify-content: center;

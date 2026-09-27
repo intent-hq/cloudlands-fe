@@ -3,6 +3,41 @@ import type { Locator, Page } from '@playwright/test';
 import type { PanelTabType } from '$store/renderer/slices/panel-layout/panel-layout-types';
 import { SHORTCUTS, formatShortcut } from '$lib/utils/shortcuts';
 import PanelHeaderActionsHost from './mocks/PanelHeaderActionsHost.svelte';
+import PanelHeaderPreview from '../panel-header-actions.preview.svelte';
+
+test('creates a pane through the nested menu and restores header focus', async ({
+  mount,
+  page,
+}, testInfo) => {
+  await page.setViewportSize({ width: 720, height: 1000 });
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  const component = await mount(PanelHeaderPreview, { props: { kind: 'agent', stacked: true } });
+  const trigger = component.getByTestId('panel-actions-trigger').filter({ visible: true });
+  await trigger.press('Enter');
+  const menu = page.locator('[data-slot="menu-content"]');
+  await waitForMenuFocusReady(menu);
+  const create = menu.getByRole('menuitem', { name: 'Create new' });
+  await create.focus();
+  await create.press('ArrowRight');
+  const submenu = page.locator('[data-slot="menu-sub-content"]');
+  await expect(submenu).toBeVisible();
+  await waitForMenuFocusReady(submenu);
+  await expect(submenu.locator('[role="menuitem"]:focus')).toHaveCount(1);
+  await testInfo.attach('panel-create-submenu', {
+    body: await page.screenshot(),
+    contentType: 'image/png',
+  });
+  await page.keyboard.press('ArrowLeft');
+  await expect(submenu).toBeHidden();
+  await expect(create).toBeFocused();
+  await create.press('ArrowRight');
+  await expect(submenu).toBeVisible();
+  await waitForMenuFocusReady(submenu);
+  await submenu.getByRole('menuitem', { name: 'New Note', exact: true }).press('Enter');
+  await expect(component).toHaveAttribute('data-last-action', 'new-note');
+  await expect(menu).toBeHidden();
+  await expect(trigger).toBeFocused();
+});
 
 const panelTypes: PanelTabType[] = ['agent', 'note', 'browser', 'terminal', 'changes'];
 const stackCounts = [1, 2, 3, 4, 5] as const;
@@ -186,7 +221,7 @@ test.describe('Panel file commands in the web renderer', () => {
     });
     const { menu, copy } = await openAgentPanelMenu(component, page);
     await menu.getByRole('menuitem').first().focus();
-    await page.keyboard.press('End');
+    await page.keyboard.type('Copy');
     await expect(copy).toBeFocused();
   });
 

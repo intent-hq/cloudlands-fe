@@ -34,7 +34,7 @@
 
 {#if embedded}
   <Menu.Label>{m.settings_section_fontStyle()}</Menu.Label>
-  <div class="panel-font-options">{@render fontItems()}</div>
+  {@render fontItems()}
 {:else}
   <Menu.Root bind:open>
     <Menu.Trigger>
@@ -58,30 +58,3 @@
     </Menu.Content>
   </Menu.Root>
 {/if}
-
-<style>
-  .panel-font-options :global([data-slot='menu-radio-item']) {
-    justify-content: flex-start;
-    align-items: center;
-  }
-
-  .panel-font-options :global([data-slot='menu-item-indicator']) {
-    order: -1;
-    width: 14px;
-    height: 14px;
-    margin-inline: 0;
-  }
-  .panel-font-options :global([data-slot='menu-item-indicator'] svg) {
-    display: none;
-  }
-  .panel-font-options :global([data-state='checked']) {
-    background: var(--panel-menu-selected, hsl(var(--accent)));
-  }
-  .panel-font-options :global([data-state='checked'] [data-slot='menu-item-indicator']::after) {
-    content: '';
-    width: 12px;
-    height: 12px;
-    border-radius: 50%;
-    background: hsl(var(--success));
-  }
-</style>
