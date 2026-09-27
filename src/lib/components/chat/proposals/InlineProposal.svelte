@@ -145,7 +145,10 @@
           {initialDraft}
           onDraftChange={handleDraftChange}
           onApply={(detail) => applyProposal(agentId, detail)}
-          onDiscard={() => (confirmingDismiss = true)}
+          onDiscard={() =>
+            proposal.kind === 'workspace-transfer'
+              ? handleConfirmDismiss()
+              : (confirmingDismiss = true)}
           onUndo={undoProposal}
         />
       {/if}

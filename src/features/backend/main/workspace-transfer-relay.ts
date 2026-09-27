@@ -21,6 +21,7 @@
  * usable and the target holds no staging garbage.
  */
 
+import { m } from '$shared/paraglide/messages.js';
 import type {
   TransferFinalizeParams,
   TransferFinalizeResult,
@@ -105,6 +106,7 @@ interface RelaySession {
   /** WebContents id of the window that started the session — lifecycle calls
    * from other windows are rejected while this window is alive. */
   ownerId: number;
+  proposalId?: string;
   /** The SOURCE daemon's client, pinned at start() time — a backend switch
    * rebinds windows to other clients, and finalize/cancel must keep talking
    * to the daemon that owns this exportId. */
@@ -146,6 +148,10 @@ function errText(error: unknown): string {
 
 export function createWorkspaceTransferRelay(deps: TransferRelayDeps): WorkspaceTransferRelay {
   let session: RelaySession | null = null;
+  const finalizedProposals = new Map<
+    string,
+    { ownerId: number; workspaceId: string; targetConnectionId?: string }
+  >();
 
   /** Best-effort source-side cleanup; never throws. */
   async function abortExport(client: RelayRpcClient, exportId: string): Promise<void> {
@@ -373,6 +379,35 @@ export function createWorkspaceTransferRelay(deps: TransferRelayDeps): Workspace
     source: RelayRpcClient,
     ownerId: number,
   ): Promise<TransferStartResult> {
+    const receipt = params.proposalId ? finalizedProposals.get(params.proposalId) : undefined;
+    if (receipt?.ownerId === ownerId) {
+      if (
+        receipt.workspaceId !== params.workspaceId ||
+        params.destination.kind !== 'server' ||
+        receipt.targetConnectionId !== params.destination.connectionId
+      ) {
+        return { success: false, error: m.chat_transfer_source_error() };
+      }
+      return { success: true };
+    }
+    if (params.proposalId && session?.proposalId === params.proposalId) {
+      if (!ownsSession(session, ownerId)) return NOT_OWNER;
+      if (
+        session.workspaceId !== params.workspaceId ||
+        params.destination.kind !== 'server' ||
+        session.targetConnectionId !== params.destination.connectionId
+      ) {
+        return { success: false, error: m.chat_transfer_source_error() };
+      }
+      if (session.committed) return { success: true, interruptedAgents: session.interruptedAgents };
+    }
+    if (
+      session?.committed &&
+      (session.proposalId || params.proposalId) &&
+      !deps.isOwnerGone(session.ownerId)
+    ) {
+      return { success: false, error: m.chat_transfer_active_error() };
+    }
     if (session && !session.committed && !session.cancelled) {
       if (!deps.isOwnerGone(session.ownerId)) {
         return {
@@ -403,6 +438,7 @@ export function createWorkspaceTransferRelay(deps: TransferRelayDeps): Workspace
     const current: RelaySession = {
       workspaceId,
       ownerId,
+      proposalId: params.proposalId,
       source,
       exportId: '',
       sourceExportStarted: false,
@@ -536,9 +572,20 @@ export function createWorkspaceTransferRelay(deps: TransferRelayDeps): Workspace
     params: TransferFinalizeParams,
     ownerId: number,
   ): Promise<TransferFinalizeResult> {
+    if (params.proposalId && finalizedProposals.get(params.proposalId)?.ownerId === ownerId) {
+      return { success: true };
+    }
     const current = session;
     if (!current || !current.committed) {
-      return { success: false, error: 'no committed transfer to finalize' };
+      return {
+        success: false,
+        error: params.proposalId
+          ? m.chat_transfer_sessionLost_error()
+          : 'no committed transfer to finalize',
+      };
+    }
+    if (current.proposalId !== params.proposalId) {
+      return { success: false, error: m.chat_transfer_source_error() };
     }
     if (!ownsSession(current, ownerId)) {
       return NOT_OWNER;
@@ -584,12 +631,27 @@ export function createWorkspaceTransferRelay(deps: TransferRelayDeps): Workspace
     }
     // An owner-gone takeover may have replaced the session mid-await; only
     // clear the session this finalize actually acted on.
+    if (current.proposalId) {
+      finalizedProposals.set(current.proposalId, {
+        ownerId,
+        workspaceId: current.workspaceId,
+        targetConnectionId: current.targetConnectionId,
+      });
+      // Match the renderer history cap; receipts only recover lost IPC replies.
+      while (finalizedProposals.size > 300) {
+        const oldest = finalizedProposals.keys().next().value;
+        if (oldest !== undefined) finalizedProposals.delete(oldest);
+      }
+    }
     if (session === current) session = null;
     return { success: true, ...(resumeFailed.length > 0 ? { resumeFailed } : {}) };
   }
 
   async function cancel(ownerId: number): Promise<TransferCancelResult> {
     const current = session;
+    if (current?.proposalId && !deps.isOwnerGone(current.ownerId)) {
+      return { success: false, error: m.chat_transfer_active_error() };
+    }
     if (!current) {
       return { success: true };
     }

@@ -1053,3 +1053,85 @@ describe('workspace-transfer relay — per-window session affinity (monorepo#351
     await expect(first).resolves.toMatchObject({ success: true });
   });
 });
+
+describe('inline approval retry ownership', () => {
+  it('reuses a committed import, rejects replacement, and retries finalize without importing again', async () => {
+    let finalizeAttempts = 0;
+    const source = makeSource({
+      'workspace.export.finalize': () =>
+        ++finalizeAttempts === 1 ? new Error('disconnected') : {},
+    });
+    const target = makeTarget();
+    const { deps } = makeDeps(source, target);
+    const relay = makeRelay(deps);
+    const params: TransferStartParams = {
+      workspaceId: 'ws-1',
+      destination: { kind: 'server', connectionId: 'target' },
+      proposalId: 'proposal-1',
+    };
+    const run = relay.start(params, source.client);
+    await emitWhenStarted(source, 'workspace:transfer:ready', READY_DATA);
+    expect(await run).toMatchObject({ success: true });
+    expect(await relay.start(params, source.client)).toMatchObject({ success: true });
+    expect(await relay.start({ ...params, proposalId: 'different' }, source.client)).toMatchObject({
+      success: false,
+    });
+    expect(
+      await relay.start({ workspaceId: 'ws-2', destination: params.destination }, source.client),
+    ).toMatchObject({ success: false });
+    expect(await relay.cancel()).toMatchObject({ success: false });
+    expect(await relay.finalize({ archiveSource: true })).toMatchObject({ success: false });
+    const finalizeParams = { proposalId: 'proposal-1', archiveSource: true, restartAgents: false };
+    expect(await relay.finalize(finalizeParams)).toMatchObject({ success: false });
+    expect(await relay.finalize(finalizeParams)).toMatchObject({ success: true });
+    expect(await relay.finalize(finalizeParams)).toMatchObject({ success: true });
+    expect(
+      await relay.start(
+        { ...params, destination: { kind: 'server', connectionId: 'other' } },
+        source.client,
+      ),
+    ).toMatchObject({ success: false });
+    expect(target.calls.filter((c) => c.method === 'workspace.import.commit')).toHaveLength(1);
+    expect(source.calls.filter((c) => c.method === 'workspace.export.start')).toHaveLength(1);
+    expect(source.calls.filter((c) => c.method === 'workspace.export.finalize')).toHaveLength(2);
+    expect(target.calls.some((c) => c.method === 'agent.resolveInterrupted')).toBe(false);
+  });
+});
+
+it('releases an abandoned committed proposal when its owner window is gone', async () => {
+  const source = makeSource();
+  const nextSource = makeSource();
+  const target = makeTarget();
+  const isOwnerGone = vi.fn(() => false);
+  const { deps } = makeDeps(source, target, { isOwnerGone });
+  const relay = makeRelay(deps);
+  const destination = { kind: 'server' as const, connectionId: 'target' };
+  const first = relay.start({ workspaceId: 'ws-1', proposalId: 'old', destination }, source.client);
+  await emitWhenStarted(source, 'workspace:transfer:ready', READY_DATA);
+  expect(await first).toMatchObject({ success: true });
+  isOwnerGone.mockReturnValue(true);
+  const next = relay.start(
+    { workspaceId: 'ws-2', proposalId: 'new', destination },
+    nextSource.client,
+    OWNER + 1,
+  );
+  await emitWhenStarted(nextSource, 'workspace:transfer:ready', {
+    ...READY_DATA,
+    workspaceId: 'ws-2',
+  });
+  expect(await next).toMatchObject({ success: true });
+  expect(source.calls.filter((c) => c.method === 'workspace.export.abort')).toEqual([
+    { method: 'workspace.export.abort', params: { exportId: 'export-1' } },
+  ]);
+});
+
+it('explains manual recovery if the desktop lost an imported proposal session', async () => {
+  const { deps } = makeDeps(makeSource());
+  const result = await makeRelay(deps).finalize({
+    proposalId: 'lost',
+    archiveSource: true,
+    restartAgents: false,
+  });
+  expect(result.success).toBe(false);
+  expect(result.error).toContain('archive the source manually');
+});

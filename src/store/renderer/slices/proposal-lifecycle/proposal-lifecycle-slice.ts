@@ -28,6 +28,14 @@ export const proposalApplySucceeded = createAction<
   [payload: { proposalId: string; completedAt: number; result?: ProposalApplyResult }]
 >('proposalLifecycle/proposalApplySucceeded');
 
+export const proposalTransferProgress = createAction<
+  [payload: { proposalId: string; phase: 'building' | 'relaying' | 'committing' }]
+>('proposalLifecycle/proposalTransferProgress');
+
+export const proposalTransferCheckpoint = createAction<
+  [payload: { proposalId: string; transfer?: NonNullable<ProposalApplyResult['transfer']> }]
+>('proposalLifecycle/proposalTransferCheckpoint');
+
 export const proposalUndoStarted = createAction<
   [payload: { proposalId: string; startedAt: number }]
 >('proposalLifecycle/proposalUndoStarted');
@@ -89,8 +97,8 @@ export function pruneAppliedProposalLifecycleEntries(
   return Object.fromEntries(
     Object.entries(entries).filter(
       ([, entry]) =>
-        (entry.status === 'applied' || entry.status === 'dismissed') &&
-        (entry.completedAt ?? 0) >= cutoff,
+        (entry.status === 'applied' || entry.status === 'dismissed' || !!entry.result?.transfer) &&
+        (entry.completedAt ?? entry.startedAt ?? 0) >= cutoff,
     ),
   );
 }
@@ -109,7 +117,13 @@ proposalLifecycleReducer.with(
     }
     return {
       ...state,
-      [proposalId]: { status: 'applying', startedAt, lastAction: 'apply' },
+      [proposalId]: {
+        ...current,
+        status: 'applying',
+        error: undefined,
+        startedAt,
+        lastAction: 'apply',
+      },
     };
   },
 );
@@ -221,5 +235,26 @@ proposalLifecycleReducer.with(
         lastAction: 'dismiss' as const,
       },
     };
+  },
+);
+
+proposalLifecycleReducer.with(
+  proposalTransferCheckpoint,
+  (state, { payload: [{ proposalId, transfer }] }) => ({
+    ...state,
+    [proposalId]: {
+      ...state[proposalId],
+      result: transfer ? { transfer } : undefined,
+      transferProgress: undefined,
+    },
+  }),
+);
+
+proposalLifecycleReducer.with(
+  proposalTransferProgress,
+  (state, { payload: [{ proposalId, phase }] }) => {
+    const entry = state[proposalId];
+    if (entry?.status !== 'applying' || !entry.result?.transfer) return state;
+    return { ...state, [proposalId]: { ...entry, transferProgress: phase } };
   },
 );

@@ -398,3 +398,148 @@ describe('persistence', () => {
     vi.useRealTimers();
   });
 });
+
+describe('workspace transfer proposals', () => {
+  const detail: ProposalActionDetail = {
+    proposal: {
+      kind: 'workspace-transfer',
+      applyToolCallId: 'transfer-p',
+      payload: {
+        operation: 'workspace.transfer',
+        workspaceId: 'ws-1',
+        sourceWorkspacePath: '/repo/ws-1',
+      },
+      preview: { title: 'Transfer project' },
+    },
+    editedFields: { sourceConnectionId: 'source', destinationConnectionId: 'target' },
+    selectedBulkItemIds: [],
+  };
+  const action = () =>
+    applyProposalRequested({ proposalId: 'transfer-p', kind: 'workspace-transfer', detail });
+  async function harness() {
+    const { createCollection } =
+      await import('@augmentcode/themis/utils/collections/collection-utils');
+    const { proposalLifecycleReducer } = await import('../proposal-lifecycle-slice');
+    let lifecycle: import('../proposal-lifecycle-types').ProposalLifecycleState = {};
+    const state = () => ({
+      ...emptyState(),
+      proposalLifecycle: lifecycle,
+      connections: {
+        windowBackendId: 'source',
+        connections: createCollection('id', [
+          { id: 'source', label: 'Source' },
+          { id: 'target', label: 'Target' },
+        ]),
+      },
+    });
+    return {
+      run: () =>
+        runSaga(
+          {
+            dispatch: (a: { type: string }) => {
+              lifecycle = proposalLifecycleReducer(lifecycle, a);
+            },
+            getState: state,
+          },
+          handleApplyProposal,
+          action(),
+        ).toPromise(),
+      get entry() {
+        return lifecycle['transfer-p'];
+      },
+    };
+  }
+  it('starts only on approval and only retries finalize after import succeeds', async () => {
+    const invoke = vi
+      .fn()
+      .mockResolvedValueOnce({ success: true })
+      .mockResolvedValueOnce({ success: false, error: 'offline' })
+      .mockResolvedValueOnce({ success: true });
+    const previousWindow = globalThis.window;
+    vi.stubGlobal('window', { electronAPI: { invoke } });
+    try {
+      const h = await harness();
+      expect(invoke).not.toHaveBeenCalled();
+      await h.run();
+      expect(h.entry.status).toBe('failed');
+      expect(h.entry.result?.transfer?.phase).toBe('imported');
+      await h.run();
+      expect(h.entry.status).toBe('applied');
+      expect(invoke.mock.calls).toEqual([
+        [
+          'transfer:start',
+          {
+            proposalId: 'transfer-p',
+            workspaceId: 'ws-1',
+            sourceWorkspacePath: '/repo/ws-1',
+            sourceConnectionId: 'source',
+            destination: { kind: 'server', connectionId: 'target' },
+          },
+        ],
+        [
+          'transfer:finalize',
+          { proposalId: 'transfer-p', archiveSource: true, restartAgents: false },
+        ],
+        [
+          'transfer:finalize',
+          { proposalId: 'transfer-p', archiveSource: true, restartAgents: false },
+        ],
+      ]);
+      await h.run();
+      expect(invoke).toHaveBeenCalledTimes(3);
+      expect(mocks.setJSON).toHaveBeenCalled();
+    } finally {
+      vi.stubGlobal('window', previousWindow);
+    }
+  });
+  it('ignores simultaneous approvals while the relay is running', async () => {
+    let finish!: (value: { success: boolean }) => void;
+    const invoke = vi
+      .fn()
+      .mockImplementationOnce(() => new Promise((resolve) => (finish = resolve)))
+      .mockResolvedValue({ success: true });
+    const previousWindow = globalThis.window;
+    vi.stubGlobal('window', { electronAPI: { invoke } });
+    try {
+      const h = await harness();
+      const first = h.run();
+      await h.run();
+      expect(invoke).toHaveBeenCalledTimes(1);
+      finish({ success: true });
+      await first;
+      expect(invoke).toHaveBeenCalledTimes(2);
+    } finally {
+      vi.stubGlobal('window', previousWindow);
+    }
+  });
+  it('rejects a browser bridge with an actionable desktop error', async () => {
+    const invoke = vi.fn();
+    const previousWindow = globalThis.window;
+    vi.stubGlobal('window', { electronAPI: { invoke, versions: { electron: '0.0.0-browser' } } });
+    try {
+      const h = await harness();
+      await h.run();
+      expect(h.entry.status).toBe('failed');
+      expect(h.entry.error).toContain('desktop');
+      expect(invoke).not.toHaveBeenCalled();
+    } finally {
+      vi.stubGlobal('window', previousWindow);
+    }
+  });
+  it('restores an interrupted checkpoint as retryable instead of pending approval', () => {
+    const result = {
+      transfer: {
+        workspaceId: 'ws-1',
+        sourceWorkspacePath: '/repo/ws-1',
+        sourceConnectionId: 'source',
+        destinationConnectionId: 'target',
+        phase: 'imported',
+      },
+    };
+    expect(
+      validateProposalLifecycleEntries({
+        entries: { p: { status: 'applying', startedAt: 10, lastAction: 'apply', result } },
+      }).p,
+    ).toMatchObject({ status: 'failed', result, lastAction: 'apply' });
+  });
+});
