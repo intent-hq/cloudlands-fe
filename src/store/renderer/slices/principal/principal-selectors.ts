@@ -1,0 +1,156 @@
+import { store } from '../../store';
+import type { AppSelector } from '../../types';
+import type { HostRole, PrincipalSnapshot } from '$shared/types/principal';
+import type { PrincipalState } from './principal-types';
+import { selectLabsMultiplayerEnabled } from '../user-preferences/user-preferences-selectors';
+
+export const selectPrincipalState: AppSelector<PrincipalState> = store.createSelector(
+  (state) => state.principal,
+);
+
+/** The boot-time local backend default is not a binding. Wait for the actual window id. */
+export const selectPrincipalConnectionContext: AppSelector<string | null> = store.createSelector(
+  (state): string | null => {
+    if (
+      !state.connections?.hasReceivedList ||
+      state.daemonHealth?.health === 'down' ||
+      !state.workspaceEvents?.subscriptionGeneration ||
+      state.connections.authRejected?.id === state.connections.windowBackendId
+    )
+      return null;
+    return JSON.stringify([
+      state.connections.windowBackendId,
+      state.daemonHealth?.connectionGeneration,
+      state.workspaceEvents.subscriptionGeneration,
+    ]);
+  },
+);
+
+export const selectPrincipalSnapshot: AppSelector<PrincipalSnapshot | null> = store.createSelector(
+  (state) => {
+    const principal = state.principal;
+    return principal?.status === 'ready' &&
+      principal.context !== null &&
+      principal.context === selectPrincipalConnectionContext.select(state)
+      ? principal.snapshot
+      : null;
+  },
+);
+
+/** Bind workspace grants to the actor and admission that produced the read. */
+export const selectPrincipalAdmissionContext: AppSelector<string | null> = store.createSelector(
+  (state): string | null => {
+    const snapshot = selectPrincipalSnapshot.select(state);
+    return snapshot
+      ? JSON.stringify([
+          state.principal.context,
+          state.principal.invalidation,
+          snapshot.principal.id,
+        ])
+      : null;
+  },
+);
+
+/** Truth about the connected host, independent of saved sessions, profiles, repos and labs. */
+export const selectHostRole: AppSelector<HostRole | null> = store.createSelector(
+  (state): HostRole | null => {
+    const snapshot = selectPrincipalSnapshot.select(state);
+    if (!snapshot) return null;
+    return snapshot.capabilities.hostMembership
+      ? (snapshot.principal.hostRole ?? null)
+      : snapshot.principal.isAdministrator
+        ? 'owner'
+        : 'guest';
+  },
+);
+
+export const selectCanAdministerHost: AppSelector<boolean> = store.createSelector(
+  (state) => selectHostRole.select(state) === 'owner',
+);
+
+export const selectPrincipalRevoked: AppSelector<boolean> = store.createSelector(
+  (state) =>
+    state.principal?.status === 'revoked' &&
+    state.principal.context !== null &&
+    state.principal.context === selectPrincipalConnectionContext.select(state),
+);
+
+/** A confirmed denial can redirect; loading or malformed authority must preserve intent. */
+export const selectHostAdministrationDenied: AppSelector<boolean> = store.createSelector(
+  (state) => {
+    const role = selectHostRole.select(state);
+    return role === 'member' || role === 'guest' || selectPrincipalRevoked.select(state);
+  },
+);
+
+/** Owner-only reads are bound to the current admitted connection. */
+export const selectHostAdministrationContext: AppSelector<string | null> = store.createSelector(
+  (state) =>
+    selectCanAdministerHost.select(state) ? selectPrincipalConnectionContext.select(state) : null,
+);
+
+export const selectCanCreateWorkspace: AppSelector<boolean> = store.createSelector((state) => {
+  const role = selectHostRole.select(state);
+  return role === 'owner' || role === 'member';
+});
+
+/** Guest presentation follows the current admission, never the saved connection category. */
+export const selectIsWorkspaceGuest: AppSelector<boolean> = store.createSelector(
+  (state) => selectHostRole.select(state) === 'guest',
+);
+
+/** Visibility only. Re-enabling Multiplayer requires a fresh read, without changing the person's role. */
+export const selectCollaborationReady: AppSelector<boolean> = store.createSelector(
+  (state) =>
+    selectLabsMultiplayerEnabled.select(state) === true &&
+    !!selectPrincipalSnapshot.select(state) &&
+    state.principal.refreshedPresentationVersion === state.principal.presentationVersion,
+);
+
+/** Ordinary owner creation remains available when experimental collaboration is hidden. */
+export const selectWorkspaceCreationVisible: AppSelector<boolean> = store.createSelector(
+  (state) =>
+    selectCanCreateWorkspace.select(state) &&
+    (selectCanAdministerHost.select(state) || selectCollaborationReady.select(state)),
+);
+
+/** Fence asynchronous UI work to the same admission and presentation lifetime. */
+export const selectWorkspaceAccessContext: AppSelector<string | null> = store.createSelector(
+  (state): string | null => {
+    if (!selectCanAdministerHost.select(state) && !selectCollaborationReady.select(state))
+      return null;
+    const { context, invalidation, presentationVersion } = state.principal;
+    return JSON.stringify([
+      context,
+      invalidation,
+      selectCanAdministerHost.select(state) ? null : presentationVersion,
+    ]);
+  },
+);
+
+/** Creation requires host-wide eligibility; scoped workspace rights use their own grant. */
+export const selectWorkspaceControlContext: AppSelector<string | null> = store.createSelector(
+  (state): string | null =>
+    selectWorkspaceCreationVisible.select(state)
+      ? selectWorkspaceAccessContext.select(state)
+      : null,
+);
+
+export const selectCollaborationCapabilities: AppSelector<{
+  hostMembership: boolean;
+  manageHostMembers: boolean;
+  personalPairing: boolean;
+  authenticatedDevices: boolean;
+  collaborationIdentity: boolean;
+}> = store.createSelector((state) => {
+  const ready = selectCollaborationReady.select(state);
+  const capabilities = selectPrincipalSnapshot.select(state)?.capabilities;
+  return {
+    hostMembership: ready && capabilities?.hostMembership === true,
+    manageHostMembers:
+      ready && capabilities?.hostMembership === true && selectCanAdministerHost.select(state),
+    personalPairing: ready && capabilities?.personalPairing === true,
+    authenticatedDevices: ready && capabilities?.authenticatedDevices === true,
+    collaborationIdentity: ready && capabilities?.collaborationIdentity === true,
+  };
+});

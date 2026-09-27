@@ -6,6 +6,7 @@ import {
 } from '$store/renderer/slices/panel-layout/panel-layout-slice';
 import { removeScript, setScriptsData } from '$store/renderer/slices/scripts/scripts-slice';
 import { addTerminal, removeTerminal } from '$store/renderer/slices/terminals/terminals-slice';
+import { installPreviewPrincipal } from '../../../test/fixtures/principal-state';
 
 export const LIST_LABELS_WORKSPACE = 'list-labels-preview';
 
@@ -14,6 +15,7 @@ export function setupListLabelsPreview(initializeStore = true) {
   const dispose = initializeStore
     ? startRootStoreLifecycle(store, { startSagas: () => [] })
     : () => {};
+  const restorePrincipal = installPreviewPrincipal();
   store.dispatch(
     initializeLayout(LIST_LABELS_WORKSPACE, {
       root: { type: 'panel', panelId: 'labels-panel' },
@@ -47,6 +49,7 @@ export function setupListLabelsPreview(initializeStore = true) {
     store.dispatch(removeScript(LIST_LABELS_WORKSPACE, 'fixture-test'));
     store.dispatch(removeTerminal(LIST_LABELS_WORKSPACE, 'fixture-terminal'));
     store.dispatch(clearPanelLayout(LIST_LABELS_WORKSPACE));
+    restorePrincipal();
     dispose();
   };
 }

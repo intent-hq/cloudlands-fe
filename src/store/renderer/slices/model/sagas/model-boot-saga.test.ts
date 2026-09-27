@@ -1,3 +1,4 @@
+import { withLegacyPrincipal } from '../../../../../test/fixtures/principal-state';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { runSaga } from 'redux-saga';
 
@@ -47,7 +48,7 @@ describe('loadModelsOnBootWorker', () => {
     mocks.list.mockResolvedValue(MODELS);
     const dispatch = vi.fn();
     await runSaga(
-      { dispatch, getState: () => ({ model: { defaultProviderId: '' } }) },
+      { dispatch, getState: () => withLegacyPrincipal({ model: { defaultProviderId: '' } }) },
       loadModelsOnBootWorker,
     ).toPromise();
 
@@ -65,7 +66,7 @@ describe('loadModelsOnBootWorker', () => {
     mocks.getProviderSettings.mockResolvedValue(null);
     const dispatch = vi.fn();
     const loaded = await runSaga(
-      { dispatch, getState: () => ({ model: { defaultProviderId: '' } }) },
+      { dispatch, getState: () => withLegacyPrincipal({ model: { defaultProviderId: '' } }) },
       loadModelsOnBootWorker,
     ).toPromise();
 
@@ -75,7 +76,7 @@ describe('loadModelsOnBootWorker', () => {
   });
 
   it('drops the response when the active provider changed while the list was in flight', async () => {
-    const current = { model: { defaultProviderId: '' } };
+    const current = withLegacyPrincipal({ model: { defaultProviderId: '' } });
     mocks.getProviderSettings.mockResolvedValue({
       activeProviderId: 'codex',
       enabledProviders: {},

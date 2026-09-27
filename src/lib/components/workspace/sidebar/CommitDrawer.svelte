@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { selectWorkspaceHostOperationContext } from '$store/renderer/slices/workspace/workspace-selectors';
   /**
    * CommitDrawer - Commit message drawer
    * Contains the commit form and auto-fill panel.
@@ -48,6 +49,7 @@
   }: Props = $props();
 
   const workspaceIdStore = writable('');
+  const hostOperationContext$ = selectWorkspaceHostOperationContext(workspaceIdStore);
   $effect(() => {
     workspaceIdStore.set(workspaceId);
   });
@@ -59,6 +61,7 @@
   const commitAgentId = $derived($commitExecState$.agentId);
 
   async function handleAutoFill() {
+    if (!selectWorkspaceHostOperationContext.select(appStore.state, workspaceId)) return;
     if (isGenerating) {
       appStore.dispatch(cancelExecution(workspaceId, 'commit'));
       return;
@@ -200,15 +203,17 @@
         </div>
       {:else}
         <div class="flex items-center">
-          <Button
-            variant="outline"
-            size="xs"
-            class={commitAgentId ? 'rounded-r-none border-r-0' : ''}
-            onclick={handleAutoFill}
-          >
-            <Fa icon={faRobot} size="xs" class="opacity-50" />
-            <span>{m.workspace_prCreator_autoFill_label()}</span>
-          </Button>
+          {#if $hostOperationContext$}
+            <Button
+              variant="outline"
+              size="xs"
+              class={commitAgentId ? 'rounded-r-none border-r-0' : ''}
+              onclick={handleAutoFill}
+            >
+              <Fa icon={faRobot} size="xs" class="opacity-50" />
+              <span>{m.workspace_prCreator_autoFill_label()}</span>
+            </Button>
+          {/if}
           {#if commitAgentId}
             <Button
               variant="outline"

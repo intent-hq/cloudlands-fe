@@ -1,3 +1,10 @@
+import {
+  admitHostExecutionFixture,
+  HOST_EXECUTION_FIXTURE,
+} from '../../../test/fixtures/host-execution-state';
+import { connectionsListReceived } from '../slices/connections/connections-slice';
+import { store as appStore } from '$store/renderer/store';
+import { admitLegacyPrincipal } from '../../../test/fixtures/principal-state';
 /**
  * Wire-contract tests for the workspaces seeder's legacy IPC bridges.
  *
@@ -9,7 +16,7 @@
  * daemon-direct cut-over — `WorkspaceClient.create` now calls
  * `appClient.workspaces.create` directly (see workspace.client.test.ts).
  */
-import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { StreamingStore } from '@augmentcode/themis/streaming-store';
 import { reducers } from '../reducer';
 
@@ -79,14 +86,67 @@ interface CommandResponse<T> {
 }
 
 describe('workspaces-seeder legacy IPC bridges', () => {
+  let dispose: () => void;
+  beforeEach(() => {
+    dispose = appStore.init();
+    admitLegacyPrincipal();
+  });
   beforeAll(async () => {
     // Importing the seeder runs its `registerMockIpcHandler` side effects.
     await import('./workspaces-seeder');
   });
 
   afterEach(() => {
+    dispose();
     __resetSettingsReadCacheForTests();
     vi.clearAllMocks();
+  });
+
+  it('members read host repositories and keep picked recents without reading or writing owner settings', async () => {
+    admitHostExecutionFixture('member', HOST_EXECUTION_FIXTURE);
+    const repos = [{ path: '/host/project', name: 'project' }];
+    mockedRequest.mockImplementation(async (method) => {
+      if (method === 'repo.list') return { repos };
+      throw new Error(`Unexpected member request: ${method}`);
+    });
+    expect(await mockInvoke(WORKSPACE_CHANNELS.GET_RECENT_REPOSITORIES, {})).toEqual({
+      success: true,
+      data: repos,
+    });
+    expect(
+      await mockInvoke(WORKSPACE_CHANNELS.ADD_RECENT_REPOSITORY, {
+        repository: 'team/project',
+        githubUrl: 'https://github.com/team/project',
+      }),
+    ).toEqual({ success: true });
+    expect(mockedRequest.mock.calls.map(([method]) => method)).toEqual(['repo.list']);
+  });
+
+  it('drops old-host repositories and never writes a pending owner recent to the new host', async () => {
+    const repoRead = deferred<unknown>();
+    mockedRequest.mockReturnValueOnce(repoRead.promise);
+    const recents = mockInvoke(WORKSPACE_CHANNELS.GET_RECENT_REPOSITORIES, {});
+    appStore.dispatch(
+      connectionsListReceived({ connections: [], activeId: 'host-b', windowBackendId: 'host-b' }),
+    );
+    admitLegacyPrincipal();
+    repoRead.resolve({ repos: [{ path: '/old-host/project', name: 'old' }] });
+    expect(await recents).toEqual({ success: true, data: [] });
+    expect(mockedRequest.mock.calls.map(([method]) => method)).toEqual(['repo.list']);
+
+    mockedRequest.mockClear();
+    const settingRead = deferred<unknown>();
+    mockedRequest.mockReturnValueOnce(settingRead.promise);
+    const adding = mockInvoke(WORKSPACE_CHANNELS.ADD_RECENT_REPOSITORY, {
+      repository: 'team/project',
+    });
+    appStore.dispatch(
+      connectionsListReceived({ connections: [], activeId: 'host-c', windowBackendId: 'host-c' }),
+    );
+    admitLegacyPrincipal();
+    settingRead.resolve(reposSetting([]));
+    expect(await adding).toEqual({ success: true });
+    expect(mockedRequest.mock.calls.map(([method]) => method)).toEqual(['settings.get']);
   });
 
   describe('workspace:list → daemon workspace.list', () => {

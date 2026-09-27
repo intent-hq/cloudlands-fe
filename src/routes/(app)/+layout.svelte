@@ -91,7 +91,7 @@
   import {
     selectHidesAgentLifecycleActions,
     selectIsCollaboratorOnlyClient,
-    selectIsWorkspaceCollaborator,
+    selectHidesWorkspaceExecutionActions,
     selectWorkspaceHasLoaded,
     selectWorkspaceItems,
     selectWorkspaceLoading,
@@ -160,8 +160,10 @@
     installInviteConsentService,
     respondToInviteConsent,
   } from '$features/invite-consent/invite-consent-service';
+  import CollaborationSignInHost from '$features/collaboration-auth/renderer/CollaborationSignInHost.svelte';
   import InviteConsentModal from '$lib/components/modals/InviteConsentModal.svelte';
   import type { InviteConsentShowPayload } from '$shared/ipc/invite-consent';
+  import { selectWorkspaceCreationVisible } from '$store/renderer/slices/principal/principal-selectors';
   import InviteNoticeHost from '$features/invite-notice/InviteNoticeHost.svelte';
   import InviteProgressHost from '$features/invite-progress/InviteProgressHost.svelte';
   import type { InterruptedAgent } from '$lib/client/app-client';
@@ -179,6 +181,7 @@
   const workspaceHasLoaded = selectWorkspaceHasLoaded();
   // Workspace creation (repo picker) is administrator-only (multiplayer w3).
   const isCollaboratorOnlyClient$ = selectIsCollaboratorOnlyClient();
+  const canCreateWorkspace$ = selectWorkspaceCreationVisible();
   const backendSetupGate = selectBackendSetupGate();
   const bootGateResolved = selectBootRouteGateResolved();
   const currentWorkspaceTabId = selectCurrentWorkspaceTabId();
@@ -529,7 +532,10 @@
       store: appStore,
       getCurrentPath: () => window.location.pathname,
       navigate: (path) => goto(path),
-      openNewWorkspace: () => appStore.dispatch(setShowCreateModal(true)),
+      openNewWorkspace: () => {
+        if (selectWorkspaceCreationVisible.select(appStore.state))
+          appStore.dispatch(setShowCreateModal(true));
+      },
       onCreateAgent: (workspaceId) => {
         // `agent.create` is refused (-32003) for a collaborator connection.
         if (selectHidesAgentLifecycleActions.select(appStore.state, workspaceId)) return;
@@ -674,15 +680,15 @@
     const toggleTerminal = () => {
       // Collaborators (multiplayer w3) are refused on terminal methods: no root
       // overlay for a collaborator-only client, none for a collaborator workspace.
-      if ($isCollaboratorOnlyClient$) return;
       const isOnWorkspacePage = $page.url.pathname.startsWith('/workspace/');
+      if (!isOnWorkspacePage && $isCollaboratorOnlyClient$) return;
       const terminalContextId = resolveTerminalShortcutWorkspaceId({
         isOnWorkspacePage,
         useSelectedWorkspace: false,
         selectedWorkspaceId: $currentWorkspaceTabId,
         routeWorkspaceId: currentWorkspaceId,
       });
-      if (selectIsWorkspaceCollaborator.select(appStore.state, terminalContextId)) return;
+      if (selectHidesWorkspaceExecutionActions.select(appStore.state, terminalContextId)) return;
       appStore.dispatch(toggleTerminalOverlay(terminalContextId));
     };
     register({
@@ -1095,7 +1101,7 @@
 
   <!-- Create Workspace Modal (opened from sidebar nav + button) -->
   <NewSpaceModal
-    open={$showCreateModal$ && !$isCollaboratorOnlyClient$}
+    open={$showCreateModal$ && $canCreateWorkspace$}
     onClose={() => appStore.dispatch(setShowCreateModal(false))}
   />
 
@@ -1157,6 +1163,7 @@
   />
 
   <!-- Invite Consent Modal (shown when main runs an intent://invite GitHub identity check) -->
+  <CollaborationSignInHost />
   <InviteConsentModal
     bind:open={showInviteConsentModal}
     payload={inviteConsentPayload}

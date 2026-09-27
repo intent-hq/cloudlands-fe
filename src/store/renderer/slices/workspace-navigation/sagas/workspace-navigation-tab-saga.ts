@@ -17,7 +17,7 @@ import {
 } from '../../panel-layout/panel-layout-slice';
 import { selectFocusedPanelId } from '../../panel-layout/panel-layout-selectors';
 import type { PanelTab } from '../../panel-layout/panel-layout-types';
-import { selectIsWorkspaceCollaborator } from '../../workspace/workspace-selectors';
+import { selectHidesWorkspaceExecutionActions } from '../../workspace/workspace-selectors';
 import { selectNoteById } from '../../workspace-notes/workspace-notes-selectors';
 import {
   chatChangesDedupId,
@@ -161,7 +161,7 @@ function* openBrowser(action: ReturnType<typeof openWorkspaceBrowser>): SagaGene
   if (!workspaceId || !url) return;
   // Browser tabs are owner-only (multiplayer w3): every entry point funnels
   // here, so a collaborator's request is dropped rather than refused later.
-  if (yield* selectIsWorkspaceCollaborator.effect(workspaceId)) {
+  if (yield* selectHidesWorkspaceExecutionActions.effect(workspaceId)) {
     logger.debug(`Browser tabs are owner-only for ${workspaceId}; ignoring open`);
     return;
   }

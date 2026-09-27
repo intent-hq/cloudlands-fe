@@ -14,6 +14,7 @@ import { PullRequestStatus } from '$shared/types';
 import { createLogger } from '$lib/utils/client-logger';
 import { m } from '$shared/paraglide/messages.js';
 import { updateWorkspaceEntity } from '$store/renderer/slices/workspace/workspace-slice';
+import { selectWorkspaceHostOperationContext } from '$store/renderer/slices/workspace/workspace-selectors';
 import { store as appStore } from '$store/renderer/store';
 
 const logger = createLogger('BackgroundGitActionsService');
@@ -98,6 +99,10 @@ class BackgroundGitActionsService {
    */
   async createPR(params: CreatePRParams): Promise<CreatePRResult> {
     const { workspaceId, prTitle, prDescription, targetBranch, hasStaged } = params;
+    const context = selectWorkspaceHostOperationContext.select(appStore.state, workspaceId);
+    if (!context) return { success: false };
+    const isCurrent = () =>
+      selectWorkspaceHostOperationContext.select(appStore.state, workspaceId) === context;
 
     if (!prTitle.trim()) {
       return { success: false, error: m.acceptChanges_backgroundGit_prTitleRequired_error() };
@@ -111,6 +116,7 @@ class BackgroundGitActionsService {
           'commit',
           { commitMessage: prTitle.trim() },
         );
+        if (!isCurrent()) return { success: false };
         if (!commitResult.success) {
           return {
             success: false,
@@ -126,6 +132,7 @@ class BackgroundGitActionsService {
         targetBranch,
       });
 
+      if (!isCurrent()) return { success: false };
       if (result.success) {
         // Update local workspace store with PR info from result
         if (result.result?.prNumber && result.result?.prHtmlUrl) {
@@ -166,6 +173,7 @@ class BackgroundGitActionsService {
         };
       }
     } catch (error) {
+      if (!isCurrent()) return { success: false };
       const message =
         error instanceof Error
           ? error.message

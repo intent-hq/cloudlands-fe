@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { selectWorkspaceHostOperationContext } from '$store/renderer/slices/workspace/workspace-selectors';
   /**
    * PostMergeActions - Post-merge reset and archive options
    * Shown when workspace commits have been merged to trunk.
@@ -55,9 +56,12 @@
   const gitOps$ = selectGitOperationFlags(workspaceIdStore);
   const isResettingToTrunk = $derived($gitOps$.isResettingToTrunk);
 
-  async function persistWorkspaceChanges(changes: Record<string, unknown>) {
+  async function persistWorkspaceChanges(
+    changes: Record<string, unknown>,
+    isCurrent: () => boolean,
+  ) {
     const result = await workspaceClient.update({ id: workspaceId as WorkspaceId, ...changes });
-    if (result.ok) {
+    if (result.ok && isCurrent()) {
       appStore.dispatch(setWorkspaceEntity(result.data));
     }
     return result;
@@ -71,6 +75,16 @@
 
   // Start new workspace with same repo after merge, archiving the current one
   async function handleStartNewSpace() {
+    const operationWorkspaceId = workspaceId;
+    const operationContext = selectWorkspaceHostOperationContext.select(
+      appStore.state,
+      operationWorkspaceId,
+    );
+    if (!operationContext) return;
+    const isCurrentOperation = () =>
+      workspaceId === operationWorkspaceId &&
+      selectWorkspaceHostOperationContext.select(appStore.state, operationWorkspaceId) ===
+        operationContext;
     const repo = $workspace?.repositoryPath;
     const worktree = $workspace?.worktreePath;
     const currentWorkspaceId = $workspace?.id;
@@ -78,6 +92,7 @@
     // Archive the current workspace first
     if (currentWorkspaceId) {
       const archiveResult = await workspaceClient.archive(currentWorkspaceId);
+      if (!isCurrentOperation()) return;
       if (!archiveResult.ok) {
         notify.error(m.workspace_postMerge_archiveFailed_error());
         return;
@@ -91,6 +106,7 @@
     // repositoryPath === worktreePath) and daemon-managed paths are not
     // copyable local sources, so prefilling them would open the Copy-local
     // tab against a daemon-owned directory.
+    if (!isCurrentOperation()) return;
     if (repo && repo !== worktree && !isDaemonManagedRepoPath(repo)) {
       sessionStorage.setItem('workspace-prefill', JSON.stringify({ repoPath: repo }));
     }
@@ -98,26 +114,44 @@
     // Open the create workspace modal
     const { setShowCreateModal } =
       await import('$store/renderer/slices/sidebar-nav/sidebar-nav-slice');
+    if (!isCurrentOperation()) return;
     appStore.dispatch(setShowCreateModal(true));
   }
 
   // Reset workspace branch to trunk HEAD and continue working
   async function handleResetAndContinue() {
+    const operationWorkspaceId = workspaceId;
+    const operationContext = selectWorkspaceHostOperationContext.select(
+      appStore.state,
+      operationWorkspaceId,
+    );
+    if (!operationContext) return;
+    const isCurrentOperation = () =>
+      workspaceId === operationWorkspaceId &&
+      selectWorkspaceHostOperationContext.select(appStore.state, operationWorkspaceId) ===
+        operationContext;
     if (!workspaceId || !$workspace) return;
 
     const capturedWsId = workspaceId;
     appStore.dispatch(setGitOperationFlag(workspaceId, 'isResettingToTrunk', true));
     try {
+      if (!isCurrentOperation()) return;
       const result = await AcceptChangesClient.resetToTrunk(workspaceId as WorkspaceId);
 
       // If workspace changed during the async call, discard stale updates
       if (workspaceId !== capturedWsId) return;
 
+      if (!isCurrentOperation()) return;
       if (result.success && result.result?.newHeadSha) {
         // Reset succeeded - now try UI follow-up (non-fatal)
         try {
           // Update baseCommitSha - this is the critical step that "resets" the sidebar boundary
-          await persistWorkspaceChanges({ baseCommitSha: result.result.newHeadSha });
+          if (!isCurrentOperation()) return;
+          await persistWorkspaceChanges(
+            { baseCommitSha: result.result.newHeadSha },
+            isCurrentOperation,
+          );
+          if (!isCurrentOperation()) return;
 
           // Clear older commits pagination cache which may reference commits from old history
           appStore.dispatch(ftClearOlderCommits(workspaceId));
@@ -128,6 +162,7 @@
             appStore.dispatch(refreshRequested(workspaceId, true)),
           ]);
 
+          if (!isCurrentOperation()) return;
           // Also refresh aheadOfTrunk and isContentMergedToTrunk to ensure button hides itself
           appStore.dispatch(refreshAcceptChangesStatus(workspaceId));
 
@@ -141,6 +176,7 @@
 
           notify.success(m.workspace_postMerge_resetSuccess_label());
         } catch (uiError) {
+          if (!isCurrentOperation()) return;
           console.error('Failed to refresh UI after workspace reset:', uiError);
           dispatchPostMergeUpdate({
             isMergedToTrunk: false,
@@ -153,8 +189,9 @@
 
         // If workspace was archived, unarchive it so the user can continue working
         // Fire-and-forget: don't block the reset UX for a best-effort unarchive
-        if ($workspace.archived) {
+        if (isCurrentOperation() && $workspace.archived) {
           workspaceClient.unarchive($workspace.id).then((unarchiveResult) => {
+            if (!isCurrentOperation()) return;
             if (!unarchiveResult.ok) {
               console.error('Failed to unarchive workspace after reset:', unarchiveResult.error);
             } else {
@@ -166,6 +203,7 @@
         notify.error(result.error || m.workspace_postMerge_resetFailed_error());
       }
     } catch {
+      if (!isCurrentOperation()) return;
       notify.error(m.workspace_postMerge_resetFailed_error());
     } finally {
       appStore.dispatch(setGitOperationFlag(workspaceId, 'isResettingToTrunk', false));

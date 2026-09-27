@@ -62,6 +62,7 @@ const electronState = vi.hoisted(() => ({
 /** Steerable per-method RPC responder for the fake client (tests override). */
 const rpc = vi.hoisted(() => ({
   handler: (async () => ({})) as (method: string) => Promise<unknown>,
+  ownerIdentityAvailable: true,
 }));
 
 vi.mock('electron', () => ({
@@ -127,7 +128,15 @@ vi.mock('../json-rpc-client', () => {
     }
     start(): void {}
     dispose(): void {}
-    request = vi.fn(async (method: string) => rpc.handler(method));
+    request = vi.fn(async (method: string) => {
+      // Controlled legacy-owner wire responses exercise the real import classifier.
+      if (method === 'client.hello') return { server: { capabilities: {} } };
+      if (method === 'principal.me')
+        return rpc.ownerIdentityAvailable
+          ? { id: 'owner', login: null, displayName: null, avatarUrl: null, isAdministrator: true }
+          : {};
+      return rpc.handler(method);
+    });
     registerMethod(): () => void {
       return () => {};
     }
@@ -197,7 +206,7 @@ const REMOTE_INPUT = {
   port: 8443,
   token: 'secret-token',
 };
-const FINGERPRINT = 'AA:BB:CC:DD';
+const FINGERPRINT = Array(32).fill('AB').join(':');
 
 /** Add a live renderer-window double; returns its `send` spy. */
 function openWindow(backendId = 'local'): ReturnType<typeof vi.fn> {
@@ -262,6 +271,7 @@ beforeEach(async () => {
   electronState.handlers = new Map();
   electronState.decryptShouldFail = false;
   rpc.handler = async () => ({});
+  rpc.ownerIdentityAvailable = true;
   vi.resetModules();
   vi.clearAllMocks();
   mockCaptureFingerprint.mockResolvedValue({
@@ -283,6 +293,18 @@ afterEach(async () => {
 // ---------------------------------------------------------------------------
 
 describe('multi-backend connect — end-to-end journey', () => {
+  it('refuses an unclassified credential before writing the real owner registry', async () => {
+    rpc.ownerIdentityAvailable = false;
+    const { mod, openOrFocus } = await loadModule();
+    mod.registerBackendHandlers();
+    await expect(
+      invoke('connections:add', { ...REMOTE_INPUT, fingerprint: FINGERPRINT }),
+    ).rejects.toThrow('Personal credential identity unavailable');
+    const store = await import('../connections-store');
+    expect((await store.list()).filter((record) => !record.isLocal)).toEqual([]);
+    expect(openOrFocus).not.toHaveBeenCalled();
+  });
+
   it('opens a remote window without destroying the local window or client', async () => {
     const { mod, openOrFocus } = await loadModule();
     mod.registerBackendHandlers();

@@ -26,6 +26,11 @@ const mockPart = vi.hoisted(() => (marker: string) => async () => {
   };
 });
 
+vi.mock('$store/renderer/slices/principal/principal-selectors', () => ({
+  selectCanAdministerHost: () => readable(!mocks.guestSession),
+  selectIsWorkspaceGuest: () => readable(!!mocks.guestSession),
+  selectWorkspaceCreationVisible: () => readable(!mocks.guestSession),
+}));
 vi.mock('$store/renderer/store', () => ({ store: { state: {}, dispatch: mocks.dispatch } }));
 vi.mock('$lib/utils/client-logger', () => ({
   createLogger: () => ({ debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() }),
@@ -73,7 +78,7 @@ vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => {
     selectActiveWorkspaceId: { select: () => null },
     selectWorkspaceIsEmpty: { select: () => false },
     selectIsNewWorkspaceSession: () => readable(false),
-    selectIsWorkspaceCollaborator: () => readable(false),
+    selectHidesWorkspaceExecutionActions: () => readable(false),
     selectHidesAgentLifecycleActions: () => readable(mocks.hidesAgentLifecycleActions),
   };
 });

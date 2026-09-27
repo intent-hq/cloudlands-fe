@@ -77,6 +77,10 @@ for (const theme of ['light', 'dark'] as const) {
       }
       await expect(root).toBeVisible();
       await waitForMenuFocusReady(root);
+      // Include the file commands loaded by the menu's lazy import in both snapshots.
+      await expect(
+        root.getByRole('menuitem', { name: 'Copy Absolute Path', exact: true }),
+      ).toBeVisible();
       const rootPresentation = await menuPresentation(root);
       expect(parseFloat(rootPresentation.surface.radius)).toBeGreaterThan(0);
       await fontTrigger.focus();

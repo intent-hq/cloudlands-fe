@@ -1,3 +1,4 @@
+import { hostExecutionConnectionChanged } from '../host-execution/host-execution-slice';
 import { createAction } from '@augmentcode/themis/utils/store/create-action';
 import { createReducer } from '@augmentcode/themis/utils/store/create-reducer';
 import { resolveProviderEnabled } from '$shared/provider-catalog';
@@ -156,3 +157,5 @@ providerSettingsReducer.with(loadEnabledProvidersFromStorage, (state, { payload:
     pendingEnablementOverrides: pending,
   };
 });
+
+providerSettingsReducer.with(hostExecutionConnectionChanged, () => initialState);

@@ -1,3 +1,4 @@
+import { admitLegacyPrincipal } from '../../../../../test/fixtures/principal-state';
 import { cleanup, fireEvent, render, screen } from '@testing-library/svelte';
 import { tick } from 'svelte';
 import DefaultAgentModelSettings from '$lib/components/settings/DefaultAgentModelSettings.svelte';
@@ -80,6 +81,7 @@ for (const legacyEmptyKey of [true, false]) {
   describe(`default model durability, empty provider key ${legacyEmptyKey}`, () => {
     it('keeps the selected model after a delayed cross-provider catalog reload and settings hydration', async () => {
       dispose = store.init();
+      admitLegacyPrincipal();
       store.dispatch(
         providerCatalogLoaded({
           providers: ['auggie', 'codex', 'grok', 'opencode', 'pi'].map((id) => ({
@@ -141,9 +143,7 @@ for (const legacyEmptyKey of [true, false]) {
         }
         throw new Error(`Unexpected request ${method}`);
       });
-      tasks.push(
-        runSaga({ channel, dispatch, getState: () => store.state }, settingsHydrationSaga),
-      );
+      cancelSagas.push(store.runSaga(settingsHydrationSaga));
       await Promise.resolve();
       tasks.push(runSaga({ channel, dispatch, getState: () => store.state }, modelSelectionSaga));
       tasks.push(runSaga({ channel, dispatch, getState: () => store.state }, modelReloadSaga));
@@ -189,6 +189,7 @@ for (const legacyEmptyKey of [true, false]) {
 
     it('keeps the persisted Codex default after boot catalog loading', async () => {
       dispose = store.init();
+      admitLegacyPrincipal();
       applySettingsChanges([
         { path: 'model.defaultProvider', value: 'codex' },
         {
@@ -216,6 +217,7 @@ for (const legacyEmptyKey of [true, false]) {
 
 it('keeps a Grok choice made through the real Settings dropdown after the reload returns', async () => {
   dispose = store.init();
+  admitLegacyPrincipal();
   store.dispatch(
     providerCatalogLoaded({
       providers: ['auggie', 'codex', 'grok'].map((id) => ({
@@ -314,6 +316,7 @@ it('keeps a Grok choice made through the real Settings dropdown after the reload
       grok: 'grok4.5',
     });
     store.dispatch(backendReconnected());
+    admitLegacyPrincipal();
     await vi.waitFor(() => expect(request).toHaveBeenCalledWith('settings.list'));
     await tick();
     expect(screen.getByRole('button', { name: /Grok 4.5/ })).toBeTruthy();
@@ -324,6 +327,7 @@ it('keeps a Grok choice made through the real Settings dropdown after the reload
 
 it('rehydrates a fresh renderer from the saved Grok pair before boot catalog loading', async () => {
   dispose = store.init();
+  admitLegacyPrincipal();
   // Serialized shape persisted by the selection path and retained in the
   // independently captured daemon restart evidence. No optimistic state.
   const saved = JSON.stringify([
@@ -385,6 +389,7 @@ it.each([
   ['foreign', { ...auggieCatalog, providerId: 'auggie' }],
 ])('keeps the explicit choice through a %s catalog', async (_name, reply) => {
   dispose = store.init();
+  admitLegacyPrincipal();
   applySettingsChanges([
     { path: 'model.defaultProvider', value: 'grok' },
     { path: 'model.providerDefaults', value: { grok: 'grok4.5', auggie: 'gpt6-astra' } },

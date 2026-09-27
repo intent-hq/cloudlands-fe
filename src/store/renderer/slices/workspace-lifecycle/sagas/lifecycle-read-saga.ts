@@ -11,6 +11,7 @@ import { createLogger } from '$lib/utils/client-logger';
 import type { AgentDelegatedCounts, AgentSession, Workspace } from '$shared/types';
 import { workspaceClient } from '../../workspace/utils/workspace.client';
 import { selectActiveBackendId } from '../../../utils/backend-storage-namespace';
+import { selectPrincipalAdmissionContext } from '../../principal/principal-selectors';
 import { takeEveryFromWindowEvent } from '../../../utils/ipc-channel';
 import { selectCurrentWorkspaceTabId } from '../../tab-state/tab-state-selectors';
 import {
@@ -204,19 +205,30 @@ function scriptsReadContext(action: { type: string; payload: [string, ...unknown
     : context;
 }
 
-function* refreshWorkspaces(): SagaGenerator<void> {
+export function* refreshWorkspaces(): SagaGenerator<void> {
+  const backendId = yield* selectActiveBackendId();
+  const admission = yield* selectPrincipalAdmissionContext.effect();
   const result: Awaited<ReturnType<typeof workspaceClient.list>> = yield* call(
     [workspaceClient, workspaceClient.list],
     { lite: true },
   );
+  if (
+    (yield* selectActiveBackendId()) !== backendId ||
+    (yield* selectPrincipalAdmissionContext.effect()) !== admission
+  )
+    return;
   if (!result.ok) throw new Error(result.error);
-  const backendId = yield* selectActiveBackendId();
   yield* put(replaceWorkspaceList(result.data));
-  yield* put(setWorkspaceHasLoaded(true, backendId));
+  yield* put(setWorkspaceHasLoaded(true, backendId, admission));
   const recentViews: Awaited<ReturnType<typeof appClient.workspaces.recentViews>> = yield* call([
     appClient.workspaces,
     appClient.workspaces.recentViews,
   ]);
+  if (
+    (yield* selectActiveBackendId()) !== backendId ||
+    (yield* selectPrincipalAdmissionContext.effect()) !== admission
+  )
+    return;
   yield* put(loadRecencyData({ lastViewedAt: recentViews }));
 }
 

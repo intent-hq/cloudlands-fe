@@ -1,3 +1,4 @@
+const operationAuthority = vi.hoisted(() => ({ context: 'owner-admission' as string | null }));
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { render, fireEvent, waitFor } from '@testing-library/svelte';
 import type { TrackedChange, CommitInfo } from '$features/file-tracking/types';
@@ -63,6 +64,7 @@ vi.mock('$store/renderer/slices/changes/changes-slice', () => ({
 }));
 
 vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
+  selectWorkspaceHostOperationContext: mocks.selector(() => operationAuthority.context),
   selectWorkspaceById: Object.assign(
     () => ({
       subscribe(run: (v: unknown) => void) {
@@ -212,7 +214,27 @@ warmImport(() => import('./mocks/Fa.svelte'));
 warmImport(() => import('../MergePanel.svelte'));
 
 describe('MergePanel', () => {
+  it.each([null, 'replacement-admission'])(
+    'does not merge after a staged commit outlives its admission: %s',
+    async (next) => {
+      let resolve!: (value: unknown) => void;
+      mockExecute.mockReturnValueOnce(
+        new Promise((done) => {
+          resolve = done;
+        }),
+      );
+      const { component } = await renderMerge({ hasStaged: true, commitMessage: 'Commit first' });
+      component.triggerMerge();
+      await waitFor(() => expect(mockExecute).toHaveBeenCalledTimes(1));
+      operationAuthority.context = next;
+      resolve({ success: true });
+      await new Promise((done) => setTimeout(done, 0));
+      expect(mockExecute).toHaveBeenCalledTimes(1);
+      expect(mockExecute).toHaveBeenCalledWith('ws-1', 'commit', expect.anything());
+    },
+  );
   beforeEach(() => {
+    operationAuthority.context = 'owner-admission';
     mocks.dispatch.mockClear();
     mockExecute.mockClear();
     mockExecute.mockResolvedValue({ success: true, result: { newHeadSha: 'h1' } });

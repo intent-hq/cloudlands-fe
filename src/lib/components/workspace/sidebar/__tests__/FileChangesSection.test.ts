@@ -1,3 +1,4 @@
+const operationAuthority = vi.hoisted(() => ({ context: 'owner-admission' as string | null }));
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { render, fireEvent, waitFor } from '@testing-library/svelte';
 import { ChangeStage, type TrackedChange } from '$features/file-tracking/types';
@@ -220,6 +221,7 @@ async function renderSection(overrides: Partial<Record<string, unknown>> = {}) {
 
 describe('FileChangesSection', () => {
   beforeEach(() => {
+    operationAuthority.context = 'owner-admission';
     mocks.dispatch.mockClear();
     mocks.reduxDispatch.mockClear();
     mocks.openTab.mockClear();
@@ -244,6 +246,57 @@ describe('FileChangesSection', () => {
     const paths = Array.from(rows).map((r) => r.getAttribute('data-file-path'));
     expect(paths).toEqual(expect.arrayContaining(['src/a.ts', 'src/b.ts', 'src/c.ts']));
   });
+
+  it.each(['unchanged', 'reconnect', 'lab-cycle', 'workspace-switch', 'unmount'] as const)(
+    'binds queued group commits to their enqueue lifetime: %s',
+    async (change) => {
+      mocks.unstaged.push(
+        makeChange('src/first.ts', { agentId: 'first', agentName: 'First' }),
+        makeChange('src/second.ts', { agentId: 'second', agentName: 'Second' }),
+      );
+      let finishStage!: (value: { success: boolean }) => void;
+      mocks.stageFiles.mockReturnValueOnce(
+        new Promise((resolve) => {
+          finishStage = resolve;
+        }),
+      );
+      const view = await renderSection();
+      const buttons = view.getAllByTestId('group-commit-button');
+      expect(buttons).toHaveLength(2);
+      await fireEvent.click(buttons[0]);
+      await fireEvent.click(buttons[1]);
+      expect(mocks.stageFiles).toHaveBeenCalledTimes(1);
+      const firstPath = mocks.stageFiles.mock.calls[0][1][0];
+      if (change === 'reconnect') operationAuthority.context = 'new-connection-admission';
+      if (change === 'lab-cycle') {
+        operationAuthority.context = null;
+        await Promise.resolve();
+        operationAuthority.context = 'new-presentation-admission';
+      }
+      if (change === 'workspace-switch') await view.rerender({ workspaceId: 'ws-other' });
+      if (change === 'unmount') view.unmount();
+      finishStage({ success: true });
+      await waitFor(() => {
+        if (change === 'unchanged') expect(mockExecute).toHaveBeenCalledTimes(2);
+        else
+          expect(
+            view.container.querySelectorAll('[data-testid="group-commit-button"]').length,
+          ).toBe(change === 'unmount' ? 0 : 2);
+      });
+      if (change === 'unchanged') {
+        expect(mocks.stageFiles.mock.calls).toEqual([
+          ['ws-1', [firstPath]],
+          ['ws-1', [firstPath === 'src/first.ts' ? 'src/second.ts' : 'src/first.ts']],
+        ]);
+        expect(
+          mockExecute.mock.calls.every(([id, action]) => id === 'ws-1' && action === 'commit'),
+        ).toBe(true);
+      } else {
+        expect(mocks.stageFiles).toHaveBeenCalledTimes(1);
+        expect(mockExecute).not.toHaveBeenCalled();
+      }
+    },
+  );
 
   it('independently collapses and expands file sections', async () => {
     mocks.unstaged.push(makeChange('src/unstaged.ts'));
@@ -446,3 +499,8 @@ describe('FileChangesSection', () => {
     expect(mocks.openTab).not.toHaveBeenCalled();
   });
 });
+
+vi.mock('$store/renderer/slices/workspace/workspace-selectors', async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
+  selectWorkspaceHostOperationContext: mocks.selector(() => operationAuthority.context),
+}));

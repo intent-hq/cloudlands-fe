@@ -1,6 +1,9 @@
 <script lang="ts">
+  import { selectPrincipalConnectionContext } from '$store/renderer/slices/principal/principal-selectors';
   /* eslint-disable max-lines */
-  import { onDestroy, onMount, untrack } from 'svelte';
+  import { selectIsHostMember } from '$store/renderer/slices/host-execution/host-execution-selectors';
+  const hostMember$ = selectIsHostMember();
+  import { onDestroy, onMount, tick, untrack } from 'svelte';
   import { writable } from 'svelte/store';
 
   import { useAgentSession } from '$lib/hooks/useAgentSession.svelte';
@@ -314,6 +317,7 @@
     agentId: string;
     workspaceId: string;
     revision: number;
+    connection: string | null;
   };
   let pendingModelUpdate = $state<ModelChange | null>(null);
   let isApplyingModelUpdate = $state(false);
@@ -652,6 +656,10 @@
     if (epoch === lastSeenClearEpoch) return;
     lastSeenClearEpoch = epoch;
     untrack(() => {
+      pendingModelUpdate = null;
+      agentProviderModels = null;
+      agentProviderError = null;
+      allProviderModels = {};
       lastFetchedProviderIds = '';
       void fetchAllProviderModels($availableEnabledProviderIds$);
       if (usesAgentProviderFetch) {
@@ -861,7 +869,8 @@
       !destroyed &&
       change.revision === modelChangeRevision &&
       change.agentId === agentId &&
-      change.workspaceId === workspaceId
+      change.workspaceId === workspaceId &&
+      change.connection === selectPrincipalConnectionContext.select(appStore.state)
     );
   }
 
@@ -951,6 +960,9 @@
       dropdownValue = currentDropdownValue();
       return;
     }
+    const connection = selectPrincipalConnectionContext.select(appStore.state);
+    const selectionAgentId = agentId;
+    const selectionWorkspaceId = workspaceId;
     const pick = model === undefined ? undefined : (picked ?? resolvePickedTriple(model));
     if (pick && (!hasResolvedProvider(pick.providerId) || !canUseProviderModels(pick.providerId))) {
       dropdownValue = currentDropdownValue();
@@ -976,10 +988,27 @@
       return;
     }
     onModelChange?.(model, pick);
-    if (effectiveLocked || destroyed) return;
-    if (updateGlobalDefault) appStore.dispatch(selectModel(pick.modelId, pick.providerId));
-    if (!updateGlobalStore || !agentId || !workspaceId) return;
-    const change: ModelChange = { pick, previous, agentId, workspaceId, revision };
+    await tick();
+    if (
+      effectiveLocked ||
+      destroyed ||
+      revision !== modelChangeRevision ||
+      connection !== selectPrincipalConnectionContext.select(appStore.state) ||
+      selectionAgentId !== agentId ||
+      selectionWorkspaceId !== workspaceId
+    )
+      return;
+    if (updateGlobalDefault && !$hostMember$)
+      appStore.dispatch(selectModel(pick.modelId, pick.providerId));
+    if (!updateGlobalStore || !selectionAgentId || !selectionWorkspaceId) return;
+    const change: ModelChange = {
+      pick,
+      previous,
+      agentId: selectionAgentId,
+      workspaceId: selectionWorkspaceId,
+      revision,
+      connection,
+    };
     if (deferUpdate) pendingModelUpdate = change;
     else await applyBackendModelUpdate(change);
   }
@@ -1346,6 +1375,7 @@
   let noProviderToastShown = false;
 
   function openProviderSettings() {
+    if ($hostMember$) return;
     dropdownOpen = false;
     void navigateToSettings({ tab: 'accounts', hash: 'providers' }).catch((error: unknown) => {
       logger.error('Failed to open provider settings from model picker', error);
@@ -1356,14 +1386,21 @@
     if (hasNoAvailableProvider) {
       if (!noProviderToastShown) {
         noProviderToastShown = true;
-        notify.error(m.chat_modelPicker_noProviderAvailable_toast(), {
-          id: 'no-provider-available',
-          duration: 6000,
-          action: {
-            label: m.chat_modelPicker_noProviderAvailable_openSettings_label(),
-            onClick: openProviderSettings,
+        notify.error(
+          $hostMember$
+            ? m.hostExecution_providerSetup_description()
+            : m.chat_modelPicker_noProviderAvailable_toast(),
+          {
+            id: 'no-provider-available',
+            duration: 6000,
+            action: $hostMember$
+              ? undefined
+              : {
+                  label: m.chat_modelPicker_noProviderAvailable_openSettings_label(),
+                  onClick: openProviderSettings,
+                },
           },
-        });
+        );
       }
     } else {
       noProviderToastShown = false;
@@ -2095,6 +2132,9 @@
       dropdownValue = currentDropdownValue();
       return;
     }
+    const connection = selectPrincipalConnectionContext.select(appStore.state);
+    const confirmationAgentId = agentId;
+    const confirmationWorkspaceId = workspaceId;
     const modelValue = value as string;
     const pick =
       modelValue === USE_DEFAULT_VALUE
@@ -2129,7 +2169,15 @@
                 parseCompoundModelId(modelValue).modelId),
         },
       );
-      if (!confirmed || confirmation !== confirmationRevision || effectiveLocked || destroyed) {
+      if (
+        !confirmed ||
+        confirmation !== confirmationRevision ||
+        effectiveLocked ||
+        destroyed ||
+        connection !== selectPrincipalConnectionContext.select(appStore.state) ||
+        confirmationAgentId !== agentId ||
+        confirmationWorkspaceId !== workspaceId
+      ) {
         dropdownValue = currentDropdownValue();
         return;
       }
@@ -2397,7 +2445,7 @@
             </Button>
           {/each}
         </div>
-        {#if !hasNoAvailableProvider}
+        {#if !hasNoAvailableProvider && !$hostMember$}
           <Button
             variant="ghost"
             size="icon-sm"
@@ -2514,6 +2562,7 @@
         {isLoadingModels}
         {blockingLoadError}
         {hasNoAvailableProvider}
+        hostManaged={$hostMember$}
         onOpenProviderSettings={openProviderSettings}
         onRetry={handleRetry}
       />

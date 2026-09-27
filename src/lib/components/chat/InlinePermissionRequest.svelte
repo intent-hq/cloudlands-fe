@@ -12,6 +12,7 @@
   import { formatInteger } from '$lib/i18n/format';
   import { Button } from '$lib/components/ui/button';
   import { shouldHandlePermissionShortcut } from './permission-shortcut';
+  import { selectPermissionRequestContext } from '$store/renderer/slices/permission/permission-selectors';
 
   interface Props {
     request: PermissionRequest;
@@ -52,7 +53,8 @@
   }
 
   function handleSelectOption(optionId: string) {
-    if (isProcessing) return;
+    if (isProcessing || !selectPermissionRequestContext.select(appStore.state, request.requestId))
+      return;
     isProcessing = true;
     appStore.dispatch(selectPermissionOption(request.requestId, optionId));
     isProcessing = false;

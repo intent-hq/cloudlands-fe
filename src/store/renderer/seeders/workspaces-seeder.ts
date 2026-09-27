@@ -1,3 +1,9 @@
+import { store as appStore } from '../store';
+import {
+  selectCanAdministerHost,
+  selectPrincipalConnectionContext,
+  selectPrincipalAdmissionContext,
+} from '../slices/principal/principal-selectors';
 /**
  * Workspaces & layout seeder.
  *
@@ -108,6 +114,7 @@ registerMockIpcHandler(WORKSPACE_CHANNELS.LIST, async () => {
 const REPOS_KNOWN_SETTING = 'repos.known';
 
 async function readReposKnownSetting(): Promise<KnownRepo[]> {
+  if (!selectCanAdministerHost.select(appStore.state)) return [];
   try {
     const setting = await readSetting(REPOS_KNOWN_SETTING);
     return Array.isArray(setting?.value) ? (setting.value as KnownRepo[]) : [];
@@ -127,9 +134,14 @@ async function readReposKnownSetting(): Promise<KnownRepo[]> {
 // `repo.list` read propagate as rejections — the caller keeps the prior
 // known-repos list on error (mirrors the legacy safe-handler contract).
 registerMockIpcHandler(WORKSPACE_CHANNELS.GET_RECENT_REPOSITORIES, async () => {
+  const connection = selectPrincipalConnectionContext.select(appStore.state);
   const result = await backendRequest<{ repos: KnownRepo[] }>('repo.list');
+  if (connection !== selectPrincipalConnectionContext.select(appStore.state))
+    return { success: true, data: [] };
   const repos = (result.repos ?? []).filter((repo) => !isDaemonManagedCheckoutPath(repo.path));
   const githubPicks = (await readReposKnownSetting()).filter((repo) => !!repo.githubUrl);
+  if (connection !== selectPrincipalConnectionContext.select(appStore.state))
+    return { success: true, data: [] };
   const merged = [
     ...githubPicks,
     ...repos.filter((repo) => !githubPicks.some((pick) => pick.path === repo.path)),
@@ -143,6 +155,7 @@ registerMockIpcHandler(WORKSPACE_CHANNELS.GET_RECENT_REPOSITORIES, async () => {
 // setting. Failures fold to `{ success:false, error }` (callers fire and
 // forget with a logged warning).
 registerMockIpcHandler(WORKSPACE_CHANNELS.ADD_RECENT_REPOSITORY, async (arg) => {
+  const connection = selectPrincipalConnectionContext.select(appStore.state);
   const payload = arg as
     { repository?: unknown; name?: unknown; owner?: unknown; githubUrl?: unknown } | undefined;
   const repository = typeof payload?.repository === 'string' ? payload.repository : '';
@@ -170,7 +183,12 @@ registerMockIpcHandler(WORKSPACE_CHANNELS.ADD_RECENT_REPOSITORY, async (arg) => 
     } else {
       existing.push({ path: repository, name, owner, githubUrl, addedAt: now, lastUsedAt: now });
     }
-    await updateSettings([{ path: REPOS_KNOWN_SETTING, value: existing }]);
+    if (
+      selectCanAdministerHost.select(appStore.state) &&
+      connection === selectPrincipalConnectionContext.select(appStore.state)
+    ) {
+      await updateSettings([{ path: REPOS_KNOWN_SETTING, value: existing }]);
+    }
     return { success: true };
   } catch (error) {
     return {
@@ -188,6 +206,7 @@ registerMockIpcHandler(WORKSPACE_CHANNELS.ADD_RECENT_REPOSITORY, async (arg) => 
 // envelope `{ success:true, data:{ removed } }`, with failures folded to
 // `{ success:false, error }` so the caller surfaces them loud.
 registerMockIpcHandler(WORKSPACE_CHANNELS.REMOVE_RECENT_REPOSITORY, async (arg) => {
+  const connection = selectPrincipalConnectionContext.select(appStore.state);
   const repository = (arg as { repository?: unknown } | undefined)?.repository;
   if (typeof repository !== 'string' || repository.length === 0) {
     return { success: false, error: 'repository is required' };
@@ -200,10 +219,16 @@ registerMockIpcHandler(WORKSPACE_CHANNELS.REMOVE_RECENT_REPOSITORY, async (arg) 
     const result = await backendRequest<{ removed: boolean }>('repo.remove', {
       path: repository,
     });
+    if (connection !== selectPrincipalConnectionContext.select(appStore.state))
+      return { success: true, data: result };
     const githubPicks = await readReposKnownSetting();
     const remaining = githubPicks.filter((repo) => repo.path !== repository);
     const removedFromSetting = remaining.length !== githubPicks.length;
-    if (removedFromSetting) {
+    if (
+      removedFromSetting &&
+      selectCanAdministerHost.select(appStore.state) &&
+      connection === selectPrincipalConnectionContext.select(appStore.state)
+    ) {
       await updateSettings([{ path: REPOS_KNOWN_SETTING, value: remaining }]);
     }
     return {
@@ -243,6 +268,11 @@ registerMockIpcHandler(WORKSPACE_CHANNELS.UPDATE_SETTINGS, async (arg) => {
 });
 
 registerMockSeeder('workspaces', async ({ store, client, workspaceId, getWorkspaceId }) => {
+  const backendId = getActiveBackendId(store.state);
+  const admission = selectPrincipalAdmissionContext.select(store.state);
+  const current = () =>
+    getActiveBackendId(store.state) === backendId &&
+    selectPrincipalAdmissionContext.select(store.state) === admission;
   let workspaces: Workspace[] = [];
   let recentViews: Record<string, number> = {};
 
@@ -254,15 +284,17 @@ registerMockSeeder('workspaces', async ({ store, client, workspaceId, getWorkspa
     if (!result.ok) throw new Error(result.error);
     workspaces = result.data;
   } catch (error) {
+    if (!current()) return;
     console.error('Workspaces seeder: client.workspaces.list() failed:', error);
     // Clear any stale workspaces from a previous seeding attempt (dev/HMR/tests)
     store.dispatch(replaceWorkspaceList([]));
-    store.dispatch(setWorkspaceHasLoaded(true, getActiveBackendId(store.state)));
+    store.dispatch(setWorkspaceHasLoaded(true, backendId, null));
     return;
   }
 
+  if (!current()) return;
   store.dispatch(replaceWorkspaceList(workspaces));
-  store.dispatch(setWorkspaceHasLoaded(true, getActiveBackendId(store.state)));
+  store.dispatch(setWorkspaceHasLoaded(true, backendId, admission));
 
   try {
     recentViews = await client.workspaces.recentViews();
@@ -272,6 +304,7 @@ registerMockSeeder('workspaces', async ({ store, client, workspaceId, getWorkspa
     recentViews = {};
   }
 
+  if (!current()) return;
   store.dispatch(loadRecencyData({ lastViewedAt: recentViews }));
 
   // Auto-select the first non-archived workspace (skip archived since they're hidden by default).

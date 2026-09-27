@@ -6,6 +6,7 @@ import { store } from '../../store';
 import { selectWorkspaceItems } from '../workspace/workspace-selectors';
 import type { SetupEvaluation } from './setup-prompt-types';
 import { hasReadyProvider } from './setup-prompt-utils';
+import { selectHostRole } from '../principal/principal-selectors';
 
 /** Latest completed evaluation, or null until the first one resolves. */
 export const selectSetupEvaluation = store.createSelector((state) => state.setupPrompt.evaluation);
@@ -36,6 +37,7 @@ export const selectActiveSetupEvaluation = store.createSelector((state): SetupEv
  * this session.
  */
 export const selectShowRemoteSetupPrompt = store.createSelector((state) => {
+  if (selectHostRole.select(state) !== 'owner') return false;
   const evaluation = selectActiveSetupEvaluation.select(state);
   if (!evaluation || evaluation.isLocal || !evaluation.setupNeeded) return false;
   return !state.setupPrompt.dismissedConnectionIds.includes(evaluation.connectionId);
@@ -53,6 +55,9 @@ export const selectShowRemoteSetupPrompt = store.createSelector((state) => {
  */
 export const selectBackendSetupGate = store.createSelector(
   (state): 'none' | 'pending' | 'redirect' => {
+    const role = selectHostRole.select(state);
+    if (role === 'member' || role === 'guest') return 'none';
+    if (role === null) return 'pending';
     // Same workspace count the saga evaluates (selectWorkspaceItems excludes
     // the chief workspace), so the gate and the evaluation never disagree.
     if (state.workspace.hasLoaded && selectWorkspaceItems.select(state).length > 0) return 'none';

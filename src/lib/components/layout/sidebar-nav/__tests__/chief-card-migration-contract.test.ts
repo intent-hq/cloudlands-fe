@@ -1,3 +1,4 @@
+import { admitLegacyPrincipal } from '../../../../../test/fixtures/principal-state';
 /**
  * Behavioral contract for the Chief card's thread lifecycle and its embedded
  * chat layout, rendered against the real store with ChatPanel mocked.
@@ -58,6 +59,7 @@ describe('Chief card migration contract', () => {
 
   beforeEach(() => {
     appStore.init();
+    admitLegacyPrincipal();
     appStore.dispatch(guestSessionsListReceived({ sessions: [], openIds: [], connectedIds: [] }));
     appStore.dispatch(setActiveProvider('auggie'));
 

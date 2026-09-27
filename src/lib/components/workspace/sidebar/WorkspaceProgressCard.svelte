@@ -75,6 +75,8 @@
   } from '$store/renderer/slices/workspace/workspace-slice';
   import {
     selectHidesOwnerWorkspaceActions,
+    selectWorkspaceHostOperationContext,
+    selectCanShareWorkspace,
     selectWorkspaceById,
     selectWorkspaceProgressActions,
   } from '$store/renderer/slices/workspace/workspace-selectors';
@@ -86,7 +88,6 @@
   import { store as appStore } from '$store/renderer/store';
   import { openTransferModal } from '$store/renderer/slices/workspace-transfer/workspace-transfer-slice';
   import { openShareDialog } from '$store/renderer/slices/workspace-share/workspace-share-slice';
-  import { selectLabsMultiplayerEnabled } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
   import { selectWorkspaceDrivingClient } from '$store/renderer/slices/browser-clients/browser-clients-selectors';
   import { setWorkspaceBrowserClientRequested } from '$store/renderer/slices/browser-clients/browser-clients-slice';
   import { selectWorkspaceHasBrowserTabs } from '$store/renderer/slices/panel-layout/panel-layout-selectors';
@@ -130,9 +131,7 @@
   // Owner-only actions (Transfer/Download, Archive, Delete) are refused by the
   // daemon for collaborators (`require_owner`), so the menu hides them up front.
   const hidesOwnerActions$ = selectHidesOwnerWorkspaceActions(workspaceIdStore);
-  // Sharing is a lab: the Share entry point stays hidden until the user turns
-  // the Multiplayer lab on in Settings → Labs (local preference, off by default).
-  const labsMultiplayerEnabled$ = selectLabsMultiplayerEnabled();
+  const canShareWorkspace$ = selectCanShareWorkspace(workspaceIdStore);
   // BE-owned task progress rollup served verbatim from the workspace-tasks slice
   // (PROTOCOL §5.4 `task.list`.stats). The renderer never re-derives counts.
   const taskStats$ = selectWorkspaceTaskProgress(workspaceIdStore);
@@ -287,10 +286,15 @@
 
   async function handleUnarchive() {
     if (!$workspace) return;
+    const target = $workspace;
+    const context = selectWorkspaceHostOperationContext.select(appStore.state, target.id);
+    if (!context) return;
     const { notify } = await import('$lib/components/patterns/notify');
     const workspaceTitle = $workspace.title || m.workspace_multiSelectSidebar_space_label();
 
-    const result = await workspaceClient.unarchive($workspace.id);
+    if (selectWorkspaceHostOperationContext.select(appStore.state, target.id) !== context) return;
+    const result = await workspaceClient.unarchive(target.id);
+    if (selectWorkspaceHostOperationContext.select(appStore.state, target.id) !== context) return;
     if (result.ok) {
       appStore.dispatch(loadWorkspacesRequested());
       notify.success(m.workspace_progressCard_unarchivedSpace_toast({ title: workspaceTitle }));
@@ -432,21 +436,18 @@
     },
   });
 
-  // Owner-only (PROTOCOL §5.1 `myRole`): a missing role never offers Share, and
-  // neither does a guest window or a window whose identity has not settled
-  // (`selectHidesOwnerWorkspaceActions`), whatever `myRole` the row carries.
-  // On top of that the Multiplayer lab must be on: with it off (the default)
-  // even the owner gets no Share item — and no presence-avatar fallback either,
-  // since that fallback reuses this action.
+  // Sharing follows current workspace management authority and Multiplayer
+  // visibility. The same action is the presence-avatar fallback below.
   const shareAction: MenuAction | null = $derived(
-    $labsMultiplayerEnabled$ && $workspace?.myRole === 'owner' && !$hidesOwnerActions$
+    $canShareWorkspace$
       ? {
           id: 'share-workspace',
           label: m.workspace_share_menu_label(),
           icon: faUserPlus,
           dividerBefore: true,
           onClick: () => {
-            if (!$workspace) return;
+            if (!$workspace || !selectCanShareWorkspace.select(appStore.state, $workspace.id))
+              return;
             appStore.dispatch(
               openShareDialog({ workspaceId: $workspace.id, workspaceTitle: $workspace.title }),
             );
@@ -459,7 +460,7 @@
   // offline members greyscale, so the row shows even while only this window
   // is online. An avatar takes the viewer to where that person looks right
   // now (their agent chat, else their note); with no such focus it opens the
-  // owner's Share screen and stays inert for a non-owner.
+  // Share screen when the viewer can manage this workspace.
   const presencePeople$ = selectWorkspacePresencePeople(workspaceIdStore);
   const presenceFocusTargets$ = selectWorkspacePresenceFocusTargets(workspaceIdStore);
   const presencePersonAction = $derived.by(() => {
@@ -513,6 +514,7 @@
           dividerBefore: !shareAction,
           onClick: () => {
             if (!$workspace) return;
+            if (selectHidesOwnerWorkspaceActions.select(appStore.state, $workspace.id)) return;
             appStore.dispatch(
               openTransferModal({
                 workspaceId: $workspace.id,

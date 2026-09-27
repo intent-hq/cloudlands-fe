@@ -76,6 +76,8 @@ vi.mock('$store/renderer/store', async () => {
 });
 
 vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
+  selectWorkspaceHostOperationContext: mocks.selector(() => 'owner-admission'),
+  selectCanShareWorkspace: mocks.selector(() => false),
   selectWorkspaceById: mocks.selector(() => mocks.workspaceEntity),
   selectWorkspaceActivePullRequest: mocks.selector(() => null),
   selectWorkspaceProgressHeadline: mocks.selector(() => ({ headline: '', subtext: '' })),

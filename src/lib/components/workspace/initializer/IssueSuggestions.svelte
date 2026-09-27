@@ -114,8 +114,13 @@
   }
 
   /** Cache key for the repo set a GitHub issues/PRs listing was fetched against. */
-  function repoSetKey(owner: string, repo: string, related: GitHubRepoRef[]): string {
-    return [repoRefKey({ owner, repo }), ...related.map(repoRefKey)].join(',');
+  function repoSetKey(
+    owner: string,
+    repo: string,
+    related: GitHubRepoRef[],
+    connection: string | null = null,
+  ): string {
+    return JSON.stringify([connection, [repoRefKey({ owner, repo }), ...related.map(repoRefKey)]]);
   }
 
   // Related (submodule) repos per primary `owner/repo`, resolved once per
@@ -125,8 +130,12 @@
   const relatedReposCache: Map<string, GitHubRepoRef[]> = new Map();
   const relatedReposInFlight: Map<string, Promise<GitHubRepoRef[]>> = new Map();
 
-  async function resolveRelatedRepos(owner: string, repo: string): Promise<GitHubRepoRef[]> {
-    const key = repoRefKey({ owner, repo });
+  async function resolveRelatedRepos(
+    owner: string,
+    repo: string,
+    connection: string | null,
+  ): Promise<GitHubRepoRef[]> {
+    const key = JSON.stringify([connection, repoRefKey({ owner, repo })]);
     const cached = relatedReposCache.get(key);
     if (cached) return cached;
     const inFlight = relatedReposInFlight.get(key);
@@ -140,7 +149,7 @@
       if (!response?.success) {
         throw new Error(response?.error ?? 'Failed to list related repositories');
       }
-      const seen = new Set<string>([key]);
+      const seen = new Set<string>([repoRefKey({ owner, repo })]);
       const related: GitHubRepoRef[] = [];
       for (const ref of response.data ?? []) {
         const refKey = repoRefKey(ref);
@@ -276,6 +285,11 @@
 </script>
 
 <script lang="ts">
+  import { selectIsHostMember } from '$store/renderer/slices/host-execution/host-execution-selectors';
+  import { selectPrincipalConnectionContext } from '$store/renderer/slices/principal/principal-selectors';
+  const hostMember$ = selectIsHostMember();
+  const connection$ = selectPrincipalConnectionContext();
+
   /* eslint-disable max-lines */
   import { onMount, onDestroy, tick, untrack } from 'svelte';
   import { slide } from '$lib/motion';
@@ -474,7 +488,7 @@
   let relatedRepos = $state<GitHubRepoRef[]>([]);
   const githubRepoSetKey = $derived(
     repositoryOwner && repositoryName
-      ? repoSetKey(repositoryOwner, repositoryName, relatedRepos)
+      ? repoSetKey(repositoryOwner, repositoryName, relatedRepos, $connection$)
       : '',
   );
   // Row labels are only shown when more than one repo contributes. Short
@@ -649,7 +663,7 @@
 
   // Watch for GitHub auth state changes (e.g., after user connects via Settings)
   $effect(() => {
-    const storeIsAuth = $githubAuthIsAuthenticated$;
+    const storeIsAuth = $hostMember$ || $githubAuthIsAuthenticated$;
     if (storeIsAuth && !isGitHubAuthenticated) {
       // Auth completed (e.g., user connected via Settings)
       isGitHubAuthenticated = true;
@@ -1044,7 +1058,9 @@
       // this function, causing an infinite loop (effect_update_depth_exceeded).
       // Auth initialization is handled by the components that manage GitHub auth
       // (GitHubAuthBanner, GitHubAuthConnection, etc.).
-      isGitHubAuthenticated = selectGitHubAuthIsAuthenticated.select(appStore.state);
+      isGitHubAuthenticated =
+        selectIsHostMember.select(appStore.state) ||
+        selectGitHubAuthIsAuthenticated.select(appStore.state);
 
       logger.debug('GitHub auth state', {
         isAuthenticated: isGitHubAuthenticated,
@@ -1528,16 +1544,17 @@
   // from what the listing was fetched against), refresh both GitHub tabs
   // once so the blended list includes them.
   async function loadRelatedRepos(owner: string, repo: string) {
+    const connection = $connection$;
     if (!isElectronPlatform()) return;
     let related: GitHubRepoRef[];
     try {
-      related = await resolveRelatedRepos(owner, repo);
+      related = await resolveRelatedRepos(owner, repo, connection);
     } catch (error) {
       logger.warn('Failed to list related repositories', { owner, repo, error });
       return;
     }
-    if (repositoryOwner !== owner || repositoryName !== repo) return;
-    if (repoSetKey(owner, repo, related) === githubRepoSetKey) return;
+    if (connection !== $connection$ || repositoryOwner !== owner || repositoryName !== repo) return;
+    if (repoSetKey(owner, repo, related, $connection$) === githubRepoSetKey) return;
     relatedRepos = related;
     loadGitHubIssues();
     loadGitHubPRs();
@@ -1549,6 +1566,7 @@
     const owner = repositoryOwner;
     const repo = repositoryName;
     const authed = isGitHubAuthenticated;
+    const connection = $connection$;
     // Only reload if we have both and are authenticated
     if (owner && repo && authed) {
       // Use untrack to prevent infinite loop - the load functions update state
@@ -1556,7 +1574,10 @@
       untrack(() => {
         // Search the primary repo alone until the related set is known;
         // a session-cached set applies immediately.
-        relatedRepos = relatedReposCache.get(repoRefKey({ owner, repo })) ?? [];
+        githubIssuesPager.reset();
+        githubPRsPager.reset();
+        relatedRepos =
+          relatedReposCache.get(JSON.stringify([connection, repoRefKey({ owner, repo })])) ?? [];
         loadGitHubIssues();
         loadGitHubPRs();
         void loadRelatedRepos(owner, repo);
@@ -2420,7 +2441,7 @@
         {/if}
 
         <!-- GitHub auth status - only show when not authenticated -->
-        {#if (activeSource === 'github-issues' || activeSource === 'github-prs') && !isLoading && !isGitHubAuthenticated}
+        {#if !$hostMember$ && (activeSource === 'github-issues' || activeSource === 'github-prs') && !isLoading && !isGitHubAuthenticated}
           <div
             class="flex items-center justify-between px-3 py-2 text-sm border-t border-border"
             transition:slide={{ tier: 'moderate' }}

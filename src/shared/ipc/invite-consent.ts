@@ -91,6 +91,8 @@ export interface InviteIdentityProvider {
 }
 
 interface InviteConsentShowBase {
+  /** Omitted only by older workspace-invite senders. */
+  scope?: 'workspace' | 'host';
   requestId: string;
   /** Which prompt the modal renders. */
   mode: 'connect-forge' | 'sign-in-required' | 'prove' | 'confirm';
@@ -133,7 +135,8 @@ interface InviteConsentProvePayload extends InviteConsentShowBase {
 interface InviteConsentConfirmPayload extends InviteConsentShowBase {
   mode: 'confirm';
   /** GitHub login the stored credential for this host belongs to. */
-  login: string;
+  login: string | null;
+  identity?: InviteIdentityProvider;
 }
 
 /** `invite-consent:show` payload (main → renderer). */

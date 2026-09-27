@@ -1,4 +1,5 @@
 /** @vitest-environment jsdom */
+import { initialState as principalInitialState } from '$store/renderer/slices/principal/principal-slice';
 import {
   useEncoderEffortHarness,
   mocks,
@@ -661,7 +662,7 @@ describe('decoded Micro encoder effort and wire behavior', () => {
     if (context === 'other-workspace')
       state.agentSessions.byAgentId['agent-1'].workspaceId = 'ws-2';
     if (context === 'unsupported') state.agentSessions.byAgentId['agent-1'].model = 'no-effort';
-    if (context === 'guest-boot') state.guestSessions.hasReceivedList = false;
+    if (context === 'guest-boot') state.principal = principalInitialState;
     if (context === 'collaborator')
       state.workspace.workspaces = updateItem(state.workspace.workspaces, {
         ...getItem(state.workspace.workspaces, 'ws-1')!,

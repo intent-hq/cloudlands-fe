@@ -1,4 +1,5 @@
 import { store } from '../../store';
+import type { AppSelector } from '../../types';
 import {
   PullRequestStatus,
   type EnvironmentConfig,
@@ -17,9 +18,14 @@ import { selectGitStatus } from '../git/git-selectors';
 import { selectIsDaemonLocal } from '../daemon-health/daemon-health-selectors';
 import { selectActivePrMonitors } from '../pr-monitor/pr-monitor-selectors';
 import {
-  selectIsGuestWindow,
-  selectWindowIdentitySettled,
-} from '../guest-sessions/guest-sessions-selectors';
+  selectCanAdministerHost,
+  selectCollaborationReady,
+  selectHostRole,
+  selectPrincipalSnapshot,
+  selectPrincipalRevoked,
+  selectWorkspaceAccessContext,
+  selectPrincipalAdmissionContext,
+} from '../principal/principal-selectors';
 import type {
   WorkflowStage,
   WorkspaceActivePrStatus,
@@ -32,11 +38,11 @@ import { m } from '$shared/paraglide/messages.js';
 import { formatInteger, formatNumber } from '$lib/i18n/format';
 import { getPrChipLabel } from '$lib/utils/pr-chip-label';
 
-export const selectWorkspaceLoading = store.createSelector((state) => {
+export const selectWorkspaceLoading: AppSelector<boolean> = store.createSelector((state) => {
   return state.workspace.loading;
 });
 
-export const selectWorkspaceHasLoaded = store.createSelector((state) => {
+export const selectWorkspaceHasLoaded: AppSelector<boolean> = store.createSelector((state) => {
   return state.workspace.hasLoaded;
 });
 
@@ -46,44 +52,50 @@ export const selectWorkspaceHasLoaded = store.createSelector((state) => {
  * acting on the loaded list (e.g. first-open layout seeding) must also
  * require the `loadedBackendId` stamp to match.
  */
-export const selectWorkspaceListLoadedForBackend = store.createSelector<
-  [backendId: string],
-  boolean
->((state, backendId) => {
-  return state.workspace.hasLoaded && state.workspace.loadedBackendId === backendId;
-});
+export const selectWorkspaceListLoadedForBackend: AppSelector<boolean, [backendId: string]> =
+  store.createSelector<[backendId: string], boolean>((state, backendId) => {
+    return state.workspace.hasLoaded && state.workspace.loadedBackendId === backendId;
+  });
 
-export const selectWorkspaceIsCreating = store.createSelector((state) => {
+export const selectWorkspaceIsCreating: AppSelector<boolean> = store.createSelector((state) => {
   return state.workspace.isCreating;
 });
 
-export const selectWorkspacePendingDeletions = store.createSelector<[], Record<string, boolean>>(
-  (state) => {
+export const selectWorkspacePendingDeletions: AppSelector<Record<string, boolean>> =
+  store.createSelector<[], Record<string, boolean>>((state) => {
     return state.workspace.pendingDeletions;
-  },
+  });
+
+export const selectWorkspaceDeletionToken: AppSelector<string | undefined, [workspaceId: string]> =
+  store.createSelector(
+    (state, workspaceId: string): string | undefined =>
+      state.workspace.pendingDeletionTokens[workspaceId],
+  );
+
+export const selectWorkspaceProjectionVersion: AppSelector<number> = store.createSelector(
+  (state) => state.workspace.projectionVersion,
 );
 
-export const selectWorkspacePendingCreations = store.createSelector((state) => {
-  return state.workspace.pendingCreations;
-});
-
-export const selectWorkspacesSortedByRecency = store.createSelector<
-  [workspaces: Workspace[]],
-  Workspace[]
->((state, workspaces) => {
-  return [...workspaces].sort((a, b) => {
-    const aTime = state.workspace.recency.lastViewedAt[a.id] ?? 0;
-    const bTime = state.workspace.recency.lastViewedAt[b.id] ?? 0;
-
-    if (aTime && bTime) {
-      return bTime - aTime;
-    }
-
-    if (aTime) return -1;
-    if (bTime) return 1;
-    return 0;
+export const selectWorkspacePendingCreations: AppSelector<Record<string, Workspace>> =
+  store.createSelector((state) => {
+    return state.workspace.pendingCreations;
   });
-});
+
+export const selectWorkspacesSortedByRecency: AppSelector<Workspace[], [workspaces: Workspace[]]> =
+  store.createSelector<[workspaces: Workspace[]], Workspace[]>((state, workspaces) => {
+    return [...workspaces].sort((a, b) => {
+      const aTime = state.workspace.recency.lastViewedAt[a.id] ?? 0;
+      const bTime = state.workspace.recency.lastViewedAt[b.id] ?? 0;
+
+      if (aTime && bTime) {
+        return bTime - aTime;
+      }
+
+      if (aTime) return -1;
+      if (bTime) return 1;
+      return 0;
+    });
+  });
 
 // ---------------------------------------------------------------------------
 // Workspace entity selectors
@@ -93,20 +105,20 @@ export const selectWorkspacesSortedByRecency = store.createSelector<
  * Select a workspace entity by ID from Redux.
  * Returns undefined if not stored yet.
  */
-export const selectWorkspaceById = store.createSelector<[wsId: string], Workspace | undefined>(
-  (state, wsId) => {
+export const selectWorkspaceById: AppSelector<Workspace | undefined, [wsId: string]> =
+  store.createSelector<[wsId: string], Workspace | undefined>((state, wsId) => {
     return getItem(state.workspace.workspaces, wsId as Workspace['id']);
-  },
-);
+  });
 
 /**
  * Whether the stored row has been hydrated from `workspace.get` (slim
  * `workspace.list` rows omit the detail-only fields — see
  * `WorkspaceState.detailHydrated`).
  */
-export const selectWorkspaceDetailHydrated = store.createSelector<[wsId: string], boolean>(
-  (state, wsId) => state.workspace.detailHydrated[wsId] === true,
-);
+export const selectWorkspaceDetailHydrated: AppSelector<boolean, [wsId: string]> =
+  store.createSelector<[wsId: string], boolean>(
+    (state, wsId) => state.workspace.detailHydrated[wsId] === true,
+  );
 
 /**
  * Whether the stored `pullRequests` pool is the capped `workspace.list`
@@ -120,10 +132,12 @@ export function isWorkspacePullRequestPoolTruncated(workspace: Workspace | undef
   );
 }
 
-export const selectWorkspaceEnvironmentConfig = store.createSelector<
-  [wsId: string],
-  EnvironmentConfig | undefined
->((state, wsId) => selectWorkspaceById.select(state, wsId)?.environmentConfig);
+export const selectWorkspaceEnvironmentConfig: AppSelector<
+  EnvironmentConfig | undefined,
+  [wsId: string]
+> = store.createSelector<[wsId: string], EnvironmentConfig | undefined>(
+  (state, wsId) => selectWorkspaceById.select(state, wsId)?.environmentConfig,
+);
 
 /**
  * True when a workspace's files live on THIS machine (monorepo#2171).
@@ -144,137 +158,167 @@ export const selectWorkspaceEnvironmentConfig = store.createSelector<
  * `environmentConfig`, so the entity resolves to remote as soon as it is
  * hydrated.
  */
-export const selectIsWorkspaceHostLocal = store.createSelector<[wsId: string], boolean>(
-  (state, wsId) => {
+export const selectIsWorkspaceHostLocal: AppSelector<boolean, [wsId: string]> =
+  store.createSelector<[wsId: string], boolean>((state, wsId) => {
     if (!selectIsDaemonLocal.select(state)) return false;
     const workspace = selectWorkspaceById.select(state, wsId);
     if (!workspace) return true;
     return workspace.environmentConfig?.type !== 'remote' && workspace.isRemote !== true;
-  },
-);
+  });
 
 /**
  * True when the daemon marked the workspace as waiting on external conditions
  * (`workspace.waiting`, PROTOCOL §5.1 — active hooks / PR monitors / watched
  * agents). Absent reads as false: older daemons never send the field.
  */
-export const selectWorkspaceIsWaiting = store.createSelector<[wsId: string], boolean>(
-  (state, wsId) => selectWorkspaceById.select(state, wsId)?.waiting === true,
+export const selectWorkspaceIsWaiting: AppSelector<boolean, [wsId: string]> = store.createSelector<
+  [wsId: string],
+  boolean
+>((state, wsId) => selectWorkspaceById.select(state, wsId)?.waiting === true);
+
+/** Server management authority, independent of owner metadata and experimental visibility. */
+export const selectCanManageWorkspace: AppSelector<boolean, [wsId: string]> = store.createSelector<
+  [wsId: string],
+  boolean
+>((state, wsId) => {
+  const snapshot = selectPrincipalSnapshot.select(state);
+  const role = selectHostRole.select(state);
+  if (!snapshot || !role) return false;
+  // Virtual host administration never inherits member workspace rights.
+  if (wsId === CHIEF_WORKSPACE_ID) return role === 'owner';
+  const workspace = selectWorkspaceById.select(state, wsId);
+  // Guests can retain an explicit workspace owner grant. An inherited member
+  // row or a cached grant from a previous actor/admission is never sufficient.
+  if (
+    role === 'guest' &&
+    (workspace?.myRole !== 'owner' ||
+      !selectWorkspaceListLoadedForBackend.select(state, state.connections.windowBackendId) ||
+      state.workspace.loadedPrincipalContext !== selectPrincipalAdmissionContext.select(state))
+  )
+    return false;
+  if (snapshot.capabilities.hostMembership) {
+    return (
+      selectWorkspaceListLoadedForBackend.select(state, state.connections.windowBackendId) &&
+      workspace?.canManage === true
+    );
+  }
+  return role === 'owner' ? workspace?.myRole !== 'collaborator' : workspace?.myRole === 'owner';
+});
+
+/** Confirmed denial permits destructive cleanup; unknown authority and lab visibility do not. */
+export const selectWorkspaceManagementDenied: AppSelector<boolean, [wsId: string]> =
+  store.createSelector<[wsId: string], boolean>((state, wsId) => {
+    if (selectPrincipalRevoked.select(state)) return true;
+    const role = selectHostRole.select(state);
+    if (role === null) return false;
+    if (wsId === CHIEF_WORKSPACE_ID) return role !== 'owner';
+    const workspace = selectWorkspaceById.select(state, wsId);
+    if (
+      role === 'guest' &&
+      (!selectWorkspaceListLoadedForBackend.select(state, state.connections.windowBackendId) ||
+        state.workspace.loadedPrincipalContext !== selectPrincipalAdmissionContext.select(state))
+    )
+      return false;
+    if (selectPrincipalSnapshot.select(state)?.capabilities.hostMembership) {
+      return (
+        selectWorkspaceListLoadedForBackend.select(state, state.connections.windowBackendId) &&
+        workspace?.canManage === false
+      );
+    }
+    return workspace?.myRole === 'collaborator';
+  });
+
+/** Existing owner controls remain ordinary UI; member management is an experimental surface. */
+const selectWorkspaceManagementVisible = store.createSelector<[wsId: string], boolean>(
+  (state, wsId) =>
+    selectCanManageWorkspace.select(state, wsId) &&
+    (selectCanAdministerHost.select(state) || selectCollaborationReady.select(state)),
 );
 
-/**
- * True when the daemon reports the caller as a `collaborator` in the workspace
- * (`workspace.myRole`, PROTOCOL §5.1 — multiplayer w3), or the window is bound
- * to a host joined as a guest (multiplayer w4). Collaborator connections are
- * refused (-32003) on every owner-only method (terminals, browser tabs, port
- * forwarding, host exec), so the workspace UI hides those surfaces up front.
- * A guest window's connection carries a per-principal credential, which the
- * daemon refuses on those administrator-only methods and on `/tunnel`
- * regardless of the workspace role it reports — so the window reads as
- * collaborator whatever `myRole` says (an invite joined with the host owner's
- * own GitHub account reuses the primary principal and reports `owner`) — and
- * until the window's guest/owner identity has settled
- * (`selectWindowIdentitySettled`), since under the boot-time default a guest
- * window reads as an owner window. Absent `myRole` (older daemon, non-member,
- * unknown workspace) in a settled owner window reads as owner-equivalent.
- */
-export const selectIsWorkspaceCollaborator = store.createSelector<[wsId: string], boolean>(
-  (state, wsId) =>
-    !selectWindowIdentitySettled.select(state) ||
-    selectIsGuestWindow.select(state) ||
-    selectWorkspaceById.select(state, wsId)?.myRole === 'collaborator',
-);
+export const selectWorkspaceManagementContext: AppSelector<string | null, [wsId: string]> =
+  store.createSelector<[wsId: string], string | null>((state, wsId) =>
+    selectWorkspaceManagementVisible.select(state, wsId)
+      ? selectWorkspaceAccessContext.select(state)
+      : null,
+  );
 
-/**
- * True when the workspace menus must not offer the owner-only workspace
- * actions (Transfer/Download, Archive, Delete): the daemon reports the caller
- * as a `collaborator` (`require_owner` refuses them with -32003), or the
- * window is bound to a host joined as a guest (multiplayer w4) — whatever
- * `myRole` the row carries, and before it has arrived: a guest window is
- * never an owner seat, so neither an unloaded row nor a row the daemon
- * reports as `owner` (the host owner's own account joining its own invite)
- * may expose them. The same holds while the window's identity is still the
- * boot-time default (`selectWindowIdentitySettled` false): a guest window is
- * not identifiable yet, so the actions stay hidden rather than flash. Absent
- * `myRole` in a settled owner window keeps owner semantics (older daemon).
- */
-export const selectHidesOwnerWorkspaceActions = store.createSelector<[wsId: string], boolean>(
-  (state, wsId) =>
-    !selectWindowIdentitySettled.select(state) ||
-    selectIsGuestWindow.select(state) ||
-    selectWorkspaceById.select(state, wsId)?.myRole === 'collaborator',
-);
+/** Member-only RPCs require host admission as well as the workspace's service grant. */
+export const selectWorkspaceHostOperationContext: AppSelector<string | null, [wsId: string]> =
+  store.createSelector<[wsId: string], string | null>((state, wsId) => {
+    const role = selectHostRole.select(state);
+    return role === 'owner' || role === 'member'
+      ? selectWorkspaceManagementContext.select(state, wsId)
+      : null;
+  });
 
-/**
- * True when the connected principal owns the workspace: the daemon reports
- * `myRole: 'owner'` (PROTOCOL §5.1) in a settled owner window. Gates the
- * surfaces the daemon's `require_owner` check protects and that a missing role
- * must never offer (sharing, the roster). Fails closed like
- * `selectHidesOwnerWorkspaceActions`: false in a guest window whatever
- * `myRole` the row carries (the host owner's own account joining its own
- * invite reports `owner`), and until the window's identity has settled.
- */
-export const selectIsWorkspaceOwner = store.createSelector<[wsId: string], boolean>(
+/** Shell, script and browser RPCs have the same owner/member transport boundary. */
+export const selectWorkspaceExecutionContext: AppSelector<string | null, [wsId: string]> =
+  selectWorkspaceHostOperationContext;
+
+export const selectHidesWorkspaceExecutionActions: AppSelector<boolean, [wsId: string]> =
+  store.createSelector<[wsId: string], boolean>(
+    (state, wsId) => selectWorkspaceExecutionContext.select(state, wsId) === null,
+  );
+
+/** A current guest admission is an explicit transport denial for execution, even for workspace owners. */
+export const selectWorkspaceExecutionDenied: AppSelector<boolean, [wsId: string]> =
+  store.createSelector<[wsId: string], boolean>(
+    (state, wsId) =>
+      selectHostRole.select(state) === 'guest' ||
+      selectWorkspaceManagementDenied.select(state, wsId),
+  );
+
+/** Compatibility name for existing workspace-management consumers. */
+export const selectIsWorkspaceCollaborator: AppSelector<boolean, [wsId: string]> =
+  store.createSelector<[wsId: string], boolean>(
+    (state, wsId) => !selectWorkspaceManagementVisible.select(state, wsId),
+  );
+
+export const selectHidesOwnerWorkspaceActions: AppSelector<boolean, [wsId: string]> =
+  store.createSelector<[wsId: string], boolean>(
+    (state, wsId) => selectWorkspaceHostOperationContext.select(state, wsId) === null,
+  );
+
+/** Actual ownership stays distinct from management; members remain collaborators. */
+export const selectIsWorkspaceOwner: AppSelector<boolean, [wsId: string]> = store.createSelector<
+  [wsId: string],
+  boolean
+>(
   (state, wsId) =>
-    selectWindowIdentitySettled.select(state) &&
-    !selectIsGuestWindow.select(state) &&
+    selectCanAdministerHost.select(state) &&
     selectWorkspaceById.select(state, wsId)?.myRole === 'owner',
 );
 
-/**
- * True when the workspace UI must not offer the agent lifecycle actions —
- * create (`agent.create`, `agent.delegate`, `agent.wakeOrCreate`) and delete
- * (`agent.delete`, `agent.cancelDelete`): the daemon refuses them with -32003
- * for a collaborator connection, so the affordances are hidden (never merely
- * disabled) and the creation / deletion sagas refuse before sending anything.
- * Same fail-closed shape as `selectIsWorkspaceCollaborator`: a guest window
- * whatever `myRole` it reports, a `collaborator` row in an owner window, and
- * any window whose guest/owner identity is still the boot-time default. A
- * collaborator-only client (`selectIsCollaboratorOnlyClient`) hides them for
- * every `wsId`, so a lookup that misses the row (missing, stale, or not yet
- * listed id) cannot fall open. Rename and model switching are not lifecycle
- * actions and stay available.
- */
-export const selectHidesAgentLifecycleActions = store.createSelector<[wsId: string], boolean>(
+export const selectCanShareWorkspace: AppSelector<boolean, [wsId: string]> = store.createSelector<
+  [wsId: string],
+  boolean
+>(
   (state, wsId) =>
-    selectIsWorkspaceCollaborator.select(state, wsId) ||
-    selectIsCollaboratorOnlyClient.select(state),
+    selectCollaborationReady.select(state) &&
+    selectWorkspaceHostOperationContext.select(state, wsId) !== null &&
+    (selectPrincipalSnapshot.select(state)?.capabilities.hostMembership === true ||
+      selectIsWorkspaceOwner.select(state, wsId)),
 );
 
-/**
- * True when the connected principal is a collaborator everywhere: the list
- * has loaded and every workspace it can see reports `myRole: 'collaborator'`.
- * Gates app-wide administrator-only surfaces (workspace creation / repo
- * picker, provider + connection settings, voice dictation) that are not tied
- * to a single workspace. An empty list reads as owner: an owner with no
- * workspaces must still be able to create one — except in a window bound to
- * a host joined as a guest (multiplayer w4), whose principal is a
- * non-administrator by construction: it is a collaborator-only client from
- * boot, before the list loads and with zero shared workspaces. Until the
- * window's guest/owner identity has settled it therefore reads as
- * collaborator-only (the safe default: a guest window must never expose the
- * administrator surfaces while its identity is still the boot-time default);
- * only the workspace list itself stays optimistic while unloaded.
- */
-export const selectIsCollaboratorOnlyClient = store.createSelector((state) => {
-  if (selectIsGuestWindow.select(state)) return true;
-  if (!selectWindowIdentitySettled.select(state)) return true;
-  if (!state.workspace.hasLoaded) return false;
-  // The Chief is a client-side virtual workspace (no `myRole`); it must not
-  // read as an owned workspace and defeat the gate that hides it.
-  const workspaces = getItems(state.workspace.workspaces).filter(
-    (ws) => ws.id !== CHIEF_WORKSPACE_ID,
+export const selectHidesAgentLifecycleActions: AppSelector<boolean, [wsId: string]> =
+  store.createSelector<[wsId: string], boolean>(
+    (state, wsId) => selectWorkspaceHostOperationContext.select(state, wsId) === null,
   );
-  return workspaces.length > 0 && workspaces.every((ws) => ws.myRole === 'collaborator');
-});
 
-export const selectWorkspaceItems = store.createSelector<[], Workspace[]>((state) => {
-  return getItems(state.workspace.workspaces).filter(
-    (workspace) => workspace.id !== CHIEF_WORKSPACE_ID,
-  );
-});
+/** Existing host-administration gate. Workspace creation uses selectCanCreateWorkspace. */
+export const selectIsCollaboratorOnlyClient: AppSelector<boolean> = store.createSelector(
+  (state) => !selectCanAdministerHost.select(state),
+);
 
-export const selectWorkspaceIsEmpty = store.createSelector((state) => {
+export const selectWorkspaceItems: AppSelector<Workspace[]> = store.createSelector<[], Workspace[]>(
+  (state) => {
+    return getItems(state.workspace.workspaces).filter(
+      (workspace) => workspace.id !== CHIEF_WORKSPACE_ID,
+    );
+  },
+);
+
+export const selectWorkspaceIsEmpty: AppSelector<boolean> = store.createSelector((state) => {
   return state.workspace.workspaces.ids.length === 0;
 });
 
@@ -287,37 +331,37 @@ export const selectWorkspaceIsEmpty = store.createSelector((state) => {
  * Uses createSelector's built-in caching so the same reference is
  * returned when the underlying data hasn't changed.
  */
-export const selectWorkspaceActivePullRequest = store.createSelector<
-  [wsId: string],
-  PullRequestInfo | null
->((state, wsId) => {
-  const workspace = getItem(state.workspace.workspaces, wsId as Workspace['id']);
-  return workspace?.activePullRequest ?? null;
-});
+export const selectWorkspaceActivePullRequest: AppSelector<PullRequestInfo | null, [wsId: string]> =
+  store.createSelector<[wsId: string], PullRequestInfo | null>((state, wsId) => {
+    const workspace = getItem(state.workspace.workspaces, wsId as Workspace['id']);
+    return workspace?.activePullRequest ?? null;
+  });
 
 /**
  * Returns whether this is a brand-new workspace session (no changes, no commits,
  * viewing the spec). Evaluates to a primitive boolean so it won't cause
  * re-render cycles.
  */
-export const selectIsNewWorkspaceSession = store.createSelector<
-  [wsId: string, selectedNoteId: string | null],
-  boolean
->((state, wsId, selectedNoteId) => {
-  const isNewlyCreated = selectIsNewlyCreatedWorkspace.select(state, wsId);
-  const staged = selectCurrentStagedWorkingChanges.select(state, wsId);
-  const unstaged = selectCurrentUnstagedWorkingChanges.select(state, wsId);
-  const commits = selectFileTrackingCommits.select(state, wsId) ?? [];
-  const gitStatus = selectGitStatus.select(state, wsId);
-  return !!(
-    isNewlyCreated &&
-    selectedNoteId === 'spec' &&
-    !staged.length &&
-    !unstaged.length &&
-    !commits.length &&
-    !gitStatus?.files.length
-  );
-});
+export const selectIsNewWorkspaceSession: AppSelector<
+  boolean,
+  [wsId: string, selectedNoteId: string | null]
+> = store.createSelector<[wsId: string, selectedNoteId: string | null], boolean>(
+  (state, wsId, selectedNoteId) => {
+    const isNewlyCreated = selectIsNewlyCreatedWorkspace.select(state, wsId);
+    const staged = selectCurrentStagedWorkingChanges.select(state, wsId);
+    const unstaged = selectCurrentUnstagedWorkingChanges.select(state, wsId);
+    const commits = selectFileTrackingCommits.select(state, wsId) ?? [];
+    const gitStatus = selectGitStatus.select(state, wsId);
+    return !!(
+      isNewlyCreated &&
+      selectedNoteId === 'spec' &&
+      !staged.length &&
+      !unstaged.length &&
+      !commits.length &&
+      !gitStatus?.files.length
+    );
+  },
+);
 
 // ---------------------------------------------------------------------------
 // Workspace progress card selectors
@@ -395,10 +439,10 @@ function buildActivePrSummary(args: {
  * One sidebar source for the View PR link and Changes-card PR action. The
  * workspace-linked PR wins; active monitors are the fallback used by View PR.
  */
-export const selectWorkspaceActivePrSummary = store.createSelector<
-  [wsId: string],
-  WorkspaceActivePrSummary | null
->((state, wsId) => {
+export const selectWorkspaceActivePrSummary: AppSelector<
+  WorkspaceActivePrSummary | null,
+  [wsId: string]
+> = store.createSelector<[wsId: string], WorkspaceActivePrSummary | null>((state, wsId) => {
   const workspace = getItem(state.workspace.workspaces, wsId as Workspace['id']);
   const workspaceRepo =
     workspace?.repositoryOwner && workspace?.repositoryName
@@ -434,385 +478,394 @@ export const selectWorkspaceActivePrSummary = store.createSelector<
   });
 });
 
-export const selectWorkflowStage = store.createSelector<
-  [wsId: string, input: WorkspaceProgressInput],
-  WorkflowStage
->((state, wsId, input) => {
-  const {
-    gitStatus,
-    gitStatusLoading,
-    taskStats,
-    completionRatio,
-    isAgentWorking,
-    specHasContent,
-  } = input;
-  const activePR = selectWorkspaceActivePullRequest.select(state, wsId) ?? undefined;
+export const selectWorkflowStage: AppSelector<
+  WorkflowStage,
+  [wsId: string, input: WorkspaceProgressInput]
+> = store.createSelector<[wsId: string, input: WorkspaceProgressInput], WorkflowStage>(
+  (state, wsId, input) => {
+    const {
+      gitStatus,
+      gitStatusLoading,
+      taskStats,
+      completionRatio,
+      isAgentWorking,
+      specHasContent,
+    } = input;
+    const activePR = selectWorkspaceActivePullRequest.select(state, wsId) ?? undefined;
 
-  // Still loading git status - only show loading if we have no cached data to display
-  if (gitStatusLoading && !gitStatus) {
-    const hasCachedPRData =
-      activePR &&
-      (activePR.status === 'Open' ||
-        activePR.status === 'Draft' ||
-        activePR.status === 'Merged' ||
-        activePR.status === 'Closed');
-    const hasTasks = taskStats.total > 0;
-    if (!hasCachedPRData && !hasTasks) {
-      return 'loading';
-    }
-    // Otherwise fall through - use cached data while git status loads
-  }
-
-  // If agent is working and no tasks yet, it's creating the spec
-  if (isAgentWorking && taskStats.total === 0) {
-    return 'spec-creating';
-  }
-
-  const hasUncommittedChanges = (gitStatus?.uncommittedCount ?? 0) > 0;
-  const hasStagedChanges = (gitStatus?.stagedCount ?? 0) > 0;
-  const hasUnpushedCommits = (gitStatus?.localCommits?.filter((c) => !c.isPushed).length ?? 0) > 0;
-  const existingPR = gitStatus?.existingPR;
-  const hasOpenTasks = taskStats.total > 0 && taskStats.completed < taskStats.total;
-
-  if (existingPR) {
-    if (existingPR.state === 'merged' || existingPR.state === 'closed') {
-      // PR merged/closed: open tasks, uncommitted/staged changes, or unpushed
-      // commits mean there is still new work. The just-merged branch's own
-      // commits never read as unpushed here: per-commit `isPushed` is computed
-      // against origin/<branch>, and those commits were pushed to open the PR.
-      if (!hasUncommittedChanges && !hasStagedChanges && !hasUnpushedCommits && !hasOpenTasks) {
-        return 'all-done';
+    // Still loading git status - only show loading if we have no cached data to display
+    if (gitStatusLoading && !gitStatus) {
+      const hasCachedPRData =
+        activePR &&
+        (activePR.status === 'Open' ||
+          activePR.status === 'Draft' ||
+          activePR.status === 'Merged' ||
+          activePR.status === 'Closed');
+      const hasTasks = taskStats.total > 0;
+      if (!hasCachedPRData && !hasTasks) {
+        return 'loading';
       }
-      // Otherwise fall through to the task-based and git-change states.
-    } else if (existingPR.state === 'open') {
-      if (activePR?.reviewDecision === 'APPROVED') {
+      // Otherwise fall through - use cached data while git status loads
+    }
+
+    // If agent is working and no tasks yet, it's creating the spec
+    if (isAgentWorking && taskStats.total === 0) {
+      return 'spec-creating';
+    }
+
+    const hasUncommittedChanges = (gitStatus?.uncommittedCount ?? 0) > 0;
+    const hasStagedChanges = (gitStatus?.stagedCount ?? 0) > 0;
+    const hasUnpushedCommits =
+      (gitStatus?.localCommits?.filter((c) => !c.isPushed).length ?? 0) > 0;
+    const existingPR = gitStatus?.existingPR;
+    const hasOpenTasks = taskStats.total > 0 && taskStats.completed < taskStats.total;
+
+    if (existingPR) {
+      if (existingPR.state === 'merged' || existingPR.state === 'closed') {
+        // PR merged/closed: open tasks, uncommitted/staged changes, or unpushed
+        // commits mean there is still new work. The just-merged branch's own
+        // commits never read as unpushed here: per-commit `isPushed` is computed
+        // against origin/<branch>, and those commits were pushed to open the PR.
+        if (!hasUncommittedChanges && !hasStagedChanges && !hasUnpushedCommits && !hasOpenTasks) {
+          return 'all-done';
+        }
+        // Otherwise fall through to the task-based and git-change states.
+      } else if (existingPR.state === 'open') {
+        if (activePR?.reviewDecision === 'APPROVED') {
+          return 'pr-approved';
+        }
+        return 'pr-open';
+      }
+    } else if (activePR && (activePR.status === 'Open' || activePR.status === 'Draft')) {
+      // gitStatus not loaded yet, but we have cached activePullRequest - use it.
+      if (activePR.reviewDecision === 'APPROVED') {
         return 'pr-approved';
       }
       return 'pr-open';
     }
-  } else if (activePR && (activePR.status === 'Open' || activePR.status === 'Draft')) {
-    // gitStatus not loaded yet, but we have cached activePullRequest - use it.
-    if (activePR.reviewDecision === 'APPROVED') {
-      return 'pr-approved';
+
+    // Tasks exist but none started
+    if (taskStats.total > 0 && completionRatio === 0 && taskStats.inProgress === 0) {
+      return 'tasks-ready';
     }
-    return 'pr-open';
-  }
 
-  // Tasks exist but none started
-  if (taskStats.total > 0 && completionRatio === 0 && taskStats.inProgress === 0) {
-    return 'tasks-ready';
-  }
-
-  // Tasks in progress
-  if (taskStats.inProgress > 0 || (taskStats.total > 0 && completionRatio < 1)) {
-    return 'tasks-in-progress';
-  }
-
-  // Unpushed commits (ready to push or create PR)
-  if (hasUnpushedCommits && !hasUncommittedChanges) {
-    return 'commits-unpushed';
-  }
-
-  // Staged changes (ready to commit)
-  if (hasStagedChanges) {
-    return 'changes-staged';
-  }
-
-  // Unstaged changes
-  if (hasUncommittedChanges) {
-    return 'changes-unstaged';
-  }
-
-  // No git changes - check task status
-  if (taskStats.total === 0) {
-    if (specHasContent) {
-      return 'spec-ready';
+    // Tasks in progress
+    if (taskStats.inProgress > 0 || (taskStats.total > 0 && completionRatio < 1)) {
+      return 'tasks-in-progress';
     }
-    return 'spec-empty';
-  }
 
-  // All tasks complete, no changes
-  return 'all-done';
-});
+    // Unpushed commits (ready to push or create PR)
+    if (hasUnpushedCommits && !hasUncommittedChanges) {
+      return 'commits-unpushed';
+    }
 
-export const selectWorkspaceProgressHeadline = store.createSelector<
-  [wsId: string, input: WorkspaceProgressInput],
-  WorkspaceProgressHeadline
->((state, wsId, input) => {
-  const stage = selectWorkflowStage.select(state, wsId, input);
-  const { gitStatus, taskStats, completionRatio } = input;
-  const uncommittedCount = gitStatus?.uncommittedCount ?? 0;
-  const stagedCount = gitStatus?.stagedCount ?? 0;
-  const unpushedCommits = gitStatus?.localCommits?.filter((c) => !c.isPushed) ?? [];
-  const existingPR = gitStatus?.existingPR;
-  const activePR = selectWorkspaceActivePullRequest.select(state, wsId) ?? undefined;
+    // Staged changes (ready to commit)
+    if (hasStagedChanges) {
+      return 'changes-staged';
+    }
 
-  switch (stage) {
-    case 'loading':
-      return { headline: m.workspace_progress_loading_headline(), subtext: '' };
+    // Unstaged changes
+    if (hasUncommittedChanges) {
+      return 'changes-unstaged';
+    }
 
-    case 'spec-empty':
-      return { headline: m.workspace_progress_specEmpty_headline(), subtext: '' };
+    // No git changes - check task status
+    if (taskStats.total === 0) {
+      if (specHasContent) {
+        return 'spec-ready';
+      }
+      return 'spec-empty';
+    }
 
-    case 'spec-creating':
-      return { headline: m.workspace_progress_specCreating_headline(), subtext: '' };
+    // All tasks complete, no changes
+    return 'all-done';
+  },
+);
 
-    case 'spec-ready':
-      return { headline: m.workspace_progress_ready_headline(), subtext: '' };
+export const selectWorkspaceProgressHeadline: AppSelector<
+  WorkspaceProgressHeadline,
+  [wsId: string, input: WorkspaceProgressInput]
+> = store.createSelector<[wsId: string, input: WorkspaceProgressInput], WorkspaceProgressHeadline>(
+  (state, wsId, input) => {
+    const stage = selectWorkflowStage.select(state, wsId, input);
+    const { gitStatus, taskStats, completionRatio } = input;
+    const uncommittedCount = gitStatus?.uncommittedCount ?? 0;
+    const stagedCount = gitStatus?.stagedCount ?? 0;
+    const unpushedCommits = gitStatus?.localCommits?.filter((c) => !c.isPushed) ?? [];
+    const existingPR = gitStatus?.existingPR;
+    const activePR = selectWorkspaceActivePullRequest.select(state, wsId) ?? undefined;
 
-    case 'tasks-ready':
-      return { headline: m.workspace_progress_tasksReady_headline(), subtext: '' };
+    switch (stage) {
+      case 'loading':
+        return { headline: m.workspace_progress_loading_headline(), subtext: '' };
 
-    case 'tasks-in-progress': {
-      if (completionRatio >= 0.75) {
-        const remaining = taskStats.total - taskStats.completed;
+      case 'spec-empty':
+        return { headline: m.workspace_progress_specEmpty_headline(), subtext: '' };
+
+      case 'spec-creating':
+        return { headline: m.workspace_progress_specCreating_headline(), subtext: '' };
+
+      case 'spec-ready':
+        return { headline: m.workspace_progress_ready_headline(), subtext: '' };
+
+      case 'tasks-ready':
+        return { headline: m.workspace_progress_tasksReady_headline(), subtext: '' };
+
+      case 'tasks-in-progress': {
+        if (completionRatio >= 0.75) {
+          const remaining = taskStats.total - taskStats.completed;
+          return {
+            headline:
+              remaining === 1
+                ? m.workspace_progress_almostThere_one({ count: formatInteger(remaining) })
+                : m.workspace_progress_almostThere_many({ count: formatInteger(remaining) }),
+            subtext: '',
+          };
+        }
+        if (completionRatio > 0.1) {
+          return {
+            headline: m.workspace_progress_percent_headline({
+              percent: `${formatNumber(Math.round(completionRatio * 100))}%`,
+            }),
+            subtext: '',
+          };
+        }
         return {
-          headline:
-            remaining === 1
-              ? m.workspace_progress_almostThere_one({ count: formatInteger(remaining) })
-              : m.workspace_progress_almostThere_many({ count: formatInteger(remaining) }),
-          subtext: '',
+          headline: m.workspace_progress_making_headline(),
+          subtext:
+            taskStats.completed > 0
+              ? m.workspace_progress_tasksDone_subtext({
+                  completed: formatInteger(taskStats.completed),
+                  total: formatInteger(taskStats.total),
+                })
+              : '',
         };
       }
-      if (completionRatio > 0.1) {
+
+      case 'changes-unstaged':
+        // Only show file changes summary if tasks have been worked on
+        if (taskStats.completed > 0 || taskStats.inProgress > 0) {
+          return {
+            headline:
+              uncommittedCount === 1
+                ? m.workspace_progress_reviewChanges_one({ count: formatInteger(uncommittedCount) })
+                : m.workspace_progress_reviewChanges_many({
+                    count: formatInteger(uncommittedCount),
+                  }),
+            subtext: m.workspace_progress_reviewChanges_subtext(),
+          };
+        }
+        if (taskStats.total === 0) {
+          return { headline: m.workspace_progress_ready_headline(), subtext: '' };
+        }
+        return { headline: m.workspace_progress_tasksReady_headline(), subtext: '' };
+
+      case 'changes-staged':
         return {
-          headline: m.workspace_progress_percent_headline({
-            percent: `${formatNumber(Math.round(completionRatio * 100))}%`,
+          headline:
+            stagedCount === 1
+              ? m.workspace_progress_staged_one({ count: formatInteger(stagedCount) })
+              : m.workspace_progress_staged_many({ count: formatInteger(stagedCount) }),
+          subtext: '',
+        };
+
+      case 'commits-unpushed': {
+        // Only an open/draft PR can be updated by a push; after a merge/close the
+        // remaining commits need a new PR.
+        const prIsUpdatable = existingPR?.state === 'open' || existingPR?.state === 'draft';
+        return {
+          headline:
+            unpushedCommits.length === 1
+              ? m.workspace_progress_commitsToPush_one({
+                  count: formatInteger(unpushedCommits.length),
+                })
+              : m.workspace_progress_commitsToPush_many({
+                  count: formatInteger(unpushedCommits.length),
+                }),
+          subtext: prIsUpdatable
+            ? m.workspace_progress_pushUpdate_subtext()
+            : m.workspace_progress_pushCreate_subtext(),
+        };
+      }
+
+      case 'pr-open': {
+        const parts: string[] = [];
+        if (activePR?.reviewDecision === 'CHANGES_REQUESTED') {
+          parts.push(m.workspace_progress_changesRequested_part());
+        } else {
+          parts.push(m.workspace_progress_awaitingReview_part());
+        }
+        if (activePR?.ciStatus && activePR.ciStatus.total > 0) {
+          const total = formatInteger(activePR.ciStatus.total);
+          if (activePR.ciStatus.failed > 0) {
+            const failed = formatInteger(activePR.ciStatus.failed);
+            parts.push(
+              activePR.ciStatus.pending > 0
+                ? m.workspace_progress_checksFailingRunning_part({
+                    failed,
+                    total,
+                    pending: formatInteger(activePR.ciStatus.pending),
+                  })
+                : m.workspace_progress_checksFailing_part({ failed, total }),
+            );
+          } else if (activePR.ciStatus.pending > 0) {
+            parts.push(
+              m.workspace_progress_checksRunning_part({
+                pending: formatInteger(activePR.ciStatus.pending),
+                total,
+              }),
+            );
+          } else {
+            parts.push(
+              m.workspace_progress_checksPassing_part({
+                passed: formatInteger(activePR.ciStatus.passed),
+                total,
+              }),
+            );
+          }
+        }
+        const statusDetails = parts.join(', ');
+        const { prNumber } = resolvePrIdentity(activePR, input);
+        return {
+          headline: m.workspace_progress_prOpen_headline({
+            number: String(prNumber),
+            details: statusDetails,
           }),
           subtext: '',
         };
       }
-      return {
-        headline: m.workspace_progress_making_headline(),
-        subtext:
-          taskStats.completed > 0
-            ? m.workspace_progress_tasksDone_subtext({
-                completed: formatInteger(taskStats.completed),
-                total: formatInteger(taskStats.total),
-              })
-            : '',
-      };
-    }
 
-    case 'changes-unstaged':
-      // Only show file changes summary if tasks have been worked on
-      if (taskStats.completed > 0 || taskStats.inProgress > 0) {
+      case 'pr-approved': {
+        let approvedBy = '';
+        if (activePR?.approvedBy && activePR.approvedBy.length > 0) {
+          approvedBy = ` ${m.workspace_progress_prApprovedBy_part({ names: activePR.approvedBy.join(', ') })}`;
+        }
+        let ciInfo = '';
+        if (activePR?.ciStatus && activePR.ciStatus.total > 0) {
+          const total = formatInteger(activePR.ciStatus.total);
+          if (activePR.ciStatus.failed > 0) {
+            ciInfo = `, ${m.workspace_progress_checksFailing_part({ failed: formatInteger(activePR.ciStatus.failed), total })}`;
+          } else if (activePR.ciStatus.pending > 0) {
+            ciInfo = `, ${m.workspace_progress_checksPending_part({ pending: formatInteger(activePR.ciStatus.pending), total })}`;
+          } else {
+            ciInfo = `, ${m.workspace_progress_checksPassing_part({ passed: formatInteger(activePR.ciStatus.passed), total })}`;
+          }
+        }
+        const { prNumber } = resolvePrIdentity(activePR, input);
         return {
-          headline:
-            uncommittedCount === 1
-              ? m.workspace_progress_reviewChanges_one({ count: formatInteger(uncommittedCount) })
-              : m.workspace_progress_reviewChanges_many({ count: formatInteger(uncommittedCount) }),
-          subtext: m.workspace_progress_reviewChanges_subtext(),
+          headline: m.workspace_progress_prApproved_headline({
+            number: String(prNumber),
+            approvedBy,
+            ciInfo,
+          }),
+          subtext: '',
         };
       }
-      if (taskStats.total === 0) {
+
+      case 'pr-merged':
+      case 'all-done':
+        return { headline: m.workspace_progress_allDone_headline(), subtext: '' };
+
+      default:
         return { headline: m.workspace_progress_ready_headline(), subtext: '' };
-      }
-      return { headline: m.workspace_progress_tasksReady_headline(), subtext: '' };
+    }
+  },
+);
 
-    case 'changes-staged':
-      return {
-        headline:
-          stagedCount === 1
-            ? m.workspace_progress_staged_one({ count: formatInteger(stagedCount) })
-            : m.workspace_progress_staged_many({ count: formatInteger(stagedCount) }),
-        subtext: '',
-      };
+export const selectWorkspaceProgressActions: AppSelector<
+  WorkspaceProgressAction[],
+  [wsId: string, input: WorkspaceProgressInput]
+> = store.createSelector<[wsId: string, input: WorkspaceProgressInput], WorkspaceProgressAction[]>(
+  (state, wsId, input) => {
+    const stage = selectWorkflowStage.select(state, wsId, input);
+    const { taskStats } = input;
+    const existingPR = input.gitStatus?.existingPR;
+    const activePR = selectWorkspaceActivePullRequest.select(state, wsId) ?? undefined;
+    const activePrSummary = selectWorkspaceActivePrSummary.select(state, wsId);
+    const { prUrl: fallbackPrUrl } = resolvePrIdentity(activePR, input);
+    const prUrl = activePrSummary?.url ?? fallbackPrUrl;
 
-    case 'commits-unpushed': {
-      // Only an open/draft PR can be updated by a push; after a merge/close the
-      // remaining commits need a new PR.
-      const prIsUpdatable = existingPR?.state === 'open' || existingPR?.state === 'draft';
-      return {
-        headline:
-          unpushedCommits.length === 1
-            ? m.workspace_progress_commitsToPush_one({
-                count: formatInteger(unpushedCommits.length),
-              })
-            : m.workspace_progress_commitsToPush_many({
-                count: formatInteger(unpushedCommits.length),
-              }),
-        subtext: prIsUpdatable
-          ? m.workspace_progress_pushUpdate_subtext()
-          : m.workspace_progress_pushCreate_subtext(),
-      };
+    // The approved stage retains its dedicated Merge PR action.
+    if (stage === 'pr-approved') {
+      if (!prUrl) return [];
+      return [
+        {
+          id: 'merge-pr',
+          label: m.workspace_progress_mergePr_label(),
+          iconKey: 'code-branch',
+          tooltip: m.workspace_progress_mergePr_tooltip(),
+          url: prUrl,
+        },
+      ];
     }
 
-    case 'pr-open': {
-      const parts: string[] = [];
-      if (activePR?.reviewDecision === 'CHANGES_REQUESTED') {
-        parts.push(m.workspace_progress_changesRequested_part());
-      } else {
-        parts.push(m.workspace_progress_awaitingReview_part());
-      }
-      if (activePR?.ciStatus && activePR.ciStatus.total > 0) {
-        const total = formatInteger(activePR.ciStatus.total);
-        if (activePR.ciStatus.failed > 0) {
-          const failed = formatInteger(activePR.ciStatus.failed);
-          parts.push(
-            activePR.ciStatus.pending > 0
-              ? m.workspace_progress_checksFailingRunning_part({
-                  failed,
-                  total,
-                  pending: formatInteger(activePR.ciStatus.pending),
-                })
-              : m.workspace_progress_checksFailing_part({ failed, total }),
-          );
-        } else if (activePR.ciStatus.pending > 0) {
-          parts.push(
-            m.workspace_progress_checksRunning_part({
-              pending: formatInteger(activePR.ciStatus.pending),
-              total,
-            }),
-          );
-        } else {
-          parts.push(
-            m.workspace_progress_checksPassing_part({
-              passed: formatInteger(activePR.ciStatus.passed),
-              total,
-            }),
-          );
+    // For every other stage, an openable PR takes priority over the
+    // stage-based Review/Commit/Push actions.
+    if (activePrSummary) {
+      return [
+        {
+          id: 'view-pr',
+          label: activePrSummary.actionLabel,
+          iconKey: 'code-branch',
+          tooltip: activePrSummary.actionTooltip,
+          url: activePrSummary.url,
+        },
+      ];
+    }
+
+    if (prUrl) {
+      return [
+        {
+          id: 'view-pr',
+          label: m.workspace_progress_viewPr_label(),
+          iconKey: 'code-branch',
+          tooltip: m.workspace_progress_viewPr_tooltip(),
+          url: prUrl,
+        },
+      ];
+    }
+
+    switch (stage) {
+      case 'changes-unstaged':
+        // Only offer the review action when tasks have actually been worked on.
+        if (taskStats.completed > 0 || taskStats.inProgress > 0) {
+          return [
+            {
+              id: 'review-changes',
+              label: m.workspace_progress_reviewAction_label(),
+              iconKey: 'file-lines',
+              tooltip: m.workspace_progress_reviewAction_tooltip(),
+            },
+          ];
         }
-      }
-      const statusDetails = parts.join(', ');
-      const { prNumber } = resolvePrIdentity(activePR, input);
-      return {
-        headline: m.workspace_progress_prOpen_headline({
-          number: String(prNumber),
-          details: statusDetails,
-        }),
-        subtext: '',
-      };
-    }
+        return [];
 
-    case 'pr-approved': {
-      let approvedBy = '';
-      if (activePR?.approvedBy && activePR.approvedBy.length > 0) {
-        approvedBy = ` ${m.workspace_progress_prApprovedBy_part({ names: activePR.approvedBy.join(', ') })}`;
-      }
-      let ciInfo = '';
-      if (activePR?.ciStatus && activePR.ciStatus.total > 0) {
-        const total = formatInteger(activePR.ciStatus.total);
-        if (activePR.ciStatus.failed > 0) {
-          ciInfo = `, ${m.workspace_progress_checksFailing_part({ failed: formatInteger(activePR.ciStatus.failed), total })}`;
-        } else if (activePR.ciStatus.pending > 0) {
-          ciInfo = `, ${m.workspace_progress_checksPending_part({ pending: formatInteger(activePR.ciStatus.pending), total })}`;
-        } else {
-          ciInfo = `, ${m.workspace_progress_checksPassing_part({ passed: formatInteger(activePR.ciStatus.passed), total })}`;
-        }
-      }
-      const { prNumber } = resolvePrIdentity(activePR, input);
-      return {
-        headline: m.workspace_progress_prApproved_headline({
-          number: String(prNumber),
-          approvedBy,
-          ciInfo,
-        }),
-        subtext: '',
-      };
-    }
-
-    case 'pr-merged':
-    case 'all-done':
-      return { headline: m.workspace_progress_allDone_headline(), subtext: '' };
-
-    default:
-      return { headline: m.workspace_progress_ready_headline(), subtext: '' };
-  }
-});
-
-export const selectWorkspaceProgressActions = store.createSelector<
-  [wsId: string, input: WorkspaceProgressInput],
-  WorkspaceProgressAction[]
->((state, wsId, input) => {
-  const stage = selectWorkflowStage.select(state, wsId, input);
-  const { taskStats } = input;
-  const existingPR = input.gitStatus?.existingPR;
-  const activePR = selectWorkspaceActivePullRequest.select(state, wsId) ?? undefined;
-  const activePrSummary = selectWorkspaceActivePrSummary.select(state, wsId);
-  const { prUrl: fallbackPrUrl } = resolvePrIdentity(activePR, input);
-  const prUrl = activePrSummary?.url ?? fallbackPrUrl;
-
-  // The approved stage retains its dedicated Merge PR action.
-  if (stage === 'pr-approved') {
-    if (!prUrl) return [];
-    return [
-      {
-        id: 'merge-pr',
-        label: m.workspace_progress_mergePr_label(),
-        iconKey: 'code-branch',
-        tooltip: m.workspace_progress_mergePr_tooltip(),
-        url: prUrl,
-      },
-    ];
-  }
-
-  // For every other stage, an openable PR takes priority over the
-  // stage-based Review/Commit/Push actions.
-  if (activePrSummary) {
-    return [
-      {
-        id: 'view-pr',
-        label: activePrSummary.actionLabel,
-        iconKey: 'code-branch',
-        tooltip: activePrSummary.actionTooltip,
-        url: activePrSummary.url,
-      },
-    ];
-  }
-
-  if (prUrl) {
-    return [
-      {
-        id: 'view-pr',
-        label: m.workspace_progress_viewPr_label(),
-        iconKey: 'code-branch',
-        tooltip: m.workspace_progress_viewPr_tooltip(),
-        url: prUrl,
-      },
-    ];
-  }
-
-  switch (stage) {
-    case 'changes-unstaged':
-      // Only offer the review action when tasks have actually been worked on.
-      if (taskStats.completed > 0 || taskStats.inProgress > 0) {
+      case 'changes-staged':
         return [
           {
-            id: 'review-changes',
-            label: m.workspace_progress_reviewAction_label(),
-            iconKey: 'file-lines',
-            tooltip: m.workspace_progress_reviewAction_tooltip(),
+            id: 'commit',
+            label: m.workspace_progress_commit_label(),
+            iconKey: 'check',
+            tooltip: m.workspace_progress_commit_tooltip(),
           },
         ];
-      }
-      return [];
 
-    case 'changes-staged':
-      return [
-        {
-          id: 'commit',
-          label: m.workspace_progress_commit_label(),
-          iconKey: 'check',
-          tooltip: m.workspace_progress_commit_tooltip(),
-        },
-      ];
+      case 'commits-unpushed':
+        return [
+          {
+            id: 'push-or-create-pr',
+            label: existingPR
+              ? m.workspace_progress_pushChanges_label()
+              : m.workspace_progress_createPr_label(),
+            iconKey: 'code-pull-request',
+            tooltip: existingPR
+              ? m.workspace_progress_pushChanges_tooltip()
+              : m.workspace_progress_createPr_tooltip(),
+          },
+        ];
 
-    case 'commits-unpushed':
-      return [
-        {
-          id: 'push-or-create-pr',
-          label: existingPR
-            ? m.workspace_progress_pushChanges_label()
-            : m.workspace_progress_createPr_label(),
-          iconKey: 'code-pull-request',
-          tooltip: existingPR
-            ? m.workspace_progress_pushChanges_tooltip()
-            : m.workspace_progress_createPr_tooltip(),
-        },
-      ];
-
-    default:
-      return [];
-  }
-});
+      default:
+        return [];
+    }
+  },
+);

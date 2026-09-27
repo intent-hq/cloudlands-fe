@@ -1,3 +1,4 @@
+import { withLegacyPrincipal } from '../../../../../test/fixtures/principal-state';
 /**
  * Saga → wire contract for the owner-side Share dialog. FAKE transport only:
  * `backendRequest` is mocked, so each test asserts the exact JSON-RPC method
@@ -118,7 +119,7 @@ function rootState(share: WorkspaceShareState, roles: Record<string, WorkspaceRo
   const workspaces = Object.entries(roles).map(
     ([id, myRole]) => ({ id, title: id, myRole }) as unknown as Workspace,
   );
-  return {
+  return withLegacyPrincipal({
     workspaceShare: share,
     workspace: { workspaces: createCollection('id', workspaces) },
     connections: connectionsInitialState,
@@ -126,7 +127,7 @@ function rootState(share: WorkspaceShareState, roles: Record<string, WorkspaceRo
       guestSessionsInitialState,
       guestSessionsListReceived({ sessions: [], openIds: [], connectedIds: [] }),
     ),
-  };
+  } as unknown as StoreState);
 }
 
 function harness(

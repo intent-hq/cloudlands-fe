@@ -1,3 +1,4 @@
+import { withLegacyPrincipal } from '../../../../../test/fixtures/principal-state';
 import { runSaga, stdChannel, type Task } from 'redux-saga';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -149,27 +150,30 @@ const GUEST_SESSION: GuestSessionRecord = {
  * backend id is a joined host).
  */
 function windowIdentity(guest = false) {
-  return {
-    workspace: { ...workspaceInitialState, hasLoaded: true },
-    connections: guest
-      ? connectionsReducer(
-          connectionsInitialState,
-          connectionsListReceived({
-            connections: [],
-            activeId: GUEST_SESSION.id,
-            windowBackendId: GUEST_SESSION.id,
-          }),
-        )
-      : connectionsInitialState,
-    guestSessions: guestSessionsReducer(
-      guestSessionsInitialState,
-      guestSessionsListReceived({
-        sessions: guest ? [GUEST_SESSION] : [],
-        openIds: [],
-        connectedIds: [],
-      }),
-    ),
-  };
+  return withLegacyPrincipal(
+    {
+      workspace: { ...workspaceInitialState, hasLoaded: true },
+      connections: guest
+        ? connectionsReducer(
+            connectionsInitialState,
+            connectionsListReceived({
+              connections: [],
+              activeId: GUEST_SESSION.id,
+              windowBackendId: GUEST_SESSION.id,
+            }),
+          )
+        : connectionsInitialState,
+      guestSessions: guestSessionsReducer(
+        guestSessionsInitialState,
+        guestSessionsListReceived({
+          sessions: guest ? [GUEST_SESSION] : [],
+          openIds: [],
+          connectedIds: [],
+        }),
+      ),
+    },
+    guest ? 'guest' : 'owner',
+  );
 }
 
 function start(
@@ -212,6 +216,33 @@ describe('agentMutationSaga', () => {
     clearPendingAgentDeletions();
     vi.useRealTimers();
     vi.clearAllMocks();
+  });
+
+  it('preserves scoped guest agent restore while refusing deletion for a guest workspace owner', async () => {
+    const { channel, task, getState } = start(undefined, { guest: true });
+    const current = getState();
+    current.principal.snapshot!.capabilities.hostMembership = true;
+    current.principal.snapshot!.principal.hostRole = 'guest';
+    const { selectPrincipalAdmissionContext } = await import('../../principal/principal-selectors');
+    Object.assign(current.workspace, {
+      hasLoaded: true,
+      loadedBackendId: current.connections.windowBackendId,
+      loadedPrincipalContext: selectPrincipalAdmissionContext.select(current),
+      workspaces: { ids: [WS], map: { [WS]: { id: WS, myRole: 'owner', canManage: true } } },
+    });
+    mocks.restore.mockResolvedValue({ success: true });
+    try {
+      const restore = restoreRetiredAgentRequested(WS, A1);
+      channel.put(restore);
+      await expect(restore.promise).resolves.toBeUndefined();
+      expect(mocks.restore).toHaveBeenCalledWith(A1, WS);
+      const remove = deleteAgentSessionRequested(WS, A1);
+      channel.put(remove);
+      await expect(remove.promise).rejects.toThrow();
+      expect(mocks.deleteAgent).not.toHaveBeenCalled();
+    } finally {
+      await stop(task);
+    }
   });
 
   it('restores through agents.get, preserves hydrated messages, and settles success', async () => {

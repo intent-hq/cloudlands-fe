@@ -1,4 +1,5 @@
 import { runSaga, stdChannel } from 'redux-saga';
+import { withLegacyPrincipal } from '../../../../../test/fixtures/principal-state';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { getItem } from '@augmentcode/themis/utils/collections/collection-utils';
 
@@ -48,9 +49,12 @@ import {
 import { initialState as specialistsInitialState } from '../../specialists/specialists-slice';
 import {
   initialState as workspaceInitialState,
+  markWorkspacePendingDeletion,
   removeWorkspaceEntity,
   replaceWorkspaceList,
+  resetWorkspaceState,
   setWorkspaceEntity,
+  setWorkspaceHasLoaded,
   workspaceReducer,
 } from '../../workspace/workspace-slice';
 import {
@@ -75,6 +79,18 @@ import {
   WORKSPACE_OPERATION_UNDO_DURATION_MS,
   workspaceOperationsSaga,
 } from './workspace-operations-saga';
+import { principalContextChanged, principalReducer } from '../../principal/principal-slice';
+import {
+  connectionStatusChanged,
+  daemonHealthReducer,
+} from '../../daemon-health/daemon-health-slice';
+import {
+  daemonEventsSubscribed,
+  workspaceEventsReducer,
+} from '../../workspace-events/workspace-events-slice';
+import { selectPrincipalAdmissionContext } from '../../principal/principal-selectors';
+import { selectWorkspaceManagementContext } from '../../workspace/workspace-selectors';
+import { workspaceDeleted } from '../../workspace-lifecycle/workspace-lifecycle-slice';
 
 const settle = async () => {
   await Promise.resolve();
@@ -151,16 +167,19 @@ function latestUndo(): (() => void) | undefined {
 
 function harness(seed: Workspace[], bundledSpecialists: Specialist[] = []) {
   const channel = stdChannel();
+  let authority = withLegacyPrincipal({});
   let workspaceState = workspaceInitialState;
   for (const item of seed)
     workspaceState = workspaceReducer(workspaceState, setWorkspaceEntity(item));
   let operations = operationsInitialState;
   let proposalLifecycle = proposalLifecycleInitialState;
   const specialists = { ...specialistsInitialState, bundledSpecialists };
+  let observe: ((action: { type: string }) => void) | undefined;
   const dispatch = vi.fn((action) => {
     workspaceState = workspaceReducer(workspaceState, action);
     operations = workspaceOperationsReducer(operations, action);
     proposalLifecycle = proposalLifecycleReducer(proposalLifecycle, action);
+    observe?.(action);
     return action;
   });
   const task = runSaga(
@@ -168,6 +187,7 @@ function harness(seed: Workspace[], bundledSpecialists: Specialist[] = []) {
       channel,
       dispatch,
       getState: () => ({
+        ...authority,
         workspace: workspaceState,
         workspaceOperations: operations,
         proposalLifecycle,
@@ -186,6 +206,13 @@ function harness(seed: Workspace[], bundledSpecialists: Specialist[] = []) {
     dispatch,
     send,
     task,
+    authority: () => authority,
+    setAuthority: (next: typeof authority) => {
+      authority = next;
+    },
+    observe: (callback: typeof observe) => {
+      observe = callback;
+    },
     state: () => ({
       workspace: workspaceState,
       workspaceOperations: operations,
@@ -1250,6 +1277,428 @@ describe('workspaceOperationsSaga', () => {
     expect(mocks.notify.error).toHaveBeenCalledTimes(1);
     await vi.advanceTimersByTimeAsync(WORKSPACE_DELETION_TOMBSTONE_TTL_MS);
     expect(run.state().workspace.pendingDeletions).toEqual({});
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+});
+
+describe('workspace management authority', () => {
+  it.each(['archive', 'unarchive', 'delete', 'bulk-archive', 'bulk-delete'] as const)(
+    'refuses guest-owned workspace lifecycle RPCs: %s',
+    async (operation) => {
+      vi.resetAllMocks();
+      mocks.getActiveWorkNames.mockResolvedValue(noActiveWork);
+      mocks.navigate.mockResolvedValue(undefined);
+      mocks.archive.mockResolvedValue({ ok: false, error: 'GuestForbidden' });
+      mocks.unarchive.mockResolvedValue({ ok: false, error: 'GuestForbidden' });
+      mocks.deleteWorkspace.mockResolvedValue({ ok: false, error: 'GuestForbidden' });
+      const owned = { ...workspace('ws-1'), myRole: 'owner' as const, canManage: true };
+      const run = harness([owned]);
+      const authority = run.authority();
+      authority.principal.snapshot!.capabilities.hostMembership = true;
+      authority.principal.snapshot!.principal.hostRole = 'guest';
+      authority.principal.snapshot!.principal.isAdministrator = false;
+      run.send(
+        setWorkspaceHasLoaded(true, 'local', selectPrincipalAdmissionContext.select(authority)),
+      );
+      try {
+        expect(
+          selectWorkspaceManagementContext.select(
+            { ...authority, workspace: run.state().workspace },
+            owned.id,
+          ),
+        ).not.toBeNull();
+        if (operation === 'archive') run.send(requestArchiveWorkspace(owned.id));
+        if (operation === 'unarchive') run.send(requestUnarchiveWorkspace(owned.id));
+        if (operation === 'delete') run.send(requestDeleteWorkspace(owned.id));
+        if (operation === 'bulk-archive') {
+          run.send(openBulkArchiveConfirm({ workspaceIds: [owned.id] }));
+          await settle();
+          run.send(confirmBulkArchive());
+        }
+        if (operation === 'bulk-delete') {
+          run.send(openBulkDeleteConfirm({ workspaceIds: [owned.id] }));
+          await settle();
+          run.send(confirmBulkDelete());
+        }
+        await settle();
+        expect(mocks.archive).not.toHaveBeenCalled();
+        expect(mocks.unarchive).not.toHaveBeenCalled();
+        expect(mocks.deleteWorkspace).not.toHaveBeenCalled();
+        expect(mocks.cancelDelete).not.toHaveBeenCalled();
+        expect(getItem(run.state().workspace.workspaces, owned.id)).toEqual(owned);
+      } finally {
+        run.task.cancel();
+        await run.task.toPromise();
+      }
+    },
+  );
+
+  it.each(['failed-result', 'thrown-error'] as const)(
+    'never restores a live-deleted workspace after a pending delete %s',
+    async (outcome) => {
+      vi.resetAllMocks();
+      mocks.getActiveWorkNames.mockResolvedValue(noActiveWork);
+      mocks.navigate.mockResolvedValue(undefined);
+      let resolve!: (value: unknown) => void;
+      let reject!: (reason: Error) => void;
+      mocks.deleteWorkspace.mockReturnValue(
+        new Promise((done, fail) => {
+          resolve = done;
+          reject = fail;
+        }),
+      );
+      const run = harness([workspace('ws-1')]);
+      try {
+        run.send(requestDeleteWorkspace('ws-1'));
+        await settle();
+        expect(mocks.deleteWorkspace).toHaveBeenCalledTimes(1);
+        expect(getItem(run.state().workspace.workspaces, 'ws-1')).toBeUndefined();
+        expect(run.state().workspace.pendingDeletions['ws-1']).toBe(true);
+        run.send(workspaceDeleted('ws-1', []));
+        if (outcome === 'failed-result') resolve({ ok: false, error: 'late failure' });
+        else reject(new Error('response lost'));
+        await settle();
+        expect(getItem(run.state().workspace.workspaces, 'ws-1')).toBeUndefined();
+        expect(run.state().workspace.pendingDeletions).toEqual({});
+        expect(run.dispatch.mock.calls.flat()).toContainEqual(
+          expect.objectContaining({ type: 'workspace/loadWorkspacesRequested' }),
+        );
+      } finally {
+        run.task.cancel();
+        await run.task.toPromise();
+      }
+    },
+  );
+
+  it.each(['new-admission', 'new-list', 'new-detail'] as const)(
+    'clears a failed deletion without restoring an older workspace grant: %s',
+    async (change) => {
+      vi.resetAllMocks();
+      mocks.getActiveWorkNames.mockResolvedValue(noActiveWork);
+      mocks.navigate.mockResolvedValue(undefined);
+      let resolve!: (value: unknown) => void;
+      mocks.deleteWorkspace.mockReturnValue(new Promise((done) => (resolve = done)));
+      const owned = { ...workspace('ws-1'), myRole: 'owner' as const, canManage: true };
+      const run = harness([owned]);
+      const authority = run.authority();
+      authority.principal.snapshot!.capabilities.hostMembership = true;
+      authority.principal.snapshot!.principal.hostRole = 'member';
+      authority.principal.snapshot!.principal.isAdministrator = false;
+      run.send(
+        setWorkspaceHasLoaded(true, 'local', selectPrincipalAdmissionContext.select(authority)),
+      );
+      try {
+        run.send(requestDeleteWorkspace(owned.id));
+        await settle();
+        expect(mocks.deleteWorkspace).toHaveBeenCalledTimes(1);
+        if (change === 'new-admission') authority.principal.invalidation++;
+        const current = { ...owned, myRole: 'collaborator' as const, canManage: false };
+        if (change === 'new-detail') run.send(setWorkspaceEntity(current));
+        else run.send(replaceWorkspaceList([current]));
+        run.send(
+          setWorkspaceHasLoaded(true, 'local', selectPrincipalAdmissionContext.select(authority)),
+        );
+        resolve({ ok: false, error: 'ownership removed' });
+        await settle();
+        expect(run.state().workspace.pendingDeletions).toEqual({});
+        expect(
+          selectWorkspaceManagementContext.select(
+            { ...authority, workspace: run.state().workspace },
+            owned.id,
+          ),
+        ).toBeNull();
+        run.send(replaceWorkspaceList([current]));
+        expect(getItem(run.state().workspace.workspaces, owned.id)?.canManage).toBe(false);
+      } finally {
+        run.task.cancel();
+        await run.task.toPromise();
+      }
+    },
+  );
+
+  it.each([
+    'single-failed',
+    'single-success',
+    'single-before-send',
+    'single-cancel',
+    'bulk-failed',
+    'bulk-success',
+    'bulk-before-send',
+    'bulk-cancel',
+    'other-backend',
+    'replaced-store',
+  ] as const)('keeps deletion cleanup owned across a physical reconnect: %s', async (mode) => {
+    vi.resetAllMocks();
+    vi.useFakeTimers();
+    mocks.getActiveWorkNames.mockResolvedValue(noActiveWork);
+    mocks.navigate.mockResolvedValue(undefined);
+    let resolve!: (value: unknown) => void;
+    mocks.deleteWorkspace.mockReturnValue(new Promise((done) => (resolve = done)));
+    const row = { ...workspace('ws-1'), myRole: 'collaborator' as const, canManage: true };
+    const run = harness([row]);
+    const authority = run.authority();
+    authority.principal.snapshot!.capabilities.hostMembership = true;
+    authority.principal.snapshot!.principal.hostRole = 'member';
+    authority.principal.snapshot!.principal.isAdministrator = false;
+    run.send(setWorkspaceHasLoaded(true, 'local'));
+    const disconnect = () => {
+      const status = connectionStatusChanged('disconnected');
+      authority.daemonHealth = daemonHealthReducer(authority.daemonHealth, status);
+      const context = principalContextChanged(null);
+      authority.principal = principalReducer(authority.principal, context);
+      run.send(context);
+    };
+    const beforeSend = mode.endsWith('before-send');
+    if (beforeSend)
+      run.observe((action) => {
+        if (action.type === markWorkspacePendingDeletion.type) disconnect();
+      });
+    try {
+      if (mode.startsWith('bulk')) {
+        run.send(openBulkDeleteConfirm({ workspaceIds: ['ws-1'], groupLabel: 'Reconnect group' }));
+        await vi.advanceTimersByTimeAsync(50);
+        run.send(confirmBulkDelete());
+      } else run.send(requestDeleteWorkspace('ws-1'));
+      await vi.advanceTimersByTimeAsync(50);
+      expect(mocks.deleteWorkspace).toHaveBeenCalledTimes(beforeSend ? 0 : 1);
+      disconnect();
+      const replaced = mode === 'other-backend' || mode === 'replaced-store';
+      if (replaced) {
+        if (mode === 'other-backend') authority.connections.windowBackendId = 'host-b';
+        run.send(resetWorkspaceState());
+        run.send(setWorkspaceEntity({ ...row, title: 'New store row' }));
+        run.send(markWorkspacePendingDeletion(row.id));
+      }
+      if (mode.endsWith('cancel')) {
+        run.task.cancel();
+        await run.task.toPromise();
+      }
+      if (!beforeSend) resolve({ ok: mode.endsWith('success'), error: 'refused' });
+      await vi.advanceTimersByTimeAsync(50);
+      authority.daemonHealth = daemonHealthReducer(
+        authority.daemonHealth,
+        connectionStatusChanged('connected'),
+      );
+      authority.workspaceEvents = workspaceEventsReducer(
+        authority.workspaceEvents,
+        daemonEventsSubscribed(),
+      );
+      run.setAuthority(withLegacyPrincipal(authority));
+      await vi.advanceTimersByTimeAsync(
+        WORKSPACE_DELETION_TOMBSTONE_TTL_MS + WORKSPACE_OPERATION_UNDO_DURATION_MS,
+      );
+      if (replaced) {
+        expect(getItem(run.state().workspace.workspaces, row.id)?.title).toBe('New store row');
+        expect(run.state().workspace.pendingDeletions[row.id]).toBe(true);
+      } else {
+        expect(run.state().workspace.pendingDeletions).toEqual({});
+        run.send(replaceWorkspaceList([row]));
+        expect(getItem(run.state().workspace.workspaces, row.id)).toBeDefined();
+        expect(run.state().workspaceOperations.bulkOperationInFlight).toBe(false);
+      }
+    } finally {
+      run.task.cancel();
+      await run.task.toPromise();
+      await vi.advanceTimersByTimeAsync(
+        WORKSPACE_DELETION_TOMBSTONE_TTL_MS + WORKSPACE_OPERATION_UNDO_DURATION_MS,
+      );
+      vi.useRealTimers();
+    }
+  });
+
+  it.each([
+    'single-failed',
+    'single-before-send',
+    'single-cancel',
+    'bulk-failed',
+    'bulk-before-send',
+    'bulk-cancel',
+    'other-host',
+  ] as const)('cleans owned deletion state after an authority change: %s', async (mode) => {
+    vi.resetAllMocks();
+    vi.useFakeTimers();
+    mocks.getActiveWorkNames.mockResolvedValue(noActiveWork);
+    mocks.navigate.mockResolvedValue(undefined);
+    let resolve!: (value: unknown) => void;
+    mocks.deleteWorkspace.mockReturnValue(
+      new Promise((done) => {
+        resolve = done;
+      }),
+    );
+    const row = { ...workspace('ws-1'), myRole: 'collaborator' as const, canManage: true };
+    const run = harness([row]);
+    const authority = run.authority();
+    authority.principal.snapshot!.capabilities.hostMembership = true;
+    authority.principal.snapshot!.principal.hostRole = 'member';
+    authority.principal.snapshot!.principal.isAdministrator = false;
+    run.send(setWorkspaceHasLoaded(true, 'local'));
+    const beforeSend = mode.endsWith('before-send');
+    if (beforeSend)
+      run.observe((action) => {
+        if (action.type === 'workspace/markWorkspacePendingDeletion') {
+          authority.userPreferences.labsMultiplayerEnabled = false;
+        }
+      });
+    try {
+      if (mode.startsWith('bulk')) {
+        run.send(openBulkDeleteConfirm({ workspaceIds: ['ws-1'], groupLabel: 'Owned group' }));
+        await vi.advanceTimersByTimeAsync(50);
+        run.send(confirmBulkDelete());
+      } else run.send(requestDeleteWorkspace('ws-1'));
+      await vi.advanceTimersByTimeAsync(50);
+      expect(mocks.deleteWorkspace).toHaveBeenCalledTimes(beforeSend ? 0 : 1);
+      authority.userPreferences.labsMultiplayerEnabled = false;
+      if (mode === 'other-host') {
+        authority.connections.windowBackendId = 'host-b';
+        run.send(resetWorkspaceState());
+        run.send(setWorkspaceEntity({ ...row, title: 'Current host row' }));
+      }
+      if (mode.endsWith('cancel')) {
+        run.task.cancel();
+        await run.task.toPromise();
+      }
+      if (!beforeSend) resolve({ ok: false, error: 'refused' });
+      await vi.advanceTimersByTimeAsync(50);
+      authority.userPreferences.labsMultiplayerEnabled = true;
+      await vi.advanceTimersByTimeAsync(
+        WORKSPACE_DELETION_TOMBSTONE_TTL_MS + WORKSPACE_OPERATION_UNDO_DURATION_MS,
+      );
+      if (mode === 'other-host') {
+        expect(getItem(run.state().workspace.workspaces, 'ws-1')?.title).toBe('Current host row');
+      } else {
+        run.send(replaceWorkspaceList([row]));
+        expect(run.state().workspace.pendingDeletions).toEqual({});
+        expect(getItem(run.state().workspace.workspaces, 'ws-1')).toBeDefined();
+        expect(run.state().workspaceOperations.bulkOperationInFlight).toBe(false);
+      }
+    } finally {
+      run.task.cancel();
+      await run.task.toPromise();
+      await vi.advanceTimersByTimeAsync(
+        WORKSPACE_DELETION_TOMBSTONE_TTL_MS + WORKSPACE_OPERATION_UNDO_DURATION_MS,
+      );
+      vi.useRealTimers();
+    }
+  });
+
+  it('refuses direct archive and creation for a guest even with an owned workspace grant', async () => {
+    vi.resetAllMocks();
+    mocks.getActiveWorkNames.mockResolvedValue(noActiveWork);
+    mocks.archive.mockResolvedValue({ ok: true });
+    const run = harness([
+      { ...workspace('owned'), myRole: 'owner', canManage: true },
+      { ...workspace('shared'), myRole: 'collaborator', canManage: false },
+    ]);
+    const state = run.authority();
+    state.principal.snapshot!.capabilities.hostMembership = true;
+    state.principal.snapshot!.principal.hostRole = 'guest';
+    state.principal.snapshot!.principal.isAdministrator = false;
+    run.send(
+      setWorkspaceHasLoaded(
+        true,
+        'local',
+        JSON.stringify([
+          state.principal.context,
+          state.principal.invalidation,
+          state.principal.snapshot!.principal.id,
+        ]),
+      ),
+    );
+    try {
+      run.send(requestArchiveWorkspace('owned'));
+      await settle();
+      run.send(requestArchiveWorkspace('shared'));
+      run.send(requestArchiveWorkspace('ungranted'));
+      run.send(applyWorkspaceProposal({ proposal: createProposal('guest-create') }));
+      await settle();
+      expect(mocks.archive).not.toHaveBeenCalled();
+      expect(getItem(run.state().workspace.workspaces, 'owned')?.archived).toBe(false);
+      expect(mocks.create).not.toHaveBeenCalled();
+    } finally {
+      run.task.cancel();
+      await run.task.toPromise();
+    }
+  });
+
+  it('allows a member to archive an inherited workspace without treating the member as owner', async () => {
+    vi.resetAllMocks();
+    mocks.getActiveWorkNames.mockResolvedValue(noActiveWork);
+    mocks.archive.mockResolvedValue({ ok: true });
+    const run = harness([{ ...workspace('ws-1'), myRole: 'collaborator', canManage: true }]);
+    const state = run.authority();
+    state.principal.snapshot!.capabilities.hostMembership = true;
+    state.principal.snapshot!.principal.hostRole = 'member';
+    state.principal.snapshot!.principal.isAdministrator = false;
+    run.send(setWorkspaceHasLoaded(true, state.connections.windowBackendId));
+    run.send(requestArchiveWorkspace('ws-1'));
+    await settle();
+    expect(mocks.archive).toHaveBeenCalledWith('ws-1');
+    expect(getItem(run.state().workspace.workspaces, 'ws-1')?.archived).toBe(true);
+    expect(state.principal.snapshot!.principal.isAdministrator).toBe(false);
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('dismisses a stale warning on reconnect and blocks its old confirm action', async () => {
+    vi.resetAllMocks();
+    mocks.getActiveWorkNames.mockResolvedValue({ ...noActiveWork, agentNames: ['Busy agent'] });
+    const run = harness([workspace('ws-1')]);
+    run.send(requestArchiveWorkspace('ws-1'));
+    await settle();
+    expect(run.state().workspaceOperations.pendingArchiveWorkspaceId).toBe('ws-1');
+    run.setAuthority({
+      ...run.authority(),
+      principal: { ...run.authority().principal, status: 'unknown' },
+    });
+    run.send(principalContextChanged(null));
+    await settle();
+    expect(run.state().workspaceOperations.pendingArchiveWorkspaceId).toBeNull();
+    run.send(confirmArchiveWorkspace());
+    await settle();
+    expect(mocks.archive).not.toHaveBeenCalled();
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it.each([requestDeleteWorkspace, requestArchiveWorkspace, requestUnarchiveWorkspace])(
+    'drops a stale menu action after the role becomes unknown',
+    async (action) => {
+      vi.clearAllMocks();
+      const run = harness([workspace('ws-1')]);
+      run.setAuthority({
+        ...run.authority(),
+        principal: { ...run.authority().principal, status: 'unknown' },
+      });
+      run.send(action('ws-1'));
+      await settle();
+      expect(mocks.deleteWorkspace).not.toHaveBeenCalled();
+      expect(mocks.archive).not.toHaveBeenCalled();
+      expect(mocks.unarchive).not.toHaveBeenCalled();
+      expect(mocks.getActiveWorkNames).not.toHaveBeenCalled();
+      run.task.cancel();
+      await run.task.toPromise();
+    },
+  );
+
+  it('does not archive a different host when its warning preflight resolves late', async () => {
+    vi.clearAllMocks();
+    let resolve!: (value: typeof noActiveWork) => void;
+    mocks.getActiveWorkNames.mockReturnValue(
+      new Promise((done) => {
+        resolve = done;
+      }),
+    );
+    const run = harness([workspace('ws-1')]);
+    run.send(requestArchiveWorkspace('ws-1'));
+    await settle();
+    run.setAuthority({
+      ...run.authority(),
+      connections: { ...run.authority().connections, windowBackendId: 'other-host' },
+    });
+    resolve(noActiveWork);
+    await settle();
+    expect(mocks.archive).not.toHaveBeenCalled();
     run.task.cancel();
     await run.task.toPromise();
   });

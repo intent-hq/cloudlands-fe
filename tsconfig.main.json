@@ -23,7 +23,9 @@
       "$lib/*": ["./src/lib/*"],
       "$store/*": ["./src/store/*"],
       "$shared/*": ["./src/shared/*"],
-      "$features/*": ["./src/features/*"]
+      "$features/*": ["./src/features/*"],
+      "@fortawesome/fontawesome-common-types": ["./src/lib/icons/phosphor-icons.ts"],
+      "@fortawesome/free-solid-svg-icons": ["./src/lib/icons/phosphor-icons.ts"]
     },
     "allowSyntheticDefaultImports": true
   },

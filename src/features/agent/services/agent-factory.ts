@@ -29,6 +29,7 @@ import {
   selectAvailableEnabledProviderIds,
 } from '$store/renderer/slices/provider-settings/provider-settings-selectors';
 import { selectHasCheckedOnce } from '$store/renderer/slices/agent-availability/agent-availability-selectors';
+import { selectIsHostMember } from '$store/renderer/slices/host-execution/host-execution-selectors';
 
 import { store as appStore } from '$store/renderer/store';
 import { m } from '$shared/paraglide/messages.js';
@@ -317,7 +318,7 @@ export class UnifiedAgentFactory {
       // Step 6.5: Determine provider early (needed for model resolution)
       // Determine provider: use explicit config.provider, or get from Redux active-provider slice
       let provider = config.provider;
-      if (!provider && !isBackend) {
+      if (!provider && !isBackend && !normalized.metadata?.specialist) {
         const activeId = await getActiveProviderId();
         if (activeId) {
           // D1(B): never silently spawn on an unavailable provider — this is
@@ -344,7 +345,9 @@ export class UnifiedAgentFactory {
             });
             return {
               success: false,
-              error: m.agent_factory_activeProviderUnavailable_error({ provider: activeId }),
+              error: selectIsHostMember.select(appStore.state)
+                ? m.hostExecution_providerSetup_description()
+                : m.agent_factory_activeProviderUnavailable_error({ provider: activeId }),
             };
           }
           provider = activeId;
@@ -455,6 +458,10 @@ export class UnifiedAgentFactory {
           };
         }
         agent.id = createAgentId(backendResult.agentId);
+        // The host resolves specialist/default models. Keep its provider/model
+        // pair together so later picker mutations address the actual session.
+        agent.provider = backendResult.provider ?? agent.provider;
+        agent.model = backendResult.model ?? agent.model;
       }
 
       logger.debug('Backend agent created', {
@@ -719,7 +726,14 @@ export class UnifiedAgentFactory {
     provider?: string,
     _skipInitialPrompt?: boolean,
     nameExplicitlySet?: boolean,
-  ): Promise<{ success: boolean; agentId?: string; error?: string; cause?: unknown }> {
+  ): Promise<{
+    success: boolean;
+    agentId?: string;
+    provider?: string | null;
+    model?: string | null;
+    error?: string;
+    cause?: unknown;
+  }> {
     try {
       const request = {
         workspaceId: String(agent.workspaceId),
@@ -757,7 +771,12 @@ export class UnifiedAgentFactory {
 
       const created = await appClient.agents.create(request);
 
-      return { success: true, agentId: created.id ? String(created.id) : undefined };
+      return {
+        success: true,
+        agentId: created.id ? String(created.id) : undefined,
+        provider: created.provider,
+        model: created.model,
+      };
     } catch (error) {
       logger.error('Daemon agent.create failed', error);
       // Keep the thrown error alongside the flattened message: a daemon

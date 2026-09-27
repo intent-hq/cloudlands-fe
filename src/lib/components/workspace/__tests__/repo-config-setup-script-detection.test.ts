@@ -9,6 +9,7 @@
  * branch changes (monorepo#835). This is the modal-side counterpart of the
  * onboarding suite, so a modal-only edit can no longer go untested.
  */
+import { withLegacyPrincipal } from '../../../../test/fixtures/principal-state';
 import { cleanup, render, waitFor } from '@testing-library/svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -38,10 +39,11 @@ vi.mock('$store/renderer/store', async () => {
   const { createAppStoreMockModule } =
     await import('$store/renderer/utils/test-helpers/store-mock');
   return createAppStoreMockModule({
-    state: () => ({
-      hardwareConsole: { pttRecording: false, voiceTranscribing: false },
-      workspaceCreateProgress: { byProgressId: {} },
-    }),
+    state: () =>
+      withLegacyPrincipal({
+        hardwareConsole: { pttRecording: false, voiceTranscribing: false },
+        workspaceCreateProgress: { byProgressId: {} },
+      }),
     dispatch: mocks.dispatch,
   });
 });

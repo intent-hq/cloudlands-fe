@@ -104,16 +104,33 @@ vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
       return () => {};
     },
   }),
-  selectIsWorkspaceCollaborator: (workspaceIdArg: any) =>
-    createSelectorReadable(workspaceIdArg, () => collaboratorState.workspace),
-  selectHidesAgentLifecycleActions: (workspaceIdArg: any) =>
-    createSelectorReadable(workspaceIdArg, () => collaboratorState.workspace),
+  selectHidesWorkspaceExecutionActions: Object.assign(
+    (workspaceIdArg: any) =>
+      createSelectorReadable(workspaceIdArg, () => collaboratorState.workspace),
+    { select: () => collaboratorState.workspace },
+  ),
+  selectHidesAgentLifecycleActions: Object.assign(
+    (workspaceIdArg: any) =>
+      createSelectorReadable(workspaceIdArg, () => collaboratorState.workspace),
+    { select: () => collaboratorState.workspace },
+  ),
   selectIsCollaboratorOnlyClient: () => ({
     subscribe: (fn: (value: boolean) => void) => {
       fn(collaboratorState.client);
       return () => {};
     },
   }),
+}));
+vi.mock('$store/renderer/slices/principal/principal-selectors', () => ({
+  selectWorkspaceCreationVisible: Object.assign(
+    () => ({
+      subscribe: (fn: (value: boolean) => void) => {
+        fn(!collaboratorState.client);
+        return () => {};
+      },
+    }),
+    { select: () => !collaboratorState.client },
+  ),
 }));
 vi.mock('$features/agent/browser', () => ({}));
 
@@ -425,6 +442,14 @@ describe('CommandPalette new actions', () => {
     await waitFor(() => {
       expect(screen.queryByRole('button', { name: /example\.com/ })).toBeNull();
     });
+    expect(reduxDispatchMock).not.toHaveBeenCalledWith(createTerminalRequested('ws-1'));
+  });
+
+  it('blocks a visible terminal command if authority is withdrawn before the click', async () => {
+    render(CommandPalette, { props: { isOpen: true, workspaceId: 'ws-1', onClose: vi.fn() } });
+    const button = await screen.findByRole('button', { name: 'Terminal' });
+    collaboratorState.workspace = true;
+    await fireEvent.click(button);
     expect(reduxDispatchMock).not.toHaveBeenCalledWith(createTerminalRequested('ws-1'));
   });
 

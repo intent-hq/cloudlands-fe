@@ -1,5 +1,7 @@
 // @verify-changed-triggers: scripts/transfer-selection-fixtures.mjs, .github/workflows/intent-pr.yml
 // The shared contract/golden live outside this package; the connected gate owns their changes.
+
+import { withLegacyPrincipal } from '../../../../test/fixtures/principal-state';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, render, screen, waitFor } from '@testing-library/svelte';
 import { tick } from 'svelte';
@@ -85,7 +87,7 @@ const { contract, artifact } = await loadTransferSelectionFixtures();
 console.info('Transfer-selection renderer input:', JSON.stringify(artifact.provenance));
 
 function makeState(codexEnabled: boolean) {
-  return {
+  return withLegacyPrincipal({
     providerCatalog: providerCatalogReducer(
       catalogInitialState,
       providerCatalogLoaded(contract.providersCatalog),
@@ -114,7 +116,7 @@ function makeState(codexEnabled: boolean) {
       hasReceivedList: true,
       listUnavailable: false,
     },
-  };
+  });
 }
 
 beforeEach(() => {

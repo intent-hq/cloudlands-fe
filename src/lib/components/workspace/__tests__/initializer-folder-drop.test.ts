@@ -9,6 +9,7 @@
  * folder items ride `initialAgent.contextReferences` as
  * `{ type: 'file', path, title }` (same shape as a folder @-mention).
  */
+import { withLegacyPrincipal } from '../../../../test/fixtures/principal-state';
 import { cleanup, fireEvent, render, waitFor } from '@testing-library/svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -57,7 +58,7 @@ vi.mock('$store/renderer/store', async () => {
   const { createAppStoreMockModule } =
     await import('$store/renderer/utils/test-helpers/store-mock');
   return createAppStoreMockModule({
-    state: () => ({ workspaceCreateProgress: { byProgressId: {} } }),
+    state: () => withLegacyPrincipal({ workspaceCreateProgress: { byProgressId: {} } }),
     dispatch: mocks.dispatch,
   });
 });

@@ -1,6 +1,7 @@
 import { runSaga, stdChannel } from 'redux-saga';
 import { all, fork } from 'typed-redux-saga';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { withLegacyPrincipal } from '../../../../../test/fixtures/principal-state';
 
 const mocks = vi.hoisted(() => ({
   open: vi.fn(),
@@ -162,7 +163,7 @@ describe('rapid workspace switch ownership', () => {
     const channel = stdChannel();
     const actions: Action[] = [];
     const leases = new Map<string, number>();
-    let state = reduce(undefined, { type: '@@INIT' });
+    let state: RootState = withLegacyPrincipal(reduce(undefined, { type: '@@INIT' }));
     const dispatch = (action: Action) => {
       state = reduce(state, action);
       actions.push(action);

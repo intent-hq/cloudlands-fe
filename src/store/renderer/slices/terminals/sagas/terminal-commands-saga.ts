@@ -1,7 +1,7 @@
 import { call, put, takeEvery, type SagaGenerator } from 'typed-redux-saga';
 
 import { dispatchWindowEvent } from '$lib/utils/window-events';
-import { selectIsWorkspaceCollaborator } from '../../workspace/workspace-selectors';
+import { selectHidesWorkspaceExecutionActions } from '../../workspace/workspace-selectors';
 import { selectActiveTerminalIdForWorkspace } from '../terminals-selectors';
 import {
   closeActiveTerminalRequested,
@@ -19,7 +19,7 @@ function* createTerminalWorker(
   action: ReturnType<typeof createTerminalRequested>,
 ): SagaGenerator<void> {
   const [workspaceId] = action.payload;
-  if (yield* selectIsWorkspaceCollaborator.effect(workspaceId)) return;
+  if (yield* selectHidesWorkspaceExecutionActions.effect(workspaceId)) return;
   yield* call(() => dispatchWindowEvent('workspace:new-terminal', { workspaceId }));
 }
 

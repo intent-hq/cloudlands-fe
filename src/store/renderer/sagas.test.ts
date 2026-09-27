@@ -1,3 +1,4 @@
+import { hardwareConsoleSaga } from './slices/principal/sagas/host-owner-services-saga';
 import { describe, expect, it, vi } from 'vitest';
 
 import { actionKeySaga } from './slices/hardware-console/sagas/action-key-saga';
@@ -6,7 +7,7 @@ import { encoderPreferenceSaga } from './slices/hardware-console/sagas/encoder-p
 import { keyPinPersistenceSaga } from './slices/hardware-console/sagas/key-pin-persistence-saga';
 import { promptPickerSaga } from './slices/hardware-console/sagas/prompt-picker-saga';
 import { voiceTranscriptionSaga } from './slices/hardware-console/sagas/voice-transcription-saga';
-import { hardwareConsoleSaga, sagas, startAllAppSagas } from './sagas';
+import { sagas, startAllAppSagas } from './sagas';
 
 describe('renderer app saga registry', () => {
   it('registers every audited root saga exactly once', () => {
@@ -18,6 +19,8 @@ describe('renderer app saga registry', () => {
       'connectionsSaga',
       'guestSessionsSaga',
       'presenceSaga',
+      'principalSaga',
+      'hostExecutionSaga',
       'settingsHydrationSaga',
       'activeStreamsSaga',
       'agentReadSaga',
@@ -28,6 +31,7 @@ describe('renderer app saga registry', () => {
       'chatScrollbackSaga',
       'switchTimingSaga',
       'permissionResponseSaga',
+      'permissionReadSaga',
       'agentStreamSaga',
       'agentCreationSaga',
       'backgroundExecutorSaga',
@@ -64,10 +68,8 @@ describe('renderer app saga registry', () => {
       'modelReloadSaga',
       'providerAvailabilitySaga',
       'setupPromptSaga',
-      'hostRequirementsSaga',
       'backgroundHooksSaga',
-      'hardwareConsoleSaga',
-      'voiceSettingsSaga',
+      'hostOwnerServicesSaga',
       'themeSaga',
       'powerSaga',
       'autoUpdateSaga',
@@ -75,13 +77,13 @@ describe('renderer app saga registry', () => {
       'proposalLifecycleSaga',
       'settingsProposalHistorySaga',
       'specialistProposalHistorySaga',
-      'githubAuthSaga',
       'gitlabAuthSaga',
       'githubRepoSearchSaga',
       'githubUserSearchSaga',
       'sentryAuthSaga',
       'linearAuthSaga',
       'identitySaga',
+      'collaborationAuthSaga',
       'mcpSettingsSaga',
       'directoryPickerSaga',
       'legacyImportSaga',
@@ -106,7 +108,6 @@ describe('renderer app saga registry', () => {
       'externalEditorsPersistenceSaga',
       'workspaceSettingsSaga',
       'updateChannelSaga',
-      'notificationSettingsSaga',
       'userPreferencesPersistenceSaga',
       'workspaceInitializerSaga',
       'zoomIpcSaga',

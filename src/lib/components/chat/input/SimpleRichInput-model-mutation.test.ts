@@ -3,6 +3,7 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-li
 import { tick } from 'svelte';
 import { createCollection } from '@augmentcode/themis/utils/collections/collection-utils';
 import type { Workspace } from '$shared/types';
+import { withLegacyPrincipal } from '../../../../test/fixtures/principal-state';
 
 const fixture = vi.hoisted(() => ({
   state: {} as Record<string, any>,
@@ -133,7 +134,7 @@ async function confirm() {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  fixture.state = {
+  fixture.state = withLegacyPrincipal({
     agentSessions: {
       ...sessionInitial,
       byAgentId: {
@@ -179,7 +180,7 @@ beforeEach(() => {
     voiceSettings: { engine: 'daemon', provider: 'elevenlabs', keyConfigured: {} },
     skills: { byWorkspaceId: {} },
     multiPanelContext: { panels: [], selections: [] },
-  };
+  });
   fixture.dispatch.mockImplementation((action) => {
     fixture.state.agentSessions = agentSessionReducer(fixture.state.agentSessions, action);
     fixture.state.model = modelReducer(fixture.state.model, action);

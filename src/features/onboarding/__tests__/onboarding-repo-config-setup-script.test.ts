@@ -20,6 +20,7 @@
  * workspaceCreateProgress slice before the create goes out, echoed on the
  * request (PROTOCOL §5.1), and cleared once the create settles.
  */
+import { withLegacyPrincipal } from '../../../test/fixtures/principal-state';
 import { cleanup, render, waitFor } from '@testing-library/svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -32,6 +33,9 @@ const mocks = vi.hoisted(() => {
   });
   return {
     readable,
+    admission: 'owner' as 'owner' | 'member' | 'unknown',
+    backendId: 'local',
+    multiplayer: true,
     dispatch: vi.fn(),
     goto: vi.fn(),
     fetchRepoConfig: vi.fn<(repoPath: string) => Promise<string | null>>(),
@@ -41,6 +45,7 @@ const mocks = vi.hoisted(() => {
     getRemoteUrl: vi.fn<(repoPath: string) => Promise<unknown>>(),
     workspaceCreate: vi.fn<(params: Record<string, unknown>) => Promise<unknown>>(),
     toastError: vi.fn(),
+    runtimeMentions: vi.fn(async () => []),
     gitPull: vi.fn<() => Promise<{ success: boolean; error?: string }>>(),
     // Default implementations are (re)installed per test by the top-level
     // beforeEach (installDefaultMockImplementations) after every shared mock
@@ -74,13 +79,28 @@ const mocks = vi.hoisted(() => {
   };
 });
 
+function admittedFormState(input: object) {
+  const state = withLegacyPrincipal({
+    ...input,
+    connections: { windowBackendId: mocks.backendId },
+    userPreferences: { labsMultiplayerEnabled: mocks.multiplayer },
+  });
+  if (mocks.admission === 'unknown') state.principal.status = 'unknown';
+  if (mocks.admission === 'member') {
+    state.principal.snapshot!.capabilities.hostMembership = true;
+    state.principal.snapshot!.principal.hostRole = 'member';
+    state.principal.snapshot!.principal.isAdministrator = false;
+  }
+  return state;
+}
+
 vi.mock('$app/navigation', () => ({ goto: mocks.goto }));
 
 vi.mock('$store/renderer/store', async () => {
   const { createAppStoreMockModule } =
     await import('$store/renderer/utils/test-helpers/store-mock');
   return createAppStoreMockModule({
-    state: () => ({ model: { defaultProviderId: mocks.activeProviderId } }),
+    state: () => admittedFormState({ model: { defaultProviderId: mocks.activeProviderId } }),
     dispatch: mocks.dispatch,
   });
 });
@@ -147,7 +167,7 @@ vi.mock('$features/onboarding/utils/resolve-onboarding-model', () => ({
 // runtime parser — which pulls in the terminal manager — is stubbed.
 vi.mock('$features/onboarding/utils/parse-context-references', async (importOriginal) => ({
   ...(await importOriginal<typeof import('$features/onboarding/utils/parse-context-references')>()),
-  parseRuntimeMentions: vi.fn(async () => []),
+  parseRuntimeMentions: mocks.runtimeMentions,
 }));
 
 vi.mock('$lib/components/workspace/initializer/staged-attachments', async (importOriginal) => ({
@@ -282,6 +302,10 @@ function installDefaultMockImplementations() {
   for (const value of Object.values(mocks)) {
     if (vi.isMockFunction(value)) value.mockReset();
   }
+  mocks.admission = 'owner';
+  mocks.backendId = 'local';
+  mocks.multiplayer = true;
+  mocks.runtimeMentions.mockResolvedValue([]);
   mocks.lastUsedSelect.mockReturnValue(undefined);
   mocks.fetchRepoConfig.mockResolvedValue(null);
   mocks.fetchGitHubRepoConfig.mockResolvedValue(null);
@@ -331,6 +355,68 @@ afterEach(async () => {
 });
 
 describe('onboarding repo-config setup script detection', () => {
+  it.each(
+    (['model', 'runtime'] as const).flatMap((held) =>
+      (['unchanged', 'lab-off', 'unknown', 'other-host'] as const).map((change) => ({
+        held,
+        change,
+      })),
+    ),
+  )(
+    'fences onboarding continuations after held $held resolution: $change',
+    async ({ held, change }) => {
+      mocks.admission = 'member';
+      let release!: () => void;
+      const model = { provider: 'auggie', model: 'model', specialistId: 'developer' };
+      if (held === 'model')
+        mocks.resolveModel.mockReturnValue(
+          new Promise((done) => {
+            release = () => done(model);
+          }),
+        );
+      else
+        mocks.runtimeMentions.mockReturnValue(
+          new Promise((done) => {
+            release = () => done([]);
+          }),
+        );
+      mocks.workspaceCreate.mockResolvedValue({ ok: false, error: 'stop after payload capture' });
+      renderPage();
+      selectLocalRepo('/repo/a');
+      const captured = (
+        window as unknown as {
+          __mockOnboardingPromptStep: {
+            setSkipIsolation: (value: boolean) => void;
+            setBranchBehind: (behind: number) => void;
+            setInputValue: (value: string) => void;
+            onSubmit: () => void;
+          };
+        }
+      ).__mockOnboardingPromptStep;
+      captured.setSkipIsolation(true);
+      captured.setBranchBehind(2);
+      captured.setInputValue('build the thing');
+      captured.onSubmit();
+      await waitFor(() =>
+        expect(held === 'model' ? mocks.resolveModel : mocks.runtimeMentions).toHaveBeenCalled(),
+      );
+      const before = mocks.dispatch.mock.calls.length;
+      if (change === 'other-host') mocks.backendId = 'host-b';
+      if (change === 'lab-off') mocks.multiplayer = false;
+      if (change === 'unknown') mocks.admission = 'unknown';
+      release();
+      await settleInFlightCreates();
+      expect(mocks.gitPull).toHaveBeenCalledTimes(change === 'unchanged' ? 1 : 0);
+      expect(mocks.workspaceCreate).toHaveBeenCalledTimes(change === 'unchanged' ? 1 : 0);
+      if (change !== 'unchanged')
+        expect(
+          dispatchedActions()
+            .slice(before)
+            .filter((a) => a.type.startsWith('model/') || a.type.startsWith('providerSettings/')),
+        ).toEqual([]);
+    },
+  );
+
   it('defaults to "From repo config" when the repo commits a setupScript', async () => {
     // A last-used script exists too — repo config must win the priority.
     mocks.lastUsedSelect.mockReturnValue({ name: 'My saved script', content: 'echo saved' });

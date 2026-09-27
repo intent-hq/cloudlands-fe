@@ -1,3 +1,5 @@
+import { initialState as principalInitialState } from '$store/renderer/slices/principal/principal-slice';
+import { withLegacyPrincipal } from '../../../../test/fixtures/principal-state';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
 import { tick } from 'svelte';
@@ -282,6 +284,12 @@ import { warmImport } from '../../../../test/warm-import';
 // billed to the first test's timeout (intent-hq/monorepo#1464).
 warmImport(() => import('../../ui/__tests__/mocks/Fa.svelte'));
 warmImport(() => import('../../ui/__tests__/mocks/button.svelte'));
+
+beforeEach(() => {
+  mockRoleState.current = withLegacyPrincipal(
+    mockRoleState.reset(),
+  ) as unknown as typeof mockRoleState.current;
+});
 
 afterEach(() => {
   availableProviderOverride$.set(null);
@@ -568,11 +576,51 @@ describe('ModelPicker guest / collaborator lock', () => {
 
   it('unsettled window identity: locks (fails closed)', () => {
     mockRoleState.current.guestSessions.hasReceivedList = false;
+    Object.assign(mockRoleState.current, { principal: principalInitialState });
     withWorkspaceRole('owner');
 
     renderAgentPicker();
 
     expect(screen.getByRole('button').hasAttribute('disabled')).toBe(true);
+  });
+
+  it('member with canManage can pick its specialist provider while host administration remains unavailable', async () => {
+    withWorkspaceRole('collaborator');
+    const state = withLegacyPrincipal(mockRoleState.current);
+    state.principal.snapshot!.capabilities.hostMembership = true;
+    state.principal.snapshot!.principal.hostRole = 'member';
+    state.principal.snapshot!.principal.isAdministrator = false;
+    state.workspace.workspaces.map['ws-1'].canManage = true;
+    state.workspace.loadedBackendId = state.connections.windowBackendId;
+    Object.assign(mockRoleState.current, state);
+    mockAgentSession$.set({ id: 'agent-1', workspaceId: 'ws-1', provider: 'codex' });
+    activeProviderId$.set('claude-code');
+    enabledProviderIds$.set(['claude-code', 'codex']);
+    availableProviderOverride$.set(['claude-code', 'codex']);
+    vi.mocked(getModelsForProviderForLoadingState).mockImplementation(async (providerId) => ({
+      models: [
+        {
+          value: providerId === 'codex' ? 'review-model' : 'host-default-model',
+          label: providerId === 'codex' ? 'Host reviewer' : 'Host default',
+        },
+      ],
+    }));
+    const { agentClient } = await import('$features/agent/agent.client');
+    renderAgentPicker('review-model');
+    const button = screen.getByRole('button');
+    expect(button.hasAttribute('disabled')).toBe(false);
+    await fireEvent.click(button);
+    await fireEvent.click(await screen.findByRole('option', { name: /Host reviewer/ }));
+    await waitFor(() =>
+      expect(vi.mocked(agentClient.setModel)).toHaveBeenCalledWith(
+        'agent-1',
+        'review-model',
+        'ws-1',
+        'codex',
+      ),
+    );
+    expect(dispatchedTypes()).not.toContain('model/selectModel');
+    expect(screen.queryByText('Open provider settings')).toBeNull();
   });
 
   it('owner window: the picker stays interactive', async () => {
@@ -651,6 +699,73 @@ describe('ModelPicker guest / collaborator lock', () => {
     expect(vi.mocked(agentClient.setModel)).not.toHaveBeenCalled();
     expect(screen.getByRole('button').textContent).toContain('Sonnet 4.6');
   });
+
+  for (const boundary of ['confirmation', 'deferred', 'response'] as const) {
+    it.each(['reconnect', 'different-host'] as const)(
+      `drops a model pick across %s while awaiting ${boundary}, even when the new owner is admitted`,
+      async (replacement) => {
+        const { agentClient } = await import('$features/agent/agent.client');
+        withWorkspaceRole('owner');
+        twoModelCatalog();
+        let confirm!: (value: boolean) => void;
+        let respond!: (value: { ok: true; data: { success: true } }) => void;
+        const onModelChange = vi.fn();
+        const confirmModelChange =
+          boundary === 'confirmation'
+            ? vi.fn(
+                () =>
+                  new Promise<boolean>((resolve) => {
+                    confirm = resolve;
+                  }),
+              )
+            : undefined;
+        if (boundary === 'response')
+          vi.mocked(agentClient.setModel).mockImplementationOnce(
+            () =>
+              new Promise((resolve) => {
+                respond = resolve;
+              }),
+          );
+        const props = {
+          selectedModel: 'auggie:sonnet4.6',
+          agentId: 'agent-1',
+          workspaceId: 'ws-1',
+          updateGlobalStore: true,
+          deferUpdate: boundary === 'deferred',
+          confirmModelChange,
+          onModelChange,
+          portal: false,
+        };
+        const { rerender } = render(ModelPicker, { props });
+        await fireEvent.click(screen.getByRole('button'));
+        await fireEvent.click(await screen.findByRole('option', { name: /Opus 4\.7/ }));
+        if (boundary === 'confirmation')
+          await waitFor(() => expect(confirmModelChange).toHaveBeenCalled());
+        else if (boundary === 'response')
+          await waitFor(() => expect(agentClient.setModel).toHaveBeenCalledTimes(1));
+        else await waitFor(() => expect(onModelChange).toHaveBeenCalled());
+
+        const state = withLegacyPrincipal(mockRoleState.current);
+        if (replacement === 'reconnect') state.daemonHealth.connectionGeneration++;
+        else state.connections.windowBackendId = 'host-b';
+        state.workspace.loadedBackendId = state.connections.windowBackendId;
+        Object.assign(mockRoleState.current, withLegacyPrincipal(state));
+        (mockAppStore as unknown as { emitState: () => void }).emitState();
+        await tick();
+        expect(screen.getByRole('button').hasAttribute('disabled')).toBe(false);
+
+        if (boundary === 'confirmation') confirm(true);
+        else if (boundary === 'response') respond({ ok: true, data: { success: true } });
+        else await rerender({ ...props, deferUpdate: false });
+        await tick();
+        await tick();
+        expect(agentClient.setModel).toHaveBeenCalledTimes(boundary === 'response' ? 1 : 0);
+        expect(dispatchedTypes()).not.toContain('agentSession/updateSession');
+        expect(reconcileAgentReasoningEffortMock).not.toHaveBeenCalled();
+        if (boundary === 'confirmation') expect(onModelChange).not.toHaveBeenCalled();
+      },
+    );
+  }
 
   it('role flips to collaborator while a deferred update is queued: streaming end does not flush it', async () => {
     const { agentClient } = await import('$features/agent/agent.client');

@@ -1,3 +1,7 @@
+const operationAuthority = vi.hoisted(() => ({
+  context: 'owner-admission' as string | null,
+  administrator: true,
+}));
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { render, fireEvent, waitFor } from '@testing-library/svelte';
 import type { CommitInfo } from '$features/file-tracking/types';
@@ -59,7 +63,12 @@ vi.mock('$store/renderer/store', async () => {
   });
 });
 
+vi.mock('$store/renderer/slices/principal/principal-selectors', () => ({
+  selectCanAdministerHost: mocks.selector(() => operationAuthority.administrator),
+}));
+
 vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
+  selectWorkspaceHostOperationContext: mocks.selector(() => operationAuthority.context),
   selectWorkspaceById: mocks.selector(() => mocks.workspaceEntity),
 }));
 
@@ -247,6 +256,8 @@ warmImport(() => import('../CommitsTimeline.svelte'));
 
 describe('CommitsTimeline', () => {
   beforeEach(() => {
+    operationAuthority.context = 'owner-admission';
+    operationAuthority.administrator = true;
     mocks.dispatch.mockClear();
     reduxDispatch.mockClear();
     mockExecute.mockReset();
@@ -540,6 +551,32 @@ describe('CommitsTimeline', () => {
     await fireEvent.input(input, { target: { value: to } });
     await fireEvent.keyDown(input, { key: 'Enter' });
   }
+
+  it('keeps member push and undo available without owner-only commit amendment', async () => {
+    operationAuthority.administrator = false;
+    mocks.ftCommits.push(makeCommit('abc', 'feat: one'));
+    const { container } = await renderTimeline();
+    await fireEvent.dblClick(container.querySelector('[title="feat: one"]')!);
+    expect(container.querySelector('input[type="text"]')).toBeNull();
+    expect(container.querySelector('[data-testid="commit-undo-button"]')).toBeTruthy();
+    expect(container.querySelector('[data-testid="commit-push-button"]')).toBeTruthy();
+    expect(mockInvoke).not.toHaveBeenCalled();
+  });
+
+  it('refuses an amendment editor opened before owner authority is lost', async () => {
+    mocks.ftCommits.push(makeCommit('abc', 'feat: one'));
+    const { container } = await renderTimeline();
+    await fireEvent.dblClick(container.querySelector('[title="feat: one"]')!);
+    const input = await waitFor(() => {
+      const input = container.querySelector('input[type="text"]')!;
+      expect(input).toBeTruthy();
+      return input;
+    });
+    await fireEvent.input(input, { target: { value: 'changed' } });
+    operationAuthority.administrator = false;
+    await fireEvent.keyDown(input, { key: 'Enter' });
+    expect(mockInvoke).not.toHaveBeenCalled();
+  });
 
   it('saveCommitEdit amends with cwd + workspaceId on the execute-command payload (monorepo#537)', async () => {
     mocks.ftCommits.push(makeCommit('abc', 'feat: one'));

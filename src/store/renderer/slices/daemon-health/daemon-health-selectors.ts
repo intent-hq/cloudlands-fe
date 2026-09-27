@@ -4,13 +4,26 @@
 
 import { compareToPinnedVersion, type PinComparison } from '$shared/intentd-version-compare';
 import { store } from '../../store';
-import type { BackendTransportInfo } from './daemon-health-types';
+import type { AppSelector } from '../../types';
+import type {
+  BackendTransportInfo,
+  DaemonHealth,
+  DaemonHealthStats,
+  DaemonStatusCheckFailure,
+  SidecarRunLog,
+  UnslothStatusWirePayload,
+  AgentMemoryUsageWirePayload,
+} from './daemon-health-types';
 
-export const selectDaemonHealth = store.createSelector((state) => state.daemonHealth.health);
+export const selectDaemonHealth: AppSelector<DaemonHealth> = store.createSelector(
+  (state) => state.daemonHealth.health,
+);
 
-export const selectDaemonHealthStats = store.createSelector((state) => state.daemonHealth.stats);
+export const selectDaemonHealthStats: AppSelector<DaemonHealthStats | null> = store.createSelector(
+  (state) => state.daemonHealth.stats,
+);
 
-export const selectDaemonHealthLastUpdated = store.createSelector(
+export const selectDaemonHealthLastUpdated: AppSelector<string | null> = store.createSelector(
   (state) => state.daemonHealth.lastUpdated,
 );
 
@@ -19,34 +32,35 @@ export const selectDaemonHealthLastUpdated = store.createSelector(
  * null while checks succeed (#4439). Pair with `selectDaemonHealthLastUpdated`
  * for last-success freshness.
  */
-export const selectDaemonStatusCheckFailure = store.createSelector(
-  (state) => state.daemonHealth.statusCheckFailure,
-);
+export const selectDaemonStatusCheckFailure: AppSelector<DaemonStatusCheckFailure | null> =
+  store.createSelector((state) => state.daemonHealth.statusCheckFailure);
 
 /**
  * Connection lifecycle counter a system.status poll captures before its
  * request so the reducer can discard the result if the connection changed
  * meanwhile (see DaemonHealthState.connectionGeneration).
  */
-export const selectDaemonConnectionGeneration = store.createSelector(
+export const selectDaemonConnectionGeneration: AppSelector<number> = store.createSelector(
   (state) => state.daemonHealth.connectionGeneration,
 );
 
 /** Last-known transport info; survives disconnects (see DaemonHealthState.transport). */
-export const selectDaemonTransport = store.createSelector((state) => state.daemonHealth.transport);
+export const selectDaemonTransport: AppSelector<BackendTransportInfo | null> = store.createSelector(
+  (state) => state.daemonHealth.transport,
+);
 
 /** Reconnect attempts since the last successful connect (#1750). */
-export const selectReconnectAttempts = store.createSelector(
+export const selectReconnectAttempts: AppSelector<number> = store.createSelector(
   (state) => state.daemonHealth.reconnectAttempts,
 );
 
 /** The host's guest connection cap refused the last connect (HTTP 503). */
-export const selectConnectionLimited = store.createSelector(
+export const selectConnectionLimited: AppSelector<boolean> = store.createSelector(
   (state) => state.daemonHealth.connectionLimited,
 );
 
 /** Main's scheduled wait before the next attempt while the cap refuses us; null otherwise. */
-export const selectConnectionLimitRetryAfterMs = store.createSelector(
+export const selectConnectionLimitRetryAfterMs: AppSelector<number | null> = store.createSelector(
   (state) => state.daemonHealth.connectionLimitRetryAfterMs,
 );
 
@@ -68,8 +82,8 @@ export interface DaemonVersionComparison {
  * mismatch". A mismatch is `comparison === 'older' | 'newer'`; 'unknown'
  * (unparsable version) is not a mismatch.
  */
-export const selectDaemonVersionComparison = store.createSelector(
-  (state): DaemonVersionComparison | null => {
+export const selectDaemonVersionComparison: AppSelector<DaemonVersionComparison | null> =
+  store.createSelector((state): DaemonVersionComparison | null => {
     const daemonVersion = state.daemonHealth.stats?.version;
     const pinnedVersion = state.daemonHealth.transport?.pinnedVersion;
     if (!daemonVersion || !pinnedVersion) return null;
@@ -78,8 +92,7 @@ export const selectDaemonVersionComparison = store.createSelector(
       daemonVersion,
       pinnedVersion,
     };
-  },
-);
+  });
 
 /**
  * First protocol version (major, minor) whose daemon serves the
@@ -111,8 +124,8 @@ export function supportsSourceControlAuthProtocol(protocolVersion?: string | nul
  * before the first poll — the GitLab surfaces stay hidden until the daemon
  * has proven the capability rather than offering a connect that would fail.
  */
-export const selectDaemonSupportsSourceControlAuth = store.createSelector((state): boolean =>
-  supportsSourceControlAuthProtocol(state.daemonHealth.stats?.protocolVersion),
+export const selectDaemonSupportsSourceControlAuth: AppSelector<boolean> = store.createSelector(
+  (state): boolean => supportsSourceControlAuthProtocol(state.daemonHealth.stats?.protocolVersion),
 );
 
 /**
@@ -145,8 +158,8 @@ export function supportsIdentitySeamProtocol(protocolVersion?: string | null): b
  * pins and provider-aware member rows stay hidden until the daemon has proven
  * the capability, and the GitHub-only shapes are sent instead.
  */
-export const selectDaemonSupportsIdentitySeam = store.createSelector((state): boolean =>
-  supportsIdentitySeamProtocol(state.daemonHealth.stats?.protocolVersion),
+export const selectDaemonSupportsIdentitySeam: AppSelector<boolean> = store.createSelector(
+  (state): boolean => supportsIdentitySeamProtocol(state.daemonHealth.stats?.protocolVersion),
 );
 
 /**
@@ -172,44 +185,44 @@ export function isLocalTransport(transport: BackendTransportInfo | null): boolea
  * override, §5.12/§5.14, that the transport mode cannot see). Falls back to
  * the FE transport heuristic before the first poll lands.
  */
-export const selectIsDaemonLocal = store.createSelector((state): boolean => {
+export const selectIsDaemonLocal: AppSelector<boolean> = store.createSelector((state): boolean => {
   const reported = state.daemonHealth.hostLocality;
   if (reported === 'local' || reported === 'remote') return reported === 'local';
   return isLocalTransport(state.daemonHealth.transport);
 });
 
 /** True when the sidecar supervisor gave up restarting the daemon (#439). */
-export const selectSidecarGaveUp = store.createSelector(
+export const selectSidecarGaveUp: AppSelector<boolean> = store.createSelector(
   (state) => state.daemonHealth.sidecarGaveUp,
 );
 
 /** Reason string from the sidecar give-up broadcast, if any. */
-export const selectSidecarGaveUpReason = store.createSelector(
+export const selectSidecarGaveUpReason: AppSelector<string | null> = store.createSelector(
   (state) => state.daemonHealth.sidecarGaveUpReason,
 );
 
 /** True when the sidecar spawn could not happen at all (binary not found, spawn error). */
-export const selectSidecarStartupFailed = store.createSelector(
+export const selectSidecarStartupFailed: AppSelector<boolean> = store.createSelector(
   (state) => state.daemonHealth.sidecarStartupFailed,
 );
 
 /** Reason string from the sidecar startup-failure broadcast, if any. */
-export const selectSidecarStartupFailedReason = store.createSelector(
+export const selectSidecarStartupFailedReason: AppSelector<string | null> = store.createSelector(
   (state) => state.daemonHealth.sidecarStartupFailedReason,
 );
 
 /** True once a successful connect has landed at any point since app launch. */
-export const selectHasEverConnected = store.createSelector(
+export const selectHasEverConnected: AppSelector<boolean> = store.createSelector(
   (state) => state.daemonHealth.hasEverConnected,
 );
 
 /** True while an on-demand sidecar spawn is pending (#439). */
-export const selectSidecarSpawnPending = store.createSelector(
+export const selectSidecarSpawnPending: AppSelector<boolean> = store.createSelector(
   (state) => state.daemonHealth.sidecarSpawnPending,
 );
 
 /** Error string from the last failed on-demand sidecar spawn, if any. */
-export const selectSidecarSpawnError = store.createSelector(
+export const selectSidecarSpawnError: AppSelector<string | null> = store.createSelector(
   (state) => state.daemonHealth.sidecarSpawnError,
 );
 
@@ -217,41 +230,39 @@ export const selectSidecarSpawnError = store.createSelector(
  * Epoch ms of the first disconnect caused by a user-requested daemon update,
  * or null when the current outage (if any) is not update-caused.
  */
-export const selectDaemonUpdateDisconnectedAt = store.createSelector(
+export const selectDaemonUpdateDisconnectedAt: AppSelector<number | null> = store.createSelector(
   (state) => state.daemonHealth.daemonUpdateDisconnectedAt,
 );
 
 /** Last-run sidecar log fetched on demand for the daemon-loss dialog, if any. */
-export const selectSidecarRunLog = store.createSelector(
+export const selectSidecarRunLog: AppSelector<SidecarRunLog | null> = store.createSelector(
   (state) => state.daemonHealth.sidecarRunLog,
 );
 
 /** True while a backend:get-sidecar-run-log fetch is in flight. */
-export const selectSidecarRunLogPending = store.createSelector(
+export const selectSidecarRunLogPending: AppSelector<boolean> = store.createSelector(
   (state) => state.daemonHealth.sidecarRunLogPending,
 );
 
 /** Error string from the last failed run-log fetch, if any. */
-export const selectSidecarRunLogError = store.createSelector(
+export const selectSidecarRunLogError: AppSelector<string | null> = store.createSelector(
   (state) => state.daemonHealth.sidecarRunLogError,
 );
 
 /** Last unsloth.status result (polled while the status dropdown is open), if any. */
-export const selectUnslothStatus = store.createSelector(
-  (state) => state.daemonHealth.unslothStatus,
-);
+export const selectUnslothStatus: AppSelector<UnslothStatusWirePayload | null> =
+  store.createSelector((state) => state.daemonHealth.unslothStatus);
 
 /** True while an unsloth.stop request is in flight. */
-export const selectUnslothStopping = store.createSelector(
+export const selectUnslothStopping: AppSelector<boolean> = store.createSelector(
   (state) => state.daemonHealth.unslothStopping,
 );
 
 /** Last agent.memoryUsage result (fetched while the agent memory breakdown is open), if any. */
-export const selectAgentMemoryUsage = store.createSelector(
-  (state) => state.daemonHealth.agentMemoryUsage,
-);
+export const selectAgentMemoryUsage: AppSelector<AgentMemoryUsageWirePayload | null> =
+  store.createSelector((state) => state.daemonHealth.agentMemoryUsage);
 
 /** True when the last agent.memoryUsage fetch failed. */
-export const selectAgentMemoryUsageError = store.createSelector(
+export const selectAgentMemoryUsageError: AppSelector<boolean> = store.createSelector(
   (state) => state.daemonHealth.agentMemoryUsageError,
 );

@@ -831,9 +831,8 @@ function* watchActions(): SagaGenerator<void> {
 
 export function* guestSessionsSaga(): SagaGenerator<void> {
   if (!getApi()) {
-    // Outside Electron there is no main to ask and nothing can be joined as a
-    // guest: settle the window's identity (`selectWindowIdentitySettled`) as
-    // owner instead of leaving it a boot-time unknown forever.
+    // Outside Electron there is no local session registry to ask. Mark that
+    // storage read unavailable; principal.me independently resolves authority.
     yield* put(guestSessionsListUnavailable());
     return;
   }

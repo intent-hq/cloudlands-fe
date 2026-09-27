@@ -18,6 +18,15 @@ import {
   startScriptRequested,
   stopScriptRequested,
 } from '../scripts-slice';
+import { withLegacyPrincipal } from '../../../../../test/fixtures/principal-state';
+import {
+  initialState as workspace,
+  setWorkspaceEntity,
+  setWorkspaceHasLoaded,
+  workspaceReducer,
+} from '../../workspace/workspace-slice';
+import type { Workspace } from '$shared/types';
+import { selectPrincipalAdmissionContext } from '../../principal/principal-selectors';
 import { scriptsOperationSaga } from './scripts-operation-saga';
 
 const WS = 'ws-1';
@@ -36,11 +45,24 @@ function deferred<T>() {
 function start() {
   const channel = stdChannel();
   const actions: any[] = [];
+  let state = withLegacyPrincipal({ workspace });
   const task = runSaga(
-    { channel, dispatch: (action) => (actions.push(action), channel.put(action), action) },
+    {
+      getState: () => state,
+      channel,
+      dispatch: (action) => (actions.push(action), channel.put(action), action),
+    },
     scriptsOperationSaga,
   );
-  return { actions, channel, task };
+  return {
+    actions,
+    channel,
+    task,
+    setState: (next: typeof state) => {
+      state = next;
+    },
+    state: () => state,
+  };
 }
 
 async function stop(task: Task) {
@@ -127,6 +149,77 @@ describe('scriptsOperationSaga', () => {
     pending.resolve({ success: true });
     await settle();
     expect(run.actions.some(({ type }) => type === refreshScripts.type)).toBe(false);
+    await stop(run.task);
+  });
+});
+
+describe('script control authority changes', () => {
+  it.each(['owner', 'member', 'guest'] as const)(
+    'keeps script transport admission separate from workspace management: %s',
+    async (role) => {
+      vi.clearAllMocks();
+      mocks.start.mockResolvedValue({ success: true });
+      mocks.stop.mockResolvedValue({ success: true });
+      mocks.restart.mockResolvedValue({ success: true });
+      const run = start();
+      const state = run.state();
+      state.principal.snapshot!.capabilities.hostMembership = true;
+      state.principal.snapshot!.principal.hostRole = role;
+      state.principal.snapshot!.principal.isAdministrator = role === 'owner';
+      state.workspace = workspaceReducer(
+        workspaceReducer(
+          workspace,
+          setWorkspaceEntity({ id: WS, myRole: 'owner', canManage: true } as Workspace),
+        ),
+        setWorkspaceHasLoaded(true, 'local', selectPrincipalAdmissionContext.select(state)),
+      );
+      try {
+        for (const request of [startScriptRequested, stopScriptRequested, restartScriptRequested]) {
+          run.channel.put(request(WS, 'script'));
+          await settle();
+        }
+        for (const operation of Object.values(mocks)) {
+          if (role === 'guest') expect(operation).not.toHaveBeenCalled();
+          else expect(operation).toHaveBeenCalledWith(WS, 'script');
+        }
+        expect(run.actions.filter((action) => action.type === refreshScripts.type)).toHaveLength(
+          role === 'guest' ? 0 : 3,
+        );
+      } finally {
+        await stop(run.task);
+      }
+    },
+  );
+
+  it.each([startScriptRequested, stopScriptRequested, restartScriptRequested])(
+    'refuses a stale operation after authority is unresolved',
+    async (request) => {
+      vi.clearAllMocks();
+      const run = start();
+      run.setState({ ...run.state(), principal: { ...run.state().principal, status: 'unknown' } });
+      run.channel.put(request(WS, 'script'));
+      await settle();
+      expect(mocks.start).not.toHaveBeenCalled();
+      expect(mocks.stop).not.toHaveBeenCalled();
+      expect(mocks.restart).not.toHaveBeenCalled();
+      await stop(run.task);
+    },
+  );
+
+  it('ignores a previous host result without refreshing the current host scripts', async () => {
+    const pending = deferred<{ success: boolean }>();
+    mocks.start.mockReturnValue(pending.promise);
+    const run = start();
+    run.channel.put(startScriptRequested(WS, 'script'));
+    await settle();
+    run.setState({
+      ...run.state(),
+      connections: { ...run.state().connections, windowBackendId: 'other-host' },
+    });
+    pending.resolve({ success: true });
+    await settle();
+    expect(run.actions).not.toContainEqual(refreshScripts(WS));
+    expect(run.actions).not.toContainEqual(scriptOperationSucceeded(WS, 'script', 'start'));
     await stop(run.task);
   });
 });

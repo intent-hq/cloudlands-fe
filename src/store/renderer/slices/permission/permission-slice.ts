@@ -20,7 +20,7 @@ export interface PermissionRequest {
   options: Array<{
     id: string;
     label: string;
-    description?: string;
+    description?: string | null;
     destructive?: boolean;
   }>;
   agentName?: string;
@@ -29,6 +29,8 @@ export interface PermissionRequest {
 }
 
 export type PermissionState = {
+  context: string | null;
+  revision: number;
   /** All pending permission requests */
   requests: Collection<PermissionRequest, 'requestId'>;
 };
@@ -38,8 +40,17 @@ export type PermissionState = {
 // ============================================================================
 
 export const initialState: PermissionState = {
+  context: null,
+  revision: 0,
   requests: createCollection<PermissionRequest, 'requestId'>('requestId'),
 };
+
+export const permissionContextChanged = createAction<[context: string | null]>(
+  'permission/contextChanged',
+);
+export const pendingPermissionsReceived = createAction<
+  [context: string, revision: number, requests: PermissionRequest[]]
+>('permission/pendingReceived');
 
 // ============================================================================
 // Actions
@@ -79,6 +90,16 @@ export const selectPermissionOption = createAction<[requestId: string, optionId:
 // ============================================================================
 
 export const permissionReducer = createReducer<PermissionState>(initialState);
+permissionReducer.with(permissionContextChanged, (state, { payload: [context] }) =>
+  state.context === context ? state : { ...initialState, context },
+);
+permissionReducer.with(
+  pendingPermissionsReceived,
+  (state, { payload: [context, revision, requests] }) =>
+    state.context === context && state.revision === revision
+      ? { ...state, requests: createCollection('requestId', requests) }
+      : state,
+);
 permissionReducer.with(permissionRequestReceived, (state, { payload: [request] }) => {
   const requests = addItem(state.requests, request);
   if (requests === state.requests) {
@@ -87,6 +108,7 @@ permissionReducer.with(permissionRequestReceived, (state, { payload: [request] }
 
   return {
     ...state,
+    revision: state.revision + 1,
     requests,
   };
 });
@@ -98,17 +120,16 @@ permissionReducer.with(setPendingRequests, (state, { payload: [requests] }) => {
 
   return {
     ...state,
+    revision: state.revision + 1,
     requests: nextRequests,
   };
 });
 permissionReducer.with(removePermissionRequest, (state, { payload: [requestId] }) => {
   const requests = removeItem(state.requests, requestId);
-  if (requests === state.requests) {
-    return state;
-  }
-
+  // Even an unseen resolution invalidates an in-flight recovery snapshot.
   return {
     ...state,
+    revision: state.revision + 1,
     requests,
   };
 });

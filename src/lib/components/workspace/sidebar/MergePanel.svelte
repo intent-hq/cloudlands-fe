@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { selectWorkspaceHostOperationContext } from '$store/renderer/slices/workspace/workspace-selectors';
   /**
    * MergePanel - Merge drawer content for sidebar changes panel.
    * Shows merge options (via PR or git), squash/push toggles, and merge/auto-fill buttons.
@@ -115,9 +116,12 @@
     handleMergeToTrunk(opts);
   }
 
-  async function persistWorkspaceChanges(changes: Record<string, unknown>) {
+  async function persistWorkspaceChanges(
+    changes: Record<string, unknown>,
+    isCurrent: () => boolean,
+  ) {
     const result = await workspaceClient.update({ id: workspaceId as WorkspaceId, ...changes });
-    if (result.ok) {
+    if (result.ok && isCurrent()) {
       appStore.dispatch(setWorkspaceEntity(result.data));
     }
     return result;
@@ -128,6 +132,17 @@
   }
 
   async function handleAutoFillMerge() {
+    const operationWorkspaceId = workspaceId;
+    const operationContext = selectWorkspaceHostOperationContext.select(
+      appStore.state,
+      operationWorkspaceId,
+    );
+    if (!operationContext) return;
+    const isCurrentOperation = () =>
+      workspaceId === operationWorkspaceId &&
+      selectWorkspaceHostOperationContext.select(appStore.state, operationWorkspaceId) ===
+        operationContext;
+    if (!isCurrentOperation()) return;
     if (isGeneratingMerge) {
       appStore.dispatch(cancelExecution(workspaceId, 'commit-merge'));
     } else {
@@ -168,6 +183,16 @@
     rebaseFirst?: boolean;
     localOnly?: boolean;
   }) {
+    const operationWorkspaceId = workspaceId;
+    const operationContext = selectWorkspaceHostOperationContext.select(
+      appStore.state,
+      operationWorkspaceId,
+    );
+    if (!operationContext) return;
+    const isCurrentOperation = () =>
+      workspaceId === operationWorkspaceId &&
+      selectWorkspaceHostOperationContext.select(appStore.state, operationWorkspaceId) ===
+        operationContext;
     if (!workspaceId) return;
 
     if (hasStaged) {
@@ -175,9 +200,11 @@
         notify.error(m.workspace_mergePanel_commitMessageRequired_error());
         return;
       }
+      if (!isCurrentOperation()) return;
       const commitResult = await AcceptChangesClient.execute(workspaceId as WorkspaceId, 'commit', {
         commitMessage: commitMessage.trim(),
       });
+      if (!isCurrentOperation()) return;
       if (!commitResult.success) {
         notify.error(commitResult.error || m.workspace_mergePanel_commitFailed_error());
         return;
@@ -186,6 +213,7 @@
 
     isMergingToTrunk = true;
     try {
+      if (!isCurrentOperation()) return;
       const result = await AcceptChangesClient.execute(workspaceId as WorkspaceId, 'merge', {
         targetBranch,
         mergeStrategy: options?.squash ? 'squash' : 'merge',
@@ -193,6 +221,7 @@
         localOnly: options?.localOnly,
       });
 
+      if (!isCurrentOperation()) return;
       if (result.success) {
         dispatchPostMergeUpdate({
           isMergedToTrunk: true,
@@ -210,12 +239,18 @@
         }
         if (result.result?.autoRebased && result.result?.newBaseSha) {
           try {
-            await persistWorkspaceChanges({ baseCommitSha: result.result.newBaseSha });
+            if (!isCurrentOperation()) return;
+            await persistWorkspaceChanges(
+              { baseCommitSha: result.result.newBaseSha },
+              isCurrentOperation,
+            );
+            if (!isCurrentOperation()) return;
             appStore.dispatch(ftClearOlderCommits(workspaceId));
           } catch {
             console.error('Failed to update baseCommitSha after auto-rebase');
           }
         }
+        if (!isCurrentOperation()) return;
         if (result.result?.autoRebased) {
           notify.success(m.workspace_mergePanel_rebasedAndMerged_label({ branch: targetBranch }));
         } else {
@@ -252,6 +287,16 @@
   }
 
   async function handleMergePROnGitHub(options?: { mergeMethod?: 'merge' | 'squash' | 'rebase' }) {
+    const operationWorkspaceId = workspaceId;
+    const operationContext = selectWorkspaceHostOperationContext.select(
+      appStore.state,
+      operationWorkspaceId,
+    );
+    if (!operationContext) return;
+    const isCurrentOperation = () =>
+      workspaceId === operationWorkspaceId &&
+      selectWorkspaceHostOperationContext.select(appStore.state, operationWorkspaceId) ===
+        operationContext;
     if (!workspaceId) return;
     const openPR = pullRequests.find((pr) => pr.status === 'open' || pr.status === 'draft');
     if (!openPR) {
@@ -261,9 +306,11 @@
 
     mergeOptions.mergingPR = true;
     try {
+      if (!isCurrentOperation()) return;
       const result = await AcceptChangesClient.mergePR(workspaceId as WorkspaceId, openPR.number, {
         mergeMethod: options?.mergeMethod || (mergeOptions.squash ? 'squash' : 'merge'),
       });
+      if (!isCurrentOperation()) return;
       if (result.success) {
         dispatchPostMergeUpdate({
           isMergedToTrunk: true,
@@ -279,6 +326,7 @@
         } catch {
           /* Refresh failed but merge succeeded */
         }
+        if (!isCurrentOperation()) return;
         notify.success(m.workspace_mergePanel_prMergedOnGithub_label({ number: openPR.number }));
         celebrateMerge();
       } else {

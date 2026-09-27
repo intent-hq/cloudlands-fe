@@ -174,6 +174,50 @@ describe('openInviteConnection', () => {
     daemon.upgradeUrls = [];
   });
 
+  it('sends host scope on every invite RPC without requiring a workspace', async () => {
+    const preview = {
+      scope: 'host',
+      role: 'member',
+      hostname: 'studio',
+      pinIdentity: { provider: 'github', host: 'github.com', externalUserId: '42' },
+    };
+    const credential = {
+      status: 'authorized',
+      scope: 'host',
+      hostRole: 'member',
+      identity: preview.pinIdentity,
+      principalId: 'remote-42',
+      login: 'octocat',
+      token: 'member-token',
+    };
+    daemon.handler = (req) => ({
+      result:
+        req.method === 'invite.challenge'
+          ? { ...preview, nonce: CHALLENGE.nonce, nonceExpiresAt: CHALLENGE.nonceExpiresAt }
+          : req.method === 'invite.inspect'
+            ? preview
+            : credential,
+    });
+    const { openInviteConnection } = await import('../invite-connection');
+    const conn = await openInviteConnection({
+      hosts: ['127.0.0.1'],
+      port: daemon.port,
+      fingerprint: daemon.fingerprint,
+      scope: 'host',
+    });
+    try {
+      expect(await conn.inspect('host-invite', 'secret')).toEqual(preview);
+      await conn.challenge('host-invite', 'secret');
+      expect(await conn.prove('host-invite', 'secret', PROOF)).toEqual(credential);
+      expect(await conn.accept('host-invite', 'secret', 'member-token')).toEqual(credential);
+      expect(daemon.requests).toHaveLength(4);
+      expect(daemon.requests.every((r) => r.params?.scope === 'host')).toBe(true);
+      expect(daemon.requests.some((r) => r.method === 'client.hello')).toBe(false);
+    } finally {
+      conn.close();
+    }
+  });
+
   it('dials /invite and runs invite.challenge then invite.prove with the documented params', async () => {
     daemon.handler = (req) => {
       if (req.method === 'invite.challenge') return { result: CHALLENGE };

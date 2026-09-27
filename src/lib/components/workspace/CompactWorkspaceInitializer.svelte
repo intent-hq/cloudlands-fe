@@ -1,5 +1,6 @@
 <script lang="ts">
   /* eslint-disable max-lines */
+  import { selectWorkspaceControlContext } from '$store/renderer/slices/principal/principal-selectors';
   import { untrack, onMount, onDestroy, type Snippet } from 'svelte';
   import {
     type InitialRepoInfo,
@@ -1685,6 +1686,8 @@
   }
 
   async function handleSubmit() {
+    const controlContext = selectWorkspaceControlContext.select(appStore.state);
+    if (!controlContext) return;
     if (!isValid || isCreating || isEnhancing || isProcessingImages) return;
     // Attachments still placing or failed block the create: a failed pill
     // must be retried or removed first (no silent drop, no base64 fallback).
@@ -1722,6 +1725,7 @@
       // path the destination won't exist until after cloning
       if (repoType === 'github' && githubUrl) {
         const repoValidation = await validateRepoPath(githubUrl, false);
+        if (selectWorkspaceControlContext.select(appStore.state) !== controlContext) return;
         if (!repoValidation.valid) throw new Error(repoValidation.error);
         // Note: We don't validate the parent directory here because:
         // 1. The backend will create it if it doesn't exist (using mkdir with recursive: true)
@@ -1730,6 +1734,7 @@
         // Skip local path validation for remote repos - the path is on the remote server,
         // not the local machine. The connection test already verified the repo exists.
         const repoValidation = await validateRepoPath(repoPath, isNewRepo);
+        if (selectWorkspaceControlContext.select(appStore.state) !== controlContext) return;
         if (!repoValidation.valid) throw new Error(repoValidation.error);
       }
 
@@ -1759,6 +1764,7 @@
             typeof window !== 'undefined' && window.electronAPI
               ? await appClient.git.pull(repoPath, branch)
               : undefined;
+          if (selectWorkspaceControlContext.select(appStore.state) !== controlContext) return;
           if (!pullResult?.success) {
             pullError = pullResult?.error || m.workspace_compactInitializer_pullFailed_error();
             showPullConflictDialog = true;
@@ -1772,6 +1778,7 @@
             branch,
           });
         } catch (err) {
+          if (selectWorkspaceControlContext.select(appStore.state) !== controlContext) return;
           pullError =
             err instanceof Error ? err.message : m.workspace_compactInitializer_pullFailed_error();
           showPullConflictDialog = true;
@@ -1923,8 +1930,10 @@
         if (mention.type === 'terminal') {
           try {
             const { terminalManager } = await import('$features/terminal/terminal-manager.svelte');
+            if (selectWorkspaceControlContext.select(appStore.state) !== controlContext) return;
             const wsId = (mention.meta?.workspaceId as string) || '';
             const bufferContent = await terminalManager.getBufferContent(mention.id, wsId);
+            if (selectWorkspaceControlContext.select(appStore.state) !== controlContext) return;
             if (bufferContent) {
               const contextRef: Record<string, any> = {
                 type: 'terminal',
@@ -1945,6 +1954,7 @@
             const { selectScriptOutput, selectScriptById, selectScriptRuntime } =
               await import('$store/renderer/slices/scripts/scripts-selectors');
             const { scriptOutputToLines } = await import('$lib/utils/script-output-text');
+            if (selectWorkspaceControlContext.select(appStore.state) !== controlContext) return;
             const scriptId = mention.id;
             const wsId = (mention.meta?.workspaceId as string) || null;
             const state = appStore.state;
@@ -2086,6 +2096,7 @@
 
       // Save branch per repo for persistence - ensures branch is remembered even if user
       // didn't explicitly click a branch in the dropdown (accepting the auto-selected default)
+      if (selectWorkspaceControlContext.select(appStore.state) !== controlContext) return;
       if (debugConfig.get('enableFormPersistence') && repoPath && baseBranch && !isNewRepo) {
         appStore.dispatch(setWorkspaceInitializerBranchForRepo(repoPath, baseBranch));
         logger.debug('Saved branch per repo', { repoPath, branch: baseBranch });
@@ -2116,6 +2127,7 @@
 
       const requestContextLinks = buildContextLinks(contextMentions);
 
+      if (selectWorkspaceControlContext.select(appStore.state) !== controlContext) return;
       const result = await workspaceClient.create({
         title: prefillTitle || '', // Use deep-link title if provided, otherwise agent will set it
         repositoryPath: isGithubPick
@@ -2137,6 +2149,7 @@
         progressId: createProgressId, // Echoed on git:clone:progress/done frames (PROTOCOL §5.1)
       });
 
+      if (selectWorkspaceControlContext.select(appStore.state) !== controlContext) return;
       if (!result.ok) throw new Error(result.error || 'Failed to create workspace');
 
       const workspace = result.data.workspace;
@@ -2149,6 +2162,7 @@
       // navigation stays an empty shell so drawer migration cannot compete.
       try {
         const { getPanelLayoutManager } = await import('$features/layout/panel-layout-adapter');
+        if (selectWorkspaceControlContext.select(appStore.state) !== controlContext) return;
         getPanelLayoutManager(workspace.id).clearLayout();
       } catch (error) {
         logger.debug('Could not clear panel layout', { error });
@@ -2156,6 +2170,7 @@
       try {
         const { workspaceStorageManager } =
           await import('$store/renderer/slices/workspace/utils/workspace-storage-manager');
+        if (selectWorkspaceControlContext.select(appStore.state) !== controlContext) return;
         workspaceStorageManager.clearState(workspace.id);
       } catch (error) {
         logger.debug('Could not clear workspace storage state', { error });
@@ -2195,6 +2210,7 @@
       // this flow — the created workspace itself is never rolled back.
       if (hasStagedFiles) {
         pendingFirstMessage = {
+          controlContext,
           workspaceId: workspace.id,
           agentId: initialAgentId,
           content: initialPrompt.trim(),
@@ -2202,6 +2218,7 @@
           contextReferences,
         };
         const sent = await placeAndSendFirstMessage();
+        if (selectWorkspaceControlContext.select(appStore.state) !== controlContext) return;
         if (!sent) {
           isCreating = false;
           return;
@@ -2274,8 +2291,10 @@
       // Clear before navigation can unmount the form and flush its draft.
       clearForm();
       await goto(`/workspace/${workspace.id}`);
+      if (selectWorkspaceControlContext.select(appStore.state) !== controlContext) return;
       oncreate?.();
     } catch (err) {
+      if (selectWorkspaceControlContext.select(appStore.state) !== controlContext) return;
       if (err instanceof Error && err.message.startsWith(UNKNOWN_SPECIALIST_ERROR_PREFIX)) {
         appStore.dispatch(refetchSpecialistsRequested());
         resetUnavailableSpecialist();
@@ -2288,6 +2307,7 @@
       }
     } finally {
       isCreating = false;
+      isPulling = false;
       // The create settled (success, failure, or early return) — drop the
       // transient progress entry so the slice never accumulates stale ids.
       activeCreateProgressId = null;
@@ -2643,7 +2663,7 @@
   // the first-message send) failed: the workspace exists, the modal stays
   // open with failed pills, and the create button resumes this flow instead
   // of creating a second workspace.
-  let pendingFirstMessage = $state<HeldFirstMessage | null>(null);
+  let pendingFirstMessage = $state<(HeldFirstMessage & { controlContext: string }) | null>(null);
 
   /**
    * Place all staged attachments into the created workspace (sourcePath-only,
@@ -2656,8 +2676,12 @@
   async function placeAndSendFirstMessage(): Promise<boolean> {
     const pending = pendingFirstMessage;
     if (!pending) return true;
+    if (selectWorkspaceControlContext.select(appStore.state) !== pending.controlContext)
+      return false;
 
     const redemption = await redeemStagedAttachments(pending.workspaceId, contextItems);
+    if (selectWorkspaceControlContext.select(appStore.state) !== pending.controlContext)
+      return false;
     contextItems = redemption.items;
     if (redemption.failedCount > 0) {
       error = m.workspace_compactInitializer_attachmentPlacementFailed_error();
@@ -2670,6 +2694,8 @@
     // verbatim made every staged-attachment first send fail before reaching
     // the daemon (monorepo#2576).
     const sendResult = await sendHeldFirstMessage($state.snapshot(pending), redemption.fileBlocks);
+    if (selectWorkspaceControlContext.select(appStore.state) !== pending.controlContext)
+      return false;
     if (!sendResult.sent) {
       logger.error('First-message send failed after attachment placement', {
         error: sendResult.errorDetail,

@@ -101,7 +101,7 @@
   import SidebarBrowserList from './SidebarBrowserList.svelte';
   import { selectEffectiveFileExplorerWorkspacePath } from '$store/renderer/slices/file-explorer/file-explorer-selectors';
   import {
-    selectIsWorkspaceCollaborator,
+    selectHidesWorkspaceExecutionActions,
     selectWorkspaceActivePullRequest,
     selectWorkspaceById,
   } from '$store/renderer/slices/workspace/workspace-selectors';
@@ -344,12 +344,9 @@
       ? `repeat(${itemCount - 1}, ${LAUNCHER_STEP_SIZE}px) ${LAUNCHER_VISIBLE_SIZE}px`
       : `${LAUNCHER_VISIBLE_SIZE}px`;
   }
-  // Collaborators (multiplayer w3) are refused on terminal + browser methods, so
-  // the shell dock, browser launcher, their strip tabs, and any persisted
-  // selection of those tabs are withheld up front. The selector fails closed: a
-  // guest window (multiplayer w4) reads as collaborator whatever `myRole` the
-  // row carries, and so does every window until its identity has settled.
-  const isCollaborator$ = selectIsWorkspaceCollaborator(workspaceIdStore);
+  // Workspace ownership does not admit guests to shell, script or browser RPCs.
+  // Hide these surfaces until current host admission permits their operations.
+  const isCollaborator$ = selectHidesWorkspaceExecutionActions(workspaceIdStore);
   const isCollaborator = $derived($isCollaborator$);
   const selectedTabIds = selectMultiSelectSidebarSelectedTabIds(workspaceIdStore);
   const selectedTabs = $derived(normalizeSelectedTabs($selectedTabIds, isCollaborator));
@@ -517,10 +514,12 @@
   }
 
   function createBrowser() {
+    if (selectHidesWorkspaceExecutionActions.select(appStore.state, workspaceId)) return;
     panelLayoutManager.openBrowserPanel();
   }
 
   function createTerminal() {
+    if (selectHidesWorkspaceExecutionActions.select(appStore.state, workspaceId)) return;
     appStore.dispatch(openTerminalOverlay(workspaceId));
   }
 

@@ -1,3 +1,4 @@
+import { hostExecutionConnectionChanged } from '../host-execution/host-execution-slice';
 /**
  * Provider Catalog Slice
  *
@@ -33,3 +34,5 @@ providerCatalogReducer.with(providerCatalogLoaded, (state, { payload: [catalog] 
   providers: createCollection<ProviderCatalogEntry, 'id'>('id', catalog.providers),
   loaded: true,
 }));
+
+providerCatalogReducer.with(hostExecutionConnectionChanged, () => initialState);

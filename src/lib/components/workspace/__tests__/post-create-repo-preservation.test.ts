@@ -8,6 +8,7 @@
  * clearing per-create state (remoteSetup). Agent prefs stay preserved, and
  * the last-used setup script is restored for the preserved repo.
  */
+import { withLegacyPrincipal } from '../../../../test/fixtures/principal-state';
 import { cleanup, render, waitFor } from '@testing-library/svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -48,7 +49,10 @@ vi.mock('$app/navigation', () => ({ goto: mocks.goto }));
 vi.mock('$store/renderer/store', async () => {
   const { createAppStoreMockModule } =
     await import('$store/renderer/utils/test-helpers/store-mock');
-  return createAppStoreMockModule({ state: () => ({}), dispatch: mocks.dispatch });
+  return createAppStoreMockModule({
+    state: () => withLegacyPrincipal({}),
+    dispatch: mocks.dispatch,
+  });
 });
 
 vi.mock('$store/renderer/slices/workspace-initializer/workspace-initializer-selectors', () => ({

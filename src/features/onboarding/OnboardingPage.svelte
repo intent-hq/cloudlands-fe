@@ -14,6 +14,10 @@
   import { invoke } from '$shared/generated/ipc-client';
   import { appClient } from '$lib/client';
   import {
+    selectHostRole,
+    selectWorkspaceControlContext,
+  } from '$store/renderer/slices/principal/principal-selectors';
+  import {
     clearNewWorkspaceDraft,
     createNewWorkspaceDraftSaver,
     LEGACY_ONBOARDING_PROMPT_SESSION_KEY,
@@ -194,6 +198,7 @@
   const workspaceInitializerHydrated$ = selectWorkspaceInitializerHydrated();
   const allRequirementsMet$ = selectAllRequirementsMet();
   const requirementsCheckedOnce$ = selectHostRequirementsHasCheckedOnce();
+  const hostRole$ = selectHostRole();
   const providerCatalogEntries$ = selectProviderCatalogEntries();
 
   let projectSelection = $state<ProjectSelection | null>(null);
@@ -380,6 +385,7 @@
   // the held first-message send) failed: submit resumes this flow instead of
   // creating a second workspace. The created workspace is never rolled back.
   let onboardingPendingSend = $state<{
+    controlContext: string;
     workspaceId: string;
     agentId?: string;
     prompt: string;
@@ -769,15 +775,23 @@
   const showStartWorking = $derived(
     onboardingStepIndex >= ONBOARDING_STEP_ORDER.indexOf('configuring'),
   );
-  const onboardingVisibleStep = $derived(
-    isConfiguringStep ? 4 : isProjectStep ? 3 : isForgeStep ? 2 : 1,
-  );
   // The 'requirements' gate is not counted in the visible step indicator, and
   // 'configuring' and 'ready' share one visible step, so the count is the
   // visible order minus the terminal 'ready' entry. Back navigation maps
   // visible step N-1 to the visible order so it never lands on the gate.
-  const VISIBLE_STEP_ORDER = ONBOARDING_STEP_ORDER.filter((step) => step !== 'requirements');
-  const ONBOARDING_TOTAL_STEPS = VISIBLE_STEP_ORDER.length - 1;
+  const VISIBLE_STEP_ORDER = $derived(
+    ONBOARDING_STEP_ORDER.filter(
+      (step) =>
+        step !== 'requirements' &&
+        ($hostRole$ !== 'member' || (step !== 'welcome' && step !== 'forge')),
+    ),
+  );
+  const ONBOARDING_TOTAL_STEPS = $derived(VISIBLE_STEP_ORDER.length - 1);
+  const onboardingVisibleStep = $derived(
+    isConfiguringStep
+      ? ONBOARDING_TOTAL_STEPS
+      : Math.max(1, VISIBLE_STEP_ORDER.indexOf($onboardingStep$) + 1),
+  );
 
   // ============================================================================
   // Mount: Reset onboarding state
@@ -796,6 +810,7 @@
   $effect(() => {
     if (!isOnboarding || $onboardingStep$ !== 'requirements') return;
     const step = determineOnboardingInitialStep({
+      hostRole: $hostRole$,
       requirementsCheckedOnce: $requirementsCheckedOnce$,
       allRequirementsMet: $allRequirementsMet$,
     });
@@ -1064,10 +1079,12 @@
   async function resumeOnboardingPendingSend() {
     const pending = onboardingPendingSend;
     if (!pending) return;
+    if (selectWorkspaceControlContext.select(appStore.state) !== pending.controlContext) return;
     isOnboardingCreating = true;
     onboardingCreationError = null;
     try {
       const redemption = await redeemStagedAttachments(pending.workspaceId, onboardingStagedItems);
+      if (selectWorkspaceControlContext.select(appStore.state) !== pending.controlContext) return;
       onboardingStagedItems = redemption.items;
       if (redemption.failedCount > 0) {
         onboardingCreationError = m.onboarding_page_attachmentPlacementFailed_error();
@@ -1094,6 +1111,7 @@
         },
         redemption.fileBlocks,
       );
+      if (selectWorkspaceControlContext.select(appStore.state) !== pending.controlContext) return;
       if (!sendResult.sent) {
         onboardingImageItems = retainImagePlacementIdentity(
           onboardingImageItems,
@@ -1129,6 +1147,8 @@
   }
 
   async function handleOnboardingSubmit() {
+    const controlContext = selectWorkspaceControlContext.select(appStore.state);
+    if (!controlContext) return;
     const prompt = onboardingInputValue.trim();
     if (!prompt || isOnboardingCreating || !projectSelection?.isValid) return;
     // Failed staged-attachment pills block create (retry or remove first —
@@ -1207,6 +1227,7 @@
           ? { model: onboardingSelectedModel, provider: onboardingSelectedProvider }
           : undefined,
       );
+      if (selectWorkspaceControlContext.select(appStore.state) !== controlContext) return;
       setupSpecialistId = specialistId ?? undefined;
       setupSpecialistName = specialistName;
       // General (null specialist) uses the modal's generic agent name.
@@ -1234,6 +1255,7 @@
       const contextMentionRefs = parseContextMentions(contextMentions);
       const fileMentionRefs = parseFileMentions(richTextareaMentions);
       const runtimeMentionRefs = await parseRuntimeMentions(richTextareaMentions, logger);
+      if (selectWorkspaceControlContext.select(appStore.state) !== controlContext) return;
       // Staged folder pills (dropped folders, local daemon only) ride as
       // path context references on the initial message — never placed via
       // file.placeAttachment (the daemon rejects directories). Same shape a
@@ -1274,6 +1296,7 @@
             typeof window !== 'undefined' && window.electronAPI
               ? await appClient.git.pull(projectSelection.repoPath, projectSelection.branch)
               : undefined;
+          if (selectWorkspaceControlContext.select(appStore.state) !== controlContext) return;
           if (!pullResult?.success) {
             onboardingPullError = pullResult?.error || m.onboarding_page_pullFailed_error();
             onboardingShowPullConflictDialog = true;
@@ -1285,6 +1308,7 @@
             branch: projectSelection.branch,
           });
         } catch (err) {
+          if (selectWorkspaceControlContext.select(appStore.state) !== controlContext) return;
           onboardingPullError =
             err instanceof Error ? err.message : m.onboarding_page_pullFailed_error();
           onboardingShowPullConflictDialog = true;
@@ -1327,6 +1351,7 @@
 
       const requestContextLinks = buildContextLinks(contextMentions);
 
+      if (selectWorkspaceControlContext.select(appStore.state) !== controlContext) return;
       const result = await workspaceClient.create({
         title: '',
         repositoryPath: isGithubPick ? undefined : projectSelection.repoPath,
@@ -1359,6 +1384,7 @@
         progressId: createProgressId, // Echoed on git:clone:progress/done frames (PROTOCOL §5.1)
       });
 
+      if (selectWorkspaceControlContext.select(appStore.state) !== controlContext) return;
       if (!result.ok) {
         // Keep the daemon's machine-readable code (clone failure taxonomy,
         // PROTOCOL §9.1) alongside the human message so the error block can
@@ -1384,6 +1410,7 @@
       try {
         const { workspaceStorageManager: wsm } =
           await import('$store/renderer/slices/workspace/utils/workspace-storage-manager');
+        if (selectWorkspaceControlContext.select(appStore.state) !== controlContext) return;
         wsm.clearState(workspace.id);
       } catch {
         /* ignore */
@@ -1439,12 +1466,14 @@
       // the created workspace is never rolled back or duplicated.
       if (hasStagedFiles) {
         onboardingPendingSend = {
+          controlContext,
           workspaceId: workspace.id,
           agentId,
           prompt,
           contextReferences,
         };
         const redemption = await redeemStagedAttachments(workspace.id, onboardingStagedItems);
+        if (selectWorkspaceControlContext.select(appStore.state) !== controlContext) return;
         onboardingStagedItems = redemption.items;
         if (redemption.failedCount > 0) {
           onboardingCreationErrorCode = null;
@@ -1464,6 +1493,7 @@
           },
           redemption.fileBlocks,
         );
+        if (selectWorkspaceControlContext.select(appStore.state) !== controlContext) return;
         if (!sendResult.sent) {
           onboardingCreationErrorCode = null;
           // Retain the failed attempt's image placement identity on the
@@ -1540,10 +1570,12 @@
 
       if (setupScriptStatus) {
         await new Promise((r) => setTimeout(r, 300));
+        if (selectWorkspaceControlContext.select(appStore.state) !== controlContext) return;
         setupScriptStatus = 'done';
       }
       setupAgentStatus = 'active';
       await new Promise((r) => setTimeout(r, 300));
+      if (selectWorkspaceControlContext.select(appStore.state) !== controlContext) return;
       setupAgentStatus = 'done';
 
       // The prompt was submitted — cancel any armed debounced save (its
@@ -1572,11 +1604,15 @@
 
       await goto(`/workspace/${workspace.id}`, { replaceState: true });
     } catch (err) {
+      if (selectWorkspaceControlContext.select(appStore.state) !== controlContext) return;
       logger.error('Workspace creation failed', err as Error);
       onboardingCreationError =
         err instanceof Error ? err.message : m.onboarding_page_unexpected_error();
       isOnboardingCreating = false;
     } finally {
+      if (selectWorkspaceControlContext.select(appStore.state) !== controlContext) {
+        isOnboardingCreating = false;
+      }
       // The create settled (success or failure) — drop the transient progress
       // entry so the slice never accumulates stale ids. The local
       // onboardingCreateProgressId is kept: the card stays mounted on success
@@ -1749,7 +1785,9 @@
                     <div class="py-8 space-y-6" in:fly={{ tier: 'slow', distance: 15 }}>
                       {#if isRequirementsStep}
                         <div class="max-w-5xl mx-auto" data-testid="onboarding-requirements-step">
-                          <OnboardingRequirementsStep />
+                          {#if $hostRole$ === 'owner'}
+                            <OnboardingRequirementsStep />
+                          {/if}
                         </div>
                       {:else if isWelcomeStep}
                         <div class="py-6 overflow-x-auto scrollbar-none -mx-6">

@@ -132,7 +132,8 @@ export function readSetting(path: string): Promise<SettingDefinitionWithValue | 
     const run = pending.promise
       .catch(() => null)
       .then(() => {
-        if (trailingSettingReads.get(path) === run) trailingSettingReads.delete(path);
+        if (trailingSettingReads.get(path) !== run) return null;
+        trailingSettingReads.delete(path);
         return readSetting(path);
       })
       .finally(() => {
@@ -175,11 +176,15 @@ export async function updateSettings(changes: AppSettingChange[]): Promise<Setti
   };
 }
 
-export function __resetSettingsReadCacheForTests(): void {
-  settingCache.clear();
+/** A new connection must neither reuse nor wait on the previous host's reads. */
+export function resetSettingsConnectionCache(): void {
+  invalidateSettingsReadCache();
   pendingSettingReads.clear();
   trailingSettingReads.clear();
-  settingsGeneration += 1;
+}
+
+export function __resetSettingsReadCacheForTests(): void {
+  resetSettingsConnectionCache();
 }
 
 /** Build a fresh `update` change list, omitting `undefined` values. */

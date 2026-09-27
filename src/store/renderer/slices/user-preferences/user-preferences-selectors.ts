@@ -1,109 +1,123 @@
 import { store } from '../../store';
-import { SYSTEM_DEFAULT_FONT, type FontOption } from './user-preferences-slice';
+import type { AppSelector } from '../../types';
+import {
+  SYSTEM_DEFAULT_FONT,
+  type FontOption,
+  type UserPreferencesState,
+} from './user-preferences-slice';
 import { resolvePreferenceToLocale } from '$lib/i18n/locale';
 import { m } from '$shared/paraglide/messages.js';
 
-export const selectAgentFontStyle = store.createSelector((state) => {
-  return state.userPreferences.agentFontStyle;
-});
+export const selectAgentFontStyle: AppSelector<UserPreferencesState['agentFontStyle']> =
+  store.createSelector((state) => {
+    return state.userPreferences.agentFontStyle;
+  });
 
-export const selectAgentFontStyleLabel = store.createSelector((state) => {
-  switch (state.userPreferences.agentFontStyle) {
-    case 'sans':
-      return 'Sans-serif';
-    case 'monospace':
-      return 'Monospace';
-    default:
-      return 'Sans-serif';
-  }
-});
+export const selectAgentFontStyleLabel: AppSelector<'Sans-serif' | 'Monospace'> =
+  store.createSelector((state) => {
+    switch (state.userPreferences.agentFontStyle) {
+      case 'sans':
+        return 'Sans-serif';
+      case 'monospace':
+        return 'Monospace';
+      default:
+        return 'Sans-serif';
+    }
+  });
 
-export const selectIsAgentMonospace = store.createSelector((state) => {
+export const selectIsAgentMonospace: AppSelector<boolean> = store.createSelector((state) => {
   return state.userPreferences.agentFontStyle === 'monospace';
 });
 
-export const selectUpdateChannel = store.createSelector((state) => {
-  return state.userPreferences.updateChannel;
-});
+export const selectUpdateChannel: AppSelector<UserPreferencesState['updateChannel']> =
+  store.createSelector((state) => {
+    return state.userPreferences.updateChannel;
+  });
 
-export const selectSpellcheckEnabled = store.createSelector((state) => {
+export const selectSpellcheckEnabled: AppSelector<boolean> = store.createSelector((state) => {
   return state.userPreferences.spellcheckEnabled;
 });
 
-export const selectZoomFactor = store.createSelector((state) => {
+export const selectZoomFactor: AppSelector<number> = store.createSelector((state) => {
   return state.userPreferences.zoomFactor;
 });
 
-export const selectShowArchived = store.createSelector((state) => {
+export const selectShowArchived: AppSelector<boolean> = store.createSelector((state) => {
   return state.userPreferences.showArchived;
 });
 
-export const selectGroupByRepo = store.createSelector((state) => {
+export const selectGroupByRepo: AppSelector<boolean> = store.createSelector((state) => {
   return state.userPreferences.groupByRepo;
 });
 
-export const selectHasCompletedProviderSetup = store.createSelector((state) => {
-  return state.userPreferences.hasCompletedProviderSetup;
-});
+export const selectHasCompletedProviderSetup: AppSelector<boolean> = store.createSelector(
+  (state) => {
+    return state.userPreferences.hasCompletedProviderSetup;
+  },
+);
 
-export const selectShowReasoningBlocks = store.createSelector((state) => {
+export const selectShowReasoningBlocks: AppSelector<boolean> = store.createSelector((state) => {
   return state.userPreferences?.showReasoningBlocks ?? false;
 });
 
-export const selectChatAuroraEnabled = store.createSelector((state) => {
+export const selectChatAuroraEnabled: AppSelector<boolean> = store.createSelector((state) => {
   return state.userPreferences?.chatAuroraEnabled ?? true;
 });
 
-export const selectShellTransparencyEnabled = store.createSelector((state) => {
-  return state.userPreferences?.shellTransparencyEnabled ?? true;
-});
+export const selectShellTransparencyEnabled: AppSelector<boolean> = store.createSelector(
+  (state) => {
+    return state.userPreferences?.shellTransparencyEnabled ?? true;
+  },
+);
 
-export const selectReduceMotionOnBattery = store.createSelector((state) => {
+export const selectReduceMotionOnBattery: AppSelector<boolean> = store.createSelector((state) => {
   return state.userPreferences?.reduceMotionOnBattery ?? false;
 });
 
-export const selectLabsSettingsVisible = store.createSelector((state) => {
+export const selectLabsSettingsVisible: AppSelector<boolean> = store.createSelector((state) => {
   return state.userPreferences?.labsSettingsVisible ?? false;
 });
 
-export const selectLabsMultiplayerEnabled = store.createSelector((state) => {
+export const selectLabsMultiplayerEnabled: AppSelector<boolean> = store.createSelector((state) => {
   return state.userPreferences?.labsMultiplayerEnabled ?? false;
 });
 
-export const selectLabsGitLabEnabled = store.createSelector((state) => {
+export const selectLabsGitLabEnabled: AppSelector<boolean> = store.createSelector((state) => {
   return state.userPreferences?.labsGitLabEnabled === true;
 });
 
-export const selectCounterScale = store.createSelector((state) => {
+export const selectCounterScale: AppSelector<number> = store.createSelector((state) => {
   return 1 / state.userPreferences.zoomFactor;
 });
 
-export const selectNoteFontStyle = store.createSelector((state) => {
-  return state.userPreferences.noteFontStyle;
-});
+export const selectNoteFontStyle: AppSelector<UserPreferencesState['noteFontStyle']> =
+  store.createSelector((state) => {
+    return state.userPreferences.noteFontStyle;
+  });
 
-export const selectNoteFontStyleLabel = store.createSelector((state) => {
-  switch (state.userPreferences.noteFontStyle) {
-    case 'sans':
-      return 'Sans-serif';
-    case 'serif':
-      return 'Serif';
-    case 'monospace':
-      return 'Monospace';
-    default:
-      return 'Sans-serif';
-  }
-});
+export const selectNoteFontStyleLabel: AppSelector<'Sans-serif' | 'Monospace' | 'Serif'> =
+  store.createSelector((state) => {
+    switch (state.userPreferences.noteFontStyle) {
+      case 'sans':
+        return 'Sans-serif';
+      case 'serif':
+        return 'Serif';
+      case 'monospace':
+        return 'Monospace';
+      default:
+        return 'Sans-serif';
+    }
+  });
 
-export const selectIsNoteMonospace = store.createSelector((state) => {
+export const selectIsNoteMonospace: AppSelector<boolean> = store.createSelector((state) => {
   return state.userPreferences.noteFontStyle === 'monospace';
 });
 
-export const selectCodeFontFamily = store.createSelector((state) => {
+export const selectCodeFontFamily: AppSelector<string> = store.createSelector((state) => {
   return state.userPreferences.codeFontFamily;
 });
 
-export const selectCodeFontFamilyCSS = store.createSelector((state) => {
+export const selectCodeFontFamilyCSS: AppSelector<string> = store.createSelector((state) => {
   const { codeFontFamily } = state.userPreferences;
   if (codeFontFamily === 'system-default') {
     return SYSTEM_DEFAULT_FONT;
@@ -111,7 +125,7 @@ export const selectCodeFontFamilyCSS = store.createSelector((state) => {
   return `'${codeFontFamily}', monospace`;
 });
 
-export const selectCodeFontFamilyLabel = store.createSelector((state) => {
+export const selectCodeFontFamilyLabel: AppSelector<string> = store.createSelector((state) => {
   const { codeFontFamily } = state.userPreferences;
   if (codeFontFamily === 'system-default') {
     return m.settings_fonts_systemDefault_label();
@@ -119,7 +133,7 @@ export const selectCodeFontFamilyLabel = store.createSelector((state) => {
   return codeFontFamily;
 });
 
-export const selectCodeFontOptions = store.createSelector((state) => {
+export const selectCodeFontOptions: AppSelector<FontOption[]> = store.createSelector((state) => {
   const { systemFonts } = state.userPreferences;
   const options: FontOption[] = [
     {
@@ -142,46 +156,55 @@ export const selectCodeFontOptions = store.createSelector((state) => {
   return options;
 });
 
-export const selectNotificationEnabled = store.createSelector((state) => {
+export const selectNotificationEnabled: AppSelector<boolean> = store.createSelector((state) => {
   return state.userPreferences.enabled;
 });
 
-export const selectSoundEnabled = store.createSelector((state) => {
+export const selectSoundEnabled: AppSelector<boolean> = store.createSelector((state) => {
   return state.userPreferences.soundEnabled;
 });
 
-export const selectSoundOnlyWhenUnfocused = store.createSelector((state) => {
+export const selectSoundOnlyWhenUnfocused: AppSelector<boolean> = store.createSelector((state) => {
   return state.userPreferences.soundOnlyWhenUnfocused;
 });
 
-export const selectNotificationVolume = store.createSelector((state) => {
+export const selectNotificationVolume: AppSelector<number> = store.createSelector((state) => {
   return state.userPreferences.volume;
 });
 
-export const selectNotificationVolumeWrite = store.createSelector((state) => {
+export const selectNotificationVolumeWrite: AppSelector<{
+  editId: number | null;
+  hydrationEpoch: number;
+}> = store.createSelector((state) => {
   return {
     editId: state.userPreferences.pendingNotificationVolumeEditId,
     hydrationEpoch: state.userPreferences.notificationVolumeHydrationEpoch,
   };
 });
 
-export const selectActivityLogPresets = store.createSelector((state) => {
-  return state.userPreferences.activityLogPresets;
-});
+export const selectActivityLogPresets: AppSelector<UserPreferencesState['activityLogPresets']> =
+  store.createSelector((state) => {
+    return state.userPreferences.activityLogPresets;
+  });
 
-export const selectLanguagePreference = store.createSelector((state) => {
+export const selectLanguagePreference: AppSelector<string> = store.createSelector((state) => {
   return state.userPreferences.languagePreference;
 });
 
-export const selectGithubLinkDefaultAction = store.createSelector((state) => {
+export const selectGithubLinkDefaultAction: AppSelector<
+  UserPreferencesState['githubLinkDefaultAction']
+> = store.createSelector((state) => {
   return state.userPreferences?.githubLinkDefaultAction ?? 'show-choices';
 });
 
-export const selectShortcutOverrides = store.createSelector((state) => {
-  return state.userPreferences.shortcutOverrides;
-});
+export const selectShortcutOverrides: AppSelector<UserPreferencesState['shortcutOverrides']> =
+  store.createSelector((state) => {
+    return state.userPreferences.shortcutOverrides;
+  });
 
 /** The concrete catalog locale the preference resolves to (explicit → system → en). */
-export const selectResolvedLocale = store.createSelector((state) => {
+export const selectResolvedLocale: AppSelector<
+  'en' | 'zh-CN' | 'zh-TW' | 'ja' | 'ko' | 'de' | 'fr' | 'es'
+> = store.createSelector((state) => {
   return resolvePreferenceToLocale(state.userPreferences.languagePreference);
 });

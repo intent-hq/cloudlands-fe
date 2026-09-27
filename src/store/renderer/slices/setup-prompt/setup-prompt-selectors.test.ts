@@ -3,6 +3,7 @@
  */
 
 import { describe, it, expect } from 'vitest';
+import { withLegacyPrincipal } from '../../../../test/fixtures/principal-state';
 import { createCollection } from '@augmentcode/themis/utils/collections/collection-utils';
 import { CHIEF_WORKSPACE_ID } from '$shared/types/branded-ids';
 import { LOCAL_CONNECTION_ID } from '$shared/types/connections';
@@ -45,7 +46,7 @@ function stateWith(opts: {
   providerStatusMap?: Record<string, { available: boolean; authenticated?: boolean }>;
 }): StoreState {
   const workspaceIds = opts.workspaceIds ?? [];
-  return {
+  return withLegacyPrincipal({
     connections: {
       ...connectionsInitialState,
       connections: createCollection<ConnectionRecord, 'id'>('id', [LOCAL, REMOTE]),
@@ -63,7 +64,7 @@ function stateWith(opts: {
     agentAvailability: {
       providerStatusMap: opts.providerStatusMap ?? {},
     },
-  } as unknown as StoreState;
+  });
 }
 
 describe('selectSetupEvaluation / selectActiveSetupEvaluation', () => {
