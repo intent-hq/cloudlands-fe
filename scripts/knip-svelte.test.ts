@@ -71,7 +71,11 @@ describe('Svelte imports in the real dead-code gate', () => {
         writeFileSync(path.join(root, file), source);
       };
       try {
-        write('package.json', JSON.stringify({ type: 'module', dependencies: { svelte: '*' } }));
+        // Knip registers import.meta.glob handling through its Vite plugin, as in this repo.
+        write(
+          'package.json',
+          JSON.stringify({ type: 'module', dependencies: { svelte: '*', vite: '*' } }),
+        );
         write(
           'knip.jsonc',
           JSON.stringify({
