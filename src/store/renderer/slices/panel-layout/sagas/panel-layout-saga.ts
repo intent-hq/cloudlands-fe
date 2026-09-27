@@ -47,8 +47,8 @@ import {
 } from '../../workspace-agents/workspace-agents-selectors';
 import { setAgents, setInitialAgentId } from '../../workspace-agents/workspace-agents-slice';
 import {
-  selectIsWorkspaceCollaborator,
-  selectWorkspaceManagementDenied,
+  selectHidesWorkspaceExecutionActions,
+  selectWorkspaceExecutionDenied,
   selectWorkspaceById,
   selectWorkspaceDetailHydrated,
   selectWorkspaceListLoadedForBackend,
@@ -332,7 +332,7 @@ function* routeTabToRightmostColumn(
   // where a collaborator's owner-only open is dropped (multiplayer w3).
   if (
     OWNER_ONLY_TAB_TYPES.includes(tab.type) &&
-    (yield* selectIsWorkspaceCollaborator.effect(wsId))
+    (yield* selectHidesWorkspaceExecutionActions.effect(wsId))
   ) {
     return;
   }
@@ -668,7 +668,7 @@ const OWNER_ONLY_TAB_TYPES: readonly PanelTabType[] = ['terminal', 'browser'];
  * for `reopenClosedTab` / `restoreHiddenTab` to bring back.
  */
 function* stripOwnerOnlyTabsForCollaborator(wsId: string): SagaGenerator<void> {
-  if (!(yield* selectWorkspaceManagementDenied.effect(wsId))) return;
+  if (!(yield* selectWorkspaceExecutionDenied.effect(wsId))) return;
   for (const tabType of OWNER_ONLY_TAB_TYPES) {
     yield* put(destroyTabsByType(wsId, tabType));
   }

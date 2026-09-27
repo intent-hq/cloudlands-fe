@@ -154,6 +154,43 @@ describe('workspaceReducer', () => {
       expect(state.pendingDeletions).toEqual({});
     });
 
+    it('only clears or restores the deletion marker owned by an operation', () => {
+      const row = makeWorkspace({ id: 'ws-1', title: 'Original row' });
+      const marked = workspaceReducer(initialState, markWorkspacePendingDeletion(row.id, 'first'));
+      expect(workspaceReducer(marked, clearWorkspacePendingDeletion(row.id, 'stale'))).toBe(marked);
+      expect(
+        workspaceReducer(
+          marked,
+          setWorkspaceEntity(row, { restoreDeletion: { token: 'stale', projectionVersion: 0 } }),
+        ),
+      ).toBe(marked);
+      const restored = workspaceReducer(
+        marked,
+        setWorkspaceEntity(row, { restoreDeletion: { token: 'first', projectionVersion: 0 } }),
+      );
+      expect(getItem(restored.workspaces, row.id)?.title).toBe('Original row');
+      expect(restored.pendingDeletions).toEqual({});
+      expect(restored.pendingDeletionTokens).toEqual({});
+      const second = workspaceReducer(restored, markWorkspacePendingDeletion(row.id, 'second'));
+      expect(workspaceReducer(second, clearWorkspacePendingDeletion(row.id, 'first'))).toBe(second);
+      const cleared = workspaceReducer(second, clearWorkspacePendingDeletion(row.id, 'second'));
+      expect(cleared.pendingDeletions).toEqual({});
+      expect(cleared.pendingDeletionTokens).toEqual({});
+    });
+
+    it('does not restore a previous store deletion into a reset store', () => {
+      const row = makeWorkspace({ id: 'ws-1' });
+      const marked = workspaceReducer(initialState, markWorkspacePendingDeletion(row.id, 'old'));
+      const reset = workspaceReducer(marked, resetWorkspaceState());
+      expect(reset.pendingDeletionTokens).toEqual({});
+      expect(
+        workspaceReducer(
+          reset,
+          setWorkspaceEntity(row, { restoreDeletion: { token: 'old', projectionVersion: 0 } }),
+        ),
+      ).toBe(reset);
+    });
+
     it('tracks and clears pending creations', () => {
       const pending = makeWorkspace({ id: 'pending-1', title: 'Pending' });
       let state = workspaceReducer(initialState, setPendingCreation(pending));

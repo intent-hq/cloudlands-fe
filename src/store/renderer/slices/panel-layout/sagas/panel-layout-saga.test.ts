@@ -68,7 +68,10 @@ import {
   hostMembershipChanged,
   principalReducer,
 } from '../../principal/principal-slice';
-import { selectPrincipalConnectionContext } from '../../principal/principal-selectors';
+import {
+  selectPrincipalAdmissionContext,
+  selectPrincipalConnectionContext,
+} from '../../principal/principal-selectors';
 import { backendReconnected } from '../../workspace-lifecycle/workspace-lifecycle-slice';
 import { LOCAL_CONNECTION_ID } from '$shared/types/connections';
 import type { AgentSession, ContextLink, Note, Workspace } from '$shared/types';
@@ -1518,6 +1521,13 @@ describe('panelLayoutSaga', () => {
       await settle();
       expect(ownerOnlyTabs(reduceDispatched(dispatch).byWorkspaceId[WS_1])).toHaveLength(3);
       state.principal = guest.principal;
+      state.workspace = {
+        ...state.workspace,
+        hasLoaded: true,
+        loadedBackendId: LOCAL_CONNECTION_ID,
+        loadedPrincipalContext: selectPrincipalAdmissionContext.select(state),
+        workspaces: createCollection('id', [{ id: WS_1, myRole: 'collaborator' } as never]),
+      };
       channel.put(
         principalReceived(
           { context: guest.principal.context!, invalidation: 0, presentationVersion: 0 },

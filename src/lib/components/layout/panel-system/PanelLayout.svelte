@@ -90,7 +90,7 @@
     selectRestoreStatus,
   } from '$store/renderer/slices/panel-layout/panel-layout-selectors';
   import { createPanelTerminalRequested } from '$store/renderer/slices/terminals/terminals-slice';
-  import { selectIsWorkspaceCollaborator } from '$store/renderer/slices/workspace/workspace-selectors';
+  import { selectHidesWorkspaceExecutionActions } from '$store/renderer/slices/workspace/workspace-selectors';
   import { renameAgentSessionRequested } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
   import {
     markPanelTouched,
@@ -169,7 +169,7 @@
   const allTabs$ = selectAllTabs(workspaceIdStore);
   // Collaborators (multiplayer w3) are refused on terminal + browser methods, so
   // their "New terminal" / "New browser" entry points are withheld up front.
-  const isCollaborator$ = selectIsWorkspaceCollaborator(workspaceIdStore);
+  const isCollaborator$ = selectHidesWorkspaceExecutionActions(workspaceIdStore);
   const panelColumnDefaultWidthTiers$ = selectPanelColumnDefaultWidthTiers(workspaceIdStore);
   const panelDefaultWidthViewport = writable(0);
   const panelColumnDefaultWidths$ = derived(
@@ -935,6 +935,7 @@
   });
 
   function handleCreateTerminal(panelId?: string) {
+    if (selectHidesWorkspaceExecutionActions.select(appStore.state, workspaceId)) return;
     appStore.dispatch(createPanelTerminalRequested(workspaceId, panelId));
   }
 
@@ -944,6 +945,7 @@
   // when onOpenBrowser is undefined.
   const canOpenBrowserPanel = hasCapability('browserPanel');
   function handleOpenBrowser(panelId?: string) {
+    if (selectHidesWorkspaceExecutionActions.select(appStore.state, workspaceId)) return;
     layoutManager.openBrowserPanel('about:blank', undefined, panelId);
   }
 

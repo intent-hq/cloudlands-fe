@@ -91,7 +91,7 @@
   import {
     selectHidesAgentLifecycleActions,
     selectIsCollaboratorOnlyClient,
-    selectIsWorkspaceCollaborator,
+    selectHidesWorkspaceExecutionActions,
     selectWorkspaceHasLoaded,
     selectWorkspaceItems,
     selectWorkspaceLoading,
@@ -688,7 +688,7 @@
         selectedWorkspaceId: $currentWorkspaceTabId,
         routeWorkspaceId: currentWorkspaceId,
       });
-      if (selectIsWorkspaceCollaborator.select(appStore.state, terminalContextId)) return;
+      if (selectHidesWorkspaceExecutionActions.select(appStore.state, terminalContextId)) return;
       appStore.dispatch(toggleTerminalOverlay(terminalContextId));
     };
     register({

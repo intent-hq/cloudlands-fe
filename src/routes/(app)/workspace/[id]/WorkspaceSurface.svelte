@@ -32,7 +32,7 @@
   import {
     selectWorkspaceIsEmpty,
     selectIsNewWorkspaceSession,
-    selectIsWorkspaceCollaborator,
+    selectHidesWorkspaceExecutionActions,
     selectHidesAgentLifecycleActions,
   } from '$store/renderer/slices/workspace/workspace-selectors';
   import {
@@ -190,7 +190,7 @@
   const workspaceLoadState = selectWorkspaceLoadState(workspaceIdStore);
   // Collaborators (multiplayer w3) have no terminal access; the quake overlay
   // (and its shortcut) is withheld rather than surfacing -32003 on open.
-  const isCollaborator$ = selectIsWorkspaceCollaborator(workspaceIdStore);
+  const isCollaborator$ = selectHidesWorkspaceExecutionActions(workspaceIdStore);
   // Agent create / delegate / delete are refused (-32003) for a collaborator
   // connection; the sidebar and panel creation affordances are withheld by
   // passing no handler, exactly as the terminal / browser ones are.

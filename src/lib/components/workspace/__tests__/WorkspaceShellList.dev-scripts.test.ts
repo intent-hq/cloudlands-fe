@@ -11,6 +11,7 @@ const mocks = vi.hoisted(() => {
   const openUserTab = vi.fn();
   return {
     dispatch: vi.fn(),
+    executionDenied: false,
     openUserTab,
     getPanelLayoutManager: vi.fn(() => ({ openUserTab })),
     scripts: {} as Record<string, ScriptWithState[]>,
@@ -55,6 +56,10 @@ vi.mock('$store/renderer/slices/scripts/scripts-selectors', () => ({
   selectWorkspaceScriptOperations: workspaceReadable(
     (workspaceId) => mocks.operations[workspaceId] ?? {},
   ),
+}));
+
+vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
+  selectHidesWorkspaceExecutionActions: workspaceSelector(() => mocks.executionDenied),
 }));
 
 vi.mock('$store/renderer/slices/terminals/terminals-selectors', () => ({
@@ -116,6 +121,25 @@ describe('WorkspaceShellList development script controls', () => {
     mocks.terminals = {};
     mocks.terminalStates = {};
     mocks.placements = {};
+    mocks.executionDenied = false;
+  });
+
+  it('withholds shell and script controls when execution is refused', () => {
+    mocks.executionDenied = true;
+    mocks.scripts[WS] = [script('build', 'Build', 'idle')];
+    mocks.terminals[WS] = [{ id: 'terminal-1', name: 'Build shell', workspaceId: WS }];
+    const { container } = render(WorkspaceShellList, { props: { workspaceId: WS } });
+    expect(container.querySelector('[data-workspace-shell-list]')).toBeNull();
+  });
+
+  it('refuses a stale visible script action after execution authority changes', async () => {
+    mocks.scripts[WS] = [script('build', 'Build', 'idle')];
+    const { container } = render(WorkspaceShellList, { props: { workspaceId: WS } });
+    const button = container.querySelector('[data-script-action="start"]')!;
+    expect(button).not.toBeNull();
+    mocks.executionDenied = true;
+    await fireEvent.click(button);
+    expect(mocks.dispatch).not.toHaveBeenCalled();
   });
 
   function terminalRow(id: string): HTMLElement {

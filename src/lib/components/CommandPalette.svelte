@@ -46,7 +46,7 @@
   import { initBrowserWorkspace } from '$store/renderer/slices/browser/browser-slice';
   import {
     selectHidesAgentLifecycleActions,
-    selectIsWorkspaceCollaborator,
+    selectHidesWorkspaceExecutionActions as selectHidesExecution,
     selectWorkspaceItems,
   } from '$store/renderer/slices/workspace/workspace-selectors';
   import { selectWorkspaceCreationVisible } from '$store/renderer/slices/principal/principal-selectors';
@@ -139,7 +139,7 @@
   const labsGitLabEnabled$ = selectLabsGitLabEnabled();
   // Collaborators (multiplayer w3) are refused on terminal + browser methods and
   // cannot create workspaces, so those commands and result groups are withheld.
-  const isCollaborator$ = selectIsWorkspaceCollaborator(workspaceIdStore);
+  const isCollaborator$ = selectHidesExecution(workspaceIdStore);
   const canCreateWorkspace$ = selectWorkspaceCreationVisible();
   // Agent create is likewise refused (-32003) for a collaborator connection.
   const hidesAgentLifecycleActions$ = selectHidesAgentLifecycleActions(workspaceIdStore);
@@ -771,7 +771,7 @@
           }
           break;
         case 'terminal':
-          if (workspaceId && !selectIsWorkspaceCollaborator.select(appStore.state, workspaceId)) {
+          if (workspaceId && !selectHidesExecution.select(appStore.state, workspaceId)) {
             appStore.dispatch(
               openTab(workspaceId, {
                 type: 'terminal',
@@ -786,7 +786,7 @@
           if (
             item.url &&
             workspaceId &&
-            !selectIsWorkspaceCollaborator.select(appStore.state, workspaceId)
+            !selectHidesExecution.select(appStore.state, workspaceId)
           ) {
             appStore.dispatch(openWorkspaceBrowser(workspaceId, item.url));
           }
@@ -839,7 +839,7 @@
         }
         return true;
       case 'new-terminal':
-        if (workspaceId && !selectIsWorkspaceCollaborator.select(appStore.state, workspaceId)) {
+        if (workspaceId && !selectHidesExecution.select(appStore.state, workspaceId)) {
           appStore.dispatch(createTerminalRequested(workspaceId));
         }
         return true;
@@ -855,7 +855,7 @@
         return true;
       case 'open-url':
         // Open a browser panel with default URL
-        if (workspaceId && !selectIsWorkspaceCollaborator.select(appStore.state, workspaceId)) {
+        if (workspaceId && !selectHidesExecution.select(appStore.state, workspaceId)) {
           appStore.dispatch(openWorkspaceBrowser(workspaceId, 'about:blank'));
         }
         return true;

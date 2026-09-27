@@ -17,7 +17,7 @@ import {
   stopScriptRequested,
 } from '../scripts-slice';
 import type { ScriptQuickAction } from '../scripts-types';
-import { selectWorkspaceManagementContext } from '../../workspace/workspace-selectors';
+import { selectWorkspaceExecutionContext } from '../../workspace/workspace-selectors';
 
 type ScriptOperationRequest = ReturnType<
   typeof startScriptRequested | typeof stopScriptRequested | typeof restartScriptRequested
@@ -45,7 +45,7 @@ function operationFor(action: ScriptOperationRequest): ScriptQuickAction {
 
 function* runScriptOperation(action: ScriptOperationRequest): SagaGenerator<void> {
   const [workspaceId, scriptId] = action.payload;
-  const context = yield* selectWorkspaceManagementContext.effect(workspaceId);
+  const context = yield* selectWorkspaceExecutionContext.effect(workspaceId);
   if (!context) return;
   const operation = operationFor(action);
   try {
@@ -54,7 +54,7 @@ function* runScriptOperation(action: ScriptOperationRequest): SagaGenerator<void
       cleanup: take(matchesWorkspaceCleanup(workspaceId)),
     });
     if (outcome.cleanup) return;
-    if ((yield* selectWorkspaceManagementContext.effect(workspaceId)) !== context) return;
+    if ((yield* selectWorkspaceExecutionContext.effect(workspaceId)) !== context) return;
     if (!outcome.result?.success) {
       yield* put(
         scriptOperationFailed(
@@ -69,7 +69,7 @@ function* runScriptOperation(action: ScriptOperationRequest): SagaGenerator<void
     yield* put(scriptOperationSucceeded(workspaceId, scriptId, operation));
     yield* put(refreshScripts(workspaceId));
   } catch (error) {
-    if ((yield* selectWorkspaceManagementContext.effect(workspaceId)) !== context) return;
+    if ((yield* selectWorkspaceExecutionContext.effect(workspaceId)) !== context) return;
     yield* put(scriptOperationFailed(workspaceId, scriptId, operation, errorMessage(error)));
   }
 }

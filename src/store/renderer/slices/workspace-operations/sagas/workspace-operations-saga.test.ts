@@ -49,6 +49,7 @@ import {
 import { initialState as specialistsInitialState } from '../../specialists/specialists-slice';
 import {
   initialState as workspaceInitialState,
+  markWorkspacePendingDeletion,
   removeWorkspaceEntity,
   replaceWorkspaceList,
   resetWorkspaceState,
@@ -78,7 +79,17 @@ import {
   WORKSPACE_OPERATION_UNDO_DURATION_MS,
   workspaceOperationsSaga,
 } from './workspace-operations-saga';
-import { principalContextChanged } from '../../principal/principal-slice';
+import { principalContextChanged, principalReducer } from '../../principal/principal-slice';
+import {
+  connectionStatusChanged,
+  daemonHealthReducer,
+} from '../../daemon-health/daemon-health-slice';
+import {
+  daemonEventsSubscribed,
+  workspaceEventsReducer,
+} from '../../workspace-events/workspace-events-slice';
+import { selectPrincipalAdmissionContext } from '../../principal/principal-selectors';
+import { selectWorkspaceManagementContext } from '../../workspace/workspace-selectors';
 
 const settle = async () => {
   await Promise.resolve();
@@ -1271,6 +1282,142 @@ describe('workspaceOperationsSaga', () => {
 });
 
 describe('workspace management authority', () => {
+  it.each(['new-admission', 'new-list', 'new-detail'] as const)(
+    'clears a failed deletion without restoring an older workspace grant: %s',
+    async (change) => {
+      vi.resetAllMocks();
+      mocks.getActiveWorkNames.mockResolvedValue(noActiveWork);
+      mocks.navigate.mockResolvedValue(undefined);
+      let resolve!: (value: unknown) => void;
+      mocks.deleteWorkspace.mockReturnValue(new Promise((done) => (resolve = done)));
+      const owned = { ...workspace('ws-1'), myRole: 'owner' as const, canManage: true };
+      const run = harness([owned]);
+      const authority = run.authority();
+      authority.principal.snapshot!.capabilities.hostMembership = true;
+      authority.principal.snapshot!.principal.hostRole = 'guest';
+      authority.principal.snapshot!.principal.isAdministrator = false;
+      run.send(
+        setWorkspaceHasLoaded(true, 'local', selectPrincipalAdmissionContext.select(authority)),
+      );
+      try {
+        run.send(requestDeleteWorkspace(owned.id));
+        await settle();
+        expect(mocks.deleteWorkspace).toHaveBeenCalledTimes(1);
+        if (change === 'new-admission') authority.principal.invalidation++;
+        const current = { ...owned, myRole: 'collaborator' as const, canManage: false };
+        if (change === 'new-detail') run.send(setWorkspaceEntity(current));
+        else run.send(replaceWorkspaceList([current]));
+        run.send(
+          setWorkspaceHasLoaded(true, 'local', selectPrincipalAdmissionContext.select(authority)),
+        );
+        resolve({ ok: false, error: 'ownership removed' });
+        await settle();
+        expect(run.state().workspace.pendingDeletions).toEqual({});
+        expect(
+          selectWorkspaceManagementContext.select(
+            { ...authority, workspace: run.state().workspace },
+            owned.id,
+          ),
+        ).toBeNull();
+        run.send(replaceWorkspaceList([current]));
+        expect(getItem(run.state().workspace.workspaces, owned.id)?.canManage).toBe(false);
+      } finally {
+        run.task.cancel();
+        await run.task.toPromise();
+      }
+    },
+  );
+
+  it.each([
+    'single-failed',
+    'single-success',
+    'single-before-send',
+    'single-cancel',
+    'bulk-failed',
+    'bulk-success',
+    'bulk-before-send',
+    'bulk-cancel',
+    'other-backend',
+    'replaced-store',
+  ] as const)('keeps deletion cleanup owned across a physical reconnect: %s', async (mode) => {
+    vi.resetAllMocks();
+    vi.useFakeTimers();
+    mocks.getActiveWorkNames.mockResolvedValue(noActiveWork);
+    mocks.navigate.mockResolvedValue(undefined);
+    let resolve!: (value: unknown) => void;
+    mocks.deleteWorkspace.mockReturnValue(new Promise((done) => (resolve = done)));
+    const row = { ...workspace('ws-1'), myRole: 'collaborator' as const, canManage: true };
+    const run = harness([row]);
+    const authority = run.authority();
+    authority.principal.snapshot!.capabilities.hostMembership = true;
+    authority.principal.snapshot!.principal.hostRole = 'member';
+    authority.principal.snapshot!.principal.isAdministrator = false;
+    run.send(setWorkspaceHasLoaded(true, 'local'));
+    const disconnect = () => {
+      const status = connectionStatusChanged('disconnected');
+      authority.daemonHealth = daemonHealthReducer(authority.daemonHealth, status);
+      const context = principalContextChanged(null);
+      authority.principal = principalReducer(authority.principal, context);
+      run.send(context);
+    };
+    const beforeSend = mode.endsWith('before-send');
+    if (beforeSend)
+      run.observe((action) => {
+        if (action.type === markWorkspacePendingDeletion.type) disconnect();
+      });
+    try {
+      if (mode.startsWith('bulk')) {
+        run.send(openBulkDeleteConfirm({ workspaceIds: ['ws-1'], groupLabel: 'Reconnect group' }));
+        await vi.advanceTimersByTimeAsync(50);
+        run.send(confirmBulkDelete());
+      } else run.send(requestDeleteWorkspace('ws-1'));
+      await vi.advanceTimersByTimeAsync(50);
+      expect(mocks.deleteWorkspace).toHaveBeenCalledTimes(beforeSend ? 0 : 1);
+      disconnect();
+      const replaced = mode === 'other-backend' || mode === 'replaced-store';
+      if (replaced) {
+        if (mode === 'other-backend') authority.connections.windowBackendId = 'host-b';
+        run.send(resetWorkspaceState());
+        run.send(setWorkspaceEntity({ ...row, title: 'New store row' }));
+        run.send(markWorkspacePendingDeletion(row.id));
+      }
+      if (mode.endsWith('cancel')) {
+        run.task.cancel();
+        await run.task.toPromise();
+      }
+      if (!beforeSend) resolve({ ok: mode.endsWith('success'), error: 'refused' });
+      await vi.advanceTimersByTimeAsync(50);
+      authority.daemonHealth = daemonHealthReducer(
+        authority.daemonHealth,
+        connectionStatusChanged('connected'),
+      );
+      authority.workspaceEvents = workspaceEventsReducer(
+        authority.workspaceEvents,
+        daemonEventsSubscribed(),
+      );
+      run.setAuthority(withLegacyPrincipal(authority));
+      await vi.advanceTimersByTimeAsync(
+        WORKSPACE_DELETION_TOMBSTONE_TTL_MS + WORKSPACE_OPERATION_UNDO_DURATION_MS,
+      );
+      if (replaced) {
+        expect(getItem(run.state().workspace.workspaces, row.id)?.title).toBe('New store row');
+        expect(run.state().workspace.pendingDeletions[row.id]).toBe(true);
+      } else {
+        expect(run.state().workspace.pendingDeletions).toEqual({});
+        run.send(replaceWorkspaceList([row]));
+        expect(getItem(run.state().workspace.workspaces, row.id)).toBeDefined();
+        expect(run.state().workspaceOperations.bulkOperationInFlight).toBe(false);
+      }
+    } finally {
+      run.task.cancel();
+      await run.task.toPromise();
+      await vi.advanceTimersByTimeAsync(
+        WORKSPACE_DELETION_TOMBSTONE_TTL_MS + WORKSPACE_OPERATION_UNDO_DURATION_MS,
+      );
+      vi.useRealTimers();
+    }
+  });
+
   it.each([
     'single-failed',
     'single-before-send',

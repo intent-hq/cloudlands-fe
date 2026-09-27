@@ -68,6 +68,15 @@ export const selectWorkspacePendingDeletions = store.createSelector<[], Record<s
   },
 );
 
+export const selectWorkspaceDeletionToken = store.createSelector(
+  (state, workspaceId: string): string | undefined =>
+    state.workspace.pendingDeletionTokens[workspaceId],
+);
+
+export const selectWorkspaceProjectionVersion = store.createSelector(
+  (state) => state.workspace.projectionVersion,
+);
+
 export const selectWorkspacePendingCreations = store.createSelector((state) => {
   return state.workspace.pendingCreations;
 });
@@ -231,6 +240,26 @@ export const selectWorkspaceManagementContext = store.createSelector<[wsId: stri
     selectWorkspaceManagementVisible.select(state, wsId)
       ? selectWorkspaceAccessContext.select(state)
       : null,
+);
+
+/** Shell, script and browser RPCs require host admission in addition to workspace management. */
+export const selectWorkspaceExecutionContext = store.createSelector<[wsId: string], string | null>(
+  (state, wsId) => {
+    const role = selectHostRole.select(state);
+    return role === 'owner' || role === 'member'
+      ? selectWorkspaceManagementContext.select(state, wsId)
+      : null;
+  },
+);
+
+export const selectHidesWorkspaceExecutionActions = store.createSelector<[wsId: string], boolean>(
+  (state, wsId) => selectWorkspaceExecutionContext.select(state, wsId) === null,
+);
+
+/** A current guest admission is an explicit transport denial for execution, even for workspace owners. */
+export const selectWorkspaceExecutionDenied = store.createSelector<[wsId: string], boolean>(
+  (state, wsId) =>
+    selectHostRole.select(state) === 'guest' || selectWorkspaceManagementDenied.select(state, wsId),
 );
 
 /** Compatibility name for existing workspace-management consumers. */

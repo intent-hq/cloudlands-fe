@@ -104,7 +104,7 @@ vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
       return () => {};
     },
   }),
-  selectIsWorkspaceCollaborator: Object.assign(
+  selectHidesWorkspaceExecutionActions: Object.assign(
     (workspaceIdArg: any) =>
       createSelectorReadable(workspaceIdArg, () => collaboratorState.workspace),
     { select: () => collaboratorState.workspace },
