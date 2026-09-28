@@ -206,14 +206,47 @@ export function readRssMiB(pid, platform = process.platform) {
   }
 }
 
-/**
- * The V8 old-space cap the checker will run under (last `--max-old-space-size`
- * across NODE_OPTIONS and CT_NODE_ARGS), in MB, or null when none is set.
- */
+// Match the existing CI Svelte-check step, without changing other Node processes.
+const DEFAULT_HEAP_FLAG = '--max-old-space-size=8192';
+
+/** Recognize Node heap choices, including aliases and double-quoted option tokens. */
+function heapFlags(options) {
+  const tokens = (options?.match(/(?:[^\s"]|"(?:\\.|[^"\\])*")+/g) ?? []).map((token) =>
+    token.replaceAll('"', ''),
+  );
+  const flags = [];
+  for (let i = 0; i < tokens.length; i++) {
+    const match =
+      /^--max[-_]old[-_]space[-_]size(?<percentage>[-_]percentage)?(?:=(?<value>.*))?$/.exec(
+        tokens[i],
+      );
+    if (!match) continue;
+    const kind = match.groups.percentage ? 'percentage' : 'size';
+    const value = match.groups.value ?? (kind === 'percentage' ? tokens[++i] : undefined);
+    flags.push({ kind, value });
+  }
+  return flags;
+}
+
+/** Percentage wins over absolute size; CLI wins over env, then the last value wins. */
+function heapSetting(env) {
+  const flags = [...heapFlags(env.NODE_OPTIONS), ...heapFlags(env.CT_NODE_ARGS)];
+  return flags.findLast((flag) => flag.kind === 'percentage') ?? flags.at(-1);
+}
+
+/** Default only the checker, preserving explicit caller caps and unrelated options. */
+function checkerEnv(env) {
+  const childEnv = syncEnv(env);
+  if (!heapSetting(env)) {
+    childEnv.NODE_OPTIONS = [env.NODE_OPTIONS, DEFAULT_HEAP_FLAG].filter(Boolean).join(' ');
+  }
+  return childEnv;
+}
+
+/** Effective absolute old-space cap in MB, or null when unset or percentage-based. */
 export function heapCapMB(env = process.env) {
-  const flags = `${env.NODE_OPTIONS ?? ''} ${env.CT_NODE_ARGS ?? ''}`;
-  const matches = [...flags.matchAll(/--max-old-space-size=(\d+)/g)];
-  return matches.length > 0 ? Number(matches[matches.length - 1][1]) : null;
+  const flag = heapSetting(env);
+  return flag?.kind === 'size' && /^\d+$/.test(flag.value) ? Number(flag.value) : null;
 }
 
 /**
@@ -224,8 +257,10 @@ export function heapCapMB(env = process.env) {
  */
 export function formatPeakRss(peakRssMiB, env = process.env) {
   if (peakRssMiB === null) return null;
-  const cap = heapCapMB(env);
-  const capNote = cap === null ? 'no --max-old-space-size set' : `--max-old-space-size=${cap}`;
+  const flag = heapSetting(env);
+  const capNote = flag
+    ? `--max-old-space-size${flag.kind === 'percentage' ? '-percentage' : ''}=${flag.value}`
+    : 'no --max-old-space-size set';
   return `svelte-check peak RSS: ${peakRssMiB} MiB (${capNote})`;
 }
 
@@ -306,7 +341,7 @@ export function runSvelteCheck({
     [...rssProbeArgs(probeDir), ...flags, cliPath, ...args],
     {
       stdio: ['inherit', outputFd, 'inherit'],
-      env: { ...syncEnv(env), [RSS_FILE_ENV]: path.join(probeDir, RSS_FILE) },
+      env: { ...checkerEnv(env), [RSS_FILE_ENV]: path.join(probeDir, RSS_FILE) },
     },
   );
   let peakRssMiB = null;
@@ -350,10 +385,12 @@ async function main() {
   const outputDir = mkdtempSync(path.join(tmpdir(), 'cloudlands-svelte-check-'));
   const outputPath = path.join(outputDir, 'output.ndjson');
   const outputFd = openSync(outputPath, 'w');
+  const env = checkerEnv(process.env);
   const { exitCode, peakRssMiB } = await runSvelteCheck({
     cliPath: resolveBin('svelte-check', 'svelte-check'),
     args,
     outputFd,
+    env,
   });
   closeSync(outputFd);
   const lines = readFileSync(outputPath, 'utf8').split(/\r?\n/);
@@ -370,7 +407,7 @@ async function main() {
         `in ${completed.filesWithProblems} files (checked ${completed.files} files)`,
     );
   }
-  const peakReport = formatPeakRss(peakRssMiB);
+  const peakReport = formatPeakRss(peakRssMiB, env);
   if (peakReport) console.log(peakReport);
 
   const guardFailures = evaluateRun({ exitCode, completed });
