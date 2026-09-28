@@ -1,3 +1,8 @@
+vi.mock('$store/renderer/slices/daemon-health/daemon-health-selectors', () => ({
+  selectDaemonConnectionGeneration: () => ({
+    subscribe: (run: (value: number) => void) => (run(0), () => {}),
+  }),
+}));
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 
@@ -90,6 +95,9 @@ vi.mock('$store/renderer/slices/presence/presence-selectors', () => ({
   selectAgentPresencePeople: () => mockState.presencePeople,
 }));
 vi.mock('$store/renderer/slices/workspace-agents/workspace-agents-selectors', () => ({
+  selectAgentRetirementSupported: () => ({
+    subscribe: (run: (value: boolean) => void) => (run(false), () => {}),
+  }),
   selectActiveAgentId: () => mockState.activeAgentId,
   selectInitialAgentId: () => ({
     subscribe: (run: (value: string | null) => void) => (run(null), () => {}),
@@ -276,3 +284,8 @@ describe('AgentTabType agent model reactivity', () => {
     );
   });
 });
+
+vi.mock('$store/renderer/slices/provider-catalog/workspace-catalog-selectors', () => ({
+  selectContextSpecialists: () => mockState.presencePeople,
+  selectContextSelectedModel: () => mockState.defaultModel,
+}));

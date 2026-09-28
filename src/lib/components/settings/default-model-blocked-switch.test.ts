@@ -11,6 +11,8 @@ import ModelPicker from '$lib/components/chat/input/ModelPicker.svelte';
 import DefaultAgentModelSettings from '$lib/components/settings/DefaultAgentModelSettings.svelte';
 import { applySettingsChanges } from '$features/settings/settings-hydration-service';
 import { modelSelectionSaga } from '$store/renderer/slices/model/sagas/model-selection-saga';
+import { backgroundAgentSettingsSaga } from '$store/renderer/slices/background-agent-settings/sagas/background-agent-settings-saga';
+import { providerSettingsSaga } from '$store/renderer/slices/provider-settings/sagas/provider-settings-saga';
 const disposers: Array<() => void> = [];
 afterEach(() => {
   cleanup();
@@ -22,6 +24,8 @@ for (const withCallbacks of [false, true]) {
     disposers.push(store.init());
     const restore = preview.states.reasoning.setup?.();
     if (restore) disposers.push(restore);
+    disposers.push(store.runSaga(backgroundAgentSettingsSaga));
+    disposers.push(store.runSaga(providerSettingsSaga));
     applySettingsChanges([
       { path: 'model.defaultProvider', value: 'codex' },
       { path: 'model.providerDefaults', value: { codex: 'codex-preview-balanced' } },

@@ -17,6 +17,7 @@
   import { readInviteLink } from '$features/workspace-sharing/invite-link-vault';
   import { store as appStore } from '$store/renderer/store';
   import {
+    shareIntegrationAuthRequested,
     closeShareDialog,
     shareInviteCreateRequested,
     shareInviteRevokeRequested,
@@ -24,6 +25,7 @@
     shareMemberRemoveRequested,
   } from '$store/renderer/slices/workspace-share/workspace-share-slice';
   import {
+    selectShareIntegrationAuth,
     selectShareActionError,
     selectShareAddingPrincipalId,
     selectShareCanManage,
@@ -52,8 +54,12 @@
   import { selectEffectiveIdentityProvider } from '$store/renderer/slices/identity/identity-selectors';
   import { selectDaemonSupportsIdentitySeam } from '$store/renderer/slices/daemon-health/daemon-health-selectors';
   import { navigateToSettings } from '$lib/utils/workspace-navigation';
-  import { searchGithubUsers } from '$store/renderer/slices/github-user-search/github-user-search-slice';
   import {
+    clearGithubUserSearch,
+    searchGithubUsers,
+  } from '$store/renderer/slices/github-user-search/github-user-search-slice';
+  import {
+    selectGithubUserSearchWorkspaceId,
     selectGithubUserSearchError,
     selectGithubUserSearchLastQuery,
     selectGithubUserSearchLoading,
@@ -85,10 +91,29 @@
   const removingPrincipalId$ = selectShareRemovingPrincipalId();
   const addingPrincipalId$ = selectShareAddingPrincipalId();
   const actionError$ = selectShareActionError();
+  const userSearchWorkspaceId$ = selectGithubUserSearchWorkspaceId();
+  const matchingUserSearch = $derived($userSearchWorkspaceId$ === ($workspaceId$ ?? undefined));
+  $effect(() => {
+    $workspaceId$;
+    $open$;
+    appStore.dispatch(clearGithubUserSearch());
+  });
   const userSuggestions$ = selectGithubUserSearchResults();
   const userSearchLoading$ = selectGithubUserSearchLoading();
   const userSearchError$ = selectGithubUserSearchError();
   const userSearchQuery$ = selectGithubUserSearchLastQuery();
+  const integrationAuth$ = selectShareIntegrationAuth();
+  $effect(() => {
+    const workspaceId = $workspaceId$;
+    const host = $gitlabHost$ || undefined;
+    const open = $open$;
+    $githubConnected$;
+    $gitlabConnected$;
+    const refresh = () => {
+      if (workspaceId && open) appStore.dispatch(shareIntegrationAuthRequested(workspaceId, host));
+    };
+    refresh();
+  });
   const inviteLinks = $derived.by(() => {
     const ids = $invites$.map((invite) => invite.id);
     if ($createdLink$) ids.push($createdLink$.inviteId);
@@ -105,8 +130,8 @@
   open={$open$}
   workspaceId={$workspaceId$}
   workspaceTitle={$workspaceTitle$}
-  githubConnected={$githubConnected$}
-  gitlabConnected={$gitlabConnected$}
+  githubConnected={$integrationAuth$.github}
+  gitlabConnected={$integrationAuth$.gitlab}
   gitlabEnabled={$gitlabEnabled$}
   gitlabHost={$gitlabHost$}
   identitySeamSupported={$identitySeamSupported$}
@@ -127,10 +152,10 @@
   removingPrincipalId={$removingPrincipalId$}
   addingPrincipalId={$addingPrincipalId$}
   actionError={$actionError$}
-  userSuggestions={$userSuggestions$}
-  userSearchLoading={$userSearchLoading$}
-  userSearchError={$userSearchError$}
-  userSearchQuery={$userSearchQuery$}
+  userSuggestions={matchingUserSearch ? $userSuggestions$ : []}
+  userSearchLoading={matchingUserSearch && $userSearchLoading$}
+  userSearchError={matchingUserSearch ? $userSearchError$ : null}
+  userSearchQuery={matchingUserSearch ? $userSearchQuery$ : ''}
   onClose={() => appStore.dispatch(closeShareDialog())}
   onConnectGitHub={() => appStore.dispatch(openGitHubAuthModal(null))}
   onOpenConnections={() => {
@@ -142,5 +167,5 @@
   onRevokeInvite={(inviteId) => appStore.dispatch(shareInviteRevokeRequested(inviteId))}
   onRemoveMember={(principalId) => appStore.dispatch(shareMemberRemoveRequested(principalId))}
   onAddMember={(principalId) => appStore.dispatch(shareMemberAddRequested(principalId))}
-  onSearchUsers={(query) => appStore.dispatch(searchGithubUsers(query))}
+  onSearchUsers={(query) => appStore.dispatch(searchGithubUsers(query, $workspaceId$ ?? undefined))}
 />

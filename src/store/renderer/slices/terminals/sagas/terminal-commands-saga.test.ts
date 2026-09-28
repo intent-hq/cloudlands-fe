@@ -103,7 +103,7 @@ describe('terminalCommandsSaga', () => {
     await vi.waitFor(() => expect(mocks.disposeTerminal).toHaveBeenCalledTimes(1));
 
     expect(dispatched).toEqual([{ type: 'terminals/removeTerminal', payload: ['ws-1', 'term-b'] }]);
-    expect(mocks.disposeTerminal).toHaveBeenCalledWith('term-b');
+    expect(mocks.disposeTerminal).toHaveBeenCalledWith('term-b', 'ws-1');
     expect(selectTerminalsForWorkspace.select(getState(), 'ws-1').map((t) => t.id)).toEqual([
       'term-a',
     ]);

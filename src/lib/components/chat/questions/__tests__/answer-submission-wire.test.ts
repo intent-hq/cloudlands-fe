@@ -402,6 +402,7 @@ describe('wizard completion → agent.sendMessage wire shape', () => {
 
     const queueCall = backendRequestMock.mock.calls.find((c) => c[0] === 'agent.queueMessage')!;
     expect(queueCall[1]).toEqual({
+      workspaceId: WS,
       agentId: AGENT,
       content: `Q: ${SINGLE.question}\nA: OS keychain`,
       messageMetadata: { type: 'question_answers', answeredQuestionsMessageId: 'msg-a1' },

@@ -17,6 +17,7 @@ import ProviderSelector from '$lib/components/settings/ProviderSelector.svelte';
 import { applySettingsChanges } from '$features/settings/settings-hydration-service';
 import { providerSettingsSaga } from '$store/renderer/slices/provider-settings/sagas/provider-settings-saga';
 import { backgroundAgentSettingsSaga } from '$store/renderer/slices/background-agent-settings/sagas/background-agent-settings-saga';
+import { selectProviderSettingsSessionRequests } from '$store/renderer/slices/provider-settings/provider-settings-selectors';
 const disposers: Array<() => void> = [];
 afterEach(() => {
   cleanup();
@@ -25,6 +26,7 @@ afterEach(() => {
 });
 it('does not announce a successful provider switch when the legacy snapshot rejects it', async () => {
   disposers.push(store.init(), setupPreviewProviders());
+  disposers.push(store.runSaga(providerSettingsSaga), store.runSaga(backgroundAgentSettingsSaga));
   applySettingsChanges([
     { path: 'model.defaultProvider', value: 'codex' },
     { path: 'quickActions.defaultModel', value: 'balanced' },
@@ -40,7 +42,6 @@ it('does not announce a successful provider switch when the legacy snapshot reje
       },
     },
   ]);
-  disposers.push(store.runSaga(providerSettingsSaga), store.runSaga(backgroundAgentSettingsSaga));
   const before = store.state.backgroundAgentSettings;
   const dispatch = vi.spyOn(store, 'dispatch');
   render(ProviderSelector);
@@ -52,6 +53,14 @@ it('does not announce a successful provider switch when the legacy snapshot reje
   expect(store.state.backgroundAgentSettings).toBe(before);
   expect(update).not.toHaveBeenCalled();
   expect(notifySuccess).not.toHaveBeenCalled();
+  const request = dispatch.mock.calls.find(
+    ([action]) => action.type === 'providerSettings/setActiveProvider',
+  )?.[0];
+  expect(request).toBeDefined();
+  const context = (request as { payload: [string, { id: string; sessionId: string }] }).payload[1];
+  expect(selectProviderSettingsSessionRequests.select(store.state, context.sessionId)).toEqual([
+    { ...context, resource: 'default', status: 'failure' },
+  ]);
   expect(
     dispatch.mock.calls.some(([action]) => action.type === 'model/reloadModelsForProvider'),
   ).toBe(false);

@@ -654,6 +654,8 @@ export class LiveChatClient implements ChatClient {
     onPhase?: (phase: ChatLiveStreamPhase) => void,
     options?: ChatSubscribeOptions,
   ): Unsubscribe {
+    const workspaceId = options?.workspaceId;
+    const context = workspaceId !== undefined ? { workspaceId } : {};
     const reconciler = new ChatTranscriptReconciler(agentId);
     let disposed = false;
     let subscriptionId: string | undefined;
@@ -886,6 +888,7 @@ export class LiveChatClient implements ChatClient {
       // blocks.
       backendRequest<{ subscriptionId?: string }>('chat.subscribe', {
         agentId,
+        ...context,
         deltaEncoding: 'incremental',
         projection: 'slim',
         ...(resumeAnchor === undefined ? {} : { sinceMessageId: resumeAnchor }),
@@ -904,9 +907,11 @@ export class LiveChatClient implements ChatClient {
             // this attempt while it was in flight. Never store the id and
             // best-effort release the daemon-side subscription it created.
             if (id) {
-              void backendRequest('chat.unsubscribe', { subscriptionId: id }).catch(() => {
-                // Unsubscribe is best-effort.
-              });
+              void backendRequest('chat.unsubscribe', { subscriptionId: id, ...context }).catch(
+                () => {
+                  // Unsubscribe is best-effort.
+                },
+              );
             }
             return;
           }
@@ -957,7 +962,7 @@ export class LiveChatClient implements ChatClient {
       if (!subscriptionId) return;
       const id = subscriptionId;
       subscriptionId = undefined;
-      void backendRequest('chat.unsubscribe', { subscriptionId: id }).catch(() => {
+      void backendRequest('chat.unsubscribe', { subscriptionId: id, ...context }).catch(() => {
         // Unsubscribe is best-effort.
       });
     };

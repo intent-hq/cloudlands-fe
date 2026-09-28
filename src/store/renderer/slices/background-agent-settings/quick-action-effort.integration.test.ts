@@ -1,5 +1,4 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { runSaga, stdChannel, type Task } from 'redux-saga';
 
 const { update } = vi.hoisted(() => ({ update: vi.fn() }));
 vi.mock('$lib/client', () => ({ appClient: { settings: { update } } }));
@@ -21,12 +20,9 @@ import {
 } from './background-agent-settings-slice';
 
 let dispose: (() => void) | undefined;
-const tasks: Task[] = [];
+const stopSagas: (() => void)[] = [];
 afterEach(async () => {
-  for (const task of tasks.splice(0)) {
-    task.cancel();
-    await task.toPromise();
-  }
+  for (const stop of stopSagas.splice(0)) stop();
   dispose?.();
   vi.resetAllMocks();
 });
@@ -43,20 +39,16 @@ const saved = {
 };
 function setup() {
   dispose = store.init();
-  applySettingsChanges(Object.entries(saved).map(([path, value]) => ({ path, value })));
   const persisted: Record<string, unknown> = structuredClone(saved);
   update.mockImplementation(async (changes: { path: string; value: unknown }[]) => {
     for (const { path, value } of changes) persisted[path] = structuredClone(value);
     return changes;
   });
-  const channel = stdChannel();
-  const dispatch = (action: { type: string }) => {
-    store.dispatch(action);
-    channel.put(action);
-  };
+  const dispatch = (action: { type: string }) => store.dispatch(action);
   for (const saga of [providerSettingsSaga, modelSelectionSaga, backgroundAgentSettingsSaga]) {
-    tasks.push(runSaga({ channel, dispatch, getState: () => store.state }, saga));
+    stopSagas.push(store.runSaga(saga));
   }
+  applySettingsChanges(Object.entries(saved).map(([path, value]) => ({ path, value })));
   return { dispatch, persisted };
 }
 
@@ -112,8 +104,10 @@ for (const atomic of [false, true]) {
     });
     // Reload the daemon's saved snapshot, not the outgoing provider's UI state.
     const reloaded = structuredClone(persisted);
+    for (const stop of stopSagas.splice(0)) stop();
     dispose?.();
     dispose = store.init();
+    stopSagas.push(store.runSaga(backgroundAgentSettingsSaga));
     applySettingsChanges(Object.entries(reloaded).map(([path, value]) => ({ path, value })));
     expect(store.state.backgroundAgentSettings.defaultModel).toBe('balanced');
     expect(store.state.backgroundAgentSettings.defaultReasoningEffort).toBe('medium');

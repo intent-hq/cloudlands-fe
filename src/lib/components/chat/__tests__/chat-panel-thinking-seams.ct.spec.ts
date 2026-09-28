@@ -93,7 +93,16 @@ for (const theme of ['light', 'dark'] as const) {
           props: { theme, width, zoom, seamOnly: true },
         });
 
+        const reveal = async (messageId: string) => {
+          await component
+            .getByTestId('chat-transcript-scroll-viewport')
+            .evaluate((node) => node.dispatchEvent(new WheelEvent('wheel', { deltaY: -20 })));
+          await component
+            .locator(`[data-message-id="${messageId}"]`)
+            .evaluate((node) => node.scrollIntoView({ block: 'center' }));
+        };
         for (const [eventId, assistantId] of eventPairs) {
+          await reveal(assistantId);
           const event = component.locator(`[data-message-id="${eventId}"]`);
           const assistant = component.locator(`[data-message-id="${assistantId}"]`);
           const thinking = assistant.locator('[data-message-content-block="thinking"]').first();
@@ -109,6 +118,12 @@ for (const theme of ['light', 'dark'] as const) {
           expect(gap, `${eventId}>Thinking`).toBeCloseTo(24 * zoom, 1);
         }
 
+        await reveal('assistant-wake');
+        await expect(
+          component.locator(
+            '[data-message-id="assistant-wake"] [data-message-content-block="thinking"]',
+          ),
+        ).toBeVisible();
         const eventBoundary = await component
           .locator('[data-message-id="event-wake"]')
           .evaluate((event) => {
@@ -132,6 +147,7 @@ for (const theme of ['light', 'dark'] as const) {
             [0, 0, 0, 0],
           ],
         ] as const) {
+          await reveal(messageId);
           const message = component.locator(`[data-message-id="${messageId}"]`);
           for (const disclosure of await message.getByTestId('response-group-disclosure').all()) {
             if ((await disclosure.getAttribute('aria-expanded')) === 'false') {
@@ -139,6 +155,7 @@ for (const theme of ['light', 'dark'] as const) {
             }
             await expect(disclosure).toHaveAttribute('aria-expanded', 'true');
           }
+          await reveal(messageId);
           await settleLayout(message);
           const rowSets = [
             {
@@ -147,7 +164,7 @@ for (const theme of ['light', 'dark'] as const) {
                 .locator('[data-operational-stack]')
                 .first()
                 .locator(
-                  ':scope > [data-message-content-block="tool_use"], :scope > [data-message-content-block="thinking"]',
+                  ':scope > [data-operational-window] > [data-operational-window-key] > [data-message-content-block="tool_use"], :scope > [data-operational-window] > [data-operational-window-key] > [data-message-content-block="thinking"]',
                 ),
               types: topLevelTypes,
               gaps: topLevelGaps,
@@ -157,7 +174,7 @@ for (const theme of ['light', 'dark'] as const) {
               rows: message
                 .locator('[data-response-group-content]')
                 .locator(
-                  ':scope > [data-message-content-block="tool_use"], :scope > [data-message-content-block="thinking"]',
+                  ':scope > [data-operational-window] > [data-operational-window-key] > [data-message-content-block="tool_use"], :scope > [data-operational-window] > [data-operational-window-key] > [data-message-content-block="thinking"]',
                 ),
               types: ['tool_use', 'thinking', 'tool_use', 'tool_use'],
               gaps: [0, 0, 0],
@@ -179,7 +196,9 @@ for (const theme of ['light', 'dark'] as const) {
                   childMargins: [rowStyle.marginTop, rowStyle.marginBottom],
                   wrapperMargins: [wrapperStyle.marginTop, wrapperStyle.marginBottom],
                   wrapperPaddingTop: wrapperStyle.paddingTop,
-                  parentRowGap: getComputedStyle(wrapper.parentElement!).rowGap,
+                  parentRowGap: getComputedStyle(
+                    wrapper.closest('[data-response-group-content], [data-operational-stack]')!,
+                  ).rowGap,
                 };
               }),
             );

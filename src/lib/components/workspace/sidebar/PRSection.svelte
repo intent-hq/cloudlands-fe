@@ -1,4 +1,11 @@
+<script module lang="ts">
+  const pullOwners = new Map<string, symbol>();
+</script>
+
 <script lang="ts">
+  import { onDestroy } from 'svelte';
+  import { onBackendReconnected } from '$lib/client/live/backend-transport';
+  import { captureIntegrationContext } from '$features/integrations-request-context';
   import { Input } from '$lib/components/ui/input';
   /* eslint-disable max-lines */
   /**
@@ -599,8 +606,31 @@
     }
   }
 
+  const ownedPulls = new Map<string, symbol>();
+  function retirePull(origin: string, token: symbol) {
+    if (ownedPulls.get(origin) === token) ownedPulls.delete(origin);
+    if (pullOwners.get(origin) !== token) return;
+    pullOwners.delete(origin);
+    appStore.dispatch(setGitOperationFlag(origin, 'isPulling', false));
+  }
+  const retireOwnedPulls = () => {
+    for (const [origin, token] of ownedPulls) retirePull(origin, token);
+  };
+  let stopPullReconnect: (() => void) | undefined;
+  onDestroy(() => {
+    stopPullReconnect?.();
+    retireOwnedPulls();
+  });
+
   async function handlePull() {
-    appStore.dispatch(setGitOperationFlag(workspaceId, 'isPulling', true));
+    const originWorkspaceId = workspaceId;
+    const context = captureIntegrationContext(originWorkspaceId);
+    stopPullReconnect ??= onBackendReconnected(retireOwnedPulls);
+    const token = Symbol();
+    pullOwners.set(originWorkspaceId, token);
+    ownedPulls.set(originWorkspaceId, token);
+    const isCurrent = () => context.isCurrent() && pullOwners.get(originWorkspaceId) === token;
+    appStore.dispatch(setGitOperationFlag(originWorkspaceId, 'isPulling', true));
     try {
       // Daemon-backed pull (`git.pull`, PROTOCOL §5.6) via the appClient seam.
       // The wire method is path-based (repoPath + branchName), replacing the
@@ -611,15 +641,17 @@
         notify.error(m.workspace_prSection_pullUnavailable_error());
         return;
       }
-      const result = await appClient.git.pull(repoPath, branch);
+      const result = await appClient.git.pull(repoPath, branch, originWorkspaceId);
+      if (!isCurrent()) return;
       if (result.success) {
         notify.success(m.workspace_prSection_pullSuccess_label());
-        gitCache.invalidateWorkspace(workspaceId as WorkspaceId);
-        appStore.dispatch(loadGitStatus(workspaceId, true));
+        gitCache.invalidateWorkspace(originWorkspaceId as WorkspaceId);
+        appStore.dispatch(loadGitStatus(originWorkspaceId, true));
       } else {
         notify.error(m.workspace_prSection_pullFailed_error({ error: result.error ?? '' }));
       }
     } catch (error) {
+      if (!isCurrent()) return;
       notify.error(
         m.workspace_prSection_pullFailedDetail_error({
           error:
@@ -627,7 +659,7 @@
         }),
       );
     } finally {
-      appStore.dispatch(setGitOperationFlag(workspaceId, 'isPulling', false));
+      retirePull(originWorkspaceId, token);
     }
   }
 

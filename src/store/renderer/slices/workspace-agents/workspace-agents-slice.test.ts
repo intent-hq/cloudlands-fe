@@ -1,3 +1,4 @@
+import { agentRetirementSupportReceived } from './workspace-agents-slice';
 import type { AgentSession, AgentStatus } from '$shared/types';
 import { describe, expect, it } from 'vitest';
 import type { StoreState } from '../../types';
@@ -9,6 +10,7 @@ import {
 } from '../agent-queue/agent-queue-slice';
 import {
   selectActiveAgent,
+  selectAgentRetirementSupported,
   selectAllWorkspaceAgents,
   selectBackgroundWorkspaceAgents,
   selectBackgroundAgentsLoaded,
@@ -1298,5 +1300,25 @@ describe('workspace-agents selectors', () => {
       const next = workspaceAgentsReducer(state, cleanupAgentCreatedEvents(WS_1, 1000));
       expect(next).toBe(state);
     });
+  });
+});
+
+describe('retirement capability availability', () => {
+  it('fails closed until the current connection advertises support', () => {
+    const workspaceAgents = workspaceAgentsReducer(
+      initialState,
+      agentRetirementSupportReceived(2, true),
+    );
+    const state = { workspaceAgents, daemonHealth: { connectionGeneration: 2 } } as StoreState;
+    expect(selectAgentRetirementSupported.select(state)).toBe(true);
+    expect(
+      selectAgentRetirementSupported.select({
+        ...state,
+        daemonHealth: { ...state.daemonHealth, connectionGeneration: 3 },
+      }),
+    ).toBe(false);
+    expect(selectAgentRetirementSupported.select({ ...state, workspaceAgents: initialState })).toBe(
+      false,
+    );
   });
 });

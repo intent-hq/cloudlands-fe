@@ -3,6 +3,15 @@ import { SYSTEM_DEFAULT_FONT, type FontOption } from './user-preferences-slice';
 import { resolvePreferenceToLocale } from '$lib/i18n/locale';
 import { m } from '$shared/paraglide/messages.js';
 
+export const selectAgentRulesEditor = store.createSelector(
+  (state) => state.userPreferences.agentRulesEditor,
+);
+
+export const selectAgentRulesHaveChanges = store.createSelector((state) => {
+  const editor = selectAgentRulesEditor.select(state);
+  return editor.content.trim() !== editor.originalContent.trim();
+});
+
 export const selectAgentFontStyle = store.createSelector((state) => {
   return state.userPreferences.agentFontStyle;
 });

@@ -414,12 +414,12 @@ async function placeAttachmentChunked(
         seq * chunkBytes,
         chunkBytes,
       );
-      await sendAttachmentUploadChunk(uploadId, seq, content);
+      await sendAttachmentUploadChunk(uploadId, seq, content, workspaceId);
       onProgress?.((seq + 1) / totalChunks);
     }
     throwIfAborted(signal);
     committing = true;
-    return await commitAttachmentUpload(uploadId);
+    return await commitAttachmentUpload(uploadId, workspaceId);
   } catch (error) {
     // Only a commit can have placed the file before its reply was lost; a
     // failed chunk never binds the key, so no lookup is attempted for it.
@@ -427,7 +427,7 @@ async function placeAttachmentChunked(
       const recovered = await recoverPlacementByKey(workspaceId, source.idempotencyKey);
       if (recovered) return recovered;
     }
-    await abortAttachmentUpload(uploadId).catch(() => {
+    await abortAttachmentUpload(uploadId, workspaceId).catch(() => {
       // Best-effort: the daemon sweeps orphaned sessions on the next begin.
     });
     throw error;

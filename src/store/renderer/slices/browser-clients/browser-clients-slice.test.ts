@@ -156,7 +156,7 @@ describe('browserClientsReducer', () => {
       connectedAt: '2026-09-07T00:00:03.000Z',
     };
     let state = browserClientsReducer(initialState, ownClientIdReceived('cli-desk'));
-    state = browserClientsReducer(state, liveClientsReceived([desk, laptop, viewer]));
+    state = browserClientsReducer(state, liveClientsReceived([desk, laptop, viewer], 'ws-1'));
     state = browserClientsReducer(
       state,
       workspaceBrowserClientReceived('ws-1', {
@@ -198,7 +198,7 @@ describe('browserClientsReducer', () => {
 
   it('gates the indicator on browser tabs and two clients, except for an offline pin', () => {
     let state = browserClientsReducer(initialState, ownClientIdReceived('cli-desk'));
-    state = browserClientsReducer(state, liveClientsReceived([desk, laptop]));
+    state = browserClientsReducer(state, liveClientsReceived([desk, laptop], 'ws-1'));
     state = browserClientsReducer(
       state,
       workspaceBrowserClientReceived('ws-1', {
@@ -221,7 +221,7 @@ describe('browserClientsReducer', () => {
     });
 
     // One client with a browser tab: hidden.
-    state = browserClientsReducer(state, liveClientsReceived([desk]));
+    state = browserClientsReducer(state, liveClientsReceived([desk], 'ws-1'));
     state = browserClientsReducer(
       state,
       workspaceBrowserClientReceived('ws-1', {
