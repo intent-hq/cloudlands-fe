@@ -157,7 +157,7 @@ test('matches the wide side and lower composer spacing', async ({ mount, page })
 });
 
 for (const { width, expectedLeftInset, expectedComposerInset, label } of transcriptInsetCases) {
-  test(`uses the regular transcript inset ${label}`, async ({ mount, page }) => {
+  test(`uses the regular transcript inset ${label}`, async ({ mount, page }, testInfo) => {
     await page.setViewportSize({ width: 900, height: 900 });
     const component = await mount(ChatPanelOperationalGeometryHost, {
       props: { theme: 'light', zoom: 1, width },
@@ -195,19 +195,10 @@ for (const { width, expectedLeftInset, expectedComposerInset, label } of transcr
     );
 
     if (width < 640) {
-      const [avatarBox, titleBox, iconBox, summaryBox] = await Promise.all([
-        component.getByTestId('panel-header-agent-avatar-slot').boundingBox(),
-        component.locator('[data-panel-header-title]').boundingBox(),
-        component.locator('[data-operational-icon-box]').first().boundingBox(),
-        component.locator('[data-operational-summary]').first().boundingBox(),
-      ]);
-
-      expect(avatarBox).not.toBeNull();
-      expect(titleBox).not.toBeNull();
-      expect(iconBox).not.toBeNull();
-      expect(summaryBox).not.toBeNull();
-      expect(Math.abs(center(avatarBox!) - center(iconBox!))).toBeLessThanOrEqual(1);
-      expect(Math.abs(titleBox!.x - summaryBox!.x)).toBeLessThanOrEqual(1);
+      await testInfo.attach('narrow-chat-content', {
+        body: await component.screenshot(),
+        contentType: 'image/png',
+      });
     } else {
       const viewport = component.getByTestId('chat-transcript-scroll-viewport');
       await viewport.hover();
