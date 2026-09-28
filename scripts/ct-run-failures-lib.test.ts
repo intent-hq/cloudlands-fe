@@ -463,6 +463,54 @@ describe('requiredLaneLog', () => {
 });
 
 describe('formatReport', () => {
+  it('separates confirmed counts from unknown totals without treating pending jobs as red', () => {
+    const confirmed = {
+      status: 'failed',
+      specFile: 'a.ct.spec.ts',
+      location: 'a.ct.spec.ts:1:1',
+      title: 'fails',
+    };
+    const { text, json } = formatReport({
+      runId: 1,
+      repo: 'o/r',
+      shards: [
+        {
+          shard: 1,
+          shardCount: 3,
+          jobId: 11,
+          conclusion: 'failure',
+          source: 'json',
+          cases: [confirmed],
+        },
+        {
+          shard: 2,
+          shardCount: 3,
+          jobId: 22,
+          conclusion: 'cancelled',
+          source: null,
+          cases: [],
+        },
+        {
+          shard: 3,
+          shardCount: 3,
+          jobId: 33,
+          conclusion: null,
+          source: null,
+          cases: [],
+          pending: true,
+        },
+      ],
+    });
+    expect(json.totals).toEqual({ failed: null, flaky: null, redShards: 2 });
+    expect(json.knownCounts).toEqual({ failed: 1, flaky: 0 });
+    expect(json.unknownShards).toBe(1);
+    expect(json.shards[0].cases).toEqual([confirmed]);
+    expect(json.shards[1].countsUnknown).toBe(true);
+    expect(json.shards[2]).not.toHaveProperty('countsUnknown');
+    expect(text).toContain('Total: unknown');
+    expect(text).toContain('Known: 1 failed, 0 flaky');
+  });
+
   const shards = [
     { ...parseCtJobs(JOBS_PAYLOAD)[0], source: null, cases: [] },
     { ...parseCtJobs(JOBS_PAYLOAD)[2], source: null, cases: [] },
@@ -490,7 +538,7 @@ describe('formatReport', () => {
       `  flaky   ${FILES_MENU_SPEC}:54:1  Files menu keyboard navigation executes each mock action once and restores focus`,
     );
     expect(lines[6]).toBe(
-      'Total: 1 failed, 1 flaky across 2 red shards (job 33: https://github.com/intent-hq/cloudlands-fe/actions/runs/35205905401/job/33, job 44: https://github.com/intent-hq/cloudlands-fe/actions/runs/35205905401/job/44)',
+      'Total: unknown (1 shard without complete counts). Known: 1 failed, 1 flaky across 2 red shards (job 33: https://github.com/intent-hq/cloudlands-fe/actions/runs/35205905401/job/33, job 44: https://github.com/intent-hq/cloudlands-fe/actions/runs/35205905401/job/44)',
     );
     expect(lines).toHaveLength(7);
   });
