@@ -5,7 +5,7 @@
  * metadata).
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { createCollection } from '@augmentcode/themis/utils/collections/collection-utils';
+import { createCollection } from '@themislib/themis/utils/collections/collection-utils';
 import { formatModelChangeLabel, getModelChangeNotice } from '../model-change-notice';
 
 let mockStoreState: Record<string, unknown> = {};

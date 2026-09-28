@@ -13,7 +13,7 @@
 import type { PrincipalIdentity } from '$features/workspace-sharing/types';
 import type { GuestSessionRecord } from '$shared/types/guest-sessions';
 import type { WorkspaceRole } from '$shared/types';
-import type { Collection } from '@augmentcode/themis/utils/collections/collection-utils';
+import type { Collection } from '@themislib/themis/utils/collections/collection-utils';
 
 export type {
   GuestSessionRecord,

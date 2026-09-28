@@ -1,7 +1,7 @@
 /** @vitest-environment jsdom */
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { getItems } from '@augmentcode/themis/utils/collections/collection-utils';
+import { getItems } from '@themislib/themis/utils/collections/collection-utils';
 import { LiveAppClient } from '$lib/client';
 import { __resetSettingsReadCacheForTests } from '$lib/client/live/live-settings-client';
 import { mockInvoke, registerMockIpcHandler, resetMockIpcRouter } from '$shared/ipc-mock-router';

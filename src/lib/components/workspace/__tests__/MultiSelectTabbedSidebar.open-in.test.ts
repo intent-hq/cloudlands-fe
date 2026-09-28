@@ -1,7 +1,7 @@
 /**
  * @vitest-environment jsdom
  */
-import { createCollection } from '@augmentcode/themis/utils/collections/collection-utils';
+import { createCollection } from '@themislib/themis/utils/collections/collection-utils';
 import { cleanup, fireEvent, render, waitFor, within } from '@testing-library/svelte';
 import { tick } from 'svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';

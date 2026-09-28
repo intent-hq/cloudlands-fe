@@ -41,15 +41,15 @@ Make this decision before creating `store.ts`, selectors, root lifecycle wiring,
 
 | Evidence in the target app/package/code path | Choose | Import | Read next |
 | --- | --- | --- | --- |
-| Concrete Svelte/SvelteKit evidence: svelte.config.*, .svelte files, SvelteKit +layout/+page, imports from svelte, $selector template reads, Svelte readable expectations | Svelte Store family | Store from @augmentcode/themis/svelte-store | ../svelte/SKILL.md, ../svelte/component-integration/SKILL.md, ../svelte/selectors/SKILL.md |
-| Concrete React evidence: React dependencies in the app path, JSX/TSX React components/hooks, imports from react, ReactStore, Preact React signal selectors, direct signal reads, or necessary .useValue(...args) fallback reads | React Store family | ReactStore from @augmentcode/themis/react-store | ../react/SKILL.md, ../react/store/SKILL.md, ../react/selectors/SKILL.md |
-| Node services, server routes, background workers, CLIs, scripts, test harnesses, no-UI paths, Kefir/observable selector arguments, or no concrete Svelte/React evidence | Streaming Store family by default | StreamingStore from @augmentcode/themis/streaming-store | ../streaming/SKILL.md, ../streaming/store/SKILL.md, ../streaming/selectors/SKILL.md, ../streaming/selector-lifecycle/SKILL.md |
+| Concrete Svelte/SvelteKit evidence: svelte.config.*, .svelte files, SvelteKit +layout/+page, imports from svelte, $selector template reads, Svelte readable expectations | Svelte Store family | Store from @themislib/themis/svelte-store | ../svelte/SKILL.md, ../svelte/component-integration/SKILL.md, ../svelte/selectors/SKILL.md |
+| Concrete React evidence: React dependencies in the app path, JSX/TSX React components/hooks, imports from react, ReactStore, Preact React signal selectors, direct signal reads, or necessary .useValue(...args) fallback reads | React Store family | ReactStore from @themislib/themis/react-store | ../react/SKILL.md, ../react/store/SKILL.md, ../react/selectors/SKILL.md |
+| Node services, server routes, background workers, CLIs, scripts, test harnesses, no-UI paths, Kefir/observable selector arguments, or no concrete Svelte/React evidence | Streaming Store family by default | StreamingStore from @themislib/themis/streaming-store | ../streaming/SKILL.md, ../streaming/store/SKILL.md, ../streaming/selectors/SKILL.md, ../streaming/selector-lifecycle/SKILL.md |
 
 **Mutual exclusivity rule:** one app/package/code path must not mix concrete Store families. Do not import more than one of `Store`, `ReactStore`, and `StreamingStore` into the same setup path, do not mix Svelte readable `$selector` patterns with React `.useValue(...)` or Kefir observables, and do not reuse lifecycle examples across families except as explicit contrast notes.
 
 ## Installation workflow
 
-Choose a bundle using `../SKILL.md` — **Consumer skill install routing**. Follow `@augmentcode/themis/docs/INSTALLATION.md`, the sole owner of installation operations:
+Choose a bundle using `../SKILL.md` — **Consumer skill install routing**. Follow `@themislib/themis/docs/INSTALLATION.md`, the sole owner of installation operations:
 
 - **Consumer package installation** — package/runtime dependencies, the selected family's peers, and the optional saga-test helper.
 - **Explicit skill installation** and **Consumer CLI and bundle selection** — explicit commands, bundle contents, destinations, compatibility links, collision handling, and refresh behavior. Narrowing a bundle removes previously manifest-owned family files; it does not add Core alongside every earlier family.

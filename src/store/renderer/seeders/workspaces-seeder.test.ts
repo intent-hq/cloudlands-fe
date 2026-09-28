@@ -10,7 +10,7 @@
  * `appClient.workspaces.create` directly (see workspace.client.test.ts).
  */
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
-import { StreamingStore } from '@augmentcode/themis/streaming-store';
+import { StreamingStore } from '@themislib/themis/streaming-store';
 import { reducers } from '../reducer';
 
 // FAKE transport only: the daemon bridge is mocked so no request ever reaches

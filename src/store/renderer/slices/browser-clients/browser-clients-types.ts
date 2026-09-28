@@ -12,7 +12,7 @@
 import {
   createCollection,
   type Collection,
-} from '@augmentcode/themis/utils/collections/collection-utils';
+} from '@themislib/themis/utils/collections/collection-utils';
 import type { LiveClient, WorkspaceBrowserClient } from '$shared/types/browser-clients';
 
 export type LiveClientCollection = Collection<LiveClient, 'clientId'>;

@@ -1,4 +1,4 @@
-import { takeLatestFromSelector } from '@augmentcode/themis/saga';
+import { takeLatestFromSelector } from '@themislib/themis/saga';
 import { channel } from 'redux-saga';
 import { call, cancelled, delay, join, put, takeEvery } from 'typed-redux-saga';
 import { notify } from '$lib/components/patterns/notify';

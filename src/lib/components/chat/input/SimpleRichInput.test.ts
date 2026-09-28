@@ -4,7 +4,7 @@ import {
   exerciseVisualStates,
 } from '$lib/components/__tests__/helpers/visual-state-characterization';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
-import { createCollection } from '@augmentcode/themis/utils/collections/collection-utils';
+import { createCollection } from '@themislib/themis/utils/collections/collection-utils';
 import { derived, readable } from 'svelte/store';
 
 vi.mock('$lib/components/shared/icons/FaWrapper.svelte', async () => {

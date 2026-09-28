@@ -1,5 +1,5 @@
 import type { FileGitStatus, FileNode } from '$shared/types';
-import { getItem } from '@augmentcode/themis/utils/collections/collection-utils';
+import { getItem } from '@themislib/themis/utils/collections/collection-utils';
 import { describe, expect, it } from 'vitest';
 import { workspaceUnmounted } from '../workspace-lifecycle/workspace-lifecycle-slice';
 import {

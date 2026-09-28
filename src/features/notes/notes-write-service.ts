@@ -38,7 +38,7 @@
  * logger. State reads use the raw `appStore.state.workspaceNotes` shape via
  * the `readWorkspaceNotes` / `readNoteById` helpers below.
  */
-import { getItem, getItems } from '@augmentcode/themis/utils/collections/collection-utils';
+import { getItem, getItems } from '@themislib/themis/utils/collections/collection-utils';
 import { appClient } from '$lib/client';
 import type { MutationResult } from '$lib/client';
 import { notify } from '$lib/components/patterns/notify';

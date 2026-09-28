@@ -1,4 +1,4 @@
-import { createCollection } from '@augmentcode/themis/utils/collections/collection-utils';
+import { createCollection } from '@themislib/themis/utils/collections/collection-utils';
 import { describe, expect, it } from 'vitest';
 import type { Workspace, WorkspaceRole } from '$shared/types';
 import { WorkspaceId } from '$shared/types/branded-ids';

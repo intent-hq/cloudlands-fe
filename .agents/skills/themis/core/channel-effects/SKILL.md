@@ -133,7 +133,7 @@ yield* takeLatest(ch, worker);
 yield* takeLatestFromSelector(selectItem, [id], worker);
 ```
 
-Source context: package-internal store-utility saga implementation. Public selector-channel helpers are available from `@augmentcode/themis/saga`. Priority: **MEDIUM**.
+Source context: package-internal store-utility saga implementation. Public selector-channel helpers are available from `@themislib/themis/saga`. Priority: **MEDIUM**.
 
 ## See also
 

@@ -1,4 +1,4 @@
-package: "@augmentcode/themis"
+package: "@themislib/themis"
 version: "0.3.2"
 target: "svelte"
 installedAt: "2026-09-25T17:24:44.439Z"

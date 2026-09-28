@@ -1,5 +1,5 @@
 import { call, put, takeEvery, type SagaGenerator } from 'typed-redux-saga';
-import { getItem } from '@augmentcode/themis/utils/collections/collection-utils';
+import { getItem } from '@themislib/themis/utils/collections/collection-utils';
 
 import { appClient, type PermissionOutcome } from '$lib/client';
 import { createLogger } from '$lib/utils/client-logger';

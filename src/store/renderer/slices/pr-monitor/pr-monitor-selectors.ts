@@ -3,7 +3,7 @@
  */
 
 import { store } from '../../store';
-import { getItems } from '@augmentcode/themis/utils/collections/collection-utils';
+import { getItems } from '@themislib/themis/utils/collections/collection-utils';
 import type { PrMonitorRow } from '$features/pr-monitor/pr-monitor-service';
 import type { PrMonitorSnapshotStatus } from './pr-monitor-slice';
 

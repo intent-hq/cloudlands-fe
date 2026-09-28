@@ -1,6 +1,6 @@
-import { createAction } from '@augmentcode/themis/utils/store/create-action';
-import { createReducer } from '@augmentcode/themis/utils/store/create-reducer';
-import { createBooleanPreference } from '@augmentcode/themis/utils/store/boolean-preference';
+import { createAction } from '@themislib/themis/utils/store/create-action';
+import { createReducer } from '@themislib/themis/utils/store/create-reducer';
+import { createBooleanPreference } from '@themislib/themis/utils/store/boolean-preference';
 import { createWorkspaceScopedHelpers } from '../../utils/workspace-scoped';
 import { workspaceUnmounted } from '../workspace-lifecycle/workspace-lifecycle-slice';
 

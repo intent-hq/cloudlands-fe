@@ -1,6 +1,6 @@
-import { createAction } from '@augmentcode/themis/utils/store/create-action';
-import { createReducer } from '@augmentcode/themis/utils/store/create-reducer';
-import { createBooleanPreference } from '@augmentcode/themis/utils/store/boolean-preference';
+import { createAction } from '@themislib/themis/utils/store/create-action';
+import { createReducer } from '@themislib/themis/utils/store/create-reducer';
+import { createBooleanPreference } from '@themislib/themis/utils/store/boolean-preference';
 import { SYSTEM_LANGUAGE_PREFERENCE } from '$shared/i18n/locale-matcher';
 import type { GithubLinkDefaultAction } from '$shared/utils/link-helpers';
 import type { UpdateChannel } from '$features/auto-update/types';

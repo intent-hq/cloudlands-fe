@@ -1,4 +1,4 @@
-import { getItem } from '@augmentcode/themis/utils/collections/collection-utils';
+import { getItem } from '@themislib/themis/utils/collections/collection-utils';
 
 import { type Workspace } from '$shared/types';
 import { store } from '../../store';

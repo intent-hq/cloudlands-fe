@@ -7,7 +7,7 @@
 import { store } from '../../store';
 import { SPEC_NOTE_ID } from '$shared/constants/notes';
 import type { Note } from '$shared/types';
-import { getItem, getItems } from '@augmentcode/themis/utils/collections/collection-utils';
+import { getItem, getItems } from '@themislib/themis/utils/collections/collection-utils';
 import { emptyWorkspaceNotesState } from './workspace-notes-slice';
 import type { NoteVersionsState, WorkspaceNotesWorkspaceState } from './workspace-notes-types';
 

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { getItem, getItems } from '@augmentcode/themis/utils/collections/collection-utils';
+import { getItem, getItems } from '@themislib/themis/utils/collections/collection-utils';
 import {
   settingsEventsReducer as reduce,
   settingsFormOpened,

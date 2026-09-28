@@ -2,7 +2,7 @@
  * Browser Clients Selectors (renderer)
  */
 
-import { getItem, getItems } from '@augmentcode/themis/utils/collections/collection-utils';
+import { getItem, getItems } from '@themislib/themis/utils/collections/collection-utils';
 import type { LiveClient, WorkspaceBrowserClient } from '$shared/types/browser-clients';
 import type { BrowserTabHost } from '$lib/components/browser/browser-tab-host';
 import {

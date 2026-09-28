@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { runSaga, stdChannel, type Task } from 'redux-saga';
-import { createCollection } from '@augmentcode/themis/utils/collections/collection-utils';
+import { createCollection } from '@themislib/themis/utils/collections/collection-utils';
 import { m } from '$shared/paraglide/messages.js';
 import type { HardwareConsoleManager, HardwareConsoleStatus } from '../../device/device-manager';
 import {

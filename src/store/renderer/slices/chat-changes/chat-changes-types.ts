@@ -1,4 +1,4 @@
-import type { Collection } from '@augmentcode/themis/utils/collections/collection-utils';
+import type { Collection } from '@themislib/themis/utils/collections/collection-utils';
 
 export type AgentFileRefreshEntry = {
   path: string;

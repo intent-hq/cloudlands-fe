@@ -1,5 +1,5 @@
 import { runSaga, stdChannel } from 'redux-saga';
-import { getItem } from '@augmentcode/themis/utils/collections/collection-utils';
+import { getItem } from '@themislib/themis/utils/collections/collection-utils';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { appClient } from '$lib/client';

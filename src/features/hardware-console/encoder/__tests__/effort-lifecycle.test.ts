@@ -18,7 +18,7 @@ import {
 import { describe, expect, it, vi } from 'vitest';
 import { render, screen } from '@testing-library/svelte';
 import { registerMockIpcHandler } from '$shared/ipc-mock-router';
-import { createCollection } from '@augmentcode/themis/utils/collections/collection-utils';
+import { createCollection } from '@themislib/themis/utils/collections/collection-utils';
 import { appClient } from '$lib/client';
 import { AGENT_CHANNELS } from '$shared/ipc/channels';
 import {

@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { runSaga, stdChannel } from 'redux-saga';
-import { getItem } from '@augmentcode/themis/utils/collections/collection-utils';
+import { getItem } from '@themislib/themis/utils/collections/collection-utils';
 
 const mocks = vi.hoisted(() => ({ respondPermission: vi.fn() }));
 vi.mock('$lib/client', () => ({

@@ -1,4 +1,4 @@
-import { takeEveryFromSelector } from '@augmentcode/themis/saga';
+import { takeEveryFromSelector } from '@themislib/themis/saga';
 import { call, fork, put, take, takeEvery } from 'typed-redux-saga';
 import {
   applyReasoningEffort,
