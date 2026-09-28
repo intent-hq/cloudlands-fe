@@ -155,7 +155,7 @@ test('two-message forced history remains anchored after 200-message prepend', as
       (row) => {
         const r = row.getBoundingClientRect();
         return (
-          row.hasAttribute('data-chat-operational-row') &&
+          row.querySelector('[data-chat-operational-row]') !== null &&
           !row.dataset.operationalWindowKey?.includes('group-header') &&
           r.top >= box.top &&
           r.bottom <= box.bottom
