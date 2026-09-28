@@ -191,16 +191,10 @@
     return safeDisclosureTransition(node, { tier: 'moderate', y: 0 }, { direction: 'in' });
   }
 
-  /**
-   * Svelte action that adds the slide-up animation class once per unique
-   * block key, then removes it after the animation completes. Uses a
-   * persistent Set to track which keys have already animated, so even if
-   * Svelte recreates the DOM element the animation won't replay.
-   */
+  // Apply the entrance class once per persistent key and remove it on completion.
   function animateIn(node: HTMLElement, params: { animate: boolean; key: string }) {
     if (!params.animate || animatedKeys.has(params.key)) return {};
 
-    // Mark as animated immediately
     animatedKeys.add(params.key);
 
     node.classList.add('content-block--animate-in');
@@ -219,7 +213,6 @@
     };
   }
 
-  // Use $derived.by for synchronous computation without side effects
   let blocks = $derived.by(() => {
     // Collapse duplicate §7.1 resource blocks (daemon-attached canonical +
     // FE-lifted fallback for the same logical resource) so exactly one card
@@ -236,7 +229,6 @@
       ),
     ).filter((block) => !isQuestionResourceBlock(block));
 
-    // DEBUG: Log content block types for tool call visibility debugging
     if (isStreaming) {
       const blockTypes = rawBlocks.map((b) => b.type);
       const hasToolUse = blockTypes.includes('tool_use');
@@ -251,10 +243,8 @@
 
     let filtered: ContentBlock[];
     if (!isStreaming) {
-      // Not streaming - do full processing
       // Filter empty text blocks and optionally hide tool activity.
       filtered = rawBlocks.filter((block) => {
-        // Filter out tool_use blocks if hideToolCalls is true
         if (hideToolCalls && block.type === 'tool_use') {
           return false;
         }
@@ -275,7 +265,6 @@
     } else {
       // Streaming with content blocks - filter empty text blocks and optionally tool calls
       filtered = rawBlocks.filter((block) => {
-        // Filter out tool calls if requested
         if (hideToolCalls && (block.type === 'tool_use' || block.type === 'tool_result')) {
           return false;
         }
@@ -315,15 +304,12 @@
     normalizeResponseGroups(groupContentBlocks(blocks, isStreaming), isStreaming),
   );
 
-  // Track tool states
   let toolStates = $state<Map<string, 'running' | 'completed' | 'error'>>(new Map());
 
   let toolResultClassification = $derived.by(() => classifyToolResults(groupedBlocks));
   let toolResultsMap = $derived(toolResultClassification.resultsMap);
 
-  // Update tool states based on content
   $effect(() => {
-    // Set tool states based on whether they have results
     const newToolStates = new Map<string, 'running' | 'completed' | 'error'>();
 
     for (const block of blocks) {
@@ -336,7 +322,6 @@
         // tool-call pairing.
         const result = findToolResult(toolResultsMap, toolBlock);
         if (result) {
-          // Check both snake_case and camelCase for error flag
           const isError = result.is_error || result.isError;
           // Also detect errors from the result payload text (§7.1 `output`,
           // legacy `content` fallback; e.g., "Error:" prefix or "Tool Error:")
@@ -355,13 +340,9 @@
       }
     }
 
-    // Update state with new maps to trigger reactivity
     toolStates = newToolStates;
   });
 
-  // No need for manual markdown processing - MarkdownViewer handles it
-
-  // Handle file opening from AugmentCodeSnippet
   function handleOpenFile(detail: {
     path: string;
     line?: number;
@@ -379,7 +360,6 @@
     );
   }
 
-  // Handle diagram binding clicks (file, note, etc.)
   function handleDiagramBindingClick(e: MouseEvent, binding: { type: string; target: string }) {
     logger.info('Diagram binding clicked', binding);
     const openInAdjacentPanel = e.metaKey || e.ctrlKey;
@@ -454,13 +434,11 @@
 
   function parseTextBlock(text: string): ParsedTextResult {
     const cacheKey = JSON.stringify([workspaceId ?? null, isStreaming, flatstr(text)]);
-    // Check cache first
     const cached = parsedTextCache.get(cacheKey);
     if (cached) {
       return cached;
     }
 
-    // Extract setup script if present
     const setupScript = AuggieTextParser.extractSetupScript(text);
     // Strip suggested prompts (they're rendered separately in ChatPanel)
     const { cleanedContent: contentWithoutSuggestions } = parseSuggestedPrompts(text);
