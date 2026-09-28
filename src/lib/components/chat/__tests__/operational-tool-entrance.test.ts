@@ -17,10 +17,10 @@ vi.mock('$lib/utils/layout-phases', () => ({
   },
 }));
 let reserve: ReturnType<typeof createToolEntranceReservations>;
-let entered: Set<string>;
+let entered: Set<string | undefined>;
 let measured: number | undefined;
 let admitted: boolean;
-const row = (id: string) =>
+const row = (id: string | undefined) =>
   createWindowItemProjector()(
     [{ type: 'tool_use', id, name: 'view', input: {} }],
     'message',
@@ -89,5 +89,14 @@ it('cancels its pending admission work on renderer destruction', async () => {
   cleanup();
   await frame();
   expect(entered.size).toBe(0);
+  expect(phases.writes).toHaveLength(0);
+});
+
+it('accepts the optional source identity used by the renderer entrance set', async () => {
+  const item = row(undefined);
+  expect(reserve(item, true).estimatedHeight).toBe(1);
+  await frame();
+  expect(entered.has(undefined)).toBe(true);
+  expect(reserve(item, true)).toBe(item);
   expect(phases.writes).toHaveLength(0);
 });

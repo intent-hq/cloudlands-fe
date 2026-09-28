@@ -6,9 +6,9 @@ import type { WindowItem } from './operational-window-items';
 /** A new tool may reserve its animated origin only during its admission window. */
 export function createToolEntranceReservations(
   panel: Pick<ReturnType<typeof useOperationalPanel>, 'locate' | 'measuredHeight'>,
-  entered: Set<string>,
+  entered: Set<string | undefined>,
 ) {
-  const pending = new Map<string, string>();
+  const pending = new Map<string, string | undefined>();
   let revision = $state(0);
   let cancelWrite: (() => void) | undefined;
   let disposed = false;
