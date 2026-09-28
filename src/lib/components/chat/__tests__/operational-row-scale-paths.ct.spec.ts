@@ -37,6 +37,16 @@ const transcript = (rows: number, prefix = 'scale'): AgentMessage[] => [
 
 test.beforeEach(async ({ page }) => instrument(page));
 test.afterEach(async ({ page }, info) => {
+  const navigation = await page.evaluate(
+    () =>
+      (window as Window & { __interactionNavigationTrace?: unknown[] })
+        .__interactionNavigationTrace,
+  );
+  if (navigation)
+    await info.attach('interaction-navigation', {
+      body: JSON.stringify(navigation),
+      contentType: 'application/json',
+    });
   const probe = await page.evaluate(() => ({
     frames: window.rowScaleProbe.frames,
     longtasks: window.rowScaleProbe.longtasks,
