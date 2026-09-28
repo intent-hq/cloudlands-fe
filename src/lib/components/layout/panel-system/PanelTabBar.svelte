@@ -1259,7 +1259,6 @@
         variant="ghost-light"
         size="icon-sm"
         wrapContent={false}
-        active={panelActionsMenuOpen[location]}
         aria-label={m.ui_breadcrumb_more_label()}
         class="panel-header-action-button"
         data-testid="panel-actions-trigger"
@@ -1457,7 +1456,6 @@
               {...props}
               variant="plain"
               size="lg"
-              active={paneStackMenuOpen}
               class="panel-selector-button w-full min-w-0 max-w-full justify-start bg-muted"
               wrapContent={false}
               aria-label={selectorLabel}
@@ -1835,6 +1833,23 @@
     line-height: 1.2;
     font-weight: 400;
   }
+  :global(
+    :is(.panel-header-action-button, .panel-selector-button):not(
+      :disabled,
+      [data-disabled],
+      [aria-disabled='true']
+    )
+  ),
+  :global(
+    .panel-header-menu
+      :is([data-menu-item], [data-panel-menu-row], button, a[href], [role='option']):not(
+        :disabled,
+        [data-disabled],
+        [aria-disabled='true']
+      )
+  ) {
+    cursor: pointer;
+  }
   :global(.panel-header-menu [data-proximity-highlight='selected']),
   :global(.panel-header-submenu [data-navigation-message-id][aria-selected='true']) {
     background: color-mix(in srgb, hsl(var(--background)), hsl(var(--foreground)) 5%);
@@ -1895,8 +1910,7 @@
     border: 1px solid hsl(var(--border));
     border-radius: 9px;
   }
-  :global(.panel-selector-button:hover),
-  :global(.panel-selector-button[aria-expanded='true']) {
+  :global(.panel-selector-button:hover) {
     background-color: color-mix(in srgb, hsl(var(--muted)), hsl(var(--foreground)) 4%);
   }
   .panel-selector-title {
@@ -2000,7 +2014,10 @@
     margin: 6px auto 12px;
   }
   :global(
-    .panel-actions-menu-content:has(.panel-move-pad:hover, .panel-move-direction[data-highlighted])
+    .panel-actions-menu-content:has(
+        [data-panel-actions-section='move']:hover,
+        .panel-move-direction[data-highlighted]
+      )
       > [data-slot='menu-list-highlight']
       [data-proximity-highlight='hover']
   ) {

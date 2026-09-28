@@ -610,7 +610,7 @@
 
 <style>
   .panel {
-    --panel-shell-radius: var(--radius-large);
+    --panel-shell-radius: calc(var(--radius-large) * 1.5);
     position: relative;
     width: 100%;
     min-width: 0;
