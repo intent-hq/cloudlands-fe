@@ -287,6 +287,40 @@ describe('agentMutationSaga', () => {
     await stop(task);
   });
 
+  it.each(['local Restore', 'restored metadata'])(
+    'does not undo %s when an older retirement response arrives late',
+    async (restoredBy) => {
+      let finishRetire!: (result: { success: true; retiredAt: string }) => void;
+      mocks.retire.mockReturnValue(new Promise((resolve) => (finishRetire = resolve)));
+      mocks.restore.mockResolvedValue({ success: true });
+      mocks.get.mockResolvedValue(session());
+      const existing = session();
+      const harness = start({ [A1]: existing }, { live: true });
+      const retire = retireAgentRequested(WS, A1);
+      harness.channel.put(retire);
+      await settle();
+      expect(mocks.retire).toHaveBeenCalledExactlyOnceWith(A1, WS);
+
+      // The retirement event refresh can expose Restore before its RPC replies.
+      harness.dispatch(updateSession(A1, { retiredAt: '2026-09-28T08:00:00Z' }));
+      if (restoredBy === 'local Restore') {
+        const restore = restoreRetiredAgentRequested(WS, A1);
+        harness.channel.put(restore);
+        await expect(restore.promise).resolves.toBeUndefined();
+      } else {
+        harness.dispatch(bulkUpsertSessions([session(A1, { updatedAt: '2026-09-28T09:00:00Z' })]));
+      }
+      expect(harness.getState().agentSessions.byAgentId[A1].retiredAt).toBeUndefined();
+
+      finishRetire({ success: true, retiredAt: '2026-09-28T08:00:00Z' });
+      await expect(retire.promise).resolves.toBeUndefined();
+      expect(harness.getState().agentSessions.byAgentId[A1].retiredAt).toBeUndefined();
+      expect(harness.getState().agentSessions.byAgentId[A1].messages).toEqual(existing.messages);
+      expect(mocks.get).toHaveBeenCalledWith(A1);
+      await stop(harness.task);
+    },
+  );
+
   it('allows collaborators to steer retirement', async () => {
     mocks.retire.mockResolvedValue({ success: true, retiredAt: '2026-09-28T08:00:00Z' });
     const { channel, task } = start(undefined, { guest: true });
@@ -295,6 +329,28 @@ describe('agentMutationSaga', () => {
     await expect(action.promise).resolves.toBeUndefined();
     expect(mocks.retire).toHaveBeenCalledExactlyOnceWith(A1, WS);
     await stop(task);
+  });
+
+  it('reconciles instead of patching a retirement response from an old connection', async () => {
+    let finishRetire!: (result: { success: true; retiredAt: string }) => void;
+    mocks.retire.mockReturnValue(new Promise((resolve) => (finishRetire = resolve)));
+    mocks.get.mockResolvedValue(session());
+    const harness = start(undefined, { live: true });
+    const before = harness.getState().agentSessions.byAgentId[A1];
+    const action = retireAgentRequested(WS, A1);
+    harness.channel.put(action);
+    await settle();
+    expect(mocks.retire).toHaveBeenCalledExactlyOnceWith(A1, WS);
+    harness.getState().daemonHealth.connectionGeneration++;
+    finishRetire({ success: true, retiredAt: '2026-09-28T08:00:00Z' });
+
+    await expect(action.promise).resolves.toBeUndefined();
+    expect(harness.getState().agentSessions.byAgentId[A1]).toBe(before);
+    expect(harness.dispatched.some((candidate) => candidate.type === updateSession.type)).toBe(
+      false,
+    );
+    expect(mocks.get).toHaveBeenCalledWith(A1);
+    await stop(harness.task);
   });
 
   it('refuses unsupported retirement before sending the mutation', async () => {

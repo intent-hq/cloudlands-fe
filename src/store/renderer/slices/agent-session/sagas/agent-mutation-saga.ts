@@ -17,7 +17,10 @@ import {
   type PendingAgentDeletion,
 } from '$features/agent/utils/pending-agent-deletions';
 import { dismissAgentAttentionToast } from '$features/agent/agent-attention-toast-service';
-import { readAgentSession } from '$features/agent/agent-read-service';
+import {
+  readAgentSession,
+  refreshAgentSessionAfterEvent,
+} from '$features/agent/agent-read-service';
 import { appClient } from '$lib/client';
 import { withToastCountdown } from '$lib/components/patterns/notify';
 import { createLogger } from '$lib/utils/client-logger';
@@ -196,9 +199,20 @@ function* retireAgent(action: ReturnType<typeof retireAgentRequested>): SagaGene
     ) {
       throw new Error(m.agent_mutation_retireUnavailable_error());
     }
+    const beforeRetire = yield* selectAgentSession.effect(agentId);
     const result = yield* call([appClient.agents, appClient.agents.retire], agentId, wsId);
     if (!result.success) throw new Error(result.error || m.agent_mutation_retireFailed_error());
-    yield* put(updateSession(agentId, { retiredAt: result.retiredAt }));
+    if (
+      beforeRetire &&
+      beforeRetire === (yield* selectAgentSession.effect(agentId)) &&
+      generation === (yield* selectDaemonConnectionGeneration.effect())
+    ) {
+      yield* put(updateSession(agentId, { retiredAt: result.retiredAt }));
+    } else {
+      // Events and Restore can overtake this response. Reconcile changed rows
+      // through the existing trailing read instead of replaying an old timestamp.
+      yield* spawn(refreshAgentSessionAfterEvent, agentId);
+    }
     yield* put(action.success(undefined as never));
     settled = true;
   } catch (error) {
