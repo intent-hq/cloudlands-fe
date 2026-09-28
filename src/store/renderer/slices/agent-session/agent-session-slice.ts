@@ -1025,6 +1025,7 @@ type SessionComparisonSnapshot = Pick<
   | 'acpSessionId'
   | 'createdAt'
   | 'updatedAt'
+  | 'retiredAt'
   | 'lastActivity'
   | 'hasUnread'
   | 'currentTurnNumber'
@@ -1087,6 +1088,7 @@ function toSessionComparisonSnapshot(session: StoredAgentSession): SessionCompar
     acpSessionId: session.acpSessionId,
     createdAt: session.createdAt,
     updatedAt: session.updatedAt,
+    retiredAt: session.retiredAt,
     lastActivity: session.lastActivity,
     hasUnread: session.hasUnread,
     currentTurnNumber: session.currentTurnNumber,

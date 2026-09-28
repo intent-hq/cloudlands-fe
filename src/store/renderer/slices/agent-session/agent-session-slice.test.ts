@@ -6,7 +6,7 @@ import {
   type QueuedMessage,
 } from '$shared/types';
 import { AgentActivationState } from '$shared/types/agent-session';
-import type { AgentSessionState } from './agent-session-types';
+import type { AgentSessionState, StoredAgentSession } from './agent-session-types';
 import type { StoreState } from '../../types';
 import {
   agentQueueReducer,
@@ -270,6 +270,25 @@ describe('agent-session-slice reducer', () => {
 
       expect(next).toBe(state);
     });
+
+    it.each([
+      ['wire upsert', upsertSession],
+      ['stored restore', (session: StoredAgentSession) => restoreStoredSessions([session])],
+    ] as const)(
+      'tracks retirement-only changes through %s without losing no-op identity',
+      (_, action) => {
+        let state = agentSessionReducer(initialState, upsertSession(makeSession('a1', 'ws-1')));
+        expect(state.agentIdsByWorkspace['ws-1']).toContain('a1');
+        for (const retiredAt of ['2026-09-28T09:00:00Z', '2026-09-28T10:00:00Z', undefined]) {
+          const before = state;
+          state = agentSessionReducer(state, action({ ...state.byAgentId['a1'], retiredAt }));
+          expect(state).not.toBe(before);
+          expect(state.byAgentId['a1'].retiredAt).toBe(retiredAt);
+          expect(state.agentIdsByWorkspace['ws-1']).toEqual(['a1']);
+          expect(agentSessionReducer(state, action({ ...state.byAgentId['a1'] }))).toBe(state);
+        }
+      },
+    );
 
     it('keeps the no-op guard bounded to message count and last message ID', () => {
       const messages = [makeUniqueMessage('m1'), makeUniqueMessage('m2')];

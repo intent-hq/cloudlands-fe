@@ -6496,8 +6496,14 @@ describe('daemonEventsBridge (agent lifecycle → collapsed bin counts, §5.5 sc
       handler(notification('agent:retired', { agentId: PARENT }));
       await settle();
       seedSession({ id: PARENT as never, retiredAt: '2026-01-01T12:00:00.000Z' });
+      // Model the successful metadata refresh before deleting the restored row.
+      // A no-op mock would leave it retired, so deletion correctly owes no count.
+      refreshAgentSessionAfterEventSpy.mockImplementationOnce(async () => {
+        seedSession({ id: PARENT as never });
+      });
       handler(notification('agent:restored', { agentId: PARENT }));
       await settle();
+      expect(appStore.state.agentSessions.byAgentId[PARENT].retiredAt).toBeUndefined();
       handler(notification('agent:deleted', { agentId: PARENT }));
       await settle();
 
