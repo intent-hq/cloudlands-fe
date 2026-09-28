@@ -63,6 +63,8 @@
     branchBaseCommitSha?: string;
     /** When true, use provided content from change.content instead of fetching from git */
     useProvidedContent?: boolean;
+    /** False for node-owned transcript paths, including lazy and refresh reads. */
+    allowHeadReads?: boolean;
     /**
      * Starting line number for partial/snippet diffs (1-based). When > 1,
      * blank lines are prepended so real file line numbers are rendered in the gutter.
@@ -110,6 +112,7 @@
     branchBaseRef,
     branchBaseCommitSha,
     useProvidedContent = false,
+    allowHeadReads = true,
     lineOffset = 1,
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     lineStageIndicators,
@@ -419,7 +422,17 @@
         change.stage === 'committed' &&
         Boolean(branchBaseRef || branchBaseCommitSha);
 
-      if (shouldUseProvidedContent) {
+      if (!allowHeadReads) {
+        // Transcript snippets are the only available source until checkpoint reads
+        // are wired. Missing, empty or raw-patch snippets must not query the head.
+        if (!hasProvidedContent || contentIsRawDiff) {
+          error = m.chat_inlineDiffItem_transcriptUnavailable_label();
+          return;
+        }
+        if (!checkContentSize(oldContentValue, newContentValue)) return;
+        oldContent = oldContentValue;
+        newContent = newContentValue;
+      } else if (shouldUseProvidedContent) {
         logger.info('[loadDiffContent] Using provided content', {
           reason: useProvidedContent ? 'useProvidedContent prop' : 'committed change',
           oldContentLength: oldContentValue.length,
@@ -1034,6 +1047,7 @@
   // Load on mount and refresh after a retained workspace surface is reactivated.
   $effect(() => {
     if (!active) return;
+    void allowHeadReads;
     logger.info('[onMount] Component mounted', {
       instanceId,
       changeId: change?.id,
@@ -1069,6 +1083,7 @@
       absolutePath &&
       change?.stage !== 'committed' &&
       !useProvidedContent &&
+      allowHeadReads &&
       !loading &&
       !isGitlinkChange
     ) {
@@ -1077,7 +1092,7 @@
   });
 
   $effect(() => {
-    if (!active || useProvidedContent) return;
+    if (!active || useProvidedContent || !allowHeadReads) return;
     const content = $workingTreeFileContentStore;
     if (content === null || content === lastObservedWorkingTreeContent) return;
 
@@ -1197,7 +1212,7 @@
         e.preventDefault();
 
         // Prevent multiple simultaneous operations
-        if (isProcessingLineAction || loading) {
+        if (!allowHeadReads || isProcessingLineAction || loading) {
           return;
         }
 

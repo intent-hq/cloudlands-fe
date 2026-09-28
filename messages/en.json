@@ -2124,6 +2124,7 @@
   "chat_eventWakeup_triggered_many": "{count} events triggered this response",
   "chat_eventWakeup_triggered_one": "{count} event triggered this response",
   "chat_inlineDiffItem_clickToScroll_label": "Click to scroll the code",
+  "chat_inlineDiffItem_transcriptUnavailable_label": "This file’s content is unavailable in the recorded tool output.",
   "chat_inlineDiffItem_noWorkspace_label": "No workspace available",
   "chat_inlineDiffItem_viewer_ariaLabel": "File diff viewer - click to enable scrolling",
   "chat_inlinePermission_from_label": "from {name}",

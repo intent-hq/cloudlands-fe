@@ -2124,6 +2124,7 @@
   "chat_eventWakeup_triggered_many": "이벤트 {count}개가 이 응답을 트리거했습니다",
   "chat_eventWakeup_triggered_one": "이벤트 {count}개가 이 응답을 트리거했습니다",
   "chat_inlineDiffItem_clickToScroll_label": "클릭하여 코드 스크롤",
+  "chat_inlineDiffItem_transcriptUnavailable_label": "기록된 도구 출력에서 이 파일의 내용을 사용할 수 없습니다.",
   "chat_inlineDiffItem_noWorkspace_label": "사용 가능한 작업 공간 없음",
   "chat_inlineDiffItem_viewer_ariaLabel": "파일 diff 뷰어 - 클릭하여 스크롤 활성화",
   "chat_inlinePermission_from_label": "{name}에서",

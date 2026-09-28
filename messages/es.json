@@ -2124,6 +2124,7 @@
   "chat_eventWakeup_triggered_many": "{count} eventos activaron esta respuesta",
   "chat_eventWakeup_triggered_one": "{count} evento activó esta respuesta",
   "chat_inlineDiffItem_clickToScroll_label": "Haga clic para desplazar el código",
+  "chat_inlineDiffItem_transcriptUnavailable_label": "El contenido de este archivo no está disponible en la salida registrada de la herramienta.",
   "chat_inlineDiffItem_noWorkspace_label": "No hay espacio de trabajo disponible",
   "chat_inlineDiffItem_viewer_ariaLabel": "Visor de diff de archivos: haga clic para habilitar el desplazamiento",
   "chat_inlinePermission_from_label": "de {name}",

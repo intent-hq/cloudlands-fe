@@ -498,6 +498,7 @@
   {:else}
     <div data-assistant-prose={insetProse ? 'static-markdown' : undefined}>
       <MarkdownViewer
+        canOpenFile={() => canOpenAgentPath(appStore.state, agentId)}
         content={parsedBlock.content || ''}
         {isStreaming}
         {workspaceId}
@@ -555,6 +556,7 @@
             data-assistant-prose={nested ? undefined : 'static-fallback'}
           >
             <MarkdownViewer
+              canOpenFile={() => canOpenAgentPath(appStore.state, agentId)}
               content={cleanedText}
               {isStreaming}
               {workspaceId}
@@ -621,6 +623,7 @@
             {#if nestedBlock.type === 'text' && nestedBlock.text}
               <div class="w-full">
                 <MarkdownViewer
+                  canOpenFile={() => canOpenAgentPath(appStore.state, agentId)}
                   content={nestedBlock.text}
                   {workspaceId}
                   taskBlockRenderMode="content"
@@ -648,6 +651,7 @@
               {@const nestedToolState = toolStates.get(nestedToolBlock.id) || 'completed'}
               {@const nestedResultContent = getToolResultPayload(nestedToolResult)}
               <ToolCall
+                {agentId}
                 toolUse={nestedToolBlock}
                 toolState={nestedToolState}
                 result={nestedResultContent}

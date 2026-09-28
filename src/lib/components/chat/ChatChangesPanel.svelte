@@ -3141,6 +3141,7 @@
             <!-- Single change (only staged or only unstaged) -->
             {@const category = getChangeCategory(change)}
             <InlineDiffItem
+              allowHeadReads={!nodeOwnedPaths}
               {change}
               foldUnchanged={$foldUnchanged}
               lineWrapping={$lineWrapping}

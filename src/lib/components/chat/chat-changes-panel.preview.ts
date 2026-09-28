@@ -58,7 +58,13 @@ export const preview = definePreview<ComponentProps<typeof ChatChangesPanelHarne
   defaultState: 'populated',
   states: {
     'remote-offline': {
-      props: { changes, agentId: 'preview-remote-diff', isAggregate: true },
+      props: {
+        changes: changes.map((change, index) =>
+          index === 0 ? { ...change, oldContent: undefined, newContent: undefined } : change,
+        ),
+        agentId: 'preview-remote-diff',
+        isAggregate: true,
+      },
       setup: () => {
         appStore.dispatch(
           bulkUpsertSessions([

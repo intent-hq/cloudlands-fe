@@ -2124,6 +2124,7 @@
   "chat_eventWakeup_triggered_many": "{count} 个事件触发了此回复",
   "chat_eventWakeup_triggered_one": "{count} 个事件触发了此回复",
   "chat_inlineDiffItem_clickToScroll_label": "点击以滚动代码",
+  "chat_inlineDiffItem_transcriptUnavailable_label": "记录的工具输出中没有此文件的内容。",
   "chat_inlineDiffItem_noWorkspace_label": "没有可用的工作区",
   "chat_inlineDiffItem_viewer_ariaLabel": "文件差异查看器——点击启用滚动",
   "chat_inlinePermission_from_label": "来自 {name}",

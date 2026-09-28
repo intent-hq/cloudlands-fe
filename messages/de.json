@@ -2124,6 +2124,7 @@
   "chat_eventWakeup_triggered_many": "{count} Ereignisse haben diese Antwort ausgelöst",
   "chat_eventWakeup_triggered_one": "{count} Ereignis hat diese Antwort ausgelöst",
   "chat_inlineDiffItem_clickToScroll_label": "Klicken, um den Code zu scrollen",
+  "chat_inlineDiffItem_transcriptUnavailable_label": "Der Inhalt dieser Datei ist in der aufgezeichneten Werkzeugausgabe nicht verfügbar.",
   "chat_inlineDiffItem_noWorkspace_label": "Kein Arbeitsbereich verfügbar",
   "chat_inlineDiffItem_viewer_ariaLabel": "Datei-Diff-Ansicht - zum Aktivieren des Scrollens klicken",
   "chat_inlinePermission_from_label": "von {name}",

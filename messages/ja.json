@@ -2124,6 +2124,7 @@
   "chat_eventWakeup_triggered_many": "{count} 件のイベントがこの応答をトリガーしました",
   "chat_eventWakeup_triggered_one": "{count} 件のイベントがこの応答をトリガーしました",
   "chat_inlineDiffItem_clickToScroll_label": "クリックしてコードをスクロール",
+  "chat_inlineDiffItem_transcriptUnavailable_label": "このファイルの内容は、記録されたツール出力では利用できません。",
   "chat_inlineDiffItem_noWorkspace_label": "利用可能なワークスペースがありません",
   "chat_inlineDiffItem_viewer_ariaLabel": "ファイル差分ビューアー - クリックしてスクロールを有効化",
   "chat_inlinePermission_from_label": "{name} から",

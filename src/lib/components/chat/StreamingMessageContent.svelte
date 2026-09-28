@@ -715,6 +715,7 @@
   {:else if parsedBlock.type === 'text'}
     <div data-assistant-prose={insetProse ? 'streaming-markdown' : undefined}>
       <MarkdownViewer
+        canOpenFile={() => canOpenAgentPath(appStore.state, agentId)}
         content={parsedBlock.content || ''}
         isStreaming={isStreaming && isLastBlock}
         {workspaceId}
@@ -727,6 +728,7 @@
   {:else}
     <div data-assistant-prose={insetProse ? 'streaming-fallback' : undefined}>
       <MarkdownViewer
+        canOpenFile={() => canOpenAgentPath(appStore.state, agentId)}
         content={parsedBlock.content || ''}
         isStreaming={isStreaming && isLastBlock}
         {workspaceId}
@@ -792,6 +794,7 @@
             data-assistant-prose={nested ? undefined : 'streaming-plain'}
           >
             <MarkdownViewer
+              canOpenFile={() => canOpenAgentPath(appStore.state, agentId)}
               content={cleanedText}
               isStreaming={isStreaming && isLastBlock}
               {workspaceId}
@@ -853,6 +856,7 @@
             {#if nestedBlock.type === 'text' && nestedBlock.text}
               <div class="w-full">
                 <MarkdownViewer
+                  canOpenFile={() => canOpenAgentPath(appStore.state, agentId)}
                   content={nestedBlock.text}
                   {workspaceId}
                   taskBlockRenderMode="content"
@@ -880,6 +884,7 @@
               {@const nestedToolState = toolStates.get(nestedToolBlock.id) || 'completed'}
               {@const nestedResultContent = getToolResultPayload(nestedToolResult)}
               <ToolCall
+                {agentId}
                 toolUse={nestedToolBlock}
                 toolState={nestedToolState}
                 result={nestedResultContent}
@@ -1077,7 +1082,13 @@
       class="w-full {OPERATIONAL_ASSISTANT_PROSE_INSET_CLASS}"
       data-assistant-prose="streaming-empty"
     >
-      <MarkdownViewer content="" isStreaming={true} {workspaceId} taskBlockRenderMode="content" />
+      <MarkdownViewer
+        canOpenFile={() => canOpenAgentPath(appStore.state, agentId)}
+        content=""
+        isStreaming={true}
+        {workspaceId}
+        taskBlockRenderMode="content"
+      />
     </div>
   {/if}
 </div>

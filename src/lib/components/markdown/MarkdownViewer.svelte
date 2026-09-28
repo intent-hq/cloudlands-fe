@@ -49,6 +49,8 @@
     className?: string;
     workspaceId?: string;
     onCodeBlockAction?: (action: string, code: string, language?: string) => void;
+    /** File-only policy; external web and note links remain usable. */
+    canOpenFile?: () => boolean;
     onFileClick?: (
       path: string,
       options?: { line?: number; openInAdjacentPanel?: boolean; sourcePanelId?: string },
@@ -76,6 +78,7 @@
 
     onCodeBlockAction: _onCodeBlockAction,
     onFileClick,
+    canOpenFile,
     taskBlockRenderMode = 'placeholder',
     chatImageThumbnails = false,
     forceExternalLinks = false,
@@ -83,9 +86,7 @@
     media,
   }: Props = $props();
 
-  // One cache-busting token per viewer instance: re-processing the same
-  // message (streaming ticks, prop changes) keeps its image URLs stable, while
-  // a newly mounted viewer fetches the file's current bytes.
+  // Keep image URLs stable until this viewer is remounted.
   const workspaceFileVersion = createWorkspaceFileVersion();
 
   const mediaSegments = $derived(splitWorkspaceVideoMarkdown(content, workspaceId));
@@ -367,10 +368,7 @@
   }
 
   // PERF: Single reusable link click handler - shared between streaming and static content
-  // Routes all link clicks through the unified link handler for consistent behavior:
-  // - Click → embedded browser panel (for http/https)
-  // - Cmd+Click → external browser
-  // - intent:// → internal navigation
+  // Route anchor clicks through the unified link handler.
   function handleLinkClick(event: MouseEvent | KeyboardEvent): void {
     const target = event.target as HTMLElement;
     const anchor = target.closest('a');
@@ -401,6 +399,7 @@
 
       handleLink(anchor.href, {
         workspaceId: owningWorkspaceId,
+        canOpenFile,
         sourcePanelId,
         event,
         rawHref: anchor.getAttribute('href') ?? undefined,
@@ -417,6 +416,7 @@
       const meta = JSON.parse(mentionEl.getAttribute('data-meta') || '{}');
 
       if (type === 'file') {
+        if (canOpenFile?.() === false) return;
         event.preventDefault();
         event.stopPropagation();
         event.stopImmediatePropagation();
@@ -535,6 +535,7 @@
           {workspaceId}
           onCodeBlockAction={_onCodeBlockAction}
           {onFileClick}
+          {canOpenFile}
           {taskBlockRenderMode}
           {chatImageThumbnails}
           {forceExternalLinks}

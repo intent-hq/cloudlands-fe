@@ -2124,6 +2124,7 @@
   "chat_eventWakeup_triggered_many": "{count} événements ont déclenché cette réponse",
   "chat_eventWakeup_triggered_one": "{count} événement a déclenché cette réponse",
   "chat_inlineDiffItem_clickToScroll_label": "Cliquer pour faire défiler le code",
+  "chat_inlineDiffItem_transcriptUnavailable_label": "Le contenu de ce fichier n’est pas disponible dans la sortie enregistrée de l’outil.",
   "chat_inlineDiffItem_noWorkspace_label": "Aucun espace de travail disponible",
   "chat_inlineDiffItem_viewer_ariaLabel": "Visionneuse de diff de fichier - cliquer pour activer le défilement",
   "chat_inlinePermission_from_label": "de {name}",
