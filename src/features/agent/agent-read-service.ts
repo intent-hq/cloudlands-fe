@@ -1,3 +1,4 @@
+import { claimAgentReadOwnership } from './agent-read-ownership';
 import { onBackendReconnected } from '$lib/client/live/backend-transport';
 /**
  * Reusable agent-session read seam used by the agent read saga and event router.
@@ -77,8 +78,9 @@ let readGeneration = 0;
 const markerProjectionGeneration = new Map<string, number>();
 const QUESTION_MARKER_KEYS = ['pendingQuestionsMessageId', 'dismissedQuestionsMessageId'] as const;
 
-export function notePendingQuestionMarkerProjection(agentId: string): void {
-  markerProjectionGeneration.set(agentId, readGeneration);
+export function notePendingQuestionMarkerProjection(agentId: string, workspaceId?: string): void {
+  workspaceId ??= appStore.state.agentSessions?.byAgentId[agentId]?.workspaceId;
+  markerProjectionGeneration.set(readKey(agentId, workspaceId), readGeneration);
 }
 
 function preserveProjectedQuestionMarkers(
@@ -87,9 +89,10 @@ function preserveProjectedQuestionMarkers(
   session: AgentSession | null,
 ): AgentSession | null {
   if (!session) return session;
-  const projectedAt = markerProjectionGeneration.get(agentId);
+  const projectedAt = markerProjectionGeneration.get(readKey(agentId, session.workspaceId));
   if (projectedAt === undefined || generation > projectedAt) return session;
-  const stored = appStore.state.agentSessions?.byAgentId[agentId]?.metadata;
+  const current = appStore.state.agentSessions?.byAgentId[agentId];
+  const stored = current?.workspaceId === session.workspaceId ? current.metadata : undefined;
   if (!stored) return session;
   let metadata = session.metadata;
   for (const key of QUESTION_MARKER_KEYS) {
@@ -111,6 +114,7 @@ export async function refreshAgentSessionAfterEvent(
 ): Promise<void> {
   workspaceId ??= appStore.state.agentSessions?.byAgentId[agentId]?.workspaceId;
   const key = readKey(agentId, workspaceId);
+  const ownership = claimAgentReadOwnership(agentId, workspaceId);
   const pending = inFlight.get(key);
   if (!pending) return ensureAgentSession(agentId, workspaceId);
 
@@ -123,13 +127,15 @@ export async function refreshAgentSessionAfterEvent(
   const rerun = pending.then(
     () => {
       pendingEventRerun.delete(key);
-      if (connection === connectionGeneration) return ensureAgentSession(agentId, workspaceId);
+      if (connection === connectionGeneration && ownership.isCurrent())
+        return ensureAgentSession(agentId, workspaceId);
     },
     () => {
       // A rejected leading read is not cached and must not suppress the event's
       // authoritative trailing retry.
       pendingEventRerun.delete(key);
-      if (connection === connectionGeneration) return ensureAgentSession(agentId, workspaceId);
+      if (connection === connectionGeneration && ownership.isCurrent())
+        return ensureAgentSession(agentId, workspaceId);
     },
   );
   pendingEventRerun.set(key, rerun);
@@ -171,22 +177,29 @@ export function readAgentSession(
 
 async function hydrateAgentSession(
   agentId: string,
+  ownership: ReturnType<typeof claimAgentReadOwnership>,
   workspaceId?: string,
 ): Promise<AgentSession | null> {
   workspaceId ??= appStore.state.agentSessions?.byAgentId[agentId]?.workspaceId;
-  const key = readKey(agentId, workspaceId);
   try {
-    const storedBefore = appStore.state.agentSessions?.byAgentId[agentId];
+    const prior = appStore.state.agentSessions?.byAgentId[agentId];
+    const storedBefore = prior?.workspaceId === workspaceId ? prior : undefined;
     const hadInFlightPairBeforeFetch =
       storedBefore?.isStreaming === true && storedBefore?.isProcessing === true;
     const session = await readAgentSession(agentId, workspaceId);
+    if (session) ownership.bindWorkspace(session.workspaceId);
     // Re-check after the fetch: a deletion may have become pending while
     // `agent.get` was in flight; upserting now would resurrect the
     // soft-hidden session. Also drop rows carrying the daemon's
     // delete-grace-window deadline (PROTOCOL §5.5 `pendingDeleteAt`)
     // — a deletion scheduled by another window/client (or before an FE
     // restart) is not in this window's local registry.
-    if (session && !session.pendingDeleteAt && !isAgentDeletionPending(agentId)) {
+    if (
+      ownership.isCurrent() &&
+      session &&
+      !session.pendingDeleteAt &&
+      !isAgentDeletionPending(agentId)
+    ) {
       // `agent.get` returns AgentLite (PROTOCOL §5.5) — session metadata and
       // message COUNTS only, not the retained transcript. `normalizeAgent`
       // fills the missing `messages` field with `[]`, so dispatching this
@@ -195,7 +208,10 @@ async function hydrateAgentSession(
       // messages so this metadata-only refresh never erases the seq-0 user
       // message (nor any subsequent history).
       const existing = appStore.state.agentSessions?.byAgentId[agentId];
-      const merged = existing ? { ...session, messages: existing.messages } : session;
+      const merged =
+        existing?.workspaceId === session.workspaceId
+          ? { ...session, messages: existing.messages }
+          : session;
       appStore.dispatch(
         bulkUpsertSessions(
           [merged],
@@ -218,7 +234,7 @@ async function hydrateAgentSession(
     }
     return null;
   } finally {
-    hydrationInFlight.delete(key);
+    hydrationInFlight.delete(ownership.key);
   }
 }
 
@@ -230,7 +246,8 @@ async function hydrateAgentSession(
  */
 export async function ensureAgentSession(agentId: string, workspaceId?: string): Promise<void> {
   workspaceId ??= appStore.state.agentSessions?.byAgentId[agentId]?.workspaceId;
-  const key = readKey(agentId, workspaceId);
+  const ownership = claimAgentReadOwnership(agentId, workspaceId);
+  const key = ownership.key;
   // A soft-hidden deletion is pending (undo window still open): the daemon
   // still returns the agent from `agent.get`, so refetching would resurrect
   // the deleted session. Skip entirely.
@@ -240,7 +257,7 @@ export async function ensureAgentSession(agentId: string, workspaceId?: string):
     await pending;
     return;
   }
-  const run = hydrateAgentSession(agentId, workspaceId);
+  const run = hydrateAgentSession(agentId, ownership, workspaceId);
   hydrationInFlight.set(key, run);
   await run;
 }

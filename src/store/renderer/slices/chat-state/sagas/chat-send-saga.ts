@@ -1,3 +1,4 @@
+import { isAgentReadWorkspaceCurrent } from '$features/agent/agent-read-ownership';
 import { selectAgentSessionWorkspaceId } from '../../agent-session/agent-session-selectors';
 import {
   call,
@@ -290,7 +291,7 @@ function* dispatchToLifecycle(
       // (monorepo#2481) or a hydrate-reconciled fold (monorepo#2486) —
       // advances this seq, and the queue-on-send seed below must then yield
       // to it.
-      const queueSeqAtSend = getAgentQueueEventSnapshotSeq(agentId);
+      const queueSeqAtSend = getAgentQueueEventSnapshotSeq(agentId, wsId);
       const result = yield* call(
         [appClient.agents, appClient.agents.queue],
         agentId,
@@ -315,12 +316,15 @@ function* dispatchToLifecycle(
         // snapshot (including the shrunk-after-drain one) is at least as
         // fresh as this echo, so seeding over it would re-add a just-drained
         // row (monorepo#2481).
-        if (getAgentQueueEventSnapshotSeq(agentId) === queueSeqAtSend) {
+        if (
+          isAgentReadWorkspaceCurrent(agentId, wsId) &&
+          getAgentQueueEventSnapshotSeq(agentId, wsId) === queueSeqAtSend
+        ) {
           const existing = yield* selectAgentQueueMessages.effect(agentId);
           if (!existing.some((message) => message.id === queuedMessage.id)) {
-            yield* put(replaceAgentQueue(agentId, [...existing, queuedMessage]));
+            yield* put(replaceAgentQueue(agentId, [...existing, queuedMessage], wsId));
           }
-        } else {
+        } else if (isAgentReadWorkspaceCurrent(agentId, wsId)) {
           logger.debug(
             'queue-on-send seed superseded by an authoritative snapshot; reconciling via hydrate',
             { agentId, queuedMessageId: queuedMessage.id },

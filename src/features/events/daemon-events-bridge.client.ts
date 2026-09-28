@@ -1,3 +1,4 @@
+import { isAgentReadWorkspaceCurrent } from '$features/agent/agent-read-ownership';
 import { selectWorkspaceMcpServerName } from '$store/renderer/slices/mcp-settings/mcp-settings-selectors';
 /**
  * Daemon events → renderer Redux bridge.
@@ -1488,10 +1489,13 @@ function handleAgentUpdatedEvent(event: WorkspaceEvent): void {
     // in another workspace, and invalidate any toast still loading its imports.
     void dismissAgentAttentionToast(agentId);
   }
+  const ownerWorkspace = appStore.state.agentSessions?.byAgentId[agentId]?.workspaceId;
+  if (event.workspaceId && ownerWorkspace && event.workspaceId !== ownerWorkspace) return;
   if (pendingQuestionMarkersFromWorkspaceEvent(event) !== null) {
-    notePendingQuestionMarkerProjection(agentId);
+    notePendingQuestionMarkerProjection(agentId, event.workspaceId);
   }
-  void refreshAgentSessionAfterEvent(agentId);
+  if (isAgentReadWorkspaceCurrent(agentId, event.workspaceId))
+    void refreshAgentSessionAfterEvent(agentId, event.workspaceId);
   // Cross-window InterruptedAgentsModal reconciliation (§5.35):
   // agent.resolveInterrupted emits agent:updated per resolved agent, so an
   // open modal listing this agent re-checks agent.listInterrupted (debounced;
@@ -1619,10 +1623,13 @@ function handleQueueUpdatedEvent(event: WorkspaceEvent): void {
   const agentId = data.agentId;
   const queue = data.queue;
   if (typeof agentId !== 'string' || !Array.isArray(queue)) return;
-  appStore.dispatch(replaceAgentQueue(agentId, queue as QueuedMessage[]));
+  const ownerWorkspace = appStore.state.agentSessions?.byAgentId[agentId]?.workspaceId;
+  if (event.workspaceId && ownerWorkspace && event.workspaceId !== ownerWorkspace) return;
+  if (!isAgentReadWorkspaceCurrent(agentId, event.workspaceId)) return;
+  appStore.dispatch(replaceAgentQueue(agentId, queue as QueuedMessage[], event.workspaceId));
   // Mark the snapshot so an in-flight hydrate fetch that started before this
   // event discards its (now stale) response instead of overwriting it.
-  noteAgentQueueEventSnapshotApplied(agentId);
+  noteAgentQueueEventSnapshotApplied(agentId, event.workspaceId);
 }
 
 /**
@@ -3796,7 +3803,8 @@ export function routeDaemonEventsNotification(
     const data = (event as { data?: Record<string, unknown> }).data;
     const agentId = data?.agentId;
     if (typeof agentId === 'string' && agentId.length > 0) {
-      void refreshAgentSessionAfterEvent(agentId);
+      if (isAgentReadWorkspaceCurrent(agentId, event.workspaceId))
+        void refreshAgentSessionAfterEvent(agentId, event.workspaceId);
     } else {
       appStore.dispatch(hydrateAgentsRequested(workspaceId));
     }

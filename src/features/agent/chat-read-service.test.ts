@@ -1,3 +1,4 @@
+import { ensureAgentSession } from './agent-read-service';
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { AgentStatus } from '$shared/types/agent.types';
 import type { AgentSession, AgentMessage } from '$shared/types';
@@ -920,4 +921,63 @@ it('drops old connection transcript pages without replaying a trailing request',
     undefined,
     WS,
   );
+});
+
+describe('workspace transcript ownership', () => {
+  beforeAll(() => appStore.init());
+  it.each(['a-first', 'b-first'])(
+    'keeps only the latest workspace transcript with %s completion',
+    async (order) => {
+      const id = `transcript-${order}`;
+      const finishes: Array<(page: ReturnType<typeof conversation>) => void> = [];
+      agentsApi.get.mockImplementation(async (agentId: string, workspaceId: string) =>
+        makeSession({ id: agentId, workspaceId }),
+      );
+      agentsApi.getConversation.mockImplementation(
+        () => new Promise((resolve) => finishes.push(resolve)),
+      );
+      const a = loadChatTranscript(id, 'workspace-a');
+      await flush();
+      const b = loadChatTranscript(id, 'workspace-b');
+      await flush();
+      const finishA = async () => {
+        finishes[0](conversation([makeMessage('a-message', 'A')]));
+        await a;
+      };
+      const finishB = async () => {
+        finishes[1](conversation([makeMessage('b-message', 'B')]));
+        await b;
+      };
+      if (order === 'a-first') {
+        await finishA();
+        await finishB();
+      } else {
+        await finishB();
+        await finishA();
+      }
+      const stored = selectAgentSession.select(appStore.state, id);
+      expect(stored?.workspaceId).toBe('workspace-b');
+      expect(stored?.messages.map((m) => m.id)).toEqual(['b-message']);
+    },
+  );
+});
+
+it('keeps a newer transcript owner when an older metadata hydrate finishes', async () => {
+  appStore.init();
+  const id = 'cross-service-owner';
+  let finish!: (session: AgentSession) => void;
+  agentsApi.get.mockImplementationOnce(
+    () =>
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+  );
+  const old = ensureAgentSession(id, 'workspace-a');
+  agentsApi.get.mockResolvedValueOnce(makeSession({ id, workspaceId: 'workspace-b' }));
+  agentsApi.getConversation.mockResolvedValueOnce(conversation([makeMessage('b-only', 'B')]));
+  await loadChatTranscript(id, 'workspace-b');
+  finish(makeSession({ id, workspaceId: 'workspace-a' }));
+  await old;
+  expect(selectAgentSession.select(appStore.state, id)?.workspaceId).toBe('workspace-b');
+  expect(selectAgentMessages.select(appStore.state, id).map((row) => row.id)).toEqual(['b-only']);
 });

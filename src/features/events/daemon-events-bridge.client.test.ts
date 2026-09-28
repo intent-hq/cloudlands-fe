@@ -3611,6 +3611,32 @@ describe('daemonEventsBridge (queue wire contract — agent:queue:updated → re
     };
   }
 
+  it('ignores queue and question-marker events from another workspace with the same agent ID', async () => {
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+    handler(
+      notification('agent:queue:updated', {
+        agentId: AGENT,
+        queue: [{ id: 'ours', content: 'ours', position: 0, queuedAt: '2026-01-02T00:00:00Z' }],
+      }),
+    );
+    const before = appStore.state.agentQueue.byAgentId[AGENT];
+    const foreignQueue = notification('agent:queue:updated', { agentId: AGENT, queue: [] });
+    foreignQueue.params.event.workspaceId = 'workspace-other';
+    handler(foreignQueue);
+    expect(appStore.state.agentQueue.byAgentId[AGENT]).toEqual(before);
+    const foreignMarker = notification('agent:updated', {
+      agentId: AGENT,
+      pendingQuestionsMessageId: 'foreign-marker',
+    });
+    foreignMarker.params.event.workspaceId = 'workspace-other';
+    handler(foreignMarker);
+    expect(
+      appStore.state.agentSessions.byAgentId[AGENT].metadata?.pendingQuestionsMessageId,
+    ).not.toBe('foreign-marker');
+    expect(refreshAgentSessionAfterEventSpy).not.toHaveBeenCalled();
+  });
+
   it('renders the BE queue snapshot from a PROTOCOL §5.5 agent:queue:updated payload', async () => {
     await primeBridge();
     const handler = capturedHandlers[0]!;
@@ -5036,7 +5062,7 @@ describe('daemonEventsBridge (agent:attention-requested → showAgentAttentionTo
       await flush();
 
       expect(dismissAgentAttentionToastSpy.mock.calls).toEqual([[AGENT]]);
-      expect(refreshAgentSessionAfterEventSpy).toHaveBeenCalledWith(AGENT);
+      expect(refreshAgentSessionAfterEventSpy).toHaveBeenCalledWith(AGENT, WS);
     },
   );
 
@@ -5244,7 +5270,7 @@ describe('daemonEventsBridge (agent:attention-requested → showAgentAttentionTo
     );
     await flush();
 
-    expect(refreshAgentSessionAfterEventSpy).toHaveBeenCalledWith(AGENT);
+    expect(refreshAgentSessionAfterEventSpy).toHaveBeenCalledWith(AGENT, WS);
     expect(showAgentAttentionToastSpy).toHaveBeenCalledTimes(1);
   });
 });
@@ -5733,7 +5759,7 @@ describe('daemonEventsBridge (session lifecycle — agent:created/renamed/update
     });
     await flush();
 
-    expect(refreshAgentSessionAfterEventSpy).toHaveBeenCalledWith(AGENT);
+    expect(refreshAgentSessionAfterEventSpy).toHaveBeenCalledWith(AGENT, WS);
     expect(ensureAgentSessionSpy).not.toHaveBeenCalled();
     const state = appStore.state as {
       agentSessions: { byAgentId: Record<string, AgentSession> };
@@ -5759,8 +5785,8 @@ describe('daemonEventsBridge (session lifecycle — agent:created/renamed/update
     handler(notification('agent:updated', { agentId: AGENT }));
 
     expect(refreshAgentSessionAfterEventSpy).toHaveBeenCalledTimes(2);
-    expect(refreshAgentSessionAfterEventSpy).toHaveBeenNthCalledWith(1, AGENT);
-    expect(refreshAgentSessionAfterEventSpy).toHaveBeenNthCalledWith(2, AGENT);
+    expect(refreshAgentSessionAfterEventSpy).toHaveBeenNthCalledWith(1, AGENT, WS);
+    expect(refreshAgentSessionAfterEventSpy).toHaveBeenNthCalledWith(2, AGENT, WS);
 
     resolveFirst();
     await flush();
@@ -5841,7 +5867,7 @@ describe('daemonEventsBridge (agent:retired/restored/deleted → lazy Retired bi
     handler(notification('agent:retired', { agentId: AGENT }));
     await flush();
     expect(retiredCountOf(WS)).toBe(2);
-    expect(refreshAgentSessionAfterEventSpy).toHaveBeenCalledWith(AGENT);
+    expect(refreshAgentSessionAfterEventSpy).toHaveBeenCalledWith(AGENT, WS);
 
     handler(notification('agent:restored', { agentId: AGENT }));
     await flush();
@@ -5855,7 +5881,7 @@ describe('daemonEventsBridge (agent:retired/restored/deleted → lazy Retired bi
     await flush();
 
     expect(retiredCountOf(WS)).toBe(0);
-    expect(refreshAgentSessionAfterEventSpy).toHaveBeenCalledWith(AGENT);
+    expect(refreshAgentSessionAfterEventSpy).toHaveBeenCalledWith(AGENT, WS);
   });
 
   it('agent:deleted on a known retired row nudges the count down in lockstep with its removal', async () => {
@@ -10400,7 +10426,7 @@ describe('daemonEventsBridge (STAB-9 — agent:status-changed / agent:idle refre
 
     handler(notification('agent:status-changed', { agentId: AGENT, status: 'responding' }));
 
-    expect(refreshAgentSessionAfterEventSpy).toHaveBeenCalledWith(AGENT);
+    expect(refreshAgentSessionAfterEventSpy).toHaveBeenCalledWith(AGENT, WS);
     expect(dispatchSpy).not.toHaveBeenCalledWith(hydrateAgentsRequested(WS));
 
     // Restore the getter to prevent leakage
@@ -10424,7 +10450,7 @@ describe('daemonEventsBridge (STAB-9 — agent:status-changed / agent:idle refre
 
     handler(notification('agent:idle', { agentId: AGENT }));
 
-    expect(refreshAgentSessionAfterEventSpy).toHaveBeenCalledWith(AGENT);
+    expect(refreshAgentSessionAfterEventSpy).toHaveBeenCalledWith(AGENT, WS);
     expect(dispatchSpy).not.toHaveBeenCalledWith(hydrateAgentsRequested(WS));
 
     // Restore the getter to prevent leakage

@@ -673,7 +673,7 @@ describe('chatSendSaga', () => {
       turnId: 'turn-superseded',
     };
     mocks.queue.mockImplementation(async () => {
-      noteAgentQueueEventSnapshotApplied(AGENT);
+      noteAgentQueueEventSnapshotApplied(AGENT, WS);
       return {
         success: true,
         turnId: 'turn-superseded',
@@ -723,7 +723,7 @@ describe('chatSendSaga', () => {
     run.channel.put(sendMessage(AGENT, { wsId: WS, text: 'later' }));
     await settle();
 
-    expect(run.dispatch).toHaveBeenCalledWith(replaceAgentQueue(AGENT, [freshQueuedMessage]));
+    expect(run.dispatch).toHaveBeenCalledWith(replaceAgentQueue(AGENT, [freshQueuedMessage], WS));
     run.task.cancel();
     await run.task.toPromise();
   });

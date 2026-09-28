@@ -661,6 +661,7 @@ it('keeps concurrent reads of an opaque agent id separate by workspace', async (
 });
 
 it('drops a prior connection response and its scheduled trailing read', async () => {
+  appStore.init();
   const agentId = 'connection-agent';
   let finish!: (session: AgentSession) => void;
   agentsApi.get.mockClear();
@@ -681,4 +682,76 @@ it('drops a prior connection response and its scheduled trailing read', async ()
   expect(fresh?.name).toBe('new connection');
   expect(agentsApi.get).toHaveBeenCalledTimes(2);
   expect(agentsApi.get).toHaveBeenLastCalledWith(agentId, 'workspace-a');
+});
+
+describe('workspace result ownership', () => {
+  beforeAll(() => appStore.init());
+  it.each(['a-first', 'b-first'])(
+    'keeps the latest workspace metadata with %s completion',
+    async (order) => {
+      const id = `metadata-${order}`;
+      const finishes: Array<(session: AgentSession) => void> = [];
+      agentsApi.get.mockImplementation(() => new Promise((resolve) => finishes.push(resolve)));
+      const a = ensureAgentSession(id, 'workspace-a');
+      const b = ensureAgentSession(id, 'workspace-b');
+      const finishA = async () => {
+        finishes[0](makeSession({ id, workspaceId: 'workspace-a', name: 'A' }));
+        await a;
+      };
+      const finishB = async () => {
+        finishes[1](makeSession({ id, workspaceId: 'workspace-b', name: 'B' }));
+        await b;
+        appStore.dispatch(
+          bulkUpsertSessions([
+            makeSession({
+              id,
+              workspaceId: 'workspace-b',
+              messages: [{ id: 'b-message', role: 'user', timestamp: '2026-09-28T00:00:00Z' }],
+            }),
+          ]),
+        );
+      };
+      if (order === 'a-first') {
+        await finishA();
+        await finishB();
+      } else {
+        await finishB();
+        await finishA();
+      }
+      const stored = selectAgentSession.select(appStore.state, id);
+      expect(stored?.workspaceId).toBe('workspace-b');
+      expect(stored?.messages.map((m) => m.id)).toEqual(['b-message']);
+    },
+  );
+});
+
+it('never projects workspace A question markers into a pending workspace B read', async () => {
+  appStore.init();
+  const id = 'scoped-marker';
+  appStore.dispatch(
+    bulkUpsertSessions([
+      makeSession({
+        id,
+        workspaceId: 'workspace-a',
+        metadata: { pendingQuestionsMessageId: 'a-marker' },
+      }),
+    ]),
+  );
+  let finish!: (session: AgentSession) => void;
+  agentsApi.get.mockImplementationOnce(
+    () =>
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+  );
+  const read = readAgentSession(id, 'workspace-b');
+  notePendingQuestionMarkerProjection(id, 'workspace-a');
+  finish(
+    makeSession({
+      id,
+      workspaceId: 'workspace-b',
+      metadata: { pendingQuestionsMessageId: 'b-marker' },
+    }),
+  );
+  expect((await read)?.metadata?.pendingQuestionsMessageId).toBe('b-marker');
 });

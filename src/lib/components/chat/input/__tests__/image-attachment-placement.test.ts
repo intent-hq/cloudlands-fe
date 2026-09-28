@@ -110,7 +110,7 @@ describe('placeImageAttachment', () => {
     await expect(
       placeImageAttachment('ws-1', 'big.png', { data: bigData, mimeType: 'image/png' }, api),
     ).rejects.toThrow('connection reset');
-    expect(api.abortAttachmentUpload).toHaveBeenCalledWith('up-1');
+    expect(api.abortAttachmentUpload).toHaveBeenCalledWith('up-1', 'ws-1');
     expect(api.commitAttachmentUpload).not.toHaveBeenCalled();
   });
 
@@ -133,7 +133,7 @@ describe('placeImageAttachment', () => {
     );
     // 30 MiB at 16 MiB per chunk = 2 chunks, then commit.
     expect(api.sendAttachmentUploadChunk).toHaveBeenCalledTimes(2);
-    expect(api.commitAttachmentUpload).toHaveBeenCalledWith('up-1');
+    expect(api.commitAttachmentUpload).toHaveBeenCalledWith('up-1', 'ws-1');
   });
 });
 
@@ -243,7 +243,7 @@ describe('placeImageAttachment — idempotencyKey (keyed placement)', () => {
       placeImageAttachment('ws-1', 'big.png', { data: bigData, idempotencyKey: KEY }, api),
     ).rejects.toThrow('Request timed out');
     expect(api.getAttachmentInfo).not.toHaveBeenCalled();
-    expect(api.abortAttachmentUpload).toHaveBeenCalledWith('up-1');
+    expect(api.abortAttachmentUpload).toHaveBeenCalledWith('up-1', 'ws-1');
   });
 
   it('recovers through the lookup when begin says the key is already committed (lost commit reply)', async () => {

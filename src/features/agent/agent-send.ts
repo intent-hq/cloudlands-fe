@@ -1,3 +1,4 @@
+import { isAgentReadWorkspaceCurrent } from '$features/agent/agent-read-ownership';
 /**
  * Agent send pipeline.
  *
@@ -347,7 +348,7 @@ export async function sendMessage(
                   // hydrate-reconciled fold (monorepo#2486) — advances this
                   // seq, and the queued-response queue seed below must then
                   // yield to it.
-                  const queueSeqAtSend = getAgentQueueEventSnapshotSeq(agentId);
+                  const queueSeqAtSend = getAgentQueueEventSnapshotSeq(agentId, workspace.id);
                   // PROTOCOL.md §5.5 `agent.sendMessage` — one direct daemon call over
                   // the BackendTransport seam. History is daemon-owned (loaded from
                   // persistence); legacy-only fields (messages, resetHistory,
@@ -474,13 +475,16 @@ export async function sendMessage(
                         // (including the shrunk-after-drain one) is at least
                         // as fresh as this echo, so seeding over it would
                         // re-add a just-drained row (monorepo#2481).
-                        if (getAgentQueueEventSnapshotSeq(agentId) === queueSeqAtSend) {
+                        if (
+                          isAgentReadWorkspaceCurrent(agentId, workspace.id) &&
+                          getAgentQueueEventSnapshotSeq(agentId, workspace.id) === queueSeqAtSend
+                        ) {
                           const existing = selectAgentQueueMessages.select(appStore.state, agentId);
                           const next = existing.some((m) => m.id === queuedMessage.id)
                             ? existing
                             : [...existing, queuedMessage];
-                          dispatchRedux(replaceAgentQueue(agentId, next));
-                        } else {
+                          dispatchRedux(replaceAgentQueue(agentId, next, workspace.id));
+                        } else if (isAgentReadWorkspaceCurrent(agentId, workspace.id)) {
                           logger.debug(
                             'queued-response queue seed superseded by an authoritative snapshot; reconciling via hydrate',
                             { agentId, queuedMessageId: queuedMessage.id },
@@ -495,7 +499,7 @@ export async function sendMessage(
                           // without it if drained. Swallowed on failure — the
                           // send itself succeeded, and the service leaves the
                           // prior mirror intact on error.
-                          await hydrateAgentQueue(agentId).catch(() => undefined);
+                          await hydrateAgentQueue(agentId, workspace.id).catch(() => undefined);
                         }
                       }
 

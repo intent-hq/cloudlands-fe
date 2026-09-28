@@ -1156,7 +1156,8 @@ function applySessionUpsert(
   const finalSession = toStoredSession(session);
   const agentId = String(finalSession.id);
   const wsId = String(session.workspaceId);
-  const existing = getSession(state, agentId);
+  const prior = getSession(state, agentId);
+  const existing = prior?.workspaceId === session.workspaceId ? prior : undefined;
 
   // FE-owned fields never ride the wire snapshot: each one's stored value
   // comes from its FE_OWNED_FIELD_POLICY entry, never from `session`.
@@ -1276,7 +1277,8 @@ function applySessionUpsert(
     return state;
   }
 
-  let next = setSession(state, agentId, finalSession);
+  const ownedState = prior && !existing ? removeFromWorkspaceIndex(state, agentId) : state;
+  let next = setSession(ownedState, agentId, finalSession);
   next = registerInWorkspaceIndex(next, agentId, wsId);
   return next;
 }
@@ -1767,7 +1769,8 @@ agentSessionReducer.with(eventReceived, (state, { payload: [, event] }) => {
   if (markers) {
     const [agentId, fields] = markers;
     const existing = getSession(state, agentId);
-    if (!existing) return state;
+    if (!existing || (event.workspaceId && existing.workspaceId !== event.workspaceId))
+      return state;
     const metadata = existing.metadata ?? {};
     if (
       Object.entries(fields).every(

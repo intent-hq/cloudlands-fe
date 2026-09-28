@@ -1,3 +1,4 @@
+import { claimAgentReadOwnership } from './agent-read-ownership';
 /**
  * Reusable on-demand transcript read seam used by the daemon event router
  * (reconnect / event-driven refetches). `loadChatTranscript(agentId)` fetches
@@ -58,11 +59,14 @@ const inFlight = new Map<string, Promise<void>>();
 const pendingRerun = new Map<string, Promise<void>>();
 
 /** Dependency-light one-time read of the store's current transcript (no selector import). */
-function readCurrentMessages(agentId: string): AgentMessage[] {
+function readCurrentMessages(agentId: string, workspaceId?: string): AgentMessage[] {
   const state = appStore.state as {
-    agentSessions?: { byAgentId: Record<string, { messages?: AgentMessage[] }> };
+    agentSessions?: {
+      byAgentId: Record<string, { workspaceId?: string; messages?: AgentMessage[] }>;
+    };
   };
-  return state.agentSessions?.byAgentId[agentId]?.messages ?? [];
+  const session = state.agentSessions?.byAgentId[agentId];
+  return session?.workspaceId === workspaceId ? (session?.messages ?? []) : [];
 }
 
 /**
@@ -88,7 +92,8 @@ export async function loadChatTranscript(agentId: string, workspaceId?: string):
   }
   workspaceId ??= appStore.state.agentSessions?.byAgentId[agentId]?.workspaceId;
   const connection = connectionGeneration;
-  const key = JSON.stringify([connection, workspaceId ?? null, agentId]);
+  const ownership = claimAgentReadOwnership(agentId, workspaceId);
+  const key = ownership.key;
   const pending = inFlight.get(key);
   if (pending) {
     // A request arriving mid-load means the in-flight read may already be
@@ -103,7 +108,8 @@ export async function loadChatTranscript(agentId: string, workspaceId?: string):
     if (scheduledRerun) return scheduledRerun;
     const rerun = pending.then(() => {
       pendingRerun.delete(key);
-      if (connection === connectionGeneration) return loadChatTranscript(agentId, workspaceId);
+      if (connection === connectionGeneration && ownership.isCurrent())
+        return loadChatTranscript(agentId, workspaceId);
     });
     pendingRerun.set(key, rerun);
     return rerun;
@@ -125,7 +131,7 @@ export async function loadChatTranscript(agentId: string, workspaceId?: string):
   // dropped (BE truncation via edit/regenerate or agent.replaceMessages, from
   // this or any other client) converge to BE state instead of becoming ghosts.
   const baselineIds = new Set<string>();
-  for (const message of readCurrentMessages(agentId)) {
+  for (const message of readCurrentMessages(agentId, workspaceId)) {
     if (typeof message.id === 'string') baselineIds.add(message.id);
     if (typeof message.appMessageId === 'string') baselineIds.add(message.appMessageId);
   }
@@ -145,7 +151,9 @@ export async function loadChatTranscript(agentId: string, workspaceId?: string):
   (async () => {
     try {
       const session = await readAgentSession(agentId, workspaceId);
-      if (!session || connection !== connectionGeneration) return;
+      if (!session || connection !== connectionGeneration || !ownership.isCurrent()) return;
+      ownership.bindWorkspace(session.workspaceId);
+      workspaceId ??= session.workspaceId;
       // Skip rows carrying the daemon's delete-grace-window deadline (PROTOCOL
       // §5.5 `pendingDeleteAt`) — a deletion scheduled by another
       // window/client (or before an FE restart) is not in the local registry.
@@ -177,7 +185,7 @@ export async function loadChatTranscript(agentId: string, workspaceId?: string):
         // getConversation returns oldest→newest within each page and pages
         // walk newest→oldest, so prepend each page to keep the accumulated
         // list in overall oldest→newest order.
-        if (connection !== connectionGeneration) return;
+        if (connection !== connectionGeneration || !ownership.isCurrent()) return;
         allMessages.unshift(...page.messages);
         nextToken = page.nextToken;
       } while (nextToken !== null && allMessages.length < MAX_MESSAGES_PER_AGENT);
@@ -208,7 +216,7 @@ export async function loadChatTranscript(agentId: string, workspaceId?: string):
       // BE-side truncations (edit/regenerate refetch convergence, iOS
       // editAndRegenerate, daemon agent.replaceMessages) still shrink the
       // transcript instead of leaving permanent ghost rows.
-      const appendedDuringRead = readCurrentMessages(agentId).filter(
+      const appendedDuringRead = readCurrentMessages(agentId, workspaceId).filter(
         (m) =>
           !(
             (typeof m.id === 'string' && baselineIds.has(m.id)) ||
@@ -235,7 +243,7 @@ export async function loadChatTranscript(agentId: string, workspaceId?: string):
       // Wrap cleanup in try/finally to ensure inFlight.delete and resolveRun
       // run even if the dispatch throws
       try {
-        if (connection === connectionGeneration)
+        if (connection === connectionGeneration && ownership.isCurrent())
           appStore.dispatch(transcriptHydrationSettled(agentId));
       } finally {
         inFlight.delete(key);

@@ -3,6 +3,7 @@ import type { Collection } from '@augmentcode/themis/utils/collections/collectio
 
 /** Queue metadata and messages for a single agent. */
 export interface AgentQueueEntryState {
+  workspaceId?: string;
   messages: Collection<QueuedMessage, 'id'>;
   /** Bounded tombstone list for locally removed queued messages. */
   recentlyRemovedMessageIds: string[];

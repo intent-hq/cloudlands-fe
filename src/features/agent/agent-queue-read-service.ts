@@ -1,3 +1,4 @@
+import { claimAgentReadOwnership } from './agent-read-ownership';
 import { onBackendReconnected } from '$lib/client/live/backend-transport';
 /**
  * Agent queue read service — the reconciliation fallback for the renderer's
@@ -51,6 +52,7 @@ function queueKey(agentId: string, workspaceId?: string): string {
       connectionGeneration += 1;
       hydrateInFlightByAgent.clear();
       hydrateFollowUpWantedByAgent.clear();
+      eventSnapshotSeqByAgent.clear();
     });
   }
   return JSON.stringify([connectionGeneration, workspaceId ?? null, agentId]);
@@ -75,8 +77,10 @@ const eventSnapshotSeqByAgent = new Map<string, number>();
  * RPC response — folding the older response afterward could re-add a
  * just-drained row or drop a just-queued one.
  */
-export function noteAgentQueueEventSnapshotApplied(agentId: string): void {
-  eventSnapshotSeqByAgent.set(agentId, (eventSnapshotSeqByAgent.get(agentId) ?? 0) + 1);
+export function noteAgentQueueEventSnapshotApplied(agentId: string, workspaceId?: string): void {
+  workspaceId ??= appStore.state.agentSessions?.byAgentId[agentId]?.workspaceId;
+  const key = queueKey(agentId, workspaceId);
+  eventSnapshotSeqByAgent.set(key, (eventSnapshotSeqByAgent.get(key) ?? 0) + 1);
 }
 
 /**
@@ -87,12 +91,17 @@ export function noteAgentQueueEventSnapshotApplied(agentId: string): void {
  * (monorepo#2486) — is at least as fresh as the RPC echo, so seeding from
  * the stale echo would re-add a just-drained row.
  */
-export function getAgentQueueEventSnapshotSeq(agentId: string): number {
-  return eventSnapshotSeqByAgent.get(agentId) ?? 0;
+export function getAgentQueueEventSnapshotSeq(agentId: string, workspaceId?: string): number {
+  workspaceId ??= appStore.state.agentSessions?.byAgentId[agentId]?.workspaceId;
+  return eventSnapshotSeqByAgent.get(queueKey(agentId, workspaceId)) ?? 0;
 }
 
-async function runHydrateAgentQueueFetch(agentId: string, workspaceId?: string): Promise<void> {
-  const key = queueKey(agentId, workspaceId);
+async function runHydrateAgentQueueFetch(
+  agentId: string,
+  ownership: ReturnType<typeof claimAgentReadOwnership>,
+  workspaceId?: string,
+): Promise<void> {
+  const key = ownership.key;
   const connection = connectionGeneration;
   // Trailing follow-ups re-enter here without passing the public entry
   // point's guard: skip the RPC (and the slice-entry-creating dispatch) when
@@ -101,11 +110,11 @@ async function runHydrateAgentQueueFetch(agentId: string, workspaceId?: string):
     hydrateFollowUpWantedByAgent.delete(key);
     return;
   }
-  appStore.dispatch(hydrateAgentQueueRequested(agentId));
-  const seqAtFetchStart = eventSnapshotSeqByAgent.get(agentId) ?? 0;
+  appStore.dispatch(hydrateAgentQueueRequested(agentId, workspaceId));
+  const seqAtFetchStart = getAgentQueueEventSnapshotSeq(agentId, workspaceId);
   try {
     const queue = await appClient.agents.getQueue(agentId, workspaceId);
-    if (connection !== connectionGeneration) return;
+    if (connection !== connectionGeneration || !ownership.isCurrent()) return;
     // Re-check after the fetch: a deletion may have become pending while
     // `agent.getQueue` was in flight (folding the response would resurrect
     // rows for a soft-hidden session), or a live event snapshot may have
@@ -115,8 +124,8 @@ async function runHydrateAgentQueueFetch(agentId: string, workspaceId?: string):
       // else terminates this cycle when the fold is skipped. (In the
       // superseded case the event's replaceAgentQueue already cleared it.)
       appStore.dispatch(setAgentQueueHydrating(agentId, false));
-    } else if ((eventSnapshotSeqByAgent.get(agentId) ?? 0) === seqAtFetchStart) {
-      appStore.dispatch(replaceAgentQueue(agentId, queue));
+    } else if (getAgentQueueEventSnapshotSeq(agentId, workspaceId) === seqAtFetchStart) {
+      appStore.dispatch(replaceAgentQueue(agentId, queue, workspaceId));
       // A hydrate fold is an authoritative snapshot too: advance the seq so
       // the send paths' queued-response seed guard (monorepo#2481) yields to
       // it exactly like a live event fold — a stale `queued: true` echo
@@ -127,10 +136,10 @@ async function runHydrateAgentQueueFetch(agentId: string, workspaceId?: string):
       // flight to observe it — mid-fetch seq advances still only ever come
       // from live event snapshots. A trailing follow-up captures its
       // seqAtFetchStart after this bump, so it is not spuriously discarded.
-      eventSnapshotSeqByAgent.set(agentId, (eventSnapshotSeqByAgent.get(agentId) ?? 0) + 1);
+      noteAgentQueueEventSnapshotApplied(agentId, workspaceId);
     }
   } catch (error) {
-    if (connection !== connectionGeneration) return;
+    if (connection !== connectionGeneration || !ownership.isCurrent()) return;
     logger.error(`Failed to hydrate agent queue for ${agentId}`, error);
     if (isAgentDeletionPending(agentId)) {
       // Don't create/keep an error entry for a soft-hidden session.
@@ -146,8 +155,12 @@ async function runHydrateAgentQueueFetch(agentId: string, workspaceId?: string):
     // regardless of how many triggers piled up. Awaited so the shared
     // in-flight promise settles only when the whole chain (including
     // follow-ups queued during the trailing fetch) has finished.
-    if (connection === connectionGeneration && hydrateFollowUpWantedByAgent.delete(key)) {
-      await runHydrateAgentQueueFetch(agentId, workspaceId);
+    if (
+      connection === connectionGeneration &&
+      ownership.isCurrent() &&
+      hydrateFollowUpWantedByAgent.delete(key)
+    ) {
+      await runHydrateAgentQueueFetch(agentId, ownership, workspaceId);
     }
   }
 }
@@ -162,7 +175,9 @@ async function runHydrateAgentQueueFetch(agentId: string, workspaceId?: string):
  */
 export function hydrateAgentQueue(agentId: string, workspaceId?: string): Promise<void> {
   workspaceId ??= appStore.state.agentSessions?.byAgentId[agentId]?.workspaceId;
-  const key = queueKey(agentId, workspaceId);
+  queueKey(agentId, workspaceId);
+  const ownership = claimAgentReadOwnership(agentId, workspaceId);
+  const key = ownership.key;
   // A soft-hidden deletion is pending (undo window still open): the daemon
   // still returns the agent, so hydrating would re-mirror rows for the
   // deleted session. Skip entirely.
@@ -172,7 +187,7 @@ export function hydrateAgentQueue(agentId: string, workspaceId?: string): Promis
     hydrateFollowUpWantedByAgent.add(key);
     return inFlight;
   }
-  const chain = runHydrateAgentQueueFetch(agentId, workspaceId).finally(() => {
+  const chain = runHydrateAgentQueueFetch(agentId, ownership, workspaceId).finally(() => {
     hydrateInFlightByAgent.delete(key);
   });
   hydrateInFlightByAgent.set(key, chain);

@@ -7306,3 +7306,25 @@ describe('FE-owned session fields survive an agent.get refetch (FE_OWNED_FIELD_P
     });
   });
 });
+
+it('does not carry frontend fields or old workspace indexes across an opaque agent ID rebind', () => {
+  let state = agentSessionReducer(
+    initialState,
+    bulkUpsertSessions([makeSession('shared-origin', 'workspace-a')]),
+  );
+  state = agentSessionReducer(
+    state,
+    updateSession('shared-origin', {
+      liveTurnOpen: true,
+      metadata: { pendingQuestionsMessageId: 'a-marker' },
+    }),
+  );
+  state = agentSessionReducer(
+    state,
+    bulkUpsertSessions([makeSession('shared-origin', 'workspace-b')]),
+  );
+  expect(state.byAgentId['shared-origin'].workspaceId).toBe('workspace-b');
+  expect(state.byAgentId['shared-origin'].liveTurnOpen).not.toBe(true);
+  expect(state.byAgentId['shared-origin'].metadata?.pendingQuestionsMessageId).toBeUndefined();
+  expect(state.agentIdsByWorkspace['workspace-a'] ?? []).not.toContain('shared-origin');
+});
