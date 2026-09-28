@@ -1,6 +1,6 @@
 /** @vitest-environment jsdom */
 import { afterEach, beforeEach, describe, it, expect, vi } from 'vitest';
-import { cleanup, render, fireEvent, screen, waitFor } from '@testing-library/svelte';
+import { cleanup, render, fireEvent, screen, waitFor, within } from '@testing-library/svelte';
 import { store as appStore } from '$store/renderer/store';
 import {
   bulkUpsertSessions,
@@ -410,6 +410,10 @@ describe('nested agent path policies', () => {
           if (disclosure.getAttribute('aria-expanded') === 'false')
             await fireEvent.click(disclosure);
         }
+        if (kind === 'history') {
+          const historyRow = await screen.findByTestId('reasoning-history-row');
+          await fireEvent.click(within(historyRow).getByRole('button', { expanded: false }));
+        }
         const link = await screen.findByRole('link', { name: 'File' });
         if (kind === 'thinking')
           expect(link.closest('[data-reasoning-expanded-body]')).not.toBeNull();
@@ -682,6 +686,10 @@ describe('agent media provenance before mounting', () => {
         )) {
           if (disclosure.getAttribute('aria-expanded') === 'false')
             await fireEvent.click(disclosure);
+        }
+        if (kind === 'history') {
+          const historyRow = await screen.findByTestId('reasoning-history-row');
+          await fireEvent.click(within(historyRow).getByRole('button', { expanded: false }));
         }
         const headMedia = () =>
           container.querySelectorAll(
