@@ -207,6 +207,41 @@ describe('panel scope work', () => {
     expect(panel.measuredHeight(entry.key)).toBe(56);
   });
 
+  it('retains transferred geometry when only the retired root changes width', () => {
+    const group = { ...entry, kind: 'group' as const };
+    const first = node();
+    const oldRow = node();
+    const header = node();
+    header.setAttribute('data-operational-disclosure-row', '');
+    vi.mocked(oldRow.getBoundingClientRect).mockReturnValue(new DOMRect(0, 0, 600, 56));
+    vi.mocked(header.getBoundingClientRect).mockReturnValue(new DOMRect(0, 0, 600, 40));
+    oldRow.append(header);
+    first.append(oldRow);
+    panel.attach('first', first, [group], vi.fn());
+    panel.watch(oldRow, entry.key);
+    const second = node();
+    panel.attach('second', second, [{ ...entry, key: 'other' }], vi.fn());
+    frame();
+    window.dispatchEvent(new Event('resize'));
+    frame();
+    expect(panel.measuredHeight(entry.key)).toBe(56);
+    expect(panel.summaryHeight(entry.key)).toBe(40);
+    panel.update('second', [group]);
+    vi.mocked(first.getBoundingClientRect).mockReturnValue(new DOMRect(0, 0, 300, 56));
+    frame();
+    expect(panel.measuredHeight(entry.key)).toBe(56);
+    expect(panel.summaryHeight(entry.key)).toBe(40);
+    expect(panel.locate(entry.key)?.height).toBe(56);
+    expect(panel.locate(entry.key)?.node).toBeUndefined();
+
+    // The current owner's width change must still discard its stale geometry.
+    vi.mocked(second.getBoundingClientRect).mockReturnValue(new DOMRect(0, 0, 300, 56));
+    window.dispatchEvent(new Event('resize'));
+    frame();
+    expect(panel.measuredHeight(entry.key)).toBeUndefined();
+    expect(panel.summaryHeight(entry.key)).toBe(28);
+  });
+
   it('does not accept a retired group header measurement after a scope transfer', () => {
     const group = { ...entry, kind: 'group' as const };
     const first = node();

@@ -245,6 +245,7 @@ function createPanel(getScrollRoot: () => HTMLElement | undefined) {
       if (box.width > 0 && widths.get(scope) !== box.width) {
         widths.set(scope, box.width);
         for (const entry of root.entries) {
+          if (owners.get(entry.key) !== scope) continue;
           heights.delete(entry.key);
           headers.delete(entry.key);
         }
