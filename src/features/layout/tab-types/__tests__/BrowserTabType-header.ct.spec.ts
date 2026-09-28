@@ -23,7 +23,9 @@ test('browser owner menu is keyboard accessible and viewport follows panel resiz
       width: 640,
     },
   });
-  const trigger = component.getByTestId('panel-actions-trigger');
+  const trigger = component
+    .locator('[data-panel-content-header]')
+    .getByRole('button', { name: 'More', exact: true });
   const menu = page.locator('[data-slot="menu-content"]');
   const owner = menu.getByRole('menuitem', { name: /Browser agent/ });
   await trigger.focus();

@@ -39,15 +39,31 @@ test('production note actions preserve selection and keyboard state across both 
     }
     await expect(root).toBeVisible();
     await expect(fontTrigger).toBeVisible();
-    const surface = await root.evaluate((node) => {
-      const rect = node.getBoundingClientRect();
-      return {
-        contained:
-          rect.left >= 0 && rect.top >= 0 && rect.right <= innerWidth && rect.bottom <= innerHeight,
-        portalled: !document.querySelector('[data-testid="note-menu-host"]')!.contains(node),
-      };
+    await root.evaluate(async (node) => {
+      await document.fonts.ready;
+      await Promise.allSettled(node.getAnimations({ subtree: true }).map((a) => a.finished));
     });
-    expect(surface).toEqual({ contained: true, portalled: true });
+    // The programmatic context entry opens before floating placement has settled.
+    // Poll the same viewport bounds so persistent clipping still fails.
+    const readSurface = () =>
+      root.evaluate((node) => {
+        const rect = node.getBoundingClientRect();
+        return {
+          contained:
+            rect.left >= 0 &&
+            rect.top >= 0 &&
+            rect.right <= innerWidth &&
+            rect.bottom <= innerHeight,
+          portalled: !document.querySelector('[data-testid="note-menu-host"]')!.contains(node),
+          bounds: { left: rect.left, top: rect.top, right: rect.right, bottom: rect.bottom },
+          viewport: { width: innerWidth, height: innerHeight },
+        };
+      });
+    await expect.poll(readSurface).toMatchObject({ contained: true, portalled: true });
+    await testInfo.attach(`note-${entry}-bounds`, {
+      body: JSON.stringify(await readSurface()),
+      contentType: 'application/json',
+    });
     await testInfo.attach(`note-${entry}-root`, {
       body: await page.screenshot(),
       contentType: 'image/png',
