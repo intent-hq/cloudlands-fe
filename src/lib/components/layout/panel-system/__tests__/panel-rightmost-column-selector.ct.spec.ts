@@ -2,6 +2,13 @@ import { expect, test } from '../../../../../test/ct-test';
 import type { Locator } from '@playwright/test';
 import PanelRightmostColumnSelectorHarness from './mocks/PanelRightmostColumnSelectorHarness.svelte';
 
+test.afterEach(async ({ page }, testInfo) => {
+  await testInfo.attach('column-limit-final-state', {
+    body: await page.screenshot(),
+    contentType: 'image/png',
+  });
+});
+
 async function panelIds(component: Locator) {
   const value = await component.getByTestId('panel-layout-state').getAttribute('data-panel-ids');
   return value?.split(',').filter(Boolean) ?? [];

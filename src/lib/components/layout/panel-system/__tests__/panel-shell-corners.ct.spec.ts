@@ -2,6 +2,13 @@ import { expect, test } from '../../../../../test/ct-test';
 import type { Locator, Page } from '@playwright/test';
 import PanelWorkspaceColumnClipHarness from './mocks/PanelWorkspaceColumnClipHarness.svelte';
 
+test.afterEach(async ({ page }, testInfo) => {
+  await testInfo.attach('panel-shell-final-state', {
+    body: await page.screenshot(),
+    contentType: 'image/png',
+  });
+});
+
 async function shellStyles(panel: Locator, page: Page, expectedBackgroundClass = 'bg-sidebar') {
   const expected = await page.evaluate((backgroundClass) => {
     const backgroundProbe = document.createElement('div');
@@ -146,7 +153,9 @@ for (const theme of ['light', 'dark'] as const) {
       await component.locator('.panel-split-handle').focus();
       const before = await bounds();
       await page.keyboard.press('Tab');
-      await expect(panels.nth(1).getByTestId('panel-actions-trigger')).toBeFocused();
+      await expect(
+        panels.nth(1).getByTestId('panel-actions-trigger').filter({ visible: true }),
+      ).toBeFocused();
       await expect(panels.nth(1)).toHaveAttribute('data-focused', 'true');
       expect(await bounds()).toEqual(before);
       for (const [index, panel] of (await panels.all()).entries()) {

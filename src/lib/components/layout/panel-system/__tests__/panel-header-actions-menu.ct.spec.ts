@@ -392,6 +392,10 @@ for (const [index, panelType] of panelTypes.entries()) {
       await page.evaluate(() => innerHeight),
     );
     expect(menuBox!.x).toBeLessThan(triggerBox!.x + triggerBox!.width);
+    await testInfo.attach('narrow-menu-open', {
+      body: await page.screenshot(),
+      contentType: 'image/png',
+    });
 
     await page.getByRole('menuitem', { name: 'Content display action' }).click();
     await expect(component).toHaveAttribute('data-display-count', '1');
@@ -450,7 +454,7 @@ for (const scenario of [
   test(`fits content in ${scenario.theme} at ${scenario.viewportWidth}px and ${scenario.zoom * 100}% zoom`, async ({
     mount,
     page,
-  }) => {
+  }, testInfo) => {
     await page.setViewportSize({ width: scenario.viewportWidth, height: 800 });
     const component = await mount(PanelHeaderActionsHost, {
       props: {
@@ -491,6 +495,10 @@ for (const scenario of [
     expect(geometry.right).toBeLessThanOrEqual(scenario.viewportWidth - 8 + 0.5);
     expect(geometry.shortcutColor).not.toBe(geometry.labelColor);
     expect(geometry.labelScrollWidth).toBeGreaterThan(geometry.labelClientWidth);
+    await testInfo.attach('long-label-menu', {
+      body: await page.screenshot(),
+      contentType: 'image/png',
+    });
 
     await longItem.click();
     await expect(component).toHaveAttribute('data-display-count', '1');
@@ -561,6 +569,12 @@ for (const stackCount of [1, 5] as const) {
       const menu = page.getByRole('menu', { name: 'Panes in this stack' });
       const item = menu.locator(`[data-pane-stack-item="note-tab-${index}"]`);
       await item.focus();
+      if (index === stackCount) {
+        await testInfo.attach('pane-selector-open', {
+          body: await page.screenshot(),
+          contentType: 'image/png',
+        });
+      }
       await page.keyboard.press('Enter');
       await expect(component).toHaveAttribute('data-active-tab', `note-tab-${index}`);
       await expect(trigger).toContainText(`note panel ${index}`);

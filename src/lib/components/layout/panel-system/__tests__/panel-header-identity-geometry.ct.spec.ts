@@ -36,7 +36,7 @@ for (const identityType of ['agent', 'note', 'file', 'terminal', 'browser', 'set
   });
 }
 
-test('uses aligned Swiss action rows in the empty panel', async ({ mount }) => {
+test('uses aligned Swiss action rows in the empty panel', async ({ mount }, testInfo) => {
   const component = await mount(PanelHeaderIdentityHost, {
     props: { identityType: 'empty', theme: 'dark', width: 240, height: 320, zoom: 2 },
   });
@@ -73,6 +73,10 @@ test('uses aligned Swiss action rows in the empty panel', async ({ mount }) => {
   );
 
   const first = geometry[0];
+  await testInfo.attach('empty-panel', {
+    body: await component.screenshot(),
+    contentType: 'image/png',
+  });
   for (const item of geometry) {
     expect(item.rowHeight).toBeCloseTo(28, 1);
     expect(item.fontSize).toBe('13px');

@@ -35,6 +35,10 @@ for (const direction of ['up', 'down'] as const) {
     const state = component.getByTestId('vertical-layout-state');
     const alpha = pane(component, 'alpha');
     const original = await geometry(alpha);
+    await testInfo.attach(`before-detach-${direction}.png`, {
+      body: await component.screenshot(),
+      contentType: 'image/png',
+    });
     await move(page, alpha, direction);
     const beta = pane(component, 'beta');
     await expect(alpha).toHaveCount(1);
@@ -65,6 +69,10 @@ for (const direction of ['up', 'down'] as const) {
     await alpha.locator('[data-panel-tabless-header]').getByTestId('panel-actions-trigger').click();
     const boundary = page.getByRole('menuitem', { name: `Move panel ${direction}`, exact: true });
     await expect(boundary).toBeDisabled();
+    await testInfo.attach(`boundary-disabled-${direction}.png`, {
+      body: await page.screenshot(),
+      contentType: 'image/png',
+    });
     await page.keyboard.press('Escape');
 
     const handle = component.locator('button[data-resize-axis="y"]');
@@ -120,13 +128,17 @@ for (const direction of ['up', 'down'] as const) {
       contentType: 'application/json',
     });
     await testInfo.attach(`horizontal-after-${direction}.png`, {
-      body: await component.screenshot(),
+      // Reveal the intrinsic canvas only while capturing, so both side columns are visible.
+      body: await page.screenshot({
+        fullPage: true,
+        style: '[data-testid="panel-workspace-inset"] { overflow: visible !important; }',
+      }),
       contentType: 'image/png',
     });
   });
 }
 
-test('disables both vertical directions for a lone pane', async ({ mount, page }) => {
+test('disables both vertical directions for a lone pane', async ({ mount, page }, testInfo) => {
   const component = await mount(PanelVerticalMovementHarness, { props: { lone: true } });
   await component
     .locator('[data-panel-tabless-header]')
@@ -137,6 +149,10 @@ test('disables both vertical directions for a lone pane', async ({ mount, page }
       page.getByRole('menuitem', { name: `Move panel ${direction}`, exact: true }),
     ).toBeDisabled();
   }
+  await testInfo.attach('lone-pane-disabled-arrows.png', {
+    body: await page.screenshot(),
+    contentType: 'image/png',
+  });
 });
 
 for (const direction of ['up', 'down'] as const) {
@@ -152,6 +168,10 @@ for (const direction of ['up', 'down'] as const) {
     await move(page, alpha, direction);
     const beta = pane(component, 'beta');
     await expect(beta.locator('[data-tab-id="beta"][aria-hidden="false"]')).toBeVisible();
+    await testInfo.attach(`before-close-${direction}.png`, {
+      body: await component.screenshot(),
+      contentType: 'image/png',
+    });
     await alpha.locator('[data-panel-tabless-header]').getByTestId('panel-close-button').click();
     await expect(alpha).toHaveCount(0);
     await expect(beta.locator('[data-tab-id="beta"][aria-hidden="false"]')).toBeVisible();
@@ -181,6 +201,10 @@ for (const direction of ['up', 'down'] as const) {
     const alpha = pane(component, 'alpha');
     const original = await geometry(alpha);
     await move(page, alpha, direction === 'up' ? 'down' : 'up');
+    await testInfo.attach(`before-combine-${direction}.png`, {
+      body: await component.screenshot(),
+      contentType: 'image/png',
+    });
     await move(page, alpha, direction);
     await expect(component.locator('[data-panel-id]')).toHaveCount(1);
     await expect(alpha).toHaveAttribute('data-focused', 'true');
@@ -218,6 +242,10 @@ for (const direction of ['left', 'right'] as const) {
     const alpha = pane(component, 'alpha');
     await move(page, alpha, 'down');
     const beta = pane(component, 'beta');
+    await testInfo.attach(`before-side-${direction}.png`, {
+      body: await component.screenshot(),
+      contentType: 'image/png',
+    });
     await move(page, alpha, direction);
     await expect(component.getByTestId('vertical-layout-state')).toHaveAttribute(
       'data-columns',
@@ -247,7 +275,10 @@ for (const direction of ['left', 'right'] as const) {
       '2',
     );
     await testInfo.attach(`single-row-${direction}.png`, {
-      body: await component.screenshot(),
+      body: await page.screenshot({
+        fullPage: true,
+        style: '[data-testid="panel-workspace-inset"] { overflow: visible !important; }',
+      }),
       contentType: 'image/png',
     });
   });

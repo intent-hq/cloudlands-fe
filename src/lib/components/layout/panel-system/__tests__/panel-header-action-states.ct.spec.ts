@@ -46,6 +46,10 @@ test('agent submenus support keyboard entry, selection and dismissal', async ({
     if (id === 'task-progress-trigger') {
       await expect(page.getByTestId('task-progress-list')).toContainText('Review the header');
     }
+    await testInfo.attach(`${id}-open`, {
+      body: await page.screenshot(),
+      contentType: 'image/png',
+    });
     await page.keyboard.press('Escape');
     await expect(item).toHaveAttribute('aria-expanded', 'false');
     await expect(item).toBeFocused();
@@ -55,6 +59,10 @@ test('agent submenus support keyboard entry, selection and dismissal', async ({
   await page.keyboard.press('ArrowRight');
   const search = page.getByTestId('chat-message-navigator-search');
   await search.fill('Review header');
+  await testInfo.attach('prompts-search-open', {
+    body: await page.screenshot(),
+    contentType: 'image/png',
+  });
   await search.press('Enter');
   await expect(component).toHaveAttribute('data-selected-message', 'first');
   await root.getByTestId('chat-scroll-to-bottom-button').click();
@@ -69,6 +77,10 @@ test('agent submenus support keyboard entry, selection and dismissal', async ({
   });
   await page.keyboard.press('Escape');
   await expect(trigger).toBeFocused();
+  await testInfo.attach('agent-menu-dismissed-focus-restored', {
+    body: await page.screenshot(),
+    contentType: 'image/png',
+  });
 });
 
 test('additional action dismisses the menu while header expansion and close remain accessible', async ({
