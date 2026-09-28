@@ -47,7 +47,7 @@ for (const { width, theme } of [
     await page.keyboard.press('Enter');
     const menu = page.getByRole('menu');
     await expect(menu).toBeVisible();
-    await expect(menu.getByRole('menuitem', { name: 'Zoom Panel' })).toBeDisabled();
+    await expect(menu.getByRole('menuitem', { name: 'Zoom Panel' })).toHaveCount(0);
     await page.keyboard.press('Escape');
     await expect(actions.getByTestId('panel-actions-trigger')).toBeFocused();
     await actions.getByTestId('panel-close-button').focus();
@@ -89,7 +89,6 @@ for (const { width, theme } of [
     await expect(trigger).toBeFocused();
     for (const [name, action] of [
       ['Copy conversation', 'copy'],
-      ['Zoom Panel', 'zoom'],
       ['Delete agent', 'delete'],
     ]) {
       await trigger.click();

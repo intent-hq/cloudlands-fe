@@ -71,7 +71,7 @@ test('agent submenus support keyboard entry, selection and dismissal', async ({
   await expect(trigger).toBeFocused();
 });
 
-test('zoom dismisses the menu and the separate close control stays keyboard accessible', async ({
+test('additional action dismisses the menu while header zoom and close remain accessible', async ({
   mount,
   page,
 }) => {
@@ -83,10 +83,18 @@ test('zoom dismisses the menu and the separate close control stays keyboard acce
     .locator('[data-panel-tabless-header]')
     .getByTestId('panel-actions-trigger');
   await trigger.press('Enter');
-  await page.getByRole('menuitem', { name: 'Zoom Panel', exact: false }).press('Enter');
-  await expect(component).toHaveAttribute('data-zoom-count', '1');
+  await expect(page.getByRole('menuitem', { name: /Zoom Panel/ })).toHaveCount(0);
+  await page.getByTestId('chat-scroll-to-bottom-button').press('Enter');
   await expect(page.getByRole('menu')).toBeHidden();
   await expect(trigger).toBeFocused();
+  await trigger.press('Enter');
+  await expect(page.getByTestId('chat-scroll-to-bottom-button')).toHaveAttribute(
+    'aria-disabled',
+    'true',
+  );
+  await page.keyboard.press('Escape');
+  await component.locator('[data-panel-tabless-header]').dblclick({ position: { x: 2, y: 2 } });
+  await expect(component).toHaveAttribute('data-zoom-count', '1');
   await component
     .locator('[data-panel-tabless-header]')
     .getByTestId('panel-close-button')

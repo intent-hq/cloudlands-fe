@@ -179,7 +179,7 @@
     {workspaceId}
     isFocused
     onTabRename={(tab, name) => renameAgent(tab.id, name)}
-    contentActions={fullActions ? { actions: primaryActions } : undefined}
+    contentActions={fullActions ? { additional: primaryActions } : undefined}
     onTabClick={(id) => (activeAgent = id === 'root-tab' ? 'root' : 'delegated')}
     onZoomToggle={() => (zoomCount += 1)}
     onTabClose={() => (closeCount += 1)}

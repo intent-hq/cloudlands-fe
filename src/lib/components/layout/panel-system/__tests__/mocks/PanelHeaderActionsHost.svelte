@@ -128,8 +128,11 @@
   {/if}
 {/snippet}
 
-{#snippet contentCommandAction()}
+{#snippet additionalAction()}
   <Menu.CommandItem label="Content navigation" onclick={() => (navigationCount += 1)} />
+{/snippet}
+
+{#snippet contentCommandAction()}
   <Menu.CommandItem label="Content command action" onclick={() => (contentCount += 1)} />
 {/snippet}
 
@@ -159,6 +162,7 @@
     contentActions={{
       display: contentDisplayAction,
       actions: contentCommandAction,
+      additional: additionalAction,
     }}
     onZoomToggle={() => (zoomCount += 1)}
     onSplitHorizontal={() => (splitCount += 1)}

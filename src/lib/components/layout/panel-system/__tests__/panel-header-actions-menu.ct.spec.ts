@@ -229,9 +229,11 @@ test.describe('Panel file commands in the web renderer', () => {
     const { menu, trigger } = await openAgentPanelMenu(component, page);
     await menu.getByRole('menuitem').first().focus();
     await page.keyboard.press('End');
-    await expect(menu.getByRole('menuitem', { name: /Zoom Panel/ })).toBeFocused();
+    await expect(
+      menu.getByRole('menuitem', { name: 'Content navigation', exact: true }),
+    ).toBeFocused();
     await page.keyboard.press('Enter');
-    await expect(component).toHaveAttribute('data-zoom-count', '1');
+    await expect(component).toHaveAttribute('data-navigation-count', '1');
     await expect(menu).toBeHidden();
     await expect(trigger).toBeFocused();
   });
@@ -345,10 +347,6 @@ for (const [index, panelType] of panelTypes.entries()) {
     await trigger.click();
     await page.getByRole('menuitem', { name: 'Content navigation' }).click();
     await expect(component).toHaveAttribute('data-navigation-count', '1');
-
-    await trigger.click();
-    await page.getByRole('menuitem', { name: /Zoom Panel/i }).click();
-    await expect(component).toHaveAttribute('data-zoom-count', '1');
 
     await trigger.click();
     await page.getByRole('menuitem', { name: 'Move panel left' }).press('Enter');
