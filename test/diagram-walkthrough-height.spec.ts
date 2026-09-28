@@ -8,6 +8,10 @@ let server: ViteDevServer | undefined;
 
 test.describe.configure({ mode: 'default', timeout: 120_000 });
 
+// Keep first-attempt failures alongside the raw geometry. A failure screenshot is
+// post-failure; trace frames are sampled. Neither proves the violating box was painted.
+test.use({ trace: 'retain-on-failure', screenshot: 'only-on-failure' });
+
 test.beforeAll(async () => {
   if (externalBaseUrl) return;
   const ownedServer = await createServer({
@@ -279,20 +283,47 @@ for (const width of [960, 662, 420]) {
       expect(rapid.at(-1)!.edges).toEqual(states[0].edges);
       expect(Math.max(...rapid.map((sample) => sample.overflow))).toBeLessThanOrEqual(1);
       const resize = [];
+      const resizeSegments = [];
       for (const [index, resizeWidth] of [
         [1, 420],
         [2, 960],
         [0, width],
       ]) {
-        resize.push(...(await sampleChange(root, index, resizeWidth)));
+        const samples = await sampleChange(root, index, resizeWidth);
+        resize.push(...samples);
+        resizeSegments.push({ index, resizeWidth, samples });
       }
       await testInfo.attach('resize-geometry', {
         body: JSON.stringify(resize, null, 2),
         contentType: 'application/json',
       });
+      await testInfo.attach('resize-segments', {
+        body: JSON.stringify(resizeSegments, null, 2),
+        contentType: 'application/json',
+      });
       expect(resize.at(-1)!.settled).toBe(true);
       expect(resize.every((sample) => sample.finitePaint)).toBe(true);
       expect(Math.max(...resize.map((sample) => sample.overflow))).toBeLessThanOrEqual(1);
+      for (const { index, samples } of resizeSegments) {
+        const final = samples.at(-1)!;
+        expect(final.settled).toBe(true);
+        expect(final.state).toBe(states[index].id);
+        expect(final.nodes).toEqual(states[index].nodes);
+        expect(final.paintedNodes).toEqual(states[index].nodes);
+        expect(final.edges).toEqual(states[index].edges);
+        expect(final.labels).toEqual(states[index].edges);
+        expect(final.fonts.length).toBeGreaterThanOrEqual(5);
+        expect(Math.min(...final.fonts.map((font) => font.css))).toBeGreaterThanOrEqual(10);
+        expect(Math.min(...final.fonts.map((font) => font.screen))).toBeGreaterThanOrEqual(10);
+        expect(final.fonts.filter((font) => font.primary).every((font) => font.screen >= 12)).toBe(
+          true,
+        );
+        const offsets = samples.map((sample) => sample.controlOffset - sample.footerOffset);
+        expect(Math.max(...offsets) - Math.min(...offsets)).toBeLessThanOrEqual(1);
+        if (motion === 'reduced') {
+          expect(samples.every((sample) => sample.animationCount === 0)).toBe(true);
+        }
+      }
       await root.screenshot({ path: testInfo.outputPath('compact-walkthrough.png') });
     });
   }
