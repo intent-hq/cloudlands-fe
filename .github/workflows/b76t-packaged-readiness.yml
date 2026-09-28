@@ -1,10 +1,9 @@
-# UNAPPLIED PROPOSAL. Root must review the exact future control head before opening the draft PR.
+# One-use guest-facts probe; the successor commit identity is frozen externally before push.
 # No checkout or repository program is run. This job gathers guest facts only.
 name: B76t packaged worker readiness
 on:
-  pull_request:
-    types: [opened]
-    branches: [main]
+  push:
+    branches: [diagnostic/b76t-packaged-readiness]
     paths: [.github/workflows/b76t-packaged-readiness.yml]
 permissions:
   contents: read
@@ -14,9 +13,19 @@ concurrency:
 jobs:
   readiness:
     if: >-
+      github.event_name == 'push' &&
       github.repository == 'intent-hq/cloudlands-fe' &&
-      github.event.pull_request.head.repo.full_name == github.repository &&
-      github.event.pull_request.head.ref == 'diagnostic/b76t-packaged-readiness'
+      github.event.repository.full_name == github.repository &&
+      github.ref == 'refs/heads/diagnostic/b76t-packaged-readiness' &&
+      github.event.ref == github.ref &&
+      github.actor == 'panghy' && github.triggering_actor == 'panghy' &&
+      github.run_attempt == '1' &&
+      github.event.before == '2f5a567695b7400dbdfad739378961f5895c3409' &&
+      github.event.created == false && github.event.deleted == false &&
+      github.event.forced == false &&
+      github.event.commits[0].id == github.sha &&
+      github.event.commits[1] == null &&
+      github.event.after == github.sha && github.event.head_commit.id == github.sha
     runs-on: gh-linux-8x
     timeout-minutes: 8
     steps:
@@ -26,8 +35,8 @@ jobs:
         shell: bash --noprofile --norc {0}
         env:
           B76_CONTEXT_RUNNER_ENVIRONMENT: ${{ runner.environment }}
-          B76_EVENT_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-          B76_EVENT_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          B76_EVENT_AFTER_SHA: ${{ github.event.after }}
+          B76_EVENT_BEFORE_SHA: ${{ github.event.before }}
         run: |
           native_exit() {
             local primary=$?
@@ -94,24 +103,39 @@ jobs:
                       'ImageOS', 'ImageVersion']
               identity = {key: os.environ.get(key) for key in keys}
               event = json.loads(pathlib.Path(os.environ['GITHUB_EVENT_PATH']).read_text())
-              pr = event['pull_request']
-              source = {'eventAction': event.get('action'), 'number': pr['number'], 'draft': pr['draft'],
-                        'headRepo': pr['head']['repo']['full_name'], 'headRef': pr['head']['ref'],
-                        'headSha': pr['head']['sha'], 'baseRef': pr['base']['ref'], 'baseSha': pr['base']['sha']}
+              commits = event.get('commits')
+              head = event.get('head_commit')
+              repository = event.get('repository') or {}
+              source = {'eventRef': event.get('ref'), 'repository': repository.get('full_name'),
+                        'repositoryId': repository.get('id'), 'fork': repository.get('fork'),
+                        'before': event.get('before'), 'after': event.get('after'),
+                        'created': event.get('created'), 'deleted': event.get('deleted'),
+                        'forced': event.get('forced'),
+                        'commitIds': [commit.get('id') if isinstance(commit, dict) else None
+                                      for commit in commits] if isinstance(commits, list) else None,
+                        'headCommitId': head.get('id') if isinstance(head, dict) else None}
               facts.update(identity=identity, source=source)
-              assert identity['GITHUB_EVENT_NAME'] == 'pull_request' and source['eventAction'] == 'opened'
-              assert identity['GITHUB_REPOSITORY'] == source['headRepo'] == 'intent-hq/cloudlands-fe'
-              assert source['headRef'] == 'diagnostic/b76t-packaged-readiness' and source['draft'] is True
-              assert source['baseRef'] == 'main' and source['baseSha'] == '03af3f74a992453db0292452e2b09952cef7bdfb'
+              assert identity['GITHUB_EVENT_NAME'] == 'push'
+              assert identity['GITHUB_REPOSITORY'] == source['repository'] == 'intent-hq/cloudlands-fe'
+              assert type(source['repositoryId']) is int and source['repositoryId'] == 1283687685
+              assert source['fork'] is False
+              assert source['eventRef'] == identity['GITHUB_REF'] == 'refs/heads/diagnostic/b76t-packaged-readiness'
+              assert all(source[key] is False for key in ['created', 'deleted', 'forced'])
+              assert source['before'] == '2f5a567695b7400dbdfad739378961f5895c3409'
+              assert isinstance(commits, list) and len(commits) == 1
+              assert isinstance(head, dict) and isinstance(commits[0], dict)
+              shas = [source['before'], source['after'], source['headCommitId'],
+                      source['commitIds'][0], identity['GITHUB_SHA'], identity['GITHUB_WORKFLOW_SHA']]
+              assert all(isinstance(value, str) and re.fullmatch('[a-f0-9]{40}', value)
+                         and value != '0' * 40 for value in shas)
+              assert source['after'] != source['before']
+              assert all(value == source['after'] for value in shas[2:])
+              assert source['after'] == os.environ['B76_EVENT_AFTER_SHA']
+              assert source['before'] == os.environ['B76_EVENT_BEFORE_SHA']
               assert identity['GITHUB_RUN_ATTEMPT'] == '1'
               assert identity['GITHUB_ACTOR'] == identity['GITHUB_TRIGGERING_ACTOR'] == 'panghy'
-              assert source['headSha'] == os.environ['B76_EVENT_HEAD_SHA']
-              assert source['baseSha'] == os.environ['B76_EVENT_BASE_SHA']
-              assert all(re.fullmatch('[a-f0-9]{40}', value or '') for value in
-                         [source['headSha'], source['baseSha'], identity['GITHUB_SHA'], identity['GITHUB_WORKFLOW_SHA']])
-              assert identity['GITHUB_REF'] == 'refs/pull/' + str(source['number']) + '/merge'
-              assert identity['GITHUB_WORKFLOW_REF'] == 'intent-hq/cloudlands-fe/.github/workflows/b76t-packaged-readiness.yml@' + identity['GITHUB_REF']
-              assert identity['GITHUB_WORKFLOW_SHA'] == identity['GITHUB_SHA']
+              assert identity['GITHUB_JOB'] == 'readiness'
+              assert identity['GITHUB_WORKFLOW_REF'] == 'intent-hq/cloudlands-fe/.github/workflows/b76t-packaged-readiness.yml@refs/heads/diagnostic/b76t-packaged-readiness'
               assert identity['RUNNER_ENVIRONMENT'] == os.environ['B76_CONTEXT_RUNNER_ENVIRONMENT'] == 'github-hosted'
               assert identity['RUNNER_OS'] == 'Linux' and identity['RUNNER_ARCH'] == 'X64'
               assert identity['ImageOS'] and identity['ImageVersion'] and identity['RUNNER_NAME']
