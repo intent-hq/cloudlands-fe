@@ -22,7 +22,6 @@
   } from '$lib/client/live/live-prompt-enhancement';
   import { TooltipShortcut } from '$lib/components/ui/tooltip';
   import TooltipRich from '$lib/components/ui/tooltip/TooltipRich.svelte';
-  import { surfaceClasses } from '$lib/components/ui/surface-context';
   import ArrowUpIcon from 'phosphor-svelte/lib/ArrowUpIcon';
 
   import Fa from '$lib/components/shared/icons/FaWrapper.svelte';
@@ -605,7 +604,7 @@
           ? 'hover'
           : 'rest',
   );
-  const edgeShadow = 'inset 0 0 0 1px hsl(var(--border))';
+  const edgeShadow = 'none';
   const composerStyle = $derived(
     `${
       isAutoExpand
@@ -1454,8 +1453,7 @@
 <div
   bind:this={containerRef}
   class={cn(
-    'relative rich-input-container flex flex-col overflow-hidden rounded-(--radius-large) border-0 p-2 has-[[data-chat-input-queue-region]>_*]:pt-0 text-card-foreground transition-[box-shadow,color,min-height] duration-spring-fast ease-spring-fast motion-reduce:transition-none',
-    surfaceClasses(2, 2),
+    'relative rich-input-container flex flex-col overflow-hidden rounded-(--radius-large) border border-border bg-surface-2 shadow-none p-2 has-[[data-chat-input-queue-region]>_*]:pt-0 text-card-foreground transition-[box-shadow,color,min-height] duration-spring-fast ease-spring-fast motion-reduce:transition-none',
     isAutoExpand
       ? 'transition-[border-color,background-color,box-shadow,min-height]'
       : 'transition-[border-color,background-color,box-shadow]',

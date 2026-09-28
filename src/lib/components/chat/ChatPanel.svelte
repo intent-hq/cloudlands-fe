@@ -7133,11 +7133,6 @@
     }
   }
 
-  /* The prompt lane owns the outer inset around the nested composer surface. */
-  .composer-prompt-layer :global(.rich-input-container) {
-    border-top-width: 0;
-  }
-
   @keyframes input-flash {
     0% {
       box-shadow: inset 0 0 0 2px hsl(var(--primary) / 0.4);

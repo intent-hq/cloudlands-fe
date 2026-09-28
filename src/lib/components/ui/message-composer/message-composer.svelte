@@ -10,7 +10,6 @@
   import SizeProvider from '$lib/components/ui/SizeProvider.svelte';
   import SurfaceProvider from '$lib/components/ui/SurfaceProvider.svelte';
   import { useSize } from '$lib/components/ui/size-context';
-  import { surfaceClasses } from '$lib/components/ui/surface-context';
   import { Textarea } from '$lib/components/ui/textarea';
   import { createProximityHover, type ProximityHover } from '$lib/interaction';
   import { animatedHeight, scale } from '$lib/motion';
@@ -103,7 +102,7 @@
   const ringState = $derived(
     dragOver ? 'drag' : focused ? 'focus' : hovered && clickToFocus && !disabled ? 'hover' : 'rest',
   );
-  const edgeShadow = 'inset 0 0 0 1px hsl(var(--border))';
+  const edgeShadow = 'none';
   const rootStyle = $derived(
     [edgeShadow ? `box-shadow:${edgeShadow}` : '', typeof style === 'string' ? style : '']
       .filter(Boolean)
@@ -437,8 +436,7 @@
     data-ring-state={ringState}
     data-size={resolvedSize}
     class={cn(
-      'flex flex-col rounded-(--radius-large) p-2 transition-[box-shadow,color] duration-spring-fast ease-spring-fast',
-      surfaceClasses(2, 2),
+      'flex flex-col rounded-(--radius-large) border border-border bg-surface-2 shadow-none p-2 transition-[box-shadow,color] duration-spring-fast ease-spring-fast',
       clickToFocus && !disabled && 'cursor-text',
       disabled && 'pointer-events-none opacity-50',
       className,
