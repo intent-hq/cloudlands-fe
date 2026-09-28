@@ -892,6 +892,7 @@ export function projectPaneMoveInLayout(
           ...targetPanel.tabs.slice(insertIndex),
         ],
         activeTabId: tabId,
+        pristine: false,
         attentionTabIds: targetPanel.attentionTabIds?.filter((id) => id !== tabId),
       },
     };
