@@ -3,12 +3,13 @@ import { actionChannel, call, take } from 'typed-redux-saga';
 
 import { appClient } from '$lib/client';
 import { createLogger } from '$lib/utils/client-logger';
-import {
-  selectBgDefaultModel,
-  selectBgTypeOverrides,
-} from '../background-agent-settings-selectors';
+import { selectBgSettings } from '../background-agent-settings-selectors';
+import { backgroundSettingsChanges } from '../background-agent-settings-persistence';
 import {
   clearTypeOverride,
+  setDefaultReasoningEffort,
+  setTypeReasoningEffortOverride,
+  resetTypeOverride,
   resetSettings,
   setDefaultModel,
   setTypeOverride,
@@ -17,15 +18,11 @@ import {
 const logger = createLogger('BackgroundAgentSettingsSaga');
 
 function* persistBackgroundAgentSettingsWorker() {
-  const defaultModel = yield* selectBgDefaultModel.effect();
-  const typeOverrides = yield* selectBgTypeOverrides.effect();
+  const settings = yield* selectBgSettings.effect();
   try {
     yield* call(
       [appClient.settings, appClient.settings.update],
-      [
-        { path: 'quickActions.defaultModel', value: defaultModel },
-        { path: 'quickActions.typeOverrides', value: { ...typeOverrides } },
-      ],
+      backgroundSettingsChanges(settings),
     );
   } catch (error) {
     logger.error('Failed to persist background agent settings:', error);
@@ -35,7 +32,15 @@ function* persistBackgroundAgentSettingsWorker() {
 /** Unregistered until the S20 middleware cutover. */
 export function* backgroundAgentSettingsSaga() {
   const channel = yield* actionChannel(
-    [setDefaultModel, setTypeOverride, clearTypeOverride, resetSettings],
+    [
+      setDefaultModel,
+      setTypeOverride,
+      clearTypeOverride,
+      resetSettings,
+      setDefaultReasoningEffort,
+      setTypeReasoningEffortOverride,
+      resetTypeOverride,
+    ],
     buffers.sliding(1),
   );
   try {

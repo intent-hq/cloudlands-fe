@@ -4,6 +4,7 @@
   export const preview = definePreview<{
     narrowPane?: boolean;
     quickActionDefaultModel?: string;
+    quickActionEffort?: string;
   }>({
     id: 'provider-default-models',
     title: 'Provider default models',
@@ -11,6 +12,12 @@
     states: {
       default: { props: {} },
       'narrow-pane': { props: { narrowPane: true } },
+      'quick-action-effort': {
+        props: {
+          quickActionDefaultModel: 'codex:codex-preview-balanced',
+          quickActionEffort: 'medium',
+        },
+      },
     },
   });
 </script>
@@ -31,6 +38,8 @@
   import { setFileSpecialists } from '$store/renderer/slices/specialists/specialists-slice';
   import {
     selectBgDefaultModel,
+    selectBgDefaultReasoningEffort,
+    selectBgTypeReasoningEffortOverrides,
     selectBgTypeOverrides,
   } from '$store/renderer/slices/background-agent-settings/background-agent-settings-selectors';
   import { hydrateSettings } from '$store/renderer/slices/background-agent-settings/background-agent-settings-slice';
@@ -41,13 +50,20 @@
   let {
     narrowPane = false,
     quickActionDefaultModel = '',
-  }: { narrowPane?: boolean; quickActionDefaultModel?: string } = $props();
+    quickActionEffort = '',
+  }: {
+    narrowPane?: boolean;
+    quickActionDefaultModel?: string;
+    quickActionEffort?: string;
+  } = $props();
   // The sandbox/CT root owns the isolated store; no persistence sagas run here.
   const previous = {
     models: selectProviderModels.select(appStore.state),
     effort: selectDefaultReasoningEffort.select(appStore.state),
     specialists: selectFileSpecialists.select(appStore.state),
     defaultModel: selectBgDefaultModel.select(appStore.state),
+    defaultReasoningEffort: selectBgDefaultReasoningEffort.select(appStore.state),
+    typeReasoningEffortOverrides: selectBgTypeReasoningEffortOverrides.select(appStore.state),
     typeOverrides: selectBgTypeOverrides.select(appStore.state),
   };
   const restoreModels = modelPreview.states.reasoning.setup?.();
@@ -56,8 +72,10 @@
   appStore.dispatch(
     hydrateSettings({
       defaultModel: quickActionDefaultModel,
+      defaultReasoningEffort: quickActionEffort,
+      typeReasoningEffortOverrides: {},
       typeOverrides: {
-        commit: 'claude-code:claude-code-preview-deep',
+        commit: quickActionEffort ? '' : 'claude-code:claude-code-preview-deep',
         pr: '',
         review: '',
         fast: '',
@@ -81,6 +99,8 @@
   const defaultModel$ = selectBgDefaultModel();
   const overrides$ = selectBgTypeOverrides();
   const effort$ = selectDefaultReasoningEffort();
+  const quickEffort$ = selectBgDefaultReasoningEffort();
+  const quickEffortOverrides$ = selectBgTypeReasoningEffortOverrides();
   onDestroy(() => {
     appStore.dispatch(hydrateSettings(previous));
     appStore.dispatch(setFileSpecialists(previous.specialists));
@@ -112,6 +132,8 @@
       defaultModel: $defaultModel$,
       overrides: $overrides$,
       effort: $effort$,
+      quickEffort: $quickEffort$,
+      quickEffortOverrides: $quickEffortOverrides$,
     })}</output
   >
 </div>

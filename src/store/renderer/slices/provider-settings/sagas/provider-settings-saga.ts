@@ -1,3 +1,5 @@
+import { selectBgSettings } from '../../background-agent-settings/background-agent-settings-selectors';
+import { backgroundSettingsChanges } from '../../background-agent-settings/background-agent-settings-persistence';
 import { buffers, channel, type Channel } from 'redux-saga';
 import { all, call, delay, put, take, takeEvery } from 'typed-redux-saga';
 
@@ -45,6 +47,9 @@ function* changesFor(update: ProviderSettingsUpdate) {
     // Provider leg of the default model triple — `providers.active` is
     // deprecated (unread by the daemon).
     changes.push({ path: 'model.defaultProvider', value: update.activeProviderId });
+    const background = yield* selectBgSettings.effect();
+    if (background?.providerId)
+      changes.push(...backgroundSettingsChanges(background, update.activeProviderId));
   }
   if (update.enabledProviderDelta !== undefined) {
     const { providerId, enabled } = update.enabledProviderDelta;

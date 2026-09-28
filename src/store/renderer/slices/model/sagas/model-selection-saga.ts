@@ -1,8 +1,10 @@
+import { selectBgSettings } from '../../background-agent-settings/background-agent-settings-selectors';
+import { backgroundSettingsChanges } from '../../background-agent-settings/background-agent-settings-persistence';
 import { buffers } from 'redux-saga';
 import { actionChannel, all, call, delay, put, race, take, takeEvery } from 'typed-redux-saga';
 
 import { appClient } from '$lib/client';
-import type { SettingsUpdateResult } from '$lib/client/app-client';
+import type { AppSettingChange, SettingsUpdateResult } from '$lib/client/app-client';
 import { isDaemonErrorResponse } from '$lib/client/live/backend-transport-types';
 import { createLogger } from '$lib/utils/client-logger';
 import { splitLegacyCompoundId } from '$shared/utils/legacy-model-id';
@@ -101,12 +103,17 @@ export function* persistSelectedModelsWorker(
     value[providerId] = splitLegacyCompoundId(model).modelId;
   }
   try {
-    const changes = atomicProviderId
+    const changes: AppSettingChange[] = atomicProviderId
       ? [
           { path: 'model.defaultProvider', value: atomicProviderId },
           { path: 'model.providerDefaults', value },
         ]
       : [{ path: 'model.providerDefaults', value }];
+    if (atomicProviderId) {
+      const background = yield* selectBgSettings.effect();
+      if (background?.providerId)
+        changes.push(...backgroundSettingsChanges(background, atomicProviderId));
+    }
     const updateSnapshot = appClient.settings.updateSnapshot?.bind(appClient.settings);
     const hasRevisionClient = updateSnapshot !== undefined;
     const result: SettingsUpdateResult = updateSnapshot

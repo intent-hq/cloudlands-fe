@@ -3,6 +3,8 @@ import type { Proposal, ProposalActionDetail } from '$shared/types/proposal';
 import {
   initialState as backgroundAgentSettingsInitialState,
   setDefaultModel,
+  setDefaultReasoningEffort,
+  setTypeReasoningEffortOverride,
 } from '$store/renderer/slices/background-agent-settings/background-agent-settings-slice';
 import {
   initialState as userPreferencesInitialState,
@@ -147,6 +149,41 @@ describe('settings-proposal-actions', () => {
         apply: { kind: 'redux-action', action: 'backgroundAgentSettings/setDefaultModel' },
       },
     ]);
+  });
+
+  it('applies and reverses independent quick-action effort proposals', async () => {
+    mocks.getState.mockReturnValue(
+      makeState({
+        backgroundAgentSettings: {
+          ...backgroundAgentSettingsInitialState,
+          defaultReasoningEffort: 'low',
+          typeReasoningEffortOverrides: { commit: 'high' },
+        },
+      }),
+    );
+    const shared = await applySettingsProposalWork(
+      makeDetail(makeProposal('quickActions.defaultReasoningEffort', 'medium')),
+    );
+    expect(mocks.dispatch).toHaveBeenCalledWith(setDefaultReasoningEffort('medium'));
+    await undoSettingsProposalWork(shared.reverseChanges);
+    expect(mocks.dispatch).toHaveBeenCalledWith(setDefaultReasoningEffort('low'));
+    const action = await applySettingsProposalWork(
+      makeDetail(makeProposal('quickActions.typeReasoningEffortOverrides', { fast: 'high' })),
+    );
+    expect(mocks.dispatch).toHaveBeenCalledWith(
+      setTypeReasoningEffortOverride({ type: 'commit', effort: '' }),
+    );
+    expect(mocks.dispatch).toHaveBeenCalledWith(
+      setTypeReasoningEffortOverride({ type: 'fast', effort: 'high' }),
+    );
+    mocks.dispatch.mockClear();
+    await undoSettingsProposalWork(action.reverseChanges);
+    expect(mocks.dispatch).toHaveBeenCalledWith(
+      setTypeReasoningEffortOverride({ type: 'commit', effort: 'high' }),
+    );
+    expect(mocks.dispatch).toHaveBeenCalledWith(
+      setTypeReasoningEffortOverride({ type: 'fast', effort: '' }),
+    );
   });
 
   it('applies normalized Open In editor order, persists it, and returns a reversible change', async () => {

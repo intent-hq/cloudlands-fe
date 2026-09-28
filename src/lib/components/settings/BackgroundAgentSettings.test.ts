@@ -19,6 +19,7 @@ const mocks = vi.hoisted(() => ({
       return () => {};
     },
   }),
+  defaultModel: { value: '' },
   typeOverrides: { value: { commit: '', pr: '', review: '', fast: '' } },
   effectiveProviderId: { value: 'auggie' },
   catalogLoaded: { value: true },
@@ -39,7 +40,9 @@ vi.mock('$store/renderer/store', async () => {
 vi.mock(
   '$store/renderer/slices/background-agent-settings/background-agent-settings-selectors',
   () => ({
-    selectBgDefaultModel: () => mocks.readable(''),
+    selectBgDefaultModel: () => mocks.readable(mocks.defaultModel.value),
+    selectBgDefaultReasoningEffort: () => mocks.readable('medium'),
+    selectBgTypeReasoningEffortOverrides: () => mocks.readable({}),
     selectBgTypeOverrides: () => mocks.readable(mocks.typeOverrides.value),
     selectHasOverride: (type: string) =>
       mocks.readable(
@@ -67,6 +70,29 @@ describe('BackgroundAgentSettings (quick-action settings pane)', () => {
     mocks.effectiveProviderId.value = 'auggie';
     mocks.catalogLoaded.value = true;
     mocks.dispatched.length = 0;
+    mocks.defaultModel.value = '';
+  });
+
+  it('blocks effort editing for a foreign inherited default without changing saved values', () => {
+    mocks.defaultModel.value = 'codex:other';
+    render(BackgroundAgentSettings);
+    expect(screen.queryAllByTestId('pick-reasoning')).toHaveLength(0);
+    expect(screen.getAllByTestId('quick-action-effort-provider-note')).toHaveLength(4);
+    expect(mocks.dispatched).toEqual([]);
+  });
+
+  it('blocks only the foreign action effort and keeps same-provider rows editable', async () => {
+    mocks.typeOverrides.value = { commit: 'codex:other', pr: '', review: '', fast: '' };
+    render(BackgroundAgentSettings);
+    expect(screen.getAllByTestId('quick-action-effort-provider-note')).toHaveLength(1);
+    expect(screen.getAllByTestId('pick-reasoning')).toHaveLength(3);
+    await fireEvent.click(screen.getAllByTestId('pick-reasoning')[1]);
+    expect(mocks.dispatched).toEqual([
+      {
+        type: 'backgroundAgentSettings/setTypeReasoningEffortOverride',
+        payload: [{ type: 'pr', effort: 'high' }],
+      },
+    ]);
   });
 
   it('shows the stored override model in its row picker', () => {
@@ -139,4 +165,27 @@ describe('BackgroundAgentSettings (quick-action settings pane)', () => {
     render(BackgroundAgentSettings);
     expect(screen.getByTestId('fast-auggie-only-note')).toBeTruthy();
   });
+});
+
+it('each quick-action row saves and clears effort without pinning its inherited model', async () => {
+  render(BackgroundAgentSettings);
+  for (let index = 0; index < 4; index++) {
+    await fireEvent.click(screen.getAllByTestId('pick-reasoning')[index]);
+    await fireEvent.click(screen.getAllByTestId('clear-reasoning')[index]);
+  }
+  expect(mocks.dispatched).toEqual([
+    { type: 'backgroundAgentSettings/setDefaultReasoningEffort', payload: ['high'] },
+    { type: 'backgroundAgentSettings/setDefaultReasoningEffort', payload: [''] },
+    ...['commit', 'pr', 'fast'].flatMap((type) => [
+      {
+        type: 'backgroundAgentSettings/setTypeReasoningEffortOverride',
+        payload: [{ type, effort: 'high' }],
+      },
+      {
+        type: 'backgroundAgentSettings/setTypeReasoningEffortOverride',
+        payload: [{ type, effort: '' }],
+      },
+    ]),
+  ]);
+  cleanup();
 });

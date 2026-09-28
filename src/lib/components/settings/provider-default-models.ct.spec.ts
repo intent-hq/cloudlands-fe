@@ -72,11 +72,47 @@ for (const scenario of [
     await page.getByRole('option', { name: /Use default quick action model/ }).click();
     await expect(defaults).toContainText('"commit":""');
     await expect(defaults).toContainText(`"defaultModel":"${quickActionDefaultModel}"`);
+    // The foreign-provider row has no effort footer until it inherits the local model.
+    await expect(commit).toHaveAttribute('aria-expanded', 'false');
     await commit.click();
     await expect(
       page.getByRole('option', { name: /Use default quick action model/ }),
     ).toHaveAttribute('aria-selected', 'true');
     await page.keyboard.press('Escape');
     await expect(commit).toBeFocused();
+  });
+}
+
+for (const action of ['default', 'commit', 'pr', 'fast']) {
+  test(`quick-action ${action} effort supports inherited models and keyboard reset`, async ({
+    mount,
+    page,
+  }) => {
+    await page.setViewportSize({ width: 1000, height: 1000 });
+    const root = await mount(Preview, {
+      props: {
+        quickActionDefaultModel: 'codex:codex-preview-balanced',
+        quickActionEffort: 'medium',
+      },
+    });
+    const trigger = root.locator(`#background-agent-${action} button[aria-haspopup="listbox"]`);
+    const output = root.getByTestId('defaults-state');
+    await trigger.click();
+    const effort = page.getByTestId('effort-picker-trigger');
+    await effort.focus();
+    await effort.press('Enter');
+    await page.keyboard.press('End');
+    await page.keyboard.press('Enter');
+    if (action === 'default') await expect(output).toContainText('"quickEffort":"high"');
+    else await expect(output).toContainText(`"quickEffortOverrides":{"${action}":"high"}`);
+    await expect(output).toContainText('"overrides":{"commit":"","pr":"","review":"","fast":""}');
+    await expect(effort).toBeFocused();
+    await effort.press('Enter');
+    await page.keyboard.press('Home');
+    await page.keyboard.press('Enter');
+    if (action === 'default') await expect(output).toContainText('"quickEffort":""');
+    else await expect(output).toContainText('"quickEffortOverrides":{}');
+    await page.keyboard.press('Escape');
+    await expect(trigger).toBeFocused();
   });
 }

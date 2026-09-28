@@ -248,6 +248,8 @@
     silentFallback?: boolean;
     showReasoning?: boolean;
     reasoningEffort?: string | null;
+    /** Display-only inherited effort; never materialized into a selection. */
+    defaultReasoningEffort?: string | null;
     onReasoningChange?: (effort: string | null) => boolean | void | Promise<boolean | void>;
     reasoningDisabled?: boolean;
     showProviderWarningNotice?: boolean;
@@ -293,6 +295,7 @@
     silentFallback = false,
     showReasoning = false,
     reasoningEffort,
+    defaultReasoningEffort,
     onReasoningChange,
     reasoningDisabled = false,
     showProviderWarningNotice,
@@ -1658,6 +1661,13 @@
   const persistedReasoningEffort = $derived(
     onReasoningChange ? (reasoningEffort ?? null) : ($reasoningEffort$ ?? null),
   );
+  const inheritedReasoningLabel = $derived(
+    defaultReasoningEffort && reasoningLevels.includes(defaultReasoningEffort)
+      ? m.chat_modelPicker_defaultModelPreview_label({
+          model: reasoningLevelLabel(defaultReasoningEffort),
+        })
+      : undefined,
+  );
   const currentReasoningEffort = $derived(
     persistedReasoningEffort && reasoningLevels.includes(persistedReasoningEffort)
       ? persistedReasoningEffort
@@ -1670,7 +1680,7 @@
         })
       : currentReasoningEffort
         ? reasoningLevelLabel(currentReasoningEffort)
-        : m.chat_effortPicker_level_auto(),
+        : (inheritedReasoningLabel ?? m.chat_effortPicker_level_auto()),
   );
   const currentReasoningLevelIndex = $derived(
     currentReasoningEffort ? reasoningLevels.indexOf(currentReasoningEffort) : -1,
@@ -2272,6 +2282,7 @@
           {workspaceId}
           effortLevels={reasoningLevels}
           effort={persistedReasoningEffort}
+          autoLabel={inheritedReasoningLabel}
           disabled={reasoningControlDisabled}
           busy={updatingReasoningEffort}
           {modalAware}

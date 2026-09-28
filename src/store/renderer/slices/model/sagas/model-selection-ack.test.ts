@@ -85,7 +85,9 @@ it.each([
     ).toBe('persisted');
     await settle();
 
-    expect(request).toHaveBeenLastCalledWith('settings.update', { changes: selection() });
+    expect(request).toHaveBeenLastCalledWith('settings.update', {
+      changes: expect.arrayContaining(selection()),
+    });
     expect(store.state.model.pendingDefaultProviderId).toBeNull();
     expect(store.state.model.pendingProviderModels).toEqual({});
     environment.dispatch(settingsChangesReceived(selection('codex', 'stale'), 7));

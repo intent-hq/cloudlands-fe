@@ -55,6 +55,8 @@ import {
   selectUpdateChannel,
 } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
 import {
+  selectBgDefaultReasoningEffort,
+  selectBgTypeReasoningEffortOverrides,
   selectBgDefaultModel,
   selectBgTypeOverrides,
 } from '$store/renderer/slices/background-agent-settings/background-agent-settings-selectors';
@@ -111,6 +113,8 @@ import {
   type NoteFontStyle,
 } from '$store/renderer/slices/user-preferences/user-preferences-slice';
 import {
+  setDefaultReasoningEffort,
+  setTypeReasoningEffortOverride,
   setDefaultModel,
   setTypeOverride,
   type BackgroundAgentType,
@@ -320,6 +324,10 @@ async function readCurrentSettingValue(definition: AppSettingDefinition): Promis
       return selectSoundOnlyWhenUnfocused.select(state);
     case 'notifications.volume':
       return selectNotificationVolume.select(state);
+    case 'quickActions.defaultReasoningEffort':
+      return selectBgDefaultReasoningEffort.select(state);
+    case 'quickActions.typeReasoningEffortOverrides':
+      return selectBgTypeReasoningEffortOverrides.select(state);
     case 'quickActions.defaultModel':
       return selectBgDefaultModel.select(state);
     case 'quickActions.typeOverrides':
@@ -460,6 +468,16 @@ function dispatchReduxAction(path: string, value: unknown): boolean {
       appStore.dispatch(setVolume(parsed));
       return true;
     }
+    case 'quickActions.defaultReasoningEffort':
+      appStore.dispatch(setDefaultReasoningEffort(String(value ?? '')));
+      return true;
+    case 'quickActions.typeReasoningEffortOverrides':
+      for (const type of ['commit', 'pr', 'review', 'fast'] as BackgroundAgentType[]) {
+        appStore.dispatch(
+          setTypeReasoningEffortOverride({ type, effort: String(objectValue(value)[type] ?? '') }),
+        );
+      }
+      return true;
     case 'quickActions.defaultModel':
       appStore.dispatch(setDefaultModel(String(value ?? '')));
       return true;

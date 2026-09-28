@@ -32,6 +32,7 @@ import { splitLegacyCompoundId } from '$shared/utils/legacy-model-id';
 import {
   hydrateSettings as hydrateBackgroundAgentSettings,
   type BackgroundAgentType,
+  type BackgroundAgentSettingsState,
 } from '$store/renderer/slices/background-agent-settings/background-agent-settings-slice';
 import {
   setDisabledServers,
@@ -323,6 +324,23 @@ function applyBackgroundAgentBundle(byPath: Map<string, unknown>): void {
   // A settings:changed delta may only include ONE of defaultModel / typeOverrides.
   // Fall back to current slice state for missing keys so partial updates don't drop values.
   const currentState = appStore.state.backgroundAgentSettings;
+  // A delayed switch acknowledgement must not apply the outgoing provider's
+  // bundle while the model slice is protecting a newer provider choice.
+  const incomingProvider = byPath.get('model.defaultProvider');
+  if (
+    typeof incomingProvider === 'string' &&
+    incomingProvider !== appStore.state.model.defaultProviderId
+  )
+    return;
+  if (![...byPath.keys()].some((path) => path.startsWith('quickActions.'))) {
+    appStore.dispatch(
+      hydrateBackgroundAgentSettings({
+        ...currentState,
+        providerId: appStore.state.model.defaultProviderId,
+      }),
+    );
+    return;
+  }
   const defaultModel =
     (byPath.get('quickActions.defaultModel') as string | undefined) ?? currentState.defaultModel;
   const typeOverrides =
@@ -346,7 +364,25 @@ function applyBackgroundAgentBundle(byPath: Map<string, unknown>): void {
       defaultModel,
       overrides as Record<BackgroundAgentType, string>,
     );
-    appStore.dispatch(hydrateBackgroundAgentSettings(migrated));
+    appStore.dispatch(
+      hydrateBackgroundAgentSettings({
+        ...migrated,
+        providerId: appStore.state.model.defaultProviderId,
+        defaultReasoningEffort: byPath.has('quickActions.defaultReasoningEffort')
+          ? ((byPath.get('quickActions.defaultReasoningEffort') as string | null) ?? '')
+          : currentState.defaultReasoningEffort,
+        typeReasoningEffortOverrides: byPath.has('quickActions.typeReasoningEffortOverrides')
+          ? ((byPath.get(
+              'quickActions.typeReasoningEffortOverrides',
+            ) as BackgroundAgentSettingsState['typeReasoningEffortOverrides']) ?? {})
+          : currentState.typeReasoningEffortOverrides,
+        providerSettings: byPath.has('quickActions.providerSettings')
+          ? ((byPath.get(
+              'quickActions.providerSettings',
+            ) as BackgroundAgentSettingsState['providerSettings']) ?? {})
+          : currentState.providerSettings,
+      }),
+    );
   }
 }
 
@@ -367,7 +403,7 @@ export function applySettingsChanges(
   for (const change of changes) {
     applyOne(change, revision);
     bundle.set(change.path, change.value);
-    if (change.path.startsWith('quickActions.')) {
+    if (change.path.startsWith('quickActions.') || change.path === 'model.defaultProvider') {
       hasBackgroundAgentPaths = true;
     }
     if (change.path === 'providers.enabled') {
