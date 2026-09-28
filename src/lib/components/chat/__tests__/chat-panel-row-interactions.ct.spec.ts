@@ -769,3 +769,79 @@ for (const motion of ['reduce', 'no-preference'] as const) {
     });
   }
 }
+
+test('watched reasoning search retains the body until the actual scrollport reveals it', async ({
+  mount,
+  page,
+}, info) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  const watched = messages(0);
+  watched[0].id = 'watched-user';
+  watched[1].id = 'watched-assistant';
+  watched[1].contentBlocks = [
+    { type: 'text', id: 'watched-open', text: '<group:Prepping>Scale inspection.' },
+    ...Array.from({ length: 99 }, (_, i): ContentBlock => ({
+      type: 'thinking',
+      id: `watched-row-${i}`,
+      text: `**Scale reasoning ${i}**\n\nDetails needle-watched-${i}.`,
+    })),
+    { type: 'text', id: 'watched-close', text: '</group:Prepping>' },
+    { type: 'text', id: 'watched-end', text: 'End of completed inspection.' },
+  ];
+  const host = await mount(ChatPanelOperationalGeometryHost, {
+    props: {
+      liveMessages: messages(0),
+      alternateMessages: watched,
+      watchedAgent: true,
+      detachedStatus: true,
+      height: 700,
+      width: 600,
+    },
+  });
+  await host
+    .getByTestId('scale-agent-subscriptions')
+    .getByRole('button', { name: /Alternate agent/ })
+    .first()
+    .click();
+  await expect(host.locator('[data-message-id="watched-assistant"]')).toBeVisible();
+  const viewport = host.getByTestId('chat-transcript-scroll-viewport').filter({ visible: true });
+  await viewport.click({ position: { x: 4, y: 4 } });
+  await page.keyboard.press('ControlOrMeta+f');
+  const input = host.getByRole('search', { name: 'Find in panel' }).getByRole('textbox');
+  for (const index of [50, 80]) {
+    const query = `needle-watched-${index}.`;
+    await input.fill(query);
+    const body = host.getByText(`Details ${query}`, { exact: true });
+    await expect(body).toBeInViewport();
+    await expect
+      .poll(() =>
+        page.evaluate(() => {
+          const ranges = CSS.highlights?.get('current-search-result') as
+            Iterable<Range> | undefined;
+          return ranges ? Array.from(ranges)[0]?.toString() : undefined;
+        }),
+      )
+      .toBe(query);
+    const key = await body.evaluate((node) =>
+      node.closest('[data-operational-window-key]')!.getAttribute('data-operational-window-key')!,
+    );
+    const visible = await viewport.evaluate(async (node, expectedKey) => {
+      const samples: boolean[] = [];
+      for (let frame = 0; frame < 60; frame++) {
+        await new Promise<void>((resolve) => requestAnimationFrame(() => setTimeout(resolve, 0)));
+        const row = [...node.querySelectorAll('[data-operational-window-key]')].find(
+          (candidate) => candidate.getAttribute('data-operational-window-key') === expectedKey,
+        );
+        const box = row?.getBoundingClientRect();
+        const clip = node.getBoundingClientRect();
+        samples.push(!!box && box.top >= clip.top && box.bottom <= clip.bottom);
+      }
+      return samples;
+    }, key);
+    await info.attach(`watched-target-${index}-after-navigation`, {
+      body: JSON.stringify(visible),
+      contentType: 'application/json',
+    });
+    expect(visible).toEqual(Array(60).fill(true));
+  }
+});
