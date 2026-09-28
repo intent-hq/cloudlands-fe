@@ -1,13 +1,19 @@
 <script lang="ts" module>
   import { definePreview } from '$lib/component-catalog/preview-definition';
 
-  export const preview = definePreview<{ cursor: 'pointer' | 'default' }>({
+  export const preview = definePreview<{
+    cursor: 'pointer' | 'default';
+    nodeStatus?: 'pending' | 'halted' | 'resuming';
+  }>({
     id: 'agent-name-cursor',
     title: 'Agent name cursor',
     defaultState: 'pointer',
     states: {
       pointer: { props: { cursor: 'pointer' } },
       default: { props: { cursor: 'default' } },
+      provisioning: { props: { cursor: 'pointer', nodeStatus: 'pending' } },
+      halted: { props: { cursor: 'pointer', nodeStatus: 'halted' } },
+      resuming: { props: { cursor: 'pointer', nodeStatus: 'resuming' } },
     },
   });
 </script>
@@ -23,7 +29,10 @@
   import { AgentId, WorkspaceId } from '$shared/types/branded-ids';
   import AgentCard from './AgentCard.svelte';
 
-  let { cursor = 'pointer' }: { cursor?: 'pointer' | 'default' } = $props();
+  let {
+    cursor = 'pointer',
+    nodeStatus,
+  }: { cursor?: 'pointer' | 'default'; nodeStatus?: 'pending' | 'halted' | 'resuming' } = $props();
   const agentId = 'agent-name-cursor-preview';
   onMount(() => {
     appStore.dispatch(
@@ -34,7 +43,13 @@
           workspaceId: WorkspaceId('agent-name-cursor-preview-workspace'),
           name: 'Demo developer',
           nameExplicitlySet: true,
-          status: AgentStatus.Idle,
+          status: nodeStatus ?? AgentStatus.Idle,
+          ...(nodeStatus
+            ? {
+                placement: { target: 'remote', checkout: 'isolated' },
+                effectiveIsolation: nodeStatus === 'pending' ? 'pending' : 'isolated',
+              }
+            : {}),
           messages: [],
           createdAt: '2026-09-16T00:00:00.000Z',
           updatedAt: '2026-09-16T00:00:00.000Z',

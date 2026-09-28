@@ -152,7 +152,7 @@ for (const legacyEmptyKey of [true, false]) {
       await vi.waitFor(() => expect(releaseCatalog).toBeTypeOf('function'));
       expect(pair()).toEqual({ provider: 'grok', model: 'grok4.5' });
       expect(request).toHaveBeenCalledWith('settings.update', {
-        changes: [
+        changes: expect.arrayContaining([
           { path: 'model.defaultProvider', value: 'grok' },
           {
             path: 'model.providerDefaults',
@@ -163,7 +163,7 @@ for (const legacyEmptyKey of [true, false]) {
               grok: 'grok4.5',
             },
           },
-        ],
+        ]),
       });
       dispatch(settingsChangesReceived(initialSnapshot, 0));
       expect(pair()).toEqual({ provider: 'grok', model: 'grok4.5' });

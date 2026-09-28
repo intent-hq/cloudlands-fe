@@ -5,6 +5,8 @@
 
   import { useAgentSession } from '$lib/hooks/useAgentSession.svelte';
   import { selectAgentReasoningEffort } from '$store/renderer/slices/agent-session/agent-session-selectors';
+  import { isQuickActionProviderSwitchBlocked } from '$store/renderer/slices/background-agent-settings/quick-action-provider-switch';
+  import { backgroundProviderSwitchBlocked } from '$store/renderer/slices/background-agent-settings/background-agent-settings-slice';
 
   import Button from '$lib/components/ui/button/button.svelte';
   import {
@@ -248,6 +250,8 @@
     silentFallback?: boolean;
     showReasoning?: boolean;
     reasoningEffort?: string | null;
+    /** Display-only inherited effort; never materialized into a selection. */
+    defaultReasoningEffort?: string | null;
     onReasoningChange?: (effort: string | null) => boolean | void | Promise<boolean | void>;
     reasoningDisabled?: boolean;
     showProviderWarningNotice?: boolean;
@@ -293,6 +297,7 @@
     silentFallback = false,
     showReasoning = false,
     reasoningEffort,
+    defaultReasoningEffort,
     onReasoningChange,
     reasoningDisabled = false,
     showProviderWarningNotice,
@@ -954,6 +959,17 @@
     const pick = model === undefined ? undefined : (picked ?? resolvePickedTriple(model));
     if (pick && (!hasResolvedProvider(pick.providerId) || !canUseProviderModels(pick.providerId))) {
       dropdownValue = currentDropdownValue();
+      return;
+    }
+    // A rejected global provider switch must not become an optimistic local
+    // selection or invoke the caller's model/effort reconciliation callback.
+    if (
+      updateGlobalDefault &&
+      pick &&
+      isQuickActionProviderSwitchBlocked(appStore.state.backgroundAgentSettings, pick.providerId)
+    ) {
+      dropdownValue = currentDropdownValue();
+      appStore.dispatch(backgroundProviderSwitchBlocked(pick.providerId));
       return;
     }
     const previous = pendingModelUpdate?.previous ?? {
@@ -1658,6 +1674,13 @@
   const persistedReasoningEffort = $derived(
     onReasoningChange ? (reasoningEffort ?? null) : ($reasoningEffort$ ?? null),
   );
+  const inheritedReasoningLabel = $derived(
+    defaultReasoningEffort && reasoningLevels.includes(defaultReasoningEffort)
+      ? m.chat_modelPicker_defaultModelPreview_label({
+          model: reasoningLevelLabel(defaultReasoningEffort),
+        })
+      : undefined,
+  );
   const currentReasoningEffort = $derived(
     persistedReasoningEffort && reasoningLevels.includes(persistedReasoningEffort)
       ? persistedReasoningEffort
@@ -1670,7 +1693,7 @@
         })
       : currentReasoningEffort
         ? reasoningLevelLabel(currentReasoningEffort)
-        : m.chat_effortPicker_level_auto(),
+        : (inheritedReasoningLabel ?? m.chat_effortPicker_level_auto()),
   );
   const currentReasoningLevelIndex = $derived(
     currentReasoningEffort ? reasoningLevels.indexOf(currentReasoningEffort) : -1,
@@ -2272,6 +2295,7 @@
           {workspaceId}
           effortLevels={reasoningLevels}
           effort={persistedReasoningEffort}
+          autoLabel={inheritedReasoningLabel}
           disabled={reasoningControlDisabled}
           busy={updatingReasoningEffort}
           {modalAware}

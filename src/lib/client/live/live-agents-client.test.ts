@@ -2703,3 +2703,48 @@ describe('LiveAgentsClient.subscribe typed per-workspace agent channel (PROTOCOL
     ]);
   });
 });
+
+describe('node agent wire compatibility', () => {
+  afterEach(() => resetMockBackend());
+  it('uses unchanged get/list requests and preserves remote and legacy projections', async () => {
+    const backend = installMockBackend();
+    const remote = {
+      id: 'agent-node-wire',
+      workspaceId: 'ws-node-wire',
+      status: 'halted',
+      placement: {
+        target: 'remote',
+        checkout: 'isolated',
+        os: 'linux',
+        nodeId: 'node-build',
+        exclusive: true,
+      },
+      nodeId: 'node-build',
+      leaseId: 'lease-build',
+      nodeState: 'offline',
+      effectiveIsolation: 'isolated',
+      nodePath: '/node/checkout',
+      checkpoint: {
+        id: 'checkpoint-wire',
+        assignmentEpoch: '1',
+        captureRevision: '10',
+        capturedAt: '2026-09-28T09:00:00Z',
+        committedAt: '2026-09-28T09:00:01Z',
+      },
+    };
+    const legacy = { id: 'agent-local-wire', workspaceId: 'ws-node-wire', status: 'idle' };
+    backend.onRequest('agent.list', () => ({ agents: [remote, legacy] }));
+    backend.onRequest('agent.get', () => ({ agent: remote }));
+    const client = new LiveAgentsClient();
+    const rows = await client.list('ws-node-wire', { scope: 'topLevel' });
+    const detail = await client.get('agent-node-wire');
+    expect(backend.requests).toEqual([
+      { method: 'agent.list', params: { workspaceId: 'ws-node-wire', scope: 'topLevel' } },
+      { method: 'agent.get', params: { agentId: 'agent-node-wire' } },
+    ]);
+    expect(rows[0]).toMatchObject(remote);
+    expect(rows[1]).toMatchObject(legacy);
+    expect(rows[1]).not.toHaveProperty('placement');
+    expect(detail).toMatchObject(remote);
+  });
+});

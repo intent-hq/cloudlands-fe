@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import {
+  fastModeHydrationStarted,
+  fastModeSupportReceived,
+  hydrateProviderFastMode,
+  setProviderFastMode,
+  fastModeWriteSettled,
   enablementPersistRejected,
   ensureEnabledIfUnset,
   initialState as bareInitialState,
@@ -225,5 +230,36 @@ describe('providerSettingsReducer', () => {
       );
       expect(hydrated.enabledProviders).toEqual({ auggie: true });
     });
+  });
+});
+
+describe('provider Fast mode state', () => {
+  it('defaults off and rejects edits before the daemon advertises the setting', () => {
+    expect(initialState.fastMode.confirmed).toEqual({});
+    expect(providerSettingsReducer(initialState, setProviderFastMode('codex', true))).toBe(
+      initialState,
+    );
+  });
+  it('keeps newer pending intent across hydration and settlement of an older edit', () => {
+    let state = providerSettingsReducer(initialState, fastModeSupportReceived(true));
+    state = providerSettingsReducer(state, setProviderFastMode('codex', true));
+    const first = state.fastMode.pending.codex.editId;
+    state = providerSettingsReducer(state, setProviderFastMode('codex', false));
+    state = providerSettingsReducer(
+      state,
+      hydrateProviderFastMode({ codex: true, 'claude-code': true }, 4),
+    );
+    state = providerSettingsReducer(state, fastModeWriteSettled('codex', first));
+    expect(state.fastMode.pending.codex.enabled).toBe(false);
+    expect(state.fastMode.confirmed).toEqual({ codex: true, 'claude-code': true });
+    expect(providerSettingsReducer(state, hydrateProviderFastMode({}, 3))).toBe(state);
+    expect(providerSettingsReducer(state, hydrateProviderFastMode({}))).toBe(state);
+    state = providerSettingsReducer(
+      state,
+      fastModeWriteSettled('codex', state.fastMode.pending.codex.editId),
+    );
+    expect(state.fastMode.pending).toEqual({});
+    state = providerSettingsReducer(state, fastModeHydrationStarted());
+    expect(state.fastMode).toEqual(initialState.fastMode);
   });
 });

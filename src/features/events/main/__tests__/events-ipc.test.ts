@@ -81,6 +81,45 @@ describe('events IPC renderer subscription cleanup', () => {
     vi.clearAllMocks();
   });
 
+  it.each(['hub:checkpoint', 'file:changed'])(
+    'accepts the registered %s event through the validated emit handler',
+    async (type) => {
+      setupEventsIPC();
+      const emit = electronMocks.handlers.get(EVENTS_CHANNELS.EMIT);
+      expect(emit).toBeDefined();
+      const result = await emit?.(
+        { sender: { id: 42 } },
+        {
+          event: {
+            ...makeEvent(),
+            type,
+            workspaceId: 'test-workspace',
+            actor: { type: 'system', name: 'Checkpoint hub' },
+          },
+        },
+      );
+      expect(result).toEqual({ success: true });
+    },
+  );
+
+  it('still rejects undeclared hub events through the validated emit handler', async () => {
+    setupEventsIPC();
+    const emit = electronMocks.handlers.get(EVENTS_CHANNELS.EMIT);
+    expect(emit).toBeDefined();
+    const result = await emit?.(
+      { sender: { id: 42 } },
+      {
+        event: {
+          ...makeEvent(),
+          type: 'hub:not-registered',
+          workspaceId: 'test-workspace',
+          actor: { type: 'system', name: 'Checkpoint hub' },
+        },
+      },
+    );
+    expect(result).toMatchObject({ success: false });
+  });
+
   it('removes close-listener registry entries when a subscribed window closes', async () => {
     const closedListeners: Array<() => void> = [];
     const window = makeWindow(closedListeners);
