@@ -15,7 +15,11 @@
   interface Props {
     item?: ReasoningHistoryItem;
     fragment?: number;
-    saved?: { expanded?: boolean; userToggled?: boolean; searchOwnsExpansion?: boolean };
+    saved?: {
+      expanded?: boolean;
+      manualExpansion?: Record<number, boolean>;
+      searchOwnsExpansion?: boolean;
+    };
     content: string;
     isStreaming?: boolean;
     workspaceId?: string;
@@ -41,14 +45,16 @@
   const history = $derived(item ? [item] : extractReasoningHistory(content));
   const instanceId = $props.id();
   // svelte-ignore state_referenced_locally -- a projected phase retains its disclosure across mounts.
-  let manualExpansion = $state<Record<number, boolean>>(saved?.userToggled ? { 0: saved.expanded ?? false } : {});
+  let manualExpansion = $state<Record<number, boolean>>({ ...saved?.manualExpansion });
   // svelte-ignore state_referenced_locally -- search ownership is panel-retained, not mount-local.
-  let searchExpansion = $state<Record<number, boolean>>(saved?.searchOwnsExpansion ? { 0: true } : {});
+  let searchExpansion = $state<Record<number, boolean>>(
+    saved?.searchOwnsExpansion ? { 0: true } : {},
+  );
 
   function persist() {
     if (!saved) return;
     saved.expanded = expanded(0);
-    saved.userToggled = manualExpansion[0] !== undefined;
+    saved.manualExpansion = { ...manualExpansion };
     saved.searchOwnsExpansion = searchExpansion[0] === true;
   }
   onDestroy(persist);
@@ -57,7 +63,10 @@
     return (
       searchExpansion[index] ??
       manualExpansion[index] ??
-      (isStreaming && index === history.length - 1)
+      (isStreaming &&
+        (item
+          ? fragment === extractReasoningHistory(content).length - 1
+          : index === history.length - 1))
     );
   }
 

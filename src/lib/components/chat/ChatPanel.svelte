@@ -1467,7 +1467,7 @@
               (id) =>
                 operationalPanel.resolveTarget(
                   keepMessageId,
-                  id.replace(/^(?:group|thinking):/, ''),
+                  id.replace(/^(?:group|thinking|reasoning):/, ''),
                 ) === opened.key,
             )
           : keep.has(opened.disclosureId))
@@ -1514,7 +1514,7 @@
     for (const id of match.disclosurePath) {
       const row = await materializeSearchRow(
         match.messageId,
-        id.replace(/^(?:group|thinking):/, ''),
+        id.replace(/^(?:group|thinking|reasoning):/, ''),
         current,
       );
       if (!current()) return;
@@ -1535,7 +1535,7 @@
             disclosureId: id,
             key: operationalPanel.resolveTarget(
               match.messageId,
-              id.replace(/^(?:group|thinking):/, ''),
+              id.replace(/^(?:group|thinking|reasoning):/, ''),
             ),
           });
         await tick();
@@ -1636,7 +1636,7 @@
         query,
         match.occurrenceInBlock,
       );
-      const key = target?.key ?? `${match.messageId}\u0000${match.blockPath}`;
+      const key = `${target?.key ?? match.messageId}\u0000${match.blockPath}`;
       const group = matchesByBlock.get(key) ?? [];
       group.push({
         match: target ? { ...match, occurrenceInBlock: target.occurrenceInRow } : match,

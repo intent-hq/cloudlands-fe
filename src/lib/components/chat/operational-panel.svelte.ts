@@ -8,7 +8,7 @@ import {
 const CONTEXT = Symbol('operational-panel');
 type Entry = Omit<OperationalRowDescriptor, 'scopeId'> & {
   mountPath?: string;
-  navigation?: { messageId: string; path: string; text?: string };
+  navigation?: { messageId: string; path: string; text?: string; aliases?: string[] };
 };
 export type WindowSegment = {
   key: string;
@@ -152,16 +152,18 @@ function createPanel(getScrollRoot: () => HTMLElement | undefined) {
       if (owners.get(entry.key) !== scope) continue;
       const navigation = entry.navigation;
       if (!navigation) continue;
-      const id = targetId(navigation.messageId, navigation.path);
-      let entries = root.targets.get(id);
-      if (!entries) {
-        entries = [];
-        root.targets.set(id, entries);
-        let scopes = navigationTargets.get(id);
-        if (!scopes) navigationTargets.set(id, (scopes = new Map()));
-        scopes.set(root, entries);
+      for (const path of [navigation.path, ...(navigation.aliases ?? [])]) {
+        const id = targetId(navigation.messageId, path);
+        let entries = root.targets.get(id);
+        if (!entries) {
+          entries = [];
+          root.targets.set(id, entries);
+          let scopes = navigationTargets.get(id);
+          if (!scopes) navigationTargets.set(id, (scopes = new Map()));
+          scopes.set(root, entries);
+        }
+        entries.push(entry);
       }
-      entries.push(entry);
     }
   }
   function targetsFor(messageId: string, path: string) {

@@ -13,11 +13,7 @@ interface ChatSearchBlock {
   disclosurePath: string[];
   text: string;
 }
-import {
-  getResponseGroupCurrentChildIndex,
-  normalizeResponseGroups,
-  shouldRenderResponseGroupInline,
-} from './response-group-blocks';
+import { normalizeResponseGroups, shouldRenderResponseGroupInline } from './response-group-blocks';
 import {
   extractReasoningHeading,
   extractReasoningHistory,
@@ -115,15 +111,7 @@ function buildMessageSearchBlocks(
     if (block.type !== 'content_group') return;
     const parents = shouldRenderResponseGroupInline(block) ? [] : [`group:${path}`];
     if (parents.length) addText(block.name, `${path}:summary`, []);
-    const currentIndex = getResponseGroupCurrentChildIndex(block);
     block.children.forEach((child, childIndex) => {
-      if (
-        block.isStreaming &&
-        currentIndex >= 0 &&
-        childIndex !== currentIndex &&
-        child.type !== 'tool_result'
-      )
-        return;
       const childPath = chatSearchBlockPath(blockIndex, childIndex);
       if (child.type === 'text') {
         addText(child.text || child.content || '', childPath, parents);

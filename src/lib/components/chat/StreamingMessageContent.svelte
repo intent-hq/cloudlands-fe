@@ -1040,7 +1040,13 @@
     {#snippet currentChild()}
       <OperationalWindow
         scope={`${rowScope}:group:${item.key}`}
-        items={projectWindowItems(group.children, rowScope, isVisibleGroupChild, group, blockIndex).filter((child) => child.childIndex === currentIndex)}
+        items={projectWindowItems(
+          group.children,
+          rowScope,
+          (child) => isVisibleGroupChild(child as ContentBlock),
+          group,
+          blockIndex,
+        ).filter((child) => child.childIndex === currentIndex)}
         row={renderWindowItem}
       />
     {/snippet}

@@ -1,7 +1,7 @@
 /** @vitest-environment jsdom */
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, waitFor } from '@testing-library/svelte';
-import { tick } from 'svelte';
+import { cleanup, waitFor } from '@testing-library/svelte';
+import { fireEvent, render, settleOperationalFrames as tick } from './operational-renderer-test';
 import type { AgentMessage, ContentBlock } from '$shared/types';
 import type { ContentBlockGroup } from '$lib/utils/messageParser';
 import {

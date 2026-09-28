@@ -39,7 +39,7 @@ describe('chat search utilities', () => {
     ]);
   });
 
-  it('indexes only the current child in a live response group', () => {
+  it('indexes live preview and older history with their disclosure owner', () => {
     const message = assistant(
       'assistant-live',
       [
@@ -50,7 +50,9 @@ describe('chat search utilities', () => {
       true,
     );
 
-    expect(findChatSearchMatches([message], 'earlier', new Map())).toEqual([]);
+    expect(findChatSearchMatches([message], 'earlier', new Map())).toEqual([
+      expect.objectContaining({ blockPath: 'b:0:c:0', disclosurePath: ['group:b:0'] }),
+    ]);
     expect(findChatSearchMatches([message], 'current live', new Map())).toEqual([
       {
         messageId: 'assistant-live',

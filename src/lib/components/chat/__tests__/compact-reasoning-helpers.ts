@@ -4,13 +4,15 @@ import { expect } from '../../../../test/ct-test';
 export const activityRowSelector =
   '[data-message-content-block="thinking"] [data-chat-operational-row], [data-message-content-block="tool_use"] [data-chat-operational-row]';
 
-export async function openReasoning(fixture: Locator) {
+export async function openReasoning(fixture: Locator, expectedBodyDisclosures?: number) {
   const group = fixture.getByTestId('response-group-disclosure');
   if ((await group.count()) && (await group.getAttribute('aria-expanded')) === 'false')
     await group.click();
   const disclosures = fixture.locator(
     '[data-testid="reasoning-disclosure"], [data-testid="reasoning-history-row"] button',
   );
+  if (expectedBodyDisclosures !== undefined)
+    await expect.poll(() => disclosures.count()).toBe(expectedBodyDisclosures);
   for (const disclosure of await disclosures.all()) {
     if ((await disclosure.getAttribute('aria-expanded')) === 'false') await disclosure.click();
   }

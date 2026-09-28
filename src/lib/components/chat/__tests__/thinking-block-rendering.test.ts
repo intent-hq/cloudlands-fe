@@ -692,6 +692,7 @@ describe('thinking blocks — StreamingMessageContent', () => {
       'thinking',
       'tool_use',
       'thinking',
+      'thinking',
       'tool_use',
     ]);
     const responseGroup = screen.getByTestId('response-group');
@@ -706,7 +707,8 @@ describe('thinking blocks — StreamingMessageContent', () => {
     expect(history[2]).toContain('Invoking workspace API to set title');
     expect(history[3]).toContain('Set workspace title and read the current spec');
     expect(history[4]).toContain('Planning clarification questions on formatting issues');
-    expect(history[5]).toContain('Ask for the expected agent chat layout');
+    expect(history[5]).toContain('Planning code inspection and question sequencing');
+    expect(history[6]).toContain('Ask for the expected agent chat layout');
     const historyTitles = [
       ...responseGroup.querySelectorAll('[data-testid="reasoning-history-title"]'),
     ].map((title) => title.textContent?.trim());
@@ -765,6 +767,7 @@ describe('thinking blocks — StreamingMessageContent', () => {
       'thinking',
       'thinking',
       'tool_use',
+      'thinking',
       'thinking',
       'tool_use',
     ]);

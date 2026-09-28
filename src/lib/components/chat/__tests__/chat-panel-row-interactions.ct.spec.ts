@@ -4,6 +4,90 @@ import ChatPanelOperationalGeometryHost from './ChatPanelOperationalGeometryHost
 
 test.setTimeout(60_000);
 
+for (const live of [false, true]) {
+  test(`phase summary and body search survive eviction and restoration (streaming=${live})`, async ({
+    mount,
+    page,
+  }, info) => {
+    await page.emulateMedia({ reducedMotion: 'reduce' });
+    const transcript: AgentMessage[] = [
+      {
+        id: 'phase-message',
+        role: 'assistant',
+        timestamp: '2026-09-28T10:00:01Z',
+        isStreaming: live,
+        contentBlocks: [
+          { type: 'thinking', id: 'compact-title', text: '## Compact title' },
+          { type: 'text', text: '<group:Prepping>Inline prose remains separate.</group>' },
+          { type: 'text', text: '<group:Prepping>' },
+          { type: 'thinking', id: 'history-title', text: '## History group' },
+          ...Array.from({ length: 80 }, (_, i): ContentBlock => ({
+            type: 'thinking',
+            id: `phases-${i}`,
+            text: `## Context ${i}\n\n**needle-phase-${i}-end**\n\nBody needle-phase-${i}-end.`,
+          })),
+          { type: 'text', text: '</group>' },
+          ...Array.from({ length: 80 }, (_, i): ContentBlock => ({
+            type: 'thinking',
+            id: `tail-${i}`,
+            text: `## Tail ${i}`,
+          })),
+        ],
+      },
+    ];
+    const host = await mount(ChatPanelOperationalGeometryHost, {
+      props: { liveMessages: transcript, liveStreaming: live, detachedStatus: !live, height: 700 },
+    });
+    const viewport = host.getByTestId('chat-transcript-scroll-viewport');
+    await expect.poll(() => host.locator('[data-chat-operational-row]').count()).toBeGreaterThan(0);
+    await viewport.click({ position: { x: 4, y: 4 } });
+    await page.keyboard.press('ControlOrMeta+f');
+    const input = host.getByRole('search', { name: 'Find in panel' }).getByRole('textbox');
+    const query = 'needle-phase-40-end';
+    const body = host.getByText(`Body ${query}.`, { exact: true });
+    await input.fill(query);
+    const title = host.getByRole('button', { name: query, exact: true });
+    await expect(title).toBeInViewport();
+    await expect(title).toHaveAttribute('aria-expanded', 'false');
+    await input.press('Enter');
+    await expect(body).toBeInViewport();
+    await expect
+      .poll(() =>
+        page.evaluate(() =>
+          Array.from(CSS.highlights.get('current-search-result') ?? [], (range) =>
+            range.toString(),
+          ).join(''),
+        ),
+      )
+      .toBe(query);
+    // Summary and body share a canonical row; active Find may retain that row.
+    // Release search ownership before exercising eviction and restoration.
+    await input.press('Escape');
+    await expect(input).toHaveCount(0);
+    await viewport.evaluate((node) => {
+      node.dispatchEvent(new WheelEvent('wheel', { deltaY: 10000 }));
+      node.scrollTop = node.scrollHeight;
+    });
+    await expect(title).toHaveCount(0);
+    await viewport.click({ position: { x: 4, y: 4 } });
+    await page.keyboard.press('ControlOrMeta+f');
+    await input.fill(query);
+    await expect(title).toBeInViewport();
+    await expect(title).toHaveAttribute('aria-expanded', 'false');
+    await input.press('Enter');
+    await expect(body).toBeInViewport();
+    await info.attach('phase-search-after-eviction', {
+      body: await host.screenshot(),
+      contentType: 'image/png',
+    });
+    await input.fill('Inline prose remains separate.');
+    await expect(
+      host.getByText('Inline prose remains separate.', { exact: true }),
+    ).toBeInViewport();
+    await expect(host.getByRole('button', { name: 'Compact title', exact: true })).toHaveCount(0);
+  });
+}
+
 const messages = (count = 100): AgentMessage[] => [
   {
     id: 'interaction-user',
@@ -199,8 +283,20 @@ test('real chat follows disclosure growth and resizing, but preserves user scrol
   page,
 }) => {
   await page.emulateMedia({ reducedMotion: 'no-preference' });
+  const messagesWithAnchors = (count = 100) => {
+    const source = messages(count);
+    source[1].contentBlocks = source[1].contentBlocks!.flatMap((block, index): ContentBlock[] =>
+      block.type === 'text' && block.text?.startsWith('</group:')
+        ? [
+            block,
+            { type: 'thinking', id: `anchor-${index}`, text: `## Scrollback anchor ${index}` },
+          ]
+        : [block],
+    );
+    return source;
+  };
   const host = await mount(ChatPanelOperationalGeometryHost, {
-    props: { liveMessages: messages(), detachedStatus: true },
+    props: { liveMessages: messagesWithAnchors(), detachedStatus: true },
   });
   const viewport = host.getByTestId('chat-transcript-scroll-viewport');
   const distance = () => viewport.evaluate((n) => n.scrollHeight - n.clientHeight - n.scrollTop);
@@ -209,7 +305,9 @@ test('real chat follows disclosure growth and resizing, but preserves user scrol
   await group.click();
   await group.click();
   await expect.poll(distance).toBeLessThanOrEqual(2);
-  await host.update({ props: { liveMessages: messages(110), detachedStatus: true, width: 380 } });
+  await host.update({
+    props: { liveMessages: messagesWithAnchors(110), detachedStatus: true, width: 380 },
+  });
   await expect.poll(distance).toBeLessThanOrEqual(2);
   await viewport.evaluate((n) => {
     n.dispatchEvent(new WheelEvent('wheel', { deltaY: -500 }));
@@ -219,15 +317,21 @@ test('real chat follows disclosure growth and resizing, but preserves user scrol
   const before = await viewport.evaluate((n) => n.scrollTop);
   const anchor = await viewport.evaluate((node) => {
     const clip = node.getBoundingClientRect();
-    const row = [...node.querySelectorAll('[data-operational-disclosure-row]')].find((row) => {
+    // Group summaries are not registered anchors. Use a standalone reasoning row.
+    const row = [
+      ...node.querySelectorAll(
+        '[data-message-content-block="thinking"] [data-operational-disclosure-row]',
+      ),
+    ].find((row) => {
       const rect = row.getBoundingClientRect();
       return rect.top >= clip.top && rect.bottom <= clip.bottom;
-    })!;
+    });
+    if (!row) throw new Error('Expected a visible standalone reasoning anchor');
     return {
       key: row
         .closest('[data-operational-window-key]')!
         .getAttribute('data-operational-window-key')!,
-      top: row.getBoundingClientRect().top,
+      top: row.getBoundingClientRect().top - clip.top,
     };
   });
   const anchorTop = () =>
@@ -235,9 +339,14 @@ test('real chat follows disclosure growth and resizing, but preserves user scrol
       const row = [...node.querySelectorAll('[data-operational-window-key]')].find(
         (row) => row.getAttribute('data-operational-window-key') === key,
       );
-      return row?.querySelector('[data-operational-disclosure-row]')?.getBoundingClientRect().top;
+      const summary = row?.querySelector('[data-operational-disclosure-row]');
+      return summary
+        ? summary.getBoundingClientRect().top - node.getBoundingClientRect().top
+        : undefined;
     }, anchor.key);
-  await host.update({ props: { liveMessages: messages(120), detachedStatus: true, width: 380 } });
+  await host.update({
+    props: { liveMessages: messagesWithAnchors(120), detachedStatus: true, width: 380 },
+  });
   await expect.poll(() => viewport.evaluate((n) => n.scrollTop)).toBeCloseTo(before, 0);
   await expect.poll(anchorTop).toBeCloseTo(anchor.top, 0);
   await expect.poll(distance).toBeGreaterThan(100);

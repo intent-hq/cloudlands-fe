@@ -42,8 +42,13 @@
   {#snippet currentChild()}
     <div class={OPERATIONAL_GROUP_CHILD_CONTENT_CLASS} data-response-group-child>
       <div data-testid="live-current-child">
-        {#each Array.from({ length: lineCount }) as _, index}
-          <div data-testid="live-stream-line">{chunk}{lineCount > 1 ? ` ${index + 1}` : ''}</div>
+        {#if editable}
+          <Input aria-label="Live child input" />
+        {/if}
+        {#each Array.from({ length: visibleLineCount }) as _, index}
+          <div data-testid="live-stream-line">
+            {chunk}{visibleLineCount > 1 ? ` ${index + 1}` : ''}
+          </div>
         {/each}
       </div>
     </div>
