@@ -130,8 +130,11 @@ test.describe('chat message navigator production path', () => {
       const target = page.locator('[data-message-id="user-6"]');
       await expect(target).toHaveCount(1);
       expect(await duplicateLiveMessageIdentityPairs(page)).toEqual([]);
-      await listButton.click();
+      // Exercise the hover-open then click path: the click must not steal search focus.
+      await listButton.hover();
       const dialog = await pickerForTrigger(page, listButton);
+      await expect(dialog.getByRole('combobox', { name: 'Filter user messages' })).toBeFocused();
+      await listButton.click();
       await expect(dialog).toHaveRole('menu');
       const search = dialog.getByRole('combobox', { name: 'Filter user messages' });
       const options = dialog.getByRole('option');
@@ -370,15 +373,15 @@ test.describe('chat message navigator production path', () => {
     await panelActions.click();
     await trigger.hover();
     await pickerForTrigger(page, trigger);
-    await search.focus();
     await expect(search).toBeFocused();
     await picker.getByRole('option').first().focus();
     await expect(picker).toBeVisible();
     await closeButton.focus();
     await expect(picker).toHaveCount(0);
     await expect(closeButton).toBeFocused();
+    await expect(panelActions).toHaveAttribute('aria-expanded', 'true');
+    await expect(trigger).toHaveAttribute('aria-expanded', 'false');
 
-    await panelActions.click();
     await trigger.click();
     await pickerForTrigger(page, trigger);
     await expect(search).toBeFocused();
