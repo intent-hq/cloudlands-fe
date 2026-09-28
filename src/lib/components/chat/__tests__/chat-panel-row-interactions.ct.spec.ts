@@ -589,7 +589,7 @@ for (const motion of ['reduce', 'no-preference'] as const) {
     test(`batched ${following ? 'followed' : 'offscreen'} tools retain natural tail geometry through replay with ${motion} motion`, async ({
       mount,
       page,
-    }) => {
+    }, info) => {
       await page.emulateMedia({ reducedMotion: motion });
       const initial = messages(80);
       initial[1].isStreaming = true;
@@ -605,13 +605,48 @@ for (const motion of ['reduce', 'no-preference'] as const) {
       if (!following)
         await viewport.evaluate((node) => {
           node.dispatchEvent(new WheelEvent('wheel', { deltaY: -1000 }));
-          node.scrollTop = 0;
+          node.scrollTop = 700;
           node.dispatchEvent(new Event('scroll'));
         });
       await page.evaluate(async () => {
         for (let frame = 0; frame < 8; frame++) await new Promise(requestAnimationFrame);
       });
       const before = await viewport.evaluate((node) => node.scrollHeight);
+      const initialTop = await viewport.evaluate((node) => node.scrollTop);
+      await viewport.evaluate((node) => {
+        const clip = node.getBoundingClientRect();
+        const anchor = [...node.querySelectorAll('[data-operational-disclosure-row]')].find(
+          (row) => {
+            const rect = row.getBoundingClientRect();
+            return rect.top >= clip.top && rect.bottom <= clip.bottom;
+          },
+        );
+        if (!anchor) throw new Error('Expected a visible existing history anchor');
+        const key = anchor
+          .closest('[data-operational-window-key]')!
+          .getAttribute('data-operational-window-key');
+        const anchorTop = anchor.getBoundingClientRect().top;
+        const scrollTop = node.scrollTop;
+        const root = node as HTMLElement & {
+          batchSamples: { distance: number; topDrift: number; anchorDrift: number | null }[];
+        };
+        root.batchSamples = [];
+        const sample = () => {
+          // Sample after ResizeObserver delivery, as in the disclosure/resize test.
+          setTimeout(() => {
+            const current = [...node.querySelectorAll('[data-operational-window-key]')]
+              .find((row) => row.getAttribute('data-operational-window-key') === key)
+              ?.querySelector('[data-operational-disclosure-row]');
+            root.batchSamples.push({
+              distance: node.scrollHeight - node.clientHeight - node.scrollTop,
+              topDrift: node.scrollTop - scrollTop,
+              anchorDrift: current ? current.getBoundingClientRect().top - anchorTop : null,
+            });
+            if (root.batchSamples.length < 60) requestAnimationFrame(sample);
+          }, 0);
+        };
+        requestAnimationFrame(sample);
+      });
       const updated = structuredClone(initial);
       updated[1].contentBlocks!.push(
         ...Array.from({ length: 160 }, (_, index): ContentBlock => ({
@@ -622,9 +657,38 @@ for (const motion of ['reduce', 'no-preference'] as const) {
         })),
       );
       await host.update({ props: { liveMessages: updated, liveStreaming: true } });
-      await page.evaluate(async () => {
-        for (let frame = 0; frame < 8; frame++) await new Promise(requestAnimationFrame);
+      await expect
+        .poll(() =>
+          viewport.evaluate(
+            (node) => (node as HTMLElement & { batchSamples: unknown[] }).batchSamples.length,
+          ),
+        )
+        .toBe(60);
+      const samples = await viewport.evaluate(
+        (node) =>
+          (
+            node as HTMLElement & {
+              batchSamples: { distance: number; topDrift: number; anchorDrift: number | null }[];
+            }
+          ).batchSamples,
+      );
+      await info.attach('batch-completed-frame-geometry', {
+        body: JSON.stringify(samples),
+        contentType: 'application/json',
       });
+      if (following) {
+        expect(Math.max(...samples.map((sample) => Math.abs(sample.distance)))).toBeLessThanOrEqual(
+          2,
+        );
+      } else {
+        expect(samples.every((sample) => sample.anchorDrift !== null)).toBe(true);
+        expect(Math.max(...samples.map((sample) => Math.abs(sample.topDrift)))).toBeLessThanOrEqual(
+          2,
+        );
+        expect(
+          Math.max(...samples.map((sample) => Math.abs(sample.anchorDrift!))),
+        ).toBeLessThanOrEqual(2);
+      }
       // Deferred tools must reserve their complete natural summaries, even
       // before they have ever mounted or their tool-entry transition has run.
       await expect
@@ -633,9 +697,11 @@ for (const motion of ['reduce', 'no-preference'] as const) {
       await expect
         .poll(() =>
           viewport.evaluate(
-            (node, follows) =>
-              follows ? node.scrollHeight - node.clientHeight - node.scrollTop : node.scrollTop,
-            following,
+            (node, { follows, top }) =>
+              follows
+                ? node.scrollHeight - node.clientHeight - node.scrollTop
+                : Math.abs(node.scrollTop - top),
+            { follows: following, top: initialTop },
           ),
         )
         .toBeLessThanOrEqual(2);
