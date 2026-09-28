@@ -690,6 +690,7 @@
     <ChatWorkspaceCard workspaceIds={parsedBlock.metadata.workspaceCardData.workspaceIds} />
   {:else if parsedBlock.type === 'nav_link' && parsedBlock.metadata?.navLinkData}
     <NavLink
+      canOpenFile={() => canOpenAgentPath(appStore.state, agentId)}
       target={parsedBlock.metadata.navLinkData.target}
       label={parsedBlock.metadata.navLinkData.label}
       {workspaceId}
@@ -757,7 +758,12 @@
     {/if}
   {:else if isNavLinkBlock(block)}
     <div class="w-full">
-      <NavLink target={block.target} label={block.label} {workspaceId} />
+      <NavLink
+        canOpenFile={() => canOpenAgentPath(appStore.state, agentId)}
+        target={block.target}
+        label={block.label}
+        {workspaceId}
+      />
     </div>
   {:else if block.type === 'text' && (block.text || (block as any).content)}
     {@const textContent = block.text || (block as any).content || ''}
@@ -902,6 +908,7 @@
          <think>-tag parser path in messageParser emits `content`. -->
     {#if reasoningHistory}
       <ReasoningHistoryBlock
+        canOpenFile={() => canOpenAgentPath(appStore.state, agentId)}
         content={getContentBlockText(block) || m.chat_shared_processing_fallback()}
         isStreaming={isStreaming && isLastBlock}
         {workspaceId}
@@ -909,6 +916,7 @@
       />
     {:else}
       <ThinkingBlock
+        canOpenFile={() => canOpenAgentPath(appStore.state, agentId)}
         content={getContentBlockText(block) || m.chat_shared_processing_fallback()}
         isStreaming={isStreaming && isLastBlock}
         {workspaceId}

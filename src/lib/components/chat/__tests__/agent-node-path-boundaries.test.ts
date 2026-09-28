@@ -18,7 +18,10 @@ import ChatChangesPanelHarness from '$lib/components/chat/ChatChangesPanelHarnes
 import ToolDetails from '$lib/components/chat/ToolDetails.svelte';
 import { getFileChangesFromMessages } from '$lib/utils/get-file-changes-from-messages';
 vi.mock('$features/file-tracking/components/diff/DiffViewer.svelte', async () => ({
-  default: (await import('$lib/components/chat/__tests__/mocks/SlotOnly.svelte')).default,
+  default: (
+    await import('$features/file-tracking/components/diff/__tests__/mocks/MockDiffViewer.svelte')
+  ).default,
+  hashContent: (content: string) => content,
 }));
 vi.mock(
   '$lib/client/live/backend-transport',
@@ -365,4 +368,150 @@ describe('node path boundaries', () => {
     });
     expect(openExternal).toHaveBeenCalledWith({ url: 'vscode://file//node-only/file.ts' });
   });
+});
+
+describe('nested agent path policies', () => {
+  for (const [renderer, component] of [
+    ['static', MessageContent],
+    ['streaming', StreamingMessageContent],
+  ] as const) {
+    for (const kind of ['thinking', 'history', 'nav fence', 'nav block'] as const) {
+      it(`${renderer} ${kind} preserves click-time provenance and local/note/web routes`, async () => {
+        const links =
+          '[File](src/a.ts) [Note](intent://local/note/spec) [Web](https://example.com).';
+        const content =
+          kind === 'thinking'
+            ? [{ type: 'thinking', text: links }]
+            : kind === 'history'
+              ? [
+                  { type: 'text', text: '<group:Prepping>' },
+                  { type: 'thinking', text: links },
+                  { type: 'text', text: '</group:Prepping>Done.' },
+                ]
+              : kind === 'nav fence'
+                ? [
+                    {
+                      type: 'text',
+                      text: '```nav-link\n{"target":"intent://local/file/src/a.ts","label":"File"}\n```\n```nav-link\n{"target":"intent://local/note/spec","label":"Note"}\n```',
+                    },
+                  ]
+                : [
+                    { type: 'nav-link', target: 'intent://local/file/src/a.ts', label: 'File' },
+                    { type: 'nav-link', target: 'intent://local/note/spec', label: 'Note' },
+                  ];
+        appStore.dispatch(
+          bulkUpsertSessions([agent({ placement: undefined, nodePath: undefined })]),
+        );
+        render(component, { agentId: id, workspaceId, content, isStreaming: kind === 'thinking' });
+        for (const disclosure of screen.queryAllByTestId(
+          /^(reasoning|response-group)-disclosure$/,
+        )) {
+          if (disclosure.getAttribute('aria-expanded') === 'false')
+            await fireEvent.click(disclosure);
+        }
+        const link = await screen.findByRole('link', { name: 'File' });
+        if (kind === 'thinking')
+          expect(link.closest('[data-reasoning-expanded-body]')).not.toBeNull();
+        if (kind === 'history')
+          expect(link.closest('[data-reasoning-history-body]')).not.toBeNull();
+        appStore.dispatch(bulkUpsertSessions([agent()]));
+        const dispatch = vi.spyOn(appStore, 'dispatch');
+        await fireEvent.click(link);
+        await fireEvent.keyDown(link, { key: 'Enter', ctrlKey: true, metaKey: true });
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        expect(
+          dispatch.mock.calls.filter(([a]) => a.type === 'workspaceNavigation/openWorkspaceFile'),
+        ).toEqual([]);
+        expect(openExternal).not.toHaveBeenCalled();
+        await fireEvent.click(await screen.findByRole('link', { name: 'Note' }));
+        await waitFor(() =>
+          expect(
+            dispatch.mock.calls.some(([a]) => a.type === 'workspaceNavigation/openWorkspaceNote'),
+          ).toBe(true),
+        );
+        if (kind === 'thinking' || kind === 'history') {
+          await fireEvent.click(await screen.findByRole('link', { name: 'Web' }));
+          await waitFor(() =>
+            expect(openExternal).toHaveBeenCalledWith({ url: 'https://example.com/' }),
+          );
+        }
+        appStore.dispatch(
+          bulkUpsertSessions([agent({ placement: undefined, nodePath: undefined })]),
+        );
+        dispatch.mockClear();
+        await fireEvent.click(link);
+        await waitFor(() =>
+          expect(
+            dispatch.mock.calls.filter(([a]) => a.type === 'workspaceNavigation/openWorkspaceFile'),
+          ).toHaveLength(1),
+        );
+      });
+    }
+  }
+});
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((done) => {
+    resolve = done;
+  });
+  return { promise, resolve };
+}
+
+describe('placement changes during lazy diff reads', () => {
+  for (const phase of ['git.diffs', 'file.read'] as const) {
+    for (const recorded of [false, true]) {
+      it(`invalidates pending ${phase} and keeps ${recorded ? 'recorded' : 'unavailable'} remote content`, async () => {
+        const pending = deferred<unknown>();
+        const path = 'src/pending.ts';
+        backend.onRequest('git.diffs', () =>
+          phase === 'git.diffs' ? pending.promise : [{ path, hunks: [] }],
+        );
+        backend.onRequest('file.read', () =>
+          phase === 'file.read' ? pending.promise : { content: 'HEAD NEW' },
+        );
+        backend.onRequest('git.showFile', () => ({ content: 'HEAD OLD' }));
+        appStore.dispatch(
+          bulkUpsertSessions([agent({ placement: undefined, nodePath: undefined })]),
+        );
+        const change = {
+          filePath: path,
+          action: 'modify' as const,
+          additions: 1,
+          deletions: 1,
+          toolName: 'edit_file',
+          toolCallId: 'pending-edit',
+        };
+        const view = render(ChatChangesPanelHarness, { agentId: id, changes: [change] });
+        await waitFor(() => expect(backend.requests.some((r) => r.method === phase)).toBe(true));
+        const readsBefore = backend.requests.length;
+        appStore.dispatch(bulkUpsertSessions([agent()]));
+        await view.rerender({
+          agentId: id,
+          changes: [
+            recorded
+              ? { ...change, oldContent: 'RECORDED OLD', newContent: 'RECORDED NEW' }
+              : change,
+          ],
+        });
+        pending.resolve(phase === 'git.diffs' ? [{ path, hunks: [] }] : { content: 'HEAD NEW' });
+        await new Promise((resolve) => setTimeout(resolve, 20));
+        expect(
+          backend.requests
+            .slice(readsBefore)
+            .filter((r) => ['git.diffs', 'git.showFile', 'file.read'].includes(r.method)),
+        ).toEqual([]);
+        if (recorded)
+          await waitFor(() =>
+            expect(screen.getByTestId('new-content').textContent).toBe('RECORDED NEW'),
+          );
+        else
+          await screen.findByText(
+            'This file’s content is unavailable in the recorded tool output.',
+          );
+        expect(document.body.textContent).not.toContain('HEAD NEW');
+        expect(document.body.textContent).not.toContain('HEAD OLD');
+      });
+    }
+  }
 });

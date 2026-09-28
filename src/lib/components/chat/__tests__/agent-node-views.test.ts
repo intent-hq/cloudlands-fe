@@ -113,8 +113,9 @@ describe('node agents in existing views', () => {
       isAggregate: true,
       showStagingControls: true,
     });
-    expect(screen.getByRole('status').textContent).toContain('2026-09-28T08:45:00Z');
-    expect(screen.getByRole('status').textContent).toContain('not checkpoint contents');
+    const checkpointStatus = screen.getByText(/Last successful checkpoint:/);
+    expect(checkpointStatus.textContent).toContain('2026-09-28T08:45:00Z');
+    expect(checkpointStatus.textContent).toContain('not checkpoint contents');
     const open = await screen.findByRole('button', { name: 'Open file' });
     expect(open.hasAttribute('disabled')).toBe(true);
     await fireEvent.click(open);
@@ -132,8 +133,8 @@ describe('node agents in existing views', () => {
   it('does not invent a checkpoint time when no checkpoint succeeded', () => {
     appStore.dispatch(bulkUpsertSessions([makeAgent({ checkpoint: undefined })]));
     render(ChatChangesPanelHarness, { changes, agentId: id });
-    expect(screen.getByRole('status').textContent).toContain('No successful checkpoint');
-    expect(screen.getByRole('status').textContent).not.toContain('2026-09');
+    const checkpointStatus = screen.getByText(/No successful checkpoint available/);
+    expect(checkpointStatus.textContent).not.toContain('2026-09');
   });
   it('leaves ordinary local diff actions available', async () => {
     appStore.dispatch(

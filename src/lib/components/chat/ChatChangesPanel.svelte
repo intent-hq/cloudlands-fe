@@ -286,6 +286,7 @@
 
   import { selectAgentFileRefreshes } from '$store/renderer/slices/chat-changes/chat-changes-selectors';
   import { getSelectedTextWithinSurface } from '$lib/utils/selected-text';
+  import { canOpenAgentPath } from './agent-path-actions';
   import { store as appStore } from '$store/renderer/store';
 
   /**
@@ -689,6 +690,14 @@
     const currentGitRootId = gitRootId;
     const currentGitRootPath = gitRootPath;
     const workspaceId = routeWorkspaceId;
+
+    if (nodeOwnedPaths) {
+      ++fetchVersion;
+      enrichedChanges = currentChanges;
+      lastChangesKey = '';
+      isEnrichingChanges = false;
+      return;
+    }
 
     if (!workspaceId || currentChanges.length === 0) {
       // Only update if enrichedChanges is not already empty (avoid unnecessary reactivity)
@@ -1287,7 +1296,7 @@
         })
         .join(';;');
 
-    if (newKey === lastMergedChangesKey) {
+    if (!nodeOwnedPaths && newKey === lastMergedChangesKey) {
       return; // Skip update - data hasn't changed
     }
     lastMergedChangesKey = newKey;
@@ -3142,6 +3151,7 @@
             {@const category = getChangeCategory(change)}
             <InlineDiffItem
               allowHeadReads={!nodeOwnedPaths}
+              canReadHeadFiles={() => canOpenAgentPath(appStore.state, agentId)}
               {change}
               foldUnchanged={$foldUnchanged}
               lineWrapping={$lineWrapping}
