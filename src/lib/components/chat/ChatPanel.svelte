@@ -3964,6 +3964,9 @@
   ) {
     if (!isActive || !scrollContainer) return;
 
+    // Explicit navigation owns the viewport until the user returns to bottom.
+    // Programmatic scroll events intentionally do not release followBottom.
+    shouldFollowBottom = false;
     const containerRect = scrollContainer.getBoundingClientRect();
     const elementRect = element.getBoundingClientRect();
 
@@ -3997,6 +4000,7 @@
    */
   function smoothScrollToPosition(top: number, duration: number = spring.moderate.settleMs) {
     if (!isActive) return;
+    shouldFollowBottom = false;
     animateScrollTo(() => (isActive ? scrollContainer : null), top, duration);
   }
 
@@ -4564,7 +4568,7 @@
   // Automated rows (wakes, system, agent-origin) are skipped; when the
   // current message is itself automated, the walk starts from its position
   // in the full message order. No preceding user message → scroll to top.
-  function scrollToPreviousUserMessage(currentMessageId: string) {
+  async function scrollToPreviousUserMessage(currentMessageId: string) {
     if (!scrollContainer) return;
 
     const previousMessage = findPreviousUserMessage($agentMessages$, currentMessageId);
@@ -4574,19 +4578,12 @@
       smoothScrollToPosition(0);
       return;
     }
-    const targetElement = scrollContainer.querySelector(
-      `[data-message-id="${previousMessage.id}"]`,
-    ) as HTMLElement;
-
-    if (targetElement) {
-      smoothScrollTo(targetElement, 'start');
-
-      // // Flash highlight effect
-      // targetElement.classList.add('message-highlight-flash');
-      // setTimeout(() => {
-      //   targetElement.classList.remove('message-highlight-flash');
-      // }, 600);
-    }
+    // Measure the rendered row, not its lazy placeholder, just as the header
+    // navigator does. Reuse the same follow release and force-visible lifetime.
+    const targetElement = await forceRenderAndFindMessage(previousMessage.id);
+    if (!isActive || !targetElement) return;
+    smoothScrollTo(targetElement, 'start');
+    scheduleDeepOpenRelease();
   }
 
   // Track if draft prompt has been applied to prevent re-applying on re-renders
