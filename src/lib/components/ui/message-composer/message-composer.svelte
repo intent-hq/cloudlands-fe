@@ -104,11 +104,11 @@
     dragOver ? 'drag' : focused ? 'focus' : hovered && clickToFocus && !disabled ? 'hover' : 'rest',
   );
   const edgeShadow = $derived(
-    ringState === 'drag'
-      ? '0 0 0 1px hsl(var(--focus-ring)), var(--shadow-surface-2)'
+    ringState === 'drag' || ringState === 'focus'
+      ? 'inset 0 0 0 2px hsl(var(--focus-ring)), var(--shadow-surface-2)'
       : ringState === 'hover'
-        ? '0 0 0 1px hsl(var(--border)), var(--shadow-surface-2)'
-        : undefined,
+        ? 'inset 0 0 0 1px hsl(var(--foreground) / 0.45), var(--shadow-surface-2)'
+        : 'inset 0 0 0 1px hsl(var(--foreground) / 0.3), var(--shadow-surface-2)',
   );
   const rootStyle = $derived(
     [edgeShadow ? `box-shadow:${edgeShadow}` : '', typeof style === 'string' ? style : '']
