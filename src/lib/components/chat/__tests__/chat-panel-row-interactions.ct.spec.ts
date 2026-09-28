@@ -664,11 +664,14 @@ for (const motion of ['reduce', 'no-preference'] as const) {
         const scrollTop = node.scrollTop;
         const root = node as HTMLElement & {
           batchSamples: { distance: number; topDrift: number; anchorDrift: number | null }[];
+          batchSampling: boolean;
         };
         root.batchSamples = [];
+        root.batchSampling = true;
         const sample = () => {
           // Sample after ResizeObserver delivery, as in the disclosure/resize test.
           setTimeout(() => {
+            if (!root.batchSampling) return;
             const current = [...node.querySelectorAll('[data-operational-window-key]')]
               .find((row) => row.getAttribute('data-operational-window-key') === key)
               ?.querySelector('[data-operational-disclosure-row]');
@@ -677,7 +680,7 @@ for (const motion of ['reduce', 'no-preference'] as const) {
               topDrift: node.scrollTop - scrollTop,
               anchorDrift: current ? current.getBoundingClientRect().top - anchorTop : null,
             });
-            if (root.batchSamples.length < 60) requestAnimationFrame(sample);
+            requestAnimationFrame(sample);
           }, 0);
         };
         requestAnimationFrame(sample);
@@ -692,25 +695,33 @@ for (const motion of ['reduce', 'no-preference'] as const) {
         })),
       );
       await host.update({ props: { liveMessages: updated, liveStreaming: true } });
+      const postAppendStart = await viewport.evaluate(
+        (node) => (node as HTMLElement & { batchSamples: unknown[] }).batchSamples.length,
+      );
       await expect
         .poll(() =>
           viewport.evaluate(
             (node) => (node as HTMLElement & { batchSamples: unknown[] }).batchSamples.length,
           ),
         )
-        .toBe(60);
-      const samples = await viewport.evaluate(
-        (node) =>
-          (
-            node as HTMLElement & {
-              batchSamples: { distance: number; topDrift: number; anchorDrift: number | null }[];
-            }
-          ).batchSamples,
-      );
+        .toBeGreaterThanOrEqual(postAppendStart + 60);
+      const samples = await viewport.evaluate((node) => {
+        const root = node as HTMLElement & {
+          batchSamples: { distance: number; topDrift: number; anchorDrift: number | null }[];
+          batchSampling: boolean;
+        };
+        root.batchSampling = false;
+        return root.batchSamples;
+      });
       await info.attach('batch-completed-frame-geometry', {
         body: JSON.stringify(samples),
         contentType: 'application/json',
       });
+      await info.attach('batch-post-append-marker', {
+        body: JSON.stringify({ postAppendStart, totalSamples: samples.length }),
+        contentType: 'application/json',
+      });
+      expect(samples.length - postAppendStart).toBeGreaterThanOrEqual(60);
       if (following) {
         expect(Math.max(...samples.map((sample) => Math.abs(sample.distance)))).toBeLessThanOrEqual(
           2,
