@@ -184,7 +184,6 @@ const PERSIST_ACTIONS = [
   moveTabToPanel,
   moveTabToSplit,
   moveTabToSplitLevel,
-  moveActivePaneVertically,
   closeOtherTabs,
   closeTabsToRight,
   closeAllTabs,
@@ -915,6 +914,7 @@ function* saveHistoryAfterDelay(
   if (message.kind === 'cancel') return;
   try {
     if (
+      message.action.type === moveActivePaneVertically.type ||
       message.action.type === movePanel.type ||
       message.action.type === movePanelToRootEdge.type
     ) {
