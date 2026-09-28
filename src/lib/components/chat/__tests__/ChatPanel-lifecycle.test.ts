@@ -3606,7 +3606,11 @@ describe('ChatPanel mounted lifecycle', () => {
     flushFrame();
     await tick();
 
-    expect(mocks.seekConversationToMessage).toHaveBeenCalledWith('agent-a', 'proposal-message-far');
+    expect(mocks.seekConversationToMessage).toHaveBeenCalledWith(
+      'agent-a',
+      'proposal-message-far',
+      'workspace-a',
+    );
     expect(view.container.querySelector('[data-message-id="proposal-message-far"]')).not.toBeNull();
   });
 
@@ -3774,7 +3778,7 @@ describe('ChatPanel mounted lifecycle', () => {
 
     view.component.refreshUserMessageIndex();
     await tick();
-    expect(mocks.listUserMessages).toHaveBeenCalledWith('agent-a');
+    expect(mocks.listUserMessages).toHaveBeenCalledWith('agent-a', undefined, 'workspace-a');
     expect(onNavigationStateChange).toHaveBeenLastCalledWith(
       expect.objectContaining({ isLoadingUserMessageIndex: true }),
     );

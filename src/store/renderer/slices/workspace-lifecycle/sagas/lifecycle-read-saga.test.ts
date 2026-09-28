@@ -1818,6 +1818,7 @@ describe('lifecycleReadSaga', () => {
 
   it('covers agent line-stat success, cache no-op, force, and failure', async () => {
     const current = state();
+    current.agentSessions.byAgentId['agent-1'] = agent('agent-1');
     mocks.getAgentLineStats.mockResolvedValueOnce({ additions: 8, deletions: 3, filesChanged: 2 });
     const run = start(current);
     run.channel.put(requestAgentLineStats('agent-1'));
@@ -1833,7 +1834,10 @@ describe('lifecycleReadSaga', () => {
     run.channel.put(requestAgentLineStats('agent-1', true));
     await settle();
 
-    expect(mocks.getAgentLineStats.mock.calls).toEqual([['agent-1'], ['agent-1']]);
+    expect(mocks.getAgentLineStats.mock.calls).toEqual([
+      ['agent-1', WS],
+      ['agent-1', WS],
+    ]);
     expect(run.actions).toEqual([
       {
         type: 'changes/agentLineStatsRequestStarted',
@@ -1870,21 +1874,31 @@ describe('lifecycleReadSaga', () => {
           (resolvers[agentId] ??= []).push(resolve);
         }),
     );
-    const run = start();
+    const current = state();
+    current.agentSessions.byAgentId['agent-1'] = agent('agent-1');
+    current.agentSessions.byAgentId['agent-2'] = agent('agent-2');
+    const run = start(current);
 
     run.channel.put(requestAgentLineStats('agent-1'));
     run.channel.put(requestAgentLineStats('agent-1'));
     run.channel.put(requestAgentLineStats('agent-2'));
     await settle();
 
-    expect(mocks.getAgentLineStats.mock.calls).toEqual([['agent-1'], ['agent-2']]);
+    expect(mocks.getAgentLineStats.mock.calls).toEqual([
+      ['agent-1', WS],
+      ['agent-2', WS],
+    ]);
     resolvers['agent-1'][0](null);
     resolvers['agent-2'][0](null);
     await settle();
 
     run.channel.put(requestAgentLineStats('agent-1'));
     await settle();
-    expect(mocks.getAgentLineStats.mock.calls).toEqual([['agent-1'], ['agent-2'], ['agent-1']]);
+    expect(mocks.getAgentLineStats.mock.calls).toEqual([
+      ['agent-1', WS],
+      ['agent-2', WS],
+      ['agent-1', WS],
+    ]);
     resolvers['agent-1'][1](null);
     await settle();
     await stop(run.task);

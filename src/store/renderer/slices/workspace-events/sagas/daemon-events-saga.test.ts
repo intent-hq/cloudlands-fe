@@ -297,7 +297,7 @@ describe('daemonEventsSaga', () => {
     mocks.reconnectHandler!();
     await settle();
 
-    expect(mocks.unsubscribe).toHaveBeenCalledWith('sub-old');
+    expect(mocks.unsubscribe).toHaveBeenCalledWith('sub-old', undefined);
     expect(mocks.subscribe).toHaveBeenCalledTimes(2);
     expect(mocks.refresh).toHaveBeenCalledTimes(1);
     expect(mocks.subscribe.mock.invocationCallOrder[1]).toBeLessThan(
@@ -305,7 +305,7 @@ describe('daemonEventsSaga', () => {
     );
     task.cancel();
     await task.toPromise();
-    expect(mocks.unsubscribe).toHaveBeenLastCalledWith('sub-new');
+    expect(mocks.unsubscribe).toHaveBeenLastCalledWith('sub-new', undefined);
   });
 
   it('announces firehose readiness only once a subscription id is held, on boot and reconnect', async () => {
@@ -347,7 +347,10 @@ describe('daemonEventsSaga', () => {
     mocks.reconnectHandler!();
     await settle();
 
-    expect(mocks.unsubscribe.mock.calls).toEqual([['sub-fire-old'], ['sub-file-old']]);
+    expect(mocks.unsubscribe.mock.calls).toEqual([
+      ['sub-fire-old', undefined],
+      ['sub-file-old', 'ws-1'],
+    ]);
     expect(mocks.subscribe.mock.calls).toEqual([
       [firehoseParams],
       [scopedFileParams('ws-1')],
@@ -360,7 +363,10 @@ describe('daemonEventsSaga', () => {
     );
     task.cancel();
     await task.toPromise();
-    expect(mocks.unsubscribe.mock.calls.slice(2)).toEqual([['sub-fire-new'], ['sub-file-new']]);
+    expect(mocks.unsubscribe.mock.calls.slice(2)).toEqual([
+      ['sub-fire-new', undefined],
+      ['sub-file-new', 'ws-1'],
+    ]);
   });
 
   it('replays and refreshes the desired workspace after selection A switches to workspace B', async () => {
@@ -432,7 +438,7 @@ describe('daemonEventsSaga', () => {
 
     expect(mocks.offNotification).toHaveBeenCalledTimes(1);
     expect(mocks.offReconnect).toHaveBeenCalledTimes(1);
-    expect(mocks.unsubscribe).toHaveBeenCalledWith('sub-1');
+    expect(mocks.unsubscribe).toHaveBeenCalledWith('sub-1', undefined);
     expect(mocks.disposeRouting).toHaveBeenCalledTimes(1);
   });
 
@@ -445,7 +451,10 @@ describe('daemonEventsSaga', () => {
     task.cancel();
     await task.toPromise();
 
-    expect(mocks.unsubscribe.mock.calls).toEqual([['sub-fire'], ['sub-file']]);
+    expect(mocks.unsubscribe.mock.calls).toEqual([
+      ['sub-fire', undefined],
+      ['sub-file', 'ws-1'],
+    ]);
     expect(mocks.disposeRouting).toHaveBeenCalledTimes(1);
   });
 
@@ -461,7 +470,7 @@ describe('daemonEventsSaga', () => {
 
     // The scoped lease is unsubscribed (no replacing subscribe on a clear)
     // and the routing gate no longer accepts its id.
-    expect(mocks.unsubscribe.mock.calls).toEqual([['sub-file']]);
+    expect(mocks.unsubscribe.mock.calls).toEqual([['sub-file', 'ws-1']]);
     expect(mocks.subscribe).toHaveBeenCalledTimes(2);
     mocks.notificationHandler!({ method: 'events.event', params: { sequence: 1 } });
     await settle();
@@ -530,7 +539,7 @@ describe('daemonEventsSaga', () => {
     await settle();
 
     expect(mocks.subscribe.mock.calls).toEqual([[firehoseParams], [scopedFileParams('ws-1')]]);
-    expect(mocks.unsubscribe).toHaveBeenCalledWith('sub-file-ws1');
+    expect(mocks.unsubscribe).toHaveBeenCalledWith('sub-file-ws1', 'ws-1');
     mocks.notificationHandler!({ method: 'events.event', params: { sequence: 1 } });
     await settle();
     expect(mocks.route).toHaveBeenLastCalledWith(
@@ -588,7 +597,7 @@ describe('daemonEventsSaga', () => {
 
     resolveSubscribe({ subscriptionId: 'sub-late' });
     await settle();
-    expect(mocks.unsubscribe).toHaveBeenCalledWith('sub-late');
+    expect(mocks.unsubscribe).toHaveBeenCalledWith('sub-late', undefined);
   });
 
   it('routes settings bundles to the settings domain action without applying them itself', async () => {

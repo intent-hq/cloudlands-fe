@@ -1170,6 +1170,8 @@ describe('chatScrollbackSaga (on-demand history paging)', () => {
       expect.any(Number),
       undefined,
       'm-500',
+      undefined,
+      WS,
     ]);
     expect(run.history()?.messages.map((m) => m.id)).toEqual(['m-499', 'm-500', 'm-501']);
     expect(run.chat()?.scrollbackGapToken).toBe('newer-2');

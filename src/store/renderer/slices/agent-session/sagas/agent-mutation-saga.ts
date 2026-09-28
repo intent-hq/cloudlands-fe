@@ -210,7 +210,7 @@ function* restoreAgent(
     if (hasUsableSession(existing)) {
       yield* put(action.success(existing));
     } else {
-      const fetched = yield* call(readAgentSession, agentId);
+      const fetched = yield* call(readAgentSession, agentId, wsId);
       if (!fetched) {
         yield* put(action.success(existing ?? null));
       } else {
@@ -251,7 +251,7 @@ function* activateAgent(action: ReturnType<typeof activateAgentRequested>): Saga
         activationAttempts,
       });
     }
-    const fetched = yield* call(readAgentSession, agentId);
+    const fetched = yield* call(readAgentSession, agentId, wsId);
     if (fetched) {
       const source = preserveMessages(fetched, existing);
       const activated: WireAgentSession = {

@@ -223,7 +223,7 @@ describe('agentMutationSaga', () => {
     channel.put(action);
 
     await expect(action.promise).resolves.toEqual(expect.objectContaining({ id: A1, messages }));
-    expect(mocks.get).toHaveBeenCalledWith(A1);
+    expect(mocks.get).toHaveBeenCalledWith(A1, WS);
     const upsert = dispatched.find((candidate) => candidate.type === bulkUpsertSessions.type);
     expect(upsert.payload[0][0]).toEqual(expect.objectContaining({ id: A1, messages }));
     await stop(task);
@@ -560,7 +560,14 @@ describe('agentMutationSaga', () => {
     const hydration = loadChatTranscript(agentId);
     // Wait for the held request itself, not the read service's number of microtasks.
     await conversationStarted.promise;
-    expect(mocks.getConversation).toHaveBeenCalledWith(agentId, 50, undefined);
+    expect(mocks.getConversation).toHaveBeenCalledWith(
+      agentId,
+      50,
+      undefined,
+      undefined,
+      undefined,
+      WS,
+    );
 
     const { channel, task } = start({ [agentId]: staleSession });
     const deletion = deleteAgentSessionRequested(WS, agentId);
@@ -1064,7 +1071,7 @@ describe('agentMutationSaga', () => {
           const action = activateAgentRequested(WS, A1);
           harness.channel.put(action);
           await settle();
-          expect(mocks.get).toHaveBeenCalledWith(A1);
+          expect(mocks.get).toHaveBeenCalledWith(A1, WS);
           const current = harness.getState().agentSessions.byAgentId[A1];
           expect(current.activationState).toBe('activating');
           harness.dispatch(restoreStoredSessions([{ ...current, ...LIVE } as StoredAgentSession]));
