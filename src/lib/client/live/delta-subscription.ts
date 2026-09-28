@@ -192,6 +192,7 @@ export interface DeltaSubscriptionConfig<T> {
  * independent reconciler whose seq stream is isolated from its siblings.
  */
 interface DynamicChannelState<T> {
+  params: Record<string, unknown>;
   /**
    * Per-channel registration-generation token: bumped whenever a newer
    * registration or a teardown (removal, resnapshot, reconnect, dispose)
@@ -246,6 +247,11 @@ function retryDelayMs(attempt: number): number {
 export function createDeltaSubscription<T>(config: DeltaSubscriptionConfig<T>): Unsubscribe {
   const { channel, getId, normalize, handler } = config;
   const dynamic = channel.dynamic;
+  const params = { ...channel.params };
+  const teardownParams = (subscriptionId: string, scope: Record<string, unknown>) => ({
+    subscriptionId,
+    ...(typeof scope.workspaceId === 'string' ? { workspaceId: scope.workspaceId } : {}),
+  });
   // Static reconciler; the dynamic form holds one reconciler per channel in
   // `dynamicChannels` instead.
   const reconciler = new DeltaReconciler<T>(getId, normalize);
@@ -320,7 +326,7 @@ export function createDeltaSubscription<T>(config: DeltaSubscriptionConfig<T>): 
     }
     channelGeneration += 1;
     const generation = channelGeneration;
-    backendRequest<{ subscriptionId?: string }>(channel.subscribeMethod, channel.params ?? {})
+    backendRequest<{ subscriptionId?: string }>(channel.subscribeMethod, params)
       .then((result) => {
         const id = result?.subscriptionId;
         if (generation !== channelGeneration || disposed) {
@@ -329,7 +335,7 @@ export function createDeltaSubscription<T>(config: DeltaSubscriptionConfig<T>): 
           // the newer id must keep matching — and best-effort release the
           // daemon-side subscription this reply just created.
           if (id) {
-            void backendRequest(channel.unsubscribeMethod, { subscriptionId: id }).catch(() => {
+            void backendRequest(channel.unsubscribeMethod, teardownParams(id, params)).catch(() => {
               // Unsubscribe is best-effort.
             });
           }
@@ -375,7 +381,7 @@ export function createDeltaSubscription<T>(config: DeltaSubscriptionConfig<T>): 
     if (!channelSubscriptionId) return;
     const id = channelSubscriptionId;
     channelSubscriptionId = undefined;
-    void backendRequest(channel.unsubscribeMethod, { subscriptionId: id }).catch(() => {
+    void backendRequest(channel.unsubscribeMethod, teardownParams(id, params)).catch(() => {
       // Unsubscribe is best-effort.
     });
   };
@@ -388,7 +394,7 @@ export function createDeltaSubscription<T>(config: DeltaSubscriptionConfig<T>): 
     }
     state.generation += 1;
     const generation = state.generation;
-    backendRequest<{ subscriptionId?: string }>(channel.subscribeMethod, dynamic.paramsForId(id))
+    backendRequest<{ subscriptionId?: string }>(channel.subscribeMethod, state.params)
       .then((result) => {
         const sid = result?.subscriptionId;
         if (disposed || dynamicChannels.get(id) !== state || generation !== state.generation) {
@@ -396,9 +402,11 @@ export function createDeltaSubscription<T>(config: DeltaSubscriptionConfig<T>): 
           // while this attempt was in flight. Best-effort release the
           // daemon-side subscription this reply just created.
           if (sid) {
-            void backendRequest(channel.unsubscribeMethod, { subscriptionId: sid }).catch(() => {
-              // Unsubscribe is best-effort.
-            });
+            void backendRequest(channel.unsubscribeMethod, teardownParams(sid, state.params)).catch(
+              () => {
+                // Unsubscribe is best-effort.
+              },
+            );
           }
           return;
         }
@@ -443,9 +451,11 @@ export function createDeltaSubscription<T>(config: DeltaSubscriptionConfig<T>): 
     const sid = state.subscriptionId;
     state.subscriptionId = undefined;
     if (sid) {
-      void backendRequest(channel.unsubscribeMethod, { subscriptionId: sid }).catch(() => {
-        // Unsubscribe is best-effort.
-      });
+      void backendRequest(channel.unsubscribeMethod, teardownParams(sid, state.params)).catch(
+        () => {
+          // Unsubscribe is best-effort.
+        },
+      );
     }
   };
 
@@ -479,6 +489,7 @@ export function createDeltaSubscription<T>(config: DeltaSubscriptionConfig<T>): 
       if (dynamicChannels.has(id)) continue;
       const state: DynamicChannelState<T> = {
         generation: 0,
+        params: { ...dynamic.paramsForId(id) },
         reconciler: new DeltaReconciler<T>(getId, normalize),
         seeded: false,
         awaitingResnapshot: false,

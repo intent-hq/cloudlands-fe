@@ -1,3 +1,4 @@
+import { selectAgentSessionWorkspaceId } from '../../agent-session/agent-session-selectors';
 import {
   call,
   cancelled,
@@ -277,6 +278,7 @@ function* dispatchToLifecycle(
     yield* put(clearChatDraft(wsId, agentId));
     try {
       const queueOptions = {
+        workspaceId: wsId,
         ...(options.imageBlocks !== undefined ? { imageBlocks: options.imageBlocks } : {}),
         ...(options.fileBlocks !== undefined ? { fileBlocks: options.fileBlocks } : {}),
         ...(options.messageMetadata !== undefined
@@ -289,10 +291,12 @@ function* dispatchToLifecycle(
       // advances this seq, and the queue-on-send seed below must then yield
       // to it.
       const queueSeqAtSend = getAgentQueueEventSnapshotSeq(agentId);
-      const result =
-        Object.keys(queueOptions).length > 0
-          ? yield* call([appClient.agents, appClient.agents.queue], agentId, content, queueOptions)
-          : yield* call([appClient.agents, appClient.agents.queue], agentId, content);
+      const result = yield* call(
+        [appClient.agents, appClient.agents.queue],
+        agentId,
+        content,
+        queueOptions,
+      );
       if (!result.success) {
         yield* put(chatLastAttemptedMessageSet(agentId, recordedAttempt));
         yield* put(chatSendFailed(agentId, result.error ?? m.agent_chatSend_queueRejected_error()));
@@ -330,7 +334,7 @@ function* dispatchToLifecycle(
           // Swallowed on failure — the enqueue itself succeeded, so a hydrate
           // error must not surface as chatSendFailed; the service leaves the
           // prior mirror intact on error.
-          yield* call(() => hydrateAgentQueue(agentId).catch(() => undefined));
+          yield* call(() => hydrateAgentQueue(agentId, wsId).catch(() => undefined));
         }
       }
       if (wsId === CHIEF_WORKSPACE_ID) {
@@ -395,6 +399,7 @@ function* handleRemove(action: RemoveAction): SagaGenerator<void> {
       [appClient.agents, appClient.agents.removeQueued],
       agentId,
       messageId,
+      yield* selectAgentSessionWorkspaceId.effect(agentId),
     );
     if (!result.success)
       logger.warn('Queue removal failed; keeping optimistic removal', {
@@ -415,7 +420,11 @@ function* handleRemove(action: RemoveAction): SagaGenerator<void> {
 function* performStop(agentId: string): SagaGenerator<void> {
   yield* put(chatStopInitiated(agentId));
   try {
-    const result = yield* call([appClient.agents, appClient.agents.stop], agentId);
+    const result = yield* call(
+      [appClient.agents, appClient.agents.stop],
+      agentId,
+      yield* selectAgentSessionWorkspaceId.effect(agentId),
+    );
     if (!result.success)
       logger.warn('Agent stop was not acknowledged', { agentId, error: result.error });
   } finally {

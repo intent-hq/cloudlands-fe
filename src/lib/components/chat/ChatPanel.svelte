@@ -3773,7 +3773,7 @@
       // `agent:queue:updated` (e.g. while this panel was unmounted or during a
       // reconnect gap) would otherwise leave stale drained rows rendered
       // forever (monorepo#1749).
-      void hydrateAgentQueue(agentId);
+      void hydrateAgentQueue(agentId, workspace?.id);
 
       // Reconstruct onboarding context entirely from workspace + agent session.
       // No external storage needed — all essential data lives on the workspace object.
@@ -3932,7 +3932,7 @@
 
     // Reconcile the queued-messages mirror alongside the transcript re-init
     // (monorepo#1749).
-    void hydrateAgentQueue(agentId);
+    void hydrateAgentQueue(agentId, workspace?.id);
 
     // The saga is fire-and-forget from the component's perspective.
     // End rebind tracking immediately — the saga handles its own cancellation.
@@ -4343,7 +4343,7 @@
     if (!messageId || !ref) return;
     const getContainer = beginScrollNavigation();
     if (!messageIdToTurnKey.has(messageId)) {
-      if (!(await seekConversationToMessage(agentId, messageId)) || !getContainer()) return;
+      if (!(await seekConversationToMessage(agentId, messageId, workspace?.id)) || !getContainer()) return;
       await tick();
     }
     const message = await forceRenderAndFindMessage(messageId, getContainer);
@@ -4786,7 +4786,15 @@
   // Handle editing a queued message. The client seam folds transport errors
   // into `{ success: false, error }`, so branching on `result.success` is safe.
   async function handleEditQueuedMessage(messageId: string, content: string, editing?: boolean) {
-    const result = await appClient.agents.editQueued(agentId, messageId, content, editing);
+    const originAgentId = agentId;
+    const originWorkspaceId = workspace?.id;
+    const result = await appClient.agents.editQueued(
+      originAgentId,
+      messageId,
+      content,
+      editing,
+      originWorkspaceId,
+    );
     if (!result.success) {
       logger.error('Failed to edit queued message', { messageId, error: result.error });
     } else {
@@ -4796,7 +4804,7 @@
       // the authoritative echoed queuedMessage.content over the local arg so
       // the record can't drift from the daemon's entry.
       const persistedText = result.queuedMessage?.content ?? content;
-      appStore.dispatch(chatQueuedRetryRecordUpdated(agentId, messageId, persistedText));
+      appStore.dispatch(chatQueuedRetryRecordUpdated(originAgentId, messageId, persistedText));
     }
     return result;
   }
@@ -5462,7 +5470,7 @@
     // / seek rejected) the helper logs and we bail, leaving the conversation
     // where it is. Resident rows scroll directly, keeping the tail intact.
     if (agentId && !messageIdToTurnKey.has(messageId)) {
-      if (!(await seekConversationToMessage(agentId, messageId))) return false;
+      if (!(await seekConversationToMessage(agentId, messageId, workspace?.id))) return false;
     }
     if (!getContainer()) return false;
     const targetElement = await forceRenderAndFindMessage(messageId, getContainer);
@@ -5484,11 +5492,13 @@
   export function refreshUserMessageIndex(): void {
     if (!isActive || userMessageIndexUnsupported || userMessageIndexFetchInFlight || !agentId)
       return;
+    const originAgentId = agentId;
+    const originWorkspaceId = workspace?.id;
     userMessageIndexFetchInFlight = true;
     void appClient.agents
-      .listUserMessages(agentId)
+      .listUserMessages(originAgentId, undefined, originWorkspaceId)
       .then((result) => {
-        if (!isActive) return;
+        if (!isActive || agentId !== originAgentId || workspace?.id !== originWorkspaceId) return;
         if (result.ok) {
           userMessageIndexItems = getUserMessageNavigationItemsFromIndex(result.items);
         } else if (result.unsupported) {
@@ -5498,7 +5508,8 @@
         }
       })
       .finally(() => {
-        userMessageIndexFetchInFlight = false;
+        if (agentId === originAgentId && workspace?.id === originWorkspaceId)
+          userMessageIndexFetchInFlight = false;
       });
   }
 

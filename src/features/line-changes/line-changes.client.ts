@@ -40,8 +40,16 @@ export async function getWorkspaceLineStats(workspaceId: string): Promise<Metric
 }
 
 /** `metrics.getAgentStats` — one agent's line-change totals, or null when untracked. */
-export async function getAgentLineStats(agentId: string): Promise<Metrics | null> {
-  return toMetrics(await backendRequest<unknown>('metrics.getAgentStats', { agentId }));
+export async function getAgentLineStats(
+  agentId: string,
+  workspaceId?: string,
+): Promise<Metrics | null> {
+  return toMetrics(
+    await backendRequest<unknown>('metrics.getAgentStats', {
+      agentId,
+      ...(workspaceId !== undefined ? { workspaceId } : {}),
+    }),
+  );
 }
 
 /** `metrics.getAllWorkspaceStats` — `{ [workspaceId]: Metrics }` for all workspaces. */
@@ -57,8 +65,11 @@ export async function getAllWorkspaceLineStats(): Promise<Record<string, Metrics
 }
 
 /** `metrics.clearAgentStats` — resets one agent's counters; folds to a boolean. */
-export async function clearAgentLineStats(agentId: string): Promise<boolean> {
-  const result = await backendRequest<unknown>('metrics.clearAgentStats', { agentId });
+export async function clearAgentLineStats(agentId: string, workspaceId?: string): Promise<boolean> {
+  const result = await backendRequest<unknown>('metrics.clearAgentStats', {
+    agentId,
+    ...(workspaceId !== undefined ? { workspaceId } : {}),
+  });
   return Boolean(
     result && typeof result === 'object' && (result as { success?: unknown }).success === true,
   );

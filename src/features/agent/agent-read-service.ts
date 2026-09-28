@@ -1,7 +1,8 @@
+import { onBackendReconnected } from '$lib/client/live/backend-transport';
 /**
  * Reusable agent-session read seam used by the agent read saga and event router.
  *
- * `ensureAgentSession(agentId)` fetches `appClient.agents.get` and hydrates the
+ * `ensureAgentSession(agentId, workspaceId)` fetches `appClient.agents.get` and hydrates the
  * store: `bulkUpsertSessions([session])` populates the agent-session slice
  * (`byAgentId` + messages = the conversation), and `upsertSession(session)`
  * registers the agent id in the workspace-agents index. `upsertSession` alone is
@@ -38,6 +39,21 @@ import { isAgentNotFoundError } from './utils/agent-not-found-error';
 import { staleRuntimeFlagClearUpsertOptions } from './utils/stale-runtime-flag-clear';
 
 const logger = createLogger('AgentReadService');
+let connectionGeneration = 0;
+let lifecycleInstalled = false;
+function readKey(agentId: string, workspaceId?: string): string {
+  if (!lifecycleInstalled) {
+    lifecycleInstalled = true;
+    onBackendReconnected(() => {
+      connectionGeneration += 1;
+      inFlight.clear();
+      hydrationInFlight.clear();
+      pendingEventRerun.clear();
+      markerProjectionGeneration.clear();
+    });
+  }
+  return JSON.stringify([connectionGeneration, workspaceId ?? null, agentId]);
+}
 
 /** In-flight wire reads keyed by agent id; shared by every metadata caller. */
 const inFlight = new Map<string, Promise<AgentSession | null>>();
@@ -89,28 +105,34 @@ function preserveProjectedQuestionMarkers(
  * If a read is already in flight, one trailing read is scheduled after it;
  * further events during that read share the same trailing promise.
  */
-export async function refreshAgentSessionAfterEvent(agentId: string): Promise<void> {
-  const pending = inFlight.get(agentId);
-  if (!pending) return ensureAgentSession(agentId);
+export async function refreshAgentSessionAfterEvent(
+  agentId: string,
+  workspaceId?: string,
+): Promise<void> {
+  workspaceId ??= appStore.state.agentSessions?.byAgentId[agentId]?.workspaceId;
+  const key = readKey(agentId, workspaceId);
+  const pending = inFlight.get(key);
+  if (!pending) return ensureAgentSession(agentId, workspaceId);
 
-  const scheduledRerun = pendingEventRerun.get(agentId);
+  const connection = connectionGeneration;
+  const scheduledRerun = pendingEventRerun.get(key);
   if (scheduledRerun) return scheduledRerun;
 
   // Delete before the trailing read so events during that read can coalesce
   // into one further trailing refresh instead of getting lost.
   const rerun = pending.then(
     () => {
-      pendingEventRerun.delete(agentId);
-      return ensureAgentSession(agentId);
+      pendingEventRerun.delete(key);
+      if (connection === connectionGeneration) return ensureAgentSession(agentId, workspaceId);
     },
     () => {
       // A rejected leading read is not cached and must not suppress the event's
       // authoritative trailing retry.
-      pendingEventRerun.delete(agentId);
-      return ensureAgentSession(agentId);
+      pendingEventRerun.delete(key);
+      if (connection === connectionGeneration) return ensureAgentSession(agentId, workspaceId);
     },
   );
-  pendingEventRerun.set(agentId, rerun);
+  pendingEventRerun.set(key, rerun);
   return rerun;
 }
 
@@ -122,27 +144,42 @@ export async function refreshAgentSessionAfterEvent(agentId: string): Promise<vo
  * response to a request that started before an `agent:updated` marker
  * projection keeps the store's projected marker values.
  */
-export function readAgentSession(agentId: string): Promise<AgentSession | null> {
-  const pending = inFlight.get(agentId);
+export function readAgentSession(
+  agentId: string,
+  workspaceId?: string,
+): Promise<AgentSession | null> {
+  workspaceId ??= appStore.state.agentSessions?.byAgentId[agentId]?.workspaceId;
+  const key = readKey(agentId, workspaceId);
+  const pending = inFlight.get(key);
   if (pending) return pending;
 
   const generation = ++readGeneration;
+  const connection = connectionGeneration;
   const run = appClient.agents
-    .get(agentId)
-    .then((session) => preserveProjectedQuestionMarkers(agentId, generation, session))
+    .get(agentId, workspaceId)
+    .then((session) =>
+      connection === connectionGeneration
+        ? preserveProjectedQuestionMarkers(agentId, generation, session)
+        : null,
+    )
     .finally(() => {
-      if (inFlight.get(agentId) === run) inFlight.delete(agentId);
+      if (inFlight.get(key) === run) inFlight.delete(key);
     });
-  inFlight.set(agentId, run);
+  inFlight.set(key, run);
   return run;
 }
 
-async function hydrateAgentSession(agentId: string): Promise<AgentSession | null> {
+async function hydrateAgentSession(
+  agentId: string,
+  workspaceId?: string,
+): Promise<AgentSession | null> {
+  workspaceId ??= appStore.state.agentSessions?.byAgentId[agentId]?.workspaceId;
+  const key = readKey(agentId, workspaceId);
   try {
     const storedBefore = appStore.state.agentSessions?.byAgentId[agentId];
     const hadInFlightPairBeforeFetch =
       storedBefore?.isStreaming === true && storedBefore?.isProcessing === true;
-    const session = await readAgentSession(agentId);
+    const session = await readAgentSession(agentId, workspaceId);
     // Re-check after the fetch: a deletion may have become pending while
     // `agent.get` was in flight; upserting now would resurrect the
     // soft-hidden session. Also drop rows carrying the daemon's
@@ -181,7 +218,7 @@ async function hydrateAgentSession(agentId: string): Promise<AgentSession | null
     }
     return null;
   } finally {
-    hydrationInFlight.delete(agentId);
+    hydrationInFlight.delete(key);
   }
 }
 
@@ -191,17 +228,19 @@ async function hydrateAgentSession(agentId: string): Promise<AgentSession | null
  * intact rather than clearing it. Concurrent calls for the same agent share one
  * fetch.
  */
-export async function ensureAgentSession(agentId: string): Promise<void> {
+export async function ensureAgentSession(agentId: string, workspaceId?: string): Promise<void> {
+  workspaceId ??= appStore.state.agentSessions?.byAgentId[agentId]?.workspaceId;
+  const key = readKey(agentId, workspaceId);
   // A soft-hidden deletion is pending (undo window still open): the daemon
   // still returns the agent from `agent.get`, so refetching would resurrect
   // the deleted session. Skip entirely.
   if (isAgentDeletionPending(agentId)) return;
-  const pending = hydrationInFlight.get(agentId);
+  const pending = hydrationInFlight.get(key);
   if (pending) {
     await pending;
     return;
   }
-  const run = hydrateAgentSession(agentId);
-  hydrationInFlight.set(agentId, run);
+  const run = hydrateAgentSession(agentId, workspaceId);
+  hydrationInFlight.set(key, run);
   await run;
 }

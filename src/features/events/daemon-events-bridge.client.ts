@@ -397,18 +397,21 @@ const lastAppliedRetireTransitionByAgent = new Map<string, 'retired' | 'restored
  * fetch after it settles. `ensureAgentSession` never rejects, so the chain
  * always advances.
  */
+let agentRefreshGeneration = 0;
 const agentSessionRefreshInFlight = new Set<string>();
 const agentSessionRefreshFollowUpWanted = new Set<string>();
-function refreshAgentSessionCoalesced(agentId: string): void {
-  if (agentSessionRefreshInFlight.has(agentId)) {
-    agentSessionRefreshFollowUpWanted.add(agentId);
+function refreshAgentSessionCoalesced(agentId: string, workspaceId?: string): void {
+  const generation = agentRefreshGeneration;
+  const key = JSON.stringify([generation, workspaceId ?? null, agentId]);
+  if (agentSessionRefreshInFlight.has(key)) {
+    agentSessionRefreshFollowUpWanted.add(key);
     return;
   }
-  agentSessionRefreshInFlight.add(agentId);
-  void ensureAgentSession(agentId).then(() => {
-    agentSessionRefreshInFlight.delete(agentId);
-    if (agentSessionRefreshFollowUpWanted.delete(agentId)) {
-      refreshAgentSessionCoalesced(agentId);
+  agentSessionRefreshInFlight.add(key);
+  void ensureAgentSession(agentId, workspaceId).then(() => {
+    agentSessionRefreshInFlight.delete(key);
+    if (agentSessionRefreshFollowUpWanted.delete(key) && generation === agentRefreshGeneration) {
+      refreshAgentSessionCoalesced(agentId, workspaceId);
     }
   });
 }
@@ -683,12 +686,19 @@ function applyStreamPreviewFields(
  * always runs even after a failed fetch (a still-unknown session then makes
  * the deferred writes no-ops, same as today).
  */
-function withHydratedSession(agentId: string, apply: () => void): void {
+function withHydratedSession(
+  agentId: string,
+  workspaceId: string | undefined,
+  apply: () => void,
+): void {
   if (appStore.state.agentSessions?.byAgentId[agentId]) {
     apply();
     return;
   }
-  void ensureAgentSession(agentId).then(apply);
+  const generation = agentRefreshGeneration;
+  void ensureAgentSession(agentId, workspaceId).then(() => {
+    if (generation === agentRefreshGeneration) apply();
+  });
 }
 
 /**
@@ -765,7 +775,7 @@ function handleStreamActivityEvent(event: WorkspaceEvent, workspaceId: string): 
   // live even while pings stream in. `updatedAt` is daemon-owned and left
   // untouched. (Ended-turn stragglers never reach here — dropped above.)
   const eventTimestamp = (event as { timestamp?: unknown }).timestamp;
-  withHydratedSession(agentId, () => {
+  withHydratedSession(agentId, event.workspaceId, () => {
     // Re-check at execution time: `withHydratedSession` defers this callback
     // across an async hydration fetch when the session isn't known yet, and
     // the turn's terminal `agent:stream:end` may stamp the ended-turn map
@@ -1138,7 +1148,7 @@ function handleStreamEndEvent(event: WorkspaceEvent, workspaceId: string): void 
       // terminal choreography closes — see handleStreamActivityEvent.
       previewTurnEndedMessageIdByAgent.set(agentId, messageId);
     }
-    withHydratedSession(agentId, () => {
+    withHydratedSession(agentId, event.workspaceId, () => {
       applyStreamPreviewFields(
         agentId,
         typeof data?.lastAgentResponse === 'string' ? data.lastAgentResponse : undefined,
@@ -1342,7 +1352,7 @@ function handleAgentCreatedEvent(event: WorkspaceEvent, workspaceId: string): vo
   const countThisCreate = !scopeCountedCreatedAgentIds.has(agentId);
   scopeCountedCreatedAgentIds.add(agentId);
   const baselineGeneration = scopeCountsGenerationOf(workspaceId);
-  void ensureAgentSession(agentId).then(() => {
+  void ensureAgentSession(agentId, workspaceId).then(() => {
     if (!countThisCreate) return;
     const session = appStore.state.agentSessions?.byAgentId[agentId];
     if (!session || session.retiredAt) return;
@@ -1574,7 +1584,7 @@ function handleAgentLastMessageEvent(event: WorkspaceEvent): void {
     updates.lastUserMessage =
       typeof data.lastUserMessage === 'string' ? data.lastUserMessage : undefined;
   }
-  withHydratedSession(agentId, () => {
+  withHydratedSession(agentId, event.workspaceId, () => {
     const session = appStore.state.agentSessions?.byAgentId[agentId];
     if (!session) return;
     appStore.dispatch(
@@ -1890,6 +1900,7 @@ function handlePermissionRequestEvent(event: WorkspaceEvent): void {
   const timestamp = data.timestamp;
   const request: PermissionRequest = {
     requestId,
+    ...(event.workspaceId ? { workspaceId: event.workspaceId } : {}),
     sessionId,
     title,
     description: typeof description === 'string' || description === null ? description : undefined,
@@ -4157,7 +4168,7 @@ export function routeDaemonEventsNotification(
   if (type === 'agent:message' && !daemonEmitsLastMessage) {
     const { agentId, role } = event.data ?? {};
     if (typeof agentId === 'string' && (role === 'assistant' || role === 'user')) {
-      refreshAgentSessionCoalesced(agentId);
+      refreshAgentSessionCoalesced(agentId, event.workspaceId);
     }
   }
   // Process-queue events (§6.5): agent:process:queued sets the hint,
@@ -4302,6 +4313,9 @@ export const DAEMON_EVENTS_SUBSCRIBE_TYPES = [
 export async function refreshDaemonEventsAfterReconnect(
   activeWorkspaceId: string | null,
 ): Promise<void> {
+  agentRefreshGeneration += 1;
+  agentSessionRefreshInFlight.clear();
+  agentSessionRefreshFollowUpWanted.clear();
   const state = appStore.state as {
     workspaceAgents?: {
       byWorkspaceId: Record<string, { activeAgentId?: string | null }>;
@@ -4319,7 +4333,7 @@ export async function refreshDaemonEventsAfterReconnect(
       // every reconnect. Queue rows drained while the connection was down
       // never re-emit `agent:queue:updated`; reconcile the mirror from
       // `agent.getQueue` (monorepo#1749).
-      void hydrateAgentQueue(activeAgentId);
+      void hydrateAgentQueue(activeAgentId, activeWorkspaceId);
     }
   }
   // Sharing rows converge via live `workspace:updated` membership deltas
@@ -4406,6 +4420,7 @@ async function reconcileAgentFailureRegistry(): Promise<void> {
 }
 
 export function disposeDaemonEventsRoutingState(): void {
+  agentRefreshGeneration += 1;
   streamsByAgent.clear();
   previewTurnMessageIdByAgent.clear();
   previewTurnEndedMessageIdByAgent.clear();

@@ -1,3 +1,4 @@
+import { onBackendReconnected } from '$lib/client/live/backend-transport';
 /**
  * Agent queue read service — the reconciliation fallback for the renderer's
  * queued-messages mirror (monorepo#1749).
@@ -41,6 +42,19 @@ import { createLogger } from '$lib/utils/client-logger';
 import { isAgentDeletionPending } from './utils/pending-agent-deletions';
 
 const logger = createLogger('AgentQueueReadService');
+let connectionGeneration = 0;
+let lifecycleInstalled = false;
+function queueKey(agentId: string, workspaceId?: string): string {
+  if (!lifecycleInstalled) {
+    lifecycleInstalled = true;
+    onBackendReconnected(() => {
+      connectionGeneration += 1;
+      hydrateInFlightByAgent.clear();
+      hydrateFollowUpWantedByAgent.clear();
+    });
+  }
+  return JSON.stringify([connectionGeneration, workspaceId ?? null, agentId]);
+}
 
 /** Shared in-flight hydrate chain per agent (leading fetch + any trailing follow-up). */
 const hydrateInFlightByAgent = new Map<string, Promise<void>>();
@@ -77,18 +91,21 @@ export function getAgentQueueEventSnapshotSeq(agentId: string): number {
   return eventSnapshotSeqByAgent.get(agentId) ?? 0;
 }
 
-async function runHydrateAgentQueueFetch(agentId: string): Promise<void> {
+async function runHydrateAgentQueueFetch(agentId: string, workspaceId?: string): Promise<void> {
+  const key = queueKey(agentId, workspaceId);
+  const connection = connectionGeneration;
   // Trailing follow-ups re-enter here without passing the public entry
   // point's guard: skip the RPC (and the slice-entry-creating dispatch) when
   // a deletion became pending while the leading fetch was in flight.
   if (isAgentDeletionPending(agentId)) {
-    hydrateFollowUpWantedByAgent.delete(agentId);
+    hydrateFollowUpWantedByAgent.delete(key);
     return;
   }
   appStore.dispatch(hydrateAgentQueueRequested(agentId));
   const seqAtFetchStart = eventSnapshotSeqByAgent.get(agentId) ?? 0;
   try {
-    const queue = await appClient.agents.getQueue(agentId);
+    const queue = await appClient.agents.getQueue(agentId, workspaceId);
+    if (connection !== connectionGeneration) return;
     // Re-check after the fetch: a deletion may have become pending while
     // `agent.getQueue` was in flight (folding the response would resurrect
     // rows for a soft-hidden session), or a live event snapshot may have
@@ -113,6 +130,7 @@ async function runHydrateAgentQueueFetch(agentId: string): Promise<void> {
       eventSnapshotSeqByAgent.set(agentId, (eventSnapshotSeqByAgent.get(agentId) ?? 0) + 1);
     }
   } catch (error) {
+    if (connection !== connectionGeneration) return;
     logger.error(`Failed to hydrate agent queue for ${agentId}`, error);
     if (isAgentDeletionPending(agentId)) {
       // Don't create/keep an error entry for a soft-hidden session.
@@ -128,8 +146,8 @@ async function runHydrateAgentQueueFetch(agentId: string): Promise<void> {
     // regardless of how many triggers piled up. Awaited so the shared
     // in-flight promise settles only when the whole chain (including
     // follow-ups queued during the trailing fetch) has finished.
-    if (hydrateFollowUpWantedByAgent.delete(agentId)) {
-      await runHydrateAgentQueueFetch(agentId);
+    if (connection === connectionGeneration && hydrateFollowUpWantedByAgent.delete(key)) {
+      await runHydrateAgentQueueFetch(agentId, workspaceId);
     }
   }
 }
@@ -142,20 +160,22 @@ async function runHydrateAgentQueueFetch(agentId: string): Promise<void> {
  * All coalesced callers share the in-flight chain promise, which resolves
  * once the leading fetch and any trailing follow-up have settled.
  */
-export function hydrateAgentQueue(agentId: string): Promise<void> {
+export function hydrateAgentQueue(agentId: string, workspaceId?: string): Promise<void> {
+  workspaceId ??= appStore.state.agentSessions?.byAgentId[agentId]?.workspaceId;
+  const key = queueKey(agentId, workspaceId);
   // A soft-hidden deletion is pending (undo window still open): the daemon
   // still returns the agent, so hydrating would re-mirror rows for the
   // deleted session. Skip entirely.
   if (!agentId || isAgentDeletionPending(agentId)) return Promise.resolve();
-  const inFlight = hydrateInFlightByAgent.get(agentId);
+  const inFlight = hydrateInFlightByAgent.get(key);
   if (inFlight) {
-    hydrateFollowUpWantedByAgent.add(agentId);
+    hydrateFollowUpWantedByAgent.add(key);
     return inFlight;
   }
-  const chain = runHydrateAgentQueueFetch(agentId).finally(() => {
-    hydrateInFlightByAgent.delete(agentId);
+  const chain = runHydrateAgentQueueFetch(agentId, workspaceId).finally(() => {
+    hydrateInFlightByAgent.delete(key);
   });
-  hydrateInFlightByAgent.set(agentId, chain);
+  hydrateInFlightByAgent.set(key, chain);
   return chain;
 }
 

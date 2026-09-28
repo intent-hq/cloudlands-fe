@@ -2331,7 +2331,7 @@ describe('daemonEventsBridge (agent:stream:activity — push-applied live previe
       }),
     );
 
-    expect(ensureAgentSessionSpy).toHaveBeenCalledWith(AGENT);
+    expect(ensureAgentSessionSpy).toHaveBeenCalledWith(AGENT, WS);
   });
 
   it('ignores malformed agent:stream:activity payloads (missing/empty agentId or messageId)', async () => {
@@ -2385,7 +2385,7 @@ describe('daemonEventsBridge (agent:stream:activity — push-applied live previe
     );
     await flush();
 
-    expect(ensureAgentSessionSpy).toHaveBeenCalledWith(AGENT);
+    expect(ensureAgentSessionSpy).toHaveBeenCalledWith(AGENT, WS);
     expect(readAgentSessionField('lastAgentResponse')).toBe('text for an unhydrated agent');
     expect(readAgentSessionField('digest')).toBe('Hydrated preview');
   });
@@ -4922,6 +4922,7 @@ describe('daemonEventsBridge (permission flow — PROTOCOL §8 request/resolved 
     const requests = readPermissionRequests();
     expect(requests).toHaveLength(1);
     expect(requests[0]).toMatchObject({
+      workspaceId: WS,
       requestId: REQUEST_ID,
       sessionId: AGENT,
       title: 'Run command',
@@ -5637,7 +5638,7 @@ describe('daemonEventsBridge (session lifecycle — agent:created/renamed/update
     });
     await flush();
 
-    expect(ensureAgentSessionSpy).toHaveBeenCalledWith(CREATED_AGENT);
+    expect(ensureAgentSessionSpy).toHaveBeenCalledWith(CREATED_AGENT, WS);
     const state = appStore.state as {
       agentSessions: {
         byAgentId: Record<string, AgentSession>;
@@ -6060,7 +6061,7 @@ describe('daemonEventsBridge (agent lifecycle → collapsed bin counts, §5.5 sc
     handler(notification('agent:created', { agentId: 'agent-vanished' }));
     await flush();
 
-    expect(ensureAgentSessionSpy).toHaveBeenCalledWith('agent-vanished');
+    expect(ensureAgentSessionSpy).toHaveBeenCalledWith('agent-vanished', WS);
     expect(scopeCountsOf()).toEqual(COUNTS);
   });
 
@@ -10785,7 +10786,7 @@ describe('daemonEventsBridge (agent:last-message §6.5 — preview projections a
 
     // The withHydratedSession seam fetches the session shell once — never a
     // transcript page walk.
-    expect(ensureAgentSessionSpy).toHaveBeenCalledWith('agent-unknown');
+    expect(ensureAgentSessionSpy).toHaveBeenCalledWith('agent-unknown', WS);
     expect(loadChatTranscriptSpy).not.toHaveBeenCalled();
   });
 
@@ -10858,7 +10859,7 @@ describe('daemonEventsBridge (STAB-22 back-compat — agent:message falls back t
     );
     await flush();
 
-    expect(ensureAgentSessionSpy).toHaveBeenCalledWith(AGENT);
+    expect(ensureAgentSessionSpy).toHaveBeenCalledWith(AGENT, WS);
     expect(loadChatTranscriptSpy).not.toHaveBeenCalled();
   });
 
@@ -10888,6 +10889,31 @@ describe('daemonEventsBridge (STAB-22 back-compat — agent:message falls back t
     // Trailing coalesce: the burst collapsed into exactly one follow-up.
     expect(ensureAgentSessionSpy).toHaveBeenCalledTimes(2);
     expect(loadChatTranscriptSpy).not.toHaveBeenCalled();
+  });
+
+  it('drops a queued metadata refresh when routing is disposed before the reply', async () => {
+    seedSession({ messages: [] });
+    let finish!: () => void;
+    ensureAgentSessionSpy.mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          finish = resolve;
+        }) as never,
+    );
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+    handler(
+      notification('agent:message', { agentId: AGENT, messageId: 'old-1', role: 'assistant' }),
+    );
+    handler(
+      notification('agent:message', { agentId: AGENT, messageId: 'old-2', role: 'assistant' }),
+    );
+    const { disposeDaemonEventsRoutingState } = await import('./daemon-events-bridge.client');
+    disposeDaemonEventsRoutingState();
+    finish();
+    await flush();
+    expect(ensureAgentSessionSpy).toHaveBeenCalledTimes(1);
+    expect(ensureAgentSessionSpy).toHaveBeenCalledWith(AGENT, WS);
   });
 
   it('retires the fallback once the daemon emits agent:last-message', async () => {

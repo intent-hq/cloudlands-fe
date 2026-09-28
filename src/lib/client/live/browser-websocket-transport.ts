@@ -384,9 +384,12 @@ export class BrowserWebSocketTransport implements BackendTransport {
     return this.request<T>('events.subscribe', params);
   }
 
-  async unsubscribe(subscriptionId: string): Promise<void> {
+  async unsubscribe(subscriptionId: string, workspaceId?: string): Promise<void> {
     try {
-      await this.request('events.unsubscribe', { subscriptionId });
+      await this.request('events.unsubscribe', {
+        subscriptionId,
+        ...(workspaceId !== undefined ? { workspaceId } : {}),
+      });
     } catch {
       // Unsubscribe is best-effort; ignore transport errors on teardown.
     }

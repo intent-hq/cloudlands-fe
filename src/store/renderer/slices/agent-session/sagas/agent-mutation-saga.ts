@@ -353,10 +353,10 @@ function* renameAgent(action: ReturnType<typeof renameAgentSessionRequested>): S
 }
 
 function* stopAgent(action: ReturnType<typeof stopAgentSessionRequested>): SagaGenerator<void> {
-  const [, agentId] = action.payload;
+  const [wsId, agentId] = action.payload;
   let settled = false;
   try {
-    const result = yield* call([appClient.agents, appClient.agents.stop], agentId);
+    const result = yield* call([appClient.agents, appClient.agents.stop], agentId, wsId);
     if (!result.success) throw new Error(result.error || m.agent_mutation_stopFailed_error());
     yield* put(action.success(undefined as never));
     settled = true;

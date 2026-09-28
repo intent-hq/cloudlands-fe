@@ -597,7 +597,7 @@ export interface AgentsClient {
    * is the per-bin count triple, absent on daemons predating `scope`.
    */
   listWithMeta(workspaceId: string, options?: AgentListOptions): Promise<AgentListResult>;
-  get(agentId: string): Promise<AgentSession | null>;
+  get(agentId: string, workspaceId?: string): Promise<AgentSession | null>;
   /**
    * One page of an agent's retained transcript (`agent.getConversation`, §5.5).
    * Returns AgentMessage-granular messages (role/turn structure preserved) — the
@@ -628,6 +628,7 @@ export interface AgentsClient {
     pageToken?: string,
     aroundMessageId?: string,
     aroundIndex?: number,
+    workspaceId?: string,
   ): Promise<{
     messages: AgentMessage[];
     truncated: boolean;
@@ -646,7 +647,12 @@ export interface AgentsClient {
    * carry the original `data`, never the thumbnail. Unknown message/block ids
    * reject with `-32602`; errors propagate as rejections.
    */
-  getMessageBlock(agentId: string, messageId: string, blockId: string): Promise<ContentBlock>;
+  getMessageBlock(
+    agentId: string,
+    messageId: string,
+    blockId: string,
+    workspaceId?: string,
+  ): Promise<ContentBlock>;
   /**
    * The full user-message index of one agent (`agent.listUserMessages`,
    * §5.5): every **user-role** message as a lightweight
@@ -658,7 +664,11 @@ export interface AgentsClient {
    * transport/daemon failure as `{ ok: false, unsupported: false, error }`,
    * so callers can ignore the failure and fall back to tail-derived items.
    */
-  listUserMessages(agentId: string, previewChars?: number): Promise<UserMessageIndexResult>;
+  listUserMessages(
+    agentId: string,
+    previewChars?: number,
+    workspaceId?: string,
+  ): Promise<UserMessageIndexResult>;
   /**
    * Create an agent session (`agent.create`, §5.5). The daemon returns the
    * full `AgentLite` projection of the newly persisted session (widened in
@@ -668,7 +678,7 @@ export interface AgentsClient {
    * Transport / daemon errors propagate as rejections.
    */
   create(request: AgentCreateRequest): Promise<AgentSession>;
-  send(agentId: string, message: string): Promise<MutationResult>;
+  send(agentId: string, message: string, workspaceId?: string): Promise<MutationResult>;
   /**
    * Edit a past **user** message and regenerate from that point
    * (`agent.editAndRegenerate`, §5.5 catalog-parity extension). The daemon
@@ -704,6 +714,7 @@ export interface AgentsClient {
     agentId: string,
     message: string,
     options?: {
+      workspaceId?: string;
       imageBlocks?: ImageBlock[];
       fileBlocks?: FileBlock[];
       messageMetadata?: Record<string, unknown>;
@@ -723,6 +734,7 @@ export interface AgentsClient {
     messageId: string,
     content: string,
     editing?: boolean,
+    workspaceId?: string,
   ): Promise<MutationResult>;
   /**
    * Send a queued message immediately (`agent.sendQueuedMessageNow`, §5.5):
@@ -751,7 +763,7 @@ export interface AgentsClient {
    * messageMetadata? }`) verbatim; `[]` when the queue is empty. Transport /
    * daemon errors propagate as rejections, like the other reads.
    */
-  getQueue(agentId: string): Promise<QueuedMessage[]>;
+  getQueue(agentId: string, workspaceId?: string): Promise<QueuedMessage[]>;
   /**
    * Remove a queued message (`agent.removeQueuedMessage`, §5.5). The daemon is
    * **idempotent** — it always returns `{ success: true }` even when the queue
@@ -760,14 +772,14 @@ export interface AgentsClient {
    * optimistic delete back. Emits `agent:queue:updated` (§6.5) only when the
    * queue actually changed.
    */
-  removeQueued(agentId: string, messageId: string): Promise<MutationResult>;
+  removeQueued(agentId: string, messageId: string, workspaceId?: string): Promise<MutationResult>;
   /**
    * Cancel the agent's in-flight stream (`agent.stop`, §5.5). The response is
    * just an ack (`{ success: true }`); the daemon cancels the current turn
    * and emits the terminal `agent:stream:end` (§7), which is the signal that
    * converges the FE streaming state.
    */
-  stop(agentId: string): Promise<MutationResult>;
+  stop(agentId: string, workspaceId?: string): Promise<MutationResult>;
   /**
    * Cancel the agent's completion watches / delegation groups
    * (`agent.cancelSubscriptions`, §5.5). Unscoped (neither optional param)
@@ -953,6 +965,7 @@ export interface AgentsClient {
   respondPermission(
     requestId: string,
     outcome: PermissionOutcome,
+    workspaceId?: string,
   ): Promise<RespondPermissionResult>;
   /**
    * List agents that were interrupted by an intentd restart
@@ -1044,6 +1057,7 @@ export interface ChatClient {
 
 /** Options for `ChatClient.subscribe` (PROTOCOL §7.1 resume). */
 export interface ChatSubscribeOptions {
+  workspaceId?: string;
   /**
    * Resume anchor: the last known (fully persisted) message id. The daemon
    * replies with a delta snapshot (`resumed: true`) when it knows the id,
@@ -1114,16 +1128,21 @@ export interface TerminalsClient {
    */
   create(params: TerminalCreateParams): Promise<MutationResult>;
   /** `terminal.write` — `data` is plain text; the live client base64-encodes it. */
-  write(terminalId: string, data: string): Promise<MutationResult>;
+  write(terminalId: string, data: string, workspaceId?: string): Promise<MutationResult>;
   /** `terminal.resize`. */
-  resize(terminalId: string, cols: number, rows: number): Promise<MutationResult>;
+  resize(
+    terminalId: string,
+    cols: number,
+    rows: number,
+    workspaceId?: string,
+  ): Promise<MutationResult>;
   /** `terminal.kill` — signals the PTY; the daemon then emits `terminal:exit`. */
-  kill(terminalId: string): Promise<MutationResult>;
+  kill(terminalId: string, workspaceId?: string): Promise<MutationResult>;
   /**
    * `terminal.getBuffer` — base64 scrollback for replay on (re)connect. The
    * live client decodes the base64 payload so callers receive a plain string.
    */
-  getBuffer(terminalId: string, maxBytes?: number): Promise<string>;
+  getBuffer(terminalId: string, maxBytes?: number, workspaceId?: string): Promise<string>;
   /**
    * Ported `terminal.readOutput` — plaintext convenience read for MCP-style
    * callers. The daemon router (§5.13) requires `workspaceId` in addition to
@@ -1132,7 +1151,11 @@ export interface TerminalsClient {
    */
   output(workspaceId: string, terminalId: string): Promise<string>;
   /** Subscribe to `terminal:*` events scoped to a single terminalId. */
-  subscribeEvents(terminalId: string, handlers: TerminalEventHandlers): Unsubscribe;
+  subscribeEvents(
+    terminalId: string,
+    handlers: TerminalEventHandlers,
+    workspaceId?: string,
+  ): Unsubscribe;
   subscribe(handler: SubscriptionHandler<TerminalTab[]>): Unsubscribe;
 }
 
