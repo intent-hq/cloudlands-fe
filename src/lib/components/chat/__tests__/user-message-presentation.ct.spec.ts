@@ -39,12 +39,12 @@ for (const state of cases) {
     });
 
     const header = component.locator('[data-panel-content-header]');
-    const trigger = header
-      .locator('[data-panel-header-content-actions]')
-      .getByTestId('chat-message-navigator-trigger');
+    await header.getByTestId('panel-actions-trigger').click();
+    const trigger = page.getByTestId('chat-message-navigator-trigger');
     await expect(trigger).toHaveCount(1);
     await trigger.click();
-    const dialog = page.getByRole('dialog', { name: 'Browse user messages' });
+    const dialog = page.locator('[data-chat-message-navigator-content]');
+    await expect(dialog).toBeVisible();
     const search = dialog.getByRole('combobox', { name: 'Filter user messages' });
     const options = dialog.getByRole('option');
 
