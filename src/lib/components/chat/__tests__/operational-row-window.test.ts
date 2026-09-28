@@ -261,6 +261,44 @@ describe('panel-wide operational row window', () => {
     expect(policy.snapshot().totalHeight).toBe(1990);
   });
 
+  it('ignores stale removed-row measurements before validating a live resize batch', () => {
+    const policy = createOperationalRowWindow();
+    const entries = rows(2);
+    policy.setEntries(entries);
+    policy.setEntries(entries.slice(0, 1));
+    expect(() =>
+      policy.measure([
+        { key: entries[0].key, height: 25 },
+        { key: entries[1].key, height: 0 },
+        { key: 'stale', height: NaN },
+      ]),
+    ).not.toThrow();
+    expect(policy.locate(entries[0].key)?.height).toBe(25);
+    expect(policy.snapshot().totalHeight).toBe(25);
+  });
+
+  it('charges outer-renderer remounts again while retaining descriptors and measured geometry', () => {
+    const policy = createOperationalRowWindow();
+    const entries = rows(4);
+    const keys = entries.map((entry) => entry.key);
+    policy.setEntries(entries);
+    policy.measure([{ key: keys[0], height: 35 }]);
+    policy.setViewport({ top: 0, bottom: 100 });
+    expect(policy.advanceFrame(1)).toEqual(keys);
+    policy.invalidateMounts(keys);
+    policy.invalidateMounts(keys);
+    expect(policy.snapshot().mountedKeys).toEqual([]);
+    expect(policy.snapshot().pendingKeys).toEqual(keys);
+    expect(policy.snapshot().totalHeight).toBe(65);
+    expect(policy.locate(keys[0])?.height).toBe(35);
+    expect(policy.advanceFrame(1)).toEqual([]);
+    expect(policy.advanceFrame(2)).toEqual(keys);
+    policy.invalidateMounts([keys[0], 'unknown']);
+    expect(policy.advanceFrame(2)).toEqual([]);
+    expect(policy.advanceFrame(3)).toEqual([keys[0]]);
+    expect(policy.snapshot().mountedKeys).toEqual(keys);
+  });
+
   it('rejects invalid geometry instead of allowing NaN to erase bounds', () => {
     const policy = createOperationalRowWindow();
     expect(() => policy.setEntries([{ ...rows(1)[0], estimatedHeight: 0 }])).toThrow();

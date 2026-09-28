@@ -179,11 +179,22 @@ export function createOperationalRowWindow() {
     /** Batch measurements of mounted rows/content only; stale keys are ignored. */
     measure(measurements: readonly { key: string; height: number }[]): void {
       if (disposed) return;
-      for (const { height } of measurements) validateHeight(height);
-      for (const { key, height } of measurements) {
-        if (positions.has(key)) measured.set(key, height);
-      }
+      const live = measurements.filter(({ key }) => positions.has(key));
+      for (const { height } of live) validateHeight(height);
+      for (const { key, height } of live) measured.set(key, height);
       rebuildIndex();
+    },
+    /**
+     * Forget physical mounts torn down by an outer message/group/renderer while
+     * retaining row identity and measured geometry. The owner must invalidate
+     * affected keys before publishing a replacement renderer, then render the
+     * fresh snapshot. Re-created components need new admissions; invalidation
+     * never refunds the frame's already-used allowance. Batch at the owner
+     * boundary rather than registering per-offscreen-row lifecycle observers.
+     */
+    invalidateMounts(keys: readonly string[]): void {
+      if (disposed) return;
+      for (const key of keys) mounted.delete(key);
     },
     releaseScope(scopeId: string): void {
       if (disposed) return;
