@@ -1,5 +1,10 @@
 <script lang="ts">
   import { onDestroy, untrack } from 'svelte';
+  import AgentSubscriptions from '../AgentSubscriptions.svelte';
+  import { appLayoutNavigationSaga } from '$store/renderer/slices/app-layout/sagas/app-layout-navigation-saga';
+  import { watchRightmostColumnRequests } from '$store/renderer/slices/panel-layout/sagas/panel-layout-saga';
+  import { setSubscriptionSnapshot } from '$store/renderer/slices/agent-subscription-ui/agent-subscription-ui-slice';
+  import { openWorkspaceTab } from '$store/renderer/slices/tab-state/tab-state-slice';
   import { faComment } from '@fortawesome/free-solid-svg-icons';
   import type { AgentMessage, AgentSession, ContentBlock, PendingProposalRef } from '$shared/types';
   import { AgentStatus } from '$shared/types/agent.types';
@@ -35,6 +40,7 @@
     height = 900,
     liveStreaming,
     alternateMessages,
+    watchedAgent = false,
     activeAgent = 'primary',
     seamOnly = false,
     detachedStatus = false,
@@ -54,6 +60,7 @@
     height?: number;
     liveStreaming?: boolean;
     alternateMessages?: AgentMessage[];
+    watchedAgent?: boolean;
     activeAgent?: 'primary' | 'secondary';
     seamOnly?: boolean;
     detachedStatus?: boolean;
@@ -76,7 +83,16 @@
   const workspaceId = 'chat-panel-operational-geometry';
   const agentId = 'chat-panel-operational-agent';
   const timestamp = '2026-08-17T12:00:00.000Z';
-  const disposeStore = startRootStoreLifecycle(store, { startSagas: () => [] });
+  const watchedFixture = untrack(() => watchedAgent);
+  const disposeStore = startRootStoreLifecycle(store, {
+    startSagas: (appStore) =>
+      watchedFixture
+        ? [
+            appStore.runSaga(appLayoutNavigationSaga),
+            appStore.runSaga(watchRightmostColumnRequests),
+          ]
+        : [],
+  });
 
   const operationalContent = (prefix: string, includeStreamingThinking = false) =>
     [
@@ -650,7 +666,7 @@
               workspaceId,
               closable: true,
             },
-            ...(alternate
+            ...(alternate && !watchedFixture
               ? [
                   {
                     id: 'alternate-tab',
@@ -670,6 +686,26 @@
     }),
   );
   store.dispatch(setRestoreStatus(workspaceId, 'restored'));
+  if (watchedFixture) {
+    store.dispatch(openWorkspaceTab(workspaceId));
+    store.dispatch(
+      setSubscriptionSnapshot(workspaceId, agentId, {
+        subscriptions: [
+          {
+            id: 'scale-watch',
+            agentId,
+            actorIds: [`${agentId}-alternate`],
+            eventTypes: ['agent:completed'],
+            createdAt: timestamp,
+            description: 'Watch alternate agent',
+          },
+        ],
+        delegationGroups: [],
+        agentStatuses: { [`${agentId}-alternate`]: 'waiting' },
+        waitingState: 'waiting',
+      }),
+    );
+  }
 
   $effect(() => {
     const streaming = liveStreaming;
@@ -687,7 +723,8 @@
 
   $effect(() => {
     const tabId = activeAgent === 'secondary' ? 'alternate-tab' : 'agent-tab';
-    if (alternate) untrack(() => store.dispatch(setActiveTab(workspaceId, tabId, 'chat-panel')));
+    if (alternate && !watchedFixture)
+      untrack(() => store.dispatch(setActiveTab(workspaceId, tabId, 'chat-panel')));
   });
 
   $effect(() => {
@@ -751,6 +788,11 @@
 </script>
 
 <section class:dark={theme === 'dark'} style:zoom data-testid="chat-panel-operational-host">
+  {#if watchedFixture}
+    <div data-testid="scale-agent-subscriptions" style:width="{width}px">
+      <AgentSubscriptions {workspaceId} {agentId} />
+    </div>
+  {/if}
   <div style:height="{height}px" style:width="{width}px">
     <PanelLayout {workspaceId} layoutId={workspaceId} contained />
   </div>
