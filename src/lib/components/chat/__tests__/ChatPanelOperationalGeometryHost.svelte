@@ -12,10 +12,12 @@
   import {
     bulkUpsertSessions,
     replaceMessages,
+    updateSession,
   } from '$store/renderer/slices/agent-session/agent-session-slice';
   import {
     initializeLayout,
     setRestoreStatus,
+    setActiveTab,
   } from '$store/renderer/slices/panel-layout/panel-layout-slice';
   import { setWorkspaceEntity } from '$store/renderer/slices/workspace/workspace-slice';
   import { setAgents } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
@@ -30,6 +32,10 @@
     theme = 'light',
     zoom = 1,
     width = 560,
+    height = 900,
+    liveStreaming,
+    alternateMessages,
+    activeAgent = 'primary',
     seamOnly = false,
     detachedStatus = false,
     reasoningSearchOnly = false,
@@ -45,6 +51,10 @@
     theme?: 'light' | 'dark';
     zoom?: number;
     width?: number;
+    height?: number;
+    liveStreaming?: boolean;
+    alternateMessages?: AgentMessage[];
+    activeAgent?: 'primary' | 'secondary';
     seamOnly?: boolean;
     detachedStatus?: boolean;
     reasoningSearchOnly?: boolean;
@@ -609,6 +619,14 @@
     } as never),
   );
   store.dispatch(bulkUpsertSessions([session], { preserveExplicitRuntimeFlags: false }));
+  const alternate = untrack(() => alternateMessages);
+  if (alternate)
+    store.dispatch(
+      bulkUpsertSessions(
+        [{ ...session, id: `${agentId}-alternate`, name: 'Alternate agent', messages: alternate }],
+        { preserveExplicitRuntimeFlags: false },
+      ),
+    );
   store.dispatch(setAgents(workspaceId, [session]));
   store.dispatch(
     initializeLayout(workspaceId, {
@@ -625,6 +643,18 @@
               workspaceId,
               closable: true,
             },
+            ...(alternate
+              ? [
+                  {
+                    id: 'alternate-tab',
+                    type: 'agent',
+                    title: 'Alternate agent',
+                    agentId: `${agentId}-alternate`,
+                    workspaceId,
+                    closable: true,
+                  },
+                ]
+              : []),
           ],
           activeTabId: 'agent-tab',
         },
@@ -633,6 +663,25 @@
     }),
   );
   store.dispatch(setRestoreStatus(workspaceId, 'restored'));
+
+  $effect(() => {
+    const streaming = liveStreaming;
+    if (streaming === undefined) return;
+    untrack(() =>
+      store.dispatch(
+        updateSession(agentId, {
+          isStreaming: streaming,
+          isProcessing: streaming,
+          isResponding: streaming,
+        }),
+      ),
+    );
+  });
+
+  $effect(() => {
+    const tabId = activeAgent === 'secondary' ? 'alternate-tab' : 'agent-tab';
+    if (alternate) untrack(() => store.dispatch(setActiveTab(workspaceId, tabId, 'chat-panel')));
+  });
 
   $effect(() => {
     if (!liveFixture || !liveMessages) return;
@@ -695,7 +744,7 @@
 </script>
 
 <section class:dark={theme === 'dark'} style:zoom data-testid="chat-panel-operational-host">
-  <div style:height="900px" style:width="{width}px">
+  <div style:height="{height}px" style:width="{width}px">
     <PanelLayout {workspaceId} layoutId={workspaceId} contained />
   </div>
 </section>
